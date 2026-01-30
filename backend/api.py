@@ -430,8 +430,9 @@ origins = [
     "http://127.0.0.1:8081",
     "http://127.0.0.1:8082",
     "http://127.0.0.1:5173",
-    "http://localhost",
-
+    "http://localhost"
+    "https://hukukoid.com",       # <--- EN ÖNEMLİSİ BU
+    "https://www.hukukoid.com"
 ]
 
 app.add_middleware(
@@ -729,24 +730,27 @@ def health_check():
     return {"status": "running", "message": "HukuDok API Active (Web Mode)"}
 
 # --- CONFIG ENDPOINTS (Dropdown Lists) ---
+@app.get("/config/lawyers")
 @app.get("/api/config/lawyers")
 def get_lawyers_endpoint():
     """Returns list of lawyers for dropdown."""
     config = DynamicConfig.get_instance()
     return config.get_lawyers()
-
+@app.get("/config/statuses")
 @app.get("/api/config/statuses")
 def get_statuses_endpoint():
     """Returns list of statuses for dropdown."""
     config = DynamicConfig.get_instance()
     return config.get_statuses()
-
+@app.get("/config/doctypes")
 @app.get("/api/config/doctypes")
 def get_doctypes_endpoint():
     """Returns list of document types for dropdown."""
     config = DynamicConfig.get_instance()
     return config.get_doctypes()
 
+@app.post("/refresh")
+@app.post("/api/refresh")
 @app.post("/api/config/refresh")
 async def refresh_config_endpoint(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Manually triggers a refresh of all lists from SharePoint."""
