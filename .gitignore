@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 .env_bundled
+backend/.env
+frontend/.env
+*.env
 
 # Node Modules
 node_modules/
