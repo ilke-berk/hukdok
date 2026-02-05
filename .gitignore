@@ -1,0 +1,44 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+.env_bundled
+backend/.env
+frontend/.env
+*.env
+
+# Node Modules
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build Artifacts
+**/dist
+**/__pycache__
+**/*.pyc
+
+# IDEs
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+
+# HukuDok Specific
+Raporlar/
+backend/muvekkil_listesi.json
+backend/data/
+backend/logs/
+*.db
+*.db-shm
+*.db-wal
+backend/data/hukudok.db
