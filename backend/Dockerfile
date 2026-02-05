@@ -19,8 +19,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
+# Make entrypoint executable
+RUN chmod +x docker-entrypoint.sh
+
+# Create data directory (will be mounted as volume)
+RUN mkdir -p /app/data
+
 # Expose the port the app runs on
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use entrypoint script
+ENTRYPOINT ["./docker-entrypoint.sh"]

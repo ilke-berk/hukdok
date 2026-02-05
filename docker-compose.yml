@@ -6,7 +6,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      # Persistent volume for database (production)
+      - backend-data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
@@ -22,3 +23,8 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+# Named volumes for persistence
+volumes:
+  backend-data:
+    driver: local

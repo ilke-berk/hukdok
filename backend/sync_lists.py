@@ -233,9 +233,9 @@ def run_full_sync():
     init_db()
     db = SessionLocal()
     try:
-        # sync_lawyers(db)
-        # sync_statuses(db)
-        # sync_doctypes(db)
+        sync_lawyers(db)
+        sync_statuses(db)
+        sync_doctypes(db)
         sync_clients(db)
     finally:
         db.close()
