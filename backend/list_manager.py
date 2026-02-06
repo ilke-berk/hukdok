@@ -221,6 +221,9 @@ def add_client(data: dict):
             existing.email = data.get("email")
             existing.address = data.get("address")
             existing.notes = data.get("notes")
+            existing.contact_type = data.get("contact_type", "Client")
+            existing.client_type = data.get("client_type")
+            existing.category = data.get("category")
             existing.active = True
             db.commit()
             logger.info(f"Client updated: {name}")
@@ -233,6 +236,9 @@ def add_client(data: dict):
             email=data.get("email"),
             address=data.get("address"),
             notes=data.get("notes"),
+            contact_type=data.get("contact_type", "Client"),
+            client_type=data.get("client_type"),
+            category=data.get("category"),
             active=True
         )
         db.add(new_client)

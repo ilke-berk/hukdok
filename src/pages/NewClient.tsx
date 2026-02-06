@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { UserPlus, Save, User, MapPin, Phone, CreditCard, Mail, Edit } from "lucide-react";
+import { UserPlus, Save, User, MapPin, Phone, CreditCard, Mail, Edit, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useClients } from "@/hooks/useClients";
@@ -23,6 +23,11 @@ const NewClient = () => {
     const editModeClient = location.state?.client;
     const isEditMode = !!editModeClient;
 
+    // Determine contact type (Default to Client)
+    const initialContactType = location.state?.contact_type || editModeClient?.contact_type || "Client";
+    const isClient = initialContactType === "Client";
+    const typeLabel = isClient ? "Müvekkil" : "Kişi";
+
     // Form State
     const [formData, setFormData] = useState({
         name: "",
@@ -32,7 +37,8 @@ const NewClient = () => {
         address: "",
         notes: "",
         client_type: "Individual", // Default
-        category: ""
+        category: "",
+        contact_type: initialContactType
     });
 
     const [tcError, setTcError] = useState<string | null>(null);
@@ -48,7 +54,8 @@ const NewClient = () => {
                 address: editModeClient.address || "",
                 notes: editModeClient.notes || "",
                 client_type: editModeClient.client_type || "Individual",
-                category: editModeClient.category || ""
+                category: editModeClient.category || "",
+                contact_type: editModeClient.contact_type || "Client"
             });
         }
     }, [editModeClient]);
@@ -60,12 +67,12 @@ const NewClient = () => {
             name: formData.name,
             tc_no: formData.tcNo,
             phone: formData.phone,
-
             email: formData.email,
             address: formData.address,
             notes: formData.notes,
             client_type: formData.client_type,
-            category: formData.category
+            category: formData.category,
+            contact_type: formData.contact_type
         };
 
         // Final Validation before submit
@@ -85,7 +92,7 @@ const NewClient = () => {
         }
 
         if (success) {
-            toast.success(isEditMode ? "Müvekkil güncellendi!" : "Müvekkil kaydedildi!", {
+            toast.success(isEditMode ? `${typeLabel} güncellendi!` : `${typeLabel} kaydedildi!`, {
                 description: `${formData.name} ${isEditMode ? "bilgileri güncellendi" : "sisteme eklendi"}.`
             });
 
@@ -102,11 +109,12 @@ const NewClient = () => {
                     address: "",
                     notes: "",
                     client_type: "Individual",
-                    category: ""
+                    category: "",
+                    contact_type: initialContactType
                 });
             }
         } else {
-            toast.error("Hata oluştu", { description: isEditMode ? "Güncelleme başarısız." : "Müvekkil kaydedilemedi." });
+            toast.error("Hata oluştu", { description: isEditMode ? "Güncelleme başarısız." : `${typeLabel} kaydedilemedi.` });
         }
     };
 
@@ -117,10 +125,10 @@ const NewClient = () => {
             <main className="container max-w-4xl mx-auto px-6 py-8">
                 <div className="mb-8 text-center space-y-2">
                     <h1 className="text-3xl font-bold tracking-tight text-primary">
-                        Müvekkil Yönetimi
+                        {isClient ? "Müvekkil Yönetimi" : "Diğer Kişi Yönetimi"}
                     </h1>
                     <p className="text-muted-foreground">
-                        {isEditMode ? "Mevcut müvekkil bilgilerini güncelleyin." : "Yeni müvekkil ekleyin veya iletişim bilgilerini güncelleyin."}
+                        {isEditMode ? `Mevcut ${typeLabel.toLowerCase()} bilgilerini güncelleyin.` : `Yeni ${typeLabel.toLowerCase()} ekleyin veya iletişim bilgilerini güncelleyin.`}
                     </p>
                 </div>
 
@@ -136,7 +144,7 @@ const NewClient = () => {
                             }}
                             selectedFile={selectedFile}
                             onClearFile={() => setSelectedFile(null)}
-                            title="Müvekkil Belgesi Yükle"
+                            title={`${typeLabel} Belgesi Yükle`}
                             description="Bilgileri otomatik doldurmak için belge yükleyiniz (Opsiyonel)"
                             uploadText="Belge Yükle"
                         />
@@ -147,8 +155,8 @@ const NewClient = () => {
                             <div className="flex items-center justify-between">
                                 <div className="space-y-1">
                                     <CardTitle className="flex items-center gap-2 text-xl">
-                                        {isEditMode ? <Edit className="w-5 h-5 text-primary" /> : <UserPlus className="w-5 h-5 text-primary" />}
-                                        {isEditMode ? "Müvekkil Düzenle" : "Müvekkil Kartı"}
+                                        {isEditMode ? <Edit className="w-5 h-5 text-primary" /> : (isClient ? <UserPlus className="w-5 h-5 text-primary" /> : <Users className="w-5 h-5 text-primary" />)}
+                                        {isEditMode ? `${typeLabel} Düzenle` : `${typeLabel} Kartı`}
                                     </CardTitle>
                                     <CardDescription>
                                         {isEditMode ? "Aşağıdaki bilgileri düzenleyip kaydedin" : "Kişisel ve iletişim bilgilerini giriniz"}
@@ -175,7 +183,7 @@ const NewClient = () => {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label>Müvekkil Tipi</Label>
+                                    <Label>{typeLabel} Tipi</Label>
                                     <div className="flex gap-4 pt-1">
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
@@ -290,7 +298,7 @@ const NewClient = () => {
                                     <div className="space-y-2 md:col-span-2">
                                         <Label>Özel Notlar</Label>
                                         <Textarea
-                                            placeholder="Müvekkil hakkında hatırlatmalar..."
+                                            placeholder={`${typeLabel} hakkında hatırlatmalar...`}
                                             className="h-20"
                                             value={formData.notes}
                                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -309,7 +317,7 @@ const NewClient = () => {
                                 ) : (
                                     <>
                                         <Save className="w-4 h-4 mr-2" />
-                                        {isEditMode ? "Güncelle" : "Müvekkili Kaydet"}
+                                        {isEditMode ? "Güncelle" : `${typeLabel} Kaydet`}
                                     </>
                                 )}
                             </Button>

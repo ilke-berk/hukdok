@@ -124,7 +124,7 @@ export const AnalysisResults = ({
 
     // Normalize Belge Turu (Pad with _ to 14 chars to match Select options)
     if (normalizedData.belge_turu_kodu) {
-      let code = normalizedData.belge_turu_kodu.toUpperCase().trim();
+      let code = toEnglishUpper(normalizedData.belge_turu_kodu).trim();
       // Remove invalid chars just in case
       code = code.replace(/[^A-Z0-9_-]/g, '');
       if (code.length > 0 && code.length < 14) {
@@ -160,19 +160,26 @@ export const AnalysisResults = ({
   }, [localClientList]);
 
 
+
+  // Helper: Turkish to English Uppercase (Defined early for use in effects and other functions)
+  const toEnglishUpper = (str: string): string => {
+    if (!str) return "";
+    let result = str.toLocaleUpperCase('tr-TR');
+
+    // Mapping for Turkish characters to English equivalents
+    const mapping: Record<string, string> = {
+      'Ç': 'C', 'Ğ': 'G', 'İ': 'I', 'I': 'I', 'Ö': 'O', 'Ş': 'S', 'Ü': 'U',
+      'ç': 'C', 'ğ': 'G', 'ı': 'I', 'i': 'I', 'ö': 'O', 'ş': 'S', 'ü': 'U'
+    };
+
+    result = result.replace(/[ÇĞİIÖŞÜçğıöşü]/g, char => mapping[char] || char);
+    return result;
+  };
+
   // Müvekkil adını kurala uygun koda dönüştür
   const convertToMuvekkilKodu = (fullName: string): string => {
-    // 1. Türkçe karakterleri İngilizce karşılıklarına çevir
-    const turkishToEnglish: Record<string, string> = {
-      'ç': 'C', 'Ç': 'C', 'ğ': 'G', 'Ğ': 'G', 'ı': 'I', 'İ': 'I',
-      'ö': 'O', 'Ö': 'O', 'ş': 'S', 'Ş': 'S', 'ü': 'U', 'Ü': 'U',
-      'â': 'A', 'Â': 'A', 'î': 'I', 'Î': 'I', 'û': 'U', 'Û': 'U'
-    };
-    const convertTurkish = (str: string): string => {
-      let result = '';
-      for (const char of str) { result += turkishToEnglish[char] || char; }
-      return result.toUpperCase();
-    };
+    // 1. Türkçe karakterleri İngilizce karşılıklarına çevir (toEnglishUpper kullanarak basitleştirildi)
+    // Şirket ve İsim işleme mantığı korundu
 
     // 2. Şirket Göstergeleri
     const companyIndicators = [
@@ -181,38 +188,40 @@ export const AnalysisResults = ({
       'SOMPO', 'NIPPON', 'AXA', 'QUICK', 'AKSIGORTA', 'ANADOLU', 'ALLIANZ', 'MAPFRE', 'HDI', 'ZURICH', 'ERGO'
     ];
 
-    const upperName = fullName.toUpperCase();
+    const upperName = toEnglishUpper(fullName); // Use centralized helper
     const isCompany = companyIndicators.some(indicator => upperName.includes(indicator));
 
     if (isCompany) {
-      let cleanedName = fullName.trim().toUpperCase();
+      let cleanedName = upperName.trim(); // Already uppercase and English chars
       const insuranceCompanyMap: Record<string, string> = {
-        'AXA': 'AXA-SIGORTA', 'AKSIGORTA': 'AKSIGORTA', 'ANADOLU': 'ANADOLU-SIGORT', 'ANADOLU SIGORTA': 'ANADOLU-SIGORT',
-        'ANADOLU SİGORTA': 'ANADOLU-SIGORT', 'SOMPO': 'SOMPO-SIGORTA', 'NIPPON': 'NIPPON-SIGORTA', 'QUICK': 'QUICK-SIGORTA',
-        'ALLIANZ': 'ALLIANZ-SIGORT', 'MAPFRE': 'MAPFRE-SIGORT', 'HDI': 'HDI-SIGORTA', 'ZURICH': 'ZURICH-SIGORT', 'ERGO': 'ERGO-SIGORTA',
+        'AXA': 'AXA-SIGORTA', 'AKSIGORTA': 'AKSIGORTA', 'ANADOLU': 'ANADOLU-SIGORT',
+        'SOMPO': 'SOMPO-SIGORTA', 'NIPPON': 'NIPPON-SIGORTA', 'QUICK': 'QUICK-SIGORTA',
+        'ALLIANZ': 'ALLIANZ-SIGORT', 'MAPFRE': 'MAPFRE-SIGORT', 'HDI': 'HDI-SIGORTA',
+        'ZURICH': 'ZURICH-SIGORT', 'ERGO': 'ERGO-SIGORTA',
       };
 
       for (const [key, formattedName] of Object.entries(insuranceCompanyMap)) {
         if (cleanedName.includes(key)) {
-          const converted = convertTurkish(formattedName);
+          // formattedName keys are already safe, but safety check
+          const converted = toEnglishUpper(formattedName);
           if (converted.length >= 14) return converted.substring(0, 14);
           else return converted.padEnd(14, '-');
         }
       }
 
       cleanedName = cleanedName.replace(/[.,;:'"!?()[\]{}]/g, '').replace(/\s+/g, '-');
-      const converted = convertTurkish(cleanedName);
+      const converted = toEnglishUpper(cleanedName); // Redundant if already done but safe
       if (converted.length >= 14) return converted.substring(0, 14);
       else return converted.padEnd(14, '-');
     }
 
-    // 3. Şahıs İsmi İşleme (YENİ MANTIK - Analyzer.py ile uyumlu)
+    // 3. Şahıs İsmi İşleme
     let cleanedName = fullName;
     const titlesToRemove = [
       'PROF.', 'PROF', 'PROFESÖR', 'PROFESSOR', 'DR.', 'DR', 'DOKTOR', 'DOCTOR', 'UZMAN DR.', 'UZMAN DR', 'UZMAN',
       'MİMAR', 'MIMAR', 'MÜHENDİS', 'MUHENDIS', 'AV.', 'AV', 'AVUKAT', 'PHD', 'PH.D', 'BSC', 'MSC', 'MBA'
     ];
-    let upperClean = cleanedName.toUpperCase();
+    let upperClean = toEnglishUpper(cleanedName);
     for (const title of titlesToRemove) {
       upperClean = upperClean.replace(new RegExp(`\\b${title}\\b`, 'g'), '');
     }
@@ -225,16 +234,15 @@ export const AnalysisResults = ({
     let result = '';
     if (parts.length === 1) {
       // Tek Kelime
-      result = convertTurkish(parts[0]);
+      result = toEnglishUpper(parts[0]);
     } else {
       // Ad Soyad (Format: A_SOYAD - güvenli dosya adı için)
-      const initial = convertTurkish(parts[0].charAt(0));
-      const surname = convertTurkish(parts[parts.length - 1]);
+      const initial = toEnglishUpper(parts[0].charAt(0));
+      const surname = toEnglishUpper(parts[parts.length - 1]);
       result = `${initial}_${surname}`;
     }
 
     // 4. Uzunluk ve Padding (14 Karakter Sabit)
-    // Suffix (Count) buraya eklenmez, çünkü generateFilename içinde ekleniyor.
     if (result.length > 14) {
       return result.substring(0, 14);
     } else {
@@ -273,10 +281,10 @@ export const AnalysisResults = ({
   };
 
   const generateFilename = () => {
-    const hash6 = (approvedFields.ofis_dosya_no ? editedData.hash : data.hash).substring(0, 6).toUpperCase();
+    const hash6 = toEnglishUpper((approvedFields.ofis_dosya_no ? editedData.hash : data.hash)).substring(0, 6);
     const parts = [
       approvedFields.tarih ? editedData.tarih : data.tarih,
-      approvedFields.belge_turu_kodu ? editedData.belge_turu_kodu : data.belge_turu_kodu,
+      approvedFields.belge_turu_kodu ? editedData.belge_turu_kodu : toEnglishUpper(data.belge_turu_kodu),
       // MÜVEKKİL KODU İŞLEME
       (() => {
         let baseCode = approvedFields.muvekkil_kodu ? editedData.muvekkil_kodu : data.muvekkil_kodu;
@@ -292,6 +300,14 @@ export const AnalysisResults = ({
         const count = localClientList.length;
 
         // Müvekkil sayısını 14 karakterden SONRA ayrı segment olarak ekle
+        // baseCode zaten convertToMuvekkilKodu tarafından veya toEnglishUpper tarafından işlenmeli
+        // Eğer data'dan geliyorsa ve hyphen yoksa raw gelebilir, onu sanitize edelim
+        if (!approvedFields.muvekkil_kodu && !baseCode.includes('_')) { // Basit kontrol, daha sağlamı:
+          if (!baseCode.includes('-') && !baseCode.includes('_') && /[ÇĞİIÖŞÜçğıöşü]/.test(baseCode)) {
+            baseCode = toEnglishUpper(baseCode);
+          }
+        }
+
         return `${baseCode}_${count > 0 ? count : 1}`;
       })(),
       // ESAS NO: Dosya adı için YY-NNNNN formatı (metadata'da orijinal kalır)
@@ -306,13 +322,13 @@ export const AnalysisResults = ({
           const number = match[2].padStart(5, '0'); // 5 hane (12 → 00012)
           return `${year}-${number}`;
         }
-        return esasNo.replace(/\//g, '-'); // Fallback
+        return toEnglishUpper(esasNo).replace(/\//g, '-'); // Fallback sanitize
       })(),
-      approvedFields.avukat_kodu ? editedData.avukat_kodu : data.avukat_kodu,
-      approvedFields.durum ? editedData.durum : data.durum,
-      approvedFields.ofis_dosya_no ? editedData.ofis_dosya_no : data.ofis_dosya_no,
-      approvedFields.yedek1 ? editedData.yedek1 : data.yedek1,
-      approvedFields.yedek2 ? editedData.yedek2 : data.yedek2,
+      toEnglishUpper(approvedFields.avukat_kodu ? editedData.avukat_kodu : data.avukat_kodu),
+      toEnglishUpper(approvedFields.durum ? editedData.durum : data.durum),
+      toEnglishUpper(approvedFields.ofis_dosya_no ? editedData.ofis_dosya_no : data.ofis_dosya_no),
+      toEnglishUpper(approvedFields.yedek1 ? editedData.yedek1 : data.yedek1),
+      toEnglishUpper(approvedFields.yedek2 ? editedData.yedek2 : data.yedek2),
       hash6,
     ];
     return parts.join("_");
@@ -350,7 +366,8 @@ export const AnalysisResults = ({
       if (field === "tarih") {
         formattedValue = parseDateToYYMMDD(formattedValue);
       } else if (field === "belge_turu_kodu") {
-        formattedValue = formattedValue.replace(/[^A-Za-z0-9_-]/g, '').substring(0, 14).toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
+        formattedValue = formattedValue.replace(/[^A-Z0-9_-]/g, '').substring(0, 14);
         if (formattedValue.length < 14) formattedValue = formattedValue.padEnd(14, '_');
       } else if (field === "muvekkil_kodu") {
         // Her zaman convertToMuvekkilKodu uygula (A_SOYAD formatı için)
@@ -361,13 +378,13 @@ export const AnalysisResults = ({
           const cleanedName = formattedValue.replace(/-+/g, ' ').replace(/_+/g, ' ').trim();
           formattedValue = convertToMuvekkilKodu(cleanedName);
         } else {
-          formattedValue = formattedValue.toUpperCase();
+          formattedValue = toEnglishUpper(formattedValue);
           if (formattedValue.length >= 14) formattedValue = formattedValue.substring(0, 14);
           else if (formattedValue.length === 0) formattedValue = '______________';
           else formattedValue = formattedValue.padEnd(14, '_');
         }
       } else if (field === "esas_no") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         // Allow YYYY/NNNN or YYYY-NNNN
         const match = formattedValue.match(/(\d{4})[\/\-\s]*(\d+)/);
         if (match) {
@@ -387,25 +404,25 @@ export const AnalysisResults = ({
           }
         }
       } else if (field === "ofis_dosya_no") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         if (formattedValue.length >= 9) formattedValue = formattedValue.substring(0, 9);
         else formattedValue = formattedValue.length === 0 ? 'XXXXXXXXX' : formattedValue.padEnd(9, 'X');
       } else if (field === "avukat_kodu") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         if (formattedValue.length === 0) formattedValue = 'XXX';
         else if (formattedValue.length >= 3) formattedValue = formattedValue.substring(0, 3);
         else formattedValue = formattedValue.padEnd(3, 'X');
       } else if (field === "durum") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         formattedValue = formattedValue.length === 0 ? 'X' : formattedValue.substring(0, 1);
       } else if (field === "yedek1") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         formattedValue = formattedValue.length === 0 ? '-' : formattedValue.substring(0, 1);
       } else if (field === "yedek2") {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
         formattedValue = formattedValue.length === 0 ? '--' : (formattedValue.length >= 2 ? formattedValue.substring(0, 2) : formattedValue.padEnd(2, '-'));
       } else {
-        formattedValue = formattedValue.toUpperCase();
+        formattedValue = toEnglishUpper(formattedValue);
       }
       setEditedData((prev) => ({ ...prev, [field]: formattedValue }));
     }

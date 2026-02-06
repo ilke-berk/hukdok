@@ -32,9 +32,9 @@ export const ProtectedAdminRoute = ({ children }: ProtectedAdminRouteProps) => {
     }
 
     // 2. Check if admin
-    // Case-insensitive check just to be safe
-    const userEmail = (account.username || "").toLowerCase();
-    const isAdmin = ADMIN_EMAILS.some(email => email.toLowerCase() === userEmail);
+    // Turkish-aware case-insensitive email comparison
+    const userEmail = (account.username || "").toLocaleLowerCase('tr-TR');
+    const isAdmin = ADMIN_EMAILS.some(email => email.toLocaleLowerCase('tr-TR') === userEmail);
 
     if (!isAdmin) {
         console.warn("⛔ Unauthorized Admin Access Attempt:", userEmail);

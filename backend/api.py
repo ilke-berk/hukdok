@@ -80,6 +80,13 @@ class ReorderRequest(BaseModel):
     type: str # lawyers, statuses, doctypes, emails
     ordered_ids: List[str] # List of codes or emails
 
+# Contact Type Enum for validation
+from enum import Enum
+
+class ContactType(str, Enum):
+    CLIENT = "Client"
+    OTHER = "Other"
+
 class ClientCreate(BaseModel):
     name: str
     tc_no: Optional[str] = None
@@ -90,6 +97,7 @@ class ClientCreate(BaseModel):
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
+    contact_type: ContactType = ContactType.CLIENT  # Enum validation
 
 class ClientRead(BaseModel):
     id: int
@@ -102,6 +110,7 @@ class ClientRead(BaseModel):
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
+    contact_type: str = "Client"  # Return as string for frontend compatibility
     active: bool
 
     class Config:
@@ -117,6 +126,7 @@ class ClientUpdate(BaseModel):
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
+    contact_type: Optional[ContactType] = None  # Enum validation
     active: Optional[bool] = None 
     class Config:
         from_attributes = True
@@ -231,6 +241,7 @@ app.add_middleware(
     allow_origins=[
         "https://hukukoid.com",
         "http://localhost:8080",
+        "http://localhost:8081",
         "http://localhost:5173",
         "http://127.0.0.1:8000"
     ],

@@ -28,6 +28,7 @@ class Client(Base):
     address = Column(String, nullable=True)
     address = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    contact_type = Column(String, default="Client") # "Client" or "Other"
     client_type = Column(String, nullable=True) # "Individual" or "Corporate"
     category = Column(String, nullable=True) # e.g. "Sigorta", "Özel"
 
