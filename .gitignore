@@ -42,3 +42,7 @@ backend/logs/
 *.db-shm
 *.db-wal
 backend/data/hukudok.db
+
+# Migration files (too large for Git)
+backend/migration_data.json
+backend/test_*.py

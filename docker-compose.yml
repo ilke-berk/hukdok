@@ -1,4 +1,25 @@
 services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: hukudok-postgres
+    environment:
+      POSTGRES_DB: hukudok
+      POSTGRES_USER: hukudok_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U hukudok_user -d hukudok" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hukudok-network
+
   backend:
     build:
       context: ./backend
@@ -11,9 +32,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
+      - DATABASE_URL=${DATABASE_URL}
     # Load environment variables from backend/.env if it exists, or root .env
     env_file:
       - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hukudok-network
 
   frontend:
     build:
@@ -23,8 +50,17 @@ services:
       - "8080:80"
     depends_on:
       - backend
+    networks:
+      - hukudok-network
 
 # Named volumes for persistence
 volumes:
   backend-data:
     driver: local
+  postgres-data:
+    driver: local
+
+# Network for inter-service communication
+networks:
+  hukudok-network:
+    driver: bridge
