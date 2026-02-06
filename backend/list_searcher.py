@@ -23,7 +23,8 @@ class ListSearcher:
             base_dir = Path(__file__).resolve().parent
             
         # Check AppData First
-        app_data_path = Path.home() / "AppData" / "Local" / "HukuDok" / "data" / normalized_file
+        # Fix: normalized_file comes as "data/..." so we take .name to get just filename
+        app_data_path = Path.home() / "AppData" / "Local" / "HukuDok" / "data" / Path(normalized_file).name
         bundled_path = base_dir / normalized_file
         
         if app_data_path.exists():
