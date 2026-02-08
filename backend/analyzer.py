@@ -636,7 +636,7 @@ async def analyze_file_generator(
             data["belgede_gecen_isimler"] = cleaned_diger_isimler
             
             # Önemli durumları logla
-            if kaynak == "fallback":
+            if kaynak == "fallback" and hook_muvekkil != sonuc:
                 TechnicalLogger.log("WARNING", f"⚠️ HOOK YANLIŞTI! '{hook_muvekkil}' yerine '{sonuc}' kullanıldı")
             elif kaynak == "bulunamadi":
                 TechnicalLogger.log("WARNING", f"ℹ️ Listede bulunamadı: '{hook_muvekkil}' (Yeni müvekkil olabilir)")
