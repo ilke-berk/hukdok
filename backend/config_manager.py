@@ -16,8 +16,27 @@ except ImportError:
 
 import json
 from pathlib import Path
+import os
+import sys
 
+# --- PATH HELPERS ---
+def get_app_base_path() -> Path:
+    """Returns %LocalAppData%/HukuDok"""
+    return Path.home() / "AppData" / "Local" / "HukuDok"
 
+def get_data_dir() -> Path:
+    """Returns %LocalAppData%/HukuDok/data (Created if not exists)"""
+    p = get_app_base_path() / "data"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def get_log_dir() -> Path:
+    """Returns %LocalAppData%/HukuDok/logs (Created if not exists)"""
+    p = get_app_base_path() / "logs"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+# --- CLASS DEFINITION ---
 class DynamicConfig:
     _instance = None
     _lock = threading.Lock()
@@ -39,6 +58,7 @@ class DynamicConfig:
         self.__doctypes: List[Dict] = []
         self.__clients: List[str] = []  # Müvekkil listesi eklendi
         self.__email_recipients: List[Dict] = []  # E-posta alıcıları eklendi
+        self.__case_subjects: List[Dict] = []  # Dava Konuları eklendi
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -132,5 +152,17 @@ class DynamicConfig:
             self.__email_recipients = recipients
             TechnicalLogger.log(
                 "INFO", f"DynamicConfig: Email recipients updated ({len(recipients)} items)"
+            )
+
+    def get_case_subjects(self) -> List[Dict]:
+        """Dava Konusu listesini döndür"""
+        return self.__case_subjects
+
+    def set_case_subjects(self, subjects: List[Dict]):
+        """Dava Konusu listesini güncelle"""
+        with self._lock:
+            self.__case_subjects = subjects
+            TechnicalLogger.log(
+                "INFO", f"DynamicConfig: Case Subjects updated ({len(subjects)} items)"
             )
 

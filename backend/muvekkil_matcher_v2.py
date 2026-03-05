@@ -16,35 +16,34 @@ class HibridMatcher:
 
     def load_clients(self):
         try:
-            import sys
-            if getattr(sys, 'frozen', False):
-                current_dir = Path(sys.executable).parent
-            else:
-                current_dir = Path(__file__).resolve().parent
-            
-            json_path = current_dir / "data" / "normalized_client_list.json"
-            if json_path.exists():
-                with open(json_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.clients = list(data.get("clients", {}).keys())
+            from database import get_normalized_clients
+            normalized_map = get_normalized_clients()
+            # normalized_map değerler artık list[str] — key'ler normalized isimler
+            self.clients = set(normalized_map.keys())  # Hızlı lookup için set
+            logger.info(f"✅ HibridMatcher: {len(self.clients)} clients loaded from DB.")
         except Exception as e:
             logger.error(f"HibridMatcher Load Error: {e}")
+            self.clients = set()
 
     def filtrele(self, hook_tespit, diger_isimler, avukat_var):
         """
-        Şimdilik basit pass-through veya list checking.
+        Müvekkil doğrulama: liste üzerine kontrol eder.
+        İ/İ Normalize sonra arar.
         """
-        # 1. Eğer hook_tespit zaten listedeyse onayla
+        def normalize(s: str) -> str:
+            return s.upper().replace("İ", "I")
+
+        clients_normalized = {normalize(c) for c in self.clients}
+
+        # 1. hook_tespit listede mi?
         if hook_tespit:
-            ts = hook_tespit.upper().replace("İ", "I")
-            if ts in self.clients:
+            if normalize(hook_tespit) in clients_normalized:
                 return hook_tespit, "cache_hit", 100.0
-        
-        # 2. Diğer isimlerden listede olan var mı?
+
+        # 2. Diger isimlerden listede olan var mı?
         if diger_isimler:
             for isim in diger_isimler:
-                name_upper = isim.upper().replace("İ", "I")
-                if name_upper in self.clients:
+                if normalize(isim) in clients_normalized:
                     return isim, "liste_düzeltmesi", 95.0
 
         # Bulunamadıysa LLM ne dediyse o
@@ -61,8 +60,15 @@ def get_hibrid_matcher():
 
 def yenile_matcher():
     """
-    Called by api.py background task to reload data from JSON
+    HibridMatcher + ListSearcher ikisini birden yeniler.
+    api.py background task veya /refresh endpoint'inden çağrılabilir.
     """
     matcher = get_hibrid_matcher()
     matcher.load_clients()
     logger.info("✅ HibridMatcher: Liste yenilendi.")
+
+    try:
+        from list_searcher import yenile_list_searcher
+        yenile_list_searcher()
+    except Exception as e:
+        logger.warning(f"ListSearcher yenilenirken hata: {e}")

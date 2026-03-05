@@ -5,11 +5,9 @@ echo "🚀 Starting HukuDok Backend..."
 
 echo "📊 Initializing database and running migrations..."
 python -c "
-from database import Base, engine, check_and_migrate_tables
-# Create all tables
-Base.metadata.create_all(bind=engine)
-# Run migrations for any new fields
-check_and_migrate_tables()
+from database import init_db
+# Robust initialization including models import, table creation, migrations and seeding
+init_db()
 print('✅ Database ready!')
 "
 
@@ -19,5 +17,5 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✅ Starting API server..."
-exec uvicorn api:app --host 0.0.0.0 --port 8000
+exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8001}
 

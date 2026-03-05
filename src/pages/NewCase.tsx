@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useClients } from "@/hooks/useClients";
+import { useConfig } from "@/hooks/useConfig";
+import { useCases, CaseData } from "@/hooks/useCases";
 import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -9,68 +13,355 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, RefreshCw, Sparkles, Loader2, Upload, Check, ChevronsUpDown } from "lucide-react";
+import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, RefreshCw, Sparkles, Loader2, Upload, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { FileUpload } from "@/components/FileUpload";
+import { generateTrackingNumber } from "@/lib/caseNumberUtils";
+import { cn } from "@/lib/utils";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
-// Mock Data
-const DOSYA_TURLERI = ["Hukuk Dava", "Ceza Dava", "İcra", "İdare", "Vergi", "Değişik İş"];
-const MAHKEME_TURLERI = ["Asliye Hukuk", "Tüketici", "Sulh Hukuk", "Aile", "İş", "Ticaret", "İcra Hukuk"];
-const KATEGORILER = ["Genel", "Özel Müvekkil", "Sigorta (AXA)", "Ticari Danışmanlık", "Ceza Dosyaları"];
-const AVUKATLAR = ["İlke Berk", "Ahmet Yılmaz", "Ayşe Demir", "Stajyer Mehmet"];
+// Dava konuları ve diğer listeler useConfig üzerinden dinamik olarak alınıyor.
+const DOSYA_TURLERI = ["Ceza", "Hukuk", "İcra", "İdari Yargı", "Arabuluculuk", "Savcılık"];
+const ALT_TURLER: Record<string, string[]> = {
+    "Ceza": [
+        "AĞIR CEZA MAHKEMESİ",
+        "ASLİYE CEZA MAHKEMESİ",
+        "BÖLGE ADLİYE MAH. CEZA DAİRESİ",
+        "ÇOCUK AĞIR CEZA MAHKEMESİ",
+        "ÇOCUK MAHKEMESİ",
+        "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ",
+        "İCRA CEZA HAKİMLİĞİ",
+        "İNFAZ HAKİMLİĞİ",
+        "İSTİNAF CEZA DAİRESİ (İLK DERECE)",
+        "SULH CEZA HAKİMLİĞİ",
+        "YARGITAY CEZA DAİRESİ (İLK DERECE)",
+    ],
+    "Hukuk": [
+        "AİLE MAHKEMESİ",
+        "ASLİYE HUKUK MAHKEMESİ",
+        "ASLİYE TİCARET MAHKEMESİ",
+        "BAM HUKUK DAİRESİ (İLK DERECE)",
+        "BÖLGE ADLİYE MAH. HUKUK DAİRESİ",
+        "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ",
+        "İCRA HUKUK MAHKEMESİ",
+        "İŞ MAHKEMESİ",
+        "KADASTRO MAHKEMESİ",
+        "KADASTRO MAHKEMESİ (MÜŞ)",
+        "SULH HUKUK MAHKEMESİ",
+        "TÜKETİCİ MAHKEMESİ",
+    ],
+    "İcra": ["İCRA DAİRESİ"],
+    "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
+    "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
+    "Savcılık": [],
+};
 const TARAF_ROLLERI = ["Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil"];
-const UCUNCU_TARAF_ROLLERI = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Diğer"];
-const DAVA_KONULARI = [
-    "Alacak Davası",
-    "Tazminat Davası",
-    "İşe İade Davası",
-    "Nafaka Davası",
-    "Boşanma Davası",
-    "Tahliye Davası",
-    "Ayıplı Mal - Bedel İadesi",
-    "İstihkak Davası",
-    "Menfi Tespit Davası",
-    "Ecrimisil Davası"
-    // Kullanıcı gerçek listeyi verdiğinde bu liste güncellenecek
+const UCUNCU_TARAF_ROLLERI = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Davacı", "Davalı", "Diğer"];
+const HIZMET_TURLERI = [
+    { label: "Rapor", index: 0 },
+    { label: "Danışmanlık", index: 1 },
+    { label: "Dava", index: 2 },
+    { label: "İcra", index: 3 },
+    { label: "Yazışma", index: 4 }
 ];
+// DAVA_KONULARI removed - using dynamic config via useConfig
+
+interface EditModeParty {
+    party_type: string;
+    name: string;
+    role: string;
+    birth_year?: number;
+    gender?: string;
+    client_id?: number | null;
+}
+
+interface EditModeCaseData {
+    id?: number;
+    tracking_no: string;
+    status: string;
+    history?: { date: string; action: string; user?: string; old?: string; new?: string; field?: string }[];
+    file_type?: string;
+    sub_type?: string;
+    subject?: string;
+    court?: string;
+    responsible_lawyer_name?: string;
+    uyap_lawyer_name?: string;
+    esas_no?: string;
+    opening_date?: string;
+    service_type?: string;
+    maddi_tazminat?: number | string;
+    manevi_tazminat?: number | string;
+    parties?: EditModeParty[];
+}
+
+interface CaseSearchResult {
+    id: number;
+    tracking_no: string;
+    esas_no?: string;
+    court?: string;
+    status: string;
+}
+
+interface DbClientData {
+    id: number;
+    name: string;
+    tc_no?: string;
+    vergi_no?: string;
+    category?: string;
+}
+
+interface CaseHistoryEntry {
+    date: string;
+    action: string;
+    user?: string;
+    old?: string;
+    new?: string;
+    field?: string;
+}
+
+const toTitleCase = (str: string): string => {
+    if (!str) return "";
+    return str
+        .split(/(\s+|[,;]+)/)
+        .map(part => {
+            if (/^(\s+|[,;]+)$/.test(part)) return part;
+            if (part.length === 0) return part;
+            return part.charAt(0).toLocaleUpperCase('tr-TR') + part.slice(1).toLocaleLowerCase('tr-TR');
+        })
+        .join("");
+};
+
+const toUpperTR = (str: string) => str.toLocaleUpperCase('tr-TR').trim();
+
 
 const NewCase = () => {
-    // Generate a random mock case ID for display
-    const [caseId, setCaseId] = useState(`2024/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`);
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    // API Hooks
+    const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
+    const { getClients } = useClients();
+    const { caseSubjects, lawyers } = useConfig();
+
+    // Check if we are in edit mode
+    const editModeCase = location.state?.case as EditModeCaseData | undefined;
+    const isEditMode = !!editModeCase;
+
+    // Generate case tracking ID using central utility
+    const [caseId, setCaseId] = useState(editModeCase?.tracking_no || generateTrackingNumber());
     const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState<CaseSearchResult[]>([]);
+    const [isSearchingCases, setIsSearchingCases] = useState(false);
+    const [caseStatus, setCaseStatus] = useState(editModeCase?.status || "DERDEST");
+    const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
+
+    // Config
+    const [dbClients, setDbClients] = useState<DbClientData[]>([]);
+    const [isDbLoading, setIsDbLoading] = useState(false);
 
     // Form States
+    const [showClientConfirm, setShowClientConfirm] = useState(false);
+    const [pendingUnregistered, setPendingUnregistered] = useState<{ name: string }[]>([]);
+    const [clientSearchValues, setClientSearchValues] = useState<{ [key: number]: string }>({});
+
     const [formData, setFormData] = useState({
-        fileType: "",
-        subType: "",
-        subject: "",
-        court: "",
+        fileType: editModeCase?.file_type || "",
+        subType: editModeCase?.sub_type || "",
+        subject: editModeCase?.subject || "",
+        court: editModeCase?.court || "",
         category: "",
-        lawyer: "",
-        uyapLawyer: "",
-        esasNo: "",
-        merciNo: "",
-        fileOpeningDate: "",
-        maddiTazminat: "",
-        maneviTazminat: ""
+        lawyer: editModeCase?.responsible_lawyer_name || "",
+        uyapLawyer: editModeCase?.uyap_lawyer_name || "",
+        esasNo: editModeCase?.esas_no || "",
+        fileOpeningDate: editModeCase?.opening_date || "",
+        serviceType: "00000", // Default service type code
+        maddiTazminat: editModeCase?.maddi_tazminat?.toString() || "",
+        maneviTazminat: editModeCase?.manevi_tazminat?.toString() || ""
     });
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
-    const [clients, setClients] = useState<Array<{ name: string; role: string }>>([
-        { name: "", role: "Davacı" }
-    ]);
+    const [clients, setClients] = useState<Array<{ name: string; role: string; birth_year?: number; gender?: string }>>(
+        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) ||
+        [{ name: "", role: "Davacı" }]
+    );
 
     // Multiple Counter-Parties (Karşı Taraf)
-    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string }>>([
-        { name: "", role: "Davalı" }
-    ]);
+    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string }>>(
+        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) ||
+        [{ name: "", role: "Davalı" }]
+    );
 
     // Third Parties (Tanık, Bilirkişi, etc.)
-    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string }>>([]);
+    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string }>>(
+        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) ||
+        []
+    );
+    // Open/Close states for client comboboxes
+    const [clientComboboxesOpen, setClientComboboxesOpen] = useState<boolean[]>([]);
 
     // Combobox state for searchable subject dropdown
     const [subjectComboboxOpen, setSubjectComboboxOpen] = useState(false);
+
+    // Approval Ticks State
+    const [approvedFields, setApprovedFields] = useState({
+        court: false,
+        clients: [] as boolean[],
+        counterParties: [] as boolean[],
+        thirdParties: [] as boolean[]
+    });
+
+    useEffect(() => {
+        setApprovedFields({
+            court: false,
+            clients: new Array(clients.length).fill(false),
+            counterParties: new Array(counterParties.length).fill(false),
+            thirdParties: new Array(thirdParties.length).fill(false)
+        });
+    }, [clients.length, counterParties.length, thirdParties.length]);
+
+    const handleFieldApproval = (type: 'court' | 'client' | 'counter' | 'third', idx?: number) => {
+        if (type === 'court') {
+            setFormData(prev => ({ ...prev, court: toTitleCase(prev.court) }));
+            setApprovedFields(prev => ({ ...prev, court: !prev.court }));
+        } else if (type === 'client' && idx !== undefined) {
+            const updated = [...clients];
+            updated[idx].name = toTitleCase(updated[idx].name);
+            setClients(updated);
+            const newApprovals = [...approvedFields.clients];
+            newApprovals[idx] = !newApprovals[idx];
+            setApprovedFields(prev => ({ ...prev, clients: newApprovals }));
+        } else if (type === 'counter' && idx !== undefined) {
+            const updated = [...counterParties];
+            updated[idx].name = toTitleCase(updated[idx].name);
+            setCounterParties(updated);
+            const newApprovals = [...approvedFields.counterParties];
+            newApprovals[idx] = !newApprovals[idx];
+            setApprovedFields(prev => ({ ...prev, counterParties: newApprovals }));
+        } else if (type === 'third' && idx !== undefined) {
+            const updated = [...thirdParties];
+            updated[idx].name = toTitleCase(updated[idx].name);
+            setThirdParties(updated);
+            const newApprovals = [...approvedFields.thirdParties];
+            newApprovals[idx] = !newApprovals[idx];
+            setApprovedFields(prev => ({ ...prev, thirdParties: newApprovals }));
+        }
+    };
+
+    useEffect(() => {
+        const fetchDbClients = async () => {
+            setIsDbLoading(true);
+            try {
+                const data = await getClients();
+                if (data) setDbClients(data);
+            } catch (error) {
+                console.error("Müvekkil listesi yüklenemedi:", error);
+                toast.error("Müvekkil listesi yüklenemedi.");
+            } finally {
+                setIsDbLoading(false);
+            }
+        };
+        fetchDbClients();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Search cases effect
+    const { searchCases, getClientCaseSequence } = useCases();
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            if (searchQuery.length >= 2) {
+                setIsSearchingCases(true);
+                const results = await searchCases(searchQuery);
+                setSearchResults(results || []);
+                setIsSearchingCases(false);
+            } else {
+                setSearchResults([]);
+            }
+        }, 500);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchQuery]);
+
+    // Yardımcı: Hizmet bitmask'ini güncelle (11000 formatı)
+    const handleServiceToggle = (index: number, checked: boolean) => {
+        const currentMask = formData.serviceType.split("");
+        currentMask[index] = checked ? "1" : "0";
+        const newMask = currentMask.join("");
+        setFormData({ ...formData, serviceType: newMask });
+        updateTrackingNumber(undefined, undefined, newMask);
+    };
+
+    const getOppositeRole = (role: string) => {
+        if (role === "Davacı") return "Davalı";
+        if (role === "Davalı") return "Davacı";
+        if (role === "Müşteki") return "Sanık";
+        if (role === "Sanık") return "Müşteki";
+        return role;
+    };
+
+    // Yardımcı: Takip Numarasını Güncelle
+    const updateTrackingNumber = async (clientInfo?: { category?: string, clientName?: string }, fType?: string, sType?: string) => {
+        if (isEditMode) return;
+
+        const cName = clientInfo?.clientName || (clients.length > 0 ? clients[0].name : "");
+        let seq = 1;
+        if (cName) {
+            seq = await getClientCaseSequence(cName);
+        }
+
+        const tracking = generateTrackingNumber({
+            category: clientInfo?.category !== undefined ? clientInfo.category : formData.category,
+            clientName: cName,
+            sequence: seq,
+            processType: fType || formData.fileType,
+            serviceType: sType || formData.serviceType
+        });
+        setCaseId(tracking);
+    };
+
+    const handleSelectCase = async (caseSummary: { id: number }) => {
+        const fullCase = await getCase(caseSummary.id);
+        if (fullCase) {
+            navigate("/new-case", { state: { case: fullCase }, replace: true });
+        }
+    };
+
+    // Effect to handle incoming case state (for editing)
+    useEffect(() => {
+        if (editModeCase) {
+            setCaseId(editModeCase.tracking_no);
+            setCaseStatus(editModeCase.status);
+            setCaseHistory(editModeCase.history || []);
+            setFormData({
+                fileType: editModeCase.file_type || "",
+                subType: editModeCase.sub_type || "",
+                subject: editModeCase.subject || "",
+                court: editModeCase.court || "",
+                category: "",
+                lawyer: editModeCase.responsible_lawyer_name || "",
+                uyapLawyer: editModeCase.uyap_lawyer_name || "",
+                esasNo: editModeCase.esas_no || "",
+                fileOpeningDate: editModeCase.opening_date || "",
+                serviceType: editModeCase.service_type || "00000",
+                maddiTazminat: editModeCase.maddi_tazminat?.toString() || "",
+                maneviTazminat: editModeCase.manevi_tazminat?.toString() || ""
+            });
+            setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
+            setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || [{ name: "", role: "Davalı" }]);
+            setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || []);
+        }
+    }, [editModeCase]);
 
     // File Upload States
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -105,12 +396,12 @@ const NewCase = () => {
                 subType: "Tüketici",
                 subject: "Ayıplı Mal - Bedel İadesi",
                 court: "Bursa Tüketici Mahkemesi (Tahmini)",
-                category: "Genel",
-                lawyer: "İlke Berk",
-                uyapLawyer: "Av. Mehmet Demir",
+                category: "Genel", // Assuming "Genel" is a valid doctype.name
+                lawyer: "İlke Berk", // Assuming "İlke Berk" is a valid lawyer.name
+                uyapLawyer: "Av. Mehmet Demir", // Assuming "Av. Mehmet Demir" is a valid lawyer.name
                 esasNo: "2024/111", // Extracted from doc
-                merciNo: "1", // Merci numarası
                 fileOpeningDate: new Date().toISOString().split('T')[0], // Set to today's date
+                serviceType: "00000",
                 maddiTazminat: "",
                 maneviTazminat: ""
             });
@@ -147,74 +438,184 @@ const NewCase = () => {
         }, 1000);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
+    const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
+        if (e) e.preventDefault();
 
-        // Mock save delay
-        setTimeout(() => {
-            setIsLoading(false);
-            toast.success("Dava kartı güncellendi!", {
-                description: `Dosya No: ${caseId} bilgileri kaydedildi.`
+        // Validate that all people in 'clients' list are actually registered (Case-Insensitive Check)
+        const unregistered = clients.filter(c =>
+            c.name && !dbClients.some(db => toUpperTR(db.name) === toUpperTR(c.name))
+        );
+        if (!forceSave && unregistered.length > 0) {
+            setPendingUnregistered(unregistered.map(u => ({ name: u.name })));
+            setShowClientConfirm(true);
+            return;
+        }
+
+        setShowClientConfirm(false);
+        setPendingUnregistered([]);
+
+        // Prepare data for backend
+        const caseData = {
+            tracking_no: caseId,
+            esas_no: formData.esasNo,
+            status: caseStatus,
+            file_type: formData.fileType,
+            sub_type: formData.subType,
+            subject: formData.subject,
+            court: formData.court,
+            opening_date: formData.fileOpeningDate,
+            responsible_lawyer_name: formData.lawyer,
+            uyap_lawyer_name: formData.uyapLawyer,
+            maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
+            manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
+            parties: [
+                ...clients.filter(c => c.name).map(c => ({
+                    client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(c.name))?.id,
+                    name: c.name,
+                    role: c.role,
+                    party_type: "CLIENT" as const
+                })),
+                ...counterParties.filter(c => c.name).map(c => ({
+                    name: c.name,
+                    role: c.role,
+                    party_type: "COUNTER" as const
+                })),
+                ...thirdParties.filter(t => t.name).map(t => ({
+                    name: t.name,
+                    role: t.role,
+                    party_type: "THIRD" as const
+                }))
+            ]
+        };
+
+        let success;
+        if (isEditMode && editModeCase?.id) {
+            success = await updateCase(editModeCase.id, caseData as CaseData);
+        } else {
+            success = await saveCase(caseData as CaseData);
+        }
+
+        if (success) {
+            toast.success(isEditMode ? "Dava kartı güncellendi!" : "Dava kartı veritabanına kaydedildi!", {
+                description: `Ofis No: ${caseId} bilgileri başarıyla işlendi.`
             });
-        }, 1500);
+
+            if (isEditMode && editModeCase?.id) {
+                // Refresh history after save
+                const updated = await getCase(editModeCase.id);
+                if (updated) setCaseHistory(updated.history || []);
+            }
+        } else {
+            toast.error("Hata", { description: "Dava kartı kaydedilemedi. Sunucu hatası oluştu." });
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!isEditMode || !editModeCase?.id) return;
+
+        const success = await deleteCase(editModeCase.id);
+        if (success) {
+            toast.success("Silindi", { description: "Dava başarıyla silindi." });
+            navigate(-1);
+        } else {
+            toast.error("Hata", { description: "Silme işlemi başarısız oldu." });
+        }
+    };
+
+    const handleReset = () => {
+        if (isLoading || isAnalyzing) return;
+
+        // Reset main form data
+        setFormData({
+            fileType: "",
+            subType: "",
+            subject: "",
+            court: "",
+            category: "",
+            lawyer: "",
+            uyapLawyer: "",
+            esasNo: "",
+            fileOpeningDate: "",
+            serviceType: "00000",
+            maddiTazminat: "",
+            maneviTazminat: ""
+        });
+
+        // Reset parties
+        setClients([{ name: "", role: "Davacı" }]);
+        setCounterParties([{ name: "", role: "Davalı" }]);
+        setThirdParties([]);
+
+        // Reset files and search
+        setSelectedFiles([]);
+        setSearchQuery("");
+        setCaseStatus("DERDEST");
+
+        // Generate new random ID
+        setCaseId(`2024/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`);
+
+        toast.info("Form ve yüklenen belgeler temizlendi.");
     };
 
     return (
         <div className="min-h-screen bg-background">
             <Header />
 
-            <main className="container max-w-4xl mx-auto px-6 py-8">
-                <div className="mb-8 text-center space-y-2">
-                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                        Dava Kartı Yönetimi
-                    </h1>
-                    <p className="text-muted-foreground">
-                        Yeni dava açın veya mevcut dosyaları arayıp eksik bilgileri tamamlayın.
-                    </p>
-                </div>
-
-                {/* SEARCH SECTION */}
-                <div className="grid md:grid-cols-3 gap-6 mb-8">
-                    <div className="md:col-span-2 space-y-4">
-                        <Label className="text-muted-foreground font-semibold">Mevcut Dosya Sorgulama</Label>
-                        <Card className="glass-card">
-                            <CardContent className="p-4 flex gap-4 items-center">
-                                <Search className="w-5 h-5 text-muted-foreground" />
-                                <Input
-                                    placeholder="Dosya No (2023/123) veya Müvekkil..."
-                                    className="border-0 bg-transparent focus-visible:ring-0 text-lg"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                                <Button variant="secondary" onClick={handleSearch} disabled={isLoading}>
-                                    {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Bul"}
-                                </Button>
-                            </CardContent>
-                        </Card>
+            <main className="max-w-[1400px] mx-auto px-6 py-8">
+                {/* DASHBOARD HEADER */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                            {isEditMode ? "Dava Kartı Düzenle" : "Dava Kartı Yönetimi"}
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            {isEditMode ? "Mevcut dosya bilgilerini güncelleyin ve geçmişi takip edin." : "Yeni dava açın veya mevcut dosyaları arayıp eksik bilgileri tamamlayın."}
+                        </p>
                     </div>
 
-                    <div className="space-y-4">
-                        <Label className="text-muted-foreground font-semibold flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-primary" />
-                            Otomatik Dava Açılışı
-                        </Label>
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="relative w-full sm:w-80">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Ofis No veya Müvekkil Ara..."
+                                className="pl-10 bg-muted/20 border-border/50 focus:bg-background transition-all"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            {searchResults.length > 0 && (
+                                <Card className="absolute top-full left-0 right-0 mt-2 z-50 shadow-2xl border-primary/20 bg-background/95 backdrop-blur overflow-hidden">
+                                    <div className="max-h-60 overflow-auto py-2">
+                                        {searchResults.map((res) => (
+                                            <button
+                                                key={res.id}
+                                                className="w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors flex flex-col border-b border-border/40 last:border-0"
+                                                onClick={() => handleSelectCase(res)}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <span className="font-bold text-sm text-primary">{res.tracking_no}</span>
+                                                    <span className="text-[10px] bg-primary/10 px-1.5 py-0.5 rounded text-primary font-bold">{res.status}</span>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground truncate">
+                                                    {res.esas_no || '(Esas No Yok)'} - {res.court || '(Mahkeme Yok)'}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </Card>
+                            )}
+                        </div>
+
                         <Button
-                            className="w-full h-[72px] text-lg font-semibold shadow-lg bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 transition-all hover:scale-[1.02]"
+                            className="w-full sm:w-auto font-semibold shadow-md bg-primary hover:bg-primary/90"
                             onClick={() => document.getElementById("case-file-upload")?.click()}
                             disabled={isAnalyzing}
                         >
                             {isAnalyzing ? (
-                                <>
-                                    <Loader2 className="w-5 h-5 mr-3 animate-spin" />
-                                    Analiz Ediliyor...
-                                </>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             ) : (
-                                <>
-                                    <Upload className="w-6 h-6 mr-3" />
-                                    Belge Yükle ({selectedFiles.length})
-                                </>
+                                <Upload className="w-4 h-4 mr-2" />
                             )}
+                            Belge Yükle {selectedFiles.length > 0 && `(${selectedFiles.length})`}
                         </Button>
                         <input
                             id="case-file-upload"
@@ -263,7 +664,7 @@ const NewCase = () => {
                                             className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-destructive/90"
                                             type="button"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                                            <X className="w-3 h-3" />
                                         </button>
                                     </div>
                                 ))}
@@ -274,496 +675,727 @@ const NewCase = () => {
 
 
                 <form onSubmit={handleSubmit}>
-                    <Card className="glass-card shadow-lg border-muted/40 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <CardHeader className="bg-muted/5 border-b border-border/50 pb-6">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-1">
-                                    <CardTitle className="flex items-center gap-2 text-xl">
-                                        <Gavel className="w-5 h-5 text-primary" />
-                                        Dava Künyesi
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Eksik bilgileri daha sonra tamamlayabilirsiniz.
-                                    </CardDescription>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        {/* LEFT COLUMN: PRIMARY INFO */}
+                        <div className="lg:col-span-8 space-y-8">
+                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-6">
+                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <User className="w-4 h-4" /> 1. Taraf Bilgileri
+                                    </h3>
                                 </div>
-                                <div className="bg-primary/10 px-4 py-2 rounded-full border border-primary/20">
-                                    <span className="text-sm font-semibold text-primary block text-center text-xs uppercase tracking-wider opacity-70">
-                                        Özel No
-                                    </span>
-                                    <span className="text-lg font-mono font-bold text-foreground">
-                                        {caseId}
-                                    </span>
-                                </div>
-                            </div>
-                        </CardHeader>
-
-                        <CardContent className="p-8 space-y-8">
-                            {/* BÖLÜM 1: TEMEL BİLGİLER */}
-                            <div className="grid md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-muted-foreground" />
-                                        Esas No (Mahkeme)
-                                    </Label>
-                                    <Input
-                                        placeholder="Örn: 2024/123"
-                                        value={formData.esasNo}
-                                        onChange={(e) => setFormData({ ...formData, esasNo: e.target.value })}
-                                        className="text-lg font-mono"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-muted-foreground" />
-                                        Merci No
-                                    </Label>
-                                    <Input
-                                        placeholder="Örn: 1"
-                                        value={formData.merciNo}
-                                        onChange={(e) => setFormData({ ...formData, merciNo: e.target.value })}
-                                        className="text-lg font-mono"
-                                    />
-                                </div>
-
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label className="flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-muted-foreground" />
-                                        Dosya Açılış Tarihi
-                                    </Label>
-                                    <Input
-                                        type="date"
-                                        value={formData.fileOpeningDate}
-                                        onChange={(e) => setFormData({ ...formData, fileOpeningDate: e.target.value })}
-                                        className="text-lg"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-muted-foreground" />
-                                        Dosya Türü
-                                    </Label>
-                                    <Select value={formData.fileType} onValueChange={(v) => setFormData({ ...formData, fileType: v })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Seçiniz..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {DOSYA_TURLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <Scale className="w-4 h-4 text-muted-foreground" />
-                                        Alt Tür
-                                    </Label>
-                                    <Select value={formData.subType} onValueChange={(v) => setFormData({ ...formData, subType: v })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Seçiniz..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {MAHKEME_TURLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label className="flex items-center gap-2">
-                                        <Scale className="w-4 h-4 text-muted-foreground" />
-                                        Davanın Konusu
-                                    </Label>
-                                    <Popover open={subjectComboboxOpen} onOpenChange={setSubjectComboboxOpen}>
-                                        <PopoverTrigger asChild>
+                                <CardContent className="p-8 space-y-10">
+                                    {/* Müvekkil Section */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <div className="w-1 h-3 bg-primary" />
+                                                Müvekkil Tarafı
+                                            </Label>
                                             <Button
-                                                variant="outline"
-                                                role="combobox"
-                                                aria-expanded={subjectComboboxOpen}
-                                                className="w-full justify-between text-lg font-normal"
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setClients([...clients, { name: "", role: "Müdahil" }])}
+                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
                                             >
-                                                {formData.subject || "Dava konusunu seçin veya arayın..."}
-                                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                <Plus className="w-3 h-3" /> Ekle
                                             </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-full p-0" align="start">
-                                            <Command>
-                                                <CommandInput placeholder="Dava konusu ara..." />
-                                                <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
-                                                <CommandGroup className="max-h-64 overflow-auto">
-                                                    {DAVA_KONULARI.map((konu) => (
-                                                        <CommandItem
-                                                            key={konu}
-                                                            value={konu}
-                                                            onSelect={(currentValue) => {
-                                                                setFormData({ ...formData, subject: currentValue === formData.subject ? "" : currentValue });
-                                                                setSubjectComboboxOpen(false);
+                                        </div>
+
+                                        <div className="grid gap-3">
+                                            {clients.map((client, index) => (
+                                                <div key={index} className="flex gap-3 items-start animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    <div className="flex-1">
+                                                        <Popover
+                                                            open={clientComboboxesOpen[index]}
+                                                            onOpenChange={(open) => {
+                                                                const newOpen = [...clientComboboxesOpen];
+                                                                newOpen[index] = open;
+                                                                setClientComboboxesOpen(newOpen);
                                                             }}
                                                         >
-                                                            <Check
-                                                                className={`mr-2 h-4 w-4 ${formData.subject === konu ? "opacity-100" : "opacity-0"}`}
-                                                            />
-                                                            {konu}
-                                                        </CommandItem>
-                                                    ))}
-                                                </CommandGroup>
-                                            </Command>
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                            </div>
+                                                            <PopoverTrigger asChild>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    role="combobox"
+                                                                    aria-expanded={clientComboboxesOpen[index]}
+                                                                    className="w-full justify-between font-normal bg-transparent border-border/60"
+                                                                >
+                                                                    <div className="flex-1 truncate">
+                                                                        {client.name ? toTitleCase(client.name) : "Müvekkil Seçiniz..."}
+                                                                    </div>
+                                                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                                </Button>
+                                                            </PopoverTrigger>
+                                                            <PopoverContent className="w-[400px] p-0" align="start">
+                                                                <Command>
+                                                                    <CommandInput
+                                                                        placeholder="Müvekkil ara..."
+                                                                        value={clientSearchValues[index] || ""}
+                                                                        onValueChange={(val) => {
+                                                                            setClientSearchValues(prev => ({ ...prev, [index]: val }));
+                                                                        }}
+                                                                    />
+                                                                    <CommandEmpty>
+                                                                        <div className="p-4 text-center">
+                                                                            <p className="text-sm text-muted-foreground mb-3">Müvekkil bulunamadı. <br /><strong>"{clientSearchValues[index]}"</strong> ismini kullanmak ister misiniz?</p>
+                                                                            <Button
+                                                                                size="sm"
+                                                                                className="w-full bg-primary/20 text-primary hover:bg-primary/30 mt-2 border-primary/30"
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const val = clientSearchValues[index] || "";
+                                                                                    if (!val.trim()) return;
+                                                                                    const updated = [...clients];
+                                                                                    updated[index].name = toTitleCase(val.trim());
+                                                                                    setClients(updated);
 
-                            <Separator />
+                                                                                    const newOpen = [...clientComboboxesOpen];
+                                                                                    newOpen[index] = false;
+                                                                                    setClientComboboxesOpen(newOpen);
+                                                                                }}
+                                                                            >
+                                                                                <Plus className="w-4 h-4 mr-2" /> Hızlı Müvekkil Ekle
+                                                                            </Button>
+                                                                        </div>
+                                                                    </CommandEmpty>
+                                                                    <CommandGroup className="max-h-64 overflow-auto">
+                                                                        {dbClients.map((dbClient) => (
+                                                                            <CommandItem
+                                                                                key={dbClient.id}
+                                                                                value={dbClient.name}
+                                                                                onSelect={(currentValue) => {
+                                                                                    const updated = [...clients];
+                                                                                    updated[index].name = toTitleCase(currentValue);
+                                                                                    setClients(updated);
 
-                            {/* BÖLÜM 2: TARAFLAR */}
-                            <div className="space-y-4">
-                                <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
-                                    <User className="w-4 h-4" /> Taraf Bilgileri
-                                </h3>
+                                                                                    // Yeni protokol uyarınca takip nosunu güncelle
+                                                                                    if (index === 0) {
+                                                                                        updateTrackingNumber({
+                                                                                            category: dbClient.category,
+                                                                                            clientName: dbClient.name
+                                                                                        });
+                                                                                    }
 
-                                {/* Müvekkil / Clients Section */}
-                                <div className="mb-2">
-                                    <h4 className="text-sm font-medium text-muted-foreground">Müvekkil Tarafı</h4>
-                                </div>
+                                                                                    const newOpen = [...clientComboboxesOpen];
+                                                                                    newOpen[index] = false;
+                                                                                    setClientComboboxesOpen(newOpen);
+                                                                                }}
+                                                                            >
+                                                                                <Check
+                                                                                    className={`mr-2 h-4 w-4 ${client.name === dbClient.name ? "opacity-100" : "opacity-0"}`}
+                                                                                />
+                                                                                <div className="flex flex-col">
+                                                                                    <span>{toTitleCase(dbClient.name)}</span>
+                                                                                    {dbClient.tc_no && <span className="text-[10px] text-muted-foreground">{dbClient.tc_no}</span>}
+                                                                                </div>
+                                                                            </CommandItem>
+                                                                        ))}
+                                                                    </CommandGroup>
+                                                                </Command>
+                                                            </PopoverContent>
+                                                        </Popover>
+                                                    </div>
+                                                    <Checkbox
+                                                        checked={approvedFields.clients[index]}
+                                                        onCheckedChange={() => handleFieldApproval('client', index)}
+                                                        className={cn("mt-2.5", approvedFields.clients[index] && "data-[state=checked]:bg-success data-[state=checked]:border-success glow-success")}
+                                                    />
+                                                    <div className="w-40">
+                                                        <Select
+                                                            value={client.role}
+                                                            onValueChange={(v) => {
+                                                                const updated = [...clients];
+                                                                updated[index].role = v;
+                                                                setClients(updated);
 
-                                {clients.map((client, index) => (
-                                    <div key={index} className="relative grid md:grid-cols-12 gap-4 items-end bg-muted/20 p-4 rounded-lg border border-dashed border-muted-foreground/20">
-                                        {index === 0 && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setClients([...clients, { name: "", role: "Müdahil" }])}
-                                                className="absolute top-2 right-2 h-6 w-6 rounded-full hover:bg-muted flex items-center justify-center transition-colors z-10"
-                                                title="Ek Müvekkil Ekle"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M5 12h14" />
-                                                    <path d="M12 5v14" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                        <div className="md:col-span-4 space-y-2">
-                                            <Label>{index === 0 ? "Müvekkil Adı / Ünvanı" : `Ek Müvekkil ${index}`}</Label>
-                                            <Input
-                                                placeholder="Örn: Ahmet Yılmaz"
-                                                value={client.name}
-                                                onChange={(e) => {
-                                                    const updated = [...clients];
-                                                    updated[index].name = e.target.value;
-                                                    setClients(updated);
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="md:col-span-3 space-y-2">
-                                            <Label>Sıfatı</Label>
-                                            <Select
-                                                value={client.role}
-                                                onValueChange={(v) => {
-                                                    const updated = [...clients];
-                                                    updated[index].role = v;
-                                                    setClients(updated);
-                                                }}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="md:col-span-5 flex items-end justify-end gap-2">
-                                            {index === 0 && (
-                                                <div className="text-xs text-muted-foreground flex-1">
-                                                    Müvekkil firmalar için tam ticari ünvan girilmesi önerilir.
+                                                                // İlk müvekkil ise karşı tarafın rolünü otomatik ayarla
+                                                                if (index === 0 && counterParties.length > 0) {
+                                                                    const matched = [...counterParties];
+                                                                    matched[0].role = getOppositeRole(v);
+                                                                    setCounterParties(matched);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-9 bg-transparent border-border/60">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    {index > 0 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                                                            onClick={() => setClients(clients.filter((_, i) => i !== index))}
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
                                                 </div>
-                                            )}
-                                            {index > 0 && (
-                                                <Button
-                                                    type="button"
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => setClients(clients.filter((_, i) => i !== index))}
-                                                >
-                                                    Sil
-                                                </Button>
-                                            )}
+                                            ))}
                                         </div>
                                     </div>
-                                ))}
 
-                                {/* Karşı Taraf / Counter Parties Section */}
-                                <div className="mb-2 mt-6">
-                                    <h4 className="text-sm font-medium text-muted-foreground">Karşı Taraf</h4>
-                                </div>
-
-                                {counterParties.map((party, index) => (
-                                    <div key={index} className="relative grid md:grid-cols-12 gap-4 items-end bg-muted/20 p-4 rounded-lg border border-dashed border-muted-foreground/20">
-                                        {index === 0 && (
-                                            <button
+                                    {/* Karşı Taraf Section */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <div className="w-1 h-3 bg-primary" />
+                                                Karşı Taraf Bilgileri
+                                            </Label>
+                                            <Button
                                                 type="button"
+                                                variant="ghost"
+                                                size="sm"
                                                 onClick={() => setCounterParties([...counterParties, { name: "", role: "Davalı" }])}
-                                                className="absolute top-2 right-2 h-6 w-6 rounded-full hover:bg-muted flex items-center justify-center transition-colors z-10"
-                                                title="Ek Karşı Taraf Ekle"
+                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M5 12h14" />
-                                                    <path d="M12 5v14" />
-                                                </svg>
-                                            </button>
+                                                <Plus className="w-3 h-3" /> Ekle
+                                            </Button>
+                                        </div>
+
+                                        <div className="grid gap-3">
+                                            {counterParties.map((party, index) => (
+                                                <div key={index} className="flex gap-3 items-start animate-in fade-in slide-in-from-top-1 duration-200">
+                                                    <div className="flex-1">
+                                                        <Input
+                                                            placeholder="Karşı Taraf Adı / Ünvanı"
+                                                            value={party.name}
+                                                            onChange={(e) => {
+                                                                const updated = [...counterParties];
+                                                                updated[index].name = e.target.value;
+                                                                setCounterParties(updated);
+                                                            }}
+                                                            className="h-9 bg-transparent border-border/60 focus:border-primary/50"
+                                                        />
+                                                    </div>
+                                                    <Checkbox
+                                                        checked={approvedFields.counterParties[index]}
+                                                        onCheckedChange={() => handleFieldApproval('counter', index)}
+                                                        className={cn("mt-2.5", approvedFields.counterParties[index] && "data-[state=checked]:bg-success data-[state=checked]:border-success glow-success")}
+                                                    />
+                                                    <div className="w-40">
+                                                        <Select
+                                                            value={party.role}
+                                                            onValueChange={(v) => {
+                                                                const updated = [...counterParties];
+                                                                updated[index].role = v;
+                                                                setCounterParties(updated);
+
+                                                                // İlk karşı taraf ise müvekkilin rolünü otomatik ayarla
+                                                                if (index === 0 && clients.length > 0) {
+                                                                    const matched = [...clients];
+                                                                    matched[0].role = getOppositeRole(v);
+                                                                    setClients(matched);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-9 bg-transparent border-border/60">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    {index > 0 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                                                            onClick={() => setCounterParties(counterParties.filter((_, i) => i !== index))}
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Üçüncü Taraflar Section */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <div className="w-1 h-3 bg-primary" />
+                                                Üçüncü Taraflar
+                                            </Label>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
+                                                onClick={() => setThirdParties([...thirdParties, { name: "", role: "Tanık" }])}
+                                            >
+                                                <Plus className="w-3 h-3" /> Ekle
+                                            </Button>
+                                        </div>
+
+                                        {thirdParties.length === 0 ? (
+                                            <div className="text-[11px] text-muted-foreground italic py-1 px-1">
+                                                Kayıtlı tanık veya bilirkişi bulunmuyor.
+                                            </div>
+                                        ) : (
+                                            <div className="grid gap-2">
+                                                {thirdParties.map((party, index) => (
+                                                    <div key={index} className="flex gap-2 items-start animate-in fade-in slide-in-from-top-1 duration-200">
+                                                        <div className="flex-1">
+                                                            <Input
+                                                                placeholder="İsim / Ünvan"
+                                                                value={party.name}
+                                                                onChange={(e) => {
+                                                                    const updated = [...thirdParties];
+                                                                    updated[index].name = e.target.value;
+                                                                    setThirdParties(updated);
+                                                                }}
+                                                                className="h-8 text-sm bg-transparent border-border/40 focus:border-primary/40"
+                                                            />
+                                                        </div>
+                                                        <Checkbox
+                                                            checked={approvedFields.thirdParties[index]}
+                                                            onCheckedChange={() => handleFieldApproval('third', index)}
+                                                            className={cn("mt-2", approvedFields.thirdParties[index] && "data-[state=checked]:bg-success data-[state=checked]:border-success glow-success")}
+                                                        />
+                                                        <div className="w-32">
+                                                            <Select
+                                                                value={party.role}
+                                                                onValueChange={(v) => {
+                                                                    const updated = [...thirdParties];
+                                                                    updated[index].role = v;
+                                                                    setThirdParties(updated);
+                                                                }}
+                                                            >
+                                                                <SelectTrigger className="h-8 text-xs bg-transparent border-border/40">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {UCUNCU_TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                                                            onClick={() => setThirdParties(thirdParties.filter((_, i) => i !== index))}
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </Button>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
-                                        <div className="md:col-span-4 space-y-2">
-                                            <Label>{index === 0 ? "Karşı Taraf" : `Ek Karşı Taraf ${index}`}</Label>
-                                            <Input
-                                                placeholder="Örn: XYZ İnşaat Ltd. Şti."
-                                                value={party.name}
-                                                onChange={(e) => {
-                                                    const updated = [...counterParties];
-                                                    updated[index].name = e.target.value;
-                                                    setCounterParties(updated);
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="md:col-span-3 space-y-2">
-                                            <Label>Sıfatı</Label>
-                                            <Select
-                                                value={party.role}
-                                                onValueChange={(v) => {
-                                                    const updated = [...counterParties];
-                                                    updated[index].role = v;
-                                                    setCounterParties(updated);
-                                                }}
-                                            >
-                                                <SelectTrigger>
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                        <div className="md:col-span-5 flex items-end justify-end">
-                                            {index > 0 && (
-                                                <Button
-                                                    type="button"
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => setCounterParties(counterParties.filter((_, i) => i !== index))}
-                                                >
-                                                    Sil
-                                                </Button>
-                                            )}
-                                        </div>
                                     </div>
-                                ))}
+                                </CardContent>
+                            </Card>
 
-                                {/* Üçüncü Taraflar / Third Parties Section */}
-                                <div className="mb-2 mt-6">
-                                    <h4 className="text-sm font-medium text-muted-foreground">Üçüncü Taraflar (Tanık, Bilirkişi, vb.)</h4>
+                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-6">
+                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <Gavel className="w-4 h-4" /> 2. Dava Bilgileri
+                                    </h3>
                                 </div>
-
-                                {thirdParties.length === 0 ? (
-                                    <div className="relative bg-amber-50/50 dark:bg-amber-950/20 p-8 rounded-lg border border-amber-200 dark:border-amber-800 border-dashed">
-                                        <button
-                                            type="button"
-                                            onClick={() => setThirdParties([...thirdParties, { name: "", role: "Tanık" }])}
-                                            className="absolute top-2 right-2 h-6 w-6 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900 flex items-center justify-center transition-colors z-10"
-                                            title="Üçüncü Taraf Ekle"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M5 12h14" />
-                                                <path d="M12 5v14" />
-                                            </svg>
-                                        </button>
-                                        <p className="text-sm text-muted-foreground text-center">Üçüncü taraf eklemek için + butonuna tıklayın</p>
-                                    </div>
-                                ) : (
-                                    thirdParties.map((party, index) => (
-                                        <div key={index} className="relative grid md:grid-cols-12 gap-4 items-end bg-amber-50/50 dark:bg-amber-950/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
-                                            {index === 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setThirdParties([...thirdParties, { name: "", role: "Tanık" }])}
-                                                    className="absolute top-2 right-2 h-6 w-6 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900 flex items-center justify-center transition-colors z-10"
-                                                    title="Üçüncü Taraf Ekle"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                        <path d="M5 12h14" />
-                                                        <path d="M12 5v14" />
-                                                    </svg>
-                                                </button>
-                                            )}
-                                            <div className="md:col-span-4 space-y-2">
-                                                <Label className="text-amber-700 dark:text-amber-400">Üçüncü Taraf {index + 1}</Label>
+                                <CardContent className="p-8 space-y-6">
+                                    <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
+                                        <div className="space-y-2 md:col-span-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Building className="w-3 h-3" /> Mahkeme Bilgisi
+                                            </Label>
+                                            <div className="relative flex items-center gap-2">
                                                 <Input
-                                                    placeholder="İsim / Ünvan"
-                                                    value={party.name}
-                                                    onChange={(e) => {
-                                                        const updated = [...thirdParties];
-                                                        updated[index].name = e.target.value;
-                                                        setThirdParties(updated);
-                                                    }}
+                                                    placeholder="Örn: Bursa 13. Tüketici Mahkemesi"
+                                                    value={formData.court}
+                                                    onChange={(e) => setFormData({ ...formData, court: e.target.value })}
+                                                    className="text-base bg-transparent border-border/60 flex-1"
+                                                />
+                                                <Checkbox
+                                                    checked={approvedFields.court}
+                                                    onCheckedChange={() => handleFieldApproval('court')}
+                                                    className={approvedFields.court ? "data-[state=checked]:bg-success data-[state=checked]:border-success glow-success" : ""}
                                                 />
                                             </div>
-                                            <div className="md:col-span-3 space-y-2">
-                                                <Label className="text-amber-700 dark:text-amber-400">Sıfatı</Label>
-                                                <Select
-                                                    value={party.role}
-                                                    onValueChange={(v) => {
-                                                        const updated = [...thirdParties];
-                                                        updated[index].role = v;
-                                                        setThirdParties(updated);
-                                                    }}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {UCUNCU_TARAF_ROLLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="md:col-span-5 flex items-end justify-end">
-                                                <Button
-                                                    type="button"
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => setThirdParties(thirdParties.filter((_, i) => i !== index))}
-                                                >
-                                                    Sil
-                                                </Button>
-                                            </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
 
-                            <Separator />
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Esas No
+                                            </Label>
+                                            <Input
+                                                placeholder="2024/123"
+                                                value={formData.esasNo}
+                                                onChange={(e) => setFormData({ ...formData, esasNo: e.target.value })}
+                                                className="font-mono bg-transparent border-border/60"
+                                            />
+                                        </div>
 
-                            {/* BÖLÜM 3: TAZMİNAT TALEPLERİ */}
-                            <div className="space-y-4">
-                                <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="12" x2="12" y1="2" y2="22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                                    Tazminat Talepleri
-                                </h3>
 
-                                <div className="grid md:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="flex items-center gap-2">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-muted-foreground"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
-                                            Maddi Tazminat
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Briefcase className="w-3 h-3" /> Dosya Türü
+                                            </Label>
+                                            <Select
+                                                value={formData.fileType}
+                                                onValueChange={(v) => {
+                                                    setFormData({ ...formData, fileType: v, subType: "" });
+                                                    updateTrackingNumber(undefined, v);
+                                                }}
+                                            >
+                                                <SelectTrigger className="bg-transparent border-border/60">
+                                                    <SelectValue placeholder="Seçiniz..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {DOSYA_TURLERI.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Scale className="w-3 h-3" /> Alt Tür
+                                            </Label>
+                                            <Select
+                                                value={formData.subType}
+                                                onValueChange={(v) => setFormData({ ...formData, subType: v })}
+                                                disabled={!formData.fileType || (ALT_TURLER[formData.fileType]?.length ?? 0) === 0}
+                                            >
+                                                <SelectTrigger className="bg-transparent border-border/60">
+                                                    <SelectValue placeholder={
+                                                        !formData.fileType
+                                                            ? "Önce dosya türü seçin"
+                                                            : (ALT_TURLER[formData.fileType]?.length ?? 0) === 0
+                                                                ? "Alt tür tanımlı değil"
+                                                                : "Seçiniz..."
+                                                    } />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {(ALT_TURLER[formData.fileType] ?? []).map(t => (
+                                                        <SelectItem key={t} value={t}>{toTitleCase(t)}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="space-y-4 md:col-span-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Briefcase className="w-3 h-3" /> Hizmet Türü (Çoklu Seçim)
+                                            </Label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 p-4 bg-muted/5 border border-border/40 rounded-lg">
+                                                {HIZMET_TURLERI.map((t) => (
+                                                    <div key={t.index} className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                            id={`service-${t.index}`}
+                                                            checked={formData.serviceType[t.index] === "1"}
+                                                            onCheckedChange={(checked) => handleServiceToggle(t.index, !!checked)}
+                                                        />
+                                                        <Label
+                                                            htmlFor={`service-${t.index}`}
+                                                            className="text-sm font-medium leading-none cursor-pointer"
+                                                        >
+                                                            {t.label}
+                                                        </Label>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <p className="text-[10px] text-muted-foreground italic">
+                                                Seçilen her hizmet dosya numarasının son bloğuna (11000 gibi) eklenir.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Calendar className="w-3 h-3" /> Dosya Açılış Tarihi
+                                            </Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.fileOpeningDate}
+                                                onChange={(e) => setFormData({ ...formData, fileOpeningDate: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Sparkles className="w-3 h-3" /> Davanın Konusu
+                                            </Label>
+                                            <Popover open={subjectComboboxOpen} onOpenChange={setSubjectComboboxOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        role="combobox"
+                                                        aria-expanded={subjectComboboxOpen}
+                                                        className="w-full justify-between font-normal bg-transparent border-border/60"
+                                                    >
+                                                        {formData.subject || "Seçiniz..."}
+                                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[400px] p-0" align="start">
+                                                    <Command>
+                                                        <CommandInput placeholder="Dava konusu ara..." />
+                                                        <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
+                                                        <CommandGroup className="max-h-64 overflow-auto">
+                                                            {[...caseSubjects].sort((a, b) => {
+                                                                const specificSubjects = ["Rücuen Alacak (Tıbbi Kötü Uygulama)", "Tazminat (Tıbbi Kötü Uygulama)"];
+                                                                const indexA = specificSubjects.indexOf(a.name);
+                                                                const indexB = specificSubjects.indexOf(b.name);
+                                                                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                                                                if (indexA !== -1) return -1;
+                                                                if (indexB !== -1) return 1;
+                                                                return 0; // Maintain original order for others
+                                                            }).map((subject) => (
+                                                                <CommandItem
+                                                                    key={subject.code}
+                                                                    value={subject.name}
+                                                                    onSelect={(currentValue) => {
+                                                                        setFormData({ ...formData, subject: currentValue === formData.subject ? "" : currentValue });
+                                                                        setSubjectComboboxOpen(false);
+                                                                    }}
+                                                                >
+                                                                    <Check
+                                                                        className={`mr-2 h-4 w-4 ${formData.subject === subject.name ? "opacity-100" : "opacity-0"}`}
+                                                                    />
+                                                                    {subject.name}
+                                                                </CommandItem>
+                                                            ))}
+                                                        </CommandGroup>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        {/* RIGHT COLUMN: SUMMARY & SIDEBAR ACTIONS */}
+                        <div className="lg:col-span-4 space-y-8 lg:sticky lg:top-8">
+                            {/* CASE BADGE CARD */}
+                            <Card className={`glass-card border-l-4 p-6 
+                                ${caseStatus === 'DERDEST' ? 'border-primary/20 bg-primary/5 border-l-primary' :
+                                    caseStatus === 'DANIŞ' ? 'border-blue-500/20 bg-blue-500/5 border-l-blue-500' :
+                                        'border-muted/40 bg-muted/5 border-l-muted-foreground'}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className={`text-[10px] font-bold uppercase tracking-widest 
+                                        ${caseStatus === 'DERDEST' ? 'text-primary' :
+                                            caseStatus === 'DANIŞ' ? 'text-blue-500' :
+                                                'text-muted-foreground'}`}>Ofis No</span>
+                                    <Select value={caseStatus} onValueChange={setCaseStatus}>
+                                        <SelectTrigger className={`w-fit h-6 text-[10px] font-bold border-0 px-2 gap-1 rounded-md transition-colors focus:ring-0 focus:ring-offset-0 
+                                            ${caseStatus === 'DERDEST' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
+                                                caseStatus === 'DANIŞ' ? 'bg-blue-500/20 text-blue-500 hover:bg-blue-500/30' :
+                                                    'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="DANIŞ" className="text-blue-500 font-medium">DANIŞ</SelectItem>
+                                            <SelectItem value="DERDEST" className="text-primary font-medium">DERDEST</SelectItem>
+                                            <SelectItem value="MAHZEN" className="text-muted-foreground font-medium">MAHZEN</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="text-lg sm:text-xl md:text-2xl font-mono font-bold break-words leading-tight">
+                                    {caseId.split('.').map((part, i, arr) => (
+                                        <span key={i} className="whitespace-nowrap">
+                                            {part}
+                                            {i < arr.length - 1 && '.\u200B'}
+                                        </span>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2 italic">
+                                    Sistem tarafından otomatik atanan takip numarasıdır.
+                                </p>
+                            </Card>
+
+                            {/* RESPONSIBLE INFO */}
+                            <Card className="glass-card border-border/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-4">
+                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <Briefcase className="w-3 h-3" /> Sorumlu Bilgileri
+                                    </h3>
+                                </div>
+                                <div className="p-5 space-y-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sorumlu Avukat</Label>
+                                        <Select value={formData.lawyer} onValueChange={(v) => setFormData({ ...formData, lawyer: v })}>
+                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                                <SelectValue placeholder="Seçiniz..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {lawyers.map(t => <SelectItem key={t.code} value={t.name}>{t.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">UYAP Avukat</Label>
+                                        <Select value={formData.uyapLawyer} onValueChange={(v) => setFormData({ ...formData, uyapLawyer: v })}>
+                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                                <SelectValue placeholder="Seçiniz..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {lawyers.map(t => <SelectItem key={t.code} value={t.name}>{t.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </Card>
+
+                            {/* COMPENSATION CLAIMS */}
+                            <Card className="glass-card border-border/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-4">
+                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <Banknote className="w-3 h-3" /> Tazminat Talepleri
+                                    </h3>
+                                </div>
+                                <div className="p-5 space-y-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                            <Coins className="w-3 h-3" /> Maddi Tazminat
                                         </Label>
                                         <div className="relative">
                                             <Input
                                                 type="text"
-                                                placeholder="0"
+                                                placeholder="0,00"
                                                 value={formData.maddiTazminat ? Number(formData.maddiTazminat).toLocaleString('tr-TR') : ''}
                                                 onChange={(e) => {
                                                     const value = e.target.value.replace(/[^0-9]/g, '');
                                                     setFormData({ ...formData, maddiTazminat: value });
                                                 }}
-                                                className="text-lg font-mono pr-12"
+                                                className="h-9 text-base font-mono pr-10 bg-transparent border-border/60"
                                             />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">TL</span>
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">Talep edilen maddi tazminat tutarı</p>
                                     </div>
-
-                                    <div className="space-y-2">
-                                        <Label className="flex items-center gap-2">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-muted-foreground"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" /></svg>
-                                            Manevi Tazminat
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                            <Heart className="w-3 h-3" /> Manevi Tazminat
                                         </Label>
                                         <div className="relative">
                                             <Input
                                                 type="text"
-                                                placeholder="0"
+                                                placeholder="0,00"
                                                 value={formData.maneviTazminat ? Number(formData.maneviTazminat).toLocaleString('tr-TR') : ''}
                                                 onChange={(e) => {
                                                     const value = e.target.value.replace(/[^0-9]/g, '');
                                                     setFormData({ ...formData, maneviTazminat: value });
                                                 }}
-                                                className="text-lg font-mono pr-12"
+                                                className="h-9 text-base font-mono pr-10 bg-transparent border-border/60"
                                             />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">TL</span>
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">Talep edilen manevi tazminat tutarı</p>
                                     </div>
                                 </div>
-                            </div>
+                            </Card>
 
-                            <Separator />
+                            {/* GLOBAL ACTIONS */}
+                            <div className="space-y-3 pt-4">
+                                <Button type="submit" size="lg" className="w-full text-base font-semibold shadow-xl h-12" disabled={isLoading || isSaving}>
+                                    {isSaving || isLoading ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                                            İşleniyor...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="mr-2 h-5 w-5" />
+                                            {isEditMode ? "Değişiklikleri Kaydet" : "Dava Kartını Kaydet"}
+                                        </>
+                                    )}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="w-full h-12 border-border/60"
+                                    onClick={isEditMode ? () => navigate(-1) : handleReset}
+                                    disabled={isLoading || isSaving}
+                                >
+                                    {isEditMode ? "Geri Dön" : "Vazgeç"}
+                                </Button>
 
-                            {/* BÖLÜM 4: DETAYLAR */}
-                            <div className="grid md:grid-cols-2 gap-6">
-
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <Building className="w-4 h-4 text-muted-foreground" />
-                                        Mahkeme Bilgisi
-                                    </Label>
-                                    <Input
-                                        placeholder="Örn: Bursa 13. Tüketici Mahkemesi"
-                                        value={formData.court}
-                                        onChange={(e) => setFormData({ ...formData, court: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <Briefcase className="w-4 h-4 text-muted-foreground" />
-                                        Kategori
-                                    </Label>
-                                    <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Kategori Seç..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {KATEGORILER.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>Sorumlu Avukat</Label>
-                                    <Select value={formData.lawyer} onValueChange={(v) => setFormData({ ...formData, lawyer: v })}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Avukat Seç..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {AVUKATLAR.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label>UYAP Kayıtlı Avukat</Label>
-                                    <Input
-                                        placeholder="Örn: Av. Mehmet Demir"
-                                        value={formData.uyapLawyer}
-                                        onChange={(e) => setFormData({ ...formData, uyapLawyer: e.target.value })}
-                                    />
-                                </div>
-                            </div>
-                        </CardContent>
-
-                        {/* FOOTER ACTION */}
-                        <div className="bg-muted/5 border-t border-border p-6 flex justify-end gap-4">
-                            <Button type="button" variant="outline" size="lg">İptal</Button>
-                            <Button type="submit" size="lg" className="px-8 font-semibold shadow-lg" disabled={isLoading}>
-                                {isLoading ? (
-                                    <>Kaydediliyor...</>
-                                ) : (
-                                    <>
-                                        <Save className="w-4 h-4 mr-2" />
-                                        Kaydet / Güncelle
-                                    </>
+                                {isEditMode && (
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="destructive" size="lg" type="button" className="w-full h-12 mt-4 gap-2">
+                                                <Trash2 className="w-5 h-5" />
+                                                Bu Davayı Sil
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Davayı silmek istediğinize emin misiniz?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    Bu işlem geri alınamaz. İlgili dava ve tüm geçmiş kayıtları sistemden kalıcı olarak silinecektir.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>İptal</AlertDialogCancel>
+                                                <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
                                 )}
-                            </Button>
+                            </div>
+
+                            {/* HISTORY SECTION (Only in Edit Mode) */}
+                            {isEditMode && caseHistory.length > 0 && (
+                                <Card className="glass-card border-border/40 overflow-hidden">
+                                    <div className="bg-muted/5 border-b border-border/40 p-4">
+                                        <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                            <RefreshCw className="w-3 h-3" /> Değişiklik Geçmişi
+                                        </h3>
+                                    </div>
+                                    <div className="p-4 max-h-[400px] overflow-auto">
+                                        <div className="space-y-4">
+                                            {caseHistory.map((h, i) => (
+                                                <div key={i} className="text-xs border-l-2 border-primary/20 pl-3 py-1">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="font-bold text-primary">
+                                                            {h.field === 'esas_no' ? 'Esas No Değişti' :
+                                                                h.field === 'court' ? 'Mahkeme Değişti' :
+                                                                    h.field === 'status' ? 'Durum Değişti' : h.field}
+                                                        </span>
+                                                        <span className="text-[10px] text-muted-foreground">
+                                                            {new Date(h.date).toLocaleDateString('tr-TR')} {new Date(h.date).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-muted-foreground line-through opacity-50">{h.old || '(Boş)'}</p>
+                                                    <p className="font-medium">➔ {h.new}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </Card>
+                            )}
                         </div>
-                    </Card>
+                    </div>
                 </form>
+                {/* Yeni Müvekkil Onay Modalı */}
+                <AlertDialog open={showClientConfirm} onOpenChange={setShowClientConfirm}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Yeni Müvekkil Kaydedilecek</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                <strong>{pendingUnregistered.map(u => u.name).join(", ")}</strong> isimli müvekkiller sistemde bulunamadı. Dava oluşturulurken bu kişiler otomatik olarak sisteme yeni müvekkil olarak kaydedilecektir. Onaylıyor musunuz?
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setShowClientConfirm(false)}>Vazgeç</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleSubmit(undefined, true)}>
+                                Evet, Kaydet ve Davayı Aç
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
             </main>
-        </div>
+        </div >
     );
 };
 

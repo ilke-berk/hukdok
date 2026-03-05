@@ -2,8 +2,13 @@ import { msalInstance, loginRequest } from "@/config/msalConfig";
 
 // Base API URL helper
 export const getApiUrl = async (): Promise<string> => {
-    // Web Mode (Production / Dev)
-    const apiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+    // Geliştirme modunda (Vite Proxy için) veya eğer API_URL tanımlanmamışsa bağıl yol kullan
+    const apiUrl = import.meta.env.VITE_API_URL;
+
+    if (!apiUrl) {
+        return ""; // Tarayıcı mevcut origin (örn: http://localhost:8000) üzerinden /api/... çağırır
+    }
+
     return apiUrl;
 };
 

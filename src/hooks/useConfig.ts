@@ -3,19 +3,21 @@ import { getApiUrl } from "@/lib/api";
 import { useMsal } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
 
-type Option = {
-    code: string;
+export interface ConfigItem {
+    id?: number;
+    code?: string;
     name: string;
     email?: string;
     description?: string;
-};
+}
 
 export const useConfig = () => {
     const { instance, accounts } = useMsal();
-    const [lawyers, setLawyers] = useState<Option[]>([]);
-    const [statuses, setStatuses] = useState<Option[]>([]);
-    const [doctypes, setDoctypes] = useState<Option[]>([]);
-    const [emailRecipients, setEmailRecipients] = useState<Option[]>([]);
+    const [lawyers, setLawyers] = useState<ConfigItem[]>([]);
+    const [statuses, setStatuses] = useState<ConfigItem[]>([]);
+    const [doctypes, setDoctypes] = useState<ConfigItem[]>([]);
+    const [emailRecipients, setEmailRecipients] = useState<ConfigItem[]>([]);
+    const [caseSubjects, setCaseSubjects] = useState<ConfigItem[]>([]); // Added
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -56,25 +58,29 @@ export const useConfig = () => {
                     "Content-Type": "application/json"
                 };
 
-                const [resLawyers, resStatuses, resDoctypes, resRecipients] = await Promise.all([
+                const [resLawyers, resStatuses, resDoctypes, resRecipients, resCaseSubjects] = await Promise.all([
                     fetch(`${baseUrl}/api/config/lawyers`, { headers }),
                     fetch(`${baseUrl}/api/config/statuses`, { headers }),
                     fetch(`${baseUrl}/api/config/doctypes`, { headers }),
                     fetch(`${baseUrl}/api/config/email_recipients`, { headers }),
+                    fetch(`${baseUrl}/api/config/case_subjects`, { headers }), // Added
                 ]);
 
-                if (resLawyers.ok) setLawyers(await resLawyers.json());
+                if (resLawyers.ok) setLawyers((await resLawyers.json()) as ConfigItem[]);
                 else console.error("Failed to fetch lawyers", resLawyers.status);
 
-                if (resStatuses.ok) setStatuses(await resStatuses.json());
+                if (resStatuses.ok) setStatuses((await resStatuses.json()) as ConfigItem[]);
                 else console.error("Failed to fetch statuses", resStatuses.status);
 
-                if (resDoctypes.ok) setDoctypes(await resDoctypes.json());
+                if (resDoctypes.ok) setDoctypes((await resDoctypes.json()) as ConfigItem[]);
                 else console.error("Failed to fetch doctypes", resDoctypes.status);
 
 
-                if (resRecipients.ok) setEmailRecipients(await resRecipients.json());
+                if (resRecipients.ok) setEmailRecipients((await resRecipients.json()) as ConfigItem[]);
                 else console.error("Failed to fetch email recipients", resRecipients.status);
+
+                if (resCaseSubjects.ok) setCaseSubjects((await resCaseSubjects.json()) as ConfigItem[]); // Added
+                else console.error("Failed to fetch case subjects", resCaseSubjects.status);
 
             } catch (error) {
                 console.error("Failed to load config:", error);
@@ -89,7 +95,7 @@ export const useConfig = () => {
     }, [instance, accounts]);
 
     // --- CRUD HELPER ---
-    const authenticatedRequest = async (url: string, method: string, body?: any) => {
+    const authenticatedRequest = async (url: string, method: string, body?: unknown) => {
         const baseUrl = await getApiUrl();
         const account = instance.getActiveAccount() || accounts[0];
         if (!account) return false;
@@ -114,10 +120,6 @@ export const useConfig = () => {
     // --- ACTIONS ---
     const addLawyer = async (code: string, name: string) => {
         if (await authenticatedRequest("/api/config/lawyers", "POST", { code, name })) {
-            // Optimistic update or refresh? For simplicity: refresh.
-            // Actually, simply reloading the page or triggering re-fetch is easier, 
-            // but useConfig context is local. We'd need to expose a refresh function.
-            // For now, let's just return true and let AdminPage reload.
             return true;
         }
         return false;
@@ -133,14 +135,22 @@ export const useConfig = () => {
     const addEmail = async (name: string, email: string, description: string) => authenticatedRequest("/api/config/email_recipients", "POST", { name, email, description });
     const deleteEmail = async (email: string) => authenticatedRequest("/api/config/email_recipients", "DELETE", { email });
 
+    // Case Subject Actions
+    const addCaseSubject = async (name: string) => {
+        const generatedCode = name.replace(/\s+/g, '').substring(0, 4).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+        return authenticatedRequest("/api/config/case_subjects", "POST", { code: generatedCode, name });
+    };
+    const deleteCaseSubject = async (code: string) => authenticatedRequest(`/api/config/case_subjects/${code}`, "DELETE");
+
     const reorderList = async (type: string, orderedIds: string[]) => authenticatedRequest("/api/config/reorder", "POST", { type, ordered_ids: orderedIds });
 
     return {
-        lawyers, statuses, doctypes, emailRecipients, isLoading,
+        lawyers, statuses, doctypes, emailRecipients, caseSubjects, isLoading,
         addLawyer, deleteLawyer,
         addStatus, deleteStatus,
         addDoctype, deleteDoctype,
         addEmail, deleteEmail,
+        addCaseSubject, deleteCaseSubject,
         reorderList
     };
 };

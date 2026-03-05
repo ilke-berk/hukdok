@@ -38,7 +38,6 @@ interface AnalysisData {
   belgede_gecen_isimler: string[];
 
   esas_no: string;
-  avukat_kodu: string;
   durum: string;
   ofis_dosya_no: string;
   yedek1: string;
@@ -48,30 +47,41 @@ interface AnalysisData {
   hash: string;
 }
 
+interface LinkedCaseData {
+  esas_no?: string;
+  client_parties?: string[];
+  muvekkil_adi?: string;
+  karsi_taraf?: string | string[];
+  parties?: { party_type: string; name: string }[];
+  [key: string]: unknown;
+}
+
 interface AnalysisResultsProps {
   data: AnalysisData;
   onValidationChange: (isValid: boolean, data: AnalysisData) => void;
+  linkedCase?: LinkedCaseData | null;
 }
 
 // --- DYNAMIC TYPE DEFINITION ---
 interface Lawyer {
-  code: string;
+  code?: string;
   name: string;
 }
 
 interface StatusItem {
-  code: string;
+  code?: string;
   name: string;
 }
 
 interface DocTypeItem {
-  code: string;
+  code?: string;
   name: string;
 }
 
 export const AnalysisResults = ({
   data,
   onValidationChange,
+  linkedCase,
 }: AnalysisResultsProps) => {
   const { toast } = useToast();
   const [lawyerOptions, setLawyerOptions] = useState<Lawyer[]>([]);
@@ -91,7 +101,6 @@ export const AnalysisResults = ({
     belge_turu_kodu: false,
     muvekkil_kodu: false,
     esas_no: false,
-    avukat_kodu: false,
     durum: false,
     ofis_dosya_no: true,
     yedek1: true,
@@ -135,6 +144,9 @@ export const AnalysisResults = ({
       normalizedData.belge_turu_kodu = code;
     }
 
+    normalizedData.muvekkil_kodu = toTitleCase(normalizedData.muvekkil_kodu || "");
+    normalizedData.karsi_taraf = toTitleCase(normalizedData.karsi_taraf || "");
+
     setEditedData(normalizedData);
     setLocalClientList(normalizedData.muvekkiller || []);
     setApprovedFields({
@@ -142,7 +154,6 @@ export const AnalysisResults = ({
       belge_turu_kodu: false,
       muvekkil_kodu: false,
       esas_no: false,
-      avukat_kodu: false,
       durum: false,
       ofis_dosya_no: true,
       yedek1: true,
@@ -152,6 +163,7 @@ export const AnalysisResults = ({
     setCopied(false);
     // Reset validation in parent
     onValidationChange(false, normalizedData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   // Sync localClientList to editedData whenever it changes
@@ -159,8 +171,83 @@ export const AnalysisResults = ({
     setEditedData(prev => ({ ...prev, muvekkiller: localClientList }));
   }, [localClientList]);
 
+  // --- FAZ 1.5: DAVA BAĞLANTISI - VERİ DOLDURMA (FRONTEND - GÖRSEL) ---
+  // Dava seçildiğinde, dava kaydındaki MÜVEKKİL, KARŞI TARAF, AVUKAT ve ESAS NO
+  // bilgilerini her zaman (boş olmasa bile) form alanlarına ve onay durumuna yansıt.
+  useEffect(() => {
+    if (!linkedCase) return;
 
+    const nextData = { ...editedData };
+    const nextApprovals = { ...approvedFields };
+    let hasChanges = false;
+    const changedFields: string[] = [];
 
+    // 1. ESAS NO — Davadaki esas no her zaman üstüne gelsin
+    if (linkedCase.esas_no) {
+      nextData.esas_no = linkedCase.esas_no;
+      nextApprovals.esas_no = true;
+      hasChanges = true;
+      changedFields.push("Esas No");
+    }
+
+    // 2. MÜVEKKİL — DB'deki client_parties veya muvekkil alanından al
+    let linkedMuvekkil: string | null = null;
+    let linkedMuvekkilList: string[] = [];
+
+    if (linkedCase.client_parties && Array.isArray(linkedCase.client_parties) && linkedCase.client_parties.length > 0) {
+      linkedMuvekkilList = linkedCase.client_parties;
+      linkedMuvekkil = linkedCase.client_parties[0];
+    } else if (linkedCase.muvekkil_adi) {
+      linkedMuvekkil = linkedCase.muvekkil_adi;
+      linkedMuvekkilList = [linkedCase.muvekkil_adi];
+    } else if (linkedCase.parties && Array.isArray(linkedCase.parties)) {
+      const clients = linkedCase.parties
+        .filter((p) => p.party_type === "CLIENT" || p.party_type === "MUVEKKIL")
+        .map((p) => p.name);
+      if (clients.length > 0) {
+        linkedMuvekkilList = clients;
+        linkedMuvekkil = clients[0];
+      }
+    }
+
+    if (linkedMuvekkil) {
+      nextData.muvekkil_kodu = toTitleCase(linkedMuvekkil);
+      nextApprovals.muvekkil_kodu = true;
+      // Müvekkil listesini de güncelle (setLocalClientList ile)
+      setLocalClientList(linkedMuvekkilList);
+      hasChanges = true;
+      changedFields.push("Müvekkil");
+    }
+
+    // 3. KARŞI TARAF — Davadaki her zaman üstüne gelsin
+    let linkedKarsiTaraf = linkedCase.karsi_taraf;
+    if (!linkedKarsiTaraf && linkedCase.parties && Array.isArray(linkedCase.parties)) {
+      const counters = linkedCase.parties
+        .filter((p) => p.party_type === "COUNTER")
+        .map((p) => p.name);
+      if (counters.length > 0) linkedKarsiTaraf = counters.join(", ");
+    }
+
+    if (linkedKarsiTaraf) {
+      nextData.karsi_taraf = toTitleCase(Array.isArray(linkedKarsiTaraf)
+        ? linkedKarsiTaraf.join(", ")
+        : linkedKarsiTaraf);
+      nextApprovals.karsi_taraf = true;
+      hasChanges = true;
+      changedFields.push("Karşı Taraf");
+    }
+
+    if (hasChanges) {
+      setEditedData(nextData);
+      setApprovedFields(nextApprovals);
+      toast({
+        title: "✅ Dava Bilgileri Yüklendi",
+        description: `Güncellenen alanlar: ${changedFields.join(", ")}`,
+        variant: "default",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedCase, lawyerOptions]);
   // Helper: Turkish to English Uppercase (Defined early for use in effects and other functions)
   const toEnglishUpper = (str: string): string => {
     if (!str) return "";
@@ -174,6 +261,18 @@ export const AnalysisResults = ({
 
     result = result.replace(/[ÇĞİIÖŞÜçğıöşü]/g, char => mapping[char] || char);
     return result;
+  };
+
+  const toTitleCase = (str: string): string => {
+    if (!str) return "";
+    return str
+      .split(/(\s+|[,;]+)/)
+      .map(part => {
+        if (/^(\s+|[,;]+)$/.test(part)) return part;
+        if (part.length === 0) return part;
+        return part.charAt(0).toLocaleUpperCase('tr-TR') + part.slice(1).toLocaleLowerCase('tr-TR');
+      })
+      .join("");
   };
 
   // Müvekkil adını kurala uygun koda dönüştür
@@ -280,14 +379,69 @@ export const AnalysisResults = ({
     return 'XXXXXX';
   };
 
+  const formatFieldValue = (field: string, value: string): string => {
+    let formattedValue = value || "";
+    if (field === "tarih") {
+      formattedValue = parseDateToYYMMDD(formattedValue);
+    } else if (field === "belge_turu_kodu") {
+      formattedValue = toEnglishUpper(formattedValue);
+      formattedValue = formattedValue.replace(/[^A-Z0-9_-]/g, '').substring(0, 14);
+      if (formattedValue.length < 14) formattedValue = formattedValue.padEnd(14, '_');
+    } else if (field === "muvekkil_kodu") {
+      const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(formattedValue);
+      if (hasLetters && formattedValue.length > 0) {
+        const cleanedName = formattedValue.replace(/-+/g, ' ').replace(/_+/g, ' ').trim();
+        formattedValue = convertToMuvekkilKodu(cleanedName);
+      } else {
+        formattedValue = toEnglishUpper(formattedValue);
+        if (formattedValue.length >= 14) formattedValue = formattedValue.substring(0, 14);
+        else if (formattedValue.length === 0) formattedValue = '______________';
+        else formattedValue = formattedValue.padEnd(14, '_');
+      }
+    } else if (field === "esas_no") {
+      formattedValue = toEnglishUpper(formattedValue);
+      const match = formattedValue.match(/(\d{4})[/\-\s]*(\d+)/);
+      if (match) {
+        const year = match[1];
+        const number = match[2];
+        formattedValue = `${year}/${number}`;
+      } else {
+        const shortMatch = formattedValue.match(/(\d{2})[/\-\s]*(\d+)/);
+        if (shortMatch) {
+          const year = "20" + shortMatch[1];
+          const number = shortMatch[2];
+          formattedValue = `${year}/${number}`;
+        } else {
+          formattedValue = formattedValue.length === 0 ? '--------' : formattedValue;
+        }
+      }
+    } else if (field === "ofis_dosya_no") {
+      formattedValue = toEnglishUpper(formattedValue);
+      if (formattedValue.length >= 9) formattedValue = formattedValue.substring(0, 9);
+      else formattedValue = formattedValue.length === 0 ? 'XXXXXXXXX' : formattedValue.padEnd(9, 'X');
+    } else if (field === "durum") {
+      formattedValue = toEnglishUpper(formattedValue);
+      formattedValue = formattedValue.length === 0 ? 'X' : formattedValue.substring(0, 1);
+    } else if (field === "yedek1") {
+      formattedValue = toEnglishUpper(formattedValue);
+      formattedValue = formattedValue.length === 0 ? '-' : formattedValue.substring(0, 1);
+    } else if (field === "yedek2") {
+      formattedValue = toEnglishUpper(formattedValue);
+      formattedValue = formattedValue.length === 0 ? '--' : (formattedValue.length >= 2 ? formattedValue.substring(0, 2) : formattedValue.padEnd(2, '-'));
+    } else {
+      formattedValue = toEnglishUpper(formattedValue);
+    }
+    return formattedValue;
+  };
+
   const generateFilename = () => {
     const hash6 = toEnglishUpper((approvedFields.ofis_dosya_no ? editedData.hash : data.hash)).substring(0, 6);
     const parts = [
-      approvedFields.tarih ? editedData.tarih : data.tarih,
-      approvedFields.belge_turu_kodu ? editedData.belge_turu_kodu : toEnglishUpper(data.belge_turu_kodu),
+      approvedFields.tarih ? formatFieldValue("tarih", editedData.tarih) : data.tarih,
+      approvedFields.belge_turu_kodu ? formatFieldValue("belge_turu_kodu", editedData.belge_turu_kodu) : toEnglishUpper(data.belge_turu_kodu),
       // MÜVEKKİL KODU İŞLEME
       (() => {
-        let baseCode = approvedFields.muvekkil_kodu ? editedData.muvekkil_kodu : data.muvekkil_kodu;
+        let baseCode = approvedFields.muvekkil_kodu ? formatFieldValue("muvekkil_kodu", editedData.muvekkil_kodu) : data.muvekkil_kodu;
 
         // Her zaman formatla - tire/boşlukları düzelt
         if (baseCode && baseCode.includes('-')) {
@@ -300,8 +454,6 @@ export const AnalysisResults = ({
         const count = localClientList.length;
 
         // Müvekkil sayısını 14 karakterden SONRA ayrı segment olarak ekle
-        // baseCode zaten convertToMuvekkilKodu tarafından veya toEnglishUpper tarafından işlenmeli
-        // Eğer data'dan geliyorsa ve hyphen yoksa raw gelebilir, onu sanitize edelim
         if (!approvedFields.muvekkil_kodu && !baseCode.includes('_')) { // Basit kontrol, daha sağlamı:
           if (!baseCode.includes('-') && !baseCode.includes('_') && /[ÇĞİIÖŞÜçğıöşü]/.test(baseCode)) {
             baseCode = toEnglishUpper(baseCode);
@@ -312,11 +464,11 @@ export const AnalysisResults = ({
       })(),
       // ESAS NO: Dosya adı için YY-NNNNN formatı (metadata'da orijinal kalır)
       (() => {
-        const esasNo = approvedFields.esas_no ? editedData.esas_no : data.esas_no;
+        const esasNo = approvedFields.esas_no ? formatFieldValue("esas_no", editedData.esas_no) : data.esas_no;
         if (!esasNo) return esasNo;
 
         // 2024/12345 veya 2024-12345 formatını parse et
-        const match = esasNo.match(/(\d{2,4})[\/\-](\d+)/);
+        const match = esasNo.match(/(\d{2,4})[/-\s](\d+)/);
         if (match) {
           const year = match[1].slice(-2); // Son 2 hane (2024 → 24)
           const number = match[2].padStart(5, '0'); // 5 hane (12 → 00012)
@@ -324,11 +476,10 @@ export const AnalysisResults = ({
         }
         return toEnglishUpper(esasNo).replace(/\//g, '-'); // Fallback sanitize
       })(),
-      toEnglishUpper(approvedFields.avukat_kodu ? editedData.avukat_kodu : data.avukat_kodu),
-      toEnglishUpper(approvedFields.durum ? editedData.durum : data.durum),
-      toEnglishUpper(approvedFields.ofis_dosya_no ? editedData.ofis_dosya_no : data.ofis_dosya_no),
-      toEnglishUpper(approvedFields.yedek1 ? editedData.yedek1 : data.yedek1),
-      toEnglishUpper(approvedFields.yedek2 ? editedData.yedek2 : data.yedek2),
+      approvedFields.durum ? formatFieldValue("durum", editedData.durum) : toEnglishUpper(data.durum),
+      approvedFields.ofis_dosya_no ? formatFieldValue("ofis_dosya_no", editedData.ofis_dosya_no) : toEnglishUpper(data.ofis_dosya_no),
+      approvedFields.yedek1 ? formatFieldValue("yedek1", editedData.yedek1) : toEnglishUpper(data.yedek1),
+      approvedFields.yedek2 ? formatFieldValue("yedek2", editedData.yedek2) : toEnglishUpper(data.yedek2),
       hash6,
     ];
     return parts.join("_");
@@ -362,69 +513,11 @@ export const AnalysisResults = ({
 
   const handleFieldApproval = (field: keyof typeof approvedFields, checked: boolean) => {
     if (checked) {
-      let formattedValue = editedData[field as keyof typeof editedData] as string;
-      if (field === "tarih") {
-        formattedValue = parseDateToYYMMDD(formattedValue);
-      } else if (field === "belge_turu_kodu") {
-        formattedValue = toEnglishUpper(formattedValue);
-        formattedValue = formattedValue.replace(/[^A-Z0-9_-]/g, '').substring(0, 14);
-        if (formattedValue.length < 14) formattedValue = formattedValue.padEnd(14, '_');
-      } else if (field === "muvekkil_kodu") {
-        // Her zaman convertToMuvekkilKodu uygula (A_SOYAD formatı için)
-        // İsim içeriyorsa formatla, değilse padding uygula
-        const hasLetters = /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(formattedValue);
-        if (hasLetters && formattedValue.length > 0) {
-          // İsim veya kod - tire/boşlukları parse et ve formatla
-          const cleanedName = formattedValue.replace(/-+/g, ' ').replace(/_+/g, ' ').trim();
-          formattedValue = convertToMuvekkilKodu(cleanedName);
-        } else {
-          formattedValue = toEnglishUpper(formattedValue);
-          if (formattedValue.length >= 14) formattedValue = formattedValue.substring(0, 14);
-          else if (formattedValue.length === 0) formattedValue = '______________';
-          else formattedValue = formattedValue.padEnd(14, '_');
-        }
-      } else if (field === "esas_no") {
-        formattedValue = toEnglishUpper(formattedValue);
-        // Allow YYYY/NNNN or YYYY-NNNN
-        const match = formattedValue.match(/(\d{4})[\/\-\s]*(\d+)/);
-        if (match) {
-          const year = match[1];
-          const number = match[2];
-          // Standard Format: YYYY/NNNN (No padding for number, standard slash)
-          formattedValue = `${year}/${number}`;
-        } else {
-          // Fallback for short years or other formats
-          const shortMatch = formattedValue.match(/(\d{2})[\/\-\s]*(\d+)/);
-          if (shortMatch) {
-            const year = "20" + shortMatch[1];
-            const number = shortMatch[2];
-            formattedValue = `${year}/${number}`;
-          } else {
-            formattedValue = formattedValue.length === 0 ? '--------' : formattedValue;
-          }
-        }
-      } else if (field === "ofis_dosya_no") {
-        formattedValue = toEnglishUpper(formattedValue);
-        if (formattedValue.length >= 9) formattedValue = formattedValue.substring(0, 9);
-        else formattedValue = formattedValue.length === 0 ? 'XXXXXXXXX' : formattedValue.padEnd(9, 'X');
-      } else if (field === "avukat_kodu") {
-        formattedValue = toEnglishUpper(formattedValue);
-        if (formattedValue.length === 0) formattedValue = 'XXX';
-        else if (formattedValue.length >= 3) formattedValue = formattedValue.substring(0, 3);
-        else formattedValue = formattedValue.padEnd(3, 'X');
-      } else if (field === "durum") {
-        formattedValue = toEnglishUpper(formattedValue);
-        formattedValue = formattedValue.length === 0 ? 'X' : formattedValue.substring(0, 1);
-      } else if (field === "yedek1") {
-        formattedValue = toEnglishUpper(formattedValue);
-        formattedValue = formattedValue.length === 0 ? '-' : formattedValue.substring(0, 1);
-      } else if (field === "yedek2") {
-        formattedValue = toEnglishUpper(formattedValue);
-        formattedValue = formattedValue.length === 0 ? '--' : (formattedValue.length >= 2 ? formattedValue.substring(0, 2) : formattedValue.padEnd(2, '-'));
-      } else {
-        formattedValue = toEnglishUpper(formattedValue);
+      if (field === "muvekkil_kodu") {
+        setEditedData(prev => ({ ...prev, muvekkil_kodu: toTitleCase(prev.muvekkil_kodu) }));
+      } else if (field === "karsi_taraf") {
+        setEditedData(prev => ({ ...prev, karsi_taraf: toTitleCase(prev.karsi_taraf || "") }));
       }
-      setEditedData((prev) => ({ ...prev, [field]: formattedValue }));
     }
     setApprovedFields((prev) => ({ ...prev, [field]: checked }));
   };
@@ -438,10 +531,10 @@ export const AnalysisResults = ({
             Önerilen Dosya Adı
           </CardTitle>
           <Badge
-            variant={generatedFilename.length === 75 ? "default" : "secondary"}
-            className={generatedFilename.length === 75 ? "bg-success/90 text-success-foreground glow-success" : "bg-muted text-muted-foreground"}
+            variant={generatedFilename.replace(".pdf", "").length === 71 ? "default" : "secondary"}
+            className={generatedFilename.replace(".pdf", "").length === 71 ? "bg-success/90 text-success-foreground glow-success" : "bg-muted text-muted-foreground"}
           >
-            UZUNLUK {generatedFilename.length} / 75
+            UZUNLUK {generatedFilename.replace(".pdf", "").length} / 71
           </Badge>
         </div>
       </CardHeader>
@@ -533,10 +626,9 @@ export const AnalysisResults = ({
                                       toast({ title: "İşlem Engellendi", description: "Bu kişiyi Ana Müvekkil yapabilmek için önce solundaki kutucuğu işaretleyerek listeye eklemelisiniz.", variant: "destructive" });
                                       return;
                                     }
-                                    const formattedCode = convertToMuvekkilKodu(name);
-                                    handleFieldChange("muvekkil_kodu", formattedCode);
+                                    handleFieldChange("muvekkil_kodu", toTitleCase(name));
                                     setOpenClientSelect(false);
-                                    toast({ title: "Ana Müvekkil Seçildi", description: name });
+                                    toast({ title: "Ana Müvekkil Seçildi", description: toTitleCase(name) });
                                   }}
                                 >
                                   <span className={cn("font-medium", isSelected ? "text-primary" : "text-muted-foreground", isPrimary && "font-bold text-primary")}>
@@ -557,13 +649,13 @@ export const AnalysisResults = ({
                         {(() => {
                           const detectedSet = new Set(data.muvekkiller || []);
                           // Create a set of lawyer names/codes for filtering
-                          const lawyerSet = new Set(lawyerOptions.map(l => l.name.toUpperCase()));
+                          const lawyerSet = new Set(lawyerOptions.map(l => l.name.toLocaleUpperCase('tr-TR')));
                           // Also add lawyer codes just in case
-                          lawyerOptions.forEach(l => lawyerSet.add(l.code.toUpperCase()));
+                          lawyerOptions.forEach(l => { if (l.code) lawyerSet.add(l.code.toLocaleUpperCase('tr-TR')); });
 
                           const otherNames = (editedData.belgede_gecen_isimler || [])
                             .filter(name => {
-                              const upper = name.trim().toUpperCase();
+                              const upper = name.trim().toLocaleUpperCase('tr-TR');
                               return upper.length > 0 &&
                                 !detectedSet.has(name) &&
                                 !lawyerSet.has(upper) &&
@@ -589,11 +681,10 @@ export const AnalysisResults = ({
                                 </div>
                                 <div className="flex-1 text-xs font-mono truncate select-none flex items-center justify-between"
                                   onClick={() => {
-                                    const formattedCode = convertToMuvekkilKodu(name);
-                                    handleFieldChange("muvekkil_kodu", formattedCode);
+                                    handleFieldChange("muvekkil_kodu", toTitleCase(name));
                                     if (!isSelected) setLocalClientList(prev => [...prev, name]);
                                     setOpenClientSelect(false);
-                                    toast({ title: "Ana Müvekkil Seçildi", description: name });
+                                    toast({ title: "Ana Müvekkil Seçildi", description: toTitleCase(name) });
                                   }}
                                 >
                                   <span className={cn(isSelected ? "text-foreground" : "text-muted-foreground", isPrimary && "font-bold text-primary")}>
@@ -618,13 +709,12 @@ export const AnalysisResults = ({
                               if (e.key === "Enter") {
                                 const value = (e.target as HTMLInputElement).value.trim();
                                 if (value) {
-                                  const formattedCode = convertToMuvekkilKodu(value);
-                                  handleFieldChange("muvekkil_kodu", formattedCode);
+                                  handleFieldChange("muvekkil_kodu", toTitleCase(value));
                                   if (!localClientList.includes(value)) {
                                     setLocalClientList(prev => [...prev, value]);
                                   }
                                   setOpenClientSelect(false);
-                                  toast({ title: "Müvekkil Eklendi", description: value });
+                                  toast({ title: "Müvekkil Eklendi", description: toTitleCase(value) });
                                 }
                               }
                             }}
@@ -653,7 +743,7 @@ export const AnalysisResults = ({
                     className="w-full justify-between font-mono glass-input h-auto min-h-[40px] px-3 py-2 text-sm whitespace-normal text-left"
                   >
                     <span className="line-clamp-2">
-                      {editedData.karsi_taraf || "Karşı Taraf Seçin..."}
+                      {editedData.karsi_taraf ? toTitleCase(editedData.karsi_taraf) : "Karşı Taraf Seçin..."}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -669,11 +759,12 @@ export const AnalysisResults = ({
                           if (editedData.muvekkil_kodu) excludeSet.add(editedData.muvekkil_kodu);
 
                           // Avukatları da çıkar
-                          const lawyerSet = new Set(lawyerOptions.map(l => l.name.toUpperCase()));
+                          const lawyerSet = new Set(lawyerOptions.map(l => l.name.toLocaleUpperCase('tr-TR')));
+                          lawyerOptions.forEach(l => { if (l.code) lawyerSet.add(l.code.toLocaleUpperCase('tr-TR')); });
 
                           const candidates = (editedData.belgede_gecen_isimler || [])
                             .filter(name => {
-                              const upper = name.toUpperCase().trim();
+                              const upper = name.toLocaleUpperCase('tr-TR').trim();
                               return !excludeSet.has(name) && !lawyerSet.has(upper) && upper.length > 2;
                             });
 
@@ -821,20 +912,6 @@ export const AnalysisResults = ({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground"><User className="w-3 h-3" /> [D] AVUKAT</Label>
-            <div className="relative flex items-center gap-2">
-              <Select value={editedData.avukat_kodu} onValueChange={(value) => handleFieldChange("avukat_kodu", value)} disabled={approvedFields.avukat_kodu}>
-                <SelectTrigger className="font-mono glass-input"><SelectValue placeholder="Avukat seçin" /></SelectTrigger>
-                <SelectContent className="max-h-[300px] glass z-50">
-                  {isLoadingLawyers ? (<SelectItem value="LOADING" disabled>Yükleniyor...</SelectItem>) : (lawyerOptions.map((lawyer) => (<SelectItem key={lawyer.code} value={lawyer.code}>{lawyer.code} – {lawyer.name}</SelectItem>)))}
-                  {!isLoadingLawyers && lawyerOptions.length === 0 && (<SelectItem value="ERROR" disabled>Liste Yüklenemedi</SelectItem>)}
-                  <SelectItem value="XXX">XXX – Herhangi bir Avukat tespit edilemedi</SelectItem>
-                </SelectContent>
-              </Select>
-              <Checkbox checked={approvedFields.avukat_kodu} onCheckedChange={(checked) => handleFieldApproval("avukat_kodu", checked as boolean)} className={approvedFields.avukat_kodu ? "data-[state=checked]:bg-success data-[state=checked]:border-success" : ""} />
-            </div>
-          </div>
 
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">[E] DURUM</Label>
@@ -850,23 +927,6 @@ export const AnalysisResults = ({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">[Ö] ÖZEL NO (SİSTEM)</Label>
-            <div className="relative flex items-center gap-2">
-              <Input
-                value={editedData.ofis_dosya_no}
-                readOnly
-                className="font-mono glass-input bg-muted/50 text-muted-foreground cursor-not-allowed"
-                title="Bu alan sistem tarafından otomatik verilir"
-              />
-              <Checkbox
-                checked={true}
-                disabled
-                className="data-[state=checked]:bg-muted data-[state=checked]:text-muted-foreground opacity-50"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">[F] ESAS NO</Label>
             <div className="relative flex items-center gap-2">
               <Input value={editedData.esas_no} onChange={(e) => handleFieldChange("esas_no", e.target.value)} className="font-mono glass-input pr-10" maxLength={30} disabled={approvedFields.esas_no} />
@@ -874,21 +934,6 @@ export const AnalysisResults = ({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">[G] YEDEK1</Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.yedek1} onChange={(e) => handleFieldChange("yedek1", e.target.value)} placeholder="1 Karakter" className="font-mono glass-input pr-10" maxLength={1} disabled={approvedFields.yedek1} />
-              <Checkbox checked={approvedFields.yedek1} onCheckedChange={(checked) => handleFieldApproval("yedek1", checked as boolean)} className={approvedFields.yedek1 ? "data-[state=checked]:bg-success data-[state=checked]:border-success" : ""} />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">[H] YEDEK2</Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.yedek2} onChange={(e) => handleFieldChange("yedek2", e.target.value)} placeholder="2 Karakter" className="font-mono glass-input pr-10" maxLength={2} disabled={approvedFields.yedek2} />
-              <Checkbox checked={approvedFields.yedek2} onCheckedChange={(checked) => handleFieldApproval("yedek2", checked as boolean)} className={approvedFields.yedek2 ? "data-[state=checked]:bg-success data-[state=checked]:border-success" : ""} />
-            </div>
-          </div>
         </div>
 
         <div className="space-y-2 pt-4 border-t border-border/30">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
-import { useConfig } from "@/hooks/useConfig";
+import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,27 +78,30 @@ const SortableRow = ({ id, children, className }: { id: string, children: React.
 
 const AdminPage = () => {
     const {
-        lawyers, statuses, doctypes, emailRecipients, isLoading,
+        lawyers, statuses, doctypes, emailRecipients, caseSubjects, isLoading,
         addLawyer, deleteLawyer,
         addStatus, deleteStatus,
         addDoctype, deleteDoctype,
         addEmail, deleteEmail,
+        addCaseSubject, deleteCaseSubject,
         reorderList
     } = useConfig();
 
     const [activeTab, setActiveTab] = useState("lawyers");
 
     // Local State for Optimistic Sorting
-    const [localLawyers, setLocalLawyers] = useState<any[]>([]);
-    const [localStatuses, setLocalStatuses] = useState<any[]>([]);
-    const [localDocTypes, setLocalDocTypes] = useState<any[]>([]);
-    const [localEmails, setLocalEmails] = useState<any[]>([]);
+    const [localLawyers, setLocalLawyers] = useState<ConfigItem[]>([]);
+    const [localStatuses, setLocalStatuses] = useState<ConfigItem[]>([]);
+    const [localDocTypes, setLocalDocTypes] = useState<ConfigItem[]>([]);
+    const [localEmails, setLocalEmails] = useState<ConfigItem[]>([]);
+    const [localCaseSubjects, setLocalCaseSubjects] = useState<ConfigItem[]>([]); // Added
 
     // Sync from props when they change (unless we are dragging - handled by optimistics)
     useEffect(() => { setLocalLawyers(lawyers); }, [lawyers]);
     useEffect(() => { setLocalStatuses(statuses); }, [statuses]);
     useEffect(() => { setLocalDocTypes(doctypes); }, [doctypes]);
     useEffect(() => { setLocalEmails(emailRecipients); }, [emailRecipients]);
+    useEffect(() => { setLocalCaseSubjects(caseSubjects); }, [caseSubjects]); // Added
 
     // Sensors
     const sensors = useSensors(
@@ -114,8 +117,8 @@ const AdminPage = () => {
         if (active.id !== over?.id) {
             let oldIndex = -1;
             let newIndex = -1;
-            let currentList: any[] = [];
-            let setList: any = null;
+            let currentList: ConfigItem[] = [];
+            let setList: React.Dispatch<React.SetStateAction<ConfigItem[]>> | null = null;
             let type = "";
 
             if (activeTab === "lawyers") {
@@ -134,19 +137,23 @@ const AdminPage = () => {
                 currentList = localEmails;
                 setList = setLocalEmails;
                 type = "emails";
+            } else if (activeTab === "case_subjects") {
+                currentList = localCaseSubjects;
+                setList = setLocalCaseSubjects;
+                type = "case_subjects";
             }
 
             oldIndex = currentList.findIndex(item => (item.code || item.email) === active.id);
             newIndex = currentList.findIndex(item => (item.code || item.email) === over?.id);
 
-            if (oldIndex !== -1 && newIndex !== -1) {
+            if (oldIndex !== -1 && newIndex !== -1 && setList) {
                 // Optimistic Update
                 const newOrder = arrayMove(currentList, oldIndex, newIndex);
                 setList(newOrder);
 
                 // API Call
                 // Use code/email as ID for persistence
-                const orderedIds = newOrder.map(item => item.code || item.email);
+                const orderedIds = newOrder.map(item => item.code || item.email || "");
                 const success = await reorderList(type, orderedIds);
                 if (!success) {
                     toast.error("Sıralama kaydedilemedi.");
@@ -161,24 +168,27 @@ const AdminPage = () => {
     const [isStatusAddOpen, setIsStatusAddOpen] = useState(false);
     const [isDocTypeAddOpen, setIsDocTypeAddOpen] = useState(false);
     const [isEmailAddOpen, setIsEmailAddOpen] = useState(false);
+    const [isCaseSubjectAddOpen, setIsCaseSubjectAddOpen] = useState(false); // Added
 
     // Form States
     const [lawyerForm, setLawyerForm] = useState({ code: "", name: "" });
     const [statusForm, setStatusForm] = useState({ code: "", name: "" });
     const [docTypeForm, setDocTypeForm] = useState({ code: "", name: "" });
     const [emailForm, setEmailForm] = useState({ email: "", name: "", description: "" });
+    const [caseSubjectForm, setCaseSubjectForm] = useState({ name: "" }); // Added
 
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleDelete = async (item: any, type: string) => {
+    const handleDelete = async (item: ConfigItem, type: string) => {
         if (!window.confirm(`Silinecek: ${item.name || item.code}. Emin misiniz?`)) return;
 
         let success = false;
         try {
-            if (type === "lawyer") success = await deleteLawyer(item.code);
-            else if (type === "status") success = await deleteStatus(item.code);
-            else if (type === "doctype") success = await deleteDoctype(item.code);
-            else if (type === "email") success = await deleteEmail(item.email);
+            if (type === "lawyer" && item.code) success = await deleteLawyer(item.code);
+            else if (type === "status" && item.code) success = await deleteStatus(item.code);
+            else if (type === "doctype" && item.code) success = await deleteDoctype(item.code);
+            else if (type === "email" && item.email) success = await deleteEmail(item.email);
+            else if (type === "case_subject" && item.code) success = await deleteCaseSubject(item.code); // Added
 
             if (success) {
                 toast.success("Silindi!");
@@ -226,6 +236,17 @@ const AdminPage = () => {
         else toast.error("Hata");
     };
 
+    // Case Subject Handlers
+
+    const handleSaveCaseSubject = async () => {
+        if (!caseSubjectForm.name) { toast.warning("İsim zorunlu"); return; }
+        setIsSubmitting(true);
+        const success = await addCaseSubject(caseSubjectForm.name);
+        setIsSubmitting(false);
+        if (success) { toast.success("Eklendi"); setIsCaseSubjectAddOpen(false); setCaseSubjectForm({ name: "" }); setTimeout(() => window.location.reload(), 500); }
+        else toast.error("Hata");
+    };
+
     if (isLoading) {
         return (
             <div className="min-h-screen bg-background">
@@ -245,11 +266,20 @@ const AdminPage = () => {
                 <p className="text-muted-foreground mb-8">Listeleri sürükleyerek sıralayabilirsiniz.</p>
 
                 <Tabs defaultValue="lawyers" className="w-full" onValueChange={setActiveTab}>
-                    <TabsList className="grid w-full grid-cols-4 mb-8">
+                    <TabsList className="flex flex-wrap h-auto gap-2 justify-start mb-8 p-1 bg-muted/20">
                         <TabsTrigger value="lawyers">Avukatlar</TabsTrigger>
                         <TabsTrigger value="statuses">Durumlar</TabsTrigger>
                         <TabsTrigger value="doctypes">Belge Türleri</TabsTrigger>
+                        <TabsTrigger value="case_subjects">Dava Konuları</TabsTrigger>
                         <TabsTrigger value="emails">E-posta Alıcıları</TabsTrigger>
+
+                        {/* YAPILACAKLAR / EKLENECEKLER */}
+                        <TabsTrigger value="court_types" className="border border-dashed border-primary/40 opacity-70">Mahkemeler</TabsTrigger>
+                        <TabsTrigger value="case_types" className="border border-dashed border-primary/40 opacity-70">Dava Türleri</TabsTrigger>
+                        <TabsTrigger value="party_roles" className="border border-dashed border-primary/40 opacity-70">Taraf Rolleri</TabsTrigger>
+                        <TabsTrigger value="client_categories" className="border border-dashed border-primary/40 opacity-70">Kategoriler</TabsTrigger>
+                        <TabsTrigger value="specialties" className="border border-dashed border-primary/40 opacity-70">Uzmanlıklar</TabsTrigger>
+                        <TabsTrigger value="cities" className="border border-dashed border-primary/40 opacity-70">Şehirler</TabsTrigger>
                     </TabsList>
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -368,6 +398,42 @@ const AdminPage = () => {
                             </Card>
                         </TabsContent>
 
+                        {/* CASE SUBJECTS TAB */}
+                        <TabsContent value="case_subjects">
+                            <Card>
+                                <CardHeader className="flex flex-row items-center justify-between">
+                                    <CardTitle>Dava Konuları</CardTitle>
+                                    <Dialog open={isCaseSubjectAddOpen} onOpenChange={setIsCaseSubjectAddOpen}>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Konu</Button></DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader><DialogTitle>Yeni Dava Konusu Ekle</DialogTitle></DialogHeader>
+                                            <div className="grid gap-4 py-4">
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={caseSubjectForm.name} onChange={e => setCaseSubjectForm({ ...caseSubjectForm, name: e.target.value })} className="col-span-3" /></div>
+                                            </div>
+                                            <DialogFooter><Button onClick={handleSaveCaseSubject} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </CardHeader>
+                                <CardContent>
+                                    <Table>
+                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Dava Konusu</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableBody>
+                                            <SortableContext items={localCaseSubjects.map(i => i.code)} strategy={verticalListSortingStrategy}>
+                                                {localCaseSubjects.map((item) => (
+                                                    <SortableRow key={item.code} id={item.code}>
+                                                        <TableCell className="font-medium">{item.name}</TableCell>
+                                                        <TableCell className="text-right">
+                                                            <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "case_subject")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                                        </TableCell>
+                                                    </SortableRow>
+                                                ))}
+                                            </SortableContext>
+                                        </TableBody>
+                                    </Table>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
                         {/* EMAILS TAB */}
                         <TabsContent value="emails">
                             <Card>
@@ -405,6 +471,56 @@ const AdminPage = () => {
                                         </TableBody>
                                     </Table>
                                 </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        {/* YENİ EKLENECEK PLACEHOLDER İÇERİKLER */}
+                        <TabsContent value="court_types">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Mahkeme Türleri (Yakında)</CardTitle>
+                                    <CardDescription>Asliye Hukuk, Tüketici Mahkemesi vb. mahkeme tiplerinin dinamik yönetimi eklenecek.</CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </TabsContent>
+                        <TabsContent value="case_types">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Dava Türleri (Yakında)</CardTitle>
+                                    <CardDescription>Belirsiz Alacak, Kısmi Dava, Tespit vs. dava açılış türleri eklenecek.</CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </TabsContent>
+                        <TabsContent value="party_roles">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Taraf Rolleri (Yakında)</CardTitle>
+                                    <CardDescription>Davacı, Davalı, İhbar Olunan, Müdahil gibi dava içi roller eklenecek.</CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </TabsContent>
+                        <TabsContent value="client_categories">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Müvekkil Kategorileri (Yakında)</CardTitle>
+                                    <CardDescription>Doktor, Hasta, Sigorta Acentesi vb. cari kişi / kurumsal gruplandırmalar eklenecek.</CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </TabsContent>
+                        <TabsContent value="specialties">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Uzmanlık Alanları (Yakında)</CardTitle>
+                                    <CardDescription>Kardiyoloji, Dahiliye, Pratisyen gibi hekim uzmanlık alanları eklenecek.</CardDescription>
+                                </CardHeader>
+                            </Card>
+                        </TabsContent>
+                        <TabsContent value="cities">
+                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5">
+                                <CardHeader>
+                                    <CardTitle>Şehir Listesi (Yakında)</CardTitle>
+                                    <CardDescription>Uygulamada kullanılan il listesinin ve adliyelerin lokasyon yönetimi eklenecek.</CardDescription>
+                                </CardHeader>
                             </Card>
                         </TabsContent>
 

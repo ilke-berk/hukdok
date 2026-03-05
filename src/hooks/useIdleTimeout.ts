@@ -98,6 +98,7 @@ export const useIdleTimeout = (timeoutMinutes: number = 30, warningMinutes: numb
                 window.removeEventListener(event, handleActivity);
             });
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instance, TIMEOUT_MS, WARNING_MS]);
 
     return { showWarning, resetTimer };

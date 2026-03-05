@@ -57,7 +57,7 @@ export function EmailModal({
             setSendEmail(true); // Default to true
             setTebligTarihi(""); // Reset date
         }
-    }, [isOpen]);
+    }, [isOpen, defaultCc.length]);
 
     // Handler for selecting recipient
     const handleSelectRecipient = (type: 'to' | 'cc', recipient: { name: string, email: string }) => {

@@ -202,15 +202,16 @@ def get_default_json() -> Dict[str, Any]:
         "belgede_gecen_isimler": [],
         "belge_turu_kodu": "",
         "belge_kaynagi": "XXXX",
-        "avukat_kodu": "XXX",
+        "avukat_kodu": None,
         "esas_no": "",
+        "court": None,
         "durum": "G",
         "ozet": "Analysis Failed",
     }
 
 
-# --- CACHE MECHANISM (SQLite) ---
-from db_manager import DatabaseManager
+# --- CACHE MECHANISM (PostgreSQL) ---
+from database import DatabaseManager
 
 
 async def analyze_file_generator(
@@ -317,8 +318,8 @@ async def analyze_file_generator(
         pre_extracted = {
             "tarih": None,
             "esas_no": None,
-            "avukat_kodu": None,
-            "muvekkil_candidates": []
+            "muvekkil_candidates": [],
+            "court": None,
         }
         
         t2 = time.perf_counter()  # Pre-extraction timer start
@@ -343,14 +344,6 @@ async def analyze_file_generator(
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"[PRE] Esas No çıkarımı hatası: {e}")
             
-            # 3. Avukat (List/Regex)
-            try:
-                from lawyer_extractor import find_best_lawyer
-                pre_extracted["avukat_kodu"] = find_best_lawyer(extracted_text)
-                if pre_extracted["avukat_kodu"]:
-                    TechnicalLogger.log("INFO", f"⚖️ [PRE] Avukat bulundu: {pre_extracted['avukat_kodu']}")
-            except Exception as e:
-                TechnicalLogger.log("WARNING", f"[PRE] Avukat çıkarımı hatası: {e}")
             
             # 4. Müvekkil Adayları (FlashText)
             try:
@@ -360,6 +353,15 @@ async def analyze_file_generator(
                     TechnicalLogger.log("INFO", f"👤 [PRE] Müvekkil adayları: {pre_extracted['muvekkil_candidates']}", {"count": len(pre_extracted["muvekkil_candidates"])})
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"[PRE] Müvekkil arama hatası: {e}")
+
+            # 5. Mahkeme Adı (Hibrit Regex)
+            try:
+                from court_extractor import find_court_name
+                pre_extracted["court"] = find_court_name(extracted_text)
+                if pre_extracted["court"]:
+                    TechnicalLogger.log("INFO", f"🏛️ [PRE] Mahkeme bulundu: {pre_extracted['court']}")
+            except Exception as e:
+                TechnicalLogger.log("WARNING", f"[PRE] Mahkeme çıkarımı hatası: {e}")
         
         # === MISSING FIELDS DETECTION ===
         missing_fields = []
@@ -367,10 +369,10 @@ async def analyze_file_generator(
             missing_fields.append("tarih")
         if not pre_extracted["esas_no"]:
             missing_fields.append("esas_no")
-        if not pre_extracted["avukat_kodu"]:
-            missing_fields.append("avukat_kodu")
         if not pre_extracted["muvekkil_candidates"]:
             missing_fields.append("muvekkil")
+        if not pre_extracted["court"]:
+            missing_fields.append("court")
         
         benchmark["pre_extraction"] = round((time.perf_counter() - t2) * 1000, 2)
         
@@ -472,9 +474,13 @@ async def analyze_file_generator(
         data["belge_turu_kodu"] = ""
         debug_info.append("- Belge Türü: Kullanıcıya Bırakıldı")
         
-        # 🛡️ HARD OVERRIDE: Karşı Taraf Seçimini Kullanıcıya Bırak
-        data["karsi_taraf"] = ""
-        debug_info.append("- Karşı Taraf: Kullanıcıya Bırakıldı")
+        # 🛡️ Karşı Taraf: UI formu için sıfırla, ama AI önerisini sakla
+        # QuickCaseModal yeni dava açarken bu öneriyi kullanır
+        ai_karsi_taraf = data.get("karsi_taraf", "")
+        data["suggested_karsi_taraf"] = ai_karsi_taraf  # QuickCaseModal için
+        data["karsi_taraf"] = ""                         # Belge onay formu için kullanıcıya bırak
+        debug_info.append(f"- Karşı Taraf: Kullanıcıya Bırakıldı (AI önerisi: {ai_karsi_taraf or 'yok'})")
+
 
         # === POST-PROCESSING: Pre-Extracted Değerleri Uygula ===
         # Artık regex'leri tekrar çalıştırmıyoruz, pre-extraction'daki sonuçları kullan
@@ -495,13 +501,15 @@ async def analyze_file_generator(
             # LLM'nin bulduğu değer kalır
             debug_info.append(f"- Esas No: LLM ({data.get('esas_no', 'BOŞ')})")
         
-        # ⚖️ AVUKAT
-        if pre_extracted.get("avukat_kodu"):
-            data["avukat_kodu"] = pre_extracted["avukat_kodu"]
-            debug_info.append(f"- Avukat: REGEX/LİSTE ({pre_extracted['avukat_kodu']})")
+
+        # 🏛️ MAHKEME
+        if pre_extracted.get("court"):
+            # Regex buldu — kesinlikle daha güvenilir, LLM'i ezmez
+            data["court"] = pre_extracted["court"]
+            debug_info.append(f"- Mahkeme: REGEX ({pre_extracted['court']})")
         else:
-            # LLM'nin bulduğu değer kalır
-            debug_info.append(f"- Avukat: LLM ({data.get('avukat_kodu', 'BOŞ')})")
+            # LLM'nin bulduğu değeri koru (veya None)
+            debug_info.append(f"- Mahkeme: LLM ({data.get('court', 'BOŞ')})")
 
         # 👤 MÜVEKKİL (Hibrit Matcher hala gerekli)
         try:
@@ -509,35 +517,35 @@ async def analyze_file_generator(
             diger_isimler = data.get("belgede_gecen_isimler", [])
             avukat_var = data.get("avukat_kodu") is not None
             
-            # 🛡️ AVUKAT FİLTRESİ: Müvekkil adaylarından avukatları çıkar
+            # 🛡️ AVUKAT FİLTRESİ: Sadece TAM isim eşleşmesi (kelime parçaları değil)
+            import re as _re
             lawyer_names_upper = set()
             for lawyer in lawyers:
                 name = lawyer.get("name", "")
                 if name:
-                    # Hem tam ismi hem de parçalarını ekle
-                    lawyer_names_upper.add(name.upper())
-                    # Örn: "AYŞE GÜL HANYALOĞLU" için "AYŞE", "GÜL", "HANYALOĞLU" da ekle
-                    for part in name.upper().split():
-                        if len(part) > 3:  # Sadece anlamlı parçalar
-                            lawyer_names_upper.add(part)
-            
-            # Hook müvekkil avukat mı?
-            if hook_muvekkil and hook_muvekkil.upper() in lawyer_names_upper:
+                    full = name.upper()
+                    lawyer_names_upper.add(full)
+                    # "Av." / "Dr." öneksiz hali de ekle
+                    stripped = _re.sub(r'^(AV\.|DR\.|UZM\.)\s*', '', full).strip()
+                    lawyer_names_upper.add(stripped)
+            # İ/I normalize edilmiş set (eşleşme için)
+            lawyer_normalized = {n.replace("İ", "I") for n in lawyer_names_upper}
+
+            # hook_muvekkil avukat mı? (normalize ederek karşılaştır)
+            if hook_muvekkil and hook_muvekkil.upper().replace("İ", "I") in lawyer_normalized:
                 TechnicalLogger.log("WARNING", f"⚠️ AVUKAT FİLTRE: '{hook_muvekkil}' avukat olarak tespit edildi, müvekkil olarak kullanılmayacak!")
                 hook_muvekkil = None
-            
-            # Diğer isimlerden avukatları çıkar
+
+            # Diğer isimlerden avukatları çıkar (sadece TAM isim eşleşmesi)
             filtered_isimler = []
             for isim in diger_isimler:
-                isim_upper = isim.upper() if isim else ""
-                is_lawyer = False
-                for lawyer_name in lawyer_names_upper:
-                    if lawyer_name in isim_upper or isim_upper in lawyer_name:
-                        is_lawyer = True
-                        break
-                if not is_lawyer:
+                isim_n = isim.upper().replace("İ", "I") if isim else ""
+                if isim_n not in lawyer_normalized:
                     filtered_isimler.append(isim)
-            
+                else:
+                    TechnicalLogger.log("INFO", f"⚠️ Avukat (tam isim) listesinden çıkarıldı: {isim}")
+
+
             # Güncellenmiş listeyi kaydet (GEÇİCİ - Aşağıda tekrar filtrelenecek)
             data["belgede_gecen_isimler"] = filtered_isimler
             
@@ -698,12 +706,7 @@ async def analyze_file_generator(
         # ⏱️ BENCHMARK: Toplam süreyi hesapla ve logla
         benchmark["total"] = round((time.perf_counter() - total_start) * 1000, 2)
         
-        # Görünür çıktı için print kullan (TechnicalLogger bazen filtreliyor)
-        print(f"\n{'='*60}")
-        print(f"⏱️ BENCHMARK SONUÇLARI (ms):")
-        for key, value in benchmark.items():
-            print(f"   {key}: {value} ms")
-        print(f"{'='*60}\n")
+        # Görünür çıktı için print kullanılıyordu, loglara ve _benchmark içine alındı.
         
         logging.info(f"⏱️ BENCHMARK: {benchmark}")
         

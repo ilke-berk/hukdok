@@ -22,20 +22,9 @@ PRE_COMPILED_TITLE_PATTERNS = [
 # Compiled once for speed in massive loops
 PRE_COMPILED_SPLIT_PATTERN = re.compile(r';| - | / | ve ')
 
-def turkish_upper(text):
-    """Turkish specific uppercase conversion"""
-    if not text:
-        return ""
-    table = str.maketrans({
-        "i": "İ",
-        "ı": "I",
-        "ğ": "Ğ",
-        "ü": "Ü",
-        "ş": "Ş",
-        "ö": "Ö",
-        "ç": "Ç"
-    })
-    return text.translate(table).upper()
+from text_utils import turkish_upper
+
+# def turkish_upper(text): -> Removed local implementation
 
 def clean_name(name):
     """
@@ -71,8 +60,8 @@ def process_client_list():
     import shutil
 
     # Determine paths
-    app_data_dir = Path.home() / "AppData" / "Local" / "HukuDok" / "data"
-    app_data_dir.mkdir(parents=True, exist_ok=True)
+    from config_manager import get_data_dir
+    app_data_dir = get_data_dir()
     
     # 1. Input Path (muvekkil_listesi.json) - Check AppData first, then Bundled
     input_path = app_data_dir / "muvekkil_listesi.json"

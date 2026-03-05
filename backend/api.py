@@ -8,8 +8,8 @@ from pathlib import Path
 # --- STARTUP DEBUG LOGGING (CRITICAL FOR DEBUGGING EXE) ---
 def write_startup_log(msg):
     try:
-        log_dir = Path.home() / "AppData" / "Local" / "HukuDok" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        from config_manager import get_log_dir
+        log_dir = get_log_dir()
         log_file = log_dir / "startup_debug.log"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(log_file, "a", encoding="utf-8") as f:
@@ -34,7 +34,7 @@ if sys.stderr and sys.stderr.encoding != 'utf-8':
     except Exception:
         pass
 
-print("DEBUG: API Loading started...", flush=True)
+
 write_startup_log("DEBUG: API Loading started...")
 
 import uvicorn
@@ -43,7 +43,7 @@ import time
 import uuid
 import logging
 import argparse
-print("DEBUG: Base imports done.", flush=True)
+
 
 import json
 from datetime import datetime
@@ -52,13 +52,12 @@ from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, File, UploadFile, Form, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from pydantic import BaseModel, ConfigDict
 from dotenv import load_dotenv
 from pathlib import Path
 import tempfile
-import tempfile
-print("DEBUG: FastAPI imports done.", flush=True)
+
 
 # --- Pydantic Models for Config Updates ---
 from database import SessionLocal
@@ -92,12 +91,16 @@ class ClientCreate(BaseModel):
     tc_no: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    address: Optional[str] = None
+    mobile_phone: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
-    contact_type: ContactType = ContactType.CLIENT  # Enum validation
+    cari_kod: Optional[str] = None
+    contact_type: ContactType = ContactType.CLIENT
+    birth_year: Optional[int] = None
+    gender: Optional[str] = None
+    specialty: Optional[str] = None
 
 class ClientRead(BaseModel):
     id: int
@@ -105,31 +108,86 @@ class ClientRead(BaseModel):
     tc_no: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    address: Optional[str] = None
+    mobile_phone: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
-    contact_type: str = "Client"  # Return as string for frontend compatibility
+    cari_kod: Optional[str] = None
+    contact_type: str = "Client"
     active: bool
+    birth_year: Optional[int] = None
+    gender: Optional[str] = None
+    specialty: Optional[str] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
     tc_no: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    address: Optional[str] = None
+    mobile_phone: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
     client_type: Optional[str] = None
     category: Optional[str] = None
-    contact_type: Optional[ContactType] = None  # Enum validation
-    active: Optional[bool] = None 
-    class Config:
-        from_attributes = True
+    cari_kod: Optional[str] = None
+    contact_type: Optional[ContactType] = None
+    active: Optional[bool] = None
+    birth_year: Optional[int] = None
+    gender: Optional[str] = None
+    specialty: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class CasePartyCreate(BaseModel):
+    client_id: Optional[int] = None
+    name: str
+    role: str
+    party_type: str # "CLIENT", "COUNTER", "THIRD"
+    birth_year: Optional[int] = None
+    gender: Optional[str] = None
+
+class CaseCreate(BaseModel):
+    tracking_no: str
+    esas_no: Optional[str] = None
+    merci_no: Optional[str] = None
+    status: str = "DERDEST"
+    service_type: Optional[str] = None
+    file_type: Optional[str] = None
+    sub_type: Optional[str] = None
+    subject: Optional[str] = None
+    court: Optional[str] = None
+    opening_date: Optional[str] = None
+    responsible_lawyer_name: Optional[str] = None
+    uyap_lawyer_name: Optional[str] = None
+    maddi_tazminat: Optional[float] = 0
+    manevi_tazminat: Optional[float] = 0
+    parties: List[CasePartyCreate] = []
+
+class CaseRead(BaseModel):
+    id: int
+    tracking_no: str
+    esas_no: Optional[str] = None
+    merci_no: Optional[str] = None
+    status: str
+    service_type: Optional[str] = None
+    file_type: Optional[str] = None
+    sub_type: Optional[str] = None
+    subject: Optional[str] = None
+    court: Optional[str] = None
+    opening_date: Optional[str] = None
+    responsible_lawyer_name: Optional[str] = None
+    uyap_lawyer_name: Optional[str] = None
+    maddi_tazminat: float = 0
+    manevi_tazminat: float = 0
+    created_at: datetime
+    parties: List[CasePartyCreate] = []
+    history: List[Dict[str, Any]] = []
+    documents: List[Dict[str, Any]] = []
+    
+    model_config = ConfigDict(from_attributes=True)
 
 
 
@@ -138,17 +196,13 @@ class ClientUpdate(BaseModel):
 try:
     write_startup_log("Attempting to import modules...")
     from sharepoint_uploader_graph import upload_file_to_sharepoint
-    print("DEBUG: sharepoint_uploader_graph imported.", flush=True)
+
     from analyzer import analyze_file_generator
-    print("DEBUG: analyzer imported.", flush=True)
-    from list_manager import get_lawyer_list_from_sharepoint, get_status_list_from_sharepoint, get_doctype_list_from_sharepoint
-    print("DEBUG: list_manager imported.", flush=True)
-    from sharepoint_muvekkil_manager import get_client_list_from_sharepoint
-    print("DEBUG: sharepoint_muvekkil_manager imported.", flush=True)
+    from admin_manager import get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects
     from log_manager import LogManager, TechnicalLogger
-    print("DEBUG: log_manager imported.", flush=True)
+
     from config_manager import DynamicConfig
-    print("DEBUG: config_manager imported.", flush=True)
+
     from counter_manager import get_counter_manager
     write_startup_log("All local modules imported successfully.")
     
@@ -231,20 +285,85 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup: Load from cache for fast startup. Use refresh button for updates."""
+    logging.info("🚀 API Starting...")
+    write_startup_log("🚀 API Startup Event triggered")
+    
+    # Initialize Database (Create Tables & Migrate)
+    try:
+        from database import init_db
+        init_db()
+    except Exception as e:
+        logging.critical(f"🔥 Database Init Failed: {e}")
+        write_startup_log(f"🔥 Database Init Failed: {e}")
+
+    config = DynamicConfig.get_instance()
+
+    # Load Local Cache
+    if cache_manager:
+        cached_data = cache_manager.load_cache()
+        if cached_data:
+            lawyers = cached_data.get("lawyers", [])
+            statuses = cached_data.get("statuses", [])
+            doctypes = cached_data.get("doctypes", [])
+            clients = cached_data.get("clients", [])
+            
+            config.set_lawyers(lawyers)
+            config.set_statuses(statuses)
+            config.set_doctypes(doctypes)
+            config.set_clients(clients)
+            email_recipients = cached_data.get("email_recipients", [])
+            if email_recipients:
+                config.set_email_recipients(email_recipients)
+            
+            logging.info(f"📦 Cache Loaded: {len(lawyers)} lawyers, {len(statuses)} statuses, {len(clients)} clients, {len(email_recipients)} email recipients.")
+        else:
+            logging.warning("📦 Cache empty. Use refresh button to load data.")
+
+    # Start Background Refresh (Non-blocking)
+    import threading
+    threading.Thread(target=refresh_lists_background, daemon=True).start()
+    logging.info("🔄 Startup: Background refresh thread started.")
+    
+    # SECURITY: Cleanup orphaned temp files from previous sessions (KVKK)
+    try:
+        import glob
+        temp_dir = tempfile.gettempdir()
+        patterns = ["tmp*.pdf", "tmp*.docx", "tmp*.doc", "tmp*.txt", "tmp*.udf"]
+        cleaned_count = 0
+        
+        for pattern in patterns:
+            for old_file in glob.glob(os.path.join(temp_dir, pattern)):
+                try:
+                    file_age = time.time() - os.path.getmtime(old_file)
+                    if file_age > 3600:  
+                        os.remove(old_file)
+                        cleaned_count += 1
+                except Exception as e:
+                    pass
+        
+        if cleaned_count > 0:
+            logging.info(f"🧹 Startup cleanup: Removed {cleaned_count} orphaned temp files")
+    except Exception as e:
+        logging.warning(f"⚠️ Startup cleanup failed: {e}")
+        
+    yield
+    
+    logging.info("🛑 API Shutting down...")
+
+
 # Initialize FastAPI
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # --- CORS ---
-# SUPER PERMISSIVE FOR DEV: Allow EVERYTHING
+# SUPER PERMISSIVE FOR DEV: Allow EVERYTHING (REGEX)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://hukukoid.com",
-        "http://localhost:8080",
-        "http://localhost:8081",
-        "http://localhost:5173",
-        "http://127.0.0.1:8000"
-    ],
+    allow_origin_regex=".*", # Allow all origins via regex
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -297,8 +416,11 @@ class SecurityEventLogger:
     
     def __init__(self):
         # Security log location
-        log_dir = Path.home() / "AppData" / "Local" / "HukuDok" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        # Custom import to avoid circular dependency issues at top level if any
+        from config_manager import get_log_dir
+        
+        # Security log location
+        log_dir = get_log_dir()
         
         self.log_file = log_dir / "security.log"
         
@@ -364,182 +486,68 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
 # --- BACKGROUND UPDATE TASK ---
 # --- BACKGROUND UPDATE TASK ---
 def refresh_lists_background():
-    """Background Task: Syncs SharePoint -> DB, then Updates Singleton Config from DB."""
-    logging.info("🔄 Background: Starting list update...")
+    """Background Task: Updates Singleton Config from Database (Admin-only mode)."""
+    logging.info("🔄 Background: Loading lists from Database...")
     try:
-        # 0. SYNC SharePoint -> Database
-        try:
-            from sync_lists import run_full_sync
-            logging.info("🔄 Triggering Database Sync...")
-            run_full_sync()
-            logging.info("✅ Database Sync Complete.")
-        except Exception as sync_e:
-            logging.error(f"❌ Database Sync Failed: {sync_e}")
-            # Continue anyway, maybe we can read old data from DB or fallback to SP
-            
-        # 1. Fetch Data (Now fetches from DB because of list_manager updates)
-        new_lawyers = get_lawyer_list_from_sharepoint()
-        new_statuses = get_status_list_from_sharepoint()
-        new_doctypes = get_doctype_list_from_sharepoint()
-        new_clients = get_client_list_from_sharepoint()
+        # Load Directly from DB (Admin-managed)
+        new_lawyers = get_lawyers()
+        new_statuses = get_statuses()
+        new_doctypes = get_doctypes()
+        new_recipients = get_email_recipients()
+        new_subjects = get_case_subjects()
 
-        # 1b. Fetch local email recipients (Now from DB)
-        try:
-            from list_manager import get_email_recipients_from_db
-            new_recipients = get_email_recipients_from_db()
-            logging.info(f"✅ Background: {len(new_recipients)} email recipients loaded from DB.")
-        except Exception as e:
-            logging.error(f"⚠️ Failed to load email recipients: {e}")
-
-        # 2. Update Singleton
+        # Update Singleton
         config = DynamicConfig.get_instance()
         updated = False
 
+        if new_subjects:
+            config.set_case_subjects(new_subjects)
+            logging.info(f"✅ Background: {len(new_subjects)} subjects loaded from DB.")
+            updated = True
+
         if new_lawyers:
             config.set_lawyers(new_lawyers)
-            logging.info(f"✅ Background: {len(new_lawyers)} lawyers updated.")
+            logging.info(f"✅ Background: {len(new_lawyers)} lawyers loaded from DB.")
             updated = True
         
         if new_statuses:
             config.set_statuses(new_statuses)
-            logging.info(f"✅ Background: {len(new_statuses)} statuses updated.")
+            logging.info(f"✅ Background: {len(new_statuses)} statuses loaded from DB.")
             updated = True
             
         if new_doctypes:
             config.set_doctypes(new_doctypes)
-            logging.info(f"✅ Background: {len(new_doctypes)} doctypes updated.")
-            updated = True
-        
-        if new_clients:
-            config.set_clients(new_clients)
-            logging.info(f"✅ Background: {len(new_clients)} clients updated.")
+            logging.info(f"✅ Background: {len(new_doctypes)} doctypes loaded from DB.")
             updated = True
         
         if new_recipients:
             config.set_email_recipients(new_recipients)
+            logging.info(f"✅ Background: {len(new_recipients)} recipients loaded from DB.")
             updated = True
             
-            # MÜVEKKİL LİSTESİNİ JSON'A YAZ (Matcher için)
-            try:
-                from pathlib import Path
-                import json
-                from datetime import datetime
-                import os
-                
-                # Absolute path kullan (Electron farklı dizinden çalışabiliyor)
-                # Write to AppData (Writable)
-                app_data_dir = Path.home() / "AppData" / "Local" / "HukuDok" / "data"
-                app_data_dir.mkdir(parents=True, exist_ok=True)
-                muvekkil_json_path = app_data_dir / "muvekkil_listesi.json"
-                
-                muvekkil_data = {
-                    "metadata": {
-                        "kaynak": "SharePoint - Muvekkil Listesi",
-                        "son_guncelleme": datetime.now().isoformat(),
-                        "toplam_muvekkil": len(new_clients),
-                        "durum": "AKTIF"
-                    },
-                    "muvekiller": new_clients  # Now preserves full dict structure with IDs
-                }
-                
-                with open(muvekkil_json_path, 'w', encoding='utf-8') as f:
-                    json.dump(muvekkil_data, f, ensure_ascii=False, indent=2)
-                
-                logging.info(f"✅ muvekkil_listesi.json güncellendi ({len(new_clients)} müvekkil)")
-                logging.info(f"   Dosya: {muvekkil_json_path}")
-                
-                # 1. normalized_client_list.json'u yeniden oluştur
-                from client_normalizer import process_client_list
-                process_client_list()
-                logging.info("✅ normalized_client_list.json yenilendi")
-                
-                # 2. Matcher'ı yenile
-                from muvekkil_matcher_v2 import yenile_matcher
-                yenile_matcher()
-                logging.info("✅ Müvekkil matcher yenilendi")
-                
-                # 3. ListSearcher singleton'ını yenile
-                from list_searcher import get_list_searcher
-                searcher = get_list_searcher()
-                searcher._load_data()  # Reload from updated JSON
-                logging.info("✅ ListSearcher yenilendi")
-                
-            except Exception as json_error:
-                logging.error(f"⚠️ muvekkil_listesi.json yazma hatası: {json_error}")
-                import traceback
-                logging.error(traceback.format_exc())
-
         # 3. Persist to JSON Cache
         if updated and cache_manager:
             full_data = {
                 "lawyers": config.get_lawyers(),
                 "statuses": config.get_statuses(),
                 "doctypes": config.get_doctypes(),
-                "clients": config.get_clients(),
+                "case_subjects": config.get_case_subjects(),
                 "email_recipients": config.get_email_recipients(),
                 "last_updated": datetime.now().isoformat()
             }
             cache_manager.save_cache(full_data)
+        
+        # 4. Refresh Matcher and Searcher (from DB)
+        from muvekkil_matcher_v2 import yenile_matcher
+        yenile_matcher()
+        from list_searcher import get_list_searcher
+        get_list_searcher()._load_data()
+        logging.info("✅ Matcher and Searcher refreshed from DB.")
+
     except Exception as e:
         logging.error(f"⚠️ Background Update Failed: {e}")
 
-@app.on_event("startup")
-def startup_event():
-    """Startup: Load from cache for fast startup. Use refresh button for updates."""
-    logging.info("🚀 API Starting...")
-    write_startup_log("🚀 API Startup Event triggered")
-    config = DynamicConfig.get_instance()
-
-    # Load Local Cache (hızlı açılış)
-    if cache_manager:
-        cached_data = cache_manager.load_cache()
-        if cached_data:
-            lawyers = cached_data.get("lawyers", [])
-            statuses = cached_data.get("statuses", [])
-            doctypes = cached_data.get("doctypes", [])
-            clients = cached_data.get("clients", [])
-            
-            config.set_lawyers(lawyers)
-            config.set_statuses(statuses)
-            config.set_doctypes(doctypes)
-            config.set_clients(clients)
-            email_recipients = cached_data.get("email_recipients", [])
-            if email_recipients:
-                config.set_email_recipients(email_recipients)
-            
-            logging.info(f"📦 Cache Loaded: {len(lawyers)} lawyers, {len(statuses)} statuses, {len(clients)} clients, {len(email_recipients)} email recipients.")
-        else:
-            logging.warning("📦 Cache empty. Use refresh button to load data.")
-
-    # Start Background Refresh (Non-blocking)
-    import threading
-    threading.Thread(target=refresh_lists_background, daemon=True).start()
-    logging.info("🔄 Startup: Background refresh thread started.")
-    
-    # SECURITY: Cleanup orphaned temp files from previous sessions (KVKK)
-    try:
-        import glob
-        temp_dir = tempfile.gettempdir()
-        # Look for common temp file patterns from our app
-        patterns = ["tmp*.pdf", "tmp*.docx", "tmp*.doc", "tmp*.txt", "tmp*.udf"]
-        cleaned_count = 0
-        
-        for pattern in patterns:
-            for old_file in glob.glob(os.path.join(temp_dir, pattern)):
-                try:
-                    # Only remove files older than 1 hour (safety check)
-                    file_age = time.time() - os.path.getmtime(old_file)
-                    if file_age > 3600:  # 1 hour in seconds
-                        os.remove(old_file)
-                        cleaned_count += 1
-                except Exception as e:
-                    pass  # Ignore errors for individual files
-        
-        if cleaned_count > 0:
-            logging.info(f"🧹 Startup cleanup: Removed {cleaned_count} orphaned temp files")
-    except Exception as e:
-        logging.warning(f"⚠️ Startup cleanup failed: {e}")
-
+# Startup logic migrated to lifespan contextmanager above
 # --- CONFIG ---
 # (CORS moved to top for priority)
 
@@ -551,7 +559,7 @@ if ssl_cert and os.path.exists(ssl_cert):
 # --- ARGS ---
 def get_port():
     parser = argparse.ArgumentParser(description="HukuDok Backend API")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the API on")
+    parser.add_argument("--port", type=int, default=8001, help="Port to run the API on")
     args, _ = parser.parse_known_args()
     return args.port
 
@@ -575,13 +583,15 @@ def sanitize_filename(filename: str) -> str:
     # 1. Path traversal karakterlerini engelle - basename sadece dosya adını alır
     filename = os.path.basename(filename)
     
-    # 2. Null byte injection engelleme
+    # 2. Null byte injection engelleme (text_utils içinde de var ama burada kalsın)
     filename = filename.replace('\x00', '')
     
-    # 3. Sadece güvenli karakterlere izin ver
-    # Türkçe karakterler + alfanumerik + tire, alt çizgi, nokta, parantez, boşluk
-    safe_pattern = re.compile(r'[^a-zA-ZğüşıöçĞÜŞİÖÇ0-9._\-() ]')
-    filename = safe_pattern.sub('_', filename)
+    # 3. Güvenli karakter temizliği (Merkezi fonksiyon kullanımı)
+    from text_utils import sanitize_filename_text
+    filename = sanitize_filename_text(filename)
+    
+    # safe_pattern = re.compile(r'[^a-zA-ZğüşıöçĞÜŞİÖÇ0-9._\-() ]') -> text_utils içinde daha kapsamlısı var
+    # filename = safe_pattern.sub('_', filename)
     
     # 4. Uzantı kontrolü - sadece PDF, DOCX ve UDF
     allowed_extensions = {'.pdf', '.docx', '.doc', '.udf'}
@@ -835,19 +845,58 @@ def health_check():
 def get_lawyers_endpoint(user: dict = Depends(get_current_user)):
     """Returns list of lawyers for dropdown."""
     config = DynamicConfig.get_instance()
-    return config.get_lawyers()
+    lawyers = config.get_lawyers()
+    if not lawyers:
+        from admin_manager import get_lawyers
+        lawyers = get_lawyers()
+    return lawyers
+
 @app.get("/config/statuses")
 @app.get("/api/config/statuses")
 def get_statuses_endpoint(user: dict = Depends(get_current_user)):
     """Returns list of statuses for dropdown."""
     config = DynamicConfig.get_instance()
-    return config.get_statuses()
+    statuses = config.get_statuses()
+    if not statuses:
+        from admin_manager import get_statuses
+        statuses = get_statuses()
+    return statuses
+
 @app.get("/config/doctypes")
 @app.get("/api/config/doctypes")
 def get_doctypes_endpoint(user: dict = Depends(get_current_user)):
     """Returns list of document types for dropdown."""
     config = DynamicConfig.get_instance()
-    return config.get_doctypes()
+    doctypes = config.get_doctypes()
+    if not doctypes:
+        from admin_manager import get_doctypes
+        doctypes = get_doctypes()
+    return doctypes
+
+@app.get("/config/case_subjects")
+@app.get("/api/config/case_subjects")
+def get_case_subjects_endpoint(user: dict = Depends(get_current_user)):
+    """Returns list of case subjects."""
+    config = DynamicConfig.get_instance()
+    subjects = config.get_case_subjects()
+    if not subjects:
+        from admin_manager import get_case_subjects
+        subjects = get_case_subjects()
+    return subjects
+
+@app.post("/api/config/case_subjects")
+def api_add_case_subject(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_case_subject(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add case subject")
+    return {"status": "success", "message": "Case subject added"}
+
+@app.delete("/api/config/case_subjects/{code}")
+def api_delete_case_subject(code: str, user: dict = Depends(get_current_user)):
+    success = delete_case_subject(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Case subject not found or failed to delete")
+    return {"status": "success", "message": "Case subject deleted"}
 
 @app.get("/config/email_recipients")
 @app.get("/api/config/email_recipients")
@@ -855,21 +904,189 @@ def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
     """Returns list of email recipients (names and emails)."""
     config = DynamicConfig.get_instance()
     data = config.get_email_recipients()
-    # ensure_ascii=False is CRITICAL for Turkish characters
     return JSONResponse(content=data, headers={"Content-Type": "application/json; charset=utf-8"})
 
-    # ensure_ascii=False is CRITICAL for Turkish characters
-    return JSONResponse(content=data, headers={"Content-Type": "application/json; charset=utf-8"})
 
 # --- ADD / DELETE ENDPOINTS ---
-from list_manager import (
-    add_lawyer, delete_lawyer, 
-    add_status, delete_status, 
-    add_doctype, delete_doctype, 
+from admin_manager import (
+    add_lawyer, delete_lawyer,
+    add_status, delete_status,
+    add_doctype, delete_doctype,
     add_email_recipient, delete_email_recipient,
-    reorder_list, add_client
+    add_case_subject, delete_case_subject,
+    reorder_list, add_client, add_case, get_case, get_cases, update_case, search_cases
 )
 from database import check_and_migrate_tables
+
+# --- FAZ 1: Belge türü → Dava durumu eşleştirme tablosu ---
+# Admin paneli ile genişletilebilir, şimdilik kodda sabit.
+# Format: belge_turu_kodu_prefix → yeni_dava_durumu
+DOCTYPE_TO_STATUS_MAP = {
+    "KARAR":    "KARAR",      # Karar belgesi → Dava durumu KARAR
+    "TEMYIZ":   "TEMYIZ",    # Temyiz dilekçesi → Dava TEMYIZ'e geçer
+    "INFAZ":    "INFAZ",     # İnfaz belgesi → Dava INFAZ'a geçer
+    "FERAGAT":  "KAPALI",    # Feragat → Dava kapanır
+    "ISLAH":    "DERDEST",   # Islah dilekçesi → Dava aktif devam eder
+}
+
+def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: str = None):
+    """
+    Faz 1: Belge türüne göre dava durumunu otomatik günceller.
+    Örn: KARAR-BLG yüklenince dava → KARAR durumuna geçer.
+    """
+    if not case_id or not belge_turu_kodu:
+        return False
+    try:
+        db = SessionLocal()
+        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        if not case:
+            db.close()
+            return False
+
+        new_status = None
+        kod_upper = belge_turu_kodu.upper()
+        for prefix, status in DTYPE_TO_STATUS_MAP_ITEMS:
+            if kod_upper.startswith(prefix):
+                new_status = status
+                break
+
+        if new_status and new_status != case.status:
+            old_status = case.status
+            case.status = new_status
+            # Geçmişe kaydet
+            history = models.CaseHistory(
+                case_id=case_id,
+                field_name="status",
+                old_value=old_status,
+                new_value=new_status
+            )
+            db.add(history)
+            db.commit()
+            logging.info(f"✅ [Faz1] Dava {case_id} durumu otomatik güncellendi: {old_status} → {new_status} (Belge: {belge_turu_kodu})")
+            db.close()
+            return True
+
+        db.close()
+        return False
+    except Exception as e:
+        logging.error(f"❌ [Faz1] Otomatik durum güncelleme hatası: {e}")
+        return False
+
+def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: str = None, uploaded_by: str = None):
+    """
+    Faz 1.5: Eksik dava bilgilerini belgeden okunan verilerle otomatik tamamlar.
+    """
+    if not case_id:
+        return {}
+    
+    updated_fields = {}
+    try:
+        db = SessionLocal()
+        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        if not case:
+            return {}
+
+        # 1. Avukat Eksikse Tamamla
+        if avukat_kodu and (not case.responsible_lawyer_name or case.responsible_lawyer_name == "Atanmadı" or case.responsible_lawyer_name.strip() == ""):
+            try:
+                lawyers = DynamicConfig.get_instance().get_lawyers()
+                for lawyer in lawyers:
+                    if lawyer.get("code") == avukat_kodu:
+                        avukat_adi = lawyer.get("name")
+                        old_avukat = case.responsible_lawyer_name
+                        case.responsible_lawyer_name = avukat_adi
+                        history = models.CaseHistory(
+                            case_id=case_id,
+                            field_name="responsible_lawyer_name",
+                            old_value=old_avukat or "Yok",
+                            new_value=avukat_adi
+                        )
+                        db.add(history)
+                        updated_fields["lawyer"] = avukat_adi
+                        logging.info(f"✨ [Auto-Enrich] Dava {case_id} Sorumlu Avukat atandı: {avukat_adi}")
+                        break
+            except Exception as e:
+                logging.warning(f"Avukat lookup hatası (Enrichment): {e}")
+
+        # 2. Karşı Taraf Eksikse Tamamla
+        if karsi_taraf:
+            has_counter = any(p.party_type == "COUNTER" for p in case.parties)
+            if not has_counter:
+                new_party = models.CaseParty(case_id=case_id, name=karsi_taraf, role="Karşı Taraf", party_type="COUNTER")
+                db.add(new_party)
+                history = models.CaseHistory(
+                    case_id=case_id,
+                    field_name="karşı_taraf",
+                    old_value="Yok",
+                    new_value=karsi_taraf
+                )
+                db.add(history)
+                updated_fields["counter_party"] = karsi_taraf
+                logging.info(f"✨ [Auto-Enrich] Dava {case_id} Karşı Taraf Eklendi: {karsi_taraf}")
+
+        if updated_fields:
+            db.commit()
+            
+        return updated_fields
+    except Exception as e:
+        logging.error(f"❌ [Auto-Enrich] Hata: {e}")
+        return {}
+    finally:
+        db.close()
+
+# Dict → List of tuples for prefix matching
+DTYPE_TO_STATUS_MAP_ITEMS = list(DOCTYPE_TO_STATUS_MAP.items())
+
+def _save_case_document(
+    case_id: int | None,
+    original_filename: str,
+    stored_filename: str,
+    belge_turu_kodu: str = None,
+    belge_turu_adi: str = None,
+    ai_summary: str = None,
+    muvekkil_adi: str = None,
+    avukat_kodu: str = None,
+    esas_no: str = None,
+    is_test_mode: bool = False,
+    uploaded_by: str = None
+) -> int | None:
+    """
+    Faz 1: Yüklenen belgeyi case_documents tablosuna kaydeder.
+    is_test_mode=True ise case_id olmasa da kaydeder (TEST modu).
+    """
+    try:
+        db = SessionLocal()
+
+        if case_id:
+            link_mode = "LINKED"
+        elif is_test_mode:
+            link_mode = "TEST"
+        else:
+            link_mode = "UNLINKED"
+
+        doc = models.CaseDocument(
+            case_id=case_id,
+            original_filename=original_filename,
+            stored_filename=stored_filename,
+            belge_turu_kodu=belge_turu_kodu,
+            belge_turu_adi=belge_turu_adi,
+            ai_summary=ai_summary,
+            muvekkil_adi=muvekkil_adi,
+            avukat_kodu=avukat_kodu,
+            esas_no=esas_no,
+            link_mode=link_mode,
+            uploaded_by=uploaded_by
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        doc_id = doc.id
+        db.close()
+        logging.info(f"✅ [Faz1] CaseDocument kaydedildi: ID={doc_id}, mode={link_mode}, case_id={case_id}")
+        return doc_id
+    except Exception as e:
+        logging.error(f"❌ [Faz1] CaseDocument kayıt hatası: {e}")
+        return None
 
 
 # Ensure DB Migration
@@ -947,7 +1164,7 @@ def api_reorder_list(request: ReorderRequest, user: dict = Depends(get_current_u
 
 @app.post("/api/clients")
 def api_add_client(client: ClientCreate, user: dict = Depends(get_current_user)):
-    success = add_client(client.dict())
+    success = add_client(client.model_dump())
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save client")
     return {"status": "success", "message": "Client saved"}
@@ -962,6 +1179,145 @@ def get_clients_api(user: dict = Depends(get_current_user)):
     finally:
         db.close()
 
+@app.post("/api/cases")
+def api_add_case(case_data: CaseCreate, user: dict = Depends(get_current_user)):
+    result = add_case(case_data.model_dump())
+    if not result:
+        raise HTTPException(status_code=500, detail="Failed to save case")
+    return {"status": "success", "message": "Case saved", **result}
+
+@app.get("/api/incomplete-tasks")
+def get_incomplete_tasks(user: dict = Depends(get_current_user)):
+    """Yarım kalan dava ve müvekkil kayıtlarını tespit eder."""
+    db = SessionLocal()
+    try:
+        incomplete_cases = []
+        incomplete_clients = []
+
+        # 1. Eksik Davalar
+        cases = db.query(models.Case).filter(models.Case.active == True).all()
+        for c in cases:
+            missing = []
+            if not c.court:
+                missing.append("Mahkeme")
+            if not c.responsible_lawyer_name:
+                missing.append("Avukat")
+            if not c.subject:
+                missing.append("Konu")
+
+            # CLIENT party olup client_id bağlı olmayan taraf var mı?
+            for p in c.parties:
+                if p.party_type == "CLIENT" and not p.client_id:
+                    missing.append(f"Müvekkil bağlantısı ({p.name})")
+
+            # Hiç CLIENT party yoksa
+            client_parties = [p for p in c.parties if p.party_type == "CLIENT"]
+            if len(client_parties) == 0:
+                missing.append("Müvekkil yok")
+
+            if missing:
+                incomplete_cases.append({
+                    "id": c.id,
+                    "type": "case",
+                    "esas_no": c.esas_no or c.tracking_no,
+                    "court": c.court or "",
+                    "status": c.status,
+                    "missing_fields": missing,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                })
+
+        # 2. Eksik Müvekkiller
+        clients = db.query(models.Client).filter(models.Client.active == True).all()
+        for cl in clients:
+            missing = []
+            if not cl.phone:
+                missing.append("Telefon")
+            if not cl.email:
+                missing.append("E-posta")
+            if not cl.tc_no:
+                missing.append("TC No")
+            if not cl.address:
+                missing.append("Adres")
+
+            # En az 2 alan eksikse "yarım" say (tek alan eksik normalde tolere edilir)
+            if len(missing) >= 2:
+                incomplete_clients.append({
+                    "id": cl.id,
+                    "type": "client",
+                    "name": cl.name,
+                    "client_type": cl.client_type or "Belirtilmemiş",
+                    "missing_fields": missing,
+                })
+
+        return {
+            "incomplete_cases": incomplete_cases,
+            "incomplete_clients": incomplete_clients[:20],  # En fazla 20 müvekkil göster
+            "total_incomplete_cases": len(incomplete_cases),
+            "total_incomplete_clients": len(incomplete_clients),
+        }
+    except Exception as e:
+        logger.error(f"Incomplete Tasks Error: {e}")
+        return {"incomplete_cases": [], "incomplete_clients": [], "total_incomplete_cases": 0, "total_incomplete_clients": 0}
+    finally:
+        db.close()
+
+@app.get("/api/cases", response_model=List[CaseRead])
+def get_cases_api(user: dict = Depends(get_current_user)):
+    """Returns list of cases."""
+    return get_cases()
+
+@app.get("/api/cases/client-sequence")
+def get_client_case_sequence(client_name: str, user: dict = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        # Find how many distinct cases this client name is attached to as a CLIENT
+        count = db.query(func.count(func.distinct(models.CaseParty.case_id)))\
+                  .filter(models.CaseParty.party_type == "CLIENT")\
+                  .filter(models.CaseParty.name.ilike(client_name))\
+                  .scalar()
+        
+        return {"sequence": (count or 0) + 1}
+    except Exception as e:
+        logger.error(f"Error getting client sequence: {e}")
+        return {"sequence": 1}
+    finally:
+        db.close()
+
+@app.get("/api/cases/search")
+def api_search_cases(q: str, user: dict = Depends(get_current_user)):
+    return search_cases(q)
+
+@app.get("/api/cases/{case_id}")
+def api_get_case(case_id: int, user: dict = Depends(get_current_user)):
+    case = get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+@app.put("/api/cases/{case_id}")
+def api_update_case(case_id: int, case_data: CaseCreate, user: dict = Depends(get_current_user)):
+    success = update_case(case_id, case_data.model_dump())
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update case")
+    return {"status": "success", "message": "Case updated"}
+
+@app.delete("/api/cases/{case_id}")
+def api_delete_case(case_id: int, user: dict = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        db.delete(case)
+        db.commit()
+        return {"status": "success", "message": "Case deleted"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
 @app.put("/api/clients/{client_id}")
 def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = Depends(get_current_user)):
     db = SessionLocal()
@@ -971,7 +1327,7 @@ def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = De
             raise HTTPException(status_code=404, detail="Client not found")
         
         # Update fields
-        update_data = client_data.dict(exclude_unset=True)
+        update_data = client_data.model_dump(exclude_unset=True)
         for key, value in update_data.items():
             setattr(client, key, value)
         
@@ -979,11 +1335,128 @@ def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = De
         db.refresh(client)
         return {"status": "success", "message": "Client updated", "client": client}
     except Exception as e:
-        print(f"Error updating client: {e}")
+        logger.error(f"Error updating client: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+@app.delete("/api/clients/{client_id}")
+def api_delete_client(client_id: int, user: dict = Depends(get_current_user)):
+    db = SessionLocal()
+    try:
+        client = db.query(models.Client).filter(models.Client.id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        # First: detach any case_party references to avoid FK violation
+        db.query(models.CaseParty).filter(models.CaseParty.client_id == client_id).update(
+            {"client_id": None}, synchronize_session=False
+        )
+        
+        db.delete(client)
+        db.commit()
+        return {"status": "success", "message": "Client deleted"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting client {client_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+# --- FAZ 1: BELGE ENDPOİNT'LERİ ---
+
+@app.get("/api/cases/{case_id}/documents")
+def get_case_documents(case_id: int, user: dict = Depends(get_current_user)):
+    """Belirli bir davaya ait tüm yüklenen belgeleri listeler."""
+    db = SessionLocal()
+    try:
+        docs = db.query(models.CaseDocument).filter(
+            models.CaseDocument.case_id == case_id
+        ).order_by(models.CaseDocument.uploaded_at.desc()).all()
+        return [
+            {
+                "id": d.id,
+                "case_id": d.case_id,
+                "original_filename": d.original_filename,
+                "stored_filename": d.stored_filename,
+                "belge_turu_kodu": d.belge_turu_kodu,
+                "belge_turu_adi": d.belge_turu_adi,
+                "ai_summary": d.ai_summary,
+                "muvekkil_adi": d.muvekkil_adi,
+                "avukat_kodu": d.avukat_kodu,
+                "esas_no": d.esas_no,
+                "link_mode": d.link_mode,
+                "uploaded_by": d.uploaded_by,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            }
+            for d in docs
+        ]
+    finally:
+        db.close()
+
+@app.get("/api/documents")
+def get_all_documents(
+    limit: int = 50,
+    link_mode: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    """Tüm yüklenen belgeleri listeler. link_mode ile filtrele: LINKED, TEST, UNLINKED"""
+    db = SessionLocal()
+    try:
+        q = db.query(models.CaseDocument)
+        if link_mode:
+            q = q.filter(models.CaseDocument.link_mode == link_mode.upper())
+        docs = q.order_by(models.CaseDocument.uploaded_at.desc()).limit(limit).all()
+        return [
+            {
+                "id": d.id,
+                "case_id": d.case_id,
+                "original_filename": d.original_filename,
+                "stored_filename": d.stored_filename,
+                "belge_turu_kodu": d.belge_turu_kodu,
+                "belge_turu_adi": d.belge_turu_adi,
+                "muvekkil_adi": d.muvekkil_adi,
+                "avukat_kodu": d.avukat_kodu,
+                "esas_no": d.esas_no,
+                "link_mode": d.link_mode,
+                "uploaded_by": d.uploaded_by,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            }
+            for d in docs
+        ]
+    finally:
+        db.close()
+
+@app.patch("/api/documents/{doc_id}/link")
+def link_document_to_case(
+    doc_id: int,
+    payload: dict,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Bağlantısız (UNLINKED/TEST) bir belgeyi sonradan bir davaya bağlar.
+    Body: { "case_id": 123 }
+    """
+    db = SessionLocal()
+    try:
+        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        new_case_id = payload.get("case_id")
+        if not new_case_id:
+            raise HTTPException(status_code=400, detail="case_id gerekli")
+        case = db.query(models.Case).filter(models.Case.id == new_case_id).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+        doc.case_id = new_case_id
+        doc.link_mode = "LINKED"
+        db.commit()
+        return {"status": "success", "message": f"Belge #{doc_id} dava #{new_case_id}'ye bağlandı"}
+    finally:
+        db.close()
+
+# --- END FAZ 1 BELGE ENDPOİNT'LERİ ---
 
 @app.post("/refresh")
 @app.post("/api/refresh")
@@ -1056,26 +1529,51 @@ async def analyze_file_endpoint(request: Request, file: UploadFile = File(...), 
                         ofis_dosya_no = await counter_task
                         final_data["ofis_dosya_no"] = ofis_dosya_no
                     else: 
-                        # Eğer analyzer hata verdiyse counter task'ı iptal etmeye gerek yok ama await etmeliyiz
-                         try:
-                             _ = await counter_task # Consume task
-                         except: pass
+                        try:
+                            _ = await counter_task
+                        except: pass
 
                     api_timings["counter_fetch"] = round((time.perf_counter() - t2) * 1000, 2)
+
+                    # --- FAZ 1: OTOMATİK DAVA EŞLEŞTİRME ---
+                    try:
+                        t_match = time.perf_counter()
+                        from case_matcher import find_matching_case
+                        
+                        match_result = await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            find_matching_case,
+                            final_data.get("esas_no"),
+                            final_data.get("muvekkiller") or ([final_data.get("muvekkil_adi")] if final_data.get("muvekkil_adi") else []),
+                            final_data.get("avukat_kodu"),
+                        )
+                        
+                        if match_result:
+                            final_data["suggested_case"] = match_result
+                            TechnicalLogger.log(
+                                "INFO",
+                                f"🎯 Dava önerisi: #{match_result['case_id']} "
+                                f"({match_result['esas_no']}) "
+                                f"Skor={match_result['score']} Güven={match_result['confidence']}"
+                            )
+                        else:
+                            final_data["suggested_case"] = None
+
+                        api_timings["case_match"] = round((time.perf_counter() - t_match) * 1000, 2)
+                    except Exception as match_err:
+                        TechnicalLogger.log("WARNING", f"CaseMatcher hatası (atlandı): {match_err}")
+                        final_data["suggested_case"] = None
+                    # --- END FAZ 1 ---
+
                     api_timings["total"] = round((time.perf_counter() - api_start) * 1000, 2)
                     
-                    # Benchmark çıktısını logla
-                    print(f"\n{'='*60}")
-                    print(f"⏱️ API ENDPOINT BENCHMARK (ms):")
-                    for key, value in api_timings.items():
-                        print(f"   {key}: {value} ms")
-                    print(f"{'='*60}\n")
+                    # Benchmark print removed as requested
                     
-                    # Frontend'e de gönder
                     final_data["_api_benchmark"] = api_timings
                     step["data"] = final_data
                 
                 yield json.dumps(step) + "\n"
+
                 
         except Exception as e:
             error_id = str(uuid.uuid4())[:8]
@@ -1089,6 +1587,34 @@ async def analyze_file_endpoint(request: Request, file: UploadFile = File(...), 
                 TechnicalLogger.log("WARNING", f"Failed to delete temp file: {temp_path}")
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+
+# --- DOWNLOAD CACHE ---
+import uuid
+DOWNLOAD_CACHE = {}
+
+@app.get("/api/download/{file_id}")
+async def download_file(file_id: str):
+    if file_id not in DOWNLOAD_CACHE:
+        raise HTTPException(status_code=404, detail="Dosya bulunamadı veya süresi doldu.")
+    
+    file_info = DOWNLOAD_CACHE[file_id]
+    file_path = file_info["path"]
+    filename = file_info["filename"]
+    
+    if not os.path.exists(file_path):
+        del DOWNLOAD_CACHE[file_id]
+        raise HTTPException(status_code=404, detail="Dosya diskte bulunamadı.")
+        
+    # FileResponse automatically handles streaming/ranges
+    return FileResponse(
+        path=file_path, 
+        filename=filename, 
+        media_type='application/pdf',
+        # Background task to clean up after download? 
+        # Better to let the scheduled cleanup handle it, or remove from cache immediately.
+        # We'll remove from cache to prevent multi-download, but keep file for the main cleanup task.
+    )
+
 
 @app.post("/confirm")
 @limiter.limit("20/minute")
@@ -1108,13 +1634,21 @@ async def confirm_process(
     custom_to_json: str = Form(None),
     custom_cc_json: str = Form(None),
     send_email: bool = Form(True),
-    teblig_tarihi: str = Form(None)
+    teblig_tarihi: str = Form(None),
+    # --- FAZ 1: Dava Bağlantısı ---
+    linked_case_id: Optional[int] = Form(None),   # Seçilen dava ID'si (opsiyonel)
+    is_test_mode: bool = Form(False),              # Test modunda dava zorunlu değil
+    ai_ozet: str = Form(None),                     # Analiz özeti (belge kaydı için)
+    user: dict = Depends(get_current_user)         # Auth (Form endpoint'lerinde Depends sona gelmeli)
 ):
-    """Step 2: Confirm Process (Web Mode) - Rename, Upload to SharePoint"""
+    """Step 2: Confirm Process (Web Mode) - Rename, Upload to SharePoint, Link to Case"""
     import time as perf_time
     confirm_start = perf_time.perf_counter()
     timings = {}
-    
+
+    # Kullanıcı bilgisi
+    current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
+
     # Parse JSON fields from Form
     try:
         muvekkiller = json.loads(muvekkiller_json) if muvekkiller_json else []
@@ -1125,6 +1659,23 @@ async def confirm_process(
         raise HTTPException(status_code=400, detail="Invalid JSON in form fields")
 
     results = {}
+    
+    # 0. Avukat Bilgisini Dava Kaydından Bul (Eğer gönderilmediyse)
+    if not avukat_kodu and linked_case_id:
+        db_fetch = SessionLocal()
+        try:
+            case_fetch = db_fetch.query(models.Case).filter(models.Case.id == linked_case_id).first()
+            if case_fetch and case_fetch.responsible_lawyer_name:
+                lawyers = DynamicConfig.get_instance().get_lawyers()
+                for l in lawyers:
+                    if l.get("name") == case_fetch.responsible_lawyer_name:
+                        avukat_kodu = l.get("code")
+                        logging.info(f"🔍 [Auto-Avukat] Dava {linked_case_id} için avukat kodu bulundu: {avukat_kodu}")
+                        break
+        except Exception as e:
+            logging.warning(f"Avukat lookup hatası (Confirm): {e}")
+        finally:
+            db_fetch.close()
     
     # 1. Save Uploaded File to Temp (for SharePoint Upload)
     suffix = Path(file.filename).suffix
@@ -1349,19 +1900,74 @@ async def confirm_process(
         results["email"] = "Dosya bulunamadı"
         logging.warning(f"⚠️ [7] E-posta gönderilemedi - dosya yok: {email_file_path}")
     
-    # 8. Temizlik Görevi (En son çalışır) - KVKK-compliant
-    def _async_cleanup(temp_path):
+    # 8. Download Preparation (Web Mode)
+    # Store the filePath in cache so frontend can fetch it
+    download_id = None
+    if email_file_path and os.path.exists(email_file_path):
+        download_id = str(uuid.uuid4())
+        DOWNLOAD_CACHE[download_id] = {
+            "path": email_file_path,
+            "filename": new_filename,
+            "timestamp": perf_time.time()
+        }
+        results["download_id"] = download_id
+        logging.info(f"💾 Download hazırlandı ID: {download_id}")
+
+    # 9. Temizlik Görevi (En son çalışır) - KVKK-compliant
+    def _async_cleanup(temp_path, down_id=None):
         import time
-        # E-posta gönderimi için biraz bekle (garanti olsun)
-        time.sleep(10)
-        if safe_remove(temp_path, retries=5):  # Extra retries for email attachment
+        # Frontend'in indirmesi için süre tanı (30 saniye)
+        # E-posta gönderimi için de gerekli
+        time.sleep(30) 
+        
+        if safe_remove(temp_path, retries=5):  
             logging.info(f"🗑️ [Cleanup] Geçici dosya silindi: {temp_path}")
         else:
             logging.warning(f"⚠️ [Cleanup] Dosya silinemedi: {temp_path}")
+            
+        # Cache'den de temizle
+        if down_id and down_id in DOWNLOAD_CACHE:
+            del DOWNLOAD_CACHE[down_id]
 
     # Sadece PDF/A-2b temp dosyası oluşturulduysa sil (source_path source ise silme)
     if pdfa_temp_file and pdfa_temp_file != source_path:
-        background_tasks.add_task(_async_cleanup, pdfa_temp_file)
+        background_tasks.add_task(_async_cleanup, pdfa_temp_file, download_id)
+
+    # --- FAZ 1: CaseDocument Kaydı + Otomatik Dava Durum Güncellemesi ---
+    belge_turu_label = _get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
+    clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
+
+    # Belgeyi kaydet
+    doc_id = _save_case_document(
+        case_id=linked_case_id,
+        original_filename=file.filename,
+        stored_filename=new_filename,
+        belge_turu_kodu=belge_turu_kodu,
+        belge_turu_adi=belge_turu_label,
+        ai_summary=ai_ozet,
+        muvekkil_adi=clean_muvekkil,
+        avukat_kodu=avukat_kodu,
+        esas_no=esas_no,
+        is_test_mode=is_test_mode,
+        uploaded_by=current_user_name
+    )
+    results["case_document_id"] = doc_id
+    results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
+
+    # Otomatik dava durum güncellemesi (sadece gerçek bir davaya bağlıysa)
+    if linked_case_id and not is_test_mode:
+        if belge_turu_kodu:
+            status_updated = _auto_update_case_status(linked_case_id, belge_turu_kodu, current_user_name)
+            results["auto_status_update"] = status_updated
+        else:
+            results["auto_status_update"] = False
+            
+        # --- FAZ 1.5: EKSİK VERİ TAMAMLAMA ---
+        enriched_data = _auto_enrich_case_data(linked_case_id, avukat_kodu, karsi_taraf, current_user_name)
+        results["auto_enrichment"] = enriched_data
+    else:
+        results["auto_status_update"] = False
+        results["auto_enrichment"] = {}
 
     # TOPLAM SÜRE ÖZET LOGU
     total_time = perf_time.perf_counter() - confirm_start
@@ -1396,6 +2002,7 @@ async def confirm_process(
 # --- END BATCH EMAIL ---
 
 if __name__ == "__main__":
+    PORT = int(os.getenv("PORT", 8001)) # Default to 8001
     try:
         msg = f"Starting API on port {PORT}"
         logging.info(msg)

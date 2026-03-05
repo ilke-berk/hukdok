@@ -32,15 +32,15 @@ const Login = () => {
             await instance.loginRedirect(loginRequest);
             // Note: After redirect, user will return to this page
             // and handleRedirectPromise in App.tsx will process the login
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("❌ Login hatası:", error);
-            console.error("📄 Hata detayları:", {
-                message: error.message,
-                errorCode: error.errorCode,
-                errorMessage: error.errorMessage,
-                subError: error.subError,
-                correlationId: error.correlationId
-            });
+            if (error instanceof Error) {
+                console.error("📄 Hata detayları:", {
+                    message: error.message,
+                    // If MSAL throws a specific error type we can check, or just cast as any for the console log
+                    ...(error as object)
+                });
+            }
 
             setIsLoggingIn(false);
 

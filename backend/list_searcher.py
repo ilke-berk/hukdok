@@ -12,54 +12,39 @@ class ListSearcher:
     Loads normalized client list and searches in text.
     """
     
-    def __init__(self, normalized_file: str = "data/normalized_client_list.json"):
+    def __init__(self):
         self.keyword_processor = KeywordProcessor(case_sensitive=True)
-        self.client_map = {} # normalized_name -> enhanced structure or list (backward compatible)
-        
-        import sys
-        if getattr(sys, 'frozen', False):
-            base_dir = Path(sys.executable).parent
-        else:
-            base_dir = Path(__file__).resolve().parent
-            
-        # Check AppData First
-        # Fix: normalized_file comes as "data/..." so we take .name to get just filename
-        app_data_path = Path.home() / "AppData" / "Local" / "HukuDok" / "data" / Path(normalized_file).name
-        bundled_path = base_dir / normalized_file
-        
-        if app_data_path.exists():
-            self.normalized_path = app_data_path
-            logger.info(f"Using AppData client list: {self.normalized_path}")
-        else:
-            self.normalized_path = bundled_path
-            logger.info(f"Using Bundled client list: {self.normalized_path}")
-        
+        self.client_map = {} 
         self._load_data()
         
     def _load_data(self):
-        """Loads data from JSON and builds the keyword processor"""
-        if not self.normalized_path.exists():
-            logger.error(f"❌ Normalized file not found: {self.normalized_path}")
-            return
-            
+        """Loads data from Database and builds the keyword processor"""
         try:
-            with open(self.normalized_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            self.client_map = data.get("clients", {})
+            from database import get_normalized_clients
+            normalized_map = get_normalized_clients()
+
+            self.client_map = normalized_map
             
+            # Flash text processor'u sıfırla ve yeniden yüKle
+            from flashtext import KeywordProcessor
+            self.keyword_processor = KeywordProcessor(case_sensitive=True)
+
             count = 0
-            for normalized_name, value in self.client_map.items():
+            for normalized_name in self.client_map:
                 if normalized_name and len(normalized_name) > 2:
-                    # We map the normalized name to itself in FlashText
-                    # This allows us to look up the 'originals' or metadata later
                     self.keyword_processor.add_keyword(normalized_name, normalized_name)
                     count += 1
-                    
-            logger.info(f"✅ Loaded {count} keywords into FlashText processor")
-            
+
+            logger.info(f"✅ Loaded {count} clients into FlashText processor from DB")
+
         except Exception as e:
-            logger.error(f"❌ Error loading client list: {e}")
+            logger.error(f"❌ Error loading client list from DB: {e}")
+
+    def reload(self):
+        """Veri tabanından müvekkil listesini yeniden yükler. (Yeni müvekkil eklenince çağrılır)"""
+        logger.info("🔄 ListSearcher: Yenileniyor...")
+        self._load_data()
+        logger.info(f"✅ ListSearcher: {len(self.client_map)} müvekkil yülendi.")
             
     def search(self, text: str) -> List[str]:
         """
@@ -91,21 +76,19 @@ class ListSearcher:
         # Deduplicate results
         return list(set(found_keywords))
         
-    def get_original_entries(self, normalized_name: str) -> List[str]:
+    def get_original_entries(self, normalized_name: str) -> list:
         """
-        Returns the original SharePoint entries for a normalized name.
-        Supports both old format (list) and new format (dict with raw_variants).
+        Returns the original DB entries for a normalized name.
+        Handles list, dict, and legacy string formats.
         """
         value = self.client_map.get(normalized_name, [])
-        
-        # Handle new enhanced structure
         if isinstance(value, dict):
             return value.get("raw_variants", [])
-        # Handle old format (backward compatibility)
         elif isinstance(value, list):
             return value
-        else:
-            return []
+        elif isinstance(value, str):  # Legacy / Eski format
+            return [value]
+        return []
     
     def get_metadata(self, normalized_name: str) -> Dict[str, Any]:
         """
@@ -127,7 +110,6 @@ class ListSearcher:
         else:
             return {"raw_variants": [], "count": 0, "source_ids": []}
 
-# Singleton instance
 _searcher_instance = None
 
 def get_list_searcher():
@@ -135,6 +117,12 @@ def get_list_searcher():
     if _searcher_instance is None:
         _searcher_instance = ListSearcher()
     return _searcher_instance
+
+def yenile_list_searcher():
+    """Liste yenileme — yeni müvekkil eklenince veya /refresh endpoint'inden çağrılır."""
+    searcher = get_list_searcher()
+    searcher.reload()
+    logger.info("✅ ListSearcher yenilendi.")
 
 if __name__ == "__main__":
     # Test

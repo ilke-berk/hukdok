@@ -23,7 +23,7 @@ def get_system_instruction(
     
     # Default: if missing_fields is None, assume all fields need extraction (legacy mode)
     if missing_fields is None:
-        missing_fields = ["tarih", "esas_no", "avukat_kodu", "muvekkil"]
+        missing_fields = ["tarih", "esas_no", "muvekkil", "court"]
     
     # 1. Common Parts
     today_str = datetime.now().strftime("%d.%m.%Y")
@@ -62,6 +62,8 @@ def get_system_instruction(
             found_items.append(f"Avukat: {pre_extracted['avukat_kodu']}")
         if pre_extracted.get("muvekkil_candidates"):
             found_items.append(f"Müvekkil Adayları: {', '.join(pre_extracted['muvekkil_candidates'])}")
+        if pre_extracted.get("court"):
+            found_items.append(f"Mahkeme: {pre_extracted['court']}")
         
         if found_items:
             pre_context = f"""
@@ -83,12 +85,13 @@ def get_system_instruction(
        - Karar numarasını YAZMA, sadece Esas numarası.
        - Eğer yoksa: null""")
     
-    if "avukat_kodu" in missing_fields:
-        task_items.append(f"""
-    ⚖️ AVUKAT KODU: Aşağıdaki listeden belgede geçen avukatı bul:
-{lawyer_list_str}
-       - Sadece listede olan avukatların KODU'nu yaz (örn: "AGH")
-       - Listede yoksa: null""")
+
+    if "court" in missing_fields:
+        task_items.append("""
+    🏛️ MAHKEME ADI: Bu belgeyi çıkaran (karar veren) mahkemenin TAM adını bul.
+       - Karar başlığındaki adı kullan (örn: "Ankara Bölge İdare Mahkemesi 10. İdari Dava Dairesi")
+       - Belgede atıf yapılan alt/üst mahkemeleri değil, bu kararın SAHİBİ olan mahkemeyi yaz.
+       - Bulamazsan: null""")
     
     if "muvekkil" in missing_fields:
         if mode == "VERIFICATION":
@@ -132,7 +135,7 @@ def get_system_instruction(
     1. Belgenin detaylı özetini yaz
     2. Belgedeki isimleri listele (avukatlar HARİÇ)
     
-    DİĞER ALANLARI BOŞ BIRAK (tarih, esas_no, avukat_kodu, muvekkil_adi = null)
+    DİĞER ALANLARI BOŞ BIRAK (tarih, esas_no, muvekkil_adi = null)
     Onlar zaten sistemde var."""
     else:
         main_task = f"""
@@ -157,8 +160,8 @@ def get_system_instruction(
       "muvekkil_adi": "String | null",
       "muvekkiller": [],
       "belgede_gecen_isimler": [],
-      "avukat_kodu": "String | null",
       "esas_no": "String | null",
+      "court": "String | null",
       "durum": "G",
       "ozet": "String"
     }}

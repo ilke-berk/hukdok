@@ -10,12 +10,14 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
 import Index from "./pages/Index";
+import Home from "./pages/Home";
 import Login from "./pages/Login";
 import AdminPage from "./pages/AdminPage";
 import NewCase from "./pages/NewCase";
 import NewClient from "./pages/NewClient";
 import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
+import CaseDetails from "./pages/CaseDetails";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
@@ -34,6 +36,14 @@ const AppContent = () => {
         {/* Protected Routes */}
         <Route
           path="/"
+          element={
+            <ProtectedRoute>
+              <Home />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload"
           element={
             <ProtectedRoute>
               <Index />
@@ -62,6 +72,15 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               <ClientList />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/cases/:id"
+          element={
+            <ProtectedRoute>
+              <CaseDetails />
             </ProtectedRoute>
           }
         />
@@ -127,15 +146,15 @@ const App = () => {
             console.log("✅ Mevcut hesap kullanılıyor:", accounts[0].username);
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("❌ MSAL hatası:", error);
-        console.error("📄 Hata detayları:", {
-          message: error.message,
-          errorCode: error.errorCode,
-          errorMessage: error.errorMessage,
-          subError: error.subError,
-          stack: error.stack
-        });
+        if (error instanceof Error) {
+          console.error("📄 Hata detayları:", {
+            message: error.message,
+            stack: error.stack,
+            errorObj: error
+          });
+        }
 
         // Show user-friendly error message
         import("sonner").then(({ toast }) => {

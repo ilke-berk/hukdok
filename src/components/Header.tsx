@@ -2,16 +2,13 @@
 import { ThemeToggle } from "@/components/theme-toggle";
 import HukdokLogo from "./HukdokLogo";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, LogOut, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import { apiClient } from "@/lib/api";
+import { LogOut, ShieldCheck } from "lucide-react";
+
 import { useMsal } from "@azure/msal-react";
 
 import { useNavigate, useLocation } from "react-router-dom";
 
 export const Header = () => {
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const { instance, accounts } = useMsal();
   const navigate = useNavigate();
   const location = useLocation();
@@ -37,43 +34,7 @@ export const Header = () => {
     }
   };
 
-  const handleRefresh = async () => {
-    if (isRefreshing) return;
 
-    setIsRefreshing(true);
-    toast.info("SharePoint'ten veriler çekiliyor...");
-
-    try {
-      const response = await apiClient.fetch("/api/refresh", {
-        method: "POST",
-      });
-
-      if (response.status === 429) {
-        toast.error("Çok hızlı! Lütfen 1 dakika bekleyin.");
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error("Yenileme başarısız");
-      }
-
-      const data = await response.json();
-
-      // Başarılı - sayfayı yenile (frontend config'leri tekrar çeksin)
-      toast.success(`${data.message} Sayfa yenileniyor...`);
-
-      // Kısa gecikme ile sayfayı yenile
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-
-    } catch (error) {
-      console.error("Refresh error:", error);
-      toast.error("Yenileme sırasında hata oluştu");
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
 
   return (
     <header className="glass-header text-primary-foreground py-8 px-6 relative">
@@ -85,6 +46,14 @@ export const Header = () => {
           className={`text-primary-foreground hover:bg-white/10 gap-2 ${location.pathname === "/" ? "bg-white/10" : ""}`}
         >
           Anasayfa
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/upload")}
+          className={`text-primary-foreground hover:bg-white/10 gap-2 ${location.pathname === "/upload" ? "bg-white/10" : ""}`}
+        >
+          Belge Yükleme
         </Button>
         <Button
           variant="ghost"
@@ -119,16 +88,7 @@ export const Header = () => {
 
         <div className="h-4 w-px bg-white/20 mx-1" />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="text-primary-foreground hover:bg-white/10"
-          title="SharePoint'ten Listeleri Yenile"
-        >
-          <RefreshCw className={`h-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
-        </Button>
+
         <Button
           variant="ghost"
           size="sm"

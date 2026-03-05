@@ -27,7 +27,7 @@ RUN chmod +x docker-entrypoint.sh
 RUN mkdir -p /app/data
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8001
 
 # Use entrypoint script
 ENTRYPOINT ["./docker-entrypoint.sh"]

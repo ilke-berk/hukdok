@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { UserPlus, Search, User, Phone, Mail, MapPin, Loader2, FileText, Users } from "lucide-react";
+import { UserPlus, Search, User, Phone, Mail, MapPin, Loader2, FileText, Users, Gavel } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useClients } from "@/hooks/useClients";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ interface Client {
     tc_no?: string;
     email?: string;
     phone?: string;
+    mobile_phone?: string;
     address?: string;
     notes?: string;
     contact_type?: string; // "Client" or "Other"
@@ -29,11 +30,7 @@ const ClientList = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [activeTab, setActiveTab] = useState("Client"); // Default to Client tab
 
-    useEffect(() => {
-        fetchClients();
-    }, []);
-
-    const fetchClients = async () => {
+    const fetchClients = useCallback(async () => {
         try {
             setIsLoading(true);
             const data = await getClients();
@@ -48,10 +45,27 @@ const ClientList = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [getClients]);
+
+    useEffect(() => {
+        fetchClients();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Turkish-aware string normalization to handle İ/i correctly
     const normalizeTurkish = (str: string) => str.toLocaleLowerCase('tr-TR');
+
+    const toTitleCase = (str: string): string => {
+        if (!str) return "";
+        return str
+            .split(/(\s+|[,;]+)/)
+            .map(part => {
+                if (/^(\s+|[,;]+)$/.test(part)) return part;
+                if (part.length === 0) return part;
+                return part.charAt(0).toLocaleUpperCase('tr-TR') + part.slice(1).toLocaleLowerCase('tr-TR');
+            })
+            .join("");
+    };
 
     const filteredClients = clients.filter(client => {
         // Filter by Tab (Client vs Other)
@@ -149,7 +163,7 @@ const ClientList = () => {
                                         <TableRow key={client.id} className="group cursor-pointer hover:bg-muted/50">
                                             <TableCell className="font-medium text-lg">
                                                 <div className="flex flex-col">
-                                                    <span>{client.name}</span>
+                                                    <span>{toTitleCase(client.name)}</span>
                                                     {client.tc_no && (
                                                         <span className="text-sm text-muted-foreground font-mono">{client.tc_no}</span>
                                                     )}
@@ -159,7 +173,12 @@ const ClientList = () => {
                                                 <div className="flex flex-col gap-1 text-sm">
                                                     {client.phone && (
                                                         <div className="flex items-center gap-2 text-muted-foreground">
-                                                            <Phone className="w-3 h-3" /> {client.phone}
+                                                            <Phone className="w-3 h-3" /> <span className="text-[10px] uppercase opacity-60">Sabit:</span> {client.phone}
+                                                        </div>
+                                                    )}
+                                                    {client.mobile_phone && (
+                                                        <div className="flex items-center gap-2 text-muted-foreground">
+                                                            <Phone className="w-3 h-3" /> <span className="text-[10px] uppercase opacity-60">Cep:</span> {client.mobile_phone}
                                                         </div>
                                                     )}
                                                     {client.email && (
@@ -182,17 +201,31 @@ const ClientList = () => {
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="hover:bg-primary/10 hover:text-primary"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        navigate("/new-client", { state: { client } });
-                                                    }}
-                                                >
-                                                    Düzenle
-                                                </Button>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="hover:bg-primary/10 hover:text-primary gap-2"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate("/", { state: { searchQuery: client.name } });
+                                                        }}
+                                                    >
+                                                        <Gavel className="w-4 h-4" />
+                                                        Davaları Gör
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="hover:bg-primary/10 hover:text-primary"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate("/new-client", { state: { client } });
+                                                        }}
+                                                    >
+                                                        Düzenle
+                                                    </Button>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))}
