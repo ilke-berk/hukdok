@@ -41,11 +41,65 @@ const TURKEY_CITIES = [
     "Niğde", "Ordu", "Rize", "Sakarya", "Samsun", "Siirt", "Sinop", "Sivas", "Tekirdağ", "Tokat",
     "Trabzon", "Tunceli", "Şanlıurfa", "Uşak", "Van", "Yozgat", "Zonguldak", "Aksaray", "Bayburt", "Karaman",
     "Kırıkkale", "Batman", "Şırnak", "Bartın", "Ardahan", "Iğdır", "Yalova", "Karabük", "Kilis", "Osmaniye",
-    "Düzce"
+    "Düzce", "Delft", "Girne", "London", "Salmiya"
 ].sort((a, b) => a.localeCompare(b, 'tr')); // Alfabetik sıra için sırala
 
+const SPECIALTIES = [
+    "Acil Tıp",
+    "Aile Hekimliği",
+    "Anesteziyoloji ve Reanimasyon",
+    "Ağız ve Diş Sağlığı",
+    "Beyin ve Sinir Cerrahisi (Nöroşirurji)",
+    "Deri ve Zührevi Hastalıkları",
+    "Diş Tabibi",
+    "Enfeksiyon Hastalıkları ve Klinik Mikrobiyoloji",
+    "Fiziksel Tıp ve Rehabilitasyon",
+    "Gastroenteroloji",
+    "Genel Cerrahisi",
+    "Göz Hastalıkları",
+    "Göğüs Cerrahisi",
+    "Göğüs Hastalıkları",
+    "Hematoloji",
+    "Kadın Hastalıkları ve Doğum",
+    "Kalp ve Damar Cerrahisi",
+    "Kardiyoloji",
+    "Kulak Burun Boğaz Hastalıkları",
+    "Nefroloji",
+    "Nöroloji",
+    "Ortodonti",
+    "Ortopedi ve Travmatoloji",
+    "Perinatoloji",
+    "Plastik Rekonstrüktif ve Estetik Cerrahi",
+    "Pratisyen Tabip",
+    "Radyasyon Onkolojisi",
+    "Radyoloji (Radyodiyagnostik)",
+    "Ruh Sağlığı ve Hastalıkları",
+    "Spor Hekimliği",
+    "Sualtı Hekimliği ve Hiperbarik Tip",
+    "Tıbbi Biyokimya",
+    "Tıbbi Patoloji",
+    "Yoğun Bakım",
+    "Çocuk Acil",
+    "Çocuk Cerrahisi",
+    "Çocuk Endokrinolojisi",
+    "Çocuk Enfeksiyon Hastalıkları",
+    "Çocuk Hematolojisi ve Onkolojisi",
+    "Çocuk Nörolojisi",
+    "Çocuk Sağlığı ve Hastalıkları",
+    "Çocuk Ürolojisi",
+    "Üroloji",
+    "İç Hastalıkları",
+    "Adli Tıp"
+].sort((a, b) => a.localeCompare(b, 'tr'));
+
+const findMatch = (options: string[], value?: string) => {
+    if (!value) return "";
+    const found = options.find(o => o.toLocaleLowerCase('tr-TR') === value.toLocaleLowerCase('tr-TR'));
+    return found || value;
+};
+
 const NewClient = () => {
-    const categories = ["Doktor", "Özel Hastane", "Hasta", "Sigorta", "Diğer"];
+    const categories = ["Doktor", "Özel Hastane", "Kurum", "Bireysel", "Diğer"];
     const { saveClient, updateClient, deleteClient, getClients, isLoading } = useClients();
     const navigate = useNavigate();
     const location = useLocation();
@@ -94,15 +148,15 @@ const NewClient = () => {
                             phone: full.phone || "",
                             mobile_phone: full.mobile_phone || "",
                             email: full.email || "",
-                            address: full.address || "",
+                            address: findMatch(TURKEY_CITIES, full.address),
                             notes: full.notes || "",
                             client_type: full.client_type || "Individual",
-                            category: full.category || "",
+                            category: findMatch(categories, full.category),
                             cari_kod: full.cari_kod || "",
                             contact_type: full.contact_type || "Client",
                             birth_year: full.birth_year,
-                            gender: full.gender || "Belirtilmemiş",
-                            specialty: full.specialty || ""
+                            gender: findMatch(["Belirtilmemiş", "Erkek", "Kadın"], full.gender) || "Belirtilmemiş",
+                            specialty: findMatch(SPECIALTIES, full.specialty)
                         });
                     } else {
                         // Fallback: sadece gelen veriyi kullan
@@ -117,15 +171,15 @@ const NewClient = () => {
                     phone: editModeClient.phone || "",
                     mobile_phone: editModeClient.mobile_phone || "",
                     email: editModeClient.email || "",
-                    address: editModeClient.address || "",
+                    address: findMatch(TURKEY_CITIES, editModeClient.address),
                     notes: editModeClient.notes || "",
                     client_type: editModeClient.client_type || "Individual",
-                    category: editModeClient.category || "",
+                    category: findMatch(categories, editModeClient.category),
                     cari_kod: editModeClient.cari_kod || "",
                     contact_type: editModeClient.contact_type || "Client",
                     birth_year: editModeClient.birth_year,
-                    gender: editModeClient.gender || "Belirtilmemiş",
-                    specialty: editModeClient.specialty || ""
+                    gender: findMatch(["Belirtilmemiş", "Erkek", "Kadın"], editModeClient.gender) || "Belirtilmemiş",
+                    specialty: findMatch(SPECIALTIES, editModeClient.specialty)
                 });
             }
         }
@@ -371,6 +425,21 @@ const NewClient = () => {
 
                                         <div className="space-y-2">
                                             <Label className="flex items-center gap-2">
+                                                <Hash className="w-4 h-4 text-muted-foreground" />
+                                                Cari Kod (6 Hane)
+                                            </Label>
+                                            <Input
+                                                placeholder="Örn: 001234"
+                                                value={formData.cari_kod}
+                                                maxLength={10}
+                                                onChange={(e) => setFormData({ ...formData, cari_kod: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">Micro/Muhasebe cari kodunu buraya girebilirsiniz.</p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="flex items-center gap-2">
                                                 <Calendar className="w-4 h-4 text-muted-foreground" />
                                                 Doğum Yılı
                                             </Label>
@@ -527,16 +596,10 @@ const NewClient = () => {
                                                 <SelectTrigger className="w-full bg-transparent border-border/60">
                                                     <SelectValue placeholder="Uzmanlık seçiniz..." />
                                                 </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="Pratisyen">Pratisyen</SelectItem>
-                                                    <SelectItem value="Kardiyoloji">Kardiyoloji</SelectItem>
-                                                    <SelectItem value="Dahiliye">Dahiliye</SelectItem>
-                                                    <SelectItem value="Ortopedi">Ortopedi</SelectItem>
-                                                    <SelectItem value="Genel Cerrahi">Genel Cerrahi</SelectItem>
-                                                    <SelectItem value="Kadın Doğum">Kadın Doğum</SelectItem>
-                                                    <SelectItem value="Göz Hastalıkları">Göz Hastalıkları</SelectItem>
-                                                    <SelectItem value="Diş Hekimi">Diş Hekimi</SelectItem>
-                                                    <SelectItem value="Diğer">Diğer</SelectItem>
+                                                <SelectContent className="max-h-[300px]">
+                                                    {SPECIALTIES.map((s) => (
+                                                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                    ))}
                                                 </SelectContent>
                                             </Select>
                                         </div>

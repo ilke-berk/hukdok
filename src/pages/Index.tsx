@@ -32,6 +32,8 @@ interface SuggestedCase {
   karsi_taraf?: string;
   counter_parties?: string[];
   client_parties?: string[];
+  parties?: { name?: string; role?: string; party_type?: string; client_id?: number; birth_year?: number; gender?: string }[];
+  matched_doc_names?: string[];
 }
 
 interface AnalysisData {
@@ -78,7 +80,7 @@ declare global {
 }
 
 const Index = () => {
-  const { getCases } = useCases();
+  const { getCases, searchCases } = useCases();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -102,7 +104,9 @@ const Index = () => {
 
   // --- FAZ 1: Dava Bağlantısı State ---
   // Using explicit generic typing. Will define a dedicated CaseRead interface later in Faz 4
-  const [allCases, setAllCases] = useState<IndexCaseData[]>([]);
+  const [allCases, setAllCases] = useState<IndexCaseData[]>([]); // Sadece son 50 davayı tutar
+  const [searchResults, setSearchResults] = useState<IndexCaseData[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [caseSearch, setCaseSearch] = useState("");
   const [linkedCase, setLinkedCase] = useState<IndexCaseData | null>(null);
   const [isTestMode, setIsTestMode] = useState(false);
@@ -137,17 +141,25 @@ const Index = () => {
     loadOutputDir();
   }, []);
 
+  // Server-side debounced search for case linking
+  useEffect(() => {
+    if (!caseSearch || caseSearch.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setIsSearching(true);
+      const data = await searchCases(caseSearch);
+      setSearchResults(data || []);
+      setIsSearching(false);
+    }, 400);
+
+    return () => clearTimeout(timeoutId);
+  }, [caseSearch, searchCases]);
+
   // Arama filtresi
-  const filteredCases = allCases.filter(c => {
-    if (!caseSearch.trim()) return true;
-    const q = caseSearch.toLocaleLowerCase('tr-TR');
-    return (
-      (c.esas_no || "").toLocaleLowerCase('tr-TR').includes(q) ||
-      (c.tracking_no || "").toLocaleLowerCase('tr-TR').includes(q) ||
-      (c.court || "").toLocaleLowerCase('tr-TR').includes(q) ||
-      (c.responsible_lawyer_name || "").toLocaleLowerCase('tr-TR').includes(q)
-    );
-  }).slice(0, 8); // Max 8 sonuç
+  const filteredCases = caseSearch.trim().length >= 2 ? searchResults.slice(0, 8) : allCases.slice(0, 8);
 
   const handleFileSelect = (files: File | File[]) => {
     // Convert to array for consistent handling
@@ -481,31 +493,26 @@ const Index = () => {
   // Bütün tiklere basıldıktan sonra otomatik dava arama
   useEffect(() => {
     if (isValidated && finalData && !isTestMode) {
-      const normalize = (str?: string) => (str || "").toLocaleLowerCase('tr-TR').replace(/[\s\-_/]/g, "");
+      if (linkedCase) return; // Zaten seçildiyse dokunma
 
-      const targetEsas = normalize(finalData.esas_no);
-      if (!targetEsas) return;
+      const suggested = finalData.suggested_case;
+      if (suggested && suggested.confidence === "HIGH") {
+        const newCase = {
+          id: suggested.case_id,
+          tracking_no: suggested.tracking_no,
+          esas_no: suggested.esas_no,
+          court: suggested.court,
+          responsible_lawyer_name: suggested.responsible_lawyer_name,
+          status: suggested.status,
+          karsi_taraf: suggested.karsi_taraf || "",
+          parties: suggested.parties || []
+        } as unknown as IndexCaseData;
 
-      // Eğer hali hazırda bir dava seçiliyse ve seçili davanın esas numarasıyla 
-      // kullanıcının onayladığı esas numarası uyuşuyorsa dokunma.
-      // Ama uyuşmuyorsa, yeni girilen esas no'ya göre arama yap.
-      if (linkedCase) {
-        const linkedEsas = normalize(linkedCase.esas_no) || normalize(linkedCase.tracking_no);
-        if (linkedEsas === targetEsas) return;
-      }
-
-      const exactMatch = allCases.find((c) => {
-        const cEsas = normalize(c.esas_no);
-        const cTrack = normalize(c.tracking_no);
-        return (cEsas && cEsas === targetEsas) || (cTrack && cTrack === targetEsas);
-      });
-
-      if (exactMatch && exactMatch.id !== linkedCase?.id) {
-        setLinkedCase(exactMatch);
-        toast.success(`🎯 ${exactMatch.esas_no || exactMatch.tracking_no} numaralı dava bulundu ve otomatik eklendi.`, { duration: 5000 });
+        setLinkedCase(newCase);
+        toast.success(`🎯 Eşleşen isimler üzerinden dava bulundu ve otomatik eklendi: ${suggested.esas_no || suggested.tracking_no}`, { duration: 5000 });
       }
     }
-  }, [isValidated, finalData, isTestMode, allCases, linkedCase]);
+  }, [isValidated, finalData, isTestMode, linkedCase]);
 
 
 
@@ -889,6 +896,33 @@ const Index = () => {
                               Skor: {analysisData.suggested_case.score}
                             </Badge>
                           </div>
+
+                          {/* İSİM EŞLEŞME GÖRSELLEŞTİRMESİ */}
+                          <div className="bg-background/40 rounded-lg p-2.5 border border-primary/20 space-y-2">
+                            <label className="text-[9px] font-bold uppercase tracking-wider text-primary/70 block">
+                              BELGEDEKİ İSİMLER VE EŞLEŞME DURUMU
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {Array.from(new Set([
+                                analysisData.muvekkil_adi,
+                                ...(analysisData.muvekkiller || []),
+                                ...(analysisData.belgede_gecen_isimler || [])
+                              ].filter(Boolean))).map((name, idx) => {
+                                const isMatched = analysisData.suggested_case?.matched_doc_names?.includes(name);
+                                return (
+                                  <Badge
+                                    key={idx}
+                                    variant={isMatched ? "default" : "outline"}
+                                    className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-emerald-500/20 text-emerald-600 border-emerald-500/30' : 'opacity-50'}`}
+                                  >
+                                    {isMatched ? <CheckCircle2 className="w-3 h-3" /> : null}
+                                    {name}
+                                  </Badge>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                           <p className="text-xs text-muted-foreground leading-relaxed">
                             Bu belgenin <strong>{analysisData.suggested_case.esas_no}</strong> numaralı dava dosyasına ait olduğu tespit edildi. Doğruluyor musunuz?
                           </p>
@@ -908,7 +942,6 @@ const Index = () => {
                                   responsible_lawyer_name: analysisData.suggested_case.responsible_lawyer_name,
                                   status: analysisData.suggested_case.status,
                                   karsi_taraf: analysisData.suggested_case.karsi_taraf || "",
-                                  // @ts-expect-error We don't have exactly mapped party type here from suggest
                                   parties: analysisData.suggested_case.parties || []
                                 });
                               }
@@ -962,8 +995,8 @@ const Index = () => {
                       handleConfirmClick();
                     }
                   }}
-                  disabled={isProcessing || !isValidated}
-                  className={`w-full h-16 text-xl font-bold shadow-lg transition-all duration-300 hover:scale-[1.02] ${isValidated
+                  disabled={isProcessing || !isValidated || !outputDirHandle}
+                  className={`w-full h-16 text-xl font-bold shadow-lg transition-all duration-300 hover:scale-[1.02] ${(isValidated && outputDirHandle)
                     ? "bg-green-600 hover:bg-green-700"
                     : "bg-gray-400 cursor-not-allowed opacity-50"
                     }`}
@@ -971,7 +1004,9 @@ const Index = () => {
                   {isProcessing ? (
                     <><Loader2 className="w-6 h-6 mr-2 animate-spin" />İşleniyor (SharePoint & Kayıt)...</>
                   ) : (
-                    isValidated ? "✅ Onayla ve İşlemi Tamamla" : "⚠️ Lütfen Tüm Alanları Onaylayın"
+                    !outputDirHandle
+                      ? "⚠️ Çıktı Klasörü Seçiniz (Masaüstü)"
+                      : (isValidated ? "✅ Onayla ve İşlemi Tamamla" : "⚠️ Lütfen Tüm Alanları Onaylayın")
                   )}
                 </Button>
               </>

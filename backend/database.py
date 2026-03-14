@@ -146,7 +146,7 @@ def check_and_migrate_tables():
                         logger.info("Added mobile_phone to clients")
                     except Exception as e: logger.error(f"Migration error for clients.mobile_phone: {e}")
 
-            # 3. CASES MIGRATION (service_type)
+            # 3. CASES MIGRATION (service_type + new import fields)
             if "cases" in inspector.get_table_names():
                 columns = [col['name'] for col in inspector.get_columns("cases")]
                 if "service_type" not in columns:
@@ -155,6 +155,20 @@ def check_and_migrate_tables():
                         conn.commit()
                         logger.info("Added service_type to cases")
                     except Exception as e: logger.error(f"Migration error for cases.service_type: {e}")
+
+                # New fields for case import (Dava Açılış Excel)
+                new_case_columns = {
+                    "acceptance_date": "DATE",                    # İş Kabul Tarihi
+                    "bureau_type": "VARCHAR(100)",                # Büro Özel Türü
+                    "sub_type_extra": "VARCHAR(200)",             # Ek Alt Kırılım
+                }
+                for col_name, col_type in new_case_columns.items():
+                    if col_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE cases ADD COLUMN {col_name} {col_type}'))
+                            conn.commit()
+                            logger.info(f"Added {col_name} to cases")
+                        except Exception as e: logger.error(f"Migration error for cases.{col_name}: {e}")
 
             # 4. CASE_PARTIES MIGRATION (birth_year, gender)
             if "case_parties" in inspector.get_table_names():

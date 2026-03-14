@@ -149,6 +149,10 @@ class CasePartyCreate(BaseModel):
     birth_year: Optional[int] = None
     gender: Optional[str] = None
 
+class CaseLawyerCreate(BaseModel):
+    lawyer_id: Optional[int] = None
+    name: str
+
 class CaseCreate(BaseModel):
     tracking_no: str
     esas_no: Optional[str] = None
@@ -164,7 +168,37 @@ class CaseCreate(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: Optional[float] = 0
     manevi_tazminat: Optional[float] = 0
+    acceptance_date: Optional[str] = None
+    bureau_type: Optional[str] = None
+    sub_type_extra: Optional[str] = None
     parties: List[CasePartyCreate] = []
+    lawyers: List[CaseLawyerCreate] = []
+
+class CaseListRead(BaseModel):
+    id: int
+    tracking_no: str
+    esas_no: Optional[str] = None
+    merci_no: Optional[str] = None
+    status: str
+    service_type: Optional[str] = None
+    file_type: Optional[str] = None
+    sub_type: Optional[str] = None
+    subject: Optional[str] = None
+    court: Optional[str] = None
+    opening_date: Optional[str] = None
+    responsible_lawyer_name: Optional[str] = None
+    uyap_lawyer_name: Optional[str] = None
+    maddi_tazminat: float = 0
+    manevi_tazminat: float = 0
+    acceptance_date: Optional[str] = None
+    bureau_type: Optional[str] = None
+    sub_type_extra: Optional[str] = None
+    created_at: datetime
+    parties: List[CasePartyCreate] = []
+    lawyers: List[CaseLawyerCreate] = []
+    
+    model_config = ConfigDict(from_attributes=True)
+
 
 class CaseRead(BaseModel):
     id: int
@@ -182,8 +216,12 @@ class CaseRead(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: float = 0
     manevi_tazminat: float = 0
+    acceptance_date: Optional[str] = None
+    bureau_type: Optional[str] = None
+    sub_type_extra: Optional[str] = None
     created_at: datetime
     parties: List[CasePartyCreate] = []
+    lawyers: List[CaseLawyerCreate] = []
     history: List[Dict[str, Any]] = []
     documents: List[Dict[str, Any]] = []
     
@@ -914,7 +952,7 @@ from admin_manager import (
     add_doctype, delete_doctype,
     add_email_recipient, delete_email_recipient,
     add_case_subject, delete_case_subject,
-    reorder_list, add_client, add_case, get_case, get_cases, update_case, search_cases
+    reorder_list, add_client, add_case, get_case, get_cases, get_case_stats, update_case, search_cases
 )
 from database import check_and_migrate_tables
 
@@ -1188,30 +1226,33 @@ def api_add_case(case_data: CaseCreate, user: dict = Depends(get_current_user)):
 
 @app.get("/api/incomplete-tasks")
 def get_incomplete_tasks(user: dict = Depends(get_current_user)):
-    """Yarım kalan dava ve müvekkil kayıtlarını tespit eder."""
+    """Yarım kalan dava ve müvekkil kayıtlarını tespit eder (Optimize edilmiş)."""
     db = SessionLocal()
+    from sqlalchemy.orm import selectinload
     try:
         incomplete_cases = []
         incomplete_clients = []
 
-        # 1. Eksik Davalar
-        cases = db.query(models.Case).filter(models.Case.active == True).all()
+        # 1. Eksik Davalar - En son güncellenen 100 taneyi kontrol et (Limit koyarak hantallığı önle)
+        # selectinload parties N+1 sorununu önler
+        cases = db.query(models.Case).options(selectinload(models.Case.parties))\
+                  .filter(models.Case.active == True)\
+                  .order_by(models.Case.created_at.desc())\
+                  .limit(100).all()
+        
         for c in cases:
             missing = []
-            if not c.court:
-                missing.append("Mahkeme")
-            if not c.responsible_lawyer_name:
-                missing.append("Avukat")
-            if not c.subject:
-                missing.append("Konu")
+            if not c.court: missing.append("Mahkeme")
+            if not c.responsible_lawyer_name: missing.append("Avukat")
+            if not c.subject: missing.append("Konu")
 
             # CLIENT party olup client_id bağlı olmayan taraf var mı?
-            for p in c.parties:
-                if p.party_type == "CLIENT" and not p.client_id:
+            client_parties = [p for p in c.parties if p.party_type == "CLIENT"]
+            for p in client_parties:
+                if not p.client_id:
                     missing.append(f"Müvekkil bağlantısı ({p.name})")
 
             # Hiç CLIENT party yoksa
-            client_parties = [p for p in c.parties if p.party_type == "CLIENT"]
             if len(client_parties) == 0:
                 missing.append("Müvekkil yok")
 
@@ -1226,20 +1267,18 @@ def get_incomplete_tasks(user: dict = Depends(get_current_user)):
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                 })
 
-        # 2. Eksik Müvekkiller
-        clients = db.query(models.Client).filter(models.Client.active == True).all()
+        # 2. Eksik Müvekkiller - Sadece en son eklenenleri kontrol et
+        clients = db.query(models.Client).filter(models.Client.active == True)\
+                    .order_by(models.Client.updated_at.desc())\
+                    .limit(50).all()
+                    
         for cl in clients:
             missing = []
-            if not cl.phone:
-                missing.append("Telefon")
-            if not cl.email:
-                missing.append("E-posta")
-            if not cl.tc_no:
-                missing.append("TC No")
-            if not cl.address:
-                missing.append("Adres")
+            if not cl.phone and not cl.mobile_phone: missing.append("Telefon")
+            if not cl.email: missing.append("E-posta")
+            if not cl.tc_no: missing.append("TC No")
 
-            # En az 2 alan eksikse "yarım" say (tek alan eksik normalde tolere edilir)
+            # En az 2 alan eksikse "yarım" say
             if len(missing) >= 2:
                 incomplete_clients.append({
                     "id": cl.id,
@@ -1250,8 +1289,8 @@ def get_incomplete_tasks(user: dict = Depends(get_current_user)):
                 })
 
         return {
-            "incomplete_cases": incomplete_cases,
-            "incomplete_clients": incomplete_clients[:20],  # En fazla 20 müvekkil göster
+            "incomplete_cases": incomplete_cases[:30],  # İlk 30'u dön
+            "incomplete_clients": incomplete_clients[:20],
             "total_incomplete_cases": len(incomplete_cases),
             "total_incomplete_clients": len(incomplete_clients),
         }
@@ -1261,20 +1300,46 @@ def get_incomplete_tasks(user: dict = Depends(get_current_user)):
     finally:
         db.close()
 
-@app.get("/api/cases", response_model=List[CaseRead])
-def get_cases_api(user: dict = Depends(get_current_user)):
-    """Returns list of cases."""
-    return get_cases()
+@app.get("/api/cases/stats")
+def api_get_case_stats(user: dict = Depends(get_current_user)):
+    """Returns dashboard statistics correctly without loading all cases."""
+    return get_case_stats()
+
+@app.get("/api/cases", response_model=List[CaseListRead])
+def get_cases_api(
+    limit: int = 50, 
+    offset: int = 0, 
+    status: Optional[str] = None, 
+    lawyer: Optional[str] = None, 
+    q: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    """Returns list of cases with advanced filtering and pagination."""
+    return get_cases(limit=limit, offset=offset, status=status, lawyer=lawyer, q=q)
 
 @app.get("/api/cases/client-sequence")
 def get_client_case_sequence(client_name: str, user: dict = Depends(get_current_user)):
     db = SessionLocal()
     try:
-        from sqlalchemy import func
-        # Find how many distinct cases this client name is attached to as a CLIENT
+        from sqlalchemy import func, or_
+        if not client_name:
+            return {"sequence": 1}
+            
+        # Normalize: Strip "DR.", "DR", and common corporate suffixes for more robust matching
+        clean_name = client_name.strip().upper()
+        # Simple suffix stripping for doctors
+        for suffix in [" DR.", " DR"]:
+            if clean_name.endswith(suffix):
+                clean_name = clean_name[:-len(suffix)].strip()
+                break
+        
+        # We search for names starting with the base name (e.g. "ALP" matches "ALP DR." and "ALP")
+        # to ensure the sequence doesn't reset due to title variations.
+        query_pattern = f"{clean_name}%"
+        
         count = db.query(func.count(func.distinct(models.CaseParty.case_id)))\
                   .filter(models.CaseParty.party_type == "CLIENT")\
-                  .filter(models.CaseParty.name.ilike(client_name))\
+                  .filter(models.CaseParty.name.ilike(query_pattern))\
                   .scalar()
         
         return {"sequence": (count or 0) + 1}
@@ -1540,12 +1605,18 @@ async def analyze_file_endpoint(request: Request, file: UploadFile = File(...), 
                         t_match = time.perf_counter()
                         from case_matcher import find_matching_case
                         
+                        # Combine muvekkiller list AND primary muvekkil_adi for matching
+                        matching_muvekkiller = list(final_data.get("muvekkiller") or [])
+                        if final_data.get("muvekkil_adi"):
+                             matching_muvekkiller.append(final_data.get("muvekkil_adi"))
+
                         match_result = await asyncio.get_running_loop().run_in_executor(
                             None,
                             find_matching_case,
                             final_data.get("esas_no"),
-                            final_data.get("muvekkiller") or ([final_data.get("muvekkil_adi")] if final_data.get("muvekkil_adi") else []),
+                            list(set(matching_muvekkiller)),
                             final_data.get("avukat_kodu"),
+                            final_data.get("belgede_gecen_isimler", [])
                         )
                         
                         if match_result:

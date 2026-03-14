@@ -46,22 +46,44 @@ interface TrackingParams {
 }
 
 /**
- * İsmi 14 karakterlik, ASCII uyumlu bir koda dönüştürür.
- * Örn: "Abdülhamit Soysal" -> "ABDULHAMITSOYS"
+ * İsmi 10 karakterlik, ASCII uyumlu bir koda dönüştürür.
+ * Örn: "Abdülhamit Soysal" -> "A_SOYSAL.."
  */
 const slugifyName = (name: string): string => {
-    if (!name) return "XXXXXXXXXXXXXX";
-    return name
+    if (!name) return "XXXXXXXXXX";
+
+    // Normalize Turkish characters and convert to uppercase
+    const clean = name
         .trim()
         .replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ü/g, 'u')
         .replace(/ş/g, 's').replace(/ö/g, 'o').replace(/ç/g, 'c')
         .replace(/İ/g, 'I').replace(/Ğ/g, 'G').replace(/Ü/g, 'U')
         .replace(/Ş/g, 'S').replace(/Ö/g, 'O').replace(/Ç/g, 'C')
         .toLocaleUpperCase('tr-TR')
-        .replace(/[^A-Z\s]/g, '')
-        .replace(/\s+/g, '_')
-        .padEnd(14, '.')
-        .slice(0, 14);
+        .replace(/[^A-Z\s]/g, ''); // Keep letters and spaces only
+
+    const parts = clean.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 0) return "XXXXXXXXXX";
+
+    // Single name case
+    if (parts.length === 1) {
+        return parts[0].padEnd(10, '.').slice(0, 10);
+    }
+
+    // Split into first name(s) and surname
+    const surname = parts[parts.length - 1];
+    const firstNames = parts.slice(0, parts.length - 1);
+
+    // Take first letter of each first name
+    const initials = firstNames.map(part => part.charAt(0));
+
+    // Combine: I_B_SURNAME
+    const formatted = [...initials, surname].join('_');
+
+    return formatted
+        .padEnd(10, '.')
+        .slice(0, 10);
 };
 
 /**
@@ -84,7 +106,7 @@ export const generateTrackingNumber = (params?: TrackingParams): string => {
         }
     }
 
-    // 2. Blok: İsim Kısaltması (14 Karakter)
+    // 2. Blok: İsim Kısaltması (10 Karakter)
     const block2 = slugifyName(params?.clientName || "");
 
     // 3. Blok: Ofis No / Sıra No / Dava Sayısı (4 Hane)
@@ -104,6 +126,6 @@ export const generateTrackingNumber = (params?: TrackingParams): string => {
  */
 export const validateCaseNumber = (caseNumber: string): boolean => {
     if (!caseNumber) return false;
-    // Bloklar arası noktalarla birlikte format kontrolü (İsim: 14, Ofis No: 4, Diğer sayısal bloklar: 5 hane/harf)
-    return /^[A-Z0-9]{2}\.[A-Z0-9_.]{14}\.[A-Z0-9]{4}\.[A-Z0-9]{5}\.[A-Z0-9]{5}$/.test(caseNumber);
+    // Bloklar arası noktalarla birlikte format kontrolü (İsim: 10, Ofis No: 4, Diğer sayısal bloklar: 5 hane/harf)
+    return /^[A-Z0-9]{2}\.[A-Z0-9_.]{10}\.[A-Z0-9]{4}\.[A-Z0-9]{5}\.[A-Z0-9]{5}$/.test(caseNumber);
 };

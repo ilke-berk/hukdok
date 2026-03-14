@@ -66,6 +66,19 @@ const ALT_TURLER: Record<string, string[]> = {
     "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
     "Savcılık": [],
 };
+
+const DAVA_TURU_ALT_KIRILIM = [
+    "ACİL TIP", "ANESTEZİYOLOJİ VE REANİMASYON", "AĞIZ DİŞ VE ÇENE CERRAHİSİ", "AİLE HEKİMLİĞİ", "BEYİN VE SİNİR CERRAHİSİ", "DERİ VE ZÜHREVİ HASTALIKLARI", "DİŞ TABİBİ", "ENDOKRİNOLOJİ", "ENFEKSİYON HASTALIKLARI", "FİZİKSEL TIP VE REHABİLİTASYON", "GASTROENTEROLOJİ", "GENEL CERRAHİ", "GÖZ HASTALIKLARI", "GÖĞÜS CERRAHİSİ", "GÖĞÜS HASTALIKLARI", "HASTA", "HASTANE ORGANİZASYONU", "HEMATOLOJİ", "HEMŞİRE", "JİNEKOLOJİK ONKOLOJİ CERRAHİSİ", "KADIN HASTALIKLARI VE DOĞUM", "KALP VE DAMAR CERRAHİSİ", "KARDİYOLOJİ", "KULAK BURUN BOĞAZ HASTALIKLARI", "NEFROLOJİ", "NEONATOLOJİ", "NÖROLOJİ", "ONKOLOJİ", "ORTODONTİ", "ORTOPEDİ VE TRAVMATOLOJİ", "PERİNATOLOJİ", "PLASTİK VE ESTETİK CERRAHİ", "PRATİSYEN TABİP", "PROTETİK DİŞ TEDAVİSİ", "RADYOLOJİ", "RUH SAĞLIĞI VE HASTALIKLARI", "TIBBİ BİYOKİMYA", "TIBBİ GENETİK", "TIBBİ ONKOLOJİ", "TIBBİ PATOLOJİ", "YOĞUN BAKIM", "ÇOCUK CERRAHİSİ", "ÇOCUK ENFEKSİYON HASTALIKLARI", "ÇOCUK HEMATOLOJİSİ VE ONKOLOJİSİ", "ÇOCUK KALP VE DAMAR CERRAHİSİ", "ÇOCUK NÖROLOJİSİ", "ÇOCUK SAĞLIĞI VE HASTALIKLARI", "ÜROLOJİ", "İÇ HASTALIKLARI"
+];
+
+const BURO_OZEL_TURU = [
+    "ALEYHE", "DR ÖZEL", "HASTANE ÖZEL MÜVEKKİL", "LEXİS", "RÜCU", "VEKALETLİ TAKİP", "VEKALETSİZ TAKİP", "ÖZEL"
+];
+
+const EK_ALT_KIRILIM = [
+    "ACİL", "AKUT BATIN", "AKUT BÖBREK YETMEZLİĞİ", "ALERJİ", "ALIN DARALTMA", "ALÇI KOMPLİKASYONU", "AMBULANS", "AMELİYATTA POZİSYON HATASI", "AMNİYOSENTEZ", "AMPUTASYON", "ANAFLAKTİK ŞOK", "ANAL ATREZİ", "ANESTEZİ UYGULAMASI", "ANESTEZİ UYGULAMASI (EPİDURAL)", "ANESTEZİ UYGULAMASI (GENEL)", "ANJİO;STENT;PERKUTAN KORONER", "ANİ BEBEK ÖLÜMÜ", "AORT ANEVRİZMASI", "AORT DİSEKSİYONU", "APANDİSİT", "APERT SENDROMU", "ASFİKSİ;HİPOKSİ", "ASM DIŞI NÖBET", "AVASKÜLER NEKROZ", "AYDINLATILMIŞ ONAM", "AÇIK KALP AMELİYATI", "BACAK-BOY UZATMA AMELİYATI", "BADEMCİK (TONSİLLEKTOMİ);GENİZ ETİ (ADENOIDEKTOMI)", "BAKTERİYEL MENENJİT", "BAZİLLER TEPE SENDROMU", "BAĞIRSAK FELCİ (HIRSCHSPRUNG)", "BAĞIRSAK PERFORASYONU (DELİNME)", "BAĞIRSAK TIKANIKLIĞI (İLEUS - VOLVULUS)", "BEBEKTE CİLT KESİSİ", "BEL FITIĞI", "BEYİN KANAMASI", "BEYİN TÜMÖRÜ", "BLEFAROPLASTİ", "BOS KAÇAĞI", "BOTOKS", "BOYUN FITIĞI", "BOYUN LİPOSUCTİON", "BYPASS", "BÖBREK NAKLİ", "BÖBREK TRANSPLANTASYONU", "CAM KESİSİ", "COVİD 19", "CRUSH YARALANMA (EZİLME)", "CİNSİYET DEĞİŞTİRME", "CİSİM KIRILMASI", "CİSİM UNUTMA", "CİSİM YUTMA", "DAMAR YARALANMASI", "DOLGU", "DOWN SENDROMU", "DÜŞÜK", "DİYAFRAM FITIĞI", "DİŞ TELİ TEDAVİSİ", "DİŞ ÇEKİMİ", "EKLEM AMELİYATI", "EKTOPİK GEBELİK", "EMBOLİ", "ENDOFTALMİ", "ENFEKSİYON", "ENJEKSİYON SİNİR HASARI", "EPIZYOTOMI", "EPİLEPSİ", "ERPC", "FAKO+İOL", "FASİAL SİNİR HASARI", "FENİLKETONÜRİ", "FRAKTÜR (KIRIK)", "FİSTÜL", "GASTROENTERİT", "GEBELİĞİN TEŞHİS EDİLEMEMESİ", "GENİTAL HERPES", "GLOKOM", "GUATR", "GÖBEK FITIĞI-HERNİ", "GÖZ ALTI TORBASI", "GÖZ LAZER UYGULAMASI", "GÖZE YABANCI CİSİM BATMASI", "HASTANE ENFEKSİYONU", "HASTANE ORGANİZASYONU", "HATALI DİŞİN ÇEKİLMESİ", "HATALI KAN TRANSFÜZYONU", "HATALI PROTEZ", "HATALI RAPOR", "HATALI RAPORLAMA", "HATALI TANI", "HATALI İLAÇ", "HATALI İLAÇ UYGULANMASI", "HELPP SENDROMU", "HEMONJIOM", "HEMOROİD", "HEMOTORAKS-PNÖMOTORAKS", "HORNER SENDROMU", "HİSTEREKTOMİ", "HİSTEREKTOMİ(TAH)", "JİNEKOMASTİ", "KAFATASI ESTETİĞİ", "KALP ANOMALİSİ(ASD-VSD)", "KALP KAPAK AMELİYATI", "KALP KRİZİ", "KALP KRİZİ - MİYOKARD ENFARKTÜSÜ", "KALP KRİZİ-MİYOKARD ENFARKTÜSÜ", "KALP PİLİ AMELİYATI", "KAN UYUŞMAZLIĞI", "KANAL TEDAVİSİ", "KANSER", "KARIN GERME", "KARIN GERME - LİPOSUCTİON", "KARIN GERME-LİPOSUCTİON", "KASIK FITIĞI-HERNİ", "KATARAKT", "KATARAKT-FAKO+İOL", "KATARAKT-FEMTOSANİYE LAZER", "KATARAKT-LENS DEĞİŞİMİ", "KATARAKT/FAKO+İOL", "KAZA SONRASI HATALI MÜDAHALE", "KAŞ GERME", "KAŞ KALDIRMA VE GAMZE ESTETİĞİ", "KERATİT", "KESİCİ ALET YARALANMASI", "KIZLIK ZARI", "KOL GERME", "KOLONOSKOPİ", "KOMPARTMAN SENDROMU", "KOMPLİKASYON YÖNETİMİNDE HATA", "KONSÜLTASYON", "KORDON DOLANMASI", "KORNEA NAKLİ", "KOTER YANIĞI", "KÜRTAJ", "KİSTEKTOMİ", "LABİOPLASTİ", "LAZER", "LAZER YANIĞI", "LAZER/EXCİMER LAZER", "LOMBER OMURGA CERRAHİSİ", "LİPOSHİFTİNG", "LİPOSUCTİON", "MAKULA DEJENARASYONU (SARI NOKTA HASTALIĞI)", "MAKULA DEJENARASYONU(SARI NOKTA HASTALIĞI)", "MASTEKTOMİ (MEME KANSERİ)", "MEKONYUM ASPİRASYONU", "MEME BÜYÜTME-KÜÇÜLTME-MAMOPLASTİ", "MEME DİKLEŞTİRME (MASTOPEKSİ)", "MENENJİT", "MENİSKÜS", "MESANE YARALANMASI", "MS (MULTİPLE SKLEROZ)", "MYOMEKTOMİ", "MİDE KANAMASI", "MİDE KÜÇÜLTME (OBEZİTE CERRAHİSİ)", "MİDE PERFORASYONU (DELİNME)", "MİKROSEFALİ VE HİDROSEFALİ", "NEFREKTOMİ", "NEKROTİZAN FASİT", "NEONATAL (YENİDOĞAN) ÖLÜM", "NÖRAL TÜP DEFEKTİ", "NÖROLOJİK HASAR-SEREBRAL PALSİ-HİE", "OMUZ DİSTOSİSİ; BRAKİAL PLEKSUS", "OMUZ DİSTOSİSİ;BRAKİAL PLEKSUS", "OPTİK ATROFİ", "ORGAN NAKLİ", "ORTA KULAK (OTİTİS MEDİA)-MASTOİDEKTOMİ", "ORTODONTİ TEDAVİSİ", "OTOSKLEROZ", "OTİZM", "OVER KİSTİ", "PERİFERİK SİNİR SIKIŞMASI", "PLASENTA DEKOLMANI", "PLASENTA KALMASI", "PNÖMONİ (ARDS)", "POPO ESTETİĞİ", "POSTPARTUM KANAMA", "PREEKLAMPSİ", "PREMATÜRE RETİNOPATİSİ", "PREMATÜRE RETİNOPATİSİ (ROP)", "PROSTAT", "PROTEZ", "PULMONER EMBOLİ", "PULMONER STENOZ", "RADYAN ISITICI YANIĞI", "RAİ UYGULAMASI", "REFLÜ CERRAHİSİ", "REST PLASENTA", "RETİNA DEKOLMANI", "RİNOPLASTİ; SEPTOPLASTİ", "RİNOPLASTİ;SEPTOPLASTİ", "SAFRA KAÇAĞI", "SARILIK", "SAÇ EKİMİ", "SEPSİS", "SEPTOOPTİK DİSPLAZİ", "SERÖZ ADENOKARSİNOM", "SEZARYEN", "SFİNKTER HASARI (GAİTA KAÇIRMA)", "SICAK SU-ISITICI YANIK", "SKOLYOZ", "SLEEVE GASTREKTOMİ", "SOLUNUM YETMEZLİĞİ", "SPİNA BFİDA", "SPİRAL", "SPİRAL (RİA)", "SÜNNET", "SİNÜS CERRAHİSİ", "SİNİR HASARI", "SİNİR YARALANMASI", "TANI KONULAMADAN EX", "TAŞ KIRMA AMELİYATI", "TEDAVİDE GECİKME", "TENDON KESİSİ", "TESTİS KAYBI", "TESTİS TORSİYONU", "TORAKS DUVARI DEFORMİTESİ", "TOTAL KALÇA PROTEZİ", "TREKEOÖZOFAJİAL ( SOLUK BORUSU) FİSTÜL", "TRIZOMI 18", "TRİODEKTOMİ", "TRİZOMİ 13", "TRİZOMİ 18", "TUBAL LİGASYON", "TÜBERKÜLOZ", "TÜP BEBEK", "TÜPLERİN ALINMASI (BSO)", "TÜPLERİN BAĞLANMASI (TÜP LİGASYONU)", "TİROİDEKTOMİ", "UTERUS RÜPTÜRÜ", "UTERİN ATONİ", "UTERİN RÜPTÜR", "UZMANLIK ALANI DIŞI MÜDAHALE", "UZUV EKSİKLİĞİ", "UZUV KOPMASI", "VAJİNA ESTETİĞİ-LABİOPLASTİ", "VAJİNAL FİSTÜL (UVF)", "VARİKOSEL", "VARİS", "VAZEKTOMİ", "VERTEBRA CERRAHİSİ", "VEZİKOÜRETERAL REFLÜ", "VOKALKORD PARALİZİSİ (SES KISIKLIĞI)", "YANLIŞ TARAF;HATALI ORGAN", "YAĞ ENJEKSİYONU", "YENİ DOĞAN ENFEKSİYONU", "YENİ DOĞAN MUAYENESİNDE HATA", "YOĞUN BAKIM", "YÜZ GERME", "ZEHİRLENME", "ÇAPRAZ BAĞ AMELİYATI", "ÇENE (MANDİBULA) CERRAHİSİ", "ÇENE ASİMETRİSİ", "ÇENE KIRIĞI", "ÇIKIK", "ÇOCUK FELCİ", "ÜRETER YARALANMASI", "İDRAR KAÇIRMA TEDAVİSİ (ÜRİNER İNKONTİNANS)", "İLAÇ", "İLAÇ ALERJİSİ", "İMPLANT", "İNCE BAĞIRSAK PERFORASYONU", "İNSİZYON YERİ ENFEKSİYONU", "İNTRAUTERİN ÖLÜM", "İNTİHAR", "İŞİTME KAYBI"
+];
+
 const TARAF_ROLLERI = ["Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil"];
 const UCUNCU_TARAF_ROLLERI = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Davacı", "Davalı", "Diğer"];
 const HIZMET_TURLERI = [
@@ -102,7 +115,11 @@ interface EditModeCaseData {
     service_type?: string;
     maddi_tazminat?: number | string;
     manevi_tazminat?: number | string;
+    acceptance_date?: string;
+    bureau_type?: string;
+    sub_type_extra?: string;
     parties?: EditModeParty[];
+    lawyers?: { name: string; lawyer_id?: number | null }[];
 }
 
 interface CaseSearchResult {
@@ -119,6 +136,7 @@ interface DbClientData {
     tc_no?: string;
     vergi_no?: string;
     category?: string;
+    cari_kod?: string;
 }
 
 interface CaseHistoryEntry {
@@ -188,8 +206,15 @@ const NewCase = () => {
         fileOpeningDate: editModeCase?.opening_date || "",
         serviceType: "00000", // Default service type code
         maddiTazminat: editModeCase?.maddi_tazminat?.toString() || "",
-        maneviTazminat: editModeCase?.manevi_tazminat?.toString() || ""
+        maneviTazminat: editModeCase?.manevi_tazminat?.toString() || "",
+        acceptanceDate: editModeCase?.acceptance_date || "",
+        bureauType: editModeCase?.bureau_type || "",
+        subTypeExtra: editModeCase?.sub_type_extra || ""
     });
+
+    const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
+        editModeCase?.lawyers?.map((l: any) => ({ name: l.name, lawyer_id: l.lawyer_id })) || []
+    );
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
     const [clients, setClients] = useState<Array<{ name: string; role: string; birth_year?: number; gender?: string }>>(
@@ -355,8 +380,12 @@ const NewCase = () => {
                 fileOpeningDate: editModeCase.opening_date || "",
                 serviceType: editModeCase.service_type || "00000",
                 maddiTazminat: editModeCase.maddi_tazminat?.toString() || "",
-                maneviTazminat: editModeCase.manevi_tazminat?.toString() || ""
+                maneviTazminat: editModeCase.manevi_tazminat?.toString() || "",
+                acceptanceDate: editModeCase.acceptance_date || "",
+                bureauType: editModeCase.bureau_type || "",
+                subTypeExtra: editModeCase.sub_type_extra || ""
             });
+            setSelectedLawyers(editModeCase.lawyers?.map((l: any) => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
             setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
             setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || [{ name: "", role: "Davalı" }]);
             setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || []);
@@ -403,8 +432,13 @@ const NewCase = () => {
                 fileOpeningDate: new Date().toISOString().split('T')[0], // Set to today's date
                 serviceType: "00000",
                 maddiTazminat: "",
-                maneviTazminat: ""
+                maneviTazminat: "",
+                acceptanceDate: "",
+                bureauType: "",
+                subTypeExtra: ""
             });
+
+            setSelectedLawyers([{ name: "İlke Berk", lawyer_id: null }]);
 
             // Set clients
             setClients([{ name: "Ahmet Yılmaz", role: "Davacı" }]);
@@ -468,6 +502,9 @@ const NewCase = () => {
             uyap_lawyer_name: formData.uyapLawyer,
             maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
             manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
+            acceptance_date: formData.acceptanceDate || undefined,
+            bureau_type: formData.bureauType || undefined,
+            sub_type_extra: formData.subTypeExtra || undefined,
             parties: [
                 ...clients.filter(c => c.name).map(c => ({
                     client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(c.name))?.id,
@@ -485,7 +522,8 @@ const NewCase = () => {
                     role: t.role,
                     party_type: "THIRD" as const
                 }))
-            ]
+            ],
+            lawyers: selectedLawyers
         };
 
         let success;
@@ -538,10 +576,14 @@ const NewCase = () => {
             fileOpeningDate: "",
             serviceType: "00000",
             maddiTazminat: "",
-            maneviTazminat: ""
+            maneviTazminat: "",
+            acceptanceDate: "",
+            bureauType: "",
+            subTypeExtra: ""
         });
 
-        // Reset parties
+        // Reset arrays
+        setSelectedLawyers([]);
         setClients([{ name: "", role: "Davacı" }]);
         setCounterParties([{ name: "", role: "Davalı" }]);
         setThirdParties([]);
@@ -720,12 +762,12 @@ const NewCase = () => {
                                                                     variant="outline"
                                                                     role="combobox"
                                                                     aria-expanded={clientComboboxesOpen[index]}
-                                                                    className="w-full justify-between font-normal bg-transparent border-border/60"
+                                                                    className="w-full justify-between text-left font-normal bg-transparent border-border/60 h-9 px-3 text-sm shadow-none hover:bg-transparent hover:text-foreground"
                                                                 >
-                                                                    <div className="flex-1 truncate">
+                                                                    <div className={cn("flex-1 truncate text-left", !client.name && "text-muted-foreground")}>
                                                                         {client.name ? toTitleCase(client.name) : "Müvekkil Seçiniz..."}
                                                                     </div>
-                                                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-20" />
                                                                 </Button>
                                                             </PopoverTrigger>
                                                             <PopoverContent className="w-[400px] p-0" align="start">
@@ -764,10 +806,10 @@ const NewCase = () => {
                                                                         {dbClients.map((dbClient) => (
                                                                             <CommandItem
                                                                                 key={dbClient.id}
-                                                                                value={dbClient.name}
-                                                                                onSelect={(currentValue) => {
+                                                                                value={`${dbClient.name} ${dbClient.cari_kod || ""} ${dbClient.tc_no || ""}`}
+                                                                                onSelect={() => {
                                                                                     const updated = [...clients];
-                                                                                    updated[index].name = toTitleCase(currentValue);
+                                                                                    updated[index].name = toTitleCase(dbClient.name);
                                                                                     setClients(updated);
 
                                                                                     // Yeni protokol uyarınca takip nosunu güncelle
@@ -787,7 +829,14 @@ const NewCase = () => {
                                                                                     className={`mr-2 h-4 w-4 ${client.name === dbClient.name ? "opacity-100" : "opacity-0"}`}
                                                                                 />
                                                                                 <div className="flex flex-col">
-                                                                                    <span>{toTitleCase(dbClient.name)}</span>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span>{toTitleCase(dbClient.name)}</span>
+                                                                                        {dbClient.cari_kod && (
+                                                                                            <span className="text-[9px] bg-primary/10 text-primary px-1 rounded font-bold">
+                                                                                                {dbClient.cari_kod}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
                                                                                     {dbClient.tc_no && <span className="text-[10px] text-muted-foreground">{dbClient.tc_no}</span>}
                                                                                 </div>
                                                                             </CommandItem>
@@ -872,7 +921,12 @@ const NewCase = () => {
                                                                 updated[index].name = e.target.value;
                                                                 setCounterParties(updated);
                                                             }}
-                                                            className="h-9 bg-transparent border-border/60 focus:border-primary/50"
+                                                            onBlur={(e) => {
+                                                                const updated = [...counterParties];
+                                                                updated[index].name = toTitleCase(e.target.value);
+                                                                setCounterParties(updated);
+                                                            }}
+                                                            className="h-9 text-sm bg-transparent border-border/60 focus:border-primary/50 text-left"
                                                         />
                                                     </div>
                                                     <Checkbox
@@ -955,7 +1009,12 @@ const NewCase = () => {
                                                                     updated[index].name = e.target.value;
                                                                     setThirdParties(updated);
                                                                 }}
-                                                                className="h-8 text-sm bg-transparent border-border/40 focus:border-primary/40"
+                                                                onBlur={(e) => {
+                                                                    const updated = [...thirdParties];
+                                                                    updated[index].name = toTitleCase(e.target.value);
+                                                                    setThirdParties(updated);
+                                                                }}
+                                                                className="h-9 text-sm bg-transparent border-border/40 focus:border-primary/40 text-left"
                                                             />
                                                         </div>
                                                         <Checkbox
@@ -1059,28 +1118,78 @@ const NewCase = () => {
 
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                                                <Scale className="w-3 h-3" /> Alt Tür
+                                                <Scale className="w-3 h-3" /> Alt Tür (Dava Türü Alt Kırılımı)
                                             </Label>
-                                            <Select
-                                                value={formData.subType}
-                                                onValueChange={(v) => setFormData({ ...formData, subType: v })}
-                                                disabled={!formData.fileType || (ALT_TURLER[formData.fileType]?.length ?? 0) === 0}
-                                            >
-                                                <SelectTrigger className="bg-transparent border-border/60">
-                                                    <SelectValue placeholder={
-                                                        !formData.fileType
-                                                            ? "Önce dosya türü seçin"
-                                                            : (ALT_TURLER[formData.fileType]?.length ?? 0) === 0
-                                                                ? "Alt tür tanımlı değil"
-                                                                : "Seçiniz..."
-                                                    } />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {(ALT_TURLER[formData.fileType] ?? []).map(t => (
-                                                        <SelectItem key={t} value={t}>{toTitleCase(t)}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        role="combobox"
+                                                        className={`w-full justify-between h-9 text-xs border-border/60 ${!formData.subType ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
+                                                    >
+                                                        {formData.subType ? toTitleCase(formData.subType) : "Seçiniz..."}
+                                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-full p-0 max-h-64" align="start">
+                                                    <Command>
+                                                        <CommandInput placeholder="Alt tür ara..." />
+                                                        <CommandEmpty>Kayıt bulunamadı.</CommandEmpty>
+                                                        <CommandGroup className="overflow-auto max-h-56">
+                                                            {DAVA_TURU_ALT_KIRILIM.map((t) => (
+                                                                <CommandItem
+                                                                    key={t}
+                                                                    value={t}
+                                                                    onSelect={(currentValue) => {
+                                                                        setFormData({ ...formData, subType: currentValue === formData.subType ? "" : currentValue });
+                                                                    }}
+                                                                >
+                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subType === t ? "opacity-100" : "opacity-0"}`} />
+                                                                    {toTitleCase(t)}
+                                                                </CommandItem>
+                                                            ))}
+                                                        </CommandGroup>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Ek Alt Kırılım
+                                            </Label>
+                                            <Popover>
+                                                <PopoverTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        role="combobox"
+                                                        className={`w-full justify-between h-9 text-xs border-border/60 ${!formData.subTypeExtra ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
+                                                    >
+                                                        {formData.subTypeExtra ? toTitleCase(formData.subTypeExtra) : "Seçiniz..."}
+                                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-full p-0 max-h-64" align="start">
+                                                    <Command>
+                                                        <CommandInput placeholder="Ek alt kırılım ara..." />
+                                                        <CommandEmpty>Kayıt bulunamadı.</CommandEmpty>
+                                                        <CommandGroup className="overflow-auto max-h-56">
+                                                            {EK_ALT_KIRILIM.map((t) => (
+                                                                <CommandItem
+                                                                    key={t}
+                                                                    value={t}
+                                                                    onSelect={(currentValue) => {
+                                                                        setFormData({ ...formData, subTypeExtra: currentValue === formData.subTypeExtra ? "" : currentValue });
+                                                                    }}
+                                                                >
+                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subTypeExtra === t ? "opacity-100" : "opacity-0"}`} />
+                                                                    {toTitleCase(t)}
+                                                                </CommandItem>
+                                                            ))}
+                                                        </CommandGroup>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
                                         </div>
 
                                         <div className="space-y-4 md:col-span-2">
@@ -1117,6 +1226,18 @@ const NewCase = () => {
                                                 type="date"
                                                 value={formData.fileOpeningDate}
                                                 onChange={(e) => setFormData({ ...formData, fileOpeningDate: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Calendar className="w-3 h-3" /> İş Kabul Tarihi
+                                            </Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.acceptanceDate}
+                                                onChange={(e) => setFormData({ ...formData, acceptanceDate: e.target.value })}
                                                 className="bg-transparent border-border/60"
                                             />
                                         </div>
@@ -1223,13 +1344,36 @@ const NewCase = () => {
                                 </div>
                                 <div className="p-5 space-y-4">
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sorumlu Avukat</Label>
-                                        <Select value={formData.lawyer} onValueChange={(v) => setFormData({ ...formData, lawyer: v })}>
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sorumlu Avukat(lar)</Label>
+
+                                        {selectedLawyers.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {selectedLawyers.map((sl, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-1 rounded text-[11px] font-medium border border-primary/20 shadow-sm">
+                                                        {sl.name}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.preventDefault(); setSelectedLawyers(prev => prev.filter((_, i) => i !== idx)); }}
+                                                            className="hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <Select onValueChange={(v) => {
+                                            if (v && !selectedLawyers.find(l => l.name === v)) {
+                                                const lawyerObj = lawyers.find((l: any) => l.name === v);
+                                                setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: lawyerObj ? lawyerObj.id : null }]);
+                                            }
+                                        }}>
                                             <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
-                                                <SelectValue placeholder="Seçiniz..." />
+                                                <SelectValue placeholder="Avukat Ekle..." />
                                             </SelectTrigger>
-                                            <SelectContent>
-                                                {lawyers.map(t => <SelectItem key={t.code} value={t.name}>{t.name}</SelectItem>)}
+                                            <SelectContent className="max-h-64">
+                                                {lawyers.map((t: any) => <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -1241,6 +1385,28 @@ const NewCase = () => {
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {lawyers.map(t => <SelectItem key={t.code} value={t.name}>{t.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                            </Card>
+
+                            {/* BÜRO ÖZEL TÜRÜ */}
+                            <Card className="glass-card border-border/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-4">
+                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <Building className="w-3 h-3" /> Büro Özel Türü
+                                    </h3>
+                                </div>
+                                <div className="p-5 space-y-4">
+                                    <div className="space-y-1.5">
+                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tür Seçiniz</Label>
+                                        <Select value={formData.bureauType} onValueChange={(v) => setFormData({ ...formData, bureauType: v })}>
+                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                                <SelectValue placeholder="Seçiniz..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {BURO_OZEL_TURU.map(t => <SelectItem key={t} value={t}>{toTitleCase(t)}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                     </div>

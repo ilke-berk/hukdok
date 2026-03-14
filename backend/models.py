@@ -24,6 +24,10 @@ class Case(Base):
     maddi_tazminat = Column(Numeric(precision=20, scale=2), default=0)
     manevi_tazminat = Column(Numeric(precision=20, scale=2), default=0)
     
+    acceptance_date = Column(Date, nullable=True)  # İş Kabul Tarihi
+    bureau_type = Column(String, nullable=True)  # Büro Özel Türü (DR ÖZEL, LEXİS, VEKALETSİZ TAKİP vs.)
+    sub_type_extra = Column(String, nullable=True)  # Ek Alt Kırılım (RİNOPLASTİ;SEPTOPLASTİ vs.)
+    
     notes = Column(String, nullable=True)
     active = Column(Boolean, default=True)
     
@@ -34,6 +38,7 @@ class Case(Base):
     parties = relationship("CaseParty", back_populates="case", cascade="all, delete-orphan")
     history = relationship("CaseHistory", back_populates="case", cascade="all, delete-orphan")
     documents = relationship("CaseDocument", back_populates="case", cascade="all, delete-orphan")
+    lawyers = relationship("CaseLawyer", back_populates="case", cascade="all, delete-orphan")
 
 class CaseHistory(Base):
     __tablename__ = "case_history"
@@ -62,6 +67,18 @@ class CaseParty(Base):
     
     case = relationship("Case", back_populates="parties")
     client = relationship("Client", back_populates="case_parties")
+
+class CaseLawyer(Base):
+    __tablename__ = "case_lawyers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    lawyer_id = Column(Integer, ForeignKey("lawyers.id", ondelete="SET NULL"), nullable=True) # Linked if registered
+    
+    name = Column(String, nullable=False) # Actual name representation
+    
+    case = relationship("Case", back_populates="lawyers")
+    lawyer = relationship("Lawyer")
 
 class Lawyer(Base):
     __tablename__ = "lawyers"

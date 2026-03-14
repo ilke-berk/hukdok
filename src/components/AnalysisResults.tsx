@@ -148,7 +148,11 @@ export const AnalysisResults = ({
     normalizedData.karsi_taraf = toTitleCase(normalizedData.karsi_taraf || "");
 
     setEditedData(normalizedData);
-    setLocalClientList(normalizedData.muvekkiller || []);
+    const initialClients = [...(normalizedData.muvekkiller || [])];
+    if (normalizedData.muvekkil_adi && !initialClients.includes(normalizedData.muvekkil_adi)) {
+      initialClients.push(normalizedData.muvekkil_adi);
+    }
+    setLocalClientList(initialClients);
     setApprovedFields({
       tarih: false,
       belge_turu_kodu: false,
@@ -596,7 +600,10 @@ export const AnalysisResults = ({
                         {/* Sistem + Manuel eklenen tüm müvekkilleri göster */}
                         {(() => {
                           // Tüm müvekkilleri birleştir (sistem + manuel)
-                          const systemClients = data.muvekkiller || [];
+                          const systemClients = Array.from(new Set([
+                            data.muvekkil_adi,
+                            ...(data.muvekkiller || [])
+                          ].filter(Boolean)));
                           const allClients = [...new Set([...localClientList, ...systemClients])];
 
                           return allClients.map((name, idx) => {

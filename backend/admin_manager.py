@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from database import SessionLocal
 import models
+from sqlalchemy.orm import selectinload
 from config_manager import DynamicConfig
 
 logger = logging.getLogger("AdminManager")
@@ -324,7 +325,11 @@ def get_case(case_id: int):
             "uyap_lawyer_name": item.uyap_lawyer_name,
             "maddi_tazminat": float(item.maddi_tazminat),
             "manevi_tazminat": float(item.manevi_tazminat),
+            "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
+            "bureau_type": item.bureau_type,
+            "sub_type_extra": item.sub_type_extra,
             "parties": [{"name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
+            "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
             "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None} for d in item.documents]
         }
@@ -335,10 +340,84 @@ def get_case(case_id: int):
     finally:
         db.close()
 
-def get_cases():
+def get_case_stats():
+    from sqlalchemy import func
     try:
         db = SessionLocal()
-        items = db.query(models.Case).filter(models.Case.active == True).order_by(models.Case.created_at.desc()).all()
+        stats = {"total": 0, "active": 0, "closed": 0, "appeal": 0, "statuses": {}}
+        counts = db.query(models.Case.status, func.count(models.Case.id)).filter(models.Case.active == True).group_by(models.Case.status).all()
+        
+        for status, count in counts:
+            stats["total"] += count
+            stats["statuses"][status] = count
+            
+            if status == "DERDEST":
+                stats["active"] += count
+            elif status in ["KAPALI", "MAHZEN"]:
+                stats["closed"] += count
+            elif status == "TEMYIZ":
+                stats["appeal"] += count
+                
+        return stats
+    except Exception as e:
+        logger.error(f"Get Case Stats Error: {e}")
+        return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "statuses": {}}
+    finally:
+        db.close()
+
+def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str = None, q: str = None):
+    try:
+        db = SessionLocal()
+        query = db.query(models.Case).options(
+            selectinload(models.Case.parties),
+            selectinload(models.Case.lawyers)
+        ).filter(models.Case.active == True)
+
+        if status and status != "ALL":
+            query = query.filter(models.Case.status == status)
+        
+        if lawyer and lawyer != "ALL":
+            # Search in responsible_lawyer_name or in case_lawyers relationship
+            from sqlalchemy import or_
+            lawyer_pattern = f"%{lawyer}%"
+            query = query.filter(or_(
+                models.Case.responsible_lawyer_name.ilike(lawyer_pattern),
+                models.Case.lawyers.any(models.CaseLawyer.name.ilike(lawyer_pattern))
+            ))
+
+        if q and len(q) >= 2:
+            from sqlalchemy import or_, and_
+            terms = q.strip().split()
+            term_filters = []
+            
+            for term in terms:
+                if len(term) < 2: continue
+                search_pattern = f"%{term}%"
+                
+                # Basic case fields
+                conditions = [
+                    models.Case.tracking_no.ilike(search_pattern),
+                    models.Case.esas_no.ilike(search_pattern),
+                    models.Case.merci_no.ilike(search_pattern),
+                    models.Case.court.ilike(search_pattern),
+                    models.Case.subject.ilike(search_pattern),
+                    models.Case.notes.ilike(search_pattern),
+                    models.Case.responsible_lawyer_name.ilike(search_pattern),
+                    models.Case.uyap_lawyer_name.ilike(search_pattern),
+                    models.Case.parties.any(models.CaseParty.name.ilike(search_pattern)),
+                    models.Case.lawyers.any(models.CaseLawyer.name.ilike(search_pattern))
+                ]
+                
+                # Add history search (e.g. searching for an old Esas No)
+                conditions.append(models.Case.history.any(models.CaseHistory.old_value.ilike(search_pattern)))
+                
+                term_filters.append(or_(*conditions))
+            
+            if term_filters:
+                query = query.filter(and_(*term_filters))
+
+        items = query.order_by(models.Case.created_at.desc()).offset(offset).limit(limit).all()
+        
         cases_list = []
         for item in items:
             result = {
@@ -356,14 +435,17 @@ def get_cases():
                 "uyap_lawyer_name": item.uyap_lawyer_name,
                 "maddi_tazminat": float(item.maddi_tazminat) if item.maddi_tazminat else 0,
                 "manevi_tazminat": float(item.manevi_tazminat) if item.manevi_tazminat else 0,
+                "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
+                "bureau_type": item.bureau_type,
+                "sub_type_extra": item.sub_type_extra,
                 "parties": [{"name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
-                "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
-                "created_at": getattr(item, 'created_at', None)
+                "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
+                "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None
             }
             cases_list.append(result)
         return cases_list
     except Exception as e:
-        logger.error(f"Get Cases Error: {e}")
+        logger.error(f"Get Cases Advanced Error: {e}")
         return []
     finally:
         db.close()
@@ -400,10 +482,17 @@ def update_case(case_id: int, data: dict):
         case.uyap_lawyer_name = data.get("uyap_lawyer_name", case.uyap_lawyer_name)
         case.maddi_tazminat = data.get("maddi_tazminat", case.maddi_tazminat)
         case.manevi_tazminat = data.get("manevi_tazminat", case.manevi_tazminat)
+        case.bureau_type = data.get("bureau_type", case.bureau_type)
+        case.sub_type_extra = data.get("sub_type_extra", case.sub_type_extra)
         
         if data.get("opening_date"):
             try:
                 case.opening_date = datetime.strptime(data.get("opening_date"), "%Y-%m-%d").date()
+            except: pass
+
+        if data.get("acceptance_date"):
+            try:
+                case.acceptance_date = datetime.strptime(data.get("acceptance_date"), "%Y-%m-%d").date()
             except: pass
 
         # 2. Sync Parties (Delete and Re-add for simplicity in this version)
@@ -441,6 +530,24 @@ def update_case(case_id: int, data: dict):
             )
             db.add(party)
             
+        # 3. Sync Lawyers
+        db.query(models.CaseLawyer).filter(models.CaseLawyer.case_id == case_id).delete()
+        lawyers = data.get("lawyers", [])
+        lawyer_names = []
+        for l in lawyers:
+            name = l.get("name")
+            if name:
+                db.add(models.CaseLawyer(
+                    case_id=case_id,
+                    lawyer_id=l.get("lawyer_id"),
+                    name=name
+                ))
+                lawyer_names.append(name)
+        
+        # Backward compatibility for existing field
+        if lawyer_names:
+            case.responsible_lawyer_name = ", ".join(lawyer_names)
+            
         case.updated_at = datetime.now()
         db.commit()
         return True
@@ -452,68 +559,9 @@ def update_case(case_id: int, data: dict):
         db.close()
 
 def search_cases(query: str):
-    try:
-        db = SessionLocal()
-        if not query or len(query) < 2: return []
-        
-        from sqlalchemy import or_
-        
-        # 1. Search in main Case table
-        q = f"%{query}%"
-        main_results = db.query(models.Case).filter(
-            models.Case.active == True,
-            or_(
-                models.Case.tracking_no.ilike(q),
-                models.Case.esas_no.ilike(q),
-                models.Case.merci_no.ilike(q),
-                models.Case.court.ilike(q),
-                models.Case.responsible_lawyer_name.ilike(q),
-                models.Case.uyap_lawyer_name.ilike(q),
-                models.Case.notes.ilike(q)
-            )
-        ).all()
-        
-        case_ids = {c.id for c in main_results}
-        
-        # 2. Search in History (for old Esas No, etc.)
-        history_results = db.query(models.CaseHistory).filter(
-            models.CaseHistory.old_value.ilike(q)
-        ).all()
-        
-        for h in history_results:
-            if h.case_id not in case_ids:
-                case = db.query(models.Case).filter(models.Case.id == h.case_id, models.Case.active == True).first()
-                if case:
-                    main_results.append(case)
-                    case_ids.add(case.id)
-
-        # 3. Search in Parties (Client name, Counterparty name, etc.)
-        party_results = db.query(models.CaseParty).filter(
-            models.CaseParty.name.ilike(q)
-        ).all()
-        
-        for p in party_results:
-            if p.case_id not in case_ids:
-                case = db.query(models.Case).filter(models.Case.id == p.case_id, models.Case.active == True).first()
-                if case:
-                    main_results.append(case)
-                    case_ids.add(case.id)
-        
-        # Return summary for search results
-        return [
-            {
-                "id": c.id,
-                "tracking_no": c.tracking_no,
-                "esas_no": c.esas_no,
-                "court": c.court,
-                "status": c.status
-            } for c in main_results
-        ]
-    except Exception as e:
-        logger.error(f"Search Cases Error: {e}")
-        return []
-    finally:
-        db.close()
+    # Use get_cases with a high limit for the legacy search endpoint
+    # to ensure "needed places" still get all relevant results
+    return get_cases(q=query, limit=500)
 
 def add_case(data: dict):
     try:
@@ -557,8 +605,18 @@ def add_case(data: dict):
             responsible_lawyer_name=data.get("responsible_lawyer_name"),
             uyap_lawyer_name=data.get("uyap_lawyer_name"),
             maddi_tazminat=data.get("maddi_tazminat", 0),
-            manevi_tazminat=data.get("manevi_tazminat", 0)
+            manevi_tazminat=data.get("manevi_tazminat", 0),
+            bureau_type=data.get("bureau_type"),
+            sub_type_extra=data.get("sub_type_extra")
         )
+        
+        # Handle acceptance_date
+        acceptance_date_str = data.get("acceptance_date")
+        if acceptance_date_str:
+            try:
+                new_case.acceptance_date = datetime.strptime(str(acceptance_date_str).strip(), "%Y-%m-%d").date()
+            except:
+                pass
         db.add(new_case)
         db.flush()  # Get the case ID
         
@@ -595,6 +653,23 @@ def add_case(data: dict):
                 gender=p.get("gender")
             )
             db.add(party)
+            
+        # 3. Add Lawyers
+        lawyers = data.get("lawyers", [])
+        lawyer_names = []
+        for l in lawyers:
+            name = l.get("name")
+            if name:
+                db.add(models.CaseLawyer(
+                    case_id=new_case.id,
+                    lawyer_id=l.get("lawyer_id"),
+                    name=name
+                ))
+                lawyer_names.append(name)
+                
+        # Backward compatibility for existing field
+        if lawyer_names and not new_case.responsible_lawyer_name:
+            new_case.responsible_lawyer_name = ", ".join(lawyer_names)
             
         db.commit()
         # Return the new case object (for frontend linking)

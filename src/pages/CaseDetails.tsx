@@ -34,6 +34,7 @@ interface CaseDetailsData {
     manevi_tazminat?: number;
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
+    lawyers?: { name: string; lawyer_id?: number | null }[];
     documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; summary?: string; stored_filename: string; original_filename: string }[];
     [key: string]: unknown;
 }
@@ -164,10 +165,18 @@ const CaseDetails = () => {
                                         <span className="text-muted-foreground">Mahkeme:</span>
                                         <span className="font-medium">{caseData.court || "Belirtilmemiş"}</span>
                                     </div>
-                                    <div className="flex items-center gap-2.5">
-                                        <User className="w-4 h-4 text-muted-foreground shrink-0" />
-                                        <span className="text-muted-foreground">Sorumlu Avukat:</span>
-                                        <span className="font-medium">{caseData.responsible_lawyer_name || "Atanmadı"}</span>
+                                    <div className="flex items-start gap-2.5">
+                                        <User className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                                        <span className="text-muted-foreground mt-0.5">Sorumlu Avukat:</span>
+                                        <div className="font-medium flex flex-wrap gap-1">
+                                            {caseData.lawyers && caseData.lawyers.length > 0 ? (
+                                                caseData.lawyers.map((l, i) => (
+                                                    <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary border border-primary/20 whitespace-nowrap">{l.name}</span>
+                                                ))
+                                            ) : (
+                                                <span>{caseData.responsible_lawyer_name || "Atanmadı"}</span>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-2.5">
                                         <User className="w-4 h-4 text-muted-foreground shrink-0" />

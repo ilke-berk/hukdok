@@ -15,6 +15,7 @@ export interface ClientData {
     birth_year?: number;
     gender?: string;
     specialty?: string;
+    cari_kod?: string;
 }
 
 export const useClients = () => {

@@ -101,6 +101,7 @@ def find_matching_case(
     esas_no: Optional[str] = None,
     muvekkiller: Optional[list] = None,
     avukat_kodu: Optional[str] = None,
+    belgede_gecen_isimler: Optional[list] = None,
     min_score: int = 40,
 ) -> Optional[dict]:
     """
@@ -158,63 +159,61 @@ def find_matching_case(
             return None
 
         candidates = []
+        
+        # Doc names normalization (all names combined: muvekkiller + other names)
+        all_names_in_doc = []
+        if muvekkiller:
+            all_names_in_doc.extend(muvekkiller)
+        if belgede_gecen_isimler:
+            all_names_in_doc.extend(belgede_gecen_isimler)
+            
+        doc_names_norm = list(set(_normalize(n) for n in all_names_in_doc if n and len(n) >= 4))
 
         for case in case_snapshots:
             score = 0
             reasons = []
+            matched_parties = set()
+            matched_doc_names = set() # Track matched original names from document
+            
+            # Party names in this specific case
+            case_parties_norm = []
+            for p in case["parties"]:
+                if p["name"]:
+                    case_parties_norm.append((_normalize(p["name"]), p["name"]))
 
-            # 1. ESAS NO (En güçlü sinyal)
-            if esas_no and case["esas_no"]:
-                es = _esas_no_similarity(esas_no, case["esas_no"])
-                if es > 0:
-                    score += es
-                    reasons.append(f"Esas No eşleşmesi ({case['esas_no']}): +{es}")
-
-            # 2. MÜVEKKİL ADLARI (Tüm taraflarla karşılaştır — CLIENT + COUNTER + THIRD)
-            if muvekkiller:
-                all_party_names_norm = [
-                    _normalize(p["name"])
-                    for p in case["parties"]
-                    if p["name"]
-                ]
-                muvekkil_score = 0
-                for muv in muvekkiller:
-                    muv_norm = _normalize(muv)
-                    if not muv_norm:
+            match_count = 0
+            # all_names_in_doc contains (original_name, normalized_name) would be better
+            # For now, let's just use doc_names_norm and try to map back or just return the normalized matched ones
+            
+            # Revised matching loop to track doc names
+            for doc_name_orig in all_names_in_doc:
+                if not doc_name_orig or len(doc_name_orig) < 4:
+                    continue
+                doc_name_norm = _normalize(doc_name_orig)
+                
+                for cp_norm, cp_orig in case_parties_norm:
+                    if cp_norm in matched_parties:
                         continue
-                    for party_norm in all_party_names_norm:
-                        if muv_norm == party_norm:
-                            muvekkil_score += 25
-                            reasons.append(f"Taraf tam eşleşme ({muv}): +25")
+                    
+                    if doc_name_norm == cp_norm:
+                        score += 50
+                        match_count += 1
+                        reasons.append(f"İsim tam eşleşme ({cp_orig}): +50")
+                        matched_parties.add(cp_norm)
+                        matched_doc_names.add(doc_name_orig)
+                        break
+                    elif doc_name_norm in cp_norm or cp_norm in doc_name_norm:
+                        if len(doc_name_norm) >= 6 and len(cp_norm) >= 6:
+                            score += 20
+                            match_count += 0.4
+                            reasons.append(f"İsim kısmi eşleşme ({doc_name_orig} ↔ {cp_orig}): +20")
+                            matched_parties.add(cp_norm)
+                            matched_doc_names.add(doc_name_orig)
                             break
-                        elif muv_norm in party_norm or party_norm in muv_norm:
-                            muvekkil_score += 12
-                            reasons.append(f"Taraf kısmi eşleşme ({muv}): +12")
-                            break
-                score += min(muvekkil_score, 50)
-
-            # 3. AVUKAT KODU
-            if avukat_kodu:
-                lawyer_norm = _normalize(avukat_kodu)
-                case_lawyer_norm = _normalize(case["responsible_lawyer_name"])
-                if lawyer_norm and (
-                    lawyer_norm == case_lawyer_norm
-                    or lawyer_norm in case_lawyer_norm
-                    or case_lawyer_norm.startswith(lawyer_norm)
-                ):
-                    score += 15
-                    reasons.append(f"Avukat eşleşmesi ({case['responsible_lawyer_name']}): +15")
 
             if score >= min_score:
-                # Karşı taraf adını çıkar (QuickCaseModal için)
-                counter_parties = [
-                    p["name"] for p in case["parties"]
-                    if p["party_type"] == "COUNTER" and p["name"]
-                ]
-                client_parties = [
-                    p["name"] for p in case["parties"]
-                    if p["party_type"] == "CLIENT" and p["name"]
-                ]
+                counter_parties = [p["name"] for p in case["parties"] if p["party_type"] == "COUNTER" and p["name"]]
+                client_parties = [p["name"] for p in case["parties"] if p["party_type"] == "CLIENT" and p["name"]]
 
                 candidates.append({
                     "case_id": case["id"],
@@ -224,11 +223,13 @@ def find_matching_case(
                     "responsible_lawyer_name": case["responsible_lawyer_name"],
                     "status": case["status"],
                     "score": score,
+                    "match_count": match_count,
                     "match_reasons": reasons,
-                    # Taraf bilgileri — QuickCaseModal ve UI için
+                    "matched_doc_names": list(matched_doc_names), # New field
                     "counter_parties": counter_parties,
                     "client_parties": client_parties,
                     "karsi_taraf": counter_parties[0] if counter_parties else "",
+                    "parties": case["parties"] # Pass full parties for the UI
                 })
 
         if not candidates:
@@ -241,9 +242,9 @@ def find_matching_case(
         # Circular reference → JSON serialize hatası
         best = dict(candidates[0])  # Shallow copy — orijinal nesneyi koru
 
-        if best["score"] >= 80:
+        if best["score"] >= 90 or best.get("match_count", 0) >= 1.8:
             confidence = "HIGH"
-        elif best["score"] >= 50:
+        elif best["score"] >= 45:
             confidence = "MEDIUM"
         else:
             confidence = "LOW"

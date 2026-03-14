@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCases } from "@/hooks/useCases";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
     Calendar as CalendarIcon,
     Clock,
@@ -76,16 +76,24 @@ interface HomeCaseData {
 }
 
 const Home = () => {
-    const { getCases, getCase } = useCases();
+    const { getCases, getCaseStats, getCase, searchCases } = useCases();
     const { instance, accounts } = useMsal();
     const navigate = useNavigate();
     const location = useLocation();
     const [cases, setCases] = useState<HomeCaseData[]>([]);
+    const [searchResults, setSearchResults] = useState<HomeCaseData[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [stats, setStats] = useState({ active: 0, closed: 0, appeal: 0, total: 0 });
+    const [uniqueStatuses, setUniqueStatuses] = useState<string[]>(["DERDEST", "KARAR", "KAPALI", "TEMYIZ", "INFAZ"]);
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
     const [searchQuery, setSearchQuery] = useState((location.state as { searchQuery?: string } | null)?.searchQuery || "");
     const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [listLawyerFilter, setListLawyerFilter] = useState<string>("ALL");
     const [calendarLawyerFilter, setCalendarLawyerFilter] = useState<string>("ALL");
+    const [offset, setOffset] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+    const LIMIT = 100;
     const { lawyers } = useConfig();
 
     const calendarLawyerOptions = useMemo(() => {
@@ -119,14 +127,48 @@ const Home = () => {
     } | null>(null);
     const [incompleteLoading, setIncompleteLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchAllData = async () => {
-            setLoading(true);
-            const data = await getCases();
+    const loadCases = useCallback(async (isMore = false) => {
+        const currentOffset = isMore ? offset + LIMIT : 0;
+        if (!isMore) setLoading(true);
+        else setIsSearching(true); // Reuse searching state for Load More spinner
+
+        const data = await getCases({
+            limit: LIMIT,
+            offset: currentOffset,
+            status: statusFilter,
+            lawyer: listLawyerFilter,
+            q: searchQuery.length >= 2 ? searchQuery : undefined
+        });
+
+        if (isMore) {
+            setCases(prev => [...prev, ...(data || [])]);
+            setOffset(currentOffset);
+        } else {
             setCases(data || []);
-            setLoading(false);
+            setOffset(0);
+        }
+
+        setHasMore((data?.length || 0) === LIMIT);
+        setLoading(false);
+        setIsSearching(false);
+    }, [getCases, statusFilter, listLawyerFilter, searchQuery, offset]);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            const statsData = await getCaseStats();
+            if (statsData) {
+                setStats({
+                    active: statsData.active || 0,
+                    closed: statsData.closed || 0,
+                    appeal: statsData.appeal || 0,
+                    total: statsData.total || 0
+                });
+                if (statsData.statuses && Object.keys(statsData.statuses).length > 0) {
+                    setUniqueStatuses(Object.keys(statsData.statuses));
+                }
+            }
         };
-        fetchAllData();
+        fetchStats();
 
         // Yarım kalan işleri getir
         const fetchIncompleteTasks = async () => {
@@ -153,8 +195,15 @@ const Home = () => {
             }
         };
         fetchIncompleteTasks();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [getCaseStats, instance, accounts]);
+
+    // Triger loadCases on filter change
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            loadCases(false);
+        }, searchQuery.length >= 2 ? 400 : 0);
+        return () => clearTimeout(timeoutId);
+    }, [statusFilter, listLawyerFilter, searchQuery]);
 
     // Calendar events
     const calendarEvents = useMemo(() => {
@@ -188,36 +237,12 @@ const Home = () => {
         return calendarEvents[selectedDate.toDateString()] || [];
     }, [selectedDate, calendarEvents]);
 
-    // Statistics
-    const stats = useMemo(() => {
-        const active = cases.filter((c) => c.status === "DERDEST").length;
-        const closed = cases.filter((c) => c.status === "KAPALI" || c.status === "MAHZEN").length;
-        const appeal = cases.filter((c) => c.status === "TEMYIZ").length;
-        const total = cases.length;
-        return { active, closed, appeal, total };
-    }, [cases]);
+    // Statistics are now from server state `stats`
 
     // Filtered cases
-    const filteredCases = useMemo(() => {
-        return cases.filter((c) => {
-            const s = searchQuery.toLocaleLowerCase('tr-TR').trim();
-            const matchesSearch =
-                !searchQuery ||
-                (c.esas_no || "").toLocaleLowerCase('tr-TR').includes(s) ||
-                (c.tracking_no || "").toLocaleLowerCase('tr-TR').includes(s) ||
-                (c.responsible_lawyer_name || "").toLocaleLowerCase('tr-TR').includes(s) ||
-                (c.court || "").toLocaleLowerCase('tr-TR').includes(s) ||
-                (c.subject || "").toLocaleLowerCase('tr-TR').includes(s) ||
-                (c.parties || []).some((p: { name?: string }) => (p.name || "").toLocaleLowerCase('tr-TR').includes(s));
-            const matchesStatus = statusFilter === "ALL" || c.status === statusFilter;
-            return matchesSearch && matchesStatus;
-        });
-    }, [cases, searchQuery, statusFilter]);
+    const filteredCases = cases;
 
-    const uniqueStatuses = useMemo(() => {
-        const s = new Set(cases.map((c) => c.status).filter(Boolean));
-        return Array.from(s);
-    }, [cases]);
+    // uniqueStatuses is now updated from server stats, no recalculation needed from local cases.
 
     const today = new Date().toLocaleDateString("tr-TR", {
         weekday: "long",
@@ -392,34 +417,56 @@ const Home = () => {
                     <div className="lg:col-span-2 space-y-4">
 
                         {/* Search & Filter */}
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Esas no, avukat, mahkeme veya konu ara..."
-                                    className="pl-9 glass-input"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Esas no, avukat, mahkeme veya konu ara..."
+                                        className="pl-9 glass-input"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                                <div className="w-full sm:w-[200px]">
+                                    <Select
+                                        value={listLawyerFilter}
+                                        onValueChange={setListLawyerFilter}
+                                    >
+                                        <SelectTrigger className="glass-input">
+                                            <div className="flex items-center gap-2">
+                                                <Users className="w-4 h-4 text-muted-foreground" />
+                                                <SelectValue placeholder="Avukat Seçin" />
+                                            </div>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="ALL">Tüm Avukatlar</SelectItem>
+                                            {calendarLawyerOptions.map(name => (
+                                                <SelectItem key={name} value={name}>{name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+
+                            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar">
                                 <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
                                 <Button
                                     size="sm"
                                     variant={statusFilter === "ALL" ? "default" : "outline"}
-                                    className="h-9 shrink-0"
+                                    className={`h-9 shrink-0 ${statusFilter === "ALL" ? "bg-primary text-primary-foreground" : "bg-card/50"}`}
                                     onClick={() => setStatusFilter("ALL")}
                                 >
                                     Tümü
                                 </Button>
                                 {uniqueStatuses.map((s) => {
-                                    const style = getStatusStyle(s);
+                                    const isActive = statusFilter === s;
                                     return (
                                         <Button
                                             key={s}
                                             size="sm"
-                                            variant={statusFilter === s ? "default" : "outline"}
-                                            className="h-9 shrink-0"
+                                            variant={isActive ? "default" : "outline"}
+                                            className={`h-9 shrink-0 ${isActive ? "bg-primary text-primary-foreground" : "bg-card/50"}`}
                                             onClick={() => setStatusFilter(s)}
                                         >
                                             {formatStatus(s)}
@@ -433,15 +480,15 @@ const Home = () => {
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                                 <FolderOpen className="w-4 h-4" />
-                                Dava Listesi
+                                {searchQuery.trim().length >= 2 ? "Arama Sonuçları" : "Son Eklenen Davalar"}
                             </h3>
                             <span className="text-xs text-muted-foreground">
-                                {loading ? "Yükleniyor..." : `${filteredCases.length} dava gösteriliyor`}
+                                {loading || isSearching ? "Yükleniyor..." : `${filteredCases.length} dava gösteriliyor`}
                             </span>
                         </div>
 
                         {/* Cases */}
-                        {loading ? (
+                        {loading || isSearching ? (
                             <div className="space-y-3">
                                 {[1, 2, 3, 4].map((i) => (
                                     <div key={i} className="h-24 rounded-xl bg-card/60 animate-pulse border border-border/50" />
@@ -461,60 +508,62 @@ const Home = () => {
                             </div>
                         ) : (
                             <div className="space-y-3 max-h-[calc(100vh-380px)] overflow-y-auto pr-1">
-                                {filteredCases.slice(0, 50).map((c) => {
-                                    const style = getStatusStyle(c.status);
+                                {cases.map((c) => {
+                                    const style = getStatusStyle(c.status as string);
                                     return (
                                         <div
                                             key={c.id}
                                             onClick={() => navigate(`/cases/${c.id}`)}
-                                            className="group flex items-start gap-4 p-4 rounded-xl bg-card/70 border border-border/60 hover:border-primary/40 hover:bg-card transition-all duration-200 cursor-pointer"
+                                            className="group flex items-start gap-4 p-4 rounded-xl bg-card/70 border border-border/60 hover:border-primary/40 hover:bg-card transition-all duration-200 cursor-pointer shadow-sm"
                                         >
                                             {/* Left accent */}
                                             <div className={`w-1 h-full min-h-[60px] rounded-full ${style.dot} opacity-70 shrink-0`} />
 
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-start justify-between gap-2">
-                                                    <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="flex items-center gap-2 min-w-0 text-sm font-semibold">
                                                         <Gavel className="w-4 h-4 text-primary shrink-0" />
-                                                        <span className="font-semibold text-sm truncate">
+                                                        <span className="truncate">
                                                             {c.esas_no || c.tracking_no || "Esas No Yok"}
                                                         </span>
                                                     </div>
-                                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${style.bg} ${style.text}`}>
+                                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${style.bg} ${style.text} border border-border/20`}>
                                                         {formatStatus(c.status as string)}
                                                     </span>
                                                 </div>
 
-                                                <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs text-muted-foreground">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <User className="w-3 h-3 shrink-0" />
+                                                <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                                                    <div className="flex items-center gap-1.5 bg-background/40 px-2 py-1 rounded-md border border-border/30">
+                                                        <User className="w-3 h-3 shrink-0 text-primary/60" />
                                                         <span className="truncate">{c.responsible_lawyer_name || "Atanmadı"}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Scale className="w-3 h-3 shrink-0" />
+                                                    <div className="flex items-center gap-1.5 bg-background/40 px-2 py-1 rounded-md border border-border/30">
+                                                        <Scale className="w-3 h-3 shrink-0 text-primary/60" />
                                                         <span className="truncate">{c.court || "Mahkeme belirtilmedi"}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        {c.opening_date && (
+                                                    <div className="flex items-center gap-1.5 bg-background/40 px-2 py-1 rounded-md border border-border/30">
+                                                        {c.opening_date ? (
                                                             <>
-                                                                <Clock className="w-3 h-3 shrink-0 text-primary" />
-                                                                <span className="text-primary font-medium">
-                                                                    {new Date(c.opening_date).toLocaleDateString("tr-TR")}
+                                                                <Clock className="w-3 h-3 shrink-0 text-emerald-400" />
+                                                                <span className="text-emerald-400/90 font-medium">
+                                                                    {new Date(c.opening_date as string).toLocaleDateString("tr-TR")}
                                                                 </span>
                                                             </>
+                                                        ) : (
+                                                            <span className="italic opacity-50">Tarih yok</span>
                                                         )}
                                                     </div>
                                                 </div>
 
                                                 {c.subject && (
-                                                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/80 pl-1">
                                                         <FileText className="w-3 h-3 shrink-0" />
-                                                        <span className="truncate italic">{c.subject}</span>
+                                                        <span className="truncate italic uppercase tracking-tighter">{c.subject}</span>
                                                     </div>
                                                 )}
 
                                                 {c.parties && c.parties.some((p: { party_type: string }) => p.party_type === 'COUNTER') && (
-                                                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-500 font-medium">
+                                                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-amber-500 font-bold pl-1 uppercase tracking-wider">
                                                         <Users className="w-3 h-3 shrink-0" />
                                                         <span className="truncate">
                                                             {c.parties.filter((p: { party_type: string; name?: string }) => p.party_type === 'COUNTER').map((p: { name?: string }) => p.name).join(", ")}
@@ -523,14 +572,29 @@ const Home = () => {
                                                 )}
                                             </div>
 
-                                            <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary transition-colors shrink-0 mt-1" />
+                                            <div className="w-8 h-8 rounded-full bg-primary/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+                                                <ChevronRight className="w-4 h-4 text-primary" />
+                                            </div>
                                         </div>
                                     );
                                 })}
-                                {filteredCases.length > 50 && (
-                                    <p className="text-center text-xs text-muted-foreground py-2">
-                                        +{filteredCases.length - 50} daha fazla dava (aramayı daraltın)
-                                    </p>
+
+                                {hasMore && (
+                                    <div className="flex justify-center pt-4 pb-8">
+                                        <Button
+                                            variant="outline"
+                                            className="w-full max-w-[200px] border-primary/20 hover:bg-primary/10 gap-2 h-10 shadow-sm"
+                                            onClick={() => loadCases(true)}
+                                            disabled={isSearching}
+                                        >
+                                            {isSearching ? (
+                                                <Clock className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <Plus className="w-4 h-4" />
+                                            )}
+                                            Daha Fazla Yükle
+                                        </Button>
+                                    </div>
                                 )}
                             </div>
                         )}
