@@ -60,6 +60,12 @@ def migrate():
         pg_session.commit()
 
         for table_name, model in tables:
+            # Check if table exists in SQLite
+            sl_cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+            if not sl_cur.fetchone():
+                print(f"ℹ️  Skipping {table_name} (not found in SQLite)")
+                continue
+
             print(f"⏳ Migrating {table_name}...")
             sl_cur.execute(f"SELECT * FROM {table_name}")
             rows = sl_cur.fetchall()
