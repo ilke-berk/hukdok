@@ -8,7 +8,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Use the same database models for consistency
-from models import Base, Client, Lawyer, Case, Status, DocType, CaseParty, AnalysisCache
+from models import (
+    Base, Client, Lawyer, Case, Status, DocType, CaseParty, 
+    AnalysisCache, CaseHistory, CaseDocument, CaseLawyer, 
+    CaseSubject, SyncLog, EmailRecipient
+)
 
 # Configuration
 # NOTE: Inside container, postgres service name is 'postgres'
@@ -31,14 +35,20 @@ def migrate():
     sl_conn.row_factory = sqlite3.Row
     sl_cur = sl_conn.cursor()
 
-    # Tables to migrate in order
+    # Tables to migrate in order (Parents first)
     tables = [
         ("lawyers", Lawyer),
         ("statuses", Status),
         ("doctypes", DocType),
         ("clients", Client),
+        ("case_subjects", CaseSubject),
+        ("email_recipients", EmailRecipient),
+        ("sync_logs", SyncLog),
         ("cases", Case),
         ("case_parties", CaseParty),
+        ("case_history", CaseHistory),
+        ("case_documents", CaseDocument),
+        ("case_lawyers", CaseLawyer),
         ("analysis_cache", AnalysisCache)
     ]
 
