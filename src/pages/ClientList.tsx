@@ -8,9 +8,9 @@ import {
     ChevronLeft, ChevronRight, X, Filter, ChevronUp, ChevronDown, ListFilter, AlignLeft, Bold, Italic, Underline, List, FileText
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useClients } from "@/hooks/useClients";
+import { useClients } from "../hooks/useClients";
 import { toast } from "sonner";
-import { useDebounce } from "@/hooks/useDebounce";
+import { useDebounce } from "../hooks/useDebounce";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
