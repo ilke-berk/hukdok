@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Use the same database models for consistency
-from models import Base, Client, Lawyer, Case, CaseStatus, DocumentType, CaseParty, AnalysisCache
+from models import Base, Client, Lawyer, Case, Status, DocType, CaseParty, AnalysisCache
 
 # Configuration
 # NOTE: Inside container, postgres service name is 'postgres'
@@ -34,8 +34,8 @@ def migrate():
     # Tables to migrate in order
     tables = [
         ("lawyers", Lawyer),
-        ("statuses", CaseStatus),
-        ("doctypes", DocumentType),
+        ("statuses", Status),
+        ("doctypes", DocType),
         ("clients", Client),
         ("cases", Case),
         ("case_parties", CaseParty),
