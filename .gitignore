@@ -17,6 +17,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Debug/lint output files
+*_logs.txt
+*-startup.txt
+warnings.txt
+eslint-report.json
+eslint-ui-errors.txt
+lint-output.txt
+lint_results.json
+python_warnings*.txt
+
 # Build Artifacts
 **/dist
 **/__pycache__
