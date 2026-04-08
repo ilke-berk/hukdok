@@ -17,18 +17,30 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# Docker Compose komutunu belirle
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+elif docker-compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo -e "${RED}Hata: Docker Compose bulunamadı! Lütfen Docker'ın yüklü olduğundan emin olun.${NC}"
+    exit 1
+fi
+
 # 2. Kodları güncelle
 echo -e "${YELLOW}🔄 Kodlar güncelleniyor (Git Pull)...${NC}"
-# git pull komutunu projenin git yapısına göre aktif edebilirsin
-git pull origin main || echo -e "${RED}Uyarı: Git pull başarısız oldu veya git repo değil.${NC}"
+git pull origin main || echo -e "${RED}Uyarı: Git pull sırasında bir sorun oluştu, mevcut kodla devam ediliyor.${NC}"
 
 # 3. Eski konteynerleri durdur
 echo -e "${YELLOW}🛑 Mevcut servisler durduruluyor...${NC}"
-docker compose down --remove-orphans || docker-compose down --remove-orphans
+$DOCKER_COMPOSE down --remove-orphans
 
 # 4. Yeniden Build ve Start
 echo -e "${YELLOW}🏗️  Docker imajları oluşturuluyor ve başlatılıyor...${NC}"
-docker compose up -d --build || docker-compose up -d --build
+if ! $DOCKER_COMPOSE up -d --build; then
+    echo -e "${RED}❌ Build başarısız oldu! Docker Hub bağlantısını kontrol edin.${NC}"
+    exit 1
+fi
 
 # 5. Sağlık Kontrolü
 echo -e "${YELLOW}🧪 Servisler kontrol ediliyor...${NC}"
