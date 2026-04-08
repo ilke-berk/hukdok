@@ -24,11 +24,11 @@ git pull origin main || echo -e "${RED}Uyarı: Git pull başarısız oldu veya g
 
 # 3. Eski konteynerleri durdur
 echo -e "${YELLOW}🛑 Mevcut servisler durduruluyor...${NC}"
-docker-compose down --remove-orphans
+docker compose down --remove-orphans || docker-compose down --remove-orphans
 
 # 4. Yeniden Build ve Start
 echo -e "${YELLOW}🏗️  Docker imajları oluşturuluyor ve başlatılıyor...${NC}"
-docker-compose up -d --build
+docker compose up -d --build || docker-compose up -d --build
 
 # 5. Sağlık Kontrolü
 echo -e "${YELLOW}🧪 Servisler kontrol ediliyor...${NC}"
