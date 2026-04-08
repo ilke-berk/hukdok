@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from dependencies import get_current_user
-from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest
+from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtTypeItem, PartyRoleItem
 from managers.config_manager import DynamicConfig
 from managers.admin_manager import (
     get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects,
@@ -12,6 +12,14 @@ from managers.admin_manager import (
     add_doctype, delete_doctype,
     add_email_recipient, delete_email_recipient,
     add_case_subject, delete_case_subject,
+    get_file_types, add_file_type, delete_file_type,
+    get_court_types, add_court_type, delete_court_type,
+    get_party_roles, add_party_role, delete_party_role,
+    get_bureau_types, add_bureau_type, delete_bureau_type,
+    get_cities, add_city, delete_city,
+    get_specialties, add_specialty, delete_specialty,
+    get_client_categories, add_client_category, delete_client_category,
+    seed_all_lists,
     reorder_list,
 )
 
@@ -155,3 +163,202 @@ def api_reorder_list(request: ReorderRequest, user: dict = Depends(get_current_u
     if not success:
         raise HTTPException(status_code=500, detail="Reorder failed")
     return {"status": "success", "message": "List reordered"}
+
+
+# ─── FILE TYPES ───────────────────────────────────────────────────────────────
+
+@router.get("/api/config/file_types")
+def api_get_file_types(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_file_types()
+    if not data:
+        data = get_file_types()
+    return data
+
+@router.post("/api/config/file_types")
+def api_add_file_type(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_file_type(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add file type")
+    return {"status": "success"}
+
+@router.delete("/api/config/file_types/{code}")
+def api_delete_file_type(code: str, user: dict = Depends(get_current_user)):
+    success = delete_file_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="File type not found")
+    return {"status": "success"}
+
+
+# ─── COURT TYPES ──────────────────────────────────────────────────────────────
+
+@router.get("/api/config/court_types")
+def api_get_court_types(parent_code: str = None, user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_court_types()
+    if not data:
+        data = get_court_types()
+    if parent_code:
+        data = [d for d in data if d.get("parent_code") == parent_code]
+    return data
+
+@router.post("/api/config/court_types")
+def api_add_court_type(item: CourtTypeItem, user: dict = Depends(get_current_user)):
+    success = add_court_type(item.code, item.name, item.parent_code)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add court type")
+    return {"status": "success"}
+
+@router.delete("/api/config/court_types/{code}")
+def api_delete_court_type(code: str, user: dict = Depends(get_current_user)):
+    success = delete_court_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Court type not found")
+    return {"status": "success"}
+
+
+# ─── PARTY ROLES ──────────────────────────────────────────────────────────────
+
+@router.get("/api/config/party_roles")
+def api_get_party_roles(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_party_roles()
+    if not data:
+        data = get_party_roles()
+    return data
+
+@router.post("/api/config/party_roles")
+def api_add_party_role(item: PartyRoleItem, user: dict = Depends(get_current_user)):
+    success = add_party_role(item.code, item.name, item.role_type)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add party role")
+    return {"status": "success"}
+
+@router.delete("/api/config/party_roles/{code}")
+def api_delete_party_role(code: str, user: dict = Depends(get_current_user)):
+    success = delete_party_role(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Party role not found")
+    return {"status": "success"}
+
+
+# ─── BUREAU TYPES ─────────────────────────────────────────────────────────────
+
+@router.get("/api/config/bureau_types")
+def api_get_bureau_types(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_bureau_types()
+    if not data:
+        data = get_bureau_types()
+    return data
+
+@router.post("/api/config/bureau_types")
+def api_add_bureau_type(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_bureau_type(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add bureau type")
+    return {"status": "success"}
+
+@router.delete("/api/config/bureau_types/{code}")
+def api_delete_bureau_type(code: str, user: dict = Depends(get_current_user)):
+    success = delete_bureau_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Bureau type not found")
+    return {"status": "success"}
+
+
+# ─── CITIES ───────────────────────────────────────────────────────────────────
+
+@router.get("/api/config/cities")
+def api_get_cities(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_cities()
+    if not data:
+        data = get_cities()
+    return data
+
+@router.post("/api/config/cities")
+def api_add_city(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_city(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add city")
+    return {"status": "success"}
+
+@router.delete("/api/config/cities/{code}")
+def api_delete_city(code: str, user: dict = Depends(get_current_user)):
+    success = delete_city(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="City not found")
+    return {"status": "success"}
+
+
+# ─── SPECIALTIES ──────────────────────────────────────────────────────────────
+
+@router.get("/api/config/specialties")
+def api_get_specialties(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_specialties()
+    if not data:
+        data = get_specialties()
+    return data
+
+@router.post("/api/config/specialties")
+def api_add_specialty(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_specialty(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add specialty")
+    return {"status": "success"}
+
+@router.delete("/api/config/specialties/{code}")
+def api_delete_specialty(code: str, user: dict = Depends(get_current_user)):
+    success = delete_specialty(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Specialty not found")
+    return {"status": "success"}
+
+
+# ─── CLIENT CATEGORIES ────────────────────────────────────────────────────────
+
+@router.get("/api/config/client_categories")
+def api_get_client_categories(user: dict = Depends(get_current_user)):
+    from managers.config_manager import DynamicConfig
+    config = DynamicConfig.get_instance()
+    data = config.get_client_categories()
+    if not data:
+        data = get_client_categories()
+    return data
+
+@router.post("/api/config/client_categories")
+def api_add_client_category(item: ConfigItem, user: dict = Depends(get_current_user)):
+    success = add_client_category(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add client category")
+    return {"status": "success"}
+
+@router.delete("/api/config/client_categories/{code}")
+def api_delete_client_category(code: str, user: dict = Depends(get_current_user)):
+    success = delete_client_category(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client category not found")
+    return {"status": "success"}
+
+
+# ─── SEED ─────────────────────────────────────────────────────────────────────
+
+@router.post("/api/config/seed")
+def api_seed_all(user: dict = Depends(get_current_user)):
+    # Ensure new tables exist before seeding
+    try:
+        from database import Base, engine
+        import models  # noqa — registers models in metadata
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        logger.warning(f"create_all during seed: {e}")
+    seed_all_lists()
+    return {"status": "success", "message": "Seed tamamlandı"}

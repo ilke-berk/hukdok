@@ -56,9 +56,16 @@ class DynamicConfig:
         self.__lawyers: List[Dict] = []
         self.__statuses: List[Dict] = []
         self.__doctypes: List[Dict] = []
-        self.__clients: List[str] = []  # Müvekkil listesi eklendi
-        self.__email_recipients: List[Dict] = []  # E-posta alıcıları eklendi
-        self.__case_subjects: List[Dict] = []  # Dava Konuları eklendi
+        self.__clients: List[str] = []
+        self.__email_recipients: List[Dict] = []
+        self.__case_subjects: List[Dict] = []
+        self.__file_types: List[Dict] = []
+        self.__court_types: List[Dict] = []
+        self.__party_roles: List[Dict] = []
+        self.__bureau_types: List[Dict] = []
+        self.__cities: List[Dict] = []
+        self.__specialties: List[Dict] = []
+        self.__client_categories: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -155,14 +162,66 @@ class DynamicConfig:
             )
 
     def get_case_subjects(self) -> List[Dict]:
-        """Dava Konusu listesini döndür"""
         return self.__case_subjects
 
     def set_case_subjects(self, subjects: List[Dict]):
-        """Dava Konusu listesini güncelle"""
         with self._lock:
             self.__case_subjects = subjects
-            TechnicalLogger.log(
-                "INFO", f"DynamicConfig: Case Subjects updated ({len(subjects)} items)"
-            )
+            TechnicalLogger.log("INFO", f"DynamicConfig: Case Subjects updated ({len(subjects)} items)")
+
+    def get_file_types(self) -> List[Dict]:
+        return self.__file_types
+
+    def set_file_types(self, items: List[Dict]):
+        with self._lock:
+            self.__file_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: File Types updated ({len(items)} items)")
+
+    def get_court_types(self) -> List[Dict]:
+        return self.__court_types
+
+    def set_court_types(self, items: List[Dict]):
+        with self._lock:
+            self.__court_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Court Types updated ({len(items)} items)")
+
+    def get_party_roles(self) -> List[Dict]:
+        return self.__party_roles
+
+    def set_party_roles(self, items: List[Dict]):
+        with self._lock:
+            self.__party_roles = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Party Roles updated ({len(items)} items)")
+
+    def get_bureau_types(self) -> List[Dict]:
+        return self.__bureau_types
+
+    def set_bureau_types(self, items: List[Dict]):
+        with self._lock:
+            self.__bureau_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Bureau Types updated ({len(items)} items)")
+
+    def get_cities(self) -> List[Dict]:
+        return self.__cities
+
+    def set_cities(self, items: List[Dict]):
+        with self._lock:
+            self.__cities = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Cities updated ({len(items)} items)")
+
+    def get_specialties(self) -> List[Dict]:
+        return self.__specialties
+
+    def set_specialties(self, items: List[Dict]):
+        with self._lock:
+            self.__specialties = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Specialties updated ({len(items)} items)")
+
+    def get_client_categories(self) -> List[Dict]:
+        return self.__client_categories
+
+    def set_client_categories(self, items: List[Dict]):
+        with self._lock:
+            self.__client_categories = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Client Categories updated ({len(items)} items)")
 

@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { useCases } from "@/hooks/useCases";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
-import { getStoredOutputDir, setStoredOutputDir } from "@/lib/directoryStorage";
+import { getStoredOutputDir, setStoredOutputDir, clearStoredOutputDir } from "@/lib/directoryStorage";
 
 import { EmailModal } from "@/components/email/EmailModal";
 
@@ -134,7 +134,8 @@ const Index = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  // Persistent Output Directory Load
+
+  // Server-side debounced search for case linking
   useEffect(() => {
     const loadOutputDir = async () => {
       const storedHandle = await getStoredOutputDir();
@@ -145,7 +146,6 @@ const Index = () => {
     loadOutputDir();
   }, []);
 
-  // Server-side debounced search for case linking
   useEffect(() => {
     if (!caseSearch || caseSearch.trim().length < 2) {
       setSearchResults([]);
@@ -679,9 +679,9 @@ const Index = () => {
             console.error("Download fetch error:", dlErr);
           }
         } else {
-          // Fallback warning if DOCX
-          if (selectedFile.name.toLowerCase().endsWith(".docx") && newFilename.toLowerCase().endsWith(".pdf")) {
-            toast.warning("PDF dönüşümü sunucuda yapıldı ancak indirilemedi. Orijinal .docx dosyası .pdf olarak kaydediliyor (açılmayabilir).", { duration: 5000 });
+          const isNonPdf = !selectedFile.name.toLowerCase().endsWith(".pdf");
+          if (isNonPdf && newFilename.toLowerCase().endsWith(".pdf")) {
+            toast.warning(`PDF dönüşümü sunucuda yapıldı ancak indirilemedi. Orijinal dosya (${selectedFile.name.split('.').pop()}) .pdf olarak kaydediliyor (açılmayabilir).`, { duration: 5000 });
           }
         }
 
@@ -762,6 +762,10 @@ const Index = () => {
         setIsValidated(false);
         setLinkedCase(null);
         setCaseSearch("");
+        
+        // Reset output directory - User wants to re-select for every process
+        setOutputDirHandle(null);
+        await clearStoredOutputDir();
       }
     } catch (error: unknown) {
       console.error("Confirmation error:", error);
@@ -769,29 +773,6 @@ const Index = () => {
       toast.error(errorMessage);
     } finally {
       setIsProcessing(false);
-    }
-
-    // --- FILE SYSTEM ACCESS API SAVE ---
-    // Save the file electronically to the user's selected folder (if available)
-    if (outputDirHandle && selectedFile && dataToUse) {
-      let saveFilename = dataToUse.generated_filename || "belge_bilinmiyor";
-      if (!saveFilename.toLowerCase().endsWith(".pdf")) {
-        saveFilename += ".pdf";
-      }
-
-      // We need the PROCESSED file (e.g. from backend response) usually.
-      // But currently, the backend '/confirm' saves to SharePoint/Server.
-      // The 'selectedFile' is the ORIGINAL. 
-
-      // OPTION A: Save the ORIGINAL file with the NEW NAME to Desktop.
-      // OPTION B: If backend generates a standardized/stamped PDF, we would need to fetch it.
-      // Assuming user wants the ORIGINAL file but renormalized/renamed:
-
-      // If you need the file to be exactly what was uploaded but renamed:
-      const success = await saveFileToDisk(selectedFile, saveFilename);
-      if (success) {
-        toast.success(`💾 Dosya bilgisayarınıza kaydedildi: ${saveFilename}`);
-      }
     }
   };
 

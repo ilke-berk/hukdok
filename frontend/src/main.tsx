@@ -4,6 +4,14 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
+// Disable console logs in production to prevent leaking metadata
+if (import.meta.env.PROD) {
+  console.log = () => {};
+  console.debug = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+}
+
 console.log("main.tsx: Starting app render...");
 
 const rootElement = document.getElementById("root");

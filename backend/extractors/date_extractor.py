@@ -84,11 +84,6 @@ class DateCandidate:
         return f"Date({self.date_str}, Total={self.final_score} [{breakdown_str}], Snippet='...{self.snippet[-20:] if len(self.snippet)>20 else self.snippet}...')"
 
 
-def advanced_regex_scan(text):
-    candidates = []
-    text_len = len(text)
-    today = datetime.now()
-    
 # --- PRE-COMPILED PATTERNS ---
 # Pattern 1: Numeric (dd.mm.yyyy, dd/mm/yyyy, dd-mm-yyyy)
 PRE_COMPILED_NUMERIC_DATE = re.compile(r'\b(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{4})\b')
@@ -129,7 +124,7 @@ def advanced_regex_scan(text):
     # Using Pre-Compiled Pattern
     for match in PRE_COMPILED_TEXT_DATE.finditer(text):
         d_str, m_str, y_str = match.groups()
-        m_upper = m_str.upper().replace('İ', 'I').replace('I', 'I') 
+        m_upper = m_str.upper().replace('İ', 'I')
         
         found_month = None
         for month_name, month_val in months_map.items():

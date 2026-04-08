@@ -1,20 +1,6 @@
 import re
 from typing import List, Dict, Optional
 
-def extract_esas_no_candidates(text: str) -> List[Dict]:
-    """
-    Esas numarasını regex ile tespit eder.
-    
-    Türk hukuk sisteminde yaygın formatlar:
-    - 2023/145 Esas
-    - E. 2024/67
-    - Esas No: 2023/145
-    - E:2023/145
-    - Esas: 2024/234 Karar: 2024/456
-    """
-    if not text:
-        return []
-
 # --- PRE-COMPILED PATTERNS ---
 # 1. Normalization Pattern (Whitespace removal)
 PRE_COMPILED_NORM_PATTERN = re.compile(r'\s+')

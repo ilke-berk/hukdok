@@ -26,8 +26,18 @@ class DeleteRequest(BaseModel):
 
 
 class ReorderRequest(BaseModel):
-    type: str  # lawyers, statuses, doctypes, emails
+    type: str
     ordered_ids: List[str]
+
+class CourtTypeItem(BaseModel):
+    code: str
+    name: str
+    parent_code: str
+
+class PartyRoleItem(BaseModel):
+    code: str
+    name: str
+    role_type: str = "MAIN"
 
 
 class ClientCreate(BaseModel):

@@ -31,64 +31,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-// Dava konuları ve diğer listeler useConfig üzerinden dinamik olarak alınıyor.
-const DOSYA_TURLERI = ["Ceza", "Hukuk", "İcra", "İdari Yargı", "Arabuluculuk", "Savcılık"];
-const ALT_TURLER: Record<string, string[]> = {
-    "Ceza": [
-        "AĞIR CEZA MAHKEMESİ",
-        "ASLİYE CEZA MAHKEMESİ",
-        "Bölge Adliye Mah. Ceza Dairesi",
-        "ÇOCUK AĞIR CEZA MAHKEMESİ",
-        "ÇOCUK MAHKEMESİ",
-        "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ",
-        "İCRA CEZA HAKİMLİĞİ",
-        "İNFAZ HAKİMLİĞİ",
-        "İSTİNAF CEZA DAİRESİ (İLK DERECE)",
-        "SULH CEZA HAKİMLİĞİ",
-        "YARGITAY CEZA DAİRESİ (İLK DERECE)",
-    ],
-    "Hukuk": [
-        "AİLE MAHKEMESİ",
-        "ASLİYE HUKUK MAHKEMESİ",
-        "ASLİYE TİCARET MAHKEMESİ",
-        "BAM HUKUK DAİRESİ (İLK DERECE)",
-        "BÖLGE ADLİYE MAH. HUKUK DAİRESİ",
-        "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ",
-        "İCRA HUKUK MAHKEMESİ",
-        "İŞ MAHKEMESİ",
-        "KADASTRO MAHKEMESİ",
-        "KADASTRO MAHKEMESİ (MÜŞ)",
-        "SULH HUKUK MAHKEMESİ",
-        "TÜKETİCİ MAHKEMESİ",
-    ],
-    "İcra": ["İCRA DAİRESİ"],
-    "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
-    "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
-    "Savcılık": [],
-};
-
-const DAVA_TURU_ALT_KIRILIM = [
-    "ACİL TIP", "ANESTEZİYOLOJİ VE REANİMASYON", "AĞIZ DİŞ VE ÇENE CERRAHİSİ", "AİLE HEKİMLİĞİ", "BEYİN VE SİNİR CERRAHİSİ", "DERİ VE ZÜHREVİ HASTALIKLARI", "DİŞ TABİBİ", "ENDOKRİNOLOJİ", "ENFEKSİYON HASTALIKLARI", "FİZİKSEL TIP VE REHABİLİTASYON", "GASTROENTEROLOJİ", "GENEL CERRAHİ", "GÖZ HASTALIKLARI", "GÖĞÜS CERRAHİSİ", "GÖĞÜS HASTALIKLARI", "HASTA", "HASTANE ORGANİZASYONU", "HEMATOLOJİ", "HEMŞİRE", "JİNEKOLOJİK ONKOLOJİ CERRAHİSİ", "KADIN HASTALIKLARI VE DOĞUM", "KALP VE DAMAR CERRAHİSİ", "KARDİYOLOJİ", "KULAK BURUN BOĞAZ HASTALIKLARI", "NEFROLOJİ", "NEONATOLOJİ", "NÖROLOJİ", "ONKOLOJİ", "ORTODONTİ", "ORTOPEDİ VE TRAVMATOLOJİ", "PERİNATOLOJİ", "PLASTİK VE ESTETİK CERRAHİ", "PRATİSYEN TABİP", "PROTETİK DİŞ TEDAVİSİ", "RADYOLOJİ", "RUH SAĞLIĞI VE HASTALIKLARI", "TIBBİ BİYOKİMYA", "TIBBİ GENETİK", "TIBBİ ONKOLOJİ", "TIBBİ PATOLOJİ", "YOĞUN BAKIM", "ÇOCUK CERRAHİSİ", "ÇOCUK ENFEKSİYON HASTALIKLARI", "ÇOCUK HEMATOLOJİSİ VE ONKOLOJİSİ", "ÇOCUK KALP VE DAMAR CERRAHİSİ", "ÇOCUK NÖROLOJİSİ", "ÇOCUK SAĞLIĞI VE HASTALIKLARI", "ÜROLOJİ", "İÇ HASTALIKLARI"
-];
-
-const BURO_OZEL_TURU = [
-    "ALEYHE", "DR ÖZEL", "HASTANE ÖZEL MÜVEKKİL", "LEXİS", "RÜCU", "VEKALETLİ TAKİP", "VEKALETSİZ TAKİP", "ÖZEL"
-];
-
-const EK_ALT_KIRILIM = [
-    "ACİL", "AKUT BATIN", "AKUT BÖBREK YETMEZLİĞİ", "ALERJİ", "ALIN DARALTMA", "ALÇI KOMPLİKASYONU", "AMBULANS", "AMELİYATTA POZİSYON HATASI", "AMNİYOSENTEZ", "AMPUTASYON", "ANAFLAKTİK ŞOK", "ANAL ATREZİ", "ANESTEZİ UYGULAMASI", "ANESTEZİ UYGULAMASI (EPİDURAL)", "ANESTEZİ UYGULAMASI (GENEL)", "ANJİO;STENT;PERKUTAN KORONER", "ANİ BEBEK ÖLÜMÜ", "AORT ANEVRİZMASI", "AORT DİSEKSİYONU", "APANDİSİT", "APERT SENDROMU", "ASFİKSİ;HİPOKSİ", "ASM DIŞI NÖBET", "AVASKÜLER NEKROZ", "AYDINLATILMIŞ ONAM", "AÇIK KALP AMELİYATI", "BACAK-BOY UZATMA AMELİYATI", "BADEMCİK (TONSİLLEKTOMİ);GENİZ ETİ (ADENOIDEKTOMI)", "BAKTERİYEL MENENJİT", "BAZİLLER TEPE SENDROMU", "BAĞIRSAK FELCİ (HIRSCHSPRUNG)", "BAĞIRSAK PERFORASYONU (DELİNME)", "BAĞIRSAK TIKANIKLIĞI (İLEUS - VOLVULUS)", "BEBEKTE CİLT KESİSİ", "BEL FITIĞI", "BEYİN KANAMASI", "BEYİN TÜMÖRÜ", "BLEFAROPLASTİ", "BOS KAÇAĞI", "BOTOKS", "BOYUN FITIĞI", "BOYUN LİPOSUCTİON", "BYPASS", "BÖBREK NAKLİ", "BÖBREK TRANSPLANTASYONU", "CAM KESİSİ", "COVİD 19", "CRUSH YARALANMA (EZİLME)", "CİNSİYET DEĞİŞTİRME", "CİSİM KIRILMASI", "CİSİM UNUTMA", "CİSİM YUTMA", "DAMAR YARALANMASI", "DOLGU", "DOWN SENDROMU", "DÜŞÜK", "DİYAFRAM FITIĞI", "DİŞ TELİ TEDAVİSİ", "DİŞ ÇEKİMİ", "EKLEM AMELİYATI", "EKTOPİK GEBELİK", "EMBOLİ", "ENDOFTALMİ", "ENFEKSİYON", "ENJEKSİYON SİNİR HASARI", "EPIZYOTOMI", "EPİLEPSİ", "ERPC", "FAKO+İOL", "FASİAL SİNİR HASARI", "FENİLKETONÜRİ", "FRAKTÜR (KIRIK)", "FİSTÜL", "GASTROENTERİT", "GEBELİĞİN TEŞHİS EDİLEMEMESİ", "GENİTAL HERPES", "GLOKOM", "GUATR", "GÖBEK FITIĞI-HERNİ", "GÖZ ALTI TORBASI", "GÖZ LAZER UYGULAMASI", "GÖZE YABANCI CİSİM BATMASI", "HASTANE ENFEKSİYONU", "HASTANE ORGANİZASYONU", "HATALI DİŞİN ÇEKİLMESİ", "HATALI KAN TRANSFÜZYONU", "HATALI PROTEZ", "HATALI RAPOR", "HATALI RAPORLAMA", "HATALI TANI", "HATALI İLAÇ", "HATALI İLAÇ UYGULANMASI", "HELPP SENDROMU", "HEMONJIOM", "HEMOROİD", "HEMOTORAKS-PNÖMOTORAKS", "HORNER SENDROMU", "HİSTEREKTOMİ", "HİSTEREKTOMİ(TAH)", "JİNEKOMASTİ", "KAFATASI ESTETİĞİ", "KALP ANOMALİSİ(ASD-VSD)", "KALP KAPAK AMELİYATI", "KALP KRİZİ", "KALP KRİZİ - MİYOKARD ENFARKTÜSÜ", "KALP KRİZİ-MİYOKARD ENFARKTÜSÜ", "KALP PİLİ AMELİYATI", "KAN UYUŞMAZLIĞI", "KANAL TEDAVİSİ", "KANSER", "KARIN GERME", "KARIN GERME - LİPOSUCTİON", "KARIN GERME-LİPOSUCTİON", "KASIK FITIĞI-HERNİ", "KATARAKT", "KATARAKT-FAKO+İOL", "KATARAKT-FEMTOSANİYE LAZER", "KATARAKT-LENS DEĞİŞİMİ", "KATARAKT/FAKO+İOL", "KAZA SONRASI HATALI MÜDAHALE", "KAŞ GERME", "KAŞ KALDIRMA VE GAMZE ESTETİĞİ", "KERATİT", "KESİCİ ALET YARALANMASI", "KIZLIK ZARI", "KOL GERME", "KOLONOSKOPİ", "KOMPARTMAN SENDROMU", "KOMPLİKASYON YÖNETİMİNDE HATA", "KONSÜLTASYON", "KORDON DOLANMASI", "KORNEA NAKLİ", "KOTER YANIĞI", "KÜRTAJ", "KİSTEKTOMİ", "LABİOPLASTİ", "LAZER", "LAZER YANIĞI", "LAZER/EXCİMER LAZER", "LOMBER OMURGA CERRAHİSİ", "LİPOSHİFTİNG", "LİPOSUCTİON", "MAKULA DEJENARASYONU (SARI NOKTA HASTALIĞI)", "MAKULA DEJENARASYONU(SARI NOKTA HASTALIĞI)", "MASTEKTOMİ (MEME KANSERİ)", "MEKONYUM ASPİRASYONU", "MEME BÜYÜTME-KÜÇÜLTME-MAMOPLASTİ", "MEME DİKLEŞTİRME (MASTOPEKSİ)", "MENENJİT", "MENİSKÜS", "MESANE YARALANMASI", "MS (MULTİPLE SKLEROZ)", "MYOMEKTOMİ", "MİDE KANAMASI", "MİDE KÜÇÜLTME (OBEZİTE CERRAHİSİ)", "MİDE PERFORASYONU (DELİNME)", "MİKROSEFALİ VE HİDROSEFALİ", "NEFREKTOMİ", "NEKROTİZAN FASİT", "NEONATAL (YENİDOĞAN) ÖLÜM", "NÖRAL TÜP DEFEKTİ", "NÖROLOJİK HASAR-SEREBRAL PALSİ-HİE", "OMUZ DİSTOSİSİ; BRAKİAL PLEKSUS", "OMUZ DİSTOSİSİ;BRAKİAL PLEKSUS", "OPTİK ATROFİ", "ORGAN NAKLİ", "ORTA KULAK (OTİTİS MEDİA)-MASTOİDEKTOMİ", "ORTODONTİ TEDAVİSİ", "OTOSKLEROZ", "OTİZM", "OVER KİSTİ", "PERİFERİK SİNİR SIKIŞMASI", "PLASENTA DEKOLMANI", "PLASENTA KALMASI", "PNÖMONİ (ARDS)", "POPO ESTETİĞİ", "POSTPARTUM KANAMA", "PREEKLAMPSİ", "PREMATÜRE RETİNOPATİSİ", "PREMATÜRE RETİNOPATİSİ (ROP)", "PROSTAT", "PROTEZ", "PULMONER EMBOLİ", "PULMONER STENOZ", "RADYAN ISITICI YANIĞI", "RAİ UYGULAMASI", "REFLÜ CERRAHİSİ", "REST PLASENTA", "RETİNA DEKOLMANI", "RİNOPLASTİ; SEPTOPLASTİ", "RİNOPLASTİ;SEPTOPLASTİ", "SAFRA KAÇAĞI", "SARILIK", "SAÇ EKİMİ", "SEPSİS", "SEPTOOPTİK DİSPLAZİ", "SERÖZ ADENOKARSİNOM", "SEZARYEN", "SFİNKTER HASARI (GAİTA KAÇIRMA)", "SICAK SU-ISITICI YANIK", "SKOLYOZ", "SLEEVE GASTREKTOMİ", "SOLUNUM YETMEZLİĞİ", "SPİNA BFİDA", "SPİRAL", "SPİRAL (RİA)", "SÜNNET", "SİNÜS CERRAHİSİ", "SİNİR HASARI", "SİNİR YARALANMASI", "TANI KONULAMADAN EX", "TAŞ KIRMA AMELİYATI", "TEDAVİDE GECİKME", "TENDON KESİSİ", "TESTİS KAYBI", "TESTİS TORSİYONU", "TORAKS DUVARI DEFORMİTESİ", "TOTAL KALÇA PROTEZİ", "TREKEOÖZOFAJİAL ( SOLUK BORUSU) FİSTÜL", "TRIZOMI 18", "TRİODEKTOMİ", "TRİZOMİ 13", "TRİZOMİ 18", "TUBAL LİGASYON", "TÜBERKÜLOZ", "TÜP BEBEK", "TÜPLERİN ALINMASI (BSO)", "TÜPLERİN BAĞLANMASI (TÜP LİGASYONU)", "TİROİDEKTOMİ", "UTERUS RÜPTÜRÜ", "UTERİN ATONİ", "UTERİN RÜPTÜR", "UZMANLIK ALANI DIŞI MÜDAHALE", "UZUV EKSİKLİĞİ", "UZUV KOPMASI", "VAJİNA ESTETİĞİ-LABİOPLASTİ", "VAJİNAL FİSTÜL (UVF)", "VARİKOSEL", "VARİS", "VAZEKTOMİ", "VERTEBRA CERRAHİSİ", "VEZİKOÜRETERAL REFLÜ", "VOKALKORD PARALİZİSİ (SES KISIKLIĞI)", "YANLIŞ TARAF;HATALI ORGAN", "YAĞ ENJEKSİYONU", "YENİ DOĞAN ENFEKSİYONU", "YENİ DOĞAN MUAYENESİNDE HATA", "YOĞUN BAKIM", "YÜZ GERME", "ZEHİRLENME", "ÇAPRAZ BAĞ AMELİYATI", "ÇENE (MANDİBULA) CERRAHİSİ", "ÇENE ASİMETRİSİ", "ÇENE KIRIĞI", "ÇIKIK", "ÇOCUK FELCİ", "ÜRETER YARALANMASI", "İDRAR KAÇIRMA TEDAVİSİ (ÜRİNER İNKONTİNANS)", "İLAÇ", "İLAÇ ALERJİSİ", "İMPLANT", "İNCE BAĞIRSAK PERFORASYONU", "İNSİZYON YERİ ENFEKSİYONU", "İNTRAUTERİN ÖLÜM", "İNTİHAR", "İŞİTME KAYBI"
-];
-
-const TARAF_ROLLERI = ["Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil"];
-const UCUNCU_TARAF_ROLLERI = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Davacı", "Davalı", "Diğer"];
-const HIZMET_TURLERI = [
-    { label: "Rapor", index: 0 },
-    { label: "Danışmanlık", index: 1 },
-    { label: "Dava", index: 2 },
-    { label: "İcra", index: 3 },
-    { label: "Yazışma", index: 4 }
-];
-// DAVA_KONULARI removed - using dynamic config via useConfig
+// Tüm listeler artık useConfig üzerinden dinamik olarak alınıyor.
 
 interface EditModeParty {
     party_type: string;
@@ -171,7 +114,25 @@ const NewCase = () => {
     // API Hooks
     const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
     const { getClients } = useClients();
-    const { caseSubjects, lawyers } = useConfig();
+    const {
+        caseSubjects, lawyers,
+        fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
+    } = useConfig();
+
+    const DOSYA_TURLERI = fileTypes.map(f => f.name ?? "");
+    const ALT_TURLER: Record<string, string[]> = courtTypesByParent
+        ? Object.fromEntries(Object.entries(courtTypesByParent).map(([k, v]) => [k, v.map(i => i.name ?? "")]))
+        : {};
+    const TARAF_ROLLERI = mainPartyRoles.map(r => r.name ?? "");
+    const UCUNCU_TARAF_ROLLERI = thirdPartyRoles.map(r => r.name ?? "");
+    const BURO_OZEL_TURU = bureauTypes.map(b => b.name ?? "");
+    const HIZMET_TURLERI = [
+        { label: "Rapor", index: 0 },
+        { label: "Danışmanlık", index: 1 },
+        { label: "Dava", index: 2 },
+        { label: "İcra", index: 3 },
+        { label: "Yazışma", index: 4 }
+    ];
 
     // Check if we are in edit mode
     const editModeCase = location.state?.case as EditModeCaseData | undefined;
@@ -1189,16 +1150,16 @@ const NewCase = () => {
                                                         <CommandInput placeholder="Alt tür ara..." />
                                                         <CommandEmpty>Kayıt bulunamadı.</CommandEmpty>
                                                         <CommandGroup className="overflow-auto max-h-56">
-                                                            {DAVA_TURU_ALT_KIRILIM.map((t) => (
+                                                            {specialties.map((s) => (
                                                                 <CommandItem
-                                                                    key={t}
-                                                                    value={t}
+                                                                    key={s.code}
+                                                                    value={s.name ?? ""}
                                                                     onSelect={(currentValue) => {
                                                                         setFormData({ ...formData, subType: currentValue === formData.subType ? "" : currentValue });
                                                                     }}
                                                                 >
-                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subType === t ? "opacity-100" : "opacity-0"}`} />
-                                                                    {toTitleCase(t)}
+                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subType === s.name ? "opacity-100" : "opacity-0"}`} />
+                                                                    {toTitleCase(s.name ?? "")}
                                                                 </CommandItem>
                                                             ))}
                                                         </CommandGroup>
@@ -1227,16 +1188,16 @@ const NewCase = () => {
                                                         <CommandInput placeholder="Ek alt kırılım ara..." />
                                                         <CommandEmpty>Kayıt bulunamadı.</CommandEmpty>
                                                         <CommandGroup className="overflow-auto max-h-56">
-                                                            {EK_ALT_KIRILIM.map((t) => (
+                                                            {specialties.map((s) => (
                                                                 <CommandItem
-                                                                    key={t}
-                                                                    value={t}
+                                                                    key={s.code}
+                                                                    value={s.name ?? ""}
                                                                     onSelect={(currentValue) => {
                                                                         setFormData({ ...formData, subTypeExtra: currentValue === formData.subTypeExtra ? "" : currentValue });
                                                                     }}
                                                                 >
-                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subTypeExtra === t ? "opacity-100" : "opacity-0"}`} />
-                                                                    {toTitleCase(t)}
+                                                                    <Check className={`mr-2 h-4 w-4 ${formData.subTypeExtra === s.name ? "opacity-100" : "opacity-0"}`} />
+                                                                    {toTitleCase(s.name ?? "")}
                                                                 </CommandItem>
                                                             ))}
                                                         </CommandGroup>

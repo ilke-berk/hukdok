@@ -34,68 +34,11 @@ import {
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { useClients } from "@/hooks/useClients";
+import { useConfig } from "@/hooks/useConfig";
 import { validateTCIdentity } from "@/lib/validation";
 import { FileUpload } from "@/components/FileUpload";
 
-const TURKEY_CITIES = [
-    "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Amasya", "Ankara", "Antalya", "Artvin", "Aydın", "Balıkesir",
-    "Bilecik", "Bingöl", "Bitlis", "Bolu", "Burdur", "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli",
-    "Diyarbakır", "Edirne", "Elazığ", "Erzincan", "Erzurum", "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane", "Hakkari",
-    "Hatay", "Isparta", "Mersin", "İstanbul", "İzmir", "Kars", "Kastamonu", "Kayseri", "Kırklareli", "Kırşehir",
-    "Kocaeli", "Konya", "Kütahya", "Malatya", "Manisa", "Kahramanmaraş", "Mardin", "Muğla", "Muş", "Nevşehir",
-    "Niğde", "Ordu", "Rize", "Sakarya", "Samsun", "Siirt", "Sinop", "Sivas", "Tekirdağ", "Tokat",
-    "Trabzon", "Tunceli", "Şanlıurfa", "Uşak", "Van", "Yozgat", "Zonguldak", "Aksaray", "Bayburt", "Karaman",
-    "Kırıkkale", "Batman", "Şırnak", "Bartın", "Ardahan", "Iğdır", "Yalova", "Karabük", "Kilis", "Osmaniye",
-    "Düzce", "Delft", "Girne", "London", "Salmiya"
-].sort((a, b) => a.localeCompare(b, 'tr')); // Alfabetik sıra için sırala
-
-const SPECIALTIES = [
-    "Acil Tıp",
-    "Aile Hekimliği",
-    "Anesteziyoloji ve Reanimasyon",
-    "Ağız ve Diş Sağlığı",
-    "Beyin ve Sinir Cerrahisi (Nöroşirurji)",
-    "Deri ve Zührevi Hastalıkları",
-    "Diş Tabibi",
-    "Enfeksiyon Hastalıkları ve Klinik Mikrobiyoloji",
-    "Fiziksel Tıp ve Rehabilitasyon",
-    "Gastroenteroloji",
-    "Genel Cerrahisi",
-    "Göz Hastalıkları",
-    "Göğüs Cerrahisi",
-    "Göğüs Hastalıkları",
-    "Hematoloji",
-    "Kadın Hastalıkları ve Doğum",
-    "Kalp ve Damar Cerrahisi",
-    "Kardiyoloji",
-    "Kulak Burun Boğaz Hastalıkları",
-    "Nefroloji",
-    "Nöroloji",
-    "Ortodonti",
-    "Ortopedi ve Travmatoloji",
-    "Perinatoloji",
-    "Plastik Rekonstrüktif ve Estetik Cerrahi",
-    "Pratisyen Tabip",
-    "Radyasyon Onkolojisi",
-    "Radyoloji (Radyodiyagnostik)",
-    "Ruh Sağlığı ve Hastalıkları",
-    "Spor Hekimliği",
-    "Sualtı Hekimliği ve Hiperbarik Tip",
-    "Tıbbi Biyokimya",
-    "Tıbbi Patoloji",
-    "Yoğun Bakım",
-    "Çocuk Acil",
-    "Çocuk Cerrahisi",
-    "Çocuk Endokrinolojisi",
-    "Çocuk Enfeksiyon Hastalıkları",
-    "Çocuk Hematolojisi ve Onkolojisi",
-    "Çocuk Nörolojisi",
-    "Çocuk Sağlığı ve Hastalıkları",
-    "Çocuk Ürolojisi",
-    "Üroloji",
-    "İç Hastalıkları",
-    "Adli Tıp"
-].sort((a, b) => a.localeCompare(b, 'tr'));
+// Listeler useConfig üzerinden dinamik olarak alınıyor.
 
 const findMatch = (options: string[], value?: string) => {
     if (!value) return "";
@@ -104,8 +47,13 @@ const findMatch = (options: string[], value?: string) => {
 };
 
 const NewClient = () => {
-    const categories = ["Doktor", "Kurum", "Özel Hastane", "Bireysel", "Sigorta Şirketi", "Diğer"];
     const { saveClient, updateClient, deleteClient, clients, isLoading } = useClients();
+    const { cities, specialties, clientCategories } = useConfig();
+    const TURKEY_CITIES = cities.map(c => c.name ?? "");
+    const SPECIALTIES = specialties.map(s => s.name ?? "");
+    const categories = clientCategories.length > 0
+        ? clientCategories.map(c => c.name ?? "")
+        : ["Doktor", "Kurum", "Özel Hastane", "Bireysel", "Sigorta Şirketi", "Diğer"];
     const navigate = useNavigate();
     const location = useLocation();
 

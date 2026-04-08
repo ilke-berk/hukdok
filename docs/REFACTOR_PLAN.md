@@ -8,7 +8,7 @@ Tüm hook'lar elle `useState` + `useCallback` ile fetch yapıyor, duplicate logi
 ---
 
 ## ADIM 1 — `authenticatedRequest` duplicate'ini sil (Kolay)
-
+TMM
 **Dosyalar:** `useCases.ts`, `useClients.ts`, `useConfig.ts`
 
 Her üç hook'ta aynı `authenticatedRequest` wrapper kopyalanmış.  
@@ -46,6 +46,7 @@ React Query'nin cache/dedup avantajı burada en çok işe yarar.
 ---
 
 ## ADIM 3 — `useClients`'ı React Query'e taşı (Orta)
+TMM
 
 **Dosyalar:** `useClients.ts`, `ClientList.tsx`, `NewClient.tsx`, `QuickCaseModal.tsx`
 

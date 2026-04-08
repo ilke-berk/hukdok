@@ -112,6 +112,14 @@ async def lifespan(app: FastAPI):
         else:
             logging.warning("Cache empty. Use refresh button to load data.")
 
+    # Seed static lists if tables are empty
+    try:
+        from managers.admin_manager import seed_all_lists
+        seed_all_lists()
+        logging.info("Seed check completed.")
+    except Exception as e:
+        logging.warning(f"Seed failed: {e}")
+
     import threading
     threading.Thread(target=refresh_lists_background, daemon=True).start()
     logging.info("Background refresh thread started.")

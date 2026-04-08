@@ -169,6 +169,78 @@ class CaseSubject(Base):
     sequence = Column(Integer, default=0) # Ordering
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
+class FileType(Base):
+    __tablename__ = "file_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "Ceza"
+    name = Column(String, nullable=False)                           # e.g. "Ceza"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class CourtType(Base):
+    __tablename__ = "court_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, index=True, nullable=False)               # e.g. "AGIR-CEZA"
+    name = Column(String, nullable=False)                           # e.g. "AĞIR CEZA MAHKEMESİ"
+    parent_code = Column(String, nullable=False)                    # e.g. "Ceza"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class PartyRole(Base):
+    __tablename__ = "party_roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "DAVACI"
+    name = Column(String, nullable=False)                           # e.g. "Davacı"
+    role_type = Column(String, default="MAIN")                      # "MAIN" or "THIRD"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class BureauType(Base):
+    __tablename__ = "bureau_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "ALEYHE"
+    name = Column(String, nullable=False)                           # e.g. "ALEYHE"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class City(Base):
+    __tablename__ = "cities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "ISTANBUL"
+    name = Column(String, nullable=False)                           # e.g. "İstanbul"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class Specialty(Base):
+    __tablename__ = "specialties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "ACIL-TIP"
+    name = Column(String, nullable=False)                           # e.g. "Acil Tıp"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class ClientCategory(Base):
+    __tablename__ = "client_categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # e.g. "DOKTOR"
+    name = Column(String, nullable=False)                           # e.g. "Doktor"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
 class AnalysisCache(Base):
     """
     Cache for file analysis results to avoid re-processing.

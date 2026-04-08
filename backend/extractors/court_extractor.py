@@ -7,6 +7,9 @@ Strateji:
   1. HEADER REGEX  — İlk 20 satır; en güvenilir (T.C. başlığı altında)
   2. BODY REGEX    — "Hüküm veren … mahkemesi" / "karar veren" kalıpları
   Başarısız olursa None döner → LLM prompt'una bırakılır.
+
+Mahkeme türleri ve il listesi DynamicConfig üzerinden DB'den okunur.
+DB boşsa _FALLBACK_* listeleri devreye girer.
 """
 
 import re
@@ -15,19 +18,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Türk mahkeme türleri — önce uzun olanlar kontrol edilmeli (greedy match)
+# Fallback listeleri — DB boş/erişilemezse kullanılır
 # ---------------------------------------------------------------------------
-MAHKEME_TURLERI = [
-    # Bölge / Üst
+_FALLBACK_MAHKEME_TURLERI = [
     r"BÖLGE\s+ADLİYE\s+MAHKEMESİ",
     r"BÖLGE\s+İDARE\s+MAHKEMESİ",
-    r"BÖLGE\s+ADLİYE\s+MAHKEMESİ",
-    # Yargıtay / Danıştay
     r"YARGITAY",
     r"DANIŞTAY",
     r"ANAYASA\s+MAHKEMESİ",
     r"UYUŞMAZLIK\s+MAHKEMESİ",
-    # Hukuk
     r"ASLİYE\s+HUKUK\s+MAHKEMESİ",
     r"ASLİYE\s+TİCARET\s+MAHKEMESİ",
     r"SULH\s+HUKUK\s+MAHKEMESİ",
@@ -37,20 +36,33 @@ MAHKEME_TURLERI = [
     r"FİKRİ\s+VE\s+SINAİ\s+HAKLAR\s+(?:HUKUK\s+)?MAHKEMESİ",
     r"KADASTRO\s+MAHKEMESİ",
     r"İCRA\s+HUKUK\s+MAHKEMESİ",
-    # Ceza
     r"AĞIR\s+CEZA\s+MAHKEMESİ",
     r"ASLİYE\s+CEZA\s+MAHKEMESİ",
     r"SULH\s+CEZA\s+(?:MAHKEMESİ|HÂKİMLİĞİ|HAKİMLİĞİ)",
     r"ÇOCUK\s+(?:AĞIR\s+CEZA\s+)?MAHKEMESİ",
     r"(?:MİLLİ\s+)?GÜVENLİK\s+MAHKEMESİ",
-    # İdare
     r"İDARE\s+MAHKEMESİ",
     r"VERGİ\s+MAHKEMESİ",
-    # Genel
-    r"MAHKEMESİ",          # fallback
+    r"MAHKEMESİ",  # generic fallback — en sona olmalı
 ]
 
+_FALLBACK_ILLER = [
+    "ADANA","ADIYAMAN","AFYONKARAHİSAR","AĞRI","AKSARAY","AMASYA","ANKARA","ANTALYA",
+    "ARDAHAN","ARTVİN","AYDIN","BALIKESİR","BARTIN","BATMAN","BAYBURT","BİLECİK",
+    "BİNGÖL","BİTLİS","BOLU","BURDUR","BURSA","ÇANAKKALE","ÇANKIRI","ÇORUM",
+    "DENİZLİ","DİYARBAKIR","DÜZCE","EDİRNE","ELAZIĞ","ERZİNCAN","ERZURUM","ESKİŞEHİR",
+    "GAZİANTEP","GİRESUN","GÜMÜŞHANE","HAKKARİ","HATAY","IĞDIR","ISPARTA","İSTANBUL",
+    "İZMİR","KAHRAMANMARAŞ","KARABÜK","KARAMAN","KARS","KASTAMONU","KAYSERİ",
+    "KİLİS","KIRIKKALE","KIRKLARELİ","KIRŞEHİR","KOCAELİ","KONYA","KÜTAHYA",
+    "MALATYA","MANİSA","MARDİN","MERSİN","MUĞLA","MUŞ","NEVŞEHİR","NİĞDE",
+    "ORDU","OSMANİYE","RİZE","SAKARYA","SAMSUN","SİİRT","SİNOP","SİVAS",
+    "ŞANLIURFA","ŞIRNAK","TEKİRDAĞ","TOKAT","TRABZON","TUNCELİ","UŞAK",
+    "VAN","YALOVA","YOZGAT","ZONGULDAK",
+]
+
+# ---------------------------------------------------------------------------
 # Türkçe sıra sayıları (daire numarası sözel olarak yazılabilir)
+# ---------------------------------------------------------------------------
 TURKISH_ORDINALS = [
     "BİRİNCİ", "İKİNCİ", "ÜÇÜNCÜ", "DÖRDÜNCÜ", "BEŞİNCİ",
     "ALTINCI", "YEDİNCİ", "SEKİZİNCİ", "DOKUZUNCU", "ONUNCU",
@@ -77,25 +89,60 @@ DAIRE_PATTERN = rf"""
     )?
 """
 
-# Türkçe il adları (kısa liste — UTF-8 büyük harf)
-ILLER = [
-    "ADANA","ADIYAMAN","AFYONKARAHİSAR","AĞRI","AKSARAY","AMASYA","ANKARA","ANTALYA",
-    "ARDAHAN","ARTVİN","AYDIN","BALIKESİR","BARTIN","BATMAN","BAYBURT","BİLECİK",
-    "BİNGÖL","BİTLİS","BOLU","BURDUR","BURSA","ÇANAKKALE","ÇANKIRI","ÇORUM",
-    "DENİZLİ","DİYARBAKIR","DÜZCE","EDİRNE","ELAZIĞ","ERZİNCAN","ERZURUM","ESKİŞEHİR",
-    "GAZİANTEP","GİRESUN","GÜMÜŞHANE","HAKKARİ","HATAY","IĞDIR","ISPARTA","İSTANBUL",
-    "İZMİR","KAHRAMANMARAŞ","KARABÜK","KARAMAN","KARS","KASTAMONU","KAYSERİ",
-    "KİLİS","KIRIKKALE","KIRKLARELİ","KIRŞEHİR","KOCAELİ","KONYA","KÜTAHYA",
-    "MALATYA","MANİSA","MARDİN","MERSİN","MUĞLA","MUŞ","NEVŞEHİR","NİĞDE",
-    "ORDU","OSMANİYE","RİZE","SAKARYA","SAMSUN","SİİRT","SİNOP","SİVAS",
-    "ŞANLIURFA","ŞIRNAK","TEKİRDAĞ","TOKAT","TRABZON","TUNCELİ","UŞAK",
-    "VAN","YALOVA","YOZGAT","ZONGULDAK",
-]
+# ---------------------------------------------------------------------------
+# Dinamik pattern builder — DynamicConfig'den okur, boşsa fallback kullanır
+# ---------------------------------------------------------------------------
+_pattern_cache: re.Pattern | None = None
+_pattern_cache_key: tuple | None = None
 
-# İlçe mahkemesi için tam regex (örn: "Bursa 5. Asliye Hukuk Mahkemesi")
-def _build_full_pattern() -> re.Pattern:
-    il_alt = "|".join(re.escape(il) for il in ILLER)
-    turu_alt = "|".join(MAHKEME_TURLERI)
+
+def _name_to_pattern(name: str) -> str:
+    """
+    DB'den gelen mahkeme adını regex pattern'a çevirir.
+    "AĞIR CEZA MAHKEMESİ" → r"AĞIR\s+CEZA\s+MAHKEMESİ"
+    """
+    escaped = re.escape(name.strip().upper())
+    return escaped.replace(r"\ ", r"\s+")
+
+
+def _get_full_pattern() -> re.Pattern:
+    """
+    İl + mahkeme türü regex pattern'ını döner.
+    DynamicConfig güncel değerlerini kullanır; değişince yeniden derler.
+    """
+    global _pattern_cache, _pattern_cache_key
+
+    court_names: list[str] = []
+    city_names: list[str] = []
+
+    try:
+        from managers.config_manager import DynamicConfig
+        config = DynamicConfig()
+        court_names = [ct["name"].upper() for ct in config.get_court_types() if ct.get("name")]
+        city_names  = [c["name"].upper()  for c  in config.get_cities()      if c.get("name")]
+    except Exception:
+        pass  # Fallback'e düşer
+
+    cache_key = (tuple(court_names), tuple(city_names))
+    if _pattern_cache is not None and _pattern_cache_key == cache_key:
+        return _pattern_cache
+
+    # Mahkeme türü alternasyonu
+    if court_names:
+        # Uzun isimleri önce eşleştir (greedy match)
+        sorted_names = sorted(court_names, key=len, reverse=True)
+        turu_alt = "|".join(_name_to_pattern(n) for n in sorted_names)
+        turu_alt += r"|MAHKEMESİ"  # generic fallback
+    else:
+        turu_alt = "|".join(_FALLBACK_MAHKEME_TURLERI)
+
+    # İl alternasyonu
+    if city_names:
+        sorted_cities = sorted(city_names, key=len, reverse=True)
+        il_alt = "|".join(re.escape(n) for n in sorted_cities)
+    else:
+        il_alt = "|".join(re.escape(il) for il in _FALLBACK_ILLER)
+
     pattern = rf"""
         (?P<il>{il_alt})          # İl adı (ör: ANKARA)
         (?:\s+(?P<sira>\d+)\.)?   # Sıra numarası (ör: 10.) — opsiyonel
@@ -103,10 +150,12 @@ def _build_full_pattern() -> re.Pattern:
         (?P<tur>{turu_alt})       # Mahkeme türü
         {DAIRE_PATTERN}           # Daire (ör: 3. Hukuk Dairesi) — opsiyonel
     """
-    return re.compile(pattern, re.VERBOSE | re.IGNORECASE)
 
+    _pattern_cache = re.compile(pattern, re.VERBOSE | re.IGNORECASE)
+    _pattern_cache_key = cache_key
+    logger.debug(f"[COURT] Pattern yeniden derlendi ({len(court_names)} tür, {len(city_names)} il).")
+    return _pattern_cache
 
-_FULL_PATTERN = _build_full_pattern()
 
 # ---------------------------------------------------------------------------
 # Katman 1: Header regex (ilk 20 satır)
@@ -138,12 +187,11 @@ def _extract_from_header(text: str) -> str | None:
             return keyword
 
     # İl + Mahkeme türü + sıra numarası
-    match = _FULL_PATTERN.search(header_text)
+    match = _get_full_pattern().search(header_text)
     if match:
         court_base = _format_match(match)
-        
+
         # Dairenin sonraki satırda olup olmadığını ayrıca kontrol et
-        # (Regex bazen aynı satırda arayıp kaçırabilir)
         if "DAİRESİ" in header_text and "DAİRESİ" not in match.group(0):
             daire_m = _find_daire_after(header_text, match.end())
             if daire_m:
@@ -169,15 +217,9 @@ def _find_daire_after(text: str, start_pos: int) -> str | None:
     m = pattern.search(remaining)
     if not m:
         return None
-    
-    # Hangi grup eşleşti?
-    num = m.group(1)      # rakam (örn: "3")
-    word = m.group(2)     # sözel (örn: "ÜÇÜNCÜ")
+
     raw = m.group(0).strip()
-    
-    # Title-case düzelt
-    raw_title = raw.title().replace("I ", "I ")  # Türkçe title
-    return raw_title
+    return raw.upper()
 
 
 # ---------------------------------------------------------------------------
@@ -186,23 +228,21 @@ def _find_daire_after(text: str, start_pos: int) -> str | None:
 _VERDICT_PHRASES = [
     r"hüküm\s+veren\s+(.{5,80}?mahkeme(?:si|ği)?)",
     r"karar\s+veren\s+(.{5,80}?mahkeme(?:si|ği)?)",
-    r"mahkemece\s+verilen\s+karar",         # basit işaret
     r"(.{5,80}?mahkeme(?:si|ği)?)'nce\s+verilen",
     r"(.{5,80}?mahkeme(?:si|ği)?)\s+tarafından",
 ]
 
 def _extract_from_body(text: str) -> str | None:
     upper = text.upper()
+    full_pattern = _get_full_pattern()
 
     for phrase in _VERDICT_PHRASES:
         m = re.search(phrase, upper, re.IGNORECASE)
         if m:
             candidate = m.group(1) if m.lastindex else ""
-            # Extracted string içinde mahkeme türü var mı?
-            type_m = _FULL_PATTERN.search(candidate)
+            type_m = full_pattern.search(candidate)
             if type_m:
                 return _format_match(type_m)
-            # Üst mahkeme mi?
             for kw in ["YARGITAY", "DANIŞTAY", "ANAYASA MAHKEMESİ"]:
                 if kw in candidate:
                     return kw
@@ -225,7 +265,7 @@ def _format_match(match: re.Match) -> str:
 
     # Daire bilgisini bütün match içinden ayıkla (Hem rakamsal hem sözel destekli)
     full_str = match.group(0).upper()
-    
+
     # 1. Rakamsal kontrol (örn: "3. HUKUK DAİRESİ")
     daire_rakam = re.search(r"(\d+)\.\s*([A-ZÇĞİIÖŞÜ]+\s+)*DAİRESİ", full_str, re.IGNORECASE)
     if daire_rakam:
@@ -246,9 +286,9 @@ def _format_match(match: re.Match) -> str:
 def find_court_name(text: str) -> str | None:
     """
     Belgeden mahkeme adını tespit eder.
-    
+
     Returns:
-        Temiz mahkeme adı (örn: "Ankara Bölge İdare Mahkemesi 10. İdari Dava Dairesi")
+        Temiz mahkeme adı (örn: "ANKARA BÖLGE İDARE MAHKEMESİ 10. İDARİ DAVA DAİRESİ")
         veya None (bulunamazsa — LLM'e bırakılacak).
     """
     if not text or len(text) < 20:
@@ -257,14 +297,14 @@ def find_court_name(text: str) -> str | None:
     # Katman 1: Header
     result = _extract_from_header(text)
     if result:
-        logger.info(f"🏛️ [COURT] Header regex ile bulundu: {result}")
+        logger.info(f"[COURT] Header regex ile bulundu: {result}")
         return result
 
     # Katman 2: Body bağlamsal
     result = _extract_from_body(text)
     if result:
-        logger.info(f"🏛️ [COURT] Body regex ile bulundu: {result}")
+        logger.info(f"[COURT] Body regex ile bulundu: {result}")
         return result
 
-    logger.info("🏛️ [COURT] Bulunamadı — LLM'e bırakılıyor.")
+    logger.info("[COURT] Bulunamadı — LLM'e bırakılıyor.")
     return None

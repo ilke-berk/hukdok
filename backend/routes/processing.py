@@ -615,21 +615,55 @@ async def confirm_process(
         timings["3a_pdfa_convert"] = perf_time.perf_counter() - step_start
 
         if pdfa_temp_file and os.path.exists(pdfa_temp_file):
-            def _async_islenmis_upload(temp_file_path):
+            # Create the database record before adding background tasks so we have doc_id
+            belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
+            clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
+
+            doc_id = _save_case_document(
+                case_id=linked_case_id,
+                original_filename=original_filename,
+                stored_filename=new_filename,
+                belge_turu_kodu=belge_turu_kodu,
+                belge_turu_adi=belge_turu_label,
+                ai_summary=ai_ozet,
+                muvekkil_adi=clean_muvekkil,
+                avukat_kodu=avukat_kodu,
+                esas_no=esas_no,
+                is_test_mode=is_test_mode,
+                uploaded_by=current_user_name,
+            )
+            results["case_document_id"] = doc_id
+
+            def _async_islenmis_upload(temp_file_path, doc_id_to_update=None):
                 try:
-                    upload_file_to_sharepoint(
+                    response_data = upload_file_to_sharepoint(
                         temp_file_path,
                         new_filename,
                         ISLENMIS_FOLDER,
                         use_date_subfolder=False,
                     )
+                    
+                    # Update database with SharePoint URL upon successful upload
+                    if doc_id_to_update and response_data and "webUrl" in response_data:
+                        try:
+                            db_upd = SessionLocal()
+                            doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id_to_update).first()
+                            if doc_rec:
+                                doc_rec.sharepoint_url = response_data["webUrl"]
+                                db_upd.commit()
+                                logging.info(f"✅ SharePoint URL updated for Doc ID {doc_id_to_update}: {response_data['webUrl']}")
+                        except Exception as db_err:
+                            logging.error(f"Failed to update SharePoint URL in DB for Doc ID {doc_id_to_update}: {db_err}")
+                        finally:
+                            db_upd.close()
+                            
                 except Exception as e:
                     error_id = str(uuid.uuid4())[:8]
                     TechnicalLogger.log("ERROR", f"Async Processed Upload Error [ID: {error_id}]: {e}")
 
             # Both archives queued together only after successful PDF/A conversion
             background_tasks.add_task(_async_ham_upload)
-            background_tasks.add_task(_async_islenmis_upload, pdfa_temp_file)
+            background_tasks.add_task(_async_islenmis_upload, pdfa_temp_file, doc_id)
             timings["2_ham_upload"] = 0.00
             timings["3b_gizli_upload"] = 0.00
             results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
@@ -745,23 +779,6 @@ async def confirm_process(
     if pdfa_temp_file and pdfa_temp_file != source_path:
         background_tasks.add_task(_async_cleanup, pdfa_temp_file, download_id)
 
-    belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
-    clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
-
-    doc_id = _save_case_document(
-        case_id=linked_case_id,
-        original_filename=original_filename,
-        stored_filename=new_filename,
-        belge_turu_kodu=belge_turu_kodu,
-        belge_turu_adi=belge_turu_label,
-        ai_summary=ai_ozet,
-        muvekkil_adi=clean_muvekkil,
-        avukat_kodu=avukat_kodu,
-        esas_no=esas_no,
-        is_test_mode=is_test_mode,
-        uploaded_by=current_user_name,
-    )
-    results["case_document_id"] = doc_id
     results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
 
     if linked_case_id and not is_test_mode:
