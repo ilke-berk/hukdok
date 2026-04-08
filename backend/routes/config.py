@@ -4,8 +4,8 @@ from fastapi.responses import JSONResponse
 
 from dependencies import get_current_user
 from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest
-from config_manager import DynamicConfig
-from admin_manager import (
+from managers.config_manager import DynamicConfig
+from managers.admin_manager import (
     get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects,
     add_lawyer, delete_lawyer,
     add_status, delete_status,

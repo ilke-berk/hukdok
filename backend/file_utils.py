@@ -9,7 +9,9 @@ from typing import Optional
 from fastapi import HTTPException
 
 from dependencies import security_logger
-from log_manager import TechnicalLogger
+from managers.log_manager import TechnicalLogger
+
+ALLOWED_EXTENSIONS = {".pdf", ".udf"}
 
 
 def safe_remove(file_path: str, retries: int = 3, delay: float = 1.0) -> bool:
@@ -44,16 +46,15 @@ def sanitize_filename(filename: str) -> str:
     filename = filename.replace("\x00", "")
     filename = sanitize_filename_text(filename)
 
-    allowed_extensions = {".pdf", ".docx", ".doc", ".udf"}
     ext = Path(filename).suffix.lower()
 
     if not ext:
         raise HTTPException(status_code=400, detail="Geçersiz dosya formatı.")
 
-    if ext not in allowed_extensions:
+    if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"İzin verilmeyen dosya uzantısı: {ext}. Sadece PDF ve DOCX yüklenebilir.",
+            detail=f"İzin verilmeyen dosya uzantısı: {ext}. Sadece PDF ve UDF yüklenebilir.",
         )
 
     if len(filename) > 200:
@@ -70,10 +71,9 @@ def sanitize_filename(filename: str) -> str:
 
 def validate_file_type(file_path: str) -> bool:
     """Dosya tipini magic bytes ile doğrular. Extension spoofing saldırılarını engeller."""
-    allowed_extensions = {".pdf", ".docx", ".doc", ".udf"}
     ext = Path(file_path).suffix.lower()
 
-    if ext not in allowed_extensions:
+    if ext not in ALLOWED_EXTENSIONS:
         security_logger.log_event(
             "INVALID_FILE_EXTENSION",
             "WARNING",
@@ -83,7 +83,7 @@ def validate_file_type(file_path: str) -> bool:
         TechnicalLogger.log("WARNING", f"Rejected file with invalid extension: {ext}")
         raise HTTPException(
             status_code=400,
-            detail=f"İzin verilmeyen dosya tipi: {ext}. Sadece PDF ve DOCX dosyaları yüklenebilir.",
+            detail=f"İzin verilmeyen dosya tipi: {ext}. Sadece PDF ve UDF dosyaları yüklenebilir.",
         )
 
     try:
@@ -101,36 +101,30 @@ def validate_file_type(file_path: str) -> bool:
                 )
 
         elif ext == ".udf":
-            if header.startswith(b"<?xml") or header.startswith(b"<udf") or header.startswith(b"PK"):
-                TechnicalLogger.log("INFO", f"Valid UDF file: {file_path}")
-                return True
+            if header.startswith(b"PK"):
+                # ZIP tabanlı UDF — içinde content.xml olmalı
+                import zipfile
+                try:
+                    with zipfile.ZipFile(file_path, "r") as z:
+                        if "content.xml" in z.namelist():
+                            TechnicalLogger.log("INFO", f"Valid ZIP-based UDF file: {file_path}")
+                            return True
+                except zipfile.BadZipFile:
+                    pass
+                TechnicalLogger.log("ERROR", f"PK header but not a valid UDF ZIP: {file_path}")
+                raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
+            elif header.startswith(b"<?xml") or header.startswith(b"<udf"):
+                # XML tabanlı UDF — ilk 512 byte içinde <udf etiketi aranır
+                with open(file_path, "rb") as f:
+                    preview = f.read(512)
+                if b"<udf" in preview:
+                    TechnicalLogger.log("INFO", f"Valid XML-based UDF file: {file_path}")
+                    return True
+                TechnicalLogger.log("ERROR", f"XML header but no <udf tag found: {file_path}")
+                raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
             else:
                 TechnicalLogger.log("ERROR", f"Invalid UDF format, magic bytes: {header.hex()}")
                 raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
-
-        elif header.startswith(b"PK"):
-            if ext in [".docx", ".doc"]:
-                TechnicalLogger.log("INFO", f"Valid DOCX file: {file_path}")
-                return True
-            else:
-                raise HTTPException(status_code=400, detail="Dosya formatı tanınmıyor.")
-
-        elif header.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"):
-            if ext == ".doc":
-                TechnicalLogger.log("INFO", f"Valid DOC (legacy) file: {file_path}")
-                return True
-            else:
-                raise HTTPException(status_code=400, detail="Dosya formatı tanınmıyor.")
-
-        elif header.startswith(b"<?xml") or header.startswith(b"<udf") or header.startswith(b"PK"):
-            if ext == ".udf":
-                TechnicalLogger.log("INFO", f"Valid UDF file: {file_path}")
-                return True
-            elif ext in [".docx", ".doc"] and header.startswith(b"PK"):
-                TechnicalLogger.log("INFO", f"Valid DOCX file: {file_path}")
-                return True
-            else:
-                raise HTTPException(status_code=400, detail="Dosya formatı tanınmıyor.")
 
         else:
             hex_header = header.hex()
@@ -143,7 +137,7 @@ def validate_file_type(file_path: str) -> bool:
             TechnicalLogger.log("ERROR", f"Unknown file signature: {hex_header} for {file_path}")
             raise HTTPException(
                 status_code=400,
-                detail="Dosya formatı tanınmıyor veya desteklenmiyor. Sadece PDF ve DOCX dosyaları kabul edilir.",
+                detail="Dosya formatı tanınmıyor veya desteklenmiyor. Sadece PDF ve UDF dosyaları kabul edilir.",
             )
 
     except IOError as e:
@@ -153,27 +147,25 @@ def validate_file_type(file_path: str) -> bool:
 
 def validate_file_size(file_path: str) -> bool:
     """Dosya boyutunu kontrol eder - DoS saldırılarını engeller. Max: 100 MB"""
-    MAX_FILE_SIZE = 100 * 1024 * 1024
-
     try:
         size = os.path.getsize(file_path)
         size_mb = size / (1024 * 1024)
 
-        if size > MAX_FILE_SIZE:
+        if size > validate_file_size.MAX_BYTES:
             security_logger.log_event(
                 "OVERSIZED_FILE_REJECTED",
                 "WARNING",
                 f"File too large: {size_mb:.2f}MB",
-                {"file": file_path, "size_mb": size_mb, "limit_mb": MAX_FILE_SIZE / 1024 / 1024},
+                {"file": file_path, "size_mb": size_mb, "limit_mb": validate_file_size.MAX_MB},
             )
             TechnicalLogger.log(
                 "WARNING",
-                f"File too large: {size_mb:.2f}MB (max: {MAX_FILE_SIZE / 1024 / 1024}MB)",
+                f"File too large: {size_mb:.2f}MB (max: {validate_file_size.MAX_MB}MB)",
                 {"file": file_path},
             )
             raise HTTPException(
                 status_code=413,
-                detail=f"Dosya çok büyük: {size_mb:.2f}MB. Maksimum dosya boyutu: {MAX_FILE_SIZE / 1024 / 1024}MB",
+                detail=f"Dosya çok büyük: {size_mb:.2f}MB. Maksimum dosya boyutu: {validate_file_size.MAX_MB}MB",
             )
 
         TechnicalLogger.log("INFO", f"File size OK: {size_mb:.2f}MB", {"file": file_path})
@@ -182,6 +174,9 @@ def validate_file_size(file_path: str) -> bool:
     except OSError as e:
         TechnicalLogger.log("ERROR", f"Error checking file size: {e}")
         raise HTTPException(status_code=500, detail="Dosya boyutu kontrol edilemedi.")
+
+validate_file_size.MAX_MB = 50
+validate_file_size.MAX_BYTES = validate_file_size.MAX_MB * 1024 * 1024
 
 
 def normalize_date_for_sharepoint(date_str: str) -> Optional[str]:
@@ -217,7 +212,7 @@ def get_doctype_label(code: str) -> Optional[str]:
         return None
 
     try:
-        from config_manager import DynamicConfig
+        from managers.config_manager import DynamicConfig
 
         doctypes = DynamicConfig.get_instance().get_doctypes()
         for doc in doctypes:

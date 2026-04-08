@@ -6,7 +6,7 @@ from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from auth_verifier import AuthVerifier
-from config_manager import get_log_dir
+from managers.config_manager import get_log_dir
 
 security_scheme = HTTPBearer()
 

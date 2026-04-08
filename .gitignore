@@ -1,3 +1,10 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+env/
+.env/
+
 # Environment Variables
 .env
 .env.local
@@ -7,52 +14,59 @@ backend/.env
 frontend/.env
 *.env
 
-# Node Modules
-node_modules/
+# Build & Compiled Files
+**/dist/
+**/build/
+**/out/
+**/.next/
+**/.cache/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
 
-# Logs
-logs
+# Logs & Debug
+logs/
+backend/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Debug/lint output files
 *_logs.txt
 *-startup.txt
 warnings.txt
+python_warnings*.txt
+
+# Lint & Test Reports
 eslint-report.json
 eslint-ui-errors.txt
 lint-output.txt
 lint_results.json
-python_warnings*.txt
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Build Artifacts
-**/dist
-**/__pycache__
-**/*.pyc
-
-# IDEs
+# IDEs & Editor
 .vscode/*
 !.vscode/extensions.json
-.idea
+!.vscode/settings.json
+!.vscode/launch.json
+.idea/
 *.suo
-*.ntvs*
-*.njsproj
 *.sln
 *.sw?
 .DS_Store
+Thumbs.db
 
-# HukuDok Specific
+# Project Specific (HukuDok)
 Raporlar/
 backend/muvekkil_listesi.json
 backend/data/
-backend/logs/
+backend/migration_data.json
+backend/test_*.py
+
+# Database
 *.db
 *.db-shm
 *.db-wal
 backend/data/hukudok.db
-
-# Migration files (too large for Git)
-backend/migration_data.json
-backend/test_*.py

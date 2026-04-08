@@ -28,7 +28,7 @@ from PIL import Image as PILImage
 
 # Logger Import
 try:
-    from log_manager import TechnicalLogger
+    from managers.log_manager import TechnicalLogger
 except ImportError:
     class MockLogger:
         @staticmethod
@@ -411,14 +411,16 @@ class UDFConverter:
 
     async def convert_async(self) -> str:
         """Asynchronous execution flow using ProcessPoolExecutor.
-        
-        Note: CPU-bound PDF generation requires ProcessPool, not ThreadPool.
-        ProcessPoolExecutor bypasses GIL for true parallelism.
+
+        Note: self (UDFConverter) is not picklable (contains Lock, ReportLab objects).
+        Instead we pass only the path strings to the module-level convert_udf_to_pdf
+        function, which creates a fresh UDFConverter inside the subprocess.
         """
         loop = asyncio.get_running_loop()
-        # Use ProcessPoolExecutor for CPU-bound work
         executor = get_process_executor()
-        return await loop.run_in_executor(executor, self.convert)
+        return await loop.run_in_executor(
+            executor, convert_udf_to_pdf, self.udf_path, self.output_path
+        )
 
     def _check_fonts(self):
         """Fail fast in DEV_MODE if fonts are broken."""
@@ -457,10 +459,7 @@ class UDFConverter:
         if content_elem is None:
             raise ValueError("'content' element not found in XML.")
         
-        text = content_elem.text or ""
-        if text.startswith('<![CDATA[') and text.endswith(']]>'):
-            text = text[9:-3]
-        self.content_text = text
+        self.content_text = content_elem.text or ""
 
     def _setup_page_properties(self):
         """Extract margins and background image."""

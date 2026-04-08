@@ -24,7 +24,6 @@ PRE_COMPILED_SPLIT_PATTERN = re.compile(r';| - | / | ve ')
 
 from text_utils import turkish_upper
 
-# def turkish_upper(text): -> Removed local implementation
 
 def clean_name(name):
     """
@@ -60,7 +59,7 @@ def process_client_list():
     import shutil
 
     # Determine paths
-    from config_manager import get_data_dir
+    from managers.config_manager import get_data_dir
     app_data_dir = get_data_dir()
     
     # 1. Input Path (muvekkil_listesi.json) - Check AppData first, then Bundled

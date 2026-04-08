@@ -43,8 +43,6 @@ class AuthVerifier:
 
             if token_tenant not in ALLOWED_TENANTS:
                 logger.warning(f"Auth: Tenant unauthorized. Token: {token_tenant} is not in {ALLOWED_TENANTS}")
-                # return None # TEMPORARY DEBUG: Allow all tenants during dev/test if needed? 
-                # Better to just see the log first.
                 return None
 
             # 3. Get/Create JWKS Client for this Tenant

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from dependencies import get_current_user
 from schemas import CaseCreate, CaseListRead
 from database import SessionLocal
-from admin_manager import add_case, get_case, get_cases, get_case_stats, update_case, search_cases
+from managers.admin_manager import add_case, get_case, get_cases, get_case_stats, update_case, search_cases
 import models
 
 router = APIRouter()

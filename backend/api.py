@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 # --- STARTUP DEBUG LOGGING ---
 def write_startup_log(msg):
     try:
-        from config_manager import get_log_dir
+        from managers.config_manager import get_log_dir
         log_dir = get_log_dir()
         log_file = log_dir / "startup_debug.log"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -54,8 +54,8 @@ from starlette.responses import Response
 
 try:
     write_startup_log("Attempting to import modules...")
-    from config_manager import DynamicConfig
-    from log_manager import LogManager, TechnicalLogger
+    from managers.config_manager import DynamicConfig
+    from managers.log_manager import LogManager, TechnicalLogger
     from routes.processing import refresh_lists_background
     write_startup_log("All local modules imported successfully.")
 except Exception as ie:
@@ -67,7 +67,7 @@ except Exception as ie:
     sys.exit(1)
 
 try:
-    import cache_manager
+    from managers import cache_manager
 except ImportError:
     logging.warning("Cache module missing.")
     cache_manager = None

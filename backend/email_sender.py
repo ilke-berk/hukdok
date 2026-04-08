@@ -6,13 +6,15 @@ Gönderici: arsiv@lexisbio.onmicrosoft.com
 """
 
 import os
+import re
 import base64
 import logging
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
+import google.generativeai as genai
 
-from auth_graph import get_graph_token
+from sharepoint.auth_graph import get_graph_token
 
 # Logger
 logger = logging.getLogger("EmailSender")
@@ -65,11 +67,12 @@ def send_document_email(
     body_text: str,
     attachment_path: str,
     attachment_name: str,
-    cc_emails: list[str] = None
+    cc_emails: list[str] = None,
+    extra_attachments: list[dict] = None
 ) -> dict:
     """
     PDF ekli e-posta gönderir (Çoklu Gönderim ve CC Desteği).
-    
+
     Args:
         to_emails: Alıcı e-posta adresleri listesi
         subject: E-posta konusu
@@ -77,7 +80,8 @@ def send_document_email(
         attachment_path: PDF dosyasının tam yolu
         attachment_name: E-postada görünecek dosya adı
         cc_emails: CC e-posta adresleri listesi (Opsiyonel)
-        
+        extra_attachments: Ek belgeler listesi [{"path": str, "name": str}] (Opsiyonel)
+
     Returns:
         dict: {"success": bool, "message": str}
     """
@@ -143,36 +147,60 @@ def send_document_email(
         # 7. Dosyayı encode et
         attachment_content, file_size = _encode_attachment(attachment_path)
         file_size_mb = file_size / (1024 * 1024)
-        
+
         # Boyut kontrolü (35MB limit)
         if file_size_mb > 35:
             logger.error(f"❌ Dosya çok büyük: {file_size_mb:.2f}MB (max: 35MB)")
             return {"success": False, "message": f"Dosya çok büyük: {file_size_mb:.2f}MB"}
-        
+
         logger.info(f"📎 Ek dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
-        
+
+        # Ana eke ek olarak extra dosyaları encode et
+        attachments_payload = [
+            {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": attachment_name,
+                "contentType": "application/pdf",
+                "contentBytes": attachment_content
+            }
+        ]
+        if extra_attachments:
+            for extra in extra_attachments:
+                extra_path = extra.get("path", "")
+                extra_name = extra.get("name", "ek_belge")
+                if extra_path and os.path.exists(extra_path):
+                    extra_content, extra_size = _encode_attachment(extra_path)
+                    # MIME türünü uzantıya göre belirle
+                    ext = Path(extra_path).suffix.lower()
+                    mime_map = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                                ".png": "image/png", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                ".doc": "application/msword", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+                    content_type = mime_map.get(ext, "application/octet-stream")
+                    attachments_payload.append({
+                        "@odata.type": "#microsoft.graph.fileAttachment",
+                        "name": extra_name,
+                        "contentType": content_type,
+                        "contentBytes": extra_content
+                    })
+                    logger.info(f"📎 Ek belge eklendi: {extra_name}")
+                else:
+                    logger.warning(f"⚠️ Ek belge bulunamadı, atlandı: {extra_path}")
+
         # 8. E-posta payload'ı oluştur (Multiple Recipients)
         # Graph API format: [{"emailAddress": {"address": "..."}}, ...]
         to_recipients_payload = [{"emailAddress": {"address": email.strip()}} for email in to_emails if email.strip()]
         cc_recipients_payload = [{"emailAddress": {"address": email.strip()}} for email in cc_emails if email.strip()]
-        
+
         email_payload = {
             "message": {
                 "subject": subject,
                 "body": {
-                    "contentType": "Text", # HTML yapmak isterseniz burayı değiştirebiliriz
+                    "contentType": "Text",
                     "content": body_text
                 },
                 "toRecipients": to_recipients_payload,
                 "ccRecipients": cc_recipients_payload,
-                "attachments": [
-                    {
-                        "@odata.type": "#microsoft.graph.fileAttachment",
-                        "name": attachment_name,
-                        "contentType": "application/pdf",
-                        "contentBytes": attachment_content
-                    }
-                ]
+                "attachments": attachments_payload
             },
             "saveToSentItems": "true"
         }
@@ -202,122 +230,6 @@ def send_document_email(
         logger.error(f"❌ E-posta gönderim hatası: {e}")
         return {"success": False, "message": str(e)}
 
-
-def send_batch_document_email(
-    to_emails: list[str],
-    subject: str,
-    body_text: str,
-    attachments: list[dict],
-    cc_emails: list[str] = None
-) -> dict:
-    """
-    Birden fazla dosya ekli e-posta gönderir.
-    
-    Args:
-        to_emails: Alıcı listesi
-        subject: Konu
-        body_text: Gövde
-        attachments: [{"path": "/tam/yol.pdf", "name": "dosya.pdf"}] listesi
-        cc_emails: CC listesi
-    """
-    if cc_emails is None: cc_emails = []
-    
-    config = _get_email_config()
-    if not config["enabled"]:
-        return {"success": False, "message": "E-posta özelliği kapalı"}
-        
-    sender = config["sender"]
-    if not sender:
-        return {"success": False, "message": "Gönderici adresi tanımlanmamış"}
-        
-    # Test Modu
-    if config["test_mode"]:
-        test_recipient = config["test_recipient"]
-        if not test_recipient:
-            return {"success": False, "message": "Test alıcısı tanımlı değil"}
-            
-        orig_to = ", ".join(to_emails)
-        orig_cc = ", ".join(cc_emails) if cc_emails else "Yok"
-        
-        body_prefix = (
-            "📢 [TEST MODU - TOPLU GÖNDERİM]\n"
-            "--------------------------------------------------\n"
-            f"KİME: {orig_to}\n"
-            f"CC: {orig_cc}\n"
-            "--------------------------------------------------\n\n"
-        )
-        body_text = body_prefix + body_text
-        to_emails = [test_recipient]
-        cc_emails = []
-
-    if not to_emails:
-        return {"success": False, "message": "Alıcı listesi boş"}
-
-    try:
-        token = get_graph_token()
-        attachment_list = []
-        total_size_mb = 0.0
-        
-        for item in attachments:
-            f_path = item.get("path")
-            f_name = item.get("name")
-            
-            if not f_path or not os.path.exists(f_path):
-                logger.warning(f"⚠️ Toplu gönderim: Dosya bulunamadı ({f_path}), atlanıyor.")
-                continue
-                
-            b64, size = _encode_attachment(f_path)
-            total_size_mb += (size / (1024 * 1024))
-            
-            attachment_list.append({
-                "@odata.type": "#microsoft.graph.fileAttachment",
-                "name": f_name,
-                "contentType": "application/pdf", 
-                "contentBytes": b64
-            })
-            
-        if total_size_mb > 34: # 35MB limit, 1MB margin
-            return {"success": False, "message": f"Toplam dosya boyutu çok yüksek: {total_size_mb:.2f}MB (Limit: 34MB)"}
-            
-        if not attachment_list:
-            return {"success": False, "message": "Eklenecek geçerli dosya bulunamadı."}
-
-        # Payload
-        to_payload = [{"emailAddress": {"address": e.strip()}} for e in to_emails if e.strip()]
-        cc_payload = [{"emailAddress": {"address": e.strip()}} for e in cc_emails if e.strip()]
-        
-        email_payload = {
-            "message": {
-                "subject": subject,
-                "body": {"contentType": "Text", "content": body_text},
-                "toRecipients": to_payload,
-                "ccRecipients": cc_payload,
-                "attachments": attachment_list
-            },
-            "saveToSentItems": "true"
-        }
-        
-        url = f"{GRAPH}/users/{sender}/sendMail"
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        
-        logger.info(f"📧 Toplu E-posta: {len(attachment_list)} dosya → {to_emails[0]}...")
-        response = requests.post(url, headers=headers, json=email_payload, timeout=90)
-        
-        if response.status_code == 202:
-            logger.info("✅ Toplu e-posta başarıyla gönderildi.")
-            return {"success": True, "message": f"{len(attachment_list)} dosya gönderildi"}
-        else:
-            err = response.text[:200]
-            logger.error(f"❌ Toplu e-posta hatası: {response.status_code} - {err}")
-            return {"success": False, "message": f"Hata: {response.status_code}"}
-
-    except Exception as e:
-        logger.error(f"❌ Toplu gönderim hatası: {e}")
-        return {"success": False, "message": str(e)}
-
-
-import google.generativeai as genai
-import re
 
 def _generate_ai_email_body(recipient_name: str, context: dict) -> str:
     """
@@ -368,16 +280,45 @@ Kurallar:
         return None
 
 
+def generate_email_preview(recipient_name: str, context: dict) -> str:
+    """
+    AI e-posta önizlemesi oluşturur (gönderim yapmaz).
+    Fallback: standart şablon döndürür.
+    """
+    body = _generate_ai_email_body(recipient_name, context)
+    if not body:
+        teblig_tarihi_str = context.get("teblig_tarihi_str", "")
+        muvekkil_text = context.get("muvekkil_text", "Müvekkil")
+        tarih_str = context.get("tarih_str", "")
+        belge_turu = context.get("belge_turu", "Belge")
+        extra_info = f"\nBelgenin tebliğ tarihi: {teblig_tarihi_str}\n" if teblig_tarihi_str else ""
+        body = f"""Sayın {recipient_name},
+
+{muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
+{extra_info}
+Saygılarımızla,
+HukuDok Belge Arşiv Sistemi
+
+---
+Bu e-posta otomatik olarak gönderilmiştir.
+"""
+    return body
+
+
 def send_document_notification(
     avukat_kodu: str,
     filename: str,
     pdf_path: str,
     metadata: dict = None,
     custom_to: list[str] = None,
-    custom_cc: list[str] = None
+    custom_cc: list[str] = None,
+    custom_message: str = None,
+    extra_attachment_paths: list[str] = None
 ) -> dict:
     """
     Belge bildirimi gönderir - Her alıcı için özelleştirilmiş AI destekli metin oluşturur.
+    custom_message verilirse AI üretimi atlanır ve bu metin kullanılır.
+    extra_attachment_paths: ek belgelerin temp dosya yolları listesi.
     """
     config = _get_email_config()
     
@@ -470,18 +411,21 @@ def send_document_notification(
         if not recipient_name:
             recipient_name = "Avukat"
             
-        logger.info(f"🤖 AI E-posta hazırlanıyor: {recipient_name} ({recipient_email})")
-        
-        # 1. AI ile Metin Oluştur
-        body = _generate_ai_email_body(recipient_name, context)
-        
+        # 1. Kullanıcı özel mesaj yazdıysa AI üretimini atla
+        if custom_message:
+            body = custom_message
+            logger.info(f"✏️ Kullanıcı tarafından yazılmış mesaj kullanılıyor: {recipient_name} ({recipient_email})")
+        else:
+            logger.info(f"🤖 AI E-posta hazırlanıyor: {recipient_name} ({recipient_email})")
+            body = _generate_ai_email_body(recipient_name, context)
+
         # 2. AI Başarısız Olursa Şablon Kullan
         if not body:
             logger.info("ℹ️ Standart şablon kullanılıyor.")
             extra_info = ""
             if context.get("teblig_tarihi_str"):
                 extra_info = f"\nBelgenin tebliğ tarihi: {context.get('teblig_tarihi_str')}\n"
-            
+
             body = f"""Sayın {recipient_name},
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
@@ -492,16 +436,8 @@ HukuDok Belge Arşiv Sistemi
 ---
 Bu e-posta otomatik olarak gönderilmiştir.
 """
-        
-        # 3. Gönder
-        # CC sadece ilk e-postada gitsin mi? Yoksa hepsinde mi?
-        # Genelde bireysel atılıyorsa CC'ler de her birine eklenir (klasik mail merge mantığı).
-        # Ancak bu CC'deki kişiye N tane mail gitmesine sebep olur.
-        # Bu sorunu çözmek için: Eğer birden fazla alıcı varsa, CC'yi sadece İLK alıcıya ekle.
-        # VEYA kullanıcı bunu biliyordur. Hata yapmamak için hepsine ekliyoruz (Standart davranış).
-        # Şimdilik hepsine ekliyoruz.
-        
-        # CC listesini temizle (sadece email kısmını al)
+
+        # 3. CC listesini temizle (sadece email kısmını al)
         clean_cc_list = []
         for cc_str in cc_emails_raw:
             cc_match = email_regex.match(cc_str)
@@ -510,13 +446,23 @@ Bu e-posta otomatik olarak gönderilmiştir.
             else:
                 clean_cc_list.append(cc_str.strip())
 
+        # 4. Ek belgeleri hazırla
+        extra_attach_list = None
+        if extra_attachment_paths:
+            extra_attach_list = [
+                {"path": p, "name": Path(p).name}
+                for p in extra_attachment_paths
+                if p and os.path.exists(p)
+            ]
+
         res = send_document_email(
             to_emails=[recipient_email],
             subject=subject,
             body_text=body,
             attachment_path=pdf_path,
             attachment_name=filename,
-            cc_emails=clean_cc_list
+            cc_emails=clean_cc_list,
+            extra_attachments=extra_attach_list
         )
         results.append(res)
 
@@ -528,18 +474,3 @@ Bu e-posta otomatik olarak gönderilmiştir.
         return {"success": True, "message": f"{success_count}/{len(results)} gönderildi."}
     else:
         return {"success": False, "message": "Hiçbir e-posta gönderilemedi."}
-
-
-# Test fonksiyonu
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    
-    print("=" * 50)
-    print("E-posta Gönderim Test")
-    print("=" * 50)
-    
-    config = _get_email_config()
-    print(f"Enabled: {config['enabled']}")
-    print(f"Sender: {config['sender']}")
-    print(f"Test Mode: {config['test_mode']}")
-    print(f"Test Recipient: {config['test_recipient']}")

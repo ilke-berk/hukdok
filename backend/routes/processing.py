@@ -1,5 +1,6 @@
 import os
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -14,9 +15,9 @@ from fastapi.responses import StreamingResponse, FileResponse
 
 from dependencies import get_current_user
 from database import SessionLocal
-from config_manager import DynamicConfig
-from log_manager import TechnicalLogger
-from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label
+from managers.config_manager import DynamicConfig
+from managers.log_manager import TechnicalLogger
+from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_size, validate_file_type
 import models
 
 router = APIRouter()
@@ -24,6 +25,20 @@ logger = logging.getLogger(__name__)
 
 # Download cache: stores temp file paths keyed by UUID for frontend download
 DOWNLOAD_CACHE: dict = {}
+
+# Process cache: keeps full PDF alive between /process and /confirm (Faz 3)
+PROCESS_CACHE: dict = {}  # process_id → {path, original_ext, ts}
+
+
+def _cleanup_process_cache():
+    """Remove PROCESS_CACHE entries older than 30 minutes and delete their files."""
+    cutoff = time.time() - 1800  # 30 min
+    stale = [k for k, v in list(PROCESS_CACHE.items()) if v["ts"] < cutoff]
+    for k in stale:
+        entry = PROCESS_CACHE.pop(k, None)
+        if entry:
+            safe_remove(entry["path"])
+            logger.info(f"PROCESS_CACHE TTL expired: {k} → {entry['path']}")
 
 # Document type → case status auto-mapping
 DOCTYPE_TO_STATUS_MAP = {
@@ -40,8 +55,8 @@ def refresh_lists_background():
     """Background Task: Updates Singleton Config from Database."""
     logging.info("Background: Loading lists from Database...")
     try:
-        from admin_manager import get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects
-        import cache_manager as _cache_manager
+        from managers.admin_manager import get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects
+        from managers import cache_manager as _cache_manager
 
         new_lawyers = get_lawyers()
         new_statuses = get_statuses()
@@ -248,6 +263,49 @@ async def refresh_config_endpoint(
     return {"status": "refresh_started", "message": "Listeler arka planda güncelleniyor..."}
 
 
+@router.post("/preview-email-body")
+async def preview_email_body(
+    request: Request,
+    recipient_name: str = Form("İlgili"),
+    muvekkil_adi: str = Form(None),
+    muvekkiller_json: str = Form(None),
+    belge_turu_kodu: str = Form(None),
+    tarih: str = Form(None),
+    teblig_tarihi: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """E-posta AI mesajı önizlemesi oluşturur (gönderim yapmaz)."""
+    from email_sender import generate_email_preview
+
+    try:
+        muvekkiller = json.loads(muvekkiller_json) if muvekkiller_json else []
+    except Exception:
+        muvekkiller = []
+
+    muvekkil_text = muvekkil_adi or (muvekkiller[0] if muvekkiller else "Müvekkil")
+
+    def format_date_tr(date_str: str) -> str:
+        if not date_str:
+            return ""
+        if "-" in date_str:
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                return f"{parts[2]}.{parts[1]}.{parts[0]}"
+        return date_str
+
+    teblig_tarihi_normalized = normalize_date_for_sharepoint(teblig_tarihi) if teblig_tarihi else None
+
+    context = {
+        "muvekkil_text": f"{muvekkil_text} isimli müvekkilin",
+        "belge_turu": get_doctype_label(belge_turu_kodu) or "Belge",
+        "tarih_str": format_date_tr(tarih),
+        "teblig_tarihi_str": format_date_tr(teblig_tarihi_normalized),
+    }
+
+    body = generate_email_preview(recipient_name, context)
+    return {"body": body}
+
+
 @router.post("/process")
 async def analyze_file_endpoint(
     request: Request,
@@ -256,22 +314,43 @@ async def analyze_file_endpoint(
 ):
     """Step 1: Analyze File (Stream)"""
     from analyzer import analyze_file_generator
-    from counter_manager import get_counter_manager
+    from managers.counter_manager import get_counter_manager
 
     api_start = time.perf_counter()
     api_timings = {}
 
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"İzin verilmeyen dosya uzantısı: {suffix}")
+
+    temp_path = None
     try:
-        suffix = Path(file.filename).suffix
+        sha256 = hashlib.sha256()
+        total_bytes = 0
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
             temp_path = tmp_file.name
-        TechnicalLogger.log("INFO", f"Temp file created for analysis: {temp_path} ({len(content)} bytes)")
+            while chunk := await file.read(65536):
+                total_bytes += len(chunk)
+                if total_bytes > validate_file_size.MAX_BYTES:
+                    raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {validate_file_size.MAX_MB}MB.")
+                sha256.update(chunk)
+                tmp_file.write(chunk)
+        file_hash = sha256.hexdigest()
+        TechnicalLogger.log("INFO", f"Temp file created: {temp_path} ({total_bytes} bytes, hash: {file_hash[:8]}...)")
+        validate_file_type(temp_path)
+    except HTTPException:
+        safe_remove(temp_path)
+        raise
     except Exception as e:
+        safe_remove(temp_path)
         raise HTTPException(status_code=500, detail=f"Dosya yükleme hatası: {str(e)}")
 
+    # Faz 3: cleanup stale cache entries on each /process call
+    _cleanup_process_cache()
+    process_id = str(uuid.uuid4())
+
     async def event_stream():
+        cached_full_pdf_path = None
         try:
             async def fetch_counter():
                 try:
@@ -293,13 +372,25 @@ async def analyze_file_endpoint(
             counter_task = asyncio.create_task(fetch_counter())
 
             t1 = time.perf_counter()
-            generator = analyze_file_generator(temp_path)
+            generator = analyze_file_generator(temp_path, file_hash=file_hash, process_id=process_id)
             final_data = None
 
             async for step in generator:
                 if step["status"] == "complete":
                     api_timings["analyzer"] = round((time.perf_counter() - t1) * 1000, 2)
                     final_data = step.get("data", {})
+
+                    # Faz 3: cache full PDF path
+                    full_pdf_path = step.pop("full_pdf_path", None)
+                    if full_pdf_path:
+                        cached_full_pdf_path = full_pdf_path
+                        original_ext = Path(full_pdf_path).suffix.lower()
+                        PROCESS_CACHE[process_id] = {
+                            "path": full_pdf_path,
+                            "original_ext": original_ext,
+                            "ts": time.time(),
+                        }
+                        TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path}")
 
                     if final_data and "ofis_dosya_no" not in final_data:
                         ofis_dosya_no = await counter_task
@@ -338,6 +429,7 @@ async def analyze_file_endpoint(
                     api_timings["total"] = round((time.perf_counter() - api_start) * 1000, 2)
                     final_data["_api_benchmark"] = api_timings
                     step["data"] = final_data
+                    step["process_id"] = process_id
 
                 yield json.dumps(step) + "\n"
 
@@ -346,10 +438,15 @@ async def analyze_file_endpoint(
             TechnicalLogger.log("ERROR", f"Streaming Error [ID: {error_id}]: {e}")
             yield json.dumps({"status": "error", "message": f"Beklenmedik hata: {str(e)}"}) + "\n"
         finally:
-            if safe_remove(temp_path, retries=3):
-                TechnicalLogger.log("INFO", f"Deleted temp analysis file: {temp_path}")
+            # Faz 3: if temp_path was cached, don't delete it — PROCESS_CACHE TTL handles cleanup.
+            # For UDF files, temp_path is the original UDF (not the cached PDF), so always delete it.
+            if cached_full_pdf_path and cached_full_pdf_path == temp_path:
+                TechnicalLogger.log("INFO", f"Skipping temp file deletion (in PROCESS_CACHE): {temp_path}")
             else:
-                TechnicalLogger.log("WARNING", f"Failed to delete temp file: {temp_path}")
+                if safe_remove(temp_path, retries=3):
+                    TechnicalLogger.log("INFO", f"Deleted temp analysis file: {temp_path}")
+                else:
+                    TechnicalLogger.log("WARNING", f"Failed to delete temp file: {temp_path}")
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
@@ -374,8 +471,9 @@ async def download_file(file_id: str):
 async def confirm_process(
     request: Request,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     new_filename: str = Form(...),
+    process_id: Optional[str] = Form(None),
     muvekkil_adi: str = Form(None),
     karsi_taraf: str = Form(None),
     avukat_kodu: str = Form(None),
@@ -391,12 +489,14 @@ async def confirm_process(
     linked_case_id: Optional[int] = Form(None),
     is_test_mode: bool = Form(False),
     ai_ozet: str = Form(None),
+    custom_email_message: str = Form(None),
+    extra_attachment_files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
 ):
     """Step 2: Confirm Process - Rename, Upload to SharePoint, Link to Case"""
-    from sharepoint_uploader_graph import upload_file_to_sharepoint
-    from counter_manager import get_counter_manager
-    from log_manager import LogManager
+    from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint
+    from managers.counter_manager import get_counter_manager
+    from managers.log_manager import LogManager
 
     import time as perf_time
 
@@ -431,15 +531,44 @@ async def confirm_process(
         finally:
             db_fetch.close()
 
-    suffix = Path(file.filename).suffix
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            temp_path = tmp_file.name
-        TechnicalLogger.log("INFO", f"Temp file created for upload: {temp_path}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save temp file: {e}")
+    # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload
+    temp_path = None
+    _from_cache = False
+
+    if process_id and process_id in PROCESS_CACHE:
+        cache_entry = PROCESS_CACHE.pop(process_id)
+        cached_path = cache_entry["path"]
+        if os.path.exists(cached_path):
+            temp_path = cached_path
+            suffix = cache_entry.get("original_ext", ".pdf")
+            _from_cache = True
+            TechnicalLogger.log("INFO", f"PROCESS_CACHE hit: {process_id} → {cached_path}")
+        else:
+            TechnicalLogger.log("WARNING", f"PROCESS_CACHE path missing on disk: {cached_path}")
+
+    if not _from_cache:
+        if not file:
+            raise HTTPException(status_code=400, detail="Dosya veya geçerli bir process_id gereklidir.")
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"İzin verilmeyen dosya uzantısı: {suffix}")
+        try:
+            total_bytes = 0
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                temp_path = tmp_file.name
+                while chunk := await file.read(65536):
+                    total_bytes += len(chunk)
+                    if total_bytes > validate_file_size.MAX_BYTES:
+                        raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {validate_file_size.MAX_MB}MB.")
+                    tmp_file.write(chunk)
+            TechnicalLogger.log("INFO", f"Temp file created for upload: {temp_path} ({total_bytes} bytes)")
+            validate_file_type(temp_path)
+        except HTTPException:
+            safe_remove(temp_path)
+            raise
+        except Exception as e:
+            safe_remove(temp_path)
+            raise HTTPException(status_code=500, detail=f"Failed to save temp file: {e}")
 
     source_path = temp_path
     log_id = None
@@ -464,7 +593,7 @@ async def confirm_process(
     HAM_FOLDER = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
     ISLENMIS_FOLDER = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
 
-    original_filename = file.filename
+    original_filename = (file.filename if file else None) or new_filename
     date_str = datetime.now().strftime("%Y-%m-%d")
     sanitized_original = sanitize_filename(original_filename)
     ham_filename = f"{date_str}_{sanitized_original}"
@@ -476,45 +605,34 @@ async def confirm_process(
             error_id = str(uuid.uuid4())[:8]
             TechnicalLogger.log("ERROR", f"Async Ham Upload Error [ID: {error_id}]: {e}")
 
-    background_tasks.add_task(_async_ham_upload)
-    timings["2_ham_upload"] = 0.00
-    results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
-
+    # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent
     pdfa_temp_file = None
     try:
-        from pdf_converter import convert_to_pdfa2b
+        from pdf.pdf_converter import convert_to_pdfa2b
 
         step_start = perf_time.perf_counter()
         pdfa_temp_file = convert_to_pdfa2b(source_path)
         timings["3a_pdfa_convert"] = perf_time.perf_counter() - step_start
 
         if pdfa_temp_file and os.path.exists(pdfa_temp_file):
-            def _async_gizli_upload_and_cleanup(temp_file_path):
+            def _async_islenmis_upload(temp_file_path):
                 try:
                     upload_file_to_sharepoint(
                         temp_file_path,
                         new_filename,
                         ISLENMIS_FOLDER,
                         use_date_subfolder=False,
-                        metadata={
-                            "Muvekkil": (
-                                ", ".join(muvekkiller)
-                                if muvekkiller and len(muvekkiller) > 0
-                                else (muvekkil_adi or muvekkil_kodu)
-                            ),
-                            "Karsi_Taraf": karsi_taraf,
-                            "Avukat": avukat_kodu,
-                            "BelgeTuru": get_doctype_label(belge_turu_kodu),
-                            "EsasNo": esas_no,
-                            "Tarih": normalize_date_for_sharepoint(tarih),
-                        },
                     )
                 except Exception as e:
                     error_id = str(uuid.uuid4())[:8]
                     TechnicalLogger.log("ERROR", f"Async Processed Upload Error [ID: {error_id}]: {e}")
 
-            background_tasks.add_task(_async_gizli_upload_and_cleanup, pdfa_temp_file)
+            # Both archives queued together only after successful PDF/A conversion
+            background_tasks.add_task(_async_ham_upload)
+            background_tasks.add_task(_async_islenmis_upload, pdfa_temp_file)
+            timings["2_ham_upload"] = 0.00
             timings["3b_gizli_upload"] = 0.00
+            results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
             results["sharepoint_islenmis"] = "Arka Plana Atıldı (PDF/A-2b)"
         else:
             raise Exception("PDF/A-2b dönüşümü başarısız - dosya oluşturulamadı")
@@ -529,26 +647,21 @@ async def confirm_process(
     results["local_save"] = "Atlandı (Web Mode)"
     results["final_path"] = None
 
-    step_start = perf_time.perf_counter()
-    try:
-        if log_id:
-            import hashlib
-            sha256_hash = ""
+    timings["5_logging"] = 0.00
+
+    # Extra ekleri temp dosyaya kaydet
+    extra_temp_paths = []
+    for extra_file in extra_attachment_files:
+        if extra_file and extra_file.filename:
             try:
-                hash_target = final_local_path if final_local_path else source_path
-                with open(hash_target, "rb") as f:
-                    sha256_hash = hashlib.sha256(f.read()).hexdigest()
-            except Exception as h_err:
-                sha256_hash = f"Hash_Error: {h_err}"
+                extra_suffix = Path(extra_file.filename).suffix
+                with tempfile.NamedTemporaryFile(delete=False, suffix=extra_suffix) as etmp:
+                    etmp.write(await extra_file.read())
+                    extra_temp_paths.append(etmp.name)
+            except Exception as e:
+                TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-            LogManager().complete_log(log_id, new_filename, sha256_hash)
-            results["log_update"] = "Güncellendi"
-        timings["5_logging"] = perf_time.perf_counter() - step_start
-    except Exception as e:
-        timings["5_logging"] = perf_time.perf_counter() - step_start
-        TechnicalLogger.log("ERROR", f"Log Update Failed: {e}")
-
-    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list):
+    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, extra_paths=None):
         try:
             from email_sender import send_document_notification
             result = send_document_notification(
@@ -558,11 +671,18 @@ async def confirm_process(
                 metadata=email_metadata,
                 custom_to=to_list,
                 custom_cc=cc_list,
+                custom_message=msg,
+                extra_attachment_paths=extra_paths,
             )
             if not result["success"]:
                 logging.warning(f"E-posta gönderilemedi: {result['message']}")
         except Exception as e:
             TechnicalLogger.log("ERROR", f"Async Email Error: {e}")
+        finally:
+            # Extra temp dosyalarını temizle
+            if extra_paths:
+                for ep in extra_paths:
+                    safe_remove(ep)
 
     avukat_adi = ""
     if avukat_kodu:
@@ -590,7 +710,8 @@ async def confirm_process(
 
     if send_email and email_file_path and os.path.exists(email_file_path):
         background_tasks.add_task(
-            _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc
+            _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
+            custom_email_message or None, extra_temp_paths or None
         )
         timings["7_email"] = 0.00
         results["email"] = "Arka Plana Atıldı"
@@ -619,6 +740,8 @@ async def confirm_process(
         if down_id and down_id in DOWNLOAD_CACHE:
             del DOWNLOAD_CACHE[down_id]
 
+    # Her iki temp dosyayı da temizle (source_path her zaman; pdfa farklıysa o da)
+    background_tasks.add_task(_async_cleanup, source_path)
     if pdfa_temp_file and pdfa_temp_file != source_path:
         background_tasks.add_task(_async_cleanup, pdfa_temp_file, download_id)
 
@@ -627,7 +750,7 @@ async def confirm_process(
 
     doc_id = _save_case_document(
         case_id=linked_case_id,
-        original_filename=file.filename,
+        original_filename=original_filename,
         stored_filename=new_filename,
         belge_turu_kodu=belge_turu_kodu,
         belge_turu_adi=belge_turu_label,
