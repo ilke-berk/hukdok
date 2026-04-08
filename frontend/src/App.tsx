@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { MsalProvider } from "@azure/msal-react";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -29,7 +29,7 @@ const AppContent = () => {
   useIdleTimeout(30, 5); // 30 min idle, 5 min warning
 
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         {/* Public Route */}
         <Route path="/login" element={<Login />} />
@@ -114,7 +114,7 @@ const AppContent = () => {
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 };
 
