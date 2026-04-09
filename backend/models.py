@@ -273,7 +273,8 @@ class CaseDocument(Base):
     belge_turu_kodu = Column(String, nullable=True)           # "DAVA-DLK", "KARAR-BLG" vb.
     belge_turu_adi = Column(String, nullable=True)            # "Dava Dilekçesi" (okunabilir)
     ai_summary = Column(String, nullable=True)                # Gemini'nin kısa özeti
-    muvekkil_adi = Column(String, nullable=True)              # İlgili müvekkil
+    muvekkil_adi = Column(String, nullable=True)              # İlgili müvekkil (deprecated: case_party_id kullan)
+    case_party_id = Column(Integer, ForeignKey("case_parties.id", ondelete="SET NULL"), nullable=True)  # NULL → tüm dava, dolu → o tarafa ait
     avukat_kodu = Column(String, nullable=True)               # Sorumlu avukat kodu
     esas_no = Column(String, nullable=True)                   # Belgede geçen esas no
 
@@ -287,5 +288,6 @@ class CaseDocument(Base):
     uploaded_by = Column(String, nullable=True)              # Azure AD kullanıcı adı
     uploaded_at = Column(DateTime(timezone=True), default=func.now())
 
-    # İlişki
+    # İlişkiler
     case = relationship("Case", back_populates="documents")
+    case_party = relationship("CaseParty", foreign_keys=[case_party_id])

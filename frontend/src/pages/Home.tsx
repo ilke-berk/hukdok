@@ -91,7 +91,7 @@ const Home = () => {
     const [exactSearch, setExactSearch] = useState(false);
     const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
-    const LIMIT = 100;
+    const LIMIT = 20;
     const { lawyers } = useConfig();
 
     const calendarLawyerOptions = useMemo(() => {
@@ -369,7 +369,7 @@ const Home = () => {
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
                                 <FolderOpen className="w-4 h-4" />
-                                {searchQuery.trim().length >= 2 ? "Arama Sonuçları" : "Son Eklenen Davalar"}
+                                {searchQuery.trim().length >= 2 ? "Arama Sonuçları" : "Son Düzenlenen Davalar"}
                             </h3>
                             <span className="text-xs text-muted-foreground">
                                 {loading || isSearching ? "Yükleniyor..." : `${filteredCases.length} dava gösteriliyor`}

@@ -112,6 +112,7 @@ def _save_case_document(
     belge_turu_adi: str = None,
     ai_summary: str = None,
     muvekkil_adi: str = None,
+    case_party_id: int = None,
     avukat_kodu: str = None,
     esas_no: str = None,
     is_test_mode: bool = False,
@@ -126,6 +127,19 @@ def _save_case_document(
         else:
             link_mode = "UNLINKED"
 
+        # case_party_id çöz: önce dışarıdan verilen değere bak, yoksa muvekkil_adi ile eşleştir
+        resolved_party_id = case_party_id
+        if resolved_party_id is None and case_id and muvekkil_adi:
+            try:
+                party = db.query(models.CaseParty).filter(
+                    models.CaseParty.case_id == case_id,
+                    models.CaseParty.name.ilike(muvekkil_adi.strip()),
+                ).first()
+                if party:
+                    resolved_party_id = party.id
+            except Exception as e:
+                logging.warning(f"case_party_id resolution failed for '{muvekkil_adi}': {e}")
+
         doc = models.CaseDocument(
             case_id=case_id,
             original_filename=original_filename,
@@ -134,6 +148,7 @@ def _save_case_document(
             belge_turu_adi=belge_turu_adi,
             ai_summary=ai_summary,
             muvekkil_adi=muvekkil_adi,
+            case_party_id=resolved_party_id,
             avukat_kodu=avukat_kodu,
             esas_no=esas_no,
             link_mode=link_mode,
@@ -144,7 +159,7 @@ def _save_case_document(
         db.refresh(doc)
         doc_id = doc.id
         db.close()
-        logging.info(f"CaseDocument saved: ID={doc_id}, mode={link_mode}, case_id={case_id}")
+        logging.info(f"CaseDocument saved: ID={doc_id}, mode={link_mode}, case_id={case_id}, party_id={resolved_party_id}")
         return doc_id
     except Exception as e:
         logging.error(f"CaseDocument save error: {e}")
@@ -487,9 +502,11 @@ async def confirm_process(
     send_email: bool = Form(True),
     teblig_tarihi: str = Form(None),
     linked_case_id: Optional[int] = Form(None),
+    case_party_id: Optional[int] = Form(None),
     is_test_mode: bool = Form(False),
     ai_ozet: str = Form(None),
     custom_email_message: str = Form(None),
+    custom_messages_json: str = Form(None),
     extra_attachment_files: list[UploadFile] = File(default=[]),
     user: dict = Depends(get_current_user),
 ):
@@ -510,6 +527,7 @@ async def confirm_process(
         belgede_gecen_isimler = json.loads(belgede_gecen_isimler_json) if belgede_gecen_isimler_json else []
         custom_to = json.loads(custom_to_json) if custom_to_json else []
         custom_cc = json.loads(custom_cc_json) if custom_cc_json else []
+        custom_messages = json.loads(custom_messages_json) if custom_messages_json else None
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in form fields")
 
@@ -627,6 +645,7 @@ async def confirm_process(
                 belge_turu_adi=belge_turu_label,
                 ai_summary=ai_ozet,
                 muvekkil_adi=clean_muvekkil,
+                case_party_id=case_party_id,
                 avukat_kodu=avukat_kodu,
                 esas_no=esas_no,
                 is_test_mode=is_test_mode,
@@ -691,11 +710,11 @@ async def confirm_process(
                 extra_suffix = Path(extra_file.filename).suffix
                 with tempfile.NamedTemporaryFile(delete=False, suffix=extra_suffix) as etmp:
                     etmp.write(await extra_file.read())
-                    extra_temp_paths.append(etmp.name)
+                    extra_temp_paths.append({"path": etmp.name, "name": extra_file.filename})
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, extra_paths=None):
+    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None):
         try:
             from email_sender import send_document_notification
             result = send_document_notification(
@@ -706,6 +725,7 @@ async def confirm_process(
                 custom_to=to_list,
                 custom_cc=cc_list,
                 custom_message=msg,
+                custom_messages=messages,
                 extra_attachment_paths=extra_paths,
             )
             if not result["success"]:
@@ -716,7 +736,7 @@ async def confirm_process(
             # Extra temp dosyalarını temizle
             if extra_paths:
                 for ep in extra_paths:
-                    safe_remove(ep)
+                    safe_remove(ep.get("path"))
 
     avukat_adi = ""
     if avukat_kodu:
@@ -745,7 +765,7 @@ async def confirm_process(
     if send_email and email_file_path and os.path.exists(email_file_path):
         background_tasks.add_task(
             _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
-            custom_email_message or None, extra_temp_paths or None
+            custom_email_message or None, custom_messages or None, extra_temp_paths or None
         )
         timings["7_email"] = 0.00
         results["email"] = "Arka Plana Atıldı"

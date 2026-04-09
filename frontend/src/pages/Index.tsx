@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { useCases } from "@/hooks/useCases";
@@ -32,7 +33,7 @@ interface SuggestedCase {
   karsi_taraf?: string;
   counter_parties?: string[];
   client_parties?: string[];
-  parties?: { name?: string; role?: string; party_type?: string; client_id?: number; birth_year?: number; gender?: string }[];
+  parties?: { id?: number; name?: string; role?: string; party_type?: string; client_id?: number; birth_year?: number; gender?: string }[];
   matched_doc_names?: string[];
 }
 
@@ -113,6 +114,7 @@ const Index = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [caseSearch, setCaseSearch] = useState("");
   const [linkedCase, setLinkedCase] = useState<IndexCaseData | null>(null);
+  const [selectedPartyId, setSelectedPartyId] = useState<number | null>(null);
   const [isTestMode, setIsTestMode] = useState(false);
   const [casesLoaded, setCasesLoaded] = useState(false);
   const [isQuickCaseModalOpen, setIsQuickCaseModalOpen] = useState(false);
@@ -164,6 +166,25 @@ const Index = () => {
 
   // Arama filtresi
   const filteredCases = caseSearch.trim().length >= 2 ? searchResults.slice(0, 8) : allCases.slice(0, 8);
+
+  // linkedCase seçildiğinde parties ID'leriyle dolu tam dava verisini çek
+  useEffect(() => {
+    if (!linkedCase?.id) {
+      setSelectedPartyId(null);
+      return;
+    }
+    // Zaten ID'li parties varsa tekrar çekme
+    const hasPartyIds = (linkedCase as IndexCaseData & { parties?: { id?: number }[] }).parties?.some(p => p.id != null);
+    if (hasPartyIds) return;
+
+    apiClient.fetch(`/api/cases/${linkedCase.id}`)
+      .then(r => r.json())
+      .then((fullCase: IndexCaseData) => {
+        setLinkedCase(prev => prev?.id === fullCase.id ? { ...prev, ...fullCase } : prev);
+      })
+      .catch(() => { /* parties olmadan da devam edilebilir */ });
+    setSelectedPartyId(null);
+  }, [linkedCase?.id]);
 
   const handleFileSelect = (files: File | File[]) => {
     // Convert to array for consistent handling
@@ -550,7 +571,7 @@ const Index = () => {
 
   // Step 2: User confirms email -> Start Process
   // overrideLinkedCase: QuickCaseModal'dan yeni açılan dava, state güncel olmadan önce geçilir
-  const handleFinalProcess = async (toEmails: string[], ccEmails: string[], shouldSendEmail: boolean, tebligTarihi?: string, customMessage?: string, extraAttachments?: File[], overrideLinkedCase?: IndexCaseData) => {
+  const handleFinalProcess = async (toEmails: string[], ccEmails: string[], shouldSendEmail: boolean, tebligTarihi?: string, perRecipientMessages?: Record<string, string>, extraAttachments?: File[], overrideLinkedCase?: IndexCaseData) => {
     const dataToUse = finalData || analysisData;
     if (!selectedFile || !dataToUse) return;
 
@@ -593,7 +614,9 @@ const Index = () => {
       formData.append("new_filename", newFilename);
 
       // Optional fields
-      if (dataToUse.muvekkil_adi) formData.append("muvekkil_adi", dataToUse.muvekkil_adi);
+      // BUG FIX: The UI edits "muvekkil_kodu" for the client name. We must use it instead of the unedited "muvekkil_adi"
+      const approvedMuvekkil = dataToUse.muvekkil_kodu || dataToUse.muvekkil_adi;
+      if (approvedMuvekkil) formData.append("muvekkil_adi", approvedMuvekkil);
       if (dataToUse.karsi_taraf) formData.append("karsi_taraf", dataToUse.karsi_taraf);
       if (dataToUse.belge_turu_kodu) formData.append("belge_turu_kodu", dataToUse.belge_turu_kodu);
       if (dataToUse.tarih) formData.append("tarih", dataToUse.tarih);
@@ -606,7 +629,9 @@ const Index = () => {
       formData.append("custom_to_json", JSON.stringify(toEmails));
       formData.append("custom_cc_json", JSON.stringify(ccEmails));
       formData.append("send_email", String(shouldSendEmail));
-      if (customMessage) formData.append("custom_email_message", customMessage);
+      if (perRecipientMessages && Object.keys(perRecipientMessages).length > 0) {
+        formData.append("custom_messages_json", JSON.stringify(perRecipientMessages));
+      }
       if (extraAttachments && extraAttachments.length > 0) {
         for (const file of extraAttachments) {
           formData.append("extra_attachment_files", file);
@@ -617,6 +642,9 @@ const Index = () => {
       const effectiveLinkedCase = overrideLinkedCase || linkedCase;
       if (effectiveLinkedCase?.id) {
         formData.append("linked_case_id", String(effectiveLinkedCase.id));
+      }
+      if (selectedPartyId != null) {
+        formData.append("case_party_id", String(selectedPartyId));
       }
       formData.append("is_test_mode", String(isTestMode));
       if (dataToUse.ozet) {
@@ -831,6 +859,7 @@ const Index = () => {
                   <span>Test modunda belge yüklenecek — dava seçimi atlanıyor. Belge <strong>TEST</strong> olarak kaydedilir.</span>
                 </div>
               ) : linkedCase ? (
+                <>
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
@@ -858,10 +887,38 @@ const Index = () => {
                       )}
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); }} className="text-muted-foreground hover:text-destructive transition-colors" title="Davayı değiştir">
+                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); setSelectedPartyId(null); }} className="text-muted-foreground hover:text-destructive transition-colors" title="Davayı değiştir">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Müvekkil seçici — sadece CLIENT tipindeki taraflar gösterilir */}
+                {(() => {
+                  const clientParties = ((linkedCase as IndexCaseData & { parties?: { id?: number; name?: string; party_type?: string }[] })?.parties || []).filter(p => p.party_type === "CLIENT" && p.id != null);
+                  if (clientParties.length === 0) return null;
+                  return (
+                    <div className="mt-2 space-y-1">
+                      <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        <Users className="w-3 h-3" /> Belge Kime Ait?
+                      </label>
+                      <Select
+                        value={selectedPartyId != null ? String(selectedPartyId) : "all"}
+                        onValueChange={(v) => setSelectedPartyId(v === "all" ? null : Number(v))}
+                      >
+                        <SelectTrigger className="h-8 text-xs glass-input border-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Tüm Dava</SelectItem>
+                          {clientParties.map(p => (
+                            <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })()}
+                </>
               ) : (
                 <div className="space-y-2">
                   <div className="relative">
@@ -1023,15 +1080,15 @@ const Index = () => {
       <EmailModal
         isOpen={isEmailModalOpen}
         onClose={() => setIsEmailModalOpen(false)}
-        onConfirm={(to, cc, shouldSend, tebligTarihi, customMessage, extraAttachments) =>
-          handleFinalProcess(to, cc, shouldSend, tebligTarihi, customMessage, extraAttachments)
+        onConfirm={(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments) =>
+          handleFinalProcess(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments)
         }
         isLoading={emailModalLoading}
         defaultTo={[]}
         defaultCc={[]}
         batchCount={fileQueue.length > 1 ? processedBatch.length + 1 : 0}
         analysisContext={{
-          muvekkil_adi: (finalData || analysisData)?.muvekkil_adi,
+          muvekkil_adi: (finalData || analysisData)?.muvekkil_kodu || (finalData || analysisData)?.muvekkil_adi,
           muvekkiller: (finalData || analysisData)?.muvekkiller,
           belge_turu_kodu: (finalData || analysisData)?.belge_turu_kodu,
           tarih: (finalData || analysisData)?.tarih,

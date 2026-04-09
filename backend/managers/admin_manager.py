@@ -335,10 +335,10 @@ def get_case(case_id: int):
             "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
             "bureau_type": item.bureau_type,
             "sub_type_extra": item.sub_type_extra,
-            "parties": [{"name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
+            "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
             "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
-            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None} for d in item.documents]
+            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents]
         }
         return result
     except Exception as e:
@@ -423,7 +423,7 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
             if term_filters:
                 query = query.filter(and_(*term_filters))
 
-        items = query.order_by(models.Case.created_at.desc()).offset(offset).limit(limit).all()
+        items = query.order_by(models.Case.updated_at.desc()).offset(offset).limit(limit).all()
         
         cases_list = []
         for item in items:

@@ -35,7 +35,7 @@ interface CaseDetailsData {
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
     lawyers?: { name: string; lawyer_id?: number | null }[];
-    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string }[];
+    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null }[];
     [key: string]: unknown;
 }
 
@@ -45,6 +45,7 @@ const CaseDetails = () => {
     const { getCase, isLoading } = useCases();
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
+    const [activeTab, setActiveTab] = useState("overview");
 
     useEffect(() => {
         const fetchCaseData = async () => {
@@ -197,7 +198,7 @@ const CaseDetails = () => {
                 </Card>
 
                 {/* Tabs Container */}
-                <Tabs defaultValue="overview" className="w-full">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     <TabsList className="grid w-full grid-cols-3 md:w-auto md:inline-flex mb-4">
                         <TabsTrigger value="overview" className="gap-2">
                             <BarChart3 className="w-4 h-4" />
@@ -310,20 +311,42 @@ const CaseDetails = () => {
                                             const typeLabel = party.party_type === "CLIENT" ? "Müvekkil" : party.party_type === "COUNTER" ? "Karşı Taraf" : "Üçüncü Şahıs";
 
                                             return (
-                                                <div key={idx} className="flex flex-col p-4 rounded-xl border bg-background/50 gap-2">
+                                                <div 
+                                                    key={idx} 
+                                                    className="flex flex-col p-4 rounded-xl border bg-background/50 gap-2 cursor-pointer hover:border-primary/50 transition-colors group"
+                                                    onClick={() => {
+                                                        setActiveTab("documents");
+                                                        setTimeout(() => {
+                                                            const el = document.getElementById(`party-docs-${party.id}`);
+                                                            if (el) {
+                                                                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                            } else {
+                                                                toast.info("Belge Bulunamadı", { description: "Bu tarafa ait özel bir belge henüz sisteme yüklenmemiş." });
+                                                            }
+                                                        }, 150);
+                                                    }}
+                                                >
                                                     <div className="flex justify-between items-start gap-2">
-                                                        <div className="font-semibold">{party.name}</div>
+                                                        <div className="font-semibold group-hover:text-primary transition-colors flex items-center gap-2">
+                                                            {party.name}
+                                                        </div>
                                                         {party.client_id && (
                                                             <Badge variant="outline" className="text-[10px] shrink-0">Kayıtlı</Badge>
                                                         )}
                                                     </div>
-                                                    <div className="flex gap-2 mt-auto pt-2">
-                                                        <Badge className={`text-xs ${colorClass}`} variant="outline">
-                                                            {typeLabel}
-                                                        </Badge>
-                                                        <Badge variant="secondary" className="text-xs">
-                                                            {party.role}
-                                                        </Badge>
+                                                    <div className="flex justify-between items-end mt-auto pt-2">
+                                                        <div className="flex gap-2">
+                                                            <Badge className={`text-xs ${colorClass}`} variant="outline">
+                                                                {typeLabel}
+                                                            </Badge>
+                                                            <Badge variant="secondary" className="text-xs">
+                                                                {party.role}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] text-muted-foreground mr-1">
+                                                            <FileStack className="w-3 h-3" />
+                                                            <span>Dosyalar</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
@@ -347,59 +370,94 @@ const CaseDetails = () => {
                                 <CardDescription>Davaya bağlanan ve analiz edilen tüm belgeler</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {caseData.documents?.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {caseData.documents.map((doc: any) => (
-                                            <div key={doc.id} className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-background/50 hover:border-primary/40 transition-all gap-4">
-                                                <div className="flex items-start gap-4 flex-1 min-w-0">
-                                                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                                        <FileText className="w-5 h-5 text-primary" />
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <h4 className="font-semibold text-sm truncate" title={doc.stored_filename || doc.original_filename}>
-                                                            {doc.stored_filename || doc.original_filename}
-                                                        </h4>
-                                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                            {doc.belge_turu_adi && (
-                                                                <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
-                                                                    {doc.belge_turu_adi}
-                                                                </Badge>
-                                                            )}
-                                                            {doc.uploaded_at && (
-                                                                <div className="flex items-center text-xs text-muted-foreground gap-1">
-                                                                    <Clock className="w-3 h-3" />
-                                                                    {new Date(doc.uploaded_at).toLocaleString("tr-TR")}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        {/* AI Özeti Kaldırıldı */}
-                                                    </div>
+                                {caseData.documents?.length > 0 ? (() => {
+                                    // Belgeleri grupla: null → dava geneli, dolu → müvekkile ait
+                                    const caseWide = caseData.documents!.filter(d => d.case_party_id == null);
+                                    const byParty = caseData.documents!.reduce<Record<string, { name: string; docs: typeof caseData.documents }>>((acc, d) => {
+                                        if (d.case_party_id == null) return acc;
+                                        const key = String(d.case_party_id);
+                                        if (!acc[key]) acc[key] = { name: d.case_party_name || `Taraf #${key}`, docs: [] };
+                                        acc[key].docs!.push(d);
+                                        return acc;
+                                    }, {});
+
+                                    const DocCard = ({ doc }: { doc: NonNullable<typeof caseData.documents>[number] }) => (
+                                        <div key={doc.id} className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-background/50 hover:border-primary/40 transition-all gap-4">
+                                            <div className="flex items-start gap-4 flex-1 min-w-0">
+                                                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                                    <FileText className="w-5 h-5 text-primary" />
                                                 </div>
-                                                <div className="shrink-0 max-sm:w-full">
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="w-full sm:w-auto"
-                                                        onClick={() => {
-                                                            if (doc.sharepoint_url) {
-                                                                window.open(doc.sharepoint_url, '_blank', 'noopener,noreferrer');
-                                                                toast.success("Belge Açılıyor", {
-                                                                    description: "Dosya güvenli SharePoint arşivinden getiriliyor."
-                                                                });
-                                                            } else {
-                                                                toast.info("Belge Hazırlanıyor", {
-                                                                    description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir. Lütfen birkaç saniye sonra tekrar deneyin.`
-                                                                });
-                                                            }
-                                                        }}
-                                                    >
-                                                        Detay / İndir
-                                                    </Button>
+                                                <div className="min-w-0 flex-1">
+                                                    <h4 className="font-semibold text-sm truncate" title={doc.stored_filename || doc.original_filename}>
+                                                        {doc.stored_filename || doc.original_filename}
+                                                    </h4>
+                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                        {doc.belge_turu_adi && (
+                                                            <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
+                                                                {doc.belge_turu_adi}
+                                                            </Badge>
+                                                        )}
+                                                        {doc.uploaded_at && (
+                                                            <div className="flex items-center text-xs text-muted-foreground gap-1">
+                                                                <Clock className="w-3 h-3" />
+                                                                {new Date(doc.uploaded_at).toLocaleString("tr-TR")}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                ) : (
+                                            <div className="shrink-0 max-sm:w-full">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="w-full sm:w-auto"
+                                                    onClick={() => {
+                                                        if (doc.sharepoint_url) {
+                                                            window.open(doc.sharepoint_url, '_blank', 'noopener,noreferrer');
+                                                            toast.success("Belge Açılıyor", { description: "Dosya güvenli SharePoint arşivinden getiriliyor." });
+                                                        } else {
+                                                            toast.info("Belge Hazırlanıyor", { description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir.` });
+                                                        }
+                                                    }}
+                                                >
+                                                    Detay / İndir
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    );
+
+                                    return (
+                                        <div className="space-y-6">
+                                            {/* Grup 1: Tüm davayı ilgilendiren belgeler */}
+                                            {caseWide.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center gap-2 pb-1 border-b">
+                                                        <FileStack className="w-4 h-4 text-muted-foreground" />
+                                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Dava Belgeleri</span>
+                                                        <Badge variant="outline" className="text-[10px] ml-auto">{caseWide.length}</Badge>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} />)}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Grup 2+: Müvekkile ait belgeler */}
+                                            {Object.entries(byParty).map(([partyId, group]) => (
+                                                <div key={partyId} id={`party-docs-${partyId}`} className="space-y-2 scroll-mt-20">
+                                                    <div className="flex items-center gap-2 pb-1 border-b">
+                                                        <Users className="w-4 h-4 text-muted-foreground" />
+                                                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">{group.name}</span>
+                                                        <Badge variant="outline" className="text-[10px] ml-auto shrink-0">{group.docs!.length}</Badge>
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} />)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })() : (
                                     <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
                                         <FileStack className="w-10 h-10 opacity-20 mx-auto mb-3" />
                                         <p className="font-medium text-foreground">Henüz evrak yüklenmemiş</p>

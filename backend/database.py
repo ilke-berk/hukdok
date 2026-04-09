@@ -187,6 +187,28 @@ def check_and_migrate_tables():
                         logger.info("Added gender to case_parties")
                     except Exception as e: logger.error(f"Migration error for case_parties.gender: {e}")
 
+            # 5. CASE_DOCUMENTS MIGRATION (case_party_id)
+            if "case_documents" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("case_documents")]
+                if "case_party_id" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE case_documents ADD COLUMN case_party_id INTEGER REFERENCES case_parties(id) ON DELETE SET NULL'))
+                        conn.commit()
+                        logger.info("Added case_party_id to case_documents")
+                        # Backfill: mevcut muvekkil_adi değerlerini case_parties ile eşleştir
+                        conn.execute(text("""
+                            UPDATE case_documents cd
+                            SET case_party_id = cp.id
+                            FROM case_parties cp
+                            WHERE cd.case_id = cp.case_id
+                              AND cd.muvekkil_adi IS NOT NULL
+                              AND cd.case_party_id IS NULL
+                              AND UPPER(cd.muvekkil_adi) = UPPER(cp.name)
+                        """))
+                        conn.commit()
+                        logger.info("Backfilled case_party_id from muvekkil_adi")
+                    except Exception as e: logger.error(f"Migration error for case_documents.case_party_id: {e}")
+
     except Exception as e:
         logger.error(f"Global migration error: {e}")
 

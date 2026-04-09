@@ -4,7 +4,7 @@ Bu doküman, mevcut sistemin v2'ye yükseltilmesi sırasında izlenen adımları
 
 ## 🛠️ Neler Değişti?
 - **Veritabanı Şeması:** Mevcut PostgreSQL yapısı v2 özellikleri için yeni tablolar ve sütunlar (cari_kod, birth_year, service_type vb.) ile güncellendi. 🐘✅
-- **Migrasyon:** Yeni sütunlar (cari_kod, birth_year, service_type vb.) ilk başlatmada otomatik yüklenir.
+![alt text](image.png)- **Migrasyon:** Yeni sütunlar (cari_kod, birth_year, service_type vb.) ilk başlatmada otomatik yüklenir.
 - **Otomasyon:** `deploy.sh` ile tek komutla güncelleme imkanı eklendi.
 - **Frontend Hijyeni:** Console logları prodüksiyonda otomatik olarak gizlendi.
 

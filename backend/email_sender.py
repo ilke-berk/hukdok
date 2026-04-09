@@ -148,12 +148,15 @@ def send_document_email(
         attachment_content, file_size = _encode_attachment(attachment_path)
         file_size_mb = file_size / (1024 * 1024)
 
-        # Boyut kontrolü (35MB limit)
-        if file_size_mb > 35:
-            logger.error(f"❌ Dosya çok büyük: {file_size_mb:.2f}MB (max: 35MB)")
-            return {"success": False, "message": f"Dosya çok büyük: {file_size_mb:.2f}MB"}
+        # Boyut kontrolü - tek dosya limiti: 35MB, toplam limit: 35MB
+        MAX_SINGLE_MB = 35
+        MAX_TOTAL_MB = 35
 
-        logger.info(f"📎 Ek dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
+        if file_size_mb > MAX_SINGLE_MB:
+            logger.error(f"❌ Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)")
+            return {"success": False, "message": f"Ana dosya çok büyük: {file_size_mb:.2f}MB"}
+
+        logger.info(f"📎 Ana dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
 
         # Ana eke ek olarak extra dosyaları encode et
         attachments_payload = [
@@ -164,12 +167,26 @@ def send_document_email(
                 "contentBytes": attachment_content
             }
         ]
+        total_size_mb = file_size_mb
+
         if extra_attachments:
             for extra in extra_attachments:
                 extra_path = extra.get("path", "")
                 extra_name = extra.get("name", "ek_belge")
                 if extra_path and os.path.exists(extra_path):
                     extra_content, extra_size = _encode_attachment(extra_path)
+                    extra_size_mb = extra_size / (1024 * 1024)
+
+                    # Tek ek boyut kontrolü
+                    if extra_size_mb > MAX_SINGLE_MB:
+                        logger.warning(f"⚠️ Ek belge çok büyük, atlandı: {extra_name} ({extra_size_mb:.2f}MB)")
+                        continue
+
+                    # Toplam boyut kontrolü
+                    if total_size_mb + extra_size_mb > MAX_TOTAL_MB:
+                        logger.warning(f"⚠️ Toplam ek boyutu limiti aşılıyor, atlandı: {extra_name} (toplam: {total_size_mb + extra_size_mb:.2f}MB)")
+                        continue
+
                     # MIME türünü uzantıya göre belirle
                     ext = Path(extra_path).suffix.lower()
                     mime_map = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -182,7 +199,8 @@ def send_document_email(
                         "contentType": content_type,
                         "contentBytes": extra_content
                     })
-                    logger.info(f"📎 Ek belge eklendi: {extra_name}")
+                    total_size_mb += extra_size_mb
+                    logger.info(f"📎 Ek belge eklendi: {extra_name} ({extra_size_mb:.2f}MB, toplam: {total_size_mb:.2f}MB)")
                 else:
                     logger.warning(f"⚠️ Ek belge bulunamadı, atlandı: {extra_path}")
 
@@ -264,8 +282,7 @@ Kurallar:
 3. Eğer Tebliğ Tarihi ({context.get("teblig_tarihi_str")}) doluysa, bu tarihi "tebliğ tarihi" olarak mutlaka metinde geçir.
 4. Dil: Kurumsal, doğal ve saygılı bir Türkçe kullan. Robotik olmasın.
 5. Kapanış: "Saygılarımızla," ve altına "HukuDok Belge Arşiv Sistemi" imzasını ekle.
-6. Not: En alta "---" çizgisinden sonra "Bu e-posta yapay zeka desteğiyle oluşturulmuştur." notunu ekle.
-7. Metin dışında (konu başlığı vs) hiçbir şey yazma, sadece e-posta gövdesini ver.
+6. Metin dışında (konu başlığı vs) hiçbir şey yazma, sadece e-posta gövdesini ver.
 """
         response = model.generate_content(prompt)
         text = response.text.strip()
@@ -297,10 +314,8 @@ def generate_email_preview(recipient_name: str, context: dict) -> str:
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
 {extra_info}
 Saygılarımızla,
+Saygılarımızla,
 HukuDok Belge Arşiv Sistemi
-
----
-Bu e-posta otomatik olarak gönderilmiştir.
 """
     return body
 
@@ -313,12 +328,13 @@ def send_document_notification(
     custom_to: list[str] = None,
     custom_cc: list[str] = None,
     custom_message: str = None,
-    extra_attachment_paths: list[str] = None
+    custom_messages: dict = None,
+    extra_attachment_paths: list[dict] = None
 ) -> dict:
     """
     Belge bildirimi gönderir - Her alıcı için özelleştirilmiş AI destekli metin oluşturur.
     custom_message verilirse AI üretimi atlanır ve bu metin kullanılır.
-    extra_attachment_paths: ek belgelerin temp dosya yolları listesi.
+    extra_attachment_paths: ek belgelerin [{path, name}] sözlük listesi.
     """
     config = _get_email_config()
     
@@ -411,10 +427,13 @@ def send_document_notification(
         if not recipient_name:
             recipient_name = "Avukat"
             
-        # 1. Kullanıcı özel mesaj yazdıysa AI üretimini atla
-        if custom_message:
-            body = custom_message
-            logger.info(f"✏️ Kullanıcı tarafından yazılmış mesaj kullanılıyor: {recipient_name} ({recipient_email})")
+        # 1. Mesaj kaynağını belirle (öncelik: per-alıcı map > genel mesaj > AI)
+        recipient_specific_message = (custom_messages or {}).get(recipient_email)
+        active_message = recipient_specific_message or custom_message
+
+        if active_message:
+            body = active_message
+            logger.info(f"✏️ Kullanıcı mesajı kullanılıyor: {recipient_name} ({recipient_email})")
         else:
             logger.info(f"🤖 AI E-posta hazırlanıyor: {recipient_name} ({recipient_email})")
             body = _generate_ai_email_body(recipient_name, context)
@@ -432,9 +451,6 @@ def send_document_notification(
 {extra_info}
 Saygılarımızla,
 HukuDok Belge Arşiv Sistemi
-
----
-Bu e-posta otomatik olarak gönderilmiştir.
 """
 
         # 3. CC listesini temizle (sadece email kısmını al)
@@ -450,9 +466,9 @@ Bu e-posta otomatik olarak gönderilmiştir.
         extra_attach_list = None
         if extra_attachment_paths:
             extra_attach_list = [
-                {"path": p, "name": Path(p).name}
+                {"path": p.get("path"), "name": p.get("name")}
                 for p in extra_attachment_paths
-                if p and os.path.exists(p)
+                if p and p.get("path") and os.path.exists(p.get("path"))
             ]
 
         res = send_document_email(
