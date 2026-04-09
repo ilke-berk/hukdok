@@ -253,9 +253,10 @@ def _generate_ai_email_body(recipient_name: str, context: dict) -> str:
     """
     Gemini kullanarak kişiselleştirilmiş e-posta metni oluşturur.
     """
+    _load_env() # Garantiye al: Ortam değişkenlerini her üretimden önce yükle
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        logger.warning("⚠️ GEMINI_API_KEY bulunamadı, standart şablon kullanılacak.")
+        logger.error("❌ GEMINI_API_KEY bulunamadı! Ortam değişkenleri yüklenememiş olabilir.")
         return None
 
     try:
@@ -267,7 +268,7 @@ def _generate_ai_email_body(recipient_name: str, context: dict) -> str:
         
         prompt = f"""
 Sen kurumsal bir hukuk bürosunda çalışan profesyonel bir asistansın.
-Aşağıdaki bilgilere göre {recipient_name} isimli avukata/muhataba gönderilmek üzere kısa, nazik ve profesyonel bir e-posta metni yaz.
+Aşağıdaki bilgilere göre {recipient_name} isimli avukata/muhataba gönderilmek üzere nazik ve profesyonel bir e-posta metni yaz.
 
 Baglam:
 - Müvekkil: {context.get('muvekkil_text')}
@@ -278,7 +279,7 @@ Baglam:
 
 Kurallar:
 1. Hitap: "Sayın {recipient_name}," şeklinde başla.
-2. İçerik: Belgenin ekte sunulduğunu belirt.
+2. İçerik: Hangi müvekkile ait hangi belgenin (belge türü ve tarihi ile birlikte) ekte sunulduğunu açıkça, tam cümleler kurarak belirt (Örneğin: "X isimli müvekkilinize ait Y tarihli Z belgesi ekte bilginize sunulmuştur."). Sadece "Belge ektedir" gibi çok kısa cevaplar YAZMA.
 3. Eğer Tebliğ Tarihi ({context.get("teblig_tarihi_str")}) doluysa, bu tarihi "tebliğ tarihi" olarak mutlaka metinde geçir.
 4. Dil: Kurumsal, doğal ve saygılı bir Türkçe kullan. Robotik olmasın.
 5. Kapanış: "Saygılarımızla," ve altına "HukuDok Belge Arşiv Sistemi" imzasını ekle.
@@ -313,7 +314,6 @@ def generate_email_preview(recipient_name: str, context: dict) -> str:
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
 {extra_info}
-Saygılarımızla,
 Saygılarımızla,
 HukuDok Belge Arşiv Sistemi
 """
