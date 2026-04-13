@@ -413,7 +413,7 @@ def send_document_notification(
     # Format: "Ad Soyad <email@domain.com>" veya sadece "email@domain.com"
     email_regex = re.compile(r'(.*)<(.+)>')
     
-    for recipient_str in to_emails_raw:
+    for i, recipient_str in enumerate(to_emails_raw):
         recipient_name = "İlgili"
         recipient_email = recipient_str.strip()
         
@@ -477,7 +477,7 @@ HukuDok Belge Arşiv Sistemi
             body_text=body,
             attachment_path=pdf_path,
             attachment_name=filename,
-            cc_emails=clean_cc_list,
+            cc_emails=clean_cc_list if i == 0 else [],
             extra_attachments=extra_attach_list
         )
         results.append(res)
