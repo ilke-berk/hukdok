@@ -188,7 +188,7 @@ class ParagraphHandler:
             rightIndent=float(para_elem.get('RightIndent', '0')),
             firstLineIndent=float(para_elem.get('FirstLineIndent', '0')),
             fontSize=size,
-            leading=size * max(1.0, line_spacing)
+            leading=size * max(1.2, line_spacing)
         )
         
         paragraphs = []
@@ -396,6 +396,9 @@ class UDFConverter:
             'bottom': DEFAULT_MARGIN_PTS
         }
         self.base_style = None
+        self.header_start_page = 1   # startPage attribute from <header>
+        self.header_f_offset = 14.0  # headerFOffset from pageFormat (pt from page top)
+        self.footer_f_offset = 14.0  # footerFOffset from pageFormat
 
     def convert(self) -> str:
         """Main execution flow (Synchronous)."""
@@ -470,6 +473,8 @@ class UDFConverter:
                 for key in ['leftMargin', 'rightMargin', 'topMargin', 'bottomMargin']:
                     key_map = key.replace('Margin', '')
                     self.margins[key_map] = float(fmt.get(key, str(DEFAULT_MARGIN_PTS)))
+                self.header_f_offset = float(fmt.get('headerFOffset', '14.0'))
+                self.footer_f_offset = float(fmt.get('footerFOffset', '14.0'))
             
             # Background Image
             bg = props.find('bgImage')
@@ -522,6 +527,7 @@ class UDFConverter:
         # Header/Footer - filter out non-Paragraph flowables
         header = elements_elem.find('header')
         if header and para_handler:
+            self.header_start_page = int(header.get('startPage', '1'))
             for p in header.findall('paragraph'):
                 flowables = para_handler.handle(self, p)
                 # Only add Paragraph objects to avoid wrap() issues
@@ -538,11 +544,20 @@ class UDFConverter:
                     if isinstance(f, Paragraph):
                         self.footer_paragraphs.append(f)
 
-        # Body
+        # Body — header/footer her zaman ayrı işlenir, body yoksa elements_elem
+        # kullanılır ancak header/footer etiketleri atlanır (on_page ile çizilirler)
         body = elements_elem.find('body')
-        target = body if body is not None else elements_elem
-        
+        if body is not None:
+            target = body
+        else:
+            target = elements_elem
+
+        # Body olmayan UDF'lerde header/footer elementlerini story'den dışla
+        _skip_tags = {'header', 'footer'}
+
         for elem in target:
+            if elem.tag in _skip_tags:
+                continue
             # Use singleton instances for better performance
             handler = PluginRegistry.get_handler_instance(elem.tag)
             
@@ -573,35 +588,79 @@ class UDFConverter:
 
     def _build_pdf(self):
         """Generate final PDF."""
+        page_width, page_height = A4
+
+        # --- Compute effective top margin to accommodate header content ---
+        # UDF topMargin is the physical gap from the page top edge to where the
+        # header text starts (headerFOffset). Header paragraphs flow downward from
+        # there. Body must start BELOW the last header line.
+        effective_top_margin = self.margins['top']
+        if self.header_paragraphs:
+            available_width = page_width - self.margins['left'] - self.margins['right']
+            header_height = 0
+            for p in self.header_paragraphs:
+                _w, h = p.wrap(available_width, page_height)
+                header_height += h + 2  # +2pt gap between paragraphs
+            # Body starts after: top-edge gap + header content + small padding
+            effective_top_margin = self.header_f_offset + header_height + 8
+            TechnicalLogger.log("INFO", f"Header height={header_height:.1f}pt → effectiveTopMargin={effective_top_margin:.1f}pt")
+
+        # --- Compute effective bottom margin to accommodate footer content ---
+        effective_bottom_margin = self.margins['bottom']
+        if self.footer_paragraphs:
+            available_width = page_width - self.margins['left'] - self.margins['right']
+            footer_height = 0
+            for p in self.footer_paragraphs:
+                _w, h = p.wrap(available_width, page_height)
+                footer_height += h + 2
+            effective_bottom_margin = self.footer_f_offset + footer_height + 8
+
         doc = SimpleDocTemplate(
             self.output_path,
             pagesize=A4,
             leftMargin=self.margins['left'],
             rightMargin=self.margins['right'],
-            topMargin=self.margins['top'],
-            bottomMargin=self.margins['bottom']
+            topMargin=effective_top_margin,
+            bottomMargin=effective_bottom_margin,
         )
-        
+
+        header_start_page = self.header_start_page
+        header_f_offset = self.header_f_offset
+        footer_f_offset = self.footer_f_offset
+        header_paragraphs = self.header_paragraphs
+        footer_paragraphs = self.footer_paragraphs
+        bg_image = self.bg_image
+
         def on_page(canvas, doc):
             canvas.saveState()
-            # Header
-            for i, p in enumerate(self.header_paragraphs):
-                # Simple header positioning
-                w, h = p.wrap(doc.width, doc.topMargin)
-                p.drawOn(canvas, doc.leftMargin, doc.height + doc.topMargin - 15 - i*h)
-            # Footer
-            for i, p in enumerate(self.footer_paragraphs):
-                # Simple footer positioning
-                w, h = p.wrap(doc.width, doc.bottomMargin)
-                p.drawOn(canvas, doc.leftMargin, doc.bottomMargin - 15 - i*h)
-            # Bg
-            if self.bg_image:
+
+            # Bg — draw first so it stays behind text
+            if bg_image:
                 canvas.saveState()
                 canvas.setFillAlpha(0.1)
-                # Note: simplified bg logic
-                if hasattr(self.bg_image, 'drawOn'):
-                     self.bg_image.drawOn(canvas, 0, 0)
+                if hasattr(bg_image, 'drawOn'):
+                    bg_image.drawOn(canvas, 0, 0)
                 canvas.restoreState()
+
+            # Header — only on pages >= startPage
+            # y=0 is page bottom in ReportLab canvas coordinates.
+            # Header starts at `header_f_offset` pts below the page top edge.
+            if header_paragraphs and doc.page >= header_start_page:
+                header_y = page_height - header_f_offset  # y of header top (bottom of 1st para drawn here)
+                for p in header_paragraphs:
+                    _w, h = p.wrap(doc.width, effective_top_margin)
+                    header_y -= h  # drawOn uses bottom-left corner
+                    p.drawOn(canvas, doc.leftMargin, header_y)
+                    header_y -= 2  # small gap between paragraphs
+
+            # Footer — always shown, positioned above page bottom edge
+            if footer_paragraphs:
+                footer_y = footer_f_offset  # start from bottom of page + offset
+                for p in reversed(footer_paragraphs):  # draw bottom-up
+                    _w, h = p.wrap(doc.width, effective_bottom_margin)
+                    p.drawOn(canvas, doc.leftMargin, footer_y)
+                    footer_y += h + 2
+
             canvas.restoreState()
 
         doc.build(self.pdf_elements, onFirstPage=on_page, onLaterPages=on_page)
