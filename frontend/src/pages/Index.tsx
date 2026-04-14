@@ -519,29 +519,6 @@ const Index = () => {
     setFinalData((prev) => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
   }, []);
 
-  // Bütün tiklere basıldıktan sonra otomatik dava arama
-  useEffect(() => {
-    if (isValidated && finalData && !isTestMode) {
-      if (linkedCase) return; // Zaten seçildiyse dokunma
-
-      const suggested = finalData.suggested_case;
-      if (suggested && suggested.confidence === "HIGH") {
-        const newCase = {
-          id: suggested.case_id,
-          tracking_no: suggested.tracking_no,
-          esas_no: suggested.esas_no,
-          court: suggested.court,
-          responsible_lawyer_name: suggested.responsible_lawyer_name,
-          status: suggested.status,
-          karsi_taraf: suggested.karsi_taraf || "",
-          parties: suggested.parties || []
-        } as unknown as IndexCaseData;
-
-        setLinkedCase(newCase);
-        toast.success(`🎯 Eşleşen isimler üzerinden dava bulundu ve otomatik eklendi: ${suggested.esas_no || suggested.tracking_no}`, { duration: 5000 });
-      }
-    }
-  }, [isValidated, finalData, isTestMode, linkedCase]);
 
 
 

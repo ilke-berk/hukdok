@@ -317,7 +317,8 @@ async def preview_email_body(
         "teblig_tarihi_str": format_date_tr(teblig_tarihi_normalized),
     }
 
-    body = generate_email_preview(recipient_name, context)
+    sender_name = user.get("name") or user.get("preferred_username") or None
+    body = generate_email_preview(recipient_name, context, sender_name=sender_name)
     return {"body": body}
 
 
@@ -431,8 +432,8 @@ async def analyze_file_endpoint(
                             find_matching_case,
                             final_data.get("esas_no"),
                             list(set(matching_muvekkiller)),
-                            final_data.get("avukat_kodu"),
                             final_data.get("belgede_gecen_isimler", []),
+                            final_data.get("court"),
                         )
 
                         final_data["suggested_case"] = match_result
@@ -714,7 +715,7 @@ async def confirm_process(
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None):
+    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None):
         try:
             from email_sender import send_document_notification
             result = send_document_notification(
@@ -727,6 +728,7 @@ async def confirm_process(
                 custom_message=msg,
                 custom_messages=messages,
                 extra_attachment_paths=extra_paths,
+                sender_name=sender_name,
             )
             if not result["success"]:
                 logging.warning(f"E-posta gönderilemedi: {result['message']}")
@@ -765,7 +767,7 @@ async def confirm_process(
     if send_email and email_file_path and os.path.exists(email_file_path):
         background_tasks.add_task(
             _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
-            custom_email_message or None, custom_messages or None, extra_temp_paths or None
+            custom_email_message or None, custom_messages or None, extra_temp_paths or None, current_user_name
         )
         timings["7_email"] = 0.00
         results["email"] = "Arka Plana Atıldı"

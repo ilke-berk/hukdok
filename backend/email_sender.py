@@ -249,7 +249,7 @@ def send_document_email(
         return {"success": False, "message": str(e)}
 
 
-def _generate_ai_email_body(recipient_name: str, context: dict) -> str:
+def _generate_ai_email_body(recipient_name: str, context: dict, sender_name: str = None) -> str:
     """
     Gemini kullanarak kişiselleştirilmiş e-posta metni oluşturur.
     """
@@ -266,6 +266,7 @@ def _generate_ai_email_body(recipient_name: str, context: dict) -> str:
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
         model = genai.GenerativeModel(model_name)
         
+        imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
         prompt = f"""
 Sen kurumsal bir hukuk bürosunda çalışan profesyonel bir asistansın.
 Aşağıdaki bilgilere göre {recipient_name} isimli avukata/muhataba gönderilmek üzere nazik ve profesyonel bir e-posta metni yaz.
@@ -282,7 +283,7 @@ Kurallar:
 2. İçerik: Hangi müvekkile ait hangi belgenin (belge türü ve tarihi ile birlikte) ekte sunulduğunu açıkça, tam cümleler kurarak belirt (Örneğin: "X isimli müvekkilinize ait Y tarihli Z belgesi ekte bilginize sunulmuştur."). Sadece "Belge ektedir" gibi çok kısa cevaplar YAZMA.
 3. Eğer Tebliğ Tarihi ({context.get("teblig_tarihi_str")}) doluysa, bu tarihi "tebliğ tarihi" olarak mutlaka metinde geçir.
 4. Dil: Kurumsal, doğal ve saygılı bir Türkçe kullan. Robotik olmasın.
-5. Kapanış: "Saygılarımızla," ve altına "HukuDok Belge Arşiv Sistemi" imzasını ekle.
+5. Kapanış: "Saygılarımızla," ve altına tam olarak şu imzayı ekle: "{imza}"
 6. Metin dışında (konu başlığı vs) hiçbir şey yazma, sadece e-posta gövdesini ver.
 """
         response = model.generate_content(prompt)
@@ -298,24 +299,25 @@ Kurallar:
         return None
 
 
-def generate_email_preview(recipient_name: str, context: dict) -> str:
+def generate_email_preview(recipient_name: str, context: dict, sender_name: str = None) -> str:
     """
     AI e-posta önizlemesi oluşturur (gönderim yapmaz).
     Fallback: standart şablon döndürür.
     """
-    body = _generate_ai_email_body(recipient_name, context)
+    body = _generate_ai_email_body(recipient_name, context, sender_name=sender_name)
     if not body:
         teblig_tarihi_str = context.get("teblig_tarihi_str", "")
         muvekkil_text = context.get("muvekkil_text", "Müvekkil")
         tarih_str = context.get("tarih_str", "")
         belge_turu = context.get("belge_turu", "Belge")
         extra_info = f"\nBelgenin tebliğ tarihi: {teblig_tarihi_str}\n" if teblig_tarihi_str else ""
+        imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
         body = f"""Sayın {recipient_name},
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
 {extra_info}
 Saygılarımızla,
-HukuDok Belge Arşiv Sistemi
+{imza}
 """
     return body
 
@@ -329,7 +331,8 @@ def send_document_notification(
     custom_cc: list[str] = None,
     custom_message: str = None,
     custom_messages: dict = None,
-    extra_attachment_paths: list[dict] = None
+    extra_attachment_paths: list[dict] = None,
+    sender_name: str = None,
 ) -> dict:
     """
     Belge bildirimi gönderir - Her alıcı için özelleştirilmiş AI destekli metin oluşturur.
@@ -405,7 +408,7 @@ def send_document_notification(
         "teblig_tarihi_str": teblig_tarihi_str
     }
     
-    subject = f"[HukuDok] {belge_turu} - {subject_client}"
+    subject = f"[HukDok] {belge_turu} - {subject_client}" + (f" | {sender_name}" if sender_name else "")
     
     # --- GÖNDERİM DÖNGÜSÜ (Bireysel Gönderim) ---
     results = []
@@ -432,11 +435,18 @@ def send_document_notification(
         active_message = recipient_specific_message or custom_message
 
         if active_message:
-            body = active_message
+            # "HukuDok Belge Arşiv Sistemi" imzasının önüne sender_name ekle
+            if sender_name and sender_name not in active_message and "HukuDok Belge Arşiv Sistemi" in active_message:
+                body = active_message.replace(
+                    "HukuDok Belge Arşiv Sistemi",
+                    f"{sender_name}\nHukuDok Belge Arşiv Sistemi"
+                )
+            else:
+                body = active_message
             logger.info(f"✏️ Kullanıcı mesajı kullanılıyor: {recipient_name} ({recipient_email})")
         else:
             logger.info(f"🤖 AI E-posta hazırlanıyor: {recipient_name} ({recipient_email})")
-            body = _generate_ai_email_body(recipient_name, context)
+            body = _generate_ai_email_body(recipient_name, context, sender_name=sender_name)
 
         # 2. AI Başarısız Olursa Şablon Kullan
         if not body:
@@ -445,12 +455,13 @@ def send_document_notification(
             if context.get("teblig_tarihi_str"):
                 extra_info = f"\nBelgenin tebliğ tarihi: {context.get('teblig_tarihi_str')}\n"
 
+            imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
             body = f"""Sayın {recipient_name},
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
 {extra_info}
 Saygılarımızla,
-HukuDok Belge Arşiv Sistemi
+{imza}
 """
 
         # 3. CC listesini temizle (sadece email kısmını al)

@@ -3,8 +3,10 @@ import { useMsal } from "@azure/msal-react";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 
 export interface ClientData {
+    id?: number;
     name: string;
     tc_no?: string;
+    vergi_no?: string;
     email?: string;
     phone?: string;
     mobile_phone?: string;

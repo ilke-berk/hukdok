@@ -74,14 +74,6 @@ interface CaseSearchResult {
     status: string;
 }
 
-interface DbClientData {
-    id: number;
-    name: string;
-    tc_no?: string;
-    vergi_no?: string;
-    category?: string;
-    cari_kod?: string;
-}
 
 interface CaseHistoryEntry {
     date: string;
@@ -113,7 +105,7 @@ const NewCase = () => {
 
     // API Hooks
     const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
-    const { getClients } = useClients();
+    const { clients: dbClients, isLoading: isDbLoading } = useClients();
     const {
         caseSubjects, lawyers,
         fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
@@ -148,8 +140,6 @@ const NewCase = () => {
     const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
 
     // Config
-    const [dbClients, setDbClients] = useState<DbClientData[]>([]);
-    const [isDbLoading, setIsDbLoading] = useState(false);
 
     // Form States
     const [showClientConfirm, setShowClientConfirm] = useState(false);
@@ -254,22 +244,6 @@ const NewCase = () => {
         }
     };
 
-    useEffect(() => {
-        const fetchDbClients = async () => {
-            setIsDbLoading(true);
-            try {
-                const data = await getClients();
-                if (data) setDbClients(data);
-            } catch (error) {
-                console.error("Müvekkil listesi yüklenemedi:", error);
-                toast.error("Müvekkil listesi yüklenemedi.");
-            } finally {
-                setIsDbLoading(false);
-            }
-        };
-        fetchDbClients();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // Search cases effect
     const { searchCases, getClientCaseSequence } = useCases();

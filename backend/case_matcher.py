@@ -1,19 +1,23 @@
 """
 case_matcher.py — Otomatik Dava Eşleştirme Motoru (Faz 1)
 
-Belge analizinden çıkan bilgileri (esas_no, muvekkiller, avukat_kodu)
+Belge analizinden çıkan bilgileri (esas_no, muvekkiller, mahkeme)
 kullanarak veritabanındaki davalarla eşleştirir ve bir güven skoru üretir.
 
 Güven Skoru:
-  esas_no tam eşleşmesi      → +60 puan (en güvenilir sinyal)
-  esas_no kısmi eşleşmesi   → +30 puan
-  müvekkil adı eşleşmesi    → +25 puan (her biri, max +50)
-  avukat kodu eşleşmesi     → +15 puan
+  mahkeme tam eşleşmesi     → +50 puan  ┐ ikisi birden eşleşirse kesin (100 puan → HIGH)
+  esas_no tam eşleşmesi     → +50 puan  ┘
+  mahkeme şehir+tür eşleşme → +25 puan
+  müvekkil adı tam eşleşme  → +30 puan (her biri)
+  müvekkil adı kısmi eşleşme→ +15 puan (her biri)
+
+  Not: Esas no tek başına yeterli değildir — aynı esas no farklı mahkemelerde olabilir.
+       Sadece tam esas no eşleşmesi değerlendirilir, kısmi eşleşme yok.
 
 Karar eşiği:
-  ≥ 80 puan → Otomatik öneri (güven: HIGH)
-  50-79     → Öneri, kullanıcı onayı beklenir (güven: MEDIUM)
-  < 50      → Bulunamadı / Manuel seçim gerekli
+  ≥ 90 puan → Otomatik öneri (güven: HIGH)
+  45-89     → Öneri, kullanıcı onayı beklenir (güven: MEDIUM)
+  < 45      → Bulunamadı / Manuel seçim gerekli
 
 Sonuç:
   {
@@ -55,10 +59,8 @@ def _normalize(text: str) -> str:
 def _esas_no_similarity(doc_esas: str, case_esas: str) -> int:
     """
     İki esas no arasındaki benzerliği puana çevirir.
-    "2024/1234" tam eşleşme → 60
-    "2024/1234" ↔ "2024/001234" (sıfır dolgu farkı) → 60
-    Sadece yıl veya sadece numara eşleşmesi → 15
-    Hiç eşleşme → 0
+    Tam eşleşme veya sıfır dolgu farkı → +50
+    Diğer tüm durumlar → 0 (kısmi eşleşme yok)
     """
     if not doc_esas or not case_esas:
         return 0
@@ -66,11 +68,10 @@ def _esas_no_similarity(doc_esas: str, case_esas: str) -> int:
     d = _normalize(doc_esas).replace(" ", "")
     c = _normalize(case_esas).replace(" ", "")
 
-    # Tam eşleşme
     if d == c:
-        return 60
+        return 50
 
-    # Normalize: bölü veya tire ile parçala
+    # Sıfır dolgu farkı: "2024/1234" ↔ "2024/001234"
     import re
     d_parts = re.split(r"[/\-]", d)
     c_parts = re.split(r"[/\-]", c)
@@ -82,26 +83,57 @@ def _esas_no_similarity(doc_esas: str, case_esas: str) -> int:
         c_num = c_parts[1].lstrip("0") or "0"
 
         if d_year == c_year and d_num == c_num:
-            return 60  # Sıfır dolgu farkı — aynı dava
-
-        if d_year == c_year:
-            return 20  # Aynı yıl, farklı numara
-
-        if d_num == c_num:
-            return 15  # Aynı numara, farklı yıl (çok nadir ama mümkün)
-
-    # Substring kontrolü (bir kısım diğerini içeriyorsa)
-    if d in c or c in d:
-        return 25
+            return 50
 
     return 0
+
+
+def _court_similarity(doc_court: str, case_court: str) -> tuple[int, str]:
+    """
+    İki mahkeme adı arasındaki benzerliği puana çevirir.
+    Döner: (puan, açıklama)
+
+    Tam eşleşme (normalize)              → +50
+    Şehir + mahkeme türü eşleşmesi      → +25  (numara farklı olsa bile)
+    """
+    if not doc_court or not case_court:
+        return 0, ""
+
+    d = _normalize(doc_court)
+    c = _normalize(case_court)
+
+    if d == c:
+        return 50, f"Mahkeme tam eşleşme ({case_court}): +50"
+
+    SKIP = {"MAHKEMESI", "MAHKEME", "DAIRESI", "DAIRE", "VE", "NO", "NUMARALI"}
+    d_words = {w for w in d.split() if w not in SKIP and len(w) >= 2}
+    c_words = {w for w in c.split() if w not in SKIP and len(w) >= 2}
+
+    # Şehir: ilk kelime (en az 3 harf)
+    d_city = d.split()[0] if d.split() else ""
+    c_city = c.split()[0] if c.split() else ""
+    city_match = len(d_city) >= 3 and d_city == c_city
+
+    # Mahkeme türü: "TUKETICI", "HUKUK", "AGIR", "IDARE" gibi ayırt edici kelimeler
+    TYPE_KEYWORDS = {
+        "TUKETICI", "HUKUK", "AGIR", "CEZA", "IDARE", "IS", "SULH",
+        "AILE", "ICRA", "TICARET", "KADASTRO", "BOLGE",
+    }
+    d_types = d_words & TYPE_KEYWORDS
+    c_types = c_words & TYPE_KEYWORDS
+    type_match = bool(d_types & c_types)
+
+    if city_match and type_match:
+        return 25, f"Mahkeme şehir+tür eşleşmesi ({case_court}): +25"
+
+    return 0, ""
 
 
 def find_matching_case(
     esas_no: Optional[str] = None,
     muvekkiller: Optional[list] = None,
-    avukat_kodu: Optional[str] = None,
     belgede_gecen_isimler: Optional[list] = None,
+    mahkeme: Optional[str] = None,
     min_score: int = 40,
 ) -> Optional[dict]:
     """
@@ -110,7 +142,8 @@ def find_matching_case(
     Args:
         esas_no: Belgeden çıkarılan esas numarası
         muvekkiller: Belgeden çıkarılan müvekkil adları listesi
-        avukat_kodu: Belgeden çıkarılan avukat kodu
+        belgede_gecen_isimler: Belgede geçen diğer isimler
+        mahkeme: Belgeden çıkarılan mahkeme adı
         min_score: Bu puanın altındaki eşleşmeler döndürülmez
 
     Returns:
@@ -182,10 +215,14 @@ def find_matching_case(
                     case_parties_norm.append((_normalize(p["name"]), p["name"]))
 
             match_count = 0
-            # all_names_in_doc contains (original_name, normalized_name) would be better
-            # For now, let's just use doc_names_norm and try to map back or just return the normalized matched ones
-            
-            # Revised matching loop to track doc names
+
+            # Esas no eşleştirmesi
+            esas_score = _esas_no_similarity(esas_no, case["esas_no"])
+            if esas_score:
+                score += esas_score
+                reasons.append(f"Esas no tam eşleşme ({case['esas_no']}): +{esas_score}")
+
+            # İsim eşleştirmesi
             for doc_name_orig in all_names_in_doc:
                 if not doc_name_orig or len(doc_name_orig) < 4:
                     continue
@@ -196,20 +233,26 @@ def find_matching_case(
                         continue
                     
                     if doc_name_norm == cp_norm:
-                        score += 50
+                        score += 30
                         match_count += 1
-                        reasons.append(f"İsim tam eşleşme ({cp_orig}): +50")
+                        reasons.append(f"İsim tam eşleşme ({cp_orig}): +30")
                         matched_parties.add(cp_norm)
                         matched_doc_names.add(doc_name_orig)
                         break
                     elif doc_name_norm in cp_norm or cp_norm in doc_name_norm:
                         if len(doc_name_norm) >= 6 and len(cp_norm) >= 6:
-                            score += 20
-                            match_count += 0.4
-                            reasons.append(f"İsim kısmi eşleşme ({doc_name_orig} ↔ {cp_orig}): +20")
+                            score += 15
+                            match_count += 0.5
+                            reasons.append(f"İsim kısmi eşleşme ({doc_name_orig} ↔ {cp_orig}): +15")
                             matched_parties.add(cp_norm)
                             matched_doc_names.add(doc_name_orig)
                             break
+
+            # Mahkeme eşleştirmesi
+            court_score, court_reason = _court_similarity(mahkeme, case["court"])
+            if court_score:
+                score += court_score
+                reasons.append(court_reason)
 
             if score >= min_score:
                 counter_parties = [p["name"] for p in case["parties"] if p["party_type"] == "COUNTER" and p["name"]]
@@ -242,7 +285,7 @@ def find_matching_case(
         # Circular reference → JSON serialize hatası
         best = dict(candidates[0])  # Shallow copy — orijinal nesneyi koru
 
-        if best["score"] >= 90 or best.get("match_count", 0) >= 1.8:
+        if best["score"] >= 90:
             confidence = "HIGH"
         elif best["score"] >= 45:
             confidence = "MEDIUM"
