@@ -3,8 +3,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Printer, ChevronRight, ChevronLeft, FileText, Download, Loader2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Printer, ChevronRight, ChevronLeft, FileText, Download, Loader2, ChevronsUpDown, Check, X } from "lucide-react";
 import { useConfig } from "@/hooks/useConfig";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import type { Client } from "@/pages/ClientList";
@@ -56,15 +57,18 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [udfLoading, setUdfLoading] = useState(false);
 
-    const avukatListesi: string[] = (client.vekil_avukatlar || "")
-        .split(";").map(s => s.trim()).filter(Boolean);
+    const avukatListesi: string[] = lawyers
+        .map(l => l.name)
+        .sort((a, b) => a.localeCompare(b, "tr"));
 
     // Step 1
     const [verenAd, setVerenAd] = useState("");
     const [yetkiliAdlar, setYetkiliAdlar] = useState<string[]>([]);
+    const [verenOpen, setVerenOpen] = useState(false);
+    const [yetkiliOpen, setYetkiliOpen] = useState(false);
 
     // Step 2 — avukat detayları
-    const [buroAdres, setBuroAdres] = useState(client.address || "");
+    const [buroAdres, setBuroAdres] = useState("");
     const [verenDetay, setVerenDetay] = useState<AvukatDetay>({ ad: "", tc: "", sicil: "" });
     const [yetkiliDetaylar, setYetkiliDetaylar] = useState<AvukatDetay[]>([]);
 
@@ -85,20 +89,21 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     const printRef = useRef<HTMLDivElement>(null);
 
-    function lookupAvukat(ad: string): { tc: string; sicil: string } {
+    function lookupAvukat(ad: string): { tc: string; sicil: string; address: string } {
         const cache = loadCache();
         const normalAd = normalizeName(ad);
         const match = lawyers.find(l => normalizeName(l.name) === normalAd);
-        if (match && (match.tc_no || match.sicil_no)) {
-            return { tc: match.tc_no || "", sicil: match.sicil_no || "" };
+        if (match) {
+            return { tc: match.tc_no || "", sicil: match.sicil_no || "", address: match.address || "" };
         }
-        return cache[normalAd] || { tc: "", sicil: "" };
+        return { ...(cache[normalAd] || { tc: "", sicil: "" }), address: "" };
     }
 
     useEffect(() => {
         if (step !== 2) return;
         const v = lookupAvukat(verenAd);
         setVerenDetay({ ad: verenAd, tc: v.tc, sicil: v.sicil });
+        if (v.address) setBuroAdres(v.address);
         setYetkiliDetaylar(yetkiliAdlar.map(ad => {
             const l = lookupAvukat(ad);
             return { ad, tc: l.tc, sicil: l.sicil };
@@ -188,7 +193,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     function reset() {
         setStep(1); setVerenAd(""); setYetkiliAdlar([]);
-        setBuroAdres(client.address || "");
+        setVerenOpen(false); setYetkiliOpen(false);
+        setBuroAdres("");
         setVerenDetay({ ad: "", tc: "", sicil: "" }); setYetkiliDetaylar([]);
         setMuvekkillAdres(client.address || ""); setMuvekkillIl(client.il || "");
         setVergiNo(client.tc_no || "");
@@ -246,32 +252,107 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                 {/* ── ADIM 1 ── */}
                 {step === 1 && (
                     <div className="flex flex-col gap-6">
-                        <div className="flex flex-col gap-3">
+
+                        {/* Yetki Veren — tekli combobox */}
+                        <div className="flex flex-col gap-2">
                             <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetki Belgesi Veren Avukat</span>
-                            <div className="flex flex-col gap-2">
-                                {avukatListesi.map(ad => (
-                                    <label key={ad} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${verenAd === ad ? "border-rose-500/60 bg-rose-500/5" : "border-border hover:bg-accent/5"}`}>
-                                        <input type="radio" name="veren" value={ad} checked={verenAd === ad}
-                                            onChange={() => { setVerenAd(ad); setYetkiliAdlar(prev => prev.filter(a => a !== ad)); }}
-                                            className="accent-rose-600 w-4 h-4" />
-                                        <span className="text-[14px] font-medium">Av. {toUpper(ad)}</span>
-                                    </label>
-                                ))}
-                            </div>
+                            <Popover open={verenOpen} onOpenChange={setVerenOpen}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={verenOpen}
+                                        className="w-full justify-between h-10 bg-secondary/20 border-border text-sm font-normal"
+                                    >
+                                        {verenAd
+                                            ? <span className="font-medium">Av. {toUpper(verenAd)}</span>
+                                            : <span className="text-muted-foreground">Avukat seçin...</span>}
+                                        <ChevronsUpDown className="w-4 h-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                                    <Command>
+                                        <CommandInput placeholder="Avukat ara..." className="h-9" />
+                                        <CommandList>
+                                            <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
+                                            <CommandGroup>
+                                                {avukatListesi.map(ad => (
+                                                    <CommandItem
+                                                        key={ad}
+                                                        value={ad}
+                                                        onSelect={() => {
+                                                            setVerenAd(ad);
+                                                            setYetkiliAdlar(prev => prev.filter(a => a !== ad));
+                                                            setVerenOpen(false);
+                                                        }}
+                                                    >
+                                                        <Check className={`mr-2 w-4 h-4 ${verenAd === ad ? "opacity-100 text-rose-500" : "opacity-0"}`} />
+                                                        Av. {toUpper(ad)}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
                         </div>
 
-                        <div className="flex flex-col gap-3">
+                        {/* Yetkili Kılınan — çoklu combobox */}
+                        <div className="flex flex-col gap-2">
                             <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetkili Kılınan Avukatlar</span>
-                            <div className="flex flex-col gap-2">
-                                {avukatListesi.filter(ad => ad !== verenAd).map(ad => (
-                                    <label key={ad} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${yetkiliAdlar.includes(ad) ? "border-rose-500/60 bg-rose-500/5" : "border-border hover:bg-accent/5"}`}>
-                                        <Checkbox checked={yetkiliAdlar.includes(ad)} onCheckedChange={() => toggleYetkili(ad)}
-                                            className="border-muted-foreground data-[state=checked]:bg-rose-600 data-[state=checked]:border-rose-600" />
-                                        <span className="text-[14px] font-medium">Av. {toUpper(ad)}</span>
-                                    </label>
-                                ))}
-                                {verenAd === "" && <p className="text-xs text-muted-foreground italic px-1">Önce yetki veren avukatı seçin.</p>}
-                            </div>
+                            <Popover open={yetkiliOpen} onOpenChange={v => { if (verenAd) setYetkiliOpen(v); }}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        disabled={verenAd === ""}
+                                        className="w-full justify-between h-10 bg-secondary/20 border-border text-sm font-normal"
+                                    >
+                                        {yetkiliAdlar.length > 0
+                                            ? <span className="text-muted-foreground">{yetkiliAdlar.length} avukat seçildi</span>
+                                            : <span className="text-muted-foreground">{verenAd === "" ? "Önce yetki veren avukatı seçin" : "Avukat seçin..."}</span>}
+                                        <ChevronsUpDown className="w-4 h-4 shrink-0 opacity-50" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                                    <Command>
+                                        <CommandInput placeholder="Avukat ara..." className="h-9" />
+                                        <CommandList>
+                                            <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
+                                            <CommandGroup>
+                                                {avukatListesi.filter(ad => ad !== verenAd).map(ad => (
+                                                    <CommandItem
+                                                        key={ad}
+                                                        value={ad}
+                                                        onSelect={() => toggleYetkili(ad)}
+                                                    >
+                                                        <Check className={`mr-2 w-4 h-4 ${yetkiliAdlar.includes(ad) ? "opacity-100 text-rose-500" : "opacity-0"}`} />
+                                                        Av. {toUpper(ad)}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        </CommandList>
+                                    </Command>
+                                </PopoverContent>
+                            </Popover>
+
+                            {/* Seçilen avukatlar — badge'ler */}
+                            {yetkiliAdlar.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-1">
+                                    {yetkiliAdlar.map(ad => (
+                                        <span key={ad} className="inline-flex items-center gap-1 text-xs bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full px-2.5 py-1 font-medium">
+                                            Av. {toUpper(ad)}
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleYetkili(ad)}
+                                                className="ml-0.5 hover:text-rose-200 transition-colors"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex justify-end pt-2">

@@ -493,15 +493,13 @@ const ClientList = () => {
                                             <Gavel className="w-4 h-4 mr-2.5 opacity-70" /> Davalar
                                         </Button>
                                     </div>
-                                    {selectedClient.vekil_avukatlar && (
-                                        <Button
-                                            variant="outline"
-                                            className="w-full h-11 text-sm font-semibold border-border text-foreground/70 hover:bg-rose-500/5 hover:border-rose-500/40 hover:text-rose-400 bg-secondary/10 rounded-md transition-all active:scale-[0.98]"
-                                            onClick={() => setYetkiBelgesiOpen(true)}
-                                        >
-                                            <FileText className="w-4 h-4 mr-2 opacity-70" /> Yetki Belgesi
-                                        </Button>
-                                    )}
+                                    <Button
+                                        variant="outline"
+                                        className="w-full h-11 text-sm font-semibold border-border text-foreground/70 hover:bg-rose-500/5 hover:border-rose-500/40 hover:text-rose-400 bg-secondary/10 rounded-md transition-all active:scale-[0.98]"
+                                        onClick={() => setYetkiBelgesiOpen(true)}
+                                    >
+                                        <FileText className="w-4 h-4 mr-2 opacity-70" /> Yetki Belgesi
+                                    </Button>
 
                                     {/* Basics */}
                                     <div className="flex flex-col gap-2">
