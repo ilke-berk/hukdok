@@ -198,7 +198,9 @@ def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
     try:
         from udf_converter import convert_udf_to_pdf
         TechnicalLogger.log("INFO", f"UDF → PDF dönüştürülüyor: {source_udf}")
-        convert_udf_to_pdf(source_udf, output_pdf)
+        _, img_warnings = convert_udf_to_pdf(source_udf, output_pdf)
+        if img_warnings:
+            TechnicalLogger.log("WARNING", f"UDF görsel uyarıları ({len(img_warnings)}): {'; '.join(img_warnings)}")
         if not os.path.exists(output_pdf):
             raise Exception("UDF converter PDF oluşturamadı.")
         TechnicalLogger.log("INFO", f"UDF → PDF tamamlandı: {output_pdf}")

@@ -1,31 +1,47 @@
 import logging
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from dependencies import get_current_user
-from schemas import CaseCreate, CaseListRead
+from dependencies import get_current_user, get_current_tenant
+from schemas import (
+    CaseCreate, CaseListRead, CaseRelationCreate, RelatedCaseSummary, RelatedCasesResponse,
+    CaseTrackingUpdate, CaseStageLogRead,
+)
 from database import SessionLocal
-from managers.admin_manager import add_case, get_case, get_cases, get_case_stats, update_case, search_cases
+from managers.admin_manager import (
+    add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
+    update_case_tracking, get_case_stage_log,
+)
 import models
+
+
+class HearingDateCreate(BaseModel):
+    hearing_date: date
+    hearing_time: Optional[str] = None
+    lawyer_name: Optional[str] = None
+    extracted_from_doc: Optional[str] = None
+    note: Optional[str] = None
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post("/api/cases")
-def api_add_case(case_data: CaseCreate, user: dict = Depends(get_current_user)):
-    result = add_case(case_data.model_dump())
+def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
+    result = add_case(case_data.model_dump(), tenant_id=tenant_id)
     if not result:
         raise HTTPException(status_code=500, detail="Failed to save case")
     return {"status": "success", "message": "Case saved", **result}
 
 
 @router.get("/api/cases/stats")
-def api_get_case_stats(user: dict = Depends(get_current_user)):
-    return get_case_stats()
+def api_get_case_stats(tenant_id: str = Depends(get_current_tenant)):
+    return get_case_stats(tenant_id=tenant_id)
 
 
 @router.get("/api/cases", response_model=List[CaseListRead])
@@ -35,13 +51,14 @@ def get_cases_api(
     status: Optional[str] = None,
     lawyer: Optional[str] = None,
     q: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    exact: bool = False,
+    tenant_id: str = Depends(get_current_tenant),
 ):
-    return get_cases(limit=limit, offset=offset, status=status, lawyer=lawyer, q=q)
+    return get_cases(limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact, tenant_id=tenant_id)
 
 
 @router.get("/api/cases/client-sequence")
-def get_client_case_sequence(client_name: str, user: dict = Depends(get_current_user)):
+def get_client_case_sequence(client_name: str, tenant_id: str = Depends(get_current_tenant)):
     db = SessionLocal()
     try:
         if not client_name:
@@ -69,54 +86,324 @@ def get_client_case_sequence(client_name: str, user: dict = Depends(get_current_
 
 
 @router.get("/api/cases/search")
-def api_search_cases(q: str, user: dict = Depends(get_current_user)):
-    return search_cases(q)
+def api_search_cases(q: str, exact: bool = False, active_only: bool = False, tenant_id: str = Depends(get_current_tenant)):
+    return search_cases(q, exact=exact, active_only=active_only, tenant_id=tenant_id)
 
 
 @router.get("/api/cases/{case_id}")
-def api_get_case(case_id: int, user: dict = Depends(get_current_user)):
-    case = get_case(case_id)
+def api_get_case(case_id: int, tenant_id: str = Depends(get_current_tenant)):
+    case = get_case(case_id, tenant_id=tenant_id)
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
 
 
 @router.put("/api/cases/{case_id}")
-def api_update_case(case_id: int, case_data: CaseCreate, user: dict = Depends(get_current_user)):
-    success = update_case(case_id, case_data.model_dump())
+def api_update_case(case_id: int, case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
+    success = update_case(case_id, case_data.model_dump(), tenant_id=tenant_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update case")
     return {"status": "success", "message": "Case updated"}
 
 
 @router.delete("/api/cases/{case_id}")
-def api_delete_case(case_id: int, user: dict = Depends(get_current_user)):
+def api_delete_case(case_id: int, tenant_id: str = Depends(get_current_tenant)):
     db = SessionLocal()
     try:
-        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        from sqlalchemy import or_
+        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = query.filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))
+        case = query.first()
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
         db.delete(case)
         db.commit()
         return {"status": "success", "message": "Case deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Dava silme hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Dava silinemedi. Lütfen tekrar deneyin.")
+    finally:
+        db.close()
+
+
+def _case_to_summary(case, relation_id, relation_type, match_reason, score, is_manual, note) -> RelatedCaseSummary:
+    """ORM Case nesnesini RelatedCaseSummary'e dönüştür."""
+    parties = [
+        {"name": p.name, "role": p.role}
+        for p in (case.parties or [])[:3]
+    ]
+    return RelatedCaseSummary(
+        id=case.id,
+        tracking_no=case.tracking_no,
+        esas_no=case.esas_no,
+        court=case.court,
+        status=case.status,
+        file_type=case.file_type,
+        parties=parties,
+        relation_id=relation_id,
+        relation_type=relation_type,
+        match_reason=match_reason,
+        confidence_score=score,
+        is_manual=is_manual,
+        note=note,
+    )
+
+
+@router.get("/api/cases/{case_id}/relations", response_model=RelatedCasesResponse)
+def get_case_relations(
+    case_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Manuel olarak bağlanan ilişkili davaları getirir."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        ).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
+        manual_rows = db.query(models.CaseRelation).filter(
+            (models.CaseRelation.source_case_id == case_id) |
+            (models.CaseRelation.target_case_id == case_id)
+        ).all()
+
+        manual_list = []
+        for row in manual_rows:
+            other_id = row.target_case_id if row.source_case_id == case_id else row.source_case_id
+            other = (
+                db.query(models.Case)
+                .options(selectinload(models.Case.parties))
+                .filter(models.Case.id == other_id)
+                .first()
+            )
+            if other:
+                manual_list.append(_case_to_summary(
+                    case=other,
+                    relation_id=row.id,
+                    relation_type=row.relation_type,
+                    match_reason="Kullanıcı tarafından bağlandı",
+                    score=None,
+                    is_manual=True,
+                    note=row.note,
+                ))
+
+        return RelatedCasesResponse(manual=manual_list, automatic=[])
+
+    finally:
+        db.close()
+
+
+@router.post("/api/cases/{case_id}/relations", response_model=dict)
+def add_case_relation(
+    case_id: int,
+    data: CaseRelationCreate,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """İki dava arasında manuel bağlantı oluştur."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        if data.target_case_id == case_id:
+            raise HTTPException(status_code=400, detail="Dava kendisiyle ilişkilendirilemez")
+
+        tenant_filter = or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        source = db.query(models.Case).filter(models.Case.id == case_id, tenant_filter).first()
+        target = db.query(models.Case).filter(models.Case.id == data.target_case_id, tenant_filter).first()
+        if not source or not target:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
+        existing = db.query(models.CaseRelation).filter(
+            ((models.CaseRelation.source_case_id == case_id) & (models.CaseRelation.target_case_id == data.target_case_id)) |
+            ((models.CaseRelation.source_case_id == data.target_case_id) & (models.CaseRelation.target_case_id == case_id))
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Bu iki dava zaten ilişkilendirilmiş")
+
+        relation = models.CaseRelation(
+            source_case_id=case_id,
+            target_case_id=data.target_case_id,
+            relation_type=data.relation_type,
+            note=data.note,
+            created_by=user.get("name") or user.get("preferred_username"),
+        )
+        db.add(relation)
+        db.commit()
+        db.refresh(relation)
+        return {"id": relation.id, "status": "created"}
+
+    finally:
+        db.close()
+
+
+@router.delete("/api/cases/{case_id}/relations/{relation_id}")
+def delete_case_relation(
+    case_id: int,
+    relation_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Manuel bağlantıyı sil."""
+    db = SessionLocal()
+    try:
+        relation = db.query(models.CaseRelation).filter(
+            models.CaseRelation.id == relation_id,
+            (
+                (models.CaseRelation.source_case_id == case_id) |
+                (models.CaseRelation.target_case_id == case_id)
+            )
+        ).first()
+
+        if not relation:
+            raise HTTPException(status_code=404, detail="Bağlantı bulunamadı")
+
+        db.delete(relation)
+        db.commit()
+        return {"status": "deleted"}
+
+    finally:
+        db.close()
+
+
+@router.patch("/api/cases/{case_id}/tracking")
+def api_update_case_tracking(
+    case_id: int,
+    data: CaseTrackingUpdate,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Dava takip bilgilerini güncelle (aşama, tarihler, karar bilgileri)."""
+    changed_by = user.get("name") or user.get("preferred_username") or "unknown"
+    success = update_case_tracking(case_id, data.model_dump(exclude_none=False), changed_by=changed_by, tenant_id=tenant_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Dava bulunamadı veya güncelleme başarısız")
+    return {"status": "success"}
+
+
+@router.get("/api/cases/{case_id}/stage-log", response_model=List[CaseStageLogRead])
+def api_get_case_stage_log(
+    case_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Davanın aşama tarihçesini döner."""
+    return get_case_stage_log(case_id)
+
+
+@router.post("/api/cases/{case_id}/hearing-dates")
+def add_hearing_date(
+    case_id: int,
+    data: HearingDateCreate,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Duruşma zaptından çıkarılan sonraki duruşma tarihini kaydet."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        ).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
+        hearing = models.HearingDate(
+            case_id=case_id,
+            hearing_date=data.hearing_date,
+            hearing_time=data.hearing_time,
+            lawyer_name=data.lawyer_name or case.responsible_lawyer_name,
+            extracted_from_doc=data.extracted_from_doc,
+            note=data.note,
+            created_by=user.get("name") or user.get("preferred_username"),
+        )
+        db.add(hearing)
+        db.commit()
+        db.refresh(hearing)
+        return {
+            "id": hearing.id,
+            "case_id": case_id,
+            "hearing_date": hearing.hearing_date.isoformat(),
+            "hearing_time": hearing.hearing_time,
+            "lawyer_name": hearing.lawyer_name,
+        }
+    finally:
+        db.close()
+
+
+@router.get("/api/hearing-dates")
+def get_hearing_dates(
+    lawyer: Optional[str] = None,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Tüm duruşma tarihlerini döndürür (ajanda için)."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import or_
+        q = db.query(models.HearingDate)
+        if lawyer:
+            q = q.filter(models.HearingDate.lawyer_name == lawyer)
+        rows = (
+            q.outerjoin(models.Case, models.HearingDate.case_id == models.Case.id)
+            .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))
+            .add_columns(models.Case.esas_no, models.Case.court)
+            .order_by(models.HearingDate.hearing_date)
+            .all()
+        )
+        return [
+            {
+                "id": r.HearingDate.id,
+                "case_id": r.HearingDate.case_id,
+                "hearing_date": r.HearingDate.hearing_date.isoformat(),
+                "hearing_time": r.HearingDate.hearing_time,
+                "lawyer_name": r.HearingDate.lawyer_name,
+                "extracted_from_doc": r.HearingDate.extracted_from_doc,
+                "note": r.HearingDate.note,
+                "esas_no": r.esas_no,
+                "court": r.court,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+@router.delete("/api/hearing-dates/{hearing_id}")
+def delete_hearing_date(
+    hearing_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    db = SessionLocal()
+    try:
+        row = db.query(models.HearingDate).filter(models.HearingDate.id == hearing_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Duruşma tarihi bulunamadı")
+        db.delete(row)
+        db.commit()
+        return {"status": "deleted"}
     finally:
         db.close()
 
 
 @router.get("/api/incomplete-tasks")
-def get_incomplete_tasks(user: dict = Depends(get_current_user)):
+def get_incomplete_tasks(tenant_id: str = Depends(get_current_tenant)):
     db = SessionLocal()
     try:
+        from sqlalchemy import or_
         incomplete_cases = []
         incomplete_clients = []
 
         cases = (
             db.query(models.Case)
             .options(selectinload(models.Case.parties))
-            .filter(models.Case.active == True)
+            .filter(
+                models.Case.active == True,
+                or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+            )
             .order_by(models.Case.created_at.desc())
             .limit(100)
             .all()

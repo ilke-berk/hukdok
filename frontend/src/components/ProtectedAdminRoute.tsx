@@ -1,20 +1,26 @@
-
+import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { Loader2 } from "lucide-react";
+import { apiClient } from "@/lib/api";
 
 interface ProtectedAdminRouteProps {
     children: React.ReactNode;
 }
 
-// Hardcoded admin list for frontend-only protection
-const ADMIN_EMAILS = [
-    "IlkeKutluk@lexisbio.onmicrosoft.com",
-    // Add other admins here if needed
-];
-
 export const ProtectedAdminRoute = ({ children }: ProtectedAdminRouteProps) => {
     const { instance, accounts, inProgress } = useMsal();
+    const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+    const account = instance.getActiveAccount() || accounts[0];
+
+    useEffect(() => {
+        if (!account) return;
+        apiClient.fetch("/api/config/is_admin")
+            .then(res => res.json())
+            .then(data => setIsAdmin(data.is_admin === true))
+            .catch(() => setIsAdmin(false));
+    }, [account?.username]);
 
     if (inProgress !== "none" && accounts.length === 0) {
         return (
@@ -24,20 +30,20 @@ export const ProtectedAdminRoute = ({ children }: ProtectedAdminRouteProps) => {
         );
     }
 
-    const account = instance.getActiveAccount() || accounts[0];
-
-    // 1. Check if logged in
     if (!account) {
         return <Navigate to="/login" replace />;
     }
 
-    // 2. Check if admin
-    // Turkish-aware case-insensitive email comparison
-    const userEmail = (account.username || "").toLocaleLowerCase('tr-TR');
-    const isAdmin = ADMIN_EMAILS.some(email => email.toLocaleLowerCase('tr-TR') === userEmail);
+    if (isAdmin === null) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+        );
+    }
 
     if (!isAdmin) {
-        console.warn("⛔ Unauthorized Admin Access Attempt:", userEmail);
+        console.warn("⛔ Unauthorized Admin Access Attempt:", account.username);
         return <Navigate to="/" replace />;
     }
 

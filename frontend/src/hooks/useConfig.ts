@@ -10,6 +10,11 @@ export interface ConfigItem {
     description?: string;
     parent_code?: string;
     role_type?: string;
+    tc_no?: string;
+    sicil_no?: string;
+    gorev?: string;
+    phone?: string;
+    address?: string;
 }
 
 const EMPTY: ConfigItem[] = [];
@@ -27,6 +32,7 @@ const CONFIG_KEYS = {
     cities: ["config", "cities"],
     specialties: ["config", "specialties"],
     clientCategories: ["config", "client_categories"],
+    fileStatuses: ["config", "file_statuses"],
 } as const;
 
 export const useConfig = () => {
@@ -64,16 +70,18 @@ export const useConfig = () => {
     const citiesQ = useQuery({ queryKey: CONFIG_KEYS.cities, queryFn: () => fetchJson("/api/config/cities"), enabled, staleTime: STALE_TIME });
     const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), enabled, staleTime: STALE_TIME });
     const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), enabled, staleTime: STALE_TIME });
+    const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), enabled, staleTime: STALE_TIME });
 
     const isLoading =
         lawyersQ.isLoading || statusesQ.isLoading || doctypesQ.isLoading ||
         emailRecipientsQ.isLoading || caseSubjectsQ.isLoading ||
         fileTypesQ.isLoading || courtTypesQ.isLoading || partyRolesQ.isLoading ||
         bureauTypesQ.isLoading || citiesQ.isLoading || specialtiesQ.isLoading ||
-        clientCategoriesQ.isLoading;
+        clientCategoriesQ.isLoading || fileStatusesQ.isLoading;
 
     // --- MUTATIONS ---
-    const addLawyerM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/lawyers", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
+    const addLawyerM = useMutation({ mutationFn: ({ code, name, tc_no, sicil_no, gorev, email, phone, address }: { code: string; name: string; tc_no?: string; sicil_no?: string; gorev?: string; email?: string; phone?: string; address?: string }) => mutate("/api/config/lawyers", "POST", { code, name, tc_no, sicil_no, gorev, email, phone, address }), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
+    const updateLawyerM = useMutation({ mutationFn: ({ code, tc_no, sicil_no, gorev, email, phone, address }: { code: string; tc_no?: string; sicil_no?: string; gorev?: string; email?: string; phone?: string; address?: string }) => mutate(`/api/config/lawyers/${code}`, "PUT", { tc_no, sicil_no, gorev, email, phone, address }), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
     const deleteLawyerM = useMutation({ mutationFn: (code: string) => mutate(`/api/config/lawyers/${code}`, "DELETE"), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
 
     const addStatusM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/statuses", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.statuses) });
@@ -115,6 +123,9 @@ export const useConfig = () => {
     const addClientCategoryM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/client_categories", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.clientCategories) });
     const deleteClientCategoryM = useMutation({ mutationFn: (code: string) => mutate(`/api/config/client_categories/${code}`, "DELETE"), onSuccess: () => invalidate(CONFIG_KEYS.clientCategories) });
 
+    const addFileStatusM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/file_statuses", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.fileStatuses) });
+    const deleteFileStatusM = useMutation({ mutationFn: (code: string) => mutate(`/api/config/file_statuses/${code}`, "DELETE"), onSuccess: () => invalidate(CONFIG_KEYS.fileStatuses) });
+
     const typeToKey: Record<string, (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS]> = {
         lawyers: CONFIG_KEYS.lawyers,
         statuses: CONFIG_KEYS.statuses,
@@ -128,6 +139,7 @@ export const useConfig = () => {
         cities: CONFIG_KEYS.cities,
         specialties: CONFIG_KEYS.specialties,
         client_categories: CONFIG_KEYS.clientCategories,
+        file_statuses: CONFIG_KEYS.fileStatuses,
     };
 
     const reorderListM = useMutation({
@@ -167,9 +179,11 @@ export const useConfig = () => {
         cities: citiesQ.data ?? EMPTY,
         specialties: specialtiesQ.data ?? EMPTY,
         clientCategories: clientCategoriesQ.data ?? EMPTY,
+        fileStatuses: fileStatusesQ.data ?? EMPTY,
         isLoading,
 
-        addLawyer: (code: string, name: string) => addLawyerM.mutateAsync({ code, name }),
+        addLawyer: (code: string, name: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string) => addLawyerM.mutateAsync({ code, name, tc_no, sicil_no, gorev, email, phone, address }),
+        updateLawyer: (code: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string) => updateLawyerM.mutateAsync({ code, tc_no, sicil_no, gorev, email, phone, address }),
         deleteLawyer: (code: string) => deleteLawyerM.mutateAsync(code),
 
         addStatus: (code: string, name: string) => addStatusM.mutateAsync({ code, name }),
@@ -204,6 +218,9 @@ export const useConfig = () => {
 
         addClientCategory: (code: string, name: string) => addClientCategoryM.mutateAsync({ code, name }),
         deleteClientCategory: (code: string) => deleteClientCategoryM.mutateAsync(code),
+
+        addFileStatus: (code: string, name: string) => addFileStatusM.mutateAsync({ code, name }),
+        deleteFileStatus: (code: string) => deleteFileStatusM.mutateAsync(code),
 
         reorderList: (type: string, orderedIds: string[]) => reorderListM.mutateAsync({ type, orderedIds }),
     };

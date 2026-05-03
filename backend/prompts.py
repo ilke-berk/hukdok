@@ -6,10 +6,11 @@ from typing import Optional, List, Dict
 def get_system_instruction(
     dynamic_lawyers: Optional[List[Dict]] = None,
     dynamic_doctypes: Optional[List[Dict]] = None,
-    dynamic_statuses: Optional[List[Dict]] = None, 
+    dynamic_statuses: Optional[List[Dict]] = None,
     candidates: Optional[List[str]] = None,
     missing_fields: Optional[List[str]] = None,
-    pre_extracted: Optional[Dict] = None
+    pre_extracted: Optional[Dict] = None,
+    belge_turu_kodu: Optional[str] = None,
 ) -> str:
     """
     Generates a DYNAMIC system instruction based on which fields need extraction.
@@ -108,6 +109,20 @@ def get_system_instruction(
        - H&A Avukatının temsil ettiği kişiyi bul.
        - Avukatın "Vekili" olarak göründüğü tarafı seç.""")
     
+    # Duruşma/tensip zaptı için sonraki duruşma tarihi ve saati çıkarımı
+    _btk = (belge_turu_kodu or "").upper()
+    is_durusma_zapt = any(kw in _btk for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP"))
+    if is_durusma_zapt:
+        task_items.append("""
+    📅 SONRAKİ DURUŞMA TARİHİ ve SAATİ (sonraki_durusma_tarihi, sonraki_durusma_saati):
+       Belgenin SONUNDA genellikle şu formatta yazılır:
+       "DD/MM/YYYY günü saat HH:MM'e bırakılmasına karar verildi"
+       veya "duruşmanın ... günü saat ...'e bırakılmasına", "erteleme", "talik" ifadeleri.
+       - Tarihi çıkar. Format: YYYY-MM-DD
+       - Saati çıkar. Format: HH:MM (örn. 09:43)
+       - Birden fazla tarih varsa en ileri (en gelecekteki) tarihi seç.
+       - Tarih bulamazsan: null. Saat bulamazsan: null""")
+
     # Summary is ALWAYS requested
     task_items.append("""
     📝 ÖZET: Belgenin detaylı özeti (2-3 cümle).""")
@@ -129,12 +144,29 @@ def get_system_instruction(
     is_summary_only = len(missing_fields) == 0
     
     if is_summary_only:
-        main_task = """
+        if is_durusma_zapt:
+            main_task = f"""
+    🎯 ÖZET + DURUŞMA TARİHİ MODU:
+    Metadata alanları (tarih, esas_no vb.) zaten bulundu. Senin görevin:
+    1. Belgenin detaylı özetini yaz
+    2. Belgedeki isimleri listele (avukatlar HARİÇ)
+    3. Sonraki duruşma tarihini MUTLAKA çıkar (aşağıya bak)
+
+    📅 SONRAKİ DURUŞMA TARİHİ (sonraki_durusma_tarihi):
+       Belgenin sonunda genellikle şu formatta yazılır:
+       "duruşmanın ... günü saat ...'e bırakılmasına karar verildi"
+       - O tarihi çıkar. Format: YYYY-MM-DD
+       - Bulamazsan: null
+
+    DİĞER ALANLARI BOŞ BIRAK (tarih, esas_no, muvekkil_adi = null)
+    Onlar zaten sistemde var."""
+        else:
+            main_task = """
     🎯 SADECE ÖZET MODU:
     Tüm metadata alanları (tarih, esas_no vb.) zaten bulundu. Senin görevin:
     1. Belgenin detaylı özetini yaz
     2. Belgedeki isimleri listele (avukatlar HARİÇ)
-    
+
     DİĞER ALANLARI BOŞ BIRAK (tarih, esas_no, muvekkil_adi = null)
     Onlar zaten sistemde var."""
     else:
@@ -143,6 +175,8 @@ def get_system_instruction(
     Bazı alanlar regex ile bulunamadı. Sadece aşağıdaki görevleri yap:
     {chr(10).join(task_items)}
     {pre_context}"""
+
+    durusma_schema_field = ',\n      "sonraki_durusma_tarihi": "YYYY-MM-DD | null",\n      "sonraki_durusma_saati": "HH:MM | null"' if is_durusma_zapt else ""
 
     system_instruction = f"""
 <system_instruction>
@@ -163,7 +197,7 @@ def get_system_instruction(
       "esas_no": "String | null",
       "court": "String | null",
       "durum": "G",
-      "ozet": "String"
+      "ozet": "String"{durusma_schema_field}
     }}
   </output_schema>
   

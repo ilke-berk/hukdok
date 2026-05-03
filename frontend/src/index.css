@@ -72,7 +72,8 @@
 
   html.light,
   .light {
-    --background: 0 0% 100%;
+    --background: 210 25% 97%;
+    /* #F3F6FA - Hafif soğuk, göz dostu beyaz */
     --foreground: 0 0% 10%;
 
     --card: 0 0% 100%;
@@ -84,10 +85,10 @@
     --primary: 345 65% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 10% 96%;
+    --secondary: 210 20% 94%;
     --secondary-foreground: 0 0% 10%;
 
-    --muted: 220 10% 97%;
+    --muted: 210 20% 95%;
     --muted-foreground: 0 0% 35%;
 
     --accent: 345 45% 96%;
@@ -102,24 +103,24 @@
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 90%;
+    --border: 210 20% 88%;
     --input: 0 0% 100%;
     --ring: 345 65% 55%;
 
     /* Legal Document System Colors - Light Theme */
     --legal-burgundy: 345 65% 55%;
     --legal-burgundy-dark: 345 70% 40%;
-    --legal-burgundy-light: 345 35% 95%;
-    --legal-cream: 40 20% 99%;
+    --legal-burgundy-light: 345 35% 96%;
+    --legal-cream: 210 20% 97%;
     --legal-gray: 0 0% 40%;
 
     /* Gradients - Bordo tonunu koru (Dark mode ile birebir aynı) */
     --gradient-header: linear-gradient(135deg, hsl(345 70% 35%), hsl(345 60% 45%));
-    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.95), hsl(220 5% 99% / 0.9));
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.95), hsl(210 25% 97% / 0.9));
 
     /* Glass Effect Variables */
     --glass-bg: hsl(0 0% 100% / 0.9);
-    --glass-border: hsl(220 15% 90% / 0.8);
+    --glass-border: hsl(210 20% 88% / 0.8);
     --glass-shadow: 0 4px 20px hsl(0 0% 0% / 0.06);
     --glass-blur: blur(10px);
 
@@ -152,8 +153,8 @@
   /* Light mode gradient */
   .light body {
     background-image:
-      radial-gradient(ellipse at 20% 20%, hsl(345 40% 92% / 0.5) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 80%, hsl(220 20% 95% / 0.4) 0%, transparent 50%);
+      radial-gradient(ellipse at 20% 20%, hsl(345 40% 90% / 0.35) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, hsl(210 40% 92% / 0.3) 0%, transparent 50%);
   }
 
   h1,
@@ -218,6 +219,12 @@
   .glow-success {
     box-shadow: 0 0 20px hsl(142 76% 45% / 0.3);
   }
+}
+
+/* Yetki Belgesi - Yazdırma */
+@media print {
+  body > * { display: none !important; }
+  #yetki-belgesi-print-area { display: block !important; }
 }
 
 /* Custom scrollbar - Theme Aware */

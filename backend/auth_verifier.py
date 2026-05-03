@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Dict, Optional, Any
 import jwt
 from jwt import PyJWKClient
@@ -30,13 +31,13 @@ class AuthVerifier:
             token_tenant = unverified_claims.get("tid")
             
             # 2. Check Tenant Whitelist
-            ALLOWED_TENANTS = [
-                "44f029f8-f2f7-4910-8c38-998dca5fad02",  # LexisBio
-                "9776cf1f-e0b0-4923-9433-33f3fb4161de",  # Hanyaloglu
-            ]
+            ALLOWED_TENANTS = set(
+                t.strip() for t in os.getenv("ALLOWED_TENANTS", "").split(",") if t.strip()
+            )
             
-            # Dev Mode Bypass
-            if token_tenant == "dev-tenant":
+            # Dev Mode Bypass — yalnızca development ortamında ve açıkça etkinleştirilmişse
+            if (os.getenv("ENV") == "development" and os.getenv("ALLOW_DEV_TENANT") == "true"
+                    and token_tenant == "dev-tenant"):
                 return unverified_claims
 
             logger.info(f"Auth: Validating Token for Tenant: {token_tenant}")

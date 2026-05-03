@@ -64,3 +64,11 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     return claims
+
+
+async def get_current_tenant(user: dict = Depends(get_current_user)) -> str:
+    """JWT'deki 'tid' (tenant ID) değerini döndürür."""
+    tid = user.get("tid")
+    if not tid:
+        raise HTTPException(status_code=403, detail="Token'da tenant bilgisi bulunamadı")
+    return tid

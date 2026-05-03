@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useClients } from "../hooks/useClients";
 import { useDebounce } from "../hooks/useDebounce";
+import { YetkiBelgesiModal } from "@/components/YetkiBelgesiModal";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -34,13 +35,25 @@ export interface Client {
     cari_kod?: string;
     category?: string;
     specialty?: string;
+    client_type?: string;
+    il?: string;
+    sektor?: string;
+    yevmiye_no?: string;
+    noterlik?: string;
+    vekaletname_tarihi?: string;
+    vekil_avukatlar?: string;
+    gecerlilik_tarihi?: string;
+    vekalet_no?: string;
+    buro_vekalet_no?: string;
 }
 
 const ITEMS_PER_PAGE = 10;
 
 const ClientList = () => {
     const navigate = useNavigate();
-    const { clients: allClients, isLoading } = useClients();
+    const { clients: allClients, isLoading: isClientsLoading } = useClients();
+    const [initialLoaded, setInitialLoaded] = useState(false);
+    const isLoading = !initialLoaded && isClientsLoading;
 
     // UI states
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -58,6 +71,15 @@ const ClientList = () => {
     const [isFilterOpen, setIsFilterOpen] = useState(true);
     const [isCatOpen, setIsCatOpen] = useState(true);
 
+    // Yetki Belgesi modal
+    const [yetkiBelgesiOpen, setYetkiBelgesiOpen] = useState(false);
+
+    useEffect(() => {
+        if (!isClientsLoading && !initialLoaded) {
+            setInitialLoaded(true);
+        }
+    }, [isClientsLoading, initialLoaded]);
+
     const normalizeTurkish = (str: string) => str.toLocaleLowerCase('tr-TR');
     const toTitleCase = (str: string): string => {
         if (!str) return "";
@@ -70,7 +92,7 @@ const ClientList = () => {
 
     const availableCities = useMemo(() => {
         const cities = new Set<string>();
-        allClients.forEach(c => c.address && cities.add(toTitleCase(c.address.trim())));
+        allClients.forEach(c => c.il && cities.add(toTitleCase(c.il.trim())));
         return Array.from(cities).sort((a, b) => a.localeCompare(b, "tr"));
     }, [allClients]);
 
@@ -101,7 +123,7 @@ const ClientList = () => {
             result = result.filter(c => c.category && selectedCategories.includes(c.category));
         }
         if (selectedCity && selectedCity !== "all") {
-            result = result.filter(c => c.address && toTitleCase(c.address.trim()) === selectedCity);
+            result = result.filter(c => c.il && toTitleCase(c.il.trim()) === selectedCity);
         }
         if (selectedSpecialty && selectedSpecialty !== "all") {
             result = result.filter(c => c.specialty && c.specialty.trim() === selectedSpecialty);
@@ -466,11 +488,20 @@ const ClientList = () => {
                                         <Button
                                             variant="outline"
                                             className="flex-1 h-11 text-sm font-semibold border-border text-foreground/70 hover:bg-accent/5 bg-secondary/10 rounded-md transition-all active:scale-[0.98]"
-                                            onClick={() => navigate("/", { state: { searchQuery: selectedClient.name } })}
+                                            onClick={() => navigate("/cases", { state: { clientName: selectedClient.name } })}
                                         >
                                             <Gavel className="w-4 h-4 mr-2.5 opacity-70" /> Davalar
                                         </Button>
                                     </div>
+                                    {selectedClient.vekil_avukatlar && (
+                                        <Button
+                                            variant="outline"
+                                            className="w-full h-11 text-sm font-semibold border-border text-foreground/70 hover:bg-rose-500/5 hover:border-rose-500/40 hover:text-rose-400 bg-secondary/10 rounded-md transition-all active:scale-[0.98]"
+                                            onClick={() => setYetkiBelgesiOpen(true)}
+                                        >
+                                            <FileText className="w-4 h-4 mr-2 opacity-70" /> Yetki Belgesi
+                                        </Button>
+                                    )}
 
                                     {/* Basics */}
                                     <div className="flex flex-col gap-2">
@@ -565,6 +596,76 @@ const ClientList = () => {
                                                 </div>
                                             )}
 
+                                            {/* İL */}
+                                            {selectedClient.il && (
+                                                <div className="flex flex-col gap-1.5 p-3 rounded-lg hover:bg-accent/5 transition-colors border-b border-border/50">
+                                                    <span className="text-muted-foreground text-[10px] uppercase tracking-widest font-bold">İl</span>
+                                                    <span className="font-medium text-foreground text-[14px]">{toTitleCase(selectedClient.il)}</span>
+                                                </div>
+                                            )}
+
+                                            {/* SEKTÖR */}
+                                            {selectedClient.sektor && (
+                                                <div className="flex flex-col gap-1.5 p-3 rounded-lg hover:bg-accent/5 transition-colors border-b border-border/50">
+                                                    <span className="text-muted-foreground text-[10px] uppercase tracking-widest font-bold">Sektör / Kurum</span>
+                                                    <span className="font-medium text-foreground text-[14px]">{selectedClient.sektor}</span>
+                                                </div>
+                                            )}
+
+                                            {/* VEKALET BİLGİLERİ */}
+                                            {(selectedClient.noterlik || selectedClient.vekaletname_tarihi || selectedClient.buro_vekalet_no || selectedClient.vekil_avukatlar) && (
+                                                <div className="flex flex-col gap-1 mt-4 p-4 bg-secondary/20 rounded-xl border border-border/50">
+                                                    <span className="text-muted-foreground text-[10px] uppercase tracking-widest font-bold mb-2">Vekalet Bilgileri</span>
+
+                                                    {selectedClient.buro_vekalet_no && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Büro Vekalet No</span>
+                                                            <span className="text-[13px] font-semibold text-foreground">{selectedClient.buro_vekalet_no}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.yevmiye_no && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Yevmiye No</span>
+                                                            <span className="text-[13px] font-semibold text-foreground">{selectedClient.yevmiye_no}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.noterlik && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Noterlik</span>
+                                                            <span className="text-[13px] font-medium text-foreground text-right max-w-[180px]">{selectedClient.noterlik}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.vekaletname_tarihi && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Veriliş Tarihi</span>
+                                                            <span className="text-[13px] font-medium text-foreground">{selectedClient.vekaletname_tarihi}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.gecerlilik_tarihi && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Geçerlilik Tarihi</span>
+                                                            <span className="text-[13px] font-medium text-foreground">{selectedClient.gecerlilik_tarihi}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.vekalet_no && (
+                                                        <div className="flex justify-between items-center py-1.5 border-b border-border/30">
+                                                            <span className="text-[12px] text-muted-foreground">Vekalet No</span>
+                                                            <span className="text-[13px] font-semibold text-foreground">{selectedClient.vekalet_no}</span>
+                                                        </div>
+                                                    )}
+                                                    {selectedClient.vekil_avukatlar && (
+                                                        <div className="flex flex-col gap-1.5 py-1.5 pt-2">
+                                                            <span className="text-[12px] text-muted-foreground">Vekil Avukatlar</span>
+                                                            <div className="flex flex-col gap-1">
+                                                                {selectedClient.vekil_avukatlar.split(";").map((av, idx) => (
+                                                                    <span key={idx} className="text-[12px] font-medium text-foreground/80 pl-2 border-l-2 border-rose-500/30">{toTitleCase(av.trim())}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {/* NOTES */}
                                             {selectedClient.notes && (
                                                 <div className="flex flex-col gap-2 p-4 bg-secondary/20 rounded-xl mt-4 border border-border/50">
@@ -585,6 +686,14 @@ const ClientList = () => {
 
                 </div>
             </main>
+
+            {selectedClient && yetkiBelgesiOpen && (
+                <YetkiBelgesiModal
+                    open={yetkiBelgesiOpen}
+                    onClose={() => setYetkiBelgesiOpen(false)}
+                    client={selectedClient}
+                />
+            )}
         </div>
     );
 };

@@ -36,6 +36,59 @@ export interface CaseData {
     lawyers?: CaseLawyerData[];
 }
 
+export interface CaseTrackingUpdate {
+    case_stage?: string | null;
+    dosya_son_durumu?: string | null;
+    // Yerel Karar
+    karar_tarihi?: string | null;
+    karar_turu?: string | null;
+    karar_lehine?: string | null;
+    karar_no?: string | null;
+    karar_teblig_tarihi?: string | null;
+    karar_aciklama?: string | null;
+    // İstinaf
+    istinaf_basvuru_tarihi?: string | null;
+    istinaf_karar_durumu?: string | null;
+    istinaf_karar_tarihi?: string | null;
+    istinaf_mahkemesi?: string | null;
+    istinaf_esas_no?: string | null;
+    istinaf_karar_no?: string | null;
+    istinaf_karar_aciklama?: string | null;
+    istinaf_teblig_tarihi?: string | null;
+    // Temyiz
+    temyiz_basvuru_tarihi?: string | null;
+    temyiz_karar_durumu?: string | null;
+    temyiz_karar_tarihi?: string | null;
+    temyiz_mahkemesi?: string | null;
+    temyiz_esas_no?: string | null;
+    temyiz_karar_no?: string | null;
+    temyiz_eden_durumu?: string | null;
+    temyiz_karar_aciklama?: string | null;
+    temyiz_teblig_tarihi?: string | null;
+    // Karar Düzeltme
+    karar_duzeltme_durumu?: string | null;
+    karar_duzeltme_esas_no?: string | null;
+    karar_duzeltme_karar_no?: string | null;
+    karar_duzeltme_tarihi?: string | null;
+    karar_duzeltme_teblig_tarihi?: string | null;
+    karar_duzeltme_aciklama?: string | null;
+    yeni_esas_no?: string | null;
+    // Kesinleşme / İnfaz
+    kesinlesme_tarihi?: string | null;
+    infaz_tarihi?: string | null;
+    note?: string | null;
+}
+
+export interface CaseStageLogEntry {
+    id: number;
+    case_id: number;
+    stage: string;
+    changed_at: string;
+    changed_by?: string | null;
+    source?: string | null;
+    note?: string | null;
+}
+
 export const useCases = () => {
     const { authRequest } = useAuthRequest();
     const [isLoading, setIsLoading] = useState(false);
@@ -102,9 +155,9 @@ export const useCases = () => {
         return response ? response.ok : false;
     }, [authenticatedRequest]);
 
-    const searchCases = useCallback(async (query: string, exact: boolean = false) => {
+    const searchCases = useCallback(async (query: string, exact: boolean = false, activeOnly: boolean = false) => {
         setIsLoading(true);
-        const response = await authenticatedRequest(`/api/cases/search?q=${encodeURIComponent(query)}&exact=${exact}`, "GET");
+        const response = await authenticatedRequest(`/api/cases/search?q=${encodeURIComponent(query)}&exact=${exact}&active_only=${activeOnly}`, "GET");
         setIsLoading(false);
         if (response && response.ok) {
             return await response.json();
@@ -138,6 +191,57 @@ export const useCases = () => {
         return response ? response.ok : false;
     }, [authenticatedRequest]);
 
+    // --- İlişkili Davalar (case_relations tabanlı) ---
+
+    /** Bir davanın manuel + otomatik ilişkili davalarını getirir. */
+    const getRelatedCases = useCallback(async (caseId: number) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/relations`, "GET");
+        if (response && response.ok) return await response.json();
+        return { manual: [], automatic: [] };
+    }, [authenticatedRequest]);
+
+    /** Manuel bağlantı ekle */
+    const addCaseRelation = useCallback(async (caseId: number, data: { target_case_id: number; relation_type: string; note?: string | null }) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/relations`, "POST", data);
+        if (response && response.ok) return await response.json();
+        return null;
+    }, [authenticatedRequest]);
+
+    /** Manuel bağlantıyı sil */
+    const removeCaseRelation = useCallback(async (caseId: number, relationId: number) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/relations/${relationId}`, "DELETE");
+        return !!(response && response.ok);
+    }, [authenticatedRequest]);
+
+    // --- Dava Takip ---
+
+    const updateCaseTracking = useCallback(async (caseId: number, data: CaseTrackingUpdate) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/tracking`, "PATCH", data);
+        return !!(response && response.ok);
+    }, [authenticatedRequest]);
+
+    const getCaseStageLog = useCallback(async (caseId: number): Promise<CaseStageLogEntry[]> => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/stage-log`, "GET");
+        if (response && response.ok) return await response.json();
+        return [];
+    }, [authenticatedRequest]);
+
+    // --- Dava Grubu (CaseGroup sayfası için) ---
+
+    /** Bir dava grubunu tüm ilişkili davalarıyla getirir */
+    const getCaseGroup = useCallback(async (groupId: number) => {
+        const response = await authenticatedRequest(`/api/case-groups/${groupId}`, "GET");
+        if (response && response.ok) return await response.json();
+        return null;
+    }, [authenticatedRequest]);
+
+    /** Bir dava ID'sine ait grubu getirir */
+    const getCaseGroupByCase = useCallback(async (caseId: number) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/group`, "GET");
+        if (response && response.ok) return await response.json();
+        return null;
+    }, [authenticatedRequest]);
+
     return {
         saveCase,
         saveCaseAndReturn,
@@ -148,6 +252,16 @@ export const useCases = () => {
         getCase,
         searchCases,
         getClientCaseSequence,
+        // İlişkili davalar
+        getRelatedCases,
+        addCaseRelation,
+        removeCaseRelation,
+        // Dava takip
+        updateCaseTracking,
+        getCaseStageLog,
+        // Dava grubu sayfası
+        getCaseGroup,
+        getCaseGroupByCase,
         isLoading
     };
 };

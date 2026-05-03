@@ -10,10 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users } from "lucide-react";
+import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users, ChevronsUpDown, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { useCases } from "@/hooks/useCases";
+import { useConfig } from "@/hooks/useConfig";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
 import { getStoredOutputDir, setStoredOutputDir, clearStoredOutputDir } from "@/lib/directoryStorage";
 
@@ -56,6 +59,8 @@ interface AnalysisData {
   hash: string;
   court?: string;                          // Mahkeme adı (QuickCaseModal için)
   suggested_case?: SuggestedCase | null;
+  sonraki_durusma_tarihi?: string;
+  sonraki_durusma_saati?: string;
 }
 
 interface IndexCaseData {
@@ -82,9 +87,12 @@ declare global {
 
 const Index = () => {
   const { getCases, searchCases } = useCases();
+  const { doctypes } = useConfig();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedDocType, setSelectedDocType] = useState<string>("");
+  const [openDocTypeSelect, setOpenDocTypeSelect] = useState(false);
   const [outputDirHandle, setOutputDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
 
   // Email Modal States
@@ -123,7 +131,7 @@ const Index = () => {
 
   // Davaları yükle (bir kere)
   useEffect(() => {
-    getCases().then((data: IndexCaseData[]) => {
+    getCases({ status: "DERDEST" }).then((data: IndexCaseData[]) => {
       setAllCases(data || []);
       setCasesLoaded(true);
 
@@ -156,7 +164,7 @@ const Index = () => {
 
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
-      const data = await searchCases(caseSearch);
+      const data = await searchCases(caseSearch, false, true);
       setSearchResults(data || []);
       setIsSearching(false);
     }, 400);
@@ -173,9 +181,11 @@ const Index = () => {
       setSelectedPartyId(null);
       return;
     }
-    // Zaten ID'li parties varsa tekrar çekme
-    const hasPartyIds = (linkedCase as IndexCaseData & { parties?: { id?: number }[] }).parties?.some(p => p.id != null);
-    if (hasPartyIds) return;
+    // Tüm CLIENT partilerin ID'si varsa tekrar çekme (sadece CLIENT partiler dropdown için gerekli)
+    const parties = (linkedCase as IndexCaseData & { parties?: { id?: number; party_type?: string }[] }).parties ?? [];
+    const clientParties = parties.filter(p => p.party_type === "CLIENT");
+    const hasClientPartyIds = clientParties.length > 0 && clientParties.every(p => p.id != null);
+    if (hasClientPartyIds) return;
 
     apiClient.fetch(`/api/cases/${linkedCase.id}`)
       .then(r => r.json())
@@ -214,6 +224,7 @@ const Index = () => {
     setNextAnalysisData(null);
     setProcessId(null);
     setNextProcessId(null);
+    setSelectedDocType("");
     // Dava bağlantısını da sıfırla
     setLinkedCase(null);
     setCaseSearch("");
@@ -286,6 +297,7 @@ const Index = () => {
       // Web Mode: FormData ile dosya gönder
       const formData = new FormData();
       formData.append("file", selectedFile);
+      if (selectedDocType) formData.append("belge_turu_kodu", selectedDocType);
 
       const response = await apiClient.fetch("/process", {
         method: "POST",
@@ -329,7 +341,7 @@ const Index = () => {
 
                 const analysisResult: AnalysisData = {
                   tarih: resultData.tarih || "",
-                  belge_turu_kodu: resultData.belge_turu_kodu || "",
+                  belge_turu_kodu: selectedDocType || resultData.belge_turu_kodu || "",
                   muvekkil_kodu: resultData.muvekkil_adi || "",
                   muvekkil_adi: resultData.muvekkil_adi || "",          // QuickCaseModal için
                   muvekkiller: resultData.muvekkiller || [],
@@ -344,8 +356,10 @@ const Index = () => {
                   ozet: resultData.ozet || "",
                   generated_filename: "",
                   hash: resultData.hash || "",
-                  court: resultData.court || undefined,          // ← Mahkeme adı
+                  court: resultData.court || undefined,
                   suggested_case: resultData.suggested_case || null,
+                  sonraki_durusma_tarihi: resultData.sonraki_durusma_tarihi || undefined,
+                  sonraki_durusma_saati: resultData.sonraki_durusma_saati || undefined,
                 };
                 setAnalysisData(analysisResult);
 
@@ -599,6 +613,8 @@ const Index = () => {
       if (dataToUse.tarih) formData.append("tarih", dataToUse.tarih);
       if (dataToUse.esas_no) formData.append("esas_no", dataToUse.esas_no);
       if (tebligTarihi) formData.append("teblig_tarihi", tebligTarihi);
+      if (dataToUse.sonraki_durusma_tarihi) formData.append("sonraki_durusma_tarihi", dataToUse.sonraki_durusma_tarihi);
+      if (dataToUse.sonraki_durusma_saati) formData.append("sonraki_durusma_saati", dataToUse.sonraki_durusma_saati);
 
       // JSON fields (arrays)
       formData.append("muvekkiller_json", JSON.stringify(dataToUse.muvekkiller || []));
@@ -657,6 +673,12 @@ const Index = () => {
         }
       }
 
+      if (result.results?.hearing_date_saved) {
+        const dateStr = new Date(result.results.hearing_date_saved + "T00:00:00").toLocaleDateString("tr-TR");
+        const timeStr = result.results.hearing_time_saved ? ` saat ${result.results.hearing_time_saved}` : "";
+        toast.success(`📅 Sonraki duruşma tarihi ajandaya eklendi: ${dateStr}${timeStr}`, { duration: 6000 });
+      }
+
       if (result.results?.link_mode === "LINKED" && linkedCase) {
         toast.success(`📎 Belge "${linkedCase.esas_no || linkedCase.tracking_no}" davasına bağlandı.`);
       } else if (result.results?.link_mode === "TEST") {
@@ -701,10 +723,38 @@ const Index = () => {
       updatedBatch.push({ path: "", name: newFilename }); // Web'de path yok
       setProcessedBatch(updatedBatch);
 
-      if (shouldSendEmail && !isBatchMode) {
+      // Anlık ön-kontrol uyarısı (backend senkron olarak tespit etti)
+      if (result.results?.email_warning) {
+        toast.warning(`⚠️ E-posta gönderilemedi: ${result.results.email_warning}`, { duration: 8000 });
+      }
+
+      if (shouldSendEmail && !isBatchMode && !result.results?.email_warning) {
         toast.success("✅ Belge arşivlendi ve e-postalar sıraya alındı!");
-      } else if (!isBatchMode) {
+
+        // 10 saniye sonra e-posta gönderim sonucunu kontrol et
+        const docIdToCheck = result.results?.case_document_id;
+        if (docIdToCheck) {
+          setTimeout(async () => {
+            try {
+              const statusRes = await apiClient.fetch(`/api/documents/${docIdToCheck}/email-status`);
+              if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                if (statusData.email_sent === false) {
+                  toast.error(
+                    `❌ E-posta gönderilemedi: ${statusData.email_error || "Bilinmeyen hata"}`,
+                    { duration: 10000 }
+                  );
+                }
+              }
+            } catch {
+              // Sessizce geç — status kontrolü kritik değil
+            }
+          }, 10000);
+        }
+      } else if (!isBatchMode && !shouldSendEmail) {
         toast.success("✅ Belge arşivlendi (E-posta gönderilmedi).");
+      } else if (!isBatchMode) {
+        toast.success("✅ Belge arşivlendi.");
       } else {
         toast.success(`✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`);
       }
@@ -724,6 +774,7 @@ const Index = () => {
         setSelectedFile(fileQueue[nextIndex]);
         setIsValidated(false);
         setFinalData(null);
+        setSelectedDocType("");
 
         // Use preloaded data if available (instant switch!)
         if (nextAnalysisData) {
@@ -739,14 +790,9 @@ const Index = () => {
             preloadNextFile(fileQueue[nextIndex + 1]);
           }
         } else {
-          // Preload not ready yet, start fresh analysis
+          // Preload not ready yet — kullanıcı belge türü seçip analizi başlatacak
           setAnalysisData(null);
-          toast.info(`📁 Dosya ${nextIndex + 1}/${fileQueue.length} yükleniyor...`);
-          // Trigger analysis automatically
-          setTimeout(() => {
-            const analyzeBtn = document.querySelector('[data-analyze-btn]');
-            if (analyzeBtn) (analyzeBtn as HTMLButtonElement).click();
-          }, 100);
+          toast.info(`📁 Dosya ${nextIndex + 1}/${fileQueue.length} hazır — lütfen belge türünü seçip analizi başlatın.`);
         }
       } else {
         // All files processed!
@@ -807,6 +853,53 @@ const Index = () => {
               isComplete={!!analysisData}
             />
 
+            {/* Belge Türü Seçici — analiz başlamadan önce zorunlu */}
+            {selectedFile && !analysisData && (
+              <div className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-2">
+                <label className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  Belge Türü Seçin
+                  <span className="text-destructive text-xs">*</span>
+                </label>
+                <Popover open={openDocTypeSelect} onOpenChange={setOpenDocTypeSelect}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-between font-mono glass-input border-0"
+                      disabled={isAnalyzing}
+                    >
+                      {selectedDocType
+                        ? (doctypes.find(d => (d.code ?? "").replace(/_+$/, "") === selectedDocType)?.name ?? selectedDocType)
+                        : "Belge türü seçin..."}
+                      <ChevronsUpDown className="h-4 w-4 opacity-50 ml-2 shrink-0" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[340px] p-0 z-[100]" align="start">
+                    <Command>
+                      <CommandInput placeholder="Ara..." />
+                      <CommandList>
+                        <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
+                        {doctypes.map((item) => {
+                          const cleanCode = (item.code ?? "").replace(/_+$/, "");
+                          return (
+                            <CommandItem
+                              key={item.code}
+                              onSelect={() => {
+                                setSelectedDocType(cleanCode);
+                                setOpenDocTypeSelect(false);
+                              }}
+                            >
+                              {item.name}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+
             {/* --- FAZ 1: DAVA BAĞLANTISI PANELİ --- */}
             <div className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -814,20 +907,6 @@ const Index = () => {
                   <Link2 className="w-4 h-4 text-primary" />
                   Dava Bağlantısı
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsTestMode(prev => {
-                      if (!prev) { setLinkedCase(null); toast.info("🧪 TEST modu aktif — dava seçimi zorunlu değil.", { duration: 2500 }); }
-                      else { toast.info("TEST modu kapatıldı."); }
-                      return !prev;
-                    });
-                  }}
-                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all duration-200 ${isTestMode ? "bg-amber-500/20 border-amber-500/40 text-amber-400" : "bg-muted/50 border-border/50 text-muted-foreground hover:text-foreground"}`}
-                >
-                  <TestTube2 className="w-3 h-3" />
-                  TEST {isTestMode ? "Açık" : "Kapalı"}
-                </button>
               </div>
 
               {isTestMode ? (
@@ -1003,8 +1082,9 @@ const Index = () => {
             {selectedFile && (
               <>
                 <QueueStatus totalFiles={fileQueue.length} currentIndex={currentFileIndex} processedCount={processedCount} />
-                <Button data-analyze-btn onClick={handleAnalyze} disabled={isAnalyzing || isProcessing}
-                  className="w-full h-14 text-lg font-semibold bg-[hsl(345,80%,40%)] hover:bg-[hsl(345,80%,35%)] shadow-lg transition-all duration-300 hover:scale-[1.02]" size="lg">
+
+                <Button data-analyze-btn onClick={handleAnalyze} disabled={isAnalyzing || isProcessing || (!analysisData && !selectedDocType)}
+                  className="w-full h-14 text-lg font-semibold bg-[hsl(345,80%,40%)] hover:bg-[hsl(345,80%,35%)] shadow-lg transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
                   {isAnalyzing ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Analiz Ediliyor...</>) : (<><Wand2 className="w-5 h-5 mr-2" />Analizi Başlat</>)}
                 </Button>
                 {analysisData?.ozet && (

@@ -74,6 +74,7 @@ const NewClient = () => {
         mobile_phone: "",
         email: "",
         address: "",
+        il: "",
         notes: "",
         client_type: "Individual", // Default
         category: "",
@@ -81,7 +82,15 @@ const NewClient = () => {
         contact_type: initialContactType,
         birth_year: undefined as number | undefined,
         gender: "Belirtilmemiş",
-        specialty: ""
+        specialty: "",
+        sektor: "",
+        yevmiye_no: "",
+        noterlik: "",
+        vekaletname_tarihi: "",
+        vekil_avukatlar: "",
+        gecerlilik_tarihi: "",
+        vekalet_no: "",
+        buro_vekalet_no: "",
     });
 
     const [tcError, setTcError] = useState<string | null>(null);
@@ -100,7 +109,8 @@ const NewClient = () => {
                         phone: full.phone || "",
                         mobile_phone: full.mobile_phone || "",
                         email: full.email || "",
-                        address: findMatch(TURKEY_CITIES, full.address),
+                        address: full.address || "",
+                        il: findMatch(TURKEY_CITIES, full.il),
                         notes: full.notes || "",
                         client_type: full.client_type || "Individual",
                         category: findMatch(categories, full.category),
@@ -108,10 +118,17 @@ const NewClient = () => {
                         contact_type: full.contact_type || "Client",
                         birth_year: full.birth_year,
                         gender: findMatch(["Belirtilmemiş", "Erkek", "Kadın"], full.gender) || "Belirtilmemiş",
-                        specialty: findMatch(SPECIALTIES, full.specialty)
+                        specialty: findMatch(SPECIALTIES, full.specialty),
+                        sektor: full.sektor || "",
+                        yevmiye_no: full.yevmiye_no || "",
+                        noterlik: full.noterlik || "",
+                        vekaletname_tarihi: full.vekaletname_tarihi || "",
+                        vekil_avukatlar: full.vekil_avukatlar || "",
+                        gecerlilik_tarihi: full.gecerlilik_tarihi || "",
+                        vekalet_no: full.vekalet_no || "",
+                        buro_vekalet_no: full.buro_vekalet_no || "",
                     });
                 } else {
-                    // Fallback: sadece gelen veriyi kullan
                     setFormData(prev => ({ ...prev, name: editModeClient.name || "" }));
                 }
             } else {
@@ -121,7 +138,8 @@ const NewClient = () => {
                     phone: editModeClient.phone || "",
                     mobile_phone: editModeClient.mobile_phone || "",
                     email: editModeClient.email || "",
-                    address: findMatch(TURKEY_CITIES, editModeClient.address),
+                    address: editModeClient.address || "",
+                    il: findMatch(TURKEY_CITIES, editModeClient.il),
                     notes: editModeClient.notes || "",
                     client_type: editModeClient.client_type || "Individual",
                     category: findMatch(categories, editModeClient.category),
@@ -129,7 +147,15 @@ const NewClient = () => {
                     contact_type: editModeClient.contact_type || "Client",
                     birth_year: editModeClient.birth_year,
                     gender: findMatch(["Belirtilmemiş", "Erkek", "Kadın"], editModeClient.gender) || "Belirtilmemiş",
-                    specialty: findMatch(SPECIALTIES, editModeClient.specialty)
+                    specialty: findMatch(SPECIALTIES, editModeClient.specialty),
+                    sektor: editModeClient.sektor || "",
+                    yevmiye_no: editModeClient.yevmiye_no || "",
+                    noterlik: editModeClient.noterlik || "",
+                    vekaletname_tarihi: editModeClient.vekaletname_tarihi || "",
+                    vekil_avukatlar: editModeClient.vekil_avukatlar || "",
+                    gecerlilik_tarihi: editModeClient.gecerlilik_tarihi || "",
+                    vekalet_no: editModeClient.vekalet_no || "",
+                    buro_vekalet_no: editModeClient.buro_vekalet_no || "",
                 });
             }
         }
@@ -157,6 +183,7 @@ const NewClient = () => {
             mobile_phone: formData.mobile_phone,
             email: formData.email,
             address: formData.address,
+            il: formData.il || undefined,
             notes: formData.notes,
             client_type: formData.client_type,
             category: formData.category,
@@ -164,7 +191,15 @@ const NewClient = () => {
             contact_type: formData.contact_type,
             birth_year: formData.birth_year,
             gender: formData.gender === "Belirtilmemiş" ? undefined : formData.gender,
-            specialty: formData.category === "Doktor" ? formData.specialty : undefined
+            specialty: formData.category === "Doktor" ? formData.specialty : undefined,
+            sektor: formData.sektor || undefined,
+            yevmiye_no: formData.yevmiye_no || undefined,
+            noterlik: formData.noterlik || undefined,
+            vekaletname_tarihi: formData.vekaletname_tarihi || undefined,
+            vekil_avukatlar: formData.vekil_avukatlar || undefined,
+            gecerlilik_tarihi: formData.gecerlilik_tarihi || undefined,
+            vekalet_no: formData.vekalet_no || undefined,
+            buro_vekalet_no: formData.buro_vekalet_no || undefined,
         };
 
         // Final Validation before submit
@@ -200,6 +235,7 @@ const NewClient = () => {
                     mobile_phone: "",
                     email: "",
                     address: "",
+                    il: "",
                     notes: "",
                     client_type: "Individual",
                     category: "",
@@ -207,7 +243,15 @@ const NewClient = () => {
                     contact_type: initialContactType,
                     birth_year: undefined,
                     gender: "Belirtilmemiş",
-                    specialty: ""
+                    specialty: "",
+                    sektor: "",
+                    yevmiye_no: "",
+                    noterlik: "",
+                    vekaletname_tarihi: "",
+                    vekil_avukatlar: "",
+                    gecerlilik_tarihi: "",
+                    vekalet_no: "",
+                    buro_vekalet_no: "",
                 });
             }
         } else {
@@ -479,17 +523,17 @@ const NewClient = () => {
                                             />
                                         </div>
 
-                                        <div className="space-y-2 md:col-span-2">
+                                        <div className="space-y-2">
                                             <Label className="flex items-center gap-2">
                                                 <MapPin className="w-4 h-4 text-muted-foreground" />
-                                                Şehir
+                                                İl
                                             </Label>
                                             <Select
-                                                value={formData.address}
-                                                onValueChange={(v) => setFormData({ ...formData, address: v })}
+                                                value={formData.il}
+                                                onValueChange={(v) => setFormData({ ...formData, il: v })}
                                             >
                                                 <SelectTrigger className="w-full bg-transparent border-border/60">
-                                                    <SelectValue placeholder="Şehir seçiniz..." />
+                                                    <SelectValue placeholder="İl seçiniz..." />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-[300px]">
                                                     {TURKEY_CITIES.map(city => (
@@ -497,6 +541,19 @@ const NewClient = () => {
                                                     ))}
                                                 </SelectContent>
                                             </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="flex items-center gap-2">
+                                                <MapPin className="w-4 h-4 text-muted-foreground" />
+                                                Tam Adres
+                                            </Label>
+                                            <Input
+                                                placeholder="Mahalle, sokak, kapı no..."
+                                                value={formData.address}
+                                                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
                                         </div>
                                     </div>
                                 </CardContent>
@@ -557,6 +614,19 @@ const NewClient = () => {
 
 
                                     <div className="space-y-2">
+                                        <Label className="flex items-center gap-2">
+                                            <Tag className="w-4 h-4 text-muted-foreground" />
+                                            Sektör / Kurum
+                                        </Label>
+                                        <Input
+                                            placeholder="Ör: Mersin Özel Ortadoğu Hastanesi"
+                                            value={formData.sektor}
+                                            onChange={(e) => setFormData({ ...formData, sektor: e.target.value })}
+                                            className="bg-transparent border-border/60"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
                                         <Label>Özel Notlar</Label>
                                         <Textarea
                                             placeholder={`${typeLabel} hakkında hatırlatmalar...`}
@@ -568,7 +638,84 @@ const NewClient = () => {
                                 </CardContent>
                             </Card>
 
-                            {/* 4. İŞLEMLER */}
+                            {/* 4. VEKALET BİLGİLERİ */}
+                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
+                                <div className="bg-muted/5 border-b border-border/40 p-6">
+                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                        <FileText className="w-4 h-4" /> 4. Vekalet Bilgileri
+                                    </h3>
+                                </div>
+                                <CardContent className="p-8 space-y-6">
+                                    <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+                                        <div className="space-y-2">
+                                            <Label>Büro Vekalet No</Label>
+                                            <Input
+                                                placeholder="Ör: 1654"
+                                                value={formData.buro_vekalet_no}
+                                                onChange={(e) => setFormData({ ...formData, buro_vekalet_no: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Yevmiye No</Label>
+                                            <Input
+                                                placeholder="Ör: 2908"
+                                                value={formData.yevmiye_no}
+                                                onChange={(e) => setFormData({ ...formData, yevmiye_no: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                        <div className="space-y-2 col-span-2">
+                                            <Label>Noterlik</Label>
+                                            <Input
+                                                placeholder="Ör: MERSİN 11. NOTERLİĞİ"
+                                                value={formData.noterlik}
+                                                onChange={(e) => setFormData({ ...formData, noterlik: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Veriliş Tarihi</Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.vekaletname_tarihi}
+                                                onChange={(e) => setFormData({ ...formData, vekaletname_tarihi: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Geçerlilik Tarihi</Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.gecerlilik_tarihi}
+                                                onChange={(e) => setFormData({ ...formData, gecerlilik_tarihi: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>Vekalet No</Label>
+                                            <Input
+                                                placeholder="Ör: 12345"
+                                                value={formData.vekalet_no}
+                                                onChange={(e) => setFormData({ ...formData, vekalet_no: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Vekil Avukatlar</Label>
+                                        <Textarea
+                                            placeholder="AD SOYAD;AD SOYAD (noktalı virgülle ayırın)"
+                                            className="h-20 bg-transparent border-border/60 font-mono text-sm"
+                                            value={formData.vekil_avukatlar}
+                                            onChange={(e) => setFormData({ ...formData, vekil_avukatlar: e.target.value })}
+                                        />
+                                        <p className="text-[10px] text-muted-foreground">Birden fazla avukat için noktalı virgül kullanın: AYŞE GÜL;SERAP TURGAL</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* 5. İŞLEMLER */}
                             <Card className="glass-card shadow-lg border-primary/20 bg-primary/5 sticky top-24">
                                 <CardHeader className="pb-4">
                                     <CardTitle className="text-lg">İşlemi Tamamla</CardTitle>

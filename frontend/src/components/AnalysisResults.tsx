@@ -42,6 +42,8 @@ interface AnalysisData {
   court?: string;
   city?: string;
   merci?: string;
+  sonraki_durusma_tarihi?: string;
+  sonraki_durusma_saati?: string;
 }
 
 interface LinkedCaseData {
@@ -89,9 +91,18 @@ export const AnalysisResults = ({
     muvekkil_kodu: false,
     esas_no: false,
     karsi_taraf: false,
+    sonraki_durusma_tarihi: false,
   });
 
-  const allFieldsApproved = Object.values(approvedFields).every((v) => v);
+  const isDurusmaZapt = (() => {
+    const code = (editedData.belge_turu_kodu || "").toUpperCase();
+    return code.includes("DURUSMA") || code.includes("ZABIT") || code.includes("TUTANAK") || code.includes("TENSIP");
+  })();
+
+  const allFieldsApproved = Object.entries(approvedFields).every(([k, v]) => {
+    if (k === "sonraki_durusma_tarihi" && !isDurusmaZapt) return true;
+    return v;
+  });
 
   const { lawyers: loadedLawyers, doctypes: loadedDocTypes, isLoading: isConfigLoading } = useConfig();
 
@@ -113,6 +124,7 @@ export const AnalysisResults = ({
 
     normalizedData.muvekkil_kodu = toTitleCase(normalizedData.muvekkil_kodu || "");
     normalizedData.karsi_taraf = toTitleCase(normalizedData.karsi_taraf || "");
+    // sonraki_durusma_tarihi zaten ISO formatta gelir, dokunmaya gerek yok
 
     setEditedData(normalizedData);
     const initialClients = [...(normalizedData.muvekkiller || [])];
@@ -126,6 +138,7 @@ export const AnalysisResults = ({
       muvekkil_kodu: false,
       esas_no: false,
       karsi_taraf: false,
+      sonraki_durusma_tarihi: false,
     });
     onValidationChange(false, normalizedData);
   }, [data]);
@@ -409,8 +422,7 @@ export const AnalysisResults = ({
   const currentGeneratedFilename = generateFilename();
 
   useEffect(() => {
-    const isAllApproved = Object.values(approvedFields).every((v) => v);
-    onValidationChange(isAllApproved, { ...editedData, generated_filename: currentGeneratedFilename });
+    onValidationChange(allFieldsApproved, { ...editedData, generated_filename: currentGeneratedFilename });
   }, [editedData, approvedFields, onValidationChange, currentGeneratedFilename]);
 
   const handleFieldChange = (field: keyof typeof editedData, value: any) => {
@@ -503,15 +515,18 @@ export const AnalysisResults = ({
             <Label className="flex items-center gap-2 text-xs text-muted-foreground"><FileText className="w-3 h-3" /> [C] BELGE TÜRÜ</Label>
             <div className="relative flex items-center gap-2">
               <Popover open={openDocType} onOpenChange={setOpenDocType}>
-                <PopoverTrigger asChild><Button variant="outline" className="w-full justify-between glass-input font-mono border-0" disabled={approvedFields.belge_turu_kodu}>{editedData.belge_turu_kodu || "Seçin..."}<ChevronsUpDown className="h-4 w-4 opacity-50" /></Button></PopoverTrigger>
+                <PopoverTrigger asChild><Button variant="outline" className="w-full justify-between glass-input border-0" disabled={approvedFields.belge_turu_kodu}>{editedData.belge_turu_kodu ? (docTypeOptions.find(d => (d.code ?? "").replace(/_+$/, "") === editedData.belge_turu_kodu)?.name ?? editedData.belge_turu_kodu) : "Seçin..."}<ChevronsUpDown className="h-4 w-4 opacity-50" /></Button></PopoverTrigger>
                 <PopoverContent className="w-[300px] p-0 glass z-[100]" align="start">
                   <Command>
                     <CommandInput placeholder="Ara..." />
                     <CommandList>
                       <CommandEmpty>Sonuç yok.</CommandEmpty>
-                      {docTypeOptions.map((item) => (
-                        <CommandItem key={item.code} onSelect={() => { handleFieldChange("belge_turu_kodu", item.code); setOpenDocType(false); }}>{item.code} - {item.name}</CommandItem>
-                      ))}
+                      {docTypeOptions.map((item) => {
+                        const cleanCode = (item.code ?? "").replace(/_+$/, "");
+                        return (
+                          <CommandItem key={item.code} onSelect={() => { handleFieldChange("belge_turu_kodu", cleanCode); setOpenDocType(false); }}>{item.name}</CommandItem>
+                        );
+                      })}
                     </CommandList>
                   </Command>
                 </PopoverContent>
@@ -527,6 +542,41 @@ export const AnalysisResults = ({
               <Checkbox checked={approvedFields.esas_no} onCheckedChange={(c) => handleFieldApproval("esas_no", !!c)} />
             </div>
           </div>
+
+          {isDurusmaZapt && (
+            <div className="col-span-2 space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+              <Label className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                <Calendar className="w-3.5 h-3.5" />
+                SONRAKİ DURUŞMA — Ajandaya Eklenecek
+              </Label>
+              <div className="flex gap-2">
+                <div className="relative flex flex-1 items-center gap-2">
+                  <Input
+                    type="date"
+                    value={editedData.sonraki_durusma_tarihi || ""}
+                    onChange={(e) => handleFieldChange("sonraki_durusma_tarihi", e.target.value)}
+                    className="font-mono glass-input"
+                    disabled={approvedFields.sonraki_durusma_tarihi}
+                  />
+                </div>
+                <Input
+                  type="time"
+                  value={editedData.sonraki_durusma_saati || ""}
+                  onChange={(e) => handleFieldChange("sonraki_durusma_saati", e.target.value)}
+                  className="font-mono glass-input w-28"
+                  disabled={approvedFields.sonraki_durusma_tarihi}
+                  placeholder="--:--"
+                />
+                <Checkbox
+                  checked={approvedFields.sonraki_durusma_tarihi}
+                  onCheckedChange={(c) => handleFieldApproval("sonraki_durusma_tarihi", !!c)}
+                />
+              </div>
+              {!editedData.sonraki_durusma_tarihi && (
+                <p className="text-[10px] text-amber-400/70">Tarih belgeden çıkarılamadı. Manuel girin veya boş bırakın ve onaylayın.</p>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

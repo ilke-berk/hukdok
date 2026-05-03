@@ -66,6 +66,7 @@ class DynamicConfig:
         self.__cities: List[Dict] = []
         self.__specialties: List[Dict] = []
         self.__client_categories: List[Dict] = []
+        self.__file_statuses: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -224,4 +225,12 @@ class DynamicConfig:
         with self._lock:
             self.__client_categories = items
             TechnicalLogger.log("INFO", f"DynamicConfig: Client Categories updated ({len(items)} items)")
+
+    def get_file_statuses(self) -> List[Dict]:
+        return self.__file_statuses
+
+    def set_file_statuses(self, items: List[Dict]):
+        with self._lock:
+            self.__file_statuses = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: File Statuses updated ({len(items)} items)")
 

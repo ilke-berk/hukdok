@@ -51,9 +51,9 @@ def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = De
         db.refresh(client)
         return {"status": "success", "message": "Client updated", "client": client}
     except Exception as e:
-        logger.error(f"Error updating client: {e}")
+        logger.error(f"Error updating client: {e}", exc_info=True)
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Müvekkil bilgileri güncellenemedi. Lütfen tekrar deneyin.")
     finally:
         db.close()
 
@@ -75,7 +75,7 @@ def api_delete_client(client_id: int, user: dict = Depends(get_current_user)):
         return {"status": "success", "message": "Client deleted"}
     except Exception as e:
         db.rollback()
-        logger.error(f"Error deleting client {client_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error deleting client {client_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Müvekkil silinemedi. Lütfen tekrar deneyin.")
     finally:
         db.close()

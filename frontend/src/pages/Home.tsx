@@ -15,20 +15,19 @@ import {
     User,
     Search,
     Plus,
-    Upload,
     TrendingUp,
     AlertCircle,
     CheckCircle2,
     FolderOpen,
     ChevronRight,
     Scale,
-    BarChart3,
-    Filter,
     Users,
 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
+import { tr } from "date-fns/locale";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useConfig } from "@/hooks/useConfig";
+import { apiClient } from "@/lib/api";
 import {
     Select,
     SelectContent,
@@ -42,6 +41,7 @@ const statusColors: Record<string, { bg: string; text: string; dot: string }> = 
     KARAR: { bg: "bg-blue-500/15", text: "text-blue-400", dot: "bg-blue-400" },
     KAPALI: { bg: "bg-gray-500/15", text: "text-gray-400", dot: "bg-gray-400" },
     TEMYIZ: { bg: "bg-purple-500/15", text: "text-purple-400", dot: "bg-purple-400" },
+    "DANIŞ": { bg: "bg-blue-500/15", text: "text-blue-400", dot: "bg-blue-400" },
     INFAZ: { bg: "bg-orange-500/15", text: "text-orange-400", dot: "bg-orange-400" },
 };
 
@@ -51,6 +51,7 @@ const formatStatus = (status: string) => {
     if (status === "MAHZEN") return "Mahzen";
     if (status === "KAPALI") return "Kapalı";
     if (status === "TEMYIZ") return "Temyiz";
+    if (status === "DANIŞ") return "Danış";
     if (status === "INFAZ") return "İnfaz";
     if (status === "KARAR") return "Karar";
     return status.charAt(0).toLocaleUpperCase('tr-TR') + status.slice(1).toLocaleLowerCase('tr-TR');
@@ -73,6 +74,18 @@ interface HomeCaseData {
     [key: string]: unknown;
 }
 
+interface HearingDateItem {
+    id: number;
+    case_id: number;
+    hearing_date: string;
+    hearing_time?: string;
+    lawyer_name?: string;
+    extracted_from_doc?: string;
+    note?: string;
+    esas_no?: string;
+    court?: string;
+}
+
 const Home = () => {
     const { getCases, getCaseStats, getCase, searchCases } = useCases();
     const navigate = useNavigate();
@@ -80,7 +93,7 @@ const Home = () => {
     const [cases, setCases] = useState<HomeCaseData[]>([]);
     const [searchResults, setSearchResults] = useState<HomeCaseData[]>([]);
     const [isSearching, setIsSearching] = useState(false);
-    const [stats, setStats] = useState({ active: 0, closed: 0, appeal: 0, total: 0 });
+    const [stats, setStats] = useState({ active: 0, closed: 0, appeal: 0, total: 0, danis_active: 0 });
     const [uniqueStatuses, setUniqueStatuses] = useState<string[]>(["DERDEST", "KARAR", "KAPALI", "TEMYIZ", "INFAZ"]);
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -93,29 +106,11 @@ const Home = () => {
     const [hasMore, setHasMore] = useState(true);
     const LIMIT = 20;
     const { lawyers } = useConfig();
+    const [hearingDates, setHearingDates] = useState<HearingDateItem[]>([]);
 
     const calendarLawyerOptions = useMemo(() => {
-        // Konfigürasyondaki isimleri al
-        const configNames = lawyers.map(l => l.name);
-
-        // Davalardan gelen isimleri normalize et (kod ise tam isme çevir)
-        const caseLawyerNames = cases.map(c => {
-            const rawName = c.responsible_lawyer_name;
-            if (!rawName) return null;
-
-            // Eğer bir kod ise (AGH gibi), tam ismi bul
-            const matchedByCode = lawyers.find(l => l.code === rawName);
-            if (matchedByCode) return matchedByCode.name;
-
-            return rawName;
-        }).filter(Boolean) as string[];
-
-        // Tümünü birleştir, dublikeleri temizle, istenmeyenleri çıkar ve sırala
-        const EXCLUDED_NAMES = ["Başka Büro / Harici", "Hanyaloğlu & Acar"];
-        return Array.from(new Set([...configNames, ...caseLawyerNames]))
-            .filter(name => !EXCLUDED_NAMES.includes(name))
-            .sort();
-    }, [lawyers, cases]);
+        return lawyers.filter(l => l.gorev === 'AVUKAT').map(l => l.name).sort();
+    }, [lawyers]);
 
 
     const loadCases = useCallback(async (isMore = false) => {
@@ -146,6 +141,13 @@ const Home = () => {
     }, [getCases, statusFilter, listLawyerFilter, searchQuery, offset]);
 
     useEffect(() => {
+        apiClient.fetch("/api/hearing-dates")
+            .then(r => r.ok ? r.json() : Promise.resolve([]))
+            .then((data: unknown) => setHearingDates(Array.isArray(data) ? data : []))
+            .catch(() => setHearingDates([]));
+    }, []);
+
+    useEffect(() => {
         const fetchStats = async () => {
             const statsData = await getCaseStats();
             if (statsData) {
@@ -153,7 +155,9 @@ const Home = () => {
                     active: statsData.active || 0,
                     closed: statsData.closed || 0,
                     appeal: statsData.appeal || 0,
-                    total: statsData.total || 0
+                    total: statsData.total || 0,
+                    danis_active: statsData.danis_active || 0,
+                    danis_arsiv: statsData.danis_arsiv || 0,
                 });
                 if (statsData.statuses && Object.keys(statsData.statuses).length > 0) {
                     setUniqueStatuses(Object.keys(statsData.statuses));
@@ -164,13 +168,25 @@ const Home = () => {
 
     }, [getCaseStats]);
 
-    // Triger loadCases on filter change
+    // Triger loadCases on filter change or page navigation
     useEffect(() => {
         const timeoutId = setTimeout(() => {
             loadCases(false);
         }, searchQuery.length >= 2 || (exactSearch && searchQuery.length > 0) ? 400 : 0);
         return () => clearTimeout(timeoutId);
-    }, [statusFilter, listLawyerFilter, searchQuery, exactSearch]);
+    }, [statusFilter, listLawyerFilter, searchQuery, exactSearch, location.key]);
+
+    // Hearing date events: keyed by dateString like case events
+    const hearingEventsByDate = useMemo(() => {
+        const events: Record<string, HearingDateItem[]> = {};
+        hearingDates.forEach((h) => {
+            if (calendarLawyerFilter !== "ALL" && h.lawyer_name !== calendarLawyerFilter) return;
+            const dateStr = new Date(h.hearing_date + "T00:00:00").toDateString();
+            if (!events[dateStr]) events[dateStr] = [];
+            events[dateStr].push(h);
+        });
+        return events;
+    }, [hearingDates, calendarLawyerFilter]);
 
     // Calendar events
     const calendarEvents = useMemo(() => {
@@ -204,6 +220,11 @@ const Home = () => {
         return calendarEvents[selectedDate.toDateString()] || [];
     }, [selectedDate, calendarEvents]);
 
+    const selectedDateHearings = useMemo(() => {
+        if (!selectedDate) return [];
+        return hearingEventsByDate[selectedDate.toDateString()] || [];
+    }, [selectedDate, hearingEventsByDate]);
+
     // Statistics are now from server state `stats`
 
     // Filtered cases
@@ -235,14 +256,14 @@ const Home = () => {
 
                 {/* Stats Row */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card className="border-primary/20 bg-card/80 hover:shadow-lg transition-all duration-300 hover:border-primary/40 group">
+                    <Card className="border-blue-500/20 bg-card/80 hover:shadow-lg transition-all duration-300 hover:border-blue-500/40 group">
                         <CardContent className="p-4 flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
-                                <Scale className="w-6 h-6 text-primary" />
+                            <div className="w-12 h-12 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0 group-hover:bg-blue-500/25 transition-colors">
+                                <Users className="w-6 h-6 text-blue-400" />
                             </div>
                             <div>
-                                <p className="text-2xl font-bold">{loading ? "–" : stats.total}</p>
-                                <p className="text-xs text-muted-foreground">Toplam Dava</p>
+                                <p className="text-2xl font-bold text-blue-400">{loading ? "–" : stats.danis_active}</p>
+                                <p className="text-xs text-muted-foreground">Danış</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -259,18 +280,6 @@ const Home = () => {
                         </CardContent>
                     </Card>
 
-                    <Card className="border-purple-500/20 bg-card/80 hover:shadow-lg transition-all duration-300 hover:border-purple-500/40 group">
-                        <CardContent className="p-4 flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-purple-500/15 flex items-center justify-center shrink-0 group-hover:bg-purple-500/25 transition-colors">
-                                <BarChart3 className="w-6 h-6 text-purple-400" />
-                            </div>
-                            <div>
-                                <p className="text-2xl font-bold text-purple-400">{loading ? "–" : stats.appeal}</p>
-                                <p className="text-xs text-muted-foreground">Temyiz</p>
-                            </div>
-                        </CardContent>
-                    </Card>
-
                     <Card className="border-gray-500/20 bg-card/80 hover:shadow-lg transition-all duration-300 hover:border-gray-500/40 group">
                         <CardContent className="p-4 flex items-center gap-4">
                             <div className="w-12 h-12 rounded-xl bg-gray-500/15 flex items-center justify-center shrink-0 group-hover:bg-gray-500/25 transition-colors">
@@ -282,88 +291,53 @@ const Home = () => {
                             </div>
                         </CardContent>
                     </Card>
+
+                    <Card className="border-primary/20 bg-card/80 hover:shadow-lg transition-all duration-300 hover:border-primary/40 group">
+                        <CardContent className="p-4 flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
+                                <Scale className="w-6 h-6 text-primary" />
+                            </div>
+                            <div>
+                                <p className="text-2xl font-bold">{loading ? "–" : stats.total}</p>
+                                <p className="text-xs text-muted-foreground">Toplam Dava</p>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
 
+
+                {/* Search & Filter — full width above grid */}
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Esas no, avukat, mahkeme veya konu ara..."
+                                className="pl-9 glass-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-center gap-2 bg-card/40 px-3 py-1.5 rounded-lg border border-primary/20 hover:border-primary/40 transition-colors shrink-0 h-10">
+                            <Switch
+                                id="exact-search"
+                                checked={exactSearch}
+                                onCheckedChange={setExactSearch}
+                                className="h-5 w-9 data-[state=checked]:bg-primary"
+                            />
+                            <Label htmlFor="exact-search" className="text-[10px] font-semibold cursor-pointer whitespace-nowrap opacity-80 uppercase tracking-tighter">
+                                Tam Eşleşme
+                            </Label>
+                        </div>
+                    </div>
+
+                </div>
 
                 {/* Main Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                     {/* Left: Case List */}
                     <div className="lg:col-span-2 space-y-4">
-
-                        {/* Search & Filter */}
-                        <div className="flex flex-col gap-3">
-                            <div className="flex flex-col sm:flex-row gap-3">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <Input
-                                        placeholder="Esas no, avukat, mahkeme veya konu ara..."
-                                        className="pl-9 glass-input"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                    />
-                                </div>
-                                <div className="w-full sm:w-[200px]">
-                                    <Select
-                                        value={listLawyerFilter}
-                                        onValueChange={setListLawyerFilter}
-                                    >
-                                        <SelectTrigger className="glass-input">
-                                            <div className="flex items-center gap-2">
-                                                <Users className="w-4 h-4 text-muted-foreground" />
-                                                <SelectValue placeholder="Avukat Seçin" />
-                                            </div>
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="ALL">Tüm Avukatlar</SelectItem>
-                                            {calendarLawyerOptions.map(name => (
-                                                <SelectItem key={name} value={name}>{name}</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-                                <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
-                                <Button
-                                    size="sm"
-                                    variant={statusFilter === "ALL" ? "default" : "outline"}
-                                    className={`h-9 shrink-0 ${statusFilter === "ALL" ? "bg-primary text-primary-foreground" : "bg-card/50"}`}
-                                    onClick={() => setStatusFilter("ALL")}
-                                >
-                                    Tümü
-                                </Button>
-                                {uniqueStatuses.map((s) => {
-                                    const isActive = statusFilter === s;
-                                    return (
-                                        <Button
-                                            key={s}
-                                            size="sm"
-                                            variant={isActive ? "default" : "outline"}
-                                            className={`h-9 shrink-0 ${isActive ? "bg-primary text-primary-foreground" : "bg-card/50"}`}
-                                            onClick={() => setStatusFilter(s)}
-                                        >
-                                            {formatStatus(s)}
-                                        </Button>
-                                    );
-                                })}
-                                
-                                <div className="flex-1" />
-                                
-                                <div className="flex items-center gap-2 bg-card/40 px-3 py-1.5 rounded-lg border border-primary/20 hover:border-primary/40 transition-colors shrink-0">
-                                    <Switch
-                                        id="exact-search"
-                                        checked={exactSearch}
-                                        onCheckedChange={setExactSearch}
-                                        className="h-5 w-9 data-[state=checked]:bg-primary"
-                                    />
-                                    <Label htmlFor="exact-search" className="text-[10px] font-semibold cursor-pointer whitespace-nowrap opacity-80 uppercase tracking-tighter">
-                                        Tam Eşleşme
-                                    </Label>
-                                </div>
-                            </div>
-                        </div>
 
                         {/* Case List Header */}
                         <div className="flex items-center justify-between">
@@ -489,66 +463,8 @@ const Home = () => {
                         )}
                     </div>
 
-                    {/* Right: Calendar + Quick Access */}
+                    {/* Right: Calendar */}
                     <div className="space-y-4">
-
-                        {/* Quick Actions */}
-                        <Card className="border-border/60 bg-card/80">
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                                    <Plus className="w-4 h-4 text-primary" />
-                                    Hızlı İşlemler
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2 pb-4">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full justify-start gap-3 h-10 hover:bg-primary/10 hover:border-primary/40"
-                                    onClick={() => navigate("/upload")}
-                                >
-                                    <Upload className="w-4 h-4 text-primary" />
-                                    Belge Yükle & Analiz Et
-                                </Button>
-
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full justify-start gap-3 h-10 hover:bg-emerald-500/10 hover:border-emerald-500/40"
-                                    onClick={() => navigate("/new-case/form")}
-                                >
-                                    <Gavel className="w-4 h-4 text-emerald-400" />
-                                    Yeni Dava Formu
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full justify-start gap-3 h-10 hover:bg-blue-500/10 hover:border-blue-500/40"
-                                    onClick={() => navigate("/new-client")}
-                                >
-                                    <User className="w-4 h-4 text-blue-400" />
-                                    Yeni Müvekkil Ekle
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full justify-start gap-3 h-10 hover:bg-rose-500/10 hover:border-rose-500/40"
-                                    onClick={() => navigate("/cases")}
-                                >
-                                    <FolderOpen className="w-4 h-4 text-rose-500" />
-                                    Dava Dosyaları (Yönetim)
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full justify-start gap-3 h-10 hover:bg-purple-500/10 hover:border-purple-500/40"
-                                    onClick={() => navigate("/clients")}
-                                >
-                                    <Users className="w-4 h-4 text-purple-400" />
-                                    Müvekkil Listesi
-                                </Button>
-                            </CardContent>
-                        </Card>
 
                         {/* Calendar */}
                         <Card className="border-primary/20 bg-card/80">
@@ -584,6 +500,7 @@ const Home = () => {
                                     mode="single"
                                     selected={selectedDate}
                                     onSelect={setSelectedDate}
+                                    locale={tr}
                                     className="rounded-lg border-0 bg-transparent p-0 w-full"
                                     classNames={{
                                         months: "flex flex-col",
@@ -604,9 +521,11 @@ const Home = () => {
                                     }}
                                     modifiers={{
                                         hasEvent: (date) => !!calendarEvents[date.toDateString()],
+                                        hasHearing: (date) => !!hearingEventsByDate[date.toDateString()],
                                     }}
                                     modifiersStyles={{
                                         hasEvent: { fontWeight: "bold", textDecoration: "underline", color: "hsl(var(--primary))" },
+                                        hasHearing: { fontWeight: "bold", color: "#f59e0b", textDecoration: "underline dotted" },
                                     }}
                                 />
 
@@ -619,31 +538,60 @@ const Home = () => {
                                                 : "Tarih Seçin"}
                                         </p>
                                         <Badge variant="outline" className="text-xs h-5">
-                                            {selectedDateEvents.length} Etkinlik
+                                            {selectedDateEvents.length + selectedDateHearings.length} Etkinlik
                                         </Badge>
                                     </div>
 
-                                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-                                        {selectedDateEvents.length > 0 ? (
-                                            selectedDateEvents.map((evt, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    onClick={() => navigate(`/cases/${evt.id}`)}
-                                                    className="p-2.5 bg-background/60 border border-border/50 rounded-lg text-xs cursor-pointer hover:border-primary/40 transition-colors"
-                                                >
-                                                    <div className="font-semibold text-primary truncate">
-                                                        {evt.esas_no || evt.tracking_no}
-                                                    </div>
-                                                    <div className="flex justify-between items-center text-muted-foreground mt-0.5">
-                                                        <span className="truncate max-w-[120px]">{evt.court || "Mahkeme Yok"}</span>
-                                                        <span className="flex items-center gap-1 shrink-0">
-                                                            <User className="w-2.5 h-2.5" />
-                                                            {evt.responsible_lawyer_name?.split(" ")[0] || "Av."}
-                                                        </span>
-                                                    </div>
+                                    <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                                        {/* Duruşma tarihleri */}
+                                        {selectedDateHearings.map((h) => (
+                                            <div
+                                                key={`hearing-${h.id}`}
+                                                onClick={() => navigate(`/cases/${h.case_id}`)}
+                                                className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs cursor-pointer hover:border-amber-400/60 transition-colors"
+                                            >
+                                                <div className="flex items-center gap-1.5 font-semibold text-amber-400">
+                                                    <Gavel className="w-3 h-3 shrink-0" />
+                                                    <span className="truncate">{h.esas_no || `Dava #${h.case_id}`}</span>
                                                 </div>
-                                            ))
-                                        ) : (
+                                                {h.court && (
+                                                    <div className="text-[10px] text-amber-300/70 truncate mt-0.5 pl-0.5">{h.court}</div>
+                                                )}
+                                                <div className="flex justify-between items-center text-muted-foreground mt-0.5">
+                                                    <span className="text-[10px] italic truncate max-w-[140px]">
+                                                        {h.hearing_time ? `Saat ${h.hearing_time}` : "Saat belirtilmemiş"}
+                                                    </span>
+                                                    {h.lawyer_name && (
+                                                        <span className="flex items-center gap-1 shrink-0 text-[10px]">
+                                                            <User className="w-2.5 h-2.5" />
+                                                            {h.lawyer_name.split(" ")[0]}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {/* Dava açılış tarihleri */}
+                                        {selectedDateEvents.map((evt, idx) => (
+                                            <div
+                                                key={idx}
+                                                onClick={() => navigate(`/cases/${evt.id}`)}
+                                                className="p-2.5 bg-background/60 border border-border/50 rounded-lg text-xs cursor-pointer hover:border-primary/40 transition-colors"
+                                            >
+                                                <div className="font-semibold text-primary truncate">
+                                                    {evt.esas_no || evt.tracking_no}
+                                                </div>
+                                                <div className="flex justify-between items-center text-muted-foreground mt-0.5">
+                                                    <span className="truncate max-w-[120px]">{evt.court || "Mahkeme Yok"}</span>
+                                                    <span className="flex items-center gap-1 shrink-0">
+                                                        <User className="w-2.5 h-2.5" />
+                                                        {evt.responsible_lawyer_name?.split(" ")[0] || "Av."}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        {selectedDateEvents.length === 0 && selectedDateHearings.length === 0 && (
                                             <div className="text-center text-xs text-muted-foreground py-3">
                                                 Bu tarihte ajanda boş.
                                             </div>

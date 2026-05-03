@@ -3,14 +3,14 @@ import { Header } from "@/components/Header";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-    Search, Gavel, FolderOpen, Scale, FileText, 
-    Plus, Filter, ChevronRight, ChevronLeft, 
+    Search, Gavel, FolderOpen, Scale, FileText,
+    Plus, Filter, ChevronRight, ChevronLeft,
     Building2, Briefcase, Clock, CheckCircle2,
-    TrendingUp, TrendingDown, MoreHorizontal,
+    Copy, Check,
     Library, ShieldCheck, FileBadge, ListChecks,
     Users, Calendar, X, Loader2
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useCases } from "../hooks/useCases";
 import { useConfig } from "../hooks/useConfig";
 import { toast } from "sonner";
@@ -35,13 +35,40 @@ interface Case {
     responsible_lawyer_name?: string;
     file_type?: string;
     subject?: string;
+    hasar_dosya_no?: string;
+    hukuk_no?: string;
     parties?: { party_type: string; name: string; role: string }[];
 }
 
 const ITEMS_PER_PAGE = 15;
 
+const CopyBadge = ({ value, color }: { value: string; color: "orange" | "blue" }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    };
+    const base = color === "orange"
+        ? "bg-secondary/40 text-foreground/70 border-border/60 hover:bg-secondary/60"
+        : "bg-secondary/40 text-foreground/70 border-border/60 hover:bg-secondary/60";
+    return (
+        <button
+            onClick={handleCopy}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${base}`}
+            title="Kopyala"
+        >
+            {color === "orange" ? <FileText className="w-2.5 h-2.5 shrink-0" /> : <Scale className="w-2.5 h-2.5 shrink-0" />}
+            {value}
+            {copied ? <Check className="w-2.5 h-2.5 shrink-0" /> : <Copy className="w-2.5 h-2.5 shrink-0 opacity-50" />}
+        </button>
+    );
+};
+
 const CaseList = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { getCases, getCaseStats, isLoading: isHookLoading } = useCases();
     const { lawyers } = useConfig();
 
@@ -52,7 +79,9 @@ const CaseList = () => {
     const [isLoading, setIsLoading] = useState(true);
 
     // Filter states
-    const [searchQuery, setSearchQuery] = useState("");
+    const [searchQuery, setSearchQuery] = useState(
+        (location.state as { clientName?: string })?.clientName ?? ""
+    );
     const debouncedSearch = useDebounce(searchQuery, 400);
     const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
     const [selectedLawyer, setSelectedLawyer] = useState<string>("ALL");
@@ -125,8 +154,8 @@ const CaseList = () => {
         const s = status.toUpperCase();
         if (s === "DERDEST") return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">Derdest</Badge>;
         if (s === "KAPALI") return <Badge className="bg-gray-500/10 text-gray-500 border-gray-500/20">Kapalı</Badge>;
-        if (s === "TEMYIZ" || s === "ISTINAF") return <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">Üst Yargı</Badge>;
-        if (s === "KARAR") return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">Karar</Badge>;
+        if (s === "TEMYIZ" || s === "ISTINAF") return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20">Üst Yargı</Badge>;
+        if (s === "KARAR") return <Badge className="bg-indigo-500/10 text-indigo-500 border-indigo-500/20">Karar</Badge>;
         return <Badge variant="outline">{status}</Badge>;
     };
 
@@ -343,7 +372,7 @@ const CaseList = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-6">
-                                                    <div className="flex flex-col gap-1">
+                                                    <div className="flex flex-col gap-1.5">
                                                         <span className="font-semibold text-[14px] text-foreground tabular-nums">
                                                             {c.esas_no || "Esas Belirtilmedi"}
                                                         </span>
@@ -351,6 +380,12 @@ const CaseList = () => {
                                                             <Briefcase className="w-3 h-3" />
                                                             <span className="text-[11px] font-medium tracking-tighter">{c.tracking_no}</span>
                                                         </div>
+                                                        {(c.hasar_dosya_no || c.hukuk_no) && (
+                                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                                                {c.hasar_dosya_no && <CopyBadge value={c.hasar_dosya_no} color="orange" />}
+                                                                {c.hukuk_no && <CopyBadge value={c.hukuk_no} color="blue" />}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-6">
@@ -421,7 +456,7 @@ const CaseList = () => {
     );
 };
 
-const StatCard = ({ title, value, description, icon, trend, trendUp }: any) => (
+const StatCard = ({ title, value, description, icon }: any) => (
     <div className="bg-card border border-border rounded-xl p-6 flex items-center justify-start gap-5 shadow-sm relative overflow-hidden h-[120px] hover:shadow-md transition-shadow group">
         {icon && (
             <div className="z-10 bg-secondary/30 p-3 rounded-full border border-border flex-shrink-0 group-hover:bg-primary/5 transition-colors">
@@ -431,14 +466,6 @@ const StatCard = ({ title, value, description, icon, trend, trendUp }: any) => (
         <div className="flex flex-col gap-1 z-10">
             <div className="flex items-center gap-3">
                 <span className="text-[13px] text-muted-foreground font-semibold tracking-wide leading-none">{title}</span>
-                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] font-bold ${
-                    trendUp 
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" 
-                    : "bg-rose-500/10 border-rose-500/20 text-rose-500"
-                }`}>
-                    {trendUp ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                    {trend}
-                </div>
             </div>
             <span className="text-[28px] font-bold tracking-tight leading-none mt-0.5">{value}</span>
             <p className="text-[11px] text-muted-foreground font-medium mt-1">{description}</p>

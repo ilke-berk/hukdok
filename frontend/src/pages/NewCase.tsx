@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
 import { useCases, CaseData } from "@/hooks/useCases";
@@ -17,7 +18,7 @@ import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, Refres
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { FileUpload } from "@/components/FileUpload";
-import { generateTrackingNumber } from "@/lib/caseNumberUtils";
+import { generateTrackingNumber, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
 import {
     AlertDialog,
@@ -62,6 +63,11 @@ interface EditModeCaseData {
     bureau_type?: string;
     sub_type_extra?: string;
     judicial_unit?: string;
+    atama_tarihi?: string;
+    hasar_dosya_no?: string;
+    hukuk_no?: string;
+    klasor_no_2?: string;
+    notes?: string;
     parties?: EditModeParty[];
     lawyers?: { name: string; lawyer_id?: number | null }[];
 }
@@ -102,6 +108,8 @@ const toUpperTR = (str: string) => str.toLocaleUpperCase('tr-TR').trim();
 const NewCase = () => {
     const navigate = useNavigate();
     const location = useLocation();
+
+    const queryClient = useQueryClient();
 
     // API Hooks
     const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
@@ -162,7 +170,12 @@ const NewCase = () => {
         acceptanceDate: editModeCase?.acceptance_date || "",
         bureauType: editModeCase?.bureau_type || "",
         subTypeExtra: editModeCase?.sub_type_extra || "",
-        judicialUnit: editModeCase?.judicial_unit || ""
+        judicialUnit: editModeCase?.judicial_unit || "",
+        atamaTarihi: editModeCase?.atama_tarihi || "",
+        hasarDosyaNo: editModeCase?.hasar_dosya_no || "",
+        hukukNo: editModeCase?.hukuk_no || "",
+        klasorNo2: editModeCase?.klasor_no_2 || "",
+        notes: editModeCase?.notes || "",
     });
 
     const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
@@ -170,7 +183,7 @@ const NewCase = () => {
     );
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
-    const [clients, setClients] = useState<Array<{ name: string; role: string; birth_year?: number; gender?: string }>>(
+    const [clients, setClients] = useState<Array<{ name: string; role: string; category?: string; birth_year?: number; gender?: string }>>(
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) ||
         [{ name: "", role: "Davacı" }]
     );
@@ -268,7 +281,7 @@ const NewCase = () => {
         currentMask[index] = checked ? "1" : "0";
         const newMask = currentMask.join("");
         setFormData({ ...formData, serviceType: newMask });
-        updateTrackingNumber(undefined, undefined, newMask);
+        updateTrackingNumber(undefined, newMask);
     };
 
     const getOppositeRole = (role: string) => {
@@ -280,18 +293,28 @@ const NewCase = () => {
     };
 
     // Yardımcı: Takip Numarasını Güncelle
-    const updateTrackingNumber = async (clientInfo?: { category?: string, clientName?: string }, fType?: string, sType?: string) => {
+    // clientsOverride: setClients henüz commit olmadan önce güncel listeyi iletmek için
+    const updateTrackingNumber = async (
+        fType?: string,
+        sType?: string,
+        clientsOverride?: Array<{ name: string; category?: string }>
+    ) => {
         if (isEditMode) return;
 
-        const cName = clientInfo?.clientName || (clients.length > 0 ? clients[0].name : "");
+        const source = (clientsOverride || clients).filter(c => c.name);
+        const named = pickNameClient(source);
+        const catCode = bestCategoryCode(source);
+        const cName = named.name || "";
+
         let seq = 1;
         if (cName) {
             seq = await getClientCaseSequence(cName);
         }
 
         const tracking = generateTrackingNumber({
-            category: clientInfo?.category !== undefined ? clientInfo.category : formData.category,
+            category: catCode,
             clientName: cName,
+            clientCategory: named.category,
             sequence: seq,
             processType: fType || formData.fileType,
             serviceType: sType || formData.serviceType
@@ -328,7 +351,12 @@ const NewCase = () => {
                 acceptanceDate: editModeCase.acceptance_date || "",
                 bureauType: editModeCase.bureau_type || "",
                 subTypeExtra: editModeCase.sub_type_extra || "",
-                judicialUnit: editModeCase.judicial_unit || ""
+                judicialUnit: editModeCase.judicial_unit || "",
+                atamaTarihi: editModeCase.atama_tarihi || "",
+                hasarDosyaNo: editModeCase.hasar_dosya_no || "",
+                hukukNo: editModeCase.hukuk_no || "",
+                klasorNo2: editModeCase.klasor_no_2 || "",
+                notes: editModeCase.notes || "",
             });
             setSelectedLawyers(editModeCase.lawyers?.map((l: any) => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
             setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
@@ -451,6 +479,11 @@ const NewCase = () => {
             acceptance_date: formData.acceptanceDate || undefined,
             bureau_type: formData.bureauType || undefined,
             sub_type_extra: formData.subTypeExtra || undefined,
+            atama_tarihi: formData.atamaTarihi || undefined,
+            hasar_dosya_no: formData.hasarDosyaNo || undefined,
+            hukuk_no: formData.hukukNo || undefined,
+            klasor_no_2: formData.klasorNo2 || undefined,
+            notes: formData.notes || undefined,
             parties: [
                 ...clients.filter(c => c.name).map(c => ({
                     client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(c.name))?.id,
@@ -480,6 +513,7 @@ const NewCase = () => {
         }
 
         if (success) {
+            queryClient.invalidateQueries({ queryKey: ["clients"] });
             toast.success(isEditMode ? "Dava kartı güncellendi!" : "Dava kartı veritabanına kaydedildi!", {
                 description: `Ofis No: ${caseId} bilgileri başarıyla işlendi.`
             });
@@ -526,7 +560,12 @@ const NewCase = () => {
             acceptanceDate: "",
             bureauType: "",
             subTypeExtra: "",
-            judicialUnit: ""
+            judicialUnit: "",
+            atamaTarihi: "",
+            hasarDosyaNo: "",
+            hukukNo: "",
+            klasorNo2: "",
+            notes: "",
         });
 
         // Reset arrays
@@ -739,10 +778,7 @@ const NewCase = () => {
                                                                                     const updated = [...clients];
                                                                                     updated[index].name = toTitleCase(val.trim());
                                                                                     setClients(updated);
-
-                                                                                    if (index === 0) {
-                                                                                        updateTrackingNumber({ clientName: val.trim() });
-                                                                                    }
+                                                                                    updateTrackingNumber(undefined, undefined, updated);
 
                                                                                     const newOpen = [...clientComboboxesOpen];
                                                                                     newOpen[index] = false;
@@ -761,15 +797,9 @@ const NewCase = () => {
                                                                                 onSelect={() => {
                                                                                     const updated = [...clients];
                                                                                     updated[index].name = toTitleCase(dbClient.name);
+                                                                                    updated[index].category = dbClient.category;
                                                                                     setClients(updated);
-
-                                                                                    // Yeni protokol uyarınca takip nosunu güncelle
-                                                                                    if (index === 0) {
-                                                                                        updateTrackingNumber({
-                                                                                            category: dbClient.category,
-                                                                                            clientName: dbClient.name
-                                                                                        });
-                                                                                    }
+                                                                                    updateTrackingNumber(undefined, undefined, updated);
 
                                                                                     const newOpen = [...clientComboboxesOpen];
                                                                                     newOpen[index] = false;
@@ -1046,6 +1076,54 @@ const NewCase = () => {
                                             />
                                         </div>
 
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Hasar Dosya No
+                                            </Label>
+                                            <Input
+                                                placeholder="Hasar Dosya Numarası"
+                                                value={formData.hasarDosyaNo}
+                                                onChange={(e) => setFormData({ ...formData, hasarDosyaNo: e.target.value })}
+                                                className="font-mono bg-transparent border-border/60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Hukuk No
+                                            </Label>
+                                            <Input
+                                                placeholder="Hukuk Numarası"
+                                                value={formData.hukukNo}
+                                                onChange={(e) => setFormData({ ...formData, hukukNo: e.target.value })}
+                                                className="font-mono bg-transparent border-border/60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Klasör No (Eski Sistem)
+                                            </Label>
+                                            <Input
+                                                placeholder="Eski sistem klasör no"
+                                                value={formData.klasorNo2}
+                                                onChange={(e) => setFormData({ ...formData, klasorNo2: e.target.value })}
+                                                className="font-mono bg-transparent border-border/60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Calendar className="w-3 h-3" /> Atama Tarihi
+                                            </Label>
+                                            <Input
+                                                type="date"
+                                                value={formData.atamaTarihi}
+                                                onChange={(e) => setFormData({ ...formData, atamaTarihi: e.target.value })}
+                                                className="bg-transparent border-border/60"
+                                            />
+                                        </div>
+
 
                                         <div 
                                             className={cn(
@@ -1061,7 +1139,7 @@ const NewCase = () => {
                                                     value={formData.fileType}
                                                     onValueChange={(v) => {
                                                         setFormData({ ...formData, fileType: v, subType: "", judicialUnit: "" });
-                                                        updateTrackingNumber(undefined, v);
+                                                        updateTrackingNumber(v);
                                                         triggerShake();
                                                     }}
                                                 >
@@ -1279,6 +1357,18 @@ const NewCase = () => {
                                                 </PopoverContent>
                                             </Popover>
                                         </div>
+                                        <div className="space-y-2 md:col-span-2">
+                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <FileText className="w-3 h-3" /> Notlar
+                                            </Label>
+                                            <Textarea
+                                                placeholder="Dosyaya özel notlar..."
+                                                value={formData.notes}
+                                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                                                className="bg-transparent border-border/60 resize-none min-h-[80px]"
+                                            />
+                                        </div>
+
                                     </div>
                                 </CardContent>
                             </Card>

@@ -19,6 +19,7 @@ import NewClient from "./pages/NewClient";
 import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
 import CaseDetails from "./pages/CaseDetails";
+import CaseGroup from "./pages/CaseGroup";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
@@ -98,6 +99,15 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               <CaseDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/case-groups/:groupId"
+          element={
+            <ProtectedRoute>
+              <CaseGroup />
             </ProtectedRoute>
           }
         />

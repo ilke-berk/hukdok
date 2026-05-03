@@ -55,7 +55,7 @@ MAX_INLINE_IMAGE_WIDTH = 450
 MAX_INLINE_IMAGE_HEIGHT = 600
 DEFAULT_IMAGE_WIDTH = 100
 DEFAULT_IMAGE_HEIGHT = 50
-MAX_PARAGRAPHS_PER_CELL = 3
+MAX_PARAGRAPHS_PER_CELL = 50
 MAX_IMAGE_PIXELS = 89478485
 MAX_IMAGE_WIDTH = 10000
 MAX_IMAGE_HEIGHT = 10000
@@ -78,32 +78,40 @@ try:
     TechnicalLogger.log("INFO", "DejaVu fonts registered successfully")
 except Exception as e:
     FONT_LOAD_FAILED = True
-    error_msg = f"DejaVu fonts not found: {e}. Font path: {BACKEND_DIR / 'fonts'}"
     if DEV_MODE:
-        TechnicalLogger.log("CRITICAL", error_msg)
-        raise RuntimeError(f"CRITICAL: DejaVu fonts missing in DEV_MODE. {e}") from e
+        TechnicalLogger.log("CRITICAL", f"DejaVu fontları yüklenemedi: {type(e).__name__}")
+        raise RuntimeError("CRITICAL: DejaVu fonts missing in DEV_MODE.") from e
     else:
-        TechnicalLogger.log("ERROR", f"{error_msg}. Falling back to Times-Roman.")
+        TechnicalLogger.log("ERROR", f"DejaVu fontları yüklenemedi ({type(e).__name__}), Times-Roman kullanılacak.")
         DEFAULT_FONT = 'Times-Roman'
 
 # --- Helper Functions ---
 
 def validate_image_safety(image_bytes: bytes) -> Optional[PILImage.Image]:
-    """Validate image against decompression bombs and excessive dimensions."""
+    """Validate image, converting unsupported formats and resizing oversized images."""
     try:
         img = PILImage.open(io.BytesIO(image_bytes))
+
+        # BMP/TIFF are not supported by ReportLab directly — convert to RGB
+        if img.format in ('BMP', 'TIFF'):
+            TechnicalLogger.log("INFO", f"Converting {img.format} image to PNG-compatible RGB")
+            img = img.convert('RGB')
+
         width, height = img.size
         total_pixels = width * height
-        
-        if total_pixels > MAX_IMAGE_PIXELS:
-            TechnicalLogger.log("WARNING", f"Blocked decompression bomb: {total_pixels:,} pixels")
-            return None
-        if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
-            TechnicalLogger.log("WARNING", f"Blocked oversized image: {width}x{height}")
-            return None
+
+        # Resize oversized images instead of rejecting them
+        if total_pixels > MAX_IMAGE_PIXELS or width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
+            TechnicalLogger.log("WARNING", f"Oversized image {width}x{height} ({total_pixels:,} px), resizing to fit limits")
+            img.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT), PILImage.LANCZOS)
+            width, height = img.size
+            if width * height > MAX_IMAGE_PIXELS:
+                scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
+                img = img.resize((int(width * scale), int(height * scale)), PILImage.LANCZOS)
+
         return img
     except Exception as e:
-        TechnicalLogger.log("WARNING", f"Image validation failed: {e}")
+        TechnicalLogger.log("WARNING", f"Görsel doğrulama başarısız: {type(e).__name__}")
         return None
 
 def format_text_styles(text: str, bold: bool, italic: bool, underline: bool) -> str:
@@ -204,7 +212,7 @@ class ParagraphHandler:
             elif child.tag == 'space':
                 chunk = ' '
             elif child.tag == 'image':
-                img = self._process_inline_image(child)
+                img = self._process_inline_image(child, converter)
                 if img:
                     if current_text:
                         paragraphs.append(Paragraph(current_text, style))
@@ -255,30 +263,40 @@ class ParagraphHandler:
             node.get('underline') == 'true'
         )
 
-    def _process_inline_image(self, node: XmlElement) -> Optional[Image]:
-        """Process inline image with proper error handling."""
+    def _process_inline_image(self, node: XmlElement, converter: 'UDFConverter') -> Optional[Image]:
+        """Process inline image with format conversion and resize support."""
         data = node.get('imageData')
         if not data: return None
-        
+
         try:
             raw = base64.b64decode(data)
             pil = validate_image_safety(raw)
-            if not pil: return None
-            
-            img = Image(io.BytesIO(raw))
-            
-            # Resize logic
+            if not pil:
+                converter.image_warnings.append("Bir görsel okunamadı (bozuk veri)")
+                return None
+
+            # Serialize the (potentially converted/resized) PIL image to PNG bytes for ReportLab
+            buf = io.BytesIO()
+            save_mode = pil.mode if pil.mode in ('RGB', 'RGBA', 'L') else 'RGB'
+            if save_mode != pil.mode:
+                pil = pil.convert(save_mode)
+            pil.save(buf, format='PNG')
+            buf.seek(0)
+
+            img = Image(buf)
+
+            # Fit to inline size limits
             w = getattr(img, 'drawWidth', DEFAULT_IMAGE_WIDTH)
             h = getattr(img, 'drawHeight', DEFAULT_IMAGE_HEIGHT)
-            
             if w > MAX_INLINE_IMAGE_WIDTH or h > MAX_INLINE_IMAGE_HEIGHT:
-                ratio = min(MAX_INLINE_IMAGE_WIDTH/w, MAX_INLINE_IMAGE_HEIGHT/h)
+                ratio = min(MAX_INLINE_IMAGE_WIDTH / w, MAX_INLINE_IMAGE_HEIGHT / h)
                 img.drawWidth = w * ratio
                 img.drawHeight = h * ratio
-            
+
             return img
         except Exception as e:
-            TechnicalLogger.log("WARNING", f"Inline image processing failed: {e}")
+            TechnicalLogger.log("WARNING", f"Satır içi görsel işlenemedi: {type(e).__name__}")
+            converter.image_warnings.append("Bir görsel işlenemedi (desteklenmeyen format veya bozuk veri)")
             return None
 
 class TableHandler:
@@ -389,6 +407,7 @@ class UDFConverter:
         self.header_paragraphs = []
         self.footer_paragraphs = []
         self.bg_image = None
+        self.image_warnings: List[str] = []
         self.margins = {
             'left': DEFAULT_MARGIN_PTS,
             'right': DEFAULT_MARGIN_PTS,
@@ -491,7 +510,7 @@ class UDFConverter:
                 if pil:
                     self.bg_image = Image(io.BytesIO(raw))
             except Exception as e:
-                TechnicalLogger.log("WARNING", f"Bg image error: {e}")
+                TechnicalLogger.log("WARNING", f"Arkaplan görseli işlenemedi: {type(e).__name__}")
         elif source:
             try:
                 out_dir = os.path.dirname(os.path.abspath(self.output_path))
@@ -502,9 +521,9 @@ class UDFConverter:
                 if os.path.commonpath([out_dir, full_path]) == out_dir and os.path.exists(full_path):
                      self.bg_image = Image(full_path)
                 else:
-                    TechnicalLogger.log("WARNING", f"Blocked path traversal: {source}")
+                    TechnicalLogger.log("WARNING", "Path traversal girişimi engellendi (arkaplan görseli)")
             except Exception as e:
-                TechnicalLogger.log("WARNING", f"Bg source error: {e}")
+                TechnicalLogger.log("WARNING", f"Arkaplan görseli kaynak hatası: {type(e).__name__}")
 
     def _setup_styles(self):
         """Initialize ReportLab styles."""
@@ -569,7 +588,7 @@ class UDFConverter:
                     if elem.tag in ['paragraph', 'table']:
                          self.pdf_elements.append(Spacer(1, 5))
                 except Exception as e:
-                    TechnicalLogger.log("ERROR", f"Handler for {elem.tag} failed: {e}")
+                    TechnicalLogger.log("ERROR", f"UDF element işleme hatası (<{elem.tag}>): {type(e).__name__}")
             else:
                 self._handle_unknown_element(elem)
 
@@ -584,7 +603,7 @@ class UDFConverter:
                 self.pdf_elements.append(Paragraph(f"[UNKNOWN: {tag}] {text}", s))
                 self.pdf_elements.append(Spacer(1, 5))
         except Exception as e:
-            TechnicalLogger.log("WARNING", f"Failed to process unknown element <{tag}>: {e}")
+            TechnicalLogger.log("WARNING", f"Bilinmeyen UDF elementi işlenemedi (<{tag}>): {type(e).__name__}")
 
     def _build_pdf(self):
         """Generate final PDF."""
@@ -664,7 +683,7 @@ class UDFConverter:
             canvas.restoreState()
 
         doc.build(self.pdf_elements, onFirstPage=on_page, onLaterPages=on_page)
-        TechnicalLogger.log("INFO", f"PDF created: {self.output_path}")
+        TechnicalLogger.log("INFO", "PDF oluşturma tamamlandı")
 
     def _cleanup(self):
         """Clear large data structures to aid garbage collection."""
@@ -672,14 +691,15 @@ class UDFConverter:
         self.content_text = None
         self.root = None
 
-def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> str:
-    """Wrapper function for synchronous conversion."""
+def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tuple:
+    """Wrapper function for synchronous conversion. Returns (output_path, image_warnings)."""
     if output_path is None:
         temp = tempfile.gettempdir()
         output_path = os.path.join(temp, f"udf_{uuid.uuid4().hex[:8]}.pdf")
-        
+
     converter = UDFConverter(udf_path, output_path)
-    return converter.convert()
+    path = converter.convert()
+    return path, converter.image_warnings
 
 async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = None) -> str:
     """Wrapper function for asynchronous conversion."""

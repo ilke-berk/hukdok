@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+import asyncio
 from datetime import datetime
 
 # Force UTF-8 (Fix for Windows)
@@ -62,6 +63,34 @@ if not GOOGLE_API_KEY:
 # Configure Gemini
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
+
+
+async def _gemini_call_with_retry(model, payload, max_retries: int = 3):
+    """Gemini API çağrısını 429/503 hatalarında exponential backoff ile retry eder."""
+    delays = [10, 30, 60]  # saniye
+    for attempt in range(max_retries + 1):
+        try:
+            return await model.generate_content_async(payload)
+        except Exception as e:
+            err_str = str(e)
+            is_transient = (
+                "429" in err_str
+                or "503" in err_str
+                or "resource exhausted" in err_str.lower()
+                or "service is currently unavailable" in err_str.lower()
+            )
+            if is_transient and attempt < max_retries:
+                wait_sec = delays[attempt]
+                code = "429" if "429" in err_str else "503"
+                TechnicalLogger.log(
+                    "WARNING",
+                    f"⏳ Gemini geçici hata ({code}) — {wait_sec}s sonra tekrar denenecek "
+                    f"(Deneme {attempt + 1}/{max_retries})",
+                )
+                await asyncio.sleep(wait_sec)
+            else:
+                raise
+
 
 # --- SYSTEM INSTRUCTION ---
 # --- PROMPT IMPORT ---
@@ -229,6 +258,7 @@ async def analyze_file_generator(
     file_path: str,
     file_hash: Optional[str] = None,
     process_id: Optional[str] = None,
+    preset_belge_turu_kodu: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Generator that yields status updates and finally the result.
@@ -280,15 +310,21 @@ async def analyze_file_generator(
             from udf_converter import convert_udf_to_pdf
             
             # Convert UDF to temporary PDF
-            temp_pdf_from_udf = await loop.run_in_executor(
+            temp_pdf_from_udf, udf_img_warnings = await loop.run_in_executor(
                 None, convert_udf_to_pdf, file_path, None
             )
-            
+
             TechnicalLogger.log("INFO", f"UDF converted to PDF: {temp_pdf_from_udf}")
-            
+
             # Now analyze the converted PDF instead
             file_path = temp_pdf_from_udf
-            
+
+            if udf_img_warnings:
+                yield {
+                    "status": "warning",
+                    "message": f"⚠️ {len(udf_img_warnings)} görsel PDF'e aktarılamadı (bozuk veya desteklenmeyen format). Belgenin geri kalanı dönüştürüldü."
+                }
+
             yield {
                 "status": "info",
                 "message": "✅ UDF dönüştürme tamamlandı, analiz başlıyor..."
@@ -366,6 +402,8 @@ async def analyze_file_generator(
             "esas_no": None,
             "muvekkil_candidates": [],
             "court": None,
+            "sonraki_durusma_tarihi": None,
+            "sonraki_durusma_saati": None,
         }
         
         t2 = time.perf_counter()  # Pre-extraction timer start
@@ -408,6 +446,44 @@ async def analyze_file_generator(
                     TechnicalLogger.log("INFO", f"🏛️ [PRE] Mahkeme bulundu: {pre_extracted['court']}")
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"[PRE] Mahkeme çıkarımı hatası: {e}")
+
+            # 6. Sonraki Duruşma Tarihi + Saati (Regex — duruşma/tensip zaptı belgeleri için)
+            if preset_belge_turu_kodu:
+                _btk_up = preset_belge_turu_kodu.upper()
+                if any(kw in _btk_up for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP")):
+                    try:
+                        import re as _re
+                        _D = r'\d{1,2}[./\-]\d{1,2}[./\-]\d{4}'  # tarih: 1-2 haneli gün/ay
+                        _T = r'\d{1,2}[:.]\d{2}'                  # saat: 09:43 veya 09.43
+                        # (pattern, date_group, time_group_or_None)
+                        _hearing_patterns = [
+                            # "DD/MM/YYYY günü saat HH:MM" — tensip ve duruşma zaptı
+                            (rf'({_D})\s+g[uü]n[uü]\s+saat\s+({_T})', 1, 2),
+                            # "DD/MM/YYYY tarihinde/tarihine saat HH:MM"
+                            (rf'({_D})\s+tarihinde?\s+saat\s+({_T})', 1, 2),
+                            # "duruşmanın DD/MM/YYYY" — saatsiz
+                            (rf'duru[sş]man[ıi]n\s+({_D})', 1, None),
+                            # "DD/MM/YYYY tarihine/tarihinde bırakılmasına"
+                            (rf'({_D})\s+tarihine?\s+b[ıi]rak', 1, None),
+                            # "bırakılmasına ... DD/MM/YYYY" (max 80 karakter aralık, tek satır)
+                            (rf'b[ıi]rak[ıi]lmas[ıi]na[^.{{}}]{{0,80}}?({_D})', 1, None),
+                            # "ertelenmesine ... DD/MM/YYYY"
+                            (rf'ertelenmesine[^.{{}}]{{0,80}}?({_D})', 1, None),
+                        ]
+                        for pat, dg, tg in _hearing_patterns:
+                            m = _re.search(pat, extracted_text, _re.IGNORECASE)
+                            if m:
+                                raw_date = m.group(dg).replace("-", "/").replace(".", "/")
+                                parts = raw_date.split("/")
+                                if len(parts) == 3 and len(parts[2]) == 4:
+                                    pre_extracted["sonraki_durusma_tarihi"] = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+                                    if tg:
+                                        # saat ayracını normalize et (09.43 → 09:43)
+                                        pre_extracted["sonraki_durusma_saati"] = m.group(tg).replace(".", ":")
+                                    TechnicalLogger.log("INFO", f"📅 [PRE] Sonraki duruşma: {pre_extracted['sonraki_durusma_tarihi']} {pre_extracted.get('sonraki_durusma_saati') or ''}")
+                                    break
+                    except Exception as e:
+                        TechnicalLogger.log("WARNING", f"[PRE] Duruşma tarihi çıkarımı hatası: {e}")
         
         # === MISSING FIELDS DETECTION ===
         missing_fields = []
@@ -434,11 +510,12 @@ async def analyze_file_generator(
         # 🆕 YENİ: Dinamik prompt oluştur (eksik alanlar ve ön çıkarım bilgisi ile)
         sys_inst = get_system_instruction(
             dynamic_lawyers=lawyers,
-            dynamic_doctypes=doctypes, 
+            dynamic_doctypes=doctypes,
             dynamic_statuses=statuses,
             candidates=pre_extracted["muvekkil_candidates"],
             missing_fields=missing_fields,
-            pre_extracted=pre_extracted
+            pre_extracted=pre_extracted,
+            belge_turu_kodu=preset_belge_turu_kodu,
         )
 
         model = genai.GenerativeModel(
@@ -454,7 +531,7 @@ async def analyze_file_generator(
             uploaded_file = upload_to_gemini(file_path)
             yield {"status": "info", "message": "⏳ Dosya işleniyor..."}
             await wait_for_files_active([uploaded_file])
-            response = await model.generate_content_async([uploaded_file])
+            response = await _gemini_call_with_retry(model, [uploaded_file])
         else:
             # --- TEXT MODE ---
             TechnicalLogger.log("INFO", "MODE: TEXT Activated")
@@ -468,9 +545,9 @@ async def analyze_file_generator(
                     {"len": len(extracted_text)},
                 )
                 uploaded_file = upload_to_gemini(file_path)
-                response = await model.generate_content_async([uploaded_file])
+                response = await _gemini_call_with_retry(model, [uploaded_file])
             else:
-                response = await model.generate_content_async(extracted_text)
+                response = await _gemini_call_with_retry(model, extracted_text)
         
         benchmark["ai_call"] = round((time.perf_counter() - t3) * 1000, 2)
         logging.info(f"GEMINI HAM CEVAP: {response.text}")
@@ -516,9 +593,13 @@ async def analyze_file_generator(
         
         debug_info = []
 
-        # 🛡️ HARD OVERRIDE: Belge Türü Seçimini Kullanıcıya Bırak
-        data["belge_turu_kodu"] = ""
-        debug_info.append("- Belge Türü: Kullanıcıya Bırakıldı")
+        # 🛡️ Belge Türü: Kullanıcı önceden seçtiyse onu kullan, aksi halde boş bırak
+        if preset_belge_turu_kodu:
+            data["belge_turu_kodu"] = preset_belge_turu_kodu.strip().upper()
+            debug_info.append(f"- Belge Türü: Kullanıcı Önceden Seçti ({preset_belge_turu_kodu})")
+        else:
+            data["belge_turu_kodu"] = ""
+            debug_info.append("- Belge Türü: Kullanıcıya Bırakıldı")
         
         # 🛡️ Karşı Taraf: UI formu için sıfırla, ama AI önerisini sakla
         # QuickCaseModal yeni dava açarken bu öneriyi kullanır
@@ -708,6 +789,19 @@ async def analyze_file_generator(
             debug_info.append(f"- Müvekkil: HATA ({data.get('muvekkil_adi')})")
 
             
+        # 📅 SONRAKI DURUŞMA TARİHİ + SAATİ — Regex öncelikli, AI fallback
+        if pre_extracted.get("sonraki_durusma_tarihi"):
+            data["sonraki_durusma_tarihi"] = pre_extracted["sonraki_durusma_tarihi"]
+            debug_info.append(f"- Sonraki Duruşma: REGEX ({pre_extracted['sonraki_durusma_tarihi']})")
+        elif data.get("sonraki_durusma_tarihi"):
+            debug_info.append(f"- Sonraki Duruşma: LLM ({data['sonraki_durusma_tarihi']})")
+        # else: alanda null kalır, kullanıcı manuel girer
+
+        if pre_extracted.get("sonraki_durusma_saati"):
+            data["sonraki_durusma_saati"] = pre_extracted["sonraki_durusma_saati"]
+        elif not data.get("sonraki_durusma_saati"):
+            data["sonraki_durusma_saati"] = None
+
         # 🆕 DOSYA ADI ÖN İSİM FORMATLAMA (YYYY-MM-DD_TÜR_YY-ESASNO_A.Soyad)
         try:
             _tr_map = str.maketrans("ÇçĞğİıÖöŞşÜü", "CcGgIiOoSsUu")
@@ -807,7 +901,18 @@ async def analyze_file_generator(
         default_data = get_default_json()
         default_data["hash"] = file_hash
 
-        if "403" in str(e) or "quota" in str(e).lower():
+        err_str = str(e)
+        if "429" in err_str or "resource exhausted" in err_str.lower():
+            default_data["ozet"] = (
+                f"⚠️ Yapay zeka API sınırına ulaşıldı (Rate Limit). "
+                f"Lütfen birkaç dakika bekleyip tekrar deneyin. (Kod: {error_id})"
+            )
+        elif "503" in err_str or "service is currently unavailable" in err_str.lower():
+            default_data["ozet"] = (
+                f"⚠️ Yapay zeka servisi şu an geçici olarak kullanılamıyor (503). "
+                f"Lütfen kısa süre sonra tekrar deneyin. (Kod: {error_id})"
+            )
+        elif "403" in err_str or "quota" in err_str.lower():
             default_data["ozet"] = (
                 f"API Erişim Hatası (Kota Aşımı veya Yetki Sorunu). (Kod: {error_id})"
             )

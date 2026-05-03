@@ -15,7 +15,8 @@ def get_lawyers():
         db = SessionLocal()
         try:
             items = db.query(models.Lawyer).filter(models.Lawyer.active == True).order_by(models.Lawyer.sequence.asc()).all()
-            return [{"code": i.code, "name": i.name} for i in items]
+            return [{"code": i.code, "name": i.name, "tc_no": i.tc_no, "sicil_no": i.sicil_no,
+                     "gorev": i.gorev, "email": i.email, "phone": i.phone, "address": i.address} for i in items]
         finally:
             db.close()
     except Exception as e:
@@ -76,16 +77,49 @@ def get_email_recipients():
 
 # --- CRUD OPERATIONS ---
 
-def add_lawyer(code: str, name: str):
+def add_lawyer(code: str, name: str, tc_no: str = None, sicil_no: str = None,
+               gorev: str = None, email: str = None, phone: str = None, address: str = None):
     try:
         db = SessionLocal()
-        new_item = models.Lawyer(code=code, name=name, active=True)
+        new_item = models.Lawyer(code=code, name=name, active=True,
+                                 tc_no=tc_no or None, sicil_no=sicil_no or None,
+                                 gorev=gorev or None, email=email or None,
+                                 phone=phone or None, address=address or None)
         db.add(new_item)
         db.commit()
         refresh_cache("lawyers")
         return True
     except Exception as e:
         logger.error(f"Add Lawyer Error: {e}")
+        return False
+    finally:
+        db.close()
+
+def update_lawyer(code: str, tc_no: str = None, sicil_no: str = None,
+                  gorev: str = None, email: str = None, phone: str = None, address: str = None):
+    """Updates lawyer fields."""
+    try:
+        db = SessionLocal()
+        item = db.query(models.Lawyer).filter(models.Lawyer.code == code).first()
+        if not item:
+            return False
+        if tc_no is not None:
+            item.tc_no = tc_no or None
+        if sicil_no is not None:
+            item.sicil_no = sicil_no or None
+        if gorev is not None:
+            item.gorev = gorev or None
+        if email is not None:
+            item.email = email or None
+        if phone is not None:
+            item.phone = phone or None
+        if address is not None:
+            item.address = address or None
+        db.commit()
+        refresh_cache("lawyers")
+        return True
+    except Exception as e:
+        logger.error(f"Update Lawyer Error: {e}")
         return False
     finally:
         db.close()
@@ -229,10 +263,10 @@ def delete_case_subject(code: str):
 def add_client(data: dict):
     try:
         db = SessionLocal()
-        name = data.get("name", "").strip().upper()
+        name = data.get("name", "").strip()
         if not name: return False
 
-        existing = db.query(models.Client).filter(models.Client.name == name).first()
+        existing = db.query(models.Client).filter(models.Client.name.ilike(name)).first()
         if existing:
             existing.tc_no = data.get("tc_no")
             existing.phone = data.get("phone")
@@ -289,6 +323,7 @@ def reorder_list(list_type: str, ordered_ids: list):
         elif list_type == "cities": model = models.City
         elif list_type == "specialties": model = models.Specialty
         elif list_type == "client_categories": model = models.ClientCategory
+        elif list_type == "file_statuses": model = models.FileStatus
 
         if not model: return False
 
@@ -310,10 +345,24 @@ def reorder_list(list_type: str, ordered_ids: list):
 
 from datetime import datetime, date
 
-def get_case(case_id: int):
+def _apply_tenant_filter(query, tenant_id: str):
+    """Sorguya tenant izolasyon filtresi uygular.
+    tenant_id'si NULL olan kayıtlar (eski/migrasyon öncesi) her tenant'a görünür.
+    """
+    if tenant_id:
+        from sqlalchemy import or_
+        return query.filter(
+            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        )
+    return query
+
+
+def get_case(case_id: int, tenant_id: str = None):
     try:
         db = SessionLocal()
-        item = db.query(models.Case).filter(models.Case.id == case_id).first()
+        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = _apply_tenant_filter(query, tenant_id)
+        item = query.first()
         if not item: return None
         
         # Build response with parties and history
@@ -321,7 +370,6 @@ def get_case(case_id: int):
             "id": item.id,
             "tracking_no": item.tracking_no,
             "esas_no": item.esas_no,
-            "merci_no": item.merci_no,
             "status": item.status,
             "file_type": item.file_type,
             "sub_type": item.sub_type,
@@ -335,10 +383,50 @@ def get_case(case_id: int):
             "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
             "bureau_type": item.bureau_type,
             "sub_type_extra": item.sub_type_extra,
+            "atama_tarihi": item.atama_tarihi.isoformat() if item.atama_tarihi else None,
+            "hasar_dosya_no": item.hasar_dosya_no,
+            "hukuk_no": item.hukuk_no,
+            "klasor_no_2": item.klasor_no_2,
+            "notes": item.notes,
             "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
             "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
-            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents]
+            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents],
+            # Takip alanları
+            "case_stage": item.case_stage,
+            "dosya_son_durumu": item.dosya_son_durumu,
+            "karar_tarihi": item.karar_tarihi.isoformat() if item.karar_tarihi else None,
+            "karar_turu": item.karar_turu,
+            "karar_lehine": item.karar_lehine,
+            "karar_no": item.karar_no,
+            "karar_teblig_tarihi": item.karar_teblig_tarihi.isoformat() if item.karar_teblig_tarihi else None,
+            "karar_aciklama": item.karar_aciklama,
+            "istinaf_basvuru_tarihi": item.istinaf_basvuru_tarihi.isoformat() if item.istinaf_basvuru_tarihi else None,
+            "istinaf_karar_durumu": item.istinaf_karar_durumu,
+            "istinaf_karar_tarihi": item.istinaf_karar_tarihi.isoformat() if item.istinaf_karar_tarihi else None,
+            "istinaf_mahkemesi": item.istinaf_mahkemesi,
+            "istinaf_esas_no": item.istinaf_esas_no,
+            "istinaf_karar_no": item.istinaf_karar_no,
+            "istinaf_karar_aciklama": item.istinaf_karar_aciklama,
+            "istinaf_teblig_tarihi": item.istinaf_teblig_tarihi.isoformat() if item.istinaf_teblig_tarihi else None,
+            "temyiz_basvuru_tarihi": item.temyiz_basvuru_tarihi.isoformat() if item.temyiz_basvuru_tarihi else None,
+            "temyiz_karar_durumu": item.temyiz_karar_durumu,
+            "temyiz_karar_tarihi": item.temyiz_karar_tarihi.isoformat() if item.temyiz_karar_tarihi else None,
+            "temyiz_mahkemesi": item.temyiz_mahkemesi,
+            "temyiz_esas_no": item.temyiz_esas_no,
+            "temyiz_karar_no": item.temyiz_karar_no,
+            "temyiz_eden_durumu": item.temyiz_eden_durumu,
+            "temyiz_karar_aciklama": item.temyiz_karar_aciklama,
+            "temyiz_teblig_tarihi": item.temyiz_teblig_tarihi.isoformat() if item.temyiz_teblig_tarihi else None,
+            "karar_duzeltme_durumu": item.karar_duzeltme_durumu,
+            "karar_duzeltme_esas_no": item.karar_duzeltme_esas_no,
+            "karar_duzeltme_karar_no": item.karar_duzeltme_karar_no,
+            "karar_duzeltme_tarihi": item.karar_duzeltme_tarihi.isoformat() if item.karar_duzeltme_tarihi else None,
+            "karar_duzeltme_teblig_tarihi": item.karar_duzeltme_teblig_tarihi.isoformat() if item.karar_duzeltme_teblig_tarihi else None,
+            "karar_duzeltme_aciklama": item.karar_duzeltme_aciklama,
+            "yeni_esas_no": item.yeni_esas_no,
+            "kesinlesme_tarihi": item.kesinlesme_tarihi.isoformat() if item.kesinlesme_tarihi else None,
+            "infaz_tarihi": item.infaz_tarihi.isoformat() if item.infaz_tarihi else None,
         }
         return result
     except Exception as e:
@@ -347,38 +435,46 @@ def get_case(case_id: int):
     finally:
         db.close()
 
-def get_case_stats():
+def get_case_stats(tenant_id: str = None):
     from sqlalchemy import func
     try:
         db = SessionLocal()
-        stats = {"total": 0, "active": 0, "closed": 0, "appeal": 0, "statuses": {}}
-        counts = db.query(models.Case.status, func.count(models.Case.id)).filter(models.Case.active == True).group_by(models.Case.status).all()
-        
+        stats = {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {}}
+        base_query = db.query(models.Case.status, func.count(models.Case.id)).filter(models.Case.active == True)
+        base_query = _apply_tenant_filter(base_query, tenant_id)
+        counts = base_query.group_by(models.Case.status).all()
+
         for status, count in counts:
             stats["total"] += count
             stats["statuses"][status] = count
-            
-            if status == "DERDEST":
+
+            s = (status or "").upper()
+            if s == "DERDEST":
                 stats["active"] += count
-            elif status in ["KAPALI", "MAHZEN"]:
+            elif s in ("KAPALI", "MAHZEN"):
                 stats["closed"] += count
-            elif status == "TEMYIZ":
+            elif s == "TEMYIZ":
                 stats["appeal"] += count
-                
+
+        for status, count in stats["statuses"].items():
+            if (status or "").upper().startswith("DANI"):
+                stats["danis_active"] += count
+
         return stats
     except Exception as e:
         logger.error(f"Get Case Stats Error: {e}")
-        return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "statuses": {}}
+        return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {}}
     finally:
         db.close()
 
-def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str = None, q: str = None, exact: bool = False):
+def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str = None, q: str = None, exact: bool = False, tenant_id: str = None):
     try:
         db = SessionLocal()
         query = db.query(models.Case).options(
             selectinload(models.Case.parties),
             selectinload(models.Case.lawyers)
         ).filter(models.Case.active == True)
+        query = _apply_tenant_filter(query, tenant_id)
 
         if status and status != "ALL":
             query = query.filter(models.Case.status == status)
@@ -392,38 +488,67 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 models.Case.lawyers.any(models.CaseLawyer.name.ilike(lawyer_pattern))
             ))
 
-        if q and len(q) >= 2:
+        min_len = 1 if exact else 2
+        if q and len(q) >= min_len:
             from sqlalchemy import or_, and_
             terms = q.strip().split()
             term_filters = []
-            
+
             for term in terms:
                 if not exact and len(term) < 2: continue
                 search_pattern = term if exact else f"%{term}%"
-                
-                # Basic case fields
-                conditions = [
-                    models.Case.tracking_no.ilike(search_pattern),
-                    models.Case.esas_no.ilike(search_pattern),
-                    models.Case.merci_no.ilike(search_pattern),
-                    models.Case.court.ilike(search_pattern),
-                    models.Case.subject.ilike(search_pattern),
-                    models.Case.notes.ilike(search_pattern),
-                    models.Case.responsible_lawyer_name.ilike(search_pattern),
-                    models.Case.uyap_lawyer_name.ilike(search_pattern),
-                    models.Case.parties.any(models.CaseParty.name.ilike(search_pattern)),
-                    models.Case.lawyers.any(models.CaseLawyer.name.ilike(search_pattern))
-                ]
-                
-                # Add history search (e.g. searching for an old Esas No)
-                conditions.append(models.Case.history.any(models.CaseHistory.old_value.ilike(search_pattern)))
-                
+
+                if exact:
+                    # Exact mode: case number fields exact match + tüm diğer alanlar contains
+                    contains = f"%{term}%"
+                    conditions = [
+                        models.Case.esas_no.ilike(search_pattern),
+                        models.Case.tracking_no.ilike(search_pattern),
+                        models.Case.klasor_no_2.ilike(search_pattern),
+                        models.Case.court.ilike(contains),
+                        models.Case.subject.ilike(contains),
+                        models.Case.responsible_lawyer_name.ilike(contains),
+                        models.Case.uyap_lawyer_name.ilike(contains),
+                        models.Case.parties.any(models.CaseParty.name.ilike(contains)),
+                        models.Case.lawyers.any(models.CaseLawyer.name.ilike(contains)),
+                    ]
+                else:
+                    # Normal mode: search all fields
+                    conditions = [
+                        models.Case.tracking_no.ilike(search_pattern),
+                        models.Case.esas_no.ilike(search_pattern),
+                        models.Case.klasor_no_2.ilike(search_pattern),  # Eski sistem no
+                        models.Case.court.ilike(search_pattern),
+                        models.Case.subject.ilike(search_pattern),
+                        models.Case.notes.ilike(search_pattern),
+                        models.Case.responsible_lawyer_name.ilike(search_pattern),
+                        models.Case.uyap_lawyer_name.ilike(search_pattern),
+                        models.Case.parties.any(models.CaseParty.name.ilike(search_pattern)),
+                        models.Case.lawyers.any(models.CaseLawyer.name.ilike(search_pattern)),
+                        models.Case.history.any(models.CaseHistory.old_value.ilike(search_pattern)),
+                    ]
+
                 term_filters.append(or_(*conditions))
             
             if term_filters:
                 query = query.filter(and_(*term_filters))
 
-        items = query.order_by(models.Case.updated_at.desc()).offset(offset).limit(limit).all()
+        # Relevance sıralaması: sorgu varsa exact > prefix > partial > diğer
+        if q and len(q.strip()) >= min_len:
+            from sqlalchemy import case as sa_case
+            raw = q.strip()
+            relevance = sa_case(
+                (models.Case.esas_no.ilike(raw), 1),
+                (models.Case.tracking_no.ilike(raw), 1),
+                (models.Case.klasor_no_2.ilike(raw), 1),
+                (models.Case.esas_no.ilike(f"{raw}%"), 2),
+                (models.Case.tracking_no.ilike(f"{raw}%"), 2),
+                (models.Case.klasor_no_2.ilike(f"{raw}%"), 2),
+                else_=3,
+            )
+            items = query.order_by(relevance, models.Case.updated_at.desc()).offset(offset).limit(limit).all()
+        else:
+            items = query.order_by(models.Case.updated_at.desc()).offset(offset).limit(limit).all()
         
         cases_list = []
         for item in items:
@@ -431,7 +556,6 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 "id": item.id,
                 "tracking_no": item.tracking_no,
                 "esas_no": item.esas_no,
-                "merci_no": item.merci_no,
                 "status": item.status,
                 "file_type": item.file_type,
                 "sub_type": item.sub_type,
@@ -445,7 +569,9 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
                 "bureau_type": item.bureau_type,
                 "sub_type_extra": item.sub_type_extra,
-                "parties": [{"name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
+                "hasar_dosya_no": item.hasar_dosya_no,
+                "hukuk_no": item.hukuk_no,
+                "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
                 "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
                 "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None
             }
@@ -457,14 +583,16 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
     finally:
         db.close()
 
-def update_case(case_id: int, data: dict):
+def update_case(case_id: int, data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
-        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = _apply_tenant_filter(query, tenant_id)
+        case = query.first()
         if not case: return False
         
         # Fields to track for history
-        tracked_fields = ["esas_no", "court", "status", "merci_no"]
+        tracked_fields = ["esas_no", "court", "status"]
         
         # 1. Update Case and Record History
         for field in tracked_fields:
@@ -491,7 +619,11 @@ def update_case(case_id: int, data: dict):
         case.manevi_tazminat = data.get("manevi_tazminat", case.manevi_tazminat)
         case.bureau_type = data.get("bureau_type", case.bureau_type)
         case.sub_type_extra = data.get("sub_type_extra", case.sub_type_extra)
-        
+        case.hasar_dosya_no = data.get("hasar_dosya_no", case.hasar_dosya_no)
+        case.hukuk_no = data.get("hukuk_no", case.hukuk_no)
+        case.klasor_no_2 = data.get("klasor_no_2", case.klasor_no_2)
+        case.notes = data.get("notes", case.notes)
+
         if data.get("opening_date"):
             try:
                 case.opening_date = datetime.strptime(data.get("opening_date"), "%Y-%m-%d").date()
@@ -500,6 +632,11 @@ def update_case(case_id: int, data: dict):
         if data.get("acceptance_date"):
             try:
                 case.acceptance_date = datetime.strptime(data.get("acceptance_date"), "%Y-%m-%d").date()
+            except: pass
+
+        if data.get("atama_tarihi"):
+            try:
+                case.atama_tarihi = datetime.strptime(data.get("atama_tarihi"), "%Y-%m-%d").date()
             except: pass
 
         # 2. Sync Parties (Delete and Re-add for simplicity in this version)
@@ -512,14 +649,16 @@ def update_case(case_id: int, data: dict):
             
             # Otomatik Müşteri Oluşturma Yükseltmesi
             if party_type == "CLIENT" and name and not client_id:
-                existing_client = db.query(models.Client).filter(models.Client.name == name.strip().upper()).first()
+                existing_client = db.query(models.Client).filter(
+                    models.Client.name.ilike(name.strip())
+                ).first()
                 if existing_client:
                     client_id = existing_client.id
                 else:
                     new_client = models.Client(
-                        name=name.strip().upper(),
+                        name=name.strip(),
                         contact_type="Client",
-                        client_type="Gerçek Kişi",
+                        client_type="Individual",
                         active=True
                     )
                     db.add(new_client)
@@ -565,12 +704,11 @@ def update_case(case_id: int, data: dict):
     finally:
         db.close()
 
-def search_cases(query: str, exact: bool = False):
-    # Use get_cases with a high limit for the legacy search endpoint
-    # to ensure "needed places" still get all relevant results
-    return get_cases(q=query, limit=500, exact=exact)
+def search_cases(query: str, exact: bool = False, active_only: bool = False, tenant_id: str = None):
+    status = "DERDEST" if active_only else None
+    return get_cases(q=query, limit=500, exact=exact, status=status, tenant_id=tenant_id)
 
-def add_case(data: dict):
+def add_case(data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
         
@@ -602,7 +740,6 @@ def add_case(data: dict):
         new_case = models.Case(
             tracking_no=data.get("tracking_no"),
             esas_no=data.get("esas_no"),
-            merci_no=data.get("merci_no"),
             status=data.get("status", "DERDEST"),
             file_type=data.get("file_type"),
             sub_type=data.get("sub_type"),
@@ -614,9 +751,13 @@ def add_case(data: dict):
             maddi_tazminat=data.get("maddi_tazminat", 0),
             manevi_tazminat=data.get("manevi_tazminat", 0),
             bureau_type=data.get("bureau_type"),
-            sub_type_extra=data.get("sub_type_extra")
+            sub_type_extra=data.get("sub_type_extra"),
+            hasar_dosya_no=data.get("hasar_dosya_no"),
+            hukuk_no=data.get("hukuk_no"),
+            klasor_no_2=data.get("klasor_no_2"),
+            notes=data.get("notes"),
         )
-        
+
         # Handle acceptance_date
         acceptance_date_str = data.get("acceptance_date")
         if acceptance_date_str:
@@ -624,9 +765,18 @@ def add_case(data: dict):
                 new_case.acceptance_date = datetime.strptime(str(acceptance_date_str).strip(), "%Y-%m-%d").date()
             except:
                 pass
+
+        # Handle atama_tarihi
+        atama_tarihi_str = data.get("atama_tarihi")
+        if atama_tarihi_str:
+            try:
+                new_case.atama_tarihi = datetime.strptime(str(atama_tarihi_str).strip(), "%Y-%m-%d").date()
+            except:
+                pass
+
         db.add(new_case)
         db.flush()  # Get the case ID
-        
+
         # 2. Add Parties
         parties = data.get("parties", [])
         for p in parties:
@@ -636,14 +786,16 @@ def add_case(data: dict):
             
             # Otomatik Müşteri Oluşturma Yükseltmesi
             if party_type == "CLIENT" and name and not client_id:
-                existing_client = db.query(models.Client).filter(models.Client.name == name.strip().upper()).first()
+                existing_client = db.query(models.Client).filter(
+                    models.Client.name.ilike(name.strip())
+                ).first()
                 if existing_client:
                     client_id = existing_client.id
                 else:
                     new_client = models.Client(
-                        name=name.strip().upper(),
+                        name=name.strip(),
                         contact_type="Client",
-                        client_type="Gerçek Kişi",
+                        client_type="Individual",
                         active=True
                     )
                     db.add(new_client)
@@ -996,24 +1148,31 @@ def seed_all_lists():
     _seed_cities()
     _seed_specialties()
     _seed_client_categories()
+    _seed_file_statuses()
 
 def _seed_file_types():
     db = SessionLocal()
     try:
-        if db.query(models.FileType).count() > 0:
-            return
         items = [
-            ("Ceza", "Ceza"),
-            ("Hukuk", "Hukuk"),
-            ("İcra", "İcra"),
+            ("Ceza",        "Ceza"),
+            ("Hukuk",       "Hukuk"),
+            ("İcra",        "İcra"),
+            ("İdare",       "İdare"),
             ("İdari Yargı", "İdari Yargı"),
-            ("Arabuluculuk", "Arabuluculuk"),
-            ("Savcılık", "Savcılık"),
+            ("Arabuluculuk","Arabuluculuk"),
+            ("Savcılık",    "Savcılık"),
+            ("Tahkim",      "Tahkim"),
+            ("Vergi",       "Vergi"),
+            ("Danışmanlık", "Danışmanlık"),
         ]
+        added = 0
         for idx, (code, name) in enumerate(items):
-            db.add(models.FileType(code=code, name=name, active=True, sequence=idx))
+            if not db.query(models.FileType).filter_by(code=code).first():
+                db.add(models.FileType(code=code, name=name, active=True, sequence=idx))
+                added += 1
         db.commit()
-        logger.info(f"Seeded {len(items)} file_types")
+        if added:
+            logger.info(f"Seeded {added} new file_types")
     except Exception as e:
         logger.error(f"Seed FileTypes Error: {e}")
     finally:
@@ -1022,8 +1181,6 @@ def _seed_file_types():
 def _seed_court_types():
     db = SessionLocal()
     try:
-        if db.query(models.CourtType).count() > 0:
-            return
         data = {
             "Ceza": [
                 "AĞIR CEZA MAHKEMESİ", "ASLİYE CEZA MAHKEMESİ",
@@ -1042,17 +1199,29 @@ def _seed_court_types():
             ],
             "İcra": ["İCRA DAİRESİ"],
             "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
+            "İdare": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
             "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
-            "Savcılık": [],
+            "Savcılık": ["CUMHURİYET BAŞSAVCILIĞI"],
+            "Tahkim": ["TAHKIM MAHKEMESİ", "MİLLETLERARASI TAHKİM", "TOBB TAHKİM MAHKEMESİ"],
+            "Vergi": ["VERGİ MAHKEMESİ", "BÖLGE İDARE MAHKEMESİ (VERGİ)", "DANIŞTAY"],
+            "Danışmanlık": [],
         }
-        seq = 0
+        added = 0
+        seq = db.query(models.CourtType).count()
+        existing_keys = {
+            (r.name, r.parent_code)
+            for r in db.query(models.CourtType.name, models.CourtType.parent_code).all()
+        }
         for parent, names in data.items():
             for name in names:
-                code = (parent[:3] + "-" + name[:6]).upper().replace(" ", "")
-                db.add(models.CourtType(code=f"{code}-{seq}", name=name, parent_code=parent, active=True, sequence=seq))
-                seq += 1
+                if (name, parent) not in existing_keys:
+                    code = (parent[:3] + "-" + name[:6]).upper().replace(" ", "")
+                    db.add(models.CourtType(code=f"{code}-{seq}", name=name, parent_code=parent, active=True, sequence=seq))
+                    seq += 1
+                    added += 1
         db.commit()
-        logger.info(f"Seeded {seq} court_types")
+        if added:
+            logger.info(f"Seeded {added} new court_types")
     except Exception as e:
         logger.error(f"Seed CourtTypes Error: {e}")
     finally:
@@ -1061,21 +1230,31 @@ def _seed_court_types():
 def _seed_party_roles():
     db = SessionLocal()
     try:
-        if db.query(models.PartyRole).count() > 0:
-            return
-        main_roles = ["Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil"]
+        main_roles = [
+            "Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil",
+            "Şüpheli", "Borçlu", "Başvurucu", "Feri Müdahil", "Müdahil Davalı",
+        ]
         third_roles = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Diğer"]
-        seq = 0
+
+        def _norm(name):
+            return name.upper().replace(" ", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C")
+
+        existing = {r.name for r in db.query(models.PartyRole).all()}
+        seq = db.query(models.PartyRole).count()
+        added = 0
         for name in main_roles:
-            code = name.upper().replace(" ", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C")
-            db.add(models.PartyRole(code=code, name=name, role_type="MAIN", active=True, sequence=seq))
-            seq += 1
+            if name not in existing:
+                db.add(models.PartyRole(code=_norm(name), name=name, role_type="MAIN", active=True, sequence=seq))
+                seq += 1
+                added += 1
         for name in third_roles:
-            code = ("3-" + name.upper().replace(" ", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C"))
-            db.add(models.PartyRole(code=code, name=name, role_type="THIRD", active=True, sequence=seq))
-            seq += 1
+            if name not in existing:
+                db.add(models.PartyRole(code="3-" + _norm(name), name=name, role_type="THIRD", active=True, sequence=seq))
+                seq += 1
+                added += 1
         db.commit()
-        logger.info(f"Seeded {seq} party_roles")
+        if added:
+            logger.info(f"Seeded {added} new party_roles")
     except Exception as e:
         logger.error(f"Seed PartyRoles Error: {e}")
     finally:
@@ -1182,7 +1361,159 @@ def _seed_client_categories():
     finally:
         db.close()
 
+
+# ─── FILE STATUSES ────────────────────────────────────────────────────────────
+
+def get_file_statuses():
+    try:
+        db = SessionLocal()
+        try:
+            items = db.query(models.FileStatus).filter(models.FileStatus.active == True).order_by(models.FileStatus.sequence.asc()).all()
+            return [{"code": i.code, "name": i.name} for i in items]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error fetching file_statuses: {e}")
+        return []
+
+def add_file_status(code: str, name: str):
+    try:
+        db = SessionLocal()
+        new_item = models.FileStatus(code=code, name=name, active=True)
+        db.add(new_item)
+        db.commit()
+        refresh_cache("file_statuses")
+        return True
+    except Exception as e:
+        logger.error(f"Add FileStatus Error: {e}")
+        return False
+    finally:
+        db.close()
+
+def delete_file_status(code: str):
+    try:
+        db = SessionLocal()
+        item = db.query(models.FileStatus).filter(models.FileStatus.code == code).first()
+        if item:
+            db.delete(item)
+            db.commit()
+            refresh_cache("file_statuses")
+            return True
+        return False
+    finally:
+        db.close()
+
+def _seed_file_statuses():
+    db = SessionLocal()
+    try:
+        if db.query(models.FileStatus).count() > 0:
+            return
+        names = [
+            "Aciz Vesikası", "Azil", "Bekletici Mesele/Ceza-Hukuk Dosyası",
+            "Bekletici Mesele/MSK", "Bilirkişi Kusur Raporu Alındı",
+            "Bilirkişi Maluliyet Raporu Alındı", "Bilirkişi Tazminat Raporu Alındı",
+            "Bilirkişide", "Birleşme", "Bozma Sonrası Yargılama",
+            "Dava Açılması Bekleniyor", "Davaya Dönüştü", "Deliller Toplanıyor",
+            "Islah", "İade", "İncelemede", "İnfaz Haricen", "İnfaz İcradan",
+            "İstifa", "İstinafta", "Kanun Yararına Bozmada",
+            "Kapama Müvekkil Talimatıyla", "Karar Düzeltmede",
+            "Karar Kesinleşmesi Bekleniyor", "Karar Tebliği Bekleniyor",
+            "Karar Yazımı Bekleniyor", "Kesin Aleyhe", "Kesin Lehe",
+            "Lexis Rapor Gönderildi", "Lexis Rapor Hazırlanıyor", "Müvekkil Vefatı",
+            "Ön İnceleme", "Sözlü Yargılama", "Sulh İle Kapatma", "Tanık",
+            "Tehiri İcra", "Temyizde", "Uyuşmazlık Mahkemesinde",
+        ]
+        for idx, name in enumerate(names):
+            code = name.upper().replace(" ", "-").replace("/", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C")
+            db.add(models.FileStatus(code=code, name=name, active=True, sequence=idx))
+        db.commit()
+        logger.info(f"Seeded {len(names)} file_statuses")
+    except Exception as e:
+        logger.error(f"Seed FileStatuses Error: {e}")
+    finally:
+        db.close()
+
+
 # ─── UTILITIES ───────────────────────────────────────────────────────────────
+
+def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str = "MANUAL", tenant_id: str = None) -> bool:
+    """Dava takip bilgilerini günceller ve aşama değişmişse CaseStageLog kaydı ekler."""
+    db = SessionLocal()
+    try:
+        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = _apply_tenant_filter(query, tenant_id)
+        case = query.first()
+        if not case:
+            return False
+
+        old_stage = case.case_stage
+        new_stage = data.get("case_stage")
+        note = data.pop("note", None)
+
+        tracking_fields = [
+            "case_stage",
+            "dosya_son_durumu",
+            # Dosya durumu
+            "status",
+            # Yerel Karar
+            "karar_tarihi", "karar_turu", "karar_lehine",
+            "karar_no", "karar_teblig_tarihi", "karar_aciklama",
+            # İstinaf
+            "istinaf_basvuru_tarihi", "istinaf_karar_durumu", "istinaf_karar_tarihi",
+            "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
+            "istinaf_karar_aciklama", "istinaf_teblig_tarihi",
+            # Temyiz
+            "temyiz_basvuru_tarihi", "temyiz_karar_durumu", "temyiz_karar_tarihi",
+            "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
+            "temyiz_eden_durumu", "temyiz_karar_aciklama", "temyiz_teblig_tarihi",
+            # Karar Düzeltme
+            "karar_duzeltme_durumu", "karar_duzeltme_esas_no", "karar_duzeltme_karar_no",
+            "karar_duzeltme_tarihi", "karar_duzeltme_teblig_tarihi",
+            "karar_duzeltme_aciklama", "yeni_esas_no",
+            # Kesinleşme / İnfaz
+            "kesinlesme_tarihi", "infaz_tarihi",
+        ]
+        for field in tracking_fields:
+            if field in data and data[field] is not None:
+                setattr(case, field, data[field])
+
+        if new_stage and new_stage != old_stage:
+            log = models.CaseStageLog(
+                case_id=case_id,
+                stage=new_stage,
+                changed_by=changed_by,
+                source=source,
+                note=note,
+            )
+            db.add(log)
+
+        db.commit()
+        return True
+    except Exception as e:
+        logger.error(f"update_case_tracking error: {e}")
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def get_case_stage_log(case_id: int) -> list:
+    """Davanın aşama tarihçesini döner."""
+    db = SessionLocal()
+    try:
+        logs = (
+            db.query(models.CaseStageLog)
+            .filter(models.CaseStageLog.case_id == case_id)
+            .order_by(models.CaseStageLog.changed_at.asc())
+            .all()
+        )
+        return logs
+    except Exception as e:
+        logger.error(f"get_case_stage_log error: {e}")
+        return []
+    finally:
+        db.close()
+
 
 def refresh_cache(list_type: str):
     """Helper to update DynamicConfig singleton without a restart."""
@@ -1211,3 +1542,5 @@ def refresh_cache(list_type: str):
         config.set_specialties(get_specialties())
     elif list_type == "client_categories":
         config.set_client_categories(get_client_categories())
+    elif list_type == "file_statuses":
+        config.set_file_statuses(get_file_statuses())

@@ -1,8 +1,10 @@
 import logging
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from pydantic import BaseModel
 
-from dependencies import get_current_user
+from dependencies import get_current_user, get_current_tenant
 from database import SessionLocal
 import models
 
@@ -10,11 +12,64 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+# ── Yetki Belgesi UDF ─────────────────────────────────────────────────────────
+
+class YetkiBelgesiAvukat(BaseModel):
+    ad: str
+    tc: str = ""
+    sicil: str = ""
+
+class YetkiBelgesiMuvekkil(BaseModel):
+    ad: str
+    adres: str = ""
+    il: str = ""
+    tc_vergi: str = ""
+    client_type: str = "Individual"
+
+class YetkiBelgesiDayanak(BaseModel):
+    noterlik: str = ""
+    tarih: str = ""
+    yevmiye: str = ""
+
+class YetkiBelgesiRequest(BaseModel):
+    veren: YetkiBelgesiAvukat
+    yetkililar: List[YetkiBelgesiAvukat]
+    buro_adres: str = ""
+    muvekkil: YetkiBelgesiMuvekkil
+    dayanak: YetkiBelgesiDayanak
+    kapsam: str = "İlgili Vekaletnamedeki yetkilerin tamamı"
+
+
+@router.post("/api/yetki-belgesi/udf")
+def create_yetki_belgesi_udf(
+    req: YetkiBelgesiRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Yetki belgesi verilerinden .udf dosyası üretir ve döndürür."""
+    try:
+        from yetki_belgesi_generator import generate_yetki_belgesi_udf
+        import unicodedata
+        udf_bytes = generate_yetki_belgesi_udf(req.model_dump())
+        # HTTP header latin-1 zorunluluğu — Türkçe karakterleri ASCII'ye dönüştür
+        raw_name = req.muvekkil.ad[:20].replace(" ", "_")
+        safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii")
+        safe_name = safe_name or "belge"
+        filename = f"yetki_belgesi_{safe_name}.udf"
+        return Response(
+            content=udf_bytes,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        logger.error(f"Yetki belgesi UDF üretim hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Yetki belgesi oluşturulamadı. Lütfen tekrar deneyin.")
+
+
 @router.get("/api/cases/{case_id}/documents")
 def get_case_documents(
     case_id: int,
     party_id: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """
     Bir davaya ait belgeleri listeler.
@@ -24,6 +79,14 @@ def get_case_documents(
     """
     db = SessionLocal()
     try:
+        from sqlalchemy import or_
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        ).first()
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
         q = (
             db.query(models.CaseDocument)
             .filter(models.CaseDocument.case_id == case_id)
@@ -72,11 +135,16 @@ def get_case_documents(
 def get_all_documents(
     limit: int = 50,
     link_mode: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     db = SessionLocal()
     try:
-        q = db.query(models.CaseDocument)
+        from sqlalchemy import or_
+        q = (
+            db.query(models.CaseDocument)
+            .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
+            .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None), models.CaseDocument.case_id.is_(None)))
+        )
         if link_mode:
             q = q.filter(models.CaseDocument.link_mode == link_mode.upper())
         docs = q.order_by(models.CaseDocument.uploaded_at.desc()).limit(limit).all()
@@ -107,23 +175,91 @@ def get_all_documents(
 def link_document_to_case(
     doc_id: int,
     payload: dict,
-    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """Bağlantısız bir belgeyi sonradan bir davaya bağlar. Body: { "case_id": 123 }"""
     db = SessionLocal()
     try:
+        from sqlalchemy import or_
         doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         new_case_id = payload.get("case_id")
         if not new_case_id:
             raise HTTPException(status_code=400, detail="case_id gerekli")
-        case = db.query(models.Case).filter(models.Case.id == new_case_id).first()
+        case = db.query(models.Case).filter(
+            models.Case.id == new_case_id,
+            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
+        ).first()
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
         doc.case_id = new_case_id
         doc.link_mode = "LINKED"
         db.commit()
         return {"status": "success", "message": f"Belge #{doc_id} dava #{new_case_id}'ye bağlandı"}
+    finally:
+        db.close()
+
+
+@router.get("/api/documents/{doc_id}/email-status")
+def get_document_email_status(
+    doc_id: int,
+    _: str = Depends(get_current_tenant),
+):
+    """Belgenin e-posta gönderim durumunu döndürür."""
+    db = SessionLocal()
+    try:
+        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        return {
+            "doc_id": doc_id,
+            "email_sent": doc.email_sent,
+            "email_error": doc.email_error,
+        }
+    finally:
+        db.close()
+
+
+@router.patch("/api/documents/{doc_id}/party")
+def assign_document_party(
+    doc_id: int,
+    payload: dict,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Belgenin müvekkil (case_party) atamasını değiştirir.
+    Body: { "case_party_id": 123 }  → o tarafa ata
+    Body: { "case_party_id": null } → dava geneline çek
+    """
+    db = SessionLocal()
+    try:
+        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+
+        # payload'da anahtar yoksa hata ver; null kesin olarak kabul edilir
+        if "case_party_id" not in payload:
+            raise HTTPException(status_code=400, detail="case_party_id alanı gerekli (null gönderilebilir)")
+
+        new_party_id = payload["case_party_id"]
+
+        if new_party_id is not None:
+            party = db.query(models.CaseParty).filter(
+                models.CaseParty.id == new_party_id,
+                models.CaseParty.case_id == doc.case_id,
+            ).first()
+            if not party:
+                raise HTTPException(status_code=404, detail="Bu davaya ait taraf bulunamadı")
+
+        doc.case_party_id = new_party_id
+        db.commit()
+
+        party_name = None
+        if new_party_id:
+            party = db.query(models.CaseParty).filter(models.CaseParty.id == new_party_id).first()
+            party_name = party.name if party else None
+
+        logger.info(f"Document #{doc_id} party updated → {new_party_id} ({party_name})")
+        return {"status": "success", "case_party_id": new_party_id, "case_party_name": party_name}
     finally:
         db.close()

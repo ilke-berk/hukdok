@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { X, Mail, Plus, Loader2, User, Check, ZapOff, Sparkles, Paperclip, FileText, Image, ArrowLeft, ArrowRight } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { X, Mail, Plus, Loader2, User, Check, ZapOff, Sparkles, Paperclip, FileText, Image, ArrowLeft, ArrowRight, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +47,7 @@ export function EmailModal({
 
     // Step: "setup" | "preview"
     const [step, setStep] = useState<"setup" | "preview">("setup");
+    const [showNoEmailConfirm, setShowNoEmailConfirm] = useState(false);
 
     const [sendEmail, setSendEmail] = useState(true);
     const [tebligTarihi, setTebligTarihi] = useState("");
@@ -75,6 +77,7 @@ export function EmailModal({
             setTebligTarihi("");
             setPerRecipientMessages({});
             setExtraAttachments([]);
+            setShowNoEmailConfirm(false);
         }
     }, [isOpen, defaultCc.length]);
 
@@ -171,6 +174,7 @@ export function EmailModal({
     };
 
     return (
+        <>
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className={cn(
                 "glass-card border-none shadow-2xl transition-all duration-300 flex flex-col",
@@ -447,7 +451,7 @@ export function EmailModal({
                                     <ArrowRight className="w-4 h-4 ml-2" />
                                 </Button>
                             ) : (
-                                <Button onClick={() => onConfirm([], [], false, tebligTarihi, undefined, undefined)} disabled={isLoading} className="min-w-[160px]">
+                                <Button onClick={() => setShowNoEmailConfirm(true)} disabled={isLoading} variant="outline" className="min-w-[160px] border-amber-500/50 text-amber-600 hover:bg-amber-500/10">
                                     <ZapOff className="w-4 h-4 mr-2" />
                                     E-Postasız Kaydet
                                 </Button>
@@ -477,5 +481,32 @@ export function EmailModal({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+
+        <AlertDialog open={showNoEmailConfirm} onOpenChange={setShowNoEmailConfirm}>
+
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+                        <AlertTriangle className="w-5 h-5" />
+                        E-posta gönderilmeyecek
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="text-base">
+                        Bu belgeyi <strong>e-posta göndermeden</strong> kaydedeceksiniz.
+                        <br /><br />
+                        İlgili kişiler bilgilendirilmeyecek. Devam etmek istediğinizden emin misiniz?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>Geri Dön (E-posta Ekle)</AlertDialogCancel>
+                    <AlertDialogAction
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                        onClick={() => onConfirm([], [], false, tebligTarihi, undefined, undefined)}
+                    >
+                        Evet, E-Postasız Kaydet
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     );
 }

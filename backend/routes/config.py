@@ -1,13 +1,14 @@
 import logging
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from dependencies import get_current_user
-from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtTypeItem, PartyRoleItem
+from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtTypeItem, PartyRoleItem, LawyerUpdateItem
 from managers.config_manager import DynamicConfig
 from managers.admin_manager import (
     get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects,
-    add_lawyer, delete_lawyer,
+    add_lawyer, update_lawyer, delete_lawyer,
     add_status, delete_status,
     add_doctype, delete_doctype,
     add_email_recipient, delete_email_recipient,
@@ -19,6 +20,7 @@ from managers.admin_manager import (
     get_cities, add_city, delete_city,
     get_specialties, add_specialty, delete_specialty,
     get_client_categories, add_client_category, delete_client_category,
+    get_file_statuses, add_file_status, delete_file_status,
     seed_all_lists,
     reorder_list,
 )
@@ -26,6 +28,28 @@ from managers.admin_manager import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _admin_emails() -> set:
+    raw = os.getenv("ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def require_admin(user: dict = Depends(get_current_user)):
+    email = (user.get("preferred_username") or user.get("email") or "").lower()
+    if email not in _admin_emails():
+        raise HTTPException(status_code=403, detail="Yönetici yetkisi gerekli")
+    return user
+
+
+# ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+@router.get("/api/config/is_admin")
+def api_is_admin(user: dict = Depends(get_current_user)):
+    email = (user.get("preferred_username") or user.get("email") or "").lower()
+    return {"is_admin": email in _admin_emails()}
+
+
+# ─── LAWYERS ──────────────────────────────────────────────────────────────────
 
 @router.get("/config/lawyers")
 @router.get("/api/config/lawyers")
@@ -37,6 +61,33 @@ def get_lawyers_endpoint(user: dict = Depends(get_current_user)):
     return lawyers
 
 
+@router.post("/api/config/lawyers")
+def api_add_lawyer(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_lawyer(item.code, item.name, tc_no=item.tc_no, sicil_no=item.sicil_no)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add lawyer")
+    return {"status": "success", "message": "Lawyer added"}
+
+
+@router.put("/api/config/lawyers/{code}")
+def api_update_lawyer(code: str, item: LawyerUpdateItem, user: dict = Depends(require_admin)):
+    success = update_lawyer(code, tc_no=item.tc_no, sicil_no=item.sicil_no,
+                            gorev=item.gorev, email=item.email, phone=item.phone, address=item.address)
+    if not success:
+        raise HTTPException(status_code=404, detail="Lawyer not found or failed to update")
+    return {"status": "success", "message": "Lawyer updated"}
+
+
+@router.delete("/api/config/lawyers/{code}")
+def api_delete_lawyer(code: str, user: dict = Depends(require_admin)):
+    success = delete_lawyer(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Lawyer not found or failed to delete")
+    return {"status": "success", "message": "Lawyer deleted"}
+
+
+# ─── STATUSES ─────────────────────────────────────────────────────────────────
+
 @router.get("/config/statuses")
 @router.get("/api/config/statuses")
 def get_statuses_endpoint(user: dict = Depends(get_current_user)):
@@ -46,6 +97,24 @@ def get_statuses_endpoint(user: dict = Depends(get_current_user)):
         statuses = get_statuses()
     return statuses
 
+
+@router.post("/api/config/statuses")
+def api_add_status(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_status(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add status")
+    return {"status": "success", "message": "Status added"}
+
+
+@router.delete("/api/config/statuses/{code}")
+def api_delete_status(code: str, user: dict = Depends(require_admin)):
+    success = delete_status(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Status not found or failed to delete")
+    return {"status": "success", "message": "Status deleted"}
+
+
+# ─── DOCTYPES ─────────────────────────────────────────────────────────────────
 
 @router.get("/config/doctypes")
 @router.get("/api/config/doctypes")
@@ -57,6 +126,24 @@ def get_doctypes_endpoint(user: dict = Depends(get_current_user)):
     return doctypes
 
 
+@router.post("/api/config/doctypes")
+def api_add_doctype(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_doctype(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add doctype")
+    return {"status": "success", "message": "Doctype added"}
+
+
+@router.delete("/api/config/doctypes/{code}")
+def api_delete_doctype(code: str, user: dict = Depends(require_admin)):
+    success = delete_doctype(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Doctype not found or failed to delete")
+    return {"status": "success", "message": "Doctype deleted"}
+
+
+# ─── CASE SUBJECTS ────────────────────────────────────────────────────────────
+
 @router.get("/config/case_subjects")
 @router.get("/api/config/case_subjects")
 def get_case_subjects_endpoint(user: dict = Depends(get_current_user)):
@@ -67,6 +154,24 @@ def get_case_subjects_endpoint(user: dict = Depends(get_current_user)):
     return subjects
 
 
+@router.post("/api/config/case_subjects")
+def api_add_case_subject(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_case_subject(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add case subject")
+    return {"status": "success", "message": "Case subject added"}
+
+
+@router.delete("/api/config/case_subjects/{code}")
+def api_delete_case_subject(code: str, user: dict = Depends(require_admin)):
+    success = delete_case_subject(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Case subject not found or failed to delete")
+    return {"status": "success", "message": "Case subject deleted"}
+
+
+# ─── EMAIL RECIPIENTS ─────────────────────────────────────────────────────────
+
 @router.get("/config/email_recipients")
 @router.get("/api/config/email_recipients")
 def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
@@ -75,56 +180,8 @@ def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
     return JSONResponse(content=data, headers={"Content-Type": "application/json; charset=utf-8"})
 
 
-@router.post("/api/config/lawyers")
-def api_add_lawyer(item: ConfigItem, user: dict = Depends(get_current_user)):
-    success = add_lawyer(item.code, item.name)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to add lawyer")
-    return {"status": "success", "message": "Lawyer added"}
-
-
-@router.delete("/api/config/lawyers/{code}")
-def api_delete_lawyer(code: str, user: dict = Depends(get_current_user)):
-    success = delete_lawyer(code)
-    if not success:
-        raise HTTPException(status_code=404, detail="Lawyer not found or failed to delete")
-    return {"status": "success", "message": "Lawyer deleted"}
-
-
-@router.post("/api/config/statuses")
-def api_add_status(item: ConfigItem, user: dict = Depends(get_current_user)):
-    success = add_status(item.code, item.name)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to add status")
-    return {"status": "success", "message": "Status added"}
-
-
-@router.delete("/api/config/statuses/{code}")
-def api_delete_status(code: str, user: dict = Depends(get_current_user)):
-    success = delete_status(code)
-    if not success:
-        raise HTTPException(status_code=404, detail="Status not found or failed to delete")
-    return {"status": "success", "message": "Status deleted"}
-
-
-@router.post("/api/config/doctypes")
-def api_add_doctype(item: ConfigItem, user: dict = Depends(get_current_user)):
-    success = add_doctype(item.code, item.name)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to add doctype")
-    return {"status": "success", "message": "Doctype added"}
-
-
-@router.delete("/api/config/doctypes/{code}")
-def api_delete_doctype(code: str, user: dict = Depends(get_current_user)):
-    success = delete_doctype(code)
-    if not success:
-        raise HTTPException(status_code=404, detail="Doctype not found or failed to delete")
-    return {"status": "success", "message": "Doctype deleted"}
-
-
 @router.post("/api/config/email_recipients")
-def api_add_email(item: EmailItem, user: dict = Depends(get_current_user)):
+def api_add_email(item: EmailItem, user: dict = Depends(require_admin)):
     success = add_email_recipient(item.name, item.email, item.description)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add email (maybe duplicate?)")
@@ -132,7 +189,7 @@ def api_add_email(item: EmailItem, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/api/config/email_recipients")
-def api_delete_email(request: DeleteRequest, user: dict = Depends(get_current_user)):
+def api_delete_email(request: DeleteRequest, user: dict = Depends(require_admin)):
     if not request.email:
         raise HTTPException(status_code=400, detail="Email required")
     success = delete_email_recipient(request.email)
@@ -141,24 +198,10 @@ def api_delete_email(request: DeleteRequest, user: dict = Depends(get_current_us
     return {"status": "success", "message": "Email deleted"}
 
 
-@router.post("/api/config/case_subjects")
-def api_add_case_subject(item: ConfigItem, user: dict = Depends(get_current_user)):
-    success = add_case_subject(item.code, item.name)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to add case subject")
-    return {"status": "success", "message": "Case subject added"}
-
-
-@router.delete("/api/config/case_subjects/{code}")
-def api_delete_case_subject(code: str, user: dict = Depends(get_current_user)):
-    success = delete_case_subject(code)
-    if not success:
-        raise HTTPException(status_code=404, detail="Case subject not found or failed to delete")
-    return {"status": "success", "message": "Case subject deleted"}
-
+# ─── REORDER ──────────────────────────────────────────────────────────────────
 
 @router.post("/api/config/reorder")
-def api_reorder_list(request: ReorderRequest, user: dict = Depends(get_current_user)):
+def api_reorder_list(request: ReorderRequest, user: dict = Depends(require_admin)):
     success = reorder_list(request.type, request.ordered_ids)
     if not success:
         raise HTTPException(status_code=500, detail="Reorder failed")
@@ -177,14 +220,14 @@ def api_get_file_types(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/file_types")
-def api_add_file_type(item: ConfigItem, user: dict = Depends(get_current_user)):
+def api_add_file_type(item: ConfigItem, user: dict = Depends(require_admin)):
     success = add_file_type(item.code, item.name)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add file type")
     return {"status": "success"}
 
 @router.delete("/api/config/file_types/{code}")
-def api_delete_file_type(code: str, user: dict = Depends(get_current_user)):
+def api_delete_file_type(code: str, user: dict = Depends(require_admin)):
     success = delete_file_type(code)
     if not success:
         raise HTTPException(status_code=404, detail="File type not found")
@@ -205,14 +248,14 @@ def api_get_court_types(parent_code: str = None, user: dict = Depends(get_curren
     return data
 
 @router.post("/api/config/court_types")
-def api_add_court_type(item: CourtTypeItem, user: dict = Depends(get_current_user)):
+def api_add_court_type(item: CourtTypeItem, user: dict = Depends(require_admin)):
     success = add_court_type(item.code, item.name, item.parent_code)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add court type")
     return {"status": "success"}
 
 @router.delete("/api/config/court_types/{code}")
-def api_delete_court_type(code: str, user: dict = Depends(get_current_user)):
+def api_delete_court_type(code: str, user: dict = Depends(require_admin)):
     success = delete_court_type(code)
     if not success:
         raise HTTPException(status_code=404, detail="Court type not found")
@@ -231,14 +274,14 @@ def api_get_party_roles(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/party_roles")
-def api_add_party_role(item: PartyRoleItem, user: dict = Depends(get_current_user)):
+def api_add_party_role(item: PartyRoleItem, user: dict = Depends(require_admin)):
     success = add_party_role(item.code, item.name, item.role_type)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add party role")
     return {"status": "success"}
 
 @router.delete("/api/config/party_roles/{code}")
-def api_delete_party_role(code: str, user: dict = Depends(get_current_user)):
+def api_delete_party_role(code: str, user: dict = Depends(require_admin)):
     success = delete_party_role(code)
     if not success:
         raise HTTPException(status_code=404, detail="Party role not found")
@@ -257,14 +300,14 @@ def api_get_bureau_types(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/bureau_types")
-def api_add_bureau_type(item: ConfigItem, user: dict = Depends(get_current_user)):
+def api_add_bureau_type(item: ConfigItem, user: dict = Depends(require_admin)):
     success = add_bureau_type(item.code, item.name)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add bureau type")
     return {"status": "success"}
 
 @router.delete("/api/config/bureau_types/{code}")
-def api_delete_bureau_type(code: str, user: dict = Depends(get_current_user)):
+def api_delete_bureau_type(code: str, user: dict = Depends(require_admin)):
     success = delete_bureau_type(code)
     if not success:
         raise HTTPException(status_code=404, detail="Bureau type not found")
@@ -283,14 +326,14 @@ def api_get_cities(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/cities")
-def api_add_city(item: ConfigItem, user: dict = Depends(get_current_user)):
+def api_add_city(item: ConfigItem, user: dict = Depends(require_admin)):
     success = add_city(item.code, item.name)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add city")
     return {"status": "success"}
 
 @router.delete("/api/config/cities/{code}")
-def api_delete_city(code: str, user: dict = Depends(get_current_user)):
+def api_delete_city(code: str, user: dict = Depends(require_admin)):
     success = delete_city(code)
     if not success:
         raise HTTPException(status_code=404, detail="City not found")
@@ -309,14 +352,14 @@ def api_get_specialties(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/specialties")
-def api_add_specialty(item: ConfigItem, user: dict = Depends(get_current_user)):
+def api_add_specialty(item: ConfigItem, user: dict = Depends(require_admin)):
     success = add_specialty(item.code, item.name)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add specialty")
     return {"status": "success"}
 
 @router.delete("/api/config/specialties/{code}")
-def api_delete_specialty(code: str, user: dict = Depends(get_current_user)):
+def api_delete_specialty(code: str, user: dict = Depends(require_admin)):
     success = delete_specialty(code)
     if not success:
         raise HTTPException(status_code=404, detail="Specialty not found")
@@ -335,25 +378,49 @@ def api_get_client_categories(user: dict = Depends(get_current_user)):
     return data
 
 @router.post("/api/config/client_categories")
-def api_add_client_category(item: ConfigItem, user: dict = Depends(get_current_user)):
+def api_add_client_category(item: ConfigItem, user: dict = Depends(require_admin)):
     success = add_client_category(item.code, item.name)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add client category")
     return {"status": "success"}
 
 @router.delete("/api/config/client_categories/{code}")
-def api_delete_client_category(code: str, user: dict = Depends(get_current_user)):
+def api_delete_client_category(code: str, user: dict = Depends(require_admin)):
     success = delete_client_category(code)
     if not success:
         raise HTTPException(status_code=404, detail="Client category not found")
     return {"status": "success"}
 
 
+# ─── FILE STATUSES ────────────────────────────────────────────────────────────
+
+@router.get("/api/config/file_statuses")
+def api_get_file_statuses(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_file_statuses()
+    if not data:
+        data = get_file_statuses()
+    return data
+
+@router.post("/api/config/file_statuses")
+def api_add_file_status(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_file_status(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add file status")
+    return {"status": "success"}
+
+@router.delete("/api/config/file_statuses/{code}")
+def api_delete_file_status(code: str, user: dict = Depends(require_admin)):
+    success = delete_file_status(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="File status not found")
+    return {"status": "success"}
+
+
 # ─── SEED ─────────────────────────────────────────────────────────────────────
 
 @router.post("/api/config/seed")
-def api_seed_all(user: dict = Depends(get_current_user)):
-    # Ensure new tables exist before seeding
+def api_seed_all(user: dict = Depends(require_admin)):
     try:
         from database import Base, engine
         import models  # noqa — registers models in metadata

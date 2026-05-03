@@ -103,10 +103,10 @@ export const Header = () => {
         <ThemeToggle />
       </div>
       <div className="container mx-auto">
-        <div className="flex items-center justify-center gap-4 mb-3">
+        <div className="flex items-center justify-center gap-4 mb-3 cursor-pointer" onClick={() => navigate("/")}>
           <HukdokLogo className="drop-shadow-lg transition-transform hover:scale-105" />
         </div>
-        <h1 className="text-4xl font-bold text-center mb-2 tracking-tight drop-shadow-lg">HUKDOK</h1>
+        <h1 className="text-4xl font-bold text-center mb-2 tracking-tight drop-shadow-lg cursor-pointer" onClick={() => navigate("/")}>HUKDOK</h1>
         <p className="text-center text-sm opacity-90 font-medium tracking-wide">
           HANYALOĞLU&ACAR HUKUK BÜROSU DÖKÜMAN OTOMASYON SİSTEMİ BY TRAGIC
         </p>

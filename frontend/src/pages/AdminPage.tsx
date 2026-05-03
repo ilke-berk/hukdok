@@ -82,8 +82,9 @@ const AdminPage = () => {
     const {
         lawyers, statuses, doctypes, emailRecipients, caseSubjects,
         fileTypes, courtTypes, partyRoles, bureauTypes, cities, specialties, clientCategories,
+        fileStatuses,
         isLoading,
-        addLawyer, deleteLawyer,
+        addLawyer, updateLawyer, deleteLawyer,
         addStatus, deleteStatus,
         addDoctype, deleteDoctype,
         addEmail, deleteEmail,
@@ -95,6 +96,7 @@ const AdminPage = () => {
         addCity, deleteCity,
         addSpecialty, deleteSpecialty,
         addClientCategory, deleteClientCategory,
+        addFileStatus, deleteFileStatus,
         reorderList
     } = useConfig();
 
@@ -112,12 +114,16 @@ const AdminPage = () => {
     const [localCities, setLocalCities] = useState<ConfigItem[]>([]);
     const [localSpecialties, setLocalSpecialties] = useState<ConfigItem[]>([]);
     const [localClientCategories, setLocalClientCategories] = useState<ConfigItem[]>([]);
+    const [localFileStatuses, setLocalFileStatuses] = useState<ConfigItem[]>([]);
 
     // Court types: filtered by selected parent
     const [courtParentFilter, setCourtParentFilter] = useState<string>("");
     const [localCourtTypes, setLocalCourtTypes] = useState<ConfigItem[]>([]);
 
-    useEffect(() => { setLocalLawyers(lawyers); }, [lawyers]);
+    useEffect(() => {
+        const gorevOrder: Record<string, number> = { 'AVUKAT': 0, 'DIŞ AVUKAT': 1, 'DİĞER': 2 };
+        setLocalLawyers([...lawyers].sort((a, b) => (gorevOrder[a.gorev ?? ''] ?? 3) - (gorevOrder[b.gorev ?? ''] ?? 3)));
+    }, [lawyers]);
     useEffect(() => { setLocalStatuses(statuses); }, [statuses]);
     useEffect(() => { setLocalDocTypes(doctypes); }, [doctypes]);
     useEffect(() => { setLocalEmails(emailRecipients); }, [emailRecipients]);
@@ -128,6 +134,7 @@ const AdminPage = () => {
     useEffect(() => { setLocalCities(cities); }, [cities]);
     useEffect(() => { setLocalSpecialties(specialties); }, [specialties]);
     useEffect(() => { setLocalClientCategories(clientCategories); }, [clientCategories]);
+    useEffect(() => { setLocalFileStatuses(fileStatuses); }, [fileStatuses]);
     useEffect(() => {
         const filtered = courtParentFilter
             ? courtTypes.filter(c => c.parent_code === courtParentFilter)
@@ -175,6 +182,8 @@ const AdminPage = () => {
                 currentList = localSpecialties; setList = setLocalSpecialties; type = "specialties";
             } else if (activeTab === "client_categories") {
                 currentList = localClientCategories; setList = setLocalClientCategories; type = "client_categories";
+            } else if (activeTab === "file_statuses") {
+                currentList = localFileStatuses; setList = setLocalFileStatuses; type = "file_statuses";
             }
 
             oldIndex = currentList.findIndex(item => (item.code || item.email) === active.id);
@@ -210,9 +219,10 @@ const AdminPage = () => {
     const [isCityAddOpen, setIsCityAddOpen] = useState(false);
     const [isSpecialtyAddOpen, setIsSpecialtyAddOpen] = useState(false);
     const [isClientCategoryAddOpen, setIsClientCategoryAddOpen] = useState(false);
+    const [isFileStatusAddOpen, setIsFileStatusAddOpen] = useState(false);
 
     // Form States
-    const [lawyerForm, setLawyerForm] = useState({ code: "", name: "" });
+    const [lawyerForm, setLawyerForm] = useState({ code: "", name: "", tc_no: "", sicil_no: "" });
     const [statusForm, setStatusForm] = useState({ code: "", name: "" });
     const [docTypeForm, setDocTypeForm] = useState({ code: "", name: "" });
     const [emailForm, setEmailForm] = useState({ email: "", name: "", description: "" });
@@ -224,6 +234,7 @@ const AdminPage = () => {
     const [cityForm, setCityForm] = useState({ code: "", name: "" });
     const [specialtyForm, setSpecialtyForm] = useState({ code: "", name: "" });
     const [clientCategoryForm, setClientCategoryForm] = useState({ code: "", name: "" });
+    const [fileStatusForm, setFileStatusForm] = useState({ name: "" });
     const [citySearch, setCitySearch] = useState("");
     const [specialtySearch, setSpecialtySearch] = useState("");
 
@@ -246,6 +257,7 @@ const AdminPage = () => {
             else if (type === "city" && item.code) success = await deleteCity(item.code);
             else if (type === "specialty" && item.code) success = await deleteSpecialty(item.code);
             else if (type === "client_category" && item.code) success = await deleteClientCategory(item.code);
+            else if (type === "file_status" && item.code) success = await deleteFileStatus(item.code);
 
             if (success) {
                 toast.success("Silindi!");
@@ -259,12 +271,29 @@ const AdminPage = () => {
     };
 
     // --- SAVE HANDLERS ---
+    // Avukat inline düzenleme
+    const [editingLawyer, setEditingLawyer] = useState<{ code: string; tc: string; sicil: string; gorev: string; email: string; phone: string; address: string } | null>(null);
+
     const handleSaveLawyer = async () => {
         if (!lawyerForm.code || !lawyerForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
         setIsSubmitting(true);
-        const success = await addLawyer(lawyerForm.code, lawyerForm.name);
+        const success = await addLawyer(lawyerForm.code, lawyerForm.name, lawyerForm.tc_no || undefined, lawyerForm.sicil_no || undefined);
         setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsLawyerAddOpen(false); setLawyerForm({ code: "", name: "" }); }
+        if (success) { toast.success("Eklendi"); setIsLawyerAddOpen(false); setLawyerForm({ code: "", name: "", tc_no: "", sicil_no: "" }); }
+        else toast.error("Hata");
+    };
+
+    const handleSaveLawyerEdit = async () => {
+        if (!editingLawyer) return;
+        setIsSubmitting(true);
+        const success = await updateLawyer(
+            editingLawyer.code,
+            editingLawyer.tc, editingLawyer.sicil,
+            editingLawyer.gorev, editingLawyer.email,
+            editingLawyer.phone, editingLawyer.address,
+        );
+        setIsSubmitting(false);
+        if (success) { toast.success("Kaydedildi"); setEditingLawyer(null); }
         else toast.error("Hata");
     };
     const handleSaveStatus = async () => {
@@ -371,6 +400,16 @@ const AdminPage = () => {
         else toast.error("Hata");
     };
 
+    const handleSaveFileStatus = async () => {
+        if (!fileStatusForm.name) { toast.warning("İsim zorunlu"); return; }
+        const code = fileStatusForm.name.toUpperCase().replace(/\s/g, "-").replace(/\//g, "-").replace(/İ/g, "I").replace(/Ş/g, "S").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ö/g, "O").replace(/Ç/g, "C");
+        setIsSubmitting(true);
+        const success = await addFileStatus(code, fileStatusForm.name);
+        setIsSubmitting(false);
+        if (success) { toast.success("Eklendi"); setIsFileStatusAddOpen(false); setFileStatusForm({ name: "" }); }
+        else toast.error("Hata");
+    };
+
     const { authRequest } = useAuthRequest();
     const queryClient = useQueryClient();
 
@@ -406,6 +445,7 @@ const AdminPage = () => {
                         <TabsTrigger value="party_roles">Taraf Rolleri</TabsTrigger>
                         <TabsTrigger value="bureau_types">Büro Türleri</TabsTrigger>
                         <TabsTrigger value="client_categories">Kategoriler</TabsTrigger>
+                        <TabsTrigger value="file_statuses">Dosya Durumları</TabsTrigger>
                         <TabsTrigger value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger value="cities">Şehirler</TabsTrigger>
                     </TabsList>
@@ -422,23 +462,74 @@ const AdminPage = () => {
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Avukat Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={lawyerForm.code} onChange={e => setLawyerForm({ ...lawyerForm, code: e.target.value })} className="col-span-3" /></div>
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={lawyerForm.name} onChange={e => setLawyerForm({ ...lawyerForm, name: e.target.value })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={lawyerForm.code} onChange={e => setLawyerForm({ ...lawyerForm, code: e.target.value })} className="col-span-3" placeholder="AGB" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={lawyerForm.name} onChange={e => setLawyerForm({ ...lawyerForm, name: e.target.value })} className="col-span-3" placeholder="Av. Ahmet Güzel" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">T.C. No</Label><Input value={lawyerForm.tc_no} onChange={e => setLawyerForm({ ...lawyerForm, tc_no: e.target.value })} className="col-span-3 font-mono" placeholder="00000000000" maxLength={11} /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Sicil No</Label><Input value={lawyerForm.sicil_no} onChange={e => setLawyerForm({ ...lawyerForm, sicil_no: e.target.value })} className="col-span-3 font-mono" placeholder="12345" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveLawyer} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
                                     </Dialog>
                                 </CardHeader>
                                 <CardContent>
+                                    {/* Avukat düzenleme dialogu */}
+                                    <Dialog open={!!editingLawyer} onOpenChange={open => !open && setEditingLawyer(null)}>
+                                        <DialogContent className="max-w-lg">
+                                            <DialogHeader>
+                                                <DialogTitle>Avukat Düzenle</DialogTitle>
+                                                <DialogDescription className="font-mono text-xs">{editingLawyer?.code}</DialogDescription>
+                                            </DialogHeader>
+                                            <div className="grid gap-3 py-2">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1"><Label className="text-xs">T.C. No</Label><Input value={editingLawyer?.tc ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, tc: e.target.value } : null)} className="font-mono" maxLength={11} placeholder="00000000000" /></div>
+                                                    <div className="space-y-1"><Label className="text-xs">Baro Sicil No</Label><Input value={editingLawyer?.sicil ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, sicil: e.target.value } : null)} className="font-mono" placeholder="12345" /></div>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1"><Label className="text-xs">E-posta</Label><Input value={editingLawyer?.email ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, email: e.target.value } : null)} placeholder="av@ornek.com" /></div>
+                                                    <div className="space-y-1"><Label className="text-xs">Telefon</Label><Input value={editingLawyer?.phone ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, phone: e.target.value } : null)} placeholder="(532) 000 0000" /></div>
+                                                </div>
+                                                <div className="space-y-1"><Label className="text-xs">Görev</Label>
+                                                    <select value={editingLawyer?.gorev ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, gorev: e.target.value } : null)} className="w-full border rounded px-2 py-1.5 text-sm bg-background text-foreground border-border">
+                                                        <option value="">— Seçiniz —</option>
+                                                        <option value="AVUKAT">AVUKAT</option>
+                                                        <option value="DIŞ AVUKAT">DIŞ AVUKAT</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1"><Label className="text-xs">Adres</Label><Input value={editingLawyer?.address ?? ""} onChange={e => setEditingLawyer(p => p ? { ...p, address: e.target.value } : null)} placeholder="Mahalle, Cadde, No, İlçe, İl" /></div>
+                                            </div>
+                                            <DialogFooter>
+                                                <Button variant="outline" onClick={() => setEditingLawyer(null)}>İptal</Button>
+                                                <Button onClick={handleSaveLawyerEdit} disabled={isSubmitting}>Kaydet</Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
                                     <Table>
-                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Ad Soyad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead className="w-[50px]"></TableHead>
+                                                <TableHead>Kod</TableHead>
+                                                <TableHead>Ad Soyad</TableHead>
+                                                <TableHead>Görev</TableHead>
+                                                <TableHead>T.C. No</TableHead>
+                                                <TableHead>Sicil</TableHead>
+                                                <TableHead>E-posta</TableHead>
+                                                <TableHead>Telefon</TableHead>
+                                                <TableHead className="text-right">İşlemler</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
                                         <TableBody>
                                             <SortableContext items={localLawyers.map(i => i.code)} strategy={verticalListSortingStrategy}>
                                                 {localLawyers.map((item) => (
                                                     <SortableRow key={item.code} id={item.code}>
-                                                        <TableCell className="font-mono">{item.code}</TableCell>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
+                                                        <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
+                                                        <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
+                                                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.gorev || <span className="opacity-30">—</span>}</TableCell>
+                                                        <TableCell className="font-mono text-xs">{item.tc_no || <span className="opacity-30">—</span>}</TableCell>
+                                                        <TableCell className="font-mono text-xs">{item.sicil_no || <span className="opacity-30">—</span>}</TableCell>
+                                                        <TableCell className="text-xs">{item.email || <span className="opacity-30">—</span>}</TableCell>
+                                                        <TableCell className="text-xs whitespace-nowrap">{item.phone || <span className="opacity-30">—</span>}</TableCell>
                                                         <TableCell className="text-right">
+                                                            <Button variant="ghost" size="icon" onClick={() => setEditingLawyer({ code: item.code, tc: item.tc_no ?? "", sicil: item.sicil_no ?? "", gorev: item.gorev ?? "", email: item.email ?? "", phone: item.phone ?? "", address: item.address ?? "" })}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
                                                             <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "lawyer")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                                         </TableCell>
                                                     </SortableRow>
@@ -794,6 +885,42 @@ const AdminPage = () => {
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
                                                             <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "client_category")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                                        </TableCell>
+                                                    </SortableRow>
+                                                ))}
+                                            </SortableContext>
+                                        </TableBody>
+                                    </Table>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        {/* DOSYA DURUMLARI TAB */}
+                        <TabsContent value="file_statuses">
+                            <Card>
+                                <CardHeader className="flex flex-row items-center justify-between">
+                                    <CardTitle>Dosya Son Durumları</CardTitle>
+                                    <Dialog open={isFileStatusAddOpen} onOpenChange={setIsFileStatusAddOpen}>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Durum</Button></DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader><DialogTitle>Yeni Dosya Durumu Ekle</DialogTitle></DialogHeader>
+                                            <div className="grid gap-4 py-4">
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={fileStatusForm.name} onChange={e => setFileStatusForm({ name: e.target.value })} className="col-span-3" placeholder="Bilirkişide" /></div>
+                                            </div>
+                                            <DialogFooter><Button onClick={handleSaveFileStatus} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </CardHeader>
+                                <CardContent>
+                                    <Table>
+                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableBody>
+                                            <SortableContext items={localFileStatuses.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
+                                                {localFileStatuses.map((item) => (
+                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
+                                                        <TableCell className="font-medium">{item.name}</TableCell>
+                                                        <TableCell className="text-right">
+                                                            <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "file_status")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                                         </TableCell>
                                                     </SortableRow>
                                                 ))}

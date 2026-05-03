@@ -131,10 +131,20 @@ def _save_case_document(
         resolved_party_id = case_party_id
         if resolved_party_id is None and case_id and muvekkil_adi:
             try:
-                party = db.query(models.CaseParty).filter(
-                    models.CaseParty.case_id == case_id,
-                    models.CaseParty.name.ilike(muvekkil_adi.strip()),
-                ).first()
+                clean_name = muvekkil_adi.strip()
+                # Önce tam eşleşme dene, sonra isim başlangıcıyla (kısmi ad farklarına karşı)
+                party = (
+                    db.query(models.CaseParty).filter(
+                        models.CaseParty.case_id == case_id,
+                        models.CaseParty.party_type == "CLIENT",
+                        models.CaseParty.name.ilike(clean_name),
+                    ).first()
+                    or db.query(models.CaseParty).filter(
+                        models.CaseParty.case_id == case_id,
+                        models.CaseParty.party_type == "CLIENT",
+                        models.CaseParty.name.ilike(f"%{clean_name}%"),
+                    ).first()
+                )
                 if party:
                     resolved_party_id = party.id
             except Exception as e:
@@ -155,6 +165,14 @@ def _save_case_document(
             uploaded_by=uploaded_by,
         )
         db.add(doc)
+
+        # Belge yüklendiğinde ilişkili davanın updated_at'ini güncelle
+        # böylece ana sayfada "son belge eklenen davalar" öne çıksın
+        if case_id:
+            case = db.query(models.Case).filter(models.Case.id == case_id).first()
+            if case:
+                case.updated_at = datetime.now()
+
         db.commit()
         db.refresh(doc)
         doc_id = doc.id
@@ -326,6 +344,7 @@ async def preview_email_body(
 async def analyze_file_endpoint(
     request: Request,
     file: UploadFile = File(...),
+    belge_turu_kodu: Optional[str] = Form(None),
     user: dict = Depends(get_current_user),
 ):
     """Step 1: Analyze File (Stream)"""
@@ -359,7 +378,8 @@ async def analyze_file_endpoint(
         raise
     except Exception as e:
         safe_remove(temp_path)
-        raise HTTPException(status_code=500, detail=f"Dosya yükleme hatası: {str(e)}")
+        logger.error(f"Dosya yükleme hatası: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Dosya yüklenemedi. Lütfen tekrar deneyin.")
 
     # Faz 3: cleanup stale cache entries on each /process call
     _cleanup_process_cache()
@@ -388,7 +408,7 @@ async def analyze_file_endpoint(
             counter_task = asyncio.create_task(fetch_counter())
 
             t1 = time.perf_counter()
-            generator = analyze_file_generator(temp_path, file_hash=file_hash, process_id=process_id)
+            generator = analyze_file_generator(temp_path, file_hash=file_hash, process_id=process_id, preset_belge_turu_kodu=belge_turu_kodu or None)
             final_data = None
 
             async for step in generator:
@@ -509,6 +529,8 @@ async def confirm_process(
     custom_email_message: str = Form(None),
     custom_messages_json: str = Form(None),
     extra_attachment_files: list[UploadFile] = File(default=[]),
+    sonraki_durusma_tarihi: str = Form(None),
+    sonraki_durusma_saati: str = Form(None),
     user: dict = Depends(get_current_user),
 ):
     """Step 2: Confirm Process - Rename, Upload to SharePoint, Link to Case"""
@@ -587,7 +609,8 @@ async def confirm_process(
             raise
         except Exception as e:
             safe_remove(temp_path)
-            raise HTTPException(status_code=500, detail=f"Failed to save temp file: {e}")
+            logger.error(f"Geçici dosya kaydetme hatası: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Dosya kaydedilemedi. Lütfen tekrar deneyin.")
 
     source_path = temp_path
     log_id = None
@@ -715,7 +738,22 @@ async def confirm_process(
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None):
+    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None):
+        def _update_email_status(success: bool, error_msg: str = None):
+            if not doc_id:
+                return
+            try:
+                db_upd = SessionLocal()
+                doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+                if doc_rec:
+                    doc_rec.email_sent = success
+                    doc_rec.email_error = None if success else error_msg
+                    db_upd.commit()
+            except Exception as db_err:
+                logging.error(f"Email status DB update error (doc_id={doc_id}): {db_err}")
+            finally:
+                db_upd.close()
+
         try:
             from email_sender import send_document_notification
             result = send_document_notification(
@@ -730,10 +768,15 @@ async def confirm_process(
                 extra_attachment_paths=extra_paths,
                 sender_name=sender_name,
             )
-            if not result["success"]:
-                logging.warning(f"E-posta gönderilemedi: {result['message']}")
+            if result["success"]:
+                TechnicalLogger.log("INFO", f"E-posta gönderildi: {filename} → {len(to_list)} alıcı")
+                _update_email_status(True)
+            else:
+                TechnicalLogger.log("WARNING", f"E-posta gönderilemedi: {filename} — {result['message']}")
+                _update_email_status(False, result["message"])
         except Exception as e:
             TechnicalLogger.log("ERROR", f"Async Email Error: {e}")
+            _update_email_status(False, str(e))
         finally:
             # Extra temp dosyalarını temizle
             if extra_paths:
@@ -764,17 +807,39 @@ async def confirm_process(
 
     email_file_path = final_local_path
 
-    if send_email and email_file_path and os.path.exists(email_file_path):
-        background_tasks.add_task(
-            _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
-            custom_email_message or None, custom_messages or None, extra_temp_paths or None, current_user_name
-        )
-        timings["7_email"] = 0.00
-        results["email"] = "Arka Plana Atıldı"
-    elif not send_email:
-        results["email"] = "Kullanıcı tarafından atlandı"
+    def _email_pre_check() -> str | None:
+        """Gönderim kesinlikle olmayacaksa neden döndürür, yoksa None."""
+        if not email_file_path or not os.path.exists(email_file_path):
+            return "Dosya bulunamadı"
+        try:
+            from email_sender import _get_email_config
+            cfg = _get_email_config()
+            if not cfg["enabled"]:
+                return "E-posta özelliği kapalı (EMAIL_ENABLED=false)"
+            if not custom_to and not cfg["test_mode"]:
+                return "Alıcı listesi boş"
+        except Exception:
+            pass
+        return None
+
+    if send_email:
+        pre_check_error = _email_pre_check()
+        if pre_check_error:
+            results["email"] = f"Gönderilemedi: {pre_check_error}"
+            results["email_warning"] = pre_check_error
+            TechnicalLogger.log("WARNING", f"E-posta ön-kontrol başarısız: {pre_check_error} — {new_filename}")
+        else:
+            background_tasks.add_task(
+                _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
+                custom_email_message or None, custom_messages or None, extra_temp_paths or None, current_user_name,
+                doc_id
+            )
+            timings["7_email"] = 0.00
+            results["email"] = "Arka Plana Atıldı"
+            results["email_warning"] = None
     else:
-        results["email"] = "Dosya bulunamadı"
+        results["email"] = "Kullanıcı tarafından atlandı"
+        results["email_warning"] = None
 
     download_id = None
     if email_file_path and os.path.exists(email_file_path):
@@ -814,9 +879,40 @@ async def confirm_process(
         results["auto_enrichment"] = _auto_enrich_case_data(
             linked_case_id, avukat_kodu, karsi_taraf, current_user_name
         )
+
+        # Duruşma/tensip zaptından gelen sonraki duruşma tarihini ajandaya kaydet
+        _btk_up = (belge_turu_kodu or "").upper()
+        if sonraki_durusma_tarihi and any(kw in _btk_up for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP")):
+            try:
+                from datetime import date as _date
+                parsed_hearing = _date.fromisoformat(sonraki_durusma_tarihi)
+                db_h = SessionLocal()
+                case_h = db_h.query(models.Case).filter(models.Case.id == linked_case_id).first()
+                hearing = models.HearingDate(
+                    case_id=linked_case_id,
+                    hearing_date=parsed_hearing,
+                    hearing_time=sonraki_durusma_saati or None,
+                    lawyer_name=avukat_adi or (case_h.responsible_lawyer_name if case_h else None),
+                    extracted_from_doc=new_filename,
+                    created_by=current_user_name,
+                )
+                db_h.add(hearing)
+                db_h.commit()
+                results["hearing_date_saved"] = sonraki_durusma_tarihi
+                results["hearing_time_saved"] = sonraki_durusma_saati or None
+                logging.info(f"HearingDate kaydedildi: case_id={linked_case_id}, tarih={parsed_hearing}, saat={sonraki_durusma_saati}")
+                db_h.close()
+            except Exception as e:
+                logging.error(f"HearingDate kaydetme hatası: {e}")
+                results["hearing_date_saved"] = None
+                results["hearing_time_saved"] = None
+        else:
+            results["hearing_date_saved"] = None
+            results["hearing_time_saved"] = None
     else:
         results["auto_status_update"] = False
         results["auto_enrichment"] = {}
+        results["hearing_date_saved"] = None
 
     total_time = perf_time.perf_counter() - confirm_start
     timings["TOTAL"] = total_time

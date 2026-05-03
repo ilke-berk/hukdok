@@ -146,6 +146,27 @@ def check_and_migrate_tables():
                         logger.info("Added mobile_phone to clients")
                     except Exception as e: logger.error(f"Migration error for clients.mobile_phone: {e}")
 
+                # Excel import alanları (cari_mikro_guncellendi.xlsx)
+                new_client_columns = {
+                    "il":                  "VARCHAR(100)",
+                    "sektor":              "VARCHAR(200)",
+                    "yevmiye_no":          "VARCHAR(50)",
+                    "noterlik":            "VARCHAR(200)",
+                    "vekaletname_tarihi":  "DATE",
+                    "vekil_avukatlar":     "TEXT",
+                    "gecerlilik_tarihi":   "DATE",
+                    "vekalet_no":          "VARCHAR(50)",
+                    "buro_vekalet_no":     "VARCHAR(50)",
+                }
+                for col_name, col_type in new_client_columns.items():
+                    if col_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE clients ADD COLUMN {col_name} {col_type}'))
+                            conn.commit()
+                            logger.info(f"Added {col_name} to clients")
+                        except Exception as e:
+                            logger.error(f"Migration error for clients.{col_name}: {e}")
+
             # 3. CASES MIGRATION (service_type + new import fields)
             if "cases" in inspector.get_table_names():
                 columns = [col['name'] for col in inspector.get_columns("cases")]
@@ -187,9 +208,31 @@ def check_and_migrate_tables():
                         logger.info("Added gender to case_parties")
                     except Exception as e: logger.error(f"Migration error for case_parties.gender: {e}")
 
-            # 5. CASE_DOCUMENTS MIGRATION (case_party_id)
+            # 5. CASE_DOCUMENTS MIGRATION (case_party_id, sharepoint_url, email_sent, email_error)
             if "case_documents" in inspector.get_table_names():
                 columns = [col['name'] for col in inspector.get_columns("case_documents")]
+
+                if "sharepoint_url" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE case_documents ADD COLUMN sharepoint_url TEXT'))
+                        conn.commit()
+                        logger.info("Added sharepoint_url to case_documents")
+                    except Exception as e: logger.error(f"Migration error for case_documents.sharepoint_url: {e}")
+
+                if "email_sent" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE case_documents ADD COLUMN email_sent BOOLEAN'))
+                        conn.commit()
+                        logger.info("Added email_sent to case_documents")
+                    except Exception as e: logger.error(f"Migration error for case_documents.email_sent: {e}")
+
+                if "email_error" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE case_documents ADD COLUMN email_error TEXT'))
+                        conn.commit()
+                        logger.info("Added email_error to case_documents")
+                    except Exception as e: logger.error(f"Migration error for case_documents.email_error: {e}")
+
                 if "case_party_id" not in columns:
                     try:
                         conn.execute(text('ALTER TABLE case_documents ADD COLUMN case_party_id INTEGER REFERENCES case_parties(id) ON DELETE SET NULL'))
@@ -208,6 +251,161 @@ def check_and_migrate_tables():
                         conn.commit()
                         logger.info("Backfilled case_party_id from muvekkil_adi")
                     except Exception as e: logger.error(f"Migration error for case_documents.case_party_id: {e}")
+
+            # 6. CASE_RELATIONS TABLE
+            if "case_relations" not in inspector.get_table_names():
+                try:
+                    conn.execute(text("""
+                        CREATE TABLE case_relations (
+                            id SERIAL PRIMARY KEY,
+                            source_case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                            target_case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                            relation_type VARCHAR(30) NOT NULL DEFAULT 'ILGILI',
+                            note TEXT,
+                            created_by VARCHAR(100),
+                            created_at TIMESTAMPTZ DEFAULT now(),
+                            CONSTRAINT uq_case_relation UNIQUE (source_case_id, target_case_id)
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX idx_case_relations_source ON case_relations(source_case_id)"))
+                    conn.execute(text("CREATE INDEX idx_case_relations_target ON case_relations(target_case_id)"))
+                    conn.commit()
+                    logger.info("Created case_relations table")
+                except Exception as e:
+                    logger.error(f"Migration error for case_relations: {e}")
+
+            # 7. CASES TRACKING MIGRATION
+            if "cases" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("cases")]
+
+                # Rename eski kolonlar
+                rename_map = {
+                    "istinaf_tarihi":  "istinaf_basvuru_tarihi",
+                    "istinaf_sonucu":  "istinaf_karar_durumu",
+                    "temyiz_tarihi":   "temyiz_basvuru_tarihi",
+                    "temyiz_sonucu":   "temyiz_karar_durumu",
+                }
+                for old_name, new_name in rename_map.items():
+                    if old_name in columns and new_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE cases RENAME COLUMN {old_name} TO {new_name}'))
+                            conn.commit()
+                            logger.info(f"Renamed cases.{old_name} → {new_name}")
+                        except Exception as e:
+                            logger.error(f"Migration rename error for cases.{old_name}: {e}")
+                # Kolon listesini yenile
+                columns = [col['name'] for col in inspector.get_columns("cases")]
+
+                tracking_columns = {
+                    # Mevcut (ilk set)
+                    "case_stage":                   "VARCHAR(50)",
+                    "dosya_son_durumu":             "VARCHAR(100)",
+                    "karar_tarihi":                 "DATE",
+                    "karar_turu":                   "VARCHAR(50)",
+                    "karar_lehine":                 "VARCHAR(20)",
+                    "istinaf_basvuru_tarihi":        "DATE",
+                    "istinaf_karar_durumu":          "VARCHAR(100)",
+                    "istinaf_karar_tarihi":          "DATE",
+                    "temyiz_basvuru_tarihi":         "DATE",
+                    "temyiz_karar_durumu":           "VARCHAR(100)",
+                    "temyiz_karar_tarihi":           "DATE",
+                    "kesinlesme_tarihi":             "DATE",
+                    "infaz_tarihi":                  "DATE",
+                    # Yeni — Yerel Karar
+                    "karar_no":                     "VARCHAR(50)",
+                    "karar_teblig_tarihi":          "DATE",
+                    "karar_aciklama":               "TEXT",
+                    # Yeni — İstinaf
+                    "istinaf_mahkemesi":            "VARCHAR(200)",
+                    "istinaf_esas_no":              "VARCHAR(50)",
+                    "istinaf_karar_no":             "VARCHAR(50)",
+                    "istinaf_karar_aciklama":       "TEXT",
+                    "istinaf_teblig_tarihi":        "DATE",
+                    # Yeni — Temyiz
+                    "temyiz_mahkemesi":             "VARCHAR(200)",
+                    "temyiz_esas_no":               "VARCHAR(50)",
+                    "temyiz_karar_no":              "VARCHAR(50)",
+                    "temyiz_eden_durumu":           "VARCHAR(100)",
+                    "temyiz_karar_aciklama":        "TEXT",
+                    "temyiz_teblig_tarihi":         "DATE",
+                    # Yeni — Karar Düzeltme
+                    "karar_duzeltme_durumu":        "VARCHAR(100)",
+                    "karar_duzeltme_esas_no":       "VARCHAR(50)",
+                    "karar_duzeltme_karar_no":      "VARCHAR(50)",
+                    "karar_duzeltme_tarihi":        "DATE",
+                    "karar_duzeltme_teblig_tarihi": "DATE",
+                    "karar_duzeltme_aciklama":      "TEXT",
+                    "yeni_esas_no":                 "VARCHAR(100)",
+                }
+                for col_name, col_type in tracking_columns.items():
+                    if col_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE cases ADD COLUMN {col_name} {col_type}'))
+                            conn.commit()
+                            logger.info(f"Added {col_name} to cases")
+                        except Exception as e:
+                            logger.error(f"Migration error for cases.{col_name}: {e}")
+
+            # 8. EXCEL IMPORT ALANLARI (BIRLESIK_SONUC_v5)
+            if "cases" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("cases")]
+                excel_import_columns = {
+                    "klasor_no_2":    "TEXT",           # Eski sistem no — gizli, aranabilir
+                    "atama_tarihi":   "DATE",          # Atama Tarihi
+                    "hasar_dosya_no": "VARCHAR(200)",  # Hasar Dosya Numarası
+                    "hukuk_no":       "VARCHAR(100)",  # Hukuk Numarası
+                }
+                for col_name, col_type in excel_import_columns.items():
+                    if col_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE cases ADD COLUMN {col_name} {col_type}'))
+                            conn.commit()
+                            logger.info(f"Added {col_name} to cases")
+                        except Exception as e:
+                            logger.error(f"Migration error for cases.{col_name}: {e}")
+
+            # 8b. HEARING_DATES MIGRATION (hearing_time)
+            if "hearing_dates" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("hearing_dates")]
+                if "hearing_time" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE hearing_dates ADD COLUMN hearing_time VARCHAR(10)'))
+                        conn.commit()
+                        logger.info("Added hearing_time to hearing_dates")
+                    except Exception as e:
+                        logger.error(f"Migration error for hearing_dates.hearing_time: {e}")
+
+            # 10. TENANT ISOLATION — cases.tenant_id
+            if "cases" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("cases")]
+                if "tenant_id" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE cases ADD COLUMN tenant_id VARCHAR(100)'))
+                        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_cases_tenant ON cases(tenant_id)'))
+                        conn.commit()
+                        logger.info("Added tenant_id to cases")
+                    except Exception as e:
+                        logger.error(f"Migration error for cases.tenant_id: {e}")
+
+            # 9. CASE_STAGE_LOGS TABLE
+            if "case_stage_logs" not in inspector.get_table_names():
+                try:
+                    conn.execute(text("""
+                        CREATE TABLE case_stage_logs (
+                            id SERIAL PRIMARY KEY,
+                            case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                            stage VARCHAR(50) NOT NULL,
+                            changed_at TIMESTAMPTZ DEFAULT NOW(),
+                            changed_by VARCHAR(100),
+                            source VARCHAR(20) DEFAULT 'MANUAL',
+                            note TEXT
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX idx_stage_logs_case ON case_stage_logs(case_id)"))
+                    conn.commit()
+                    logger.info("Created case_stage_logs table")
+                except Exception as e:
+                    logger.error(f"Migration error for case_stage_logs: {e}")
 
     except Exception as e:
         logger.error(f"Global migration error: {e}")
