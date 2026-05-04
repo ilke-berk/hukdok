@@ -486,9 +486,9 @@ class UDFConverter:
     def _setup_page_properties(self):
         """Extract margins and background image."""
         props = self.root.find('properties')
-        if props:
+        if props is not None:
             fmt = props.find('pageFormat')
-            if fmt:
+            if fmt is not None:
                 for key in ['leftMargin', 'rightMargin', 'topMargin', 'bottomMargin']:
                     key_map = key.replace('Margin', '')
                     self.margins[key_map] = float(fmt.get(key, str(DEFAULT_MARGIN_PTS)))
@@ -545,7 +545,7 @@ class UDFConverter:
 
         # Header/Footer - filter out non-Paragraph flowables
         header = elements_elem.find('header')
-        if header and para_handler:
+        if header is not None and para_handler:
             self.header_start_page = int(header.get('startPage', '1'))
             for p in header.findall('paragraph'):
                 flowables = para_handler.handle(self, p)
@@ -555,7 +555,7 @@ class UDFConverter:
                         self.header_paragraphs.append(f)
         
         footer = elements_elem.find('footer')
-        if footer and para_handler:
+        if footer is not None and para_handler:
             for p in footer.findall('paragraph'):
                 flowables = para_handler.handle(self, p)
                 # Only add Paragraph objects to avoid wrap() issues
