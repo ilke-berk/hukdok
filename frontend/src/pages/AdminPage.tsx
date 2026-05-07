@@ -448,6 +448,7 @@ const AdminPage = () => {
                         <TabsTrigger value="file_statuses">Dosya Durumları</TabsTrigger>
                         <TabsTrigger value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger value="cities">Şehirler</TabsTrigger>
+                        <TabsTrigger value="activity_test">Aktivite Raporu Testi</TabsTrigger>
                     </TabsList>
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1006,10 +1007,266 @@ const AdminPage = () => {
                         </TabsContent>
 
                     </DndContext>
+
+                    {/* Aktivite Raporu Test Paneli — DnD dışında */}
+                    <ActivityTestPanel />
+
                 </Tabs>
             </div>
         </div>
     );
 };
+
+// ---------------------------------------------------------------------------
+// Aktivite Raporu Test Paneli
+// ---------------------------------------------------------------------------
+function ActivityTestPanel() {
+    const [targetDate, setTargetDate] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 1); // dün
+        return d.toISOString().slice(0, 10);
+    });
+    const [forceEmail, setForceEmail] = useState("");
+    const [loading, setLoading] = useState<string | null>(null);
+    const [reports, setReports] = useState<any[]>([]);
+    const [triggerResult, setTriggerResult] = useState<string | null>(null);
+    const [diagnosis, setDiagnosis] = useState<any | null>(null);
+
+    const callApi = async (endpoint: string, method = "GET", params?: Record<string, string>) => {
+        const { apiClient } = await import("@/lib/api");
+        let url = endpoint;
+        if (params) {
+            const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+            if (qs) url += "?" + qs;
+        }
+        return apiClient.fetch(url, { method });
+    };
+
+    const handleTrigger = async () => {
+        setLoading("trigger");
+        setTriggerResult(null);
+        setDiagnosis(null);
+        try {
+            const params: Record<string, string> = { target_date: targetDate };
+            if (forceEmail) params.force_user_email = forceEmail;
+            const res = await callApi("/api/activity/admin/trigger", "POST", params);
+            const data = await res.json();
+            setTriggerResult(data.message || JSON.stringify(data));
+            if (data.diagnosis) setDiagnosis(data.diagnosis);
+            if (data.success) await handleList();
+        } catch (e: any) {
+            setTriggerResult("Hata: " + e.message);
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleCatchUp = async () => {
+        setLoading("catchup");
+        setTriggerResult(null);
+        try {
+            const res = await callApi("/api/activity/admin/catch-up", "POST");
+            const data = await res.json();
+            setTriggerResult(data.message || JSON.stringify(data));
+            await handleList();
+        } catch (e: any) {
+            setTriggerResult("Hata: " + e.message);
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleList = async () => {
+        setLoading("list");
+        try {
+            const res = await callApi("/api/activity/admin/list");
+            const data = await res.json();
+            setReports(Array.isArray(data) ? data : []);
+        } catch {
+            setReports([]);
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleReset = async (date: string) => {
+        if (!confirm(`${date} tarihindeki raporlar silinsin mi?`)) return;
+        setLoading("reset");
+        try {
+            const res = await callApi("/api/activity/admin/reset", "DELETE", { target_date: date });
+            const data = await res.json();
+            setTriggerResult(`${data.deleted_count} rapor silindi (${date})`);
+            await handleList();
+        } catch (e: any) {
+            setTriggerResult("Hata: " + e.message);
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    return (
+        <TabsContent value="activity_test">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Aktivite Raporu Test Paneli</CardTitle>
+                    <CardDescription>
+                        Günlük rapor sistemini test edin. Belirli bir tarihin raporunu elle üretin,
+                        geçmiş verileri kontrol edin veya kayıtları sıfırlayın.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+
+                    {/* Tetikleyici form */}
+                    <div className="rounded-lg border p-4 space-y-4">
+                        <p className="text-sm font-medium">Rapor Üret</p>
+
+                        <div className="flex flex-wrap gap-3 items-end">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Tarih</Label>
+                                <Input
+                                    type="date"
+                                    value={targetDate}
+                                    onChange={e => setTargetDate(e.target.value)}
+                                    className="w-44"
+                                />
+                            </div>
+                            <div className="space-y-1 flex-1 min-w-52">
+                                <Label className="text-xs">
+                                    Kullanıcı e-postası <span className="text-muted-foreground">(opsiyonel — eski belgeler için)</span>
+                                </Label>
+                                <Input
+                                    type="email"
+                                    placeholder="kullanici@firma.com"
+                                    value={forceEmail}
+                                    onChange={e => setForceEmail(e.target.value)}
+                                />
+                            </div>
+                            <Button onClick={handleTrigger} disabled={loading !== null}>
+                                {loading === "trigger" ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                Rapor Üret
+                            </Button>
+                        </div>
+
+                        <p className="text-xs text-muted-foreground">
+                            <strong>Kullanıcı e-postası boşsa:</strong> Sadece bu kod deploy edildikten sonra
+                            yüklenen belgeler (uploaded_by_email dolu olanlar) sayılır.<br />
+                            <strong>Kullanıcı e-postası doluysa:</strong> O tarihteki TÜM belgeler o kullanıcıya
+                            atanır — eski (deploy öncesi) belgeler için kullanın.
+                        </p>
+                    </div>
+
+                    {/* Catch-up */}
+                    <div className="rounded-lg border p-4 flex items-center justify-between gap-4">
+                        <div>
+                            <p className="text-sm font-medium">Catch-up Çalıştır</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Backend restart senaryosunu simüle eder. Son 30 gün içindeki
+                                eksik raporları otomatik tamamlar.
+                            </p>
+                        </div>
+                        <Button variant="outline" onClick={handleCatchUp} disabled={loading !== null}>
+                            {loading === "catchup" ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Catch-up Başlat
+                        </Button>
+                    </div>
+
+                    {/* Sonuç mesajı */}
+                    {triggerResult && (
+                        <div className="rounded-lg bg-muted px-4 py-3 text-sm font-mono space-y-2">
+                            <p>{triggerResult}</p>
+                            {diagnosis && (
+                                <div className="border-t pt-2 text-xs space-y-1 text-muted-foreground">
+                                    <p className="font-semibold text-foreground">Tanı:</p>
+                                    <p>Tarih aralığı (UTC): {diagnosis.date_range_utc}</p>
+                                    <p>O tarihte toplam belge: <strong>{diagnosis.total_docs_in_range}</strong></p>
+                                    <p className="text-green-600 dark:text-green-400">
+                                        → E-postası dolu (yeni): {diagnosis.docs_with_email}
+                                    </p>
+                                    <p className="text-amber-600 dark:text-amber-400">
+                                        → E-postası boş (eski belgeler): {diagnosis.docs_without_email}
+                                    </p>
+                                    {diagnosis.docs_without_email > 0 && !forceEmail && (
+                                        <p className="text-red-500 font-medium mt-1">
+                                            ⚠ Eski belgeler için yukarıdaki "Kullanıcı e-postası" alanını doldurup tekrar deneyin.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Rapor listesi */}
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium">Son 30 Günün Raporları</p>
+                            <Button variant="ghost" size="sm" onClick={handleList} disabled={loading !== null}>
+                                {loading === "list" ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                Listele
+                            </Button>
+                        </div>
+
+                        {reports.length > 0 && (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Tarih</TableHead>
+                                        <TableHead>Kullanıcı</TableHead>
+                                        <TableHead className="text-center">Toplam</TableHead>
+                                        <TableHead className="text-center">Maillenmiş</TableHead>
+                                        <TableHead className="text-center">Mailsiz</TableHead>
+                                        <TableHead className="text-center">Onaylandı</TableHead>
+                                        <TableHead className="text-right">İşlem</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {reports.map(r => (
+                                        <TableRow key={r.id}>
+                                            <TableCell className="font-mono text-sm">
+                                                {r.report_date}
+                                            </TableCell>
+                                            <TableCell className="text-sm max-w-48 truncate">
+                                                {r.display || r.user_email}
+                                                {r.is_legacy && (
+                                                    <span className="ml-1 text-xs text-amber-500">(eski kayıt)</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-center">{r.total}</TableCell>
+                                            <TableCell className="text-center text-green-600">{r.mailed}</TableCell>
+                                            <TableCell className="text-center text-amber-600">{r.unmailed}</TableCell>
+                                            <TableCell className="text-center">
+                                                {r.acknowledged
+                                                    ? <span className="text-green-600 text-xs">✓ Evet</span>
+                                                    : <span className="text-amber-600 text-xs">⏳ Bekliyor</span>
+                                                }
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={() => handleReset(r.report_date)}
+                                                    disabled={loading !== null}
+                                                >
+                                                    <Trash2 className="h-3 w-3 mr-1" />
+                                                    Sil
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+
+                        {reports.length === 0 && (
+                            <p className="text-xs text-muted-foreground text-center py-4">
+                                "Listele" butonuna tıklayın veya rapor üretin.
+                            </p>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
+        </TabsContent>
+    );
+}
 
 export default AdminPage;

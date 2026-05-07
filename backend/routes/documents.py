@@ -1,7 +1,11 @@
 import logging
-from typing import Optional, List
+import os
+import tempfile
+import unicodedata
+from pathlib import Path
+from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from dependencies import get_current_user, get_current_tenant
@@ -124,6 +128,8 @@ def get_case_documents(
                 "link_mode": d.link_mode,
                 "uploaded_by": d.uploaded_by,
                 "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+                "email_sent": d.email_sent,
+                "email_error": d.email_error,
             }
             for d in docs
         ]
@@ -221,6 +227,41 @@ def get_document_email_status(
         db.close()
 
 
+@router.get("/api/documents/{doc_id}/download")
+def download_document(
+    doc_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """
+    Belgeyi backend üzerinden SharePoint'ten proxy olarak indirir.
+    Son kullanıcının Microsoft tenant üyesi olmasına gerek yoktur.
+    """
+    db = SessionLocal()
+    try:
+        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+
+        if not doc.stored_filename:
+            raise HTTPException(status_code=404, detail="Belge dosya adı bulunamadı")
+
+        folder_name = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+
+        try:
+            from sharepoint.sharepoint_uploader_graph import download_file_from_sharepoint
+            content, content_type = download_file_from_sharepoint(folder_name, doc.stored_filename)
+        except Exception as e:
+            logger.error(f"SharePoint download error for doc {doc_id}: {e}")
+            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
+
+        raw_name = doc.original_filename or doc.stored_filename
+        safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii") or "belge"
+        headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
+        return Response(content=content, media_type=content_type, headers=headers)
+    finally:
+        db.close()
+
+
 @router.patch("/api/documents/{doc_id}/party")
 def assign_document_party(
     doc_id: int,
@@ -262,4 +303,83 @@ def assign_document_party(
         logger.info(f"Document #{doc_id} party updated → {new_party_id} ({party_name})")
         return {"status": "success", "case_party_id": new_party_id, "case_party_name": party_name}
     finally:
+        db.close()
+
+
+class ResendEmailPayload(BaseModel):
+    to: List[str]
+    cc: List[str] = []
+    message: Optional[str] = None
+    messages: Optional[Dict[str, str]] = None
+
+
+@router.post("/api/documents/{doc_id}/resend-email")
+def resend_document_email(
+    doc_id: int,
+    payload: ResendEmailPayload,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
+    """Mevcut belgeyi SharePoint'ten indirip yeniden e-posta gönderir."""
+    if not payload.to:
+        raise HTTPException(status_code=400, detail="En az bir alıcı gerekli")
+
+    db = SessionLocal()
+    tmp_path = None
+    try:
+        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+
+        folder_name = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+        try:
+            from sharepoint.sharepoint_uploader_graph import download_file_from_sharepoint
+            content, _ = download_file_from_sharepoint(folder_name, doc.stored_filename)
+        except Exception as e:
+            logger.error(f"SharePoint download error for doc {doc_id}: {e}")
+            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
+
+        suffix = Path(doc.stored_filename).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        sender_name = user.get("name") or user.get("preferred_username") or None
+        metadata = {
+            "muvekkil_adi": doc.muvekkil_adi or "Bilinmeyen Müvekkil",
+            "belge_turu": doc.belge_turu_adi or "Belge",
+            "tarih": "",
+        }
+
+        from email_sender import send_document_notification
+        result = send_document_notification(
+            avukat_kodu=doc.avukat_kodu,
+            filename=doc.original_filename or doc.stored_filename,
+            pdf_path=tmp_path,
+            metadata=metadata,
+            custom_to=payload.to,
+            custom_cc=payload.cc,
+            custom_message=payload.message,
+            custom_messages=payload.messages,
+            sender_name=sender_name,
+        )
+
+        success = result.get("success", False)
+        doc.email_sent = success
+        doc.email_error = None if success else result.get("message", "Bilinmeyen hata")
+        db.commit()
+
+        return {"success": success, "message": result.get("message", "")}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend email error for doc {doc_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="E-posta gönderilemedi")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
         db.close()

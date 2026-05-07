@@ -4,11 +4,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
-import { MsalProvider } from "@azure/msal-react";
+import { MsalProvider, useMsal } from "@azure/msal-react";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
+import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
+import { apiClient } from "@/lib/api";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -26,10 +28,39 @@ const queryClient = new QueryClient();
 
 // Wrapper component to use hooks inside MsalProvider
 const AppContent = () => {
-  // Enable idle timeout (30 minutes)
-  useIdleTimeout(30, 5); // 30 min idle, 5 min warning
+  useIdleTimeout(30, 5);
+  const { accounts } = useMsal();
+  const [activityReport, setActivityReport] = useState<ActivityReport | null>(null);
+
+  // Oturum açıldıktan sonra bir kez günlük raporu kontrol et
+  useEffect(() => {
+    if (accounts.length === 0) return;
+
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await apiClient.fetch("/api/activity/daily-report");
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data && data.id) {
+          setActivityReport(data as ActivityReport);
+        }
+      } catch {
+        // sessizce geç — kritik değil
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [accounts.length]);
 
   return (
+    <>
+      {activityReport && (
+        <ActivityReportModal
+          report={activityReport}
+          onClose={() => setActivityReport(null)}
+        />
+      )}
     <BrowserRouter>
       <Routes>
         {/* Public Route */}
@@ -125,6 +156,7 @@ const AppContent = () => {
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
+  </>
   );
 };
 

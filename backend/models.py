@@ -421,6 +421,27 @@ class CaseDocument(Base):
     email_sent = Column(Boolean, nullable=True)              # None=gönderilmedi/atlandı, True=başarılı, False=hata
     email_error = Column(String, nullable=True)              # Hata mesajı (email_sent=False ise)
 
+    # Kullanıcı kimliği (UPN / preferred_username)
+    uploaded_by_email = Column(String, nullable=True, index=True)
+
     # İlişkiler
     case = relationship("Case", back_populates="documents")
     case_party = relationship("CaseParty", foreign_keys=[case_party_id])
+
+
+class DailyActivityReport(Base):
+    """Kullanıcı başına günlük belge yükleme özeti — gece yarısı oluşturulur."""
+    __tablename__ = "daily_activity_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, nullable=True, index=True)
+    user_email = Column(String, nullable=False, index=True)   # preferred_username (UPN)
+    report_date = Column(Date, nullable=False)                # Raporlanan gün (dün)
+    total_documents = Column(Integer, default=0)
+    mailed_documents = Column(Integer, default=0)             # email_sent=True
+    unmailed_documents = Column(Integer, default=0)           # email_sent=None (kullanıcı atladı)
+    error_documents = Column(Integer, default=0)              # email_sent=False (hata)
+    unmailed_doc_ids = Column(String, nullable=True)          # JSON liste: mailsiz belge id'leri
+    is_acknowledged = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())

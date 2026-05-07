@@ -124,6 +124,31 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=refresh_lists_background, daemon=True).start()
     logging.info("Background refresh thread started.")
 
+    # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle)
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        from managers.activity_manager import generate_daily_reports, catch_up_missed_reports
+        import pytz
+
+        scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Istanbul"))
+        scheduler.add_job(
+            generate_daily_reports,
+            CronTrigger(hour=0, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
+            id="daily_activity_report",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR).")
+
+        # Backend kapalıyken kaçırılan günleri arka planda tamamla
+        threading.Thread(target=catch_up_missed_reports, daemon=True).start()
+        logging.info("Catch-up thread başlatıldı.")
+    except ImportError:
+        logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
+
     # KVKK: Cleanup orphaned temp files from previous sessions
     try:
         temp_dir = tempfile.gettempdir()
@@ -143,6 +168,9 @@ async def lifespan(app: FastAPI):
         logging.warning(f"Startup cleanup failed: {e}")
 
     yield
+
+    if hasattr(app.state, "scheduler"):
+        app.state.scheduler.shutdown(wait=False)
 
     logging.info("API Shutting down...")
 
@@ -187,13 +215,14 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=100 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, documents, processing
+from routes import config, clients, cases, documents, processing, activity
 
 app.include_router(config.router)
 app.include_router(clients.router)
 app.include_router(cases.router)
 app.include_router(documents.router)
 app.include_router(processing.router)
+app.include_router(activity.router)
 
 
 

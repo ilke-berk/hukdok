@@ -407,6 +407,44 @@ def check_and_migrate_tables():
                 except Exception as e:
                     logger.error(f"Migration error for case_stage_logs: {e}")
 
+            # 11. CASE_DOCUMENTS — uploaded_by_email
+            if "case_documents" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("case_documents")]
+                if "uploaded_by_email" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE case_documents ADD COLUMN uploaded_by_email VARCHAR(200)'))
+                        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_case_docs_uploader_email ON case_documents(uploaded_by_email)'))
+                        conn.commit()
+                        logger.info("Added uploaded_by_email to case_documents")
+                    except Exception as e:
+                        logger.error(f"Migration error for case_documents.uploaded_by_email: {e}")
+
+            # 12. DAILY_ACTIVITY_REPORTS TABLE
+            if "daily_activity_reports" not in inspector.get_table_names():
+                try:
+                    conn.execute(text("""
+                        CREATE TABLE daily_activity_reports (
+                            id SERIAL PRIMARY KEY,
+                            tenant_id VARCHAR(200),
+                            user_email VARCHAR(200) NOT NULL,
+                            report_date DATE NOT NULL,
+                            total_documents INTEGER DEFAULT 0,
+                            mailed_documents INTEGER DEFAULT 0,
+                            unmailed_documents INTEGER DEFAULT 0,
+                            error_documents INTEGER DEFAULT 0,
+                            unmailed_doc_ids TEXT,
+                            is_acknowledged BOOLEAN DEFAULT FALSE,
+                            created_at TIMESTAMPTZ DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ DEFAULT NOW(),
+                            CONSTRAINT uq_daily_report UNIQUE (user_email, report_date)
+                        )
+                    """))
+                    conn.execute(text("CREATE INDEX idx_daily_reports_user ON daily_activity_reports(user_email, is_acknowledged)"))
+                    conn.commit()
+                    logger.info("Created daily_activity_reports table")
+                except Exception as e:
+                    logger.error(f"Migration error for daily_activity_reports: {e}")
+
     except Exception as e:
         logger.error(f"Global migration error: {e}")
 

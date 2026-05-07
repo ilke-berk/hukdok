@@ -540,23 +540,7 @@ const Index = () => {
   const handleConfirmClick = () => {
     if (!finalData && !analysisData) return;
 
-    // BATCH MODE CHECK
-    if (fileQueue.length > 1) {
-      const isLastFile = currentFileIndex === fileQueue.length - 1;
-
-      if (!isLastFile) {
-        // Not last file -> Process silently (no email modal)
-        // Pass empty arrays for emails, false for shouldSendEmail
-        handleFinalProcess([], [], false);
-        return;
-      } else {
-        // Last file -> Open modal for BATCH SENDING
-        setIsEmailModalOpen(true);
-        return;
-      }
-    }
-
-    // SINGLE MODE
+    // Her dosya için mail modalını aç (tek veya toplu yükleme fark etmez)
     setIsEmailModalOpen(true);
   };
 
@@ -566,22 +550,10 @@ const Index = () => {
     const dataToUse = finalData || analysisData;
     if (!selectedFile || !dataToUse) return;
 
-    // Check if this is a "Batch Final Step"
     const isBatchMode = fileQueue.length > 1;
     const isLastFile = currentFileIndex === fileQueue.length - 1;
 
-    // If batch mode and last file, and sending email is requested -> We need special handling
-    // We first save the current file, then trigger batch send
-
-    // For intermediate files in batch mode, modal is skipped so shouldSendEmail comes as false.
-    // For single file, modal is shown.
-
-    if (isLastFile || !isBatchMode) {
-      setEmailModalLoading(true);
-    } else {
-      // Intermediate files don't show modal, so no loading on modal
-      setIsProcessing(true);
-    }
+    setEmailModalLoading(true);
 
     // BUG FIX: Use the approved 77-character filename from AnalysisResults
     // Add .pdf extension as we are dealing with document files
@@ -723,47 +695,34 @@ const Index = () => {
       updatedBatch.push({ path: "", name: newFilename }); // Web'de path yok
       setProcessedBatch(updatedBatch);
 
-      // Anlık ön-kontrol uyarısı (backend senkron olarak tespit etti)
-      if (result.results?.email_warning) {
-        toast.warning(`⚠️ E-posta gönderilemedi: ${result.results.email_warning}`, { duration: 8000 });
-      }
-
-      if (shouldSendEmail && !isBatchMode && !result.results?.email_warning) {
-        toast.success("✅ Belge arşivlendi ve e-postalar sıraya alındı!");
-
-        // 10 saniye sonra e-posta gönderim sonucunu kontrol et
-        const docIdToCheck = result.results?.case_document_id;
-        if (docIdToCheck) {
-          setTimeout(async () => {
-            try {
-              const statusRes = await apiClient.fetch(`/api/documents/${docIdToCheck}/email-status`);
-              if (statusRes.ok) {
-                const statusData = await statusRes.json();
-                if (statusData.email_sent === false) {
-                  toast.error(
-                    `❌ E-posta gönderilemedi: ${statusData.email_error || "Bilinmeyen hata"}`,
-                    { duration: 10000 }
-                  );
-                }
-              }
-            } catch {
-              // Sessizce geç — status kontrolü kritik değil
-            }
-          }, 10000);
+      // Mail sonucunu anında göster (senkron gönderim)
+      if (shouldSendEmail) {
+        if (result.results?.email_success === true) {
+          toast.success(
+            isBatchMode
+              ? `✅ Dosya işlendi ve e-posta gönderildi (${currentFileIndex + 1}/${fileQueue.length})`
+              : "✅ Belge arşivlendi ve e-posta gönderildi!"
+          );
+        } else if (result.results?.email_warning) {
+          toast.success(
+            isBatchMode
+              ? `✅ Dosya arşivlendi (${currentFileIndex + 1}/${fileQueue.length})`
+              : "✅ Belge arşivlendi."
+          );
+          toast.error(`❌ E-posta gönderilemedi: ${result.results.email_warning}`, { duration: 10000 });
+        } else {
+          toast.success(
+            isBatchMode
+              ? `✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`
+              : "✅ Belge arşivlendi."
+          );
         }
-      } else if (!isBatchMode && !shouldSendEmail) {
-        toast.success("✅ Belge arşivlendi (E-posta gönderilmedi).");
-      } else if (!isBatchMode) {
-        toast.success("✅ Belge arşivlendi.");
       } else {
-        toast.success(`✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`);
-      }
-
-      // BATCH EMAIL - Web Mode
-      // Web modunda her dosya zaten /confirm sırasında email ile işleniyor
-      // Toplu email özelliği şimdilik devre dışı (dosyalar sunucuya tek tek gidiyor)
-      if (isBatchMode && isLastFile && shouldSendEmail) {
-        toast.info("📧 Tüm dosyalar için e-postalar gönderildi.");
+        toast.success(
+          isBatchMode
+            ? `✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`
+            : "✅ Belge arşivlendi (E-posta gönderilmedi)."
+        );
       }
 
       // Pipeline: Move to next file in queue

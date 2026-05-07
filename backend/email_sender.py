@@ -9,6 +9,7 @@ import os
 import re
 import base64
 import logging
+import time
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -234,7 +235,12 @@ def send_document_email(
         logger.info(f"📧 E-posta gönderiliyor: {sender} → {to_str} (CC: {len(cc_emails)})")
         
         response = requests.post(url, headers=headers, json=email_payload, timeout=60)
-        
+
+        if response.status_code != 202:
+            logger.warning(f"⚠️ İlk denemede başarısız (HTTP {response.status_code}), 30 sn sonra tekrar deneniyor...")
+            time.sleep(30)
+            response = requests.post(url, headers=headers, json=email_payload, timeout=60)
+
         # 10. Sonucu kontrol et
         if response.status_code == 202:
             logger.info(f"✅ E-posta başarıyla gönderildi.")

@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import AddRelationModal from "@/components/AddRelationModal";
-import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
+import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
@@ -48,7 +48,7 @@ interface CaseDetailsData {
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
     lawyers?: { name: string; lawyer_id?: number | null }[];
-    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null }[];
+    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null }[];
     [key: string]: unknown;
 }
 
@@ -90,12 +90,14 @@ const CopyButton = ({ value }: { value: string }) => {
 const CaseDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { getCase, getRelatedCases, addCaseRelation, removeCaseRelation, isLoading } = useCases();
+    const { getCase, getRelatedCases, addCaseRelation, removeCaseRelation } = useCases();
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
     const [activeTab, setActiveTab] = useState("overview");
     const [relatedBrief, setRelatedBrief] = useState<RelatedCaseBrief[]>([]);
     const [addRelationOpen, setAddRelationOpen] = useState(false);
+    const [resendDoc, setResendDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
+    const [resendLoading, setResendLoading] = useState(false);
 
     const fetchRelated = async () => {
         if (!id) return;
@@ -121,6 +123,36 @@ const CaseDetails = () => {
             await fetchRelated();
         } else {
             toast.error("Bağlantı kaldırılamadı");
+        }
+    };
+
+    const handleResendConfirm = async (
+        to: string[],
+        cc: string[],
+        shouldSend: boolean,
+        _teblig?: string,
+        perRecipientMessages?: Record<string, string>,
+    ) => {
+        if (!resendDoc || !shouldSend) { setResendDoc(null); return; }
+        setResendLoading(true);
+        try {
+            const res = await apiClient.fetch(`/api/documents/${resendDoc.id}/resend-email`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ to, cc, messages: perRecipientMessages }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || "Hata");
+            }
+            toast.success("E-posta yeniden gönderildi");
+            const data = await getCase(parseInt(id!));
+            if (data) setCaseData(data);
+        } catch (e: unknown) {
+            toast.error("E-posta gönderilemedi", { description: e instanceof Error ? e.message : String(e) });
+        } finally {
+            setResendLoading(false);
+            setResendDoc(null);
         }
     };
 
@@ -682,17 +714,59 @@ const CaseDetails = () => {
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="shrink-0 max-sm:w-full">
+                                            <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
+                                                {/* Email durum ikonu */}
+                                                {doc.email_sent === true && (
+                                                    <span title="E-posta gönderildi" className="text-emerald-400 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                                        <span className="hidden sm:inline">Gönderildi</span>
+                                                    </span>
+                                                )}
+                                                {doc.email_sent === false && (
+                                                    <span title={doc.email_error || "E-posta gönderilemedi"} className="text-red-400 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                        <XCircle className="w-4 h-4 shrink-0" />
+                                                        <span className="hidden sm:inline">Başarısız</span>
+                                                    </span>
+                                                )}
+                                                {doc.email_sent == null && (
+                                                    <span title="E-posta gönderilmedi / atlandı" className="text-muted-foreground/40 flex items-center">
+                                                        <MinusCircle className="w-4 h-4" />
+                                                    </span>
+                                                )}
+                                                {/* Tekrar Gönder butonu */}
+                                                {doc.email_sent === false && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="w-full sm:w-auto text-xs border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-400"
+                                                        onClick={() => setResendDoc(doc)}
+                                                    >
+                                                        <RotateCcw className="w-3 h-3 mr-1" />
+                                                        Tekrar Gönder
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
                                                     className="w-full sm:w-auto"
-                                                    onClick={() => {
-                                                        if (doc.sharepoint_url) {
-                                                            window.open(doc.sharepoint_url, '_blank', 'noopener,noreferrer');
-                                                            toast.success("Belge Açılıyor", { description: "Dosya güvenli SharePoint arşivinden getiriliyor." });
-                                                        } else {
+                                                    onClick={async () => {
+                                                        if (!doc.sharepoint_url) {
                                                             toast.info("Belge Hazırlanıyor", { description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir.` });
+                                                            return;
+                                                        }
+                                                        toast.info("İndiriliyor...", { description: "Belge güvenli arşivden getiriliyor." });
+                                                        try {
+                                                            const res = await apiClient.fetch(`/api/documents/${doc.id}/download`);
+                                                            if (!res.ok) throw new Error("Sunucu hatası");
+                                                            const blob = await res.blob();
+                                                            const url = URL.createObjectURL(blob);
+                                                            const a = document.createElement("a");
+                                                            a.href = url;
+                                                            a.download = doc.original_filename || "belge";
+                                                            a.click();
+                                                            URL.revokeObjectURL(url);
+                                                        } catch {
+                                                            toast.error("İndirme Hatası", { description: "Belge indirilemedi. Lütfen tekrar deneyin." });
                                                         }
                                                     }}
                                                 >
@@ -757,6 +831,17 @@ const CaseDetails = () => {
                 currentCaseId={parseInt(id!)}
                 onClose={() => setAddRelationOpen(false)}
                 onSave={handleAddRelation}
+            />
+
+            <EmailModal
+                isOpen={resendDoc != null}
+                onClose={() => setResendDoc(null)}
+                onConfirm={handleResendConfirm}
+                isLoading={resendLoading}
+                analysisContext={resendDoc ? {
+                    muvekkil_adi: resendDoc.muvekkil_adi ?? undefined,
+                    belge_turu_kodu: resendDoc.belge_turu_kodu ?? undefined,
+                } : undefined}
             />
         </div>
     );

@@ -223,6 +223,30 @@ def upload_file_to_sharepoint(
     finally:
         session.close()
 
+def download_file_from_sharepoint(folder_name: str, filename: str) -> tuple[bytes, str]:
+    """
+    SharePoint'ten dosya içeriğini ve MIME tipini döndürür.
+    Kimlik doğrulama backend service account üzerinden yapılır;
+    son kullanıcının Microsoft tenant üyesi olması gerekmez.
+    """
+    _load_env()
+    token = get_graph_token(config_type="default")
+    _site_id, drive_id = _get_site_and_drive_id(token, config_type="default")
+
+    safe_path = quote(f"{folder_name}/{filename}")
+    url = f"{GRAPH}/drives/{drive_id}/root:/{safe_path}:/content"
+
+    session = requests.Session()
+    session.verify = get_ssl_verify_option()
+    try:
+        r = session.get(url, headers=_headers(token), timeout=120, allow_redirects=True)
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type", "application/octet-stream")
+        return r.content, content_type
+    finally:
+        session.close()
+
+
 def _update_list_item_fields(session, token, drive_id, item_id, fields):
     """Updates the ListItem fields for a given DriveItem."""
     logger.info(f"📝 Metadata Güncelleniyor: {fields}")

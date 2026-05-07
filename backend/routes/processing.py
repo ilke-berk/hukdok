@@ -117,6 +117,7 @@ def _save_case_document(
     esas_no: str = None,
     is_test_mode: bool = False,
     uploaded_by: str = None,
+    uploaded_by_email: str = None,
 ):
     try:
         db = SessionLocal()
@@ -163,6 +164,7 @@ def _save_case_document(
             esas_no=esas_no,
             link_mode=link_mode,
             uploaded_by=uploaded_by,
+            uploaded_by_email=uploaded_by_email,
         )
         db.add(doc)
 
@@ -661,6 +663,7 @@ async def confirm_process(
             belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
             clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
 
+            current_user_email = user.get("preferred_username") or user.get("upn") or user.get("email") or None
             doc_id = _save_case_document(
                 case_id=linked_case_id,
                 original_filename=original_filename,
@@ -674,6 +677,7 @@ async def confirm_process(
                 esas_no=esas_no,
                 is_test_mode=is_test_mode,
                 uploaded_by=current_user_name,
+                uploaded_by_email=current_user_email,
             )
             results["case_document_id"] = doc_id
 
@@ -738,7 +742,7 @@ async def confirm_process(
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-    def _async_send_email(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None):
+    def _send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None):
         def _update_email_status(success: bool, error_msg: str = None):
             if not doc_id:
                 return
@@ -774,9 +778,11 @@ async def confirm_process(
             else:
                 TechnicalLogger.log("WARNING", f"E-posta gönderilemedi: {filename} — {result['message']}")
                 _update_email_status(False, result["message"])
+            return result
         except Exception as e:
-            TechnicalLogger.log("ERROR", f"Async Email Error: {e}")
+            TechnicalLogger.log("ERROR", f"Email Error: {e}")
             _update_email_status(False, str(e))
+            return {"success": False, "message": str(e)}
         finally:
             # Extra temp dosyalarını temizle
             if extra_paths:
@@ -827,19 +833,32 @@ async def confirm_process(
         if pre_check_error:
             results["email"] = f"Gönderilemedi: {pre_check_error}"
             results["email_warning"] = pre_check_error
+            results["email_success"] = False
             TechnicalLogger.log("WARNING", f"E-posta ön-kontrol başarısız: {pre_check_error} — {new_filename}")
         else:
-            background_tasks.add_task(
-                _async_send_email, email_file_path, new_filename, avukat_kodu, email_metadata, custom_to, custom_cc,
-                custom_email_message or None, custom_messages or None, extra_temp_paths or None, current_user_name,
-                doc_id
+            t_email = perf_time.perf_counter()
+            email_result = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: _send_email_sync(
+                    email_file_path, new_filename, avukat_kodu, email_metadata,
+                    custom_to, custom_cc, custom_email_message or None,
+                    custom_messages or None, extra_temp_paths or None,
+                    current_user_name, doc_id
+                )
             )
-            timings["7_email"] = 0.00
-            results["email"] = "Arka Plana Atıldı"
-            results["email_warning"] = None
+            timings["7_email"] = round((perf_time.perf_counter() - t_email) * 1000, 2)
+            if email_result.get("success"):
+                results["email"] = "Gönderildi"
+                results["email_warning"] = None
+                results["email_success"] = True
+            else:
+                results["email"] = f"Gönderilemedi: {email_result.get('message', 'Bilinmeyen hata')}"
+                results["email_warning"] = email_result.get("message", "Bilinmeyen hata")
+                results["email_success"] = False
     else:
         results["email"] = "Kullanıcı tarafından atlandı"
         results["email_warning"] = None
+        results["email_success"] = None
 
     download_id = None
     if email_file_path and os.path.exists(email_file_path):
