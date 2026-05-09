@@ -445,6 +445,18 @@ def check_and_migrate_tables():
                 except Exception as e:
                     logger.error(f"Migration error for daily_activity_reports: {e}")
 
+            # 12b. DAILY_ACTIVITY_REPORTS — mailed_doc_ids, error_doc_ids
+            if "daily_activity_reports" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("daily_activity_reports")]
+                for col_name in ("mailed_doc_ids", "error_doc_ids"):
+                    if col_name not in columns:
+                        try:
+                            conn.execute(text(f'ALTER TABLE daily_activity_reports ADD COLUMN {col_name} TEXT'))
+                            conn.commit()
+                            logger.info(f"Added {col_name} to daily_activity_reports")
+                        except Exception as e:
+                            logger.error(f"Migration error for daily_activity_reports.{col_name}: {e}")
+
     except Exception as e:
         logger.error(f"Global migration error: {e}")
 

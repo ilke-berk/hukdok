@@ -65,11 +65,13 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
 
     count = 0
     for user_email, user_docs in groups.items():
-        total = len(user_docs)
-        mailed = sum(1 for d in user_docs if d.email_sent is True)
-        unmailed = sum(1 for d in user_docs if d.email_sent is None)
-        errors = sum(1 for d in user_docs if d.email_sent is False)
+        mailed_ids = [d.id for d in user_docs if d.email_sent is True]
         unmailed_ids = [d.id for d in user_docs if d.email_sent is None]
+        error_ids = [d.id for d in user_docs if d.email_sent is False]
+        total = len(user_docs)
+        mailed = len(mailed_ids)
+        unmailed = len(unmailed_ids)
+        errors = len(error_ids)
 
         existing = (
             db.query(DailyActivityReport)
@@ -85,7 +87,9 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
             existing.mailed_documents = mailed
             existing.unmailed_documents = unmailed
             existing.error_documents = errors
+            existing.mailed_doc_ids = json.dumps(mailed_ids)
             existing.unmailed_doc_ids = json.dumps(unmailed_ids)
+            existing.error_doc_ids = json.dumps(error_ids)
             existing.updated_at = datetime.now(timezone.utc)
         else:
             db.add(DailyActivityReport(
@@ -95,7 +99,9 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
                 mailed_documents=mailed,
                 unmailed_documents=unmailed,
                 error_documents=errors,
+                mailed_doc_ids=json.dumps(mailed_ids),
                 unmailed_doc_ids=json.dumps(unmailed_ids),
+                error_doc_ids=json.dumps(error_ids),
                 is_acknowledged=False,
             ))
         count += 1

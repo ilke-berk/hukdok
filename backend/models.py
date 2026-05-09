@@ -442,6 +442,8 @@ class DailyActivityReport(Base):
     unmailed_documents = Column(Integer, default=0)           # email_sent=None (kullanıcı atladı)
     error_documents = Column(Integer, default=0)              # email_sent=False (hata)
     unmailed_doc_ids = Column(String, nullable=True)          # JSON liste: mailsiz belge id'leri
+    mailed_doc_ids = Column(String, nullable=True)            # JSON liste: e-posta ile gitmiş belge id'leri
+    error_doc_ids = Column(String, nullable=True)             # JSON liste: hata almış belge id'leri
     is_acknowledged = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())

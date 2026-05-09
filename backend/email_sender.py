@@ -33,16 +33,13 @@ def _load_env():
 def _get_email_config() -> dict:
     """
     E-posta yapılandırmasını döndürür.
-    
+
     Returns:
-        dict: enabled, sender, test_mode, test_recipient
+        dict: sender
     """
     _load_env()
     return {
-        "enabled": os.getenv("EMAIL_ENABLED", "false").lower() == "true",
         "sender": os.getenv("EMAIL_SENDER", ""),
-        "test_mode": os.getenv("EMAIL_TEST_MODE", "true").lower() == "true",
-        "test_recipient": os.getenv("EMAIL_TEST_RECIPIENT", ""),
     }
 
 
@@ -90,72 +87,38 @@ def send_document_email(
         cc_emails = []
 
     config = _get_email_config()
-    
-    # 1. E-posta özelliği aktif mi?
-    if not config["enabled"]:
-        logger.info("📧 E-posta özelliği kapalı (EMAIL_ENABLED=false)")
-        return {"success": False, "message": "E-posta özelliği kapalı"}
-    
-    # 2. Gönderici adresi var mı?
+
+    # 1. Gönderici adresi var mı?
     sender = config["sender"]
     if not sender:
         logger.error("❌ EMAIL_SENDER tanımlanmamış!")
         return {"success": False, "message": "Gönderici adresi tanımlanmamış"}
     
-    # 3. Test Modu Interceptor Mantığı
-    if config["test_mode"]:
-        test_recipient = config["test_recipient"]
-        if not test_recipient:
-             logger.error("❌ Test modu açık ama EMAIL_TEST_RECIPIENT tanımlı değil!")
-             return {"success": False, "message": "Test alıcısı tanımlı değil"}
-
-        # Orijinal niyetleri kaydet
-        original_to_str = ", ".join(to_emails)
-        original_cc_str = ", ".join(cc_emails) if cc_emails else "Yok"
-        
-        # Alıcıları ez (Override)
-        logger.info(f"🧪 TEST MODU: Orijinal Alıcılar [{original_to_str}] yerine [{test_recipient}] adresine gönderiliyor.")
-        
-        # Test Metnini Gövdeye Ekle
-        body_prefix = (
-            "📢 [TEST MODU BİLGİLENDİRMESİ]\n"
-            "--------------------------------------------------\n"
-            f"Bu e-posta normalde şu kişilere gidecekti:\n"
-            f"KİME: {original_to_str}\n"
-            f"CC: {original_cc_str}\n"
-            "--------------------------------------------------\n\n"
-        )
-        body_text = body_prefix + body_text
-        
-        # Hedefleri değiştir
-        to_emails = [test_recipient]
-        cc_emails = []  # Test modunda CC gönderme (veya isterseniz test recipient'ı cc yapabilirsiniz ama gerek yok)
-    
-    # 4. Alıcı listesi boş mu?
+    # 3. Alıcı listesi boş mu?
     if not to_emails:
         logger.error("❌ Alıcı listesi boş!")
         return {"success": False, "message": "Alıcı listesi boş"}
-    
-    # 5. Dosya var mı?
+
+    # 4. Dosya var mı?
     if not os.path.exists(attachment_path):
         logger.error(f"❌ Ek dosya bulunamadı: {attachment_path}")
         return {"success": False, "message": "Ek dosya bulunamadı"}
-    
+
     try:
-        # 6. Token al
+        # 5. Token al
         token = get_graph_token()
-        
-        # 7. Dosyayı encode et
+
+        # 6. Dosyayı encode et
         attachment_content, file_size = _encode_attachment(attachment_path)
         file_size_mb = file_size / (1024 * 1024)
 
-        # Boyut kontrolü - tek dosya limiti: 35MB, toplam limit: 35MB
-        MAX_SINGLE_MB = 35
-        MAX_TOTAL_MB = 35
+        # Boyut kontrolü - tek dosya limiti: 70MB, toplam limit: 70MB
+        MAX_SINGLE_MB = 70
+        MAX_TOTAL_MB = 70
 
         if file_size_mb > MAX_SINGLE_MB:
             logger.error(f"❌ Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)")
-            return {"success": False, "message": f"Ana dosya çok büyük: {file_size_mb:.2f}MB"}
+            return {"success": False, "message": f"Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)"}
 
         logger.info(f"📎 Ana dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
 
@@ -205,7 +168,7 @@ def send_document_email(
                 else:
                     logger.warning(f"⚠️ Ek belge bulunamadı, atlandı: {extra_path}")
 
-        # 8. E-posta payload'ı oluştur (Multiple Recipients)
+        # 7. E-posta payload'ı oluştur (Multiple Recipients)
         # Graph API format: [{"emailAddress": {"address": "..."}}, ...]
         to_recipients_payload = [{"emailAddress": {"address": email.strip()}} for email in to_emails if email.strip()]
         cc_recipients_payload = [{"emailAddress": {"address": email.strip()}} for email in cc_emails if email.strip()]
@@ -224,7 +187,7 @@ def send_document_email(
             "saveToSentItems": "true"
         }
         
-        # 9. E-posta gönder
+        # 8. E-posta gönder
         url = f"{GRAPH}/users/{sender}/sendMail"
         headers = {
             "Authorization": f"Bearer {token}",
@@ -234,18 +197,27 @@ def send_document_email(
         to_str = ", ".join(to_emails)
         logger.info(f"📧 E-posta gönderiliyor: {sender} → {to_str} (CC: {len(cc_emails)})")
         
-        response = requests.post(url, headers=headers, json=email_payload, timeout=60)
+        response = None
+        for attempt in range(2):
+            try:
+                response = requests.post(url, headers=headers, json=email_payload, timeout=60)
+                if response.status_code == 202:
+                    break
+                if attempt == 0:
+                    logger.warning(f"⚠️ İlk denemede başarısız (HTTP {response.status_code}), 30 sn sonra tekrar deneniyor...")
+                    time.sleep(30)
+            except requests.exceptions.RequestException as e:
+                if attempt == 0:
+                    logger.warning(f"⚠️ Bağlantı hatası, 30 sn sonra tekrar deneniyor: {e}")
+                    time.sleep(30)
+                else:
+                    raise
 
-        if response.status_code != 202:
-            logger.warning(f"⚠️ İlk denemede başarısız (HTTP {response.status_code}), 30 sn sonra tekrar deneniyor...")
-            time.sleep(30)
-            response = requests.post(url, headers=headers, json=email_payload, timeout=60)
-
-        # 10. Sonucu kontrol et
-        if response.status_code == 202:
+        # 9. Sonucu kontrol et
+        if response is not None and response.status_code == 202:
             logger.info(f"✅ E-posta başarıyla gönderildi.")
             return {"success": True, "message": "E-posta gönderildi"}
-        else:
+        elif response is not None:
             error_detail = response.text[:500] if response.text else "Bilinmeyen hata"
             logger.error(f"❌ E-posta gönderilemedi: {response.status_code} - {error_detail}")
             return {"success": False, "message": f"Hata: {response.status_code}"}
@@ -346,19 +318,12 @@ def send_document_notification(
     extra_attachment_paths: ek belgelerin [{path, name}] sözlük listesi.
     """
     config = _get_email_config()
-    
-    if not config["enabled"]:
-        return {"success": False, "message": "E-posta özelliği kapalı"}
-    
+
     # --- ALICI LİSTESİ HAZIRLIĞI ---
     to_emails_raw = custom_to if custom_to else []
     cc_emails_raw = custom_cc if custom_cc else []
     
-    # Eğer hiç alıcı yoksa ve test modundaysak placeholder ekle
-    if not to_emails_raw and config["test_mode"]:
-        to_emails_raw = ["Test Avukatı <test_placeholder@lexis.com>"]
-        logger.info("⚠️ Alıcı listesi boş, test için placeholder eklendi.")
-    elif not to_emails_raw:
+    if not to_emails_raw:
         return {"success": False, "message": "Alıcı listesi boş"}
 
     # --- METADATA HAZIRLIĞI ---
@@ -506,4 +471,5 @@ Saygılarımızla,
     elif success_count > 0:
         return {"success": True, "message": f"{success_count}/{len(results)} gönderildi."}
     else:
-        return {"success": False, "message": "Hiçbir e-posta gönderilemedi."}
+        first_error = next((r.get("message", "") for r in results if not r.get("success")), "")
+        return {"success": False, "message": first_error or "Hiçbir e-posta gönderilemedi."}

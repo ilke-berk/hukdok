@@ -445,7 +445,7 @@ export function EmailModal({
                                 İptal
                             </Button>
                             {sendEmail ? (
-                                <Button onClick={handleProceedToPreview} disabled={isLoading} className="bg-primary hover:bg-primary/90 min-w-[160px]">
+                                <Button onClick={handleProceedToPreview} disabled={isLoading || selectedRecipients.length === 0} className="bg-primary hover:bg-primary/90 min-w-[160px]">
                                     <Sparkles className="w-4 h-4 mr-2" />
                                     Mesajları Oluştur
                                     <ArrowRight className="w-4 h-4 ml-2" />

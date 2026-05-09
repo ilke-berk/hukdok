@@ -733,16 +733,19 @@ const CaseDetails = () => {
                                                         <MinusCircle className="w-4 h-4" />
                                                     </span>
                                                 )}
-                                                {/* Tekrar Gönder butonu */}
-                                                {doc.email_sent === false && (
+                                                {/* Gönder / Tekrar Gönder butonu */}
+                                                {(doc.email_sent === false || doc.email_sent === null) && (
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        className="w-full sm:w-auto text-xs border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-400"
+                                                        className={doc.email_sent === false
+                                                            ? "w-full sm:w-auto text-xs border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-400"
+                                                            : "w-full sm:w-auto text-xs border-border/40 text-muted-foreground hover:bg-secondary/50"
+                                                        }
                                                         onClick={() => setResendDoc(doc)}
                                                     >
                                                         <RotateCcw className="w-3 h-3 mr-1" />
-                                                        Tekrar Gönder
+                                                        {doc.email_sent === false ? "Tekrar Gönder" : "E-posta Gönder"}
                                                     </Button>
                                                 )}
                                                 <Button

@@ -2,7 +2,7 @@
 import { ThemeToggle } from "@/components/theme-toggle";
 import HukdokLogo from "./HukdokLogo";
 import { Button } from "@/components/ui/button";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck, History } from "lucide-react";
 
 import { useMsal } from "@azure/msal-react";
 
@@ -72,6 +72,17 @@ export const Header = () => {
           className={`text-primary-foreground hover:bg-white/10 gap-2 ${location.pathname === "/clients" ? "bg-white/10" : ""}`}
         >
           Müvekkiller
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/activity-history")}
+          className={`text-primary-foreground hover:bg-white/10 gap-2 ${location.pathname === "/activity-history" ? "bg-white/10" : ""}`}
+          title="Son 30 günde işlediğiniz belgelerin günlük raporu"
+        >
+          <History className="h-4 w-4" />
+          Aktivite Geçmişim
         </Button>
 
         {/* ADMIN LINK CHECK (Frontend Only) */}

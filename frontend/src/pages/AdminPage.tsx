@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Edit2, Loader2, GripVertical } from "lucide-react";
+import { Plus, Trash2, Edit2, Loader2, GripVertical, Eye } from "lucide-react";
+import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { toast } from "sonner";
 import {
     Table,
@@ -1031,6 +1032,8 @@ function ActivityTestPanel() {
     const [reports, setReports] = useState<any[]>([]);
     const [triggerResult, setTriggerResult] = useState<string | null>(null);
     const [diagnosis, setDiagnosis] = useState<any | null>(null);
+    const [detail, setDetail] = useState<ActivityReport | null>(null);
+    const [openingId, setOpeningId] = useState<number | null>(null);
 
     const callApi = async (endpoint: string, method = "GET", params?: Record<string, string>) => {
         const { apiClient } = await import("@/lib/api");
@@ -1086,6 +1089,23 @@ function ActivityTestPanel() {
             setReports([]);
         } finally {
             setLoading(null);
+        }
+    };
+
+    const handleViewDetail = async (reportId: number) => {
+        setOpeningId(reportId);
+        try {
+            const res = await callApi(`/api/activity/admin/report/${reportId}`);
+            if (!res.ok) throw new Error("Detay alınamadı");
+            const data = await res.json();
+            setDetail({
+                ...data,
+                has_unmailed: data.unmailed_documents > 0,
+            } as ActivityReport);
+        } catch (e: any) {
+            setTriggerResult("Detay yükleme hatası: " + e.message);
+        } finally {
+            setOpeningId(null);
         }
     };
 
@@ -1239,7 +1259,22 @@ function ActivityTestPanel() {
                                                     : <span className="text-amber-600 text-xs">⏳ Bekliyor</span>
                                                 }
                                             </TableCell>
-                                            <TableCell className="text-right">
+                                            <TableCell className="text-right space-x-1">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleViewDetail(r.id)}
+                                                    disabled={loading !== null || openingId !== null}
+                                                >
+                                                    {openingId === r.id ? (
+                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                    ) : (
+                                                        <>
+                                                            <Eye className="h-3 w-3 mr-1" />
+                                                            Detay
+                                                        </>
+                                                    )}
+                                                </Button>
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -1265,6 +1300,13 @@ function ActivityTestPanel() {
                     </div>
                 </CardContent>
             </Card>
+            {detail && (
+                <ActivityReportModal
+                    report={detail}
+                    onClose={() => setDetail(null)}
+                    readOnly
+                />
+            )}
         </TabsContent>
     );
 }

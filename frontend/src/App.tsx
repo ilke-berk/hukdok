@@ -22,6 +22,7 @@ import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
 import CaseDetails from "./pages/CaseDetails";
 import CaseGroup from "./pages/CaseGroup";
+import ActivityHistory from "./pages/ActivityHistory";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
@@ -139,6 +140,15 @@ const AppContent = () => {
           element={
             <ProtectedRoute>
               <CaseGroup />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/activity-history"
+          element={
+            <ProtectedRoute>
+              <ActivityHistory />
             </ProtectedRoute>
           }
         />

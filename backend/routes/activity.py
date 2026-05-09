@@ -35,6 +35,35 @@ def _get_user_email(user: dict) -> str:
 # KULLANICI ENDPOINT'LERİ
 # ---------------------------------------------------------------------------
 
+def _hydrate_docs(db, ids: list[int]) -> list[dict]:
+    """Verilen belge ID'leri için modal'da gösterilecek detayları çeker."""
+    if not ids:
+        return []
+    docs = (
+        db.query(models.CaseDocument)
+        .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
+        .filter(models.CaseDocument.id.in_(ids))
+        .all()
+    )
+    by_id = {d.id: d for d in docs}
+    out = []
+    for doc_id in ids:
+        d = by_id.get(doc_id)
+        if not d:
+            continue
+        out.append({
+            "id": d.id,
+            "filename": d.stored_filename or "",
+            "belge_turu": d.belge_turu_adi or "",
+            "muvekkil": d.muvekkil_adi or "",
+            "tracking_no": d.case.tracking_no if d.case else "",
+            "case_id": d.case_id,
+            "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            "email_error": d.email_error or "",
+        })
+    return out
+
+
 @router.get("/api/activity/daily-report")
 def get_pending_report(
     user: dict = Depends(get_current_user),
@@ -58,6 +87,10 @@ def get_pending_report(
     if not report:
         return None
 
+    mailed_ids = json.loads(report.mailed_doc_ids or "[]")
+    unmailed_ids = json.loads(report.unmailed_doc_ids or "[]")
+    error_ids = json.loads(report.error_doc_ids or "[]")
+
     return {
         "id": report.id,
         "report_date": report.report_date.isoformat(),
@@ -66,7 +99,91 @@ def get_pending_report(
         "unmailed_documents": report.unmailed_documents,
         "error_documents": report.error_documents,
         "has_unmailed": report.unmailed_documents > 0,
+        "mailed_docs": _hydrate_docs(db, mailed_ids),
+        "unmailed_docs": _hydrate_docs(db, unmailed_ids),
+        "error_docs": _hydrate_docs(db, error_ids),
     }
+
+
+def _serialize_report_full(db, report) -> dict:
+    """Raporu detaylı belge listeleriyle birlikte döner."""
+    mailed_ids = json.loads(report.mailed_doc_ids or "[]")
+    unmailed_ids = json.loads(report.unmailed_doc_ids or "[]")
+    error_ids = json.loads(report.error_doc_ids or "[]")
+    return {
+        "id": report.id,
+        "report_date": report.report_date.isoformat(),
+        "user_email": report.user_email,
+        "total_documents": report.total_documents,
+        "mailed_documents": report.mailed_documents,
+        "unmailed_documents": report.unmailed_documents,
+        "error_documents": report.error_documents,
+        "has_unmailed": report.unmailed_documents > 0,
+        "is_acknowledged": report.is_acknowledged,
+        "mailed_docs": _hydrate_docs(db, mailed_ids),
+        "unmailed_docs": _hydrate_docs(db, unmailed_ids),
+        "error_docs": _hydrate_docs(db, error_ids),
+    }
+
+
+@router.get("/api/activity/history")
+def get_user_history(
+    days: int = Query(default=30, ge=1, le=180),
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Kullanıcının kendi geçmiş raporlarının özet listesi (son N gün)."""
+    user_email = _get_user_email(user)
+    if not user_email:
+        return []
+
+    cutoff = dt.date.today() - dt.timedelta(days=days)
+    reports = (
+        db.query(models.DailyActivityReport)
+        .filter(
+            models.DailyActivityReport.user_email == user_email,
+            models.DailyActivityReport.report_date >= cutoff,
+        )
+        .order_by(models.DailyActivityReport.report_date.desc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "report_date": r.report_date.isoformat(),
+            "total_documents": r.total_documents,
+            "mailed_documents": r.mailed_documents,
+            "unmailed_documents": r.unmailed_documents,
+            "error_documents": r.error_documents,
+            "is_acknowledged": r.is_acknowledged,
+        }
+        for r in reports
+    ]
+
+
+@router.get("/api/activity/history/{report_id}")
+def get_user_history_detail(
+    report_id: int,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Kullanıcının kendi raporunun detayını döner (3 kategori belge listeli)."""
+    user_email = _get_user_email(user)
+    if not user_email:
+        raise HTTPException(status_code=403, detail="Kullanıcı e-postası alınamadı.")
+
+    report = (
+        db.query(models.DailyActivityReport)
+        .filter(
+            models.DailyActivityReport.id == report_id,
+            models.DailyActivityReport.user_email == user_email,
+        )
+        .first()
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Rapor bulunamadı.")
+
+    return _serialize_report_full(db, report)
 
 
 @router.post("/api/activity/daily-report/{report_id}/acknowledge")
@@ -266,6 +383,23 @@ def admin_reset_report(
     )
     db.commit()
     return {"success": True, "deleted_count": deleted, "date": parsed.isoformat()}
+
+
+@router.get("/api/activity/admin/report/{report_id}")
+def admin_get_report_detail(
+    report_id: int,
+    user: dict = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """[ADMIN] Belirli bir raporun detayını (3 kategori belge listeli) döner."""
+    report = (
+        db.query(models.DailyActivityReport)
+        .filter(models.DailyActivityReport.id == report_id)
+        .first()
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Rapor bulunamadı.")
+    return _serialize_report_full(db, report)
 
 
 @router.get("/api/activity/admin/list")

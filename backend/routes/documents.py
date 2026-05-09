@@ -369,7 +369,9 @@ def resend_document_email(
         doc.email_error = None if success else result.get("message", "Bilinmeyen hata")
         db.commit()
 
-        return {"success": success, "message": result.get("message", "")}
+        if not success:
+            raise HTTPException(status_code=422, detail=result.get("message", "E-posta gönderilemedi"))
+        return {"success": True, "message": result.get("message", "")}
 
     except HTTPException:
         raise

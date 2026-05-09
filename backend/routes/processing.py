@@ -881,9 +881,11 @@ async def confirm_process(
             del DOWNLOAD_CACHE[down_id]
 
     # Her iki temp dosyayı da temizle (source_path her zaman; pdfa farklıysa o da)
-    background_tasks.add_task(_async_cleanup, source_path)
     if pdfa_temp_file and pdfa_temp_file != source_path:
+        background_tasks.add_task(_async_cleanup, source_path)
         background_tasks.add_task(_async_cleanup, pdfa_temp_file, download_id)
+    else:
+        background_tasks.add_task(_async_cleanup, source_path, download_id)
 
     results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
 

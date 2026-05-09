@@ -1,4 +1,5 @@
 import os
+import time
 import msal
 import logging
 from dotenv import load_dotenv
@@ -66,14 +67,16 @@ def get_graph_token(config_type: str = "default") -> str:
     """
     app = _get_msal_app(config_type)
 
-    # 1. Look in cache first
-    result = app.acquire_token_for_client(
-        scopes=["https://graph.microsoft.com/.default"]
-    )
+    result = None
+    for attempt in range(2):
+        result = app.acquire_token_for_client(
+            scopes=["https://graph.microsoft.com/.default"]
+        )
+        if "access_token" in result:
+            return result["access_token"]
+        if attempt == 0:
+            logger.warning(f"Graph token alınamadı, 5sn sonra tekrar deneniyor: {result.get('error')}")
+            time.sleep(5)
 
-    if "access_token" in result:
-        # success
-        return result["access_token"]
-    else:
-        logger.error(f"Graph token failed ({config_type}): {result.get('error')}")
-        raise RuntimeError(f"Graph token failed: {result}")
+    logger.error(f"Graph token failed ({config_type}): {result.get('error')}")
+    raise RuntimeError(f"Graph token failed: {result}")
