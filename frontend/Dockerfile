@@ -11,6 +11,10 @@ RUN npm install --legacy-peer-deps
 # Copy the frontend source code
 COPY frontend/ .
 
+# Vite reads VITE_* vars from root .env (envDir: ".." in vite.config.ts).
+# WORKDIR is /app, so envDir resolves to /. Place .env there at build time.
+COPY .env /.env
+
 # Build the application
 RUN npm run build
 
