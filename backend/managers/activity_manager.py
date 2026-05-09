@@ -52,7 +52,7 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
     if not docs:
         return 0
 
-    groups: dict[tuple, list] = defaultdict(list)
+    groups: dict[str, list] = defaultdict(list)
     for doc in docs:
         if force_user_email:
             key_email = force_user_email
@@ -61,11 +61,10 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
         else:
             # Eski belge — isim ile grupla (modal gösterilemez ama istatistik toplanır)
             key_email = f"__name__{doc.uploaded_by or 'bilinmeyen'}"
-        key = (doc.tenant_id, key_email)
-        groups[key].append(doc)
+        groups[key_email].append(doc)
 
     count = 0
-    for (tenant_id, user_email), user_docs in groups.items():
+    for user_email, user_docs in groups.items():
         total = len(user_docs)
         mailed = sum(1 for d in user_docs if d.email_sent is True)
         unmailed = sum(1 for d in user_docs if d.email_sent is None)
@@ -90,7 +89,6 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
             existing.updated_at = datetime.now(timezone.utc)
         else:
             db.add(DailyActivityReport(
-                tenant_id=tenant_id,
                 user_email=user_email,
                 report_date=target_date,
                 total_documents=total,
