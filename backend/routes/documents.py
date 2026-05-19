@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
+from auth_helpers import get_tenant_owned_case, get_tenant_owned_document
 from dependencies import get_current_user, get_current_tenant
 from database import SessionLocal
 import models
@@ -22,6 +23,7 @@ class YetkiBelgesiAvukat(BaseModel):
     ad: str
     tc: str = ""
     sicil: str = ""
+    address: str = ""
 
 class YetkiBelgesiMuvekkil(BaseModel):
     ad: str
@@ -48,12 +50,19 @@ class YetkiBelgesiRequest(BaseModel):
 def create_yetki_belgesi_udf(
     req: YetkiBelgesiRequest,
     user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """Yetki belgesi verilerinden .udf dosyası üretir ve döndürür."""
     try:
         from yetki_belgesi_generator import generate_yetki_belgesi_udf
         import unicodedata
         udf_bytes = generate_yetki_belgesi_udf(req.model_dump())
+        actor = user.get("preferred_username") or user.get("email") or user.get("oid") or "unknown"
+        logger.info(
+            f"Yetki belgesi UDF üretildi: actor={actor} tenant={tenant_id} "
+            f"muvekkil={req.muvekkil.ad!r} veren={req.veren.ad!r} "
+            f"yetkili_sayisi={len(req.yetkililar)}"
+        )
         # HTTP header latin-1 zorunluluğu — Türkçe karakterleri ASCII'ye dönüştür
         raw_name = req.muvekkil.ad[:20].replace(" ", "_")
         safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii")
@@ -182,21 +191,18 @@ def link_document_to_case(
     doc_id: int,
     payload: dict,
     tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
 ):
     """Bağlantısız bir belgeyi sonradan bir davaya bağlar. Body: { "case_id": 123 }"""
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
-        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         new_case_id = payload.get("case_id")
         if not new_case_id:
             raise HTTPException(status_code=400, detail="case_id gerekli")
-        case = db.query(models.Case).filter(
-            models.Case.id == new_case_id,
-            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
-        ).first()
+        case = get_tenant_owned_case(db, new_case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
         doc.case_id = new_case_id
@@ -210,12 +216,13 @@ def link_document_to_case(
 @router.get("/api/documents/{doc_id}/email-status")
 def get_document_email_status(
     doc_id: int,
-    _: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
 ):
     """Belgenin e-posta gönderim durumunu döndürür."""
     db = SessionLocal()
     try:
-        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         return {
@@ -231,6 +238,7 @@ def get_document_email_status(
 def download_document(
     doc_id: int,
     tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
 ):
     """
     Belgeyi backend üzerinden SharePoint'ten proxy olarak indirir.
@@ -238,7 +246,7 @@ def download_document(
     """
     db = SessionLocal()
     try:
-        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
 
@@ -249,7 +257,7 @@ def download_document(
 
         try:
             from sharepoint.sharepoint_uploader_graph import download_file_from_sharepoint
-            content, content_type = download_file_from_sharepoint(folder_name, doc.stored_filename)
+            content, _ = download_file_from_sharepoint(folder_name, doc.stored_filename)
         except Exception as e:
             logger.error(f"SharePoint download error for doc {doc_id}: {e}")
             raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
@@ -257,7 +265,7 @@ def download_document(
         raw_name = doc.original_filename or doc.stored_filename
         safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii") or "belge"
         headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
-        return Response(content=content, media_type=content_type, headers=headers)
+        return Response(content=content, media_type="application/octet-stream", headers=headers)
     finally:
         db.close()
 
@@ -267,6 +275,7 @@ def assign_document_party(
     doc_id: int,
     payload: dict,
     tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
 ):
     """Belgenin müvekkil (case_party) atamasını değiştirir.
     Body: { "case_party_id": 123 }  → o tarafa ata
@@ -274,7 +283,7 @@ def assign_document_party(
     """
     db = SessionLocal()
     try:
-        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
 
@@ -327,7 +336,7 @@ def resend_document_email(
     db = SessionLocal()
     tmp_path = None
     try:
-        doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
 

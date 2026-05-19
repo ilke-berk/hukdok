@@ -2,7 +2,8 @@ import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 
-from dependencies import get_current_user
+from auth_helpers import get_tenant_owned_client, tenant_filter_clause
+from dependencies import get_current_tenant, get_current_user
 from schemas import ClientCreate, ClientRead, ClientUpdate
 from database import SessionLocal
 from managers.admin_manager import add_client
@@ -13,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/api/clients")
-def api_add_client(client: ClientCreate, user: dict = Depends(get_current_user)):
+def api_add_client(
+    client: ClientCreate,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
+    # Hanyaloğlu Acar + LexisBio ortak çalıştığı için yeni müvekkiller paylaşımlı (tenant_id=NULL).
+    # tenant_id parametresi token doğrulaması için gerekli ama damgalamada kullanılmıyor.
     success = add_client(client.model_dump())
     if not success:
         raise HTTPException(status_code=500, detail="Failed to save client")
@@ -21,12 +28,13 @@ def api_add_client(client: ClientCreate, user: dict = Depends(get_current_user))
 
 
 @router.get("/api/clients", response_model=List[ClientRead])
-def get_clients_api(user: dict = Depends(get_current_user)):
+def get_clients_api(tenant_id: str = Depends(get_current_tenant)):
     db = SessionLocal()
     try:
         clients = (
             db.query(models.Client)
             .filter(models.Client.active == True)
+            .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.name.asc())
             .all()
         )
@@ -36,10 +44,15 @@ def get_clients_api(user: dict = Depends(get_current_user)):
 
 
 @router.put("/api/clients/{client_id}")
-def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = Depends(get_current_user)):
+def api_update_client(
+    client_id: int,
+    client_data: ClientUpdate,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
     db = SessionLocal()
     try:
-        client = db.query(models.Client).filter(models.Client.id == client_id).first()
+        client = get_tenant_owned_client(db, client_id, tenant_id)
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
 
@@ -50,6 +63,8 @@ def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = De
         db.commit()
         db.refresh(client)
         return {"status": "success", "message": "Client updated", "client": client}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating client: {e}", exc_info=True)
         db.rollback()
@@ -59,10 +74,14 @@ def api_update_client(client_id: int, client_data: ClientUpdate, user: dict = De
 
 
 @router.delete("/api/clients/{client_id}")
-def api_delete_client(client_id: int, user: dict = Depends(get_current_user)):
+def api_delete_client(
+    client_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
     db = SessionLocal()
     try:
-        client = db.query(models.Client).filter(models.Client.id == client_id).first()
+        client = get_tenant_owned_client(db, client_id, tenant_id)
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
 
@@ -73,6 +92,8 @@ def api_delete_client(client_id: int, user: dict = Depends(get_current_user)):
         db.delete(client)
         db.commit()
         return {"status": "success", "message": "Client deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting client {client_id}: {e}", exc_info=True)

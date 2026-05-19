@@ -81,8 +81,6 @@ def generate_yetki_belgesi_udf(data: dict) -> bytes:
         veren_parts.append(f"T.C. Kimlik No: {tc_v}")
     if sicil_v:
         veren_parts.append(f"{sicil_v} sicil no'lu")
-    if tc_v:
-        veren_parts.append(f"Vergi Daire ve No: {tc_v}")
     add(f"    ({', '.join(veren_parts)})", family="Arial")
     add()
 
@@ -90,11 +88,15 @@ def generate_yetki_belgesi_udf(data: dict) -> bytes:
     add("YETKİLİ KILINAN AVUKATLAR :", bold=True, family="Arial")
     add()
     for idx, av in enumerate(yetkililar, 1):
-        ad_y    = uc(av.get("ad", ""))
-        tc_y    = av.get("tc", "")
-        sicil_y = av.get("sicil", "")
+        ad_y      = uc(av.get("ad", ""))
+        tc_y      = av.get("tc", "")
+        sicil_y   = av.get("sicil", "")
+        adres_y   = av.get("address", "")
         add(f"{idx}. Av. {ad_y}", family="Arial")
-        parts = ["Aynı adreste mukim"]
+        if adres_y:
+            parts = [f"{uc(adres_y)} adresinde mukim"]
+        else:
+            parts = ["Aynı adreste mukim"]
         if tc_y:
             parts.append(f"T.C. Kimlik No: {tc_y}")
         if sicil_y:

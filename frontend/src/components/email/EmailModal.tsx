@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { X, Mail, Plus, Loader2, User, Check, ZapOff, Sparkles, Paperclip, FileText, Image, ArrowLeft, ArrowRight, AlertTriangle } from "lucide-react";
+import { X, Mail, Plus, Loader2, User, Check, ZapOff, Sparkles, Paperclip, FileText, Image, ArrowLeft, ArrowRight, AlertTriangle, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,10 +20,15 @@ interface EmailModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: (to: string[], cc: string[], shouldSendEmail: boolean, tebligTarihi?: string, perRecipientMessages?: Record<string, string>, extraAttachments?: File[]) => void;
-    defaultTo?: string[];
-    defaultCc?: string[];
+    // Faz 6: prefill için recipient objesi kabul ediyoruz; hazırlık ekranından gelen
+    // ayarlar burada başlangıç state'ine basılır.
+    defaultTo?: { name: string; email: string }[];
+    defaultCc?: { name: string; email: string }[];
+    defaultSendEmail?: boolean;
+    defaultTebligTarihi?: string;
     isLoading?: boolean;
     batchCount?: number;
+    totalFiles?: number;
     analysisContext?: {
         muvekkil_adi?: string;
         muvekkiller?: string[];
@@ -38,8 +43,11 @@ export function EmailModal({
     onConfirm,
     defaultTo = [],
     defaultCc = [],
+    defaultSendEmail,
+    defaultTebligTarihi,
     isLoading = false,
     batchCount = 0,
+    totalFiles = 0,
     analysisContext,
 }: EmailModalProps) {
 
@@ -67,19 +75,23 @@ export function EmailModal({
     const [perRecipientMessages, setPerRecipientMessages] = useState<Record<string, string>>({});
     const [isGeneratingPreviews, setIsGeneratingPreviews] = useState(false);
 
+    const isBatchMode = totalFiles > 1;
+
     useEffect(() => {
         if (isOpen) {
             setStep("setup");
-            setSelectedRecipients([]);
-            setCcRecipients([]);
+            // Faz 6: hazırlık ekranındaki ayarlar prefill olarak yüklenir.
+            setSelectedRecipients(defaultTo);
+            setCcRecipients(defaultCc);
             setShowCc(defaultCc.length > 0);
-            setSendEmail(true);
-            setTebligTarihi("");
+            setSendEmail(defaultSendEmail ?? true);
+            setTebligTarihi(defaultTebligTarihi ?? "");
             setPerRecipientMessages({});
             setExtraAttachments([]);
             setShowNoEmailConfirm(false);
         }
-    }, [isOpen, defaultCc.length]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     const handleSelectRecipient = (type: 'to' | 'cc', recipient: { name: string, email: string }) => {
         if (type === 'to') {
@@ -184,6 +196,12 @@ export function EmailModal({
                     <DialogTitle className="flex items-center gap-2 text-xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
                         <Mail className="w-6 h-6 text-primary" />
                         {step === "setup" ? "İşlem Onayı ve Bildirim" : "Mesaj Önizleme"}
+                        {isBatchMode && batchCount > 0 && (
+                            <Badge variant="outline" className="ml-auto text-xs font-medium gap-1.5 border-primary/40 text-primary bg-primary/5">
+                                <Layers className="w-3 h-3" />
+                                Dosya {batchCount}/{totalFiles}
+                            </Badge>
+                        )}
                     </DialogTitle>
                     {step === "preview" && !isGeneratingPreviews && (
                         <p className="text-sm text-muted-foreground pt-1">
@@ -370,6 +388,7 @@ export function EmailModal({
                                     </div>
                                 </div>
                             )}
+
                         </div>
                     )}
 
@@ -500,7 +519,7 @@ export function EmailModal({
                     <AlertDialogCancel>Geri Dön (E-posta Ekle)</AlertDialogCancel>
                     <AlertDialogAction
                         className="bg-amber-600 hover:bg-amber-700 text-white"
-                        onClick={() => onConfirm([], [], false, tebligTarihi, undefined, undefined)}
+                        onClick={() => onConfirm([], [], false, tebligTarihi, undefined, extraAttachments.length > 0 ? extraAttachments : undefined)}
                     >
                         Evet, E-Postasız Kaydet
                     </AlertDialogAction>

@@ -387,6 +387,20 @@ def check_and_migrate_tables():
                     except Exception as e:
                         logger.error(f"Migration error for cases.tenant_id: {e}")
 
+            # 10b. TENANT ISOLATION — clients.tenant_id (IDOR-1)
+            # Mevcut müvekkiller NULL ile bırakılır → her iki tenant erişmeye devam eder.
+            # Yeni eklenenler add_client(data, tenant_id=...) ile damgalanır.
+            if "clients" in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns("clients")]
+                if "tenant_id" not in columns:
+                    try:
+                        conn.execute(text('ALTER TABLE clients ADD COLUMN tenant_id VARCHAR(100)'))
+                        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_clients_tenant ON clients(tenant_id)'))
+                        conn.commit()
+                        logger.info("Added tenant_id to clients")
+                    except Exception as e:
+                        logger.error(f"Migration error for clients.tenant_id: {e}")
+
             # 9. CASE_STAGE_LOGS TABLE
             if "case_stage_logs" not in inspector.get_table_names():
                 try:

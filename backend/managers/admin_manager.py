@@ -260,13 +260,20 @@ def delete_case_subject(code: str):
     finally:
         db.close()
 
-def add_client(data: dict):
+def add_client(data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
         name = data.get("name", "").strip()
         if not name: return False
 
-        existing = db.query(models.Client).filter(models.Client.name.ilike(name)).first()
+        # Mevcut müvekkil (aynı isimde) varsa: yalnızca aynı tenant'a veya legacy NULL'a aitse güncelle.
+        existing_q = db.query(models.Client).filter(models.Client.name.ilike(name))
+        if tenant_id:
+            from sqlalchemy import or_
+            existing_q = existing_q.filter(
+                or_(models.Client.tenant_id == tenant_id, models.Client.tenant_id.is_(None))
+            )
+        existing = existing_q.first()
         if existing:
             existing.tc_no = data.get("tc_no")
             existing.phone = data.get("phone")
@@ -282,7 +289,7 @@ def add_client(data: dict):
             existing.active = True
             db.commit()
             return True
-        
+
         new_client = models.Client(
             name=name,
             tc_no=data.get("tc_no"),
@@ -296,6 +303,7 @@ def add_client(data: dict):
             birth_year=data.get("birth_year"),
             gender=data.get("gender"),
             specialty=data.get("specialty"),
+            tenant_id=tenant_id,
             active=True
         )
         db.add(new_client)
@@ -1497,10 +1505,16 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
         db.close()
 
 
-def get_case_stage_log(case_id: int) -> list:
-    """Davanın aşama tarihçesini döner."""
+def get_case_stage_log(case_id: int, tenant_id: str = None) -> list:
+    """Davanın aşama tarihçesini döner. tenant_id verilirse, dava o tenant'a (veya legacy NULL'a) ait değilse boş liste döner."""
     db = SessionLocal()
     try:
+        # Önce davanın bu tenant tarafından görülebildiğini doğrula
+        case_q = db.query(models.Case).filter(models.Case.id == case_id)
+        case_q = _apply_tenant_filter(case_q, tenant_id)
+        if not case_q.first():
+            return []
+
         logs = (
             db.query(models.CaseStageLog)
             .filter(models.CaseStageLog.case_id == case_id)

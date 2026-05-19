@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Upload, FileText, X } from "lucide-react";
 import { Document, Packer, Paragraph } from "docx";
 import { saveAs } from "file-saver";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -39,18 +40,41 @@ export const FileUpload = ({
     setIsDragging(false);
   }, []);
 
+  const isValidFile = (file: File) => {
+    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'text/plain', 'application/xml', 'text/xml', 'application/zip'];
+    return validTypes.includes(file.type) || file.name.toLowerCase().endsWith('.udf');
+  };
+
+  const warnInvalidFiles = (invalidNames: string[]) => {
+    if (invalidNames.length === 0) return;
+    const preview = invalidNames.slice(0, 5).join(", ");
+    const suffix = invalidNames.length > 5 ? ` (+${invalidNames.length - 5} dosya daha)` : "";
+    toast.warning(
+      `${invalidNames.length} dosya desteklenmeyen formatta atlandı: ${preview}${suffix}`,
+      { duration: 6000 }
+    );
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter(file => isValidFile(file));
-
-    if (validFiles.length === 0) {
-      return; // No valid files
+    const validFiles: File[] = [];
+    const invalidNames: string[] = [];
+    for (const file of files) {
+      if (isValidFile(file)) {
+        validFiles.push(file);
+      } else {
+        invalidNames.push(file.name);
+      }
     }
 
+    warnInvalidFiles(invalidNames);
 
+    if (validFiles.length === 0) {
+      return;
+    }
 
     // Send all valid files (or single file for backward compatibility)
     if (validFiles.length === 1) {
@@ -62,16 +86,23 @@ export const FileUpload = ({
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files).filter(isValidFile);
-      if (files.length > 0) {
-        onFileSelect(files);
+      const allFiles = Array.from(e.target.files);
+      const validFiles: File[] = [];
+      const invalidNames: string[] = [];
+      for (const file of allFiles) {
+        if (isValidFile(file)) {
+          validFiles.push(file);
+        } else {
+          invalidNames.push(file.name);
+        }
+      }
+
+      warnInvalidFiles(invalidNames);
+
+      if (validFiles.length > 0) {
+        onFileSelect(validFiles);
       }
     }
-  };
-
-  const isValidFile = (file: File) => {
-    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'text/plain', 'application/xml', 'text/xml', 'application/zip'];
-    return validTypes.includes(file.type) || file.name.toLowerCase().endsWith('.udf');
   };
 
   const handleUploadClick = () => {

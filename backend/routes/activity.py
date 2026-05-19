@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from database import get_db
 from dependencies import get_current_user
+from routes.config import require_admin
 from managers.activity_manager import (
     _build_report_for_date,
     catch_up_missed_reports,
@@ -267,7 +268,7 @@ def admin_trigger_report(
         default=None,
         description="Dolu olursa o tarihteki TÜM belgeler bu e-posta altında gruplanır (eski belgeler için).",
     ),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     db=Depends(get_db),
 ):
     """[ADMIN] Belirtilen tarih için raporu elle tetikler ve tanı bilgisi döner."""
@@ -314,7 +315,7 @@ def admin_trigger_report(
         )
     except Exception as e:
         logger.error(f"Tanı sorgusu hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Veritabanı sorgu hatası: {e}")
+        raise HTTPException(status_code=500, detail="Veritabanı sorgu hatası oluştu.")
 
     docs_without_email = total_docs - docs_with_email
 
@@ -323,7 +324,7 @@ def admin_trigger_report(
         count = _build_report_for_date(db, parsed, force_user_email=force_user_email or None)
     except Exception as e:
         logger.error(f"Rapor oluşturma hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Rapor oluşturma hatası: {e}")
+        raise HTTPException(status_code=500, detail="Rapor oluşturma sırasında bir hata oluştu.")
 
     msg_parts = [f"{parsed} tarihi için {count} grup raporu oluşturuldu/güncellendi."]
     if docs_without_email > 0 and not force_user_email:
@@ -351,20 +352,20 @@ def admin_trigger_report(
 
 
 @router.post("/api/activity/admin/catch-up")
-def admin_catch_up(user: dict = Depends(get_current_user)):
+def admin_catch_up(user: dict = Depends(require_admin)):
     """[ADMIN] Kaçırılmış günlerin raporlarını tamamlar."""
     try:
         catch_up_missed_reports()
     except Exception as e:
         logger.error(f"Catch-up hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Catch-up hatası: {e}")
+        raise HTTPException(status_code=500, detail="Catch-up işlemi sırasında bir hata oluştu.")
     return {"success": True, "message": "Catch-up tamamlandı."}
 
 
 @router.delete("/api/activity/admin/reset")
 def admin_reset_report(
     target_date: Optional[str] = Query(default=None, description="YYYY-MM-DD. Boş = bugün."),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     db=Depends(get_db),
 ):
     """[ADMIN] Belirtilen tarihteki raporları siler."""
@@ -388,7 +389,7 @@ def admin_reset_report(
 @router.get("/api/activity/admin/report/{report_id}")
 def admin_get_report_detail(
     report_id: int,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     db=Depends(get_db),
 ):
     """[ADMIN] Belirli bir raporun detayını (3 kategori belge listeli) döner."""
@@ -404,7 +405,7 @@ def admin_get_report_detail(
 
 @router.get("/api/activity/admin/list")
 def admin_list_reports(
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     db=Depends(get_db),
 ):
     """[ADMIN] Son 30 gündeki tüm raporları listeler."""

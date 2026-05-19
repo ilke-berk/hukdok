@@ -13,7 +13,7 @@ export const msalConfig: Configuration = {
         redirectUri: window.location.origin, // Auto-detects localhost or production
     },
     cache: {
-        cacheLocation: "localStorage", // Keep user logged in across sessions
+        cacheLocation: "sessionStorage",
     },
 };
 
@@ -21,8 +21,11 @@ export const msalConfig: Configuration = {
 export const msalInstance = new PublicClientApplication(msalConfig);
 
 /**
- * Scopes (Permissions) requested from Microsoft Graph API
+ * Backend API için scope. Azure AD app registration → "Expose an API" altında
+ * tanımlı `access_as_user` scope'unu kullanır. Backend bu token'ın aud'unu
+ * client_id'ye karşı doğrular (auth_verifier.py).
  */
+const apiClientId = import.meta.env.VITE_AZURE_CLIENT_ID;
 export const loginRequest = {
-    scopes: ["User.Read"], // Read user profile (email, name, etc.)
+    scopes: [`api://${apiClientId}/access_as_user`],
 };

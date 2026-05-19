@@ -188,6 +188,7 @@ class Client(Base):
     name = Column(String, index=True, nullable=False) # Müvekkil adı (unique değil, TC/cari_kod ile ayırt edilir)
     source_ids = Column(String) # JSON or Comma-separated list of SharePoint IDs
     active = Column(Boolean, default=True)
+    tenant_id = Column(String, index=True, nullable=True)  # Azure AD tenant (tid). NULL = paylaşılan legacy
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
     
     # New Fields for Client Management

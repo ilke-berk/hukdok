@@ -4,9 +4,14 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
+from auth_helpers import (
+    get_tenant_owned_case,
+    get_tenant_owned_hearing,
+    tenant_filter_clause,
+)
 from dependencies import get_current_user, get_current_tenant
 from schemas import (
     CaseCreate, CaseListRead, CaseRelationCreate, RelatedCaseSummary, RelatedCasesResponse,
@@ -33,7 +38,9 @@ logger = logging.getLogger(__name__)
 
 @router.post("/api/cases")
 def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
-    result = add_case(case_data.model_dump(), tenant_id=tenant_id)
+    # Hanyaloğlu Acar + LexisBio ortak çalıştığı için yeni davalar paylaşımlı (tenant_id=NULL).
+    # tenant_id Depends'i token doğrulaması için kalıyor ama damgalamada kullanılmıyor.
+    result = add_case(case_data.model_dump())
     if not result:
         raise HTTPException(status_code=500, detail="Failed to save case")
     return {"status": "success", "message": "Case saved", **result}
@@ -73,8 +80,10 @@ def get_client_case_sequence(client_name: str, tenant_id: str = Depends(get_curr
         query_pattern = f"{clean_name}%"
         count = (
             db.query(func.count(func.distinct(models.CaseParty.case_id)))
+            .join(models.Case, models.CaseParty.case_id == models.Case.id)
             .filter(models.CaseParty.party_type == "CLIENT")
             .filter(models.CaseParty.name.ilike(query_pattern))
+            .filter(tenant_filter_clause(models.Case, tenant_id))
             .scalar()
         )
         return {"sequence": (count or 0) + 1}
@@ -251,6 +260,11 @@ def delete_case_relation(
     """Manuel bağlantıyı sil."""
     db = SessionLocal()
     try:
+        # Önce bu davaya istek sahibi tenant'ın erişip erişemediğini doğrula
+        case = get_tenant_owned_case(db, case_id, tenant_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
         relation = db.query(models.CaseRelation).filter(
             models.CaseRelation.id == relation_id,
             (
@@ -291,7 +305,7 @@ def api_get_case_stage_log(
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Davanın aşama tarihçesini döner."""
-    return get_case_stage_log(case_id)
+    return get_case_stage_log(case_id, tenant_id=tenant_id)
 
 
 @router.post("/api/cases/{case_id}/hearing-dates")
@@ -379,7 +393,7 @@ def delete_hearing_date(
 ):
     db = SessionLocal()
     try:
-        row = db.query(models.HearingDate).filter(models.HearingDate.id == hearing_id).first()
+        row = get_tenant_owned_hearing(db, hearing_id, tenant_id)
         if not row:
             raise HTTPException(status_code=404, detail="Duruşma tarihi bulunamadı")
         db.delete(row)
@@ -442,6 +456,7 @@ def get_incomplete_tasks(tenant_id: str = Depends(get_current_tenant)):
         clients = (
             db.query(models.Client)
             .filter(models.Client.active == True)
+            .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.updated_at.desc())
             .limit(50)
             .all()

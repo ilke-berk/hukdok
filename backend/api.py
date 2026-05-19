@@ -192,7 +192,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, max_size: int = 100 * 1024 * 1024):
+    def __init__(self, app, max_size: int = 50 * 1024 * 1024):
         super().__init__(app)
         self.max_size = max_size
 
@@ -206,13 +206,13 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                     {"size_mb": content_length / 1024 / 1024},
                 )
                 return Response(
-                    content="Request body too large. Maximum: 100MB",
+                    content="Request body too large. Maximum: 50MB",
                     status_code=413,
                 )
         return await call_next(request)
 
 
-app.add_middleware(RequestSizeLimitMiddleware, max_size=100 * 1024 * 1024)
+app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
 from routes import config, clients, cases, documents, processing, activity

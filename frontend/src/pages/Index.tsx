@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { FileUpload } from "@/components/FileUpload";
@@ -18,9 +18,10 @@ import { useConfig } from "@/hooks/useConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
-import { getStoredOutputDir, setStoredOutputDir, clearStoredOutputDir } from "@/lib/directoryStorage";
+import { getStoredOutputDir, setStoredOutputDir } from "@/lib/directoryStorage";
 
 import { EmailModal } from "@/components/email/EmailModal";
+import { BatchPrepScreen, type BatchPrepConfig } from "@/components/BatchPrepScreen";
 
 interface SuggestedCase {
   case_id: number;
@@ -73,6 +74,18 @@ interface IndexCaseData {
   [key: string]: unknown;
 }
 
+// Faz 5: Pre-load buffer entry — analiz sonucu, process_id ve hangi File'a ait olduğu.
+// File referansı ile eşleştirme yapıyoruz; queue mutate edildiğinde stale entry'ler
+// güvenle filtrelenebilsin.
+interface PreloadEntry {
+  file: File;
+  analysisData: AnalysisData;
+  processId: string | null;
+}
+
+// Aynı anda buffer'da tutulacak en fazla pre-load sayısı (dosya başına).
+const MAX_PRELOAD_DEPTH = 2;
+
 // Global declaration for TypeScript to recognize showDirectoryPicker
 declare global {
   interface Window {
@@ -104,16 +117,54 @@ const Index = () => {
   const [currentFileIndex, setCurrentFileIndex] = useState<number>(0);
   const [processedCount, setProcessedCount] = useState<number>(0);
 
-  // Pipeline states for background analysis
-  const [nextAnalysisData, setNextAnalysisData] = useState<AnalysisData | null>(null);
-  const [isPreloading, setIsPreloading] = useState(false);
+  // Faz 5: Pipeline pre-load buffer (FIFO). Tek slot yerine MAX_PRELOAD_DEPTH kadar
+  // dosya ileriye buffer'lanır. Sıralı doldurulur (concurrent değil) — backend AI
+  // API rate limit'i için aynı anda en fazla 1 preload + 1 aktif analiz çalışır.
+  const [preloadBuffer, setPreloadBuffer] = useState<PreloadEntry[]>([]);
+  // Eş-zamanlılık kilidi (state setter'larından önce hemen okunabilmeli).
+  const preloadInProgressRef = useRef(false);
+  // Preload tamamlanırken dosyanın hâlâ kuyrukta olduğunu doğrulamak için.
+  const fileQueueRef = useRef<File[]>([]);
 
-  // Faz 3: PROCESS_CACHE ids
+  // Faz 3: PROCESS_CACHE id (aktif dosya için)
   const [processId, setProcessId] = useState<string | null>(null);
-  const [nextProcessId, setNextProcessId] = useState<string | null>(null);
 
   // Batch Mode States
   const [processedBatch, setProcessedBatch] = useState<{ path: string, name: string }[]>([]);
+
+  // Faz 3.1: Batch e-posta ayarları paylaşımı. Toggle açıkken sıradaki dosyalarda
+  // EmailModal açılmaz; bu config doğrudan handleFinalProcess'e geçilir.
+  const [batchEmailConfig, setBatchEmailConfig] = useState<{
+    to: string[];
+    cc: string[];
+    shouldSend: boolean;
+    tebligTarihi?: string;
+    extraAttachments?: File[];
+  } | null>(null);
+
+  // Faz 6: Toplu yükleme hazırlık ekranı state'i. fileQueue.length > 1 olduğunda
+  // dosyalar kuyruğa alınmadan önce burada belge türleri ve e-posta ayarları toplanır.
+  const [showBatchPrep, setShowBatchPrep] = useState(false);
+  const [pendingBatchFiles, setPendingBatchFiles] = useState<File[]>([]);
+  const [batchPrep, setBatchPrep] = useState<{
+    docTypes: string[];
+    emailPrefill: {
+      sendEmail: boolean;
+      to: { name: string; email: string }[];
+      cc: { name: string; email: string }[];
+      tebligTarihi: string;
+      confirmPerFile: boolean;
+    };
+  } | null>(null);
+
+  // Faz 3.3: Batch sonu toplu özet için sonuç biriktirme. State yerine ref kullanıyoruz —
+  // ardışık handleFinalProcess çağrılarında React state güncelleme gecikmesi olmadan
+  // son dosyada güncel toplamı okuyabilelim.
+  const batchResultsRef = useRef<{
+    successCount: number;
+    emailSuccessCount: number;
+    errors: { filename: string; reason: string }[];
+  }>({ successCount: 0, emailSuccessCount: 0, errors: [] });
 
   // --- FAZ 1: Dava Bağlantısı State ---
   // Using explicit generic typing. Will define a dedicated CaseRead interface later in Faz 4
@@ -200,18 +251,72 @@ const Index = () => {
     // Convert to array for consistent handling
     const fileArray = Array.isArray(files) ? files : [files];
 
+    // Faz 6: Çoklu dosya seçildiğinde analiz başlamadan önce hazırlık ekranını aç.
+    // Kuyruk ve diğer state'ler hazırlık ekranı onaylandığında kurulur (handleBatchPrepStart).
+    if (fileArray.length > 1) {
+      setPendingBatchFiles(fileArray);
+      setShowBatchPrep(true);
+      return;
+    }
+
     setFileQueue(fileArray);
     setCurrentFileIndex(0);
     setProcessedCount(0);
     setProcessedBatch([]); // Reset batch
     setSelectedFile(fileArray[0]);
     setAnalysisData(null);
-    setNextAnalysisData(null);
+    setPreloadBuffer([]);
+  };
 
-    // Notify user about queue
-    if (fileArray.length > 1) {
-      toast.info(`${fileArray.length} dosya kuyruğa alındı. Pipeline başlatılıyor...`);
+  // Faz 6: Hazırlık ekranı onaylandığında: kuyruğu kur, batchPrep'i kaydet,
+  // confirmPerFile kapalıysa batchEmailConfig'i şimdiden doldur (modal atlanır).
+  const handleBatchPrepStart = (config: BatchPrepConfig) => {
+    const files = pendingBatchFiles;
+    setShowBatchPrep(false);
+    setPendingBatchFiles([]);
+
+    setBatchPrep({
+      docTypes: config.docTypes,
+      emailPrefill: {
+        sendEmail: config.emailConfig.sendEmail,
+        to: config.emailConfig.to,
+        cc: config.emailConfig.cc,
+        tebligTarihi: config.emailConfig.tebligTarihi,
+        confirmPerFile: config.emailConfig.confirmPerFile,
+      },
+    });
+
+    // confirmPerFile kapalı → EmailModal hiç açılmasın; batchEmailConfig şimdiden hazır.
+    // sendEmail kapalı da aynı yola gider (modal atlanır, e-posta gönderilmez).
+    if (!config.emailConfig.confirmPerFile) {
+      const toList = config.emailConfig.to.map((r) => `${r.name} <${r.email}>`);
+      const ccList = config.emailConfig.cc.map((r) => `${r.name} <${r.email}>`);
+      setBatchEmailConfig({
+        to: toList,
+        cc: ccList,
+        shouldSend: config.emailConfig.sendEmail,
+        tebligTarihi: config.emailConfig.tebligTarihi || undefined,
+        extraAttachments: undefined,
+      });
+    } else {
+      setBatchEmailConfig(null);
     }
+
+    setFileQueue(files);
+    setCurrentFileIndex(0);
+    setProcessedCount(0);
+    setProcessedBatch([]);
+    setSelectedFile(files[0]);
+    setSelectedDocType(config.docTypes[0] || "");
+    setAnalysisData(null);
+    setPreloadBuffer([]);
+
+    toast.info(`${files.length} dosya kuyruğa alındı. Pipeline başlatılıyor...`);
+  };
+
+  const handleBatchPrepCancel = () => {
+    setShowBatchPrep(false);
+    setPendingBatchFiles([]);
   };
 
   const handleClearFile = () => {
@@ -221,13 +326,31 @@ const Index = () => {
     setCurrentFileIndex(0);
     setProcessedCount(0);
     setProcessedBatch([]);
-    setNextAnalysisData(null);
+    setPreloadBuffer([]);
     setProcessId(null);
-    setNextProcessId(null);
     setSelectedDocType("");
     // Dava bağlantısını da sıfırla
     setLinkedCase(null);
     setCaseSearch("");
+    // Faz 3: batch state sıfırla
+    setBatchEmailConfig(null);
+    batchResultsRef.current = { successCount: 0, emailSuccessCount: 0, errors: [] };
+    // Faz 6: hazırlık state'i sıfırla
+    setBatchPrep(null);
+    setShowBatchPrep(false);
+    setPendingBatchFiles([]);
+  };
+
+  // Faz 4.2: Bekleyen dosyaları kuyruktan çıkar. Geçmiş ve mevcut dosya korunur.
+  const handleRemoveFromQueue = (index: number) => {
+    if (index <= currentFileIndex) return;
+    const removed = fileQueue[index];
+    if (!removed) return;
+    setFileQueue(prev => prev.filter((_, i) => i !== index));
+    // Faz 5: Buffer'da o dosyaya ait entry varsa çıkar. File referansıyla eşleştirme
+    // sayesinde diğer entry'ler korunur; effect kalan boşluğu yeniden doldurur.
+    setPreloadBuffer(prev => prev.filter(e => e.file !== removed));
+    toast.info(`📤 "${removed.name}" kuyruktan çıkarıldı.`);
   };
 
   const handleSelectDirectory = async () => {
@@ -276,6 +399,39 @@ const Index = () => {
     }
   };
 
+  // Otomatik dava önerisi akışı — hem ilk analizden hem de pre-load geçişinden çağrılır.
+  // currentLinkedCase parametresi closure değerinin güncel olmadığı pre-load geçişinde
+  // doğru "henüz bağlı değil" durumunu iletmek için açıkça verilir.
+  const applyAutoSuggestionFlow = (
+    suggested: SuggestedCase | null | undefined,
+    currentLinkedCase: IndexCaseData | null
+  ) => {
+    if (!suggested || currentLinkedCase || isTestMode) return;
+
+    if (suggested.client_parties?.length || suggested.counter_parties?.length) {
+      setAnalysisData(prev => prev ? {
+        ...prev,
+        muvekkiller: suggested.client_parties?.length
+          ? suggested.client_parties
+          : prev.muvekkiller,
+        muvekkil_adi: suggested.client_parties?.[0] || prev.muvekkil_adi,
+        suggested_karsi_taraf: suggested.karsi_taraf || prev.suggested_karsi_taraf,
+      } : prev);
+    }
+
+    if (suggested.confidence === "HIGH") {
+      toast.info(
+        `🎯 Dava eşleşmesi bulundu: ${suggested.esas_no} (Skor: ${suggested.score}) — Lütfen sol panelden doğrulayıp onaylayın!`,
+        { duration: 8000 }
+      );
+    } else if (suggested.confidence === "MEDIUM") {
+      toast.info(
+        `💡 Olası dava önerisi: ${suggested.esas_no} (Skor: ${suggested.score}) — Lütfen sol panelden aratıp doğrulayın veya doğru davayı seçin.`,
+        { duration: 8000 }
+      );
+    }
+    // LOW skor: hiçbir şey yapma, kullanıcı manuel seçsin
+  };
 
   const handleAnalyze = async () => {
     // Web mode: File object is used directly, no file path needed
@@ -297,7 +453,10 @@ const Index = () => {
       // Web Mode: FormData ile dosya gönder
       const formData = new FormData();
       formData.append("file", selectedFile);
-      if (selectedDocType) formData.append("belge_turu_kodu", selectedDocType);
+      // Faz 6: hazırlık ekranından gelen belge türü öncelikli; yoksa kullanıcının
+      // mevcut akıştaki seçimini kullan.
+      const effectiveDocType = batchPrep?.docTypes[currentFileIndex] ?? selectedDocType;
+      if (effectiveDocType) formData.append("belge_turu_kodu", effectiveDocType);
 
       const response = await apiClient.fetch("/process", {
         method: "POST",
@@ -341,7 +500,7 @@ const Index = () => {
 
                 const analysisResult: AnalysisData = {
                   tarih: resultData.tarih || "",
-                  belge_turu_kodu: selectedDocType || resultData.belge_turu_kodu || "",
+                  belge_turu_kodu: effectiveDocType || resultData.belge_turu_kodu || "",
                   muvekkil_kodu: resultData.muvekkil_adi || "",
                   muvekkil_adi: resultData.muvekkil_adi || "",          // QuickCaseModal için
                   muvekkiller: resultData.muvekkiller || [],
@@ -363,50 +522,7 @@ const Index = () => {
                 };
                 setAnalysisData(analysisResult);
 
-                // --- FAZ 1: Otomatik Dava Bağlantısı ---
-                const suggested = resultData.suggested_case;
-                if (suggested && !linkedCase && !isTestMode) {
-                  const caseToLink = {
-                    id: suggested.case_id,
-                    tracking_no: suggested.tracking_no,
-                    esas_no: suggested.esas_no,
-                    court: suggested.court,
-                    responsible_lawyer_name: suggested.responsible_lawyer_name,
-                    status: suggested.status,
-                    karsi_taraf: suggested.karsi_taraf || "",
-                  };
-
-                  // Eşleşen DB kaydındaki tarafları analysisData'ya da yaz
-                  // (belgede muvekkiller boş gelse bile DB'den doldur)
-                  if (suggested.client_parties?.length || suggested.counter_parties?.length) {
-                    setAnalysisData(prev => prev ? {
-                      ...prev,
-                      muvekkiller: suggested.client_parties?.length
-                        ? suggested.client_parties
-                        : prev.muvekkiller,
-                      muvekkil_adi: suggested.client_parties?.[0] || prev.muvekkil_adi,
-                      suggested_karsi_taraf: suggested.karsi_taraf || prev.suggested_karsi_taraf,
-                    } : prev);
-                  }
-
-                  if (suggested.confidence === "HIGH") {
-                    // Eskiden otomatik olarak setLinkedCase(caseToLink) yapıyorduk.
-                    // ARTIK YAPMIYORUZ! (Human-in-the-loop: Kullanıcı onayı şart)
-                    toast.info(
-                      `🎯 Dava eşleşmesi bulundu: ${suggested.esas_no} (Skor: ${suggested.score}) — Lütfen sol panelden doğrulayıp onaylayın!`,
-                      { duration: 8000 }
-                    );
-                  } else if (suggested.confidence === "MEDIUM") {
-                    // Sadece öneri olarak kalsın, otomatik bağlama (kullanıcı onayı gereksin)
-                    toast.info(
-                      `💡 Olası dava önerisi: ${suggested.esas_no} (Skor: ${suggested.score}) — Lütfen sol panelden aratıp doğrulayın veya doğru davayı seçin.`,
-                      { duration: 8000 }
-                    );
-                  }
-                  // LOW skor: hiçbir şey yapma, kullanıcı manuel seçsin
-                }
-                // --- END FAZ 1 ---
-
+                applyAutoSuggestionFlow(resultData.suggested_case, linkedCase);
 
                 toast.success("Analiz tamamlandı!");
               }
@@ -428,20 +544,21 @@ const Index = () => {
     } finally {
       clearTimeout(timeoutId);
       setIsAnalyzing(false);
-
-      // Pipeline: Preload next file in background if available
-      if (fileQueue.length > 1 && currentFileIndex < fileQueue.length - 1 && !isPreloading) {
-        preloadNextFile(fileQueue[currentFileIndex + 1]);
-      }
+      // Faz 5: Pre-load tetiklemesini effect üstlendi. Burada explicit çağrı yok —
+      // fileQueue/currentFileIndex/preloadBuffer.length değiştikçe useEffect MAX_PRELOAD_DEPTH
+      // sınırına kadar sırayla doldurur.
     }
   };
 
-  // Pipeline: Preload next file in background
-  const preloadNextFile = async (nextFile: File) => {
-    if (isPreloading) return; // Prevent concurrent preloads
+  // Faz 5: Pre-load. Tek seferde 1 dosya işler (sıralı). Tamamlandığında dosya hâlâ
+  // kuyruktaysa buffer'a push eder; bu da fill effect'i tetikleyerek sıradakini başlatır.
+  const preloadNextFile = async (nextFile: File, docTypeCode?: string) => {
+    if (preloadInProgressRef.current) return;
+    preloadInProgressRef.current = true;
+    // Faz 3.3: Preload toast'ları batch'te susturulur; özet sonda gösterilir.
 
-    setIsPreloading(true);
-    toast.info("📂 Sıradaki dosya arka planda hazırlanıyor...", { duration: 2000 });
+    let preloadedData: AnalysisData | null = null;
+    let preloadedProcessId: string | null = null;
 
     try {
       const controller = new AbortController();
@@ -450,6 +567,9 @@ const Index = () => {
       // Web Mode: FormData ile dosya gönder
       const formData = new FormData();
       formData.append("file", nextFile);
+      // Faz 6: Hazırlık ekranından gelen belge türü pre-load anında da gönderilir
+      // — backend AI'a özel prompt'u kullanma şansı verilir (Bug #3 çözümü).
+      if (docTypeCode) formData.append("belge_turu_kodu", docTypeCode);
 
       const response = await apiClient.fetch("/process", {
         method: "POST",
@@ -486,26 +606,33 @@ const Index = () => {
                 console.error("Preload error:", msg.message);
               } else if (msg.status === "complete") {
                 const resultData = msg.data;
-                if (msg.process_id) setNextProcessId(msg.process_id);
+                if (msg.process_id) preloadedProcessId = msg.process_id;
 
-                // Store preloaded data
-                setNextAnalysisData({
+                // handleAnalyze ile birebir aynı alan kümesi. Faz 6: hazırlık
+                // ekranından gelen docTypeCode varsa onu kullan; yoksa AI'ın bulduğu
+                // değere düş (kullanıcı dosyaya geçince yine düzeltebilir).
+                preloadedData = {
                   tarih: resultData.tarih || "",
-                  belge_turu_kodu: resultData.belge_turu_kodu || "",
+                  belge_turu_kodu: docTypeCode || resultData.belge_turu_kodu || "",
                   muvekkil_kodu: resultData.muvekkil_adi || "",
+                  muvekkil_adi: resultData.muvekkil_adi || "",
                   muvekkiller: resultData.muvekkiller || [],
+                  karsi_taraf: resultData.karsi_taraf || "",
+                  suggested_karsi_taraf: resultData.suggested_karsi_taraf || "",
                   belgede_gecen_isimler: resultData.belgede_gecen_isimler || [],
                   esas_no: resultData.esas_no || "",
-                  durum: resultData.durum || "X",
+                  durum: resultData.durum || "G",
                   ofis_dosya_no: resultData.ofis_dosya_no || "000000000",
                   yedek1: "X",
                   yedek2: "XX",
                   ozet: resultData.ozet || "",
                   generated_filename: "",
                   hash: resultData.hash || "",
-                });
-
-                toast.success("✅ Sıradaki dosya hazır!", { duration: 2000 });
+                  court: resultData.court || undefined,
+                  suggested_case: resultData.suggested_case || null,
+                  sonraki_durusma_tarihi: resultData.sonraki_durusma_tarihi || undefined,
+                  sonraki_durusma_saati: resultData.sonraki_durusma_saati || undefined,
+                };
               }
             } catch (e) {
               console.error("Preload JSON parse error:", e);
@@ -519,9 +646,50 @@ const Index = () => {
       console.error("Preload error:", error);
       // Silent fail - just log, don't disrupt user flow
     } finally {
-      setIsPreloading(false);
+      // Buffer'a eklemeden önce dosyanın hâlâ kuyrukta olduğunu doğrula. Kullanıcı
+      // preload sırasında dosyayı kuyruktan çıkardıysa bu race'i atlıyoruz; aksi halde
+      // stale entry buffer slot'unu işgal edip sonraki preload'ı bloklardı.
+      if (preloadedData && fileQueueRef.current.includes(nextFile)) {
+        const finalData = preloadedData;
+        const finalProcessId = preloadedProcessId;
+        setPreloadBuffer(prev => {
+          // Duplicate guard: aynı dosya için zaten entry varsa eklemeyiz.
+          if (prev.some(e => e.file === nextFile)) return prev;
+          return [...prev, { file: nextFile, analysisData: finalData, processId: finalProcessId }];
+        });
+      }
+      preloadInProgressRef.current = false;
     }
   };
+
+  // Faz 5: fileQueue ref'ini güncel tut — preload tamamlanma race'i için.
+  useEffect(() => {
+    fileQueueRef.current = fileQueue;
+  }, [fileQueue]);
+
+  // Faz 5: Buffer fill effect. Sıralı çalışır (preloadInProgressRef ile kilitli).
+  // Bir preload bittiğinde preloadBuffer state'i değişir → effect tekrar tetiklenir →
+  // gerekiyorsa sıradakini başlatır. Backend tarafında aynı anda en fazla 1 preload
+  // + 1 aktif analiz çağrısı olur (AI API rate limit'i için bilinçli sınır).
+  useEffect(() => {
+    if (fileQueue.length <= 1) return;
+    if (preloadInProgressRef.current) return;
+    if (preloadBuffer.length >= MAX_PRELOAD_DEPTH) return;
+
+    // Bir sonraki preload edilecek dosyanın index'i: currentFileIndex+1 baz, üstüne
+    // buffer'da kaç tane varsa onun kadar ileriye gider.
+    const nextIndex = currentFileIndex + 1 + preloadBuffer.length;
+    if (nextIndex >= fileQueue.length) return;
+
+    const nextFile = fileQueue[nextIndex];
+    // Aynı dosya buffer'da varsa (örn. queue mutation sonrası) tetikleme.
+    if (preloadBuffer.some(e => e.file === nextFile)) return;
+
+    // Faz 6: hazırlık ekranında o dosya için belirlenmiş belge türünü pre-load'a geç.
+    const nextDocType = batchPrep?.docTypes[nextIndex] || undefined;
+    preloadNextFile(nextFile, nextDocType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileQueue, currentFileIndex, preloadBuffer]);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
@@ -540,7 +708,21 @@ const Index = () => {
   const handleConfirmClick = () => {
     if (!finalData && !analysisData) return;
 
-    // Her dosya için mail modalını aç (tek veya toplu yükleme fark etmez)
+    // Faz 3.1: Batch modda config varsa modal atlanır; yoksa açılır.
+    // Ekler kullanıcının seçtiği şekilde tekrar gönderilir (paylaşım kararı).
+    // Per-recipient mesajlar dosyaya özgü kalır — backend default şablon kullanır.
+    if (batchEmailConfig) {
+      handleFinalProcess(
+        batchEmailConfig.to,
+        batchEmailConfig.cc,
+        batchEmailConfig.shouldSend,
+        batchEmailConfig.tebligTarihi,
+        undefined,
+        batchEmailConfig.extraAttachments,
+      );
+      return;
+    }
+
     setIsEmailModalOpen(true);
   };
 
@@ -566,7 +748,10 @@ const Index = () => {
     setEmailModalLoading(false);
     setIsProcessing(true);
 
-    toast.info("İşlem başlatıldı (SharePoint & E-Posta)...");
+    // Faz 3.3: Batch modda ara toast'lar bastırılır; sonunda toplu özet gösterilir.
+    if (!isBatchMode) {
+      toast.info("İşlem başlatıldı (SharePoint & E-Posta)...");
+    }
 
     try {
       // Web Mode: FormData ile dosya ve metadata gönder
@@ -670,7 +855,9 @@ const Index = () => {
             const dlResponse = await apiClient.fetch(`/api/download/${downloadId}`);
             if (dlResponse.ok) {
               blobToSave = await dlResponse.blob();
-              toast.success("📄 İşlenmiş (PDF/A) dosya indirildi.");
+              if (!isBatchMode) {
+                toast.success("📄 İşlenmiş (PDF/A) dosya indirildi.");
+              }
             } else {
               console.error("Download failed, falling back to original");
             }
@@ -680,49 +867,49 @@ const Index = () => {
         } else {
           const isNonPdf = !selectedFile.name.toLowerCase().endsWith(".pdf");
           if (isNonPdf && newFilename.toLowerCase().endsWith(".pdf")) {
+            // Uyarı kritik: batch'te de görünmeli.
             toast.warning(`PDF dönüşümü sunucuda yapıldı ancak indirilemedi. Orijinal dosya (${selectedFile.name.split('.').pop()}) .pdf olarak kaydediliyor (açılmayabilir).`, { duration: 5000 });
           }
         }
 
         const success = await saveFileToDisk(blobToSave as File, finalSaveFilename);
-        if (success) {
+        if (success && !isBatchMode) {
           toast.success(`💾 Dosya şuraya kaydedildi: ${finalSaveFilename}`);
         }
       }
 
       // TRACK PROCESSED FILE FOR BATCH (Web modunda dosya objesi kullanılır)
-      const updatedBatch = [...processedBatch];
-      updatedBatch.push({ path: "", name: newFilename }); // Web'de path yok
-      setProcessedBatch(updatedBatch);
+      // Fonksiyonel setter: ardışık çağrılarda stale closure'a düşmemek için.
+      setProcessedBatch(prev => [...prev, { path: "", name: newFilename }]);
 
-      // Mail sonucunu anında göster (senkron gönderim)
-      if (shouldSendEmail) {
-        if (result.results?.email_success === true) {
-          toast.success(
-            isBatchMode
-              ? `✅ Dosya işlendi ve e-posta gönderildi (${currentFileIndex + 1}/${fileQueue.length})`
-              : "✅ Belge arşivlendi ve e-posta gönderildi!"
-          );
-        } else if (result.results?.email_warning) {
-          toast.success(
-            isBatchMode
-              ? `✅ Dosya arşivlendi (${currentFileIndex + 1}/${fileQueue.length})`
-              : "✅ Belge arşivlendi."
-          );
-          toast.error(`❌ E-posta gönderilemedi: ${result.results.email_warning}`, { duration: 10000 });
-        } else {
-          toast.success(
-            isBatchMode
-              ? `✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`
-              : "✅ Belge arşivlendi."
-          );
+      // Faz 3.3: Batch modda per-file başarı toast'ları bastırılır; sayaçlar artırılır
+      // ve sonunda toplu özet gösterilir. Kritik hata (e-posta fail) batch'te de toast atar.
+      const emailFailed = shouldSendEmail && result.results?.email_warning;
+      if (isBatchMode) {
+        batchResultsRef.current.successCount += 1;
+        if (shouldSendEmail && result.results?.email_success === true) {
+          batchResultsRef.current.emailSuccessCount += 1;
+        }
+        if (emailFailed) {
+          batchResultsRef.current.errors.push({
+            filename: newFilename,
+            reason: `E-posta: ${result.results.email_warning}`,
+          });
+          toast.error(`❌ E-posta gönderilemedi (${newFilename}): ${result.results.email_warning}`, { duration: 10000 });
         }
       } else {
-        toast.success(
-          isBatchMode
-            ? `✅ Dosya işlendi (${currentFileIndex + 1}/${fileQueue.length})`
-            : "✅ Belge arşivlendi (E-posta gönderilmedi)."
-        );
+        if (shouldSendEmail) {
+          if (result.results?.email_success === true) {
+            toast.success("✅ Belge arşivlendi ve e-posta gönderildi!");
+          } else if (emailFailed) {
+            toast.success("✅ Belge arşivlendi.");
+            toast.error(`❌ E-posta gönderilemedi: ${result.results.email_warning}`, { duration: 10000 });
+          } else {
+            toast.success("✅ Belge arşivlendi.");
+          }
+        } else {
+          toast.success("✅ Belge arşivlendi (E-posta gönderilmedi).");
+        }
       }
 
       // Pipeline: Move to next file in queue
@@ -733,54 +920,87 @@ const Index = () => {
         setSelectedFile(fileQueue[nextIndex]);
         setIsValidated(false);
         setFinalData(null);
-        setSelectedDocType("");
+        // Faz 6: hazırlık ekranında belirlenmiş belge türü varsa otomatik doldur.
+        setSelectedDocType(batchPrep?.docTypes[nextIndex] ?? "");
 
-        // Use preloaded data if available (instant switch!)
-        if (nextAnalysisData) {
-          setAnalysisData(nextAnalysisData);
-          setNextAnalysisData(null);
-          // Faz 3: advance process IDs
-          setProcessId(nextProcessId);
-          setNextProcessId(null);
-          toast.success(`⚡ Dosya ${nextIndex + 1}/${fileQueue.length} anında yüklendi!`);
+        // Dosya bazında reset — önceki dosyanın dava bağlantısı sıradakine sızmamalı.
+        // isTestMode korunur (kullanıcı batch boyunca açık tutmak isteyebilir).
+        setLinkedCase(null);
+        setCaseSearch("");
+        setSelectedPartyId(null);
 
-          // Continue pipeline: preload next file
-          if (nextIndex < fileQueue.length - 1 && !isPreloading) {
-            preloadNextFile(fileQueue[nextIndex + 1]);
+        // Faz 5: Buffer'dan eşleşen entry'yi çek (file referansı ile). Bulunursa
+        // anında yüklenir; buffer'dan çıkarılır ve effect yeni slot'u doldurur.
+        const nextFile = fileQueue[nextIndex];
+        const preloadedEntry = preloadBuffer.find(e => e.file === nextFile);
+        if (preloadedEntry) {
+          setAnalysisData(preloadedEntry.analysisData);
+          setProcessId(preloadedEntry.processId);
+          setPreloadBuffer(prev => prev.filter(e => e.file !== preloadedEntry.file));
+          // Faz 3.3: Batch'te "anında yüklendi" toast'u susturulur — özet sonda gösterilir.
+          if (!isBatchMode) {
+            toast.success(`⚡ Dosya ${nextIndex + 1}/${fileQueue.length} anında yüklendi!`);
           }
+
+          // Pre-loaded dosyada da AI önerisi akışı çalışsın.
+          // linkedCase yukarıda sıfırlandı; closure eski değeri tutar, bu yüzden null geçilir.
+          applyAutoSuggestionFlow(preloadedEntry.analysisData.suggested_case, null);
+          // Yeni preload tetiklemesi explicit değil — effect halleder.
         } else {
-          // Preload not ready yet — kullanıcı belge türü seçip analizi başlatacak
+          // Preload hazır değil veya başarısız oldu — kullanıcı belge türünü seçip
+          // analizi manuel başlatır. Effect arka planda sıradakini doldurmaya devam eder.
           setAnalysisData(null);
           toast.info(`📁 Dosya ${nextIndex + 1}/${fileQueue.length} hazır — lütfen belge türünü seçip analizi başlatın.`);
         }
       } else {
         // All files processed!
         const totalFiles = fileQueue.length;
-        toast.success(`🎉 Tüm dosyalar tamamlandı! (${totalFiles}/${totalFiles})`);
+        // Son dosyanın da sayıma dahil edilmesi: QueueStatus tüm rozetleri yeşil gösterir.
+        setProcessedCount(prev => prev + 1);
 
-        // Reset state for next batch
-        setAnalysisData(null);
-        setFinalData(null);
-        setSelectedFile(null);
-        setFileQueue([]);
-        setProcessedBatch([]); // Clear batch
-        setCurrentFileIndex(0);
-        setProcessedCount(0);
-        setNextAnalysisData(null);
-        setProcessId(null);
-        setNextProcessId(null);
-        setIsValidated(false);
-        setLinkedCase(null);
-        setCaseSearch("");
-        
-        // Reset output directory - User wants to re-select for every process
-        setOutputDirHandle(null);
-        await clearStoredOutputDir();
+        if (isBatchMode) {
+          // Faz 3.3: Batch sonu toplu özet.
+          const { successCount, emailSuccessCount, errors } = batchResultsRef.current;
+          const errorCount = errors.length;
+          const errorList = errors.length > 0
+            ? errors.map(e => e.filename).slice(0, 3).join(", ") + (errors.length > 3 ? "..." : "")
+            : "";
+          const summaryParts = [`🎉 ${successCount}/${totalFiles} tamamlandı`];
+          if (emailSuccessCount > 0) summaryParts.push(`📧 ${emailSuccessCount} e-posta gönderildi`);
+          if (errorCount > 0) summaryParts.push(`⚠️ ${errorCount} hata: ${errorList}`);
+          toast.success(summaryParts.join(" · "), { duration: 8000 });
+        } else {
+          toast.success(`🎉 Tüm dosyalar tamamlandı! (${totalFiles}/${totalFiles})`);
+        }
+
+        // Reset'i kısa bir gecikmeyle yap: kullanıcı "N/N tamamlandı" görsel teyidini görür.
+        setTimeout(() => {
+          setAnalysisData(null);
+          setFinalData(null);
+          setSelectedFile(null);
+          setFileQueue([]);
+          setProcessedBatch([]); // Clear batch
+          setCurrentFileIndex(0);
+          setProcessedCount(0);
+          setPreloadBuffer([]); // Faz 5: buffer'ı temizle
+          setProcessId(null);
+          setIsValidated(false);
+          setLinkedCase(null);
+          setCaseSearch("");
+          // Faz 3.1/3.3: batch state'leri sıfırla. outputDirHandle korunur (Faz 3.2).
+          setBatchEmailConfig(null);
+          batchResultsRef.current = { successCount: 0, emailSuccessCount: 0, errors: [] };
+          // Faz 6: hazırlık state'i de sıfırla.
+          setBatchPrep(null);
+        }, 1500);
       }
     } catch (error: unknown) {
       console.error("Confirmation error:", error);
       const errorMessage = error instanceof Error ? error.message : "Beklenmedik bir hata oluştu.";
       toast.error(errorMessage);
+      if (isBatchMode) {
+        batchResultsRef.current.errors.push({ filename: newFilename, reason: errorMessage });
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -1040,7 +1260,7 @@ const Index = () => {
 
             {selectedFile && (
               <>
-                <QueueStatus totalFiles={fileQueue.length} currentIndex={currentFileIndex} processedCount={processedCount} />
+                <QueueStatus totalFiles={fileQueue.length} currentIndex={currentFileIndex} processedCount={processedCount} onRemoveFile={handleRemoveFromQueue} />
 
                 <Button data-analyze-btn onClick={handleAnalyze} disabled={isAnalyzing || isProcessing || (!analysisData && !selectedDocType)}
                   className="w-full h-14 text-lg font-semibold bg-[hsl(345,80%,40%)] hover:bg-[hsl(345,80%,35%)] shadow-lg transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
@@ -1092,17 +1312,30 @@ const Index = () => {
         </div>
       </main>
 
+      {/* Faz 6: Toplu Yükleme Hazırlık Ekranı — fileQueue.length > 1 olduğunda
+          analiz başlamadan önce belge türü ve e-posta ayarları burada toplanır. */}
+      <BatchPrepScreen
+        isOpen={showBatchPrep}
+        files={pendingBatchFiles}
+        onCancel={handleBatchPrepCancel}
+        onStart={handleBatchPrepStart}
+      />
+
       {/* Email Modal */}
       <EmailModal
         isOpen={isEmailModalOpen}
         onClose={() => setIsEmailModalOpen(false)}
-        onConfirm={(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments) =>
-          handleFinalProcess(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments)
-        }
+        onConfirm={(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments) => {
+          handleFinalProcess(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments);
+        }}
         isLoading={emailModalLoading}
-        defaultTo={[]}
-        defaultCc={[]}
+        // Faz 6: confirmPerFile açıkken hazırlık ekranındaki ayarlar prefill olur.
+        defaultTo={batchPrep?.emailPrefill.to ?? []}
+        defaultCc={batchPrep?.emailPrefill.cc ?? []}
+        defaultSendEmail={batchPrep?.emailPrefill.sendEmail}
+        defaultTebligTarihi={batchPrep?.emailPrefill.tebligTarihi}
         batchCount={fileQueue.length > 1 ? processedBatch.length + 1 : 0}
+        totalFiles={fileQueue.length}
         analysisContext={{
           muvekkil_adi: (finalData || analysisData)?.muvekkil_kodu || (finalData || analysisData)?.muvekkil_adi,
           muvekkiller: (finalData || analysisData)?.muvekkiller,

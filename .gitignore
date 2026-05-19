@@ -70,3 +70,7 @@ backend/test_*.py
 *.db-shm
 *.db-wal
 backend/data/hukudok.db
+*.sql
+backup.sql
+*.dump
+*.pgdump

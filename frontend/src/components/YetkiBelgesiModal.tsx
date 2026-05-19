@@ -9,6 +9,7 @@ import { Printer, ChevronRight, ChevronLeft, FileText, Download, Loader2, Chevro
 import { useConfig } from "@/hooks/useConfig";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import type { Client } from "@/pages/ClientList";
+import { toast } from "sonner";
 
 interface Props {
     open: boolean;
@@ -20,6 +21,7 @@ interface AvukatDetay {
     ad: string;
     tc: string;
     sicil: string;
+    address: string;
 }
 
 const CACHE_KEY = "yetki_belgesi_avukat_cache";
@@ -51,6 +53,28 @@ function toUpper(str?: string): string {
     return (str || "").toLocaleUpperCase("tr-TR");
 }
 
+function onlyDigits(value: string, max?: number): string {
+    const d = value.replace(/\D/g, "");
+    return max ? d.slice(0, max) : d;
+}
+
+function maskDate(value: string): string {
+    const d = value.replace(/\D/g, "").slice(0, 8);
+    if (d.length <= 2) return d;
+    if (d.length <= 4) return `${d.slice(0, 2)}.${d.slice(2)}`;
+    return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`;
+}
+
+function isValidDateFormat(value: string): boolean {
+    if (!value) return true;
+    return /^\d{2}\.\d{2}\.\d{4}$/.test(value);
+}
+
+function sanitizeFilename(value: string): string {
+    const ascii = value.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+    return ascii.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     const { lawyers } = useConfig();
     const { authRequest } = useAuthRequest();
@@ -69,7 +93,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     // Step 2 — avukat detayları
     const [buroAdres, setBuroAdres] = useState("");
-    const [verenDetay, setVerenDetay] = useState<AvukatDetay>({ ad: "", tc: "", sicil: "" });
+    const [verenDetay, setVerenDetay] = useState<AvukatDetay>({ ad: "", tc: "", sicil: "", address: "" });
     const [yetkiliDetaylar, setYetkiliDetaylar] = useState<AvukatDetay[]>([]);
 
     // Step 2 — müvekkil (VEKİL EDEN) ek alanlar
@@ -92,23 +116,34 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     function lookupAvukat(ad: string): { tc: string; sicil: string; address: string } {
         const cache = loadCache();
         const normalAd = normalizeName(ad);
+        const cached = cache[normalAd] || { tc: "", sicil: "" };
         const match = lawyers.find(l => normalizeName(l.name) === normalAd);
         if (match) {
-            return { tc: match.tc_no || "", sicil: match.sicil_no || "", address: match.address || "" };
+            return {
+                tc: match.tc_no || cached.tc || "",
+                sicil: match.sicil_no || cached.sicil || "",
+                address: match.address || "",
+            };
         }
-        return { ...(cache[normalAd] || { tc: "", sicil: "" }), address: "" };
+        return { tc: cached.tc || "", sicil: cached.sicil || "", address: "" };
     }
 
     useEffect(() => {
         if (step !== 2) return;
-        const v = lookupAvukat(verenAd);
-        setVerenDetay({ ad: verenAd, tc: v.tc, sicil: v.sicil });
-        if (v.address) setBuroAdres(v.address);
-        setYetkiliDetaylar(yetkiliAdlar.map(ad => {
+
+        if (verenDetay.ad !== verenAd) {
+            const v = lookupAvukat(verenAd);
+            setVerenDetay({ ad: verenAd, tc: v.tc, sicil: v.sicil, address: v.address });
+            if (v.address) setBuroAdres(v.address);
+        }
+
+        setYetkiliDetaylar(prev => yetkiliAdlar.map(ad => {
+            const existing = prev.find(d => d.ad === ad);
+            if (existing) return existing;
             const l = lookupAvukat(ad);
-            return { ad, tc: l.tc, sicil: l.sicil };
+            return { ad, tc: l.tc, sicil: l.sicil, address: l.address };
         }));
-    }, [step]);
+    }, [step, verenAd, yetkiliAdlar.join(",")]);
 
     function toggleYetkili(ad: string) {
         setYetkiliAdlar(prev =>
@@ -116,7 +151,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
         );
     }
 
-    function updateYetkili(idx: number, field: "tc" | "sicil", value: string) {
+    function updateYetkili(idx: number, field: "tc" | "sicil" | "address", value: string) {
         setYetkiliDetaylar(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
     }
 
@@ -132,7 +167,10 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
         const content = printRef.current?.innerHTML;
         if (!content) return;
         const win = window.open("", "_blank", "width=820,height=960");
-        if (!win) return;
+        if (!win) {
+            toast.error("Yazdırma penceresi açılamadı. Tarayıcınızın bu site için pop-up engelleyiciyi devre dışı bırakın.");
+            return;
+        }
         win.document.write(`<!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -161,7 +199,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
         try {
             const payload = {
                 veren: { ad: verenDetay.ad, tc: verenDetay.tc, sicil: verenDetay.sicil },
-                yetkililar: yetkiliDetaylar.map(d => ({ ad: d.ad, tc: d.tc, sicil: d.sicil })),
+                yetkililar: yetkiliDetaylar.map(d => ({ ad: d.ad, tc: d.tc, sicil: d.sicil, address: d.address })),
                 buro_adres: buroAdres,
                 muvekkil: {
                     ad: client.name,
@@ -174,18 +212,21 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                 kapsam,
             };
             const res = await authRequest("/api/yetki-belgesi/udf", "POST", payload);
-            if (!res?.ok) throw new Error("Sunucu hatası");
+            if (!res?.ok) throw new Error(`Sunucu hatası (${res?.status ?? "bilinmiyor"})`);
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `yetki_belgesi_${(client.name || "belge").replace(/\s+/g, "_").substring(0, 30)}.udf`;
+            a.download = `yetki_belgesi_${(sanitizeFilename(client.name || "belge") || "belge").substring(0, 30)}.udf`;
             document.body.appendChild(a);
             a.click();
             a.remove();
             URL.revokeObjectURL(url);
+            toast.success("UDF dosyası indirildi.");
         } catch (e) {
             console.error("UDF indirme hatası:", e);
+            const msg = e instanceof Error ? e.message : "Bilinmeyen hata";
+            toast.error(`UDF indirilemedi: ${msg}`);
         } finally {
             setUdfLoading(false);
         }
@@ -195,7 +236,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
         setStep(1); setVerenAd(""); setYetkiliAdlar([]);
         setVerenOpen(false); setYetkiliOpen(false);
         setBuroAdres("");
-        setVerenDetay({ ad: "", tc: "", sicil: "" }); setYetkiliDetaylar([]);
+        setVerenDetay({ ad: "", tc: "", sicil: "", address: "" }); setYetkiliDetaylar([]);
         setMuvekkillAdres(client.address || ""); setMuvekkillIl(client.il || "");
         setVergiNo(client.tc_no || "");
         setDayNoterlik(client.noterlik || "");
@@ -209,15 +250,19 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     // Belge önizleme için müvekkil tam adres satırı
     const muvekkillTamAdres = [muvekkillAdres, muvekkillIl].filter(Boolean).join(" ");
 
-    // Dayanak satırı
+    // Dayanak satırı — UDF üreticisiyle aynı kurallar: noterlik büyük, tarih/yevmiye olduğu gibi
     const dayanakSatiri = [
-        dayNoterlik,
+        toUpper(dayNoterlik),
         dayTarih ? `${dayTarih} tarihli` : "",
         dayYevmiye ? `Yevmiye No: ${dayYevmiye}` : "",
     ].filter(Boolean).join(", ");
 
     const step1Valid = verenAd !== "" && yetkiliAdlar.length > 0;
-    const step2Valid = verenDetay.tc.trim() !== "";
+    const step2Valid =
+        verenDetay.tc.trim().length === 11 &&
+        verenDetay.sicil.trim() !== "" &&
+        yetkiliDetaylar.every(d => d.ad.trim() !== "") &&
+        isValidDateFormat(dayTarih);
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -371,7 +416,6 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                         <div className="flex flex-col gap-2 p-4 rounded-xl bg-secondary/20 border border-border">
                             <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Büro Adresi (Avukatlar için ortak)</span>
                             <Input value={buroAdres} onChange={e => setBuroAdres(e.target.value)}
-                                placeholder="BÜYÜKDERE CADDESİ NO:239/9 SARIYER İSTANBUL"
                                 className="bg-secondary/30 border-border" />
                         </div>
 
@@ -382,13 +426,13 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
                                     <Label className="text-[11px] text-muted-foreground">T.C. Kimlik No <span className="text-rose-500">*</span></Label>
-                                    <Input value={verenDetay.tc} onChange={e => setVerenDetay(d => ({ ...d, tc: e.target.value }))}
-                                        placeholder="00000000000" maxLength={11} className="bg-secondary/30 border-border font-mono" />
+                                    <Input value={verenDetay.tc} onChange={e => setVerenDetay(d => ({ ...d, tc: onlyDigits(e.target.value, 11) }))}
+                                        inputMode="numeric" maxLength={11} className="bg-secondary/30 border-border font-mono" />
                                 </div>
                                 <div className="space-y-1">
-                                    <Label className="text-[11px] text-muted-foreground">Baro Sicil No</Label>
-                                    <Input value={verenDetay.sicil} onChange={e => setVerenDetay(d => ({ ...d, sicil: e.target.value }))}
-                                        placeholder="18670" className="bg-secondary/30 border-border font-mono" />
+                                    <Label className="text-[11px] text-muted-foreground">Baro Sicil No <span className="text-rose-500">*</span></Label>
+                                    <Input value={verenDetay.sicil} onChange={e => setVerenDetay(d => ({ ...d, sicil: onlyDigits(e.target.value, 10) }))}
+                                        inputMode="numeric" className="bg-secondary/30 border-border font-mono" />
                                 </div>
                             </div>
                         </div>
@@ -402,14 +446,20 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
                                             <Label className="text-[11px] text-muted-foreground">T.C. Kimlik No</Label>
-                                            <Input value={detay.tc} onChange={e => updateYetkili(idx, "tc", e.target.value)}
-                                                placeholder="00000000000" maxLength={11} className="bg-secondary/30 border-border font-mono text-sm" />
+                                            <Input value={detay.tc} onChange={e => updateYetkili(idx, "tc", onlyDigits(e.target.value, 11))}
+                                                inputMode="numeric" maxLength={11} className="bg-secondary/30 border-border font-mono text-sm" />
                                         </div>
                                         <div className="space-y-1">
                                             <Label className="text-[11px] text-muted-foreground">Baro Sicil No</Label>
-                                            <Input value={detay.sicil} onChange={e => updateYetkili(idx, "sicil", e.target.value)}
-                                                placeholder="24174" className="bg-secondary/30 border-border font-mono text-sm" />
+                                            <Input value={detay.sicil} onChange={e => updateYetkili(idx, "sicil", onlyDigits(e.target.value, 10))}
+                                                inputMode="numeric" className="bg-secondary/30 border-border font-mono text-sm" />
                                         </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-[11px] text-muted-foreground">Adres <span className="text-muted-foreground/60">(boşsa "Aynı adreste mukim" yazılır)</span></Label>
+                                        <Input value={detay.address} onChange={e => updateYetkili(idx, "address", e.target.value)}
+                                            placeholder=""
+                                            className="bg-secondary/30 border-border text-sm" />
                                     </div>
                                 </div>
                             ))}
@@ -423,20 +473,20 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                 <div className="space-y-1">
                                     <Label className="text-[11px] text-muted-foreground">Adres</Label>
                                     <Input value={muvekkillAdres} onChange={e => setMuvekkillAdres(e.target.value)}
-                                        placeholder="MASLAK MAH. MASLAK MEYDAN SOK. NO.3/14" className="bg-secondary/30 border-border" />
+                                        className="bg-secondary/30 border-border" />
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                         <Label className="text-[11px] text-muted-foreground">İl</Label>
                                         <Input value={muvekkillIl} onChange={e => setMuvekkillIl(e.target.value)}
-                                            placeholder="SARIYER İSTANBUL" className="bg-secondary/30 border-border" />
+                                            className="bg-secondary/30 border-border" />
                                     </div>
                                     <div className="space-y-1">
                                         <Label className="text-[11px] text-muted-foreground">
                                             {client.client_type === "Corporate" ? "Vergi No" : "T.C. Kimlik No"}
                                         </Label>
-                                        <Input value={vergiNo} onChange={e => setVergiNo(e.target.value)}
-                                            placeholder={client.client_type === "Corporate" ? "3450249570" : "00000000000"}
+                                        <Input value={vergiNo} onChange={e => setVergiNo(onlyDigits(e.target.value, client.client_type === "Corporate" ? 10 : 11))}
+                                            inputMode="numeric"
                                             maxLength={client.client_type === "Corporate" ? 10 : 11}
                                             className="bg-secondary/30 border-border font-mono" />
                                     </div>
@@ -451,18 +501,23 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                 <div className="space-y-1">
                                     <Label className="text-[11px] text-muted-foreground">Noterlik</Label>
                                     <Input value={dayNoterlik} onChange={e => setDayNoterlik(e.target.value)}
-                                        placeholder="BEYOĞLU 60. NOTERLİĞİ" className="bg-secondary/30 border-border" />
+                                        className="bg-secondary/30 border-border" />
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                         <Label className="text-[11px] text-muted-foreground">Tarih (GG.AA.YYYY)</Label>
-                                        <Input value={dayTarih} onChange={e => setDayTarih(e.target.value)}
-                                            placeholder="27.01.2020" className="bg-secondary/30 border-border font-mono" />
+                                        <Input value={dayTarih} onChange={e => setDayTarih(maskDate(e.target.value))}
+                                            inputMode="numeric" maxLength={10}
+                                            className={`bg-secondary/30 border-border font-mono ${dayTarih && !isValidDateFormat(dayTarih) ? "border-rose-500/60" : ""}`} />
+                                        {dayTarih && !isValidDateFormat(dayTarih) && (
+                                            <p className="text-[10px] text-rose-400">Tarih GG.AA.YYYY formatında olmalı</p>
+                                        )}
                                     </div>
                                     <div className="space-y-1">
                                         <Label className="text-[11px] text-muted-foreground">Yevmiye No</Label>
-                                        <Input value={dayYevmiye} onChange={e => setDayYevmiye(e.target.value)}
-                                            placeholder="3639" className="bg-secondary/30 border-border font-mono" />
+                                        <Input value={dayYevmiye} onChange={e => setDayYevmiye(onlyDigits(e.target.value, 12))}
+                                            inputMode="numeric"
+                                            className="bg-secondary/30 border-border font-mono" />
                                     </div>
                                 </div>
                             </div>
@@ -504,8 +559,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                     <div>
                                         ({toUpper(buroAdres)} adresinde mukim
                                         {verenDetay.tc && `, T.C. Kimlik No: ${verenDetay.tc}`}
-                                        {verenDetay.sicil && `, ${verenDetay.sicil} sicil no'lu`}
-                                        {verenDetay.tc && `, Vergi Daire ve No: ${verenDetay.tc}`})
+                                        {verenDetay.sicil && `, ${verenDetay.sicil} sicil no'lu`})
                                     </div>
                                 </div>
 
@@ -515,7 +569,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                     <div key={detay.ad} style={{ paddingLeft: "16px", marginBottom: "10px" }}>
                                         <div style={{ fontWeight: "bold" }}>{idx + 1}. Av. {toUpper(detay.ad)}</div>
                                         <div>
-                                            (Aynı adreste mukim
+                                            ({detay.address ? `${toUpper(detay.address)} adresinde mukim` : "Aynı adreste mukim"}
                                             {detay.tc && `, T.C. Kimlik No: ${detay.tc}`}
                                             {detay.sicil && `, ${detay.sicil} sicil no'lu`})
                                         </div>
@@ -540,7 +594,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                     <>
                                         <div style={{ fontWeight: "bold", marginTop: "20px", marginBottom: "6px" }}>DAYANAK VEKALETNAME :</div>
                                         <div style={{ paddingLeft: "16px", marginBottom: "14px" }}>
-                                            {toUpper(dayanakSatiri)}
+                                            {dayanakSatiri}
                                         </div>
                                     </>
                                 )}

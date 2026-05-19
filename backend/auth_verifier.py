@@ -43,7 +43,7 @@ class AuthVerifier:
             logger.info(f"Auth: Validating Token for Tenant: {token_tenant}")
 
             if token_tenant not in ALLOWED_TENANTS:
-                logger.warning(f"Auth: Tenant unauthorized. Token: {token_tenant} is not in {ALLOWED_TENANTS}")
+                logger.warning(f"Auth: Tenant unauthorized: {token_tenant}")
                 return None
 
             # 3. Get/Create JWKS Client for this Tenant
@@ -54,16 +54,25 @@ class AuthVerifier:
                 AuthVerifier._jwks_clients[token_tenant] = PyJWKClient(jwks_url)
             
             signing_key = AuthVerifier._jwks_clients[token_tenant].get_signing_key_from_jwt(token)
-            
-            # 4. Verify Signature
-            # We skip 'aud' check because tokens might be for Graph API or other scopes.
-            # Critical part is: Signed by Microsoft + Whitelisted Tenant
+
+            # 4. Verify Signature + Audience
+            # aud, bu uygulama için verilmiş token'ları kabul etsin diye client_id'ye sabitlenir.
+            # Azure AD scope formatına göre token'ın aud'u "api://<client_id>" veya direkt "<client_id>"
+            # olabilir; ikisini de geçerli kabul ediyoruz.
+            client_id = os.getenv("AZURE_CLIENT_ID")
+            if not client_id:
+                logger.error("Auth: AZURE_CLIENT_ID env var is not set")
+                return None
+
+            allowed_audiences = [client_id, f"api://{client_id}"]
+
             claims = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
+                audience=allowed_audiences,
                 options={
-                    "verify_aud": False,
+                    "verify_aud": True,
                     "verify_exp": True
                 }
             )

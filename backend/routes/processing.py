@@ -17,28 +17,30 @@ from dependencies import get_current_user
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
+from managers.ttl_cache import TTLCache
 from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_size, validate_file_type
 import models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Download cache: stores temp file paths keyed by UUID for frontend download
-DOWNLOAD_CACHE: dict = {}
+# Download cache: temp file paths keyed by UUID for frontend download (1h TTL safety net)
+DOWNLOAD_CACHE = TTLCache(ttl_seconds=3600)
 
-# Process cache: keeps full PDF alive between /process and /confirm (Faz 3)
-PROCESS_CACHE: dict = {}  # process_id → {path, original_ext, ts}
+# Process cache: keeps full PDF alive between /process and /confirm (30 min TTL)
+PROCESS_CACHE = TTLCache(ttl_seconds=1800)
 
 
 def _cleanup_process_cache():
-    """Remove PROCESS_CACHE entries older than 30 minutes and delete their files."""
-    cutoff = time.time() - 1800  # 30 min
-    stale = [k for k, v in list(PROCESS_CACHE.items()) if v["ts"] < cutoff]
-    for k in stale:
-        entry = PROCESS_CACHE.pop(k, None)
-        if entry:
-            safe_remove(entry["path"])
-            logger.info(f"PROCESS_CACHE TTL expired: {k} → {entry['path']}")
+    """Remove PROCESS_CACHE entries older than TTL and delete their backing files."""
+    def _evict(k, entry):
+        safe_remove(entry.get("path"))
+        logger.info(f"PROCESS_CACHE TTL expired: {k} → {entry.get('path')}")
+    PROCESS_CACHE.cleanup_stale(on_evict=_evict)
+    # Piggyback download cache cleanup on the same trigger.
+    DOWNLOAD_CACHE.cleanup_stale(
+        on_evict=lambda k, v: logger.info(f"DOWNLOAD_CACHE TTL expired: {k}")
+    )
 
 # Document type → case status auto-mapping
 DOCTYPE_TO_STATUS_MAP = {
@@ -423,11 +425,10 @@ async def analyze_file_endpoint(
                     if full_pdf_path:
                         cached_full_pdf_path = full_pdf_path
                         original_ext = Path(full_pdf_path).suffix.lower()
-                        PROCESS_CACHE[process_id] = {
+                        PROCESS_CACHE.set(process_id, {
                             "path": full_pdf_path,
                             "original_ext": original_ext,
-                            "ts": time.time(),
-                        }
+                        })
                         TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path}")
 
                     if final_data and "ofis_dosya_no" not in final_data:
@@ -489,17 +490,28 @@ async def analyze_file_endpoint(
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
+def _download_owner_id(user: dict) -> str:
+    raw = user.get("preferred_username") or user.get("upn") or user.get("email") or ""
+    return raw.strip().lower()
+
+
 @router.get("/api/download/{file_id}")
-async def download_file(file_id: str):
-    if file_id not in DOWNLOAD_CACHE:
+async def download_file(file_id: str, user: dict = Depends(get_current_user)):
+    file_info = DOWNLOAD_CACHE.get(file_id)
+    if not file_info:
         raise HTTPException(status_code=404, detail="Dosya bulunamadı veya süresi doldu.")
 
-    file_info = DOWNLOAD_CACHE[file_id]
+    requester = _download_owner_id(user)
+    owner = (file_info.get("owner") or "").strip().lower()
+    if not requester or not owner or requester != owner:
+        # Mask existence to avoid leaking valid file_ids to non-owners.
+        raise HTTPException(status_code=404, detail="Dosya bulunamadı veya süresi doldu.")
+
     file_path = file_info["path"]
     filename = file_info["filename"]
 
     if not os.path.exists(file_path):
-        del DOWNLOAD_CACHE[file_id]
+        DOWNLOAD_CACHE.delete(file_id)
         raise HTTPException(status_code=404, detail="Dosya diskte bulunamadı.")
 
     return FileResponse(path=file_path, filename=filename, media_type="application/pdf")
@@ -558,19 +570,28 @@ async def confirm_process(
 
     results = {}
 
-    # Auto-lookup lawyer code from case if not provided
-    if not avukat_kodu and linked_case_id:
+    # IDOR-6: linked_case_id verildiyse önce tenant ownership doğrula.
+    # Belge SharePoint'e gitmeden ve _save_case_document çağrılmadan önce reddetmeliyiz.
+    if linked_case_id:
+        from auth_helpers import get_tenant_owned_case
+        user_tenant = user.get("tid")
+        if not user_tenant:
+            raise HTTPException(status_code=403, detail="Token'da tenant bilgisi bulunamadı")
         db_fetch = SessionLocal()
         try:
-            case_fetch = db_fetch.query(models.Case).filter(models.Case.id == linked_case_id).first()
-            if case_fetch and case_fetch.responsible_lawyer_name:
-                lawyers = DynamicConfig.get_instance().get_lawyers()
-                for l in lawyers:
-                    if l.get("name") == case_fetch.responsible_lawyer_name:
-                        avukat_kodu = l.get("code")
-                        break
-        except Exception as e:
-            logging.warning(f"Avukat lookup error (Confirm): {e}")
+            case_fetch = get_tenant_owned_case(db_fetch, linked_case_id, user_tenant)
+            if not case_fetch:
+                raise HTTPException(status_code=404, detail="Belirtilen dava bulunamadı")
+            # Auto-lookup lawyer code from case if not provided
+            if not avukat_kodu and case_fetch.responsible_lawyer_name:
+                try:
+                    lawyers = DynamicConfig.get_instance().get_lawyers()
+                    for l in lawyers:
+                        if l.get("name") == case_fetch.responsible_lawyer_name:
+                            avukat_kodu = l.get("code")
+                            break
+                except Exception as e:
+                    logging.warning(f"Avukat lookup error (Confirm): {e}")
         finally:
             db_fetch.close()
 
@@ -578,16 +599,17 @@ async def confirm_process(
     temp_path = None
     _from_cache = False
 
-    if process_id and process_id in PROCESS_CACHE:
+    if process_id:
         cache_entry = PROCESS_CACHE.pop(process_id)
-        cached_path = cache_entry["path"]
-        if os.path.exists(cached_path):
-            temp_path = cached_path
-            suffix = cache_entry.get("original_ext", ".pdf")
-            _from_cache = True
-            TechnicalLogger.log("INFO", f"PROCESS_CACHE hit: {process_id} → {cached_path}")
-        else:
-            TechnicalLogger.log("WARNING", f"PROCESS_CACHE path missing on disk: {cached_path}")
+        if cache_entry:
+            cached_path = cache_entry["path"]
+            if os.path.exists(cached_path):
+                temp_path = cached_path
+                suffix = cache_entry.get("original_ext", ".pdf")
+                _from_cache = True
+                TechnicalLogger.log("INFO", f"PROCESS_CACHE hit: {process_id} → {cached_path}")
+            else:
+                TechnicalLogger.log("WARNING", f"PROCESS_CACHE path missing on disk: {cached_path}")
 
     if not _from_cache:
         if not file:
@@ -863,11 +885,11 @@ async def confirm_process(
     download_id = None
     if email_file_path and os.path.exists(email_file_path):
         download_id = str(uuid.uuid4())
-        DOWNLOAD_CACHE[download_id] = {
+        DOWNLOAD_CACHE.set(download_id, {
             "path": email_file_path,
             "filename": new_filename,
-            "timestamp": perf_time.time(),
-        }
+            "owner": _download_owner_id(user),
+        })
         results["download_id"] = download_id
 
     def _async_cleanup(temp_path, down_id=None):
@@ -877,8 +899,8 @@ async def confirm_process(
             logging.info(f"Cleanup: Temp file deleted: {temp_path}")
         else:
             logging.warning(f"Cleanup: Could not delete: {temp_path}")
-        if down_id and down_id in DOWNLOAD_CACHE:
-            del DOWNLOAD_CACHE[down_id]
+        if down_id:
+            DOWNLOAD_CACHE.delete(down_id)
 
     # Her iki temp dosyayı da temizle (source_path her zaman; pdfa farklıysa o da)
     if pdfa_temp_file and pdfa_temp_file != source_path:
