@@ -14,7 +14,25 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        display: ['Fraunces', 'Georgia', 'serif'],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
       colors: {
+        burgundy: {
+          50:  "#faf3f4",
+          100: "#f3e4e6",
+          200: "#e6c5ca",
+          300: "#d29ba3",
+          400: "#b96b78",
+          500: "#9c4855",
+          600: "#823945",
+          700: "#6d2434",
+          800: "#571c2a",
+          900: "#3f1520",
+          950: "#260d14",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

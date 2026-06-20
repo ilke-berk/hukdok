@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { Header } from "@/components/Header";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import {
     ArrowLeft, Gavel, Scale, Clock, FileText, AlertCircle,
@@ -18,32 +18,33 @@ import { toast } from "sonner";
 
 // --- Tip renkleri ---
 const fileTypeConfig: Record<string, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
-    Hukuk:   { label: "Hukuk",   color: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/30",   icon: <Scale className="w-4 h-4" /> },
-    İcra:    { label: "İcra",    color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30", icon: <Building2 className="w-4 h-4" /> },
-    Ceza:    { label: "Ceza",    color: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30",    icon: <Gavel className="w-4 h-4" /> },
-    İdare:   { label: "İdare",   color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30", icon: <FileText className="w-4 h-4" /> },
-    Ticaret: { label: "Ticaret", color: "text-green-400",  bg: "bg-green-500/10",  border: "border-green-500/30",  icon: <BarChart3 className="w-4 h-4" /> },
+    Hukuk:   { label: "Hukuk",   color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", icon: <Scale className="w-4 h-4" /> },
+    İcra:    { label: "İcra",    color: "text-[#c47a1e]",     bg: "bg-[#c47a1e]/10",     border: "border-[#c47a1e]/30",     icon: <Building2 className="w-4 h-4" /> },
+    Ceza:    { label: "Ceza",    color: "text-[#a8323b]",     bg: "bg-[#a8323b]/10",     border: "border-[#a8323b]/30",     icon: <Gavel className="w-4 h-4" /> },
+    İdare:   { label: "İdare",   color: "text-[#7a3f8a]",     bg: "bg-[#7a3f8a]/10",     border: "border-[#7a3f8a]/30",     icon: <FileText className="w-4 h-4" /> },
+    Ticaret: { label: "Ticaret", color: "text-[#2f8a5d]",     bg: "bg-[#2f8a5d]/10",     border: "border-[#2f8a5d]/30",     icon: <BarChart3 className="w-4 h-4" /> },
 };
 
 const getFileTypeConfig = (type?: string) =>
     fileTypeConfig[type ?? ""] ?? {
         label: type || "Diğer",
-        color: "text-primary",
-        bg: "bg-primary/10",
-        border: "border-primary/30",
+        color: "text-[var(--brand)]",
+        bg: "bg-[var(--brand-soft)]",
+        border: "border-[var(--brand)]/30",
         icon: <FileText className="w-4 h-4" />,
     };
 
 // --- Statü renkleri ---
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    DERDEST: { bg: "bg-emerald-500/15", text: "text-emerald-400", dot: "bg-emerald-400" },
-    KARAR:   { bg: "bg-blue-500/15",    text: "text-blue-400",    dot: "bg-blue-400" },
-    KAPALI:  { bg: "bg-gray-500/15",    text: "text-gray-400",    dot: "bg-gray-400" },
-    TEMYIZ:  { bg: "bg-purple-500/15",  text: "text-purple-400",  dot: "bg-purple-400" },
-    INFAZ:   { bg: "bg-orange-500/15",  text: "text-orange-400",  dot: "bg-orange-400" },
+    DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
+    ISTINAF: { bg: "bg-[#c47a1e]/15",      text: "text-[#c47a1e]",       dot: "bg-[#c47a1e]" },
+    TEMYIZ:  { bg: "bg-[#7a3f8a]/15",      text: "text-[#7a3f8a]",       dot: "bg-[#7a3f8a]" },
+    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-[var(--brand)]" },
+    INFAZ:   { bg: "bg-[#a8323b]/15",      text: "text-[#a8323b]",       dot: "bg-[#a8323b]" },
+    KAPALI:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 const getStatusStyle = (status: string) =>
-    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-primary/15", text: "text-primary", dot: "bg-primary" };
+    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
 
 // --- Tipler ---
 interface CaseInGroup {
@@ -90,6 +91,7 @@ interface CaseGroupData {
 // Ana bileşen
 // -------------------------------------------------------
 const CaseGroup = () => {
+    useSetPageTitle("Dava Grubu", ["Avukat Paneli", "Davalar"]);
     const { groupId } = useParams<{ groupId: string }>();
     const navigate = useNavigate();
     const { getCaseGroup } = useCases();
@@ -132,13 +134,12 @@ const CaseGroup = () => {
     // ---- Loading ----
     if (loadingLocal) {
         return (
-            <div className="min-h-screen bg-background flex flex-col">
-                <Header />
+            <div>
                 <main className="flex-1 container mx-auto py-6 px-4 space-y-6">
                     <Skeleton className="h-8 w-40" />
-                    <Skeleton className="h-28 w-full rounded-xl" />
-                    <Skeleton className="h-12 w-full rounded-xl" />
-                    <Skeleton className="h-[400px] w-full rounded-xl" />
+                    <Skeleton className="h-28 w-full rounded-none" />
+                    <Skeleton className="h-12 w-full rounded-none" />
+                    <Skeleton className="h-[400px] w-full rounded-none" />
                 </main>
             </div>
         );
@@ -147,8 +148,7 @@ const CaseGroup = () => {
     // ---- Not found ----
     if (!groupData) {
         return (
-            <div className="min-h-screen bg-background flex flex-col">
-                <Header />
+            <div>
                 <main className="flex-1 container mx-auto py-6 px-4 flex flex-col items-center justify-center space-y-4">
                     <AlertCircle className="w-16 h-16 text-muted-foreground opacity-50" />
                     <h2 className="text-xl font-semibold">Dava Dosyası Bulunamadı</h2>
@@ -172,8 +172,7 @@ const CaseGroup = () => {
     const groupSubject = groupData.subject ?? groupData.cases[0]?.subject ?? "Konu belirtilmemiş";
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
-            <Header />
+        <div>
 
             <main className="flex-1 container mx-auto py-6 px-4 space-y-6">
 
@@ -212,7 +211,7 @@ const CaseGroup = () => {
                 </div>
 
                 {/* === GRUP BAŞLIK KARTI === */}
-                <Card className="border-border/60 bg-card/80 overflow-hidden relative">
+                <div className="relative bg-[var(--bg-elevated)] border border-[var(--border)] border-l-4 border-l-[var(--brand)] overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1.5 bg-primary" />
                     <CardContent className="p-6 md:p-8">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -235,7 +234,7 @@ const CaseGroup = () => {
                                     { val: groupData.cases.filter(c => c.status?.toUpperCase() === "DERDEST").length, label: "Aktif" },
                                     { val: groupData.cases.filter(c => c.status?.toUpperCase() === "KAPALI").length, label: "Kapalı" },
                                 ].map(({ val, label }) => (
-                                    <div key={label} className="bg-secondary/30 rounded-xl border border-border/50 px-5 py-3 text-center min-w-[72px]">
+                                    <div key={label} className="bg-secondary/30 rounded-none border border-border/50 px-5 py-3 text-center min-w-[72px]">
                                         <p className="text-2xl font-bold">{val}</p>
                                         <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
                                     </div>
@@ -243,7 +242,7 @@ const CaseGroup = () => {
                             </div>
                         </div>
                     </CardContent>
-                </Card>
+                </div>
 
                 {/* === DAVA TÜRÜ SEÇİCİ === */}
                 <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${groupData.cases.length}, minmax(0, 1fr))` }}>
@@ -257,7 +256,7 @@ const CaseGroup = () => {
                             <button
                                 key={c.id}
                                 onClick={() => { setSelectedCaseId(c.id); setActiveDetailTab("overview"); }}
-                                className={`relative group flex flex-col text-left rounded-2xl border-2 p-5 transition-all duration-200 overflow-hidden
+                                className={`relative group flex flex-col text-left rounded-none border-2 p-5 transition-all duration-200 overflow-hidden
                                     ${isActive
                                         ? `${cfg.bg} ${cfg.border} shadow-lg shadow-black/10`
                                         : "bg-card/60 border-border/40 hover:border-border hover:bg-card/80"
@@ -269,7 +268,7 @@ const CaseGroup = () => {
                                 )}
 
                                 {/* İkon */}
-                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 transition-all
+                                <div className={`w-11 h-11 rounded-none flex items-center justify-center mb-3 transition-all
                                     ${isActive ? `${cfg.bg} border ${cfg.border}` : "bg-secondary/40 border border-border/50"}`}>
                                     <span className={`scale-125 ${isActive ? cfg.color : "text-muted-foreground"}`}>
                                         {cfg.icon}
@@ -355,7 +354,7 @@ const CaseGroup = () => {
                             {/* Genel Bilgiler */}
                             <TabsContent value="overview" className="space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <Card className="bg-card/60">
+                                    <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                         <CardHeader>
                                             <CardTitle className="text-lg">Tazminat Bilgileri</CardTitle>
                                             <CardDescription>Davaya ait parasal değerler</CardDescription>
@@ -372,7 +371,7 @@ const CaseGroup = () => {
                                         </CardContent>
                                     </Card>
 
-                                    <Card className="bg-card/60">
+                                    <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                         <CardHeader>
                                             <CardTitle className="text-lg">Dava Geçmişi</CardTitle>
                                             <CardDescription>Durum değişiklikleri</CardDescription>
@@ -410,7 +409,7 @@ const CaseGroup = () => {
 
                             {/* Taraflar */}
                             <TabsContent value="parties">
-                                <Card className="bg-card/60">
+                                <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                     <CardHeader>
                                         <CardTitle className="text-lg">Taraf Bilgileri</CardTitle>
                                         <CardDescription>Davacı, davalı ve diğer ilgililer</CardDescription>
@@ -420,16 +419,16 @@ const CaseGroup = () => {
                                             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                                 {selectedCase.parties!.map((party, idx) => {
                                                     const roleColors: Record<string, string> = {
-                                                        CLIENT: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-                                                        COUNTER: "bg-red-500/10 text-red-500 border-red-500/20",
-                                                        THIRD: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+                                                        CLIENT: "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30",
+                                                        COUNTER: "bg-[#a8323b]/10 text-[#a8323b] border-[#a8323b]/30",
+                                                        THIRD: "bg-[var(--bg-sunken)] text-[var(--fg-subtle)] border-[var(--border)]",
                                                     };
-                                                    const colorClass = roleColors[party.party_type] || "bg-primary/10 text-primary border-primary/20";
+                                                    const colorClass = roleColors[party.party_type] || "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30";
                                                     const typeLabel =
                                                         party.party_type === "CLIENT" ? "Müvekkil" :
                                                         party.party_type === "COUNTER" ? "Karşı Taraf" : "Üçüncü Şahıs";
                                                     return (
-                                                        <div key={idx} className="flex flex-col p-4 rounded-xl border bg-background/50 gap-2">
+                                                        <div key={idx} className="flex flex-col p-4 rounded-none border bg-background/50 gap-2">
                                                             <div className="font-semibold flex items-center gap-2">
                                                                 {party.name}
                                                                 {party.client_id && (
@@ -445,7 +444,7 @@ const CaseGroup = () => {
                                                 })}
                                             </div>
                                         ) : (
-                                            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
+                                            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-none">
                                                 <Users className="w-10 h-10 opacity-20 mx-auto mb-3" />
                                                 <p>Bu davaya eklenmiş taraf bulunmuyor.</p>
                                             </div>
@@ -456,7 +455,7 @@ const CaseGroup = () => {
 
                             {/* Belgeler */}
                             <TabsContent value="documents">
-                                <Card className="bg-card/60">
+                                <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                     <CardHeader>
                                         <CardTitle className="text-lg">Evrak Listesi</CardTitle>
                                         <CardDescription>Bu davaya bağlı belgeler</CardDescription>
@@ -465,7 +464,7 @@ const CaseGroup = () => {
                                         {(selectedCase.documents?.length ?? 0) > 0 ? (
                                             <div className="space-y-3">
                                                 {selectedCase.documents!.map(doc => (
-                                                    <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-background/50 hover:border-primary/40 transition-all gap-4">
+                                                    <div key={doc.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
                                                         <div className="flex items-start gap-4 flex-1 min-w-0">
                                                             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                                                                 <FileText className="w-5 h-5 text-primary" />
@@ -503,7 +502,7 @@ const CaseGroup = () => {
                                                 ))}
                                             </div>
                                         ) : (
-                                            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
+                                            <div className="text-center py-12 text-muted-foreground border border-dashed rounded-none">
                                                 <FileStack className="w-10 h-10 opacity-20 mx-auto mb-3" />
                                                 <p className="font-medium text-foreground">Henüz evrak yüklenmemiş</p>
                                                 <p className="text-sm mt-1 mb-4">Bu davaya ait belge bulunmuyor.</p>
@@ -523,7 +522,7 @@ const CaseGroup = () => {
                         </Tabs>
                     </div>
                 ) : (
-                    <Card className="bg-card/60">
+                    <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                         <CardContent className="py-12 flex flex-col items-center gap-3 text-muted-foreground">
                             <Gavel className="w-10 h-10 opacity-20" />
                             <p>Detayları görmek için yukarıdan bir dava türü seçin.</p>
@@ -532,7 +531,7 @@ const CaseGroup = () => {
                 )}
 
                 {/* === GRUP ÖZET TABLOSU === */}
-                <Card className="bg-card/60">
+                <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                     <CardHeader>
                         <CardTitle className="text-base flex items-center gap-2">
                             <Link2 className="w-4 h-4 text-primary" />
@@ -543,7 +542,7 @@ const CaseGroup = () => {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="rounded-xl border border-border overflow-hidden">
+                        <div className="rounded-none border border-border overflow-hidden">
                             <table className="w-full text-sm">
                                 <thead className="bg-muted/40">
                                     <tr className="border-b border-border">
@@ -615,7 +614,7 @@ const SelectedCaseHeader = ({ c, onViewFull }: { c: CaseInGroup; onViewFull: () 
     const cfg = getFileTypeConfig(c.file_type);
     const st = getStatusStyle(c.status);
     return (
-        <Card className={`border ${cfg.border} bg-card/80 overflow-hidden relative`}>
+        <Card className={`border ${cfg.border} bg-[var(--bg-elevated)] rounded-none overflow-hidden relative`}>
             <div className={`absolute top-0 left-0 w-full h-1 ${cfg.color.replace("text-", "bg-")}`} />
             <CardContent className="p-5">
                 <div className="flex flex-wrap items-start gap-4 justify-between">

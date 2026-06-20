@@ -10,7 +10,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -41,6 +40,8 @@ import {
 import { useConfig } from "@/hooks/useConfig";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Eyebrow } from "@/components/dashboard/primitives";
+import { FlowButton } from "@/components/flow/primitives";
 
 export interface BatchPrepConfig {
   docTypes: string[];
@@ -161,33 +162,40 @@ export function BatchPrepScreen({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="glass-card border-none shadow-2xl sm:max-w-[720px] max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
-            <Layers className="w-6 h-6 text-primary" />
-            Toplu Yükleme Hazırlığı
-            <Badge variant="outline" className="ml-2 text-xs border-primary/40 text-primary bg-primary/5">
-              {files.length} dosya
-            </Badge>
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground pt-1">
-            Analiz başlamadan önce belge türlerini ve e-posta ayarlarını belirleyin.
-            Bu adım, AI'ın doğru özel prompt'u kullanmasını sağlar.
-          </p>
+      <DialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0 sm:max-w-[760px] max-h-[92vh] overflow-y-auto">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--border)]">
+          <div className="flex items-start gap-3">
+            <div className="w-11 h-11 grid place-items-center bg-[var(--brand-soft)] text-[var(--brand)] shrink-0">
+              <Layers className="w-5 h-5" strokeWidth={1.6} />
+            </div>
+            <div className="min-w-0 grid gap-1">
+              <Eyebrow tone="brand">Toplu Yükleme · Hazırlık</Eyebrow>
+              <div className="flex items-baseline gap-3 flex-wrap">
+                <DialogTitle className="font-display text-[20px] font-medium tracking-[-0.005em] text-[var(--fg)] leading-tight">
+                  Belge Türü &amp; E-posta Ayarları
+                </DialogTitle>
+                <span className="inline-flex items-center px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase border border-[var(--brand)]/30 bg-[var(--brand-soft)] text-[var(--brand)]">
+                  {files.length} dosya
+                </span>
+              </div>
+              <p className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed">
+                Analiz başlamadan önce belge türlerini ve e-posta ayarlarını belirleyin.
+                Bu adım AI'ın doğru özel prompt'u kullanmasını sağlar.
+              </p>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-6 py-2">
+        <div className="space-y-6 px-6 py-5">
           {/* SECTION 1: BELGE TÜRLERİ */}
           <section className="space-y-3">
             <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider">
-                Belge Türleri
-              </h3>
+              <FileText className="w-3.5 h-3.5 text-[var(--brand)]" />
+              <Eyebrow tone="brand">01 · Belge Türleri</Eyebrow>
             </div>
 
-            <div className="rounded-lg border border-border/50 bg-secondary/20 p-3 space-y-2">
-              <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <div className="border border-[var(--border)] bg-[var(--bg)] p-3 space-y-2">
+              <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                 <Wand2 className="w-3 h-3" />
                 Tümüne uygula
               </Label>
@@ -195,7 +203,7 @@ export function BatchPrepScreen({
                 value={bulkDocType === "" ? AUTO_VALUE : bulkDocType}
                 onValueChange={handleBulkApply}
               >
-                <SelectTrigger className="glass-input border-0">
+                <SelectTrigger className="bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0">
                   <SelectValue placeholder="— Otomatik (AI) —" />
                 </SelectTrigger>
                 <SelectContent>
@@ -213,13 +221,13 @@ export function BatchPrepScreen({
               </Select>
             </div>
 
-            <div className="rounded-lg border border-border/50 divide-y divide-border/40 max-h-[280px] overflow-y-auto">
+            <div className="rounded-[3px] border border-[var(--border)] divide-y divide-[var(--border)] max-h-[280px] overflow-y-auto">
               {files.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
-                  className="flex items-center gap-3 p-3 hover:bg-secondary/20 transition-colors"
+                  className="flex items-center gap-3 p-3 hover:bg-[var(--bg-sunken)] transition-colors"
                 >
-                  <span className="text-xs font-mono text-muted-foreground shrink-0 w-6">
+                  <span className="text-xs font-mono text-[var(--fg-muted)] shrink-0 w-6">
                     {index + 1}.
                   </span>
                   <span
@@ -232,7 +240,7 @@ export function BatchPrepScreen({
                     value={(docTypes[index] ?? "") === "" ? AUTO_VALUE : docTypes[index]}
                     onValueChange={(v) => handlePerFileChange(index, v)}
                   >
-                    <SelectTrigger className="h-8 w-[200px] text-xs glass-input border-0 shrink-0">
+                    <SelectTrigger className="h-8 w-[200px] text-xs bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0 shrink-0">
                       <SelectValue>{doctypeName(docTypes[index] ?? "")}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
@@ -257,34 +265,33 @@ export function BatchPrepScreen({
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold uppercase tracking-wider">
-                  E-posta Ayarları
-                </h3>
+                <Mail className="w-3.5 h-3.5 text-[var(--brand)]" />
+                <Eyebrow tone="brand">02 · E-posta Ayarları</Eyebrow>
               </div>
               <div className="flex items-center gap-2">
-                <Label htmlFor="batch-send-email" className="text-xs text-muted-foreground">
+                <Label htmlFor="batch-send-email" className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
                   E-posta gönder
                 </Label>
                 <Switch
                   id="batch-send-email"
                   checked={sendEmail}
                   onCheckedChange={setSendEmail}
+                  className="data-[state=checked]:bg-[var(--brand)]"
                 />
               </div>
             </div>
 
             {sendEmail && (
-              <div className="rounded-lg border border-border/50 bg-secondary/20 p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="border border-[var(--border)] bg-[var(--bg)] p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
                 {/* Kime */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold">Kime</Label>
+                  <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Kime</Label>
                   <div className="flex flex-wrap gap-2">
                     {toRecipients.map((r) => (
                       <Badge
                         key={r.email}
                         variant="secondary"
-                        className="px-3 py-1 flex items-center gap-1 hover:bg-destructive/20 hover:text-destructive transition-colors text-sm"
+                        className="px-3 py-1 flex items-center gap-1 hover:bg-[#a8323b]/15 hover:text-[#a8323b] transition-colors text-sm"
                       >
                         <User className="w-3 h-3 mr-1 opacity-50" />
                         {r.name}
@@ -300,9 +307,9 @@ export function BatchPrepScreen({
                       <Button
                         variant="outline"
                         role="combobox"
-                        className="w-full justify-between glass-input border-0"
+                        className="w-full justify-between bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0"
                       >
-                        <span className="text-muted-foreground flex items-center text-sm">
+                        <span className="text-[var(--fg-muted)] flex items-center text-sm">
                           <Plus className="w-4 h-4 mr-2" />
                           Alıcı Ara / Ekle...
                         </span>
@@ -334,7 +341,7 @@ export function BatchPrepScreen({
                                   )}
                                 />
                                 {r.name}
-                                <span className="ml-auto text-[10px] text-muted-foreground">
+                                <span className="ml-auto text-[10px] text-[var(--fg-muted)]">
                                   {r.email}
                                 </span>
                               </CommandItem>
@@ -351,20 +358,20 @@ export function BatchPrepScreen({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-muted-foreground hover:text-primary"
+                    className="text-xs text-[var(--fg-muted)] hover:text-[var(--brand)]"
                     onClick={() => setShowCc(true)}
                   >
                     <Plus className="w-3 h-3 mr-1" /> CC Ekle
                   </Button>
                 ) : (
                   <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
-                    <Label className="text-xs font-semibold">Bilgi (CC)</Label>
+                    <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Bilgi (CC)</Label>
                     <div className="flex flex-wrap gap-2">
                       {ccRecipients.map((r) => (
                         <Badge
                           key={r.email}
                           variant="secondary"
-                          className="px-3 py-1 flex items-center gap-1 hover:bg-destructive/20 hover:text-destructive transition-colors text-sm"
+                          className="px-3 py-1 flex items-center gap-1 hover:bg-[#a8323b]/15 hover:text-[#a8323b] transition-colors text-sm"
                         >
                           <User className="w-3 h-3 mr-1 opacity-50" />
                           {r.name}
@@ -380,9 +387,9 @@ export function BatchPrepScreen({
                         <Button
                           variant="outline"
                           role="combobox"
-                          className="w-full justify-between glass-input border-0"
+                          className="w-full justify-between bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0"
                         >
-                          <span className="text-muted-foreground flex items-center text-sm">
+                          <span className="text-[var(--fg-muted)] flex items-center text-sm">
                             <Plus className="w-4 h-4 mr-2" />
                             CC'ye Alıcı Ekle...
                           </span>
@@ -414,7 +421,7 @@ export function BatchPrepScreen({
                                     )}
                                   />
                                   {r.name}
-                                  <span className="ml-auto text-[10px] text-muted-foreground">
+                                  <span className="ml-auto text-[10px] text-[var(--fg-muted)]">
                                     {r.email}
                                   </span>
                                 </CommandItem>
@@ -429,13 +436,13 @@ export function BatchPrepScreen({
 
                 {/* Tebliğ Tarihi */}
                 <div className="space-y-2">
-                  <Label htmlFor="batch-teblig-tarihi" className="text-xs font-semibold">
+                  <Label htmlFor="batch-teblig-tarihi" className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
                     Tebliğ Tarihi (Opsiyonel)
                   </Label>
                   <Input
                     id="batch-teblig-tarihi"
                     type="date"
-                    className="glass-input"
+                    className="bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                     value={tebligTarihi}
                     onChange={(e) => setTebligTarihi(e.target.value)}
                   />
@@ -443,15 +450,15 @@ export function BatchPrepScreen({
               </div>
             )}
 
-            <div className="flex items-start justify-between gap-3 p-3 rounded-lg bg-secondary/20 border border-border/50">
-              <div className="space-y-0.5 flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3 p-4 bg-[var(--bg)] border border-[var(--border)]">
+              <div className="space-y-1 flex-1 min-w-0">
                 <Label
                   htmlFor="batch-confirm-per-file"
-                  className="text-sm font-semibold"
+                  className="font-display text-[13px] font-medium text-[var(--fg)] tracking-[-0.005em]"
                 >
                   Her dosyada e-posta ayarlarını ayrıca onayla
                 </Label>
-                <p className="text-[11px] text-muted-foreground leading-snug">
+                <p className="text-[11.5px] text-[var(--fg-muted)] leading-relaxed">
                   Kapalıyken sıradaki dosyalarda e-posta penceresi hiç açılmaz —
                   yukarıdaki ayarlar tüm batch için kullanılır.
                 </p>
@@ -460,22 +467,20 @@ export function BatchPrepScreen({
                 id="batch-confirm-per-file"
                 checked={confirmPerFile}
                 onCheckedChange={setConfirmPerFile}
+                className="data-[state=checked]:bg-[var(--brand)]"
               />
             </div>
           </section>
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="ghost" onClick={onCancel}>
+        <DialogFooter className="px-6 py-4 gap-2 sm:justify-between border-t border-[var(--border)] bg-[var(--bg)]">
+          <FlowButton variant="ghost" onClick={onCancel}>
             İptal
-          </Button>
-          <Button
-            onClick={handleStart}
-            className="bg-primary hover:bg-primary/90 min-w-[180px]"
-          >
+          </FlowButton>
+          <FlowButton variant="primary" onClick={handleStart} className="min-w-[180px]">
             Analize Başla
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </FlowButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

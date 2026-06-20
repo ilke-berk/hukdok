@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Header } from "@/components/Header";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
+import { Eyebrow } from "@/components/dashboard/primitives";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +81,7 @@ const SortableRow = ({ id, children, className }: { id: string, children: React.
 };
 
 const AdminPage = () => {
+    useSetPageTitle("Yönetim", ["Yönetici Paneli"]);
     const {
         lawyers, statuses, doctypes, emailRecipients, caseSubjects,
         fileTypes, courtTypes, partyRoles, bureauTypes, cities, specialties, clientCategories,
@@ -416,9 +418,8 @@ const AdminPage = () => {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-background">
-                <Header />
-                <div className="container mx-auto py-10 flex justify-center">
+            <div>
+                <div className="max-w-[1600px] mx-auto flex justify-center py-10">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
             </div>
@@ -426,37 +427,41 @@ const AdminPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <Header />
-            <div className="container mx-auto py-10 px-4">
-                <div className="flex items-center justify-between mb-2">
-                    <h1 className="text-3xl font-bold tracking-tight">Yönetim Paneli</h1>
+        <div>
+            <div className="max-w-[1600px] mx-auto">
+                <div className="mb-8">
+                    <Eyebrow>01 · Yönetim</Eyebrow>
+                    <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
+                        Yönetim Paneli
+                    </h1>
+                    <p className="text-[13px] text-[var(--fg-muted)] mt-2 max-w-[60ch] leading-relaxed">
+                        Listeleri sürükleyerek sıralayabilirsiniz. Her sekme ayrı bir sözlüğü yönetir.
+                    </p>
                 </div>
-                <p className="text-muted-foreground mb-8">Listeleri sürükleyerek sıralayabilirsiniz.</p>
 
                 <Tabs defaultValue="lawyers" className="w-full" onValueChange={setActiveTab}>
-                    <TabsList className="flex flex-wrap h-auto gap-2 justify-start mb-8 p-1 bg-muted/20">
-                        <TabsTrigger value="lawyers">Avukatlar</TabsTrigger>
-                        <TabsTrigger value="statuses">Durumlar</TabsTrigger>
-                        <TabsTrigger value="doctypes">Belge Türleri</TabsTrigger>
-                        <TabsTrigger value="case_subjects">Dava Konuları</TabsTrigger>
-                        <TabsTrigger value="emails">E-posta Alıcıları</TabsTrigger>
-                        <TabsTrigger value="case_types">Dava Türleri</TabsTrigger>
-                        <TabsTrigger value="court_types">Mahkemeler</TabsTrigger>
-                        <TabsTrigger value="party_roles">Taraf Rolleri</TabsTrigger>
-                        <TabsTrigger value="bureau_types">Büro Türleri</TabsTrigger>
-                        <TabsTrigger value="client_categories">Kategoriler</TabsTrigger>
-                        <TabsTrigger value="file_statuses">Dosya Durumları</TabsTrigger>
-                        <TabsTrigger value="specialties">Uzmanlıklar</TabsTrigger>
-                        <TabsTrigger value="cities">Şehirler</TabsTrigger>
-                        <TabsTrigger value="activity_test">Aktivite Raporu Testi</TabsTrigger>
+                    <TabsList className="flex flex-wrap h-auto gap-1 justify-start mb-6 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="lawyers">Avukatlar</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="statuses">Durumlar</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="doctypes">Belge Türleri</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="case_subjects">Dava Konuları</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="emails">E-posta Alıcıları</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="case_types">Dava Türleri</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="court_types">Mahkemeler</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="party_roles">Taraf Rolleri</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="bureau_types">Büro Türleri</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="client_categories">Kategoriler</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="file_statuses">Dosya Durumları</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="specialties">Uzmanlıklar</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="cities">Şehirler</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="activity_test">Aktivite Raporu Testi</TabsTrigger>
                     </TabsList>
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
 
                         {/* LAWYERS TAB */}
                         <TabsContent value="lawyers">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Avukat Listesi</CardTitle>
                                     <Dialog open={isLawyerAddOpen} onOpenChange={setIsLawyerAddOpen}>
@@ -545,7 +550,7 @@ const AdminPage = () => {
 
                         {/* STATUSES TAB */}
                         <TabsContent value="statuses">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Durum Listesi</CardTitle>
                                     <Dialog open={isStatusAddOpen} onOpenChange={setIsStatusAddOpen}>
@@ -583,7 +588,7 @@ const AdminPage = () => {
 
                         {/* DOCTYPES TAB */}
                         <TabsContent value="doctypes">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Belge Türleri</CardTitle>
                                     <Dialog open={isDocTypeAddOpen} onOpenChange={setIsDocTypeAddOpen}>
@@ -621,7 +626,7 @@ const AdminPage = () => {
 
                         {/* CASE SUBJECTS TAB */}
                         <TabsContent value="case_subjects">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Dava Konuları</CardTitle>
                                     <Dialog open={isCaseSubjectAddOpen} onOpenChange={setIsCaseSubjectAddOpen}>
@@ -657,7 +662,7 @@ const AdminPage = () => {
 
                         {/* EMAILS TAB */}
                         <TabsContent value="emails">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>E-posta Alıcıları</CardTitle>
                                     <Dialog open={isEmailAddOpen} onOpenChange={setIsEmailAddOpen}>
@@ -697,7 +702,7 @@ const AdminPage = () => {
 
                         {/* DAVA TÜRLERİ TAB */}
                         <TabsContent value="case_types">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Dava Türleri</CardTitle>
                                     <Dialog open={isFileTypeAddOpen} onOpenChange={setIsFileTypeAddOpen}>
@@ -733,7 +738,7 @@ const AdminPage = () => {
 
                         {/* MAHKEME TÜRLERİ TAB */}
                         <TabsContent value="court_types">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div className="flex flex-col gap-2">
                                         <CardTitle>Mahkeme Türleri</CardTitle>
@@ -783,7 +788,7 @@ const AdminPage = () => {
 
                         {/* TARAF ROLLERİ TAB */}
                         <TabsContent value="party_roles">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Taraf Rolleri</CardTitle>
                                     <Dialog open={isPartyRoleAddOpen} onOpenChange={setIsPartyRoleAddOpen}>
@@ -827,7 +832,7 @@ const AdminPage = () => {
 
                         {/* BÜRO TÜRLERİ TAB */}
                         <TabsContent value="bureau_types">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Büro Özel Türleri</CardTitle>
                                     <Dialog open={isBureauTypeAddOpen} onOpenChange={setIsBureauTypeAddOpen}>
@@ -863,7 +868,7 @@ const AdminPage = () => {
 
                         {/* KATEGORİLER TAB */}
                         <TabsContent value="client_categories">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Müvekkil Kategorileri</CardTitle>
                                     <Dialog open={isClientCategoryAddOpen} onOpenChange={setIsClientCategoryAddOpen}>
@@ -899,7 +904,7 @@ const AdminPage = () => {
 
                         {/* DOSYA DURUMLARI TAB */}
                         <TabsContent value="file_statuses">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <CardTitle>Dosya Son Durumları</CardTitle>
                                     <Dialog open={isFileStatusAddOpen} onOpenChange={setIsFileStatusAddOpen}>
@@ -935,7 +940,7 @@ const AdminPage = () => {
 
                         {/* UZMANLIKLAR TAB */}
                         <TabsContent value="specialties">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
                                         <CardTitle>Uzmanlık Alanları</CardTitle>
@@ -972,7 +977,7 @@ const AdminPage = () => {
 
                         {/* ŞEHİRLER TAB */}
                         <TabsContent value="cities">
-                            <Card>
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
                                         <CardTitle>Şehir Listesi</CardTitle>

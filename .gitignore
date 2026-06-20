@@ -65,6 +65,16 @@ backend/data/
 backend/migration_data.json
 backend/test_*.py
 
+# Lokal-only / prod'a gitmemeli
+docker-compose.override.yml
+test_env/
+
+# Tek seferlik export script'leri ve çıktıları (PII içerebilir, regenerable)
+export_*.py
+avukatlar_export.csv
+davalar_ornek_*.xlsx
+*_export.csv
+
 # Database
 *.db
 *.db-shm

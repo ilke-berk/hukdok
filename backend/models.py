@@ -384,6 +384,23 @@ class HearingDate(Base):
     case = relationship("Case")
 
 
+class CalendarEvent(Base):
+    """Takvime elle eklenen serbest tarih işaretleri (duruşma dışı hatırlatmalar).
+
+    Bir davaya bağlı değildir; ofis genelinde kullanılır. tenant_id NULL ise ortak
+    havuzdadır (her iki büro da görür) — mevcut paylaşımlı kayıt modeliyle uyumlu.
+    """
+    __tablename__ = "calendar_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, nullable=True, index=True)
+    title = Column(String, nullable=False)            # "ne olduğu" — kullanıcının yazdığı açıklama
+    event_date = Column(Date, nullable=False)
+    event_time = Column(String(10), nullable=True)    # "14:30" formatında saat (opsiyonel)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+
 class CaseDocument(Base):
     """
     Faz 1: Belgeler ile Davalar arasındaki bağlantıyı tutar.

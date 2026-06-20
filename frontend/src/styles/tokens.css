@@ -1,0 +1,126 @@
+/* HUKDOK design token base — three neutral palettes around brand burgundy #6D2434 */
+/* Fontlar index.html'de yükleniyor (preconnect ile). Bu dosya sadece token'ları tanımlar. */
+
+:root {
+  /* Brand — burgundy scale derived from #6D2434 */
+  --burgundy-50:  #faf3f4;
+  --burgundy-100: #f3e4e6;
+  --burgundy-200: #e6c5ca;
+  --burgundy-300: #d29ba3;
+  --burgundy-400: #b96b78;
+  --burgundy-500: #9c4855;
+  --burgundy-600: #823945;
+  --burgundy-700: #6d2434;  /* brand */
+  --burgundy-800: #571c2a;
+  --burgundy-900: #3f1520;
+  --burgundy-950: #260d14;
+
+  /* Type */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ===== Klasik — warm cream neutrals ===== */
+.theme-classic {
+  --bg: #f6f1ea;
+  --bg-elevated: #fbf7f1;
+  --bg-sunken: #ede5d8;
+  --fg: #2b1d1a;
+  --fg-muted: #6e5f55;
+  --fg-subtle: #9a8b80;
+  --border: #d9cbb8;
+  --border-strong: #b8a78f;
+  --brand: var(--burgundy-700);
+  --brand-hover: var(--burgundy-800);
+  --brand-soft: var(--burgundy-100);
+  --brand-fg: #fdfaf4;
+  --ring: rgba(109, 36, 52, 0.25);
+}
+.theme-classic.dark,
+.dark .theme-classic {
+  --bg: #1a1410;
+  --bg-elevated: #221a14;
+  --bg-sunken: #120d09;
+  --fg: #f4ead8;
+  --fg-muted: #c4b39a;
+  --fg-subtle: #8c7d6a;
+  --border: #3a2c22;
+  --border-strong: #5a4636;
+  /* Brand: real burgundy DNA, brighter for dark surfaces — clear wine red, not pink */
+  --brand: #b8404c;
+  --brand-hover: #c95361;
+  --brand-soft: #2c151b;
+  --brand-fg: #fdfaf4;
+  --ring: rgba(184, 64, 76, 0.32);
+}
+
+/* ===== Modern — cool slate neutrals ===== */
+.theme-modern {
+  --bg: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #eef2f7;
+  --fg: #0f172a;
+  --fg-muted: #475569;
+  --fg-subtle: #94a3b8;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --brand: var(--burgundy-700);
+  --brand-hover: var(--burgundy-800);
+  --brand-soft: #fdf2f4;
+  --brand-fg: #ffffff;
+  --ring: rgba(109, 36, 52, 0.2);
+  --accent-panel: linear-gradient(160deg, #571c2a 0%, #3f1520 60%, #260d14 100%);
+}
+.theme-modern.dark,
+.dark .theme-modern {
+  --bg: #0b1220;
+  --bg-elevated: #111a2e;
+  --bg-sunken: #060a14;
+  --fg: #e2e8f0;
+  --fg-muted: #94a3b8;
+  --fg-subtle: #64748b;
+  --border: #1e293b;
+  --border-strong: #334155;
+  --brand: #b8404c;
+  --brand-hover: #c95361;
+  --brand-soft: #1d0e14;
+  --brand-fg: #ffffff;
+  --ring: rgba(184, 64, 76, 0.32);
+  --accent-panel: linear-gradient(160deg, #3f1520 0%, #260d14 60%, #0e0608 100%);
+}
+
+/* ===== Editorial — sharp paper neutrals ===== */
+.theme-editorial {
+  --bg: #fdfcf9;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f1ede4;
+  --fg: #14110d;
+  --fg-muted: #5c544b;
+  --fg-subtle: #8e8478;
+  --border: #1f1a14;
+  --border-strong: #14110d;
+  --border-hair: #d8d2c5;
+  --brand: var(--burgundy-700);
+  --brand-hover: var(--burgundy-800);
+  --brand-soft: #f3e4e6;
+  --brand-fg: #fdfcf9;
+  --ring: rgba(109, 36, 52, 0.25);
+}
+.theme-editorial.dark,
+.dark .theme-editorial {
+  --bg: #0e0c08;
+  --bg-elevated: #16130e;
+  --bg-sunken: #08060403;
+  --fg: #efe9dc;
+  --fg-muted: #b8ad99;
+  --fg-subtle: #7a7264;
+  --border: #efe9dc;
+  --border-strong: #efe9dc;
+  --border-hair: #2a251c;
+  --brand: #b8404c;
+  --brand-hover: #c95361;
+  --brand-soft: #2c151b;
+  --brand-fg: #fdfaf4;
+  --ring: rgba(184, 64, 76, 0.32);
+}

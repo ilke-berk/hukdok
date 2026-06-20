@@ -277,6 +277,156 @@ Kurallar:
         return None
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# MÜVEKKİL BİLGİLENDİRME
+# ──────────────────────────────────────────────────────────────────────────
+# Belge analizi sonrası, müvekkili bilgilendiren bir metin hazırlanır. Bu metin
+# müvekkile DEĞİL, davanın sorumlu avukatına "[Müvekkil Bilgilendirme]" konusuyla
+# gönderilir; avukat metni gözden geçirip müvekkiline iletir.
+#
+# Metin, büronun müvekkillerine gönderdiği gerçek bilgilendirme maillerinin
+# sıcak, birinci ağızdan tonunu taklit eder (CLIENT_NOTICE_EXAMPLES'a bakınız).
+#
+# GATING: Şu an tüm belge türlerinde bilgilendirme hazırlanır. İleride yalnızca
+# belirli belge türlerinde gönderilmesi istendiğinde:
+#   1. CLIENT_NOTIFY_ALL_DOCTYPES = False yap
+#   2. CLIENT_NOTIFICATION_DOCTYPES setine izinli belge türü kodlarını ekle
+#      (örn. {"KARAR-BLG", "DURUSMA-ZPT"})
+CLIENT_NOTIFY_ALL_DOCTYPES = True
+CLIENT_NOTIFICATION_DOCTYPES: set[str] = set()
+
+
+def should_notify_client(belge_turu_kodu: str | None) -> bool:
+    """Bu belge türü için müvekkil bilgilendirmesi hazırlanmalı mı?"""
+    if CLIENT_NOTIFY_ALL_DOCTYPES:
+        return True
+    return (belge_turu_kodu or "").strip() in CLIENT_NOTIFICATION_DOCTYPES
+
+
+# Büronun müvekkillere gönderdiği gerçek bilgilendirme maillerinden örnekler.
+# AI bu örneklerdeki tonu/yapıyı taklit eder (few-shot). Bunlar üslup referansıdır,
+# içerikleri birebir kopyalanmaz.
+CLIENT_NOTICE_EXAMPLES = """\
+ÖRNEK 1 (duruşma ertelendi):
+Merhaba Hasan Bey,
+Nasılsınız?
+Ufuk Baraç tarafından aleyhinize açılan dosyada bugün yapılacak duruşma hakimin izinli olması nedeniyle 17/11/2026 saat 09.40 ertelenmiştir.
+Gelişmeler hususunda sizi bilgilendireceğim.
+İyi günler dilerim.
+
+ÖRNEK 2 (duruşmada ara kararlar verildi):
+Merhaba Nurettin Bey,
+Hatice Altuner tarafından açılan davada bugün yapılan duruşmada, dosyanın akıbetinin sorularak ATK'dan dönüşünün beklenilmesine, bu nedenle duruşmanın 06/10/2026 günü saat 10.55'e bırakılmasına karar verildi.
+Gelişmeler hususunda sizi bilgilendireceğiz.
+İyi günler dilerim.
+
+ÖRNEK 3 (birden çok ara karar):
+Merhaba Murat Bey,
+Nasılsınız?
+Ayşe Kırmızıgül tarafından açılan davanın bugün yapılan duruşmasında tanığımız dinlendi. Mahkemece;
+1- Davalı tanığına yeni duruşma gününü bildirir davetiye çıkartılmasına,
+2- Diğer davalı tanığının ihzâren celbine,
+3- Dosyanın bilirkişiye gönderilmesi hususunun gelecek celse değerlendirilmesine,
+4- Bu nedenle duruşmanın 10/09/2026 günü saat 12:00'ye bırakılmasına karar verildi.
+Gelişmeler hususunda sizi bilgilendireceğiz.
+
+ÖRNEK 4 (lehe karar):
+Merhaba Atilla Bey,
+Nasılsınız?
+Sizi Erkan Kaya tarafından açılan dava hakkında bilgilendirmek istiyorum. Dosyamızda bugün yapılan duruşmada davanın reddine karar verildi, tebrik ederim. Bu aşamada gerekçeli kararın yazılmasını bekleyeceğiz, akabinde karşı taraf karara itiraz edebilir.
+Gelişmeler hususunda sizi bilgilendireceğim.
+İyi günler dilerim.
+
+ÖRNEK 5 (üst mahkeme gelişmesi):
+Merhaba, Nasılsınız?
+Sizi Sacide Becel dosyası hakkında bilgilendirmek istiyorum. Bildiğiniz üzere dosyamızda bir kez daha davanın reddine karar verilmiş ve karşı tarafın itirazları istinaf mahkemesince reddedilmişti. Bu aşamada karşı taraf temyiz yoluna başvurdu.
+Gelişmeler hususunda sizi bilgilendiriyor olacağım.
+İyi günler dilerim."""
+
+
+def _generate_client_email_body(client_name: str, context: dict, sender_name: str = None) -> str:
+    """
+    Gemini kullanarak müvekkili bilgilendiren, sıcak ve birinci ağızdan bir metin
+    oluşturur. Metin sorumlu avukata gidip müvekkile iletilecektir.
+
+    context anahtarları:
+      - belge_turu, tarih_str, teblig_tarihi_str
+      - ozet: belgenin AI özeti (duruşmada/karada ne olduğu) — metnin ASIL kaynağı
+      - karsi_taraf: davayı açan/karşı taraf (opsiyonel)
+      - sonraki_durusma: bir sonraki duruşma tarihi/saati metni (opsiyonel)
+    """
+    _load_env()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("❌ GEMINI_API_KEY bulunamadı! Müvekkil bilgilendirme metni oluşturulamadı.")
+        return None
+
+    ozet = (context.get("ozet") or "").strip()
+    karsi_taraf = (context.get("karsi_taraf") or "").strip()
+    sonraki_durusma = (context.get("sonraki_durusma") or "").strip()
+    teblig = (context.get("teblig_tarihi_str") or "").strip()
+
+    try:
+        genai.configure(api_key=api_key)
+        model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
+        model = genai.GenerativeModel(model_name)
+
+        prompt = f"""Sen, kurumsal bir hukuk bürosunda müvekkillerle birebir yazışan deneyimli bir avukatsın.
+Müvekkilin {client_name} kişisine, dosyasındaki son gelişmeyi anlatan SICAK, samimi ve birinci ağızdan bir bilgilendirme metni yaz.
+
+Aşağıda, büronun müvekkillerine gönderdiği gerçek mesajlardan örnekler var. Üslubu, akışı ve nezaketi bu örneklere benzet:
+────────────────────────────────────────
+{CLIENT_NOTICE_EXAMPLES}
+────────────────────────────────────────
+
+Bu mesaj için bağlam:
+- Müvekkil (hitap edilecek kişi): {client_name}
+- Belge türü: {context.get('belge_turu')}
+- Belge tarihi: {context.get('tarih_str')}
+{f"- Karşı taraf / davayı açan: {karsi_taraf}" if karsi_taraf else ""}
+{f"- Tebliğ tarihi: {teblig}" if teblig else ""}
+{f"- Bir sonraki duruşma: {sonraki_durusma}" if sonraki_durusma else ""}
+- Belgede olan gelişme (ASIL İÇERİK — buna dayanarak yaz):
+{ozet if ozet else "(Belge özeti verilmedi; yalnızca dosyaya yeni bir belge işlendiğini, gelişmeleri ileteceğini nazikçe belirt.)"}
+
+Kurallar:
+1. Hitap: "Merhaba {client_name}," ile başla (örneklerdeki gibi). İsimden cinsiyet açıkça belliyse ismin ardına "Bey"/"Hanım" ekleyebilirsin; emin değilsen yalnızca ismi kullan. "Sayın" KULLANMA.
+2. İkinci satırda kısa bir hâl hatır cümlesi kullanabilirsin ("Nasılsınız?" / "Umarım iyisinizdir.").
+3. Gövde: Belgedeki gelişmeyi müvekkilin anlayacağı sade bir dille, birinci ağızdan anlat. Mahkeme birden çok ara karar verdiyse örnekteki gibi "1- ... 2- ..." şeklinde maddele. Varsa bir sonraki duruşma gününü/saatini belirt.
+4. Sonuç müvekkilin LEHİNE ise (örn. davanın reddi/lehe karar/kesinleşme) "tebrik ederim" gibi nazik bir tebrik ekle. Aleyhine bir durumda abartılı olumsuzluk yapma, sürecin devam ettiğini güven verici biçimde anlat.
+5. Kapanışta mutlaka güven veren bir cümle kullan: "Gelişmeler hususunda sizi bilgilendireceğim." (veya "...bilgilendireceğiz.").
+6. En sona kısa bir iyi dilek ekle: "İyi günler dilerim." gibi.
+7. Hukuki olarak emin olmadığın hiçbir sonuç/yorum UYDURMA; yalnızca verilen gelişmeye sadık kal.
+8. İmza bloğu, "HukuDok", "Belge Arşiv Sistemi" gibi sistem ifadeleri EKLEME. Sadece e-posta gövdesini ver (konu başlığı yazma)."""
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        if "Konu:" in text[:50]:
+            text = text.split("\n", 1)[1].strip()
+        return text
+    except Exception as e:
+        logger.error(f"❌ Gemini müvekkil bilgilendirme metni oluşturma hatası: {e}")
+        return None
+
+
+def generate_client_email_preview(client_name: str, context: dict, sender_name: str = None) -> str:
+    """
+    Müvekkil bilgilendirme önizlemesi oluşturur (gönderim yapmaz).
+    Fallback: örneklerin tonuna yakın sade bir şablon döndürür.
+    """
+    body = _generate_client_email_body(client_name, context, sender_name=sender_name)
+    if not body:
+        tarih_str = context.get("tarih_str", "")
+        belge_turu = context.get("belge_turu", "belge")
+        ozet = (context.get("ozet") or "").strip()
+        govde = ozet if ozet else f"Dosyanıza {tarih_str} tarihli {belge_turu} işlenmiştir."
+        body = f"""Merhaba {client_name},
+Nasılsınız?
+{govde}
+Gelişmeler hususunda sizi bilgilendireceğim.
+İyi günler dilerim."""
+    return body
+
+
 def generate_email_preview(recipient_name: str, context: dict, sender_name: str = None) -> str:
     """
     AI e-posta önizlemesi oluşturur (gönderim yapmaz).
@@ -311,11 +461,13 @@ def send_document_notification(
     custom_messages: dict = None,
     extra_attachment_paths: list[dict] = None,
     sender_name: str = None,
+    subject_prefix: str = "[HukDok]",
 ) -> dict:
     """
     Belge bildirimi gönderir - Her alıcı için özelleştirilmiş AI destekli metin oluşturur.
     custom_message verilirse AI üretimi atlanır ve bu metin kullanılır.
     extra_attachment_paths: ek belgelerin [{path, name}] sözlük listesi.
+    subject_prefix: Konu başlığı ön eki (örn. müvekkil bilgilendirme için "[Müvekkil Bilgilendirme]").
     """
     config = _get_email_config()
 
@@ -379,7 +531,7 @@ def send_document_notification(
         "teblig_tarihi_str": teblig_tarihi_str
     }
     
-    subject = f"[HukDok] {belge_turu} - {subject_client}" + (f" | {sender_name}" if sender_name else "")
+    subject = f"{subject_prefix} {belge_turu} - {subject_client}" + (f" | {sender_name}" if sender_name else "")
     
     # --- GÖNDERİM DÖNGÜSÜ (Bireysel Gönderim) ---
     results = []

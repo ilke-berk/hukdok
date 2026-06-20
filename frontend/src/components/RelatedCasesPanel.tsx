@@ -49,24 +49,25 @@ const RELATION_TYPE_LABELS: Record<string, string> = {
 
 // ---- Dosya türü meta ----
 const fileTypeMeta: Record<string, { color: string; bg: string; border: string; icon: React.ReactNode }> = {
-    Hukuk:   { color: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/20",   icon: <Scale className="w-3.5 h-3.5" /> },
-    İcra:    { color: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/20",  icon: <Building2 className="w-3.5 h-3.5" /> },
-    Ceza:    { color: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/20",    icon: <Gavel className="w-3.5 h-3.5" /> },
-    İdare:   { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", icon: <FileText className="w-3.5 h-3.5" /> },
-    Ticaret: { color: "text-teal-400",   bg: "bg-teal-500/10",   border: "border-teal-500/20",   icon: <BarChart3 className="w-3.5 h-3.5" /> },
+    Hukuk:   { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", icon: <Scale className="w-3.5 h-3.5" /> },
+    İcra:    { color: "text-[#c47a1e]",     bg: "bg-[#c47a1e]/10",     border: "border-[#c47a1e]/30",     icon: <Building2 className="w-3.5 h-3.5" /> },
+    Ceza:    { color: "text-[#a8323b]",     bg: "bg-[#a8323b]/10",     border: "border-[#a8323b]/30",     icon: <Gavel className="w-3.5 h-3.5" /> },
+    İdare:   { color: "text-[#7a3f8a]",     bg: "bg-[#7a3f8a]/10",     border: "border-[#7a3f8a]/30",     icon: <FileText className="w-3.5 h-3.5" /> },
+    Ticaret: { color: "text-[#2f8a5d]",     bg: "bg-[#2f8a5d]/10",     border: "border-[#2f8a5d]/30",     icon: <BarChart3 className="w-3.5 h-3.5" /> },
 };
 const getFileTypeMeta = (type?: string | null) =>
-    fileTypeMeta[type ?? ""] ?? { color: "text-primary", bg: "bg-primary/10", border: "border-primary/20", icon: <FileText className="w-3.5 h-3.5" /> };
+    fileTypeMeta[type ?? ""] ?? { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", icon: <FileText className="w-3.5 h-3.5" /> };
 
 // ---- Statü renkleri ----
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    DERDEST: { bg: "bg-emerald-500/15", text: "text-emerald-400", dot: "bg-emerald-400" },
-    KARAR:   { bg: "bg-indigo-500/15",  text: "text-indigo-400",  dot: "bg-indigo-400" },
-    KAPALI:  { bg: "bg-gray-500/15",    text: "text-gray-400",    dot: "bg-gray-400" },
-    TEMYIZ:  { bg: "bg-amber-500/15",   text: "text-amber-400",   dot: "bg-amber-400" },
+    DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
+    ISTINAF: { bg: "bg-[#c47a1e]/15",      text: "text-[#c47a1e]",       dot: "bg-[#c47a1e]" },
+    TEMYIZ:  { bg: "bg-[#7a3f8a]/15",      text: "text-[#7a3f8a]",       dot: "bg-[#7a3f8a]" },
+    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-[var(--brand)]" },
+    KAPALI:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 const getStatusStyle = (status: string) =>
-    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-primary/15", text: "text-primary", dot: "bg-primary" };
+    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
 
 // =================================================================
 // Ana panel bileşeni
@@ -127,7 +128,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                     <Skeleton className="h-5 w-40" />
                     <Skeleton className="h-8 w-24" />
                 </div>
-                {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
+                {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-none" />)}
             </div>
         );
     }
@@ -145,7 +146,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                         Dava Bağla
                     </Button>
                 </div>
-                <div className="text-center py-16 border border-dashed rounded-xl text-muted-foreground">
+                <div className="text-center py-16 border border-dashed rounded-none text-muted-foreground">
                     <Link2 className="w-10 h-10 opacity-20 mx-auto mb-3" />
                     <p className="font-medium text-foreground">İlişkili dava yok</p>
                     <p className="text-sm mt-1 mb-4">
@@ -220,7 +221,7 @@ const RelatedCaseCard = ({ rc, isDeleting, onNavigate, onDelete }: CardProps) =>
     const relationLabel = RELATION_TYPE_LABELS[rc.relation_type] ?? rc.relation_type;
 
     return (
-        <div className="group rounded-xl border border-border/60 bg-card/60 hover:border-border transition-all overflow-hidden">
+        <div className="group rounded-none border border-border/60 bg-card/60 hover:border-border transition-all overflow-hidden">
             <div className="p-4 flex flex-col sm:flex-row sm:items-start gap-4">
                 {/* Sol: bilgiler */}
                 <div className="flex-1 min-w-0 space-y-2">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Header } from "@/components/Header";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
+import { Eyebrow } from "@/components/dashboard/primitives";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,6 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
 import { validateTCIdentity } from "@/lib/validation";
-import { FileUpload } from "@/components/FileUpload";
 
 // Listeler useConfig üzerinden dinamik olarak alınıyor.
 
@@ -47,6 +47,7 @@ const findMatch = (options: string[], value?: string) => {
 };
 
 const NewClient = () => {
+    useSetPageTitle("Yeni Müvekkil", ["Avukat Paneli", "Müvekkiller", "Yeni"]);
     const { saveClient, updateClient, deleteClient, clients, isLoading } = useClients();
     const { cities, specialties, clientCategories } = useConfig();
     const TURKEY_CITIES = cities.map(c => c.name ?? "");
@@ -272,17 +273,17 @@ const NewClient = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background">
-            <Header />
+        <div>
 
-            <main className="max-w-[1400px] mx-auto px-6 py-8">
+            <main className="max-w-[1400px] mx-auto">
                 {/* DASHBOARD HEADER */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                        <Eyebrow>{isEditMode ? "01 · Düzenleme" : "01 · Yeni Kayıt"}</Eyebrow>
+                        <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
                             {isClient ? "Müvekkil Yönetimi" : "Diğer Kişi Yönetimi"}
                         </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-[13px] text-[var(--fg-muted)] mt-2 max-w-[60ch] leading-relaxed">
                             {isEditMode ? `Mevcut ${typeLabel.toLowerCase()} bilgilerini güncelleyin.` : `Yeni ${typeLabel.toLowerCase()} ekleyin veya iletişim bilgilerini güncelleyin.`}
                         </p>
                     </div>
@@ -313,7 +314,7 @@ const NewClient = () => {
                 {/* FILE UPLOAD PREVIEW */}
                 {selectedFile && (
                     <div className="mb-8 animate-in fade-in slide-in-from-top-4">
-                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
+                        <div className="bg-primary/5 border border-primary/20 rounded-none p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="bg-primary/20 p-2 rounded">
                                     <FileText className="w-5 h-5 text-primary" />
@@ -334,16 +335,16 @@ const NewClient = () => {
                         <div className="lg:col-span-8 space-y-8">
 
                             {/* 1. KİŞİSEL BİLGİLER */}
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75">
+                                <div className="px-6 py-4 border-b border-[var(--border)]">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <User className="w-4 h-4" /> 1. Kişisel Bilgiler
                                     </h3>
                                 </div>
                                 <CardContent className="p-8 space-y-6">
                                     <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
                                         <div className="space-y-2 md:col-span-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <User className="w-4 h-4 text-muted-foreground" />
                                                 Ad Soyad / Ticari Ünvan
                                             </Label>
@@ -352,12 +353,12 @@ const NewClient = () => {
                                                 required
                                                 value={formData.name}
                                                 onChange={(e) => setFormData({ ...formData, name: toTitleCase(e.target.value) })}
-                                                className="text-lg bg-transparent border-border/60"
+                                                className="text-lg bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Users className="w-4 h-4 text-muted-foreground" />
                                                 {typeLabel} Tipi
                                             </Label>
@@ -388,7 +389,7 @@ const NewClient = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <CreditCard className="w-4 h-4 text-muted-foreground" />
                                                 TC Kimlik / Vergi No
                                             </Label>
@@ -406,7 +407,7 @@ const NewClient = () => {
                                                     const validation = validateTCIdentity(formData.tcNo);
                                                     setTcError(validation.isValid ? null : validation.message);
                                                 }}
-                                                className={`bg-transparent border-border/60 ${tcError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                                                className={`bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px] ${tcError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                                             />
                                             {tcError ? (
                                                 <p className="text-[10px] font-medium text-red-500 animate-in fade-in slide-in-from-top-1">
@@ -418,7 +419,7 @@ const NewClient = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Hash className="w-4 h-4 text-muted-foreground" />
                                                 Cari Kod (6 Hane)
                                             </Label>
@@ -427,13 +428,13 @@ const NewClient = () => {
                                                 value={formData.cari_kod}
                                                 maxLength={10}
                                                 onChange={(e) => setFormData({ ...formData, cari_kod: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                             <p className="text-[10px] text-muted-foreground">Micro/Muhasebe cari kodunu buraya girebilirsiniz.</p>
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Calendar className="w-4 h-4 text-muted-foreground" />
                                                 Doğum Yılı
                                             </Label>
@@ -447,12 +448,12 @@ const NewClient = () => {
                                                 }}
                                                 min={1900}
                                                 max={new Date().getFullYear()}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <User className="w-4 h-4 text-muted-foreground" />
                                                 Cinsiyet
                                             </Label>
@@ -460,7 +461,7 @@ const NewClient = () => {
                                                 value={formData.gender}
                                                 onValueChange={(v) => setFormData({ ...formData, gender: v })}
                                             >
-                                                <SelectTrigger className="w-full bg-transparent border-border/60">
+                                                <SelectTrigger className="w-full bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]">
                                                     <SelectValue />
                                                 </SelectTrigger>
                                                 <SelectContent>
@@ -475,16 +476,16 @@ const NewClient = () => {
                             </Card>
 
                             {/* 2. İLETİŞİM BİLGİLERİ */}
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
+                                <div className="px-6 py-4 border-b border-[var(--border)]">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <MapPin className="w-4 h-4" /> 2. İletişim Detayları
                                     </h3>
                                 </div>
                                 <CardContent className="p-8 space-y-6">
                                     <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
                                         <div className="space-y-2 md:col-span-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Mail className="w-4 h-4 text-muted-foreground" />
                                                 E-Posta Adresi
                                             </Label>
@@ -493,12 +494,12 @@ const NewClient = () => {
                                                 placeholder="ornek@email.com"
                                                 value={formData.email}
                                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Phone className="w-4 h-4 text-muted-foreground" />
                                                 Sabit Telefon
                                             </Label>
@@ -506,12 +507,12 @@ const NewClient = () => {
                                                 placeholder="02XX XXX XX XX"
                                                 value={formData.phone}
                                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Phone className="w-4 h-4 text-muted-foreground" />
                                                 Cep Telefonu
                                             </Label>
@@ -519,12 +520,12 @@ const NewClient = () => {
                                                 placeholder="05XX XXX XX XX"
                                                 value={formData.mobile_phone}
                                                 onChange={(e) => setFormData({ ...formData, mobile_phone: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <MapPin className="w-4 h-4 text-muted-foreground" />
                                                 İl
                                             </Label>
@@ -532,7 +533,7 @@ const NewClient = () => {
                                                 value={formData.il}
                                                 onValueChange={(v) => setFormData({ ...formData, il: v })}
                                             >
-                                                <SelectTrigger className="w-full bg-transparent border-border/60">
+                                                <SelectTrigger className="w-full bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]">
                                                     <SelectValue placeholder="İl seçiniz..." />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-[300px]">
@@ -544,7 +545,7 @@ const NewClient = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <MapPin className="w-4 h-4 text-muted-foreground" />
                                                 Tam Adres
                                             </Label>
@@ -552,7 +553,7 @@ const NewClient = () => {
                                                 placeholder="Mahalle, sokak, kapı no..."
                                                 value={formData.address}
                                                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                     </div>
@@ -563,9 +564,9 @@ const NewClient = () => {
                         {/* RIGHT COLUMN: ADDITIONAL INFO & ACTIONS */}
                         <div className="lg:col-span-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
                             {/* 3. EK BİLGİLER */}
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="px-6 py-4 border-b border-[var(--border)]">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <Tag className="w-4 h-4" /> 3. Ek Bilgiler
                                     </h3>
                                 </div>
@@ -579,7 +580,7 @@ const NewClient = () => {
                                             value={formData.category}
                                             onValueChange={(v) => setFormData({ ...formData, category: v })}
                                         >
-                                            <SelectTrigger className="w-full bg-transparent border-border/60">
+                                            <SelectTrigger className="w-full bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]">
                                                 <SelectValue placeholder="Kategori seçiniz..." />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -592,7 +593,7 @@ const NewClient = () => {
 
                                     {formData.category === "Doktor" && (
                                         <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                                            <Label className="flex items-center gap-2">
+                                            <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Tag className="w-4 h-4 text-muted-foreground" />
                                                 Uzmanlık Alanı
                                             </Label>
@@ -600,7 +601,7 @@ const NewClient = () => {
                                                 value={formData.specialty}
                                                 onValueChange={(v) => setFormData({ ...formData, specialty: v })}
                                             >
-                                                <SelectTrigger className="w-full bg-transparent border-border/60">
+                                                <SelectTrigger className="w-full bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]">
                                                     <SelectValue placeholder="Uzmanlık seçiniz..." />
                                                 </SelectTrigger>
                                                 <SelectContent className="max-h-[300px]">
@@ -622,15 +623,15 @@ const NewClient = () => {
                                             placeholder="Ör: Mersin Özel Ortadoğu Hastanesi"
                                             value={formData.sektor}
                                             onChange={(e) => setFormData({ ...formData, sektor: e.target.value })}
-                                            className="bg-transparent border-border/60"
+                                            className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                         />
                                     </div>
 
                                     <div className="space-y-2">
-                                        <Label>Özel Notlar</Label>
+                                        <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Özel Notlar</Label>
                                         <Textarea
                                             placeholder={`${typeLabel} hakkında hatırlatmalar...`}
-                                            className="h-24 bg-transparent border-border/60"
+                                            className="h-24 bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             value={formData.notes}
                                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                                         />
@@ -639,74 +640,74 @@ const NewClient = () => {
                             </Card>
 
                             {/* 4. VEKALET BİLGİLERİ */}
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="px-6 py-4 border-b border-[var(--border)]">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <FileText className="w-4 h-4" /> 4. Vekalet Bilgileri
                                     </h3>
                                 </div>
                                 <CardContent className="p-8 space-y-6">
                                     <div className="grid grid-cols-2 gap-x-6 gap-y-5">
                                         <div className="space-y-2">
-                                            <Label>Büro Vekalet No</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Büro Vekalet No</Label>
                                             <Input
                                                 placeholder="Ör: 1654"
                                                 value={formData.buro_vekalet_no}
                                                 onChange={(e) => setFormData({ ...formData, buro_vekalet_no: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Yevmiye No</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Yevmiye No</Label>
                                             <Input
                                                 placeholder="Ör: 2908"
                                                 value={formData.yevmiye_no}
                                                 onChange={(e) => setFormData({ ...formData, yevmiye_no: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                         <div className="space-y-2 col-span-2">
-                                            <Label>Noterlik</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Noterlik</Label>
                                             <Input
                                                 placeholder="Ör: MERSİN 11. NOTERLİĞİ"
                                                 value={formData.noterlik}
                                                 onChange={(e) => setFormData({ ...formData, noterlik: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Veriliş Tarihi</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Veriliş Tarihi</Label>
                                             <Input
                                                 type="date"
                                                 value={formData.vekaletname_tarihi}
                                                 onChange={(e) => setFormData({ ...formData, vekaletname_tarihi: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Geçerlilik Tarihi</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Geçerlilik Tarihi</Label>
                                             <Input
                                                 type="date"
                                                 value={formData.gecerlilik_tarihi}
                                                 onChange={(e) => setFormData({ ...formData, gecerlilik_tarihi: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Vekalet No</Label>
+                                            <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Vekalet No</Label>
                                             <Input
                                                 placeholder="Ör: 12345"
                                                 value={formData.vekalet_no}
                                                 onChange={(e) => setFormData({ ...formData, vekalet_no: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px]"
                                             />
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Vekil Avukatlar</Label>
+                                        <Label className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold">Vekil Avukatlar</Label>
                                         <Textarea
                                             placeholder="AD SOYAD;AD SOYAD (noktalı virgülle ayırın)"
-                                            className="h-20 bg-transparent border-border/60 font-mono text-sm"
+                                            className="h-20 bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px] font-mono text-sm"
                                             value={formData.vekil_avukatlar}
                                             onChange={(e) => setFormData({ ...formData, vekil_avukatlar: e.target.value })}
                                         />
@@ -715,51 +716,68 @@ const NewClient = () => {
                                 </CardContent>
                             </Card>
 
-                            {/* 5. İŞLEMLER */}
-                            <Card className="glass-card shadow-lg border-primary/20 bg-primary/5 sticky top-24">
-                                <CardHeader className="pb-4">
-                                    <CardTitle className="text-lg">İşlemi Tamamla</CardTitle>
-                                    <CardDescription>Bilgileri doğruladıktan sonra kaydedin.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <Button type="submit" className="w-full font-bold shadow-md h-12" disabled={isLoading}>
+                            {/* 5. İŞLEMLER — sağ sticky kart */}
+                            <div className="bg-[var(--bg-elevated)] border border-[var(--border)] sticky top-4">
+                                <div className="px-5 py-4 border-b border-[var(--border)]">
+                                    <Eyebrow tone="brand">İşlemi Tamamla</Eyebrow>
+                                    <p className="text-[12px] text-[var(--fg-muted)] mt-1.5 leading-relaxed">
+                                        Bilgileri doğruladıktan sonra kaydedin.
+                                    </p>
+                                </div>
+                                <div className="p-5 grid gap-2.5">
+                                    <Button
+                                        type="submit"
+                                        className="w-full h-11 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
+                                        disabled={isLoading}
+                                    >
                                         {isLoading ? (
-                                            <>Kaydediliyor...</>
+                                            <>Kaydediliyor…</>
                                         ) : (
                                             <>
-                                                <Save className="w-5 h-5 mr-2" />
+                                                <Save className="w-4 h-4" />
                                                 {isEditMode ? "Güncelle" : `${typeLabel} Kaydet`}
                                             </>
                                         )}
                                     </Button>
-                                    <Button type="button" variant="outline" className="w-full h-10 border-border/50 hover:bg-muted" onClick={() => navigate(-1)}>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="w-full h-10 bg-transparent border border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px] font-medium"
+                                        onClick={() => navigate(-1)}
+                                    >
                                         İptal
                                     </Button>
 
                                     {isEditMode && (
                                         <AlertDialog>
                                             <AlertDialogTrigger asChild>
-                                                <Button variant="ghost" type="button" className="w-full h-10 text-destructive hover:text-destructive hover:bg-destructive/10 mt-2">
-                                                    <Trash2 className="w-4 h-4 mr-2" />
+                                                <Button
+                                                    type="button"
+                                                    className="w-full h-10 mt-2 bg-transparent border border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 rounded-[3px] font-medium gap-2"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
                                                     Kaydı Sil
                                                 </Button>
                                             </AlertDialogTrigger>
-                                            <AlertDialogContent>
+                                            <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                                 <AlertDialogHeader>
-                                                    <AlertDialogTitle>Emin misiniz?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        Bu işlem geri alınamaz. Bu {typeLabel.toLowerCase()} kalıcı olarak sunucularımızdan silinecektir.
+                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                                                        <Trash2 className="w-4 h-4" />
+                                                        Emin misiniz?
+                                                    </AlertDialogTitle>
+                                                    <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
+                                                        Bu işlem <strong className="text-[var(--fg)]">geri alınamaz.</strong> Bu {typeLabel.toLowerCase()} kalıcı olarak sunuculardan silinecektir.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <AlertDialogFooter>
-                                                    <AlertDialogCancel>İptal</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction>
+                                                    <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={handleDelete} className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px]">Sil</AlertDialogAction>
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>
                                         </AlertDialog>
                                     )}
-                                </CardContent>
-                            </Card>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </form>

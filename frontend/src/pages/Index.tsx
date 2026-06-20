@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Header } from "@/components/Header";
-import { FileUpload } from "@/components/FileUpload";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
+import { FlowDropZone } from "@/components/flow/FlowDropZone";
+import { FlowStageStrip, type FlowStage } from "@/components/flow/primitives";
 import { AnalysisResults } from "@/components/AnalysisResults";
 import { AnalysisPending } from "@/components/AnalysisPending";
 import { QueueStatus } from "@/components/QueueStatus";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users, ChevronsUpDown, FileText } from "lucide-react";
+import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users, ChevronsUpDown, FileText, ExternalLink, Mail, Layers, ChevronRight, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { useCases } from "@/hooks/useCases";
@@ -19,6 +20,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
 import { getStoredOutputDir, setStoredOutputDir } from "@/lib/directoryStorage";
+import { SectionHeader, HairlineCard } from "@/components/dashboard/primitives";
+import { PlaceholderBadge } from "@/components/PlaceholderBadge";
 
 import { EmailModal } from "@/components/email/EmailModal";
 import { BatchPrepScreen, type BatchPrepConfig } from "@/components/BatchPrepScreen";
@@ -99,6 +102,7 @@ declare global {
 }
 
 const Index = () => {
+  useSetPageTitle("Belge Yükleme", ["Avukat Paneli", "Belge"]);
   const { getCases, searchCases } = useCases();
   const { doctypes } = useConfig();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -111,6 +115,12 @@ const Index = () => {
   // Email Modal States
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [emailModalLoading, setEmailModalLoading] = useState(false);
+
+  // Müvekkil bilgilendirme — metin sorumlu avukata gider. Modal açılınca davadan çekilir.
+  const [clientNoticeLawyer, setClientNoticeLawyer] = useState<{ name: string; email: string } | null>(null);
+  const [clientNoticeClientName, setClientNoticeClientName] = useState<string | null>(null);
+  const [clientNotifyEligible, setClientNotifyEligible] = useState(false);
+  const [clientWarning, setClientWarning] = useState<string | null>(null);
 
   // Multi-file queue states
   const [fileQueue, setFileQueue] = useState<File[]>([]);
@@ -179,6 +189,10 @@ const Index = () => {
   const [isQuickCaseModalOpen, setIsQuickCaseModalOpen] = useState(false);
 
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Boş ekrandaki kaynak kartları + "Dosya Seç" için gizli input'u tetikler.
+  const openFilePicker = () => document.getElementById("hidden-file-input")?.click();
 
   // Davaları yükle (bir kere)
   useEffect(() => {
@@ -701,6 +715,50 @@ const Index = () => {
     setFinalData((prev) => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
   }, []);
 
+  // Müvekkil bilgilendirme: EmailModal açılınca davanın sorumlu avukatını + müvekkil adını çek.
+  useEffect(() => {
+    if (!isEmailModalOpen) return;
+    const data = finalData || analysisData;
+    const belgeTuruKodu = data?.belge_turu_kodu;
+
+    if (!linkedCase?.id) {
+      // Sorumlu avukat yalnızca bağlı davadan bulunabilir.
+      setClientNoticeLawyer(null);
+      setClientNoticeClientName(null);
+      setClientNotifyEligible(false);
+      setClientWarning("Belge bir davaya bağlı değil — müvekkil bilgilendirmesi gönderilemez.");
+      return;
+    }
+
+    let cancelled = false;
+    setClientWarning(null);
+    const qs = belgeTuruKodu ? `?belge_turu_kodu=${encodeURIComponent(belgeTuruKodu)}` : "";
+    apiClient.fetch(`/api/cases/${linkedCase.id}/client-notice-target${qs}`)
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then((result: { eligible: boolean; lawyer: { name: string; email: string } | null; client_name: string | null }) => {
+        if (cancelled) return;
+        setClientNoticeLawyer(result.lawyer);
+        setClientNoticeClientName(result.client_name);
+        setClientNotifyEligible(!!result.eligible);
+        if (result.eligible && !result.lawyer) {
+          setClientWarning("Davanın sorumlu avukatı bulunamadı — müvekkil bilgilendirmesi gönderilemez.");
+        } else if (result.eligible && result.lawyer && !result.lawyer.email) {
+          setClientWarning(`Sorumlu avukatın (${result.lawyer.name}) kayıtlı e-postası yok — bilgilendirme gönderilemez.`);
+        } else {
+          setClientWarning(null);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClientNoticeLawyer(null);
+        setClientNoticeClientName(null);
+        setClientNotifyEligible(false);
+        setClientWarning("Müvekkil bilgilendirme hedefi alınamadı.");
+      });
+
+    return () => { cancelled = true; };
+  }, [isEmailModalOpen, linkedCase?.id, finalData, analysisData]);
+
 
 
 
@@ -728,7 +786,7 @@ const Index = () => {
 
   // Step 2: User confirms email -> Start Process
   // overrideLinkedCase: QuickCaseModal'dan yeni açılan dava, state güncel olmadan önce geçilir
-  const handleFinalProcess = async (toEmails: string[], ccEmails: string[], shouldSendEmail: boolean, tebligTarihi?: string, perRecipientMessages?: Record<string, string>, extraAttachments?: File[], overrideLinkedCase?: IndexCaseData) => {
+  const handleFinalProcess = async (toEmails: string[], ccEmails: string[], shouldSendEmail: boolean, tebligTarihi?: string, perRecipientMessages?: Record<string, string>, extraAttachments?: File[], sendClientNotice?: boolean, clientNoticeMessage?: string, overrideLinkedCase?: IndexCaseData) => {
     const dataToUse = finalData || analysisData;
     if (!selectedFile || !dataToUse) return;
 
@@ -779,6 +837,10 @@ const Index = () => {
       formData.append("custom_to_json", JSON.stringify(toEmails));
       formData.append("custom_cc_json", JSON.stringify(ccEmails));
       formData.append("send_email", String(shouldSendEmail));
+      formData.append("send_client_notice", String(!!sendClientNotice));
+      if (clientNoticeMessage) {
+        formData.append("client_notice_message", clientNoticeMessage);
+      }
       if (perRecipientMessages && Object.keys(perRecipientMessages).length > 0) {
         formData.append("custom_messages_json", JSON.stringify(perRecipientMessages));
       }
@@ -1007,24 +1069,170 @@ const Index = () => {
   };
 
 
+  const activeStage: FlowStage =
+    analysisData ? "confirm" :
+    isAnalyzing ? "analyze" :
+    "upload";
+
+  const stageMetaNode = (
+    <div className="flex items-center gap-3">
+      {fileQueue.length > 1 && (
+        <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+          {Math.min(processedCount + 1, fileQueue.length)} / {fileQueue.length} belge
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={handleSelectDirectory}
+        title={outputDirHandle ? "Çıktı klasörünü değiştir" : "Çıktıların kaydedileceği klasörü seç"}
+        className="inline-flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] bg-[var(--bg)] rounded-[3px] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)] transition-colors"
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${outputDirHandle ? "bg-[#2f8a5d]" : "bg-[var(--fg-subtle)]"}`} />
+        <span className="text-[9px] tracking-[0.2em] uppercase text-[var(--fg-subtle)] font-semibold">Hedef</span>
+        <span className="truncate max-w-[160px] normal-case text-[11px]">{outputDirHandle ? outputDirHandle.name : "Klasör seç"}</span>
+      </button>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="container max-w-screen-2xl mx-auto px-6 py-8">
-        <div className="flex justify-end mb-4">
-          <Button
-            variant={outputDirHandle ? "outline" : "secondary"}
-            onClick={handleSelectDirectory}
-            className="gap-2"
-            title={outputDirHandle ? "Klasör Seçili (Değiştirmek için tıkla)" : "Çıktıların otomatik kaydedileceği klasörü seç"}
-          >
-            {outputDirHandle ? `📂 Klasör: ${outputDirHandle.name}` : "📂 Çıktı Klasörü Seç (Masaüstü)"}
-            {outputDirHandle && <span className="text-green-500">●</span>}
-          </Button>
-        </div>
+    <div className="min-h-screen">
+      <main className="max-w-screen-2xl mx-auto">
+        <FlowStageStrip active={activeStage} meta={stageMetaNode} className="mb-7" />
+
+        {!selectedFile && (
+          <div className="grid gap-8">
+            {/* 01 · Yükleme — tam genişlik hero drop zone */}
+            <section>
+              <SectionHeader
+                eyebrow="01 · Yükleme"
+                title="Belgeyi sürükleyin"
+                italic="— ya da seçin"
+                meta="PDF · DOCX · DOC · TXT · UDF · maks. 50 MB"
+              />
+              <div className="mt-3">
+                <FlowDropZone
+                  onFileSelect={handleFileSelect}
+                  selectedFile={null}
+                  onClearFile={handleClearFile}
+                />
+              </div>
+            </section>
+
+            {/* 02 · Başka bir kaynak — 3 kaynak kartı */}
+            <section>
+              <SectionHeader
+                eyebrow="02 · Başka bir kaynak"
+                title="Doğrudan getirme yolları"
+                meta="3 seçenek"
+              />
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => toast.info("UYAP entegrasyonu yakında aktif olacak.")}
+                  className="group text-left p-5 bg-[var(--bg-elevated)] border border-[var(--border)] grid gap-3 transition-colors hover:border-[var(--brand)]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
+                      <ExternalLink className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                    </span>
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#c47a1e]/40 text-[#c47a1e] rounded-[2px]">
+                      Yakında
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-display font-medium text-[16px] tracking-[-0.01em] text-[var(--fg)]">UYAP'tan İndir</div>
+                    <div className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed mt-1.5">
+                      Esas no yazın; tebligat, karar ve tutanak ayrımı yapılarak indirilsin.
+                    </div>
+                  </div>
+                  <div className="pt-2.5 border-t border-[var(--border)] font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--brand)] inline-flex items-center gap-1.5">
+                    UYAP indirme <ChevronRight className="w-3 h-3" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => toast.info("E-posta (Outlook) entegrasyonu yakında aktif olacak.")}
+                  className="group text-left p-5 bg-[var(--bg-elevated)] border border-[var(--border)] grid gap-3 transition-colors hover:border-[var(--brand)]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
+                      <Mail className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                    </span>
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#c47a1e]/40 text-[#c47a1e] rounded-[2px]">
+                      Yakında
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-display font-medium text-[16px] tracking-[-0.01em] text-[var(--fg)]">E-postadan Al</div>
+                    <div className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed mt-1.5">
+                      Outlook eklentisi ile gelen ekleri tek tıkla davaya bağlayın.
+                    </div>
+                  </div>
+                  <div className="pt-2.5 border-t border-[var(--border)] font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--brand)] inline-flex items-center gap-1.5">
+                    Outlook <ChevronRight className="w-3 h-3" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  className="group text-left p-5 bg-[var(--bg-elevated)] border border-[var(--border)] grid gap-3 transition-colors hover:border-[var(--brand)]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
+                      <Layers className="w-[18px] h-[18px]" strokeWidth={1.6} />
+                    </span>
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#2f8a5d]/40 text-[#2f8a5d] rounded-[2px]">
+                      Aktif
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-display font-medium text-[16px] tracking-[-0.01em] text-[var(--fg)]">Toplu Yükleme</div>
+                    <div className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed mt-1.5">
+                      Birden fazla belge seçin; sıraya alınır, arka planda işlenir.
+                    </div>
+                  </div>
+                  <div className="pt-2.5 border-t border-[var(--border)] font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--brand)] inline-flex items-center gap-1.5">
+                    Dosyaları seç <ChevronRight className="w-3 h-3" />
+                  </div>
+                </button>
+              </div>
+            </section>
+
+            {/* 03 · Son Aktivite — placeholder (per-belge akış endpoint'i henüz yok) */}
+            <section>
+              <SectionHeader
+                eyebrow="03 · Son Aktivite"
+                title="Bugünkü yüklemelerim"
+                meta={<PlaceholderBadge />}
+              />
+              <HairlineCard className="mt-3">
+                <div className="grid place-items-center gap-3 py-8 text-center text-[var(--fg-subtle)]">
+                  <FileText className="w-8 h-8 opacity-40" />
+                  <div>
+                    <p className="text-[13px] text-[var(--fg-muted)] font-medium">Yakında aktif olacak</p>
+                    <p className="text-[11px] mt-1.5 max-w-[42ch] mx-auto leading-relaxed">
+                      Bugün yüklediğiniz belgeler, bağlandıkları dava ve işlenme durumlarıyla burada listelenecek.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate("/activity-history")}
+                    className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] inline-flex items-center gap-1 mt-2 pb-1 border-b border-[var(--border)] hover:border-[var(--brand)]"
+                  >
+                    Aktivite Geçmişi <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </HairlineCard>
+            </section>
+          </div>
+        )}
+
+        {selectedFile && (
         <div className="grid lg:grid-cols-2 gap-8">
           <div className="space-y-6">
-            <FileUpload
+            <FlowDropZone
               onFileSelect={handleFileSelect}
               selectedFile={selectedFile}
               onClearFile={handleClearFile}
@@ -1034,17 +1242,17 @@ const Index = () => {
 
             {/* Belge Türü Seçici — analiz başlamadan önce zorunlu */}
             {selectedFile && !analysisData && (
-              <div className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-2">
-                <label className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary" />
+              <div className="bg-[var(--bg-elevated)] border border-[var(--border)] p-4 grid gap-2">
+                <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                  <FileText className="w-3 h-3" />
                   Belge Türü Seçin
-                  <span className="text-destructive text-xs">*</span>
+                  <span className="text-[var(--brand)] ml-0.5">*</span>
                 </label>
                 <Popover open={openDocTypeSelect} onOpenChange={setOpenDocTypeSelect}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className="w-full justify-between font-mono glass-input border-0"
+                      className="w-full justify-between font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0"
                       disabled={isAnalyzing}
                     >
                       {selectedDocType
@@ -1080,49 +1288,49 @@ const Index = () => {
             )}
 
             {/* --- FAZ 1: DAVA BAĞLANTISI PANELİ --- */}
-            <div className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-3">
+            <div className="bg-[var(--bg-elevated)] border border-[var(--border)] p-4 grid gap-3">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold flex items-center gap-2">
-                  <Link2 className="w-4 h-4 text-primary" />
+                <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                  <Link2 className="w-3 h-3" />
                   Dava Bağlantısı
                 </label>
               </div>
 
               {isTestMode ? (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+                <div className="flex items-center gap-2 p-3 rounded-[3px] bg-[#c47a1e]/10 border border-[#c47a1e]/30 text-xs text-[#c47a1e]">
                   <TestTube2 className="w-4 h-4 shrink-0" />
                   <span>Test modunda belge yüklenecek — dava seçimi atlanıyor. Belge <strong>TEST</strong> olarak kaydedilir.</span>
                 </div>
               ) : linkedCase ? (
                 <>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 p-3 rounded-[3px] bg-[#2f8a5d]/10 border border-[#2f8a5d]/30">
+                  <CheckCircle2 className="w-5 h-5 text-[#2f8a5d] shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-emerald-400 truncate max-w-[200px]" title={linkedCase.esas_no || linkedCase.tracking_no}>
+                      <p className="text-sm font-semibold text-[#2f8a5d] truncate max-w-[200px]" title={linkedCase.esas_no || linkedCase.tracking_no}>
                         {linkedCase.esas_no || linkedCase.tracking_no}
                       </p>
                       {/* AI eşleşme göstergesi */}
                       {analysisData?.suggested_case?.case_id === linkedCase.id && (
                         <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${analysisData.suggested_case.confidence === "HIGH"
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : "bg-blue-500/20 text-blue-300"
+                          ? "bg-[#2f8a5d]/20 text-[#2f8a5d]"
+                          : "bg-[#c47a1e]/20 text-[#c47a1e]"
                           }`}>
                           🎯 AI {analysisData.suggested_case.confidence === "HIGH" ? "Eşleşti" : "Önerdi"} · {analysisData.suggested_case.score}p
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">{linkedCase.court || "Mahkeme belirtilmedi"}</p>
+                    <p className="text-xs text-[var(--fg-muted)] truncate mt-0.5">{linkedCase.court || "Mahkeme belirtilmedi"}</p>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <Badge variant="outline" className="text-xs">{linkedCase.status}</Badge>
                       {analysisData?.suggested_case?.case_id === linkedCase.id && analysisData.suggested_case.match_reasons.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground truncate">
+                        <span className="text-[10px] text-[var(--fg-muted)] truncate">
                           {analysisData.suggested_case.match_reasons[0]}
                         </span>
                       )}
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); setSelectedPartyId(null); }} className="text-muted-foreground hover:text-destructive transition-colors" title="Davayı değiştir">
+                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); setSelectedPartyId(null); }} className="text-[var(--fg-muted)] hover:text-[#a8323b] transition-colors" title="Davayı değiştir">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -1133,14 +1341,14 @@ const Index = () => {
                   if (clientParties.length === 0) return null;
                   return (
                     <div className="mt-2 space-y-1">
-                      <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--fg-subtle)]">
                         <Users className="w-3 h-3" /> Belge Kime Ait?
                       </label>
                       <Select
                         value={selectedPartyId != null ? String(selectedPartyId) : "all"}
                         onValueChange={(v) => setSelectedPartyId(v === "all" ? null : Number(v))}
                       >
-                        <SelectTrigger className="h-8 text-xs glass-input border-0">
+                        <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1157,23 +1365,23 @@ const Index = () => {
               ) : (
                 <div className="space-y-2">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input placeholder="Esas no veya mahkeme ile ara..." className="pl-9 h-9 text-sm glass-input" value={caseSearch} onChange={e => setCaseSearch(e.target.value)} />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-muted)]" />
+                    <Input placeholder="Esas no veya mahkeme ile ara..." className="pl-9 h-9 text-sm bg-[var(--bg)] border-[var(--border)] rounded-[3px]" value={caseSearch} onChange={e => setCaseSearch(e.target.value)} />
                   </div>
                   {caseSearch.trim() && (
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {!casesLoaded ? (
-                        <p className="text-xs text-muted-foreground text-center py-2 animate-pulse">Yükleniyor...</p>
+                        <p className="text-xs text-[var(--fg-muted)] text-center py-2 animate-pulse">Yükleniyor...</p>
                       ) : filteredCases.length === 0 ? (
-                        <p className="text-xs text-muted-foreground text-center py-2">Sonuç bulunamadı.</p>
+                        <p className="text-xs text-[var(--fg-muted)] text-center py-2">Sonuç bulunamadı.</p>
                       ) : filteredCases.map(c => (
                         <button key={c.id} type="button" onClick={() => { setLinkedCase(c); setCaseSearch(""); }}
-                          className="w-full text-left p-2.5 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all duration-150">
+                          className="w-full text-left p-2.5 rounded-[3px] border border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)] transition-all duration-150">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-sm font-medium truncate">{c.esas_no || c.tracking_no}</span>
                             <Badge variant="outline" className="text-xs shrink-0">{c.status}</Badge>
                           </div>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">{c.court || "Mahkeme yok"}</p>
+                          <p className="text-xs text-[var(--fg-muted)] truncate mt-0.5">{c.court || "Mahkeme yok"}</p>
                         </button>
                       ))}
                     </div>
@@ -1182,18 +1390,18 @@ const Index = () => {
                     <div className="space-y-3">
                       {/* EĞER BİR ÖNERİ VARSA VE HENÜZ SEÇİLMEDİYSE KULLANICIYA KUTU İÇİNDE SOR */}
                       {analysisData?.suggested_case && (
-                        <div className="p-3 rounded-xl border border-primary/40 bg-primary/10 space-y-3 shadow-sm">
+                        <div className="p-3 rounded-[3px] border border-[var(--brand)]/40 bg-[var(--brand-soft)] space-y-3">
                           <div className="flex items-center gap-2">
-                            <Wand2 className="w-5 h-5 text-primary" />
-                            <p className="text-sm font-semibold text-primary">Yapay Zeka Tespiti</p>
+                            <Wand2 className="w-5 h-5 text-[var(--brand)]" />
+                            <p className="text-sm font-semibold text-[var(--brand)]">Yapay Zeka Tespiti</p>
                             <Badge variant={analysisData.suggested_case.confidence === "HIGH" ? "default" : "secondary"} className="ml-auto text-[10px]">
                               Skor: {analysisData.suggested_case.score}
                             </Badge>
                           </div>
 
                           {/* İSİM EŞLEŞME GÖRSELLEŞTİRMESİ */}
-                          <div className="bg-background/40 rounded-lg p-2.5 border border-primary/20 space-y-2">
-                            <label className="text-[9px] font-bold uppercase tracking-wider text-primary/70 block">
+                          <div className="bg-[var(--bg-sunken)] rounded-[3px] p-2.5 border border-[var(--brand)]/20 space-y-2">
+                            <label className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--brand)]/70 block">
                               BELGEDEKİ İSİMLER VE EŞLEŞME DURUMU
                             </label>
                             <div className="flex flex-wrap gap-1.5">
@@ -1207,7 +1415,7 @@ const Index = () => {
                                   <Badge
                                     key={idx}
                                     variant={isMatched ? "default" : "outline"}
-                                    className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-emerald-500/20 text-emerald-600 border-emerald-500/30' : 'opacity-50'}`}
+                                    className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-[#2f8a5d]/20 text-[#2f8a5d] border-[#2f8a5d]/30' : 'opacity-50'}`}
                                   >
                                     {isMatched ? <CheckCircle2 className="w-3 h-3" /> : null}
                                     {name}
@@ -1217,7 +1425,7 @@ const Index = () => {
                             </div>
                           </div>
 
-                          <p className="text-xs text-muted-foreground leading-relaxed">
+                          <p className="text-xs text-[var(--fg-muted)] leading-relaxed">
                             Bu belgenin <strong>{analysisData.suggested_case.esas_no}</strong> numaralı dava dosyasına ait olduğu tespit edildi. Doğruluyor musunuz?
                           </p>
                           <Button
@@ -1241,13 +1449,13 @@ const Index = () => {
                               }
                               toast.success("✅ Dava onaylandı ve bağlandı.");
                             }}
-                            className="w-full h-10 gap-2 bg-primary/90 hover:bg-primary shadow-sm"
+                            className="w-full h-10 gap-2 rounded-[3px] bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)]"
                           >
                             <CheckCircle2 className="w-4 h-4" /> Evet, Bu Davaya Bağla
                           </Button>
                         </div>
                       )}
-                      <p className="text-xs text-muted-foreground flex items-center gap-1.5 px-1 mt-2">
+                      <p className="text-xs text-[var(--fg-muted)] flex items-center gap-1.5 px-1 mt-2">
                         <FolderOpen className="w-4 h-4 opacity-70" />
                         Farklı bir davaya bağlamak için yukarıdan arama yapın.
                       </p>
@@ -1263,16 +1471,16 @@ const Index = () => {
                 <QueueStatus totalFiles={fileQueue.length} currentIndex={currentFileIndex} processedCount={processedCount} onRemoveFile={handleRemoveFromQueue} />
 
                 <Button data-analyze-btn onClick={handleAnalyze} disabled={isAnalyzing || isProcessing || (!analysisData && !selectedDocType)}
-                  className="w-full h-14 text-lg font-semibold bg-[hsl(345,80%,40%)] hover:bg-[hsl(345,80%,35%)] shadow-lg transition-all duration-300 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
+                  className="w-full h-14 text-lg font-semibold rounded-[3px] bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
                   {isAnalyzing ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Analiz Ediliyor...</>) : (<><Wand2 className="w-5 h-5 mr-2" />Analizi Başlat</>)}
                 </Button>
                 {analysisData?.ozet && (
-                  <div className="glass-card rounded-xl p-6">
-                    <label className="text-sm font-semibold flex items-center gap-2 mb-3">
-                      <AlertCircle className="w-4 h-4 text-primary" />
+                  <div className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-6">
+                    <label className="text-sm font-semibold flex items-center gap-2 mb-3 text-[var(--fg)]">
+                      <AlertCircle className="w-4 h-4 text-[var(--brand)]" />
                       Belge Özeti
                     </label>
-                    <p className="text-sm text-muted-foreground leading-relaxed italic">"{analysisData.ozet}"</p>
+                    <p className="text-sm text-[var(--fg-muted)] leading-relaxed italic">"{analysisData.ozet}"</p>
                   </div>
                 )}
               </>
@@ -1291,9 +1499,9 @@ const Index = () => {
                     }
                   }}
                   disabled={isProcessing || !isValidated || !outputDirHandle}
-                  className={`w-full h-16 text-xl font-bold shadow-lg transition-all duration-300 hover:scale-[1.02] ${(isValidated && outputDirHandle)
-                    ? "bg-green-600 hover:bg-green-700"
-                    : "bg-gray-400 cursor-not-allowed opacity-50"
+                  className={`w-full h-16 text-xl font-bold rounded-[3px] transition-all duration-200 ${(isValidated && outputDirHandle)
+                    ? "bg-[#2f8a5d] hover:bg-[#2f8a5d]/90 text-white"
+                    : "bg-[var(--bg-sunken)] text-[var(--fg-subtle)] cursor-not-allowed opacity-70"
                     }`}
                 >
                   {isProcessing ? (
@@ -1310,6 +1518,7 @@ const Index = () => {
             )}
           </div>
         </div>
+        )}
       </main>
 
       {/* Faz 6: Toplu Yükleme Hazırlık Ekranı — fileQueue.length > 1 olduğunda
@@ -1325,9 +1534,13 @@ const Index = () => {
       <EmailModal
         isOpen={isEmailModalOpen}
         onClose={() => setIsEmailModalOpen(false)}
-        onConfirm={(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments) => {
-          handleFinalProcess(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments);
+        onConfirm={(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments, sendClientNotice, clientNoticeMessage) => {
+          handleFinalProcess(to, cc, shouldSend, tebligTarihi, perRecipientMessages, extraAttachments, sendClientNotice, clientNoticeMessage);
         }}
+        clientNoticeLawyer={clientNoticeLawyer}
+        clientNoticeClientName={clientNoticeClientName}
+        clientNotifyEligible={clientNotifyEligible}
+        clientWarning={clientWarning}
         isLoading={emailModalLoading}
         // Faz 6: confirmPerFile açıkken hazırlık ekranındaki ayarlar prefill olur.
         defaultTo={batchPrep?.emailPrefill.to ?? []}
@@ -1341,6 +1554,10 @@ const Index = () => {
           muvekkiller: (finalData || analysisData)?.muvekkiller,
           belge_turu_kodu: (finalData || analysisData)?.belge_turu_kodu,
           tarih: (finalData || analysisData)?.tarih,
+          ozet: (finalData || analysisData)?.ozet,
+          karsi_taraf: (finalData || analysisData)?.karsi_taraf,
+          sonraki_durusma_tarihi: (finalData || analysisData)?.sonraki_durusma_tarihi,
+          sonraki_durusma_saati: (finalData || analysisData)?.sonraki_durusma_saati,
         }}
       />
 
@@ -1370,7 +1587,7 @@ const Index = () => {
           const dataToProcess = finalData || analysisData;
           if (dataToProcess && selectedFile) {
             toast.info("📎 Dava açıldı — belge SharePoint'e otomatik kaydediliyor...", { duration: 4000 });
-            await handleFinalProcess([], [], false, undefined, undefined, undefined, newCase);
+            await handleFinalProcess([], [], false, undefined, undefined, undefined, undefined, undefined, newCase);
           }
         }}
       />

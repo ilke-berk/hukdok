@@ -344,6 +344,57 @@ async def preview_email_body(
     return {"body": body}
 
 
+@router.post("/preview-client-email-body")
+async def preview_client_email_body(
+    request: Request,
+    client_name: str = Form("Müvekkil"),
+    belge_turu_kodu: str = Form(None),
+    tarih: str = Form(None),
+    teblig_tarihi: str = Form(None),
+    ai_ozet: str = Form(None),
+    karsi_taraf: str = Form(None),
+    sonraki_durusma_tarihi: str = Form(None),
+    sonraki_durusma_saati: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Müvekkil bilgilendirme metni önizlemesi oluşturur (gönderim yapmaz).
+
+    Metin, belgenin AI özetine (ai_ozet) dayanır; bu yüzden gelişmeyi anlatabilir.
+    """
+    from email_sender import generate_client_email_preview
+
+    def format_date_tr(date_str: str) -> str:
+        if not date_str:
+            return ""
+        if "-" in date_str:
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                return f"{parts[2]}.{parts[1]}.{parts[0]}"
+        return date_str
+
+    teblig_tarihi_normalized = normalize_date_for_sharepoint(teblig_tarihi) if teblig_tarihi else None
+
+    # Bir sonraki duruşma metnini birleştir (örn. "10/09/2026 saat 12:00").
+    sonraki_durusma = ""
+    if sonraki_durusma_tarihi:
+        sonraki_durusma = format_date_tr(normalize_date_for_sharepoint(sonraki_durusma_tarihi) or sonraki_durusma_tarihi)
+        if sonraki_durusma_saati:
+            sonraki_durusma += f" saat {sonraki_durusma_saati}"
+
+    context = {
+        "belge_turu": get_doctype_label(belge_turu_kodu) or "Belge",
+        "tarih_str": format_date_tr(tarih),
+        "teblig_tarihi_str": format_date_tr(teblig_tarihi_normalized),
+        "ozet": ai_ozet or "",
+        "karsi_taraf": karsi_taraf or "",
+        "sonraki_durusma": sonraki_durusma,
+    }
+
+    sender_name = user.get("name") or user.get("preferred_username") or None
+    body = generate_client_email_preview(client_name, context, sender_name=sender_name)
+    return {"body": body}
+
+
 @router.post("/process")
 async def analyze_file_endpoint(
     request: Request,
@@ -535,6 +586,8 @@ async def confirm_process(
     custom_to_json: str = Form(None),
     custom_cc_json: str = Form(None),
     send_email: bool = Form(True),
+    send_client_notice: bool = Form(False),
+    client_notice_message: str = Form(None),
     teblig_tarihi: str = Form(None),
     linked_case_id: Optional[int] = Form(None),
     case_party_id: Optional[int] = Form(None),
@@ -764,7 +817,7 @@ async def confirm_process(
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
 
-    def _send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None):
+    def _send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None, subject_prefix="[HukDok]"):
         def _update_email_status(success: bool, error_msg: str = None):
             if not doc_id:
                 return
@@ -793,6 +846,7 @@ async def confirm_process(
                 custom_messages=messages,
                 extra_attachment_paths=extra_paths,
                 sender_name=sender_name,
+                subject_prefix=subject_prefix,
             )
             if result["success"]:
                 TechnicalLogger.log("INFO", f"E-posta gönderildi: {filename} → {len(to_list)} alıcı")
@@ -881,6 +935,63 @@ async def confirm_process(
         results["email"] = "Kullanıcı tarafından atlandı"
         results["email_warning"] = None
         results["email_success"] = None
+
+    # --- MÜVEKKİL BİLGİLENDİRME (SORUMLU AVUKATA) ---
+    # Müvekkil bilgilendirme metni müvekkile DEĞİL, davanın sorumlu avukatına
+    # "[Müvekkil Bilgilendirme]" konu başlığıyla, AYRI bir e-posta olarak gönderilir.
+    # Avukat metni gözden geçirip müvekkiline iletir.
+    # Şimdilik tüm belge türlerinde gönderilir; should_notify_client ileride sınırlayacak.
+    from email_sender import should_notify_client
+    if (
+        send_email
+        and send_client_notice
+        and should_notify_client(belge_turu_kodu)
+        and email_file_path and os.path.exists(email_file_path)
+    ):
+        # Sorumlu avukatın e-postasını çöz (avukat_kodu → lawyers config).
+        lawyer_email = ""
+        lawyer_name = avukat_adi or "İlgili Avukat"
+        if avukat_kodu:
+            try:
+                for l in DynamicConfig.get_instance().get_lawyers():
+                    if l.get("code") == avukat_kodu:
+                        lawyer_email = (l.get("email") or "").strip()
+                        lawyer_name = l.get("name") or lawyer_name
+                        break
+            except Exception as e:
+                TechnicalLogger.log("WARNING", f"Müvekkil bildirimi avukat email lookup hatası: {e}")
+
+        if not lawyer_email:
+            results["client_notice"] = "Gönderilemedi: Sorumlu avukatın e-postası yok"
+            results["client_notice_warning"] = "Sorumlu avukatın e-posta adresi bulunamadı"
+            results["client_notice_success"] = False
+            TechnicalLogger.log("WARNING", f"Müvekkil bildirimi atlandı: sorumlu avukat e-postası yok — {new_filename}")
+        else:
+            notice_recipient = f"{lawyer_name} <{lawyer_email}>"
+            t_notice = perf_time.perf_counter()
+            # doc_id geçilmez: belgenin (avukat) email_sent durumunu ezmemeli.
+            # subject_prefix: "[Müvekkil Bilgilendirme]" — ayrı, ayırt edilebilir konu.
+            notice_result = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: _send_email_sync(
+                    email_file_path, new_filename, avukat_kodu, email_metadata,
+                    [notice_recipient], [], client_notice_message or None,
+                    None, None,
+                    current_user_name, None, "[Müvekkil Bilgilendirme]"
+                )
+            )
+            timings["7b_client_notice"] = round((perf_time.perf_counter() - t_notice) * 1000, 2)
+            if notice_result.get("success"):
+                results["client_notice"] = "Gönderildi"
+                results["client_notice_warning"] = None
+                results["client_notice_success"] = True
+            else:
+                results["client_notice"] = f"Gönderilemedi: {notice_result.get('message', 'Bilinmeyen hata')}"
+                results["client_notice_warning"] = notice_result.get("message", "Bilinmeyen hata")
+                results["client_notice_success"] = False
+    else:
+        results["client_notice"] = "Atlandı"
+        results["client_notice_success"] = None
 
     download_id = None
     if email_file_path and os.path.exists(email_file_path):
