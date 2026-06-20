@@ -2,7 +2,7 @@ import logging
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
@@ -31,6 +31,12 @@ class HearingDateCreate(BaseModel):
     lawyer_name: Optional[str] = None
     extracted_from_doc: Optional[str] = None
     note: Optional[str] = None
+
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    event_date: date
+    event_time: Optional[str] = None
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -105,6 +111,69 @@ def api_get_case(case_id: int, tenant_id: str = Depends(get_current_tenant)):
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
+
+
+@router.get("/api/cases/{case_id}/client-notice-target")
+def get_case_client_notice_target(
+    case_id: int,
+    belge_turu_kodu: Optional[str] = None,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Müvekkil bilgilendirme maili için hedef bilgisini döndürür.
+
+    Müvekkil bilgilendirme metni müvekkile DEĞİL, davanın sorumlu avukatına
+    "[Müvekkil Bilgilendirme]" konu başlığıyla gönderilir (avukat metni gözden
+    geçirip müvekkile iletir). Bu endpoint modalda göstermek için:
+      - sorumlu avukatı (lawyer: {name, email})
+      - bilgilendirme metninde hitap edilecek müvekkil adını (client_name)
+      - belge türü uygunluğunu (eligible)
+    döndürür.
+    """
+    from email_sender import should_notify_client
+    from managers.config_manager import DynamicConfig
+
+    db = SessionLocal()
+    try:
+        case = get_tenant_owned_case(db, case_id, tenant_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
+        # Müvekkil ad(lar)ı — bilgilendirme metninin hitabı için.
+        client_names = [
+            (p.client.name if p.client else None) or p.name
+            for p in (case.parties or [])
+            if p.party_type == "CLIENT" and ((p.client.name if p.client else None) or p.name)
+        ]
+        if len(client_names) > 1:
+            client_name = ", ".join(client_names[:-1]) + " ve " + client_names[-1]
+        elif client_names:
+            client_name = client_names[0]
+        else:
+            client_name = None
+
+        # Sorumlu avukat → email (lawyers config'inden).
+        lawyer = None
+        responsible_name = case.responsible_lawyer_name
+        if responsible_name:
+            try:
+                for l in DynamicConfig.get_instance().get_lawyers():
+                    if l.get("name") == responsible_name:
+                        email = (l.get("email") or "").strip()
+                        lawyer = {"name": responsible_name, "email": email}
+                        break
+            except Exception as e:
+                logger.warning(f"Sorumlu avukat email lookup hatası: {e}")
+            if lawyer is None:
+                # Avukat lawyers config'inde bulunamadı; en azından adı döndür.
+                lawyer = {"name": responsible_name, "email": ""}
+
+        return {
+            "eligible": should_notify_client(belge_turu_kodu),
+            "lawyer": lawyer,
+            "client_name": client_name,
+        }
+    finally:
+        db.close()
 
 
 @router.put("/api/cases/{case_id}")
@@ -399,6 +468,129 @@ def delete_hearing_date(
         db.delete(row)
         db.commit()
         return {"status": "deleted"}
+    finally:
+        db.close()
+
+
+@router.post("/api/calendar-events")
+def add_calendar_event(
+    data: CalendarEventCreate,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Takvime elle bir tarih işareti (hatırlatma) ekle."""
+    title = (data.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Başlık (ne olduğu) gerekli")
+    db = SessionLocal()
+    try:
+        event = models.CalendarEvent(
+            tenant_id=None,  # ortak havuz — her iki büro da görür (paylaşımlı kayıt modeli)
+            title=title,
+            event_date=data.event_date,
+            event_time=data.event_time,
+            created_by=user.get("name") or user.get("preferred_username"),
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+        return {
+            "id": event.id,
+            "title": event.title,
+            "event_date": event.event_date.isoformat(),
+            "event_time": event.event_time,
+            "created_by": event.created_by,
+        }
+    finally:
+        db.close()
+
+
+@router.get("/api/calendar-events")
+def get_calendar_events(tenant_id: str = Depends(get_current_tenant)):
+    """Takvime elle eklenen tüm tarih işaretlerini döndürür."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.CalendarEvent)
+            .filter(or_(models.CalendarEvent.tenant_id == tenant_id, models.CalendarEvent.tenant_id.is_(None)))
+            .order_by(models.CalendarEvent.event_date)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "title": r.title,
+                "event_date": r.event_date.isoformat(),
+                "event_time": r.event_time,
+                "created_by": r.created_by,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+@router.delete("/api/calendar-events/{event_id}")
+def delete_calendar_event(
+    event_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(models.CalendarEvent)
+            .filter(
+                models.CalendarEvent.id == event_id,
+                or_(models.CalendarEvent.tenant_id == tenant_id, models.CalendarEvent.tenant_id.is_(None)),
+            )
+            .first()
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Tarih işareti bulunamadı")
+        db.delete(row)
+        db.commit()
+        return {"status": "deleted"}
+    finally:
+        db.close()
+
+
+@router.get("/api/calendar-report")
+def calendar_report(
+    start: date,
+    end: date,
+    format: str = "pdf",
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Tarih aralığındaki tüm işaretleri (duruşma + elle) PDF/Excel/JSON döndürür.
+
+    Davaya bağlı işaretler için müvekkil, karşı taraf, mahkeme, esas no ve sorumlu
+    avukat detayları rapora eklenir.
+    """
+    if end < start:
+        start, end = end, start
+    fmt = (format or "pdf").lower()
+    db = SessionLocal()
+    try:
+        from report_builder import build_report_rows, rows_to_excel, rows_to_pdf
+        rows = build_report_rows(db, tenant_id, start, end)
+
+        fname = f"takvim-raporu-{start.isoformat()}_{end.isoformat()}"
+        if fmt == "json":
+            return {"start": start.isoformat(), "end": end.isoformat(), "count": len(rows), "rows": rows}
+        if fmt in ("excel", "xlsx"):
+            data = rows_to_excel(rows, start, end)
+            return Response(
+                content=data,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'},
+            )
+        # default: pdf
+        data = rows_to_pdf(rows, start, end)
+        return Response(
+            content=data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'},
+        )
     finally:
         db.close()
 

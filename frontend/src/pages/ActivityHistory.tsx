@@ -1,22 +1,14 @@
 import { useEffect, useState } from "react";
-import { Header } from "@/components/Header";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Eye, History } from "lucide-react";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
+import { Loader2, Eye, FileText, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api";
 import { toast } from "sonner";
 import {
   ActivityReportModal,
   ActivityReport,
 } from "@/components/ActivityReportModal";
+import { MetricCard, SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
+import { FlowButton } from "@/components/flow/primitives";
 
 interface HistoryRow {
   id: number;
@@ -33,7 +25,16 @@ function formatDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
+function formatWeekday(iso: string): string {
+  try {
+    return new Date(iso + "T00:00:00").toLocaleDateString("tr-TR", { weekday: "short" });
+  } catch {
+    return "";
+  }
+}
+
 const ActivityHistory = () => {
+  useSetPageTitle("Aktivite Geçmişi", ["Avukat Paneli"]);
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [openingId, setOpeningId] = useState<number | null>(null);
@@ -84,122 +85,155 @@ const ActivityHistory = () => {
   );
 
   return (
-    <>
-      <Header />
-      <main className="container mx-auto px-6 py-8 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-5 w-5 text-primary" />
-              Aktivite Geçmişim
-            </CardTitle>
-            <CardDescription>
-              Son 30 gün içinde işlediğiniz belgelerin günlük raporları. Bir satıra tıklayarak
-              o günün detaylı belge listesini görebilirsiniz.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Özet kartı */}
-            {!loading && rows.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="rounded-lg border px-4 py-3 bg-muted/30">
-                  <p className="text-xs text-muted-foreground">Toplam belge</p>
-                  <p className="text-2xl font-bold">{totalSummary.total}</p>
-                </div>
-                <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3">
-                  <p className="text-xs text-green-700 dark:text-green-400">E-posta ile iletildi</p>
-                  <p className="text-2xl font-bold text-green-700 dark:text-green-400">
-                    {totalSummary.mailed}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-                  <p className="text-xs text-amber-700 dark:text-amber-400">E-postasız</p>
-                  <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">
-                    {totalSummary.unmailed}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
-                  <p className="text-xs text-red-700 dark:text-red-400">Hatalı</p>
-                  <p className="text-2xl font-bold text-red-700 dark:text-red-400">
-                    {totalSummary.errors}
-                  </p>
-                </div>
-              </div>
-            )}
+    <div className="grid gap-7">
 
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Son 30 gün içinde size ait rapor bulunamadı.
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tarih</TableHead>
-                    <TableHead className="text-center">Toplam</TableHead>
-                    <TableHead className="text-center">Mailli</TableHead>
-                    <TableHead className="text-center">Mailsiz</TableHead>
-                    <TableHead className="text-center">Hatalı</TableHead>
-                    <TableHead className="text-center">Durum</TableHead>
-                    <TableHead className="text-right">İşlem</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      className="cursor-pointer hover:bg-muted/40"
-                      onClick={() => handleOpen(r.id)}
-                    >
-                      <TableCell className="font-mono text-sm">
+      {/* Başlık */}
+      <div>
+        <Eyebrow>01 · Günlük</Eyebrow>
+        <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
+          Aktivite Geçmişim
+        </h1>
+        <p className="text-[13px] text-[var(--fg-muted)] mt-2 max-w-[60ch] leading-relaxed">
+          Son 30 gün içinde işlediğiniz belgelerin günlük raporları. Bir satıra tıklayarak
+          o günün detaylı belge listesini görebilirsiniz.
+        </p>
+      </div>
+
+      {/* Metrikler */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          label="Toplam Belge"
+          value={loading ? "—" : totalSummary.total}
+          icon={<FileText className="w-4 h-4" />}
+          tone="brand"
+          hint="Son 30 gün"
+        />
+        <MetricCard
+          label="E-posta ile İletildi"
+          value={loading ? "—" : totalSummary.mailed}
+          icon={<CheckCircle2 className="w-4 h-4" />}
+          tone="success"
+          hint="Başarılı gönderim"
+        />
+        <MetricCard
+          label="E-postasız"
+          value={loading ? "—" : totalSummary.unmailed}
+          icon={<AlertTriangle className="w-4 h-4" />}
+          tone="warning"
+          hint="Manuel iletim"
+        />
+        <MetricCard
+          label="Hatalı"
+          value={loading ? "—" : totalSummary.errors}
+          icon={<XCircle className="w-4 h-4" />}
+          tone="neutral"
+          hint="İşlenemeyen"
+        />
+      </section>
+
+      {/* Tablo */}
+      <HairlineCard padded={false}>
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <SectionHeader
+            eyebrow="02 · Dönem"
+            title="Günlük Raporlar"
+            italic="— son 30 gün"
+            meta={
+              <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+                {loading ? "Yükleniyor…" : `${rows.length} gün`}
+              </span>
+            }
+          />
+        </div>
+
+        {loading ? (
+          <div className="grid place-items-center gap-3 py-20 text-[var(--fg-subtle)]">
+            <Loader2 className="w-7 h-7 animate-spin" />
+            <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
+            <FileText className="w-9 h-9 opacity-30" />
+            <p className="text-[13px]">Son 30 gün içinde size ait rapor bulunamadı.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[var(--bg)] border-b border-[var(--border)]">
+                  <th className="text-left px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Tarih</th>
+                  <th className="text-right px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Toplam</th>
+                  <th className="text-right px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Mailli</th>
+                  <th className="text-right px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Mailsiz</th>
+                  <th className="text-right px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Hatalı</th>
+                  <th className="text-left px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">Durum</th>
+                  <th className="text-right px-5 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold">İşlem</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr
+                    key={r.id}
+                    onClick={() => handleOpen(r.id)}
+                    className="border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--bg)] cursor-pointer transition-colors"
+                  >
+                    <td className="px-5 py-3.5 align-middle">
+                      <div className="font-mono text-[13px] tabular-nums text-[var(--fg)] font-medium">
                         {formatDate(r.report_date)}
-                      </TableCell>
-                      <TableCell className="text-center font-medium">{r.total_documents}</TableCell>
-                      <TableCell className="text-center text-green-600 dark:text-green-400">
-                        {r.mailed_documents}
-                      </TableCell>
-                      <TableCell className="text-center text-amber-600 dark:text-amber-400">
-                        {r.unmailed_documents}
-                      </TableCell>
-                      <TableCell className="text-center text-red-600 dark:text-red-400">
-                        {r.error_documents}
-                      </TableCell>
-                      <TableCell className="text-center text-xs">
-                        {r.is_acknowledged ? (
-                          <span className="text-green-600">✓ Onaylandı</span>
+                      </div>
+                      <div className="font-mono text-[9.5px] tracking-[0.14em] uppercase text-[var(--fg-subtle)] mt-0.5">
+                        {formatWeekday(r.report_date)}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-mono text-[14px] tabular-nums font-medium text-[var(--fg)]">
+                      {r.total_documents}
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#2f8a5d]">
+                      {r.mailed_documents}
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#c47a1e]">
+                      {r.unmailed_documents}
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#a8323b]">
+                      {r.error_documents}
+                    </td>
+                    <td className="px-5 py-3.5 align-middle">
+                      {r.is_acknowledged ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[#2f8a5d]">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Onaylandı
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[#c47a1e]">
+                          <AlertTriangle className="w-3 h-3" />
+                          Bekliyor
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <FlowButton
+                        variant="ghost"
+                        size="sm"
+                        disabled={openingId !== null}
+                        onClick={(e) => { e.stopPropagation(); handleOpen(r.id); }}
+                      >
+                        {openingId === r.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <span className="text-amber-600">⏳ Bekliyor</span>
+                          <>
+                            <Eye className="w-3.5 h-3.5" />
+                            Detay
+                          </>
                         )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={openingId !== null}
-                          onClick={(e) => { e.stopPropagation(); handleOpen(r.id); }}
-                        >
-                          {openingId === r.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <>
-                              <Eye className="h-4 w-4 mr-1" />
-                              Detay
-                            </>
-                          )}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </main>
+                      </FlowButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </HairlineCard>
 
       {detail && (
         <ActivityReportModal
@@ -208,7 +242,7 @@ const ActivityHistory = () => {
           readOnly
         />
       )}
-    </>
+    </div>
   );
 };
 

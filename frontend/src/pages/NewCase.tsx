@@ -4,8 +4,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
 import { useCases, CaseData } from "@/hooks/useCases";
-import { Header } from "@/components/Header";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Eyebrow } from "@/components/dashboard/primitives";
+import { FlowButton } from "@/components/flow/primitives";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,7 +19,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, RefreshCw, Sparkles, Loader2, Upload, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { FileUpload } from "@/components/FileUpload";
 import { generateTrackingNumber, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
 import {
@@ -106,6 +107,7 @@ const toUpperTR = (str: string) => str.toLocaleUpperCase('tr-TR').trim();
 
 
 const NewCase = () => {
+    useSetPageTitle("Yeni Dava", ["Avukat Paneli", "Davalar", "Yeni"]);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -586,17 +588,17 @@ const NewCase = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background">
-            <Header />
+        <div>
 
-            <main className="max-w-[1400px] mx-auto px-6 py-8">
+            <main className="max-w-[1400px] mx-auto">
                 {/* DASHBOARD HEADER */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                        <Eyebrow>{isEditMode ? "01 · Düzenleme" : "01 · Yeni Dava"}</Eyebrow>
+                        <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
                             {isEditMode ? "Dava Kartı Düzenle" : "Dava Kartı Yönetimi"}
                         </h1>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-[13px] text-[var(--fg-muted)] mt-2 max-w-[60ch] leading-relaxed">
                             {isEditMode ? "Mevcut dosya bilgilerini güncelleyin ve geçmişi takip edin." : "Yeni dava açın veya mevcut dosyaları arayıp eksik bilgileri tamamlayın."}
                         </p>
                     </div>
@@ -659,7 +661,7 @@ const NewCase = () => {
                 {/* FILE UPLOAD & ANALYSIS PREVIEW */}
                 {selectedFiles.length > 0 && (
                     <div className="mb-8 animate-in fade-in slide-in-from-top-4 space-y-4">
-                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-6">
+                        <div className="bg-primary/5 border border-primary/20 rounded-none p-6">
                             <div className="flex items-center justify-between mb-4">
                                 <div>
                                     <h4 className="font-semibold text-lg flex items-center gap-2">
@@ -706,9 +708,9 @@ const NewCase = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                         {/* LEFT COLUMN: PRIMARY INFO */}
                         <div className="lg:col-span-8 space-y-8">
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="bg-[var(--bg)] border-b border-[var(--border)] p-6">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <User className="w-4 h-4" /> 1. Taraf Bilgileri
                                     </h3>
                                 </div>
@@ -716,7 +718,7 @@ const NewCase = () => {
                                     {/* Müvekkil Section */}
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-xs font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <div className="w-1 h-3 bg-primary" />
                                                 Müvekkil Tarafı
                                             </Label>
@@ -748,7 +750,7 @@ const NewCase = () => {
                                                                     variant="outline"
                                                                     role="combobox"
                                                                     aria-expanded={clientComboboxesOpen[index]}
-                                                                    className="w-full justify-between text-left font-normal bg-transparent border-border/60 h-9 px-3 text-sm shadow-none hover:bg-transparent hover:text-foreground"
+                                                                    className="w-full justify-between text-left font-normal bg-[var(--bg)] border-[var(--border-strong)] h-9 px-3 text-sm shadow-none hover:bg-transparent hover:text-foreground"
                                                                 >
                                                                     <div className={cn("flex-1 truncate text-left", !client.name && "text-muted-foreground")}>
                                                                         {client.name ? toTitleCase(client.name) : "Müvekkil Seçiniz..."}
@@ -848,7 +850,7 @@ const NewCase = () => {
                                                                 }
                                                             }}
                                                         >
-                                                            <SelectTrigger className="h-9 bg-transparent border-border/60">
+                                                            <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border-strong)]">
                                                                 <SelectValue />
                                                             </SelectTrigger>
                                                             <SelectContent>
@@ -875,7 +877,7 @@ const NewCase = () => {
                                     {/* Karşı Taraf Section */}
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-xs font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <div className="w-1 h-3 bg-primary" />
                                                 Karşı Taraf Bilgileri
                                             </Label>
@@ -907,7 +909,7 @@ const NewCase = () => {
                                                                 updated[index].name = toTitleCase(e.target.value);
                                                                 setCounterParties(updated);
                                                             }}
-                                                            className="h-9 text-sm bg-transparent border-border/60 focus:border-primary/50 text-left"
+                                                            className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/50 text-left"
                                                         />
                                                     </div>
                                                     <Checkbox
@@ -931,7 +933,7 @@ const NewCase = () => {
                                                                 }
                                                             }}
                                                         >
-                                                            <SelectTrigger className="h-9 bg-transparent border-border/60">
+                                                            <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border-strong)]">
                                                                 <SelectValue />
                                                             </SelectTrigger>
                                                             <SelectContent>
@@ -958,7 +960,7 @@ const NewCase = () => {
                                     {/* Üçüncü Taraflar Section */}
                                     <div className="space-y-3">
                                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
-                                            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-xs font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <div className="w-1 h-3 bg-primary" />
                                                 Üçüncü Taraflar
                                             </Label>
@@ -995,7 +997,7 @@ const NewCase = () => {
                                                                     updated[index].name = toTitleCase(e.target.value);
                                                                     setThirdParties(updated);
                                                                 }}
-                                                                className="h-9 text-sm bg-transparent border-border/40 focus:border-primary/40 text-left"
+                                                                className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/40 text-left"
                                                             />
                                                         </div>
                                                         <Checkbox
@@ -1012,7 +1014,7 @@ const NewCase = () => {
                                                                     setThirdParties(updated);
                                                                 }}
                                                             >
-                                                                <SelectTrigger className="h-8 text-xs bg-transparent border-border/40">
+                                                                <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
                                                                     <SelectValue />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
@@ -1037,16 +1039,16 @@ const NewCase = () => {
                                 </CardContent>
                             </Card>
 
-                            <Card className="glass-card shadow-lg border-muted/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-6">
-                                    <h3 className="text-sm font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="bg-[var(--bg)] border-b border-[var(--border)] p-6">
+                                    <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
                                         <Gavel className="w-4 h-4" /> 2. Dava Bilgileri
                                     </h3>
                                 </div>
                                 <CardContent className="p-8 space-y-6">
                                     <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
                                         <div className="space-y-2 md:col-span-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Building className="w-3 h-3" /> Mahkeme Bilgisi
                                             </Label>
                                             <div className="relative flex items-center gap-2">
@@ -1054,7 +1056,7 @@ const NewCase = () => {
                                                     placeholder="Örn: Bursa 13. Tüketici Mahkemesi"
                                                     value={formData.court}
                                                     onChange={(e) => setFormData({ ...formData, court: e.target.value })}
-                                                    className="text-base bg-transparent border-border/60 flex-1"
+                                                    className="text-base bg-[var(--bg)] border-[var(--border-strong)] flex-1"
                                                 />
                                                 <Checkbox
                                                     checked={approvedFields.court}
@@ -1065,62 +1067,62 @@ const NewCase = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Esas No
                                             </Label>
                                             <Input
                                                 placeholder="2024/123"
                                                 value={formData.esasNo}
                                                 onChange={(e) => setFormData({ ...formData, esasNo: e.target.value })}
-                                                className="font-mono bg-transparent border-border/60"
+                                                className="font-mono bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Hasar Dosya No
                                             </Label>
                                             <Input
                                                 placeholder="Hasar Dosya Numarası"
                                                 value={formData.hasarDosyaNo}
                                                 onChange={(e) => setFormData({ ...formData, hasarDosyaNo: e.target.value })}
-                                                className="font-mono bg-transparent border-border/60"
+                                                className="font-mono bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Hukuk No
                                             </Label>
                                             <Input
                                                 placeholder="Hukuk Numarası"
                                                 value={formData.hukukNo}
                                                 onChange={(e) => setFormData({ ...formData, hukukNo: e.target.value })}
-                                                className="font-mono bg-transparent border-border/60"
+                                                className="font-mono bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Klasör No (Eski Sistem)
                                             </Label>
                                             <Input
                                                 placeholder="Eski sistem klasör no"
                                                 value={formData.klasorNo2}
                                                 onChange={(e) => setFormData({ ...formData, klasorNo2: e.target.value })}
-                                                className="font-mono bg-transparent border-border/60"
+                                                className="font-mono bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Calendar className="w-3 h-3" /> Atama Tarihi
                                             </Label>
                                             <Input
                                                 type="date"
                                                 value={formData.atamaTarihi}
                                                 onChange={(e) => setFormData({ ...formData, atamaTarihi: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
@@ -1132,7 +1134,7 @@ const NewCase = () => {
                                             )}
                                         >
                                             <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                     <Briefcase className="w-3 h-3" /> Yargı Türü
                                                 </Label>
                                                 <Select
@@ -1144,7 +1146,7 @@ const NewCase = () => {
                                                     }}
                                                 >
                                                     <SelectTrigger 
-                                                        className="bg-transparent border-border/60 hover:border-primary/50 transition-colors"
+                                                        className="bg-[var(--bg)] border-[var(--border-strong)] hover:border-primary/50 transition-colors"
                                                         onClick={() => triggerShake()}
                                                     >
                                                         <SelectValue placeholder="Seçiniz..." />
@@ -1156,7 +1158,7 @@ const NewCase = () => {
                                             </div>
 
                                             <div className="space-y-2">
-                                                <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                                <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                     <Gavel className="w-3 h-3" /> Yargı Birimi
                                                 </Label>
                                                 <Select
@@ -1168,7 +1170,7 @@ const NewCase = () => {
                                                     disabled={!formData.fileType}
                                                 >
                                                     <SelectTrigger 
-                                                        className="bg-transparent border-border/60 overflow-hidden hover:border-primary/50 transition-colors"
+                                                        className="bg-[var(--bg)] border-[var(--border-strong)] overflow-hidden hover:border-primary/50 transition-colors"
                                                         onClick={() => triggerShake()}
                                                     >
                                                         <SelectValue placeholder={formData.fileType ? "Birim Seç..." : "Tür Seçin"} />
@@ -1183,7 +1185,7 @@ const NewCase = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Scale className="w-3 h-3" /> Alt Tür (Yargı Türü Alt Kırılımı)
                                             </Label>
                                             <Popover>
@@ -1191,7 +1193,7 @@ const NewCase = () => {
                                                     <Button
                                                         variant="outline"
                                                         role="combobox"
-                                                        className={`w-full justify-between h-9 text-xs border-border/60 ${!formData.subType ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
+                                                        className={`w-full justify-between h-9 text-xs border-[var(--border-strong)] ${!formData.subType ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
                                                     >
                                                         {formData.subType ? toTitleCase(formData.subType) : "Seçiniz..."}
                                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1221,7 +1223,7 @@ const NewCase = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Ek Alt Kırılım
                                             </Label>
                                             <Popover>
@@ -1229,7 +1231,7 @@ const NewCase = () => {
                                                     <Button
                                                         variant="outline"
                                                         role="combobox"
-                                                        className={`w-full justify-between h-9 text-xs border-border/60 ${!formData.subTypeExtra ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
+                                                        className={`w-full justify-between h-9 text-xs border-[var(--border-strong)] ${!formData.subTypeExtra ? "text-muted-foreground bg-transparent" : "bg-transparent text-foreground"}`}
                                                     >
                                                         {formData.subTypeExtra ? toTitleCase(formData.subTypeExtra) : "Seçiniz..."}
                                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1259,7 +1261,7 @@ const NewCase = () => {
                                         </div>
 
                                         <div className="space-y-4 md:col-span-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Briefcase className="w-3 h-3" /> Hizmet Türü (Çoklu Seçim)
                                             </Label>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 p-4 bg-muted/5 border border-border/40 rounded-lg">
@@ -1285,31 +1287,31 @@ const NewCase = () => {
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Calendar className="w-3 h-3" /> Dosya Açılış Tarihi
                                             </Label>
                                             <Input
                                                 type="date"
                                                 value={formData.fileOpeningDate}
                                                 onChange={(e) => setFormData({ ...formData, fileOpeningDate: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Calendar className="w-3 h-3" /> İş Kabul Tarihi
                                             </Label>
                                             <Input
                                                 type="date"
                                                 value={formData.acceptanceDate}
                                                 onChange={(e) => setFormData({ ...formData, acceptanceDate: e.target.value })}
-                                                className="bg-transparent border-border/60"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
 
                                         <div className="space-y-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Sparkles className="w-3 h-3" /> Davanın Konusu
                                             </Label>
                                             <Popover open={subjectComboboxOpen} onOpenChange={setSubjectComboboxOpen}>
@@ -1318,7 +1320,7 @@ const NewCase = () => {
                                                         variant="outline"
                                                         role="combobox"
                                                         aria-expanded={subjectComboboxOpen}
-                                                        className="w-full justify-between font-normal bg-transparent border-border/60"
+                                                        className="w-full justify-between font-normal bg-[var(--bg)] border-[var(--border-strong)]"
                                                     >
                                                         {formData.subject || "Seçiniz..."}
                                                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1358,14 +1360,14 @@ const NewCase = () => {
                                             </Popover>
                                         </div>
                                         <div className="space-y-2 md:col-span-2">
-                                            <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Notlar
                                             </Label>
                                             <Textarea
                                                 placeholder="Dosyaya özel notlar..."
                                                 value={formData.notes}
                                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                                className="bg-transparent border-border/60 resize-none min-h-[80px]"
+                                                className="bg-[var(--bg)] border-[var(--border-strong)] resize-none min-h-[80px]"
                                             />
                                         </div>
 
@@ -1377,7 +1379,7 @@ const NewCase = () => {
                         {/* RIGHT COLUMN: SUMMARY & SIDEBAR ACTIONS */}
                         <div className="lg:col-span-4 space-y-8 lg:sticky lg:top-8">
                             {/* CASE BADGE CARD */}
-                            <Card className={`glass-card border-l-4 p-6 
+                            <Card className={`bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none border-l-4 p-6 
                                 ${caseStatus === 'DERDEST' ? 'border-primary/20 bg-primary/5 border-l-primary' :
                                     caseStatus === 'DANIŞ' ? 'border-blue-500/20 bg-blue-500/5 border-l-blue-500' :
                                         'border-muted/40 bg-muted/5 border-l-muted-foreground'}`}>
@@ -1414,15 +1416,15 @@ const NewCase = () => {
                             </Card>
 
                             {/* RESPONSIBLE INFO */}
-                            <Card className="glass-card border-border/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-4">
-                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="bg-[var(--bg)] border-b border-[var(--border)] p-4">
+                                    <h3 className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] flex items-center gap-2">
                                         <Briefcase className="w-3 h-3" /> Sorumlu Bilgileri
                                     </h3>
                                 </div>
                                 <div className="p-5 space-y-4">
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sorumlu Avukat(lar)</Label>
+                                        <Label className="text-[10px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em]">Sorumlu Avukat(lar)</Label>
 
                                         {selectedLawyers.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mb-2">
@@ -1447,7 +1449,7 @@ const NewCase = () => {
                                                 setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: lawyerObj ? lawyerObj.id : null }]);
                                             }
                                         }}>
-                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                            <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
                                                 <SelectValue placeholder="Avukat Ekle..." />
                                             </SelectTrigger>
                                             <SelectContent className="max-h-64">
@@ -1456,9 +1458,9 @@ const NewCase = () => {
                                         </Select>
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">UYAP Avukat</Label>
+                                        <Label className="text-[10px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em]">UYAP Avukat</Label>
                                         <Select value={formData.uyapLawyer} onValueChange={(v) => setFormData({ ...formData, uyapLawyer: v })}>
-                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                            <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
                                                 <SelectValue placeholder="Seçiniz..." />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -1470,17 +1472,17 @@ const NewCase = () => {
                             </Card>
 
                             {/* BÜRO ÖZEL TÜRÜ */}
-                            <Card className="glass-card border-border/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-4">
-                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="bg-[var(--bg)] border-b border-[var(--border)] p-4">
+                                    <h3 className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] flex items-center gap-2">
                                         <Building className="w-3 h-3" /> Büro Özel Türü
                                     </h3>
                                 </div>
                                 <div className="p-5 space-y-4">
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tür Seçiniz</Label>
+                                        <Label className="text-[10px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em]">Tür Seçiniz</Label>
                                         <Select value={formData.bureauType} onValueChange={(v) => setFormData({ ...formData, bureauType: v })}>
-                                            <SelectTrigger className="h-8 text-xs bg-transparent border-border/60">
+                                            <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
                                                 <SelectValue placeholder="Seçiniz..." />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -1492,15 +1494,15 @@ const NewCase = () => {
                             </Card>
 
                             {/* COMPENSATION CLAIMS */}
-                            <Card className="glass-card border-border/40 overflow-hidden">
-                                <div className="bg-muted/5 border-b border-border/40 p-4">
-                                    <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                <div className="bg-[var(--bg)] border-b border-[var(--border)] p-4">
+                                    <h3 className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] flex items-center gap-2">
                                         <Banknote className="w-3 h-3" /> Tazminat Talepleri
                                     </h3>
                                 </div>
                                 <div className="p-5 space-y-4">
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                        <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                             <Coins className="w-3 h-3" /> Maddi Tazminat
                                         </Label>
                                         <div className="relative">
@@ -1512,13 +1514,13 @@ const NewCase = () => {
                                                     const value = e.target.value.replace(/[^0-9]/g, '');
                                                     setFormData({ ...formData, maddiTazminat: value });
                                                 }}
-                                                className="h-9 text-base font-mono pr-10 bg-transparent border-border/60"
+                                                className="h-9 text-base font-mono pr-10 bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
                                     </div>
                                     <div className="space-y-1.5">
-                                        <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                        <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                             <Heart className="w-3 h-3" /> Manevi Tazminat
                                         </Label>
                                         <div className="relative">
@@ -1530,7 +1532,7 @@ const NewCase = () => {
                                                     const value = e.target.value.replace(/[^0-9]/g, '');
                                                     setFormData({ ...formData, maneviTazminat: value });
                                                 }}
-                                                className="h-9 text-base font-mono pr-10 bg-transparent border-border/60"
+                                                className="h-9 text-base font-mono pr-10 bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
@@ -1538,61 +1540,75 @@ const NewCase = () => {
                                 </div>
                             </Card>
 
-                            {/* GLOBAL ACTIONS */}
-                            <div className="space-y-3 pt-4">
-                                <Button type="submit" size="lg" className="w-full text-base font-semibold shadow-xl h-12" disabled={isLoading || isSaving}>
-                                    {isSaving || isLoading ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                                            İşleniyor...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save className="mr-2 h-5 w-5" />
-                                            {isEditMode ? "Değişiklikleri Kaydet" : "Dava Kartını Kaydet"}
-                                        </>
-                                    )}
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="lg"
-                                    className="w-full h-12 border-border/60"
-                                    onClick={isEditMode ? () => navigate(-1) : handleReset}
-                                    disabled={isLoading || isSaving}
-                                >
-                                    {isEditMode ? "Geri Dön" : "Vazgeç"}
-                                </Button>
+                            {/* GLOBAL ACTIONS — sağ sticky işlem kartı */}
+                            <div className="bg-[var(--bg-elevated)] border border-[var(--border)] sticky top-4">
+                                <div className="px-5 py-4 border-b border-[var(--border)]">
+                                    <Eyebrow tone="brand">{isEditMode ? "İşlemi Tamamla" : "Kayıt"}</Eyebrow>
+                                </div>
+                                <div className="p-5 grid gap-2.5">
+                                    <Button
+                                        type="submit"
+                                        className="w-full h-11 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
+                                        disabled={isLoading || isSaving}
+                                    >
+                                        {isSaving || isLoading ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                İşleniyor…
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Save className="h-4 w-4" />
+                                                {isEditMode ? "Kaydet" : "Dava Kartını Aç"}
+                                            </>
+                                        )}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="w-full h-10 bg-transparent border border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px] font-medium"
+                                        onClick={isEditMode ? () => navigate(-1) : handleReset}
+                                        disabled={isLoading || isSaving}
+                                    >
+                                        {isEditMode ? "Geri Dön" : "Vazgeç"}
+                                    </Button>
 
-                                {isEditMode && (
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="destructive" size="lg" type="button" className="w-full h-12 mt-4 gap-2">
-                                                <Trash2 className="w-5 h-5" />
-                                                Bu Davayı Sil
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Davayı silmek istediğinize emin misiniz?</AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                    Bu işlem geri alınamaz. İlgili dava ve tüm geçmiş kayıtları sistemden kalıcı olarak silinecektir.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>İptal</AlertDialogCancel>
-                                                <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sil</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                )}
+                                    {isEditMode && (
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button
+                                                    type="button"
+                                                    className="w-full h-10 mt-2 bg-transparent border border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 rounded-[3px] font-medium gap-2"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                    Davayı Sil
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                                                        <Trash2 className="w-4 h-4" />
+                                                        Davayı silmek istediğinize emin misiniz?
+                                                    </AlertDialogTitle>
+                                                    <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
+                                                        Bu işlem <strong className="text-[var(--fg)]">geri alınamaz.</strong> İlgili dava ve tüm geçmiş kayıtları sistemden kalıcı olarak silinecektir.
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={handleDelete} className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px]">Sil</AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    )}
+                                </div>
                             </div>
 
                             {/* HISTORY SECTION (Only in Edit Mode) */}
                             {isEditMode && caseHistory.length > 0 && (
-                                <Card className="glass-card border-border/40 overflow-hidden">
-                                    <div className="bg-muted/5 border-b border-border/40 p-4">
-                                        <h3 className="text-xs font-bold flex items-center gap-2 text-primary uppercase tracking-widest">
+                                <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
+                                    <div className="bg-[var(--bg)] border-b border-[var(--border)] p-4">
+                                        <h3 className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] flex items-center gap-2">
                                             <RefreshCw className="w-3 h-3" /> Değişiklik Geçmişi
                                         </h3>
                                     </div>

@@ -266,33 +266,40 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="max-w-[640px] max-h-[90vh] overflow-y-auto bg-card border-border text-foreground">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 text-[16px]">
-                        <FileText className="w-5 h-5 text-rose-500" />
-                        Yetki Belgesi Oluştur
-                    </DialogTitle>
+            <DialogContent className="theme-classic max-w-[640px] max-h-[90vh] overflow-y-auto bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0">
+                <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--border)]">
+                    <div className="flex items-start gap-3">
+                        <div className="w-11 h-11 grid place-items-center bg-[var(--brand-soft)] text-[var(--brand)] shrink-0">
+                            <FileText className="w-5 h-5" strokeWidth={1.6} />
+                        </div>
+                        <div className="min-w-0 grid gap-1">
+                            <span className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)]">
+                                Yetki Belgesi · {step}/3
+                            </span>
+                            <DialogTitle className="font-display text-[20px] font-medium tracking-[-0.005em] text-[var(--fg)] leading-tight">
+                                {step === 1 && "Tarafları Seç"}
+                                {step === 2 && "Bilgileri Tamamla"}
+                                {step === 3 && "Önizle ve Yazdır"}
+                            </DialogTitle>
+                        </div>
+                    </div>
                 </DialogHeader>
 
                 {/* Adım göstergesi */}
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 px-6 pt-5 pb-1">
                     {[1, 2, 3].map(s => (
                         <div key={s} className="flex items-center gap-2">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors
-                                ${step === s ? "bg-rose-600 border-rose-600 text-white"
-                                    : step > s ? "bg-rose-600/20 border-rose-600/50 text-rose-400"
-                                        : "bg-secondary border-border text-muted-foreground"}`}>
+                            <div className={`w-7 h-7 grid place-items-center font-mono text-[11px] font-semibold border transition-colors
+                                ${step === s ? "bg-[var(--brand)] border-[var(--brand)] text-[var(--brand-fg)]"
+                                    : step > s ? "bg-[var(--brand-soft)] border-[var(--brand)]/40 text-[var(--brand)]"
+                                        : "bg-[var(--bg)] border-[var(--border)] text-[var(--fg-subtle)]"}`}>
                                 {s}
                             </div>
-                            {s < 3 && <div className={`h-px w-8 ${step > s ? "bg-rose-600/50" : "bg-border"}`} />}
+                            {s < 3 && <div className={`h-px w-8 ${step > s ? "bg-[var(--brand)]/40" : "bg-[var(--border)]"}`} />}
                         </div>
                     ))}
-                    <span className="text-xs text-muted-foreground ml-2">
-                        {step === 1 && "Tarafları Seç"}
-                        {step === 2 && "Bilgileri Tamamla"}
-                        {step === 3 && "Önizle ve Yazdır"}
-                    </span>
                 </div>
+                <div className="px-6 pb-2"></div>
 
                 {/* ── ADIM 1 ── */}
                 {step === 1 && (
@@ -300,14 +307,14 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
                         {/* Yetki Veren — tekli combobox */}
                         <div className="flex flex-col gap-2">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetki Belgesi Veren Avukat</span>
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Yetki Belgesi Veren Avukat</span>
                             <Popover open={verenOpen} onOpenChange={setVerenOpen}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
                                         role="combobox"
                                         aria-expanded={verenOpen}
-                                        className="w-full justify-between h-10 bg-secondary/20 border-border text-sm font-normal"
+                                        className="w-full justify-between h-10 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm font-normal"
                                     >
                                         {verenAd
                                             ? <span className="font-medium">Av. {toUpper(verenAd)}</span>
@@ -331,7 +338,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                                             setVerenOpen(false);
                                                         }}
                                                     >
-                                                        <Check className={`mr-2 w-4 h-4 ${verenAd === ad ? "opacity-100 text-rose-500" : "opacity-0"}`} />
+                                                        <Check className={`mr-2 w-4 h-4 ${verenAd === ad ? "opacity-100 text-[var(--brand)]" : "opacity-0"}`} />
                                                         Av. {toUpper(ad)}
                                                     </CommandItem>
                                                 ))}
@@ -344,14 +351,14 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
                         {/* Yetkili Kılınan — çoklu combobox */}
                         <div className="flex flex-col gap-2">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetkili Kılınan Avukatlar</span>
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Yetkili Kılınan Avukatlar</span>
                             <Popover open={yetkiliOpen} onOpenChange={v => { if (verenAd) setYetkiliOpen(v); }}>
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
                                         role="combobox"
                                         disabled={verenAd === ""}
-                                        className="w-full justify-between h-10 bg-secondary/20 border-border text-sm font-normal"
+                                        className="w-full justify-between h-10 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm font-normal"
                                     >
                                         {yetkiliAdlar.length > 0
                                             ? <span className="text-muted-foreground">{yetkiliAdlar.length} avukat seçildi</span>
@@ -371,7 +378,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                                         value={ad}
                                                         onSelect={() => toggleYetkili(ad)}
                                                     >
-                                                        <Check className={`mr-2 w-4 h-4 ${yetkiliAdlar.includes(ad) ? "opacity-100 text-rose-500" : "opacity-0"}`} />
+                                                        <Check className={`mr-2 w-4 h-4 ${yetkiliAdlar.includes(ad) ? "opacity-100 text-[var(--brand)]" : "opacity-0"}`} />
                                                         Av. {toUpper(ad)}
                                                     </CommandItem>
                                                 ))}
@@ -385,7 +392,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                             {yetkiliAdlar.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mt-1">
                                     {yetkiliAdlar.map(ad => (
-                                        <span key={ad} className="inline-flex items-center gap-1 text-xs bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full px-2.5 py-1 font-medium">
+                                        <span key={ad} className="inline-flex items-center gap-1 text-xs bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--brand)]/30 rounded-full px-2.5 py-1 font-medium">
                                             Av. {toUpper(ad)}
                                             <button
                                                 type="button"
@@ -413,24 +420,24 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                     <div className="flex flex-col gap-5">
 
                         {/* Büro adresi */}
-                        <div className="flex flex-col gap-2 p-4 rounded-xl bg-secondary/20 border border-border">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Büro Adresi (Avukatlar için ortak)</span>
+                        <div className="flex flex-col gap-2 p-4 rounded-none bg-secondary/20 border border-border">
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] mb-1">Büro Adresi (Avukatlar için ortak)</span>
                             <Input value={buroAdres} onChange={e => setBuroAdres(e.target.value)}
                                 className="bg-secondary/30 border-border" />
                         </div>
 
                         {/* Yetki veren avukat */}
-                        <div className="flex flex-col gap-3 p-4 rounded-xl bg-secondary/20 border border-border">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-rose-400">Yetki Veren Avukat</span>
+                        <div className="flex flex-col gap-3 p-4 rounded-none bg-secondary/20 border border-border">
+                            <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--brand)]">Yetki Veren Avukat</span>
                             <p className="text-[13px] font-semibold">Av. {toUpper(verenDetay.ad)}</p>
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
-                                    <Label className="text-[11px] text-muted-foreground">T.C. Kimlik No <span className="text-rose-500">*</span></Label>
+                                    <Label className="text-[11px] text-muted-foreground">T.C. Kimlik No <span className="text-[var(--brand)]">*</span></Label>
                                     <Input value={verenDetay.tc} onChange={e => setVerenDetay(d => ({ ...d, tc: onlyDigits(e.target.value, 11) }))}
                                         inputMode="numeric" maxLength={11} className="bg-secondary/30 border-border font-mono" />
                                 </div>
                                 <div className="space-y-1">
-                                    <Label className="text-[11px] text-muted-foreground">Baro Sicil No <span className="text-rose-500">*</span></Label>
+                                    <Label className="text-[11px] text-muted-foreground">Baro Sicil No <span className="text-[var(--brand)]">*</span></Label>
                                     <Input value={verenDetay.sicil} onChange={e => setVerenDetay(d => ({ ...d, sicil: onlyDigits(e.target.value, 10) }))}
                                         inputMode="numeric" className="bg-secondary/30 border-border font-mono" />
                                 </div>
@@ -439,9 +446,9 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
                         {/* Yetkili kılınanlar */}
                         <div className="flex flex-col gap-3">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetkili Kılınan Avukatlar</span>
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Yetkili Kılınan Avukatlar</span>
                             {yetkiliDetaylar.map((detay, idx) => (
-                                <div key={detay.ad} className="flex flex-col gap-2 p-4 rounded-xl bg-secondary/10 border border-border">
+                                <div key={detay.ad} className="flex flex-col gap-2 p-4 rounded-none bg-secondary/10 border border-border">
                                     <p className="text-[12px] font-semibold">{idx + 1}. Av. {toUpper(detay.ad)}</p>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1">
@@ -466,8 +473,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                         </div>
 
                         {/* Vekil eden (müvekkil) */}
-                        <div className="flex flex-col gap-3 p-4 rounded-xl bg-secondary/20 border border-border">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Vekil Eden (Müvekkil)</span>
+                        <div className="flex flex-col gap-3 p-4 rounded-none bg-secondary/20 border border-border">
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Vekil Eden (Müvekkil)</span>
                             <p className="text-[12px] font-semibold text-foreground/80">{toUpper(client.name)}</p>
                             <div className="grid grid-cols-1 gap-3">
                                 <div className="space-y-1">
@@ -495,8 +502,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                         </div>
 
                         {/* Dayanak Vekaletname */}
-                        <div className="flex flex-col gap-3 p-4 rounded-xl bg-secondary/20 border border-border">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Dayanak Vekaletname</span>
+                        <div className="flex flex-col gap-3 p-4 rounded-none bg-secondary/20 border border-border">
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Dayanak Vekaletname</span>
                             <div className="grid grid-cols-1 gap-3">
                                 <div className="space-y-1">
                                     <Label className="text-[11px] text-muted-foreground">Noterlik</Label>
@@ -510,7 +517,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                             inputMode="numeric" maxLength={10}
                                             className={`bg-secondary/30 border-border font-mono ${dayTarih && !isValidDateFormat(dayTarih) ? "border-rose-500/60" : ""}`} />
                                         {dayTarih && !isValidDateFormat(dayTarih) && (
-                                            <p className="text-[10px] text-rose-400">Tarih GG.AA.YYYY formatında olmalı</p>
+                                            <p className="text-[10px] text-[var(--brand)]">Tarih GG.AA.YYYY formatında olmalı</p>
                                         )}
                                     </div>
                                     <div className="space-y-1">
@@ -524,8 +531,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                         </div>
 
                         {/* Kapsam */}
-                        <div className="flex flex-col gap-2 p-4 rounded-xl bg-secondary/20 border border-border">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Yetki Belgesi Kapsamı</span>
+                        <div className="flex flex-col gap-2 p-4 rounded-none bg-secondary/20 border border-border">
+                            <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">Yetki Belgesi Kapsamı</span>
                             <Input value={kapsam} onChange={e => setKapsam(e.target.value)}
                                 className="bg-secondary/30 border-border" />
                         </div>
@@ -544,7 +551,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                 {/* ── ADIM 3 ── */}
                 {step === 3 && (
                     <div className="flex flex-col gap-4">
-                        <div className="border border-border rounded-xl overflow-auto bg-white text-black p-8 font-serif leading-relaxed shadow-inner max-h-[58vh]" style={{ fontSize: "11pt" }}>
+                        <div className="border border-border rounded-none overflow-auto bg-white text-black p-8 font-serif leading-relaxed shadow-inner max-h-[58vh]" style={{ fontSize: "11pt" }}>
                             <div ref={printRef}>
 
                                 {/* Başlık */}
@@ -628,7 +635,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                     variant="outline"
                                     onClick={handleDownloadUdf}
                                     disabled={udfLoading}
-                                    className="gap-2 border-border text-foreground/70 hover:border-rose-500/40 hover:text-rose-400"
+                                    className="gap-2 border-border text-foreground/70 hover:border-rose-500/40 hover:text-[var(--brand)]"
                                 >
                                     {udfLoading
                                         ? <Loader2 className="w-4 h-4 animate-spin" />

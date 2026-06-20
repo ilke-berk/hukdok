@@ -1,3 +1,7 @@
+/* Redesign token'ları. Shadcn HSL token'ları (aşağıda) sıcak theme-classic paletine köprülendi:
+   bg-card/bg-background/text-muted-foreground vb. kullanan eski sayfalar da sıcak palete uyar. */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,28 +10,30 @@
 
 @layer base {
   :root {
-    --background: 231 27% 8%;
-    /* #0F111A - Brand Black */
-    --foreground: 210 20% 95%;
+    --background: 24 24% 8%;
+    /* theme-classic warm bg (#1a1410) */
+    --foreground: 39 56% 90%;
 
-    --card: 231 25% 11%;
-    /* Slightly lighter than background */
-    --card-foreground: 210 20% 95%;
+    --card: 26 26% 11%;
+    /* theme-classic warm elevated (#221a14) */
+    --card-foreground: 39 56% 90%;
 
-    --popover: 231 25% 10%;
-    --popover-foreground: 210 20% 95%;
+    --popover: 26 26% 11%;
+    --popover-foreground: 39 56% 90%;
 
-    --primary: 345 65% 55%;
-    --primary-foreground: 0 0% 100%;
+    /* Brand burgundy — dark variant (#b8404c) */
+    --primary: 354 49% 49%;
+    --primary-foreground: 40 53% 97%;
 
-    --secondary: 231 20% 15%;
-    --secondary-foreground: 210 20% 90%;
+    --secondary: 25 22% 14%;
+    --secondary-foreground: 39 56% 90%;
 
-    --muted: 231 25% 12%;
-    --muted-foreground: 210 10% 60%;
+    --muted: 25 22% 13%;
+    --muted-foreground: 36 26% 69%;
 
-    --accent: 345 40% 25%;
-    --accent-foreground: 345 60% 80%;
+    /* Accent = brand-soft dark (#2c151b) */
+    --accent: 344 35% 13%;
+    --accent-foreground: 354 49% 65%;
 
     --success: 142 76% 45%;
     --success-foreground: 0 0% 100%;
@@ -38,61 +44,46 @@
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 231 15% 18%;
-    --input: 231 20% 14%;
-    --ring: 345 65% 55%;
+    --border: 25 26% 18%;
+    --input: 25 26% 18%;
+    --ring: 354 49% 49%;
 
-    --radius: 0.75rem;
+    --radius: 0rem;
 
-    /* Legal Document System Colors - Dark Theme */
-    --legal-burgundy: 345 65% 55%;
-    --legal-burgundy-dark: 345 70% 45%;
-    --legal-burgundy-light: 345 50% 65%;
+    /* Legal Document System Colors - Dark Theme (burgundy) */
+    --legal-burgundy: 354 49% 49%;
+    --legal-burgundy-dark: 351 39% 37%;
+    --legal-burgundy-light: 351 50% 55%;
     --legal-cream: 40 20% 15%;
     --legal-gray: 220 10% 50%;
 
-    /* Gradients */
-    --gradient-header: linear-gradient(135deg, hsl(345 70% 35%), hsl(345 60% 45%));
-    --gradient-glass: linear-gradient(135deg, hsl(231 25% 12% / 0.8), hsl(231 25% 10% / 0.6));
-
-    /* Glass Effect Variables */
-    --glass-bg: hsl(231 25% 12% / 0.7);
-    --glass-border: hsl(231 15% 25% / 0.5);
-    --glass-shadow: 0 8px 32px hsl(0 0% 0% / 0.4);
-    --glass-blur: blur(16px);
-
-    /* Shadows */
-    --shadow-card: 0 4px 16px -4px hsl(0 0% 0% / 0.4);
-    --shadow-elevated: 0 12px 40px -8px hsl(0 0% 0% / 0.5);
-    --shadow-glow: 0 0 30px hsl(345 65% 55% / 0.2);
-
-    /* Transitions - Disabled */
-    --transition-smooth: none;
   }
 
   html.light,
   .light {
-    --background: 210 25% 97%;
-    /* #F3F6FA - Hafif soğuk, göz dostu beyaz */
-    --foreground: 0 0% 10%;
+    --background: 35 40% 94%;
+    /* theme-classic warm cream (#f6f1ea) */
+    --foreground: 11 25% 14%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card: 36 50% 96%;
+    --card-foreground: 11 25% 14%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover: 36 50% 96%;
+    --popover-foreground: 11 25% 14%;
 
-    --primary: 345 65% 55%;
-    --primary-foreground: 0 0% 100%;
+    /* Brand burgundy — light variant (#6d2434) */
+    --primary: 348 51% 28%;
+    --primary-foreground: 40 56% 97%;
 
-    --secondary: 210 20% 94%;
-    --secondary-foreground: 0 0% 10%;
+    --secondary: 37 37% 89%;
+    --secondary-foreground: 11 25% 14%;
 
-    --muted: 210 20% 95%;
-    --muted-foreground: 0 0% 35%;
+    --muted: 37 37% 89%;
+    --muted-foreground: 24 13% 38%;
 
-    --accent: 345 45% 96%;
-    --accent-foreground: 345 65% 55%;
+    /* Accent = brand-soft light (#f3e4e6) */
+    --accent: 351 47% 93%;
+    --accent-foreground: 348 51% 28%;
 
     --success: 142 70% 42%;
     --success-foreground: 0 0% 100%;
@@ -103,31 +94,17 @@
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 210 20% 88%;
-    --input: 0 0% 100%;
-    --ring: 345 65% 55%;
+    --border: 35 30% 79%;
+    --input: 35 30% 79%;
+    --ring: 348 51% 28%;
 
-    /* Legal Document System Colors - Light Theme */
-    --legal-burgundy: 345 65% 55%;
-    --legal-burgundy-dark: 345 70% 40%;
-    --legal-burgundy-light: 345 35% 96%;
+    /* Legal Document System Colors - Light Theme (burgundy) */
+    --legal-burgundy: 348 51% 28%;
+    --legal-burgundy-dark: 348 53% 23%;
+    --legal-burgundy-light: 351 47% 93%;
     --legal-cream: 210 20% 97%;
     --legal-gray: 0 0% 40%;
 
-    /* Gradients - Bordo tonunu koru (Dark mode ile birebir aynı) */
-    --gradient-header: linear-gradient(135deg, hsl(345 70% 35%), hsl(345 60% 45%));
-    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.95), hsl(210 25% 97% / 0.9));
-
-    /* Glass Effect Variables */
-    --glass-bg: hsl(0 0% 100% / 0.9);
-    --glass-border: hsl(210 20% 88% / 0.8);
-    --glass-shadow: 0 4px 20px hsl(0 0% 0% / 0.06);
-    --glass-blur: blur(10px);
-
-    /* Shadows */
-    --shadow-card: 0 2px 8px -1px hsl(0 0% 0% / 0.06);
-    --shadow-elevated: 0 8px 24px -4px hsl(0 0% 0% / 0.1);
-    --shadow-glow: 0 0 20px hsl(345 65% 55% / 0.15);
   }
 }
 
@@ -146,7 +123,7 @@
   html:not(.light) body {
     background-image:
       radial-gradient(ellipse at 20% 20%, hsl(345 50% 15% / 0.2) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 80%, hsl(231 50% 15% / 0.15) 0%, transparent 50%);
+      radial-gradient(ellipse at 80% 80%, hsl(25 45% 14% / 0.15) 0%, transparent 50%);
     background-attachment: fixed;
   }
 
@@ -154,7 +131,7 @@
   .light body {
     background-image:
       radial-gradient(ellipse at 20% 20%, hsl(345 40% 90% / 0.35) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 80%, hsl(210 40% 92% / 0.3) 0%, transparent 50%);
+      radial-gradient(ellipse at 80% 80%, hsl(38 45% 90% / 0.3) 0%, transparent 50%);
   }
 
   h1,
@@ -172,50 +149,7 @@
     text-wrap: balance;
   }
 
-  .gradient-header {
-    background: var(--gradient-header);
-  }
-
-  /* Frosted Glass Effect */
-  .glass {
-    background: var(--glass-bg);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--glass-shadow);
-  }
-
-  .glass-card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border);
-    box-shadow: var(--shadow-elevated);
-  }
-
-  .glass-input {
-    background: hsl(var(--input));
-    color: hsl(var(--foreground));
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid hsl(var(--border));
-    box-shadow: 0 1px 2px hsl(0 0% 0% / 0.05);
-  }
-
-  .glass-header {
-    background: var(--gradient-header);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid hsl(345 40% 50% / 0.3);
-    box-shadow: 0 4px 24px hsl(345 60% 30% / 0.2);
-    color: white;
-    /* Header text always white on gradient */
-  }
-
-  .glow-primary {
-    box-shadow: var(--shadow-glow);
-  }
-
+  /* Brand glow — success rozetlerinde (NewCase onay checkboxlarında) kullanılıyor. */
   .glow-success {
     box-shadow: 0 0 20px hsl(142 76% 45% / 0.3);
   }

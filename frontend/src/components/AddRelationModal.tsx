@@ -24,20 +24,21 @@ const RELATION_TYPES = [
 
 // ---- Dosya türü ikonları ----
 const FILE_TYPE_ICONS: Record<string, React.ReactNode> = {
-    Hukuk:   <Scale className="w-3.5 h-3.5 text-blue-400" />,
-    İcra:    <Building2 className="w-3.5 h-3.5 text-orange-400" />,
-    Ceza:    <Gavel className="w-3.5 h-3.5 text-red-400" />,
-    İdare:   <FileText className="w-3.5 h-3.5 text-purple-400" />,
-    Ticaret: <FileText className="w-3.5 h-3.5 text-green-400" />,
+    Hukuk:   <Scale className="w-3.5 h-3.5 text-[var(--brand)]" />,
+    İcra:    <Building2 className="w-3.5 h-3.5 text-[#c47a1e]" />,
+    Ceza:    <Gavel className="w-3.5 h-3.5 text-[#a8323b]" />,
+    İdare:   <FileText className="w-3.5 h-3.5 text-[#7a3f8a]" />,
+    Ticaret: <FileText className="w-3.5 h-3.5 text-[#2f8a5d]" />,
 };
 const getFileTypeIcon = (type?: string | null) =>
-    FILE_TYPE_ICONS[type ?? ""] ?? <FileText className="w-3.5 h-3.5 text-muted-foreground" />;
+    FILE_TYPE_ICONS[type ?? ""] ?? <FileText className="w-3.5 h-3.5 text-[var(--fg-muted)]" />;
 
 const STATUS_COLORS: Record<string, string> = {
-    DERDEST: "bg-emerald-500/15 text-emerald-400",
-    KARAR:   "bg-blue-500/15 text-blue-400",
-    KAPALI:  "bg-gray-500/15 text-gray-400",
-    TEMYIZ:  "bg-purple-500/15 text-purple-400",
+    DERDEST: "bg-[#2f8a5d]/15 text-[#2f8a5d]",
+    ISTINAF: "bg-[#c47a1e]/15 text-[#c47a1e]",
+    TEMYIZ:  "bg-[#7a3f8a]/15 text-[#7a3f8a]",
+    KARAR:   "bg-[var(--brand-soft)] text-[var(--brand)]",
+    KAPALI:  "bg-[var(--bg-sunken)] text-[var(--fg-subtle)]",
 };
 
 interface CaseSearchResult {
@@ -141,7 +142,7 @@ const AddRelationModal = ({ open, currentCaseId, onClose, onSave }: AddRelationM
 
                         {selectedCase ? (
                             /* Seçili dava kartı */
-                            <div className="flex items-start gap-3 p-3 rounded-xl border border-primary/30 bg-primary/5">
+                            <div className="flex items-start gap-3 p-3 rounded-none border border-primary/30 bg-primary/5">
                                 <div className="flex-1 min-w-0 space-y-1">
                                     <div className="flex items-center gap-2">
                                         {getFileTypeIcon(selectedCase.file_type)}
@@ -185,7 +186,7 @@ const AddRelationModal = ({ open, currentCaseId, onClose, onSave }: AddRelationM
 
                                 {/* Sonuç listesi */}
                                 {(searchResults.length > 0 || (debouncedQuery.length >= 2 && !searching)) && (
-                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border border-border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border border-border rounded-none shadow-xl overflow-hidden max-h-60 overflow-y-auto">
                                         {searchResults.length === 0 ? (
                                             <div className="px-4 py-3 text-sm text-muted-foreground text-center">
                                                 Sonuç bulunamadı

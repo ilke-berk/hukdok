@@ -1,10 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Check, FileText, Calendar, User, FileCode, ChevronsUpDown } from "lucide-react";
+import { Check, FileText, Calendar, User, FileCode, ChevronsUpDown, Hash, Users as UsersIcon, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -22,6 +19,8 @@ import {
 import { useState, useEffect } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfig } from "@/hooks/useConfig";
+import { HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
+import { AiPill } from "@/components/flow/primitives";
 
 interface AnalysisData {
   tarih: string;
@@ -440,83 +439,187 @@ export const AnalysisResults = ({
     setApprovedFields((prev) => ({ ...prev, [field]: checked }));
   };
 
+  // Bir alanın AI tarafından doldurulup kullanıcı tarafından değiştirilmediğini kontrol eder.
+  // Override edilince AiPill kaybolur.
+  const isAi = (field: keyof typeof editedData) => {
+    const original = (data[field] ?? "") as string;
+    const current = (editedData[field] ?? "") as string;
+    return Boolean(original) && original === current;
+  };
+
   return (
-    <Card className="glass-card animate-fade-in overflow-hidden">
-      <CardHeader className="glass-header rounded-t-xl pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-xl text-primary-foreground drop-shadow">
-            <FileCode className="w-5 h-5" />
+    <HairlineCard padded={false}>
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileCode className="w-4 h-4 text-[var(--brand)] shrink-0" />
+          <Eyebrow tone="brand">03 · Onay</Eyebrow>
+          <h2 className="font-display text-[15px] font-medium text-[var(--fg)] tracking-[-0.005em]">
             Önerilen Dosya Adı
-          </CardTitle>
-          <Badge
-            variant={allFieldsApproved ? "default" : "secondary"}
-            className={allFieldsApproved ? "bg-success/90 text-success-foreground glow-success" : "bg-muted text-muted-foreground"}
-          >
-            {allFieldsApproved ? "✓ Onaylandı" : `${currentGeneratedFilename.replace(".pdf", "").length} karakter`}
-          </Badge>
+          </h2>
         </div>
-      </CardHeader>
-      <CardContent className="pt-6 space-y-6">
-        <p className="text-sm text-muted-foreground">Aşağıdaki verileri kontrol edin ve onaylayın.</p>
-        <div className="glass-input rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <code className="text-sm font-mono text-foreground flex-1 break-all">{currentGeneratedFilename}</code>
+        {allFieldsApproved ? (
+          <span className="inline-flex items-center gap-1 px-2 py-1 font-mono text-[10px] tracking-[0.14em] uppercase border border-[#2f8a5d]/40 bg-[#2f8a5d]/15 text-[#2f8a5d]">
+            <Check className="w-3 h-3" strokeWidth={2.2} />
+            Onaylandı
+          </span>
+        ) : (
+          <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+            {currentGeneratedFilename.replace(".pdf", "").length} karakter
+          </span>
+        )}
+      </div>
+
+      <div className="p-5 grid gap-5">
+        <p className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
+          AI çıkarımlarını gözden geçirin ve onay kutularını işaretleyin.
+          Bir alanı değiştirirseniz AI rozeti kaybolur.
+        </p>
+
+        {/* Filename önizleme */}
+        <div className="bg-[var(--bg-sunken)] border border-[var(--border)] px-4 py-3">
+          <div className="font-mono text-[9.5px] tracking-[0.22em] uppercase text-[var(--fg-subtle)] mb-1.5">
+            Önizleme
           </div>
+          <code className="block font-mono text-[13px] text-[var(--fg)] break-all leading-relaxed">
+            {currentGeneratedFilename}
+          </code>
         </div>
 
+        {/* Form alanları */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground"><Calendar className="w-3 h-3" /> [A] TARİH</Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.tarih} onChange={(e) => handleFieldChange("tarih", e.target.value)} className="font-mono glass-input" disabled={approvedFields.tarih} />
-              <Checkbox checked={approvedFields.tarih} onCheckedChange={(c) => handleFieldApproval("tarih", !!c)} />
+          {/* Tarih */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                <Calendar className="w-3 h-3" />
+                [A] Tarih
+              </label>
+              {isAi("tarih") && !approvedFields.tarih && <AiPill />}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={editedData.tarih}
+                onChange={(e) => handleFieldChange("tarih", e.target.value)}
+                className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] flex-1"
+                disabled={approvedFields.tarih}
+              />
+              <Checkbox
+                checked={approvedFields.tarih}
+                onCheckedChange={(c) => handleFieldApproval("tarih", !!c)}
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+              />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <User className="w-3 h-3" /> [B] MÜVEKKİL
-              {localClientList.length > 1 && <Badge variant="outline" className="ml-1">+{localClientList.length - 1}</Badge>}
-            </Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.muvekkil_kodu} onChange={(e) => handleFieldChange("muvekkil_kodu", e.target.value)} className="font-mono glass-input flex-1" disabled={approvedFields.muvekkil_kodu} />
-              <Popover open={openClientSelect} onOpenChange={setOpenClientSelect}>
-                <PopoverTrigger asChild><Button variant="outline" className="w-10 px-0 glass-input border-0" disabled={approvedFields.muvekkil_kodu}><ChevronsUpDown className="h-4 w-4 opacity-50" /></Button></PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0 glass z-[100]" align="end">
-                  <Command>
-                    <CommandInput placeholder="Ara..." />
-                    <CommandList>
-                      <CommandEmpty>Sonuç yok.</CommandEmpty>
-                      <CommandGroup heading="Müvekkiller">
-                        {localClientList.map((name) => (
-                          <CommandItem key={name} onSelect={() => { handleFieldChange("muvekkil_kodu", name); setOpenClientSelect(false); }}>
-                            <Check className={cn("mr-2 h-4 w-4", editedData.muvekkil_kodu === name ? "opacity-100" : "opacity-0")} />
-                            {name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              <Checkbox checked={approvedFields.muvekkil_kodu} onCheckedChange={(c) => handleFieldApproval("muvekkil_kodu", !!c)} />
+          {/* Müvekkil */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                <User className="w-3 h-3" />
+                [B] Müvekkil
+                {localClientList.length > 1 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--fg-muted)] tracking-[0.04em] normal-case">
+                    +{localClientList.length - 1}
+                  </span>
+                )}
+              </label>
+              {isAi("muvekkil_kodu") && !approvedFields.muvekkil_kodu && <AiPill />}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={editedData.muvekkil_kodu}
+                onChange={(e) => handleFieldChange("muvekkil_kodu", e.target.value)}
+                className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] flex-1"
+                disabled={approvedFields.muvekkil_kodu}
+              />
+              {localClientList.length > 1 && (
+                <Popover open={openClientSelect} onOpenChange={setOpenClientSelect}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-9 h-9 px-0 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
+                      disabled={approvedFields.muvekkil_kodu}
+                    >
+                      <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0 z-[100] bg-[var(--bg-elevated)] border-[var(--border)]" align="end">
+                    <Command>
+                      <CommandInput placeholder="Ara..." />
+                      <CommandList>
+                        <CommandEmpty>Sonuç yok.</CommandEmpty>
+                        <CommandGroup heading="Müvekkiller">
+                          {localClientList.map((name) => (
+                            <CommandItem key={name} onSelect={() => { handleFieldChange("muvekkil_kodu", name); setOpenClientSelect(false); }}>
+                              <Check className={cn("mr-2 h-4 w-4", editedData.muvekkil_kodu === name ? "opacity-100" : "opacity-0")} />
+                              {name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+              <Checkbox
+                checked={approvedFields.muvekkil_kodu}
+                onCheckedChange={(c) => handleFieldApproval("muvekkil_kodu", !!c)}
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+              />
             </div>
           </div>
 
-          <div className="col-span-2 space-y-2">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground"><User className="w-3 h-3" /> [VS] KARŞI TARAF</Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.karsi_taraf || ""} onChange={(e) => handleFieldChange("karsi_taraf", e.target.value)} className="font-mono glass-input flex-1" disabled={approvedFields.karsi_taraf} />
-              <Checkbox checked={approvedFields.karsi_taraf} onCheckedChange={(c) => handleFieldApproval("karsi_taraf", !!c)} />
+          {/* Karşı Taraf */}
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                <UsersIcon className="w-3 h-3" />
+                [VS] Karşı Taraf
+              </label>
+              {isAi("karsi_taraf") && !approvedFields.karsi_taraf && <AiPill />}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={editedData.karsi_taraf || ""}
+                onChange={(e) => handleFieldChange("karsi_taraf", e.target.value)}
+                className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] flex-1"
+                disabled={approvedFields.karsi_taraf}
+              />
+              <Checkbox
+                checked={approvedFields.karsi_taraf}
+                onCheckedChange={(c) => handleFieldApproval("karsi_taraf", !!c)}
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+              />
             </div>
           </div>
 
-          <div className="col-span-2 space-y-2">
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground"><FileText className="w-3 h-3" /> [C] BELGE TÜRÜ</Label>
-            <div className="relative flex items-center gap-2">
+          {/* Belge Türü */}
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                <FileText className="w-3 h-3" />
+                [C] Belge Türü
+              </label>
+              {isAi("belge_turu_kodu") && !approvedFields.belge_turu_kodu && <AiPill />}
+            </div>
+            <div className="flex items-center gap-2">
               <Popover open={openDocType} onOpenChange={setOpenDocType}>
-                <PopoverTrigger asChild><Button variant="outline" className="w-full justify-between glass-input border-0" disabled={approvedFields.belge_turu_kodu}>{editedData.belge_turu_kodu ? (docTypeOptions.find(d => (d.code ?? "").replace(/_+$/, "") === editedData.belge_turu_kodu)?.name ?? editedData.belge_turu_kodu) : "Seçin..."}<ChevronsUpDown className="h-4 w-4 opacity-50" /></Button></PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0 glass z-[100]" align="start">
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-[var(--fg)] font-normal h-10"
+                    disabled={approvedFields.belge_turu_kodu}
+                  >
+                    <span className="truncate">
+                      {editedData.belge_turu_kodu
+                        ? (docTypeOptions.find(d => (d.code ?? "").replace(/_+$/, "") === editedData.belge_turu_kodu)?.name ?? editedData.belge_turu_kodu)
+                        : "Seçin..."}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-50 shrink-0" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[340px] p-0 z-[100] bg-[var(--bg-elevated)] border-[var(--border)]" align="start">
                   <Command>
                     <CommandInput placeholder="Ara..." />
                     <CommandList>
@@ -524,61 +627,86 @@ export const AnalysisResults = ({
                       {docTypeOptions.map((item) => {
                         const cleanCode = (item.code ?? "").replace(/_+$/, "");
                         return (
-                          <CommandItem key={item.code} onSelect={() => { handleFieldChange("belge_turu_kodu", cleanCode); setOpenDocType(false); }}>{item.name}</CommandItem>
+                          <CommandItem key={item.code} onSelect={() => { handleFieldChange("belge_turu_kodu", cleanCode); setOpenDocType(false); }}>
+                            {item.name}
+                          </CommandItem>
                         );
                       })}
                     </CommandList>
                   </Command>
                 </PopoverContent>
               </Popover>
-              <Checkbox checked={approvedFields.belge_turu_kodu} onCheckedChange={(c) => handleFieldApproval("belge_turu_kodu", !!c)} />
+              <Checkbox
+                checked={approvedFields.belge_turu_kodu}
+                onCheckedChange={(c) => handleFieldApproval("belge_turu_kodu", !!c)}
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+              />
             </div>
           </div>
 
-          <div className="col-span-2 space-y-2">
-            <Label className="text-xs text-muted-foreground">[F] ESAS NO</Label>
-            <div className="relative flex items-center gap-2">
-              <Input value={editedData.esas_no} onChange={(e) => handleFieldChange("esas_no", e.target.value)} className="font-mono glass-input" disabled={approvedFields.esas_no} />
-              <Checkbox checked={approvedFields.esas_no} onCheckedChange={(c) => handleFieldApproval("esas_no", !!c)} />
+          {/* Esas No */}
+          <div className="col-span-2 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
+                <Hash className="w-3 h-3" />
+                [F] Esas No
+              </label>
+              {isAi("esas_no") && !approvedFields.esas_no && <AiPill />}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={editedData.esas_no}
+                onChange={(e) => handleFieldChange("esas_no", e.target.value)}
+                className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] flex-1"
+                disabled={approvedFields.esas_no}
+              />
+              <Checkbox
+                checked={approvedFields.esas_no}
+                onCheckedChange={(c) => handleFieldApproval("esas_no", !!c)}
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+              />
             </div>
           </div>
 
+          {/* Duruşma — sadece duruşma zaptlarında */}
           {isDurusmaZapt && (
-            <div className="col-span-2 space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-              <Label className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+            <div className="col-span-2 bg-[#c47a1e]/10 border border-[#c47a1e]/40 p-4 grid gap-2">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[#c47a1e]">
                 <Calendar className="w-3.5 h-3.5" />
-                SONRAKİ DURUŞMA — Ajandaya Eklenecek
-              </Label>
+                Sonraki Duruşma — Ajandaya Eklenecek
+              </div>
               <div className="flex gap-2">
-                <div className="relative flex flex-1 items-center gap-2">
-                  <Input
-                    type="date"
-                    value={editedData.sonraki_durusma_tarihi || ""}
-                    onChange={(e) => handleFieldChange("sonraki_durusma_tarihi", e.target.value)}
-                    className="font-mono glass-input"
-                    disabled={approvedFields.sonraki_durusma_tarihi}
-                  />
-                </div>
+                <Input
+                  type="date"
+                  value={editedData.sonraki_durusma_tarihi || ""}
+                  onChange={(e) => handleFieldChange("sonraki_durusma_tarihi", e.target.value)}
+                  className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] flex-1"
+                  disabled={approvedFields.sonraki_durusma_tarihi}
+                />
                 <Input
                   type="time"
                   value={editedData.sonraki_durusma_saati || ""}
                   onChange={(e) => handleFieldChange("sonraki_durusma_saati", e.target.value)}
-                  className="font-mono glass-input w-28"
+                  className="font-mono bg-[var(--bg)] border-[var(--border)] rounded-[3px] w-28"
                   disabled={approvedFields.sonraki_durusma_tarihi}
                   placeholder="--:--"
                 />
                 <Checkbox
                   checked={approvedFields.sonraki_durusma_tarihi}
                   onCheckedChange={(c) => handleFieldApproval("sonraki_durusma_tarihi", !!c)}
+                  className="w-5 h-5 self-center rounded-[2px] data-[state=checked]:bg-[#c47a1e] data-[state=checked]:border-[#c47a1e]"
                 />
               </div>
               {!editedData.sonraki_durusma_tarihi && (
-                <p className="text-[10px] text-amber-400/70">Tarih belgeden çıkarılamadı. Manuel girin veya boş bırakın ve onaylayın.</p>
+                <p className="inline-flex items-center gap-1.5 text-[11px] text-[#c47a1e]/80">
+                  <AlertCircle className="w-3 h-3" />
+                  Tarih belgeden çıkarılamadı. Manuel girin veya boş bırakıp onaylayın.
+                </p>
               )}
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </HairlineCard>
   );
 };

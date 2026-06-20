@@ -8,11 +8,15 @@ import { MsalProvider, useMsal } from "@azure/msal-react";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
+import { ShellLayout } from "@/components/shell/Shell";
+import { ConfirmDialogProvider } from "@/components/system/ConfirmDialog";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { apiClient } from "@/lib/api";
 import Index from "./pages/Index";
-import Home from "./pages/Home";
+import AvukatDashboard from "./pages/dashboards/AvukatDashboard";
+import IdariDashboard from "./pages/dashboards/IdariDashboard";
+import { useDashboardView } from "@/hooks/useDashboardView";
 import Login from "./pages/Login";
 import AdminPage from "./pages/AdminPage";
 import NewCase from "./pages/NewCase";
@@ -26,6 +30,12 @@ import ActivityHistory from "./pages/ActivityHistory";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
+
+// Dashboard router — Sidebar'daki view toggle'a göre Avukat veya İdari render eder.
+const DashboardRouter = () => {
+  const { view } = useDashboardView();
+  return view === "idari" ? <IdariDashboard /> : <AvukatDashboard />;
+};
 
 // Wrapper component to use hooks inside MsalProvider
 const AppContent = () => {
@@ -67,100 +77,33 @@ const AppContent = () => {
         {/* Public Route */}
         <Route path="/login" element={<Login />} />
 
-        {/* Protected Routes */}
+        {/* Protected Routes — App Shell ile sarılı */}
         <Route
-          path="/"
           element={
             <ProtectedRoute>
-              <Home />
+              <ShellLayout />
             </ProtectedRoute>
           }
-        />
-        <Route
-          path="/upload"
-          element={
-            <ProtectedRoute>
-              <Index />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/new-case"
-          element={
-            <ProtectedRoute>
-              <CaseList />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/cases"
-          element={
-            <ProtectedRoute>
-              <CaseList />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/new-case/form"
-          element={
-            <ProtectedRoute>
-              <NewCase />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/new-client"
-          element={
-            <ProtectedRoute>
-              <NewClient />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/clients"
-          element={
-            <ProtectedRoute>
-              <ClientList />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/cases/:id"
-          element={
-            <ProtectedRoute>
-              <CaseDetails />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/case-groups/:groupId"
-          element={
-            <ProtectedRoute>
-              <CaseGroup />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/activity-history"
-          element={
-            <ProtectedRoute>
-              <ActivityHistory />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/admin"
-          element={
-            <ProtectedAdminRoute>
-              <AdminPage />
-            </ProtectedAdminRoute>
-          }
-        />
+        >
+          <Route path="/" element={<DashboardRouter />} />
+          <Route path="/upload" element={<Index />} />
+          <Route path="/new-case" element={<CaseList />} />
+          <Route path="/cases" element={<CaseList />} />
+          <Route path="/new-case/form" element={<NewCase />} />
+          <Route path="/new-client" element={<NewClient />} />
+          <Route path="/clients" element={<ClientList />} />
+          <Route path="/cases/:id" element={<CaseDetails />} />
+          <Route path="/case-groups/:groupId" element={<CaseGroup />} />
+          <Route path="/activity-history" element={<ActivityHistory />} />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedAdminRoute>
+                <AdminPage />
+              </ProtectedAdminRoute>
+            }
+          />
+        </Route>
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
@@ -257,9 +200,11 @@ const App = () => {
       <ThemeProvider defaultTheme="dark" storageKey="hukudok-theme">
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <AppContent />
+            <ConfirmDialogProvider>
+              <Toaster />
+              <Sonner />
+              <AppContent />
+            </ConfirmDialogProvider>
           </TooltipProvider>
         </QueryClientProvider>
       </ThemeProvider>

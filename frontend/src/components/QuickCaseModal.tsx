@@ -11,8 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Gavel, AlertTriangle, Loader2, Sparkles, User, FileText, Scale, Building } from "lucide-react";
+import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "lucide-react";
+import { Eyebrow } from "@/components/dashboard/primitives";
+import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
 import { CaseData, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
@@ -339,40 +340,41 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
     return (
         <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-            <DialogContent className="max-w-lg sm:max-w-xl glass-card border-border/60">
-                <DialogHeader>
-                    <div className="flex items-center gap-3 mb-1">
-                        <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center">
-                            <AlertTriangle className="w-5 h-5 text-amber-400" />
+            <DialogContent className="max-w-lg sm:max-w-xl theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0">
+                <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--border)]">
+                    <div className="flex items-start gap-3">
+                        <div className="w-11 h-11 grid place-items-center bg-[#c47a1e]/15 text-[#c47a1e] shrink-0">
+                            <AlertTriangle className="w-5 h-5" strokeWidth={1.8} />
                         </div>
-                        <div>
-                            <DialogTitle className="text-lg font-semibold">Dava Bulunamadı</DialogTitle>
-                            <DialogDescription className="text-xs mt-0.5">
+                        <div className="grid gap-1 min-w-0">
+                            <Eyebrow tone="brand">Hızlı Dava · Yeni Kayıt</Eyebrow>
+                            <DialogTitle className="font-display text-[20px] font-medium tracking-[-0.005em] text-[var(--fg)] leading-tight">
+                                Dava Bulunamadı
+                            </DialogTitle>
+                            <DialogDescription className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed">
                                 Bu belge henüz açılmamış bir davaya ait görünüyor. Belgeyi kaydetmeden önce davayı açın.
                             </DialogDescription>
                         </div>
                     </div>
-
-
                 </DialogHeader>
 
-                <div className="grid gap-4 py-2">
+                <div className="grid gap-4 px-6 py-5">
                     {/* Esas No */}
                     <div className="grid grid-cols-4 items-center gap-3">
-                        <Label className="text-right text-xs text-muted-foreground col-span-1 flex items-center justify-end gap-1.5">
+                        <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 flex items-center justify-end gap-1.5">
                             <FileText className="w-3 h-3" /> Esas No *
                         </Label>
                         <Input
                             value={esasNo}
                             onChange={e => setEsasNo(e.target.value)}
                             placeholder="2024/1234"
-                            className="col-span-3 font-mono h-9 glass-input"
+                            className="col-span-3 font-mono h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                         />
                     </div>
 
                     {/* Müvekkil */}
                     <div className="grid grid-cols-4 items-center gap-3">
-                        <Label className="text-right text-xs text-muted-foreground col-span-1 flex items-center justify-end gap-1.5">
+                        <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 flex items-center justify-end gap-1.5">
                             <User className="w-3 h-3" /> Müvekkil *
                         </Label>
                         <div className="col-span-3 flex items-center gap-2">
@@ -380,9 +382,9 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 value={clientName}
                                 onChange={e => setClientName(e.target.value)}
                                 placeholder="Müvekkil adı"
-                                className="flex-1 h-9 glass-input"
+                                className="flex-1 h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                             />
-                            <div className="flex rounded-md overflow-hidden border border-border shrink-0">
+                            <div className="flex rounded-[3px] overflow-hidden border border-[var(--border)] shrink-0">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -390,8 +392,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                         setCounterRole("Davalı");
                                     }}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davacı"
-                                        ? "bg-blue-600 text-white"
-                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davacı</button>
                                 <button
@@ -401,8 +403,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                         setCounterRole("Davacı");
                                     }}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davalı"
-                                        ? "bg-rose-600 text-white"
-                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davalı</button>
                             </div>
@@ -411,7 +413,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
                     {/* Karşı Taraf */}
                     <div className="grid grid-cols-4 items-center gap-3">
-                        <Label className="text-right text-xs text-muted-foreground col-span-1">
+                        <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1">
                             Karşı Taraf
                         </Label>
                         <div className="col-span-3 flex items-center gap-2">
@@ -419,9 +421,9 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 value={counterPartyName}
                                 onChange={e => setCounterPartyName(e.target.value)}
                                 placeholder="Karşı taraf adı (opsiyonel)"
-                                className="flex-1 h-9 glass-input"
+                                className="flex-1 h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                             />
-                            <div className="flex rounded-md overflow-hidden border border-border shrink-0">
+                            <div className="flex rounded-[3px] overflow-hidden border border-[var(--border)] shrink-0">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -429,8 +431,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                         setClientRole("Davalı");
                                     }}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davacı"
-                                        ? "bg-blue-600 text-white"
-                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davacı</button>
                                 <button
@@ -440,8 +442,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                         setClientRole("Davacı");
                                     }}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davalı"
-                                        ? "bg-rose-600 text-white"
-                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davalı</button>
                             </div>
@@ -450,7 +452,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
                     {/* Mahkeme */}
                     <div className="grid grid-cols-4 items-center gap-3">
-                        <Label className="text-right text-xs text-muted-foreground col-span-1 flex items-center justify-end gap-1.5">
+                        <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 flex items-center justify-end gap-1.5">
                             <Building className="w-3 h-3" /> Mahkeme
                         </Label>
                         <div className="col-span-3">
@@ -458,7 +460,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 value={courtBase}
                                 onChange={e => setCourtBase(e.target.value)}
                                 placeholder="Örn: Samsun 2. Tüketici Mahkemesi"
-                                className="w-full h-9 glass-input text-sm"
+                                className="w-full h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm"
                             />
                         </div>
                     </div>
@@ -466,14 +468,14 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                     {/* Dava ve Kategorizasyon Bilgileri */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                 <Gavel className="w-3 h-3" /> Dosya Türü
                             </Label>
                             <Select value={fileType} onValueChange={(v) => {
                                 setFileType(v);
                                 setSubType("");
                             }}>
-                                <SelectTrigger className="h-9 glass-input text-sm">
+                                <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -483,7 +485,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                 <Scale className="w-3 h-3" /> Alt Tür
                             </Label>
                             <Select
@@ -491,7 +493,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 onValueChange={setSubType}
                                 disabled={!fileType || (ALT_TURLER[fileType]?.length ?? 0) === 0}
                             >
-                                <SelectTrigger className="h-9 glass-input text-sm">
+                                <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm">
                                     <SelectValue placeholder={
                                         !fileType
                                             ? "Önce dosya türü seçin"
@@ -511,11 +513,11 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                 <Scale className="w-3 h-3" /> Avukat
                             </Label>
                             <Select value={lawyer} onValueChange={setLawyer}>
-                                <SelectTrigger className="h-9 glass-input text-sm">
+                                <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm">
                                     <SelectValue placeholder="Seçiniz" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -529,67 +531,70 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                         </div>
 
                         <div className="space-y-1.5">
-                            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                <div className="w-3 h-3 border-r-2 border-b-2 border-muted-foreground/40" /> Açılış Tarihi
+                            <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
+                                <div className="w-3 h-3 border-r-2 border-b-2 border-[var(--fg-subtle)]/50" /> Açılış Tarihi
                             </Label>
                             <Input
                                 type="date"
                                 value={openingDate}
                                 onChange={e => setOpeningDate(e.target.value)}
-                                className="h-9 glass-input text-sm"
+                                className="h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm"
                             />
                         </div>
                     </div>
                 </div>
 
                 {showNewClientConfirm ? (
-                    <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-2 flex flex-col gap-3">
+                    <div className="bg-[var(--brand-soft)] border-y border-[var(--brand)]/30 px-6 py-4 flex flex-col gap-3">
                         <div className="flex items-start gap-3">
-                            <User className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                            <div>
-                                <h4 className="text-sm font-semibold text-primary">
+                            <div className="w-8 h-8 grid place-items-center bg-[var(--brand)] text-[var(--brand-fg)] shrink-0">
+                                <User className="w-4 h-4" strokeWidth={1.8} />
+                            </div>
+                            <div className="min-w-0">
+                                <Eyebrow tone="brand">Onay Gerekiyor</Eyebrow>
+                                <h4 className="font-display text-[15px] font-medium text-[var(--fg)] mt-0.5">
                                     {missingClients.length > 1 ? "Yeni Müvekkiller Kaydedilecek" : "Yeni Müvekkil Kaydedilecek"}
                                 </h4>
-                                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                    <strong className="text-foreground">{missingClients.join(", ")}</strong>
+                                <p className="text-[12px] text-[var(--fg-muted)] mt-1.5 leading-relaxed">
+                                    <strong className="text-[var(--fg)] font-semibold">{missingClients.join(", ")}</strong>
                                     {missingClients.length > 1 ? " isimli müvekkiller sistemde bulunamadı." : " isimli müvekkil sistemde bulunamadı."}
-                                    {" "}Dava oluşturulurken bu kişiler otomatik olarak <strong>Yeni Müvekkiller Tarafına</strong> kaydedilecektir. Onaylıyor musunuz?
+                                    {" "}Dava oluşturulurken bu kişiler otomatik olarak <strong>Yeni Müvekkiller</strong> tarafına kaydedilir.
                                 </p>
                             </div>
                         </div>
-                        <div className="flex gap-2 justify-end mt-2">
-                            <Button variant="outline" size="sm" onClick={() => setShowNewClientConfirm(false)}>
+                        <div className="flex gap-2 justify-end mt-1">
+                            <FlowButton variant="secondary" size="sm" onClick={() => setShowNewClientConfirm(false)}>
                                 Vazgeç
-                            </Button>
-                            <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={() => handleSave(true)}>
-                                Evet, {missingClients.length > 1 ? "Müvekkilleri" : "Müvekkili"} Kaydet ve Davayı Aç
-                            </Button>
+                            </FlowButton>
+                            <FlowButton variant="primary" size="sm" onClick={() => handleSave(true)}>
+                                Onayla & Kaydet
+                            </FlowButton>
                         </div>
                     </div>
                 ) : (
                     <>
-                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 flex items-start gap-2 mt-1">
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                            <span>
-                                Bu form hızlı kayıt içindir. Tam dava kartına <strong>Dava Kartı Yönetimi</strong> menüsünden ulaşabilirsiniz.
+                        <div className="bg-[#c47a1e]/10 border-y border-[#c47a1e]/25 px-6 py-3 text-[12px] text-[#c47a1e] flex items-start gap-2">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" strokeWidth={1.8} />
+                            <span className="leading-relaxed">
+                                Bu form hızlı kayıt içindir. Tam dava kartına <strong className="font-semibold">Davalar</strong> menüsünden ulaşabilirsiniz.
                             </span>
                         </div>
 
-                        <DialogFooter className="gap-2 mt-2">
-                            <Button variant="outline" onClick={onClose} disabled={isCaseLoading || isClientLoading}>
+                        <DialogFooter className="px-6 py-4 gap-2 border-t border-[var(--border)] bg-[var(--bg)]">
+                            <FlowButton variant="secondary" onClick={onClose} disabled={isCaseLoading || isClientLoading}>
                                 İptal
-                            </Button>
-                            <Button
+                            </FlowButton>
+                            <FlowButton
+                                variant="primary"
                                 onClick={() => handleSave(false)}
                                 disabled={isCaseLoading || isClientLoading || !esasNo.trim() || !clientName.trim()}
-                                className="bg-primary hover:bg-primary/90 gap-2"
                             >
                                 {isCaseLoading ? (
-                                    <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</>
+                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Kaydediliyor…</>
                                 ) : (
-                                    <><Gavel className="w-4 h-4" /> Davayı Aç ve Belgeye Bağla</>
+                                    <><Gavel className="w-3.5 h-3.5" /> Davayı Aç ve Bağla</>
                                 )}
-                            </Button>
+                            </FlowButton>
                         </DialogFooter>
                     </>
                 )}

@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { Header } from "@/components/Header";
+import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
@@ -16,15 +16,16 @@ import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    DERDEST: { bg: "bg-emerald-500/15", text: "text-emerald-400", dot: "bg-emerald-400" },
-    KARAR:   { bg: "bg-indigo-500/15",  text: "text-indigo-400",  dot: "bg-indigo-400" },
-    KAPALI:  { bg: "bg-gray-500/15",    text: "text-gray-400",    dot: "bg-gray-400" },
-    TEMYIZ:  { bg: "bg-amber-500/15",   text: "text-amber-400",   dot: "bg-amber-400" },
-    INFAZ:   { bg: "bg-orange-500/15",  text: "text-orange-400",  dot: "bg-orange-400" },
+    DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
+    ISTINAF: { bg: "bg-[#c47a1e]/15",      text: "text-[#c47a1e]",       dot: "bg-[#c47a1e]" },
+    TEMYIZ:  { bg: "bg-[#7a3f8a]/15",      text: "text-[#7a3f8a]",       dot: "bg-[#7a3f8a]" },
+    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-[var(--brand)]" },
+    INFAZ:   { bg: "bg-[#a8323b]/15",      text: "text-[#a8323b]",       dot: "bg-[#a8323b]" },
+    KAPALI:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 
 const getStatusStyle = (status: string) =>
-    statusColors[status?.toLocaleUpperCase('tr-TR')] || { bg: "bg-primary/15", text: "text-primary", dot: "bg-primary" };
+    statusColors[status?.toLocaleUpperCase('tr-TR')] || { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
 
 interface CaseDetailsData {
     status: string;
@@ -54,14 +55,14 @@ interface CaseDetailsData {
 
 // Tip badge renkleri (CaseGroup ile tutarlı)
 const fileTypeMeta: Record<string, { color: string; bg: string; border: string; dot: string; icon: React.ReactNode }> = {
-    Hukuk:   { color: "text-blue-400",   bg: "bg-blue-500/10",   border: "border-blue-500/30",   dot: "bg-blue-400",   icon: <Scale className="w-4 h-4" /> },
-    İcra:    { color: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/30",  dot: "bg-amber-400",  icon: <Building2 className="w-4 h-4" /> },
-    Ceza:    { color: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30",    dot: "bg-red-400",    icon: <Gavel className="w-4 h-4" /> },
-    İdare:   { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30", dot: "bg-purple-400", icon: <FileText className="w-4 h-4" /> },
-    Ticaret: { color: "text-teal-400",   bg: "bg-teal-500/10",   border: "border-teal-500/30",   dot: "bg-teal-400",   icon: <BarChart3 className="w-4 h-4" /> },
+    Hukuk:   { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", dot: "bg-[var(--brand)]", icon: <Scale className="w-4 h-4" /> },
+    İcra:    { color: "text-[#c47a1e]",     bg: "bg-[#c47a1e]/10",     border: "border-[#c47a1e]/30",     dot: "bg-[#c47a1e]",     icon: <Building2 className="w-4 h-4" /> },
+    Ceza:    { color: "text-[#a8323b]",     bg: "bg-[#a8323b]/10",     border: "border-[#a8323b]/30",     dot: "bg-[#a8323b]",     icon: <Gavel className="w-4 h-4" /> },
+    İdare:   { color: "text-[#7a3f8a]",     bg: "bg-[#7a3f8a]/10",     border: "border-[#7a3f8a]/30",     dot: "bg-[#7a3f8a]",     icon: <FileText className="w-4 h-4" /> },
+    Ticaret: { color: "text-[#2f8a5d]",     bg: "bg-[#2f8a5d]/10",     border: "border-[#2f8a5d]/30",     dot: "bg-[#2f8a5d]",     icon: <BarChart3 className="w-4 h-4" /> },
 };
 const getFileTypeMeta = (type?: string) =>
-    fileTypeMeta[type ?? ""] ?? { color: "text-primary", bg: "bg-primary/10", border: "border-primary/30", dot: "bg-primary", icon: <FileText className="w-4 h-4" /> };
+    fileTypeMeta[type ?? ""] ?? { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", dot: "bg-[var(--brand)]", icon: <FileText className="w-4 h-4" /> };
 
 interface RelatedCaseBrief {
     id: number;
@@ -88,6 +89,7 @@ const CopyButton = ({ value }: { value: string }) => {
 };
 
 const CaseDetails = () => {
+    useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
     const { getCase, getRelatedCases, addCaseRelation, removeCaseRelation } = useCases();
@@ -191,16 +193,15 @@ const CaseDetails = () => {
 
     if (loadingLocal) {
         return (
-            <div className="min-h-screen bg-background flex flex-col">
-                <Header />
-                <main className="flex-1 container mx-auto py-6 px-4 space-y-6">
+            <div>
+                <main className="max-w-[1400px] mx-auto space-y-6">
                     <Button variant="ghost" className="gap-2 w-fit mb-4" disabled>
                         <ArrowLeft className="w-4 h-4" />
                         Listeye Dön
                     </Button>
-                    <Skeleton className="h-24 w-full rounded-xl" />
-                    <Skeleton className="h-10 w-full rounded-xl" />
-                    <Skeleton className="h-[400px] w-full rounded-xl" />
+                    <Skeleton className="h-24 w-full rounded-none" />
+                    <Skeleton className="h-10 w-full rounded-none" />
+                    <Skeleton className="h-[400px] w-full rounded-none" />
                 </main>
             </div>
         );
@@ -208,9 +209,8 @@ const CaseDetails = () => {
 
     if (!caseData) {
         return (
-            <div className="min-h-screen bg-background flex flex-col">
-                <Header />
-                <main className="flex-1 container mx-auto py-6 px-4 flex flex-col items-center justify-center space-y-4">
+            <div>
+                <main className="max-w-[1400px] mx-auto py-20 flex flex-col items-center justify-center space-y-4">
                     <AlertCircle className="w-16 h-16 text-muted-foreground opacity-50" />
                     <h2 className="text-xl font-semibold">Dava Bulunamadı</h2>
                     <p className="text-muted-foreground text-center">Aradığınız dava sistemde bulunamadı veya silinmiş olabilir.</p>
@@ -230,10 +230,9 @@ const CaseDetails = () => {
     const style = getStatusStyle(caseData.status);
 
     return (
-        <div className="min-h-screen bg-background flex flex-col">
-            <Header />
+        <div>
 
-            <main className="flex-1 container mx-auto py-6 px-4 space-y-6">
+            <main className="max-w-[1400px] mx-auto space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <Button variant="ghost" className="gap-2 w-fit hover:bg-muted" onClick={() => navigate("/")}>
                         <ArrowLeft className="w-4 h-4" />
@@ -262,10 +261,7 @@ const CaseDetails = () => {
                 </div>
 
                 {/* Case Header Card */}
-                <Card className="border-border/60 bg-card/80 overflow-hidden relative">
-                    {/* Top colored line according to status */}
-                    <div className={`absolute top-0 left-0 w-full h-1.5 ${style.dot}`} />
-
+                <div className="relative bg-[var(--bg-elevated)] border border-[var(--border)] border-l-4 border-l-[var(--brand)] overflow-hidden">
                     <CardContent className="p-6 md:p-8">
                         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
                             <div className="space-y-4 flex-1">
@@ -363,7 +359,7 @@ const CaseDetails = () => {
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {/* Mevcut dava — aktif */}
-                                        <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border-2 ${style.bg} border-current ${style.text} cursor-default`}>
+                                        <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-none border-2 ${style.bg} border-current ${style.text} cursor-default`}>
                                             <Gavel className="w-4 h-4 shrink-0" />
                                             <div className="flex flex-col">
                                                 <span className="text-xs font-bold leading-none">{caseData.file_type || "Bu Dava"}</span>
@@ -380,7 +376,7 @@ const CaseDetails = () => {
                                                 <div key={rc.id} className="group flex items-center gap-1">
                                                     <button
                                                         onClick={() => navigate(`/cases/${rc.id}`)}
-                                                        className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-border/60 bg-card/60 hover:border-primary/40 hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all"
+                                                        className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-none border border-border/60 bg-card/60 hover:border-primary/40 hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all"
                                                     >
                                                         <span className={`${meta.color}`}>{meta.icon}</span>
                                                         <div className="flex flex-col items-start">
@@ -406,7 +402,7 @@ const CaseDetails = () => {
                                         {relatedBrief.length === 0 && (
                                             <button
                                                 onClick={() => setAddRelationOpen(true)}
-                                                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-dashed border-border/60 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all text-xs"
+                                                className="flex items-center gap-2 px-3.5 py-2.5 rounded-none border border-dashed border-border/60 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all text-xs"
                                             >
                                                 <Plus className="w-3.5 h-3.5" />
                                                 Bağlantılı dava ekle
@@ -417,22 +413,22 @@ const CaseDetails = () => {
                             </div>
                         </div>
                     </CardContent>
-                </Card>
+                </div>
 
                 {/* Tabs Container */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="grid w-full grid-cols-4 md:w-auto md:inline-flex mb-4">
-                        <TabsTrigger value="overview" className="gap-2">
+                    <TabsList className="grid w-full grid-cols-4 md:w-auto md:inline-flex mb-4 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-1 gap-1">
+                        <TabsTrigger value="overview" className="gap-2 rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-[var(--brand)]">
                             <BarChart3 className="w-4 h-4" />
                             <span className="hidden sm:inline">Genel Bilgiler</span>
                             <span className="sm:hidden">Genel</span>
                         </TabsTrigger>
-                        <TabsTrigger value="tracking" className="gap-2">
+                        <TabsTrigger value="tracking" className="gap-2 rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-[var(--brand)]">
                             <Activity className="w-4 h-4" />
                             <span className="hidden sm:inline">Takip</span>
                             <span className="sm:hidden">Takip</span>
                         </TabsTrigger>
-                        <TabsTrigger value="parties" className="gap-2">
+                        <TabsTrigger value="parties" className="gap-2 rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-[var(--brand)]">
                             <Users className="w-4 h-4" />
                             <span className="hidden sm:inline">Taraflar</span>
                             <span className="sm:hidden">Taraflar</span>
@@ -442,7 +438,7 @@ const CaseDetails = () => {
                                 </Badge>
                             )}
                         </TabsTrigger>
-                        <TabsTrigger value="documents" className="gap-2">
+                        <TabsTrigger value="documents" className="gap-2 rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-[var(--brand)]">
                             <FileStack className="w-4 h-4" />
                             <span className="hidden sm:inline">Belgeler</span>
                             <span className="sm:hidden">Belgeler</span>
@@ -458,7 +454,7 @@ const CaseDetails = () => {
                     <TabsContent value="overview" className="space-y-4">
                         {/* Dosya / Hasar Bilgileri */}
                         {(caseData.hasar_dosya_no || caseData.hukuk_no || caseData.klasor_no_2 || caseData.atama_tarihi || caseData.notes) && (
-                            <Card className="bg-card/60">
+                            <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-lg flex items-center gap-2">
                                         <FileText className="w-4 h-4 text-primary" />
@@ -504,7 +500,7 @@ const CaseDetails = () => {
                         )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Card className="bg-card/60">
+                            <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader>
                                     <CardTitle className="text-lg">Tazminat Bilgileri</CardTitle>
                                     <CardDescription>Davaya ait parantez içi maddi değerler</CardDescription>
@@ -521,7 +517,7 @@ const CaseDetails = () => {
                                 </CardContent>
                             </Card>
 
-                            <Card className="bg-card/60">
+                            <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader>
                                     <CardTitle className="text-lg">Dava Geçmişi</CardTitle>
                                     <CardDescription>Sistem üzerindeki durum değişiklikleri</CardDescription>
@@ -577,7 +573,7 @@ const CaseDetails = () => {
 
                     {/* Parties Tab */}
                     <TabsContent value="parties">
-                        <Card className="bg-card/60">
+                        <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                             <CardHeader>
                                 <CardTitle className="text-lg">Taraf Bilgileri</CardTitle>
                                 <CardDescription>Davacı, davalı ve diğer ilgililer</CardDescription>
@@ -587,11 +583,11 @@ const CaseDetails = () => {
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {caseData.parties.map((party: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }, idx: number) => {
                                             const roleColors: Record<string, string> = {
-                                                "CLIENT": "bg-primary/10 text-primary border-primary/20",
-                                                "COUNTER": "bg-transparent text-red-500 border-red-500/40",
-                                                "THIRD": "bg-gray-500/10 text-gray-500 border-gray-500/20",
+                                                "CLIENT": "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30",
+                                                "COUNTER": "bg-transparent text-[#a8323b] border-[#a8323b]/40",
+                                                "THIRD": "bg-[var(--bg-sunken)] text-[var(--fg-subtle)] border-[var(--border)]",
                                             };
-                                            const colorClass = roleColors[party.party_type] || "bg-primary/10 text-primary border-primary/20";
+                                            const colorClass = roleColors[party.party_type] || "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30";
 
                                             // Make party_type more readable
                                             const typeLabel = party.party_type === "CLIENT" ? "Müvekkil" : party.party_type === "COUNTER" ? "Karşı Taraf" : "Üçüncü Şahıs";
@@ -599,7 +595,7 @@ const CaseDetails = () => {
                                             return (
                                                 <div 
                                                     key={idx} 
-                                                    className="flex flex-col p-4 rounded-xl border bg-background/50 gap-2 cursor-pointer hover:border-primary/50 transition-colors group"
+                                                    className="flex flex-col p-4 rounded-none border bg-background/50 gap-2 cursor-pointer hover:border-primary/50 transition-colors group"
                                                     onClick={() => {
                                                         setActiveTab("documents");
                                                         setTimeout(() => {
@@ -639,7 +635,7 @@ const CaseDetails = () => {
                                         })}
                                     </div>
                                 ) : (
-                                    <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
+                                    <div className="text-center py-12 text-muted-foreground border border-dashed rounded-none">
                                         <Users className="w-10 h-10 opacity-20 mx-auto mb-3" />
                                         <p>Bu davaya eklenmiş taraf bulunmuyor.</p>
                                     </div>
@@ -650,7 +646,7 @@ const CaseDetails = () => {
 
                     {/* Documents Tab */}
                     <TabsContent value="documents">
-                        <Card className="bg-card/60">
+                        <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                             <CardHeader>
                                 <CardTitle className="text-lg">Evrak Listesi</CardTitle>
                                 <CardDescription>Davaya bağlanan ve analiz edilen tüm belgeler</CardDescription>
@@ -670,7 +666,7 @@ const CaseDetails = () => {
                                     const clientParties = (caseData.parties || []).filter(p => p.party_type === "CLIENT");
 
                                     const DocCard = ({ doc }: { doc: NonNullable<typeof caseData.documents>[number] }) => (
-                                        <div key={doc.id} className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border bg-background/50 hover:border-primary/40 transition-all gap-4">
+                                        <div key={doc.id} className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
                                             <div className="flex items-start gap-4 flex-1 min-w-0">
                                                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                                                     <FileText className="w-5 h-5 text-primary" />
@@ -717,19 +713,19 @@ const CaseDetails = () => {
                                             <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
                                                 {/* Email durum ikonu */}
                                                 {doc.email_sent === true && (
-                                                    <span title="E-posta gönderildi" className="text-emerald-400 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                    <span title="E-posta gönderildi" className="text-[#2f8a5d] flex items-center gap-1 text-xs whitespace-nowrap">
                                                         <CheckCircle2 className="w-4 h-4 shrink-0" />
                                                         <span className="hidden sm:inline">Gönderildi</span>
                                                     </span>
                                                 )}
                                                 {doc.email_sent === false && (
-                                                    <span title={doc.email_error || "E-posta gönderilemedi"} className="text-red-400 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                    <span title={doc.email_error || "E-posta gönderilemedi"} className="text-[#a8323b] flex items-center gap-1 text-xs whitespace-nowrap">
                                                         <XCircle className="w-4 h-4 shrink-0" />
                                                         <span className="hidden sm:inline">Başarısız</span>
                                                     </span>
                                                 )}
                                                 {doc.email_sent == null && (
-                                                    <span title="E-posta gönderilmedi / atlandı" className="text-muted-foreground/40 flex items-center">
+                                                    <span title="E-posta gönderilmedi / atlandı" className="text-[var(--fg-subtle)] flex items-center">
                                                         <MinusCircle className="w-4 h-4" />
                                                     </span>
                                                 )}
@@ -739,8 +735,8 @@ const CaseDetails = () => {
                                                         variant="outline"
                                                         size="sm"
                                                         className={doc.email_sent === false
-                                                            ? "w-full sm:w-auto text-xs border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-400"
-                                                            : "w-full sm:w-auto text-xs border-border/40 text-muted-foreground hover:bg-secondary/50"
+                                                            ? "w-full sm:w-auto text-xs border-[#a8323b]/40 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                                                            : "w-full sm:w-auto text-xs border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                                         }
                                                         onClick={() => setResendDoc(doc)}
                                                     >
@@ -811,7 +807,7 @@ const CaseDetails = () => {
                                         </div>
                                     );
                                 })() : (
-                                    <div className="text-center py-12 text-muted-foreground border border-dashed rounded-xl">
+                                    <div className="text-center py-12 text-muted-foreground border border-dashed rounded-none">
                                         <FileStack className="w-10 h-10 opacity-20 mx-auto mb-3" />
                                         <p className="font-medium text-foreground">Henüz evrak yüklenmemiş</p>
                                         <p className="text-sm mt-1 mb-4">Bu davaya ait belge bulunmuyor. Yeni bir belge yükleyerek davaya bağlayabilirsiniz.</p>
