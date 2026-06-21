@@ -753,23 +753,31 @@ const CaseDetails = () => {
                                                             toast.info("Belge Hazırlanıyor", { description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir.` });
                                                             return;
                                                         }
-                                                        toast.info("İndiriliyor...", { description: "Belge güvenli arşivden getiriliyor." });
+                                                        // Diske indirmek yerine okuma için yeni sekmede aç (mükerrer dosya oluşmasın).
+                                                        // NOT: `noopener` KULLANMA — blob: URL'i opener bağlamında üretilir,
+                                                        // noopener'lı sekme ayrı bağlama düştüğü için blob'u çözemez ve beyaz ekran gelir.
+                                                        const tab = window.open("", "_blank");
+                                                        toast.info("Açılıyor...", { description: "Belge güvenli arşivden getiriliyor." });
                                                         try {
-                                                            const res = await apiClient.fetch(`/api/documents/${doc.id}/download`);
+                                                            const res = await apiClient.fetch(`/api/documents/${doc.id}/download?inline=true`);
                                                             if (!res.ok) throw new Error("Sunucu hatası");
                                                             const blob = await res.blob();
                                                             const url = URL.createObjectURL(blob);
-                                                            const a = document.createElement("a");
-                                                            a.href = url;
-                                                            a.download = doc.original_filename || "belge";
-                                                            a.click();
-                                                            URL.revokeObjectURL(url);
+                                                            if (tab) {
+                                                                tab.location.href = url;
+                                                            } else {
+                                                                // Pop-up engellendiyse aynı sekmede aç.
+                                                                window.open(url, "_blank");
+                                                            }
+                                                            // Sekme blob'u okuyabilsin diye URL'i biraz sonra serbest bırak.
+                                                            setTimeout(() => URL.revokeObjectURL(url), 60_000);
                                                         } catch {
-                                                            toast.error("İndirme Hatası", { description: "Belge indirilemedi. Lütfen tekrar deneyin." });
+                                                            tab?.close();
+                                                            toast.error("Açma Hatası", { description: "Belge görüntülenemedi. Lütfen tekrar deneyin." });
                                                         }
                                                     }}
                                                 >
-                                                    Detay / İndir
+                                                    Detay / Görüntüle
                                                 </Button>
                                             </div>
                                         </div>

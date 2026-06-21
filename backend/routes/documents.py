@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import os
 import tempfile
 import unicodedata
@@ -237,12 +238,16 @@ def get_document_email_status(
 @router.get("/api/documents/{doc_id}/download")
 def download_document(
     doc_id: int,
+    inline: bool = False,
     tenant_id: str = Depends(get_current_tenant),
     user: dict = Depends(get_current_user),
 ):
     """
     Belgeyi backend üzerinden SharePoint'ten proxy olarak indirir.
     Son kullanıcının Microsoft tenant üyesi olmasına gerek yoktur.
+
+    inline=True ile çağrılırsa tarayıcıda görüntülenebilir tipte (PDF/resim vb.)
+    ve `Content-Disposition: inline` ile döner — diske indirme yerine okuma için.
     """
     db = SessionLocal()
     try:
@@ -264,8 +269,17 @@ def download_document(
 
         raw_name = doc.original_filename or doc.stored_filename
         safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii") or "belge"
-        headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
-        return Response(content=content, media_type="application/octet-stream", headers=headers)
+
+        if inline:
+            # Tarayıcıda okuma için: doğru MIME tipi + inline disposition.
+            media_type = mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
+            disposition = "inline"
+        else:
+            media_type = "application/octet-stream"
+            disposition = "attachment"
+
+        headers = {"Content-Disposition": f'{disposition}; filename="{safe_name}"'}
+        return Response(content=content, media_type=media_type, headers=headers)
     finally:
         db.close()
 
