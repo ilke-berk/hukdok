@@ -20,52 +20,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
 import { getStoredOutputDir, setStoredOutputDir } from "@/lib/directoryStorage";
-import { SectionHeader, HairlineCard } from "@/components/dashboard/primitives";
-import { PlaceholderBadge } from "@/components/PlaceholderBadge";
+import { getTodayUploads, getTodayUploadItems, addTodayUpload, type TodayUploadItem } from "@/lib/todayUploads";
+import { SectionHeader } from "@/components/dashboard/primitives";
+import { TodayUploadsList } from "@/components/dashboard/TodayUploadsList";
+import { useMsal } from "@azure/msal-react";
 
 import { EmailModal } from "@/components/email/EmailModal";
-import { BatchPrepScreen, type BatchPrepConfig } from "@/components/BatchPrepScreen";
-
-interface SuggestedCase {
-  case_id: number;
-  tracking_no: string;
-  esas_no: string;
-  court: string;
-  responsible_lawyer_name: string;
-  status: string;
-  score: number;
-  confidence: "HIGH" | "MEDIUM" | "LOW";
-  match_reasons: string[];
-  all_candidates: SuggestedCase[];
-  karsi_taraf?: string;
-  counter_parties?: string[];
-  client_parties?: string[];
-  parties?: { id?: number; name?: string; role?: string; party_type?: string; client_id?: number; birth_year?: number; gender?: string }[];
-  matched_doc_names?: string[];
-}
-
-interface AnalysisData {
-  tarih: string;
-  belge_turu_kodu: string;
-  muvekkil_kodu: string;
-  muvekkil_adi?: string;
-  muvekkiller?: string[];
-  karsi_taraf?: string;
-  suggested_karsi_taraf?: string;       // AI'ın bulduğu karşı taraf (QuickCaseModal için)
-  belgede_gecen_isimler: string[];
-  esas_no: string;
-  durum: string;
-  ofis_dosya_no: string;
-  yedek1: string;
-  yedek2: string;
-  ozet: string;
-  generated_filename: string;
-  hash: string;
-  court?: string;                          // Mahkeme adı (QuickCaseModal için)
-  suggested_case?: SuggestedCase | null;
-  sonraki_durusma_tarihi?: string;
-  sonraki_durusma_saati?: string;
-}
+import { BulkUploadWorkbench, type BulkUploadStartConfig } from "@/components/BulkUploadWorkbench";
+import { analyzeDocument, type AnalysisData, type SuggestedCase } from "@/lib/analyzeDocument";
 
 interface IndexCaseData {
   id: number;
@@ -108,6 +70,8 @@ const Index = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Hazırlık ekranından "Onaya Geç" sonrası 0. dosyanın analizini otomatik tetiklemek için.
+  const [autoAnalyzePending, setAutoAnalyzePending] = useState(false);
   const [selectedDocType, setSelectedDocType] = useState<string>("");
   const [openDocTypeSelect, setOpenDocTypeSelect] = useState(false);
   const [outputDirHandle, setOutputDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
@@ -142,12 +106,17 @@ const Index = () => {
   // Batch Mode States
   const [processedBatch, setProcessedBatch] = useState<{ path: string, name: string }[]>([]);
 
+  // Bugün arşivlenen belgeler — drop zone sayacı + "Bugünkü yüklemelerim" listesi (localStorage, güne göre).
+  const [todayCount, setTodayCount] = useState<number>(getTodayUploads());
+  const [todayItems, setTodayItems] = useState<TodayUploadItem[]>(getTodayUploadItems());
+  const { accounts } = useMsal();
+
   // Faz 3.1: Batch e-posta ayarları paylaşımı. Toggle açıkken sıradaki dosyalarda
   // EmailModal açılmaz; bu config doğrudan handleFinalProcess'e geçilir.
   const [batchEmailConfig, setBatchEmailConfig] = useState<{
     to: string[];
     cc: string[];
-    shouldSend: boolean;
+    perFileSend: boolean[];   // dosya bazında e-posta gönderilsin mi (fileQueue sırasıyla hizalı)
     tebligTarihi?: string;
     extraAttachments?: File[];
   } | null>(null);
@@ -158,6 +127,7 @@ const Index = () => {
   const [pendingBatchFiles, setPendingBatchFiles] = useState<File[]>([]);
   const [batchPrep, setBatchPrep] = useState<{
     docTypes: string[];
+    emailFlags: boolean[];      // dosya bazında e-posta toggle (fileQueue sırasıyla hizalı)
     emailPrefill: {
       sendEmail: boolean;
       to: { name: string; email: string }[];
@@ -282,34 +252,42 @@ const Index = () => {
     setPreloadBuffer([]);
   };
 
-  // Faz 6: Hazırlık ekranı onaylandığında: kuyruğu kur, batchPrep'i kaydet,
-  // confirmPerFile kapalıysa batchEmailConfig'i şimdiden doldur (modal atlanır).
-  const handleBatchPrepStart = (config: BatchPrepConfig) => {
-    const files = pendingBatchFiles;
+  // Tezgâh "Onaya Geç" dediğinde: önceden (paralel) hesaplanmış analiz sonuçlarıyla
+  // kuyruğu kur. 0. dosya doğrudan açılır, 1..N-1 preloadBuffer'a seed edilir — böylece
+  // varsayılan tek-tek onay akışında her dosya analiz beklemeden anında yüklenir.
+  const handleBatchPrepStart = (config: BulkUploadStartConfig) => {
+    const { results, emailConfig } = config;
     setShowBatchPrep(false);
     setPendingBatchFiles([]);
 
+    if (results.length === 0) return;
+
+    const files = results.map((r) => r.file);
+    const docTypes = results.map((r) => r.docType);
+    const emailFlags = results.map((r) => r.email);
+
     setBatchPrep({
-      docTypes: config.docTypes,
+      docTypes,
+      emailFlags,
       emailPrefill: {
-        sendEmail: config.emailConfig.sendEmail,
-        to: config.emailConfig.to,
-        cc: config.emailConfig.cc,
-        tebligTarihi: config.emailConfig.tebligTarihi,
-        confirmPerFile: config.emailConfig.confirmPerFile,
+        sendEmail: emailFlags.some(Boolean),
+        to: emailConfig.to,
+        cc: emailConfig.cc,
+        tebligTarihi: emailConfig.tebligTarihi,
+        confirmPerFile: emailConfig.confirmPerFile,
       },
     });
 
     // confirmPerFile kapalı → EmailModal hiç açılmasın; batchEmailConfig şimdiden hazır.
-    // sendEmail kapalı da aynı yola gider (modal atlanır, e-posta gönderilmez).
-    if (!config.emailConfig.confirmPerFile) {
-      const toList = config.emailConfig.to.map((r) => `${r.name} <${r.email}>`);
-      const ccList = config.emailConfig.cc.map((r) => `${r.name} <${r.email}>`);
+    // Gönderim kararı dosya bazında (perFileSend) verilir.
+    if (!emailConfig.confirmPerFile) {
+      const toList = emailConfig.to.map((r) => `${r.name} <${r.email}>`);
+      const ccList = emailConfig.cc.map((r) => `${r.name} <${r.email}>`);
       setBatchEmailConfig({
         to: toList,
         cc: ccList,
-        shouldSend: config.emailConfig.sendEmail,
-        tebligTarihi: config.emailConfig.tebligTarihi || undefined,
+        perFileSend: emailFlags,
+        tebligTarihi: emailConfig.tebligTarihi || undefined,
         extraAttachments: undefined,
       });
     } else {
@@ -321,11 +299,16 @@ const Index = () => {
     setProcessedCount(0);
     setProcessedBatch([]);
     setSelectedFile(files[0]);
-    setSelectedDocType(config.docTypes[0] || "");
-    setAnalysisData(null);
-    setPreloadBuffer([]);
+    setSelectedDocType(docTypes[0] || "");
 
-    toast.info(`${files.length} dosya kuyruğa alındı. Pipeline başlatılıyor...`);
+    // Hazırlık ekranında analiz yapılmaz. Analiz burada (handoff sonrası) başlar:
+    // 0. dosya otomatik analiz edilir, 1..N-1 preload effect'i ile arka planda hazırlanır.
+    setAnalysisData(null);
+    setProcessId(null);
+    setPreloadBuffer([]);
+    setAutoAnalyzePending(true);
+
+    toast.info(`${files.length} dosya hazır — analiz başlatılıyor...`);
   };
 
   const handleBatchPrepCancel = () => {
@@ -353,6 +336,7 @@ const Index = () => {
     setBatchPrep(null);
     setShowBatchPrep(false);
     setPendingBatchFiles([]);
+    setAutoAnalyzePending(false);
   };
 
   // Faz 4.2: Bekleyen dosyaları kuyruktan çıkar. Geçmiş ve mevcut dosya korunur.
@@ -456,113 +440,43 @@ const Index = () => {
 
     setIsAnalyzing(true);
 
-    // --- VIRTUAL BLANK PDF (Boş Belge) ---
-    // Web modunda bu özellik şimdilik devre dışı
-    // TODO: Gerekirse web için yeniden tasarlanabilir
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 300 saniye (5dk) zaman aşımı
+    // Faz 6: hazırlık ekranından gelen belge türü öncelikli; yoksa kullanıcının
+    // mevcut akıştaki seçimini kullan.
+    const effectiveDocType = batchPrep?.docTypes[currentFileIndex] ?? selectedDocType;
 
     try {
-      // Web Mode: FormData ile dosya gönder
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      // Faz 6: hazırlık ekranından gelen belge türü öncelikli; yoksa kullanıcının
-      // mevcut akıştaki seçimini kullan.
-      const effectiveDocType = batchPrep?.docTypes[currentFileIndex] ?? selectedDocType;
-      if (effectiveDocType) formData.append("belge_turu_kodu", effectiveDocType);
-
-      const response = await apiClient.fetch("/process", {
-        method: "POST",
-        body: formData,  // Content-Type otomatik ayarlanır (multipart/form-data)
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error("Sunucu hatası: " + response.statusText);
-      }
-
-      if (!response.body) throw new Error("ReadableStream not supported");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const msg = JSON.parse(line);
-
-              if (msg.status === "info") {
-                toast.info(msg.message);
-              } else if (msg.status === "error") {
-                throw new Error(msg.message);
-              } else if (msg.status === "complete") {
-                const resultData = msg.data;
-                if (msg.process_id) setProcessId(msg.process_id);
-                console.log("Stream Complete Data:", resultData);
-
-                const analysisResult: AnalysisData = {
-                  tarih: resultData.tarih || "",
-                  belge_turu_kodu: effectiveDocType || resultData.belge_turu_kodu || "",
-                  muvekkil_kodu: resultData.muvekkil_adi || "",
-                  muvekkil_adi: resultData.muvekkil_adi || "",          // QuickCaseModal için
-                  muvekkiller: resultData.muvekkiller || [],
-                  karsi_taraf: resultData.karsi_taraf || "",
-                  suggested_karsi_taraf: resultData.suggested_karsi_taraf || "",
-                  belgede_gecen_isimler: resultData.belgede_gecen_isimler || [],
-                  esas_no: resultData.esas_no || "",
-                  durum: resultData.durum || "G",
-                  ofis_dosya_no: resultData.ofis_dosya_no || "000000000",
-                  yedek1: "X",
-                  yedek2: "XX",
-                  ozet: resultData.ozet || "",
-                  generated_filename: "",
-                  hash: resultData.hash || "",
-                  court: resultData.court || undefined,
-                  suggested_case: resultData.suggested_case || null,
-                  sonraki_durusma_tarihi: resultData.sonraki_durusma_tarihi || undefined,
-                  sonraki_durusma_saati: resultData.sonraki_durusma_saati || undefined,
-                };
-                setAnalysisData(analysisResult);
-
-                applyAutoSuggestionFlow(resultData.suggested_case, linkedCase);
-
-                toast.success("Analiz tamamlandı!");
-              }
-            } catch (e) {
-              console.error("JSON Parse Error on Stream chunk", e);
-            }
-          }
-        }
-
-        if (done) break;
-      }
+      const { analysisData: result, processId: pid } = await analyzeDocument(
+        selectedFile,
+        effectiveDocType || undefined,
+        { onInfo: (m) => toast.info(m) },
+      );
+      if (pid) setProcessId(pid);
+      setAnalysisData(result);
+      applyAutoSuggestionFlow(result.suggested_case, linkedCase);
+      toast.success("Analiz tamamlandı!");
     } catch (error) {
       console.error("Local Analysis error:", error);
       if (error instanceof Error && error.name === 'AbortError') {
-        toast.error("İstek zaman aşımına uğradı. Sunucu yanıt vermiyor (30sn).");
+        toast.error("İstek zaman aşımına uğradı. Sunucu yanıt vermiyor.");
       } else {
         toast.error(error instanceof Error ? error.message : "Analiz sırasında hata oluştu");
       }
     } finally {
-      clearTimeout(timeoutId);
       setIsAnalyzing(false);
       // Faz 5: Pre-load tetiklemesini effect üstlendi. Burada explicit çağrı yok —
       // fileQueue/currentFileIndex/preloadBuffer.length değiştikçe useEffect MAX_PRELOAD_DEPTH
       // sınırına kadar sırayla doldurur.
     }
   };
+
+  // Hazırlık ekranından handoff sonrası: selectedFile kurulunca 0. dosyayı otomatik analiz et.
+  useEffect(() => {
+    if (autoAnalyzePending && selectedFile && !analysisData && !isAnalyzing) {
+      setAutoAnalyzePending(false);
+      handleAnalyze();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAnalyzePending, selectedFile, analysisData, isAnalyzing]);
 
   // Faz 5: Pre-load. Tek seferde 1 dosya işler (sıralı). Tamamlandığında dosya hâlâ
   // kuyruktaysa buffer'a push eder; bu da fill effect'i tetikleyerek sıradakini başlatır.
@@ -575,87 +489,11 @@ const Index = () => {
     let preloadedProcessId: string | null = null;
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000);
-
-      // Web Mode: FormData ile dosya gönder
-      const formData = new FormData();
-      formData.append("file", nextFile);
       // Faz 6: Hazırlık ekranından gelen belge türü pre-load anında da gönderilir
-      // — backend AI'a özel prompt'u kullanma şansı verilir (Bug #3 çözümü).
-      if (docTypeCode) formData.append("belge_turu_kodu", docTypeCode);
-
-      const response = await apiClient.fetch("/process", {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error("Preload failed: " + response.statusText);
-      }
-
-      if (!response.body) throw new Error("ReadableStream not supported");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const msg = JSON.parse(line);
-
-              if (msg.status === "error") {
-                console.error("Preload error:", msg.message);
-              } else if (msg.status === "complete") {
-                const resultData = msg.data;
-                if (msg.process_id) preloadedProcessId = msg.process_id;
-
-                // handleAnalyze ile birebir aynı alan kümesi. Faz 6: hazırlık
-                // ekranından gelen docTypeCode varsa onu kullan; yoksa AI'ın bulduğu
-                // değere düş (kullanıcı dosyaya geçince yine düzeltebilir).
-                preloadedData = {
-                  tarih: resultData.tarih || "",
-                  belge_turu_kodu: docTypeCode || resultData.belge_turu_kodu || "",
-                  muvekkil_kodu: resultData.muvekkil_adi || "",
-                  muvekkil_adi: resultData.muvekkil_adi || "",
-                  muvekkiller: resultData.muvekkiller || [],
-                  karsi_taraf: resultData.karsi_taraf || "",
-                  suggested_karsi_taraf: resultData.suggested_karsi_taraf || "",
-                  belgede_gecen_isimler: resultData.belgede_gecen_isimler || [],
-                  esas_no: resultData.esas_no || "",
-                  durum: resultData.durum || "G",
-                  ofis_dosya_no: resultData.ofis_dosya_no || "000000000",
-                  yedek1: "X",
-                  yedek2: "XX",
-                  ozet: resultData.ozet || "",
-                  generated_filename: "",
-                  hash: resultData.hash || "",
-                  court: resultData.court || undefined,
-                  suggested_case: resultData.suggested_case || null,
-                  sonraki_durusma_tarihi: resultData.sonraki_durusma_tarihi || undefined,
-                  sonraki_durusma_saati: resultData.sonraki_durusma_saati || undefined,
-                };
-              }
-            } catch (e) {
-              console.error("Preload JSON parse error:", e);
-            }
-          }
-        }
-
-        if (done) break;
-      }
+      // — backend AI'a özel prompt'u kullanma şansı verilir.
+      const { analysisData, processId } = await analyzeDocument(nextFile, docTypeCode);
+      preloadedData = analysisData;
+      preloadedProcessId = processId;
     } catch (error) {
       console.error("Preload error:", error);
       // Silent fail - just log, don't disrupt user flow
@@ -770,10 +608,12 @@ const Index = () => {
     // Ekler kullanıcının seçtiği şekilde tekrar gönderilir (paylaşım kararı).
     // Per-recipient mesajlar dosyaya özgü kalır — backend default şablon kullanır.
     if (batchEmailConfig) {
+      // Gönderim kararı dosya bazında (tezgâhtaki per-row toggle).
+      const shouldSend = batchEmailConfig.perFileSend[currentFileIndex] ?? false;
       handleFinalProcess(
         batchEmailConfig.to,
         batchEmailConfig.cc,
-        batchEmailConfig.shouldSend,
+        shouldSend,
         batchEmailConfig.tebligTarihi,
         undefined,
         batchEmailConfig.extraAttachments,
@@ -944,6 +784,22 @@ const Index = () => {
       // Fonksiyonel setter: ardışık çağrılarda stale closure'a düşmemek için.
       setProcessedBatch(prev => [...prev, { path: "", name: newFilename }]);
 
+      // Bugünkü yükleme kaydını ekle (tekli + toplu, her başarılı arşivlemede bir).
+      // Sayaç ve "Bugünkü yüklemelerim" listesi aynı localStorage kaydından beslenir.
+      const ext = (selectedFile.name.split(".").pop() || "DOSYA").toUpperCase();
+      const isLinked = result.results?.link_mode === "LINKED";
+      const nextItems = addTodayUpload({
+        filename: newFilename,
+        sizeBytes: selectedFile.size,
+        ext,
+        clientName: approvedMuvekkil || undefined,
+        caseNo: effectiveLinkedCase?.esas_no || dataToUse.esas_no || undefined,
+        uploader: accounts[0]?.name || undefined,
+        status: isLinked ? "BAĞLANDI" : "ARŞİVLENDİ",
+      });
+      setTodayItems(nextItems);
+      setTodayCount(nextItems.length);
+
       // Faz 3.3: Batch modda per-file başarı toast'ları bastırılır; sayaçlar artırılır
       // ve sonunda toplu özet gösterilir. Kritik hata (e-posta fail) batch'te de toast atar.
       const emailFailed = shouldSendEmail && result.results?.email_warning;
@@ -1096,8 +952,21 @@ const Index = () => {
 
   return (
     <div className="min-h-screen">
+      {/* Toplu yükleme ön hazırlık tezgâhı — 2+ dosya seçildiğinde tam sayfa açılır.
+          Analiz paralel çalışır; "Onaya Geç" sonuçları varsayılan tek-tek akışa devreder. */}
+      {showBatchPrep ? (
+        <BulkUploadWorkbench
+          files={pendingBatchFiles}
+          onCancel={handleBatchPrepCancel}
+          onStart={handleBatchPrepStart}
+        />
+      ) : (
       <main className="max-w-screen-2xl mx-auto">
-        <FlowStageStrip active={activeStage} meta={stageMetaNode} className="mb-7" />
+        {/* Dosya seçiliyken şerit üstte kalır (analiz/onay ilerlemesini gösterir).
+            Boş ekranda ise şerit + HEDEF rozeti drop zone kutusunun içine taşınır. */}
+        {selectedFile && (
+          <FlowStageStrip active={activeStage} meta={stageMetaNode} className="mb-7" />
+        )}
 
         {!selectedFile && (
           <div className="grid gap-8">
@@ -1114,6 +983,8 @@ const Index = () => {
                   onFileSelect={handleFileSelect}
                   selectedFile={null}
                   onClearFile={handleClearFile}
+                  todayCount={todayCount}
+                  header={<FlowStageStrip active={activeStage} meta={stageMetaNode} />}
                 />
               </div>
             </section>
@@ -1200,31 +1071,22 @@ const Index = () => {
               </div>
             </section>
 
-            {/* 03 · Son Aktivite — placeholder (per-belge akış endpoint'i henüz yok) */}
+            {/* 03 · Son Aktivite — bugün arşivlenen belgeler (localStorage, güne göre) */}
             <section>
               <SectionHeader
                 eyebrow="03 · Son Aktivite"
                 title="Bugünkü yüklemelerim"
-                meta={<PlaceholderBadge />}
-              />
-              <HairlineCard className="mt-3">
-                <div className="grid place-items-center gap-3 py-8 text-center text-[var(--fg-subtle)]">
-                  <FileText className="w-8 h-8 opacity-40" />
-                  <div>
-                    <p className="text-[13px] text-[var(--fg-muted)] font-medium">Yakında aktif olacak</p>
-                    <p className="text-[11px] mt-1.5 max-w-[42ch] mx-auto leading-relaxed">
-                      Bugün yüklediğiniz belgeler, bağlandıkları dava ve işlenme durumlarıyla burada listelenecek.
-                    </p>
-                  </div>
+                meta={
                   <button
                     type="button"
                     onClick={() => navigate("/activity-history")}
-                    className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] inline-flex items-center gap-1 mt-2 pb-1 border-b border-[var(--border)] hover:border-[var(--brand)]"
+                    className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] inline-flex items-center gap-1"
                   >
-                    Aktivite Geçmişi <ArrowRight className="w-3 h-3" />
+                    Tümünü gör <ArrowRight className="w-3 h-3" />
                   </button>
-                </div>
-              </HairlineCard>
+                }
+              />
+              <TodayUploadsList items={todayItems} onShowAll={() => navigate("/activity-history")} />
             </section>
           </div>
         )}
@@ -1520,15 +1382,7 @@ const Index = () => {
         </div>
         )}
       </main>
-
-      {/* Faz 6: Toplu Yükleme Hazırlık Ekranı — fileQueue.length > 1 olduğunda
-          analiz başlamadan önce belge türü ve e-posta ayarları burada toplanır. */}
-      <BatchPrepScreen
-        isOpen={showBatchPrep}
-        files={pendingBatchFiles}
-        onCancel={handleBatchPrepCancel}
-        onStart={handleBatchPrepStart}
-      />
+      )}
 
       {/* Email Modal */}
       <EmailModal
@@ -1545,7 +1399,7 @@ const Index = () => {
         // Faz 6: confirmPerFile açıkken hazırlık ekranındaki ayarlar prefill olur.
         defaultTo={batchPrep?.emailPrefill.to ?? []}
         defaultCc={batchPrep?.emailPrefill.cc ?? []}
-        defaultSendEmail={batchPrep?.emailPrefill.sendEmail}
+        defaultSendEmail={batchPrep?.emailFlags[currentFileIndex] ?? batchPrep?.emailPrefill.sendEmail}
         defaultTebligTarihi={batchPrep?.emailPrefill.tebligTarihi}
         batchCount={fileQueue.length > 1 ? processedBatch.length + 1 : 0}
         totalFiles={fileQueue.length}

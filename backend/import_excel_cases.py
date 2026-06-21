@@ -21,6 +21,7 @@ load_dotenv("../.env")
 import openpyxl
 import models
 from database import SessionLocal
+from managers.admin_manager import resolve_lawyers_field
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -263,9 +264,27 @@ def run(dry_run: bool = False, limit: int = None):
                     active                 = True,
                 )
 
+                # Sorumlu avukatı canonical hale getir + case_lawyers FK'sini kur (Track B)
+                if dosya_ilgilisi:
+                    resolved = resolve_lawyers_field(str(dosya_ilgilisi))
+                    canonical_names = [(m.get("name") if m else raw) for (m, raw) in resolved]
+                    if canonical_names:
+                        case.responsible_lawyer_name = ", ".join(canonical_names)
+
                 if not dry_run:
                     db.add(case)
                     db.flush()  # case.id'yi al
+                    if dosya_ilgilisi:
+                        for (m, raw) in resolve_lawyers_field(str(dosya_ilgilisi)):
+                            lid = None
+                            if m:
+                                lrow = db.query(models.Lawyer).filter(models.Lawyer.code == m.get("code")).first()
+                                lid = lrow.id if lrow else None
+                            db.add(models.CaseLawyer(
+                                case_id=case.id,
+                                lawyer_id=lid,
+                                name=(m.get("name") if m else raw),
+                            ))
 
                 # Taraflar
                 parties = []

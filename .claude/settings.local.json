@@ -1,7 +1,47 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(cat docker-compose.yml)",
+      "Bash(cat docker-compose.yaml)",
+      "Read(//c/Users/ilkeb/OneDrive/Masaüstü/**)",
+      "Bash(python -c ':*)",
+      "Bash(docker restart:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker exec:*)",
+      "Bash(ls -la /c/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main/backend/*.py)",
+      "Bash(npx tsc:*)",
+      "Bash(xargs grep *)",
+      "Bash(python -c \"import ast, sys; files = ['models.py','database.py','schemas.py','routes/cases.py']; [print\\(f'OK: {f}'\\) or ast.parse\\(open\\(f\\).read\\(\\)\\) for f in files]; print\\('All OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(grep -n \"app\\\\s*=\\\\s*FastAPI\\\\|uvicorn\\\\|app\\\\.include_router\" \"c:/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main/backend/\"*.py)",
+      "Bash(docker-compose up *)",
+      "Bash(ls *.py)",
+      "Bash(ls docker-compose*)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(ls c:/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main/backend/__pycache__/import_clients*)",
+      "Read(//c/Users/ilkeb/**)",
+      "Bash(python \"/c/Users/ilkeb/Downloads/AGH_ICIN_QUICK_HERKEZ_YETKI.udf\")",
+      "Bash(unzip -p \"AGH_ICIN_QUICK_HERKEZ_YETKI.udf\" content.xml)",
+      "Bash(unzip -p \"ILKE_2_DAVA_DLK.udf\" content.xml)",
+      "Bash(docker-compose ps *)",
+      "Bash(python import_lawyers_excel.py)",
+      "Bash(python -X utf8 import_lawyers_excel.py)",
+      "Bash(python -c \"s = 'cgiiiosuCGIIOSU'; t = '\\\\u00e7\\\\u011f\\\\u0131i\\\\u00f6\\\\u015f\\\\u00fc\\\\u00c7\\\\u011e\\\\u0130I\\\\u00d6\\\\u015e\\\\u00dc'; print\\(len\\(s\\), len\\(t\\)\\)\")",
+      "Bash(python -X utf8 import_lawyers_excel.py --db-url \"postgresql://hukudok_user:dv3clS_gcjnKgCn7suoaZU@localhost:5432/hukudok\")",
+      "Bash(python -X utf8 -c ' *)",
+      "Bash(npm install *)",
+      "Bash(npm --version)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"/: %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"/i18n.js: %{http_code}\\\\n\" http://localhost:5173/i18n.js)",
+      "Bash(curl -s -o /dev/null -w \"/script.js: %{http_code}\\\\n\" http://localhost:5173/script.js)",
+      "Bash(curl -s -o /dev/null -w \"/styles.css: %{http_code}\\\\n\" http://localhost:5173/styles.css)",
+      "Bash(cp \"C:/Users/ilkeb/OneDrive/Masaüstü/portrait_top.jpeg\" \"C:/Users/ilkeb/OneDrive/Masaüstü/formula-portfolio-project/public/portrait_top.jpeg\")",
+      "Bash(cp \"C:/Users/ilkeb/OneDrive/Masaüstü/portrait_bottom.png\" \"C:/Users/ilkeb/OneDrive/Masaüstü/formula-portfolio-project/public/portrait_bottom.png\")",
+      "Bash(curl -s -o /dev/null -w \"/portrait_top.jpeg: %{http_code} \\(%{size_download} bytes\\)\\\\n\" http://localhost:5173/portrait_top.jpeg)",
+      "Bash(curl -s -o /dev/null -w \"/portrait_bottom.png: %{http_code} \\(%{size_download} bytes\\)\\\\n\" http://localhost:5173/portrait_bottom.png)"
     ]
   }
 }

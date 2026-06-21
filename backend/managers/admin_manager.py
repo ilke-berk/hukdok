@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from database import SessionLocal
 import models
@@ -475,6 +476,230 @@ def get_case_stats(tenant_id: str = None):
     finally:
         db.close()
 
+# --- Sorumlu Avukat Filtresi: Toleranslı Ad Eşleştirme ---
+#
+# Davalardaki responsible_lawyer_name değerleri tutarsız formatlarda saklanmış:
+#   "Av. Serap Turgal" / "Serap Turgal" / "TUGCE UNGOR" / "Tuğçe Üngör Yanık" / "AGH" (kod)
+# Düz LIKE '%tam ad%' bu varyantları yakalayamıyordu. Burada her iki tarafı da
+# ASCII'ye katlayıp ünvanları atarak token bazlı eşleştiriyoruz.
+
+# Türkçe karakter katlama (ASCII, küçük harf)
+_TR_FOLD = str.maketrans({
+    "ı": "i", "İ": "i", "I": "i",
+    "ş": "s", "Ş": "s",
+    "ç": "c", "Ç": "c",
+    "ğ": "g", "Ğ": "g",
+    "ö": "o", "Ö": "o",
+    "ü": "u", "Ü": "u",
+    "â": "a", "Â": "a", "î": "i", "Î": "i", "û": "u", "Û": "u",
+})
+
+# Ünvan token'ları — eşleştirmede gürültü, atılır
+_TITLE_TOKENS = {"av", "avk", "avukat", "stj", "stajyer", "dr", "prof"}
+
+# Çoklu avukat ayraçları: virgül, noktalı virgül, eğik çizgi, &, " ve "
+_PERSON_SPLIT = re.compile(r"\s*(?:,|;|/|&|\bve\b)\s*", re.IGNORECASE)
+
+
+def _norm_name(s: str) -> str:
+    """Adı ASCII küçük harfe katlar, noktalama + ünvanı atar, boşlukları sadeleştirir."""
+    if not s:
+        return ""
+    s = s.translate(_TR_FOLD).lower()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    toks = [t for t in s.split() if t and t not in _TITLE_TOKENS]
+    return " ".join(toks)
+
+
+def _name_tokens(s: str) -> set:
+    return set(_norm_name(s).split())
+
+
+def _split_persons(s: str):
+    """Çoklu avukat içeren bir alanı tekil kişilere böler."""
+    if not s:
+        return []
+    return [p for p in _PERSON_SPLIT.split(s) if p and p.strip()]
+
+
+def _resolve_lawyer_aliases(selected: str):
+    """selected (kod veya ad) → config'teki avukatı çözer ve eşleştirme bilgisini döndürür.
+    Dönen: (core_tokens, code_norm, surname, surname_unique) | None (çözülemezse)."""
+    try:
+        lawyers = DynamicConfig.get_instance().get_lawyers() or []
+    except Exception:
+        lawyers = []
+    if not lawyers:
+        return None
+    sel_norm = _norm_name(selected)
+    sel_code = _norm_name(selected)  # kodlar da normalize edilerek karşılaştırılır
+    target = None
+    for l in lawyers:
+        code_norm = _norm_name(l.get("code") or "")
+        name_norm = _norm_name(l.get("name") or "")
+        if (code_norm and code_norm == sel_code) or (name_norm and name_norm == sel_norm):
+            target = l
+            break
+    if target is None:
+        return None
+    core_tokens = _name_tokens(target.get("name") or "")
+    code_norm = _norm_name(target.get("code") or "")
+    name_toks = _norm_name(target.get("name") or "").split()
+    surname = name_toks[-1] if name_toks else ""
+    # Soyad config genelinde benzersiz mi? (tek-token kayıtları güvenle eşlemek için)
+    surname_count = sum(
+        1 for l in lawyers
+        if (_norm_name(l.get("name") or "").split() or [""])[-1] == surname
+    )
+    return core_tokens, code_norm, surname, (surname_count == 1)
+
+
+def _value_matches(value, core_tokens, code_norm, surname, surname_unique) -> bool:
+    """Bir ad alanının (tekil veya çoklu) seçilen avukatla eşleşip eşleşmediği."""
+    for part in _split_persons(value):
+        ptoks = _name_tokens(part)
+        if not ptoks:
+            continue
+        # 1) Kod birebir (ör. "AGH")
+        if code_norm and code_norm in ptoks:
+            return True
+        # 2) En az 2 ortak token (ad+soyad veya ad+ikinci ad)
+        if len(ptoks & core_tokens) >= 2:
+            return True
+        # 3) Tek-token kayıt yalnızca benzersiz soyadla eşleşir (ör. "Hanyaloğlu")
+        if surname and surname_unique and ptoks == {surname}:
+            return True
+    return False
+
+
+def _lawyer_filter_case_ids(db, selected: str, tenant_id: str):
+    """Seçilen avukatla eşleşen dava ID kümesini döndürür (toleranslı).
+    responsible_lawyer_name + case_lawyers ilişkisinin ikisini de tarar."""
+    aliases = _resolve_lawyer_aliases(selected)
+    matched = set()
+
+    if aliases is None:
+        # Config'te çözülemedi → normalize edilmiş "contains" ile geriye dönük güvenli arama
+        sel_norm = _norm_name(selected)
+        if not sel_norm:
+            return matched
+        q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active == True)
+        q = _apply_tenant_filter(q, tenant_id)
+        for cid, rn in q.all():
+            if any(sel_norm in _norm_name(p) for p in _split_persons(rn)):
+                matched.add(cid)
+        for cid, nm in db.query(models.CaseLawyer.case_id, models.CaseLawyer.name).all():
+            if sel_norm in _norm_name(nm):
+                matched.add(cid)
+        return matched
+
+    core_tokens, code_norm, surname, surname_unique = aliases
+    q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active == True)
+    q = _apply_tenant_filter(q, tenant_id)
+    for cid, rn in q.all():
+        if _value_matches(rn, core_tokens, code_norm, surname, surname_unique):
+            matched.add(cid)
+    for cid, nm in db.query(models.CaseLawyer.case_id, models.CaseLawyer.name).all():
+        if _value_matches(nm, core_tokens, code_norm, surname, surname_unique):
+            matched.add(cid)
+    return matched
+
+
+# --- Track B: Merkezi Avukat Çözümleyici (tüm yazma yollarının tek kapısı) ---
+#
+# Ham bir avukat metnini ("TUGCE UNGOR", "Serap Turgal", "AGH"…) config'teki tek bir
+# avukata çözer. Yeni veri buradan geçince responsible_lawyer_name canonical olur ve
+# case_lawyers.lawyer_id (yapısal bağ) dolar. Bulamazsa None → çağıran ham değeri korur.
+
+def resolve_lawyer(raw_value: str):
+    """Tek kişilik ham avukat metnini config avukatına çözer. Dönen: lawyer dict | None."""
+    if not raw_value or not str(raw_value).strip():
+        return None
+    try:
+        lawyers = DynamicConfig.get_instance().get_lawyers() or []
+    except Exception:
+        lawyers = []
+    if not lawyers:
+        # Cache boş (ör. standalone script) → DB'den oku
+        lawyers = get_lawyers() or []
+    if not lawyers:
+        return None
+    ptoks = _name_tokens(raw_value)
+    if not ptoks:
+        return None
+    # Benzersiz soyad haritası (tek-token kayıtları güvenle çözmek için)
+    surname_count = {}
+    for l in lawyers:
+        tk = _norm_name(l.get("name") or "").split()
+        if tk:
+            surname_count[tk[-1]] = surname_count.get(tk[-1], 0) + 1
+    for l in lawyers:
+        core = _name_tokens(l.get("name") or "")
+        code = _norm_name(l.get("code") or "")
+        tk = _norm_name(l.get("name") or "").split()
+        sur = tk[-1] if tk else ""
+        if code and code in ptoks:
+            return l
+        if len(ptoks & core) >= 2:
+            return l
+        if sur and surname_count.get(sur) == 1 and ptoks == {sur}:
+            return l
+    return None
+
+
+def resolve_lawyers_field(raw_value: str):
+    """Çoklu avukat içerebilen bir alanı çözer.
+    Dönen: [(lawyer_dict | None, ham_parça), …] — sıra ve tekrar korunur."""
+    out = []
+    seen = set()
+    for part in _split_persons(raw_value):
+        matched = resolve_lawyer(part)
+        key = (matched.get("code") if matched else None) or _norm_name(part)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((matched, part.strip()))
+    return out
+
+
+def canonicalize_lawyers(db, lawyers_input, responsible_text):
+    """Yazma yolları için: gelen avukat girdisini canonical hale getirir.
+    Girdi öncelik sırası: yapısal `lawyers` listesi → yoksa serbest `responsible_text`.
+    Dönen: (case_lawyer_rows, canonical_responsible_name, unresolved_parts)
+      - case_lawyer_rows: [{"name", "lawyer_id"}] (canonical ad + FK)
+      - unresolved_parts: çözülemeyen ham parçalar (review için)
+    """
+    raws = []
+    if lawyers_input:
+        for l in lawyers_input:
+            nm = (l or {}).get("name")
+            if nm:
+                raws.append(nm)
+    elif responsible_text:
+        raws = [p for (_, p) in [(None, x) for x in _split_persons(responsible_text)]]
+
+    rows, names, unresolved = [], [], []
+    for raw in raws:
+        matched = resolve_lawyer(raw)
+        if matched:
+            lid = None
+            lrow = db.query(models.Lawyer).filter(models.Lawyer.code == matched.get("code")).first()
+            if lrow:
+                lid = lrow.id
+            cname = matched.get("name") or raw
+            if cname not in names:
+                rows.append({"name": cname, "lawyer_id": lid})
+                names.append(cname)
+        else:
+            # Çözülemedi → ham değeri koru ama işaretle
+            if raw not in names:
+                rows.append({"name": raw, "lawyer_id": None})
+                names.append(raw)
+                unresolved.append(raw)
+    canonical = ", ".join(names) if names else None
+    return rows, canonical, unresolved
+
+
 def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str = None, q: str = None, exact: bool = False, tenant_id: str = None):
     try:
         db = SessionLocal()
@@ -488,13 +713,10 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
             query = query.filter(models.Case.status == status)
         
         if lawyer and lawyer != "ALL":
-            # Search in responsible_lawyer_name or in case_lawyers relationship
-            from sqlalchemy import or_
-            lawyer_pattern = f"%{lawyer}%"
-            query = query.filter(or_(
-                models.Case.responsible_lawyer_name.ilike(lawyer_pattern),
-                models.Case.lawyers.any(models.CaseLawyer.name.ilike(lawyer_pattern))
-            ))
+            # Toleranslı eşleştirme: ünvan/diakritik/format farklarını ve çoklu avukatı çözer.
+            matched_ids = _lawyer_filter_case_ids(db, lawyer, tenant_id)
+            # Eşleşme yoksa garanti boş küme (-1) ile sonucu boşalt
+            query = query.filter(models.Case.id.in_(matched_ids if matched_ids else [-1]))
 
         min_len = 1 if exact else 2
         if q and len(q) >= min_len:
@@ -579,9 +801,11 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 "sub_type_extra": item.sub_type_extra,
                 "hasar_dosya_no": item.hasar_dosya_no,
                 "hukuk_no": item.hukuk_no,
+                "dosya_son_durumu": getattr(item, "dosya_son_durumu", None),
                 "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
                 "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
-                "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None
+                "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None,
+                "updated_at": item.updated_at.isoformat() if getattr(item, "updated_at", None) else None,
             }
             cases_list.append(result)
         return cases_list
@@ -684,23 +908,17 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
             )
             db.add(party)
             
-        # 3. Sync Lawyers
+        # 3. Sync Lawyers — Track B: canonical ad + lawyer_id FK üret
         db.query(models.CaseLawyer).filter(models.CaseLawyer.case_id == case_id).delete()
-        lawyers = data.get("lawyers", [])
-        lawyer_names = []
-        for l in lawyers:
-            name = l.get("name")
-            if name:
-                db.add(models.CaseLawyer(
-                    case_id=case_id,
-                    lawyer_id=l.get("lawyer_id"),
-                    name=name
-                ))
-                lawyer_names.append(name)
-        
-        # Backward compatibility for existing field
-        if lawyer_names:
-            case.responsible_lawyer_name = ", ".join(lawyer_names)
+        rows, canonical, unresolved = canonicalize_lawyers(
+            db, data.get("lawyers", []), data.get("responsible_lawyer_name")
+        )
+        for r in rows:
+            db.add(models.CaseLawyer(case_id=case_id, lawyer_id=r["lawyer_id"], name=r["name"]))
+        if canonical:
+            case.responsible_lawyer_name = canonical
+        if unresolved:
+            logger.warning(f"Case {case_id}: çözülemeyen avukat(lar): {unresolved}")
             
         case.updated_at = datetime.now()
         db.commit()
@@ -786,12 +1004,16 @@ def add_case(data: dict, tenant_id: str = None):
         db.flush()  # Get the case ID
 
         # 2. Add Parties
+        # Danışma (DANIŞ): ortada henüz dava yok; listede olmayan müvekkil için
+        # KALICI yeni müvekkil kaydı OLUŞTURMA. Tam eşleşme varsa mevcut müvekkile
+        # bağla, yoksa adı yalnızca CaseParty üzerinde sakla (client_id=None).
+        is_consult = (data.get("status") == "DANIŞ")
         parties = data.get("parties", [])
         for p in parties:
             client_id = p.get("client_id")
             party_type = p.get("party_type")
             name = p.get("name")
-            
+
             # Otomatik Müşteri Oluşturma Yükseltmesi
             if party_type == "CLIENT" and name and not client_id:
                 existing_client = db.query(models.Client).filter(
@@ -799,7 +1021,7 @@ def add_case(data: dict, tenant_id: str = None):
                 ).first()
                 if existing_client:
                     client_id = existing_client.id
-                else:
+                elif not is_consult:
                     new_client = models.Client(
                         name=name.strip(),
                         contact_type="Client",
@@ -821,22 +1043,16 @@ def add_case(data: dict, tenant_id: str = None):
             )
             db.add(party)
             
-        # 3. Add Lawyers
-        lawyers = data.get("lawyers", [])
-        lawyer_names = []
-        for l in lawyers:
-            name = l.get("name")
-            if name:
-                db.add(models.CaseLawyer(
-                    case_id=new_case.id,
-                    lawyer_id=l.get("lawyer_id"),
-                    name=name
-                ))
-                lawyer_names.append(name)
-                
-        # Backward compatibility for existing field
-        if lawyer_names and not new_case.responsible_lawyer_name:
-            new_case.responsible_lawyer_name = ", ".join(lawyer_names)
+        # 3. Add Lawyers — Track B: canonical ad + lawyer_id FK üret
+        rows, canonical, unresolved = canonicalize_lawyers(
+            db, data.get("lawyers", []), data.get("responsible_lawyer_name")
+        )
+        for r in rows:
+            db.add(models.CaseLawyer(case_id=new_case.id, lawyer_id=r["lawyer_id"], name=r["name"]))
+        if canonical:
+            new_case.responsible_lawyer_name = canonical
+        if unresolved:
+            logger.warning(f"Yeni dava ({new_case.tracking_no}): çözülemeyen avukat(lar): {unresolved}")
             
         db.commit()
         # Return the new case object (for frontend linking)

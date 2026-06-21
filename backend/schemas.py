@@ -204,7 +204,9 @@ class CaseListRead(BaseModel):
     hukuk_no: Optional[str] = None
     klasor_no_2: Optional[str] = None
     notes: Optional[str] = None
+    dosya_son_durumu: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
     parties: List[CasePartyCreate] = []
     lawyers: List[CaseLawyerCreate] = []
 

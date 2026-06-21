@@ -67,27 +67,23 @@ type MetricCardProps = {
   onClick?: () => void;
 };
 
+// Minimal tasarım: tonlar renkten arındırıldı — tüm ikonlar tek tip ince/nötr.
+// Vurgu gerektiğinde yalnızca `brand` hafif bir renk taşır, diğerleri gri kalır.
+const neutralTone = {
+  iconBg: "bg-[var(--bg-sunken)]",
+  iconColor: "text-[var(--fg-subtle)]",
+  value: "text-[var(--fg)]",
+};
+
 const toneStyles: Record<NonNullable<MetricCardProps["tone"]>, { iconBg: string; iconColor: string; value: string }> = {
   brand: {
-    iconBg: "bg-[var(--brand-soft)]",
-    iconColor: "text-[var(--brand)]",
-    value: "text-[var(--fg)]",
-  },
-  neutral: {
     iconBg: "bg-[var(--bg-sunken)]",
     iconColor: "text-[var(--fg-muted)]",
     value: "text-[var(--fg)]",
   },
-  success: {
-    iconBg: "bg-[#2f8a5d]/15",
-    iconColor: "text-[#2f8a5d]",
-    value: "text-[var(--fg)]",
-  },
-  warning: {
-    iconBg: "bg-[#c47a1e]/15",
-    iconColor: "text-[#c47a1e]",
-    value: "text-[var(--fg)]",
-  },
+  neutral: neutralTone,
+  success: neutralTone,
+  warning: neutralTone,
 };
 
 export function MetricCard({ label, value, icon, hint, tone = "neutral", onClick }: MetricCardProps) {
@@ -107,7 +103,7 @@ export function MetricCard({ label, value, icon, hint, tone = "neutral", onClick
       <div className="flex items-center justify-between">
         <Eyebrow>{label}</Eyebrow>
         {icon && (
-          <div className={`w-9 h-9 grid place-items-center ${t.iconBg} ${t.iconColor}`}>
+          <div className={`grid place-items-center ${t.iconColor}`}>
             {icon}
           </div>
         )}

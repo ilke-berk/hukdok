@@ -1,23 +1,49 @@
+import { useEffect, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useNavigate } from "react-router-dom";
-import { Menu, Search, Bell, Plus } from "lucide-react";
+import { Menu, Search, Bell, Plus, X } from "lucide-react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { PlaceholderBadge } from "@/components/PlaceholderBadge";
-import { useCommandPalette } from "@/components/system/CommandPalette";
+import { usePageSearchContext } from "@/components/system/PageSearch";
+import { GlobalSearchDropdown } from "@/components/system/GlobalSearchDropdown";
 
 type TopbarProps = {
   collapsed: boolean;
   onOpenSidebar: () => void;
 };
 
+const DEFAULT_PLACEHOLDER = "Esas no, müvekkil, mahkeme veya konu ara…";
+
 export function Topbar({ collapsed, onOpenSidebar }: TopbarProps) {
   const navigate = useNavigate();
   const { accounts } = useMsal();
   const { title, breadcrumb } = usePageTitle();
-  const { toggle: togglePalette } = useCommandPalette();
+  const { query, setQuery, registration } = usePageSearchContext();
 
   const account = accounts[0];
   const firstName = (account?.name || "Kullanıcı").split(" ")[0];
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
+
+  // Sayfa kayıt yaptıysa o sayfayı yerinde filtreler; yoksa global mod.
+  const isGlobal = registration === null;
+  const placeholder = registration?.placeholder ?? DEFAULT_PLACEHOLDER;
+  // Global modda: odaklanınca (boşken hızlı eylemler) veya yazınca dropdown açılır.
+  const showDropdown = isGlobal && focused;
+
+  // ⌘K / Ctrl+K → barı odakla
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   return (
     <header
@@ -54,18 +80,50 @@ export function Topbar({ collapsed, onOpenSidebar }: TopbarProps) {
 
       {/* Right: search + notifications + CTA */}
       <div className="flex items-center gap-3 relative">
-        <button
-          type="button"
-          aria-label="Ara"
-          onClick={togglePalette}
-          className="hidden lg:flex items-center gap-2.5 px-3 py-2 border border-[var(--border)] bg-[var(--bg-elevated)] w-[340px] text-[var(--fg-muted)] text-[13px] cursor-pointer rounded-[4px] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--fg)] text-left"
-        >
-          <Search className="w-3.5 h-3.5 shrink-0" />
-          <span className="flex-1 truncate">Esas no, müvekkil, mahkeme veya konu ara…</span>
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 border border-[var(--border)] rounded-[3px] font-mono text-[10px] text-[var(--fg-subtle)] tracking-[0.04em] bg-[var(--bg)] shrink-0">
-            ⌘K
-          </span>
-        </button>
+        {/* Tek mutlak arama barı */}
+        <div className="hidden lg:block relative w-[340px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-muted)] pointer-events-none" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setFocused(true)}
+            // Dropdown içindeki seçim mousedown ile çalıştığı için blur'ı erteliyoruz
+            onBlur={() => setFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                if (query) setQuery("");
+                inputRef.current?.blur();
+              }
+            }}
+            placeholder={placeholder}
+            aria-label="Ara"
+            className="w-full h-10 pl-9 pr-16 bg-[var(--bg-elevated)] border border-[var(--border)] text-[13px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] rounded-[4px] transition-colors focus:border-[var(--brand)] focus:outline-none"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+              aria-label="Aramayı temizle"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[var(--fg-subtle)] hover:text-[var(--brand)] transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 inline-flex items-center gap-0.5 px-1.5 py-0.5 border border-[var(--border)] rounded-[3px] font-mono text-[10px] text-[var(--fg-subtle)] tracking-[0.04em] bg-[var(--bg)] pointer-events-none">
+              ⌘K
+            </span>
+          )}
+
+          {showDropdown && (
+            <GlobalSearchDropdown
+              query={query}
+              onClose={() => { setQuery(""); inputRef.current?.blur(); }}
+            />
+          )}
+        </div>
+
         <div className="relative">
           <button
             type="button"

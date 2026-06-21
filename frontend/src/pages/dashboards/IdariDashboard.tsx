@@ -4,17 +4,17 @@ import {
   Upload,
   Gavel,
   UserPlus,
-  TrendingUp,
   Scale,
   FolderOpen,
   Clock,
   Activity,
   ArrowRight,
+  ChevronRight,
   Users,
 } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
-import { MetricCard, SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
+import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
 import { PlaceholderBadge } from "@/components/PlaceholderBadge";
 
@@ -29,51 +29,59 @@ interface DashboardCase {
   responsible_lawyer_name?: string;
 }
 
-interface CaseStats {
-  total: number;
-  active: number;
-  closed: number;
-  appeal: number;
-  danis_active?: number;
-}
-
 type QuickAction = {
   id: string;
   label: string;
-  hint: string;
+  desc: string;
+  cta: string;
+  kbd: string;
   icon: typeof Upload;
   path: string;
+  primary?: boolean;
 };
 
+// Birincil eylem (Belge Yükle) bilinçli olarak daha geniş + dolu bordo kart.
+// Diğer ikisi sade krem zemin; bordo yalnızca ikon ve CTA'da vurgu.
 const QUICK_ACTIONS: QuickAction[] = [
   {
     id: "upload",
     label: "Belge Yükle",
-    hint: "PDF / DOCX · AI ile analiz",
+    desc: "PDF veya DOCX bırakın; yapay zeka belgeyi okur, isimlendirir ve davaya bağlar.",
+    cta: "Sürükle bırak veya tıkla",
+    kbd: "U",
     icon: Upload,
     path: "/upload",
+    primary: true,
   },
   {
     id: "new-case",
     label: "Yeni Dava Aç",
-    hint: "Müvekkil + esas no",
+    desc: "Müvekkil ve esas no ile yeni dava dosyası oluşturun.",
+    cta: "Dosya oluştur",
+    kbd: "N",
     icon: Gavel,
     path: "/new-case/form",
   },
   {
     id: "new-client",
     label: "Müvekkil Ekle",
-    hint: "TC, vekalet, iletişim",
+    desc: "TC, vekalet ve iletişim bilgileriyle yeni müvekkil kaydı açın.",
+    cta: "Müvekkil kaydı",
+    kbd: "M",
     icon: UserPlus,
     path: "/new-client",
   },
 ];
 
+// Klavye kısayolu: "G" sonra ilgili harf (Gmail/Linear tarzı sıralı kısayol).
+// Tarayıcının kendi Ctrl kısayollarıyla çakışmaz; rozet "G U" biçiminde gösterilir.
+const SEQUENCE_TIMEOUT_MS = 1000;
+const shortcutLabel = (key: string) => `G ${key}`;
+
 export default function IdariDashboard() {
   useSetPageTitle("Anasayfa", ["İdari Panel"]);
   const navigate = useNavigate();
-  const { getCases, getCaseStats } = useCases();
-  const [stats, setStats] = useState<CaseStats>({ total: 0, active: 0, closed: 0, appeal: 0 });
+  const { getCases } = useCases();
   const [recentCases, setRecentCases] = useState<DashboardCase[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,25 +89,47 @@ export default function IdariDashboard() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [statsData, casesData] = await Promise.all([
-        getCaseStats(),
-        getCases({ limit: 8, offset: 0 }),
-      ]);
+      const casesData = await getCases({ limit: 8, offset: 0 });
       if (cancelled) return;
-      if (statsData) {
-        setStats({
-          total: statsData.total || 0,
-          active: statsData.active || 0,
-          closed: statsData.closed || 0,
-          appeal: statsData.appeal || 0,
-          danis_active: statsData.danis_active || 0,
-        });
-      }
       setRecentCases((casesData || []) as DashboardCase[]);
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [getCases, getCaseStats]);
+  }, [getCases]);
+
+  // "G" sonra U/N/M sıralı kısayolu → ilgili sayfaya git. Bir input/textarea içinde
+  // yazarken veya bir modifier (Ctrl/Alt/Cmd) basılıyken devre dışı kalır.
+  useEffect(() => {
+    let gPressedAt = 0;
+    const isTyping = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      return (
+        el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.tagName === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === "g") {
+        gPressedAt = Date.now();
+        return;
+      }
+      if (Date.now() - gPressedAt < SEQUENCE_TIMEOUT_MS) {
+        const action = QUICK_ACTIONS.find(a => a.kbd.toLowerCase() === key);
+        if (action) {
+          e.preventDefault();
+          gPressedAt = 0;
+          navigate(action.path);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [navigate]);
 
   const today = new Date().toLocaleDateString("tr-TR", {
     weekday: "long",
@@ -127,7 +157,8 @@ export default function IdariDashboard() {
           title="Sık kullanılanlar"
           italic="— tek tıkla işleme"
         />
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Eşit-olmayan grid: birincil kart (Belge Yükle) %40 daha geniş. */}
+        <div className="mt-3 grid grid-cols-1 gap-4 md:[grid-template-columns:1.4fr_1fr_1fr]">
           {QUICK_ACTIONS.map(a => {
             const { icon: Icon } = a;
             return (
@@ -135,64 +166,64 @@ export default function IdariDashboard() {
                 key={a.id}
                 type="button"
                 onClick={() => navigate(a.path)}
-                className="group text-left p-5 border border-[var(--border)] bg-[var(--bg-elevated)] transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+                className={[
+                  "group relative flex min-h-[132px] flex-col justify-between gap-[18px] px-6 py-[22px] text-left",
+                  "border transition-[border-color,transform] duration-150 active:translate-y-px",
+                  a.primary
+                    ? "border-[var(--brand)] text-[#fdf2f4] [background:linear-gradient(140deg,var(--brand)_0%,var(--burgundy-800,var(--brand-hover))_100%)]"
+                    : "border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
+                ].join(" ")}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="w-11 h-11 grid place-items-center bg-[var(--brand)] text-[var(--brand-fg)] transition-transform group-hover:scale-105">
-                    <Icon className="w-5 h-5" strokeWidth={1.6} />
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-[var(--fg-subtle)] mt-1 transition-colors group-hover:text-[var(--brand)]" />
+                {/* Üst: ikon kutusu + klavye kısayolu rozeti */}
+                <div className="flex items-start justify-between">
+                  <span
+                    className={[
+                      "grid h-10 w-10 place-items-center rounded-[4px] border",
+                      a.primary
+                        ? "border-white/30 bg-white/[0.08] text-[#fdf2f4]"
+                        : "border-[var(--border-strong)] bg-[var(--bg)] text-[var(--brand)]",
+                    ].join(" ")}
+                  >
+                    <Icon className="h-[18px] w-[18px]" strokeWidth={1.6} />
+                  </span>
+                  <kbd
+                    className={[
+                      "font-mono text-[10px] leading-none rounded-[3px] border px-1.5 py-[3px]",
+                      a.primary ? "border-white/25 text-[#fdf2f4]/80" : "border-[var(--border)] text-[var(--fg-subtle)]",
+                    ].join(" ")}
+                  >
+                    {shortcutLabel(a.kbd)}
+                  </kbd>
                 </div>
-                <div className="mt-4">
-                  <div className="font-display font-medium text-[16px] tracking-[-0.005em] text-[var(--fg)]">
+
+                {/* Orta: serif başlık + açıklama */}
+                <div>
+                  <div className="font-display font-medium text-[22px] tracking-[-0.015em] leading-[1.15]">
                     {a.label}
                   </div>
-                  <div className="font-mono text-[10px] tracking-[0.08em] uppercase text-[var(--fg-subtle)] mt-1.5">
-                    {a.hint}
-                  </div>
+                  <p
+                    className={[
+                      "mt-2 text-[12.5px] leading-[1.5]",
+                      a.primary ? "text-[#fdf2f4]/75" : "text-[var(--fg-muted)]",
+                    ].join(" ")}
+                  >
+                    {a.desc}
+                  </p>
                 </div>
+
+                {/* Alt: monospace CTA — link-eylem dili */}
+                <span
+                  className={[
+                    "inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em]",
+                    a.primary ? "text-[#fdf2f4]" : "text-[var(--brand)]",
+                  ].join(" ")}
+                >
+                  {a.cta}
+                  <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                </span>
               </button>
             );
           })}
-        </div>
-      </section>
-
-      {/* Metrikler */}
-      <section>
-        <SectionHeader eyebrow="02 · Genel" title="Bürodaki durum" italic="— canlı sayım" />
-        <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard
-            label="Danış"
-            value={loading ? "—" : stats.danis_active ?? "—"}
-            icon={<Users className="w-4 h-4" />}
-            tone="neutral"
-            hint="Danışmanlık"
-            onClick={() => navigate("/cases")}
-          />
-          <MetricCard
-            label="Aktif (Derdest)"
-            value={loading ? "—" : stats.active}
-            icon={<TrendingUp className="w-4 h-4" />}
-            tone="success"
-            hint="Süren davalar"
-            onClick={() => navigate("/cases")}
-          />
-          <MetricCard
-            label="Kapalı"
-            value={loading ? "—" : stats.closed}
-            icon={<FolderOpen className="w-4 h-4" />}
-            tone="neutral"
-            hint="Karar / İnfaz"
-            onClick={() => navigate("/cases")}
-          />
-          <MetricCard
-            label="Toplam Dava"
-            value={loading ? "—" : stats.total}
-            icon={<Scale className="w-4 h-4" />}
-            tone="brand"
-            hint="Tüm dosyalar"
-            onClick={() => navigate("/cases")}
-          />
         </div>
       </section>
 
@@ -201,7 +232,7 @@ export default function IdariDashboard() {
         {/* Son Davalar */}
         <div className="lg:col-span-3">
           <SectionHeader
-            eyebrow="03 · Dosyalar"
+            eyebrow="02 · Dosyalar"
             title="Son Düzenlenen Davalar"
             italic="— en son işlem"
             meta={
@@ -284,13 +315,13 @@ export default function IdariDashboard() {
         <div className="lg:col-span-2 flex flex-col gap-6">
           {/* Takvim */}
           <div>
-            <DashboardCalendar eyebrow="04 · Takvim" />
+            <DashboardCalendar eyebrow="03 · Takvim" />
           </div>
 
           {/* Süreli İşler (placeholder, backend hazır olunca dolacak) */}
           <div>
           <SectionHeader
-            eyebrow="05 · İnceleme"
+            eyebrow="04 · İnceleme"
             title="Süreli İşler"
             italic="— avukat bilgilendirmesi"
             meta={<PlaceholderBadge />}

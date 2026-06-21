@@ -154,7 +154,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     "font-sans text-[13px] font-medium tracking-[0.005em]",
                     "transition-colors",
                     active
-                      ? "text-[var(--fg)] bg-[var(--bg-elevated)]"
+                      ? "text-[var(--brand)] bg-[var(--brand-soft)] font-semibold"
                       : "text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]",
                   ].join(" ")}
                 >

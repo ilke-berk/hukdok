@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
+import { usePageSearch } from "@/components/system/PageSearch";
 import {
-  Search, Phone, Mail, MapPin, Loader2,
+  Phone, Mail, MapPin, Loader2,
   Users, Gavel, Stethoscope, Building2, User2, UserPlus,
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
 } from "lucide-react";
@@ -90,7 +91,10 @@ const ClientList = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [searchQuery, setSearchQuery] = useState("");
+  // Arama tek mutlak üst bardan sürülür (usePageSearch)
+  const { query: searchQuery, setQuery: setSearchQuery } = usePageSearch({
+    placeholder: "Ad, TC, e-posta, telefon veya cari kod ile ara…",
+  });
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [selectedTypes, setSelectedTypes] = useState<string[]>(["Client", "Other"]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -236,36 +240,6 @@ const ClientList = () => {
         />
       </section>
 
-      {/* Arama */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--fg-subtle)] pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ad, TC, e-posta, telefon veya cari kod ile ara…"
-            className="w-full h-11 pl-10 pr-10 bg-[var(--bg-elevated)] border border-[var(--border)] text-[14px] text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none transition-colors rounded-[3px]"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[var(--fg-subtle)] hover:text-[var(--brand)] transition-colors"
-              aria-label="Aramayı temizle"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        {activeFilterCount > 0 && (
-          <FlowButton variant="ghost" size="sm" onClick={clearFilters}>
-            <X className="w-3 h-3" />
-            {activeFilterCount} filtre · temizle
-          </FlowButton>
-        )}
-      </div>
-
       {/* Üçlü grid: rail + tablo + quick view */}
       <section
         className="grid gap-5 items-start"
@@ -273,6 +247,17 @@ const ClientList = () => {
       >
         {/* Filtre rail */}
         <HairlineCard className="flex flex-col gap-6 sticky top-2">
+          {activeFilterCount > 0 && (
+            <div className="flex items-center justify-between gap-2 -mb-2">
+              <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+                {activeFilterCount} filtre aktif
+              </span>
+              <FlowButton variant="ghost" size="sm" onClick={clearFilters}>
+                <X className="w-3 h-3" />
+                Temizle
+              </FlowButton>
+            </div>
+          )}
           <div>
             <Eyebrow>Kayıt Türü</Eyebrow>
             <div className="mt-2 flex flex-col gap-2">
@@ -390,7 +375,7 @@ const ClientList = () => {
                         : "hover:bg-[var(--bg)]",
                     ].join(" ")}
                   >
-                    <div className="w-8 h-8 grid place-items-center bg-[var(--bg-sunken)] text-[var(--fg-muted)] shrink-0">
+                    <div className="w-8 h-8 rounded-full grid place-items-center bg-[var(--bg-sunken)] text-[var(--brand)] shrink-0">
                       <CategoryIcon category={c.category} className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">

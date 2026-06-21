@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { PageTitleProvider } from "@/hooks/usePageTitle";
 import { DashboardViewProvider } from "@/hooks/useDashboardView";
-import { CommandPaletteProvider } from "@/components/system/CommandPalette";
+import { PageSearchProvider } from "@/components/system/PageSearch";
 
 const COLLAPSED_KEY = "hukdok.sidebar.collapsed";
 
@@ -24,7 +24,7 @@ export function ShellLayout() {
   return (
     <DashboardViewProvider>
       <PageTitleProvider>
-        <CommandPaletteProvider>
+        <PageSearchProvider>
           <div className="theme-classic flex h-screen w-full overflow-hidden bg-[var(--bg)] text-[var(--fg)] font-sans">
             <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
             <div className="flex-1 flex flex-col min-w-0">
@@ -34,7 +34,7 @@ export function ShellLayout() {
               </main>
             </div>
           </div>
-        </CommandPaletteProvider>
+        </PageSearchProvider>
       </PageTitleProvider>
     </DashboardViewProvider>
   );

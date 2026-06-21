@@ -452,10 +452,11 @@ const NewCase = () => {
         if (e) e.preventDefault();
 
         // Validate that all people in 'clients' list are actually registered (Case-Insensitive Check)
+        // Danışmada (DANIŞ) yeni müvekkil oluşturulmadığı için bu onay atlanır.
         const unregistered = clients.filter(c =>
             c.name && !dbClients.some(db => toUpperTR(db.name) === toUpperTR(c.name))
         );
-        if (!forceSave && unregistered.length > 0) {
+        if (!forceSave && caseStatus !== "DANIŞ" && unregistered.length > 0) {
             setPendingUnregistered(unregistered.map(u => ({ name: u.name })));
             setShowClientConfirm(true);
             return;
@@ -586,6 +587,11 @@ const NewCase = () => {
 
         toast.info("Form ve yüklenen belgeler temizlendi.");
     };
+
+    // DANIŞ (danışma) modunda ortada henüz dava olmadığı için form sadeleşir:
+    // sadece taraflar, mahkeme, esas no, dava konusu ve notlar gösterilir.
+    // Durum DERDEST'e dönünce klasik tam dava kartı geri gelir.
+    const isConsult = caseStatus === "DANIŞ";
 
     return (
         <div>
@@ -957,7 +963,8 @@ const NewCase = () => {
                                         </div>
                                     </div>
 
-                                    {/* Üçüncü Taraflar Section */}
+                                    {/* Üçüncü Taraflar Section — danışma modunda gizli */}
+                                    {!isConsult && (
                                     <div className="space-y-3">
                                         <div className="flex items-center justify-between border-b border-border/50 pb-2">
                                             <Label className="text-xs font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
@@ -1036,13 +1043,14 @@ const NewCase = () => {
                                             </div>
                                         )}
                                     </div>
+                                    )}
                                 </CardContent>
                             </Card>
 
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
                                 <div className="bg-[var(--bg)] border-b border-[var(--border)] p-6">
                                     <h3 className="flex items-center gap-2 font-mono text-[11px] tracking-[0.2em] uppercase font-semibold text-[var(--brand)] [&>svg]:w-3.5 [&>svg]:h-3.5">
-                                        <Gavel className="w-4 h-4" /> 2. Dava Bilgileri
+                                        <Gavel className="w-4 h-4" /> {isConsult ? "2. Danışma Bilgileri" : "2. Dava Bilgileri"}
                                     </h3>
                                 </div>
                                 <CardContent className="p-8 space-y-6">
@@ -1078,6 +1086,9 @@ const NewCase = () => {
                                             />
                                         </div>
 
+                                        {/* Aşağıdaki teknik alanlar yalnızca gerçek dava (DERDEST/MAHZEN) için gösterilir */}
+                                        {!isConsult && (
+                                        <>
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Hasar Dosya No
@@ -1309,10 +1320,12 @@ const NewCase = () => {
                                                 className="bg-[var(--bg)] border-[var(--border-strong)]"
                                             />
                                         </div>
+                                        </>
+                                        )}
 
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
-                                                <Sparkles className="w-3 h-3" /> Davanın Konusu
+                                                <Sparkles className="w-3 h-3" /> {isConsult ? "Danışma Konusu" : "Davanın Konusu"}
                                             </Label>
                                             <Popover open={subjectComboboxOpen} onOpenChange={setSubjectComboboxOpen}>
                                                 <PopoverTrigger asChild>
@@ -1415,7 +1428,9 @@ const NewCase = () => {
                                 </p>
                             </Card>
 
-                            {/* RESPONSIBLE INFO */}
+                            {/* Sorumlu / Büro / Tazminat — danışma modunda gizli */}
+                            {!isConsult && (
+                            <>
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none overflow-hidden">
                                 <div className="bg-[var(--bg)] border-b border-[var(--border)] p-4">
                                     <h3 className="font-mono text-[10px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] flex items-center gap-2">
@@ -1539,6 +1554,8 @@ const NewCase = () => {
                                     </div>
                                 </div>
                             </Card>
+                            </>
+                            )}
 
                             {/* GLOBAL ACTIONS — sağ sticky işlem kartı */}
                             <div className="bg-[var(--bg-elevated)] border border-[var(--border)] sticky top-4">
@@ -1559,7 +1576,7 @@ const NewCase = () => {
                                         ) : (
                                             <>
                                                 <Save className="h-4 w-4" />
-                                                {isEditMode ? "Kaydet" : "Dava Kartını Aç"}
+                                                {isEditMode ? "Kaydet" : isConsult ? "Danışma Kartını Aç" : "Dava Kartını Aç"}
                                             </>
                                         )}
                                     </Button>

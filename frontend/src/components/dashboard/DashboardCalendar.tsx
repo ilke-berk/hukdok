@@ -434,32 +434,12 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
               type="button"
               onClick={() => setSelectedDay(isoDate)}
               title={c.tooltip ? c.tooltip : "Bu gün için kayıt yok"}
-              className={`relative aspect-square grid grid-rows-[1fr_auto] place-items-center gap-0.5 pt-1 font-mono text-[12px] border transition-colors ${cellTone}${selectedRing}`}
+              className={`relative aspect-square grid place-items-center font-mono text-[12px] border transition-colors ${cellTone}${selectedRing}`}
             >
-              {marked && !c.today && (
-                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--brand)]" />
-              )}
               <span className="leading-none">{c.num}</span>
-              <span className="flex gap-1 min-h-[5px]">
-                {c.hearing && (
-                  <span className={`w-1.5 h-1.5 rounded-full ${c.today ? "bg-[var(--brand-fg)]" : "bg-[var(--brand)]"}`} />
-                )}
-                {c.event && (
-                  <span className={`w-1.5 h-1.5 rounded-full ${c.today ? "bg-[var(--brand-fg)]" : "bg-[#c47a1e]"}`} />
-                )}
-              </span>
             </button>
           );
         })}
-      </div>
-
-      <div className="mt-3.5 pt-3 border-t border-[var(--border)] flex items-center gap-4 font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--fg-subtle)]">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)]" /> Duruşma
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#c47a1e]" /> İşaret
-        </span>
       </div>
     </HairlineCard>
   );

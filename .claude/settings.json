@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import sys; sys.stdout.buffer.write\\(sys.stdin.buffer.read\\(\\)\\)\")",
+      "Bash(python import_excel_cases.py --dry-run --limit 5)",
+      "Bash(python import_excel_cases.py --dry-run --limit 100)",
+      "Bash(python import_excel_cases.py --dry-run)",
+      "Bash(python import_excel_cases.py)",
+      "Bash(python import_excel_cases.py --limit 10)",
+      "Bash(DATABASE_URL=\"postgresql://hukudok_user:dv3clS_gcjnKgCn7suoaZU@localhost:5432/hukudok\" python import_excel_cases.py --limit 10)",
+      "Bash(DATABASE_URL=\"postgresql://hukudok_user:dv3clS_gcjnKgCn7suoaZU@localhost:5432/hukudok\" python import_excel_cases.py)",
+      "Read(//mnt/c/Users/ilkeb/AppData/Local/HukuDok/**)",
+      "PowerShell(docker exec hukudok-postgres psql -U hukudok_user -d hukudok_prod -f /tmp/prod_backup.sql 2>&1)",
+      "Bash(curl -s \"http://localhost:8001/\")",
+      "Bash(python retag_tracking_nos.py --dry-run)",
+      "Bash(dir)",
+      "PowerShell(docker exec hukudok-postgres psql -U hukudok_user -d hukudok_staging -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;\")",
+      "PowerShell(docker exec hukudok-postgres psql -U hukudok_user -d hukudok -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;\")",
+      "PowerShell(docker exec hukudok-postgres psql -U hukudok_user -d hukudok -c \"SELECT tracking_no, klasor_no_2, esas_no, hasar_dosya_no, hukuk_no FROM cases WHERE klasor_no_2 IS NOT NULL LIMIT 10;\")",
+      "PowerShell(docker exec hukudok-postgres psql -U hukudok_user -d hukudok_staging -c \"SELECT tracking_no, esas_no FROM cases WHERE tracking_no LIKE 'S3.AXA%' LIMIT 10;\")"
+    ]
+  }
+}

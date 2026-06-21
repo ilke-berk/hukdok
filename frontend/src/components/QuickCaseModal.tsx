@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "lucide-react";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
@@ -19,6 +20,7 @@ import { CaseData, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { useClients } from "@/hooks/useClients";
 import { generateTrackingNumber } from "@/lib/caseNumberUtils";
+import { closestName } from "@/lib/nameSimilarity";
 
 const toTitleCase = (str: string): string => {
     if (!str) return "";
@@ -138,6 +140,12 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const [missingClients, setMissingClients] = useState<string[]>([]);
     const [showNewClientConfirm, setShowNewClientConfirm] = useState(false);
 
+    // Kayıt türü: DERDEST (gerçek dava) | MAHZEN (arşiv — derdestle aynı bilgiler) | DANIŞ (danışma — yeni müvekkil oluşturmaz)
+    const [status, setStatus] = useState<"DERDEST" | "MAHZEN" | "DANIŞ">("DERDEST");
+    const [notes, setNotes] = useState(""); // Danışma notu (ileride hatırlamak için)
+    const [showConsultCheck, setShowConsultCheck] = useState(false);
+    const [consultTypoHints, setConsultTypoHints] = useState<{ typed: string; suggestion: string }[]>([]);
+
     const [esasNo, setEsasNo] = useState(prefill?.esas_no || "");
     const [courtBase, setCourtBase] = useState("");   // Mahkeme adı (saysz)
     const [courtDaireNo, setCourtDaireNo] = useState(""); // Daire/sıra no (1-20)
@@ -223,6 +231,10 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             setSubType("");
             setMissingClients([]);
             setShowNewClientConfirm(false);
+            setStatus("DERDEST");
+            setNotes("");
+            setShowConsultCheck(false);
+            setConsultTypoHints([]);
 
             // avukat_kodu (örn. "AGH") → lawyers listesinden tam adı bul (örn. "Av. Ayşe Gül Hanyaloğlu")
             if (prefill?.avukat_kodu && lawyers.length > 0) {
@@ -243,8 +255,25 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     }, [open, prefill, lawyers, clients]);
 
 
+    const isConsult = status === "DANIŞ";
+
+    /** Önerilen düzeltmeleri müvekkil alanına uygular (yazım hatası onarımı). */
+    const applyTypoSuggestions = () => {
+        const parts = clientName.split(',').map(n => n.trim()).filter(n => n);
+        const fixed = parts.map(p => {
+            const hint = consultTypoHints.find(
+                h => h.typed.toLocaleLowerCase('tr-TR') === p.toLocaleLowerCase('tr-TR')
+            );
+            return hint ? hint.suggestion : p;
+        });
+        setClientName(fixed.join(', '));
+        setShowConsultCheck(false);
+        setConsultTypoHints([]);
+    };
+
     const handleSave = async (forceSave = false) => {
-        if (!esasNo.trim()) {
+        // Danışmada esas no zorunlu değil (ortada henüz dava yok).
+        if (!isConsult && !esasNo.trim()) {
             toast.error("Esas No zorunludur.");
             return;
         }
@@ -253,19 +282,35 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             return;
         }
 
-        // --- YENİ MÜVEKKİL ONAYI ---
         const namesToCheck = clientName.split(',').map(n => n.trim()).filter(n => n);
+        const missing = existingClientNames.length > 0
+            ? namesToCheck.filter(name => !existingClientNames.includes(name.toLocaleUpperCase('tr-TR')))
+            : [];
 
-        if (!forceSave && existingClientNames.length > 0 && namesToCheck.length > 0) {
-            const missing = namesToCheck.filter(name => !existingClientNames.includes(name.toLocaleUpperCase('tr-TR')));
-            if (missing.length > 0) {
-                setMissingClients(missing);
-                setShowNewClientConfirm(true);
-                return; // Kullanıcı onayını bekle
+        if (isConsult) {
+            // Danışmada yeni müvekkil OLUŞTURULMAZ. Listede olmayan isimler için
+            // yalnızca olası yazım hatasını kontrol edip en yakın müvekkili öneririz.
+            if (!forceSave && missing.length > 0) {
+                const candidatePool = existingClientsData.map(c => String(c.name));
+                const hints = missing
+                    .map(name => ({ typed: name, suggestion: closestName(name, candidatePool) }))
+                    .filter((h): h is { typed: string; suggestion: string } => !!h.suggestion);
+                if (hints.length > 0) {
+                    setConsultTypoHints(hints);
+                    setShowConsultCheck(true);
+                    return; // Yazım hatası şüphesi — kullanıcı kararını bekle
+                }
+                // Yazım hatası şüphesi yok → doğrudan kaydet (yeni müvekkil eklenmez)
             }
+        } else if (!forceSave && missing.length > 0) {
+            // --- YENİ MÜVEKKİL ONAYI (gerçek dava) ---
+            setMissingClients(missing);
+            setShowNewClientConfirm(true);
+            return; // Kullanıcı onayını bekle
         }
         setMissingClients([]);
         setShowNewClientConfirm(false);
+        setShowConsultCheck(false);
 
         // İsimleri listelere böl
         const clientNames = clientName.split(',').map(n => n.trim()).filter(n => n);
@@ -298,13 +343,14 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
         const caseData = {
             tracking_no: trackingNo,
-            esas_no: esasNo.trim(),
-            status: "DERDEST",
+            esas_no: esasNo.trim() || undefined,
+            status,
             file_type: fileType,
             sub_type: subType || undefined,
             court: courtBase.trim() || undefined,
             opening_date: openingDate || undefined,
             responsible_lawyer_name: lawyer || undefined,
+            notes: notes.trim() || undefined,
             parties: [
                 ...clientNames.map(name => ({
                     name,
@@ -321,7 +367,11 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
         const result = await saveCaseAndReturn(caseData as unknown as CaseData);
         if (result && result.id) {
-            toast.success(`✅ Dava açıldı ve belgeye bağlandı! (${esasNo})`);
+            toast.success(
+                isConsult
+                    ? "✅ Danışma kaydı açıldı ve belgeye bağlandı!"
+                    : `✅ Dava açıldı ve belgeye bağlandı! (${esasNo})`
+            );
             onCaseCreated({
                 id: result.id,
                 tracking_no: result.tracking_no || trackingNo,
@@ -330,7 +380,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                     ? `${courtBase.trim()} ${courtDaireNo}. Daire`.trim()
                     : courtBase.trim() || "",
                 responsible_lawyer_name: lawyer || "",
-                status: "DERDEST",
+                status,
             });
             onClose();
         } else {
@@ -347,27 +397,62 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             <AlertTriangle className="w-5 h-5" strokeWidth={1.8} />
                         </div>
                         <div className="grid gap-1 min-w-0">
-                            <Eyebrow tone="brand">Hızlı Dava · Yeni Kayıt</Eyebrow>
+                            <Eyebrow tone="brand">{isConsult ? "Hızlı Danışma · Yeni Kayıt" : "Hızlı Dava · Yeni Kayıt"}</Eyebrow>
                             <DialogTitle className="font-display text-[20px] font-medium tracking-[-0.005em] text-[var(--fg)] leading-tight">
-                                Dava Bulunamadı
+                                {isConsult ? "Danışma Kaydı" : "Dava Bulunamadı"}
                             </DialogTitle>
                             <DialogDescription className="text-[12.5px] text-[var(--fg-muted)] leading-relaxed">
-                                Bu belge henüz açılmamış bir davaya ait görünüyor. Belgeyi kaydetmeden önce davayı açın.
+                                {isConsult
+                                    ? "Ortada henüz dava yok. Sadece taraflar ve kısa bir not yeterli; belge bu danışma kaydına bağlanır."
+                                    : "Bu belge henüz açılmamış bir davaya ait görünüyor. Belgeyi kaydetmeden önce davayı açın."}
                             </DialogDescription>
                         </div>
                     </div>
                 </DialogHeader>
 
                 <div className="grid gap-4 px-6 py-5">
+                    {/* Kayıt Türü: Derdest / Danış */}
+                    <div className="grid grid-cols-4 items-center gap-3">
+                        <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1">
+                            Kayıt Türü
+                        </Label>
+                        <div className="col-span-3 flex rounded-[3px] overflow-hidden border border-[var(--border)] w-fit">
+                            <button
+                                type="button"
+                                onClick={() => setStatus("DERDEST")}
+                                className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${status === "DERDEST"
+                                    ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                    : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
+                                    }`}
+                            >Derdest</button>
+                            <button
+                                type="button"
+                                onClick={() => setStatus("MAHZEN")}
+                                className={`px-3 py-1.5 text-[11px] font-semibold transition-colors border-l border-[var(--border)] ${status === "MAHZEN"
+                                    ? "bg-zinc-500 text-white"
+                                    : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
+                                    }`}
+                            >Mahzen</button>
+                            <button
+                                type="button"
+                                onClick={() => setStatus("DANIŞ")}
+                                className={`px-3 py-1.5 text-[11px] font-semibold transition-colors border-l border-[var(--border)] ${status === "DANIŞ"
+                                    ? "bg-blue-500 text-white"
+                                    : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
+                                    }`}
+                            >Danış</button>
+                        </div>
+                    </div>
+
                     {/* Esas No */}
                     <div className="grid grid-cols-4 items-center gap-3">
                         <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 flex items-center justify-end gap-1.5">
-                            <FileText className="w-3 h-3" /> Esas No *
+                            <FileText className="w-3 h-3" /> {isConsult ? "Esas No" : "Esas No *"}
                         </Label>
                         <Input
                             value={esasNo}
                             onChange={e => setEsasNo(e.target.value)}
-                            placeholder="2024/1234"
+                            placeholder={isConsult ? "Varsa esas no (opsiyonel)" : "2024/1234"}
                             className="col-span-3 font-mono h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                         />
                     </div>
@@ -465,7 +550,24 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                         </div>
                     </div>
 
-                    {/* Dava ve Kategorizasyon Bilgileri */}
+                    {/* Danışma Notu — yalnızca danış modunda */}
+                    {isConsult && (
+                        <div className="grid grid-cols-4 items-start gap-3">
+                            <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 flex items-center justify-end gap-1.5 mt-2">
+                                <FileText className="w-3 h-3" /> Not
+                            </Label>
+                            <Textarea
+                                value={notes}
+                                onChange={e => setNotes(e.target.value)}
+                                placeholder="Danışma ile ilgili kısa not (ileride hatırlamak için)..."
+                                className="col-span-3 min-h-[72px] bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm resize-none"
+                            />
+                        </div>
+                    )}
+
+                    {/* Dava ve Kategorizasyon Bilgileri — danışta gizli */}
+                    {!isConsult && (
+                    <>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                             <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
@@ -542,6 +644,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             />
                         </div>
                     </div>
+                    </>
+                    )}
                 </div>
 
                 {showNewClientConfirm ? (
@@ -571,12 +675,52 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             </FlowButton>
                         </div>
                     </div>
+                ) : showConsultCheck ? (
+                    <div className="bg-blue-500/5 border-y border-blue-500/30 px-6 py-4 flex flex-col gap-3">
+                        <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 grid place-items-center bg-blue-500 text-white shrink-0">
+                                <User className="w-4 h-4" strokeWidth={1.8} />
+                            </div>
+                            <div className="min-w-0">
+                                <Eyebrow tone="brand">Yazım Kontrolü</Eyebrow>
+                                <h4 className="font-display text-[15px] font-medium text-[var(--fg)] mt-0.5">
+                                    Bunları mı demek istediniz?
+                                </h4>
+                                <p className="text-[12px] text-[var(--fg-muted)] mt-1.5 leading-relaxed">
+                                    Aşağıdaki isimler müvekkil listesinde yok ama benzer kayıt(lar) bulundu.
+                                    Danışmada <strong>yeni müvekkil oluşturulmaz</strong>; istersen düzelt, ya da böyle kaydet.
+                                </p>
+                                <ul className="mt-2 space-y-1">
+                                    {consultTypoHints.map((h, i) => (
+                                        <li key={i} className="text-[12px] text-[var(--fg)]">
+                                            <span className="line-through opacity-60">{h.typed}</span>
+                                            <span className="mx-1.5 text-blue-500">→</span>
+                                            <strong className="font-semibold">{h.suggestion}</strong>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end mt-1">
+                            <FlowButton variant="secondary" size="sm" onClick={() => { setShowConsultCheck(false); setConsultTypoHints([]); }}>
+                                Vazgeç
+                            </FlowButton>
+                            <FlowButton variant="secondary" size="sm" onClick={applyTypoSuggestions}>
+                                Önerileri Uygula
+                            </FlowButton>
+                            <FlowButton variant="primary" size="sm" onClick={() => handleSave(true)}>
+                                Böyle Kaydet
+                            </FlowButton>
+                        </div>
+                    </div>
                 ) : (
                     <>
-                        <div className="bg-[#c47a1e]/10 border-y border-[#c47a1e]/25 px-6 py-3 text-[12px] text-[#c47a1e] flex items-start gap-2">
+                        <div className={`border-y px-6 py-3 text-[12px] flex items-start gap-2 ${isConsult ? "bg-blue-500/10 border-blue-500/25 text-blue-600" : "bg-[#c47a1e]/10 border-[#c47a1e]/25 text-[#c47a1e]"}`}>
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" strokeWidth={1.8} />
                             <span className="leading-relaxed">
-                                Bu form hızlı kayıt içindir. Tam dava kartına <strong className="font-semibold">Davalar</strong> menüsünden ulaşabilirsiniz.
+                                {isConsult
+                                    ? <>Danışma kaydıdır; listede olmayan isim <strong className="font-semibold">yeni müvekkil olarak eklenmez</strong>.</>
+                                    : <>Bu form hızlı kayıt içindir. Tam dava kartına <strong className="font-semibold">Davalar</strong> menüsünden ulaşabilirsiniz.</>}
                             </span>
                         </div>
 
@@ -587,12 +731,12 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             <FlowButton
                                 variant="primary"
                                 onClick={() => handleSave(false)}
-                                disabled={isCaseLoading || isClientLoading || !esasNo.trim() || !clientName.trim()}
+                                disabled={isCaseLoading || isClientLoading || (!isConsult && !esasNo.trim()) || !clientName.trim()}
                             >
                                 {isCaseLoading ? (
                                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Kaydediliyor…</>
                                 ) : (
-                                    <><Gavel className="w-3.5 h-3.5" /> Davayı Aç ve Bağla</>
+                                    <><Gavel className="w-3.5 h-3.5" /> {isConsult ? "Danışmayı Aç ve Bağla" : "Davayı Aç ve Bağla"}</>
                                 )}
                             </FlowButton>
                         </DialogFooter>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Upload, FileText, X, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 import { FlowButton } from "./primitives";
@@ -9,6 +9,10 @@ interface FlowDropZoneProps {
   onClearFile: () => void;
   isAnalyzing?: boolean;
   isComplete?: boolean;
+  /** Bugün yüklenen belge sayısı — backend bağlanınca gerçek değer geçilir. */
+  todayCount?: number;
+  /** Boş ekranda kutunun tepesine, kesik çizgili ayraçla yerleşen içerik (ör. aşama şeridi). */
+  header?: ReactNode;
 }
 
 const VALID_TYPES = [
@@ -41,6 +45,8 @@ export function FlowDropZone({
   onClearFile,
   isAnalyzing = false,
   isComplete = false,
+  todayCount = 0,
+  header,
 }: FlowDropZoneProps) {
   const [state, setState] = useState<"idle" | "dragover">("idle");
   const [dragCount, setDragCount] = useState(0);
@@ -158,7 +164,7 @@ export function FlowDropZone({
         "relative cursor-pointer border-[1.5px] border-dashed text-center transition-all duration-200",
         isDragover
           ? "border-[var(--brand)] bg-[var(--brand-soft)] scale-[1.005]"
-          : "border-[var(--border-strong)] bg-[var(--bg-elevated)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]/40",
+          : "dropzone-gradient-hover border-[var(--border-strong)] bg-[var(--bg-elevated)] hover:border-[var(--brand)]",
       ].join(" ")}
       style={isDragover ? {
         backgroundImage: "repeating-linear-gradient(45deg, transparent 0 10px, var(--brand-soft) 10px 20px)",
@@ -173,10 +179,19 @@ export function FlowDropZone({
         onChange={handleFileInput}
       />
 
+      {header && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="px-5 py-3 border-b border-dashed border-[var(--border)] text-left cursor-default"
+        >
+          {header}
+        </div>
+      )}
+
       <div className="px-10 py-14 flex flex-col items-center gap-5">
         <div
           className={[
-            "w-16 h-16 grid place-items-center transition-colors",
+            "w-16 h-16 rounded-full grid place-items-center transition-colors",
             isDragover ? "bg-[var(--brand)] text-[var(--brand-fg)]" : "bg-[var(--brand-soft)] text-[var(--brand)]",
           ].join(" ")}
         >
@@ -215,7 +230,7 @@ export function FlowDropZone({
         <div className="flex items-center gap-3 pt-2 font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)] border-t border-dashed border-[var(--border)] pt-3 w-full justify-center">
           <span>OCR otomatik</span>
           <span className="h-3 w-px bg-[var(--border-strong)]" />
-          <span>AI eşleştirme</span>
+          <span>Bugün <span className="text-[var(--fg)] font-semibold">{todayCount}</span> yüklendi</span>
           <span className="h-3 w-px bg-[var(--border-strong)]" />
           <span>⌘V Yapıştır</span>
         </div>
