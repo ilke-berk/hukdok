@@ -199,7 +199,8 @@ const Index = () => {
 
     const timeoutId = setTimeout(async () => {
       setIsSearching(true);
-      const data = await searchCases(caseSearch, false, true);
+      // Belge bağlama tüm davalarda arama yapar (sadece DERDEST değil) — kapalı/arşiv davalara da belge bağlanabilir
+      const data = await searchCases(caseSearch, false, false);
       setSearchResults(data || []);
       setIsSearching(false);
     }, 400);
@@ -418,6 +419,7 @@ const Index = () => {
     }
 
     if (suggested.confidence === "HIGH") {
+      // Otomatik seçim yok — kullanıcı listeden onaylasın.
       toast.info(
         `🎯 Dava eşleşmesi bulundu: ${suggested.esas_no} (Skor: ${suggested.score}) — Lütfen sol panelden doğrulayıp onaylayın!`,
         { duration: 8000 }
@@ -429,6 +431,21 @@ const Index = () => {
       );
     }
     // LOW skor: hiçbir şey yapma, kullanıcı manuel seçsin
+  };
+
+  // Bir AI aday davasını bağlı dava olarak seç (öneri kartı + alternatif adaylar ortak kullanır).
+  const selectSuggestedCase = (c: SuggestedCase) => {
+    const fullCase = allCases.find(ac => ac.id === c.case_id);
+    setLinkedCase(fullCase ?? {
+      id: c.case_id,
+      tracking_no: c.tracking_no,
+      esas_no: c.esas_no,
+      court: c.court,
+      responsible_lawyer_name: c.responsible_lawyer_name,
+      status: c.status,
+      karsi_taraf: c.karsi_taraf || "",
+      parties: c.parties || [],
+    });
   };
 
   const handleAnalyze = async () => {
@@ -1250,73 +1267,77 @@ const Index = () => {
                   )}
                   {!caseSearch.trim() && (
                     <div className="space-y-3">
-                      {/* EĞER BİR ÖNERİ VARSA VE HENÜZ SEÇİLMEDİYSE KULLANICIYA KUTU İÇİNDE SOR */}
-                      {analysisData?.suggested_case && (
-                        <div className="p-3 rounded-[3px] border border-[var(--brand)]/40 bg-[var(--brand-soft)] space-y-3">
-                          <div className="flex items-center gap-2">
-                            <Wand2 className="w-5 h-5 text-[var(--brand)]" />
-                            <p className="text-sm font-semibold text-[var(--brand)]">Yapay Zeka Tespiti</p>
-                            <Badge variant={analysisData.suggested_case.confidence === "HIGH" ? "default" : "secondary"} className="ml-auto text-[10px]">
-                              Skor: {analysisData.suggested_case.score}
-                            </Badge>
-                          </div>
+                      {/* AI önerileri: puana göre sıralı liste. Otomatik seçim YOK — kullanıcı tıklayarak bağlar. */}
+                      {analysisData?.suggested_case && (() => {
+                        const sc = analysisData.suggested_case!;
+                        // En iyi eşleşme + diğer adaylar tek listede (backend zaten puana göre azalan döndürür).
+                        const ranked = [sc, ...(sc.all_candidates || [])];
+                        const docNames = Array.from(new Set([
+                          analysisData.muvekkil_adi,
+                          ...(analysisData.muvekkiller || []),
+                          ...(analysisData.belgede_gecen_isimler || []),
+                        ].filter(Boolean)));
+                        return (
+                          <div className="p-3 rounded-[3px] border border-[var(--brand)]/40 bg-[var(--brand-soft)] space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Wand2 className="w-5 h-5 text-[var(--brand)]" />
+                              <p className="text-sm font-semibold text-[var(--brand)]">Yapay Zeka — Olası Davalar</p>
+                              <Badge variant="secondary" className="ml-auto text-[10px]">puana göre</Badge>
+                            </div>
 
-                          {/* İSİM EŞLEŞME GÖRSELLEŞTİRMESİ */}
-                          <div className="bg-[var(--bg-sunken)] rounded-[3px] p-2.5 border border-[var(--brand)]/20 space-y-2">
-                            <label className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--brand)]/70 block">
-                              BELGEDEKİ İSİMLER VE EŞLEŞME DURUMU
-                            </label>
-                            <div className="flex flex-wrap gap-1.5">
-                              {Array.from(new Set([
-                                analysisData.muvekkil_adi,
-                                ...(analysisData.muvekkiller || []),
-                                ...(analysisData.belgede_gecen_isimler || [])
-                              ].filter(Boolean))).map((name, idx) => {
-                                const isMatched = analysisData.suggested_case?.matched_doc_names?.includes(name);
-                                return (
-                                  <Badge
-                                    key={idx}
-                                    variant={isMatched ? "default" : "outline"}
-                                    className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-[#2f8a5d]/20 text-[#2f8a5d] border-[#2f8a5d]/30' : 'opacity-50'}`}
-                                  >
-                                    {isMatched ? <CheckCircle2 className="w-3 h-3" /> : null}
-                                    {name}
-                                  </Badge>
-                                );
-                              })}
+                            {/* İSİM EŞLEŞME GÖRSELLEŞTİRMESİ — belgedeki isimlerin eşleşme durumu */}
+                            {docNames.length > 0 && (
+                              <div className="bg-[var(--bg-sunken)] rounded-[3px] p-2.5 border border-[var(--brand)]/20 space-y-2">
+                                <label className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--brand)]/70 block">
+                                  BELGEDEKİ İSİMLER VE EŞLEŞME DURUMU
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {docNames.map((name, idx) => {
+                                    const isMatched = sc.matched_doc_names?.includes(name as string);
+                                    return (
+                                      <Badge
+                                        key={idx}
+                                        variant={isMatched ? "default" : "outline"}
+                                        className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-[#2f8a5d]/20 text-[#2f8a5d] border-[#2f8a5d]/30' : 'opacity-50'}`}
+                                      >
+                                        {isMatched ? <CheckCircle2 className="w-3 h-3" /> : null}
+                                        {name}
+                                      </Badge>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Puana göre sıralı aday listesi — tıklayınca bağlanır, otomatik seçim yok */}
+                            <div className="space-y-1.5">
+                              {ranked.map((cand, i) => (
+                                <button
+                                  key={cand.case_id}
+                                  type="button"
+                                  onClick={() => {
+                                    selectSuggestedCase(cand);
+                                    toast.success(`✅ Dava bağlandı: ${cand.esas_no || cand.tracking_no}`);
+                                  }}
+                                  className="w-full text-left p-2.5 rounded-[3px] border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)] transition-all duration-150"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-sm font-medium truncate">{cand.esas_no || cand.tracking_no}</span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {i === 0 && (
+                                        <Badge className="text-[9px] px-1.5 border-0 bg-[var(--brand)]/15 text-[var(--brand)]">En yüksek</Badge>
+                                      )}
+                                      <Badge variant="outline" className="text-[10px] tabular-nums">{cand.score}p</Badge>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-[var(--fg-muted)] truncate mt-0.5">{cand.court || "Mahkeme yok"}</p>
+                                </button>
+                              ))}
                             </div>
                           </div>
+                        );
+                      })()}
 
-                          <p className="text-xs text-[var(--fg-muted)] leading-relaxed">
-                            Bu belgenin <strong>{analysisData.suggested_case.esas_no}</strong> numaralı dava dosyasına ait olduğu tespit edildi. Doğruluyor musunuz?
-                          </p>
-                          <Button
-                            onClick={() => {
-                              // Tüm db verisini çekmek için allCases içinden bulalım.
-                              const fullCase = allCases.find((c) => c.id === analysisData.suggested_case?.case_id);
-                              if (fullCase) {
-                                setLinkedCase(fullCase);
-                              } else {
-                                // Fallback (eğer allCases henüz dolmadıysa)
-                                setLinkedCase({
-                                  id: analysisData.suggested_case.case_id,
-                                  tracking_no: analysisData.suggested_case.tracking_no,
-                                  esas_no: analysisData.suggested_case.esas_no,
-                                  court: analysisData.suggested_case.court,
-                                  responsible_lawyer_name: analysisData.suggested_case.responsible_lawyer_name,
-                                  status: analysisData.suggested_case.status,
-                                  karsi_taraf: analysisData.suggested_case.karsi_taraf || "",
-                                  parties: analysisData.suggested_case.parties || []
-                                });
-                              }
-                              toast.success("✅ Dava onaylandı ve bağlandı.");
-                            }}
-                            className="w-full h-10 gap-2 rounded-[3px] bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)]"
-                          >
-                            <CheckCircle2 className="w-4 h-4" /> Evet, Bu Davaya Bağla
-                          </Button>
-                        </div>
-                      )}
                       <p className="text-xs text-[var(--fg-muted)] flex items-center gap-1.5 px-1 mt-2">
                         <FolderOpen className="w-4 h-4 opacity-70" />
                         Farklı bir davaya bağlamak için yukarıdan arama yapın.

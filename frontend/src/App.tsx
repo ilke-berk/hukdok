@@ -26,6 +26,7 @@ import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
 import CaseDetails from "./pages/CaseDetails";
 import CaseGroup from "./pages/CaseGroup";
+import UnlinkedDocuments from "./pages/UnlinkedDocuments";
 import ActivityHistory from "./pages/ActivityHistory";
 import { useEffect, useState } from "react";
 
@@ -87,6 +88,7 @@ const AppContent = () => {
         >
           <Route path="/" element={<DashboardRouter />} />
           <Route path="/upload" element={<Index />} />
+          <Route path="/unlinked-documents" element={<UnlinkedDocuments />} />
           <Route path="/new-case" element={<CaseList />} />
           <Route path="/cases" element={<CaseList />} />
           <Route path="/new-case/form" element={<NewCase />} />
