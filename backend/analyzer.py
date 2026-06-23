@@ -65,8 +65,11 @@ if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
 
-async def _gemini_call_with_retry(model, payload, max_retries: int = 3):
-    """Gemini API çağrısını 429/503 hatalarında exponential backoff ile retry eder."""
+async def _gemini_call_with_retry(model, payload, max_retries: int = 3, stats: Optional[Dict] = None):
+    """Gemini API çağrısını 429/503 hatalarında exponential backoff ile retry eder.
+
+    stats: verilirse retry_count ve retry_wait_ms alanları doldurulur (benchmark için).
+    """
     delays = [10, 30, 60]  # saniye
     for attempt in range(max_retries + 1):
         try:
@@ -81,6 +84,9 @@ async def _gemini_call_with_retry(model, payload, max_retries: int = 3):
             )
             if is_transient and attempt < max_retries:
                 wait_sec = delays[attempt]
+                if stats is not None:
+                    stats["retry_count"] = stats.get("retry_count", 0) + 1
+                    stats["retry_wait_ms"] = stats.get("retry_wait_ms", 0) + wait_sec * 1000
                 code = "429" if "429" in err_str else "503"
                 TechnicalLogger.log(
                     "WARNING",
@@ -308,11 +314,13 @@ async def analyze_file_generator(
         }
         try:
             from udf_converter import convert_udf_to_pdf
-            
+
             # Convert UDF to temporary PDF
+            t_udf = time.perf_counter()
             temp_pdf_from_udf, udf_img_warnings = await loop.run_in_executor(
                 None, convert_udf_to_pdf, file_path, None
             )
+            benchmark["udf_conversion"] = round((time.perf_counter() - t_udf) * 1000, 2)
 
             TechnicalLogger.log("INFO", f"UDF converted to PDF: {temp_pdf_from_udf}")
 
@@ -341,6 +349,7 @@ async def analyze_file_generator(
     # 1.5. Page Trim — LLM'e sadece ilk 2 + son sayfa gönderilir
     full_pdf_path = file_path   # arşiv için tam PDF (Faz 3'te cache'e konacak)
     temp_trimmed_pdf = None
+    t_trim = time.perf_counter()
     try:
         trimmed = await loop.run_in_executor(
             None, pdf_utils.extract_key_pages, file_path
@@ -351,6 +360,7 @@ async def analyze_file_generator(
             TechnicalLogger.log("INFO", f"Sayfa kırpma uygulandı → {trimmed}")
     except Exception as e:
         TechnicalLogger.log("WARNING", f"Sayfa kırpma başarısız, tam dosya kullanılıyor: {e}")
+    benchmark["page_trim"] = round((time.perf_counter() - t_trim) * 1000, 2)
 
     # 2. Decide Mode (Async wrapper for heavy pdf logic)
     t1 = time.perf_counter()
@@ -502,6 +512,7 @@ async def analyze_file_generator(
         TechnicalLogger.log("INFO", f"🎯 [PRE] Eksik alanlar: {missing_fields if missing_fields else 'YOK (Sadece özet istenecek)'}")
         
         # Promptu dinamik oluştur (Singleton Konfigürasyon Kullan)
+        t_prompt = time.perf_counter()
         config = DynamicConfig.get_instance()
         lawyers = config.get_lawyers()
         statuses = config.get_statuses()
@@ -521,34 +532,55 @@ async def analyze_file_generator(
         model = genai.GenerativeModel(
             model_name=GEMINI_MODEL_NAME, system_instruction=sys_inst
         )
+        benchmark["prompt_build"] = round((time.perf_counter() - t_prompt) * 1000, 2)
 
 
+        # ⏱️ ai_call alt-metrikleri — darboğazın upload/wait/generate/retry'dan
+        # hangisi olduğunu ayırmak için (lokal vs prod hız farkı teşhisi).
+        ai_stats = {"retry_count": 0, "retry_wait_ms": 0}
         t3 = time.perf_counter()  # AI call timer start
-        
+
         if needs_ocr:
             # --- OCR MODE ---
+            benchmark["mode"] = "OCR"
             TechnicalLogger.log("INFO", "MODE: OCR Activated")
+            t_up = time.perf_counter()
             uploaded_file = upload_to_gemini(file_path)
+            benchmark["upload_ms"] = round((time.perf_counter() - t_up) * 1000, 2)
             yield {"status": "info", "message": "⏳ Dosya işleniyor..."}
+            t_wait = time.perf_counter()
             await wait_for_files_active([uploaded_file])
-            response = await _gemini_call_with_retry(model, [uploaded_file])
+            benchmark["wait_active_ms"] = round((time.perf_counter() - t_wait) * 1000, 2)
+            t_gen = time.perf_counter()
+            response = await _gemini_call_with_retry(model, [uploaded_file], stats=ai_stats)
+            benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
         else:
             # --- TEXT MODE ---
+            benchmark["mode"] = "TEXT"
             TechnicalLogger.log("INFO", "MODE: TEXT Activated")
 
             # Validate text length again
             if extracted_text and len(extracted_text) < 50:
                 # Fallback to OCR if text is suspiciously short (redundant check)
+                benchmark["mode"] = "TEXT->OCR_FALLBACK"
                 TechnicalLogger.log(
                     "WARNING",
                     "Text too short, falling back to OCR",
                     {"len": len(extracted_text)},
                 )
+                t_up = time.perf_counter()
                 uploaded_file = upload_to_gemini(file_path)
-                response = await _gemini_call_with_retry(model, [uploaded_file])
+                benchmark["upload_ms"] = round((time.perf_counter() - t_up) * 1000, 2)
+                t_gen = time.perf_counter()
+                response = await _gemini_call_with_retry(model, [uploaded_file], stats=ai_stats)
+                benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
             else:
-                response = await _gemini_call_with_retry(model, extracted_text)
-        
+                t_gen = time.perf_counter()
+                response = await _gemini_call_with_retry(model, extracted_text, stats=ai_stats)
+                benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
+
+        benchmark["retry_count"] = ai_stats["retry_count"]
+        benchmark["retry_wait_ms"] = round(ai_stats["retry_wait_ms"], 2)
         benchmark["ai_call"] = round((time.perf_counter() - t3) * 1000, 2)
         logging.info(f"GEMINI HAM CEVAP: {response.text}")
 
