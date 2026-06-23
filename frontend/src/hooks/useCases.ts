@@ -242,6 +242,23 @@ export const useCases = () => {
         return null;
     }, [authenticatedRequest]);
 
+    // --- Belge Bağlama ---
+
+    /** link_mode'a göre belgeleri getirir (ör. bağlantısız belgeler için "UNLINKED"). */
+    const getDocuments = useCallback(async (linkMode?: string, limit = 100) => {
+        const params = new URLSearchParams({ limit: String(limit) });
+        if (linkMode) params.set("link_mode", linkMode);
+        const response = await authenticatedRequest(`/api/documents?${params.toString()}`, "GET");
+        if (response && response.ok) return await response.json();
+        return [];
+    }, [authenticatedRequest]);
+
+    /** Bağlantısız bir belgeyi bir davaya bağlar. */
+    const linkDocument = useCallback(async (docId: number, caseId: number) => {
+        const response = await authenticatedRequest(`/api/documents/${docId}/link`, "PATCH", { case_id: caseId });
+        return !!(response && response.ok);
+    }, [authenticatedRequest]);
+
     return {
         saveCase,
         saveCaseAndReturn,
@@ -262,6 +279,9 @@ export const useCases = () => {
         // Dava grubu sayfası
         getCaseGroup,
         getCaseGroupByCase,
+        // Belge bağlama
+        getDocuments,
+        linkDocument,
         isLoading
     };
 };

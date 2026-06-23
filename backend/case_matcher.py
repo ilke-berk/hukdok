@@ -10,6 +10,8 @@ Güven Skoru:
   mahkeme şehir+tür eşleşme → +25 puan
   müvekkil adı tam eşleşme  → +30 puan (her biri)
   müvekkil adı kısmi eşleşme→ +15 puan (her biri)
+  karşı taraf adı tam eşleşme → +12 puan (her biri — zayıf sinyal)
+  karşı taraf adı kısmi eşleşme→ +6 puan  (her biri — zayıf sinyal)
 
   Not: Esas no tek başına yeterli değildir — aynı esas no farklı mahkemelerde olabilir.
        Sadece tam esas no eşleşmesi değerlendirilir, kısmi eşleşme yok.
@@ -208,11 +210,14 @@ def find_matching_case(
             matched_parties = set()
             matched_doc_names = set() # Track matched original names from document
             
-            # Party names in this specific case
+            # Party names in this specific case (taraf türü ile birlikte)
+            # CLIENT (müvekkil) eşleşmesi güçlü sinyaldir; COUNTER/THIRD (karşı taraf)
+            # eşleşmesi zayıftır çünkü aynı sigorta/banka onlarca davada karşı taraf olabilir.
             case_parties_norm = []
             for p in case["parties"]:
                 if p["name"]:
-                    case_parties_norm.append((_normalize(p["name"]), p["name"]))
+                    is_client = (p.get("party_type") or "").upper() == "CLIENT"
+                    case_parties_norm.append((_normalize(p["name"]), p["name"], is_client))
 
             match_count = 0
 
@@ -228,22 +233,28 @@ def find_matching_case(
                     continue
                 doc_name_norm = _normalize(doc_name_orig)
                 
-                for cp_norm, cp_orig in case_parties_norm:
+                for cp_norm, cp_orig, is_client in case_parties_norm:
                     if cp_norm in matched_parties:
                         continue
-                    
+
+                    # Taraf türüne göre ağırlık: müvekkil tam +30 / kısmi +15,
+                    # karşı taraf (veya diğer) tam +12 / kısmi +6.
+                    exact_pts = 30 if is_client else 12
+                    partial_pts = 15 if is_client else 6
+                    rol = "Müvekkil" if is_client else "Karşı taraf"
+
                     if doc_name_norm == cp_norm:
-                        score += 30
-                        match_count += 1
-                        reasons.append(f"İsim tam eşleşme ({cp_orig}): +30")
+                        score += exact_pts
+                        match_count += 1 if is_client else 0.5
+                        reasons.append(f"{rol} adı tam eşleşme ({cp_orig}): +{exact_pts}")
                         matched_parties.add(cp_norm)
                         matched_doc_names.add(doc_name_orig)
                         break
                     elif doc_name_norm in cp_norm or cp_norm in doc_name_norm:
                         if len(doc_name_norm) >= 6 and len(cp_norm) >= 6:
-                            score += 15
-                            match_count += 0.5
-                            reasons.append(f"İsim kısmi eşleşme ({doc_name_orig} ↔ {cp_orig}): +15")
+                            score += partial_pts
+                            match_count += 0.5 if is_client else 0.25
+                            reasons.append(f"{rol} adı kısmi eşleşme ({doc_name_orig} ↔ {cp_orig}): +{partial_pts}")
                             matched_parties.add(cp_norm)
                             matched_doc_names.add(doc_name_orig)
                             break
