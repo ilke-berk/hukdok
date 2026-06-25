@@ -36,6 +36,7 @@ from pathlib import Path
 import uuid  # For error masking
 import vault  # Import Vault
 import hashlib
+import random  # Retry jitter için
 import time  # Benchmark için
 
 if getattr(sys, 'frozen', False):
@@ -65,32 +66,41 @@ if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
 
-async def _gemini_call_with_retry(model, payload, max_retries: int = 3, stats: Optional[Dict] = None):
-    """Gemini API çağrısını 429/503 hatalarında exponential backoff ile retry eder.
+async def _gemini_call_with_retry(model, payload, max_retries: int = 5, stats: Optional[Dict] = None):
+    """Gemini API çağrısını 429/503 hatalarında jitter'lı exponential backoff ile retry eder.
+
+    503 (overloaded) genelde saniyeler içinde toparlanır → kısa backoff (base 1s).
+    429 (kota/rate-limit) daha uzun pencere ister → daha uzun backoff (base 5s).
+    Her ikisinde de jitter eklenir (thundering-herd önlemek için), tavan 30s.
 
     stats: verilirse retry_count ve retry_wait_ms alanları doldurulur (benchmark için).
     """
-    delays = [10, 30, 60]  # saniye
+    MAX_WAIT = 30.0  # saniye
     for attempt in range(max_retries + 1):
         try:
             return await model.generate_content_async(payload)
         except Exception as e:
             err_str = str(e)
-            is_transient = (
-                "429" in err_str
-                or "503" in err_str
-                or "resource exhausted" in err_str.lower()
-                or "service is currently unavailable" in err_str.lower()
+            err_low = err_str.lower()
+            is_429 = "429" in err_str or "resource exhausted" in err_low
+            is_503 = (
+                "503" in err_str
+                or "service is currently unavailable" in err_low
+                or "overloaded" in err_low
+                or "unavailable" in err_low
             )
+            is_transient = is_429 or is_503
             if is_transient and attempt < max_retries:
-                wait_sec = delays[attempt]
+                # 503: kısa (1,2,4,8,16…), 429: uzun (5,10,20…); + jitter, tavan 30s
+                base = 5.0 if is_429 else 1.0
+                wait_sec = min(base * (2 ** attempt) + random.uniform(0, base), MAX_WAIT)
                 if stats is not None:
                     stats["retry_count"] = stats.get("retry_count", 0) + 1
                     stats["retry_wait_ms"] = stats.get("retry_wait_ms", 0) + wait_sec * 1000
-                code = "429" if "429" in err_str else "503"
+                code = "429" if is_429 else "503"
                 TechnicalLogger.log(
                     "WARNING",
-                    f"⏳ Gemini geçici hata ({code}) — {wait_sec}s sonra tekrar denenecek "
+                    f"⏳ Gemini geçici hata ({code}) — {wait_sec:.1f}s sonra tekrar denenecek "
                     f"(Deneme {attempt + 1}/{max_retries})",
                 )
                 await asyncio.sleep(wait_sec)
