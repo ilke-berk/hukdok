@@ -582,6 +582,18 @@ async def analyze_file_generator(
         benchmark["retry_count"] = ai_stats["retry_count"]
         benchmark["retry_wait_ms"] = round(ai_stats["retry_wait_ms"], 2)
         benchmark["ai_call"] = round((time.perf_counter() - t3) * 1000, 2)
+
+        # ⏱️ Token sayıları — generate_ms'in belge boyutuyla mı orantılı olduğunu
+        # test etmek için (lokal-prod hız farkı: eşzamanlılık mı, belge boyutu mu?).
+        try:
+            um = getattr(response, "usage_metadata", None)
+            if um is not None:
+                benchmark["prompt_tokens"] = getattr(um, "prompt_token_count", None)
+                benchmark["output_tokens"] = getattr(um, "candidates_token_count", None)
+                benchmark["total_tokens"] = getattr(um, "total_token_count", None)
+        except Exception as e:
+            TechnicalLogger.log("WARNING", f"usage_metadata okunamadı: {e}")
+
         logging.info(f"GEMINI HAM CEVAP: {response.text}")
 
         # 3. Robust JSON Parsing (Brace Counting)
