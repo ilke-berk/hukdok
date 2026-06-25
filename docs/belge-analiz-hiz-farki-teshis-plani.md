@@ -151,10 +151,87 @@ Bu alanlar stdout'a `⏱️ BENCHMARK:` satırında gelir → `docker compose lo
 - `retry_count`>0, `retry_wait_ms` büyük → **rate-limit** sorunu (toplu yükleme kotayı yiyor).
 - `mode`=OCR + büyük `upload_ms`/`wait_active_ms` → belge OCR'a düşüyor; lokalde TEXT'e düşüyorsa fark budur.
 
-## Sonraki Aksiyon
+## 8. ⭐ Belirleyici Bulgu (2026-06-25) — Fark `generate_ms`'te
 
-- [ ] **Instrumented `analyzer.py`'ı prod'a deploy et** (mesai dışı: SSH + `docker compose up -d --build backend`).
-- [ ] Prod'da 3 belge tipi (temiz PDF / taranmış / UDF) çalıştır, `grep BENCHMARK` ile yeni alanları oku.
-- [ ] **Aynı belgeleri lokalde** çalıştır, `generate_ms` ve `mode`'u karşılaştır (Bölüm 3 tablosu).
-- [ ] `retry_count`>0 çıkarsa → toplu yükleme eşzamanlılığını / kota tier'ını incele.
-- [ ] `mode` ayrışıyorsa → aynı belgenin neden farklı moda düştüğünü araştır.
+Instrumented kod hem lokal hem prod'da çalıştırıldı. Sonuç:
+
+| Ortam | Model | Mode | retry | **generate_ms** | udf_conversion |
+|-------|-------|------|-------|-----------------|----------------|
+| **Lokal** | gemini-2.5-flash-lite | TEXT | 0 | **2.282 / 2.946 ms** | yok (PDF) |
+| **Prod** | gemini-2.5-flash-lite | TEXT | 0 | **15.513 / 16.445 ms** | 993 / 2.573 (UDF) |
+
+- **Model aynı** (lokal `.env` okundu: `models/gemini-2.5-flash-lite`).
+- **API key aynı** (son 6: `...0Y4ks`) → GCP projesi / tier farkı **ELENDİ**.
+- **Tek fark:** saf Gemini inference lokalde ~2.5 sn, prod'da ~16 sn — **5-7 kat**.
+
+### Confound (karıştırıcı) tespit edildi
+Prod örnekleri `udf_conversion` içeriyor → **UDF** belgeleri (uzun UYAP mahkeme evrakı).
+Lokal örnekler PDF → muhtemelen daha kısa. **Elma-elmaya değil.**
+
+### Kalan 2 hipotez
+- **A) Eşzamanlılık:** prod toplu yüklemede N belgeyi aynı anahtarla aynı anda çağırıyor → Google per-proje throughput'u bölüyor → her çağrı yavaşlıyor (sert 429 yok, o yüzden retry=0).
+- **B) Belge boyutu:** prod'daki UDF'ler çok daha uzun → büyük girdi/çıktı → uzun generate.
+
+### Eklenen token instrumentation
+`_benchmark`'a `prompt_tokens` / `output_tokens` / `total_tokens` eklendi (`usage_metadata`). `generate_ms` token sayısıyla orantılıysa → hipotez B.
+
+## 9. ⭐⭐ İZOLASYON TESTİ — Premis Çürüdü (2026-06-25)
+
+Aynı dosya (`_BIM_KARARI.pdf`) hem lokalde hem prod'da TEK BAŞINA çalıştırıldı.
+`prompt_tokens: 3113` her iki tarafta birebir aynı → gerçekten aynı belge.
+
+| Ortam | generate_ms | prompt_tokens | output_tokens | total |
+|-------|-------------|---------------|---------------|-------|
+| Lokal | **4.066** | 3113 | 501 | 4.514 |
+| Prod  | **3.063** | 3113 | 532 | 3.225 |
+
+**SONUÇ: Ortam kaynaklı prod yavaşlığı YOK.** Aynı belge için prod lokalden biraz
+daha hızlı. Başta görülen 15-16 sn'lik prod örnekleri ortamdan değil **iş yükünden**:
+- O örnekler **UDF** belgeleriydi (uzun UYAP evrakı) → çok daha fazla `output_token` → uzun generate.
+- Ve/veya **toplu yükleme** eşzamanlı çağrıları → karşılıklı yavaşlama.
+
+Lokalde küçük tek PDF, prod'da büyük UDF + toplu işlem test ediliyordu → **elma-armut**.
+
+## 10. Gerçek Optimizasyon Hedefi
+
+Prod/lokal farkı sahte çıktı. Asıl yavaşlık = **büyük belgelerde generate_ms** (output token ile orantılı). Kaldıraçlar:
+1. **Çıktıyı kısalt** (özet uzunluğu / `max_output_tokens`) — generate süresi çıktı token'ıyla orantılı; en büyük kaldıraç. Her ortamı eşit hızlandırır.
+2. **Toplu yüklemede eşzamanlılık sınırı** (semaphore) — eşzamanlı Gemini çağrıları birbirini yavaşlatıyorsa.
+3. **Daha hızlı model** (örn. yeni flash-lite sürümü) — artık meşru bir hız kaldıracı (prod/lokal boşluğunu kapatmak için değil, genel hız için). A/B test: hız + çıkarım doğruluğu.
+
+## 11. ⭐⭐⭐ Model A/B — Asıl Kök Neden: Model Kuyruk Gecikmesi (2026-06-25)
+
+Aynı belge (`_BIM_KARARI.pdf`), her model 3 koşu, lokal:
+
+| Koşu | gemini-2.5-flash-lite (mevcut) | gemini-3.1-flash-lite (aday) |
+|------|-------------------------------|------------------------------|
+| run1 | 3.026 ms (428 tok) | 2.381 ms (352 tok) |
+| run2 | 3.761 ms (580 tok) | 1.904 ms (340 tok) |
+| run3 | **15.494 ms** (532 tok) ⚠️ | 1.944 ms (305 tok) |
+
+**KÖK NEDEN:** `gemini-2.5-flash-lite` sunucu-tarafı gecikmesi **fat-tail** — aynı
+girdi (≈532 token, retry yok) rastgele 3s ya da 15s sürebiliyor. Baştaki prod 15-16s
+ve 39s değerleri buydu. "Lokal hızlı/prod yavaş" algısı büyük ölçüde **bu varyanstı**,
+ortam değil.
+
+**ÇÖZÜM:** `gemini-3.1-flash-lite` ~2x hızlı (medyan ~1.9s) ve **tutarlı** (sıçrama yok).
+
+### Doğruluk
+Yapılandırılmış alanlar her iki modelde aynı: müvekkil (Sabiha Tuzluoğlu + 5 kişilik
+liste), esas_no (2021/413), tarih (2019-04-11), mahkeme (Bursa BİM 3. İdari Dava Dairesi).
+Tek fark: 3.1'in özeti daha kısa/öz (341 vs 529 token) — çekirdek doğru, 2.5 daha detaylı.
+
+### Öneri
+`gemini-3.1-flash-lite`'a geç — daha hızlı, daha tutarlı, yapılandırılmış doğruluk eşit.
+Tam rollout öncesi birkaç belge daha (büyük UDF + taranmış/OCR) ile doğrula; özet
+kısalığının kabul edilebilir olduğunu teyit et; modelin GA/pricing durumunu kontrol et.
+
+## Sonraki Aksiyon (güncel)
+
+- [x] Instrumentation + token sayıları deploy edildi (commit `fc7be7d` main).
+- [x] İzolasyon testi → prod yavaşlığı premisi çürüdü (Bölüm 9).
+- [x] Model A/B → **kök neden 2.5-flash-lite kuyruk gecikmesi; 3.1-flash-lite çözüyor** (Bölüm 11).
+- [ ] 3.1-flash-lite'ı 2-3 belge daha ile doğrula (büyük UDF, taranmış/OCR).
+- [ ] Onaylanırsa `GEMINI_MODEL_NAME` lokal + prod `.env` → `models/gemini-3.1-flash-lite`.
+- [ ] 🔐 **GÜVENLİK:** `GEMINI_API_KEY` sohbette düz metin paylaşıldı → iptal edip yenisini üret.
+- [ ] Teşhis bitince geçici `backend/_bench_run.py` runner'ını sil.
