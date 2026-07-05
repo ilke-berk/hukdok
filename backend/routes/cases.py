@@ -18,7 +18,7 @@ from schemas import (
     CaseTrackingUpdate, CaseStageLogRead,
 )
 from database import SessionLocal
-from managers.admin_manager import (
+from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
     update_case_tracking, get_case_stage_log,
 )

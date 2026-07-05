@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/components/system/PageSearch";
 import {
@@ -149,7 +149,11 @@ const CaseList = () => {
   const [onlyUrgent, setOnlyUrgent] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Yarış durumu koruması: geç dönen eski isteklerin yenisini ezmesini engeller
+  const reqIdRef = useRef(0);
+
   const fetchCases = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
     try {
       setIsLoading(true);
       const offset = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -160,6 +164,8 @@ const CaseList = () => {
         lawyer: selectedLawyer,
         q: debouncedSearch || undefined,
       });
+      // Bu yanıt en güncel istek değilse (kullanıcı yazmaya devam etti) yok say
+      if (reqId !== reqIdRef.current) return;
       if (Array.isArray(data)) {
         setCases(data);
         setTotalCount(data.length > 0 ? (currentPage * ITEMS_PER_PAGE + (data.length === ITEMS_PER_PAGE ? 1 : 0)) : 0);
@@ -168,10 +174,11 @@ const CaseList = () => {
         setTotalCount(data.total || 0);
       }
     } catch (error) {
+      if (reqId !== reqIdRef.current) return;
       console.error(error);
       toast.error("Dosyalar yüklenirken bir hata oluştu.");
     } finally {
-      setIsLoading(false);
+      if (reqId === reqIdRef.current) setIsLoading(false);
     }
   }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch]);
 

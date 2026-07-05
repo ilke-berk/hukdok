@@ -368,9 +368,13 @@ def resend_document_email(
             tmp_path = tmp.name
 
         sender_name = user.get("name") or user.get("preferred_username") or None
+        # Belge türünü koddan taze çöz: eski kayıtlarda belge_turu_adi'ye ham kod
+        # (örn. "ARA-KRR") sızmış olabilir; koddan çözüm tam adı ("Ara Karar") verir.
+        from file_utils import get_doctype_label
+        belge_turu = get_doctype_label(doc.belge_turu_kodu) or doc.belge_turu_adi or "Belge"
         metadata = {
             "muvekkil_adi": doc.muvekkil_adi or "Bilinmeyen Müvekkil",
-            "belge_turu": doc.belge_turu_adi or "Belge",
+            "belge_turu": belge_turu,
             "tarih": "",
         }
 

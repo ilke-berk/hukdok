@@ -465,3 +465,33 @@ class DailyActivityReport(Base):
     is_acknowledged = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class ExportOutbox(Base):
+    """
+    Hukukbot aktarımının kaynağı (bkz. docs/hukukbot-aktarim/PLAN.md §1).
+
+    Satır YALNIZCA SharePoint upload'ı başarıyla bitip sharepoint_url DB'ye
+    yazıldıktan sonra açılır (hook Faz 3'te, document_pipeline.py) — böylece
+    outbox id sırası = aktarılabilirlik sırası olur ve async upload ile
+    reconcile cursor'ının yarışı ortadan kalkar (BULGULAR #1).
+    """
+    __tablename__ = "export_outbox"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(
+        Integer,
+        ForeignKey("case_documents.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    # "pending"   → aktarım bekliyor (hukukbot reconcile bunları sorar)
+    # "delivered" → hukukbot işledi, ACK geldi
+    # "failed"    → hukukbot N denemeden sonra NACK'ledi; manuel inceleme (BULGULAR #9)
+    status = Column(String(20), default="pending", nullable=False, index=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    nack_reason = Column(String, nullable=True)               # NACK'teki {reason}
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+
+    document = relationship("CaseDocument")

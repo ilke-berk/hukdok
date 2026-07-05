@@ -1,5 +1,18 @@
 # Backend Refactor Planı
 
+## 2026-07 — Tanrı-modül bölünmesi (tamamlandı)
+
+- [x] `managers/admin_manager.py` (1779 satır) dörde bölündü; kendisi ince uyumluluk katmanı olarak kaldı:
+  - `managers/reference_lists.py` — 13 liste varlığı için generic CRUD (`LIST_REGISTRY` + `get_items/add_item/delete_item/reorder_list/refresh_cache`)
+  - `managers/lawyer_resolver.py` — avukat adı normalize/çözümleme motoru
+  - `managers/case_manager.py` — dava CRUD + takip
+  - `managers/client_manager.py` — müvekkil yazma
+  - `managers/seed_data.py` — seed verileri
+- [x] `routes/processing.py` `/confirm` (~500 satır) → `services/document_pipeline.py` adım fonksiyonları; endpoint imzası (27 Form parametresi) değişmedi
+- [x] `analyzer.py` `analyze_file_generator` (~730 satır) → modül seviyesi adım yardımcıları; yield sözleşmesi birebir korundu
+- [x] Tek seferlik scriptler `scripts/` altına taşındı (bkz. `scripts/README.md`)
+- [x] `database.py` migrasyonları bildirimsel `_MIGRATIONS` listesine indirildi; yapısal hata artık startup'ı durduruyor (fail-fast), yalnızca pg_trgm adımı non-fatal
+
 ## Hedef Klasör Yapısı
 
 ### `extractors/`

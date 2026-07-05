@@ -3,9 +3,9 @@ Production belgelerini gönderilen e-postalarla karşılaştırır.
 Mail gönderilmemiş belgeleri listeler.
 
 Kullanım:
-  python compare_emails_docs.py                        # 16 Nisan'dan itibaren
-  python compare_emails_docs.py --since 2026-04-14     # belirli tarihten
-  python compare_emails_docs.py --db-url postgresql://... --since 2026-04-14
+  python scripts/compare_emails_docs.py                        # 16 Nisan'dan itibaren
+  python scripts/compare_emails_docs.py --since 2026-04-14     # belirli tarihten
+  python scripts/compare_emails_docs.py --db-url postgresql://... --since 2026-04-14
 
 Eşleşme katmanları:
   strict  → ±60 dk pencere — kesinlikle gönderilmiş
@@ -18,9 +18,9 @@ import sys, os, re, argparse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env", override=True)
 
 import requests
 from sharepoint.auth_graph import get_graph_token

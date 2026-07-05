@@ -206,10 +206,23 @@ def normalize_date_for_sharepoint(date_str: str) -> Optional[str]:
     return None
 
 
+def _normalize_doctype_code(code: str) -> str:
+    """Kod karşılaştırması için normalize eder.
+
+    Config kodları sabit genişliğe alt çizgiyle doldurulur ("ARA-KRR_______")
+    ve maile/dosya adına ayraçları farklı biçimlerde ulaşabilir. Büyük harfe
+    çevirip harf/rakam dışındaki her şeyi atarak ("ARA-KRR" == "ARA-KRR_______"
+    == "ARAKRR") sağlam eşleşme sağlar.
+    """
+    return re.sub(r"[^A-Z0-9]", "", (code or "").upper())
+
+
 def get_doctype_label(code: str) -> Optional[str]:
     """Resolves document type code to its label. Returns original code if lookup fails."""
     if not code:
         return None
+
+    target = _normalize_doctype_code(code)
 
     try:
         from managers.config_manager import DynamicConfig
@@ -217,7 +230,7 @@ def get_doctype_label(code: str) -> Optional[str]:
         doctypes = DynamicConfig.get_instance().get_doctypes()
         for doc in doctypes:
             c = doc.get("kod") or doc.get("code") or doc.get("value")
-            if c == code:
+            if _normalize_doctype_code(c) == target:
                 return doc.get("aciklama") or doc.get("label") or doc.get("name") or code
     except Exception as e:
         TechnicalLogger.log("WARNING", f"Doctype lookup failed for {code}: {e}")

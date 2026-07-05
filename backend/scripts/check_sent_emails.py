@@ -1,8 +1,8 @@
 """
 Gönderilen e-postaları kontrol eder.
 Kullanım (production sunucuda):
-  docker exec hukudok-automator-main-backend-1 python check_sent_emails.py
-  docker exec hukudok-automator-main-backend-1 python check_sent_emails.py --since 2026-04-16
+  docker exec hukudok-automator-main-backend-1 python scripts/check_sent_emails.py
+  docker exec hukudok-automator-main-backend-1 python scripts/check_sent_emails.py --since 2026-04-16
 """
 
 import sys
@@ -12,10 +12,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Backend dizinini path'e ekle
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/
 
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env", override=True)
 
 import requests
 from sharepoint.auth_graph import get_graph_token
