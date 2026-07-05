@@ -71,6 +71,8 @@ test_env/
 
 # Tek seferlik export script'leri ve çıktıları (PII içerebilir, regenerable)
 export_*.py
+# export_publisher kalıcı uygulama kodudur, yukarıdaki kurala takılmasın:
+!backend/services/export_publisher.py
 avukatlar_export.csv
 davalar_ornek_*.xlsx
 *_export.csv
