@@ -1,9 +1,9 @@
 """
 BIRLESIK_SONUC_v5_temiz.xlsx → cases DB import scripti
 Kullanım:
-  python import_excel_cases.py              # Tam import
-  python import_excel_cases.py --dry-run    # DB'ye yazmadan logla
-  python import_excel_cases.py --limit 100  # İlk 100 satır
+  python scripts/import_excel_cases.py              # Tam import
+  python scripts/import_excel_cases.py --dry-run    # DB'ye yazmadan logla
+  python scripts/import_excel_cases.py --limit 100  # İlk 100 satır
 """
 
 import sys
@@ -17,6 +17,8 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
 load_dotenv("../.env")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/ modulleri icin
 
 import openpyxl
 import models

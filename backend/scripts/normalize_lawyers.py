@@ -16,11 +16,15 @@ Güvenlik:
   - Idempotent: tekrar çalıştırmak zararsız (zaten canonical olanı tekrar yazmaz).
 
 Kullanım (prod, mesai dışı):
-  docker compose exec -T backend python normalize_lawyers.py            # dry-run
-  docker compose exec -T backend python normalize_lawyers.py --apply    # uygula
+  docker compose exec -T backend python scripts/normalize_lawyers.py            # dry-run
+  docker compose exec -T backend python scripts/normalize_lawyers.py --apply    # uygula
 """
 import argparse
 import csv
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/ modulleri icin
 
 import models
 from database import SessionLocal

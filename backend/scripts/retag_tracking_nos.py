@@ -3,11 +3,11 @@ Mevcut tüm davaların tracking_no alanını geriye dönük düzeltir.
 
 - Kategori: müvekkilin clients.category alanından okunur (yoksa isimden tahmin edilir)
 - Sıra no: her müvekkil için davalar opening_date ASC sıralanır (null → sona)
-- Kuru çalıştırma: python retag_tracking_nos.py --dry-run
+- Kuru çalıştırma: python scripts/retag_tracking_nos.py --dry-run
 
 Kullanım:
-  python retag_tracking_nos.py            # Gerçek güncelleme
-  python retag_tracking_nos.py --dry-run  # Sadece önizleme, DB'ye yazmaz
+  python scripts/retag_tracking_nos.py            # Gerçek güncelleme
+  python scripts/retag_tracking_nos.py --dry-run  # Sadece önizleme, DB'ye yazmaz
 """
 
 import sys
@@ -21,6 +21,8 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 from dotenv import load_dotenv
 load_dotenv("../.env")
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/ modulleri icin
 
 import models
 from database import SessionLocal

@@ -478,7 +478,7 @@ const CaseGroup = () => {
                                                                     {doc.uploaded_at && (
                                                                         <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                                             <Clock className="w-3 h-3" />
-                                                                            {new Date(doc.uploaded_at).toLocaleString("tr-TR")}
+                                                                            {new Date(doc.uploaded_at).toLocaleString("sv-SE")}
                                                                         </span>
                                                                     )}
                                                                 </div>

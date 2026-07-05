@@ -1,7 +1,7 @@
 """
 vekalet_listesi.xlsx dosyasından avukatları veritabanına aktarır.
 Yeni avukatlar eklenir; mevcutlar tüm alanlar bakımından güncellenir.
-Kullanim: python import_lawyers_excel.py [--db-url postgresql://...]
+Kullanim: python scripts/import_lawyers_excel.py [--db-url postgresql://...]
 """
 import sys
 import os
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 _script_dir = Path(__file__).parent
-for _env in [_script_dir / ".env", _script_dir.parent / ".env"]:
+for _env in [_script_dir.parent / ".env", _script_dir.parent.parent / ".env"]:
     if _env.exists():
         load_dotenv(_env)
         print(f".env yuklendi: {_env}")
@@ -24,7 +24,7 @@ _args, _ = _ap.parse_known_args()
 if _args.db_url:
     os.environ["DATABASE_URL"] = _args.db_url
 
-sys.path.insert(0, str(_script_dir))
+sys.path.insert(0, str(_script_dir.parent))  # backend/
 
 import openpyxl
 from database import SessionLocal

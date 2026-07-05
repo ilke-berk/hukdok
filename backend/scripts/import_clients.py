@@ -5,7 +5,7 @@ Excel dosyasından (cari_mikro_guncellendi.xlsx) müvekkilleri okur,
 mevcut clients tablosunu temizler (TRUNCATE) ve taze import yapar.
 
 Kullanım:
-    python import_clients.py --file "C:/path/to/cari_mikro_guncellendi.xlsx"
+    python scripts/import_clients.py --file "C:/path/to/cari_mikro_guncellendi.xlsx"
 
 Kolon eşleştirmesi:
     Col 1  (Vergi No sayısal)   → cari_kod
@@ -48,7 +48,7 @@ _early_args, _ = _parser.parse_known_args()
 # .env yükle — önce backend/, sonra proje root'unu dene
 from dotenv import load_dotenv
 _script_dir = Path(__file__).parent
-for _env_candidate in [_script_dir / ".env", _script_dir.parent / ".env"]:
+for _env_candidate in [_script_dir.parent / ".env", _script_dir.parent.parent / ".env"]:
     if _env_candidate.exists():
         load_dotenv(_env_candidate)
         print(f"⚙️  .env yüklendi: {_env_candidate}")
@@ -67,6 +67,7 @@ except ImportError:
     sys.exit(1)
 
 # DB importları DATABASE_URL set edildikten SONRA yapılıyor
+sys.path.insert(0, str(_script_dir.parent))  # backend/ modulleri icin
 from sqlalchemy import text
 from database import SessionLocal, engine
 import models  # noqa: F401 — Base.metadata'nın tabloları görmesi için

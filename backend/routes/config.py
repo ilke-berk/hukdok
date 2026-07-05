@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 from dependencies import get_current_user
 from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtTypeItem, PartyRoleItem, LawyerUpdateItem
 from managers.config_manager import DynamicConfig
-from managers.admin_manager import (
+from managers.seed_data import seed_all_lists
+from managers.reference_lists import (
     get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects,
     add_lawyer, update_lawyer, delete_lawyer,
     add_status, delete_status,
@@ -21,7 +22,6 @@ from managers.admin_manager import (
     get_specialties, add_specialty, delete_specialty,
     get_client_categories, add_client_category, delete_client_category,
     get_file_statuses, add_file_status, delete_file_status,
-    seed_all_lists,
     reorder_list,
 )
 

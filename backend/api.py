@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
 
     # Seed static lists if tables are empty
     try:
-        from managers.admin_manager import seed_all_lists
+        from managers.seed_data import seed_all_lists
         seed_all_lists()
         logging.info("Seed check completed.")
     except Exception as e:
@@ -215,7 +215,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, documents, processing, activity
+from routes import config, clients, cases, documents, processing, activity, export
 
 app.include_router(config.router)
 app.include_router(clients.router)
@@ -223,6 +223,9 @@ app.include_router(cases.router)
 app.include_router(documents.router)
 app.include_router(processing.router)
 app.include_router(activity.router)
+# Hukukbot export API'si: Azure AD auth'un DIŞINDA, X-API-Key ile korunur.
+# Host nginx'e bağlanmaz — yalnızca iç Docker network'ünden erişilir (BULGULAR #5).
+app.include_router(export.router)
 
 
 

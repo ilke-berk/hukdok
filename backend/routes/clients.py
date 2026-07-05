@@ -6,7 +6,7 @@ from auth_helpers import get_tenant_owned_client, tenant_filter_clause
 from dependencies import get_current_tenant, get_current_user
 from schemas import ClientCreate, ClientRead, ClientUpdate
 from database import SessionLocal
-from managers.admin_manager import add_client
+from managers.client_manager import add_client
 import models
 
 router = APIRouter()

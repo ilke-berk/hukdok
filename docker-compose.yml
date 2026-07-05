@@ -26,8 +26,14 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # Paylaşılan network'te "backend" adı fazla genel; hukukbot bu isimle
+    # bağlanır: http://hukdok_backend:8001 (BULGULAR #10)
+    container_name: hukdok_backend
     ports:
-      - "8001:8001"
+      # localhost'a sabitli: API-key'li /export route'ları public porttan
+      # erişilememeli (BULGULAR #11). Host nginx localhost'tan proxy'ler,
+      # hukukbot iç Docker network'ünden konuşur.
+      - "127.0.0.1:8001:8001"
     volumes:
       # Persistent volume for database (production)
       - backend-data:/app/data
@@ -45,6 +51,7 @@ services:
         condition: service_healthy
     networks:
       - hukudok-network
+      - hukuk_shared
 
   frontend:
     build:
@@ -68,3 +75,7 @@ volumes:
 networks:
   hukudok-network:
     driver: bridge
+  # Hukukbot ile ortak external network (Faz 4). Önceden oluşturulmalı:
+  #   docker network create hukuk_shared
+  hukuk_shared:
+    external: true

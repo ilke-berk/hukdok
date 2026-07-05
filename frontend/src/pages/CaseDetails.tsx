@@ -684,7 +684,7 @@ const CaseDetails = () => {
                                                         {doc.uploaded_at && (
                                                             <div className="flex items-center text-xs text-muted-foreground gap-1">
                                                                 <Clock className="w-3 h-3" />
-                                                                {new Date(doc.uploaded_at).toLocaleString("tr-TR")}
+                                                                {new Date(doc.uploaded_at).toLocaleString("sv-SE")}
                                                             </div>
                                                         )}
                                                     </div>
