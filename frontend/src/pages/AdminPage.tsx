@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import { Eyebrow } from "@/components/dashboard/primitives";
-import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -413,9 +411,6 @@ const AdminPage = () => {
         else toast.error("Hata");
     };
 
-    const { authRequest } = useAuthRequest();
-    const queryClient = useQueryClient();
-
     if (isLoading) {
         return (
             <div>
@@ -525,9 +520,9 @@ const AdminPage = () => {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localLawyers.map(i => i.code)} strategy={verticalListSortingStrategy}>
+                                            <SortableContext items={localLawyers.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localLawyers.map((item) => (
-                                                    <SortableRow key={item.code} id={item.code}>
+                                                    <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
                                                         <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
                                                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.gorev || <span className="opacity-30">—</span>}</TableCell>
@@ -536,7 +531,7 @@ const AdminPage = () => {
                                                         <TableCell className="text-xs">{item.email || <span className="opacity-30">—</span>}</TableCell>
                                                         <TableCell className="text-xs whitespace-nowrap">{item.phone || <span className="opacity-30">—</span>}</TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => setEditingLawyer({ code: item.code, tc: item.tc_no ?? "", sicil: item.sicil_no ?? "", gorev: item.gorev ?? "", email: item.email ?? "", phone: item.phone ?? "", address: item.address ?? "" })}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
+                                                            <Button variant="ghost" size="icon" onClick={() => setEditingLawyer({ code: item.code ?? "", tc: item.tc_no ?? "", sicil: item.sicil_no ?? "", gorev: item.gorev ?? "", email: item.email ?? "", phone: item.phone ?? "", address: item.address ?? "" })}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
                                                             <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "lawyer")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                                         </TableCell>
                                                     </SortableRow>
@@ -569,9 +564,9 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localStatuses.map(i => i.code)} strategy={verticalListSortingStrategy}>
+                                            <SortableContext items={localStatuses.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localStatuses.map((item) => (
-                                                    <SortableRow key={item.code} id={item.code}>
+                                                    <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell>{item.code}</TableCell>
                                                         <TableCell>{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -607,9 +602,9 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localDocTypes.map(i => i.code)} strategy={verticalListSortingStrategy}>
+                                            <SortableContext items={localDocTypes.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localDocTypes.map((item) => (
-                                                    <SortableRow key={item.code} id={item.code}>
+                                                    <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-medium">{item.code}</TableCell>
                                                         <TableCell>{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -644,9 +639,9 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Dava Konusu</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localCaseSubjects.map(i => i.code)} strategy={verticalListSortingStrategy}>
+                                            <SortableContext items={localCaseSubjects.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localCaseSubjects.map((item) => (
-                                                    <SortableRow key={item.code} id={item.code}>
+                                                    <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
                                                             <Button variant="ghost" size="icon" onClick={() => handleDelete(item, "case_subject")}><Trash2 className="h-4 w-4 text-destructive" /></Button>
@@ -682,9 +677,9 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localEmails.map(i => i.email)} strategy={verticalListSortingStrategy}>
+                                            <SortableContext items={localEmails.map(i => i.email ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localEmails.map((item) => (
-                                                    <SortableRow key={item.email} id={item.email}>
+                                                    <SortableRow key={item.email} id={item.email ?? ""}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell>{item.email}</TableCell>
                                                         <TableCell>{item.description || "-"}</TableCell>
@@ -1034,9 +1029,26 @@ function ActivityTestPanel() {
     });
     const [forceEmail, setForceEmail] = useState("");
     const [loading, setLoading] = useState<string | null>(null);
-    const [reports, setReports] = useState<any[]>([]);
+    interface ReportRow {
+        id: number;
+        report_date: string;
+        display?: string;
+        user_email?: string;
+        is_legacy?: boolean;
+        total: number;
+        mailed: number;
+        unmailed: number;
+        acknowledged?: boolean;
+    }
+    interface TriggerDiagnosis {
+        date_range_utc: string;
+        total_docs_in_range: number;
+        docs_with_email: number;
+        docs_without_email: number;
+    }
+    const [reports, setReports] = useState<ReportRow[]>([]);
     const [triggerResult, setTriggerResult] = useState<string | null>(null);
-    const [diagnosis, setDiagnosis] = useState<any | null>(null);
+    const [diagnosis, setDiagnosis] = useState<TriggerDiagnosis | null>(null);
     const [detail, setDetail] = useState<ActivityReport | null>(null);
     const [openingId, setOpeningId] = useState<number | null>(null);
 
@@ -1062,8 +1074,8 @@ function ActivityTestPanel() {
             setTriggerResult(data.message || JSON.stringify(data));
             if (data.diagnosis) setDiagnosis(data.diagnosis);
             if (data.success) await handleList();
-        } catch (e: any) {
-            setTriggerResult("Hata: " + e.message);
+        } catch (e) {
+            setTriggerResult("Hata: " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setLoading(null);
         }
@@ -1077,8 +1089,8 @@ function ActivityTestPanel() {
             const data = await res.json();
             setTriggerResult(data.message || JSON.stringify(data));
             await handleList();
-        } catch (e: any) {
-            setTriggerResult("Hata: " + e.message);
+        } catch (e) {
+            setTriggerResult("Hata: " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setLoading(null);
         }
@@ -1107,8 +1119,8 @@ function ActivityTestPanel() {
                 ...data,
                 has_unmailed: data.unmailed_documents > 0,
             } as ActivityReport);
-        } catch (e: any) {
-            setTriggerResult("Detay yükleme hatası: " + e.message);
+        } catch (e) {
+            setTriggerResult("Detay yükleme hatası: " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setOpeningId(null);
         }
@@ -1122,8 +1134,8 @@ function ActivityTestPanel() {
             const data = await res.json();
             setTriggerResult(`${data.deleted_count} rapor silindi (${date})`);
             await handleList();
-        } catch (e: any) {
-            setTriggerResult("Hata: " + e.message);
+        } catch (e) {
+            setTriggerResult("Hata: " + (e instanceof Error ? e.message : String(e)));
         } finally {
             setLoading(null);
         }

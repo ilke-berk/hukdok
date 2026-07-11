@@ -223,7 +223,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     @media print{body{padding:25px 35px}}
   </style>
 </head>
-<body>${content}<script>window.onload=function(){window.print()}<\/script></body>
+<body>${content}<script>window.onload=function(){window.print()}${"</"}script></body>
 </html>`);
         win.document.close();
     }

@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useClients } from "../hooks/useClients";
+import { useClients, ClientData } from "../hooks/useClients";
 import { useDebounce } from "../hooks/useDebounce";
 import { YetkiBelgesiModal } from "@/components/YetkiBelgesiModal";
 
@@ -18,29 +18,9 @@ import {
 import { MetricCard, SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 
-export interface Client {
+// Alanlar hooks/useClients.ts'teki ClientData'dan gelir; listede id her zaman dolu
+export interface Client extends ClientData {
   id: number;
-  name: string;
-  tc_no?: string;
-  email?: string;
-  phone?: string;
-  mobile_phone?: string;
-  address?: string;
-  notes?: string;
-  contact_type?: string;
-  cari_kod?: string;
-  category?: string;
-  specialty?: string;
-  client_type?: string;
-  il?: string;
-  sektor?: string;
-  yevmiye_no?: string;
-  noterlik?: string;
-  vekaletname_tarihi?: string;
-  vekil_avukatlar?: string;
-  gecerlilik_tarihi?: string;
-  vekalet_no?: string;
-  buro_vekalet_no?: string;
 }
 
 const ITEMS_PER_PAGE = 12;
@@ -84,7 +64,9 @@ function DetailRow({ label, value, icon: Icon }: { label: string; value: React.R
 const ClientList = () => {
   useSetPageTitle("Müvekkiller", ["Avukat Paneli"]);
   const navigate = useNavigate();
-  const { clients: allClients, isLoading: isClientsLoading } = useClients();
+  const { clients: allClientsData, isLoading: isClientsLoading } = useClients();
+  // DB kayıtlarında id her zaman set'lidir (ClientData.id yalnızca create öncesi boş)
+  const allClients = allClientsData as Client[];
   const [initialLoaded, setInitialLoaded] = useState(false);
   const isLoading = !initialLoaded && isClientsLoading;
 

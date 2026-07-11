@@ -3,9 +3,9 @@ import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import {
     ArrowLeft, Gavel, Scale, Clock, FileText, AlertCircle,
-    FileStack, Users, History, Edit, Plus, Link2,
+    FileStack, Users, Edit, Plus, Link2,
     Building2, ChevronRight, BarChart3, TrendingUp,
-    User, CheckCircle2
+    User
 } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useEffect, useState } from "react";
@@ -13,7 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 
 // --- Tip renkleri ---

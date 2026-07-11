@@ -89,9 +89,9 @@ export function GlobalSearchDropdown({
     const q = debouncedQuery.trim().toLocaleLowerCase("tr-TR");
     if (q.length < 2) return [];
     return clients
-      .filter(c => c.name.toLocaleLowerCase("tr-TR").includes(q))
+      .filter(c => c.id != null && c.name.toLocaleLowerCase("tr-TR").includes(q))
       .slice(0, 6)
-      .map(c => ({ id: c.id, name: c.name, category: c.category }));
+      .map(c => ({ id: c.id!, name: c.name, category: c.category }));
   }, [clients, debouncedQuery]);
 
   const go = (path: string, state?: Record<string, unknown>) => {

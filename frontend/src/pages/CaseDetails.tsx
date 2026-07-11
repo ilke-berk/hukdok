@@ -432,7 +432,7 @@ const CaseDetails = () => {
                             <Users className="w-4 h-4" />
                             <span className="hidden sm:inline">Taraflar</span>
                             <span className="sm:hidden">Taraflar</span>
-                            {caseData.parties?.length > 0 && (
+                            {caseData.parties && caseData.parties.length > 0 && (
                                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] h-4">
                                     {caseData.parties.length}
                                 </Badge>
@@ -442,7 +442,7 @@ const CaseDetails = () => {
                             <FileStack className="w-4 h-4" />
                             <span className="hidden sm:inline">Belgeler</span>
                             <span className="sm:hidden">Belgeler</span>
-                            {caseData.documents?.length > 0 && (
+                            {caseData.documents && caseData.documents.length > 0 && (
                                 <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px] h-4">
                                     {caseData.documents.length}
                                 </Badge>
@@ -523,7 +523,7 @@ const CaseDetails = () => {
                                     <CardDescription>Sistem üzerindeki durum değişiklikleri</CardDescription>
                                 </CardHeader>
                                 <CardContent>
-                                    {caseData.history?.length > 0 ? (
+                                    {caseData.history && caseData.history.length > 0 ? (
                                         <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-border before:to-transparent">
                                             {caseData.history.map((h: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }, idx: number) => (
                                                 <div key={idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
@@ -579,7 +579,7 @@ const CaseDetails = () => {
                                 <CardDescription>Davacı, davalı ve diğer ilgililer</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {caseData.parties?.length > 0 ? (
+                                {caseData.parties && caseData.parties.length > 0 ? (
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {caseData.parties.map((party: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }, idx: number) => {
                                             const roleColors: Record<string, string> = {
@@ -652,7 +652,7 @@ const CaseDetails = () => {
                                 <CardDescription>Davaya bağlanan ve analiz edilen tüm belgeler</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                {caseData.documents?.length > 0 ? (() => {
+                                {caseData.documents && caseData.documents.length > 0 ? (() => {
                                     // Belgeleri grupla: null → dava geneli, dolu → müvekkile ait
                                     const caseWide = caseData.documents!.filter(d => d.case_party_id == null);
                                     const byParty = caseData.documents!.reduce<Record<string, { name: string; docs: typeof caseData.documents }>>((acc, d) => {

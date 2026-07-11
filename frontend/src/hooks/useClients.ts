@@ -18,6 +18,16 @@ export interface ClientData {
     gender?: string;
     specialty?: string;
     cari_kod?: string;
+    il?: string;
+    contact_type?: string;
+    sektor?: string;
+    yevmiye_no?: string;
+    noterlik?: string;
+    vekaletname_tarihi?: string;
+    vekil_avukatlar?: string;
+    gecerlilik_tarihi?: string;
+    vekalet_no?: string;
+    buro_vekalet_no?: string;
 }
 
 export const useClients = () => {

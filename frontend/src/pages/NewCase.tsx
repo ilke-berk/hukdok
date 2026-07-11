@@ -5,15 +5,14 @@ import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
 import { useCases, CaseData } from "@/hooks/useCases";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/dashboard/primitives";
-import { FlowButton } from "@/components/flow/primitives";
+import { ACCEPT_ATTRIBUTE } from "@/lib/fileValidation";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, RefreshCw, Sparkles, Loader2, Upload, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
@@ -115,7 +114,7 @@ const NewCase = () => {
 
     // API Hooks
     const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
-    const { clients: dbClients, isLoading: isDbLoading } = useClients();
+    const { clients: dbClients } = useClients();
     const {
         caseSubjects, lawyers,
         fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
@@ -142,10 +141,10 @@ const NewCase = () => {
 
     // Generate case tracking ID using central utility
     const [caseId, setCaseId] = useState(editModeCase?.tracking_no || generateTrackingNumber());
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, _setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<CaseSearchResult[]>([]);
-    const [isSearchingCases, setIsSearchingCases] = useState(false);
+    const [_isSearchingCases, setIsSearchingCases] = useState(false);
     const [caseStatus, setCaseStatus] = useState(editModeCase?.status || "DERDEST");
     const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
 
@@ -181,7 +180,7 @@ const NewCase = () => {
     });
 
     const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
-        editModeCase?.lawyers?.map((l: any) => ({ name: l.name, lawyer_id: l.lawyer_id })) || []
+        editModeCase?.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []
     );
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
@@ -360,7 +359,7 @@ const NewCase = () => {
                 klasorNo2: editModeCase.klasor_no_2 || "",
                 notes: editModeCase.notes || "",
             });
-            setSelectedLawyers(editModeCase.lawyers?.map((l: any) => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
+            setSelectedLawyers(editModeCase.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
             setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
             setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || [{ name: "", role: "Davalı" }]);
             setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || []);
@@ -395,7 +394,8 @@ const NewCase = () => {
             setIsAnalyzing(false);
 
             // Mock Extracted Data
-            setFormData({
+            setFormData(prev => ({
+                ...prev,
                 fileType: "Hukuk Dava",
                 subType: "Tüketici",
                 subject: "Ayıplı Mal - Bedel İadesi",
@@ -412,7 +412,7 @@ const NewCase = () => {
                 bureauType: "",
                 subTypeExtra: "",
                 judicialUnit: ""
-            });
+            }));
 
             setSelectedLawyers([{ name: "İlke Berk", lawyer_id: null }]);
 
@@ -426,26 +426,6 @@ const NewCase = () => {
                 icon: <Sparkles className="w-5 h-5 text-yellow-500" />
             });
         }, 2000);
-    };
-
-    // Simulate loading an existing case
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!searchQuery) return;
-
-        setIsLoading(true);
-        toast.info("Dosya aranıyor...");
-
-        setTimeout(() => {
-            setIsLoading(false);
-            if (searchQuery.includes("123")) {
-                toast.success("Dosya bulundu ve yüklendi: 2023/123");
-                setCaseId("2023/123");
-                // In a real app, we would set form values here
-            } else {
-                toast.error("Dosya bulunamadı, yeni bir kart oluşturuluyor.");
-            }
-        }, 1000);
     };
 
     const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
@@ -658,7 +638,7 @@ const NewCase = () => {
                             type="file"
                             className="hidden"
                             multiple
-                            accept=".pdf,.docx,.udf"
+                            accept={ACCEPT_ATTRIBUTE}
                             onChange={(e) => e.target.files && handleFileSelect(Array.from(e.target.files))}
                         />
                     </div>
@@ -1460,7 +1440,7 @@ const NewCase = () => {
 
                                         <Select onValueChange={(v) => {
                                             if (v && !selectedLawyers.find(l => l.name === v)) {
-                                                const lawyerObj = lawyers.find((l: any) => l.name === v);
+                                                const lawyerObj = lawyers.find(l => l.name === v);
                                                 setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: lawyerObj ? lawyerObj.id : null }]);
                                             }
                                         }}>
@@ -1468,7 +1448,7 @@ const NewCase = () => {
                                                 <SelectValue placeholder="Avukat Ekle..." />
                                             </SelectTrigger>
                                             <SelectContent className="max-h-64">
-                                                {lawyers.map((t: any) => <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>)}
+                                                {lawyers.map(t => <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>)}
                                             </SelectContent>
                                         </Select>
                                     </div>

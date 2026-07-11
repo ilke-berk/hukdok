@@ -2,6 +2,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Upload, FileText, X, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 import { FlowButton } from "./primitives";
+import { ACCEPT_ATTRIBUTE, isValidFile } from "@/lib/fileValidation";
 
 interface FlowDropZoneProps {
   onFileSelect: (files: File | File[]) => void;
@@ -13,20 +14,6 @@ interface FlowDropZoneProps {
   todayCount?: number;
   /** Boş ekranda kutunun tepesine, kesik çizgili ayraçla yerleşen içerik (ör. aşama şeridi). */
   header?: ReactNode;
-}
-
-const VALID_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain",
-  "application/xml",
-  "text/xml",
-  "application/zip",
-];
-
-function isValidFile(file: File): boolean {
-  return VALID_TYPES.includes(file.type) || file.name.toLowerCase().endsWith(".udf");
 }
 
 function warnInvalidFiles(invalidNames: string[]) {
@@ -175,7 +162,7 @@ export function FlowDropZone({
         type="file"
         className="hidden"
         multiple
-        accept=".pdf,.docx,.doc,.txt,.udf"
+        accept={ACCEPT_ATTRIBUTE}
         onChange={handleFileInput}
       />
 
@@ -203,7 +190,7 @@ export function FlowDropZone({
             {isDragover ? "Bırakın — dosyayı kuyruğa alalım" : "Belgeyi buraya sürükleyin"}
           </h3>
           <p className="font-sans text-[13px] text-[var(--fg-muted)] max-w-[44ch]">
-            Veya alttaki butonlardan seçin. PDF, DOCX, DOC, TXT, UDF (UYAP) — maksimum 50 MB.
+            Veya alttaki butonlardan seçin. PDF, Word, Excel, TIFF, JPG, PNG, UDF (UYAP) — maksimum 50 MB.
           </p>
         </div>
 
