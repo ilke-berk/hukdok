@@ -1,0 +1,90 @@
+# Faz 2 — Regresyon Ağı CI (docs/gelistirme-plani-2026-07-07.md §2.3)
+#
+# İki bağımsız job: backend (pytest) + frontend (tsc, vitest, build).
+# Merge kapısı için GitHub'da branch protection ayarı gerekir (manuel adım):
+#   Settings → Branches → main → Require status checks: backend, frontend
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Saf birim testleri DB'ye bağlanmaz ama database.py import'ta
+      # postgresql:// URL şartı arar; ileride DB testleri için service hazır.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukudok_test
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hukudok_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Dockerfile prod imajıyla aynı sürüm (python:3.10-slim)
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Bağımlılıkları kur
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: ruff (Faz 3.1)
+        run: ruff check .
+
+      - name: mypy (Faz 3.1 — managers/ + routes/)
+        run: mypy
+
+      - name: pytest
+        run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Dockerfile builder imajıyla aynı sürüm (node:20)
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Bağımlılıkları kur
+        # legacy-peer-deps .npmrc'den gelir (React 18 + MSAL v5)
+        run: npm ci
+
+      - name: ESLint (Faz 3.2'den beri zorunlu)
+        run: npm run lint
+
+      - name: TypeScript kontrolü
+        run: npx tsc --noEmit
+
+      - name: vitest
+        run: npm test
+
+      - name: Build
+        run: npm run build
