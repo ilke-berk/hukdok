@@ -5,6 +5,7 @@ referans listeleri managers/reference_lists.py'dedir.
 """
 import logging
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy.orm import selectinload
 
@@ -18,7 +19,16 @@ from managers.lawyer_resolver import (
 logger = logging.getLogger("AdminManager")
 
 
-def _apply_tenant_filter(query, tenant_id: str):
+def _parse_date_field(value, field_name: str):
+    """'YYYY-MM-DD' formatındaki alanı date'e çevirir; geçersizse loglayıp None döner."""
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d").date()
+    except ValueError:
+        logger.warning(f"Geçersiz tarih değeri atlandı: {field_name}={value!r}")
+        return None
+
+
+def _apply_tenant_filter(query, tenant_id: Optional[str]):
     """Sorguya tenant izolasyon filtresi uygular.
     tenant_id'si NULL olan kayıtlar (eski/migrasyon öncesi) her tenant'a görünür.
     """
@@ -30,18 +40,18 @@ def _apply_tenant_filter(query, tenant_id: str):
     return query
 
 
-def _lawyer_filter_case_ids(db, selected: str, tenant_id: str):
+def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
     """Seçilen avukatla eşleşen dava ID kümesini döndürür (toleranslı).
     responsible_lawyer_name + case_lawyers ilişkisinin ikisini de tarar."""
     aliases = _resolve_lawyer_aliases(selected)
-    matched = set()
+    matched: set = set()
 
     if aliases is None:
         # Config'te çözülemedi → normalize edilmiş "contains" ile geriye dönük güvenli arama
         sel_norm = _norm_name(selected)
         if not sel_norm:
             return matched
-        q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active == True)
+        q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active.is_(True))
         q = _apply_tenant_filter(q, tenant_id)
         for cid, rn in q.all():
             if any(sel_norm in _norm_name(p) for p in _split_persons(rn)):
@@ -52,7 +62,7 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: str):
         return matched
 
     core_tokens, code_norm, surname, surname_unique = aliases
-    q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active == True)
+    q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active.is_(True))
     q = _apply_tenant_filter(q, tenant_id)
     for cid, rn in q.all():
         if _value_matches(rn, core_tokens, code_norm, surname, surname_unique):
@@ -69,7 +79,8 @@ def get_case(case_id: int, tenant_id: str = None):
         query = db.query(models.Case).filter(models.Case.id == case_id)
         query = _apply_tenant_filter(query, tenant_id)
         item = query.first()
-        if not item: return None
+        if not item:
+            return None
 
         # Build response with parties and history
         result = {
@@ -95,7 +106,7 @@ def get_case(case_id: int, tenant_id: str = None):
             "klasor_no_2": item.klasor_no_2,
             "notes": item.notes,
             "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
-            "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
+            "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
             "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents],
             # Takip alanları
@@ -146,8 +157,8 @@ def get_case_stats(tenant_id: str = None):
     from sqlalchemy import func
     try:
         db = SessionLocal()
-        stats = {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {}}
-        base_query = db.query(models.Case.status, func.count(models.Case.id)).filter(models.Case.active == True)
+        stats: dict = {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {}}
+        base_query = db.query(models.Case.status, func.count(models.Case.id)).filter(models.Case.active.is_(True))
         base_query = _apply_tenant_filter(base_query, tenant_id)
         counts = base_query.group_by(models.Case.status).all()
 
@@ -181,7 +192,7 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
         query = db.query(models.Case).options(
             selectinload(models.Case.parties),
             selectinload(models.Case.lawyers)
-        ).filter(models.Case.active == True)
+        ).filter(models.Case.active.is_(True))
         query = _apply_tenant_filter(query, tenant_id)
 
         if status and status != "ALL":
@@ -200,7 +211,8 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
             term_filters = []
 
             for term in terms:
-                if not exact and len(term) < 2: continue
+                if not exact and len(term) < 2:
+                    continue
                 search_pattern = term if exact else f"%{term}%"
 
                 if exact:
@@ -278,7 +290,7 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 "hukuk_no": item.hukuk_no,
                 "dosya_son_durumu": getattr(item, "dosya_son_durumu", None),
                 "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
-                "lawyers": [{"name": l.name, "lawyer_id": l.lawyer_id} for l in item.lawyers],
+                "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
                 "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None,
                 "updated_at": item.updated_at.isoformat() if getattr(item, "updated_at", None) else None,
             }
@@ -297,7 +309,8 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         query = db.query(models.Case).filter(models.Case.id == case_id)
         query = _apply_tenant_filter(query, tenant_id)
         case = query.first()
-        if not case: return False
+        if not case:
+            return False
 
         # Fields to track for history
         tracked_fields = ["esas_no", "court", "status"]
@@ -333,19 +346,19 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         case.notes = data.get("notes", case.notes)
 
         if data.get("opening_date"):
-            try:
-                case.opening_date = datetime.strptime(data.get("opening_date"), "%Y-%m-%d").date()
-            except: pass
+            parsed = _parse_date_field(data["opening_date"], "opening_date")
+            if parsed:
+                case.opening_date = parsed
 
         if data.get("acceptance_date"):
-            try:
-                case.acceptance_date = datetime.strptime(data.get("acceptance_date"), "%Y-%m-%d").date()
-            except: pass
+            parsed = _parse_date_field(data["acceptance_date"], "acceptance_date")
+            if parsed:
+                case.acceptance_date = parsed
 
         if data.get("atama_tarihi"):
-            try:
-                case.atama_tarihi = datetime.strptime(data.get("atama_tarihi"), "%Y-%m-%d").date()
-            except: pass
+            parsed = _parse_date_field(data["atama_tarihi"], "atama_tarihi")
+            if parsed:
+                case.atama_tarihi = parsed
 
         # 2. Sync Parties (Delete and Re-add for simplicity in this version)
         db.query(models.CaseParty).filter(models.CaseParty.case_id == case_id).delete()
@@ -467,18 +480,12 @@ def add_case(data: dict, tenant_id: str = None):
         # Handle acceptance_date
         acceptance_date_str = data.get("acceptance_date")
         if acceptance_date_str:
-            try:
-                new_case.acceptance_date = datetime.strptime(str(acceptance_date_str).strip(), "%Y-%m-%d").date()
-            except:
-                pass
+            new_case.acceptance_date = _parse_date_field(acceptance_date_str, "acceptance_date")
 
         # Handle atama_tarihi
         atama_tarihi_str = data.get("atama_tarihi")
         if atama_tarihi_str:
-            try:
-                new_case.atama_tarihi = datetime.strptime(str(atama_tarihi_str).strip(), "%Y-%m-%d").date()
-            except:
-                pass
+            new_case.atama_tarihi = _parse_date_field(atama_tarihi_str, "atama_tarihi")
 
         db.add(new_case)
         db.flush()  # Get the case ID

@@ -1,4 +1,6 @@
-import psycopg2, os, sys
+import psycopg2
+import os
+import sys
 sys.stdout.reconfigure(encoding="utf-8")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
@@ -8,9 +10,9 @@ db = os.getenv("DATABASE_URL","").replace("@postgres:","@localhost:")
 staging = db.rsplit("/hukudok", 1)[0] + "/hukudok_staging"
 
 s = psycopg2.connect(staging)
-l = psycopg2.connect(db)
+loc = psycopg2.connect(db)
 sc = s.cursor()
-lc = l.cursor()
+lc = loc.cursor()
 
 SKIP = ("9/9","2026/1379","2000/399")
 
@@ -23,9 +25,13 @@ exact=like=none_list=0
 missing=[]
 for sid, esas in rows:
     lc.execute("SELECT id FROM cases WHERE esas_no=%s LIMIT 1",(esas,))
-    if lc.fetchone(): exact+=1; continue
+    if lc.fetchone():
+        exact+=1
+        continue
     lc.execute("SELECT id FROM cases WHERE esas_no LIKE %s LIMIT 1",(f"%{esas}%",))
-    if lc.fetchone(): like+=1; continue
+    if lc.fetchone():
+        like+=1
+        continue
     none_list+=1
     missing.append((sid, esas))
 
@@ -37,4 +43,5 @@ if missing:
     for sid, esas in missing:
         print(f"    staging_id={sid}  esas_no={esas}")
 
-s.close(); l.close()
+s.close()
+loc.close()

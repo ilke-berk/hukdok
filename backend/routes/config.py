@@ -8,7 +8,7 @@ from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtT
 from managers.config_manager import DynamicConfig
 from managers.seed_data import seed_all_lists
 from managers.reference_lists import (
-    get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects,
+    get_lawyers, get_statuses, get_doctypes, get_case_subjects,
     add_lawyer, update_lawyer, delete_lawyer,
     add_status, delete_status,
     add_doctype, delete_doctype,
@@ -182,7 +182,7 @@ def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
 
 @router.post("/api/config/email_recipients")
 def api_add_email(item: EmailItem, user: dict = Depends(require_admin)):
-    success = add_email_recipient(item.name, item.email, item.description)
+    success = add_email_recipient(item.name, item.email, item.description or "")
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add email (maybe duplicate?)")
     return {"status": "success", "message": "Email recipient added"}

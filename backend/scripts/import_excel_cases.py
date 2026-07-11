@@ -189,7 +189,7 @@ def run(dry_run: bool = False, limit: int = None):
             if limit and row_idx - 2 >= limit:
                 break
 
-            def get(col_name):
+            def get(col_name, row=row):  # row=row: döngü değişkenini bağla (B023)
                 idx = col.get(col_name)
                 return row[idx] if idx is not None else None
 

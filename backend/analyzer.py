@@ -115,7 +115,7 @@ try:
 except ImportError:
     TechnicalLogger.log("ERROR", "prompts.py not found. Using fallback.")
 
-    def get_system_instruction(l=None):
+    def get_system_instruction(dynamic_lawyers=None):
         return "ERROR"
 
 
@@ -190,7 +190,7 @@ def is_scanned_pdf(pdf_path: str) -> Tuple[bool, Optional[str]]:
             return False, cleaned_text
 
         TechnicalLogger.log(
-            "INFO", f"PDF Analysis: OCR Required", {"file": pdf_path, "reason": reason}
+            "INFO", "PDF Analysis: OCR Required", {"file": pdf_path, "reason": reason}
         )
         return True, None
     else:
@@ -209,13 +209,12 @@ def upload_to_gemini(path: str, mime_type: str = "application/pdf") -> Any:
     file = genai.upload_file(path, mime_type=mime_type)
     TechnicalLogger.log(
         "INFO",
-        f"Uploaded file to Gemini",
+        "Uploaded file to Gemini",
         {"display_name": file.display_name, "uri": file.uri},
     )
     return file
 
 
-import asyncio
 
 
 async def wait_for_files_active(files: List[Any]) -> None:
@@ -267,7 +266,6 @@ def get_default_json() -> Dict[str, Any]:
 
 
 # --- CACHE MECHANISM (PostgreSQL) ---
-from database import DatabaseManager
 
 
 # =====================================================================
@@ -320,6 +318,49 @@ async def _step_udf_conversion(
         default_data = get_default_json()
         default_data["hash"] = file_hash
         default_data["ozet"] = f"UDF dönüşüm hatası: {str(e)}"
+        yield {"status": "complete", "data": default_data}
+        state["failed"] = True
+
+
+async def _step_format_conversion(
+    state: Dict[str, Any],
+    file_hash: str,
+    benchmark: Dict[str, Any],
+    loop: asyncio.AbstractEventLoop,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """Görüntü/Office → PDF dönüşüm adımı. state: file_path, temp_converted_pdf, failed."""
+    from pdf.format_converter import IMAGE_EXTENSIONS, ensure_pdf
+
+    file_ext = Path(state["file_path"]).suffix.lower()
+    if file_ext in IMAGE_EXTENSIONS:
+        message = "🖼️ Görüntü formatı tespit edildi, PDF'e dönüştürülüyor..."
+    else:
+        message = f"📄 Office formatı ({file_ext}) tespit edildi, PDF'e dönüştürülüyor..."
+    yield {"status": "info", "message": message}
+
+    try:
+        t_conv = time.perf_counter()
+        temp_converted_pdf = await loop.run_in_executor(
+            None, ensure_pdf, state["file_path"]
+        )
+        benchmark["format_conversion"] = round((time.perf_counter() - t_conv) * 1000, 2)
+        state["temp_converted_pdf"] = temp_converted_pdf
+
+        TechnicalLogger.log("INFO", f"{file_ext} converted to PDF: {temp_converted_pdf}")
+
+        # Now analyze the converted PDF instead
+        state["file_path"] = temp_converted_pdf
+
+        yield {
+            "status": "info",
+            "message": "✅ PDF dönüştürme tamamlandı, analiz başlıyor..."
+        }
+
+    except Exception as e:
+        TechnicalLogger.log("ERROR", f"Format conversion failed ({file_ext}): {e}")
+        default_data = get_default_json()
+        default_data["hash"] = file_hash
+        default_data["ozet"] = f"Dosya dönüşüm hatası ({file_ext}): {str(e)}"
         yield {"status": "complete", "data": default_data}
         state["failed"] = True
 
@@ -422,17 +463,42 @@ def _pre_extract_hearing(pre_extracted: Dict[str, Any], extracted_text: str) -> 
             # "ertelenmesine ... DD/MM/YYYY"
             (rf'ertelenmesine[^.{{}}]{{0,80}}?({_D})', 1, None),
         ]
+        def _set_hearing(raw_date: str, raw_time: Optional[str]) -> bool:
+            raw_date = raw_date.replace("-", "/").replace(".", "/")
+            parts = raw_date.split("/")
+            if len(parts) == 3 and len(parts[2]) == 4:
+                pre_extracted["sonraki_durusma_tarihi"] = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+                if raw_time:
+                    # saat ayracını normalize et (09.43 → 09:43)
+                    pre_extracted["sonraki_durusma_saati"] = raw_time.replace(".", ":")
+                TechnicalLogger.log("INFO", f"📅 [PRE] Sonraki duruşma: {pre_extracted['sonraki_durusma_tarihi']} {pre_extracted.get('sonraki_durusma_saati') or ''}")
+                return True
+            return False
+
         for pat, dg, tg in _hearing_patterns:
             m = _re.search(pat, extracted_text, _re.IGNORECASE)
-            if m:
-                raw_date = m.group(dg).replace("-", "/").replace(".", "/")
-                parts = raw_date.split("/")
-                if len(parts) == 3 and len(parts[2]) == 4:
-                    pre_extracted["sonraki_durusma_tarihi"] = f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
-                    if tg:
-                        # saat ayracını normalize et (09.43 → 09:43)
-                        pre_extracted["sonraki_durusma_saati"] = m.group(tg).replace(".", ":")
-                    TechnicalLogger.log("INFO", f"📅 [PRE] Sonraki duruşma: {pre_extracted['sonraki_durusma_tarihi']} {pre_extracted.get('sonraki_durusma_saati') or ''}")
+            if m and _set_hearing(m.group(dg), m.group(tg) if tg else None):
+                break
+
+        # Etiket-pencere kalıbı (tebligat zarfı form yerleşimi):
+        # "Duruşma Günü / Duruşma Saati" etiketli form alanlarında değerler
+        # etiketten ÖNCE gelebilir (PDF metin sırası). Etiketin çevresindeki
+        # pencerede etikete en yakın tarih + saat aranır.
+        if not pre_extracted.get("sonraki_durusma_tarihi"):
+            for lbl in _re.finditer(r'duru[sş]ma\s+g[uü]n[uü]', extracted_text, _re.IGNORECASE):
+                before = extracted_text[max(0, lbl.start() - 200):lbl.start()]
+                after = extracted_text[lbl.end():lbl.end() + 200]
+                for window, nearest_last in ((before, True), (after, False)):
+                    dates = _re.findall(_D, window)
+                    if not dates:
+                        continue
+                    # Noktalı tarihler (17.11.2026) saat kalıbına da uyar; önce tarihleri sil
+                    times = _re.findall(_T, _re.sub(_D, " ", window))
+                    raw_date = dates[-1] if nearest_last else dates[0]
+                    raw_time = (times[-1] if nearest_last else times[0]) if times else None
+                    if _set_hearing(raw_date, raw_time):
+                        break
+                if pre_extracted.get("sonraki_durusma_tarihi"):
                     break
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[PRE] Duruşma tarihi çıkarımı hatası: {e}")
@@ -481,11 +547,10 @@ def _pre_extract_fields(
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[PRE] Mahkeme çıkarımı hatası: {e}")
 
-    # 6. Sonraki Duruşma Tarihi + Saati (Regex — duruşma/tensip zaptı belgeleri için)
-    if preset_belge_turu_kodu:
-        _btk_up = preset_belge_turu_kodu.upper()
-        if any(kw in _btk_up for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP")):
-            _pre_extract_hearing(pre_extracted, extracted_text)
+    # 6. Sonraki Duruşma Tarihi + Saati (Regex — duruşma/tensip zaptı ve tebligat belgeleri için)
+    from constants import is_hearing_doctype
+    if is_hearing_doctype(preset_belge_turu_kodu):
+        _pre_extract_hearing(pre_extracted, extracted_text)
 
 
 def _detect_missing_fields(pre_extracted: Dict[str, Any]) -> List[str]:
@@ -870,6 +935,28 @@ def _apply_hearing_fields(
     elif not data.get("sonraki_durusma_saati"):
         data["sonraki_durusma_saati"] = None
 
+    # Plausibility guard: geçersiz ISO tarih veya belge tarihinden ÖNCEKİ duruşma
+    # tarihi elenir (tebligatta zarf/evrak tarihinin duruşma günüyle karışmasına
+    # karşı). Geçmiş tarihler elenmez — arşiv belgesi yüklemelerinde meşrudur.
+    hd = data.get("sonraki_durusma_tarihi")
+    if hd:
+        from datetime import date as _date
+        try:
+            hd_parsed = _date.fromisoformat(str(hd))
+            belge_tarihi = data.get("tarih") or pre_extracted.get("tarih")
+            if belge_tarihi:
+                try:
+                    if hd_parsed < _date.fromisoformat(str(belge_tarihi)):
+                        TechnicalLogger.log("WARNING", f"⚠️ Duruşma tarihi ({hd}) belge tarihinden ({belge_tarihi}) önce — elendi.")
+                        data["sonraki_durusma_tarihi"] = None
+                        data["sonraki_durusma_saati"] = None
+                except ValueError:
+                    pass  # belge tarihi parse edilemedi, guard atlanır
+        except ValueError:
+            TechnicalLogger.log("WARNING", f"⚠️ Duruşma tarihi geçersiz formatta — elendi: {hd!r}")
+            data["sonraki_durusma_tarihi"] = None
+            data["sonraki_durusma_saati"] = None
+
 
 def _apply_filename_format(data: Dict[str, Any], debug_info: List[str]) -> None:
     """🆕 DOSYA ADI ÖN İSİM FORMATLAMA (YYYY-MM-DD_TÜR_YY-ESASNO_A.Soyad)"""
@@ -1017,7 +1104,9 @@ async def analyze_file_generator(
         yield {"status": "complete", "data": default_data}
         return
 
-    # 1. Check if file is UDF format - convert to PDF first
+    # 1. PDF olmayan formatlar (UDF/görüntü/Office) önce PDF'e çevrilir
+    from pdf.format_converter import CONVERTIBLE_EXTENSIONS
+
     file_ext = Path(file_path).suffix.lower()
     temp_pdf_from_udf = None
 
@@ -1028,6 +1117,15 @@ async def analyze_file_generator(
         file_path = udf_state["file_path"]
         temp_pdf_from_udf = udf_state["temp_pdf_from_udf"]
         if udf_state["failed"]:
+            return
+    elif file_ext in CONVERTIBLE_EXTENSIONS:
+        conv_state = {"file_path": file_path, "temp_converted_pdf": None, "failed": False}
+        async for event in _step_format_conversion(conv_state, file_hash, benchmark, loop):
+            yield event
+        file_path = conv_state["file_path"]
+        # Cleanup/cache sahipliği UDF temp PDF'iyle aynı yoldan yürür
+        temp_pdf_from_udf = conv_state["temp_converted_pdf"]
+        if conv_state["failed"]:
             return
 
     # 1.5. Page Trim — LLM'e sadece ilk 2 + son sayfa gönderilir

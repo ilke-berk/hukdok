@@ -49,9 +49,11 @@ class SecurityEventLogger:
 
 security_logger = SecurityEventLogger()
 
+_bearer_scheme = HTTPBearer(auto_error=True)
+
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=True)),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
 ):
     """Validates the Bearer token. Strict Mode (No Mock User)."""
     if not credentials:

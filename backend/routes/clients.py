@@ -33,7 +33,7 @@ def get_clients_api(tenant_id: str = Depends(get_current_tenant)):
     try:
         clients = (
             db.query(models.Client)
-            .filter(models.Client.active == True)
+            .filter(models.Client.active.is_(True))
             .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.name.asc())
             .all()
@@ -68,7 +68,7 @@ def api_update_client(
     except Exception as e:
         logger.error(f"Error updating client: {e}", exc_info=True)
         db.rollback()
-        raise HTTPException(status_code=500, detail="Müvekkil bilgileri güncellenemedi. Lütfen tekrar deneyin.")
+        raise HTTPException(status_code=500, detail="Müvekkil bilgileri güncellenemedi. Lütfen tekrar deneyin.") from e
     finally:
         db.close()
 
@@ -97,6 +97,6 @@ def api_delete_client(
     except Exception as e:
         db.rollback()
         logger.error(f"Error deleting client {client_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Müvekkil silinemedi. Lütfen tekrar deneyin.")
+        raise HTTPException(status_code=500, detail="Müvekkil silinemedi. Lütfen tekrar deneyin.") from e
     finally:
         db.close()

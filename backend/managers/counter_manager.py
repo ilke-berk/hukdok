@@ -8,7 +8,6 @@ Race condition'ları ETag ve optimistic concurrency ile önler.
 import os
 import requests
 import logging
-from typing import Optional, Tuple
 from datetime import datetime
 
 from sharepoint.auth_graph import get_graph_token
@@ -36,8 +35,8 @@ class SharePointCounterManager:
         self.list_name = COUNTER_LIST_NAME
         self._field_map_cache = None  # Field mapping cache
         
-    def _get_list_id(self, token: str, site_id: str) -> Optional[str]:
-        """Counter list'in ID'sini bul"""
+    def _get_list_id(self, token: str, site_id: str) -> str:
+        """Counter list'in ID'sini bul (bulamazsa raise eder, None dönmez)"""
         try:
             url = f"{GRAPH}/sites/{site_id}/lists"
             r = requests.get(url, headers=_headers(token), timeout=30)
@@ -159,7 +158,7 @@ class SharePointCounterManager:
             error_msg = f"Counter okuma hatası: {e}"
             logger.error(error_msg)
             TechnicalLogger.log("ERROR", error_msg)
-            raise Exception(f"SharePoint counter erişilemedi: {e}")
+            raise Exception(f"SharePoint counter erişilemedi: {e}") from e
     
     def increment_counter(self) -> bool:
         """
@@ -199,7 +198,7 @@ class SharePointCounterManager:
                 # Kullanıcı bilgisi
                 try:
                     username = os.getlogin()
-                except:
+                except OSError:
                     username = "System"
                 
                 # PATCH ile atomic update (ETag kontrolü)
@@ -248,13 +247,13 @@ class SharePointCounterManager:
                     error_msg = f"Counter increment hatası: {e}"
                     logger.error(error_msg)
                     TechnicalLogger.log("ERROR", error_msg)
-                    raise Exception(f"SharePoint counter güncellenemedi: {e}")
+                    raise Exception(f"SharePoint counter güncellenemedi: {e}") from e
             
             except Exception as e:
                 error_msg = f"Counter increment hatası: {e}"
                 logger.error(error_msg)
                 TechnicalLogger.log("ERROR", error_msg)
-                raise Exception(f"Counter increment başarısız: {e}")
+                raise Exception(f"Counter increment başarısız: {e}") from e
         
         # Max retry aşıldı
         error_msg = f"Counter increment başarısız: {max_retries} deneme sonrası ETag conflict devam ediyor"

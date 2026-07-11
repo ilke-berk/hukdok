@@ -73,7 +73,7 @@ def sync_env_to_vault_if_needed():
     if env_mtime == 0 or env_mtime <= last_sync:
         return
 
-    logger.info(f".env change detected (Newer than last sync). Updating Vault...")
+    logger.info(".env change detected (Newer than last sync). Updating Vault...")
 
     # Reload env to ensure we captured the changes
     load_dotenv(dotenv_path=ENV_PATH, override=True)

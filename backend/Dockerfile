@@ -6,10 +6,15 @@ WORKDIR /app
 
 # Install system dependencies
 # fitz (pymupdf) and others might need build tools or system libraries
-RUN apt-get update && apt-get install -y \
+# libreoffice-writer/calc: Word/Excel -> PDF dönüşümü (headless soffice)
+# fonts-liberation: Office belgelerinde Calibri/Times metrik uyumu
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ghostscript \
     fonts-dejavu-core \
+    fonts-liberation \
+    libreoffice-writer \
+    libreoffice-calc \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
@@ -24,8 +29,14 @@ COPY . .
 # Make entrypoint executable
 RUN chmod +x docker-entrypoint.sh
 
+# Non-root kullanıcı (G6). Sabit UID: mevcut backend-data volume'u prod'da
+# bir kez chown gerektirir: docker compose exec -u root backend chown -R appuser /app/data
+RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin appuser
+
 # Create data directory (will be mounted as volume)
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+
+USER appuser
 
 # Expose the port the app runs on
 EXPOSE 8001

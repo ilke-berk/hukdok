@@ -14,7 +14,8 @@ Hariç tutulanlar:
 Ayrıca analysis_cache tablosu da staging'den local'e kopyalanır (AI analiz sonuçları).
 """
 
-import sys, os
+import sys
+import os
 sys.stdout.reconfigure(encoding="utf-8")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -33,7 +34,7 @@ SKIP_ESAS = {"9/9", "2026/1379", "2000/399"}
 
 def dict_fetchall(cur):
     cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
 
 def build_case_mapping(s_cur, l_cur):
@@ -220,14 +221,14 @@ def main():
                     print(f"   ! Staging case {staging_id} ({esas_no}) oluşturulamadı")
 
         # 3. Belgeleri aktar
-        print(f"\n⏳ Belgeler aktarılıyor...")
+        print("\n⏳ Belgeler aktarılıyor...")
         ins, sk_map, sk_no, exists, no_case = migrate_documents(s_cur, l_cur, case_mapping)
         print(f"   ✓ Eklenen belge          : {ins}")
         print(f"   ~ Zaten vardı (atlandı)  : {exists}")
         print(f"   ✗ Case bulunamadı        : {sk_no}")
 
         # 4. Analysis cache
-        print(f"\n⏳ AI analiz cache aktarılıyor...")
+        print("\n⏳ AI analiz cache aktarılıyor...")
         ac_copied, ac_skipped = migrate_analysis_cache(s_cur, l_cur)
         print(f"   ✓ Kopyalanan cache       : {ac_copied}")
         print(f"   ~ Zaten vardı (atlandı)  : {ac_skipped}")
@@ -235,7 +236,7 @@ def main():
         # 5. Commit
         l_conn.commit()
         print(f"\n{'='*70}")
-        print(f"  ✅ MİGRASYON TAMAMLANDI")
+        print("  ✅ MİGRASYON TAMAMLANDI")
         print(f"     Belge eklendi: {ins}  |  Cache eklendi: {ac_copied}")
         if no_case:
             print(f"\n  ⚠️  Case eşleşemeyen belgeler ({len(no_case)} adet):")

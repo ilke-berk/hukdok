@@ -109,15 +109,25 @@ def get_system_instruction(
        - H&A Avukatının temsil ettiği kişiyi bul.
        - Avukatın "Vekili" olarak göründüğü tarafı seç.""")
     
-    # Duruşma/tensip zaptı için sonraki duruşma tarihi ve saati çıkarımı
+    # Duruşma/tensip zaptı ve tebligat için sonraki duruşma tarihi ve saati çıkarımı
+    from constants import is_hearing_doctype
     _btk = (belge_turu_kodu or "").upper()
-    is_durusma_zapt = any(kw in _btk for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP"))
+    is_durusma_zapt = is_hearing_doctype(belge_turu_kodu)
+    is_tebligat = "TEBLIG" in _btk
     if is_durusma_zapt:
-        task_items.append("""
+        tebligat_note = ""
+        if is_tebligat:
+            tebligat_note = """
+       ⚠️ TEBLİGAT ZARFI ÖZEL KURALLARI:
+       - Duruşma bilgisi "Duruşma Günü / Duruşma Saati / Duruşma Yeri" ETİKETLİ
+         form alanlarında yazar; etiketler değerlerden SONRA gelebilir.
+       - "BU ZARFTA ... VARDIR" satırındaki tarih zarftaki EVRAKIN tarihidir,
+         duruşma günü DEĞİLDİR. Onu seçme."""
+        task_items.append(f"""
     📅 SONRAKİ DURUŞMA TARİHİ ve SAATİ (sonraki_durusma_tarihi, sonraki_durusma_saati):
        Belgenin SONUNDA genellikle şu formatta yazılır:
        "DD/MM/YYYY günü saat HH:MM'e bırakılmasına karar verildi"
-       veya "duruşmanın ... günü saat ...'e bırakılmasına", "erteleme", "talik" ifadeleri.
+       veya "duruşmanın ... günü saat ...'e bırakılmasına", "erteleme", "talik" ifadeleri.{tebligat_note}
        - Tarihi çıkar. Format: YYYY-MM-DD
        - Saati çıkar. Format: HH:MM (örn. 09:43)
        - Birden fazla tarih varsa en ileri (en gelecekteki) tarihi seç.
@@ -154,7 +164,7 @@ def get_system_instruction(
 
     📅 SONRAKİ DURUŞMA TARİHİ (sonraki_durusma_tarihi):
        Belgenin sonunda genellikle şu formatta yazılır:
-       "duruşmanın ... günü saat ...'e bırakılmasına karar verildi"
+       "duruşmanın ... günü saat ...'e bırakılmasına karar verildi"{tebligat_note}
        - O tarihi çıkar. Format: YYYY-MM-DD
        - Bulamazsan: null
 

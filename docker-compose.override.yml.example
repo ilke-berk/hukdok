@@ -1,0 +1,13 @@
+# Lokal geliştirme override şablonu.
+# Kullanım: bu dosyayı docker-compose.override.yml olarak kopyalayın;
+# docker compose onu otomatik yükler. docker-compose.override.yml gitignore'dadır
+# ve prod sunucusuna GİTMEMELİDİR — prod, imajdaki kodu çalıştırır (G6).
+services:
+  backend:
+    volumes:
+      # Hot-reload: lokal kaynak kodu konteynere bağlar (yalnızca geliştirme)
+      - ./backend:/app
+  frontend:
+    ports:
+      # Frontend'i 8000 portundan da servis et (isteğe bağlı)
+      - "8000:80"

@@ -1,5 +1,7 @@
 """2026/1379 davasını staging'den local'e ekler."""
-import psycopg2, os, sys
+import psycopg2
+import os
+import sys
 sys.stdout.reconfigure(encoding="utf-8")
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
@@ -10,8 +12,8 @@ STAGING_URL = LOCAL_URL.rsplit("/hukudok", 1)[0] + "/hukudok_staging"
 TARGET_ESAS = "2026/1379"
 
 s = psycopg2.connect(STAGING_URL)
-l = psycopg2.connect(LOCAL_URL)
-sc, lc = s.cursor(), l.cursor()
+loc = psycopg2.connect(LOCAL_URL)
+sc, lc = s.cursor(), loc.cursor()
 
 def local_cols(table):
     lc.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s AND table_schema='public'", (table,))
@@ -19,14 +21,15 @@ def local_cols(table):
 
 def dict_rows(cur):
     cols = [d[0] for d in cur.description]
-    return [dict(zip(cols, r)) for r in cur.fetchall()]
+    return [dict(zip(cols, r, strict=False)) for r in cur.fetchall()]
 
 try:
     # 1. Case
     sc.execute("SELECT * FROM cases WHERE esas_no = %s", (TARGET_ESAS,))
     rows = dict_rows(sc)
     if not rows:
-        print(f"HATA: staging'de {TARGET_ESAS} bulunamadı"); sys.exit(1)
+        print(f"HATA: staging'de {TARGET_ESAS} bulunamadı")
+        sys.exit(1)
 
     case = rows[0].copy()
     staging_case_id = case.pop("id")
@@ -69,11 +72,15 @@ try:
         lc.execute(f"INSERT INTO case_documents ({dc}) VALUES ({dp})", list(dd.values()))
     print(f"✓ {len(docs)} belge eklendi")
 
-    l.commit()
+    loc.commit()
     print(f"\n✅ {TARGET_ESAS} davası ve belgeleri başarıyla local'e eklendi.")
 
 except Exception as e:
-    l.rollback()
-    print(f"❌ HATA: {e}"); raise
+    loc.rollback()
+    print(f"❌ HATA: {e}")
+    raise
 finally:
-    sc.close(); lc.close(); s.close(); l.close()
+    sc.close()
+    lc.close()
+    s.close()
+    loc.close()

@@ -18,7 +18,7 @@ from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
 from managers.ttl_cache import TTLCache
-from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_size, validate_file_type
+from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 import models
 from services import document_pipeline
 
@@ -36,6 +36,8 @@ def _cleanup_process_cache():
     """Remove PROCESS_CACHE entries older than TTL and delete their backing files."""
     def _evict(k, entry):
         safe_remove(entry.get("path"))
+        if entry.get("original_path"):
+            safe_remove(entry.get("original_path"))
         logger.info(f"PROCESS_CACHE TTL expired: {k} → {entry.get('path')}")
     PROCESS_CACHE.cleanup_stale(on_evict=_evict)
     # Piggyback download cache cleanup on the same trigger.
@@ -58,7 +60,7 @@ def refresh_lists_background():
     """Background Task: Updates Singleton Config from Database."""
     logging.info("Background: Loading lists from Database...")
     try:
-        from managers.admin_manager import get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects
+        from managers.reference_lists import get_lawyers, get_statuses, get_doctypes, get_email_recipients, get_case_subjects
         from managers import cache_manager as _cache_manager
 
         new_lawyers = get_lawyers()
@@ -240,7 +242,7 @@ async def preview_email_body(
 
     muvekkil_text = muvekkil_adi or (muvekkiller[0] if muvekkiller else "Müvekkil")
 
-    def format_date_tr(date_str: str) -> str:
+    def format_date_tr(date_str: Optional[str]) -> str:
         if not date_str:
             return ""
         if "-" in date_str:
@@ -282,7 +284,7 @@ async def preview_client_email_body(
     """
     from email_sender import generate_client_email_preview
 
-    def format_date_tr(date_str: str) -> str:
+    def format_date_tr(date_str: Optional[str]) -> str:
         if not date_str:
             return ""
         if "-" in date_str:
@@ -340,8 +342,8 @@ async def analyze_file_endpoint(
             temp_path = tmp_file.name
             while chunk := await file.read(65536):
                 total_bytes += len(chunk)
-                if total_bytes > validate_file_size.MAX_BYTES:
-                    raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {validate_file_size.MAX_MB}MB.")
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {MAX_UPLOAD_MB}MB.")
                 sha256.update(chunk)
                 tmp_file.write(chunk)
         file_hash = sha256.hexdigest()
@@ -353,7 +355,7 @@ async def analyze_file_endpoint(
     except Exception as e:
         safe_remove(temp_path)
         logger.error(f"Dosya yükleme hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Dosya yüklenemedi. Lütfen tekrar deneyin.")
+        raise HTTPException(status_code=500, detail="Dosya yüklenemedi. Lütfen tekrar deneyin.") from e
 
     # Faz 3: cleanup stale cache entries on each /process call
     _cleanup_process_cache()
@@ -394,12 +396,15 @@ async def analyze_file_endpoint(
                     full_pdf_path = step.pop("full_pdf_path", None)
                     if full_pdf_path:
                         cached_full_pdf_path = full_pdf_path
-                        original_ext = Path(full_pdf_path).suffix.lower()
+                        # Dönüştürülmüş formatlarda (UDF/görüntü/Office) orijinal
+                        # dosya da saklanır — /confirm'de HAM arşive orijinal gider.
+                        original_path = temp_path if full_pdf_path != temp_path else None
                         PROCESS_CACHE.set(process_id, {
                             "path": full_pdf_path,
-                            "original_ext": original_ext,
+                            "original_path": original_path,
+                            "original_ext": suffix,
                         })
-                        TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path}")
+                        TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path} (original: {original_path})")
 
                     if final_data and "ofis_dosya_no" not in final_data:
                         ofis_dosya_no = await counter_task
@@ -447,9 +452,9 @@ async def analyze_file_endpoint(
             TechnicalLogger.log("ERROR", f"Streaming Error [ID: {error_id}]: {e}")
             yield json.dumps({"status": "error", "message": f"Beklenmedik hata: {str(e)}"}) + "\n"
         finally:
-            # Faz 3: if temp_path was cached, don't delete it — PROCESS_CACHE TTL handles cleanup.
-            # For UDF files, temp_path is the original UDF (not the cached PDF), so always delete it.
-            if cached_full_pdf_path and cached_full_pdf_path == temp_path:
+            # Faz 3: if temp_path was cached (analiz PDF'i veya dönüştürülmüş
+            # formatın orijinali olarak), don't delete it — PROCESS_CACHE TTL handles cleanup.
+            if cached_full_pdf_path:
                 TechnicalLogger.log("INFO", f"Skipping temp file deletion (in PROCESS_CACHE): {temp_path}")
             else:
                 if safe_remove(temp_path, retries=3):
@@ -529,25 +534,28 @@ async def confirm_process(
 
     try:
         muvekkiller = json.loads(muvekkiller_json) if muvekkiller_json else []
-        belgede_gecen_isimler = json.loads(belgede_gecen_isimler_json) if belgede_gecen_isimler_json else []
+        if belgede_gecen_isimler_json:
+            # Değer kullanılmıyor; sadece JSON format doğrulaması için parse edilir.
+            json.loads(belgede_gecen_isimler_json)
         custom_to = json.loads(custom_to_json) if custom_to_json else []
         custom_cc = json.loads(custom_cc_json) if custom_cc_json else []
         custom_messages = json.loads(custom_messages_json) if custom_messages_json else None
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON in form fields")
+        raise HTTPException(status_code=400, detail="Invalid JSON in form fields") from None
 
-    results = {}
+    results: dict = {}
 
     # IDOR-6: linked_case_id verildiyse önce tenant ownership doğrula.
     # Belge SharePoint'e gitmeden ve save_case_document çağrılmadan önce reddetmeliyiz.
     if linked_case_id:
         avukat_kodu = document_pipeline.validate_tenant_and_resolve_lawyer(linked_case_id, user, avukat_kodu)
 
-    # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload
-    temp_path = await document_pipeline.accept_incoming_file(process_id, file, PROCESS_CACHE)
+    # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
+    # ham_source_path: HAM arşive gidecek orijinal dosya (dönüştürülmüş
+    # formatlarda source_path'ten farklıdır).
+    temp_path, ham_source_path = await document_pipeline.accept_incoming_file(process_id, file, PROCESS_CACHE)
 
     source_path = temp_path
-    log_id = None
     muvekkil_kodu = None
 
     try:
@@ -572,6 +580,7 @@ async def confirm_process(
         background_tasks=background_tasks,
         source_path=source_path,
         ham_filename=ham_filename,
+        ham_source_path=ham_source_path,
         ham_folder=HAM_FOLDER,
         islenmis_folder=ISLENMIS_FOLDER,
         new_filename=new_filename,
@@ -667,8 +676,8 @@ async def confirm_process(
         })
         results["download_id"] = download_id
 
-    # Her iki temp dosyayı da temizle (source_path her zaman; pdfa farklıysa o da)
-    document_pipeline.schedule_cleanup(background_tasks, source_path, pdfa_temp_file, download_id, DOWNLOAD_CACHE)
+    # Temp dosyaları temizle (source_path her zaman; pdfa ve ham orijinal farklıysa onlar da)
+    document_pipeline.schedule_cleanup(background_tasks, source_path, pdfa_temp_file, download_id, DOWNLOAD_CACHE, ham_source_path=ham_source_path)
 
     results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
 

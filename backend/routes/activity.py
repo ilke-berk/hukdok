@@ -277,7 +277,7 @@ def admin_trigger_report(
         try:
             parsed = dt.date.fromisoformat(target_date)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Geçersiz tarih. YYYY-MM-DD kullanın.")
+            raise HTTPException(status_code=400, detail="Geçersiz tarih. YYYY-MM-DD kullanın.") from None
     else:
         parsed = dt.date.today()
 
@@ -315,7 +315,7 @@ def admin_trigger_report(
         )
     except Exception as e:
         logger.error(f"Tanı sorgusu hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Veritabanı sorgu hatası oluştu.")
+        raise HTTPException(status_code=500, detail="Veritabanı sorgu hatası oluştu.") from e
 
     docs_without_email = total_docs - docs_with_email
 
@@ -324,7 +324,7 @@ def admin_trigger_report(
         count = _build_report_for_date(db, parsed, force_user_email=force_user_email or None)
     except Exception as e:
         logger.error(f"Rapor oluşturma hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Rapor oluşturma sırasında bir hata oluştu.")
+        raise HTTPException(status_code=500, detail="Rapor oluşturma sırasında bir hata oluştu.") from e
 
     msg_parts = [f"{parsed} tarihi için {count} grup raporu oluşturuldu/güncellendi."]
     if docs_without_email > 0 and not force_user_email:
@@ -358,7 +358,7 @@ def admin_catch_up(user: dict = Depends(require_admin)):
         catch_up_missed_reports()
     except Exception as e:
         logger.error(f"Catch-up hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Catch-up işlemi sırasında bir hata oluştu.")
+        raise HTTPException(status_code=500, detail="Catch-up işlemi sırasında bir hata oluştu.") from e
     return {"success": True, "message": "Catch-up tamamlandı."}
 
 
@@ -373,7 +373,7 @@ def admin_reset_report(
         try:
             parsed = dt.date.fromisoformat(target_date)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Geçersiz tarih formatı.")
+            raise HTTPException(status_code=400, detail="Geçersiz tarih formatı.") from None
     else:
         parsed = dt.date.today()
 

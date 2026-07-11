@@ -119,9 +119,12 @@ def generate_yetki_belgesi_udf(data: dict) -> bytes:
 
     # Dayanak vekaletname
     day_parts = []
-    if day_not:  day_parts.append(day_not)
-    if day_tar:  day_parts.append(f"{day_tar} tarihli")
-    if day_yev:  day_parts.append(f"Yevmiye No: {day_yev}")
+    if day_not:
+        day_parts.append(day_not)
+    if day_tar:
+        day_parts.append(f"{day_tar} tarihli")
+    if day_yev:
+        day_parts.append(f"Yevmiye No: {day_yev}")
     if day_parts:
         add("DAYANAK VEKALETNAME :", bold=True, family="Arial")
         add()

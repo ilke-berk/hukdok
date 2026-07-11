@@ -15,6 +15,8 @@ DB boşsa _FALLBACK_* listeleri devreye girer.
 import re
 import logging
 
+from text_utils import turkish_upper
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,7 @@ _pattern_cache_key: tuple | None = None
 
 
 def _name_to_pattern(name: str) -> str:
-    """
+    r"""
     DB'den gelen mahkeme adını regex pattern'a çevirir.
     "AĞIR CEZA MAHKEMESİ" → r"AĞIR\s+CEZA\s+MAHKEMESİ"
     """
@@ -173,7 +175,9 @@ def _extract_from_header(text: str) -> str | None:
     """
     lines = text.splitlines()
     header_lines = lines[:_HEADER_LINES]
-    header_text = "\n".join(header_lines).upper()
+    # str.upper() değil turkish_upper: "mahkemesi".upper() → "MAHKEMESI" (İ'siz)
+    # olur ve kalıplardaki MAHKEMESİ ile eşleşmez (IGNORECASE de kurtarmaz).
+    header_text = turkish_upper("\n".join(header_lines))
 
     # Üst mahkemeler (şehir gerektirmeyen)
     for keyword in ["YARGITAY", "DANIŞTAY", "ANAYASA MAHKEMESİ", "UYUŞMAZLIK MAHKEMESİ"]:
@@ -225,15 +229,18 @@ def _find_daire_after(text: str, start_pos: int) -> str | None:
 # ---------------------------------------------------------------------------
 # Katman 2: Body regex ("hüküm veren / karar veren" kalıpları)
 # ---------------------------------------------------------------------------
+# Kalıplar BÜYÜK harf: metin turkish_upper ile büyütülür ve Python re'nin
+# IGNORECASE'i 'i' ↔ 'İ' çiftini eşleyemez ("mahkemesi" kalıbı "MAHKEMESİ"
+# metnini yakalayamıyordu — body katmanı fiilen hiç çalışmıyordu).
 _VERDICT_PHRASES = [
-    r"hüküm\s+veren\s+(.{5,80}?mahkeme(?:si|ği)?)",
-    r"karar\s+veren\s+(.{5,80}?mahkeme(?:si|ği)?)",
-    r"(.{5,80}?mahkeme(?:si|ği)?)'nce\s+verilen",
-    r"(.{5,80}?mahkeme(?:si|ği)?)\s+tarafından",
+    r"HÜKÜM\s+VEREN\s+(.{5,80}?MAHKEME(?:Sİ|Ğİ)?)",
+    r"KARAR\s+VEREN\s+(.{5,80}?MAHKEME(?:Sİ|Ğİ)?)",
+    r"(.{5,80}?MAHKEME(?:Sİ|Ğİ)?)'NCE\s+VERİLEN",
+    r"(.{5,80}?MAHKEME(?:Sİ|Ğİ)?)\s+TARAFINDAN",
 ]
 
 def _extract_from_body(text: str) -> str | None:
-    upper = text.upper()
+    upper = turkish_upper(text)  # str.upper() Türkçe i→İ dönüşümünü yapmaz
     full_pattern = _get_full_pattern()
 
     for phrase in _VERDICT_PHRASES:

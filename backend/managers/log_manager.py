@@ -2,7 +2,6 @@ import os
 import requests
 import logging
 import socket
-import getpass
 from datetime import datetime
 
 # Mevcut auth modüllerin (Bunlar sende zaten var, dokunmuyoruz)
@@ -58,7 +57,7 @@ class LogManager:
             hostname = socket.gethostname()
             try:
                 username = os.getlogin()
-            except:
+            except OSError:
                 username = "Unknown"
 
             # INTERNAL NAME MAPPING (Based on Debug Inspection)
@@ -194,9 +193,22 @@ def mask_sensitive_data(text: str) -> str:
     return text
 
 
+# Faz 3.3 (K10): seviye adı → logging sabiti eşlemesi
+_LEVEL_MAP = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+
 class TechnicalLogger:
     _buffer: List[Dict] = []
     _lock = threading.Lock()
+    # Faz 3.3 (K10): kayıtlar standart logging'e de delege edilir; handler ve
+    # format tek yerden (root logging config) yönetilir. API yüzeyi değişmedi.
+    _std_logger = logging.getLogger("TechnicalLogger")
 
     @staticmethod
     def log(level: str, message: str, details: Optional[Dict] = None):
@@ -205,12 +217,20 @@ class TechnicalLogger:
         If level is CRITICAL/ERROR, triggers immediate sync to Cloud.
         """
         timestamp = datetime.now().isoformat()
+        masked_message = mask_sensitive_data(str(message))
         log_entry = {
             "timestamp": timestamp,
             "level": level,
-            "message": mask_sensitive_data(str(message)),
+            "message": masked_message,
             "details": details or {},
         }
+
+        # Standart logging'e delege (K10 — tek handler/format)
+        std_level = _LEVEL_MAP.get(str(level).upper(), logging.INFO)
+        if details:
+            TechnicalLogger._std_logger.log(std_level, "%s | %s", masked_message, details)
+        else:
+            TechnicalLogger._std_logger.log(std_level, "%s", masked_message)
 
         # Add to RAM buffer
         with TechnicalLogger._lock:
@@ -232,7 +252,7 @@ class TechnicalLogger:
 
             data_to_sync = list(TechnicalLogger._buffer)
 
-        if not upload_file_to_sharepoint:
+        if upload_file_to_sharepoint is None:
             return
 
         try:

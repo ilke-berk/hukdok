@@ -163,7 +163,7 @@ def find_matching_case(
             all_cases = (
                 db.query(models.Case)
                 .options(joinedload(models.Case.parties))
-                .filter(models.Case.active == True)
+                .filter(models.Case.active.is_(True))
                 .all()
             )
 
@@ -201,8 +201,6 @@ def find_matching_case(
             all_names_in_doc.extend(muvekkiller)
         if belgede_gecen_isimler:
             all_names_in_doc.extend(belgede_gecen_isimler)
-            
-        doc_names_norm = list(set(_normalize(n) for n in all_names_in_doc if n and len(n) >= 4))
 
         for case in case_snapshots:
             score = 0

@@ -13,8 +13,7 @@ from threading import Lock
 import defusedxml.ElementTree as ET
 from xml.etree.ElementTree import Element as XmlElement
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Any, Protocol, Type
-from concurrent.futures import ProcessPoolExecutor
+from typing import Optional, List, Dict, Protocol, Type
 
 # ReportLab Imports
 from reportlab.lib.pagesizes import A4
@@ -116,33 +115,48 @@ def validate_image_safety(image_bytes: bytes) -> Optional[PILImage.Image]:
 
 def format_text_styles(text: str, bold: bool, italic: bool, underline: bool) -> str:
     """Apply HTML formatting based on style flags."""
-    if bold and italic and underline: return f"<u><b><i>{text}</i></b></u>"
-    elif bold and italic: return f"<b><i>{text}</i></b>"
-    elif bold and underline: return f"<u><b>{text}</b></u>"
-    elif italic and underline: return f"<u><i>{text}</i></u>"
-    elif bold: return f"<b>{text}</b>"
-    elif italic: return f"<i>{text}</i>"
-    elif underline: return f"<u>{text}</u>"
-    else: return text
+    if bold and italic and underline:
+        return f"<u><b><i>{text}</i></b></u>"
+    elif bold and italic:
+        return f"<b><i>{text}</i></b>"
+    elif bold and underline:
+        return f"<u><b>{text}</b></u>"
+    elif italic and underline:
+        return f"<u><i>{text}</i></u>"
+    elif bold:
+        return f"<b>{text}</b>"
+    elif italic:
+        return f"<i>{text}</i>"
+    elif underline:
+        return f"<u>{text}</u>"
+    else:
+        return text
 
 def convert_color(color_value: Optional[str]) -> Optional[colors.Color]:
     """Convert UDF BGR integer color to ReportLab Color."""
-    if color_value is None: return None
+    if color_value is None:
+        return None
     try:
         color_int = int(color_value)
-        if color_int < 0: color_int = 0xFFFFFFFF + color_int + 1
+        if color_int < 0:
+            color_int = 0xFFFFFFFF + color_int + 1
         r = (color_int >> 16) & 0xFF
         g = (color_int >> 8) & 0xFF
         b = color_int & 0xFF
         return colors.Color(r/255, g/255, b/255)
-    except (ValueError, TypeError): return None
+    except (ValueError, TypeError):
+        return None
 
 def get_alignment_style(alignment_value: str) -> int:
     """Convert UDF alignment code to ReportLab constant."""
-    if alignment_value == "1": return TA_CENTER
-    elif alignment_value == "3": return TA_JUSTIFY
-    elif alignment_value == "2": return TA_RIGHT
-    else: return TA_LEFT
+    if alignment_value == "1":
+        return TA_CENTER
+    elif alignment_value == "3":
+        return TA_JUSTIFY
+    elif alignment_value == "2":
+        return TA_RIGHT
+    else:
+        return TA_LEFT
 
 # --- Plugin Architecture ---
 
@@ -183,7 +197,8 @@ class ParagraphHandler:
         
         # Spacing / Indent
         line_spacing = float(para_elem.get('LineSpacing', '1.2'))
-        if line_spacing < 0.1: line_spacing = 1.0 # Fix weird values
+        if line_spacing < 0.1:
+            line_spacing = 1.0 # Fix weird values
         
         size = float(para_elem.get('size', '12'))
         size = max(MIN_FONT_SIZE, min(size, MAX_FONT_SIZE))
@@ -266,7 +281,8 @@ class ParagraphHandler:
     def _process_inline_image(self, node: XmlElement, converter: 'UDFConverter') -> Optional[Image]:
         """Process inline image with format conversion and resize support."""
         data = node.get('imageData')
-        if not data: return None
+        if not data:
+            return None
 
         try:
             raw = base64.b64decode(data)
@@ -470,7 +486,7 @@ class UDFConverter:
                     tree = ET.parse(f, parser=ET.XMLParser(encoding='utf-8'))
                     self.root = tree.getroot()
         except Exception as e:
-            raise ValueError(f"Failed to parse UDF file: {e}")
+            raise ValueError(f"Failed to parse UDF file: {e}") from e
 
         if self.root is None:
             raise ValueError("Parsed XML root is None.")
@@ -538,7 +554,8 @@ class UDFConverter:
     def _process_elements(self):
         """Iterate over document elements using Plugin System."""
         elements_elem = self.root.find('elements')
-        if elements_elem is None: raise ValueError("No 'elements' found.")
+        if elements_elem is None:
+            raise ValueError("No 'elements' found.")
         
         # Get singleton handler instances for better performance
         para_handler = PluginRegistry.get_handler_instance('paragraph')
