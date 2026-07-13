@@ -65,11 +65,11 @@ def _resolve_lawyer_aliases(selected: str):
     sel_norm = _norm_name(selected)
     sel_code = _norm_name(selected)  # kodlar da normalize edilerek karşılaştırılır
     target = None
-    for l in lawyers:
-        code_norm = _norm_name(l.get("code") or "")
-        name_norm = _norm_name(l.get("name") or "")
+    for lw in lawyers:
+        code_norm = _norm_name(lw.get("code") or "")
+        name_norm = _norm_name(lw.get("name") or "")
         if (code_norm and code_norm == sel_code) or (name_norm and name_norm == sel_norm):
-            target = l
+            target = lw
             break
     if target is None:
         return None
@@ -79,8 +79,8 @@ def _resolve_lawyer_aliases(selected: str):
     surname = name_toks[-1] if name_toks else ""
     # Soyad config genelinde benzersiz mi? (tek-token kayıtları güvenle eşlemek için)
     surname_count = sum(
-        1 for l in lawyers
-        if (_norm_name(l.get("name") or "").split() or [""])[-1] == surname
+        1 for lw in lawyers
+        if (_norm_name(lw.get("name") or "").split() or [""])[-1] == surname
     )
     return core_tokens, code_norm, surname, (surname_count == 1)
 
@@ -126,22 +126,22 @@ def resolve_lawyer(raw_value: str):
     if not ptoks:
         return None
     # Benzersiz soyad haritası (tek-token kayıtları güvenle çözmek için)
-    surname_count = {}
-    for l in lawyers:
-        tk = _norm_name(l.get("name") or "").split()
+    surname_count: dict = {}
+    for lw in lawyers:
+        tk = _norm_name(lw.get("name") or "").split()
         if tk:
             surname_count[tk[-1]] = surname_count.get(tk[-1], 0) + 1
-    for l in lawyers:
-        core = _name_tokens(l.get("name") or "")
-        code = _norm_name(l.get("code") or "")
-        tk = _norm_name(l.get("name") or "").split()
+    for lw in lawyers:
+        core = _name_tokens(lw.get("name") or "")
+        code = _norm_name(lw.get("code") or "")
+        tk = _norm_name(lw.get("name") or "").split()
         sur = tk[-1] if tk else ""
         if code and code in ptoks:
-            return l
+            return lw
         if len(ptoks & core) >= 2:
-            return l
+            return lw
         if sur and surname_count.get(sur) == 1 and ptoks == {sur}:
-            return l
+            return lw
     return None
 
 
@@ -169,8 +169,8 @@ def canonicalize_lawyers(db, lawyers_input, responsible_text):
     """
     raws = []
     if lawyers_input:
-        for l in lawyers_input:
-            nm = (l or {}).get("name")
+        for lw in lawyers_input:
+            nm = (lw or {}).get("name")
             if nm:
                 raws.append(nm)
     elif responsible_text:

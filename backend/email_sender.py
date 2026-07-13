@@ -215,7 +215,7 @@ def send_document_email(
 
         # 9. Sonucu kontrol et
         if response is not None and response.status_code == 202:
-            logger.info(f"✅ E-posta başarıyla gönderildi.")
+            logger.info("✅ E-posta başarıyla gönderildi.")
             return {"success": True, "message": "E-posta gönderildi"}
         elif response is not None:
             error_detail = response.text[:500] if response.text else "Bilinmeyen hata"
@@ -469,8 +469,6 @@ def send_document_notification(
     extra_attachment_paths: ek belgelerin [{path, name}] sözlük listesi.
     subject_prefix: Konu başlığı ön eki (örn. müvekkil bilgilendirme için "[Müvekkil Bilgilendirme]").
     """
-    config = _get_email_config()
-
     # --- ALICI LİSTESİ HAZIRLIĞI ---
     to_emails_raw = custom_to if custom_to else []
     cc_emails_raw = custom_cc if custom_cc else []
@@ -479,11 +477,13 @@ def send_document_notification(
         return {"success": False, "message": "Alıcı listesi boş"}
 
     # --- METADATA HAZIRLIĞI ---
-    if metadata is None: metadata = {}
+    if metadata is None:
+        metadata = {}
     
     # Helper: Title Case
     def to_title_case_turkish(text: str) -> str:
-        if not text: return text
+        if not text:
+            return text
         words = text.split()
         result = []
         for word in words:
@@ -501,10 +501,12 @@ def send_document_notification(
     
     # Tarih formatlama fonksiyonu (YYYY-MM-DD -> DD.MM.YYYY)
     def format_date_tr(date_str: str) -> str:
-        if not date_str: return ""
+        if not date_str:
+            return ""
         if "-" in date_str:
             parts = date_str.split("-")
-            if len(parts) == 3: return f"{parts[2]}.{parts[1]}.{parts[0]}"
+            if len(parts) == 3:
+                return f"{parts[2]}.{parts[1]}.{parts[0]}"
         return date_str
 
     tarih_str = format_date_tr(tarih)

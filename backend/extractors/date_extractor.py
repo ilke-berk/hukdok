@@ -2,6 +2,7 @@ import re
 import os
 import json
 from datetime import datetime
+from typing import Optional
 import logging
 import google.generativeai as genai
 import vault
@@ -17,7 +18,8 @@ if api_key:
     genai.configure(api_key=api_key)
 
 def get_model():
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
+    # Fallback, email_sender.py ile aynı tutulmalı (K17)
+    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
     return genai.GenerativeModel(model_name)
 
 class DateCandidate:
@@ -107,7 +109,8 @@ def advanced_regex_scan(text):
             if 1990 <= y: 
                 # Basic validity check
                 dt = datetime(y, m, d)
-                if dt > today: continue # Strict Future Filter
+                if dt > today:
+                    continue # Strict Future Filter
                 
                 # Format to standard
                 date_str = f"{d:02d}.{m:02d}.{y}"
@@ -129,7 +132,10 @@ def advanced_regex_scan(text):
         found_month = None
         for month_name, month_val in months_map.items():
             norm_key = month_name.replace('İ', 'I')
-            if norm_key in m_upper or m_upper in norm_key:
+            # Tam ad veya ≥3 harfli önek kısaltması ("OCA", "EYL" vb.).
+            # Çift yönlü substring kontrolü ("AY" ⊂ "MAYIS", "EK" ⊂ "EKİM")
+            # yanlış pozitif üretiyordu ("5 ay 2020" → 05.05.2020) — kaldırıldı.
+            if norm_key == m_upper or (len(m_upper) >= 3 and norm_key.startswith(m_upper)):
                 found_month = month_val
                 break
         
@@ -170,8 +176,8 @@ def advanced_regex_scan(text):
         cand_year = 1900
         try:
              cand_year = datetime.strptime(cand.date_str, "%d.%m.%Y").year
-        except:
-             pass
+        except ValueError:
+             logging.debug(f"Tarih adayı parse edilemedi, 1900 varsayıldı: {cand.date_str!r}")
 
         # A. Recency Boost (+25)
         if cand.date_str in top_2_strs:
@@ -227,22 +233,27 @@ def ask_llm_referee(text, top_candidates):
         logging.error(f"LLM Error: {e}")
         return None
 
-def find_best_date(text: str) -> str:
+def find_best_date(text: str) -> Optional[str]:
     """
     Smart extraction logic replacing the old simple method.
-    Returns YYYY-MM-DD or Today's date (if hard fallback needed).
+    Returns YYYY-MM-DD veya None (tarih bulunamadıysa).
+
+    None dönüşü analyzer'da missing_fields akışına düşer ve tarih LLM'e
+    devredilir. Önceden burada bugünün tarihi uyduruluyordu; bu hem yanlış
+    veri üretiyordu hem de "tarih eksik" sinyalinin LLM'e gitmesini
+    engelliyordu.
     """
     if not text:
-        return datetime.now().strftime("%Y-%m-%d")
+        return None
 
     candidates = advanced_regex_scan(text)
-    
+
     # Sort by score descending
     candidates.sort(key=lambda x: x.final_score, reverse=True)
-    
+
     if not candidates:
-        logging.warning("No date candidates found. Defaulting to Today.")
-        return datetime.now().strftime("%Y-%m-%d")
+        logging.warning("No date candidates found — tarih LLM'e devrediliyor.")
+        return None
 
     top_candidate = candidates[0]
     is_confident = top_candidate.final_score >= 50
@@ -260,20 +271,33 @@ def find_best_date(text: str) -> str:
             pass # Fallback
 
     # Not confident -> LLM Referee
+    # Hakemin seçimi aday listesine karşı DOĞRULANIR: prompt "sadece
+    # listeden seç" dese de LLM uydurabilir; listede olmayan tarih reddedilir.
+    top_3 = candidates[:3]
+    allowed_iso = set()
+    for c in top_3:
+        try:
+            allowed_iso.add(datetime.strptime(c.date_str, "%d.%m.%Y").strftime("%Y-%m-%d"))
+        except ValueError:
+            pass
+
     try:
-        json_response = ask_llm_referee(text, candidates[:3])
+        json_response = ask_llm_referee(text, top_3)
         if json_response:
             try:
                 data = json.loads(json_response)
                 selected = data.get("selected_date")
-                if selected:
+                if selected in allowed_iso:
                     return selected
-                    
+                if selected:
+                    logging.warning(
+                        f"LLM hakem aday listesi dışında tarih döndürdü, reddedildi: {selected!r}"
+                    )
             except json.JSONDecodeError:
                 # Fallback: if LLM returns just the date string
                 stripped = json_response.strip().strip('"').strip("'")
-                if PRE_COMPILED_ISO_DATE.match(stripped):
-                     return stripped
+                if PRE_COMPILED_ISO_DATE.match(stripped) and stripped in allowed_iso:
+                    return stripped
     except Exception as e:
         logging.error(f"LLM Referee failed: {e}")
 
@@ -281,5 +305,6 @@ def find_best_date(text: str) -> str:
     try:
         dt = datetime.strptime(top_candidate.date_str, "%d.%m.%Y")
         return dt.strftime("%Y-%m-%d")
-    except:
-        return datetime.now().strftime("%Y-%m-%d")
+    except ValueError:
+        logging.warning(f"Top aday tarih parse edilemedi, tarih boş bırakıldı: {top_candidate.date_str!r}")
+        return None

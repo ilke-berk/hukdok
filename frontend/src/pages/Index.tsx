@@ -8,10 +8,9 @@ import { AnalysisPending } from "@/components/AnalysisPending";
 import { QueueStatus } from "@/components/QueueStatus";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Gavel, Users, ChevronsUpDown, FileText, ExternalLink, Mail, Layers, ChevronRight, ArrowRight } from "lucide-react";
+import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Users, ChevronsUpDown, FileText, ExternalLink, Mail, Layers, ChevronRight, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { useCases } from "@/hooks/useCases";
@@ -150,11 +149,11 @@ const Index = () => {
   // Using explicit generic typing. Will define a dedicated CaseRead interface later in Faz 4
   const [allCases, setAllCases] = useState<IndexCaseData[]>([]); // Sadece son 50 davayı tutar
   const [searchResults, setSearchResults] = useState<IndexCaseData[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [_isSearching, setIsSearching] = useState(false);
   const [caseSearch, setCaseSearch] = useState("");
   const [linkedCase, setLinkedCase] = useState<IndexCaseData | null>(null);
   const [selectedPartyId, setSelectedPartyId] = useState<number | null>(null);
-  const [isTestMode, setIsTestMode] = useState(false);
+  const [isTestMode, _setIsTestMode] = useState(false);
   const [casesLoaded, setCasesLoaded] = useState(false);
   const [isQuickCaseModalOpen, setIsQuickCaseModalOpen] = useState(false);
 
@@ -648,7 +647,6 @@ const Index = () => {
     if (!selectedFile || !dataToUse) return;
 
     const isBatchMode = fileQueue.length > 1;
-    const isLastFile = currentFileIndex === fileQueue.length - 1;
 
     setEmailModalLoading(true);
 

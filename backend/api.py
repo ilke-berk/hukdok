@@ -5,9 +5,17 @@ import logging
 import argparse
 import tempfile
 import glob
+import shutil
 import time
 from datetime import datetime
 from contextlib import asynccontextmanager
+
+# Kök logger yapılandırması — bu olmadan kök logger WARNING seviyesinde kalır
+# ve tüm logging.info() çağrıları sessizce düşer.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 # --- STARTUP DEBUG LOGGING ---
 def write_startup_log(msg):
@@ -44,9 +52,9 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -88,6 +96,15 @@ if ssl_cert and os.path.exists(ssl_cert):
 async def lifespan(app: FastAPI):
     logging.info("API Starting...")
     write_startup_log("API Startup Event triggered")
+
+    # G5: dev auth bypass'ı için üç env koşulu birden gerekir (bkz. auth_verifier).
+    # Kombinasyon DEV_MODE olmadan görülürse muhtemel yanlış prod konfigürasyonudur.
+    if (os.getenv("ENV") == "development" and os.getenv("ALLOW_DEV_TENANT") == "true"
+            and os.getenv("DEV_MODE", "").lower() != "true"):
+        logging.critical(
+            "ENV=development + ALLOW_DEV_TENANT=true ayarlı ama DEV_MODE=true değil — "
+            "dev auth bypass DEVRE DIŞI. Bu değişkenler prod ortamında set edilmemeli."
+        )
 
     try:
         from database import init_db
@@ -152,13 +169,27 @@ async def lifespan(app: FastAPI):
     # KVKK: Cleanup orphaned temp files from previous sessions
     try:
         temp_dir = tempfile.gettempdir()
-        patterns = ["tmp*.pdf", "tmp*.docx", "tmp*.doc", "tmp*.txt", "tmp*.udf"]
+        patterns = [
+            "tmp*.pdf", "tmp*.docx", "tmp*.doc", "tmp*.txt", "tmp*.udf",
+            "tmp*.xlsx", "tmp*.xls", "tmp*.tif", "tmp*.tiff", "tmp*.jpg", "tmp*.jpeg", "tmp*.png",
+            # format_converter/pdf_converter ara çıktıları
+            "imgpdf_*.pdf", "officepdf_*.pdf", "pdfa2b_*.pdf",
+        ]
         cleaned_count = 0
         for pattern in patterns:
             for old_file in glob.glob(os.path.join(temp_dir, pattern)):
                 try:
                     if time.time() - os.path.getmtime(old_file) > 3600:
                         os.remove(old_file)
+                        cleaned_count += 1
+                except Exception:
+                    pass
+        # LibreOffice çağrısı yarıda kesilirse kalan geçici dizinler
+        for dir_pattern in ("lo_out_*", "lo_profile_*"):
+            for old_dir in glob.glob(os.path.join(temp_dir, dir_pattern)):
+                try:
+                    if os.path.isdir(old_dir) and time.time() - os.path.getmtime(old_dir) > 3600:
+                        shutil.rmtree(old_dir, ignore_errors=True)
                         cleaned_count += 1
                 except Exception:
                     pass
@@ -178,17 +209,54 @@ async def lifespan(app: FastAPI):
 # --- APP SETUP ---
 app = FastAPI(lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=".*",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# CORS beyaz listesi (G2): ALLOWED_ORIGINS env'den okunur; tanımsızsa güvenli
+# default (prod domain + lokal geliştirme portları). Prod'da API aynı origin'den
+# nginx ile proxy'lendiği için tarayıcı akışı bu listeye bağımlı değildir.
+# DEV_MODE=true iken (yalnızca lokal geliştirme) tüm origin'lere izin verilir;
+# prod'da DEV_MODE false/tanımsız olmak zorundadır (bkz. G5/G10 guard'ları).
+_DEFAULT_ORIGINS = (
+    "https://hukukoid.com,https://www.hukukoid.com,"
+    "http://localhost:8080,http://localhost:8000,http://localhost:5173"
 )
+if os.getenv("DEV_MODE", "").strip().lower() == "true":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    allowed_origins = [
+        o.strip()
+        for o in os.getenv("ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",")
+        if o.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
+def _rate_limit_key(request):
+    """Nginx proxy arkasında gerçek istemci IP'si X-Forwarded-For'dadır; doğrudan
+    bağlantı IP'si kullanılırsa tüm kullanıcılar tek limit kovasını paylaşır.
+    Backend portu yalnızca localhost + iç Docker ağına açık olduğundan header
+    spoof'u dış istemciler için mümkün değildir."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key, default_limits=["100/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# default_limits yalnızca middleware kayıtlıysa uygulanır — bu satır olmadan
+# hiçbir uçta hız sınırı yoktur.
+app.add_middleware(SlowAPIMiddleware)
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):

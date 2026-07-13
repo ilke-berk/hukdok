@@ -75,8 +75,7 @@ _CORP_STOP = {
     "HASTANE", "HASTANESI", "SAGLIK", "HIZ", "HIZMETLERI", "HIZM",
     "OZEL", "TIBBI", "MALZ",
     "SITE", "SITESI", "YONETICILIGI", "YONETIM", "KURULU", "MERKEZ",
-    "VE", "VEYA", "VEYA",
-    "PAZ", "PAZARLAMA", "DAG", "DAGITIM",
+    "VE", "VEYA", "PAZ", "PAZARLAMA", "DAG", "DAGITIM",
     "ORG", "ORGANIZASYON", "YAPIM", "TANITIM",
     "URETIM", "ISLETMECILIGI", "DANISMANLIK",
     "GLOBAL", "SISTEMLERI", "HIZMETLER",
@@ -157,11 +156,16 @@ def generate_tracking_number(client_name: str, category_code: str,
 
 def _name_priority(cat_norm: str) -> int:
     """Kişi < kurum < sigorta önceliği. Düşük = önce seçilir."""
-    if cat_norm == "DOKTOR":   return 0
-    if cat_norm == "HASTA":    return 1
-    if cat_norm == "BIREYSEL": return 2
-    if cat_norm == "":         return 3  # bilinmiyor, muhtemelen kişi
-    if "SIGORTA" in cat_norm:  return 10
+    if cat_norm == "DOKTOR":
+        return 0
+    if cat_norm == "HASTA":
+        return 1
+    if cat_norm == "BIREYSEL":
+        return 2
+    if cat_norm == "":
+        return 3  # bilinmiyor, muhtemelen kişi
+    if "SIGORTA" in cat_norm:
+        return 10
     return 5  # kurum, hastane, klinik vs.
 
 
@@ -200,9 +204,11 @@ def run(dry_run: bool = True):
                 if code.startswith("S") and code != "S0":
                     return code
             for code in codes:
-                if code == "S0": return code
+                if code == "S0":
+                    return code
             for code in codes:
-                if code != "X1": return code
+                if code != "X1":
+                    return code
             return codes[0] if codes else "X1"
 
         # 2. Davalar müvekkil (isim tarafı) bazında grupla
@@ -277,7 +283,7 @@ def run(dry_run: bool = True):
             done = 0
             for i in range(0, len(updates), BATCH):
                 batch = updates[i:i+BATCH]
-                for case_id, old_no, new_no in batch:
+                for case_id, _old_no, new_no in batch:
                     db.query(models.Case).filter_by(id=case_id).update({"tracking_no": new_no})
                 db.commit()
                 done += len(batch)
@@ -293,7 +299,7 @@ def run(dry_run: bool = True):
                 print(f"{case_id:>6}  {old_no:<38}  {new_no}")
             if len(updates) > 30:
                 print(f"  ... ve {len(updates)-30} dava daha")
-            print(f"\n(dry-run: hiçbir şey yazılmadı)")
+            print("\n(dry-run: hiçbir şey yazılmadı)")
 
     except Exception as e:
         db.rollback()

@@ -40,7 +40,7 @@ def run(apply_changes: bool):
     unresolved_rows = []  # (case_id, tracking_no, raw, unresolved_part)
 
     try:
-        cases = db.query(models.Case).filter(models.Case.active == True).all()
+        cases = db.query(models.Case).filter(models.Case.active.is_(True)).all()
         print(f"Taranan aktif dava: {len(cases)}")
 
         for c in cases:

@@ -58,7 +58,7 @@ def get_items(list_type: str, extra_filter=None):
     db = None
     try:
         db = SessionLocal()
-        q = db.query(spec.model).filter(spec.model.active == True)
+        q = db.query(spec.model).filter(spec.model.active.is_(True))
         if extra_filter is not None:
             q = q.filter(extra_filter)
         items = q.order_by(*(getattr(spec.model, col).asc() for col in spec.order_by)).all()

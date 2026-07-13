@@ -372,7 +372,7 @@ export function EmailModal({
                                                                     <CommandItem
                                                                         key={recipient.email}
                                                                         value={recipient.name}
-                                                                        onSelect={() => handleSelectRecipient('to', { name: recipient.name, email: recipient.email })}
+                                                                        onSelect={() => handleSelectRecipient('to', { name: recipient.name, email: recipient.email ?? "" })}
                                                                     >
                                                                         <Check className={cn("mr-2 h-4 w-4", selectedRecipients.find(r => r.email === recipient.email) ? "opacity-100" : "opacity-0")} />
                                                                         {recipient.name}
@@ -427,7 +427,7 @@ export function EmailModal({
                                                                         <CommandItem
                                                                             key={recipient.email}
                                                                             value={recipient.name}
-                                                                            onSelect={() => handleSelectRecipient('cc', { name: recipient.name, email: recipient.email })}
+                                                                            onSelect={() => handleSelectRecipient('cc', { name: recipient.name, email: recipient.email ?? "" })}
                                                                         >
                                                                             <Check className={cn("mr-2 h-4 w-4", ccRecipients.find(r => r.email === recipient.email) ? "opacity-100" : "opacity-0")} />
                                                                             {recipient.name}

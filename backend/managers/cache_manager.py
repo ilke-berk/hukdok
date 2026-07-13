@@ -7,7 +7,6 @@ import logging
 logger = logging.getLogger("CacheManager")
 logging.basicConfig(level=logging.INFO)
 
-import sys
 from pathlib import Path
 
 # Use AppData for cache (Writable)
@@ -71,5 +70,5 @@ def save_cache(data):
         if os.path.exists(temp_file):
             try:
                 os.remove(temp_file)
-            except:
-                pass
+            except OSError as cleanup_err:
+                logger.warning(f"Temp cache dosyası silinemedi: {cleanup_err}")

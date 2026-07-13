@@ -1,6 +1,6 @@
 import threading
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict
 
 # --- LOGGER IMPORT ---
 try:
@@ -12,12 +12,10 @@ except ImportError:
         def log(*args, **kwargs):
             logging.info(f"[MockLog] {args} {kwargs}")
 
-    TechnicalLogger = MockTechnicalLogger
+    TechnicalLogger = MockTechnicalLogger  # type: ignore[misc,assignment]
 
 import json
 from pathlib import Path
-import os
-import sys
 
 # --- PATH HELPERS ---
 def get_app_base_path() -> Path:
@@ -40,6 +38,7 @@ def get_log_dir() -> Path:
 class DynamicConfig:
     _instance = None
     _lock = threading.Lock()
+    _initialized: bool = False
 
     def __new__(cls):
         if cls._instance is None:

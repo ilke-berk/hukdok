@@ -9,12 +9,11 @@ import os
 import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from pathlib import Path
 import sys
 from datetime import datetime, timedelta
 import json
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +65,6 @@ def init_db():
     logger.info("🛠️ Initializing Database...")
     try:
         # Import models here to ensure they are registered in Base.metadata
-        import models
         # Create all tables defined in models (including AnalysisCache)
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Tables created/verified.")
@@ -490,7 +488,7 @@ def get_normalized_clients() -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
-        clients = db.query(Client).filter(Client.active == True).all()
+        clients = db.query(Client).filter(Client.active.is_(True)).all()
         normalized_map: Dict[str, list] = {}
         for c in clients:
             raw_name = c.name

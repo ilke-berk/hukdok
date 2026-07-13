@@ -156,9 +156,9 @@ def get_case_client_notice_target(
         responsible_name = case.responsible_lawyer_name
         if responsible_name:
             try:
-                for l in DynamicConfig.get_instance().get_lawyers():
-                    if l.get("name") == responsible_name:
-                        email = (l.get("email") or "").strip()
+                for lw in DynamicConfig.get_instance().get_lawyers():
+                    if lw.get("name") == responsible_name:
+                        email = (lw.get("email") or "").strip()
                         lawyer = {"name": responsible_name, "email": email}
                         break
             except Exception as e:
@@ -202,7 +202,7 @@ def api_delete_case(case_id: int, tenant_id: str = Depends(get_current_tenant)):
     except Exception as e:
         db.rollback()
         logger.error(f"Dava silme hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Dava silinemedi. Lütfen tekrar deneyin.")
+        raise HTTPException(status_code=500, detail="Dava silinemedi. Lütfen tekrar deneyin.") from e
     finally:
         db.close()
 
@@ -607,7 +607,7 @@ def get_incomplete_tasks(tenant_id: str = Depends(get_current_tenant)):
             db.query(models.Case)
             .options(selectinload(models.Case.parties))
             .filter(
-                models.Case.active == True,
+                models.Case.active.is_(True),
                 or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
             )
             .order_by(models.Case.created_at.desc())
@@ -647,7 +647,7 @@ def get_incomplete_tasks(tenant_id: str = Depends(get_current_tenant)):
 
         clients = (
             db.query(models.Client)
-            .filter(models.Client.active == True)
+            .filter(models.Client.active.is_(True))
             .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.updated_at.desc())
             .limit(50)

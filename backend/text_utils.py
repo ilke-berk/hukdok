@@ -1,5 +1,4 @@
 import re
-import unicodedata
 
 def turkish_upper(text: str) -> str:
     """

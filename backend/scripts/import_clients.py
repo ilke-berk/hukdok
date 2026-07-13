@@ -208,8 +208,8 @@ def import_clients(filepath: str):
 
         for i, row in enumerate(rows, start=2):  # satır numarası (header=1)
             try:
-                # Sütunları güvenli al
-                def col(idx):
+                # Sütunları güvenli al (row=row: döngü değişkenini bağla, B023)
+                def col(idx, row=row):
                     return row[idx] if idx < len(row) else None
 
                 cari_kod        = str_val(col(0))
@@ -274,7 +274,7 @@ def import_clients(filepath: str):
                 continue
 
         db.commit()
-        print(f"\n✅ Import tamamlandı!")
+        print("\n✅ Import tamamlandı!")
         print(f"   Eklenen kayıt : {inserted}")
         print(f"   Hatalı satır  : {len(errors)}")
         if errors:

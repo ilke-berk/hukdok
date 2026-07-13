@@ -54,9 +54,7 @@ def clean_name(name):
     return cleaned if len(cleaned) > 2 else None # Filter out very short artifacts
 
 def process_client_list():
-    from pathlib import Path
     import sys
-    import shutil
 
     # Determine paths
     from managers.config_manager import get_data_dir

@@ -30,7 +30,9 @@ const getAuthToken = async (): Promise<string | null> => {
 
         // Try to get token silently
         const response = await msalInstance.acquireTokenSilent(request);
-        return response.idToken;
+        // API scope'lu access token gönderilir (G8) — idToken değil. Backend aud
+        // kontrolü "api://<client_id>" ve "<client_id>" formatlarının ikisini de kabul eder.
+        return response.accessToken;
     } catch (error) {
         console.error("❌ Token acquisition failed:", error);
         return null;
@@ -72,8 +74,9 @@ export const apiClient = {
             console.error("⛔ Unauthorized Access (401) - Logging out...");
             
             // Prevent multiple logout triggers for concurrent 401s
-            if (!(window as any)._isLoggingOut) {
-                (window as any)._isLoggingOut = true;
+            const w = window as Window & { _isLoggingOut?: boolean };
+            if (!w._isLoggingOut) {
+                w._isLoggingOut = true;
                 
                 // Alert the user and logout
                 import("sonner").then(({ toast }) => {
@@ -88,7 +91,7 @@ export const apiClient = {
                             postLogoutRedirectUri: window.location.origin + '/#/login',
                         }).catch(err => {
                             console.error("Logout failed:", err);
-                            (window as any)._isLoggingOut = false;
+                            w._isLoggingOut = false;
                         });
                     }, 500);
                 });

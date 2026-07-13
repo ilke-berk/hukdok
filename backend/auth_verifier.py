@@ -35,9 +35,14 @@ class AuthVerifier:
                 t.strip() for t in os.getenv("ALLOWED_TENANTS", "").split(",") if t.strip()
             )
             
-            # Dev Mode Bypass — yalnızca development ortamında ve açıkça etkinleştirilmişse
+            # Dev Mode Bypass (G5) — imzasız token kabulü yalnızca ÜÇ koşul birden
+            # sağlanırsa: ENV=development + ALLOW_DEV_TENANT=true + DEV_MODE=true.
+            # Prod .env'de DEV_MODE false/tanımsız olduğundan bu yol prod'da kapalıdır;
+            # kombinasyon eksikse api.py başlangıçta CRITICAL log basar.
             if (os.getenv("ENV") == "development" and os.getenv("ALLOW_DEV_TENANT") == "true"
+                    and os.getenv("DEV_MODE", "").lower() == "true"
                     and token_tenant == "dev-tenant"):
+                logger.warning("Auth: DEV bypass aktif — imzasız 'dev-tenant' token kabul edildi.")
                 return unverified_claims
 
             logger.info(f"Auth: Validating Token for Tenant: {token_tenant}")

@@ -1,0 +1,49 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# E: pycodestyle hataları (E722 bare-except dahil), F: pyflakes, B: bugbear
+select = ["E", "F", "B"]
+# E501: mevcut kodda uzun satır yaygın; satır boyu kapısı Faz 3 kapsamı dışı
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# E402: bu modüllerde import'lardan ÖNCE env yükleme / startup log / sys.path
+# kurulumu bilinçli olarak yapılır; import sırası davranışın parçası.
+"analyzer.py" = ["E402"]
+"api.py" = ["E402"]
+"client_normalizer.py" = ["E402"]
+"vault.py" = ["E402"]
+"managers/cache_manager.py" = ["E402"]
+"managers/log_manager.py" = ["E402"]
+"scripts/*" = ["E402"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI'nin Depends/Query/... default-argüman deyimi B008 değildir
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Header", "fastapi.Body",
+    "fastapi.File", "fastapi.Form", "fastapi.Path", "fastapi.Cookie",
+    "fastapi.Security", "Depends", "Query", "Header", "Body", "File",
+    "Form", "Path", "Cookie", "Security",
+]
+
+# Mypy kademeli (plan §3.1): yalnızca managers/ + routes/ taranır, strict hedeflenmez.
+# Kapsam genişletmek için files listesine modül ekleyin.
+[tool.mypy]
+python_version = "3.10"
+files = ["managers", "routes"]
+ignore_missing_imports = true
+check_untyped_defs = true
+follow_imports = "silent"
+# Kod tabanında `param: str = None` stili yaygın; Optional'a geçiş kademeli
+implicit_optional = true
+# SQLAlchemy eski stil Column() modellerinde instance ataması mypy'de
+# false-positive [assignment] üretir; modeller Mapped[]'e geçince (Faz 4) açılacak
+disable_error_code = ["assignment"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Uygulama modülleri backend kökünden import edilir (import zinciri /app'e göre)
+pythonpath = ["."]
+addopts = "-q"

@@ -20,7 +20,7 @@ from fastapi import HTTPException, BackgroundTasks, UploadFile
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
-from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_size, validate_file_type
+from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 import models
 
 logger = logging.getLogger(__name__)
@@ -127,9 +127,9 @@ def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict, avukat_k
         if not avukat_kodu and case_fetch.responsible_lawyer_name:
             try:
                 lawyers = DynamicConfig.get_instance().get_lawyers()
-                for l in lawyers:
-                    if l.get("name") == case_fetch.responsible_lawyer_name:
-                        avukat_kodu = l.get("code")
+                for lw in lawyers:
+                    if lw.get("name") == case_fetch.responsible_lawyer_name:
+                        avukat_kodu = lw.get("code")
                         break
             except Exception as e:
                 logging.warning(f"Avukat lookup error (Confirm): {e}")
@@ -138,9 +138,17 @@ def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict, avukat_k
     return avukat_kodu
 
 
-async def accept_incoming_file(process_id: Optional[str], file: Optional[UploadFile], process_cache) -> str:
-    """Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload."""
+async def accept_incoming_file(
+    process_id: Optional[str], file: Optional[UploadFile], process_cache
+) -> tuple:
+    """Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
+
+    Returns:
+        (source_for_pdfa, original_for_ham) — cache hit'te dönüştürülmüş PDF +
+        orijinal ham dosya; cache miss'te ikisi de yüklenen dosyanın kendisidir.
+    """
     temp_path = None
+    original_path = None
     _from_cache = False
 
     if process_id:
@@ -149,9 +157,11 @@ async def accept_incoming_file(process_id: Optional[str], file: Optional[UploadF
             cached_path = cache_entry["path"]
             if os.path.exists(cached_path):
                 temp_path = cached_path
-                suffix = cache_entry.get("original_ext", ".pdf")
+                cached_original = cache_entry.get("original_path")
+                if cached_original and os.path.exists(cached_original):
+                    original_path = cached_original
                 _from_cache = True
-                TechnicalLogger.log("INFO", f"PROCESS_CACHE hit: {process_id} → {cached_path}")
+                TechnicalLogger.log("INFO", f"PROCESS_CACHE hit: {process_id} → {cached_path} (original: {original_path})")
             else:
                 TechnicalLogger.log("WARNING", f"PROCESS_CACHE path missing on disk: {cached_path}")
 
@@ -167,8 +177,8 @@ async def accept_incoming_file(process_id: Optional[str], file: Optional[UploadF
                 temp_path = tmp_file.name
                 while chunk := await file.read(65536):
                     total_bytes += len(chunk)
-                    if total_bytes > validate_file_size.MAX_BYTES:
-                        raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {validate_file_size.MAX_MB}MB.")
+                    if total_bytes > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {MAX_UPLOAD_MB}MB.")
                     tmp_file.write(chunk)
             TechnicalLogger.log("INFO", f"Temp file created for upload: {temp_path} ({total_bytes} bytes)")
             validate_file_type(temp_path)
@@ -178,9 +188,9 @@ async def accept_incoming_file(process_id: Optional[str], file: Optional[UploadF
         except Exception as e:
             safe_remove(temp_path)
             logger.error(f"Geçici dosya kaydetme hatası: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="Dosya kaydedilemedi. Lütfen tekrar deneyin.")
+            raise HTTPException(status_code=500, detail="Dosya kaydedilemedi. Lütfen tekrar deneyin.") from e
 
-    return temp_path
+    return temp_path, original_path or temp_path
 
 
 def async_increment_counter():
@@ -262,6 +272,7 @@ def convert_pdfa_and_queue_uploads(
     current_user_name: str,
     results: dict,
     timings: dict,
+    ham_source_path: Optional[str] = None,
 ):
     """PDF/A dönüşümü + DB kaydı + iki SharePoint arşiv yüklemesinin kuyruklanması.
 
@@ -300,8 +311,10 @@ def convert_pdfa_and_queue_uploads(
             )
             results["case_document_id"] = doc_id
 
-            # Both archives queued together only after successful PDF/A conversion
-            background_tasks.add_task(async_ham_upload, source_path, ham_filename, ham_folder)
+            # Both archives queued together only after successful PDF/A conversion.
+            # HAM arşive orijinal ham dosya gider (dönüştürülmüş formatlarda
+            # source_path analiz PDF'i olabilir — bkz. accept_incoming_file).
+            background_tasks.add_task(async_ham_upload, ham_source_path or source_path, ham_filename, ham_folder)
             background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
             timings["2_ham_upload"] = 0.00
             timings["3b_gizli_upload"] = 0.00
@@ -313,7 +326,7 @@ def convert_pdfa_and_queue_uploads(
     except Exception as e:
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Processed Upload Error [ID: {error_id}]: {e}")
-        raise HTTPException(status_code=500, detail=f"SharePoint arşiv yüklemesi başarısız. (Hata: {error_id})")
+        raise HTTPException(status_code=500, detail=f"SharePoint arşiv yüklemesi başarısız. (Hata: {error_id})") from e
 
     return pdfa_temp_file, doc_id
 
@@ -485,10 +498,10 @@ async def send_client_notice_email(
     lawyer_name = avukat_adi or "İlgili Avukat"
     if avukat_kodu:
         try:
-            for l in DynamicConfig.get_instance().get_lawyers():
-                if l.get("code") == avukat_kodu:
-                    lawyer_email = (l.get("email") or "").strip()
-                    lawyer_name = l.get("name") or lawyer_name
+            for lw in DynamicConfig.get_instance().get_lawyers():
+                if lw.get("code") == avukat_kodu:
+                    lawyer_email = (lw.get("email") or "").strip()
+                    lawyer_name = lw.get("name") or lawyer_name
                     break
         except Exception as e:
             TechnicalLogger.log("WARNING", f"Müvekkil bildirimi avukat email lookup hatası: {e}")
@@ -534,8 +547,10 @@ def async_cleanup(temp_path, down_id=None, download_cache=None):
         download_cache.delete(down_id)
 
 
-def schedule_cleanup(background_tasks: BackgroundTasks, source_path, pdfa_temp_file, download_id, download_cache):
-    """Her iki temp dosyayı da temizle (source_path her zaman; pdfa farklıysa o da)."""
+def schedule_cleanup(background_tasks: BackgroundTasks, source_path, pdfa_temp_file, download_id, download_cache, ham_source_path=None):
+    """Temp dosyaları temizle (source_path her zaman; pdfa ve ham orijinal farklıysa onlar da)."""
+    if ham_source_path and ham_source_path != source_path:
+        background_tasks.add_task(async_cleanup, ham_source_path)
     if pdfa_temp_file and pdfa_temp_file != source_path:
         background_tasks.add_task(async_cleanup, source_path)
         background_tasks.add_task(async_cleanup, pdfa_temp_file, download_id, download_cache)
@@ -553,13 +568,31 @@ def save_hearing_date(
     current_user_name: str,
     results: dict,
 ):
-    """Duruşma/tensip zaptından gelen sonraki duruşma tarihini ajandaya kaydet."""
-    _btk_up = (belge_turu_kodu or "").upper()
-    if sonraki_durusma_tarihi and any(kw in _btk_up for kw in ("DURUSMA", "ZABIT", "TUTANAK", "TENSIP")):
+    """Duruşma/tensip zaptı veya tebligattan gelen sonraki duruşma tarihini ajandaya kaydet."""
+    from constants import is_hearing_doctype
+    if sonraki_durusma_tarihi and is_hearing_doctype(belge_turu_kodu):
         try:
             from datetime import date as _date
             parsed_hearing = _date.fromisoformat(sonraki_durusma_tarihi)
             db_h = SessionLocal()
+
+            # Dedup: aynı duruşma hem tebligattan hem zabıttan gelebilir
+            existing = (
+                db_h.query(models.HearingDate)
+                .filter(
+                    models.HearingDate.case_id == linked_case_id,
+                    models.HearingDate.hearing_date == parsed_hearing,
+                    models.HearingDate.hearing_time == (sonraki_durusma_saati or None),
+                )
+                .first()
+            )
+            if existing:
+                results["hearing_date_saved"] = sonraki_durusma_tarihi
+                results["hearing_time_saved"] = sonraki_durusma_saati or None
+                logging.info(f"HearingDate zaten mevcut, duplicate atlandı: case_id={linked_case_id}, tarih={parsed_hearing}, saat={sonraki_durusma_saati}")
+                db_h.close()
+                return
+
             case_h = db_h.query(models.Case).filter(models.Case.id == linked_case_id).first()
             hearing = models.HearingDate(
                 case_id=linked_case_id,

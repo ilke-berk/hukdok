@@ -6,7 +6,7 @@ import unicodedata
 from pathlib import Path
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from auth_helpers import get_tenant_owned_case, get_tenant_owned_document
@@ -76,7 +76,7 @@ def create_yetki_belgesi_udf(
         )
     except Exception as e:
         logger.error(f"Yetki belgesi UDF üretim hatası: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Yetki belgesi oluşturulamadı. Lütfen tekrar deneyin.")
+        raise HTTPException(status_code=500, detail="Yetki belgesi oluşturulamadı. Lütfen tekrar deneyin.") from e
 
 
 @router.get("/api/cases/{case_id}/documents")
@@ -112,7 +112,7 @@ def get_case_documents(
                 try:
                     q = q.filter(models.CaseDocument.case_party_id == int(party_id))
                 except ValueError:
-                    raise HTTPException(status_code=400, detail="party_id sayı veya 'null' olmalı")
+                    raise HTTPException(status_code=400, detail="party_id sayı veya 'null' olmalı") from None
 
         docs = q.order_by(models.CaseDocument.uploaded_at.desc()).all()
 
@@ -265,7 +265,7 @@ def download_document(
             content, _ = download_file_from_sharepoint(folder_name, doc.stored_filename)
         except Exception as e:
             logger.error(f"SharePoint download error for doc {doc_id}: {e}")
-            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
+            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı") from e
 
         raw_name = doc.original_filename or doc.stored_filename
         safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii") or "belge"
@@ -360,7 +360,7 @@ def resend_document_email(
             content, _ = download_file_from_sharepoint(folder_name, doc.stored_filename)
         except Exception as e:
             logger.error(f"SharePoint download error for doc {doc_id}: {e}")
-            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
+            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı") from e
 
         suffix = Path(doc.stored_filename).suffix
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -404,7 +404,7 @@ def resend_document_email(
         raise
     except Exception as e:
         logger.error(f"Resend email error for doc {doc_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="E-posta gönderilemedi")
+        raise HTTPException(status_code=500, detail="E-posta gönderilemedi") from e
     finally:
         if tmp_path:
             try:

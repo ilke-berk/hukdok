@@ -2,18 +2,13 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Eyebrow } from "@/components/dashboard/primitives";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
-import { UserPlus, Save, User, MapPin, Phone, CreditCard, Mail, Edit, Users, Trash2, Tag, Hash, Calendar, Upload, FileText, X, Loader2 } from "lucide-react";
+import { Save, User, MapPin, Phone, CreditCard, Mail, Users, Trash2, Tag, Hash, Calendar, Upload, FileText } from "lucide-react";
 import { toast } from "sonner";
-import {
-    RadioGroup,
-    RadioGroupItem
-} from "@/components/ui/radio-group";
 import {
     Select,
     SelectContent,
@@ -32,7 +27,6 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
@@ -102,7 +96,7 @@ const NewClient = () => {
             // Eğer sadece id ve name geliyorsa (dashboard'dan), API'den tam veriyi çek
             if (editModeClient.id && !editModeClient.phone && !editModeClient.email && !editModeClient.tc_no) {
                 if (isLoading) return;
-                const full = clients.find((c: { id: number }) => c.id === editModeClient.id);
+                const full = clients.find(c => c.id === editModeClient.id);
                 if (full) {
                     setFormData({
                         name: full.name || "",

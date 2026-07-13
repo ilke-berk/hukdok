@@ -1,8 +1,6 @@
 from flashtext import KeywordProcessor
-import json
-from pathlib import Path
 import logging
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +57,6 @@ class ListSearcher:
         # 2. Uppercase Turkish
         # 3. Collapse multiple spaces
         from client_normalizer import turkish_upper
-        import re
         
         # Replace common apostrophes
         text_cleaned = text.replace("'", " ").replace("'", " ").replace("`", " ")

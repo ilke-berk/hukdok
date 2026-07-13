@@ -95,7 +95,7 @@ export const AnalysisResults = ({
 
   const isDurusmaZapt = (() => {
     const code = (editedData.belge_turu_kodu || "").toUpperCase();
-    return code.includes("DURUSMA") || code.includes("ZABIT") || code.includes("TUTANAK") || code.includes("TENSIP");
+    return code.includes("DURUSMA") || code.includes("ZABIT") || code.includes("TUTANAK") || code.includes("TENSIP") || code.includes("TEBLIG");
   })();
 
   const allFieldsApproved = Object.entries(approvedFields).every(([k, v]) => {
@@ -424,7 +424,7 @@ export const AnalysisResults = ({
     onValidationChange(allFieldsApproved, { ...editedData, generated_filename: currentGeneratedFilename });
   }, [editedData, approvedFields, onValidationChange, currentGeneratedFilename]);
 
-  const handleFieldChange = (field: keyof typeof editedData, value: any) => {
+  const handleFieldChange = (field: keyof typeof editedData, value: unknown) => {
     setEditedData((prev) => ({ ...prev, [field]: value }));
   };
 

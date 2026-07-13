@@ -11,10 +11,20 @@ from fastapi import HTTPException
 from dependencies import security_logger
 from managers.log_manager import TechnicalLogger
 
-ALLOWED_EXTENSIONS = {".pdf", ".udf"}
+ALLOWED_EXTENSIONS = {
+    ".pdf", ".udf",
+    ".tif", ".tiff", ".jpg", ".jpeg", ".png",
+    ".docx", ".doc", ".xlsx", ".xls",
+}
+
+SUPPORTED_FORMATS_LABEL = "PDF, UDF, Word, Excel, TIFF, JPG ve PNG"
+
+# Upload boyut limiti (Faz 4.4'te env'e taşınacak: MAX_UPLOAD_MB)
+MAX_UPLOAD_MB = 50
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 
-def safe_remove(file_path: str, retries: int = 3, delay: float = 1.0) -> bool:
+def safe_remove(file_path: Optional[str], retries: int = 3, delay: float = 1.0) -> bool:
     """KVKK-compliant file removal with retry mechanism."""
     if not file_path or not os.path.exists(file_path):
         return True
@@ -54,7 +64,7 @@ def sanitize_filename(filename: str) -> str:
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"İzin verilmeyen dosya uzantısı: {ext}. Sadece PDF ve UDF yüklenebilir.",
+            detail=f"İzin verilmeyen dosya uzantısı: {ext}. Sadece {SUPPORTED_FORMATS_LABEL} yüklenebilir.",
         )
 
     if len(filename) > 200:
@@ -63,10 +73,53 @@ def sanitize_filename(filename: str) -> str:
         TechnicalLogger.log("WARNING", f"Filename truncated to 200 chars: {filename}")
 
     filename = filename.replace(" ", "_")
-    filename = re.sub(r"[_.]{2,}", "_", filename)
+    # Ardışık ayraçlar yalnızca GÖVDEDE tekilleştirilir; uzantı dışarıda
+    # tutulur, yoksa "KARARI_.pdf" → "KARARI_pdf" olur (bkz. text_utils
+    # sanitize_filename_text içindeki uyarı).
+    stem, ext = Path(filename).stem, Path(filename).suffix
+    filename = re.sub(r"[_.]{2,}", "_", stem) + ext
 
     TechnicalLogger.log("INFO", f"Filename sanitized: {filename}")
     return filename
+
+
+# Magic-byte imzaları: uzantı → kabul edilen header prefix'leri
+_MAGIC_SIGNATURES = {
+    ".tif": (b"II*\x00", b"MM\x00*"),
+    ".tiff": (b"II*\x00", b"MM\x00*"),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".png": (b"\x89PNG",),
+    # OLE Compound File (legacy Office)
+    ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+}
+
+# ZIP (PK) tabanlı formatlar: uzantı → arşiv içinde bulunması gereken marker
+_ZIP_MARKERS = {
+    ".udf": "content.xml",
+    ".docx": "word/document.xml",
+    ".xlsx": "xl/workbook.xml",
+}
+
+
+def _validate_zip_marker(file_path: str, ext: str) -> bool:
+    """PK header'lı dosyanın arşiv içeriğiyle uzantısının eşleştiğini doğrular."""
+    import zipfile
+
+    marker = _ZIP_MARKERS[ext]
+    try:
+        with zipfile.ZipFile(file_path, "r") as z:
+            if marker in z.namelist():
+                TechnicalLogger.log("INFO", f"Valid ZIP-based {ext} file: {file_path}")
+                return True
+    except zipfile.BadZipFile:
+        pass
+    TechnicalLogger.log("ERROR", f"PK header but not a valid {ext} archive: {file_path}")
+    raise HTTPException(
+        status_code=400,
+        detail=f"Dosya bozuk veya uzantısıyla ({ext}) uyumsuz bir format içeriyor.",
+    )
 
 
 def validate_file_type(file_path: str) -> bool:
@@ -83,7 +136,7 @@ def validate_file_type(file_path: str) -> bool:
         TechnicalLogger.log("WARNING", f"Rejected file with invalid extension: {ext}")
         raise HTTPException(
             status_code=400,
-            detail=f"İzin verilmeyen dosya tipi: {ext}. Sadece PDF ve UDF dosyaları yüklenebilir.",
+            detail=f"İzin verilmeyen dosya tipi: {ext}. Sadece {SUPPORTED_FORMATS_LABEL} dosyaları yüklenebilir.",
         )
 
     try:
@@ -100,31 +153,28 @@ def validate_file_type(file_path: str) -> bool:
                     detail="Dosya formatı uyumsuz. Lütfen dosya uzantısını kontrol edin.",
                 )
 
-        elif ext == ".udf":
-            if header.startswith(b"PK"):
-                # ZIP tabanlı UDF — içinde content.xml olmalı
-                import zipfile
-                try:
-                    with zipfile.ZipFile(file_path, "r") as z:
-                        if "content.xml" in z.namelist():
-                            TechnicalLogger.log("INFO", f"Valid ZIP-based UDF file: {file_path}")
-                            return True
-                except zipfile.BadZipFile:
-                    pass
-                TechnicalLogger.log("ERROR", f"PK header but not a valid UDF ZIP: {file_path}")
-                raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
-            elif header.startswith(b"<?xml") or header.startswith(b"<udf"):
-                # XML tabanlı UDF — ilk 512 byte içinde <udf etiketi aranır
-                with open(file_path, "rb") as f:
-                    preview = f.read(512)
-                if b"<udf" in preview:
-                    TechnicalLogger.log("INFO", f"Valid XML-based UDF file: {file_path}")
-                    return True
-                TechnicalLogger.log("ERROR", f"XML header but no <udf tag found: {file_path}")
-                raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
-            else:
-                TechnicalLogger.log("ERROR", f"Invalid UDF format, magic bytes: {header.hex()}")
-                raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
+        elif ext in _MAGIC_SIGNATURES:
+            if any(header.startswith(sig) for sig in _MAGIC_SIGNATURES[ext]):
+                TechnicalLogger.log("INFO", f"Valid {ext} file: {file_path}")
+                return True
+            TechnicalLogger.log("ERROR", f"Invalid {ext} magic bytes: {header.hex()} for {file_path}")
+            raise HTTPException(
+                status_code=400,
+                detail="Dosya formatı uyumsuz. Lütfen dosya uzantısını kontrol edin.",
+            )
+
+        elif ext in _ZIP_MARKERS and header.startswith(b"PK"):
+            return _validate_zip_marker(file_path, ext)
+
+        elif ext == ".udf" and (header.startswith(b"<?xml") or header.startswith(b"<udf")):
+            # XML tabanlı UDF — ilk 512 byte içinde <udf etiketi aranır
+            with open(file_path, "rb") as f:
+                preview = f.read(512)
+            if b"<udf" in preview:
+                TechnicalLogger.log("INFO", f"Valid XML-based UDF file: {file_path}")
+                return True
+            TechnicalLogger.log("ERROR", f"XML header but no <udf tag found: {file_path}")
+            raise HTTPException(status_code=400, detail="UDF dosyası bozuk veya geçersiz format.")
 
         else:
             hex_header = header.hex()
@@ -137,12 +187,12 @@ def validate_file_type(file_path: str) -> bool:
             TechnicalLogger.log("ERROR", f"Unknown file signature: {hex_header} for {file_path}")
             raise HTTPException(
                 status_code=400,
-                detail="Dosya formatı tanınmıyor veya desteklenmiyor. Sadece PDF ve UDF dosyaları kabul edilir.",
+                detail=f"Dosya formatı tanınmıyor veya desteklenmiyor. Sadece {SUPPORTED_FORMATS_LABEL} dosyaları kabul edilir.",
             )
 
     except IOError as e:
         TechnicalLogger.log("ERROR", f"File read error during validation: {e}")
-        raise HTTPException(status_code=500, detail="Dosya doğrulama sırasında hata oluştu.")
+        raise HTTPException(status_code=500, detail="Dosya doğrulama sırasında hata oluştu.") from e
 
 
 def validate_file_size(file_path: str) -> bool:
@@ -151,21 +201,21 @@ def validate_file_size(file_path: str) -> bool:
         size = os.path.getsize(file_path)
         size_mb = size / (1024 * 1024)
 
-        if size > validate_file_size.MAX_BYTES:
+        if size > MAX_UPLOAD_BYTES:
             security_logger.log_event(
                 "OVERSIZED_FILE_REJECTED",
                 "WARNING",
                 f"File too large: {size_mb:.2f}MB",
-                {"file": file_path, "size_mb": size_mb, "limit_mb": validate_file_size.MAX_MB},
+                {"file": file_path, "size_mb": size_mb, "limit_mb": MAX_UPLOAD_MB},
             )
             TechnicalLogger.log(
                 "WARNING",
-                f"File too large: {size_mb:.2f}MB (max: {validate_file_size.MAX_MB}MB)",
+                f"File too large: {size_mb:.2f}MB (max: {MAX_UPLOAD_MB}MB)",
                 {"file": file_path},
             )
             raise HTTPException(
                 status_code=413,
-                detail=f"Dosya çok büyük: {size_mb:.2f}MB. Maksimum dosya boyutu: {validate_file_size.MAX_MB}MB",
+                detail=f"Dosya çok büyük: {size_mb:.2f}MB. Maksimum dosya boyutu: {MAX_UPLOAD_MB}MB",
             )
 
         TechnicalLogger.log("INFO", f"File size OK: {size_mb:.2f}MB", {"file": file_path})
@@ -173,11 +223,7 @@ def validate_file_size(file_path: str) -> bool:
 
     except OSError as e:
         TechnicalLogger.log("ERROR", f"Error checking file size: {e}")
-        raise HTTPException(status_code=500, detail="Dosya boyutu kontrol edilemedi.")
-
-validate_file_size.MAX_MB = 50
-validate_file_size.MAX_BYTES = validate_file_size.MAX_MB * 1024 * 1024
-
+        raise HTTPException(status_code=500, detail="Dosya boyutu kontrol edilemedi.") from e
 
 def normalize_date_for_sharepoint(date_str: str) -> Optional[str]:
     """Converts various date formats to SharePoint-friendly ISO 8601 (YYYY-MM-DD)."""

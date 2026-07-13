@@ -14,7 +14,10 @@ Eşleşme katmanları:
   none    → eşleşme yok    — şüpheli, incelenmeli
 """
 
-import sys, os, re, argparse
+import sys
+import os
+import re
+import argparse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
@@ -314,14 +317,14 @@ def main():
         print(f"\n⚠️  MUHTEMELEN GÖNDERİLMİŞ (doğrulama önerilebilir, {len(maybe)} adet):\n")
         print(f"{'ID':<5} {'Tarih':<17} {'Pencere':<8} {'Dosya adı':<50} {'Müvekkil'}")
         print("-" * 110)
-        for d, email, conf in maybe:
+        for d, _email, conf in maybe:
             dt     = str(d["uploaded_at"])[:16]
             reason = "loose" if conf == "loose" else "gün"
             print(f"{d['id']:<5} {dt:<17} {reason:<8} {d['filename'][:48]:<50} {d['muvekkil'][:28]}")
 
     # ── Eşleşen örnek ──
     if matched:
-        print(f"\n✅ EŞLEŞENLERİN ÖRNEĞİ (ilk 5):\n")
+        print("\n✅ EŞLEŞENLERİN ÖRNEĞİ (ilk 5):\n")
         for doc, email, _ in matched[:5]:
             print(f"  • {doc['filename'][:48]:<50} ←→  {email['subject'][:60]}")
 

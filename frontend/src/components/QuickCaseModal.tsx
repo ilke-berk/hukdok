@@ -7,7 +7,6 @@
  */
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +17,7 @@ import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
 import { CaseData, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
-import { useClients } from "@/hooks/useClients";
+import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber } from "@/lib/caseNumberUtils";
 import { closestName } from "@/lib/nameSimilarity";
 
@@ -86,57 +85,13 @@ const ALT_TURLER: Record<string, string[]> = {
     "Savcılık": [],
 };
 
-/**
- * Analizden gelen çeşitli tarih formatlarını HTML input[type=date] için
- * gereken YYYY-MM-DD formatına çevirir.
- * Geçersiz formatlarda bugünün tarihi döner.
- */
-function parseToHtmlDate(raw?: string): string {
-    const today = new Date().toISOString().split("T")[0];
-    if (!raw || !raw.trim()) return today;
-    const s = raw.trim();
-
-    // YYYY-MM-DD — zaten doğru format
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-    // DD.MM.YYYY veya DD/MM/YYYY
-    const dotSlash = s.match(/^(\d{2})[./](\d{2})[./](\d{4})$/);
-    if (dotSlash) return `${dotSlash[3]}-${dotSlash[2]}-${dotSlash[1]}`;
-
-    // DDMMYYYY (8 haneli bitişik)
-    if (/^\d{8}$/.test(s)) {
-        const d = s.slice(0, 2), m = s.slice(2, 4), y = s.slice(4, 8);
-        if (+d <= 31 && +m <= 12) return `${y}-${m}-${d}`;
-        // YYYYMMDD (ISO bitişik)
-        const y2 = s.slice(0, 4), m2 = s.slice(4, 6), d2 = s.slice(6, 8);
-        if (+m2 <= 12 && +d2 <= 31) return `${y2}-${m2}-${d2}`;
-    }
-
-    // YYMMDD (6 haneli — analiz çıktısı örn: '221208')
-    if (/^\d{6}$/.test(s)) {
-        const yy = s.slice(0, 2), mm = s.slice(2, 4), dd = s.slice(4, 6);
-        if (+mm <= 12 && +dd <= 31) {
-            const fullYear = +yy >= 50 ? `19${yy}` : `20${yy}`;
-            return `${fullYear}-${mm}-${dd}`;
-        }
-        // DDMMYY
-        const dd2 = s.slice(0, 2), mm2 = s.slice(2, 4), yy2 = s.slice(4, 6);
-        if (+mm2 <= 12 && +dd2 <= 31) {
-            const fullYear2 = +yy2 >= 50 ? `19${yy2}` : `20${yy2}`;
-            return `${fullYear2}-${mm2}-${dd2}`;
-        }
-    }
-
-    return today;
-}
-
 export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickCaseModalProps) => {
     const { saveCaseAndReturn, getClientCaseSequence, isLoading: isCaseLoading } = useCases();
     const { clients, isLoading: isClientLoading } = useClients();
     const { lawyers } = useConfig();
 
     const [existingClientNames, setExistingClientNames] = useState<string[]>([]);
-    const [existingClientsData, setExistingClientsData] = useState<{ name: string; category?: string; tc_no?: string;[key: string]: unknown }[]>([]);
+    const [existingClientsData, setExistingClientsData] = useState<ClientData[]>([]);
     const [missingClients, setMissingClients] = useState<string[]>([]);
     const [showNewClientConfirm, setShowNewClientConfirm] = useState(false);
 
@@ -238,7 +193,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
             // avukat_kodu (örn. "AGH") → lawyers listesinden tam adı bul (örn. "Av. Ayşe Gül Hanyaloğlu")
             if (prefill?.avukat_kodu && lawyers.length > 0) {
-                const matched = lawyers.find((l: { code: string; name: string }) =>
+                const matched = lawyers.find(l =>
                     l.code === prefill.avukat_kodu ||
                     l.name === prefill.avukat_kodu
                 );
@@ -623,8 +578,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     <SelectValue placeholder="Seçiniz" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {lawyers.map((l: { code: string; name: string }) => (
-                                        <SelectItem key={l.code} value={l.name || l.code}>
+                                    {lawyers.map(l => (
+                                        <SelectItem key={l.code} value={l.name || l.code || ""}>
                                             {l.name || l.code}
                                         </SelectItem>
                                     ))}

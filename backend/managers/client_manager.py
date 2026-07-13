@@ -11,7 +11,8 @@ def add_client(data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
         name = data.get("name", "").strip()
-        if not name: return False
+        if not name:
+            return False
 
         # Mevcut müvekkil (aynı isimde) varsa: yalnızca aynı tenant'a veya legacy NULL'a aitse güncelle.
         existing_q = db.query(models.Client).filter(models.Client.name.ilike(name))

@@ -1,8 +1,9 @@
 """
 PDF/A-2b Dönüştürücü Modül
-Tüm dosyaları (PDF/DOCX) PDF/A-2b formatına dönüştürür.
+Tüm dosyaları (PDF/Office/görüntü/UDF) PDF/A-2b formatına dönüştürür.
 
-Bu modül GhostScript ve LibreOffice kullanarak dosyaları arşivleme standardı
+Bu modül GhostScript (PDF → PDF/A), LibreOffice (Word/Excel → PDF) ve
+Pillow (TIFF/JPG/PNG → PDF) kullanarak dosyaları arşivleme standardı
 olan PDF/A-2b formatına dönüştürür.
 """
 
@@ -11,6 +12,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
+
+from pdf.format_converter import (
+    IMAGE_EXTENSIONS,
+    OFFICE_EXTENSIONS,
+    image_to_pdf,
+    office_to_pdf,
+)
 
 try:
     from managers.log_manager import TechnicalLogger
@@ -51,12 +59,17 @@ def convert_to_pdfa2b(source_path: str) -> str:
             # PDF → PDF/A-2b dönüşümü (GhostScript)
             TechnicalLogger.log("INFO", f"PDF → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
             return _pdf_to_pdfa2b(source_path, output_path)
-            
-        elif file_ext in ['.docx', '.doc']:
-            # DOCX → PDF/A-2b dönüşümü (LibreOffice)
-            TechnicalLogger.log("INFO", f"DOCX → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
-            return _docx_to_pdfa2b(source_path, output_path)
-            
+
+        elif file_ext in OFFICE_EXTENSIONS:
+            # Word/Excel → PDF/A-2b dönüşümü (LibreOffice)
+            TechnicalLogger.log("INFO", f"Office → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
+            return _office_to_pdfa2b(source_path, output_path)
+
+        elif file_ext in IMAGE_EXTENSIONS:
+            # TIFF/JPG/PNG → PDF/A-2b dönüşümü (Pillow)
+            TechnicalLogger.log("INFO", f"Görüntü → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
+            return _image_to_pdfa2b(source_path, output_path)
+
         elif file_ext == '.udf':
              # UDF → PDF dönüşümü (UDF Converter)
              TechnicalLogger.log("INFO", f"UDF → PDF dönüşümü başlatılıyor: {source_path}")
@@ -65,17 +78,29 @@ def convert_to_pdfa2b(source_path: str) -> str:
         else:
             raise ValueError(f"Desteklenmeyen format: {file_ext}")
 
+    except UnicodeDecodeError as e:
+        # ValueError'ın alt sınıfı — aşağıdaki bilinçli ValueError dalına takılıp
+        # PDF fallback'ini atlamasın (2026-07-13 prod arızası)
+        TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası (decode): {e}")
+        if file_ext != '.pdf':
+            raise RuntimeError(
+                f"{file_ext} dosyası PDF'e dönüştürülemedi. "
+                "Dosya bozuk veya desteklenmeyen bir format olabilir."
+            ) from e
+        TechnicalLogger.log("WARNING", "Dönüşüm başarısız, orijinal dosya kullanılıyor (fallback)")
+        return source_path
     except ValueError:
         # Desteklenmeyen format veya UDF dönüşüm hatası — fallback yapma, yukarı taşı
         raise
     except Exception as e:
         TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası: {e}")
-        if file_ext == '.udf':
+        if file_ext != '.pdf':
+            # Orijinal PDF olmayan dosya .pdf adıyla arşive sızamaz — fallback yok
             raise RuntimeError(
-                "UDF dosyası PDF'e dönüştürülemedi. "
-                "Dosya bozuk veya desteklenmeyen bir UDF formatı olabilir."
+                f"{file_ext} dosyası PDF'e dönüştürülemedi. "
+                "Dosya bozuk veya desteklenmeyen bir format olabilir."
             ) from e
-        # PDF/DOCX için fallback: orijinal dosyayı döndür
+        # PDF için fallback: orijinal dosyayı döndür
         TechnicalLogger.log("WARNING", "Dönüşüm başarısız, orijinal dosya kullanılıyor (fallback)")
         return source_path
 
@@ -114,6 +139,10 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             gs_command,
             capture_output=True,
             text=True,
+            # GS çıktısı taramalı PDF'lerde ham Latin-1 bayt içerebilir (örn. 0xae);
+            # errors="replace" olmadan decode UnicodeDecodeError fırlatır
+            encoding="utf-8",
+            errors="replace",
             timeout=60
         )
         
@@ -127,67 +156,47 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             
     except subprocess.TimeoutExpired:
         TechnicalLogger.log("ERROR", "GhostScript timeout (60s aşıldı)")
-        raise Exception("PDF/A-2b dönüşümü timeout")
+        raise Exception("PDF/A-2b dönüşümü timeout") from None
 
 
-def _docx_to_pdfa2b(source_docx: str, output_pdf: str) -> str:
+def _office_to_pdfa2b(source_office: str, output_pdf: str) -> str:
     """
-    LibreOffice ile DOCX → PDF → PDF/A-2b dönüşümü.
-    
+    LibreOffice ile Word/Excel → PDF → PDF/A-2b dönüşümü.
+
     Args:
-        source_docx: Kaynak DOCX dosyası
+        source_office: Kaynak Word/Excel dosyası
         output_pdf: Çıktı PDF/A-2b dosyası
-        
+
     Returns:
         Dönüştürülmüş PDF/A-2b dosya yolu
     """
-    lo_executable = _find_libreoffice()
-    
-    if not lo_executable:
-        raise FileNotFoundError("LibreOffice bulunamadı! Lütfen kurulum yapın.")
-    
-    # LibreOffice komut satırı
-    output_dir = os.path.dirname(output_pdf)
-    
-    lo_command = [
-        lo_executable,
-        "--headless",
-        "--convert-to", "pdf:writer_pdf_Export",
-        "--outdir", output_dir,
-        source_docx
-    ]
-    
+    intermediate_pdf = office_to_pdf(source_office)
     try:
-        result = subprocess.run(
-            lo_command,
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
-        
-        # LibreOffice çıktı dosyası adını tahmin et
-        expected_output = os.path.join(
-            output_dir,
-            Path(source_docx).stem + ".pdf"
-        )
-        
-        if os.path.exists(expected_output):
-            # Temp PDF'i PDF/A-2b'ye dönüştür
-            TechnicalLogger.log("INFO", "DOCX → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
-            final_output = _pdf_to_pdfa2b(expected_output, output_pdf)
-            
-            # Temp PDF'i temizle
-            if os.path.exists(expected_output) and expected_output != final_output:
-                os.remove(expected_output)
-                
-            return final_output
-        else:
-            error_msg = result.stderr or "Dosya oluşturulamadı"
-            raise Exception(f"LibreOffice dönüşüm hatası: {error_msg}")
-            
-    except subprocess.TimeoutExpired:
-        TechnicalLogger.log("ERROR", "LibreOffice timeout (120s aşıldı)")
-        raise Exception("DOCX → PDF dönüşümü timeout")
+        TechnicalLogger.log("INFO", "Office → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
+        return _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
+    finally:
+        if os.path.exists(intermediate_pdf) and intermediate_pdf != output_pdf:
+            os.remove(intermediate_pdf)
+
+
+def _image_to_pdfa2b(source_image: str, output_pdf: str) -> str:
+    """
+    Pillow ile görüntü (TIFF/JPG/PNG) → PDF → PDF/A-2b dönüşümü.
+
+    Args:
+        source_image: Kaynak görüntü dosyası
+        output_pdf: Çıktı PDF/A-2b dosyası
+
+    Returns:
+        Dönüştürülmüş PDF/A-2b dosya yolu
+    """
+    intermediate_pdf = image_to_pdf(source_image)
+    try:
+        TechnicalLogger.log("INFO", "Görüntü → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
+        return _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
+    finally:
+        if os.path.exists(intermediate_pdf) and intermediate_pdf != output_pdf:
+            os.remove(intermediate_pdf)
 
 
 def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
@@ -240,25 +249,3 @@ def _find_ghostscript() -> Optional[str]:
     return None
 
 
-def _find_libreoffice() -> Optional[str]:
-    """LibreOffice executable'ını bul."""
-    # Windows için olası yollar
-    possible_paths = [
-        r"C:\Program Files\LibreOffice\program\soffice.exe",
-        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-        "soffice",  # PATH'te varsa (Linux/Mac)
-    ]
-    
-    for path in possible_paths:
-        try:
-            result = subprocess.run(
-                [path, "--version"],
-                capture_output=True,
-                timeout=5
-            )
-            if result.returncode == 0:
-                return path
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            continue
-    
-    return None

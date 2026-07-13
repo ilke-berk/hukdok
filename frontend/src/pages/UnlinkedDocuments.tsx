@@ -4,7 +4,6 @@ import { useCases } from "@/hooks/useCases";
 import { useDebounce } from "@/hooks/useDebounce";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Search, Loader2, Link2, Inbox, User, Calendar, X } from "lucide-react";

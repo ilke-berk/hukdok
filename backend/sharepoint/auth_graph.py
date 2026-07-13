@@ -4,7 +4,6 @@ import msal
 import logging
 from dotenv import load_dotenv
 from pathlib import Path
-from typing import Optional
 
 import vault
 

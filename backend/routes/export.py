@@ -32,15 +32,34 @@ logger = logging.getLogger(__name__)
 
 # ── Kimlik doğrulama ─────────────────────────────────────────────────────────
 
+_weak_key_warned = False
+
+
+def _key_is_weak(key: str) -> bool:
+    """32 karakterden kısa veya 'dev-' önekli placeholder anahtarları zayıf sayar."""
+    return len(key) < 32 or key.lower().startswith("dev-")
+
+
 def require_export_api_key(x_api_key: Optional[str] = Header(default=None)):
     """X-API-Key header'ını HUKDOK_EXPORT_API_KEY env değeriyle karşılaştırır.
 
     Env tanımlı değilse export API kapalıdır (fail-closed): her istek 503 alır.
-    Karşılaştırma sabit zamanlıdır (timing attack'a karşı).
+    Anahtar zayıfsa (kısa veya 'dev-' önekli) yalnızca DEV_MODE=true iken kabul
+    edilir; prod'da yine 503 (fail-closed). Karşılaştırma sabit zamanlıdır
+    (timing attack'a karşı).
     """
+    global _weak_key_warned
     expected = os.getenv("HUKDOK_EXPORT_API_KEY")
     if not expected:
         raise HTTPException(status_code=503, detail="Export API yapılandırılmamış")
+    if _key_is_weak(expected) and os.getenv("DEV_MODE", "").lower() != "true":
+        if not _weak_key_warned:
+            logger.critical(
+                "HUKDOK_EXPORT_API_KEY zayıf (kısa veya 'dev-' önekli) — export API "
+                "kapatıldı. Güçlü rastgele bir anahtar tanımlayın (örn. openssl rand -hex 32)."
+            )
+            _weak_key_warned = True
+        raise HTTPException(status_code=503, detail="Export API anahtarı zayıf yapılandırılmış")
     if not x_api_key or not hmac.compare_digest(x_api_key, expected):
         raise HTTPException(status_code=401, detail="Geçersiz veya eksik API anahtarı")
 
@@ -204,15 +223,16 @@ def download_export_document(document_id: int):
             raise HTTPException(status_code=404, detail="Belge SharePoint'e yüklenmemiş")
 
         folder_name = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+        stored_filename = str(doc.stored_filename)
         try:
             from sharepoint.sharepoint_uploader_graph import download_file_from_sharepoint
-            content, content_type = download_file_from_sharepoint(folder_name, doc.stored_filename)
+            content, content_type = download_file_from_sharepoint(folder_name, stored_filename)
         except Exception as e:
             logger.error(f"Export SharePoint download error for doc {document_id}: {e}")
-            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı")
+            raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı") from e
 
         safe_name = (
-            unicodedata.normalize("NFKD", doc.stored_filename)
+            unicodedata.normalize("NFKD", stored_filename)
             .encode("ascii", "ignore")
             .decode("ascii")
             or "belge"
