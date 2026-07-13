@@ -4,23 +4,18 @@ import json
 from datetime import datetime
 from typing import Optional
 import logging
-import google.generativeai as genai
-import vault
 from dotenv import load_dotenv
+
+from gemini_client import get_client as get_gemini_client
 
 # Load Environment
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path)
 
-# Configure Gemini
-api_key = vault.get_secret("GEMINI_API_KEY") 
-if api_key:
-    genai.configure(api_key=api_key)
 
-def get_model():
+def get_model_name():
     # Fallback, email_sender.py ile aynı tutulmalı (K17)
-    model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
-    return genai.GenerativeModel(model_name)
+    return os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
 
 class DateCandidate:
     def __init__(self, date_str, original_text, match_index, total_len, context_score=0):
@@ -197,8 +192,11 @@ def ask_llm_referee(text, top_candidates):
     """
     LLM decides which date is the correct Document Date among candidates.
     """
-    model = get_model()
-    
+    client = get_gemini_client()
+    if client is None:
+        logging.error("GEMINI_API_KEY bulunamadı — LLM hakem atlanıyor.")
+        return None
+
     candidates_str = "\n".join([
         f"- {c.date_str} (Bağlam: \"...{c.snippet}...\")" 
         for c in top_candidates
@@ -226,9 +224,11 @@ def ask_llm_referee(text, top_candidates):
     """
     
     try:
-        response = model.generate_content(prompt)
-        cleaned = response.text.strip().replace("```json", "").replace("```", "").strip()
-        return cleaned # Returns JSON string
+        response = client.models.generate_content(
+            model=get_model_name(), contents=prompt
+        )
+        cleaned = (response.text or "").strip().replace("```json", "").replace("```", "").strip()
+        return cleaned or None # Returns JSON string
     except Exception as e:
         logging.error(f"LLM Error: {e}")
         return None

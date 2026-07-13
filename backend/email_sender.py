@@ -13,8 +13,8 @@ import time
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
-import google.generativeai as genai
 
+from gemini_client import get_client as get_gemini_client
 from sharepoint.auth_graph import get_graph_token
 
 # Logger
@@ -238,12 +238,11 @@ def _generate_ai_email_body(recipient_name: str, context: dict, sender_name: str
         return None
 
     try:
-        genai.configure(api_key=api_key)
-        
+        client = get_gemini_client(api_key)
+
         # Daha hızlı yanıt için Flash modelini kullan
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
-        model = genai.GenerativeModel(model_name)
-        
+
         imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
         prompt = f"""
 Sen kurumsal bir hukuk bürosunda çalışan profesyonel bir asistansın.
@@ -264,8 +263,8 @@ Kurallar:
 5. Kapanış: "Saygılarımızla," ve altına tam olarak şu imzayı ekle: "{imza}"
 6. Metin dışında (konu başlığı vs) hiçbir şey yazma, sadece e-posta gövdesini ver.
 """
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        text = (response.text or "").strip()
         
         # Eğer model konu başlığı vs eklediyse temizle
         if "Konu:" in text[:50]:
@@ -367,9 +366,8 @@ def _generate_client_email_body(client_name: str, context: dict, sender_name: st
     teblig = (context.get("teblig_tarihi_str") or "").strip()
 
     try:
-        genai.configure(api_key=api_key)
+        client = get_gemini_client(api_key)
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
-        model = genai.GenerativeModel(model_name)
 
         prompt = f"""Sen, kurumsal bir hukuk bürosunda müvekkillerle birebir yazışan deneyimli bir avukatsın.
 Müvekkilin {client_name} kişisine, dosyasındaki son gelişmeyi anlatan SICAK, samimi ve birinci ağızdan bir bilgilendirme metni yaz.
@@ -398,8 +396,8 @@ Kurallar:
 6. En sona kısa bir iyi dilek ekle: "İyi günler dilerim." gibi.
 7. Hukuki olarak emin olmadığın hiçbir sonuç/yorum UYDURMA; yalnızca verilen gelişmeye sadık kal.
 8. İmza bloğu, "HukuDok", "Belge Arşiv Sistemi" gibi sistem ifadeleri EKLEME. Sadece e-posta gövdesini ver (konu başlığı yazma)."""
-        response = model.generate_content(prompt)
-        text = response.text.strip()
+        response = client.models.generate_content(model=model_name, contents=prompt)
+        text = (response.text or "").strip()
         if "Konu:" in text[:50]:
             text = text.split("\n", 1)[1].strip()
         return text

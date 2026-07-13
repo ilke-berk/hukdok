@@ -10,7 +10,8 @@ if sys.stdout.encoding != "utf-8":
 
 import logging
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from typing import List, Dict, Optional, Tuple, Any, AsyncGenerator
 
 
@@ -61,12 +62,11 @@ if not GEMINI_MODEL_NAME:
 if not GOOGLE_API_KEY:
     TechnicalLogger.log("ERROR", "GEMINI_API_KEY not found in .env file.")
 
-# Configure Gemini
-if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
+# Gemini client (google-genai) — genai.configure globali yerine ortak modül
+from gemini_client import get_client as get_gemini_client
 
 
-async def _gemini_call_with_retry(model, payload, max_retries: int = 5, stats: Optional[Dict] = None):
+async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None):
     """Gemini API çağrısını 429/503 hatalarında jitter'lı exponential backoff ile retry eder.
 
     503 (overloaded) genelde saniyeler içinde toparlanır → kısa backoff (base 1s).
@@ -76,15 +76,21 @@ async def _gemini_call_with_retry(model, payload, max_retries: int = 5, stats: O
     stats: verilirse retry_count ve retry_wait_ms alanları doldurulur (benchmark için).
     """
     MAX_WAIT = 30.0  # saniye
+    client = get_gemini_client(GOOGLE_API_KEY)
     for attempt in range(max_retries + 1):
         try:
-            return await model.generate_content_async(payload)
+            return await client.aio.models.generate_content(
+                model=GEMINI_MODEL_NAME, contents=payload, config=gen_config
+            )
         except Exception as e:
             err_str = str(e)
             err_low = err_str.lower()
-            is_429 = "429" in err_str or "resource exhausted" in err_low
+            # Öncelik tipli hata kodu (APIError.code); string kontrolü fallback
+            api_code = e.code if isinstance(e, genai_errors.APIError) else None
+            is_429 = api_code == 429 or "429" in err_str or "resource exhausted" in err_low
             is_503 = (
-                "503" in err_str
+                api_code == 503
+                or "503" in err_str
                 or "service is currently unavailable" in err_low
                 or "overloaded" in err_low
                 or "unavailable" in err_low
@@ -206,7 +212,15 @@ def upload_to_gemini(path: str, mime_type: str = "application/pdf") -> Any:
     """
     Uploads the given file to Gemini.
     """
-    file = genai.upload_file(path, mime_type=mime_type)
+    client = get_gemini_client(GOOGLE_API_KEY)
+    file = client.files.upload(
+        file=path,
+        config=genai_types.UploadFileConfig(
+            mime_type=mime_type,
+            # Eski SDK display_name'i dosya adından otomatik dolduruyordu
+            display_name=Path(path).name,
+        ),
+    )
     TechnicalLogger.log(
         "INFO",
         "Uploaded file to Gemini",
@@ -215,6 +229,10 @@ def upload_to_gemini(path: str, mime_type: str = "application/pdf") -> Any:
     return file
 
 
+def _file_state_name(file: Any) -> str:
+    """Yeni SDK'da file.state enum'dur (FileState); string dönerse de çalışır."""
+    state = getattr(file, "state", None)
+    return getattr(state, "name", None) or str(state or "")
 
 
 async def wait_for_files_active(files: List[Any]) -> None:
@@ -222,13 +240,14 @@ async def wait_for_files_active(files: List[Any]) -> None:
     Waits for the uploaded files to be processed and active.
     """
     logging.info("Waiting for file processing...")
+    client = get_gemini_client(GOOGLE_API_KEY)
     for name in (file.name for file in files):
-        file = genai.get_file(name)
-        while file.state.name == "PROCESSING":
+        file = client.files.get(name=name)
+        while _file_state_name(file) == "PROCESSING":
             await asyncio.sleep(1)
-            file = genai.get_file(name)
-        if file.state.name != "ACTIVE":
-            error_msg = f"File {file.name} failed to process state: {file.state.name}"
+            file = client.files.get(name=name)
+        if _file_state_name(file) != "ACTIVE":
+            error_msg = f"File {file.name} failed to process state: {_file_state_name(file)}"
             TechnicalLogger.log("ERROR", error_msg)
             raise Exception(error_msg)
     logging.info("...File is ready for processing.")
@@ -567,13 +586,13 @@ def _detect_missing_fields(pre_extracted: Dict[str, Any]) -> List[str]:
     return missing_fields
 
 
-def _build_prompt_and_model(
+def _build_prompt_and_config(
     pre_extracted: Dict[str, Any],
     missing_fields: List[str],
     preset_belge_turu_kodu: Optional[str],
     benchmark: Dict[str, Any],
 ) -> Tuple[Any, List[Dict]]:
-    """Dinamik promptu ve Gemini modelini kurar. Döner: (model, lawyers)."""
+    """Dinamik promptu ve GenerateContentConfig'i kurar. Döner: (gen_config, lawyers)."""
     # Promptu dinamik oluştur (Singleton Konfigürasyon Kullan)
     t_prompt = time.perf_counter()
     config = DynamicConfig.get_instance()
@@ -592,16 +611,14 @@ def _build_prompt_and_model(
         belge_turu_kodu=preset_belge_turu_kodu,
     )
 
-    model = genai.GenerativeModel(
-        model_name=GEMINI_MODEL_NAME, system_instruction=sys_inst
-    )
+    gen_config = genai_types.GenerateContentConfig(system_instruction=sys_inst)
     benchmark["prompt_build"] = round((time.perf_counter() - t_prompt) * 1000, 2)
-    return model, lawyers
+    return gen_config, lawyers
 
 
 async def _step_ai_call(
     state: Dict[str, Any],
-    model: Any,
+    gen_config: Any,
     needs_ocr: bool,
     extracted_text: Optional[str],
     file_path: str,
@@ -622,7 +639,7 @@ async def _step_ai_call(
         await wait_for_files_active([uploaded_file])
         benchmark["wait_active_ms"] = round((time.perf_counter() - t_wait) * 1000, 2)
         t_gen = time.perf_counter()
-        response = await _gemini_call_with_retry(model, [uploaded_file], stats=ai_stats)
+        response = await _gemini_call_with_retry(gen_config, [uploaded_file], stats=ai_stats)
         benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
     else:
         # --- TEXT MODE ---
@@ -643,11 +660,11 @@ async def _step_ai_call(
             state["uploaded_file"] = uploaded_file
             benchmark["upload_ms"] = round((time.perf_counter() - t_up) * 1000, 2)
             t_gen = time.perf_counter()
-            response = await _gemini_call_with_retry(model, [uploaded_file], stats=ai_stats)
+            response = await _gemini_call_with_retry(gen_config, [uploaded_file], stats=ai_stats)
             benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
         else:
             t_gen = time.perf_counter()
-            response = await _gemini_call_with_retry(model, extracted_text, stats=ai_stats)
+            response = await _gemini_call_with_retry(gen_config, extracted_text, stats=ai_stats)
             benchmark["generate_ms"] = round((time.perf_counter() - t_gen) * 1000, 2)
 
     state["response"] = response
@@ -1038,7 +1055,9 @@ def _cleanup_temp_files(
     """Geçici dosyaları temizler (Gemini upload, UDF PDF, kırpılmış PDF)."""
     if uploaded_file:
         try:
-            uploaded_file.delete()
+            client = get_gemini_client(GOOGLE_API_KEY)
+            if client:
+                client.files.delete(name=uploaded_file.name)
         except Exception as e:
             TechnicalLogger.log("WARNING", f"Error deleting Gemini file: {e}")
 
@@ -1166,7 +1185,7 @@ async def analyze_file_generator(
         # Log what we found/missing
         TechnicalLogger.log("INFO", f"🎯 [PRE] Eksik alanlar: {missing_fields if missing_fields else 'YOK (Sadece özet istenecek)'}")
 
-        model, lawyers = _build_prompt_and_model(
+        gen_config, lawyers = _build_prompt_and_config(
             pre_extracted, missing_fields, preset_belge_turu_kodu, benchmark
         )
 
@@ -1177,7 +1196,7 @@ async def analyze_file_generator(
         t3 = time.perf_counter()  # AI call timer start
 
         async for event in _step_ai_call(
-            ai_state, model, needs_ocr, extracted_text, file_path, benchmark, ai_stats
+            ai_state, gen_config, needs_ocr, extracted_text, file_path, benchmark, ai_stats
         ):
             yield event
         response = ai_state["response"]
@@ -1189,6 +1208,12 @@ async def analyze_file_generator(
         # ⏱️ Token sayıları — generate_ms'in belge boyutuyla mı orantılı olduğunu
         # test etmek için (lokal-prod hız farkı: eşzamanlılık mı, belge boyutu mu?).
         _record_token_usage(response, benchmark)
+
+        # Eski SDK engellenen yanıtta .text erişiminde ValueError atardı; yeni
+        # SDK None döndürür. ValueError'a çevirerek mevcut güvenlik-filtresi
+        # hata yolunu koruyoruz.
+        if response.text is None:
+            raise ValueError("Gemini yanıtı boş (olası güvenlik/gizlilik filtresi engeli).")
 
         logging.info(f"GEMINI HAM CEVAP: {response.text}")
 
