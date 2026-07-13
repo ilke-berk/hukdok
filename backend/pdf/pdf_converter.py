@@ -78,6 +78,17 @@ def convert_to_pdfa2b(source_path: str) -> str:
         else:
             raise ValueError(f"Desteklenmeyen format: {file_ext}")
 
+    except UnicodeDecodeError as e:
+        # ValueError'ın alt sınıfı — aşağıdaki bilinçli ValueError dalına takılıp
+        # PDF fallback'ini atlamasın (2026-07-13 prod arızası)
+        TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası (decode): {e}")
+        if file_ext != '.pdf':
+            raise RuntimeError(
+                f"{file_ext} dosyası PDF'e dönüştürülemedi. "
+                "Dosya bozuk veya desteklenmeyen bir format olabilir."
+            ) from e
+        TechnicalLogger.log("WARNING", "Dönüşüm başarısız, orijinal dosya kullanılıyor (fallback)")
+        return source_path
     except ValueError:
         # Desteklenmeyen format veya UDF dönüşüm hatası — fallback yapma, yukarı taşı
         raise
@@ -128,6 +139,10 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             gs_command,
             capture_output=True,
             text=True,
+            # GS çıktısı taramalı PDF'lerde ham Latin-1 bayt içerebilir (örn. 0xae);
+            # errors="replace" olmadan decode UnicodeDecodeError fırlatır
+            encoding="utf-8",
+            errors="replace",
             timeout=60
         )
         

@@ -174,6 +174,10 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
                 lo_command,
                 capture_output=True,
                 text=True,
+                # LO çıktısı ham bayt içerebilir; errors="replace" olmadan
+                # decode UnicodeDecodeError fırlatır (bkz. pdf_converter GS notu)
+                encoding="utf-8",
+                errors="replace",
                 timeout=LIBREOFFICE_TIMEOUT,
             )
 
