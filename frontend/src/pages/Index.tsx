@@ -374,18 +374,21 @@ const Index = () => {
     }
   };
 
-  const saveFileToDisk = async (fileBlob: Blob, filename: string) => {
-    if (!outputDirHandle) return false;
+  const saveFileToDisk = async (fileBlob: Blob, filename: string, dirOverride?: FileSystemDirectoryHandle) => {
+    // dirOverride: handleFinalProcess içinde yeni seçilen klasör, state henüz
+    // güncellenmeden (stale closure) doğru hedefe yazabilmek için geçilir.
+    const targetDir = dirOverride ?? outputDirHandle;
+    if (!targetDir) return false;
     try {
       // Check for permission logic if needed, but usually granted on selection
       // Verify permission
-      if ((await outputDirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
-        if ((await outputDirHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+      if ((await targetDir.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+        if ((await targetDir.requestPermission({ mode: 'readwrite' })) !== 'granted') {
           throw new Error("Klasöre yazma izni verilmedi.");
         }
       }
 
-      const fileHandle = await outputDirHandle.getFileHandle(filename, { create: true });
+      const fileHandle = await targetDir.getFileHandle(filename, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(fileBlob);
       await writable.close();
@@ -395,6 +398,46 @@ const Index = () => {
       toast.error(`Dosya kaydedilemedi: ${filename}`);
       return false;
     }
+  };
+
+  // Onaydan ÖNCE çıktı klasörünü doğrular: seçili değilse veya diskte artık
+  // bulunamıyorsa (taşınmış/silinmiş → NotFoundError) kullanıcıya seçtirir.
+  // Dönüş: geçerli handle | null (kullanıcı seçmedi → işlem BAŞLAMAMALI) |
+  // "unsupported" (Chrome/Edge dışı: özellik yok, akış engellenmez).
+  const ensureValidOutputDir = async (): Promise<FileSystemDirectoryHandle | null | "unsupported"> => {
+    if (!window.showDirectoryPicker) return "unsupported";
+
+    let handle: FileSystemDirectoryHandle | null = outputDirHandle;
+    if (handle) {
+      try {
+        if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+          && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+          handle = null;
+        } else {
+          // Klasör diskte hâlâ var mı ve yazılabilir mi? (izin verilmiş olsa
+          // bile klasör taşınmış/silinmişse ancak gerçek yazma denemesi
+          // NotFoundError ile ortaya çıkarır)
+          const probe = await handle.getFileHandle(".hukudok-yazma-testi.tmp", { create: true });
+          await handle.removeEntry(probe.name);
+        }
+      } catch (error) {
+        console.warn("Çıktı klasörü doğrulanamadı, yeniden seçim istenecek:", error);
+        handle = null;
+      }
+    }
+
+    if (!handle) {
+      toast.warning("Çıktı klasörü seçili değil veya artık bulunamıyor. Devam etmek için klasör seçin.");
+      try {
+        handle = await window.showDirectoryPicker({ id: 'hukudok-output', mode: 'readwrite' });
+        setOutputDirHandle(handle);
+        await setStoredOutputDir(handle);
+        toast.success("Çıktı klasörü seçildi: Dosyalar buraya kaydedilecek.");
+      } catch {
+        return null; // Kullanıcı seçim penceresini kapattı
+      }
+    }
+    return handle;
   };
 
   // Otomatik dava önerisi akışı — hem ilk analizden hem de pre-load geçişinden çağrılır.
@@ -648,6 +691,15 @@ const Index = () => {
 
     const isBatchMode = fileQueue.length > 1;
 
+    // Geçerli bir çıktı klasörü olmadan işlem BAŞLAMAZ: yerel yedek kopya
+    // zorunlu. Kullanıcı klasör seçmezse modal açık kalır, arşivleme yapılmaz.
+    const ensuredDir = await ensureValidOutputDir();
+    if (ensuredDir === null) {
+      toast.error("Belge işlenmedi: çıktı klasörü seçilmeden devam edilemez.");
+      return;
+    }
+    const localSaveDir = ensuredDir === "unsupported" ? null : ensuredDir;
+
     setEmailModalLoading(true);
 
     // BUG FIX: Use the approved 77-character filename from AnalysisResults
@@ -760,7 +812,7 @@ const Index = () => {
       }
 
       // --- FILE SYSTEM ACCESS API SAVE ---
-      if (outputDirHandle && selectedFile) {
+      if (localSaveDir && selectedFile) {
 
         // 1. Try to download PROCESSED file using download_id
         const downloadId = result.results?.download_id;
@@ -789,7 +841,7 @@ const Index = () => {
           }
         }
 
-        const success = await saveFileToDisk(blobToSave as File, finalSaveFilename);
+        const success = await saveFileToDisk(blobToSave as File, finalSaveFilename, localSaveDir);
         if (success && !isBatchMode) {
           toast.success(`💾 Dosya şuraya kaydedildi: ${finalSaveFilename}`);
         }
