@@ -7,7 +7,6 @@ import { useCases, CaseData } from "@/hooks/useCases";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/dashboard/primitives";
-import { ACCEPT_ATTRIBUTE } from "@/lib/fileValidation";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Gavel, User, FileText, Scale, Save, Briefcase, Building, Search, RefreshCw, Sparkles, Loader2, Upload, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
+import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { generateTrackingNumber, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
@@ -72,15 +71,6 @@ interface EditModeCaseData {
     lawyers?: { name: string; lawyer_id?: number | null }[];
 }
 
-interface CaseSearchResult {
-    id: number;
-    tracking_no: string;
-    esas_no?: string;
-    court?: string;
-    status: string;
-}
-
-
 interface CaseHistoryEntry {
     date: string;
     action: string;
@@ -125,7 +115,8 @@ const NewCase = () => {
         ? Object.fromEntries(Object.entries(courtTypesByParent).map(([k, v]) => [k, v.map(i => i.name ?? "")]))
         : {};
     const TARAF_ROLLERI = mainPartyRoles.map(r => r.name ?? "");
-    const UCUNCU_TARAF_ROLLERI = thirdPartyRoles.map(r => r.name ?? "");
+    // 3. taraf dropdown'ı THIRD rollerine ek olarak ana taraf rollerini de sunar
+    const UCUNCU_TARAF_ROLLERI = [...new Set([...thirdPartyRoles, ...mainPartyRoles].map(r => r.name ?? ""))];
     const BURO_OZEL_TURU = bureauTypes.map(b => b.name ?? "");
     const HIZMET_TURLERI = [
         { label: "Rapor", index: 0 },
@@ -142,9 +133,6 @@ const NewCase = () => {
     // Generate case tracking ID using central utility
     const [caseId, setCaseId] = useState(editModeCase?.tracking_no || generateTrackingNumber());
     const [isLoading, _setIsLoading] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<CaseSearchResult[]>([]);
-    const [_isSearchingCases, setIsSearchingCases] = useState(false);
     const [caseStatus, setCaseStatus] = useState(editModeCase?.status || "DERDEST");
     const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
 
@@ -259,22 +247,7 @@ const NewCase = () => {
     };
 
 
-    // Search cases effect
-    const { searchCases, getClientCaseSequence } = useCases();
-    useEffect(() => {
-        const timer = setTimeout(async () => {
-            if (searchQuery.length >= 2) {
-                setIsSearchingCases(true);
-                const results = await searchCases(searchQuery);
-                setSearchResults(results || []);
-                setIsSearchingCases(false);
-            } else {
-                setSearchResults([]);
-            }
-        }, 500);
-        return () => clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchQuery]);
+    const { getClientCaseSequence } = useCases();
 
     // Yardımcı: Hizmet bitmask'ini güncelle (11000 formatı)
     const handleServiceToggle = (index: number, checked: boolean) => {
@@ -284,6 +257,10 @@ const NewCase = () => {
         setFormData({ ...formData, serviceType: newMask });
         updateTrackingNumber(undefined, newMask);
     };
+
+    // "Ad1;Ad2" biçiminde tek satıra yazılan çoklu isimleri ayrı kişilere böler
+    const splitPartyNames = (value: string): string[] =>
+        value.split(";").map(s => s.trim()).filter(Boolean);
 
     const getOppositeRole = (role: string) => {
         if (role === "Davacı") return "Davalı";
@@ -323,13 +300,6 @@ const NewCase = () => {
         setCaseId(tracking);
     };
 
-    const handleSelectCase = async (caseSummary: { id: number }) => {
-        const fullCase = await getCase(caseSummary.id);
-        if (fullCase) {
-            navigate("/new-case", { state: { case: fullCase }, replace: true });
-        }
-    };
-
     // Effect to handle incoming case state (for editing)
     useEffect(() => {
         if (editModeCase) {
@@ -365,68 +335,6 @@ const NewCase = () => {
             setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || []);
         }
     }, [editModeCase]);
-
-    // File Upload States
-    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-    const handleFileSelect = (files: File | File[]) => {
-        const newFiles = Array.isArray(files) ? files : [files];
-        setSelectedFiles(prev => [...prev, ...newFiles]);
-    };
-
-    const handleClearFile = () => {
-        setSelectedFiles([]);
-    };
-
-    const handleRemoveFile = (index: number) => {
-        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleAnalyzeDocument = () => {
-        if (selectedFiles.length === 0) return;
-
-        setIsAnalyzing(true);
-        toast.info(`${selectedFiles.length} belge yapay zeka ile analiz ediliyor...`);
-
-        // Simulate AI Analysis
-        setTimeout(() => {
-            setIsAnalyzing(false);
-
-            // Mock Extracted Data
-            setFormData(prev => ({
-                ...prev,
-                fileType: "Hukuk Dava",
-                subType: "Tüketici",
-                subject: "Ayıplı Mal - Bedel İadesi",
-                court: "Bursa Tüketici Mahkemesi (Tahmini)",
-                category: "Genel", // Assuming "Genel" is a valid doctype.name
-                lawyer: "İlke Berk", // Assuming "İlke Berk" is a valid lawyer.name
-                uyapLawyer: "Av. Mehmet Demir", // Assuming "Av. Mehmet Demir" is a valid lawyer.name
-                esasNo: "2024/111", // Extracted from doc
-                fileOpeningDate: new Date().toISOString().split('T')[0], // Set to today's date
-                serviceType: "00000",
-                maddiTazminat: "",
-                maneviTazminat: "",
-                acceptanceDate: "",
-                bureauType: "",
-                subTypeExtra: "",
-                judicialUnit: ""
-            }));
-
-            setSelectedLawyers([{ name: "İlke Berk", lawyer_id: null }]);
-
-            // Set clients
-            setClients([{ name: "Ahmet Yılmaz", role: "Davacı" }]);
-
-            // Set counter parties
-            setCounterParties([{ name: "XYZ İnşaat Ltd. Şti.", role: "Davalı" }]);
-
-            toast.success("Bilgiler belgelerden başarıyla çıkarıldı!", {
-                icon: <Sparkles className="w-5 h-5 text-yellow-500" />
-            });
-        }, 2000);
-    };
 
     const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
         if (e) e.preventDefault();
@@ -468,22 +376,23 @@ const NewCase = () => {
             klasor_no_2: formData.klasorNo2 || undefined,
             notes: formData.notes || undefined,
             parties: [
-                ...clients.filter(c => c.name).map(c => ({
-                    client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(c.name))?.id,
-                    name: c.name,
+                // splitPartyNames: blur tetiklenmeden kalan ";"li girişler kayda ayrı kişiler olarak gitsin
+                ...clients.filter(c => c.name).flatMap(c => splitPartyNames(c.name).map(name => ({
+                    client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(name))?.id,
+                    name,
                     role: c.role,
                     party_type: "CLIENT" as const
-                })),
-                ...counterParties.filter(c => c.name).map(c => ({
-                    name: c.name,
+                }))),
+                ...counterParties.filter(c => c.name).flatMap(c => splitPartyNames(c.name).map(name => ({
+                    name,
                     role: c.role,
                     party_type: "COUNTER" as const
-                })),
-                ...thirdParties.filter(t => t.name).map(t => ({
-                    name: t.name,
+                }))),
+                ...thirdParties.filter(t => t.name).flatMap(t => splitPartyNames(t.name).map(name => ({
+                    name,
                     role: t.role,
                     party_type: "THIRD" as const
-                }))
+                })))
             ],
             lawyers: selectedLawyers
         };
@@ -557,15 +466,12 @@ const NewCase = () => {
         setCounterParties([{ name: "", role: "Davalı" }]);
         setThirdParties([]);
 
-        // Reset files and search
-        setSelectedFiles([]);
-        setSearchQuery("");
         setCaseStatus("DERDEST");
 
         // Generate new random ID
         setCaseId(`2024/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`);
 
-        toast.info("Form ve yüklenen belgeler temizlendi.");
+        toast.info("Form temizlendi.");
     };
 
     // DANIŞ (danışma) modunda ortada henüz dava olmadığı için form sadeleşir:
@@ -585,110 +491,11 @@ const NewCase = () => {
                             {isEditMode ? "Dava Kartı Düzenle" : "Dava Kartı Yönetimi"}
                         </h1>
                         <p className="text-[13px] text-[var(--fg-muted)] mt-2 max-w-[60ch] leading-relaxed">
-                            {isEditMode ? "Mevcut dosya bilgilerini güncelleyin ve geçmişi takip edin." : "Yeni dava açın veya mevcut dosyaları arayıp eksik bilgileri tamamlayın."}
+                            {isEditMode ? "Mevcut dosya bilgilerini güncelleyin ve geçmişi takip edin." : "Yeni dava kartı oluşturun."}
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <div className="relative w-full sm:w-80">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Ofis No veya Müvekkil Ara..."
-                                className="pl-10 bg-muted/20 border-border/50 focus:bg-background transition-all"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                            {searchResults.length > 0 && (
-                                <Card className="absolute top-full left-0 right-0 mt-2 z-50 shadow-2xl border-primary/20 bg-background/95 backdrop-blur overflow-hidden">
-                                    <div className="max-h-60 overflow-auto py-2">
-                                        {searchResults.map((res) => (
-                                            <button
-                                                key={res.id}
-                                                className="w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors flex flex-col border-b border-border/40 last:border-0"
-                                                onClick={() => handleSelectCase(res)}
-                                            >
-                                                <div className="flex justify-between items-center">
-                                                    <span className="font-bold text-sm text-primary">{res.tracking_no}</span>
-                                                    <span className="text-[10px] bg-primary/10 px-1.5 py-0.5 rounded text-primary font-bold">{res.status}</span>
-                                                </div>
-                                                <div className="text-xs text-muted-foreground truncate">
-                                                    {res.esas_no || '(Esas No Yok)'} - {res.court || '(Mahkeme Yok)'}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </Card>
-                            )}
-                        </div>
-
-                        <Button
-                            className="w-full sm:w-auto font-semibold shadow-md bg-primary hover:bg-primary/90"
-                            onClick={() => document.getElementById("case-file-upload")?.click()}
-                            disabled={isAnalyzing}
-                        >
-                            {isAnalyzing ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                                <Upload className="w-4 h-4 mr-2" />
-                            )}
-                            Belge Yükle {selectedFiles.length > 0 && `(${selectedFiles.length})`}
-                        </Button>
-                        <input
-                            id="case-file-upload"
-                            type="file"
-                            className="hidden"
-                            multiple
-                            accept={ACCEPT_ATTRIBUTE}
-                            onChange={(e) => e.target.files && handleFileSelect(Array.from(e.target.files))}
-                        />
-                    </div>
                 </div>
-
-                {/* FILE UPLOAD & ANALYSIS PREVIEW */}
-                {selectedFiles.length > 0 && (
-                    <div className="mb-8 animate-in fade-in slide-in-from-top-4 space-y-4">
-                        <div className="bg-primary/5 border border-primary/20 rounded-none p-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <div>
-                                    <h4 className="font-semibold text-lg flex items-center gap-2">
-                                        <FileText className="w-5 h-5 text-primary" />
-                                        Yüklenen Belgeler ({selectedFiles.length})
-                                    </h4>
-                                    <p className="text-sm text-muted-foreground">Bu belgeler analiz edilerek dava kartı oluşturulacak.</p>
-                                </div>
-                                <div className="flex gap-3">
-                                    <Button variant="outline" size="sm" onClick={handleClearFile} disabled={isAnalyzing}>Temizle</Button>
-                                    <Button onClick={handleAnalyzeDocument} disabled={isAnalyzing}>
-                                        {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                                        Analizi Başlat
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                                {selectedFiles.map((file, idx) => (
-                                    <div key={idx} className="bg-background/50 border border-primary/10 rounded-lg p-3 flex items-center gap-3 relative group">
-                                        <div className="bg-primary/20 p-2 rounded">
-                                            <FileText className="w-4 h-4 text-primary" />
-                                        </div>
-                                        <div className="overflow-hidden">
-                                            <p className="text-sm font-medium truncate" title={file.name}>{file.name}</p>
-                                            <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleRemoveFile(idx)}
-                                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-destructive/90"
-                                            type="button"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
 
                 <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -763,8 +570,12 @@ const NewCase = () => {
                                                                                 onClick={() => {
                                                                                     const val = clientSearchValues[index] || "";
                                                                                     if (!val.trim()) return;
+                                                                                    const names = splitPartyNames(val);
                                                                                     const updated = [...clients];
-                                                                                    updated[index].name = toTitleCase(val.trim());
+                                                                                    updated[index].name = toTitleCase(names[0] ?? val.trim());
+                                                                                    if (names.length > 1) {
+                                                                                        updated.splice(index + 1, 0, ...names.slice(1).map(n => ({ name: toTitleCase(n), role: updated[index].role })));
+                                                                                    }
                                                                                     setClients(updated);
                                                                                     updateTrackingNumber(undefined, undefined, updated);
 
@@ -891,8 +702,12 @@ const NewCase = () => {
                                                                 setCounterParties(updated);
                                                             }}
                                                             onBlur={(e) => {
+                                                                const names = splitPartyNames(e.target.value);
                                                                 const updated = [...counterParties];
-                                                                updated[index].name = toTitleCase(e.target.value);
+                                                                updated[index].name = toTitleCase(names[0] ?? e.target.value);
+                                                                if (names.length > 1) {
+                                                                    updated.splice(index + 1, 0, ...names.slice(1).map(n => ({ name: toTitleCase(n), role: updated[index].role })));
+                                                                }
                                                                 setCounterParties(updated);
                                                             }}
                                                             className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/50 text-left"
@@ -980,8 +795,12 @@ const NewCase = () => {
                                                                     setThirdParties(updated);
                                                                 }}
                                                                 onBlur={(e) => {
+                                                                    const names = splitPartyNames(e.target.value);
                                                                     const updated = [...thirdParties];
-                                                                    updated[index].name = toTitleCase(e.target.value);
+                                                                    updated[index].name = toTitleCase(names[0] ?? e.target.value);
+                                                                    if (names.length > 1) {
+                                                                        updated.splice(index + 1, 0, ...names.slice(1).map(n => ({ name: toTitleCase(n), role: updated[index].role })));
+                                                                    }
                                                                     setThirdParties(updated);
                                                                 }}
                                                                 className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/40 text-left"
