@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     bestCategoryCode,
+    generateNameBlock,
     generateTrackingNumber,
     pickNameClient,
     validateCaseNumber,
@@ -74,6 +75,35 @@ describe("generateTrackingNumber", () => {
             }),
         ];
         for (const c of cases) expect(validateCaseNumber(c)).toBe(true);
+    });
+});
+
+describe("generateNameBlock", () => {
+    it("üretilen blok her zaman 10 karakterdir", () => {
+        expect(generateNameBlock("İlke Berk Kutluk", "Doktor")).toHaveLength(10);
+        expect(generateNameBlock("Anadolu Sigorta A.Ş.", "Sigorta")).toHaveLength(10);
+        expect(generateNameBlock("", "")).toHaveLength(10);
+    });
+
+    it("generateTrackingNumber'ın 2. bloğuyla birebir aynıdır", () => {
+        const samples: Array<{ name: string; cat: string }> = [
+            { name: "İlke Berk Kutluk", cat: "Doktor" },
+            { name: "Anadolu Sigorta A.Ş.", cat: "Sigorta" },
+            { name: "Mehmet Öz", cat: "" },
+        ];
+        for (const s of samples) {
+            const tracking = generateTrackingNumber({
+                clientName: s.name,
+                clientCategory: s.cat,
+            });
+            // Blok2 = 4..13 arası sabit genişlikli alan (blok2 nokta içerebildiği
+            // için split(".") kullanılamaz)
+            expect(tracking.slice(3, 13)).toBe(generateNameBlock(s.name, s.cat));
+        }
+    });
+
+    it("kategori boşsa kişi formatı kullanılır", () => {
+        expect(generateNameBlock("İlke Berk Kutluk")).toBe("I_KUTLUK..");
     });
 });
 

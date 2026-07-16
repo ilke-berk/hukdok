@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from database import SessionLocal
@@ -551,6 +552,13 @@ def add_case(data: dict, tenant_id: str = None):
             "status": new_case.status,
             "responsible_lawyer_name": new_case.responsible_lawyer_name or "",
         }
+    except IntegrityError as e:
+        db.rollback()
+        if "tracking_no" in str(getattr(e, "orig", e)):
+            logger.error(f"Add Case Error: tracking_no çakışması — {data.get('tracking_no')}")
+            return {"error": "duplicate_tracking_no"}
+        logger.error(f"Add Case Error: {e}")
+        return None
     except Exception as e:
         logger.error(f"Add Case Error: {e}")
         db.rollback()

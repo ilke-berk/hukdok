@@ -77,6 +77,16 @@ const slugifyCorp = (name: string): string => {
     return word.slice(0, 10).padEnd(10, '.');
 };
 
+/**
+ * Takip numarasının 10 karakterlik isim bloğunu (blok2) üretir.
+ * Backend client-sequence bu blokla mevcut en yüksek sıra numarasını bulur.
+ */
+export const generateNameBlock = (clientName?: string, clientCategory?: string): string => {
+    const cat = clientCategory || "";
+    const isPerson = PERSON_CATEGORIES.has(cat) || cat === "";
+    return isPerson ? slugifyName(clientName || "") : slugifyCorp(clientName || "");
+};
+
 interface TrackingParams {
     category?: string;       // block1 (kategori kodu) için — tüm müvekkillerin en iyi kodu
     clientName?: string;     // isim bloğu için seçilen müvekkil
@@ -109,11 +119,7 @@ export const generateTrackingNumber = (params?: TrackingParams): string => {
     }
 
     // 2. Blok: İsim — clientCategory'e göre kişi/kurum formatı seç
-    const clientCat = params?.clientCategory || "";
-    const isPersonClient = PERSON_CATEGORIES.has(clientCat) || clientCat === "";
-    const block2 = isPersonClient
-        ? slugifyName(params?.clientName || "")
-        : slugifyCorp(params?.clientName || "");
+    const block2 = generateNameBlock(params?.clientName, params?.clientCategory);
 
     // 3. Blok: Sıra no
     const block3 = (params?.sequence?.toString() || "0001").padStart(4, '0');

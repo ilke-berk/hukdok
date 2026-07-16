@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import date
 from typing import List, Optional
 
@@ -47,6 +48,12 @@ def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_ten
     # Hanyaloğlu Acar + LexisBio ortak çalıştığı için yeni davalar paylaşımlı (tenant_id=NULL).
     # tenant_id Depends'i token doğrulaması için kalıyor ama damgalamada kullanılmıyor.
     result = add_case(case_data.model_dump())
+    if result and result.get("error") == "duplicate_tracking_no":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu ofis numarası zaten kayıtlı: {case_data.tracking_no}. "
+                   "Sıra numarasını artırıp tekrar deneyin.",
+        )
     if not result:
         raise HTTPException(status_code=500, detail="Failed to save case")
     return {"status": "success", "message": "Case saved", **result}
@@ -71,9 +78,31 @@ def get_cases_api(
 
 
 @router.get("/api/cases/client-sequence")
-def get_client_case_sequence(client_name: str, tenant_id: str = Depends(get_current_tenant)):
+def get_client_case_sequence(
+    client_name: str,
+    name_block: Optional[str] = None,
+    tenant_id: str = Depends(get_current_tenant),
+):
     db = SessionLocal()
     try:
+        # Tercih edilen yol: tracking_no'nun 10 karakterlik isim bloğu (blok2) üzerinden
+        # mevcut EN YÜKSEK sıra numarasını bul. Taraf sayımına dayalı eski yöntem, silinen
+        # davalarda ve isim eşleşmeyen kayıtlarda dolu numarayı yeniden önerip
+        # ix_cases_tracking_no çakışması (500) üretiyordu.
+        if name_block and len(name_block) == 10:
+            rows = (
+                db.query(models.Case.tracking_no)
+                .filter(func.substr(models.Case.tracking_no, 4, 10) == name_block)
+                .filter(tenant_filter_clause(models.Case, tenant_id))
+                .all()
+            )
+            max_seq = 0
+            for (tno,) in rows:
+                m = re.match(r"^[A-Z0-9]{2}\.(.{10})\.(\d{4})\.", tno or "")
+                if m:
+                    max_seq = max(max_seq, int(m.group(2)))
+            return {"sequence": max_seq + 1}
+
         if not client_name:
             return {"sequence": 1}
 

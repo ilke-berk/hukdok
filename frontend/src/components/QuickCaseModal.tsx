@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { CaseData, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { ClientData, useClients } from "@/hooks/useClients";
-import { generateTrackingNumber } from "@/lib/caseNumberUtils";
+import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
 import { closestName } from "@/lib/nameSimilarity";
 
 const toTitleCase = (str: string): string => {
@@ -286,7 +286,9 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             autoCategory = "Sigorta";
         }
 
-        const seq = firstClientName ? await getClientCaseSequence(firstClientName) : 1;
+        const seq = firstClientName
+            ? await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName))
+            : 1;
 
         const trackingNo = generateTrackingNumber({
             category: autoCategory,
@@ -339,7 +341,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             });
             onClose();
         } else {
-            toast.error("Dava kaydedilemedi. Sunucu hatası.");
+            toast.error(result?.error || "Dava kaydedilemedi. Sunucu hatası.");
         }
     };
 

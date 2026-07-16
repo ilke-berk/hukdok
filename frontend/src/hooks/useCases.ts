@@ -95,11 +95,23 @@ export const useCases = () => {
 
     const authenticatedRequest = authRequest;
 
-    const saveCase = useCallback(async (data: CaseData) => {
+    // Hata gövdesindeki `detail` mesajını okur (ör. 409 ofis no çakışması)
+    const readErrorDetail = async (response: Response | null): Promise<string | undefined> => {
+        if (!response) return undefined;
+        try {
+            const data = await response.json();
+            return typeof data?.detail === "string" ? data.detail : undefined;
+        } catch {
+            return undefined;
+        }
+    };
+
+    const saveCase = useCallback(async (data: CaseData): Promise<{ ok: boolean; error?: string }> => {
         setIsLoading(true);
         const response = await authenticatedRequest("/api/cases", "POST", data);
         setIsLoading(false);
-        return response ? response.ok : false;
+        if (response && response.ok) return { ok: true };
+        return { ok: false, error: await readErrorDetail(response) };
     }, [authenticatedRequest]);
 
     const getCases = useCallback(async (options: {
@@ -165,8 +177,10 @@ export const useCases = () => {
         return [];
     }, [authenticatedRequest]);
 
-    const getClientCaseSequence = useCallback(async (clientName: string) => {
-        const response = await authenticatedRequest(`/api/cases/client-sequence?client_name=${encodeURIComponent(clientName)}`, "GET");
+    const getClientCaseSequence = useCallback(async (clientName: string, nameBlock?: string) => {
+        const params = new URLSearchParams({ client_name: clientName });
+        if (nameBlock) params.append("name_block", nameBlock);
+        const response = await authenticatedRequest(`/api/cases/client-sequence?${params.toString()}`, "GET");
         if (response && response.ok) {
             const data = await response.json();
             return data.sequence || 1;
@@ -181,7 +195,7 @@ export const useCases = () => {
         if (response && response.ok) {
             return await response.json(); // { id, tracking_no, ... }
         }
-        return null;
+        return { error: (await readErrorDetail(response)) || "Sunucu hatası" };
     }, [authenticatedRequest]);
 
     const deleteCase = useCallback(async (id: number) => {

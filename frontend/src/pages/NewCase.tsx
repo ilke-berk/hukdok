@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { generateTrackingNumber, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
+import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
 import {
     AlertDialog,
@@ -286,7 +286,9 @@ const NewCase = () => {
 
         let seq = 1;
         if (cName) {
-            seq = await getClientCaseSequence(cName);
+            // İsim bloğu (blok2) ile sorgula: backend mevcut en yüksek sıra numarasından
+            // devam eder, dolu ofis numarası önerilmez.
+            seq = await getClientCaseSequence(cName, generateNameBlock(cName, named.category));
         }
 
         const tracking = generateTrackingNumber({
@@ -397,11 +399,14 @@ const NewCase = () => {
             lawyers: selectedLawyers
         };
 
-        let success;
+        let success: boolean;
+        let errorMessage: string | undefined;
         if (isEditMode && editModeCase?.id) {
             success = await updateCase(editModeCase.id, caseData as CaseData);
         } else {
-            success = await saveCase(caseData as CaseData);
+            const result = await saveCase(caseData as CaseData);
+            success = result.ok;
+            errorMessage = result.error;
         }
 
         if (success) {
@@ -416,7 +421,7 @@ const NewCase = () => {
                 if (updated) setCaseHistory(updated.history || []);
             }
         } else {
-            toast.error("Hata", { description: "Dava kartı kaydedilemedi. Sunucu hatası oluştu." });
+            toast.error("Hata", { description: errorMessage || "Dava kartı kaydedilemedi. Sunucu hatası oluştu." });
         }
     };
 
