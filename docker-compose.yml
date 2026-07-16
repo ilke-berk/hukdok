@@ -47,6 +47,7 @@ services:
     # Load environment variables from backend/.env if it exists, or root .env
     env_file:
       - .env
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,6 +61,7 @@ services:
       dockerfile: frontend/Dockerfile
     ports:
       - "8080:80"
+    restart: unless-stopped
     depends_on:
       - backend
     networks:
