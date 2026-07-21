@@ -1,6 +1,4 @@
 """party_check (Tanıdık Sorgu / Çıkar Çatışması) birim testleri — DB'siz."""
-import pytest
-
 from party_check import (
     check_parties,
     normalize_person_name,

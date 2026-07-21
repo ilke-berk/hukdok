@@ -133,7 +133,7 @@ def _match_name(query_norm: str, candidate_norm: str) -> str | None:
         return None
 
     used_fuzzy = False
-    for qt, ct in zip(q_tokens, c_tokens):
+    for qt, ct in zip(q_tokens, c_tokens, strict=True):
         if qt == ct:
             continue
         # Çok kısa kelimede toleranslı eşleşme güvenilmez
