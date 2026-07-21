@@ -112,7 +112,7 @@ export default function AvukatDashboard() {
           statuses: statsData.statuses || {},
         });
       }
-      setRecentCases((casesData || []) as DashboardCase[]);
+      setRecentCases((casesData?.cases || []) as DashboardCase[]);
       setLoading(false);
     })();
     return () => { cancelled = true; };

@@ -3,7 +3,7 @@ import re
 from datetime import date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
@@ -66,15 +66,24 @@ def api_get_case_stats(tenant_id: str = Depends(get_current_tenant)):
 
 @router.get("/api/cases", response_model=List[CaseListRead])
 def get_cases_api(
-    limit: int = 50,
-    offset: int = 0,
+    response: Response,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     status: Optional[str] = None,
     lawyer: Optional[str] = None,
     q: Optional[str] = None,
     exact: bool = False,
+    file_type: Optional[str] = None,
+    urgent_days: Optional[int] = Query(None, ge=1, le=365),
     tenant_id: str = Depends(get_current_tenant),
 ):
-    return get_cases(limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact, tenant_id=tenant_id)
+    items, total = get_cases(
+        limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact,
+        tenant_id=tenant_id, file_type=file_type, urgent_days=urgent_days,
+    )
+    # Gövde geriye dönük uyumlu (dizi) kalır; toplam sayı header ile taşınır
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get("/api/cases/client-sequence")

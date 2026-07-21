@@ -91,7 +91,7 @@ export default function IdariDashboard() {
       setLoading(true);
       const casesData = await getCases({ limit: 8, offset: 0 });
       if (cancelled) return;
-      setRecentCases((casesData || []) as DashboardCase[]);
+      setRecentCases((casesData?.cases || []) as DashboardCase[]);
       setLoading(false);
     })();
     return () => { cancelled = true; };

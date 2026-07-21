@@ -165,8 +165,8 @@ const Index = () => {
 
   // Davaları yükle (bir kere)
   useEffect(() => {
-    getCases({ status: "DERDEST" }).then((data: IndexCaseData[]) => {
-      setAllCases(data || []);
+    getCases<IndexCaseData>({ status: "DERDEST" }).then((data) => {
+      setAllCases(data.cases || []);
       setCasesLoaded(true);
 
       // Dacă sayfadan case yönlendirmesi var ise, seç

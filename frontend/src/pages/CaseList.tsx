@@ -157,22 +157,19 @@ const CaseList = () => {
     try {
       setIsLoading(true);
       const offset = (currentPage - 1) * ITEMS_PER_PAGE;
-      const data = await getCases({
+      const data = await getCases<Case>({
         limit: ITEMS_PER_PAGE,
         offset,
         status: selectedStatus,
         lawyer: selectedLawyer,
         q: debouncedSearch || undefined,
+        fileType: selectedFileType,
+        urgentDays: onlyUrgent ? URGENT_WINDOW_DAYS : undefined,
       });
       // Bu yanıt en güncel istek değilse (kullanıcı yazmaya devam etti) yok say
       if (reqId !== reqIdRef.current) return;
-      if (Array.isArray(data)) {
-        setCases(data);
-        setTotalCount(data.length > 0 ? (currentPage * ITEMS_PER_PAGE + (data.length === ITEMS_PER_PAGE ? 1 : 0)) : 0);
-      } else if (data && data.cases) {
-        setCases(data.cases);
-        setTotalCount(data.total || 0);
-      }
+      setCases(data.cases);
+      setTotalCount(data.total);
     } catch (error) {
       if (reqId !== reqIdRef.current) return;
       console.error(error);
@@ -180,7 +177,7 @@ const CaseList = () => {
     } finally {
       if (reqId === reqIdRef.current) setIsLoading(false);
     }
-  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch]);
+  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch, onlyUrgent]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -205,7 +202,7 @@ const CaseList = () => {
   useEffect(() => { fetchCases(); }, [fetchCases]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
-  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType]);
+  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, onlyUrgent]);
 
   // case_id → en yakın yaklaşan duruşmaya kalan gün (0..URGENT_WINDOW_DAYS)
   const urgentByCase = useMemo(() => {
@@ -256,21 +253,7 @@ const CaseList = () => {
     onlyUrgent && "urgent",
   ].filter(Boolean).length;
 
-  // Sayfada gösterilen liste (onlyUrgent ise sayfa içi süzme)
-  const displayedCases = useMemo(
-    () => onlyUrgent ? cases.filter(c => urgentByCase.has(c.id)) : cases,
-    [cases, onlyUrgent, urgentByCase],
-  );
-
-  // Üst bardaki "N DOSYA" — mümkün olduğunca gerçek sayım
-  const headerCount = useMemo(() => {
-    if (onlyUrgent) return displayedCases.length;
-    const onlyStatus = !debouncedSearch && selectedLawyer === "ALL" && selectedFileType === "ALL";
-    if (onlyStatus && selectedStatus === "ALL") return stats.total;
-    if (onlyStatus && stats.statuses[selectedStatus] !== undefined) return stats.statuses[selectedStatus];
-    return displayedCases.length;
-  }, [onlyUrgent, displayedCases.length, debouncedSearch, selectedLawyer, selectedFileType, selectedStatus, stats]);
-
+  // Tüm filtreler (acil dahil) artık sunucuda — totalCount gerçek toplam
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE) || 1;
 
   return (
@@ -436,7 +419,7 @@ const CaseList = () => {
         <HairlineCard padded={false}>
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)] gap-4">
             <span className="font-mono text-[11px] tracking-[0.12em] uppercase text-[var(--fg-muted)]">
-              <span className="text-[var(--fg)] font-semibold tabular-nums">{headerCount.toLocaleString("tr-TR")}</span> dosya
+              <span className="text-[var(--fg)] font-semibold tabular-nums">{totalCount.toLocaleString("tr-TR")}</span> dosya
               {activeFilterCount > 0 && (
                 <span className="text-[var(--fg-subtle)]"> · {activeFilterCount} filtre uygulandı</span>
               )}
@@ -460,12 +443,12 @@ const CaseList = () => {
               <Loader2 className="w-7 h-7 animate-spin" />
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
             </div>
-          ) : displayedCases.length === 0 ? (
+          ) : cases.length === 0 ? (
             <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
               <Search className="w-9 h-9 opacity-30" />
               <p className="text-[13px]">
                 {onlyUrgent
-                  ? "Bu sayfada süresi yaklaşan dosya yok."
+                  ? "Süresi yaklaşan dosya yok."
                   : "Bu kriterlere uygun dosya bulunamadı."}
               </p>
               {activeFilterCount > 0 && (
@@ -487,7 +470,7 @@ const CaseList = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedCases.map(c => {
+                  {cases.map(c => {
                     const client = c.parties?.find(p => p.party_type === "CLIENT")?.name || "—";
                     const urgentDays = urgentByCase.get(c.id);
                     const isUrgent = urgentDays !== undefined;
@@ -576,10 +559,10 @@ const CaseList = () => {
             </div>
           )}
 
-          {!onlyUrgent && totalCount > 0 && (
+          {totalCount > 0 && (
             <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border)] bg-[var(--bg)]">
               <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-                Sayfa {currentPage} · {cases.length} kayıt
+                Toplam {totalCount.toLocaleString("tr-TR")} kayıt
               </span>
               <div className="flex items-center gap-2">
                 <FlowButton
