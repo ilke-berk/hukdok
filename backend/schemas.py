@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContactType(str, Enum):
@@ -147,6 +147,52 @@ class CasePartyCreate(BaseModel):
     party_type: str  # "CLIENT", "COUNTER", "THIRD"
     birth_year: Optional[int] = None
     gender: Optional[str] = None
+    tc_no: Optional[str] = None
+
+
+# ─── Tanıdık Sorgu / Çıkar Çatışması Kontrolü ────────────────────────────────
+
+class PartyCheckItem(BaseModel):
+    name: str
+    tc_no: Optional[str] = None
+    party_type: Optional[str] = None  # "CLIENT", "COUNTER", "THIRD"
+
+
+class PartyCheckRequest(BaseModel):
+    parties: List[PartyCheckItem] = Field(..., max_length=20)
+    exclude_case_id: Optional[int] = None
+
+
+class PartyMatch(BaseModel):
+    source: str        # "client" | "case_party"
+    strength: str      # "certain" | "probable" | "possible"
+    matched_on: str    # "tc_no" | "name_exact" | "name_fuzzy"
+    name: str
+    # client kaynaklı alanlar
+    client_id: Optional[int] = None
+    cari_kod: Optional[str] = None
+    category: Optional[str] = None
+    contact_type: Optional[str] = None
+    # case_party kaynaklı alanlar
+    case_id: Optional[int] = None
+    tracking_no: Optional[str] = None
+    case_subject: Optional[str] = None
+    case_status: Optional[str] = None
+    role: Optional[str] = None
+    party_type: Optional[str] = None
+    # Eşleşen kaydın TC'si — ekranda karşılaştırma için gösterilir
+    # (endpoint auth korumalı; cari seçim ekranı da TC'yi zaten açık gösteriyor)
+    tc_no: Optional[str] = None
+
+
+class PartyCheckResult(BaseModel):
+    query: PartyCheckItem
+    conflict: bool = False
+    matches: List[PartyMatch] = []
+
+
+class PartyCheckResponse(BaseModel):
+    results: List[PartyCheckResult] = []
 
 
 class CaseLawyerCreate(BaseModel):

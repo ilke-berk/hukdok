@@ -149,6 +149,7 @@ class CaseParty(Base):
     party_type = Column(String, nullable=False) # "CLIENT" (registered), "COUNTER", "THIRD"
     birth_year = Column(Integer, nullable=True)
     gender = Column(String, nullable=True)
+    tc_no = Column(String, nullable=True) # T.C. Kimlik No (tanıdık sorgu / çıkar çatışması kontrolü)
     
     case = relationship("Case", back_populates="parties")
     client = relationship("Client", back_populates="case_parties")

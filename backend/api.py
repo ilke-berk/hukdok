@@ -225,6 +225,7 @@ if os.getenv("DEV_MODE", "").strip().lower() == "true":
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Total-Count"],
     )
 else:
     allowed_origins = [
@@ -238,6 +239,7 @@ else:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Total-Count"],
     )
 
 def _rate_limit_key(request):
@@ -283,11 +285,12 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, documents, processing, activity, export
+from routes import config, clients, cases, documents, processing, activity, export, parties
 
 app.include_router(config.router)
 app.include_router(clients.router)
 app.include_router(cases.router)
+app.include_router(parties.router)
 app.include_router(documents.router)
 app.include_router(processing.router)
 app.include_router(activity.router)

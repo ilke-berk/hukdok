@@ -4,7 +4,7 @@ Avukat adı çözümleme mantığı managers/lawyer_resolver.py'de,
 referans listeleri managers/reference_lists.py'dedir.
 """
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -106,7 +106,7 @@ def get_case(case_id: int, tenant_id: str = None):
             "hukuk_no": item.hukuk_no,
             "klasor_no_2": item.klasor_no_2,
             "notes": item.notes,
-            "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
+            "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
             "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
             "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents],
@@ -187,7 +187,18 @@ def get_case_stats(tenant_id: str = None):
         db.close()
 
 
-def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str = None, q: str = None, exact: bool = False, tenant_id: str = None):
+def get_cases(
+    limit: int = 50,
+    offset: int = 0,
+    status: str = None,
+    lawyer: str = None,
+    q: str = None,
+    exact: bool = False,
+    tenant_id: str = None,
+    file_type: str = None,
+    urgent_days: int = None,
+) -> "tuple[list[dict], int]":
+    """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür."""
     try:
         db = SessionLocal()
         query = db.query(models.Case).options(
@@ -198,6 +209,18 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
 
         if status and status != "ALL":
             query = query.filter(models.Case.status == status)
+
+        if file_type and file_type != "ALL":
+            query = query.filter(models.Case.file_type == file_type)
+
+        if urgent_days is not None:
+            # Önümüzdeki N gün içinde duruşması olan davalar (bugün dahil)
+            today = date.today()
+            upcoming = db.query(models.HearingDate.case_id).filter(
+                models.HearingDate.hearing_date >= today,
+                models.HearingDate.hearing_date <= today + timedelta(days=urgent_days),
+            )
+            query = query.filter(models.Case.id.in_(upcoming))
 
         if lawyer and lawyer != "ALL":
             # Toleranslı eşleştirme: ünvan/diakritik/format farklarını ve çoklu avukatı çözer.
@@ -251,6 +274,10 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
             if term_filters:
                 query = query.filter(and_(*term_filters))
 
+        # Toplam sayı — sayfalama (offset/limit) uygulanmadan önce.
+        # Filtreler .any()/EXISTS tabanlı olduğundan satır çoğalması yok.
+        total = query.count()
+
         # Relevance sıralaması: sorgu varsa exact > prefix > partial > diğer
         if q and len(q.strip()) >= min_len:
             from sqlalchemy import case as sa_case
@@ -264,9 +291,11 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 (models.Case.klasor_no_2.ilike(f"{raw}%"), 2),
                 else_=3,
             )
-            items = query.order_by(relevance, models.Case.updated_at.desc()).offset(offset).limit(limit).all()
+            # id tiebreaker: updated_at unique değil — eşitlikte sayfalar arası
+            # satır tekrarı/atlamasını önler
+            items = query.order_by(relevance, models.Case.updated_at.desc(), models.Case.id.desc()).offset(offset).limit(limit).all()
         else:
-            items = query.order_by(models.Case.updated_at.desc()).offset(offset).limit(limit).all()
+            items = query.order_by(models.Case.updated_at.desc(), models.Case.id.desc()).offset(offset).limit(limit).all()
 
         cases_list = []
         for item in items:
@@ -290,16 +319,16 @@ def get_cases(limit: int = 50, offset: int = 0, status: str = None, lawyer: str 
                 "hasar_dosya_no": item.hasar_dosya_no,
                 "hukuk_no": item.hukuk_no,
                 "dosya_son_durumu": getattr(item, "dosya_son_durumu", None),
-                "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender} for p in item.parties],
+                "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
                 "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
                 "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None,
                 "updated_at": item.updated_at.isoformat() if getattr(item, "updated_at", None) else None,
             }
             cases_list.append(result)
-        return cases_list
+        return cases_list, total
     except Exception as e:
         logger.error(f"Get Cases Advanced Error: {e}")
-        return []
+        return [], 0
     finally:
         db.close()
 
@@ -394,7 +423,8 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
                 role=p.get("role"),
                 party_type=party_type,
                 birth_year=p.get("birth_year"),
-                gender=p.get("gender")
+                gender=p.get("gender"),
+                tc_no=(p.get("tc_no") or "").strip() or None
             )
             db.add(party)
 
@@ -425,7 +455,8 @@ def search_cases(query: str, exact: bool = False, active_only: bool = False, ten
     status = "DERDEST" if active_only else None
     # Dropdown en fazla 8 sonuç gösteriyor; relevance sıralı ilk 25 fazlasıyla yeterli.
     # 500 kayıt çekip parties+lawyers ile serialize etmek her tuş vuruşunda boşa yüktü.
-    return get_cases(q=query, limit=25, exact=exact, status=status, tenant_id=tenant_id)
+    items, _total = get_cases(q=query, limit=25, exact=exact, status=status, tenant_id=tenant_id)
+    return items
 
 
 def add_case(data: dict, tenant_id: str = None):
@@ -504,9 +535,17 @@ def add_case(data: dict, tenant_id: str = None):
 
             # Otomatik Müşteri Oluşturma Yükseltmesi
             if party_type == "CLIENT" and name and not client_id:
-                existing_client = db.query(models.Client).filter(
-                    models.Client.name.ilike(name.strip())
-                ).first()
+                existing_client = None
+                # TC verilmişse önce TC ile eşle — aynı isimli iki cari belirsizliğini çözer
+                tc = (p.get("tc_no") or "").strip()
+                if tc:
+                    existing_client = db.query(models.Client).filter(
+                        models.Client.tc_no == tc
+                    ).first()
+                if not existing_client:
+                    existing_client = db.query(models.Client).filter(
+                        models.Client.name.ilike(name.strip())
+                    ).first()
                 if existing_client:
                     client_id = existing_client.id
                 elif not is_consult:
@@ -527,7 +566,8 @@ def add_case(data: dict, tenant_id: str = None):
                 role=p.get("role"),
                 party_type=party_type,
                 birth_year=p.get("birth_year"),
-                gender=p.get("gender")
+                gender=p.get("gender"),
+                tc_no=(p.get("tc_no") or "").strip() or None
             )
             db.add(party)
 

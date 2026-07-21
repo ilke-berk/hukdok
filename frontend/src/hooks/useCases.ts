@@ -8,6 +8,7 @@ export interface CasePartyData {
     party_type: "CLIENT" | "COUNTER" | "THIRD";
     birth_year?: number;
     gender?: string;
+    tc_no?: string;
 }
 
 export interface CaseLawyerData {
@@ -114,14 +115,16 @@ export const useCases = () => {
         return { ok: false, error: await readErrorDetail(response) };
     }, [authenticatedRequest]);
 
-    const getCases = useCallback(async (options: {
+    const getCases = useCallback(async <T = Record<string, unknown>>(options: {
         limit?: number;
         offset?: number;
         status?: string;
         lawyer?: string;
         q?: string;
         exact?: boolean;
-    } = {}) => {
+        fileType?: string;
+        urgentDays?: number;
+    } = {}): Promise<{ cases: T[]; total: number }> => {
         setIsLoading(true);
         const params = new URLSearchParams();
         if (options.limit !== undefined) params.append("limit", options.limit.toString());
@@ -130,14 +133,21 @@ export const useCases = () => {
         if (options.lawyer && options.lawyer !== "ALL") params.append("lawyer", options.lawyer);
         if (options.q) params.append("q", options.q);
         if (options.exact) params.append("exact", "true");
+        if (options.fileType && options.fileType !== "ALL") params.append("file_type", options.fileType);
+        if (options.urgentDays !== undefined) params.append("urgent_days", String(options.urgentDays));
 
         const queryString = params.toString() ? `?${params.toString()}` : "";
         const response = await authenticatedRequest(`/api/cases${queryString}`, "GET");
         setIsLoading(false);
         if (response && response.ok) {
-            return await response.json();
+            const data = await response.json();
+            const cases: T[] = Array.isArray(data) ? data : [];
+            // Toplam sayı header'da; eski backend'e karşı fallback: offset + sayfa boyu
+            const parsed = parseInt(response.headers.get("X-Total-Count") ?? "", 10);
+            const total = Number.isFinite(parsed) ? parsed : (options.offset ?? 0) + cases.length;
+            return { cases, total };
         }
-        return [];
+        return { cases: [], total: 0 };
     }, [authenticatedRequest]);
 
     const getCaseStats = useCallback(async () => {

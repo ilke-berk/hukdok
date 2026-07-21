@@ -83,6 +83,7 @@ def init_db():
 #   ("rename",  tablo, {eski_kolon: yeni_kolon})
 #   ("columns", tablo, {kolon: DDL | (DDL, [kolon eklendikten sonra çalışacak SQL, ...])})
 #   ("table",   tablo, CREATE_SQL, [index SQL, ...])
+#   ("index",   tablo, [CREATE INDEX IF NOT EXISTS SQL, ...])  — mevcut tabloya idempotent index
 _MIGRATIONS = [
     # 1. SEQUENCE for Lawyers, DocTypes, Statuses
     ("columns", "lawyers",  {"sequence": "INTEGER DEFAULT 0"}),
@@ -296,6 +297,36 @@ _MIGRATIONS = [
     """, [
         "CREATE INDEX idx_export_outbox_status ON export_outbox(status)",
     ]),
+
+    # 15. PERFORMANS INDEX'LERİ (KALITE_DENETIM_RAPORU §index eksikleri)
+    # cases(updated_at, id): liste sıralaması ORDER BY updated_at DESC, id DESC ile birebir.
+    ("index", "cases", [
+        "CREATE INDEX IF NOT EXISTS idx_cases_updated_at_id ON cases (updated_at DESC, id DESC)",
+    ]),
+    ("index", "case_parties", [
+        "CREATE INDEX IF NOT EXISTS idx_case_parties_case ON case_parties (case_id)",
+    ]),
+    ("index", "case_lawyers", [
+        "CREATE INDEX IF NOT EXISTS idx_case_lawyers_case ON case_lawyers (case_id)",
+    ]),
+    ("index", "case_history", [
+        "CREATE INDEX IF NOT EXISTS idx_case_history_case ON case_history (case_id)",
+    ]),
+    # case_id index'i models.HearingDate'te index=True ile zaten var (ix_ adı bilinçli
+    # yeniden kullanılıyor → mevcut kurulumlarda no-op); hearing_date acil filtre için yeni.
+    ("index", "hearing_dates", [
+        "CREATE INDEX IF NOT EXISTS ix_hearing_dates_case_id ON hearing_dates (case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_hearing_dates_date ON hearing_dates (hearing_date)",
+    ]),
+
+    # 16. TANIDIK SORGU — case_parties.tc_no + TC lookup index'leri
+    ("columns", "case_parties", {"tc_no": "VARCHAR(20)"}),
+    ("index", "case_parties", [
+        "CREATE INDEX IF NOT EXISTS idx_case_parties_tc_no ON case_parties (tc_no)",
+    ]),
+    ("index", "clients", [
+        "CREATE INDEX IF NOT EXISTS idx_clients_tc_no ON clients (tc_no)",
+    ]),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
@@ -375,6 +406,12 @@ def check_and_migrate_tables():
                     _exec(sql, f"{table} (index)")
                 tables.add(table)
                 logger.info(f"Created {table} table")
+
+            elif kind == "index":
+                if table not in tables:
+                    continue
+                for sql in op[2]:
+                    _exec(sql, f"{table} (index)")
 
         # pg_trgm — performans amaçlı; yetki/uzantı eksikse uygulamayı durdurmaz
         try:

@@ -20,6 +20,9 @@ import { useConfig } from "@/hooks/useConfig";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
 import { closestName } from "@/lib/nameSimilarity";
+import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
+
+const upperTR = (s: string) => s.trim().toLocaleUpperCase("tr-TR");
 
 const toTitleCase = (str: string): string => {
     if (!str) return "";
@@ -133,6 +136,10 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
     const [clientName, setClientName] = useState(getInitialClients());
     const [counterPartyName, setCounterPartyName] = useState(prefill?.karsi_taraf || "");
+    // Tanıdık sorgu: isim (TR-upper) → TC eşlemesi; TC popover içinden girilir
+    const [tcByName, setTcByName] = useState<Record<string, string>>({});
+    const handleTcChange = (name: string, tc: string) =>
+        setTcByName(prev => ({ ...prev, [upperTR(name)]: tc }));
     // Taraf rolleri: "Davacı" veya "Davalı"
     const [clientRole, setClientRole] = useState<"Davacı" | "Davalı">("Davalı");
     const [counterRole, setCounterRole] = useState<"Davacı" | "Davalı">("Davacı");
@@ -190,6 +197,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             setNotes("");
             setShowConsultCheck(false);
             setConsultTypoHints([]);
+            setTcByName({});
 
             // avukat_kodu (örn. "AGH") → lawyers listesinden tam adı bul (örn. "Av. Ayşe Gül Hanyaloğlu")
             if (prefill?.avukat_kodu && lawyers.length > 0) {
@@ -281,18 +289,27 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
         // `generateTrackingNumber` içine category="Sigorta" geçersek sigorta mantığını çalıştırır, 
         // Aksi takdirde X1 veya diğerlerini kullanır. Ancak, eğer sigorta şirketi adı varsa otomatik Sigorta atamalıyız:
         let autoCategory = category;
-        const sigortaSirketleri = ["AK", "ANADOLU", "AXA", "CORPUS", "QUICK", "EUREKO", "NIPPON", "SOMPO", "SİGORTA"];
-        if (!autoCategory && sigortaSirketleri.some(s => firstClientName.toLocaleUpperCase('tr-TR').includes(s))) {
+        // "SİGORTA" kelimesi veya marka adı AYRI KELİME olarak geçmeli.
+        // Substring kontrolü ("AK" gibi) "Burak Akman" tipi kişi isimlerini
+        // yanlışlıkla Sigorta kategorisine (S1 koduna) düşürüyordu.
+        // Aksigorta zaten "SİGORTA" içerdiği için markalar listesinde "AK" yok.
+        const sigortaMarkalari = ["ANADOLU", "AXA", "CORPUS", "QUICK", "EUREKO", "NIPPON", "SOMPO"];
+        const upperFirst = firstClientName.toLocaleUpperCase('tr-TR');
+        const nameTokens = upperFirst.split(/\s+/);
+        if (!autoCategory && (upperFirst.includes("SİGORTA") || upperFirst.includes("SIGORTA") || nameTokens.some(t => sigortaMarkalari.includes(t)))) {
             autoCategory = "Sigorta";
         }
 
+        // Kategori isim bloğuna da geçmeli: kategorisiz çağrıda sigorta şirketi
+        // kişi formatına ("A_SIGORTA.") düşüyordu; NewCase ile tutarlı olsun.
         const seq = firstClientName
-            ? await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName))
+            ? await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName, autoCategory))
             : 1;
 
         const trackingNo = generateTrackingNumber({
             category: autoCategory,
             clientName: firstClientName,
+            clientCategory: autoCategory,
             processType: fileType,
             serviceType: "00000", // QuickCase varsayılan
             sequence: seq
@@ -312,12 +329,14 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                 ...clientNames.map(name => ({
                     name,
                     role: clientRole,
-                    party_type: "CLIENT" as const
+                    party_type: "CLIENT" as const,
+                    tc_no: tcByName[upperTR(name)] || undefined
                 })),
                 ...counterNames.map(name => ({
                     name,
                     role: counterRole,
-                    party_type: "COUNTER" as const
+                    party_type: "COUNTER" as const,
+                    tc_no: tcByName[upperTR(name)] || undefined
                 })),
             ],
         };
@@ -426,13 +445,16 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 placeholder="Müvekkil adı"
                                 className="flex-1 h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                             />
+                            <PartyMatchIndicator
+                                value={clientName}
+                                partyType="CLIENT"
+                                tcByName={tcByName}
+                                onTcChange={handleTcChange}
+                            />
                             <div className="flex rounded-[3px] overflow-hidden border border-[var(--border)] shrink-0">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setClientRole("Davacı");
-                                        setCounterRole("Davalı");
-                                    }}
+                                    onClick={() => setClientRole("Davacı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davacı"
                                         ? "bg-[var(--brand)] text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
@@ -440,10 +462,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 >Davacı</button>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setClientRole("Davalı");
-                                        setCounterRole("Davacı");
-                                    }}
+                                    onClick={() => setClientRole("Davalı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davalı"
                                         ? "bg-[var(--brand)] text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
@@ -465,13 +484,16 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 placeholder="Karşı taraf adı (opsiyonel)"
                                 className="flex-1 h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                             />
+                            <PartyMatchIndicator
+                                value={counterPartyName}
+                                partyType="COUNTER"
+                                tcByName={tcByName}
+                                onTcChange={handleTcChange}
+                            />
                             <div className="flex rounded-[3px] overflow-hidden border border-[var(--border)] shrink-0">
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setCounterRole("Davacı");
-                                        setClientRole("Davalı");
-                                    }}
+                                    onClick={() => setCounterRole("Davacı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davacı"
                                         ? "bg-[var(--brand)] text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
@@ -479,10 +501,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 >Davacı</button>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setCounterRole("Davalı");
-                                        setClientRole("Davacı");
-                                    }}
+                                    onClick={() => setCounterRole("Davalı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davalı"
                                         ? "bg-[var(--brand)] text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"

@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
+import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -40,6 +41,7 @@ interface EditModeParty {
     birth_year?: number;
     gender?: string;
     client_id?: number | null;
+    tc_no?: string | null;
 }
 
 interface EditModeCaseData {
@@ -178,16 +180,39 @@ const NewCase = () => {
     );
 
     // Multiple Counter-Parties (Karşı Taraf)
-    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string }>>(
-        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) ||
+    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(
+        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) ||
         [{ name: "", role: "Davalı" }]
     );
 
     // Third Parties (Tanık, Bilirkişi, etc.)
-    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string }>>(
-        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) ||
+    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(
+        editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) ||
         []
     );
+
+    // Tanıdık sorgu: satır bazında eşleşme durumu ("counter-0" / "third-1")
+    // — eşleşme varsa satırın altında eşleşen isim + TC ve opsiyonel TC alanı belirir
+    type RowMatchState = { hasMatch: boolean; conflict: boolean; matched: Array<{ name: string; tc_no?: string | null }> };
+    const [partyMatchFlags, setPartyMatchFlags] = useState<Record<string, RowMatchState>>({});
+    const setRowMatchFlag = (key: string, s: RowMatchState) =>
+        setPartyMatchFlags(prev => {
+            const cur = prev[key];
+            if (cur && cur.hasMatch === s.hasMatch && cur.conflict === s.conflict &&
+                JSON.stringify(cur.matched) === JSON.stringify(s.matched)) return prev;
+            return { ...prev, [key]: s };
+        });
+    // "Eşleşen: Ahmet Yılmaz (TC 12345678901) · ..." biçiminde satır altı özeti
+    const rowMatchSummary = (key: string, tcEntered?: string, withTcHint = true): string => {
+        const st = partyMatchFlags[key];
+        if (!st || st.matched.length === 0) {
+            return tcEntered ? "Eşleşme yok — TC ile doğrulandı, farklı kişi" : "";
+        }
+        const list = st.matched.slice(0, 3)
+            .map(m => m.tc_no ? `${m.name} (TC ${m.tc_no})` : m.name)
+            .join(" · ");
+        return `Eşleşen: ${list}${!tcEntered && withTcHint ? " — TC girerek kesinleştirebilirsiniz" : ""}`;
+    };
     // Open/Close states for client comboboxes
     const [clientComboboxesOpen, setClientComboboxesOpen] = useState<boolean[]>([]);
 
@@ -262,14 +287,6 @@ const NewCase = () => {
     const splitPartyNames = (value: string): string[] =>
         value.split(";").map(s => s.trim()).filter(Boolean);
 
-    const getOppositeRole = (role: string) => {
-        if (role === "Davacı") return "Davalı";
-        if (role === "Davalı") return "Davacı";
-        if (role === "Müşteki") return "Sanık";
-        if (role === "Sanık") return "Müşteki";
-        return role;
-    };
-
     // Yardımcı: Takip Numarasını Güncelle
     // clientsOverride: setClients henüz commit olmadan önce güncel listeyi iletmek için
     const updateTrackingNumber = async (
@@ -333,8 +350,8 @@ const NewCase = () => {
             });
             setSelectedLawyers(editModeCase.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
             setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
-            setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || [{ name: "", role: "Davalı" }]);
-            setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role })) || []);
+            setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) || [{ name: "", role: "Davalı" }]);
+            setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) || []);
         }
     }, [editModeCase]);
 
@@ -385,16 +402,25 @@ const NewCase = () => {
                     role: c.role,
                     party_type: "CLIENT" as const
                 }))),
-                ...counterParties.filter(c => c.name).flatMap(c => splitPartyNames(c.name).map(name => ({
-                    name,
-                    role: c.role,
-                    party_type: "COUNTER" as const
-                }))),
-                ...thirdParties.filter(t => t.name).flatMap(t => splitPartyNames(t.name).map(name => ({
-                    name,
-                    role: t.role,
-                    party_type: "THIRD" as const
-                })))
+                ...counterParties.filter(c => c.name).flatMap(c => {
+                    const names = splitPartyNames(c.name);
+                    return names.map(name => ({
+                        name,
+                        role: c.role,
+                        party_type: "COUNTER" as const,
+                        // TC tek isimli satırda anlamlı; çoklu isimde kime ait belirsiz
+                        tc_no: names.length === 1 ? (c.tc_no || undefined) : undefined
+                    }));
+                }),
+                ...thirdParties.filter(t => t.name).flatMap(t => {
+                    const names = splitPartyNames(t.name);
+                    return names.map(name => ({
+                        name,
+                        role: t.role,
+                        party_type: "THIRD" as const,
+                        tc_no: names.length === 1 ? (t.tc_no || undefined) : undefined
+                    }));
+                })
             ],
             lawyers: selectedLawyers
         };
@@ -630,7 +656,22 @@ const NewCase = () => {
                                                                 </Command>
                                                             </PopoverContent>
                                                         </Popover>
+                                                        {partyMatchFlags[`client-${index}`]?.hasMatch && (
+                                                            <div className={cn(
+                                                                "mt-1 text-[10px]",
+                                                                partyMatchFlags[`client-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                            )}>
+                                                                {rowMatchSummary(`client-${index}`, undefined, false)}
+                                                            </div>
+                                                        )}
                                                     </div>
+                                                    <PartyMatchIndicator
+                                                        value={client.name}
+                                                        partyType="CLIENT"
+                                                        excludeCaseId={editModeCase?.id}
+                                                        onStateChange={(s) => setRowMatchFlag(`client-${index}`, s)}
+                                                        className="mt-[13px]"
+                                                    />
                                                     <Checkbox
                                                         checked={approvedFields.clients[index]}
                                                         onCheckedChange={() => handleFieldApproval('client', index)}
@@ -643,13 +684,6 @@ const NewCase = () => {
                                                                 const updated = [...clients];
                                                                 updated[index].role = v;
                                                                 setClients(updated);
-
-                                                                // İlk müvekkil ise karşı tarafın rolünü otomatik ayarla
-                                                                if (index === 0 && counterParties.length > 0) {
-                                                                    const matched = [...counterParties];
-                                                                    matched[0].role = getOppositeRole(v);
-                                                                    setCounterParties(matched);
-                                                                }
                                                             }}
                                                         >
                                                             <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border-strong)]">
@@ -717,7 +751,37 @@ const NewCase = () => {
                                                             }}
                                                             className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/50 text-left"
                                                         />
+                                                        {(partyMatchFlags[`counter-${index}`]?.hasMatch || party.tc_no) && splitPartyNames(party.name).length === 1 && (
+                                                            <div className="mt-1.5 flex items-center gap-2">
+                                                                <Input
+                                                                    inputMode="numeric"
+                                                                    maxLength={11}
+                                                                    placeholder="TC Kimlik No (opsiyonel)"
+                                                                    value={party.tc_no || ""}
+                                                                    onChange={(e) => {
+                                                                        const updated = [...counterParties];
+                                                                        updated[index].tc_no = e.target.value.replace(/\D/g, "");
+                                                                        setCounterParties(updated);
+                                                                    }}
+                                                                    className="h-7 w-48 text-xs font-mono bg-[var(--bg)] border-[var(--border)]"
+                                                                />
+                                                                <span className={cn(
+                                                                    "text-[10px]",
+                                                                    partyMatchFlags[`counter-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                                )}>
+                                                                    {rowMatchSummary(`counter-${index}`, party.tc_no)}
+                                                                </span>
+                                                            </div>
+                                                        )}
                                                     </div>
+                                                    <PartyMatchIndicator
+                                                        value={party.name}
+                                                        partyType="COUNTER"
+                                                        excludeCaseId={editModeCase?.id}
+                                                        tcByName={party.tc_no && party.name ? { [toUpperTR(party.name)]: party.tc_no } : undefined}
+                                                        onStateChange={(s) => setRowMatchFlag(`counter-${index}`, s)}
+                                                        className="mt-[13px]"
+                                                    />
                                                     <Checkbox
                                                         checked={approvedFields.counterParties[index]}
                                                         onCheckedChange={() => handleFieldApproval('counter', index)}
@@ -730,13 +794,6 @@ const NewCase = () => {
                                                                 const updated = [...counterParties];
                                                                 updated[index].role = v;
                                                                 setCounterParties(updated);
-
-                                                                // İlk karşı taraf ise müvekkilin rolünü otomatik ayarla
-                                                                if (index === 0 && clients.length > 0) {
-                                                                    const matched = [...clients];
-                                                                    matched[0].role = getOppositeRole(v);
-                                                                    setClients(matched);
-                                                                }
                                                             }}
                                                         >
                                                             <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border-strong)]">
@@ -810,7 +867,37 @@ const NewCase = () => {
                                                                 }}
                                                                 className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)] focus:border-primary/40 text-left"
                                                             />
+                                                            {(partyMatchFlags[`third-${index}`]?.hasMatch || party.tc_no) && splitPartyNames(party.name).length === 1 && (
+                                                                <div className="mt-1.5 flex items-center gap-2">
+                                                                    <Input
+                                                                        inputMode="numeric"
+                                                                        maxLength={11}
+                                                                        placeholder="TC Kimlik No (opsiyonel)"
+                                                                        value={party.tc_no || ""}
+                                                                        onChange={(e) => {
+                                                                            const updated = [...thirdParties];
+                                                                            updated[index].tc_no = e.target.value.replace(/\D/g, "");
+                                                                            setThirdParties(updated);
+                                                                        }}
+                                                                        className="h-7 w-48 text-xs font-mono bg-[var(--bg)] border-[var(--border)]"
+                                                                    />
+                                                                    <span className={cn(
+                                                                        "text-[10px]",
+                                                                        partyMatchFlags[`third-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                                    )}>
+                                                                        {rowMatchSummary(`third-${index}`, party.tc_no)}
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
+                                                        <PartyMatchIndicator
+                                                            value={party.name}
+                                                            partyType="THIRD"
+                                                            excludeCaseId={editModeCase?.id}
+                                                            tcByName={party.tc_no && party.name ? { [toUpperTR(party.name)]: party.tc_no } : undefined}
+                                                            onStateChange={(s) => setRowMatchFlag(`third-${index}`, s)}
+                                                            className="mt-[13px]"
+                                                        />
                                                         <Checkbox
                                                             checked={approvedFields.thirdParties[index]}
                                                             onCheckedChange={() => handleFieldApproval('third', index)}
