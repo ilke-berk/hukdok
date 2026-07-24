@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { useDashboardView } from "@/hooks/useDashboardView";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 type NavItemDef = {
   id: string;
@@ -34,8 +35,6 @@ const NAV: NavItemDef[] = [
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
 ];
 
-const ADMIN_EMAIL = "ilkekutluk@lexisbio.onmicrosoft.com";
-
 type SidebarProps = {
   collapsed: boolean;
   onToggle: () => void;
@@ -49,8 +48,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const { view, setView } = useDashboardView();
 
   const account = accounts[0];
-  const username = (account?.username || "").toLowerCase();
-  const isAdminUser = username === ADMIN_EMAIL.toLowerCase();
+  const isAdminUser = useIsAdmin() === true;
 
   const displayName = account?.name || "Kullanıcı";
   const initials = displayName

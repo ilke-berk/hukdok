@@ -13,12 +13,10 @@ import {
   Search,
   Bot,
 } from "lucide-react";
-import { useMsal } from "@azure/msal-react";
 import { useCases } from "@/hooks/useCases";
 import { useClients } from "@/hooks/useClients";
 import { useDebounce } from "@/hooks/useDebounce";
-
-const ADMIN_EMAIL = "ilkekutluk@lexisbio.onmicrosoft.com";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 type CasePreview = {
   id: number;
@@ -51,8 +49,7 @@ export function GlobalSearchDropdown({
   const debouncedQuery = useDebounce(query, 200);
   const { searchCases } = useCases();
   const { clients } = useClients();
-  const { accounts } = useMsal();
-  const isAdmin = (accounts[0]?.username || "").toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const isAdmin = useIsAdmin() === true;
 
   const [caseResults, setCaseResults] = useState<CasePreview[]>([]);
   const [isSearching, setIsSearching] = useState(false);

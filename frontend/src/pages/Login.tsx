@@ -7,7 +7,7 @@ import { loginRequest } from "@/config/msalConfig";
 import { useTheme } from "@/components/theme-provider";
 
 const ALLOWED_DOMAINS = [
-  "@hanyalogluacar.av.tr",
+  "@hanyaloglu-acar.av.tr",
   "@lexisbio.onmicrosoft.com",
 ];
 

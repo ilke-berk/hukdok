@@ -35,7 +35,7 @@ def _admin_emails() -> set:
 
 
 def require_admin(user: dict = Depends(get_current_user)):
-    email = (user.get("preferred_username") or user.get("email") or "").lower()
+    email = (user.get("preferred_username") or user.get("upn") or user.get("email") or "").lower()
     if email not in _admin_emails():
         raise HTTPException(status_code=403, detail="Yönetici yetkisi gerekli")
     return user
@@ -45,7 +45,7 @@ def require_admin(user: dict = Depends(get_current_user)):
 
 @router.get("/api/config/is_admin")
 def api_is_admin(user: dict = Depends(get_current_user)):
-    email = (user.get("preferred_username") or user.get("email") or "").lower()
+    email = (user.get("preferred_username") or user.get("upn") or user.get("email") or "").lower()
     return {"is_admin": email in _admin_emails()}
 
 
