@@ -52,6 +52,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -256,6 +257,16 @@ def _rate_limit_key(request):
 limiter = Limiter(key_func=_rate_limit_key, default_limits=["100/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Referans listelerine mükerrer kayıt girişimi tüm add endpoint'lerinden
+# yükselebilir; tek noktadan 409'a çevrilir (route'larda try/except tekrarı yerine).
+from managers.reference_lists import DuplicateItemError  # noqa: E402
+
+
+@app.exception_handler(DuplicateItemError)
+async def duplicate_item_handler(request, exc: DuplicateItemError):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 # default_limits yalnızca middleware kayıtlıysa uygulanır — bu satır olmadan
 # hiçbir uçta hız sınırı yoktur.
 app.add_middleware(SlowAPIMiddleware)

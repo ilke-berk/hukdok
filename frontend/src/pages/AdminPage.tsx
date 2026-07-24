@@ -47,6 +47,13 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+// Türkçe büyük harf: toUpperCase() 'i'yi 'I' yapar, locale şart
+const trUpper = (s: string) => s.toLocaleUpperCase("tr-TR");
+
+// Türkçe duyarsız "içerir" — liste aramalarında kullanılır
+const trMatch = (hay: string | undefined | null, needle: string) =>
+    !needle || (hay ?? "").toLocaleLowerCase("tr-TR").includes(needle.toLocaleLowerCase("tr-TR"));
+
 // --- Sortable Row Component ---
 const SortableRow = ({ id, children, className }: { id: string, children: React.ReactNode, className?: string }) => {
     const {
@@ -198,8 +205,9 @@ const AdminPage = () => {
                 // API Call
                 // Use code/email as ID for persistence
                 const orderedIds = newOrder.map(item => item.code || item.email || "");
-                const success = await reorderList(type, orderedIds);
-                if (!success) {
+                try {
+                    await reorderList(type, orderedIds);
+                } catch {
                     toast.error("Sıralama kaydedilemedi.");
                     // Revert? For now, assume success or refresh.
                 }
@@ -236,10 +244,25 @@ const AdminPage = () => {
     const [specialtyForm, setSpecialtyForm] = useState({ code: "", name: "" });
     const [clientCategoryForm, setClientCategoryForm] = useState({ code: "", name: "" });
     const [fileStatusForm, setFileStatusForm] = useState({ name: "" });
-    const [citySearch, setCitySearch] = useState("");
-    const [specialtySearch, setSpecialtySearch] = useState("");
+    // Aktif sekmedeki listeyi kelimeyle filtreler; sekme değişince sıfırlanır
+    const [listSearch, setListSearch] = useState("");
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Ortak ekleme akışı: başarıda formu kapatır, hatada backend'in mesajını
+    // (örn. 409 "… zaten listede mevcut") toast olarak gösterir.
+    const runAdd = async (fn: () => Promise<boolean>, onOk: () => void) => {
+        setIsSubmitting(true);
+        try {
+            await fn();
+            toast.success("Eklendi");
+            onOk();
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Hata");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     const handleDelete = async (item: ConfigItem, type: string) => {
         if (!window.confirm(`Silinecek: ${item.name || item.code}. Emin misiniz?`)) return;
@@ -267,7 +290,7 @@ const AdminPage = () => {
             }
         } catch (e) {
             console.error(e);
-            toast.error("Hata oluştu.");
+            toast.error(e instanceof Error ? e.message : "Hata oluştu.");
         }
     };
 
@@ -275,140 +298,106 @@ const AdminPage = () => {
     // Avukat inline düzenleme
     const [editingLawyer, setEditingLawyer] = useState<{ code: string; tc: string; sicil: string; gorev: string; email: string; phone: string; address: string } | null>(null);
 
-    const handleSaveLawyer = async () => {
+    const handleSaveLawyer = () => {
         if (!lawyerForm.code || !lawyerForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
-        setIsSubmitting(true);
-        const success = await addLawyer(lawyerForm.code, lawyerForm.name, lawyerForm.tc_no || undefined, lawyerForm.sicil_no || undefined);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsLawyerAddOpen(false); setLawyerForm({ code: "", name: "", tc_no: "", sicil_no: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addLawyer(lawyerForm.code, lawyerForm.name, lawyerForm.tc_no || undefined, lawyerForm.sicil_no || undefined),
+            () => { setIsLawyerAddOpen(false); setLawyerForm({ code: "", name: "", tc_no: "", sicil_no: "" }); });
     };
 
     const handleSaveLawyerEdit = async () => {
         if (!editingLawyer) return;
         setIsSubmitting(true);
-        const success = await updateLawyer(
-            editingLawyer.code,
-            editingLawyer.tc, editingLawyer.sicil,
-            editingLawyer.gorev, editingLawyer.email,
-            editingLawyer.phone, editingLawyer.address,
-        );
-        setIsSubmitting(false);
-        if (success) { toast.success("Kaydedildi"); setEditingLawyer(null); }
-        else toast.error("Hata");
+        try {
+            await updateLawyer(
+                editingLawyer.code,
+                editingLawyer.tc, editingLawyer.sicil,
+                editingLawyer.gorev, editingLawyer.email,
+                editingLawyer.phone, editingLawyer.address,
+            );
+            toast.success("Kaydedildi");
+            setEditingLawyer(null);
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Hata");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
-    const handleSaveStatus = async () => {
+    const handleSaveStatus = () => {
         if (!statusForm.code || !statusForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
-        setIsSubmitting(true);
-        const success = await addStatus(statusForm.code, statusForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsStatusAddOpen(false); setStatusForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addStatus(statusForm.code, statusForm.name),
+            () => { setIsStatusAddOpen(false); setStatusForm({ code: "", name: "" }); });
     };
-    const handleSaveDocType = async () => {
+    const handleSaveDocType = () => {
         if (!docTypeForm.code || !docTypeForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
-        setIsSubmitting(true);
-        const success = await addDoctype(docTypeForm.code, docTypeForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsDocTypeAddOpen(false); setDocTypeForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addDoctype(docTypeForm.code, docTypeForm.name),
+            () => { setIsDocTypeAddOpen(false); setDocTypeForm({ code: "", name: "" }); });
     };
-    const handleSaveEmail = async () => {
+    const handleSaveEmail = () => {
         if (!emailForm.email || !emailForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
-        setIsSubmitting(true);
-        const success = await addEmail(emailForm.name, emailForm.email, emailForm.description);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsEmailAddOpen(false); setEmailForm({ email: "", name: "", description: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addEmail(emailForm.name, emailForm.email, emailForm.description),
+            () => { setIsEmailAddOpen(false); setEmailForm({ email: "", name: "", description: "" }); });
     };
 
-    const handleSaveCaseSubject = async () => {
+    const handleSaveCaseSubject = () => {
         if (!caseSubjectForm.name) { toast.warning("İsim zorunlu"); return; }
-        setIsSubmitting(true);
-        const success = await addCaseSubject(caseSubjectForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsCaseSubjectAddOpen(false); setCaseSubjectForm({ name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addCaseSubject(caseSubjectForm.name),
+            () => { setIsCaseSubjectAddOpen(false); setCaseSubjectForm({ name: "" }); });
     };
 
-    const handleSaveFileType = async () => {
+    const handleSaveFileType = () => {
         if (!fileTypeForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = fileTypeForm.code || fileTypeForm.name.trim();
-        setIsSubmitting(true);
-        const success = await addFileType(code, fileTypeForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsFileTypeAddOpen(false); setFileTypeForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addFileType(code, fileTypeForm.name),
+            () => { setIsFileTypeAddOpen(false); setFileTypeForm({ code: "", name: "" }); });
     };
 
-    const handleSaveCourtType = async () => {
+    const handleSaveCourtType = () => {
         if (!courtTypeForm.name || !courtTypeForm.parent_code) { toast.warning("Zorunlu alanlar eksik"); return; }
         const code = courtTypeForm.code || (courtTypeForm.parent_code.slice(0, 3) + "-" + courtTypeForm.name.slice(0, 8)).toUpperCase().replace(/\s/g, "");
-        setIsSubmitting(true);
-        const success = await addCourtType(code, courtTypeForm.name, courtTypeForm.parent_code);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsCourtTypeAddOpen(false); setCourtTypeForm({ code: "", name: "", parent_code: courtTypeForm.parent_code }); }
-        else toast.error("Hata");
+        runAdd(() => addCourtType(code, courtTypeForm.name, courtTypeForm.parent_code),
+            () => { setIsCourtTypeAddOpen(false); setCourtTypeForm({ code: "", name: "", parent_code: courtTypeForm.parent_code }); });
     };
 
-    const handleSavePartyRole = async () => {
+    const handleSavePartyRole = () => {
         if (!partyRoleForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = partyRoleForm.code || partyRoleForm.name.toUpperCase().replace(/\s/g, "-");
-        setIsSubmitting(true);
-        const success = await addPartyRole(code, partyRoleForm.name, partyRoleForm.role_type);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsPartyRoleAddOpen(false); setPartyRoleForm({ code: "", name: "", role_type: "MAIN" }); }
-        else toast.error("Hata");
+        runAdd(() => addPartyRole(code, partyRoleForm.name, partyRoleForm.role_type),
+            () => { setIsPartyRoleAddOpen(false); setPartyRoleForm({ code: "", name: "", role_type: "MAIN" }); });
     };
 
-    const handleSaveBureauType = async () => {
+    const handleSaveBureauType = () => {
         if (!bureauTypeForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = bureauTypeForm.code || bureauTypeForm.name.toUpperCase().replace(/\s/g, "-");
-        setIsSubmitting(true);
-        const success = await addBureauType(code, bureauTypeForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsBureauTypeAddOpen(false); setBureauTypeForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addBureauType(code, bureauTypeForm.name),
+            () => { setIsBureauTypeAddOpen(false); setBureauTypeForm({ code: "", name: "" }); });
     };
 
-    const handleSaveCity = async () => {
+    const handleSaveCity = () => {
         if (!cityForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = cityForm.code || cityForm.name.toUpperCase().replace(/\s/g, "-").replace(/İ/g, "I").replace(/Ş/g, "S").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ö/g, "O").replace(/Ç/g, "C");
-        setIsSubmitting(true);
-        const success = await addCity(code, cityForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsCityAddOpen(false); setCityForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addCity(code, cityForm.name),
+            () => { setIsCityAddOpen(false); setCityForm({ code: "", name: "" }); });
     };
 
-    const handleSaveSpecialty = async () => {
+    const handleSaveSpecialty = () => {
         if (!specialtyForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = specialtyForm.code || (specialtyForm.name.slice(0, 15).toUpperCase().replace(/\s/g, "-") + "-" + Math.random().toString(36).slice(2, 5).toUpperCase());
-        setIsSubmitting(true);
-        const success = await addSpecialty(code, specialtyForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsSpecialtyAddOpen(false); setSpecialtyForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addSpecialty(code, specialtyForm.name),
+            () => { setIsSpecialtyAddOpen(false); setSpecialtyForm({ code: "", name: "" }); });
     };
 
-    const handleSaveClientCategory = async () => {
+    const handleSaveClientCategory = () => {
         if (!clientCategoryForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = clientCategoryForm.code || clientCategoryForm.name.toUpperCase().replace(/\s/g, "-").replace(/İ/g, "I").replace(/Ş/g, "S").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ö/g, "O").replace(/Ç/g, "C");
-        setIsSubmitting(true);
-        const success = await addClientCategory(code, clientCategoryForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsClientCategoryAddOpen(false); setClientCategoryForm({ code: "", name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addClientCategory(code, clientCategoryForm.name),
+            () => { setIsClientCategoryAddOpen(false); setClientCategoryForm({ code: "", name: "" }); });
     };
 
-    const handleSaveFileStatus = async () => {
+    const handleSaveFileStatus = () => {
         if (!fileStatusForm.name) { toast.warning("İsim zorunlu"); return; }
         const code = fileStatusForm.name.toUpperCase().replace(/\s/g, "-").replace(/\//g, "-").replace(/İ/g, "I").replace(/Ş/g, "S").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ö/g, "O").replace(/Ç/g, "C");
-        setIsSubmitting(true);
-        const success = await addFileStatus(code, fileStatusForm.name);
-        setIsSubmitting(false);
-        if (success) { toast.success("Eklendi"); setIsFileStatusAddOpen(false); setFileStatusForm({ name: "" }); }
-        else toast.error("Hata");
+        runAdd(() => addFileStatus(code, fileStatusForm.name),
+            () => { setIsFileStatusAddOpen(false); setFileStatusForm({ name: "" }); });
     };
 
     if (isLoading) {
@@ -434,7 +423,7 @@ const AdminPage = () => {
                     </p>
                 </div>
 
-                <Tabs defaultValue="lawyers" className="w-full" onValueChange={setActiveTab}>
+                <Tabs defaultValue="lawyers" className="w-full" onValueChange={v => { setActiveTab(v); setListSearch(""); }}>
                     <TabsList className="flex flex-wrap h-auto gap-1 justify-start mb-6 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="lawyers">Avukatlar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="statuses">Durumlar</TabsTrigger>
@@ -458,7 +447,10 @@ const AdminPage = () => {
                         <TabsContent value="lawyers">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Avukat Listesi</CardTitle>
+                                    <div>
+                                        <CardTitle>Avukat Listesi</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isLawyerAddOpen} onOpenChange={setIsLawyerAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Avukat</Button></DialogTrigger>
                                         <DialogContent>
@@ -521,7 +513,7 @@ const AdminPage = () => {
                                         </TableHeader>
                                         <TableBody>
                                             <SortableContext items={localLawyers.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localLawyers.map((item) => (
+                                                {localLawyers.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
                                                         <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
@@ -547,14 +539,17 @@ const AdminPage = () => {
                         <TabsContent value="statuses">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Durum Listesi</CardTitle>
+                                    <div>
+                                        <CardTitle>Durum Listesi</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isStatusAddOpen} onOpenChange={setIsStatusAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Durum</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Durum Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={statusForm.code} onChange={e => setStatusForm({ ...statusForm, code: e.target.value })} className="col-span-3" /></div>
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Açıklama</Label><Input value={statusForm.name} onChange={e => setStatusForm({ ...statusForm, name: e.target.value })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={statusForm.code} onChange={e => setStatusForm({ ...statusForm, code: trUpper(e.target.value) })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Açıklama</Label><Input value={statusForm.name} onChange={e => setStatusForm({ ...statusForm, name: trUpper(e.target.value) })} className="col-span-3" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveStatus} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -565,7 +560,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localStatuses.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localStatuses.map((item) => (
+                                                {localStatuses.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell>{item.code}</TableCell>
                                                         <TableCell>{item.name}</TableCell>
@@ -585,14 +580,17 @@ const AdminPage = () => {
                         <TabsContent value="doctypes">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Belge Türleri</CardTitle>
+                                    <div>
+                                        <CardTitle>Belge Türleri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isDocTypeAddOpen} onOpenChange={setIsDocTypeAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Belge Türü</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Belge Türü Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={docTypeForm.code} onChange={e => setDocTypeForm({ ...docTypeForm, code: e.target.value })} className="col-span-3" /></div>
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Adı</Label><Input value={docTypeForm.name} onChange={e => setDocTypeForm({ ...docTypeForm, name: e.target.value })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={docTypeForm.code} onChange={e => setDocTypeForm({ ...docTypeForm, code: trUpper(e.target.value) })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Adı</Label><Input value={docTypeForm.name} onChange={e => setDocTypeForm({ ...docTypeForm, name: trUpper(e.target.value) })} className="col-span-3" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveDocType} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -603,7 +601,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localDocTypes.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localDocTypes.map((item) => (
+                                                {localDocTypes.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-medium">{item.code}</TableCell>
                                                         <TableCell>{item.name}</TableCell>
@@ -623,13 +621,16 @@ const AdminPage = () => {
                         <TabsContent value="case_subjects">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Dava Konuları</CardTitle>
+                                    <div>
+                                        <CardTitle>Dava Konuları</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isCaseSubjectAddOpen} onOpenChange={setIsCaseSubjectAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Konu</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Dava Konusu Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={caseSubjectForm.name} onChange={e => setCaseSubjectForm({ ...caseSubjectForm, name: e.target.value })} className="col-span-3" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={caseSubjectForm.name} onChange={e => setCaseSubjectForm({ ...caseSubjectForm, name: trUpper(e.target.value) })} className="col-span-3" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveCaseSubject} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -640,7 +641,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Dava Konusu</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localCaseSubjects.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localCaseSubjects.map((item) => (
+                                                {localCaseSubjects.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? ""}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -659,7 +660,10 @@ const AdminPage = () => {
                         <TabsContent value="emails">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>E-posta Alıcıları</CardTitle>
+                                    <div>
+                                        <CardTitle>E-posta Alıcıları</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isEmailAddOpen} onOpenChange={setIsEmailAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni E-posta</Button></DialogTrigger>
                                         <DialogContent>
@@ -678,7 +682,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localEmails.map(i => i.email ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localEmails.map((item) => (
+                                                {localEmails.filter(i => trMatch(i.name, listSearch) || trMatch(i.email, listSearch) || trMatch(i.description, listSearch)).map((item) => (
                                                     <SortableRow key={item.email} id={item.email ?? ""}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell>{item.email}</TableCell>
@@ -699,13 +703,16 @@ const AdminPage = () => {
                         <TabsContent value="case_types">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Dava Türleri</CardTitle>
+                                    <div>
+                                        <CardTitle>Dava Türleri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isFileTypeAddOpen} onOpenChange={setIsFileTypeAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Tür</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Dava Türü Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={fileTypeForm.name} onChange={e => setFileTypeForm({ ...fileTypeForm, name: e.target.value })} className="col-span-3" placeholder="Ceza" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={fileTypeForm.name} onChange={e => setFileTypeForm({ ...fileTypeForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="CEZA" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveFileType} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -716,7 +723,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localFileTypes.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localFileTypes.map((item) => (
+                                                {localFileTypes.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? item.name}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -737,6 +744,7 @@ const AdminPage = () => {
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div className="flex flex-col gap-2">
                                         <CardTitle>Mahkeme Türleri</CardTitle>
+                                        <div><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                         <div className="flex gap-2 flex-wrap">
                                             <Button size="sm" variant={courtParentFilter === "" ? "default" : "outline"} onClick={() => setCourtParentFilter("")}>Tümü</Button>
                                             {fileTypes.map(ft => (
@@ -756,7 +764,7 @@ const AdminPage = () => {
                                                         {fileTypes.map(ft => <option key={ft.code} value={ft.name ?? ""}>{ft.name}</option>)}
                                                     </select>
                                                 </div>
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Mahkeme Adı</Label><Input value={courtTypeForm.name} onChange={e => setCourtTypeForm({ ...courtTypeForm, name: e.target.value })} className="col-span-3" placeholder="SULH HUKUK MAHKEMESİ" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Mahkeme Adı</Label><Input value={courtTypeForm.name} onChange={e => setCourtTypeForm({ ...courtTypeForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="SULH HUKUK MAHKEMESİ" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveCourtType} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -766,7 +774,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Dava Türü</TableHead><TableHead>Mahkeme Adı</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localCourtTypes.map((item) => (
+                                            {localCourtTypes.filter(i => trMatch(i.name, listSearch) || trMatch(i.parent_code, listSearch)).map((item) => (
                                                 <TableRow key={item.code}>
                                                     <TableCell className="text-muted-foreground text-sm">{item.parent_code}</TableCell>
                                                     <TableCell className="font-medium">{item.name}</TableCell>
@@ -785,13 +793,16 @@ const AdminPage = () => {
                         <TabsContent value="party_roles">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Taraf Rolleri</CardTitle>
+                                    <div>
+                                        <CardTitle>Taraf Rolleri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isPartyRoleAddOpen} onOpenChange={setIsPartyRoleAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Rol</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Taraf Rolü Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={partyRoleForm.name} onChange={e => setPartyRoleForm({ ...partyRoleForm, name: e.target.value })} className="col-span-3" placeholder="Davacı" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={partyRoleForm.name} onChange={e => setPartyRoleForm({ ...partyRoleForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="DAVACI" /></div>
                                                 <div className="grid grid-cols-4 items-center gap-4">
                                                     <Label className="text-right">Tür</Label>
                                                     <select className="col-span-3 border rounded px-2 py-1 bg-background text-foreground" value={partyRoleForm.role_type} onChange={e => setPartyRoleForm({ ...partyRoleForm, role_type: e.target.value })}>
@@ -809,7 +820,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead>Tür</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localPartyRoles.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localPartyRoles.map((item) => (
+                                                {localPartyRoles.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? item.name}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-xs text-muted-foreground">{item.role_type === "THIRD" ? "Üçüncü Taraf" : "Ana Taraf"}</TableCell>
@@ -829,13 +840,16 @@ const AdminPage = () => {
                         <TabsContent value="bureau_types">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Büro Özel Türleri</CardTitle>
+                                    <div>
+                                        <CardTitle>Büro Özel Türleri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isBureauTypeAddOpen} onOpenChange={setIsBureauTypeAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Tür</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Büro Türü Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={bureauTypeForm.name} onChange={e => setBureauTypeForm({ ...bureauTypeForm, name: e.target.value })} className="col-span-3" placeholder="ALEYHE" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={bureauTypeForm.name} onChange={e => setBureauTypeForm({ ...bureauTypeForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="ALEYHE" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveBureauType} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -846,7 +860,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localBureauTypes.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localBureauTypes.map((item) => (
+                                                {localBureauTypes.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? item.name}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -865,13 +879,16 @@ const AdminPage = () => {
                         <TabsContent value="client_categories">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Müvekkil Kategorileri</CardTitle>
+                                    <div>
+                                        <CardTitle>Müvekkil Kategorileri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isClientCategoryAddOpen} onOpenChange={setIsClientCategoryAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Kategori</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Kategori Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={clientCategoryForm.name} onChange={e => setClientCategoryForm({ ...clientCategoryForm, name: e.target.value })} className="col-span-3" placeholder="Doktor" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={clientCategoryForm.name} onChange={e => setClientCategoryForm({ ...clientCategoryForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="DOKTOR" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveClientCategory} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -882,7 +899,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localClientCategories.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localClientCategories.map((item) => (
+                                                {localClientCategories.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? item.name}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -901,13 +918,16 @@ const AdminPage = () => {
                         <TabsContent value="file_statuses">
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
-                                    <CardTitle>Dosya Son Durumları</CardTitle>
+                                    <div>
+                                        <CardTitle>Dosya Son Durumları</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
                                     <Dialog open={isFileStatusAddOpen} onOpenChange={setIsFileStatusAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Durum</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Dosya Durumu Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={fileStatusForm.name} onChange={e => setFileStatusForm({ name: e.target.value })} className="col-span-3" placeholder="Bilirkişide" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={fileStatusForm.name} onChange={e => setFileStatusForm({ name: trUpper(e.target.value) })} className="col-span-3" placeholder="BİLİRKİŞİDE" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveFileStatus} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -918,7 +938,7 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localFileStatuses.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localFileStatuses.map((item) => (
+                                                {localFileStatuses.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                     <SortableRow key={item.code} id={item.code ?? item.name}>
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell className="text-right">
@@ -939,14 +959,14 @@ const AdminPage = () => {
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
                                         <CardTitle>Uzmanlık Alanları</CardTitle>
-                                        <div className="mt-2"><Input placeholder="Ara..." value={specialtySearch} onChange={e => setSpecialtySearch(e.target.value)} className="max-w-xs" /></div>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                     </div>
                                     <Dialog open={isSpecialtyAddOpen} onOpenChange={setIsSpecialtyAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Uzmanlık</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Uzmanlık Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={specialtyForm.name} onChange={e => setSpecialtyForm({ ...specialtyForm, name: e.target.value })} className="col-span-3" placeholder="Kardiyoloji" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={specialtyForm.name} onChange={e => setSpecialtyForm({ ...specialtyForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="KARDİYOLOJİ" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveSpecialty} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -956,7 +976,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Uzmanlık Adı</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localSpecialties.filter(i => !specialtySearch || i.name.toLowerCase().includes(specialtySearch.toLowerCase())).map((item) => (
+                                            {localSpecialties.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                 <TableRow key={item.code}>
                                                     <TableCell className="font-medium">{item.name}</TableCell>
                                                     <TableCell className="text-right">
@@ -976,14 +996,14 @@ const AdminPage = () => {
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
                                         <CardTitle>Şehir Listesi</CardTitle>
-                                        <div className="mt-2"><Input placeholder="Ara..." value={citySearch} onChange={e => setCitySearch(e.target.value)} className="max-w-xs" /></div>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                     </div>
                                     <Dialog open={isCityAddOpen} onOpenChange={setIsCityAddOpen}>
                                         <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Şehir</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Şehir Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={cityForm.name} onChange={e => setCityForm({ ...cityForm, name: e.target.value })} className="col-span-3" placeholder="İstanbul" /></div>
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={cityForm.name} onChange={e => setCityForm({ ...cityForm, name: trUpper(e.target.value) })} className="col-span-3" placeholder="İSTANBUL" /></div>
                                             </div>
                                             <DialogFooter><Button onClick={handleSaveCity} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
                                         </DialogContent>
@@ -993,7 +1013,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Şehir</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localCities.filter(i => !citySearch || i.name.toLowerCase().includes(citySearch.toLowerCase())).map((item) => (
+                                            {localCities.filter(i => trMatch(i.name, listSearch)).map((item) => (
                                                 <TableRow key={item.code}>
                                                     <TableCell className="font-medium">{item.name}</TableCell>
                                                     <TableCell className="text-right">

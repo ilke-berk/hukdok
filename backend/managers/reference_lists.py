@@ -15,6 +15,20 @@ from managers.config_manager import DynamicConfig
 logger = logging.getLogger("AdminManager")
 
 
+class DuplicateItemError(Exception):
+    """Aynı isim/kod listede zaten varken ekleme girişimi (route katmanında 409'a çevrilir)."""
+
+
+def tr_upper(s: str) -> str:
+    """Türkçe büyük harf: str.upper() 'i'yi 'I' yapar, önce 'İ'ye çevrilmeli.
+    Baş/son ve ardışık boşluklar da normalize edilir."""
+    return " ".join(s.replace("i", "İ").upper().split())
+
+
+# İsimleri kişi/e-posta olan listeler büyük harfe zorlanmaz
+_NAME_UPPER_EXEMPT = {"lawyers", "emails"}
+
+
 @dataclass(frozen=True)
 class ListSpec:
     model: type
@@ -75,13 +89,35 @@ def add_item(list_type: str, **fields):
     spec = _spec(list_type)
     if not spec:
         return False
+    key = _ALIASES.get(list_type, list_type)
+    if fields.get("name") and key not in _NAME_UPPER_EXEMPT:
+        fields["name"] = tr_upper(fields["name"])
     db = None
     try:
         db = SessionLocal()
+
+        # Mükerrer isim kontrolü (büyük/küçük harf duyarsız; mahkeme türleri
+        # aynı ada farklı üst tür altında izin verdiği için parent'a göre daraltılır)
+        if fields.get("name"):
+            target = tr_upper(fields["name"])
+            q = db.query(spec.model)
+            if "parent_code" in fields:
+                q = q.filter(spec.model.parent_code == fields["parent_code"])
+            for row in q.all():
+                if tr_upper(getattr(row, "name", None) or "") == target:
+                    raise DuplicateItemError(f"\"{fields['name']}\" zaten listede mevcut")
+
+        # Mükerrer kod kontrolü
+        identifier = fields.get(spec.key)
+        if identifier and db.query(spec.model).filter(getattr(spec.model, spec.key) == identifier).first():
+            raise DuplicateItemError(f"\"{identifier}\" kodu zaten listede mevcut")
+
         db.add(spec.model(active=True, **fields))
         db.commit()
         refresh_cache(list_type)
         return True
+    except DuplicateItemError:
+        raise
     except Exception as e:
         logger.error(f"Add {list_type} Error: {e}")
         return False
@@ -226,7 +262,7 @@ def add_email_recipient(name: str, email: str, description: str = ""):
                 db.commit()
                 refresh_cache("emails")
                 return True
-            return False
+            raise DuplicateItemError(f"\"{email}\" zaten listede mevcut")
 
         from sqlalchemy import func
         max_seq = db.query(func.max(models.EmailRecipient.sequence)).scalar()
@@ -237,6 +273,8 @@ def add_email_recipient(name: str, email: str, description: str = ""):
         db.commit()
         refresh_cache("emails")
         return True
+    except DuplicateItemError:
+        raise
     except Exception as e:
         logger.error(f"Add Email Error: {e}")
         return False

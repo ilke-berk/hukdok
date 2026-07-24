@@ -49,7 +49,16 @@ export const useConfig = () => {
 
     const mutate = async (url: string, method: string, body?: unknown): Promise<boolean> => {
         const res = await authRequest(url, method, body);
-        return res ? res.ok : false;
+        if (!res?.ok) {
+            // Backend'in mesajını (örn. 409 "… zaten listede mevcut") çağırana taşı
+            let detail = "İşlem başarısız";
+            try {
+                const data = await res?.json();
+                if (typeof data?.detail === "string") detail = data.detail;
+            } catch { /* gövde JSON değilse generic mesaj kalır */ }
+            throw new Error(detail);
+        }
+        return true;
     };
 
     const invalidate = (...keys: (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS][]) =>
