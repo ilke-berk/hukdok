@@ -1,4 +1,4 @@
-"""Otonom dava açma — case intake route'ları (Faz 2 + Faz 3).
+"""Otonom dava açma — case intake route'ları (Faz 2 + Faz 3 + Faz 4).
 
 POST /api/case-intake/analyze: tek belge alır, intake çıkarım motorunu
 (case_intake_analyzer) koşturur ve /process ile aynı şekilli NDJSON stream
@@ -19,17 +19,24 @@ mahkeme adları, geçmiş dava örüntüleri) burada yüklenir. esas_no/mahkeme
 
 POST /api/case-intake/keepalive (Faz 3): PROCESS_CACHE TTL tazeler — sihirbaz
 review adımında 10 dk'da bir çağırır (hazırlık raporu Risk 4 sigortası).
+
+POST /api/case-intake/commit (Faz 4): sihirbazın tek "Kaydet ve Arşivle"
+adımı — dava kaydı atomik, belge arşivleme belge-başı best-effort, poliçe
+beslemesi best-effort (kesin kararlar 1-5, bkz. Faz 4 kickoff dokümanı).
 """
 import asyncio
 import hashlib
 import json
 import logging
+import os
 import tempfile
 import uuid
+from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from auth_helpers import tenant_filter_clause
@@ -39,11 +46,12 @@ from file_utils import (
     MAX_UPLOAD_BYTES,
     MAX_UPLOAD_MB,
     safe_remove,
+    sanitize_filename,
     validate_file_type,
 )
 from managers.log_manager import TechnicalLogger
-from routes.processing import PROCESS_CACHE, _cleanup_process_cache
-from schemas_intake import CaseIntakeMergeRequest, KeepaliveRequest
+from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache
+from schemas_intake import CaseIntakeCommitRequest, CaseIntakeMergeRequest, KeepaliveRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -427,6 +435,225 @@ async def merge_case_intake(
         },
     )
     return draft
+
+
+# =====================================================================
+# Faz 4 — commit
+# =====================================================================
+
+
+@router.post("/api/case-intake/commit")
+async def commit_case_intake(
+    req: CaseIntakeCommitRequest,
+    background_tasks: BackgroundTasks,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
+    """Tek "Kaydet": dava (atomik) + belge arşivleme + poliçe beslemesi.
+
+    Karar 4: dava oluşturma transactional; belge arşivleme belge-başı
+    best-effort — başarısız/TTL-dolmuş belge akışı öldürmez, yanıtta
+    failed/expired döner. 409'da (duplicate tracking_no) HİÇBİR belge
+    tüketilmemiştir — frontend'in tek otomatik retry'ı güvenlidir.
+    """
+    from managers import case_manager, client_manager
+    from services import document_pipeline
+
+    loop = asyncio.get_running_loop()
+    current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
+
+    # 1. Dava — atomik. status sunucuda DERDEST'e zorlanır (karar 1 — istemciye güvenme).
+    case_dict = req.case.model_dump()
+    case_dict["status"] = "DERDEST"
+    case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
+    if case_result and case_result.get("error") == "duplicate_tracking_no":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
+                   "Sıra numarasını artırıp tekrar deneyin.",
+        )
+    if not case_result:
+        raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
+    case_id = case_result["id"]
+
+    # Avukat kodu davanın sorumlusundan BİR KEZ çözülür (dava az önce bizim
+    # oluşturduğumuz — belge başına tenant sorgusu israf). Hata belge akışını
+    # durdurmaz: kod boş kalır, arşivleme devam eder.
+    avukat_kodu: Optional[str] = None
+    try:
+        avukat_kodu = await loop.run_in_executor(
+            None, document_pipeline.validate_tenant_and_resolve_lawyer, case_id, user, None
+        )
+    except Exception as e:
+        TechnicalLogger.log(
+            "WARNING", f"[INTAKE-COMMIT] Avukat çözümü hatası (case={case_id}): {e}"
+        )
+
+    ham_folder = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
+    islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu) if req.options.send_email else ""
+
+    # 2. Belge-başı best-effort döngü (karar 4). Sarmalayıcı BİLEREK geniş
+    # except Exception: confirm yolundaki GS UnicodeDecodeError arızası
+    # (ValueError alt sınıfı) dar except'leri deliyordu — tek belge hatası
+    # kalan belgeleri düşürmemeli.
+    doc_results: List[Dict[str, Any]] = []
+    for doc in req.documents:
+        entry: Dict[str, Any] = {
+            "process_id": doc.process_id,
+            "status": "queued",
+            "document_id": None,
+            "error_ozet": None,
+        }
+        temp_path = None
+        ham_source_path = None
+        pdfa_temp_file = None
+        try:
+            try:
+                temp_path, ham_source_path = await document_pipeline.accept_incoming_file(
+                    doc.process_id, None, PROCESS_CACHE
+                )
+            except HTTPException:
+                # accept_incoming_file cache girdisini POP eder; girişte yoksa /
+                # dosya diskten silinmişse 400 fırlatır → bu belge süresi dolmuş.
+                entry["status"] = "expired"
+                entry["error_ozet"] = (
+                    "İşlem önbelleği süresi dolmuş — belgeyi dava kartından yeniden yükleyin."
+                )
+                doc_results.append(entry)
+                continue
+
+            new_filename = sanitize_filename(doc.new_filename)
+            original_filename = doc.original_filename or doc.new_filename
+            ham_filename = f"{date_str}_{sanitize_filename(original_filename)}"
+
+            # step_results: pipeline adımlarının serbest anahtarları yanıt
+            # sözleşmesine sızmasın diye entry'den ayrı tutulur.
+            step_results: Dict[str, Any] = {}
+            timings: Dict[str, Any] = {}
+            pdfa_temp_file, doc_id = await loop.run_in_executor(
+                None,
+                partial(
+                    document_pipeline.convert_pdfa_and_queue_uploads,
+                    background_tasks=background_tasks,
+                    source_path=temp_path,
+                    ham_filename=ham_filename,
+                    ham_source_path=ham_source_path,
+                    ham_folder=ham_folder,
+                    islenmis_folder=islenmis_folder,
+                    new_filename=new_filename,
+                    original_filename=original_filename,
+                    belge_turu_kodu=doc.belge_turu_kodu,
+                    muvekkiller=[],
+                    muvekkil_adi=doc.muvekkil_adi,
+                    ai_ozet=doc.ai_ozet,
+                    linked_case_id=case_id,
+                    case_party_id=None,
+                    avukat_kodu=avukat_kodu,
+                    esas_no=doc.esas_no,
+                    is_test_mode=False,
+                    user=user,
+                    current_user_name=current_user_name,
+                    results=step_results,
+                    timings=timings,
+                ),
+            )
+            entry["document_id"] = doc_id
+
+            if req.options.send_email:
+                email_file_path = (
+                    pdfa_temp_file
+                    if (pdfa_temp_file and os.path.exists(pdfa_temp_file))
+                    else temp_path
+                )
+                email_metadata = document_pipeline.build_email_metadata(
+                    [], doc.muvekkil_adi, None, doc.belge_turu_kodu, None, avukat_adi, None
+                )
+                await document_pipeline.send_notification_email(
+                    email_file_path=email_file_path,
+                    new_filename=new_filename,
+                    avukat_kodu=avukat_kodu,
+                    email_metadata=email_metadata,
+                    custom_to=req.options.email_to,
+                    custom_cc=[],
+                    custom_email_message=None,
+                    custom_messages=None,
+                    extra_temp_paths=[],
+                    current_user_name=current_user_name,
+                    doc_id=doc_id,
+                    results=step_results,
+                    timings=timings,
+                )
+                entry["email"] = step_results.get("email")
+
+            document_pipeline.schedule_cleanup(
+                background_tasks, temp_path, pdfa_temp_file, None, DOWNLOAD_CACHE,
+                ham_source_path=ham_source_path,
+            )
+        except Exception as e:
+            error_id = str(uuid.uuid4())[:8]
+            TechnicalLogger.log(
+                "ERROR",
+                f"[INTAKE-COMMIT] Belge arşivleme hatası [ID: {error_id}] "
+                f"(case={case_id}, process={doc.process_id}): {e}",
+            )
+            entry["status"] = "failed"
+            entry["error_ozet"] = (
+                f"Belge arşivlenemedi (Hata: {error_id}) — dava kartından yeniden yükleyin."
+            )
+            # Cache'ten POP edilen dosyaların TTL sahibi artık yok — burada temizlenir.
+            safe_remove(pdfa_temp_file)
+            safe_remove(temp_path)
+            if ham_source_path and ham_source_path != temp_path:
+                safe_remove(ham_source_path)
+        doc_results.append(entry)
+
+    # 3. Poliçe beslemesi — best-effort (karar 5): hata dava kaydını GERİ ALMAZ.
+    # save_client_policies idempotent (dedupe = normalize police_no + dönem başı).
+    policy_result: Dict[str, Any] = {"saved": 0, "skipped": 0}
+    if req.policies:
+        by_client: Dict[int, List[Dict[str, Any]]] = {}
+        for pol in req.policies:
+            by_client.setdefault(pol.client_id, []).append(pol.model_dump(exclude={"client_id"}))
+        for cid, pol_list in by_client.items():
+            try:
+                saved_info = await loop.run_in_executor(
+                    None,
+                    partial(
+                        client_manager.save_client_policies,
+                        cid, pol_list, created_by=current_user_name,
+                    ),
+                )
+                policy_result["saved"] += saved_info["saved"]
+                policy_result["skipped"] += saved_info["skipped"]
+            except Exception as e:
+                TechnicalLogger.log(
+                    "ERROR",
+                    f"[INTAKE-COMMIT] Poliçe beslemesi hatası (case={case_id}, client={cid}): {e}",
+                )
+                policy_result["error"] = (
+                    "Poliçelerin bir kısmı kaydedilemedi — müvekkil kartından elle ekleyebilirsiniz."
+                )
+
+    TechnicalLogger.log(
+        "INFO",
+        "[INTAKE-COMMIT] Commit tamamlandı",
+        {
+            "case_id": case_id,
+            "tracking_no": case_result.get("tracking_no"),
+            "documents": {
+                s: sum(1 for d in doc_results if d["status"] == s)
+                for s in ("queued", "failed", "expired")
+            },
+            "policies": policy_result,
+        },
+    )
+    return {
+        "case": {"id": case_id, "tracking_no": case_result.get("tracking_no")},
+        "documents": doc_results,
+        "policies": policy_result,
+    }
 
 
 @router.post("/api/case-intake/keepalive")

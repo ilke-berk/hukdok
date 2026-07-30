@@ -20,6 +20,7 @@ import { useDashboardView } from "@/hooks/useDashboardView";
 import Login from "./pages/Login";
 import AdminPage from "./pages/AdminPage";
 import NewCase from "./pages/NewCase";
+import CaseIntakeWizard from "./pages/CaseIntakeWizard";
 import CaseList from "./pages/CaseList";
 import NewClient from "./pages/NewClient";
 import ClientList from "./pages/ClientList";
@@ -92,6 +93,7 @@ const AppContent = () => {
           <Route path="/new-case" element={<CaseList />} />
           <Route path="/cases" element={<CaseList />} />
           <Route path="/new-case/form" element={<NewCase />} />
+          <Route path="/new-case/auto" element={<CaseIntakeWizard />} />
           <Route path="/new-client" element={<NewClient />} />
           <Route path="/clients" element={<ClientList />} />
           <Route path="/cases/:id" element={<CaseDetails />} />

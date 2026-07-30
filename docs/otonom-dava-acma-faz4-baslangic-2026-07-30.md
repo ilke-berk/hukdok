@@ -1,5 +1,28 @@
 # Otonom Dava Açma — Faz 4 Başlangıç Planı (commit endpoint)
 
+> **DURUM: TAMAMLANDI (2026-07-30).** 6 çıkış kriterinin tümü sağlandı:
+> (1) `POST /api/case-intake/commit` tek çağrıda dava + N belge + poliçe;
+> yanıt belge-başı `queued|failed|expired` içeriyor. (2) 409 yolu gerçek
+> PROCESS_CACHE POP semantiğiyle testli — duplicate'te hiçbir belge tüketilmiyor.
+> (3) Hata izolasyonu testli: expired + pdfa-failed + **UnicodeDecodeError
+> regresyonu** (2026-07-13 confirm arızası bu yolda yutulan geniş except'le
+> kanıtlı). (4) Poliçe idempotens duman testiyle kanıtlı (2. commit → skipped=1);
+> poliçe hatası davayı düşürmüyor. (5) Konteynerde 401 test + ruff + mypy yeşil
+> (12 yeni test: `tests/test_case_intake_commit.py`). (6) Elle duman testi
+> `calibration/smoke_faz4.py` (gitignore'da, Faz 2 smoke deseni) ile gerçek
+> Gemini + DB + Ghostscript zinciri uçtan uca: tensip PDF + poliçe TIF →
+> SMOKE-* davası DERDEST zorlamalı oluştu, HAM'a orijinal TIF / işlenmişe PDF/A
+> kuyruklandı (upload stub'lı — gerçek arşiv kirletilmedi), poliçe müvekkil
+> 6250'ye `Faz4 Smoke` imzasıyla yazıldı.
+>
+> **Faz 5'e iki not:** (a) Merge poliçe çıktısının anahtarları
+> `baslangic/bitis/retroaktif/source` — commit `ClientPolicyCreate` adlarını
+> (`baslangic_tarihi`/`bitis_tarihi`/`retroaktif_tarihi`/`source_document`)
+> bekler; frontend eşlemesi şart.
+> (b) `options.send_email=true` v1'de belge başına `send_notification_email`
+> çağırır ama alıcı listesi boş gider (custom_to Faz 5 UI işi) — pre-check
+> "Alıcı listesi boş" ile zarifçe düşer, belge durumunu etkilemez.
+
 *Tarih: 2026-07-30 · Yeni oturum için kendi kendine yeten kickoff dokümanı.*
 *Eş dosyalar: [geliştirme planı](otonom-dava-acma-gelistirme-plani-2026-07-24.md) (ayrıntılı tasarım + "Faz 3 durumu" bloğu), [Faz 2 kickoff](otonom-dava-acma-faz2-baslangic-2026-07-30.md), [hazırlık raporu](otonom-dava-acma-hazirlik-raporu-2026-07-24.md).*
 

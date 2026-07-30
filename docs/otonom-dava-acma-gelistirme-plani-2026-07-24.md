@@ -152,9 +152,60 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 4. Backend: `update_case_tracking`'de `exclude_unset` semantiği (route `model_dump(exclude_unset=True)` geçer; manager mevcut her anahtarı `None` dahil uygular) — alan silme çalışır olur.
 
 ## İş Kalemi 4 — Sertleştirme (MVP sonrası)
-1. `update_case` taraf sil-yeniden-oluştur → `case_party_id` öksüzleşmesi düzeltmesi (diff bazlı güncelleme veya yeniden-oluşturma sonrası normalize ada göre re-link). Sihirbaz belge-taraf bağı kurduğundan önemi artıyor.
+1. `update_case` taraf sil-yeniden-oluştur → `case_party_id` öksüzleşmesi düzeltmesi (diff bazlı güncelleme veya yeniden-oluşturma sonrası normalize ada göre re-link). Sihirbaz belge-taraf bağı kurduğundan önemi artıyor. **İş Kalemi 5'in de önkoşulu.**
 2. client-sequence fallback düzeltmesi / 409 telemetrisi.
 3. `service_type` kaderi (persist et ya da formdan da kaldır).
+
+## İş Kalemi 5 — Zenginleştirme modu: mevcut davaya belgeden doldur/teyit (2026-07-30 eklendi)
+
+**Amaç:** sistem tek seferlik dava açılışına sıkışmasın. Açık bir davaya sonradan
+gelen belge (tensip, poliçe, tebligat, atama yazısı…) yüklendiğinde aynı çıkarım
+motoru **eksik alanları doldurmayı önerir, dolu alanları teyit eder, çelişkiyi
+gösterir** — kullanıcı tik'lerle onaylar, tek Kaydet ile uygulanır.
+
+**Bugünkü durum (bilinçli olarak sığ):** `/confirm` yolundaki sessiz
+zenginleştirmeler — `_auto_update_case_status` (doctype→durum),
+`_auto_enrich_case_data` (boşsa sorumlu avukat + karşı taraf), `save_hearing_date`
+(`routes/processing.py:112-210`) — iki-üç alanla sınırlı, yalnız boş alanı doldurur,
+kullanıcıya sormaz. Uzun vadede bunlar bu onaylı akışın içine taşınır (aşağıda
+karar noktası 3).
+
+**Tasarım — mevcut yapıtaşlarının yeniden kullanımı, yeni motor YOK:**
+1. **`/analyze` DEĞİŞMEZ** (belge başına çıkarım zaten dava-bağımsız).
+2. **`/merge`'e opsiyonel `case_id`:** mevcut dava kaydı, kayıtlı poliçelerin
+   listeye `saved=true` ile karışması deseninin alan karşılığı olarak, her alana
+   **"kayıtlı dava" kaynaklı aday** diye katılır. Çıktıda alan başına mod durumu:
+   - `fill` — dava alanı boş + belgede değer var → doldur önerisi,
+   - `confirm` — dava alanı dolu + belge aynı → teyit ✓ (agreement rozetiyle),
+   - `conflict` — dolu + belge farklı → uyarı; esas_no/mahkeme çelişkisinde
+     mevcut Katman 3 hakem çağrılır (istinaf/yeni esas ayrımını zaten yapıyor).
+   Taraflarda yalnız **EKLEME** önerilir (mevcut taraf silinmez/değiştirilmez);
+   poliçe beslemesi zaten idempotent, değişiklik gerekmez.
+3. **Uygulama endpoint'i `POST /api/case-intake/apply`** (öneri: commit'e mode
+   eklemek yerine ayrı ince endpoint): `add_case` yerine yalnız kullanıcının
+   tik'lediği alanların **kısmi güncellemesi** (`exclude_unset` semantiği —
+   İş Kalemi 3.4 deseni) + her alan için `CaseHistory` kaydı + taraf ekleme +
+   belge arşivleme (**commit'in belge-başı best-effort döngüsü aynen**: accept
+   POP → PDF/A → kuyruk → cleanup, expired/failed izolasyonu) + poliçe beslemesi.
+4. **UI girişi:** dava detayına "Belgeden Doldur / Teyit Et" düğmesi; Faz 5
+   sihirbazının review bileşenleri (`IntakeFieldRow`, tik kapısı, taraf bloğu)
+   "mevcut dava" modunda yeniden kullanılır — yalnız fark listesi gösterilir
+   (değişmeyen alanlar kısa "teyit edildi" özetine katlanır). Ayrıca sihirbazda
+   `duplicate_case` uyarısı çıktığında **"bu davayı zenginleştir"** köprüsü bu
+   moda geçirir (yeni dava açmak yerine).
+
+**Önkoşul/sıra:** Faz 5 (review bileşenleri burada doğar) + İş Kalemi 4.1
+(`update_case` taraf öksüzleşmesi — taraf yazan her kısmi güncelleme için şart).
+**Efor:** backend ~1–1.5 g (merge bağlamı + apply + testler), frontend ~1 g.
+
+**Karar noktaları (uygulamadan önce kullanıcıyla netleştir):**
+1. `apply` ayrı endpoint mi, `commit`'e `mode=enrich` mi? (öneri: ayrı endpoint —
+   add_case/409 yolu ile kısmi güncelleme semantiği karışmasın)
+2. `CaseHistory` kaynak imzası: `changed_by` kullanıcı + kaynak belge adı
+   ("intake-enrich: tensip.pdf") formatı yeterli mi?
+3. Mevcut sessiz `_auto_enrich` davranışları bu mod çıktıktan sonra kapatılsın mı,
+   olduğu gibi kalsın mı? (öneri: kalsın ama CaseHistory'ye yazdıkları belli
+   olsun; tam taşıma v2)
 
 ## Test
 - **Backend (pytest KONTEYNERDE** — host py3.13 uyumsuz): `backend/tests/test_case_intake_merge.py` — saf merge fonksiyonları (esas_no çoğunluk/beraberlik, Türkçe aksanlı taraf dedupe, rol→party_type, tarih seçimi); `test_case_intake_commit.py` — conftest desenleriyle, pipeline fonksiyonları monkeypatch'li (dava oluşur, belge-başı hata izolasyonu, 409 yolu). Prompt kalibrasyonu CI'da değil, kalibrasyon script'iyle manuel.
@@ -168,9 +219,10 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 | 1 | İş Kalemi 3 (takip paneli tek-Kaydet + PATCH null düzeltmesi) | 1–1.5 g | **Evet — anında UX kazanımı** |
 | 2 | Analyze endpoint + schema/prompt + ensemble/doğrulayıcı (`case_intake_analyzer`, `/analyze`) | 3–3.5 g | Kalibrasyon script'iyle test edilir |
 | 3 | Merge servisi + DB zenginleştirme + **kalıcı poliçe tablosu (migration + müvekkil kartı UI)** + endpoint + testler; keepalive — **TAMAMLANDI (2026-07-30)** | 3.5–4.5 g | Evet (API-tamam) |
-| 4 | Commit endpoint + testler | 1 g | Evet |
+| 4 | Commit endpoint + testler — **TAMAMLANDI (2026-07-30; durum bloğu [Faz 4 kickoff](otonom-dava-acma-faz4-baslangic-2026-07-30.md)'ta)** | 1 g | Evet |
 | 5 | Sihirbaz frontend (4 adım + CaseList girişi) | 4–5 g | **Özellik burada çıkar** |
 | 6 | Sertleştirme | 1–2 g | Kalem kalem bağımsız |
+| 7 | İş Kalemi 5: zenginleştirme modu (mevcut davaya belgeden doldur/teyit) — önkoşul Faz 5 + İş Kalemi 4.1 | 2–3 g | Evet |
 
 ## Kararlar (2026-07-30, kullanıcı onaylı — açık soru kalmadı)
 1. **Model:** intake motoru `models/gemini-3.6-flash` (env `GEMINI_INTAKE_MODEL`); yavaşlık kabul edildi, doğruluk öncelikli.
@@ -224,8 +276,9 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
   POLICY_PERIOD_MISMATCH uyarısı.
 - Test: `tests/test_case_intake_merge.py` (31 test — saf fonksiyonlar + merge/keepalive
   route'ları monkeypatch'li). Tam suite 389 yeşil; ruff + mypy temiz; frontend
-  build + vitest (68) yeşil. Sıradaki iş: **Faz 4 (commit endpoint)** — kapsamına
-  poliçe beslemesi eklendi.
+  build + vitest (68) yeşil. ~~Sıradaki iş: Faz 4 (commit endpoint)~~ — **Faz 4
+  de tamamlandı (2026-07-30)**, durum bloğu
+  [Faz 4 kickoff](otonom-dava-acma-faz4-baslangic-2026-07-30.md)'ta; sıra Faz 5.
 
 ## Doğrulama (uçtan uca)
 1. **Faz 1:** dava detayında takip panelinde birden çok aşamada alan değiştir → tek Kaydet ile hepsi yazılmalı; aşama sekmesi değiştir → veri kaybolmamalı; tarih sil + kaydet → DB'de null olmalı (konteynerde pytest + elle UI).

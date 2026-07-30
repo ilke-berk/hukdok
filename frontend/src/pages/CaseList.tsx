@@ -3,11 +3,14 @@ import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/components/system/PageSearch";
 import {
   Search, FolderOpen, Scale, FileText,
-  Plus, ChevronRight, ChevronLeft,
+  Plus, ChevronRight, ChevronLeft, ChevronDown,
   Briefcase, Copy, Check, HelpCircle,
   TrendingUp, Loader2, RefreshCw, AlertTriangle,
-  SlidersHorizontal, CalendarClock,
+  SlidersHorizontal, CalendarClock, Sparkles,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCases } from "../hooks/useCases";
 import { useConfig } from "../hooks/useConfig";
@@ -267,10 +270,27 @@ const CaseList = () => {
             Dava Dosyaları
           </h1>
         </div>
-        <FlowButton variant="primary" onClick={() => navigate("/new-case/form")}>
-          <Plus className="w-3.5 h-3.5" />
-          Yeni Dava Aç
-        </FlowButton>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <span>
+              <FlowButton variant="primary">
+                <Plus className="w-3.5 h-3.5" />
+                Yeni Dava Aç
+                <ChevronDown className="w-3.5 h-3.5" />
+              </FlowButton>
+            </span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => navigate("/new-case/auto")}>
+              <Sparkles className="w-3.5 h-3.5 mr-2" />
+              Belgelerden Otomatik Aç
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/new-case/form")}>
+              <FileText className="w-3.5 h-3.5 mr-2" />
+              Manuel Aç
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Metrikler */}

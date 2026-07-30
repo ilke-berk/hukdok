@@ -29,7 +29,7 @@ from datetime import date
 from difflib import SequenceMatcher
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from party_check import _match_name, normalize_person_name, normalize_tc
+from party_check import _match_name, normalize_party_key, normalize_person_name, normalize_tc
 
 # Çıkış alanı → çıkarım alanı eşlemesi (düz çoğunluk oyu alanları)
 PLAIN_VOTE_FIELDS = {
@@ -406,7 +406,7 @@ def merge_parties(docs: List[Dict], client_rows: List[Dict]) -> List[Dict]:
             rol = p.get("rol") or "DIGER"
             if rol == "VEKIL":
                 continue
-            key = normalize_person_name(ad)
+            key = normalize_party_key(ad)
             if not key:
                 continue
             entry = parties.setdefault(key, {
@@ -522,7 +522,7 @@ def merge_policies(
     """
     target = parse_iso_date(opening_date)
     match_by_name = {
-        normalize_person_name(p["name"]): p.get("match") for p in parties if p.get("match")
+        normalize_party_key(p["name"]): p.get("match") for p in parties if p.get("match")
     }
 
     policies: List[Dict] = []
@@ -538,7 +538,7 @@ def merge_policies(
             (p.get("ad") for p in ext.get("taraflar") or [] if p.get("rol") == "SIGORTALI"),
             None,
         )
-        m = match_by_name.get(normalize_person_name(sigortali or ""))
+        m = match_by_name.get(normalize_party_key(sigortali or ""))
         policy = {
             "police_no": ext.get("police_no"),
             "police_turu": ext.get("police_turu"),

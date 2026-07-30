@@ -19,6 +19,7 @@ import { CaseData, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
+import { parseCourt } from "@/lib/courtParse";
 import { closestName } from "@/lib/nameSimilarity";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 
@@ -151,39 +152,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             setClientName(getInitialClients());
             setCounterPartyName(toTitleCase(prefill?.karsi_taraf || ""));
             setOpeningDate("");
-            // Mahkeme ayrıştırma: courtBase + courtDaireNo
+            // Mahkeme ayrıştırma: courtBase + courtDaireNo (ortak yardımcı — lib/courtParse)
             const rawCourt = prefill?.court || "";
-
-            // Yardımcı: başlıktaki numara parse et
-            const parseCourt = (raw: string): { base: string; daireNo: string } => {
-                if (!raw) return { base: '', daireNo: '' };
-
-                // Pattern 1: "Samsun 2. Tüketici Mahkemesi"
-                // Şehir adı + sayı + mahkeme türü
-                const p1 = raw.match(/^([A-ZÇĞİIÖŞÜ][a-zçğıiöşü]+)\s+(\d+)\.\s+(.+Mahkemesi)$/i);
-                if (p1) return { base: `${p1[1]} ${p1[3]}`, daireNo: p1[2] };
-
-                // Pattern 2: "Ankara Bölge İdare Mahkemesi 10. İdari Dava Dairesi"
-                // Mahkemesi + sayı + daire
-                const p2 = raw.match(/^(.+?Mahkemesi)\s+(\d+)\.\s*.+Dairesi$/i);
-                if (p2) return { base: p2[1], daireNo: p2[2] };
-
-                // Pattern 3: Sözel ("Üçüncü İdari Dava Dairesi") — sayıya dönüdür
-                const ordinalMap: Record<string, string> = {
-                    'birinci': '1', 'ikinci': '2', 'üçüncü': '3', 'dördüncü': '4', 'beşinci': '5',
-                    'altıncı': '6', 'yedinci': '7', 'sekizinci': '8', 'dokuzuncu': '9', 'onuncu': '10'
-                };
-                for (const [word, num] of Object.entries(ordinalMap)) {
-                    const re = new RegExp(word + '\\s+.*daire', 'i');
-                    if (re.test(raw)) {
-                        const base = raw.replace(new RegExp('\\s*' + word + '.*$', 'i'), '').trim();
-                        return { base: base || raw, daireNo: num };
-                    }
-                }
-
-                return { base: raw, daireNo: '' };
-            };
-
             const { base, daireNo } = parseCourt(rawCourt);
             setCourtBase(toTitleCase(base));
             setCourtDaireNo(daireNo);

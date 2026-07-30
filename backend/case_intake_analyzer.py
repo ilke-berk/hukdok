@@ -29,7 +29,7 @@ from google.genai import types as genai_types
 
 import analyzer
 from managers.log_manager import TechnicalLogger
-from party_check import normalize_person_name
+from party_check import normalize_party_key
 from prompts import (
     get_case_intake_arbiter_instruction,
     get_case_intake_instruction,
@@ -122,7 +122,7 @@ def majority_vote(runs: List[Dict]) -> Tuple[Dict, List[Dict]]:
     for r in runs:
         seen_in_run = set()
         for p in r.get("taraflar") or []:
-            key = normalize_person_name(p.get("ad", ""))
+            key = normalize_party_key(p.get("ad", ""))
             if not key:
                 continue
             entry = parties.setdefault(

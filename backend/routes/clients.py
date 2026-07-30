@@ -113,8 +113,24 @@ def api_list_client_policies(
                       models.ClientPolicy.id.desc())
             .all()
         )
+        # Kaynak belge linki: source_document yalnız dosya adı tutar; arşivdeki
+        # SharePoint URL'si case_documents'tan ada göre bulunur (en yeni kayıt).
+        policies_out = []
+        for r in rows:
+            item = ClientPolicyRead.model_validate(r).model_dump()
+            item["document_url"] = None
+            if r.source_document:
+                doc = (
+                    db.query(models.CaseDocument.sharepoint_url)
+                    .filter(models.CaseDocument.original_filename == r.source_document,
+                            models.CaseDocument.sharepoint_url.isnot(None))
+                    .order_by(models.CaseDocument.id.desc())
+                    .first()
+                )
+                item["document_url"] = doc[0] if doc else None
+            policies_out.append(item)
         return {
-            "policies": [ClientPolicyRead.model_validate(r) for r in rows],
+            "policies": policies_out,
             "warnings": policy_overlap_warnings([_policy_row_for_overlap(r) for r in rows]),
         }
     finally:

@@ -224,6 +224,22 @@ def test_merge_parties_party_type_mapping():
     assert parties["VELİ KAYA"]["party_type"] == "THIRD"
 
 
+def test_merge_parties_dedupes_corporate_suffix_variants():
+    """Duman testi 2026-07-30: hastane "... ANONİM ŞİRKETİ" ve "... A. Ş."
+    yazımlarıyla iki ayrı taraf oluyordu — şirket eki eşitlenerek tekilleşmeli."""
+    docs = [
+        _doc("dilekce.pdf", taraflar=[
+            {"ad": "YAŞAM ÖZEL SAĞLIK HİZMETLERİ TİCARET VE SANAYİ ANONİM ŞİRKETİ", "rol": "DAVALI", "tc_no": None},
+        ]),
+        _doc("tensip.pdf", taraflar=[
+            {"ad": "Yaşam Özel Sağlık Hizmetleri Ticaret Ve Sanayi A. Ş.", "rol": "DAVALI", "tc_no": None},
+        ]),
+    ]
+    parties = merge_parties(docs, client_rows=[])
+    assert len(parties) == 1
+    assert parties[0]["doc_count"] == 2
+
+
 def test_merge_parties_uncensored_tc_preferred():
     docs = [
         _doc("a.pdf", taraflar=[{"ad": "ALİ CAN", "rol": "DAVACI", "tc_no": "***456*"}]),

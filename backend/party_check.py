@@ -66,6 +66,39 @@ def normalize_person_name(name: str) -> str:
     return " ".join(cleaned.split())
 
 
+_CORP_PAIR_MAP = {
+    ("ANONIM", "SIRKETI"): "AS",
+    ("A", "S"): "AS",  # "A.Ş." normalize sonrası iki tek harfli token
+    ("LIMITED", "SIRKETI"): "LTD",
+    ("LTD", "STI"): "LTD",
+}
+_CORP_TOKEN_MAP = {"TIC": "TICARET", "SAN": "SANAYI", "LIMITED": "LTD", "STI": "LTD"}
+
+
+def normalize_party_key(name: str) -> str:
+    """Taraf BİRLEŞTİRME anahtarı: normalize_person_name + şirket eki eşitleme.
+
+    "X A.Ş." ↔ "X Anonim Şirketi" aynı anahtara düşer; kelime sırası önemsiz
+    (_match_name'in sorted-exact semantiğiyle uyumlu). Yalnız dedup anahtarıdır,
+    görüntülenecek ad değildir.
+    """
+    norm = normalize_person_name(name)
+    tokens = norm.split()
+    out = []
+    i = 0
+    while i < len(tokens):
+        pair = tuple(tokens[i:i + 2])
+        if pair in _CORP_PAIR_MAP:
+            out.append(_CORP_PAIR_MAP[pair])
+            i += 2
+            continue
+        out.append(_CORP_TOKEN_MAP.get(tokens[i], tokens[i]))
+        i += 1
+    if _is_corporate(norm):
+        out = [t for t in out if t != "VE"]
+    return " ".join(sorted(out))
+
+
 def normalize_tc(tc: str | None) -> str | None:
     """TC'yi 11 haneye normalize eder; geçersizse None (yok sayılır)."""
     if not tc:

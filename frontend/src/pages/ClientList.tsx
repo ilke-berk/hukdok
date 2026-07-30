@@ -6,7 +6,7 @@ import {
   Phone, Mail, MapPin, Loader2,
   Users, Gavel, Stethoscope, Building2, User2, UserPlus,
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
-  ShieldCheck, AlertTriangle,
+  ShieldCheck, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useClients, ClientData } from "../hooks/useClients";
@@ -38,6 +38,7 @@ interface ClientPolicy {
   sigortali_kurum?: string | null;
   teminat_limiti?: number | null;
   source_document?: string | null;
+  document_url?: string | null;  // kaynak belgenin SharePoint linki (case_documents'tan)
 }
 
 interface ClientPoliciesResponse {
@@ -610,9 +611,22 @@ const ClientList = () => {
                     {policiesQ.data.policies.map(p => (
                       <div key={p.id} className="border-l-2 border-[var(--brand)]/40 pl-2.5 grid gap-1 text-[12px]">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-[var(--fg)]">
-                            {p.police_no || "Poliçe no yok"}
-                          </span>
+                          {p.document_url ? (
+                            <a
+                              href={p.document_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Kaynak belgeyi aç${p.source_document ? `: ${p.source_document}` : ""}`}
+                              className="inline-flex items-center gap-1 font-mono text-[var(--brand)] hover:underline"
+                            >
+                              {p.police_no || "Poliçe no yok"}
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="font-mono text-[var(--fg)]">
+                              {p.police_no || "Poliçe no yok"}
+                            </span>
+                          )}
                           {p.police_turu && (
                             <span className="inline-flex items-center px-1.5 py-0.5 font-mono text-[9px] tracking-[0.14em] uppercase border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)]">
                               {POLICE_TURU_LABELS[p.police_turu] || p.police_turu}

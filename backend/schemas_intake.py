@@ -1,9 +1,12 @@
-# Otonom dava açma — çıkarım şemaları (Faz 2) + merge/hakem şemaları (Faz 3).
+# Otonom dava açma — çıkarım şemaları (Faz 2) + merge/hakem şemaları (Faz 3)
+# + commit şemaları (Faz 4).
 # Gemini'ye response_schema olarak verilir (structured output); kalibrasyon
 # koşularıyla (calibration/run_calibration.py) itere edilmiş sürümdür.
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+from schemas import CaseCreate, ClientPolicyCreate
 
 
 class IntakeParty(BaseModel):
@@ -113,3 +116,40 @@ class CaseIntakeMergeRequest(BaseModel):
 
 class KeepaliveRequest(BaseModel):
     process_ids: list[str] = Field(..., min_length=1, max_length=50)
+
+
+# --- Commit endpoint şemaları (Faz 4) ---
+# Sihirbazın "Kaydet ve Arşivle" düğmesi: kullanıcı onaylı dava kartı +
+# PROCESS_CACHE'teki belgeler + review'da onaylanan poliçeler tek istekte gelir.
+
+
+class CommitDocumentIn(BaseModel):
+    process_id: str
+    new_filename: str
+    # HAM arşiv adı için orijinal dosya adı (merge documents[].filename);
+    # verilmezse new_filename kullanılır (confirm'deki fallback deseni).
+    original_filename: Optional[str] = None
+    belge_turu_kodu: Optional[str] = None
+    ai_ozet: Optional[str] = None
+    esas_no: Optional[str] = None
+    muvekkil_adi: Optional[str] = None
+
+
+class CommitPolicyIn(ClientPolicyCreate):
+    # Yalnız client_id'si dolu, kullanıcı onaylı poliçeler gönderilir
+    # (merge çıktısında saved=true olanları frontend hiç göndermez).
+    client_id: int
+
+
+class CommitOptions(BaseModel):
+    send_email: bool = False  # karar 2: varsayılan KAPALI
+    # Alıcı listesi (Faz 4 devir notu b): boş + send_email=true → e-posta
+    # pre-check "Alıcı listesi boş" ile zarifçe düşer, belge durumu etkilenmez.
+    email_to: list[str] = Field(default_factory=list, max_length=10)
+
+
+class CaseIntakeCommitRequest(BaseModel):
+    case: CaseCreate
+    documents: list[CommitDocumentIn] = Field(default_factory=list, max_length=15)
+    policies: list[CommitPolicyIn] = Field(default_factory=list, max_length=30)
+    options: CommitOptions = Field(default_factory=CommitOptions)
