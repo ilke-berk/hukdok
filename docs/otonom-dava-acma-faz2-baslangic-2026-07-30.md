@@ -1,5 +1,15 @@
 # Otonom Dava Açma — Faz 2 Başlangıç Planı (analyze endpoint)
 
+> **DURUM: TAMAMLANDI (2026-07-30, commit 2cc7c4b).** 5 çıkış kriterinin tümü
+> sağlandı: (1-2) 5 format (PDF/UDF ".udf.zip"/TIF/JPEG/DOCX) gerçek Gemini ile
+> uçtan uca 7/7 duman testi; (3) 23 unit/route testi + tam suite + ruff + mypy
+> yeşil; (4) 36 belgelik regresyon (results/faz2-regresyon) — tensip alanları
+> Faz 0 ile birebir, poliçe 16/16 hekim korundu, Faz 0'da boş dönen 5 tensip
+> artık eksiksiz; (5) GEMINI_INTAKE_MODEL .env.example'da. Not: çok poliçeli
+> CEVAP_DILEKCESI TIF'inde koşular farklı yılın poliçesini seçebiliyor —
+> Faz 3 poliçe listesi/dönem seçimi ele alacak. Sıradaki iş: **Faz 3 (merge
+> servisi + client_policies tablosu)**.
+
 *Tarih: 2026-07-30 · Yeni oturum için kendi kendine yeten kickoff dokümanı.*
 *Eş dosyalar: [geliştirme planı](otonom-dava-acma-gelistirme-plani-2026-07-24.md) (ayrıntılı tasarım), [hazırlık raporu](otonom-dava-acma-hazirlik-raporu-2026-07-24.md), [alan-kaynak matrisi](otonom-dava-acma-alan-kaynak-matrisi-2026-07-24.md).*
 
