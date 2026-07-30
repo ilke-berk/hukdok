@@ -255,3 +255,49 @@ class TestConvertToPdfa2bDispatch:
         src.write_bytes(b"metin")
         with pytest.raises(ValueError):
             pc.convert_to_pdfa2b(str(src))
+
+    def test_pdf_gs_failure_falls_back_to_original(self, tmp_path, monkeypatch):
+        # GS timeout/çökme durumunda PDF kaynak orijinal haliyle döner, hata yok
+        import pdf.pdf_converter as pc
+        src = tmp_path / "buyuk_tarama.pdf"
+        src.write_bytes(b"%PDF-1.4 sahte")
+
+        def _boom(s, o):
+            raise Exception("PDF/A-2b dönüşümü timeout (240s)")
+
+        monkeypatch.setattr(pc, "_pdf_to_pdfa2b", _boom)
+        assert pc.convert_to_pdfa2b(str(src)) == str(src)
+
+    def test_image_gs_failure_falls_back_to_intermediate_pdf(self, tmp_path, monkeypatch):
+        # Kaynak → PDF başarılı ama PDF/A adımı çökerse ara PDF ile devam edilir
+        import pdf.pdf_converter as pc
+        src = tmp_path / "tarama.tif"
+        _make_tiff(str(src), pages=2)
+
+        def _boom(s, o):
+            raise Exception("GhostScript hatası: sahte")
+
+        monkeypatch.setattr(pc, "_pdf_to_pdfa2b", _boom)
+        result = pc.convert_to_pdfa2b(str(src))
+        try:
+            assert result != str(src)
+            assert _pdf_page_count(result) == 2
+        finally:
+            os.remove(result)
+
+
+class TestGsTimeoutEnv:
+    def test_default_240(self, monkeypatch):
+        import pdf.pdf_converter as pc
+        monkeypatch.delenv("GS_TIMEOUT_SECONDS", raising=False)
+        assert pc._gs_timeout() == 240
+
+    def test_env_override(self, monkeypatch):
+        import pdf.pdf_converter as pc
+        monkeypatch.setenv("GS_TIMEOUT_SECONDS", "90")
+        assert pc._gs_timeout() == 90
+
+    def test_invalid_env_falls_back_to_default(self, monkeypatch):
+        import pdf.pdf_converter as pc
+        monkeypatch.setenv("GS_TIMEOUT_SECONDS", "hizli")
+        assert pc._gs_timeout() == 240

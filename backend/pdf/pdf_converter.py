@@ -11,6 +11,7 @@ import functools
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -106,6 +107,17 @@ def convert_to_pdfa2b(source_path: str) -> str:
         return source_path
 
 
+def _gs_timeout() -> int:
+    """GhostScript zaman bütçesi, saniye (env: GS_TIMEOUT_SECONDS).
+
+    nginx katmanları (host + konteyner) /confirm için 300s'e izin veriyor;
+    varsayılan 240s, kalan pay SharePoint arşiv yüklemesine bırakılır."""
+    try:
+        return int(os.getenv("GS_TIMEOUT_SECONDS", "240"))
+    except ValueError:
+        return 240
+
+
 def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
     """
     GhostScript ile PDF → PDF/A-2b dönüşümü.
@@ -135,7 +147,9 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
         source_pdf
     ]
     
+    gs_timeout = _gs_timeout()
     try:
+        step_start = time.perf_counter()
         result = subprocess.run(
             gs_command,
             capture_output=True,
@@ -144,22 +158,23 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             # errors="replace" olmadan decode UnicodeDecodeError fırlatır
             encoding="utf-8",
             errors="replace",
-            timeout=60
+            timeout=gs_timeout
         )
-        
+        elapsed = time.perf_counter() - step_start
+
         if result.returncode == 0 and os.path.exists(output_pdf):
             file_size = os.path.getsize(output_pdf) / 1024  # KB
-            TechnicalLogger.log("INFO", f"✅ PDF → PDF/A-2b başarılı: {output_pdf} ({file_size:.1f} KB)")
+            TechnicalLogger.log("INFO", f"✅ PDF → PDF/A-2b başarılı ({elapsed:.1f}s): {output_pdf} ({file_size:.1f} KB)")
             return output_pdf
         else:
             # stderr kırpılır: taranmış PDF'lerde GS nesne başına uyarı basar,
             # tam çıktı TechnicalLogger buffer'ına MB'lık kalıcı kayıt gömüyordu
             error_msg = (result.stderr or "Bilinmeyen hata")[:2048]
             raise Exception(f"GhostScript hatası: {error_msg}")
-            
+
     except subprocess.TimeoutExpired:
-        TechnicalLogger.log("ERROR", "GhostScript timeout (60s aşıldı)")
-        raise Exception("PDF/A-2b dönüşümü timeout") from None
+        TechnicalLogger.log("ERROR", f"GhostScript timeout ({gs_timeout}s aşıldı)")
+        raise Exception(f"PDF/A-2b dönüşümü timeout ({gs_timeout}s)") from None
 
 
 def _office_to_pdfa2b(source_office: str, output_pdf: str) -> str:
@@ -174,12 +189,8 @@ def _office_to_pdfa2b(source_office: str, output_pdf: str) -> str:
         Dönüştürülmüş PDF/A-2b dosya yolu
     """
     intermediate_pdf = office_to_pdf(source_office)
-    try:
-        TechnicalLogger.log("INFO", "Office → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
-        return _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
-    finally:
-        if os.path.exists(intermediate_pdf) and intermediate_pdf != output_pdf:
-            os.remove(intermediate_pdf)
+    TechnicalLogger.log("INFO", "Office → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
+    return _pdfa_or_intermediate(intermediate_pdf, output_pdf)
 
 
 def _image_to_pdfa2b(source_image: str, output_pdf: str) -> str:
@@ -194,12 +205,23 @@ def _image_to_pdfa2b(source_image: str, output_pdf: str) -> str:
         Dönüştürülmüş PDF/A-2b dosya yolu
     """
     intermediate_pdf = image_to_pdf(source_image)
+    TechnicalLogger.log("INFO", "Görüntü → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
+    return _pdfa_or_intermediate(intermediate_pdf, output_pdf)
+
+
+def _pdfa_or_intermediate(intermediate_pdf: str, output_pdf: str) -> str:
+    """Ara PDF'i PDF/A-2b'ye dönüştürür; GS başarısız olursa ara PDF ile devam eder.
+
+    Office/görüntü kaynaklarında elimizde zaten geçerli bir PDF var — PDF/A adımı
+    çökse bile kullanıcıya hata dönmek yerine o PDF arşivlenir (son çare fallback)."""
     try:
-        TechnicalLogger.log("INFO", "Görüntü → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
-        return _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
-    finally:
-        if os.path.exists(intermediate_pdf) and intermediate_pdf != output_pdf:
-            os.remove(intermediate_pdf)
+        result = _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"PDF/A-2b adımı başarısız ({e}), ara PDF kullanılıyor (fallback)")
+        return intermediate_pdf
+    if os.path.exists(intermediate_pdf) and intermediate_pdf != result:
+        os.remove(intermediate_pdf)
+    return result
 
 
 def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
