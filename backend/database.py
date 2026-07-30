@@ -330,6 +330,30 @@ _MIGRATIONS = [
 
     # 17. AVUKAT ŞEHRİ — yönetim panelinde şehir listesinden seçilir
     ("columns", "lawyers", {"city": "VARCHAR(100)"}),
+
+    # 18. CLIENT_POLICIES — otonom dava açma Faz 3 (plan Kararlar #3):
+    # hekim başına kalıcı poliçe kaydı; intake analizinden beslenir,
+    # müvekkil kartında listelenir, dönem çakışması uyarısı bu veriyle çalışır.
+    ("table", "client_policies", """
+        CREATE TABLE client_policies (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+            police_no VARCHAR(100),
+            police_turu VARCHAR(20),
+            sigorta_sirketi VARCHAR(200),
+            baslangic_tarihi DATE,
+            bitis_tarihi DATE,
+            retroaktif_tarihi DATE,
+            sigortali_kurum VARCHAR(300),
+            teminat_limiti NUMERIC(20,2),
+            source_document TEXT,
+            created_by VARCHAR(200),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """, [
+        "CREATE INDEX idx_client_policies_client ON client_policies(client_id)",
+    ]),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

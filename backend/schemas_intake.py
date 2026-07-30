@@ -1,9 +1,9 @@
-# Otonom dava açma — çıkarım şemaları (Faz 2).
+# Otonom dava açma — çıkarım şemaları (Faz 2) + merge/hakem şemaları (Faz 3).
 # Gemini'ye response_schema olarak verilir (structured output); kalibrasyon
 # koşularıyla (calibration/run_calibration.py) itere edilmiş sürümdür.
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class IntakeParty(BaseModel):
@@ -78,3 +78,38 @@ class CriticalFieldCheck(BaseModel):
 
 class CaseIntakeVerification(BaseModel):
     kontroller: list[CriticalFieldCheck] = []
+
+
+# --- Katman 3: belgeler-arası hakem (Faz 3) ---
+# Merge esas_no/mahkeme çelişkisi bulduğunda tüm belge özetlerini gören bir
+# hakem LLM çağrısı meşru farkları ayırt eder (yeni esas, istinaf, birleşen
+# dosya) ve gerekçeli karar döner. Çelişki yoksa hakem çağrılmaz.
+
+
+class ArbiterDecision(BaseModel):
+    alan: str                                  # "esas_no" | "court"
+    secilen_deger: str                         # adaylardan biri, AYNEN
+    gerekce: str                               # sihirbazda gösterilen kısa gerekçe
+
+
+class CaseIntakeArbitration(BaseModel):
+    kararlar: list[ArbiterDecision] = []
+
+
+# --- Merge endpoint istek şemaları (Faz 3) ---
+
+
+class MergeDocumentIn(BaseModel):
+    process_id: str
+    filename: str
+    # /analyze terminal olayındaki data aynen geri gelir — alan seti motora
+    # bağlı evrildiğinden serbest şekilli tutulur (merge servisi toleranslı okur)
+    extraction: dict
+
+
+class CaseIntakeMergeRequest(BaseModel):
+    documents: list[MergeDocumentIn] = Field(..., min_length=1, max_length=15)
+
+
+class KeepaliveRequest(BaseModel):
+    process_ids: list[str] = Field(..., min_length=1, max_length=50)

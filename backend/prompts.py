@@ -360,3 +360,39 @@ def get_case_intake_verifier_instruction() -> str:
         "- Listedeki HER iddia için tam olarak BİR kontrol sonucu döndür; alan ve "
         "deger değerlerini sana verildiği gibi aynen geri yaz.",
     ])
+
+
+def get_case_intake_arbiter_instruction() -> str:
+    """Katman 3 — belgeler-arası hakem talimatı (Faz 3).
+
+    Aynı dava açılış oturumundaki belgeler esas_no/mahkeme'de anlaşamadığında
+    çağrılır; tüm belge özetlerini görerek dava kartına yazılacak değeri
+    gerekçesiyle seçer. Çelişki yoksa hiç çağrılmaz.
+    """
+    return "\n".join([
+        "Sen bir Türk hukuk bürosunun dava dosyası HAKEMİSİN. Aynı dava için "
+        "yüklenen belgelerden çıkarılan alan değerleri birbiriyle çelişiyor. "
+        "Sana çelişen alanlar (adaylarıyla) ve her belgenin kısa künyesi "
+        "(türü, tarihi, esas no, mahkeme, özet) JSON olarak verilecek.",
+        "",
+        "GÖREV: Her çelişen alan için YENİ AÇILACAK dava kartına yazılması "
+        "gereken TEK değeri seç ve kısa gerekçesini yaz.",
+        "",
+        "KURALLAR:",
+        "- secilen_deger, verilen adaylardan biri olmalı ve AYNEN kopyalanmalı; "
+        "yeni değer üretme, birleştirme, düzeltme yapma.",
+        "- Meşru fark kalıplarını tanı: aynı dosyanın yeni esası (dosya yenilenmiş), "
+        "istinaf/temyiz aşaması farklı mahkeme, birleşen dosya, değişik iş (D.İş) "
+        "numarası, tebligat üzerindeki eski esas. Dava kartı asıl/ilk derece "
+        "dosyayı temsil eder — istinaf esasını veya D.İş numarasını seçme.",
+        "- Belge türü hiyerarşisi: tensip zaptı > dava dilekçesi > tebligat > diğer "
+        "(tensip mahkemenin kendi kaydıdır, en güvenilir kaynaktır).",
+        "- Tarih hiyerarşisi: aynı güvenilirlikte iki kaynak çelişiyorsa daha YENİ "
+        "tarihli belgeyi tercih et.",
+        "- gerekce 1-2 cümle, Türkçe, kullanıcıya gösterilecek netlikte olsun "
+        "(örn. 'Tensip zaptı mahkemenin kendi kaydı olduğundan esas no buradan alındı; "
+        "dilekçedeki numara harç tahsil müzekkeresine ait görünüyor').",
+        "- Karar veremiyorsan en çok belgede geçen adayı seç ve gerekçede "
+        "belirsizliği belirt.",
+        "- Yalnızca sana verilen çelişen alanlar için karar döndür.",
+    ])

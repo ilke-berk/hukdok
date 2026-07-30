@@ -221,6 +221,37 @@ class Client(Base):
 
     # When a client is deleted, set client_id to NULL in case_parties (don't delete the party row)
     case_parties = relationship("CaseParty", back_populates="client", passive_deletes=True)
+    policies = relationship("ClientPolicy", back_populates="client", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class ClientPolicy(Base):
+    """Hekim (client) başına kalıcı poliçe kaydı — otonom dava açma Faz 3.
+
+    Poliçe bir kez kaydedilir, sonraki davalarda otomatik önerilir; dönem
+    çakışması uyarısı kalıcı veriyle çalışır (plan Kararlar #3). Kayıtlar
+    intake sihirbazının analiz çıktısından beslenir veya müvekkil kartından
+    elle girilir. Tenant'ı client üzerinden taşır (ortak havuz modeli).
+    """
+    __tablename__ = "client_policies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    police_no = Column(String(100), nullable=True)          # yenileme no dahil ("92804147/4")
+    police_turu = Column(String(20), nullable=True)         # ZORUNLU | TAMAMLAYICI | DIGER
+    sigorta_sirketi = Column(String(200), nullable=True)
+    baslangic_tarihi = Column(Date, nullable=True)          # poliçe dönemi başı
+    bitis_tarihi = Column(Date, nullable=True)              # poliçe dönemi sonu
+    retroaktif_tarihi = Column(Date, nullable=True)         # geçmişe etkinlik — teminatın asıl başlangıcı
+    sigortali_kurum = Column(String(300), nullable=True)    # hekimin bağlı olduğu kurum / sigorta ettiren
+    teminat_limiti = Column(Numeric(precision=20, scale=2), nullable=True)  # olay başına (TL)
+
+    source_document = Column(String, nullable=True)         # beslendiği belge adı; elle girişte NULL
+    created_by = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+    client = relationship("Client", back_populates="policies")
 
 class DocType(Base):
     __tablename__ = "doctypes" # BelgeTuru

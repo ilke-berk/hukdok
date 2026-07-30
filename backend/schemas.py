@@ -76,6 +76,32 @@ class PartyRoleItem(BaseModel):
     role_type: str = "MAIN"
 
 
+class ClientPolicyCreate(BaseModel):
+    """Müvekkil poliçe kaydı — intake sihirbazından toplu veya karttan tekil besleme."""
+    police_no: Optional[str] = None
+    police_turu: Optional[str] = None          # ZORUNLU | TAMAMLAYICI | DIGER
+    sigorta_sirketi: Optional[str] = None
+    baslangic_tarihi: Optional[date] = None
+    bitis_tarihi: Optional[date] = None
+    retroaktif_tarihi: Optional[date] = None
+    sigortali_kurum: Optional[str] = None
+    teminat_limiti: Optional[float] = None
+    source_document: Optional[str] = None
+
+
+class ClientPolicySaveRequest(BaseModel):
+    policies: List[ClientPolicyCreate] = Field(..., min_length=1, max_length=30)
+
+
+class ClientPolicyRead(ClientPolicyCreate):
+    id: int
+    client_id: int
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ClientCreate(BaseModel):
     name: str
     tc_no: Optional[str] = None

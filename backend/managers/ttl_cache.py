@@ -39,6 +39,19 @@ class TTLCache:
         with self._lock:
             return self._store.pop(key, None) is not None
 
+    def touch(self, key: str) -> bool:
+        """Reset the entry's TTL clock without changing its value.
+
+        Returns False if the key is absent (already expired/evicted) —
+        callers surface this so the user can re-upload the document.
+        """
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return False
+            entry["_ts"] = time.time()
+            return True
+
     def __contains__(self, key: str) -> bool:
         with self._lock:
             return key in self._store

@@ -30,8 +30,12 @@ from google.genai import types as genai_types
 import analyzer
 from managers.log_manager import TechnicalLogger
 from party_check import normalize_person_name
-from prompts import get_case_intake_instruction, get_case_intake_verifier_instruction
-from schemas_intake import CaseIntakeExtraction, CaseIntakeVerification
+from prompts import (
+    get_case_intake_arbiter_instruction,
+    get_case_intake_instruction,
+    get_case_intake_verifier_instruction,
+)
+from schemas_intake import CaseIntakeArbitration, CaseIntakeExtraction, CaseIntakeVerification
 
 DEFAULT_INTAKE_MODEL = "models/gemini-3.6-flash"
 DEFAULT_ENSEMBLE_N = 3
@@ -228,6 +232,38 @@ def guess_doctype_code(belge_turu_tahmini: Optional[str], doctypes: List[Dict]) 
     if partial:
         return max(partial)[1]
     return None
+
+
+# =====================================================================
+# Katman 3 — belgeler-arası hakem (Faz 3; merge route'undan çağrılır)
+# =====================================================================
+
+
+async def arbitrate_conflicts(conflicts: List[Dict], doc_summaries: List[Dict]) -> List[Dict]:
+    """Merge'in bulduğu esas_no/mahkeme çelişkileri için hakem LLM kararı alır.
+
+    conflicts: services.case_intake.detect_conflicts çıktısı.
+    doc_summaries: services.case_intake.build_doc_summaries çıktısı.
+    Döner: [{alan, secilen_deger, gerekce}] — apply_arbitration'a gider.
+    Çelişki yoksa ÇAĞRILMAMALIDIR (plan: hakem yalnız çelişkide koşar).
+    Hata fırlatır — çağıran taraf hakemsiz (çoğunluk oyu) sonuca düşer.
+    """
+    config = genai_types.GenerateContentConfig(
+        system_instruction=get_case_intake_arbiter_instruction(),
+        response_mime_type="application/json",
+        response_schema=CaseIntakeArbitration,
+    )
+    payload_text = json.dumps(
+        {"celisen_alanlar": conflicts, "belgeler": doc_summaries},
+        ensure_ascii=False, indent=2, default=str,
+    )
+    stats: Dict[str, Any] = {"retry_count": 0, "retry_wait_ms": 0}
+    response = await analyzer._gemini_call_with_retry(
+        config, [payload_text], stats=stats, model=get_intake_model()
+    )
+    if response.text is None:
+        raise ValueError("Hakem yanıtı boş (olası güvenlik filtresi engeli).")
+    return CaseIntakeArbitration.model_validate_json(response.text).model_dump()["kararlar"]
 
 
 # =====================================================================

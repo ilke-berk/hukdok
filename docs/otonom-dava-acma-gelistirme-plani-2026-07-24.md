@@ -167,7 +167,7 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 | 0 | Örnek belge demetleri, kalibrasyon script'i, schema/prompt iterasyonu, alan seti taslağı | 1–2 g (çoğu dev-dışı) | — |
 | 1 | İş Kalemi 3 (takip paneli tek-Kaydet + PATCH null düzeltmesi) | 1–1.5 g | **Evet — anında UX kazanımı** |
 | 2 | Analyze endpoint + schema/prompt + ensemble/doğrulayıcı (`case_intake_analyzer`, `/analyze`) | 3–3.5 g | Kalibrasyon script'iyle test edilir |
-| 3 | Merge servisi + DB zenginleştirme + **kalıcı poliçe tablosu (migration + müvekkil kartı UI)** + endpoint + testler; keepalive | 3.5–4.5 g | Evet (API-tamam) |
+| 3 | Merge servisi + DB zenginleştirme + **kalıcı poliçe tablosu (migration + müvekkil kartı UI)** + endpoint + testler; keepalive — **TAMAMLANDI (2026-07-30)** | 3.5–4.5 g | Evet (API-tamam) |
 | 4 | Commit endpoint + testler | 1 g | Evet |
 | 5 | Sihirbaz frontend (4 adım + CaseList girişi) | 4–5 g | **Özellik burada çıkar** |
 | 6 | Sertleştirme | 1–2 g | Kalem kalem bağımsız |
@@ -185,6 +185,47 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 10. Çıkarılan alan kesin listesi: `caseIntakeFields.ts`'e ertelendi; Faz 5 cilası öncesi donmalı.
 
 **v2 notları:** analiz bitince kullanıcıya push/uygulama içi bildirim ("analiz bitti, incelemeye dön" — kullanıcı sihirbazda beklemesin); vekaletnameden avukat/uyap_lawyer çıkarımı.
+
+## Faz 3 durumu (2026-07-30 — TAMAMLANDI)
+
+- **Merge servisi** `backend/services/case_intake.py` (saf, DB/Gemini'siz): alan bazlı
+  çoğunluk oyu (payda = alanı dolu belge sayısı; esas_no beraberliği en yeni
+  belge_tarihi ile), dilekçe öncelikli subject/tazminat, açılış tarihi türetme,
+  taraf birleşimi (dava rolü > SIGORTALI; VEKIL taraf listesine girmez; sansürsüz
+  TC tercih), cari eşleşmesi (`match_client`: tc 1.0 / exact 0.95 / fuzzy 0.8,
+  kanonik ad önerisiyle), poliçe LİSTESİ (oy yok; relevant = açılış tarihi
+  retroaktif–bitiş aralığında; uç uca dönem = yenileme, çakışma DEĞİL).
+- **Katman 3 hakem**: `detect_conflicts` (esas_no/court ≥2 aday) →
+  `case_intake_analyzer.arbitrate_conflicts` (GEMINI_INTAKE_MODEL, structured
+  output `CaseIntakeArbitration`) → `apply_arbitration` (aday dışı hakem kararı
+  uygulanmaz, ARBITER_UNAPPLIED uyarısı; hakem hatası taslağı düşürmez,
+  ARBITER_FAILED ile çoğunluk sonucu korunur). Çelişki yoksa hakem çağrılmıyor
+  (testle doğrulandı).
+- **`POST /api/case-intake/merge`** (durumsuz) + **`/keepalive`** (TTLCache.touch —
+  yeni metod). Merge, listelenen process_id'lerin TTL'ini tazeler; süresi dolan
+  belge DOCUMENT_EXPIRED uyarısıyla işaretlenir. DB zenginleştirme route'ta:
+  tanıdık sorgu (check_parties, parties route'uyla aynı satır şekli), mükerrer
+  dava (find_matching_case → duplicate_case), müvekkil geçmişi örüntüleri
+  (priors: en sık file_type/sub_type/sorumlu avukat), bilinen mahkeme yazımı
+  önerisi (known_court_suggestion, ≥0.90 benzerlik).
+- **client_policies** (karar 3): migration #18 + `models.ClientPolicy` (client FK,
+  ON DELETE CASCADE) — lokal Postgres'te doğrulandı. Besleme
+  `client_manager.save_client_policies` (idempotent; dedupe = normalize
+  police_no + dönem başı). Endpoint'ler: GET/POST/DELETE
+  `/api/clients/{id}/policies` (GET dönem çakışması uyarısı döner). Müvekkil
+  kartı (ClientList Hızlı Bakış) poliçe listesi + amber çakışma uyarısı gösteriyor.
+- **Plan sapması (bilinçli):** merge poliçeyi DB'ye YAZMAZ (endpoint durumsuz
+  kalsın, kullanıcı vazgeçebilir) — kalıcı besleme sihirbaz commit'inde
+  (Faz 4) `save_client_policies`/POST policies ile yapılacak. Merge yanıtında
+  poliçeler client_id + saved bayrağıyla döner; kayıtlı poliçeler "kayıtlı
+  poliçe" kaynağıyla listeye karışır (karar 3: sonraki davada otomatik öneri).
+- **Faz 2 regresyon notu kapatıldı:** çok poliçeli belgede dönem seçimi artık
+  merge'de olay/açılış tarihine göre (relevant bayrağı); hiçbir dönem uymuyorsa
+  POLICY_PERIOD_MISMATCH uyarısı.
+- Test: `tests/test_case_intake_merge.py` (31 test — saf fonksiyonlar + merge/keepalive
+  route'ları monkeypatch'li). Tam suite 389 yeşil; ruff + mypy temiz; frontend
+  build + vitest (68) yeşil. Sıradaki iş: **Faz 4 (commit endpoint)** — kapsamına
+  poliçe beslemesi eklendi.
 
 ## Doğrulama (uçtan uca)
 1. **Faz 1:** dava detayında takip panelinde birden çok aşamada alan değiştir → tek Kaydet ile hepsi yazılmalı; aşama sekmesi değiştir → veri kaybolmamalı; tarih sil + kaydet → DB'de null olmalı (konteynerde pytest + elle UI).

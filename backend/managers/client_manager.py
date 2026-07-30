@@ -1,10 +1,70 @@
 """Müvekkil (Client) yazma işlemleri."""
 import logging
+import re
+import unicodedata
 
 from database import SessionLocal
 import models
 
 logger = logging.getLogger("AdminManager")
+
+
+def _policy_dedupe_key(police_no, baslangic_tarihi) -> tuple:
+    """Poliçe tekilleştirme anahtarı: normalize no + dönem başı.
+
+    Aynı poliçenin ikinci beslemesi (sihirbaz tekrar koşusu, aynı belge iki
+    davada) yeni satır AÇMAZ; aynı numaralı yenileme (farklı dönem) ayrı kayıttır.
+    services.case_intake._policy_key ile aynı semantik.
+    """
+    s = str(police_no or "").strip().upper()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+    return (re.sub(r"\s+", " ", s), str(baslangic_tarihi or ""))
+
+
+def save_client_policies(client_id: int, policies: list, created_by: str = None) -> dict:
+    """Poliçe listesini müvekkil kaydına idempotent besler (Faz 3).
+
+    policies: [{police_no, police_turu, sigorta_sirketi, baslangic_tarihi,
+                bitis_tarihi, retroaktif_tarihi, sigortali_kurum,
+                teminat_limiti, source_document}]
+    Döner: {"saved": n, "skipped": n} — skipped = zaten kayıtlı (dedupe anahtarı).
+    """
+    db = SessionLocal()
+    try:
+        existing = db.query(models.ClientPolicy).filter(
+            models.ClientPolicy.client_id == client_id
+        ).all()
+        existing_keys = {
+            _policy_dedupe_key(p.police_no, p.baslangic_tarihi) for p in existing
+        }
+        saved = skipped = 0
+        for p in policies:
+            key = _policy_dedupe_key(p.get("police_no"), p.get("baslangic_tarihi"))
+            if key in existing_keys:
+                skipped += 1
+                continue
+            existing_keys.add(key)
+            db.add(models.ClientPolicy(
+                client_id=client_id,
+                police_no=p.get("police_no"),
+                police_turu=p.get("police_turu"),
+                sigorta_sirketi=p.get("sigorta_sirketi"),
+                baslangic_tarihi=p.get("baslangic_tarihi"),
+                bitis_tarihi=p.get("bitis_tarihi"),
+                retroaktif_tarihi=p.get("retroaktif_tarihi"),
+                sigortali_kurum=p.get("sigortali_kurum"),
+                teminat_limiti=p.get("teminat_limiti"),
+                source_document=p.get("source_document"),
+                created_by=created_by,
+            ))
+            saved += 1
+        db.commit()
+        return {"saved": saved, "skipped": skipped}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def add_client(data: dict, tenant_id: str = None):

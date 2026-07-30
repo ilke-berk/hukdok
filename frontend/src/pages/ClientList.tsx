@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/components/system/PageSearch";
 import {
   Phone, Mail, MapPin, Loader2,
   Users, Gavel, Stethoscope, Building2, User2, UserPlus,
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
+  ShieldCheck, AlertTriangle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useClients, ClientData } from "../hooks/useClients";
+import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { useDebounce } from "../hooks/useDebounce";
 import { YetkiBelgesiModal } from "@/components/YetkiBelgesiModal";
 
@@ -21,6 +24,37 @@ import { FlowButton } from "@/components/flow/primitives";
 // Alanlar hooks/useClients.ts'teki ClientData'dan gelir; listede id her zaman dolu
 export interface Client extends ClientData {
   id: number;
+}
+
+// Kalıcı poliçe kaydı (client_policies) — otonom dava açma Faz 3
+interface ClientPolicy {
+  id: number;
+  police_no?: string | null;
+  police_turu?: string | null;          // ZORUNLU | TAMAMLAYICI | DIGER
+  sigorta_sirketi?: string | null;
+  baslangic_tarihi?: string | null;
+  bitis_tarihi?: string | null;
+  retroaktif_tarihi?: string | null;
+  sigortali_kurum?: string | null;
+  teminat_limiti?: number | null;
+  source_document?: string | null;
+}
+
+interface ClientPoliciesResponse {
+  policies: ClientPolicy[];
+  warnings: { code: string; message: string }[];
+}
+
+const POLICE_TURU_LABELS: Record<string, string> = {
+  ZORUNLU: "Zorunlu",
+  TAMAMLAYICI: "Tamamlayıcı",
+  DIGER: "Diğer",
+};
+
+function formatPolicyDate(iso?: string | null): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}.${m}.${y}` : iso;
 }
 
 const ITEMS_PER_PAGE = 12;
@@ -84,6 +118,19 @@ const ClientList = () => {
   const [selectedSpecialty, setSelectedSpecialty] = useState("all");
 
   const [yetkiBelgesiOpen, setYetkiBelgesiOpen] = useState(false);
+
+  // Kayıtlı poliçeler (client_policies) — seçili müvekkilin kartında listelenir
+  const { authRequest } = useAuthRequest();
+  const policiesQ = useQuery({
+    queryKey: ["client-policies", selectedClient?.id],
+    queryFn: async (): Promise<ClientPoliciesResponse> => {
+      const res = await authRequest(`/api/clients/${selectedClient!.id}/policies`, "GET");
+      if (res?.ok) return res.json();
+      return { policies: [], warnings: [] };
+    },
+    enabled: !!selectedClient,
+    staleTime: 60 * 1000,
+  });
 
   useEffect(() => {
     if (!isClientsLoading && !initialLoaded) setInitialLoaded(true);
@@ -537,6 +584,57 @@ const ClientList = () => {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Poliçeler (client_policies — otonom dava açma Faz 3) */}
+              {policiesQ.data && policiesQ.data.policies.length > 0 && (
+                <div className="bg-[var(--bg-sunken)] border border-[var(--border)] p-4">
+                  <div className="flex items-center gap-1.5 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] mb-2 pb-2 border-b border-[var(--border)]">
+                    <ShieldCheck className="w-3 h-3" />
+                    Poliçeler · {policiesQ.data.policies.length}
+                  </div>
+
+                  {policiesQ.data.warnings.map((w, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-2 mb-3 px-2.5 py-2 border border-[#c47a1e]/30 bg-[#c47a1e]/10 text-[#c47a1e] text-[11px] leading-snug"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{w.message}</span>
+                    </div>
+                  ))}
+
+                  <div className="grid gap-3">
+                    {policiesQ.data.policies.map(p => (
+                      <div key={p.id} className="border-l-2 border-[var(--brand)]/40 pl-2.5 grid gap-1 text-[12px]">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[var(--fg)]">
+                            {p.police_no || "Poliçe no yok"}
+                          </span>
+                          {p.police_turu && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 font-mono text-[9px] tracking-[0.14em] uppercase border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)]">
+                              {POLICE_TURU_LABELS[p.police_turu] || p.police_turu}
+                            </span>
+                          )}
+                        </div>
+                        {p.sigorta_sirketi && (
+                          <span className="text-[var(--fg-muted)] truncate">{toTitleCase(p.sigorta_sirketi)}</span>
+                        )}
+                        <span className="font-mono text-[11px] text-[var(--fg-muted)]">
+                          {formatPolicyDate(p.baslangic_tarihi)} – {formatPolicyDate(p.bitis_tarihi)}
+                          {p.retroaktif_tarihi && (
+                            <span title="Retroaktif tarih (geçmişe etkinlik)"> · retro {formatPolicyDate(p.retroaktif_tarihi)}</span>
+                          )}
+                        </span>
+                        {p.teminat_limiti != null && (
+                          <span className="text-[11px] text-[var(--fg-subtle)]">
+                            Teminat: {Number(p.teminat_limiti).toLocaleString("tr-TR")} TL
+                          </span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
