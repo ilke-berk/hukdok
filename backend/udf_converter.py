@@ -7,7 +7,7 @@ import tempfile
 import uuid
 import asyncio
 import zipfile
-from threading import Lock
+from threading import Lock, Semaphore
 # Security: Use defusedxml instead of xml.etree to prevent XML DoS attacks
 # (Billion Laughs, Quadratic Blowup, etc.)
 import defusedxml.ElementTree as ET
@@ -94,7 +94,9 @@ def validate_image_safety(image_bytes: bytes) -> Optional[PILImage.Image]:
         # BMP/TIFF are not supported by ReportLab directly — convert to RGB
         if img.format in ('BMP', 'TIFF'):
             TechnicalLogger.log("INFO", f"Converting {img.format} image to PNG-compatible RGB")
-            img = img.convert('RGB')
+            converted = img.convert('RGB')
+            img.close()  # açık BytesIO handle'ı serbest bırak
+            img = converted
 
         width, height = img.size
         total_pixels = width * height
@@ -106,7 +108,9 @@ def validate_image_safety(image_bytes: bytes) -> Optional[PILImage.Image]:
             width, height = img.size
             if width * height > MAX_IMAGE_PIXELS:
                 scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
-                img = img.resize((int(width * scale), int(height * scale)), PILImage.LANCZOS)
+                resized = img.resize((int(width * scale), int(height * scale)), PILImage.LANCZOS)
+                img.close()
+                img = resized
 
         return img
     except Exception as e:
@@ -295,8 +299,15 @@ class ParagraphHandler:
             buf = io.BytesIO()
             save_mode = pil.mode if pil.mode in ('RGB', 'RGBA', 'L') else 'RGB'
             if save_mode != pil.mode:
-                pil = pil.convert(save_mode)
-            pil.save(buf, format='PNG')
+                converted = pil.convert(save_mode)
+                pil.close()
+                pil = converted
+            try:
+                pil.save(buf, format='PNG')
+            finally:
+                # PNG serileştirildikten sonra raster ve altındaki BytesIO(raw)
+                # bellekte tutulmasın — build sonuna kadar canlı kalıyordu
+                pil.close()
             buf.seek(0)
 
             img = Image(buf)
@@ -437,14 +448,18 @@ class UDFConverter:
 
     def convert(self) -> str:
         """Main execution flow (Synchronous)."""
-        self._check_fonts()
-        self._parse_xml()
-        self._extract_global_content()
-        self._setup_page_properties()
-        self._setup_styles()
-        self._process_elements()
-        self._build_pdf()
-        self._cleanup()
+        try:
+            self._check_fonts()
+            self._parse_xml()
+            self._extract_global_content()
+            self._setup_page_properties()
+            self._setup_styles()
+            self._process_elements()
+            self._build_pdf()
+        finally:
+            # Hata yolunda da temizlik: XML ağacı + flowable'lar traceback
+            # frame'i üzerinden canlı kalıp GC'yi bekliyordu
+            self._cleanup()
         return self.output_path
 
     async def convert_async(self) -> str:
@@ -524,7 +539,21 @@ class UDFConverter:
                 raw = base64.b64decode(data)
                 pil = validate_image_safety(raw)
                 if pil:
-                    self.bg_image = Image(io.BytesIO(raw))
+                    # Küçültülmüş PIL görüntüsünden gömülür. Orijinal `raw`'ı
+                    # gömmek boyut korumasını devre dışı bırakıyordu: dev
+                    # arkaplan her sayfada tam boy decode ediliyordu.
+                    buf = io.BytesIO()
+                    save_mode = pil.mode if pil.mode in ('RGB', 'RGBA', 'L') else 'RGB'
+                    if save_mode != pil.mode:
+                        converted = pil.convert(save_mode)
+                        pil.close()
+                        pil = converted
+                    try:
+                        pil.save(buf, format='PNG')
+                    finally:
+                        pil.close()
+                    buf.seek(0)
+                    self.bg_image = Image(buf)
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Arkaplan görseli işlenemedi: {type(e).__name__}")
         elif source:
@@ -707,6 +736,14 @@ class UDFConverter:
         self.pdf_elements = None
         self.content_text = None
         self.root = None
+        self.bg_image = None
+        self.header_paragraphs = None
+        self.footer_paragraphs = None
+
+# Görselli UDF dönüşümü görsel başına birden çok bellek kopyası üretir;
+# eşzamanlı dönüşümler ana süreçte tepe tahsisi katlıyordu (2026-07-29 OOM)
+_convert_semaphore = Semaphore(1)
+
 
 def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tuple:
     """Wrapper function for synchronous conversion. Returns (output_path, image_warnings)."""
@@ -715,7 +752,8 @@ def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tupl
         output_path = os.path.join(temp, f"udf_{uuid.uuid4().hex[:8]}.pdf")
 
     converter = UDFConverter(udf_path, output_path)
-    path = converter.convert()
+    with _convert_semaphore:
+        path = converter.convert()
     return path, converter.image_warnings
 
 async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = None) -> str:

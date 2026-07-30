@@ -7,6 +7,7 @@ Pillow (TIFF/JPG/PNG → PDF) kullanarak dosyaları arşivleme standardı
 olan PDF/A-2b formatına dönüştürür.
 """
 
+import functools
 import os
 import subprocess
 import tempfile
@@ -151,7 +152,9 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             TechnicalLogger.log("INFO", f"✅ PDF → PDF/A-2b başarılı: {output_pdf} ({file_size:.1f} KB)")
             return output_pdf
         else:
-            error_msg = result.stderr or "Bilinmeyen hata"
+            # stderr kırpılır: taranmış PDF'lerde GS nesne başına uyarı basar,
+            # tam çıktı TechnicalLogger buffer'ına MB'lık kalıcı kayıt gömüyordu
+            error_msg = (result.stderr or "Bilinmeyen hata")[:2048]
             raise Exception(f"GhostScript hatası: {error_msg}")
             
     except subprocess.TimeoutExpired:
@@ -222,8 +225,10 @@ def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
         raise
 
 
+@functools.lru_cache(maxsize=1)
 def _find_ghostscript() -> Optional[str]:
-    """GhostScript executable'ını bul."""
+    """GhostScript executable'ını bul (sonuç cache'lenir — binary yolu değişmez;
+    aksi halde her dönüşüm fazladan `--version` alt süreçleri doğuruyordu)."""
     # Windows için olası yollar
     possible_paths = [
         r"C:\Program Files\gs\gs10.06.0\bin\gswin64c.exe",  # Latest installed version

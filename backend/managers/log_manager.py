@@ -174,7 +174,8 @@ class LogManager:
 import threading
 import re
 import json
-from typing import Optional, Dict, List
+from collections import deque
+from typing import Deque, Dict, Optional
 
 try:
     from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint
@@ -204,8 +205,14 @@ _LEVEL_MAP = {
 
 
 class TechnicalLogger:
-    _buffer: List[Dict] = []
+    # Tavanlı buffer: SharePoint'e ulaşılamayan ya da hiç ERROR üretmeyen
+    # prod'da sınırsız büyüyüp kalıcı anonim bellek tüketiyordu (2026-07-29
+    # OOM incelemesi). Tavana ulaşınca en eski kayıt düşer.
+    _MAX_BUFFER_ENTRIES = 2000
+    _MAX_MESSAGE_CHARS = 4000
+    _buffer: Deque[Dict] = deque(maxlen=_MAX_BUFFER_ENTRIES)
     _lock = threading.Lock()
+    _sync_lock = threading.Lock()
     # Faz 3.3 (K10): kayıtlar standart logging'e de delege edilir; handler ve
     # format tek yerden (root logging config) yönetilir. API yüzeyi değişmedi.
     _std_logger = logging.getLogger("TechnicalLogger")
@@ -217,7 +224,7 @@ class TechnicalLogger:
         If level is CRITICAL/ERROR, triggers immediate sync to Cloud.
         """
         timestamp = datetime.now().isoformat()
-        masked_message = mask_sensitive_data(str(message))
+        masked_message = mask_sensitive_data(str(message)[: TechnicalLogger._MAX_MESSAGE_CHARS])
         log_entry = {
             "timestamp": timestamp,
             "level": level,
@@ -236,9 +243,14 @@ class TechnicalLogger:
         with TechnicalLogger._lock:
             TechnicalLogger._buffer.append(log_entry)
 
-        # Immediate sync for critical errors
+        # Immediate sync for critical errors. Ayrı thread'de: senkron SharePoint
+        # upload'ı çağıranı (async yolda event loop'un kendisini) kilitliyordu.
         if level in ["ERROR", "CRITICAL"]:
-            TechnicalLogger.sync_to_cloud()
+            threading.Thread(
+                target=TechnicalLogger.sync_to_cloud,
+                name="technical-log-sync",
+                daemon=True,
+            ).start()
 
     @staticmethod
     def sync_to_cloud():
@@ -246,6 +258,17 @@ class TechnicalLogger:
         Dumps RAM buffer to a JSON file and uploads to SharePoint.
         Then clears the buffer.
         """
+        # Zaten koşan bir senkron varsa yenisini başlatma — kayıtlar buffer'da,
+        # sıradaki senkron alır (ERROR başına thread yığılmasını önler)
+        if not TechnicalLogger._sync_lock.acquire(blocking=False):
+            return
+        try:
+            TechnicalLogger._sync_to_cloud_locked()
+        finally:
+            TechnicalLogger._sync_lock.release()
+
+    @staticmethod
+    def _sync_to_cloud_locked():
         with TechnicalLogger._lock:
             if not TechnicalLogger._buffer:
                 return
@@ -283,9 +306,14 @@ class TechnicalLogger:
             # Clean up temp file
             os.remove(temp_filepath)
 
-            # Clear buffer only on success
+            # Yalnızca senkronlanan kayıtları düş: upload sürerken eklenen
+            # yeni kayıtlar buffer'da kalır (önceden komple sıfırlanıp
+            # aradaki kayıtlar kayboluyordu)
             with TechnicalLogger._lock:
-                TechnicalLogger._buffer = []
+                synced_ids = set(map(id, data_to_sync))
+                remaining = [e for e in TechnicalLogger._buffer if id(e) not in synced_ids]
+                TechnicalLogger._buffer.clear()
+                TechnicalLogger._buffer.extend(remaining)
 
         except Exception as e:
             logger.error(f"Technical Sync Failed: {e}")

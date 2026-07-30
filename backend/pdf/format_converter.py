@@ -7,15 +7,18 @@ normalizasyon adımı hem de pdf_converter'ın PDF/A hattı bu modülü kullanı
 böylece dönüşüm mantığı tek yerde durur.
 """
 
+import functools
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
+import fitz
 from PIL import Image, ImageSequence
 
 try:
@@ -43,6 +46,10 @@ LIBREOFFICE_TIMEOUT = 120
 # Aynı anda en fazla 2 soffice süreci — her biri ~200MB RAM tüketebilir
 _office_semaphore = threading.Semaphore(2)
 
+# Görüntü dönüşümü tek tek: eşzamanlı dev taramalar ana süreçte GB mertebesinde
+# tepe tahsis yapıp glibc arena'larında kalıcı RSS bırakıyor (2026-07-29 OOM)
+_image_semaphore = threading.Semaphore(1)
+
 
 def ensure_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     """
@@ -68,29 +75,61 @@ def ensure_pdf(source_path: str, output_path: Optional[str] = None) -> str:
 
 
 def _normalize_frame(frame: Image.Image) -> Image.Image:
-    """PDF'e gömülemeyen modları (P/RGBA/CMYK/I;16/1...) RGB'ye çevirir, dev kareleri küçültür."""
-    img = frame
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-    else:
-        # ImageSequence iterator'ı aynı buffer'ı yeniden kullanır — kopya şart
-        img = img.copy()
+    """PDF'e gömülemeyen modları RGB'ye çevirir, dev kareleri küçültür.
 
+    Boyut kararı ORİJİNAL mod üzerinde verilir: 1-bit G4 tarama (mode "1")
+    RGB'ye açılınca 24 kat şişer; önce açıp sonra ölçmek 600 dpi A4 sayfayı
+    limitlerin altında bırakıp kare başına ~100 MB tahsis ettiriyordu.
+    """
+    img = frame
     width, height = img.size
-    if width * height > MAX_IMAGE_PIXELS or width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
+    oversized = width * height > MAX_IMAGE_PIXELS or width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT
+
+    if oversized:
         TechnicalLogger.log("WARNING", f"Oversized image frame {width}x{height}, resizing to fit limits")
+        # LANCZOS 1-bit üzerinde çalışmaz; griye aç (RGB değil — 3x küçük)
+        if img.mode == "1":
+            img = img.convert("L")
+        elif img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        else:
+            img = img.copy()
         img.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT), Image.LANCZOS)
         width, height = img.size
         if width * height > MAX_IMAGE_PIXELS:
-            scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
-            img = img.resize((int(width * scale), int(height * scale)), Image.LANCZOS)
+            img = img.resize(
+                (int(width * (MAX_IMAGE_PIXELS / (width * height)) ** 0.5),
+                 int(height * (MAX_IMAGE_PIXELS / (width * height)) ** 0.5)),
+                Image.LANCZOS,
+            )
+        return img
 
-    return img
+    if img.mode in ("RGB", "L", "1"):
+        # "1" olduğu gibi kalır (PDF'e CCITT ile gömülür). ImageSequence
+        # iterator'ı aynı buffer'ı yeniden kullanır — kopya şart.
+        return img.copy()
+    return img.convert("RGB")
+
+
+def _merge_single_page_pdfs(page_paths: List[str], output_path: str) -> None:
+    """Tek sayfalık PDF'leri sırayla tek dosyada birleştirir (fitz)."""
+    merged = fitz.open()
+    try:
+        for page_path in page_paths:
+            with fitz.open(page_path) as page_doc:
+                merged.insert_pdf(page_doc)
+        merged.save(output_path)
+    finally:
+        merged.close()
 
 
 def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     """
     Görüntüyü (çok sayfalı TIFF dahil) PDF'e çevirir (Pillow).
+
+    Kareler tek tek işlenip tek sayfalık ara PDF'lere yazılır ve fitz ile
+    birleştirilir — tüm kareleri aynı anda bellekte tutmak çok sayfalı
+    taramalarda GB mertebesine çıkıyordu (2026-07-29 OOM kök nedeni).
 
     Returns:
         Üretilen PDF'in yolu
@@ -104,19 +143,30 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
             f"imgpdf_{os.getpid()}_{uuid.uuid4().hex[:8]}.pdf",
         )
 
+    page_paths: List[str] = []
     try:
-        with Image.open(source_path) as img:
-            frames = [_normalize_frame(frame) for frame in ImageSequence.Iterator(img)]
-
-        if not frames:
-            raise RuntimeError("Görüntüde sayfa bulunamadı")
-
-        frames[0].save(
-            output_path,
-            "PDF",
-            save_all=True,
-            append_images=frames[1:],
-        )
+        with _image_semaphore, Image.open(source_path) as img:
+            page_count = getattr(img, "n_frames", 1)
+            if page_count <= 1:
+                frame = _normalize_frame(img)
+                try:
+                    frame.save(output_path, "PDF")
+                finally:
+                    frame.close()
+                page_count = 1
+            else:
+                for raw_frame in ImageSequence.Iterator(img):
+                    frame = _normalize_frame(raw_frame)
+                    page_path = os.path.join(
+                        tempfile.gettempdir(),
+                        f"imgpg_{os.getpid()}_{uuid.uuid4().hex[:8]}.pdf",
+                    )
+                    try:
+                        frame.save(page_path, "PDF")
+                    finally:
+                        frame.close()
+                    page_paths.append(page_path)
+                _merge_single_page_pdfs(page_paths, output_path)
     except RuntimeError:
         raise
     except Exception as e:
@@ -124,11 +174,17 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
         raise RuntimeError(
             "Görüntü dosyası PDF'e dönüştürülemedi. Dosya bozuk veya desteklenmeyen bir format olabilir."
         ) from e
+    finally:
+        for page_path in page_paths:
+            try:
+                os.remove(page_path)
+            except OSError:
+                pass
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
         raise RuntimeError("Görüntü → PDF dönüşümü çıktı üretemedi")
 
-    TechnicalLogger.log("INFO", f"Görüntü → PDF tamamlandı: {output_path} ({len(frames)} sayfa)")
+    TechnicalLogger.log("INFO", f"Görüntü → PDF tamamlandı: {output_path} ({page_count} sayfa)")
     return output_path
 
 
@@ -170,20 +226,38 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
 
     try:
         with _office_semaphore:
-            result = subprocess.run(
+            # soffice bir wrapper script: timeout'ta yalnız wrapper'ı öldürmek
+            # soffice.bin'i yetim bırakır (~200 MB). Yeni oturum + grup kill şart.
+            popen_kwargs = {"start_new_session": True} if os.name == "posix" else {}
+            proc = subprocess.Popen(
                 lo_command,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 # LO çıktısı ham bayt içerebilir; errors="replace" olmadan
                 # decode UnicodeDecodeError fırlatır (bkz. pdf_converter GS notu)
                 encoding="utf-8",
                 errors="replace",
-                timeout=LIBREOFFICE_TIMEOUT,
+                **popen_kwargs,
             )
+            try:
+                lo_stdout, lo_stderr = proc.communicate(timeout=LIBREOFFICE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                else:
+                    proc.kill()
+                proc.communicate()
+                raise
 
         produced_pdf = os.path.join(work_dir, Path(source_path).stem + ".pdf")
         if not os.path.exists(produced_pdf):
-            error_msg = (result.stderr or result.stdout or "").strip() or "Dosya oluşturulamadı"
+            # stderr kırpılır: tam çıktı TechnicalLogger buffer'ına gömülüp
+            # kalıcı MB'lık kayıtlar üretiyordu
+            error_msg = ((lo_stderr or lo_stdout or "").strip() or "Dosya oluşturulamadı")[:2048]
             raise RuntimeError(f"LibreOffice dönüşüm hatası: {error_msg}")
 
         if output_path is None:
@@ -203,8 +277,10 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
         shutil.rmtree(profile_dir, ignore_errors=True)
 
 
+@functools.lru_cache(maxsize=1)
 def find_libreoffice() -> Optional[str]:
-    """LibreOffice executable'ını bul."""
+    """LibreOffice executable'ını bul (sonuç cache'lenir — binary yolu değişmez;
+    aksi halde her dönüşüm fazladan `--version` alt süreçleri doğuruyordu)."""
     # Windows için olası yollar
     possible_paths = [
         r"C:\Program Files\LibreOffice\program\soffice.exe",

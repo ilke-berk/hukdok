@@ -21,6 +21,7 @@ def load_and_analyze_pdf(pdf_path):
     Returns:
         (needs_ocr: bool, extracted_text: str|None, reason: str)
     """
+    doc = None
     try:
         doc = fitz.open(pdf_path)
         full_text = []
@@ -33,7 +34,6 @@ def load_and_analyze_pdf(pdf_path):
             return True, None, "EMPTY_FILE"
 
         if total_pages > MAX_PDF_PAGES:
-            doc.close()
             logging.warning(f"PDF rejected: {total_pages} pages exceeds limit of {MAX_PDF_PAGES}")
             raise ValueError(f"PDF çok fazla sayfa içeriyor: {total_pages}. Maksimum {MAX_PDF_PAGES} sayfa.")
 
@@ -77,8 +77,6 @@ def load_and_analyze_pdf(pdf_path):
             # Early Exit: If we found both issues, we can technically stop analyzing for 'reasons'
             # but we continue to collect 'full_text' in case we can use it as fallback.
 
-        doc.close()
-
         # Combine text
         combined_text = "\n".join(full_text)
 
@@ -101,6 +99,11 @@ def load_and_analyze_pdf(pdf_path):
     except Exception as e:
         logging.error(f"PDF Analysis Error: {e}")
         return True, None, f"ERROR: {e}"
+    finally:
+        # İstisna yolunda da kapat: açık kalan MuPDF store'u (font/görsel
+        # cache) native bellekte, traceback döngüsü GC'yi geciktirir
+        if doc is not None:
+            doc.close()
 
 
 BLANK_PAGE_CHAR_THRESHOLD = 200  # Bu karakterden azsa metin yetersiz sayılır
@@ -150,35 +153,47 @@ def extract_key_pages(pdf_path: str) -> str:
     Returns:
         Kullanılacak PDF'nin yolu — orijinal veya yeni temp dosya.
     """
+    new_doc = None
     doc = fitz.open(pdf_path)
-    total = len(doc)
+    try:
+        total = len(doc)
 
-    if total <= 3:
+        if total <= 3:
+            return pdf_path
+
+        last = total - 1
+
+        # Her pozisyon için boşluk kontrolü ve kayma
+        p0 = _find_non_blank(doc, 0,    +1, 0, last)      # 1. sayfa: ileri kay
+        p1 = _find_non_blank(doc, 1,    +1, 0, last)      # 2. sayfa: ileri kay
+        p_last = _find_non_blank(doc, last, -1, 0, last)  # Son sayfa: geri kay
+
+        pages_to_keep = sorted({p0, p1, p_last})
+
+        logging.info(
+            f"extract_key_pages: {total} sayfa, secilen indeksler: {pages_to_keep} "
+            f"(p0={p0}, p1={p1}, son={p_last})"
+        )
+
+        new_doc = fitz.open()
+        for p in pages_to_keep:
+            new_doc.insert_pdf(doc, from_page=p, to_page=p)
+
+        fd, output_path = tempfile.mkstemp(suffix="_trimmed.pdf")
+        os.close(fd)
+        try:
+            new_doc.save(output_path)
+        except Exception:
+            # Kaydedilemeyen temp dosya çağırana dönmez ve hiç silinmezdi
+            try:
+                os.remove(output_path)
+            except OSError:
+                pass
+            raise
+
+        return output_path
+    finally:
+        # İstisna yolunda da kapat: MuPDF store'u native bellekte kalıyordu
+        if new_doc is not None:
+            new_doc.close()
         doc.close()
-        return pdf_path
-
-    last = total - 1
-
-    # Her pozisyon için boşluk kontrolü ve kayma
-    p0 = _find_non_blank(doc, 0,    +1, 0, last)      # 1. sayfa: ileri kay
-    p1 = _find_non_blank(doc, 1,    +1, 0, last)      # 2. sayfa: ileri kay
-    p_last = _find_non_blank(doc, last, -1, 0, last)  # Son sayfa: geri kay
-
-    pages_to_keep = sorted({p0, p1, p_last})
-
-    logging.info(
-        f"extract_key_pages: {total} sayfa, secilen indeksler: {pages_to_keep} "
-        f"(p0={p0}, p1={p1}, son={p_last})"
-    )
-
-    new_doc = fitz.open()
-    for p in pages_to_keep:
-        new_doc.insert_pdf(doc, from_page=p, to_page=p)
-    doc.close()
-
-    fd, output_path = tempfile.mkstemp(suffix="_trimmed.pdf")
-    os.close(fd)
-    new_doc.save(output_path)
-    new_doc.close()
-
-    return output_path

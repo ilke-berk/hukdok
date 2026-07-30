@@ -339,7 +339,10 @@ async def save_extra_attachments(extra_attachment_files: list) -> list:
             try:
                 extra_suffix = Path(extra_file.filename).suffix
                 with tempfile.NamedTemporaryFile(delete=False, suffix=extra_suffix) as etmp:
-                    etmp.write(await extra_file.read())
+                    # Chunk'lı okuma: tek seferlik read() 50 MB'a kadar tek
+                    # parça bytes tahsis ediyordu (ana upload zaten chunk'lı)
+                    while chunk := await extra_file.read(65536):
+                        etmp.write(chunk)
                     extra_temp_paths.append({"path": etmp.name, "name": extra_file.filename})
             except Exception as e:
                 TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
@@ -536,9 +539,10 @@ async def send_client_notice_email(
             results["client_notice_success"] = False
 
 
-def async_cleanup(temp_path, down_id=None, download_cache=None):
-    import time as t
-    t.sleep(30)
+async def async_cleanup(temp_path, down_id=None, download_cache=None):
+    # asyncio.sleep: senkron time.sleep(30) her /confirm'de 1-3 anyio
+    # threadpool token'ını 30 sn işgal edip havuzu kurutuyordu
+    await asyncio.sleep(30)
     if safe_remove(temp_path, retries=5):
         logging.info(f"Cleanup: Temp file deleted: {temp_path}")
     else:

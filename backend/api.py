@@ -261,12 +261,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Referans listelerine mükerrer kayıt girişimi tüm add endpoint'lerinden
 # yükselebilir; tek noktadan 409'a çevrilir (route'larda try/except tekrarı yerine).
-from managers.reference_lists import DuplicateItemError  # noqa: E402
+from managers.reference_lists import DuplicateItemError, ItemInUseError  # noqa: E402
 
 
 @app.exception_handler(DuplicateItemError)
 async def duplicate_item_handler(request, exc: DuplicateItemError):
     return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(ItemInUseError)
+async def item_in_use_handler(request, exc: ItemInUseError):
+    # Kullanımdaki liste öğesi silinemez; arayüz "kaç kayıt etkileniyor" bilgisini
+    # usage alanından okuyup boşalt/taşı seçeneklerini sunar.
+    return JSONResponse(status_code=409, content={"detail": str(exc), "usage": exc.usage})
 # default_limits yalnızca middleware kayıtlıysa uygulanır — bu satır olmadan
 # hiçbir uçta hız sınırı yoktur.
 app.add_middleware(SlowAPIMiddleware)
@@ -296,9 +303,11 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, documents, processing, activity, export, parties
+from routes import config, clients, cases, debug, documents, processing, activity, export, parties
 
 app.include_router(config.router)
+# Bellek teşhisi (yalnız admin) — 2026-07-29 OOM incelemesi
+app.include_router(debug.router)
 app.include_router(clients.router)
 app.include_router(cases.router)
 app.include_router(parties.router)

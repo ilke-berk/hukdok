@@ -43,20 +43,29 @@ def _get_email_config() -> dict:
     }
 
 
-def _encode_attachment(file_path: str) -> tuple[str, int]:
+def _encode_attachment(file_path: str, cache: dict = None) -> tuple[str, int]:
     """
     PDF dosyasını base64 olarak encode eder.
-    
+
     Args:
         file_path: Dosya yolu
-        
+        cache: Verilirse sonuç yol anahtarıyla saklanır — çok alıcılı
+            gönderimde aynı dosyayı alıcı başına yeniden encode etmek
+            anlık ~3.7x dosya boyutu kadar tahsisi her turda tekrarlıyordu
+
     Returns:
         tuple: (base64_content, file_size_bytes)
     """
+    if cache is not None and file_path in cache:
+        return cache[file_path]
+
     with open(file_path, "rb") as f:
         content = f.read()
-    
-    return base64.b64encode(content).decode("utf-8"), len(content)
+
+    result = (base64.b64encode(content).decode("utf-8"), len(content))
+    if cache is not None:
+        cache[file_path] = result
+    return result
 
 
 def send_document_email(
@@ -66,7 +75,8 @@ def send_document_email(
     attachment_path: str,
     attachment_name: str,
     cc_emails: list[str] = None,
-    extra_attachments: list[dict] = None
+    extra_attachments: list[dict] = None,
+    attachment_cache: dict = None,
 ) -> dict:
     """
     PDF ekli e-posta gönderir (Çoklu Gönderim ve CC Desteği).
@@ -109,12 +119,13 @@ def send_document_email(
         token = get_graph_token()
 
         # 6. Dosyayı encode et
-        attachment_content, file_size = _encode_attachment(attachment_path)
+        attachment_content, file_size = _encode_attachment(attachment_path, attachment_cache)
         file_size_mb = file_size / (1024 * 1024)
 
-        # Boyut kontrolü - tek dosya limiti: 70MB, toplam limit: 70MB
-        MAX_SINGLE_MB = 70
-        MAX_TOTAL_MB = 70
+        # Boyut kontrolü — upload limitiyle (50 MB) hizalı; önceki 70 MB,
+        # sisteme hiç giremeyecek boyutta dosyanın base64 şişmesine izin veriyordu
+        MAX_SINGLE_MB = 50
+        MAX_TOTAL_MB = 50
 
         if file_size_mb > MAX_SINGLE_MB:
             logger.error(f"❌ Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)")
@@ -138,7 +149,7 @@ def send_document_email(
                 extra_path = extra.get("path", "")
                 extra_name = extra.get("name", "ek_belge")
                 if extra_path and os.path.exists(extra_path):
-                    extra_content, extra_size = _encode_attachment(extra_path)
+                    extra_content, extra_size = _encode_attachment(extra_path, attachment_cache)
                     extra_size_mb = extra_size / (1024 * 1024)
 
                     # Tek ek boyut kontrolü
@@ -535,7 +546,10 @@ def send_document_notification(
     
     # --- GÖNDERİM DÖNGÜSÜ (Bireysel Gönderim) ---
     results = []
-    
+
+    # Aynı ekler her alıcı için yeniden encode edilmesin (bkz. _encode_attachment)
+    encode_cache: dict = {}
+
     # Format: "Ad Soyad <email@domain.com>" veya sadece "email@domain.com"
     email_regex = re.compile(r'(.*)<(.+)>')
     
@@ -612,7 +626,8 @@ Saygılarımızla,
             attachment_path=pdf_path,
             attachment_name=filename,
             cc_emails=clean_cc_list if i == 0 else [],
-            extra_attachments=extra_attach_list
+            extra_attachments=extra_attach_list,
+            attachment_cache=encode_cache,
         )
         results.append(res)
 

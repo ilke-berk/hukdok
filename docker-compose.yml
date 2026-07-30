@@ -44,6 +44,10 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
       - PORT=8001 # Override default port
+      # glibc thread başına ayrı malloc arena açar; PDF/görüntü dönüşümünün dev
+      # geçici tahsisleri arena'larda kalıp RSS'i kalıcı yükseltiyordu
+      # (2026-07-29 OOM incelemesi). 2 arena, 2 vCPU için yeterli.
+      - MALLOC_ARENA_MAX=2
     # Load environment variables from backend/.env if it exists, or root .env
     env_file:
       - .env

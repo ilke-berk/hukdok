@@ -70,6 +70,59 @@ class TestImageToPdf:
         with pytest.raises(RuntimeError):
             image_to_pdf(str(src), str(tmp_path / "out.pdf"))
 
+    def test_multipage_1bit_g4_tiff_roundtrip(self, tmp_path):
+        # Adliye taramalarının tipik formatı: çok sayfalı 1-bit G4 TIFF.
+        # 2026-07-29 OOM kök nedeni bu yoldu — kareler RGB'ye açılıp listede
+        # tutuluyordu (24x şişme × tüm sayfalar aynı anda).
+        src = tmp_path / "g4.tif"
+        frames = [Image.new("1", (1200, 1600), 1) for _ in range(4)]
+        frames[0].save(
+            str(src), "TIFF", save_all=True, append_images=frames[1:], compression="group4"
+        )
+        out = image_to_pdf(str(src), str(tmp_path / "out.pdf"))
+        assert _pdf_page_count(out) == 4
+
+    def test_no_leftover_page_temps(self, tmp_path):
+        import glob
+        import tempfile as tf
+        src = tmp_path / "tarama.tif"
+        _make_tiff(str(src), pages=3)
+        before = set(glob.glob(os.path.join(tf.gettempdir(), "imgpg_*.pdf")))
+        image_to_pdf(str(src), str(tmp_path / "out.pdf"))
+        after = set(glob.glob(os.path.join(tf.gettempdir(), "imgpg_*.pdf")))
+        assert after == before
+
+
+class TestNormalizeFrame:
+    def test_1bit_mode_preserved(self):
+        # RGB'ye açmak sayfa başına 24x bellek demek — "1" olduğu gibi kalmalı
+        from pdf.format_converter import _normalize_frame
+        norm = _normalize_frame(Image.new("1", (100, 100), 1))
+        assert norm.mode == "1"
+
+    def test_oversized_1bit_downscaled_as_grayscale(self, monkeypatch):
+        # Küçültme kararı RGB dönüşümünden ÖNCE, orijinal mod üzerinde verilmeli
+        from pdf import format_converter as fc
+        monkeypatch.setattr(fc, "MAX_IMAGE_WIDTH", 500)
+        monkeypatch.setattr(fc, "MAX_IMAGE_HEIGHT", 500)
+        norm = fc._normalize_frame(Image.new("1", (1000, 800), 1))
+        assert max(norm.size) <= 500
+        assert norm.mode == "L"
+
+    def test_oversized_rgba_downscaled_to_rgb(self, monkeypatch):
+        from pdf import format_converter as fc
+        monkeypatch.setattr(fc, "MAX_IMAGE_WIDTH", 400)
+        monkeypatch.setattr(fc, "MAX_IMAGE_HEIGHT", 400)
+        norm = fc._normalize_frame(Image.new("RGBA", (800, 600), (10, 20, 30, 128)))
+        assert max(norm.size) <= 400
+        assert norm.mode == "RGB"
+
+    def test_returns_copy_not_original(self):
+        # ImageSequence iterator'ı buffer'ı yeniden kullanır — kopya şart
+        from pdf.format_converter import _normalize_frame
+        img = Image.new("L", (50, 50), 128)
+        assert _normalize_frame(img) is not img
+
 
 # ── ensure_pdf dispatch ──────────────────────────────────────────────────────
 
