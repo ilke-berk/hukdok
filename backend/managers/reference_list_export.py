@@ -36,6 +36,9 @@ def list_to_excel(list_type: str, today: date = None) -> bytes:
     from openpyxl.styles import Alignment, Font, PatternFill
 
     key = resolve_list_type(list_type)
+    if key is None:
+        # Route zaten 404 döndürüyor; burası doğrudan çağrılara karşı koruma
+        raise ValueError(f"Bilinmeyen liste türü: {list_type}")
     spec = LIST_REGISTRY[key]
     title = LIST_TITLES.get(key, key)
     columns = list(spec.fields)

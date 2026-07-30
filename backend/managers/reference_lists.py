@@ -331,7 +331,9 @@ def delete_item(list_type: str, identifier: str, mode: str = "block", target: st
         item = db.query(spec.model).filter(key_col == identifier).first()
         if not item:
             return False
-        old_name = getattr(item, "name", None)
+        # name'siz modelde (olmamalı) identifier'a düş — mesajlar ve
+        # bağımlı kayıt eşleştirmesi str bekler
+        old_name = getattr(item, "name", None) or str(identifier)
 
         affected = 0
         if mode in ("block", "clear"):
