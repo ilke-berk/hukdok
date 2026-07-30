@@ -66,7 +66,7 @@ if not GOOGLE_API_KEY:
 from gemini_client import get_client as get_gemini_client
 
 
-async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None):
+async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None, model: Optional[str] = None):
     """Gemini API çağrısını 429/503 hatalarında jitter'lı exponential backoff ile retry eder.
 
     503 (overloaded) genelde saniyeler içinde toparlanır → kısa backoff (base 1s).
@@ -74,13 +74,14 @@ async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, sta
     Her ikisinde de jitter eklenir (thundering-herd önlemek için), tavan 30s.
 
     stats: verilirse retry_count ve retry_wait_ms alanları doldurulur (benchmark için).
+    model: verilirse GEMINI_MODEL_NAME yerine kullanılır (intake motoru GEMINI_INTAKE_MODEL geçirir).
     """
     MAX_WAIT = 30.0  # saniye
     client = get_gemini_client(GOOGLE_API_KEY)
     for attempt in range(max_retries + 1):
         try:
             return await client.aio.models.generate_content(
-                model=GEMINI_MODEL_NAME, contents=payload, config=gen_config
+                model=model or GEMINI_MODEL_NAME, contents=payload, config=gen_config
             )
         except Exception as e:
             err_str = str(e)

@@ -303,7 +303,7 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, debug, documents, processing, activity, export, parties
+from routes import config, clients, cases, debug, documents, processing, activity, export, parties, case_intake
 
 app.include_router(config.router)
 # Bellek teşhisi (yalnız admin) — 2026-07-29 OOM incelemesi
@@ -313,6 +313,8 @@ app.include_router(cases.router)
 app.include_router(parties.router)
 app.include_router(documents.router)
 app.include_router(processing.router)
+# Otonom dava açma — intake analiz endpoint'i (Faz 2)
+app.include_router(case_intake.router)
 app.include_router(activity.router)
 # Hukukbot export API'si: Azure AD auth'un DIŞINDA, X-API-Key ile korunur.
 # Host nginx'e bağlanmaz — yalnızca iç Docker network'ünden erişilir (BULGULAR #5).

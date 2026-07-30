@@ -221,3 +221,142 @@ def get_system_instruction(
 </system_instruction>
 """
     return system_instruction
+
+
+# =====================================================================
+# Otonom dava açma — intake çıkarım talimatı (Faz 2).
+# Faz 0 kalibrasyonuyla (calibration/run_calibration.py) itere edilmiş
+# prompt v2; şeması schemas_intake.CaseIntakeExtraction.
+# =====================================================================
+
+
+def get_case_intake_instruction(
+    regex_hints: Optional[Dict] = None,
+    lawyer_names: Optional[List[str]] = None,
+    client_hints: Optional[List[str]] = None,
+    yargi_turleri: Optional[List[str]] = None,
+) -> str:
+    """Dava kartı odaklı çıkarım talimatı.
+
+    regex_hints: metinden ön-çıkarılan ipuçları (esas_no adayları, tarihler).
+    lawyer_names: büro avukat listesi (vekil ayıklama + uyap_lawyer eşleşmesi).
+    client_hints: FlashText'in belgede bulduğu kayıtlı müvekkil adları.
+    yargi_turleri: izinli yargı türü listesi (DB'den; yoksa varsayılan).
+    """
+    yargi_list = yargi_turleri or [
+        "Hukuk", "Ceza", "İcra", "İdari", "Arabuluculuk", "Savcılık",
+    ]
+
+    sections = [
+        "Sen bir Türk hukuk bürosunun dava açılış asistanısın. Sana verilen belge, "
+        "yeni açılacak bir dava dosyasının açılış evrakından BİRİDİR (dava dilekçesi, "
+        "tensip zaptı, tebligat mazbatası, sigorta poliçesi, vekaletname, sigorta "
+        "görevlendirme/atama yazısı vb.). Görevin bu belgeden dava kartı alanlarını "
+        "çıkarmak ve istenen JSON şemasını doldurmaktır.",
+        "",
+        "GENEL KURALLAR:",
+        "- Yalnızca belgede AÇIKÇA yazan bilgiyi çıkar. Tahmin etme, uydurma; "
+        "belgede olmayan alanı null bırak. Boş alan hatalı alandan iyidir.",
+        "- Tarihleri ISO biçiminde ver (YYYY-MM-DD).",
+        "- esas_no biçimi 'YYYY/N' (örn. 2024/123). 'E.', 'ESAS NO' etiketleriyle "
+        "geçer. Değişik iş (D.İş), talimat veya soruşturma numarasını esas_no sanma.",
+        "- mahkeme: daire numarası dahil TAM resmi ad (örn. 'ANKARA 3. ASLİYE HUKUK "
+        "MAHKEMESİ'). Belge başlığındaki mahkemeyi al; dilekçede '... MAHKEMESİNE' "
+        "hitabı da geçerli kaynaktır.",
+        f"- yargi_turu şu listeden seçilir: {', '.join(yargi_list)}. Mahkeme adından "
+        "türet (İdare/Vergi Mahkemesi → İdari; Asliye/Tüketici/İş/Asliye Ticaret → "
+        "Hukuk; Ağır Ceza/Asliye Ceza → Ceza; İcra Dairesi → İcra).",
+        "",
+        "TARAF KURALLARI (kritik):",
+        "- Tarafları YALNIZCA belgenin taraf/başlık bloğundan al (DAVACI:, DAVALI:, "
+        "MÜDAHİL:, İHBAR OLUNAN: etiketleri). Metin içinde adı geçen herkesi taraf yapma.",
+        "- Avukatları taraf olarak LİSTELEME; vekil bilgisi gerekiyorsa rol=VEKIL ile ver.",
+        "- tc_no yalnızca belgede yazılı T.C. kimlik numarasıysa doldur. SANSÜRLÜ ise "
+        "(örn. '***0959214*') yıldızlar DAHİL aynen aktar — görünen haneler kayıt "
+        "eşleştirmede kullanılır; yıldızları tamamlamaya veya tahmin etmeye çalışma.",
+        "- Poliçe belgesinde davacı/davalı yoktur: sigortalı HEKİMİ rol=SIGORTALI, "
+        "sigorta şirketini rol=SIGORTA_SIRKETI olarak taraflar listesine MUTLAKA yaz — "
+        "poliçede en az bu iki taraf her zaman vardır, boş taraf listesi dönme. "
+        "DİKKAT: 'Sigorta Ettiren' (prim ödeyen hastane/şirket) sigortalı DEĞİLDİR; "
+        "onu taraflara değil sigortali_kurum alanına yaz. Sigortalı, 'Sigortalı "
+        "Adı/Ünvanı' etiketli KİŞİDİR.",
+        "- Vekaletnamede vekalet VEREN kişiyi rol=DIGER ile ver (davadaki rolü bu "
+        "belgeden bilinemez); vekil tayin edilen avukatları rol=VEKIL ile ver.",
+        "",
+        "BELGE TÜRÜNE GÖRE ODAK:",
+        "- Dava dilekçesi: taraflar, mahkeme hitabı, dava_konusu (KONU/TALEP bölümü), "
+        "maddi/manevi tazminat (SONUÇ ve İSTEM bölümündeki harca esas değer), olay "
+        "anlatımından uzmanlik_tahmini (örn. estetik ameliyat türü, tıbbi işlem).",
+        "- Tensip zaptı: esas_no (en güvenilir kaynak), mahkeme, dava_acilis_tarihi, taraflar.",
+        "- Tebligat mazbatası/zarfı: teblig_tarihi, esas_no, mahkeme.",
+        "- Poliçe: police_no (yenileme no'suyla birlikte, örn. '92804147/4'), "
+        "sigorta_sirketi (TEMİNATI VEREN şirket; acente/broker DEĞİL), sigortalı hekim adı, "
+        "poliçe dönemi (police_baslangic_tarihi / police_bitis_tarihi), varsa "
+        "'Geçmişe Etkinlik / Retroaktif Tarih' → retroaktif_tarihi, police_turu: "
+        "'Tıbbi Kötü Uygulamaya İlişkin Zorunlu Mali Sorumluluk' → ZORUNLU, "
+        "'Tamamlayıcı Hekim Sorumluluk' → TAMAMLAYICI. sigortali_kurum: hekimin bağlı "
+        "olduğu kurum veya sigorta ettiren hastane/şirket. teminat_limiti: olay başına "
+        "teminat (TL). Hekimin uzmanlık dalı yazıyorsa uzmanlik_tahmini'ne yaz. "
+        "Aynı hekimin birden fazla poliçesi olabilir; SADECE bu belgedeki poliçeyi çıkar. "
+        "Belge bir zeyilname ise bunu belge_turu_tahmini'nde belirt.",
+        "- Sigorta görevlendirme/atama yazısı: hasar_dosya_no, hukuk_no, sigorta_sirketi, "
+        "sigortalı/ilgili hekim adı.",
+        "- belge_turu_tahmini alanına belgenin türünü serbest metinle yaz "
+        "(örn. 'Dava Dilekçesi', 'Tensip Zaptı', 'Sigorta Poliçesi').",
+        "",
+        "- ozet: 2-3 cümlelik nesnel özet — kim kime karşı, ne talep ediyor, hangi olay.",
+    ]
+
+    if lawyer_names:
+        sections += [
+            "",
+            "BÜRO AVUKATLARI (bu isimler büronun kendi avukatlarıdır; taraf DEĞİLDİR, "
+            "belgede vekil olarak geçerlerse rol=VEKIL ile işaretle):",
+            *[f"- {n}" for n in lawyer_names],
+        ]
+
+    if client_hints:
+        sections += [
+            "",
+            "KAYITLI MÜVEKKİL İPUCU (bu adlar büronun müvekkil kayıtlarıyla eşleşti; "
+            "belgede geçiyorlarsa taraf listesine almayı atlama):",
+            *[f"- {n}" for n in client_hints],
+        ]
+
+    if regex_hints:
+        sections += [
+            "",
+            "METİNDEN ÖN-ÇIKARILAN İPUÇLARI (doğrula; belgeyle çelişiyorsa belgeyi esas al):",
+            *[f"- {k}: {v}" for k, v in regex_hints.items() if v],
+        ]
+
+    return "\n".join(sections)
+
+
+def get_case_intake_verifier_instruction() -> str:
+    """Katman 2 — kritik alan doğrulayıcı geçişi talimatı.
+
+    Ensemble sonucundaki kritik değerler (esas_no, tc_no, taraf rolleri) için
+    ikinci bir çağrıyla "değer belgede geçiyor mu, kanıt cümlesi ne?" sorulur.
+    Kanıtsız değer düşük güvenli işaretlenir (sihirbazda rozet rengi).
+    """
+    return "\n".join([
+        "Sen bir Türk hukuk belgesi DOĞRULAMA asistanısın. Sana bir belge ve bu "
+        "belgeden çıkarıldığı iddia edilen alan değerlerinin listesi verilecek. "
+        "Görevin her iddiayı belgeye karşı TEK TEK kontrol etmektir; yeni bilgi "
+        "çıkarmak değil.",
+        "",
+        "KURALLAR:",
+        "- Her iddia için: deger belgede AÇIKÇA geçiyorsa belgede_geciyor=true yaz ve "
+        "kanit alanına belgeden geçtiği kısa cümleyi/ifadeyi AYNEN aktar.",
+        "- Değer belgede geçmiyorsa veya emin değilsen belgede_geciyor=false, kanit=null. "
+        "Şüphede false tercih et — yanlış onay yanlış redden kötüdür.",
+        "- alan 'rol:' ile başlıyorsa: adı verilen kişinin belgede o rol etiketi "
+        "altında (DAVACI:, DAVALI:, SİGORTALI vb.) yer alıp almadığını kontrol et.",
+        "- alan 'tc_no:' ile başlıyorsa: numara belgedeki değerle birebir eşleşmelidir; "
+        "sansürlü (yıldızlı) değerlerde yıldız düzeni dahil karşılaştır.",
+        "- Biçim farkı (boşluk, büyük/küçük harf, noktalama) eşleşmeyi BOZMAZ; "
+        "içerik farkı bozar.",
+        "- Listedeki HER iddia için tam olarak BİR kontrol sonucu döndür; alan ve "
+        "deger değerlerini sana verildiği gibi aynen geri yaz.",
+    ])
