@@ -20,6 +20,7 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 | `backfill_belge_turu_adi.py` | case_documents.belge_turu_adi backfill (dry-run varsayılan) |
 | `retag_tracking_nos.py` | Takip numaralarını yeniden etiketleme |
 | `normalize_lawyers.py` | responsible_lawyer_name'i canonical hale getirme (Track B) |
+| `normalize_list_names.py` | Referans listesi adlarını başlık formatına çevirme (dry-run varsayılan) |
 | `add_single_case.py` | Tek dava ekleme (psycopg2, elle) |
 | `check_sent_emails.py` | Graph API'den gönderilen mailleri kontrol |
 | `compare_emails_docs.py` | Mail ↔ belge kaydı karşılaştırması |

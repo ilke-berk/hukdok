@@ -1,10 +1,13 @@
 import logging
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from dependencies import get_current_user
-from schemas import ConfigItem, EmailItem, DeleteRequest, ReorderRequest, CourtTypeItem, PartyRoleItem, LawyerUpdateItem
+from schemas import (
+    ConfigItem, EmailItem, DeleteRequest, ReorderRequest, RenameRequest,
+    CourtTypeItem, PartyRoleItem, LawyerUpdateItem, ListUpdateRequest, ListDeleteRequest,
+)
 from managers.config_manager import DynamicConfig
 from managers.seed_data import seed_all_lists
 from managers.reference_lists import (
@@ -22,7 +25,8 @@ from managers.reference_lists import (
     get_specialties, add_specialty, delete_specialty,
     get_client_categories, add_client_category, delete_client_category,
     get_file_statuses, add_file_status, delete_file_status,
-    reorder_list,
+    reorder_list, rename_item, update_item, delete_item, get_usage,
+    resolve_list_type, LIST_REGISTRY,
 )
 
 router = APIRouter()
@@ -63,7 +67,9 @@ def get_lawyers_endpoint(user: dict = Depends(get_current_user)):
 
 @router.post("/api/config/lawyers")
 def api_add_lawyer(item: ConfigItem, user: dict = Depends(require_admin)):
-    success = add_lawyer(item.code, item.name, tc_no=item.tc_no, sicil_no=item.sicil_no)
+    success = add_lawyer(item.code, item.name, tc_no=item.tc_no, sicil_no=item.sicil_no,
+                         gorev=item.gorev, email=item.email, phone=item.phone,
+                         address=item.address, city=item.city)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add lawyer")
     return {"status": "success", "message": "Lawyer added"}
@@ -196,6 +202,85 @@ def api_delete_email(request: DeleteRequest, user: dict = Depends(require_admin)
     if not success:
         raise HTTPException(status_code=404, detail="Email not found")
     return {"status": "success", "message": "Email deleted"}
+
+
+# ─── RENAME / UPDATE / DELETE (tüm listeler için generic) ────────────────────
+
+@router.post("/api/config/rename")
+def api_rename_item(request: RenameRequest, user: dict = Depends(require_admin)):
+    """Yalnızca adı değiştirir — /api/config/update'in eski, dar kapsamlı hâli."""
+    result = rename_item(request.type, request.code, request.name)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    if result is False:
+        raise HTTPException(status_code=500, detail="Yeniden adlandırma başarısız")
+    return {"status": "success", "updated": result["updated"]}
+
+
+@router.get("/api/config/fields/{list_type}")
+def api_list_fields(list_type: str, user: dict = Depends(require_admin)):
+    """Listenin düzenlenebilir kolonları — arayüz düzenleme formunu buna göre kurar."""
+    key = resolve_list_type(list_type)
+    if not key:
+        raise HTTPException(status_code=404, detail="Bilinmeyen liste")
+    spec = LIST_REGISTRY[key]
+    return {"type": key, "key": spec.key, "editable": list(spec.editable)}
+
+
+@router.get("/api/config/export/{list_type}")
+def api_export_list(list_type: str, user: dict = Depends(get_current_user)):
+    """Listeyi Excel (.xlsx) olarak indirir — hukdok-<liste>-<tarih>.xlsx."""
+    if not resolve_list_type(list_type):
+        raise HTTPException(status_code=404, detail="Bilinmeyen liste")
+    from managers.reference_list_export import build_filename, list_to_excel
+    return Response(
+        content=list_to_excel(list_type),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{build_filename(list_type)}.xlsx"'},
+    )
+
+
+@router.get("/api/config/usage")
+def api_item_usage(type: str, code: str, user: dict = Depends(require_admin)):
+    """Öğenin adını taşıyan dava / müvekkil / belge sayısı — silme onayı için."""
+    if not resolve_list_type(type):
+        raise HTTPException(status_code=404, detail="Bilinmeyen liste")
+    usage = get_usage(type, code)
+    if usage is None:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    return usage
+
+
+@router.post("/api/config/update")
+def api_update_item(request: ListUpdateRequest, user: dict = Depends(require_admin)):
+    """Liste öğesini düzenler; ad değiştiyse bağlı kayıtlara yayar (updated = yansıyan kayıt)."""
+    if not resolve_list_type(request.type):
+        raise HTTPException(status_code=404, detail="Bilinmeyen liste")
+    result = update_item(request.type, request.code, request.fields)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı")
+    if result is False:
+        raise HTTPException(status_code=400, detail="Güncelleme başarısız — alanları kontrol edin")
+    return {"status": "success", "updated": result["updated"]}
+
+
+@router.post("/api/config/delete")
+def api_delete_item(request: ListDeleteRequest, user: dict = Depends(require_admin)):
+    """Liste öğesini siler. mode: block | clear | reassign | keep.
+
+    Kullanımdaki öğede mode="block" 409 döner (gövdede usage ile birlikte);
+    arayüz bunu "boşalt / başka değere taşı" seçimine çevirir.
+    """
+    if not resolve_list_type(request.type):
+        raise HTTPException(status_code=404, detail="Bilinmeyen liste")
+    if request.mode not in ("block", "clear", "reassign", "keep"):
+        raise HTTPException(status_code=400, detail="Geçersiz silme modu")
+    if request.mode == "reassign" and not request.target_code:
+        raise HTTPException(status_code=400, detail="Taşıma için hedef kayıt seçin")
+    result = delete_item(request.type, request.code, mode=request.mode, target=request.target_code)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kayıt bulunamadı veya silinemedi")
+    return {"status": "success", "affected": result["affected"]}
 
 
 # ─── REORDER ──────────────────────────────────────────────────────────────────

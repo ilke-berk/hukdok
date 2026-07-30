@@ -180,6 +180,7 @@ class Lawyer(Base):
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     address = Column(String, nullable=True)
+    city = Column(String, nullable=True)     # Şehir listesinden seçilir (Client.il ile aynı sözlük)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
 class Client(Base):

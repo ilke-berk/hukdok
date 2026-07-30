@@ -18,6 +18,7 @@ class ConfigItem(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    city: Optional[str] = None
 
 
 class EmailItem(BaseModel):
@@ -34,6 +35,26 @@ class DeleteRequest(BaseModel):
 class ReorderRequest(BaseModel):
     type: str
     ordered_ids: List[str]
+
+class RenameRequest(BaseModel):
+    type: str
+    code: str
+    name: str
+
+
+class ListUpdateRequest(BaseModel):
+    """Liste öğesi düzenleme — fields yalnızca ilgili listenin editable kolonlarını içerir."""
+    type: str
+    code: str
+    fields: Dict[str, Optional[str]]
+
+
+class ListDeleteRequest(BaseModel):
+    """Liste öğesi silme; mode bağlı kayıtlara ne olacağını belirler."""
+    type: str
+    code: str
+    mode: str = "block"          # "block" | "clear" | "reassign" | "keep"
+    target_code: Optional[str] = None   # mode="reassign" için hedef öğe kodu
 
 class LawyerUpdateItem(BaseModel):
     tc_no: Optional[str] = None

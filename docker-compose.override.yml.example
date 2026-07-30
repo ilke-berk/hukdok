@@ -7,6 +7,13 @@ services:
     volumes:
       # Hot-reload: lokal kaynak kodu konteynere bağlar (yalnızca geliştirme)
       - ./backend:/app
+    # TLS'e araya giren bir antivirüs (örn. AVG) varsa konteynerdeki HTTPS
+    # çağrıları CERTIFICATE_VERIFY_FAILED verir. Azure AD imza anahtarları (JWKS)
+    # çekilemeyince her istek 401 olur ve arayüz "Oturum süresi doldu" der.
+    # Çözüm bundle'ı: backend/calibration/README.md. Gerekmiyorsa bu bloğu silin.
+    environment:
+      - SSL_CERT_FILE=/app/calibration/ca_bundle.pem
+      - REQUESTS_CA_BUNDLE=/app/calibration/ca_bundle.pem
   frontend:
     ports:
       # Frontend'i 8000 portundan da servis et (isteğe bağlı)

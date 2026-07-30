@@ -327,6 +327,9 @@ _MIGRATIONS = [
     ("index", "clients", [
         "CREATE INDEX IF NOT EXISTS idx_clients_tc_no ON clients (tc_no)",
     ]),
+
+    # 17. AVUKAT ŞEHRİ — yönetim panelinde şehir listesinden seçilir
+    ("columns", "lawyers", {"city": "VARCHAR(100)"}),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
