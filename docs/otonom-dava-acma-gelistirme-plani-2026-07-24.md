@@ -71,6 +71,8 @@ Davranış:
 
 Intake çıkarım motoru belge yükleme hattından **tamamen bağımsız** kurulur — kendi prompt'u, kendi şeması, kendi işlem ayarları. Maliyet kısıtı yok. Sonuçları:
 
+- **Model (Faz 0 kalibrasyon kararı, 2026-07-30):** intake motoru `/process`'in flash-lite'ını DEĞİL, tam flash sınıfını kullanır (env `GEMINI_INTAKE_MODEL`, kalibrasyonda `models/gemini-3.6-flash`). Ölçüm: 16 poliçede sigortalı hekim çıkarımı flash-lite ensemble=3'te 9/15 (düşük anlaşma) iken 3.6-flash'ta **16/16 tam anlaşmayla** çıktı; uzmanlık 7/16→16/16. Koşu süresi ~2x, karar net.
+
 - **Sayfa kırpma YOK:** `/process`'in "ilk 2 + son sayfa" kırpması intake'te uygulanmaz; belge tam gönderilir (dava belgelerinde kritik bilgi ortada olabiliyor — en büyük doğruluk kazanımı).
 - **Katman 1 — Ensemble:** belge başına aynı çıkarım N=3 kez koşulur, alan bazında çoğunluk oyu. Tek seferlik halüsinasyon elenir.
 - **Katman 2 — Doğrulayıcı geçiş:** kritik alanlar (esas_no, taraf rolleri, tc_no) için ikinci çağrı: "değer belgede geçiyor mu, kanıt cümlesi ne?" Kanıtsız değer düşük güvenli işaretlenir → sihirbazda rozet rengi.
@@ -122,7 +124,7 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 
 ### Akış (tek sayfa, adım state'i)
 1. **Yükleme:** çoklu dosya dropzone (max ~15, `/process` uzantı beyaz listesi). "Analiz Et"e kadar işlem başlamaz.
-2. **Çıkarım ilerlemesi:** dosyalar sırayla (`useCaseIntake.analyzeFile`, NDJSON reader). Satır başına: ad, canlı durum, sonuç çipleri (esas no / mahkeme / N taraf) veya kırmızı "başarısız" (akış devam eder, başarısız belge merge dışı ama listede). Hepsi bitince otomatik `/merge`.
+2. **Çıkarım ilerlemesi:** dosyalar sırayla (`useCaseIntake.analyzeFile`, NDJSON reader). Adım başında ortalama süre beklentisi gösterilir ("N belge × ~X sn ≈ toplam ~Y dk" — X kalibrasyon ölçümünden sabitlenir, ensemble=3 ile belge başına ~25-30 sn). Satır başına: ad, canlı durum, sonuç çipleri (esas no / mahkeme / N taraf) veya kırmızı "başarısız" (akış devam eder, başarısız belge merge dışı ama listede). Hepsi bitince otomatik `/merge`. (v2: analiz bitince bildirim — kullanıcı sekmede beklemek zorunda kalmasın.)
 3. **İnceleme ("Dava Kartı Onayı") — UX'in kalbi:**
    - Alanlar **`caseIntakeFields.ts`**'ten render edilir:
      ```ts
@@ -165,18 +167,24 @@ Prompt: `prompts.py`'a `get_case_intake_instruction()` — dava kartı odaklı, 
 | 0 | Örnek belge demetleri, kalibrasyon script'i, schema/prompt iterasyonu, alan seti taslağı | 1–2 g (çoğu dev-dışı) | — |
 | 1 | İş Kalemi 3 (takip paneli tek-Kaydet + PATCH null düzeltmesi) | 1–1.5 g | **Evet — anında UX kazanımı** |
 | 2 | Analyze endpoint + schema/prompt + ensemble/doğrulayıcı (`case_intake_analyzer`, `/analyze`) | 3–3.5 g | Kalibrasyon script'iyle test edilir |
-| 3 | Merge servisi + DB zenginleştirme + endpoint + testler; keepalive | 2–2.5 g | Evet (API-tamam) |
+| 3 | Merge servisi + DB zenginleştirme + **kalıcı poliçe tablosu (migration + müvekkil kartı UI)** + endpoint + testler; keepalive | 3.5–4.5 g | Evet (API-tamam) |
 | 4 | Commit endpoint + testler | 1 g | Evet |
 | 5 | Sihirbaz frontend (4 adım + CaseList girişi) | 4–5 g | **Özellik burada çıkar** |
 | 6 | Sertleştirme | 1–2 g | Kalem kalem bağımsız |
 
-## Açık sorular (geliştirme sırasında onaylanacak)
-1. Sihirbaz durumu: sabit DERDEST önerisi (DANIŞ, `add_case`'te Client satırı atlıyor).
-2. Commit'te belge-başı bildirim e-postası: varsayılan kapalı toggle önerisi.
-3. Tiklenmemiş alan politikası: öneri verildi (boş olmayan AI değeri zorunlu tik, düzenlemede oto-tik) — kullanılırken kalibre edilir.
-4. Çıkarılan alan kesin listesi: `caseIntakeFields.ts`'e ertelendi; Faz 5 cilası öncesi donmalı.
-5. Oturum başına max belge (öneri 15); vekaletnameden avukat/uyap_lawyer çıkarımı → v2 adayı.
-6. Poliçelerin kalıcı saklanması: hekim (client) kaydına bağlı poliçe tablosu ister mi? V1'de poliçe bilgisi dava notes'una yazılır; kalıcı tablo DB migration gerektirir → kullanıcı kararı.
+## Kararlar (2026-07-30, kullanıcı onaylı — açık soru kalmadı)
+1. **Model:** intake motoru `models/gemini-3.6-flash` (env `GEMINI_INTAKE_MODEL`); yavaşlık kabul edildi, doğruluk öncelikli.
+2. **Ensemble N=3 kalıcı**; Katman 2 doğrulayıcı geçiş yalnız kritik alanlara (esas_no, TC, taraf rolleri).
+3. **Kalıcı poliçe tablosu (seçenek b):** hekim (client) kaydına bağlı `client_policies` tablosu — poliçe bir kez kaydedilir, sonraki davalarda otomatik önerilir, dönem çakışması uyarısı kalıcı veriyle çalışır. DB migration + müvekkil kartı UI'ı Faz 3'e eklendi (+1.5–2 gün).
+4. **Tazminat alanları sihirbaza DAHİL** (kalibrasyonda dilekçeden 5/5 güvenilir çıktı; plandaki "hariç" kararı geri alındı).
+5. Sihirbaz durumu: **sabit DERDEST**.
+6. Commit'te müvekkile e-posta: **varsayılan kapalı toggle**.
+7. Oturum başına **max 15 belge**. Çıkarım adımında UI'de **ortalama süre beklentisi** gösterilir ("belge başına ~X sn sürer" — kalibrasyon ölçümünden).
+8. `hasar_dosya_no`/`hukuk_no`: şimdilik kapsam dışı — kullanıcı sigorta atama yazısı örnekleri getirecek, alanlar o zaman kalibre edilip eklenecek.
+9. Tiklenmemiş alan politikası: boş olmayan AI değeri zorunlu tik, düzenlemede oto-tik — kullanılırken kalibre edilir.
+10. Çıkarılan alan kesin listesi: `caseIntakeFields.ts`'e ertelendi; Faz 5 cilası öncesi donmalı.
+
+**v2 notları:** analiz bitince kullanıcıya push/uygulama içi bildirim ("analiz bitti, incelemeye dön" — kullanıcı sihirbazda beklemesin); vekaletnameden avukat/uyap_lawyer çıkarımı.
 
 ## Doğrulama (uçtan uca)
 1. **Faz 1:** dava detayında takip panelinde birden çok aşamada alan değiştir → tek Kaydet ile hepsi yazılmalı; aşama sekmesi değiştir → veri kaybolmamalı; tarih sil + kaydet → DB'de null olmalı (konteynerde pytest + elle UI).
