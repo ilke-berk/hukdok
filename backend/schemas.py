@@ -261,6 +261,7 @@ class CaseCreate(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: Optional[float] = 0
     manevi_tazminat: Optional[float] = 0
+    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None
@@ -289,6 +290,7 @@ class CaseListRead(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: float = 0
     manevi_tazminat: float = 0
+    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None
@@ -321,6 +323,7 @@ class CaseRead(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: float = 0
     manevi_tazminat: float = 0
+    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None

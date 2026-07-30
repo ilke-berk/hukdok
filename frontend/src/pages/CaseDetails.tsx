@@ -39,6 +39,7 @@ interface CaseDetailsData {
     opening_date?: string;
     maddi_tazminat?: number;
     manevi_tazminat?: number;
+    tazminat_talep_tarihi?: string;
     case_group_id?: number;
     hasar_dosya_no?: string;
     hukuk_no?: string;
@@ -514,6 +515,12 @@ const CaseDetails = () => {
                                         <span className="text-muted-foreground">Manevi Tazminat</span>
                                         <span className="font-semibold text-lg">{formatCurrency(caseData.manevi_tazminat || 0)}</span>
                                     </div>
+                                    {caseData.tazminat_talep_tarihi && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">Tazminat Talep Tarihi</span>
+                                            <span className="font-semibold">{new Date(caseData.tazminat_talep_tarihi).toLocaleDateString("tr-TR")}</span>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
 

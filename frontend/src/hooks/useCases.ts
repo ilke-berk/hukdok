@@ -28,6 +28,7 @@ export interface CaseData {
     responsible_lawyer_name?: string;
     uyap_lawyer_name?: string;
     maddi_tazminat?: number;
+    tazminat_talep_tarihi?: string;
     manevi_tazminat?: number;
     acceptance_date?: string;
     bureau_type?: string;

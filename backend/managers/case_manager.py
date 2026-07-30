@@ -98,6 +98,7 @@ def get_case(case_id: int, tenant_id: str = None):
             "uyap_lawyer_name": item.uyap_lawyer_name,
             "maddi_tazminat": float(item.maddi_tazminat),
             "manevi_tazminat": float(item.manevi_tazminat),
+            "tazminat_talep_tarihi": item.tazminat_talep_tarihi.isoformat() if item.tazminat_talep_tarihi else None,
             "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
             "bureau_type": item.bureau_type,
             "sub_type_extra": item.sub_type_extra,
@@ -313,6 +314,7 @@ def get_cases(
                 "uyap_lawyer_name": item.uyap_lawyer_name,
                 "maddi_tazminat": float(item.maddi_tazminat) if item.maddi_tazminat else 0,
                 "manevi_tazminat": float(item.manevi_tazminat) if item.manevi_tazminat else 0,
+                "tazminat_talep_tarihi": item.tazminat_talep_tarihi.isoformat() if item.tazminat_talep_tarihi else None,
                 "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
                 "bureau_type": item.bureau_type,
                 "sub_type_extra": item.sub_type_extra,
@@ -389,6 +391,11 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
             parsed = _parse_date_field(data["atama_tarihi"], "atama_tarihi")
             if parsed:
                 case.atama_tarihi = parsed
+
+        if data.get("tazminat_talep_tarihi"):
+            parsed = _parse_date_field(data["tazminat_talep_tarihi"], "tazminat_talep_tarihi")
+            if parsed:
+                case.tazminat_talep_tarihi = parsed
 
         # 2. Sync Parties (Delete and Re-add for simplicity in this version)
         db.query(models.CaseParty).filter(models.CaseParty.case_id == case_id).delete()
@@ -518,6 +525,11 @@ def add_case(data: dict, tenant_id: str = None):
         atama_tarihi_str = data.get("atama_tarihi")
         if atama_tarihi_str:
             new_case.atama_tarihi = _parse_date_field(atama_tarihi_str, "atama_tarihi")
+
+        # Handle tazminat_talep_tarihi
+        talep_tarihi_str = data.get("tazminat_talep_tarihi")
+        if talep_tarihi_str:
+            new_case.tazminat_talep_tarihi = _parse_date_field(talep_tarihi_str, "tazminat_talep_tarihi")
 
         db.add(new_case)
         db.flush()  # Get the case ID

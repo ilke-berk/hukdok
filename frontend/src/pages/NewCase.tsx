@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
+import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, CalendarDays, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
@@ -59,6 +59,7 @@ interface EditModeCaseData {
     opening_date?: string;
     service_type?: string;
     maddi_tazminat?: number | string;
+    tazminat_talep_tarihi?: string;
     manevi_tazminat?: number | string;
     acceptance_date?: string;
     bureau_type?: string;
@@ -158,6 +159,7 @@ const NewCase = () => {
         serviceType: "00000", // Default service type code
         maddiTazminat: editModeCase?.maddi_tazminat?.toString() || "",
         maneviTazminat: editModeCase?.manevi_tazminat?.toString() || "",
+        tazminatTalepTarihi: editModeCase?.tazminat_talep_tarihi || "",
         acceptanceDate: editModeCase?.acceptance_date || "",
         bureauType: editModeCase?.bureau_type || "",
         subTypeExtra: editModeCase?.sub_type_extra || "",
@@ -338,6 +340,7 @@ const NewCase = () => {
                 serviceType: editModeCase.service_type || "00000",
                 maddiTazminat: editModeCase.maddi_tazminat?.toString() || "",
                 maneviTazminat: editModeCase.manevi_tazminat?.toString() || "",
+                tazminatTalepTarihi: editModeCase.tazminat_talep_tarihi || "",
                 acceptanceDate: editModeCase.acceptance_date || "",
                 bureauType: editModeCase.bureau_type || "",
                 subTypeExtra: editModeCase.sub_type_extra || "",
@@ -386,6 +389,7 @@ const NewCase = () => {
             uyap_lawyer_name: formData.uyapLawyer,
             maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
             manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
+            tazminat_talep_tarihi: formData.tazminatTalepTarihi || undefined,
             acceptance_date: formData.acceptanceDate || undefined,
             bureau_type: formData.bureauType || undefined,
             sub_type_extra: formData.subTypeExtra || undefined,
@@ -480,6 +484,7 @@ const NewCase = () => {
             serviceType: "00000",
             maddiTazminat: "",
             maneviTazminat: "",
+            tazminatTalepTarihi: "",
             acceptanceDate: "",
             bureauType: "",
             subTypeExtra: "",
@@ -1442,6 +1447,17 @@ const NewCase = () => {
                                             />
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
+                                            <CalendarDays className="w-3 h-3" /> Tazminat Talep Tarihi
+                                        </Label>
+                                        <Input
+                                            type="date"
+                                            value={formData.tazminatTalepTarihi}
+                                            onChange={(e) => setFormData({ ...formData, tazminatTalepTarihi: e.target.value })}
+                                            className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)]"
+                                        />
                                     </div>
                                 </div>
                             </Card>

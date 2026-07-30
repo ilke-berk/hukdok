@@ -116,6 +116,7 @@ _MIGRATIONS = [
         "acceptance_date": "DATE",             # İş Kabul Tarihi
         "bureau_type":     "VARCHAR(100)",     # Büro Özel Türü
         "sub_type_extra":  "VARCHAR(200)",     # Ek Alt Kırılım
+        "tazminat_talep_tarihi": "DATE",       # Tazminat Talep Tarihi (2026-07-30)
     }),
 
     # 4. CASE_PARTIES (birth_year, gender)
