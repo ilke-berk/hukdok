@@ -30,10 +30,11 @@ from database import SessionLocal
 # ─── MAPPING TABLOLARI (frontend/caseNumberUtils.ts ile eşleşmeli) ────────────
 
 CATEGORY_MAP = {
-    "DOKTOR":       "D1",
-    "ÖZEL HASTANE": "H2",
-    "SİGORTA":      "S0",
-    "HASTA":        "H1",
+    "DOKTOR":          "D1",
+    "SAĞLIK ÇALIŞANI": "D2",
+    "ÖZEL HASTANE":    "H2",
+    "SİGORTA":         "S0",
+    "HASTA":           "H1",
 }
 
 INSURANCE_CODES = {
@@ -137,7 +138,7 @@ def _get_category_code(category: str, client_name: str) -> str:
 
     return block1
 
-_PERSON_CATS = {"DOKTOR", "HASTA", "BIREYSEL"}
+_PERSON_CATS = {"DOKTOR", "SAGLIK CALISANI", "HASTA", "BIREYSEL"}
 
 def generate_tracking_number(client_name: str, category_code: str,
                               sequence: int, process_type: str,
@@ -158,15 +159,17 @@ def _name_priority(cat_norm: str) -> int:
     """Kişi < kurum < sigorta önceliği. Düşük = önce seçilir."""
     if cat_norm == "DOKTOR":
         return 0
-    if cat_norm == "HASTA":
+    if cat_norm == "SAGLIK CALISANI":
         return 1
-    if cat_norm == "BIREYSEL":
+    if cat_norm == "HASTA":
         return 2
+    if cat_norm == "BIREYSEL":
+        return 3
     if cat_norm == "":
-        return 3  # bilinmiyor, muhtemelen kişi
+        return 4  # bilinmiyor, muhtemelen kişi
     if "SIGORTA" in cat_norm:
         return 10
-    return 5  # kurum, hastane, klinik vs.
+    return 6  # kurum, hastane, klinik vs.
 
 
 def run(dry_run: bool = True):
@@ -199,13 +202,16 @@ def run(dry_run: bool = True):
             """Kategori kodu için: TÜM müvekkillere bak, en özgül kodu seç (sigorta > doktor > X1)."""
             parties = all_parties.get(case_id, [])
             codes = [_get_category_code(cat, p.name) for p, cat in parties]
-            # Öncelik: özgül sigorta (S1-S7) > S0 > D1 > H2 > H1 > X1
+            # Öncelik: özgül sigorta (S1-S7) > S0 > D1 > D2 > H2 > H1 > X1
             for code in codes:
                 if code.startswith("S") and code != "S0":
                     return code
             for code in codes:
                 if code == "S0":
                     return code
+            for wanted in ("D1", "D2", "H2", "H1"):
+                if wanted in codes:
+                    return wanted
             for code in codes:
                 if code != "X1":
                     return code

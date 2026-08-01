@@ -36,11 +36,11 @@ const NAV: NavItemDef[] = [
 ];
 
 type SidebarProps = {
-  collapsed: boolean;
-  onToggle: () => void;
+  open: boolean;
+  onClose: () => void;
 };
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ open, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { instance, accounts } = useMsal();
@@ -89,33 +89,31 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside
-      aria-hidden={collapsed}
+      aria-hidden={!open}
+      onMouseLeave={onClose}
       className={[
-        "shrink-0 grid overflow-hidden relative",
+        "fixed left-0 top-0 h-full z-40 grid overflow-hidden",
+        "w-[248px] pt-[22px] px-4 pb-4",
         "bg-[var(--bg-sunken)] border-r border-[var(--border)]",
-        collapsed ? "w-0 p-0 border-r-0" : "w-[248px] pt-[22px] px-4 pb-4",
+        open ? "shadow-[0_12px_40px_-12px_rgba(0,0,0,0.35)]" : "",
       ].join(" ")}
       style={{
         gridTemplateRows: "auto 1fr auto",
-        transition: "width 240ms cubic-bezier(0.4,0,0.2,1), padding 240ms cubic-bezier(0.4,0,0.2,1), border-right-width 240ms cubic-bezier(0.4,0,0.2,1)",
+        transform: open ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 240ms cubic-bezier(0.4,0,0.2,1), box-shadow 240ms ease",
       }}
     >
       <div
         className="w-[216px] grid"
-        style={{
-          gridTemplateRows: "auto 1fr auto",
-          opacity: collapsed ? 0 : 1,
-          transition: "opacity 160ms ease",
-          transitionDelay: collapsed ? "0s" : "100ms",
-        }}
+        style={{ gridTemplateRows: "auto 1fr auto" }}
       >
         {/* Mark + collapse */}
         <div className="flex items-center justify-between gap-3 pb-[22px] pl-1 pr-1 border-b border-[var(--border)] min-h-[56px]">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => { navigate("/"); onClose(); }}
             className="flex items-center gap-3 cursor-pointer outline-none"
-            tabIndex={collapsed ? -1 : 0}
+            tabIndex={open ? 0 : -1}
           >
             <Scale className="w-7 h-7 text-[var(--brand)] stroke-[1.25]" />
             <span className="font-display text-[18px] font-medium tracking-[0.16em] text-[var(--fg)] whitespace-nowrap">
@@ -124,10 +122,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </button>
           <button
             type="button"
-            onClick={onToggle}
-            aria-label="Menüyü daralt"
-            title="Menüyü daralt"
-            tabIndex={collapsed ? -1 : 0}
+            onClick={onClose}
+            aria-label="Menüyü kapat"
+            title="Menüyü kapat"
+            tabIndex={open ? 0 : -1}
             className="w-[26px] h-[26px] grid place-items-center rounded-[4px] border border-[var(--border)] bg-transparent text-[var(--fg-muted)] cursor-pointer transition-colors hover:text-[var(--brand)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
           >
             <ChevronsLeft className="w-3.5 h-3.5" />
@@ -147,8 +145,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => navigate(item.path)}
-                  tabIndex={collapsed ? -1 : 0}
+                  onClick={() => { navigate(item.path); onClose(); }}
+                  tabIndex={open ? 0 : -1}
                   className={[
                     "flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] text-left relative",
                     "font-sans text-[13px] font-medium tracking-[0.005em]",
@@ -198,7 +196,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     key={v}
                     type="button"
                     onClick={() => setView(v)}
-                    tabIndex={collapsed ? -1 : 0}
+                    tabIndex={open ? 0 : -1}
                     className={[
                       "px-2 py-1.5 font-sans text-[11px] font-medium tracking-[0.04em] transition-colors",
                       active
@@ -217,7 +215,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <button
               type="button"
               onClick={toggleTheme}
-              tabIndex={collapsed ? -1 : 0}
+              tabIndex={open ? 0 : -1}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-2 border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] font-sans text-[11px] font-medium tracking-[0.04em] rounded-[4px] cursor-pointer transition-colors hover:text-[var(--fg)] hover:border-[var(--border-strong)]"
               title={theme === "light" ? "Koyu tema" : "Açık tema"}
             >
@@ -227,7 +225,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <button
               type="button"
               onClick={handleLogout}
-              tabIndex={collapsed ? -1 : 0}
+              tabIndex={open ? 0 : -1}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-2 border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] font-sans text-[11px] font-medium tracking-[0.04em] rounded-[4px] cursor-pointer transition-colors hover:text-[var(--fg)] hover:border-[var(--border-strong)]"
               title={`Çıkış Yap (${displayName})`}
             >

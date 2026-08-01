@@ -186,7 +186,7 @@ const NewClient = () => {
             contact_type: formData.contact_type,
             birth_year: formData.birth_year,
             gender: formData.gender === "Belirtilmemiş" ? undefined : formData.gender,
-            specialty: formData.category === "Doktor" ? formData.specialty : undefined,
+            specialty: ["Doktor", "Sağlık Çalışanı"].includes(formData.category) ? formData.specialty : undefined,
             sektor: formData.sektor || undefined,
             yevmiye_no: formData.yevmiye_no || undefined,
             noterlik: formData.noterlik || undefined,
@@ -585,7 +585,7 @@ const NewClient = () => {
                                         </Select>
                                     </div>
 
-                                    {formData.category === "Doktor" && (
+                                    {["Doktor", "Sağlık Çalışanı"].includes(formData.category) && (
                                         <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
                                             <Label className="flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] font-semibold [&>svg]:w-3 [&>svg]:h-3">
                                                 <Tag className="w-4 h-4 text-muted-foreground" />

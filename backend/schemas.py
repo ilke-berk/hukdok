@@ -261,10 +261,10 @@ class CaseCreate(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: Optional[float] = 0
     manevi_tazminat: Optional[float] = 0
-    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None
+    judicial_unit: Optional[str] = None
     # Excel import / ek alanlar
     atama_tarihi: Optional[str] = None
     hasar_dosya_no: Optional[str] = None
@@ -290,16 +290,17 @@ class CaseListRead(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: float = 0
     manevi_tazminat: float = 0
-    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None
+    judicial_unit: Optional[str] = None
     atama_tarihi: Optional[date] = None
     hasar_dosya_no: Optional[str] = None
     hukuk_no: Optional[str] = None
     klasor_no_2: Optional[str] = None
     notes: Optional[str] = None
     dosya_son_durumu: Optional[str] = None
+    missing_required_fields: List[dict] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
     parties: List[CasePartyCreate] = []
@@ -323,10 +324,10 @@ class CaseRead(BaseModel):
     uyap_lawyer_name: Optional[str] = None
     maddi_tazminat: float = 0
     manevi_tazminat: float = 0
-    tazminat_talep_tarihi: Optional[str] = None
     acceptance_date: Optional[str] = None
     bureau_type: Optional[str] = None
     sub_type_extra: Optional[str] = None
+    judicial_unit: Optional[str] = None
     # Excel import / ek alanlar
     atama_tarihi: Optional[date] = None
     hasar_dosya_no: Optional[str] = None

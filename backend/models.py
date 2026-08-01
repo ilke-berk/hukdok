@@ -22,11 +22,11 @@ class Case(Base):
     
     maddi_tazminat = Column(Numeric(precision=20, scale=2), default=0)
     manevi_tazminat = Column(Numeric(precision=20, scale=2), default=0)
-    tazminat_talep_tarihi = Column(Date, nullable=True)  # Tazminat talebinin karşı tarafa iletildiği tarih
-    
+
     acceptance_date = Column(Date, nullable=True)  # İş Kabul Tarihi
     bureau_type = Column(String, nullable=True)  # Büro Özel Türü (DR ÖZEL, LEXİS, VEKALETSİZ TAKİP vs.)
     sub_type_extra = Column(String, nullable=True)  # Ek Alt Kırılım (RİNOPLASTİ;SEPTOPLASTİ vs.)
+    judicial_unit = Column(String, nullable=True)  # Yargı Birimi (yargı türünün yanındaki ikinci seçim)
     
     notes = Column(String, nullable=True)
     active = Column(Boolean, default=True)

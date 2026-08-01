@@ -38,6 +38,7 @@ interface Case {
   hukuk_no?: string;
   updated_at?: string;
   dosya_son_durumu?: string;
+  missing_required_fields?: { field: string; label: string }[];
   parties?: { party_type: string; name: string; role: string }[];
 }
 
@@ -150,6 +151,7 @@ const CaseList = () => {
   const [selectedLawyer, setSelectedLawyer] = useState<string>("ALL");
   const [selectedFileType, setSelectedFileType] = useState<string>("ALL");
   const [onlyUrgent, setOnlyUrgent] = useState(false);
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   // Yarış durumu koruması: geç dönen eski isteklerin yenisini ezmesini engeller
@@ -168,6 +170,7 @@ const CaseList = () => {
         q: debouncedSearch || undefined,
         fileType: selectedFileType,
         urgentDays: onlyUrgent ? URGENT_WINDOW_DAYS : undefined,
+        missingRequired: onlyMissing || undefined,
       });
       // Bu yanıt en güncel istek değilse (kullanıcı yazmaya devam etti) yok say
       if (reqId !== reqIdRef.current) return;
@@ -180,7 +183,7 @@ const CaseList = () => {
     } finally {
       if (reqId === reqIdRef.current) setIsLoading(false);
     }
-  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch, onlyUrgent]);
+  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch, onlyUrgent, onlyMissing]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -205,7 +208,7 @@ const CaseList = () => {
   useEffect(() => { fetchCases(); }, [fetchCases]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
-  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, onlyUrgent]);
+  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, onlyUrgent, onlyMissing]);
 
   // case_id → en yakın yaklaşan duruşmaya kalan gün (0..URGENT_WINDOW_DAYS)
   const urgentByCase = useMemo(() => {
@@ -235,6 +238,7 @@ const CaseList = () => {
     setSelectedLawyer("ALL");
     setSelectedFileType("ALL");
     setOnlyUrgent(false);
+    setOnlyMissing(false);
     setSearchQuery("");
   };
 
@@ -254,6 +258,7 @@ const CaseList = () => {
     selectedLawyer !== "ALL" && "lawyer",
     selectedFileType !== "ALL" && "filetype",
     onlyUrgent && "urgent",
+    onlyMissing && "missing",
   ].filter(Boolean).length;
 
   // Tüm filtreler (acil dahil) artık sunucuda — totalCount gerçek toplam
@@ -433,6 +438,30 @@ const CaseList = () => {
               )}
             </button>
           </div>
+
+          {/* Eksik alan filtresi — zorunlu alanları tamamlanmamış dosyalar */}
+          <div>
+            <Eyebrow>Eksik Alan</Eyebrow>
+            <button
+              type="button"
+              onClick={() => setOnlyMissing(v => !v)}
+              className={[
+                "mt-2 w-full text-left border p-3 transition-colors",
+                onlyMissing
+                  ? "border-amber-500/50 bg-amber-500/5"
+                  : "border-[var(--border)] bg-[var(--bg)] hover:border-[var(--border-strong)]",
+              ].join(" ")}
+            >
+              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] uppercase text-amber-600">
+                <AlertTriangle className="w-3 h-3" />
+                Eksik Alanlı Dosyalar
+              </div>
+              <div className="mt-1.5 text-[11px] text-[var(--fg-subtle)] leading-snug">
+                Zorunlu alanları tamamlanmamış dosyaları göster
+                {onlyMissing && <span className="text-amber-600"> · filtre açık</span>}
+              </div>
+            </button>
+          </div>
         </HairlineCard>
 
         {/* Tablo */}
@@ -469,7 +498,9 @@ const CaseList = () => {
               <p className="text-[13px]">
                 {onlyUrgent
                   ? "Süresi yaklaşan dosya yok."
-                  : "Bu kriterlere uygun dosya bulunamadı."}
+                  : onlyMissing
+                    ? "Eksik alanlı dosya yok — tüm zorunlu alanlar tamamlanmış."
+                    : "Bu kriterlere uygun dosya bulunamadı."}
               </p>
               {activeFilterCount > 0 && (
                 <FlowButton variant="secondary" size="sm" onClick={clearFilters}>
@@ -527,6 +558,15 @@ const CaseList = () => {
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {c.hasar_dosya_no && <CopyBadge value={c.hasar_dosya_no} icon={FileText} />}
                               {c.hukuk_no && <CopyBadge value={c.hukuk_no} icon={Scale} />}
+                            </div>
+                          )}
+                          {(c.missing_required_fields?.length ?? 0) > 0 && (
+                            <div
+                              className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-amber-500/[0.14] text-amber-600 font-mono text-[9.5px] tracking-[0.12em] uppercase font-semibold"
+                              title={`Eksik zorunlu alanlar: ${c.missing_required_fields!.map(m => m.label).join(", ")}`}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              Eksik alan · {c.missing_required_fields!.length}
                             </div>
                           )}
                         </td>

@@ -5,7 +5,7 @@
  * Analiz verisiyle otomatik doldurulur (esas_no, müvekkil, avukat).
  * Kaydettikten sonra yeni dava otomatik olarak belgeye bağlanır.
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,7 @@ import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
-import { CaseData, useCases } from "@/hooks/useCases";
+import { CaseData, DuplicateCaseMatch, useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
@@ -54,45 +54,17 @@ interface QuickCaseModalProps {
     onCaseCreated: (newCase: { id: number; tracking_no: string; esas_no: string; court: string; responsible_lawyer_name: string; status: string }) => void;
 }
 
-const DOSYA_TURLERI = ["Ceza", "Hukuk", "İcra", "İdari Yargı", "Arabuluculuk", "Savcılık"];
-const ALT_TURLER: Record<string, string[]> = {
-    "Ceza": [
-        "AĞIR CEZA MAHKEMESİ",
-        "ASLİYE CEZA MAHKEMESİ",
-        "BÖLGE ADLİYE MAH. CEZA DAİRESİ",
-        "ÇOCUK AĞIR CEZA MAHKEMESİ",
-        "ÇOCUK MAHKEMESİ",
-        "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ",
-        "İCRA CEZA HAKİMLİĞİ",
-        "İNFAZ HAKİMLİĞİ",
-        "İSTİNAF CEZA DAİRESİ (İLK DERECE)",
-        "SULH CEZA HAKİMLİĞİ",
-        "YARGITAY CEZA DAİRESİ (İLK DERECE)",
-    ],
-    "Hukuk": [
-        "AİLE MAHKEMESİ",
-        "ASLİYE HUKUK MAHKEMESİ",
-        "ASLİYE TİCARET MAHKEMESİ",
-        "BAM HUKUK DAİRESİ (İLK DERECE)",
-        "BÖLGE ADLİYE MAH. HUKUK DAİRESİ",
-        "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ",
-        "İCRA HUKUK MAHKEMESİ",
-        "İŞ MAHKEMESİ",
-        "KADASTRO MAHKEMESİ",
-        "KADASTRO MAHKEMESİ (MÜŞ)",
-        "SULH HUKUK MAHKEMESİ",
-        "TÜKETİCİ MAHKEMESİ",
-    ],
-    "İcra": ["İCRA DAİRESİ"],
-    "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
-    "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
-    "Savcılık": [],
-};
-
 export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickCaseModalProps) => {
-    const { saveCaseAndReturn, getClientCaseSequence, isLoading: isCaseLoading } = useCases();
+    const { saveCaseAndReturn, getClientCaseSequence, checkDuplicateCase, isLoading: isCaseLoading } = useCases();
     const { clients, isLoading: isClientLoading } = useClients();
-    const { lawyers } = useConfig();
+    const { lawyers, requiredCaseFields, fileTypes, courtTypesByParent } = useConfig();
+
+    // Yargı türü/alt tür listeleri DB'den (NewCase ile aynı kaynak) — önceden
+    // buradaki sabit kopya referans listesinden geri kalıyordu.
+    const DOSYA_TURLERI = fileTypes.map(f => f.name ?? "").filter(Boolean);
+    const ALT_TURLER: Record<string, string[]> = courtTypesByParent
+        ? Object.fromEntries(Object.entries(courtTypesByParent).map(([k, v]) => [k, v.map(i => i.name ?? "")]))
+        : {};
 
     const [existingClientNames, setExistingClientNames] = useState<string[]>([]);
     const [existingClientsData, setExistingClientsData] = useState<ClientData[]>([]);
@@ -104,6 +76,14 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const [notes, setNotes] = useState(""); // Danışma notu (ileride hatırlamak için)
     const [showConsultCheck, setShowConsultCheck] = useState(false);
     const [consultTypoHints, setConsultTypoHints] = useState<{ typed: string; suggestion: string }[]>([]);
+    // Zorunlu alan uyarısı: eksik alan kaydı engellemez, onaylanırsa DERDEST kaydedilir
+    const [showMissingConfirm, setShowMissingConfirm] = useState(false);
+    const [pendingMissing, setPendingMissing] = useState<{ field: string; label: string }[]>([]);
+    const missingAcknowledged = useRef(false);
+    // Mükerrer dava uyarısı
+    const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+    const [pendingDuplicates, setPendingDuplicates] = useState<DuplicateCaseMatch[]>([]);
+    const duplicateAcknowledged = useRef(false);
 
     const [esasNo, setEsasNo] = useState(prefill?.esas_no || "");
     const [courtBase, setCourtBase] = useState("");   // Mahkeme adı (saysz)
@@ -205,14 +185,40 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     };
 
     const handleSave = async (forceSave = false) => {
-        // Danışmada esas no zorunlu değil (ortada henüz dava yok).
-        if (!isConsult && !esasNo.trim()) {
-            toast.error("Esas No zorunludur.");
-            return;
-        }
         if (!clientName.trim()) {
             toast.error("En az bir müvekkil adı girilmeli.");
             return;
+        }
+
+        // Zorunlu alan uyarısı (kullanıcı kararı 2026-07-31 rev.2): eksik alan
+        // kaydı ENGELLEMEZ — onaylanırsa dosya DERDEST açılır, panelde "eksik"
+        // uyarısıyla görünür. Hızlı form tüm alanları toplamadığından uyarı
+        // DERDEST'te neredeyse her zaman çıkar; tamamlanma yeri tam dava kartı.
+        if (status === "DERDEST" && !missingAcknowledged.current) {
+            const values: Record<string, string | undefined> = {
+                esas_no: esasNo,
+                court: courtBase,
+                file_type: fileType,
+                sub_type: subType,
+                opening_date: openingDate,
+                responsible_lawyer_name: lawyer,
+            };
+            const missingReq = requiredCaseFields.filter(f => !(values[f.field] ?? "").trim());
+            if (missingReq.length > 0) {
+                setPendingMissing(missingReq);
+                setShowMissingConfirm(true);
+                return;
+            }
+        }
+
+        // Mükerrer dava kontrolü: aynı esas no'lu aktif kayıt varsa onaysız açma
+        if (!duplicateAcknowledged.current && esasNo.trim()) {
+            const dups = await checkDuplicateCase(esasNo, courtBase);
+            if (dups.length > 0) {
+                setPendingDuplicates(dups);
+                setShowDuplicateConfirm(true);
+                return;
+            }
         }
 
         const namesToCheck = clientName.split(',').map(n => n.trim()).filter(n => n);
@@ -594,7 +600,74 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                     )}
                 </div>
 
-                {showNewClientConfirm ? (
+                {showDuplicateConfirm ? (
+                    <div className="bg-red-500/5 border-y border-red-500/30 px-6 py-4 flex flex-col gap-3">
+                        <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 grid place-items-center bg-red-500 text-white shrink-0">
+                                <AlertTriangle className="w-4 h-4" strokeWidth={1.8} />
+                            </div>
+                            <div className="min-w-0">
+                                <Eyebrow tone="brand">Mükerrer Kayıt Şüphesi</Eyebrow>
+                                <h4 className="font-display text-[15px] font-medium text-[var(--fg)] mt-0.5">
+                                    Bu esas no zaten kayıtlı olabilir
+                                </h4>
+                                <ul className="mt-2 space-y-1">
+                                    {pendingDuplicates.map(d => (
+                                        <li key={d.id} className="text-[12px] text-[var(--fg)]">
+                                            <span className="font-mono font-semibold">{d.esas_no}</span>
+                                            {" · "}{d.court || "Mahkeme belirtilmemiş"}
+                                            {d.court_match && <strong className="ml-1 text-red-500">(aynı mahkeme!)</strong>}
+                                            <span className="text-[var(--fg-subtle)] font-mono ml-1">· {d.tracking_no}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end mt-1">
+                            <FlowButton variant="secondary" size="sm" onClick={() => setShowDuplicateConfirm(false)}>
+                                Vazgeç
+                            </FlowButton>
+                            <FlowButton variant="primary" size="sm" onClick={() => {
+                                duplicateAcknowledged.current = true;
+                                setShowDuplicateConfirm(false);
+                                handleSave(false);
+                            }}>
+                                Yine de Aç
+                            </FlowButton>
+                        </div>
+                    </div>
+                ) : showMissingConfirm ? (
+                    <div className="bg-amber-500/5 border-y border-amber-500/30 px-6 py-4 flex flex-col gap-3">
+                        <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 grid place-items-center bg-amber-500 text-white shrink-0">
+                                <AlertTriangle className="w-4 h-4" strokeWidth={1.8} />
+                            </div>
+                            <div className="min-w-0">
+                                <Eyebrow tone="brand">Zorunlu Alanlar Eksik</Eyebrow>
+                                <h4 className="font-display text-[15px] font-medium text-[var(--fg)] mt-0.5">
+                                    Dosya eksik alanlarla açılacak
+                                </h4>
+                                <p className="text-[12px] text-[var(--fg-muted)] mt-1.5 leading-relaxed">
+                                    Eksik: <strong className="text-[var(--fg)] font-semibold">{pendingMissing.map(m => m.label).join(", ")}</strong>.
+                                    {" "}Kaydederseniz dava <strong>DERDEST</strong> olarak açılır ve panelde
+                                    <strong> "eksik alan"</strong> uyarısıyla görünür; tam dava kartından tamamlayabilirsiniz.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end mt-1">
+                            <FlowButton variant="secondary" size="sm" onClick={() => setShowMissingConfirm(false)}>
+                                Geri Dön
+                            </FlowButton>
+                            <FlowButton variant="primary" size="sm" onClick={() => {
+                                missingAcknowledged.current = true;
+                                setShowMissingConfirm(false);
+                                handleSave(false);
+                            }}>
+                                Eksik Olarak Kaydet
+                            </FlowButton>
+                        </div>
+                    </div>
+                ) : showNewClientConfirm ? (
                     <div className="bg-[var(--brand-soft)] border-y border-[var(--brand)]/30 px-6 py-4 flex flex-col gap-3">
                         <div className="flex items-start gap-3">
                             <div className="w-8 h-8 grid place-items-center bg-[var(--brand)] text-[var(--brand-fg)] shrink-0">

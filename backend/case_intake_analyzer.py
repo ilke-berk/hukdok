@@ -278,7 +278,8 @@ def _extract_digital_text(file_path: str) -> Optional[str]:
 
 
 def _fetch_prompt_context(extracted_text: Optional[str]) -> Dict[str, Optional[List[str]]]:
-    """DB bağlamı: büro avukatları, FlashText müvekkil ipuçları, izinli yargı türleri.
+    """DB bağlamı: büro avukatları, FlashText müvekkil ipuçları, izinli yargı
+    türleri, dava konuları ve uzmanlıklar.
 
     Her kaynak bağımsız try/except'lidir — bağlam eksikliği analizi durdurmaz
     (prompt varsayılanlarına düşülür).
@@ -286,6 +287,8 @@ def _fetch_prompt_context(extracted_text: Optional[str]) -> Dict[str, Optional[L
     lawyer_names = None
     client_hints = None
     yargi_turleri = None
+    dava_konulari = None
+    uzmanliklar = None
     doctypes: List[Dict] = []
 
     try:
@@ -317,10 +320,26 @@ def _fetch_prompt_context(extracted_text: Optional[str]) -> Dict[str, Optional[L
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[INTAKE] Yargı türü listesi alınamadı: {e}")
 
+    # Dava konusu + uzmanlık: kanonik listeler prompt'a enjekte edilir — model
+    # YA listeden birebir seçer YA null bırakır (serbest metin istenmez).
+    try:
+        from managers.reference_lists import get_case_subjects, get_specialties
+
+        dava_konulari = [
+            s.get("name") for s in (get_case_subjects() or []) if s.get("name")
+        ] or None
+        uzmanliklar = [
+            s.get("name") for s in (get_specialties() or []) if s.get("name")
+        ] or None
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"[INTAKE] Konu/uzmanlık listesi alınamadı: {e}")
+
     return {
         "lawyer_names": lawyer_names,
         "client_hints": client_hints,
         "yargi_turleri": yargi_turleri,
+        "dava_konulari": dava_konulari,
+        "uzmanliklar": uzmanliklar,
         "doctypes": doctypes,
     }
 
@@ -422,6 +441,8 @@ async def analyze_intake_file_generator(
             lawyer_names=ctx["lawyer_names"],
             client_hints=ctx["client_hints"],
             yargi_turleri=ctx["yargi_turleri"],
+            dava_konulari=ctx["dava_konulari"],
+            uzmanliklar=ctx["uzmanliklar"],
         )
         benchmark["prompt_build_ms"] = round((time.perf_counter() - t_ctx) * 1000, 2)
 

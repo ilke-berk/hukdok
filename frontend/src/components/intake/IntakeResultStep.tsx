@@ -24,12 +24,13 @@ const STATUS_META = {
  */
 export function IntakeResultStep({ result, filenames, onRestart }: IntakeResultStepProps) {
   const failedCount = result.documents.filter(d => d.status !== "queued").length;
+  const missing = result.case.missing_required_fields ?? [];
 
   return (
     <div className="grid gap-5 max-w-[720px]">
       <FlowCard className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 grid place-items-center bg-emerald-500/10 text-emerald-600 shrink-0">
+          <div className="w-11 h-11 grid place-items-center shrink-0 bg-emerald-500/10 text-emerald-600">
             <CheckCircle2 className="w-5 h-5" strokeWidth={1.8} />
           </div>
           <div className="min-w-0">
@@ -47,6 +48,16 @@ export function IntakeResultStep({ result, filenames, onRestart }: IntakeResultS
           </FlowButton>
         </Link>
       </FlowCard>
+
+      {missing.length > 0 && (
+        <FlowCard className="border-amber-500/40 bg-amber-500/5">
+          <p className="text-[13px] text-[var(--fg)] leading-relaxed">
+            <span className="font-semibold text-amber-600">Zorunlu alanlar eksik:</span>
+            {" "}<span className="font-medium">{missing.map(m => m.label).join(", ")}</span>.
+            {" "}Dosya dava panelinde "eksik alan" uyarısıyla görünecek — dava kartından tamamlayabilirsiniz.
+          </p>
+        </FlowCard>
+      )}
 
       <FlowCard padded={false}>
         <div className="px-5 py-3 border-b border-[var(--border)]">

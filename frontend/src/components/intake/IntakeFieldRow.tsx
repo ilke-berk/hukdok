@@ -1,14 +1,19 @@
-import { ChevronDown, Scale, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, ChevronsUpDown, Scale, ShieldCheck } from "lucide-react";
 
 import { AiPill } from "@/components/flow/primitives";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Popover, PopoverContent, PopoverTrigger,
+  Popover, PopoverAnchor, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import type { ClientPrior, MergeField } from "@/lib/caseIntake";
 import type { IntakeFieldDef, IntakeFieldState } from "@/lib/caseIntakeFields";
@@ -31,10 +36,15 @@ interface IntakeFieldRowProps {
  * Review satırı: onay Checkbox'ı + değer editörü (AI ön-dolu) + kaynak rozeti
  * ("3/4 belge · dilekce.pdf") + adaylar popover'ı (anlaşmazlıkta tıkla-seç).
  * Onay semantiği: boş olmayan her AI değeri kaydetten önce tiklenmeli;
- * düzenleme otomatik tikler; boş alan tik istemez.
+ * düzenleme otomatik tikler. Zorunlu alan boşken de tik ister — boş tik
+ * "bu bilgi şu anda elimde yok" onay diyaloğundan geçer; zorunlu olmayan
+ * boş alanın tiki pasiftir.
  */
 export function IntakeFieldRow({ def, state, field, options, prior, onChange, onApprove }: IntakeFieldRowProps) {
-  const needsApproval = state.value !== "";
+  const [comboboxOpen, setComboboxOpen] = useState(false);
+  const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
+  const isEmpty = state.value === "";
+  const needsApproval = !isEmpty || Boolean(def.required);
   const candidates = field?.candidates ?? [];
   const showCandidates = candidates.length > 1;
   const confidence = field?.confidence != null ? Math.round(field.confidence * 100) : undefined;
@@ -73,6 +83,46 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
             </SelectContent>
           </Select>
         );
+      case "combobox":
+        // Kanonik liste alanları (dava konusu, uzmanlık): aranabilir seçim —
+        // NewCase'teki desenle aynı; değer YA listeden YA boş, serbest metin yok.
+        return (
+          <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                id={inputId}
+                variant="outline"
+                role="combobox"
+                aria-expanded={comboboxOpen}
+                className="w-full h-9 justify-between font-normal text-[13px] bg-transparent border-[var(--border-strong)]"
+              >
+                <span className="truncate">{state.value || "Seçiniz..."}</span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[300px] p-0" align="start">
+              <Command>
+                <CommandInput placeholder={`${def.label} ara...`} />
+                <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
+                <CommandGroup className="max-h-64 overflow-auto">
+                  {(options || []).map(o => (
+                    <CommandItem
+                      key={o}
+                      value={o}
+                      onSelect={() => {
+                        onChange(o === state.value ? "" : o);
+                        setComboboxOpen(false);
+                      }}
+                    >
+                      <Check className={`mr-2 h-4 w-4 ${state.value === o ? "opacity-100" : "opacity-0"}`} />
+                      {o}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        );
       case "date":
         return (
           <Input
@@ -108,14 +158,58 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
   })();
 
   return (
-    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 py-3 border-b border-[var(--border)] last:border-b-0">
+    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 py-2.5">
       <div className="pt-6">
-        <Checkbox
-          checked={state.approved}
-          disabled={!needsApproval}
-          onCheckedChange={v => onApprove(v === true)}
-          aria-label={`${def.label} alanını onayla`}
-        />
+        <Popover open={emptyConfirmOpen} onOpenChange={setEmptyConfirmOpen}>
+          {/* Anchor yalnız konum verir (Trigger DEĞİL — trigger her tıkta
+              toggle yapar, dolu alanda da panel açardı); açma kararı yalnız
+              onCheckedChange'teki boş+zorunlu koşulunda */}
+          <PopoverAnchor asChild>
+            <span>
+              <Checkbox
+                checked={state.approved}
+                disabled={!needsApproval}
+                onCheckedChange={v => {
+                  // Boş zorunlu alanı tiklemek onay ister; tik kaldırmak serbest
+                  if (v === true && isEmpty && def.required) {
+                    setEmptyConfirmOpen(true);
+                    return;
+                  }
+                  onApprove(v === true);
+                }}
+                aria-label={`${def.label} alanını onayla`}
+              />
+            </span>
+          </PopoverAnchor>
+          <PopoverContent align="start" side="right" className="w-80 p-4">
+            <p className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+              Zorunlu Alan Boş
+            </p>
+            <p className="text-[13px] text-[var(--fg)] mt-1.5 leading-relaxed">
+              <strong>{def.label}</strong> alanı boş onaylanacak. "Bu bilgi şu anda
+              elimde yok — bilgiye sahip olduğumda dava kartına kaydedeceğim."
+            </p>
+            <div className="flex gap-2 justify-end mt-3">
+              <button
+                type="button"
+                onClick={() => setEmptyConfirmOpen(false)}
+                className="px-3 py-1.5 text-[12px] text-[var(--fg-muted)] hover:text-[var(--fg)] border border-[var(--border-strong)] transition-colors"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onApprove(true);
+                  setEmptyConfirmOpen(false);
+                }}
+                className="px-3 py-1.5 text-[12px] font-medium bg-[var(--brand)] text-[var(--brand-fg)] hover:opacity-90 transition-opacity"
+              >
+                Onaylıyorum
+              </button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="min-w-0">

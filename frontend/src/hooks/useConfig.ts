@@ -31,6 +31,14 @@ export type DeleteMode = "block" | "clear" | "reassign" | "keep";
 
 const EMPTY: ConfigItem[] = [];
 
+/** Dava kartı zorunlu alanı (tek kaynak: backend/required_fields.py). */
+export interface RequiredCaseField {
+    field: string;
+    label: string;
+}
+
+const EMPTY_REQUIRED: RequiredCaseField[] = [];
+
 const CONFIG_KEYS = {
     lawyers: ["config", "lawyers"],
     statuses: ["config", "statuses"],
@@ -97,6 +105,16 @@ export const useConfig = () => {
     const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), enabled, staleTime: STALE_TIME });
     const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), enabled, staleTime: STALE_TIME });
     const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), enabled, staleTime: STALE_TIME });
+    const requiredCaseFieldsQ = useQuery({
+        queryKey: ["config", "required_case_fields"],
+        queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
+            const res = await authRequest("/api/config/required_case_fields", "GET");
+            if (!res?.ok) return { fields: [], party_rule: null };
+            return res.json();
+        },
+        enabled,
+        staleTime: STALE_TIME,
+    });
 
     const isLoading =
         lawyersQ.isLoading || statusesQ.isLoading || doctypesQ.isLoading ||
@@ -203,6 +221,8 @@ export const useConfig = () => {
         specialties: specialtiesQ.data ?? EMPTY,
         clientCategories: clientCategoriesQ.data ?? EMPTY,
         fileStatuses: fileStatusesQ.data ?? EMPTY,
+        requiredCaseFields: requiredCaseFieldsQ.data?.fields ?? EMPTY_REQUIRED,
+        requiredPartyRule: requiredCaseFieldsQ.data?.party_rule ?? null,
         isLoading,
 
         addLawyer: (code: string, name: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string, city?: string) => addLawyerM.mutateAsync({ code, name, tc_no, sicil_no, gorev, email, phone, address, city }),

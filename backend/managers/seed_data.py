@@ -70,13 +70,15 @@ def _seed_court_types():
                 "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ", "İCRA HUKUK MAHKEMESİ",
                 "İŞ MAHKEMESİ", "KADASTRO MAHKEMESİ", "KADASTRO MAHKEMESİ (MÜŞ)",
                 "SULH HUKUK MAHKEMESİ", "TÜKETİCİ MAHKEMESİ",
+                # 2026-07-31: judicial_unit backfill'inin eski veride bulduğu birimler
+                "NOTERLİK", "TÜKETİCİ HAKEM HEYETİ",
             ],
             "İcra": ["İCRA DAİRESİ"],
             "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
             "İdare": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
-            "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ"],
+            "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ", "ARABULUCULUK BÜROSU"],
             "Savcılık": ["CUMHURİYET BAŞSAVCILIĞI"],
-            "Tahkim": ["TAHKIM MAHKEMESİ", "MİLLETLERARASI TAHKİM", "TOBB TAHKİM MAHKEMESİ"],
+            "Tahkim": ["TAHKIM MAHKEMESİ", "MİLLETLERARASI TAHKİM", "TOBB TAHKİM MAHKEMESİ", "TAHKİM HEYETİ"],
             "Vergi": ["VERGİ MAHKEMESİ", "BÖLGE İDARE MAHKEMESİ (VERGİ)", "DANIŞTAY"],
             "Danışmanlık": [],
         }
@@ -218,22 +220,32 @@ def _seed_specialties():
 
 
 def _seed_client_categories():
+    # Öğe-bazlı "ensure": count()>0 kısa devresi yeni kategori eklemelerini
+    # (Sağlık Çalışanı 2026-07-31, seed'de eksik kalmış Hasta) mevcut DB'lere
+    # taşıyamıyordu — kod yoksa eklenir, varsa dokunulmaz.
     db = SessionLocal()
     try:
-        if db.query(models.ClientCategory).count() > 0:
-            return
         items = [
             ("DOKTOR", "Doktor"),
+            ("SAGLIK-CALISANI", "Sağlık Çalışanı"),
+            ("HASTA", "Hasta"),
             ("KURUM", "Kurum"),
             ("OZEL-HASTANE", "Özel Hastane"),
             ("BIREYSEL", "Bireysel"),
             ("SIGORTA", "Sigorta Şirketi"),
             ("DIGER", "Diğer"),
         ]
-        for idx, (code, name) in enumerate(items):
-            db.add(models.ClientCategory(code=code, name=name, active=True, sequence=idx))
-        db.commit()
-        logger.info(f"Seeded {len(items)} client_categories")
+        existing = {c.code for c in db.query(models.ClientCategory.code).all()}
+        next_seq = db.query(models.ClientCategory).count()
+        added = 0
+        for code, name in items:
+            if code in existing:
+                continue
+            db.add(models.ClientCategory(code=code, name=name, active=True, sequence=next_seq + added))
+            added += 1
+        if added:
+            db.commit()
+            logger.info(f"Seeded {added} client_categories")
     except Exception as e:
         logger.error(f"Seed ClientCategories Error: {e}")
     finally:

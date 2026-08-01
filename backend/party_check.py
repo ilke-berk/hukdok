@@ -16,11 +16,13 @@ Eşleşme kademeleri (güçlüden zayıfa):
                               "Ali Veli" ↔ "Ali Beki" eşleşmez — yalnızca ilk
                               ismin aynı olması yetmez, soyisim de eşleşmeli.)
 
-conflict=True koşulları:
-  a) CLIENT olmayan sorgu, contact_type="Client" bir cari kaydıyla eşleşirse
-     (karşı taraf ofisin müvekkili → çıkar çatışması riski)
-  b) CLIENT sorgusu geçmiş bir dosyada COUNTER/THIRD taraf olarak geçmişse
-  c) TC eşleşip isim eşleşmiyorsa (aynı TC farklı isim → veri hatası / kesin kişi)
+conflict=True koşulu (TEK):
+  CLIENT olmayan sorgu, contact_type="Client" bir cari kaydıyla eşleşirse
+  (karşı taraf ofisin müvekkili → çıkar çatışması riski).
+  Müvekkil satırı çatışma ÜRETMEZ — müvekkilin geçmiş dosyalarda karşı taraf
+  olarak görünmesi bilgi olarak listelenir (matches), conflict sayılmaz
+  (2026-08-01 kullanıcı kararı: çıkar çatışması yalnız karşı tarafa bakılır).
+  TC eşleşip isim eşleşmeyen kayıtlar da yalnız matches'ta raporlanır.
 """
 
 import re
@@ -260,11 +262,12 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
 
             p_type = p.get("party_type") or ""
             # CLIENT sorgusunun geçmiş CLIENT görünümleri beklenen durum —
-            # yalnızca COUNTER/THIRD geçmişi ilginç (taraf değişimi = çatışma).
+            # yalnızca COUNTER/THIRD geçmişi ilginç. Taraf-değişimi geçmişi
+            # bilgi olarak listelenir, çatışma SAYILMAZ (müvekkil ile çıkar
+            # çatışması olmaz; çatışma yalnız karşı tarafın kayıtlı müvekkil
+            # çıkmasıdır — cari döngüsündeki koşul).
             if q_type == "CLIENT" and p_type == "CLIENT" and matched_on != "tc_no":
                 continue
-            if q_type == "CLIENT" and p_type in ("COUNTER", "THIRD"):
-                conflict = True
 
             matches.append({
                 "source": "case_party",
@@ -303,10 +306,8 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
                 cleaned.append(m)
             matches = cleaned
             conflict = any(
-                (m["source"] == "client" and q_type != "CLIENT"
-                 and (m.get("contact_type") or "Client") == "Client")
-                or (m["source"] == "case_party" and q_type == "CLIENT"
-                    and m.get("party_type") in ("COUNTER", "THIRD"))
+                m["source"] == "client" and q_type != "CLIENT"
+                and (m.get("contact_type") or "Client") == "Client"
                 for m in cleaned
             )
 

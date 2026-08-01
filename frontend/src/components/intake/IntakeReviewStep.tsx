@@ -93,9 +93,26 @@ const PARTY_TYPE_LABEL: Record<ReviewParty["party_type"], string> = {
   THIRD: "3. Kişi",
 };
 
+// Hizmet türü bitmask etiketleri (NewCase HIZMET_TURLERI ile aynı sıra —
+// index = maskedeki hane; ofis no son bloğu bu maskeden üretilir)
+const SERVICE_TYPES = [
+  { label: "Rapor", index: 0 },
+  { label: "Danışmanlık", index: 1 },
+  { label: "Dava", index: 2 },
+  { label: "İcra", index: 3 },
+  { label: "Yazışma", index: 4 },
+];
+
 export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReviewStepProps) {
   const { getClientCaseSequence } = useCases();
-  const { lawyers, doctypes, emailRecipients, courtTypesByParent } = useConfig();
+  const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
+
+  // Zorunlu alan seti (required_fields.py tek kaynak, /api/config/required_case_fields).
+  // Zorunlu alanlar boşken de tik ister — boş tik "bilgi elimde yok" onayı gerektirir.
+  const requiredFieldKeys = useMemo(
+    () => new Set(requiredCaseFields.map(f => f.field)),
+    [requiredCaseFields],
+  );
 
   // --- Alanlar ---------------------------------------------------------
   const [fieldStates, setFieldStates] = useState<Record<string, IntakeFieldState>>(
@@ -103,10 +120,11 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   );
 
   const setFieldValue = (key: string, value: string) => {
-    // Düzenlemek otomatik tikler; kullanıcının boşalttığı alan boş kaydedilir
+    // Düzenlemek otomatik tikler; boşaltmak tiki DÜŞÜRÜR — zorunlu alan
+    // boş bırakılacaksa "bilgi elimde yok" onayıyla yeniden tiklenmeli
     setFieldStates(prev => ({
       ...prev,
-      [key]: { ...prev[key], value, touched: true, approved: value !== "" ? true : prev[key].approved },
+      [key]: { ...prev[key], value, touched: true, approved: value !== "" },
     }));
   };
 
@@ -155,6 +173,20 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   );
   const partiesApproved = parties.every(p => p.approved || !p.name.trim());
 
+  // --- Hizmet Türü (bitmask, NewCase deseni) ---------------------------
+  // Seçilen her hizmet ofis numarasının son bloğuna (11000 gibi) yansır.
+  const [serviceMask, setServiceMask] = useState("00000");
+  const toggleService = (index: number, checked: boolean) => {
+    setServiceMask(prev => {
+      const mask = prev.split("");
+      mask[index] = checked ? "1" : "0";
+      return mask.join("");
+    });
+  };
+
+  // --- Dava Avukatları (çoklu, NewCase deseni) -------------------------
+  const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>([]);
+
   // --- Ofis No ---------------------------------------------------------
   const [trackingNo, setTrackingNo] = useState("");
   const [isGeneratingNo, setIsGeneratingNo] = useState(false);
@@ -181,20 +213,20 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
         clientCategory: named.category,
         sequence: seq,
         processType: fieldStates.file_type?.value || "Hukuk",
-        serviceType: "00000",
+        serviceType: serviceMask,
       }));
     } finally {
       setIsGeneratingNo(false);
     }
-  }, [approvedClients, fieldStates.file_type?.value, getClientCaseSequence]);
+  }, [approvedClients, fieldStates.file_type?.value, serviceMask, getClientCaseSequence]);
 
-  // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü değiştikçe) üretilir
+  // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü / hizmet maskesi değiştikçe) üretilir
   const approvedClientsKey = approvedClients.map(p => p.name).join("|");
   const fileTypeValue = fieldStates.file_type?.value;
   useEffect(() => {
     regenerateTracking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [approvedClientsKey, fileTypeValue]);
+  }, [approvedClientsKey, fileTypeValue, serviceMask]);
 
   // --- Poliçeler -------------------------------------------------------
   // Varsayılan seçim: kayıtlı olmayan + müvekkil eşleşmeli poliçeler
@@ -246,7 +278,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   };
 
   // --- Kaydet kapısı ---------------------------------------------------
-  const progress = fieldApprovalProgress(fieldStates);
+  const progress = fieldApprovalProgress(fieldStates, requiredFieldKeys);
   const canSave =
     progress.complete &&
     partiesApproved &&
@@ -295,7 +327,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
         tracking_no: tracking,
         esas_no: v("esas_no") || null,
         status: "DERDEST", // sunucu zaten zorlar (karar 1)
-        service_type: "00000",
+        service_type: serviceMask,
         file_type: v("file_type") || null,
         sub_type: v("sub_type") || null,
         sub_type_extra: v("sub_type_extra") || null,
@@ -306,9 +338,20 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
         uyap_lawyer_name: v("uyap_lawyer_name") || null,
         maddi_tazminat: num("maddi_tazminat"),
         manevi_tazminat: num("manevi_tazminat"),
+        judicial_unit: v("judicial_unit") || null,
+        hasar_dosya_no: v("hasar_dosya_no") || null,
+        hukuk_no: v("hukuk_no") || null,
+        klasor_no_2: v("klasor_no_2") || null,
+        acceptance_date: v("acceptance_date") || null,
+        bureau_type: v("bureau_type") || null,
+        atama_tarihi: v("atama_tarihi") || null,
         notes: v("notes") || null,
         parties: commitParties,
-        lawyers: lawyerName ? [{ name: lawyerName, lawyer_id: lawyerObj?.id ?? null }] : [],
+        // Sorumlu avukat + eklenen dava avukatları (ad bazında tekilleştirilir)
+        lawyers: [
+          ...(lawyerName ? [{ name: lawyerName, lawyer_id: lawyerObj?.id ?? null }] : []),
+          ...selectedLawyers.filter(sl => sl.name !== lawyerName),
+        ],
       },
       documents: documents
         .filter(d => !d.expired)
@@ -348,7 +391,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
             clientCategory: named.category,
             sequence: seq,
             processType: fieldStates.file_type?.value || "Hukuk",
-            serviceType: "00000",
+            serviceType: serviceMask,
           });
           setTrackingNo(fresh);
           await onCommit(buildRequest(fresh));
@@ -367,6 +410,20 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
 
   // --- Render ----------------------------------------------------------
   const fieldDefs = activeIntakeFields();
+
+  // Alanlar bölüm başlıklarıyla gruplanır (ardışık aynı section tek grup);
+  // her grup içte 2 sütunlu ızgara — wide alanlar tam satır kaplar.
+  const fieldSections = useMemo(() => {
+    const sections: { title: string; defs: typeof fieldDefs }[] = [];
+    for (const def of fieldDefs) {
+      const title = def.section || "";
+      const last = sections[sections.length - 1];
+      if (last && last.title === title) last.defs.push(def);
+      else sections.push({ title, defs: [def] });
+    }
+    return sections;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const lawyerNames = lawyers.map(l => l.name);
 
   // Priors: ilk cari-eşleşmeli müvekkilin geçmiş dava alışkanlıkları — düşük
@@ -374,10 +431,27 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   const priorClientId = parties.find(p => p.party_type === "CLIENT" && p.client_id != null)?.client_id;
   const clientPriors = priorClientId != null ? draft.priors?.[String(priorClientId)] : undefined;
 
-  // Alt tür seçenekleri yargı türüne bağlıdır (NewCase'teki ALT_TURLER ile aynı kaynak)
-  const subTypeOptions = (courtTypesByParent?.[fieldStates.file_type?.value || ""] || [])
+  // Yargı Birimi seçenekleri yargı türüne bağlıdır (NewCase'teki ALT_TURLER ile aynı kaynak)
+  const judicialUnitOptions = (courtTypesByParent?.[fieldStates.file_type?.value || ""] || [])
     .map(i => i.name ?? "")
     .filter(Boolean);
+  const bureauTypeOptions = bureauTypes.map(b => b.name ?? "").filter(Boolean);
+
+  // Dava konusu: NewCase ile aynı sıralama — tıbbi kötü uygulama konuları en üstte
+  const subjectOptions = useMemo(() => {
+    const pinned = ["Rücuen Alacak (Tıbbi Kötü Uygulama)", "Tazminat (Tıbbi Kötü Uygulama)"];
+    return [...caseSubjects]
+      .sort((a, b) => {
+        const ia = pinned.indexOf(a.name);
+        const ib = pinned.indexOf(b.name);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return 0;
+      })
+      .map(s => s.name);
+  }, [caseSubjects]);
+  const specialtyOptions = useMemo(() => specialties.map(s => s.name), [specialties]);
   const expiredCount = documents.filter(d => d.expired).length;
   const relevantPolicies = draft.policies;
 
@@ -407,7 +481,8 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
         </div>
       ))}
 
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
+      {/* Sol (alanlar) içte 2 sütunlu olduğundan biraz daha geniş tutulur */}
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-5 items-start">
         {/* Sol: dava kartı alanları */}
         <FlowCard padded={false}>
           <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
@@ -418,24 +493,102 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
               <span className="text-[var(--fg)] font-semibold">{progress.approved}</span>/{progress.required} alan onaylandı
             </span>
           </div>
-          <div className="px-5">
-            {fieldDefs.map(def => (
-              <IntakeFieldRow
-                key={def.key}
-                def={def}
-                state={fieldStates[def.key]}
-                field={def.draftKey ? draft.fields[def.draftKey] : undefined}
-                options={
-                  def.key === "file_type" ? Object.keys(PROCESS_MAP)
-                    : def.key === "sub_type" ? subTypeOptions
-                      : def.key === "responsible_lawyer_name" || def.key === "uyap_lawyer_name" ? lawyerNames
-                        : undefined
-                }
-                prior={def.priorsKey ? clientPriors?.[def.priorsKey] : undefined}
-                onChange={value => setFieldValue(def.key, value)}
-                onApprove={approved => setFieldApproved(def.key, approved)}
-              />
+          <div className="px-5 pb-4">
+            {fieldSections.map(sec => (
+              <div key={sec.title} className="pt-4 first:pt-3">
+                {sec.title && (
+                  <div className="font-mono text-[9.5px] tracking-[0.22em] uppercase font-semibold text-[var(--brand)] border-b border-[var(--border)] pb-1.5">
+                    {sec.title}
+                  </div>
+                )}
+                <div className="grid sm:grid-cols-2 gap-x-8">
+                  {sec.defs.map(def => (
+                    <div key={def.key} className={def.wide ? "sm:col-span-2" : "min-w-0"}>
+                      <IntakeFieldRow
+                        def={requiredFieldKeys.has(def.key) ? { ...def, required: true } : def}
+                        state={fieldStates[def.key]}
+                        field={def.draftKey ? draft.fields[def.draftKey] : undefined}
+                        options={
+                          def.key === "file_type" ? Object.keys(PROCESS_MAP)
+                            : def.key === "judicial_unit" ? judicialUnitOptions
+                              : def.key === "sub_type" || def.key === "sub_type_extra" ? specialtyOptions
+                                : def.key === "subject" ? subjectOptions
+                                  : def.key === "bureau_type" ? bureauTypeOptions
+                                    : def.key === "responsible_lawyer_name" || def.key === "uyap_lawyer_name" ? lawyerNames
+                                      : undefined
+                        }
+                        prior={def.priorsKey ? clientPriors?.[def.priorsKey] : undefined}
+                        onChange={value => setFieldValue(def.key, value)}
+                        onApprove={approved => setFieldApproved(def.key, approved)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
             ))}
+          </div>
+
+          {/* Dava Avukatları + Hizmet Türü — yan yana */}
+          <div className="grid sm:grid-cols-2 border-t border-[var(--border)]">
+            <div className="px-5 py-4">
+              <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-1.5">
+                Dava Avukatları (Sorumluya Ek)
+              </span>
+              {selectedLawyers.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedLawyers.map((sl, idx) => (
+                    <span key={idx} className="inline-flex items-center gap-1 bg-[var(--brand-soft)] text-[var(--brand)] px-2 py-1 text-[11px] font-medium border border-[var(--brand)]/20">
+                      {sl.name}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLawyers(prev => prev.filter((_, i) => i !== idx))}
+                        className="hover:opacity-70 transition-opacity"
+                        aria-label={`${sl.name} avukatını çıkar`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Select
+                value=""
+                onValueChange={v => {
+                  if (v && !selectedLawyers.find(l => l.name === v)) {
+                    const obj = lawyers.find(l => l.name === v);
+                    setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: obj?.id ?? null }]);
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9 text-[13px] border-[var(--border-strong)] bg-transparent">
+                  <SelectValue placeholder="Avukat Ekle..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {lawyerNames.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Hizmet Türü — seçimler ofis numarasının son bloğunu şekillendirir */}
+            <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-[var(--border)]">
+              <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-2">
+                Hizmet Türü (Çoklu Seçim)
+              </span>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                {SERVICE_TYPES.map(t => (
+                  <label key={t.index} className="flex items-center gap-2 text-[13px] text-[var(--fg)] cursor-pointer">
+                    <Checkbox
+                      checked={serviceMask[t.index] === "1"}
+                      onCheckedChange={checked => toggleService(t.index, checked === true)}
+                    />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
+              <p className="font-mono text-[10px] text-[var(--fg-subtle)] mt-2">
+                Seçimler ofis numarasının son bloğuna (11000) yansır.
+              </p>
+            </div>
           </div>
 
           {/* Ofis No */}

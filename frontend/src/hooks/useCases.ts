@@ -28,7 +28,6 @@ export interface CaseData {
     responsible_lawyer_name?: string;
     uyap_lawyer_name?: string;
     maddi_tazminat?: number;
-    tazminat_talep_tarihi?: string;
     manevi_tazminat?: number;
     acceptance_date?: string;
     bureau_type?: string;
@@ -36,6 +35,16 @@ export interface CaseData {
     judicial_unit?: string;
     parties: CasePartyData[];
     lawyers?: CaseLawyerData[];
+}
+
+/** check-duplicate yanıt satırı */
+export interface DuplicateCaseMatch {
+    id: number;
+    tracking_no: string;
+    esas_no: string;
+    court?: string | null;
+    status: string;
+    court_match: boolean;
 }
 
 export interface CaseTrackingUpdate {
@@ -125,6 +134,7 @@ export const useCases = () => {
         exact?: boolean;
         fileType?: string;
         urgentDays?: number;
+        missingRequired?: boolean;
     } = {}): Promise<{ cases: T[]; total: number }> => {
         setIsLoading(true);
         const params = new URLSearchParams();
@@ -136,6 +146,7 @@ export const useCases = () => {
         if (options.exact) params.append("exact", "true");
         if (options.fileType && options.fileType !== "ALL") params.append("file_type", options.fileType);
         if (options.urgentDays !== undefined) params.append("urgent_days", String(options.urgentDays));
+        if (options.missingRequired) params.append("missing_required", "true");
 
         const queryString = params.toString() ? `?${params.toString()}` : "";
         const response = await authenticatedRequest(`/api/cases${queryString}`, "GET");
@@ -171,11 +182,25 @@ export const useCases = () => {
         return null;
     }, [authenticatedRequest]);
 
-    const updateCase = useCallback(async (id: number, data: CaseData) => {
+    /** Mükerrer dava kontrolü — aynı esas no'lu aktif kayıtlar (normalize eşleşme). */
+    const checkDuplicateCase = useCallback(async (esasNo: string, court?: string): Promise<DuplicateCaseMatch[]> => {
+        if (!esasNo.trim()) return [];
+        const params = new URLSearchParams({ esas_no: esasNo.trim() });
+        if (court?.trim()) params.append("court", court.trim());
+        const response = await authenticatedRequest(`/api/cases/check-duplicate?${params.toString()}`, "GET");
+        if (response && response.ok) {
+            const data = await response.json();
+            return data.matches ?? [];
+        }
+        return [];
+    }, [authenticatedRequest]);
+
+    const updateCase = useCallback(async (id: number, data: CaseData): Promise<{ ok: boolean; error?: string }> => {
         setIsLoading(true);
         const response = await authenticatedRequest(`/api/cases/${id}`, "PUT", data);
         setIsLoading(false);
-        return response ? response.ok : false;
+        if (response && response.ok) return { ok: true };
+        return { ok: false, error: await readErrorDetail(response) };
     }, [authenticatedRequest]);
 
     const searchCases = useCallback(async (query: string, exact: boolean = false, activeOnly: boolean = false) => {
@@ -287,6 +312,7 @@ export const useCases = () => {
     return {
         saveCase,
         saveCaseAndReturn,
+        checkDuplicateCase,
         updateCase,
         deleteCase,
         getCases,

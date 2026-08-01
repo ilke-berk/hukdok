@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from database import SessionLocal
 import models
+from required_fields import REQUIRED_CASE_FIELDS, compute_missing_fields
 from managers.lawyer_resolver import (
     _norm_name, _split_persons, _resolve_lawyer_aliases, _value_matches,
     canonicalize_lawyers,
@@ -98,10 +99,10 @@ def get_case(case_id: int, tenant_id: str = None):
             "uyap_lawyer_name": item.uyap_lawyer_name,
             "maddi_tazminat": float(item.maddi_tazminat),
             "manevi_tazminat": float(item.manevi_tazminat),
-            "tazminat_talep_tarihi": item.tazminat_talep_tarihi.isoformat() if item.tazminat_talep_tarihi else None,
             "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
             "bureau_type": item.bureau_type,
             "sub_type_extra": item.sub_type_extra,
+            "judicial_unit": item.judicial_unit,
             "atama_tarihi": item.atama_tarihi.isoformat() if item.atama_tarihi else None,
             "hasar_dosya_no": item.hasar_dosya_no,
             "hukuk_no": item.hukuk_no,
@@ -147,6 +148,8 @@ def get_case(case_id: int, tenant_id: str = None):
             "kesinlesme_tarihi": item.kesinlesme_tarihi.isoformat() if item.kesinlesme_tarihi else None,
             "infaz_tarihi": item.infaz_tarihi.isoformat() if item.infaz_tarihi else None,
         }
+        result["service_type"] = item.service_type
+        result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
         return result
     except Exception as e:
         logger.error(f"Get Case Error: {e}")
@@ -188,6 +191,41 @@ def get_case_stats(tenant_id: str = None):
         db.close()
 
 
+def _missing_required_clause():
+    """Zorunlu alanlardan en az biri boş olan davalar için SQL koşulu.
+
+    compute_missing_fields'ın SQL karşılığı — REQUIRED_CASE_FIELDS'tan türetilir,
+    liste değişince otomatik uyum sağlar. Tarih kolonlarında yalnız NULL,
+    metinlerde NULL/boş-trim kontrolü yapılır; karşı taraf TC kuralı da dahildir.
+    """
+    from sqlalchemy import Date, and_, exists, func, or_
+
+    conds = []
+    for f in REQUIRED_CASE_FIELDS:
+        col = getattr(models.Case, f["field"], None)
+        if col is None:
+            continue
+        if isinstance(col.type, Date):
+            conds.append(col.is_(None))
+        else:
+            conds.append(or_(col.is_(None), func.trim(col) == ""))
+
+    cp = models.CaseParty
+    has_counter = exists().where(
+        and_(cp.case_id == models.Case.id, cp.party_type == "COUNTER")
+    )
+    has_counter_tc = exists().where(
+        and_(
+            cp.case_id == models.Case.id,
+            cp.party_type == "COUNTER",
+            cp.tc_no.isnot(None),
+            func.trim(cp.tc_no) != "",
+        )
+    )
+    conds.append(and_(has_counter, ~has_counter_tc))
+    return or_(*conds)
+
+
 def get_cases(
     limit: int = 50,
     offset: int = 0,
@@ -198,6 +236,7 @@ def get_cases(
     tenant_id: str = None,
     file_type: str = None,
     urgent_days: int = None,
+    missing_required: bool = False,
 ) -> "tuple[list[dict], int]":
     """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür."""
     try:
@@ -213,6 +252,9 @@ def get_cases(
 
         if file_type and file_type != "ALL":
             query = query.filter(models.Case.file_type == file_type)
+
+        if missing_required:
+            query = query.filter(_missing_required_clause())
 
         if urgent_days is not None:
             # Önümüzdeki N gün içinde duruşması olan davalar (bugün dahil)
@@ -314,18 +356,23 @@ def get_cases(
                 "uyap_lawyer_name": item.uyap_lawyer_name,
                 "maddi_tazminat": float(item.maddi_tazminat) if item.maddi_tazminat else 0,
                 "manevi_tazminat": float(item.manevi_tazminat) if item.manevi_tazminat else 0,
-                "tazminat_talep_tarihi": item.tazminat_talep_tarihi.isoformat() if item.tazminat_talep_tarihi else None,
                 "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
                 "bureau_type": item.bureau_type,
                 "sub_type_extra": item.sub_type_extra,
+                "judicial_unit": item.judicial_unit,
+                "service_type": item.service_type,
+                "atama_tarihi": item.atama_tarihi.isoformat() if item.atama_tarihi else None,
                 "hasar_dosya_no": item.hasar_dosya_no,
                 "hukuk_no": item.hukuk_no,
+                "klasor_no_2": item.klasor_no_2,
+                "notes": item.notes,
                 "dosya_son_durumu": getattr(item, "dosya_son_durumu", None),
                 "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
                 "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
                 "created_at": item.created_at.isoformat() if hasattr(item, 'created_at') and item.created_at else None,
                 "updated_at": item.updated_at.isoformat() if getattr(item, "updated_at", None) else None,
             }
+            result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
             cases_list.append(result)
         return cases_list, total
     except Exception as e:
@@ -372,6 +419,7 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         case.manevi_tazminat = data.get("manevi_tazminat", case.manevi_tazminat)
         case.bureau_type = data.get("bureau_type", case.bureau_type)
         case.sub_type_extra = data.get("sub_type_extra", case.sub_type_extra)
+        case.judicial_unit = data.get("judicial_unit", case.judicial_unit)
         case.hasar_dosya_no = data.get("hasar_dosya_no", case.hasar_dosya_no)
         case.hukuk_no = data.get("hukuk_no", case.hukuk_no)
         case.klasor_no_2 = data.get("klasor_no_2", case.klasor_no_2)
@@ -391,11 +439,6 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
             parsed = _parse_date_field(data["atama_tarihi"], "atama_tarihi")
             if parsed:
                 case.atama_tarihi = parsed
-
-        if data.get("tazminat_talep_tarihi"):
-            parsed = _parse_date_field(data["tazminat_talep_tarihi"], "tazminat_talep_tarihi")
-            if parsed:
-                case.tazminat_talep_tarihi = parsed
 
         # 2. Sync Parties (Delete and Re-add for simplicity in this version)
         db.query(models.CaseParty).filter(models.CaseParty.case_id == case_id).delete()
@@ -458,6 +501,46 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         db.close()
 
 
+def find_duplicate_cases(esas_no: str, court: str = None, tenant_id: str = None):
+    """Aynı esas no'lu aktif davaları bulur (mükerrer açılış uyarısı için).
+
+    Esas no karşılaştırması normalize + sıfır dolgu toleranslıdır
+    ("2024/123" == "2024 / 0123"); mahkeme benzerliği bilgi amaçlı
+    `court_match` bayrağı olarak döner — aynı esas no farklı mahkemede
+    meşru olabilir, karar kullanıcının.
+    """
+    from case_matcher import _court_similarity, _esas_no_similarity
+
+    if not esas_no or not str(esas_no).strip():
+        return []
+    db = SessionLocal()
+    try:
+        q = db.query(models.Case).filter(
+            models.Case.active.is_(True), models.Case.esas_no.isnot(None)
+        )
+        q = _apply_tenant_filter(q, tenant_id)
+        matches = []
+        for c in q.all():
+            if _esas_no_similarity(esas_no, c.esas_no) >= 50:
+                court_score, _reason = _court_similarity(court or "", c.court or "")
+                matches.append({
+                    "id": c.id,
+                    "tracking_no": c.tracking_no,
+                    "esas_no": c.esas_no,
+                    "court": c.court,
+                    "status": c.status,
+                    "court_match": court_score >= 25,
+                })
+        # Aynı mahkemedekiler önce — kullanıcı için en olası mükerrerler
+        matches.sort(key=lambda m: not m["court_match"])
+        return matches[:10]
+    except Exception as e:
+        logger.error(f"Find Duplicate Cases Error: {e}")
+        return []
+    finally:
+        db.close()
+
+
 def search_cases(query: str, exact: bool = False, active_only: bool = False, tenant_id: str = None):
     status = "DERDEST" if active_only else None
     # Dropdown en fazla 8 sonuç gösteriyor; relevance sıralı ilk 25 fazlasıyla yeterli.
@@ -467,6 +550,9 @@ def search_cases(query: str, exact: bool = False, active_only: bool = False, ten
 
 
 def add_case(data: dict, tenant_id: str = None):
+    # Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı 2026-07-31 rev.2):
+    # dosya DERDEST olarak açılır, eksikler get_case/get_cases'teki
+    # missing_required_fields ile panelde uyarı olarak görünür ve filtrelenir.
     try:
         db = SessionLocal()
 
@@ -499,6 +585,7 @@ def add_case(data: dict, tenant_id: str = None):
             tracking_no=data.get("tracking_no"),
             esas_no=data.get("esas_no"),
             status=data.get("status", "DERDEST"),
+            service_type=data.get("service_type"),
             file_type=data.get("file_type"),
             sub_type=data.get("sub_type"),
             subject=data.get("subject"),
@@ -510,6 +597,7 @@ def add_case(data: dict, tenant_id: str = None):
             manevi_tazminat=data.get("manevi_tazminat", 0),
             bureau_type=data.get("bureau_type"),
             sub_type_extra=data.get("sub_type_extra"),
+            judicial_unit=data.get("judicial_unit"),
             hasar_dosya_no=data.get("hasar_dosya_no"),
             hukuk_no=data.get("hukuk_no"),
             klasor_no_2=data.get("klasor_no_2"),
@@ -525,11 +613,6 @@ def add_case(data: dict, tenant_id: str = None):
         atama_tarihi_str = data.get("atama_tarihi")
         if atama_tarihi_str:
             new_case.atama_tarihi = _parse_date_field(atama_tarihi_str, "atama_tarihi")
-
-        # Handle tazminat_talep_tarihi
-        talep_tarihi_str = data.get("tazminat_talep_tarihi")
-        if talep_tarihi_str:
-            new_case.tazminat_talep_tarihi = _parse_date_field(talep_tarihi_str, "tazminat_talep_tarihi")
 
         db.add(new_case)
         db.flush()  # Get the case ID

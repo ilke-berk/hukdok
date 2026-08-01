@@ -21,6 +21,7 @@ from services.case_intake import (  # noqa: E402
     merge_fields,
     merge_parties,
     merge_policies,
+    normalize_known_value,
     parse_iso_date,
     policy_overlap_warnings,
     suggest_known_court,
@@ -365,6 +366,87 @@ def test_suggest_known_court():
     # Alakasız → öneri yok
     assert suggest_known_court("VAN 2. AĞIR CEZA MAHKEMESİ", known) is None
     assert suggest_known_court(None, known) is None
+
+
+def test_merge_fields_hasar_hukuk_no_plain_vote():
+    # Sigorta atama yazısından hasar/hukuk no artık taslağa akar (2026-08-01)
+    docs = [
+        _doc("atama.pdf", belge_turu_tahmini="Sigorta Görevlendirme Yazısı",
+             hasar_dosya_no="2024-HS-123", hukuk_no="HK-77"),
+        _doc("dilekce.pdf", belge_turu_tahmini="Dava Dilekçesi", dava_konusu="Tazminat"),
+    ]
+    fields = merge_fields(docs)
+    assert fields["hasar_dosya_no"]["value"] == "2024-HS-123"
+    assert fields["hukuk_no"]["value"] == "HK-77"
+
+
+def test_derive_judicial_unit_shared_module():
+    # Sihirbaz merge'i ile backfill script'i aynı kalıpları kullanır
+    from services.judicial_unit import derive_judicial_unit
+
+    assert derive_judicial_unit("ANKARA 4. TÜKETİCİ MAHKEMESİ") == "TÜKETİCİ MAHKEMESİ"
+    assert derive_judicial_unit("İSTANBUL ANADOLU 2. ASLİYE HUKUK MAHKEMESİ") == "ASLİYE HUKUK MAHKEMESİ"
+    assert derive_judicial_unit("KAYSERİ İCRA DAİRESİ") == "İCRA DAİRESİ"
+    assert derive_judicial_unit("bizim oda") is None
+    assert derive_judicial_unit("") is None
+
+
+def test_normalize_known_value():
+    known = ["Tazminat (Tıbbi Kötü Uygulama)", "Rücuen Alacak (Tıbbi Kötü Uygulama)"]
+    # Birebir aynı yazım → kanonik ad
+    assert normalize_known_value(known[0], known) == known[0]
+    # Normalize eşitlik (küçük harf, aksan, çift boşluk) → kanonik ad
+    assert normalize_known_value("tazminat  (tibbi kötü uygulama)", known) == known[0]
+    # Küçük sapma (≥0.90 benzerlik) → kanonik ada toparlanır
+    assert normalize_known_value("Tazminat (Tıbbi Kötü Uygulamalar)", known) == known[0]
+    # Eşik altı serbest metin → None (liste dışı değer sızmaz)
+    assert normalize_known_value(
+        "Fazlaya ilişkin talep hakları saklı 5.000 TL maddi tazminat talebidir", known
+    ) is None
+    assert normalize_known_value(None, known) is None
+    assert normalize_known_value("Tazminat", None) is None
+
+
+def test_build_draft_canonical_guard_subject_and_specialty():
+    # Değer YA listeden YA boş: eşleşmeyen AI metni boşaltılır, normalize
+    # eşleşen değer kanonik yazıma çekilir; liste yoksa bekçi devre dışı.
+    known_subjects = ["Tazminat (Tıbbi Kötü Uygulama)"]
+    known_specialties = ["Beyin ve Sinir Cerrahisi (Nöroşirurji)"]
+    docs = [
+        _doc("dilekce.pdf", belge_turu_tahmini="Dava Dilekçesi",
+             dava_konusu="Fazlaya ilişkin talep hakları saklı tazminat talebidir",
+             uzmanlik_tahmini="beyin ve sinir cerrahisi (nöroşirurji)"),
+    ]
+    draft, _ = build_draft(
+        docs, [], known_subjects=known_subjects, known_specialties=known_specialties
+    )
+    assert draft["fields"]["subject"]["value"] is None
+    assert draft["fields"]["sub_type_extra"]["value"] == known_specialties[0]
+
+    draft2, _ = build_draft(docs, [])
+    assert draft2["fields"]["subject"]["value"] == (
+        "Fazlaya ilişkin talep hakları saklı tazminat talebidir"
+    )
+
+
+def test_build_draft_canonical_guard_filters_candidates():
+    # Belgeler anlaşamadığında adaylar da süzülür: liste dışı aday düşer,
+    # aynı kanonik ada eşlenenler tek adayda birleşir. (Dilekçe yok — subject
+    # dilekçe-öncelikli olduğundan dilekçe olsaydı yalnız dilekçeler oylardı.)
+    known_subjects = ["Tazminat (Tıbbi Kötü Uygulama)"]
+    docs = [
+        _doc("tensip.pdf", belge_turu_tahmini="Tensip Zaptı",
+             dava_konusu="Tazminat (Tıbbi Kötü Uygulama)"),
+        _doc("tensip2.pdf", belge_turu_tahmini="Tensip Zaptı",
+             dava_konusu="Tazminat (Tıbbi Kötü Uygulamalar)"),
+        _doc("mazbata.pdf", belge_turu_tahmini="Tebligat Mazbatası",
+             dava_konusu="Alacak davasına ilişkin serbest metin"),
+    ]
+    draft, _ = build_draft(docs, [], known_subjects=known_subjects)
+    cands = draft["fields"]["subject"]["candidates"]
+    assert [c["value"] for c in cands] == ["Tazminat (Tıbbi Kötü Uygulama)"]
+    assert cands[0]["count"] == 2
+    assert sorted(cands[0]["sources"]) == ["tensip.pdf", "tensip2.pdf"]
 
 
 def test_client_priors_most_common():

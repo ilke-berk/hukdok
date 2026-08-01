@@ -51,6 +51,16 @@ describe("generateTrackingNumber", () => {
         expect(no.split(".")[0]).toBe("S0");
     });
 
+    it("sağlık çalışanı D2 kodu ve kişi formatı alır", () => {
+        const no = generateTrackingNumber({
+            category: "Sağlık Çalışanı",
+            clientName: "Ayşe Yılmaz",
+            clientCategory: "Sağlık Çalışanı",
+        });
+        expect(no.split(".")[0]).toBe("D2");
+        expect(no).toContain(".A_YILMAZ..");
+    });
+
     it("süreç tipi ve sıra numarası bloklara yansır", () => {
         const no = generateTrackingNumber({ processType: "İcra", sequence: 12 });
         const parts = no.split(".");
@@ -116,13 +126,21 @@ describe("pickNameClient", () => {
         expect(picked.name).toBe("Mehmet Öz");
     });
 
-    it("öncelik sırası Doktor > Hasta > Bireysel", () => {
+    it("öncelik sırası Doktor > Sağlık Çalışanı > Hasta > Bireysel", () => {
         const picked = pickNameClient([
             { name: "B", category: "Bireysel" },
             { name: "H", category: "Hasta" },
+            { name: "S", category: "Sağlık Çalışanı" },
             { name: "D", category: "Doktor" },
         ]);
         expect(picked.name).toBe("D");
+
+        const withoutDoctor = pickNameClient([
+            { name: "B", category: "Bireysel" },
+            { name: "H", category: "Hasta" },
+            { name: "S", category: "Sağlık Çalışanı" },
+        ]);
+        expect(withoutDoctor.name).toBe("S");
     });
 
     it("boş liste boş sonuç döner", () => {
@@ -149,6 +167,20 @@ describe("bestCategoryCode", () => {
 
     it("sigorta yoksa ilk anlamlı kod", () => {
         expect(bestCategoryCode([{ name: "Mehmet", category: "Hasta" }])).toBe("H1");
+    });
+
+    it("sigorta yoksa açık öncelik: D1 > D2 > H2 > H1 (liste sırasından bağımsız)", () => {
+        expect(bestCategoryCode([
+            { name: "Hasta Kişi", category: "Hasta" },
+            { name: "Hemşire Ayşe", category: "Sağlık Çalışanı" },
+            { name: "Mehmet Öz", category: "Doktor" },
+        ])).toBe("D1");
+
+        expect(bestCategoryCode([
+            { name: "Hasta Kişi", category: "Hasta" },
+            { name: "Özel Hastane A.Ş.", category: "Özel Hastane" },
+            { name: "Hemşire Ayşe", category: "Sağlık Çalışanı" },
+        ])).toBe("D2");
     });
 
     it("boş liste X1", () => {

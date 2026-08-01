@@ -8,13 +8,12 @@ import { usePageSearchContext } from "@/components/system/PageSearch";
 import { GlobalSearchDropdown } from "@/components/system/GlobalSearchDropdown";
 
 type TopbarProps = {
-  collapsed: boolean;
   onOpenSidebar: () => void;
 };
 
 const DEFAULT_PLACEHOLDER = "Esas no, müvekkil, mahkeme veya konu ara…";
 
-export function Topbar({ collapsed, onOpenSidebar }: TopbarProps) {
+export function Topbar({ onOpenSidebar }: TopbarProps) {
   const navigate = useNavigate();
   const { accounts } = useMsal();
   const { title, breadcrumb } = usePageTitle();
@@ -52,17 +51,16 @@ export function Topbar({ collapsed, onOpenSidebar }: TopbarProps) {
     >
       {/* Left: opener + title */}
       <div className="flex items-center gap-3.5 min-w-0">
-        {collapsed && (
-          <button
-            type="button"
-            onClick={onOpenSidebar}
-            aria-label="Menüyü aç"
-            title="Menüyü aç"
-            className="w-[38px] h-[38px] grid place-items-center rounded-[4px] border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] cursor-pointer transition-colors shrink-0 hover:text-[var(--brand)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          onMouseEnter={onOpenSidebar}
+          aria-label="Menüyü aç"
+          title="Menüyü aç"
+          className="w-[38px] h-[38px] grid place-items-center rounded-[4px] border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] cursor-pointer transition-colors shrink-0 hover:text-[var(--brand)] hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]"
+        >
+          <Menu className="w-4 h-4" />
+        </button>
         <div className="flex flex-col min-w-0">
           <div className="font-mono text-[10px] tracking-[0.18em] uppercase text-[var(--fg-subtle)]">
             {(breadcrumb || ["Avukat Paneli"]).join(" / ")}

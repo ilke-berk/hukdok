@@ -84,6 +84,9 @@ def init_db():
 #   ("columns", tablo, {kolon: DDL | (DDL, [kolon eklendikten sonra çalışacak SQL, ...])})
 #   ("table",   tablo, CREATE_SQL, [index SQL, ...])
 #   ("index",   tablo, [CREATE INDEX IF NOT EXISTS SQL, ...])  — mevcut tabloya idempotent index
+#   ("drop",    tablo, [kolon, ...])  — kolonu VERİYLE BİRLİKTE siler; modeldeki tanım ve
+#                                       "columns" op'undaki satır da kaldırılmış olmalı,
+#                                       yoksa sonraki açılışta kolon geri eklenir
 _MIGRATIONS = [
     # 1. SEQUENCE for Lawyers, DocTypes, Statuses
     ("columns", "lawyers",  {"sequence": "INTEGER DEFAULT 0"}),
@@ -116,7 +119,7 @@ _MIGRATIONS = [
         "acceptance_date": "DATE",             # İş Kabul Tarihi
         "bureau_type":     "VARCHAR(100)",     # Büro Özel Türü
         "sub_type_extra":  "VARCHAR(200)",     # Ek Alt Kırılım
-        "tazminat_talep_tarihi": "DATE",       # Tazminat Talep Tarihi (2026-07-30)
+        "judicial_unit":   "VARCHAR(200)",     # Yargı Birimi (2026-07-31 — formda vardı, kaydedilmiyordu)
     }),
 
     # 4. CASE_PARTIES (birth_year, gender)
@@ -355,6 +358,10 @@ _MIGRATIONS = [
     """, [
         "CREATE INDEX idx_client_policies_client ON client_policies(client_id)",
     ]),
+
+    # 19. TAZMINAT_TALEP_TARIHI GERI ALIMI — anket kararı (2026-07-31):
+    # alan 2026-07-30'da eklendi, ofis "kaldırılsın" dedi; veri kaybı kabul.
+    ("drop", "cases", ["tazminat_talep_tarihi"]),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
@@ -424,6 +431,16 @@ def check_and_migrate_tables():
                     for sql in post_sql:
                         _exec(sql, f"{table}.{col_name} (post)")
                     logger.info(f"Added {col_name} to {table}")
+
+            elif kind == "drop":
+                if table not in tables:
+                    continue
+                columns = {col["name"] for col in inspector.get_columns(table)}
+                for col_name in op[2]:
+                    if col_name not in columns:
+                        continue
+                    _exec(f'ALTER TABLE {table} DROP COLUMN {col_name}', f"{table}.{col_name} (drop)")
+                    logger.info(f"Dropped {col_name} from {table}")
 
             elif kind == "table":
                 if table in tables:

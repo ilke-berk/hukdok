@@ -56,6 +56,12 @@ def sanitize_filename(filename: str) -> str:
     filename = filename.replace("\x00", "")
     filename = sanitize_filename_text(filename)
 
+    # UYAP bazen UDF'i ".udf.zip" adıyla verir — ada ".udf" olarak normalize
+    # edilir (routes/case_intake.resolve_upload_suffix ile aynı özel durum;
+    # UDF zaten ZIP arşividir, içerik değişmez).
+    if filename.lower().endswith(".udf.zip"):
+        filename = filename[: -len(".zip")]
+
     ext = Path(filename).suffix.lower()
 
     if not ext:

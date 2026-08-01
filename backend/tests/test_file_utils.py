@@ -111,6 +111,12 @@ class TestSanitizeFilename:
     def test_new_formats_accepted(self, name):
         assert sanitize_filename(name) == name
 
+    def test_udf_zip_normalized_to_udf(self):
+        # UYAP'ın ".udf.zip" adlandırması ".udf"e normalize edilir; düz .zip reddedilir
+        assert sanitize_filename("TENSIP_TUTANAGI.udf.zip") == "TENSIP_TUTANAGI.udf"
+        with pytest.raises(HTTPException):
+            sanitize_filename("arsiv.zip")
+
     def test_long_name_truncated(self):
         result = sanitize_filename("a" * 250 + ".pdf")
         assert result == "a" * 150 + ".pdf"

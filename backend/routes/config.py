@@ -53,6 +53,15 @@ def api_is_admin(user: dict = Depends(get_current_user)):
     return {"is_admin": email in _admin_emails()}
 
 
+# ─── ZORUNLU DAVA ALANLARI ────────────────────────────────────────────────────
+
+@router.get("/api/config/required_case_fields")
+def api_required_case_fields(user: dict = Depends(get_current_user)):
+    """Dava kartı zorunlu alan listesi (tek kaynak: backend/required_fields.py)."""
+    from required_fields import PARTY_TC_FIELD, REQUIRED_CASE_FIELDS
+    return {"fields": REQUIRED_CASE_FIELDS, "party_rule": PARTY_TC_FIELD}
+
+
 # ─── LAWYERS ──────────────────────────────────────────────────────────────────
 
 @router.get("/config/lawyers")

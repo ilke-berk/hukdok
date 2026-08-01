@@ -77,7 +77,7 @@ function toTitleCase(str: string): string {
 function CategoryIcon({ category, className = "w-4 h-4" }: { category?: string; className?: string }) {
   if (!category) return <User2 className={className} />;
   const low = category.toLowerCase();
-  if (low.includes("doktor")) return <Stethoscope className={className} />;
+  if (low.includes("doktor") || low.includes("sağlık")) return <Stethoscope className={className} />;
   if (low.includes("kurum") || low.includes("hastane") || low.includes("sigorta")) return <Building2 className={className} />;
   return <User2 className={className} />;
 }
@@ -153,10 +153,10 @@ const ClientList = () => {
     const justClients = allClients.filter(c => c.contact_type !== "Other");
     return {
       total: justClients.length,
-      doctors: justClients.filter(c => c.category === "Doktor").length,
+      doctors: justClients.filter(c => c.category === "Doktor" || c.category === "Sağlık Çalışanı").length,
       corporates: justClients.filter(c => c.category === "Kurum" || c.category === "Özel Hastane" || c.category === "Sigorta Şirketi").length,
       individuals: justClients.filter(c => c.category === "Bireysel").length,
-      others: justClients.filter(c => !["Doktor", "Kurum", "Özel Hastane", "Sigorta Şirketi", "Bireysel"].includes(c.category || "")).length,
+      others: justClients.filter(c => !["Doktor", "Sağlık Çalışanı", "Kurum", "Özel Hastane", "Sigorta Şirketi", "Bireysel"].includes(c.category || "")).length,
     };
   }, [allClients]);
 

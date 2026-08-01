@@ -1,5 +1,8 @@
+// DİKKAT: eşleşme includes ile yapılır ve sıra önemlidir — "Özel Hastane",
+// "Hasta"dan ÖNCE gelmeli (aksi halde substring olarak H1'e düşer).
 export const CATEGORY_MAP: Record<string, string> = {
     "Doktor": "D1",
+    "Sağlık Çalışanı": "D2",
     "Özel Hastane": "H2",
     "Sigorta": "S0",
     "Hasta": "H1",
@@ -43,7 +46,7 @@ const CORP_STOP: Set<string> = new Set([
 ]);
 
 // Kişi kategorileri — bu kategorilerde slugifyName kullanılır
-const PERSON_CATEGORIES = new Set(["Doktor", "Hasta", "Bireysel"]);
+const PERSON_CATEGORIES = new Set(["Doktor", "Sağlık Çalışanı", "Hasta", "Bireysel"]);
 
 const normalizeAscii = (s: string): string =>
     s.replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ü/g, 'u')
@@ -135,7 +138,7 @@ export const generateTrackingNumber = (params?: TrackingParams): string => {
 
 /**
  * Birden fazla müvekkil arasından isim bloğu için en uygun olanı seç.
- * Kişi (Doktor/Hasta/Bireysel) > Kurum > Sigorta Şirketi
+ * Kişi (Doktor/Sağlık Çalışanı/Hasta/Bireysel) > Kurum > Sigorta Şirketi
  */
 export const pickNameClient = (
     clients: Array<{ name: string; category?: string }>
@@ -143,12 +146,13 @@ export const pickNameClient = (
     if (clients.length === 0) return { name: "", category: "" };
 
     const priority = (cat?: string): number => {
-        if (!cat) return 3;
-        if (cat === "Doktor")   return 0;
-        if (cat === "Hasta")    return 1;
-        if (cat === "Bireysel") return 2;
+        if (!cat) return 4;
+        if (cat === "Doktor")          return 0;
+        if (cat === "Sağlık Çalışanı") return 1;
+        if (cat === "Hasta")           return 2;
+        if (cat === "Bireysel")        return 3;
         if (cat.toLowerCase().includes("sigorta")) return 10;
-        return 5;
+        return 6;
     };
 
     const sorted = [...clients].sort((a, b) => priority(a.category) - priority(b.category));
@@ -157,7 +161,7 @@ export const pickNameClient = (
 
 /**
  * Tüm müvekkillerden en iyi kategori kodunu döner.
- * Özgül sigorta (S1-S7) > S0 > D1 > H2 > H1 > X1
+ * Özgül sigorta (S1-S7) > S0 > D1 > D2 > H2 > H1 > X1
  */
 export const bestCategoryCode = (
     clients: Array<{ name: string; category?: string }>
@@ -183,6 +187,10 @@ export const bestCategoryCode = (
     const codes = clients.map(c => getCode(c.name, c.category || ""));
     for (const c of codes) if (c.startsWith("S") && c !== "S0") return c;
     for (const c of codes) if (c === "S0") return c;
+    // Docstring'deki açık öncelik: D1 > D2 > H2 > H1 (önceden "ilk X1 olmayan" idi)
+    for (const wanted of ["D1", "D2", "H2", "H1"]) {
+        if (codes.includes(wanted)) return wanted;
+    }
     for (const c of codes) if (c !== "X1") return c;
     return codes[0];
 };

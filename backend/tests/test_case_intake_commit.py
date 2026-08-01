@@ -125,16 +125,47 @@ def _doc(pid, filename="2024-01-15_AHMET-YILMAZ_TENSIP-ZPT____.pdf", **extra):
 # ── mutlu yol ────────────────────────────────────────────────────────────────
 
 def test_commit_case_only_creates_case_and_forces_derdest(env):
+    # Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı 2026-07-31 rev.2):
+    # dava DERDEST açılır, eksikler yanıtla döner (panelde uyarı için).
     r = env.client.post("/api/case-intake/commit", json=_payload())
     assert r.status_code == 200
     body = r.json()
-    assert body["case"] == {"id": 123, "tracking_no": "2026/0456"}
+    assert body["case"]["id"] == 123
+    assert body["case"]["tracking_no"] == "2026/0456"
+    assert body["case"]["status"] == "DERDEST"
+    assert len(body["case"]["missing_required_fields"]) > 0
     assert body["documents"] == []
     assert body["policies"] == {"saved": 0, "skipped": 0}
     # status istemcinin gönderdiği KARAR değil, sunucuda zorlanmış DERDEST
     assert len(env.calls["add_case"]) == 1
     assert env.calls["add_case"][0]["status"] == "DERDEST"
     assert env.calls["add_case"][0]["parties"][0]["client_id"] == 12
+
+
+def test_commit_complete_case_has_no_missing_fields(env):
+    payload = _payload()
+    payload["case"].update({
+        "file_type": "Hukuk",
+        "judicial_unit": "ASLİYE HUKUK MAHKEMESİ",
+        "sub_type": "ASLİYE HUKUK MAHKEMESİ",
+        "sub_type_extra": "Üroloji",
+        "opening_date": "2024-01-10",
+        "subject": "Maddi-manevi tazminat",
+        "uyap_lawyer_name": "Av. Deniz",
+        "service_type": "00100",
+        "acceptance_date": "2024-01-05",
+        "bureau_type": "LEXİS",
+        "atama_tarihi": "2024-01-02",
+    })
+    payload["case"]["parties"].append(
+        {"name": "Karşı Kurum", "role": "DAVALI", "party_type": "COUNTER", "tc_no": "12345678901"}
+    )
+    r = env.client.post("/api/case-intake/commit", json=payload)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["case"]["status"] == "DERDEST"
+    assert body["case"]["missing_required_fields"] == []
+    assert env.calls["add_case"][0]["status"] == "DERDEST"
 
 
 def test_commit_happy_path_all_documents_queued(env):

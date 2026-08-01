@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,8 +39,9 @@ interface CaseDetailsData {
     opening_date?: string;
     maddi_tazminat?: number;
     manevi_tazminat?: number;
-    tazminat_talep_tarihi?: string;
     case_group_id?: number;
+    judicial_unit?: string;
+    missing_required_fields?: { field: string; label: string }[];
     hasar_dosya_no?: string;
     hukuk_no?: string;
     klasor_no_2?: string;
@@ -261,6 +262,35 @@ const CaseDetails = () => {
                     </div>
                 </div>
 
+                {/* Eksik zorunlu alan bandı — anket kararı: eksikler unutulmasın, tamamlanınca DERDEST'e geçirilsin */}
+                {(caseData.missing_required_fields?.length ?? 0) > 0 && (
+                    <div className="flex items-start gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-sm leading-relaxed">
+                            <span className="font-semibold text-amber-700 dark:text-amber-500">
+                                Eksik zorunlu alanlar ({caseData.missing_required_fields!.length}):
+                            </span>{" "}
+                            <span className="text-[var(--fg)]">
+                                {caseData.missing_required_fields!.map(m => m.label).join(", ")}
+                            </span>
+                            {caseData.status === "DANIŞ" && (
+                                <span className="block text-[var(--fg-muted)] mt-0.5">
+                                    Dosya DANIŞ statüsünde — alanları tamamlayıp davayı DERDEST'e geçirebilirsiniz.
+                                </span>
+                            )}
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-auto shrink-0 gap-1.5 border-amber-500/40 hover:bg-amber-500/15"
+                            onClick={() => navigate("/new-case/form", { state: { case: caseData } })}
+                        >
+                            <Edit className="w-3.5 h-3.5" />
+                            Tamamla
+                        </Button>
+                    </div>
+                )}
+
                 {/* Case Header Card */}
                 <div className="relative bg-[var(--bg-elevated)] border border-[var(--border)] border-l-4 border-l-[var(--brand)] overflow-hidden">
                     <CardContent className="p-6 md:p-8">
@@ -454,7 +484,7 @@ const CaseDetails = () => {
                     {/* Overview Tab */}
                     <TabsContent value="overview" className="space-y-4">
                         {/* Dosya / Hasar Bilgileri */}
-                        {(caseData.hasar_dosya_no || caseData.hukuk_no || caseData.klasor_no_2 || caseData.atama_tarihi || caseData.notes) && (
+                        {(caseData.hasar_dosya_no || caseData.hukuk_no || caseData.klasor_no_2 || caseData.atama_tarihi || caseData.judicial_unit || caseData.notes) && (
                             <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-lg flex items-center gap-2">
@@ -489,6 +519,12 @@ const CaseDetails = () => {
                                                 <span className="font-medium">{new Date(caseData.atama_tarihi as string).toLocaleDateString("tr-TR")}</span>
                                             </div>
                                         )}
+                                        {caseData.judicial_unit && (
+                                            <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Yargı Birimi</span>
+                                                <span className="font-medium">{caseData.judicial_unit}</span>
+                                            </div>
+                                        )}
                                     </div>
                                     {caseData.notes && (
                                         <div className="mt-3 p-3 rounded-lg border bg-background/50">
@@ -515,12 +551,6 @@ const CaseDetails = () => {
                                         <span className="text-muted-foreground">Manevi Tazminat</span>
                                         <span className="font-semibold text-lg">{formatCurrency(caseData.manevi_tazminat || 0)}</span>
                                     </div>
-                                    {caseData.tazminat_talep_tarihi && (
-                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                            <span className="text-muted-foreground">Tazminat Talep Tarihi</span>
-                                            <span className="font-semibold">{new Date(caseData.tazminat_talep_tarihi).toLocaleDateString("tr-TR")}</span>
-                                        </div>
-                                    )}
                                 </CardContent>
                             </Card>
 

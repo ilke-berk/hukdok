@@ -38,6 +38,10 @@ PLAIN_VOTE_FIELDS = {
     "file_type": "yargi_turu",
     "teblig_tarihi": "teblig_tarihi",
     "sub_type_extra": "uzmanlik_tahmini",
+    # Sigorta atama/görevlendirme yazısından (2026-08-01 — karar 8 geri alındı,
+    # atama yazısı da sihirbaza yüklenebilir)
+    "hasar_dosya_no": "hasar_dosya_no",
+    "hukuk_no": "hukuk_no",
 }
 # Dava dilekçesi öncelikli alanlar: dilekçede dolu ise yalnız dilekçe(ler) oylar
 DILEKCE_PRIORITY_FIELDS = {
@@ -628,6 +632,27 @@ def suggest_known_court(value: Optional[str], known_courts: List[str]) -> Option
     return best if best_ratio >= 0.90 else None
 
 
+def normalize_known_value(value: Optional[str], known_names: Optional[List[str]]) -> Optional[str]:
+    """Serbest değeri kanonik liste adına eşler (dava konusu / uzmanlık bekçisi).
+
+    Normalize eşitlik → kanonik ad; değilse en yüksek benzerlik ≥0.90 → kanonik
+    ad; eşleşme yoksa None. Kural kesin: değer YA yönetici panelindeki dinamik
+    listeden birebir gelir YA boş kalır — liste dışı serbest metin taslağa
+    sızmaz, kullanıcı boş alanı combobox'tan doldurur (2026-08-01 kararı)."""
+    if not value or not known_names:
+        return None
+    v_norm = _norm(value)
+    best, best_ratio = None, 0.0
+    for name in known_names:
+        n_norm = _norm(name)
+        if n_norm == v_norm:
+            return name
+        ratio = SequenceMatcher(None, v_norm, n_norm).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = name, ratio
+    return best if best_ratio >= 0.90 else None
+
+
 def client_priors(case_rows: List[Dict]) -> Dict[str, Any]:
     """Müvekkilin geçmiş davalarından örüntüler (zenginleştirme 4).
 
@@ -652,6 +677,8 @@ def build_draft(
     client_rows: List[Dict],
     known_policies: Optional[List[Dict]] = None,
     known_courts: Optional[List[str]] = None,
+    known_subjects: Optional[List[str]] = None,
+    known_specialties: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], List[Dict]]:
     """Saf birleştirme: alanlar + taraflar + poliçeler + uyarılar + belge özeti.
 
@@ -668,6 +695,32 @@ def build_draft(
     court_suggestion = suggest_known_court(fields["court"]["value"], known_courts or [])
     if court_suggestion:
         fields["court"]["known_court_suggestion"] = court_suggestion
+
+    # Dava konusu + uzmanlık kanonik bekçisi: liste yüklüyse değer YA listeden
+    # YA boş. Küçük model sapmaları (≥0.90 benzerlik) kanonik ada toparlanır;
+    # eşleşmeyen değer boşaltılır (alan tiksiz gelir, kullanıcı seçer).
+    # Adaylar da aynı süzgeçten geçer — popover liste dışı değer önermesin.
+    for f_key, known in (("subject", known_subjects), ("sub_type_extra", known_specialties)):
+        if not known:
+            continue
+        f = fields[f_key]
+        if f["value"]:
+            f["value"] = normalize_known_value(f["value"], known)
+        if f.get("candidates"):
+            canon_cands: Dict[str, Dict] = {}
+            for c in f["candidates"]:
+                canon = normalize_known_value(c.get("value"), known)
+                if not canon:
+                    continue
+                if canon in canon_cands:
+                    canon_cands[canon]["count"] += c.get("count", 0)
+                    canon_cands[canon]["sources"] = sorted(
+                        set(canon_cands[canon]["sources"]) | set(c.get("sources") or [])
+                    )
+                else:
+                    canon_cands[canon] = {**c, "value": canon,
+                                          "sources": list(c.get("sources") or [])}
+            f["candidates"] = list(canon_cands.values())
 
     documents = []
     for d in docs:

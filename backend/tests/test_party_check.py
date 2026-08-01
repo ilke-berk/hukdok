@@ -160,11 +160,23 @@ def test_counter_matching_other_contact_is_not_conflict():
     assert len(res[0]["matches"]) == 1
 
 
-def test_client_query_with_past_counter_history_is_conflict():
+def test_client_query_with_past_counter_history_is_not_conflict():
+    # Müvekkil ile çıkar çatışması olmaz (2026-08-01 kararı): taraf-değişimi
+    # geçmişi bilgi olarak listelenir ama conflict bayrağı kalkmaz.
     parties = [_party(name="AHMET YILMAZ", party_type="COUNTER")]
     res = check_parties([_q("Ahmet Yılmaz", party_type="CLIENT")], [], parties)
-    assert res[0]["conflict"] is True
+    assert res[0]["conflict"] is False
     assert res[0]["matches"][0]["party_type"] == "COUNTER"
+
+
+def test_client_query_counter_history_not_conflict_after_tc_cleanup():
+    # TC temizliği sonrası conflict yeniden hesabı da CLIENT geçmişini çatışma saymaz
+    parties = [_party(name="AHMET YILMAZ", party_type="COUNTER", tc_no="12345678901")]
+    res = check_parties(
+        [_q("Ahmet Yılmaz", tc_no="12345678901", party_type="CLIENT")], [], parties
+    )
+    assert res[0]["conflict"] is False
+    assert res[0]["matches"][0]["matched_on"] == "tc_no"
 
 
 def test_client_query_expected_client_match_suppressed():

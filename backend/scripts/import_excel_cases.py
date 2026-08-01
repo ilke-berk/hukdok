@@ -34,6 +34,7 @@ SHEET_NAME = "Son Liste"
 
 CATEGORY_MAP = {
     "DOKTOR": "D1",
+    "SAĞLIK ÇALIŞANI": "D2",
     "ÖZEL HASTANE": "H2",
     "SİGORTA": "S0",
     "HASTA": "H1",

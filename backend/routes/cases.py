@@ -21,7 +21,7 @@ from schemas import (
 from database import SessionLocal
 from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
-    update_case_tracking, get_case_stage_log,
+    update_case_tracking, get_case_stage_log, find_duplicate_cases,
 )
 import models
 
@@ -75,11 +75,13 @@ def get_cases_api(
     exact: bool = False,
     file_type: Optional[str] = None,
     urgent_days: Optional[int] = Query(None, ge=1, le=365),
+    missing_required: bool = False,
     tenant_id: str = Depends(get_current_tenant),
 ):
     items, total = get_cases(
         limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact,
         tenant_id=tenant_id, file_type=file_type, urgent_days=urgent_days,
+        missing_required=missing_required,
     )
     # Gövde geriye dönük uyumlu (dizi) kalır; toplam sayı header ile taşınır
     response.headers["X-Total-Count"] = str(total)
@@ -141,6 +143,16 @@ def get_client_case_sequence(
 @router.get("/api/cases/search")
 def api_search_cases(q: str, exact: bool = False, active_only: bool = False, tenant_id: str = Depends(get_current_tenant)):
     return search_cases(q, exact=exact, active_only=active_only, tenant_id=tenant_id)
+
+
+@router.get("/api/cases/check-duplicate")
+def api_check_duplicate_case(
+    esas_no: str,
+    court: Optional[str] = None,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Aynı esas no'lu aktif dava var mı? (mükerrer açılış uyarısı — anket 2026-07-31)"""
+    return {"matches": find_duplicate_cases(esas_no, court=court, tenant_id=tenant_id)}
 
 
 @router.get("/api/cases/{case_id}")
@@ -216,8 +228,8 @@ def get_case_client_notice_target(
 
 @router.put("/api/cases/{case_id}")
 def api_update_case(case_id: int, case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
-    success = update_case(case_id, case_data.model_dump(), tenant_id=tenant_id)
-    if not success:
+    result = update_case(case_id, case_data.model_dump(), tenant_id=tenant_id)
+    if not result:
         raise HTTPException(status_code=500, detail="Failed to update case")
     return {"status": "success", "message": "Case updated"}
 

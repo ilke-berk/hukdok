@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
-import { useCases, CaseData } from "@/hooks/useCases";
+import { useCases, CaseData, DuplicateCaseMatch } from "@/hooks/useCases";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, CalendarDays, Banknote, Coins, Heart, Trash2 } from "lucide-react";
+import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
@@ -59,7 +59,6 @@ interface EditModeCaseData {
     opening_date?: string;
     service_type?: string;
     maddi_tazminat?: number | string;
-    tazminat_talep_tarihi?: string;
     manevi_tazminat?: number | string;
     acceptance_date?: string;
     bureau_type?: string;
@@ -106,11 +105,12 @@ const NewCase = () => {
     const queryClient = useQueryClient();
 
     // API Hooks
-    const { saveCase, updateCase, deleteCase, getCase, isLoading: isSaving } = useCases();
+    const { saveCase, updateCase, deleteCase, getCase, checkDuplicateCase, isLoading: isSaving } = useCases();
     const { clients: dbClients } = useClients();
     const {
         caseSubjects, lawyers,
         fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
+        requiredCaseFields, requiredPartyRule,
     } = useConfig();
 
     const DOSYA_TURLERI = fileTypes.map(f => f.name ?? "");
@@ -144,6 +144,15 @@ const NewCase = () => {
     // Form States
     const [showClientConfirm, setShowClientConfirm] = useState(false);
     const [pendingUnregistered, setPendingUnregistered] = useState<{ name: string }[]>([]);
+    // Zorunlu alan uyarısı: eksik alan kaydı engellemez, onaylanırsa DERDEST
+    // kaydedilir ve panelde "eksik" rozetiyle görünür
+    const [showMissingConfirm, setShowMissingConfirm] = useState(false);
+    const [pendingMissing, setPendingMissing] = useState<{ field: string; label: string }[]>([]);
+    const missingAcknowledged = useRef(false);
+    // Mükerrer dava uyarısı: aynı esas no'lu aktif kayıt varsa onay istenir
+    const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+    const [pendingDuplicates, setPendingDuplicates] = useState<DuplicateCaseMatch[]>([]);
+    const duplicateAcknowledged = useRef(false);
     const [clientSearchValues, setClientSearchValues] = useState<{ [key: number]: string }>({});
 
     const [formData, setFormData] = useState({
@@ -159,7 +168,6 @@ const NewCase = () => {
         serviceType: "00000", // Default service type code
         maddiTazminat: editModeCase?.maddi_tazminat?.toString() || "",
         maneviTazminat: editModeCase?.manevi_tazminat?.toString() || "",
-        tazminatTalepTarihi: editModeCase?.tazminat_talep_tarihi || "",
         acceptanceDate: editModeCase?.acceptance_date || "",
         bureauType: editModeCase?.bureau_type || "",
         subTypeExtra: editModeCase?.sub_type_extra || "",
@@ -340,7 +348,6 @@ const NewCase = () => {
                 serviceType: editModeCase.service_type || "00000",
                 maddiTazminat: editModeCase.maddi_tazminat?.toString() || "",
                 maneviTazminat: editModeCase.manevi_tazminat?.toString() || "",
-                tazminatTalepTarihi: editModeCase.tazminat_talep_tarihi || "",
                 acceptanceDate: editModeCase.acceptance_date || "",
                 bureauType: editModeCase.bureau_type || "",
                 subTypeExtra: editModeCase.sub_type_extra || "",
@@ -358,8 +365,56 @@ const NewCase = () => {
         }
     }, [editModeCase]);
 
+    // Zorunlu alan denetimi — liste backend'den gelir (tek kaynak: required_fields.py).
+    const getMissingRequired = (): { field: string; label: string }[] => {
+        const values: Record<string, string | undefined> = {
+            esas_no: formData.esasNo,
+            court: formData.court,
+            file_type: formData.fileType,
+            judicial_unit: formData.judicialUnit,
+            sub_type: formData.subType,
+            sub_type_extra: formData.subTypeExtra,
+            opening_date: formData.fileOpeningDate,
+            subject: formData.subject,
+            responsible_lawyer_name: formData.lawyer,
+            uyap_lawyer_name: formData.uyapLawyer,
+            service_type: formData.serviceType,
+            acceptance_date: formData.acceptanceDate,
+            bureau_type: formData.bureauType,
+            atama_tarihi: formData.atamaTarihi,
+        };
+        const missing = requiredCaseFields.filter(f => !(values[f.field] ?? "").trim());
+        const namedCounters = counterParties.filter(c => c.name);
+        if (requiredPartyRule && namedCounters.length > 0 && !namedCounters.some(c => (c.tc_no || "").trim())) {
+            missing.push(requiredPartyRule);
+        }
+        return missing;
+    };
+
     const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
         if (e) e.preventDefault();
+
+        // Zorunlu alan uyarısı: eksik alan kaydı ENGELLEMEZ — kullanıcı onaylarsa
+        // dosya DERDEST kaydedilir, panelde "eksik" uyarısıyla görünür/filtrelenir.
+        if (caseStatus === "DERDEST" && !missingAcknowledged.current) {
+            const missing = getMissingRequired();
+            if (missing.length > 0) {
+                setPendingMissing(missing);
+                setShowMissingConfirm(true);
+                return;
+            }
+        }
+
+        // Mükerrer dava kontrolü: aynı esas no'lu aktif kayıt varsa onaysız açma
+        // (anket: "aynı dava ara sıra iki kez açılıyor"). Yalnız yeni kayıtta.
+        if (!isEditMode && !duplicateAcknowledged.current && formData.esasNo.trim()) {
+            const dups = await checkDuplicateCase(formData.esasNo, formData.court);
+            if (dups.length > 0) {
+                setPendingDuplicates(dups);
+                setShowDuplicateConfirm(true);
+                return;
+            }
+        }
 
         // Validate that all people in 'clients' list are actually registered (Case-Insensitive Check)
         // Danışmada (DANIŞ) yeni müvekkil oluşturulmadığı için bu onay atlanır.
@@ -389,10 +444,10 @@ const NewCase = () => {
             uyap_lawyer_name: formData.uyapLawyer,
             maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
             manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
-            tazminat_talep_tarihi: formData.tazminatTalepTarihi || undefined,
             acceptance_date: formData.acceptanceDate || undefined,
             bureau_type: formData.bureauType || undefined,
             sub_type_extra: formData.subTypeExtra || undefined,
+            judicial_unit: formData.judicialUnit || undefined,
             atama_tarihi: formData.atamaTarihi || undefined,
             hasar_dosya_no: formData.hasarDosyaNo || undefined,
             hukuk_no: formData.hukukNo || undefined,
@@ -432,7 +487,9 @@ const NewCase = () => {
         let success: boolean;
         let errorMessage: string | undefined;
         if (isEditMode && editModeCase?.id) {
-            success = await updateCase(editModeCase.id, caseData as CaseData);
+            const result = await updateCase(editModeCase.id, caseData as CaseData);
+            success = result.ok;
+            errorMessage = result.error;
         } else {
             const result = await saveCase(caseData as CaseData);
             success = result.ok;
@@ -484,7 +541,6 @@ const NewCase = () => {
             serviceType: "00000",
             maddiTazminat: "",
             maneviTazminat: "",
-            tazminatTalepTarihi: "",
             acceptanceDate: "",
             bureauType: "",
             subTypeExtra: "",
@@ -1448,17 +1504,6 @@ const NewCase = () => {
                                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-bold font-mono">TL</span>
                                         </div>
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
-                                            <CalendarDays className="w-3 h-3" /> Tazminat Talep Tarihi
-                                        </Label>
-                                        <Input
-                                            type="date"
-                                            value={formData.tazminatTalepTarihi}
-                                            onChange={(e) => setFormData({ ...formData, tazminatTalepTarihi: e.target.value })}
-                                            className="h-9 text-sm bg-[var(--bg)] border-[var(--border-strong)]"
-                                        />
-                                    </div>
                                 </div>
                             </Card>
                             </>
@@ -1574,6 +1619,75 @@ const NewCase = () => {
                             <AlertDialogCancel onClick={() => setShowClientConfirm(false)}>Vazgeç</AlertDialogCancel>
                             <AlertDialogAction onClick={() => handleSubmit(undefined, true)}>
                                 Evet, Kaydet ve Davayı Aç
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+                {/* Zorunlu Alan Eksik Modalı — kaydı engellemez, uyarır */}
+                <AlertDialog open={showMissingConfirm} onOpenChange={setShowMissingConfirm}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Zorunlu Alanlar Eksik</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                                <div>
+                                    <p>Aşağıdaki zorunlu alanlar boş:</p>
+                                    <ul className="list-disc pl-5 mt-2 space-y-0.5">
+                                        {pendingMissing.map(m => (
+                                            <li key={m.field} className="font-medium">{m.label}</li>
+                                        ))}
+                                    </ul>
+                                    <p className="mt-3">
+                                        Yine de kaydederseniz dosya <strong>DERDEST</strong> olarak açılır ve dava
+                                        panelinde <strong>"eksik alan"</strong> uyarısıyla görünür; alanları sonradan
+                                        tamamlayabilirsiniz.
+                                    </p>
+                                </div>
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setShowMissingConfirm(false)}>Geri Dön ve Tamamla</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => {
+                                missingAcknowledged.current = true;
+                                setShowMissingConfirm(false);
+                                handleSubmit(undefined, false);
+                            }}>
+                                Eksik Olarak Kaydet
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+                {/* Mükerrer Dava Uyarı Modalı */}
+                <AlertDialog open={showDuplicateConfirm} onOpenChange={setShowDuplicateConfirm}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Bu Esas No Zaten Kayıtlı Olabilir</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                                <div>
+                                    <p>Aynı esas numarasını taşıyan aktif kayıt(lar) bulundu:</p>
+                                    <ul className="mt-2 space-y-1.5">
+                                        {pendingDuplicates.map(d => (
+                                            <li key={d.id} className="border border-[var(--border)] p-2 text-sm">
+                                                <span className="font-mono font-semibold">{d.esas_no}</span>
+                                                {" · "}{d.court || "Mahkeme belirtilmemiş"}
+                                                {d.court_match && <span className="ml-1 text-red-500 font-semibold">(aynı mahkeme!)</span>}
+                                                <span className="block text-muted-foreground font-mono text-xs mt-0.5">
+                                                    {d.tracking_no} · {d.status}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <p className="mt-3">Bu dava daha önce açılmış olabilir. Yine de yeni kayıt açmak istiyor musunuz?</p>
+                                </div>
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setShowDuplicateConfirm(false)}>Vazgeç</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => {
+                                duplicateAcknowledged.current = true;
+                                setShowDuplicateConfirm(false);
+                                handleSubmit(undefined, false);
+                            }}>
+                                Yine de Aç
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>
