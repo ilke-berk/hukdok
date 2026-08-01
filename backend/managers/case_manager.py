@@ -452,6 +452,9 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         # Update non-tracked main fields
         case.file_type = data.get("file_type", case.file_type)
         case.sub_type = data.get("sub_type", case.sub_type)
+        # Faz 6.4 kararı (2026-08-01): service_type kalıcı VE düzenlenebilir —
+        # NewCase edit formu zaten gönderiyordu, burada yok sayılıyordu.
+        case.service_type = data.get("service_type", case.service_type)
         case.subject = data.get("subject", case.subject)
         case.responsible_lawyer_name = data.get("responsible_lawyer_name", case.responsible_lawyer_name)
         case.uyap_lawyer_name = data.get("uyap_lawyer_name", case.uyap_lawyer_name)

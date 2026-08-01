@@ -12,6 +12,11 @@ check-duplicate), sihirbaza .eml desteği (expand-eml; gerçek Quick/Maher
 maili ile uçtan uca doğrulandı). Deploy öncesi DB yedeği:
 `~/hukdok-backup-pre-eml-20260801-1526.sql.gz`.
 
+**2026-08-01 akşam güncellemesi:** Faz 6.1+6.3 (`5ffb95a`) ve 6.2
+(`a7e0064`) main'de TAMAM, deploy bekliyor. Backend 107 pytest +
+frontend 114 vitest yeşil, tsc temiz. Kalan: 6.4 service_type kararı
+(kullanıcı), Adım 0 prod koşusu (kullanıcı), sonra Adım 2 (Faz 1).
+
 ## Sıralama ve gerekçe
 
 | Adım | İş | Efor | Neden bu sırada |
