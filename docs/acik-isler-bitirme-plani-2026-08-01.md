@@ -18,7 +18,11 @@ düzenlenebilir) main'de, deploy bekliyor. Backend 467 pytest + frontend
 114 vitest yeşil, tsc temiz. **Adım 0 KOŞULDU:** backfill_judicial_unit
 prod'da uygulandı — 13.594 kayıt dolduruldu, 33 eşleşmeyen (%0,24; serbest
 metin/yazım hatası, kalıp düzeltmesi gereksiz), 751 mahkeme adı boş.
-Kalan: Faz 6 deploy'u (mesai dışı), sonra Adım 2 (Faz 1).
+**Faz 6 PROD'DA CANLI (2026-08-01 ~20:30, f67b615):** bundle + ff-merge,
+öncesinde pg_dump (`~/hukdok-backup-pre-faz6-20260801-1728.sql.gz`).
+Doğrulandı: konteynerler ayakta, backend startup temiz, yeni bundle'da
+intake-draft var, analyze/keepalive 405 + client-sequence 403, site 200.
+Kalan: Adım 2 (Faz 1), sonra Adım 3 (Faz 7).
 
 ## Sıralama ve gerekçe
 

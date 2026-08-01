@@ -133,7 +133,7 @@ def _build_body_html(msg: email.message.EmailMessage) -> Optional[str]:
         content = part.get_content()
     except Exception:
         payload = part.get_payload(decode=True)
-        if payload is None:
+        if not isinstance(payload, bytes):
             return None
         content = payload.decode("utf-8", errors="replace")
 
@@ -269,7 +269,7 @@ async def expand_eml(
             continue
 
         payload = part.get_payload(decode=True)
-        if not payload:
+        if not isinstance(payload, bytes) or not payload:
             skipped.append({"filename": display_name, "reason": "içerik çözülemedi"})
             continue
 

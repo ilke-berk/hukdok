@@ -395,7 +395,8 @@ def diff_case_parties(existing: list, incoming: list):
     İsim eşleşip TC farklıysa TC düzeltmesi sayılır (satır korunur).
     """
     unmatched = {p["id"] for p in existing}
-    by_tc, by_name = {}, {}
+    by_tc: dict[str, list[int]] = {}
+    by_name: dict[str, list[int]] = {}
     for p in existing:
         tc = normalize_tc(p.get("tc_no"))
         if tc:
