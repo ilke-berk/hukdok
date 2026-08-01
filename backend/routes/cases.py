@@ -88,6 +88,22 @@ def get_cases_api(
     return items
 
 
+def max_tracking_sequence(tracking_nos) -> int:
+    """tracking_no listesinden en yüksek sıra numarasını çıkarır (saf).
+
+    Numara deseni "XX.<10 karakter isim bloğu>.<4 hane sıra>.": desene uymayan
+    (eski/serbest formatlı) numaralar yok sayılır. COUNT tabanlı öneri, silinen
+    veya isim eşleşmeyen kayıtlarda dolu numarayı yeniden önerip 409/500
+    üretiyordu (2026-07-16 kaydı) — max+1 bu sınıfı kapatır.
+    """
+    max_seq = 0
+    for tno in tracking_nos:
+        m = re.match(r"^[A-Z0-9]{2}\.(.{10})\.(\d{4})\.", tno or "")
+        if m:
+            max_seq = max(max_seq, int(m.group(2)))
+    return max_seq
+
+
 @router.get("/api/cases/client-sequence")
 def get_client_case_sequence(
     client_name: str,
@@ -96,10 +112,8 @@ def get_client_case_sequence(
 ):
     db = SessionLocal()
     try:
-        # Tercih edilen yol: tracking_no'nun 10 karakterlik isim bloğu (blok2) üzerinden
-        # mevcut EN YÜKSEK sıra numarasını bul. Taraf sayımına dayalı eski yöntem, silinen
-        # davalarda ve isim eşleşmeyen kayıtlarda dolu numarayı yeniden önerip
-        # ix_cases_tracking_no çakışması (500) üretiyordu.
+        # Tercih edilen yol: tracking_no'nun 10 karakterlik isim bloğu (blok2)
+        # üzerinden mevcut EN YÜKSEK sıra numarası + 1.
         if name_block and len(name_block) == 10:
             rows = (
                 db.query(models.Case.tracking_no)
@@ -107,12 +121,7 @@ def get_client_case_sequence(
                 .filter(tenant_filter_clause(models.Case, tenant_id))
                 .all()
             )
-            max_seq = 0
-            for (tno,) in rows:
-                m = re.match(r"^[A-Z0-9]{2}\.(.{10})\.(\d{4})\.", tno or "")
-                if m:
-                    max_seq = max(max_seq, int(m.group(2)))
-            return {"sequence": max_seq + 1}
+            return {"sequence": max_tracking_sequence(t for (t,) in rows) + 1}
 
         if not client_name:
             return {"sequence": 1}
@@ -123,16 +132,20 @@ def get_client_case_sequence(
                 clean_name = clean_name[: -len(suffix)].strip()
                 break
 
+        # Fallback (name_block yok): müvekkilin davalarının tracking_no'larından
+        # max+1 — Faz 6.3'te COUNT yerine geçti (silinen kayıt aralığı çakışma
+        # üretmesin). İsim eşleşmeyen kayıt sınırlaması bu yolda doğal olarak kalır.
         query_pattern = f"{clean_name}%"
-        count = (
-            db.query(func.count(func.distinct(models.CaseParty.case_id)))
-            .join(models.Case, models.CaseParty.case_id == models.Case.id)
+        rows = (
+            db.query(models.Case.tracking_no)
+            .join(models.CaseParty, models.CaseParty.case_id == models.Case.id)
             .filter(models.CaseParty.party_type == "CLIENT")
             .filter(models.CaseParty.name.ilike(query_pattern))
             .filter(tenant_filter_clause(models.Case, tenant_id))
-            .scalar()
+            .distinct()
+            .all()
         )
-        return {"sequence": (count or 0) + 1}
+        return {"sequence": max_tracking_sequence(t for (t,) in rows) + 1}
     except Exception as e:
         logger.error(f"Error getting client sequence: {e}")
         return {"sequence": 1}

@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from database import SessionLocal
 import models
+from party_check import normalize_party_key, normalize_tc
 from required_fields import REQUIRED_CASE_FIELDS, compute_missing_fields
 from managers.lawyer_resolver import (
     _norm_name, _split_persons, _resolve_lawyer_aliases, _value_matches,
@@ -382,6 +383,45 @@ def get_cases(
         db.close()
 
 
+def diff_case_parties(existing: list, incoming: list):
+    """Taraf listesi diff'i: (updates, inserts, delete_ids) döndürür.
+
+    updates: [(existing_id, incoming_dict)], inserts: [incoming_dict],
+    delete_ids: [existing_id]. Eşleşme önce normalize TC (kesin kimlik),
+    sonra `normalize_party_key` (kurumsal ünvan eşitlemeli, kelime sırası
+    bağımsız isim anahtarı) ile yapılır; her mevcut satır en fazla bir gelen
+    tarafla eşleşir. Eşleşen satır UPDATE edildiği için id'si sabit kalır —
+    case_documents.case_party_id bağları (FK SET NULL) öksüzleşmez.
+    İsim eşleşip TC farklıysa TC düzeltmesi sayılır (satır korunur).
+    """
+    unmatched = {p["id"] for p in existing}
+    by_tc, by_name = {}, {}
+    for p in existing:
+        tc = normalize_tc(p.get("tc_no"))
+        if tc:
+            by_tc.setdefault(tc, []).append(p["id"])
+        key = normalize_party_key(p.get("name") or "")
+        if key:
+            by_name.setdefault(key, []).append(p["id"])
+
+    updates, inserts = [], []
+    for inc in incoming:
+        pid = None
+        tc = normalize_tc(inc.get("tc_no"))
+        if tc:
+            pid = next((i for i in by_tc.get(tc, []) if i in unmatched), None)
+        if pid is None:
+            key = normalize_party_key(inc.get("name") or "")
+            if key:
+                pid = next((i for i in by_name.get(key, []) if i in unmatched), None)
+        if pid is None:
+            inserts.append(inc)
+        else:
+            unmatched.discard(pid)
+            updates.append((pid, inc))
+    return updates, inserts, sorted(unmatched)
+
+
 def update_case(case_id: int, data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
@@ -440,16 +480,21 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
             if parsed:
                 case.atama_tarihi = parsed
 
-        # 2. Sync Parties (Delete and Re-add for simplicity in this version)
-        db.query(models.CaseParty).filter(models.CaseParty.case_id == case_id).delete()
-        parties = data.get("parties", [])
-        for p in parties:
-            client_id = p.get("client_id")
-            party_type = p.get("party_type")
-            name = p.get("name")
+        # 2. Sync Parties — diff bazlı: eşleşen satır UPDATE (id sabit,
+        # belge-taraf bağı korunur), yeni satır INSERT, kalkan satır DELETE.
+        existing_parties = db.query(models.CaseParty).filter(
+            models.CaseParty.case_id == case_id
+        ).all()
+        updates, inserts, delete_ids = diff_case_parties(
+            [{"id": ep.id, "name": ep.name, "tc_no": ep.tc_no} for ep in existing_parties],
+            data.get("parties", []),
+        )
 
+        def _resolve_client_id(p):
+            client_id = p.get("client_id")
+            name = p.get("name")
             # Otomatik Müşteri Oluşturma Yükseltmesi
-            if party_type == "CLIENT" and name and not client_id:
+            if p.get("party_type") == "CLIENT" and name and not client_id:
                 existing_client = db.query(models.Client).filter(
                     models.Client.name.ilike(name.strip())
                 ).first()
@@ -465,18 +510,33 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
                     db.add(new_client)
                     db.flush()
                     client_id = new_client.id
+            return client_id
 
-            party = models.CaseParty(
+        rows_by_id = {ep.id: ep for ep in existing_parties}
+        for pid, p in updates:
+            row = rows_by_id[pid]
+            row.client_id = _resolve_client_id(p)
+            row.name = p.get("name")
+            row.role = p.get("role")
+            row.party_type = p.get("party_type")
+            row.birth_year = p.get("birth_year")
+            row.gender = p.get("gender")
+            row.tc_no = (p.get("tc_no") or "").strip() or None
+        for p in inserts:
+            db.add(models.CaseParty(
                 case_id=case_id,
-                client_id=client_id,
-                name=name,
+                client_id=_resolve_client_id(p),
+                name=p.get("name"),
                 role=p.get("role"),
-                party_type=party_type,
+                party_type=p.get("party_type"),
                 birth_year=p.get("birth_year"),
                 gender=p.get("gender"),
                 tc_no=(p.get("tc_no") or "").strip() or None
-            )
-            db.add(party)
+            ))
+        if delete_ids:
+            db.query(models.CaseParty).filter(
+                models.CaseParty.id.in_(delete_ids)
+            ).delete(synchronize_session=False)
 
         # 3. Sync Lawyers — Track B: canonical ad + lawyer_id FK üret
         db.query(models.CaseLawyer).filter(models.CaseLawyer.case_id == case_id).delete()
@@ -691,6 +751,14 @@ def add_case(data: dict, tenant_id: str = None):
         db.rollback()
         if "tracking_no" in str(getattr(e, "orig", e)):
             logger.error(f"Add Case Error: tracking_no çakışması — {data.get('tracking_no')}")
+            # Telemetri (Faz 6.3): öneri mantığı hâlâ dolu numara üretiyorsa
+            # SharePoint'teki teknik loglardan görülebilsin (ERROR → anlık sync)
+            from managers.log_manager import TechnicalLogger
+            TechnicalLogger.log(
+                "ERROR",
+                "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
+                details={"tracking_no": data.get("tracking_no")},
+            )
             return {"error": "duplicate_tracking_no"}
         logger.error(f"Add Case Error: {e}")
         return None
