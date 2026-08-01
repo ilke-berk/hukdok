@@ -199,16 +199,40 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
         FileNotFoundError: LibreOffice kurulu değilse
         RuntimeError: Dönüşüm başarısız veya timeout olursa
     """
-    lo_executable = find_libreoffice()
-    if not lo_executable:
-        raise FileNotFoundError("LibreOffice bulunamadı! Lütfen kurulum yapın.")
-
     ext = Path(source_path).suffix.lower()
     export_filter = "calc_pdf_Export" if ext in (".xlsx", ".xls") else "writer_pdf_Export"
     convert_target = f"pdf:{export_filter}"
     if ext in (".xlsx", ".xls") and os.getenv("EXCEL_PDF_SINGLE_PAGE_SHEETS") == "1":
         # Geniş sayfaları tek PDF sayfasına sığdırır (LibreOffice >= 7.2)
         convert_target += ':{"SinglePageSheets":{"type":"boolean","value":"true"}}'
+    return _soffice_to_pdf(source_path, convert_target, output_path)
+
+
+def html_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
+    """
+    HTML dosyasını LibreOffice headless ile PDF'e çevirir (aynı semafor/timeout).
+
+    Yalnız iç kullanım içindir (e-posta gövdesi → sanal belge, expand-eml):
+    .html CONVERTIBLE_EXTENSIONS'a BİLEREK eklenmez — upload yolları HTML kabul
+    etmez, bu fonksiyon beyaz listeden bağımsız çağrılır.
+
+    Returns:
+        Üretilen PDF'in yolu
+
+    Raises:
+        FileNotFoundError: LibreOffice kurulu değilse
+        RuntimeError: Dönüşüm başarısız veya timeout olursa
+    """
+    # HTML, Writer/Web bileşeninde açılır — writer_pdf_Export bu bileşende
+    # geçersizdir, doğru dışa aktarma filtresi writer_web_pdf_Export.
+    return _soffice_to_pdf(source_path, "pdf:writer_web_pdf_Export", output_path)
+
+
+def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional[str] = None) -> str:
+    """Ortak soffice hattı: benzersiz profil + outdir, semafor, grup kill."""
+    lo_executable = find_libreoffice()
+    if not lo_executable:
+        raise FileNotFoundError("LibreOffice bulunamadı! Lütfen kurulum yapın.")
 
     # Paralel soffice çağrıları ortak profil kilidinde çakışır — her çağrıya
     # benzersiz profil; aynı stem'li eşzamanlı dosyalar için benzersiz outdir.
@@ -266,12 +290,12 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
                 f"officepdf_{os.getpid()}_{uuid.uuid4().hex[:8]}.pdf",
             )
         shutil.move(produced_pdf, output_path)
-        TechnicalLogger.log("INFO", f"Office → PDF tamamlandı: {source_path} → {output_path}")
+        TechnicalLogger.log("INFO", f"LibreOffice → PDF tamamlandı: {source_path} → {output_path}")
         return output_path
 
     except subprocess.TimeoutExpired:
         TechnicalLogger.log("ERROR", f"LibreOffice timeout ({LIBREOFFICE_TIMEOUT}s aşıldı): {source_path}")
-        raise RuntimeError("Office → PDF dönüşümü timeout") from None
+        raise RuntimeError("LibreOffice → PDF dönüşümü timeout") from None
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
         shutil.rmtree(profile_dir, ignore_errors=True)

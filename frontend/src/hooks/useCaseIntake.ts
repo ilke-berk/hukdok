@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   analyzeIntakeFile,
   commitIntake,
+  emlSummaryMessage,
+  expandEmlFile,
+  expandedEmlToFiles,
   keepaliveIntake,
   mergeIntake,
+  planIntakeAppend,
   type CaseIntakeCommitRequest,
   type CommitResult,
   type IntakeExtraction,
   type MergeDraft,
 } from "@/lib/caseIntake";
+import { isEmlFile } from "@/lib/fileValidation";
 
 // =====================================================================
 // Sihirbaz durum makinesi (Faz 5): upload → analyze → review → result.
@@ -44,6 +50,7 @@ const makeFileId = () => `intake-${++nextFileId}`;
 export function useCaseIntake() {
   const [step, setStep] = useState<IntakeStep>("upload");
   const [files, setFiles] = useState<IntakeFile[]>([]);
+  const [isExpandingEml, setIsExpandingEml] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
@@ -55,31 +62,78 @@ export function useCaseIntake() {
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const addFiles = useCallback((incoming: File[]) => {
-    setFiles(prev => {
-      const room = MAX_INTAKE_FILES - prev.length;
-      const fresh = incoming
-        .filter(f => !prev.some(p => p.file.name === f.name && p.file.size === f.size))
-        .slice(0, Math.max(0, room))
-        .map((file): IntakeFile => ({
-          id: makeFileId(),
-          file,
-          status: "waiting",
-          statusMessage: null,
-          processId: null,
-          extraction: null,
-          error: null,
-        }));
-      return [...prev, ...fresh];
-    });
+  // Liste mutasyonları ref üzerinden akar: .eml genişletmesi sıralı-async
+  // koştuğundan (await'ler arasında state bayatlar) taşma/dedup hesabı her
+  // adımda güncel listeyle yapılmalı.
+  const filesRef = useRef<IntakeFile[]>([]);
+  const applyFiles = useCallback((updater: (prev: IntakeFile[]) => IntakeFile[]) => {
+    filesRef.current = updater(filesRef.current);
+    setFiles(filesRef.current);
   }, []);
+
+  const makeIntakeFile = (file: File): IntakeFile => ({
+    id: makeFileId(),
+    file,
+    status: "waiting",
+    statusMessage: null,
+    processId: null,
+    extraction: null,
+    error: null,
+  });
+
+  const fileKeys = () => filesRef.current.map(f => ({ name: f.file.name, size: f.file.size }));
+
+  /**
+   * Adım 1: dosya ekleme. .eml'ler önce expand-eml ile parçalara açılır
+   * (gövde sanal PDF + izinli ekler); parçalar normal belge gibi listeye
+   * girer, .eml'in kendisi GİRMEZ. MAX_INTAKE_FILES kontrolü genişleme
+   * SONRASI toplam üzerinden yapılır — taşarsa uyarı + sığan kadarı eklenir.
+   */
+  const addFiles = useCallback(async (incoming: File[]) => {
+    const regular = incoming.filter(f => !isEmlFile(f));
+    const emls = incoming.filter(isEmlFile);
+
+    if (regular.length > 0) {
+      const plan = planIntakeAppend(fileKeys(), regular, MAX_INTAKE_FILES);
+      if (plan.accepted.length > 0) {
+        applyFiles(prev => [...prev, ...plan.accepted.map(makeIntakeFile)]);
+      }
+      if (plan.overflow > 0) {
+        toast.warning(`En fazla ${MAX_INTAKE_FILES} belge yüklenebilir — ${plan.overflow} dosya eklenmedi.`);
+      }
+    }
+
+    if (emls.length === 0) return;
+    setIsExpandingEml(true);
+    try {
+      for (const eml of emls) {
+        try {
+          const result = await expandEmlFile(eml);
+          const plan = planIntakeAppend(fileKeys(), expandedEmlToFiles(result), MAX_INTAKE_FILES);
+          if (plan.accepted.length > 0) {
+            applyFiles(prev => [...prev, ...plan.accepted.map(makeIntakeFile)]);
+          }
+          const summary = `${eml.name}: ${emlSummaryMessage(result, plan.overflow)}`;
+          if (result.skipped.length > 0 || plan.overflow > 0) toast.warning(summary, { duration: 6000 });
+          else toast.success(summary);
+        } catch (e) {
+          toast.error(
+            e instanceof Error ? `${eml.name}: ${e.message}` : `${eml.name} açılamadı.`,
+            { duration: 6000 },
+          );
+        }
+      }
+    } finally {
+      setIsExpandingEml(false);
+    }
+  }, [applyFiles]);
 
   const removeFile = useCallback((id: string) => {
-    setFiles(prev => prev.filter(f => f.id !== id));
-  }, []);
+    applyFiles(prev => prev.filter(f => f.id !== id));
+  }, [applyFiles]);
 
   const patchFile = (id: string, patch: Partial<IntakeFile>) => {
-    setFiles(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)));
+    applyFiles(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)));
   };
 
   /**
@@ -206,20 +260,22 @@ export function useCaseIntake() {
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setStep("upload");
-    setFiles([]);
+    applyFiles(() => []);
+    setIsExpandingEml(false);
     setIsAnalyzing(false);
     setIsMerging(false);
     setMergeError(null);
     setDraft(null);
     setIsCommitting(false);
     setCommitResult(null);
-  }, []);
+  }, [applyFiles]);
 
   return {
     step,
     setStep,
     files,
     addFiles,
+    isExpandingEml,
     removeFile,
     isAnalyzing,
     startAnalysis,

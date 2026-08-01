@@ -130,6 +130,122 @@ export async function analyzeIntakeFile(
   }
 }
 
+// --- Expand (.eml) -----------------------------------------------------
+// Tek .eml → gövde sanal belge (PDF) + izinli ekler. Parçalar normal dosya
+// gibi listeye eklenir; .eml'in kendisi listeye girmez ve arşivlenmez.
+// Backend sözleşmesi: POST /api/case-intake/expand-eml (routes/case_intake.py).
+
+export interface EmlExpandedPart {
+  filename: string;
+  data_b64: string;
+}
+
+export interface EmlSkippedPart {
+  filename: string;
+  reason: string;
+}
+
+export interface EmlExpandResult {
+  body: EmlExpandedPart | null;
+  attachments: EmlExpandedPart[];
+  skipped: EmlSkippedPart[];
+}
+
+export async function expandEmlFile(file: File): Promise<EmlExpandResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await apiClient.fetch("/api/case-intake/expand-eml", {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch { /* gövde JSON değilse statusText kalır */ }
+    throw new Error("E-posta açılamadı: " + detail);
+  }
+  return await response.json() as EmlExpandResult;
+}
+
+// Uzantı → MIME eşlemesi (base64 parçadan File üretirken; backend zaten
+// beyaz liste dışını elemiştir, bilinmeyen uzantı octet-stream kalır).
+const EXT_MIME: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".udf": "application/octet-stream",
+};
+
+export function mimeFromFilename(filename: string): string {
+  const name = filename.toLowerCase();
+  const hit = Object.keys(EXT_MIME).find(ext => name.endsWith(ext));
+  return hit ? EXT_MIME[hit] : "application/octet-stream";
+}
+
+export function base64ToFile(dataB64: string, filename: string): File {
+  const binary = atob(dataB64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: mimeFromFilename(filename) });
+}
+
+/** Expand yanıtındaki parçaları (gövde önde) File nesnelerine çevirir. */
+export function expandedEmlToFiles(result: EmlExpandResult): File[] {
+  const parts = [...(result.body ? [result.body] : []), ...result.attachments];
+  return parts.map(p => base64ToFile(p.data_b64, p.filename));
+}
+
+/**
+ * Toast özeti: "E-posta açıldı: gövde + 5 ek eklendi, 2 parça atlandı (inline görsel)".
+ * overflow: MAX_INTAKE_FILES nedeniyle listeye sığmayan parça sayısı.
+ */
+export function emlSummaryMessage(result: EmlExpandResult, overflow = 0): string {
+  const added: string[] = [];
+  if (result.body) added.push("gövde");
+  if (result.attachments.length > 0) added.push(`${result.attachments.length} ek`);
+  let msg = added.length > 0
+    ? `E-posta açıldı: ${added.join(" + ")} eklendi`
+    : "E-posta açıldı: eklenebilir parça bulunamadı";
+  if (result.skipped.length > 0) {
+    const reasons = [...new Set(result.skipped.map(s => s.reason))].join(", ");
+    msg += `, ${result.skipped.length} parça atlandı (${reasons})`;
+  }
+  if (overflow > 0) {
+    msg += ` — ${overflow} parça belge sınırına sığmadı`;
+  }
+  return msg;
+}
+
+/**
+ * Listeye ekleme planı (saf): ad+boyut dedup + MAX_INTAKE_FILES tavanı.
+ * Taşan parçalar overflow olarak döner — sığan kadarı eklenir (plan B2).
+ */
+export function planIntakeAppend(
+  existing: { name: string; size: number }[],
+  incoming: File[],
+  max: number,
+): { accepted: File[]; overflow: number } {
+  const seen = new Set(existing.map(p => `${p.name}|${p.size}`));
+  const unique: File[] = [];
+  for (const f of incoming) {
+    const key = `${f.name}|${f.size}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(f);
+  }
+  const room = Math.max(0, max - existing.length);
+  return { accepted: unique.slice(0, room), overflow: Math.max(0, unique.length - room) };
+}
+
 // --- Merge -------------------------------------------------------------
 
 export interface MergeFieldCandidate {
@@ -153,9 +269,11 @@ export interface MergeField {
 }
 
 // merge_fields çıktı anahtarları (backend services/case_intake.py)
+// judicial_unit: mahkemeden türetilir (route 4b); hasar/hukuk no: atama yazısından
 export type MergeFieldKey =
   | "esas_no" | "court" | "file_type" | "teblig_tarihi" | "sub_type_extra"
-  | "subject" | "maddi_tazminat" | "manevi_tazminat" | "opening_date";
+  | "subject" | "maddi_tazminat" | "manevi_tazminat" | "opening_date"
+  | "judicial_unit" | "hasar_dosya_no" | "hukuk_no";
 
 export interface MergeClientMatch {
   client_id: number | null;
@@ -329,6 +447,13 @@ export interface CommitCaseIn {
   maddi_tazminat?: number | null;
   manevi_tazminat?: number | null;
   sub_type_extra?: string | null;
+  judicial_unit?: string | null;
+  hasar_dosya_no?: string | null;
+  hukuk_no?: string | null;
+  klasor_no_2?: string | null;
+  acceptance_date?: string | null;
+  bureau_type?: string | null;
+  atama_tarihi?: string | null;
   notes?: string | null;
   parties: CommitCasePartyIn[];
   lawyers: { lawyer_id?: number | null; name: string }[];
@@ -350,7 +475,13 @@ export interface CommitDocumentResult {
 }
 
 export interface CommitResult {
-  case: { id: number; tracking_no: string };
+  case: {
+    id: number;
+    tracking_no: string;
+    /** Sunucu kararı: zorunlu alanlar tamsa DERDEST, eksikse DANIŞ */
+    status?: string;
+    missing_required_fields?: { field: string; label: string }[];
+  };
   documents: CommitDocumentResult[];
   policies: { saved: number; skipped: number; error?: string };
 }

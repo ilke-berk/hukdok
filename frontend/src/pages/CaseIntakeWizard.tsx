@@ -85,6 +85,7 @@ const CaseIntakeWizard = () => {
           onAddFiles={intake.addFiles}
           onRemoveFile={intake.removeFile}
           onStart={startAnalysis}
+          isExpandingEml={intake.isExpandingEml}
         />
       )}
 

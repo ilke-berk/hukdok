@@ -14,6 +14,11 @@ interface FlowDropZoneProps {
   todayCount?: number;
   /** Boş ekranda kutunun tepesine, kesik çizgili ayraçla yerleşen içerik (ör. aşama şeridi). */
   header?: ReactNode;
+  /** Kabul listesi override'ı — sihirbaz .eml'i YALNIZ kendi dropzone'unda açar. */
+  accept?: string;
+  isFileValid?: (file: File) => boolean;
+  /** Boş ekrandaki format açıklaması override'ı. */
+  description?: string;
 }
 
 function warnInvalidFiles(invalidNames: string[]) {
@@ -34,6 +39,9 @@ export function FlowDropZone({
   isComplete = false,
   todayCount = 0,
   header,
+  accept = ACCEPT_ATTRIBUTE,
+  isFileValid = isValidFile,
+  description = "Veya alttaki butonlardan seçin. PDF, Word, Excel, TIFF, JPG, PNG, UDF (UYAP) — maksimum 50 MB.",
 }: FlowDropZoneProps) {
   const [state, setState] = useState<"idle" | "dragover">("idle");
   const [dragCount, setDragCount] = useState(0);
@@ -66,14 +74,14 @@ export function FlowDropZone({
     const validFiles: File[] = [];
     const invalidNames: string[] = [];
     for (const file of files) {
-      if (isValidFile(file)) validFiles.push(file);
+      if (isFileValid(file)) validFiles.push(file);
       else invalidNames.push(file.name);
     }
     warnInvalidFiles(invalidNames);
     if (validFiles.length === 0) return;
     if (validFiles.length === 1) onFileSelect(validFiles[0]);
     else onFileSelect(validFiles);
-  }, [onFileSelect]);
+  }, [onFileSelect, isFileValid]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -81,7 +89,7 @@ export function FlowDropZone({
       const validFiles: File[] = [];
       const invalidNames: string[] = [];
       for (const file of allFiles) {
-        if (isValidFile(file)) validFiles.push(file);
+        if (isFileValid(file)) validFiles.push(file);
         else invalidNames.push(file.name);
       }
       warnInvalidFiles(invalidNames);
@@ -162,7 +170,7 @@ export function FlowDropZone({
         type="file"
         className="hidden"
         multiple
-        accept={ACCEPT_ATTRIBUTE}
+        accept={accept}
         onChange={handleFileInput}
       />
 
@@ -190,7 +198,7 @@ export function FlowDropZone({
             {isDragover ? "Bırakın — dosyayı kuyruğa alalım" : "Belgeyi buraya sürükleyin"}
           </h3>
           <p className="font-sans text-[13px] text-[var(--fg-muted)] max-w-[44ch]">
-            Veya alttaki butonlardan seçin. PDF, Word, Excel, TIFF, JPG, PNG, UDF (UYAP) — maksimum 50 MB.
+            {description}
           </p>
         </div>
 

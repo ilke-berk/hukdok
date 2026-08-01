@@ -25,10 +25,17 @@ adımı — dava kaydı atomik, belge arşivleme belge-başı best-effort, poli�
 beslemesi best-effort (kesin kararlar 1-5, bkz. Faz 4 kickoff dokümanı).
 """
 import asyncio
+import base64
+import email
+import email.message
+import email.policy
 import hashlib
+import html as html_lib
 import json
 import logging
+import mimetypes
 import os
+import re
 import tempfile
 import uuid
 from datetime import datetime
@@ -64,6 +71,250 @@ def resolve_upload_suffix(filename: Optional[str]) -> str:
     if name.endswith(".udf.zip"):
         return ".udf"
     return Path(name).suffix
+
+
+# =====================================================================
+# .eml genişletme — sihirbaza özel (plan: docs/eml-intake-gelistirme-plani).
+# .eml ALLOWED_EXTENSIONS'a GİRMEZ; doğrulama burada yereldir. Parçalar
+# frontend'te normal dosya gibi listeye eklenir — analiz/merge/commit/arşiv
+# hattı bu endpoint'ten habersizdir.
+# =====================================================================
+
+_EML_HEADER_RE = re.compile(rb"^(From|Received|Subject|MIME-Version):", re.IGNORECASE | re.MULTILINE)
+
+# Gövde HTML temizliği: script blokları, dış stylesheet'ler ve dış/cid görsel
+# referansları sökülür (imza logoları vb.) — hedef görsel sadakat değil,
+# metnin modele ulaşması.
+_SCRIPT_RE = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_REMOTE_IMG_RE = re.compile(
+    r"<img\b[^>]*\bsrc\s*=\s*[\"']?(?:cid:|https?:|//)[^>]*?>", re.IGNORECASE | re.DOTALL
+)
+_META_CHARSET_RE = re.compile(r"<meta\b[^>]*charset[^>]*>", re.IGNORECASE)
+_BODY_OPEN_RE = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
+_ANY_TAG_RE = re.compile(r"<[^>]+>")
+
+EML_BODY_FILENAME = "E-posta_govdesi.pdf"
+
+
+def _looks_like_eml(head: bytes) -> bool:
+    """İlk ~32 KB'de RFC822 başlıklarından en az İKİSİ aranır (.eml'in magic
+    byte'ı yoktur — düz metin başlıklarıyla tanınır). Pencere 32 KB: gerçek
+    Outlook maillerinde ARC/DKIM imza blokları From:/Subject:'i birkaç KB
+    geriye itiyor (ölçüldü: From ~5.6 KB, MIME-Version ~17 KB)."""
+    found = {m.group(1).lower() for m in _EML_HEADER_RE.finditer(head)}
+    return len(found) >= 2
+
+
+def _email_header_html(msg: email.message.EmailMessage) -> str:
+    """Konu/Kimden/Kime/Tarih tablosu — konu satırı hasar no + esas no taşıdığı
+    için modele mutlaka gitmeli."""
+    rows = [
+        ("Konu", msg.get("Subject")),
+        ("Kimden", msg.get("From")),
+        ("Kime", msg.get("To")),
+        ("Tarih", msg.get("Date")),
+    ]
+    cells = "".join(
+        f"<tr><td><b>{html_lib.escape(label)}</b></td>"
+        f"<td>{html_lib.escape(str(value))}</td></tr>"
+        for label, value in rows
+        if value
+    )
+    return f'<table border="1" cellpadding="4" cellspacing="0">{cells}</table><hr>'
+
+
+def _build_body_html(msg: email.message.EmailMessage) -> Optional[str]:
+    """Gövdeyi (HTML tercihli) başlık tablosuyla birleşik tek HTML'e çevirir."""
+    part = msg.get_body(preferencelist=("html", "plain"))
+    if part is None:
+        return None
+    try:
+        content = part.get_content()
+    except Exception:
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            return None
+        content = payload.decode("utf-8", errors="replace")
+
+    header_html = _email_header_html(msg)
+    if part.get_content_type() == "text/html":
+        cleaned = _SCRIPT_RE.sub("", content)
+        cleaned = _LINK_TAG_RE.sub("", cleaned)
+        cleaned = _REMOTE_IMG_RE.sub("", cleaned)
+        # Orijinal charset bildirimi yanıltır — dosya UTF-8 (BOM'lu) yazılır.
+        cleaned = _META_CHARSET_RE.sub("", cleaned)
+        body_open = _BODY_OPEN_RE.search(cleaned)
+        if body_open:
+            idx = body_open.end()
+            return cleaned[:idx] + header_html + cleaned[idx:]
+        return (
+            '<html><head><meta charset="utf-8"></head><body>'
+            + header_html + cleaned + "</body></html>"
+        )
+    return (
+        '<html><head><meta charset="utf-8"></head><body>'
+        + header_html
+        + f'<pre style="white-space:pre-wrap">{html_lib.escape(content)}</pre>'
+        + "</body></html>"
+    )
+
+
+def _render_body_pdf(body_html: str) -> bytes:
+    """Gövde HTML → PDF (soffice). Karmaşık HTML dönüşümü patlarsa gövde düz
+    metne indirilip yeniden denenir (plan risk maddesi)."""
+    from pdf.format_converter import html_to_pdf
+
+    def _convert(html_text: str) -> bytes:
+        html_path = None
+        pdf_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8-sig", suffix=".html", delete=False
+            ) as f:
+                html_path = f.name
+                f.write(html_text)
+            pdf_path = html_to_pdf(html_path)
+            with open(pdf_path, "rb") as pf:
+                return pf.read()
+        finally:
+            safe_remove(html_path)
+            safe_remove(pdf_path)
+
+    try:
+        return _convert(body_html)
+    except Exception as e:
+        TechnicalLogger.log(
+            "WARNING", f"[INTAKE-EML] HTML gövde dönüşümü başarısız, düz metin fallback: {e}"
+        )
+        plain = html_lib.unescape(_ANY_TAG_RE.sub(" ", body_html))
+        fallback_html = (
+            '<html><head><meta charset="utf-8"></head><body>'
+            + f'<pre style="white-space:pre-wrap">{html_lib.escape(plain)}</pre>'
+            + "</body></html>"
+        )
+        return _convert(fallback_html)
+
+
+@router.post("/api/case-intake/expand-eml")
+async def expand_eml(
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Tek .eml'i parçalara açar: gövde sanal belge (PDF) + izinli ekler.
+
+    Yanıt JSON (base64): {"body": {...}|null, "attachments": [...], "skipped": [...]}.
+    Orijinal .eml arşivlenmez; parçalar frontend'te normal dosya olarak akar.
+    """
+    data = bytearray()
+    while chunk := await file.read(65536):
+        data.extend(chunk)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"Dosya çok büyük. Maksimum {MAX_UPLOAD_MB}MB.")
+
+    if not _looks_like_eml(bytes(data[:32768])):
+        raise HTTPException(
+            status_code=400,
+            detail="Geçerli bir e-posta (.eml) dosyası değil — RFC822 başlıkları bulunamadı.",
+        )
+
+    try:
+        msg = email.message_from_bytes(bytes(data), policy=email.policy.default)
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"[INTAKE-EML] Parse hatası: {e}")
+        raise HTTPException(status_code=400, detail="E-posta dosyası okunamadı (bozuk format).") from e
+
+    # ── Gövde → sanal belge PDF'i ────────────────────────────────────────
+    body_entry: Optional[Dict[str, str]] = None
+    body_html = _build_body_html(msg)
+    if body_html is not None:
+        loop = asyncio.get_running_loop()
+        try:
+            pdf_bytes = await loop.run_in_executor(None, _render_body_pdf, body_html)
+            body_entry = {
+                "filename": sanitize_filename(EML_BODY_FILENAME),
+                "data_b64": base64.b64encode(pdf_bytes).decode("ascii"),
+            }
+        except Exception as e:
+            error_id = str(uuid.uuid4())[:8]
+            TechnicalLogger.log(
+                "ERROR", f"[INTAKE-EML] Gövde PDF dönüşümü başarısız [ID: {error_id}]: {e}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"E-posta gövdesi PDF'e dönüştürülemedi (Hata: {error_id}).",
+            ) from e
+
+    # ── Ekler ────────────────────────────────────────────────────────────
+    attachments: List[Dict[str, str]] = []
+    skipped: List[Dict[str, str]] = []
+    total_bytes = 0
+    for i, part in enumerate(msg.iter_attachments(), start=1):
+        ctype = part.get_content_type()
+        raw_name = part.get_filename()
+        display_name = raw_name or f"ek_{i}"
+
+        # İç içe .eml (attached message) Faz 1'de açılmaz.
+        if ctype == "message/rfc822" or (raw_name or "").lower().endswith(".eml"):
+            skipped.append({
+                "filename": raw_name or f"ek_{i}.eml",
+                "reason": "iç içe e-posta desteklenmiyor",
+            })
+            continue
+
+        # iter_attachments inline/cid gövde parçalarını zaten dışarıda bırakır;
+        # yine de ek olarak işaretlenmiş Content-ID'li görseller (imza logoları) elenir.
+        if part.get("Content-ID") and part.get_content_maintype() == "image":
+            skipped.append({"filename": display_name, "reason": "inline görsel"})
+            continue
+
+        payload = part.get_payload(decode=True)
+        if not payload:
+            skipped.append({"filename": display_name, "reason": "içerik çözülemedi"})
+            continue
+
+        if not raw_name:
+            raw_name = f"ek_{i}{mimetypes.guess_extension(ctype) or ''}"
+
+        # Whitelist kontrolü sanitize'dan ÖNCE — sanitize_filename izin dışı
+        # uzantıda HTTPException fırlatır, burada sessizce atlanmalı.
+        suffix = resolve_upload_suffix(raw_name)
+        if suffix not in ALLOWED_EXTENSIONS:
+            skipped.append({
+                "filename": raw_name,
+                "reason": f"uzantı desteklenmiyor ({suffix or 'uzantısız'})",
+            })
+            continue
+
+        if len(payload) > MAX_UPLOAD_BYTES:
+            skipped.append({
+                "filename": raw_name,
+                "reason": f"boyut aşımı (maksimum {MAX_UPLOAD_MB}MB)",
+            })
+            continue
+        total_bytes += len(payload)
+        if total_bytes > MAX_UPLOAD_BYTES:
+            skipped.append({
+                "filename": raw_name,
+                "reason": f"toplam boyut aşımı (maksimum {MAX_UPLOAD_MB}MB)",
+            })
+            continue
+
+        attachments.append({
+            "filename": sanitize_filename(raw_name),
+            "data_b64": base64.b64encode(payload).decode("ascii"),
+        })
+
+    TechnicalLogger.log(
+        "INFO",
+        "[INTAKE-EML] Genişletme tamamlandı",
+        {
+            "body": body_entry is not None,
+            "attachments": [a["filename"] for a in attachments],
+            "skipped": skipped,
+        },
+    )
+    return {"body": body_entry, "attachments": attachments, "skipped": skipped}
 
 
 @router.post("/api/case-intake/analyze")
@@ -161,7 +412,8 @@ async def analyze_case_intake_file(
 
 
 def _load_merge_context(tenant_id: str) -> Dict[str, Any]:
-    """Merge için DB bağlamı: cariler, geçmiş dosya tarafları, bilinen mahkemeler.
+    """Merge için DB bağlamı: cariler, geçmiş dosya tarafları, bilinen mahkemeler,
+    kanonik dava konusu + uzmanlık listeleri.
 
     parties route'unun sorgu şekliyle birebir (check_parties aynı satırları bekler).
     """
@@ -217,7 +469,29 @@ def _load_merge_context(tenant_id: str) -> Dict[str, Any]:
             )
             if r[0]
         ]
-        return {"client_rows": client_rows, "party_rows": party_rows, "known_courts": known_courts}
+        # Kanonik listeler (dava konusu + uzmanlık): merge bekçisi liste dışı
+        # AI değerini boşaltır. Liste yüklenemezse bekçi devre dışı kalır
+        # (None → build_draft dokunmaz), merge durmaz.
+        known_subjects: Optional[List[str]] = None
+        known_specialties: Optional[List[str]] = None
+        try:
+            from managers.reference_lists import get_case_subjects, get_specialties
+
+            known_subjects = [
+                s.get("name") for s in (get_case_subjects() or []) if s.get("name")
+            ] or None
+            known_specialties = [
+                s.get("name") for s in (get_specialties() or []) if s.get("name")
+            ] or None
+        except Exception as e:
+            TechnicalLogger.log("WARNING", f"[INTAKE] Konu/uzmanlık listesi alınamadı: {e}")
+        return {
+            "client_rows": client_rows,
+            "party_rows": party_rows,
+            "known_courts": known_courts,
+            "known_subjects": known_subjects,
+            "known_specialties": known_specialties,
+        }
     finally:
         db.close()
 
@@ -328,6 +602,8 @@ async def merge_case_intake(
         docs, ctx["client_rows"],
         known_policies=known_policies,
         known_courts=ctx["known_courts"],
+        known_subjects=ctx.get("known_subjects"),
+        known_specialties=ctx.get("known_specialties"),
     )
 
     # 4. Katman 3 — hakem (yalnız çelişkide; hatası taslağı düşürmez)
@@ -354,6 +630,24 @@ async def merge_case_intake(
                     "çoğunluk oyu sonucu gösteriliyor, adayları kontrol edin."
                 ),
             })
+
+    # 4b. Yargı Birimi: mahkeme adından türetilir (hakem SONRASI — nihai mahkeme
+    # değeri üzerinden; backfill script'iyle aynı kalıplar, tek kaynak).
+    try:
+        from services.judicial_unit import derive_judicial_unit
+
+        court_value = draft["fields"].get("court", {}).get("value")
+        ju = derive_judicial_unit(court_value) if court_value else None
+        draft["fields"]["judicial_unit"] = {
+            "value": ju,
+            "agreement": None,
+            "confidence": None,
+            "candidates": [],
+            "sources": [],
+            **({"derived_from": "court"} if ju else {}),
+        }
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"[INTAKE] Yargı birimi türetme hatası: {e}")
 
     # 5. Tanıdık sorgu (çıkar çatışması) — taraf satırlarına iliştirilir
     try:
@@ -462,8 +756,13 @@ async def commit_case_intake(
     loop = asyncio.get_running_loop()
     current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
 
-    # 1. Dava — atomik. status sunucuda DERDEST'e zorlanır (karar 1 — istemciye güvenme).
+    # 1. Dava — atomik. status sunucuda DERDEST'e zorlanır (karar 1 — istemciye
+    # güvenme). Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı
+    # 2026-07-31 rev.2): eksikler yanıtla döner, panelde uyarı olarak görünür.
+    from required_fields import compute_missing_fields
+
     case_dict = req.case.model_dump()
+    missing_fields = compute_missing_fields(case_dict, case_dict.get("parties"))
     case_dict["status"] = "DERDEST"
     case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
     if case_result and case_result.get("error") == "duplicate_tracking_no":
@@ -472,7 +771,7 @@ async def commit_case_intake(
             detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
                    "Sıra numarasını artırıp tekrar deneyin.",
         )
-    if not case_result:
+    if not case_result or case_result.get("error"):
         raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
     case_id = case_result["id"]
 
@@ -650,7 +949,12 @@ async def commit_case_intake(
         },
     )
     return {
-        "case": {"id": case_id, "tracking_no": case_result.get("tracking_no")},
+        "case": {
+            "id": case_id,
+            "tracking_no": case_result.get("tracking_no"),
+            "status": case_dict["status"],
+            "missing_required_fields": missing_fields,
+        },
         "documents": doc_results,
         "policies": policy_result,
     }

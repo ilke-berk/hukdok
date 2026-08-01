@@ -235,6 +235,8 @@ def get_case_intake_instruction(
     lawyer_names: Optional[List[str]] = None,
     client_hints: Optional[List[str]] = None,
     yargi_turleri: Optional[List[str]] = None,
+    dava_konulari: Optional[List[str]] = None,
+    uzmanliklar: Optional[List[str]] = None,
 ) -> str:
     """Dava kartı odaklı çıkarım talimatı.
 
@@ -242,17 +244,35 @@ def get_case_intake_instruction(
     lawyer_names: büro avukat listesi (vekil ayıklama + uyap_lawyer eşleşmesi).
     client_hints: FlashText'in belgede bulduğu kayıtlı müvekkil adları.
     yargi_turleri: izinli yargı türü listesi (DB'den; yoksa varsayılan).
+    dava_konulari: izinli dava konusu listesi (DB'den; liste-dışı değer istenmez).
+    uzmanliklar: izinli uzmanlık listesi (DB'den; liste-dışı değer istenmez).
     """
     yargi_list = yargi_turleri or [
         "Hukuk", "Ceza", "İcra", "İdari", "Arabuluculuk", "Savcılık",
     ]
 
+    # Dava konusu / uzmanlık: kanonik liste varsa değer YA listeden birebir gelir
+    # YA null — serbest metin fallback'i yok (merge tarafındaki bekçiyle birlikte
+    # yönetici panelindeki dinamik listeler dışına değer sızmaz).
+    kanonik_kurallar = []
+    if dava_konulari:
+        kanonik_kurallar.append(
+            f"- dava_konusu SADECE şu listeden BİREBİR seçilir: {', '.join(dava_konulari)}. "
+            "Hiçbiri uymuyorsa null bırak — belgedeki ifadeyi YAZMA."
+        )
+    if uzmanliklar:
+        kanonik_kurallar.append(
+            f"- uzmanlik_tahmini SADECE şu listeden BİREBİR seçilir: {', '.join(uzmanliklar)}. "
+            "Hiçbiri uymuyorsa null bırak — serbest metin YAZMA."
+        )
+
     sections = [
         "Sen bir Türk hukuk bürosunun dava açılış asistanısın. Sana verilen belge, "
         "yeni açılacak bir dava dosyasının açılış evrakından BİRİDİR (dava dilekçesi, "
         "tensip zaptı, tebligat mazbatası, sigorta poliçesi, vekaletname, sigorta "
-        "görevlendirme/atama yazısı vb.). Görevin bu belgeden dava kartı alanlarını "
-        "çıkarmak ve istenen JSON şemasını doldurmaktır.",
+        "görevlendirme/atama yazısı, sigorta atama e-postası (çıktısı) vb.). Görevin "
+        "bu belgeden dava kartı alanlarını çıkarmak ve istenen JSON şemasını "
+        "doldurmaktır.",
         "",
         "GENEL KURALLAR:",
         "- Yalnızca belgede AÇIKÇA yazan bilgiyi çıkar. Tahmin etme, uydurma; "
@@ -266,6 +286,7 @@ def get_case_intake_instruction(
         f"- yargi_turu şu listeden seçilir: {', '.join(yargi_list)}. Mahkeme adından "
         "türet (İdare/Vergi Mahkemesi → İdari; Asliye/Tüketici/İş/Asliye Ticaret → "
         "Hukuk; Ağır Ceza/Asliye Ceza → Ceza; İcra Dairesi → İcra).",
+        *kanonik_kurallar,
         "",
         "TARAF KURALLARI (kritik):",
         "- Tarafları YALNIZCA belgenin taraf/başlık bloğundan al (DAVACI:, DAVALI:, "
@@ -301,6 +322,18 @@ def get_case_intake_instruction(
         "Belge bir zeyilname ise bunu belge_turu_tahmini'nde belirt.",
         "- Sigorta görevlendirme/atama yazısı: hasar_dosya_no, hukuk_no, sigorta_sirketi, "
         "sigortalı/ilgili hekim adı.",
+        "- Sigorta atama e-postası (çıktısı): sigorta şirketinin büroya dava atadığı "
+        "e-posta. Başındaki Konu/Kimden/Kime/Tarih başlık tablosu ve gövde metni "
+        "veri kaynağıdır:",
+        "  * 'T.T' / 'T.T.' kısaltması TEBLİĞ TARİHİ demektir (örn. 'T.T: 23/07/2026') "
+        "→ teblig_tarihi. Bunu belge_tarihi veya dava_acilis_tarihi sanma.",
+        "  * Konu satırı kalıbı '[<Mahkeme>-<HasarDosyaNo>-<n>-<Esas Yıl/No>]' "
+        "(örn. '[Kayseri 3. Tüketici Mahkemesi-5002940510859-0-2026/371]') → buradan "
+        "mahkeme, hasar_dosya_no (uzun rakam dizisi) ve esas_no (YYYY/N) çıkarılır.",
+        "  * Gönderen şirket / imza bloğu → sigorta_sirketi ipucu (örn. Quick "
+        "Sigorta). E-postayı gönderen sigorta şirketidir; büro veya avukat değildir.",
+        "  * Forward zincirindeki 'From:/Sent:/Subject:' blokları da aynı kurallarla "
+        "taranır.",
         "- belge_turu_tahmini alanına belgenin türünü serbest metinle yaz "
         "(örn. 'Dava Dilekçesi', 'Tensip Zaptı', 'Sigorta Poliçesi').",
         "",
