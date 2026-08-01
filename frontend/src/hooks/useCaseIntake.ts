@@ -16,6 +16,13 @@ import {
   type MergeDraft,
 } from "@/lib/caseIntake";
 import { isEmlFile } from "@/lib/fileValidation";
+import {
+  clearIntakeDraft,
+  loadIntakeDraft,
+  markExpiredDocuments,
+  type IntakeDraftSnapshot,
+  type ReviewSnapshot,
+} from "@/lib/intakeDraft";
 
 // =====================================================================
 // Sihirbaz durum makinesi (Faz 5): upload → analyze → review → result.
@@ -57,6 +64,14 @@ export function useCaseIntake() {
   const [draft, setDraft] = useState<MergeDraft | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
+
+  // Faz 6.2: yarım kalan taslak (oturum düşmesi / sayfa yenileme sonrası).
+  // Açılışta bir kez okunur; kullanıcı "devam et" derse review'a restore edilir.
+  const [pendingDraft, setPendingDraft] = useState<IntakeDraftSnapshot | null>(
+    () => loadIntakeDraft(),
+  );
+  const [restoredReview, setRestoredReview] = useState<ReviewSnapshot | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
 
   // Sıralı analiz döngüsü iptali (sihirbazdan çıkışta akış durdurulur)
   const abortRef = useRef<AbortController | null>(null);
@@ -231,14 +246,49 @@ export function useCaseIntake() {
 
   // Review adımı açıkken 10 dk'da bir keepalive — PROCESS_CACHE TTL'i (30 dk)
   // tazelenir ki kullanıcı incelemede oyalansa da commit'te belgeler canlı olsun.
+  // İd kaynağı draft.documents (files DEĞİL): restore edilen taslakta files boş.
   useEffect(() => {
-    if (step !== "review") return;
-    const ids = files.filter(f => f.processId).map(f => f.processId!) ;
+    if (step !== "review" || !draft) return;
+    const ids = draft.documents.map(d => d.process_id);
     if (ids.length === 0) return;
     const tick = () => { keepaliveIntake(ids).catch(() => { /* sessiz — bir sonraki tick dener */ }); };
     const interval = setInterval(tick, 10 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [step, files]);
+  }, [step, draft]);
+
+  /**
+   * Yarım kalan taslağa devam: önce keepalive ile hangi process_id'lerin hâlâ
+   * canlı olduğu öğrenilir; expired dönenler taslakta "yeniden yükle" olarak
+   * işaretlenir (commit onları zaten dışarıda bırakır). Ardından review'a geçilir.
+   */
+  const resumeDraft = useCallback(async () => {
+    if (!pendingDraft || isResuming) return;
+    setIsResuming(true);
+    try {
+      let review = pendingDraft.review;
+      const ids = pendingDraft.draft.documents.map(d => d.process_id);
+      if (ids.length > 0) {
+        try {
+          const result = await keepaliveIntake(ids);
+          review = markExpiredDocuments(review, result.expired);
+        } catch {
+          // keepalive ulaşılamadı — mevcut expired bayraklarıyla devam;
+          // gerçekten ölmüş belgeler commit yanıtında görünür (Faz 4 izolasyonu)
+        }
+      }
+      setDraft(pendingDraft.draft);
+      setRestoredReview(review);
+      setPendingDraft(null);
+      setStep("review");
+    } finally {
+      setIsResuming(false);
+    }
+  }, [pendingDraft, isResuming]);
+
+  const discardDraft = useCallback(() => {
+    clearIntakeDraft();
+    setPendingDraft(null);
+  }, []);
 
   /**
    * Tek "Kaydet ve Arşivle". 409 (duplicate tracking_no) CommitConflictError
@@ -249,6 +299,7 @@ export function useCaseIntake() {
     setIsCommitting(true);
     try {
       const result = await commitIntake(req);
+      clearIntakeDraft(); // dava kaydoldu — taslak artık bayat
       setCommitResult(result);
       setStep("result");
       return result;
@@ -259,6 +310,7 @@ export function useCaseIntake() {
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
+    clearIntakeDraft();
     setStep("upload");
     applyFiles(() => []);
     setIsExpandingEml(false);
@@ -266,6 +318,7 @@ export function useCaseIntake() {
     setIsMerging(false);
     setMergeError(null);
     setDraft(null);
+    setRestoredReview(null);
     setIsCommitting(false);
     setCommitResult(null);
   }, [applyFiles]);
@@ -287,5 +340,10 @@ export function useCaseIntake() {
     commit,
     commitResult,
     reset,
+    pendingDraft,
+    isResuming,
+    resumeDraft,
+    discardDraft,
+    restoredReview,
   };
 }

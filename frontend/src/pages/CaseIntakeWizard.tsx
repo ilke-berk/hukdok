@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { FlowStageStrip, type FlowStage } from "@/components/flow/primitives";
+import { FlowButton, FlowCard, FlowStageStrip, type FlowStage } from "@/components/flow/primitives";
 import { IntakeUploadStep } from "@/components/intake/IntakeUploadStep";
 import { IntakeProgressStep } from "@/components/intake/IntakeProgressStep";
 import { IntakeReviewStep } from "@/components/intake/IntakeReviewStep";
@@ -79,6 +79,34 @@ const CaseIntakeWizard = () => {
         meta={intake.files.length > 0 ? `${intake.files.length} belge` : undefined}
       />
 
+      {intake.step === "upload" && intake.pendingDraft && (
+        <FlowCard className="flex items-center justify-between gap-4 flex-wrap border-[var(--brand)]">
+          <div>
+            <p className="text-[13px] font-medium text-[var(--fg)]">
+              Yarım kalan taslak bulundu
+              {(() => {
+                const t = new Date(intake.pendingDraft.savedAt);
+                return isNaN(t.getTime())
+                  ? ""
+                  : ` (${t.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })})`;
+              })()}
+            </p>
+            <p className="mt-0.5 text-[12px] text-[var(--fg-subtle)]">
+              Oturum kesintisinden önce inceleme adımında kalınmıştı — kaldığın
+              yerden devam edebilirsin. Süresi dolan belgeler işaretlenir.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <FlowButton size="sm" onClick={intake.resumeDraft} disabled={intake.isResuming}>
+              {intake.isResuming ? "Yükleniyor..." : "Devam Et"}
+            </FlowButton>
+            <FlowButton size="sm" variant="ghost" onClick={intake.discardDraft} disabled={intake.isResuming}>
+              At
+            </FlowButton>
+          </div>
+        </FlowCard>
+      )}
+
       {intake.step === "upload" && (
         <IntakeUploadStep
           files={intake.files}
@@ -104,6 +132,7 @@ const CaseIntakeWizard = () => {
           draft={intake.draft}
           isCommitting={intake.isCommitting}
           onCommit={intake.commit}
+          initialReview={intake.restoredReview}
         />
       )}
 

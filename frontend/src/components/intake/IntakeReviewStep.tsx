@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, ExternalLink, FileText, Mail, Plus, RefreshCw, Save, Trash2, X,
 } from "lucide-react";
@@ -31,6 +31,8 @@ import {
   fieldApprovalProgress,
   type IntakeFieldState,
 } from "@/lib/caseIntakeFields";
+import { SESSION_EXPIRED_EVENT } from "@/lib/api";
+import { debounce, saveIntakeDraft, type ReviewSnapshot } from "@/lib/intakeDraft";
 import {
   bestCategoryCode,
   generateNameBlock,
@@ -82,6 +84,8 @@ interface IntakeReviewStepProps {
   draft: MergeDraft;
   isCommitting: boolean;
   onCommit: (req: CaseIntakeCommitRequest) => Promise<unknown>;
+  /** Faz 6.2: yarım kalan taslaktan devam — form durumu buradan init edilir. */
+  initialReview?: ReviewSnapshot | null;
 }
 
 let nextPartyId = 0;
@@ -103,7 +107,7 @@ const SERVICE_TYPES = [
   { label: "Yazışma", index: 4 },
 ];
 
-export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReviewStepProps) {
+export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview }: IntakeReviewStepProps) {
   const { getClientCaseSequence } = useCases();
   const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
 
@@ -116,7 +120,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
 
   // --- Alanlar ---------------------------------------------------------
   const [fieldStates, setFieldStates] = useState<Record<string, IntakeFieldState>>(
-    () => buildFieldStates(draft),
+    () => initialReview?.fieldStates ?? buildFieldStates(draft),
   );
 
   const setFieldValue = (key: string, value: string) => {
@@ -133,19 +137,22 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   };
 
   // --- Taraflar --------------------------------------------------------
+  // Restore'da id'ler taze üretilir (sayaç oturuma özgü, saklanan id çakışır)
   const [parties, setParties] = useState<ReviewParty[]>(() =>
-    draft.parties.map(p => ({
-      id: makePartyId(),
-      name: p.match?.name || p.name, // kayıtlı carinin kanonik yazımı tercih edilir
-      role: ROL_DISPLAY[p.rol] || p.rol,
-      party_type: p.party_type,
-      tc_no: p.tc_no || "",
-      client_id: p.match?.client_id ?? null,
-      matchName: p.match?.name ?? null,
-      matchCategory: p.match?.category ?? null,
-      approved: false,
-      fromDraft: true,
-    })),
+    initialReview
+      ? initialReview.parties.map(p => ({ ...p, id: makePartyId() }))
+      : draft.parties.map(p => ({
+          id: makePartyId(),
+          name: p.match?.name || p.name, // kayıtlı carinin kanonik yazımı tercih edilir
+          role: ROL_DISPLAY[p.rol] || p.rol,
+          party_type: p.party_type,
+          tc_no: p.tc_no || "",
+          client_id: p.match?.client_id ?? null,
+          matchName: p.match?.name ?? null,
+          matchCategory: p.match?.category ?? null,
+          approved: false,
+          fromDraft: true,
+        })),
   );
 
   const patchParty = (id: string, patch: Partial<ReviewParty>) => {
@@ -175,7 +182,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
 
   // --- Hizmet Türü (bitmask, NewCase deseni) ---------------------------
   // Seçilen her hizmet ofis numarasının son bloğuna (11000 gibi) yansır.
-  const [serviceMask, setServiceMask] = useState("00000");
+  const [serviceMask, setServiceMask] = useState(initialReview?.serviceMask ?? "00000");
   const toggleService = (index: number, checked: boolean) => {
     setServiceMask(prev => {
       const mask = prev.split("");
@@ -185,10 +192,12 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   };
 
   // --- Dava Avukatları (çoklu, NewCase deseni) -------------------------
-  const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>([]);
+  const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
+    initialReview?.selectedLawyers ?? [],
+  );
 
   // --- Ofis No ---------------------------------------------------------
-  const [trackingNo, setTrackingNo] = useState("");
+  const [trackingNo, setTrackingNo] = useState(initialReview?.trackingNo ?? "");
   const [isGeneratingNo, setIsGeneratingNo] = useState(false);
 
   const regenerateTracking = useCallback(async () => {
@@ -231,6 +240,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   // --- Poliçeler -------------------------------------------------------
   // Varsayılan seçim: kayıtlı olmayan + müvekkil eşleşmeli poliçeler
   const [selectedPolicies, setSelectedPolicies] = useState<Record<string, boolean>>(() => {
+    if (initialReview) return initialReview.selectedPolicies;
     const initial: Record<string, boolean> = {};
     for (const p of draft.policies) {
       initial[policyKey(p)] = !p.saved && p.client_id != null;
@@ -239,7 +249,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   });
 
   // --- Belge şeridi ----------------------------------------------------
-  const [documents, setDocuments] = useState<ReviewDocument[]>([]);
+  const [documents, setDocuments] = useState<ReviewDocument[]>(
+    () => initialReview?.documents ?? [],
+  );
   useEffect(() => {
     // doctypes yüklenince tahminsiz belgelere ad-bazlı fallback uygulanır
     setDocuments(prev => {
@@ -263,8 +275,8 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
   };
 
   // --- E-posta bildirimi (karar 2: varsayılan KAPALI) ------------------
-  const [sendEmail, setSendEmail] = useState(false);
-  const [emailTo, setEmailTo] = useState<string[]>([]);
+  const [sendEmail, setSendEmail] = useState(initialReview?.sendEmail ?? false);
+  const [emailTo, setEmailTo] = useState<string[]>(initialReview?.emailTo ?? []);
   const [customEmail, setCustomEmail] = useState("");
 
   const addEmailRecipient = (addr: string) => {
@@ -276,6 +288,48 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit }: IntakeReview
     setEmailTo(prev => (prev.includes(v) ? prev : [...prev, v]));
     setCustomEmail("");
   };
+
+  // --- Taslak dayanıklılığı (Faz 6.2 katman 2) -------------------------
+  // Form durumu sessionStorage'a debounce'lu yazılır; oturum düşmesi
+  // (SESSION_EXPIRED_EVENT) ve pagehide'da bekletmeden flush edilir.
+  const snapshotRef = useRef<() => ReviewSnapshot>(() => ({} as ReviewSnapshot));
+  snapshotRef.current = () => ({
+    fieldStates,
+    parties: parties.map(({ id: _id, ...rest }) => rest),
+    serviceMask,
+    selectedLawyers,
+    trackingNo,
+    selectedPolicies,
+    documents,
+    sendEmail,
+    emailTo,
+  });
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const saveDraftRef = useRef<ReturnType<typeof debounce> | null>(null);
+  if (saveDraftRef.current === null) {
+    saveDraftRef.current = debounce(
+      () => saveIntakeDraft(draftRef.current, snapshotRef.current()),
+      1000,
+    );
+  }
+  useEffect(() => {
+    saveDraftRef.current!();
+  }, [fieldStates, parties, serviceMask, selectedLawyers, trackingNo,
+      selectedPolicies, documents, sendEmail, emailTo]);
+  useEffect(() => {
+    const save = saveDraftRef.current!;
+    const flush = () => save.flush();
+    window.addEventListener(SESSION_EXPIRED_EVENT, flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener(SESSION_EXPIRED_EVENT, flush);
+      window.removeEventListener("pagehide", flush);
+      // Unmount: commit başarısında taslak zaten temizlendi — bekleyen yazım
+      // bayat taslağı geri getirmesin diye iptal edilir.
+      save.cancel();
+    };
+  }, []);
 
   // --- Kaydet kapısı ---------------------------------------------------
   const progress = fieldApprovalProgress(fieldStates, requiredFieldKeys);

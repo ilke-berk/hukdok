@@ -17,7 +17,7 @@ vi.mock("@/config/msalConfig", () => ({
 const toastError = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { error: toastError } }));
 
-import { apiClient, getApiUrl } from "./api";
+import { apiClient, getApiUrl, SESSION_EXPIRED_EVENT } from "./api";
 
 const account = { username: "test@example.com" };
 
@@ -87,6 +87,46 @@ describe("apiClient.fetch", () => {
 
         const [, options] = fetchMock.mock.calls[0];
         expect((options.headers as Headers).get("Content-Type")).toBe(null);
+    });
+
+    it("401'de token sessizce yenilenip istek BİR kez tekrarlanır (Faz 6.2)", async () => {
+        // İlk edinim "test-token", forceRefresh edinimi "fresh-token" döner
+        msalMocks.acquireTokenSilent
+            .mockResolvedValueOnce({ accessToken: "test-token" })
+            .mockResolvedValueOnce({ accessToken: "fresh-token" });
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({ status: 401, ok: false })
+            .mockResolvedValueOnce({ status: 200, ok: true });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await apiClient.fetch("/api/cases");
+
+        expect(response.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        const retryHeaders = fetchMock.mock.calls[1][1].headers as Headers;
+        expect(retryHeaders.get("Authorization")).toBe("Bearer fresh-token");
+        // forceRefresh ile ikinci edinim yapılmış olmalı
+        expect(msalMocks.acquireTokenSilent.mock.calls[1][0].forceRefresh).toBe(true);
+        expect(msalMocks.logoutRedirect).not.toHaveBeenCalled();
+    });
+
+    it("yenileme sonrası da 401 ise flush olayı yayınlanıp logout'a gidilir", async () => {
+        msalMocks.acquireTokenSilent
+            .mockResolvedValueOnce({ accessToken: "test-token" })
+            .mockResolvedValueOnce({ accessToken: "fresh-token" });
+        const fetchMock = vi.fn().mockResolvedValue({ status: 401, ok: false });
+        vi.stubGlobal("fetch", fetchMock);
+        const flushListener = vi.fn();
+        window.addEventListener(SESSION_EXPIRED_EVENT, flushListener);
+
+        await apiClient.fetch("/api/cases");
+
+        expect(fetchMock).toHaveBeenCalledTimes(2); // orijinal + tek tekrar
+        expect(flushListener).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
+            timeout: 2000,
+        });
+        window.removeEventListener(SESSION_EXPIRED_EVENT, flushListener);
     });
 
     it("401 yanıtta oturum kapatma akışı tetiklenir", async () => {

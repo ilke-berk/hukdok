@@ -12,8 +12,14 @@ export const getApiUrl = async (): Promise<string> => {
     return apiUrl;
 };
 
+/**
+ * Oturum kurtarılamayıp logout redirect'e gidilmeden HEMEN önce yayınlanır —
+ * dinleyenler (ör. sihirbaz taslağı) durumlarını sessionStorage'a flush eder.
+ */
+export const SESSION_EXPIRED_EVENT = "hukdok:session-expired";
+
 // Validates and returns the authentication token
-const getAuthToken = async (): Promise<string | null> => {
+const getAuthToken = async (forceRefresh = false): Promise<string | null> => {
     try {
         const activeAccount = msalInstance.getActiveAccount();
         const accounts = msalInstance.getAllAccounts();
@@ -25,7 +31,8 @@ const getAuthToken = async (): Promise<string | null> => {
 
         const request = {
             ...loginRequest,
-            account: activeAccount || accounts[0]
+            account: activeAccount || accounts[0],
+            forceRefresh
         };
 
         // Try to get token silently
@@ -64,15 +71,31 @@ export const apiClient = {
 
         console.log(`📡 API Request: ${options.method || 'GET'} ${url}`);
 
-        const response = await fetch(url, {
+        let response = await fetch(url, {
             ...options,
             headers
         });
 
+        // Faz 6.2 katman 1: 401'de MSAL sessiz yenileme (forceRefresh) + isteği
+        // BİR kez tekrar — 30+ dk review'da access token düşse de akış kesilmez.
+        // (Gövdeler string/FormData; ikisi de güvenle yeniden gönderilebilir.)
+        if (response.status === 401) {
+            const freshToken = await getAuthToken(true);
+            if (freshToken && freshToken !== token) {
+                console.warn("🔄 401 sonrası token yenilendi — istek tekrarlanıyor");
+                headers.set("Authorization", `Bearer ${freshToken}`);
+                response = await fetch(url, { ...options, headers });
+            }
+        }
+
         // Handle 401 Unauthorized globally if needed
         if (response.status === 401) {
             console.error("⛔ Unauthorized Access (401) - Logging out...");
-            
+
+            // Sessiz yenileme tutmadı → logout kaçınılmaz; redirect öncesi açık
+            // taslaklar sessionStorage'a flush edilsin (sihirbaz dinler).
+            window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+
             // Prevent multiple logout triggers for concurrent 401s
             const w = window as Window & { _isLoggingOut?: boolean };
             if (!w._isLoggingOut) {
