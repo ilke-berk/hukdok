@@ -134,6 +134,9 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
                 field_name="status",
                 old_value=old_status,
                 new_value=new_status,
+                # Faz 7 kararı 3: sessiz zenginleştirme kalır ama imzası belli olur
+                changed_by=uploaded_by,
+                source="auto-status",
             )
             db.add(history)
             db.commit()
@@ -176,6 +179,9 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
                             field_name="responsible_lawyer_name",
                             old_value=old_avukat or "Yok",
                             new_value=avukat_adi,
+                            # Faz 7 kararı 3: sessiz zenginleştirme imzalanır
+                            changed_by=uploaded_by,
+                            source="auto-enrich",
                         )
                         db.add(history)
                         updated_fields["lawyer"] = avukat_adi
@@ -195,6 +201,9 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
                     field_name="karşı_taraf",
                     old_value="Yok",
                     new_value=karsi_taraf,
+                    # Faz 7 kararı 3: sessiz zenginleştirme imzalanır
+                    changed_by=uploaded_by,
+                    source="auto-enrich",
                 )
                 db.add(history)
                 updated_fields["counter_party"] = karsi_taraf

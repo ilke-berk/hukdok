@@ -362,6 +362,14 @@ _MIGRATIONS = [
     # 19. TAZMINAT_TALEP_TARIHI GERI ALIMI — anket kararı (2026-07-31):
     # alan 2026-07-30'da eklendi, ofis "kaldırılsın" dedi; veri kaybı kabul.
     ("drop", "cases", ["tazminat_talep_tarihi"]),
+
+    # 20. CASE_HISTORY İMZASI — otonom dava açma Faz 7 (zenginleştirme modu):
+    # kim + hangi kaynaktan ("intake-enrich: tensip.pdf", "auto-enrich").
+    # Mevcut kayıtlar NULL kalır (elle/legacy değişiklik).
+    ("columns", "case_history", {
+        "changed_by": "VARCHAR(200)",
+        "source":     "VARCHAR(300)",
+    }),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

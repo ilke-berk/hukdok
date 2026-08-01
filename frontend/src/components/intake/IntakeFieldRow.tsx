@@ -15,7 +15,7 @@ import {
 import {
   Popover, PopoverAnchor, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import type { ClientPrior, MergeField } from "@/lib/caseIntake";
+import { SAVED_CASE_SOURCE, type ClientPrior, type MergeField } from "@/lib/caseIntake";
 import type { IntakeFieldDef, IntakeFieldState } from "@/lib/caseIntakeFields";
 
 interface IntakeFieldRowProps {
@@ -30,6 +30,9 @@ interface IntakeFieldRowProps {
   /** Değer değişimi — düzenlemek alanı OTOMATİK tikler (onay semantiği). */
   onChange: (value: string) => void;
   onApprove: (approved: boolean) => void;
+  /** Enrich modu (Faz 7): tik "onay" değil "uygula" anlamındadır; satırda
+      doldur/çelişki rozeti + kayıtlı değer gösterilir. */
+  enrichMode?: boolean;
 }
 
 /**
@@ -40,11 +43,14 @@ interface IntakeFieldRowProps {
  * "bu bilgi şu anda elimde yok" onay diyaloğundan geçer; zorunlu olmayan
  * boş alanın tiki pasiftir.
  */
-export function IntakeFieldRow({ def, state, field, options, prior, onChange, onApprove }: IntakeFieldRowProps) {
+export function IntakeFieldRow({ def, state, field, options, prior, onChange, onApprove, enrichMode }: IntakeFieldRowProps) {
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
   const isEmpty = state.value === "";
-  const needsApproval = !isEmpty || Boolean(def.required);
+  // Enrich modunda tik = "uygula": boş alan tik'lenebilir kalır (alan silme)
+  const needsApproval = enrichMode || !isEmpty || Boolean(def.required);
+  const enrich = field?.enrich;
+  const enrichCurrent = enrich?.current == null ? "" : String(enrich.current);
   const candidates = field?.candidates ?? [];
   const showCandidates = candidates.length > 1;
   const confidence = field?.confidence != null ? Math.round(field.confidence * 100) : undefined;
@@ -222,6 +228,19 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
             {def.required && <span className="text-[var(--brand)] ml-1">*</span>}
           </label>
           <div className="flex items-center gap-1.5">
+            {enrichMode && enrich?.status === "fill" && (
+              <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600">
+                Doldur
+              </span>
+            )}
+            {enrichMode && enrich?.status === "conflict" && (
+              <span
+                title={`Kayıtlı değerden farklı: ${enrichCurrent}`}
+                className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-amber-600/40 bg-amber-500/10 text-amber-600"
+              >
+                Çelişki
+              </span>
+            )}
             {field?.verified === true && (
               <span title="Değer belgede kanıtla doğrulandı" className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.1em] uppercase text-emerald-600">
                 <ShieldCheck className="w-3 h-3" /> Kanıtlı
@@ -246,6 +265,16 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
             <span className="font-mono text-[10px] tracking-[0.04em] text-[var(--fg-subtle)]">
               {sourceLabel}
             </span>
+          )}
+          {enrichMode && enrich?.status === "conflict" && enrichCurrent !== state.value && (
+            <button
+              type="button"
+              onClick={() => onChange(enrichCurrent)}
+              className="font-mono text-[10px] tracking-[0.04em] text-amber-600 hover:underline"
+              title="Kayıtlı dava değerine geri dön (alan davada değişmez)"
+            >
+              Kayıtlı: {enrichCurrent}
+            </button>
           )}
           {prior && prior.value !== state.value && (
             <button
@@ -294,7 +323,9 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
                       >
                         <span className="break-all">{String(c.value ?? "")}</span>
                         <span className="block font-mono text-[10px] text-[var(--fg-subtle)] mt-0.5">
-                          {c.count} belge · {c.sources.slice(0, 2).join(", ")}{c.sources.length > 2 ? "…" : ""}
+                          {c.count === 0 && c.sources.includes(SAVED_CASE_SOURCE)
+                            ? SAVED_CASE_SOURCE
+                            : `${c.count} belge · ${c.sources.slice(0, 2).join(", ")}${c.sources.length > 2 ? "…" : ""}`}
                         </span>
                       </button>
                     </li>

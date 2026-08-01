@@ -254,6 +254,16 @@ export interface MergeFieldCandidate {
   sources: string[];
 }
 
+// Faz 7 — zenginleştirme modunda alan başına durum (annotate_enrich_status):
+// fill: dava alanı boş + belgede değer var; confirm: dolu + aynı;
+// conflict: dolu + farklı; keep: dolu + belge önerisi yok.
+export type EnrichStatus = "fill" | "confirm" | "conflict" | "keep";
+
+export interface MergeFieldEnrich {
+  status: EnrichStatus;
+  current: unknown;                   // kayıtlı davadaki mevcut değer
+}
+
 export interface MergeField {
   value: unknown;
   agreement: number | null;
@@ -266,7 +276,11 @@ export interface MergeField {
   arbiter?: { secilen_deger: string; gerekce?: string | null } | null;
   known_court_suggestion?: string;    // court: bilinen yazım önerisi
   derived_from?: string;              // opening_date: "belge_tarihi" türetmesi
+  enrich?: MergeFieldEnrich;          // yalnız enrich modunda
 }
+
+/** Kayıtlı dava kaynaklı adayın sources etiketi (backend SAVED_CASE_SOURCE). */
+export const SAVED_CASE_SOURCE = "kayıtlı dava";
 
 // merge_fields çıktı anahtarları (backend services/case_intake.py)
 // judicial_unit: mahkemeden türetilir (route 4b); hasar/hukuk no: atama yazısından
@@ -290,6 +304,12 @@ export interface MergePartyCheckMatch {
   [key: string]: unknown;
 }
 
+export interface MergePartyExisting {
+  case_party_id: number;
+  name: string;               // davadaki kayıtlı yazım
+  role: string | null;
+}
+
 export interface MergeParty {
   name: string;
   rol: string;
@@ -300,6 +320,8 @@ export interface MergeParty {
   sources: string[];
   match: MergeClientMatch | null;
   check?: { conflict: boolean; matches: MergePartyCheckMatch[] };
+  // Enrich modu: davada zaten kayıtlı tarafla eşleşme (yalnız EKLEME önerilir)
+  existing?: MergePartyExisting | null;
 }
 
 export interface MergePolicy {
@@ -348,6 +370,15 @@ export interface ClientPrior {
   total: number;
 }
 
+/** Enrich modunda hedef davanın özeti (merge yanıtındaki case bloğu). */
+export interface MergeCaseSummary {
+  id: number;
+  tracking_no: string;
+  esas_no: string | null;
+  court: string | null;
+  status: string;
+}
+
 export interface MergeDraft {
   fields: Record<MergeFieldKey, MergeField> & Record<string, MergeField>;
   parties: MergeParty[];
@@ -357,6 +388,9 @@ export interface MergeDraft {
   duplicate_case: MergeDuplicateCase | null;
   // client_id (string) → alan → öneri (file_type/sub_type/responsible_lawyer_name/subject)
   priors: Record<string, Record<string, ClientPrior>>;
+  // Faz 7: "new" = açılış sihirbazı, "enrich" = mevcut davayı doldur/teyit
+  mode?: "new" | "enrich";
+  case?: MergeCaseSummary | null;
 }
 
 export interface MergeDocumentIn {
@@ -365,10 +399,13 @@ export interface MergeDocumentIn {
   extraction: IntakeExtraction;
 }
 
-export async function mergeIntake(documents: MergeDocumentIn[]): Promise<MergeDraft> {
+export async function mergeIntake(
+  documents: MergeDocumentIn[],
+  caseId?: number | null,
+): Promise<MergeDraft> {
   const response = await apiClient.fetch("/api/case-intake/merge", {
     method: "POST",
-    body: JSON.stringify({ documents }),
+    body: JSON.stringify({ documents, ...(caseId != null ? { case_id: caseId } : {}) }),
   });
   if (!response.ok) {
     let detail = response.statusText;
@@ -492,6 +529,50 @@ export class CommitConflictError extends Error {
     super(message);
     this.name = "CommitConflictError";
   }
+}
+
+// --- Apply (Faz 7 — zenginleştirme modu) -------------------------------
+// Backend sözleşmesi: POST /api/case-intake/apply (schemas_intake.py).
+// fields yalnız tik'lenen (uygulanacak) alanları içerir — gönderilmeyen alan
+// davada DOKUNULMAZ, null gönderilen SİLİNİR (exclude_unset semantiği).
+
+export interface CaseIntakeApplyRequest {
+  case_id: number;
+  fields: Record<string, string | number | null>;
+  parties: CommitCasePartyIn[];         // yalnız EKLENECEK taraflar
+  documents: CommitDocumentIn[];
+  policies: CommitPolicyIn[];
+  options: { send_email: boolean; email_to: string[] };
+}
+
+export interface ApplyUpdatedField {
+  field: string;
+  old: string | null;
+  new: string | null;
+}
+
+export interface ApplyResult {
+  case: { id: number; tracking_no: string };
+  updated_fields: ApplyUpdatedField[];
+  added_parties: string[];
+  documents: CommitDocumentResult[];
+  policies: { saved: number; skipped: number; error?: string };
+}
+
+export async function applyIntake(req: CaseIntakeApplyRequest): Promise<ApplyResult> {
+  const response = await apiClient.fetch("/api/case-intake/apply", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+    } catch { /* gövde JSON değilse statusText kalır */ }
+    throw new Error("Güncelleme başarısız: " + detail);
+  }
+  return await response.json() as ApplyResult;
 }
 
 export async function commitIntake(req: CaseIntakeCommitRequest): Promise<CommitResult> {

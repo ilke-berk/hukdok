@@ -135,7 +135,11 @@ class CaseHistory(Base):
     old_value = Column(String)
     new_value = Column(String)
     changed_at = Column(DateTime(timezone=True), default=func.now())
-    
+    # Faz 7 imzası: kim + hangi kaynaktan ("intake-enrich: tensip.pdf",
+    # "auto-enrich"…). Elle düzenlemelerde NULL kalabilir (legacy davranış).
+    changed_by = Column(String(200), nullable=True)
+    source = Column(String(300), nullable=True)
+
     case = relationship("Case", back_populates="history")
 
 class CaseParty(Base):

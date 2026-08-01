@@ -58,7 +58,15 @@ from file_utils import (
 )
 from managers.log_manager import TechnicalLogger
 from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache
-from schemas_intake import CaseIntakeCommitRequest, CaseIntakeMergeRequest, KeepaliveRequest
+from schemas_intake import (
+    CaseIntakeApplyRequest,
+    CaseIntakeCommitRequest,
+    CaseIntakeMergeRequest,
+    CommitDocumentIn,
+    CommitOptions,
+    CommitPolicyIn,
+    KeepaliveRequest,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -569,17 +577,32 @@ async def merge_case_intake(
     """Oturumdaki belge çıkarımlarını tek dava kartı taslağında birleştirir (durumsuz)."""
     import case_intake_analyzer
     from case_matcher import find_matching_case
+    from managers import case_manager
     from party_check import check_parties
     from services.case_intake import (
+        annotate_enrich_status,
         apply_arbitration,
         build_doc_summaries,
         build_draft,
         client_priors,
+        detect_conflicts,
+        inject_case_candidates,
+        mark_existing_parties,
         merge_parties,
     )
 
     loop = asyncio.get_running_loop()
     docs = [d.model_dump() for d in req.documents]
+
+    # 0. Zenginleştirme modu (Faz 7): hedef dava yüklenir (tenant süzgeçli) —
+    # değerleri aşağıda "kayıtlı dava" kaynaklı aday olarak taslağa katılır.
+    case_row: Optional[Dict[str, Any]] = None
+    if req.case_id is not None:
+        case_row = await loop.run_in_executor(
+            None, partial(case_manager.get_case, req.case_id, tenant_id)
+        )
+        if not case_row:
+            raise HTTPException(status_code=404, detail="Zenginleştirilecek dava bulunamadı.")
 
     # 1. Keepalive: listelenen tüm process_id'lerin TTL'i tazelenir; süresi
     #    dolmuş belge birleştirmeye girer ama taslakta expired işaretlenir
@@ -605,6 +628,13 @@ async def merge_case_intake(
         known_subjects=ctx.get("known_subjects"),
         known_specialties=ctx.get("known_specialties"),
     )
+
+    # 3b. Zenginleştirme: kayıtlı dava değerleri adaylara katılır; esas_no/
+    # mahkeme farkı yeni çelişki doğurabilir → hakem listesi yeniden kurulur
+    # (kayıtlı değer de artık aday olduğundan hakem onu seçebilir).
+    if case_row is not None:
+        inject_case_candidates(draft["fields"], case_row)
+        conflicts = detect_conflicts(draft["fields"])
 
     # 4. Katman 3 — hakem (yalnız çelişkide; hatası taslağı düşürmez)
     if conflicts:
@@ -649,6 +679,21 @@ async def merge_case_intake(
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[INTAKE] Yargı birimi türetme hatası: {e}")
 
+    # 4c. Zenginleştirme: nihai (hakem + türetme sonrası) değerler üzerinden
+    # alan başına fill/confirm/conflict/keep durumu + taraf eşleme + dava özeti.
+    draft["mode"] = "enrich" if case_row is not None else "new"
+    draft["case"] = None
+    if case_row is not None:
+        annotate_enrich_status(draft["fields"], case_row)
+        mark_existing_parties(draft["parties"], case_row.get("parties") or [])
+        draft["case"] = {
+            "id": case_row["id"],
+            "tracking_no": case_row["tracking_no"],
+            "esas_no": case_row["esas_no"],
+            "court": case_row["court"],
+            "status": case_row["status"],
+        }
+
     # 5. Tanıdık sorgu (çıkar çatışması) — taraf satırlarına iliştirilir
     try:
         queries = [
@@ -669,27 +714,28 @@ async def merge_case_intake(
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[INTAKE] Tanıdık sorgu hatası (merge): {e}")
 
-    # 6. Mükerrer dava kontrolü
-    try:
-        client_names = [p["name"] for p in draft["parties"] if p["party_type"] == "CLIENT"]
-        other_names = [p["name"] for p in draft["parties"] if p["party_type"] != "CLIENT"]
-        dup = await loop.run_in_executor(None, lambda: find_matching_case(
-            esas_no=draft["fields"]["esas_no"]["value"],
-            muvekkiller=client_names,
-            belgede_gecen_isimler=other_names,
-            mahkeme=draft["fields"]["court"]["value"],
-        ))
-        if dup:
-            draft["duplicate_case"] = {
-                "id": dup["case_id"],
-                "tracking_no": dup["tracking_no"],
-                "esas_no": dup["esas_no"],
-                "court": dup["court"],
-                "score": dup["score"],
-                "confidence": dup["confidence"],
-            }
-    except Exception as e:
-        TechnicalLogger.log("WARNING", f"[INTAKE] Mükerrer dava kontrolü hatası: {e}")
+    # 6. Mükerrer dava kontrolü (zenginleştirme modunda anlamsız — hedef belli)
+    if case_row is None:
+        try:
+            client_names = [p["name"] for p in draft["parties"] if p["party_type"] == "CLIENT"]
+            other_names = [p["name"] for p in draft["parties"] if p["party_type"] != "CLIENT"]
+            dup = await loop.run_in_executor(None, lambda: find_matching_case(
+                esas_no=draft["fields"]["esas_no"]["value"],
+                muvekkiller=client_names,
+                belgede_gecen_isimler=other_names,
+                mahkeme=draft["fields"]["court"]["value"],
+            ))
+            if dup:
+                draft["duplicate_case"] = {
+                    "id": dup["case_id"],
+                    "tracking_no": dup["tracking_no"],
+                    "esas_no": dup["esas_no"],
+                    "court": dup["court"],
+                    "score": dup["score"],
+                    "confidence": dup["confidence"],
+                }
+        except Exception as e:
+            TechnicalLogger.log("WARNING", f"[INTAKE] Mükerrer dava kontrolü hatası: {e}")
 
     # 7. Müvekkil geçmişi örüntüleri (düşük-güvenli ön-dolgu önerileri)
     if matched_ids:
@@ -726,79 +772,44 @@ async def merge_case_intake(
             "policies": len(draft["policies"]),
             "conflicts": len(conflicts),
             "warnings": [w["code"] for w in draft["warnings"]],
+            "mode": draft["mode"],
+            "case_id": req.case_id,
         },
     )
     return draft
 
 
 # =====================================================================
-# Faz 4 — commit
+# Faz 4 — commit (+ Faz 7 apply ile paylaşılan yardımcılar)
 # =====================================================================
 
 
-@router.post("/api/case-intake/commit")
-async def commit_case_intake(
-    req: CaseIntakeCommitRequest,
+async def _archive_intake_documents(
+    documents: List[CommitDocumentIn],
+    case_id: int,
+    avukat_kodu: Optional[str],
     background_tasks: BackgroundTasks,
-    tenant_id: str = Depends(get_current_tenant),
-    user: dict = Depends(get_current_user),
-):
-    """Tek "Kaydet": dava (atomik) + belge arşivleme + poliçe beslemesi.
+    user: dict,
+    current_user_name: str,
+    options: CommitOptions,
+) -> List[Dict[str, Any]]:
+    """Belge-başı best-effort arşiv döngüsü (karar 4) — commit + apply ortak.
 
-    Karar 4: dava oluşturma transactional; belge arşivleme belge-başı
-    best-effort — başarısız/TTL-dolmuş belge akışı öldürmez, yanıtta
-    failed/expired döner. 409'da (duplicate tracking_no) HİÇBİR belge
-    tüketilmemiştir — frontend'in tek otomatik retry'ı güvenlidir.
+    Sarmalayıcı BİLEREK geniş except Exception: confirm yolundaki GS
+    UnicodeDecodeError arızası (ValueError alt sınıfı) dar except'leri
+    deliyordu — tek belge hatası kalan belgeleri düşürmemeli. accept POP →
+    PDF/A → kuyruk → cleanup; expired/failed izolasyonu yanıt satırında döner.
     """
-    from managers import case_manager, client_manager
     from services import document_pipeline
 
     loop = asyncio.get_running_loop()
-    current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
-
-    # 1. Dava — atomik. status sunucuda DERDEST'e zorlanır (karar 1 — istemciye
-    # güvenme). Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı
-    # 2026-07-31 rev.2): eksikler yanıtla döner, panelde uyarı olarak görünür.
-    from required_fields import compute_missing_fields
-
-    case_dict = req.case.model_dump()
-    missing_fields = compute_missing_fields(case_dict, case_dict.get("parties"))
-    case_dict["status"] = "DERDEST"
-    case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
-    if case_result and case_result.get("error") == "duplicate_tracking_no":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
-                   "Sıra numarasını artırıp tekrar deneyin.",
-        )
-    if not case_result or case_result.get("error"):
-        raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
-    case_id = case_result["id"]
-
-    # Avukat kodu davanın sorumlusundan BİR KEZ çözülür (dava az önce bizim
-    # oluşturduğumuz — belge başına tenant sorgusu israf). Hata belge akışını
-    # durdurmaz: kod boş kalır, arşivleme devam eder.
-    avukat_kodu: Optional[str] = None
-    try:
-        avukat_kodu = await loop.run_in_executor(
-            None, document_pipeline.validate_tenant_and_resolve_lawyer, case_id, user, None
-        )
-    except Exception as e:
-        TechnicalLogger.log(
-            "WARNING", f"[INTAKE-COMMIT] Avukat çözümü hatası (case={case_id}): {e}"
-        )
-
     ham_folder = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
     islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
     date_str = datetime.now().strftime("%Y-%m-%d")
-    avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu) if req.options.send_email else ""
+    avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu) if options.send_email else ""
 
-    # 2. Belge-başı best-effort döngü (karar 4). Sarmalayıcı BİLEREK geniş
-    # except Exception: confirm yolundaki GS UnicodeDecodeError arızası
-    # (ValueError alt sınıfı) dar except'leri deliyordu — tek belge hatası
-    # kalan belgeleri düşürmemeli.
     doc_results: List[Dict[str, Any]] = []
-    for doc in req.documents:
+    for doc in documents:
         entry: Dict[str, Any] = {
             "process_id": doc.process_id,
             "status": "queued",
@@ -860,7 +871,7 @@ async def commit_case_intake(
             )
             entry["document_id"] = doc_id
 
-            if req.options.send_email:
+            if options.send_email:
                 email_file_path = (
                     pdfa_temp_file
                     if (pdfa_temp_file and os.path.exists(pdfa_temp_file))
@@ -874,7 +885,7 @@ async def commit_case_intake(
                     new_filename=new_filename,
                     avukat_kodu=avukat_kodu,
                     email_metadata=email_metadata,
-                    custom_to=req.options.email_to,
+                    custom_to=options.email_to,
                     custom_cc=[],
                     custom_email_message=None,
                     custom_messages=None,
@@ -907,33 +918,109 @@ async def commit_case_intake(
             if ham_source_path and ham_source_path != temp_path:
                 safe_remove(ham_source_path)
         doc_results.append(entry)
+    return doc_results
 
-    # 3. Poliçe beslemesi — best-effort (karar 5): hata dava kaydını GERİ ALMAZ.
-    # save_client_policies idempotent (dedupe = normalize police_no + dönem başı).
+
+async def _feed_intake_policies(
+    policies: List[CommitPolicyIn],
+    case_id: int,
+    current_user_name: str,
+) -> Dict[str, Any]:
+    """Poliçe beslemesi — best-effort (karar 5): hata dava kaydını GERİ ALMAZ.
+
+    save_client_policies idempotent (dedupe = normalize police_no + dönem başı).
+    """
+    from managers import client_manager
+
+    loop = asyncio.get_running_loop()
     policy_result: Dict[str, Any] = {"saved": 0, "skipped": 0}
-    if req.policies:
-        by_client: Dict[int, List[Dict[str, Any]]] = {}
-        for pol in req.policies:
-            by_client.setdefault(pol.client_id, []).append(pol.model_dump(exclude={"client_id"}))
-        for cid, pol_list in by_client.items():
-            try:
-                saved_info = await loop.run_in_executor(
-                    None,
-                    partial(
-                        client_manager.save_client_policies,
-                        cid, pol_list, created_by=current_user_name,
-                    ),
-                )
-                policy_result["saved"] += saved_info["saved"]
-                policy_result["skipped"] += saved_info["skipped"]
-            except Exception as e:
-                TechnicalLogger.log(
-                    "ERROR",
-                    f"[INTAKE-COMMIT] Poliçe beslemesi hatası (case={case_id}, client={cid}): {e}",
-                )
-                policy_result["error"] = (
-                    "Poliçelerin bir kısmı kaydedilemedi — müvekkil kartından elle ekleyebilirsiniz."
-                )
+    if not policies:
+        return policy_result
+    by_client: Dict[int, List[Dict[str, Any]]] = {}
+    for pol in policies:
+        by_client.setdefault(pol.client_id, []).append(pol.model_dump(exclude={"client_id"}))
+    for cid, pol_list in by_client.items():
+        try:
+            saved_info = await loop.run_in_executor(
+                None,
+                partial(
+                    client_manager.save_client_policies,
+                    cid, pol_list, created_by=current_user_name,
+                ),
+            )
+            policy_result["saved"] += saved_info["saved"]
+            policy_result["skipped"] += saved_info["skipped"]
+        except Exception as e:
+            TechnicalLogger.log(
+                "ERROR",
+                f"[INTAKE-COMMIT] Poliçe beslemesi hatası (case={case_id}, client={cid}): {e}",
+            )
+            policy_result["error"] = (
+                "Poliçelerin bir kısmı kaydedilemedi — müvekkil kartından elle ekleyebilirsiniz."
+            )
+    return policy_result
+
+
+@router.post("/api/case-intake/commit")
+async def commit_case_intake(
+    req: CaseIntakeCommitRequest,
+    background_tasks: BackgroundTasks,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
+    """Tek "Kaydet": dava (atomik) + belge arşivleme + poliçe beslemesi.
+
+    Karar 4: dava oluşturma transactional; belge arşivleme belge-başı
+    best-effort — başarısız/TTL-dolmuş belge akışı öldürmez, yanıtta
+    failed/expired döner. 409'da (duplicate tracking_no) HİÇBİR belge
+    tüketilmemiştir — frontend'in tek otomatik retry'ı güvenlidir.
+    """
+    from managers import case_manager
+    from services import document_pipeline
+
+    loop = asyncio.get_running_loop()
+    current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
+
+    # 1. Dava — atomik. status sunucuda DERDEST'e zorlanır (karar 1 — istemciye
+    # güvenme). Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı
+    # 2026-07-31 rev.2): eksikler yanıtla döner, panelde uyarı olarak görünür.
+    from required_fields import compute_missing_fields
+
+    case_dict = req.case.model_dump()
+    missing_fields = compute_missing_fields(case_dict, case_dict.get("parties"))
+    case_dict["status"] = "DERDEST"
+    case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
+    if case_result and case_result.get("error") == "duplicate_tracking_no":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
+                   "Sıra numarasını artırıp tekrar deneyin.",
+        )
+    if not case_result or case_result.get("error"):
+        raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
+    case_id = case_result["id"]
+
+    # Avukat kodu davanın sorumlusundan BİR KEZ çözülür (dava az önce bizim
+    # oluşturduğumuz — belge başına tenant sorgusu israf). Hata belge akışını
+    # durdurmaz: kod boş kalır, arşivleme devam eder.
+    avukat_kodu: Optional[str] = None
+    try:
+        avukat_kodu = await loop.run_in_executor(
+            None, document_pipeline.validate_tenant_and_resolve_lawyer, case_id, user, None
+        )
+    except Exception as e:
+        TechnicalLogger.log(
+            "WARNING", f"[INTAKE-COMMIT] Avukat çözümü hatası (case={case_id}): {e}"
+        )
+
+    # 2. Belge-başı best-effort döngü (karar 4) — apply ile ortak yardımcı.
+    doc_results = await _archive_intake_documents(
+        req.documents, case_id, avukat_kodu, background_tasks,
+        user, current_user_name, req.options,
+    )
+
+    # 3. Poliçe beslemesi — best-effort (karar 5) — apply ile ortak yardımcı.
+    policy_result = await _feed_intake_policies(req.policies, case_id, current_user_name)
 
     TechnicalLogger.log(
         "INFO",
@@ -955,6 +1042,99 @@ async def commit_case_intake(
             "status": case_dict["status"],
             "missing_required_fields": missing_fields,
         },
+        "documents": doc_results,
+        "policies": policy_result,
+    }
+
+
+# =====================================================================
+# Faz 7 — apply (zenginleştirme modu)
+# =====================================================================
+
+
+@router.post("/api/case-intake/apply")
+async def apply_case_intake(
+    req: CaseIntakeApplyRequest,
+    background_tasks: BackgroundTasks,
+    tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
+):
+    """Zenginleştirme modunun tek "Kaydet"i: MEVCUT davaya kısmi güncelleme.
+
+    commit'ten farkı: dava oluşturmaz — yalnız kullanıcının tik'lediği alanlar
+    uygulanır (exclude_unset; gönderilmeyen alan dokunulmaz, None silinir),
+    taraflarda yalnız EKLEME yapılır, her değişiklik "intake-enrich: <belge>"
+    imzalı CaseHistory'ye yazılır. Belge arşivleme + poliçe beslemesi commit'in
+    belge-başı best-effort döngüsüyle birebir aynıdır.
+    """
+    from managers import case_manager
+    from services import document_pipeline
+
+    loop = asyncio.get_running_loop()
+    current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
+
+    # CaseHistory kaynak imzası (karar 2): "intake-enrich: <belge adı>".
+    # Çok belgede ilk ikisi + sayaç; kolon sınırına (300) kırpılır.
+    doc_names = [d.original_filename or d.new_filename for d in req.documents]
+    source_sig = "intake-enrich"
+    if doc_names:
+        source_sig += f": {', '.join(doc_names[:2])}"
+        if len(doc_names) > 2:
+            source_sig += f" +{len(doc_names) - 2}"
+    source_sig = source_sig[:300]
+
+    # 1. Kısmi güncelleme + yalnız-EKLEME taraflar (tek transaction).
+    fields = req.fields.model_dump(exclude_unset=True)
+    parties = [p.model_dump() for p in req.parties]
+    result = await loop.run_in_executor(
+        None,
+        partial(
+            case_manager.enrich_case, req.case_id, fields, parties,
+            changed_by=current_user_name, source=source_sig, tenant_id=tenant_id,
+        ),
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Zenginleştirilecek dava bulunamadı.")
+    if result.get("error"):
+        raise HTTPException(status_code=500, detail="Dava güncellenemedi.")
+
+    # 2. Avukat kodu (commit ile aynı: hata belge akışını durdurmaz).
+    avukat_kodu: Optional[str] = None
+    try:
+        avukat_kodu = await loop.run_in_executor(
+            None, document_pipeline.validate_tenant_and_resolve_lawyer, req.case_id, user, None
+        )
+    except Exception as e:
+        TechnicalLogger.log(
+            "WARNING", f"[INTAKE-APPLY] Avukat çözümü hatası (case={req.case_id}): {e}"
+        )
+
+    # 3+4. Belge arşivleme + poliçe beslemesi — commit ile ortak yardımcılar.
+    doc_results = await _archive_intake_documents(
+        req.documents, req.case_id, avukat_kodu, background_tasks,
+        user, current_user_name, req.options,
+    )
+    policy_result = await _feed_intake_policies(req.policies, req.case_id, current_user_name)
+
+    TechnicalLogger.log(
+        "INFO",
+        "[INTAKE-APPLY] Zenginleştirme tamamlandı",
+        {
+            "case_id": req.case_id,
+            "tracking_no": result.get("tracking_no"),
+            "updated_fields": [u["field"] for u in result["updated_fields"]],
+            "added_parties": result["added_parties"],
+            "documents": {
+                s: sum(1 for d in doc_results if d["status"] == s)
+                for s in ("queued", "failed", "expired")
+            },
+            "policies": policy_result,
+        },
+    )
+    return {
+        "case": {"id": req.case_id, "tracking_no": result.get("tracking_no")},
+        "updated_fields": result["updated_fields"],
+        "added_parties": result["added_parties"],
         "documents": doc_results,
         "policies": policy_result,
     }

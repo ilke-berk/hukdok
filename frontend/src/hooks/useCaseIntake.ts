@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import {
   analyzeIntakeFile,
+  applyIntake,
   commitIntake,
   emlSummaryMessage,
   expandEmlFile,
@@ -10,6 +11,8 @@ import {
   keepaliveIntake,
   mergeIntake,
   planIntakeAppend,
+  type ApplyResult,
+  type CaseIntakeApplyRequest,
   type CaseIntakeCommitRequest,
   type CommitResult,
   type IntakeExtraction,
@@ -54,7 +57,7 @@ export interface IntakeFile {
 let nextFileId = 0;
 const makeFileId = () => `intake-${++nextFileId}`;
 
-export function useCaseIntake() {
+export function useCaseIntake(initialEnrichCaseId: number | null = null) {
   const [step, setStep] = useState<IntakeStep>("upload");
   const [files, setFiles] = useState<IntakeFile[]>([]);
   const [isExpandingEml, setIsExpandingEml] = useState(false);
@@ -64,6 +67,17 @@ export function useCaseIntake() {
   const [draft, setDraft] = useState<MergeDraft | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
+  // Faz 7 — zenginleştirme modu: dolu ise merge case_id ile çağrılır ve
+  // Kaydet commit yerine apply'a gider. Ref: merge async akışlarında (sıralı
+  // analiz sonu / duplicate köprüsü) state bayatlamasın.
+  const enrichCaseIdRef = useRef<number | null>(initialEnrichCaseId);
+  const [enrichCaseId, setEnrichCaseIdState] = useState<number | null>(initialEnrichCaseId);
+  const setEnrichCaseId = useCallback((caseId: number | null) => {
+    enrichCaseIdRef.current = caseId;
+    setEnrichCaseIdState(caseId);
+  }, []);
 
   // Faz 6.2: yarım kalan taslak (oturum düşmesi / sayfa yenileme sonrası).
   // Açılışta bir kez okunur; kullanıcı "devam et" derse review'a restore edilir.
@@ -211,6 +225,7 @@ export function useCaseIntake() {
           filename: f.file.name,
           extraction: f.extraction!,
         })),
+        enrichCaseIdRef.current,
       );
       setDraft(merged);
       setStep("review");
@@ -234,6 +249,7 @@ export function useCaseIntake() {
           filename: f.file.name,
           extraction: f.extraction!,
         })),
+        enrichCaseIdRef.current,
       );
       setDraft(merged);
       setStep("review");
@@ -243,6 +259,16 @@ export function useCaseIntake() {
       setIsMerging(false);
     }
   }, []);
+
+  /**
+   * Duplicate uyarısından "bu davayı zenginleştir" köprüsü: analiz sonuçları
+   * korunur, merge hedef davayla yeniden koşar — review "mevcut dava" moduna
+   * geçer (draft.mode === "enrich"). Yeni analiz yapılmaz.
+   */
+  const enrichExisting = useCallback(async (caseId: number) => {
+    setEnrichCaseId(caseId);
+    await retryMerge(filesRef.current);
+  }, [retryMerge, setEnrichCaseId]);
 
   // Review adımı açıkken 10 dk'da bir keepalive — PROCESS_CACHE TTL'i (30 dk)
   // tazelenir ki kullanıcı incelemede oyalansa da commit'te belgeler canlı olsun.
@@ -276,6 +302,8 @@ export function useCaseIntake() {
           // gerçekten ölmüş belgeler commit yanıtında görünür (Faz 4 izolasyonu)
         }
       }
+      // Enrich taslağı: hedef dava kimliği taslağın içinden geri yüklenir
+      setEnrichCaseId(pendingDraft.draft.case?.id ?? null);
       setDraft(pendingDraft.draft);
       setRestoredReview(review);
       setPendingDraft(null);
@@ -283,7 +311,7 @@ export function useCaseIntake() {
     } finally {
       setIsResuming(false);
     }
-  }, [pendingDraft, isResuming]);
+  }, [pendingDraft, isResuming, setEnrichCaseId]);
 
   const discardDraft = useCallback(() => {
     clearIntakeDraft();
@@ -308,6 +336,20 @@ export function useCaseIntake() {
     }
   }, []);
 
+  /** Enrich modunun tek "Kaydet"i: apply — mevcut davaya kısmi güncelleme. */
+  const apply = useCallback(async (req: CaseIntakeApplyRequest): Promise<ApplyResult> => {
+    setIsCommitting(true);
+    try {
+      const result = await applyIntake(req);
+      clearIntakeDraft(); // değişiklikler uygulandı — taslak artık bayat
+      setApplyResult(result);
+      setStep("result");
+      return result;
+    } finally {
+      setIsCommitting(false);
+    }
+  }, []);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     clearIntakeDraft();
@@ -321,7 +363,11 @@ export function useCaseIntake() {
     setRestoredReview(null);
     setIsCommitting(false);
     setCommitResult(null);
-  }, [applyFiles]);
+    setApplyResult(null);
+    // Sihirbaz dava detayından (?enrichCase) açıldıysa mod korunur; duplicate
+    // köprüsüyle geçilmişse yeni sihirbaz "yeni dava" moduna döner.
+    setEnrichCaseId(initialEnrichCaseId);
+  }, [applyFiles, setEnrichCaseId, initialEnrichCaseId]);
 
   return {
     step,
@@ -339,6 +385,10 @@ export function useCaseIntake() {
     isCommitting,
     commit,
     commitResult,
+    apply,
+    applyResult,
+    enrichCaseId,
+    enrichExisting,
     reset,
     pendingDraft,
     isResuming,

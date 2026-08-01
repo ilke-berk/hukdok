@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -272,6 +272,17 @@ const CaseDetails = () => {
                         >
                             <FileStack className="w-4 h-4" />
                             Evrak Ekle
+                        </Button>
+                        {/* Faz 7: sihirbaz "mevcut dava" modunda — belgeden
+                            eksik alanları doldur / dolu alanları teyit et */}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => navigate(`/new-case/auto?enrichCase=${caseData.id}`)}
+                        >
+                            <Sparkles className="w-4 h-4" />
+                            Belgeden Doldur / Teyit Et
                         </Button>
                     </div>
                 </div>

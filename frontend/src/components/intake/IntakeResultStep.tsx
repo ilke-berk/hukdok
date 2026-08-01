@@ -2,13 +2,17 @@ import { AlertCircle, CheckCircle2, Clock, ExternalLink, RotateCcw } from "lucid
 import { Link } from "react-router-dom";
 
 import { FlowButton, FlowCard } from "@/components/flow/primitives";
-import type { CommitResult } from "@/lib/caseIntake";
+import type { ApplyUpdatedField, CommitResult } from "@/lib/caseIntake";
+import { enrichFieldLabel } from "@/lib/intakeEnrich";
 
 interface IntakeResultStepProps {
   result: CommitResult;
   /** process_id → orijinal dosya adı (sonuç satırında ad göstermek için) */
   filenames: Record<string, string>;
   onRestart: () => void;
+  /** Faz 7 — enrich modu sonucu: güncellenen alanlar + eklenen taraflar.
+      Dolu ise başlık "Dava güncellendi" olur. */
+  enrich?: { updatedFields: ApplyUpdatedField[]; addedParties: string[] } | null;
 }
 
 const STATUS_META = {
@@ -22,7 +26,7 @@ const STATUS_META = {
  * belgeler için yönlendirme: dava kartından yeniden yükleme (karar 4 —
  * commit retry YOK, dava zaten oluştu).
  */
-export function IntakeResultStep({ result, filenames, onRestart }: IntakeResultStepProps) {
+export function IntakeResultStep({ result, filenames, onRestart, enrich }: IntakeResultStepProps) {
   const failedCount = result.documents.filter(d => d.status !== "queued").length;
   const missing = result.case.missing_required_fields ?? [];
 
@@ -35,7 +39,7 @@ export function IntakeResultStep({ result, filenames, onRestart }: IntakeResultS
           </div>
           <div className="min-w-0">
             <p className="font-display text-[17px] font-medium text-[var(--fg)]">
-              Dava oluşturuldu
+              {enrich ? "Dava güncellendi" : "Dava oluşturuldu"}
             </p>
             <p className="font-mono text-[12px] text-[var(--fg-muted)] mt-0.5">
               Ofis No: {result.case.tracking_no}
@@ -48,6 +52,41 @@ export function IntakeResultStep({ result, filenames, onRestart }: IntakeResultS
           </FlowButton>
         </Link>
       </FlowCard>
+
+      {enrich && (
+        <FlowCard padded={false}>
+          <div className="px-5 py-3 border-b border-[var(--border)]">
+            <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-[var(--fg-subtle)]">
+              Uygulanan değişiklikler
+            </span>
+          </div>
+          {enrich.updatedFields.length === 0 && enrich.addedParties.length === 0 ? (
+            <p className="px-5 py-3 text-[13px] text-[var(--fg-muted)]">
+              Dava kartında alan değişikliği yapılmadı — yalnız belgeler/poliçeler işlendi.
+            </p>
+          ) : (
+            <ul className="divide-y divide-[var(--border)]">
+              {enrich.updatedFields.map(u => (
+                <li key={u.field} className="px-5 py-2.5 text-[13px] text-[var(--fg)]">
+                  <span className="font-medium">{enrichFieldLabel(u.field)}:</span>{" "}
+                  {u.old ? (
+                    <>
+                      <span className="line-through text-[var(--fg-subtle)]">{u.old}</span>
+                      {" → "}
+                    </>
+                  ) : null}
+                  <span>{u.new ?? "(silindi)"}</span>
+                </li>
+              ))}
+              {enrich.addedParties.map(name => (
+                <li key={`party-${name}`} className="px-5 py-2.5 text-[13px] text-[var(--fg)]">
+                  <span className="font-medium">Taraf eklendi:</span> {name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </FlowCard>
+      )}
 
       {missing.length > 0 && (
         <FlowCard className="border-amber-500/40 bg-amber-500/5">

@@ -36,7 +36,28 @@ bundle + ff-merge ile çıktı, öncesinde pg_dump
 (`~/hukdok-backup-pre-faz1-20260801-1758.sql.gz`). Doğrulandı: konteynerler
 ayakta, backend startup temiz, site yeni bundle'ı servis ediyor
 (Faz 1 işareti bundle'da), tracking PATCH authsuz 401.
-Kalan: Adım 3 (Faz 7 — başlamadan 3 karar noktası kullanıcıya).
+**Adım 3 (Faz 7 — zenginleştirme modu) KODU TAMAM (2026-08-02):** karar
+noktaları kullanıcı onayıyla plan önerileri yönünde kapandı — (1) ayrı
+`POST /api/case-intake/apply`, (2) CaseHistory imzası `changed_by` (kullanıcı)
++ `source` ("intake-enrich: <belge adı>"; `case_history`'ye iki kolon eklendi,
+bildirimsel migration #20), (3) sessiz `_auto_enrich`/`_auto_status` kalır,
+artık imzalı CaseHistory yazar (tam taşıma v2). Uygulanan: merge'e opsiyonel
+`case_id` (kayıtlı dava değerleri "kayıtlı dava" kaynaklı aday; alan başına
+fill/confirm/conflict/keep; esas_no/mahkeme farkı Katman 3 hakeme gider;
+taraflar mevcutlarla TC/normalize-ad eşlenir), `case_manager.enrich_case`
+(exclude_unset kısmi güncelleme + yalnız-EKLEME taraf + imzalı history),
+apply endpoint'i commit'in belge-başı best-effort arşiv + poliçe yardımcılarını
+paylaşır (refactor: `_archive_intake_documents` / `_feed_intake_policies`).
+UI: dava detayında "Belgeden Doldur / Teyit Et" (`/new-case/auto?enrichCase=`),
+duplicate uyarısında "Bu davayı zenginleştir →" köprüsü, review enrich modunda
+fark listesi (teyitler çipe katlanır; ofis no / hizmet türü / avukat blokları
+gizli; tik = UYGULA), sonuç ekranında uygulanan değişiklik listesi.
+Test: backend 501 pytest (26 yeni: `test_case_intake_enrich.py`) + frontend
+138 vitest (12 yeni: `intakeEnrich.test.ts`), tsc/ruff/mypy temiz. Duman
+(lokal Docker): migration kolonları doğrulandı; `enrich_case` gerçek DB'de
+doldur + idempotens + ünvan-eşitlemeli taraf dedupe + imzalı history geçti;
+apply route'u openapi'de. Kalan: canlı benzeri UI dumanı (gerçek tensip +
+mevcut dava, tarayıcıdan) + prod deploy.
 
 ## Sıralama ve gerekçe
 

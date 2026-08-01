@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from schemas import CaseCreate, ClientPolicyCreate
+from schemas import CaseCreate, CasePartyCreate, ClientPolicyCreate
 
 
 class IntakeParty(BaseModel):
@@ -112,6 +112,10 @@ class MergeDocumentIn(BaseModel):
 
 class CaseIntakeMergeRequest(BaseModel):
     documents: list[MergeDocumentIn] = Field(..., min_length=1, max_length=15)
+    # Faz 7 — zenginleştirme modu: verilirse kayıtlı dava değerleri alan
+    # adaylarına "kayıtlı dava" kaynağıyla katılır, alan başına
+    # fill/confirm/conflict/keep durumu döner, taraflar mevcutlarla eşlenir.
+    case_id: Optional[int] = None
 
 
 class KeepaliveRequest(BaseModel):
@@ -150,6 +154,46 @@ class CommitOptions(BaseModel):
 
 class CaseIntakeCommitRequest(BaseModel):
     case: CaseCreate
+    documents: list[CommitDocumentIn] = Field(default_factory=list, max_length=15)
+    policies: list[CommitPolicyIn] = Field(default_factory=list, max_length=30)
+    options: CommitOptions = Field(default_factory=CommitOptions)
+
+
+# --- Apply endpoint şemaları (Faz 7 — zenginleştirme modu) ---
+# Sihirbazın "mevcut dava" modundaki tek "Kaydet"i: yalnız tik'lenen alanlar
+# kısmi güncelleme olarak gelir (exclude_unset — İş Kalemi 3.4 deseni),
+# taraflar yalnız EKLENECEK satırlardır, belgeler/poliçeler commit ile aynı.
+
+
+class EnrichFieldsIn(BaseModel):
+    """Kısmi alan yükü — yalnız gönderilen anahtar uygulanır (route
+    model_dump(exclude_unset=True) geçer); None gönderilen alan SİLİNİR.
+    Alan seti case_manager.ENRICH_FIELDS ile birebir."""
+    esas_no: Optional[str] = None
+    court: Optional[str] = None
+    file_type: Optional[str] = None
+    sub_type: Optional[str] = None
+    sub_type_extra: Optional[str] = None
+    subject: Optional[str] = None
+    opening_date: Optional[str] = None
+    judicial_unit: Optional[str] = None
+    maddi_tazminat: Optional[float] = None
+    manevi_tazminat: Optional[float] = None
+    hasar_dosya_no: Optional[str] = None
+    hukuk_no: Optional[str] = None
+    klasor_no_2: Optional[str] = None
+    acceptance_date: Optional[str] = None
+    atama_tarihi: Optional[str] = None
+    bureau_type: Optional[str] = None
+    responsible_lawyer_name: Optional[str] = None
+    uyap_lawyer_name: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CaseIntakeApplyRequest(BaseModel):
+    case_id: int
+    fields: EnrichFieldsIn = Field(default_factory=EnrichFieldsIn)
+    parties: list[CasePartyCreate] = Field(default_factory=list, max_length=30)
     documents: list[CommitDocumentIn] = Field(default_factory=list, max_length=15)
     policies: list[CommitPolicyIn] = Field(default_factory=list, max_length=30)
     options: CommitOptions = Field(default_factory=CommitOptions)

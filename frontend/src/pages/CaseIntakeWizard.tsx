@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { FlowButton, FlowCard, FlowStageStrip, type FlowStage } from "@/components/flow/primitives";
 import { IntakeUploadStep } from "@/components/intake/IntakeUploadStep";
@@ -23,9 +23,18 @@ const STAGE_FOR_STEP: Record<IntakeStep, FlowStage> = {
 };
 
 const CaseIntakeWizard = () => {
-  useSetPageTitle("Belgelerden Dava Aç");
   const navigate = useNavigate();
-  const intake = useCaseIntake();
+  // Faz 7 — dava detayından giriş: /new-case/auto?enrichCase=<id> sihirbazı
+  // "mevcut davayı zenginleştir" modunda açar (merge case_id ile koşar).
+  const [searchParams] = useSearchParams();
+  const enrichParamRef = useRef<number | null>((() => {
+    const raw = searchParams.get("enrichCase");
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  })());
+  const intake = useCaseIntake(enrichParamRef.current);
+  const enrichMode = intake.enrichCaseId != null;
+  useSetPageTitle(enrichMode ? "Belgeden Doldur / Teyit Et" : "Belgelerden Dava Aç");
 
   const filenamesByProcessId = useMemo(() => {
     const map: Record<string, string> = {};
@@ -59,10 +68,12 @@ const CaseIntakeWizard = () => {
       <div className="flex items-baseline justify-between gap-4 flex-wrap">
         <div>
           <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-[var(--fg-subtle)]">
-            02 · Otomatik Dava Açma
+            {enrichMode ? "02 · Belgeden Doldur / Teyit Et" : "02 · Otomatik Dava Açma"}
           </p>
           <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
-            Belgelerden Dava Aç
+            {enrichMode
+              ? `Davayı Belgeden Zenginleştir${intake.draft?.case ? ` — ${intake.draft.case.tracking_no}` : ""}`
+              : "Belgelerden Dava Aç"}
           </h1>
         </div>
         <button
@@ -129,9 +140,14 @@ const CaseIntakeWizard = () => {
 
       {intake.step === "review" && intake.draft && (
         <IntakeReviewStep
+          // Mod/hedef değişiminde (duplicate köprüsü → enrich merge) form
+          // durumu taslaktan yeniden kurulmalı — key remount'u zorlar.
+          key={`${intake.draft.mode ?? "new"}-${intake.draft.case?.id ?? 0}`}
           draft={intake.draft}
           isCommitting={intake.isCommitting}
           onCommit={intake.commit}
+          onApply={intake.apply}
+          onEnrichExisting={intake.enrichExisting}
           initialReview={intake.restoredReview}
         />
       )}
@@ -141,6 +157,22 @@ const CaseIntakeWizard = () => {
           result={intake.commitResult}
           filenames={filenamesByProcessId}
           onRestart={intake.reset}
+        />
+      )}
+
+      {intake.step === "result" && intake.applyResult && (
+        <IntakeResultStep
+          result={{
+            case: intake.applyResult.case,
+            documents: intake.applyResult.documents,
+            policies: intake.applyResult.policies,
+          }}
+          filenames={filenamesByProcessId}
+          onRestart={intake.reset}
+          enrich={{
+            updatedFields: intake.applyResult.updated_fields,
+            addedParties: intake.applyResult.added_parties,
+          }}
         />
       )}
     </div>

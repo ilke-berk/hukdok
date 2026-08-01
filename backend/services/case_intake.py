@@ -746,5 +746,129 @@ def build_draft(
     return draft, detect_conflicts(fields)
 
 
+# =====================================================================
+# Zenginleştirme modu (Faz 7 / İş Kalemi 5) — kayıtlı dava bağlamı
+# =====================================================================
+
+# Taslak alan anahtarı → get_case sözlüğündeki dava alanı. teblig_tarihi
+# dava kartında yok (takip paneli alanı) — bağlama girmez. judicial_unit
+# route 4b'de türetildiğinden inject sırasında henüz yoktur (fields.get
+# toleranslı), annotate hakem+türetme SONRASI koştuğu için onu da kapsar.
+ENRICH_CASE_FIELD_MAP = {
+    "esas_no": "esas_no",
+    "court": "court",
+    "file_type": "file_type",
+    "subject": "subject",
+    "sub_type_extra": "sub_type_extra",
+    "opening_date": "opening_date",
+    "maddi_tazminat": "maddi_tazminat",
+    "manevi_tazminat": "manevi_tazminat",
+    "judicial_unit": "judicial_unit",
+    "hasar_dosya_no": "hasar_dosya_no",
+    "hukuk_no": "hukuk_no",
+}
+
+SAVED_CASE_SOURCE = "kayıtlı dava"
+
+
+def _case_value_empty(field_key: str, value: Any) -> bool:
+    """Dava alanı 'boş' sayılır mı? Tazminatta 0 boş demektir (add_case
+    varsayılanı 0 yazar — 0'ı dolu saymak her davayı 'çelişkili' yapardı)."""
+    if value is None or value == "":
+        return True
+    if field_key in ("maddi_tazminat", "manevi_tazminat"):
+        try:
+            return float(value) == 0.0
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def inject_case_candidates(fields: Dict[str, Dict], case_row: Dict[str, Any]) -> None:
+    """Kayıtlı dava değerlerini alan adaylarına katar (hakem ÖNCESİ çağrılır).
+
+    Belge adayıyla aynı (normalize) değer yeni aday üretmez — o adayın
+    kaynaklarına "kayıtlı dava" eklenir; farklı değer count=0 ile yeni aday
+    olur, böylece esas_no/mahkeme çelişkisi detect_conflicts'e (→ Katman 3
+    hakem) görünür. Alanın value'su DEĞİŞMEZ: belge önerisi taslakta kalır,
+    doldur/teyit kararı kullanıcının.
+    """
+    for f_key, case_key in ENRICH_CASE_FIELD_MAP.items():
+        field = fields.get(f_key)
+        current = case_row.get(case_key)
+        if field is None or _case_value_empty(f_key, current):
+            continue
+        k = _vote_key(current)
+        match = next(
+            (c for c in field.get("candidates") or [] if _vote_key(c["value"]) == k),
+            None,
+        )
+        if match is not None:
+            if SAVED_CASE_SOURCE not in match["sources"]:
+                match["sources"].append(SAVED_CASE_SOURCE)
+        else:
+            field.setdefault("candidates", []).append({
+                "value": current, "count": 0, "sources": [SAVED_CASE_SOURCE],
+            })
+
+
+def annotate_enrich_status(fields: Dict[str, Dict], case_row: Dict[str, Any]) -> None:
+    """Alan başına doldur/teyit/çelişki durumu (hakem + türetmeler SONRASI).
+
+    fill: dava alanı boş + belgede değer var → doldur önerisi;
+    confirm: dolu + belge aynı → teyit; conflict: dolu + belge farklı → uyarı;
+    keep: dolu + belge önerisi yok → kayıtlı değer korunur. İkisi de boşsa
+    enrich bilgisi yazılmaz (alan sihirbazda elle doldurulabilir kalır).
+    """
+    for f_key, case_key in ENRICH_CASE_FIELD_MAP.items():
+        field = fields.get(f_key)
+        if field is None:
+            continue
+        current = case_row.get(case_key)
+        cur_empty = _case_value_empty(f_key, current)
+        value = field.get("value")
+        val_empty = value is None or value == ""
+        if cur_empty and val_empty:
+            continue
+        if cur_empty:
+            status = "fill"
+        elif val_empty:
+            status = "keep"
+        elif _vote_key(value) == _vote_key(current):
+            status = "confirm"
+        else:
+            status = "conflict"
+        field["enrich"] = {"status": status, "current": current}
+
+
+def mark_existing_parties(parties: List[Dict], case_parties: List[Dict]) -> None:
+    """Birleşen taraf satırlarını davadaki kayıtlı taraflarla eşler.
+
+    Eşleşen satır existing={case_party_id, name, role} alır — sihirbaz bu
+    satırları "zaten kayıtlı" gösterir, apply'a göndermez (taraflarda yalnız
+    EKLEME). Eşleşme anahtarı diff_case_parties ile aynı: önce normalize TC,
+    sonra normalize_party_key (kurumsal ünvan eşitlemeli).
+    """
+    by_tc: Dict[str, Dict] = {}
+    by_name: Dict[str, Dict] = {}
+    for cp in case_parties:
+        tc = normalize_tc(cp.get("tc_no"))
+        if tc:
+            by_tc.setdefault(tc, cp)
+        key = normalize_party_key(cp.get("name") or "")
+        if key:
+            by_name.setdefault(key, cp)
+    for p in parties:
+        tc = normalize_tc(p.get("tc_no"))
+        hit = by_tc.get(tc) if tc else None
+        if hit is None:
+            key = normalize_party_key(p.get("name") or "")
+            hit = by_name.get(key) if key else None
+        p["existing"] = (
+            {"case_party_id": hit.get("id"), "name": hit.get("name"), "role": hit.get("role")}
+            if hit else None
+        )
+
+
 # Hakem çağrısı imzası (route enjekte eder; testte sahte hakemle doğrulanır)
 ArbiterFn = Callable[[List[Dict], List[Dict]], List[Dict]]

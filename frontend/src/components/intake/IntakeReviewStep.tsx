@@ -20,6 +20,7 @@ import {
   CommitConflictError,
   policyKey,
   selectCommitPolicies,
+  type CaseIntakeApplyRequest,
   type CaseIntakeCommitRequest,
   type CommitCasePartyIn,
   type MergeDraft,
@@ -31,6 +32,13 @@ import {
   fieldApprovalProgress,
   type IntakeFieldState,
 } from "@/lib/caseIntakeFields";
+import {
+  buildEnrichFields,
+  confirmedFieldLabels,
+  enrichApplySummary,
+  enrichRowGroup,
+  selectEnrichParties,
+} from "@/lib/intakeEnrich";
 import { SESSION_EXPIRED_EVENT } from "@/lib/api";
 import { debounce, saveIntakeDraft, type ReviewSnapshot } from "@/lib/intakeDraft";
 import {
@@ -69,6 +77,9 @@ interface ReviewParty {
   matchCategory: string | null;  // ofis no isim bloğu kişi/kurum kararı için
   approved: boolean;
   fromDraft: boolean;
+  // Enrich modu: davada zaten kayıtlı tarafın id'si — satır salt-okunur
+  // gösterilir, apply'a gönderilmez (yalnız EKLEME)
+  existingId?: number | null;
 }
 
 interface ReviewDocument {
@@ -84,6 +95,11 @@ interface IntakeReviewStepProps {
   draft: MergeDraft;
   isCommitting: boolean;
   onCommit: (req: CaseIntakeCommitRequest) => Promise<unknown>;
+  /** Faz 7: enrich modunda Kaydet commit yerine apply'a gider. */
+  onApply?: (req: CaseIntakeApplyRequest) => Promise<unknown>;
+  /** Faz 7: duplicate uyarısından "bu davayı zenginleştir" köprüsü —
+      merge hedef davayla yeniden koşar, review enrich moduna geçer. */
+  onEnrichExisting?: (caseId: number) => void;
   /** Faz 6.2: yarım kalan taslaktan devam — form durumu buradan init edilir. */
   initialReview?: ReviewSnapshot | null;
 }
@@ -107,15 +123,22 @@ const SERVICE_TYPES = [
   { label: "Yazışma", index: 4 },
 ];
 
-export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview }: IntakeReviewStepProps) {
+export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnrichExisting, initialReview }: IntakeReviewStepProps) {
   const { getClientCaseSequence } = useCases();
   const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
 
+  // Faz 7 — enrich modu: mevcut davayı belgeden doldur/teyit. Yalnız fark
+  // listesi gösterilir; tik semantiği "onay" değil "UYGULA"dır (tik'lenmeyen
+  // alan davada dokunulmaz), ofis no / hizmet türü / avukat blokları gizlenir.
+  const enrichMode = draft.mode === "enrich" && draft.case != null;
+  const enrichCase = draft.case;
+
   // Zorunlu alan seti (required_fields.py tek kaynak, /api/config/required_case_fields).
   // Zorunlu alanlar boşken de tik ister — boş tik "bilgi elimde yok" onayı gerektirir.
+  // Enrich modunda uygulanmaz: dava zaten açık, eksikler panel uyarısının işi.
   const requiredFieldKeys = useMemo(
-    () => new Set(requiredCaseFields.map(f => f.field)),
-    [requiredCaseFields],
+    () => (enrichMode ? new Set<string>() : new Set(requiredCaseFields.map(f => f.field))),
+    [requiredCaseFields, enrichMode],
   );
 
   // --- Alanlar ---------------------------------------------------------
@@ -143,8 +166,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
       ? initialReview.parties.map(p => ({ ...p, id: makePartyId() }))
       : draft.parties.map(p => ({
           id: makePartyId(),
-          name: p.match?.name || p.name, // kayıtlı carinin kanonik yazımı tercih edilir
-          role: ROL_DISPLAY[p.rol] || p.rol,
+          // Kayıtlı taraf davadaki yazımıyla, kalanlar kanonik cari yazımıyla
+          name: p.existing?.name || p.match?.name || p.name,
+          role: p.existing?.role || ROL_DISPLAY[p.rol] || p.rol,
           party_type: p.party_type,
           tc_no: p.tc_no || "",
           client_id: p.match?.client_id ?? null,
@@ -152,6 +176,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
           matchCategory: p.match?.category ?? null,
           approved: false,
           fromDraft: true,
+          existingId: p.existing?.case_party_id ?? null,
         })),
   );
 
@@ -229,10 +254,12 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
     }
   }, [approvedClients, fieldStates.file_type?.value, serviceMask, getClientCaseSequence]);
 
-  // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü / hizmet maskesi değiştikçe) üretilir
+  // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü / hizmet maskesi değiştikçe) üretilir.
+  // Enrich modunda dava zaten numaralı — üretim tamamen atlanır.
   const approvedClientsKey = approvedClients.map(p => p.name).join("|");
   const fileTypeValue = fieldStates.file_type?.value;
   useEffect(() => {
+    if (enrichMode) return;
     regenerateTracking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedClientsKey, fileTypeValue, serviceMask]);
@@ -331,28 +358,50 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
     };
   }, []);
 
+  // --- Enrich uygulama yükü (Faz 7) ------------------------------------
+  // Tik = UYGULA: yalnız tik'li ve kayıtlı değerden farklı alanlar + kayıtlı
+  // olmayan tik'li taraflar gider; tik'lenmeyen her şey davada dokunulmaz.
+  const enrichFieldsPayload = enrichMode ? buildEnrichFields(fieldStates, draft) : {};
+  const enrichParties = enrichMode ? selectEnrichParties(parties) : [];
+  const activeDocuments = documents.filter(d => !d.expired);
+  const enrichCounts = {
+    fields: Object.keys(enrichFieldsPayload).length,
+    parties: enrichParties.length,
+    documents: activeDocuments.length,
+    policies: draft.policies.filter(
+      p => selectedPolicies[policyKey(p)] && !p.saved && p.client_id != null,
+    ).length,
+  };
+  const enrichHasWork =
+    enrichCounts.fields + enrichCounts.parties + enrichCounts.documents + enrichCounts.policies > 0;
+
   // --- Kaydet kapısı ---------------------------------------------------
   const progress = fieldApprovalProgress(fieldStates, requiredFieldKeys);
-  const canSave =
-    progress.complete &&
-    partiesApproved &&
-    approvedClients.length > 0 &&
-    trackingNo !== "" &&
-    (!sendEmail || emailTo.length > 0) &&
-    !isCommitting &&
-    !isGeneratingNo;
+  const canSave = enrichMode
+    ? enrichHasWork && (!sendEmail || emailTo.length > 0) && !isCommitting
+    : progress.complete &&
+      partiesApproved &&
+      approvedClients.length > 0 &&
+      trackingNo !== "" &&
+      (!sendEmail || emailTo.length > 0) &&
+      !isCommitting &&
+      !isGeneratingNo;
 
-  const gateHint = !progress.complete
-    ? `${progress.approved}/${progress.required} alan onaylandı`
-    : approvedClients.length === 0
-      ? "En az 1 müvekkil onaylanmalı"
-      : !partiesApproved
-        ? "Tüm taraf satırları onaylanmalı (ya da boş bırakılmalı)"
-        : trackingNo === ""
-          ? "Ofis numarası üretilemedi"
-          : sendEmail && emailTo.length === 0
-            ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
-            : null;
+  const gateHint = enrichMode
+    ? sendEmail && emailTo.length === 0
+      ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
+      : enrichApplySummary(enrichCounts)
+    : !progress.complete
+      ? `${progress.approved}/${progress.required} alan onaylandı`
+      : approvedClients.length === 0
+        ? "En az 1 müvekkil onaylanmalı"
+        : !partiesApproved
+          ? "Tüm taraf satırları onaylanmalı (ya da boş bırakılmalı)"
+          : trackingNo === ""
+            ? "Ofis numarası üretilemedi"
+            : sendEmail && emailTo.length === 0
+              ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
+              : null;
 
   // --- Commit ----------------------------------------------------------
   const buildRequest = (tracking: string): CaseIntakeCommitRequest => {
@@ -425,7 +474,49 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
     };
   };
 
+  // --- Apply (Faz 7 — enrich modu) -------------------------------------
+  const buildApplyRequest = (): CaseIntakeApplyRequest => {
+    const esasNo = fieldStates.esas_no?.value?.trim() || enrichCase?.esas_no || null;
+    const muvekkilAdi =
+      parties.find(p => p.party_type === "CLIENT" && p.name.trim())?.name ?? null;
+    return {
+      case_id: enrichCase!.id,
+      fields: enrichFieldsPayload,
+      parties: enrichParties.map(p => ({
+        client_id: p.client_id ?? undefined,
+        name: p.name.trim(),
+        role: p.role || (p.party_type === "CLIENT" ? "Davacı" : "Davalı"),
+        party_type: p.party_type,
+        tc_no: p.tc_no || undefined,
+      })),
+      documents: activeDocuments.map(d => ({
+        process_id: d.process_id,
+        new_filename: d.newName.trim() || d.filename,
+        original_filename: d.filename,
+        belge_turu_kodu: d.code || null,
+        ai_ozet: d.ozet || null,
+        esas_no: esasNo,
+        muvekkil_adi: muvekkilAdi,
+      })),
+      policies: selectCommitPolicies(
+        draft.policies.filter(p => selectedPolicies[policyKey(p)]),
+      ),
+      options: { send_email: sendEmail, email_to: sendEmail ? emailTo : [] },
+    };
+  };
+
   const handleSave = async () => {
+    if (enrichMode) {
+      if (!onApply) return;
+      try {
+        await onApply(buildApplyRequest());
+      } catch (e) {
+        toast.error("Güncelleme başarısız", {
+          description: e instanceof Error ? e.message : "Sunucu hatası oluştu.",
+        });
+      }
+      return;
+    }
     try {
       await onCommit(buildRequest(trackingNo));
     } catch (e) {
@@ -463,7 +554,13 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
   };
 
   // --- Render ----------------------------------------------------------
-  const fieldDefs = activeIntakeFields();
+  // Enrich modunda yalnız FARK listesi satır olur (fill/conflict); teyit
+  // edilenler özet çipine katlanır, kalan alanlar gizlenir (plan İK 5.4).
+  const allFieldDefs = activeIntakeFields();
+  const fieldDefs = enrichMode
+    ? allFieldDefs.filter(def => enrichRowGroup(def, draft) === "action")
+    : allFieldDefs;
+  const confirmedLabels = enrichMode ? confirmedFieldLabels(draft) : [];
 
   // Alanlar bölüm başlıklarıyla gruplanır (ardışık aynı section tek grup);
   // her grup içte 2 sütunlu ızgara — wide alanlar tam satır kaplar.
@@ -511,11 +608,32 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
 
   return (
     <div className="grid gap-5">
+      {/* Enrich modu başlığı: hedef dava */}
+      {enrichMode && enrichCase && (
+        <div className="border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-[13px] text-[var(--fg)]">
+            <span className="font-semibold">Mevcut dava zenginleştiriliyor:</span>{" "}
+            <Link
+              to={`/cases/${enrichCase.id}`}
+              target="_blank"
+              className="font-mono text-[12px] text-[var(--brand)] hover:underline inline-flex items-center gap-1"
+            >
+              {enrichCase.tracking_no} <ExternalLink className="w-3 h-3" />
+            </Link>
+            {enrichCase.esas_no && <span className="font-mono text-[12px]"> · {enrichCase.esas_no}</span>}
+            {enrichCase.court && <span className="text-[12px] text-[var(--fg-muted)]"> · {enrichCase.court}</span>}
+          </span>
+          <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+            Tik'lenen öneriler davaya işlenir — tik'lenmeyen alanlara dokunulmaz
+          </span>
+        </div>
+      )}
+
       {/* Uyarı bantları */}
       {draft.duplicate_case && (
-        <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3">
+        <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3 flex-wrap">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span className="text-[13px] text-[var(--fg)] min-w-0">
+          <span className="text-[13px] text-[var(--fg)] min-w-0 flex-1">
             Bu dava zaten kayıtlı olabilir:{" "}
             <Link
               to={`/cases/${draft.duplicate_case.id}`}
@@ -524,8 +642,18 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
             >
               {draft.duplicate_case.tracking_no} <ExternalLink className="w-3 h-3" />
             </Link>{" "}
-            — inceleyin ya da yine de devam edin.
+            — inceleyin, bu davayı zenginleştirin ya da yine de devam edin.
           </span>
+          {onEnrichExisting && (
+            <FlowButton
+              size="sm"
+              variant="secondary"
+              onClick={() => onEnrichExisting(draft.duplicate_case!.id)}
+              disabled={isCommitting}
+            >
+              Bu davayı zenginleştir →
+            </FlowButton>
+          )}
         </div>
       )}
       {draft.warnings.map((w, i) => (
@@ -541,12 +669,37 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
         <FlowCard padded={false}>
           <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
             <span className="font-mono text-[10px] tracking-[0.18em] uppercase text-[var(--fg-subtle)]">
-              Dava Kartı Alanları
+              {enrichMode ? "Belgeden Öneriler — Fark Listesi" : "Dava Kartı Alanları"}
             </span>
             <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-              <span className="text-[var(--fg)] font-semibold">{progress.approved}</span>/{progress.required} alan onaylandı
+              {enrichMode ? (
+                <><span className="text-[var(--fg)] font-semibold">{enrichCounts.fields}</span> alan uygulanacak</>
+              ) : (
+                <><span className="text-[var(--fg)] font-semibold">{progress.approved}</span>/{progress.required} alan onaylandı</>
+              )}
             </span>
           </div>
+          {enrichMode && confirmedLabels.length > 0 && (
+            <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center gap-1.5">
+              <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
+                Belgeyle teyit edildi:
+              </span>
+              {confirmedLabels.map(label => (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600"
+                >
+                  ✓ {label}
+                </span>
+              ))}
+            </div>
+          )}
+          {enrichMode && fieldDefs.length === 0 && (
+            <div className="px-5 py-4 text-[13px] text-[var(--fg-muted)]">
+              Belgelerden dava kartına uygulanacak yeni alan önerisi çıkmadı —
+              belgeler yine de arşivlenebilir, yeni taraf/poliçe eklenebilir.
+            </div>
+          )}
           <div className="px-5 pb-4">
             {fieldSections.map(sec => (
               <div key={sec.title} className="pt-4 first:pt-3">
@@ -574,6 +727,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
                         prior={def.priorsKey ? clientPriors?.[def.priorsKey] : undefined}
                         onChange={value => setFieldValue(def.key, value)}
                         onApprove={approved => setFieldApproved(def.key, approved)}
+                        enrichMode={enrichMode}
                       />
                     </div>
                   ))}
@@ -582,7 +736,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
             ))}
           </div>
 
-          {/* Dava Avukatları + Hizmet Türü — yan yana */}
+          {/* Dava Avukatları + Hizmet Türü — yan yana (enrich modunda gizli:
+              sorumlu avukat/hizmet maskesi açılışın işi, kartta düzenlenir) */}
+          {!enrichMode && (
           <div className="grid sm:grid-cols-2 border-t border-[var(--border)]">
             <div className="px-5 py-4">
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-1.5">
@@ -644,8 +800,10 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
               </p>
             </div>
           </div>
+          )}
 
-          {/* Ofis No */}
+          {/* Ofis No (enrich modunda gizli — dava zaten numaralı) */}
+          {!enrichMode && (
           <div className="px-5 py-4 border-t border-[var(--border)]">
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
@@ -668,6 +826,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
               className="h-9 font-mono text-[13px] border-[var(--border-strong)] bg-[var(--bg-sunken)]"
             />
           </div>
+          )}
         </FlowCard>
 
         {/* Sağ kolon: taraflar + poliçeler + belgeler */}
@@ -688,12 +847,29 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
             </div>
             <ul className="divide-y divide-[var(--border)]">
               {parties.map(p => (
+                enrichMode && p.existingId != null ? (
+                  // Davada zaten kayıtlı taraf: salt-okunur, apply'a gitmez
+                  // (yalnız EKLEME — mevcut taraf silinmez/değiştirilmez)
+                  <li key={p.id} className="px-5 py-2.5 flex items-center gap-2 flex-wrap">
+                    <span className="text-[13px] text-[var(--fg)]">{p.name}</span>
+                    {p.role && (
+                      <span className="text-[12px] text-[var(--fg-muted)]">· {p.role}</span>
+                    )}
+                    <span className="font-mono text-[10px] px-1.5 py-0.5 border border-[var(--border)] text-[var(--fg-subtle)]">
+                      Davada kayıtlı
+                    </span>
+                  </li>
+                ) : (
                 <li key={p.id} className="px-5 py-3 grid grid-cols-[auto_1fr] gap-x-3">
                   <div className="pt-2">
                     <Checkbox
                       checked={p.approved}
                       onCheckedChange={v => patchParty(p.id, { approved: v === true })}
-                      aria-label={`${p.name || "taraf"} satırını onayla`}
+                      aria-label={
+                        enrichMode
+                          ? `${p.name || "taraf"} satırını davaya ekle`
+                          : `${p.name || "taraf"} satırını onayla`
+                      }
                     />
                   </div>
                   <div className="grid gap-2 min-w-0">
@@ -753,8 +929,14 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
                         Kayıtlı cari: {p.matchName} (#{p.client_id})
                       </p>
                     )}
+                    {enrichMode && p.fromDraft && (
+                      <p className="font-mono text-[10px] tracking-[0.04em] text-[var(--fg-subtle)]">
+                        Belgeden yeni taraf önerisi — tik'lenirse davaya eklenir
+                      </p>
+                    )}
                   </div>
                 </li>
+                )
               ))}
             </ul>
           </FlowCard>
@@ -974,7 +1156,11 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, initialReview 
         </span>
         <FlowButton variant="primary" onClick={handleSave} disabled={!canSave}>
           <Save className="w-3.5 h-3.5" />
-          {isCommitting ? "Kaydediliyor…" : "Kaydet ve Arşivle"}
+          {isCommitting
+            ? "Kaydediliyor…"
+            : enrichMode
+              ? "Davayı Güncelle ve Arşivle"
+              : "Kaydet ve Arşivle"}
         </FlowButton>
       </FlowCard>
     </div>

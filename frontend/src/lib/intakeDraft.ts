@@ -26,6 +26,8 @@ export interface DraftParty {
   matchCategory: string | null;
   approved: boolean;
   fromDraft: boolean;
+  // Faz 7 — enrich modu: davada zaten kayıtlı tarafın id'si (restore'da korunur)
+  existingId?: number | null;
 }
 
 export interface DraftDocument {

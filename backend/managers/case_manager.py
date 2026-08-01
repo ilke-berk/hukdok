@@ -111,7 +111,7 @@ def get_case(case_id: int, tenant_id: str = None):
             "notes": item.notes,
             "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
             "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
-            "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat()} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
+            "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat(), "changed_by": h.changed_by, "source": h.source} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
             "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents],
             # Takip alanları
             "case_stage": item.case_stage,
@@ -423,6 +423,30 @@ def diff_case_parties(existing: list, incoming: list):
     return updates, inserts, sorted(unmatched)
 
 
+def _resolve_party_client_id(db, p: dict):
+    """CLIENT tarafı için cari çözümü: verilmiş client_id aynen; yoksa ada göre
+    mevcut cari, o da yoksa yeni cari (Otomatik Müşteri Oluşturma Yükseltmesi)."""
+    client_id = p.get("client_id")
+    name = p.get("name")
+    if p.get("party_type") == "CLIENT" and name and not client_id:
+        existing_client = db.query(models.Client).filter(
+            models.Client.name.ilike(name.strip())
+        ).first()
+        if existing_client:
+            client_id = existing_client.id
+        else:
+            new_client = models.Client(
+                name=name.strip(),
+                contact_type="Client",
+                client_type="Individual",
+                active=True
+            )
+            db.add(new_client)
+            db.flush()
+            client_id = new_client.id
+    return client_id
+
+
 def update_case(case_id: int, data: dict, tenant_id: str = None):
     try:
         db = SessionLocal()
@@ -494,32 +518,10 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
             data.get("parties", []),
         )
 
-        def _resolve_client_id(p):
-            client_id = p.get("client_id")
-            name = p.get("name")
-            # Otomatik Müşteri Oluşturma Yükseltmesi
-            if p.get("party_type") == "CLIENT" and name and not client_id:
-                existing_client = db.query(models.Client).filter(
-                    models.Client.name.ilike(name.strip())
-                ).first()
-                if existing_client:
-                    client_id = existing_client.id
-                else:
-                    new_client = models.Client(
-                        name=name.strip(),
-                        contact_type="Client",
-                        client_type="Individual",
-                        active=True
-                    )
-                    db.add(new_client)
-                    db.flush()
-                    client_id = new_client.id
-            return client_id
-
         rows_by_id = {ep.id: ep for ep in existing_parties}
         for pid, p in updates:
             row = rows_by_id[pid]
-            row.client_id = _resolve_client_id(p)
+            row.client_id = _resolve_party_client_id(db, p)
             row.name = p.get("name")
             row.role = p.get("role")
             row.party_type = p.get("party_type")
@@ -529,7 +531,7 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         for p in inserts:
             db.add(models.CaseParty(
                 case_id=case_id,
-                client_id=_resolve_client_id(p),
+                client_id=_resolve_party_client_id(db, p),
                 name=p.get("name"),
                 role=p.get("role"),
                 party_type=p.get("party_type"),
@@ -561,6 +563,135 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         logger.error(f"Update Case Error: {e}")
         db.rollback()
         return False
+    finally:
+        db.close()
+
+
+# Zenginleştirme modunun (Faz 7) güncelleyebildiği dava kartı alanları.
+# status/tracking_no/service_type bilinçli dışarıda: durum takip panelinin,
+# ofis no + hizmet maskesi açılış sihirbazının işi.
+ENRICH_FIELDS = [
+    "esas_no", "court", "file_type", "sub_type", "sub_type_extra", "subject",
+    "opening_date", "judicial_unit", "maddi_tazminat", "manevi_tazminat",
+    "hasar_dosya_no", "hukuk_no", "klasor_no_2", "acceptance_date",
+    "atama_tarihi", "bureau_type", "responsible_lawyer_name",
+    "uyap_lawyer_name", "notes",
+]
+_ENRICH_DATE_FIELDS = {"opening_date", "acceptance_date", "atama_tarihi"}
+_ENRICH_MONEY_FIELDS = {"maddi_tazminat", "manevi_tazminat"}
+
+
+def enrich_changes(current: dict, fields: dict) -> list:
+    """exclude_unset fields dict'inden uygulanacak (alan, eski, yeni) üçlüleri (saf).
+
+    Sözleşme (İş Kalemi 3.4 deseni): fields yalnız istemcinin GÖNDERDİĞİ
+    anahtarları içerir — gönderilmeyen alan dokunulmaz, None gönderilen SİLİNİR.
+    Değeri değişmeyen alan listeye girmez (no-op CaseHistory kirletmez).
+    Tarih alanları date'e çevrilir; çevrilemeyen tarih yok sayılır.
+    """
+    changes = []
+    for field in ENRICH_FIELDS:
+        if field not in fields:
+            continue
+        new_val = fields[field]
+        old_val = current.get(field)
+        if field in _ENRICH_DATE_FIELDS and new_val is not None:
+            new_val = _parse_date_field(new_val, field)
+            if new_val is None:
+                continue
+        if field in _ENRICH_MONEY_FIELDS:
+            try:
+                unchanged = float(new_val or 0) == float(old_val or 0)
+            except (TypeError, ValueError):
+                unchanged = False
+        else:
+            unchanged = str(old_val or "") == str(new_val or "")
+        if unchanged:
+            continue
+        changes.append((field, old_val, new_val))
+    return changes
+
+
+def enrich_case(case_id: int, fields: dict, new_parties: list,
+                changed_by: str, source: str, tenant_id: str = None):
+    """Zenginleştirme modu (Faz 7): mevcut davaya kısmi güncelleme.
+
+    update_case'ten farkları: alan beyaz listesi ENRICH_FIELDS + exclude_unset
+    semantiği (enrich_changes), taraflarda YALNIZ EKLEME (mevcut satır
+    güncellenmez/silinmez — case_party_id bağları garanti korunur; zaten
+    kayıtlı taraf normalize ad/TC eşleşmesiyle atlanır), her değişikliğe
+    changed_by + source imzalı CaseHistory kaydı.
+
+    Döner: None (dava yok/tenant dışı) | {"error": ...} |
+    {"tracking_no", "updated_fields": [{field, old, new}], "added_parties": [ad]}.
+    """
+    db = SessionLocal()
+    try:
+        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = _apply_tenant_filter(query, tenant_id)
+        case = query.first()
+        if not case:
+            return None
+
+        current = {f: getattr(case, f) for f in ENRICH_FIELDS}
+        updated = []
+        for field, old_val, new_val in enrich_changes(current, fields):
+            setattr(case, field, new_val)
+            db.add(models.CaseHistory(
+                case_id=case_id,
+                field_name=field,
+                old_value=str(old_val) if old_val is not None else "",
+                new_value=str(new_val) if new_val is not None else "",
+                changed_by=changed_by,
+                source=source,
+            ))
+            updated.append({
+                "field": field,
+                "old": str(old_val) if old_val is not None else None,
+                "new": str(new_val) if new_val is not None else None,
+            })
+
+        added = []
+        existing_rows = [
+            {"id": p.id, "name": p.name, "tc_no": p.tc_no} for p in case.parties
+        ]
+        for p in new_parties:
+            _, inserts, _ = diff_case_parties(existing_rows, [p])
+            if not inserts:
+                continue  # zaten kayıtlı taraf — yalnız-EKLEME idempotent kalır
+            db.add(models.CaseParty(
+                case_id=case_id,
+                client_id=_resolve_party_client_id(db, p),
+                name=p.get("name"),
+                role=p.get("role"),
+                party_type=p.get("party_type"),
+                birth_year=p.get("birth_year"),
+                gender=p.get("gender"),
+                tc_no=(p.get("tc_no") or "").strip() or None,
+            ))
+            db.add(models.CaseHistory(
+                case_id=case_id,
+                field_name="taraf",
+                old_value="",
+                new_value=f"{p.get('name')} ({p.get('role') or p.get('party_type')})",
+                changed_by=changed_by,
+                source=source,
+            ))
+            existing_rows.append({"id": 0, "name": p.get("name"), "tc_no": p.get("tc_no")})
+            added.append(p.get("name"))
+
+        if updated or added:
+            case.updated_at = datetime.now()
+        db.commit()
+        return {
+            "tracking_no": case.tracking_no,
+            "updated_fields": updated,
+            "added_parties": added,
+        }
+    except Exception as e:
+        logger.error(f"Enrich Case Error: {e}")
+        db.rollback()
+        return {"error": "enrich_failed"}
     finally:
         db.close()
 
