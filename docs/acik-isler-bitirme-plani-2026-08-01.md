@@ -30,9 +30,13 @@ dialog onaylı ve anlık kaldı. Ayrılma koruması: `beforeunload` + CaseDetail
 sekme değişiminde confirm (`onDirtyChange` prop). Backend: route
 `model_dump(exclude_unset=True)`, manager `tracking_changes` — gönderilmeyen
 alan dokunulmaz, null gönderilen SİLİNİR. Testler: backend 475 pytest +
-frontend 126 vitest yeşil, tsc/mypy/ruff temiz. Deploy bekliyor
-(821e0fa CI düzeltmesiyle birlikte çıkacak).
-Kalan: Faz 1 deploy, sonra Adım 3 (Faz 7).
+frontend 126 vitest yeşil, tsc/mypy/ruff temiz.
+**Faz 1 PROD'DA CANLI (2026-08-01 ~21:00, 9f08513):** 821e0fa + 9f08513
+bundle + ff-merge ile çıktı, öncesinde pg_dump
+(`~/hukdok-backup-pre-faz1-20260801-1758.sql.gz`). Doğrulandı: konteynerler
+ayakta, backend startup temiz, site yeni bundle'ı servis ediyor
+(Faz 1 işareti bundle'da), tracking PATCH authsuz 401.
+Kalan: Adım 3 (Faz 7 — başlamadan 3 karar noktası kullanıcıya).
 
 ## Sıralama ve gerekçe
 
