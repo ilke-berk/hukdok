@@ -22,7 +22,17 @@ metin/yazım hatası, kalıp düzeltmesi gereksiz), 751 mahkeme adı boş.
 öncesinde pg_dump (`~/hukdok-backup-pre-faz6-20260801-1728.sql.gz`).
 Doğrulandı: konteynerler ayakta, backend startup temiz, yeni bundle'da
 intake-draft var, analyze/keepalive 405 + client-sequence 403, site 200.
-Kalan: Adım 2 (Faz 1), sonra Adım 3 (Faz 7).
+**Adım 2 (Faz 1) TAMAM (2026-08-01 gece):** CaseTrackingPanel panel geneli
+tek taslak (`lib/trackingDraft.ts` saf modül) + tek Kaydet + kaydedilmemiş
+rozeti; `handleStageClick` taslağı sıfırlamıyor, refresh/aşama geçişinde
+dirty alanlar `rebaseDraft` ile korunuyor. Aşama geçişi (confirmStage)
+dialog onaylı ve anlık kaldı. Ayrılma koruması: `beforeunload` + CaseDetails
+sekme değişiminde confirm (`onDirtyChange` prop). Backend: route
+`model_dump(exclude_unset=True)`, manager `tracking_changes` — gönderilmeyen
+alan dokunulmaz, null gönderilen SİLİNİR. Testler: backend 475 pytest +
+frontend 126 vitest yeşil, tsc/mypy/ruff temiz. Deploy bekliyor
+(821e0fa CI düzeltmesiyle birlikte çıkacak).
+Kalan: Faz 1 deploy, sonra Adım 3 (Faz 7).
 
 ## Sıralama ve gerekçe
 

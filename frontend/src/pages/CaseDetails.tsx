@@ -98,6 +98,20 @@ const CaseDetails = () => {
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
     const [activeTab, setActiveTab] = useState("overview");
+    // Takip panelinde kaydedilmemiş değişiklik varsa sekme değişiminde onay iste
+    // (sekme içeriği unmount olur, taslak kaybolur — Faz 1 ayrılma koruması)
+    const [trackingDirty, setTrackingDirty] = useState(false);
+
+    const handleTabChange = (tab: string) => {
+        if (activeTab === "tracking" && tab !== "tracking" && trackingDirty) {
+            const ok = window.confirm(
+                "Takip panelinde kaydedilmemiş değişiklikler var. Sekmeden ayrılırsanız kaybolur. Devam edilsin mi?"
+            );
+            if (!ok) return;
+            setTrackingDirty(false);
+        }
+        setActiveTab(tab);
+    };
     const [relatedBrief, setRelatedBrief] = useState<RelatedCaseBrief[]>([]);
     const [addRelationOpen, setAddRelationOpen] = useState(false);
     const [resendDoc, setResendDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
@@ -447,7 +461,7 @@ const CaseDetails = () => {
                 </div>
 
                 {/* Tabs Container */}
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                     <TabsList className="grid w-full grid-cols-4 md:w-auto md:inline-flex mb-4 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-1 gap-1">
                         <TabsTrigger value="overview" className="gap-2 rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-b-[var(--brand)]">
                             <BarChart3 className="w-4 h-4" />
@@ -605,6 +619,7 @@ const CaseDetails = () => {
                                 const data = await getCase(parseInt(id!));
                                 if (data) setCaseData(data);
                             }}
+                            onDirtyChange={setTrackingDirty}
                         />
                     </TabsContent>
 

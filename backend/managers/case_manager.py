@@ -774,8 +774,48 @@ def add_case(data: dict, tenant_id: str = None):
         db.close()
 
 
+# Takip panelinin güncelleyebildiği alanlar (case_stage dahil).
+TRACKING_FIELDS = [
+    "case_stage",
+    "dosya_son_durumu",
+    # Dosya durumu
+    "status",
+    # Yerel Karar
+    "karar_tarihi", "karar_turu", "karar_lehine",
+    "karar_no", "karar_teblig_tarihi", "karar_aciklama",
+    # İstinaf
+    "istinaf_basvuru_tarihi", "istinaf_karar_durumu", "istinaf_karar_tarihi",
+    "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
+    "istinaf_karar_aciklama", "istinaf_teblig_tarihi",
+    # Temyiz
+    "temyiz_basvuru_tarihi", "temyiz_karar_durumu", "temyiz_karar_tarihi",
+    "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
+    "temyiz_eden_durumu", "temyiz_karar_aciklama", "temyiz_teblig_tarihi",
+    # Karar Düzeltme
+    "karar_duzeltme_durumu", "karar_duzeltme_esas_no", "karar_duzeltme_karar_no",
+    "karar_duzeltme_tarihi", "karar_duzeltme_teblig_tarihi",
+    "karar_duzeltme_aciklama", "yeni_esas_no",
+    # Kesinleşme / İnfaz
+    "kesinlesme_tarihi", "infaz_tarihi",
+]
+
+
+def tracking_changes(data: dict) -> list:
+    """exclude_unset dict'inden uygulanacak (alan, değer) çiftleri (saf).
+
+    Sözleşme (Faz 1): data yalnız istemcinin GÖNDERDİĞİ alanları içerir
+    (route model_dump(exclude_unset=True) ile üretir). Gönderilmeyen alan
+    listeye girmez → dokunulmaz; None gönderilen girer → alan silinir.
+    """
+    return [(f, data[f]) for f in TRACKING_FIELDS if f in data]
+
+
 def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str = "MANUAL", tenant_id: str = None) -> bool:
-    """Dava takip bilgilerini günceller ve aşama değişmişse CaseStageLog kaydı ekler."""
+    """Dava takip bilgilerini günceller ve aşama değişmişse CaseStageLog kaydı ekler.
+
+    data yalnız güncellenecek alanları içermeli (exclude_unset); None değer
+    alanı temizler.
+    """
     db = SessionLocal()
     try:
         query = db.query(models.Case).filter(models.Case.id == case_id)
@@ -788,32 +828,8 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
         new_stage = data.get("case_stage")
         note = data.pop("note", None)
 
-        tracking_fields = [
-            "case_stage",
-            "dosya_son_durumu",
-            # Dosya durumu
-            "status",
-            # Yerel Karar
-            "karar_tarihi", "karar_turu", "karar_lehine",
-            "karar_no", "karar_teblig_tarihi", "karar_aciklama",
-            # İstinaf
-            "istinaf_basvuru_tarihi", "istinaf_karar_durumu", "istinaf_karar_tarihi",
-            "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
-            "istinaf_karar_aciklama", "istinaf_teblig_tarihi",
-            # Temyiz
-            "temyiz_basvuru_tarihi", "temyiz_karar_durumu", "temyiz_karar_tarihi",
-            "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
-            "temyiz_eden_durumu", "temyiz_karar_aciklama", "temyiz_teblig_tarihi",
-            # Karar Düzeltme
-            "karar_duzeltme_durumu", "karar_duzeltme_esas_no", "karar_duzeltme_karar_no",
-            "karar_duzeltme_tarihi", "karar_duzeltme_teblig_tarihi",
-            "karar_duzeltme_aciklama", "yeni_esas_no",
-            # Kesinleşme / İnfaz
-            "kesinlesme_tarihi", "infaz_tarihi",
-        ]
-        for field in tracking_fields:
-            if field in data and data[field] is not None:
-                setattr(case, field, data[field])
+        for field, value in tracking_changes(data):
+            setattr(case, field, value)
 
         if new_stage and new_stage != old_stage:
             log = models.CaseStageLog(

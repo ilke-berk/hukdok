@@ -1,78 +1,17 @@
 import { useState, useEffect } from "react";
 import { useCases, CaseTrackingUpdate } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
+import {
+    STAGES, STAGE_KEYS, STAGE_FIELDS,
+    TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
+    rebaseDraft, buildPatch, commitDraft,
+} from "@/lib/trackingDraft";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CheckCircle2, Circle, ChevronRight, Save, Info } from "lucide-react";
-
-// ── Aşamalar ──────────────────────────────────────────────────────────────────
-const STAGES = [
-    { key: "KARAR",          label: "Yerel Mahkeme", short: "Yerel" },
-    { key: "ISTINAF",        label: "İstinaf",       short: "İst." },
-    { key: "TEMYIZ",         label: "Temyiz",        short: "Tem." },
-    { key: "KARAR_DUZELTME", label: "K.Düzeltme",   short: "K.Düz." },
-    { key: "KESINLESME",     label: "Kesinleşme",   short: "Kes." },
-    { key: "KAPALI",         label: "Kapalı",        short: "Kap." },
-];
-const STAGE_KEYS = STAGES.map(s => s.key);
-
-
-// ── Her aşamanın alanları ─────────────────────────────────────────────────────
-interface FieldDef {
-    label: string;
-    key: string;
-    type: "date" | "text" | "select" | "textarea";
-    options?: string[];
-    wide?: boolean; // 2 kolon kaplar
-}
-
-const STAGE_FIELDS: Record<string, FieldDef[]> = {
-    KARAR: [
-        { label: "Karar Tarihi",        key: "karar_tarihi",        type: "date" },
-        { label: "Tebliğ Tarihi",       key: "karar_teblig_tarihi", type: "date" },
-        { label: "Kesinleşme Tarihi",   key: "kesinlesme_tarihi",   type: "date" },
-        { label: "Karar Türü",          key: "karar_turu",          type: "select", options: ["KABUL","RED","KISMI_KABUL","FERAGAT","UZLASMA","DUSME"] },
-        { label: "Karar Lehine",        key: "karar_lehine",        type: "select", options: ["LEHINE","ALEYHINE","KISMI"] },
-        { label: "Karar No",            key: "karar_no",            type: "text" },
-        { label: "Açıklama",            key: "karar_aciklama",      type: "textarea", wide: true },
-    ],
-    ISTINAF: [
-        { label: "Başvuru Tarihi",  key: "istinaf_basvuru_tarihi",  type: "date" },
-        { label: "Mahkeme",         key: "istinaf_mahkemesi",       type: "text", wide: true },
-        { label: "Esas No",         key: "istinaf_esas_no",         type: "text" },
-        { label: "Karar No",        key: "istinaf_karar_no",        type: "text" },
-        { label: "Karar Tarihi",    key: "istinaf_karar_tarihi",    type: "date" },
-        { label: "Karar Durumu",    key: "istinaf_karar_durumu",    type: "select", options: ["ONANMADI","BOZULDU","DÜZELTILEREK_ONANMADI","KISMI_BOZMA","FERAGAT","DUSME"] },
-        { label: "Tebliğ Tarihi",   key: "istinaf_teblig_tarihi",   type: "date" },
-        { label: "Açıklama",        key: "istinaf_karar_aciklama",  type: "textarea", wide: true },
-    ],
-    TEMYIZ: [
-        { label: "Mahkeme",        key: "temyiz_mahkemesi",        type: "text", wide: true },
-        { label: "Karar Tarihi",   key: "temyiz_karar_tarihi",     type: "date" },
-        { label: "Esas No",        key: "temyiz_esas_no",          type: "text" },
-        { label: "Karar No",       key: "temyiz_karar_no",         type: "text" },
-        { label: "Tarih Bilgisi",  key: "temyiz_basvuru_tarihi",   type: "date" },
-        { label: "Tebliğ Tarihi",  key: "temyiz_teblig_tarihi",    type: "date" },
-        { label: "Temyiz Eden",    key: "temyiz_eden_durumu",      type: "text" },
-        { label: "Açıklama",       key: "temyiz_karar_aciklama",   type: "textarea", wide: true },
-    ],
-    KARAR_DUZELTME: [
-        { label: "Kararı Durumu",  key: "karar_duzeltme_durumu",        type: "select", options: ["ONANMADI","BOZULDU","DÜZELTILEREK_ONANMADI","FERAGAT","DUSME"] },
-        { label: "Esas No",        key: "karar_duzeltme_esas_no",       type: "text" },
-        { label: "Karar No",       key: "karar_duzeltme_karar_no",      type: "text" },
-        { label: "Tebliğ Tarihi",  key: "karar_duzeltme_teblig_tarihi", type: "date" },
-        { label: "Yeni Esas No / Mahkemesi", key: "yeni_esas_no",       type: "text", wide: true },
-        { label: "Karar Tarihi",   key: "karar_duzeltme_tarihi",        type: "date" },
-        { label: "Açıklama",       key: "karar_duzeltme_aciklama",      type: "textarea", wide: true },
-    ],
-    KESINLESME: [
-        { label: "Kesinleşme Tarihi", key: "kesinlesme_tarihi", type: "date" },
-    ],
-    KAPALI: [],
-};
+import { CheckCircle2, Circle, ChevronRight, Save, Info, AlertTriangle } from "lucide-react";
 
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border bg-background border-border focus:border-primary focus:outline-none";
 
@@ -80,9 +19,12 @@ interface Props {
     caseId: number;
     caseData: Record<string, unknown>;
     onRefresh: () => void;
+    /** Panelde kaydedilmemiş değişiklik olup olmadığını üst bileşene bildirir
+     *  (sekme değişiminde ayrılma koruması için). */
+    onDirtyChange?: (dirty: boolean) => void;
 }
 
-const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
+const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props) => {
     const { updateCaseTracking } = useCases();
     const { fileStatuses } = useConfig();
     const [saving, setSaving] = useState(false);
@@ -90,84 +32,68 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
     const currentStage = (caseData.case_stage as string) ?? null;
     const currentIdx   = currentStage ? STAGE_KEYS.indexOf(currentStage) : -1;
 
-    // Seçili aşama
+    // Seçili aşama (yalnız görünüm — taslağa dokunmaz)
     const [selectedKey, setSelectedKey] = useState<string>(currentStage ?? "KARAR");
 
     // Aşama geçiş onay dialogu
     const [stageDialog, setStageDialog] = useState<{ key: string; label: string } | null>(null);
     const [stageNote, setStageNote]     = useState("");
 
-    // Dosya Son Durumu
-    const [dosyaSonDurumu, setDosyaSonDurumu] = useState<string | null>(
-        (caseData.dosya_son_durumu as string) ?? null
-    );
-    const [dosyaDirty, setDosyaDirty] = useState(false);
+    // ── Panel geneli TEK taslak: tüm aşamaların alanları + dosya_son_durumu ──
+    const [draft, setDraft] = useState<TrackingDraft>(() => initTrackingDraft(caseData));
+    const dirty = isDirty(draft);
+    const dirtyCount = dirtyKeys(draft).length;
 
-    // caseData değişince dosya son durumunu senkronize et
+    // caseData yenilenince (refresh, aşama geçişi) baseline tazelenir;
+    // kaydedilmemiş değişiklikler rebaseDraft içinde KORUNUR.
     useEffect(() => {
-        setDosyaSonDurumu((caseData.dosya_son_durumu as string) ?? null);
-        setDosyaDirty(false);
-    }, [caseData.dosya_son_durumu]);
+        setDraft(prev => rebaseDraft(prev, caseData));
+    }, [caseData]);
 
-    const saveDosyaSonDurumu = async (value: string | null) => {
-        setSaving(true);
-        const ok = await updateCaseTracking(caseId, { dosya_son_durumu: value || null });
-        setSaving(false);
-        if (ok) {
-            toast.success("Dosya son durumu kaydedildi");
-            setDosyaDirty(false);
-            onRefresh();
-        } else toast.error("Güncelleme başarısız");
-    };
-
-    // Inline form değerleri (seçili aşamanın alanları)
-    const [form, setForm] = useState<Partial<CaseTrackingUpdate>>({});
-    const [dirty, setDirty] = useState(false);
-
-    // caseData değişince aktif aşamanın form alanlarını senkronize et
+    // Ayrılma koruması: üst bileşene dirty bildir + sayfa kapanışında uyar
     useEffect(() => {
-        const initial: Partial<CaseTrackingUpdate> = {};
-        (STAGE_FIELDS[selectedKey] ?? []).forEach(f => {
-            initial[f.key as keyof CaseTrackingUpdate] = (caseData[f.key] as string) ?? null;
-        });
-        setForm(initial);
-        setDirty(false);
-    }, [caseData, selectedKey]);
+        onDirtyChange?.(dirty);
+    }, [dirty, onDirtyChange]);
+    useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
+    useEffect(() => {
+        if (!dirty) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [dirty]);
 
     const selectedIdx  = STAGE_KEYS.indexOf(selectedKey);
     const isReached    = selectedIdx <= currentIdx;
     const fields       = STAGE_FIELDS[selectedKey] ?? [];
 
-    // Timeline'a tıklanınca
-    const handleStageClick = (key: string) => {
-        setSelectedKey(key);
-        // Form'u caseData ile doldur
-        const initial: Partial<CaseTrackingUpdate> = {};
-        (STAGE_FIELDS[key] ?? []).forEach(f => {
-            initial[f.key as keyof CaseTrackingUpdate] = (caseData[f.key] as string) ?? null;
-        });
-        setForm(initial);
-        setDirty(false);
+    // Timeline'a tıklanınca: yalnız görünüm değişir, taslak sıfırlanMAZ
+    const handleStageClick = (key: string) => setSelectedKey(key);
+
+    const setField = (key: string, val: string | null) => {
+        setDraft(prev => setDraftField(prev, key, val));
     };
 
-    const setField = (key: keyof CaseTrackingUpdate, val: string | null) => {
-        setForm(prev => ({ ...prev, [key]: val || null }));
-        setDirty(true);
-    };
+    const fieldValue = (key: string) => draft.values[key] ?? "";
 
-    // Aşama alanlarını kaydet
-    const saveFields = async () => {
+    // Tek Kaydet: yalnız değişen alanlar PATCH'lenir (boşaltılan alan null → silinir)
+    const saveAll = async () => {
+        const patch = buildPatch(draft);
+        if (Object.keys(patch).length === 0) return;
         setSaving(true);
-        const ok = await updateCaseTracking(caseId, form as CaseTrackingUpdate);
+        const ok = await updateCaseTracking(caseId, patch as CaseTrackingUpdate);
         setSaving(false);
         if (ok) {
-            toast.success("Kaydedildi");
-            setDirty(false);
+            setDraft(prev => commitDraft(prev));
+            toast.success("Takip bilgileri kaydedildi");
             onRefresh();
         } else toast.error("Güncelleme başarısız");
     };
 
-    // Aşama geçişi
+    // Aşama geçişi — istisna: dialog onaylı, anlık (CaseStageLog olayı)
     const openStageDialog = (stage: typeof STAGES[number]) => {
         if (stage.key === currentStage) return;
         setStageNote("");
@@ -236,6 +162,25 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
     return (
         <div className="space-y-4">
 
+            {/* ── Kaydedilmemiş değişiklik çubuğu — panel geneli tek Kaydet ── */}
+            {dirty && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 shrink-0">
+                            Kaydedilmemiş
+                        </Badge>
+                        <span className="text-xs text-muted-foreground truncate">
+                            {dirtyCount} alan değişti — kaydetmeden ayrılırsanız kaybolur.
+                        </span>
+                    </div>
+                    <Button size="sm" onClick={saveAll} disabled={saving} className="shrink-0 gap-1">
+                        <Save className="w-3.5 h-3.5" />
+                        {saving ? "Kaydediliyor…" : "Kaydet"}
+                    </Button>
+                </div>
+            )}
+
             {/* ── Davanın Son Durumu — her zaman görünür ───────────────────── */}
             <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="pt-3 pb-4 px-5">
@@ -264,29 +209,19 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                             {currentStage ? "Bu aşama için henüz veri girilmemiş." : "Takip bilgisi girmek için aşağıdaki zaman çizelgesini kullanın."}
                         </p>
                     )}
-                    {/* ── Dosya Son Durumu seçici ── */}
+                    {/* ── Dosya Son Durumu seçici — taslağın parçası ── */}
                     <div className="mt-4 pt-3 border-t border-primary/15">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Dosya Son Durumu</p>
-                        <div className="flex items-center gap-2">
-                            <select
-                                className={`${inputCls} flex-1`}
-                                value={dosyaSonDurumu ?? ""}
-                                onChange={e => {
-                                    setDosyaSonDurumu(e.target.value || null);
-                                    setDosyaDirty(true);
-                                }}
-                            >
-                                <option value="">— Seçiniz —</option>
-                                {fileStatuses.map(opt => (
-                                    <option key={opt.code} value={opt.name}>{opt.name}</option>
-                                ))}
-                            </select>
-                            {dosyaDirty && (
-                                <Button size="sm" onClick={() => saveDosyaSonDurumu(dosyaSonDurumu)} disabled={saving}>
-                                    <Save className="w-3.5 h-3.5 mr-1" />Kaydet
-                                </Button>
-                            )}
-                        </div>
+                        <select
+                            className={inputCls}
+                            value={fieldValue("dosya_son_durumu")}
+                            onChange={e => setField("dosya_son_durumu", e.target.value)}
+                        >
+                            <option value="">— Seçiniz —</option>
+                            {fileStatuses.map(opt => (
+                                <option key={opt.code} value={opt.name}>{opt.name}</option>
+                            ))}
+                        </select>
                     </div>
                 </CardContent>
             </Card>
@@ -300,14 +235,18 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                             const active   = idx === currentIdx;
                             const future   = idx > currentIdx;
                             const selected = stage.key === selectedKey;
+                            const stageDirty = (STAGE_FIELDS[stage.key] ?? []).some(f => dirtyKeys(draft).includes(f.key));
 
                             return (
                                 <div key={stage.key} className="flex items-center">
                                     <button
                                         type="button"
                                         onClick={() => handleStageClick(stage.key)}
-                                        className="flex flex-col items-center gap-1.5 min-w-[56px] sm:min-w-[66px] group"
+                                        className="flex flex-col items-center gap-1.5 min-w-[56px] sm:min-w-[66px] group relative"
                                     >
+                                        {stageDirty && (
+                                            <span className="absolute -top-0.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" title="Kaydedilmemiş değişiklik" />
+                                        )}
                                         <div className={`
                                             w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all
                                             ${done || active ? "bg-primary border-primary text-primary-foreground" : "bg-muted/40 border-border text-muted-foreground"}
@@ -355,22 +294,14 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                                 </Badge>
                             )}
                         </div>
-                        <div className="flex items-center gap-2">
-                            {dirty && (
-                                <Button size="sm" onClick={saveFields} disabled={saving} className="h-7 px-3 gap-1 text-xs">
-                                    <Save className="w-3.5 h-3.5" />
-                                    {saving ? "Kaydediliyor…" : "Kaydet"}
-                                </Button>
-                            )}
-                            {selectedKey !== currentStage && (
-                                <Button size="sm" variant="outline"
-                                    className="h-7 px-3 gap-1 text-xs"
-                                    onClick={() => openStageDialog(STAGES[selectedIdx])}>
-                                    <ChevronRight className="w-3.5 h-3.5" />
-                                    Bu Aşamaya Geç
-                                </Button>
-                            )}
-                        </div>
+                        {selectedKey !== currentStage && (
+                            <Button size="sm" variant="outline"
+                                className="h-7 px-3 gap-1 text-xs"
+                                onClick={() => openStageDialog(STAGES[selectedIdx])}>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                                Bu Aşamaya Geç
+                            </Button>
+                        )}
                     </div>
 
                     {/* KAPALI */}
@@ -400,20 +331,20 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                                     </label>
                                     {f.type === "date" && (
                                         <input type="date"
-                                            value={(form[f.key as keyof CaseTrackingUpdate] as string) ?? ""}
-                                            onChange={e => setField(f.key as keyof CaseTrackingUpdate, e.target.value)}
+                                            value={fieldValue(f.key)}
+                                            onChange={e => setField(f.key, e.target.value)}
                                             className={inputCls} />
                                     )}
                                     {f.type === "text" && (
                                         <input type="text"
-                                            value={(form[f.key as keyof CaseTrackingUpdate] as string) ?? ""}
-                                            onChange={e => setField(f.key as keyof CaseTrackingUpdate, e.target.value)}
+                                            value={fieldValue(f.key)}
+                                            onChange={e => setField(f.key, e.target.value)}
                                             className={inputCls} />
                                     )}
                                     {f.type === "select" && (
                                         <select
-                                            value={(form[f.key as keyof CaseTrackingUpdate] as string) ?? ""}
-                                            onChange={e => setField(f.key as keyof CaseTrackingUpdate, e.target.value)}
+                                            value={fieldValue(f.key)}
+                                            onChange={e => setField(f.key, e.target.value)}
                                             className={inputCls}>
                                             <option value="">Seçiniz</option>
                                             {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
@@ -421,8 +352,8 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                                     )}
                                     {f.type === "textarea" && (
                                         <textarea rows={2}
-                                            value={(form[f.key as keyof CaseTrackingUpdate] as string) ?? ""}
-                                            onChange={e => setField(f.key as keyof CaseTrackingUpdate, e.target.value)}
+                                            value={fieldValue(f.key)}
+                                            onChange={e => setField(f.key, e.target.value)}
                                             className={`${inputCls} resize-none`} />
                                     )}
                                 </div>
@@ -452,6 +383,12 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh }: Props) => {
                                 <p className="text-sm font-bold text-primary">{stageDialog?.label}</p>
                             </div>
                         </div>
+                        {dirty && (
+                            <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                                Kaydedilmemiş alan değişiklikleriniz bu geçişle kaydedilmez;
+                                geçiş sonrası panelde durur, "Kaydet" ile kaydedin.
+                            </p>
+                        )}
                         <div>
                             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
                                 Not (opsiyonel)

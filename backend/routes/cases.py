@@ -423,9 +423,12 @@ def api_update_case_tracking(
     user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Dava takip bilgilerini güncelle (aşama, tarihler, karar bilgileri)."""
+    """Dava takip bilgilerini güncelle (aşama, tarihler, karar bilgileri).
+
+    exclude_unset: gönderilmeyen alan dokunulmaz, null gönderilen SİLİNİR (Faz 1).
+    """
     changed_by = user.get("name") or user.get("preferred_username") or "unknown"
-    success = update_case_tracking(case_id, data.model_dump(exclude_none=False), changed_by=changed_by, tenant_id=tenant_id)
+    success = update_case_tracking(case_id, data.model_dump(exclude_unset=True), changed_by=changed_by, tenant_id=tenant_id)
     if not success:
         raise HTTPException(status_code=404, detail="Dava bulunamadı veya güncelleme başarısız")
     return {"status": "success"}
