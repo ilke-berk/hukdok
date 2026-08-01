@@ -89,3 +89,9 @@ backend/data/hukudok.db
 backup.sql
 *.dump
 *.pgdump
+
+# Gercek veri exportlari (KVKK — asla commit etme)
+dava_dosyalari_full_*.csv
+dava_dosyalari_full_*.xlsx
+# TS incremental build ciktilari
+*.tsbuildinfo
