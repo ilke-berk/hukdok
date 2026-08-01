@@ -12,10 +12,13 @@ check-duplicate), sihirbaza .eml desteği (expand-eml; gerçek Quick/Maher
 maili ile uçtan uca doğrulandı). Deploy öncesi DB yedeği:
 `~/hukdok-backup-pre-eml-20260801-1526.sql.gz`.
 
-**2026-08-01 akşam güncellemesi:** Faz 6.1+6.3 (`5ffb95a`) ve 6.2
-(`a7e0064`) main'de TAMAM, deploy bekliyor. Backend 107 pytest +
-frontend 114 vitest yeşil, tsc temiz. Kalan: 6.4 service_type kararı
-(kullanıcı), Adım 0 prod koşusu (kullanıcı), sonra Adım 2 (Faz 1).
+**2026-08-01 akşam güncellemesi:** Faz 6 TAMAMEN bitti — 6.1+6.3
+(`5ffb95a`), 6.2 (`a7e0064`), 6.4 (`3630c24`, karar: service_type kalıcı +
+düzenlenebilir) main'de, deploy bekliyor. Backend 467 pytest + frontend
+114 vitest yeşil, tsc temiz. **Adım 0 KOŞULDU:** backfill_judicial_unit
+prod'da uygulandı — 13.594 kayıt dolduruldu, 33 eşleşmeyen (%0,24; serbest
+metin/yazım hatası, kalıp düzeltmesi gereksiz), 751 mahkeme adı boş.
+Kalan: Faz 6 deploy'u (mesai dışı), sonra Adım 2 (Faz 1).
 
 ## Sıralama ve gerekçe
 
