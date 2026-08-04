@@ -218,12 +218,15 @@ def add_item(list_type: str, **fields):
         db = SessionLocal()
 
         # Mükerrer isim kontrolü (büyük/küçük harf duyarsız; mahkeme türleri
-        # aynı ada farklı üst tür altında izin verdiği için parent'a göre daraltılır)
+        # aynı ada farklı üst tür altında, taraf rolleri aynı ada farklı türde
+        # (Ana/Üçüncü) izin verdiği için ilgili kolona göre daraltılır)
         if fields.get("name"):
             target = tr_upper(fields["name"])
             q = db.query(spec.model)
             if "parent_code" in fields:
                 q = q.filter(spec.model.parent_code == fields["parent_code"])
+            if "role_type" in fields:
+                q = q.filter(spec.model.role_type == fields["role_type"])
             for row in q.all():
                 if tr_upper(getattr(row, "name", None) or "") == target:
                     raise DuplicateItemError(f"\"{fields['name']}\" zaten listede mevcut")
@@ -413,15 +416,26 @@ def update_item(list_type: str, identifier: str, fields: dict):
         new_name = fields.get("name")
 
         # Mükerrer ad kontrolü — kendisi hariç, harf duyarsız. Mahkeme türlerinde
-        # aynı ad farklı üst tür altında serbest olduğu için parent'a göre daraltılır.
-        if new_name and (not old_name or tr_upper(new_name) != tr_upper(old_name)):
-            target_name = tr_upper(new_name)
+        # aynı ad farklı üst tür altında, taraf rollerinde aynı ad farklı türde
+        # (Ana/Üçüncü) serbest olduğu için ilgili kolona göre daraltılır. Taraf
+        # rolünde tür değişimi de hedef türde ad çakışması yaratabilir; o yüzden
+        # ad değişmese bile kontrol edilir.
+        new_role_type = fields.get("role_type")
+        role_type_changed = (
+            key == "party_roles" and new_role_type
+            and new_role_type != getattr(item, "role_type", None)
+        )
+        name_changed = new_name and (not old_name or tr_upper(new_name) != tr_upper(old_name))
+        target_name = tr_upper(new_name or old_name or "")
+        if target_name and (name_changed or role_type_changed):
             q = db.query(spec.model).filter(key_col != identifier)
             if key == "court_types":
                 q = q.filter(spec.model.parent_code == fields.get("parent_code", item.parent_code))
+            if key == "party_roles":
+                q = q.filter(spec.model.role_type == (new_role_type or item.role_type))
             for row in q.all():
                 if tr_upper(getattr(row, "name", None) or "") == target_name:
-                    raise DuplicateItemError(f"\"{new_name}\" zaten listede mevcut")
+                    raise DuplicateItemError(f"\"{new_name or old_name}\" zaten listede mevcut")
 
         # Kimlik kolonu düzenlenebiliyorsa (e-posta alıcıları) mükerrer kontrolü
         new_key = fields.get(spec.key)

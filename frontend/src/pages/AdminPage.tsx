@@ -533,8 +533,10 @@ const AdminPage = () => {
 
     const handleSavePartyRole = () => {
         if (!partyRoleForm.name) { toast.warning("İsim zorunlu"); return; }
-        if (!confirmSimilar(partyRoleForm.name, partyRoles)) return;
-        const code = partyRoleForm.code || partyRoleForm.name.toUpperCase().replace(/\s/g, "-");
+        if (!confirmSimilar(partyRoleForm.name, partyRoles.filter(r => r.role_type === partyRoleForm.role_type))) return;
+        // Aynı ad iki türde de bulunabilir; kod çakışmasın diye üçüncü taraf
+        // kodları seed ile aynı biçimde "3-" öneki alır
+        const code = partyRoleForm.code || (partyRoleForm.role_type === "THIRD" ? "3-" : "") + partyRoleForm.name.toUpperCase().replace(/\s/g, "-");
         runAdd(() => addPartyRole(code, partyRoleForm.name, partyRoleForm.role_type),
             () => { setIsPartyRoleAddOpen(false); setPartyRoleForm({ code: "", name: "", role_type: "MAIN" }); });
     };
