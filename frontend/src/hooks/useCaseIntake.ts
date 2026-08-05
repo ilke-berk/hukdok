@@ -69,6 +69,9 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+  // 409 sonrası tazelenen review'da kalıcı "henüz kaydedilmedi" bandı —
+  // toast geçicidir, kullanıcı kaçırırsa kaydoldu sanıp kapatabilir.
+  const [conflictRefreshed, setConflictRefreshed] = useState(false);
 
   // Faz 7 — zenginleştirme modu: dolu ise merge case_id ile çağrılır ve
   // Kaydet commit yerine apply'a gider. Ref: merge async akışlarında (sıralı
@@ -347,6 +350,7 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
    */
   const apply = useCallback(async (req: CaseIntakeApplyRequest): Promise<ApplyResult> => {
     setIsCommitting(true);
+    setConflictRefreshed(false); // yeni deneme — önceki çakışma bandı kalksın
     try {
       const result = await applyIntake(req);
       clearIntakeDraft(); // değişiklikler uygulandı — taslak artık bayat
@@ -360,6 +364,7 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
           toast.warning("Dava bu arada güncellendi — öneriler güncel değerlerle tazeleniyor...", {
             duration: 6000,
           });
+          setConflictRefreshed(true);
           await retryMerge(filesRef.current);
         } else {
           // Restore edilmiş taslak: analiz sonuçları elde yok, re-merge imkânsız
@@ -389,6 +394,7 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
     setIsCommitting(false);
     setCommitResult(null);
     setApplyResult(null);
+    setConflictRefreshed(false);
     // Sihirbaz dava detayından (?enrichCase) açıldıysa mod korunur; duplicate
     // köprüsüyle geçilmişse yeni sihirbaz "yeni dava" moduna döner.
     setEnrichCaseId(initialEnrichCaseId);
@@ -412,6 +418,7 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
     commitResult,
     apply,
     applyResult,
+    conflictRefreshed,
     enrichCaseId,
     enrichExisting,
     reset,

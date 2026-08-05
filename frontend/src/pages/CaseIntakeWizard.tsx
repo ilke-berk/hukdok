@@ -151,6 +151,7 @@ const CaseIntakeWizard = () => {
           onApply={intake.apply}
           onEnrichExisting={intake.enrichExisting}
           initialReview={intake.restoredReview}
+          conflictNotice={intake.conflictRefreshed}
         />
       )}
 

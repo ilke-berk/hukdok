@@ -103,6 +103,8 @@ interface IntakeReviewStepProps {
   onEnrichExisting?: (caseId: number) => void;
   /** Faz 6.2: yarım kalan taslaktan devam — form durumu buradan init edilir. */
   initialReview?: ReviewSnapshot | null;
+  /** 409 sonrası tazelenen review'da kalıcı "henüz kaydedilmedi" bandı. */
+  conflictNotice?: boolean;
 }
 
 let nextPartyId = 0;
@@ -124,7 +126,7 @@ const SERVICE_TYPES = [
   { label: "Yazışma", index: 4 },
 ];
 
-export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnrichExisting, initialReview }: IntakeReviewStepProps) {
+export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnrichExisting, initialReview, conflictNotice }: IntakeReviewStepProps) {
   const { getClientCaseSequence } = useCases();
   const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
 
@@ -615,6 +617,19 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
 
   return (
     <div className="grid gap-5">
+      {/* 409 sonrası kalıcı uyarı: toast kaçırılsa bile "kaydedildi" sanılmasın.
+          Bant bir sonraki Kaydet denemesine kadar durur (hook temizler). */}
+      {conflictNotice && (
+        <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span className="text-[13px] text-[var(--fg)]">
+            <span className="font-semibold">Değişiklikler henüz kaydedilmedi.</span>{" "}
+            Dava bu ekran açıkken güncellendiği için öneriler güncel değerlerle
+            tazelendi — farkları yeniden işaretleyip Kaydet'e basın.
+          </span>
+        </div>
+      )}
+
       {/* Enrich modu başlığı: hedef dava */}
       {enrichMode && enrichCase && (
         <div className="border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
