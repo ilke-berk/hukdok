@@ -97,10 +97,12 @@ def convert_to_pdfa2b(source_path: str) -> str:
     except Exception as e:
         TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası: {e}")
         if file_ext != '.pdf':
-            # Orijinal PDF olmayan dosya .pdf adıyla arşive sızamaz — fallback yok
+            # Orijinal PDF olmayan dosya .pdf adıyla arşive sızamaz — fallback yok.
+            # "Dosya bozuk" deme: neden bilinmiyor, dosya sağlam olabilir
+            # (2026-08-05: sağlam UDF'e 7 kez "bozuk" denildi).
             raise RuntimeError(
-                f"{file_ext} dosyası PDF'e dönüştürülemedi. "
-                "Dosya bozuk veya desteklenmeyen bir format olabilir."
+                f"{file_ext} dosyası PDF'e dönüştürülemedi "
+                "(beklenmeyen dönüşüm hatası — teknik kayıt alındı)."
             ) from e
         # PDF için fallback: orijinal dosyayı döndür
         TechnicalLogger.log("WARNING", "Dönüşüm başarısız, orijinal dosya kullanılıyor (fallback)")
