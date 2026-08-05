@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Protocol, Type
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, TableStyle, Spacer, Image, PageBreak, LongTable, Flowable
+from reportlab.platypus.doctemplate import LayoutError
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -331,8 +332,22 @@ class TableHandler:
     
     def handle(self, converter: 'UDFConverter', table_elem: XmlElement) -> List[Flowable]:
         rows = table_elem.findall('row')
+
+        # Degrade modu: layout hatası sonrası ikinci denemede tablo yerine düz
+        # paragraf akışı üretilir — görsel sadakat düşer ama içerik tam kalır
+        # ve sığmama hatası imkansızlaşır.
+        if converter.degrade_tables:
+            para_handler = ParagraphHandler()
+            flows: List[Flowable] = []
+            for row in rows:
+                for cell in row.findall('cell'):
+                    for p in cell.findall('paragraph'):
+                        flows.extend(para_handler.handle(converter, p))
+                flows.append(Spacer(1, 6))
+            return flows
+
         table_data = []
-        
+
         # We need to process paragraph elements inside cells
         # Since logic is in ParagraphHandler, we can instantiate it or call converter method if we kept it
         # But better to use the handler directly or via registry if we treat internal paragraphs as elements
@@ -378,8 +393,14 @@ class TableHandler:
         col_spans = table_elem.get('columnSpans', '').split(',')
         col_widths = None
         if len(col_spans) == col_count:
-             try: 
-                 col_widths = [float(x) for x in col_spans]
+             try:
+                 # columnSpans oransal pay (UYAP'ta yüzde: "100", "50,50" vb.);
+                 # mutlak punto sanmak tabloyu 100pt'lik şeride sıkıştırıyordu.
+                 spans = [float(x) for x in col_spans]
+                 total = sum(spans)
+                 avail_width = A4[0] - converter.margins['left'] - converter.margins['right']
+                 if total > 0 and avail_width > 0:
+                     col_widths = [s / total * avail_width for s in spans]
              except (ValueError, TypeError) as e:
                  TechnicalLogger.log("WARNING", f"Invalid column widths: {e}")
 
@@ -397,7 +418,7 @@ class TableHandler:
         elif border == 'borderOuter':
             t_style.append(('BOX', (0,0), (-1,-1), 1, colors.black))
 
-        t = LongTable(table_data, colWidths=col_widths, splitByRow=1)
+        t = LongTable(table_data, colWidths=col_widths, splitByRow=1, splitInRow=1)
         t.setStyle(TableStyle(t_style))
         return [t]
 
@@ -425,9 +446,10 @@ def get_process_executor():
     return _process_executor
 
 class UDFConverter:
-    def __init__(self, udf_path: str, output_path: str):
+    def __init__(self, udf_path: str, output_path: str, degrade_tables: bool = False):
         self.udf_path = udf_path
         self.output_path = output_path
+        self.degrade_tables = degrade_tables
         self.root = None
         self.content_text = ""
         self.pdf_elements = []
@@ -501,7 +523,7 @@ class UDFConverter:
                     tree = ET.parse(f, parser=ET.XMLParser(encoding='utf-8'))
                     self.root = tree.getroot()
         except Exception as e:
-            raise ValueError(f"Failed to parse UDF file: {e}") from e
+            raise ValueError(f"UDF dosyası okunamadı; dosya bozuk veya geçersiz olabilir. ({e})") from e
 
         if self.root is None:
             raise ValueError("Parsed XML root is None.")
@@ -751,9 +773,28 @@ def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tupl
         temp = tempfile.gettempdir()
         output_path = os.path.join(temp, f"udf_{uuid.uuid4().hex[:8]}.pdf")
 
-    converter = UDFConverter(udf_path, output_path)
     with _convert_semaphore:
-        path = converter.convert()
+        converter = UDFConverter(udf_path, output_path)
+        try:
+            path = converter.convert()
+        except LayoutError as e:
+            # Katman 1 fallback: sayfaya sığmayan düzen (dev tablo hücresi vb.)
+            # iş akışını kesmesin — tablolar düzleştirilerek bir kez daha dene.
+            TechnicalLogger.log(
+                "WARNING", f"UDF layout hatası, tablolar düzleştirilerek yeniden deneniyor: {e}"
+            )
+            converter = UDFConverter(udf_path, output_path, degrade_tables=True)
+            try:
+                path = converter.convert()
+            except LayoutError as e2:
+                raise ValueError(
+                    "Belge düzeni PDF sayfasına yerleştirilemedi; "
+                    "basitleştirilmiş dönüşüm de başarısız oldu."
+                ) from e2
+            converter.image_warnings.append(
+                "Belgedeki tablo düzeni sayfaya sığmadı; tablolar basitleştirilmiş "
+                "düzenle (çizgisiz akış) dönüştürüldü."
+            )
     return path, converter.image_warnings
 
 async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = None) -> str:

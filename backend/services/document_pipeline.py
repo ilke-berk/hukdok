@@ -323,6 +323,15 @@ def convert_pdfa_and_queue_uploads(
         else:
             raise Exception("PDF/A-2b dönüşümü başarısız - dosya oluşturulamadı")
 
+    except HTTPException:
+        raise
+    except (RuntimeError, ValueError) as e:
+        # Dönüşüm katmanının kullanıcıya dönük mesajları (pdf_converter RuntimeError,
+        # udf_converter ValueError) — "SharePoint başarısız" deyip gerçek nedeni
+        # gizlemek kullanıcıyı yanlış yere bakmaya itiyordu (2026-08-05 arızası).
+        error_id = str(uuid.uuid4())[:8]
+        TechnicalLogger.log("ERROR", f"Processed Upload Error [ID: {error_id}]: {e}")
+        raise HTTPException(status_code=500, detail=f"{e} (Hata: {error_id})") from e
     except Exception as e:
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Processed Upload Error [ID: {error_id}]: {e}")
