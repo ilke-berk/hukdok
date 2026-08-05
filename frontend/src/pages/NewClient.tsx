@@ -28,7 +28,7 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-import { useClients } from "@/hooks/useClients";
+import { useClients, type ClientCaseSummary } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
 import { validateTCIdentity } from "@/lib/validation";
 
@@ -42,7 +42,7 @@ const findMatch = (options: string[], value?: string) => {
 
 const NewClient = () => {
     useSetPageTitle("Yeni Müvekkil", ["Avukat Paneli", "Müvekkiller", "Yeni"]);
-    const { saveClient, updateClient, deleteClient, clients, isLoading } = useClients();
+    const { saveClient, updateClient, deleteClient, getClientCaseSummary, clients, isLoading } = useClients();
     const { cities, specialties, clientCategories } = useConfig();
     const TURKEY_CITIES = cities.map(c => c.name ?? "");
     const SPECIALTIES = specialties.map(s => s.name ?? "");
@@ -158,6 +158,10 @@ const NewClient = () => {
 
     // Soft-delete gerekçesi (zorunlu, min 3 karakter) — backend Query kısıtıyla birebir
     const [deleteReason, setDeleteReason] = useState("");
+
+    // Silme dialogu bilgilendirmesi: açık dava varsa kırmızı uyarı — engelleme YOK
+    // (sistem geneli kural: uyar, engelleme). Fetch hatası uyarıyı sessizce atlar.
+    const [caseSummary, setCaseSummary] = useState<ClientCaseSummary | null>(null);
 
     const handleDelete = async () => {
         if (!isEditMode) return;
@@ -747,7 +751,14 @@ const NewClient = () => {
                                     </Button>
 
                                     {isEditMode && (
-                                        <AlertDialog>
+                                        <AlertDialog
+                                            onOpenChange={(open) => {
+                                                if (open) {
+                                                    setCaseSummary(null);
+                                                    getClientCaseSummary(editModeClient.id).then(setCaseSummary).catch(() => setCaseSummary(null));
+                                                }
+                                            }}
+                                        >
                                             <AlertDialogTrigger asChild>
                                                 <Button
                                                     type="button"
@@ -765,6 +776,11 @@ const NewClient = () => {
                                                     </AlertDialogTitle>
                                                     <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
                                                         Bu {typeLabel.toLowerCase()} listelerden kaldırılır ve arşive taşınır; <strong className="text-[var(--fg)]">yönetici panelinden geri alınabilir.</strong> Gerekçe zorunludur ve kayıt altına alınır.
+                                                        {caseSummary !== null && caseSummary.active_cases > 0 && (
+                                                            <span className="block mt-2 text-[#a8323b] font-medium">
+                                                                Dikkat: bu {typeLabel.toLowerCase()} kaydının {caseSummary.active_cases} açık davası var. Silinse de davalardaki taraf kayıtları korunur.
+                                                            </span>
+                                                        )}
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
                                                 <textarea

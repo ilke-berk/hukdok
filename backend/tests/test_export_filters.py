@@ -105,9 +105,9 @@ class TestGetTypeAllowlist:
 
 # ── _doc_passes_filters ──────────────────────────────────────────────────────
 
-def _doc(link_mode="AUTO", sharepoint_url="https://sp/x.pdf", kod="ARA-KRR_______"):
+def _doc(link_mode="AUTO", sharepoint_url="https://sp/x.pdf", kod="ARA-KRR_______", case=None):
     return SimpleNamespace(
-        link_mode=link_mode, sharepoint_url=sharepoint_url, belge_turu_kodu=kod
+        link_mode=link_mode, sharepoint_url=sharepoint_url, belge_turu_kodu=kod, case=case
     )
 
 
@@ -140,3 +140,16 @@ class TestDocPassesFilters:
 
     def test_no_filters_everything_passes(self):
         assert export._doc_passes_filters(_doc(kod=None), set(), set()) is True
+
+    def test_deleted_case_rejected(self):
+        # Soft-delete edilmiş davanın belgesi export hattından akmaz
+        case = SimpleNamespace(deleted_at="2026-08-05T00:00:00")
+        assert export._doc_passes_filters(_doc(case=case), set(), set()) is False
+
+    def test_live_case_passes(self):
+        case = SimpleNamespace(deleted_at=None)
+        assert export._doc_passes_filters(_doc(case=case), set(), set()) is True
+
+    def test_unlinked_no_case_passes(self):
+        # case_id=None (UNLINKED) belgeler bilinçli olarak dahil kalır
+        assert export._doc_passes_filters(_doc(case=None), set(), set()) is True

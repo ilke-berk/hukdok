@@ -413,6 +413,8 @@ Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini
 
 **Genel yorum:** Çalışma ciddi, yöntemli ve doğru yönde — özellikle düzeltme logu disiplini ve silinen föylerin gerekçeli saklanması, HukuDok'un veri felsefesiyle tam uyumlu ve örnek nitelikte. Excel'in kolon seti fiilen "HukuDok şemasının eski sistemden görünüşü" olduğundan aktarım teknik olarak düşük riskli. Yukarıdaki tespitlerin çoğu, çalışma tamamlandığında ekip tarafından zaten kapatılmış olabilir; nihai teslimde bu profilleme yeniden koşulup güncel durum doğrulanmalıdır. Teslim öncesi ekiple konuşulması *yararlı* iki başlık: MüvekkilNo eşleşmelerinin nihai durumu ve `Hükmedilen` tutar alanları için HukuDok tarafında yer açılıp açılmayacağı (şema boşluğu bizim tarafımızda).
 
+**Aktarım günü notu (2026-08-05):** aktarım gününde admin panelinden `party_roles` listesine `Aleyhine Başvurulan / Alacaklı / Katılan` eklenecek; "Kurum" kategorisinin B1 eşlemesi ve Hizmet Türü bitmask tablosu ekiple birlikte kararlaştırılacak (açık karar).
+
 ### 6.6 Mutabakat ve uygulanan işler (2026-08-05)
 
 Büro, teknik rapora verdiği cevapta **D-No / Luhn / Numarator önerisini geri çekti** (gerekçe: ilkenin — "numara kimliktir, veri deposu değildir" — `cases.id` ile zaten sağlandığını kabul). Karşılığında aşağıdaki maddeler kabul edilip **uygulandı**:
@@ -426,6 +428,15 @@ Büro, teknik rapora verdiği cevapta **D-No / Luhn / Numarator önerisini geri 
 | Kayıt No gösterimi | ✅ Uygulandı | `cases.id` dava detayı "Dosya Bilgileri" kartında kısa, dikte edilebilir "Kayıt No" olarak gösterilir |
 
 Büro cevabındaki "dört taahhüt" çerçevesi (kalıcılık, görünürlük, export sabitliği, çıkış garantisi) satıcı–müşteri kurgusuydu; uygulama Hanyaloğlu-Acar bünyesinde geliştirildiği için bunlar taahhüt değil **iç standarttır**: `cases.id` PK olarak kalıcıdır, export sütun sabitliği geliştirme pratiği olarak gözetilir, veri kendi Postgres'imizdedir (`pg_dump` her an alınabilir).
+
+**İkinci tur kararlar (2026-08-05):**
+
+- **Export soft-delete filtresi + cari silme uyarısı uygulandı:** `/export` hattı (liste + tekil + dosya + outbox enqueue) soft-delete edilmiş davanın belgelerini artık eler; UNLINKED (davasız) belgeler bilinçli dahil kalır, dava restore edilirse belgeleri tekrar akar (filtre dinamik — istenen davranış). Aktif (DERDEST/DANIŞ) davası olan cari silinirken silme dialogu kırmızı bilgilendirme gösterir (`GET /api/clients/{id}/case-summary`) — sistem geneli kural gereği ENGELLEME YOK.
+- **tku_no/sistem_no aktarım doğrulama kararı:** ayrı doğrulama ucu AÇILMAYACAK; doğrulama = aktarım script'inin dry-run raporu + doğrudan psql sorguları + `GET /api/cases/{id}` ham dict'inde iki alanın dönmesi.
+- **Retag kuru-çalışma sonucu:** lokal DB'de İdare/Tahkim/Vergi/Danışmanlık türündeki 4.414 dosyanın SIFIRINDA `B4=HUKUK` yanlış bloğu bulundu (bu türler Excel import script'iyle gelmişti, script'in haritası tamdı; UI'dan bu türlerde yeni-format numara hiç üretilmemiş). Toplu retag GEREKSİZ; PROCESS_MAP düzeltmesi ileriye dönük korumadır. Prod'da teyit sorgusu: `SELECT count(*) FROM cases WHERE file_type IN ('İdare','Tahkim','Vergi','Danışmanlık') AND tracking_no LIKE '%.HUKUK.%';`
+- **calendar_events maddesi düştü:** tablo davaya bağlı değildir (`case_id` yok; `models.py` docstring: "Bir davaya bağlı değildir"). Davaya bağlı takvim öğesi `HearingDate`'tir ve onun soft-delete filtresi uygulanmıştır.
+
+**Kanonik kimlik:** `cases.id` sistemin kanonik kimliğidir; hiçbir işlemde değişmez. Export sütun adları/sırası sürümlenir; değişiklikler duyurulmadan yapılmaz.
 
 ---
 
@@ -588,6 +599,7 @@ GS_TIMEOUT_SECONDS, MALLOC_ARENA_MAX=2, SSL_CERT_FILE (AVG TLS için lokal)
 12. **OneDrive + Docker build cache**: requirements değişse bile pip katmanı CACHED geçebilir; `--progress=plain` ile doğrulayın.
 13. E-posta "müvekkil bilgilendirme" çıktısı müvekkile GİTMEZ; sorumlu avukata gider (bilinçli tasarım).
 14. Frontend `VITE_*` değerleri build-time gömülür; env değişince frontend rebuild şarttır (`--build`).
+15. **Soft-delete imha değildir.** KVKK imha yükümlülüğü kapsamında, saklama süresi dolan kayıtlar için kalıcı imha (purge) yolu İLERİKİ FAZ olarak planlanmalıdır (belge binary'lerinin SharePoint'ten silinmesi dahil).
 
 ---
 
@@ -598,7 +610,7 @@ GS_TIMEOUT_SECONDS, MALLOC_ARENA_MAX=2, SSL_CERT_FILE (AVG TLS için lokal)
 **Davalar:** `POST/GET /api/cases` · `GET /api/cases/stats` · `GET /api/cases/search` · `GET /api/cases/client-sequence` · `GET /api/cases/check-duplicate` · `GET/PUT /api/cases/{id}` · `DELETE /api/cases/{id}?reason=` (soft-delete, gerekçe zorunlu) · `PATCH /api/cases/{id}/tracking` · `GET /api/cases/{id}/stage-log` · relations CRUD · hearing-dates CRUD · calendar-events CRUD · `GET /api/calendar-report`
 **Admin (soft-delete):** `GET /api/admin/deleted-records` · `POST /api/admin/restore/{case|client}/{id}` — silinenleri gören TEK yol; require_admin
 **Intake:** `POST /api/case-intake/expand-eml | analyze | merge | commit | apply | keepalive`
-**Müvekkil/taraf:** `POST/GET /api/clients` · `PUT /api/clients/{id}` · `DELETE /api/clients/{id}?reason=` (soft-delete, gerekçe zorunlu) · policies CRUD · `POST /api/parties/check`
+**Müvekkil/taraf:** `POST/GET /api/clients` · `PUT /api/clients/{id}` · `GET /api/clients/{id}/case-summary` (silme uyarısı sayıları) · `DELETE /api/clients/{id}?reason=` (soft-delete, gerekçe zorunlu) · policies CRUD · `POST /api/parties/check`
 **Config:** 13 liste CRUD (`/api/config/{liste}`) · `update/delete/usage/fields/export/reorder/seed/rename` · `GET /api/config/is_admin` · `GET /api/config/required_case_fields`
 **Aktivite:** `GET /api/activity/daily-report|history` · acknowledge · send-emails · admin uçları
 **Export (API-key, iç ağ):** `GET /export/documents[/{id}[/file]]` · `POST /export/outbox/{id}/ack|nack`

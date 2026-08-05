@@ -53,6 +53,11 @@ def enqueue_document(document_id: int) -> Optional[int]:
             return None
         if doc.link_mode == "TEST" or not doc.sharepoint_url:
             return None
+        # Silinmiş davanın belgesi outbox'a hiç girmez; zaten delivered olmuş
+        # satırlara dokunulmaz. Dava restore edilirse belgeleri tekrar akabilir
+        # (export filtresi dinamik) — istenen davranış.
+        if doc.case is not None and doc.case.deleted_at is not None:
+            return None
         allowlist = get_type_allowlist()
         code = _normalize_doctype_code(doc.belge_turu_kodu or "")
         if allowlist and code not in allowlist:

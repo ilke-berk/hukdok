@@ -89,9 +89,13 @@ def _doc_passes_filters(doc, allowlist: set[str], types_filter: set[str]) -> boo
 
     - link_mode != "TEST" (BULGULAR #3; UNLINKED bilinçli olarak dahildir)
     - sharepoint_url dolu olmalı (outbox tabanlı listede zaten garanti, savunma amaçlı)
+    - Davası soft-delete edilmiş belge elenir; case_id=None (UNLINKED) dahil kalır.
+      Filtre dinamiktir: dava restore edilirse belgeleri tekrar akar — istenen davranış.
     - Tür, env allowlist'ine VE istekteki types= filtresine uymalı (normalize edilerek)
     """
     if doc is None or doc.link_mode == "TEST" or not doc.sharepoint_url:
+        return False
+    if doc.case is not None and doc.case.deleted_at is not None:
         return False
     code = _normalize_doctype_code(doc.belge_turu_kodu or "")
     if allowlist and code not in allowlist:
@@ -170,6 +174,8 @@ def get_export_document(document_id: int):
         doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == document_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        if doc.case is not None and doc.case.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
 
         outbox = (
             db.query(models.ExportOutbox)
@@ -218,6 +224,8 @@ def download_export_document(document_id: int):
     try:
         doc = db.query(models.CaseDocument).filter(models.CaseDocument.id == document_id).first()
         if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        if doc.case is not None and doc.case.deleted_at is not None:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         if not doc.sharepoint_url or not doc.stored_filename:
             raise HTTPException(status_code=404, detail="Belge SharePoint'e yüklenmemiş")

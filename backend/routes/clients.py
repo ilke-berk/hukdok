@@ -50,6 +50,37 @@ def get_clients_api(tenant_id: str = Depends(get_current_tenant)):
         db.close()
 
 
+@router.get("/api/clients/{client_id}/case-summary")
+def api_client_case_summary(
+    client_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Cari silme dialogu için dava sayıları — yalnız bilgilendirme, engelleme yok.
+
+    "Aktif" = kapanmamış dosya (DERDEST veya DANIŞ); MAHZEN kapalı sayılır.
+    Silinmiş davalar iki sayıma da girmez. Aynı davada birden çok taraf kaydı
+    olabileceği için dava id'leri distinct sayılır.
+    """
+    db = SessionLocal()
+    try:
+        client = get_tenant_owned_client(db, client_id, tenant_id)
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+
+        base = (
+            db.query(models.Case.id)
+            .join(models.CaseParty, models.CaseParty.case_id == models.Case.id)
+            .filter(models.CaseParty.client_id == client_id)
+            .filter(models.Case.deleted_at.is_(None))
+            .distinct()
+        )
+        total = base.count()
+        active = base.filter(models.Case.status.in_(("DERDEST", "DANIŞ"))).count()
+        return {"active_cases": active, "total_cases": total}
+    finally:
+        db.close()
+
+
 @router.put("/api/clients/{client_id}")
 def api_update_client(
     client_id: int,

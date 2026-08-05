@@ -30,6 +30,11 @@ export interface ClientData {
     buro_vekalet_no?: string;
 }
 
+export interface ClientCaseSummary {
+    active_cases: number;
+    total_cases: number;
+}
+
 export const useClients = () => {
     const { accounts } = useMsal();
     const { authRequest } = useAuthRequest();
@@ -76,6 +81,14 @@ export const useClients = () => {
         onSuccess: invalidate,
     });
 
+    // Silme dialogu bilgilendirmesi: aktif (DERDEST/DANIŞ) + toplam dava sayısı.
+    // Hata durumunda null döner — uyarı gösterilmez, silme engellenmez.
+    const getClientCaseSummary = async (id: number): Promise<ClientCaseSummary | null> => {
+        const res = await authRequest(`/api/clients/${id}/case-summary`, "GET");
+        if (res?.ok) return res.json() as Promise<ClientCaseSummary>;
+        return null;
+    };
+
     const isLoading =
         clientsQ.isLoading ||
         saveClientM.isPending ||
@@ -88,5 +101,6 @@ export const useClients = () => {
         saveClient: (data: ClientData) => saveClientM.mutateAsync(data),
         updateClient: (id: number, data: ClientData) => updateClientM.mutateAsync({ id, data }),
         deleteClient: (id: number, reason: string) => deleteClientM.mutateAsync({ id, reason }),
+        getClientCaseSummary,
     };
 };
