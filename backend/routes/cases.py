@@ -114,6 +114,9 @@ def get_client_case_sequence(
     try:
         # Tercih edilen yol: tracking_no'nun 10 karakterlik isim bloğu (blok2)
         # üzerinden mevcut EN YÜKSEK sıra numarası + 1.
+        # BİLİNÇLİ: soft-delete filtresi YOK — silinen davaların tracking_no
+        # aralığı sayılmaya devam eder ki aynı numara yeniden önerilmesin
+        # (unique kısıt silinenleri de kapsar; öneri 409'a çarpmasın).
         if name_block and len(name_block) == 10:
             rows = (
                 db.query(models.Case.tracking_no)
@@ -248,18 +251,32 @@ def api_update_case(case_id: int, case_data: CaseCreate, tenant_id: str = Depend
 
 
 @router.delete("/api/cases/{case_id}")
-def api_delete_case(case_id: int, tenant_id: str = Depends(get_current_tenant)):
+def api_delete_case(
+    case_id: int,
+    reason: str = Query(..., min_length=3, max_length=500),
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Soft-delete: kayıt DB'de kalır, listelerden gizlenir, admin geri alabilir.
+
+    Gerekçe zorunlu (query param — DELETE body bazı proxy'lerde düşer).
+    get_tenant_owned_case silinmişi görmez → çifte silme doğal 404.
+    """
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
-        query = db.query(models.Case).filter(models.Case.id == case_id)
-        query = query.filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))
-        case = query.first()
+        case = get_tenant_owned_case(db, case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Case not found")
-        db.delete(case)
+        case.deleted_at = func.now()
+        case.deleted_by = (
+            user.get("preferred_username") or user.get("upn") or user.get("email") or "Unknown"
+        )
+        case.delete_reason = reason.strip()
+        # active=False: active.is_(True) filtreleyen sıcak yollar (stats, matcher,
+        # intake bağlamı) ek kod olmadan kapanır; restore'da True'ya döner.
+        case.active = False
         db.commit()
-        return {"status": "success", "message": "Case deleted"}
+        return {"status": "success", "message": "Case archived"}
     except HTTPException:
         raise
     except Exception as e:
@@ -301,11 +318,7 @@ def get_case_relations(
     """Manuel olarak bağlanan ilişkili davaları getirir."""
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
-        case = db.query(models.Case).filter(
-            models.Case.id == case_id,
-            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
-        ).first()
+        case = get_tenant_owned_case(db, case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
 
@@ -320,7 +333,10 @@ def get_case_relations(
             other = (
                 db.query(models.Case)
                 .options(selectinload(models.Case.parties))
-                .filter(models.Case.id == other_id)
+                .filter(
+                    models.Case.id == other_id,
+                    models.Case.deleted_at.is_(None),  # silinmiş dava ilişki listesinde görünmesin
+                )
                 .first()
             )
             if other:
@@ -350,13 +366,11 @@ def add_case_relation(
     """İki dava arasında manuel bağlantı oluştur."""
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
         if data.target_case_id == case_id:
             raise HTTPException(status_code=400, detail="Dava kendisiyle ilişkilendirilemez")
 
-        tenant_filter = or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
-        source = db.query(models.Case).filter(models.Case.id == case_id, tenant_filter).first()
-        target = db.query(models.Case).filter(models.Case.id == data.target_case_id, tenant_filter).first()
+        source = get_tenant_owned_case(db, case_id, tenant_id)
+        target = get_tenant_owned_case(db, data.target_case_id, tenant_id)
         if not source or not target:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
 
@@ -453,11 +467,7 @@ def add_hearing_date(
     """Duruşma zaptından çıkarılan sonraki duruşma tarihini kaydet."""
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
-        case = db.query(models.Case).filter(
-            models.Case.id == case_id,
-            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
-        ).first()
+        case = get_tenant_owned_case(db, case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
 
@@ -499,6 +509,7 @@ def get_hearing_dates(
         rows = (
             q.outerjoin(models.Case, models.HearingDate.case_id == models.Case.id)
             .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))
+            .filter(models.Case.deleted_at.is_(None))  # silinen davanın duruşmaları ajandada kalmasın
             .add_columns(models.Case.esas_no, models.Case.court)
             .order_by(models.HearingDate.hearing_date)
             .all()
@@ -714,6 +725,7 @@ def get_incomplete_tasks(tenant_id: str = Depends(get_current_tenant)):
         clients = (
             db.query(models.Client)
             .filter(models.Client.active.is_(True))
+            .filter(models.Client.deleted_at.is_(None))
             .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.updated_at.desc())
             .limit(50)

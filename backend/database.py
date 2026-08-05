@@ -370,6 +370,41 @@ _MIGRATIONS = [
         "changed_by": "VARCHAR(200)",
         "source":     "VARCHAR(300)",
     }),
+
+    # 21. SOFT-DELETE (dava + müvekkil) — 2026-08-05 büro mutabakatı:
+    # silme kaydı korur (deleted_at/by/reason), listelerden gizler, admin geri alır.
+    # Partial index: canlı sorgular deleted_at IS NULL filtresinden index beklemez;
+    # admin "Silinenler" listesi IS NOT NULL tarar — index minik kalır.
+    ("columns", "cases", {
+        "deleted_at": ("TIMESTAMPTZ", [
+            "CREATE INDEX IF NOT EXISTS idx_cases_deleted_at ON cases(deleted_at) WHERE deleted_at IS NOT NULL",
+        ]),
+        "deleted_by":    "VARCHAR(200)",
+        "delete_reason": "TEXT",
+    }),
+    ("columns", "clients", {
+        "deleted_at": ("TIMESTAMPTZ", [
+            "CREATE INDEX IF NOT EXISTS idx_clients_deleted_at ON clients(deleted_at) WHERE deleted_at IS NOT NULL",
+        ]),
+        "deleted_by":    "VARCHAR(200)",
+        "delete_reason": "TEXT",
+    }),
+
+    # 22. TKU NO + SISTEM NO — Full_Rapor_TKU aktarım hazırlığı (2026-08-05):
+    # tku_no olay grup anahtarı (unique değil), sistem_no eski sistem kaydı (unique).
+    # Yalnız DB + arama; UI gösterimi yok. PG'de unique index çoklu NULL'a izin verir.
+    ("columns", "cases", {
+        "tku_no":    ("VARCHAR(100)", ["CREATE INDEX IF NOT EXISTS idx_cases_tku_no ON cases(tku_no)"]),
+        "sistem_no": ("VARCHAR(100)", ["CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_sistem_no ON cases(sistem_no)"]),
+    }),
+
+    # 23. HÜKMEDILEN TUTARLAR — büro mutabakatı (2026-08-05): karar bloğuna
+    # yapısal alanlar; NULL = girilmedi (default 0 bilinçli YOK).
+    ("columns", "cases", {
+        "hukmedilen_maddi":  "NUMERIC(20,2)",
+        "hukmedilen_manevi": "NUMERIC(20,2)",
+        "hukmedilen_toplam": "NUMERIC(20,2)",
+    }),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
@@ -384,6 +419,8 @@ _TRGM_INDEXES = {
     "idx_cases_subject_trgm":     ("cases", "subject"),
     "idx_cases_resp_lawyer_trgm": ("cases", "responsible_lawyer_name"),
     "idx_cases_uyap_lawyer_trgm": ("cases", "uyap_lawyer_name"),
+    "idx_cases_tku_no_trgm":      ("cases", "tku_no"),
+    "idx_cases_sistem_no_trgm":   ("cases", "sistem_no"),
     # ilişkili tablolar — taraf / avukat adları
     "idx_case_parties_name_trgm": ("case_parties", "name"),
     "idx_case_lawyers_name_trgm": ("case_lawyers", "name"),
@@ -578,7 +615,10 @@ def get_normalized_clients() -> Dict[str, Any]:
 
     db = SessionLocal()
     try:
-        clients = db.query(Client).filter(Client.active.is_(True)).all()
+        clients = db.query(Client).filter(
+            Client.active.is_(True),
+            Client.deleted_at.is_(None),
+        ).all()
         normalized_map: Dict[str, list] = {}
         for c in clients:
             raw_name = c.name

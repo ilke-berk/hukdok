@@ -393,6 +393,10 @@ class CaseTrackingUpdate(BaseModel):
     karar_no: Optional[str] = None
     karar_teblig_tarihi: Optional[date] = None
     karar_aciklama: Optional[str] = None
+    # Hükmedilen tutarlar — None gönderilen alan silinir (exclude_unset semantiği)
+    hukmedilen_maddi: Optional[float] = None
+    hukmedilen_manevi: Optional[float] = None
+    hukmedilen_toplam: Optional[float] = None
     # İstinaf
     istinaf_basvuru_tarihi: Optional[date] = None
     istinaf_karar_durumu: Optional[str] = None

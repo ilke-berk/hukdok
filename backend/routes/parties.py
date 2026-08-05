@@ -32,6 +32,7 @@ def api_check_parties(req: PartyCheckRequest, tenant_id: str = Depends(get_curre
                     models.Client.contact_type,
                 )
                 .filter(models.Client.active.is_(True))
+                .filter(models.Client.deleted_at.is_(None))
                 .filter(tenant_filter_clause(models.Client, tenant_id))
                 .all()
             )
@@ -54,6 +55,7 @@ def api_check_parties(req: PartyCheckRequest, tenant_id: str = Depends(get_curre
                 )
                 .join(models.Case, models.CaseParty.case_id == models.Case.id)
                 .filter(tenant_filter_clause(models.Case, tenant_id))
+                .filter(models.Case.deleted_at.is_(None))
                 .all()
             )
         ]

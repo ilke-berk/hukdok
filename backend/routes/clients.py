@@ -1,6 +1,6 @@
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth_helpers import get_tenant_owned_client, tenant_filter_clause
 from dependencies import get_current_tenant, get_current_user
@@ -40,6 +40,7 @@ def get_clients_api(tenant_id: str = Depends(get_current_tenant)):
         clients = (
             db.query(models.Client)
             .filter(models.Client.active.is_(True))
+            .filter(models.Client.deleted_at.is_(None))
             .filter(tenant_filter_clause(models.Client, tenant_id))
             .order_by(models.Client.name.asc())
             .all()
@@ -199,22 +200,31 @@ def api_delete_client_policy(
 @router.delete("/api/clients/{client_id}")
 def api_delete_client(
     client_id: int,
+    reason: str = Query(..., min_length=3, max_length=500),
     tenant_id: str = Depends(get_current_tenant),
     user: dict = Depends(get_current_user),
 ):
+    """Soft-delete: kayıt DB'de kalır, listelerden gizlenir, admin geri alabilir.
+
+    CaseParty.client_id BİLİNÇLİ NULL'lanmaz (eski hard-delete davranışıydı) —
+    bağlar kopmadığı için restore sıfır maliyetli; taraf görünümleri zaten
+    `p.client.name if p.client else p.name` ile çalışıyor.
+    Client.active'e DOKUNULMAZ (kullanıcı-düzenlenebilir "pasif cari" alanı).
+    """
     db = SessionLocal()
     try:
         client = get_tenant_owned_client(db, client_id, tenant_id)
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
 
-        db.query(models.CaseParty).filter(models.CaseParty.client_id == client_id).update(
-            {"client_id": None}, synchronize_session=False
+        from sqlalchemy import func
+        client.deleted_at = func.now()
+        client.deleted_by = (
+            user.get("preferred_username") or user.get("upn") or user.get("email") or "Unknown"
         )
-
-        db.delete(client)
+        client.delete_reason = reason.strip()
         db.commit()
-        return {"status": "success", "message": "Client deleted"}
+        return {"status": "success", "message": "Client archived"}
     except HTTPException:
         raise
     except Exception as e:

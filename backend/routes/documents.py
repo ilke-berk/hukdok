@@ -93,11 +93,8 @@ def get_case_documents(
     """
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
-        case = db.query(models.Case).filter(
-            models.Case.id == case_id,
-            or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None))
-        ).first()
+        from auth_helpers import get_tenant_owned_case
+        case = get_tenant_owned_case(db, case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
 
@@ -160,6 +157,8 @@ def get_all_documents(
             db.query(models.CaseDocument)
             .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
             .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None), models.CaseDocument.case_id.is_(None)))
+            # Soft-delete: silinmiş davanın belgeleri listelenmez; UNLINKED belgeler görünür
+            .filter(or_(models.Case.deleted_at.is_(None), models.CaseDocument.case_id.is_(None)))
         )
         if link_mode:
             q = q.filter(models.CaseDocument.link_mode == link_mode.upper())

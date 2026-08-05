@@ -508,8 +508,8 @@ const CaseDetails = () => {
 
                     {/* Overview Tab */}
                     <TabsContent value="overview" className="space-y-4">
-                        {/* Dosya / Hasar Bilgileri */}
-                        {(caseData.hasar_dosya_no || caseData.hukuk_no || caseData.klasor_no_2 || caseData.atama_tarihi || caseData.judicial_unit || caseData.notes) && (
+                        {/* Dosya / Hasar Bilgileri — Kayıt No her davada var, kart hep görünür */}
+                        {(
                             <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-lg flex items-center gap-2">
@@ -520,6 +520,11 @@ const CaseDetails = () => {
                                 </CardHeader>
                                 <CardContent>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {/* Kısa, dikte edilebilir kalıcı kimlik (cases.id) — 2026-08-05 büro mutabakatı */}
+                                        <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
+                                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Kayıt No</span>
+                                            <span className="font-mono font-medium">{caseData.id}</span>
+                                        </div>
                                         {caseData.hasar_dosya_no && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
                                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Hasar Dosya No</span>
@@ -576,6 +581,25 @@ const CaseDetails = () => {
                                         <span className="text-muted-foreground">Manevi Tazminat</span>
                                         <span className="font-semibold text-lg">{formatCurrency(caseData.manevi_tazminat || 0)}</span>
                                     </div>
+                                    {/* Hükmedilen tutarlar — null = girilmedi, satır gizli */}
+                                    {caseData.hukmedilen_maddi != null && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">Hükmedilen Maddi</span>
+                                            <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_maddi as number)}</span>
+                                        </div>
+                                    )}
+                                    {caseData.hukmedilen_manevi != null && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">Hükmedilen Manevi</span>
+                                            <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_manevi as number)}</span>
+                                        </div>
+                                    )}
+                                    {caseData.hukmedilen_toplam != null && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">Hükmedilen Toplam</span>
+                                            <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_toplam as number)}</span>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
 

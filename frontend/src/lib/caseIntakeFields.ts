@@ -42,7 +42,11 @@ export const INTAKE_FIELDS: IntakeFieldDef[] = [
   // Alt Tür: NewCase ile aynı — specialties listesi (etiket yanıltıcı olsa da
   // eski veride sub_type uzmanlık tutar; veri tutarlılığı için aynı kaynak)
   { key: "sub_type",                                            priorsKey: "sub_type",       label: "Dosya Alt Türü", widget: "combobox", enabled: true, section: "Dosya Kimliği" },
-  { key: "sub_type_extra",          draftKey: "sub_type_extra", label: "Uzmanlık / Tıbbi İşlem", widget: "combobox", enabled: true, section: "Dosya Kimliği" },
+  // Geçici gizli (2026-08-04): Ek Alt Kırılım dropdown'u güncellenecek, sonra
+  // kullanıma açılacak (NewCase'teki blok ve required_fields.py ile birlikte
+  // geri al). enabled:false → state kurulmaz; enrich modunda alan davaya
+  // dokunmaz, kayıtlı değer korunur.
+  { key: "sub_type_extra",          draftKey: "sub_type_extra", label: "Uzmanlık / Tıbbi İşlem", widget: "combobox", enabled: false, section: "Dosya Kimliği" },
   { key: "subject",                 draftKey: "subject",        priorsKey: "subject",        label: "Dava Konusu", widget: "combobox", enabled: true, section: "Dava Bilgileri", wide: true },
   { key: "opening_date",            draftKey: "opening_date",   label: "Dava Açılış Tarihi", widget: "date",     enabled: true, section: "Dava Bilgileri" },
   { key: "maddi_tazminat",          draftKey: "maddi_tazminat", label: "Maddi Tazminat (₺)", widget: "money",    enabled: true, section: "Dava Bilgileri" },

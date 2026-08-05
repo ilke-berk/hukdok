@@ -17,11 +17,16 @@ def tenant_filter_clause(model, tenant_id: str):
 
 
 def get_tenant_owned_case(db: Session, case_id: int, tenant_id: str):
-    """Davayı yalnızca istek sahibi tenant'a (veya legacy NULL'a) ait ise döndürür."""
+    """Davayı yalnızca istek sahibi tenant'a (veya legacy NULL'a) ait ise döndürür.
+
+    Soft-delete edilmiş (deleted_at dolu) davalar hiçbir kullanıcı yoluna dönmez;
+    yalnız admin uçları (routes/admin.py) silinenleri doğrudan sorgular.
+    """
     return (
         db.query(models.Case)
         .filter(
             models.Case.id == case_id,
+            models.Case.deleted_at.is_(None),
             tenant_filter_clause(models.Case, tenant_id),
         )
         .first()
@@ -35,6 +40,7 @@ def get_tenant_owned_hearing(db: Session, hearing_id: int, tenant_id: str):
         .join(models.Case, models.HearingDate.case_id == models.Case.id)
         .filter(
             models.HearingDate.id == hearing_id,
+            models.Case.deleted_at.is_(None),
             tenant_filter_clause(models.Case, tenant_id),
         )
         .first()
@@ -63,6 +69,12 @@ def get_tenant_owned_document(
                 models.Case.tenant_id.is_(None),
                 models.CaseDocument.case_id.is_(None),
             ),
+            # Soft-delete: silinmiş davanın belgeleri gizli; UNLINKED (case_id NULL)
+            # belgeler çalışmaya devam eder.
+            or_(
+                models.Case.deleted_at.is_(None),
+                models.CaseDocument.case_id.is_(None),
+            ),
         )
         .first()
     )
@@ -87,6 +99,7 @@ def get_tenant_owned_client(db: Session, client_id: int, tenant_id: str):
         db.query(models.Client)
         .filter(
             models.Client.id == client_id,
+            models.Client.deleted_at.is_(None),
             tenant_filter_clause(models.Client, tenant_id),
         )
         .first()

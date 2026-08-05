@@ -4,7 +4,7 @@ import { useConfig } from "@/hooks/useConfig";
 import {
     STAGES, STAGE_KEYS, STAGE_FIELDS,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
-    rebaseDraft, buildPatch, commitDraft,
+    rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -339,6 +339,14 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                         <input type="text"
                                             value={fieldValue(f.key)}
                                             onChange={e => setField(f.key, e.target.value)}
+                                            className={inputCls} />
+                                    )}
+                                    {f.type === "money" && (
+                                        <input type="text" inputMode="decimal"
+                                            placeholder="150000 veya 1.500,25"
+                                            value={fieldValue(f.key)}
+                                            onChange={e => setField(f.key, e.target.value)}
+                                            onBlur={e => setField(f.key, normalizeMoney(e.target.value))}
                                             className={inputCls} />
                                     )}
                                     {f.type === "select" && (

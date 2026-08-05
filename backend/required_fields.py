@@ -16,7 +16,10 @@ REQUIRED_CASE_FIELDS = [
     {"field": "file_type", "label": "Yargı Türü"},
     {"field": "judicial_unit", "label": "Yargı Birimi"},
     {"field": "sub_type", "label": "Dosya Alt Türü"},
-    {"field": "sub_type_extra", "label": "Uzmanlık / Tıbbi İşlem"},
+    # Geçici olarak listeden çıkarıldı (2026-08-04): Ek Alt Kırılım alanı UI'da
+    # gizlendi (dropdown güncellenecek); görünmeyen alan "eksik" uyarısı
+    # üretmesin. Alan geri açılınca bu satırı da geri al.
+    # {"field": "sub_type_extra", "label": "Uzmanlık / Tıbbi İşlem"},
     {"field": "opening_date", "label": "Dava Açılış Tarihi"},
     {"field": "subject", "label": "Dava Konusu"},
     {"field": "responsible_lawyer_name", "label": "Sorumlu Avukat"},

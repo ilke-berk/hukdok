@@ -32,11 +32,23 @@ class Case(Base):
     active = Column(Boolean, default=True)
     tenant_id = Column(String, index=True, nullable=True)  # Azure AD tenant (tid)
 
+    # Soft-delete: deleted_at tek gerçek kaynak; silmede active=False da yazılır
+    # (restore'da True). Kayıt DB'de kalır, admin panelinden geri alınır.
+    deleted_at    = Column(DateTime(timezone=True), nullable=True)
+    deleted_by    = Column(String(200), nullable=True)
+    delete_reason = Column(String, nullable=True)
+
     # Excel import alanları (BIRLESIK_SONUC_v5)
     klasor_no_2    = Column(String(2000), nullable=True)  # Eski sistem no — gizli, aranabilir
     atama_tarihi   = Column(Date,   nullable=True)  # Atama Tarihi
     hasar_dosya_no = Column(String, nullable=True)  # Hasar Dosya Numarası
     hukuk_no       = Column(String, nullable=True)  # Hukuk Numarası
+
+    # Eski sistem kimlikleri (Full_Rapor_TKU aktarımı) — yalnız DB + arama, UI'da gösterilmez.
+    # tku_no: olay/vaka grup anahtarı (TKU-784 gibi, unique DEĞİL — aynı olayın föyleri paylaşır)
+    # sistem_no: Micro Kolay Ofis kayıt kimliği (SSTMN-9425 gibi, unique)
+    tku_no    = Column(String(100), index=True, nullable=True)
+    sistem_no = Column(String(100), unique=True, index=True, nullable=True)
 
     # Takip alanları
     case_stage = Column(String(50), nullable=True)          # DERDEST | KARAR | ISTINAF | TEMYIZ | KARAR_DUZELTME | KESINLESME | INFAZ | KAPALI
@@ -49,6 +61,11 @@ class Case(Base):
     karar_no = Column(String(50), nullable=True)
     karar_teblig_tarihi = Column(Date, nullable=True)
     karar_aciklama = Column(String, nullable=True)
+    # Hükmedilen tutarlar (2026-08-05 büro mutabakatı) — NULL = girilmedi (0'dan farklı),
+    # bu yüzden default YOK. Toplam otomatik hesaplanmaz, bağımsız alan.
+    hukmedilen_maddi  = Column(Numeric(precision=20, scale=2), nullable=True)
+    hukmedilen_manevi = Column(Numeric(precision=20, scale=2), nullable=True)
+    hukmedilen_toplam = Column(Numeric(precision=20, scale=2), nullable=True)
 
     # İstinaf
     istinaf_basvuru_tarihi = Column(Date, nullable=True)
@@ -196,6 +213,11 @@ class Client(Base):
     source_ids = Column(String) # JSON or Comma-separated list of SharePoint IDs
     active = Column(Boolean, default=True)
     tenant_id = Column(String, index=True, nullable=True)  # Azure AD tenant (tid). NULL = paylaşılan legacy
+
+    # Soft-delete (active'e DOKUNULMAZ — active kullanıcı-düzenlenebilir "pasif cari" alanı)
+    deleted_at    = Column(DateTime(timezone=True), nullable=True)
+    deleted_by    = Column(String(200), nullable=True)
+    delete_reason = Column(String, nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
     
     # New Fields for Client Management

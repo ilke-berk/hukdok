@@ -45,6 +45,27 @@ def test_judicial_unit_column_registered():
     assert "judicial_unit" in set(_column_ops("cases"))
 
 
+def test_soft_delete_columns_registered():
+    # 2026-08-05 paketi: soft-delete (dava + müvekkil)
+    case_cols = set(_column_ops("cases"))
+    client_cols = set(_column_ops("clients"))
+    for col in ("deleted_at", "deleted_by", "delete_reason"):
+        assert col in case_cols, f"cases.{col} migration'da kayıtlı değil"
+        assert col in client_cols, f"clients.{col} migration'da kayıtlı değil"
+
+
+def test_tku_sistem_no_columns_registered():
+    case_cols = set(_column_ops("cases"))
+    assert "tku_no" in case_cols
+    assert "sistem_no" in case_cols
+
+
+def test_hukmedilen_columns_registered():
+    case_cols = set(_column_ops("cases"))
+    for col in ("hukmedilen_maddi", "hukmedilen_manevi", "hukmedilen_toplam"):
+        assert col in case_cols, f"cases.{col} migration'da kayıtlı değil"
+
+
 def test_migration_ops_have_known_kinds():
     known = {"rename", "columns", "table", "index", "drop"}
     assert {op[0] for op in _MIGRATIONS} <= known

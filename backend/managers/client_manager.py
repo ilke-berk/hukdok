@@ -75,7 +75,12 @@ def add_client(data: dict, tenant_id: str = None):
             return False
 
         # Mevcut müvekkil (aynı isimde) varsa: yalnızca aynı tenant'a veya legacy NULL'a aitse güncelle.
-        existing_q = db.query(models.Client).filter(models.Client.name.ilike(name))
+        # Soft-delete edilmiş kayıt UPSERT hedefi OLMAZ — aynı isimle yeni kayıt açılır
+        # (silinen kayıt sessizce diriltilmesin; geri alma yalnız admin panelinden).
+        existing_q = db.query(models.Client).filter(
+            models.Client.name.ilike(name),
+            models.Client.deleted_at.is_(None),
+        )
         if tenant_id:
             from sqlalchemy import or_
             existing_q = existing_q.filter(

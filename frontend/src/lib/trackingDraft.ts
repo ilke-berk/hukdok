@@ -9,9 +9,29 @@
 export interface FieldDef {
     label: string;
     key: string;
-    type: "date" | "text" | "select" | "textarea";
+    type: "date" | "text" | "select" | "textarea" | "money";
     options?: string[];
     wide?: boolean; // 2 kolon kaplar
+}
+
+/** Para girişini backend'in kabul ettiği düz sayı string'ine çevirir.
+ *  "1.500,25" → "1500.25" · "150.000" → "150000" · "1500.25" → "1500.25".
+ *  Geçersiz girdi "" döner (norm → null → alan silinir). Pydantic Optional[float]
+ *  yalnız düz "1500.25" biçimini coerce eder; TR biçimi 422 üretirdi. */
+export function normalizeMoney(raw: string): string {
+    const v = raw.replace(/[₺\s]|TL/gi, "").trim();
+    if (!v) return "";
+    let out: string;
+    if (v.includes(",")) {
+        // TR biçimi: nokta binlik, virgül ondalık
+        out = v.replace(/\./g, "").replace(",", ".");
+    } else if (/^\d{1,3}(\.\d{3})+$/.test(v)) {
+        // Yalnız binlik noktalar: "150.000" → "150000"
+        out = v.replace(/\./g, "");
+    } else {
+        out = v;
+    }
+    return /^\d+(\.\d+)?$/.test(out) ? out : "";
 }
 
 export const STAGES = [
@@ -32,6 +52,9 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
         { label: "Karar Türü",          key: "karar_turu",          type: "select", options: ["KABUL","RED","KISMI_KABUL","FERAGAT","UZLASMA","DUSME"] },
         { label: "Karar Lehine",        key: "karar_lehine",        type: "select", options: ["LEHINE","ALEYHINE","KISMI"] },
         { label: "Karar No",            key: "karar_no",            type: "text" },
+        { label: "Hükmedilen Maddi",    key: "hukmedilen_maddi",    type: "money" },
+        { label: "Hükmedilen Manevi",   key: "hukmedilen_manevi",   type: "money" },
+        { label: "Hükmedilen Toplam",   key: "hukmedilen_toplam",   type: "money" },
         { label: "Açıklama",            key: "karar_aciklama",      type: "textarea", wide: true },
     ],
     ISTINAF: [

@@ -114,7 +114,10 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
         return False
     try:
         db = SessionLocal()
-        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            models.Case.deleted_at.is_(None),  # silinmiş davanın durumu güncellenmesin
+        ).first()
         if not case:
             db.close()
             return False
@@ -158,7 +161,10 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
     updated_fields = {}
     try:
         db = SessionLocal()
-        case = db.query(models.Case).filter(models.Case.id == case_id).first()
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            models.Case.deleted_at.is_(None),  # silinmiş dava zenginleştirilmesin
+        ).first()
         if not case:
             return {}
 

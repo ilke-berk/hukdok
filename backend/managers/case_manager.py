@@ -32,9 +32,13 @@ def _parse_date_field(value, field_name: str):
 
 
 def _apply_tenant_filter(query, tenant_id: Optional[str]):
-    """Sorguya tenant izolasyon filtresi uygular.
+    """Sorguya tenant izolasyon + soft-delete filtresi uygular.
     tenant_id'si NULL olan kayıtlar (eski/migrasyon öncesi) her tenant'a görünür.
+    Soft-delete edilmiş davalar (deleted_at dolu) hiçbir case_manager yoluna
+    dönmez — case_manager tamamen kullanıcı-yüzüdür; silinenleri yalnız
+    routes/admin.py doğrudan sorgular.
     """
+    query = query.filter(models.Case.deleted_at.is_(None))
     if tenant_id:
         from sqlalchemy import or_
         return query.filter(
@@ -108,6 +112,8 @@ def get_case(case_id: int, tenant_id: str = None):
             "hasar_dosya_no": item.hasar_dosya_no,
             "hukuk_no": item.hukuk_no,
             "klasor_no_2": item.klasor_no_2,
+            "tku_no": item.tku_no,
+            "sistem_no": item.sistem_no,
             "notes": item.notes,
             "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
             "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
@@ -122,6 +128,10 @@ def get_case(case_id: int, tenant_id: str = None):
             "karar_no": item.karar_no,
             "karar_teblig_tarihi": item.karar_teblig_tarihi.isoformat() if item.karar_teblig_tarihi else None,
             "karar_aciklama": item.karar_aciklama,
+            # NULL = girilmedi (0'dan farklı) — float(None) patlar, is not None şart
+            "hukmedilen_maddi": float(item.hukmedilen_maddi) if item.hukmedilen_maddi is not None else None,
+            "hukmedilen_manevi": float(item.hukmedilen_manevi) if item.hukmedilen_manevi is not None else None,
+            "hukmedilen_toplam": float(item.hukmedilen_toplam) if item.hukmedilen_toplam is not None else None,
             "istinaf_basvuru_tarihi": item.istinaf_basvuru_tarihi.isoformat() if item.istinaf_basvuru_tarihi else None,
             "istinaf_karar_durumu": item.istinaf_karar_durumu,
             "istinaf_karar_tarihi": item.istinaf_karar_tarihi.isoformat() if item.istinaf_karar_tarihi else None,
@@ -290,6 +300,8 @@ def get_cases(
                         models.Case.esas_no.ilike(search_pattern),
                         models.Case.tracking_no.ilike(search_pattern),
                         models.Case.klasor_no_2.ilike(search_pattern),
+                        models.Case.tku_no.ilike(search_pattern),      # Eski sistem olay no
+                        models.Case.sistem_no.ilike(search_pattern),   # Eski sistem kayıt no
                         models.Case.court.ilike(contains),
                         models.Case.subject.ilike(contains),
                         models.Case.responsible_lawyer_name.ilike(contains),
@@ -303,6 +315,8 @@ def get_cases(
                         models.Case.tracking_no.ilike(search_pattern),
                         models.Case.esas_no.ilike(search_pattern),
                         models.Case.klasor_no_2.ilike(search_pattern),  # Eski sistem no
+                        models.Case.tku_no.ilike(search_pattern),       # Eski sistem olay no (TKU-784)
+                        models.Case.sistem_no.ilike(search_pattern),    # Eski sistem kayıt no (SSTMN-9425)
                         models.Case.court.ilike(search_pattern),
                         models.Case.subject.ilike(search_pattern),
                         models.Case.notes.ilike(search_pattern),
@@ -330,9 +344,13 @@ def get_cases(
                 (models.Case.esas_no.ilike(raw), 1),
                 (models.Case.tracking_no.ilike(raw), 1),
                 (models.Case.klasor_no_2.ilike(raw), 1),
+                (models.Case.tku_no.ilike(raw), 1),
+                (models.Case.sistem_no.ilike(raw), 1),
                 (models.Case.esas_no.ilike(f"{raw}%"), 2),
                 (models.Case.tracking_no.ilike(f"{raw}%"), 2),
                 (models.Case.klasor_no_2.ilike(f"{raw}%"), 2),
+                (models.Case.tku_no.ilike(f"{raw}%"), 2),
+                (models.Case.sistem_no.ilike(f"{raw}%"), 2),
                 else_=3,
             )
             # id tiebreaker: updated_at unique değil — eşitlikte sayfalar arası
@@ -430,7 +448,8 @@ def _resolve_party_client_id(db, p: dict):
     name = p.get("name")
     if p.get("party_type") == "CLIENT" and name and not client_id:
         existing_client = db.query(models.Client).filter(
-            models.Client.name.ilike(name.strip())
+            models.Client.name.ilike(name.strip()),
+            models.Client.deleted_at.is_(None),  # silinmiş cariye oto-bağlanma
         ).first()
         if existing_client:
             client_id = existing_client.id
@@ -830,11 +849,13 @@ def add_case(data: dict, tenant_id: str = None):
                 tc = (p.get("tc_no") or "").strip()
                 if tc:
                     existing_client = db.query(models.Client).filter(
-                        models.Client.tc_no == tc
+                        models.Client.tc_no == tc,
+                        models.Client.deleted_at.is_(None),  # silinmiş cariye oto-bağlanma
                     ).first()
                 if not existing_client:
                     existing_client = db.query(models.Client).filter(
-                        models.Client.name.ilike(name.strip())
+                        models.Client.name.ilike(name.strip()),
+                        models.Client.deleted_at.is_(None),
                     ).first()
                 if existing_client:
                     client_id = existing_client.id
@@ -914,6 +935,7 @@ TRACKING_FIELDS = [
     # Yerel Karar
     "karar_tarihi", "karar_turu", "karar_lehine",
     "karar_no", "karar_teblig_tarihi", "karar_aciklama",
+    "hukmedilen_maddi", "hukmedilen_manevi", "hukmedilen_toplam",
     # İstinaf
     "istinaf_basvuru_tarihi", "istinaf_karar_durumu", "istinaf_karar_tarihi",
     "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",

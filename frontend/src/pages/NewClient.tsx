@@ -156,12 +156,16 @@ const NewClient = () => {
         }
     }, [editModeClient, clients, isLoading]);
 
+    // Soft-delete gerekçesi (zorunlu, min 3 karakter) — backend Query kısıtıyla birebir
+    const [deleteReason, setDeleteReason] = useState("");
+
     const handleDelete = async () => {
         if (!isEditMode) return;
+        if (deleteReason.trim().length < 3) return;
 
-        const success = await deleteClient(editModeClient.id);
+        const success = await deleteClient(editModeClient.id, deleteReason.trim());
         if (success) {
-            toast.success("Silindi", { description: `${typeLabel} başarıyla silindi.` });
+            toast.success("Arşive taşındı", { description: `${typeLabel} listelerden kaldırıldı; yönetici panelinden geri alınabilir.` });
             navigate(-1);
         } else {
             toast.error("Hata", { description: "Silme işlemi başarısız oldu." });
@@ -760,12 +764,23 @@ const NewClient = () => {
                                                         Emin misiniz?
                                                     </AlertDialogTitle>
                                                     <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
-                                                        Bu işlem <strong className="text-[var(--fg)]">geri alınamaz.</strong> Bu {typeLabel.toLowerCase()} kalıcı olarak sunuculardan silinecektir.
+                                                        Bu {typeLabel.toLowerCase()} listelerden kaldırılır ve arşive taşınır; <strong className="text-[var(--fg)]">yönetici panelinden geri alınabilir.</strong> Gerekçe zorunludur ve kayıt altına alınır.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
+                                                <textarea
+                                                    rows={2}
+                                                    value={deleteReason}
+                                                    onChange={e => setDeleteReason(e.target.value)}
+                                                    placeholder="Silme gerekçesi (zorunlu)…"
+                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                                                />
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={handleDelete} className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px]">Sil</AlertDialogAction>
+                                                    <AlertDialogAction
+                                                        onClick={handleDelete}
+                                                        disabled={deleteReason.trim().length < 3}
+                                                        className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                                                    >Sil</AlertDialogAction>
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>
                                         </AlertDialog>

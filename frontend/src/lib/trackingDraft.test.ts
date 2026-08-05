@@ -9,6 +9,7 @@ import {
     rebaseDraft,
     buildPatch,
     commitDraft,
+    normalizeMoney,
 } from "./trackingDraft";
 
 const caseData = {
@@ -34,6 +35,43 @@ describe("initTrackingDraft", () => {
 
     it("case_stage taslağın parçası DEĞİL (aşama geçişi ayrı yol)", () => {
         expect(TRACKING_DRAFT_KEYS).not.toContain("case_stage");
+    });
+
+    it("hükmedilen tutarlar taslağın parçası (2026-08-05)", () => {
+        expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_maddi");
+        expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_manevi");
+        expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_toplam");
+    });
+});
+
+describe("normalizeMoney", () => {
+    it("TR biçimi düz sayıya çevrilir (Pydantic float coercion uyumu)", () => {
+        expect(normalizeMoney("1.500,25")).toBe("1500.25");
+        expect(normalizeMoney("150.000")).toBe("150000");
+        expect(normalizeMoney("1.234.567,89")).toBe("1234567.89");
+    });
+
+    it("EN/düz biçim olduğu gibi kalır", () => {
+        expect(normalizeMoney("1500.25")).toBe("1500.25");
+        expect(normalizeMoney("150000")).toBe("150000");
+    });
+
+    it("para birimi ve boşluklar temizlenir", () => {
+        expect(normalizeMoney("₺ 150.000")).toBe("150000");
+        expect(normalizeMoney("1.500,25 TL")).toBe("1500.25");
+    });
+
+    it("geçersiz girdi boş döner (alan silinir, 422 üretmez)", () => {
+        expect(normalizeMoney("abc")).toBe("");
+        expect(normalizeMoney("")).toBe("");
+        expect(normalizeMoney("1,2,3")).toBe("");
+    });
+
+    it("money alanı dirty/patch akışına girer", () => {
+        let d = initTrackingDraft(caseData);
+        d = setDraftField(d, "hukmedilen_maddi", normalizeMoney("1.500,25"));
+        expect(dirtyKeys(d)).toEqual(["hukmedilen_maddi"]);
+        expect(buildPatch(d)).toEqual({ hukmedilen_maddi: "1500.25" });
     });
 });
 

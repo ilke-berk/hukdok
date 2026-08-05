@@ -303,9 +303,11 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
 # --- ROUTES ---
-from routes import config, clients, cases, debug, documents, processing, activity, export, parties, case_intake
+from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake
 
 app.include_router(config.router)
+# Soft-delete geri alma (yalnız admin) — silinenleri gören tek yol
+app.include_router(admin.router)
 # Bellek teşhisi (yalnız admin) — 2026-07-29 OOM incelemesi
 app.include_router(debug.router)
 app.include_router(clients.router)

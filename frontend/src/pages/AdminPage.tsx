@@ -751,6 +751,7 @@ const AdminPage = () => {
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="cities">Şehirler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="activity_test">Aktivite Raporu Testi</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="deleted">Silinenler</TabsTrigger>
                     </TabsList>
 
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1324,6 +1325,9 @@ const AdminPage = () => {
                     {/* Aktivite Raporu Test Paneli — DnD dışında */}
                     <ActivityTestPanel />
 
+                    {/* Soft-delete edilen kayıtlar + geri alma — DnD dışında */}
+                    <DeletedRecordsPanel />
+
                 </Tabs>
             </div>
         </div>
@@ -1636,6 +1640,135 @@ function ActivityTestPanel() {
                     readOnly
                 />
             )}
+        </TabsContent>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Silinenler Paneli — soft-delete edilen dava/müvekkil kayıtları + geri alma
+// ---------------------------------------------------------------------------
+function DeletedRecordsPanel() {
+    interface DeletedCaseRow {
+        id: number; tracking_no: string; esas_no?: string | null; court?: string | null;
+        deleted_at?: string | null; deleted_by?: string | null; delete_reason?: string | null;
+    }
+    interface DeletedClientRow {
+        id: number; name: string; cari_kod?: string | null;
+        deleted_at?: string | null; deleted_by?: string | null; delete_reason?: string | null;
+    }
+    const [data, setData] = useState<{ cases: DeletedCaseRow[]; clients: DeletedClientRow[] }>({ cases: [], clients: [] });
+    const [loading, setLoading] = useState(false);
+    const [restoringKey, setRestoringKey] = useState<string | null>(null);
+    const [reloadKey, setReloadKey] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            setLoading(true);
+            try {
+                const { apiClient } = await import("@/lib/api");
+                const res = await apiClient.fetch("/api/admin/deleted-records");
+                if (res.ok && !cancelled) setData(await res.json());
+            } catch {
+                /* sessiz — tablo boş kalır */
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [reloadKey]);
+
+    const restore = async (type: "case" | "client", id: number, label: string) => {
+        setRestoringKey(`${type}-${id}`);
+        try {
+            const { apiClient } = await import("@/lib/api");
+            const res = await apiClient.fetch(`/api/admin/restore/${type}/${id}`, { method: "POST" });
+            if (res.ok) {
+                toast.success("Geri alındı", { description: `${label} listelere geri döndü.` });
+                setReloadKey(k => k + 1);
+            } else {
+                toast.error("Geri alma başarısız oldu.");
+            }
+        } catch {
+            toast.error("Geri alma başarısız oldu.");
+        } finally {
+            setRestoringKey(null);
+        }
+    };
+
+    const fmtDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("tr-TR") : "—");
+    const total = data.cases.length + data.clients.length;
+
+    return (
+        <TabsContent value="deleted">
+            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
+                <CardHeader>
+                    <CardTitle>Silinen Kayıtlar</CardTitle>
+                    <CardDescription>
+                        Silme kayıtları yok edilmez; buradan geri alınabilir. Gerekçe ve silen kişi kayıt altındadır.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {loading && (
+                        <p className="text-xs text-muted-foreground text-center py-4 flex items-center justify-center gap-2">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Yükleniyor…
+                        </p>
+                    )}
+                    {!loading && total === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-4">Silinmiş kayıt yok.</p>
+                    )}
+                    {!loading && total > 0 && (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Tip</TableHead>
+                                    <TableHead>Kimlik</TableHead>
+                                    <TableHead>Silen</TableHead>
+                                    <TableHead>Tarih</TableHead>
+                                    <TableHead>Gerekçe</TableHead>
+                                    <TableHead className="text-right">İşlem</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {data.cases.map(c => (
+                                    <TableRow key={`case-${c.id}`}>
+                                        <TableCell><span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border rounded bg-[var(--brand-soft)] text-[var(--brand)]">Dava</span></TableCell>
+                                        <TableCell className="font-mono text-xs" title={c.tracking_no}>
+                                            {c.tracking_no}{c.esas_no ? ` · ${c.esas_no}` : ""}
+                                        </TableCell>
+                                        <TableCell className="text-xs">{c.deleted_by || "—"}</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{fmtDate(c.deleted_at)}</TableCell>
+                                        <TableCell className="text-xs max-w-[280px] truncate" title={c.delete_reason || ""}>{c.delete_reason || "—"}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button size="sm" variant="outline" disabled={restoringKey === `case-${c.id}`}
+                                                onClick={() => restore("case", c.id, c.tracking_no)}>
+                                                {restoringKey === `case-${c.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Geri Al"}
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                                {data.clients.map(c => (
+                                    <TableRow key={`client-${c.id}`}>
+                                        <TableCell><span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border rounded bg-background/50 text-muted-foreground">Müvekkil</span></TableCell>
+                                        <TableCell className="text-xs" title={c.name}>
+                                            {c.name}{c.cari_kod ? ` · ${c.cari_kod}` : ""}
+                                        </TableCell>
+                                        <TableCell className="text-xs">{c.deleted_by || "—"}</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{fmtDate(c.deleted_at)}</TableCell>
+                                        <TableCell className="text-xs max-w-[280px] truncate" title={c.delete_reason || ""}>{c.delete_reason || "—"}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button size="sm" variant="outline" disabled={restoringKey === `client-${c.id}`}
+                                                onClick={() => restore("client", c.id, c.name)}>
+                                                {restoringKey === `client-${c.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Geri Al"}
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
         </TabsContent>
     );
 }

@@ -93,7 +93,10 @@ def save_case_document(
         # Belge yüklendiğinde ilişkili davanın updated_at'ini güncelle
         # böylece ana sayfada "son belge eklenen davalar" öne çıksın
         if case_id:
-            case = db.query(models.Case).filter(models.Case.id == case_id).first()
+            case = db.query(models.Case).filter(
+                models.Case.id == case_id,
+                models.Case.deleted_at.is_(None),  # soft-delete: silinmiş davaya dokunma
+            ).first()
             if case:
                 case.updated_at = datetime.now()
 
@@ -606,7 +609,10 @@ def save_hearing_date(
                 db_h.close()
                 return
 
-            case_h = db_h.query(models.Case).filter(models.Case.id == linked_case_id).first()
+            case_h = db_h.query(models.Case).filter(
+                models.Case.id == linked_case_id,
+                models.Case.deleted_at.is_(None),
+            ).first()
             hearing = models.HearingDate(
                 case_id=linked_case_id,
                 hearing_date=parsed_hearing,

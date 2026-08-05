@@ -57,6 +57,11 @@ export interface CaseTrackingUpdate {
     karar_no?: string | null;
     karar_teblig_tarihi?: string | null;
     karar_aciklama?: string | null;
+    // Hükmedilen tutarlar — normalizeMoney sonrası düz sayı string'i gider,
+    // backend Pydantic float'a coerce eder
+    hukmedilen_maddi?: string | null;
+    hukmedilen_manevi?: string | null;
+    hukmedilen_toplam?: string | null;
     // İstinaf
     istinaf_basvuru_tarihi?: string | null;
     istinaf_karar_durumu?: string | null;
@@ -234,9 +239,12 @@ export const useCases = () => {
         return { error: (await readErrorDetail(response)) || "Sunucu hatası" };
     }, [authenticatedRequest]);
 
-    const deleteCase = useCallback(async (id: number) => {
+    /** Soft-delete: gerekçe zorunlu; kayıt arşive taşınır, admin geri alabilir. */
+    const deleteCase = useCallback(async (id: number, reason: string) => {
         setIsLoading(true);
-        const response = await authenticatedRequest(`/api/cases/${id}`, "DELETE");
+        const response = await authenticatedRequest(
+            `/api/cases/${id}?reason=${encodeURIComponent(reason)}`, "DELETE"
+        );
         setIsLoading(false);
         return response ? response.ok : false;
     }, [authenticatedRequest]);

@@ -66,8 +66,11 @@ export const useClients = () => {
     });
 
     const deleteClientM = useMutation({
-        mutationFn: async (id: number) => {
-            const res = await authRequest(`/api/clients/${id}`, "DELETE");
+        // Soft-delete: gerekçe zorunlu; kayıt arşive taşınır, admin geri alabilir.
+        mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+            const res = await authRequest(
+                `/api/clients/${id}?reason=${encodeURIComponent(reason)}`, "DELETE"
+            );
             return res ? res.ok : false;
         },
         onSuccess: invalidate,
@@ -84,6 +87,6 @@ export const useClients = () => {
         isLoading,
         saveClient: (data: ClientData) => saveClientM.mutateAsync(data),
         updateClient: (id: number, data: ClientData) => updateClientM.mutateAsync({ id, data }),
-        deleteClient: (id: number) => deleteClientM.mutateAsync(id),
+        deleteClient: (id: number, reason: string) => deleteClientM.mutateAsync({ id, reason }),
     };
 };

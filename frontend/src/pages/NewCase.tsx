@@ -512,12 +512,16 @@ const NewCase = () => {
         }
     };
 
+    // Soft-delete gerekçesi (zorunlu, min 3 karakter) — backend Query kısıtıyla birebir
+    const [deleteReason, setDeleteReason] = useState("");
+
     const handleDelete = async () => {
         if (!isEditMode || !editModeCase?.id) return;
+        if (deleteReason.trim().length < 3) return;
 
-        const success = await deleteCase(editModeCase.id);
+        const success = await deleteCase(editModeCase.id, deleteReason.trim());
         if (success) {
-            toast.success("Silindi", { description: "Dava başarıyla silindi." });
+            toast.success("Arşive taşındı", { description: "Dava listelerden kaldırıldı; yönetici panelinden geri alınabilir." });
             navigate(-1);
         } else {
             toast.error("Hata", { description: "Silme işlemi başarısız oldu." });
@@ -1185,6 +1189,11 @@ const NewCase = () => {
                                             </Popover>
                                         </div>
 
+                                        {/* Ek Alt Kırılım geçici olarak gizli (2026-08-04): dropdown listesi
+                                            güncellenecek, sonra tekrar kullanıma açılacak. formData.subTypeExtra
+                                            state'i ve kayıt payload'ı korunuyor — düzenleme modunda mevcut değer
+                                            silinmesin. Geri açarken required_fields.py ve caseIntakeFields.ts'teki
+                                            sub_type_extra satırlarını da geri al.
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <FileText className="w-3 h-3" /> Ek Alt Kırılım
@@ -1222,6 +1231,7 @@ const NewCase = () => {
                                                 </PopoverContent>
                                             </Popover>
                                         </div>
+                                        */}
 
                                         <div className="space-y-4 md:col-span-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
@@ -1560,12 +1570,23 @@ const NewCase = () => {
                                                         Davayı silmek istediğinize emin misiniz?
                                                     </AlertDialogTitle>
                                                     <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
-                                                        Bu işlem <strong className="text-[var(--fg)]">geri alınamaz.</strong> İlgili dava ve tüm geçmiş kayıtları sistemden kalıcı olarak silinecektir.
+                                                        Dava listelerden kaldırılır ve arşive taşınır; <strong className="text-[var(--fg)]">yönetici panelinden geri alınabilir.</strong> Gerekçe zorunludur ve kayıt altına alınır.
                                                     </AlertDialogDescription>
                                                 </AlertDialogHeader>
+                                                <textarea
+                                                    rows={2}
+                                                    value={deleteReason}
+                                                    onChange={e => setDeleteReason(e.target.value)}
+                                                    placeholder="Silme gerekçesi (zorunlu)…"
+                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                                                />
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={handleDelete} className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px]">Sil</AlertDialogAction>
+                                                    <AlertDialogAction
+                                                        onClick={handleDelete}
+                                                        disabled={deleteReason.trim().length < 3}
+                                                        className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                                                    >Sil</AlertDialogAction>
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>
                                         </AlertDialog>

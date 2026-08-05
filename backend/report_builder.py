@@ -64,6 +64,7 @@ def build_report_rows(db, tenant_id: str, start: date, end: date):
             models.HearingDate.hearing_date >= start,
             models.HearingDate.hearing_date <= end,
             or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)),
+            models.Case.deleted_at.is_(None),  # silinen davanın duruşmaları rapora girmesin
         )
         .all()
     )

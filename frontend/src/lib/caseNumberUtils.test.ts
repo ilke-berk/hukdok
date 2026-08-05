@@ -68,6 +68,19 @@ describe("generateTrackingNumber", () => {
         expect(no).toContain(".0012.");
     });
 
+    // 2026-08-05: bu 4 tür haritada eksikti ve sessizce HUKUK üretiyordu
+    it.each([
+        ["İdare", "IDARE"],
+        ["Tahkim", "TAHKM"],
+        ["Vergi", "VERGI"],
+        ["Danışmanlık", "DANIS"],
+    ])("%s türü blok4'te %s üretir (HUKUK'a düşmez)", (processType, expected) => {
+        const no = generateTrackingNumber({ processType });
+        const parts = no.split(".");
+        expect(parts[parts.length - 2]).toBe(expected);
+        expect(validateCaseNumber(no)).toBe(true);
+    });
+
     it("üretilen numara validateCaseNumber'dan geçer", () => {
         const cases = [
             generateTrackingNumber(),
