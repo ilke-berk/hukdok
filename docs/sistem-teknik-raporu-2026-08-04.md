@@ -447,7 +447,8 @@ Tüm kimlikler/ilişkiler/metadata tek Postgres'tedir; SharePoint yalnız belge 
 - **Saklama:** yerelde (`~/backups/`) son 14 gün; SharePoint kopyaları birikir (app-only erişimli klasör — dump kişisel veri içerir, başka yere kopyalanmaz).
 - **Log:** `~/backups/backup.log` + `systemctl status db-backup.service`.
 - **Geri dönüş:** `pg_restore --list <dump>` içerik listesi; boş DB'ye `pg_restore -d <db> --no-owner <dump>`; doğrulama `SELECT count(*) FROM cases;`. Adımlar: `scripts/prod/README.md`.
-- **Kurulum doğrulaması (2026-08-05):** elle + systemd üzerinden birer koşu başarılı; dump 28 tablo verisi içeriyor, `pg_restore --list` ile açılabildiği doğrulandı; SharePoint'e yükleme Graph item id döndürdü. Tam restore tatbikatı (boş DB'ye açıp count doğrulama) henüz yapılmadı.
+- **Kurulum doğrulaması (2026-08-05):** elle + systemd üzerinden birer koşu başarılı; dump 28 tablo verisi içeriyor, `pg_restore --list` ile açılabildiği doğrulandı; SharePoint'e yükleme Graph item id döndürdü.
+- **Geri dönüş tatbikatı YAPILDI (2026-08-05):** dump sunucuda geçici boş DB'ye (`hukudok_restore_test`) `pg_restore --no-owner` ile açıldı; sayımlar canlı DB ile BİREBİR eşleşti (cases=14.388, clients=2.020, case_documents=1.638, case_parties=50.010); test DB silindi. Yedekten dönüş yolu kanıtlı.
 
 ---
 
