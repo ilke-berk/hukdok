@@ -438,6 +438,17 @@ Büro cevabındaki "dört taahhüt" çerçevesi (kalıcılık, görünürlük, e
 
 **Kanonik kimlik:** `cases.id` sistemin kanonik kimliğidir; hiçbir işlemde değişmez. Export sütun adları/sırası sürümlenir; değişiklikler duyurulmadan yapılmaz.
 
+### 6.7 Postgres yedekleme rutini (2026-08-05'ten beri prod'da CANLI)
+
+Tüm kimlikler/ilişkiler/metadata tek Postgres'tedir; SharePoint yalnız belge binary'si tutar — DB kaybı "hangi belge hangi davanın" bilgisinin kaybı olurdu. 2026-08-05'e kadar düzenli yedek YOKTU; kurulan rutin:
+
+- **Yöntem:** gecelik `pg_dump -Fc` (custom format — `pg_restore` ile seçmeli geri dönüş) → boyut kontrolü (1 MB altı hata; dolu dump 1.7 MB, 14.388 dava) → SharePoint `02_YEDEK_ARSIV` klasörüne `db_backup_YYYY-MM-DD.dump` kopyası (backend konteynerinin mevcut app-only Graph kimliğiyle, `backend/scripts/upload_db_backup.py` — sıfır yeni bağımlılık, teknik loglarla aynı klasör).
+- **Zamanlama:** systemd timer `db-backup.timer`, her gece 00:30 UTC (03:30 TR), `Persistent=true` (sunucuda cron yok; net-watchdog/mem-watch ile aynı desen). Script: sunucuda `~/backup_db.sh` (repo: `scripts/prod/backup_db.sh`).
+- **Saklama:** yerelde (`~/backups/`) son 14 gün; SharePoint kopyaları birikir (app-only erişimli klasör — dump kişisel veri içerir, başka yere kopyalanmaz).
+- **Log:** `~/backups/backup.log` + `systemctl status db-backup.service`.
+- **Geri dönüş:** `pg_restore --list <dump>` içerik listesi; boş DB'ye `pg_restore -d <db> --no-owner <dump>`; doğrulama `SELECT count(*) FROM cases;`. Adımlar: `scripts/prod/README.md`.
+- **Kurulum doğrulaması (2026-08-05):** elle + systemd üzerinden birer koşu başarılı; dump 28 tablo verisi içeriyor, `pg_restore --list` ile açılabildiği doğrulandı; SharePoint'e yükleme Graph item id döndürdü. Tam restore tatbikatı (boş DB'ye açıp count doğrulama) henüz yapılmadı.
+
 ---
 
 ## 7. Arama ve belgeye erişim
