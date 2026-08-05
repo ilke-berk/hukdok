@@ -115,6 +115,9 @@ def get_case(case_id: int, tenant_id: str = None):
             "tku_no": item.tku_no,
             "sistem_no": item.sistem_no,
             "notes": item.notes,
+            # Eşzamanlılık imzası: zenginleştirme apply'ı bu değeri
+            # expected_updated_at olarak geri gönderir (bayat ekran → 409).
+            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
             "parties": [{"id": p.id, "name": p.name, "role": p.role, "party_type": p.party_type, "client_id": p.client_id, "birth_year": p.birth_year, "gender": p.gender, "tc_no": p.tc_no} for p in item.parties],
             "lawyers": [{"name": lw.name, "lawyer_id": lw.lawyer_id} for lw in item.lawyers],
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat(), "changed_by": h.changed_by, "source": h.source} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
@@ -631,8 +634,31 @@ def enrich_changes(current: dict, fields: dict) -> list:
     return changes
 
 
+def is_stale_case(case_updated_at, expected_updated_at) -> bool:
+    """Optimistic imza kontrolü (saf): verilen imza davanın updated_at'iyle
+    eşleşmiyor mu? İmza verilmemişse kontrol atlanır (geriye uyum — eski
+    istemci davranışı değişmez). İki taraf da ISO normalize edilir; ayrıştırılamayan
+    imza bayat sayılır (yanlış pozitif 409 zararsız — kullanıcı güncel değerleri görür).
+    """
+    if not expected_updated_at:
+        return False
+
+    def norm(value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value.isoformat()
+        try:
+            return datetime.fromisoformat(str(value).strip()).isoformat()
+        except ValueError:
+            return str(value).strip()
+
+    return norm(case_updated_at) != norm(expected_updated_at)
+
+
 def enrich_case(case_id: int, fields: dict, new_parties: list,
-                changed_by: str, source: str, tenant_id: str = None):
+                changed_by: str, source: str, tenant_id: str = None,
+                expected_updated_at: str = None):
     """Zenginleştirme modu (Faz 7): mevcut davaya kısmi güncelleme.
 
     update_case'ten farkları: alan beyaz listesi ENRICH_FIELDS + exclude_unset
@@ -640,6 +666,11 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
     güncellenmez/silinmez — case_party_id bağları garanti korunur; zaten
     kayıtlı taraf normalize ad/TC eşleşmesiyle atlanır), her değişikliğe
     changed_by + source imzalı CaseHistory kaydı.
+
+    expected_updated_at dolu gelirse davanın güncel updated_at'iyle
+    karşılaştırılır — eşleşmezse HİÇBİR alan yazılmadan {"error": "stale_case"}
+    döner (route 409'a çevirir; belge arşivi apply'da bu adımdan SONRA koştuğu
+    için 409'da belge de tüketilmez — retry güvenli).
 
     Döner: None (dava yok/tenant dışı) | {"error": ...} |
     {"tracking_no", "updated_fields": [{field, old, new}], "added_parties": [ad]}.
@@ -651,6 +682,9 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
         case = query.first()
         if not case:
             return None
+
+        if is_stale_case(case.updated_at, expected_updated_at):
+            return {"error": "stale_case"}
 
         current = {f: getattr(case, f) for f in ENRICH_FIELDS}
         updated = []

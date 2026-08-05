@@ -4,10 +4,14 @@ import { describe, it, expect, vi } from "vitest";
 // ulaşır — saf eşleme testleri için API istemcisi mock'lanır.
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: vi.fn() } }));
 
+import { apiClient } from "@/lib/api";
 import {
+  type CaseIntakeApplyRequest,
   type EmlExpandResult,
   type MergeDraft,
   type MergePolicy,
+  ApplyConflictError,
+  applyIntake,
   base64ToFile,
   emlSummaryMessage,
   expandedEmlToFiles,
@@ -266,6 +270,44 @@ describe("emlSummaryMessage — skipped toast mantığı", () => {
   it("hiç parça eklenemediyse bunu söyler", () => {
     expect(emlSummaryMessage(makeExpandResult({ body: null, attachments: [], skipped: [] })))
       .toBe("E-posta açıldı: eklenebilir parça bulunamadı");
+  });
+});
+
+// --- applyIntake — 409 stale_case ayrımı (sertleştirme İş 2) -------------
+
+const applyReq = (): CaseIntakeApplyRequest => ({
+  case_id: 55,
+  expected_updated_at: "2026-08-01T12:00:00",
+  fields: {},
+  parties: [],
+  documents: [],
+  policies: [],
+  options: { send_email: false, email_to: [] },
+});
+
+const mockResponse = (status: number, body: unknown) =>
+  vi.mocked(apiClient.fetch).mockResolvedValueOnce({
+    ok: status < 400,
+    status,
+    statusText: String(status),
+    json: async () => body,
+  } as unknown as Response);
+
+describe("applyIntake — 409 ayrımı", () => {
+  it("409'u ApplyConflictError olarak fırlatır (backend detail mesajıyla)", async () => {
+    mockResponse(409, { detail: "Dava bu ekran açıldıktan sonra güncellendi." });
+    await expect(applyIntake(applyReq())).rejects.toThrowError(ApplyConflictError);
+    // İmza istek gövdesinde aynen gitmiş olmalı
+    const call = vi.mocked(apiClient.fetch).mock.calls.at(-1)!;
+    expect(JSON.parse(call[1]!.body as string).expected_updated_at)
+      .toBe("2026-08-01T12:00:00");
+  });
+
+  it("diğer hatalar düz Error kalır (genel toast yolu)", async () => {
+    mockResponse(500, { detail: "Dava güncellenemedi." });
+    const err = await applyIntake(applyReq()).catch(e => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ApplyConflictError);
   });
 });
 

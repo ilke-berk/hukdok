@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import {
   analyzeIntakeFile,
+  ApplyConflictError,
   applyIntake,
   commitIntake,
   emlSummaryMessage,
@@ -336,7 +337,14 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
     }
   }, []);
 
-  /** Enrich modunun tek "Kaydet"i: apply — mevcut davaya kısmi güncelleme. */
+  /**
+   * Enrich modunun tek "Kaydet"i: apply — mevcut davaya kısmi güncelleme.
+   * 409 (stale_case): dava review açıkken güncellendi — backend hiçbir alanı
+   * yazmamış, hiçbir belgeyi tüketmemiştir. Merge otomatik tazelenir (analiz
+   * sonuçları korunur, Gemini'ye gidilmez); review yeni draft'la yeniden
+   * kurulur ve kullanıcı farkları tekrar tik'leyip Kaydet'e basar — otomatik
+   * yeniden-apply YOK, çakışmada karar daima kullanıcının.
+   */
   const apply = useCallback(async (req: CaseIntakeApplyRequest): Promise<ApplyResult> => {
     setIsCommitting(true);
     try {
@@ -345,10 +353,27 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
       setApplyResult(result);
       setStep("result");
       return result;
+    } catch (e) {
+      if (e instanceof ApplyConflictError) {
+        const ready = filesRef.current.filter(f => f.status === "done" && f.processId && f.extraction);
+        if (ready.length > 0) {
+          toast.warning("Dava bu arada güncellendi — öneriler güncel değerlerle tazeleniyor...", {
+            duration: 6000,
+          });
+          await retryMerge(filesRef.current);
+        } else {
+          // Restore edilmiş taslak: analiz sonuçları elde yok, re-merge imkânsız
+          toast.error("Dava bu ekran açıkken güncellendi", {
+            description: "Taslak tazelenemiyor — sihirbazı dava kartından yeniden açın.",
+            duration: 8000,
+          });
+        }
+      }
+      throw e;
     } finally {
       setIsCommitting(false);
     }
-  }, []);
+  }, [retryMerge]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();

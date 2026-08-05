@@ -377,6 +377,10 @@ export interface MergeCaseSummary {
   esas_no: string | null;
   court: string | null;
   status: string;
+  // Eşzamanlılık imzası: apply expected_updated_at olarak geri gönderir —
+  // dava bu arada değiştiyse 409. Optional: eski sessionStorage taslakları
+  // bu alanı taşımaz (imzasız apply → kontrol atlanır, geriye uyum).
+  updated_at?: string | null;
 }
 
 export interface MergeDraft {
@@ -538,6 +542,9 @@ export class CommitConflictError extends Error {
 
 export interface CaseIntakeApplyRequest {
   case_id: number;
+  // Merge özetindeki case.updated_at aynen geri gönderilir; dava bu ekran
+  // açıldıktan sonra değiştiyse backend 409 döner (ApplyConflictError).
+  expected_updated_at?: string | null;
   fields: Record<string, string | number | null>;
   parties: CommitCasePartyIn[];         // yalnız EKLENECEK taraflar
   documents: CommitDocumentIn[];
@@ -559,6 +566,19 @@ export interface ApplyResult {
   policies: { saved: number; skipped: number; error?: string };
 }
 
+/**
+ * 409 stale_case — dava review açıkken güncellendi. Hook merge'i otomatik
+ * tazeler (analizler korunur, Gemini'ye gidilmez); otomatik yeniden-apply YOK,
+ * kullanıcı farkları yeni draft'ta tekrar tik'leyip Kaydet'e basar.
+ * 409'da backend hiçbir alanı yazmamış, hiçbir belgeyi tüketmemiştir.
+ */
+export class ApplyConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApplyConflictError";
+  }
+}
+
 export async function applyIntake(req: CaseIntakeApplyRequest): Promise<ApplyResult> {
   const response = await apiClient.fetch("/api/case-intake/apply", {
     method: "POST",
@@ -570,6 +590,7 @@ export async function applyIntake(req: CaseIntakeApplyRequest): Promise<ApplyRes
       const body = await response.json();
       if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
     } catch { /* gövde JSON değilse statusText kalır */ }
+    if (response.status === 409) throw new ApplyConflictError(detail);
     throw new Error("Güncelleme başarısız: " + detail);
   }
   return await response.json() as ApplyResult;

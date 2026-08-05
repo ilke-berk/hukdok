@@ -142,7 +142,9 @@ const CaseIntakeWizard = () => {
         <IntakeReviewStep
           // Mod/hedef değişiminde (duplicate köprüsü → enrich merge) form
           // durumu taslaktan yeniden kurulmalı — key remount'u zorlar.
-          key={`${intake.draft.mode ?? "new"}-${intake.draft.case?.id ?? 0}`}
+          // updated_at da anahtarda: 409 sonrası AYNI davaya re-merge'de dava
+          // imzası değişir → review yeni draft'la yeniden kurulur.
+          key={`${intake.draft.mode ?? "new"}-${intake.draft.case?.id ?? 0}-${intake.draft.case?.updated_at ?? ""}`}
           draft={intake.draft}
           isCommitting={intake.isCommitting}
           onCommit={intake.commit}

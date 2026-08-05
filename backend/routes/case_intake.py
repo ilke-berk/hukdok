@@ -694,6 +694,8 @@ async def merge_case_intake(
             "esas_no": case_row["esas_no"],
             "court": case_row["court"],
             "status": case_row["status"],
+            # Eşzamanlılık imzası — apply expected_updated_at olarak geri yollar
+            "updated_at": case_row.get("updated_at"),
         }
 
     # 5. Tanıdık sorgu (çıkar çatışması) — taraf satırlarına iliştirilir
@@ -1086,6 +1088,9 @@ async def apply_case_intake(
     source_sig = source_sig[:300]
 
     # 1. Kısmi güncelleme + yalnız-EKLEME taraflar (tek transaction).
+    # Bayat imza kontrolü bu adımın İÇİNDE, alan yazımından önce koşar —
+    # 409'da hiçbir alan yazılmaz, belge arşivi (adım 3) hiç başlamadığından
+    # PROCESS_CACHE girdileri de tüketilmez → frontend'in re-merge'ü güvenli.
     fields = req.fields.model_dump(exclude_unset=True)
     parties = [p.model_dump() for p in req.parties]
     result = await loop.run_in_executor(
@@ -1093,10 +1098,17 @@ async def apply_case_intake(
         partial(
             case_manager.enrich_case, req.case_id, fields, parties,
             changed_by=current_user_name, source=source_sig, tenant_id=tenant_id,
+            expected_updated_at=req.expected_updated_at,
         ),
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Zenginleştirilecek dava bulunamadı.")
+    if result.get("error") == "stale_case":
+        raise HTTPException(
+            status_code=409,
+            detail="Dava bu ekran açıldıktan sonra güncellendi — "
+                   "öneriler güncel değerlerle yeniden birleştirilecek.",
+        )
     if result.get("error"):
         raise HTTPException(status_code=500, detail="Dava güncellenemedi.")
 

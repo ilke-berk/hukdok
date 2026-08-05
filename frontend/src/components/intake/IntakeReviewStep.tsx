@@ -17,6 +17,7 @@ import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import {
+  ApplyConflictError,
   CommitConflictError,
   policyKey,
   selectCommitPolicies,
@@ -481,6 +482,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       parties.find(p => p.party_type === "CLIENT" && p.name.trim())?.name ?? null;
     return {
       case_id: enrichCase!.id,
+      // Eşzamanlılık imzası: dava bu ekran açıldıktan sonra değiştiyse backend
+      // 409 döner (eski taslaklarda alan yok → null → kontrol atlanır).
+      expected_updated_at: enrichCase?.updated_at ?? null,
       fields: enrichFieldsPayload,
       parties: enrichParties.map(p => ({
         client_id: p.client_id ?? undefined,
@@ -511,6 +515,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       try {
         await onApply(buildApplyRequest());
       } catch (e) {
+        // 409 stale_case: hook toast'lar ve merge'i otomatik tazeler — review
+        // yeni draft'la remount olur, burada ikinci bir hata göstermeyiz.
+        if (e instanceof ApplyConflictError) return;
         toast.error("Güncelleme başarısız", {
           description: e instanceof Error ? e.message : "Sunucu hatası oluştu.",
         });

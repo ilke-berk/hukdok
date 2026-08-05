@@ -10,7 +10,7 @@
    test_case_intake_commit desenleri).
 """
 import os
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -52,6 +52,7 @@ def _case_row(**overrides):
         "judicial_unit": None,
         "hasar_dosya_no": None,
         "hukuk_no": None,
+        "updated_at": "2026-08-01T12:00:00",
         "parties": [
             {"id": 71, "name": "Ahmet YILMAZ", "role": "Davacı",
              "party_type": "CLIENT", "client_id": 12, "tc_no": "12345678901"},
@@ -159,6 +160,27 @@ def test_mark_existing_parties_by_tc_name_and_corporate_suffix():
     assert parties[1]["existing"]["case_party_id"] == 72
     assert parties[1]["existing"]["name"] == "Quick Sigorta Anonim Şirketi"
     assert parties[2]["existing"] is None
+
+
+# ── Alan listesi senkronu ────────────────────────────────────────────────────
+# ENRICH_FIELDS (manager beyaz listesi) ile EnrichFieldsIn (route şeması) el
+# ile senkron iki liste — ayrışırlarsa alan sessizce uygulanmaz. Bu test
+# ayrışmayı derleme anında yakalar (sertleştirme planı İş 1).
+
+def test_enrich_field_whitelist_matches_schema():
+    from managers.case_manager import ENRICH_FIELDS
+    from schemas_intake import EnrichFieldsIn
+
+    assert set(ENRICH_FIELDS) == set(EnrichFieldsIn.model_fields)
+
+
+def test_enrich_case_field_map_subset_of_whitelist():
+    # Merge'in fill/confirm durumu verdiği her alan apply'da da uygulanabilir
+    # olmalı — aksi halde sihirbaz tik'letir ama manager sessizce atlar.
+    from managers.case_manager import ENRICH_FIELDS
+    from services.case_intake import ENRICH_CASE_FIELD_MAP
+
+    assert set(ENRICH_CASE_FIELD_MAP) <= set(ENRICH_FIELDS)
 
 
 # ── enrich_changes (exclude_unset semantiği) ─────────────────────────────────
@@ -298,6 +320,8 @@ def test_merge_enrich_mode_full_draft(merge_env):
         assert draft["mode"] == "enrich"
         assert draft["case"]["id"] == 55
         assert draft["case"]["tracking_no"] == "2024/0055"
+        # Eşzamanlılık imzası özet üzerinden frontend'e taşınır (409 koruması)
+        assert draft["case"]["updated_at"] == "2026-08-01T12:00:00"
         assert merge_env.get_case_calls == [(55, "tenant-1")]
 
         # esas_no: belge 2025/7 vs kayıtlı 2024/123 → hakem tetiklendi,
@@ -365,6 +389,9 @@ def test_merge_without_case_id_stays_new_mode(merge_env):
 
 # ── apply route ──────────────────────────────────────────────────────────────
 
+CASE_UPDATED_AT = datetime(2026, 8, 1, 12, 0, 0)
+
+
 @pytest.fixture()
 def apply_env(monkeypatch, tmp_path):
     from fastapi import FastAPI
@@ -378,13 +405,19 @@ def apply_env(monkeypatch, tmp_path):
 
     calls = {"enrich": [], "resolve": [], "convert": [], "cleanup": [], "policies": []}
 
-    def fake_enrich_case(case_id, fields, parties, changed_by, source, tenant_id=None):
+    def fake_enrich_case(case_id, fields, parties, changed_by, source, tenant_id=None,
+                         expected_updated_at=None):
         calls["enrich"].append({
             "case_id": case_id, "fields": fields, "parties": parties,
             "changed_by": changed_by, "source": source, "tenant_id": tenant_id,
+            "expected_updated_at": expected_updated_at,
         })
         if case_id == 999:
             return None
+        # Gerçek imza kontrolüyle aynı yol: dava DB'de CASE_UPDATED_AT anında
+        # güncellenmiş gibi davranır — bayat imza alan yazılmadan reddedilir.
+        if case_manager.is_stale_case(CASE_UPDATED_AT, expected_updated_at):
+            return {"error": "stale_case"}
         return {
             "tracking_no": "2024/0055",
             "updated_fields": [
@@ -543,3 +576,53 @@ def test_apply_enrich_failure_500(apply_env, monkeypatch):
     )
     r = apply_env.client.post("/api/case-intake/apply", json=_apply_payload())
     assert r.status_code == 500
+
+
+# ── Eşzamanlılık koruması: 409 + yeniden birleştir (sertleştirme İş 2) ───────
+
+def test_is_stale_case_signature():
+    from managers.case_manager import is_stale_case
+
+    now = datetime(2026, 8, 1, 12, 0, 0)
+    assert is_stale_case(now, None) is False          # imza yok → kontrol atlanır
+    assert is_stale_case(now, "") is False
+    assert is_stale_case(now, "2026-08-01T12:00:00") is False   # güncel imza
+    assert is_stale_case(now, "2026-08-01T11:59:59") is True    # bayat imza
+    assert is_stale_case(None, "2026-08-01T12:00:00") is True   # dava imzasız, istemci imzalı
+    assert is_stale_case(now, "saçma-değer") is True            # ayrıştırılamayan → bayat
+
+
+def test_apply_stale_signature_409_consumes_nothing(apply_env):
+    from routes.processing import PROCESS_CACHE
+
+    apply_env.put_cache("pid-stale")
+    r = apply_env.client.post("/api/case-intake/apply", json=_apply_payload(
+        expected_updated_at="2026-08-01T11:00:00",  # dava 12:00'de güncellenmişti
+        documents=[{"process_id": "pid-stale", "new_filename": "tensip.pdf"}],
+    ))
+    try:
+        assert r.status_code == 409
+        assert "yeniden birleştirilecek" in r.json()["detail"]
+        # Belge TÜKETİLMEDİ: arşiv döngüsü hiç koşmadı, cache girdisi duruyor —
+        # frontend'in re-merge + yeniden Kaydet akışı güvenli.
+        assert PROCESS_CACHE.touch("pid-stale") is True
+        assert apply_env.calls["convert"] == []
+        # enrich_case bayat imzayı aldı ve alan yazmadan reddetti
+        assert apply_env.calls["enrich"][0]["expected_updated_at"] == "2026-08-01T11:00:00"
+    finally:
+        PROCESS_CACHE.delete("pid-stale")
+
+
+def test_apply_current_signature_200(apply_env):
+    r = apply_env.client.post("/api/case-intake/apply", json=_apply_payload(
+        expected_updated_at="2026-08-01T12:00:00",
+    ))
+    assert r.status_code == 200
+    assert apply_env.calls["enrich"][0]["expected_updated_at"] == "2026-08-01T12:00:00"
+
+
+def test_apply_without_signature_skips_check(apply_env):
+    # Geriye uyum: eski istemci imza göndermez → kontrol yok, davranış değişmez
+    r = apply_env.client.post("/api/case-intake/apply", json=_apply_payload())
+    assert r.status_code == 200
+    assert apply_env.calls["enrich"][0]["expected_updated_at"] is None

@@ -192,6 +192,9 @@ class EnrichFieldsIn(BaseModel):
 
 class CaseIntakeApplyRequest(BaseModel):
     case_id: int
+    # Merge özetindeki updated_at geri gönderilir; dava bu arada değiştiyse
+    # apply 409 döner (bayat ekranla yazma imkânsız). None → kontrol atlanır.
+    expected_updated_at: Optional[str] = None
     fields: EnrichFieldsIn = Field(default_factory=EnrichFieldsIn)
     parties: list[CasePartyCreate] = Field(default_factory=list, max_length=30)
     documents: list[CommitDocumentIn] = Field(default_factory=list, max_length=15)
