@@ -1,0 +1,8 @@
+[Unit]
+Description=Bellek kayitcisi - sistem ve konteyner bellegini 5 dk'da bir yazar
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mem-watch.sh
+TimeoutStartSec=60

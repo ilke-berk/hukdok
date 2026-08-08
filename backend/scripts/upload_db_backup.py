@@ -4,7 +4,7 @@ Konteyner içinden koşar — Graph env'leri hazırdır, yeni bağımlılık yok
 Teknik loglarla aynı klasör desenini kullanır (02_YEDEK_ARSIV kökü).
 4 MB üzeri dosyalar uploader'daki chunk'lı upload session ile gider.
 
-Kullanım (scripts/prod/backup_db.sh bu adımları otomatik koşar):
+Kullanım (infra/scripts/backup_db.sh bu adımları otomatik koşar):
   docker cp yedek.dump hukdok_backend:/tmp/db_backup_2026-08-05.dump
   docker exec hukdok_backend python scripts/upload_db_backup.py /tmp/db_backup_2026-08-05.dump
 """

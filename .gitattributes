@@ -1,0 +1,5 @@
+# Sunucuda çalışan/sunucuya kopyalanan dosyalar her platformda LF kalmalı:
+# CRLF'li bir shell script bash'te "bad interpreter ^M" ile kırılır. Windows
+# checkout'undan scp ile kopyalama senaryosu da buna dahildir (Faz 1-B).
+*.sh text eol=lf
+infra/** text eol=lf

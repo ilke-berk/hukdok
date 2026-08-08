@@ -1,0 +1,10 @@
+[Unit]
+Description=HukuDok gecelik Postgres yedegini 00:30 UTC (03:30 TR) kostur
+
+[Timer]
+OnCalendar=*-*-* 00:30:00
+Persistent=true
+AccuracySec=5min
+
+[Install]
+WantedBy=timers.target

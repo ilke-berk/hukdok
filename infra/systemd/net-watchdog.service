@@ -1,0 +1,9 @@
+[Unit]
+Description=Ag nobetcisi - metadata erisilemezse ens4'u toparlar
+After=network.target
+Documentation=file:///usr/local/sbin/net-watchdog.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/net-watchdog.sh
+TimeoutStartSec=120

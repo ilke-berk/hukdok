@@ -16,7 +16,10 @@ services:
     restart: unless-stopped
     # Bellek/log sınırları (Faz 1-A): önceden yalnız sunucudaki gitignore'lu
     # override'da / daemon.json'daydı — VM kaybında konfig repo'dan geri gelsin.
+    # memswap=mem → swap yok: swap'a taşma, 2026-07-29 kesintilerindeki I/O
+    # fırtınasının mekanizmasıydı (tüm servislerde aynı kural).
     mem_limit: 512m
+    memswap_limit: 512m
     logging:
       driver: json-file
       options:
@@ -94,6 +97,7 @@ services:
       - "8080:80"
     restart: unless-stopped
     mem_limit: 128m
+    memswap_limit: 128m
     logging:
       driver: json-file
       options:

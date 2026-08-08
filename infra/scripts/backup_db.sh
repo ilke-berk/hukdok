@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prod Postgres gecelik yedeği — kurulum: scripts/prod/README.md
+# Prod Postgres gecelik yedeği — kurulum: infra/README.md (sunucu hedefi:
+# /home/luciferandlucius/backup_db.sh, db-backup.service bu yolu bekler)
 #
 # Akış: pg_dump (custom format) → boyut kontrolü → SharePoint 02_YEDEK_ARSIV'e
 # kopya (backend konteynerinin app-only Graph kimliğiyle) → 14 günden eski

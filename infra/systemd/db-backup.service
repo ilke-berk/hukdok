@@ -1,0 +1,9 @@
+[Unit]
+Description=HukuDok gecelik Postgres yedegi (pg_dump + SharePoint kopyasi)
+After=docker.service
+
+[Service]
+Type=oneshot
+User=luciferandlucius
+ExecStart=/home/luciferandlucius/backup_db.sh
+TimeoutStartSec=900

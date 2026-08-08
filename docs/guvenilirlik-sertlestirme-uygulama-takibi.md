@@ -31,7 +31,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 
 ### FAZ 1 — İnfra/deploy repo'ya → Deploy #2
 - [x] **1-A** · docker-compose sertleştirme (mem/log limitleri, healthcheck, depends_on) + migration'ı entrypoint'ten tek seferlik ayrı adıma al (`migrate.py`) + `api.py` import-time migration çağrısını kaldır + sığ `/healthz` (limiter.exempt); `--workers 2` bilinçli ERTELENDİ → 3-E (bkz. Plandan düşülenler)
-- [ ] **1-B** · `infra/` dizini: sunucudan (`ssh hukukoid`) host nginx config, net-watchdog + unit'ler, mem-watch, daemon.json, **yedekleme script+timer** çekilip repo'ya alınır + kurulum scripti
+- [x] **1-B** · `infra/` dizini: sunucudan (`ssh hukukoid`) host nginx config, net-watchdog + unit'ler, mem-watch, daemon.json, **yedekleme script+timer** çekilip repo'ya alındı + idempotent `install.sh` (sunucuda HENÜZ koşmadı — 1-C provasında)
 - [ ] **1-C** · `deploy.sh` yeniden yazımı (build→up, ff-only, imaj etiketleme, rollback.sh, deploy öncesi pg_dump, gerçek /healthz kapısı) + sunucuda elle prova → **Deploy #2**
 
 ### FAZ 2 — Monitoring ve alarm → Deploy #3
@@ -62,6 +62,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 
 ## Durum notları (her oturum tek satır, en yeni üstte)
 
+- 2026-08-08 (4): 1-B tamam — `infra/` kuruldu: host nginx (default=hukukoid.com 300s + hukbot), net-watchdog/mem-watch/db-backup unit+script'leri, daemon.json sunucudan birebir çekildi (11 dosya diff'le doğrulandı); `scripts/prod` → `infra/scripts`e taşındı, README envanter+yeni-VM önkoşulları+restore ile `infra/README.md`de; idempotent `install.sh` yazıldı ama sunucuda HENÜZ koşmadı (1-C provasında); `.gitattributes` LF kuralı; compose'a pg/fe `memswap_limit` (sunucu override'ıyla hizalı — override Deploy #2 sonrası kalkacak); 554 test konteynerde yeşil.
 - 2026-08-08 (3): 1-A kodlandı — compose'a mem/log limitleri + backend `/healthz` healthcheck + frontend depends_on:healthy (lokalde doğrulandı: backend healthy olana dek frontend bekledi, limitler HostConfig'te 2g/512m/128m); migrasyon `migrate.py` ile entrypoint'te tek seferlik, api.py import-time çağrı kaldırıldı; `--workers 2` → 3-E'ye ertelendi (PROCESS_CACHE süreç içi); 554 test konteynerde yeşil (6 yeni `test_faz1_infra.py`); prod'a Deploy #2 ile gidecek.
 - 2026-08-08 (2): Deploy #1 yapıldı — prod=9f1b202; yedek alındı (SharePoint'e de), backend imajı yeniden derlendi, başlangıç temiz, HTTP 200, mem_limit 2g + MALLOC_ARENA_MAX=2 korundu; `upload_db_backup.py` artık imajda (docker-cp kırılganlığı kapandı); GS eşzamanlılık kanıtı ilk gerçek büyük /confirm'de loglardan izlenecek.
 - 2026-08-08: Faz 0 tamamı kodlandı (0-A/0-B/0-C, 10 madde); 548 test konteynerde yeşil (17'si yeni `test_faz0_hardening.py`); 0.9 owner kontrolü intake set/touch/pop noktalarına da işlendi; 0.6 davranış notu: limit aşan ek artık hata değil, e-posta arşiv referansıyla gidiyor; Deploy #1 mesai dışı bekliyor.
