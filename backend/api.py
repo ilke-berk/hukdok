@@ -108,6 +108,10 @@ async def lifespan(app: FastAPI):
         )
 
     try:
+        # Konteynerde migrasyonlar entrypoint'teki migrate.py'de zaten koştu;
+        # burası host-run (python api.py) için yedek ve tek worker'da zararsız.
+        # uvicorn --workers N'e geçmeden önce bu çağrı kaldırılmalı/kapılanmalı
+        # (worker başına lifespan koşar → DDL yarışı; bkz. Faz 3-E notu).
         from database import init_db
         init_db()
     except Exception as e:
@@ -329,9 +333,15 @@ def health_check():
     return {"status": "running", "message": "HukuDok API Active (Web Mode)"}
 
 
-# Ensure DB migration on load
-from database import check_and_migrate_tables
-check_and_migrate_tables()
+# Sığ sağlık ucu: docker-compose healthcheck + deploy sağlık kapısı (Faz 1-C)
+# hedefi. Bilinçli DB'siz — her 30 sn koşar; bağımlılık denetimli derin /healthz
+# Faz 2-A'da bu ucu genişletecek. limiter.exempt: sağlık yoklaması hiçbir
+# koşulda 429'a takılmamalı (unhealthy → frontend depends_on + deploy kapısı
+# yanlış alarm verir).
+@app.get("/healthz")
+@limiter.exempt
+def healthz():
+    return {"status": "ok"}
 
 
 def get_port():

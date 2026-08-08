@@ -3,18 +3,11 @@ set -e
 
 echo "🚀 Starting HukuDok Backend..."
 
-echo "📊 Initializing database and running migrations..."
-python -c "
-from database import init_db
-# Robust initialization including models import, table creation, migrations and seeding
-init_db()
-print('✅ Database ready!')
-"
-
-if [ $? -ne 0 ]; then
-    echo "❌ Database initialization failed!"
-    exit 1
-fi
+# Migrasyonlar uvicorn'dan ÖNCE tek süreçte koşar (set -e: hata konteyneri
+# durdurur, uygulama bozuk şemayla ayağa kalkmaz). --workers N'e geçişin
+# önkoşulu: DDL asla worker süreci içinde koşmamalı (Faz 1-A).
+echo "📊 Running database migrations (one-time step)..."
+python migrate.py
 
 echo "✅ Starting API server..."
 exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8001}

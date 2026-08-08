@@ -14,6 +14,14 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     restart: unless-stopped
+    # Bellek/log sınırları (Faz 1-A): önceden yalnız sunucudaki gitignore'lu
+    # override'da / daemon.json'daydı — VM kaybında konfig repo'dan geri gelsin.
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U hukudok_user -d hukudok" ]
       interval: 10s
@@ -52,6 +60,25 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    # 2026-07-29/30 OOM incelemesi: backend'in anon bellek büyümesi VM'i
+    # kilitliyordu. Limit aşımında konteyner OOM-kill edilir ve restart olur —
+    # tüm VM'in ağ/SSH kaybetmesinden iyidir. memswap=mem → swap kullanmaz.
+    mem_limit: 2g
+    memswap_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      # curl imajda yok (python:slim) — stdlib urllib yeterli. urlopen HTTP>=400'de
+      # exception fırlatır → non-zero exit → unhealthy. $$: compose'un kendi
+      # interpolasyonundan kaçış; ${PORT:-8001} konteyner kabuğunda açılır.
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:$${PORT:-8001}/healthz', timeout=5)\"" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,8 +93,15 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - hukudok-network
 

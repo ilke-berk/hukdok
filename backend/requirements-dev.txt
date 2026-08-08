@@ -1,5 +1,7 @@
 # Test/geliştirme bağımlılıkları — prod imajına GİRMEZ.
 # Kullanım: pip install -r requirements.txt -r requirements-dev.txt
 pytest==8.3.5
+# starlette TestClient httpx gerektirir (endpoint testleri, örn. /healthz)
+httpx==0.28.1
 ruff==0.15.21
 mypy==2.2.0

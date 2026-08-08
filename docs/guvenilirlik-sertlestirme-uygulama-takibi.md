@@ -18,6 +18,7 @@ Ana plan: [guvenilirlik-sertlestirme-plani-2026-08-04.md](guvenilirlik-sertlesti
 - **Container nginx 300 sn timeout:** repo'da ve prod'da (f72f13e). Host nginx config'i hâlâ sadece sunucuda → 1-B kapsamında.
 - **Faz 3.5'in /commit 409 kullanıcı yüzü:** "henüz kaydedilmedi" bandı canlı (031e020, 1c8ca71). KALAN: idempotent çözümleme (409'da mevcut davayı bulup döndürme) — 3-D'de mevcut davranışı doğrulayıp üstüne kur.
 - **Faz 3.8 Katman 1** (converter içi fallback + gerçek nedene göre hata mesajı): 2026-08-05'te kodlandı (e5df7b5) → 3-F yalnız Katman 2'yi yapar.
+- **Faz 1 uvicorn `--workers 2` (2026-08-08 tespiti):** 1-A'da AÇILMADI — `PROCESS_CACHE`/`DOWNLOAD_CACHE` süreç içi bellekte (`routes/processing.py`); iki worker'da `/process`→`/confirm` ~%50 cache miss ile kırılır, ayrıca APScheduler günlük raporu + refresh thread'i duplike olur. Geçiş 3-E'ye taşındı; önkoşul: disk kalıcılığı + worker-tekil arkaplan işleri (lifespan `init_db` dahil).
 
 ## Paketler
 
@@ -29,7 +30,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 - [x] **0-C** · madde 0.5, 0.6 — `email_sender.py`: kill-switch onarımı (config + gönderim kapısı), ek limiti 3 MB + arşiv referanslı gövde notu; toplu pytest yeşil → **Deploy #1 YAPILDI (2026-08-08, prod=9f1b202)**
 
 ### FAZ 1 — İnfra/deploy repo'ya → Deploy #2
-- [ ] **1-A** · docker-compose sertleştirme (mem/log limitleri, healthcheck, depends_on) + uvicorn `--workers 2` + migration'ı entrypoint'ten tek seferlik ayrı adıma al + `api.py` import-time migration çağrısını kaldır
+- [x] **1-A** · docker-compose sertleştirme (mem/log limitleri, healthcheck, depends_on) + migration'ı entrypoint'ten tek seferlik ayrı adıma al (`migrate.py`) + `api.py` import-time migration çağrısını kaldır + sığ `/healthz` (limiter.exempt); `--workers 2` bilinçli ERTELENDİ → 3-E (bkz. Plandan düşülenler)
 - [ ] **1-B** · `infra/` dizini: sunucudan (`ssh hukukoid`) host nginx config, net-watchdog + unit'ler, mem-watch, daemon.json, **yedekleme script+timer** çekilip repo'ya alınır + kurulum scripti
 - [ ] **1-C** · `deploy.sh` yeniden yazımı (build→up, ff-only, imaj etiketleme, rollback.sh, deploy öncesi pg_dump, gerçek /healthz kapısı) + sunucuda elle prova → **Deploy #2**
 
@@ -43,7 +44,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 - [ ] **3-B** · Graph retry: paylaşılan Session + urllib3.Retry + 401 token yenileme + chunk resume [3.2]
 - [ ] **3-C** · Gemini retry sınıflandırıcı (kod bazlı) + finish_reason + deadline bütçesi + devre kesici [3.3] → **Deploy #4**
 - [ ] **3-D** · ofis no atomik rezervasyon + `/confirm` idempotency anahtarı + `/commit` 409 idempotent çözümleme [3.4, 3.5]
-- [ ] **3-E** · DB timeout/rollback'ler + PROCESS_CACHE disk kalıcılığı [3.6, 3.7]
+- [ ] **3-E** · DB timeout/rollback'ler + PROCESS_CACHE disk kalıcılığı [3.6, 3.7] + uvicorn `--workers 2` geçişi (1-A'dan devir; önkoşullar: cache disk kalıcılığı + lifespan `init_db`/APScheduler/refresh-thread tekilleştirme)
 - [ ] **3-F** · `conversion_pending` katmanı: orijinali kendi uzantısıyla sakla, gece retry, hukukbot export hariç tutma [3.8] → **Deploy #5**
 
 ### FAZ 4 — Frontend dayanıklılığı → Deploy #6 (--build!)
@@ -61,6 +62,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 
 ## Durum notları (her oturum tek satır, en yeni üstte)
 
+- 2026-08-08 (3): 1-A kodlandı — compose'a mem/log limitleri + backend `/healthz` healthcheck + frontend depends_on:healthy (lokalde doğrulandı: backend healthy olana dek frontend bekledi, limitler HostConfig'te 2g/512m/128m); migrasyon `migrate.py` ile entrypoint'te tek seferlik, api.py import-time çağrı kaldırıldı; `--workers 2` → 3-E'ye ertelendi (PROCESS_CACHE süreç içi); 554 test konteynerde yeşil (6 yeni `test_faz1_infra.py`); prod'a Deploy #2 ile gidecek.
 - 2026-08-08 (2): Deploy #1 yapıldı — prod=9f1b202; yedek alındı (SharePoint'e de), backend imajı yeniden derlendi, başlangıç temiz, HTTP 200, mem_limit 2g + MALLOC_ARENA_MAX=2 korundu; `upload_db_backup.py` artık imajda (docker-cp kırılganlığı kapandı); GS eşzamanlılık kanıtı ilk gerçek büyük /confirm'de loglardan izlenecek.
 - 2026-08-08: Faz 0 tamamı kodlandı (0-A/0-B/0-C, 10 madde); 548 test konteynerde yeşil (17'si yeni `test_faz0_hardening.py`); 0.9 owner kontrolü intake set/touch/pop noktalarına da işlendi; 0.6 davranış notu: limit aşan ek artık hata değil, e-posta arşiv referansıyla gidiyor; Deploy #1 mesai dışı bekliyor.
 - 2026-08-07: Takip dosyası oluşturuldu, paketler tanımlandı; henüz paket başlamadı.
