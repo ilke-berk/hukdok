@@ -311,7 +311,7 @@ def _merge_payload(case_id=55, esas_no="2025/7"):
 def test_merge_enrich_mode_full_draft(merge_env):
     from routes.processing import PROCESS_CACHE
 
-    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf"})
+    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf", "owner": "t@example.com"})
     try:
         resp = merge_env.client.post("/api/case-intake/merge", json=_merge_payload())
         assert resp.status_code == 200
@@ -352,7 +352,7 @@ def test_merge_enrich_mode_full_draft(merge_env):
 def test_merge_enrich_no_conflict_when_values_agree(merge_env):
     from routes.processing import PROCESS_CACHE
 
-    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf"})
+    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf", "owner": "t@example.com"})
     try:
         resp = merge_env.client.post(
             "/api/case-intake/merge", json=_merge_payload(esas_no="2024/123")
@@ -374,7 +374,7 @@ def test_merge_without_case_id_stays_new_mode(merge_env):
 
     payload = _merge_payload()
     del payload["case_id"]
-    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf"})
+    PROCESS_CACHE.set("pid-tensip", {"path": "/tmp/pid-tensip.pdf", "owner": "t@example.com"})
     try:
         resp = merge_env.client.post("/api/case-intake/merge", json=payload)
         assert resp.status_code == 200
@@ -457,7 +457,10 @@ def apply_env(monkeypatch, tmp_path):
     def put_cache(pid):
         p = tmp_path / f"{pid}.pdf"
         p.write_bytes(b"%PDF fake")
-        PROCESS_CACHE.set(pid, {"path": str(p), "original_path": None, "original_ext": ".pdf"})
+        PROCESS_CACHE.set(pid, {
+            "path": str(p), "original_path": None, "original_ext": ".pdf",
+            "owner": "test@example.com",
+        })
         return p
 
     app = FastAPI()

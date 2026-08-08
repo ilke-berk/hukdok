@@ -588,7 +588,7 @@ def test_merge_route_full_draft(merge_client):
     from routes.processing import PROCESS_CACHE
 
     for pid in ("pid-tensip", "pid-dilekce"):   # pid-police kasıtlı olarak cache'te yok
-        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf"})
+        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf", "owner": "test@example.com"})
     try:
         resp = merge_client.post("/api/case-intake/merge", json=_merge_payload())
         assert resp.status_code == 200
@@ -631,7 +631,7 @@ def test_merge_route_no_conflict_skips_arbiter(merge_client):
     payload = _merge_payload()
     payload["documents"][1]["extraction"]["esas_no"] = "2024/1"   # çelişki kalmadı
     for pid in ("pid-tensip", "pid-dilekce", "pid-police"):
-        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf"})
+        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf", "owner": "test@example.com"})
     try:
         resp = merge_client.post("/api/case-intake/merge", json=payload)
         assert resp.status_code == 200
@@ -651,7 +651,7 @@ def test_merge_route_arbiter_failure_keeps_majority(merge_client, monkeypatch):
 
     monkeypatch.setattr(case_intake_analyzer, "arbitrate_conflicts", failing_arbiter)
     for pid in ("pid-tensip", "pid-dilekce", "pid-police"):
-        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf"})
+        PROCESS_CACHE.set(pid, {"path": f"/tmp/{pid}.pdf", "owner": "test@example.com"})
     try:
         resp = merge_client.post("/api/case-intake/merge", json=_merge_payload())
         assert resp.status_code == 200
@@ -666,7 +666,7 @@ def test_merge_route_arbiter_failure_keeps_majority(merge_client, monkeypatch):
 def test_keepalive_route_refreshes_and_reports_expired(merge_client):
     from routes.processing import PROCESS_CACHE
 
-    PROCESS_CACHE.set("pid-alive", {"path": "/tmp/x.pdf"})
+    PROCESS_CACHE.set("pid-alive", {"path": "/tmp/x.pdf", "owner": "test@example.com"})
     try:
         resp = merge_client.post(
             "/api/case-intake/keepalive",

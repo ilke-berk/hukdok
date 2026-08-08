@@ -79,7 +79,10 @@ def env(monkeypatch, tmp_path):
     def put_cache(pid):
         p = tmp_path / f"{pid}.pdf"
         p.write_bytes(b"%PDF fake")
-        PROCESS_CACHE.set(pid, {"path": str(p), "original_path": None, "original_ext": ".pdf"})
+        PROCESS_CACHE.set(pid, {
+            "path": str(p), "original_path": None, "original_ext": ".pdf",
+            "owner": "test@example.com",
+        })
         return p
 
     app = FastAPI()

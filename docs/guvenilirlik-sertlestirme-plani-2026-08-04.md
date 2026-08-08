@@ -6,6 +6,8 @@
 
 **Kısıt:** Uygulama aktif kullanımda. Her faz kendi başına deploy edilebilir, küçük ve geri alınabilir olmalı. Deploy'lar mesai dışı yapılır.
 
+**Uygulama takibi:** Oturum paketleri ve güncel durum [guvenilirlik-sertlestirme-uygulama-takibi.md](guvenilirlik-sertlestirme-uygulama-takibi.md) dosyasında — çalışmaya oradan başla, bu dosyadan yalnız ilgili faz bölümünü oku.
+
 ---
 
 ## Özet teşhis

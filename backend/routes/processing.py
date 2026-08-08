@@ -7,6 +7,7 @@ import time
 import uuid
 import tempfile
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
@@ -112,6 +113,7 @@ def refresh_lists_background():
 def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: str = None):
     if not case_id or not belge_turu_kodu:
         return False
+    db = None
     try:
         db = SessionLocal()
         case = db.query(models.Case).filter(
@@ -119,7 +121,6 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
             models.Case.deleted_at.is_(None),  # silinmiş davanın durumu güncellenmesin
         ).first()
         if not case:
-            db.close()
             return False
 
         new_status = None
@@ -144,14 +145,15 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
             db.add(history)
             db.commit()
             logging.info(f"Case {case_id} status auto-updated: {old_status} → {new_status}")
-            db.close()
             return True
 
-        db.close()
         return False
     except Exception as e:
         logging.error(f"Auto status update error: {e}")
         return False
+    finally:
+        if db is not None:
+            db.close()
 
 
 def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: str = None, uploaded_by: str = None):
@@ -159,6 +161,7 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
         return {}
 
     updated_fields = {}
+    db = None
     try:
         db = SessionLocal()
         case = db.query(models.Case).filter(
@@ -222,7 +225,8 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
         logging.error(f"Auto-Enrich error: {e}")
         return {}
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 @router.post("/refresh")
@@ -378,6 +382,7 @@ async def analyze_file_endpoint(
 
     async def event_stream():
         cached_full_pdf_path = None
+        counter_task = None
         try:
             async def fetch_counter():
                 try:
@@ -418,6 +423,7 @@ async def analyze_file_endpoint(
                             "path": full_pdf_path,
                             "original_path": original_path,
                             "original_ext": suffix,
+                            "owner": _owner_id(user),
                         })
                         TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path} (original: {original_path})")
 
@@ -467,6 +473,13 @@ async def analyze_file_endpoint(
             TechnicalLogger.log("ERROR", f"Streaming Error [ID: {error_id}]: {e}")
             yield json.dumps({"status": "error", "message": f"Beklenmedik hata: {str(e)}"}) + "\n"
         finally:
+            # Analiz "complete"e ulaşamazsa counter_task hiç await edilmiyordu → sarkan task
+            if counter_task is not None and not counter_task.done():
+                counter_task.cancel()
+                try:
+                    await counter_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             # Faz 3: if temp_path was cached (analiz PDF'i veya dönüştürülmüş
             # formatın orijinali olarak), don't delete it — PROCESS_CACHE TTL handles cleanup.
             if cached_full_pdf_path:
@@ -480,9 +493,22 @@ async def analyze_file_endpoint(
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
-def _download_owner_id(user: dict) -> str:
+def _owner_id(user: dict) -> str:
+    """Cache sahipliği için kullanıcı kimliği (DOWNLOAD_CACHE + PROCESS_CACHE ortak)."""
     raw = user.get("preferred_username") or user.get("upn") or user.get("email") or ""
     return raw.strip().lower()
+
+
+def _touch_owned(cache: TTLCache, key: str, owner: str) -> bool:
+    """TTL tazeler; girdi başka kullanıcınınsa yokmuş gibi False döner."""
+    entry = cache.get(key)
+    if not entry:
+        return False
+    entry_owner = (entry.get("owner") or "").strip().lower()
+    if not owner or not entry_owner or owner != entry_owner:
+        TechnicalLogger.log("WARNING", f"PROCESS_CACHE owner mismatch (touch): {key}")
+        return False
+    return cache.touch(key)
 
 
 @router.get("/api/download/{file_id}")
@@ -491,7 +517,7 @@ async def download_file(file_id: str, user: dict = Depends(get_current_user)):
     if not file_info:
         raise HTTPException(status_code=404, detail="Dosya bulunamadı veya süresi doldu.")
 
-    requester = _download_owner_id(user)
+    requester = _owner_id(user)
     owner = (file_info.get("owner") or "").strip().lower()
     if not requester or not owner or requester != owner:
         # Mask existence to avoid leaking valid file_ids to non-owners.
@@ -568,7 +594,9 @@ async def confirm_process(
     # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
     # ham_source_path: HAM arşive gidecek orijinal dosya (dönüştürülmüş
     # formatlarda source_path'ten farklıdır).
-    temp_path, ham_source_path = await document_pipeline.accept_incoming_file(process_id, file, PROCESS_CACHE)
+    temp_path, ham_source_path = await document_pipeline.accept_incoming_file(
+        process_id, file, PROCESS_CACHE, owner=_owner_id(user)
+    )
 
     source_path = temp_path
     muvekkil_kodu = None
@@ -590,29 +618,35 @@ async def confirm_process(
     sanitized_original = sanitize_filename(original_filename)
     ham_filename = f"{date_str}_{sanitized_original}"
 
-    # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent
-    pdfa_temp_file, doc_id = document_pipeline.convert_pdfa_and_queue_uploads(
-        background_tasks=background_tasks,
-        source_path=source_path,
-        ham_filename=ham_filename,
-        ham_source_path=ham_source_path,
-        ham_folder=HAM_FOLDER,
-        islenmis_folder=ISLENMIS_FOLDER,
-        new_filename=new_filename,
-        original_filename=original_filename,
-        belge_turu_kodu=belge_turu_kodu,
-        muvekkiller=muvekkiller,
-        muvekkil_adi=muvekkil_adi,
-        ai_ozet=ai_ozet,
-        linked_case_id=linked_case_id,
-        case_party_id=case_party_id,
-        avukat_kodu=avukat_kodu,
-        esas_no=esas_no,
-        is_test_mode=is_test_mode,
-        user=user,
-        current_user_name=current_user_name,
-        results=results,
-        timings=timings,
+    # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
+    # Executor şart: Ghostscript dönüşümü senkron ve 240 sn'ye kadar sürebilir —
+    # event loop'ta koşarsa tüm kullanıcıların istekleri durur (504 kümeleri).
+    pdfa_temp_file, doc_id = await asyncio.get_running_loop().run_in_executor(
+        None,
+        partial(
+            document_pipeline.convert_pdfa_and_queue_uploads,
+            background_tasks=background_tasks,
+            source_path=source_path,
+            ham_filename=ham_filename,
+            ham_source_path=ham_source_path,
+            ham_folder=HAM_FOLDER,
+            islenmis_folder=ISLENMIS_FOLDER,
+            new_filename=new_filename,
+            original_filename=original_filename,
+            belge_turu_kodu=belge_turu_kodu,
+            muvekkiller=muvekkiller,
+            muvekkil_adi=muvekkil_adi,
+            ai_ozet=ai_ozet,
+            linked_case_id=linked_case_id,
+            case_party_id=case_party_id,
+            avukat_kodu=avukat_kodu,
+            esas_no=esas_no,
+            is_test_mode=is_test_mode,
+            user=user,
+            current_user_name=current_user_name,
+            results=results,
+            timings=timings,
+        ),
     )
 
     final_local_path = pdfa_temp_file if (pdfa_temp_file and os.path.exists(pdfa_temp_file)) else source_path
@@ -622,8 +656,14 @@ async def confirm_process(
 
     timings["5_logging"] = 0.00
 
-    # Extra ekleri temp dosyaya kaydet
-    extra_temp_paths = await document_pipeline.save_extra_attachments(extra_attachment_files)
+    # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir
+    extra_temp_paths, skipped_extras = await document_pipeline.save_extra_attachments(extra_attachment_files)
+    if skipped_extras:
+        results["extra_attachments_skipped"] = skipped_extras
+        results["extra_attachments_warning"] = (
+            "Bazı ekler doğrulamadan geçemediği için e-postaya eklenmedi: "
+            + ", ".join(skipped_extras)
+        )
 
     avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu)
 
@@ -687,7 +727,7 @@ async def confirm_process(
         DOWNLOAD_CACHE.set(download_id, {
             "path": email_file_path,
             "filename": new_filename,
-            "owner": _download_owner_id(user),
+            "owner": _owner_id(user),
         })
         results["download_id"] = download_id
 

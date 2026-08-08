@@ -41,6 +41,7 @@ def save_case_document(
     uploaded_by: str = None,
     uploaded_by_email: str = None,
 ):
+    db = None
     try:
         db = SessionLocal()
         if case_id:
@@ -103,12 +104,14 @@ def save_case_document(
         db.commit()
         db.refresh(doc)
         doc_id = doc.id
-        db.close()
         logging.info(f"CaseDocument saved: ID={doc_id}, mode={link_mode}, case_id={case_id}, party_id={resolved_party_id}")
         return doc_id
     except Exception as e:
         logging.error(f"CaseDocument save error: {e}")
         return None
+    finally:
+        if db is not None:
+            db.close()
 
 
 def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict, avukat_kodu: Optional[str]) -> Optional[str]:
@@ -142,9 +145,12 @@ def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict, avukat_k
 
 
 async def accept_incoming_file(
-    process_id: Optional[str], file: Optional[UploadFile], process_cache
+    process_id: Optional[str], file: Optional[UploadFile], process_cache, owner: Optional[str]
 ) -> tuple:
     """Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
+
+    owner: isteği yapan kullanıcının kimliği — girdiyi yalnız /process'te
+    cache'e koyan kullanıcı tüketebilir.
 
     Returns:
         (source_for_pdfa, original_for_ham) — cache hit'te dönüştürülmüş PDF +
@@ -155,7 +161,17 @@ async def accept_incoming_file(
     _from_cache = False
 
     if process_id:
-        cache_entry = process_cache.pop(process_id)
+        cache_entry = process_cache.get(process_id)
+        if cache_entry:
+            entry_owner = (cache_entry.get("owner") or "").strip().lower()
+            requester = (owner or "").strip().lower()
+            if not requester or not entry_owner or requester != entry_owner:
+                # Mask existence to avoid leaking valid process_ids to non-owners;
+                # girdi sahibinde kalır, cache miss gibi davranılır.
+                TechnicalLogger.log("WARNING", f"PROCESS_CACHE owner mismatch: {process_id}")
+                cache_entry = None
+            else:
+                cache_entry = process_cache.pop(process_id)
         if cache_entry:
             cached_path = cache_entry["path"]
             if os.path.exists(cached_path):
@@ -227,8 +243,8 @@ def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: st
         # Update database with SharePoint URL upon successful upload
         url_saved = False
         if doc_id_to_update and response_data and "webUrl" in response_data:
+            db_upd = SessionLocal()
             try:
-                db_upd = SessionLocal()
                 doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id_to_update).first()
                 if doc_rec:
                     doc_rec.sharepoint_url = response_data["webUrl"]
@@ -343,30 +359,56 @@ def convert_pdfa_and_queue_uploads(
     return pdfa_temp_file, doc_id
 
 
-async def save_extra_attachments(extra_attachment_files: list) -> list:
-    """Extra ekleri temp dosyaya kaydet."""
+async def save_extra_attachments(extra_attachment_files: list) -> tuple[list, list]:
+    """Extra ekleri ana dosyayla aynı doğrulamadan (uzantı + boyut + magic-byte)
+    geçirip temp dosyaya kaydeder. Geçemeyen ek e-postaya eklenmez.
+
+    Returns:
+        (kaydedilenler, atlanan dosya adları) — atlananlar results'a yazılıp
+        kullanıcıya gösterilir.
+    """
     extra_temp_paths = []
+    skipped = []
     for extra_file in extra_attachment_files:
-        if extra_file and extra_file.filename:
-            try:
-                extra_suffix = Path(extra_file.filename).suffix
-                with tempfile.NamedTemporaryFile(delete=False, suffix=extra_suffix) as etmp:
-                    # Chunk'lı okuma: tek seferlik read() 50 MB'a kadar tek
-                    # parça bytes tahsis ediyordu (ana upload zaten chunk'lı)
-                    while chunk := await extra_file.read(65536):
-                        etmp.write(chunk)
-                    extra_temp_paths.append({"path": etmp.name, "name": extra_file.filename})
-            except Exception as e:
-                TechnicalLogger.log("WARNING", f"Extra attachment save error: {e}")
-    return extra_temp_paths
+        if not (extra_file and extra_file.filename):
+            continue
+        filename = extra_file.filename
+        extra_suffix = Path(filename).suffix.lower()
+        if extra_suffix not in ALLOWED_EXTENSIONS:
+            TechnicalLogger.log("WARNING", f"Extra attachment rejected (uzantı {extra_suffix or '(yok)'}): {filename}")
+            skipped.append(filename)
+            continue
+        tmp_path = None
+        try:
+            total_bytes = 0
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extra_suffix) as etmp:
+                tmp_path = etmp.name
+                # Chunk'lı okuma: tek seferlik read() 50 MB'a kadar tek
+                # parça bytes tahsis ediyordu (ana upload zaten chunk'lı)
+                while chunk := await extra_file.read(65536):
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_UPLOAD_BYTES:
+                        raise HTTPException(status_code=413, detail=f"Ek çok büyük. Maksimum {MAX_UPLOAD_MB}MB.")
+                    etmp.write(chunk)
+            validate_file_type(tmp_path)
+            extra_temp_paths.append({"path": tmp_path, "name": filename})
+        except HTTPException as e:
+            safe_remove(tmp_path)
+            TechnicalLogger.log("WARNING", f"Extra attachment rejected: {filename} — {e.detail}")
+            skipped.append(filename)
+        except Exception as e:
+            safe_remove(tmp_path)
+            TechnicalLogger.log("WARNING", f"Extra attachment save error ({filename}): {e}")
+            skipped.append(filename)
+    return extra_temp_paths, skipped
 
 
 def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None, subject_prefix="[HukDok]"):
     def _update_email_status(success: bool, error_msg: str = None):
         if not doc_id:
             return
+        db_upd = SessionLocal()
         try:
-            db_upd = SessionLocal()
             doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
             if doc_rec:
                 doc_rec.email_sent = success
@@ -587,6 +629,7 @@ def save_hearing_date(
     """Duruşma/tensip zaptı veya tebligattan gelen sonraki duruşma tarihini ajandaya kaydet."""
     from constants import is_hearing_doctype
     if sonraki_durusma_tarihi and is_hearing_doctype(belge_turu_kodu):
+        db_h = None
         try:
             from datetime import date as _date
             parsed_hearing = _date.fromisoformat(sonraki_durusma_tarihi)
@@ -606,7 +649,6 @@ def save_hearing_date(
                 results["hearing_date_saved"] = sonraki_durusma_tarihi
                 results["hearing_time_saved"] = sonraki_durusma_saati or None
                 logging.info(f"HearingDate zaten mevcut, duplicate atlandı: case_id={linked_case_id}, tarih={parsed_hearing}, saat={sonraki_durusma_saati}")
-                db_h.close()
                 return
 
             case_h = db_h.query(models.Case).filter(
@@ -626,11 +668,13 @@ def save_hearing_date(
             results["hearing_date_saved"] = sonraki_durusma_tarihi
             results["hearing_time_saved"] = sonraki_durusma_saati or None
             logging.info(f"HearingDate kaydedildi: case_id={linked_case_id}, tarih={parsed_hearing}, saat={sonraki_durusma_saati}")
-            db_h.close()
         except Exception as e:
             logging.error(f"HearingDate kaydetme hatası: {e}")
             results["hearing_date_saved"] = None
             results["hearing_time_saved"] = None
+        finally:
+            if db_h is not None:
+                db_h.close()
     else:
         results["hearing_date_saved"] = None
         results["hearing_time_saved"] = None

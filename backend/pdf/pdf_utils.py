@@ -13,6 +13,14 @@ logging.basicConfig(
 MAX_PDF_PAGES = 500
 
 
+class PdfPageLimitError(ValueError):
+    """MAX_PDF_PAGES aşımı.
+
+    Ayrı tip: genel ValueError handler'ları (ör. analyzer'ın "Güvenlik
+    Filtresi" teşhisi) bu hatayı sahiplenmesin, kullanıcı gerçek nedeni görsün.
+    """
+
+
 def load_and_analyze_pdf(pdf_path):
     """
     Opens PDF, extracts text, and simultaneously checks for scanned/hybrid content.
@@ -35,7 +43,7 @@ def load_and_analyze_pdf(pdf_path):
 
         if total_pages > MAX_PDF_PAGES:
             logging.warning(f"PDF rejected: {total_pages} pages exceeds limit of {MAX_PDF_PAGES}")
-            raise ValueError(f"PDF çok fazla sayfa içeriyor: {total_pages}. Maksimum {MAX_PDF_PAGES} sayfa.")
+            raise PdfPageLimitError(f"PDF çok fazla sayfa içeriyor: {total_pages}. Maksimum {MAX_PDF_PAGES} sayfa.")
 
         logging.info(f"Processing PDF: {pdf_path} ({total_pages} pages)")
 
@@ -96,6 +104,10 @@ def load_and_analyze_pdf(pdf_path):
         # Success path
         return False, combined_text, "CLEAN_TEXT"
 
+    except PdfPageLimitError:
+        # Kendi sayfa limiti guard'ı — aşağıdaki genel except yutup dosyayı
+        # OCR yoluna sokuyordu (limit ölü koddu)
+        raise
     except Exception as e:
         logging.error(f"PDF Analysis Error: {e}")
         return True, None, f"ERROR: {e}"

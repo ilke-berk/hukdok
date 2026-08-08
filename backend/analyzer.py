@@ -139,6 +139,13 @@ except ImportError:
 
         pdf_utils = None
 
+if pdf_utils is not None:
+    PdfPageLimitError = pdf_utils.PdfPageLimitError
+else:
+    # pdf_utils yoksa bu hata hiç üretilmez; except cümlesi için yer tutucu
+    class PdfPageLimitError(ValueError):
+        pass
+
 # --- DYNAMIC CONFIG ---
 from managers.config_manager import DynamicConfig
 
@@ -236,15 +243,25 @@ def _file_state_name(file: Any) -> str:
     return getattr(state, "name", None) or str(state or "")
 
 
-async def wait_for_files_active(files: List[Any]) -> None:
+async def wait_for_files_active(files: List[Any], deadline_seconds: float = 120.0) -> None:
     """
     Waits for the uploaded files to be processed and active.
+
+    deadline_seconds: PROCESSING'de takılı dosya isteği sonsuza dek asmasın —
+    toplam bekleme bu süreyi aşarsa TimeoutError fırlatılır.
     """
     logging.info("Waiting for file processing...")
     client = get_gemini_client(GOOGLE_API_KEY)
+    deadline = time.monotonic() + deadline_seconds
     for name in (file.name for file in files):
         file = client.files.get(name=name)
         while _file_state_name(file) == "PROCESSING":
+            if time.monotonic() > deadline:
+                error_msg = (
+                    f"File {file.name} stuck in PROCESSING (>{deadline_seconds:.0f}s)"
+                )
+                TechnicalLogger.log("ERROR", error_msg)
+                raise TimeoutError(error_msg)
             await asyncio.sleep(1)
             file = client.files.get(name=name)
         if _file_state_name(file) != "ACTIVE":
@@ -1271,6 +1288,27 @@ async def analyze_file_generator(
         default_data["hash"] = file_hash
         default_data["ozet"] = (
             f"Dosya bulunamadı. Lütfen dosya yolunu kontrol edin. (Kod: {error_id})"
+        )
+        yield {"status": "complete", "data": default_data}
+
+    except PdfPageLimitError as e:
+        # ValueError alt sınıfı — aşağıdaki handler "Güvenlik Filtresi" diye
+        # yanlış teşhis koymasın, kullanıcı sayfa limitini görsün
+        error_id = str(uuid.uuid4())[:8]
+        TechnicalLogger.log("ERROR", f"PDF page limit exceeded: {e}")
+        default_data = get_default_json()
+        default_data["hash"] = file_hash
+        default_data["ozet"] = f"{e} (Kod: {error_id})"
+        yield {"status": "complete", "data": default_data}
+
+    except json.JSONDecodeError as e:
+        # ValueError alt sınıfı — bozuk LLM çıktısı güvenlik filtresi değildir
+        error_id = str(uuid.uuid4())[:8]
+        TechnicalLogger.log("ERROR", f"Gemini JSON parse error [ErrorID: {error_id}]: {e}")
+        default_data = get_default_json()
+        default_data["hash"] = file_hash
+        default_data["ozet"] = (
+            f"Yapay zeka yanıtı çözümlenemedi (bozuk çıktı). Lütfen tekrar deneyin. (Kod: {error_id})"
         )
         yield {"status": "complete", "data": default_data}
 

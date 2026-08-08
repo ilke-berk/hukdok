@@ -35,11 +35,23 @@ def _get_email_config() -> dict:
     E-posta yapılandırmasını döndürür.
 
     Returns:
-        dict: sender
+        dict: sender, enabled (kill-switch), test_mode
     """
     _load_env()
+
+    def _flag(name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None or raw.strip() == "":
+            return default
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+
     return {
         "sender": os.getenv("EMAIL_SENDER", ""),
+        # EMAIL_ENABLED=false tüm gönderimi durdurur; anahtar yoksa açık kabul
+        # edilir (mevcut prod davranışı). Tüketiciler: email_pre_check,
+        # activity_manager.send_unmailed_summary, send_document_email.
+        "enabled": _flag("EMAIL_ENABLED", True),
+        "test_mode": _flag("EMAIL_TEST_MODE", False),
     }
 
 
@@ -98,6 +110,11 @@ def send_document_email(
 
     config = _get_email_config()
 
+    # 0. Kill-switch — tüm gönderim yollarının geçtiği tek nokta
+    if not config["enabled"]:
+        logger.info("E-posta özelliği kapalı (EMAIL_ENABLED=false), gönderim atlandı.")
+        return {"success": False, "message": "E-posta özelliği kapalı (EMAIL_ENABLED=false)"}
+
     # 1. Gönderici adresi var mı?
     sender = config["sender"]
     if not sender:
@@ -118,49 +135,57 @@ def send_document_email(
         # 5. Token al
         token = get_graph_token()
 
-        # 6. Dosyayı encode et
-        attachment_content, file_size = _encode_attachment(attachment_path, attachment_cache)
-        file_size_mb = file_size / (1024 * 1024)
+        # 6. Ekleri hazırla — Graph /sendMail istek gövdesini ~4 MB'ta keser
+        # (base64 şişmesi dahil); önceki 50 MB limiti garantili 413 üretiyordu.
+        # Limiti aşan ek e-postaya girmez, gövdeye arşiv referansı yazılır.
+        MAX_SINGLE_MB = 3
+        MAX_TOTAL_MB = 3
 
-        # Boyut kontrolü — upload limitiyle (50 MB) hizalı; önceki 70 MB,
-        # sisteme hiç giremeyecek boyutta dosyanın base64 şişmesine izin veriyordu
-        MAX_SINGLE_MB = 50
-        MAX_TOTAL_MB = 50
+        islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+        site_url = os.getenv("SHAREPOINT_SITE_URL", "").strip()
+        arsiv_ref = f"{site_url} → {islenmis_folder}" if site_url else f"SharePoint arşivi → {islenmis_folder}"
 
-        if file_size_mb > MAX_SINGLE_MB:
-            logger.error(f"❌ Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)")
-            return {"success": False, "message": f"Ana dosya çok büyük: {file_size_mb:.2f}MB (max: {MAX_SINGLE_MB}MB)"}
+        attachments_payload = []
+        size_notes = []
+        total_size_mb = 0.0
 
-        logger.info(f"📎 Ana dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
-
-        # Ana eke ek olarak extra dosyaları encode et
-        attachments_payload = [
-            {
+        file_size_mb = os.path.getsize(attachment_path) / (1024 * 1024)
+        if file_size_mb <= MAX_SINGLE_MB:
+            attachment_content, _ = _encode_attachment(attachment_path, attachment_cache)
+            attachments_payload.append({
                 "@odata.type": "#microsoft.graph.fileAttachment",
                 "name": attachment_name,
                 "contentType": "application/pdf",
                 "contentBytes": attachment_content
-            }
-        ]
-        total_size_mb = file_size_mb
+            })
+            total_size_mb = file_size_mb
+            logger.info(f"📎 Ana dosya hazırlandı: {attachment_name} ({file_size_mb:.2f}MB)")
+        else:
+            size_notes.append(
+                f'"{attachment_name}" ({file_size_mb:.1f} MB) e-posta ek limitini ({MAX_SINGLE_MB} MB) '
+                f"aştığı için ekte değildir. Belgeye arşivden ulaşabilirsiniz: {arsiv_ref} "
+                f"(dosya adı: {attachment_name})"
+            )
+            logger.warning(
+                f"⚠️ Ana dosya ek limitini aşıyor ({file_size_mb:.2f}MB), arşiv referansıyla gönderiliyor: {attachment_name}"
+            )
 
         if extra_attachments:
             for extra in extra_attachments:
                 extra_path = extra.get("path", "")
                 extra_name = extra.get("name", "ek_belge")
                 if extra_path and os.path.exists(extra_path):
-                    extra_content, extra_size = _encode_attachment(extra_path, attachment_cache)
-                    extra_size_mb = extra_size / (1024 * 1024)
+                    extra_size_mb = os.path.getsize(extra_path) / (1024 * 1024)
 
-                    # Tek ek boyut kontrolü
-                    if extra_size_mb > MAX_SINGLE_MB:
-                        logger.warning(f"⚠️ Ek belge çok büyük, atlandı: {extra_name} ({extra_size_mb:.2f}MB)")
+                    # Tek ek + toplam boyut kontrolü (encode etmeden önce)
+                    if extra_size_mb > MAX_SINGLE_MB or total_size_mb + extra_size_mb > MAX_TOTAL_MB:
+                        size_notes.append(
+                            f'Ek belge "{extra_name}" ({extra_size_mb:.1f} MB) boyut limiti nedeniyle eklenemedi.'
+                        )
+                        logger.warning(f"⚠️ Ek belge boyut limitini aşıyor, atlandı: {extra_name} ({extra_size_mb:.2f}MB)")
                         continue
 
-                    # Toplam boyut kontrolü
-                    if total_size_mb + extra_size_mb > MAX_TOTAL_MB:
-                        logger.warning(f"⚠️ Toplam ek boyutu limiti aşılıyor, atlandı: {extra_name} (toplam: {total_size_mb + extra_size_mb:.2f}MB)")
-                        continue
+                    extra_content, _ = _encode_attachment(extra_path, attachment_cache)
 
                     # MIME türünü uzantıya göre belirle
                     ext = Path(extra_path).suffix.lower()
@@ -178,6 +203,9 @@ def send_document_email(
                     logger.info(f"📎 Ek belge eklendi: {extra_name} ({extra_size_mb:.2f}MB, toplam: {total_size_mb:.2f}MB)")
                 else:
                     logger.warning(f"⚠️ Ek belge bulunamadı, atlandı: {extra_path}")
+
+        if size_notes:
+            body_text = body_text + "\n\nNot:\n" + "\n".join(f"- {n}" for n in size_notes)
 
         # 7. E-posta payload'ı oluştur (Multiple Recipients)
         # Graph API format: [{"emailAddress": {"address": "..."}}, ...]

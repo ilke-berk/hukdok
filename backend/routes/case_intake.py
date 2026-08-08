@@ -57,7 +57,7 @@ from file_utils import (
     validate_file_type,
 )
 from managers.log_manager import TechnicalLogger
-from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache
+from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache, _owner_id, _touch_owned
 from schemas_intake import (
     CaseIntakeApplyRequest,
     CaseIntakeCommitRequest,
@@ -385,6 +385,7 @@ async def analyze_case_intake_file(
                             "path": full_pdf_path,
                             "original_path": original_path,
                             "original_ext": suffix,
+                            "owner": _owner_id(user),
                         })
                         TechnicalLogger.log(
                             "INFO",
@@ -609,7 +610,8 @@ async def merge_case_intake(
     # 1. Keepalive: listelenen tüm process_id'lerin TTL'i tazelenir; süresi
     #    dolmuş belge birleştirmeye girer ama taslakta expired işaretlenir
     #    (commit adımı o belgeyi arşivleyemeyecek — kullanıcı bilgilendirilir).
-    expired_ids = {d["process_id"] for d in docs if not PROCESS_CACHE.touch(d["process_id"])}
+    requester = _owner_id(user)
+    expired_ids = {d["process_id"] for d in docs if not _touch_owned(PROCESS_CACHE, d["process_id"], requester)}
 
     # 2. DB bağlamı + eşleşen hekimlerin kayıtlı poliçeleri
     ctx = await loop.run_in_executor(None, _load_merge_context, tenant_id)
@@ -826,7 +828,7 @@ async def _archive_intake_documents(
         try:
             try:
                 temp_path, ham_source_path = await document_pipeline.accept_incoming_file(
-                    doc.process_id, None, PROCESS_CACHE
+                    doc.process_id, None, PROCESS_CACHE, owner=_owner_id(user)
                 )
             except HTTPException:
                 # accept_incoming_file cache girdisini POP eder; girişte yoksa /
@@ -1160,6 +1162,7 @@ def keepalive_case_intake(
     user: dict = Depends(get_current_user),
 ):
     """PROCESS_CACHE TTL tazeler; süresi dolanlar expired listesinde döner."""
-    refreshed = [pid for pid in req.process_ids if PROCESS_CACHE.touch(pid)]
+    requester = _owner_id(user)
+    refreshed = [pid for pid in req.process_ids if _touch_owned(PROCESS_CACHE, pid, requester)]
     expired = [pid for pid in req.process_ids if pid not in set(refreshed)]
     return {"refreshed": refreshed, "expired": expired}
