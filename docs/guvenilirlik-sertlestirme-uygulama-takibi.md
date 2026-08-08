@@ -26,7 +26,7 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 ### FAZ 0 — Acil düzeltmeler → Deploy #1
 - [x] **0-A** · madde 0.1, 0.2, 0.8, 0.9, 0.10 — `routes/processing.py` + `document_pipeline.py` çekirdeği (event-loop, session sızıntısı, task sızıntısı, cache owner, ek doğrulama); canlı eşzamanlılık dumanı Deploy #1 sırasında
 - [x] **0-B** · madde 0.3, 0.4, 0.7 — `analyzer.py`, `gemini_client.py`, `pdf/pdf_utils.py` hata yolları (JSON decode, Gemini timeout, MAX_PDF_PAGES → `PdfPageLimitError`)
-- [x] **0-C** · madde 0.5, 0.6 — `email_sender.py`: kill-switch onarımı (config + gönderim kapısı), ek limiti 3 MB + arşiv referanslı gövde notu; toplu pytest yeşil → **Deploy #1 BEKLİYOR (mesai dışı)**
+- [x] **0-C** · madde 0.5, 0.6 — `email_sender.py`: kill-switch onarımı (config + gönderim kapısı), ek limiti 3 MB + arşiv referanslı gövde notu; toplu pytest yeşil → **Deploy #1 YAPILDI (2026-08-08, prod=9f1b202)**
 
 ### FAZ 1 — İnfra/deploy repo'ya → Deploy #2
 - [ ] **1-A** · docker-compose sertleştirme (mem/log limitleri, healthcheck, depends_on) + uvicorn `--workers 2` + migration'ı entrypoint'ten tek seferlik ayrı adıma al + `api.py` import-time migration çağrısını kaldır
@@ -61,5 +61,6 @@ Paketler dosya kümesine göre gruplandı: aynı dosyalara dokunan maddeler ayn�
 
 ## Durum notları (her oturum tek satır, en yeni üstte)
 
+- 2026-08-08 (2): Deploy #1 yapıldı — prod=9f1b202; yedek alındı (SharePoint'e de), backend imajı yeniden derlendi, başlangıç temiz, HTTP 200, mem_limit 2g + MALLOC_ARENA_MAX=2 korundu; `upload_db_backup.py` artık imajda (docker-cp kırılganlığı kapandı); GS eşzamanlılık kanıtı ilk gerçek büyük /confirm'de loglardan izlenecek.
 - 2026-08-08: Faz 0 tamamı kodlandı (0-A/0-B/0-C, 10 madde); 548 test konteynerde yeşil (17'si yeni `test_faz0_hardening.py`); 0.9 owner kontrolü intake set/touch/pop noktalarına da işlendi; 0.6 davranış notu: limit aşan ek artık hata değil, e-posta arşiv referansıyla gidiyor; Deploy #1 mesai dışı bekliyor.
 - 2026-08-07: Takip dosyası oluşturuldu, paketler tanımlandı; henüz paket başlamadı.
