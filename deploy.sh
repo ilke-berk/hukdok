@@ -131,8 +131,18 @@ if [ "$RUNNING_VER" = "$NEW_SHA" ]; then
 else
     say "⚠️  Çalışan sürüm '${RUNNING_VER:-?}' ≠ beklenen '${NEW_SHA}' — bayat imaj olabilir"
 fi
-curl -fsS --max-time 5 "$FRONT_URL" >/dev/null 2>&1 \
-    || fail "Frontend :8080 yanıt vermiyor — geri dönüş: ./rollback.sh ${OLD_SHA}"
+# Frontend'e de kısa poll: konteyner "Started" ile nginx'in porta geçmesi
+# arasında 1-2 sn yarış var — Deploy #2'de tek atımlık curl buna yakalandı
+# (deploy sağlıklıydı, kapı erken pes etti).
+say "🧪 Frontend kontrolü (30 sn'ye kadar)..."
+fdeadline=$((SECONDS + 30))
+until curl -fsS --max-time 5 "$FRONT_URL" >/dev/null 2>&1; do
+    if [ "$SECONDS" -ge "$fdeadline" ]; then
+        docker logs "$(docker compose ps -q frontend)" --tail 15 2>&1 || true
+        fail "Frontend :8080 30 sn'de yanıt vermedi — geri dönüş: ./rollback.sh ${OLD_SHA}"
+    fi
+    sleep 2
+done
 ok "Frontend yanıt veriyor"
 
 # ── 7. Gecelik yedek timer'ı yerinde mi? (uyarı — deploy'u durdurmaz) ────────
