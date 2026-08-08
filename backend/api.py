@@ -6,6 +6,7 @@ import argparse
 import tempfile
 import glob
 import shutil
+import threading
 import time
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -333,17 +334,57 @@ def health_check():
     return {"status": "running", "message": "HukuDok API Active (Web Mode)"}
 
 
-# Sığ sağlık ucu: docker-compose healthcheck + deploy sağlık kapısı (Faz 1-C)
-# hedefi. Bilinçli DB'siz — her 30 sn koşar; bağımlılık denetimli derin /healthz
-# Faz 2-A'da bu ucu genişletecek. limiter.exempt: sağlık yoklaması hiçbir
-# koşulda 429'a takılmamalı (unhealthy → frontend depends_on + deploy kapısı
-# yanlış alarm verir).
+# Derin sağlık ucu (Faz 2-A): docker-compose healthcheck + deploy sağlık
+# kapısı (Faz 1-C) + GCP uptime check (container nginx location = /healthz)
+# hep buraya bakar. DB SELECT 1 + süreç içi sinyaller (health.py); DB fail →
+# 503 "unhealthy", Gemini/Graph sorunları → 200 "degraded" (yalnız görünürlük).
+# limiter.exempt: sağlık yoklaması hiçbir koşulda 429'a takılmamalı
+# (unhealthy → frontend depends_on + deploy kapısı yanlış alarm verir).
+import health  # noqa: E402
+
+# TTL cache: yoklamalar (compose 30 sn + uptime check bölgeleri + deploy
+# kapısının 3 sn'lik poll'u) üst üste binince DB'ye inmesin (plan: "cache'li").
+_HEALTHZ_CACHE_TTL_SECONDS = 10.0
+_healthz_lock = threading.Lock()
+_healthz_cache: dict = {"at": 0.0, "payload": None, "code": 200}
+
+
+def _healthz_db_ok() -> bool:
+    # Sync endpoint threadpool'da koşar — bloklayan SELECT 1 event loop'a
+    # dokunmaz. pool_pre_ping'li ortak engine kullanılır (ayrı bağlantı yok).
+    try:
+        from sqlalchemy import text as _sa_text
+
+        from database import engine
+
+        with engine.connect() as conn:
+            conn.execute(_sa_text("SELECT 1"))
+        return True
+    except Exception as e:
+        logging.getLogger("healthz").warning(f"/healthz DB kontrolü başarısız: {e}")
+        return False
+
+
 @app.get("/healthz")
 @limiter.exempt
-def healthz():
+def healthz(response: Response):
+    now = time.monotonic()
+    with _healthz_lock:
+        fresh = now - _healthz_cache["at"] < _HEALTHZ_CACHE_TTL_SECONDS
+        if _healthz_cache["payload"] is not None and fresh:
+            response.status_code = _healthz_cache["code"]
+            return _healthz_cache["payload"]
+    # Hesap kilit DIŞINDA: DB kontrolü uzarsa eşzamanlı yoklamalar kilitte
+    # kuyruklanmasın (en kötü ihtimal birkaç mükerrer SELECT 1).
     # version: imaja build'de gömülen git SHA (APP_VERSION); lokalde "dev".
     # deploy.sh sağlık kapısı bunu beklenen SHA ile karşılaştırır.
-    return {"status": "ok", "version": os.getenv("APP_VERSION", "dev")}
+    payload, code = health.evaluate(
+        db_ok=_healthz_db_ok(), version=os.getenv("APP_VERSION", "dev")
+    )
+    with _healthz_lock:
+        _healthz_cache.update(at=time.monotonic(), payload=payload, code=code)
+    response.status_code = code
+    return payload
 
 
 def get_port():

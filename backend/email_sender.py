@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from gemini_client import get_client as get_gemini_client
 from sharepoint.auth_graph import get_graph_token
+import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
 # Logger
 logger = logging.getLogger("EmailSender")
@@ -312,6 +313,7 @@ Kurallar:
         return text
     except Exception as e:
         logger.error(f"❌ Gemini AI e-posta oluşturma hatası: {e}")
+        health.record_gemini_error()
         return None
 
 
@@ -442,6 +444,7 @@ Kurallar:
         return text
     except Exception as e:
         logger.error(f"❌ Gemini müvekkil bilgilendirme metni oluşturma hatası: {e}")
+        health.record_gemini_error()
         return None
 
 

@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 import vault
+# /healthz sinyalleri (Faz 2-A): stdlib-only modül, script bağlamlarında da güvenli
+import health
 
 # Global variable to hold the MSAL app instances (Dictionary for Multi-Config)
 _MSAL_APPS = {}
@@ -72,10 +74,14 @@ def get_graph_token(config_type: str = "default") -> str:
             scopes=["https://graph.microsoft.com/.default"]
         )
         if "access_token" in result:
+            # MSAL cache'ten dönüş de "auth çalışıyor" sinyalidir; /healthz
+            # graph_token_age_seconds bu damgadan hesaplanır.
+            health.record_graph_token_ok()
             return result["access_token"]
         if attempt == 0:
             logger.warning(f"Graph token alınamadı, 5sn sonra tekrar deneniyor: {result.get('error')}")
             time.sleep(5)
 
     logger.error(f"Graph token failed ({config_type}): {result.get('error')}")
+    health.record_graph_token_fail()
     raise RuntimeError(f"Graph token failed: {result}")

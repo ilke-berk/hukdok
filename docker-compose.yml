@@ -80,6 +80,9 @@ services:
       # curl imajda yok (python:slim) — stdlib urllib yeterli. urlopen HTTP>=400'de
       # exception fırlatır → non-zero exit → unhealthy. $$: compose'un kendi
       # interpolasyonundan kaçış; ${PORT:-8001} konteyner kabuğunda açılır.
+      # Faz 2-A: /healthz artık derin — DB SELECT 1 başarısızsa 503 döner,
+      # konteyner "unhealthy" görünür (Docker restart ETMEZ, yalnız işaretler;
+      # frontend depends_on yalnız İLK ayağa kalkışta bunu bekler).
       test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:$${PORT:-8001}/healthz', timeout=5)\"" ]
       interval: 30s
       timeout: 10s

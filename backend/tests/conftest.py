@@ -37,3 +37,22 @@ def _no_cloud_sync(monkeypatch):
     from managers.log_manager import TechnicalLogger
 
     monkeypatch.setattr(TechnicalLogger, "sync_to_cloud", staticmethod(lambda: None))
+
+
+@pytest.fixture(autouse=True)
+def _clean_health_signals():
+    """/healthz süreç-global sinyallerini (Faz 2-A) her testten önce sıfırla.
+
+    Gemini hata yollarını tetikleyen testler (faz0, analyzer, email_sender)
+    health.py sayaçlarını doldurur; healthz testleri deterministik durum
+    bekler. api import edilmişse endpoint'in TTL cache'i de temizlenir —
+    yoksa bir testin 503'ü sonraki testin /healthz yanıtına sızar.
+    """
+    import health
+
+    health.reset_for_tests()
+    if "api" in sys.modules:
+        api = sys.modules["api"]
+        with api._healthz_lock:
+            api._healthz_cache.update(at=0.0, payload=None, code=200)
+    yield

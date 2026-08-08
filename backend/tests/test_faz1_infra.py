@@ -6,8 +6,9 @@ Kapsam:
 - api.py'de import-time migrasyon çağrısı YOK — uvicorn --workers N'e geçişte
   her worker'ın import sırasında DDL koşmasını engelleyen düzeltmenin bekçisi
 - docker-entrypoint.sh migrate.py'yi uvicorn'dan ÖNCE çağırıyor
-- /healthz: docker-compose healthcheck'in çağırdığı uç — lifespan (DB)
-  gerektirmeden 200 döner ve rate limit'ten muaftır
+- /healthz: docker-compose healthcheck'in çağırdığı uç — lifespan gerektirmeden
+  yanıt verir ve rate limit'ten muaftır (Faz 2-A'dan beri derin: DB kontrolü
+  burada monkeypatch'lenir çünkü conftest'in DATABASE_URL'i dummy'dir)
 """
 from pathlib import Path
 
@@ -65,14 +66,20 @@ def test_entrypoint_runs_migrate_before_uvicorn():
 
 def _client():
     # `with` bloğu bilinçli YOK: lifespan (init_db, scheduler, thread'ler)
-    # çalışmaz — healthz'in DB'siz 200 vermesi tam da istenen garanti.
+    # çalışmaz — healthz'in lifespan gerektirmeden yanıt vermesi istenen garanti.
     from starlette.testclient import TestClient
     from api import app
 
     return TestClient(app)
 
 
-def test_healthz_returns_200_without_lifespan():
+def test_healthz_returns_200_without_lifespan(monkeypatch):
+    # Faz 2-A: /healthz derinleşti (DB SELECT 1). conftest'in DATABASE_URL'i
+    # dummy olduğundan gerçek kontrol burada bağlanamaz → monkeypatch; DB-fail
+    # yolu test_faz2_monitoring'de ayrıca test edilir.
+    import api
+
+    monkeypatch.setattr(api, "_healthz_db_ok", lambda: True)
     r = _client().get("/healthz")
     assert r.status_code == 200
     body = r.json()
@@ -82,11 +89,15 @@ def test_healthz_returns_200_without_lifespan():
     assert body["version"], "healthz 'version' alanı boş olmamalı"
 
 
-def test_healthz_exempt_from_rate_limit():
+def test_healthz_exempt_from_rate_limit(monkeypatch):
     # Global limit 100/dk (api.py default_limits). Sağlık yoklaması hiçbir
     # koşulda 429 görmemeli: unhealthy işareti frontend depends_on'u ve deploy
     # sağlık kapısını (Faz 1-C) yanlış tetikler. 105 istek limitin üstüne çıkar;
-    # exempt bozulursa 429'lar burada yakalanır.
+    # exempt bozulursa 429'lar burada yakalanır. (TTL cache'in ilk isteği
+    # dışında DB'ye inmemesi de bu hacimde dolaylı doğrulanır.)
+    import api
+
+    monkeypatch.setattr(api, "_healthz_db_ok", lambda: True)
     client = _client()
     statuses = {client.get("/healthz").status_code for _ in range(105)}
     assert statuses == {200}

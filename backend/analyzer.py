@@ -64,6 +64,7 @@ if not GOOGLE_API_KEY:
 
 # Gemini client (google-genai) — genai.configure globali yerine ortak modül
 from gemini_client import get_client as get_gemini_client
+import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
 
 async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None, model: Optional[str] = None):
@@ -112,6 +113,9 @@ async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, sta
                 )
                 await asyncio.sleep(wait_sec)
             else:
+                # Nihai başarısızlık (kalıcı hata ya da retry bütçesi bitti):
+                # /healthz "gemini_errors_last_hour" sayacına işlenir (Faz 2-A)
+                health.record_gemini_error()
                 raise
 
 

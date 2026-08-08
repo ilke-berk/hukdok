@@ -7,6 +7,7 @@ import logging
 from dotenv import load_dotenv
 
 from gemini_client import get_client as get_gemini_client
+import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
 # Load Environment
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
@@ -231,6 +232,7 @@ def ask_llm_referee(text, top_candidates):
         return cleaned or None # Returns JSON string
     except Exception as e:
         logging.error(f"LLM Error: {e}")
+        health.record_gemini_error()
         return None
 
 def find_best_date(text: str) -> Optional[str]:
