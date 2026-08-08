@@ -12,7 +12,6 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 # Senin listenin adı 'log' olduğu için varsayılanı değiştirdik
 LOG_LIST_NAME = os.getenv("SHAREPOINT_LOG_LIST_NAME", "log")
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("LogManager")
 
 

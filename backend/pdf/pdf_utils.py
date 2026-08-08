@@ -4,10 +4,7 @@ import fitz
 import re
 import logging
 
-# Configure Logging for standalone testing
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Loglama merkezi: logging_setup.configure_logging (Faz 2-B) — api.py kurar.
 
 
 MAX_PDF_PAGES = 500

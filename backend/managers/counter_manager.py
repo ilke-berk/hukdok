@@ -17,7 +17,6 @@ from managers.log_manager import TechnicalLogger
 GRAPH = "https://graph.microsoft.com/v1.0"
 COUNTER_LIST_NAME = os.getenv("SHAREPOINT_COUNTER_LIST_NAME", "Counter")
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SharePointCounterManager")
 
 
@@ -275,10 +274,13 @@ def get_counter_manager():
     return SharePointCounterManager()
 
 
-# Test fonksiyonu
+# Test fonksiyonu (python -m managers.counter_manager ile koşar)
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.INFO)
+
+    from logging_setup import configure_logging
+
+    configure_logging()
     logger = logging.getLogger("SharePointCounterManagerTest")
 
     logger.info("SharePoint Counter Manager Test")

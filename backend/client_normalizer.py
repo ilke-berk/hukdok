@@ -3,8 +3,6 @@ import re
 import logging
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("ClientNormalizer")
 
 # --- PRE-COMPILED REGEX PATTERNS (PERFORMANCE OPTIMIZATION) ---

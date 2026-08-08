@@ -27,10 +27,7 @@ except ImportError:
 
     TechnicalLogger = MockTechnicalLogger
 
-# Configure Logging (Standard logging for console fallback)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Loglama merkezi: logging_setup.configure_logging (Faz 2-B) — api.py kurar.
 
 # Load Environment Variables
 from pathlib import Path

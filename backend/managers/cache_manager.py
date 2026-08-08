@@ -5,7 +5,6 @@ import logging
 
 # Logger Setup
 logger = logging.getLogger("CacheManager")
-logging.basicConfig(level=logging.INFO)
 
 from pathlib import Path
 

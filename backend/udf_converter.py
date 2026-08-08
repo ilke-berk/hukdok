@@ -809,7 +809,10 @@ async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = N
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         import logging
-        logging.basicConfig(level=logging.INFO)
+
+        from logging_setup import configure_logging
+
+        configure_logging()
         logger = logging.getLogger("UDFConverterCLI")
         try:
             # Sync mode CLI

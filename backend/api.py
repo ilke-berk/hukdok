@@ -11,12 +11,13 @@ import time
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# Kök logger yapılandırması — bu olmadan kök logger WARNING seviyesinde kalır
-# ve tüm logging.info() çağrıları sessizce düşer.
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+# Merkezi loglama (Faz 2-B): dağınık basicConfig'lerin yerini alan tek
+# dictConfig — JSON formatter + request-id için bkz. logging_setup.py.
+# Diğer import'lardan ÖNCE koşmalı ki import sırasında akan loglar da biçimli
+# olsun (bu olmadan kök logger WARNING'de kalır, logging.info sessizce düşer).
+from logging_setup import RequestIdMiddleware, configure_logging
+
+configure_logging()
 
 # --- STARTUP DEBUG LOGGING ---
 def write_startup_log(msg):
@@ -307,6 +308,10 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 
+# En dışta (add_middleware LIFO — son eklenen en dış katmandır): 413/429/CORS
+# kısa devreleri dahil her yanıt X-Request-ID taşır ve erişim satırı alır.
+app.add_middleware(RequestIdMiddleware)
+
 # --- ROUTES ---
 from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake
 
@@ -400,7 +405,9 @@ if __name__ == "__main__":
         msg = f"Starting API on port {PORT}"
         logging.info(msg)
         write_startup_log(msg)
-        uvicorn.run(app, host="0.0.0.0", port=PORT, reload=False)
+        # log_config=None: uvicorn kendi dictConfig'iyle merkezi kurulumu
+        # ezmesin (dev yolu; konteynerde CLI import'tan önce kurar, sorun yok).
+        uvicorn.run(app, host="0.0.0.0", port=PORT, reload=False, log_config=None)
     except Exception as e:
         err_msg = f"CRITICAL STARTUP ERROR: {e}"
         logging.critical(err_msg)

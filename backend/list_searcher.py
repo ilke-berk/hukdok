@@ -123,7 +123,9 @@ def yenile_list_searcher():
 
 if __name__ == "__main__":
     # Test
-    logging.basicConfig(level=logging.INFO)
+    from logging_setup import configure_logging
+
+    configure_logging()
     searcher = ListSearcher()
     # Print some stats from instance
     logger.info(f"Keywords loaded: {len(searcher.keyword_processor.get_all_keywords())}")
