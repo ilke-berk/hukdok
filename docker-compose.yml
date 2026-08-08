@@ -37,6 +37,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # deploy.sh export eder (git SHA); elle build'de "dev" düşer.
+        APP_VERSION: ${APP_VERSION:-dev}
     # Paylaşılan network'te "backend" adı fazla genel; hukukbot bu isimle
     # bağlanır: http://hukdok_backend:8001 (BULGULAR #10)
     container_name: hukdok_backend
@@ -93,6 +96,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        # Login rozetindeki sürüm (VITE_APP_VERSION olarak bundle'a gömülür)
+        APP_VERSION: ${APP_VERSION:-dev}
     ports:
       - "8080:80"
     restart: unless-stopped

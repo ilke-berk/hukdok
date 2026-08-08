@@ -341,7 +341,9 @@ def health_check():
 @app.get("/healthz")
 @limiter.exempt
 def healthz():
-    return {"status": "ok"}
+    # version: imaja build'de gömülen git SHA (APP_VERSION); lokalde "dev".
+    # deploy.sh sağlık kapısı bunu beklenen SHA ile karşılaştırır.
+    return {"status": "ok", "version": os.getenv("APP_VERSION", "dev")}
 
 
 def get_port():

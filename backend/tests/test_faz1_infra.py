@@ -75,7 +75,11 @@ def _client():
 def test_healthz_returns_200_without_lifespan():
     r = _client().get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    body = r.json()
+    assert body["status"] == "ok"
+    # version: imaja gömülen git SHA (APP_VERSION env); test ortamında env yok
+    # → "dev" fallback'i. deploy.sh sağlık kapısı bu alanı SHA ile karşılaştırır.
+    assert body["version"], "healthz 'version' alanı boş olmamalı"
 
 
 def test_healthz_exempt_from_rate_limit():

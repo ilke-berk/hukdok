@@ -38,6 +38,12 @@ RUN mkdir -p /app/data && chown -R appuser:appuser /app
 
 USER appuser
 
+# Çalışan sürüm (/healthz "version" alanı) — deploy.sh git SHA'sını geçer,
+# lokal build'de "dev". Son katmanlardan biri: sürüm değişimi üstteki ağır
+# katmanların (apt, pip, COPY) cache'ini bozmaz.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 # Expose the port the app runs on
 EXPOSE 8001
 

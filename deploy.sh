@@ -93,6 +93,10 @@ for img in "$BACKEND_IMG" "$FRONTEND_IMG"; do
     fi
 done
 
+# Sürümü imajlara göm: login rozeti + /healthz "version" alanı bu SHA'yı
+# gösterir (compose build args → Dockerfile ARG APP_VERSION).
+export APP_VERSION="$NEW_SHA"
+
 say "🏗  docker compose build (eski stack çalışmaya devam ediyor)..."
 docker compose build
 
@@ -118,7 +122,15 @@ until curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; do
     fi
     sleep 3
 done
-ok "Backend sağlıklı (${SECONDS} sn)"
+# Çalışan sürümü doğrula: /healthz'in version alanı yeni SHA'yı göstermeli.
+# Uyarı olarak bırakıldı (fail değil): lokal mount/elle build senaryolarında
+# meşru sapma olabilir; prod'da bu uyarı bayat imaj işaretidir.
+RUNNING_VER=$(curl -fsS --max-time 5 "$HEALTH_URL" 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || true)
+if [ "$RUNNING_VER" = "$NEW_SHA" ]; then
+    ok "Backend sağlıklı (${SECONDS} sn, sürüm: ${RUNNING_VER})"
+else
+    say "⚠️  Çalışan sürüm '${RUNNING_VER:-?}' ≠ beklenen '${NEW_SHA}' — bayat imaj olabilir"
+fi
 curl -fsS --max-time 5 "$FRONT_URL" >/dev/null 2>&1 \
     || fail "Frontend :8080 yanıt vermiyor — geri dönüş: ./rollback.sh ${OLD_SHA}"
 ok "Frontend yanıt veriyor"

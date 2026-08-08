@@ -99,7 +99,8 @@ const Login = () => {
             </span>
             <span className="w-px h-2.5 bg-[var(--border-strong)] mx-0.5" />
             <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--fg-subtle)]">
-              v2.4.1
+              {/* Gerçek sürüm: deploy'da build'e gömülen git SHA (bkz. frontend/Dockerfile APP_VERSION) */}
+              {import.meta.env.VITE_APP_VERSION || "dev"}
             </span>
           </div>
           <button

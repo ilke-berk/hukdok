@@ -15,6 +15,12 @@ COPY frontend/ .
 # WORKDIR is /app, so envDir resolves to /. Place .env there at build time.
 COPY .env /.env
 
+# Çalışan sürüm — deploy.sh git SHA'sını geçer, lokal build'de "dev" kalır.
+# Login rozeti bunu gösterir. Bilinçli olarak COPY'lerden SONRA: sürüm değişimi
+# yalnız build katmanını yeniler, npm install cache'i korunur.
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=$APP_VERSION
+
 # Build the application
 RUN npm run build
 

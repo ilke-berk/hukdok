@@ -53,4 +53,5 @@ until curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; do
     fi
     sleep 3
 done
-ok "✅ Rollback tamam: ${SHA} çalışıyor · not: sonraki deploy :latest'i yeniden hizalar"
+# healthz'in version alanı artık geri dönülen imajın SHA'sını göstermeli
+ok "✅ Rollback tamam: $(curl -fsS --max-time 5 "$HEALTH_URL" 2>/dev/null || echo '?') · not: sonraki deploy :latest'i yeniden hizalar"
