@@ -14,11 +14,14 @@
     }
   ],
   "alertStrategy": {
-    "notificationRateLimit": { "period": "3600s" },
+    "notificationRateLimit": {
+      "period": "3600s"
+    },
     "autoClose": "86400s"
   },
   "notificationChannels": [
     "projects/gen-lang-client-0074242743/notificationChannels/14019859689042683176",
     "projects/gen-lang-client-0074242743/notificationChannels/14019859689042684523"
-  ]
+  ],
+  "severity": "CRITICAL"
 }
