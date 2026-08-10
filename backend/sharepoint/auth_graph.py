@@ -61,12 +61,27 @@ def _get_msal_app(config_type: str = "default") -> msal.ConfidentialClientApplic
     return app
 
 
-def get_graph_token(config_type: str = "default") -> str:
+def get_graph_token(config_type: str = "default", force_refresh: bool = False) -> str:
     """
     Acquires a token from MSAL.
     config_type: 'default' or 'upload'
+    force_refresh: True ise MSAL cache'i düşürülür ve AAD'den taze token istenir.
+    Graph 401 döndüğünde çağıran bir kez bununla tekrar dener (Faz 3-B):
+    cache'teki token süresi dolmadan sunucuda geçersizleşmiş olabilir
+    (secret rotasyonu, revoke, koşullu erişim).
     """
     app = _get_msal_app(config_type)
+
+    if force_refresh:
+        try:
+            # msal>=1.27: bu client'ın cache'lenmiş app token'larını düşürür
+            app.remove_tokens_for_client()
+        except Exception:
+            # Eski msal ya da beklenmedik durum: app nesnesini atmak da cache'i
+            # sıfırlar (client-credential akışı durumsuz, yeniden kurmak ucuz)
+            _MSAL_APPS.pop(config_type, None)
+            app = _get_msal_app(config_type)
+        logger.info(f"Graph token cache düşürüldü, taze token alınacak ({config_type})")
 
     result = None
     for attempt in range(2):
