@@ -6,7 +6,9 @@ from typing import Optional
 import logging
 from dotenv import load_dotenv
 
+import gemini_client
 from gemini_client import get_client as get_gemini_client
+from google.genai import errors as genai_errors
 import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
 # Load Environment
@@ -192,7 +194,22 @@ def advanced_regex_scan(text):
 def ask_llm_referee(text, top_candidates):
     """
     LLM decides which date is the correct Document Date among candidates.
+
+    Faz 3-C kapsam kararı: tek deneme + soft-fail korunur (None dönüşü
+    find_best_date'te en iyi regex adayına düşer) — retry/deadline bütçesi
+    eklenmez. Devre kesiciye iki yönde bağlıdır: açıkken çağrı hiç yapılmaz
+    (health sayacına işlenmez — Gemini'ye gidilmedi, kesiciyi açan hata
+    zaten işlendi); gerçek 429/503 kesici sayacını besler.
     """
+    model_name = get_model_name()
+    remaining = gemini_client.circuit_open_remaining(model_name)
+    if remaining > 0:
+        logging.warning(
+            f"⛔ Gemini devre kesici açık (model={model_name}, {remaining:.0f} sn) — "
+            f"LLM tarih hakemi atlandı, regex adayına düşülüyor."
+        )
+        return None
+
     client = get_gemini_client()
     if client is None:
         logging.error("GEMINI_API_KEY bulunamadı — LLM hakem atlanıyor.")
@@ -226,11 +243,14 @@ def ask_llm_referee(text, top_candidates):
     
     try:
         response = client.models.generate_content(
-            model=get_model_name(), contents=prompt
+            model=model_name, contents=prompt
         )
+        gemini_client.circuit_record_success(model_name)
         cleaned = (response.text or "").strip().replace("```json", "").replace("```", "").strip()
         return cleaned or None # Returns JSON string
     except Exception as e:
+        if isinstance(e, genai_errors.APIError) and e.code in gemini_client.SATURATION_API_CODES:
+            gemini_client.circuit_record_failure(model_name)
         logging.error(f"LLM Error: {e}")
         health.record_gemini_error()
         return None

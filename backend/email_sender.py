@@ -14,7 +14,9 @@ import requests
 from pathlib import Path
 from dotenv import load_dotenv
 
+import gemini_client
 from gemini_client import get_client as get_gemini_client
+from google.genai import errors as genai_errors
 from sharepoint.auth_graph import get_graph_token
 import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
@@ -267,6 +269,37 @@ def send_document_email(
         return {"success": False, "message": str(e)}
 
 
+def _breaker_guarded_generate(client, model_name: str, prompt: str):
+    """Tek denemeli Gemini çağrısını devre kesiciye bağlar (Faz 3-C).
+
+    Kapsam kararı: bu modülün AI metin üretimleri soft-fail'dir (None →
+    şablon fallback) ve tek denemedir — retry döngüsü ve deadline bütçesi
+    EKLENMEZ (tek deneme zaten HTTP timeout'la sınırlı, retry beklemesi
+    /confirm zincirini geciktirirdi). Kesiciye İKİ yönde bağlanır:
+    - danışma: kesici açıkken çağrı hiç yapılmaz, None döner. Gemini'ye
+      gidilmediği için health sayacına İŞLENMEZ (kesiciyi açan asıl hata
+      zaten işlendi); şablon fallback'i kullanıcıya sorunsuz yansır.
+    - besleme: gerçek 429/503 kesici sayacını artırır (GEMINI_MODEL_NAME
+      analyzer'la paylaşıldığından sinyal ortak havuza yazılır); hata
+      çağırana fırlatılır, mevcut soft-fail (health kaydı + None) korunur.
+    """
+    remaining = gemini_client.circuit_open_remaining(model_name)
+    if remaining > 0:
+        logger.warning(
+            f"⛔ Gemini devre kesici açık (model={model_name}, {remaining:.0f} sn) — "
+            f"AI metin üretimi atlandı, şablona düşülüyor."
+        )
+        return None
+    try:
+        response = client.models.generate_content(model=model_name, contents=prompt)
+    except Exception as e:
+        if isinstance(e, genai_errors.APIError) and e.code in gemini_client.SATURATION_API_CODES:
+            gemini_client.circuit_record_failure(model_name)
+        raise
+    gemini_client.circuit_record_success(model_name)
+    return response
+
+
 def _generate_ai_email_body(recipient_name: str, context: dict, sender_name: str = None) -> str:
     """
     Gemini kullanarak kişiselleştirilmiş e-posta metni oluşturur.
@@ -303,7 +336,9 @@ Kurallar:
 5. Kapanış: "Saygılarımızla," ve altına tam olarak şu imzayı ekle: "{imza}"
 6. Metin dışında (konu başlığı vs) hiçbir şey yazma, sadece e-posta gövdesini ver.
 """
-        response = client.models.generate_content(model=model_name, contents=prompt)
+        response = _breaker_guarded_generate(client, model_name, prompt)
+        if response is None:
+            return None
         text = (response.text or "").strip()
         
         # Eğer model konu başlığı vs eklediyse temizle
@@ -437,7 +472,9 @@ Kurallar:
 6. En sona kısa bir iyi dilek ekle: "İyi günler dilerim." gibi.
 7. Hukuki olarak emin olmadığın hiçbir sonuç/yorum UYDURMA; yalnızca verilen gelişmeye sadık kal.
 8. İmza bloğu, "HukuDok", "Belge Arşiv Sistemi" gibi sistem ifadeleri EKLEME. Sadece e-posta gövdesini ver (konu başlığı yazma)."""
-        response = client.models.generate_content(model=model_name, contents=prompt)
+        response = _breaker_guarded_generate(client, model_name, prompt)
+        if response is None:
+            return None
         text = (response.text or "").strip()
         if "Konu:" in text[:50]:
             text = text.split("\n", 1)[1].strip()

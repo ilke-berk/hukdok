@@ -47,10 +47,13 @@ def _clean_health_signals():
     health.py sayaçlarını doldurur; healthz testleri deterministik durum
     bekler. api import edilmişse endpoint'in TTL cache'i de temizlenir —
     yoksa bir testin 503'ü sonraki testin /healthz yanıtına sızar.
+    Faz 3-C devre kesici state'i de süreç-globaldir → aynı gerekçeyle sıfırlanır.
     """
+    import gemini_client
     import health
 
     health.reset_for_tests()
+    gemini_client.reset_circuits_for_tests()
     if "api" in sys.modules:
         api = sys.modules["api"]
         with api._healthz_lock:

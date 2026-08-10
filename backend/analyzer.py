@@ -60,60 +60,108 @@ if not GOOGLE_API_KEY:
     TechnicalLogger.log("ERROR", "GEMINI_API_KEY not found in .env file.")
 
 # Gemini client (google-genai) — genai.configure globali yerine ortak modül
+import gemini_client
 from gemini_client import get_client as get_gemini_client
 import health  # /healthz Gemini hata sayacı (Faz 2-A)
 
+# Retry'lar DAHİL toplam süre bütçesi (Faz 3-C). Container nginx
+# proxy_read_timeout 300 sn; /process NDJSON stream'inde retry penceresi
+# boyunca event akmaz → sessiz pencere 300 sn'yi aşarsa nginx 504 döner ve
+# backend boşa retry'lamış olur. Bütçe "yeni bekleme/deneme BAŞLATMA"
+# kapısıdır: en kötü durumda son deneme bütçenin hemen altında başlar ve
+# HTTP timeout'a (120 sn, gemini_client.GEMINI_HTTP_TIMEOUT_MS) kadar
+# sürebilir → toplam ≈ 170 + 120 = 290 sn < 300. (wait_for_files_active'in
+# ayrı 120 sn tavanı kendi yield'inden sonra koşar, bu bütçeye girmez.)
+GEMINI_RETRY_DEADLINE_SECONDS = 170.0
+
 
 async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None, model: Optional[str] = None):
-    """Gemini API çağrısını 429/503 hatalarında jitter'lı exponential backoff ile retry eder.
+    """Gemini API çağrısını geçici hatalarda jitter'lı exponential backoff ile retry eder.
 
-    503 (overloaded) genelde saniyeler içinde toparlanır → kısa backoff (base 1s).
-    429 (kota/rate-limit) daha uzun pencere ister → daha uzun backoff (base 5s).
-    Her ikisinde de jitter eklenir (thundering-herd önlemek için), tavan 30s.
+    Sınıflandırma KOD bazlıdır (gemini_client.classify_transient):
+    APIError.code ∈ {429,500,502,503,504} + httpx.TransportError. 429
+    (kota/rate-limit) uzun backoff (base 5s), sunucu/ağ hataları kısa (base 1s);
+    jitter'lı, tavan 30s. Retry'lar dahil toplam süre
+    GEMINI_RETRY_DEADLINE_SECONDS bütçesiyle sınırlıdır.
+
+    Devre kesici (model-başına): art arda 429/503 eşiği aşınca 60 sn açılır;
+    açıkken çağrı Gemini'ye gitmeden GeminiCircuitOpenError ile hızlı-fail
+    eder. Hızlı-fail NİHAİ başarısızlıktır (kullanıcıya yansır) → healthz
+    sayacına işlenir; log sözleşmesinde nihai ERROR'u çağıranın handler'ı
+    üretir, burası WARNING bırakır.
+
+    health sözleşmesi (Faz 2-A): record_gemini_error() YALNIZ nihai
+    başarısızlıkta çağrılır; atlatılan geçici hatalar sayılmaz.
 
     stats: verilirse retry_count ve retry_wait_ms alanları doldurulur (benchmark için).
     model: verilirse GEMINI_MODEL_NAME yerine kullanılır (intake motoru GEMINI_INTAKE_MODEL geçirir).
     """
     MAX_WAIT = 30.0  # saniye
+    mdl = model or GEMINI_MODEL_NAME
+
+    # Kesici kontrolü yalnız girişte: çağrı başladıktan sonra kesici açılsa da
+    # eldeki retry döngüsü kendi bütçesiyle sürer (zaten zaman-sınırlı);
+    # kesicinin amacı YENİ çağrıların yığılmasını önlemektir.
+    remaining_open = gemini_client.circuit_open_remaining(mdl)
+    if remaining_open > 0:
+        health.record_gemini_error()
+        TechnicalLogger.log(
+            "WARNING",
+            f"⛔ Gemini devre kesici açık (model={mdl}, {remaining_open:.0f} sn) — "
+            f"çağrı yapılmadan reddedildi",
+        )
+        raise gemini_client.GeminiCircuitOpenError(mdl, remaining_open)
+
     client = get_gemini_client(GOOGLE_API_KEY)
+    deadline = time.monotonic() + GEMINI_RETRY_DEADLINE_SECONDS
     for attempt in range(max_retries + 1):
         try:
-            return await client.aio.models.generate_content(
-                model=model or GEMINI_MODEL_NAME, contents=payload, config=gen_config
+            response = await client.aio.models.generate_content(
+                model=mdl, contents=payload, config=gen_config
             )
+            gemini_client.circuit_record_success(mdl)
+            return response
         except Exception as e:
-            err_str = str(e)
-            err_low = err_str.lower()
-            # Öncelik tipli hata kodu (APIError.code); string kontrolü fallback
-            api_code = e.code if isinstance(e, genai_errors.APIError) else None
-            is_429 = api_code == 429 or "429" in err_str or "resource exhausted" in err_low
-            is_503 = (
-                api_code == 503
-                or "503" in err_str
-                or "service is currently unavailable" in err_low
-                or "overloaded" in err_low
-                or "unavailable" in err_low
-            )
-            is_transient = is_429 or is_503
-            if is_transient and attempt < max_retries:
-                # 503: kısa (1,2,4,8,16…), 429: uzun (5,10,20…); + jitter, tavan 30s
-                base = 5.0 if is_429 else 1.0
-                wait_sec = min(base * (2 ** attempt) + random.uniform(0, base), MAX_WAIT)
-                if stats is not None:
-                    stats["retry_count"] = stats.get("retry_count", 0) + 1
-                    stats["retry_wait_ms"] = stats.get("retry_wait_ms", 0) + wait_sec * 1000
-                code = "429" if is_429 else "503"
-                TechnicalLogger.log(
-                    "WARNING",
-                    f"⏳ Gemini geçici hata ({code}) — {wait_sec:.1f}s sonra tekrar denenecek "
-                    f"(Deneme {attempt + 1}/{max_retries})",
-                )
-                await asyncio.sleep(wait_sec)
-            else:
-                # Nihai başarısızlık (kalıcı hata ya da retry bütçesi bitti):
-                # /healthz "gemini_errors_last_hour" sayacına işlenir (Faz 2-A)
+            kind = gemini_client.classify_transient(e)
+            if kind is None:
+                # Kalıcı hata (400/403/404... ya da API dışı) — retry anlamsız
                 health.record_gemini_error()
                 raise
+
+            api_code = e.code if isinstance(e, genai_errors.APIError) else None
+            if api_code in gemini_client.SATURATION_API_CODES:
+                # Açılış olayının WARNING logu gemini_client içinde (tek nokta)
+                gemini_client.circuit_record_failure(mdl)
+
+            if attempt >= max_retries:
+                # Retry hakkı bitti → nihai başarısızlık (ERROR'u çağıran loglar)
+                health.record_gemini_error()
+                raise
+
+            # 429: uzun (5,10,20…), sunucu/ağ: kısa (1,2,4,8,16…); + jitter, tavan 30s
+            base = 5.0 if kind == "429" else 1.0
+            wait_sec = min(base * (2 ** attempt) + random.uniform(0, base), MAX_WAIT)
+
+            if time.monotonic() + wait_sec > deadline:
+                # Deadline bütçesi doldu: bekleme/deneme başlatma, nihai hatayı dön
+                TechnicalLogger.log(
+                    "WARNING",
+                    f"⏱️ Gemini deadline bütçesi doldu ({GEMINI_RETRY_DEADLINE_SECONDS:.0f} sn) — "
+                    f"retry bırakılıyor (Deneme {attempt + 1}/{max_retries})",
+                )
+                health.record_gemini_error()
+                raise
+
+            if stats is not None:
+                stats["retry_count"] = stats.get("retry_count", 0) + 1
+                stats["retry_wait_ms"] = stats.get("retry_wait_ms", 0) + wait_sec * 1000
+            label = str(api_code) if api_code is not None else f"ağ/{e.__class__.__name__}"
+            TechnicalLogger.log(
+                "WARNING",
+                f"⏳ Gemini geçici hata ({label}) — {wait_sec:.1f}s sonra tekrar denenecek "
+                f"(Deneme {attempt + 1}/{max_retries})",
+            )
+            await asyncio.sleep(wait_sec)
 
 
 # --- SYSTEM INSTRUCTION ---
@@ -702,6 +750,73 @@ def _record_token_usage(response: Any, benchmark: Dict[str, Any]) -> None:
         TechnicalLogger.log("WARNING", f"usage_metadata okunamadı: {e}")
 
 
+# ── Yanıt doğrulama (Faz 3-C): finish_reason KOD bazlı okunur ────────────────
+# Eskiden response.text None ise her durumda "güvenlik filtresi" deniyordu;
+# MAX_TOKENS kesilmesi ve nedensiz boş yanıt yanlış etiketleniyordu.
+
+class GeminiResponseError(ValueError):
+    """Boş/kullanılamaz Gemini yanıtı (neden bilinmiyor ya da sıradışı)."""
+
+
+class GeminiTruncatedError(GeminiResponseError):
+    """Yanıt MAX_TOKENS ile kesildi — güvenlik filtresi DEĞİL."""
+
+
+class GeminiBlockedError(GeminiResponseError):
+    """Yanıt/istek güvenlik-gizlilik filtresine takıldı (finish/block_reason kanıtlı)."""
+
+
+# FinishReason enum'ından (SDK 2.11.0, koddan doğrulandı) filtre/engel anlamına
+# gelenler. RECITATION/BLOCKLIST vb. de kullanıcıya "içerik engellendi" olarak
+# yansıtılır — teknik ayrıntı log'da durur.
+_BLOCK_FINISH_REASONS = frozenset({
+    "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY",
+})
+
+
+def _finish_reason_name(response: Any) -> str:
+    """İlk adayın finish_reason'ını enum adı olarak döndürür ('' = yok)."""
+    candidates = getattr(response, "candidates", None) or []
+    reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+    if reason is None:
+        return ""
+    return getattr(reason, "name", None) or str(reason)
+
+
+def _ensure_response_text(response: Any, context: str = "Gemini") -> str:
+    """response.text'i döndürür; boş/kesik yanıtta finish_reason'a göre TİPLİ hata atar.
+
+    MAX_TOKENS'ta metin kısmen gelmiş olsa da hata atılır: kesik JSON'u parse
+    etmeye çalışmak yanıltıcı "bozuk çıktı" teşhisi üretir, oysa neden belli.
+    """
+    reason = _finish_reason_name(response)
+    if reason == "MAX_TOKENS":
+        raise GeminiTruncatedError(
+            f"{context} yanıtı uzunluk sınırına takıldı (finish_reason=MAX_TOKENS)."
+        )
+
+    text = getattr(response, "text", None)
+    if text is not None:
+        return text
+
+    if reason in _BLOCK_FINISH_REASONS:
+        raise GeminiBlockedError(
+            f"{context} yanıtı engellendi (finish_reason={reason})."
+        )
+
+    # Aday hiç yoksa istek tarafı engellenmiş olabilir: prompt_feedback'e bak
+    block = getattr(getattr(response, "prompt_feedback", None), "block_reason", None)
+    block_name = (getattr(block, "name", None) or str(block)) if block else ""
+    if block_name and block_name != "BLOCKED_REASON_UNSPECIFIED":
+        raise GeminiBlockedError(
+            f"{context} isteği engellendi (block_reason={block_name})."
+        )
+
+    raise GeminiResponseError(
+        f"{context} yanıtı boş döndü (finish_reason={reason or 'yok'})."
+    )
+
+
 def _extract_first_json(text):
     text = text.strip()
     # Find first '{'
@@ -1043,19 +1158,37 @@ def _apply_filename_format(data: Dict[str, Any], debug_info: List[str]) -> None:
         debug_info.append(f"- Dosya Formatı: HATA ({str(e)})")
 
 
-def _api_error_ozet(err_str: str, error_id: str) -> str:
-    """Genel API hatası için kullanıcıya gösterilecek özet metnini üretir."""
-    if "429" in err_str or "resource exhausted" in err_str.lower():
+def _api_error_ozet(err: Any, error_id: str) -> str:
+    """Genel API hatası için kullanıcıya gösterilecek özet metnini üretir.
+
+    Faz 3-C: Exception nesnesi geçirilirse sınıflandırma KOD bazlıdır
+    (GeminiCircuitOpenError / APIError.code); string geçilirse eski
+    string-eşleme davranışı fallback olarak korunur.
+    """
+    if isinstance(err, gemini_client.GeminiCircuitOpenError):
+        return (
+            f"⚠️ Yapay zeka servisi art arda hata verdiği için kısa süreliğine "
+            f"devre dışı bırakıldı (koruma devrede). Lütfen 1 dakika sonra "
+            f"tekrar deneyin. (Kod: {error_id})"
+        )
+
+    api_code = err.code if isinstance(err, genai_errors.APIError) else None
+    err_str = str(err)
+    if api_code == 429 or "429" in err_str or "resource exhausted" in err_str.lower():
         return (
             f"⚠️ Yapay zeka API sınırına ulaşıldı (Rate Limit). "
             f"Lütfen birkaç dakika bekleyip tekrar deneyin. (Kod: {error_id})"
         )
-    elif "503" in err_str or "service is currently unavailable" in err_str.lower():
+    elif (
+        api_code in (500, 502, 503, 504)
+        or "503" in err_str
+        or "service is currently unavailable" in err_str.lower()
+    ):
         return (
             f"⚠️ Yapay zeka servisi şu an geçici olarak kullanılamıyor (503). "
             f"Lütfen kısa süre sonra tekrar deneyin. (Kod: {error_id})"
         )
-    elif "403" in err_str or "quota" in err_str.lower():
+    elif api_code == 403 or "403" in err_str or "quota" in err_str.lower():
         return (
             f"API Erişim Hatası (Kota Aşımı veya Yetki Sorunu). (Kod: {error_id})"
         )
@@ -1228,16 +1361,15 @@ async def analyze_file_generator(
         # test etmek için (lokal-prod hız farkı: eşzamanlılık mı, belge boyutu mu?).
         _record_token_usage(response, benchmark)
 
-        # Eski SDK engellenen yanıtta .text erişiminde ValueError atardı; yeni
-        # SDK None döndürür. ValueError'a çevirerek mevcut güvenlik-filtresi
-        # hata yolunu koruyoruz.
-        if response.text is None:
-            raise ValueError("Gemini yanıtı boş (olası güvenlik/gizlilik filtresi engeli).")
+        # Faz 3-C: finish_reason KOD bazlı okunur — MAX_TOKENS kesilmesi ve
+        # boş yanıt artık "güvenlik filtresi" diye yanlış etiketlenmez; gerçek
+        # filtre engeli finish/block_reason kanıtıyla GeminiBlockedError olur.
+        result_text = _ensure_response_text(response)
 
-        logging.info(f"GEMINI HAM CEVAP: {response.text}")
+        logging.info(f"GEMINI HAM CEVAP: {result_text}")
 
         # 3. Robust JSON Parsing (Brace Counting)
-        data = _parse_gemini_json(response.text)
+        data = _parse_gemini_json(result_text)
 
         # 4. Hash'i sonuca ekle
         data["hash"] = file_hash
@@ -1313,13 +1445,37 @@ async def analyze_file_generator(
         )
         yield {"status": "complete", "data": default_data}
 
-    except ValueError as e:
+    except GeminiResponseError as e:
+        # Faz 3-C: boş/kesik/engellenmiş yanıt — neden finish_reason'dan geliyor
         error_id = str(uuid.uuid4())[:8]
-        TechnicalLogger.log("ERROR", f"Gemini Value Error (Likely Safety Block): {e}")
+        TechnicalLogger.log("ERROR", f"Gemini response error [ErrorID: {error_id}]: {e}")
+        default_data = get_default_json()
+        default_data["hash"] = file_hash
+        if isinstance(e, GeminiTruncatedError):
+            ozet = (
+                f"Yapay zeka yanıtı uzunluk sınırına takıldı ve kesildi (belge "
+                f"çok yoğun olabilir). Lütfen tekrar deneyin. (Kod: {error_id})"
+            )
+        elif isinstance(e, GeminiBlockedError):
+            ozet = (
+                f"Yapay zeka yanıtı engellendi (Güvenlik/Gizlilik Filtresi). (Kod: {error_id})"
+            )
+        else:
+            ozet = (
+                f"Yapay zeka boş yanıt döndürdü. Lütfen tekrar deneyin. (Kod: {error_id})"
+            )
+        default_data["ozet"] = ozet
+        yield {"status": "complete", "data": default_data}
+
+    except ValueError as e:
+        # Faz 3-C: filtre engeli artık kanıtla (GeminiBlockedError) raporlanır;
+        # buraya düşen ValueError'a güvenlik filtresi teşhisi KONMAZ.
+        error_id = str(uuid.uuid4())[:8]
+        TechnicalLogger.log("ERROR", f"Gemini Value Error [ErrorID: {error_id}]: {e}")
         default_data = get_default_json()
         default_data["hash"] = file_hash
         default_data["ozet"] = (
-            f"Yapay zeka yanıtı engellendi (Güvenlik/Gizlilik Filtresi). (Kod: {error_id})"
+            f"Yapay zeka yanıtı işlenemedi. Lütfen tekrar deneyin. (Kod: {error_id})"
         )
         yield {"status": "complete", "data": default_data}
 
@@ -1333,7 +1489,7 @@ async def analyze_file_generator(
 
         default_data = get_default_json()
         default_data["hash"] = file_hash
-        default_data["ozet"] = _api_error_ozet(str(e), error_id)
+        default_data["ozet"] = _api_error_ozet(e, error_id)
 
         yield {"status": "complete", "data": default_data}
     finally:

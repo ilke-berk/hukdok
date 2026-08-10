@@ -28,6 +28,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 from google.genai import types as genai_types
 
 import analyzer
+import gemini_client
 from managers.log_manager import TechnicalLogger
 from party_check import normalize_party_key
 from prompts import (
@@ -261,9 +262,9 @@ async def arbitrate_conflicts(conflicts: List[Dict], doc_summaries: List[Dict]) 
     response = await analyzer._gemini_call_with_retry(
         config, [payload_text], stats=stats, model=get_intake_model()
     )
-    if response.text is None:
-        raise ValueError("Hakem yanıtı boş (olası güvenlik filtresi engeli).")
-    return CaseIntakeArbitration.model_validate_json(response.text).model_dump()["kararlar"]
+    # Faz 3-C: boş/kesik yanıt finish_reason kanıtıyla tipli hataya çevrilir
+    text = analyzer._ensure_response_text(response, context="Hakem")
+    return CaseIntakeArbitration.model_validate_json(text).model_dump()["kararlar"]
 
 
 # =====================================================================
@@ -467,6 +468,7 @@ async def analyze_intake_file_generator(
         ai_stats: Dict[str, Any] = {"retry_count": 0, "retry_wait_ms": 0}
         runs: List[Dict] = []
         durations: List[float] = []
+        last_run_error: Optional[Exception] = None
         payload = [uploaded_file, "Bu belgeyi analiz et ve şemayı doldur."]
         for i in range(n):
             t_run = time.perf_counter()
@@ -474,9 +476,9 @@ async def analyze_intake_file_generator(
                 response = await analyzer._gemini_call_with_retry(
                     gen_config, payload, stats=ai_stats, model=intake_model
                 )
-                if response.text is None:
-                    raise ValueError("Gemini yanıtı boş (olası güvenlik filtresi engeli).")
-                runs.append(CaseIntakeExtraction.model_validate_json(response.text).model_dump())
+                # Faz 3-C: boş/kesik yanıt finish_reason kanıtıyla tipli hata olur
+                text = analyzer._ensure_response_text(response)
+                runs.append(CaseIntakeExtraction.model_validate_json(text).model_dump())
                 durations.append(round(time.perf_counter() - t_run, 1))
                 yield {
                     "status": "info",
@@ -485,6 +487,7 @@ async def analyze_intake_file_generator(
             except Exception as e:
                 # Tek bozuk koşu (kaçak/kırpık JSON, filtre engeli) belgeyi öldürmesin —
                 # atla, kalan koşularla oyla (Faz 0'da flash-lite'ta görüldü).
+                last_run_error = e
                 TechnicalLogger.log(
                     "WARNING",
                     f"[INTAKE] Koşu {i + 1}/{n} geçersiz ({e.__class__.__name__}): {e}",
@@ -498,10 +501,23 @@ async def analyze_intake_file_generator(
         benchmark["retry_wait_ms"] = round(ai_stats["retry_wait_ms"], 2)
 
         if not runs:
-            yield {
-                "status": "error",
-                "message": "Belge analizi başarısız: tüm çıkarım koşuları geçersiz sonuç döndürdü.",
-            }
+            # Nihai başarısızlık → log sözleşmesi gereği tek ERROR (koşu
+            # başına WARNING'ler yukarıda düştü). Devre kesici hızlı-fail'i
+            # kullanıcıya gerçek nedeniyle yansıtılır.
+            TechnicalLogger.log(
+                "ERROR",
+                "[INTAKE] Tüm çıkarım koşuları geçersiz — analiz başarısız",
+                {"file": file_path, "runs_requested": n},
+            )
+            if isinstance(last_run_error, gemini_client.GeminiCircuitOpenError):
+                message = (
+                    "⚠️ Yapay zeka servisi art arda hata verdiği için kısa "
+                    "süreliğine devre dışı bırakıldı (koruma devrede). "
+                    "Lütfen 1 dakika sonra tekrar deneyin."
+                )
+            else:
+                message = "Belge analizi başarısız: tüm çıkarım koşuları geçersiz sonuç döndürdü."
+            yield {"status": "error", "message": message}
             return
 
         merged, parties = majority_vote(runs)
@@ -526,10 +542,9 @@ async def analyze_intake_file_generator(
                     verify_config, [uploaded_file, claims_text],
                     stats=ai_stats, model=intake_model,
                 )
-                if v_response.text is None:
-                    raise ValueError("Doğrulayıcı yanıtı boş.")
+                v_text = analyzer._ensure_response_text(v_response, context="Doğrulayıcı")
                 kontroller = CaseIntakeVerification.model_validate_json(
-                    v_response.text
+                    v_text
                 ).model_dump()["kontroller"]
                 verification = apply_verification(claims, kontroller)
             except Exception as e:
@@ -577,7 +592,7 @@ async def analyze_intake_file_generator(
         TechnicalLogger.log(
             "ERROR", f"[INTAKE] Analiz hatası [ErrorID: {error_id}]: {e}", {"file": file_path}
         )
-        yield {"status": "error", "message": analyzer._api_error_ozet(str(e), error_id)}
+        yield {"status": "error", "message": analyzer._api_error_ozet(e, error_id)}
     finally:
         # Gemini'deki dosya her durumda silinir
         if uploaded_file is not None:
