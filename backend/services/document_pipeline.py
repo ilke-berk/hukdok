@@ -230,6 +230,38 @@ def async_ham_upload(source_path: str, ham_filename: str, ham_folder: str):
         TechnicalLogger.log("ERROR", f"Async Ham Upload Error [ID: {error_id}]: {e}")
 
 
+def _record_upload_result(doc_id, web_url):
+    """Faz 2-C: işlenmiş kopya yükleme denemesinin sonucunu belge kaydına işler.
+
+    web_url doluysa sharepoint_url + upload_status='uploaded', değilse 'failed';
+    iki durumda da upload_attempts artar. True dönüşü URL'in commit edildiği
+    anlamına gelir — hukukbot outbox hook'u yalnız o zaman açılır (BULGULAR #1).
+    """
+    if not doc_id:
+        return False
+    url_saved = False
+    db_upd = SessionLocal()
+    try:
+        doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
+        if doc_rec:
+            doc_rec.upload_attempts = (doc_rec.upload_attempts or 0) + 1
+            if web_url:
+                doc_rec.sharepoint_url = web_url
+                doc_rec.upload_status = "uploaded"
+                url_saved = True
+            else:
+                doc_rec.upload_status = "failed"
+            db_upd.commit()
+            if url_saved:
+                logging.info(f"✅ SharePoint URL updated for Doc ID {doc_id}: {web_url}")
+    except Exception as db_err:
+        db_upd.rollback()
+        logging.error(f"Failed to update upload status in DB for Doc ID {doc_id}: {db_err}")
+    finally:
+        db_upd.close()
+    return url_saved
+
+
 def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: str, doc_id_to_update=None):
     try:
         from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint
@@ -240,21 +272,8 @@ def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: st
             use_date_subfolder=False,
         )
 
-        # Update database with SharePoint URL upon successful upload
-        url_saved = False
-        if doc_id_to_update and response_data and "webUrl" in response_data:
-            db_upd = SessionLocal()
-            try:
-                doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id_to_update).first()
-                if doc_rec:
-                    doc_rec.sharepoint_url = response_data["webUrl"]
-                    db_upd.commit()
-                    url_saved = True
-                    logging.info(f"✅ SharePoint URL updated for Doc ID {doc_id_to_update}: {response_data['webUrl']}")
-            except Exception as db_err:
-                logging.error(f"Failed to update SharePoint URL in DB for Doc ID {doc_id_to_update}: {db_err}")
-            finally:
-                db_upd.close()
+        web_url = (response_data or {}).get("webUrl")
+        url_saved = _record_upload_result(doc_id_to_update, web_url)
 
         # Hukukbot aktarımı (Faz 3): outbox satırı yalnızca URL commit'inden
         # SONRA açılır (BULGULAR #1). Hook hatası arşivleme akışını deviremez.
@@ -268,6 +287,7 @@ def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: st
     except Exception as e:
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Async Processed Upload Error [ID: {error_id}]: {e}")
+        _record_upload_result(doc_id_to_update, None)
 
 
 def convert_pdfa_and_queue_uploads(

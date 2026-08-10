@@ -1,0 +1,52 @@
+# HukuDok — GCP Ops Agent özel konfigürasyonu (Faz 2-C).
+# Hedef: /etc/google-cloud-ops-agent/config.yaml (install.sh kopyalar,
+# değişince agent'ı restart eder). Built-in varsayılanla MERGE edilir:
+# default_pipeline (syslog → Cloud Logging) burada yeniden tanımlanmadığı
+# için AYNEN KALIR — kernel OOM satırları ("Out of memory: Killed process")
+# o akışla gider, OOM alarmı log_id("syslog") filtreler.
+#
+# docker_json: konteyner stdout/stderr'ı (json-file driver, daemon.json 50m×3
+# rotasyon). İki katmanlı parse:
+#   1) docker sarmalayıcısı {log, stream, time} — time LogEntry zaman damgası
+#   2) uygulamanın kendi JSON satırı (backend LOG_FORMAT=json,
+#      logging_setup.JsonFormatter) — `log` alanı çözülüp kayda açılır
+# JSON olmayan satırlar (container nginx, postgres, text-format loglar) parse
+# edilemeyince OLDUĞU GİBİ kalır — parse başarısızlığı kaydı düşürmez.
+# promote_severity: uygulamanın `severity` alanı LogEntry.severity'ye taşınır;
+# ERROR-oranı alarmının log tabanlı metriği (hukdok_backend_error_count,
+# bkz. apply_monitoring.sh) bu alanı filtreler.
+logging:
+  receivers:
+    docker_json:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*-json.log
+      record_log_file_path: true
+    net_watchdog:
+      type: files
+      include_paths:
+        - /var/log/net-watchdog.log
+    mem_watch:
+      type: files
+      include_paths:
+        - /var/log/mem-watch.log
+  processors:
+    parse_docker_wrapper:
+      type: parse_json
+      time_key: time
+      time_format: "%Y-%m-%dT%H:%M:%S.%L%z"
+    parse_app_json:
+      type: parse_json
+      field: log
+    promote_severity:
+      type: modify_fields
+      fields:
+        severity:
+          move_from: jsonPayload.severity
+  service:
+    pipelines:
+      docker:
+        receivers: [docker_json]
+        processors: [parse_docker_wrapper, parse_app_json, promote_severity]
+      watchdogs:
+        receivers: [net_watchdog, mem_watch]

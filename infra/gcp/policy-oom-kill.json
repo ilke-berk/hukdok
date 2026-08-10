@@ -1,0 +1,24 @@
+{
+  "displayName": "HukuDok OOM kill (bellek)",
+  "documentation": {
+    "content": "Kernel bir süreci bellek yetmezliğinden öldürdü (2026-07-29/30 kesintilerinin doğrudan sinyali; o gün satır: `Out of memory: Killed process 1650 (uvicorn) ... anon-rss:3571008kB`). Konteyner cgroup limitinde (compose mem_limit 2g) satır `Memory cgroup out of memory` biçimindedir — filtre ikisini de yakalar. Syslog akışı Ops Agent varsayılan pipeline'ından gelir.\n\nİnceleme: `ssh hukukoid` → `sudo dmesg -T | grep -i 'out of memory'` + `/var/log/mem-watch.log` eğilim verisi (anon büyümesi hangi saatte başlamış?).",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "Kernel OOM satiri (syslog)",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"gce_instance\" AND logName=\"projects/gen-lang-client-0074242743/logs/syslog\" AND textPayload=~\"(Memory cgroup out of memory|Out of memory): Killed process\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "3600s" },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042683176",
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042684523"
+  ]
+}

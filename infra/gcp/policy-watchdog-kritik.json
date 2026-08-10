@@ -1,0 +1,24 @@
+{
+  "displayName": "HukuDok watchdog KRITIK",
+  "documentation": {
+    "content": "Sunucu nöbetçilerinden KRITIK satırı geldi:\n\n- `net-watchdog` (/var/log/net-watchdog.log): yerel ağ müdahalelere rağmen dönmedi veya metadata 5+ turdur erişilemiyor (2026-07-29 ens4/DHCP arızası deseni) — VM konsolundan müdahale gerekebilir.\n- `mem-watch` (/var/log/mem-watch.log): hukdok_backend anon belleği 1500 MB eşiğini aştı — OOM yolunda, eğilim verisi aynı dosyada.\n\nİki dosya da Ops Agent'ın Faz 2-C pipeline'ıyla (infra/gcp/ops-agent-config.yaml) Cloud Logging'e akar.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "net-watchdog / mem-watch KRITIK satiri",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"gce_instance\" AND (logName=\"projects/gen-lang-client-0074242743/logs/net_watchdog\" OR logName=\"projects/gen-lang-client-0074242743/logs/mem_watch\") AND textPayload=~\"KRITIK\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "3600s" },
+    "autoClose": "86400s"
+  },
+  "notificationChannels": [
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042683176",
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042684523"
+  ]
+}

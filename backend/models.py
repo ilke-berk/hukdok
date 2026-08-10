@@ -499,6 +499,12 @@ class CaseDocument(Base):
     email_sent = Column(Boolean, nullable=True)              # None=gönderilmedi/atlandı, True=başarılı, False=hata
     email_error = Column(String, nullable=True)              # Hata mesajı (email_sent=False ise)
 
+    # Arşiv durumu (Faz 2-C): işlenmiş kopyanın SharePoint yükleme sonucu.
+    # pending → kayıt açıldı, yükleme kuyrukta; uploaded → URL commit edildi;
+    # failed → deneme(ler) başarısız. Faz 3-A retry kuyruğunun temelidir.
+    upload_status = Column(String, default="pending", nullable=True)
+    upload_attempts = Column(Integer, default=0, nullable=True)
+
     # Kullanıcı kimliği (UPN / preferred_username)
     uploaded_by_email = Column(String, nullable=True, index=True)
 

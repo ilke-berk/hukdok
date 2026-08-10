@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { initErrorBeacon } from "./lib/errorBeacon";
 
 // Disable console logs in production to prevent leaking metadata
 if (import.meta.env.PROD) {
@@ -11,6 +12,10 @@ if (import.meta.env.PROD) {
   console.info = () => {};
   console.warn = () => {};
 }
+
+// Faz 2-C: yakalanmayan hatalar /api/client-error'a raporlanır — render'dan
+// ÖNCE kurulur ki açılış hataları da (aşağıdaki throw dahil) yakalansın.
+initErrorBeacon();
 
 console.log("main.tsx: Starting app render...");
 

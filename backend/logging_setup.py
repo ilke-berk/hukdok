@@ -168,7 +168,7 @@ class RequestIdMiddleware:
         path = scope.get("path", "")
         method = scope.get("method", "-")
         # Gerçek istemci IP'si nginx arkasında X-Forwarded-For'dadır
-        # (bkz. api._rate_limit_key — backend portu dışa kapalı, spoof edilemez).
+        # (bkz. rate_limiting._rate_limit_key — backend portu dışa kapalı, spoof edilemez).
         xff = headers.get(b"x-forwarded-for", b"").decode("latin-1")
         client_ip = (
             xff.split(",")[0].strip()

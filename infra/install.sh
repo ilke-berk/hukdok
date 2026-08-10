@@ -19,6 +19,7 @@ fi
 BACKUP_USER="luciferandlucius"
 BACKUP_HOME="/home/${BACKUP_USER}"
 changed_nginx=0
+changed_ops_agent=0
 
 inst() {  # inst <kaynak> <hedef> <mod> [sahip:grup]
     local src="$1" dst="$2" mode="$3" owner="${4:-root:root}"
@@ -27,7 +28,10 @@ inst() {  # inst <kaynak> <hedef> <mod> [sahip:grup]
     else
         install -o "${owner%%:*}" -g "${owner##*:}" -m "$mode" "$src" "$dst"
         echo "YAZILDI  $dst"
-        case "$dst" in /etc/nginx/*) changed_nginx=1 ;; esac
+        case "$dst" in
+            /etc/nginx/*) changed_nginx=1 ;;
+            /etc/google-cloud-ops-agent/*) changed_ops_agent=1 ;;
+        esac
     fi
 }
 
@@ -49,6 +53,21 @@ inst scripts/backup_db.sh "${BACKUP_HOME}/backup_db.sh" 0755 "${BACKUP_USER}:${B
 
 echo "== docker daemon.json =="
 inst docker/daemon.json /etc/docker/daemon.json 0644
+
+echo "== GCP Ops Agent config (Faz 2-C log alarmları) =="
+if [ -d /etc/google-cloud-ops-agent ]; then
+    inst gcp/ops-agent-config.yaml /etc/google-cloud-ops-agent/config.yaml 0644
+    if [ "$changed_ops_agent" -eq 1 ]; then
+        # Restart saniyeler sürer, yalnız log/metrik gönderimini keser (uygulamaya
+        # dokunmaz). Config bozuksa restart burada patlar (set -e) — istenen bu.
+        systemctl restart google-cloud-ops-agent
+        echo "ops-agent yeniden başlatıldı (yeni logging pipeline'ları)"
+    else
+        echo "ops-agent değişmedi — restart yok"
+    fi
+else
+    echo "ATLANDI: google-cloud-ops-agent kurulu değil (yeni VM önkoşulu — bkz. README)"
+fi
 
 echo "== nginx site'ları =="
 inst nginx/sites-available/default /etc/nginx/sites-available/default 0644

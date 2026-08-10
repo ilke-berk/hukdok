@@ -405,6 +405,26 @@ _MIGRATIONS = [
         "hukmedilen_manevi": "NUMERIC(20,2)",
         "hukmedilen_toplam": "NUMERIC(20,2)",
     }),
+
+    # 24. CASE_DOCUMENTS ARŞİV DURUMU — Faz 2-C (sertleştirme planı madde 2.6):
+    # işlenmiş kopyanın SharePoint yükleme durumu; Faz 3-A retry kuyruğunun ve
+    # belge kartındaki "arşivleme başarısız" göstergesinin temeli.
+    # Backfill: URL'i olan eski kayıtlar uploaded; olmayanlar failed — URL yoksa
+    # arşiv linki kullanılamaz, nedeni (yükleme mi URL kaydı mı) fark etmez.
+    # Partial index: retry taraması failed/pending arar, uploaded çoğunluk dışarıda.
+    ("columns", "case_documents", {
+        "upload_status": (
+            "VARCHAR(20) DEFAULT 'pending'",
+            [
+                "UPDATE case_documents SET upload_status = CASE "
+                "WHEN sharepoint_url IS NOT NULL AND sharepoint_url <> '' "
+                "THEN 'uploaded' ELSE 'failed' END",
+                "CREATE INDEX IF NOT EXISTS idx_case_docs_upload_status "
+                "ON case_documents(upload_status) WHERE upload_status <> 'uploaded'",
+            ],
+        ),
+        "upload_attempts": "INTEGER DEFAULT 0",
+    }),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

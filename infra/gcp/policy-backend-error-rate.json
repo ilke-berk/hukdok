@@ -1,0 +1,31 @@
+{
+  "displayName": "HukuDok backend ERROR orani yuksek",
+  "documentation": {
+    "content": "Backend konteyner loglarında (docker_json) 5 dakikada 5 veya daha fazla severity>=ERROR satırı. Kaynak: log tabanlı metrik `hukdok_backend_error_count` (apply_monitoring.sh kurar). Frontend hata beacon'ı (/api/client-error) da severity=ERROR yazdığı için 'ekran boş' tipi istemci hataları da bu alarmı besler.\n\nİnceleme: `gcloud logging read 'logName=\"projects/gen-lang-client-0074242743/logs/docker_json\" AND severity>=ERROR' --limit 20 --format='value(timestamp,jsonPayload.message)'` — request_id alanıyla `docker logs hukdok_backend` içinde uçtan uca iz sürülür.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "ERROR sayisi >= 5 / 5 dk",
+      "conditionThreshold": {
+        "filter": "metric.type=\"logging.googleapis.com/user/hukdok_backend_error_count\" AND resource.type=\"gce_instance\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_SUM"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 4,
+        "duration": "0s",
+        "trigger": { "count": 1 }
+      }
+    }
+  ],
+  "alertStrategy": { "autoClose": "86400s" },
+  "notificationChannels": [
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042683176",
+    "projects/gen-lang-client-0074242743/notificationChannels/14019859689042684523"
+  ]
+}

@@ -19,6 +19,8 @@ Amaç: VM kaybolsa bile bilinen-iyi host konfigürasyonu `git clone` +
 | `scripts/mem-watch.sh` | `/usr/local/sbin/mem-watch.sh` | mem-watch.service'in ExecStart'ı |
 | `scripts/backup_db.sh` | `/home/luciferandlucius/backup_db.sh` (sahip: luciferandlucius — db-backup.service `User=` ve `ExecStart=` bu yolu bekler) | pg_dump -Fc → boyut kontrolü (<1 MB hata; dolu dump ~1.7 MB) → SharePoint `02_YEDEK_ARSIV`'e `db_backup_YYYY-MM-DD.dump` (backend konteynerindeki `scripts/upload_db_backup.py` ile) → yerelde 14 gün saklama; log `~/backups/backup.log` |
 | `docker/daemon.json` | `/etc/docker/daemon.json` | json-file log rotasyonu (50m×3) daemon default'u. docker-compose.yml aynı ayarı servis bazında da taşır (Faz 1-A); daemon.json compose dışı konteynerler için emniyet |
+| `gcp/ops-agent-config.yaml` | `/etc/google-cloud-ops-agent/config.yaml` | Faz 2-C: docker konteyner loglarını (json-file → iki katmanlı JSON parse, `severity` → LogEntry.severity) + net-watchdog/mem-watch loglarını Cloud Logging'e gönderir; log tabanlı alarmların veri kaynağı. Varsayılan syslog pipeline'ı korunur (merge). Değişince install.sh agent'ı restart eder |
+| `gcp/policy-*.json` + `gcp/apply_monitoring.sh` | — (GCP projesine, sunucuya değil) | Log tabanlı metrik `hukdok_backend_error_count` + 3 alarm politikası (ERROR oranı ≥5/5dk, kernel OOM kill, watchdog KRITIK; bildirim iki e-posta kanalına). LOKAL makineden `bash infra/gcp/apply_monitoring.sh` ile koşulur, idempotent. İlk koşu 2026-08-10 (Cloud Logging API de o gün etkinleştirildi — daha önce hiç açılmamıştı, Ops Agent hiçbir log gönderememişti) |
 
 ## Kurulum / güncelleme (sunucuda)
 
@@ -31,13 +33,18 @@ sudo bash infra/install.sh
 install.sh idempotenttir: içerik aynıysa dokunmaz; nginx'i yalnızca config
 değiştiyse ve `nginx -t` geçerse reload eder; üç timer'ı `enable --now` yapar;
 docker daemon'ı yeniden BAŞLATMAZ (daemon.json değiştiyse mesai dışı elle
-`sudo systemctl restart docker`).
+`sudo systemctl restart docker`); Ops Agent config'i değiştiyse
+`google-cloud-ops-agent`'ı restart eder (saniyeler, uygulamaya dokunmaz;
+agent kurulu değilse bölümü atlar).
 
 Yeni VM önkoşulları (install.sh bunları kurmaz): `luciferandlucius` kullanıcısı,
 docker + compose eklentisi, nginx + certbot (sertifikalar
 `/etc/letsencrypt/live/hukukoid.com/` ve `.../hukbot.tragic.tr/` — certbot ile
 yeniden üretilir), `docker network create hukuk_shared`, `~/hukdok` repo
-klonu + `.env`.
+klonu + `.env`, google-cloud-ops-agent (kurulum:
+`curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install`;
+VM service account'unda `logging.write` + `monitoring.write` scope'ları olmalı —
+mevcut VM'de var).
 
 ## Bilinen sunucu sapmaları (2026-08-08 envanteri)
 
@@ -70,3 +77,14 @@ birebir çıktı (bkz. 345eda3).
 ssh hukukoid 'systemctl list-timers --no-pager | grep -E "db-backup|mem-watch|net-watchdog"'
 ssh hukukoid 'tail -3 ~/backups/backup.log; sudo tail -3 /var/log/net-watchdog.log /var/log/mem-watch.log'
 ```
+
+Log akışı + alarmlar (lokal makineden; ops-agent config'i sunucuya işlendikten sonra):
+
+```bash
+gcloud logging read 'logName="projects/gen-lang-client-0074242743/logs/docker_json"' --limit 3 --format="value(timestamp,jsonPayload.message,textPayload)"
+gcloud alpha monitoring policies list --format="table(displayName,enabled)"
+```
+
+Watchdog alarmının uçtan uca testi: sunucuda
+`echo "$(date -Is) KRITIK: alarm testi (elle)" | sudo tee -a /var/log/mem-watch.log`
+→ birkaç dakika içinde iki adrese "HukuDok watchdog KRITIK" e-postası düşer.

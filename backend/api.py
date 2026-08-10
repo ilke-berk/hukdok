@@ -55,10 +55,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
@@ -249,18 +248,10 @@ else:
         expose_headers=["X-Total-Count"],
     )
 
-def _rate_limit_key(request):
-    """Nginx proxy arkasında gerçek istemci IP'si X-Forwarded-For'dadır; doğrudan
-    bağlantı IP'si kullanılırsa tüm kullanıcılar tek limit kovasını paylaşır.
-    Backend portu yalnızca localhost + iç Docker ağına açık olduğundan header
-    spoof'u dış istemciler için mümkün değildir."""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return get_remote_address(request)
+# Limiter rate_limiting.py'de yaşar: routes/client_errors.py per-endpoint
+# limit dekoratörü için aynı instance'ı import eder (Faz 2-C).
+from rate_limiting import limiter  # noqa: E402
 
-
-limiter = Limiter(key_func=_rate_limit_key, default_limits=["100/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -313,9 +304,12 @@ app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
 app.add_middleware(RequestIdMiddleware)
 
 # --- ROUTES ---
-from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake
+from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake, client_errors
 
 app.include_router(config.router)
+# Frontend hata beacon'ı — bilinçli auth'suz (auth kırıkken de rapor gelsin);
+# IP limiti + gövde tavanı + alan beyaz listesi korumaları modülün içinde.
+app.include_router(client_errors.router)
 # Soft-delete geri alma (yalnız admin) — silinenleri gören tek yol
 app.include_router(admin.router)
 # Bellek teşhisi (yalnız admin) — 2026-07-29 OOM incelemesi
