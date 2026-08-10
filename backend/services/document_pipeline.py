@@ -222,6 +222,8 @@ def async_increment_counter():
 
 
 def async_ham_upload(source_path: str, ham_filename: str, ham_folder: str):
+    """Faz 3-A'dan beri yalnız fallback: asıl yol upload_queue outbox'ıdır.
+    Buraya düşen tek deneme nihaidir — ERROR loglaması bu yüzden yerinde."""
     try:
         from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint
         upload_file_to_sharepoint(source_path, ham_filename, ham_folder, use_date_subfolder=False)
@@ -263,6 +265,8 @@ def _record_upload_result(doc_id, web_url):
 
 
 def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: str, doc_id_to_update=None):
+    """Faz 3-A'dan beri yalnız fallback: asıl yol upload_queue outbox'ıdır.
+    Buraya düşen tek deneme nihaidir — ERROR loglaması bu yüzden yerinde."""
     try:
         from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint
         response_data = upload_file_to_sharepoint(
@@ -353,8 +357,18 @@ def convert_pdfa_and_queue_uploads(
             # Both archives queued together only after successful PDF/A conversion.
             # HAM arşive orijinal ham dosya gider (dönüştürülmüş formatlarda
             # source_path analiz PDF'i olabilir — bkz. accept_incoming_file).
-            background_tasks.add_task(async_ham_upload, ham_source_path or source_path, ham_filename, ham_folder)
-            background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
+            #
+            # Faz 3-A: fire-and-forget BackgroundTasks yerine kalıcı outbox —
+            # payload spool'a kopyalanır, satır /confirm yanıtından ÖNCE commit
+            # edilir; süreç ölse de yükleme kaybolmaz, geçici hata retry edilir.
+            # enqueue None dönerse (DB/disk arızası) eski tek-denemeli yola düş:
+            # kuyruk arızası arşivlemeyi eskisinden kötü yapmamalı.
+            from services.upload_queue import enqueue_upload
+            ham_upload_src = ham_source_path or source_path
+            if enqueue_upload("ham", ham_upload_src, ham_filename, ham_folder, document_id=doc_id) is None:
+                background_tasks.add_task(async_ham_upload, ham_upload_src, ham_filename, ham_folder)
+            if enqueue_upload("islenmis", pdfa_temp_file, new_filename, islenmis_folder, document_id=doc_id) is None:
+                background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
             timings["2_ham_upload"] = 0.00
             timings["3b_gizli_upload"] = 0.00
             results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"

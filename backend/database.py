@@ -64,8 +64,13 @@ def init_db():
     """
     logger.info("🛠️ Initializing Database...")
     try:
-        # Import models here to ensure they are registered in Base.metadata
-        # Create all tables defined in models (including AnalysisCache)
+        # Modelleri gerçekten import et ki Base.metadata dolsun: migrate.py
+        # (Faz 1-A) yalnız bu modülü import eder — bu satır yokken create_all
+        # sessiz no-op'tu ve YENİ tablolar ancak lifespan'deki yedek init_db
+        # çağrısında (modeller route'lar üzerinden yüklüyken) oluşuyordu.
+        # Faz 3-A'da upload_outbox ile tespit edildi; 3-E lifespan çağrısını
+        # kaldıracağı için migrasyonun tek başına eksiksiz koşması şart.
+        import models  # noqa: F401
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Tables created/verified.")
 
@@ -437,6 +442,14 @@ _MIGRATIONS = [
         "deleted_by":    "VARCHAR(200)",
         "delete_reason": "TEXT",
     }),
+
+    # 26. UPLOAD_OUTBOX PARTIAL INDEX — Faz 3-A: tablo create_all'dan gelir;
+    # worker taraması yalnız pending satırları arar, uploaded/failed çoğunluk
+    # dışarıda kalsın (idx_case_docs_upload_status ile aynı gerekçe).
+    ("index", "upload_outbox", [
+        "CREATE INDEX IF NOT EXISTS idx_upload_outbox_pending "
+        "ON upload_outbox(next_attempt_at) WHERE status = 'pending'",
+    ]),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

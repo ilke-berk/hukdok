@@ -172,6 +172,18 @@ async def lifespan(app: FastAPI):
     except ImportError:
         logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
 
+    # SharePoint yükleme outbox worker'ı (Faz 3-A): ilk taraması startup
+    # reconcile'dır — önceki süreçten kalan pending yüklemeleri toparlar.
+    # Faz 3-E notu: uvicorn --workers N'e geçişte süreç-tekil yapılmalı
+    # (her worker kendi thread'ini açarsa aynı satır N kez yüklenir).
+    try:
+        from services.upload_queue import start_upload_worker
+        start_upload_worker()
+    except Exception as e:
+        # Worker yoksa enqueue edilen satırlar birikir, sonraki açılış işler —
+        # yine de retry sistemi devre dışı demek: gerçek arıza sinyali, ERROR.
+        logging.error(f"Upload outbox worker başlatılamadı: {e}")
+
     # KVKK: Cleanup orphaned temp files from previous sessions
     try:
         temp_dir = tempfile.gettempdir()
@@ -208,6 +220,12 @@ async def lifespan(app: FastAPI):
 
     if hasattr(app.state, "scheduler"):
         app.state.scheduler.shutdown(wait=False)
+
+    try:
+        from services.upload_queue import stop_upload_worker
+        stop_upload_worker()
+    except Exception as e:
+        logging.warning(f"Upload outbox worker durdurulamadı: {e}")
 
     logging.info("API Shutting down...")
 

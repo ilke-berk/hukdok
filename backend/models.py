@@ -539,6 +539,49 @@ class DailyActivityReport(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
 
+class UploadOutbox(Base):
+    """
+    SharePoint arşiv yüklemelerinin kalıcı kuyruğu (Faz 3-A, plan madde 3.1).
+
+    /confirm yanıtı dönmeden önce her arşiv yüklemesi (ham + islenmis) için
+    payload spool dizinine kopyalanır ve buraya pending satır yazılır; yükleme
+    işi services/upload_queue.py'deki tek worker thread'inde koşar. Süreç ölse
+    bile satır + spool dosyası kalır, açılıştaki reconcile kaldığı yerden dener.
+
+    Not: Faz 2-C backfill'inden gelen eski "failed" belgeler (upload_status
+    kolonundaki 50 kayıt) bu kuyruğun KAPSAMI DIŞINDADIR — kaynak dosyaları
+    /confirm'den 30 sn sonra silindiği için sunucuda yeniden yüklenecek içerik
+    yok; retry yalnız spool dosyası olan outbox satırları için mümkündür.
+    """
+    __tablename__ = "upload_outbox"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Ham satırlarda da izlenebilirlik için dolu; belge upload_status'unu yalnız
+    # "islenmis" satırları günceller. CASCADE: belge hard-delete edilirse
+    # (bugün yok, soft-delete var) kuyruk satırı da düşer.
+    document_id = Column(
+        Integer,
+        ForeignKey("case_documents.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    kind = Column(String(20), nullable=False)                 # "ham" | "islenmis"
+    spool_path = Column(String, nullable=True)                # payload kopyası; janitor temizlerse NULL
+    target_filename = Column(String, nullable=False)
+    target_folder = Column(String, nullable=False)
+    # "pending"  → yükleme bekliyor / retry'da (worker tarar)
+    # "uploaded" → SharePoint'e gitti, spool dosyası silindi
+    # "failed"   → MAX_ATTEMPTS tüketildi ya da spool kayıp; nihai (ERROR loglanır)
+    status = Column(String(20), default="pending", nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=True)  # NULL = hemen dene
+    last_error = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    done_at = Column(DateTime(timezone=True), nullable=True)  # uploaded/failed'a geçiş anı
+
+    document = relationship("CaseDocument")
+
+
 class ExportOutbox(Base):
     """
     Hukukbot aktarımının kaynağı (bkz. docs/hukukbot-aktarim/PLAN.md §1).
