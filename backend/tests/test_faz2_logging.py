@@ -18,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-import logging_setup
 from logging_setup import (
     ACCESS_LOG_EXEMPT_PATHS,
     JsonFormatter,
