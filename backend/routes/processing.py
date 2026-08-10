@@ -21,7 +21,7 @@ from managers.log_manager import TechnicalLogger
 from managers.ttl_cache import TTLCache
 from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 import models
-from services import document_pipeline
+from services import confirm_idempotency, document_pipeline
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -385,11 +385,16 @@ async def analyze_file_endpoint(
         counter_task = None
         try:
             async def fetch_counter():
+                # Faz 3-D (plan 3.4): numara tahsisi ATOMİK — oku+artır+döndür
+                # tek işlemde, ETag/If-Match ile. Eski akış burada salt okuyup
+                # artırmayı /confirm'e bırakıyordu; iki eşzamanlı kullanıcı aynı
+                # numarayı alabiliyordu. Timeout'ta thread arkada tahsisi
+                # bitirebilir → numara atlanır (boşluk); mükerrere tercih edilir.
                 try:
                     loop = asyncio.get_running_loop()
                     counter = get_counter_manager()
                     ofis_dosya_no = await asyncio.wait_for(
-                        loop.run_in_executor(None, counter.get_next_counter),
+                        loop.run_in_executor(None, counter.reserve_next_counter),
                         timeout=10.0,
                     )
                     return ofis_dosya_no
@@ -584,187 +589,226 @@ async def confirm_process(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON in form fields") from None
 
+    # Faz 3-D (plan 3.5): idempotency kapısı — 504 sonrası retry aynı
+    # process_id ile gelir (frontend hep gönderir); tamamlanmış işlemin yanıtı
+    # pipeline'ı TEKRAR KOŞMADAN aynen döner, halen koşan işlem 409 alır.
+    # Kapı, ilk yan etkiden (cache pop / tenant sorgusu) ÖNCE geçilmeli.
+    idem_active = False
+    if process_id:
+        idem_verdict, idem_replay = confirm_idempotency.begin(process_id, _owner_id(user))
+        if idem_verdict == "replay" and idem_replay is not None:
+            TechnicalLogger.log(
+                "INFO", f"/confirm idempotent replay: {process_id} — pipeline atlandı"
+            )
+            idem_replay.setdefault("results", {})["idempotent_replay"] = True
+            return idem_replay
+        if idem_verdict == "in_progress":
+            raise HTTPException(
+                status_code=409,
+                detail="Bu belgenin kaydı sunucuda halen sürüyor. Lütfen bekleyin ve "
+                       "belgeyi TEKRAR GÖNDERMEYİN — işlem bitince aynı ekrandan tekrar "
+                       "denerseniz mevcut sonuç gösterilecektir.",
+            )
+        idem_active = idem_verdict == "proceed"
+
     results: dict = {}
 
-    # IDOR-6: linked_case_id verildiyse önce tenant ownership doğrula.
-    # Belge SharePoint'e gitmeden ve save_case_document çağrılmadan önce reddetmeliyiz.
-    if linked_case_id:
-        avukat_kodu = document_pipeline.validate_tenant_and_resolve_lawyer(linked_case_id, user, avukat_kodu)
-
-    # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
-    # ham_source_path: HAM arşive gidecek orijinal dosya (dönüştürülmüş
-    # formatlarda source_path'ten farklıdır).
-    temp_path, ham_source_path = await document_pipeline.accept_incoming_file(
-        process_id, file, PROCESS_CACHE, owner=_owner_id(user)
-    )
-
-    source_path = temp_path
-    muvekkil_kodu = None
-
     try:
-        new_filename = sanitize_filename(new_filename)
-    except HTTPException as e:
-        TechnicalLogger.log("WARNING", f"Filename sanitization failed: {e.detail}")
-        raise e
+        # IDOR-6: linked_case_id verildiyse önce tenant ownership doğrula.
+        # Belge SharePoint'e gitmeden ve save_case_document çağrılmadan önce reddetmeliyiz.
+        if linked_case_id:
+            avukat_kodu = document_pipeline.validate_tenant_and_resolve_lawyer(linked_case_id, user, avukat_kodu)
 
-    background_tasks.add_task(document_pipeline.async_increment_counter)
-    timings["1_counter"] = 0.00
-
-    HAM_FOLDER = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
-    ISLENMIS_FOLDER = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
-
-    original_filename = (file.filename if file else None) or new_filename
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    sanitized_original = sanitize_filename(original_filename)
-    ham_filename = f"{date_str}_{sanitized_original}"
-
-    # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
-    # Executor şart: Ghostscript dönüşümü senkron ve 240 sn'ye kadar sürebilir —
-    # event loop'ta koşarsa tüm kullanıcıların istekleri durur (504 kümeleri).
-    pdfa_temp_file, doc_id = await asyncio.get_running_loop().run_in_executor(
-        None,
-        partial(
-            document_pipeline.convert_pdfa_and_queue_uploads,
-            background_tasks=background_tasks,
-            source_path=source_path,
-            ham_filename=ham_filename,
-            ham_source_path=ham_source_path,
-            ham_folder=HAM_FOLDER,
-            islenmis_folder=ISLENMIS_FOLDER,
-            new_filename=new_filename,
-            original_filename=original_filename,
-            belge_turu_kodu=belge_turu_kodu,
-            muvekkiller=muvekkiller,
-            muvekkil_adi=muvekkil_adi,
-            ai_ozet=ai_ozet,
-            linked_case_id=linked_case_id,
-            case_party_id=case_party_id,
-            avukat_kodu=avukat_kodu,
-            esas_no=esas_no,
-            is_test_mode=is_test_mode,
-            user=user,
-            current_user_name=current_user_name,
-            results=results,
-            timings=timings,
-        ),
-    )
-
-    final_local_path = pdfa_temp_file if (pdfa_temp_file and os.path.exists(pdfa_temp_file)) else source_path
-    timings["4_local_save"] = 0.00
-    results["local_save"] = "Atlandı (Web Mode)"
-    results["final_path"] = None
-
-    timings["5_logging"] = 0.00
-
-    # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir
-    extra_temp_paths, skipped_extras = await document_pipeline.save_extra_attachments(extra_attachment_files)
-    if skipped_extras:
-        results["extra_attachments_skipped"] = skipped_extras
-        results["extra_attachments_warning"] = (
-            "Bazı ekler doğrulamadan geçemediği için e-postaya eklenmedi: "
-            + ", ".join(skipped_extras)
+        # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
+        # ham_source_path: HAM arşive gidecek orijinal dosya (dönüştürülmüş
+        # formatlarda source_path'ten farklıdır).
+        temp_path, ham_source_path = await document_pipeline.accept_incoming_file(
+            process_id, file, PROCESS_CACHE, owner=_owner_id(user)
         )
 
-    avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu)
+        source_path = temp_path
+        muvekkil_kodu = None
 
-    email_metadata = document_pipeline.build_email_metadata(
-        muvekkiller, muvekkil_adi, muvekkil_kodu, belge_turu_kodu, tarih, avukat_adi, teblig_tarihi
-    )
+        try:
+            new_filename = sanitize_filename(new_filename)
+        except HTTPException as e:
+            TechnicalLogger.log("WARNING", f"Filename sanitization failed: {e.detail}")
+            raise e
 
-    email_file_path = final_local_path
+        # Faz 3-D: sayaç artırma buradan KALKTI — numara /process'te atomik tahsis
+        # ediliyor (counter_manager.reserve_next_counter); burada artırmak çift
+        # sayıma yol açardı. timings anahtarı frontend benchmark sözleşmesi için duruyor.
+        timings["1_counter"] = 0.00
 
-    if send_email:
-        await document_pipeline.send_notification_email(
-            email_file_path=email_file_path,
-            new_filename=new_filename,
-            avukat_kodu=avukat_kodu,
-            email_metadata=email_metadata,
-            custom_to=custom_to,
-            custom_cc=custom_cc,
-            custom_email_message=custom_email_message,
-            custom_messages=custom_messages,
-            extra_temp_paths=extra_temp_paths,
-            current_user_name=current_user_name,
-            doc_id=doc_id,
-            results=results,
-            timings=timings,
+        HAM_FOLDER = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
+        ISLENMIS_FOLDER = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+
+        original_filename = (file.filename if file else None) or new_filename
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        sanitized_original = sanitize_filename(original_filename)
+        ham_filename = f"{date_str}_{sanitized_original}"
+
+        # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
+        # Executor şart: Ghostscript dönüşümü senkron ve 240 sn'ye kadar sürebilir —
+        # event loop'ta koşarsa tüm kullanıcıların istekleri durur (504 kümeleri).
+        pdfa_temp_file, doc_id = await asyncio.get_running_loop().run_in_executor(
+            None,
+            partial(
+                document_pipeline.convert_pdfa_and_queue_uploads,
+                background_tasks=background_tasks,
+                source_path=source_path,
+                ham_filename=ham_filename,
+                ham_source_path=ham_source_path,
+                ham_folder=HAM_FOLDER,
+                islenmis_folder=ISLENMIS_FOLDER,
+                new_filename=new_filename,
+                original_filename=original_filename,
+                belge_turu_kodu=belge_turu_kodu,
+                muvekkiller=muvekkiller,
+                muvekkil_adi=muvekkil_adi,
+                ai_ozet=ai_ozet,
+                linked_case_id=linked_case_id,
+                case_party_id=case_party_id,
+                avukat_kodu=avukat_kodu,
+                esas_no=esas_no,
+                is_test_mode=is_test_mode,
+                user=user,
+                current_user_name=current_user_name,
+                results=results,
+                timings=timings,
+            ),
         )
-    else:
-        results["email"] = "Kullanıcı tarafından atlandı"
-        results["email_warning"] = None
-        results["email_success"] = None
 
-    # --- MÜVEKKİL BİLGİLENDİRME (SORUMLU AVUKATA) ---
-    # Müvekkil bilgilendirme metni müvekkile DEĞİL, davanın sorumlu avukatına
-    # "[Müvekkil Bilgilendirme]" konu başlığıyla, AYRI bir e-posta olarak gönderilir.
-    # Avukat metni gözden geçirip müvekkiline iletir.
-    # Şimdilik tüm belge türlerinde gönderilir; should_notify_client ileride sınırlayacak.
-    from email_sender import should_notify_client
-    if (
-        send_email
-        and send_client_notice
-        and should_notify_client(belge_turu_kodu)
-        and email_file_path and os.path.exists(email_file_path)
-    ):
-        await document_pipeline.send_client_notice_email(
-            email_file_path=email_file_path,
-            new_filename=new_filename,
-            avukat_kodu=avukat_kodu,
-            avukat_adi=avukat_adi,
-            email_metadata=email_metadata,
-            client_notice_message=client_notice_message,
-            current_user_name=current_user_name,
-            results=results,
-            timings=timings,
+        final_local_path = pdfa_temp_file if (pdfa_temp_file and os.path.exists(pdfa_temp_file)) else source_path
+        timings["4_local_save"] = 0.00
+        results["local_save"] = "Atlandı (Web Mode)"
+        results["final_path"] = None
+
+        timings["5_logging"] = 0.00
+
+        # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir
+        extra_temp_paths, skipped_extras = await document_pipeline.save_extra_attachments(extra_attachment_files)
+        if skipped_extras:
+            results["extra_attachments_skipped"] = skipped_extras
+            results["extra_attachments_warning"] = (
+                "Bazı ekler doğrulamadan geçemediği için e-postaya eklenmedi: "
+                + ", ".join(skipped_extras)
+            )
+
+        avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu)
+
+        email_metadata = document_pipeline.build_email_metadata(
+            muvekkiller, muvekkil_adi, muvekkil_kodu, belge_turu_kodu, tarih, avukat_adi, teblig_tarihi
         )
-    else:
-        results["client_notice"] = "Atlandı"
-        results["client_notice_success"] = None
 
-    download_id = None
-    if email_file_path and os.path.exists(email_file_path):
-        download_id = str(uuid.uuid4())
-        DOWNLOAD_CACHE.set(download_id, {
-            "path": email_file_path,
-            "filename": new_filename,
-            "owner": _owner_id(user),
-        })
-        results["download_id"] = download_id
+        email_file_path = final_local_path
 
-    # Temp dosyaları temizle (source_path her zaman; pdfa ve ham orijinal farklıysa onlar da)
-    document_pipeline.schedule_cleanup(background_tasks, source_path, pdfa_temp_file, download_id, DOWNLOAD_CACHE, ham_source_path=ham_source_path)
+        if send_email:
+            await document_pipeline.send_notification_email(
+                email_file_path=email_file_path,
+                new_filename=new_filename,
+                avukat_kodu=avukat_kodu,
+                email_metadata=email_metadata,
+                custom_to=custom_to,
+                custom_cc=custom_cc,
+                custom_email_message=custom_email_message,
+                custom_messages=custom_messages,
+                extra_temp_paths=extra_temp_paths,
+                current_user_name=current_user_name,
+                doc_id=doc_id,
+                results=results,
+                timings=timings,
+            )
+        else:
+            results["email"] = "Kullanıcı tarafından atlandı"
+            results["email_warning"] = None
+            results["email_success"] = None
 
-    results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
+        # --- MÜVEKKİL BİLGİLENDİRME (SORUMLU AVUKATA) ---
+        # Müvekkil bilgilendirme metni müvekkile DEĞİL, davanın sorumlu avukatına
+        # "[Müvekkil Bilgilendirme]" konu başlığıyla, AYRI bir e-posta olarak gönderilir.
+        # Avukat metni gözden geçirip müvekkiline iletir.
+        # Şimdilik tüm belge türlerinde gönderilir; should_notify_client ileride sınırlayacak.
+        from email_sender import should_notify_client
+        if (
+            send_email
+            and send_client_notice
+            and should_notify_client(belge_turu_kodu)
+            and email_file_path and os.path.exists(email_file_path)
+        ):
+            await document_pipeline.send_client_notice_email(
+                email_file_path=email_file_path,
+                new_filename=new_filename,
+                avukat_kodu=avukat_kodu,
+                avukat_adi=avukat_adi,
+                email_metadata=email_metadata,
+                client_notice_message=client_notice_message,
+                current_user_name=current_user_name,
+                results=results,
+                timings=timings,
+            )
+        else:
+            results["client_notice"] = "Atlandı"
+            results["client_notice_success"] = None
 
-    if linked_case_id and not is_test_mode:
-        if belge_turu_kodu:
-            results["auto_status_update"] = _auto_update_case_status(
-                linked_case_id, belge_turu_kodu, current_user_name
+        download_id = None
+        if email_file_path and os.path.exists(email_file_path):
+            download_id = str(uuid.uuid4())
+            DOWNLOAD_CACHE.set(download_id, {
+                "path": email_file_path,
+                "filename": new_filename,
+                "owner": _owner_id(user),
+            })
+            results["download_id"] = download_id
+
+        # Temp dosyaları temizle (source_path her zaman; pdfa ve ham orijinal farklıysa onlar da)
+        document_pipeline.schedule_cleanup(background_tasks, source_path, pdfa_temp_file, download_id, DOWNLOAD_CACHE, ham_source_path=ham_source_path)
+
+        results["link_mode"] = "TEST" if is_test_mode else ("LINKED" if linked_case_id else "UNLINKED")
+
+        if linked_case_id and not is_test_mode:
+            if belge_turu_kodu:
+                results["auto_status_update"] = _auto_update_case_status(
+                    linked_case_id, belge_turu_kodu, current_user_name
+                )
+            else:
+                results["auto_status_update"] = False
+
+            results["auto_enrichment"] = _auto_enrich_case_data(
+                linked_case_id, avukat_kodu, karsi_taraf, current_user_name
+            )
+
+            # Duruşma/tensip zaptından gelen sonraki duruşma tarihini ajandaya kaydet
+            document_pipeline.save_hearing_date(
+                linked_case_id=linked_case_id,
+                belge_turu_kodu=belge_turu_kodu,
+                sonraki_durusma_tarihi=sonraki_durusma_tarihi,
+                sonraki_durusma_saati=sonraki_durusma_saati,
+                avukat_adi=avukat_adi,
+                new_filename=new_filename,
+                current_user_name=current_user_name,
+                results=results,
             )
         else:
             results["auto_status_update"] = False
+            results["auto_enrichment"] = {}
+            results["hearing_date_saved"] = None
 
-        results["auto_enrichment"] = _auto_enrich_case_data(
-            linked_case_id, avukat_kodu, karsi_taraf, current_user_name
-        )
+        total_time = perf_time.perf_counter() - confirm_start
+        timings["TOTAL"] = total_time
 
-        # Duruşma/tensip zaptından gelen sonraki duruşma tarihini ajandaya kaydet
-        document_pipeline.save_hearing_date(
-            linked_case_id=linked_case_id,
-            belge_turu_kodu=belge_turu_kodu,
-            sonraki_durusma_tarihi=sonraki_durusma_tarihi,
-            sonraki_durusma_saati=sonraki_durusma_saati,
-            avukat_adi=avukat_adi,
-            new_filename=new_filename,
-            current_user_name=current_user_name,
-            results=results,
-        )
-    else:
-        results["auto_status_update"] = False
-        results["auto_enrichment"] = {}
-        results["hearing_date_saved"] = None
-
-    total_time = perf_time.perf_counter() - confirm_start
-    timings["TOTAL"] = total_time
-
-    return {"status": "completed", "results": results, "timings": timings}
+        payload = {"status": "completed", "results": results, "timings": timings}
+        if idem_active and process_id:
+            # Yanıt kaydedilir ki 504 sonrası retry pipeline'sız replay alsın.
+            confirm_idempotency.complete(process_id, payload)
+        return payload
+    except BaseException:
+        # Belge YARATILMADAN düşen istek kaydı bırakır → kullanıcı hemen tekrar
+        # deneyebilir (dönüşüm 500'ü tipik örnek). Belge yaratıldıysa
+        # (results'ta case_document_id var) kayıt in_progress KALIR: yeniden
+        # koşmak belgeyi mükerrer yaratırdı; retry 409 alır, bayat eşiği
+        # (30 dk) dolunca kilit kendiliğinden çözülür. CancelledError dahil
+        # (BaseException) — istek iptalinde de aynı mantık geçerli.
+        if idem_active and process_id and "case_document_id" not in results:
+            confirm_idempotency.release(process_id)
+        raise

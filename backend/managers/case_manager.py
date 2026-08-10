@@ -4,7 +4,7 @@ Avukat adı çözümleme mantığı managers/lawyer_resolver.py'de,
 referans listeleri managers/reference_lists.py'dedir.
 """
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError
@@ -942,15 +942,12 @@ def add_case(data: dict, tenant_id: str = None):
     except IntegrityError as e:
         db.rollback()
         if "tracking_no" in str(getattr(e, "orig", e)):
-            logger.error(f"Add Case Error: tracking_no çakışması — {data.get('tracking_no')}")
-            # Telemetri (Faz 6.3): öneri mantığı hâlâ dolu numara üretiyorsa
-            # SharePoint'teki teknik loglardan görülebilsin (ERROR → anlık sync)
-            from managers.log_manager import TechnicalLogger
-            TechnicalLogger.log(
-                "ERROR",
-                "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
-                details={"tracking_no": data.get("tracking_no")},
-            )
+            # Faz 3-D: çakışma burada NİHAİ değildir — /commit route'u önce
+            # idempotent çözümleme dener (kaybolan yanıt sonrası retry kendi
+            # davasına çarpmış olabilir). Log sözleşmesi gereği burada WARNING;
+            # [TRACKING_NO_COLLISION] ERROR telemetrisini gerçek 409'u döndüren
+            # route'lar üretir (case_intake.py commit + cases.py api_add_case).
+            logger.warning(f"Add Case: tracking_no çakışması — {data.get('tracking_no')}")
             return {"error": "duplicate_tracking_no"}
         logger.error(f"Add Case Error: {e}")
         return None
@@ -958,6 +955,135 @@ def add_case(data: dict, tenant_id: str = None):
         logger.error(f"Add Case Error: {e}")
         db.rollback()
         return None
+    finally:
+        db.close()
+
+
+# find_idempotent_commit_match: "kaybolan yanıt" retry penceresi. Otomatik
+# retry saniyeler, elle tekrar tıklama dakikalar, taslaktan devam ertesi gün
+# olabilir — 24 saat hepsini kapsar; daha eski bir dava aynı numarayı gerçek
+# çakışmayla (sayaç önerisi bug'ı, 2026-07-16) tutuyordur.
+IDEMPOTENT_MATCH_WINDOW_HOURS = 24
+
+
+def _norm_plain(value) -> str:
+    """esas_no/mahkeme karşılaştırma anahtarı: boşluk sadeleştir + casefold.
+    Aynı taslaktan gelen retry'da değerler bayt-bayt aynıdır; bu normalize
+    yalnız zararsız boşluk/büyüklük farklarını tolere eder. (Parametre
+    bilinçli tipsiz: eski stil Column[] modellerinde mypy arg-type üretiyor.)"""
+    return " ".join(str(value or "").split()).casefold()
+
+
+def find_idempotent_commit_match(data: dict, tenant_id: Optional[str] = None) -> Optional[dict]:
+    """duplicate_tracking_no anında: mevcut dava BU isteğin daha önce başarıyla
+    kaydolmuş hâli mi? (yanıtı kaybolan commit / çift tıklama — Faz 3-D, 3.5)
+
+    MUHAFAZAKÂR eşleşme: yanlış pozitif (farklı davayı "aynı" sanmak) yeni
+    davayı sessizce yutar ve belgeleri yanlış karta arşivler; şüphede None
+    dönülür → çağıran 409'a düşer (bugünkü davranış, kullanıcı karar verir).
+    Kriterlerin HEPSİ:
+      1. tracking_no birebir + dava soft-delete edilmemiş (silinmiş kayıtla
+         çakışma sayaç bug'ının bilinen hali → gerçek 409)
+      2. tenant görünürlüğü: dava başka tenant'a damgalıysa eşleşme yok
+      3. created_at son IDEMPOTENT_MATCH_WINDOW_HOURS içinde
+      4. esas_no ve court normalize eşit (ikisi de boş dahil — aynı taslaktan
+         gelen retry'da birebir aynıdırlar)
+      5. taraf kümesi eşit ve BOŞ DEĞİL: {(party_type, normalize_party_key(ad))}
+    Eşleşmede add_case dönüş şekli + "reused": True döner.
+    """
+    tracking_no = data.get("tracking_no")
+    if not tracking_no:
+        return None
+    req_parties = {
+        ((p.get("party_type") or "").strip().upper(), normalize_party_key(p.get("name") or ""))
+        for p in (data.get("parties") or [])
+        if (p.get("name") or "").strip()
+    }
+    if not req_parties:
+        # Tarafsız istek için elimizde güçlü kimlik yok — 409 sürsün.
+        return None
+
+    db = SessionLocal()
+    try:
+        case = (
+            db.query(models.Case)
+            .options(selectinload(models.Case.parties))
+            .filter(
+                models.Case.tracking_no == tracking_no,
+                models.Case.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if case is None:
+            return None
+        if tenant_id and case.tenant_id and case.tenant_id != tenant_id:
+            return None
+
+        created_at = case.created_at
+        if created_at is None:
+            return None
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - created_at
+        if age > timedelta(hours=IDEMPOTENT_MATCH_WINDOW_HOURS):
+            return None
+
+        if _norm_plain(data.get("esas_no")) != _norm_plain(case.esas_no):
+            return None
+        if _norm_plain(data.get("court")) != _norm_plain(case.court):
+            return None
+
+        case_parties = {
+            ((p.party_type or "").strip().upper(), normalize_party_key(p.name or ""))
+            for p in case.parties
+            if (p.name or "").strip()
+        }
+        if req_parties != case_parties:
+            return None
+
+        return {
+            "id": case.id,
+            "tracking_no": case.tracking_no,
+            "esas_no": case.esas_no,
+            "court": case.court or "",
+            "status": case.status,
+            "responsible_lawyer_name": case.responsible_lawyer_name or "",
+            "reused": True,
+        }
+    except Exception as e:
+        # Çözümleme başarısızlığı 409'u engellememeli (bugünkü davranışa düş).
+        logger.warning(f"Idempotent commit eşleşmesi bakılamadı: {e}")
+        return None
+    finally:
+        db.close()
+
+
+def get_case_document_filenames(case_id: int) -> dict:
+    """Davanın (soft-delete edilmemiş) belgelerinin stored_filename → id eşlemesi.
+
+    Faz 3-D idempotent commit çözümlemesi için: retry'ın belgelerinden davada
+    zaten kayıtlı olanlar yeniden arşivlenmeden raporlanır. Aynı ada birden çok
+    belge varsa ilk (en eski) id döner — yalnız raporlama, kozmetik.
+    """
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.CaseDocument.stored_filename, models.CaseDocument.id)
+            .filter(
+                models.CaseDocument.case_id == case_id,
+                models.CaseDocument.deleted_at.is_(None),
+            )
+            .order_by(models.CaseDocument.id)
+            .all()
+        )
+        out: dict = {}
+        for name, doc_id in rows:
+            if name:
+                out.setdefault(name, doc_id)
+        return out
+    except Exception as e:
+        logger.warning(f"Belge adı eşlemesi alınamadı (case={case_id}): {e}")
+        return {}
     finally:
         db.close()
 

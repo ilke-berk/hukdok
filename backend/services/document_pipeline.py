@@ -212,15 +212,6 @@ async def accept_incoming_file(
     return temp_path, original_path or temp_path
 
 
-def async_increment_counter():
-    try:
-        from managers.counter_manager import get_counter_manager
-        counter = get_counter_manager()
-        counter.increment_counter()
-    except Exception as e:
-        TechnicalLogger.log("ERROR", f"Async Counter Error: {e}")
-
-
 def async_ham_upload(source_path: str, ham_filename: str, ham_folder: str):
     """Faz 3-A'dan beri yalnız fallback: asıl yol upload_queue outbox'ıdır.
     Buraya düşen tek deneme nihaidir — ERROR loglaması bu yüzden yerinde."""

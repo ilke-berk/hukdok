@@ -996,12 +996,38 @@ async def commit_case_intake(
     missing_fields = compute_missing_fields(case_dict, case_dict.get("parties"))
     case_dict["status"] = "DERDEST"
     case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
+    idempotent_reuse = False
     if case_result and case_result.get("error") == "duplicate_tracking_no":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
-                   "Sıra numarasını artırıp tekrar deneyin.",
+        # Faz 3-D (plan 3.5): 409 artık nihai değil — yanıtı kaybolan önceki
+        # commit'in KENDİ davasına çarpmış olabiliriz (çift tıklama / timeout
+        # sonrası tekrar). Muhafazakâr eşleşme tutarsa mevcut dava idempotent
+        # sonuç olarak döner; eski "sıra numarasını artırıp tekrar deneyin"
+        # yolu bu senaryoda aynı davayı İKİNCİ kez açtırıyordu.
+        match = await loop.run_in_executor(
+            None, partial(case_manager.find_idempotent_commit_match, case_dict, tenant_id)
         )
+        if match:
+            idempotent_reuse = True
+            case_result = match
+            TechnicalLogger.log(
+                "INFO",
+                "[INTAKE-COMMIT] 409 idempotent çözüldü — mevcut dava döndürülüyor",
+                {"case_id": match["id"], "tracking_no": match.get("tracking_no")},
+            )
+        else:
+            # Gerçek çakışma (nihai): [TRACKING_NO_COLLISION] ERROR telemetrisi
+            # Faz 3-D'de add_case'ten buraya taşındı (orada WARNING) — sayaç
+            # önerisi hâlâ dolu numara üretiyorsa buradan görülür (2026-07-16).
+            TechnicalLogger.log(
+                "ERROR",
+                "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
+                details={"tracking_no": req.case.tracking_no},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
+                       "Sıra numarasını artırıp tekrar deneyin.",
+            )
     if not case_result or case_result.get("error"):
         raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
     case_id = case_result["id"]
@@ -1020,12 +1046,48 @@ async def commit_case_intake(
         )
 
     # 2. Belge-başı best-effort döngü (karar 4) — apply ile ortak yardımcı.
+    # İdempotent yeniden kullanımda davada aynı stored_filename ile ZATEN
+    # kayıtlı belgeler yeniden arşivlenmez (ilk commit arşivlemişti; retry'ın
+    # cache girdileri çoğu kez tükenmiştir ve "expired" raporu yanıltıcı olur)
+    # — mevcut belge id'siyle "queued" raporlanır. İlk commit'in yarım
+    # bıraktığı belgeler normal döngüden geçer: cache'i yaşıyorsa arşivlenir.
+    docs_to_archive = list(req.documents)
+    reused_doc_entries: List[Dict[str, Any]] = []
+    if idempotent_reuse and req.documents:
+        existing_by_name = await loop.run_in_executor(
+            None, case_manager.get_case_document_filenames, case_id
+        )
+        docs_to_archive = []
+        for d in req.documents:
+            try:
+                lookup_name = sanitize_filename(d.new_filename)
+            except HTTPException:
+                # Arşiv döngüsü aynı adı aynı şekilde reddedecek — oraya bırak.
+                docs_to_archive.append(d)
+                continue
+            existing_id = existing_by_name.get(lookup_name)
+            if existing_id is not None:
+                reused_doc_entries.append({
+                    "process_id": d.process_id,
+                    "status": "queued",
+                    "document_id": existing_id,
+                    "error_ozet": None,
+                })
+            else:
+                docs_to_archive.append(d)
+
     doc_results = await _archive_intake_documents(
-        req.documents, case_id, avukat_kodu, background_tasks,
+        docs_to_archive, case_id, avukat_kodu, background_tasks,
         user, current_user_name, req.options,
     )
+    if reused_doc_entries:
+        # Yanıt, isteğin belge sırasını korur (frontend satır eşlemesi).
+        by_pid = {e["process_id"]: e for e in list(doc_results) + reused_doc_entries}
+        doc_results = [by_pid[d.process_id] for d in req.documents if d.process_id in by_pid]
 
     # 3. Poliçe beslemesi — best-effort (karar 5) — apply ile ortak yardımcı.
+    # (İdempotent yeniden kullanımda da güvenli: save_client_policies kendi
+    # içinde dedupe eder — tekrar besleme "skipped" sayar.)
     policy_result = await _feed_intake_policies(req.policies, case_id, current_user_name)
 
     TechnicalLogger.log(
@@ -1045,8 +1107,13 @@ async def commit_case_intake(
         "case": {
             "id": case_id,
             "tracking_no": case_result.get("tracking_no"),
-            "status": case_dict["status"],
+            # Yeniden kullanımda mevcut davanın gerçek durumu döner (yeni
+            # kayıtta sunucu zorlaması DERDEST).
+            "status": case_result.get("status") if idempotent_reuse else case_dict["status"],
             "missing_required_fields": missing_fields,
+            # Faz 3-D: retry'ın mevcut davaya çözüldüğünün işareti (frontend
+            # bilmeyen alanı yok sayar; teşhis ve gelecek UI mesajı için).
+            "idempotent_reuse": idempotent_reuse,
         },
         "documents": doc_results,
         "policies": policy_result,

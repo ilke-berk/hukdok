@@ -582,6 +582,40 @@ class UploadOutbox(Base):
     document = relationship("CaseDocument")
 
 
+class ConfirmReceipt(Base):
+    """
+    /confirm idempotency kaydı (Faz 3-D, plan madde 3.5).
+
+    Anahtar process_id'dir: /process her sihirbaz oturumu için tekil UUID
+    üretir ve frontend /confirm'e (retry'lar dahil) hep aynısını gönderir.
+    504 sonrası kullanıcı retry'ı bugüne dek pipeline'ı ikinci kez koşturup
+    mükerrer belge + mükerrer e-posta üretiyordu (nginx.conf'ta "mukerrer
+    kayit kaynagi" olarak belgeli).
+
+    Akış (services/confirm_idempotency.py):
+      - /confirm başında PK'ya INSERT denenir → geçerse pipeline koşar.
+      - PK çakışırsa: satır "completed" ise saklanan yanıt AYNEN döndürülür
+        (pipeline koşmaz), "in_progress" ise 409 "işlem sürüyor" dönülür.
+      - Başarıda yanıt JSON'u satıra yazılır; belge YARATILMADAN patlayan
+        istek satırını siler (retry serbest kalır).
+
+    Kayıt DB'de (süreç içinde değil) — bilinçli (3-E kararı): uvicorn restart
+    ve gelecekteki --workers 2 geçişinde worker'lar arası tutarlı kalır;
+    süreç içi bir dict ikisinde de idempotensi kaybederdi.
+    """
+    __tablename__ = "confirm_receipts"
+
+    # /process'in ürettiği UUID (36 hane); PK = eşzamanlı çift gönderim kilidi
+    process_id = Column(String(64), primary_key=True)
+    # İstek sahibinin UPN'i — yanıt yalnız sahibine replay edilir
+    owner = Column(String(320), nullable=True)
+    status = Column(String(20), default="in_progress", nullable=False)  # in_progress | completed
+    # completed'da /confirm yanıtının JSON'u; replay bunun aynısını döndürür
+    response_json = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
 class ExportOutbox(Base):
     """
     Hukukbot aktarımının kaynağı (bkz. docs/hukukbot-aktarim/PLAN.md §1).

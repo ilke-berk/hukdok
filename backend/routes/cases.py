@@ -49,6 +49,15 @@ def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_ten
     # tenant_id Depends'i token doğrulaması için kalıyor ama damgalamada kullanılmıyor.
     result = add_case(case_data.model_dump())
     if result and result.get("error") == "duplicate_tracking_no":
+        # Faz 3-D: [TRACKING_NO_COLLISION] telemetrisi add_case'ten nihai
+        # noktaya taşındı (intake commit'te çakışma artık idempotent
+        # çözülebiliyor; buradaki elle kayıt yolunda 409 nihaidir).
+        from managers.log_manager import TechnicalLogger
+        TechnicalLogger.log(
+            "ERROR",
+            "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
+            details={"tracking_no": case_data.tracking_no},
+        )
         raise HTTPException(
             status_code=409,
             detail=f"Bu ofis numarası zaten kayıtlı: {case_data.tracking_no}. "

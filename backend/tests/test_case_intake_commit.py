@@ -206,6 +206,11 @@ def test_commit_duplicate_tracking_no_409_consumes_no_document(env, monkeypatch)
     monkeypatch.setattr(
         case_manager, "add_case", lambda data: {"error": "duplicate_tracking_no"}
     )
+    # Faz 3-D: 409'dan önce idempotent çözümleme denenir; bu test GERÇEK
+    # çakışma yolunu sınar → eşleşme yok (testte DB'ye çıkılmaz).
+    monkeypatch.setattr(
+        case_manager, "find_idempotent_commit_match", lambda data, tenant_id=None: None
+    )
     env.put_cache("pid-dup")
     r = env.client.post(
         "/api/case-intake/commit", json=_payload(documents=[_doc("pid-dup")])
