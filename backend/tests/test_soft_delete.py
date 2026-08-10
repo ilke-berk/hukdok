@@ -119,6 +119,19 @@ def test_central_filters_contain_deleted_at():
         assert "deleted_at.is_(None)" in inspect.getsource(fn), fn.__name__
 
 
+def test_case_detail_documents_exclude_deleted():
+    """Dava kartı belgeleri Case.documents İLİŞKİSİNDEN ham serileştirir; filtre
+    comprehension'dadır. Kaldırılırsa silinen belge dava kartına geri sızar —
+    2026-08-10'da canlıda yakalandı (DELETE 200 ama kart göstermeye devam etti):
+    routes/documents.py listeleri filtreliydi, bu serileştirme noktası atlanmıştı."""
+    from managers import case_manager
+
+    src = inspect.getsource(case_manager.get_case)
+    assert "for d in item.documents if d.deleted_at is None" in src, (
+        "dava kartı belge listesinde deleted_at filtresi yok"
+    )
+
+
 def test_client_sequence_deliberately_ignores_soft_delete():
     """client-sequence silinen davaların numara aralığını SAYMAYA devam etmeli
     (aynı numara yeniden önerilmesin — unique kısıt silinenleri de kapsıyor)."""
