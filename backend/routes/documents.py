@@ -5,9 +5,10 @@ import tempfile
 import unicodedata
 from pathlib import Path
 from typing import Optional, List, Dict
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import func
 
 from auth_helpers import get_tenant_owned_case, get_tenant_owned_document
 from dependencies import get_current_user, get_current_tenant
@@ -101,6 +102,7 @@ def get_case_documents(
         q = (
             db.query(models.CaseDocument)
             .filter(models.CaseDocument.case_id == case_id)
+            .filter(models.CaseDocument.deleted_at.is_(None))
         )
         if party_id is not None:
             if party_id.lower() == "null":
@@ -159,6 +161,8 @@ def get_all_documents(
             .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None), models.CaseDocument.case_id.is_(None)))
             # Soft-delete: silinmiş davanın belgeleri listelenmez; UNLINKED belgeler görünür
             .filter(or_(models.Case.deleted_at.is_(None), models.CaseDocument.case_id.is_(None)))
+            # Soft-delete: silinmiş belgeler listelenmez
+            .filter(models.CaseDocument.deleted_at.is_(None))
         )
         if link_mode:
             q = q.filter(models.CaseDocument.link_mode == link_mode.upper())
@@ -209,6 +213,46 @@ def link_document_to_case(
         doc.link_mode = "LINKED"
         db.commit()
         return {"status": "success", "message": f"Belge #{doc_id} dava #{new_case_id}'ye bağlandı"}
+    finally:
+        db.close()
+
+
+@router.delete("/api/documents/{doc_id}")
+def api_delete_document(
+    doc_id: int,
+    reason: str = Query(..., min_length=3, max_length=500),
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Soft-delete: kayıt DB'de kalır, listelerden gizlenir, admin geri alabilir.
+
+    Dava/müvekkil silme kalıbının (routes/cases.py) belge karşılığı. SharePoint
+    arşiv kopyasına dokunulmaz. Gerekçe zorunlu (query param — DELETE body bazı
+    proxy'lerde düşer). get_tenant_owned_document silinmişi görmez → çifte silme
+    doğal 404.
+    """
+    db = SessionLocal()
+    try:
+        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        doc.deleted_at = func.now()
+        doc.deleted_by = (
+            user.get("preferred_username") or user.get("upn") or user.get("email") or "Unknown"
+        )
+        doc.delete_reason = reason.strip()
+        db.commit()
+        logger.info(
+            f"Belge soft-delete: id={doc_id} file={doc.stored_filename!r} "
+            f"case_id={doc.case_id} by={doc.deleted_by}"
+        )
+        return {"status": "success", "message": "Belge arşive taşındı"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Belge silme hatası ({doc_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Belge silinemedi. Lütfen tekrar deneyin.") from e
     finally:
         db.close()
 

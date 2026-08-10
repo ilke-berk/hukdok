@@ -64,6 +64,9 @@ def get_tenant_owned_document(
         .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
         .filter(
             models.CaseDocument.id == doc_id,
+            # Soft-delete edilmiş belge hiçbir kullanıcı yoluna dönmez;
+            # yalnız admin uçları (routes/admin.py) silinenleri sorgular.
+            models.CaseDocument.deleted_at.is_(None),
             or_(
                 models.Case.tenant_id == tenant_id,
                 models.Case.tenant_id.is_(None),

@@ -44,6 +44,8 @@ def _hydrate_docs(db, ids: list[int]) -> list[dict]:
         db.query(models.CaseDocument)
         .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
         .filter(models.CaseDocument.id.in_(ids))
+        # Rapor yazıldıktan sonra silinen belgeler modal'da gösterilmez
+        .filter(models.CaseDocument.deleted_at.is_(None))
         .all()
     )
     by_id = {d.id: d for d in docs}
@@ -296,11 +298,14 @@ def admin_trigger_report(
 
     # Tanı sorguları
     try:
+        # deleted_at filtresi rapor üretimiyle (activity_manager) tutarlı olmalı,
+        # yoksa tanı sayıları rapordan sapar ve yanlış alarm üretir.
         total_docs = (
             db.query(models.CaseDocument)
             .filter(
                 models.CaseDocument.uploaded_at >= day_start_utc,
                 models.CaseDocument.uploaded_at < day_end_utc,
+                models.CaseDocument.deleted_at.is_(None),
             )
             .count()
         )
@@ -310,6 +315,7 @@ def admin_trigger_report(
                 models.CaseDocument.uploaded_at >= day_start_utc,
                 models.CaseDocument.uploaded_at < day_end_utc,
                 models.CaseDocument.uploaded_by_email.isnot(None),
+                models.CaseDocument.deleted_at.is_(None),
             )
             .count()
         )

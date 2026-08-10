@@ -45,6 +45,9 @@ def _build_report_for_date(db, target_date: date, force_user_email: str = None) 
         .filter(
             CaseDocument.uploaded_at >= day_start_utc,
             CaseDocument.uploaded_at < day_end_utc,
+            # Soft-delete edilmiş belgeler rapora girmez (catch-up has_docs
+            # sorgusuyla tutarlı olmalı, yoksa gün sonsuza dek "eksik" görünür)
+            CaseDocument.deleted_at.is_(None),
         )
         .all()
     )
@@ -172,6 +175,7 @@ def catch_up_missed_reports():
                         CaseDocument.uploaded_at >= day_start,
                         CaseDocument.uploaded_at < day_end,
                         CaseDocument.uploaded_by_email.isnot(None),
+                        CaseDocument.deleted_at.is_(None),
                     )
                     .first()
                 )

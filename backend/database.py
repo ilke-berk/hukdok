@@ -425,6 +425,18 @@ _MIGRATIONS = [
         ),
         "upload_attempts": "INTEGER DEFAULT 0",
     }),
+
+    # 25. CASE_DOCUMENTS SOFT-DELETE — madde 21'deki dava/müvekkil kalıbının
+    # belgelere genişletilmesi: silme kaydı korur, listelerden gizler, admin
+    # geri alır; SharePoint arşiv kopyasına dokunulmaz. Partial index madde 21
+    # ile aynı gerekçe: canlı sorgular IS NULL, admin listesi IS NOT NULL tarar.
+    ("columns", "case_documents", {
+        "deleted_at": ("TIMESTAMPTZ", [
+            "CREATE INDEX IF NOT EXISTS idx_case_docs_deleted_at ON case_documents(deleted_at) WHERE deleted_at IS NOT NULL",
+        ]),
+        "deleted_by":    "VARCHAR(200)",
+        "delete_reason": "TEXT",
+    }),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

@@ -508,6 +508,12 @@ class CaseDocument(Base):
     # Kullanıcı kimliği (UPN / preferred_username)
     uploaded_by_email = Column(String, nullable=True, index=True)
 
+    # Soft-delete (dava/müvekkil kalıbı): kayıt DB'de kalır, listelerden gizlenir,
+    # admin panelinden geri alınır. SharePoint arşiv kopyasına dokunulmaz.
+    deleted_at    = Column(DateTime(timezone=True), nullable=True)
+    deleted_by    = Column(String(200), nullable=True)
+    delete_reason = Column(String, nullable=True)
+
     # İlişkiler
     case = relationship("Case", back_populates="documents")
     case_party = relationship("CaseParty", foreign_keys=[case_party_id])

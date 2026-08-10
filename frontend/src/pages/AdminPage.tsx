@@ -1645,7 +1645,7 @@ function ActivityTestPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Silinenler Paneli — soft-delete edilen dava/müvekkil kayıtları + geri alma
+// Silinenler Paneli — soft-delete edilen dava/müvekkil/belge kayıtları + geri alma
 // ---------------------------------------------------------------------------
 function DeletedRecordsPanel() {
     interface DeletedCaseRow {
@@ -1656,7 +1656,12 @@ function DeletedRecordsPanel() {
         id: number; name: string; cari_kod?: string | null;
         deleted_at?: string | null; deleted_by?: string | null; delete_reason?: string | null;
     }
-    const [data, setData] = useState<{ cases: DeletedCaseRow[]; clients: DeletedClientRow[] }>({ cases: [], clients: [] });
+    interface DeletedDocumentRow {
+        id: number; stored_filename: string; belge_turu_adi?: string | null;
+        case_id?: number | null; case_tracking_no?: string | null;
+        deleted_at?: string | null; deleted_by?: string | null; delete_reason?: string | null;
+    }
+    const [data, setData] = useState<{ cases: DeletedCaseRow[]; clients: DeletedClientRow[]; documents?: DeletedDocumentRow[] }>({ cases: [], clients: [], documents: [] });
     const [loading, setLoading] = useState(false);
     const [restoringKey, setRestoringKey] = useState<string | null>(null);
     const [reloadKey, setReloadKey] = useState(0);
@@ -1678,7 +1683,7 @@ function DeletedRecordsPanel() {
         return () => { cancelled = true; };
     }, [reloadKey]);
 
-    const restore = async (type: "case" | "client", id: number, label: string) => {
+    const restore = async (type: "case" | "client" | "document", id: number, label: string) => {
         setRestoringKey(`${type}-${id}`);
         try {
             const { apiClient } = await import("@/lib/api");
@@ -1697,7 +1702,7 @@ function DeletedRecordsPanel() {
     };
 
     const fmtDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("tr-TR") : "—");
-    const total = data.cases.length + data.clients.length;
+    const total = data.cases.length + data.clients.length + (data.documents?.length ?? 0);
 
     return (
         <TabsContent value="deleted">
@@ -1760,6 +1765,23 @@ function DeletedRecordsPanel() {
                                             <Button size="sm" variant="outline" disabled={restoringKey === `client-${c.id}`}
                                                 onClick={() => restore("client", c.id, c.name)}>
                                                 {restoringKey === `client-${c.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Geri Al"}
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                                {(data.documents ?? []).map(d => (
+                                    <TableRow key={`document-${d.id}`}>
+                                        <TableCell><span className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border rounded bg-background/50 text-muted-foreground">Belge</span></TableCell>
+                                        <TableCell className="text-xs max-w-[280px] truncate" title={d.stored_filename}>
+                                            {d.stored_filename}{d.case_tracking_no ? ` · ${d.case_tracking_no}` : ""}
+                                        </TableCell>
+                                        <TableCell className="text-xs">{d.deleted_by || "—"}</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{fmtDate(d.deleted_at)}</TableCell>
+                                        <TableCell className="text-xs max-w-[280px] truncate" title={d.delete_reason || ""}>{d.delete_reason || "—"}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button size="sm" variant="outline" disabled={restoringKey === `document-${d.id}`}
+                                                onClick={() => restore("document", d.id, d.stored_filename)}>
+                                                {restoringKey === `document-${d.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Geri Al"}
                                             </Button>
                                         </TableCell>
                                     </TableRow>

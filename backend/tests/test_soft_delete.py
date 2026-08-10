@@ -27,6 +27,11 @@ def test_client_has_soft_delete_columns():
         assert hasattr(models.Client, col), f"models.Client.{col} yok"
 
 
+def test_case_document_has_soft_delete_columns():
+    for col in ("deleted_at", "deleted_by", "delete_reason"):
+        assert hasattr(models.CaseDocument, col), f"models.CaseDocument.{col} yok"
+
+
 def test_case_has_tku_sistem_no_columns():
     assert hasattr(models.Case, "tku_no")
     assert hasattr(models.Case, "sistem_no")
@@ -76,13 +81,21 @@ def test_client_delete_requires_reason():
     _assert_required_query(p)
 
 
+def test_document_delete_requires_reason():
+    from routes.documents import api_delete_document
+    p = _reason_param(api_delete_document)
+    assert p is not None, "DELETE /api/documents reason parametresi kaldırılmış"
+    _assert_required_query(p)
+
+
 # ─── Restore ucu ─────────────────────────────────────────────────────────────
 
 def test_restore_rejects_unknown_record_type():
     from routes.admin import api_restore_record
     # record_type doğrulaması DB'ye dokunmadan önce çalışır
+    # ("document" 2026-08-10'da geçerli tip oldu — bilinmeyen örnek: hearing)
     with pytest.raises(HTTPException) as exc:
-        api_restore_record("document", 1, user={}, tenant_id="t")
+        api_restore_record("hearing", 1, user={}, tenant_id="t")
     assert exc.value.status_code == 400
 
 

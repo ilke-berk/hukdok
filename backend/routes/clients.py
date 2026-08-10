@@ -155,7 +155,8 @@ def api_list_client_policies(
                 doc = (
                     db.query(models.CaseDocument.sharepoint_url)
                     .filter(models.CaseDocument.original_filename == r.source_document,
-                            models.CaseDocument.sharepoint_url.isnot(None))
+                            models.CaseDocument.sharepoint_url.isnot(None),
+                            models.CaseDocument.deleted_at.is_(None))
                     .order_by(models.CaseDocument.id.desc())
                     .first()
                 )

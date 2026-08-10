@@ -1,7 +1,17 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useCases } from "@/hooks/useCases";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,6 +126,9 @@ const CaseDetails = () => {
     const [addRelationOpen, setAddRelationOpen] = useState(false);
     const [resendDoc, setResendDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
     const [resendLoading, setResendLoading] = useState(false);
+    // Belge soft-delete diyaloğu — gerekçe zorunlu (min 3), dava silme kalıbıyla birebir
+    const [deleteDoc, setDeleteDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
+    const [deleteDocReason, setDeleteDocReason] = useState("");
 
     const fetchRelated = async () => {
         if (!id) return;
@@ -191,6 +204,28 @@ const CaseDetails = () => {
             if (data) setCaseData(data);
         } catch (e: unknown) {
             toast.error("Müvekkil ataması başarısız", { description: e instanceof Error ? e.message : String(e) });
+        }
+    };
+
+    const handleDeleteDoc = async () => {
+        if (!deleteDoc || deleteDocReason.trim().length < 3) return;
+        try {
+            const res = await apiClient.fetch(
+                `/api/documents/${deleteDoc.id}?reason=${encodeURIComponent(deleteDocReason.trim())}`,
+                { method: "DELETE" },
+            );
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || "Silme başarısız");
+            }
+            toast.success("Belge arşive taşındı", { description: "Listeden kaldırıldı; yönetici panelinden geri alınabilir." });
+            const data = await getCase(parseInt(id!));
+            if (data) setCaseData(data);
+        } catch (e: unknown) {
+            toast.error("Belge silinemedi", { description: e instanceof Error ? e.message : String(e) });
+        } finally {
+            setDeleteDoc(null);
+            setDeleteDocReason("");
         }
     };
 
@@ -866,6 +901,15 @@ const CaseDetails = () => {
                                                 >
                                                     Detay / Görüntüle
                                                 </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="w-full sm:w-auto border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                                                    title="Belgeyi sil"
+                                                    onClick={() => setDeleteDoc(doc)}
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                </Button>
                                             </div>
                                         </div>
                                     );
@@ -937,6 +981,39 @@ const CaseDetails = () => {
                     belge_turu_kodu: resendDoc.belge_turu_kodu ?? undefined,
                 } : undefined}
             />
+
+            {/* Belge silme onayı — gerekçe zorunlu, admin geri alabilir */}
+            <AlertDialog open={deleteDoc != null} onOpenChange={(open) => { if (!open) { setDeleteDoc(null); setDeleteDocReason(""); } }}>
+                <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                            <Trash2 className="w-4 h-4" />
+                            Belgeyi silmek istediğinize emin misiniz?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
+                            <span className="block truncate font-medium text-[var(--fg)] mb-1" title={deleteDoc?.stored_filename || deleteDoc?.original_filename}>
+                                {deleteDoc?.stored_filename || deleteDoc?.original_filename}
+                            </span>
+                            Belge listelerden kaldırılır ve arşive taşınır; <strong className="text-[var(--fg)]">yönetici panelinden geri alınabilir.</strong> Gerekçe zorunludur ve kayıt altına alınır.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <textarea
+                        rows={2}
+                        value={deleteDocReason}
+                        onChange={e => setDeleteDocReason(e.target.value)}
+                        placeholder="Silme gerekçesi (zorunlu)…"
+                        className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                    />
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDeleteDoc}
+                            disabled={deleteDocReason.trim().length < 3}
+                            className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                        >Sil</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 };
