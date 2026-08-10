@@ -9,7 +9,7 @@
     {
       "displayName": "Kernel OOM satiri (syslog)",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"gce_instance\" AND logName=\"projects/gen-lang-client-0074242743/logs/syslog\" AND textPayload=~\"(Memory cgroup out of memory|Out of memory): Killed process\""
+        "filter": "resource.type=\"gce_instance\" AND logName=\"projects/gen-lang-client-0074242743/logs/syslog\" AND (jsonPayload.message=~\"(Memory cgroup out of memory|Out of memory): Killed process\" OR textPayload=~\"(Memory cgroup out of memory|Out of memory): Killed process\")"
       }
     }
   ],

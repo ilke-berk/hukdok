@@ -9,7 +9,7 @@
     {
       "displayName": "net-watchdog / mem-watch KRITIK satiri",
       "conditionMatchedLog": {
-        "filter": "resource.type=\"gce_instance\" AND (logName=\"projects/gen-lang-client-0074242743/logs/net_watchdog\" OR logName=\"projects/gen-lang-client-0074242743/logs/mem_watch\") AND textPayload=~\"KRITIK\""
+        "filter": "resource.type=\"gce_instance\" AND (logName=\"projects/gen-lang-client-0074242743/logs/net_watchdog\" OR logName=\"projects/gen-lang-client-0074242743/logs/mem_watch\") AND (jsonPayload.message=~\"KRITIK\" OR textPayload=~\"KRITIK\")"
       }
     }
   ],
