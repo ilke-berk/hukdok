@@ -53,8 +53,11 @@ def save_cache(data):
     """
     ensure_cache_dir()
 
-    # Use a temp file for atomic write safety
-    temp_file = os.path.join(CACHE_DIR, "list_cache.tmp")
+    # Use a temp file for atomic write safety.
+    # Faz 3-E: ad süreç başına TEKİL — uvicorn --workers N'de her worker'ın
+    # refresh thread'i boot'ta buraya yazar; sabit "list_cache.tmp" adı iki
+    # sürecin aynı dosyaya iç içe yazıp bozuk içerik move etmesine açıktı.
+    temp_file = os.path.join(CACHE_DIR, f"list_cache.tmp-{os.getpid()}")
 
     try:
         with open(temp_file, "w", encoding="utf-8") as f:

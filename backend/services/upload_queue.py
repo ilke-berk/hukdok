@@ -116,6 +116,11 @@ def enqueue_upload(
             db.commit()
             db.refresh(row)
             outbox_id = row.id
+        except Exception:
+            # Faz 3-E (3.6): açık transaction'ı bırak; dıştaki except fallback'e
+            # düşürür (rollback da patlarsa yine aynı yere düşer — bare yeterli).
+            db.rollback()
+            raise
         finally:
             db.close()
 
@@ -218,6 +223,11 @@ def _attempt_upload(outbox_id: int) -> None:
         kind, doc_id = row.kind, row.document_id
         spool_path = row.spool_path
         target_filename, target_folder = row.target_filename, row.target_folder
+    except Exception:
+        # Faz 3-E (3.6): sayaç commit'i düştüyse upload'a GEÇME (zehirli dosya
+        # bekçisi sayaca dayanır); istisna _worker_loop'ta WARNING'e düşer.
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -327,7 +337,13 @@ def _purge_terminal_spools(db, now: datetime) -> None:
         if not safe_remove(row.spool_path):
             continue  # dosya silinemedi — pointer'ı koru, sonraki tarama dener
         row.spool_path = None
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            # Faz 3-E (3.6): DB düştüyse sıradaki satırların commit'i de düşer —
+            # rollback'le bırak, istisna _worker_loop'ta WARNING'e düşsün.
+            db.rollback()
+            raise
         if row.status == "failed":
             logger.info(
                 f"Upload outbox: failed satırın spool dosyası "

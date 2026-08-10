@@ -66,6 +66,9 @@ services:
       # tabanlı alarmları (Faz 2-C) severity'yi bu alandan okur. Host'ta
       # (python api.py, CLI) set edilmez → okunur text biçimi kalır.
       - LOG_FORMAT=json
+      # Faz 3-E: uvicorn worker sayısı (entrypoint varsayılanı da 2). Sorun
+      # çıkarsa 1'e çekip `up -d` (recreate) ile imajsız geri dönüş yapılır.
+      - UVICORN_WORKERS=2
     # Load environment variables from backend/.env if it exists, or root .env
     env_file:
       - .env

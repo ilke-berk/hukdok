@@ -10,5 +10,9 @@ echo "📊 Running database migrations (one-time step)..."
 python migrate.py
 
 echo "✅ Starting API server..."
-exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8001}
+# Faz 3-E: 2 worker — /process-/confirm çaprazı DiskTTLCache (disk destekli
+# PROCESS_CACHE) ile, süreç-tekil arkaplan işleri lider kilidiyle
+# (services/singleton_lock.py) güvenli. UVICORN_WORKERS=1 ile imaj
+# değiştirmeden tek worker'a dönülebilir (compose env + recreate yeter).
+exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8001} --workers ${UVICORN_WORKERS:-2}
 

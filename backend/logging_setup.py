@@ -74,6 +74,10 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "request_id": getattr(record, "request_id", "-"),
             "location": f"{record.module}:{record.lineno}",
+            # Faz 3-E: uvicorn --workers N'de satırın hangi worker'dan geldiği
+            # (süreç-içi durumlar — devre kesici, health sayaçları — worker
+            # başına olduğundan) teşhiste gerekir.
+            "pid": record.process,
         }
         if record.exc_info:
             entry["exception"] = self.formatException(record.exc_info)

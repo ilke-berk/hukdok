@@ -108,6 +108,14 @@ def save_case_document(
         return doc_id
     except Exception as e:
         logging.error(f"CaseDocument save error: {e}")
+        # Faz 3-E (3.6): başarısız transaction bağlantıda asılı kalmasın.
+        # Guard'lı: rollback'in kendisi de düşerse (DB tamamen kapalı) bu
+        # fonksiyonun "hata = None döner" sözleşmesi bozulmamalı.
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         return None
     finally:
         if db is not None:
@@ -441,6 +449,12 @@ def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc
                 db_upd.commit()
         except Exception as db_err:
             logging.error(f"Email status DB update error (doc_id={doc_id}): {db_err}")
+            # Faz 3-E (3.6): guard'lı rollback — e-posta durumu best-effort'tur,
+            # rollback hatası gönderim sonucunu değiştirmemeli.
+            try:
+                db_upd.rollback()
+            except Exception:
+                pass
         finally:
             db_upd.close()
 
@@ -695,6 +709,13 @@ def save_hearing_date(
             logging.info(f"HearingDate kaydedildi: case_id={linked_case_id}, tarih={parsed_hearing}, saat={sonraki_durusma_saati}")
         except Exception as e:
             logging.error(f"HearingDate kaydetme hatası: {e}")
+            # Faz 3-E (3.6): guard'lı rollback — duruşma kaydı best-effort,
+            # /confirm yanıtını deviremez.
+            if db_h is not None:
+                try:
+                    db_h.rollback()
+                except Exception:
+                    pass
             results["hearing_date_saved"] = None
             results["hearing_time_saved"] = None
         finally:

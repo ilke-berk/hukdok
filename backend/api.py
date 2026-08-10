@@ -108,16 +108,18 @@ async def lifespan(app: FastAPI):
             "dev auth bypass DEVRE DIŞI. Bu değişkenler prod ortamında set edilmemeli."
         )
 
-    try:
-        # Konteynerde migrasyonlar entrypoint'teki migrate.py'de zaten koştu;
-        # burası host-run (python api.py) için yedek ve tek worker'da zararsız.
-        # uvicorn --workers N'e geçmeden önce bu çağrı kaldırılmalı/kapılanmalı
-        # (worker başına lifespan koşar → DDL yarışı; bkz. Faz 3-E notu).
-        from database import init_db
-        init_db()
-    except Exception as e:
-        logging.critical(f"Database Init Failed: {e}")
-        write_startup_log(f"Database Init Failed: {e}")
+    # Faz 3-E: lifespan'deki yedek init_db KALDIRILDI — migrasyonun tek sahibi
+    # entrypoint'teki migrate.py (3-A'daki "import models" düzeltmesinden beri
+    # tek başına eksiksiz). --workers N'de her worker lifespan koşar → burada
+    # DDL, worker'lar arası yarış + statement_timeout'lu app engine'inde uzun
+    # backfill demekti. Host-run (python api.py) için: önce `python migrate.py`.
+
+    # Süreç-tekil arkaplan işleri (aşağıda) yalnız lider worker'da başlar;
+    # kilit süreç ölünce çekirdekçe bırakılır, yeniden doğan worker devralır.
+    from services.singleton_lock import try_acquire_leader
+    is_leader = try_acquire_leader()
+    if not is_leader:
+        logging.info("Worker lider değil — süreç-tekil arkaplan işleri bu worker'da atlanıyor.")
 
     config = DynamicConfig.get_instance()
 
@@ -143,46 +145,68 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.warning(f"Seed failed: {e}")
 
+    # Refresh thread'i BİLEREK worker-BAŞINA koşar (3-E kararı): DynamicConfig,
+    # matcher ve searcher süreç İÇİ singleton'lardır — yalnız liderde koşsaydı
+    # diğer worker'lar taze cache dosyası yokken boş listelerle kalırdı.
+    # Duplikasyonun tek gerçek zararı cache dosyası yazma yarışıydı →
+    # cache_manager.save_cache tekil temp adla atomik yazacak şekilde düzeltildi.
+    # Bilinen sınır: /refresh endpoint'i yalnız isteği işleyen worker'ı tazeler;
+    # diğeri kendi refresh'ine (boot ya da kendi /refresh'i) kadar bayat kalır —
+    # liste değişiklikleri nadir, kabul edilen takas.
     import threading
     threading.Thread(target=refresh_lists_background, daemon=True).start()
     logging.info("Background refresh thread started.")
 
-    # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle)
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from apscheduler.triggers.cron import CronTrigger
-        from managers.activity_manager import generate_daily_reports, catch_up_missed_reports
-        import pytz
+    # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle).
+    # Faz 3-E: yalnız lider worker'da — N worker'da N kopya rapor/e-posta üretirdi.
+    if is_leader:
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            from managers.activity_manager import generate_daily_reports, catch_up_missed_reports
+            import pytz
 
-        scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Istanbul"))
-        scheduler.add_job(
-            generate_daily_reports,
-            CronTrigger(hour=0, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
-            id="daily_activity_report",
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
-        scheduler.start()
-        app.state.scheduler = scheduler
-        logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR).")
+            scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Istanbul"))
+            scheduler.add_job(
+                generate_daily_reports,
+                CronTrigger(hour=0, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
+                id="daily_activity_report",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            scheduler.start()
+            app.state.scheduler = scheduler
+            logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR).")
 
-        # Backend kapalıyken kaçırılan günleri arka planda tamamla
-        threading.Thread(target=catch_up_missed_reports, daemon=True).start()
-        logging.info("Catch-up thread başlatıldı.")
-    except ImportError:
-        logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
+            # Backend kapalıyken kaçırılan günleri arka planda tamamla
+            threading.Thread(target=catch_up_missed_reports, daemon=True).start()
+            logging.info("Catch-up thread başlatıldı.")
+        except ImportError:
+            logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
 
     # SharePoint yükleme outbox worker'ı (Faz 3-A): ilk taraması startup
     # reconcile'dır — önceki süreçten kalan pending yüklemeleri toparlar.
-    # Faz 3-E notu: uvicorn --workers N'e geçişte süreç-tekil yapılmalı
-    # (her worker kendi thread'ini açarsa aynı satır N kez yüklenir).
+    # Faz 3-E: yalnız lider worker'da — her worker kendi thread'ini açarsa
+    # aynı satır N kez yüklenir. Lider ölürse yeni lider lifespan'de devralır;
+    # o pencerede enqueue edilen satırlar birikir, devralan reconcile işler.
+    if is_leader:
+        try:
+            from services.upload_queue import start_upload_worker
+            start_upload_worker()
+        except Exception as e:
+            # Worker yoksa enqueue edilen satırlar birikir, sonraki açılış işler —
+            # yine de retry sistemi devre dışı demek: gerçek arıza sinyali, ERROR.
+            logging.error(f"Upload outbox worker başlatılamadı: {e}")
+
+    # Faz 3-E (3.7): PROCESS_CACHE/DOWNLOAD_CACHE artık disk destekli — boot'ta
+    # TTL süpürmesi önceki süreçten kalan bayat girdileri (ve payload
+    # dosyalarını) temizler; taze girdiler restart'ı ATLATIR (özelliğin amacı).
+    # Claim-atomik olduğundan iki worker'ın eşzamanlı süpürmesi güvenlidir.
     try:
-        from services.upload_queue import start_upload_worker
-        start_upload_worker()
+        from routes.processing import _cleanup_process_cache
+        _cleanup_process_cache()
     except Exception as e:
-        # Worker yoksa enqueue edilen satırlar birikir, sonraki açılış işler —
-        # yine de retry sistemi devre dışı demek: gerçek arıza sinyali, ERROR.
-        logging.error(f"Upload outbox worker başlatılamadı: {e}")
+        logging.warning(f"Cache boot süpürmesi başarısız: {e}")
 
     # KVKK: Cleanup orphaned temp files from previous sessions
     try:

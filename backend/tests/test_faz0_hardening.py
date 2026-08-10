@@ -12,6 +12,7 @@ DB'ye/ağa erişim yok.
 """
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -122,6 +123,17 @@ def test_auto_enrich_case_data_closes_session_on_error(monkeypatch):
 # ── 0.9: PROCESS_CACHE sahiplik ──────────────────────────────────────────────
 
 
+def _purge_cache_entry(cache, key):
+    """Test temizliği: girdiyi VE (3-E adopt'unun cache dizinine taşıdığı)
+    payload dosyasını düşürür — modül-genel cache'te artık bırakma."""
+    from file_utils import safe_remove
+
+    entry = cache.pop(key) or {}
+    safe_remove(entry.get("path"))
+    if entry.get("original_path"):
+        safe_remove(entry.get("original_path"))
+
+
 def test_accept_incoming_file_owner_mismatch_preserves_entry(tmp_path):
     from routes.processing import PROCESS_CACHE
     from services import document_pipeline
@@ -138,7 +150,7 @@ def test_accept_incoming_file_owner_mismatch_preserves_entry(tmp_path):
         # Girdi tüketilmedi — gerçek sahibi hâlâ kullanabilir
         assert PROCESS_CACHE.get("pid-owned") is not None
     finally:
-        PROCESS_CACHE.delete("pid-owned")
+        _purge_cache_entry(PROCESS_CACHE, "pid-owned")
 
 
 def test_accept_incoming_file_owner_match_consumes(tmp_path):
@@ -148,15 +160,23 @@ def test_accept_incoming_file_owner_match_consumes(tmp_path):
     p = tmp_path / "doc.pdf"
     p.write_bytes(b"%PDF fake")
     PROCESS_CACHE.set("pid-owned2", {"path": str(p), "original_path": None, "owner": "sahip@example.com"})
+    temp_path = None
     try:
         temp_path, ham_path = asyncio.run(document_pipeline.accept_incoming_file(
             "pid-owned2", None, PROCESS_CACHE, owner="  Sahip@Example.COM "
         ))
-        assert temp_path == str(p)
-        assert ham_path == str(p)
+        # 3-E: set() payload'ı cache dizinine TAŞIR — dönen yol adopt sonrası
+        # konumdur; içerik ve tüketim semantiği aynen korunur.
+        assert os.path.exists(temp_path)
+        assert Path(temp_path).parent == PROCESS_CACHE._dir
+        assert Path(temp_path).read_bytes() == b"%PDF fake"
+        assert ham_path == temp_path
         assert PROCESS_CACHE.get("pid-owned2") is None  # POP edildi
     finally:
-        PROCESS_CACHE.delete("pid-owned2")
+        _purge_cache_entry(PROCESS_CACHE, "pid-owned2")
+        if temp_path:
+            from file_utils import safe_remove
+            safe_remove(temp_path)
 
 
 def test_accept_incoming_file_legacy_entry_without_owner_denied(tmp_path):
@@ -172,7 +192,7 @@ def test_accept_incoming_file_legacy_entry_without_owner_denied(tmp_path):
                 "pid-legacy", None, PROCESS_CACHE, owner="biri@example.com"
             ))
     finally:
-        PROCESS_CACHE.delete("pid-legacy")
+        _purge_cache_entry(PROCESS_CACHE, "pid-legacy")
 
 
 def test_touch_owned_semantics():

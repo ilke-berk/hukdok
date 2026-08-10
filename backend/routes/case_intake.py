@@ -363,7 +363,8 @@ async def analyze_case_intake_file(
         logger.error(f"[INTAKE] Dosya yükleme hatası: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Dosya yüklenemedi. Lütfen tekrar deneyin.") from e
 
-    _cleanup_process_cache()
+    # Faz 3-E: süpürme artık disk taraması + payload silme → executor'da.
+    await asyncio.get_running_loop().run_in_executor(None, _cleanup_process_cache)
     process_id = str(uuid.uuid4())
 
     async def event_stream():
@@ -381,12 +382,19 @@ async def analyze_case_intake_file(
                     if full_pdf_path:
                         cached_full_pdf_path = full_pdf_path
                         original_path = temp_path if full_pdf_path != temp_path else None
-                        PROCESS_CACHE.set(process_id, {
-                            "path": full_pdf_path,
-                            "original_path": original_path,
-                            "original_ext": suffix,
-                            "owner": _owner_id(user),
-                        })
+                        # Faz 3-E: set() payload'ı volume'e taşır → executor'da
+                        # (routes/processing.py'deki /process ile aynı gerekçe).
+                        await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            PROCESS_CACHE.set,
+                            process_id,
+                            {
+                                "path": full_pdf_path,
+                                "original_path": original_path,
+                                "original_ext": suffix,
+                                "owner": _owner_id(user),
+                            },
+                        )
                         TechnicalLogger.log(
                             "INFO",
                             f"[INTAKE] PROCESS_CACHE stored: {process_id} → {full_pdf_path} (original: {original_path})",

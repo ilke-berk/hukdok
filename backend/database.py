@@ -31,12 +31,39 @@ if not DATABASE_URL or not DATABASE_URL.startswith("postgresql"):
 
 # PostgreSQL Configuration
 logger.info("🐘 Using PostgreSQL database")
+
+# ─── DB dayanıklılık sınırları (Faz 3-E, plan 3.6) ───────────────────────────
+# pool_timeout: havuz doluyken bekleyen istek 10 sn'de TimeoutError alır —
+#   önceden 30 sn varsayılanla kuyruklanıp nginx 300 sn'lik pencereyi yiyordu.
+# connect_timeout: PG'ye ulaşılamıyorsa bağlantı denemesi 5 sn'de düşer
+#   (varsayılan libpq davranışı dakikalarca askıda kalabilir).
+# statement_timeout: tek sorgu 30 sn'yi aşarsa sunucu iptal eder — kilitli
+#   satır/kaçak sorgu tüm havuzu rehin alamaz. libpq "options" ile bağlantı
+#   bazında gider: YALNIZ bu engine'den açılan bağlantıları kapsar —
+#   * gece pg_dump kendi bağlantısını kurar → kapsanmaz (etkilenmez),
+#   * migrate.py import'tan ÖNCE DB_STATEMENT_TIMEOUT_MS=0 set eder →
+#     create_all + backfill UPDATE'ler sınırsız koşar (30 sn'yi meşru aşabilir).
+DB_POOL_TIMEOUT_SECONDS = 10
+DB_CONNECT_TIMEOUT_SECONDS = 5
+DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
+
+
+def _build_connect_args(statement_timeout_ms: int) -> Dict[str, Any]:
+    """psycopg2 connect kwargs'ları; 0/negatif timeout = statement_timeout yok."""
+    args: Dict[str, Any] = {"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS}
+    if statement_timeout_ms > 0:
+        args["options"] = f"-c statement_timeout={statement_timeout_ms}"
+    return args
+
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,      # Verify connections before using
     pool_size=10,            # Connection pool size
     max_overflow=20,         # Max overflow connections
     pool_recycle=3600,       # Recycle connections after 1 hour
+    pool_timeout=DB_POOL_TIMEOUT_SECONDS,
+    connect_args=_build_connect_args(DB_STATEMENT_TIMEOUT_MS),
     echo=False               # Set to True for SQL query logging
 )
 
@@ -49,10 +76,19 @@ class Base(DeclarativeBase):
     pass
 
 def get_db():
-    """Dependency for FastAPI to get DB session."""
+    """Dependency for FastAPI to get DB session.
+
+    Faz 3-E (plan 3.6): handler istisnayla düşerse açık transaction burada
+    rollback edilir — close() havuz reset'ine bırakmak, pool_pre_ping ve
+    reset davranışına örtük güvenmekti; başarısız transaction'ın bağlantıda
+    asılı kalması "idle in transaction (aborted)" birikimine yol açabiliyordu.
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

@@ -193,6 +193,11 @@ def complete(process_id: str, payload: dict) -> None:
                 synchronize_session=False,
             )
             db.commit()
+        except Exception:
+            # Faz 3-E (3.6): açık transaction bağlantıda kalmasın; istisna
+            # dıştaki except'te WARNING'e düşer (rollback hatası dahil).
+            db.rollback()
+            raise
         finally:
             db.close()
     except Exception as e:
@@ -215,6 +220,10 @@ def release(process_id: str) -> None:
                 models.ConfirmReceipt.process_id == process_id
             ).delete(synchronize_session=False)
             db.commit()
+        except Exception:
+            # Faz 3-E (3.6): complete() ile aynı gerekçe.
+            db.rollback()
+            raise
         finally:
             db.close()
     except Exception as e:

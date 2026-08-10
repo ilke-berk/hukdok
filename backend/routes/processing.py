@@ -18,7 +18,7 @@ from dependencies import get_current_user
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
-from managers.ttl_cache import TTLCache
+from managers.ttl_cache import DiskTTLCache
 from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 import models
 from services import confirm_idempotency, document_pipeline
@@ -26,11 +26,45 @@ from services import confirm_idempotency, document_pipeline
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Download cache: temp file paths keyed by UUID for frontend download (1h TTL safety net)
-DOWNLOAD_CACHE = TTLCache(ttl_seconds=3600)
 
-# Process cache: keeps full PDF alive between /process and /confirm (30 min TTL)
-PROCESS_CACHE = TTLCache(ttl_seconds=1800)
+def _cache_dir(env_var: str, default_subdir: str) -> Path:
+    """Cache dizini: env override ya da <backend>/data/<subdir>.
+
+    Konteynerde <backend> = /app ve /app/data backend-data volume'üdür
+    (3-A'nın get_spool_dir deseni) → girdiler restart/recreate'i atlatır ve
+    uvicorn worker'ları arasında paylaşılır. Host'ta backend/data (gitignore).
+    """
+    override = os.getenv(env_var, "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "data" / default_subdir
+
+
+# Faz 3-E (plan 3.7): iki cache de disk destekli (DiskTTLCache) — süreç içi
+# sözlük uvicorn --workers 2'de /process→/confirm çaprazında ~%50 miss demekti,
+# restart da tüm açık sihirbaz oturumlarını "expired" yapıyordu.
+#
+# DOWNLOAD_CACHE kapsam KARARI (3-E): yalnız İNDEKS disk destekli; payload
+# (işlenmiş PDF) sistem temp'inde kalır. Dosya /confirm'den ~30 sn sonra
+# zaten silinir (schedule_cleanup) — kalıcılık değeri yok; ama indeks süreç
+# içi kalsaydı iki worker'da download isteğinin öbür worker'a düşmesi ~%50
+# 404 üretirdi (frontend orijinale fallback yapıyor ama işlenmiş kopya
+# sessizce kaybolurdu). Aynı konteynerdeki worker'lar /tmp'yi paylaştığı
+# için indeksin paylaşılması yeterli; restart sonrası bayat girdi diskte
+# dosya bulamaz → mevcut 404+temizlik yolu zaten ele alıyor.
+DOWNLOAD_CACHE = DiskTTLCache(
+    _cache_dir("DOWNLOAD_CACHE_DIR", "download_cache"), ttl_seconds=3600
+)
+
+# PROCESS_CACHE: /process ile /confirm arasında tam PDF'i yaşatır (30 dk TTL).
+# adopt_file_fields: set() anında analiz PDF'i + orijinal dosya volume'e
+# TAŞINIR — payload da restart'ı ve worker sınırını atlatır. owner/original_ext
+# alanları meta JSON'unda aynen taşınır (sahiplik semantiği değişmedi).
+PROCESS_CACHE = DiskTTLCache(
+    _cache_dir("PROCESS_CACHE_DIR", "process_cache"),
+    ttl_seconds=1800,
+    adopt_file_fields=("path", "original_path"),
+)
 
 
 def _cleanup_process_cache():
@@ -150,6 +184,13 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
         return False
     except Exception as e:
         logging.error(f"Auto status update error: {e}")
+        # Faz 3-E (3.6): guard'lı rollback — otomatik statü best-effort,
+        # rollback hatası /confirm sonucunu değiştirmemeli.
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         return False
     finally:
         if db is not None:
@@ -223,6 +264,12 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
         return updated_fields
     except Exception as e:
         logging.error(f"Auto-Enrich error: {e}")
+        # Faz 3-E (3.6): guard'lı rollback (yukarıdaki auto-status ile aynı gerekçe)
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         return {}
     finally:
         if db is not None:
@@ -376,8 +423,9 @@ async def analyze_file_endpoint(
         logger.error(f"Dosya yükleme hatası: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Dosya yüklenemedi. Lütfen tekrar deneyin.") from e
 
-    # Faz 3: cleanup stale cache entries on each /process call
-    _cleanup_process_cache()
+    # Faz 3: cleanup stale cache entries on each /process call.
+    # Faz 3-E: süpürme artık disk taraması + payload silme → executor'da.
+    await asyncio.get_running_loop().run_in_executor(None, _cleanup_process_cache)
     process_id = str(uuid.uuid4())
 
     async def event_stream():
@@ -424,12 +472,21 @@ async def analyze_file_endpoint(
                         # Dönüştürülmüş formatlarda (UDF/görüntü/Office) orijinal
                         # dosya da saklanır — /confirm'de HAM arşive orijinal gider.
                         original_path = temp_path if full_pdf_path != temp_path else None
-                        PROCESS_CACHE.set(process_id, {
-                            "path": full_pdf_path,
-                            "original_path": original_path,
-                            "original_ext": suffix,
-                            "owner": _owner_id(user),
-                        })
+                        # Faz 3-E: set() payload'ı volume'e TAŞIR (50 MB'a
+                        # kadar disk I/O) → executor'da, event loop kilitlenmesin
+                        # (0-A disiplini). Girdideki yollar taşınma SONRASINI
+                        # gösterir; buradaki yereller /confirm'i ilgilendirmez.
+                        await asyncio.get_running_loop().run_in_executor(
+                            None,
+                            PROCESS_CACHE.set,
+                            process_id,
+                            {
+                                "path": full_pdf_path,
+                                "original_path": original_path,
+                                "original_ext": suffix,
+                                "owner": _owner_id(user),
+                            },
+                        )
                         TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path} (original: {original_path})")
 
                     if final_data and "ofis_dosya_no" not in final_data:
@@ -504,7 +561,7 @@ def _owner_id(user: dict) -> str:
     return raw.strip().lower()
 
 
-def _touch_owned(cache: TTLCache, key: str, owner: str) -> bool:
+def _touch_owned(cache: DiskTTLCache, key: str, owner: str) -> bool:
     """TTL tazeler; girdi başka kullanıcınınsa yokmuş gibi False döner."""
     entry = cache.get(key)
     if not entry:

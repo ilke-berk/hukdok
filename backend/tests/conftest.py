@@ -13,6 +13,7 @@ DB'ye/ağa/keyring'e dokunmadan çalışsın diye burada üç önlem alınır:
 """
 import os
 import sys
+import tempfile
 import types
 
 import pytest
@@ -21,6 +22,14 @@ import pytest
 os.environ.setdefault(
     "DATABASE_URL", "postgresql://test:test@localhost:5432/hukudok_test"
 )
+
+# (1b) Faz 3-E: PROCESS_CACHE/DOWNLOAD_CACHE disk destekli (DiskTTLCache) ve
+# dizinleri modül import'unda çözülür — test koşusu gerçek backend/data (konteynerde
+# /app/data volume'ü!) dizinlerini kirletmesin diye app modülleri import edilmeden
+# ÖNCE geçici dizine yönlendirilir. setdefault: bilinçli dış override'a saygı.
+_CACHE_TMP = tempfile.mkdtemp(prefix="hukdok-test-cache-")
+os.environ.setdefault("PROCESS_CACHE_DIR", os.path.join(_CACHE_TMP, "process"))
+os.environ.setdefault("DOWNLOAD_CACHE_DIR", os.path.join(_CACHE_TMP, "download"))
 
 # (2) vault stub — gerçek modülün public API'siyle aynı imzalar
 if "vault" not in sys.modules:

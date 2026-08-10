@@ -284,8 +284,11 @@ class TechnicalLogger:
             LOGS_DIR = Path.home() / "AppData" / "Local" / "HukuDok" / "logs"
             LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+            # Faz 3-E: pid eklendi — uvicorn --workers N'de iki worker aynı
+            # saniyede senkronlarsa aynı SharePoint adına yazar (replace),
+            # bir worker'ın ERROR partisi sessizce kaybolurdu.
             timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            temp_filename = f"technical_log_{timestamp_str}_{socket.gethostname()}.json"
+            temp_filename = f"technical_log_{timestamp_str}_{socket.gethostname()}_p{os.getpid()}.json"
             temp_filepath = os.path.join(LOGS_DIR, temp_filename)
             TARGET_SP_FOLDER = os.getenv(
                 "SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV"
