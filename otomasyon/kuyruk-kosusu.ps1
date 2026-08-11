@@ -45,7 +45,19 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 function Yaz([string]$mesaj) {
     $satir = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $mesaj
     Write-Host $satir
-    Add-Content -Path $anaLog -Value $satir -Encoding UTF8
+    # OneDrive/tail kaynakli gecici dosya kilidi loglamayi OLDUREMEZ (2026-08-11
+    # gecesi Add-Content IOException'i EAP=Stop ile tum kosucuyu devirdi).
+    for ($y = 1; $y -le 3; $y++) {
+        try { Add-Content -Path $anaLog -Value $satir -Encoding UTF8 -ErrorAction Stop; break }
+        catch { Start-Sleep -Milliseconds 300 }
+    }
+}
+
+# Kuyruk dosyasi OneDrive altinda - gecici paylasim kilitlerine karsi tekrar dene.
+function DosyaDene([scriptblock]$islem) {
+    for ($d = 1; $d -le 5; $d++) {
+        try { return (& $islem) } catch { if ($d -eq 5) { throw }; Start-Sleep -Milliseconds 400 }
+    }
 }
 
 # --- claude CLI ---
@@ -68,7 +80,8 @@ function OldurAgac([int]$islemNo) { cmd /c ("taskkill /pid {0} /t /f >nul 2>&1" 
 # --- kuyruk okuma/yazma ---
 function KuyrukOku {
     $liste = @()
-    foreach ($s in [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8)) {
+    $tumSatirlar = DosyaDene { [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8) }
+    foreach ($s in $tumSatirlar) {
         if ($s -match '^- \[( |x)\] (G\d+) \| bant:(backend|frontend|docs) \| bagimli:([^ |]+) \|') {
             $liste += [pscustomobject]@{
                 Bitti   = ($Matches[1] -eq 'x')
@@ -83,26 +96,26 @@ function KuyrukOku {
 }
 
 function KuyrukIsaretle([string]$id) {
-    $satirlar = [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8)
+    $satirlar = DosyaDene { [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8) }
     for ($j = 0; $j -lt $satirlar.Count; $j++) {
         if ($satirlar[$j] -match ('^- \[ \] ' + $id + ' \|')) {
             $satirlar[$j] = $satirlar[$j] -replace '^- \[ \]', '- [x]'
             break
         }
     }
-    [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom)
+    DosyaDene { [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom) } | Out-Null
     Yaz ("TAMAMLANDI: " + $id)
 }
 
 function KuyrukBloke([string]$id, [string]$sebep) {
-    $satirlar = [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8)
+    $satirlar = DosyaDene { [System.IO.File]::ReadAllLines($kuyrukDosya, [System.Text.Encoding]::UTF8) }
     for ($j = 0; $j -lt $satirlar.Count; $j++) {
         if (($satirlar[$j] -match ('^- \[ \] ' + $id + ' \|')) -and ($satirlar[$j] -notmatch 'BLOKE')) {
             $satirlar[$j] = $satirlar[$j] + ' | BLOKE(' + $sebep + ')'
             break
         }
     }
-    [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom)
+    DosyaDene { [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom) } | Out-Null
     Yaz ("BLOKE: {0} - {1}" -f $id, $sebep)
 }
 

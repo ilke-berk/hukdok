@@ -35,7 +35,11 @@ $takipDosya = Join-Path $repoKok "docs\guvenilirlik-sertlestirme-uygulama-takibi
 function Yaz([string]$mesaj) {
     $satir = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $mesaj
     Write-Host $satir
-    Add-Content -Path $anaLog -Value $satir -Encoding UTF8
+    # Gecici dosya kilidi (OneDrive/tail) loglamayi oldurmesin - 3 deneme, sonra vazgec.
+    for ($y = 1; $y -le 3; $y++) {
+        try { Add-Content -Path $anaLog -Value $satir -Encoding UTF8 -ErrorAction Stop; break }
+        catch { Start-Sleep -Milliseconds 300 }
+    }
 }
 
 # --- claude CLI'yi bul (npm shim .ps1 ise yanindaki .cmd tercih edilir: cmd.exe ile kosacagiz) ---
