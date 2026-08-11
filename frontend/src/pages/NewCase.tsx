@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
@@ -20,6 +20,14 @@ import { toast } from "sonner";
 import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { describeDraftAge } from "@/lib/formDraft";
+import {
+    EMPTY_NEW_CASE_FORM,
+    isNewCaseDraftDirty,
+    newCaseDraftStore,
+    type NewCaseDraftData,
+} from "@/lib/newCaseDraft";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -246,6 +254,26 @@ const NewCase = () => {
         setTimeout(() => setIsShaking(false), 400);
     };
 
+    // --- G004: Taslak kalıcılığı ---------------------------------------
+    // Doldurulan form sekme yenilenmesinde/kaza navigasyonunda kaybolmasın.
+    // Düzenleme modunda KAPALI: orada tek doğru kaynak sunucudaki kayıttır;
+    // taslak, kapatılıp yeniden açılan bir kartta eski düzenlemeyi diriltirdi.
+    const draftData: NewCaseDraftData = useMemo(() => ({
+        caseStatus,
+        formData,
+        selectedLawyers,
+        clients,
+        counterParties,
+        thirdParties,
+    }), [caseStatus, formData, selectedLawyers, clients, counterParties, thirdParties]);
+
+    const draftDirty = !isEditMode && isNewCaseDraftDirty(draftData);
+    const draft = useFormDraft(newCaseDraftStore, {
+        data: draftData,
+        dirty: draftDirty,
+        enabled: !isEditMode,
+    });
+
     useEffect(() => {
         setApprovedFields({
             court: false,
@@ -341,6 +369,29 @@ const NewCase = () => {
             serviceType: sType || formData.serviceType
         });
         setCaseId(tracking);
+    };
+
+    // Taslak şeridindeki "geri yükle". Sessiz sihir YOK: kullanıcı açıkça basar.
+    const handleRestoreDraft = () => {
+        const data = draft.restore();
+        if (!data) return;
+
+        setCaseStatus(data.caseStatus);
+        // EMPTY tabanı: eski sürümde olmayan alanlar undefined kalmasın.
+        setFormData({ ...EMPTY_NEW_CASE_FORM, ...data.formData });
+        setSelectedLawyers(data.selectedLawyers);
+        setClients(data.clients.length > 0 ? data.clients : [{ name: "", role: "Davacı" }]);
+        setCounterParties(data.counterParties.length > 0 ? data.counterParties : [{ name: "", role: "Davalı" }]);
+        setThirdParties(data.thirdParties);
+
+        // Ofis numarası taslakta TAŞINMAZ (bkz. newCaseDraft.ts): sunucudan
+        // yeniden üretilir. Sıra alınamazsa updateTrackingNumber sequenceError
+        // kurar ve G002 kuralı kaydı bloke eder.
+        updateTrackingNumber(data.formData.fileType, data.formData.serviceType, data.clients);
+
+        toast.success("Taslak geri yüklendi", {
+            description: "Ofis numarası sunucudan yeniden alınıyor.",
+        });
     };
 
     // Effect to handle incoming case state (for editing)
@@ -521,6 +572,9 @@ const NewCase = () => {
         }
 
         if (success) {
+            // Kaydedilen verinin taslak hayaleti kalmasın (yenilemede "yarım
+            // kalan form" diye geri teklif edilirdi).
+            draft.clear();
             queryClient.invalidateQueries({ queryKey: ["clients"] });
             toast.success(isEditMode ? "Dava kartı güncellendi!" : "Dava kartı veritabanına kaydedildi!", {
                 description: `Ofis No: ${caseId} bilgileri başarıyla işlendi.`
@@ -553,32 +607,13 @@ const NewCase = () => {
     };
 
     const handleReset = () => {
-        if (isLoading || isAnalyzing) return;
+        // G004: koşul eskiden tanımsız `isAnalyzing`'e bakıyordu — "Temizle"
+        // butonu ReferenceError ile sayfayı düşürüyordu. NewCase'te analiz akışı
+        // yok; yalnız isLoading kaldı.
+        if (isLoading) return;
 
-        // Reset main form data
-        setFormData({
-            fileType: "",
-            subType: "",
-            subject: "",
-            court: "",
-            category: "",
-            lawyer: "",
-            uyapLawyer: "",
-            esasNo: "",
-            fileOpeningDate: "",
-            serviceType: "00000",
-            maddiTazminat: "",
-            maneviTazminat: "",
-            acceptanceDate: "",
-            bureauType: "",
-            subTypeExtra: "",
-            judicialUnit: "",
-            atamaTarihi: "",
-            hasarDosyaNo: "",
-            hukukNo: "",
-            klasorNo2: "",
-            notes: "",
-        });
+        // Reset main form data (boş form referansı newCaseDraft.ts'te tek kaynak)
+        setFormData({ ...EMPTY_NEW_CASE_FORM });
 
         // Reset arrays
         setSelectedLawyers([]);
@@ -590,6 +625,9 @@ const NewCase = () => {
 
         // Generate new random ID
         setCaseId(`2024/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`);
+
+        // Kullanıcı formu bilinçli temizledi — taslak da gitsin.
+        draft.clear();
 
         toast.info("Form temizlendi.");
     };
@@ -616,6 +654,28 @@ const NewCase = () => {
                     </div>
 
                 </div>
+
+                {/* G004: Yarım kalan taslak şeridi — geri yükleme SESSİZ değil,
+                    kullanıcı görür ve karar verir. */}
+                {draft.pending && (
+                    <div className="mb-8 flex flex-wrap items-center gap-3 border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
+                        <RefreshCw className="w-4 h-4 text-[var(--brand)] shrink-0" />
+                        <div className="text-[13px] leading-relaxed">
+                            <span className="font-semibold text-[var(--fg)]">Yarım kalan dava kartı bulundu</span>
+                            <span className="text-[var(--fg-muted)]">
+                                {" "}— {describeDraftAge(draft.pending.ageMs)} kaydedildi. Geri yüklerseniz ofis numarası sunucudan yeniden alınır.
+                            </span>
+                        </div>
+                        <div className="ml-auto flex items-center gap-2">
+                            <Button type="button" size="sm" onClick={handleRestoreDraft}>
+                                Taslağı geri yükle
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" onClick={draft.dismiss}>
+                                Yoksay
+                            </Button>
+                        </div>
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit}>
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

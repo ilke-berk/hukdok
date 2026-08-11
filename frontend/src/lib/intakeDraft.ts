@@ -1,3 +1,4 @@
+import { areDraftsSuppressed } from "@/lib/formDraft";
 import type { MergeDraft } from "@/lib/caseIntake";
 import type { IntakeFieldState } from "@/lib/caseIntakeFields";
 
@@ -68,6 +69,11 @@ const getStorage = (): Storage | null => {
 };
 
 export function saveIntakeDraft(draft: MergeDraft, review: ReviewSnapshot): void {
+  // Çıkış bastırması (G004 denetim düzeltmesi): sihirbaz da pagehide'da flush
+  // eder (IntakeReviewStep) ve taslağı tc_no taşır — logoutRedirect'in
+  // tetiklediği flush, clearAppStorage'ın sildiği taslağı geri yazmasın.
+  // (Oturum düşmesi 401 bayrağı KURMAZ; o flush bilinçli özellik, aynen çalışır.)
+  if (areDraftsSuppressed()) return;
   const storage = getStorage();
   if (!storage) return;
   const snapshot: IntakeDraftSnapshot = {
@@ -126,33 +132,7 @@ export function markExpiredDocuments(
   };
 }
 
-export interface DebouncedFn {
-  (): void;
-  /** Bekleyen çağrıyı iptal eder (unmount temizliği). */
-  cancel: () => void;
-  /** Bekletmeden hemen çalıştırır (oturum düşmesi / pagehide flush'ı). */
-  flush: () => void;
-}
-
-export function debounce(fn: () => void, ms: number): DebouncedFn {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const cancel = () => {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  };
-  const debounced = () => {
-    cancel();
-    timer = setTimeout(() => {
-      timer = null;
-      fn();
-    }, ms);
-  };
-  debounced.cancel = cancel;
-  debounced.flush = () => {
-    cancel();
-    fn();
-  };
-  return debounced;
-}
+// G004: `debounce` sayfadan bağımsız taslak motoruna (formDraft.ts) taşındı —
+// tek kopya kalsın diye buradan yeniden dışa veriliyor (mevcut çağıranlar bozulmaz).
+export { debounce } from "@/lib/formDraft";
+export type { DebouncedFn } from "@/lib/formDraft";
