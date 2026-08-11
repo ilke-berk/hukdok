@@ -332,22 +332,6 @@ export const useCases = () => {
         return [];
     }, [authenticatedRequest]);
 
-    // --- Dava Grubu (CaseGroup sayfası için) ---
-
-    /** Bir dava grubunu tüm ilişkili davalarıyla getirir */
-    const getCaseGroup = useCallback(async (groupId: number) => {
-        const response = await authenticatedRequest(`/api/case-groups/${groupId}`, "GET");
-        if (response && response.ok) return await response.json();
-        return null;
-    }, [authenticatedRequest]);
-
-    /** Bir dava ID'sine ait grubu getirir */
-    const getCaseGroupByCase = useCallback(async (caseId: number) => {
-        const response = await authenticatedRequest(`/api/cases/${caseId}/group`, "GET");
-        if (response && response.ok) return await response.json();
-        return null;
-    }, [authenticatedRequest]);
-
     // --- Belge Bağlama ---
 
     /** link_mode'a göre belgeleri getirir (ör. bağlantısız belgeler için "UNLINKED"). */
@@ -383,9 +367,6 @@ export const useCases = () => {
         // Dava takip
         updateCaseTracking,
         getCaseStageLog,
-        // Dava grubu sayfası
-        getCaseGroup,
-        getCaseGroupByCase,
         // Belge bağlama
         getDocuments,
         linkDocument,

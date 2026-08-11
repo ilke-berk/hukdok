@@ -27,7 +27,6 @@ import NewClient from "./pages/NewClient";
 import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
 import CaseDetails from "./pages/CaseDetails";
-import CaseGroup from "./pages/CaseGroup";
 import UnlinkedDocuments from "./pages/UnlinkedDocuments";
 import ActivityHistory from "./pages/ActivityHistory";
 import { useEffect, useState } from "react";
@@ -98,7 +97,6 @@ const AppContent = () => {
           <Route path="/new-client" element={<NewClient />} />
           <Route path="/clients" element={<ClientList />} />
           <Route path="/cases/:id" element={<CaseDetails />} />
-          <Route path="/case-groups/:groupId" element={<CaseGroup />} />
           <Route path="/activity-history" element={<ActivityHistory />} />
           <Route
             path="/admin"
