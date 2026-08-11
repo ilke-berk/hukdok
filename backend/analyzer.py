@@ -380,6 +380,8 @@ def _failed_event(error_ozet: str, error_kod: str = "analysis_error") -> Dict[st
         * `gemini_truncated` — uzunluk sınırı (MAX_TOKENS) nedeniyle kesik yanıt
         * `schema_invalid`   — çıktı ayrıştırıldı ama YAPISI şemaya uymuyor
                                (Faz 5-B; bkz. schemas_process)
+        * `pdf_page_limit`   — belge MAX_PDF_PAGES sınırını aşıyor (G010;
+                               `_step_decide_mode`, pdf_utils.PdfPageLimitError)
         * `analysis_error`   — diğer tüm nihai başarısızlıklar
       Etiket uzayı KAPALI değildir (ileride yeni etiket eklenebilir);
       tüketiciler tanımadıkları etiketi `analysis_error` gibi ele almalıdır.
@@ -387,6 +389,10 @@ def _failed_event(error_ozet: str, error_kod: str = "analysis_error") -> Dict[st
       TAŞIMAZ (confirm adımı yok → PROCESS_CACHE yazılmaz).
     - Bu olayın üretilmesi YENİ bir ERROR log satırı EKLEMEZ; nihai ERROR'lar
       zaten çağıran handler'da yazılır (deneme-düzeyi hatalar WARNING kalır).
+      İSTİSNA — iki ön-koşul yolu nihai başarısızlıkta bilerek WARNING loglar
+      (API anahtarı yok / dosya kaybolmuş; bkz. `analyze_file_generator`):
+      operatör hatası ya da kullanıcı kaynaklı, alarm hijyeni için ERROR'a
+      yükseltilmez.
     - Beklenmedik istisnada route'un ürettiği `{"status": "error", "message"}`
       olayı bu sözleşmenin dışındadır ve aynen korunur.
     """
@@ -520,12 +526,15 @@ async def _step_page_trim(
 
 async def _step_decide_mode(
     file_path: str,
-    file_hash: str,
     state: Dict[str, Any],
     benchmark: Dict[str, Any],
     loop: asyncio.AbstractEventLoop,
 ) -> AsyncGenerator[Dict[str, Any], None]:
-    """OCR/TEXT mod kararı. state: needs_ocr, extracted_text, failed."""
+    """OCR/TEXT mod kararı. state: needs_ocr, extracted_text, failed.
+
+    Buradaki üç hata yolu da akışı NİHAİ sonlandırır → hepsi `_failed_event`
+    sözleşmesiyle biter (G010; eskiden default-data'lı `status:"error"` idi).
+    """
     t1 = time.perf_counter()
     try:
         # Tavanın evi config/settings.py (env: PDF_PARSE_TIMEOUT_SECONDS, Faz 5-A)
@@ -538,18 +547,21 @@ async def _step_decide_mode(
             "ERROR",
             f"PDF parse timeout ({settings.pdf_parse_timeout_seconds:.0f}s): {file_path}",
         )
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = "PDF ayrıştırma zaman aşımına uğradı. Dosya çok büyük veya bozuk olabilir."
-        yield {"status": "error", "message": "PDF işlenemedi: zaman aşımı.", "data": default_data}
+        yield _failed_event(
+            "PDF ayrıştırma zaman aşımına uğradı. Dosya çok büyük veya bozuk olabilir."
+        )
+        state["failed"] = True
+        return
+    except PdfPageLimitError as e:
+        # ValueError alt sınıfı — aşağıdaki genel dal sahiplenmesin; kullanıcı
+        # gerçek nedeni (sayfa limiti) kendi etiketiyle görsün.
+        TechnicalLogger.log("ERROR", f"PDF page limit exceeded: {e}")
+        yield _failed_event(str(e), "pdf_page_limit")
         state["failed"] = True
         return
     except ValueError as e:
         TechnicalLogger.log("ERROR", f"PDF rejected: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = str(e)
-        yield {"status": "error", "message": str(e), "data": default_data}
+        yield _failed_event(str(e))
         state["failed"] = True
         return
     benchmark["pdf_analysis"] = round((time.perf_counter() - t1) * 1000, 2)
@@ -1393,7 +1405,7 @@ async def analyze_file_generator(
 
     # 2. Decide Mode (Async wrapper for heavy pdf logic)
     mode_state = {"needs_ocr": None, "extracted_text": None, "failed": False}
-    async for event in _step_decide_mode(file_path, file_hash, mode_state, benchmark, loop):
+    async for event in _step_decide_mode(file_path, mode_state, benchmark, loop):
         yield event
     if mode_state["failed"]:
         return
@@ -1516,13 +1528,11 @@ async def analyze_file_generator(
             f"Dosya bulunamadı. Lütfen dosya yolunu kontrol edin. (Kod: {error_id})"
         )
 
-    except PdfPageLimitError as e:
-        # ValueError alt sınıfı — aşağıdaki handler "Güvenlik Filtresi" diye
-        # yanlış teşhis koymasın, kullanıcı sayfa limitini görsün
-        error_id = str(uuid.uuid4())[:8]
-        TechnicalLogger.log("ERROR", f"PDF page limit exceeded: {e}")
-        yield _failed_event(f"{e} (Kod: {error_id})")
-
+    # NOT (G010): burada `except PdfPageLimitError` dalı VARDI ve ÖLÜYDÜ —
+    # sayfa limitini yalnız pdf_utils.load_and_analyze_pdf fırlatır, o da bu
+    # try'ın ÖNCESİNDE `_step_decide_mode` içinde çağrılır. Limit artık orada
+    # `pdf_page_limit` etiketiyle `failed` üretir; dal yanıltıcı olduğu için
+    # kaldırıldı (yeniden ekleme: önce istisnanın buraya ulaştığını kanıtla).
     except json.JSONDecodeError as e:
         # ValueError alt sınıfı — bozuk LLM çıktısı güvenlik filtresi değildir
         error_id = str(uuid.uuid4())[:8]

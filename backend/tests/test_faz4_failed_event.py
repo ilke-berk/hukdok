@@ -96,8 +96,11 @@ def test_failed_event_contract_documented_in_docstring():
     """Sözleşme koddaki docstring'de belgeli (frontend'le ortak referans)."""
     doc = analyzer._failed_event.__doc__ or ""
     for token in ('"status": "failed"', "error_ozet", "error_kod",
-                  "gemini_saturated", "gemini_blocked", "gemini_truncated", "analysis_error"):
+                  "gemini_saturated", "gemini_blocked", "gemini_truncated",
+                  "pdf_page_limit", "analysis_error"):
         assert token in doc
+    # G010: nihai başarısızlıkta WARNING loglayan ön-koşul yolları belgeli
+    assert "İSTİSNA" in doc and "WARNING" in doc
 
 
 def test_api_error_kod_mapping():
@@ -163,6 +166,68 @@ def test_format_conversion_failure_yields_failed(monkeypatch, tmp_path):
     assert event["error_ozet"].startswith("Dosya dönüşüm hatası (.docx)")
 
 
+# ── Mod kararı (_step_decide_mode): nihai hatalar "failed" ──────────────────
+# G010: bu adım eskiden default-data'lı `status:"error"` üretiyordu; sözleşme
+# dışıydı ve `error_kod` telemetrisi kayıptı.
+
+
+def _make_pdf(path, pages: int) -> str:
+    """`pages` sayfalık, metin dolu gerçek bir PDF üretir (stub yok)."""
+    import fitz
+
+    doc = fitz.open()
+    for i in range(pages):
+        doc.new_page().insert_text((72, 72), f"Sayfa {i + 1} icerigi. " * 20)
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_page_limit_yields_failed_with_own_kod(monkeypatch, tmp_path):
+    """MAX_PDF_PAGES aşımı → `pdf_page_limit`. Uçtan uca gerçek pdf_utils yolu.
+
+    Sayfa kırpma (extract_key_pages) 4 sayfayı 3'e indirir; limit 2 olduğu için
+    kırpma sonrası da aşılır — gerçek akışta bu yolun ULAŞILABİLİR olduğunun
+    kanıtı (eski `except PdfPageLimitError` dalı ana try'da ölüydü).
+    """
+    from pdf import pdf_utils
+
+    monkeypatch.setattr(analyzer, "GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(pdf_utils, "MAX_PDF_PAGES", 2)
+
+    events = _drive(_make_pdf(tmp_path / "kalin.pdf", 4))
+
+    event = _assert_terminal_failed(events, "pdf_page_limit")
+    assert "Maksimum 2 sayfa" in event["error_ozet"]
+
+
+def test_page_limit_keeps_single_error_log(monkeypatch, tmp_path, log_calls):
+    """Log sözleşmesi: sayfa limiti nihai hatadır → TEK ERROR, ikinci eklenmez."""
+    from pdf import pdf_utils
+
+    monkeypatch.setattr(analyzer, "GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(pdf_utils, "MAX_PDF_PAGES", 2)
+
+    _assert_terminal_failed(_drive(_make_pdf(tmp_path / "kalin.pdf", 4)), "pdf_page_limit")
+    assert len(_levels(log_calls, "ERROR")) == 1
+
+
+def test_pdf_parse_timeout_yields_failed(monkeypatch, tmp_path):
+    """Ayrıştırma zaman aşımı da nihai → `failed` (eskiden `status:"error"`)."""
+    import time as _time
+
+    monkeypatch.setattr(analyzer, "GOOGLE_API_KEY", "test-key")
+    monkeypatch.setattr(analyzer.pdf_utils, "extract_key_pages", lambda path: path)
+    monkeypatch.setattr(analyzer.settings, "pdf_parse_timeout_seconds", 0.05)
+    monkeypatch.setattr(analyzer, "is_scanned_pdf", lambda path: _time.sleep(1))
+
+    pdf = tmp_path / "yavas.pdf"
+    pdf.write_bytes(b"%PDF-1.4\ntest\n")
+
+    event = _assert_terminal_failed(_drive(str(pdf)), "analysis_error")
+    assert "zaman aşımına" in event["error_ozet"]
+
+
 # ── Handler zinciri: her nihai hata kendi etiketiyle "failed" ────────────────
 
 
@@ -170,12 +235,6 @@ def test_file_not_found_handler_yields_failed(monkeypatch, pdf_ready):
     _raise_at_prompt_build(monkeypatch, FileNotFoundError("gitti"))
     event = _assert_terminal_failed(_drive(pdf_ready), "analysis_error")
     assert "Dosya bulunamadı" in event["error_ozet"]
-
-
-def test_page_limit_handler_yields_failed(monkeypatch, pdf_ready):
-    _raise_at_prompt_build(monkeypatch, analyzer.PdfPageLimitError("Belge 500 sayfayı aşıyor"))
-    event = _assert_terminal_failed(_drive(pdf_ready), "analysis_error")
-    assert "500 sayfa" in event["error_ozet"]
 
 
 def test_json_decode_handler_yields_failed(monkeypatch, pdf_ready):

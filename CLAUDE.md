@@ -47,9 +47,10 @@ atlanır — mükerrere tercih edilir).
 olaylar `{"status": "info"/"warning"/"error"/"complete"/"failed", ...}`.
 Nihai başarısızlık: `{"status":"failed", "error_ozet", "error_kod"}`; `error_kod`
 etiketleri `gemini_saturated | gemini_blocked | gemini_truncated | schema_invalid |
-analysis_error` (uzay açık; tanınmayan etiket `analysis_error` gibi ele alınır).
-`failed` SON olaydır, `process_id` taşımaz. Route'un beklenmedik istisnası
-`{"status":"error","message"}` üretir ve bu sözleşmenin dışındadır.
+pdf_page_limit | analysis_error` (uzay açık; tanınmayan etiket `analysis_error` gibi
+ele alınır). `failed` SON olaydır, `process_id` taşımaz. Analyzer içinde akışı nihai
+sonlandıran `status:"error"` yield'i YOKTUR; `{"status":"error","message"}` yalnız
+route'un beklenmedik istisnasından gelir ve bu sözleşmenin dışındadır.
 
 **Tenant modeli:** `cases`/`clients` tablolarında `tenant_id` kolonu VAR ama iki tenant
 (Hanyaloğlu Acar + LexisBio) ortak çalışır: yeni kayıtlar bilinçli `tenant_id=NULL`

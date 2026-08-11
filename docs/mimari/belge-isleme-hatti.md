@@ -21,7 +21,7 @@
 Olaylar `{"status": ...}` taşır: `info`, `warning`, `error`, `complete`, `failed`.
 
 Nihai başarısızlık sözleşmesi `analyzer.py::_failed_event` docstring'inde tanımlıdır ve
-**birebir** uyulur (`backend/analyzer.py:368-393`):
+**birebir** uyulur (`backend/analyzer.py:368-399`):
 
 ```
 {"status": "failed",
@@ -37,6 +37,7 @@ Nihai başarısızlık sözleşmesi `analyzer.py::_failed_event` docstring'inde 
 | `gemini_blocked` | güvenlik/gizlilik filtresi |
 | `gemini_truncated` | uzunluk sınırı (MAX_TOKENS) nedeniyle kesik yanıt |
 | `schema_invalid` | çıktı ayrıştırıldı ama YAPISI şemaya uymuyor (bkz. `schemas_process`) |
+| `pdf_page_limit` | belge `MAX_PDF_PAGES` sınırını aşıyor (`_step_decide_mode`, `pdf_utils.PdfPageLimitError`) |
 | `analysis_error` | diğer tüm nihai başarısızlıklar |
 
 Sözleşmenin üç kuralı, docstring'den:
@@ -47,13 +48,17 @@ Sözleşmenin üç kuralı, docstring'den:
 - **`failed` SON olaydır**: ardından `complete` GELMEZ ve olay `process_id` TAŞIMAZ —
   confirm adımı yoktur, PROCESS_CACHE yazılmaz.
 - Bu olayın üretilmesi **yeni bir ERROR log satırı EKLEMEZ**; nihai ERROR'lar çağıran
-  handler'da yazılır, deneme-düzeyi hatalar WARNING kalır (log sözleşmesi).
+  handler'da yazılır, deneme-düzeyi hatalar WARNING kalır (log sözleşmesi). İki ön-koşul
+  yolu (API anahtarı yok / dosya kaybolmuş) nihai başarısızlıkta **bilerek WARNING**
+  loglar — operatör ya da kullanıcı kaynaklı, alarm hijyeni için ERROR'a yükseltilmez.
 
 Başarılı akışın terminal olayı `complete`'tir ve `process_id` **taşır** — `/confirm` bu
 kimlikle çağrılır.
 
 Route'un **beklenmedik** istisnasında üretilen `{"status": "error", "message": ...}` olayı
-bu sözleşmenin dışındadır ve aynen korunur (`analyzer.py:390-391`).
+bu sözleşmenin dışındadır ve aynen korunur (`analyzer.py:396-397`). `analyzer.py` içinde
+akışı nihai sonlandıran `status:"error"` yield'i **kalmadı** — mod kararının üç hata yolu
+(zaman aşımı, sayfa limiti, diğer `ValueError`) da `failed` üretir.
 
 Karar kaydı: [`004-failed-olay-sozlesmesi.md`](../kararlar/004-failed-olay-sozlesmesi.md).
 
