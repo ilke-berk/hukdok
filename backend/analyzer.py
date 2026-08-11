@@ -364,6 +364,42 @@ def get_default_json() -> Dict[str, Any]:
 # =====================================================================
 
 
+def _failed_event(error_ozet: str, error_kod: str = "analysis_error") -> Dict[str, str]:
+    """Nihai başarısızlık terminal olayını üretir (Faz 4-B).
+
+    SÖZLEŞME (frontend ile ORTAK referans — birebir uyulur):
+
+        {"status": "failed",
+         "error_ozet": "<kullanıcıya gösterilecek Türkçe mesaj>",
+         "error_kod": "<etiket>"}
+
+    - `error_kod` etiketleri:
+        * `gemini_saturated` — devre kesici açık / 429 / 5xx (servis doygun)
+        * `gemini_blocked`   — güvenlik/gizlilik filtresi
+        * `gemini_truncated` — uzunluk sınırı (MAX_TOKENS) nedeniyle kesik yanıt
+        * `analysis_error`   — diğer tüm nihai başarısızlıklar
+      Etiket uzayı KAPALI değildir (ileride örn. şema doğrulaması için yeni
+      etiket eklenebilir); tüketiciler tanımadıkları etiketi `analysis_error`
+      gibi ele almalıdır.
+    - `failed` SON olaydır: ardından `complete` GELMEZ, olay `process_id`
+      TAŞIMAZ (confirm adımı yok → PROCESS_CACHE yazılmaz).
+    - Bu olayın üretilmesi YENİ bir ERROR log satırı EKLEMEZ; nihai ERROR'lar
+      zaten çağıran handler'da yazılır (deneme-düzeyi hatalar WARNING kalır).
+    - Beklenmedik istisnada route'un ürettiği `{"status": "error", "message"}`
+      olayı bu sözleşmenin dışındadır ve aynen korunur.
+    """
+    return {"status": "failed", "error_ozet": error_ozet, "error_kod": error_kod}
+
+
+# GEÇİŞ ŞİMİ (Faz 4-B): aşağıdaki iki dönüşüm adımı case_intake_analyzer ile
+# PAYLAŞILIR ve intake akışı bugün default-data'lı `complete` olayını kendi
+# `error` olayına çeviriyor. Intake kendi terminal olay sözleşmesine sahip
+# (bu görevin kapsamı dışı) → adımlar varsayılan olarak ESKİ olayı üretmeyi
+# sürdürür; analyze_file_generator state'e `legacy_complete_on_error: False`
+# koyarak olayı bastırır ve `state["error_ozet"]` üzerinden `failed` üretir.
+# Intake de `failed`e geçtiğinde bu bayrak ve legacy dal silinmelidir.
+
+
 async def _step_udf_conversion(
     state: Dict[str, Any],
     file_hash: str,
@@ -404,10 +440,12 @@ async def _step_udf_conversion(
 
     except Exception as e:
         TechnicalLogger.log("ERROR", f"UDF conversion failed: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = f"UDF dönüşüm hatası: {str(e)}"
-        yield {"status": "complete", "data": default_data}
+        state["error_ozet"] = f"UDF dönüşüm hatası: {str(e)}"
+        if state.get("legacy_complete_on_error", True):
+            default_data = get_default_json()
+            default_data["hash"] = file_hash
+            default_data["ozet"] = state["error_ozet"]
+            yield {"status": "complete", "data": default_data}
         state["failed"] = True
 
 
@@ -447,10 +485,12 @@ async def _step_format_conversion(
 
     except Exception as e:
         TechnicalLogger.log("ERROR", f"Format conversion failed ({file_ext}): {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = f"Dosya dönüşüm hatası ({file_ext}): {str(e)}"
-        yield {"status": "complete", "data": default_data}
+        state["error_ozet"] = f"Dosya dönüşüm hatası ({file_ext}): {str(e)}"
+        if state.get("legacy_complete_on_error", True):
+            default_data = get_default_json()
+            default_data["hash"] = file_hash
+            default_data["ozet"] = state["error_ozet"]
+            yield {"status": "complete", "data": default_data}
         state["failed"] = True
 
 
@@ -1205,6 +1245,29 @@ def _api_error_ozet(err: Any, error_id: str) -> str:
         )
 
 
+def _api_error_kod(err: Any) -> str:
+    """Genel API hatasını `failed` olayının `error_kod` etiketine eşler.
+
+    `_api_error_ozet` ile AYNI kod bazlı sınıflandırmayı kullanır (kullanıcı
+    mesajı ile makine etiketi ayrışmasın). Kota/yetki (403) doygunluk değildir
+    → `analysis_error`.
+    """
+    if isinstance(err, gemini_client.GeminiCircuitOpenError):
+        return "gemini_saturated"
+
+    api_code = err.code if isinstance(err, genai_errors.APIError) else None
+    err_str = str(err)
+    if api_code == 429 or "429" in err_str or "resource exhausted" in err_str.lower():
+        return "gemini_saturated"
+    if (
+        api_code in (500, 502, 503, 504)
+        or "503" in err_str
+        or "service is currently unavailable" in err_str.lower()
+    ):
+        return "gemini_saturated"
+    return "analysis_error"
+
+
 def _cleanup_temp_files(
     uploaded_file: Any,
     temp_pdf_from_udf: Optional[str],
@@ -1247,7 +1310,13 @@ async def analyze_file_generator(
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Generator that yields status updates and finally the result.
-    Yields: {"status": "info"/"error"/"complete", "message": "...", "data": dict}
+    Yields: {"status": "info"/"warning"/"error"/"complete"/"failed", ...}
+
+    İKİ terminal olay vardır (Faz 4-B):
+      * Başarı: {"status": "complete", "data": {...}, "full_pdf_path": "..."}
+      * Nihai başarısızlık: `_failed_event` sözleşmesi — {"status": "failed",
+        "error_ozet": ..., "error_kod": ...}. Varsayılan veriyle "complete"
+        dönen eski (sessiz veri kaybı) yol KALDIRILDI.
 
     file_hash: Önceden hesaplanmışsa geçirilir, tekrar diskten okuma yapılmaz.
     process_id: Faz 3 PROCESS_CACHE için — verilirse UDF temp PDF silinmez (cache'e alınır).
@@ -1270,16 +1339,18 @@ async def analyze_file_generator(
         TechnicalLogger.log(
             "WARNING", "Skipping analysis because GEMINI_API_KEY is missing."
         )
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        yield {"status": "complete", "data": default_data}
+        yield _failed_event(
+            "Yapay zeka servisi yapılandırılmamış (API anahtarı tanımlı değil). "
+            "Lütfen sistem yöneticisine bildirin."
+        )
         return
 
     if not os.path.exists(file_path):
         TechnicalLogger.log("WARNING", f"File vanished before processing: {file_path}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        yield {"status": "complete", "data": default_data}
+        yield _failed_event(
+            "Dosya işlem sırasında bulunamadı (silinmiş veya taşınmış olabilir). "
+            "Lütfen tekrar yükleyin."
+        )
         return
 
     # 1. PDF olmayan formatlar (UDF/görüntü/Office) önce PDF'e çevrilir
@@ -1289,21 +1360,29 @@ async def analyze_file_generator(
     temp_pdf_from_udf = None
 
     if file_ext == '.udf':
-        udf_state = {"file_path": file_path, "temp_pdf_from_udf": None, "failed": False}
+        udf_state = {
+            "file_path": file_path, "temp_pdf_from_udf": None, "failed": False,
+            "legacy_complete_on_error": False,
+        }
         async for event in _step_udf_conversion(udf_state, file_hash, benchmark, loop):
             yield event
         file_path = udf_state["file_path"]
         temp_pdf_from_udf = udf_state["temp_pdf_from_udf"]
         if udf_state["failed"]:
+            yield _failed_event(udf_state["error_ozet"])
             return
     elif file_ext in CONVERTIBLE_EXTENSIONS:
-        conv_state = {"file_path": file_path, "temp_converted_pdf": None, "failed": False}
+        conv_state = {
+            "file_path": file_path, "temp_converted_pdf": None, "failed": False,
+            "legacy_complete_on_error": False,
+        }
         async for event in _step_format_conversion(conv_state, file_hash, benchmark, loop):
             yield event
         file_path = conv_state["file_path"]
         # Cleanup/cache sahipliği UDF temp PDF'iyle aynı yoldan yürür
         temp_pdf_from_udf = conv_state["temp_converted_pdf"]
         if conv_state["failed"]:
+            yield _failed_event(conv_state["error_ozet"])
             return
 
     # 1.5. Page Trim — LLM'e sadece ilk 2 + son sayfa gönderilir
@@ -1420,71 +1499,60 @@ async def analyze_file_generator(
         )
         yield {"status": "complete", "data": data, "full_pdf_path": full_pdf_path}
 
+    # Handler zinciri (sıra korunur): her biri artık `failed` terminal olayı
+    # üretir — log satırları ve teşhis mantığı aynen kalır.
     except FileNotFoundError:
-        # Error handlers unchanged
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"File not found: {file_path}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = (
+        yield _failed_event(
             f"Dosya bulunamadı. Lütfen dosya yolunu kontrol edin. (Kod: {error_id})"
         )
-        yield {"status": "complete", "data": default_data}
 
     except PdfPageLimitError as e:
         # ValueError alt sınıfı — aşağıdaki handler "Güvenlik Filtresi" diye
         # yanlış teşhis koymasın, kullanıcı sayfa limitini görsün
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"PDF page limit exceeded: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = f"{e} (Kod: {error_id})"
-        yield {"status": "complete", "data": default_data}
+        yield _failed_event(f"{e} (Kod: {error_id})")
 
     except json.JSONDecodeError as e:
         # ValueError alt sınıfı — bozuk LLM çıktısı güvenlik filtresi değildir
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Gemini JSON parse error [ErrorID: {error_id}]: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = (
+        yield _failed_event(
             f"Yapay zeka yanıtı çözümlenemedi (bozuk çıktı). Lütfen tekrar deneyin. (Kod: {error_id})"
         )
-        yield {"status": "complete", "data": default_data}
 
     except GeminiResponseError as e:
         # Faz 3-C: boş/kesik/engellenmiş yanıt — neden finish_reason'dan geliyor
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Gemini response error [ErrorID: {error_id}]: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
         if isinstance(e, GeminiTruncatedError):
             ozet = (
                 f"Yapay zeka yanıtı uzunluk sınırına takıldı ve kesildi (belge "
                 f"çok yoğun olabilir). Lütfen tekrar deneyin. (Kod: {error_id})"
             )
+            kod = "gemini_truncated"
         elif isinstance(e, GeminiBlockedError):
             ozet = (
                 f"Yapay zeka yanıtı engellendi (Güvenlik/Gizlilik Filtresi). (Kod: {error_id})"
             )
+            kod = "gemini_blocked"
         else:
             ozet = (
                 f"Yapay zeka boş yanıt döndürdü. Lütfen tekrar deneyin. (Kod: {error_id})"
             )
-        default_data["ozet"] = ozet
-        yield {"status": "complete", "data": default_data}
+            kod = "analysis_error"
+        yield _failed_event(ozet, kod)
 
     except ValueError as e:
         # Faz 3-C: filtre engeli artık kanıtla (GeminiBlockedError) raporlanır;
         # buraya düşen ValueError'a güvenlik filtresi teşhisi KONMAZ.
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Gemini Value Error [ErrorID: {error_id}]: {e}")
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = (
+        yield _failed_event(
             f"Yapay zeka yanıtı işlenemedi. Lütfen tekrar deneyin. (Kod: {error_id})"
         )
-        yield {"status": "complete", "data": default_data}
 
     except Exception as e:
         error_id = str(uuid.uuid4())[:8]
@@ -1494,11 +1562,7 @@ async def analyze_file_generator(
             {"trace": str(e)},
         )
 
-        default_data = get_default_json()
-        default_data["hash"] = file_hash
-        default_data["ozet"] = _api_error_ozet(e, error_id)
-
-        yield {"status": "complete", "data": default_data}
+        yield _failed_event(_api_error_ozet(e, error_id), _api_error_kod(e))
     finally:
         _cleanup_temp_files(
             ai_state["uploaded_file"], temp_pdf_from_udf, temp_trimmed_pdf, process_id
