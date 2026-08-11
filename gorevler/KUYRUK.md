@@ -57,6 +57,27 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G023 | bant:backend | bagimli:- | .eml gövde temizliğini tokenizer'a taşı (G015 RET'ini kapatır)
 - [x] G024 | bant:backend | bagimli:G023 | Ofis dosyalarında SSRF: harici bağlı görsel temizliksiz soffice'e gidiyor
+- [ ] G025 | bant:backend | bagimli:- | G023 gerilemesi: "&lt;" ile başlayan gövde metni sessizce yok oluyor
+
+<!-- G025 kaynağı: bağımsız ÜÇÜNCÜ denetim (2026-08-12). İki SSRF iddiası da DOĞRULANDI —
+     denetçi 50 YENİ varyant yazdı, pozitif kontrol 83 istek üretti, temizlenmiş korpus 0;
+     üstelik G024 tohumu BİLEREK KAPALIYKEN sanitizer tek başına ayakta kaldı. Ama G023
+     güvenlik dışı bir gerileme getirdi: handle_data `<` ile başlayan metin koşusunu atıyor,
+     convert_charrefs=True olduğu için `&lt;` çözülmüş `<` olarak geliyor → Outlook
+     gövdelerindeki `<ad@firma.com>` ve `<<yer tutucu>>` metinleri sessizce kayboluyor.
+     Gemini analizini besleyen yol bu. Düzeltme ölçüldü: at yerine kaçışla.
+     AYRICA (kuyruğa girmedi): backend imajı BAYAT, html_sanitizer.py imajda yok — lokal
+     testler override bind-mount'u sayesinde doğru kodu koşuyor, imaj deploy'da kurulacak. -->
+
+## Kullanıcı kararı bekleyenler (otomasyona GİRMEZ — ssh/deploy/veri kararı ister)
+
+- 0.5 ofis no kategori rejimi: X1 = 1.658 kayıt → dokunma / retag / eşleme tablosu (ADR şart)
+- 0.6 prod export + hukukbot sağlık denetimi (ssh)
+- A.2 gerçek müvekkil verisinin OneDrive senkronundan çıkarılması (140 MB SQLite + 139 MB PDF)
+- service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
+- pip/npm yükseltmeleri (G022 ADR'si hazır; uygulama onayı kullanıcıda)
+- Çıkış ağı denetimi: G024'ten sonra **zorunlu değil** (SSRF ağ katmanında kapandı);
+  yalnız derinlik savunması olarak değerlendirilebilir
 
 ## Kapanmış plan: Denetim bulguları (2026-08-11 bağımsız denetim; deploy kararı kullanıcıda)
 
