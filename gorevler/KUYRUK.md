@@ -23,3 +23,17 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G006 | bant:backend | bagimli:- | 6-A: CLAUDE.md + docs reorg (arsiv şerhi + referans güncelleme)
 - [x] G007 | bant:backend | bagimli:G006 | 6-B-1: docs/mimari içerikleri + ADR'ler (koddan türetilmiş)
 - [x] G008 | bant:backend | bagimli:G007 | 6-B-2: modül docstring'leri + proje skill'leri + plan kapanışı
+
+## Aktif plan: Denetim bulguları (2026-08-11 bağımsız denetim; deploy kararı kullanıcıda)
+
+<!-- Kaynak: 6-ajanlı bağımsız denetim (2026-08-11 sohbet raporu). G009 davranışsız
+     (diff yalnız yorum/docstring/md). Backend bandı zaten seri; G013 worktree'de
+     paralel koşabilir. G012→G011 zinciri test_faz3_e_hardening.py ortaklığı
+     ihtimalinden ("şüphede zincirle"). analyzer.py yalnız G010'da, upload_queue
+     yalnız G011'de — çakışma yok. -->
+
+- [ ] G009 | bant:backend | bagimli:- | Denetim: bayat yol referansları + docstring/şerh düzeltmeleri (davranışsız)
+- [ ] G010 | bant:backend | bagimli:- | Denetim: analyzer nihai hataları failed olayına bağla (pdf_page_limit)
+- [ ] G011 | bant:backend | bagimli:- | Denetim: outbox 'uploaded' + belge URL yazımı atomik/self-heal
+- [ ] G012 | bant:backend | bagimli:G011 | Denetim: lider kilidi fallback yolu + CRITICAL alarm
+- [ ] G013 | bant:docs | bagimli:- | Denetim: backup_db.sh trap temizliği + deploy/rollback sessiz çıkış
