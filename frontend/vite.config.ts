@@ -25,6 +25,18 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         secure: false,
       },
+      // Bu ikisi eksikti: `npm run dev` altinda her iki e-posta govde onizlemesi
+      // de SPA'ya dusup 404/HTML donuyordu. nginx.conf ile ayni allowlist.
+      '/preview-email-body': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/preview-client-email-body': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+        secure: false,
+      },
       '/refresh': {
         target: 'http://localhost:8001',
         changeOrigin: true,

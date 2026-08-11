@@ -43,6 +43,10 @@ services:
     # Paylaşılan network'te "backend" adı fazla genel; hukukbot bu isimle
     # bağlanır: http://hukdok_backend:8001 (BULGULAR #10)
     container_name: hukdok_backend
+    # PID 1 uvicorn'dur ve cocuk sureclerini reap ETMEZ: her soffice (LibreOffice)
+    # donusumu ~5 zombie birakiyordu (olculdu: 42 donusumde 212 -> 230 surec).
+    # init: true, PID 1'e tini'yi koyar; zombie'leri o toplar.
+    init: true
     ports:
       # localhost'a sabitli: API-key'li /export route'ları public porttan
       # erişilememeli (BULGULAR #11). Host nginx localhost'tan proxy'ler,

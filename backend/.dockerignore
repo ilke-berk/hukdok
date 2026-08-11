@@ -1,0 +1,41 @@
+# Backend build context'i ./backend'dir (docker-compose.yml build.context) —
+# kökteki .dockerignore bu build'e UYGULANMAZ, bu dosya gerekiyordu.
+# Dockerfile "COPY . ." yaptigi icin burada dislanmayan her sey imaja girer.
+#
+# Olculen /app boyutu: 329 MB. Asagidakiler cikarildiginda geriye ~24 MB kalir
+# (kod + fonts). DIKKAT: bu dosya yalnizca IMAJI kucultur; backend/data ve
+# backend/calibration diskte OLDUGU GIBI KALIR (gercek muvekkil verisi, silme
+# karari kullanicinindir).
+
+# 134 MB legacy SQLite (hukudok.db) + runtime state. Uretimde /app/data zaten
+# named volume (backend-data) ile maskelenir ve Dockerfile "mkdir -p /app/data"
+# ile dizini yaratir — imajda tasinmasina gerek yok.
+data/
+
+# 139 MB kalibrasyon PDF'i + ca_bundle.pem. Yalnizca elle calistirilan araclar
+# (calibration/run_calibration.py, smoke_faz*.py) ve lokal AVG TLS cozumu icin;
+# ikisi de docker-compose.override.yml'in ./backend:/app bind-mount'undan calisir,
+# imajdaki kopyayi kullanmaz.
+calibration/
+
+# Arac cache'leri (29 MB'i .mypy_cache) — imajda hicbir ise yaramaz.
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+**/__pycache__
+**/*.py[cod]
+
+# 2,7 MB test paketi. Prod imaji test kosmaz; lokalde konteyner testi zaten
+# docker-compose.override.yml'in ./backend:/app mount'u uzerinden HOST'taki
+# tests/ dizinini kosar. NOT: override'i OLMAYAN bir ortamda
+# "docker compose exec backend python -m pytest" artik test bulamaz.
+# (requirements-dev.txt BILEREK haric tutulmadi — CLAUDE.md'deki
+#  "pip install -r requirements-dev.txt" adimi konteyner icinde kosuyor.)
+tests/
+
+# Sirlar ve yerel yardimcilar
+.env
+.env.*
+*.log
+REFACTOR_PLAN.md
