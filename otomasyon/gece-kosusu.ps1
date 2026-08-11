@@ -57,6 +57,7 @@ function KosClaude([string]$argSatiri, [string]$outLog, [string]$errLog, [int]$z
     $cmdSatiri = '/s /c ""' + $claudeYol + '" ' + $argSatiri + '"'
     $p = Start-Process -FilePath "$env:ComSpec" -ArgumentList $cmdSatiri -WorkingDirectory $repoKok `
          -NoNewWindow -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+    $null = $p.Handle   # Handle tuzagi: dokunulmazsa .ExitCode null doner
     $bitti = $p.WaitForExit($zamanAsimiDk * 60000)
     if (-not $bitti) {
         cmd /c ("taskkill /pid {0} /t /f >nul 2>&1" -f $p.Id)

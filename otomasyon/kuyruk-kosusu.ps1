@@ -71,8 +71,12 @@ if ($claudeYol.ToLower().EndsWith(".ps1")) {
 
 function BaslatClaude([string]$argSatiri, [string]$outLog, [string]$errLog, [string]$dizin) {
     $cmdSatiri = '/s /c ""' + $claudeYol + '" ' + $argSatiri + '"'
-    return Start-Process -FilePath "$env:ComSpec" -ArgumentList $cmdSatiri -WorkingDirectory $dizin `
-           -NoNewWindow -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+    $p = Start-Process -FilePath "$env:ComSpec" -ArgumentList $cmdSatiri -WorkingDirectory $dizin `
+         -NoNewWindow -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+    # PS tuzagi: Handle'a surec CIKMADAN dokunulmazsa .ExitCode $null doner
+    # (2026-08-11: G003/G004 bu yuzden yanlis BLOKE yedi).
+    $null = $p.Handle
+    return $p
 }
 
 function OldurAgac([int]$islemNo) { cmd /c ("taskkill /pid {0} /t /f >nul 2>&1" -f $islemNo) }
@@ -206,6 +210,10 @@ function SeritIsle([string]$bant) {
     }
     $cikis = $s.Proc.ExitCode
     $seritler[$bant] = $null
+    if ($null -eq $cikis) {
+        Yaz ("UYARI: {0} cikis kodu okunamadi (Handle tuzagi) - basari varsayilip denetime gidiliyor." -f $id)
+        $cikis = 0
+    }
     if ($cikis -ne 0) { KuyrukBloke $id ("claude cikis kodu " + $cikis + " - kota/ag olabilir"); return }
     $son = ""
     if (Test-Path $s.Out) { $son = (Get-Content $s.Out -Tail 30) -join "`n" }
