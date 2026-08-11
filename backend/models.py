@@ -1,3 +1,10 @@
+"""SQLAlchemy ORM modelleri — `Base.metadata` şemanın tek bildirimsel kaynağıdır.
+
+Not (G028, 2026-08-12): `sync_logs` ve `analysis_cache` modelleri (`SyncLog`,
+`AnalysisCache`) tek tüketicileri ölü kod olduğu ve iki tablo da boş kaldığı için
+kaldırıldı. **Tablolar DB'de duruyor** — bilinçli olarak DROP edilmedi (veri kaybı
+riski + migrate.py fail-fast). Artıkları görürsen: model yok, kullanan kod yok.
+"""
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -300,16 +307,6 @@ class Status(Base):
     sequence = Column(Integer, default=0) # Ordering
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
-class SyncLog(Base):
-    """Logs when the last sync happened for each list type."""
-    __tablename__ = "sync_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    list_name = Column(String, unique=True, index=True) # "Lawyers", "Clients", etc.
-    last_sync = Column(DateTime(timezone=True), default=func.now())
-    status = Column(String) # "SUCCESS", "FAILED"
-    item_count = Column(Integer, default=0)
-
 class EmailRecipient(Base):
     __tablename__ = "email_recipients"
 
@@ -413,19 +410,6 @@ class FileStatus(Base):
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
-
-class AnalysisCache(Base):
-    """
-    Cache for file analysis results to avoid re-processing.
-    Moved from SQLite (db_manager.py) to Main DB (PostgreSQL).
-    """
-    __tablename__ = "analysis_cache"
-
-    file_hash = Column(String, primary_key=True, index=True)
-    data_json = Column(String, nullable=True) # JSON stored as Text
-    created_at = Column(DateTime(timezone=True), default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
-
 
 class HearingDate(Base):
     """Duruşma zaptından çıkarılan bir sonraki duruşma tarihleri."""

@@ -5,7 +5,6 @@ import math
 import base64
 import tempfile
 import uuid
-import asyncio
 import zipfile
 from threading import Lock, Semaphore
 # Security: Use defusedxml instead of xml.etree to prevent XML DoS attacks
@@ -434,17 +433,6 @@ PluginRegistry.register('page-break', PageBreakHandler)
 
 # --- Main Converter Class ---
 
-# Module-level executor for proper async support
-_process_executor = None
-
-def get_process_executor():
-    """Lazy initialization of ProcessPoolExecutor."""
-    global _process_executor
-    if _process_executor is None:
-        from concurrent.futures import ProcessPoolExecutor
-        _process_executor = ProcessPoolExecutor(max_workers=2)
-    return _process_executor
-
 class UDFConverter:
     def __init__(self, udf_path: str, output_path: str, degrade_tables: bool = False):
         self.udf_path = udf_path
@@ -483,19 +471,6 @@ class UDFConverter:
             # frame'i üzerinden canlı kalıp GC'yi bekliyordu
             self._cleanup()
         return self.output_path
-
-    async def convert_async(self) -> str:
-        """Asynchronous execution flow using ProcessPoolExecutor.
-
-        Note: self (UDFConverter) is not picklable (contains Lock, ReportLab objects).
-        Instead we pass only the path strings to the module-level convert_udf_to_pdf
-        function, which creates a fresh UDFConverter inside the subprocess.
-        """
-        loop = asyncio.get_running_loop()
-        executor = get_process_executor()
-        return await loop.run_in_executor(
-            executor, convert_udf_to_pdf, self.udf_path, self.output_path
-        )
 
     def _check_fonts(self):
         """Fail fast in DEV_MODE if fonts are broken."""
@@ -811,15 +786,6 @@ def convert_udf_to_pdf(
     finally:
         _convert_semaphore.release()
     return path, converter.image_warnings
-
-async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = None) -> str:
-    """Wrapper function for asynchronous conversion."""
-    if output_path is None:
-        temp = tempfile.gettempdir()
-        output_path = os.path.join(temp, f"udf_{uuid.uuid4().hex[:8]}.pdf")
-    
-    converter = UDFConverter(udf_path, output_path)
-    return await converter.convert_async()
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

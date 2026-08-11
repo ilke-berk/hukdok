@@ -66,7 +66,7 @@ try:
     write_startup_log("Attempting to import modules...")
     from config.settings import settings
     from managers.config_manager import DynamicConfig
-    from managers.log_manager import LogManager, TechnicalLogger
+    from managers.log_manager import TechnicalLogger
     from routes.processing import refresh_lists_background
     write_startup_log("All local modules imported successfully.")
 except Exception as ie:
@@ -84,11 +84,6 @@ except ImportError:
     cache_manager = None
 
 load_dotenv()
-
-try:
-    log_manager = LogManager()
-except Exception:
-    log_manager = None
 
 ssl_cert = os.getenv("SSL_CERT_FILE")
 if ssl_cert and os.path.exists(ssl_cert):

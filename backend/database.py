@@ -10,10 +10,7 @@ import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import sys
-from datetime import datetime, timedelta
-import json
-import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -622,85 +619,6 @@ def check_and_migrate_tables():
         except Exception as e:
             conn.rollback()
             logger.error(f"pg_trgm extension/index migration error: {e}")
-
-# --- DATABASE MANAGER (Ported from db_manager.py) ---
-
-class DatabaseManager:
-    _instance = None
-
-    def __init__(self):
-        pass
-
-    @classmethod
-    def get_instance(cls):
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    def _get_db(self):
-        return SessionLocal()
-
-    def get_cache(self, file_hash: str) -> Optional[Dict[str, Any]]:
-        """Retrieves analysis result from DB by hash (PostgreSQL)."""
-        from models import AnalysisCache
-        db = self._get_db()
-        try:
-            cache_entry = db.query(AnalysisCache).filter(AnalysisCache.file_hash == file_hash).first()
-            if cache_entry and cache_entry.data_json:
-                return json.loads(cache_entry.data_json)
-            return None
-        except Exception as e:
-            logger.error(f"DB Read Failed (PG): {e}")
-            return None
-        finally:
-            db.close()
-
-    def save_cache(self, file_hash: str, data: Dict[str, Any]):
-        """Saves (Upserts) analysis result to DB (PostgreSQL)."""
-        from models import AnalysisCache
-        db = self._get_db()
-        try:
-            timestamp = time.time()
-            data["_cache_ts"] = timestamp
-            json_str = json.dumps(data, ensure_ascii=False)
-
-            cache_entry = db.query(AnalysisCache).filter(AnalysisCache.file_hash == file_hash).first()
-            if cache_entry:
-                cache_entry.data_json = json_str
-                cache_entry.updated_at = datetime.now()
-            else:
-                new_entry = AnalysisCache(
-                    file_hash=file_hash,
-                    data_json=json_str
-                )
-                db.add(new_entry)
-            
-            db.commit()
-        except Exception as e:
-            logger.error(f"DB Save Failed (PG): {e}")
-            db.rollback()
-        finally:
-            db.close()
-
-    def cleanup_cache(self, days: int = None):
-        """Removes entries older than 'days'."""
-        from models import AnalysisCache
-        if days is None:
-            days = int(os.getenv("CACHE_EXPIRY_DAYS", "30"))
-
-        cutoff_date = datetime.now() - timedelta(days=days)
-        
-        db = self._get_db()
-        try:
-            deleted_count = db.query(AnalysisCache).filter(AnalysisCache.updated_at < cutoff_date).delete()
-            db.commit()
-            if deleted_count > 0:
-                logger.info(f"DB Cleanup: Removed {deleted_count} old entries.")
-        except Exception as e:
-            logger.error(f"DB Cleanup Failed (PG): {e}")
-            db.rollback()
-        finally:
-            db.close()
 
 # --- CLIENT DATA HELPERS ---
 

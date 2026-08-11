@@ -1,6 +1,6 @@
 """Belge işleme hattının HTTP ucu: `/process` (NDJSON analiz stream'i) ve `/confirm`.
 
-Ayrıca `/api/download/{file_id}`, `/refresh` ailesi ve e-posta gövdesi önizleme
+Ayrıca `/api/download/{file_id}`, `/refresh` ve e-posta gövdesi önizleme
 route'ları; `api.py` include_router ile bağlanır. Ağır iş `analyzer` (Gemini) ile
 `services/document_pipeline`'da; `/confirm` idempotenttir
 (`services/confirm_idempotency`). İki uvicorn worker'ı arasındaki sihirbaz durumu
@@ -289,9 +289,9 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
             db.close()
 
 
+# Tek yol: `/refresh`. Frontend (`lib/api.ts`) ve konteyner nginx (`nginx.conf:109`)
+# bunu kullanır; `/api/refresh` + `/api/config/refresh` alias'ları çağrısızdı, silindi (G028).
 @router.post("/refresh")
-@router.post("/api/refresh")
-@router.post("/api/config/refresh")
 async def refresh_config_endpoint(
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),

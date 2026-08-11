@@ -1,183 +1,25 @@
-"""İki ayrı günlük: SharePoint 'log' listesine belge kaydı + teknik hata arşivi.
+"""Teknik hata arşivi: standart logging + tavanlı RAM tamponu + SharePoint yedeği.
 
-`LogManager` her işlenen belge için SharePoint listesinde satır açar (`init_log`) ve
-sonucunu günceller; analyzer ile belge hattı çağırır. `TechnicalLogger` kayıtları
-standart logging'e delege eder (K10) VE tavanlı RAM tamponunda biriktirip
-ERROR/CRITICAL'de ayrı thread'de SharePoint yedek arşivine JSON olarak yükler; mesajlar
-`mask_sensitive_data` ile maskelenir. Dış bağımlılık: Graph API (`sharepoint/`), threading.
+`TechnicalLogger` kayıtları standart logging'e delege eder (K10) VE tavanlı RAM
+tamponunda biriktirip ERROR/CRITICAL'de ayrı thread'de SharePoint yedek arşivine JSON
+olarak yükler; mesajlar `mask_sensitive_data` ile maskelenir. Dış bağımlılık: Graph API
+(`sharepoint/`), threading.
+
+Not: bu modülde bir zamanlar SharePoint 'log' listesine satır açan `LogManager` da vardı;
+`init_log/complete_log/fail_log` hiçbir yerden çağrılmadığı için 2026-08-12'de silindi
+(G028). Liste yazımı zaten durmuştu, tüm belge metadata'sı Postgres'te.
 """
 import os
-import requests
 import logging
 import socket
 from datetime import datetime
 
-# Mevcut auth modüllerin (Bunlar sende zaten var, dokunmuyoruz)
-from sharepoint.auth_graph import get_graph_token
-from sharepoint.sharepoint_uploader_graph import _get_site_and_drive_id, _headers
-
-GRAPH = "https://graph.microsoft.com/v1.0"
-# Senin listenin adı 'log' olduğu için varsayılanı değiştirdik
-LOG_LIST_NAME = os.getenv("SHAREPOINT_LOG_LIST_NAME", "log")
-
 logger = logging.getLogger("LogManager")
 
 
-class LogManager:
-    def __init__(self):
-        pass
-
-    def _get_list_id_by_name(self, token, site_id, list_name):
-        """SharePoint Listesinin ID'sini ismine göre bulur."""
-        url = f"{GRAPH}/sites/{site_id}/lists"
-        try:
-            r = requests.get(url, headers=_headers(token), timeout=30)
-            r.raise_for_status()
-            lists = r.json().get("value", [])
-
-            for lst in lists:
-                # SharePoint bazen display name bazen name kullanır, ikisine de bakalım
-                if lst.get("displayName") == list_name or lst.get("name") == list_name:
-                    return lst["id"]
-            return None
-        except Exception as e:
-            logger.error(f"Error finding list '{list_name}': {e}")
-            return None
-
-    def init_log(self, original_filename: str):
-        """
-        Step 1: Create an initial log entry in SharePoint to reserve an ID.
-        Returns:
-            tuple: (log_item_id, error_message)
-            - log_item_id: The auto-increment int ID from SharePoint.
-            - error_message: None if success, string if failed.
-        """
-        try:
-            token = get_graph_token()
-            site_id, _ = _get_site_and_drive_id(token)
-
-            list_id = self._get_list_id_by_name(token, site_id, LOG_LIST_NAME)
-            if not list_id:
-                return None, f"SharePoint list '{LOG_LIST_NAME}' not found."
-
-            # Prepare initial item
-            hostname = socket.gethostname()
-            try:
-                username = os.getlogin()
-            except OSError:
-                username = "Unknown"
-
-            # INTERNAL NAME MAPPING (Based on Debug Inspection)
-            # field_1: Kullanici
-            # field_2: Bilgisayar
-            # field_3: Orijinal_Dosya
-            # field_4: Yeni_Dosya
-            # field_5: Durum
-            # field_6: Dosya_Hash_SHA256
-
-            item_data = {
-                "fields": {
-                    "Title": original_filename,
-                    "field_1": username,
-                    "field_2": hostname,
-                    "field_3": original_filename,
-                    "field_4": "-",
-                    "field_5": "ISLENIYOR",
-                    "field_6": "-",
-                }
-            }
-
-            # Create Item
-            post_url = f"{GRAPH}/sites/{site_id}/lists/{list_id}/items"
-            r = requests.post(
-                post_url, headers=_headers(token), json=item_data, timeout=30
-            )
-
-            # Hata detayını yakala
-            if not r.ok:
-                logger.error(f"SharePoint Init Error: {r.text}")
-                return None, f"SharePoint Init Error: {r.status_code} - {r.text}"
-
-            r.raise_for_status()
-
-            data = r.json()
-            item_id = data.get("id")  # This is the Auto-ID
-
-            logger.info(f"Log initialized. ID: {item_id} for file: {original_filename}")
-            return item_id, None
-
-        except Exception as e:
-            logger.error(f"Failed to init log: {e}")
-            return None, str(e)
-
-    def complete_log(self, log_item_id: str, final_filename: str, file_hash: str = ""):
-        """
-        Step 2: Update the log entry with success status and final filename.
-        """
-        if not log_item_id:
-            logger.warning("No log_item_id provided to complete_log.")
-            return
-
-        try:
-            token = get_graph_token()
-            site_id, _ = _get_site_and_drive_id(token)
-            list_id = self._get_list_id_by_name(token, site_id, LOG_LIST_NAME)
-
-            patch_url = f"{GRAPH}/sites/{site_id}/lists/{list_id}/items/{log_item_id}"
-
-            update_data = {
-                "fields": {
-                    "field_5": "SUCCESS",  # Durum
-                    "field_4": final_filename,  # Yeni_Dosya
-                    "field_6": file_hash,  # Hash
-                }
-            }
-
-            r = requests.patch(
-                patch_url, headers=_headers(token), json=update_data, timeout=30
-            )
-            if not r.ok:
-                logger.error(f"SharePoint Complete Error: {r.text}")
-                return False
-            r.raise_for_status()
-
-            logger.info(
-                f"Log completed for ID: {log_item_id}. Final Name: {final_filename}"
-            )
-            return True
-        except Exception as e:
-            logger.error(f"Failed to complete log {log_item_id}: {e}")
-            return False
-
-    def fail_log(self, log_item_id: str, error_msg: str):
-        """
-        Step 3: Mark the log as failed if something goes wrong.
-        """
-        if not log_item_id:
-            return
-
-        try:
-            token = get_graph_token()
-            site_id, _ = _get_site_and_drive_id(token)
-            list_id = self._get_list_id_by_name(token, site_id, LOG_LIST_NAME)
-
-            patch_url = f"{GRAPH}/sites/{site_id}/lists/{list_id}/items/{log_item_id}"
-
-            update_data = {
-                "fields": {
-                    "field_5": "ERROR",  # Durum
-                    "field_4": f"HATA: {error_msg[:100]}",  # Yeni_Dosya'ya hata mesajı
-                }
-            }
-
-            requests.patch(
-                patch_url, headers=_headers(token), json=update_data, timeout=30
-            )
-        except Exception as e:
-            logger.error(f"Failed to mark log as error {log_item_id}: {e}")
-
-
-# --- TECHNICAL LOGGER MERGE ---
+# --- TECHNICAL LOGGER ---
+# Import'lar bilerek burada (dosya ortasında): pyproject `per-file-ignores` bu dosyaya
+# E402 muafiyeti verir. Taşımak sırf kozmetik olur, diff'i büyütmemek için bırakıldı.
 import threading
 import re
 import json

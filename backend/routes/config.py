@@ -71,7 +71,6 @@ def api_required_case_fields(user: dict = Depends(get_current_user)):
 
 # ─── LAWYERS ──────────────────────────────────────────────────────────────────
 
-@router.get("/config/lawyers")
 @router.get("/api/config/lawyers")
 def get_lawyers_endpoint(user: dict = Depends(get_current_user)):
     config = DynamicConfig.get_instance()
@@ -110,7 +109,6 @@ def api_delete_lawyer(code: str, user: dict = Depends(require_admin)):
 
 # ─── STATUSES ─────────────────────────────────────────────────────────────────
 
-@router.get("/config/statuses")
 @router.get("/api/config/statuses")
 def get_statuses_endpoint(user: dict = Depends(get_current_user)):
     config = DynamicConfig.get_instance()
@@ -138,7 +136,6 @@ def api_delete_status(code: str, user: dict = Depends(require_admin)):
 
 # ─── DOCTYPES ─────────────────────────────────────────────────────────────────
 
-@router.get("/config/doctypes")
 @router.get("/api/config/doctypes")
 def get_doctypes_endpoint(user: dict = Depends(get_current_user)):
     config = DynamicConfig.get_instance()
@@ -166,7 +163,6 @@ def api_delete_doctype(code: str, user: dict = Depends(require_admin)):
 
 # ─── CASE SUBJECTS ────────────────────────────────────────────────────────────
 
-@router.get("/config/case_subjects")
 @router.get("/api/config/case_subjects")
 def get_case_subjects_endpoint(user: dict = Depends(get_current_user)):
     config = DynamicConfig.get_instance()
@@ -194,7 +190,6 @@ def api_delete_case_subject(code: str, user: dict = Depends(require_admin)):
 
 # ─── EMAIL RECIPIENTS ─────────────────────────────────────────────────────────
 
-@router.get("/config/email_recipients")
 @router.get("/api/config/email_recipients")
 def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
     config = DynamicConfig.get_instance()
