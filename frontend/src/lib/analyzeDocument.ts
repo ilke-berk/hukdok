@@ -49,10 +49,35 @@ export interface AnalyzeResult {
 }
 
 // Bilinen stream mesaj tipleri — info/error toast'ları çağıran tarafa bırakılır.
+// `failed` (G001/G002 sözleşmesi) backend'in AÇIK başarısızlık bildirimidir:
+// SON olaydır, process_id taşımaz ve varsayılan verili form ÜRETİLMEZ.
 type StreamMessage =
   | { status: "info"; message: string }
   | { status: "error"; message: string }
+  | { status: "failed"; error_ozet?: string; error_kod?: string }
   | { status: "complete"; process_id?: string; data: Record<string, unknown> };
+
+/** `failed` etiketleri — frontend davranış AYIRMAZ, yalnız telemetri/log içindir. */
+export type AnalysisErrorCode =
+  | "gemini_saturated"
+  | "gemini_blocked"
+  | "gemini_truncated"
+  | "analysis_error"
+  | (string & {});
+
+/**
+ * Backend'in `failed` terminal olayı. `message` doğrudan kullanıcıya
+ * gösterilebilir Türkçe `error_ozet`tir (Index.tsx mevcut catch'i toast'lar).
+ */
+export class AnalysisFailedError extends Error {
+  readonly code: AnalysisErrorCode;
+
+  constructor(message: string, code: AnalysisErrorCode) {
+    super(message);
+    this.name = "AnalysisFailedError";
+    this.code = code;
+  }
+}
 
 export interface AnalyzeOptions {
   /** "info" stream mesajları geldiğinde (örn. tekli akışta toast göstermek için). */
@@ -100,7 +125,9 @@ function mapAnalysisData(resultData: Record<string, unknown>, docTypeCode?: stri
  * Tek bir belgeyi backend `/process` ucuna gönderip streaming yanıtı parse eder.
  * `handleAnalyze` ve `preloadNextFile` arasındaki kopya mantığı tek kaynağa toplar.
  *
- * `complete` mesajı gelmezse hata fırlatır (analiz tamamlanamadı).
+ * `complete` mesajı gelmezse hata fırlatır (analiz tamamlanamadı). `error` ve
+ * `failed` olaylarında da reddeder; `failed` reddi kullanıcı-dostu `error_ozet`
+ * mesajını taşıyan AnalysisFailedError'dır.
  */
 export async function analyzeDocument(
   file: File,
@@ -152,6 +179,13 @@ export async function analyzeDocument(
           options.onInfo?.(msg.message);
         } else if (msg.status === "error") {
           throw new Error(msg.message);
+        } else if (msg.status === "failed") {
+          // Nihai başarısızlık: TEK hata, analysisData'ya dokunulmaz — çağıran
+          // formu varsayılan veriyle DOLDURMAZ, akış reddiyle temiz biter.
+          throw new AnalysisFailedError(
+            msg.error_ozet || "Belge analizi tamamlanamadı.",
+            msg.error_kod || "analysis_error",
+          );
         } else if (msg.status === "complete") {
           if (msg.process_id) processId = msg.process_id;
           analysisData = mapAnalysisData(msg.data, docTypeCode);

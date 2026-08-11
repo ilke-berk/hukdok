@@ -12,10 +12,10 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCases } from "../hooks/useCases";
+import { useCases, CASE_LIST_ERROR } from "../hooks/useCases";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useConfig } from "../hooks/useConfig";
 import { apiClient } from "@/lib/api";
-import { toast } from "sonner";
 import { useDebounce } from "../hooks/useDebounce";
 import { formatAgo } from "@/lib/relativeTime";
 import {
@@ -153,6 +153,8 @@ const CaseList = () => {
   const [onlyUrgent, setOnlyUrgent] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Yarış durumu koruması: geç dönen eski isteklerin yenisini ezmesini engeller
   const reqIdRef = useRef(0);
@@ -176,10 +178,13 @@ const CaseList = () => {
       if (reqId !== reqIdRef.current) return;
       setCases(data.cases);
       setTotalCount(data.total);
+      setLoadError(null);
     } catch (error) {
       if (reqId !== reqIdRef.current) return;
       console.error(error);
-      toast.error("Dosyalar yüklenirken bir hata oluştu.");
+      // G002: kaybolan toast yerine kalıcı şerit — "kayıt yok" görünümünün
+      // yerine geçer, kullanıcı kesintiyi veri kaybıyla karıştırmasın.
+      setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
     } finally {
       if (reqId === reqIdRef.current) setIsLoading(false);
     }
@@ -487,12 +492,23 @@ const CaseList = () => {
             </FlowButton>
           </div>
 
+          {loadError && (
+            <DataErrorBanner
+              description={loadError}
+              onRetry={() => { fetchCases(); fetchStats(); }}
+              isRetrying={isLoading}
+              className="mx-5 mb-4"
+            />
+          )}
+
           {isLoading ? (
             <div className="grid place-items-center gap-3 py-20 text-[var(--fg-subtle)]">
               <Loader2 className="w-7 h-7 animate-spin" />
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
             </div>
           ) : cases.length === 0 ? (
+            // G002: hatada "bulunamadı" görünümü ASLA çıkmaz — yerini şerit alır.
+            loadError ? null : (
             <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
               <Search className="w-9 h-9 opacity-30" />
               <p className="text-[13px]">
@@ -508,6 +524,7 @@ const CaseList = () => {
                 </FlowButton>
               )}
             </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">

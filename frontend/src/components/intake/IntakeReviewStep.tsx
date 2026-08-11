@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { IntakeFieldRow } from "@/components/intake/IntakeFieldRow";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
-import { useCases } from "@/hooks/useCases";
+import { useCases, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import {
   ApplyConflictError,
@@ -227,6 +227,8 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   // --- Ofis No ---------------------------------------------------------
   const [trackingNo, setTrackingNo] = useState(initialReview?.trackingNo ?? "");
   const [isGeneratingNo, setIsGeneratingNo] = useState(false);
+  // G002: ofis no sırası alınamadıysa kayıt bloke (null = hata yok)
+  const [sequenceError, setSequenceError] = useState<string | null>(null);
 
   const regenerateTracking = useCallback(async () => {
     if (approvedClients.length === 0) {
@@ -252,10 +254,25 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         processType: fieldStates.file_type?.value || "Hukuk",
         serviceType: serviceMask,
       }));
+      setSequenceError(null);
     } finally {
       setIsGeneratingNo(false);
     }
   }, [approvedClients, fieldStates.file_type?.value, serviceMask, getClientCaseSequence]);
+
+  /**
+   * G002: effect'ten çağrılan sarmalayıcı — sıra numarası hatası artık
+   * yutulmuyor; yakalanmazsa unhandled rejection olurdu. Hata bayrağı
+   * kaydetmeyi bloke eder (uydurma ofis numarasıyla kayıt YOK).
+   */
+  const regenerateTrackingSafely = useCallback(async () => {
+    try {
+      await regenerateTracking();
+    } catch (error) {
+      console.error(error);
+      setSequenceError(error instanceof Error ? error.message : CASE_SEQUENCE_ERROR);
+    }
+  }, [regenerateTracking]);
 
   // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü / hizmet maskesi değiştikçe) üretilir.
   // Enrich modunda dava zaten numaralı — üretim tamamen atlanır.
@@ -263,7 +280,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   const fileTypeValue = fieldStates.file_type?.value;
   useEffect(() => {
     if (enrichMode) return;
-    regenerateTracking();
+    regenerateTrackingSafely();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [approvedClientsKey, fileTypeValue, serviceMask]);
 
@@ -388,7 +405,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       trackingNo !== "" &&
       (!sendEmail || emailTo.length > 0) &&
       !isCommitting &&
-      !isGeneratingNo;
+      !isGeneratingNo &&
+      // G002: sıra numarası doğrulanamadıysa kaydet düğmesi de kapalı kalır
+      !sequenceError;
 
   const gateHint = enrichMode
     ? sendEmail && emailTo.length === 0
@@ -400,7 +419,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         ? "En az 1 müvekkil onaylanmalı"
         : !partiesApproved
           ? "Tüm taraf satırları onaylanmalı (ya da boş bırakılmalı)"
-          : trackingNo === ""
+          : sequenceError
+            ? "Ofis numarası doğrulanamadı — bağlantıyı kontrol edip yenileyin"
+            : trackingNo === ""
             ? "Ofis numarası üretilemedi"
             : sendEmail && emailTo.length === 0
               ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
@@ -526,6 +547,14 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       }
       return;
     }
+    // G002: ofis numarası sunucudan doğrulanamadıysa kayıt BLOKE — sessiz `1`
+    // sırasıyla üretilmiş numara dolu çıkıp commit'i 409'a düşürüyordu.
+    if (sequenceError) {
+      toast.error("Kaydedilemez: ofis numarası doğrulanamadı", {
+        description: `${sequenceError} Bağlantı düzelince "Ofis No" alanını yenileyin.`,
+      });
+      return;
+    }
     try {
       await onCommit(buildRequest(trackingNo));
     } catch (e) {
@@ -550,6 +579,11 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
           setTrackingNo(fresh);
           await onCommit(buildRequest(fresh));
         } catch (retryErr) {
+          // G002: tekrar sırasında sıra numarası da alınamadıysa (sunucu hâlâ
+          // erişilemez) bayrağı kaldır — sonraki kaydet denemesi de bloke olsun.
+          if (retryErr instanceof Error && retryErr.message === CASE_SEQUENCE_ERROR) {
+            setSequenceError(retryErr.message);
+          }
           toast.error("Kayıt başarısız", {
             description: retryErr instanceof Error ? retryErr.message : "Ofis numarası çakışması çözülemedi.",
           });
@@ -833,7 +867,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               </span>
               <button
                 type="button"
-                onClick={regenerateTracking}
+                onClick={regenerateTrackingSafely}
                 disabled={isGeneratingNo || approvedClients.length === 0}
                 title="Sıra numarasını yeniden sorgula"
                 className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-[var(--brand)] hover:bg-[var(--brand-soft)] transition-colors disabled:opacity-30"
@@ -847,6 +881,12 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               placeholder="İlk müvekkil onaylanınca üretilir"
               className="h-9 font-mono text-[13px] border-[var(--border-strong)] bg-[var(--bg-sunken)]"
             />
+            {/* G002: sıra numarası alınamadı — gösterilen numara güvenilmez, kayıt bloke */}
+            {sequenceError && (
+              <p role="alert" className="mt-1.5 text-[12px] text-[var(--danger,#b3261e)]">
+                {sequenceError} Numara doğrulanana kadar kayıt yapılamaz.
+              </p>
+            )}
           </div>
           )}
         </FlowCard>

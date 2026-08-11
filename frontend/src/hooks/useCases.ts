@@ -105,6 +105,14 @@ export interface CaseStageLogEntry {
     note?: string | null;
 }
 
+/**
+ * G002: Liste ve sıra numarası uçlarında "hata ≠ boş veri". Bu mesajlar
+ * kullanıcıya banner/toast olarak aynen gösterilir.
+ */
+export const CASE_LIST_ERROR = "Dava listesi alınamadı — sunucuya ulaşılamadı.";
+export const CASE_SEQUENCE_ERROR =
+    "Ofis numarası alınamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
+
 export const useCases = () => {
     const { authRequest } = useAuthRequest();
     const [isLoading, setIsLoading] = useState(false);
@@ -156,15 +164,16 @@ export const useCases = () => {
         const queryString = params.toString() ? `?${params.toString()}` : "";
         const response = await authenticatedRequest(`/api/cases${queryString}`, "GET");
         setIsLoading(false);
-        if (response && response.ok) {
-            const data = await response.json();
-            const cases: T[] = Array.isArray(data) ? data : [];
-            // Toplam sayı header'da; eski backend'e karşı fallback: offset + sayfa boyu
-            const parsed = parseInt(response.headers.get("X-Total-Count") ?? "", 10);
-            const total = Number.isFinite(parsed) ? parsed : (options.offset ?? 0) + cases.length;
-            return { cases, total };
-        }
-        return { cases: [], total: 0 };
+        // G002: eskiden hata da `{cases: [], total: 0}` dönüyordu — kullanıcı
+        // kesintide "dosya bulunamadı" görüp veri kaybı sanıyordu. Artık fırlatılır;
+        // çağıran sayfa hata şeridini "kayıt yok" görünümünün yerine gösterir.
+        if (!response || !response.ok) throw new Error(CASE_LIST_ERROR);
+        const data = await response.json();
+        const cases: T[] = Array.isArray(data) ? data : [];
+        // Toplam sayı header'da; eski backend'e karşı fallback: offset + sayfa boyu
+        const parsed = parseInt(response.headers.get("X-Total-Count") ?? "", 10);
+        const total = Number.isFinite(parsed) ? parsed : (options.offset ?? 0) + cases.length;
+        return { cases, total };
     }, [authenticatedRequest]);
 
     const getCaseStats = useCallback(async () => {
@@ -218,15 +227,25 @@ export const useCases = () => {
         return [];
     }, [authenticatedRequest]);
 
-    const getClientCaseSequence = useCallback(async (clientName: string, nameBlock?: string) => {
+    /**
+     * G002: Hata YUTMAZ. Eski sessiz `1` fallback'i kesintide sıfırdan sıra
+     * numarası üretiyor, dolu bir ofis numarası öneriyor ve kaydı 409'a
+     * düşürüyordu. Artık fırlatır — çağıran kaydetmeyi bloke eder.
+     */
+    const getClientCaseSequence = useCallback(async (clientName: string, nameBlock?: string): Promise<number> => {
         const params = new URLSearchParams({ client_name: clientName });
         if (nameBlock) params.append("name_block", nameBlock);
         const response = await authenticatedRequest(`/api/cases/client-sequence?${params.toString()}`, "GET");
-        if (response && response.ok) {
-            const data = await response.json();
-            return data.sequence || 1;
+        if (!response || !response.ok) throw new Error(CASE_SEQUENCE_ERROR);
+        let sequence: unknown;
+        try {
+            sequence = (await response.json())?.sequence;
+        } catch {
+            throw new Error(CASE_SEQUENCE_ERROR);
         }
-        return 1;
+        const parsed = Number(sequence);
+        if (!Number.isFinite(parsed) || parsed < 1) throw new Error(CASE_SEQUENCE_ERROR);
+        return parsed;
     }, [authenticatedRequest]);
 
     const saveCaseAndReturn = useCallback(async (data: CaseData) => {

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useClients, ClientData } from "../hooks/useClients";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { useDebounce } from "../hooks/useDebounce";
 import { YetkiBelgesiModal } from "@/components/YetkiBelgesiModal";
@@ -99,7 +100,13 @@ function DetailRow({ label, value, icon: Icon }: { label: string; value: React.R
 const ClientList = () => {
   useSetPageTitle("Müvekkiller", ["Avukat Paneli"]);
   const navigate = useNavigate();
-  const { clients: allClientsData, isLoading: isClientsLoading } = useClients();
+  const {
+    clients: allClientsData,
+    isLoading: isClientsLoading,
+    clientsError,
+    refetchClients,
+    isRefetchingClients,
+  } = useClients();
   // DB kayıtlarında id her zaman set'lidir (ClientData.id yalnızca create öncesi boş)
   const allClients = allClientsData as Client[];
   const [initialLoaded, setInitialLoaded] = useState(false);
@@ -368,7 +375,7 @@ const ClientList = () => {
               className="flex-1"
               meta={
                 <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-                  {isLoading ? "Yükleniyor…" : `${filteredClients.length} kayıt`}
+                  {isLoading ? "Yükleniyor…" : clientsError ? "—" : `${filteredClients.length} kayıt`}
                 </span>
               }
             />
@@ -379,6 +386,14 @@ const ClientList = () => {
               <Loader2 className="w-7 h-7 animate-spin" />
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
             </div>
+          ) : clientsError ? (
+            // G002: hatada "müvekkil bulunamadı" yazmak veri kaybı izlenimi veriyordu.
+            <DataErrorBanner
+              description={clientsError}
+              onRetry={() => { refetchClients(); }}
+              isRetrying={isRefetchingClients}
+              className="m-5"
+            />
           ) : displayedClients.length === 0 ? (
             <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
               <Users className="w-9 h-9 opacity-30" />

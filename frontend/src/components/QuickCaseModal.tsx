@@ -15,7 +15,7 @@ import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
-import { CaseData, DuplicateCaseMatch, useCases } from "@/hooks/useCases";
+import { CaseData, DuplicateCaseMatch, useCases, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
@@ -278,9 +278,20 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
         // Kategori isim bloğuna da geçmeli: kategorisiz çağrıda sigorta şirketi
         // kişi formatına ("A_SIGORTA.") düşüyordu; NewCase ile tutarlı olsun.
-        const seq = firstClientName
-            ? await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName, autoCategory))
-            : 1;
+        // G002: sıra numarası alınamazsa fırlar — sessiz `1` ile dolu bir ofis
+        // numarası üretip kaydı 409'a düşürmektense kaydetmeyi BLOKE ediyoruz.
+        let seq = 1;
+        if (firstClientName) {
+            try {
+                seq = await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName, autoCategory));
+            } catch (error) {
+                console.error(error);
+                toast.error("Dava açılamadı: ofis numarası alınamadı", {
+                    description: error instanceof Error ? error.message : CASE_SEQUENCE_ERROR,
+                });
+                return;
+            }
+        }
 
         const trackingNo = generateTrackingNumber({
             category: autoCategory,

@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Users,
 } from "lucide-react";
-import { useCases } from "@/hooks/useCases";
+import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
@@ -84,18 +85,29 @@ export default function IdariDashboard() {
   const { getCases } = useCases();
   const [recentCases, setRecentCases] = useState<DashboardCase[]>([]);
   const [loading, setLoading] = useState(true);
+  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const casesData = await getCases({ limit: 8, offset: 0 });
-      if (cancelled) return;
-      setRecentCases((casesData?.cases || []) as DashboardCase[]);
-      setLoading(false);
+      try {
+        const casesData = await getCases({ limit: 8, offset: 0 });
+        if (cancelled) return;
+        setRecentCases((casesData?.cases || []) as DashboardCase[]);
+        setLoadError(null);
+      } catch (error) {
+        if (cancelled) return;
+        console.error(error);
+        setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
     return () => { cancelled = true; };
-  }, [getCases]);
+  }, [getCases, reloadKey]);
 
   // "G" sonra U/N/M sıralı kısayolu → ilgili sayfaya git. Bir input/textarea içinde
   // yazarken veya bir modifier (Ctrl/Alt/Cmd) basılıyken devre dışı kalır.
@@ -252,6 +264,14 @@ export default function IdariDashboard() {
                   <div key={i} className="h-16 bg-[var(--bg-sunken)] animate-pulse" />
                 ))}
               </div>
+            ) : loadError ? (
+              // G002: hatada "Dava bulunamadı." yazmak veri kaybı izlenimi veriyordu.
+              <DataErrorBanner
+                description={loadError}
+                onRetry={() => setReloadKey(k => k + 1)}
+                isRetrying={loading}
+                className="border-0"
+              />
             ) : recentCases.length === 0 ? (
               <div className="p-7 grid place-items-center gap-2 text-center text-[var(--fg-subtle)]">
                 <FolderOpen className="w-7 h-7 opacity-40" />

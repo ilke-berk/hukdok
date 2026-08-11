@@ -12,7 +12,8 @@ import {
   FileText,
   Archive,
 } from "lucide-react";
-import { useCases } from "@/hooks/useCases";
+import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { apiClient } from "@/lib/api";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
@@ -92,31 +93,42 @@ export default function AvukatDashboard() {
   const [recentCases, setRecentCases] = useState<DashboardCase[]>([]);
   const [hearings, setHearings] = useState<HearingItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const [statsData, casesData] = await Promise.all([
-        getCaseStats(),
-        getCases({ limit: 8, offset: 0 }),
-      ]);
-      if (cancelled) return;
-      if (statsData) {
-        setStats({
-          total: statsData.total || 0,
-          active: statsData.active || 0,
-          closed: statsData.closed || 0,
-          appeal: statsData.appeal || 0,
-          danis_active: statsData.danis_active || 0,
-          statuses: statsData.statuses || {},
-        });
+      try {
+        const [statsData, casesData] = await Promise.all([
+          getCaseStats(),
+          getCases({ limit: 8, offset: 0 }),
+        ]);
+        if (cancelled) return;
+        if (statsData) {
+          setStats({
+            total: statsData.total || 0,
+            active: statsData.active || 0,
+            closed: statsData.closed || 0,
+            appeal: statsData.appeal || 0,
+            danis_active: statsData.danis_active || 0,
+            statuses: statsData.statuses || {},
+          });
+        }
+        setRecentCases((casesData?.cases || []) as DashboardCase[]);
+        setLoadError(null);
+      } catch (error) {
+        if (cancelled) return;
+        console.error(error);
+        setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setRecentCases((casesData?.cases || []) as DashboardCase[]);
-      setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [getCases, getCaseStats]);
+  }, [getCases, getCaseStats, reloadKey]);
 
   useEffect(() => {
     apiClient.fetch("/api/hearing-dates")
@@ -363,6 +375,14 @@ export default function AvukatDashboard() {
                   <div key={i} className="h-16 bg-[var(--bg-sunken)] animate-pulse" />
                 ))}
               </div>
+            ) : loadError ? (
+              // G002: hatada "Dava bulunamadı." yazmak veri kaybı izlenimi veriyordu.
+              <DataErrorBanner
+                description={loadError}
+                onRetry={() => setReloadKey(k => k + 1)}
+                isRetrying={loading}
+                className="border-0"
+              />
             ) : recentCases.length === 0 ? (
               <div className="p-7 grid place-items-center gap-2 text-center text-[var(--fg-subtle)]">
                 <FolderOpen className="w-7 h-7 opacity-40" />
