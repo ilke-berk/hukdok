@@ -104,6 +104,10 @@ function KuyrukIsaretle([string]$id) {
         }
     }
     DosyaDene { [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom) } | Out-Null
+    # KUYRUK degisikligi COMMIT'lenmeli: kirli kalirsa AnaTemizMi sonraki backend
+    # gorevlerini ve merge'leri sonsuza dek bloklar (2026-08-11 gecesi tespit).
+    cmd /c "git add gorevler/KUYRUK.md >nul 2>&1"
+    cmd /c ("git commit -m ""chore: kuyruk durumu - {0} tamam"" >nul 2>&1" -f $id)
     Yaz ("TAMAMLANDI: " + $id)
 }
 
@@ -116,6 +120,8 @@ function KuyrukBloke([string]$id, [string]$sebep) {
         }
     }
     DosyaDene { [System.IO.File]::WriteAllLines($kuyrukDosya, $satirlar, $utf8NoBom) } | Out-Null
+    cmd /c "git add gorevler/KUYRUK.md >nul 2>&1"
+    cmd /c ("git commit -m ""chore: kuyruk durumu - {0} BLOKE"" >nul 2>&1" -f $id)
     Yaz ("BLOKE: {0} - {1}" -f $id, $sebep)
 }
 
