@@ -16,9 +16,9 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import and_, false, func, or_
 
-from auth_helpers import get_tenant_owned_case, get_tenant_owned_document
+from auth_helpers import get_tenant_owned_case, get_tenant_owned_document, tenant_filter_clause
 from dependencies import get_current_user, get_current_tenant
 from database import SessionLocal
 import models
@@ -159,16 +159,46 @@ def get_all_documents(
     limit: int = 50,
     link_mode: Optional[str] = None,
     tenant_id: str = Depends(get_current_tenant),
+    user: dict = Depends(get_current_user),
 ):
+    """Belge listesi — bağlı belgeler tenant zincirinden, bağlantısızlar sahibinden yetkilenir.
+
+    Erişim kuralı `auth_helpers.get_tenant_owned_document` ile AYNIdır (tekil belge
+    uçlarının kuralı liste ucuna taşındı): `case_id` doluysa dava tenant'ı eşleşmeli
+    (NULL = paylaşılan legacy) ve dava silinmemiş olmalı; `case_id` NULL ise (UNLINKED/
+    TEST) yalnız belgeyi yükleyen kullanıcı görür. Aksi halde bağlantısız belgeler
+    tenant'tan bağımsız olarak herkese listeleniyordu.
+    """
     db = SessionLocal()
     try:
-        from sqlalchemy import or_
+        # Kimlik: uploaded_by_email aynı üçlü fallback ile yazılıyor
+        # (services/document_pipeline.py) — okuma tarafı onunla eşleşmeli.
+        upn = (
+            user.get("preferred_username") or user.get("upn") or user.get("email") or ""
+        ).strip().lower()
+        # Kimliksiz token → bağlantısız belge hiç görünmez (fail-closed)
+        unlinked_owned = (
+            and_(
+                models.CaseDocument.case_id.is_(None),
+                func.lower(models.CaseDocument.uploaded_by_email) == upn,
+            )
+            if upn
+            else false()
+        )
         q = (
             db.query(models.CaseDocument)
             .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
-            .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None), models.CaseDocument.case_id.is_(None)))
-            # Soft-delete: silinmiş davanın belgeleri listelenmez; UNLINKED belgeler görünür
-            .filter(or_(models.Case.deleted_at.is_(None), models.CaseDocument.case_id.is_(None)))
+            .filter(
+                or_(
+                    and_(
+                        models.CaseDocument.case_id.isnot(None),
+                        tenant_filter_clause(models.Case, tenant_id),
+                        # Soft-delete: silinmiş davanın belgeleri listelenmez
+                        models.Case.deleted_at.is_(None),
+                    ),
+                    unlinked_owned,
+                )
+            )
             # Soft-delete: silinmiş belgeler listelenmez
             .filter(models.CaseDocument.deleted_at.is_(None))
         )
