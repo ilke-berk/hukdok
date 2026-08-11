@@ -11,7 +11,8 @@ Kapsam:
   instance = iki worker simülasyonu), atomik pop yarışı, adopt (payload'ın
   cache dizinine taşınması), mtime-TTL + touch, claim/orphan süpürmeleri,
   bozuk meta dayanıklılığı
-- singleton_lock: lider kilidi tekliği + bırakınca devralma
+- singleton_lock: lider kilidi tekliği + bırakınca devralma; birincil yol
+  açılamayınca yedek yola geçiş, hiçbir yol açılamayınca fail-open + TEK CRITICAL
 - bekçiler: api.py lifespan'inde init_db YOK, süreç-tekil işler is_leader
   kapısında, boot süpürmesi var; entrypoint --workers; PROCESS_CACHE/
   DOWNLOAD_CACHE disk destekli ve doğru parametreli
@@ -19,7 +20,9 @@ Kapsam:
 DB'ye/ağa inilmez (conftest sözleşmesi).
 """
 import ast
+import inspect
 import json
+import logging
 import os
 import threading
 import time
@@ -581,6 +584,110 @@ def test_try_acquire_leader_idempotent(tmp_path, monkeypatch):
     assert handle is not None
     handle.close()
     monkeypatch.setattr(singleton_lock, "_handle", None)
+
+
+class _ListHandler(logging.Handler):
+    """dictConfig pytest caplog'u söküyor (Faz 2-C notu) — adlandırılmış
+    logger'a doğrudan handler takılır (test_faz3_counter_reserve kalıbı)."""
+
+    def __init__(self):
+        super().__init__()
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+
+@pytest.fixture()
+def lock_logs():
+    handler = _ListHandler()
+    lg = logging.getLogger("services.singleton_lock")
+    prev_level = lg.level
+    lg.addHandler(handler)
+    lg.setLevel(logging.DEBUG)
+    yield handler
+    lg.removeHandler(handler)
+    lg.setLevel(prev_level)
+
+
+@pytest.fixture()
+def reset_leader_handle():
+    """Lider handle'ı süreç-global: testler birbirine sızmasın."""
+    from services import singleton_lock
+
+    singleton_lock._handle = None
+    yield singleton_lock
+    if singleton_lock._handle is not None:
+        singleton_lock._handle.close()
+    singleton_lock._handle = None
+
+
+def test_singleton_lock_falls_back_when_primary_path_unusable(
+    tmp_path, monkeypatch, reset_leader_handle, lock_logs
+):
+    """Birincil yol açılamıyorsa (izin/disk) yedek yola geçilir ve kilit ORADA
+    kurulur — fail-open'a düşülmez. İki talipten yalnız BİRİ lider kalır."""
+    singleton_lock = reset_leader_handle
+    unusable = tmp_path / "olmayan-dizin" / "leader.lock"  # dizin yok → OSError
+    fallback = tmp_path / "yedek.lock"
+    monkeypatch.setattr(singleton_lock, "_lock_path_candidates", lambda: [unusable, fallback])
+
+    assert singleton_lock.try_acquire_leader() is True
+    handle = singleton_lock._handle
+    assert handle is not None
+    assert Path(handle.name) == fallback  # kilit yedek yolda kuruldu
+    assert handle.closed is False  # süreç ömrünce tutulur (release API'si yok)
+
+    # İkinci talip (diğer worker) aynı yedek dosyayı kilitleyemez.
+    assert singleton_lock._try_lock_file(fallback) is None
+
+    assert [r for r in lock_logs.records if r.levelno >= logging.ERROR] == []
+    assert any("kullanılamıyor" in r.getMessage() for r in lock_logs.records)
+
+
+def test_singleton_lock_critical_when_no_path_usable(
+    tmp_path, monkeypatch, reset_leader_handle, lock_logs
+):
+    """Hiçbir yol açılamazsa davranış fail-open KALIR (arkaplan işleri durmasın)
+    ama sessiz değil: tam bir adet CRITICAL — mükerrer koşu izlemede görünsün."""
+    singleton_lock = reset_leader_handle
+    candidates = [tmp_path / "yok-1" / "leader.lock", tmp_path / "yok-2" / "leader.lock"]
+    monkeypatch.setattr(singleton_lock, "_lock_path_candidates", lambda: candidates)
+
+    assert singleton_lock.try_acquire_leader() is True  # fail-open korunuyor
+
+    criticals = [r for r in lock_logs.records if r.levelno == logging.CRITICAL]
+    assert len(criticals) == 1, [r.getMessage() for r in lock_logs.records]
+    assert [r for r in lock_logs.records if r.levelno == logging.ERROR] == []
+
+    # İdempotent: ikinci çağrı yeniden denemez, CRITICAL tekrarlanmaz.
+    assert singleton_lock.try_acquire_leader() is True
+    assert len([r for r in lock_logs.records if r.levelno == logging.CRITICAL]) == 1
+
+
+def test_singleton_lock_no_release_api():
+    """Kilit süreç ömrünce tutulur: bırakma API'si eklenirse liderlik uçar."""
+    from services import singleton_lock
+
+    funcs = [
+        name
+        for name, obj in vars(singleton_lock).items()
+        if inspect.isfunction(obj)
+        and obj.__module__ == singleton_lock.__name__
+        and not name.startswith("_")
+    ]
+    assert funcs == ["try_acquire_leader"], funcs
+
+
+def test_lock_path_candidates_are_distinct_absolute_paths():
+    """Adaylar tüm worker'larda AYNI mutlak yola çözülmeli (yoksa lider seçimi
+    bölünür) ve birbirinin kopyası olmamalı (yedeklik anlamını yitirir)."""
+    from services import singleton_lock
+
+    paths = singleton_lock._lock_path_candidates()
+    assert len(paths) >= 2
+    assert len(set(paths)) == len(paths)
+    assert all(p.is_absolute() for p in paths)
 
 
 # ─── bekçiler: lifespan / entrypoint / cache kuruluşu ────────────────────────
