@@ -15,9 +15,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from config.settings import settings
 from pdf.format_converter import (
     IMAGE_EXTENSIONS,
     OFFICE_EXTENSIONS,
+    ConversionBusyError,
+    _clip_timeout,
     image_to_pdf,
     office_to_pdf,
 )
@@ -33,53 +36,68 @@ except ImportError:
             logging.log(getattr(logging, level, logging.INFO), message)
 
 
-def convert_to_pdfa2b(source_path: str) -> str:
+def convert_to_pdfa2b(source_path: str, time_budget_seconds: Optional[float] = None) -> str:
     """
     Dosyayı PDF/A-2b formatına dönüştürür.
-    
+
     Args:
         source_path: Kaynak dosya yolu (PDF veya DOCX)
-        
+        time_budget_seconds: Faz 5-A (plan 5.2) istek zaman bütçesi — verilirse
+            zincirdeki alt bileşenler (semafor beklemeleri, LO ve GS alt-süreç
+            timeout'ları) kalan bütçeden pay alır; nginx 300 sn penceresi
+            içinde bitmeyecek zincir kurulamaz. None → bütçesiz (gece retry
+            job'ı ve /process normalizasyonu — bugüne kadarki davranış aynen).
+
     Returns:
         PDF/A-2b formatındaki dosyanın yolu (temp file veya orijinal)
-        
+
     Raises:
+        ConversionBusyError: Bütçeli yolda dönüşüm kuyruğu doluysa (çağıran
+            503 "sistem meşgul" üretir; conversion_pending katmanına DÜŞMEZ)
         Exception: Dönüşüm başarısız olursa
     """
     if not os.path.exists(source_path):
         raise FileNotFoundError(f"Kaynak dosya bulunamadı: {source_path}")
-    
+
+    deadline = (
+        time.monotonic() + time_budget_seconds if time_budget_seconds is not None else None
+    )
+
     file_ext = Path(source_path).suffix.lower()
-    
+
     # Temp dosya oluştur
     temp_dir = tempfile.gettempdir()
     output_filename = f"pdfa2b_{os.getpid()}_{Path(source_path).stem}.pdf"
     output_path = os.path.join(temp_dir, output_filename)
-    
+
     try:
         if file_ext == '.pdf':
             # PDF → PDF/A-2b dönüşümü (GhostScript)
             TechnicalLogger.log("INFO", f"PDF → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
-            return _pdf_to_pdfa2b(source_path, output_path)
+            return _pdf_to_pdfa2b(source_path, output_path, deadline)
 
         elif file_ext in OFFICE_EXTENSIONS:
             # Word/Excel → PDF/A-2b dönüşümü (LibreOffice)
             TechnicalLogger.log("INFO", f"Office → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
-            return _office_to_pdfa2b(source_path, output_path)
+            return _office_to_pdfa2b(source_path, output_path, deadline)
 
         elif file_ext in IMAGE_EXTENSIONS:
             # TIFF/JPG/PNG → PDF/A-2b dönüşümü (Pillow)
             TechnicalLogger.log("INFO", f"Görüntü → PDF/A-2b dönüşümü başlatılıyor: {source_path}")
-            return _image_to_pdfa2b(source_path, output_path)
+            return _image_to_pdfa2b(source_path, output_path, deadline)
 
         elif file_ext == '.udf':
              # UDF → PDF dönüşümü (UDF Converter)
              TechnicalLogger.log("INFO", f"UDF → PDF dönüşümü başlatılıyor: {source_path}")
-             return _udf_to_pdfa2b(source_path, output_path)
+             return _udf_to_pdfa2b(source_path, output_path, deadline)
 
         else:
             raise ValueError(f"Desteklenmeyen format: {file_ext}")
 
+    except ConversionBusyError:
+        # Faz 5-A (5.2): "sistem dolu" bir dönüşüm hatası DEĞİLDİR — aşağıdaki
+        # sarmalayıcılara (fallback / RuntimeError) yakalanmadan çağırana gider.
+        raise
     except UnicodeDecodeError as e:
         # ValueError'ın alt sınıfı — aşağıdaki bilinçli ValueError dalına takılıp
         # PDF fallback'ini atlamasın (2026-07-13 prod arızası)
@@ -114,17 +132,18 @@ def convert_to_pdfa2b(source_path: str) -> str:
 
 
 def _gs_timeout() -> int:
-    """GhostScript zaman bütçesi, saniye (env: GS_TIMEOUT_SECONDS).
+    """GhostScript zaman tavanı, saniye — evi config/settings.py
+    (env: GS_TIMEOUT_SECONDS, Faz 5-A; bozuk değerde varsayılana düşme
+    toleransı artık settings katmanında).
 
     nginx katmanları (host + konteyner) /confirm için 300s'e izin veriyor;
-    varsayılan 240s, kalan pay SharePoint arşiv yüklemesine bırakılır."""
-    try:
-        return int(os.getenv("GS_TIMEOUT_SECONDS", "240"))
-    except ValueError:
-        return 240
+    varsayılan 240s. Bütçeli yolda (plan 5.2) efektif değer kalan bütçeyle
+    ayrıca kırpılır. Çağrı anında okunur: testler settings attribute'unu
+    monkeypatch'leyebilir."""
+    return settings.gs_timeout_seconds
 
 
-def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
+def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str, deadline: Optional[float] = None) -> str:
     """
     GhostScript ile PDF → PDF/A-2b dönüşümü.
     
@@ -153,7 +172,10 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
         source_pdf
     ]
     
-    gs_timeout = _gs_timeout()
+    # Faz 5-A (5.2): tavan ile kalan istek bütçesinin küçüğü (deadline=None →
+    # tavan aynen). Bütçe LO/semafor beklemesinde eridiyse GS kısa timeout'la
+    # düşer → çağıran zincir mevcut hata yoluna (fallback / pending) gider.
+    gs_timeout = _clip_timeout(_gs_timeout(), deadline)
     try:
         step_start = time.perf_counter()
         result = subprocess.run(
@@ -180,11 +202,11 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
 
     except subprocess.TimeoutExpired:
         # Faz 3-F: deneme-düzeyi WARNING — nihai ERROR akış sahibinde
-        TechnicalLogger.log("WARNING", f"GhostScript timeout ({gs_timeout}s aşıldı)")
-        raise Exception(f"PDF/A-2b dönüşümü timeout ({gs_timeout}s)") from None
+        TechnicalLogger.log("WARNING", f"GhostScript timeout ({gs_timeout:.0f}s aşıldı)")
+        raise Exception(f"PDF/A-2b dönüşümü timeout ({gs_timeout:.0f}s)") from None
 
 
-def _office_to_pdfa2b(source_office: str, output_pdf: str) -> str:
+def _office_to_pdfa2b(source_office: str, output_pdf: str, deadline: Optional[float] = None) -> str:
     """
     LibreOffice ile Word/Excel → PDF → PDF/A-2b dönüşümü.
 
@@ -195,12 +217,12 @@ def _office_to_pdfa2b(source_office: str, output_pdf: str) -> str:
     Returns:
         Dönüştürülmüş PDF/A-2b dosya yolu
     """
-    intermediate_pdf = office_to_pdf(source_office)
+    intermediate_pdf = office_to_pdf(source_office, deadline=deadline)
     TechnicalLogger.log("INFO", "Office → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
-    return _pdfa_or_intermediate(intermediate_pdf, output_pdf)
+    return _pdfa_or_intermediate(intermediate_pdf, output_pdf, deadline)
 
 
-def _image_to_pdfa2b(source_image: str, output_pdf: str) -> str:
+def _image_to_pdfa2b(source_image: str, output_pdf: str, deadline: Optional[float] = None) -> str:
     """
     Pillow ile görüntü (TIFF/JPG/PNG) → PDF → PDF/A-2b dönüşümü.
 
@@ -211,18 +233,20 @@ def _image_to_pdfa2b(source_image: str, output_pdf: str) -> str:
     Returns:
         Dönüştürülmüş PDF/A-2b dosya yolu
     """
-    intermediate_pdf = image_to_pdf(source_image)
+    intermediate_pdf = image_to_pdf(source_image, deadline=deadline)
     TechnicalLogger.log("INFO", "Görüntü → PDF tamamlandı, PDF/A-2b'ye dönüştürülüyor...")
-    return _pdfa_or_intermediate(intermediate_pdf, output_pdf)
+    return _pdfa_or_intermediate(intermediate_pdf, output_pdf, deadline)
 
 
-def _pdfa_or_intermediate(intermediate_pdf: str, output_pdf: str) -> str:
+def _pdfa_or_intermediate(intermediate_pdf: str, output_pdf: str, deadline: Optional[float] = None) -> str:
     """Ara PDF'i PDF/A-2b'ye dönüştürür; GS başarısız olursa ara PDF ile devam eder.
 
     Office/görüntü kaynaklarında elimizde zaten geçerli bir PDF var — PDF/A adımı
-    çökse bile kullanıcıya hata dönmek yerine o PDF arşivlenir (son çare fallback)."""
+    çökse bile kullanıcıya hata dönmek yerine o PDF arşivlenir (son çare fallback).
+    Bütçeli yolda (5.2) GS payı kalan bütçeye kırpılmıştır; bütçe biterse de aynı
+    fallback işler — belge normal PDF olarak arşivlenir, istek 504'e sürüklenmez."""
     try:
-        result = _pdf_to_pdfa2b(intermediate_pdf, output_pdf)
+        result = _pdf_to_pdfa2b(intermediate_pdf, output_pdf, deadline)
     except Exception as e:
         TechnicalLogger.log("WARNING", f"PDF/A-2b adımı başarısız ({e}), ara PDF kullanılıyor (fallback)")
         return intermediate_pdf
@@ -231,7 +255,7 @@ def _pdfa_or_intermediate(intermediate_pdf: str, output_pdf: str) -> str:
     return result
 
 
-def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
+def _udf_to_pdfa2b(source_udf: str, output_pdf: str, deadline: Optional[float] = None) -> str:
     """
     UDF → PDF dönüşümü (GhostScript atlanır, ReportLab çıktısı direkt kullanılır).
     GhostScript PDF/A-2b modunda ICC profili olmadan geçersiz dosya üretebilir.
@@ -239,7 +263,7 @@ def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
     try:
         from udf_converter import convert_udf_to_pdf
         TechnicalLogger.log("INFO", f"UDF → PDF dönüştürülüyor: {source_udf}")
-        _, img_warnings = convert_udf_to_pdf(source_udf, output_pdf)
+        _, img_warnings = convert_udf_to_pdf(source_udf, output_pdf, deadline=deadline)
         if img_warnings:
             TechnicalLogger.log("WARNING", f"UDF görsel uyarıları ({len(img_warnings)}): {'; '.join(img_warnings)}")
         if not os.path.exists(output_pdf):
@@ -250,6 +274,9 @@ def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
         # Faz 3-F: deneme-düzeyi WARNING — nihai ERROR akış sahibinde
         # (gece job'ı MAX'ta / pipeline katman-arızasında)
         TechnicalLogger.log("WARNING", "UDF Converter modülü bulunamadı!")
+        raise
+    except ConversionBusyError:
+        # "Sistem dolu" dönüşüm hatası değildir — yanıltıcı log'suz yukarı taşı
         raise
     except Exception as e:
         TechnicalLogger.log("WARNING", f"UDF → PDF hatası: {e}")

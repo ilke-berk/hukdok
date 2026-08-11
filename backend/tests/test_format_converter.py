@@ -213,7 +213,7 @@ class TestConvertToPdfa2bDispatch:
         _make_tiff(str(src), pages=2)
 
         # GhostScript adımını kopyalamayla taklit et — ara PDF çıktıya taşınır
-        def _fake_gs(s, o):
+        def _fake_gs(s, o, deadline=None):
             shutil.copy(s, o)
             return o
 
@@ -230,7 +230,7 @@ class TestConvertToPdfa2bDispatch:
         src = tmp_path / "bozuk.xlsx"
         src.write_bytes(b"PK\x03\x04 bozuk")
 
-        def _boom(s, o=None):
+        def _boom(s, o=None, deadline=None):
             raise RuntimeError("LibreOffice dönüşüm hatası")
 
         monkeypatch.setattr(pc, "office_to_pdf", _boom)
@@ -242,7 +242,7 @@ class TestConvertToPdfa2bDispatch:
         src = tmp_path / "bozuk.tif"
         src.write_bytes(b"II*\x00 bozuk")
 
-        def _boom(s, o=None):
+        def _boom(s, o=None, deadline=None):
             raise RuntimeError("Görüntü dönüşüm hatası")
 
         monkeypatch.setattr(pc, "image_to_pdf", _boom)
@@ -262,7 +262,7 @@ class TestConvertToPdfa2bDispatch:
         src = tmp_path / "buyuk_tarama.pdf"
         src.write_bytes(b"%PDF-1.4 sahte")
 
-        def _boom(s, o):
+        def _boom(s, o, deadline=None):
             raise Exception("PDF/A-2b dönüşümü timeout (240s)")
 
         monkeypatch.setattr(pc, "_pdf_to_pdfa2b", _boom)
@@ -286,18 +286,32 @@ class TestConvertToPdfa2bDispatch:
             os.remove(result)
 
 
-class TestGsTimeoutEnv:
-    def test_default_240(self, monkeypatch):
+class TestGsTimeout:
+    """Faz 5-A: GS tavanının evi config/settings.py — env boot'ta bir kez okunur.
+
+    Eski testler env'i çağrı anında değiştiriyordu; yeni sözleşmede env
+    plumbing'i taze Settings() örneğiyle, çalışma zamanı patch'i settings
+    attribute'uyla doğrulanır (bozuk env toleransı settings katmanında).
+    """
+
+    def test_default_240(self):
         import pdf.pdf_converter as pc
-        monkeypatch.delenv("GS_TIMEOUT_SECONDS", raising=False)
         assert pc._gs_timeout() == 240
 
-    def test_env_override(self, monkeypatch):
+    def test_reads_live_settings_attribute(self, monkeypatch):
         import pdf.pdf_converter as pc
-        monkeypatch.setenv("GS_TIMEOUT_SECONDS", "90")
+        from config.settings import settings
+        monkeypatch.setattr(settings, "gs_timeout_seconds", 90)
         assert pc._gs_timeout() == 90
 
+    def test_env_override_via_fresh_settings(self, monkeypatch):
+        from config.settings import Settings
+        monkeypatch.setenv("GS_TIMEOUT_SECONDS", "90")
+        assert Settings().gs_timeout_seconds == 90
+
     def test_invalid_env_falls_back_to_default(self, monkeypatch):
-        import pdf.pdf_converter as pc
+        # Eski _gs_timeout ValueError-fallback sözleşmesi settings'e taşındı:
+        # bozuk değer uygulamayı düşürmez, varsayılana düşer.
+        from config.settings import Settings
         monkeypatch.setenv("GS_TIMEOUT_SECONDS", "hizli")
-        assert pc._gs_timeout() == 240
+        assert Settings().gs_timeout_seconds == 240

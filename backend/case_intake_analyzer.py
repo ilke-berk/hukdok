@@ -29,6 +29,7 @@ from google.genai import types as genai_types
 
 import analyzer
 import gemini_client
+from config.settings import settings
 from managers.log_manager import TechnicalLogger
 from party_check import normalize_party_key
 from prompts import (
@@ -418,12 +419,17 @@ async def analyze_intake_file_generator(
         extracted_text = None
         t_text = time.perf_counter()
         try:
+            # Tavanın evi config/settings.py (env: PDF_PARSE_TIMEOUT_SECONDS, Faz 5-A)
             extracted_text = await asyncio.wait_for(
                 loop.run_in_executor(None, _extract_digital_text, file_path),
-                timeout=60.0,
+                timeout=settings.pdf_parse_timeout_seconds,
             )
         except asyncio.TimeoutError:
-            TechnicalLogger.log("WARNING", f"[INTAKE] PDF metin çıkarma timeout (60s): {file_path}")
+            TechnicalLogger.log(
+                "WARNING",
+                f"[INTAKE] PDF metin çıkarma timeout "
+                f"({settings.pdf_parse_timeout_seconds:.0f}s): {file_path}",
+            )
         except ValueError as e:
             # pdf_utils dosyayı reddetti (bozuk/şifreli) — /process ile tutarlı: fatal
             TechnicalLogger.log("ERROR", f"[INTAKE] PDF reddedildi: {e}")

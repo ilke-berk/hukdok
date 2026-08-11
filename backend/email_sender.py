@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import gemini_client
+from config.settings import settings
 from gemini_client import get_client as get_gemini_client
 from google.genai import errors as genai_errors
 from sharepoint.auth_graph import get_graph_token
@@ -25,6 +26,13 @@ logger = logging.getLogger("EmailSender")
 
 # Graph API endpoint
 GRAPH = "https://graph.microsoft.com/v1.0"
+
+# Ek limitlerinin evi config/settings.py (env: EMAIL_MAX_SINGLE_MB /
+# EMAIL_MAX_TOTAL_MB, Faz 5-A). Gerekçe 0-C: Graph /sendMail istek gövdesini
+# ~4 MB'ta keser (base64 şişmesi dahil) — varsayılan 3 MB. Modül sabiti
+# alias'tır; limiti aşan ek e-postaya girmez, gövdeye arşiv referansı yazılır.
+MAX_SINGLE_MB = settings.email_max_single_mb
+MAX_TOTAL_MB = settings.email_max_total_mb
 
 
 def _load_env():
@@ -138,12 +146,7 @@ def send_document_email(
         # 5. Token al
         token = get_graph_token()
 
-        # 6. Ekleri hazırla — Graph /sendMail istek gövdesini ~4 MB'ta keser
-        # (base64 şişmesi dahil); önceki 50 MB limiti garantili 413 üretiyordu.
-        # Limiti aşan ek e-postaya girmez, gövdeye arşiv referansı yazılır.
-        MAX_SINGLE_MB = 3
-        MAX_TOTAL_MB = 3
-
+        # 6. Ekleri hazırla — limitler modül sabitlerinde (evi config/settings.py).
         islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
         site_url = os.getenv("SHAREPOINT_SITE_URL", "").strip()
         arsiv_ref = f"{site_url} → {islenmis_folder}" if site_url else f"SharePoint arşivi → {islenmis_folder}"

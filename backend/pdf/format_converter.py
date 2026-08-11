@@ -14,12 +14,15 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional
 
 import fitz
 from PIL import Image, ImageSequence
+
+from config.settings import settings
 
 try:
     from managers.log_manager import TechnicalLogger
@@ -41,7 +44,8 @@ MAX_IMAGE_PIXELS = 89478485
 MAX_IMAGE_WIDTH = 10000
 MAX_IMAGE_HEIGHT = 10000
 
-LIBREOFFICE_TIMEOUT = 120
+# Evi config/settings.py (env: LIBREOFFICE_TIMEOUT, Faz 5-A); alias korunur.
+LIBREOFFICE_TIMEOUT = settings.libreoffice_timeout_seconds
 
 # Aynı anda en fazla 2 soffice süreci — her biri ~200MB RAM tüketebilir
 _office_semaphore = threading.Semaphore(2)
@@ -49,6 +53,51 @@ _office_semaphore = threading.Semaphore(2)
 # Görüntü dönüşümü tek tek: eşzamanlı dev taramalar ana süreçte GB mertebesinde
 # tepe tahsis yapıp glibc arena'larında kalıcı RSS bırakıyor (2026-07-29 OOM)
 _image_semaphore = threading.Semaphore(1)
+
+
+class ConversionBusyError(Exception):
+    """Dönüşüm semaforu bütçeli yolda zamanında alınamadı (Faz 5-A, plan 5.2).
+
+    RuntimeError DEĞİL bilinçli: "dönüşüm başarısız" (belge sorunu →
+    conversion_pending katmanı) ile "sistem dolu" (istek sorunu → 503,
+    kullanıcı birkaç dakika sonra tekrar dener) ayrı akışlardır; generic
+    RuntimeError/Exception sarmalayıcıları bu tipi yutmamalıdır.
+    """
+
+
+def acquire_conversion_slot(semaphore, deadline: Optional[float], label: str) -> None:
+    """Dönüşüm semaforunu alır; bütçeli yolda bekleme tavanlıdır (plan 5.2).
+
+    deadline None → bloklayan acquire (bugüne kadarki davranış: gece retry
+    job'ı ve /process normalizasyonu istek bütçesine bağlanmaz). deadline
+    (time.monotonic tabanlı) verildiyse bekleme, acquire tavanı ile kalan
+    bütçenin küçüğüyle sınırlanır; dolarsa ConversionBusyError.
+    """
+    if deadline is None:
+        semaphore.acquire()
+        return
+    wait_cap = min(
+        settings.conversion_acquire_timeout_seconds,
+        max(deadline - time.monotonic(), 0.0),
+    )
+    if wait_cap <= 0 or not semaphore.acquire(timeout=wait_cap):
+        TechnicalLogger.log(
+            "WARNING",
+            f"Dönüşüm kuyruğu dolu ({label}) — {wait_cap:.0f} sn içinde slot açılmadı",
+        )
+        raise ConversionBusyError(label)
+
+
+def _clip_timeout(base_seconds: float, deadline: Optional[float], floor: float = 1.0) -> float:
+    """Alt-bileşen timeout'u: kendi tavanı ile kalan bütçenin küçüğü (≥ floor).
+
+    deadline None → tavan aynen (bütçesiz yol). floor, subprocess'e 0/negatif
+    timeout gitmesin diye — bütçe fiilen bitmişse zaten anında TimeoutExpired
+    ile dönüşüm-hatası yoluna (PDF fallback / conversion_pending) düşülür.
+    """
+    if deadline is None:
+        return base_seconds
+    return max(min(base_seconds, deadline - time.monotonic()), floor)
 
 
 def ensure_pdf(source_path: str, output_path: Optional[str] = None) -> str:
@@ -123,7 +172,11 @@ def _merge_single_page_pdfs(page_paths: List[str], output_path: str) -> None:
         merged.close()
 
 
-def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
+def image_to_pdf(
+    source_path: str,
+    output_path: Optional[str] = None,
+    deadline: Optional[float] = None,
+) -> str:
     """
     Görüntüyü (çok sayfalı TIFF dahil) PDF'e çevirir (Pillow).
 
@@ -131,11 +184,15 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     birleştirilir — tüm kareleri aynı anda bellekte tutmak çok sayfalı
     taramalarda GB mertebesine çıkıyordu (2026-07-29 OOM kök nedeni).
 
+    deadline (time.monotonic tabanlı, Faz 5-A): verilirse semafor beklemesi
+    tavanlıdır; None → bloklayan acquire (bütçesiz yollar, eski davranış).
+
     Returns:
         Üretilen PDF'in yolu
 
     Raises:
         RuntimeError: Görüntü açılamaz veya PDF üretilemezse
+        ConversionBusyError: Bütçeli yolda dönüşüm kuyruğu doluysa
     """
     if output_path is None:
         output_path = os.path.join(
@@ -144,40 +201,45 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
         )
 
     page_paths: List[str] = []
+    # Faz 5-A (5.2): acquire try'ın DIŞINDA — ConversionBusyError aşağıdaki
+    # generic RuntimeError sarmalayıcısına yakalanmadan çağırana taşınmalı.
+    acquire_conversion_slot(_image_semaphore, deadline, "görüntü dönüşümü")
     try:
-        with _image_semaphore, Image.open(source_path) as img:
-            page_count = getattr(img, "n_frames", 1)
-            if page_count <= 1:
-                frame = _normalize_frame(img)
-                try:
-                    frame.save(output_path, "PDF")
-                finally:
-                    frame.close()
-                page_count = 1
-            else:
-                for raw_frame in ImageSequence.Iterator(img):
-                    frame = _normalize_frame(raw_frame)
-                    page_path = os.path.join(
-                        tempfile.gettempdir(),
-                        f"imgpg_{os.getpid()}_{uuid.uuid4().hex[:8]}.pdf",
-                    )
+        try:
+            with Image.open(source_path) as img:
+                page_count = getattr(img, "n_frames", 1)
+                if page_count <= 1:
+                    frame = _normalize_frame(img)
                     try:
-                        frame.save(page_path, "PDF")
+                        frame.save(output_path, "PDF")
                     finally:
                         frame.close()
-                    page_paths.append(page_path)
-                _merge_single_page_pdfs(page_paths, output_path)
-    except RuntimeError:
-        raise
-    except Exception as e:
-        # Faz 3-F: deneme-düzeyi WARNING — dönüşüm hatası belge için nihai değil
-        # (arşiv yolunda conversion_pending katmanı + gece retry; analiz yolunda
-        # nihai ERROR'u stream/intake handler'ları üretir).
-        TechnicalLogger.log("WARNING", f"Görüntü → PDF hatası: {e}")
-        raise RuntimeError(
-            "Görüntü dosyası PDF'e dönüştürülemedi. Dosya bozuk veya desteklenmeyen bir format olabilir."
-        ) from e
+                    page_count = 1
+                else:
+                    for raw_frame in ImageSequence.Iterator(img):
+                        frame = _normalize_frame(raw_frame)
+                        page_path = os.path.join(
+                            tempfile.gettempdir(),
+                            f"imgpg_{os.getpid()}_{uuid.uuid4().hex[:8]}.pdf",
+                        )
+                        try:
+                            frame.save(page_path, "PDF")
+                        finally:
+                            frame.close()
+                        page_paths.append(page_path)
+                    _merge_single_page_pdfs(page_paths, output_path)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            # Faz 3-F: deneme-düzeyi WARNING — dönüşüm hatası belge için nihai değil
+            # (arşiv yolunda conversion_pending katmanı + gece retry; analiz yolunda
+            # nihai ERROR'u stream/intake handler'ları üretir).
+            TechnicalLogger.log("WARNING", f"Görüntü → PDF hatası: {e}")
+            raise RuntimeError(
+                "Görüntü dosyası PDF'e dönüştürülemedi. Dosya bozuk veya desteklenmeyen bir format olabilir."
+            ) from e
     finally:
+        _image_semaphore.release()
         for page_path in page_paths:
             try:
                 os.remove(page_path)
@@ -191,9 +253,16 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     return output_path
 
 
-def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
+def office_to_pdf(
+    source_path: str,
+    output_path: Optional[str] = None,
+    deadline: Optional[float] = None,
+) -> str:
     """
     Word/Excel dosyasını LibreOffice headless ile PDF'e çevirir.
+
+    deadline (time.monotonic tabanlı, Faz 5-A): verilirse semafor beklemesi
+    tavanlı, LO alt-süreç timeout'u kalan bütçeyle kırpılır; None → eski davranış.
 
     Returns:
         Üretilen PDF'in yolu
@@ -201,6 +270,7 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     Raises:
         FileNotFoundError: LibreOffice kurulu değilse
         RuntimeError: Dönüşüm başarısız veya timeout olursa
+        ConversionBusyError: Bütçeli yolda dönüşüm kuyruğu doluysa
     """
     ext = Path(source_path).suffix.lower()
     export_filter = "calc_pdf_Export" if ext in (".xlsx", ".xls") else "writer_pdf_Export"
@@ -208,7 +278,7 @@ def office_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     if ext in (".xlsx", ".xls") and os.getenv("EXCEL_PDF_SINGLE_PAGE_SHEETS") == "1":
         # Geniş sayfaları tek PDF sayfasına sığdırır (LibreOffice >= 7.2)
         convert_target += ':{"SinglePageSheets":{"type":"boolean","value":"true"}}'
-    return _soffice_to_pdf(source_path, convert_target, output_path)
+    return _soffice_to_pdf(source_path, convert_target, output_path, deadline=deadline)
 
 
 def html_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
@@ -231,7 +301,12 @@ def html_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     return _soffice_to_pdf(source_path, "pdf:writer_web_pdf_Export", output_path)
 
 
-def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional[str] = None) -> str:
+def _soffice_to_pdf(
+    source_path: str,
+    convert_target: str,
+    output_path: Optional[str] = None,
+    deadline: Optional[float] = None,
+) -> str:
     """Ortak soffice hattı: benzersiz profil + outdir, semafor, grup kill."""
     lo_executable = find_libreoffice()
     if not lo_executable:
@@ -251,8 +326,13 @@ def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional
         source_path,
     ]
 
+    # Faz 5-A (5.2): LO alt-süreç timeout'u tavan ile kalan bütçenin küçüğü.
+    # Efektif değer semafor beklemesinden SONRA hesaplanır (bekleme de bütçeden).
+    lo_timeout = LIBREOFFICE_TIMEOUT
     try:
-        with _office_semaphore:
+        acquire_conversion_slot(_office_semaphore, deadline, "Office dönüşümü")
+        try:
+            lo_timeout = _clip_timeout(LIBREOFFICE_TIMEOUT, deadline)
             # soffice bir wrapper script: timeout'ta yalnız wrapper'ı öldürmek
             # soffice.bin'i yetim bırakır (~200 MB). Yeni oturum + grup kill şart.
             popen_kwargs = {"start_new_session": True} if os.name == "posix" else {}
@@ -268,7 +348,7 @@ def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional
                 **popen_kwargs,
             )
             try:
-                lo_stdout, lo_stderr = proc.communicate(timeout=LIBREOFFICE_TIMEOUT)
+                lo_stdout, lo_stderr = proc.communicate(timeout=lo_timeout)
             except subprocess.TimeoutExpired:
                 if os.name == "posix":
                     try:
@@ -279,6 +359,8 @@ def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional
                     proc.kill()
                 proc.communicate()
                 raise
+        finally:
+            _office_semaphore.release()
 
         produced_pdf = os.path.join(work_dir, Path(source_path).stem + ".pdf")
         if not os.path.exists(produced_pdf):
@@ -298,7 +380,7 @@ def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional
 
     except subprocess.TimeoutExpired:
         # Faz 3-F: deneme-düzeyi WARNING (yukarıdaki görüntü dalıyla aynı gerekçe)
-        TechnicalLogger.log("WARNING", f"LibreOffice timeout ({LIBREOFFICE_TIMEOUT}s aşıldı): {source_path}")
+        TechnicalLogger.log("WARNING", f"LibreOffice timeout ({lo_timeout:.0f}s aşıldı): {source_path}")
         raise RuntimeError("LibreOffice → PDF dönüşümü timeout") from None
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

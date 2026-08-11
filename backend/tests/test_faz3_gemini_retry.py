@@ -227,9 +227,17 @@ def test_deadline_budget_stops_retries(monkeypatch, no_sleep):
 
 
 def test_deadline_budget_stays_under_nginx_window():
-    # Bütçe + tek deneme HTTP tavanı, container nginx 300 sn'nin altında kalmalı
-    worst_case = analyzer.GEMINI_RETRY_DEADLINE_SECONDS + gemini_client.GEMINI_HTTP_TIMEOUT_MS / 1000
-    assert worst_case < 300
+    # Bütçe + tek deneme HTTP tavanı, container nginx 300 sn'nin altında kalmalı.
+    # Faz 5-A: değerlerin evi config/settings.py — bekçi settings üzerinden okur
+    # ve modül alias'larının settings'le eşzamanlı kaldığını da doğrular.
+    from config.settings import settings
+
+    assert analyzer.GEMINI_RETRY_DEADLINE_SECONDS == settings.gemini_retry_deadline_seconds
+    assert gemini_client.GEMINI_HTTP_TIMEOUT_MS == settings.gemini_http_timeout_ms
+    worst_case = (
+        settings.gemini_retry_deadline_seconds + settings.gemini_http_timeout_ms / 1000
+    )
+    assert worst_case < settings.request_time_budget_seconds == 300
 
 
 # ── Devre kesici entegrasyonu ────────────────────────────────────────────────

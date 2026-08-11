@@ -769,13 +769,24 @@ class UDFConverter:
 _convert_semaphore = Semaphore(1)
 
 
-def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tuple:
-    """Wrapper function for synchronous conversion. Returns (output_path, image_warnings)."""
+def convert_udf_to_pdf(
+    udf_path: str, output_path: Optional[str] = None, deadline: Optional[float] = None
+) -> tuple:
+    """Wrapper function for synchronous conversion. Returns (output_path, image_warnings).
+
+    deadline (time.monotonic tabanlı, Faz 5-A): verilirse semafor beklemesi
+    tavanlıdır (dolarsa ConversionBusyError); None → bloklayan acquire (eski davranış).
+    """
+    # Lazy import: modül CLI/standalone da kullanılıyor, app bağımlılığı
+    # yalnız çağrı anında yüklensin (TechnicalLogger guard'ıyla aynı ruh).
+    from pdf.format_converter import acquire_conversion_slot
+
     if output_path is None:
         temp = tempfile.gettempdir()
         output_path = os.path.join(temp, f"udf_{uuid.uuid4().hex[:8]}.pdf")
 
-    with _convert_semaphore:
+    acquire_conversion_slot(_convert_semaphore, deadline, "UDF dönüşümü")
+    try:
         converter = UDFConverter(udf_path, output_path)
         try:
             path = converter.convert()
@@ -797,6 +808,8 @@ def convert_udf_to_pdf(udf_path: str, output_path: Optional[str] = None) -> tupl
                 "Belgedeki tablo düzeni sayfaya sığmadı; tablolar basitleştirilmiş "
                 "düzenle (çizgisiz akış) dönüştürüldü."
             )
+    finally:
+        _convert_semaphore.release()
     return path, converter.image_warnings
 
 async def convert_udf_to_pdf_async(udf_path: str, output_path: Optional[str] = None) -> str:

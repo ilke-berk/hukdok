@@ -225,7 +225,7 @@ def _run_convert(monkeypatch, tmp_path, enqueue_returns):
     pdfa = tmp_path / "pdfa.pdf"
     pdfa.write_bytes(b"%PDF-1.4 pdfa")
 
-    monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b", lambda p: str(pdfa))
+    monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b", lambda p, **kw: str(pdfa))
     monkeypatch.setattr(document_pipeline, "save_case_document", lambda **kw: 7)
 
     calls = []

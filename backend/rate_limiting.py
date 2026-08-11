@@ -7,6 +7,8 @@ import etmek döngü yaratırdı (api routes'u import ediyor).
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from config.settings import settings
+
 
 def _rate_limit_key(request):
     """Nginx proxy arkasında gerçek istemci IP'si X-Forwarded-For'dadır; doğrudan
@@ -19,4 +21,5 @@ def _rate_limit_key(request):
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_rate_limit_key, default_limits=["100/minute"])
+# Varsayılan kovanın evi config/settings.py (env: RATE_LIMIT_DEFAULT, Faz 5-A).
+limiter = Limiter(key_func=_rate_limit_key, default_limits=[settings.rate_limit_default])

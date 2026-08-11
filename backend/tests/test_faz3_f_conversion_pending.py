@@ -199,7 +199,7 @@ def _run_convert_with_failure(monkeypatch, tmp_path, conv_exc=None, new_filename
     orijinal = tmp_path / "orijinal.udf"
     orijinal.write_bytes(b"PK\x03\x04 orijinal")
 
-    def boom(path):
+    def boom(path, **kw):
         raise conv_exc or ValueError(".udf dosyası PDF'e dönüştürülemedi (tablo hatası)")
 
     monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b", boom)
@@ -290,7 +290,7 @@ def test_pending_layer_missing_output_also_covered(monkeypatch, tmp_path):
     _use_conv_spool(monkeypatch, tmp_path)
     src = tmp_path / "kaynak.udf"
     src.write_bytes(b"PK\x03\x04")
-    monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b", lambda p: str(tmp_path / "yok.pdf"))
+    monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b", lambda p, **kw: str(tmp_path / "yok.pdf"))
     monkeypatch.setattr(document_pipeline, "save_case_document", lambda **kw: 9)
     monkeypatch.setattr(upload_queue, "enqueue_upload", lambda *a, **k: 1)
 
@@ -331,7 +331,7 @@ def test_pending_layer_doc_save_failure_falls_back_to_500_and_cleans_spool(monke
     orijinal = tmp_path / "orijinal.udf"
     orijinal.write_bytes(b"PK\x03\x04")
     monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b",
-                        lambda p: (_ for _ in ()).throw(ValueError("dönüşüm hatası")))
+                        lambda p, **kw: (_ for _ in ()).throw(ValueError("dönüşüm hatası")))
     monkeypatch.setattr(document_pipeline, "save_case_document", lambda **kw: None)
 
     with pytest.raises(HTTPException) as exc:
@@ -358,7 +358,7 @@ def test_pending_filename_keeps_pdf_when_original_is_pdf(monkeypatch, tmp_path):
     src = tmp_path / "kaynak.pdf"
     src.write_bytes(b"%PDF-1.4")
     monkeypatch.setattr(pdf_converter, "convert_to_pdfa2b",
-                        lambda p: (_ for _ in ()).throw(FileNotFoundError("gs yok")))
+                        lambda p, **kw: (_ for _ in ()).throw(FileNotFoundError("gs yok")))
     saved = []
     monkeypatch.setattr(document_pipeline, "save_case_document",
                         lambda **kw: saved.append(kw) or 5)

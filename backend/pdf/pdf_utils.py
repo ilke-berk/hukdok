@@ -4,10 +4,13 @@ import fitz
 import re
 import logging
 
+from config.settings import settings
+
 # Loglama merkezi: logging_setup.configure_logging (Faz 2-B) — api.py kurar.
 
 
-MAX_PDF_PAGES = 500
+# Evi config/settings.py (env: MAX_PDF_PAGES, Faz 5-A); alias korunur.
+MAX_PDF_PAGES = settings.max_pdf_pages
 
 
 class PdfPageLimitError(ValueError):

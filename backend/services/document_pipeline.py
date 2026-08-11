@@ -17,13 +17,24 @@ from typing import Optional
 
 from fastapi import HTTPException, BackgroundTasks, UploadFile
 
+from config.settings import settings
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
 from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
+from pdf.format_converter import ConversionBusyError
 import models
 
 logger = logging.getLogger(__name__)
+
+# Faz 5-A (plan 5.2): dönüşüm kuyruğu doluyken /confirm'ün 503 yanıt gövdesi.
+# 4-A sözleşmesi: backend JSON detail'leri kullanıcıya gösterilebilir — metin
+# son kullanıcıya hitap eder. 3-D idempotency kapısı release ettiği için aynı
+# process_id'li retry güvenlidir (dosya fallback'i frontend'te hep birlikte gider).
+CONVERSION_BUSY_DETAIL = (
+    "Sistem şu anda meşgul, belgeyi TEKRAR YÜKLEMEYİN — birkaç dakika sonra "
+    "aynı ekrandan tekrar deneyin."
+)
 
 
 def save_case_document(
@@ -449,7 +460,21 @@ def convert_pdfa_and_queue_uploads(
         step_start = perf_time.perf_counter()
         conversion_error: Optional[Exception] = None
         try:
-            pdfa_temp_file = convert_to_pdfa2b(source_path)
+            # Faz 5-A (plan 5.2): dönüşüm zinciri istek zaman bütçesinden pay
+            # alır — LO+GS+semafor beklemeleri toplamda bu tavanı aşamaz (nginx
+            # 300 sn penceresi; bekçi testi test_faz5_settings_budget). Her iki
+            # çağıran da istek handler'ıdır (/confirm + intake commit); gece
+            # retry job'ı convert_to_pdfa2b'yi DOĞRUDAN, bütçesiz çağırır.
+            pdfa_temp_file = convert_to_pdfa2b(
+                source_path,
+                time_budget_seconds=settings.confirm_conversion_budget_seconds,
+            )
+        except ConversionBusyError:
+            # Sistem doluluğu belge sorunu değildir: conversion_pending
+            # katmanına DÜŞMEZ, route katmanı 503 "meşgul" döndürür (3-D
+            # idempotency kapısı release eder → aynı process_id ile birkaç
+            # dakika sonraki retry güvenlidir).
+            raise
         except Exception as conv_exc:
             # Dönüşümün TÜM iç yolları tükendi (pdf_converter RuntimeError,
             # udf_converter ValueError, beklenmedik hata) — pending katmanına.
@@ -529,6 +554,10 @@ def convert_pdfa_and_queue_uploads(
         results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
         results["sharepoint_islenmis"] = "Arka Plana Atıldı (PDF/A-2b)"
 
+    except ConversionBusyError:
+        # Faz 5-A (5.2): sistem doluluğu — ERROR'suz yukarı taşınır, route
+        # katmanı 503 CONVERSION_BUSY_DETAIL üretir (WARNING'i semafor attı).
+        raise
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as e:

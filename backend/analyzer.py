@@ -63,6 +63,7 @@ if not GOOGLE_API_KEY:
 import gemini_client
 from gemini_client import get_client as get_gemini_client
 import health  # /healthz Gemini hata sayacı (Faz 2-A)
+from config.settings import settings
 
 # Retry'lar DAHİL toplam süre bütçesi (Faz 3-C). Container nginx
 # proxy_read_timeout 300 sn; /process NDJSON stream'inde retry penceresi
@@ -72,7 +73,9 @@ import health  # /healthz Gemini hata sayacı (Faz 2-A)
 # HTTP timeout'a (120 sn, gemini_client.GEMINI_HTTP_TIMEOUT_MS) kadar
 # sürebilir → toplam ≈ 170 + 120 = 290 sn < 300. (wait_for_files_active'in
 # ayrı 120 sn tavanı kendi yield'inden sonra koşar, bu bütçeye girmez.)
-GEMINI_RETRY_DEADLINE_SECONDS = 170.0
+# Faz 5-A: değerin evi config/settings.py (env: GEMINI_RETRY_DEADLINE_SECONDS);
+# alias korunur, aritmetiğin bekçisi test_faz3_gemini_retry settings'ten okur.
+GEMINI_RETRY_DEADLINE_SECONDS = settings.gemini_retry_deadline_seconds
 
 
 async def _gemini_call_with_retry(gen_config, payload, max_retries: int = 5, stats: Optional[Dict] = None, model: Optional[str] = None):
@@ -483,12 +486,16 @@ async def _step_decide_mode(
     """OCR/TEXT mod kararı. state: needs_ocr, extracted_text, failed."""
     t1 = time.perf_counter()
     try:
+        # Tavanın evi config/settings.py (env: PDF_PARSE_TIMEOUT_SECONDS, Faz 5-A)
         needs_ocr, extracted_text = await asyncio.wait_for(
             loop.run_in_executor(None, is_scanned_pdf, file_path),
-            timeout=60.0,
+            timeout=settings.pdf_parse_timeout_seconds,
         )
     except asyncio.TimeoutError:
-        TechnicalLogger.log("ERROR", f"PDF parse timeout (60s): {file_path}")
+        TechnicalLogger.log(
+            "ERROR",
+            f"PDF parse timeout ({settings.pdf_parse_timeout_seconds:.0f}s): {file_path}",
+        )
         default_data = get_default_json()
         default_data["hash"] = file_hash
         default_data["ozet"] = "PDF ayrıştırma zaman aşımına uğradı. Dosya çok büyük veya bozuk olabilir."

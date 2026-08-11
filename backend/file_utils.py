@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
+from config.settings import settings
 from dependencies import security_logger
 from managers.log_manager import TechnicalLogger
 
@@ -19,8 +20,10 @@ ALLOWED_EXTENSIONS = {
 
 SUPPORTED_FORMATS_LABEL = "PDF, UDF, Word, Excel, TIFF, JPG ve PNG"
 
-# Upload boyut limiti (Faz 4.4'te env'e taşınacak: MAX_UPLOAD_MB)
-MAX_UPLOAD_MB = 50
+# Upload boyut limitinin evi config/settings.py (env: MAX_UPLOAD_MB, Faz 5-A).
+# Modül sabiti ince alias: mevcut from-import'lar ve testlerin monkeypatch
+# noktaları (file_utils.MAX_UPLOAD_BYTES) değişmeden çalışır.
+MAX_UPLOAD_MB = settings.max_upload_mb
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 

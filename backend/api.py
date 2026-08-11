@@ -64,6 +64,7 @@ from starlette.responses import Response
 
 try:
     write_startup_log("Attempting to import modules...")
+    from config.settings import settings
     from managers.config_manager import DynamicConfig
     from managers.log_manager import LogManager, TechnicalLogger
     from routes.processing import refresh_lists_background
@@ -346,13 +347,18 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
                     {"size_mb": content_length / 1024 / 1024},
                 )
                 return Response(
-                    content="Request body too large. Maximum: 50MB",
+                    content=f"Request body too large. Maximum: {self.max_size // (1024 * 1024)}MB",
                     status_code=413,
                 )
         return await call_next(request)
 
 
-app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)
+# Limitin evi config/settings.py (env: REQUEST_SIZE_LIMIT_MB, Faz 5-A);
+# MAX_UPLOAD_MB'den ayrı düğme (multipart ek yükü bağımsız ayarlanabilsin),
+# varsayılan ikisi de 50 → bugünkü davranış aynen.
+app.add_middleware(
+    RequestSizeLimitMiddleware, max_size=settings.request_size_limit_mb * 1024 * 1024
+)
 
 # En dışta (add_middleware LIFO — son eklenen en dış katmandır): 413/429/CORS
 # kısa devreleri dahil her yanıt X-Request-ID taşır ve erişim satırı alır.

@@ -57,6 +57,7 @@ from file_utils import (
     validate_file_type,
 )
 from managers.log_manager import TechnicalLogger
+from pdf.format_converter import ConversionBusyError
 from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache, _owner_id, _touch_owned
 from schemas_intake import (
     CaseIntakeApplyRequest,
@@ -921,6 +922,19 @@ async def _archive_intake_documents(
                 background_tasks, temp_path, pdfa_temp_file, None, DOWNLOAD_CACHE,
                 ham_source_path=ham_source_path,
             )
+        except ConversionBusyError:
+            # Faz 5-A (plan 5.2): dönüşüm kuyruğu dolu — sistem arızası değil,
+            # ERROR üretilmez (WARNING'i semafor attı). Cache girdisi POP
+            # edildiğinden bu belge için retry = dava kartından yeniden yükleme.
+            entry["status"] = "failed"
+            entry["error_ozet"] = (
+                "Sistem şu anda meşgul, belge arşivlenmedi — birkaç dakika sonra "
+                "dava kartından yeniden yükleyin."
+            )
+            safe_remove(pdfa_temp_file)
+            safe_remove(temp_path)
+            if ham_source_path and ham_source_path != temp_path:
+                safe_remove(ham_source_path)
         except Exception as e:
             error_id = str(uuid.uuid4())[:8]
             TechnicalLogger.log(

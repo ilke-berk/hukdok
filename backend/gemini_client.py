@@ -24,9 +24,13 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
+from config.settings import settings
+
 # Hiçbir Gemini çağrısı sonsuza dek asılmamalı: SDK'da varsayılan timeout yok,
 # takılı bir istek /process akışını süresiz bloke ediyordu. Milisaniye cinsinden.
-GEMINI_HTTP_TIMEOUT_MS = 120_000
+# Faz 5-A: evi config/settings.py (env: GEMINI_HTTP_TIMEOUT_MS); alias korunur —
+# 3-C bütçe aritmetiği (170 + 120 = 290 < 300) bekçi testiyle kilitli.
+GEMINI_HTTP_TIMEOUT_MS = settings.gemini_http_timeout_ms
 
 _client: Optional[genai.Client] = None
 _client_key: Optional[str] = None

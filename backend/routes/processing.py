@@ -14,12 +14,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, File, UploadFile, Form
 from fastapi.responses import StreamingResponse, FileResponse
 
+from config.settings import settings
 from dependencies import get_current_user
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
 from managers.ttl_cache import DiskTTLCache
 from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
+from pdf.format_converter import ConversionBusyError
 import models
 from services import confirm_idempotency, document_pipeline
 
@@ -52,8 +54,11 @@ def _cache_dir(env_var: str, default_subdir: str) -> Path:
 # sessizce kaybolurdu). Aynı konteynerdeki worker'lar /tmp'yi paylaştığı
 # için indeksin paylaşılması yeterli; restart sonrası bayat girdi diskte
 # dosya bulamaz → mevcut 404+temizlik yolu zaten ele alıyor.
+# TTL'lerin evi config/settings.py (env: DOWNLOAD_CACHE_TTL_SECONDS /
+# PROCESS_CACHE_TTL_SECONDS, Faz 5-A); varsayılanlar aynen 3600 / 1800.
 DOWNLOAD_CACHE = DiskTTLCache(
-    _cache_dir("DOWNLOAD_CACHE_DIR", "download_cache"), ttl_seconds=3600
+    _cache_dir("DOWNLOAD_CACHE_DIR", "download_cache"),
+    ttl_seconds=settings.download_cache_ttl_seconds,
 )
 
 # PROCESS_CACHE: /process ile /confirm arasında tam PDF'i yaşatır (30 dk TTL).
@@ -62,7 +67,7 @@ DOWNLOAD_CACHE = DiskTTLCache(
 # alanları meta JSON'unda aynen taşınır (sahiplik semantiği değişmedi).
 PROCESS_CACHE = DiskTTLCache(
     _cache_dir("PROCESS_CACHE_DIR", "process_cache"),
-    ttl_seconds=1800,
+    ttl_seconds=settings.process_cache_ttl_seconds,
     adopt_file_fields=("path", "original_path"),
 )
 
@@ -441,13 +446,18 @@ async def analyze_file_endpoint(
                 try:
                     loop = asyncio.get_running_loop()
                     counter = get_counter_manager()
+                    # Tavanın evi config/settings.py (env:
+                    # COUNTER_FETCH_TIMEOUT_SECONDS, Faz 5-A); varsayılan 10 sn.
                     ofis_dosya_no = await asyncio.wait_for(
                         loop.run_in_executor(None, counter.reserve_next_counter),
-                        timeout=10.0,
+                        timeout=settings.counter_fetch_timeout_seconds,
                     )
                     return ofis_dosya_no
                 except asyncio.TimeoutError:
-                    TechnicalLogger.log("ERROR", "SharePoint counter timeout (10s)")
+                    TechnicalLogger.log(
+                        "ERROR",
+                        f"SharePoint counter timeout ({settings.counter_fetch_timeout_seconds:.0f}s)",
+                    )
                     return "TIMEOUT___"
                 except Exception as e:
                     TechnicalLogger.log("ERROR", f"SharePoint counter error: {e}")
@@ -711,33 +721,42 @@ async def confirm_process(
         # Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
         # Executor şart: Ghostscript dönüşümü senkron ve 240 sn'ye kadar sürebilir —
         # event loop'ta koşarsa tüm kullanıcıların istekleri durur (504 kümeleri).
-        pdfa_temp_file, doc_id = await asyncio.get_running_loop().run_in_executor(
-            None,
-            partial(
-                document_pipeline.convert_pdfa_and_queue_uploads,
-                background_tasks=background_tasks,
-                source_path=source_path,
-                ham_filename=ham_filename,
-                ham_source_path=ham_source_path,
-                ham_folder=HAM_FOLDER,
-                islenmis_folder=ISLENMIS_FOLDER,
-                new_filename=new_filename,
-                original_filename=original_filename,
-                belge_turu_kodu=belge_turu_kodu,
-                muvekkiller=muvekkiller,
-                muvekkil_adi=muvekkil_adi,
-                ai_ozet=ai_ozet,
-                linked_case_id=linked_case_id,
-                case_party_id=case_party_id,
-                avukat_kodu=avukat_kodu,
-                esas_no=esas_no,
-                is_test_mode=is_test_mode,
-                user=user,
-                current_user_name=current_user_name,
-                results=results,
-                timings=timings,
-            ),
-        )
+        try:
+            pdfa_temp_file, doc_id = await asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(
+                    document_pipeline.convert_pdfa_and_queue_uploads,
+                    background_tasks=background_tasks,
+                    source_path=source_path,
+                    ham_filename=ham_filename,
+                    ham_source_path=ham_source_path,
+                    ham_folder=HAM_FOLDER,
+                    islenmis_folder=ISLENMIS_FOLDER,
+                    new_filename=new_filename,
+                    original_filename=original_filename,
+                    belge_turu_kodu=belge_turu_kodu,
+                    muvekkiller=muvekkiller,
+                    muvekkil_adi=muvekkil_adi,
+                    ai_ozet=ai_ozet,
+                    linked_case_id=linked_case_id,
+                    case_party_id=case_party_id,
+                    avukat_kodu=avukat_kodu,
+                    esas_no=esas_no,
+                    is_test_mode=is_test_mode,
+                    user=user,
+                    current_user_name=current_user_name,
+                    results=results,
+                    timings=timings,
+                ),
+            )
+        except ConversionBusyError:
+            # Faz 5-A (plan 5.2): dönüşüm kuyruğu dolu → sonsuz bekleyip nginx
+            # 504'üne çarpmak yerine dürüst 503. Belge YARATILMADI → dıştaki
+            # BaseException handler'ı idempotency kaydını release eder, aynı
+            # process_id'li retry (frontend dosya fallback'iyle) güvenlidir.
+            raise HTTPException(
+                status_code=503, detail=document_pipeline.CONVERSION_BUSY_DETAIL
+            ) from None
 
         final_local_path = pdfa_temp_file if (pdfa_temp_file and os.path.exists(pdfa_temp_file)) else source_path
         timings["4_local_save"] = 0.00
