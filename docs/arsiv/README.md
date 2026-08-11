@@ -16,6 +16,12 @@
 Bir iddiayı buradan alıp güncel kabul etme: **koddan doğrula**. Kod ile arşiv çelişirse
 kod haklıdır.
 
+## Alt dizinler
+
+| Yol | İçerik |
+| --- | --- |
+| [`gorevler/`](gorevler/README.md) | Kapanmış gece kuyruğu görev dosyaları (G001–G025) — tanım + oturum raporu. Aynı şerh geçerli: tarihseldir. |
+
 ## Aktif (arşiv olmayan) dokümanlar
 
 | Yol | İçerik |
