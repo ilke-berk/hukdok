@@ -1,8 +1,19 @@
-"""party_check (Tanıdık Sorgu / Çıkar Çatışması) birim testleri — DB'siz."""
+"""party_check (Tanıdık Sorgu / Çıkar Çatışması) birim testleri.
+
+İlk bölüm DB'siz saf birim testleridir. Sonda G017 bölümü iki eklentiyi
+kapsar: hazırlanmış aday satırları (`prepare_candidate_rows`) ve route'un
+süreç-içi aday TTL cache'i (`routes/parties.py`) — cache testleri süreç içi
+sqlite üzerinde GERÇEK sorgu koşar (`routes.parties.SessionLocal` yönlendirilir).
+"""
+from types import SimpleNamespace
+
+import pytest
+
 from party_check import (
     check_parties,
     normalize_person_name,
     normalize_tc,
+    prepare_candidate_rows,
 )
 
 
@@ -253,3 +264,197 @@ def test_dedupe_case_party_rows_same_person():
     ]
     res = check_parties([_q("Ahmet Yılmaz")], [], parties)
     assert len(res[0]["matches"]) == 1
+
+
+# ── G017: hazırlanmış aday satırları ────────────────────────────────────────
+
+# Davranış değişikliği YOK iddiasının testi: aynı senaryolar ham satırlarla ve
+# prepare_candidate_rows'tan geçmiş satırlarla birebir aynı sonucu vermeli.
+_PREPARE_SCENARIOS = [
+    ([_client(name="AHMET YILMAZ")], [], _q("ahmet yılmaz")),
+    ([_client(name="AHMET YILMAZ")], [], _q("Ahmet Yilmas")),
+    ([_client(name="ANADOLU SİGORTA A.Ş.")], [], _q("Anadolu Sigorte A.Ş.")),
+    ([_client(name="AHMET YILMAZ", tc_no="99999999999")], [],
+     _q("Ahmet Yılmaz", tc_no="12345678901")),
+    ([_client(tc_no="12345678901", name="FARKLI İSİM")], [],
+     _q("Ahmet Yılmaz", tc_no="12345678901")),
+    ([_client(name="AHMET YILMAZ")], [_party(name="AHMET YILMAZ", party_type="CLIENT")],
+     _q("Ahmet Yılmaz", party_type="CLIENT")),
+    ([], [_party(case_id=5, name="AHMET YILMAZ"), _party(case_id=5, name="Ahmet Yılmaz")],
+     _q("Ahmet Yılmaz")),
+    ([_client(id=3, name="AHMET YILMAZ")], [_party(case_id=8, name="AHMET YILMAZ", client_id=3)],
+     _q("Ahmet Yılmaz")),
+    ([], [_party(name="Ali Beki")], _q("Ali Veli")),
+]
+
+
+@pytest.mark.parametrize("clients,parties,query", _PREPARE_SCENARIOS)
+def test_prepared_rows_give_identical_results(clients, parties, query):
+    raw = check_parties([query], clients, parties)
+    prepared = check_parties(
+        [query], prepare_candidate_rows(clients), prepare_candidate_rows(parties)
+    )
+    assert prepared == raw
+
+
+def test_prepared_rows_do_not_leak_internal_fields():
+    # `_key`/`_tc` satır içi hazırlık alanları; yanıtta görünmemeli
+    clients = prepare_candidate_rows([_client(name="AHMET YILMAZ")])
+    parties = prepare_candidate_rows([_party(name="AHMET YILMAZ")])
+    res = check_parties([_q("Ahmet Yılmaz")], clients, parties)
+    assert res[0]["matches"]
+    for m in res[0]["matches"]:
+        assert [k for k in m if k.startswith("_")] == []
+
+
+def test_prepare_does_not_mutate_input_rows():
+    rows = [_client(name="AHMET YILMAZ")]
+    snapshot = dict(rows[0])
+    prepared = prepare_candidate_rows(rows)
+    assert rows[0] == snapshot
+    assert prepared[0]["_key"][0] == normalize_person_name("AHMET YILMAZ")
+    assert prepared[0]["_tc"] is None
+
+
+def test_prepare_shares_one_key_per_distinct_name():
+    # Aynı isim onlarca dosyada tekrar ediyor → anahtar isim başına bir kez
+    prepared = prepare_candidate_rows([
+        _party(case_id=1, name="AHMET YILMAZ"),
+        _party(case_id=2, name="AHMET YILMAZ"),
+        _party(case_id=3, name="ZEYNEP DEMİR"),
+    ])
+    assert prepared[0]["_key"] is prepared[1]["_key"]
+    assert prepared[2]["_key"] is not prepared[0]["_key"]
+
+
+def test_normalize_person_name_is_memoized():
+    normalize_person_name.cache_clear()
+    first = normalize_person_name("Dr. Ahmet Yılmaz")
+    hits_before = normalize_person_name.cache_info().hits
+    second = normalize_person_name("Dr. Ahmet Yılmaz")
+    assert first == second
+    assert normalize_person_name.cache_info().hits == hits_before + 1
+
+
+# ── G017: route'un aday TTL cache'i (süreç içi sqlite üzerinde) ──────────────
+
+T1 = "tenant-hanyaloglu"
+T2 = "tenant-lexisbio"
+
+
+@pytest.fixture()
+def parties_db(monkeypatch):
+    """Paylaşılan in-memory sqlite + `routes.parties.SessionLocal` yönlendirmesi.
+
+    Aday cache'i süreç-globaldir → test öncesi ve sonrası sıfırlanır, yoksa bir
+    testin adayları diğerine sızar.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from database import Base
+    import models  # noqa: F401 — Base.metadata dolsun
+    from routes import parties as parties_route
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    maker = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    monkeypatch.setattr(parties_route, "SessionLocal", maker)
+    parties_route.reset_candidate_cache_for_tests()
+    yield SimpleNamespace(sessions=maker, route=parties_route, models=models)
+    parties_route.reset_candidate_cache_for_tests()
+    engine.dispose()
+
+
+def _seed_client(env, name, tenant_id, tc_no=None):
+    db = env.sessions()
+    try:
+        row = env.models.Client(
+            name=name, tenant_id=tenant_id, contact_type="Client", active=True, tc_no=tc_no
+        )
+        db.add(row)
+        db.commit()
+        return row.id
+    finally:
+        db.close()
+
+
+def _seed_case_party(env, name, tenant_id, tracking_no):
+    db = env.sessions()
+    try:
+        case = env.models.Case(tracking_no=tracking_no, tenant_id=tenant_id, status="DERDEST")
+        db.add(case)
+        db.flush()
+        db.add(env.models.CaseParty(
+            case_id=case.id, name=name, role="Davalı", party_type="COUNTER"
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _names(rows):
+    return {r["name"] for r in rows}
+
+
+def test_candidate_rows_are_prepared_and_usable(parties_db):
+    _seed_client(parties_db, "AHMET YILMAZ", T1)
+    _seed_case_party(parties_db, "ZEYNEP DEMİR", T1, "X1.TEST.0001")
+
+    clients, parties = parties_db.route._candidate_rows(T1)
+    assert "_key" in clients[0] and "_tc" in clients[0]
+    assert "_key" in parties[0] and "_tc" in parties[0]
+
+    # Cache'ten gelen satırlarla çatışma tespiti çalışıyor
+    res = check_parties([_q("Ahmet Yilmas", party_type="COUNTER")], clients, parties)
+    assert res[0]["conflict"] is True
+    assert res[0]["matches"][0]["matched_on"] == "name_fuzzy"  # soyisimde 1 harf
+
+
+def test_candidate_cache_serves_repeat_request_from_memory(parties_db):
+    _seed_client(parties_db, "AHMET YILMAZ", T1)
+    clients, _ = parties_db.route._candidate_rows(T1)
+    assert _names(clients) == {"AHMET YILMAZ"}
+
+    # TTL içinde eklenen kayıt BİLİNÇLİ olarak görünmez (invalidasyon yok,
+    # tazelik garantisi TTL'dir) — cache'in gerçekten kullanıldığının kanıtı.
+    _seed_client(parties_db, "ZEYNEP DEMİR", T1)
+    cached, _ = parties_db.route._candidate_rows(T1)
+    assert _names(cached) == {"AHMET YILMAZ"}
+
+    parties_db.route.reset_candidate_cache_for_tests()
+    fresh, _ = parties_db.route._candidate_rows(T1)
+    assert _names(fresh) == {"AHMET YILMAZ", "ZEYNEP DEMİR"}
+
+
+def test_candidate_cache_key_isolates_tenants(parties_db):
+    _seed_client(parties_db, "T1 MÜVEKKİLİ", T1)
+    _seed_client(parties_db, "T2 MÜVEKKİLİ", T2)
+    _seed_client(parties_db, "PAYLAŞILAN CARİ", None)  # legacy NULL havuz
+    _seed_case_party(parties_db, "T1 KARŞI TARAF", T1, "X1.T1.0001")
+    _seed_case_party(parties_db, "T2 KARŞI TARAF", T2, "X1.T2.0001")
+
+    # Dönüşümlü sorgu: tek-girdi politikası (tenant değişince eski indeks
+    # düşer) izolasyonu da tazeliği de bozmamalı.
+    for _ in range(2):
+        clients, parties = parties_db.route._candidate_rows(T1)
+        assert _names(clients) == {"T1 MÜVEKKİLİ", "PAYLAŞILAN CARİ"}
+        assert _names(parties) == {"T1 KARŞI TARAF"}
+
+        clients, parties = parties_db.route._candidate_rows(T2)
+        assert _names(clients) == {"T2 MÜVEKKİLİ", "PAYLAŞILAN CARİ"}
+        assert _names(parties) == {"T2 KARŞI TARAF"}
+
+
+def test_candidate_cache_expires_and_refetches(parties_db):
+    # Negatif TTL: her girdi anında bayat sayılır (saat çözünürlüğüne bağlı
+    # yarış olmadan süre dolumunu test eder).
+    parties_db.route.reset_candidate_cache_for_tests(ttl_seconds=-1)
+    _seed_client(parties_db, "AHMET YILMAZ", T1)
+    assert len(parties_db.route._candidate_rows(T1)[0]) == 1
+
+    _seed_client(parties_db, "ZEYNEP DEMİR", T1)
+    assert len(parties_db.route._candidate_rows(T1)[0]) == 2

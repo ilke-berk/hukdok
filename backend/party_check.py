@@ -23,10 +23,17 @@ conflict=True koşulu (TEK):
   olarak görünmesi bilgi olarak listelenir (matches), conflict sayılmaz
   (2026-08-01 kullanıcı kararı: çıkar çatışması yalnız karşı tarafa bakılır).
   TC eşleşip isim eşleşmeyen kayıtlar da yalnız matches'ta raporlanır.
+
+Hazırlanmış aday satırları (G017): `prepare_candidate_rows` satıra `_key`
+(normalize ad türevleri) ve `_tc` (normalize TC) alanlarını ekler; check_parties
+bunları VARSA kullanır, yoksa satır başına hesaplar. Sonuç her iki durumda
+birebir aynıdır — hazırlık yalnız CPU tasarrufudur (aday cache'i:
+`routes/parties.py`). Bu alanlar yanıta çıkmaz.
 """
 
 import re
 import unicodedata
+from functools import lru_cache
 
 from text_utils import turkish_upper
 from case_matcher import _normalize as _fold_diacritics
@@ -50,13 +57,18 @@ _FUZZY_MIN_LEN = 5
 _NAME_MIN_LEN = 4
 
 
+@lru_cache(maxsize=8192)
 def normalize_person_name(name: str) -> str:
     """Karşılaştırma anahtarı üretir: birleşik işaret temizliği → Türkçe upper
     → diakritik katlama → unvan temizliği → boşluk sadeleştirme.
 
     NFD + combining-strip önemli: bazı kayıtlarda 'i̇' (i + U+0307 birleşik
     nokta) gibi görünmez karakterler var; bunlar temizlenmezse birebir aynı
-    isim exact yerine fuzzy'ye düşer ya da hiç eşleşmez."""
+    isim exact yerine fuzzy'ye düşer ya da hiç eşleşmez.
+
+    Saf fonksiyon (str → str) → memoize edilebilir. lru_cache aynı ismin
+    tekrar tekrar normalize edilmesini keser (bir dava açma oturumunda aynı
+    taraflar birden çok kez sorgulanır); maxsize sınırlı, süresiz büyüme yok."""
     if not name:
         return ""
     cleaned = unicodedata.normalize("NFD", name)
@@ -140,14 +152,23 @@ def _is_corporate(normalized_name: str) -> bool:
     return "A" in tokens and "S" in tokens
 
 
-def _match_name(query_norm: str, candidate_norm: str) -> str | None:
-    """None | "name_exact" | "name_fuzzy"
+def _name_key(normalized_name: str) -> tuple:
+    """Eşleştirmenin satır başına yeniden hesapladığı türevleri bir kez üretir:
+    `(norm, kelimeler, sıralı-kelime anahtarı, kurumsal mı)`.
 
-    Kelime bazlı: kelime sayısı eşit olmalı ve her kelime karşılığıyla ayrı
-    ayrı eşleşmeli. Böylece "ALI VELI" ↔ "ALI BEKI" eşleşmez (ilk isim aynı
-    diye soyisim farkı tolere edilmez), ama "AHMET YILMAS" ↔ "AHMET YILMAZ"
-    (soyisimde 1 harflik yazım hatası) yakalanır.
+    Sıralı anahtar dize olarak tutulur; kelimeler split()'ten geldiği için
+    boşluk içermez → `" ".join(sorted(a)) == " ".join(sorted(b))` ile
+    `sorted(a) == sorted(b)` denktir (davranış korunur, karşılaştırma ucuzlar).
     """
+    tokens = tuple(normalized_name.split())
+    return (normalized_name, tokens, " ".join(sorted(tokens)), _is_corporate(normalized_name))
+
+
+def _match_name_keys(q_key: tuple, c_key: tuple) -> str | None:
+    """`_match_name`in hazırlanmış anahtarlar üzerinde çalışan biçimi."""
+    query_norm, q_tokens, q_sorted, q_corp = q_key
+    candidate_norm, c_tokens, c_sorted, c_corp = c_key
+
     if not query_norm or not candidate_norm:
         return None
     if query_norm == candidate_norm:
@@ -155,14 +176,11 @@ def _match_name(query_norm: str, candidate_norm: str) -> str | None:
     if len(query_norm) < _FUZZY_MIN_LEN:
         return None
 
-    q_tokens = query_norm.split()
-    c_tokens = candidate_norm.split()
-
     # Kelime sırası farklı ama küme aynı ("SOYSAL AHMET" ↔ "AHMET SOYSAL") → exact
-    if len(q_tokens) > 1 and sorted(q_tokens) == sorted(c_tokens):
+    if len(q_tokens) > 1 and q_sorted == c_sorted:
         return "name_exact"
 
-    if _is_corporate(query_norm) or _is_corporate(candidate_norm):
+    if q_corp or c_corp:
         return None
     if len(q_tokens) != len(c_tokens):
         return None
@@ -171,14 +189,90 @@ def _match_name(query_norm: str, candidate_norm: str) -> str | None:
     for qt, ct in zip(q_tokens, c_tokens, strict=True):
         if qt == ct:
             continue
-        # Çok kısa kelimede toleranslı eşleşme güvenilmez
-        if len(qt) < 3 or _levenshtein(qt, ct) > _token_threshold(len(qt)):
+        threshold = _token_threshold(len(qt))
+        # Çok kısa kelimede toleranslı eşleşme güvenilmez. Uzunluk farkı
+        # düzenleme mesafesinin ALT sınırıdır → eşiği aşıyorsa Levenshtein'ı
+        # hiç kurmadan eleriz (aynı sonuç, ölçülen maliyetin büyük kısmı gider).
+        if (
+            len(qt) < 3
+            or abs(len(qt) - len(ct)) > threshold
+            or _levenshtein(qt, ct) > threshold
+        ):
             return None
         used_fuzzy = True
     return "name_fuzzy" if used_fuzzy else "name_exact"
 
 
+def _match_name(query_norm: str, candidate_norm: str) -> str | None:
+    """None | "name_exact" | "name_fuzzy"
+
+    Kelime bazlı: kelime sayısı eşit olmalı ve her kelime karşılığıyla ayrı
+    ayrı eşleşmeli. Böylece "ALI VELI" ↔ "ALI BEKI" eşleşmez (ilk isim aynı
+    diye soyisim farkı tolere edilmez), ama "AHMET YILMAS" ↔ "AHMET YILMAZ"
+    (soyisimde 1 harflik yazım hatası) yakalanır.
+
+    Ucuz erken çıkışlar burada kalır: anahtar kurmaya yalnız gerçekten kelime
+    karşılaştırması gerekince girilir (`services/case_intake.py` bu yolu satır
+    başına çağırıyor).
+    """
+    if not query_norm or not candidate_norm:
+        return None
+    if query_norm == candidate_norm:
+        return "name_exact"
+    if len(query_norm) < _FUZZY_MIN_LEN:
+        return None
+    return _match_name_keys(_name_key(query_norm), _name_key(candidate_norm))
+
+
 _STRENGTH = {"tc_no": "certain", "name_exact": "probable", "name_fuzzy": "possible"}
+
+_UNSET = object()
+
+
+def prepare_candidate_rows(rows: list[dict]) -> list[dict]:
+    """Aday satırlarını karşılaştırmaya hazırlar (yeni liste döner, girdi bozulmaz).
+
+    Her satıra `_key` (bkz. `_name_key`) ve `_tc` (normalize TC) iliştirilir.
+    Aynı isim onlarca dosyada tekrar ettiği için anahtar İSİM BAŞINA bir kez
+    üretilip paylaşılır; dize alanları da yerel havuzda tekilleştirilir —
+    satırlar cache'te KALICI olduğundan (route TTL cache'i) tekrar eden
+    "DERDEST"/"Davalı"/aynı ad kopyaları bellekte tek nesneye iner.
+
+    Hazırlık davranışı değiştirmez: check_parties bu alanlar yoksa aynı işi
+    satır başına yapar (`_row_key`/`_row_tc`).
+    """
+    text_pool: dict[str, str] = {}
+    key_pool: dict[str, tuple] = {}
+    prepared: list[dict] = []
+    for row in rows:
+        item = {}
+        for field, value in row.items():
+            item[field] = text_pool.setdefault(value, value) if isinstance(value, str) else value
+        name = item.get("name") or ""
+        key = key_pool.get(name)
+        if key is None:
+            key = key_pool[name] = _name_key(normalize_person_name(name))
+        item["_key"] = key
+        item["_tc"] = normalize_tc(item.get("tc_no"))
+        prepared.append(item)
+    return prepared
+
+
+def _row_key(row: dict) -> tuple:
+    """Satırın ad anahtarı — hazırlanmışsa cache'ten, değilse anında."""
+    key = row.get("_key")
+    if key is None:
+        return _name_key(normalize_person_name(row.get("name") or ""))
+    return key
+
+
+def _row_tc(row: dict) -> str | None:
+    """Satırın normalize TC'si — hazırlanmışsa cache'ten, değilse anında.
+    (`None` geçerli bir değer olduğu için varlık kontrolü sentinel ile.)"""
+    tc = row.get("_tc", _UNSET)
+    if tc is _UNSET:
+        return normalize_tc(row.get("tc_no"))
+    return tc
 
 
 def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
@@ -188,11 +282,15 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
     party_rows:  [{id, name, tc_no, role, party_type, client_id,
                    case_id, tracking_no, case_subject, case_status}]
     → [{query, conflict, matches}]  (schemas.PartyCheckResult şekli)
+
+    Aday satırları `prepare_candidate_rows`ten geçmişse `_key`/`_tc` alanları
+    kullanılır (hazırlanmamış satırlarla sonuç aynı, yalnız daha yavaş).
     """
     results = []
     for q in queries:
         q_name = (q.get("name") or "").strip()
         q_norm = normalize_person_name(q_name)
+        q_key = _name_key(q_norm)
         q_tc = normalize_tc(q.get("tc_no"))
         q_type = q.get("party_type") or ""
 
@@ -206,14 +304,15 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
 
         # ── Cari kayıtları ──────────────────────────────────────────────
         for c in client_rows:
-            c_tc = normalize_tc(c.get("tc_no"))
-            c_norm = normalize_person_name(c.get("name") or "")
+            c_tc = _row_tc(c)
+            c_key = _row_key(c)
+            c_norm = c_key[0]
 
             matched_on = None
             if q_tc and c_tc and q_tc == c_tc:
                 matched_on = "tc_no"
             else:
-                matched_on = _match_name(q_norm, c_norm)
+                matched_on = _match_name_keys(q_key, c_key)
 
             if not matched_on:
                 continue
@@ -241,6 +340,9 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
                 # Eşleşen kaydın TC'si ekranda gösterilir (kullanıcı talebi;
                 # endpoint auth korumalı, cari seçiminde de TC zaten açık)
                 "tc_no": c.get("tc_no"),
+                # Dedupe anahtarı için taşınan geçici alan — aşağıda pop'lanır,
+                # yanıta çıkmaz (adı yeniden normalize etmemek için).
+                "_norm": c_norm,
             })
 
         # ── Geçmiş dosya tarafları ──────────────────────────────────────
@@ -248,14 +350,15 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
             if exclude_case_id and p.get("case_id") == exclude_case_id:
                 continue
 
-            p_tc = normalize_tc(p.get("tc_no"))
-            p_norm = normalize_person_name(p.get("name") or "")
+            p_tc = _row_tc(p)
+            p_key = _row_key(p)
+            p_norm = p_key[0]
 
             matched_on = None
             if q_tc and p_tc and q_tc == p_tc:
                 matched_on = "tc_no"
             else:
-                matched_on = _match_name(q_norm, p_norm)
+                matched_on = _match_name_keys(q_key, p_key)
 
             if not matched_on:
                 continue
@@ -282,6 +385,7 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
                 "role": p.get("role"),
                 "party_type": p_type,
                 "tc_no": p.get("tc_no"),
+                "_norm": p_norm,  # geçici — dedupe anahtarı, aşağıda pop'lanır
             })
 
         # ── TC verilmiş ve TC'li kayıtla isim eşleşti ama TC eşleşmedi →
@@ -296,11 +400,11 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
                 row_tc = None
                 if m["source"] == "client":
                     row = next((c for c in client_rows if c["id"] == m["client_id"]), None)
-                    row_tc = normalize_tc(row.get("tc_no")) if row else None
+                    row_tc = _row_tc(row) if row else None
                 else:
                     row = next((p for p in party_rows if p.get("case_id") == m["case_id"]
                                 and (p.get("name") or "") == m["name"]), None)
-                    row_tc = normalize_tc(row.get("tc_no")) if row else None
+                    row_tc = _row_tc(row) if row else None
                 if row_tc and row_tc != q_tc:
                     continue
                 cleaned.append(m)
@@ -316,12 +420,13 @@ def check_parties(queries, client_rows, party_rows, exclude_case_id=None):
         seen = set()
         deduped = []
         for m in matches:
+            m_norm = m.pop("_norm")  # geçici alan burada tükenir → yanıt şekli aynı
             if m["source"] == "case_party" and m.get("client_id") in matched_client_ids:
-                key = ("cp", m.get("case_id"), normalize_person_name(m["name"]))
+                key = ("cp", m.get("case_id"), m_norm)
             elif m["source"] == "client":
                 key = ("cl", m.get("client_id"))
             else:
-                key = ("cp", m.get("case_id"), normalize_person_name(m["name"]), m.get("role"))
+                key = ("cp", m.get("case_id"), m_norm, m.get("role"))
             if key in seen:
                 continue
             seen.add(key)
