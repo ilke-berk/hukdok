@@ -3,7 +3,22 @@
 Geri alınması pahalı olan ya da tekrar tekrar sorgulanan kararların gerekçesi burada
 tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 
-**Durum: iskelet.** Mevcut kararların derlenmesi G007 görevinde yapılacak.
+## Kayıtlar
+
+| # | Karar |
+| --- | --- |
+| [001](001-tenant-ortak-havuz.md) | Yeni kayıtlar `tenant_id=NULL`: iki tenant ortak havuzda çalışır |
+| [002](002-ofis-no-isim-blogu-onceligi.md) | Ofis numarası isim bloğu: kategori önceliği, "ilk müvekkil" değil |
+| [003](003-process-cache-disk.md) | PROCESS_CACHE disk destekli, bellekte state yok |
+| [004](004-failed-olay-sozlesmesi.md) | `failed` olay sözleşmesi: terminal olay, etiket uzayı AÇIK |
+| [005](005-upload-outbox-tek-worker.md) | Süreç-tekil arkaplan işleri dosya kilidiyle; refresh thread'i istisna |
+| [006](006-gece-otomasyonu-serit-modeli.md) | Gece otomasyonunda şerit modeli: backend ana dizinde seri |
+| [007](007-logout-taslak-susturmasi.md) | Form taslakları sessionStorage'da; çıkışta yazım bastırılır (KVKK) |
+| [008](008-conversion-pending-ayri-kolon.md) | Dönüşüm durumu ayrı kolonda; gece retry'ı senkron yükler |
+| [009](009-confirm-idempotency-anahtari.md) | `/confirm` idempotency anahtarı `process_id`; kayıt DB'de |
+| [010](010-export-nginxe-acilmaz.md) | `/export` public'e proxy'lenmez: iç ağ + API anahtarı, fail-closed |
+| [011](011-bellek-swap-yasagi.md) | Swap yasak, bellek limitleri repoda, `MALLOC_ARENA_MAX=2` |
+| [012](012-soft-delete-baglar-korunur.md) | Soft-delete: bağlar koparılmaz, `active` alanına dokunulmaz |
 
 ## Dosya biçimi
 
