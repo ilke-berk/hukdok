@@ -19,6 +19,7 @@ tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 | [010](010-export-nginxe-acilmaz.md) | `/export` public'e proxy'lenmez: iç ağ + API anahtarı, fail-closed |
 | [011](011-bellek-swap-yasagi.md) | Swap yasak, bellek limitleri repoda, `MALLOC_ARENA_MAX=2` |
 | [012](012-soft-delete-baglar-korunur.md) | Soft-delete: bağlar koparılmaz, `active` alanına dokunulmaz |
+| [013](013-bagimlilik-yamalama-ve-calisma-zamani.md) | Bağımlılık yamalama sırası, tarihli ignore listesiyle denetim kapısı, `node:24` + `python:3.12` |
 
 ## Dosya biçimi
 

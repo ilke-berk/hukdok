@@ -134,6 +134,40 @@ react-router-dom.
 **A.6 Çalışma zamanı yaşlanması.** `node:20` bugün EOL; `python:3.10` iki ay sonra. Yükseltme
 planı bu fazda **karara** bağlanmalı (uygulama ayrı iş). *(S — karar)*
 
+> **ÖLÇÜM ŞERHİ (G022, 2026-08-11) — A.5 ve A.6 karara bağlandı.**
+> Yukarıdaki iki madde bu tarihte yeniden ölçüldü ve
+> [`docs/kararlar/013-bagimlilik-yamalama-ve-calisma-zamani.md`](../kararlar/013-bagimlilik-yamalama-ve-calisma-zamani.md)
+> ile kapatıldı. **Yukarıdaki metin bilinçli olarak silinmedi**; aşağıdaki düzeltmelerle
+> birlikte okunmalıdır:
+>
+> - **`npm audit` 22/15 doğrulandı**, ama sayı tek başına yanıltıcı: `--omit=dev` ile
+>   **10 açık (4 moderate / 6 high)** kalıyor — 12'si yalnız derleme zincirinde (vite,
+>   esbuild, rollup, eslint), tarayıcı bundle'ında değil.
+> - **`jszip` iddiası çürüdü:** `jszip@3.10.1`'in bugün advisory'si yok. `docx`'i silmenin
+>   getirisi `docx/node_modules/nanoid`. `@xmldom/xmldom` + `underscore` ↔ `mammoth` bağı doğru.
+>   G021 sonrası beklenen: prod **7 paket (4 moderate / 3 high)**, tümü **20 paket (13 high)**.
+> - **Python tarafı "7 pakette 57 kayıt (~43 distinct)" yerine ölçülen: 73 ham / 39 distinct,
+>   7 paket** (Pillow 17, cryptography 7, python-multipart 6, PyJWT 6, requests 1,
+>   python-dotenv 1, pytest 1-dev). Fix sürümü olmayan **tek** kayıt PyJWT `PYSEC-2025-183`
+>   — planın uyardığı tuzak doğrulandı.
+> - **Plan `starlette`'i doğrudan pin sanıyordu; değil.** `requirements.txt` transitif
+>   bağımlılıkları sabitlemiyor (lock yok) → imajdaki sürüm repodan okunamıyor. Yine de kesin:
+>   `fastapi==0.121.3` → `starlette<0.51.0` ve bu aralıktaki **her** sürüm ≥10 kayıt taşıyor;
+>   ilk temiz starlette **1.5.0**, ona ulaşmak **fastapi yükseltmesi** gerektiriyor. Gerçek
+>   prod tabanı bu yüzden 39 değil **en az 49**.
+> - **`node:20` "bugün EOL" değil — 2026-04-30'da EOL oldu**, yani 3,5 ay gecikmedeyiz
+>   (kaynak: nodejs/Release `schedule.json`). `python:3.10` EOL **2026-10-31** (doğrulandı).
+>   Karar: **`node:24`** (Aktif LTS, EOL 2028-04-30) ve **`python:3.12`** (EOL 2028-10-31;
+>   3.13 reddedildi — `psycopg2-binary==2.9.9`'un cp313 tekerleği yok).
+> - **A.5 artık *(S)* değil.** PyJWT'nin tek tüketicisi `auth_verifier.py` ve **sıfır testi
+>   var**; yükseltmesi FAZ B.3 karakterizasyon testinin arkasına kilitlendi. `npm` tarafı ve
+>   python-multipart/Pillow/cryptography/requests/python-dotenv *(S)* olarak kalıyor.
+> - **Kapı tasarımı ADR'de:** `pip-audit` kurulu ortamı denetler (transitif körlüğü lock'suz
+>   kapatır); ignore listesi `backend/audit-ignore.txt`'te gerekçeli ve **tarihli** yaşar,
+>   tarihi geçen satır kapıyı kırmızıya çevirir. Frontend kapısının ön koşulu:
+>   `frontend/Dockerfile:8-9` lock'u kullanmıyor (`npm install`, `package-lock.json`
+>   kurulum anında yok) → CI'ın denetlediği ağaç ile prod'un yayınladığı ağaç aynı değil.
+
 ---
 
 ## 4. FAZ B — Emniyet ağı
