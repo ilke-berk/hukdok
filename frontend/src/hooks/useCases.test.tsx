@@ -9,7 +9,7 @@ vi.mock("@/hooks/useAuthRequest", () => ({
   useAuthRequest: () => ({ authRequest: authRequestMock }),
 }));
 
-import { useCases, CASE_LIST_ERROR, CASE_SEQUENCE_ERROR } from "./useCases";
+import { useCases, CASE_LIST_ERROR, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "./useCases";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -121,5 +121,84 @@ describe("useCases — hata ≠ boş veri (G002)", () => {
     await act(async () => {
       await expect(api().getClientCaseSequence("BİR MÜVEKKİL")).rejects.toThrow(CASE_SEQUENCE_ERROR);
     });
+  });
+
+  // --- G019: mükerrer dava kapısı ---
+
+  it("checkDuplicateCase başarılı yanıtta eşleşmeleri döndürür", async () => {
+    authRequestMock.mockResolvedValue(jsonResponse({
+      matches: [{ id: 1, tracking_no: "X", esas_no: "2024/1", status: "DERDEST", court_match: true }],
+    }));
+
+    let dups: unknown[] | null = null;
+    await act(async () => {
+      dups = await api().checkDuplicateCase("2024/1", "Ankara 1. Asliye Hukuk");
+    });
+
+    expect(dups!).toHaveLength(1);
+  });
+
+  it("checkDuplicateCase eşleşme yoksa boş liste döndürür (hata değil)", async () => {
+    authRequestMock.mockResolvedValue(jsonResponse({ matches: [] }));
+
+    let dups: unknown[] | null = null;
+    await act(async () => {
+      dups = await api().checkDuplicateCase("2024/1");
+    });
+
+    expect(dups!).toEqual([]);
+  });
+
+  it("checkDuplicateCase hatada 'mükerrer yok' DEMEZ, fırlatır", async () => {
+    // Backend eşi (G014) bu durumda 503 + {detail} döner.
+    authRequestMock.mockResolvedValue(jsonResponse({ detail: "kontrol yapılamıyor" }, { ok: false }));
+
+    await act(async () => {
+      await expect(api().checkDuplicateCase("2024/1")).rejects.toThrow(CASE_DUPLICATE_CHECK_ERROR);
+    });
+  });
+
+  it("checkDuplicateCase sözleşme dışı gövdede de fırlatır", async () => {
+    authRequestMock.mockResolvedValue(jsonResponse({}));
+
+    await act(async () => {
+      await expect(api().checkDuplicateCase("2024/1")).rejects.toThrow(CASE_DUPLICATE_CHECK_ERROR);
+    });
+  });
+
+  it("checkDuplicateCase esas no boşsa uca hiç gitmez", async () => {
+    let dups: unknown[] | null = null;
+    await act(async () => {
+      dups = await api().checkDuplicateCase("   ");
+    });
+
+    expect(dups!).toEqual([]);
+    expect(authRequestMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Tüketici deseninin (NewCase.tsx / QuickCaseModal.tsx handleSubmit) kapı
+   * davranışı: kontrol fırlarsa kayıt POST'una HİÇ ulaşılmaz. Bileşenlerin
+   * kendisi bu görevin test kapsamı dışında (yalnız hooks testleri), bu yüzden
+   * desen hook seviyesinde doğrulanır.
+   */
+  it("kontrol fırlarsa kayıt POST'u hiç yapılmaz (tüketici kapısı)", async () => {
+    authRequestMock.mockImplementation(async (url: string) =>
+      url.includes("check-duplicate")
+        ? jsonResponse({ detail: "kontrol yapılamıyor" }, { ok: false })
+        : jsonResponse({ id: 1 }),
+    );
+
+    let saveAttempted = false;
+    await act(async () => {
+      try {
+        await api().checkDuplicateCase("2024/1");
+        saveAttempted = true;
+        await api().saveCase({ tracking_no: "X", status: "DERDEST", parties: [] });
+      } catch { /* kapı: tüketici burada toast basıp return eder */ }
+    });
+
+    expect(saveAttempted).toBe(false);
+    expect(authRequestMock).not.toHaveBeenCalledWith("/api/cases", "POST", expect.anything());
   });
 });

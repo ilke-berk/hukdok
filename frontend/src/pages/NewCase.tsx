@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
-import { useCases, CaseData, DuplicateCaseMatch, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
+import { useCases, CaseData, DuplicateCaseMatch, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "@/hooks/useCases";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -119,6 +120,7 @@ const NewCase = () => {
         caseSubjects, lawyers,
         fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
         requiredCaseFields, requiredPartyRule,
+        configError, requiredFieldsError, refetchConfig, isRefetchingConfig,
     } = useConfig();
 
     const DOSYA_TURLERI = fileTypes.map(f => f.name ?? "");
@@ -469,6 +471,15 @@ const NewCase = () => {
             return;
         }
 
+        // G019: zorunlu alan listesi sunucudan alınamadıysa uyarı kapısı SESSİZCE
+        // açılıyordu (boş liste = "hiçbir alan zorunlu değil"). Kayıt BLOKE.
+        if (caseStatus === "DERDEST" && requiredFieldsError) {
+            toast.error("Kaydedilemez: zorunlu alan listesi doğrulanamadı", {
+                description: `${requiredFieldsError} Sayfa başındaki şeritten "Tekrar dene" ile yenileyin.`,
+            });
+            return;
+        }
+
         // Zorunlu alan uyarısı: eksik alan kaydı ENGELLEMEZ — kullanıcı onaylarsa
         // dosya DERDEST kaydedilir, panelde "eksik" uyarısıyla görünür/filtrelenir.
         if (caseStatus === "DERDEST" && !missingAcknowledged.current) {
@@ -483,7 +494,18 @@ const NewCase = () => {
         // Mükerrer dava kontrolü: aynı esas no'lu aktif kayıt varsa onaysız açma
         // (anket: "aynı dava ara sıra iki kez açılıyor"). Yalnız yeni kayıtta.
         if (!isEditMode && !duplicateAcknowledged.current && formData.esasNo.trim()) {
-            const dups = await checkDuplicateCase(formData.esasNo, formData.court);
+            // G019: kontrol yapılamadıysa "mükerrer yok" varsayılmaz — kayıt BLOKE.
+            // Aksi halde kesintide aynı esas no ikinci kez kaydedilebiliyordu.
+            let dups: DuplicateCaseMatch[];
+            try {
+                dups = await checkDuplicateCase(formData.esasNo, formData.court);
+            } catch (error) {
+                console.error(error);
+                toast.error("Kaydedilemez: mükerrer dava kontrolü yapılamadı", {
+                    description: error instanceof Error ? error.message : CASE_DUPLICATE_CHECK_ERROR,
+                });
+                return;
+            }
             if (dups.length > 0) {
                 setPendingDuplicates(dups);
                 setShowDuplicateConfirm(true);
@@ -675,6 +697,18 @@ const NewCase = () => {
                             </Button>
                         </div>
                     </div>
+                )}
+
+                {/* G019: config listeleri alınamadıysa form BOŞ DEĞİL, HATALI görünür —
+                    boş dropdown'ları "liste boş" sanmasın, zorunlu alan kapısı da
+                    (requiredFieldsError) kaydı bloke eder. */}
+                {(configError || requiredFieldsError) && (
+                    <DataErrorBanner
+                        className="mb-8"
+                        description={`${configError ?? ""}${configError && requiredFieldsError ? " " : ""}${requiredFieldsError ?? ""}`.trim()}
+                        onRetry={() => { void refetchConfig(); }}
+                        isRetrying={isRefetchingConfig}
+                    />
                 )}
 
                 <form onSubmit={handleSubmit}>

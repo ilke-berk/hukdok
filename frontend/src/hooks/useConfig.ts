@@ -39,6 +39,14 @@ export interface RequiredCaseField {
 
 const EMPTY_REQUIRED: RequiredCaseField[] = [];
 
+/**
+ * G019: "hata ≠ boş liste". Bu mesajlar kullanıcıya şerit/toast olarak gösterilir;
+ * boş listeyle karışmasınlar diye ayrı tutulur.
+ */
+export const CONFIG_LIST_ERROR = "Ayar listeleri alınamadı — sunucuya ulaşılamadı.";
+export const REQUIRED_FIELDS_ERROR =
+    "Zorunlu alan listesi alınamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
+
 const CONFIG_KEYS = {
     lawyers: ["config", "lawyers"],
     statuses: ["config", "statuses"],
@@ -61,9 +69,15 @@ export const useConfig = () => {
     const queryClient = useQueryClient();
     const enabled = accounts.length > 0;
 
+    /**
+     * G019: Hata YUTMAZ. Eski sessiz `[]` fallback'i 13 config listesinin
+     * hepsini kesintide "boş liste" gibi gösteriyor, zorunlu alan ve dropdown
+     * kapılarını sessizce açıyordu. Aynı dosyadaki mutasyon yolu (`request`)
+     * zaten fırlatıyordu — tutarsızlık burada kapandı.
+     */
     const fetchJson = async (url: string): Promise<ConfigItem[]> => {
         const res = await authRequest(url, "GET");
-        if (!res?.ok) return [];
+        if (!res?.ok) throw new Error(CONFIG_LIST_ERROR);
         return res.json();
     };
 
@@ -91,30 +105,52 @@ export const useConfig = () => {
 
     const STALE_TIME = 5 * 60 * 1000;
 
+    // apiClient GET'i zaten 3 denemeye kadar tekrarlıyor (Faz 4.1); react-query'nin
+    // ek 3 denemesi hata şeridini saniyelerce geciktirirdi — tekrar kullanıcıya
+    // bırakıldı (useClients ile aynı karar).
+    const queryOpts = { enabled, staleTime: STALE_TIME, retry: false } as const;
+
     // --- QUERIES ---
-    const lawyersQ = useQuery({ queryKey: CONFIG_KEYS.lawyers, queryFn: () => fetchJson("/api/config/lawyers"), enabled, staleTime: STALE_TIME });
-    const statusesQ = useQuery({ queryKey: CONFIG_KEYS.statuses, queryFn: () => fetchJson("/api/config/statuses"), enabled, staleTime: STALE_TIME });
-    const doctypesQ = useQuery({ queryKey: CONFIG_KEYS.doctypes, queryFn: () => fetchJson("/api/config/doctypes"), enabled, staleTime: STALE_TIME });
-    const emailRecipientsQ = useQuery({ queryKey: CONFIG_KEYS.emailRecipients, queryFn: () => fetchJson("/api/config/email_recipients"), enabled, staleTime: STALE_TIME });
-    const caseSubjectsQ = useQuery({ queryKey: CONFIG_KEYS.caseSubjects, queryFn: () => fetchJson("/api/config/case_subjects"), enabled, staleTime: STALE_TIME });
-    const fileTypesQ = useQuery({ queryKey: CONFIG_KEYS.fileTypes, queryFn: () => fetchJson("/api/config/file_types"), enabled, staleTime: STALE_TIME });
-    const courtTypesQ = useQuery({ queryKey: CONFIG_KEYS.courtTypes, queryFn: () => fetchJson("/api/config/court_types"), enabled, staleTime: STALE_TIME });
-    const partyRolesQ = useQuery({ queryKey: CONFIG_KEYS.partyRoles, queryFn: () => fetchJson("/api/config/party_roles"), enabled, staleTime: STALE_TIME });
-    const bureauTypesQ = useQuery({ queryKey: CONFIG_KEYS.bureauTypes, queryFn: () => fetchJson("/api/config/bureau_types"), enabled, staleTime: STALE_TIME });
-    const citiesQ = useQuery({ queryKey: CONFIG_KEYS.cities, queryFn: () => fetchJson("/api/config/cities"), enabled, staleTime: STALE_TIME });
-    const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), enabled, staleTime: STALE_TIME });
-    const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), enabled, staleTime: STALE_TIME });
-    const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), enabled, staleTime: STALE_TIME });
+    const lawyersQ = useQuery({ queryKey: CONFIG_KEYS.lawyers, queryFn: () => fetchJson("/api/config/lawyers"), ...queryOpts });
+    const statusesQ = useQuery({ queryKey: CONFIG_KEYS.statuses, queryFn: () => fetchJson("/api/config/statuses"), ...queryOpts });
+    const doctypesQ = useQuery({ queryKey: CONFIG_KEYS.doctypes, queryFn: () => fetchJson("/api/config/doctypes"), ...queryOpts });
+    const emailRecipientsQ = useQuery({ queryKey: CONFIG_KEYS.emailRecipients, queryFn: () => fetchJson("/api/config/email_recipients"), ...queryOpts });
+    const caseSubjectsQ = useQuery({ queryKey: CONFIG_KEYS.caseSubjects, queryFn: () => fetchJson("/api/config/case_subjects"), ...queryOpts });
+    const fileTypesQ = useQuery({ queryKey: CONFIG_KEYS.fileTypes, queryFn: () => fetchJson("/api/config/file_types"), ...queryOpts });
+    const courtTypesQ = useQuery({ queryKey: CONFIG_KEYS.courtTypes, queryFn: () => fetchJson("/api/config/court_types"), ...queryOpts });
+    const partyRolesQ = useQuery({ queryKey: CONFIG_KEYS.partyRoles, queryFn: () => fetchJson("/api/config/party_roles"), ...queryOpts });
+    const bureauTypesQ = useQuery({ queryKey: CONFIG_KEYS.bureauTypes, queryFn: () => fetchJson("/api/config/bureau_types"), ...queryOpts });
+    const citiesQ = useQuery({ queryKey: CONFIG_KEYS.cities, queryFn: () => fetchJson("/api/config/cities"), ...queryOpts });
+    const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), ...queryOpts });
+    const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), ...queryOpts });
+    const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), ...queryOpts });
     const requiredCaseFieldsQ = useQuery({
         queryKey: ["config", "required_case_fields"],
         queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
             const res = await authRequest("/api/config/required_case_fields", "GET");
-            if (!res?.ok) return { fields: [], party_rule: null };
+            // G019: boş zorunlu alan listesi = "hiçbir alan zorunlu değil" demek;
+            // kesintide kapı sessizce açılıyordu. Artık hata state'ine düşer.
+            if (!res?.ok) throw new Error(REQUIRED_FIELDS_ERROR);
             return res.json();
         },
-        enabled,
-        staleTime: STALE_TIME,
+        ...queryOpts,
     });
+
+    // G019: hata boş listeden ayrışsın diye açıkça dışa verilir (useClients deseni).
+    const listQueries = [
+        lawyersQ, statusesQ, doctypesQ, emailRecipientsQ, caseSubjectsQ, fileTypesQ,
+        courtTypesQ, partyRolesQ, bureauTypesQ, citiesQ, specialtiesQ,
+        clientCategoriesQ, fileStatusesQ,
+    ];
+    const isConfigError = listQueries.some(q => q.isError);
+    const isRequiredFieldsError = requiredCaseFieldsQ.isError;
+    const isRefetchingConfig = listQueries.some(q => q.isFetching) || requiredCaseFieldsQ.isFetching;
+    const refetchConfig = async (): Promise<void> => {
+        await Promise.all([
+            ...listQueries.map(q => q.refetch()),
+            requiredCaseFieldsQ.refetch(),
+        ]);
+    };
 
     const isLoading =
         lawyersQ.isLoading || statusesQ.isLoading || doctypesQ.isLoading ||
@@ -224,6 +260,14 @@ export const useConfig = () => {
         requiredCaseFields: requiredCaseFieldsQ.data?.fields ?? EMPTY_REQUIRED,
         requiredPartyRule: requiredCaseFieldsQ.data?.party_rule ?? null,
         isLoading,
+
+        // G019: "hata ≠ boş liste" — çağıran kesintiyi boş listeyle karıştırmasın.
+        isConfigError,
+        configError: isConfigError ? CONFIG_LIST_ERROR : undefined,
+        isRequiredFieldsError,
+        requiredFieldsError: isRequiredFieldsError ? REQUIRED_FIELDS_ERROR : undefined,
+        refetchConfig,
+        isRefetchingConfig,
 
         addLawyer: (code: string, name: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string, city?: string) => addLawyerM.mutateAsync({ code, name, tc_no, sicil_no, gorev, email, phone, address, city }),
         addStatus: (code: string, name: string) => addStatusM.mutateAsync({ code, name }),
