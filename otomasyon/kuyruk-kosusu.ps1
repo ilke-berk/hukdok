@@ -148,7 +148,9 @@ function AnaTemizMi {
 # 2026-08-11 G006 dersi: isciler Windows'ta PowerShell aracini da kullaniyor; yalniz-Bash
 # allowlist PowerShell cagrilarini onay kapisina dusurdu (headless'ta otomatik red = BLOKE).
 # Izin/yasak desenleri iki aracta IKIZ tutulur; git mv tasima gorevleri icin eklendi.
-$ortakAraclar  = '"Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git mv:*)" "Bash(npm:*)" "Bash(npx:*)" "PowerShell(git status:*)" "PowerShell(git diff:*)" "PowerShell(git log:*)" "PowerShell(git show:*)" "PowerShell(git mv:*)"'
+# 2026-08-11 G013 dersi: script gorevleri "bash -n" (salt sozdizim, yan etkisiz) ister;
+# listede yoktu, docs bandindaki isci dogrulama kosamadan BLOKE kaldi.
+$ortakAraclar  = '"Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git mv:*)" "Bash(npm:*)" "Bash(npx:*)" "Bash(bash -n:*)" "PowerShell(git status:*)" "PowerShell(git diff:*)" "PowerShell(git log:*)" "PowerShell(git show:*)" "PowerShell(git mv:*)" "PowerShell(bash -n:*)"'
 $yasakOrtak    = '"Bash(git push:*)" "Bash(ssh:*)" "Bash(scp:*)" "Bash(gcloud:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(git restore:*)" "Bash(git merge:*)" "Bash(git worktree:*)" "PowerShell(git push:*)" "PowerShell(ssh:*)" "PowerShell(scp:*)" "PowerShell(gcloud:*)" "PowerShell(git reset:*)" "PowerShell(git checkout:*)" "PowerShell(git restore:*)" "PowerShell(git merge:*)" "PowerShell(git worktree:*)"'
 $izinBackend   = $ortakAraclar + ' "Bash(docker compose:*)" "Bash(git add:*)" "Bash(git commit:*)" "PowerShell(docker compose:*)" "PowerShell(git add:*)" "PowerShell(git commit:*)"'
 $izinWorktree  = $ortakAraclar + ' "Bash(git add:*)" "Bash(git commit:*)" "PowerShell(git add:*)" "PowerShell(git commit:*)"'
