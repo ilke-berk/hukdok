@@ -327,6 +327,48 @@ async def item_in_use_handler(request, exc: ItemInUseError):
     # Kullanımdaki liste öğesi silinemez; arayüz "kaç kayıt etkileniyor" bilgisini
     # usage alanından okuyup boşalt/taşı seçeneklerini sunar.
     return JSONResponse(status_code=409, content={"detail": str(exc), "usage": exc.usage})
+
+
+# ─── 503 "sistem meşgul" ağı (Faz 5-B, plan 5.3) ──────────────────────────────
+# Doygunluk sinyalleri 500'e mahkûm edilmemeli: 500 "kod bozuk, tekrar deneme
+# boşuna" der; kullanıcı ya vazgeçer ya da aynı belgeyi tekrar tekrar yükleyip
+# yükü artırır. Gövde biçimi 5-A'nın /confirm 503'üyle AYNI: {"detail": "..."}
+# ve metin son kullanıcıya hitap eder (4-A sözleşmesi: detail gösterilebilir).
+# 4-A frontend'i 502/503/504'ü zaten işliyor → frontend değişikliği gerekmez.
+import subprocess  # noqa: E402
+from sqlalchemy.exc import OperationalError  # noqa: E402
+from services import document_pipeline  # noqa: E402
+
+
+@app.exception_handler(subprocess.TimeoutExpired)
+async def conversion_timeout_handler(request, exc: subprocess.TimeoutExpired):
+    """Ghostscript / LibreOffice zaman aşımı bir istek handler'ına kadar
+    ulaştıysa: belge bozuk değil, sistem yetişemiyor demektir.
+
+    Normal /confirm yolunda dönüşüm hataları conversion_pending katmanına
+    (Faz 3-F) düşer ve buraya HİÇ gelmez; bu handler o katmanın kapsamadığı
+    çağrı yollarının 500 üretmesini engelleyen ağdır. Log: doygunluk
+    WARNING'i alt-bileşende zaten atıldı, burada YENİ ERROR üretilmez.
+    """
+    logging.warning(f"Dönüşüm alt süreci zaman aşımına uğradı ({exc.cmd}) — 503 döndürülüyor")
+    return JSONResponse(
+        status_code=503, content={"detail": document_pipeline.CONVERSION_BUSY_DETAIL}
+    )
+
+
+# Bağlantı kopması / havuz tükenmesi / statement_timeout — hepsi geçici
+# doygunluktur (ProgrammingError gibi kalıcı SQL hataları DAHİL DEĞİL, onlar
+# gerçek 500'dür). "TEKRAR GÖNDERMEYİN": çoğu yazma ucu idempotent değil.
+DB_BUSY_DETAIL = (
+    "Sistem şu anda yoğun, işleminiz tamamlanamadı — TEKRAR GÖNDERMEYİN, "
+    "birkaç dakika sonra tekrar deneyin."
+)
+
+
+@app.exception_handler(OperationalError)
+async def db_unavailable_handler(request, exc: OperationalError):
+    logging.error(f"Veritabanı erişilemedi ({request.url.path}) — 503 döndürülüyor: {exc}")
+    return JSONResponse(status_code=503, content={"detail": DB_BUSY_DETAIL})
 # default_limits yalnızca middleware kayıtlıysa uygulanır — bu satır olmadan
 # hiçbir uçta hız sınırı yoktur.
 app.add_middleware(SlowAPIMiddleware)

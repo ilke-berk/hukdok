@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal
+from db_errors import is_unique_violation
 import models
 from managers.config_manager import DynamicConfig
 
@@ -184,6 +186,15 @@ def _name_variants(name: str) -> list:
     return [v for v in {name, tr_upper(name), tr_lower(name), tr_title(name)} if v]
 
 
+def _duplicate_message(spec, fields: dict) -> str:
+    """DB'nin UNIQUE kısıtından dönen çakışma için kullanıcıya dönük mesaj.
+
+    Ön kontrol mesajlarıyla (add_item/update_item) aynı cümle kalıbı kullanılır
+    ki arayüz iki yolu ayırt etmek zorunda kalmasın."""
+    label = fields.get("name") or fields.get(spec.key) or "Kayıt"
+    return f"\"{label}\" zaten listede mevcut"
+
+
 # ─── GENERIC CRUD ────────────────────────────────────────────────────────────
 
 def get_items(list_type: str, extra_filter=None):
@@ -242,6 +253,16 @@ def add_item(list_type: str, **fields):
         return True
     except DuplicateItemError:
         raise
+    except IntegrityError as e:
+        # Faz 5-B (plan 5.3): yukarıdaki ön kontrolü atlatan mükerrer kayıt
+        # (harf/boşluk varyantı, iki sekmeden eşzamanlı ekleme) DB'nin UNIQUE
+        # kısıtına çarpar. Eskiden generic except'e düşüp False dönüyordu →
+        # route "Failed to add ..." 500'ü. Artık api.py'deki 409 handler'ına
+        # gider: kullanıcı "zaten mevcut" mesajını görür.
+        if is_unique_violation(e):
+            raise DuplicateItemError(_duplicate_message(spec, fields)) from e
+        logger.error(f"Add {list_type} Error: {e}")
+        return False
     except Exception as e:
         logger.error(f"Add {list_type} Error: {e}")
         return False
@@ -459,6 +480,12 @@ def update_item(list_type: str, identifier: str, fields: dict):
         return {"updated": updated}
     except DuplicateItemError:
         raise
+    except IntegrityError as e:
+        # add_item ile aynı gerekçe (Faz 5-B): ön kontrolü atlatan çakışma 409.
+        if is_unique_violation(e):
+            raise DuplicateItemError(_duplicate_message(spec, fields)) from e
+        logger.error(f"Update {list_type} Error: {e}")
+        return False
     except Exception as e:
         logger.error(f"Update {list_type} Error: {e}")
         return False
@@ -590,6 +617,12 @@ def add_email_recipient(name: str, email: str, description: str = ""):
         return True
     except DuplicateItemError:
         raise
+    except IntegrityError as e:
+        # add_item ile aynı gerekçe (Faz 5-B): ön kontrolü atlatan çakışma 409.
+        if is_unique_violation(e):
+            raise DuplicateItemError(f"\"{email}\" zaten listede mevcut") from e
+        logger.error(f"Add Email Error: {e}")
+        return False
     except Exception as e:
         logger.error(f"Add Email Error: {e}")
         return False

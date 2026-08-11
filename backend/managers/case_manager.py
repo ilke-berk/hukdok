@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from database import SessionLocal
+from db_errors import is_unique_violation
 import models
 from party_check import normalize_party_key, normalize_tc
 from required_fields import REQUIRED_CASE_FIELDS, compute_missing_fields
@@ -20,6 +21,15 @@ from managers.lawyer_resolver import (
 )
 
 logger = logging.getLogger("AdminManager")
+
+# Faz 5-B (plan 5.3): tracking_no çakışması SQLSTATE 23505 + ihlal edilen
+# indeksin ADIYLA tespit edilir (eski `"tracking_no" in str(e)` metin eşlemesi
+# kalktı). Ad, models.Case.tracking_no'nun `unique=True, index=True`
+# tanımından SQLAlchemy'nin ürettiği indekstir — `cases` tablosunda
+# `uq_cases_sistem_no` da UNIQUE olduğu için ad eşlemesi ŞART: sistem_no
+# çakışmasına "ofis numarası zaten kayıtlı" demek kullanıcıyı boşuna sıra
+# numarası artırmaya iterdi.
+TRACKING_NO_UNIQUE_INDEX = "ix_cases_tracking_no"
 
 
 def _parse_date_field(value, field_name: str):
@@ -472,13 +482,21 @@ def _resolve_party_client_id(db, p: dict):
 
 
 def update_case(case_id: int, data: dict, tenant_id: str = None):
+    """Dava alanlarını günceller.
+
+    Dönüş (Faz 5-B, plan 5.3 — reference_lists.update_item ile AYNI ayrım):
+      True  — başarı
+      None  — dava yok / bu tenant'a görünmüyor → route 404 döner
+      False — güncelleme sırasında hata → route 500 döner
+    Ayrımdan önce ikisi de False'tu; "olmayan davayı güncelle" 500 oluyordu.
+    """
     try:
         db = SessionLocal()
         query = db.query(models.Case).filter(models.Case.id == case_id)
         query = _apply_tenant_filter(query, tenant_id)
         case = query.first()
         if not case:
-            return False
+            return None
 
         # Fields to track for history
         tracked_fields = ["esas_no", "court", "status"]
@@ -941,7 +959,7 @@ def add_case(data: dict, tenant_id: str = None):
         }
     except IntegrityError as e:
         db.rollback()
-        if "tracking_no" in str(getattr(e, "orig", e)):
+        if is_unique_violation(e, TRACKING_NO_UNIQUE_INDEX):
             # Faz 3-D: çakışma burada NİHAİ değildir — /commit route'u önce
             # idempotent çözümleme dener (kaybolan yanıt sonrası retry kendi
             # davasına çarpmış olabilir). Log sözleşmesi gereği burada WARNING;

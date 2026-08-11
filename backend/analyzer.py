@@ -64,6 +64,7 @@ import gemini_client
 from gemini_client import get_client as get_gemini_client
 import health  # /healthz Gemini hata sayacı (Faz 2-A)
 from config.settings import settings
+from schemas_process import ProcessSchemaError, validate_process_output  # Faz 5-B (plan 5.4)
 
 # Retry'lar DAHİL toplam süre bütçesi (Faz 3-C). Container nginx
 # proxy_read_timeout 300 sn; /process NDJSON stream'inde retry penceresi
@@ -377,10 +378,11 @@ def _failed_event(error_ozet: str, error_kod: str = "analysis_error") -> Dict[st
         * `gemini_saturated` — devre kesici açık / 429 / 5xx (servis doygun)
         * `gemini_blocked`   — güvenlik/gizlilik filtresi
         * `gemini_truncated` — uzunluk sınırı (MAX_TOKENS) nedeniyle kesik yanıt
+        * `schema_invalid`   — çıktı ayrıştırıldı ama YAPISI şemaya uymuyor
+                               (Faz 5-B; bkz. schemas_process)
         * `analysis_error`   — diğer tüm nihai başarısızlıklar
-      Etiket uzayı KAPALI değildir (ileride örn. şema doğrulaması için yeni
-      etiket eklenebilir); tüketiciler tanımadıkları etiketi `analysis_error`
-      gibi ele almalıdır.
+      Etiket uzayı KAPALI değildir (ileride yeni etiket eklenebilir);
+      tüketiciler tanımadıkları etiketi `analysis_error` gibi ele almalıdır.
     - `failed` SON olaydır: ardından `complete` GELMEZ, olay `process_id`
       TAŞIMAZ (confirm adımı yok → PROCESS_CACHE yazılmaz).
     - Bu olayın üretilmesi YENİ bir ERROR log satırı EKLEMEZ; nihai ERROR'lar
@@ -1457,6 +1459,12 @@ async def analyze_file_generator(
         # 3. Robust JSON Parsing (Brace Counting)
         data = _parse_gemini_json(result_text)
 
+        # 3.5 Şema doğrulaması (Faz 5-B, plan 5.4): ayrıştırılabilir ama YAPISI
+        # bozuk çıktı (kök liste, `muvekkiller: {...}` vb.) buradan geri döner —
+        # eskiden post-processing'de patlayıp "analiz hatası" diye görünüyordu.
+        # Toleranslı normalizasyon için bkz. schemas_process.
+        data = validate_process_output(data)
+
         # 4. Hash'i sonuca ekle
         data["hash"] = file_hash
 
@@ -1521,6 +1529,19 @@ async def analyze_file_generator(
         TechnicalLogger.log("ERROR", f"Gemini JSON parse error [ErrorID: {error_id}]: {e}")
         yield _failed_event(
             f"Yapay zeka yanıtı çözümlenemedi (bozuk çıktı). Lütfen tekrar deneyin. (Kod: {error_id})"
+        )
+
+    except ProcessSchemaError as e:
+        # Faz 5-B: JSON ayrıştırıldı ama yapısı şemaya uymuyor. ValueError
+        # DEĞİL (bkz. ProcessSchemaError docstring) → aşağıdaki JSONDecodeError/
+        # ValueError handler'larına düşmez, kendi etiketiyle raporlanır.
+        # Nihai başarısızlık → TEK ERROR (deneme-düzeyi log eklenmez).
+        error_id = str(uuid.uuid4())[:8]
+        TechnicalLogger.log("ERROR", f"Gemini şema doğrulaması başarısız [ErrorID: {error_id}]: {e}")
+        yield _failed_event(
+            "Yapay zeka yanıtı beklenen yapıda değil (eksik/bozuk alanlar). "
+            f"Lütfen tekrar deneyin. (Kod: {error_id})",
+            "schema_invalid",
         )
 
     except GeminiResponseError as e:

@@ -254,8 +254,12 @@ def get_case_client_notice_target(
 @router.put("/api/cases/{case_id}")
 def api_update_case(case_id: int, case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
     result = update_case(case_id, case_data.model_dump(), tenant_id=tenant_id)
+    # Faz 5-B (plan 5.3): "dava yok" (None) artık 500 değil 404 — silinmiş/başka
+    # tenant'a ait kartı güncellemeye çalışan arayüz sunucu arızası görüyordu.
+    if result is None:
+        raise HTTPException(status_code=404, detail="Dava bulunamadı")
     if not result:
-        raise HTTPException(status_code=500, detail="Failed to update case")
+        raise HTTPException(status_code=500, detail="Dava güncellenemedi. Lütfen tekrar deneyin.")
     return {"status": "success", "message": "Case updated"}
 
 

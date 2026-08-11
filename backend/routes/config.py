@@ -199,7 +199,9 @@ def get_email_recipients_endpoint(user: dict = Depends(get_current_user)):
 def api_add_email(item: EmailItem, user: dict = Depends(require_admin)):
     success = add_email_recipient(item.name, item.email, item.description or "")
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to add email (maybe duplicate?)")
+        # Faz 5-B: mükerrer kayıt artık buraya DÜŞMEZ — DuplicateItemError
+        # api.py'deki handler'da 409 olur. Buraya kalan tek şey gerçek arıza.
+        raise HTTPException(status_code=500, detail="E-posta alıcısı eklenemedi. Lütfen tekrar deneyin.")
     return {"status": "success", "message": "Email recipient added"}
 
 
