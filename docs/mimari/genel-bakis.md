@@ -84,6 +84,14 @@ korunur; kilidi alan worker "lider"dir. Kilit süreç yaşadıkça tutulur, sür
 bırakır → yeni worker devralır, **liderlik sabit bir worker'a bağlı değildir**
 (`singleton_lock.py:1-12`).
 
+Kilit dosyası tek yola bağlı değildir (G012): aday zinciri `tempfile.gettempdir()` →
+`/dev/shm` → `/var/tmp` sırayla denenir (`singleton_lock.py::_lock_path_candidates`).
+Ayrım kritik: yol AÇILAMAZSA (OSError) sıradaki adaya geçilir; dosya açılıp kilit BAŞKA
+süreçte çıkarsa zincir durur ve worker lider OLMAZ (yoksa iki lider doğardı). Hiçbir aday
+açılamazsa fail-open korunur — her worker kendini lider sayar (arıza günü arkaplan işleri
+tamamen durmasın; en kötü durum tekli davranışın N kopyası) ama sessiz değil: süreç başına
+TEK `CRITICAL` log satırı atılır (`singleton_lock.py:132-142`), log tabanlı alarm bunu yakalar.
+
 | İş | Kapsam | Kod |
 | --- | --- | --- |
 | APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)` | yalnız lider | `api.py:163-177` |
