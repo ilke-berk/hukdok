@@ -8,6 +8,7 @@ ayrıştırma testleri _render_body_pdf monkeypatch'iyle koşar.
 import base64
 import io
 import os
+import time
 import zipfile
 from email.message import EmailMessage
 from types import SimpleNamespace
@@ -302,6 +303,47 @@ def test_local_attributes_preserved(env, fake_render):
     assert "color:#ff0000" in cleaned
 
 
+# ── fail-closed: temizlik yapılamazsa ham HTML soffice'e GİTMEZ (G023) ──────
+
+def test_sanitizer_failure_falls_back_to_plaintext(env, fake_render, monkeypatch):
+    """Sanitizer istisna atarsa ya da boyut tavanı aşılırsa gövde düz-metin
+    yoluna düşer; ham HTML hiçbir koşulda dönüştürücüye verilmez."""
+    from services.html_sanitizer import SanitizerError
+
+    payload = '<table background="http://failclosed.test/probe.png"><tr><td>Dava metni</td></tr></table>'
+
+    def _boom(raw, **kwargs):
+        raise SanitizerError("sentetik arıza")
+
+    monkeypatch.setattr(env.module, "sanitize_email_html", _boom)
+    r = _post(env, _html_eml_bytes(payload))
+    assert r.status_code == 200
+    html = fake_render[0]
+    assert "failclosed.test" not in html          # ham HTML geçmedi
+    assert "background" not in html.lower()        # gövde markup'ı düz metne indirildi
+    assert "<pre" in html.lower()                 # düz-metin yolu
+    assert "Dava metni" in html                   # metin kaybı yok
+    assert SUBJECT in html                        # başlık tablosu duruyor
+
+
+def test_size_cap_falls_back_to_plaintext(env, fake_render, monkeypatch):
+    """Boyut tavanı da aynı fail-closed yoluna çıkar (istisna ile aynı kapı)."""
+    from services import html_sanitizer
+
+    monkeypatch.setattr(html_sanitizer, "MAX_HTML_CHARS", 50)
+    payload = (
+        '<table background="http://toobig.test/probe.png"><tr><td>'
+        + "Dava metni uzun gövde " * 20
+        + "</td></tr></table>"
+    )
+    r = _post(env, _html_eml_bytes(payload))
+    assert r.status_code == 200
+    html = fake_render[0]
+    assert "toobig.test" not in html
+    assert "<pre" in html.lower()
+    assert "Dava metni uzun gövde" in html
+
+
 # ── gerçek soffice ile gövde PDF'i (konteyner) ──────────────────────────────
 
 @requires_soffice
@@ -330,3 +372,93 @@ def test_plain_body_pdf_rendered_with_soffice(env):
         text = "".join(page.get_text() for page in doc)
     assert "T.T: 23/07/2026" in text
     assert "Sayın yetkili" in text
+
+
+# ── AC6 canlı kanıt: gerçek soffice + gerçek dinleyici (G023) ───────────────
+#
+# "Çıktıda uzak URL yok" iddiası ancak dinleyicinin GERÇEKTEN kayıt tuttuğu
+# kanıtlanırsa bir şey söyler. Bu yüzden İKİ test birlikte durur: pozitif
+# kontrol ham yükün istek DOĞURDUĞUNU, asıl test temizlenmiş yükün
+# doğurmadığını gösterir. Pozitif kontrol düşerse asıl test anlamsızdır.
+
+class _ProbeListener:
+    """Konteyner içi 127.0.0.1 dinleyicisi — soffice'in çektiği yolları kaydeder."""
+
+    def __init__(self):
+        import http.server
+        import threading
+
+        hits = self.hits = []
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits.append(self.path)
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            do_HEAD = do_GET
+            do_POST = do_GET
+
+            def log_message(self, *args):
+                pass
+
+        self._srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self.port = self._srv.server_address[1]
+        self._thread = threading.Thread(target=self._srv.serve_forever, daemon=True)
+        self._thread.start()
+
+    def close(self):
+        self._srv.shutdown()
+        self._srv.server_close()
+        self._thread.join(timeout=5)
+
+
+def _probe_document(port):
+    """13 vakalık korpus + allowlist taşıyıcı taraması tek belgede — sanitizer
+    birim testleriyle ORTAK kaynak (iki yerde ayrışan korpus tutmamak için)."""
+    from test_sanitizer_html import allowlisted_attr_probe, probe_payloads
+
+    host = f"127.0.0.1:{port}"
+    payloads = probe_payloads(host)
+    html = (
+        "<html><body>"
+        + allowlisted_attr_probe(host)
+        + "".join(payloads.values())   # dengesiz tırnak + EOF vakaları en sonda
+        + "</body></html>"
+    )
+    return html, payloads
+
+
+@requires_soffice
+def test_probe_listener_records_raw_payload_positive_control(env):
+    """Pozitif kontrol: TEMİZLENMEMİŞ yük soffice'e verilince dinleyici kayıt tutar."""
+    listener = _ProbeListener()
+    try:
+        raw_html, _ = _probe_document(listener.port)
+        pdf_bytes = env.module._render_body_pdf(raw_html)
+        assert pdf_bytes.startswith(b"%PDF")
+        time.sleep(1.0)  # soffice isteği dönüşüm sırasında atar; kaydın oturması için
+        assert listener.hits, (
+            "dinleyici hiç istek görmedi — kanıt düzeneği çalışmıyor, "
+            "negatif testin 'boş kayıt' sonucu anlamsız"
+        )
+    finally:
+        listener.close()
+
+
+@requires_soffice
+def test_no_outbound_request_after_sanitize(env):
+    """AC6 asıl kanıt: aynı korpus uçtan uca /expand-eml'den geçince giden istek YOK."""
+    listener = _ProbeListener()
+    try:
+        raw_html, payloads = _probe_document(listener.port)
+        r = _post(env, _html_eml_bytes(raw_html))
+        assert r.status_code == 200
+        pdf_bytes = base64.b64decode(r.json()["body"]["data_b64"])
+        assert pdf_bytes.startswith(b"%PDF")
+        assert len(payloads) == 13
+        time.sleep(1.0)
+        assert listener.hits == [], f"soffice uzak kaynak çekti: {listener.hits}"
+    finally:
+        listener.close()

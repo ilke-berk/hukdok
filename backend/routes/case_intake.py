@@ -68,6 +68,7 @@ from schemas_intake import (
     CommitPolicyIn,
     KeepaliveRequest,
 )
+from services.html_sanitizer import DOC_PREFIX, DOC_SUFFIX, html_to_text, sanitize_email_html
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,40 +93,14 @@ def resolve_upload_suffix(filename: Optional[str]) -> str:
 
 _EML_HEADER_RE = re.compile(rb"^(From|Received|Subject|MIME-Version):", re.IGNORECASE | re.MULTILINE)
 
-# Gövde HTML temizliği: script/style blokları, dış stylesheet'ler ve dış/cid
-# görsel referansları sökülür (imza logoları vb.) — hedef görsel sadakat değil,
-# metnin modele ulaşması.
+# Gövde HTML temizliği services/html_sanitizer.py'ye taşındı (G023).
 #
 # GÜVENLİK (SSRF): gövde soffice ile PDF'e çevrilirken LibreOffice uzak kaynak
 # taşıyan attribute'ları GERÇEKTEN çeker — `<table background="http://...">`
-# ile kanıtlandı. Etiket bazlı denylist (img/link) yetmez; taşıyıcı uzay açıktır
-# (background, poster, srcset, data, meta-refresh...). Bu yüzden kural GENELDİR:
-# hangi etikette olursa olsun uzak şema taşıyan attribute sökülür
-# (`_strip_remote_refs`). Aşağıdaki üç özel desen bunun ÜSTÜNE korunur: script/
-# link/uzak-img etiketleri komple silinir — yalnız attribute soymak boş `<img>`
-# iskeleti bırakır ve soffice kırık görsel kutusu çizer.
-_SCRIPT_RE = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
-_STYLE_BLOCK_RE = re.compile(r"<style\b.*?</style\s*>", re.IGNORECASE | re.DOTALL)
-_LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
-_REMOTE_IMG_RE = re.compile(
-    r"<img\b[^>]*\bsrc\s*=\s*[\"']?(?:cid:|https?:|//)[^>]*?>", re.IGNORECASE | re.DOTALL
-)
-_META_CHARSET_RE = re.compile(r"<meta\b[^>]*charset[^>]*>", re.IGNORECASE)
-
-_TAG_RE = re.compile(r"<[A-Za-z!/][^>]*>", re.DOTALL)
-_ATTR_RE = re.compile(
-    r"""\s+([A-Za-z_:][-.\w:]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>`=]+)""", re.DOTALL
-)
-# Şema değerin HERHANGİ bir yerinde aranır: `<meta http-equiv="refresh"
-# content="0;url=http://...">` gibi taşıyıcılarda URL başta değildir.
-_REMOTE_SCHEME_RE = re.compile(r"(?:https?|ftps?|file|cid)\s*:", re.IGNORECASE)
-# Protokol-göreli (`//host/x`) ve UNC (`\\host\x`) yalnız değerin BAŞINDA anlamlı.
-_PROTO_RELATIVE_RE = re.compile(r"^(?://|\\\\)")
-_ATTR_STRIP_RE = re.compile(r"[\s\x00-\x20\x7f]")
-_CSS_IMPORT_RE = re.compile(r"@import\b[^;}]*;?", re.IGNORECASE)
-_CSS_URL_RE = re.compile(r"url\s*\([^)]*\)", re.IGNORECASE)
-_BODY_OPEN_RE = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
-_ANY_TAG_RE = re.compile(r"<[^>]+>")
+# ile kanıtlandı. Regex tabanlı temizlik (G015) saldırganın baytlarını çıktıya
+# aynen geçirdiği için sınıfı kapatamadı; artık girdi tokenize edilip çıktı
+# SIFIRDAN kanonik olarak yeniden yazılıyor. Politikanın tamamı (düşürülen
+# etiketler, attribute allowlist'i, değer kapıları) sanitizer modülündedir.
 
 EML_BODY_FILENAME = "E-posta_govdesi.pdf"
 
@@ -137,47 +112,6 @@ def _looks_like_eml(head: bytes) -> bool:
     geriye itiyor (ölçüldü: From ~5.6 KB, MIME-Version ~17 KB)."""
     found = {m.group(1).lower() for m in _EML_HEADER_RE.finditer(head)}
     return len(found) >= 2
-
-
-def _normalize_attr_value(raw: str) -> str:
-    """Attribute değerini KARAR için normalize eder: tırnağı soy, HTML
-    entity'lerini çöz, boşluk/kontrol karakterlerini at. Böylece
-    `&#104;ttp://...` ve `h&#9;ttp://...` gibi kaçışlar da yakalanır."""
-    value = raw.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        value = value[1:-1]
-    return _ATTR_STRIP_RE.sub("", html_lib.unescape(value))
-
-
-def _strip_css_remote(css: str) -> str:
-    """CSS'teki uzak kaynak taşıyıcıları: `@import` kuralları komple silinir,
-    `url(...)` fonksiyonları şemaya BAKILMADAN `none` yapılır — görsel sadakat
-    hedef olmadığı için en genel (kaçış kaldırmayan) kural tercih edildi."""
-    return _CSS_URL_RE.sub("none", _CSS_IMPORT_RE.sub("", css))
-
-
-def _clean_tag_attrs(match: "re.Match[str]") -> str:
-    """Tek bir etiketin attribute'larını süzer."""
-
-    def _attr(m: "re.Match[str]") -> str:
-        name, raw = m.group(1), m.group(2)
-        value = _normalize_attr_value(raw)
-        if _REMOTE_SCHEME_RE.search(value) or _PROTO_RELATIVE_RE.match(value):
-            return ""
-        if name.lower() == "style":
-            cleaned = _strip_css_remote(raw)
-            if cleaned != raw:
-                return f" {name}={cleaned}"
-        return m.group(0)
-
-    return _ATTR_RE.sub(_attr, match.group(0))
-
-
-def _strip_remote_refs(html: str) -> str:
-    """Uzak şema taşıyan attribute'ları etiket etiket söker (genel SSRF kuralı).
-    Yalnız etiketlerin içinde çalışır — gövde METNİNDEKİ adresler korunur, zaten
-    ağ isteği doğurmazlar ve modele bilgi taşırlar."""
-    return _TAG_RE.sub(_clean_tag_attrs, html)
 
 
 def _email_header_html(msg: email.message.EmailMessage) -> str:
@@ -198,8 +132,24 @@ def _email_header_html(msg: email.message.EmailMessage) -> str:
     return f'<table border="1" cellpadding="4" cellspacing="0">{cells}</table><hr>'
 
 
+def _plain_body_document(header_html: str, text: str) -> str:
+    """Düz metin gövdesi — tamamı kaçışlanır, markup olarak yorumlanacak bayt
+    kalmaz. Belge iskeleti sanitizer'ınkiyle aynı sabitten gelir."""
+    return (
+        DOC_PREFIX
+        + header_html
+        + f'<pre style="white-space:pre-wrap">{html_lib.escape(text)}</pre>'
+        + DOC_SUFFIX
+    )
+
+
 def _build_body_html(msg: email.message.EmailMessage) -> Optional[str]:
-    """Gövdeyi (HTML tercihli) başlık tablosuyla birleşik tek HTML'e çevirir."""
+    """Gövdeyi (HTML tercihli) başlık tablosuyla birleşik tek HTML'e çevirir.
+
+    HTML gövde tokenizer ile yeniden serileştirilir (services/html_sanitizer).
+    Temizlik patlarsa ya da boyut tavanı aşılırsa ham HTML soffice'e ASLA
+    gitmez — görünür metin çıkarılıp düz-metin yoluna düşülür (fail-closed).
+    """
     part = msg.get_body(preferencelist=("html", "plain"))
     if part is None:
         return None
@@ -213,27 +163,15 @@ def _build_body_html(msg: email.message.EmailMessage) -> Optional[str]:
 
     header_html = _email_header_html(msg)
     if part.get_content_type() == "text/html":
-        cleaned = _SCRIPT_RE.sub("", content)
-        cleaned = _STYLE_BLOCK_RE.sub("", cleaned)
-        cleaned = _LINK_TAG_RE.sub("", cleaned)
-        cleaned = _REMOTE_IMG_RE.sub("", cleaned)
-        cleaned = _strip_remote_refs(cleaned)
-        # Orijinal charset bildirimi yanıltır — dosya UTF-8 (BOM'lu) yazılır.
-        cleaned = _META_CHARSET_RE.sub("", cleaned)
-        body_open = _BODY_OPEN_RE.search(cleaned)
-        if body_open:
-            idx = body_open.end()
-            return cleaned[:idx] + header_html + cleaned[idx:]
-        return (
-            '<html><head><meta charset="utf-8"></head><body>'
-            + header_html + cleaned + "</body></html>"
-        )
-    return (
-        '<html><head><meta charset="utf-8"></head><body>'
-        + header_html
-        + f'<pre style="white-space:pre-wrap">{html_lib.escape(content)}</pre>'
-        + "</body></html>"
-    )
+        try:
+            return sanitize_email_html(content, body_prefix=header_html)
+        except Exception as e:
+            TechnicalLogger.log(
+                "WARNING",
+                f"[INTAKE-EML] HTML temizliği yapılamadı, düz metin yoluna düşüldü: {e}",
+            )
+            content = html_to_text(content)
+    return _plain_body_document(header_html, content)
 
 
 def _render_body_pdf(body_html: str) -> bytes:
@@ -263,13 +201,7 @@ def _render_body_pdf(body_html: str) -> bytes:
         TechnicalLogger.log(
             "WARNING", f"[INTAKE-EML] HTML gövde dönüşümü başarısız, düz metin fallback: {e}"
         )
-        plain = html_lib.unescape(_ANY_TAG_RE.sub(" ", body_html))
-        fallback_html = (
-            '<html><head><meta charset="utf-8"></head><body>'
-            + f'<pre style="white-space:pre-wrap">{html_lib.escape(plain)}</pre>'
-            + "</body></html>"
-        )
-        return _convert(fallback_html)
+        return _convert(_plain_body_document("", html_to_text(body_html)))
 
 
 @router.post("/api/case-intake/expand-eml")
