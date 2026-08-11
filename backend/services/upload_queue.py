@@ -16,6 +16,10 @@ büyük sessiz veri kaybı yolu". Yeni akış export_publisher.py desenidir:
 3. "islenmis" satırlarında her deneme document_pipeline._record_upload_result
    ile belgeye işlenir (upload_attempts artar, uploaded/failed görünür);
    hukukbot outbox hook'u YALNIZ URL commit'inde açılır — davranış korunur.
+   Başarı yolunda satırın 'uploaded' geçişi ile belgenin URL yazımı AYNI
+   transaction'dadır (G011): araya düşen DB arızası/süreç ölümü ikisini birden
+   geri sarar, satır pending kalır ve sonraki tarama yeniden dener — belge
+   "pending + URL'süz" asılı kalamaz.
 
 Loglama sözleşmesi (Faz 2-C ERROR-oranı alarmı ≥5 ERROR/5dk çalıyor): geçici /
 retry edilebilir hatalar WARNING, yalnız NİHAİ başarısızlık ERROR. Worker
@@ -168,16 +172,20 @@ def _is_due(row, now: datetime) -> bool:
     return next_at <= now
 
 
-def _record_doc_attempt(kind: str, document_id, web_url) -> bool:
+def _record_doc_attempt(kind: str, document_id, web_url, db=None) -> bool:
     """islenmis satırının denemesini belge kaydına işler (Faz 2-C sözleşmesi).
 
-    True dönüşü sharepoint_url'in commit edildiği anlamına gelir — hukukbot
-    outbox hook'u yalnız o zaman açılır (BULGULAR #1).
+    db verilirse (G011 başarı yolu) belge yazımı ÇAĞIRANIN açık
+    transaction'ına katılır: commit de rollback da çağırana aittir, DB hatası
+    yukarı fırlar. db=None klasik yoldur (kendi session'ını açıp commit eder,
+    hatayı yutar). True dönüşü sharepoint_url'in yazıldığı anlamına gelir —
+    hukukbot outbox hook'u yalnız o yazım COMMIT edildikten sonra açılır
+    (BULGULAR #1).
     """
     if kind != "islenmis" or not document_id:
         return False
     from services.document_pipeline import _record_upload_result
-    return _record_upload_result(document_id, web_url)
+    return _record_upload_result(document_id, web_url, db=db)
 
 
 def _finalize_failed(db, row, reason: str) -> None:
@@ -273,9 +281,20 @@ def _attempt_upload(outbox_id: int) -> None:
             row.status = "uploaded"
             row.done_at = datetime.now(timezone.utc)
             row.last_error = None
+            # G011: satırın 'uploaded' geçişi ile belgenin sharepoint_url +
+            # upload_status yazımı AYNI transaction'da, TEK commit'le gider.
+            # Ayrı commit'lerdeyken aradaki DB arızası (ya da süreç ölümü)
+            # belgeyi süresiz "pending + URL'süz" bırakıyordu: satır artık
+            # pending olmadığı için worker onu bir daha ele almıyordu, elde
+            # yeniden yazılacak webUrl de kalmıyordu. Şimdi arıza ikisini
+            # birden geri sarar → satır pending kalır, sonraki tarama yeniden
+            # dener (SharePoint'e ikinci kopya overwrite'tır, zararsız).
+            url_saved = _record_doc_attempt(kind, doc_id, web_url, db=db)
             db.commit()
+            url_note = " + belge URL'si aynı transaction'da yazıldı" if url_saved else ""
             logger.info(
-                f"Upload outbox: {kind} yüklendi ({target_filename}, deneme {attempt_no})",
+                f"Upload outbox: {kind} yüklendi ({target_filename}, deneme "
+                f"{attempt_no}){url_note}",
                 extra={"doc_id": doc_id, "outbox_id": outbox_id, "kind": kind},
             )
             # Önce durum commit'i, sonra dosya silme: ters sırada commit
@@ -286,7 +305,6 @@ def _attempt_upload(outbox_id: int) -> None:
                 row.spool_path = None
                 db.commit()
 
-            url_saved = _record_doc_attempt(kind, doc_id, web_url)
             if url_saved:
                 try:
                     from services.export_publisher import notify_hukukbot
@@ -314,8 +332,10 @@ def _attempt_upload(outbox_id: int) -> None:
             )
     except Exception as db_err:
         db.rollback()
-        # Sonuç DB'ye işlenemedi — satır pending kaldı, sonraki tarama yeniden
-        # dener (başarılıysa overwrite zararsız). Geçici durum → WARNING.
+        # Sonuç DB'ye işlenemedi — rollback outbox statüsünü de belge yazımını
+        # da geri sarar (G011: ikisi tek transaction), satır pending kaldı,
+        # sonraki tarama yeniden dener (başarılıysa overwrite zararsız).
+        # Geçici durum → WARNING.
         logger.warning(
             f"Upload outbox durum güncellenemedi (outbox={outbox_id}): {db_err}",
             extra={"doc_id": doc_id, "outbox_id": outbox_id, "kind": kind},

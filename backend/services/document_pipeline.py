@@ -246,17 +246,31 @@ def async_ham_upload(source_path: str, ham_filename: str, ham_folder: str):
         TechnicalLogger.log("ERROR", f"Async Ham Upload Error [ID: {error_id}]: {e}")
 
 
-def _record_upload_result(doc_id, web_url):
+def _record_upload_result(doc_id, web_url, db=None):
     """Faz 2-C: işlenmiş kopya yükleme denemesinin sonucunu belge kaydına işler.
 
     web_url doluysa sharepoint_url + upload_status='uploaded', değilse 'failed';
-    iki durumda da upload_attempts artar. True dönüşü URL'in commit edildiği
-    anlamına gelir — hukukbot outbox hook'u yalnız o zaman açılır (BULGULAR #1).
+    iki durumda da upload_attempts artar. True dönüşü URL'in yazıldığı anlamına
+    gelir — hukukbot outbox hook'u yalnız o yazım COMMIT edildikten sonra açılır
+    (BULGULAR #1).
+
+    İki mod:
+    - `db=None` (klasik): kendi session'ını açar, commit/rollback/close eder ve
+      DB hatasını YUTAR (False döner). async_islenmis_upload fallback'i ile
+      upload_queue'nun başarısız-deneme yolu bunu kullanır.
+    - `db` verili (G011 atomik yol): yazım ÇAĞIRANIN açık transaction'ına
+      katılır; commit/rollback/close çağırana aittir, DB hatası yukarı FIRLAR.
+      upload_queue böylece outbox satırının 'uploaded' geçişiyle belgenin URL
+      yazımını TEK transaction'da birleştirir: ikisi ayrı commit'lerdeyken
+      aradaki DB arızası belgeyi süresiz "pending + URL'süz" bırakıyordu ve
+      retry yolu yoktu (satır artık pending olmadığı için worker onu bir daha
+      ele almıyordu).
     """
     if not doc_id:
         return False
+    owns_session = db is None
+    db_upd = SessionLocal() if owns_session else db
     url_saved = False
-    db_upd = SessionLocal()
     try:
         doc_rec = db_upd.query(models.CaseDocument).filter(models.CaseDocument.id == doc_id).first()
         if doc_rec:
@@ -267,14 +281,22 @@ def _record_upload_result(doc_id, web_url):
                 url_saved = True
             else:
                 doc_rec.upload_status = "failed"
-            db_upd.commit()
-            if url_saved:
-                logging.info(f"✅ SharePoint URL updated for Doc ID {doc_id}: {web_url}")
+            if owns_session:
+                db_upd.commit()
+                if url_saved:
+                    # Atomik modda bu satır YOK: kalıcılığı çağıranın commit'i
+                    # verir, "yazıldı" bilgisini de commit'ten sonra o loglar.
+                    logging.info(f"✅ SharePoint URL updated for Doc ID {doc_id}: {web_url}")
     except Exception as db_err:
+        if not owns_session:
+            # Atomik mod: geri sarma ve loglama çağıranın işi — outbox satırı
+            # da bu rollback'le pending'e döner, sonraki tarama yeniden dener.
+            raise
         db_upd.rollback()
         logging.error(f"Failed to update upload status in DB for Doc ID {doc_id}: {db_err}")
     finally:
-        db_upd.close()
+        if owns_session:
+            db_upd.close()
     return url_saved
 
 

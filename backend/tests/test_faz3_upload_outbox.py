@@ -9,6 +9,9 @@ Kapsam:
   hukukbot hook kapısı), geçici hata (WARNING + backoff), nihai hata (ERROR +
   extra doc_id/outbox_id + spool KORUNUR), spool kaybı, ham satırında belge
   güncellemesi olmaması
+- G011 atomiklik: satırın 'uploaded' geçişi ile belgenin sharepoint_url yazımı
+  TEK transaction — belge yazımı ya da commit düşerse satır pending'e geri
+  sarılır (kalıcı "uploaded + URL'süz" durum oluşmaz), sonraki tarama dener
 - _scan_once: startup reconcile — vadesi gelenler işlenir, gelecektekiler beklet
 - _purge_terminal_spools: failed 30 gün sonra, uploaded hemen temizlenir
 - worker yaşam döngüsü: idempotent start, taramada exception'a dayanıklılık, stop
@@ -124,6 +127,18 @@ def _reset_worker_state():
     upload_queue.stop_upload_worker()
     upload_queue._wake.clear()
     upload_queue._stop.clear()
+
+
+@pytest.fixture
+def root_log_records():
+    """Kök logger'a düşen TÜM kayıtlar. document_pipeline modül logger'ı değil
+    `logging.error` (kök) kullanır — "nihai olmayan arızada hiç ERROR yok"
+    iddiası ancak buradan doğrulanabilir."""
+    handler = _ListHandler()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    yield handler.records
+    root.removeHandler(handler)
 
 
 @pytest.fixture
@@ -328,10 +343,14 @@ def test_attempt_success_marks_uploaded_deletes_spool_and_opens_hook(monkeypatch
         lambda *a, **kw: {"webUrl": "https://sp/yeni.pdf"},
     )
     recorded, notified = [], []
-    monkeypatch.setattr(
-        document_pipeline, "_record_upload_result",
-        lambda doc_id, url: recorded.append((doc_id, url)) or True,
-    )
+
+    def fake_record(doc_id, url, db=None):
+        # db is not None: belge yazımı outbox satırının transaction'ına
+        # katılıyor (G011 atomik yol) — imza değişse bu bekçi düşer
+        recorded.append((doc_id, url, db is not None))
+        return True
+
+    monkeypatch.setattr(document_pipeline, "_record_upload_result", fake_record)
     monkeypatch.setattr(
         export_publisher, "notify_hukukbot", lambda doc_id: notified.append(doc_id)
     )
@@ -343,7 +362,7 @@ def test_attempt_success_marks_uploaded_deletes_spool_and_opens_hook(monkeypatch
     assert row.done_at is not None and row.last_error is None
     assert not os.path.exists(spool_path)
     assert row.spool_path is None
-    assert recorded == [(7, "https://sp/yeni.pdf")]
+    assert recorded == [(7, "https://sp/yeni.pdf", True)]
     assert notified == [7]  # hook yalnız URL commit'inde (BULGULAR #1)
 
 
@@ -359,7 +378,7 @@ def test_attempt_success_ham_touches_no_document(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         document_pipeline, "_record_upload_result",
-        lambda *a: pytest.fail("ham satırı belge kaydına dokunmamalı"),
+        lambda *a, **kw: pytest.fail("ham satırı belge kaydına dokunmamalı"),
     )
     monkeypatch.setattr(
         export_publisher, "notify_hukukbot",
@@ -385,10 +404,14 @@ def test_attempt_transient_failure_schedules_backoff_with_warning(
 
     monkeypatch.setattr(uploader, "upload_file_to_sharepoint", boom)
     recorded = []
-    monkeypatch.setattr(
-        document_pipeline, "_record_upload_result",
-        lambda doc_id, url: recorded.append((doc_id, url)) or False,
-    )
+
+    def fake_record(doc_id, url, db=None):
+        # Başarısız denemede belge yazımı KENDİ session'ını açar (db=None):
+        # satır pending kalacağı için atomiklik gerekmiyor
+        recorded.append((doc_id, url, db))
+        return False
+
+    monkeypatch.setattr(document_pipeline, "_record_upload_result", fake_record)
 
     before = datetime.now(timezone.utc)
     upload_queue._attempt_upload(5)
@@ -399,7 +422,7 @@ def test_attempt_transient_failure_schedules_backoff_with_warning(
     assert row.next_attempt_at >= before + timedelta(seconds=upload_queue.RETRY_BACKOFF_SECONDS[0] - 1)
     assert "429" in row.last_error
     assert os.path.exists(row.spool_path)  # payload retry için durur
-    assert recorded == [(7, None)]  # belge kartı 'failed' + attempts artışı görür
+    assert recorded == [(7, None, None)]  # belge kartı 'failed' + attempts artışı görür
     # Geçici hata WARNING'dir — ERROR-oranı alarmını (≥5/5dk) çaldırmamalı
     warnings = [r for r in queue_log_records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and not [r for r in queue_log_records if r.levelno >= logging.ERROR]
@@ -422,7 +445,7 @@ def test_attempt_final_failure_marks_failed_with_error_and_keeps_spool(
         uploader, "upload_file_to_sharepoint",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("503 kalıcı")),
     )
-    monkeypatch.setattr(document_pipeline, "_record_upload_result", lambda *a: False)
+    monkeypatch.setattr(document_pipeline, "_record_upload_result", lambda *a, **kw: False)
 
     upload_queue._attempt_upload(5)
 
@@ -450,7 +473,7 @@ def test_attempt_missing_spool_fails_immediately(monkeypatch, tmp_path, queue_lo
     recorded = []
     monkeypatch.setattr(
         document_pipeline, "_record_upload_result",
-        lambda doc_id, url: recorded.append((doc_id, url)) or False,
+        lambda doc_id, url, db=None: recorded.append((doc_id, url)) or False,
     )
 
     upload_queue._attempt_upload(5)
@@ -474,6 +497,194 @@ def test_attempt_skips_non_pending_rows(monkeypatch, tmp_path):
 
     upload_queue._attempt_upload(5)
     assert row.attempts == 1  # dokunulmadı
+
+
+# ─── G011: outbox 'uploaded' + belge URL yazımı atomik mi ────────────────────
+
+class _FakeDocRow:
+    """models.CaseDocument satırının yükleme alanları."""
+
+    def __init__(self, **kw):
+        self.id = kw.get("id", 7)
+        self.sharepoint_url = kw.get("sharepoint_url")
+        self.upload_status = kw.get("upload_status", "pending")
+        self.upload_attempts = kw.get("upload_attempts", 0)
+
+
+class _TxSession:
+    """Transaction semantiğini taklit eden session: commit izlenen nesnelerin o
+    anki halini KALICI yapar, rollback son kalıcı hale geri sarar.
+
+    _FakeSession yalnız commit/rollback sayar; Python nesnesindeki mutasyonu
+    geri almadığı için "arıza sonrası satır pending'e döndü mü" sorusunu
+    cevaplayamaz — atomiklik iddiası bu yüzden burada kanıtlanır. journal,
+    her commit'te kalıcılaşan (satır statüleri, belge URL'si) çiftini tutar:
+    "uploaded ama URL'süz" bir ara durumun HİÇ kalıcı olmadığı böyle görülür.
+    """
+
+    def __init__(self, outbox_rows, doc=None, fail_doc_query=False, fail_commit_no=None):
+        self.outbox_rows = outbox_rows
+        self.doc = doc
+        self.fail_doc_query = fail_doc_query
+        self.fail_commit_no = fail_commit_no
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed = False
+        self.journal = []
+        self._durable = self._snapshot()
+
+    def _snapshot(self):
+        tracked = [o for o in list(self.outbox_rows) + [self.doc] if o is not None]
+        return [(obj, dict(obj.__dict__)) for obj in tracked]
+
+    def query(self, model):
+        import models
+
+        if model is models.CaseDocument:
+            if self.fail_doc_query:
+                raise RuntimeError("DB koptu (belge yazımı)")
+            return _FakeQuery([self.doc] if self.doc is not None else [])
+        return _FakeQuery(self.outbox_rows)
+
+    def commit(self):
+        self.commits += 1
+        if self.fail_commit_no == self.commits:
+            raise RuntimeError("commit koptu")
+        self._durable = self._snapshot()
+        self.journal.append(
+            ([r.status for r in self.outbox_rows], getattr(self.doc, "sharepoint_url", None))
+        )
+
+    def rollback(self):
+        self.rollbacks += 1
+        for obj, state in self._durable:
+            obj.__dict__.clear()
+            obj.__dict__.update(state)
+
+    def close(self):
+        self.closed = True
+
+
+def _patch_tx_sessions(monkeypatch, rows, doc, **result_session_kwargs):
+    """SessionLocal → _TxSession. _attempt_upload iki session açar: (1) deneme
+    sayacı, (2) sonuç yazımı. Arıza enjeksiyonu YALNIZ ikinciye uygulanır."""
+    from services import upload_queue
+
+    sessions = []
+
+    def factory():
+        kw = result_session_kwargs if len(sessions) == 1 else {}
+        s = _TxSession(rows, doc, **kw)
+        sessions.append(s)
+        return s
+
+    monkeypatch.setattr(upload_queue, "SessionLocal", factory)
+    return sessions
+
+
+def _patch_uploader_ok(monkeypatch, web_url="https://sp/yeni.pdf"):
+    import sharepoint.sharepoint_uploader_graph as uploader
+
+    monkeypatch.setattr(
+        uploader, "upload_file_to_sharepoint", lambda *a, **kw: {"webUrl": web_url}
+    )
+
+
+def test_attempt_success_writes_row_and_document_in_one_transaction(monkeypatch, tmp_path):
+    """Başarı yolu: satır 'uploaded' ile belge URL'si TEK commit'te kalıcılaşır."""
+    from services import upload_queue, export_publisher
+
+    row = _spooled_row(tmp_path, id=5, document_id=7, kind="islenmis")
+    doc = _FakeDocRow(id=7)
+    sessions = _patch_tx_sessions(monkeypatch, [row], doc)
+    _patch_uploader_ok(monkeypatch)
+
+    notified = []
+    monkeypatch.setattr(
+        export_publisher,
+        "notify_hukukbot",
+        # Hook anındaki kalıcı durumu da kaydet: URL commit'inden SONRA mı?
+        lambda doc_id: notified.append((doc_id, list(sessions[1].journal))),
+    )
+
+    upload_queue._attempt_upload(5)
+
+    assert row.status == "uploaded"
+    assert doc.sharepoint_url == "https://sp/yeni.pdf"
+    assert doc.upload_status == "uploaded" and doc.upload_attempts == 1
+
+    result_session = sessions[1]
+    # İlk (ve tek) durum commit'i satırı 'uploaded' yaparken belge URL'sini de
+    # taşır; hiçbir kalıcı ara durumda "uploaded ama URL'süz" yok
+    assert result_session.journal[0] == (["uploaded"], "https://sp/yeni.pdf")
+    assert not [
+        j for j in result_session.journal if j[0] == ["uploaded"] and j[1] is None
+    ]
+    assert notified[0][0] == 7
+    assert notified[0][1][0][1] == "https://sp/yeni.pdf", "hook URL kalıcı olmadan açılmamalı"
+
+
+def test_attempt_success_doc_write_failure_rolls_back_outbox_row(
+    monkeypatch, tmp_path, queue_log_records, root_log_records
+):
+    """G011 çift-arıza penceresi: belge yazımı düşerse satır 'uploaded'da
+    KALMAZ — pending'e geri sarılır, sonraki tarama yeniden dener."""
+    from services import upload_queue, export_publisher
+
+    row = _spooled_row(tmp_path, id=5, document_id=7, kind="islenmis")
+    spool_path = row.spool_path
+    doc = _FakeDocRow(id=7)
+    sessions = _patch_tx_sessions(monkeypatch, [row], doc, fail_doc_query=True)
+    _patch_uploader_ok(monkeypatch)
+    monkeypatch.setattr(
+        export_publisher,
+        "notify_hukukbot",
+        lambda *a: pytest.fail("URL kalıcı değilken hukukbot hook'u açılmamalı"),
+    )
+
+    upload_queue._attempt_upload(5)
+
+    # Kalıcı durum: satır PENDING, belge dokunulmamış — "uploaded + URL'süz" yok
+    assert row.status == "pending" and row.done_at is None
+    assert doc.sharepoint_url is None and doc.upload_status == "pending"
+    assert doc.upload_attempts == 0
+    assert sessions[1].rollbacks == 1 and sessions[1].journal == []
+    # Deneme sayacı ÖNCEKİ session'da commit edildi → zehirli-dosya bekçisi durur
+    assert row.attempts == 1
+    # Payload retry için durur ve satır yeniden vadesi gelmiş sayılır
+    assert os.path.exists(spool_path)
+    assert upload_queue._is_due(row, datetime.now(timezone.utc))
+    # Retry edilebilir arıza → WARNING; nihai değil, ERROR yok (alarm sözleşmesi)
+    assert len([r for r in queue_log_records if r.levelno == logging.WARNING]) == 1
+    assert not [r for r in root_log_records if r.levelno >= logging.ERROR]
+
+
+def test_attempt_success_commit_failure_leaves_no_half_written_state(
+    monkeypatch, tmp_path, queue_log_records, root_log_records
+):
+    """Süreç ölümü/commit arızası penceresi: iki yazımın ARASINDA commit
+    olmadığı için kalıcı sonuç ya 'ikisi de' ya 'hiçbiri'dir."""
+    from services import upload_queue, export_publisher
+
+    row = _spooled_row(tmp_path, id=5, document_id=7, kind="islenmis")
+    doc = _FakeDocRow(id=7)
+    # Sonuç session'ının İLK commit'i = satır+belge yazımının tek commit'i
+    sessions = _patch_tx_sessions(monkeypatch, [row], doc, fail_commit_no=1)
+    _patch_uploader_ok(monkeypatch)
+    monkeypatch.setattr(
+        export_publisher,
+        "notify_hukukbot",
+        lambda *a: pytest.fail("commit düştüyse hook açılmamalı"),
+    )
+
+    upload_queue._attempt_upload(5)
+
+    assert sessions[1].journal == [], "hiçbir ara durum kalıcılaşmamalı"
+    assert row.status == "pending" and row.done_at is None
+    assert doc.sharepoint_url is None and doc.upload_status == "pending"
+    assert os.path.exists(row.spool_path)  # payload retry için durur
+    assert len([r for r in queue_log_records if r.levelno == logging.WARNING]) == 1
+    assert not [r for r in root_log_records if r.levelno >= logging.ERROR]
 
 
 # ─── zamanlama yardımcıları ──────────────────────────────────────────────────
