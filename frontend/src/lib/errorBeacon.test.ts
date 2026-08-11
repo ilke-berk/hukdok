@@ -6,6 +6,7 @@ import {
   buildFromErrorEvent,
   buildFromRejection,
   initErrorBeacon,
+  reportCaughtRenderError,
   sendReport,
   shouldSend,
 } from "./errorBeacon";
@@ -149,5 +150,42 @@ describe("initErrorBeacon (uçtan uca dinleyici)", () => {
     const report = JSON.parse(spy.mock.calls[0][1] as string);
     expect(report.kind).toBe("unhandledrejection");
     expect(report.message).toBe("reddedildi");
+  });
+});
+
+describe("reportCaughtRenderError (Faz 4.4: ErrorBoundary köprüsü)", () => {
+  it("Error'ı [ErrorBoundary] önekiyle kind=error olarak raporlar", () => {
+    const spy = stubSendBeacon();
+    const err = new Error("render patladı");
+
+    reportCaughtRenderError(err, "in App\n  in div");
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const report = JSON.parse(spy.mock.calls[0][1] as string);
+    // Backend beyaz listesi {"error","unhandledrejection"} — yeni kind "unknown"a
+    // düşerdi; ayrım mesaj önekiyle yapılır.
+    expect(report.kind).toBe("error");
+    expect(report.message).toBe("[ErrorBoundary] render patladı");
+    expect(report.stack).toBe(err.stack); // Error stack'i componentStack'e tercih edilir
+  });
+
+  it("Error olmayan değeri stringleştirir ve stack olarak componentStack'e düşer", () => {
+    const spy = stubSendBeacon();
+
+    reportCaughtRenderError({ code: 7 }, "in App");
+
+    const report = JSON.parse(spy.mock.calls[0][1] as string);
+    expect(report.message).toBe('[ErrorBoundary] {"code":7}');
+    expect(report.stack).toBe("in App");
+  });
+
+  it("aynı render hatası 30 sn penceresinde bir kez gider (ortak kısma)", () => {
+    const spy = stubSendBeacon();
+    const err = new Error("döngüdeki hata");
+
+    reportCaughtRenderError(err);
+    reportCaughtRenderError(err);
+
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

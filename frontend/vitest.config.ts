@@ -11,6 +11,8 @@ export default defineConfig({
   },
   test: {
     environment: "node", // DOM gerektiren testler dosya başına @vitest-environment jsdom kullanır
-    include: ["src/**/*.test.ts"],
+    // Faz 4.4: .tsx da dahil — bileşen testleri (ör. ErrorBoundary) yalnız-.ts
+    // deseninde SESSİZCE toplanmıyordu.
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });

@@ -46,6 +46,71 @@ const getAuthToken = async (forceRefresh = false): Promise<string | null> => {
     }
 };
 
+// --- Faz 4.1: zaman aşımı katmanları + idempotent GET retry ---------------
+//
+// Tarayıcı fetch'inin varsayılan timeout'u YOK — askıda kalan bağlantı sonsuz
+// "yükleniyor" demek. İki katman:
+//   - DEFAULT (30 sn): etkileşimli okuma/yazma uçları.
+//   - LONG (300 sn): dosya yükleme, analiz/LLM, dönüşüm, indirme/export ve
+//     e-posta gönderen uçlar — nginx proxy_read_timeout 300 sn ile hizalı;
+//     sunucu kendi 504'ünü üretebilsin diye daha kısa tutulmaz.
+export const DEFAULT_TIMEOUT_MS = 30_000;
+export const LONG_TIMEOUT_MS = 300_000;
+
+// Uzun katman eşlemesi (tasarım kararı): FormData gövdesi = dosya yükleme her
+// zaman uzun; kalanlar yol tabanlı. Hızlı bir ucun uzun tavana girmesi zararsız
+// (tavan bekleme değil), tersi 30 sn'de meşru işi keser — şüphede uzun seçildi.
+const LONG_TIMEOUT_PREFIXES = [
+    "/process",                   // upload + Gemini analiz stream'i
+    "/confirm",                   // PDF/A dönüşümü + arşiv + e-posta
+    "/api/case-intake/",          // otonom dava açma ailesi (analyze/merge/commit LLM'li)
+    "/api/download/",             // işlenmiş PDF indirmesi (büyük gövde)
+    "/preview-email-body",        // Gemini gövde üretimi
+    "/preview-client-email-body",
+    "/api/config/export/",        // dosya export indirmesi
+    "/api/activity/admin/",       // rapor üretimi/toplu e-posta tetikleri
+    "/refresh",                   // SharePoint config listelerinin yeniden yüklenmesi
+];
+// Yolun İÇİNDE geçen işaretler (ör. /api/documents/{id}/download).
+const LONG_TIMEOUT_MARKERS = ["/download", "/resend-email", "/send-emails"];
+
+export function resolveTimeoutMs(endpoint: string, options: RequestInit = {}): number {
+    if (options.body instanceof FormData) return LONG_TIMEOUT_MS;
+    const path = (endpoint.startsWith("/") ? endpoint : "/" + endpoint).split("?")[0];
+    if (LONG_TIMEOUT_PREFIXES.some((p) => path.startsWith(p))) return LONG_TIMEOUT_MS;
+    if (LONG_TIMEOUT_MARKERS.some((m) => path.includes(m))) return LONG_TIMEOUT_MS;
+    return DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * apiClient'ın kendi zaman aşımı — çıplak AbortError yerine kullanıcıya
+ * gösterilebilir Türkçe mesaj taşır (çağıranlar error.message'ı toast'lar).
+ * Çağıranın kendi iptali (options.signal) bu sınıfa ÇEVRİLMEZ, aynen fırlar.
+ */
+export class ApiTimeoutError extends Error {
+    readonly endpoint: string;
+    readonly timeoutMs: number;
+
+    constructor(endpoint: string, timeoutMs: number) {
+        const message = timeoutMs >= LONG_TIMEOUT_MS
+            ? "İşlem 5 dakika içinde tamamlanamadı. İşlem sunucuda sürüyor olabilir — " +
+              "aynı belgeyi hemen TEKRAR YÜKLEMEYİN; birkaç dakika bekleyip aynı ekrandan tekrar deneyin."
+            : "Sunucudan 30 saniye içinde yanıt alınamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.";
+        super(message);
+        this.name = "ApiTimeoutError";
+        this.endpoint = endpoint;
+        this.timeoutMs = timeoutMs;
+    }
+}
+
+// YALNIZ idempotent GET'ler tekrar denenir: 2 deneme, 500ms→1000ms backoff.
+// POST'lar (özellikle /confirm ve /commit) HİÇBİR koşulda otomatik tekrarlanmaz —
+// 3-D idempotency kapısı sunucuda olsa da otomatik tekrar bilinçli yasak.
+// Zaman aşımında da tekrar YOK (30 sn × 3 = 90 sn askı olurdu; timeout "geçici
+// hıçkırık" değil "sunucu takıldı" sinyalidir).
+const GET_RETRY_DELAYS_MS = [500, 1000];
+const RETRYABLE_GET_STATUSES = new Set([502, 503, 504]);
+
 /**
  * Global API Client wrapper
  * automatically handles Bearer Token injection
@@ -71,10 +136,68 @@ export const apiClient = {
 
         console.log(`📡 API Request: ${options.method || 'GET'} ${url}`);
 
-        let response = await fetch(url, {
-            ...options,
-            headers
-        });
+        const timeoutMs = resolveTimeoutMs(endpoint, options);
+
+        // Deneme başına kendi controller'ımız + setTimeout: AbortSignal.timeout
+        // yerine bilinçli tercih — çağıranın signal'iyle elle köprülenir
+        // (AbortSignal.any bağımlılığı yok) ve vitest fake-timer'larıyla test
+        // edilebilir. Timeout gövde okumasını da kapsar (signal fetch'e bağlı).
+        const doFetch = async (requestHeaders: Headers): Promise<Response> => {
+            const controller = new AbortController();
+            let timedOut = false;
+            const timer = setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, timeoutMs);
+            const onCallerAbort = () => controller.abort(options.signal?.reason);
+            if (options.signal) {
+                if (options.signal.aborted) onCallerAbort();
+                else options.signal.addEventListener("abort", onCallerAbort, { once: true });
+            }
+            try {
+                return await fetch(url, { ...options, headers: requestHeaders, signal: controller.signal });
+            } catch (err) {
+                if (timedOut && !options.signal?.aborted) {
+                    throw new ApiTimeoutError(endpoint, timeoutMs);
+                }
+                throw err;
+            } finally {
+                clearTimeout(timer);
+                options.signal?.removeEventListener("abort", onCallerAbort);
+            }
+        };
+
+        const method = (options.method || "GET").toUpperCase();
+        const maxAttempts = method === "GET" ? 1 + GET_RETRY_DELAYS_MS.length : 1;
+
+        let response: Response | null = null;
+        let lastNetworkError: unknown = null;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            if (attempt > 0) {
+                await new Promise((r) => setTimeout(r, GET_RETRY_DELAYS_MS[attempt - 1]));
+                if (options.signal?.aborted) break;
+                console.warn(`🔁 GET tekrar denemesi ${attempt}/${GET_RETRY_DELAYS_MS.length}: ${url}`);
+            }
+            try {
+                response = await doFetch(headers);
+                lastNetworkError = null;
+            } catch (err) {
+                if (err instanceof ApiTimeoutError) throw err;               // timeout'ta tekrar yok
+                if ((err as Error)?.name === "AbortError") throw err;        // çağıran iptali aynen
+                if (method !== "GET") throw err;                             // yalnız GET retry'lanır
+                lastNetworkError = err;
+                response = null;
+                continue;
+            }
+            if (method !== "GET" || !RETRYABLE_GET_STATUSES.has(response.status)) break;
+            // 502/503/504 GET → bir sonraki turda tekrar denenir; denemeler
+            // tükenirse son yanıt olduğu gibi döner (çağıran hata yolunu işler).
+        }
+        if (!response) {
+            throw lastNetworkError instanceof Error
+                ? lastNetworkError
+                : new Error("Sunucuya ulaşılamadı.");
+        }
 
         // Faz 6.2 katman 1: 401'de MSAL sessiz yenileme (forceRefresh) + isteği
         // BİR kez tekrar — 30+ dk review'da access token düşse de akış kesilmez.
@@ -84,7 +207,7 @@ export const apiClient = {
             if (freshToken && freshToken !== token) {
                 console.warn("🔄 401 sonrası token yenilendi — istek tekrarlanıyor");
                 headers.set("Authorization", `Bearer ${freshToken}`);
-                response = await fetch(url, { ...options, headers });
+                response = await doFetch(headers);
             }
         }
 

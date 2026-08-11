@@ -57,7 +57,11 @@ type StreamMessage =
 export interface AnalyzeOptions {
   /** "info" stream mesajları geldiğinde (örn. tekli akışta toast göstermek için). */
   onInfo?: (message: string) => void;
-  /** Harici iptal sinyali. Verilmezse 5 dk timeout'lu kendi controller'ı kullanılır. */
+  /**
+   * Harici iptal sinyali (yalnız iptal için). Zaman aşımı Faz 4.1'den beri
+   * apiClient'ta: /process uzun katmandadır (300 sn), aşımda anlaşılır
+   * mesajlı ApiTimeoutError fırlar.
+   */
   signal?: AbortSignal;
 }
 
@@ -103,73 +107,64 @@ export async function analyzeDocument(
   docTypeCode?: string,
   options: AnalyzeOptions = {},
 ): Promise<AnalyzeResult> {
-  // Harici signal verilmediyse 5 dk'lık kendi timeout'umuzu kuruyoruz.
-  const ownController = options.signal ? null : new AbortController();
-  const signal = options.signal ?? ownController!.signal;
-  const timeoutId = ownController
-    ? setTimeout(() => ownController.abort(), 300000)
-    : null;
+  // Faz 4.1: buradaki 5 dk'lık kendi controller'ı kaldırıldı — timeout artık
+  // tek kaynaktan, apiClient'ın uzun katmanından gelir (stream okuması dahil).
+  const formData = new FormData();
+  formData.append("file", file);
+  if (docTypeCode) formData.append("belge_turu_kodu", docTypeCode);
 
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-    if (docTypeCode) formData.append("belge_turu_kodu", docTypeCode);
+  const response = await apiClient.fetch("/process", {
+    method: "POST",
+    body: formData,
+    signal: options.signal,
+  });
 
-    const response = await apiClient.fetch("/process", {
-      method: "POST",
-      body: formData,
-      signal,
-    });
+  if (!response.ok) {
+    throw new Error("Sunucu hatası: " + response.statusText);
+  }
+  if (!response.body) throw new Error("ReadableStream not supported");
 
-    if (!response.ok) {
-      throw new Error("Sunucu hatası: " + response.statusText);
-    }
-    if (!response.body) throw new Error("ReadableStream not supported");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let analysisData: AnalysisData | null = null;
+  let processId: string | null = null;
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let analysisData: AnalysisData | null = null;
-    let processId: string | null = null;
+  while (true) {
+    const { value, done } = await reader.read();
 
-    while (true) {
-      const { value, done } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
-      if (value) {
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let msg: StreamMessage;
+        try {
+          msg = JSON.parse(line) as StreamMessage;
+        } catch (e) {
+          console.error("JSON Parse Error on Stream chunk", e);
+          continue;
+        }
 
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let msg: StreamMessage;
-          try {
-            msg = JSON.parse(line) as StreamMessage;
-          } catch (e) {
-            console.error("JSON Parse Error on Stream chunk", e);
-            continue;
-          }
-
-          if (msg.status === "info") {
-            options.onInfo?.(msg.message);
-          } else if (msg.status === "error") {
-            throw new Error(msg.message);
-          } else if (msg.status === "complete") {
-            if (msg.process_id) processId = msg.process_id;
-            analysisData = mapAnalysisData(msg.data, docTypeCode);
-          }
+        if (msg.status === "info") {
+          options.onInfo?.(msg.message);
+        } else if (msg.status === "error") {
+          throw new Error(msg.message);
+        } else if (msg.status === "complete") {
+          if (msg.process_id) processId = msg.process_id;
+          analysisData = mapAnalysisData(msg.data, docTypeCode);
         }
       }
-
-      if (done) break;
     }
 
-    if (!analysisData) {
-      throw new Error("Analiz tamamlanamadı (yanıt eksik).");
-    }
-
-    return { analysisData, processId };
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (done) break;
   }
+
+  if (!analysisData) {
+    throw new Error("Analiz tamamlanamadı (yanıt eksik).");
+  }
+
+  return { analysisData, processId };
 }

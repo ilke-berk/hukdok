@@ -115,3 +115,30 @@ export function initErrorBeacon(): void {
     handle(buildFromRejection(event as PromiseRejectionEvent)),
   );
 }
+
+/**
+ * Faz 4.4: React render hataları window "error" olayına DÜŞMEZ (React yakalayıp
+ * boundary'ye verir) — ErrorBoundary.componentDidCatch buradan elle raporlar.
+ * Aynı kısma/dedup kuralları geçerli; kind backend beyaz listesindeki "error"
+ * kalır (yeni kind "unknown"a düşerdi), ayrım "[ErrorBoundary]" önekiyle.
+ */
+export function reportCaughtRenderError(error: unknown, componentStack?: string): void {
+  try {
+    const asError = error instanceof Error ? error : undefined;
+    let message: string;
+    try {
+      message = asError?.message ?? (typeof error === "string" ? error : JSON.stringify(error));
+    } catch {
+      message = String(error);
+    }
+    const stack = asError?.stack || componentStack;
+    handle({
+      kind: "error",
+      message: truncate(`[ErrorBoundary] ${message || "bilinmeyen render hatası"}`, MAX_MESSAGE),
+      stack: stack ? truncate(stack, MAX_STACK) : undefined,
+      url: truncate(window.location.href, MAX_URL),
+    });
+  } catch {
+    // beacon hiçbir koşulda kendi hatasını üretmez
+  }
+}

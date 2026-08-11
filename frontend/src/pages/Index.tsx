@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2, FolderOpen, Users, ChevronsUpDown, FileText, ExternalLink, Mail, Layers, ChevronRight, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
+import { confirmErrorMessage, extractConfirmFlags } from "@/lib/confirmResponse";
 import { useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -775,13 +776,34 @@ const Index = () => {
         body: formData
       });
 
-      const result = await response.json();
-
+      // Faz 4.3: ÖNCE durum kodu, SONRA gövde — 504'te nginx HTML döndürür,
+      // koşulsuz response.json() ham SyntaxError toast'ına dönüşüyordu.
+      // 409 (3-D "işlem sürüyor") detail'i olduğu gibi geçer; catch bloğu formu
+      // sıfırlamadığından kullanıcı bekleyip aynı ekrandan tekrar deneyebilir.
       if (!response.ok) {
-        throw new Error(result.detail || "Kayıt işlemi sırasında bir hata oluştu.");
+        throw new Error(await confirmErrorMessage(response));
       }
 
+      const result = await response.json();
+      const confirmFlags = extractConfirmFlags(result);
+
       console.log("Confirmation complete:", result);
+
+      // 3-D: aynı process_id ile tekrar gönderim — işlem ilk seferde zaten
+      // tamamlanmıştı, backend önceki yanıtı aynen döndürdü (pipeline/e-posta
+      // tekrar koşmadı). Mükerrer "arşivlendi" başarısı yerine bilgi verilir.
+      if (confirmFlags.idempotentReplay) {
+        toast.info("ℹ️ Bu belge zaten kaydedilmişti — önceki sonuç gösterildi, işlem tekrarlanmadı.", { duration: 6000 });
+      }
+
+      // 3-F: PDF dönüşümü başarısız — belge orijinal uzantısıyla arşivlendi,
+      // dönüşüm gece otomatik denenecek. Kritik bilgi: batch modda da görünür.
+      if (confirmFlags.conversionPending) {
+        toast.warning(
+          confirmFlags.conversionWarning || "Belge kaydedildi; PDF dönüşümü gece otomatik olarak tamamlanacak.",
+          { duration: 10000 },
+        );
+      }
 
       // --- FAZ 1: Otomatik durum güncelleme bildirimi ---
       if (result.results?.auto_status_update) {
@@ -817,7 +839,7 @@ const Index = () => {
         // 1. Try to download PROCESSED file using download_id
         const downloadId = result.results?.download_id;
         let blobToSave: Blob | File = selectedFile; // Fallback to original
-        const finalSaveFilename = newFilename;
+        let finalSaveFilename = newFilename;
 
         if (downloadId) {
           try {
@@ -832,6 +854,13 @@ const Index = () => {
             }
           } catch (dlErr) {
             console.error("Download fetch error:", dlErr);
+          }
+        } else if (confirmFlags.conversionPending) {
+          // 3-F: PDF hiç üretilmedi — orijinal, arşivdeki GERÇEK adıyla (kendi
+          // uzantısıyla) kaydedilir; ".pdf adıyla açılmayan dosya" tuzağına
+          // düşülmez. Kullanıcı uyarıyı yukarıdaki conversion toast'ından aldı.
+          if (confirmFlags.archivedFilename) {
+            finalSaveFilename = confirmFlags.archivedFilename;
           }
         } else {
           const isNonPdf = !selectedFile.name.toLowerCase().endsWith(".pdf");
@@ -883,7 +912,10 @@ const Index = () => {
           toast.error(`❌ E-posta gönderilemedi (${newFilename}): ${result.results.email_warning}`, { duration: 10000 });
         }
       } else {
-        if (shouldSendEmail) {
+        if (confirmFlags.idempotentReplay) {
+          // 3-D replay: "zaten kaydedilmişti" bilgisi yukarıda gösterildi —
+          // eski yanıttan gelen başarı/e-posta toast'ları tekrarlanmaz.
+        } else if (shouldSendEmail) {
           if (result.results?.email_success === true) {
             toast.success("✅ Belge arşivlendi ve e-posta gönderildi!");
           } else if (emailFailed) {

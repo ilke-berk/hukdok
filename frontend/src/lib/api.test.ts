@@ -17,7 +17,15 @@ vi.mock("@/config/msalConfig", () => ({
 const toastError = vi.hoisted(() => vi.fn());
 vi.mock("sonner", () => ({ toast: { error: toastError } }));
 
-import { apiClient, getApiUrl, SESSION_EXPIRED_EVENT } from "./api";
+import {
+    ApiTimeoutError,
+    DEFAULT_TIMEOUT_MS,
+    LONG_TIMEOUT_MS,
+    apiClient,
+    getApiUrl,
+    resolveTimeoutMs,
+    SESSION_EXPIRED_EVENT,
+} from "./api";
 
 const account = { username: "test@example.com" };
 
@@ -148,5 +156,193 @@ describe("apiClient.fetch", () => {
             timeout: 2000,
         });
         expect(msalMocks.logoutRedirect).toHaveBeenCalledTimes(1);
+    });
+});
+
+// --- Faz 4.1: zaman aşımı katmanları --------------------------------------
+
+describe("resolveTimeoutMs (uç eşlemesi)", () => {
+    it("etkileşimli okuma uçları varsayılan 30 sn'dedir", () => {
+        expect(resolveTimeoutMs("/api/cases")).toBe(DEFAULT_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/hearing-dates")).toBe(DEFAULT_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/activity/history?days=30")).toBe(DEFAULT_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/documents/5/party")).toBe(DEFAULT_TIMEOUT_MS);
+    });
+
+    it("upload/analiz/dönüşüm uçları uzun katmandadır (300 sn)", () => {
+        expect(resolveTimeoutMs("/process")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/confirm")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/case-intake/analyze")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/case-intake/commit")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/preview-email-body")).toBe(LONG_TIMEOUT_MS);
+    });
+
+    it("indirme/export/e-posta uçları uzun katmandadır", () => {
+        expect(resolveTimeoutMs("/api/download/abc123")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/documents/5/download?inline=true")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/documents/5/resend-email")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/activity/daily-report/1/send-emails")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/config/export/clients")).toBe(LONG_TIMEOUT_MS);
+    });
+
+    it("FormData gövdesi = dosya yükleme → yol ne olursa olsun uzun katman", () => {
+        expect(resolveTimeoutMs("/api/herhangi-bir-uc", { body: new FormData() })).toBe(LONG_TIMEOUT_MS);
+    });
+});
+
+// Abort signal'ine saygı duyan, hiç yanıt dönmeyen fetch stub'ı — timeout testleri.
+// Gerçek fetch gibi: zaten abort edilmiş signal ANINDA reddeder.
+function stubHangingFetch() {
+    const fetchMock = vi.fn().mockImplementation((_url: string, options: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+            const fail = () =>
+                reject(new DOMException("The operation was aborted.", "AbortError"));
+            if (options.signal?.aborted) {
+                fail();
+                return;
+            }
+            options.signal?.addEventListener("abort", fail);
+        });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+}
+
+describe("apiClient.fetch zaman aşımı (Faz 4.1)", () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("30 sn'de ApiTimeoutError fırlar; timeout'ta tekrar deneme YOKTUR", async () => {
+        vi.useFakeTimers();
+        const fetchMock = stubHangingFetch();
+
+        const promise = apiClient.fetch("/api/cases");
+        const assertion = expect(promise).rejects.toBeInstanceOf(ApiTimeoutError);
+        await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+        await assertion;
+
+        // GET olmasına rağmen timeout retry'lanmaz (30 sn × 3 = 90 sn askı olurdu)
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("kısa katman mesajı anlaşılırdır (çıplak AbortError sızmaz)", async () => {
+        vi.useFakeTimers();
+        stubHangingFetch();
+
+        const promise = apiClient.fetch("/api/cases");
+        const assertion = expect(promise).rejects.toThrow(/30 saniye içinde yanıt alınamadı/);
+        await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+        await assertion;
+    });
+
+    it("uzun katman (/confirm) 5 dk bekler ve 'TEKRAR YÜKLEMEYİN' tavsiyesi taşır", async () => {
+        vi.useFakeTimers();
+        const fetchMock = stubHangingFetch();
+
+        const promise = apiClient.fetch("/confirm", { method: "POST", body: new FormData() });
+        const assertion = expect(promise).rejects.toThrow(/TEKRAR YÜKLEMEYİN/);
+
+        // 30 sn'de HENÜZ düşmemeli (uzun katman)
+        await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(LONG_TIMEOUT_MS - DEFAULT_TIMEOUT_MS);
+        await assertion;
+        expect(fetchMock).toHaveBeenCalledTimes(1); // POST asla tekrarlanmaz
+    });
+
+    it("çağıranın kendi iptali ApiTimeoutError'a ÇEVRİLMEZ, AbortError aynen fırlar", async () => {
+        stubHangingFetch();
+        const controller = new AbortController();
+
+        const promise = apiClient.fetch("/api/cases", { signal: controller.signal });
+        const assertion = expect(promise).rejects.toSatisfy(
+            (e) => (e as Error).name === "AbortError",
+        );
+        controller.abort();
+        await assertion;
+    });
+});
+
+// --- Faz 4.1: yalnız idempotent GET retry ---------------------------------
+
+describe("apiClient.fetch GET retry (Faz 4.1)", () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("GET 503'te 500ms→1000ms backoff'la iki kez tekrar dener, başarıyı döndürür", async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({ status: 503, ok: false })
+            .mockResolvedValueOnce({ status: 503, ok: false })
+            .mockResolvedValueOnce({ status: 200, ok: true });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const promise = apiClient.fetch("/api/cases");
+        await vi.advanceTimersByTimeAsync(1500);
+        const response = await promise;
+
+        expect(response.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("denemeler tükenince son 503 yanıtı olduğu gibi döner (çağıran işler)", async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn().mockResolvedValue({ status: 503, ok: false });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const promise = apiClient.fetch("/api/cases");
+        await vi.advanceTimersByTimeAsync(1500);
+        const response = await promise;
+
+        expect(response.status).toBe(503);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("GET ağ hatasında da tekrar dener", async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn()
+            .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+            .mockResolvedValueOnce({ status: 200, ok: true });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const promise = apiClient.fetch("/api/cases");
+        await vi.advanceTimersByTimeAsync(500);
+        const response = await promise;
+
+        expect(response.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("GET 500'de tekrar DENEMEZ (yalnız 502/503/504 geçicidir)", async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ status: 500, ok: false });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await apiClient.fetch("/api/cases");
+
+        expect(response.status).toBe(500);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("POST 503'te ASLA tekrar denemez (/confirm, /commit disiplini)", async () => {
+        const fetchMock = vi.fn().mockResolvedValue({ status: 503, ok: false });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await apiClient.fetch("/confirm", { method: "POST", body: "{}" });
+
+        expect(response.status).toBe(503);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("POST ağ hatasında anında fırlar, tekrar yok", async () => {
+        const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+        vi.stubGlobal("fetch", fetchMock);
+
+        await expect(
+            apiClient.fetch("/api/cases", { method: "POST", body: "{}" }),
+        ).rejects.toBeInstanceOf(TypeError);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });

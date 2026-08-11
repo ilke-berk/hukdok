@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
 import { ShellLayout } from "@/components/shell/Shell";
 import { ConfirmDialogProvider } from "@/components/system/ConfirmDialog";
+import { ErrorBoundary } from "@/components/system/ErrorBoundary";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { apiClient } from "@/lib/api";
@@ -207,7 +208,10 @@ const App = () => {
             <ConfirmDialogProvider>
               <Toaster />
               <Sonner />
-              <AppContent />
+              {/* Faz 4.4: render hatası SPA'yı boş ekrana çevirmesin — fallback + yenile */}
+              <ErrorBoundary>
+                <AppContent />
+              </ErrorBoundary>
             </ConfirmDialogProvider>
           </TooltipProvider>
         </QueryClientProvider>
