@@ -280,10 +280,14 @@ if (-not (AnaTemizMi)) {
     }
 }
 
-$sunumModu = $false
-cmd /c "presentationsettings /start >nul 2>&1"
-if ($LASTEXITCODE -eq 0) { $sunumModu = $true; Yaz "Sunum modu acik (makine uyumaz)." }
-else { Yaz "UYARI: sunum modu acilamadi - uykuyu elle kapat." }
+# PresentationSettings.exe /start, mod acik kaldigi surece CALISIR DURUMDA KALIR
+# (cmd /c ile cagirmak sonsuza dek bloklar - 2026-08-11 gecesi canli yasandi).
+# Start-Process ile beklemeden baslatilir, finally'de oldurulunce mod kapanir.
+$sunumProc = $null
+try {
+    $sunumProc = Start-Process -FilePath "presentationsettings" -ArgumentList "/start" -PassThru -WindowStyle Hidden
+    Yaz "Sunum modu acik (makine uyumaz)."
+} catch { Yaz "UYARI: sunum modu acilamadi - uykuyu elle kapat." }
 
 # --- ana dongu ---
 $bosTur = 0
@@ -334,7 +338,7 @@ try {
     }
 }
 finally {
-    if ($sunumModu) { cmd /c "presentationsettings /stop >nul 2>&1" }
+    if ($null -ne $sunumProc) { try { Stop-Process -Id $sunumProc.Id -Force -ErrorAction Stop } catch {} }
 }
 
 Yaz ("=== KOSU BITTI: {0} gorev baslatildi, {1} gorev tamamlandi ===" -f $baslatilan, $bitirilen)

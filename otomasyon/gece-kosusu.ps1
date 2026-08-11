@@ -89,10 +89,13 @@ for ($d = 1; $d -le 36; $d++) {
 if (-not $backendHazir) { Yaz "HATA: backend konteyneri 3 dakikada hazir olmadi."; exit 1 }
 Yaz "Backend hazir."
 
-$sunumModu = $false
-cmd /c "presentationsettings /start >nul 2>&1"
-if ($LASTEXITCODE -eq 0) { $sunumModu = $true; Yaz "Sunum modu acik (makine uyumaz)." }
-else { Yaz "UYARI: sunum modu acilamadi - guc ayarlarindan uykuyu elle kapat." }
+# PresentationSettings.exe /start, mod acik kaldigi surece CALISIR DURUMDA KALIR
+# (cmd /c ile cagirmak sonsuza dek bloklar). Start-Process + finally'de oldur.
+$sunumProc = $null
+try {
+    $sunumProc = Start-Process -FilePath "presentationsettings" -ArgumentList "/start" -PassThru -WindowStyle Hidden
+    Yaz "Sunum modu acik (makine uyumaz)."
+} catch { Yaz "UYARI: sunum modu acilamadi - guc ayarlarindan uykuyu elle kapat." }
 
 # --- claude arguman setleri ---
 $ortakAraclar = '"Bash(docker compose:*)" "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(npm:*)" "Bash(npx:*)"'
@@ -145,7 +148,7 @@ try {
     }
 }
 finally {
-    if ($sunumModu) { cmd /c "presentationsettings /stop >nul 2>&1" }
+    if ($null -ne $sunumProc) { try { Stop-Process -Id $sunumProc.Id -Force -ErrorAction Stop } catch {} }
 }
 
 Yaz ("=== KOSU BITTI: bu gece {0} paket tamamlandi ===" -f $tamamlanan)
