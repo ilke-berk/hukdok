@@ -35,6 +35,9 @@ export interface ClientCaseSummary {
     total_cases: number;
 }
 
+/** G002: liste hatası kullanıcıya bu mesajla gösterilir (boş liste ile karışmasın). */
+export const CLIENT_LIST_ERROR = "Müvekkil listesi alınamadı — sunucuya ulaşılamadı.";
+
 export const useClients = () => {
     const { accounts } = useMsal();
     const { authRequest } = useAuthRequest();
@@ -45,11 +48,16 @@ export const useClients = () => {
         queryKey: ["clients"],
         queryFn: async () => {
             const res = await authRequest("/api/clients", "GET");
-            if (res?.ok) return res.json() as Promise<ClientData[]>;
-            return [] as ClientData[];
+            // G002: eskiden hata da `[]` dönüyordu — müvekkil listesi boş görünüp
+            // kullanıcı kayıtların silindiğini sanıyordu. Artık hata state'ine düşer.
+            if (!res?.ok) throw new Error(CLIENT_LIST_ERROR);
+            return res.json() as Promise<ClientData[]>;
         },
         enabled,
         staleTime: 5 * 60 * 1000,
+        // apiClient GET'i zaten 3 denemeye kadar tekrarlıyor (Faz 4.1); react-query'nin
+        // ek 3 denemesi hata şeridini ~7 sn geciktirirdi. Tekrar kullanıcıya bırakıldı.
+        retry: false,
     });
 
     const invalidate = () => queryClient.invalidateQueries({ queryKey: ["clients"] });
@@ -98,6 +106,11 @@ export const useClients = () => {
     return {
         clients: clientsQ.data ?? [],
         isLoading,
+        // G002: hata boş listeden ayrışsın diye açıkça dışa verilir.
+        isClientsError: clientsQ.isError,
+        clientsError: clientsQ.isError ? CLIENT_LIST_ERROR : undefined,
+        refetchClients: () => clientsQ.refetch(),
+        isRefetchingClients: clientsQ.isFetching,
         saveClient: (data: ClientData) => saveClientM.mutateAsync(data),
         updateClient: (id: number, data: ClientData) => updateClientM.mutateAsync({ id, data }),
         deleteClient: (id: number, reason: string) => deleteClientM.mutateAsync({ id, reason }),

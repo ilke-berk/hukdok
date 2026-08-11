@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
-import { useCases, CaseData, DuplicateCaseMatch } from "@/hooks/useCases";
+import { useCases, CaseData, DuplicateCaseMatch, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -135,6 +135,8 @@ const NewCase = () => {
 
     // Generate case tracking ID using central utility
     const [caseId, setCaseId] = useState(editModeCase?.tracking_no || generateTrackingNumber());
+    // G002: ofis no sırası alınamadıysa dolu (yanlış) numarayla kayıt yapılmasın
+    const [sequenceError, setSequenceError] = useState<string | null>(null);
     const [isLoading, _setIsLoading] = useState(false);
     const [caseStatus, setCaseStatus] = useState(editModeCase?.status || "DERDEST");
     const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
@@ -315,8 +317,20 @@ const NewCase = () => {
         if (cName) {
             // İsim bloğu (blok2) ile sorgula: backend mevcut en yüksek sıra numarasından
             // devam eder, dolu ofis numarası önerilmez.
-            seq = await getClientCaseSequence(cName, generateNameBlock(cName, named.category));
+            try {
+                seq = await getClientCaseSequence(cName, generateNameBlock(cName, named.category));
+            } catch (error) {
+                // G002: sıra numarası alınamadıysa uydurma numara ÜRETİLMEZ —
+                // handleSubmit bu bayrağı görüp kaydı bloke eder.
+                console.error(error);
+                setSequenceError(error instanceof Error ? error.message : CASE_SEQUENCE_ERROR);
+                toast.error("Ofis numarası üretilemedi", {
+                    description: error instanceof Error ? error.message : CASE_SEQUENCE_ERROR,
+                });
+                return;
+            }
         }
+        setSequenceError(null);
 
         const tracking = generateTrackingNumber({
             category: catCode,
@@ -393,6 +407,16 @@ const NewCase = () => {
 
     const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
         if (e) e.preventDefault();
+
+        // G002: ofis numarası sunucudan alınamadıysa kayıt BLOKE — aksi halde
+        // dolu bir numarayla kaydedip 409'a düşülüyor ya da yanlış numara açılıyordu.
+        // (Düzenlemede numara sabittir, kontrol yalnız yeni kayıtta.)
+        if (!isEditMode && sequenceError) {
+            toast.error("Kaydedilemez: ofis numarası doğrulanamadı", {
+                description: `${sequenceError} Bağlantı düzelince müvekkil alanını yeniden seçin.`,
+            });
+            return;
+        }
 
         // Zorunlu alan uyarısı: eksik alan kaydı ENGELLEMEZ — kullanıcı onaylarsa
         // dosya DERDEST kaydedilir, panelde "eksik" uyarısıyla görünür/filtrelenir.
@@ -1388,6 +1412,12 @@ const NewCase = () => {
                                 <p className="text-xs text-muted-foreground mt-2 italic">
                                     Sistem tarafından otomatik atanan takip numarasıdır.
                                 </p>
+                                {/* G002: sıra numarası alınamadı — gösterilen numara GÜNCEL DEĞİL, kayıt bloke */}
+                                {sequenceError && !isEditMode && (
+                                    <p role="alert" className="text-xs text-destructive mt-2">
+                                        {sequenceError} Numara doğrulanana kadar kayıt yapılamaz.
+                                    </p>
+                                )}
                             </Card>
 
                             {/* Sorumlu / Büro / Tazminat — danışma modunda gizli */}
