@@ -15,6 +15,7 @@ import {
   Scale,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
+import { clearAppStorage } from "@/lib/appStorage";
 import { useDashboardView } from "@/hooks/useDashboardView";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
@@ -68,17 +69,21 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     return location.pathname === item.path;
   };
 
-  const handleLogout = () => {
+  // G004: eskiden hata yolunda `sessionStorage.clear()` + `localStorage.clear()`
+  // çağrılıyordu — bu, origin'deki HER anahtarı (MSAL'ın kendi cache'i, başka
+  // sekmedeki veri, eklenti kayıtları) siliyordu. Artık yalnız HUKDOK anahtarları
+  // temizlenir; MSAL oturumunu kendi API'siyle (logoutRedirect) kapatır.
+  const handleLogout = async () => {
+    clearAppStorage(); // taslaklar + tercih/önbellek anahtarları (TC içeren yetki belgesi cache'i dahil)
     try {
-      const currentAccount = instance.getActiveAccount();
-      instance.logoutRedirect({
-        account: currentAccount,
+      await instance.logoutRedirect({
+        account: instance.getActiveAccount(),
         postLogoutRedirectUri: window.location.origin + "/login",
       });
     } catch (error) {
+      // Redirect kurulamadı (ör. interaction_in_progress). MSAL cache'ine ELLE
+      // dokunulmaz — yarım silinmiş cache kilitli durumlar üretir; sayfa tazelenir.
       console.error("❌ Logout failed:", error);
-      sessionStorage.clear();
-      localStorage.clear();
       window.location.reload();
     }
   };

@@ -126,33 +126,7 @@ export function markExpiredDocuments(
   };
 }
 
-export interface DebouncedFn {
-  (): void;
-  /** Bekleyen çağrıyı iptal eder (unmount temizliği). */
-  cancel: () => void;
-  /** Bekletmeden hemen çalıştırır (oturum düşmesi / pagehide flush'ı). */
-  flush: () => void;
-}
-
-export function debounce(fn: () => void, ms: number): DebouncedFn {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const cancel = () => {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  };
-  const debounced = () => {
-    cancel();
-    timer = setTimeout(() => {
-      timer = null;
-      fn();
-    }, ms);
-  };
-  debounced.cancel = cancel;
-  debounced.flush = () => {
-    cancel();
-    fn();
-  };
-  return debounced;
-}
+// G004: `debounce` sayfadan bağımsız taslak motoruna (formDraft.ts) taşındı —
+// tek kopya kalsın diye buradan yeniden dışa veriliyor (mevcut çağıranlar bozulmaz).
+export { debounce } from "@/lib/formDraft";
+export type { DebouncedFn } from "@/lib/formDraft";

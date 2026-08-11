@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { FlowDropZone } from "@/components/flow/FlowDropZone";
@@ -14,7 +14,14 @@ import { Wand2, Loader2, AlertCircle, Link2, Search, X, TestTube2, CheckCircle2,
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";
 import { confirmErrorMessage, extractConfirmFlags } from "@/lib/confirmResponse";
-import { useCases } from "@/hooks/useCases";
+import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
+import { useFormDraft } from "@/hooks/useFormDraft";
+import { describeDraftAge } from "@/lib/formDraft";
+import {
+  isUploadFlowDraftDirty,
+  uploadFlowDraftStore,
+  type UploadFlowDraftData,
+} from "@/lib/uploadFlowDraft";
 import { useConfig } from "@/hooks/useConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -156,27 +163,92 @@ const Index = () => {
   const [selectedPartyId, setSelectedPartyId] = useState<number | null>(null);
   const [isTestMode, _setIsTestMode] = useState(false);
   const [casesLoaded, setCasesLoaded] = useState(false);
+  // G004: liste isteği düşerse "kayıt yok" değil HATA gösterilir (G002 kuralı).
+  const [casesError, setCasesError] = useState<string | null>(null);
   const [isQuickCaseModalOpen, setIsQuickCaseModalOpen] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
 
+  // --- G004: Yükleme akışı taslağı ------------------------------------
+  // Yenileme/kaza navigasyonunda dosyanın kendisi (File) ve process_id
+  // kurtarılamaz; kullanıcının emek verdiği BAĞLAM kurtarılır.
+  const uploadDraftData: UploadFlowDraftData = useMemo(() => ({
+    docType: selectedDocType,
+    filename: selectedFile?.name ?? null,
+    linkedCase: linkedCase
+      ? {
+        id: linkedCase.id,
+        tracking_no: linkedCase.tracking_no,
+        esas_no: linkedCase.esas_no,
+        court: linkedCase.court,
+      }
+      : null,
+  }), [selectedDocType, selectedFile, linkedCase]);
+
+  // Ekranda onaylanmamış bir belge varsa sekmeyi kapatmak/yenilemek veri
+  // kaybettirir (analiz yeniden koşmak zorunda kalır) — tarayıcı uyarısı burada.
+  const uploadInFlight = !!selectedFile && (isAnalyzing || !!analysisData || fileQueue.length > 0);
+
+  const uploadDraft = useFormDraft(uploadFlowDraftStore, {
+    data: uploadDraftData,
+    dirty: isUploadFlowDraftDirty(uploadDraftData),
+    warnOnUnload: uploadInFlight,
+  });
+
+  const handleRestoreUploadDraft = () => {
+    const data = uploadDraft.restore();
+    if (!data) return;
+    if (data.docType) setSelectedDocType(data.docType);
+    if (data.linkedCase) {
+      // Taraf listesi taslakta yok; aşağıdaki effect tam davayı sunucudan çeker
+      // (ve "belge kime ait" seçimini bilerek sıfırlar — bkz. uploadFlowDraft.ts).
+      setLinkedCase({
+        id: data.linkedCase.id,
+        tracking_no: data.linkedCase.tracking_no,
+        esas_no: data.linkedCase.esas_no,
+        court: data.linkedCase.court,
+      });
+    }
+    toast.info("Yükleme bağlamı geri yüklendi — belgeyi yeniden seçin, analiz yeniden koşacak.");
+  };
+
   // Boş ekrandaki kaynak kartları + "Dosya Seç" için gizli input'u tetikler.
   const openFilePicker = () => document.getElementById("hidden-file-input")?.click();
 
-  // Davaları yükle (bir kere)
+  // Son davaları yükle (bir kere).
+  // G004: G002 ile getCases artık kesintide FIRLATIYOR; bu zincirde `.catch`
+  // yoktu — yakalanmayan rejection oluşuyor ve `casesLoaded` hiç true olmadığı
+  // için dava arama paneli sonsuz "Yükleniyor..."da kalıyordu.
   useEffect(() => {
-    getCases<IndexCaseData>({ status: "DERDEST" }).then((data) => {
-      setAllCases(data.cases || []);
-      setCasesLoaded(true);
-
-      // Dacă sayfadan case yönlendirmesi var ise, seç
-      if (location.state?.preselectCase) {
-        setLinkedCase(location.state.preselectCase);
-        toast.info(`Dava önceden seçildi: ${location.state.preselectCase.esas_no || location.state.preselectCase.tracking_no}`);
-      }
-    });
+    let cancelled = false;
+    getCases<IndexCaseData>({ status: "DERDEST" })
+      .then((data) => {
+        if (cancelled) return;
+        setAllCases(data.cases || []);
+        setCasesError(null);
+        setCasesLoaded(true);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Son davalar yüklenemedi:", error);
+        setAllCases([]);
+        setCasesError(error instanceof Error ? error.message : CASE_LIST_ERROR);
+        // Hata da bir sonuçtur: yükleme durumu biter, panel "kayıt yok" yerine
+        // hata şeridi gösterir. Esas no araması ayrı uçtan gittiği için çalışır.
+        setCasesLoaded(true);
+      });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Dava sayfasından yönlendirmeyle gelen ön-seçim. Son dava listesinden
+  // BAĞIMSIZ tutuldu: liste isteği düşse de ön-seçim uygulanmalı.
+  useEffect(() => {
+    const preselect = location.state?.preselectCase as IndexCaseData | undefined;
+    if (!preselect) return;
+    setLinkedCase(preselect);
+    toast.info(`Dava önceden seçildi: ${preselect.esas_no || preselect.tracking_no}`);
   }, [location.state]);
 
 
@@ -338,6 +410,8 @@ const Index = () => {
     setShowBatchPrep(false);
     setPendingBatchFiles([]);
     setAutoAnalyzePending(false);
+    // İptal = taslak da gitsin (yarım kalan bağlam hayaleti kalmaz).
+    uploadDraft.clear();
   };
 
   // Faz 4.2: Bekleyen dosyaları kuyruktan çıkar. Geçmiş ve mevcut dosya korunur.
@@ -1009,6 +1083,8 @@ const Index = () => {
           batchResultsRef.current = { successCount: 0, emailSuccessCount: 0, errors: [] };
           // Faz 6: hazırlık state'i de sıfırla.
           setBatchPrep(null);
+          // Arşivleme tamam — taslak bağlamı silinir (kaydedilen verinin hayaleti kalmaz).
+          uploadDraft.clear();
         }, 1500);
       }
     } catch (error: unknown) {
@@ -1061,6 +1137,33 @@ const Index = () => {
         />
       ) : (
       <main className="max-w-screen-2xl mx-auto">
+        {/* G004: Yarım kalan yükleme şeridi. Yalnız boş ekranda gösterilir —
+            zaten bir belge seçiliyse kullanıcı akışın içindedir. */}
+        {uploadDraft.pending && !selectedFile && (
+          <div className="mb-7 flex flex-wrap items-center gap-3 border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
+            <AlertCircle className="w-4 h-4 text-[var(--brand)] shrink-0" />
+            <div className="text-[13px] leading-relaxed max-w-[80ch]">
+              <span className="font-semibold text-[var(--fg)]">Yarım kalan yükleme bulundu</span>
+              <span className="text-[var(--fg-muted)]">
+                {" "}— {describeDraftAge(uploadDraft.pending.ageMs)}
+                {uploadDraft.pending.data.filename ? ` · "${uploadDraft.pending.data.filename}"` : ""}
+                {uploadDraft.pending.data.linkedCase
+                  ? ` · ${uploadDraft.pending.data.linkedCase.esas_no || uploadDraft.pending.data.linkedCase.tracking_no}`
+                  : ""}
+                . Belge türü ve dava bağlantısı geri yüklenebilir; belgenin kendisi yeniden seçilmeli — analiz yeniden koşar.
+              </span>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Button type="button" size="sm" onClick={handleRestoreUploadDraft}>
+                Bağlamı geri yükle
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={uploadDraft.dismiss}>
+                Yoksay
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Dosya seçiliyken şerit üstte kalır (analiz/onay ilerlemesini gösterir).
             Boş ekranda ise şerit + HEDEF rozeti drop zone kutusunun içine taşınır. */}
         {selectedFile && (
@@ -1329,6 +1432,14 @@ const Index = () => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--fg-muted)]" />
                     <Input placeholder="Esas no veya mahkeme ile ara..." className="pl-9 h-9 text-sm bg-[var(--bg)] border-[var(--border)] rounded-[3px]" value={caseSearch} onChange={e => setCaseSearch(e.target.value)} />
                   </div>
+                  {/* G004: Son dava listesi alınamadıysa "sonuç yok" değil HATA
+                      gösterilir; arama ayrı uçtan gittiği için kullanılabilir kalır. */}
+                  {casesError && (
+                    <p className="flex items-start gap-1.5 text-xs text-[#a8323b] leading-relaxed">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{casesError} Son davalar listelenemiyor — esas no ile arayabilirsiniz.</span>
+                    </p>
+                  )}
                   {caseSearch.trim() && (
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {!casesLoaded ? (
