@@ -92,15 +92,38 @@ def resolve_upload_suffix(filename: Optional[str]) -> str:
 
 _EML_HEADER_RE = re.compile(rb"^(From|Received|Subject|MIME-Version):", re.IGNORECASE | re.MULTILINE)
 
-# Gövde HTML temizliği: script blokları, dış stylesheet'ler ve dış/cid görsel
-# referansları sökülür (imza logoları vb.) — hedef görsel sadakat değil,
+# Gövde HTML temizliği: script/style blokları, dış stylesheet'ler ve dış/cid
+# görsel referansları sökülür (imza logoları vb.) — hedef görsel sadakat değil,
 # metnin modele ulaşması.
+#
+# GÜVENLİK (SSRF): gövde soffice ile PDF'e çevrilirken LibreOffice uzak kaynak
+# taşıyan attribute'ları GERÇEKTEN çeker — `<table background="http://...">`
+# ile kanıtlandı. Etiket bazlı denylist (img/link) yetmez; taşıyıcı uzay açıktır
+# (background, poster, srcset, data, meta-refresh...). Bu yüzden kural GENELDİR:
+# hangi etikette olursa olsun uzak şema taşıyan attribute sökülür
+# (`_strip_remote_refs`). Aşağıdaki üç özel desen bunun ÜSTÜNE korunur: script/
+# link/uzak-img etiketleri komple silinir — yalnız attribute soymak boş `<img>`
+# iskeleti bırakır ve soffice kırık görsel kutusu çizer.
 _SCRIPT_RE = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_STYLE_BLOCK_RE = re.compile(r"<style\b.*?</style\s*>", re.IGNORECASE | re.DOTALL)
 _LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
 _REMOTE_IMG_RE = re.compile(
     r"<img\b[^>]*\bsrc\s*=\s*[\"']?(?:cid:|https?:|//)[^>]*?>", re.IGNORECASE | re.DOTALL
 )
 _META_CHARSET_RE = re.compile(r"<meta\b[^>]*charset[^>]*>", re.IGNORECASE)
+
+_TAG_RE = re.compile(r"<[A-Za-z!/][^>]*>", re.DOTALL)
+_ATTR_RE = re.compile(
+    r"""\s+([A-Za-z_:][-.\w:]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>`=]+)""", re.DOTALL
+)
+# Şema değerin HERHANGİ bir yerinde aranır: `<meta http-equiv="refresh"
+# content="0;url=http://...">` gibi taşıyıcılarda URL başta değildir.
+_REMOTE_SCHEME_RE = re.compile(r"(?:https?|ftps?|file|cid)\s*:", re.IGNORECASE)
+# Protokol-göreli (`//host/x`) ve UNC (`\\host\x`) yalnız değerin BAŞINDA anlamlı.
+_PROTO_RELATIVE_RE = re.compile(r"^(?://|\\\\)")
+_ATTR_STRIP_RE = re.compile(r"[\s\x00-\x20\x7f]")
+_CSS_IMPORT_RE = re.compile(r"@import\b[^;}]*;?", re.IGNORECASE)
+_CSS_URL_RE = re.compile(r"url\s*\([^)]*\)", re.IGNORECASE)
 _BODY_OPEN_RE = re.compile(r"<body\b[^>]*>", re.IGNORECASE)
 _ANY_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -114,6 +137,47 @@ def _looks_like_eml(head: bytes) -> bool:
     geriye itiyor (ölçüldü: From ~5.6 KB, MIME-Version ~17 KB)."""
     found = {m.group(1).lower() for m in _EML_HEADER_RE.finditer(head)}
     return len(found) >= 2
+
+
+def _normalize_attr_value(raw: str) -> str:
+    """Attribute değerini KARAR için normalize eder: tırnağı soy, HTML
+    entity'lerini çöz, boşluk/kontrol karakterlerini at. Böylece
+    `&#104;ttp://...` ve `h&#9;ttp://...` gibi kaçışlar da yakalanır."""
+    value = raw.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return _ATTR_STRIP_RE.sub("", html_lib.unescape(value))
+
+
+def _strip_css_remote(css: str) -> str:
+    """CSS'teki uzak kaynak taşıyıcıları: `@import` kuralları komple silinir,
+    `url(...)` fonksiyonları şemaya BAKILMADAN `none` yapılır — görsel sadakat
+    hedef olmadığı için en genel (kaçış kaldırmayan) kural tercih edildi."""
+    return _CSS_URL_RE.sub("none", _CSS_IMPORT_RE.sub("", css))
+
+
+def _clean_tag_attrs(match: "re.Match[str]") -> str:
+    """Tek bir etiketin attribute'larını süzer."""
+
+    def _attr(m: "re.Match[str]") -> str:
+        name, raw = m.group(1), m.group(2)
+        value = _normalize_attr_value(raw)
+        if _REMOTE_SCHEME_RE.search(value) or _PROTO_RELATIVE_RE.match(value):
+            return ""
+        if name.lower() == "style":
+            cleaned = _strip_css_remote(raw)
+            if cleaned != raw:
+                return f" {name}={cleaned}"
+        return m.group(0)
+
+    return _ATTR_RE.sub(_attr, match.group(0))
+
+
+def _strip_remote_refs(html: str) -> str:
+    """Uzak şema taşıyan attribute'ları etiket etiket söker (genel SSRF kuralı).
+    Yalnız etiketlerin içinde çalışır — gövde METNİNDEKİ adresler korunur, zaten
+    ağ isteği doğurmazlar ve modele bilgi taşırlar."""
+    return _TAG_RE.sub(_clean_tag_attrs, html)
 
 
 def _email_header_html(msg: email.message.EmailMessage) -> str:
@@ -150,8 +214,10 @@ def _build_body_html(msg: email.message.EmailMessage) -> Optional[str]:
     header_html = _email_header_html(msg)
     if part.get_content_type() == "text/html":
         cleaned = _SCRIPT_RE.sub("", content)
+        cleaned = _STYLE_BLOCK_RE.sub("", cleaned)
         cleaned = _LINK_TAG_RE.sub("", cleaned)
         cleaned = _REMOTE_IMG_RE.sub("", cleaned)
+        cleaned = _strip_remote_refs(cleaned)
         # Orijinal charset bildirimi yanıltır — dosya UTF-8 (BOM'lu) yazılır.
         cleaned = _META_CHARSET_RE.sub("", cleaned)
         body_open = _BODY_OPEN_RE.search(cleaned)

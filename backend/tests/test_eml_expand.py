@@ -52,6 +52,18 @@ def _base_msg(html_body=True):
     return msg
 
 
+def _html_eml_bytes(html):
+    """Verilen HTML gövdeyi taşıyan eksiz .eml (temizlik testleri için)."""
+    msg = EmailMessage()
+    msg["From"] = "saldirgan@ornek.test"
+    msg["To"] = "info@ornek.av.tr"
+    msg["Subject"] = SUBJECT
+    msg["Date"] = "Thu, 30 Jul 2026 10:00:00 +0300"
+    msg.set_content(BODY_PLAIN)
+    msg.add_alternative(html, subtype="html")
+    return bytes(msg)
+
+
 def _full_eml_bytes():
     """Plan test fixture'ı: HTML gövde + PDF ek + inline logo + zip + udf.zip + nested eml."""
     msg = _base_msg()
@@ -199,6 +211,95 @@ def test_unnamed_part_gets_generated_name(env, fake_render):
     assert r.status_code == 200
     names = [a["filename"] for a in r.json()["attachments"]]
     assert any(n.startswith("ek_") and n.endswith(".pdf") for n in names)
+
+
+# ── gövde HTML temizliği / SSRF regresyonu ──────────────────────────────────
+#
+# Gövde soffice ile PDF'e çevrilirken LibreOffice uzak kaynakları GERÇEKTEN
+# çekiyordu (probe ile kanıtlandı: <table background="http://..."> için sunucu
+# kaydında GET). Aşağıdaki testler taşıyıcıyı tek tek değil, "uzak şema taşıyan
+# attribute" genel kuralını kanıtlar.
+
+SSRF_HTML = (
+    "<html><head>"
+    "<style>@import url('http://evil.test/import.css');"
+    " body { background: url(http://evil.test/css_bg.png); }</style>"
+    '<meta http-equiv="refresh" content="0;url=http://evil.test/refresh">'
+    "</head><body>"
+    '<table background="http://evil.test/TABLE_PROBE.png"><tr>'
+    '<td background="&#104;ttp://evil.test/entity.png">hücre</td></tr></table>'
+    "<div style=\"background-image:url('http://evil.test/inline.png')\">stil</div>"
+    '<img srcset="http://evil.test/srcset.png 2x" src="yerel.png">'
+    '<video poster="//evil.test/poster.jpg"></video>'
+    '<object data="http://evil.test/object.bin"></object>'
+    '<a href="http://evil.test/link">Dava metni burada</a>'
+    "</body></html>"
+)
+
+
+def test_remote_resource_attributes_stripped(env, fake_render):
+    """Kabul kriteri: temizlik sonrası gövdede HİÇBİR uzak URL kalmaz."""
+    r = _post(env, _html_eml_bytes(SSRF_HTML))
+    assert r.status_code == 200
+    html = fake_render[0]
+
+    assert "evil.test" not in html          # hiçbir taşıyıcı sızmadı
+    assert "http://" not in html
+    assert "@import" not in html
+    assert "url(" not in html.lower()       # style bloğu + inline style url()
+    # Aşırı temizlik değil: gövde metni korunur
+    assert "Dava metni burada" in html
+    assert "hücre" in html
+
+
+def test_table_background_probe_removed(env, fake_render):
+    """Kanıtlanmış SSRF taşıyıcısının kendisi — img'e özel kural bunu kaçırıyordu."""
+    html = '<html><body><table background="http://127.0.0.1:8765/TABLE_PROBE.png">' \
+           "<tr><td>satır</td></tr></table></body></html>"
+    r = _post(env, _html_eml_bytes(html))
+    assert r.status_code == 200
+    cleaned = fake_render[0]
+    assert "TABLE_PROBE" not in cleaned
+    assert "background" not in cleaned.lower()
+    assert "satır" in cleaned               # tablo içeriği duruyor
+
+
+def test_link_tag_removed(env, fake_render):
+    """`_LINK_TAG_RE` kapsaması: yerel href'li <link> de sökülür."""
+    r = _post(env, _html_eml_bytes(
+        '<html><head><link rel="stylesheet" href="/yerel/stil.css"></head>'
+        "<body><p>Gövde</p></body></html>"
+    ))
+    assert r.status_code == 200
+    cleaned = fake_render[0]
+    assert "<link" not in cleaned.lower()
+    assert "stil.css" not in cleaned
+    assert "Gövde" in cleaned
+
+
+def test_cid_image_still_removed(env, fake_render):
+    """Mevcut davranış korunur: cid: gömülü görsel etiketi komple silinir."""
+    r = _post(env, _html_eml_bytes(
+        '<html><body><img src="cid:logo123"><p>İmza</p></body></html>'
+    ))
+    assert r.status_code == 200
+    cleaned = fake_render[0]
+    assert "cid:logo123" not in cleaned
+    assert "<img" not in cleaned.lower()
+    assert "İmza" in cleaned
+
+
+def test_local_attributes_preserved(env, fake_render):
+    """Genel kural yalnız UZAK şemaları söker — yerel/göreli değerler kalır."""
+    r = _post(env, _html_eml_bytes(
+        '<html><body><p class="govde"><a href="/yerel/sayfa">bak</a>'
+        '<span style="color:#ff0000">kırmızı</span></p></body></html>'
+    ))
+    assert r.status_code == 200
+    cleaned = fake_render[0]
+    assert 'class="govde"' in cleaned
+    assert 'href="/yerel/sayfa"' in cleaned
+    assert "color:#ff0000" in cleaned
 
 
 # ── gerçek soffice ile gövde PDF'i (konteyner) ──────────────────────────────
