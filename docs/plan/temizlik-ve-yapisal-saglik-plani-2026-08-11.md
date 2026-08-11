@@ -289,7 +289,7 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 
 | Sıcak yol | Sorgu türü | Bugünkü erişim | Ölçüm | Doğru yol |
 | --- | --- | --- | --- | --- |
-| Tanıdık sorgu | eşitlik + bulanık isim | Tüm tablo Python'a (51.855 satır) | 1 isim ~600 ms CPU + ~430 ms DB; **20 isimde 10,5 sn CPU** | **Önce A.4 (cache)**, sonra yeniden değerlendir |
+| ~~Tanıdık sorgu~~ | eşitlik + bulanık isim | ~~Tüm tablo Python'a (51.855 satır)~~ | ~~1 isim ~600 ms + 20 isimde 10,5 sn~~ | **DÜŞTÜ — durma kriteri karşılandı** (aşağı bak) |
 | `find_matching_case` | bulanık eşleştirme | Tüm aktif dava + tarafları belleğe | 2.953 ms; **tepe bellek 244 MB (gerçek RSS deltası ~290 MB)** | SQL'de aday daraltma + yalnız gerekli kolonlar |
 | Avukat filtresi | eşitlik | İki `.all()` + Python | 116 ms, doğrusal büyür | index + SQL filtre |
 | Dava araması | 13 kollu OR × terim sayısı | 11 trgm index'inin hiçbiri kullanılamıyor | 83 ms → UNION **20 ms = 4,0×** (tek terim, ≥3 karakter). 2 karakterde 97 → 77 ms = **1,27×** | UNION — ama bkz. uyarı |
@@ -311,7 +311,18 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 > `CaseList.tsx:270` sayfalamayı ondan hesaplıyor. `with_total=False` genel uygulanırsa
 > **sayfalama sessizce bozulur.** Yalnız `search_cases:816` yolunda uygulanır.
 
-> **party_check → SQL göçü için sert kural.** `similarity('ALI VELI','ALI BEKI')` = **0,307** >
+> **DURMA KRİTERİ İŞLEDİ (2026-08-11, G017).** A.4 uygulandı ve ölçüldü: 1 isim sıcak yolda
+> **1.139 ms → 166 ms** (< 200 ms eşiği), 20 isim **10.093 ms → 1.575 ms**. Aday yükleme
+> 549 ms → 0,01 ms. Davranış eşdeğerliği 1.324.050 isim çifti üzerinde **0 fark** ile kanıtlandı.
+> **Bu satır plandan DÜŞTÜ** — L'lik SQL göçüne gerek kalmadı, aşağıdaki sert kural da
+> uygulanmayacak (kayıt olarak korunuyor).
+> Kalan: 20 isimlik istek hâlâ ~1,6 sn CPU (maliyetin %69'u `_levenshtein`); bantlı/erken
+> çıkışlı Levenshtein ayrı ve küçük bir iş olarak durabilir.
+> Bedeli yazılı: TTL 60 sn, süreç-içi, invalidasyon yok → yeni müvekkil/taraf tanıdık sorguda
+> **en geç 60 sn sonra** görünür (uç salt okunur uyarı ucu, kayıt engellemiyor). Bellek:
+> hazır indeks 52 MB/worker, tek girdi politikası (2 worker'da ~104 MB, limit 2g).
+
+> **party_check → SQL göçü için sert kural (UYGULANMAYACAK — yukarıdaki nota bak).** `similarity('ALI VELI','ALI BEKI')` = **0,307** >
 > pg varsayılan eşik 0,3 → `%` operatörü bu çifti **eşleştirir**; oysa `party_check.py:19-20`
 > docstring'i bunu **açıkça reddediyor**. Ayrıca DB collation'ı `en_US.utf8`,
 > `upper('ilker')` = `ILKER` (İ değil) — Türkçe upper'ın SQL karşılığı bu DB'de **yok**.

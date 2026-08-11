@@ -74,7 +74,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.10-slim)
-docker compose exec -T backend python -m pytest            # 2026-08-11: 859 passed, 2 skipped
+docker compose exec -T backend python -m pytest            # 2026-08-11: 905 passed, 2 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -84,7 +84,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-08-11: 299 passed (23 dosya)
+npm --prefix frontend test                                 # 2026-08-11: 317 passed (25 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
