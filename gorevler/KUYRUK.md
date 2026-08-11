@@ -24,13 +24,32 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G007 | bant:backend | bagimli:G006 | 6-B-1: docs/mimari içerikleri + ADR'ler (koddan türetilmiş)
 - [x] G008 | bant:backend | bagimli:G007 | 6-B-2: modül docstring'leri + proje skill'leri + plan kapanışı
 
-## Aktif plan: Denetim bulguları (2026-08-11 bağımsız denetim; deploy kararı kullanıcıda)
+## Aktif plan: Temizlik planı FAZ 0 + FAZ A (2026-08-11; deploy kararı kullanıcıda)
+
+<!-- Kaynak: docs/plan/temizlik-ve-yapisal-saglik-plani-2026-08-11.md (25 ajanlı keşif+denetim).
+     KUYRUĞA GİRMEYENLER: 0.5 ofis no kategori rejimi (X1=1.658 kayıt — geçmiş veri kararı
+     kullanıcıda, ADR şart), 0.6 prod export/hukukbot denetimi (ssh gerekir, otomasyon yapamaz),
+     A.2'nin veri silme/taşıma kısmı (gerçek müvekkil verisi — kullanıcı işi), service_type
+     backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor), pip/npm yükseltmelerinin
+     kendisi (G022 kararı sonrası, kullanıcı onayıyla).
+     Backend bandı SERİ: G014→G015→G016→G017→G018 sırayla koşar (bağımlılık değil, bant kuralı).
+     Gerçek paralellik: backend × frontend × docs üçlüsünden gelir. -->
+
+- [ ] G014 | bant:backend | bagimli:- | 0.2+0.4-be: hata yutan kapılar (find_duplicate_cases + client-sequence)
+- [ ] G015 | bant:backend | bagimli:- | 0.1: .eml gövdesinde SSRF — uzak kaynak taşıyan attribute'ları sök
+- [ ] G016 | bant:backend | bagimli:- | 0.8: /api/documents bağlantısız belgelerde tenant izolasyonu yok
+- [ ] G017 | bant:backend | bagimli:- | A.4: tanıdık sorgu aday indeksi TTL cache + normalizasyon memoize
+- [ ] G018 | bant:backend | bagimli:- | A.1+A.3+0.7: gzip, eksik preview proxy'si, init:true, backend/.dockerignore
+- [ ] G019 | bant:frontend | bagimli:G014 | 0.2+0.3-fe: checkDuplicateCase + useConfig hata yutması
+- [ ] G020 | bant:frontend | bagimli:G019 | service_type kayıt yüküne eklensin + as CaseData cast'i kalksın
+- [ ] G021 | bant:frontend | bagimli:- | A.5: ölü npm bağımlılıkları (docx/mammoth/file-saver/get-port)
+- [ ] G022 | bant:docs | bagimli:- | A.5+A.6: bağımlılık + runtime yaşlanma ADR'si (yükseltme YAPMAZ)
+
+## Kapanmış plan: Denetim bulguları (2026-08-11 bağımsız denetim; deploy kararı kullanıcıda)
 
 <!-- Kaynak: 6-ajanlı bağımsız denetim (2026-08-11 sohbet raporu). G009 davranışsız
-     (diff yalnız yorum/docstring/md). Backend bandı zaten seri; G013 worktree'de
-     paralel koşabilir. G012→G011 zinciri test_faz3_e_hardening.py ortaklığı
-     ihtimalinden ("şüphede zincirle"). analyzer.py yalnız G010'da, upload_queue
-     yalnız G011'de — çakışma yok.
+     (diff yalnız yorum/docstring/md). G012→G011 zinciri test_faz3_e_hardening.py ortaklığı
+     ihtimalinden ("şüphede zincirle").
      KAPANIŞ (2026-08-11 akşam): 5/5 tamam; beşi de ayrı temiz-context denetçiyle
      denetlendi, 5/5 GECTI (G013 dirijan devriyle — izin kapısı, ders: bash -n
      allowlist'e eklendi 04c9789). Kapılar nihai HEAD'de: 868+2 / ruff / mypy temiz.
