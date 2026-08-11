@@ -31,7 +31,7 @@ type NavItemDef = {
 const NAV: NavItemDef[] = [
   { id: "home", label: "Anasayfa", path: "/", Icon: Home, matches: p => p === "/" },
   { id: "upload", label: "Belge Yükleme", path: "/upload", Icon: Upload },
-  { id: "cases", label: "Dava Dosyaları", path: "/cases", Icon: FolderOpen, matches: p => p.startsWith("/cases") || p.startsWith("/new-case") || p.startsWith("/case-groups") },
+  { id: "cases", label: "Dava Dosyaları", path: "/cases", Icon: FolderOpen, matches: p => p.startsWith("/cases") || p.startsWith("/new-case") },
   { id: "unlinked", label: "Bağlantısız Belgeler", path: "/unlinked-documents", Icon: Link2 },
   { id: "clients", label: "Müvekkiller", path: "/clients", Icon: Users, matches: p => p.startsWith("/clients") || p.startsWith("/new-client") },
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
