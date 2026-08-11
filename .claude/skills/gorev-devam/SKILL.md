@@ -45,6 +45,10 @@ Prompt'un sonunda `GOREV: <id>` verilir. Tek çağrı = o TEK görev. Bitince (c
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`. Yalnız dokunduğun dosyaları
   `git add` et; `git add -A` yasak.
 - Son mesajında: görev id'si, commit hash'i, test sonuçları, izlenecekler. Sonraki göreve geçme.
+- Son mesajının EN SON SATIRI kesinlikle şu ikisinden biri olsun (koşucu yalnız bu satıra bakar;
+  metnin başka yerinde "BLOKE" kelimesini serbestçe kullanabilirsin):
+  - `GOREV-SONUC: TAMAM`
+  - `GOREV-SONUC: BLOKE — <tek cümle sebep>`
 
 ## Koşulsuz yasaklar
 `git push`, `ssh`, `scp`, `gcloud`, deploy/rollback scriptleri, `git merge`, `git worktree`,

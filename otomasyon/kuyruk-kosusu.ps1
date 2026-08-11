@@ -217,7 +217,10 @@ function SeritIsle([string]$bant) {
     if ($cikis -ne 0) { KuyrukBloke $id ("claude cikis kodu " + $cikis + " - kota/ag olabilir"); return }
     $son = ""
     if (Test-Path $s.Out) { $son = (Get-Content $s.Out -Tail 30) -join "`n" }
-    if ($son -match "BLOKE") { KuyrukBloke $id "isci BLOKE birakti - gorev dosyasindaki DURUM satirina bak"; return }
+    # Duz "BLOKE" kelime aramasi yanlis pozitif uretti (G005 raporundaki "BLOKE sayilmadi"
+    # cumlesine takildi, 2026-08-11). Yalniz acik sentinel taninir; sentinelsiz cikislarda
+    # karari denetim verir (commit yoksa denetci zaten RET der).
+    if ($son -match "GOREV-SONUC: BLOKE") { KuyrukBloke $id "isci BLOKE birakti - gorev dosyasindaki DURUM satirina bak"; return }
 
     Yaz ("ISCI BITTI: {0} - denetim (temiz context) basliyor..." -f $id)
     $dOut = Join-Path $logDir ("denetim_{0}_{1}.out.log" -f $kosuId, $id)
