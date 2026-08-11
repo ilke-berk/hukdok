@@ -16,10 +16,18 @@ export interface CaseLawyerData {
     name: string;
 }
 
+/**
+ * Kayıt yükünün (POST/PUT /api/cases) sözleşmesi — backend `CaseCreate`
+ * (schemas.py) ile birebir. G020: buraya yazılmayan alan gövdeye de girmesin
+ * diye çağıran taraf `as CaseData` cast'i KULLANMAZ; yük nesnesi doğrudan bu
+ * tiple bildirilir, böylece eksik/fazla alanı derleyici yakalar. Eskiden cast
+ * `service_type`'ın hiç gönderilmediğini örtüyordu (canlı DB: 14.345 kayıtta 0 dolu).
+ */
 export interface CaseData {
     tracking_no: string;
     esas_no?: string;
     status: string;
+    service_type?: string;
     file_type?: string;
     sub_type?: string;
     subject?: string;
@@ -33,6 +41,12 @@ export interface CaseData {
     bureau_type?: string;
     sub_type_extra?: string;
     judicial_unit?: string;
+    // Excel import / ek alanlar (backend CaseCreate'te var, yük zaten taşıyordu)
+    atama_tarihi?: string;
+    hasar_dosya_no?: string;
+    hukuk_no?: string;
+    klasor_no_2?: string;
+    notes?: string;
     parties: CasePartyData[];
     lawyers?: CaseLawyerData[];
 }

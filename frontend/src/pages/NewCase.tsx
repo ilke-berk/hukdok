@@ -24,10 +24,12 @@ import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { useFormDraft } from "@/hooks/useFormDraft";
 import { describeDraftAge } from "@/lib/formDraft";
 import {
+    DEFAULT_SERVICE_TYPE,
     EMPTY_NEW_CASE_FORM,
     isNewCaseDraftDirty,
     newCaseDraftStore,
     type NewCaseDraftData,
+    type NewCaseFormValues,
 } from "@/lib/newCaseDraft";
 import {
     AlertDialog,
@@ -105,6 +107,115 @@ const toTitleCase = (str: string): string => {
 
 const toUpperTR = (str: string) => str.toLocaleUpperCase('tr-TR').trim();
 
+// "Ad1;Ad2" biçiminde tek satıra yazılan çoklu isimleri ayrı kişilere böler
+const splitPartyNames = (value: string): string[] =>
+    value.split(";").map(s => s.trim()).filter(Boolean);
+
+/**
+ * Düzenleme modunda forma yüklenecek değerler — TEK kaynak: hem ilk state hem de
+ * `editModeCase` değişince koşan effect bunu çağırır. G020 öncesi iki ayrı kopya
+ * vardı ve ilk state `serviceType`'ı kayıttaki değere bakmadan "00000" açıyordu.
+ */
+export function editModeFormValues(source?: EditModeCaseData): NewCaseFormValues {
+    return {
+        fileType: source?.file_type || "",
+        subType: source?.sub_type || "",
+        subject: source?.subject || "",
+        court: source?.court || "",
+        category: "",
+        lawyer: source?.responsible_lawyer_name || "",
+        uyapLawyer: source?.uyap_lawyer_name || "",
+        esasNo: source?.esas_no || "",
+        fileOpeningDate: source?.opening_date || "",
+        serviceType: source?.service_type || DEFAULT_SERVICE_TYPE,
+        maddiTazminat: source?.maddi_tazminat?.toString() || "",
+        maneviTazminat: source?.manevi_tazminat?.toString() || "",
+        acceptanceDate: source?.acceptance_date || "",
+        bureauType: source?.bureau_type || "",
+        subTypeExtra: source?.sub_type_extra || "",
+        judicialUnit: source?.judicial_unit || "",
+        atamaTarihi: source?.atama_tarihi || "",
+        hasarDosyaNo: source?.hasar_dosya_no || "",
+        hukukNo: source?.hukuk_no || "",
+        klasorNo2: source?.klasor_no_2 || "",
+        notes: source?.notes || "",
+    };
+}
+
+export interface CasePayloadInput {
+    trackingNo: string;
+    status: string;
+    formData: NewCaseFormValues;
+    clients: Array<{ name: string; role: string }>;
+    counterParties: Array<{ name: string; role: string; tc_no?: string }>;
+    thirdParties: Array<{ name: string; role: string; tc_no?: string }>;
+    /** Kayıtlı müvekkiller — isim eşleşen taraf `client_id` ile bağlanır */
+    dbClients: Array<{ id?: number; name: string }>;
+    lawyers: Array<{ name: string; lawyer_id?: number | null }>;
+}
+
+/**
+ * POST/PUT gövdesini üretir. Saf fonksiyon (testten doğrudan çağrılır) ve dönüş
+ * tipi `CaseData` — yüke girmeyen bir alan artık derleme hatasıdır. G020: eskiden
+ * gövde `as CaseData` ile cast'leniyordu ve `service_type` hiç gönderilmiyordu.
+ */
+export function buildCasePayload(input: CasePayloadInput): CaseData {
+    const { formData } = input;
+    return {
+        tracking_no: input.trackingNo,
+        esas_no: formData.esasNo,
+        status: input.status,
+        service_type: formData.serviceType,
+        file_type: formData.fileType,
+        sub_type: formData.subType,
+        subject: formData.subject,
+        court: formData.court,
+        opening_date: formData.fileOpeningDate,
+        responsible_lawyer_name: formData.lawyer,
+        uyap_lawyer_name: formData.uyapLawyer,
+        maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
+        manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
+        acceptance_date: formData.acceptanceDate || undefined,
+        bureau_type: formData.bureauType || undefined,
+        sub_type_extra: formData.subTypeExtra || undefined,
+        judicial_unit: formData.judicialUnit || undefined,
+        atama_tarihi: formData.atamaTarihi || undefined,
+        hasar_dosya_no: formData.hasarDosyaNo || undefined,
+        hukuk_no: formData.hukukNo || undefined,
+        klasor_no_2: formData.klasorNo2 || undefined,
+        notes: formData.notes || undefined,
+        parties: [
+            // splitPartyNames: blur tetiklenmeden kalan ";"li girişler kayda ayrı kişiler olarak gitsin
+            ...input.clients.filter(c => c.name).flatMap(c => splitPartyNames(c.name).map(name => ({
+                client_id: input.dbClients.find(db => toUpperTR(db.name) === toUpperTR(name))?.id,
+                name,
+                role: c.role,
+                party_type: "CLIENT" as const
+            }))),
+            ...input.counterParties.filter(c => c.name).flatMap(c => {
+                const names = splitPartyNames(c.name);
+                return names.map(name => ({
+                    name,
+                    role: c.role,
+                    party_type: "COUNTER" as const,
+                    // TC tek isimli satırda anlamlı; çoklu isimde kime ait belirsiz
+                    tc_no: names.length === 1 ? (c.tc_no || undefined) : undefined
+                }));
+            }),
+            ...input.thirdParties.filter(t => t.name).flatMap(t => {
+                const names = splitPartyNames(t.name);
+                return names.map(name => ({
+                    name,
+                    role: t.role,
+                    party_type: "THIRD" as const,
+                    tc_no: names.length === 1 ? (t.tc_no || undefined) : undefined
+                }));
+            })
+        ],
+        lawyers: input.lawyers,
+    };
+}
+
 
 const NewCase = () => {
     useSetPageTitle("Yeni Dava", ["Avukat Paneli", "Davalar", "Yeni"]);
@@ -167,29 +278,7 @@ const NewCase = () => {
     const duplicateAcknowledged = useRef(false);
     const [clientSearchValues, setClientSearchValues] = useState<{ [key: number]: string }>({});
 
-    const [formData, setFormData] = useState({
-        fileType: editModeCase?.file_type || "",
-        subType: editModeCase?.sub_type || "",
-        subject: editModeCase?.subject || "",
-        court: editModeCase?.court || "",
-        category: "",
-        lawyer: editModeCase?.responsible_lawyer_name || "",
-        uyapLawyer: editModeCase?.uyap_lawyer_name || "",
-        esasNo: editModeCase?.esas_no || "",
-        fileOpeningDate: editModeCase?.opening_date || "",
-        serviceType: "00000", // Default service type code
-        maddiTazminat: editModeCase?.maddi_tazminat?.toString() || "",
-        maneviTazminat: editModeCase?.manevi_tazminat?.toString() || "",
-        acceptanceDate: editModeCase?.acceptance_date || "",
-        bureauType: editModeCase?.bureau_type || "",
-        subTypeExtra: editModeCase?.sub_type_extra || "",
-        judicialUnit: editModeCase?.judicial_unit || "",
-        atamaTarihi: editModeCase?.atama_tarihi || "",
-        hasarDosyaNo: editModeCase?.hasar_dosya_no || "",
-        hukukNo: editModeCase?.hukuk_no || "",
-        klasorNo2: editModeCase?.klasor_no_2 || "",
-        notes: editModeCase?.notes || "",
-    });
+    const [formData, setFormData] = useState<NewCaseFormValues>(editModeFormValues(editModeCase));
 
     const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
         editModeCase?.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []
@@ -325,10 +414,6 @@ const NewCase = () => {
         updateTrackingNumber(undefined, newMask);
     };
 
-    // "Ad1;Ad2" biçiminde tek satıra yazılan çoklu isimleri ayrı kişilere böler
-    const splitPartyNames = (value: string): string[] =>
-        value.split(";").map(s => s.trim()).filter(Boolean);
-
     // Yardımcı: Takip Numarasını Güncelle
     // clientsOverride: setClients henüz commit olmadan önce güncel listeyi iletmek için
     const updateTrackingNumber = async (
@@ -402,29 +487,7 @@ const NewCase = () => {
             setCaseId(editModeCase.tracking_no);
             setCaseStatus(editModeCase.status);
             setCaseHistory(editModeCase.history || []);
-            setFormData({
-                fileType: editModeCase.file_type || "",
-                subType: editModeCase.sub_type || "",
-                subject: editModeCase.subject || "",
-                court: editModeCase.court || "",
-                category: "",
-                lawyer: editModeCase.responsible_lawyer_name || "",
-                uyapLawyer: editModeCase.uyap_lawyer_name || "",
-                esasNo: editModeCase.esas_no || "",
-                fileOpeningDate: editModeCase.opening_date || "",
-                serviceType: editModeCase.service_type || "00000",
-                maddiTazminat: editModeCase.maddi_tazminat?.toString() || "",
-                maneviTazminat: editModeCase.manevi_tazminat?.toString() || "",
-                acceptanceDate: editModeCase.acceptance_date || "",
-                bureauType: editModeCase.bureau_type || "",
-                subTypeExtra: editModeCase.sub_type_extra || "",
-                judicialUnit: editModeCase.judicial_unit || "",
-                atamaTarihi: editModeCase.atama_tarihi || "",
-                hasarDosyaNo: editModeCase.hasar_dosya_no || "",
-                hukukNo: editModeCase.hukuk_no || "",
-                klasorNo2: editModeCase.klasor_no_2 || "",
-                notes: editModeCase.notes || "",
-            });
+            setFormData(editModeFormValues(editModeCase));
             setSelectedLawyers(editModeCase.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
             setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
             setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) || [{ name: "", role: "Davalı" }]);
@@ -528,67 +591,25 @@ const NewCase = () => {
         setPendingUnregistered([]);
 
         // Prepare data for backend
-        const caseData = {
-            tracking_no: caseId,
-            esas_no: formData.esasNo,
+        const caseData = buildCasePayload({
+            trackingNo: caseId,
             status: caseStatus,
-            file_type: formData.fileType,
-            sub_type: formData.subType,
-            subject: formData.subject,
-            court: formData.court,
-            opening_date: formData.fileOpeningDate,
-            responsible_lawyer_name: formData.lawyer,
-            uyap_lawyer_name: formData.uyapLawyer,
-            maddi_tazminat: formData.maddiTazminat ? Number(formData.maddiTazminat) : 0,
-            manevi_tazminat: formData.maneviTazminat ? Number(formData.maneviTazminat) : 0,
-            acceptance_date: formData.acceptanceDate || undefined,
-            bureau_type: formData.bureauType || undefined,
-            sub_type_extra: formData.subTypeExtra || undefined,
-            judicial_unit: formData.judicialUnit || undefined,
-            atama_tarihi: formData.atamaTarihi || undefined,
-            hasar_dosya_no: formData.hasarDosyaNo || undefined,
-            hukuk_no: formData.hukukNo || undefined,
-            klasor_no_2: formData.klasorNo2 || undefined,
-            notes: formData.notes || undefined,
-            parties: [
-                // splitPartyNames: blur tetiklenmeden kalan ";"li girişler kayda ayrı kişiler olarak gitsin
-                ...clients.filter(c => c.name).flatMap(c => splitPartyNames(c.name).map(name => ({
-                    client_id: dbClients.find(db => toUpperTR(db.name) === toUpperTR(name))?.id,
-                    name,
-                    role: c.role,
-                    party_type: "CLIENT" as const
-                }))),
-                ...counterParties.filter(c => c.name).flatMap(c => {
-                    const names = splitPartyNames(c.name);
-                    return names.map(name => ({
-                        name,
-                        role: c.role,
-                        party_type: "COUNTER" as const,
-                        // TC tek isimli satırda anlamlı; çoklu isimde kime ait belirsiz
-                        tc_no: names.length === 1 ? (c.tc_no || undefined) : undefined
-                    }));
-                }),
-                ...thirdParties.filter(t => t.name).flatMap(t => {
-                    const names = splitPartyNames(t.name);
-                    return names.map(name => ({
-                        name,
-                        role: t.role,
-                        party_type: "THIRD" as const,
-                        tc_no: names.length === 1 ? (t.tc_no || undefined) : undefined
-                    }));
-                })
-            ],
-            lawyers: selectedLawyers
-        };
+            formData,
+            clients,
+            counterParties,
+            thirdParties,
+            dbClients,
+            lawyers: selectedLawyers,
+        });
 
         let success: boolean;
         let errorMessage: string | undefined;
         if (isEditMode && editModeCase?.id) {
-            const result = await updateCase(editModeCase.id, caseData as CaseData);
+            const result = await updateCase(editModeCase.id, caseData);
             success = result.ok;
             errorMessage = result.error;
         } else {
-            const result = await saveCase(caseData as CaseData);
+            const result = await saveCase(caseData);
             success = result.ok;
             errorMessage = result.error;
         }
