@@ -10,6 +10,19 @@ Gelecek geliştirme planlarının **kalıcı yürütme sistemi**. Sertleştirme 
 
 Akış: `/plan-hazirla` (gündüz, seninle) → onay → `otomasyon\kuyruk-kosusu.ps1` (gece, gözetimsiz).
 
+## Arşivleme kuralı
+
+**Bir plan kapandığında o planın görev dosyaları [`docs/arsiv/gorevler/`](../docs/arsiv/gorevler/README.md)
+altına `git mv` ile taşınır** (silinmez — rapor bölümleri kararların gerekçesini taşıyan
+kurumsal kayıttır; `git mv` sayesinde `git log --follow` geçmişi izlemeye devam eder).
+
+- **`gorevler/gorev/` yalnız AÇIK işleri gösterir.** Amaç çalışma dizininin okunabilirliği:
+  sıfır-context bir oturum kapanmış onlarca dosyayı taramasın.
+- **`KUYRUK.md`'deki satırlar KALIR** — taşınmaz, silinmez. Kısa satırlardır ve sürecin
+  izidir: hangi görev hangi plana aitti, hangi sırayla koştu, ne zaman `[x]` oldu.
+- Taşıma bir **docs bandı görevi** olarak kuyruğa girer (ilk örnek: G029). Satır sayısını
+  azaltmaz, yalnız çalışma dizinini sadeleştirir.
+
 ## KUYRUK.md satır formatı (runner bunu parse eder — bozma)
 
 ```
