@@ -26,6 +26,12 @@ Eşzamanlılık: uvicorn tek worker varsayımı — satırları yalnız bu süre
 thread işler, süreç içi yarış yoktur. uvicorn --workers 2 geçişinde (Faz 3-E)
 bu worker süreç-tekil yapılmalı (yoksa aynı satır iki kez yüklenir; overwrite
 zararsız ama gereksiz) — bkz. takip dosyasındaki 3-E önkoşulları.
+
+Faz 3-F statü eki: 'superseded' — gece dönüşüm job'ı PDF'i yükleyip belgeyi
+tamamladıktan sonra, aynı belgenin hâlâ bekleyen islenmis-orijinal satırı
+etkisizleştirilir (tamamlanırsa _record_upload_result sharepoint_url'i PDF'ten
+orijinale geri EZERDİ). Worker superseded satırı işlemez; upload sırasında
+yakalanırsa sonuç belgeye İŞLENMEZ; spool dosyası janitor'da hemen temizlenir.
 """
 import logging
 import os
@@ -248,6 +254,21 @@ def _attempt_upload(outbox_id: int) -> None:
         if row is None:
             return
 
+        if row.status == "superseded":
+            # Faz 3-F: gece dönüşüm job'ı bu satırı upload SIRASINDA
+            # etkisizleştirdi — dosya yüklendiyse zararsız kopyadır ama sonuç
+            # belgeye İŞLENMEZ (sharepoint_url gece yazılan PDF'i göstermeye
+            # devam eder) ve hukukbot hook'u açılmaz.
+            if safe_remove(spool_path):
+                row.spool_path = None
+                db.commit()
+            logger.info(
+                f"Upload outbox: satır gece dönüşümüyle etkisizleştirilmiş, "
+                f"sonuç belgeye işlenmedi (outbox={outbox_id})",
+                extra={"doc_id": doc_id, "outbox_id": outbox_id, "kind": kind},
+            )
+            return
+
         if error is None:
             row.status = "uploaded"
             row.done_at = datetime.now(timezone.utc)
@@ -309,6 +330,8 @@ def _purge_terminal_spools(db, now: datetime) -> None:
 
     - uploaded: dosya normalde başarı anında silinir; safe_remove o an
       başaramadıysa buradan toparlanır (bekleme yok).
+    - superseded (Faz 3-F): satır etkisizleştirilmiştir, dosyanın retry değeri
+      yok — bekleme olmadan temizlenir.
     - failed: FAILED_SPOOL_RETENTION_DAYS boyunca saklanır — elle kurtarma
       şansı (status='pending', attempts=0 → worker yeniden dener) — sonra silinir.
 
@@ -318,13 +341,13 @@ def _purge_terminal_spools(db, now: datetime) -> None:
     rows = (
         db.query(models.UploadOutbox)
         .filter(
-            models.UploadOutbox.status.in_(("uploaded", "failed")),
+            models.UploadOutbox.status.in_(("uploaded", "failed", "superseded")),
             models.UploadOutbox.spool_path.isnot(None),
         )
         .all()
     )
     for row in rows:
-        if row.status not in ("uploaded", "failed") or not row.spool_path:
+        if row.status not in ("uploaded", "failed", "superseded") or not row.spool_path:
             continue  # defansif: testlerdeki fake filter no-op olabilir
         if row.status == "failed":
             done_at = row.done_at or row.created_at
@@ -350,6 +373,60 @@ def _purge_terminal_spools(db, now: datetime) -> None:
                 f"{FAILED_SPOOL_RETENTION_DAYS} gün sonra silindi (outbox={row.id})",
                 extra={"doc_id": row.document_id, "outbox_id": row.id},
             )
+
+
+def supersede_pending_uploads(document_id: int, kind: str) -> int:
+    """Belgenin bekleyen <kind> satırlarını 'superseded' yapar (Faz 3-F).
+
+    Gece dönüşüm job'ı PDF'i senkron yükleyip belgeyi tamamlamadan HEMEN önce
+    çağırır: bekleyen islenmis-orijinal satırı sonradan tamamlanıp
+    _record_upload_result ile sharepoint_url'i orijinale geri ezmesin.
+    Upload'ı o anda süren satır pre-check'i çoktan geçmiştir — o pencere
+    _attempt_upload'ın sonuç-yazma adımındaki superseded guard'ıyla kapanır.
+    Hata fırlatmaz; etkisizleştirilen satır sayısını döndürür.
+    """
+    if not document_id:
+        return 0
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.UploadOutbox)
+            .filter(
+                models.UploadOutbox.document_id == document_id,
+                models.UploadOutbox.kind == kind,
+                models.UploadOutbox.status == "pending",
+            )
+            .all()
+        )
+        count = 0
+        for row in rows:
+            # Defansif yeniden kontrol (testlerdeki fake filter no-op olabilir)
+            if row.status != "pending" or row.kind != kind or row.document_id != document_id:
+                continue
+            row.status = "superseded"
+            row.done_at = datetime.now(timezone.utc)
+            row.last_error = "Gece dönüşümü PDF'i yükledi — orijinal-yükleme satırı etkisizleştirildi"
+            count += 1
+        if count:
+            db.commit()
+            logger.info(
+                f"Upload outbox: {count} bekleyen {kind} satırı etkisizleştirildi "
+                f"(gece dönüşümü tamamlandı)",
+                extra={"doc_id": document_id, "kind": kind},
+            )
+        return count
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.warning(
+            f"Upload outbox supersede başarısız (doc={document_id}): {e}",
+            extra={"doc_id": document_id, "kind": kind},
+        )
+        return 0
+    finally:
+        db.close()
 
 
 def _scan_once() -> int:

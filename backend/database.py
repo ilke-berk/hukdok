@@ -486,6 +486,24 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_upload_outbox_pending "
         "ON upload_outbox(next_attempt_at) WHERE status = 'pending'",
     ]),
+
+    # 27. CASE_DOCUMENTS DÖNÜŞÜM KATMANI — Faz 3-F (plan 3.8 Katman 2):
+    # dönüşüm başarısızsa orijinal kendi uzantısıyla arşivlenir, kayıt
+    # conversion_status='pending' açılır, gece job'ı spool'daki orijinalden
+    # yeniden dener. Mevcut kayıtlar NULL kalır (backfill YOK — 3-A kararı:
+    # geçmiş failed belgelerin kaynak dosyası artık mevcut değil).
+    # Partial index: gece taraması yalnız pending arar, çoğunluk (NULL) dışarıda.
+    ("columns", "case_documents", {
+        "conversion_status": (
+            "VARCHAR(20)",
+            [
+                "CREATE INDEX IF NOT EXISTS idx_case_docs_conversion_pending "
+                "ON case_documents(id) WHERE conversion_status = 'pending'",
+            ],
+        ),
+        "conversion_attempts":   "INTEGER DEFAULT 0",
+        "conversion_spool_path": "TEXT",
+    }),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.

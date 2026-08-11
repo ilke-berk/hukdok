@@ -83,7 +83,10 @@ def convert_to_pdfa2b(source_path: str) -> str:
     except UnicodeDecodeError as e:
         # ValueError'ın alt sınıfı — aşağıdaki bilinçli ValueError dalına takılıp
         # PDF fallback'ini atlamasın (2026-07-13 prod arızası)
-        TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası (decode): {e}")
+        # Faz 3-F: deneme-düzeyi log WARNING — dönüşüm hatası artık belge için
+        # nihai değil (conversion_pending katmanı + gece retry); nihai tek
+        # ERROR'u akış sahibi üretir (gece job'ı MAX'ta / pipeline katman-arızasında).
+        TechnicalLogger.log("WARNING", f"PDF/A-2b dönüşüm hatası (decode): {e}")
         if file_ext != '.pdf':
             raise RuntimeError(
                 f"{file_ext} dosyası PDF'e dönüştürülemedi. "
@@ -95,7 +98,8 @@ def convert_to_pdfa2b(source_path: str) -> str:
         # Desteklenmeyen format veya UDF dönüşüm hatası — fallback yapma, yukarı taşı
         raise
     except Exception as e:
-        TechnicalLogger.log("ERROR", f"PDF/A-2b dönüşüm hatası: {e}")
+        # Faz 3-F: deneme-düzeyi WARNING (yukarıdaki decode dalıyla aynı gerekçe)
+        TechnicalLogger.log("WARNING", f"PDF/A-2b dönüşüm hatası: {e}")
         if file_ext != '.pdf':
             # Orijinal PDF olmayan dosya .pdf adıyla arşive sızamaz — fallback yok.
             # "Dosya bozuk" deme: neden bilinmiyor, dosya sağlam olabilir
@@ -175,7 +179,8 @@ def _pdf_to_pdfa2b(source_pdf: str, output_pdf: str) -> str:
             raise Exception(f"GhostScript hatası: {error_msg}")
 
     except subprocess.TimeoutExpired:
-        TechnicalLogger.log("ERROR", f"GhostScript timeout ({gs_timeout}s aşıldı)")
+        # Faz 3-F: deneme-düzeyi WARNING — nihai ERROR akış sahibinde
+        TechnicalLogger.log("WARNING", f"GhostScript timeout ({gs_timeout}s aşıldı)")
         raise Exception(f"PDF/A-2b dönüşümü timeout ({gs_timeout}s)") from None
 
 
@@ -242,10 +247,12 @@ def _udf_to_pdfa2b(source_udf: str, output_pdf: str) -> str:
         TechnicalLogger.log("INFO", f"UDF → PDF tamamlandı: {output_pdf}")
         return output_pdf
     except ImportError:
-        TechnicalLogger.log("ERROR", "UDF Converter modülü bulunamadı!")
+        # Faz 3-F: deneme-düzeyi WARNING — nihai ERROR akış sahibinde
+        # (gece job'ı MAX'ta / pipeline katman-arızasında)
+        TechnicalLogger.log("WARNING", "UDF Converter modülü bulunamadı!")
         raise
     except Exception as e:
-        TechnicalLogger.log("ERROR", f"UDF → PDF hatası: {e}")
+        TechnicalLogger.log("WARNING", f"UDF → PDF hatası: {e}")
         raise
 
 

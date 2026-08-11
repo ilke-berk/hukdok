@@ -155,10 +155,14 @@ def send_document_email(
         file_size_mb = os.path.getsize(attachment_path) / (1024 * 1024)
         if file_size_mb <= MAX_SINGLE_MB:
             attachment_content, _ = _encode_attachment(attachment_path, attachment_cache)
+            # Faz 3-F: conversion_pending akışında ana ek orijinal dosya
+            # (ör. .udf) olabilir — PDF olmayan içerik application/pdf diye
+            # etiketlenmez (ad zaten gerçek uzantıyı taşır).
+            main_ext = Path(attachment_path).suffix.lower()
             attachments_payload.append({
                 "@odata.type": "#microsoft.graph.fileAttachment",
                 "name": attachment_name,
-                "contentType": "application/pdf",
+                "contentType": "application/pdf" if main_ext == ".pdf" else "application/octet-stream",
                 "contentBytes": attachment_content
             })
             total_size_mb = file_size_mb

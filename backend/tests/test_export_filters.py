@@ -105,10 +105,10 @@ class TestGetTypeAllowlist:
 
 # ── _doc_passes_filters ──────────────────────────────────────────────────────
 
-def _doc(link_mode="AUTO", sharepoint_url="https://sp/x.pdf", kod="ARA-KRR_______", case=None, deleted_at=None):
+def _doc(link_mode="AUTO", sharepoint_url="https://sp/x.pdf", kod="ARA-KRR_______", case=None, deleted_at=None, conversion_status=None):
     return SimpleNamespace(
         link_mode=link_mode, sharepoint_url=sharepoint_url, belge_turu_kodu=kod, case=case,
-        deleted_at=deleted_at,
+        deleted_at=deleted_at, conversion_status=conversion_status,
     )
 
 
@@ -158,3 +158,15 @@ class TestDocPassesFilters:
     def test_unlinked_no_case_passes(self):
         # case_id=None (UNLINKED) belgeler bilinçli olarak dahil kalır
         assert export._doc_passes_filters(_doc(case=None), set(), set()) is True
+
+    def test_conversion_pending_rejected(self):
+        # Faz 3-F: arşivde PDF değil orijinal (ör. .udf) durur — ingest'e açılmaz
+        assert export._doc_passes_filters(_doc(conversion_status="pending"), set(), set()) is False
+
+    def test_conversion_failed_rejected(self):
+        # Nihai failed de aynı nedenle akmaz (arşiv kopyası hâlâ orijinal)
+        assert export._doc_passes_filters(_doc(conversion_status="failed"), set(), set()) is False
+
+    def test_conversion_completed_passes(self):
+        # Gece job'ı başarınca statü NULL'lanır → belge normal akar
+        assert export._doc_passes_filters(_doc(conversion_status=None), set(), set()) is True

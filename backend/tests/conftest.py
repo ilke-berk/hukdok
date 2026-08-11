@@ -30,6 +30,9 @@ os.environ.setdefault(
 _CACHE_TMP = tempfile.mkdtemp(prefix="hukdok-test-cache-")
 os.environ.setdefault("PROCESS_CACHE_DIR", os.path.join(_CACHE_TMP, "process"))
 os.environ.setdefault("DOWNLOAD_CACHE_DIR", os.path.join(_CACHE_TMP, "download"))
+# Faz 3-F: conversion spool da aynı gerekçeyle tmp'ye (dizin çağrı anında
+# çözülür ama testin gerçek /app/data'ya yazmaması için emniyet ağı).
+os.environ.setdefault("CONVERSION_SPOOL_DIR", os.path.join(_CACHE_TMP, "conversion"))
 
 # (2) vault stub — gerçek modülün public API'siyle aynı imzalar
 if "vault" not in sys.modules:

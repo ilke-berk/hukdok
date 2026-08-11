@@ -884,6 +884,12 @@ async def _archive_intake_documents(
                 ),
             )
             entry["document_id"] = doc_id
+            # Faz 3-F: dönüşüm pending'e düştüyse belge kaydedildi ama arşivde
+            # şimdilik orijinal duruyor — yanıt satırında görünür olsun
+            # (status "queued" kalır: belge kaybolmadı, akış başarılı).
+            if step_results.get("conversion_pending"):
+                entry["conversion_pending"] = True
+                entry["error_ozet"] = step_results.get("conversion_warning")
 
             if options.send_email:
                 email_file_path = (

@@ -174,9 +174,22 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
                 misfire_grace_time=3600,
             )
+            # Faz 3-F: gece dönüşüm retry job'ı — conversion_pending belgeleri
+            # yeniden dener (PDF/A üret → arşive yükle → statüyü düşür →
+            # hukukbot'u AÇ). Aynı scheduler'da (yeni thread/scheduler YOK,
+            # 3-E devri) → yalnız lider worker'da koşar. 02:30 TR: gece yarısı
+            # raporu (00:00) ve host pg_dump'ı (03:30) ile çakışmaz.
+            from services.conversion_retry import retry_pending_conversions
+            scheduler.add_job(
+                retry_pending_conversions,
+                CronTrigger(hour=2, minute=30, timezone=pytz.timezone("Europe/Istanbul")),
+                id="conversion_retry",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
             scheduler.start()
             app.state.scheduler = scheduler
-            logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR).")
+            logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR; dönüşüm retry 02:30 TR).")
 
             # Backend kapalıyken kaçırılan günleri arka planda tamamla
             threading.Thread(target=catch_up_missed_reports, daemon=True).start()

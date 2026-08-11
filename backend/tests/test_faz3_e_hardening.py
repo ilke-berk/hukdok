@@ -621,11 +621,17 @@ def _count_in_leader_gates(fn_node, needle: str) -> tuple:
     return total, gated
 
 def test_singleton_background_jobs_are_leader_gated():
-    """Süreç-tekil işler (outbox worker, APScheduler, catch-up) yalnız
-    is_leader kapısının içinde başlatılabilir — kapı kalkarsa worker sayısı
-    kadar kopya koşar (aynı satır N kez yüklenir, N kopya rapor)."""
+    """Süreç-tekil işler (outbox worker, APScheduler, catch-up, gece dönüşüm
+    retry'ı) yalnız is_leader kapısının içinde başlatılabilir — kapı kalkarsa
+    worker sayısı kadar kopya koşar (aynı satır N kez yüklenir, N kopya rapor,
+    aynı belge N kez dönüştürülür)."""
     _, lifespan = _lifespan_ast()
-    for needle in ("start_upload_worker", "BackgroundScheduler", "catch_up_missed_reports"):
+    for needle in (
+        "start_upload_worker",
+        "BackgroundScheduler",
+        "catch_up_missed_reports",
+        "retry_pending_conversions",  # Faz 3-F gece job'ı (scheduler'a job olarak)
+    ):
         total, gated = _count_in_leader_gates(lifespan, needle)
         assert total > 0, f"lifespan'de {needle} yok"
         assert total == gated, f"{needle} is_leader kapısı DIŞINDA çağrılıyor"

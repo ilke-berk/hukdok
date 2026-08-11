@@ -505,6 +505,24 @@ class CaseDocument(Base):
     upload_status = Column(String, default="pending", nullable=True)
     upload_attempts = Column(Integer, default=0, nullable=True)
 
+    # PDF/A dönüşüm katmanı (Faz 3-F, plan 3.8 Katman 2): /confirm'de dönüşüm
+    # TÜM yollara rağmen başarısızsa belge kaybolmaz — orijinal KENDİ uzantısıyla
+    # arşive gider, kayıt conversion_status='pending' ile açılır, gece job'ı
+    # (services/conversion_retry.py) yeniden dener.
+    #   NULL      → normal (dönüşüm gerekmedi ya da tamamlandı)
+    #   'pending' → gece yeniden denenecek (spool'daki orijinalden)
+    #   'failed'  → denemeler tükendi; tek nihai ERROR loglanır, spool dosyası
+    #               elle kurtarma için saklanır (conversion_status='pending',
+    #               conversion_attempts=0 yapılırsa gece job'ı yeniden dener)
+    # KARAR NOTU: upload_status'a yeni değer DEĞİL, ayrı alan — upload_status
+    # işlenmiş kopyanın SharePoint yükleme durumudur ve pending belgede
+    # orijinalin yüklemesini izlemeye devam eder (dik boyutlar; belge kartı
+    # göstergesi ve idx_case_docs_upload_status partial index'i bozulmaz).
+    # Hukukbot export'u conversion_status IS NOT NULL kayıtları ingest'e almaz.
+    conversion_status = Column(String, nullable=True)
+    conversion_attempts = Column(Integer, default=0, nullable=True)
+    conversion_spool_path = Column(String, nullable=True)
+
     # Kullanıcı kimliği (UPN / preferred_username)
     uploaded_by_email = Column(String, nullable=True, index=True)
 

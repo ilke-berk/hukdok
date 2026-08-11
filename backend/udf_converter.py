@@ -656,7 +656,9 @@ class UDFConverter:
                     if elem.tag in ['paragraph', 'table']:
                          self.pdf_elements.append(Spacer(1, 5))
                 except Exception as e:
-                    TechnicalLogger.log("ERROR", f"UDF element işleme hatası (<{elem.tag}>): {type(e).__name__}")
+                    # Faz 3-F: eleman atlanır, dönüşüm sürer — soft olay WARNING
+                    # (eleman başına ERROR tek belgede alarm eşiğini doldurabiliyordu)
+                    TechnicalLogger.log("WARNING", f"UDF element işleme hatası (<{elem.tag}>): {type(e).__name__}")
             else:
                 self._handle_unknown_element(elem)
 

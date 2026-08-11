@@ -592,7 +592,10 @@ async def download_file(file_id: str, user: dict = Depends(get_current_user)):
         DOWNLOAD_CACHE.delete(file_id)
         raise HTTPException(status_code=404, detail="Dosya diskte bulunamadı.")
 
-    return FileResponse(path=file_path, filename=filename, media_type="application/pdf")
+    # Faz 3-F: conversion_pending akışında indirme dosyası orijinal (ör. .udf)
+    # olabilir — PDF olmayan içerik application/pdf olarak etiketlenmez.
+    media_type = "application/pdf" if str(filename).lower().endswith(".pdf") else "application/octet-stream"
+    return FileResponse(path=file_path, filename=filename, media_type=media_type)
 
 
 @router.post("/confirm")
@@ -741,6 +744,17 @@ async def confirm_process(
         results["local_save"] = "Atlandı (Web Mode)"
         results["final_path"] = None
 
+        # Faz 3-F: dönüşüm pending'e düştüyse elde PDF/A yok; e-posta eki ve
+        # indirme dosyası source_path'tir (cache hit'te analiz PDF'i — gerçek
+        # bir PDF; cache miss'te orijinalin kendisi). Ek/indirme ADI dosyanın
+        # GERÇEK türünü taşımalı: içerik PDF değilse .pdf maskesi takılmaz.
+        effective_filename = new_filename
+        if results.get("conversion_pending") and Path(final_local_path).suffix.lower() != ".pdf":
+            effective_filename = (
+                results.get("archived_filename")
+                or Path(new_filename).with_suffix(Path(final_local_path).suffix.lower()).name
+            )
+
         timings["5_logging"] = 0.00
 
         # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir
@@ -763,7 +777,7 @@ async def confirm_process(
         if send_email:
             await document_pipeline.send_notification_email(
                 email_file_path=email_file_path,
-                new_filename=new_filename,
+                new_filename=effective_filename,
                 avukat_kodu=avukat_kodu,
                 email_metadata=email_metadata,
                 custom_to=custom_to,
@@ -795,7 +809,7 @@ async def confirm_process(
         ):
             await document_pipeline.send_client_notice_email(
                 email_file_path=email_file_path,
-                new_filename=new_filename,
+                new_filename=effective_filename,
                 avukat_kodu=avukat_kodu,
                 avukat_adi=avukat_adi,
                 email_metadata=email_metadata,
@@ -813,7 +827,7 @@ async def confirm_process(
             download_id = str(uuid.uuid4())
             DOWNLOAD_CACHE.set(download_id, {
                 "path": email_file_path,
-                "filename": new_filename,
+                "filename": effective_filename,
                 "owner": _owner_id(user),
             })
             results["download_id"] = download_id

@@ -40,6 +40,8 @@ def save_case_document(
     is_test_mode: bool = False,
     uploaded_by: str = None,
     uploaded_by_email: str = None,
+    conversion_status: str = None,
+    conversion_spool_path: str = None,
 ):
     db = None
     try:
@@ -88,6 +90,8 @@ def save_case_document(
             link_mode=link_mode,
             uploaded_by=uploaded_by,
             uploaded_by_email=uploaded_by_email,
+            conversion_status=conversion_status,
+            conversion_spool_path=conversion_spool_path,
         )
         db.add(doc)
 
@@ -293,6 +297,117 @@ def async_islenmis_upload(temp_file_path, new_filename: str, islenmis_folder: st
         _record_upload_result(doc_id_to_update, None)
 
 
+def _register_pending_conversion(
+    background_tasks: BackgroundTasks,
+    conversion_error: Exception,
+    source_path: str,
+    ham_source_path: Optional[str],
+    ham_filename: str,
+    ham_folder: str,
+    islenmis_folder: str,
+    new_filename: str,
+    original_filename: str,
+    belge_turu_kodu: Optional[str],
+    muvekkiller: list,
+    muvekkil_adi: Optional[str],
+    ai_ozet: Optional[str],
+    linked_case_id: Optional[int],
+    case_party_id: Optional[int],
+    avukat_kodu: Optional[str],
+    esas_no: Optional[str],
+    is_test_mode: bool,
+    user: dict,
+    current_user_name: str,
+    results: dict,
+):
+    """Faz 3-F (plan 3.8 Katman 2): dönüşüm nihai başarısızlığında belgeyi kaybetme.
+
+    Orijinal KENDİ uzantısıyla iki arşive de kuyruklanır (".pdf adıyla sızma"
+    kuralı korunur), CaseDocument conversion_status='pending' + conversion
+    spool kopyasıyla açılır (gece job'ı services/conversion_retry.py tamamlar),
+    kullanıcıya results üzerinden uyarı döner ve /confirm akışı sürer.
+
+    Katmanın kendisi kurulamazsa (spool kopyası ya da DB kaydı yok) bugünkü
+    davranışa düşülür: HTTPException(500, gerçek neden) — akış eskisinden
+    kötü olamaz. Başarıda doc_id döndürür.
+
+    Log sözleşmesi: buradaki başarısızlık belge için NİHAİ DEĞİL (gece retry
+    var) → WARNING; tek nihai ERROR'u gece job'ı üretir.
+    """
+    from services.conversion_retry import spool_original
+
+    error_id = str(uuid.uuid4())[:8]
+    original_src = ham_source_path or source_path
+    orig_ext = (Path(original_src).suffix or Path(original_filename).suffix or ".bin").lower()
+    if not orig_ext.startswith("."):
+        orig_ext = f".{orig_ext}"
+    pending_filename = Path(new_filename).with_suffix(orig_ext).name
+
+    spool_path = spool_original(original_src, orig_ext)
+    if spool_path is None:
+        TechnicalLogger.log(
+            "ERROR",
+            f"Processed Upload Error [ID: {error_id}]: {conversion_error} "
+            "(conversion_pending katmanı da kurulamadı: spool kopyası alınamadı)",
+        )
+        raise HTTPException(status_code=500, detail=f"{conversion_error} (Hata: {error_id})")
+
+    belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
+    clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
+    current_user_email = user.get("preferred_username") or user.get("upn") or user.get("email") or None
+    doc_id = save_case_document(
+        case_id=linked_case_id,
+        original_filename=original_filename,
+        stored_filename=pending_filename,
+        belge_turu_kodu=belge_turu_kodu,
+        belge_turu_adi=belge_turu_label,
+        ai_summary=ai_ozet,
+        muvekkil_adi=clean_muvekkil,
+        case_party_id=case_party_id,
+        avukat_kodu=avukat_kodu,
+        esas_no=esas_no,
+        is_test_mode=is_test_mode,
+        uploaded_by=current_user_name,
+        uploaded_by_email=current_user_email,
+        conversion_status="pending",
+        conversion_spool_path=spool_path,
+    )
+    if doc_id is None:
+        safe_remove(spool_path)
+        TechnicalLogger.log(
+            "ERROR",
+            f"Processed Upload Error [ID: {error_id}]: {conversion_error} "
+            "(conversion_pending katmanı da kurulamadı: belge kaydı açılamadı)",
+        )
+        raise HTTPException(status_code=500, detail=f"{conversion_error} (Hata: {error_id})")
+    results["case_document_id"] = doc_id
+
+    # İki arşive de ORİJİNAL gider — kendi uzantısıyla. stored_filename da
+    # pending_filename'dir: belge kartı indirmesi ve hukukbot dosya ucu arşivde
+    # GERÇEKTEN duran adı görür; gece job'ı başarınca .pdf adına güncellenir.
+    from services.upload_queue import enqueue_upload
+    if enqueue_upload("ham", original_src, ham_filename, ham_folder, document_id=doc_id) is None:
+        background_tasks.add_task(async_ham_upload, original_src, ham_filename, ham_folder)
+    if enqueue_upload("islenmis", original_src, pending_filename, islenmis_folder, document_id=doc_id) is None:
+        background_tasks.add_task(async_islenmis_upload, original_src, pending_filename, islenmis_folder, doc_id)
+    timings_note = f"Arka Plana Atıldı (orijinal: {pending_filename} — PDF dönüşümü gece tamamlanacak)"
+    results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
+    results["sharepoint_islenmis"] = timings_note
+    results["conversion_pending"] = True
+    results["archived_filename"] = pending_filename
+    results["conversion_warning"] = (
+        "Belge kaydedildi ve orijinal haliyle arşivlendi; PDF dönüşümü şu anda "
+        f"tamamlanamadı, gece otomatik yeniden denenecek. (Neden: {conversion_error})"
+    )
+
+    TechnicalLogger.log(
+        "WARNING",
+        f"PDF dönüşümü başarısız, conversion_pending katmanı devrede "
+        f"[ID: {error_id}] (doc={doc_id}, arşiv adı: {pending_filename}): {conversion_error}",
+    )
+    return doc_id
+
+
 def convert_pdfa_and_queue_uploads(
     background_tasks: BackgroundTasks,
     source_path: str,
@@ -319,7 +434,12 @@ def convert_pdfa_and_queue_uploads(
     """PDF/A dönüşümü + DB kaydı + iki SharePoint arşiv yüklemesinin kuyruklanması.
 
     Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
-    Başarıda (pdfa_temp_file, doc_id) döndürür; başarısızlıkta HTTPException(500) fırlatır.
+    Başarıda (pdfa_temp_file, doc_id) döndürür.
+
+    Faz 3-F: dönüşüm (Katman 1 fallback'leri dahil) yine de başarısızsa artık
+    500 atılmaz — belge conversion_pending olarak kaydedilir, orijinal kendi
+    uzantısıyla arşivlenir ve (None, doc_id) döner; yalnız pending katmanı da
+    kurulamazsa HTTPException(500) fırlatılır (eski davranış taban çizgisidir).
     """
     pdfa_temp_file = None
     doc_id = None
@@ -327,60 +447,95 @@ def convert_pdfa_and_queue_uploads(
         from pdf.pdf_converter import convert_to_pdfa2b
 
         step_start = perf_time.perf_counter()
-        pdfa_temp_file = convert_to_pdfa2b(source_path)
+        conversion_error: Optional[Exception] = None
+        try:
+            pdfa_temp_file = convert_to_pdfa2b(source_path)
+        except Exception as conv_exc:
+            # Dönüşümün TÜM iç yolları tükendi (pdf_converter RuntimeError,
+            # udf_converter ValueError, beklenmedik hata) — pending katmanına.
+            conversion_error = conv_exc
+            pdfa_temp_file = None
         timings["3a_pdfa_convert"] = perf_time.perf_counter() - step_start
+        if conversion_error is None and not (pdfa_temp_file and os.path.exists(pdfa_temp_file)):
+            conversion_error = RuntimeError("PDF/A-2b dönüşümü başarısız - dosya oluşturulamadı")
 
-        if pdfa_temp_file and os.path.exists(pdfa_temp_file):
-            # Create the database record before adding background tasks so we have doc_id
-            belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
-            clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
-
-            current_user_email = user.get("preferred_username") or user.get("upn") or user.get("email") or None
-            doc_id = save_case_document(
-                case_id=linked_case_id,
+        if conversion_error is not None:
+            doc_id = _register_pending_conversion(
+                background_tasks=background_tasks,
+                conversion_error=conversion_error,
+                source_path=source_path,
+                ham_source_path=ham_source_path,
+                ham_filename=ham_filename,
+                ham_folder=ham_folder,
+                islenmis_folder=islenmis_folder,
+                new_filename=new_filename,
                 original_filename=original_filename,
-                stored_filename=new_filename,
                 belge_turu_kodu=belge_turu_kodu,
-                belge_turu_adi=belge_turu_label,
-                ai_summary=ai_ozet,
-                muvekkil_adi=clean_muvekkil,
+                muvekkiller=muvekkiller,
+                muvekkil_adi=muvekkil_adi,
+                ai_ozet=ai_ozet,
+                linked_case_id=linked_case_id,
                 case_party_id=case_party_id,
                 avukat_kodu=avukat_kodu,
                 esas_no=esas_no,
                 is_test_mode=is_test_mode,
-                uploaded_by=current_user_name,
-                uploaded_by_email=current_user_email,
+                user=user,
+                current_user_name=current_user_name,
+                results=results,
             )
-            results["case_document_id"] = doc_id
-
-            # Both archives queued together only after successful PDF/A conversion.
-            # HAM arşive orijinal ham dosya gider (dönüştürülmüş formatlarda
-            # source_path analiz PDF'i olabilir — bkz. accept_incoming_file).
-            #
-            # Faz 3-A: fire-and-forget BackgroundTasks yerine kalıcı outbox —
-            # payload spool'a kopyalanır, satır /confirm yanıtından ÖNCE commit
-            # edilir; süreç ölse de yükleme kaybolmaz, geçici hata retry edilir.
-            # enqueue None dönerse (DB/disk arızası) eski tek-denemeli yola düş:
-            # kuyruk arızası arşivlemeyi eskisinden kötü yapmamalı.
-            from services.upload_queue import enqueue_upload
-            ham_upload_src = ham_source_path or source_path
-            if enqueue_upload("ham", ham_upload_src, ham_filename, ham_folder, document_id=doc_id) is None:
-                background_tasks.add_task(async_ham_upload, ham_upload_src, ham_filename, ham_folder)
-            if enqueue_upload("islenmis", pdfa_temp_file, new_filename, islenmis_folder, document_id=doc_id) is None:
-                background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
             timings["2_ham_upload"] = 0.00
             timings["3b_gizli_upload"] = 0.00
-            results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
-            results["sharepoint_islenmis"] = "Arka Plana Atıldı (PDF/A-2b)"
-        else:
-            raise Exception("PDF/A-2b dönüşümü başarısız - dosya oluşturulamadı")
+            return None, doc_id
+
+        # Create the database record before adding background tasks so we have doc_id
+        belge_turu_label = get_doctype_label(belge_turu_kodu) if belge_turu_kodu else None
+        clean_muvekkil = (muvekkiller[0] if muvekkiller else None) or muvekkil_adi
+
+        current_user_email = user.get("preferred_username") or user.get("upn") or user.get("email") or None
+        doc_id = save_case_document(
+            case_id=linked_case_id,
+            original_filename=original_filename,
+            stored_filename=new_filename,
+            belge_turu_kodu=belge_turu_kodu,
+            belge_turu_adi=belge_turu_label,
+            ai_summary=ai_ozet,
+            muvekkil_adi=clean_muvekkil,
+            case_party_id=case_party_id,
+            avukat_kodu=avukat_kodu,
+            esas_no=esas_no,
+            is_test_mode=is_test_mode,
+            uploaded_by=current_user_name,
+            uploaded_by_email=current_user_email,
+        )
+        results["case_document_id"] = doc_id
+
+        # Both archives queued together only after successful PDF/A conversion.
+        # HAM arşive orijinal ham dosya gider (dönüştürülmüş formatlarda
+        # source_path analiz PDF'i olabilir — bkz. accept_incoming_file).
+        #
+        # Faz 3-A: fire-and-forget BackgroundTasks yerine kalıcı outbox —
+        # payload spool'a kopyalanır, satır /confirm yanıtından ÖNCE commit
+        # edilir; süreç ölse de yükleme kaybolmaz, geçici hata retry edilir.
+        # enqueue None dönerse (DB/disk arızası) eski tek-denemeli yola düş:
+        # kuyruk arızası arşivlemeyi eskisinden kötü yapmamalı.
+        from services.upload_queue import enqueue_upload
+        ham_upload_src = ham_source_path or source_path
+        if enqueue_upload("ham", ham_upload_src, ham_filename, ham_folder, document_id=doc_id) is None:
+            background_tasks.add_task(async_ham_upload, ham_upload_src, ham_filename, ham_folder)
+        if enqueue_upload("islenmis", pdfa_temp_file, new_filename, islenmis_folder, document_id=doc_id) is None:
+            background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
+        timings["2_ham_upload"] = 0.00
+        timings["3b_gizli_upload"] = 0.00
+        results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"
+        results["sharepoint_islenmis"] = "Arka Plana Atıldı (PDF/A-2b)"
 
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as e:
-        # Dönüşüm katmanının kullanıcıya dönük mesajları (pdf_converter RuntimeError,
-        # udf_converter ValueError) — "SharePoint başarısız" deyip gerçek nedeni
-        # gizlemek kullanıcıyı yanlış yere bakmaya itiyordu (2026-08-05 arızası).
+        # Pipeline'ın dönüşüm-dışı adımlarından gelen kullanıcıya dönük mesajlar —
+        # "SharePoint başarısız" deyip gerçek nedeni gizlemek kullanıcıyı yanlış
+        # yere bakmaya itiyordu (2026-08-05 arızası). Dönüşüm hatalarının kendisi
+        # artık yukarıda pending katmanına gider.
         error_id = str(uuid.uuid4())[:8]
         TechnicalLogger.log("ERROR", f"Processed Upload Error [ID: {error_id}]: {e}")
         raise HTTPException(status_code=500, detail=f"{e} (Hata: {error_id})") from e

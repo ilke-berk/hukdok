@@ -170,7 +170,10 @@ def image_to_pdf(source_path: str, output_path: Optional[str] = None) -> str:
     except RuntimeError:
         raise
     except Exception as e:
-        TechnicalLogger.log("ERROR", f"Görüntü → PDF hatası: {e}")
+        # Faz 3-F: deneme-düzeyi WARNING — dönüşüm hatası belge için nihai değil
+        # (arşiv yolunda conversion_pending katmanı + gece retry; analiz yolunda
+        # nihai ERROR'u stream/intake handler'ları üretir).
+        TechnicalLogger.log("WARNING", f"Görüntü → PDF hatası: {e}")
         raise RuntimeError(
             "Görüntü dosyası PDF'e dönüştürülemedi. Dosya bozuk veya desteklenmeyen bir format olabilir."
         ) from e
@@ -294,7 +297,8 @@ def _soffice_to_pdf(source_path: str, convert_target: str, output_path: Optional
         return output_path
 
     except subprocess.TimeoutExpired:
-        TechnicalLogger.log("ERROR", f"LibreOffice timeout ({LIBREOFFICE_TIMEOUT}s aşıldı): {source_path}")
+        # Faz 3-F: deneme-düzeyi WARNING (yukarıdaki görüntü dalıyla aynı gerekçe)
+        TechnicalLogger.log("WARNING", f"LibreOffice timeout ({LIBREOFFICE_TIMEOUT}s aşıldı): {source_path}")
         raise RuntimeError("LibreOffice → PDF dönüşümü timeout") from None
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

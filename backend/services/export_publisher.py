@@ -53,6 +53,12 @@ def enqueue_document(document_id: int) -> Optional[int]:
             return None
         if doc.link_mode == "TEST" or not doc.sharepoint_url:
             return None
+        # Faz 3-F: dönüşümü bekleyen/başarısız belge ingest'e AÇILMAZ — arşivde
+        # PDF değil orijinal (ör. .udf) durur; hukukbot'un PDF ingest'i düşer
+        # (140+ belgelik failed birikimi vakasının önlemi). Gece job'ı dönüşümü
+        # tamamlayınca statü NULL'lanır ve hook o zaman yeniden çağrılır.
+        if doc.conversion_status is not None:
+            return None
         # Silinmiş davanın belgesi outbox'a hiç girmez; zaten delivered olmuş
         # satırlara dokunulmaz. Dava restore edilirse belgeleri tekrar akabilir
         # (export filtresi dinamik) — istenen davranış.

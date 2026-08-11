@@ -91,9 +91,14 @@ def _doc_passes_filters(doc, allowlist: set[str], types_filter: set[str]) -> boo
     - sharepoint_url dolu olmalı (outbox tabanlı listede zaten garanti, savunma amaçlı)
     - Kendisi veya davası soft-delete edilmiş belge elenir; case_id=None (UNLINKED) dahil kalır.
       Filtre dinamiktir: kayıt restore edilirse belgeleri tekrar akar — istenen davranış.
+    - conversion_status NULL olmalı (Faz 3-F): pending/failed belgelerin arşiv
+      kopyası PDF değil orijinaldir (ör. .udf) — ingest'e açılmaz. Gece job'ı
+      dönüşümü tamamlayınca statü NULL'lanır ve belge akmaya başlar.
     - Tür, env allowlist'ine VE istekteki types= filtresine uymalı (normalize edilerek)
     """
     if doc is None or doc.link_mode == "TEST" or not doc.sharepoint_url:
+        return False
+    if doc.conversion_status is not None:
         return False
     if doc.deleted_at is not None:
         return False
@@ -178,6 +183,10 @@ def get_export_document(document_id: int):
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         if doc.deleted_at is not None or (doc.case is not None and doc.case.deleted_at is not None):
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        # Faz 3-F: dönüşümü tamamlanmamış belge export yüzeyinde yok sayılır
+        # (arşiv kopyası PDF değil — liste zaten filtreler, bu savunma katmanı).
+        if doc.conversion_status is not None:
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
 
         outbox = (
             db.query(models.ExportOutbox)
@@ -228,6 +237,10 @@ def download_export_document(document_id: int):
         if not doc:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         if doc.deleted_at is not None or (doc.case is not None and doc.case.deleted_at is not None):
+            raise HTTPException(status_code=404, detail="Belge bulunamadı")
+        # Faz 3-F: dönüşümü tamamlanmamış belgenin arşiv kopyası PDF değil,
+        # orijinaldir (ör. .udf) — hukukbot'a dosya olarak da verilmez.
+        if doc.conversion_status is not None:
             raise HTTPException(status_code=404, detail="Belge bulunamadı")
         if not doc.sharepoint_url or not doc.stored_filename:
             raise HTTPException(status_code=404, detail="Belge SharePoint'e yüklenmemiş")
