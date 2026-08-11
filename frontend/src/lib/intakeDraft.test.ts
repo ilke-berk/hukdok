@@ -10,6 +10,7 @@ import {
   saveIntakeDraft,
   type ReviewSnapshot,
 } from "./intakeDraft";
+import { resumeAllDrafts, suppressAllDrafts } from "./formDraft";
 import type { MergeDraft } from "./caseIntake";
 
 // Taslak testleri gerçek MergeDraft'ın tamamına ihtiyaç duymaz — yalnız
@@ -72,6 +73,21 @@ describe("saveIntakeDraft / loadIntakeDraft", () => {
     saveIntakeDraft(draft, review);
     clearIntakeDraft();
     expect(loadIntakeDraft()).toBeNull();
+  });
+
+  // G004 denetim düzeltmesi: sihirbaz taslağı (tc_no taşır) da logout
+  // bastırmasına uyar — IntakeReviewStep'in pagehide flush'ı, çıkışta
+  // clearAppStorage'ın sildiği taslağı geri yazamaz.
+  it("suppressAllDrafts kuruluyken saveIntakeDraft diske YAZMAZ; resume geri açar", () => {
+    suppressAllDrafts();
+    try {
+      saveIntakeDraft(draft, review);
+      expect(sessionStorage.getItem(INTAKE_DRAFT_KEY)).toBeNull();
+    } finally {
+      resumeAllDrafts();
+    }
+    saveIntakeDraft(draft, review);
+    expect(loadIntakeDraft()?.review).toEqual(review);
   });
 });
 

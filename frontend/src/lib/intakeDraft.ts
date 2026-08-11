@@ -1,3 +1,4 @@
+import { areDraftsSuppressed } from "@/lib/formDraft";
 import type { MergeDraft } from "@/lib/caseIntake";
 import type { IntakeFieldState } from "@/lib/caseIntakeFields";
 
@@ -68,6 +69,11 @@ const getStorage = (): Storage | null => {
 };
 
 export function saveIntakeDraft(draft: MergeDraft, review: ReviewSnapshot): void {
+  // Çıkış bastırması (G004 denetim düzeltmesi): sihirbaz da pagehide'da flush
+  // eder (IntakeReviewStep) ve taslağı tc_no taşır — logoutRedirect'in
+  // tetiklediği flush, clearAppStorage'ın sildiği taslağı geri yazmasın.
+  // (Oturum düşmesi 401 bayrağı KURMAZ; o flush bilinçli özellik, aynen çalışır.)
+  if (areDraftsSuppressed()) return;
   const storage = getStorage();
   if (!storage) return;
   const snapshot: IntakeDraftSnapshot = {

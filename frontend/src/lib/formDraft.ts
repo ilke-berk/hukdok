@@ -43,6 +43,45 @@ export interface DraftStore<T> {
   clear(): void;
 }
 
+// ---------------------------------------------------------------------
+// Logout bastırması (G004 denetim düzeltmesi — RET bulgusu).
+//
+// SORUN: Çıkış akışı `clearAppStorage()` ile taslakları siler, hemen ardından
+// `logoutRedirect` navigasyonu `pagehide` + `beforeunload` tetikler; bu
+// flush'lar taslağı sessionStorage'a GERİ yazardı. sessionStorage aynı
+// sekmedeki AAD gidiş-dönüşünde hayatta kaldığı için sonraki kullanıcı,
+// önceki kullanıcının TC içeren taslağını "geri yükle" şeridiyle görürdü.
+//
+// ÇÖZÜM: Sidebar, temizlikten ÖNCE `suppressAllDrafts()` çağırır. Bayrak
+// kuruluyken (1) HİÇBİR DraftStore.save diske yazmaz, (2) attachUnloadGuard
+// uyarı diyaloğu da flush da üretmez — tarayıcının "ayrılmak istiyor musunuz?"
+// sorusu logout'un ortasına düşmez. Bayrak modül-içi bellektedir: redirect /
+// reload sayfayı tazeleyince kendiliğinden sıfırlanır.
+//
+// DİKKAT: Oturum düşmesi (401 → SESSION_EXPIRED_EVENT) bu bayrağı KURMAZ —
+// orada flush bilinçli bir özelliktir (aynı kullanıcı tekrar girince emeği
+// geri gelir; depo da temizlenmez). Sayfaların kendi `clear()` kilidi
+// (useFormDraft.suppressed) olduğu gibi durur; bu bayrak yalnız çıkışa özeldir.
+// ---------------------------------------------------------------------
+
+let allDraftsSuppressed = false;
+
+/** Çıkış akışı: tüm taslak yazımlarını ve ayrılma uyarılarını sustur.
+ *  `clearAppStorage()`'dan ÖNCE çağrılmalı. */
+export function suppressAllDrafts(): void {
+  allDraftsSuppressed = true;
+}
+
+/** Bastırmayı geri alır — logout kurulamayıp kullanıcı oturumda kaldığında
+ *  (Sidebar catch yolu) ve test temizliğinde kullanılır. */
+export function resumeAllDrafts(): void {
+  allDraftsSuppressed = false;
+}
+
+export function areDraftsSuppressed(): boolean {
+  return allDraftsSuppressed;
+}
+
 /** Storage erişimi engelli olabilir (gizli mod kısıtı vb.) — taslak özelliği
  *  o durumda sessizce devre dışı kalır, akış asla kırılmaz. */
 export const sessionDraftStorage = (): Storage | null => {
@@ -78,6 +117,10 @@ export function createDraftStore<T>(options: DraftStoreOptions): DraftStore<T> {
     key,
 
     save(data: T, now: number = Date.now()): void {
+      // Çıkış bastırması: temizlik ile redirect arasındaki pagehide/unmount
+      // flush'ları silinen taslağı diriltmesin (en derin boğaz noktası —
+      // debounce'lu yazıcı dahil TÜM yazım yolları buradan geçer).
+      if (allDraftsSuppressed) return;
       const store = safeStorage();
       if (!store) return;
       const envelope: DraftEnvelope<T> = {
@@ -160,6 +203,10 @@ export function describeDraftAge(ageMs: number): string {
 export function attachUnloadGuard(active: boolean, onFlush?: () => void): () => void {
   if (!active || typeof window === "undefined") return () => { /* bağlanmadı */ };
   const handler = (event: BeforeUnloadEvent) => {
+    // Çıkış bastırması OLAY ANINDA denetlenir (söküm React render'ı bekler,
+    // logout navigasyonu beklemez): uyarı diyaloğu logoutRedirect'in ortasına
+    // düşmez, flush da silinen taslağı geri yazmaz.
+    if (allDraftsSuppressed) return;
     onFlush?.(); // ayrılmadan önce bekleyen taslak yazımını diske indir
     event.preventDefault();
     // Eski tarayıcı sözleşmesi: returnValue dolu olmadan uyarı çıkmaz.

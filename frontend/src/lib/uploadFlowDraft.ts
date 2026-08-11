@@ -4,8 +4,7 @@ import { createDraftStore } from "@/lib/formDraft";
 // Belge yükleme akışı taslağı (G004 · sertleştirme 4-C, Index.tsx).
 //
 // NE SAKLANIR: kullanıcının EMEK verdiği bağlam — seçtiği belge türü, bağladığı
-// dava, "belge kime ait" müvekkil seçimi ve (yalnız şeritte göstermek için)
-// dosya adı.
+// dava ve (yalnız şeritte göstermek için) dosya adı.
 //
 // NE SAKLANMAZ ve NEDEN:
 //  - `process_id`: PROCESS_CACHE TTL'ine (30 dk, keepalive'lı) bağlı. Bayat bir

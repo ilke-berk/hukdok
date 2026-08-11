@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { clearAppStorage } from "@/lib/appStorage";
+import { resumeAllDrafts, suppressAllDrafts } from "@/lib/formDraft";
 import { useDashboardView } from "@/hooks/useDashboardView";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
@@ -74,6 +75,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   // sekmedeki veri, eklenti kayıtları) siliyordu. Artık yalnız HUKDOK anahtarları
   // temizlenir; MSAL oturumunu kendi API'siyle (logoutRedirect) kapatır.
   const handleLogout = async () => {
+    // SIRA ÖNEMLİ (G004 denetim düzeltmesi): önce taslak sistemi susturulur.
+    // logoutRedirect navigasyonu pagehide + (kirli formda) beforeunload tetikler;
+    // bastırma olmadan bu flush'lar az önce silinen taslağı sessionStorage'a
+    // GERİ yazar ve sonraki kullanıcı önceki kullanıcının TC'li taslağını
+    // görürdü (sessionStorage aynı sekmedeki AAD gidiş-dönüşünde yaşar).
+    // Bastırma ayrıca kirli formdaki "ayrılmak istiyor musunuz?" diyaloğunun
+    // logout'un ortasına düşmesini de engeller.
+    suppressAllDrafts();
     clearAppStorage(); // taslaklar + tercih/önbellek anahtarları (TC içeren yetki belgesi cache'i dahil)
     try {
       await instance.logoutRedirect({
@@ -84,6 +93,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       // Redirect kurulamadı (ör. interaction_in_progress). MSAL cache'ine ELLE
       // dokunulmaz — yarım silinmiş cache kilitli durumlar üretir; sayfa tazelenir.
       console.error("❌ Logout failed:", error);
+      // Çıkış GERÇEKLEŞMEDİ → kullanıcı oturumda kalıyor; taslak sistemi geri
+      // açılır ki reload'ın pagehide flush'ı AYNI kullanıcının emeğini korusun
+      // (kullanıcı değişimi yok — KVKK riski yok).
+      resumeAllDrafts();
       window.location.reload();
     }
   };

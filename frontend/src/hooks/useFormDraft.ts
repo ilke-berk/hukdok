@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SESSION_EXPIRED_EVENT } from "@/lib/api";
 import {
+  areDraftsSuppressed,
   attachUnloadGuard,
   debounce,
   type DebouncedFn,
@@ -20,6 +21,9 @@ import {
 //  - `beforeunload` yalnız `warnOnUnload` (varsayılan: `dirty`) iken bağlanır.
 //  - `clear()` (kaydet/iptal) taslağı siler VE yeniden yazımı kilitler; veri
 //    tekrar değişene dek "kaydedilmiş verinin hayaleti" geri yazılmaz.
+//  - Çıkış (logout): `suppressAllDrafts()` kuruluyken yazıcı da flush yolları
+//    da (pagehide / SESSION_EXPIRED / unmount / beforeunload) diske YAZMAZ —
+//    clearAppStorage'ın sildiği taslak redirect sırasında dirilmez (RET bulgusu).
 // =====================================================================
 
 const DEFAULT_DEBOUNCE_MS = 800;
@@ -75,7 +79,10 @@ export function useFormDraft<T>(
   if (writerRef.current === null) {
     writerRef.current = debounce(() => {
       const current = latest.current;
-      if (suppressed.current || !current.enabled || !current.dirty) return;
+      // areDraftsSuppressed: logout bastırması (store.save da ayrıca denetler;
+      // burada da durmak niyeti hook seviyesinde görünür kılar).
+      if (suppressed.current || areDraftsSuppressed() || !current.enabled || !current.dirty)
+        return;
       store.save(current.data);
     }, debounceMs);
   }

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  areDraftsSuppressed,
   attachUnloadGuard,
   createDraftStore,
   describeDraftAge,
+  resumeAllDrafts,
   sessionDraftStorage,
+  suppressAllDrafts,
 } from "./formDraft";
 
 interface Sample {
@@ -158,5 +161,82 @@ describe("attachUnloadGuard", () => {
     const event = fireUnload();
     expect(event.defaultPrevented).toBe(false);
     expect(flush).not.toHaveBeenCalled();
+  });
+});
+
+// =====================================================================
+// Logout bastırması (G004 denetim düzeltmesi — RET bulgusu).
+// Senaryo: Sidebar Çıkış → suppressAllDrafts() → clearAppStorage() →
+// logoutRedirect navigasyonu pagehide/beforeunload flush'larını tetikler.
+// Bastırma olmadan bu flush'lar silinen TC'li taslağı GERİ yazardı.
+// =====================================================================
+describe("suppressAllDrafts (logout bastırması)", () => {
+  const fireUnload = () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event;
+  };
+
+  afterEach(() => resumeAllDrafts());
+
+  it("bayrak kuruluyken save diske YAZMAZ — temizlenen taslak dirilmez", () => {
+    const store = makeStore();
+    store.save({ name: "önceki kullanıcı", count: 1 });
+    expect(sessionStorage.getItem(KEY)).not.toBeNull();
+
+    suppressAllDrafts();
+    sessionStorage.clear(); // clearAppStorage'ın temizliğini temsil eder
+    store.save({ name: "önceki kullanıcı", count: 1 }); // pagehide/unmount flush'ı
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("resumeAllDrafts yazımı geri açar (logout kurulamadı → oturum sürüyor)", () => {
+    const store = makeStore();
+    suppressAllDrafts();
+    store.save({ name: "a", count: 1 });
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+
+    resumeAllDrafts();
+    store.save({ name: "a", count: 1 });
+    expect(store.load()?.data.name).toBe("a");
+  });
+
+  it("bastırma clear'ı ENGELLEMEZ — silme her zaman güvenlidir", () => {
+    const store = makeStore();
+    store.save({ name: "a", count: 1 });
+    suppressAllDrafts();
+    store.clear();
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("areDraftsSuppressed bayrağın güncel durumunu yansıtır", () => {
+    expect(areDraftsSuppressed()).toBe(false);
+    suppressAllDrafts();
+    expect(areDraftsSuppressed()).toBe(true);
+    resumeAllDrafts();
+    expect(areDraftsSuppressed()).toBe(false);
+  });
+
+  it("bastırma kuruluyken guard uyarı da flush da üretmez (diyalog logout'u bölmez)", () => {
+    const flush = vi.fn();
+    const detach = attachUnloadGuard(true, flush);
+    suppressAllDrafts();
+    const event = fireUnload();
+    expect(event.defaultPrevented).toBe(false);
+    expect(flush).not.toHaveBeenCalled();
+    detach();
+  });
+
+  it("guard bayrağı OLAY ANINDA okur: resume sonrası aynı guard yeniden uyarır", () => {
+    const flush = vi.fn();
+    const detach = attachUnloadGuard(true, flush); // bağlanırken bayrak yok
+    suppressAllDrafts();
+    expect(fireUnload().defaultPrevented).toBe(false);
+
+    resumeAllDrafts(); // Sidebar catch yolu: logout kurulamadı
+    const event = fireUnload();
+    expect(event.defaultPrevented).toBe(true);
+    expect(flush).toHaveBeenCalledTimes(1);
+    detach();
   });
 });
