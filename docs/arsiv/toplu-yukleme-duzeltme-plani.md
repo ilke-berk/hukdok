@@ -29,7 +29,7 @@ Her faz **bağımsız deploy edilebilir** olacak şekilde ayrıldı. Faz 1 produ
 
 ### 1.1 — `linkedCase` dosyalar arası reset (Bug #1)
 
-**Dosya:** [Index.tsx:728-755](../frontend/src/pages/Index.tsx#L728-L755)
+**Dosya:** [Index.tsx:728-755](../../frontend/src/pages/Index.tsx#L728-L755)
 
 **Değişiklik:** Sıradaki dosyaya geçerken aşağıdaki satırlar eklenir:
 
@@ -46,9 +46,9 @@ setSelectedPartyId(null);
 
 ### 1.2 — Pre-load veri yapısı eşitleme (Bug #2)
 
-**Dosya:** [Index.tsx:492-506](../frontend/src/pages/Index.tsx#L492-L506)
+**Dosya:** [Index.tsx:492-506](../../frontend/src/pages/Index.tsx#L492-L506)
 
-**Değişiklik:** `preloadNextFile` içindeki `setNextAnalysisData(...)` bloku, [Index.tsx:342-363](../frontend/src/pages/Index.tsx#L342-L363) yapısıyla birebir eşitlenir. Eklenen alanlar: `muvekkil_adi`, `karsi_taraf`, `suggested_karsi_taraf`, `court`, `suggested_case`, `sonraki_durusma_tarihi`, `sonraki_durusma_saati`.
+**Değişiklik:** `preloadNextFile` içindeki `setNextAnalysisData(...)` bloku, [Index.tsx:342-363](../../frontend/src/pages/Index.tsx#L342-L363) yapısıyla birebir eşitlenir. Eklenen alanlar: `muvekkil_adi`, `karsi_taraf`, `suggested_karsi_taraf`, `court`, `suggested_case`, `sonraki_durusma_tarihi`, `sonraki_durusma_saati`.
 
 **Refaktör fırsatı:** Bu mapping iki yerde tekrar ediyor — `mapResultToAnalysisData(resultData, selectedDocType?)` helper'ı çıkarılabilir. Faz 2'ye bırakılabilir; Faz 1'de minimum invaziv değişiklikle eşitlenir.
 
@@ -59,7 +59,7 @@ setSelectedPartyId(null);
 
 ### 1.3 — Pre-load'da `belge_turu_kodu` gönderimi (Bug #3)
 
-**Dosya:** [Index.tsx:451-452](../frontend/src/pages/Index.tsx#L451-L452)
+**Dosya:** [Index.tsx:451-452](../../frontend/src/pages/Index.tsx#L451-L452)
 
 **Değişiklik:** Pre-load anında kullanıcı seçimi yok ama bu pipeline'ın yapısal bir kısıtı. Karar gerekiyor:
 
@@ -70,9 +70,9 @@ setSelectedPartyId(null);
 
 ### 1.4 — Pre-loaded dosyada auto-dava-bağlama tetikleme (Bug #9)
 
-**Dosya:** [Index.tsx:738-755](../frontend/src/pages/Index.tsx#L738-L755)
+**Dosya:** [Index.tsx:738-755](../../frontend/src/pages/Index.tsx#L738-L755)
 
-**Değişiklik:** `setAnalysisData(nextAnalysisData)` çağrısından sonra, [Index.tsx:366-407](../frontend/src/pages/Index.tsx#L366-L407) içindeki "FAZ 1: Otomatik Dava Bağlantısı" bloku yardımcı bir fonksiyona çıkarılır:
+**Değişiklik:** `setAnalysisData(nextAnalysisData)` çağrısından sonra, [Index.tsx:366-407](../../frontend/src/pages/Index.tsx#L366-L407) içindeki "FAZ 1: Otomatik Dava Bağlantısı" bloku yardımcı bir fonksiyona çıkarılır:
 
 ```tsx
 const applyAutoSuggestionFlow = (data: AnalysisData) => {
@@ -104,7 +104,7 @@ Hem `handleAnalyze` hem de pre-loaded geçiş bu helper'ı çağırır.
 
 ### 2.1 — `processedBatch` fonksiyonel setter (Bug #5)
 
-**Dosya:** [Index.tsx:693-696](../frontend/src/pages/Index.tsx#L693-L696)
+**Dosya:** [Index.tsx:693-696](../../frontend/src/pages/Index.tsx#L693-L696)
 
 ```tsx
 // Önce:
@@ -120,7 +120,7 @@ setProcessedBatch(prev => [...prev, { path: "", name: newFilename }]);
 
 ### 2.2 — Son dosyada `processedCount` artırma (Bug #6)
 
-**Dosya:** [Index.tsx:756-779](../frontend/src/pages/Index.tsx#L756-L779) ("All files processed!" dalı)
+**Dosya:** [Index.tsx:756-779](../../frontend/src/pages/Index.tsx#L756-L779) ("All files processed!" dalı)
 
 **Değişiklik:** Reset bloğundan ÖNCE bir kez daha `setProcessedCount(prev => prev + 1)` çağır. Reset sonrası `setProcessedCount(0)` zaten var; ama UI son dosya tamamlanırken `10/10` görmeli, sıfırlanmadan önce kısa bir tamamlanma animasyonu için.
 
@@ -128,7 +128,7 @@ setProcessedBatch(prev => [...prev, { path: "", name: newFilename }]);
 
 ### 2.3 — `durum` varsayılan tutarsızlığı (Bug #8)
 
-**Dosya:** [Index.tsx:499](../frontend/src/pages/Index.tsx#L499) ve [Index.tsx:352](../frontend/src/pages/Index.tsx#L352)
+**Dosya:** [Index.tsx:499](../../frontend/src/pages/Index.tsx#L499) ve [Index.tsx:352](../../frontend/src/pages/Index.tsx#L352)
 
 **Değişiklik:** Pre-load'da `"X"` yerine `"G"` kullan (handleAnalyze ile aynı). Faz 1.2'deki mapping helper'ı bu sorunu zaten çözer.
 
@@ -149,7 +149,7 @@ setProcessedBatch(prev => [...prev, { path: "", name: newFilename }]);
 
 ### 3.1 — EmailModal batch-level config (Bug #4, #12)
 
-**Dosya:** [EmailModal.tsx](../frontend/src/components/email/EmailModal.tsx), [Index.tsx](../frontend/src/pages/Index.tsx)
+**Dosya:** [EmailModal.tsx](../../frontend/src/components/email/EmailModal.tsx), [Index.tsx](../../frontend/src/pages/Index.tsx)
 
 **Tasarım:**
 - Batch mode tespiti: `fileQueue.length > 1`.
@@ -167,7 +167,7 @@ const [batchEmailConfig, setBatchEmailConfig] = useState<{
 } | null>(null);
 ```
 
-**Yorumun düzeltilmesi:** [Index.tsx:543](../frontend/src/pages/Index.tsx#L543) yorumu güncellenir: "Batch modda config varsa modal atlanır; yoksa açılır."
+**Yorumun düzeltilmesi:** [Index.tsx:543](../../frontend/src/pages/Index.tsx#L543) yorumu güncellenir: "Batch modda config varsa modal atlanır; yoksa açılır."
 
 **UI:** EmailModal başlığına "Dosya 3/10 — Tüm batch için ayarlar" göstergesi.
 
@@ -178,7 +178,7 @@ const [batchEmailConfig, setBatchEmailConfig] = useState<{
 
 ### 3.2 — `outputDirHandle` kalıcılığı (Bug #7)
 
-**Dosya:** [Index.tsx:776-778](../frontend/src/pages/Index.tsx#L776-L778)
+**Dosya:** [Index.tsx:776-778](../../frontend/src/pages/Index.tsx#L776-L778)
 
 **Karar gerekiyor:** Mevcut yorum "User wants to re-select for every process" diyor. Bu kasıtlıysa ve kullanıcı tercihi geçerliyse:
 
@@ -191,7 +191,7 @@ const [batchEmailConfig, setBatchEmailConfig] = useState<{
 
 ### 3.3 — Toast özetleme (Bug #11)
 
-**Dosya:** [Index.tsx](../frontend/src/pages/Index.tsx) — `handleFinalProcess` içindeki toast çağrıları
+**Dosya:** [Index.tsx](../../frontend/src/pages/Index.tsx) — `handleFinalProcess` içindeki toast çağrıları
 
 **Değişiklik:** Batch mode'da (`isBatchMode === true`) ara toast'ları susturup batch sonunda toplu özet at:
 
@@ -236,7 +236,7 @@ const [batchResults, setBatchResults] = useState<{
 
 ### 4.1 — Geçersiz dosya uyarısı (Bug #13)
 
-**Dosya:** [FileUpload.tsx:42-70](../frontend/src/components/FileUpload.tsx#L42-L70)
+**Dosya:** [FileUpload.tsx:42-70](../../frontend/src/components/FileUpload.tsx#L42-L70)
 
 **Değişiklik:**
 ```tsx
@@ -275,7 +275,7 @@ Aynı mantık `handleFileInput` için de uygulanır.
 
 ### 4.2 — Kuyruktan dosya çıkarma (Bug #10)
 
-**Dosya:** [QueueStatus.tsx](../frontend/src/components/QueueStatus.tsx), [Index.tsx](../frontend/src/pages/Index.tsx)
+**Dosya:** [QueueStatus.tsx](../../frontend/src/components/QueueStatus.tsx), [Index.tsx](../../frontend/src/pages/Index.tsx)
 
 **Tasarım:**
 - QueueStatus'taki rozet listesi tıklanabilir hale gelir (gelecek dosyalar için, geçmiş için değil).
@@ -337,7 +337,7 @@ const MAX_PRELOAD_DEPTH = 2; // 2 dosya ileriye kadar buffer
 **Trade-off:**
 - ✅ Yavaş kullanıcıda daha pürüzsüz akış.
 - ⚠️ Backend tarafında 2-3 paralel `/process` çağrısı → AI API rate limit riski.
-- ⚠️ PROCESS_CACHE TTL 30 dakika → eski entry'ler birikebilir, mevcut [processing.py:34](../backend/routes/processing.py#L34) cleanup mekanizması yeterli olmalı.
+- ⚠️ PROCESS_CACHE TTL 30 dakika → eski entry'ler birikebilir, mevcut [processing.py:34](../../backend/routes/processing.py#L34) cleanup mekanizması yeterli olmalı.
 
 **Karar kriteri:** Production logs'tan ortalama batch boyutu ve dosya başına bekleme süresine bakılır. Eğer kullanıcı 1 dosyada >2 dakika harcıyorsa Faz 5 değerli.
 
@@ -364,7 +364,7 @@ Bugün ───► FAZ 1 (kritik fix, deploy)
 
 ### Regresyon riski yüksek alanlar
 
-1. **`linkedCase` state akışı** — Faz 1.1 ile değişiyor, QuickCaseModal flow'unu da etkileyebilir ([Index.tsx:1115-1143](../frontend/src/pages/Index.tsx#L1115-L1143)). Test: yeni dava açma akışı batch içinde tetiklendiğinde sıradaki dosya hâlâ doğru bağlanıyor mu?
+1. **`linkedCase` state akışı** — Faz 1.1 ile değişiyor, QuickCaseModal flow'unu da etkileyebilir ([Index.tsx:1115-1143](../../frontend/src/pages/Index.tsx#L1115-L1143)). Test: yeni dava açma akışı batch içinde tetiklendiğinde sıradaki dosya hâlâ doğru bağlanıyor mu?
 2. **EmailModal reset davranışı** — Faz 3.1 ile değişiyor. Tek dosya akışı bozulmamalı.
 3. **PROCESS_CACHE TTL** — Faz 5'te artarsa backend bellek/disk kullanımı izlenmeli.
 

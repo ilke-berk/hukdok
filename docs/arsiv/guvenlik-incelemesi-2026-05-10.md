@@ -10,7 +10,7 @@
 
 ## Kritik (CRITICAL)
 
-### 1. Açık CORS + Credentials — [backend/api.py:181-187](../backend/api.py#L181-L187)
+### 1. Açık CORS + Credentials — [backend/api.py:181-187](../../backend/api.py#L181-L187)
 ```python
 app.add_middleware(CORSMiddleware,
     allow_origin_regex=".*", allow_credentials=True,
@@ -19,7 +19,7 @@ app.add_middleware(CORSMiddleware,
 **Risk:** Herhangi bir kötü amaçlı site, kurban tarayıcısından kimlik bilgisiyle (cookie/Authorization) bu API'ye CSRF benzeri istek atabilir. `allow_credentials=True` + `*` kombinasyonu standart olarak yasak — tarayıcı bunu reddetse de regex `.*` ile bypass ediliyor.
 **Öneri:** Üretim domainlerini whitelist olarak listele (`allow_origins=["https://hukudok.example.com"]`).
 
-### 2. Authenticated olmayan dosya indirme — [backend/routes/processing.py:492-505](../backend/routes/processing.py#L492-L505)
+### 2. Authenticated olmayan dosya indirme — [backend/routes/processing.py:492-505](../../backend/routes/processing.py#L492-L505)
 ```python
 @router.get("/api/download/{file_id}")
 async def download_file(file_id: str):  # Depends YOK
@@ -32,19 +32,19 @@ Aşağıdaki endpoint'ler `doc_id`/`hearing_id`/`relation_id` üzerinden erişim
 
 | Endpoint | Dosya | Konum |
 |---|---|---|
-| `GET /api/documents/{doc_id}/download` | documents.py | [L230-262](../backend/routes/documents.py#L230-L262) |
-| `PATCH /api/documents/{doc_id}/link` | documents.py | [L180-207](../backend/routes/documents.py#L180-L207) |
-| `PATCH /api/documents/{doc_id}/party` | documents.py | [L265-306](../backend/routes/documents.py#L265-L306) |
-| `GET /api/documents/{doc_id}/email-status` | documents.py | [L210-227](../backend/routes/documents.py#L210-L227) |
-| `POST /api/documents/{doc_id}/resend-email` | documents.py | [L316-387](../backend/routes/documents.py#L316-L387) |
-| `DELETE /api/hearing-dates/{hearing_id}` | cases.py | [L375-389](../backend/routes/cases.py#L375-L389) |
-| `DELETE /api/cases/{case_id}/relations/{relation_id}` | cases.py | [L245-270](../backend/routes/cases.py#L245-L270) |
-| `GET /api/cases/{case_id}/stage-log` | cases.py | [L288-294](../backend/routes/cases.py#L288-L294) — `tenant_id` parametresi alınıyor ama kullanılmıyor |
-| `GET /api/cases/client-sequence` | cases.py | [L60-85](../backend/routes/cases.py#L60-L85) — tüm tenantların müvekkil sayımına bakıyor |
+| `GET /api/documents/{doc_id}/download` | documents.py | [L230-262](../../backend/routes/documents.py#L230-L262) |
+| `PATCH /api/documents/{doc_id}/link` | documents.py | [L180-207](../../backend/routes/documents.py#L180-L207) |
+| `PATCH /api/documents/{doc_id}/party` | documents.py | [L265-306](../../backend/routes/documents.py#L265-L306) |
+| `GET /api/documents/{doc_id}/email-status` | documents.py | [L210-227](../../backend/routes/documents.py#L210-L227) |
+| `POST /api/documents/{doc_id}/resend-email` | documents.py | [L316-387](../../backend/routes/documents.py#L316-L387) |
+| `DELETE /api/hearing-dates/{hearing_id}` | cases.py | [L375-389](../../backend/routes/cases.py#L375-L389) |
+| `DELETE /api/cases/{case_id}/relations/{relation_id}` | cases.py | [L245-270](../../backend/routes/cases.py#L245-L270) |
+| `GET /api/cases/{case_id}/stage-log` | cases.py | [L288-294](../../backend/routes/cases.py#L288-L294) — `tenant_id` parametresi alınıyor ama kullanılmıyor |
+| `GET /api/cases/client-sequence` | cases.py | [L60-85](../../backend/routes/cases.py#L60-L85) — tüm tenantların müvekkil sayımına bakıyor |
 
 **Öneri:** Her `doc_id`/`hearing_id` lookup'ında ilişkili `Case.tenant_id == tenant_id` filtresi zorunlu kılınmalı; ortak helper (`get_doc_for_tenant(doc_id, tenant)`) yazılması tavsiye edilir.
 
-### 4. Müvekkil (Client) endpoint'lerinde tenant filtresi yok — [backend/routes/clients.py](../backend/routes/clients.py)
+### 4. Müvekkil (Client) endpoint'lerinde tenant filtresi yok — [backend/routes/clients.py](../../backend/routes/clients.py)
 ```python
 @router.get("/api/clients")  # Tüm tenantların tüm müvekkillerini döner
 @router.put("/api/clients/{client_id}")  # Başka tenantın müvekkilini güncelleyebilir
@@ -52,7 +52,7 @@ Aşağıdaki endpoint'ler `doc_id`/`hearing_id`/`relation_id` üzerinden erişim
 ```
 **Risk:** `Client` modelinde `tenant_id` bulunmuyor olabilir; bu durumda tüm tenantlar arasında müvekkil listesi paylaşılıyor — KVKK ihlali. Authenticated her kullanıcı diğer şirketlerin müvekkillerini düzenleyebilir/silebilir.
 
-### 5. "Admin" endpoint'lerinde admin kontrolü yok — [backend/routes/activity.py:260-436](../backend/routes/activity.py#L260-L436)
+### 5. "Admin" endpoint'lerinde admin kontrolü yok — [backend/routes/activity.py:260-436](../../backend/routes/activity.py#L260-L436)
 ```python
 @router.delete("/api/activity/admin/reset")
 def admin_reset_report(..., user: dict = Depends(get_current_user)):  # require_admin yok
@@ -66,18 +66,18 @@ def admin_reset_report(..., user: dict = Depends(get_current_user)):  # require_
 
 ## Yüksek (HIGH)
 
-### 6. JWT `aud` doğrulaması atlanmış — [backend/auth_verifier.py:65-69](../backend/auth_verifier.py#L65-L69)
+### 6. JWT `aud` doğrulaması atlanmış — [backend/auth_verifier.py:65-69](../../backend/auth_verifier.py#L65-L69)
 ```python
 options={"verify_aud": False, "verify_exp": True}
 ```
 Bu uygulama için verilmemiş bir Microsoft Graph access token'ı (örn. başka bir multi-tenant uygulama tokeni) aynı tenant'tan geldiği sürece kabul edilir. Token replay riski.
 **Öneri:** Uygulamanın `client_id`'sine eşit olarak `verify_aud=True` + `audience=...` zorunlu kılın.
 
-### 7. Postgres dump (9.6MB) repo kökünde, `.gitignore`'da değil — [backup.sql](../backup.sql)
+### 7. Postgres dump (9.6MB) repo kökünde, `.gitignore`'da değil — [backup.sql](../../backup.sql)
 İçeriği gerçek prod dump'ı (`pg_dump`). `.gitignore`'da `*.sql` yok; `git add .` yapılırsa commit edilir. Ayrıca bu dosyanın diskte düz olarak durması da KVKK/PII açısından risk.
 **Öneri:** `.gitignore`'a `*.sql`, `backup.sql` ekleyin; dosyayı şifrelenmiş dış depoya taşıyıp diskten silin.
 
-### 8. Postgres host'ta açık — [docker-compose.yml:14-15](../docker-compose.yml#L14-L15)
+### 8. Postgres host'ta açık — [docker-compose.yml:14-15](../../docker-compose.yml#L14-L15)
 ```yaml
 ports:
   - "5432:5432"
@@ -109,20 +109,20 @@ ports:
 ## Orta (MEDIUM)
 
 ### 11. Dosya boyutu sınırı tutarsız
-- `RequestSizeLimitMiddleware`: 100 MB ([api.py:215](../backend/api.py#L215))
-- nginx `client_max_body_size`: 100 MB ([nginx.conf:2](../nginx.conf#L2))
-- `validate_file_size.MAX_MB`: 50 ([file_utils.py:178](../backend/file_utils.py#L178))
+- `RequestSizeLimitMiddleware`: 100 MB ([api.py:215](../../backend/api.py#L215))
+- nginx `client_max_body_size`: 100 MB ([nginx.conf:2](../../nginx.conf#L2))
+- `validate_file_size.MAX_MB`: 50 ([file_utils.py:178](../../backend/file_utils.py#L178))
 - `/process` chunked check'inde de 50 MB kullanılıyor
 
-Hata mesajının "Maximum 100MB" demesi ([api.py:209](../backend/api.py#L209)) yanıltıcı; sınırın 50MB olması daha doğru.
+Hata mesajının "Maximum 100MB" demesi ([api.py:209](../../backend/api.py#L209)) yanıltıcı; sınırın 50MB olması daha doğru.
 
-### 12. Linked case `tenant_id` doğrulanmadan belge bağlanıyor — [backend/routes/processing.py:528-565](../backend/routes/processing.py#L528-L565)
+### 12. Linked case `tenant_id` doğrulanmadan belge bağlanıyor — [backend/routes/processing.py:528-565](../../backend/routes/processing.py#L528-L565)
 `/confirm` endpoint'inde `linked_case_id` Form alanı geliyor; davanın istek sahibinin tenant'ında olduğu doğrulanmıyor. Saldırgan başka tenant'taki davaya belge bağlayabilir.
 
-### 13. Global in-memory cache thread-safe değil — [processing.py:27,30](../backend/routes/processing.py#L27)
+### 13. Global in-memory cache thread-safe değil — [processing.py:27,30](../../backend/routes/processing.py#L27)
 `DOWNLOAD_CACHE` ve `PROCESS_CACHE` plain `dict` — uvicorn worker'larında race + multiple worker'da paylaşılmıyor. Yapısal hata değil ama production riski (cache miss + temp dosya leak'i).
 
-### 14. `/api/incomplete-tasks` müvekkil listesinde tenant filtresi yok — [cases.py:442-448](../backend/routes/cases.py#L442-L448)
+### 14. `/api/incomplete-tasks` müvekkil listesinde tenant filtresi yok — [cases.py:442-448](../../backend/routes/cases.py#L442-L448)
 Davalar tenant'a göre filtrelenirken müvekkiller filtresiz alınıyor. Aynı IDOR pattern.
 
 ### 15. Hata mesajlarında stack trace / detay sızması
@@ -132,7 +132,7 @@ Birçok handler `detail=f"...: {e}"` döndürüyor (örn. activity.py:317, 326, 
 
 ## Düşük (LOW)
 
-### 16. `ENV=development` + `ALLOW_DEV_TENANT=true` bypass — [auth_verifier.py:39-41](../backend/auth_verifier.py#L39-L41)
+### 16. `ENV=development` + `ALLOW_DEV_TENANT=true` bypass — [auth_verifier.py:39-41](../../backend/auth_verifier.py#L39-L41)
 Açıkça ENV gerektiriyor (iyi) ama prod'da ENV variable'ı yanlışlıkla "development" set edilirse `tid="dev-tenant"` token kabul edilir. Üretim Docker imajında bu env vars zorla `production` olarak override edilmeli.
 
 ### 17. `secret_value` log riski ✅ DÜZELTİLDİ (2026-05-10)
@@ -140,7 +140,7 @@ Açıkça ENV gerektiriyor (iyi) ama prod'da ENV variable'ı yanlışlıkla "dev
 
 **Çözüm:** Yetkisiz tenant uyarısı artık yalnızca token'daki `tid`'i logluyor; whitelist set'i log'a yazılmıyor.
 
-### 18. SharePoint download'da MIME doğrulaması yok — [documents.py:260](../backend/routes/documents.py#L260) ✅ DÜZELTİLDİ (2026-05-10)
+### 18. SharePoint download'da MIME doğrulaması yok — [documents.py:260](../../backend/routes/documents.py#L260) ✅ DÜZELTİLDİ (2026-05-10)
 SharePoint'in döndürdüğü `content_type` doğrulanmadan kullanıcıya verilmesi nadir bir reflected-content riski yaratır. Belgeleri her zaman `application/octet-stream` olarak servis etmek daha güvenli.
 
 **Çözüm:** SharePoint'ten dönen `content_type` artık yok sayılıyor; download endpoint her zaman `media_type="application/octet-stream"` ile servis ediyor. `Content-Disposition: attachment` ile birleşince tarayıcı içeriği yorumlamıyor.
@@ -151,11 +151,11 @@ SharePoint'in döndürdüğü `content_type` doğrulanmadan kullanıcıya verilm
 
 - JWT imza doğrulaması (PyJWKClient)
 - File magic-byte doğrulama (PDF/UDF)
-- `defusedxml` kullanımı (XXE'ye karşı) — [udf_converter.py:13](../backend/udf_converter.py#L13)
+- `defusedxml` kullanımı (XXE'ye karşı) — [udf_converter.py:13](../../backend/udf_converter.py#L13)
 - SQLAlchemy ORM/parameterized queries (SQLi yok)
 - Rate limiting middleware tanımlı (ama endpoint başına `@limiter.limit` decorator'ı kullanılmamış — global 100/min korumada kalıyor)
-- Filename sanitization — [file_utils.py:41](../backend/file_utils.py#L41)
-- KVKK temp file cleanup — [api.py:152-168](../backend/api.py#L152-L168)
+- Filename sanitization — [file_utils.py:41](../../backend/file_utils.py#L41)
+- KVKK temp file cleanup — [api.py:152-168](../../backend/api.py#L152-L168)
 - Vault (Windows keyring) kullanımı
 
 ---

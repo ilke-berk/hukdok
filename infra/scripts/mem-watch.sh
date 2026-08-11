@@ -4,7 +4,7 @@
 # Amac: 2026-07-29'daki OOM'un (backend anon 3.57 GB, global_oom) tekrarinda
 # kok nedeni tahminle degil veriyle yakalamak. O gece elimizde egilim verisi
 # olmadigi icin sizintinin nerede oldugunu kod okuyarak bulamadik.
-# Gerekce: docs/sunucu-sertlestirme-plani-2026-07-30.md (Madde 6)
+# Gerekce: docs/arsiv/sunucu-sertlestirme-plani-2026-07-30.md (Madde 6)
 #
 # 'anon'  = gercek bellek (sizinti buradan gorulur)
 # 'file'  = sayfa onbellegi (baski altinda kendiliginden birakilir, zararsiz)

@@ -8,12 +8,12 @@ description: Sertleştirme takibindeki sıradaki tamamlanmamış paketi uçtan u
 Tek çağrı = TEK paket. Paket bitince (commit dahil) dur; sonraki pakete geçme.
 
 ## 1. Durumu oku
-- `docs/guvenilirlik-sertlestirme-uygulama-takibi.md` dosyasını oku: çalışma protokolü, paket listesi, son durum notları.
+- `docs/plan/guvenilirlik-sertlestirme-uygulama-takibi.md` dosyasını oku: çalışma protokolü, paket listesi, son durum notları.
 - Durum notlarında çözülmemiş `BLOCKED` varsa: hiçbir şey değiştirme, son mesajında `BLOCKED — kullanici mudahalesi gerekli` yaz, dur.
 - İlk işaretsiz `- [ ]` paketi bul:
   - Hiç kalmadıysa: son mesajında aynen `TUM PAKETLER TAMAM` yaz, dur.
   - Paket FAZ 6'daysa (6-A/6-B): son mesajında aynen `FAZ 6 GECE KAPSAMI DISI` yaz, dur. (docs reorganizasyonu bu takip dosyasının kendisini de taşıyacağı için gözetimsiz yapılmaz.)
-- Ana planın (`docs/guvenilirlik-sertlestirme-plani-2026-08-04.md`) YALNIZ ilgili faz bölümünü oku — paket satırındaki `[x.y]` numaraları o bölümün maddeleridir. Eski denetim raporlarını ve arşiv planlarını açma.
+- Ana planın (`docs/plan/guvenilirlik-sertlestirme-plani-2026-08-04.md`) YALNIZ ilgili faz bölümünü oku — paket satırındaki `[x.y]` numaraları o bölümün maddeleridir. Eski denetim raporlarını ve arşiv planlarını açma.
 
 ## 2. Çalışma ağacını değerlendir
 - `git status --porcelain` çıktısına bak (`.claude/` altını yok say).

@@ -2,7 +2,7 @@
 
 Sertleştirme planının kalan paketlerini (FAZ 4 → FAZ 5) sen uyurken sırayla işletir.
 Her paket **sıfır context'li ayrı bir Claude oturumunda** koşar; durum, context'te değil
-diskte tutulur: `docs/guvenilirlik-sertlestirme-uygulama-takibi.md` tek doğruluk kaynağıdır.
+diskte tutulur: `docs/plan/guvenilirlik-sertlestirme-uygulama-takibi.md` tek doğruluk kaynağıdır.
 
 ## Mekanizma
 

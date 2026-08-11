@@ -15,7 +15,7 @@
 
 ## 1. Yönetici Özeti
 
-Sistem **"regex-önce, LLM-sonra" hibrit** bir mimari kullanıyor ve bu strateji doğru. Regex katmanı yapısal alanları (esas no, tarih, mahkeme, duruşma) LLM'den önce çıkarıyor; bulunamayanlar `missing_fields` olarak Gemini'ye devrediliyor ([analyzer.py:509-569](../backend/analyzer.py#L509-L569)). Bu, maliyeti düşürüyor, determinizm sağlıyor ve LLM halüsinasyonuna karşı çapa görevi görüyor.
+Sistem **"regex-önce, LLM-sonra" hibrit** bir mimari kullanıyor ve bu strateji doğru. Regex katmanı yapısal alanları (esas no, tarih, mahkeme, duruşma) LLM'den önce çıkarıyor; bulunamayanlar `missing_fields` olarak Gemini'ye devrediliyor ([analyzer.py:509-569](../../backend/analyzer.py#L509-L569)). Bu, maliyeti düşürüyor, determinizm sağlıyor ve LLM halüsinasyonuna karşı çapa görevi görüyor.
 
 Ancak denetimde **3 yüksek öncelikli hata**, **4 orta öncelikli risk** ve önemli bir **test açığı** tespit edildi: `esas_no_extractor` ve `court_extractor` için **hiç test yok** (0 test), buna karşın bu iki alan dava eşleştirmenin (case_matcher) ana sinyalleri.
 
@@ -33,14 +33,14 @@ PDF → metin çıkarma → [REGEX ÖN-ÇIKARIM] → eksik alan tespiti → dina
 
 | Alan | Modül | Yöntem | Test |
 |---|---|---|---|
-| Esas No | [esas_no_extractor.py](../backend/extractors/esas_no_extractor.py) | 3 kademeli regex + karar-no filtresi | ❌ **Yok** |
-| Belge Tarihi | [date_extractor.py](../backend/extractors/date_extractor.py) | Regex adaylar + puanlama + LLM hakem | ✅ 14 test |
-| Mahkeme | [court_extractor.py](../backend/extractors/court_extractor.py) | Header regex → body regex → LLM'e devir | ❌ **Yok** |
-| Duruşma tarihi/saati | [analyzer.py:447-506](../backend/analyzer.py#L447-L506) | 6 kalıp + etiket-pencere taraması | ✅ 15 test |
+| Esas No | [esas_no_extractor.py](../../backend/extractors/esas_no_extractor.py) | 3 kademeli regex + karar-no filtresi | ❌ **Yok** |
+| Belge Tarihi | [date_extractor.py](../../backend/extractors/date_extractor.py) | Regex adaylar + puanlama + LLM hakem | ✅ 14 test |
+| Mahkeme | [court_extractor.py](../../backend/extractors/court_extractor.py) | Header regex → body regex → LLM'e devir | ❌ **Yok** |
+| Duruşma tarihi/saati | [analyzer.py:447-506](../../backend/analyzer.py#L447-L506) | 6 kalıp + etiket-pencere taraması | ✅ 15 test |
 | Müvekkil adayları | FlashText (list_searcher) | Regex değil — doğru tercih | — |
-| Dava eşleştirme | [case_matcher.py](../backend/case_matcher.py) | Normalize + kelime kümesi (regex minimal) | ✅ 17 test |
-| Belge türü tahmini (FE) | [predictDocType.ts](../frontend/src/lib/predictDocType.ts) | Token + Levenshtein | ✅ var |
-| Takip no üretimi (FE) | [caseNumberUtils.ts](../frontend/src/lib/caseNumberUtils.ts) | Slug regex'leri | ✅ var |
+| Dava eşleştirme | [case_matcher.py](../../backend/case_matcher.py) | Normalize + kelime kümesi (regex minimal) | ✅ 17 test |
+| Belge türü tahmini (FE) | [predictDocType.ts](../../frontend/src/lib/predictDocType.ts) | Token + Levenshtein | ✅ var |
+| Takip no üretimi (FE) | [caseNumberUtils.ts](../../frontend/src/lib/caseNumberUtils.ts) | Slug regex'leri | ✅ var |
 
 ### 2.2 İyi yapılmış olanlar
 
@@ -56,7 +56,7 @@ PDF → metin çıkarma → [REGEX ÖN-ÇIKARIM] → eksik alan tespiti → dina
 
 ### 🔴 Y1 — Esas No Kalıp 1'de her şey opsiyonel → çıplak `YYYY/N` "very_high" sayılıyor
 
-[esas_no_extractor.py:12](../backend/extractors/esas_no_extractor.py#L12)
+[esas_no_extractor.py:12](../../backend/extractors/esas_no_extractor.py#L12)
 
 ```python
 (re.compile(r'(?:ESAS|DOSYA)?(?:NO|NUMARASI|SAYISI)?:?(\d{4}/\d+)', re.IGNORECASE), 'very_high'),
@@ -64,7 +64,7 @@ PDF → metin çıkarma → [REGEX ÖN-ÇIKARIM] → eksik alan tespiti → dina
 
 Tüm önekler `?` ile opsiyonel olduğundan bu kalıp fiilen **`(\d{4}/\d+)`** demektir: belgede geçen *herhangi bir* `2023/456` deseni, bağlamına bakılmaksızın `very_high` güvenle esas no adayı olur. Sonuçları:
 
-1. **Karar numarası sızması:** Karar-no filtresi yalnız Kalıp 3'e uygulanıyor (`if i == 3`, [satır 58](../backend/extractors/esas_no_extractor.py#L58)). `KARAR NO: 2023/456` metni Kalıp 1 ile `very_high` eşleşir ve filtre atlanır. Karar no belgede esas no'dan önce geçiyorsa (`find_best_esas_no` ilk eşleşmeyi döner) **yanlış esas no** döner → case_matcher +50 puanı yanlış davaya gider.
+1. **Karar numarası sızması:** Karar-no filtresi yalnız Kalıp 3'e uygulanıyor (`if i == 3`, [satır 58](../../backend/extractors/esas_no_extractor.py#L58)). `KARAR NO: 2023/456` metni Kalıp 1 ile `very_high` eşleşir ve filtre atlanır. Karar no belgede esas no'dan önce geçiyorsa (`find_best_esas_no` ilk eşleşmeyi döner) **yanlış esas no** döner → case_matcher +50 puanı yanlış davaya gider.
 2. **Mevzuat/genelge referansları:** "2004/85 sayılı genelge" gibi ifadeler yıl filtresinden (1990-2035) geçer.
 3. Kalıp 3 (`E[.:]?...`) boşluksuz normalize metinde **E ile biten her kelimeye** takılır: `...GENELGE2022/3` → `E2022/3` → esas no "2022/3" (yanlış pozitif, `high` güven).
 
@@ -72,7 +72,7 @@ Tüm önekler `?` ile opsiyonel olduğundan bu kalıp fiilen **`(\d{4}/\d+)`** d
 
 ### 🔴 Y2 — Ay adı eşleşmesi çift yönlü substring: "5 ay 2020" → 05.05.2020
 
-[date_extractor.py:133](../backend/extractors/date_extractor.py#L133)
+[date_extractor.py:133](../../backend/extractors/date_extractor.py#L133)
 
 ```python
 if norm_key in m_upper or m_upper in norm_key:
@@ -87,7 +87,7 @@ if norm_key in m_upper or m_upper in norm_key:
 
 ### 🔴 Y3 — LLM hakemin seçtiği tarih aday listesine karşı doğrulanmıyor
 
-[date_extractor.py:263-277](../backend/extractors/date_extractor.py#L263-L277)
+[date_extractor.py:263-277](../../backend/extractors/date_extractor.py#L263-L277)
 
 Prompt "sadece listedeki tarihlerden seç" diyor ama kod `data.get("selected_date")` değerini **hiç kontrol etmeden** döndürüyor. LLM listede olmayan bir tarih uydurursa (kural ihlali) sisteme aynen girer. Ayrıca dönen değerin geçerli `YYYY-MM-DD` olduğu da yalnız string-fallback dalında kontrol ediliyor.
 
@@ -95,7 +95,7 @@ Prompt "sadece listedeki tarihlerden seç" diyor ama kod `data.get("selected_dat
 
 ### 🟠 O1 — Tarih bulunamayınca "bugün" uyduruluyor
 
-[date_extractor.py:236-246, 287](../backend/extractors/date_extractor.py#L231-L246)
+[date_extractor.py:236-246, 287](../../backend/extractors/date_extractor.py#L231-L246)
 
 `find_best_date` hiçbir aday bulamazsa **bugünün tarihini** belge tarihi olarak döndürüyor. Hukuki belgede sessizce üretilmiş bir tarih; dosya adlandırma, sıralama ve UYAP eşlemesinde yanıltıcı. Ayrıca alan hep dolu döndüğü için `_detect_missing_fields` "tarih eksik" diyemiyor → LLM'e "tarihi bul" görevi hiç gitmiyor.
 
@@ -103,7 +103,7 @@ Prompt "sadece listedeki tarihlerden seç" diyor ama kod `data.get("selected_dat
 
 ### 🟠 O2 — Mahkeme DAIRE_PATTERN'i aşırı gevşek
 
-[court_extractor.py:77-90](../backend/extractors/court_extractor.py#L77-L90)
+[court_extractor.py:77-90](../../backend/extractors/court_extractor.py#L77-L90)
 
 `{TR_UPPER}+\.?` alternatifi "Roma rakamı" niyetiyle **herhangi bir büyük harfli kelimeyi** numara bölümü sayar; ardından iki opsiyonel sıfat + `DAİRESİ`. Bu, mahkeme adından sonra gelen alakasız 1-3 kelimeyi daire adına yapıştırabilir. Ayrıca aynı daire çıkarımı 3 yerde tekrar yazılmış (`_find_daire_after`, `_format_match` rakam + sözel dalları) — davranışları küçük farklarla ayrışıyor.
 
@@ -111,7 +111,7 @@ Prompt "sadece listedeki tarihlerden seç" diyor ama kod `data.get("selected_dat
 
 ### 🟠 O3 — `_get_full_pattern` her çağrıda DB/config okuyor
 
-[court_extractor.py:108-157](../backend/extractors/court_extractor.py#L108-L157)
+[court_extractor.py:108-157](../../backend/extractors/court_extractor.py#L108-L157)
 
 Pattern cache'i var ama cache anahtarını üretmek için her belgede (header + body = 2 çağrı) `DynamicConfig`'ten tüm mahkeme türleri ve iller çekiliyor. Config nadiren değişir.
 
@@ -121,11 +121,11 @@ Pattern cache'i var ama cache anahtarını üretmek için her belgede (header + 
 
 Aynı "Türkçe karakteri sadeleştir / büyüt" mantığı en az beş yerde bağımsız yazılmış ve **birbirinden farklı** davranıyor:
 
-- [text_utils.py](../backend/text_utils.py) `turkish_upper` + `slugify` (İ→I, şapkalılar dahil)
-- [case_matcher.py:45](../backend/case_matcher.py#L45) `_normalize` (şapkalı harfleri **kapsamıyor**: "Â" olduğu gibi kalır)
-- [caseNumberUtils.ts:48](../frontend/src/lib/caseNumberUtils.ts#L48) `normalizeAscii`
-- [predictDocType.ts:21](../frontend/src/lib/predictDocType.ts#L21) `foldTr`
-- [analyzer.py:794](../backend/analyzer.py#L794) satır içi ünvan temizliği (client_normalizer'daki `PRE_COMPILED_TITLE_PATTERNS` ile ayrışık)
+- [text_utils.py](../../backend/text_utils.py) `turkish_upper` + `slugify` (İ→I, şapkalılar dahil)
+- [case_matcher.py:45](../../backend/case_matcher.py#L45) `_normalize` (şapkalı harfleri **kapsamıyor**: "Â" olduğu gibi kalır)
+- [caseNumberUtils.ts:48](../../frontend/src/lib/caseNumberUtils.ts#L48) `normalizeAscii`
+- [predictDocType.ts:21](../../frontend/src/lib/predictDocType.ts#L21) `foldTr`
+- [analyzer.py:794](../../backend/analyzer.py#L794) satır içi ünvan temizliği (client_normalizer'daki `PRE_COMPILED_TITLE_PATTERNS` ile ayrışık)
 
 Ör. `case_matcher._normalize("KÂZIM")` ≠ `slugify("KÂZIM")` → isim eşleşme puanı sessizce kaçar.
 
@@ -133,9 +133,9 @@ Aynı "Türkçe karakteri sadeleştir / büyüt" mantığı en az beş yerde ba�
 
 ### 🟡 Küçük notlar
 
-- [client_normalizer.py:14-18](../backend/client_normalizer.py#L13-L19): `\bDR\.?` kalıbı "DRAGOMAN" gibi kelimelerin başını yer (`\b` sonrası nokta opsiyonel, kelime devamı kontrolü yok) → `\bDR\.` veya `\bDR\b\.?` + sonrasında boşluk şartı.
-- [esas_no_extractor.py:66](../backend/extractors/esas_no_extractor.py#L66): yorum "2010-2030" diyor, kod 1990-2035 — yorumu düzelt.
-- Duruşma etiket-pencere taraması ([analyzer.py:489-504](../backend/analyzer.py#L489-L504)) "etikete en yakın" yerine "penceredeki son/ilk" tarihi alıyor; çok tarihli tebligatlarda yanlış seçim riski (testleri var, corpus genişletilince izlenmeli).
+- [client_normalizer.py:14-18](../../backend/client_normalizer.py#L13-L19): `\bDR\.?` kalıbı "DRAGOMAN" gibi kelimelerin başını yer (`\b` sonrası nokta opsiyonel, kelime devamı kontrolü yok) → `\bDR\.` veya `\bDR\b\.?` + sonrasında boşluk şartı.
+- [esas_no_extractor.py:66](../../backend/extractors/esas_no_extractor.py#L66): yorum "2010-2030" diyor, kod 1990-2035 — yorumu düzelt.
+- Duruşma etiket-pencere taraması ([analyzer.py:489-504](../../backend/analyzer.py#L489-L504)) "etikete en yakın" yerine "penceredeki son/ilk" tarihi alıyor; çok tarihli tebligatlarda yanlış seçim riski (testleri var, corpus genişletilince izlenmeli).
 
 ---
 
@@ -170,7 +170,7 @@ Kısa yanıt: **regex performans sorunu değil.** Kalıplar derlenmiş, ReDoS'a 
 
 Ek iki somut strateji iyileştirmesi:
 
-1. **Structured output:** `ask_llm_referee` yanıtı ` ```json ` temizleyerek parse ediyor ([date_extractor.py:225](../backend/extractors/date_extractor.py#L225)). Gemini'nin `response_mime_type="application/json"` + `response_schema` desteği kullanılmalı — parse hataları sınıfça yok olur. Aynısı ana analiz çağrısı için de geçerliyse oraya da.
+1. **Structured output:** `ask_llm_referee` yanıtı ` ```json ` temizleyerek parse ediyor ([date_extractor.py:225](../../backend/extractors/date_extractor.py#L225)). Gemini'nin `response_mime_type="application/json"` + `response_schema` desteği kullanılmalı — parse hataları sınıfça yok olur. Aynısı ana analiz çağrısı için de geçerliyse oraya da.
 2. **LLM hakem desenini genelleştir:** Tarihte çalışan "belirsizse LLM'e adaylarla sor" deseni, esas no (birden çok aday: ilk derece + istinaf esası) ve mahkeme (header/body çelişkisi) için de uygulanabilir. Uydurma önleme kuralı: LLM yalnız aday listesinden seçer, kod bunu **doğrular** (Y3'ün genel çözümü).
 
 ---

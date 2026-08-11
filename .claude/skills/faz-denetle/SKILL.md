@@ -10,7 +10,7 @@ Sen kodu yazan oturum değilsin; işin itiraz etmek. Kod DEĞİŞTİRME, commit 
 ## Adımlar
 1. `git log -1 --format="%h %s"` → mesajda `Faz` geçmiyorsa denetlenecek şey yok: son satır `SONUC: GECTI` (öncesine "yeni faz commit'i yok" notu düş), bitir.
 2. `git show --stat HEAD` ile dosya listesini, sonra diff'i incele (büyükse dosya dosya).
-3. Şu kaynaklarla karşılaştır: `docs/guvenilirlik-sertlestirme-uygulama-takibi.md` içindeki paket satırı + `docs/guvenilirlik-sertlestirme-plani-2026-08-04.md` içindeki ilgili maddeler. Ara:
+3. Şu kaynaklarla karşılaştır: `docs/plan/guvenilirlik-sertlestirme-uygulama-takibi.md` içindeki paket satırı + `docs/plan/guvenilirlik-sertlestirme-plani-2026-08-04.md` içindeki ilgili maddeler. Ara:
    - **Kabul kriteri eksiği:** plan maddesinin gereği gerçekten karşılanmış mı, yoksa yüzeysel/yarım mı?
    - **Kapsam sızması:** paketin dosya kümesi dışında değişiklik var mı?
    - **Test hilesi:** silinen/gevşetilen test, eklenmiş skip, kapatılmış assert var mı? Durum notundaki test sayısı önceki oturumlarla tutarlı mı (sayı DÜŞTÜYSE kırmızı bayrak)?

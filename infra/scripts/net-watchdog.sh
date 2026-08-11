@@ -1,6 +1,6 @@
 #!/bin/bash
 # Ag nobetcisi - metadata erisimini olcer, sorun YEREL agda ise ens4'u toparlar.
-# Gerekce ve kurulum: docs/sunucu-sertlestirme-plani-2026-07-30.md (Madde 1)
+# Gerekce ve kurulum: docs/arsiv/sunucu-sertlestirme-plani-2026-07-30.md (Madde 1)
 #
 # Tasarim notlari:
 #  - Bu kutuda 'ping' kurulu DEGIL. Erisilebilirlik uc yapisal sinyalle olculuyor:

@@ -17,7 +17,7 @@
 | `cases.tenant_id IS NULL` olan | **14.341 (hepsi)** |
 | `clients` tablosunda kayıt | 1.996 |
 | `clients` tablosundaki `tenant_id` sütunu | **YOK** |
-| Helper | [`_apply_tenant_filter`](../backend/managers/admin_manager.py#L348) — `tenant_id == X OR tenant_id IS NULL` |
+| Helper | [`_apply_tenant_filter`](../../backend/managers/admin_manager.py#L348) — `tenant_id == X OR tenant_id IS NULL` |
 
 **Yorum:** Veritabanındaki tüm mevcut veri `tenant_id IS NULL` durumunda olduğu için iki tenant **şu anda aynı havuzu paylaşıyor.** Mevcut kod tabanında "NULL = paylaşılan/legacy, yeni kayıtlar tenant'a damgalanır" şeklinde bir konvansiyon var. Bu raporda önerilen tüm düzeltmeler bu semantiği koruyacak şekilde tasarlanmıştır.
 
@@ -37,7 +37,7 @@ Bu üç madde aşağıda her bulguda "✓ Geriye dönük uyum" kontrol listesi a
 
 ### IDOR-1. `Client` modelinde `tenant_id` sütunu yok — tüm müvekkil endpoint'leri paylaşımlı
 
-**Dosya:** [backend/models.py:184-220](../backend/models.py#L184-L220), [backend/routes/clients.py](../backend/routes/clients.py)
+**Dosya:** [backend/models.py:184-220](../../backend/models.py#L184-L220), [backend/routes/clients.py](../../backend/routes/clients.py)
 
 ```python
 class Client(Base):
@@ -111,7 +111,7 @@ class Client(Base):
 
 ### IDOR-2. `/api/cases/client-sequence` tüm tenantları sayıyor
 
-**Dosya:** [backend/routes/cases.py:60-85](../backend/routes/cases.py#L60-L85)
+**Dosya:** [backend/routes/cases.py:60-85](../../backend/routes/cases.py#L60-L85)
 
 ```python
 @router.get("/api/cases/client-sequence")
@@ -149,7 +149,7 @@ count = (
 
 ### IDOR-3. `/api/hearing-dates/{hearing_id}` DELETE — tenant doğrulaması yok
 
-**Dosya:** [backend/routes/cases.py:375-389](../backend/routes/cases.py#L375-L389)
+**Dosya:** [backend/routes/cases.py:375-389](../../backend/routes/cases.py#L375-L389)
 
 ```python
 @router.delete("/api/hearing-dates/{hearing_id}")
@@ -182,7 +182,7 @@ if not row:
 
 ### IDOR-4. `/api/cases/{case_id}/relations/{relation_id}` DELETE — tenant doğrulamasız
 
-**Dosya:** [backend/routes/cases.py:245-270](../backend/routes/cases.py#L245-L270)
+**Dosya:** [backend/routes/cases.py:245-270](../../backend/routes/cases.py#L245-L270)
 
 ```python
 relation = db.query(models.CaseRelation).filter(
@@ -214,11 +214,11 @@ if not case:
 ### IDOR-5. `/api/documents/{doc_id}/*` — belge → dava → tenant zinciri doğrulanmıyor
 
 **Dosyalar:**
-- [routes/documents.py:180-207](../backend/routes/documents.py#L180-L207) — PATCH /link
-- [routes/documents.py:210-227](../backend/routes/documents.py#L210-L227) — GET /email-status
-- [routes/documents.py:230-262](../backend/routes/documents.py#L230-L262) — GET /download
-- [routes/documents.py:265-306](../backend/routes/documents.py#L265-L306) — PATCH /party
-- [routes/documents.py:316-387](../backend/routes/documents.py#L316-L387) — POST /resend-email
+- [routes/documents.py:180-207](../../backend/routes/documents.py#L180-L207) — PATCH /link
+- [routes/documents.py:210-227](../../backend/routes/documents.py#L210-L227) — GET /email-status
+- [routes/documents.py:230-262](../../backend/routes/documents.py#L230-L262) — GET /download
+- [routes/documents.py:265-306](../../backend/routes/documents.py#L265-L306) — PATCH /party
+- [routes/documents.py:316-387](../../backend/routes/documents.py#L316-L387) — POST /resend-email
 
 **Pattern:**
 ```python
@@ -281,7 +281,7 @@ def download_document(doc_id: int,
 
 ### IDOR-6. `/confirm` endpoint'inde `linked_case_id` tenant doğrulamasız
 
-**Dosya:** [backend/routes/processing.py:520-587](../backend/routes/processing.py#L520-L587), özellikle [L574-587](../backend/routes/processing.py#L574-L587)
+**Dosya:** [backend/routes/processing.py:520-587](../../backend/routes/processing.py#L520-L587), özellikle [L574-587](../../backend/routes/processing.py#L574-L587)
 
 ```python
 if not avukat_kodu and linked_case_id:
@@ -322,7 +322,7 @@ if linked_case_id:
 
 ### IDOR-7. `/api/incomplete-tasks` müvekkil listesi tenant'sız
 
-**Dosya:** [backend/routes/cases.py:442-448](../backend/routes/cases.py#L442-L448)
+**Dosya:** [backend/routes/cases.py:442-448](../../backend/routes/cases.py#L442-L448)
 
 ```python
 clients = (
@@ -352,7 +352,7 @@ clients = (
 
 ### IDOR-8. `/api/cases/{case_id}/stage-log` tenant filtresi uygulamıyor
 
-**Dosya:** [backend/routes/cases.py:288-294](../backend/routes/cases.py#L288-L294)
+**Dosya:** [backend/routes/cases.py:288-294](../../backend/routes/cases.py#L288-L294)
 
 ```python
 @router.get("/api/cases/{case_id}/stage-log", response_model=List[CaseStageLogRead])
@@ -385,7 +385,7 @@ def api_get_case_stage_log(case_id: int,
 
 ### IDOR-9. `case_party_id` tenant cross-check yok (PATCH /documents/{doc_id}/party)
 
-**Dosya:** [routes/documents.py:265-306](../backend/routes/documents.py#L265-L306)
+**Dosya:** [routes/documents.py:265-306](../../backend/routes/documents.py#L265-L306)
 
 Endpoint `case_party.case_id == doc.case_id` kontrolü yapıyor — bu mantıken iyi, ama IDOR-5'teki `doc` tenant doğrulaması olmadığı için zincirle birlikte sömürülebilir. IDOR-5 çözümü uygulanırsa bu da kapanır.
 

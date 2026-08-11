@@ -3,7 +3,7 @@
 
  Her paket icin SIFIR-context'li bir claude oturumu acar (.claude/skills/faz-devam),
  ardindan AYRI bir temiz oturumla denetletir (.claude/skills/faz-denetle).
- Durum tek dogruluk kaynaginda tutulur: docs/guvenilirlik-sertlestirme-uygulama-takibi.md
+ Durum tek dogruluk kaynaginda tutulur: docs/plan/guvenilirlik-sertlestirme-uygulama-takibi.md
 
  Kullanim (repo kokunden):
    powershell -ExecutionPolicy Bypass -File otomasyon\gece-kosusu.ps1
@@ -30,7 +30,7 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $kosuId = Get-Date -Format "yyyyMMdd-HHmmss"
 $anaLog = Join-Path $logDir ("gece_{0}.log" -f $kosuId)
 $durdurDosya = Join-Path $otomasyonDir "DURDUR"
-$takipDosya = Join-Path $repoKok "docs\guvenilirlik-sertlestirme-uygulama-takibi.md"
+$takipDosya = Join-Path $repoKok "docs\plan\guvenilirlik-sertlestirme-uygulama-takibi.md"
 
 function Yaz([string]$mesaj) {
     $satir = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $mesaj
