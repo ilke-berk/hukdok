@@ -82,10 +82,28 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G029 satır SAYISINI azaltmaz, yalnız çalışma dizinini sadeleştirir — dürüst çerçeve
      görev dosyasında yazılı. -->
 
-- [x] G026 | bant:frontend | bagimli:- | Ölü ui/sidebar.tsx (637) + kaskadını sil | BLOKE(eski worktree duruyor - elle incele)
+- [x] G026 | bant:frontend | bagimli:- | Ölü ui/sidebar.tsx (637) + kaskadını sil
 - [x] G027 | bant:frontend | bagimli:G026 | CaseGroup.tsx (666) + kalan ölü ui/ bileşenleri + sahipsiz npm
 - [x] G028 | bant:backend | bagimli:- | Backend ölü katmanlar: LogManager sınıfı, DatabaseManager, SyncLog, AnalysisCache, ölü route alias'ları
-- [x] G029 | bant:docs | bagimli:- | Kapanmış görev dosyalarını arşivle (G001-G025 → docs/arsiv/gorevler/) | BLOKE(eski worktree duruyor - elle incele)
+- [x] G029 | bant:docs | bagimli:- | Kapanmış görev dosyalarını arşivle (G001-G025 → docs/arsiv/gorevler/)
+
+## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
+
+<!-- FAZ C işçilerinin bulduğu, kapsam dışı bırakılan kalemler. -->
+
+- **`npx tsc --noEmit` KAPISI SAHTE** (G026 buldu, doğrulandı): `frontend/tsconfig.json`
+  solution-style (`"files": []` + `references`) → komut yardım metnini basıp **exit 0**
+  dönüyor, tek dosya denetlemiyor. Bu gecenin G019/G020/G021/G026/G027 görevlerinde
+  "tsc temiz" kriteri **boştu**. Gerçek denetim: `tsc --noEmit -p tsconfig.app.json`.
+  Görev şablonundaki doğrulama komutu düzeltilmeli.
+- **4 tip hatası main dalında canlı** (gerçek denetim ilk kez koşunca çıktı):
+  `AdminPage.tsx:427`, `CaseDetails.tsx:561`, `AvukatDashboard.tsx:120`,
+  `IdariDashboard.tsx:99` — hepsi `TS2352`/`TS2322`. FAZ C'nin ürünü değil, önceden vardı.
+- `hooks/use-mobile.tsx` (11 satır) — tek tüketicisi silinen `ui/sidebar.tsx`'ti (G026 notu)
+- `docs/plan/guvenilirlik-sertlestirme-uygulama-takibi.md:67,69` bayat düz-metin atıfları
+  artık `docs/arsiv/gorevler/` altını kastediyor (G029 notu; link değiller, kırık yok)
+- `/plan-hazirla` skill'i plan kapanışında arşivleme görevi üretmiyor; kural yalnız
+  `gorevler/README.md`'de yazılı (G029 notu)
 
 ## Kullanıcı kararı bekleyenler (otomasyona GİRMEZ — ssh/deploy/veri kararı ister)
 
