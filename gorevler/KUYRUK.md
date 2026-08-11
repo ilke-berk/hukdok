@@ -30,7 +30,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      (diff yalnız yorum/docstring/md). Backend bandı zaten seri; G013 worktree'de
      paralel koşabilir. G012→G011 zinciri test_faz3_e_hardening.py ortaklığı
      ihtimalinden ("şüphede zincirle"). analyzer.py yalnız G010'da, upload_queue
-     yalnız G011'de — çakışma yok. -->
+     yalnız G011'de — çakışma yok.
+     KAPANIŞ (2026-08-11 akşam): 5/5 tamam; beşi de ayrı temiz-context denetçiyle
+     denetlendi, 5/5 GECTI (G013 dirijan devriyle — izin kapısı, ders: bash -n
+     allowlist'e eklendi 04c9789). Kapılar nihai HEAD'de: 868+2 / ruff / mypy temiz.
+     Prod'a YANSIMADI — deploy kararı kullanıcıda. -->
 
 - [x] G009 | bant:backend | bagimli:- | Denetim: bayat yol referansları + docstring/şerh düzeltmeleri (davranışsız)
 - [x] G010 | bant:backend | bagimli:- | Denetim: analyzer nihai hataları failed olayına bağla (pdf_page_limit)
