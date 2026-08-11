@@ -15,8 +15,9 @@ import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
-import { CaseData, DuplicateCaseMatch, useCases, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
+import { CaseData, DuplicateCaseMatch, useCases, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
+import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
 import { parseCourt } from "@/lib/courtParse";
@@ -57,7 +58,10 @@ interface QuickCaseModalProps {
 export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickCaseModalProps) => {
     const { saveCaseAndReturn, getClientCaseSequence, checkDuplicateCase, isLoading: isCaseLoading } = useCases();
     const { clients, isLoading: isClientLoading } = useClients();
-    const { lawyers, requiredCaseFields, fileTypes, courtTypesByParent } = useConfig();
+    const {
+        lawyers, requiredCaseFields, fileTypes, courtTypesByParent,
+        configError, requiredFieldsError, refetchConfig, isRefetchingConfig,
+    } = useConfig();
 
     // Yargı türü/alt tür listeleri DB'den (NewCase ile aynı kaynak) — önceden
     // buradaki sabit kopya referans listesinden geri kalıyordu.
@@ -190,6 +194,15 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             return;
         }
 
+        // G019: zorunlu alan listesi alınamadıysa kapı SESSİZCE açılıyordu
+        // (boş liste = "hiçbir alan zorunlu değil"). Kayıt BLOKE.
+        if (status === "DERDEST" && requiredFieldsError) {
+            toast.error("Kaydedilemez: zorunlu alan listesi doğrulanamadı", {
+                description: `${requiredFieldsError} Yukarıdaki şeritten "Tekrar dene" ile yenileyin.`,
+            });
+            return;
+        }
+
         // Zorunlu alan uyarısı (kullanıcı kararı 2026-07-31 rev.2): eksik alan
         // kaydı ENGELLEMEZ — onaylanırsa dosya DERDEST açılır, panelde "eksik"
         // uyarısıyla görünür. Hızlı form tüm alanları toplamadığından uyarı
@@ -213,7 +226,17 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
 
         // Mükerrer dava kontrolü: aynı esas no'lu aktif kayıt varsa onaysız açma
         if (!duplicateAcknowledged.current && esasNo.trim()) {
-            const dups = await checkDuplicateCase(esasNo, courtBase);
+            // G019: kontrol yapılamadıysa "mükerrer yok" varsayılmaz — kayıt BLOKE.
+            let dups: DuplicateCaseMatch[];
+            try {
+                dups = await checkDuplicateCase(esasNo, courtBase);
+            } catch (error) {
+                console.error(error);
+                toast.error("Dava açılamadı: mükerrer dava kontrolü yapılamadı", {
+                    description: error instanceof Error ? error.message : CASE_DUPLICATE_CHECK_ERROR,
+                });
+                return;
+            }
             if (dups.length > 0) {
                 setPendingDuplicates(dups);
                 setShowDuplicateConfirm(true);
@@ -374,6 +397,16 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                 </DialogHeader>
 
                 <div className="grid gap-4 px-6 py-5">
+                    {/* G019: config listeleri alınamadıysa boş dropdown'lar "liste boş"
+                        sanılmasın — hata görünür, zorunlu alan kapısı kaydı bloke eder. */}
+                    {(configError || requiredFieldsError) && (
+                        <DataErrorBanner
+                            description={`${configError ?? ""}${configError && requiredFieldsError ? " " : ""}${requiredFieldsError ?? ""}`.trim()}
+                            onRetry={() => { void refetchConfig(); }}
+                            isRetrying={isRefetchingConfig}
+                        />
+                    )}
+
                     {/* Kayıt Türü: Derdest / Danış */}
                     <div className="grid grid-cols-4 items-center gap-3">
                         <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1">

@@ -112,6 +112,9 @@ export interface CaseStageLogEntry {
 export const CASE_LIST_ERROR = "Dava listesi alınamadı — sunucuya ulaşılamadı.";
 export const CASE_SEQUENCE_ERROR =
     "Ofis numarası alınamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
+/** G019: mükerrer kontrolü yapılamadı — "mükerrer yok" DEĞİL, "bilinmiyor". */
+export const CASE_DUPLICATE_CHECK_ERROR =
+    "Mükerrer dava kontrolü yapılamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
 
 export const useCases = () => {
     const { authRequest } = useAuthRequest();
@@ -196,17 +199,29 @@ export const useCases = () => {
         return null;
     }, [authenticatedRequest]);
 
-    /** Mükerrer dava kontrolü — aynı esas no'lu aktif kayıtlar (normalize eşleşme). */
+    /**
+     * Mükerrer dava kontrolü — aynı esas no'lu aktif kayıtlar (normalize eşleşme).
+     *
+     * G019: Hata YUTMAZ. Eski sessiz `[]` fallback'i kesintide "mükerrer yok"
+     * gibi okunuyor, mükerrer dava kapısını (anket: "aynı dava iki kez açılıyor")
+     * sessizce açıyordu. Artık fırlatır — çağıran kaydetmeyi bloke eder.
+     * Backend eşi G014 ile 200+boş yerine 503 dönüyor (`routes/cases.py:190`).
+     */
     const checkDuplicateCase = useCallback(async (esasNo: string, court?: string): Promise<DuplicateCaseMatch[]> => {
         if (!esasNo.trim()) return [];
         const params = new URLSearchParams({ esas_no: esasNo.trim() });
         if (court?.trim()) params.append("court", court.trim());
         const response = await authenticatedRequest(`/api/cases/check-duplicate?${params.toString()}`, "GET");
-        if (response && response.ok) {
-            const data = await response.json();
-            return data.matches ?? [];
+        if (!response || !response.ok) throw new Error(CASE_DUPLICATE_CHECK_ERROR);
+        let matches: unknown;
+        try {
+            matches = (await response.json())?.matches;
+        } catch {
+            throw new Error(CASE_DUPLICATE_CHECK_ERROR);
         }
-        return [];
+        // Sözleşme dışı gövde de "bilinmiyor"dur; boş sonuca çevirmeyiz.
+        if (!Array.isArray(matches)) throw new Error(CASE_DUPLICATE_CHECK_ERROR);
+        return matches as DuplicateCaseMatch[];
     }, [authenticatedRequest]);
 
     const updateCase = useCallback(async (id: number, data: CaseData): Promise<{ ok: boolean; error?: string }> => {
