@@ -83,7 +83,8 @@ def resolve_upload_suffix(filename: Optional[str]) -> str:
 
 
 # =====================================================================
-# .eml genişletme — sihirbaza özel (plan: docs/eml-intake-gelistirme-plani).
+# .eml genişletme — sihirbaza özel
+# (plan: docs/arsiv/eml-intake-gelistirme-plani-2026-08-01.md).
 # .eml ALLOWED_EXTENSIONS'a GİRMEZ; doğrulama burada yereldir. Parçalar
 # frontend'te normal dosya gibi listeye eklenir — analiz/merge/commit/arşiv
 # hattı bu endpoint'ten habersizdir.

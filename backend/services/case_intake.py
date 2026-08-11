@@ -4,7 +4,7 @@ Aynı oturumda analiz edilen N belgenin çıkarımlarını tek dava kartı tasla
 birleştirir. Bu modül SAF fonksiyonlardan oluşur: DB ve Gemini erişimi YOK —
 satırlar (client_rows, kayıtlı poliçeler, bilinen mahkeme adları) route
 katmanından dict/list olarak gelir, böylece DB'siz conftest ile unit test edilir
-(plan: docs/otonom-dava-acma-gelistirme-plani-2026-07-24.md, İş Kalemi 1).
+(plan: docs/arsiv/otonom-dava-acma-gelistirme-plani-2026-07-24.md, İş Kalemi 1).
 
 Girdi biçimi — /analyze'in terminal olayındaki data, frontend'den geri gelir:
     documents = [{"process_id": "...", "filename": "...", "extraction": {...}}]

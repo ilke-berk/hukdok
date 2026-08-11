@@ -53,8 +53,12 @@ logger = logging.getLogger(__name__)
 # ~300 sn sürebilir (nginx proxy_read_timeout; GS tavanı 240 sn) — 30 dk
 # PROCESS_CACHE TTL'iyle hizalıdır ve yaşayan hiçbir isteği devralmaz.
 # Bayat satır = önceki süreç pipeline ortasında öldü (deploy/OOM); belge
-# yaratılmadan öldüyse devralıp yeniden koşmak güvenli, yaratıldıysa route
-# release ETMEZ (aşağıya bkz.) ve satır kalıcı kilit görevi görür.
+# yaratılmadan öldüyse route satırı release eder ve kullanıcı hemen tekrar
+# dener. Belge yaratıldıysa route release ETMEZ: satır in_progress kalır,
+# aradaki retry'lar 409 alır — ama kilit KALICI DEĞİLDİR; bu eşik dolunca
+# begin() satırı devralır (proceed) ve pipeline yeniden koşabilir. Bilinçli
+# takas: sonsuza dek kilitli kalmaktansa, 30 dk sonra mükerrer belge riskini
+# göze alıp akışı açıyoruz (bkz. routes/processing.py, /confirm except bloğu).
 STALE_IN_PROGRESS_SECONDS = 30 * 60
 
 # Tamamlanmış kayıtların tutulma süresi: replay penceresi gerçekte dakikalar;

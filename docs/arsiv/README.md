@@ -25,21 +25,15 @@ kod haklıdır.
 | [`docs/kararlar/`](../kararlar/README.md) | Kalıcı mimari kararlar |
 | `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı, arşiv DEĞİL |
 
-## Kod yorumlarından hâlâ eski yolla atıf alan arşiv dosyaları
+## Koddan bu klasöre atıflar
 
-Aşağıdaki `backend/**` yorumları taşınma öncesi `docs/<ad>.md` yollarını kullanmaya
-devam eder (G006'da bilinçli DEĞİŞTİRİLMEDİ — dokunma listesi; düzeltilmeleri G007
-kapsamındadır). O yolları `docs/arsiv/<ad>.md` olarak oku:
+Kod ve altyapı dosyalarındaki arşiv atıfları `docs/arsiv/<ad>.md` biçimindedir:
+`.github/workflows/ci.yml`, `infra/scripts/net-watchdog.sh`, `infra/scripts/mem-watch.sh`
+G006'da; kalan üç `backend/**` yorumu (`case_intake_analyzer.py`, `services/case_intake.py`,
+`routes/case_intake.py`) G009'da güncellendi. Taşınma öncesi düz `docs/<ad>.md` yazımı
+kod tarafında kalmadı.
 
-| Koddaki eski yol | Gerçek yer | Atıf veren |
-| --- | --- | --- |
-| `docs/otonom-dava-acma-gelistirme-plani-2026-07-24.md` | `docs/arsiv/otonom-dava-acma-gelistirme-plani-2026-07-24.md` | `backend/case_intake_analyzer.py`, `backend/services/case_intake.py` |
-| `docs/eml-intake-gelistirme-plani` (kısaltma) | `docs/arsiv/eml-intake-gelistirme-plani-2026-08-01.md` | `backend/routes/case_intake.py` |
-
-Diğer kod/altyapı atıfları (`.github/workflows/ci.yml`, `infra/scripts/net-watchdog.sh`,
-`infra/scripts/mem-watch.sh`) G006'da `docs/arsiv/...` olarak güncellendi.
-
-Not: **arşiv dosyalarının kendi içindeki** `docs/<ad>.md` yazımları da taşınma öncesi
+Not: **arşiv dosyalarının kendi içindeki** `docs/<ad>.md` yazımları taşınma öncesi
 yollardır — bu klasördeki komşularını kastederler (`docs/arsiv/<ad>.md` diye oku);
 tarihsel içerik bilerek yeniden yazılmadı. (Yalnızca koda giden `](../...)` biçimli
 göreli linkler taşınmayla kırıldığı için `](../../...)` yapıldı.)

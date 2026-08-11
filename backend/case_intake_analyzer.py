@@ -4,7 +4,7 @@
 analyzer'ından bağımsız bir hattır ama dönüşüm adımlarını (UDF/Office/görüntü
 → PDF), OCR kararını ve Gemini retry mantığını analyzer'dan yeniden kullanır.
 
-Kalibrasyon kararları (docs/otonom-dava-acma-gelistirme-plani-2026-07-24.md):
+Kalibrasyon kararları (docs/arsiv/otonom-dava-acma-gelistirme-plani-2026-07-24.md):
 - Model: GEMINI_INTAKE_MODEL env (varsayılan models/gemini-3.6-flash) —
   /process'in flash-lite'ı DEĞİL; sigortalı çıkarımı flash-lite'ta 9/15,
   3.6-flash'ta 16/16.
