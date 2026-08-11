@@ -45,7 +45,9 @@ REQUIRED_KEYS=(POSTGRES_PASSWORD DATABASE_URL GEMINI_API_KEY AZURE_CLIENT_ID
                ALLOWED_TENANTS SHAREPOINT_TENANT_ID SHAREPOINT_CLIENT_ID
                SHAREPOINT_CLIENT_SECRET)
 for k in "${REQUIRED_KEYS[@]}"; do
-    v=$(grep -E "^${k}=" .env | head -1 | cut -d= -f2-)
+    # `|| true` şart: anahtar HİÇ yoksa grep 1 döner, `set -e`+pipefail altında
+    # script aşağıdaki açıklayıcı fail mesajını basmadan sessizce çıkardı.
+    v=$(grep -E "^${k}=" .env | head -1 | cut -d= -f2-) || true
     [ -n "$v" ] || fail ".env zorunlu anahtarı boş/yok: ${k}"
 done
 
@@ -55,8 +57,9 @@ if ! docker network inspect hukuk_shared >/dev/null 2>&1; then
 fi
 
 # İmaj adları proje adına göre değişir (sunucuda hukdok-*, lokalde farklı)
-BACKEND_IMG=$(docker compose config --images | grep -- '-backend$' | head -1)
-FRONTEND_IMG=$(docker compose config --images | grep -- '-frontend$' | head -1)
+# `|| true`: eşleşme yoksa grep 1 döner; boşluğu aşağıdaki fail mesajı bildirsin.
+BACKEND_IMG=$(docker compose config --images | grep -- '-backend$' | head -1) || true
+FRONTEND_IMG=$(docker compose config --images | grep -- '-frontend$' | head -1) || true
 { [ -n "$BACKEND_IMG" ] && [ -n "$FRONTEND_IMG" ]; } || fail "imaj adları compose config'ten çözülemedi"
 
 # ── 2. Kod güncelle ──────────────────────────────────────────────────────────

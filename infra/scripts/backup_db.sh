@@ -31,6 +31,12 @@ log "OK: dump alındı ($SIZE bayt): $DUMP"
 
 # 2. VM dışına kopya: SharePoint 02_YEDEK_ARSIV (db_backup_YYYY-MM-DD.dump)
 REMOTE_NAME="db_backup_${DATE}.dump"
+# Kopya konteynerin /tmp'inde kişisel veri taşır: upload hata verirse `set -e`
+# script'i aşağıdaki rm satırına ULAŞMADAN durdururdu. Temizliği her çıkış
+# yoluna bağla (trap REMOTE_NAME tanımından SONRA kurulur; `set -u` altında
+# daha erken kurulamaz). `|| true` trap'in kendisini `set -e` ile patlatmaz;
+# EXIT trap `exit` çağırmadığı için script'in hata kodu KORUNUR.
+trap 'docker exec -u 0 hukdok_backend rm -f "/tmp/${REMOTE_NAME}" 2>/dev/null || true' EXIT
 docker cp "$DUMP" "hukdok_backend:/tmp/${REMOTE_NAME}"
 docker exec hukdok_backend python scripts/upload_db_backup.py "/tmp/${REMOTE_NAME}"
 # docker cp kökten (root) yazar; konteynerin normal kullanıcısı silemez → -u 0

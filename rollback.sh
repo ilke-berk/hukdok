@@ -19,8 +19,10 @@ fail() { echo -e "${C_R}$*${C_N}" >&2; exit 1; }
 
 HEALTH_URL="http://localhost:8001/healthz"
 
-BACKEND_IMG=$(docker compose config --images | grep -- '-backend$' | head -1)
-FRONTEND_IMG=$(docker compose config --images | grep -- '-frontend$' | head -1)
+# `|| true`: eşleşme yoksa grep 1 döner; `set -e`+pipefail altında script
+# aşağıdaki açıklayıcı fail mesajını basmadan sessizce çıkardı.
+BACKEND_IMG=$(docker compose config --images | grep -- '-backend$' | head -1) || true
+FRONTEND_IMG=$(docker compose config --images | grep -- '-frontend$' | head -1) || true
 { [ -n "$BACKEND_IMG" ] && [ -n "$FRONTEND_IMG" ]; } || fail "imaj adları compose config'ten çözülemedi"
 
 if [ $# -lt 1 ]; then
