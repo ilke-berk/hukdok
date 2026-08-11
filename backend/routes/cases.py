@@ -166,8 +166,18 @@ def get_client_case_sequence(
         )
         return {"sequence": max_tracking_sequence(t for (t,) in rows) + 1}
     except Exception as e:
-        logger.error(f"Error getting client sequence: {e}")
-        return {"sequence": 1}
+        # G014: sabit {"sequence": 1} fallback'i KALKTI. Hata anında gerçek
+        # sıradan bağımsız "1" önerisi dolu bir ofis numarası üretiyor, kayıt
+        # 409'a düşüyordu (frontend zaten G002 ile hatayı fırlatıyor ama 200
+        # gövdesi ona hiç ulaşmıyordu). 503: geçici bağımlılık arızası, kod
+        # hatasının 500'ünden ayırt edilebilir; gövde {"detail": ...} — Faz 5-B
+        # doygunluk sözleşmesiyle aynı biçim.
+        # NOT: :146'daki boş `client_name` erken çıkışı hata değil, aynen durur.
+        logger.error(f"Ofis no sıra tahsisi başarısız: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Ofis numarası sırası şu anda hesaplanamıyor. Lütfen tekrar deneyin.",
+        ) from e
     finally:
         db.close()
 
@@ -183,8 +193,22 @@ def api_check_duplicate_case(
     court: Optional[str] = None,
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Aynı esas no'lu aktif dava var mı? (mükerrer açılış uyarısı — anket 2026-07-31)"""
-    return {"matches": find_duplicate_cases(esas_no, court=court, tenant_id=tenant_id)}
+    """Aynı esas no'lu aktif dava var mı? (mükerrer açılış uyarısı — anket 2026-07-31)
+
+    G014: DB hatası "mükerrer yok" DEĞİLDİR. Eski hâl `find_duplicate_cases`in
+    yuttuğu istisnayı HTTP 200 + boş `matches` olarak sunuyor, mükerrer kapısını
+    sessizce açıyordu. Artık 503 — "bilinmiyor" durumu çağırana ayırt edilebilir
+    şekilde ulaşır (gövde {"detail": ...}, Faz 5-B sözleşmesi).
+    """
+    try:
+        matches = find_duplicate_cases(esas_no, court=court, tenant_id=tenant_id)
+    except Exception as e:
+        logger.error(f"Mükerrer dava kontrolü başarısız: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Mükerrer dava kontrolü şu anda yapılamıyor. Lütfen tekrar deneyin.",
+        ) from e
+    return {"matches": matches}
 
 
 @router.get("/api/cases/{case_id}")

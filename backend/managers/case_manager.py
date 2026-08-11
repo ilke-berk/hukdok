@@ -776,6 +776,12 @@ def find_duplicate_cases(esas_no: str, court: str = None, tenant_id: str = None)
     ("2024/123" == "2024 / 0123"); mahkeme benzerliği bilgi amaçlı
     `court_match` bayrağı olarak döner — aynı esas no farklı mahkemede
     meşru olabilir, karar kullanıcının.
+
+    G014: istisna YUTULMAZ. Eski hâl DB hatasında `logger.error` + boş liste
+    döndürüyordu; boş liste "mükerrer yok" anlamına geldiği için arıza anında
+    mükerrer dava kapısı sessizce açılıyor, aynı esas no ikinci kez
+    kaydedilebiliyordu. Hata çağırana ulaşır; nihai ERROR'u ve HTTP
+    sözleşmesini route yazar (log sözleşmesi: TEK ERROR).
     """
     from case_matcher import _court_similarity, _esas_no_similarity
 
@@ -802,9 +808,6 @@ def find_duplicate_cases(esas_no: str, court: str = None, tenant_id: str = None)
         # Aynı mahkemedekiler önce — kullanıcı için en olası mükerrerler
         matches.sort(key=lambda m: not m["court_match"])
         return matches[:10]
-    except Exception as e:
-        logger.error(f"Find Duplicate Cases Error: {e}")
-        return []
     finally:
         db.close()
 
