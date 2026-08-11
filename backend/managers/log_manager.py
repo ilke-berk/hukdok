@@ -1,3 +1,11 @@
+"""İki ayrı günlük: SharePoint 'log' listesine belge kaydı + teknik hata arşivi.
+
+`LogManager` her işlenen belge için SharePoint listesinde satır açar (`init_log`) ve
+sonucunu günceller; analyzer ile belge hattı çağırır. `TechnicalLogger` kayıtları
+standart logging'e delege eder (K10) VE tavanlı RAM tamponunda biriktirip
+ERROR/CRITICAL'de ayrı thread'de SharePoint yedek arşivine JSON olarak yükler; mesajlar
+`mask_sensitive_data` ile maskelenir. Dış bağımlılık: Graph API (`sharepoint/`), threading.
+"""
 import os
 import requests
 import logging

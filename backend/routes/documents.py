@@ -1,3 +1,11 @@
+"""Belge listeleme/indirme/silme, taraf-belge bağı ve yetki belgesi UDF üretimi.
+
+`/api/documents*`, `/api/cases/{case_id}/documents` ve `/api/yetki-belgesi/udf`
+route'ları; `api.py` include_router ile bağlanır. Dış bağımlılıklar fonksiyon içinde
+lazy import edilir: SharePoint Graph (indirme), `email_sender` (bildirimi yeniden
+gönderme), `yetki_belgesi_generator` (UDF). Silme SOFT'tur — SharePoint arşiv kopyası
+silinmez.
+"""
 import logging
 import mimetypes
 import os

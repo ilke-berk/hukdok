@@ -1,4 +1,10 @@
-"""Müvekkil (Client) yazma işlemleri."""
+"""Müvekkil (Client) yazma işlemleri: upsert + poliçe kaydı.
+
+`add_client` aynı isimli cariyi günceller, yoksa açar (soft-delete'li kaydı
+DİRİLTMEZ); `save_client_policies` poliçeleri `_policy_dedupe_key` ile tekilleştirerek
+yazar. Çağıranlar: `routes/clients.py` ve dava alım hattı (`services/case_intake`).
+Dış bağımlılık: SQLAlchemy oturumu (`database.SessionLocal`, `models`).
+"""
 import logging
 import re
 import unicodedata

@@ -1,3 +1,10 @@
+"""Tanıdık sorgu: girilen tarafları cari ve geçmiş dosya taraflarıyla eşleştirir.
+
+Tek route: `POST /api/parties/check` (`api.py` include_router). Eşleştirme mantığı
+`party_check.check_parties`'te; buradaki iş yalnız tenant filtresiyle aday satırları
+(müvekkiller + `CaseParty`) DB'den toplamaktır. Salt okunur — kayıt yazmaz, akışı
+engellemez; yalnız kullanıcıya uyarı gösterir.
+"""
 import logging
 
 from fastapi import APIRouter, Depends

@@ -1,3 +1,10 @@
+"""Referans listelerinin (avukat, statü, belge türü, şehir, taraf rolü…) yönetim API'si.
+
+`/api/config/*` route'ları; `api.py` include_router ile bağlanır. Okuma
+`get_current_user`, yazma `require_admin` (ADMIN_EMAILS env) ister — `require_admin`
+buradan `routes/activity.py` tarafından da import edilir. DB işleri
+`managers/reference_lists`'te, süreç-içi kopya `managers/config_manager.DynamicConfig`'te.
+"""
 import logging
 import os
 from fastapi import APIRouter, Depends, HTTPException, Response

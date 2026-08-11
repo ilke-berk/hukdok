@@ -1,3 +1,10 @@
+"""Müvekkil (client) CRUD'u, poliçe listesi ve dava sayısı özetinin HTTP ucu.
+
+`/api/clients*` route'ları; `api.py` include_router ile bağlanır. Yazma işleri
+`managers/client_manager`'a delege edilir, okumalar `auth_helpers` tenant
+filtresinden geçer (paylaşımlı havuz). Silme SOFT'tur (`deleted_at`);
+`CaseParty.client_id` bağları bilinçli korunur, geri alma kolay kalsın diye.
+"""
 import logging
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query

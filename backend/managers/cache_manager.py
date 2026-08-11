@@ -1,3 +1,11 @@
+"""Referans listelerinin (avukat/statü/belge türü) yerel JSON önbelleği.
+
+`%LocalAppData%/HukuDok/cache/list_cache.json` dosyasını okur/yazar; açılışta
+(`api.py`) ve liste yenilemesinden sonra (`routes/processing.py`) çağrılır —
+SharePoint'e ulaşılamadığında listelerin boş kalmaması içindir. Yazma pid'li geçici
+dosya + `shutil.move` ile atomiktir (her uvicorn worker'ı aynı dosyaya yazabilir).
+Bozuk JSON sessizce yok sayılır, boş sözlük döner.
+"""
 import os
 import json
 import shutil

@@ -1,3 +1,11 @@
+"""Belge işleme hattının HTTP ucu: `/process` (NDJSON analiz stream'i) ve `/confirm`.
+
+Ayrıca `/api/download/{file_id}`, `/refresh` ailesi ve e-posta gövdesi önizleme
+route'ları; `api.py` include_router ile bağlanır. Ağır iş `analyzer` (Gemini) ile
+`services/document_pipeline`'da; `/confirm` idempotenttir
+(`services/confirm_idempotency`). İki uvicorn worker'ı arasındaki sihirbaz durumu
+buradaki disk destekli PROCESS_CACHE/DOWNLOAD_CACHE ile paylaşılır.
+"""
 import os
 import asyncio
 import hashlib

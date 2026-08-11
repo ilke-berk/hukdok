@@ -1,3 +1,11 @@
+"""Süreç-içi dinamik konfigürasyon: referans listelerinin singleton kopyası.
+
+`DynamicConfig` (thread-kilitli singleton) avukat/statü/belge türü/şehir… listelerini
+ve mojibake düzeltme haritasını RAM'de tutar; açılışta ve `/refresh` ile doldurulur,
+analyzer + route'lar DB'ye her istekte gitmemek için buradan okur. Süreç-içi olduğu
+için refresh thread'i bilinçli worker-BAŞINA koşar. Dış bağımlılık: threading,
+`managers/log_manager` (TechnicalLogger) ve `managers/data/mojibake_map.json`.
+"""
 import threading
 import logging
 from typing import List, Dict

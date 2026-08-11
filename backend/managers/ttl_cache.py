@@ -1,3 +1,11 @@
+"""Süreli önbellek iki biçimde: süreç-içi `TTLCache` ve disk destekli `DiskTTLCache`.
+
+`TTLCache` RLock korumalı bellek sözlüğüdür (tek süreç). `DiskTTLCache` girdiyi dosyaya
+yazar; TTL saati dosya mtime'ıdır, `pop()` claim dosyasıyla atomiktir ve
+`cleanup_stale()` sahipsiz payload'ı 2×TTL'de süpürür — böylece uvicorn'un iki
+worker'ı `/process`→`/confirm` çaprazında aynı girdiyi paylaşır, girdi restart'ı atlatır.
+Tek tüketici `routes/processing.py` (PROCESS_CACHE, DOWNLOAD_CACHE). Dış bağımlılık yok.
+"""
 import json
 import logging
 import os

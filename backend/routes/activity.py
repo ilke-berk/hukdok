@@ -1,5 +1,9 @@
-"""
-Günlük Aktivite Raporu API Rotaları
+"""Günlük aktivite raporu API rotaları.
+
+`/api/activity/*`: gün sonu raporunu okuma/onaylama, geçmiş raporlar ve admin uçları
+(elle koşum, kaçan günleri toparlama, sıfırlama). Raporu üreten mantık
+`managers/activity_manager`'da — aynı fonksiyon APScheduler'la her gece 00:00 TR de
+koşar. Admin uçları `routes/config.require_admin` ile korunur.
 """
 
 import json

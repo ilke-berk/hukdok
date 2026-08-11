@@ -1,3 +1,10 @@
+"""Dava (case) CRUD'u ile duruşma, takvim ve takip kayıtlarının HTTP ucu.
+
+`/api/cases*`, `/api/hearing-dates*`, `/api/calendar-events*`, `/api/calendar-report`
+ve `/api/incomplete-tasks` route'larını taşır; `api.py` include_router ile bağlar.
+İş mantığı `managers/case_manager`'da, erişim `auth_helpers` tenant filtresinden
+geçer (paylaşımlı havuz: `tenant_id == X OR IS NULL`). Silme SOFT'tur (`deleted_at`).
+"""
 import logging
 import re
 from datetime import date
