@@ -55,6 +55,62 @@ _office_semaphore = threading.Semaphore(2)
 _image_semaphore = threading.Semaphore(1)
 
 
+# ── LibreOffice profil sertleştirmesi (G024) ────────────────────────────────
+#
+# Ofis dosyaları uzak kaynak taşır: OOXML'de `<a:blip r:link="…"/>` + ilişki
+# dosyasında `TargetMode="External"`, binary `.doc`ta bağlı grafik. soffice
+# bunları YÜKLEME ANINDA çeker — kullanıcı onayı olmadan giden istek (SSRF).
+# `.eml` gövdesindeki HTML için kurulan temizlik (services/html_sanitizer.py)
+# bu yüzeyi KAPSAMAZ: kural part-türü özeldir, ofis dosyaları `/process` ana
+# belge hattından temizliksiz geçer.
+#
+# Savunma, `_soffice_to_pdf`in her çağrıda zaten ürettiği TAZE profile tohumlanır:
+# taşıyıcı sayısı ne olursa olsun tek noktada kapanır ve zip yeniden yazmanın
+# aksine binary formatları da kapsar.
+#
+#   1. Manuel proxy `127.0.0.1:1` (ölü port), no-proxy listesi BOŞ: LO'nun tüm
+#      HTTP/HTTPS trafiği bağlantı-reddine düşer. Taşıyıcıdan bağımsızdır.
+#   2. `BlockUntrustedRefererLinks`: içe aktarma filtresi seviyesinde ikinci kat —
+#      belge güvenilir konumda değilse bağlantılar hiç çözülmez.
+#
+# ÖLÇÜM (G024, atılabilir konteyner, LibreOffice 25.2.3.2, gerçek dinleyici):
+#   tohumsuz    → .docx 3 istek, .xlsx 3 istek, .doc 3 istek (OPTIONS+HEAD+GET)
+#   (1)         → üçü de 0 istek
+#   (2) tek     → .docx 0, .xlsx 0, .doc 3  (binary formatı kapatmıyor)
+#   ELENEN      → `Office.{Writer,Calc}/Content/Update/Link` = 0 ve = 2,
+#                 `DisableActiveContent`: bağlı görsel isteğini durdurmadı.
+# Dönüşüm süresine ölçülebilir etkisi yok (yüksüz ~1,1-1,3 sn, tohumlu aynı).
+_LO_HARDENING_XCU = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetProxyType" oor:op="fuse"><value>2</value></prop></item>
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPProxyName" oor:op="fuse"><value>127.0.0.1</value></prop></item>
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPProxyPort" oor:op="fuse"><value>1</value></prop></item>
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPSProxyName" oor:op="fuse"><value>127.0.0.1</value></prop></item>
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetHTTPSProxyPort" oor:op="fuse"><value>1</value></prop></item>
+<item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetNoProxy" oor:op="fuse"><value></value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
+</oor:items>
+"""
+
+
+def _seed_lo_profile(profile_dir: str) -> None:
+    """Taze LibreOffice profiline sertleştirme ayarlarını yazar (G024).
+
+    FAIL-CLOSED: yazılamazsa dönüşüm hiç başlatılmaz. Sertleştirilmemiş profille
+    devam etmek SSRF yüzeyini sessizce geri açardı; dönüşüm hatası ise zaten
+    tolere edilen bir durumdur (conversion_pending katmanı + gece retry).
+    """
+    user_dir = os.path.join(profile_dir, "user")
+    try:
+        os.makedirs(user_dir, exist_ok=True)
+        with open(os.path.join(user_dir, "registrymodifications.xcu"), "w", encoding="utf-8") as fh:
+            fh.write(_LO_HARDENING_XCU)
+    except OSError as e:
+        # Deneme-düzeyi WARNING (log sözleşmesi): nihai ERROR'u çağıran üretir.
+        TechnicalLogger.log("WARNING", f"LibreOffice profili sertleştirilemedi: {e}")
+        raise RuntimeError("LibreOffice profili hazırlanamadı") from e
+
+
 class ConversionBusyError(Exception):
     """Dönüşüm semaforu bütçeli yolda zamanında alınamadı (Faz 5-A, plan 5.2).
 
@@ -307,7 +363,12 @@ def _soffice_to_pdf(
     output_path: Optional[str] = None,
     deadline: Optional[float] = None,
 ) -> str:
-    """Ortak soffice hattı: benzersiz profil + outdir, semafor, grup kill."""
+    """Ortak soffice hattı: sertleştirilmiş benzersiz profil + outdir, semafor, grup kill.
+
+    Profil her çağrıda sıfırdan üretilir ve `_seed_lo_profile` ile uzak kaynak
+    çekmeye kapatılır (G024) — bu hattan geçen HER format (`.docx/.doc/.xlsx/.xls`
+    ve `html_to_pdf`) tek noktada korunur.
+    """
     lo_executable = find_libreoffice()
     if not lo_executable:
         raise FileNotFoundError("LibreOffice bulunamadı! Lütfen kurulum yapın.")
@@ -330,6 +391,9 @@ def _soffice_to_pdf(
     # Efektif değer semafor beklemesinden SONRA hesaplanır (bekleme de bütçeden).
     lo_timeout = LIBREOFFICE_TIMEOUT
     try:
+        # G024: uzak kaynak çekmeyi kapat. Semafordan ÖNCE — beklemeye girmeden
+        # başarısız olur ve slot boşuna tutulmaz.
+        _seed_lo_profile(profile_dir)
         acquire_conversion_slot(_office_semaphore, deadline, "Office dönüşümü")
         try:
             lo_timeout = _clip_timeout(LIBREOFFICE_TIMEOUT, deadline)

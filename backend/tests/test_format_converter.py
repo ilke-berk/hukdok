@@ -4,9 +4,12 @@ Görüntü → PDF dönüşümü saf Pillow ile test edilir (harici bağımlıl�
 Office → PDF testleri konteynerde koşar; soffice yoksa atlanır.
 convert_to_pdfa2b dispatch testleri alt dönüştürücüleri mock'lar.
 """
+import contextlib
 import os
 import shutil
+import threading
 import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import fitz  # pymupdf
 import pytest
@@ -202,6 +205,233 @@ class TestOfficeToPdf:
         src.write_bytes(b"PK\x03\x04 bozuk arsiv")
         with pytest.raises(RuntimeError):
             office_to_pdf(str(src), str(tmp_path / "out.pdf"))
+
+
+# ── G024: ofis dosyasındaki harici bağlı görsel (SSRF) ──────────────────────
+
+
+class _ProbeHandler(BaseHTTPRequestHandler):
+    """Giden isteği KAYDEDER; gövde döndürmez (404 yeter — kanıt istektir)."""
+
+    protocol_version = "HTTP/1.0"
+
+    def _record(self):
+        self.server.hits.append(f"{self.command} {self.path}")
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    do_GET = _record
+    do_HEAD = _record
+    do_POST = _record
+    do_PUT = _record
+    do_OPTIONS = _record
+    do_PROPFIND = _record
+
+    def send_error(self, code, message=None, explain=None):
+        # LO WebDAV keşfi tanımadığımız metotlar da deneyebilir — 501 de kanıttır
+        self.server.hits.append(f"ERR{code} {getattr(self, 'path', '?')}")
+        BaseHTTPRequestHandler.send_error(self, code, message)
+
+    def log_message(self, *args):
+        pass
+
+
+class _ProbeServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self):
+        super().__init__(("127.0.0.1", 0), _ProbeHandler)
+        self.hits = []
+
+
+@contextlib.contextmanager
+def _probe():
+    """Gerçek dinleyici: taban URL + isteğe bakan liste."""
+    srv = _ProbeServer()
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{srv.server_address[1]}", srv.hits
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+_EXT_RELS = (
+    '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rIdX" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"'
+    ' Target="{url}" TargetMode="External"/></Relationships>'
+)
+
+
+def _docx_with_linked_image(path, url):
+    """`<a:blip r:link>` + `TargetMode="External"` taşıyan minimal .docx."""
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Default Extension="png" ContentType="image/png"/>'
+            '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            "</Types>",
+        )
+        z.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+            "</Relationships>",
+        )
+        z.writestr(
+            "word/document.xml",
+            '<?xml version="1.0"?><w:document '
+            'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>'
+            "<w:p><w:r><w:t>Tebligat ekli belge</w:t></w:r></w:p>"
+            '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            '<wp:extent cx="1905000" cy="1905000"/><wp:docPr id="1" name="P1"/><a:graphic>'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+            '<pic:nvPicPr><pic:cNvPr id="1" name="P1"/><pic:cNvPicPr/></pic:nvPicPr>'
+            '<pic:blipFill><a:blip r:link="rIdX"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="1905000"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+            "</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+        z.writestr("word/_rels/document.xml.rels", _EXT_RELS.format(url=url))
+    return path
+
+
+def _xlsx_with_linked_image(path, url):
+    """Aynı sınıf, Calc tarafı: çizim parçasında `r:link` + harici ilişki."""
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>'
+            "</Types>",
+        )
+        z.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>",
+        )
+        z.writestr(
+            "xl/workbook.xml",
+            '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Sayfa1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        z.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            "</Relationships>",
+        )
+        z.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Dava No</t></is></c></row></sheetData>'
+            '<drawing r:id="rIdDr"/></worksheet>',
+        )
+        z.writestr(
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rIdDr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>'
+            "</Relationships>",
+        )
+        z.writestr(
+            "xl/drawings/drawing1.xml",
+            '<?xml version="1.0"?><xdr:wsDr '
+            'xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:oneCellAnchor>'
+            "<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>"
+            '<xdr:ext cx="1905000" cy="1905000"/><xdr:pic>'
+            '<xdr:nvPicPr><xdr:cNvPr id="1" name="P1"/><xdr:cNvPicPr/></xdr:nvPicPr>'
+            '<xdr:blipFill><a:blip r:link="rIdX"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+            '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1905000" cy="1905000"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
+            "</xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>",
+        )
+        z.writestr("xl/drawings/_rels/drawing1.xml.rels", _EXT_RELS.format(url=url))
+    return path
+
+
+class TestSeedLoProfile:
+    """Tohumun kendisi (soffice gerektirmez)."""
+
+    def test_writes_registrymodifications(self, tmp_path):
+        from pdf.format_converter import _seed_lo_profile
+        _seed_lo_profile(str(tmp_path))
+        written = (tmp_path / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
+        assert 'oor:name="ooInetProxyType"' in written
+        assert 'oor:name="BlockUntrustedRefererLinks"' in written
+        assert "127.0.0.1" in written
+
+    def test_fail_closed_when_profile_unwritable(self, tmp_path, monkeypatch):
+        # Tohum yazılamıyorsa dönüşüm BAŞLAMAZ — sertleştirilmemiş profille
+        # devam etmek SSRF yüzeyini sessizce geri açardı.
+        import pdf.format_converter as fc
+
+        def _boom(*a, **kw):
+            raise OSError("disk dolu")
+
+        monkeypatch.setattr(fc.os, "makedirs", _boom)
+        with pytest.raises(RuntimeError):
+            fc._seed_lo_profile(str(tmp_path))
+
+
+@pytest.mark.skipif(_soffice_missing, reason="LibreOffice (soffice) kurulu değil")
+class TestOfficeRemoteResourceSsrf:
+    """Gerçek soffice + gerçek dinleyici. Kanıt = giden istek sayısı."""
+
+    def test_docx_linked_image_makes_no_request(self, tmp_path):
+        with _probe() as (base, hits):
+            src = _docx_with_linked_image(tmp_path / "d1.docx", f"{base}/D1_BLIP.png")
+            out = office_to_pdf(str(src), str(tmp_path / "d1.pdf"))
+            assert _pdf_page_count(out) >= 1
+        assert hits == []
+
+    def test_xlsx_linked_image_makes_no_request(self, tmp_path):
+        with _probe() as (base, hits):
+            src = _xlsx_with_linked_image(tmp_path / "x1.xlsx", f"{base}/X1_BLIP.png")
+            out = office_to_pdf(str(src), str(tmp_path / "x1.pdf"))
+            assert _pdf_page_count(out) >= 1
+        assert hits == []
+
+    def test_negative_control_without_hardening_does_request(self, tmp_path, monkeypatch):
+        # Testin İŞ YAPTIĞININ kanıtı: tohum devre dışıyken aynı yük istek üretir.
+        # Kırmızıya dönmezse yukarıdaki iki test hiçbir şey ölçmüyor demektir.
+        import pdf.format_converter as fc
+        monkeypatch.setattr(fc, "_seed_lo_profile", lambda profile_dir: None)
+        with _probe() as (base, hits):
+            src = _docx_with_linked_image(tmp_path / "d1.docx", f"{base}/D1_BLIP.png")
+            office_to_pdf(str(src), str(tmp_path / "d1.pdf"))
+        assert hits, "negatif kontrol istek üretmedi — yük artık delmiyor olabilir"
+
+    def test_embedded_image_document_still_converts(self, tmp_path):
+        # Meşru dosya bozulmamalı: gömülü görsel + metin + tablo PDF'te durmalı
+        from openpyxl import Workbook
+        src = tmp_path / "tablo.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws["A1"] = "Dava No"
+        ws["B1"] = "2024/123 Esas"
+        wb.save(str(src))
+        out = office_to_pdf(str(src), str(tmp_path / "out.pdf"))
+        with fitz.open(out) as doc:
+            text = doc[0].get_text()
+        assert "Dava No" in text and "2024/123 Esas" in text
 
 
 # ── convert_to_pdfa2b dispatch ───────────────────────────────────────────────

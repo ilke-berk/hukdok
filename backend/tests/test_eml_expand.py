@@ -431,8 +431,17 @@ def _probe_document(port):
 
 
 @requires_soffice
-def test_probe_listener_records_raw_payload_positive_control(env):
-    """Pozitif kontrol: TEMİZLENMEMİŞ yük soffice'e verilince dinleyici kayıt tutar."""
+def test_probe_listener_records_raw_payload_positive_control(env, monkeypatch):
+    """Pozitif kontrol: TEMİZLENMEMİŞ yük soffice'e verilince dinleyici kayıt tutar.
+
+    G024 soffice profiline ikinci bir kat koydu (uzak kaynak çekme kapalı) — bu
+    kat AÇIKKEN hiçbir yük istek üretemez, dolayısıyla bu pozitif kontrol HTML
+    temizliğinin katmanını ölçemez hâle gelirdi. Burada BİLEREK devre dışı
+    bırakılıyor: ölçülen şey G023'ün sanitizer katmanının tek başına gerekliliği.
+    G024 katmanının kendi kanıtı test_format_converter.py'dedir.
+    """
+    import pdf.format_converter as fc
+    monkeypatch.setattr(fc, "_seed_lo_profile", lambda profile_dir: None)
     listener = _ProbeListener()
     try:
         raw_html, _ = _probe_document(listener.port)
