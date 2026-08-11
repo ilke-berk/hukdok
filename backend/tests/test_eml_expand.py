@@ -9,6 +9,7 @@ import base64
 import io
 import os
 import time
+import warnings
 import zipfile
 from email.message import EmailMessage
 from types import SimpleNamespace
@@ -471,3 +472,73 @@ def test_no_outbound_request_after_sanitize(env):
         assert listener.hits == [], f"soffice uzak kaynak çekti: {listener.hits}"
     finally:
         listener.close()
+
+
+# ── G025 canlı kanıt: kaçışlanmış metin hem GÖRÜNÜR hem SESSİZ ──────────────
+
+@requires_soffice
+def test_escaped_markup_text_is_visible_but_silent(env, monkeypatch):
+    """G025: metni atmak yerine kaçışlamak güvenli mi — GERÇEK soffice ile ölç.
+
+    G024 tohumu (LO profilinde uzak kaynak kapalı) BİLEREK devre dışı: tohum
+    açıkken hiçbir yük istek üretemez ve ölçüm sanitizer katmanının kusurunu
+    maskeler. Burada ölçülen tam olarak şu: `&lt;img src="http://…">` gibi
+    KAÇIŞLANMIŞ markup, PDF'te düz metin olarak görünür (analiz için Gemini'ye
+    gider) ama LibreOffice'e tek bir istek bile attırmaz.
+    """
+    import fitz
+
+    import pdf.format_converter as fc
+    monkeypatch.setattr(fc, "_seed_lo_profile", lambda profile_dir: None)
+
+    listener = _ProbeListener()
+    try:
+        url = f"http://127.0.0.1:{listener.port}/escaped-remnant.png"
+        body = (
+            f'<p>&lt;img src="{url}"&gt; satiri govdede metin olarak duruyor</p>'
+            "<p>&lt;Sayin Ilgili&gt;, ekte bilirkisi raporu ve fatura yer almaktadir.</p>"
+            "<div>&lt;&lt;DOSYA NO&gt;&gt; 2026/1234 Esas</div>"
+        )
+        r = _post(env, _html_eml_bytes(body))
+        assert r.status_code == 200
+        pdf_bytes = base64.b64decode(r.json()["body"]["data_b64"])
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            text = "".join(page.get_text() for page in doc)
+
+        # (a) metin kaybı yok — eskiden bu üç satırdan geriye yalnız `<` kalıyordu
+        assert "escaped-remnant.png" in text, text
+        assert "Sayin Ilgili" in text, text
+        assert "DOSYA NO" in text, text
+        assert "2026/1234 Esas" in text, text
+
+        # (b) kaçışlanmış markup istek DOĞURMUYOR — tohum kapalıyken bile
+        time.sleep(1.0)
+        assert listener.hits == [], f"kaçışlanmış metin istek doğurdu: {listener.hits}"
+    finally:
+        listener.close()
+
+
+def test_soffice_dependent_ssrf_proofs_are_visible_when_skipped():
+    """`@requires_soffice` ile atlanan CANLI SSRF kanıtı SESSİZ kaybolmasın.
+
+    ÖLÇÜM (G025, repodan): `.github/workflows/ci.yml` backend job'ı yalnız
+    `requirements.txt` + `requirements-dev.txt` kurar — libreoffice kuran ADIM
+    YOKTUR. soffice bu projeye tek yerden girer: `backend/Dockerfile:16-17`
+    (`libreoffice-writer`, `libreoffice-calc`). Dolayısıyla canlı dinleyici
+    kanıtları YALNIZ konteynerde koşar:
+
+        docker compose exec -T backend python -m pytest tests/test_eml_expand.py
+
+    Host'ta ve CI'da atlanırlar. Bu test hiçbir zaman atlanmaz; soffice yoksa
+    yüksek sesle uyarır ki yeşil "N passed" satırı SSRF kanıtının koştuğu
+    izlenimini vermesin.
+    """
+    if _soffice_missing():
+        warnings.warn(
+            "SSRF CANLI KANITI ATLANDI: soffice yok — bu ortamda "
+            "test_no_outbound_request_after_sanitize ve "
+            "test_escaped_markup_text_is_visible_but_silent KOŞMADI. "
+            "SSRF regresyonu bu koşuda ölçülmemiştir; konteynerde koşturun.",
+            UserWarning,
+            stacklevel=2,
+        )

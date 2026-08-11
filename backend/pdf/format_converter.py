@@ -80,6 +80,18 @@ _image_semaphore = threading.Semaphore(1)
 #   ELENEN      → `Office.{Writer,Calc}/Content/Update/Link` = 0 ve = 2,
 #                 `DisableActiveContent`: bağlı görsel isteğini durdurmadı.
 # Dönüşüm süresine ölçülebilir etkisi yok (yüksüz ~1,1-1,3 sn, tohumlu aynı).
+#
+# BELGELENMEMİŞ YAN ETKİ (G025'te ölçüldü — aynı konteyner, yalnız BELGE notu,
+# davranış DEĞİŞMEDİ): tohum `html_to_pdf` yolunda HTML'deki YEREL GÖRELİ
+# görselleri DE engelliyor. `<img src="legit.png">` + dosya gerçekten yanında:
+#   tohum KAPALI → PDF'te 1 görsel  |  tohum AÇIK → 0 görsel  (metin ikisinde de yerinde)
+# Muhtemel sebep (2): belge güvenilir konumda olmadığı için bağlantı çözülmüyor.
+# OFİS GÖMÜLÜ görselleri ETKİLENMEZ — gömülü PNG'li .xlsx: tohum kapalı 1,
+# tohum açık 1 görsel (zip içindeki parça bağlantı çözümlemesinden geçmiyor).
+# Gerçek `.eml` yolunda zararsız: gövde HTML'i TEK BAŞINA bir tempfile'a yazılır
+# (routes/case_intake.py::_render_body_pdf), yanında çözülecek yerel dosya
+# yoktur; inline logolar `cid:` şemalıdır ve sanitizer'ın değer kapısı
+# şema taşıyan her `src`i düşürür. Yine de bilinçli bir kayıptır — yazılı dursun.
 _LO_HARDENING_XCU = """<?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <item oor:path="/org.openoffice.Inet/Settings"><prop oor:name="ooInetProxyType" oor:op="fuse"><value>2</value></prop></item>

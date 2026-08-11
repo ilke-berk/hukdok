@@ -396,6 +396,100 @@ def test_incomplete_tag_remnant_is_not_emitted_raw():
     assert "metin" in out
 
 
+# ── G025: `&lt;` ile BAŞLAYAN metin kaybı ───────────────────────────────────
+#
+# G023 `handle_data`'da `<` ile başlayan koşuyu "kalıntı" sayıp atıyordu.
+# `convert_charrefs=True` yüzünden `&lt;` buraya çözülmüş `<` olarak gelir →
+# `<ad@firma.com>` ve `<<yer tutucu>>` ile BAŞLAYAN gövde metinleri sessizce
+# siliniyordu. Yük tablosu bağımsız denetimin canlı çıktısından birebir alındı.
+
+G025_LOSS_CASES = {
+    "p_acili_hitap": (
+        "<p>&lt;Sayin Ilgili&gt;, ekte bilirkişi raporu ve fatura yer almaktadir. "
+        "Toplam tutar 145.000 TL'dir.</p>",
+        "&lt;Sayin Ilgili&gt;, ekte bilirkişi raporu ve fatura yer almaktadir. "
+        "Toplam tutar 145.000 TL'dir.",
+    ),
+    "td_eposta_adresi": (
+        "<td>&lt;av.ilke@lexis.com.tr&gt; tarafindan 12.08.2026 tarihinde gonderildi</td>",
+        "&lt;av.ilke@lexis.com.tr&gt; tarafindan 12.08.2026 tarihinde gonderildi",
+    ),
+    "div_cift_acili_yer_tutucu": (
+        "<div>&lt;&lt;DOSYA NO&gt;&gt; 2026/1234 Esas - durusma 15.09.2026</div>",
+        "&lt;&lt;DOSYA NO&gt;&gt; 2026/1234 Esas - durusma 15.09.2026",
+    ),
+    "sayisal_entity": (
+        "<p>&#60;av.ilke@lexis.com.tr&#62; imzali dilekce ektedir</p>",
+        "&lt;av.ilke@lexis.com.tr&gt; imzali dilekce ektedir",
+    ),
+}
+
+
+@pytest.mark.parametrize("case_id", sorted(G025_LOSS_CASES))
+def test_text_starting_with_escaped_lt_is_preserved(case_id):
+    """Metnin TAMAMI çıktıda — eskiden yalnız `&lt;` kalıyordu."""
+    payload, expected = G025_LOSS_CASES[case_id]
+    out = sanitize_email_html(payload)
+    assert expected in out, out
+    _assert_clean(out)
+
+
+@pytest.mark.parametrize("case_id", sorted(G025_LOSS_CASES))
+def test_html_to_text_keeps_text_starting_with_escaped_lt(case_id):
+    """Fail-closed düz-metin yolu da aynı metni kaybetmemeli (ikinci şans)."""
+    payload, _ = G025_LOSS_CASES[case_id]
+    text = html_to_text(payload)
+    # Düz-metin yolunda entity ÇÖZÜLMÜŞ hâliyle durur (çağıran escape eder).
+    assert "av.ilke@lexis.com.tr" in text or "Sayin Ilgili" in text or "DOSYA NO" in text
+    assert text.lstrip().startswith("<"), text
+
+
+def test_escaped_lt_run_is_lossless_for_text_extractor():
+    """`_TextExtractor` koşunun BAŞINDAKİ `<` yüzünden koşuyu atmıyor."""
+    text = html_to_text("<div>&lt;&lt;DOSYA NO&gt;&gt; 2026/1234 Esas</div>")
+    assert "<<DOSYA NO>> 2026/1234 Esas" in text
+
+
+def test_bare_less_than_still_emitted_as_entity():
+    """Etiket açamayan tek `<` kaçışlanarak korunur (davranış değişmedi)."""
+    out = sanitize_email_html("<p>x</p><")
+    assert out.endswith("&lt;" + DOC_SUFFIX), out
+    assert _audit(out) == []
+
+
+@pytest.mark.parametrize("payload", [
+    '<p>metin</p><img src="http://kalinti.test/x',              # EOF'ta kapanmamış etiket
+    '<p>metin</p><img src="http://kalinti.test/a>b',            # kalıntı içinde `>`
+    '<table background="http://kalinti.test/p.png><tr><td>x',   # dengesiz tırnak
+    "<p>metin</p></di",                                         # kapanmamış kapanış etiketi
+    "<p>metin</p><?php http://kalinti.test/y",                  # kapanmamış PI
+])
+def test_incomplete_markup_never_reaches_handle_data(payload):
+    """ÖLÇÜM KİLİDİ (G025): kalıntı atma kuralı bu katmanda karşılıksızdı.
+
+    `handle_data`'yı artık kaçışlıyoruz (atmıyoruz); bunun güvenli olmasının
+    sebebi, HTMLParser'ın tamamlanmamış markup'ı `handle_data`'ya HİÇ
+    vermemesidir (py3.10.20'de ölçüldü). Bir Python yükseltmesi bunu
+    değiştirirse kalıntı metni kaçışlanmış hâlde görünür olur — inert kalır ama
+    davranış değişir; bu test o günü SESSİZ geçmesin diye durur.
+    """
+    seen = []
+    orig = html_sanitizer._CanonicalSerializer.handle_data
+
+    class _Spy(html_sanitizer._CanonicalSerializer):
+        def handle_data(self, data):
+            seen.append(data)
+            orig(self, data)
+
+    out: list = []
+    parser = _Spy(out)
+    parser.feed(payload)
+    parser.close()
+    remnants = [d for d in seen if d.startswith("<") and len(d) > 1]
+    assert remnants == [], f"kalıntı handle_data'ya düştü: {remnants}"
+    assert "kalinti.test" not in "".join(out)
+
+
 # ── html_to_text (fail-closed yolunun girdisi) ──────────────────────────────
 
 def test_html_to_text_drops_markup_and_script():

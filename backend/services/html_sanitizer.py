@@ -14,7 +14,8 @@ içermez. Girdi `html.parser` ile ayrıştırılır ve çıktı SIFIRDAN yeniden
 * attribute adı sabit bir allowlist'ten gelir (allowlist dışı her şey — `on*`
   dahil — düşer; taşıyıcı uzayını tek tek saymaya gerek kalmaz),
 * attribute değeri DAİMA çift tırnaklı ve `html.escape` edilmiş yazılır,
-* metin `html.escape` edilir; tamamlanmamış markup kalıntısı atılır.
+* metin `html.escape` edilir — ATILMAZ (G025: kaçışlama hem güvenli hem
+  kayıpsız; `&lt;` ile başlayan gövde metni artık yok olmuyor).
 
 Belge iskeleti (DOCTYPE + html/head/meta/body) sabittir ve BİZİM üretimimizdir;
 girdideki iskelet etiketleri ile bildirimler (DOCTYPE/PI/bogus decl) yayınlanmaz.
@@ -195,14 +196,23 @@ class _CanonicalSerializer(HTMLParser):
 
     # ── metin ───────────────────────────────────────────────────────────
     def handle_data(self, data: str) -> None:
+        """Metin DAİMA kaçışlanarak yayınlanır — atılmaz (G025).
+
+        G023 burada `<` ile BAŞLAYAN veriyi "tamamlanmamış markup kalıntısı"
+        sayıp atıyordu. `convert_charrefs=True` olduğu için `&lt;` / `&#60;`
+        buraya çözülmüş `<` olarak gelir; yani kural, `&lt;` ile başlayan her
+        gövde metnini (`<ad@firma.com>`, `<<yer tutucu>>`) sessizce siliyordu.
+
+        ÖLÇÜM (G025, konteyner py3.10.20): kalıntı korkusu bu katmanda
+        karşılıksız — HTMLParser kapanmamış etiketi (`<img src="…` EOF'ta) ve
+        dengesiz tırnaklı etiketi `handle_data`'ya HİÇ vermiyor, sessizce
+        yutuyor. `<` ile başlayıp buraya ulaşan tek veri, etiket açamayan TEK
+        karakterlik `"<"`tır; onun kaçışlanmışı da zaten `&lt;`. Kalıntı ileride
+        (Python sürümü değişirse) buraya düşerse kaçışlanmış hâli inert kalır —
+        canlı soffice dinleyicisiyle 0 istek ölçüldü — ve
+        `test_incomplete_tag_remnant_is_not_emitted_raw` bunu haber verir.
+        """
         if self._suppress or not data:
-            return
-        if data[0] == "<":
-            # Tamamlanmamış markup kalıntısı: HTMLParser kapanmamış etiketi ve
-            # dengesiz tırnaklı etiketi EOF'ta ham METİN olarak geri verir.
-            # Ham baytı çıktıya geçirmek tam da G015'in kusuruydu — yalnız `<`
-            # karakteri korunur, gerisi atılır.
-            self._out.append("&lt;")
             return
         self._out.append(html_lib.escape(data, quote=False))
 
@@ -303,9 +313,11 @@ class _TextExtractor(HTMLParser):
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        """Fail-closed yol metin KAYBETMEZ (G025) — `<` ile başlayan koşu da
+        aynen alınır. Çıktı çağıranda `html.escape` ile inert'lenip `<pre>`
+        içine konur (routes/case_intake.py::_plain_body_document), bu yüzden
+        burada kaçışlama yapılmaz; ikinci kaçışlama metni bozardı."""
         if self._suppress or not data:
-            return
-        if data[0] == "<":
             return
         self.parts.append(data)
 
