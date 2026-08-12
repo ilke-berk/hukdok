@@ -234,11 +234,46 @@ olmadan listeliyor** — bu C değil **FAZ 0** maddesidir, doğrulanıp oraya ta
 
 ## 6. FAZ D — Veritabanı sağlığı
 
-### 6.0 Ön koşul: prod ölçümü *(pazarlıksız)*
+### 6.0 Ön koşul: prod ölçümü — ✅ **KOŞULDU (2026-08-12, Deploy #9 sonrası)**
 
-Prod'da tek seferlik **salt-okunur** set koşulmadan hiçbir index kalemi kuyruğa girmez:
-`pg_stat_user_indexes`, `pg_stat_user_tables`, ilgili sorgular için `EXPLAIN (ANALYZE)`,
-gerçek gzip durumu. §6.2 ve §6.3'ün rakamları o çıktıyla **değiştirilir**.
+| Ölçüm | LOKAL (restore kopya) | **PROD (gerçek)** |
+| --- | --- | --- |
+| `cases` | 14.345 | **14.395** (hepsi aktif) |
+| `clients` / `case_parties` | 1.998 / 49.857 | **2.026 / 50.032** |
+| `case_documents` | 229 | **1.793** ← lokal kopya ciddi eksikti |
+| DB boyutu | 70 MB | 67 MB |
+| `cases` heap / index | 11 MB / 35 MB | **7 MB / 33 MB (4,7×)** |
+| Toplam index | 122 | 122 |
+| `idx_scan = 0` | 56 | **96** |
+| **Güvenli düşürme adayı** (unique/primary DEĞİL) | — | **52 index / 31 MB** |
+| **`idx_scan=0` AMA unique/primary** | — | **44 — DOKUNMA** |
+| autoanalyze görmüş tablo | 1/30 | **5/30** |
+| autovacuum görmüş tablo | 1/30 | **4/30** |
+| `cases` son autoanalyze | HİÇ | **2026-08-01** (11 gün önce) |
+| `cases` seq_scan / idx_scan | — | **1.962 / 39.210** (index baskın) |
+
+**Düzeltilen iddialar:**
+
+1. **§6.3 autovacuum teşhisi YANLIŞTI.** "29/30 tabloda hiç koşmamış" lokal kum havuzunun
+   artefaktıydı; prod'da autovacuum **çalışıyor**. Kalan gerçek: seyrek (cases 11 gündür
+   analiz görmemiş) — toplu yazma dalgasından sonra elle `ANALYZE` yine de gerekli.
+2. **§6.2'nin TUZAK uyarısı prod'da BİREBİR DOĞRULANDI.** Kullanılmayan 96 index'in
+   **44'ü unique/primary**. "Kullanılmayanı düşür" kuralı körlemesine uygulansaydı
+   ofis no tekilliği dahil 44 kısıt silinirdi. Liste `indisunique`/`indisprimary` ile
+   filtrelenmek zorunda — bu artık teori değil, ölçüm.
+3. **GIN trigram bulgusu prod'da da geçerli.** En büyük 6 güvenli aday, `cases` üzerindeki
+   trigram index'leri: `subject` 6.112 kB, `tracking_no` 5.472 kB, `court` 5.424 kB,
+   `klasor_no_2` 3.528 kB, `esas_no` 3.328 kB, `resp_lawyer` 3.032 kB — **~27 MB**,
+   hiçbiri hiç taranmamış.
+4. **Gerçekten kullanılan index'ler:** `idx_case_parties_case` **1.810.671 tarama**
+   (açık ara birinci), `ix_cases_id` 38.993, `ix_case_documents_id` 3.689.
+
+> **Kazanç net:** 67 MB'lık veritabanında **31 MB güvenle düşürülebilir index** var ve
+> bunun 27 MB'ı `cases` üzerindeki altı trigram index'i. `cases` yazma yolu bundan
+> doğrudan faydalanır (index/heap oranı 4,7×).
+
+> **Not:** `pg_stat_user_tables.n_live_tup` analiz görmemiş tablolarda **çöp değer** veriyor
+> (prod'da `case_parties` için 85, gerçeği 50.032). Satır sayısı daima `count(*)` ile alınmalı.
 
 ### 6.1 Kök neden: migrasyon op'ları sessizce hiç çalışmıyor *(kritik, ortamdan bağımsız)*
 
