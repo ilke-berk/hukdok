@@ -130,6 +130,21 @@ class Case(Base):
     hastada_olusan_zarar = Column(String(300), nullable=True)
     uygulanan_yontem = Column(String(200), nullable=True)
 
+    # ─── EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────────
+    # TÜRETİLMİŞ kolon: NULL = eksik yok, aksi hâlde kaydın kovası
+    # (required_fields.MISSING_BUCKETS: MANUAL | AKTARIM). Tek yazma yolu
+    # `case_manager.refresh_missing_required` — değer required_fields'ın Python
+    # kuralından hesaplanır, kolon yalnız filtrenin okuduğu önbellektir. Eskiden
+    # bu soru her listelemede satır başına korele EXISTS'lerle soruluyordu.
+    #
+    # DEFAULT 'MANUAL' BİLİNÇLİ: case_manager'ı atlayan bir yazıcı (bugün
+    # scripts/import_excel_cases.py) satırı hesaplamasız bırakırsa kayıt "eksik"
+    # görünür. Yön önemlidir — görünmeyen borç hiç kapanmaz (ADR-014), fazladan
+    # görünen borç ilk düzenlemede kendini düzeltir.
+    missing_required_bucket = Column(
+        String(20), nullable=True, server_default="MANUAL"
+    )
+
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 

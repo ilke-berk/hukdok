@@ -67,32 +67,21 @@ def test_parties_accepts_objects_with_attributes():
     assert [m["field"] for m in missing] == [PARTY_TC_FIELD["field"]]
 
 
-# ── SQL filtre yardımcısı (compute_missing_fields'ın sorgu karşılığı) ────────
+# ── SQL ikizi (compute_missing_fields'ın sorgu karşılığı) ────────────────────
+#
+# G046'da korele EXISTS'li SQLAlchemy koşulu (`_missing_required_clause`)
+# kaldırıldı: sıcak yol artık denormalize `missing_required_bucket` kolonunu
+# okuyor. SQL ikizinin yeni görevi backfill + denetim; ayrıntılı kilitleme
+# tests/test_g046_missing_required.py'de.
 
-def test_missing_required_clause_compiles_and_respects_column_types():
-    from sqlalchemy.dialects import postgresql
+def test_missing_required_sql_covers_every_required_field():
+    from required_fields import missing_required_sql
 
-    from managers.case_manager import _missing_required_clause
-
-    clause = _missing_required_clause()
-    sql = str(clause.compile(dialect=postgresql.dialect()))
-    # Metin kolonlarında trim kontrolü var...
-    assert "trim(cases.esas_no)" in sql
-    # ...tarih kolonlarında YOK (trim(date) Postgres'te hata verir), yalnız IS NULL
-    assert "trim(cases.opening_date)" not in sql
-    assert "cases.opening_date IS NULL" in sql
+    sql = missing_required_sql()
+    for f in REQUIRED_CASE_FIELDS:
+        assert f"cases.{f['field']}" in sql, f"{f['field']} SQL ikizinde yok"
     # Karşı taraf TC kuralı da SQL'e çevrilmiş olmalı
     assert "case_parties" in sql
-
-
-def test_missing_required_clause_covers_every_required_field():
-    from sqlalchemy.dialects import postgresql
-
-    from managers.case_manager import _missing_required_clause
-
-    sql = str(_missing_required_clause().compile(dialect=postgresql.dialect()))
-    for f in REQUIRED_CASE_FIELDS:
-        assert f"cases.{f['field']}" in sql, f"{f['field']} SQL filtresinde yok"
 
 
 # ── API: rota sırası + parametre geçişi ──────────────────────────────────────

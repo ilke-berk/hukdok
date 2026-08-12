@@ -15,7 +15,14 @@ from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import is_unique_violation
 import models
 from party_check import normalize_party_key, normalize_tc
-from required_fields import REQUIRED_CASE_FIELDS, compute_missing_fields
+from required_fields import (
+    AKTARIM_SOURCE_PREFIX,
+    MISSING_BUCKETS,
+    MISSING_FLAG_INPUT_FIELDS,
+    compute_missing_bucket,
+    compute_missing_fields,
+    missing_bucket_sql,
+)
 from managers.lawyer_resolver import (
     _norm_name, _split_persons, _resolve_lawyer_aliases, _value_matches,
     canonicalize_lawyers,
@@ -419,39 +426,94 @@ def get_case_stats(tenant_id: str = None):
         db.close()
 
 
-def _missing_required_clause():
-    """Zorunlu alanlardan en az biri boş olan davalar için SQL koşulu.
+# ─── EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────────────
+#
+# `cases.missing_required_bucket` TÜRETİLMİŞ kolondur ve tek yazma yolu
+# aşağıdaki `refresh_missing_required`tır (esas_no'da `sync_current_esas` ile
+# aynı desen). Kural `required_fields`te yaşar; burada yalnız kaydın anlık
+# görüntüsü toplanır.
+#
+# NEDEN DENORMALİZE (E6): filtre eskiden satır başına iki korele EXISTS + 13
+# kolonun trim kontrolüyle hesaplanıyordu. Lokal prod kopyasında ölçüm
+# (14.345 aktif dava, 2026-08-12): count 36,1 ms → 5,1 ms, ilk sayfa (50 satır)
+# 4,6 ms → 1,9 ms. Lokal kopya prod'u TEMSİL ETMEZ (yazma trafiği sıfır,
+# önbellek sıcak) — mertebe değişimi anlamlıdır, mutlak sayılar değil.
+#
+# BAYAT BAYRAK RİSKİ gerçektir; üç savunma var:
+#   1. üç yazma yolunun (add/update/enrich) üçü de bu fonksiyondan geçer,
+#   2. `TRACKING_FIELDS` ile zorunlu alanların kesişmesi testle boş tutulur —
+#      takip formu zorunlu alan yazmaya başlarsa test söyler,
+#   3. `audit_missing_required_flags` bayrağı SQL ikiziyle karşılaştırır.
 
-    compute_missing_fields'ın SQL karşılığı — REQUIRED_CASE_FIELDS'tan türetilir,
-    liste değişince otomatik uyum sağlar. Tarih kolonlarında yalnız NULL,
-    metinlerde NULL/boş-trim kontrolü yapılır; karşı taraf TC kuralı da dahildir.
+
+def _case_snapshot(case) -> dict:
+    """Kaydın bayrak için okunan alanları (zorunlular + kapı alanları)."""
+    return {name: getattr(case, name, None) for name in MISSING_FLAG_INPUT_FIELDS}
+
+
+def _is_aktarim_kaydi(db, case_id: int) -> bool:
+    """Kayıt HUKDOK teslim aktarımından mı doğdu? (D8 — provenance tek kaynak)
+
+    İmza `case_history.source`ta yaşar; denormalize İKİNCİ bir bayrak
+    tutulmaz. `startswith(..., autoescape=True)` şart: ham LIKE'ta '_' joker
+    olur ve 'HUKDOKxTESLIM...' de eşleşirdi.
     """
-    from sqlalchemy import Date, and_, exists, func, or_
+    return db.query(models.CaseHistory.id).filter(
+        models.CaseHistory.case_id == case_id,
+        models.CaseHistory.source.startswith(AKTARIM_SOURCE_PREFIX, autoescape=True),
+    ).first() is not None
 
-    conds = []
-    for f in REQUIRED_CASE_FIELDS:
-        col = getattr(models.Case, f["field"], None)
-        if col is None:
-            continue
-        if isinstance(col.type, Date):
-            conds.append(col.is_(None))
-        else:
-            conds.append(or_(col.is_(None), func.trim(col) == ""))
 
-    cp = models.CaseParty
-    has_counter = exists().where(
-        and_(cp.case_id == models.Case.id, cp.party_type == "COUNTER")
-    )
-    has_counter_tc = exists().where(
-        and_(
-            cp.case_id == models.Case.id,
-            cp.party_type == "COUNTER",
-            cp.tc_no.isnot(None),
-            func.trim(cp.tc_no) != "",
-        )
-    )
-    conds.append(and_(has_counter, ~has_counter_tc))
-    return or_(*conds)
+def refresh_missing_required(db, case) -> Optional[str]:
+    """Eksik alan bayrağını yeniden hesaplar ve kayda yazar; kovayı döndürür.
+
+    `db.flush()` ile başlar: taraf ekleme/silme ve alan atamaları henüz
+    bekliyorsa aşağıdaki sorgu onları GÖREMEZ ve bayrak bir tur bayat kalırdı.
+    Taraflar ilişki üzerinden değil sorguyla okunur — `add_case` satırları
+    `case_id` ile ekler, `case.parties` koleksiyonu o anda boş görünür.
+    """
+    db.flush()
+    parties = db.query(models.CaseParty.party_type, models.CaseParty.tc_no).filter(
+        models.CaseParty.case_id == case.id
+    ).all()
+    missing = compute_missing_fields(_case_snapshot(case), parties)
+    is_aktarim = bool(missing) and _is_aktarim_kaydi(db, case.id)
+    case.missing_required_bucket = compute_missing_bucket(missing, is_aktarim)
+    return case.missing_required_bucket
+
+
+def audit_missing_required_flags(db=None, limit: int = 20) -> dict:
+    """Bayrak ile SQL ikizinin sapmasını ölçer (bayatlama nöbetçisi, Postgres).
+
+    Denormalize bir kolonun tek gerçek riski sessizce bayatlamasıdır; bu
+    fonksiyon soruyu ölçülebilir kılar: {"toplam", "sapan", "ornekler"}.
+    Salt okunurdur — düzeltme YAPMAZ (bayat satırı sessizce onarmak, bayatlığın
+    NEDENİNİ gizlerdi; onarım kaydın kendi yazma yolundan geçmeli).
+    """
+    from sqlalchemy import text
+
+    own = db is None
+    db = db or SessionLocal()
+    try:
+        toplam = db.execute(text("SELECT count(*) FROM cases")).scalar() or 0
+        rows = db.execute(text(
+            "SELECT id, missing_required_bucket AS bayrak, "
+            f"{missing_bucket_sql('cases')} AS beklenen FROM cases "
+            f"WHERE missing_required_bucket IS DISTINCT FROM {missing_bucket_sql('cases')} "
+            f"ORDER BY id LIMIT {int(limit)}"
+        )).all()
+        sapan = db.execute(text(
+            "SELECT count(*) FROM cases WHERE missing_required_bucket "
+            f"IS DISTINCT FROM {missing_bucket_sql('cases')}"
+        )).scalar() or 0
+        return {
+            "toplam": toplam,
+            "sapan": sapan,
+            "ornekler": [{"id": r.id, "bayrak": r.bayrak, "beklenen": r.beklenen} for r in rows],
+        }
+    finally:
+        if own:
+            db.close()
 
 
 def _attach_esas_matches(db, cases_list: list, q, exact: bool, min_len: int) -> None:
@@ -503,8 +565,17 @@ def get_cases(
     file_type: str = None,
     urgent_days: int = None,
     missing_required: bool = False,
+    missing_bucket: str = None,
 ) -> "tuple[list[dict], int]":
-    """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür."""
+    """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür.
+
+    `missing_bucket` (D8): eksik filtresi açıkken kovayı daraltır —
+    "MANUAL" elle açılmış kayıtlar, "AKTARIM" HUKDOK teslim aktarımından gelenler
+    (required_fields.MISSING_BUCKETS). Verilmezse İKİ KOVA DA döner: bugünkü
+    davranış korunur ve borç gizlenmez — kova seçimi panelin işidir ve frontend
+    bu görevin kapsamı DIŞINDADIR (ayrı iş). Tanınmayan değer sessizce sonucu
+    saptırmasın diye yok sayılır ve WARNING'lenir.
+    """
     try:
         db = SessionLocal()
         query = db.query(models.Case).options(
@@ -520,7 +591,14 @@ def get_cases(
             query = query.filter(models.Case.file_type == file_type)
 
         if missing_required:
-            query = query.filter(_missing_required_clause())
+            # E6: sıcak yolda tek kolon okunur; kural + hesap yazma yolunda
+            # (refresh_missing_required). NULL = eksik yok.
+            query = query.filter(models.Case.missing_required_bucket.isnot(None))
+            if missing_bucket:
+                if missing_bucket in MISSING_BUCKETS:
+                    query = query.filter(models.Case.missing_required_bucket == missing_bucket)
+                else:
+                    logger.warning(f"Bilinmeyen eksik-alan kovası yok sayıldı: {missing_bucket!r}")
 
         if urgent_days is not None:
             # Önümüzdeki N gün içinde duruşması olan davalar (bugün dahil)
@@ -857,6 +935,9 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
         if unresolved:
             logger.warning(f"Case {case_id}: çözülemeyen avukat(lar): {unresolved}")
 
+        # Eksik alan bayrağı: alanlar VE taraflar yazıldıktan sonra (G046)
+        refresh_missing_required(db, case)
+
         case.updated_at = datetime.now()
         db.commit()
         return True
@@ -1022,6 +1103,10 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
             added.append(p.get("name"))
 
         if updated or added:
+            # Eksik alan bayrağı: yalnız gerçekten bir şey değiştiyse (G046).
+            # Kayıt dokunulmadıysa bayrağı da yeniden yazmak, boş bir UPDATE
+            # üretip enrich'in "hiçbir şey değişmedi" sözleşmesini bozardı.
+            refresh_missing_required(db, case)
             case.updated_at = datetime.now()
         db.commit()
         return {
@@ -1224,6 +1309,10 @@ def add_case(data: dict, tenant_id: str = None):
             new_case.responsible_lawyer_name = canonical
         if unresolved:
             logger.warning(f"Yeni dava ({new_case.tracking_no}): çözülemeyen avukat(lar): {unresolved}")
+
+        # Eksik alan bayrağı: taraflar eklendikten SONRA (karşı taraf TC kuralı
+        # onları okur). Kolonun DEFAULT'u 'MANUAL' — burası onu düzelten yerdir.
+        refresh_missing_required(db, new_case)
 
         db.commit()
         # Return the new case object (for frontend linking)

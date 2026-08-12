@@ -13,6 +13,11 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import sys
 from typing import Dict, Any
 
+# Zorunlu alan kuralının SQL ikizi (madde 33 backfill'i). required_fields hiçbir
+# şey import etmez — döngü riski yok; kural tek kaynaktan gelsin diye buradan
+# çağrılır (elle yazılmış ikinci bir SQL listesi tutulmaz).
+from required_fields import missing_bucket_sql
+
 logger = logging.getLogger(__name__)
 
 
@@ -686,6 +691,32 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_case_esas_numbers_esas_no "
         "ON case_esas_numbers (esas_no)",
     ]),
+
+    # ─── 33. EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────
+    #
+    # `missing_required` filtresi bugüne kadar satır başına korele EXISTS'lerle
+    # (karşı taraf TC kuralı) + 13 kolonun trim kontrolüyle hesaplanıyordu.
+    # Denormalize kova kolonu bunu tek kolon okumasına indirir; kolonu
+    # `case_manager.refresh_missing_required` yazar, kural `required_fields`te.
+    #
+    # BACKFILL post-SQL'i required_fields'tan TÜRETİLİR — burada ikinci bir
+    # kural listesi YOKTUR. Yalnız kolon YENİ EKLENDİĞİNDE koşar; bu doğrudur,
+    # çünkü sıfırdan kurulan bir şemada (create_all kolonu zaten yaratır)
+    # doldurulacak satır da yoktur. Kalıcı olması gereken bir kısıt/index
+    # DEĞİLDİR — G041 tuzağı buraya uygulanmaz.
+    #
+    # INDEX BİLİNÇLİ EKLENMEDİ: lokal prod kopyasında (14.345 aktif dava,
+    # 2026-08-12) zorunlu alanların en az biri kayıtların %100'ünde boş
+    # (`service_type` 14.345, `uyap_lawyer_name` 14.344 satırda boş) — yani
+    # bayrak bugün hiç seçici değil ve planlayıcı zaten seq scan seçer.
+    # Ölçülmemiş index eklemek G042'nin temizlediği borcu geri getirirdi;
+    # aktarım sonrası kova dağılımı ölçülünce yeniden değerlendirilir.
+    ("columns", "cases", {
+        "missing_required_bucket": (
+            "VARCHAR(20) DEFAULT 'MANUAL'",
+            [f"UPDATE cases SET missing_required_bucket = {missing_bucket_sql('cases')}"],
+        ),
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
