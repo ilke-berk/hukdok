@@ -102,7 +102,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Zincir yalnız GERÇEK dosya çakışmasında kuruldu (pyproject.toml, ci.yml) —
      tek uzun zincir bir BLOKE'de tüm geceyi yakardı. -->
 
-- [ ] G030 | bant:backend | bagimli:- | B.1: pytest-cov + CI kapsam kapısı
+- [x] G030 | bant:backend | bagimli:- | B.1: pytest-cov + CI kapsam kapısı
 - [ ] G031 | bant:backend | bagimli:G030 | B.4: migrasyon yolu testi (gerçek Postgres) — FAZ D'nin kapısı
 - [ ] G032 | bant:backend | bagimli:- | B.5: X-Total-Count / sayfalama karakterizasyonu — FAZ E'nin kapısı
 - [ ] G033 | bant:backend | bagimli:- | B.3-1: "DB hatası → kapı KAPALI" karakterizasyonu (FAZ 0.2/0.3/0.4 kilidi)
