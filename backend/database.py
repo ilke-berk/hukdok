@@ -555,6 +555,67 @@ _MIGRATIONS = [
     ("index", "clients", [
         "CREATE INDEX IF NOT EXISTS ix_clients_name ON clients (name)",
     ]),
+
+    # ─── 30. EKSİK INDEX'LER (FAZ D 6.2-b, G043) ─────────────────────────────
+    #
+    # Madde 29 düşürür, burası ekler; ikisi birlikte 6.2'yi tamamlar.
+    #
+    # (a) INDEX'SİZ FK KOLONLARI. Liste tahminle değil sorguyla üretildi
+    #     (pg_constraint contype='f' ∩ index'i olmayan kolonlar, 2026-08-12 lokal
+    #     prod kopyası): 14 FK'nın 12'si zaten kapsanıyor, kapsanmayan İKİ tane
+    #     çıktı — plan "4 kolon" diyordu, gerçek 2. Kapsayan index arayışı ADLA
+    #     değil `indkey` önekiyle yapıldı; ör. case_relations.source_case_id'yi
+    #     uq_case_relation (çok kolonlu UNIQUE) zaten karşılıyor.
+    #     Index'siz FK'nın bedeli yalnız JOIN değil: referans verilen satır
+    #     silinince/güncellenince PG referans eden tabloyu SEQ SCAN'le doğrular
+    #     (case_documents.case_party_id ON DELETE SET NULL, case_lawyers.lawyer_id).
+    ("index", "case_documents", [
+        "CREATE INDEX IF NOT EXISTS idx_case_documents_case_party "
+        "ON case_documents (case_party_id)",
+    ]),
+    ("index", "case_lawyers", [
+        "CREATE INDEX IF NOT EXISTS idx_case_lawyers_lawyer "
+        "ON case_lawyers (lawyer_id)",
+    ]),
+    #     ÜÇÜNCÜSÜ AYRI BİR SINIF: case_parties.client_id mevcut kurulumlarda
+    #     index'li (ix_case_parties_client_id — ölçüldü), SIFIRDAN kurulumda ise
+    #     DEĞİL: models.CaseParty.client_id'de `index=True` yok, index eski bir
+    #     model tanımından kalmış. İki kurulum yolu farklı şema üretiyordu; bunu
+    #     yeni testin FK sorgusu yakaladı (tahminle bulunmazdı). Mevcut ADI
+    #     bilinçli yeniden kullanıyoruz — yeni bir ad prod'da aynı kolona İKİNCİ
+    #     index koyar ve G042'nin temizlik listesine düşerdi. `ix_clients_name`
+    #     (madde 27) ile aynı desen.
+    ("index", "case_parties", [
+        "CREATE INDEX IF NOT EXISTS ix_case_parties_client_id "
+        "ON case_parties (client_id)",
+    ]),
+
+    # (b) cases.status KISMİ index'i. Sıcak değerler ÖLÇÜLDÜ, tahmin edilmedi
+    #     (SELECT status, count(*) FROM cases GROUP BY 1 — 2026-08-12):
+    #       MAHZEN  11.324 (%79)   ← arşiv; tüm tablonun dörtte üçü
+    #       DERDEST  3.021 (%21)
+    #     Tam index MAHZEN için de satır tutardı ve o değerde planlayıcı zaten
+    #     seq scan seçerdi (seçicilik yok) — boşuna yazma maliyeti. Koşul
+    #     `<> 'MAHZEN'` biçiminde yazıldı, IN listesiyle DEĞİL: yarın eklenecek
+    #     bir statü (DANIŞ/TEMYIZ/KAPALI — routes/clients.py:85, required_fields)
+    #     listede unutulursa index'e sessizce girmez; "arşiv hariç" kuralı ise
+    #     kendiliğinden kapsar. PG kısmi index'i `status = 'DERDEST'` gibi bir
+    #     koşulun predicate'i ima ettiğini görüp kullanır (EXPLAIN ile doğrulandı:
+    #     count sorgusu 6,3 ms → 2,3 ms).
+    ("index", "cases", [
+        "CREATE INDEX IF NOT EXISTS idx_cases_status_sicak "
+        "ON cases (status) WHERE status <> 'MAHZEN'",
+    ]),
+
+    # (c) substr(tracking_no, 4, 10) FONKSİYONEL index'i. routes/cases.py:139
+    #     her dava açma formunda bu ifadeyle sıra numarası tahsis ediyor; düz
+    #     kolon index'i ifadeye uygulanmaz, tek çare fonksiyonel index.
+    #     Ölçüm (14.345 satır, lokal prod kopyası): seq scan 6,1 ms / 1.358 buffer
+    #     → bitmap index scan 0,2 ms / 20 buffer (~30×).
+    ("index", "cases", [
+        "CREATE INDEX IF NOT EXISTS idx_cases_tracking_name_block "
+        "ON cases (substr(tracking_no, 4, 10))",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
@@ -647,6 +708,39 @@ _MIGRATIONS += [
 # Sözlükte kalsalardı bu blok her açılışta yeniden yaratır, temizlik hiç tutmazdı.
 # Kalanlar bilinçli duruyor: prod'da taranıp taranmadıkları ÖLÇÜLMEDİ ve
 # `idx_case_parties_name_trgm`'in gerçek müşterisi var (routes/cases.py:162).
+
+# ─── AVUKAT ADI ASCII KATLAMASININ SQL KARŞILIĞI (G043) ──────────────────────
+#
+# managers/lawyer_resolver._TR_FOLD'un birebir SQL ikizi. Avukat filtresi artık
+# eşleştirmeyi SQL'de ön-eliyor (managers/case_manager._lawyer_filter_case_ids);
+# katlama olmadan '%ungor%' ile "ÜNGÖR" bulunamaz.
+#
+# PAZARLIKSIZ: aşağıdaki fonksiyonel trigram index'i ile sorgunun ürettiği ifade
+# BİREBİR aynı olmalıdır — Postgres ifade index'ini metin olarak değil ayrıştırılmış
+# ifade ağacı olarak eşler; translate() argümanlarının bir karakteri bile farklıysa
+# index sorguya HİÇ uygulanmaz (sessiz performans kaybı, hata vermez). Bu yüzden
+# harita tek kaynak olarak burada durur ve case_manager BURADAN import eder.
+# tests/test_g043_index_ve_avukat_filtresi.py üç tarafı da (Python haritası, bu
+# sabitler, index DDL'i) birbirine kilitler.
+SQL_FOLD_FROM = "ıİIşŞçÇğĞöÖüÜâÂîÎûÛ"
+SQL_FOLD_TO = "iiissccggoouuaaiiuu"
+
+
+def sql_folded_expr(column_sql: str) -> str:
+    """`column_sql` için ASCII'ye katlanmış küçük harf SQL ifadesi."""
+    return (
+        f"lower(translate(coalesce({column_sql}, ''), "
+        f"'{SQL_FOLD_FROM}', '{SQL_FOLD_TO}'))"
+    )
+
+
+# NOT (G043): trigram index'leri BİLİNÇLİ olarak ("index", ...) op'una değil bu
+# sözlüğe yazılır. "index" op'ları migrasyon döngüsünde, yani aşağıdaki
+# `CREATE EXTENSION IF NOT EXISTS pg_trgm`den ÖNCE koşar; sıfırdan bir kurulumda
+# gin_trgm_ops henüz yoktur ve DDL patlayınca migrasyon FAIL-FAST ile konteyneri
+# durdurur. Bu blok ise hata-toleranslıdır (index yoksa sorgu yavaşlar, uygulama
+# ayakta kalır). Sözlük değeri kolon ADI ya da parantezli İFADE olabilir; ikisi de
+# aynı `USING gin (<x> gin_trgm_ops)` şablonuna girer.
 _TRGM_INDEXES = {
     # cases — kimlik ve metin alanları
     "idx_cases_uyap_lawyer_trgm": ("cases", "uyap_lawyer_name"),
@@ -655,6 +749,14 @@ _TRGM_INDEXES = {
     # ilişkili tablolar — taraf / avukat adları
     "idx_case_parties_name_trgm": ("case_parties", "name"),
     "idx_case_lawyers_name_trgm": ("case_lawyers", "name"),
+    # G043 — avukat filtresinin SQL ön-elemesinin müşterisi. G042 ham kolonun
+    # trigram index'ini (idx_cases_resp_lawyer_trgm) düşürdü: prod'da hiç
+    # taranmamıştı, çünkü o gün filtre SQL'de DEĞİL Python'daydı. Yerine geçen
+    # bu index katlanmış ifadeyi indeksler ve gerçek müşterisi vardır — ölçüm:
+    # 159 avukat seçimi, ortalama 47,4 ms → 3,0 ms (~16×), boyut 304 kB.
+    "idx_cases_resp_lawyer_fold_trgm": (
+        "cases", f"({sql_folded_expr('responsible_lawyer_name')})",
+    ),
 }
 
 

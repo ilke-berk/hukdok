@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from database import SessionLocal
+from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import is_unique_violation
 import models
 from party_check import normalize_party_key, normalize_tc
@@ -57,9 +57,49 @@ def _apply_tenant_filter(query, tenant_id: Optional[str]):
     return query
 
 
+def _sql_folded(column):
+    """Kolonun ASCII'ye katlanmış küçük harf SQL ifadesi (_norm_name'in SQL ikizi).
+
+    Katlama haritası database.SQL_FOLD_* sabitlerinden gelir — orada da
+    `idx_cases_resp_lawyer_fold_trgm` fonksiyonel index'ini üretir. İki taraf aynı
+    ifadeyi üretmezse index bu sorguya HİÇ uygulanmaz (hata vermez, sessizce
+    yavaşlar); bu yüzden harita tek kaynaktan gelir.
+    """
+    from sqlalchemy import func
+    return func.lower(
+        func.translate(func.coalesce(column, ""), SQL_FOLD_FROM, SQL_FOLD_TO)
+    )
+
+
+def _lawyer_prefilter(column, tokens):
+    """Ad kolonu için SUPERSET ön-eleme koşulu: token'lardan en az biri geçiyor mu?
+
+    `_value_matches`in ÜÇ kuralı da (kod birebir / ≥2 ortak token / benzersiz
+    soyad) eşleşebilmek için değerin normalize halinde `tokens` kümesinden en az
+    bir öğe bulunmasını GEREKTİRİR — kural 2 en az bir çekirdek token, kural 3
+    soyadın kendisi, kural 1 kodun kendisi. Dolayısıyla bu koşul Python
+    doğrulamasının sonucunu asla eleyemez; yalnız aday sayısını kırpar. Kesin
+    kararı yine `_value_matches` verir, sonuç kümesi bit-bit aynı kalır.
+
+    Ünvan atma (`_TITLE_TOKENS`) SQL tarafında YAPILMAZ; gerekmiyor da: ünvan
+    atmak yalnız token siler, kalan token'ların karakter dizisini bozmaz →
+    '%token%' araması ünvanlı ham metinde de bulur (yön: SQL ⊇ Python).
+    """
+    from sqlalchemy import or_
+    folded = _sql_folded(column)
+    return or_(*[folded.like(f"%{t}%") for t in sorted(tokens)])
+
+
 def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
     """Seçilen avukatla eşleşen dava ID kümesini döndürür (toleranslı).
-    responsible_lawyer_name + case_lawyers ilişkisinin ikisini de tarar."""
+    responsible_lawyer_name + case_lawyers ilişkisinin ikisini de tarar.
+
+    FAZ E/E7: eşleştirme mantığı Python'da kalır (ünvan/diakritik/çoklu-avukat
+    kuralları SQL'e sadakatle çevrilemez), ama ADAYLAR artık SQL'de daralır —
+    eskiden her filtrede `cases` tablosunun tamamı (14.345 satır) Python'a
+    çekiliyordu. Ölçüm: 159 avukat seçimi, ortalama 47,4 ms → 3,0 ms (~16×);
+    159/159'unda eski ve yeni id kümeleri birebir aynı.
+    """
     aliases = _resolve_lawyer_aliases(selected)
     matched: set = set()
 
@@ -68,24 +108,41 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
         sel_norm = _norm_name(selected)
         if not sel_norm:
             return matched
-        q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active.is_(True))
-        q = _apply_tenant_filter(q, tenant_id)
-        for cid, rn in q.all():
-            if any(sel_norm in _norm_name(p) for p in _split_persons(rn)):
-                matched.add(cid)
-        for cid, nm in db.query(models.CaseLawyer.case_id, models.CaseLawyer.name).all():
-            if sel_norm in _norm_name(nm):
-                matched.add(cid)
+        tokens = set(sel_norm.split())
+
+        def _case_matches(value):
+            return any(sel_norm in _norm_name(p) for p in _split_persons(value))
+
+        def _lawyer_matches(value):
+            return sel_norm in _norm_name(value)
+    else:
+        core_tokens, code_norm, surname, surname_unique = aliases
+        tokens = {t for t in core_tokens if t}
+        if code_norm:
+            tokens.add(code_norm)
+
+        def _case_matches(value):
+            return _value_matches(value, core_tokens, code_norm, surname, surname_unique)
+
+        _lawyer_matches = _case_matches
+
+    if not tokens:
+        # Çekirdek token da kod da yok → üç kuralın hiçbiri eşleşemez.
         return matched
 
-    core_tokens, code_norm, surname, surname_unique = aliases
     q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active.is_(True))
     q = _apply_tenant_filter(q, tenant_id)
+    q = q.filter(_lawyer_prefilter(models.Case.responsible_lawyer_name, tokens))
     for cid, rn in q.all():
-        if _value_matches(rn, core_tokens, code_norm, surname, surname_unique):
+        if _case_matches(rn):
             matched.add(cid)
-    for cid, nm in db.query(models.CaseLawyer.case_id, models.CaseLawyer.name).all():
-        if _value_matches(nm, core_tokens, code_norm, surname, surname_unique):
+    # BİLİNÇLİ: case_lawyers tarafında tenant/active filtresi YOK (eski davranış
+    # aynen korunur) — fazladan id çağıranın `Case.id.in_()` süzgecinde düşer.
+    lq = db.query(models.CaseLawyer.case_id, models.CaseLawyer.name).filter(
+        _lawyer_prefilter(models.CaseLawyer.name, tokens)
+    )
+    for cid, nm in lq.all():
+        if _lawyer_matches(nm):
             matched.add(cid)
     return matched
 
