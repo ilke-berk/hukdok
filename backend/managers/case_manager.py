@@ -299,6 +299,18 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
 
 
 def get_case(case_id: int, tenant_id: str = None):
+    # E1 (G051) — İLİŞKİLER BİLEREK LAZY: burada `selectinload` YOKTUR ve
+    # eklenmemelidir. Liste yolunda (`get_cases`) selectinload N satırın ilişki
+    # sorgusunu 1'e indirir; KART TEK satırdır, orada selectinload bir sorguyu
+    # bir sorguya indirir — kazanç yok, kurulum maliyeti var.
+    # Ölçüm (lokal prod kopyası, 14.345 aktif dava, 14 kart × 10 tekrar,
+    # 2026-08-12): lazy 6 sorgu / 2,90 ms · selectinload×5 6 sorgu / 3,70 ms ·
+    # + zincirli `documents.case_party` 6-7 sorgu / 3,88 ms. Yani "kart N+1"
+    # teşhisi tutmuyor; üç varyantın sorgu sayısı aynı, eager olan YAVAŞ.
+    # `d.case_party` da belge başına sorgu AÇMAZ: taraf aynı davanın tarafıdır
+    # ve sözlük `parties`i `documents`ten önce materyalize eder — PK identity
+    # map'ten gelir. Bu iddiayı tests/test_g051_kart_ve_arama_sorgulari.py
+    # belge sayısını artırarak kilitler.
     try:
         db = SessionLocal()
         query = db.query(models.Case).filter(models.Case.id == case_id)
@@ -584,8 +596,16 @@ def get_cases(
     urgent_days: int = None,
     missing_required: bool = False,
     missing_bucket: str = None,
+    with_total: bool = True,
 ) -> "tuple[list[dict], int]":
     """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür.
+
+    `with_total=False` (E3, G051): toplam SAYILMAZ ve ikinci öğe `-1` döner.
+    `-1` bilinçlidir — `len(items)` döndürmek "gerçek toplam" gibi okunur ve
+    çağıranın sayfalamasını sessizce bozar (bkz. `tests/test_cases_pagination.py`);
+    `-1` toplamı kullanmaya kalkanı ilk bakışta ele verir. Bu yüzden yalnız
+    toplamı zaten atan tek çağrı yeri olan `search_cases` bu bayrağı verir;
+    liste yolu (`routes/cases.py` → `X-Total-Count`) ASLA vermez.
 
     `missing_bucket` (D8): eksik filtresi açıkken kovayı daraltır —
     "MANUAL" elle açılmış kayıtlar, "AKTARIM" HUKDOK teslim aktarımından gelenler
@@ -694,7 +714,9 @@ def get_cases(
 
         # Toplam sayı — sayfalama (offset/limit) uygulanmadan önce.
         # Filtreler .any()/EXISTS tabanlı olduğundan satır çoğalması yok.
-        total = query.count()
+        # İstenmezse COUNT hiç koşmaz: aramada bu, her tuş vuruşunda ikinci bir
+        # tam taramayı ortadan kaldırır (E3).
+        total = query.count() if with_total else -1
 
         # Relevance sıralaması: sorgu varsa exact > prefix > partial > diğer
         if q and len(q.strip()) >= min_len:
@@ -1187,7 +1209,12 @@ def search_cases(query: str, exact: bool = False, active_only: bool = False, ten
     status = "DERDEST" if active_only else None
     # Dropdown en fazla 8 sonuç gösteriyor; relevance sıralı ilk 25 fazlasıyla yeterli.
     # 500 kayıt çekip parties+lawyers ile serialize etmek her tuş vuruşunda boşa yüktü.
-    items, _total = get_cases(q=query, limit=25, exact=exact, status=status, tenant_id=tenant_id)
+    # `with_total=False` (E3): dropdown toplam sayı GÖSTERMEZ — sayılsaydı her
+    # tuş vuruşunda ikinci bir tam tarama olurdu. Toplamı kullanan TEK yer liste
+    # yolu; orası bayrağı vermez (X-Total-Count sözleşmesi korunur).
+    items, _total = get_cases(
+        q=query, limit=25, exact=exact, status=status, tenant_id=tenant_id, with_total=False
+    )
     return items
 
 

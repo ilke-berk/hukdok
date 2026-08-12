@@ -352,7 +352,7 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 | Arama `count()` | aggregate | `search_cases:816`'da `_total` **atılıyor** | Her tuşta ikinci tam tarama | `with_total=False` **yalnız o çağrıya** |
 | `missing_required` | korele EXISTS | Satır başına alt sorgu | 81 ms vs 19 ms | denormalize bayrak |
 | Intake merge mahkeme sözlüğü | DISTINCT | Her çağrıda tam tarama | 17,8 ms | TTL cache |
-| Dava kartı | ilişki yükleme | Lazy → N+1 | 5 sorgu / 58 ms | `selectinload` |
+| ~~Dava kartı~~ | ilişki yükleme | ~~Lazy → N+1~~ | ~~5 sorgu / 58 ms~~ | **DÜŞTÜ — teşhis doğrulanmadı (G051, aşağı bak)** |
 
 > **UNION uyarısı.** Taslaktaki "123 ms → 6,9 ms (18×)" **hiçbir kurulumda tekrar üretilemedi.**
 > Gerçek: tek terim ve ≥3 karakterde 4,0×; tipik 2 karakterlik aramada 1,27×. Sebep: `cases.notes`
@@ -366,6 +366,25 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 > `routes/cases.py:97-103` `total`'ı `X-Total-Count` başlığına yazıyor;
 > `CaseList.tsx:270` sayfalamayı ondan hesaplıyor. `with_total=False` genel uygulanırsa
 > **sayfalama sessizce bozulur.** Yalnız `search_cases:816` yolunda uygulanır.
+>
+> **UYGULANDI (2026-08-12, G051).** `get_cases(..., with_total=False)` COUNT'u hiç
+> koşmuyor ve toplam yerine `-1` döndürüyor (`len(items)` bilinçli DEĞİL: gerçek toplam
+> sanılıp sayfalamayı bozardı). Bayrağı veren tek yer `search_cases`; AST taraması bunu
+> test olarak kilitliyor. Lokal ölçüm (prod kopyası, 14.345 aktif dava, 12 terim ×
+> 10 tekrar): **127,3 ms → 73,4 ms (−42%)**, sorgu **5 → 4**; 12 terimin id kümesi
+> birebir aynı. `test_cases_pagination.py` 15/15 yeşil ve **değiştirilmedi**.
+
+> **E1 DÜŞTÜ — "kart N+1" teşhisi ölçümle doğrulanmadı (2026-08-12, G051).**
+> Kart TEK satırdır: `selectinload` orada bir ilişki sorgusunu yine bir ilişki sorgusuna
+> indirir, yani sayı düşmez. Aynı süreçte A/B (prod kopyası, 14 kart × 10 tekrar):
+> lazy **6 sorgu / 2,90 ms** · selectinload×5 **6 sorgu / 3,70 ms** · zincirli
+> `documents.case_party` ile **6-7 sorgu / 3,88 ms**. Yani eager varyant yalnız
+> yavaşlatıyor; zincirli hâli kart başına bir sorgu **ekliyor**. Tek gerçek N+1 adayı olan
+> belge→taraf okuması (`d.case_party.name`) zaten sorgu açmıyor: taraf aynı davanın
+> tarafıdır ve kart sözlüğü `parties`i `documents`ten önce materyalize ettiği için
+> identity map'ten gelir. `get_case` **bilerek lazy bırakıldı**;
+> `tests/test_g051_kart_ve_arama_sorgulari.py` kartın sorgu sayısının belge sayısıyla
+> büyümediğini kilitler — gerçek bir N+1 doğarsa test söyler, karar o gün yeniden açılır.
 
 > **KALAN MADDE (2026-08-12 kararıyla kuyruğa giriyor).** Aşağıdaki durma kriteri notu
 > party_check'in **SQL göçünü** düşürdü — o iş gereksiz hâle geldi, atlanmadı. Ama notun
@@ -552,9 +571,9 @@ Risk sırasına göre — ucuzdan pahalıya, UNION en sonda:
 
 | # | Madde | Bağımlılık | Boy |
 | --- | --- | --- | --- |
-| E1 | Dava kartı `selectinload` (`case_manager.py:93` `get_case`) | — | S |
+| ~~E1~~ | ~~Dava kartı `selectinload` (`get_case`)~~ — **DÜŞTÜ (G051): ölçüm teşhisi çürüttü**, kart lazy kalıyor | — | S |
 | E2 | Intake mahkeme sözlüğü TTL cache (`managers/ttl_cache.py` hazır) | — | S |
-| E3 | Arama `count()` — `with_total=False` **yalnız** `case_manager.py:819` | B.5 (G032) | S |
+| E3 | Arama `count()` — `with_total=False` **yalnız** `search_cases` ✅ **UYGULANDI (G051)**: 127,3 → 73,4 ms, 5 → 4 sorgu | B.5 (G032) | S |
 | E4 | Bantlı/erken çıkışlı Levenshtein (maliyetin %69'u) | — | M |
 | E5 | `find_matching_case` SQL daraltma (tepe bellek 244 MB, `/process` sıcak yolu) | — | M |
 | E6 | `missing_required` denormalize bayrak — **şema işi** | D (şema) | M |
