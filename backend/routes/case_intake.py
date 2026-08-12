@@ -37,6 +37,7 @@ import mimetypes
 import os
 import re
 import tempfile
+import time
 import uuid
 from datetime import datetime
 from functools import partial
@@ -57,6 +58,7 @@ from file_utils import (
     validate_file_type,
 )
 from managers.log_manager import TechnicalLogger
+from managers.ttl_cache import TTLCache
 from pdf.format_converter import ConversionBusyError
 from routes.processing import DOWNLOAD_CACHE, PROCESS_CACHE, _cleanup_process_cache, _owner_id, _touch_owned
 from schemas_intake import (
@@ -428,11 +430,87 @@ async def analyze_case_intake_file(
 # =====================================================================
 
 
+# Bilinen mahkeme sözlüğü süreç-içi TTL cache'te (G052): `Case.court` üzerindeki
+# DISTINCT tam tarama her merge çağrısında koşuyordu (ölçüm: 2.163 girdi / 273 KB,
+# sıcak bağlantıda ~6,5 ms, taze süreçte ~53 ms). Sözlük neredeyse hiç değişmez — yalnız
+# DAHA ÖNCE HİÇ GÖRÜLMEMİŞ bir mahkeme adı taşıyan dava kaydedilince büyür.
+#
+# TTL 300 sn — İNVALİDASYON YOK, bilinçli (routes/parties.py:30 ile aynı gerekçe):
+# backend uvicorn'u 2 worker ile koşar (docker-entrypoint.sh) ve bu cache
+# süreç-içidir; lider kilidi (api.py lifespan) yalnız arkaplan işlerini
+# tekilleştirir, İSTEK yollarını kapsamaz → her worker kendi sözlüğünü tutar ve
+# A worker'ında açılan dava B worker'ının sözlüğünü tazeleyemez. Kullanıcıya
+# görünen tek etki: yeni bir mahkeme adı "bilinen yazım" önerisine
+# (services/case_intake.py::suggest_known_court) EN GEÇ 300 sn sonra girer —
+# bu uç yalnız öneri üretir, eksik öneri akışı durdurmaz. TTL parties'inkinden
+# (60 sn) uzun: sözlük çok daha yavaş değişiyor.
+_KNOWN_COURTS_TTL_SECONDS = 300
+
+# Bellek: ölçülen sözlük 2.163 girdi / 273 KB (liste + string'ler). Anahtar
+# tenant_id içerdiği için en kötü hâlde iki tenant × iki worker ≈ 1,1 MB —
+# G017'nin 52 MB/worker'ı gibi bir sürpriz yok, bu yüzden parties.py'daki
+# "TEK GİRDİ" düşürme politikasına gerek duyulmadı.
+_known_courts_cache = TTLCache(_KNOWN_COURTS_TTL_SECONDS)
+
+
+def _known_courts(db, tenant_id: str) -> List[str]:
+    """Bilinen mahkeme adları — TTL cache'ten, yoksa DB'den.
+
+    Anahtar tenant_id'yi İÇERİR: satırlar `tenant_filter_clause` ile süzülü
+    geliyor, ortak anahtar bir tenant'ın mahkemelerini diğerine sızdırırdı.
+
+    Kilit yok (bilinçli): TTLCache'in kendisi RLock korumalı, burada korunacak
+    başka global yok. İki isteğin aynı anda ıskalaması olabilir — sonuç aynı,
+    bedeli bir fazladan sorgu; kilidi tutup DB'yi beklemekten iyidir.
+    """
+    import models
+
+    key = f"known_courts:{tenant_id}"
+    # TTLCache süresi yalnız cleanup_stale'de işlenir (get bayat girdiyi de
+    # döndürür) → süre kapısı burada (parties.py:112 ile aynı desen).
+    _known_courts_cache.cleanup_stale()
+    entry = _known_courts_cache.get(key)
+    if entry is not None:
+        # Kopya: TTLCache.get sığ kopya döndürür, listenin kendisi paylaşımlıdır;
+        # çağıranın mutasyonu cache'i bozardı.
+        return list(entry["courts"])
+
+    started = time.perf_counter()
+    courts = [
+        r[0] for r in (
+            db.query(models.Case.court)
+            .filter(models.Case.active.is_(True), models.Case.court.isnot(None))
+            .filter(tenant_filter_clause(models.Case, tenant_id))
+            .distinct()
+            .all()
+        )
+        if r[0]
+    ]
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    _known_courts_cache.set(key, {"courts": courts})
+    logger.info(
+        "Intake mahkeme sözlüğü yenilendi: %d girdi, %.0f ms (TTL %d sn)",
+        len(courts), elapsed_ms, _KNOWN_COURTS_TTL_SECONDS,
+    )
+    return list(courts)
+
+
+def reset_known_courts_cache_for_tests(ttl_seconds: Optional[int] = None) -> None:
+    """Süreç-global mahkeme sözlüğü cache'ini boşaltır (yalnız testler için)."""
+    global _known_courts_cache
+
+    _known_courts_cache = TTLCache(
+        _KNOWN_COURTS_TTL_SECONDS if ttl_seconds is None else ttl_seconds
+    )
+
+
 def _load_merge_context(tenant_id: str) -> Dict[str, Any]:
     """Merge için DB bağlamı: cariler, geçmiş dosya tarafları, bilinen mahkemeler,
     kanonik dava konusu + uzmanlık listeleri.
 
     parties route'unun sorgu şekliyle birebir (check_parties aynı satırları bekler).
+    Mahkeme sözlüğü hariç hepsi her çağrıda DB'den okunur; mahkemeler
+    `_known_courts` TTL cache'inden gelir (G052 — gerekçe orada).
     """
     from database import SessionLocal
     import models
@@ -478,16 +556,7 @@ def _load_merge_context(tenant_id: str) -> Dict[str, Any]:
                 .all()
             )
         ]
-        known_courts = [
-            r[0] for r in (
-                db.query(models.Case.court)
-                .filter(models.Case.active.is_(True), models.Case.court.isnot(None))
-                .filter(tenant_filter_clause(models.Case, tenant_id))
-                .distinct()
-                .all()
-            )
-            if r[0]
-        ]
+        known_courts = _known_courts(db, tenant_id)
         # Kanonik listeler (dava konusu + uzmanlık): merge bekçisi liste dışı
         # AI değerini boşaltır. Liste yüklenemezse bekçi devre dışı kalır
         # (None → build_draft dokunmaz), merge durmaz.

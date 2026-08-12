@@ -572,7 +572,7 @@ Risk sırasına göre — ucuzdan pahalıya, UNION en sonda:
 | # | Madde | Bağımlılık | Boy |
 | --- | --- | --- | --- |
 | ~~E1~~ | ~~Dava kartı `selectinload` (`get_case`)~~ — **DÜŞTÜ (G051): ölçüm teşhisi çürüttü**, kart lazy kalıyor | — | S |
-| E2 | Intake mahkeme sözlüğü TTL cache (`managers/ttl_cache.py` hazır) | — | S |
+| E2 | Intake mahkeme sözlüğü TTL cache (`managers/ttl_cache.py` hazır) ✅ **UYGULANDI (G052)**: 6,45 ms → 0,003 ms (sıcak), 2.163 girdi / 273 KB, TTL 300 sn | — | S |
 | E3 | Arama `count()` — `with_total=False` **yalnız** `search_cases` ✅ **UYGULANDI (G051)**: 127,3 → 73,4 ms, 5 → 4 sorgu | B.5 (G032) | S |
 | E4 | Bantlı/erken çıkışlı Levenshtein (maliyetin %69'u) | — | M |
 | E5 | `find_matching_case` SQL daraltma (tepe bellek 244 MB, `/process` sıcak yolu) | — | M |

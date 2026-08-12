@@ -128,7 +128,12 @@ KNOWN_UNPAIRED_SITES = {
     # bugün sızıntı YOK — ama koruma tek katmanlı: `deleted_at` "tek gerçek
     # kaynak" olarak tanımlanmışken (models.py:42) bu noktalar ona bakmıyor.
     ("routes/cases.py", "get_incomplete_tasks"),
-    ("routes/case_intake.py", "_load_merge_context"),
+    # G052'de TAŞINDI (sapma aynı, adres değişti): intake mahkeme sözlüğü
+    # sorgusu `_load_merge_context`ten `_known_courts` TTL cache yardımcısına
+    # çıktı. Sorgunun kendisi harfiyen aynı — `active.is_(True)` var,
+    # `deleted_at` yok. `_load_merge_context` listeden düştü: içinde kalan
+    # tek Case süzgeci (party_rows) `deleted_at`i zaten uyguluyor.
+    ("routes/case_intake.py", "_known_courts"),
 }
 
 
