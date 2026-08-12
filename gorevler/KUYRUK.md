@@ -103,7 +103,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      tek uzun zincir bir BLOKE'de tüm geceyi yakardı. -->
 
 - [x] G030 | bant:backend | bagimli:- | B.1: pytest-cov + CI kapsam kapısı
-- [ ] G031 | bant:backend | bagimli:G030 | B.4: migrasyon yolu testi (gerçek Postgres) — FAZ D'nin kapısı
+- [x] G031 | bant:backend | bagimli:G030 | B.4: migrasyon yolu testi (gerçek Postgres) — FAZ D'nin kapısı
 - [ ] G032 | bant:backend | bagimli:- | B.5: X-Total-Count / sayfalama karakterizasyonu — FAZ E'nin kapısı
 - [ ] G033 | bant:backend | bagimli:- | B.3-1: "DB hatası → kapı KAPALI" karakterizasyonu (FAZ 0.2/0.3/0.4 kilidi)
 - [ ] G034 | bant:backend | bagimli:G033 | B.3-2: tenant + soft-delete ORM semantiği karakterizasyonu
