@@ -791,7 +791,14 @@ def test_worker_start_is_idempotent_and_survives_scan_errors(monkeypatch):
 def test_migrations_have_upload_outbox_partial_index():
     from database import _MIGRATIONS
 
-    ops = [op for op in _MIGRATIONS if op[0] == "index" and op[1] == "upload_outbox"]
+    # G042 aynı tabloya ikinci bir ("index", ...) op'u ekledi: kullanılmayan
+    # ix_upload_outbox_id'nin DROP'u. Bekçinin derdi CREATE tarafıdır — op türü
+    # yerine SQL'in kendisi süzülür, mükerrer CREATE koruması aynen sürer.
+    ops = [
+        op for op in _MIGRATIONS
+        if op[0] == "index" and op[1] == "upload_outbox"
+        and any(sql.upper().lstrip().startswith("CREATE") for sql in op[2])
+    ]
     assert len(ops) == 1, "upload_outbox partial index op'u tam bir kez olmalı"
     joined = " ".join(ops[0][2])
     assert "idx_upload_outbox_pending" in joined

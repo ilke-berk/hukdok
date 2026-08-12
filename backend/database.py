@@ -122,7 +122,8 @@ def init_db():
 #   ("rename",  tablo, {eski_kolon: yeni_kolon})
 #   ("columns", tablo, {kolon: DDL | (DDL, [kolon eklendikten sonra çalışacak SQL, ...])})
 #   ("table",   tablo, CREATE_SQL, [index SQL, ...])
-#   ("index",   tablo, [CREATE INDEX IF NOT EXISTS SQL, ...])  — mevcut tabloya idempotent index
+#   ("index",   tablo, [idempotent index DDL, ...])  — CREATE INDEX IF NOT EXISTS ya da
+#                                       DROP INDEX IF EXISTS; koşulsuz koşar (bkz. madde 29)
 #   ("drop",    tablo, [kolon, ...])  — kolonu VERİYLE BİRLİKTE siler; modeldeki tanım ve
 #                                       "columns" op'undaki satır da kaldırılmış olmalı,
 #                                       yoksa sonraki açılışta kolon geri eklenir
@@ -556,17 +557,98 @@ _MIGRATIONS = [
     ]),
 ]
 
+# ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
+#
+# PAZARLIKSIZ KURAL: `idx_scan` index TARAMALARINI sayar; UNIQUE kısıt doğrulaması
+# (INSERT/UPDATE tekillik kontrolü) o sayacı ARTIRMAZ. Görevini kusursuz yapan bir
+# UNIQUE index ömrü boyunca `idx_scan = 0` görünür. Prod ölçümünde (2026-08-12)
+# `idx_scan = 0` olan 96 index'in 44'ü unique/primary'ydi — "kullanılmayanı düşür"
+# körlemesine uygulansaydı ofis no tekilliğini TEK BAŞINA tutan `ix_cases_tracking_no`
+# (indisunique=true, pg_constraint karşılığı YOK) da silinirdi.
+#
+# Bu liste bu yüzden iki dar ölçütle üretildi (scripts/index_envanteri.py):
+#
+#   (A) YAPISAL İKİZ — `indkey` + opclass + access method + kısmi koşul imzası
+#       birebir aynı ikinci bir index var. İstatistikten BAĞIMSIZ güvenli: kalan
+#       ikiz planlayıcı için aynı işi görür. `ix_cases_id` prod'da 38.993 kez
+#       tarandı — "kullanılıyor" ama `cases_pkey` ile birebir aynı, tarama ona
+#       geçer. İmza ADLA değil `pg_index.indkey` ile karşılaştırılır: bu şemada
+#       `ix_`/`idx_` isimlendirmesi tutarlı DEĞİL.
+#   (B) PROD'DA HİÇ TARANMAMIŞ TRIGRAM — yalnız §6.0'da PROD'da ölçülmüş altı
+#       `cases` GIN index'i (~26 MB). Ölçülmemiş trigram index'lerine (özellikle
+#       `idx_case_parties_name_trgm` — routes/cases.py:162 taraf aramasının
+#       müşterisi) DOKUNULMADI. Lokal restore kopyasında sayaçlar sıfırlanmış
+#       olduğu için "lokalde 0" tek başına gerekçe SAYILMAZ.
+#
+# Üç `*_case_id` ikizinde modelin `index=True` ürettiği taraf düşürülür, migrasyonun
+# yarattığı `idx_*_case` KALIR: prod'da `idx_case_parties_case` 1.810.671 taramayla
+# şemanın en sıcak index'i; ikizini düşürmek planı hiç oynatmaz. models.py DEĞİŞMEZ
+# (kapsam dışı) — sıfırdan kurulumda create_all bu index'leri yaratır, migrasyon
+# hemen sonra düşürür; sonuç iki kurulum yolunda da AYNI şemadır.
+#
+# DROP'lar ("index", ...) op'una yazılır (koşulsuz koşar) ve IF EXISTS ile
+# idempotenttir. Trigram index'leri AYRICA `_TRGM_INDEXES` sözlüğünden çıkarıldı —
+# yoksa aşağıdaki pg_trgm bloğu her açılışta yeniden yaratır ve temizlik hiç tutmaz.
+_DUSURULECEK_INDEXLER = {
+    # (A) PK ikizi — `ix_<tablo>_id`, modeldeki `id = Column(..., index=True)`den
+    # doğar ve tablonun PRIMARY KEY index'iyle birebir aynıdır.
+    "analysis_cache":         ["ix_analysis_cache_file_hash"],   # PK = file_hash
+    "bureau_types":           ["ix_bureau_types_id"],
+    "calendar_events":        ["ix_calendar_events_id"],
+    "case_relations":         ["ix_case_relations_id"],
+    "case_stage_logs":        ["ix_case_stage_logs_id"],
+    "case_subjects":          ["ix_case_subjects_id"],
+    "cities":                 ["ix_cities_id"],
+    "client_categories":      ["ix_client_categories_id"],
+    "court_types":            ["ix_court_types_id"],
+    "daily_activity_reports": ["ix_daily_activity_reports_id"],
+    "doctypes":               ["ix_doctypes_id"],
+    "email_recipients":       ["ix_email_recipients_id"],
+    "export_outbox":          ["ix_export_outbox_id"],
+    "file_statuses":          ["ix_file_statuses_id"],
+    "file_types":             ["ix_file_types_id"],
+    "hearing_dates":          ["ix_hearing_dates_id"],
+    "lawyers":                ["ix_lawyers_id"],
+    "party_roles":            ["ix_party_roles_id"],
+    "specialties":            ["ix_specialties_id"],
+    "statuses":               ["ix_statuses_id"],
+    "sync_logs":              ["ix_sync_logs_id"],
+    "upload_outbox":          ["ix_upload_outbox_id"],
+    "clients":                ["ix_clients_id"],
+    "case_documents":         ["ix_case_documents_id"],
+    # (A) PK ikizi + kolon ikizi aynı tabloda
+    "case_history":           ["ix_case_history_id", "ix_case_history_case_id"],
+    "case_lawyers":           ["ix_case_lawyers_id", "ix_case_lawyers_case_id"],
+    "case_parties":           ["ix_case_parties_id", "ix_case_parties_case_id"],
+    # (A) PK ikizi + (B) prod'da hiç taranmamış altı GIN trigram index'i
+    "cases": [
+        "ix_cases_id",
+        "idx_cases_subject_trgm",       # 6.112 kB (prod)
+        "idx_cases_tracking_no_trgm",   # 5.472 kB
+        "idx_cases_court_trgm",         # 5.424 kB
+        "idx_cases_klasor_no_2_trgm",   # 3.528 kB
+        "idx_cases_esas_no_trgm",       # 3.328 kB
+        "idx_cases_resp_lawyer_trgm",   # 3.032 kB
+    ],
+}
+
+_MIGRATIONS += [
+    ("index", tablo, [f"DROP INDEX IF EXISTS {ad}" for ad in adlar])
+    for tablo, adlar in _DUSURULECEK_INDEXLER.items()
+]
+
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
 # Arama ilike '%term%' (baştan wildcard) kullanıyor → B-tree index işe yaramaz,
 # her sorgu full table scan. GIN + gin_trgm_ops index'i bu kalıbı hızlandırır.
+#
+# G042: `cases` üzerindeki altı büyük trigram index'i (esas_no, tracking_no,
+# klasor_no_2, court, subject, responsible_lawyer_name) BURADAN ÇIKARILDI —
+# prod'da hiçbiri hiç taranmamıştı (~26 MB) ve madde 29 onları düşürüyor.
+# Sözlükte kalsalardı bu blok her açılışta yeniden yaratır, temizlik hiç tutmazdı.
+# Kalanlar bilinçli duruyor: prod'da taranıp taranmadıkları ÖLÇÜLMEDİ ve
+# `idx_case_parties_name_trgm`'in gerçek müşterisi var (routes/cases.py:162).
 _TRGM_INDEXES = {
     # cases — kimlik ve metin alanları
-    "idx_cases_esas_no_trgm":     ("cases", "esas_no"),
-    "idx_cases_tracking_no_trgm": ("cases", "tracking_no"),
-    "idx_cases_klasor_no_2_trgm": ("cases", "klasor_no_2"),
-    "idx_cases_court_trgm":       ("cases", "court"),
-    "idx_cases_subject_trgm":     ("cases", "subject"),
-    "idx_cases_resp_lawyer_trgm": ("cases", "responsible_lawyer_name"),
     "idx_cases_uyap_lawyer_trgm": ("cases", "uyap_lawyer_name"),
     "idx_cases_tku_no_trgm":      ("cases", "tku_no"),
     "idx_cases_sistem_no_trgm":   ("cases", "sistem_no"),

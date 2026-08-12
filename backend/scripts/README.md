@@ -26,5 +26,6 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 | `compare_emails_docs.py` | Mail ↔ belge kaydı karşılaştırması |
 | `export_avukatlar_excel.py` | avukat CSV'sinden xlsx üretimi |
 | `export_davalar_ornek_excel.py` | Örnek 10 davayı xlsx'e aktarma |
+| `index_envanteri.py` | Index envanteri + güvenli düşürme listesi (SALT OKUNUR; `--json`) |
 
 İşi biten script silinebilir — git geçmişi saklar.
