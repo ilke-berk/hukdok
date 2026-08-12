@@ -104,7 +104,7 @@ export default function AvukatDashboard() {
       try {
         const [statsData, casesData] = await Promise.all([
           getCaseStats(),
-          getCases({ limit: 8, offset: 0 }),
+          getCases<DashboardCase>({ limit: 8, offset: 0 }),
         ]);
         if (cancelled) return;
         if (statsData) {
@@ -117,7 +117,7 @@ export default function AvukatDashboard() {
             statuses: statsData.statuses || {},
           });
         }
-        setRecentCases((casesData?.cases || []) as DashboardCase[]);
+        setRecentCases(casesData?.cases ?? []);
         setLoadError(null);
       } catch (error) {
         if (cancelled) return;

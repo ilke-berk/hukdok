@@ -38,6 +38,10 @@ const getStatusStyle = (status: string) =>
     statusColors[status?.toLocaleUpperCase('tr-TR')] || { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
 
 interface CaseDetailsData {
+    // cases.id — backend her yanıtta döner (case_manager.get_case), sayısaldır.
+    // Beyan edilmezse aşağıdaki index signature'a düşüp `unknown` oluyor ve
+    // render edildiği yerde TS2322 veriyordu.
+    id: number;
     status: string;
     esas_no?: string;
     tracking_no?: string;

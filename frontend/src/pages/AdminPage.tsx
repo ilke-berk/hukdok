@@ -113,9 +113,15 @@ const TAB_TO_LIST: Record<string, string> = {
     file_statuses: "file_statuses", specialties: "specialties", cities: "cities",
 };
 
+// Düzenlenebilir alan adları ConfigItem'ın metin taşıyan alanlarıdır; `id` sayısal
+// kimliktir, formda görünmez. Anahtarı bu tiple bağlamak `openEdit`'teki değer
+// okumasını cast'siz kılar (aksi hâlde ConfigItem index signature'ı olmadığı için
+// TS2352 çıkıyordu).
+type EditableKey = Exclude<keyof ConfigItem, "id">;
+
 // Düzenleme formundaki tek bir alan. options verilirse açılır liste, aksi hâlde metin kutusu.
 interface FieldDef {
-    key: string;
+    key: EditableKey;
     label: string;
     format?: "title";                                  // yazarken Türkçe başlık formatına çevir
     options?: { value: string; label: string }[];
@@ -424,7 +430,7 @@ const AdminPage = () => {
             type,
             id: identifierOf(type, item),
             title: item.name || item.email || "",
-            values: Object.fromEntries(fields.map(f => [f.key, (item as Record<string, unknown>)[f.key] as string ?? ""])),
+            values: Object.fromEntries(fields.map(f => [f.key, item[f.key] ?? ""] as const)),
         });
     };
 
