@@ -4,12 +4,15 @@
 kapsar: hazırlanmış aday satırları (`prepare_candidate_rows`) ve route'un
 süreç-içi aday TTL cache'i (`routes/parties.py`) — cache testleri süreç içi
 sqlite üzerinde GERÇEK sorgu koşar (`routes.parties.SessionLocal` yönlendirilir).
+En sondaki G053 bölümü bantlı/erken çıkışlı eşik kapısını (`_levenshtein_within`)
+kısayolsuz tam matris referansına karşı doğrular.
 """
 from types import SimpleNamespace
 
 import pytest
 
 from party_check import (
+    _levenshtein_within,
     check_parties,
     normalize_person_name,
     normalize_tc,
@@ -458,3 +461,125 @@ def test_candidate_cache_expires_and_refetches(parties_db):
 
     _seed_client(parties_db, "ZEYNEP DEMİR", T1)
     assert len(parties_db.route._candidate_rows(T1)[0]) == 2
+
+
+# ── G053: bantlı / erken çıkışlı eşik kapısı ────────────────────────────────
+
+# `_levenshtein_within` tam mesafe DÖNDÜRMEZ; "mesafe ≤ eşik mi" sorusunu
+# yanıtlar. Doğruluğu, tam matris referansına karşı kanıtlanır — kısayolların
+# (bant, erken çıkış, eşit-uzunluk hızlı yolu) hiçbiri sonucu değiştirmemeli.
+
+
+def _reference_levenshtein(a: str, b: str) -> int:
+    """Kısayolsuz tam matris Levenshtein — yalnız test referansı."""
+    m, n = len(a), len(b)
+    if m == 0:
+        return n
+    if n == 0:
+        return m
+    prev = list(range(n + 1))
+    for i in range(1, m + 1):
+        curr = [i]
+        for j in range(1, n + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr.append(min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost))
+        prev = curr
+    return prev[n]
+
+
+def _all_strings(alphabet, max_len):
+    out = [""]
+    frontier = [""]
+    for _ in range(max_len):
+        frontier = [s + ch for s in frontier for ch in alphabet]
+        out.extend(frontier)
+    return out
+
+
+def test_within_matches_reference_exhaustively_on_short_strings():
+    # 3 harflik alfabede 0-4 uzunluktaki TÜM dizeler (121) × TÜM dizeler ×
+    # kullanılan iki eşik = 29.282 karşılaştırma; tek fark bile kabul edilmez.
+    strings = _all_strings("ABC", 4)
+    assert len(strings) == 121
+    checked = 0
+    for a in strings:
+        for b in strings:
+            distance = _reference_levenshtein(a, b)
+            for threshold in (1, 2):
+                assert _levenshtein_within(a, b, threshold) is (distance <= threshold), (
+                    a, b, threshold, distance
+                )
+                checked += 1
+    assert checked == 121 * 121 * 2
+
+
+def test_within_matches_reference_on_longer_perturbed_words():
+    # Uzun kelimeler (eşik 2 yolu) — tohumlu üretim, deterministik.
+    import random
+
+    rnd = random.Random(53)
+    alphabet = "AEIKLMNRSTUYZ"
+    for _ in range(2000):
+        base = "".join(rnd.choice(alphabet) for _ in range(rnd.randint(5, 12)))
+        variant = list(base)
+        for _ in range(rnd.randint(0, 4)):
+            pos = rnd.randrange(len(variant)) if variant else 0
+            op = rnd.choice(("sub", "del", "ins"))
+            if op == "sub" and variant:
+                variant[pos] = rnd.choice(alphabet)
+            elif op == "del" and variant:
+                del variant[pos]
+            else:
+                variant.insert(pos, rnd.choice(alphabet))
+        other = "".join(variant)
+        distance = _reference_levenshtein(base, other)
+        for threshold in (1, 2):
+            assert _levenshtein_within(base, other, threshold) is (distance <= threshold), (
+                base, other, threshold, distance
+            )
+
+
+@pytest.mark.parametrize("a,b,threshold,expected", [
+    ("", "", 1, True),                    # iki boş dize
+    ("", "A", 1, True),                   # boş ↔ tek harf: mesafe 1
+    ("", "AB", 1, False),                 # boş ↔ iki harf: eşik aşıldı
+    ("", "AB", 2, True),
+    ("A", "A", 1, True),                  # tek karakter, birebir aynı
+    ("A", "B", 1, True),
+    ("A", "B", 2, True),
+    ("AHMET", "AHMET", 1, True),          # birebir aynı dize (matris kurulmaz)
+    ("AHMET", "AHMETLER", 1, False),      # uzunluk farkı eşikten büyük → bant yok
+    ("AHMET", "AHMETLER", 2, False),
+    ("YILMAZ", "YILMAS", 1, True),        # eşiğe eşit mesafe → eşik AŞILMADI
+    ("YILMAZ", "YALMAS", 1, False),       # mesafe 2 > eşik 1
+    ("YILMAZ", "YALMAS", 2, True),
+])
+def test_within_edge_cases(a, b, threshold, expected):
+    assert _levenshtein_within(a, b, threshold) is expected
+    assert (_reference_levenshtein(a, b) <= threshold) is expected
+
+
+def test_within_equal_length_shortcut_does_not_leak_to_threshold_two():
+    # Eşit uzunlukta eşik 1 için "en fazla bir harf farkı" kısayolu geçerlidir,
+    # eşik 2 için DEĞİL: baştan silme + sona ekleme mesafeyi 2'de tutar ama
+    # dizeler her konumda farklıdır. Kısayol eşik 2'ye sızarsa bu test kırılır.
+    a, b = "ABCDEFGHIJ", "BCDEFGHIJA"
+    assert _reference_levenshtein(a, b) == 2
+    assert sum(x != y for x, y in zip(a, b, strict=True)) == 10
+    assert _levenshtein_within(a, b, 2) is True
+    assert _levenshtein_within(a, b, 1) is False
+
+
+def test_turkish_dotted_i_pairs_still_match_after_banding():
+    # Türkçe yolu (turkish_upper + NFD combining-strip + diakritik katlama)
+    # değişmedi: İ/I ve ı/i çiftleri aynı kademeye düşmeye devam ediyor.
+    clients = [_client(name="İlker Işık")]
+    exact = check_parties([_q("ilker ışık")], clients, [])
+    assert exact[0]["matches"][0]["matched_on"] == "name_exact"
+
+    fuzzy = check_parties([_q("İlker Işıl")], clients, [])   # soyadında 1 harf
+    assert fuzzy[0]["matches"][0]["matched_on"] == "name_fuzzy"
+
+    assert _levenshtein_within(
+        normalize_person_name("IŞIK"), normalize_person_name("ışık"), 1
+    ) is True

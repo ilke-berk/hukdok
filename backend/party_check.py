@@ -123,20 +123,69 @@ def normalize_tc(tc: str | None) -> str | None:
 
 
 
-def _levenshtein(a: str, b: str) -> int:
+def _levenshtein_within(a: str, b: str, threshold: int) -> bool:
+    """`a` ile `b` arasındaki düzenleme mesafesi `threshold`u AŞMIYORSA True.
+
+    TAM MESAFE DÖNDÜRMEZ (sözleşme bilinçli daraltıldı): tek çağrı yeri
+    `_match_name_keys` zaten yalnız `> threshold` karşılaştırması yapıyordu,
+    mesafenin kendisi hiçbir yerde kullanılmıyor. Eşik-aşımı sorusuna
+    indirgeyince iki kısayol serbest kalır ve İKİSİ DE SONUCU DEĞİŞTİRMEZ:
+
+    * **Bant:** mesafe indis farkının altına inemez → `|i-j| > threshold`
+      hücrelerinin gerçek değeri zaten eşiği aşar; hesaplanmaz, `threshold+1`
+      sayılır. Satır başına en fazla `2*threshold+1` hücre işlenir (eşik 1 ya
+      da 2 olduğu için 3-5 hücre), tüm satır değil.
+    * **Erken çıkış:** DP'de satır minimumu azalamaz (her hücre bir önceki
+      satır/sütun hücrelerinin minimumundan küçük olamaz) → bir satırın
+      tamamı eşiği aşmışsa sonuç da aşar; kalan satırlar hiç kurulmaz.
+
+    Değerler `threshold+1`de doyurulur. Doyurma özyinelemeyle değişmelidir
+    (min/+1 monoton) → eşiğin ALTINDA kalan hücreler birebir doğru hesaplanır,
+    yalnız "zaten elenmiş" hücreler tek bir üst değere toplanır.
+    """
     m, n = len(a), len(b)
-    if m == 0:
-        return n
-    if n == 0:
-        return m
-    prev = list(range(n + 1))
+    if a == b:
+        return True
+    if abs(m - n) > threshold:
+        return False
+    if m == 0 or n == 0:
+        # Diğeri boş: mesafe = dolu dizenin uzunluğu (üstteki fark kapısı geçti)
+        return max(m, n) <= threshold
+
+    if threshold == 1 and m == n:
+        # EŞİT UZUNLUK + EŞİK 1 → matris hiç kurulmaz. Ekleme/silme uzunluğu
+        # değiştirir; eşit uzunlukta 1 düzenleme yalnız DEĞİŞTİRME olabilir →
+        # "mesafe ≤ 1" ile "en fazla bir konumda harf farkı" DENKTİR. Kelime
+        # eşiği ≤7 harfte 1 olduğu için çağrıların çoğu buradan döner.
+        seen_diff = False
+        for x, y in zip(a, b, strict=True):  # m == n (üstteki kapı)
+            if x != y:
+                if seen_diff:
+                    return False
+                seen_diff = True
+        return True
+
+    cap = threshold + 1  # "eşiği aştı" için tek temsilci değer
+    prev = [j if j <= threshold else cap for j in range(n + 1)]
     for i in range(1, m + 1):
-        curr = [i]
-        for j in range(1, n + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
-            curr.append(min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost))
+        lo = max(1, i - threshold)
+        hi = min(n, i + threshold)
+        curr = [cap] * (n + 1)
+        curr[0] = i if i <= threshold else cap
+        row_min = curr[0]
+        ai = a[i - 1]
+        for j in range(lo, hi + 1):
+            cost = 0 if ai == b[j - 1] else 1
+            val = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            if val > threshold:
+                val = cap
+            elif val < row_min:
+                row_min = val
+            curr[j] = val
+        if row_min > threshold:
+            return False
         prev = curr
-    return prev[n]
+    return prev[n] <= threshold
 
 
 def _token_threshold(length: int) -> int:
@@ -192,11 +241,12 @@ def _match_name_keys(q_key: tuple, c_key: tuple) -> str | None:
         threshold = _token_threshold(len(qt))
         # Çok kısa kelimede toleranslı eşleşme güvenilmez. Uzunluk farkı
         # düzenleme mesafesinin ALT sınırıdır → eşiği aşıyorsa Levenshtein'ı
-        # hiç kurmadan eleriz (aynı sonuç, ölçülen maliyetin büyük kısmı gider).
+        # hiç kurmadan eleriz (aynı sonuç, ölçülen maliyetin büyük kısmı gider;
+        # kapı `_levenshtein_within` içinde de var — burada çağrıyı bile kesiyor).
         if (
             len(qt) < 3
             or abs(len(qt) - len(ct)) > threshold
-            or _levenshtein(qt, ct) > threshold
+            or not _levenshtein_within(qt, ct, threshold)
         ):
             return None
         used_fuzzy = True
