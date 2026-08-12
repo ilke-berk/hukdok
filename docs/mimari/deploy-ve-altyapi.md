@@ -1,6 +1,6 @@
 # Deploy ve altyapı — deploy.sh, rollback, systemd birimleri, izleme
 
-> **Son doğrulama: 2026-08-11 · 2eade56**
+> **Son doğrulama: 2026-08-12 · 2de8d20** (§1 test kapısı G038 ile eklendi)
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -9,11 +9,11 @@
 ## 1. `deploy.sh`
 
 Kullanım: sunucuda, mesai dışı — `cd ~/hukdok && ./deploy.sh`. Akış dosyanın başındaki
-yorumda yazılıdır (`deploy.sh:6-9`): önkoşullar → `git pull --ff-only` → pre-deploy
-`pg_dump` → build (eski stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → `up -d` → `/healthz`
-kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
+yorumda yazılıdır (`deploy.sh:7-10`): önkoşullar → `git pull --ff-only` → pre-deploy
+`pg_dump` → build (eski stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → **test kapısı** →
+`up -d` → `/healthz` kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
 
-Dört tasarım tercihi, gerekçeleriyle (`deploy.sh:11-19`):
+Beş tasarım tercihi, gerekçeleriyle (`deploy.sh:12-30`):
 
 | Tercih | Gerekçe (kodda yazılı) |
 | --- | --- |
@@ -21,29 +21,78 @@ Dört tasarım tercihi, gerekçeleriyle (`deploy.sh:11-19`):
 | `git pull --ff-only` başarısızsa **DURUR** | eskiden hata yutulup ESKİ kodla sessizce devam ediliyordu |
 | Sağlık kapısı gerçek | `/healthz` 120 sn poll, başarısızsa `exit 1` + rollback komutu basılır (eskiden `sleep 5` + `docker ps`) |
 | İmajlar SHA ile etiketlenir | `docker image prune -f` artık rollback hedeflerini silemez (etiketli imaj dangling olmaz) |
+| Test kapısı (G038) | build'den SONRA, `up`'tan ÖNCE koşar — testler kalırsa deploy DURUR, çalışan stack'e hiç dokunulmaz (kırık kod prod'a çıkamaz) |
 
 ### Güvenlik kapıları
 
-- **`.env` zorunlu anahtar denetimi** (`deploy.sh:44-50`): `POSTGRES_PASSWORD`,
+- **`.env` zorunlu anahtar denetimi** (`deploy.sh:118-125`): `POSTGRES_PASSWORD`,
   `DATABASE_URL`, `GEMINI_API_KEY`, `AZURE_CLIENT_ID`, `ALLOWED_TENANTS`,
   `SHAREPOINT_TENANT_ID`, `SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET` — biri boşsa
   deploy iptal.
-- **`hukuk_shared` ağı** yoksa oluşturulur (`:52-55`).
-- **Pre-deploy dump** (`:69-83`): `docker exec hukudok-postgres pg_dump -U hukudok_user -Fc
+- **`hukuk_shared` ağı** yoksa oluşturulur (`:128-131`).
+- **Pre-deploy dump** (`:146-157`): `docker exec hukudok-postgres pg_dump -U hukudok_user -Fc
   hukudok > ~/backups/predeploy_<SHA>_<zaman>.dump`. Dump `MIN_DUMP_BYTES` (varsayılan 1 MiB)
   altındaysa **deploy iptal**. Gerekçe: "Migration'lar açılışta otomatik koşar; kötü bir
   migration'ın tek geri yolu bu dump'tır (rollback.sh imaj döndürür, DB'yi DÖNDÜRMEZ)"
-  (`:70-71`). `hukudok-postgres` çalışmıyorsa adım atlanır (ilk kurulum senaryosu).
-- **Rollback hedefini koruma** (`:85-94`): build `:latest`'i yeni imaja taşıyacağı için eski
+  (`:147-148`). `hukudok-postgres` çalışmıyorsa adım atlanır (ilk kurulum senaryosu).
+- **Rollback hedefini koruma** (`:162-171`): build `:latest`'i yeni imaja taşıyacağı için eski
   imaj SHA etiketi taşımıyorsa önce etiketlenir — rollback hedefi dangling'e düşmesin.
-- **Sürüm doğrulaması** (`:125-133`): `/healthz`'in `version` alanı yeni SHA'yı göstermeli.
+- **Test kapısı** (`:67-98` tanım, `:184-185` çağrı) — aşağıda ayrı başlık.
+- **Sürüm doğrulaması** (`:205-213`): `/healthz`'in `version` alanı yeni SHA'yı göstermeli.
   Bu bir **uyarıdır, fail değil** — lokal mount/elle build senaryolarında meşru sapma
   olabilir; prod'da bayat imaj işaretidir.
-- **Frontend poll'u** (`:134-140`): konteyner "Started" ile nginx'in porta geçmesi arasında
+- **Frontend poll'u** (`:214-225`): konteyner "Started" ile nginx'in porta geçmesi arasında
   1-2 sn yarış var; tek atımlık `curl` buna yakalanmıştı → 30 sn poll.
 
-Ortam düğmeleri (`deploy.sh:21-23`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
-prova: 0). Saklanan etiket sayısı `KEEP_TAGS=3` (`:35`).
+Ortam düğmeleri (`deploy.sh:32-35`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
+prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:47`).
+
+### Test kapısı (G038)
+
+`test_gate()` (`deploy.sh:67-98`) build'den **sonra**, `up -d`'den **önce** koşar
+(`:184-185`). Testler kalırsa deploy `exit 1` ile durur ve çalışan stack'e hiç dokunulmaz —
+kırık kod prod'a çıkamaz. Ölçülen süre: **~45-47 sn** (pip install ~9 sn + 1035 test ~37 sn);
+120 sn'lik `/healthz` kapısıyla birlikte deploy'un toplam kapı bütçesi bu iki sayıdır.
+
+Kapı, YENİ imajdan tek seferlik bir konteyner kaldırır (`docker run --rm`), çalışan
+konteynerlere dokunmaz. İki tasarım kısıtı kodda yazılı:
+
+- **`docker compose run` BİLEREK kullanılmaz.** Compose servisi olarak koşmak `.env`'i
+  (gerçek `DATABASE_URL`) beraberinde getirirdi; `tests/conftest.py` `DATABASE_URL`'i
+  `setdefault` ile koyduğu için gerçek URL korunur ve `tests/test_migration_path.py`
+  ulaştığı Postgres'te scratch veritabanı yaratıp düşürür — yani kapı **prod postgres'e
+  DDL koşturabilirdi**. Temiz ortamlı `docker run` bu yüzden şart.
+- **Test kodu imajda YOKTUR** (`backend/.dockerignore:35` `tests/` dışlar), bu yüzden
+  çalışma ağacındaki `backend/` **salt-okunur** mount edilir: kütüphane ortamı yeni imajdan,
+  test kodu `git pull`'un getirdiği ağaçtan gelir — ikisi de aynı commit'tir. Salt-okunur
+  mount yüzünden `-p no:cacheprovider` ve `PYTHONDONTWRITEBYTECODE=1` şarttır.
+
+**Kapının bilinçli sınırı — migration testleri KOŞMAZ.** Kapı temiz ortamda (`.env` yok,
+dolayısıyla `DATABASE_URL` yok) koştuğu için DB gerektiren testler atlanır: kapıda
+**1035 passed / 8 skipped**, çalışan konteynerde (`docker compose exec -T backend python -m
+pytest`) **1041 passed / 2 skipped** — aradaki 6 test `tests/test_migration_path.py`'nin
+`dbtest`'leridir (scratch veritabanı yaratıp düşürürler). Bu, kapının prod postgres'e
+dokunmamasının bedelidir: **bozuk bir migration kapıdan geçer.** Onu yakalayan iki savunma
+başka yerde — CI (`.github/workflows/ci.yml`, postgres servisi + `DATABASE_URL` ile
+`dbtest`'leri koşar) ve pre-deploy `pg_dump`.
+
+Üç çıkış yolu:
+
+| Durum | Davranış |
+| --- | --- |
+| Testler geçti | `✅ Test kapısı GEÇTİ (N sn)`, deploy devam eder |
+| Testler kaldı | `❌ Test kapısı KALDI` + `exit 1` — `up -d` hiç çalışmaz |
+| Dev bağımlılıkları kurulamadı (pip ağ erişimi yok) | Konteyner **91** döner → **gürültülü uyarı** basılır ama deploy **DURMAZ** (sessiz atlama yasak) |
+
+`SKIP_TESTS=1 ./deploy.sh` kaçış kapısıdır: kapıyı atlar ve çerçeveli bir uyarı basar
+("Prod'a TEST EDİLMEMİŞ kod çıkıyor").
+
+**`./deploy.sh --gate-only`** (`:103-111`): yalnız test kapısını koşar ve çıkar. Dal
+`git pull`'dan **önce** döndüğü için pull / dump / build / `up -d` hiç çalışmaz; henüz build
+olmadığından mevcut `:latest` imajı üzerinden koşar. Kapının davranışını prod'a dokunmadan
+kanıtlamanın yoludur. `MSYS_NO_PATHCONV=1` (`:50-54`) yalnız Git Bash içindir — Linux'ta
+hiçbir şey yapmaz; onsuz lokal prova docker'ın `-w /app` argümanı bozulduğu için çıkış 125
+verir.
 
 ## 2. `rollback.sh`
 
@@ -78,7 +127,7 @@ yoktur (`docker-compose.yml:87-88`).
 ## 4. Sürüm izi
 
 ```
-deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:98)
+deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:175)
   → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:40-42, :109-111)
     → backend Dockerfile ARG/ENV  → /healthz "version"
     → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti

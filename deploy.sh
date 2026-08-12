@@ -2,11 +2,12 @@
 # HukuDok prod deploy (Faz 1-C).
 #
 # Kullanım (sunucuda, mesai dışı):   cd ~/hukdok && ./deploy.sh
+#   Yalnız test kapısını koş (pull/dump/build/up YOK):  ./deploy.sh --gate-only
 #
 # Akış: önkoşullar → git pull --ff-only → pre-deploy pg_dump → build (eski
-# stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → up -d (frontend, backend
-# healthy olana dek bekler) → /healthz kapısı (120 sn) → etiket bakımı (son 3)
-# + dangling temizliği.
+# stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → TEST KAPISI (yeni imajdan
+# tek seferlik konteyner) → up -d (frontend, backend healthy olana dek bekler)
+# → /healthz kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
 #
 # Eski deploy.sh'tan bilinçli farklar (guvenilirlik-sertlestirme-plani Faz 1.4):
 #  - 'down' YOK: build çalışan stack'i etkilemez, kesinti yalnız up'taki
@@ -17,10 +18,21 @@
 #    rollback komutu basılır (eskiden sleep 5 + docker ps)
 #  - imajlar SHA ile etiketlenir; 'docker image prune -f' artık rollback
 #    hedeflerini silemez (etiketli imaj dangling olmaz)
+#  - TEST KAPISI (G038): build'den SONRA, up'tan ÖNCE koşar. Testler kalırsa
+#    deploy DURUR ve çalışan stack'e hiç dokunulmaz (kırık kod prod'a çıkamaz).
+#    Kapı, YENİ imajdan tek seferlik bir konteyner kaldırır; çalışan stack'e
+#    ve prod DB'ye dokunmaz. 'docker compose run' BİLEREK kullanılmaz: compose
+#    servisi .env'i (gerçek DATABASE_URL) beraberinde getirir ve
+#    tests/test_migration_path.py ulaştığı Postgres'te scratch DB yaratıp
+#    düşürür — yani kapı prod postgres'e DDL koşturabilirdi.
+#    Test kodu imajda YOKTUR (backend/.dockerignore:35 tests/ dışlar), bu yüzden
+#    çalışma ağacındaki backend/ salt-okunur mount edilir: kütüphane ortamı yeni
+#    imajdan, test kodu git pull'un getirdiği ağaçtan — ikisi de AYNI commit.
 #
 # Ortam düğmeleri (varsayılanlar prod içindir):
 #   MIN_DUMP_BYTES=1048576   pre-deploy dump alt sınırı (lokal prova: 1)
 #   PRUNE=1                  dangling imaj temizliği (lokal prova: 0)
+#   SKIP_TESTS=0             1 → test kapısı atlanır (gürültülü uyarı basar)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -35,6 +47,68 @@ BACKUP_DIR="${HOME}/backups"
 KEEP_TAGS=3
 MIN_DUMP_BYTES="${MIN_DUMP_BYTES:-1048576}"
 PRUNE="${PRUNE:-1}"
+# Git Bash (Windows) MSYS yol dönüşümü docker'ın '-w /app' argümanını
+# 'C:/Program Files/Git/app' yapar → kapı imaj bile çalıştıramaz (çıkış 125).
+# Lokal kuru koşu (./deploy.sh --gate-only) bu yüzden dönüşümü kapatır;
+# Linux'ta (prod) bu değişken hiçbir şey yapmaz — davranış değişmez.
+export MSYS_NO_PATHCONV=1
+# Konteyner İÇİ özel çıkış kodu: dev bağımlılıkları KURULAMADI (pip ağ erişimi
+# yok). Test başarısızlığından ayırt edilmeli — pytest 0..5 döner, 91 çakışmaz.
+GATE_SKIP_EXIT=91
+
+GATE_ONLY=0
+for arg in "$@"; do
+    case "$arg" in
+        --gate-only) GATE_ONLY=1 ;;
+        *) fail "bilinmeyen argüman: ${arg} (kullanım: ./deploy.sh [--gate-only])" ;;
+    esac
+done
+
+# ── 0. Test kapısı ───────────────────────────────────────────────────────────
+# Verilen imajdan tek seferlik bir konteyner kaldırıp testleri koşar. Çalışan
+# stack'e DOKUNMAZ. Dönüş 0 = deploy devam edebilir; başarısızlıkta fail ile
+# script'i durdurur (up -d hiç çalışmaz). Gerekçeler dosya başındaki yorumda.
+test_gate() {
+    local img="$1" t0=$SECONDS rc=0 dt
+    if [ "${SKIP_TESTS:-0}" = "1" ]; then
+        say "════════════════════════════════════════════════════════════"
+        say "  ⚠️  SKIP_TESTS=1 — TEST KAPISI ATLANDI (bilinçli tercih)"
+        say "  Prod'a TEST EDİLMEMİŞ kod çıkıyor."
+        say "════════════════════════════════════════════════════════════"
+        return 0
+    fi
+    say "🧪 Test kapısı: ${img} (tek seferlik konteyner; çalışan stack'e dokunulmaz)..."
+    docker run --rm --entrypoint bash --user root \
+        -v "${PWD}/backend:/app:ro" -w /app \
+        -e PYTHONDONTWRITEBYTECODE=1 -e HOME=/tmp \
+        "$img" -c "pip install --no-cache-dir -q -r requirements-dev.txt || exit ${GATE_SKIP_EXIT}
+                   python -m pytest -p no:cacheprovider" || rc=$?
+    dt=$((SECONDS - t0))
+    if [ "$rc" -eq 0 ]; then
+        ok "✅ Test kapısı GEÇTİ (${dt} sn)"
+        return 0
+    fi
+    if [ "$rc" -eq "$GATE_SKIP_EXIT" ]; then
+        # Sessiz atlama YASAK: erişim yoksa uyar ama deploy'u bloke etme.
+        say "⚠️  Test kapısı ATLANDI: dev bağımlılıkları kurulamadı (pip ağ erişimi yok?)."
+        say "    Kod TEST EDİLMEDEN deploy ediliyor — kapı bunu bilerek durdurmuyor (${dt} sn)."
+        return 0
+    fi
+    fail "❌ Test kapısı KALDI (çıkış ${rc}, ${dt} sn) — deploy DURDU, çalışan stack'e dokunulmadı. Bilinçli atlamak için: SKIP_TESTS=1 ./deploy.sh"
+}
+
+# --gate-only: kapıyı deploy akışından bağımsız koş. git pull'dan ÖNCE döner —
+# pull / dump / build / up -d hiç çalışmaz. Henüz build yok, o yüzden mevcut
+# :latest imajı üzerinden koşar. Çıkış kodu doğrudan kapının kararıdır.
+if [ "$GATE_ONLY" = "1" ]; then
+    say "🚪 --gate-only: YALNIZ test kapısı koşulacak (pull/dump/build/up YOK)"
+    # `|| true`: eşleşme yoksa grep 1 döner; boşluğu aşağıdaki fail bildirsin.
+    GATE_IMG=$(docker compose config --images | grep -- '-backend$' | head -1) || true
+    [ -n "$GATE_IMG" ] || fail "backend imaj adı compose config'ten çözülemedi"
+    test_gate "${GATE_IMG}:latest"
+    ok "🚪 --gate-only bitti"
+    exit 0
+fi
 
 # ── 1. Önkoşullar ────────────────────────────────────────────────────────────
 say "🔎 Önkoşullar denetleniyor..."
@@ -106,6 +180,9 @@ docker compose build
 docker tag "${BACKEND_IMG}:latest"  "${BACKEND_IMG}:${NEW_SHA}"
 docker tag "${FRONTEND_IMG}:latest" "${FRONTEND_IMG}:${NEW_SHA}"
 ok "İmajlar etiketlendi: ${NEW_SHA}"
+
+# ── 4b. Test kapısı (up'tan ÖNCE — kırık kod çalışan stack'i devralmasın) ────
+test_gate "${BACKEND_IMG}:${NEW_SHA}"
 
 # ── 5. Up (yalnız değişen konteynerler yeniden yaratılır) ────────────────────
 say "🚀 docker compose up -d..."
