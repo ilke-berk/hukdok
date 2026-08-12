@@ -87,6 +87,33 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G028 | bant:backend | bagimli:- | Backend ölü katmanlar: LogManager sınıfı, DatabaseManager, SyncLog, AnalysisCache, ölü route alias'ları
 - [x] G029 | bant:docs | bagimli:- | Kapanmış görev dosyalarını arşivle (G001-G025 → docs/arsiv/gorevler/)
 
+## Aktif plan: FAZ B — emniyet ağı (2026-08-12; deploy GEREKTİRMEZ)
+
+<!-- Kaynak: docs/plan/temizlik-ve-yapisal-saglik-plani-2026-08-11.md §4 (B.1-B.6).
+     Bu faz kullanıcıya doğrudan bir şey vermez; D/E/F'nin ön koşuludur.
+     G031 (B.4) fazın çıpası: FAZ D 6.1'in kapısı. G032 (B.5) FAZ E'nin kapısı.
+     KUYRUĞA GİRMEYEN: main'e branch protection (GitHub ayarı — kullanıcı işi,
+     ci.yml:4-5 zaten manuel adım olduğunu yazıyor); frontend sayfa karakterizasyon
+     testleri (plan §9 — tek müşterisi kapsam dışı bırakılan dosya bölme).
+     PLANDA OLMAYAN İKİ EK (G036+G037): sahte tsc kapısı FAZ C'de keşfedildi, plan
+     yazıldığında bilinmiyordu; "CI 5/5 yeşil" iddiasının beşte biri boş bir kapı —
+     emniyet ağı faziyle aynı sınıf, bu yüzden buraya alındı.
+     Bant: G036 frontend (tek gerçek paralel dilim), kalanı backend = seri.
+     Zincir yalnız GERÇEK dosya çakışmasında kuruldu (pyproject.toml, ci.yml) —
+     tek uzun zincir bir BLOKE'de tüm geceyi yakardı. -->
+
+- [ ] G030 | bant:backend | bagimli:- | B.1: pytest-cov + CI kapsam kapısı
+- [ ] G031 | bant:backend | bagimli:G030 | B.4: migrasyon yolu testi (gerçek Postgres) — FAZ D'nin kapısı
+- [ ] G032 | bant:backend | bagimli:- | B.5: X-Total-Count / sayfalama karakterizasyonu — FAZ E'nin kapısı
+- [ ] G033 | bant:backend | bagimli:- | B.3-1: "DB hatası → kapı KAPALI" karakterizasyonu (FAZ 0.2/0.3/0.4 kilidi)
+- [ ] G034 | bant:backend | bagimli:G033 | B.3-2: tenant + soft-delete ORM semantiği karakterizasyonu
+- [ ] G035 | bant:backend | bagimli:G031 | B.6: mypy kapsamı services/ (ölçüldü: 25 hata / 6 dosya)
+- [ ] G036 | bant:frontend | bagimli:- | Main'de canlı 4 tip hatası (sahte tsc kapısının borcu)
+- [ ] G037 | bant:backend | bagimli:G030,G036 | CI'daki sahte tsc kapısını gerçeğe çevir
+- [ ] G038 | bant:backend | bagimli:G030 | B.2: deploy.sh test kapısı (RİSKLİ — görev dosyasında şerh)
+- [ ] G039 | bant:docs | bagimli:- | 12.08 kararlarını ADR'ye yaz (UYAP · kanonik yazım · K1 kodu · ES/Redis reddi)
+- [ ] G040 | bant:docs | bagimli:G039 | FAZ C görev dosyalarını arşivle (G026-G029)
+
 ## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
 
 <!-- FAZ C işçilerinin bulduğu, kapsam dışı bırakılan kalemler. -->
@@ -112,6 +139,9 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - A.2 gerçek müvekkil verisinin OneDrive senkronundan çıkarılması (140 MB SQLite + 139 MB PDF)
 - service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
 - pip/npm yükseltmeleri (G022 ADR'si hazır; uygulama onayı kullanıcıda)
+- **B.2'nin ikinci yarısı: main dalına branch protection** (GitHub Settings → Branches →
+  Require status checks: backend, frontend). `ci.yml:4-5` bunun manuel adım olduğunu
+  zaten yazıyor; otomasyon GitHub ayarı değiştiremez
 - Çıkış ağı denetimi: G024'ten sonra **zorunlu değil** (SSRF ağ katmanında kapandı);
   yalnız derinlik savunması olarak değerlendirilebilir
 

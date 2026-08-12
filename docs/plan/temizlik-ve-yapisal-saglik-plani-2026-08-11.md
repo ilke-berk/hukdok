@@ -320,6 +320,27 @@ kriteridir. *(S)*
 
 ## 7. FAZ E — Sorgu algoritmaları
 
+> **✅ FAZ E TAMAMEN KOŞACAK — KULLANICI KARARI (2026-08-12).** Madde atlanmayacak,
+> süre kısıt değil.
+>
+> **Karar geçmişi (dürüstlük kaydı).** Bu fazın ertelenmesi 2026-08-12'de *ajan tarafından*
+> önerildi ve bir ara sürümde yanlışlıkla "kullanıcı kararı" olarak kaydedildi. Kullanıcı
+> böyle bir karar vermemişti; sorunca düzeltildi ve **tam koşum** yönünde karar verdi.
+> Erteleme gerekçem "kazanç bu ölçekte küçük, 2–3 gece eder" idi — **yanlış para birimi**:
+> planın kendi §11'i sınırın *insan onay noktası* olduğunu, gece maliyetinin değil,
+> söylüyor. D+E zaten tek deploy'a paketliydi; ayırmak deploy sayısını artırıp
+> 156 satır-numaralı doküman çıpasının bedelini iki kez ödetecekti.
+>
+> **Risk sırası (madde atlamak değil, sıralamak).** Yedi maddenin altısı ucuz ve düşük
+> riskli; riski taşıyan tek madde **UNION yeniden yazımı** (sonuç kümesini sessizce
+> değiştirebilir, çok terimli hâl INTERSECT-of-UNION → L). Kuyruk bu sıraya göre kurulur:
+> ucuz maddeler önce, UNION en sonda ve kendi doğrulama kapısıyla.
+>
+> **Ayrıca (§12'den taşındı):** iki madde yapısal olarak FAZ D'ye ait —
+> `missing_required` denormalizasyonu bir **şema değişikliğidir** (kolon + backfill),
+> avukat filtresi ise D'nin index'i olmadan zaten yapılamaz. Kuyrukta D'nin şema
+> gecesine bağlanırlar.
+
 Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal ölçüm):
 
 | Sıcak yol | Sorgu türü | Bugünkü erişim | Ölçüm | Doğru yol |
@@ -346,6 +367,13 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 > `CaseList.tsx:270` sayfalamayı ondan hesaplıyor. `with_total=False` genel uygulanırsa
 > **sayfalama sessizce bozulur.** Yalnız `search_cases:816` yolunda uygulanır.
 
+> **KALAN MADDE (2026-08-12 kararıyla kuyruğa giriyor).** Aşağıdaki durma kriteri notu
+> party_check'in **SQL göçünü** düşürdü — o iş gereksiz hâle geldi, atlanmadı. Ama notun
+> son satırındaki kalan iş duruyor ve "madde atlama" kararı gereği kuyruğa alınır:
+> **bantlı/erken çıkışlı Levenshtein.** 20 isimlik istek hâlâ ~1,6 sn CPU ve maliyetin
+> **%69'u `_levenshtein`**. Kabul kriteri A.4'ünkiyle aynı olmalı: davranış eşdeğerliği
+> üretim verisinden üretilmiş isim çiftleri üzerinde **0 fark** ile kanıtlanır.
+
 > **DURMA KRİTERİ İŞLEDİ (2026-08-11, G017).** A.4 uygulandı ve ölçüldü: 1 isim sıcak yolda
 > **1.139 ms → 166 ms** (< 200 ms eşiği), 20 isim **10.093 ms → 1.575 ms**. Aday yükleme
 > 549 ms → 0,01 ms. Davranış eşdeğerliği 1.324.050 isim çifti üzerinde **0 fark** ile kanıtlandı.
@@ -370,7 +398,22 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 
 ## 8. FAZ F — HUKDOK aktarımı (8.409 föy)
 
-Taslakta 10 satırlık bir başlıktı; denetim haklı olarak "plan değil" dedi.
+> **📄 ŞARTNAME GELDİ (2026-08-12).** Karşı taraf ekibi soru raporunu cevapladı
+> (`HUKDOK_SORU_RAPORU_2026-08-11_CEVAPLI.xlsx`). FAZ F artık tahmin değil, satır satır
+> gereksinim: **11 yeni kolon + 1 yeni tablo + 1 rename + 7 davranış kuralı + 4 rapor.**
+> Tam belge: [`faz-f-aktarim-gereksinimleri-2026-08-12.md`](faz-f-aktarim-gereksinimleri-2026-08-12.md).
+>
+> **İki bulgu aşağıdaki metni değiştiriyor:**
+>
+> 1. **Aktarım tek seferlik DEĞİL.** Göz hastalıkları dilimi için tarih taahhüdü yok,
+>    teslim **partiler hâlinde** gelecek; ayrıca beş ayrı düzeltme listesi yolda.
+>    İdempotency artık "gereken" değil **işletim modelinin kendisi**.
+> 2. **`uq_case_relation` yok ve TKU ilişkileri oraya yazılacak.** `database.py`'de
+>    `case_relations`'ın `CREATE TABLE`'ı `CONSTRAINT uq_case_relation UNIQUE
+>    (source_case_id, target_case_id)` içeriyor — ama bu bir `("table", …)` op'u ve
+>    §6.1 gereği **hiç çalışmıyor**; `models.py`'de de karşılığı yok. 510 TKU grubu
+>    tekillik koruması olmayan bir tabloya yazılacak; parti tekrarında ilişkiler
+>    **sessizce ikilenir**. **FAZ D 6.1'in FAZ F'yi neden bloke ettiğinin somut kanıtı budur.**
 
 **Düzeltme:** "cases'i %59 büyütür" iddiası muhtemelen yanlış — bu ağırlıkla bir **UPDATE
 dalgası**, INSERT değil (eşleştirme köprüsü DosyaNo↔klasor_no_2 %97,4).
@@ -404,6 +447,13 @@ Ayrıca `sistem_no` UNIQUE ile 1.211 birleşik kart çatışması (bilinen açı
 | **Frontend sayfa karakterizasyon testleri** | Tek müşterisi yukarıdaki iki kalem | Bölme yeniden açılırsa |
 | **Tip/kısıt hijyeni** (CHECK, enum, TEXT→JSONB) | 14.345 satırlık, ~38 belge/ay kullanılan sistemde canlı veri üzerinde yüksek riskli, kullanıcı değeri ~0 | Veri bütünlüğü arızası görülürse |
 | **Alembic'e geçiş** | §6.1 mevcut `("index", …)` op türünün yettiğini kanıtladı | Şema değişim hızı artarsa |
+| **Elasticsearch** | Prod DB **67 MB**, `cases` 14.395 satır. ES'in gerçekçi asgari JVM heap'i ~1 GB — veritabanının 15 katı bellek. Backend limiti 2 GB, swap yasak, 2026-07-29'da **3,57 GB'da OOM** yendi. Üstelik `cases` üzerindeki **27 MB'lık altı GIN trigram index'i hiç taranmamış** (§6.0): elimizdeki tam metin altyapısı kullanılmıyor bile | Arama belge **içeriğine** girmesi gerekirse; **veya** `cases` ~1M satırı geçerse; **veya** düzgün index'le arama >500 ms olursa |
+| **Redis** | Aday indeksi süreç-içi cache'te (G017): yükleme **549 ms → 0,01 ms**. Redis bir ağ atlaması, bir konteyner ve yeni bir arıza modu ekleyip bunu yavaşlatır. 2 GB'lık kutuda yer de yok | Tek VM'den çıkıp **yatay ölçeklersek** (süreç-içi cache orada çalışmaz); **veya** worker'lar arası cache invalidasyonu iş gereksinimi olursa (bugün 60 sn TTL kabul edilmiş) |
+
+> **B-tree notu:** Postgres'te varsayılan index zaten B-tree ve **FAZ D 6.2 tam olarak
+> bu iştir** — 52 kullanılmayan index'in düşürülmesi, 4 index'siz FK kolonuna index,
+> `cases.status` kısmi index'i, `substr(tracking_no,4,10)` fonksiyonel index'i.
+> Ayrı bir "B-tree çalışması" gerekmiyor; D'nin kendisi o.
 
 **FAZ 6'dan kurtarılan iki madde** (FAZ 0/A'ya taşındı): dava açma mantığının üç kopyasının
 tekilleştirilmesi (0.5'in kök nedeni) ve rota bazlı lazy-loading (A.1'in yanında).
@@ -484,15 +534,32 @@ Görev tavanı 180 dk. Dükkân aynı sürede ~8 commit/gün üretmeye devam edi
 
 | Faz | Kalem | Tahmini gece | Deploy | İnsan onay noktası |
 | --- | --- | --- | --- | --- |
-| 0 | 6 arıza + service_type yazma | 2 | **Evet (öncelikli)** | 0.5 kategori kararı (ADR) |
-| A | 6 hızlı kazanım | 1–2 | Evet *(0 ile aynı deploy)* | A.2 veri taşıma, A.6 sürüm kararı |
-| B | Kapılar + karakterizasyon | 3–4 | Hayır (CI hariç) | — |
-| C | ~3.600 satır ölü kod | 1–2 | Evet | — |
-| D | Migrasyon + index | 2 | **Evet (dikkatli)** | Prod ölçümü (6.0) + UNIQUE mükerrer kontrolü |
-| E | Sorgu algoritmaları | 2–3 | Evet *(D ile aynı deploy)* | party_check altın küme onayı |
-| F | Aktarım yazma yolu | 3+ | Evet | Aktarım kararı |
+| 0 | 6 arıza + service_type yazma | 2 | **Evet (öncelikli)** | ✅ Bitti — Deploy #9 |
+| A | 6 hızlı kazanım | 1–2 | Evet *(0 ile aynı deploy)* | ✅ Bitti — Deploy #9 |
+| C | ~3.600 satır ölü kod | 1–2 | Evet | ✅ Bitti — Deploy #9 (net −3.461 satır) |
+| B | Kapılar + karakterizasyon | 2 | Hayır (CI hariç) | — *(kuyrukta: G030–G038)* |
+| D | Migrasyon + index + **şema** | 3 | **Evet (dikkatli)** | ✅ Prod ölçümü koştu (6.0) · UNIQUE mükerrer kontrolü açık |
+| E | Sorgu algoritmaları — **8 madde, tamamı** | 3 | Evet *(D ile aynı deploy)* | ✅ Karar verildi (2026-08-12): madde atlanmıyor |
+| F | Aktarım yazma yolu + 8 kural + 4 rapor | 3+ | Evet | ✅ Şartname geldi · K1/K2/K3 kararları verildi |
 
-**Toplam ≈ 14–18 gece, 4 prod deploy'u** (7 değil — 0+A ve D+E paketlendi).
+**Kalan ≈ 11 gece, 2 prod deploy'u.** D'nin gecesi 2'den 3'e çıktı: 11 yeni kolon +
+`case_esas_numbers` tablosu + `Uzmanlık Alanı` rename'i aktarımdan **önce** oturmalı,
+yoksa aktarım scripti olmayan kolona yazar. D+E tek deploy'da paketli kalıyor (§7 kararı).
+
+### FAZ E madde envanteri (kuyruk bunun üstüne kurulacak)
+
+Risk sırasına göre — ucuzdan pahalıya, UNION en sonda:
+
+| # | Madde | Bağımlılık | Boy |
+| --- | --- | --- | --- |
+| E1 | Dava kartı `selectinload` (`case_manager.py:93` `get_case`) | — | S |
+| E2 | Intake mahkeme sözlüğü TTL cache (`managers/ttl_cache.py` hazır) | — | S |
+| E3 | Arama `count()` — `with_total=False` **yalnız** `case_manager.py:819` | B.5 (G032) | S |
+| E4 | Bantlı/erken çıkışlı Levenshtein (maliyetin %69'u) | — | M |
+| E5 | `find_matching_case` SQL daraltma (tepe bellek 244 MB, `/process` sıcak yolu) | — | M |
+| E6 | `missing_required` denormalize bayrak — **şema işi** | D (şema) | M |
+| E7 | Avukat filtresi index + SQL | D (index) | S |
+| E8 | **Dava araması UNION** + çok terimli INTERSECT-of-UNION | B.5, D | **L** |
 
 **Durma kriteri.** Her fazın sonunda: *hedeflenen ölçüm sağlandıysa kalan maddeler düşer.*
 Örnek: FAZ A sonrası party_check 1 isim < 200 ms ise, FAZ E'nin party_check maddesi **silinir**.
