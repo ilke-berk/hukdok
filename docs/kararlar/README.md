@@ -24,6 +24,7 @@ tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 | [015](015-kanonik-dava-konusu-yazimi.md) | Kanonik dava konusu yazımı; asıl düzeltme veri değil kural |
 | [016](016-ofis-no-kategori-rejimi.md) | Ofis no kategori rejimi: `K1` ileriye dönük, geçmiş dokunulmaz |
 | [017](017-elasticsearch-ve-redis-kapsam-disi.md) | Elasticsearch ve Redis kapsam dışı: bellek bütçesi + kullanılmayan index'ler |
+| [018](018-index-temizligi-37-kalem.md) | 37 index düşürülüyor: 31 yapısal ikiz koşulsuz, 6 trigram bilinçli bahisle (E8 bağı) |
 
 ## Dosya biçimi
 
