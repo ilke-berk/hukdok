@@ -88,8 +88,14 @@ jobs:
       - name: ESLint (Faz 3.2'den beri zorunlu)
         run: npm run lint
 
+      # ÇIPLAK `npx tsc --noEmit` BU REPODA SAHTE BİR KAPIDIR (G026 bulgusu, G037'de
+      # kanıtlandı): kök tsconfig.json solution-style'dır (`"files": []` + references),
+      # dolayısıyla tsc hiçbir dosya bulamaz ve tip hatası dururken bile exit 0 döner.
+      # `-b` referansları GERÇEKTEN izler → hem tsconfig.app.json (src/) hem
+      # tsconfig.node.json (vite.config.ts) denetlenir. `--force` inkremental
+      # "up to date" atlamasını kapatır (CI temiz checkout'ta da niyeti açık tutar).
       - name: TypeScript kontrolü
-        run: npx tsc --noEmit
+        run: npx tsc -b --force
 
       - name: vitest
         run: npm test
