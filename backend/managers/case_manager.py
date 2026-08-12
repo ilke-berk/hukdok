@@ -4,6 +4,7 @@ Avukat adı çözümleme mantığı managers/lawyer_resolver.py'de,
 referans listeleri managers/reference_lists.py'dedir.
 """
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -39,6 +40,131 @@ def _parse_date_field(value, field_name: str):
     except ValueError:
         logger.warning(f"Geçersiz tarih değeri atlandı: {field_name}={value!r}")
         return None
+
+
+# ─── ESAS NUMARASI TARİHÇESİ (FAZ F şartnamesi §1.3, G045) ───────────────────
+#
+# `cases.esas_no` TÜRETİLMİŞ bir değerdir: `case_esas_numbers` tablosundaki
+# `is_current = True` satırının kopyası. Kolona DOĞRUDAN atama yapılmaz — tek
+# yazma yolu `sync_current_esas`'tır; ikinci bir yazıcı ikinci bir doğruluk
+# kaynağı demektir. Şema tarafındaki karşılığı `uq_case_esas_current` kısmi
+# unique index'idir (database.py madde 32): kural yorumla değil kısıtla tutulur.
+ESAS_STAGE_YEREL = "YEREL"
+ESAS_STAGE_ONCEKI = "ONCEKI"
+ESAS_STAGES = (ESAS_STAGE_YEREL, "ISTINAF", "TEMYIZ", "KARAR_DUZELTME", ESAS_STAGE_ONCEKI)
+
+# Serbest metinden esas numarası: yıl 19xx/20xx, ardından sıra numarası.
+# `(?<!\d)` / `(?!\d)` sınırları uzun rakam dizilerinin ortasından eşleşmeyi
+# engeller. Ayırıcı SERBEST bırakıldı (" - ", ",", ";", "/" hepsi geçer):
+# teslim paketinde tek ayırıcı gözlendi ("2017/325 - 2024/145") ama karşı taraf
+# dört düzeltme listesi daha gönderecek — ayırıcıyı sabitlemek, biçim
+# değişince satırı sessizce yutardı.
+_ESAS_NO_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})\s*/\s*(\d{1,6})(?!\d)")
+
+# Kolon sınırları modelden okunur, elle tekrarlanmaz: şema büyürse kod
+# kendiliğinden uyar (aksi hâlde sessizce yanlış yerde kırpar).
+_ESAS_NO_MAX = models.CaseEsasNumber.esas_no.property.columns[0].type.length
+_ESAS_COURT_MAX = models.CaseEsasNumber.court.property.columns[0].type.length
+_ESAS_SOURCE_MAX = models.CaseEsasNumber.source.property.columns[0].type.length
+
+
+def parse_esas_history(raw) -> list:
+    """Serbest metinden esas numarası listesi (saf; sıra korunur, tekilleşir).
+
+    Şartname §1.3'ün "çok değerli girdi" örneği: `"2017/325 - 2024/145"` iki
+    ayrı ÖNCEKİ esas numarasıdır, tek bir metin değeri değil.
+
+    Bilinçli sınır: numaranın kendisi normalize edilir (iç boşluk atılır) ama
+    rakamlar OLDUĞU GİBİ korunur — sıfır dolgusu ("2024/0123") anlamlı bir
+    fark olabilir; toleranslı karşılaştırmayı `case_matcher._esas_no_similarity`
+    yapar, saklama biçimini bozmak veriyi kaybetmektir.
+
+    VERİ DOLUMU BU GÖREVDE YOK — kural burada, uygulaması FAZ F'nin aktarım
+    scriptinin işi (görev dosyası kabul kriteri).
+    """
+    seen: list = []
+    for year, seq in _ESAS_NO_RE.findall(str(raw or "")):
+        value = f"{year}/{seq}"
+        if value not in seen:
+            seen.append(value)
+    return seen
+
+
+def sync_current_esas(db, case, esas_no, court=None, source=None,
+                      stage: str = ESAS_STAGE_YEREL):
+    """`cases.esas_no`ya yazan TEK yol; tarihçeyi `is_current` ile senkron tutar.
+
+    Davranış:
+      * Değer boşsa kolon temizlenir ve güncel işaret kalkar — tarihçe satırları
+        SİLİNMEZ: geçmiş numaralar kayıt değeridir, eski esasla arama yapılıyor.
+      * Değer varsa (esas_no, stage) satırı yoksa açılır, varsa yeniden güncel
+        işaretlenir; diğer satırların `is_current`'ı düşer. Böylece dava başına
+        en fazla bir güncel satır kalır (`uq_case_esas_current`).
+      * Aynı numara ikinci kez yazılırsa yeni satır AÇILMAZ (`uq_case_esas`) —
+        aktarım tekrar tekrar koşacağı için idempotency pazarlıksız (§0).
+
+    `court`/`source` yalnız satır ilk doğduğunda yazılır; sonradan gelen bir
+    mahkeme değeri yalnız boş alanı doldurur — provenance üzerine yazmak
+    "bu numara hangi mahkemedeydi" bilgisini kaybettirirdi.
+    """
+    if stage not in ESAS_STAGES:
+        raise ValueError(f"Bilinmeyen esas aşaması: {stage!r}")
+
+    value = " ".join(str(esas_no or "").split()) or None
+    case.esas_no = value
+
+    # `cases.esas_no` sınırsız TEXT, tarihçe kolonu VARCHAR(50) (şartname §1.3).
+    # Sığmayan bir değer (elle girilmiş çöp) bugüne kadar SORUNSUZ kaydediliyordu;
+    # tarihçe uğruna kaydı 500'e çevirmek kabul edilemez. Satır atlanır ama eski
+    # `is_current` işareti YİNE DE düşer — yoksa kolon yeni değeri, tarihçe eski
+    # değeri "güncel" gösterir ve tam da kaçınılan ikinci kaynak doğardı.
+    # Log sözleşmesi: deneme-düzeyi durum WARNING, ERROR değil.
+    row_value = value
+    if value is not None and len(value) > _ESAS_NO_MAX:
+        logger.warning(
+            f"Esas no tarihçeye yazılamadı (>{_ESAS_NO_MAX} karakter): {value[:60]!r}"
+        )
+        row_value = None
+
+    if case.id is None:
+        db.flush()          # FK için dava id'si şart
+
+    target = None
+    rows = db.query(models.CaseEsasNumber).filter(
+        models.CaseEsasNumber.case_id == case.id
+    ).all()
+    for row in rows:
+        if row_value and row.esas_no == row_value and row.stage == stage:
+            target = row
+        elif row.is_current:
+            row.is_current = False
+
+    if row_value is None:
+        return None
+    if target is None:
+        target = models.CaseEsasNumber(
+            case_id=case.id, esas_no=row_value, stage=stage,
+            # Denormalize kopyalar kolon sınırlarına kırpılır: taşan bir mahkeme
+            # adı yüzünden kaydın tamamını kaybetmek orantısız olurdu.
+            court=(str(court)[:_ESAS_COURT_MAX] if court else None),
+            source=(str(source)[:_ESAS_SOURCE_MAX] if source else None),
+        )
+        db.add(target)
+    elif court and not target.court:
+        target.court = str(court)[:_ESAS_COURT_MAX]
+    target.is_current = True
+    return target
+
+
+def _esas_row_dict(row) -> dict:
+    """Tarihçe satırının API gösterimi (kart ve arama aynı sözleşmeyi kullanır)."""
+    return {
+        "esas_no": row.esas_no,
+        "stage": row.stage,
+        "court": row.court,
+        "is_current": bool(row.is_current),
+        "source": row.source,
+    }
 
 
 def _apply_tenant_filter(query, tenant_id: Optional[str]):
@@ -161,6 +287,13 @@ def get_case(case_id: int, tenant_id: str = None):
             "id": item.id,
             "tracking_no": item.tracking_no,
             "esas_no": item.esas_no,
+            # Esas numarası TARİHÇESİ (G045): güncel satır önce, sonra yazılma
+            # sırası. `esas_no` bu listedeki is_current satırının kopyasıdır —
+            # kart iki değeri de gösterir ki "hangi numara ne zamandı" görünsün.
+            "esas_numbers": [
+                _esas_row_dict(e)
+                for e in sorted(item.esas_numbers, key=lambda e: (not e.is_current, e.id))
+            ],
             "status": item.status,
             "file_type": item.file_type,
             "sub_type": item.sub_type,
@@ -321,6 +454,44 @@ def _missing_required_clause():
     return or_(*conds)
 
 
+def _attach_esas_matches(db, cases_list: list, q, exact: bool, min_len: int) -> None:
+    """Aramayı eşleştiren TARİHÇE satırlarını sonuç satırlarına iliştirir (G045).
+
+    "2021/588 ile arayınca dosya çıksın" tek başına yetmez: kullanıcı listede
+    o numarayı GÖREMEZ, çünkü `esas_no` kolonu artık başka bir numaradır ve
+    sonuç "neden çıktı bu?" diye okunur. Bu yüzden eşleşen satırın AŞAMASI da
+    taşınır (`stage`), kart açmaya gerek kalmaz.
+
+    Tek ek sorgu, yalnız arama varken: N+1 olmasın diye sayfadaki id'ler toplu
+    sorulur. Eşleşme yoksa alan boş liste kalır (istemci sözleşmesi sabit).
+    """
+    for row in cases_list:
+        row["esas_matches"] = []
+    if not cases_list or not q or len(q) < min_len:
+        return
+
+    from sqlalchemy import or_
+    terms = [t for t in q.strip().split() if exact or len(t) >= 2]
+    if not terms:
+        return
+    patterns = [t if exact else f"%{t}%" for t in terms]
+
+    rows = (
+        db.query(models.CaseEsasNumber)
+        .filter(
+            models.CaseEsasNumber.case_id.in_([row["id"] for row in cases_list]),
+            or_(*[models.CaseEsasNumber.esas_no.ilike(p) for p in patterns]),
+        )
+        .order_by(models.CaseEsasNumber.id)
+        .all()
+    )
+    by_case: dict = {}
+    for row in rows:
+        by_case.setdefault(row.case_id, []).append(_esas_row_dict(row))
+    for row in cases_list:
+        row["esas_matches"] = by_case.get(row["id"], [])
+
+
 def get_cases(
     limit: int = 50,
     offset: int = 0,
@@ -382,6 +553,11 @@ def get_cases(
                     contains = f"%{term}%"
                     conditions = [
                         models.Case.esas_no.ilike(search_pattern),
+                        # Eski/aşama esasları (G045): görevsizlik-bozma sonrası
+                        # numara değişse de dosya eski numarasıyla bulunur.
+                        models.Case.esas_numbers.any(
+                            models.CaseEsasNumber.esas_no.ilike(search_pattern)
+                        ),
                         models.Case.tracking_no.ilike(search_pattern),
                         models.Case.klasor_no_2.ilike(search_pattern),
                         models.Case.tku_no.ilike(search_pattern),      # Eski sistem olay no
@@ -398,6 +574,10 @@ def get_cases(
                     conditions = [
                         models.Case.tracking_no.ilike(search_pattern),
                         models.Case.esas_no.ilike(search_pattern),
+                        # Eski/aşama esasları (G045) — bkz. exact dalındaki not
+                        models.Case.esas_numbers.any(
+                            models.CaseEsasNumber.esas_no.ilike(search_pattern)
+                        ),
                         models.Case.klasor_no_2.ilike(search_pattern),  # Eski sistem no
                         models.Case.tku_no.ilike(search_pattern),       # Eski sistem olay no (TKU-784)
                         models.Case.sistem_no.ilike(search_pattern),    # Eski sistem kayıt no (SSTMN-9425)
@@ -477,6 +657,7 @@ def get_cases(
             }
             result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
             cases_list.append(result)
+        _attach_esas_matches(db, cases_list, q, exact, min_len)
         return cases_list, total
     except Exception as e:
         logger.error(f"Get Cases Advanced Error: {e}")
@@ -583,7 +764,16 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
                     new_value=str(new_val)
                 )
                 db.add(history_entry)
-                setattr(case, field, new_val)
+                if field == "esas_no":
+                    # Türetilmiş alan: kolon + tarihçe tek yoldan (G045).
+                    # court bu turda da değişebilir; henüz yazılmamış olabileceği
+                    # için gelen değer önceliklidir.
+                    sync_current_esas(
+                        db, case, new_val,
+                        court=data.get("court") or case.court, source="update_case",
+                    )
+                else:
+                    setattr(case, field, new_val)
 
         # Update non-tracked main fields
         case.file_type = data.get("file_type", case.file_type)
@@ -778,7 +968,16 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
         current = {f: getattr(case, f) for f in ENRICH_FIELDS}
         updated = []
         for field, old_val, new_val in enrich_changes(current, fields):
-            setattr(case, field, new_val)
+            if field == "esas_no":
+                # Türetilmiş alan: kolon + tarihçe tek yoldan (G045). Belgeden
+                # gelen zenginleştirme bu yolla da tarihçeye düşer — dosyanın
+                # esası tensiple/bozmayla değiştiğinde eskisi kayıtta kalır.
+                sync_current_esas(
+                    db, case, new_val,
+                    court=fields.get("court") or case.court, source=source,
+                )
+            else:
+                setattr(case, field, new_val)
             db.add(models.CaseHistory(
                 case_id=case_id,
                 field_name=field,
@@ -921,9 +1120,10 @@ def add_case(data: dict, tenant_id: str = None):
                 logger.warning(f"Tarih parse edilemedi, atlanıyor: '{date_str}'")
 
         # 1. Create Case
+        # esas_no BİLİNÇLİ olarak burada verilmez — türetilmiş değerdir ve
+        # yalnız sync_current_esas yazar (flush'tan sonra, G045).
         new_case = models.Case(
             tracking_no=data.get("tracking_no"),
-            esas_no=data.get("esas_no"),
             status=data.get("status", "DERDEST"),
             service_type=data.get("service_type"),
             file_type=data.get("file_type"),
@@ -956,6 +1156,12 @@ def add_case(data: dict, tenant_id: str = None):
 
         db.add(new_case)
         db.flush()  # Get the case ID
+
+        # 1b. Esas no + tarihçenin ilk satırı (G045) — tek yazma yolu
+        sync_current_esas(
+            db, new_case, data.get("esas_no"),
+            court=data.get("court"), source="add_case",
+        )
 
         # 2. Add Parties
         # Danışma (DANIŞ): ortada henüz dava yok; listede olmayan müvekkil için

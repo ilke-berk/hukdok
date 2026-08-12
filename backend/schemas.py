@@ -300,6 +300,10 @@ class CaseListRead(BaseModel):
     klasor_no_2: Optional[str] = None
     notes: Optional[str] = None
     dosya_son_durumu: Optional[str] = None
+    # Aramayı eşleştiren esas tarihçesi satırları (G045). Yalnız q ile arama
+    # yapıldığında dolar: dosya ESKİ esas numarasıyla bulunduğunda listede
+    # "hangi aşamanın numarasıydı" görünsün diye (`stage`).
+    esas_matches: List[Dict[str, Any]] = []
     missing_required_fields: List[dict] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -313,6 +317,10 @@ class CaseRead(BaseModel):
     id: int
     tracking_no: str
     esas_no: Optional[str] = None
+    # Esas numarası tarihçesi (G045, şartname §1.3): {esas_no, stage, court,
+    # is_current, source}. `esas_no` bu listedeki is_current satırının
+    # kopyasıdır — ikinci doğruluk kaynağı değil, türetilmiş değer.
+    esas_numbers: List[Dict[str, Any]] = []
     status: str
     service_type: Optional[str] = None
     file_type: Optional[str] = None

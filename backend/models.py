@@ -141,6 +141,43 @@ class Case(Base):
     relations_as_source = relationship("CaseRelation", foreign_keys="CaseRelation.source_case_id", cascade="all, delete-orphan")
     relations_as_target = relationship("CaseRelation", foreign_keys="CaseRelation.target_case_id", cascade="all, delete-orphan")
     stage_logs = relationship("CaseStageLog", back_populates="case", cascade="all, delete-orphan")
+    esas_numbers = relationship("CaseEsasNumber", back_populates="case", cascade="all, delete-orphan")
+
+
+class CaseEsasNumber(Base):
+    """Bir davanın esas numarası TARİHÇESİ (FAZ F şartnamesi §1.3, G045).
+
+    Esas numarası bir öznitelik değil, aşamalar boyunca değişen kimlik geçmişidir:
+    görevsizlik/yetkisizlik/bozma sonrası numara değişir ve **eski numarayla arama
+    yapılır** (teslim paketindeki "Eski Dosya No" sütunu 616 satırda tam olarak
+    bunu taşıyor: `"2017/325 - 2024/145"`).
+
+    `cases.esas_no` KALIR ama TÜRETİLMİŞ değerdir: `is_current = True` satırının
+    kopyası. Tek yazma yolu `case_manager.sync_current_esas`; sıcak yollar (liste,
+    kart) tek kolondan okumaya devam eder, arama bu index'li tabloya vurur.
+
+    Kolonlarda `index=True` BİLİNÇLİ YOK (G042 dersi): `id` üzerindeki index PK
+    ikizi olurdu, `case_id`yi ise `uq_case_esas` (case_id, esas_no, stage) zaten
+    ÖNEK kolonuyla karşılar — FK taramaları için ayrı index mükerrer olurdu
+    (G043'te `case_relations.source_case_id` için verilen kararın aynısı).
+    Kısıt ve index'ler `database._MIGRATIONS`'ta ayrı bir `("index", ...)` op'unda
+    durur; `("table", ...)` op'una gömülselerdi hiç koşmazlardı (G041).
+    """
+    __tablename__ = "case_esas_numbers"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    esas_no = Column(String(50), nullable=False)
+    # YEREL | ISTINAF | TEMYIZ | KARAR_DUZELTME | ONCEKI (case_manager.ESAS_STAGES)
+    stage = Column(String(20), nullable=False)
+    court = Column(String(200), nullable=True)
+    # Dava başına EN FAZLA BİR True — kısmi unique index'le zorlanır
+    # (uq_case_esas_current). cases.esas_no bu satırın kopyasıdır.
+    is_current = Column(Boolean, nullable=False, default=False)
+    source = Column(String(100), nullable=True)   # provenance: "add_case", "HUKDOK_TESLIM_*"…
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    case = relationship("Case", back_populates="esas_numbers")
 
 class CaseStageLog(Base):
     __tablename__ = "case_stage_logs"

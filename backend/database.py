@@ -647,6 +647,45 @@ _MIGRATIONS = [
         "hastada_olusan_zarar":      "VARCHAR(300)",    # büyüyen sözlük (bugün 89 değer)
         "uygulanan_yontem":          "VARCHAR(200)",    # branşa göre kapalı liste
     }),
+
+    # ─── 32. ESAS NUMARASI TARİHÇESİ TABLOSU (G045) ──────────────────────────
+    #
+    # Kaynak: docs/plan/faz-f-aktarim-gereksinimleri-2026-08-12.md §1.3.
+    # Şartnamenin "11 yeni kolon" saydığı kalemin on birincisi kolon DEĞİL
+    # tablodur; G044 on kolonu açtı, bu madde tabloyu tamamlıyor.
+    #
+    # TABLO burada ("table", ...) op'uyla YARATILMAZ — modelde tanımlı olduğu
+    # için create_all yaratır (calendar_events / upload_outbox / G044'ün iki
+    # referans listesiyle aynı yol). Yazılsaydı ölü kod olurdu: init_db önce
+    # create_all koşturur, tablo listesini SONRA okur → op her kurulumda atlanır.
+    #
+    # KISIT VE INDEX'LER BU YÜZDEN ("index", ...) OP'UNDA — G041'in tamir ettiği
+    # hatanın tekrarı tam olarak bunları tablo op'unun gövdesine gömmek olurdu;
+    # oradan HİÇ koşmazlardı. "index" op'u koşulsuz koşar, IF NOT EXISTS
+    # idempotent kılar.
+    #
+    #   uq_case_esas         → aynı davada aynı (esas, aşama) ikinci kez yazılamaz;
+    #                          aktarım idempotency'sinin dayanağı (§0: teslim
+    #                          partiler hâlinde ve düzeltme listeleriyle tekrar gelecek).
+    #   uq_case_esas_current → dava başına EN FAZLA BİR is_current satırı. Türetme
+    #                          kuralı ("cases.esas_no = is_current satırının kopyası")
+    #                          bir yorum değil, ŞEMA kısıtıdır: ikinci doğruluk
+    #                          kaynağı doğamaz. Kısmi index yalnız güncel satırları
+    #                          tutar (dava sayısı kadar giriş).
+    #   esas_no index'i      → aramanın müşterisi. Trigram BİLİNÇLİ YOK: G042
+    #                          prod'da hiç taranmamış `idx_cases_esas_no_trgm`'i
+    #                          (3.328 kB) düşürdü; ölçülmeden ikincisini eklemek
+    #                          aynı borcu geri getirirdi. B-tree tam/önek
+    #                          eşleşmesini karşılar — eski esasla arama tam
+    #                          numarayla yapılır ("2021/588").
+    ("index", "case_esas_numbers", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_esas "
+        "ON case_esas_numbers (case_id, esas_no, stage)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_esas_current "
+        "ON case_esas_numbers (case_id) WHERE is_current",
+        "CREATE INDEX IF NOT EXISTS idx_case_esas_numbers_esas_no "
+        "ON case_esas_numbers (esas_no)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
