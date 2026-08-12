@@ -17,8 +17,11 @@ jobs:
       run:
         working-directory: backend
     env:
-      # Saf birim testleri DB'ye bağlanmaz ama database.py import'ta
-      # postgresql:// URL şartı arar; ileride DB testleri için service hazır.
+      # İki iş görür: (1) saf birim testleri DB'ye bağlanmaz ama database.py
+      # import'ta postgresql:// URL şartı arar, (2) tests/test_migration_path.py
+      # (G031) bu URL'den scratch veritabanı yaratıp gerçek migrasyon yolunu
+      # koşar — servis kullanıcısı `postgres` superuser olduğu için
+      # CREATE/DROP DATABASE yetkisi var. Ulaşılamazsa o testler SKIP olur.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukudok_test
     services:
       postgres:

@@ -51,6 +51,12 @@ pythonpath = ["."]
 # dev araçsız konteynerde `python -m pytest` "unrecognized arguments" ile ölür.
 # Kapsam yalnız CI adımında ölçülür (.github/workflows/ci.yml).
 addopts = "-q"
+# dbtest: gerçek Postgres'e bağlanan testler (tests/test_migration_path.py).
+# İşaretsiz koşuda DA çalışırlar — DB'ye ulaşılamıyorsa kendileri SKIP olur;
+# bilinçli dışlamak için: pytest -m "not dbtest".
+markers = [
+    "dbtest: gerçek bir PostgreSQL sunucusuna bağlanır (yoksa SKIP)",
+]
 
 # Kapsam ölçümü uygulama kodunu sayar; test ve yardımcı scriptler hariç.
 [tool.coverage.run]

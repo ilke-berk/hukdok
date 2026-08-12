@@ -6,6 +6,9 @@ DB'ye/ağa/keyring'e dokunmadan çalışsın diye burada üç önlem alınır:
 1. database.py, DATABASE_URL postgresql değilse sys.exit(1) çağırır → herhangi
    bir app modülü import edilmeden ÖNCE dummy bir URL set edilir. create_engine
    bağlantı açmaz (lazy); bu testler hiçbir zaman gerçek sorgu çalıştırmaz.
+   TEK İSTİSNA: tests/test_migration_path.py (dbtest marker'lı) bilinçli olarak
+   gerçek Postgres'e bağlanır — ama buradaki dummy URL'e/global engine'e kalıcı
+   dokunmaz: kendi scratch veritabanını yaratıp düşürür, DB yoksa SKIP olur.
 2. vault.py import'u keyring/dosya sistemine dokunabilir (CI ortamında keyring
    backend'i yok) → hafif bir stub ile değiştirilir. get_secret env'e düşer.
 3. TechnicalLogger ERROR/CRITICAL loglarda SharePoint'e senkron upload dener →
