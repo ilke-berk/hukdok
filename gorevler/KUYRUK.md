@@ -165,7 +165,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G051 | bant:backend | bagimli:G049 | E1+E3: dava kartı selectinload + arama count()'unun atılması
 - [x] G052 | bant:backend | bagimli:- | E2: intake mahkeme sözlüğü TTL cache (mekanizma hazır)
 - [x] G053 | bant:backend | bagimli:- | E4: bantlı/erken çıkışlı Levenshtein (maliyetin %69'u)
-- [x] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (işçi erişim kesilmesiyle düştü — DİRİJAN DEVRİ ile bitirildi, bağımsız denetim YOK)
+- [x] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (işçi erişim kesilmesiyle düştü — dirijan devri; bağımsız denetim SONRADAN koşuldu: GECTI, 509 girdi / 0 fark)
 - [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var) | BLOKE(HESAP ERİŞİMİ: claude CLI "organization has disabled Claude subscription access for Claude Code" diyor; kod/kuyruk sorunu DEĞİL, işçi hiç başlayamadı - erişim dönünce eki sil)
 - [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
 
