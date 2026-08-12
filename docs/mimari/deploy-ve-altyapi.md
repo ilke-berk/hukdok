@@ -1,6 +1,6 @@
 # Deploy ve altyapı — deploy.sh, rollback, systemd birimleri, izleme
 
-> **Son doğrulama: 2026-08-12 · 2de8d20** (§1 test kapısı G038 ile eklendi)
+> **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır)
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -13,7 +13,7 @@ yorumda yazılıdır (`deploy.sh:7-10`): önkoşullar → `git pull --ff-only` �
 `pg_dump` → build (eski stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → **test kapısı** →
 `up -d` → `/healthz` kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
 
-Beş tasarım tercihi, gerekçeleriyle (`deploy.sh:12-30`):
+Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
 
 | Tercih | Gerekçe (kodda yazılı) |
 | --- | --- |
@@ -22,40 +22,44 @@ Beş tasarım tercihi, gerekçeleriyle (`deploy.sh:12-30`):
 | Sağlık kapısı gerçek | `/healthz` 120 sn poll, başarısızsa `exit 1` + rollback komutu basılır (eskiden `sleep 5` + `docker ps`) |
 | İmajlar SHA ile etiketlenir | `docker image prune -f` artık rollback hedeflerini silemez (etiketli imaj dangling olmaz) |
 | Test kapısı (G038) | build'den SONRA, `up`'tan ÖNCE koşar — testler kalırsa deploy DURUR, çalışan stack'e hiç dokunulmaz (kırık kod prod'a çıkamaz) |
+| Kapının kendi Postgres'i (G050) | temiz ortamın bedeli DB testlerinin SKIP olmasıydı; kapı artık kendi tek kullanımlık Postgres'ini kaldırır — prod DB'ye yine hiç dokunmaz |
 
 ### Güvenlik kapıları
 
-- **`.env` zorunlu anahtar denetimi** (`deploy.sh:118-125`): `POSTGRES_PASSWORD`,
+- **`.env` zorunlu anahtar denetimi** (`deploy.sh:259-267`): `POSTGRES_PASSWORD`,
   `DATABASE_URL`, `GEMINI_API_KEY`, `AZURE_CLIENT_ID`, `ALLOWED_TENANTS`,
   `SHAREPOINT_TENANT_ID`, `SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET` — biri boşsa
   deploy iptal.
-- **`hukuk_shared` ağı** yoksa oluşturulur (`:128-131`).
-- **Pre-deploy dump** (`:146-157`): `docker exec hukudok-postgres pg_dump -U hukudok_user -Fc
+- **`hukuk_shared` ağı** yoksa oluşturulur (`:269-272`).
+- **Pre-deploy dump** (`:287-301`): `docker exec hukudok-postgres pg_dump -U hukudok_user -Fc
   hukudok > ~/backups/predeploy_<SHA>_<zaman>.dump`. Dump `MIN_DUMP_BYTES` (varsayılan 1 MiB)
   altındaysa **deploy iptal**. Gerekçe: "Migration'lar açılışta otomatik koşar; kötü bir
   migration'ın tek geri yolu bu dump'tır (rollback.sh imaj döndürür, DB'yi DÖNDÜRMEZ)"
-  (`:147-148`). `hukudok-postgres` çalışmıyorsa adım atlanır (ilk kurulum senaryosu).
-- **Rollback hedefini koruma** (`:162-171`): build `:latest`'i yeni imaja taşıyacağı için eski
+  (`:288-289`). `hukudok-postgres` çalışmıyorsa adım atlanır (ilk kurulum senaryosu).
+- **Rollback hedefini koruma** (`:303-312`): build `:latest`'i yeni imaja taşıyacağı için eski
   imaj SHA etiketi taşımıyorsa önce etiketlenir — rollback hedefi dangling'e düşmesin.
-- **Test kapısı** (`:67-98` tanım, `:184-185` çağrı) — aşağıda ayrı başlık.
-- **Sürüm doğrulaması** (`:205-213`): `/healthz`'in `version` alanı yeni SHA'yı göstermeli.
+- **Test kapısı** (`:195-239` tanım, `:325-326` çağrı) — aşağıda ayrı başlık.
+- **Sürüm doğrulaması** (`:346-354`): `/healthz`'in `version` alanı yeni SHA'yı göstermeli.
   Bu bir **uyarıdır, fail değil** — lokal mount/elle build senaryolarında meşru sapma
   olabilir; prod'da bayat imaj işaretidir.
-- **Frontend poll'u** (`:214-225`): konteyner "Started" ile nginx'in porta geçmesi arasında
+- **Frontend poll'u** (`:355-367`): konteyner "Started" ile nginx'in porta geçmesi arasında
   1-2 sn yarış var; tek atımlık `curl` buna yakalanmıştı → 30 sn poll.
 
-Ortam düğmeleri (`deploy.sh:32-35`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
-prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:47`).
+Ortam düğmeleri (`deploy.sh:37-40`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
+prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:52`).
 
-### Test kapısı (G038)
+### Test kapısı (G038 · G050)
 
-`test_gate()` (`deploy.sh:67-98`) build'den **sonra**, `up -d`'den **önce** koşar
-(`:184-185`). Testler kalırsa deploy `exit 1` ile durur ve çalışan stack'e hiç dokunulmaz —
-kırık kod prod'a çıkamaz. Ölçülen süre: **~45-47 sn** (pip install ~9 sn + 1035 test ~37 sn);
-120 sn'lik `/healthz` kapısıyla birlikte deploy'un toplam kapı bütçesi bu iki sayıdır.
+`test_gate()` (`deploy.sh:195-239`) build'den **sonra**, `up -d`'den **önce** koşar
+(`:325-326`). Testler kalırsa deploy `exit 1` ile durur ve çalışan stack'e hiç dokunulmaz —
+kırık kod prod'a çıkamaz. Ölçülen süre: **~59-61 sn** (geçici Postgres kalkışı ~5 sn +
+pip install ~7 sn + `migrate.py` ~1 sn + 1190 test ~45 sn). G050 öncesi 44 sn'ydi; 15 sn'lik
+artış DB gerektiren 29 testin artık **gerçekten koşmasının** bedelidir. 120 sn'lik
+`/healthz` kapısıyla birlikte deploy'un toplam kapı bütçesi bu iki sayıdır.
+`gate_db_up`/`gate_db_down`/`gate_sweep_orphan_networks` tanımları `:68-182`.
 
 Kapı, YENİ imajdan tek seferlik bir konteyner kaldırır (`docker run --rm`), çalışan
-konteynerlere dokunmaz. İki tasarım kısıtı kodda yazılı:
+konteynerlere dokunmaz. Üç tasarım kısıtı kodda yazılı:
 
 - **`docker compose run` BİLEREK kullanılmaz.** Compose servisi olarak koşmak `.env`'i
   (gerçek `DATABASE_URL`) beraberinde getirirdi; `tests/conftest.py` `DATABASE_URL`'i
@@ -66,31 +70,56 @@ konteynerlere dokunmaz. İki tasarım kısıtı kodda yazılı:
   çalışma ağacındaki `backend/` **salt-okunur** mount edilir: kütüphane ortamı yeni imajdan,
   test kodu `git pull`'un getirdiği ağaçtan gelir — ikisi de aynı commit'tir. Salt-okunur
   mount yüzünden `-p no:cacheprovider` ve `PYTHONDONTWRITEBYTECODE=1` şarttır.
+- **Kapının kendi Postgres'i vardır** (G050, `:68-182`) — aşağıda.
 
-**Kapının bilinçli sınırı — migration testleri KOŞMAZ.** Kapı temiz ortamda (`.env` yok,
-dolayısıyla `DATABASE_URL` yok) koştuğu için DB gerektiren testler atlanır: kapıda
-**1035 passed / 8 skipped**, çalışan konteynerde (`docker compose exec -T backend python -m
-pytest`) **1041 passed / 2 skipped** — aradaki 6 test `tests/test_migration_path.py`'nin
-`dbtest`'leridir (scratch veritabanı yaratıp düşürürler). Bu, kapının prod postgres'e
-dokunmamasının bedelidir: **bozuk bir migration kapıdan geçer.** Onu yakalayan iki savunma
-başka yerde — CI (`.github/workflows/ci.yml`, postgres servisi + `DATABASE_URL` ile
-`dbtest`'leri koşar) ve pre-deploy `pg_dump`.
+#### Kapının kendi Postgres'i (G050)
 
-Üç çıkış yolu:
+Temiz ortamın bedeli, DB gerektiren testlerin **SKIP** olmasıydı; SKIP yeşil sayıldığı için
+kapı **29 testi koşmadan** "geçti" diyordu (2026-08-12 ölçümü: kapıda 1158 passed/32
+skipped, çalışan konteynerde 1187 passed/3 skipped). FAZ D'nin migrasyon-yolu,
+index-envanteri ve esas-tarihçesi testleri de aynı deliğe düşmüştü.
+
+Çözüm prod DB'ye bağlanmak **değil** (o yol tam olarak yukarıdaki birinci kısıtın
+reddettiği yoldur): kapı `gate_db_up()` ile **kendi tek kullanımlık Postgres'ini** kaldırır.
+
+| Kısıt | Nasıl |
+| --- | --- |
+| Prod verisine temas yok | Boş `postgres:15-alpine`, `gate/gate@gatedb`; prod `.env` bu konteynere hiç girmez |
+| Ağ yalıtımı | Kendi ağı (`hukdok_gate_net_<pid>_<rnd>`); `hukuk_shared` / compose ağına **bağlanmaz** |
+| Port yayınlanmaz | `-p` yok, `--network host` yok — yalnız kapı ağından erişilebilir |
+| Çakışmaya dayanıklı | Ad PID+`$RANDOM`'dan türer, üstelik `docker container/network inspect` ile boşta olduğu doğrulanır (5 deneme) |
+| Her yolda silinir | `gate_db_down()` hem doğrudan çağrılır hem `trap ... EXIT INT TERM` ile yedeklenir; sıra: test konteyneri → postgres → ağ (ağ 5×1 sn yeniden dener), silinemeyen kalem **uyarı basar** |
+| Kendi kendini toparlar | `gate_sweep_orphan_networks()` her koşuda artık kalmış kapı ağlarını siler; `docker network rm` kullanımdaki ağı reddettiği için eşzamanlı bir deploy'un ağına dokunamaz |
+
+Konteyner içinde testlerden **önce `python migrate.py`** koşar: şema boş DB'de kurulur.
+Bu hem prod entrypoint'inin yolunun provasıdır (bozuk migrasyon artık kapıda yakalanır,
+konteyner prod'da kalkmadan önce) hem de "kolon yok → SKIP" diyen testlerin (`test_g046_*`)
+önkoşuludur.
+
+**Sonuç (2026-08-12 ölçümü):** kapıda **1185 passed / 5 skipped**, referans koşuda
+(`docker compose exec -T backend python -m pytest`) **1187 passed / 3 skipped** — toplam
+ikisinde de 1190. Kalan fark iki testtir (`test_g046_missing_required.py:574,598`): gerçek
+kayıt sayısı yetersiz diyerek atlarlar, çünkü kapının veritabanı **bilinçli olarak boştur**
+(prod verisi oraya kopyalanmaz). Pytest artık `-rs` ile koşar: hangi testin neden
+atlandığı deploy çıktısında görünür, sessiz SKIP kalmaz.
+
+Beş çıkış yolu:
 
 | Durum | Davranış |
 | --- | --- |
 | Testler geçti | `✅ Test kapısı GEÇTİ (N sn)`, deploy devam eder |
 | Testler kaldı | `❌ Test kapısı KALDI` + `exit 1` — `up -d` hiç çalışmaz |
+| Şema migrasyonu boş DB'de kaldı | Konteyner **92** döner → `❌ ... şema migrasyonu BOŞ veritabanında koşmadı` + `exit 1` (bu kod prod'da entrypoint'te de düşerdi) |
+| Geçici Postgres kalkmadı | `❌ Test kapısı KURULAMADI` + `exit 1` — sessizce DB'siz koşmak G050'nin kapattığı deliği geri açardı |
 | Dev bağımlılıkları kurulamadı (pip ağ erişimi yok) | Konteyner **91** döner → **gürültülü uyarı** basılır ama deploy **DURMAZ** (sessiz atlama yasak) |
 
 `SKIP_TESTS=1 ./deploy.sh` kaçış kapısıdır: kapıyı atlar ve çerçeveli bir uyarı basar
 ("Prod'a TEST EDİLMEMİŞ kod çıkıyor").
 
-**`./deploy.sh --gate-only`** (`:103-111`): yalnız test kapısını koşar ve çıkar. Dal
+**`./deploy.sh --gate-only`** (`:241-252`): yalnız test kapısını koşar ve çıkar. Dal
 `git pull`'dan **önce** döndüğü için pull / dump / build / `up -d` hiç çalışmaz; henüz build
 olmadığından mevcut `:latest` imajı üzerinden koşar. Kapının davranışını prod'a dokunmadan
-kanıtlamanın yoludur. `MSYS_NO_PATHCONV=1` (`:50-54`) yalnız Git Bash içindir — Linux'ta
+kanıtlamanın yoludur. `MSYS_NO_PATHCONV=1` (`:55-59`) yalnız Git Bash içindir — Linux'ta
 hiçbir şey yapmaz; onsuz lokal prova docker'ın `-w /app` argümanı bozulduğu için çıkış 125
 verir.
 
@@ -127,7 +156,7 @@ yoktur (`docker-compose.yml:87-88`).
 ## 4. Sürüm izi
 
 ```
-deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:175)
+deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:316)
   → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:40-42, :109-111)
     → backend Dockerfile ARG/ENV  → /healthz "version"
     → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti

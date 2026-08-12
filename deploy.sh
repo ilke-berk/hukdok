@@ -28,6 +28,12 @@
 #    Test kodu imajda YOKTUR (backend/.dockerignore:35 tests/ dışlar), bu yüzden
 #    çalışma ağacındaki backend/ salt-okunur mount edilir: kütüphane ortamı yeni
 #    imajdan, test kodu git pull'un getirdiği ağaçtan — ikisi de AYNI commit.
+#  - KAPININ KENDİ POSTGRES'İ (G050): temiz ortamın bedeli, DB gerektiren
+#    testlerin SKIP olmasıydı — kapı 29 testi koşmadan yeşil diyordu (SKIP
+#    yeşildir; ölçüm 2026-08-12: kapıda 1158 passed/32 skipped, çalışan
+#    konteynerde 1187 passed/3 skipped). Kapı kendi Postgres'ini kaldırır: kendi
+#    ağı, yayınlanmamış port, rastgele ad, kapı biter bitmez konteyner + ağ
+#    silinir. Prod DB'ye temas yok, 'docker compose run' hâlâ kullanılmıyor.
 #
 # Ortam düğmeleri (varsayılanlar prod içindir):
 #   MIN_DUMP_BYTES=1048576   pre-deploy dump alt sınırı (lokal prova: 1)
@@ -55,6 +61,125 @@ export MSYS_NO_PATHCONV=1
 # Konteyner İÇİ özel çıkış kodu: dev bağımlılıkları KURULAMADI (pip ağ erişimi
 # yok). Test başarısızlığından ayırt edilmeli — pytest 0..5 döner, 91 çakışmaz.
 GATE_SKIP_EXIT=91
+# Aynı gerekçeyle: şema migrasyonu boş DB'de kaldı (G050). Bu bir test
+# başarısızlığı DEĞİLDİR ama deploy'u durdurur — prod'da aynı migrasyon
+# entrypoint'te koşacak ve konteyner hiç kalkmayacaktı.
+GATE_MIGRATE_EXIT=92
+
+# ── Kapının tek kullanımlık Postgres'i (G050) ────────────────────────────────
+# Kapı temiz ortamda koştuğu için DATABASE_URL yoktu ve DB gerektiren testler
+# (migrasyon yolu, index envanteri, esas tarihçesi) SKIP oluyordu — SKIP yeşil
+# sayıldığı için kapı onları KOŞMADAN geçiyordu. Çözüm prod DB'ye bağlanmak
+# DEĞİL (o yol tam olarak G038'in reddettiği yoldur): kapı kendi postgres'ini
+# kaldırır. Kısıtlar: port YAYINLANMAZ, prod ağlarına (hukuk_shared, compose
+# ağı) BAĞLANMAZ, adı rastgeledir, kapı biter bitmez konteyner+ağ silinir.
+GATE_PG_IMAGE="postgres:15-alpine"
+GATE_DB_USER="gate"
+GATE_DB_PASS="gate"
+GATE_DB_NAME="gatedb"
+GATE_PG_NAME=""
+GATE_NET_NAME=""
+GATE_RUN_NAME=""
+
+# Her yolda koşar: başarı, test başarısızlığı (fail→exit), pip 91, migrasyon 92,
+# Ctrl-C/kill. İçeride hiçbir komut script'i düşürmemeli → hepsi `|| true`,
+# sonu `return 0`. Sızıntı SESSİZ kalmaz: silinemeyen kalem uyarıyla bildirilir.
+#
+# SIRA ÖNEMLİ: önce test konteyneri, sonra postgres, en sonda ağ. Script
+# dışarıdan öldürüldüğünde `docker run --rm`in İSTEMCİSİ ölür ama konteyner
+# ayakta kalabilir; ağ o yüzden "active endpoints" ile reddedilirdi (ölçüldü:
+# G050, TERM yolu). Test konteyneri bu yüzden adlandırılır ve önce silinir;
+# ağ silme ayrıca 5×1 sn yeniden denenir (endpoint teardown asenkrondur).
+gate_db_down() {
+    if [ -n "${GATE_RUN_NAME}" ]; then
+        docker rm -f "$GATE_RUN_NAME" >/dev/null 2>&1 || true
+        GATE_RUN_NAME=""
+    fi
+    if [ -n "${GATE_PG_NAME}" ]; then
+        # -v: postgres imajının anonim data volume'ü de gitsin
+        docker rm -fv "$GATE_PG_NAME" >/dev/null 2>&1 || true
+        if docker container inspect "$GATE_PG_NAME" >/dev/null 2>&1; then
+            say "⚠️  kapı postgres'i silinemedi: ${GATE_PG_NAME} (elle: docker rm -fv ${GATE_PG_NAME})"
+        fi
+        GATE_PG_NAME=""
+    fi
+    if [ -n "${GATE_NET_NAME}" ]; then
+        for _ in 1 2 3 4 5; do
+            docker network rm "$GATE_NET_NAME" >/dev/null 2>&1 && break
+            sleep 1
+        done
+        if docker network inspect "$GATE_NET_NAME" >/dev/null 2>&1; then
+            say "⚠️  kapı ağı silinemedi: ${GATE_NET_NAME} (elle: docker network rm ${GATE_NET_NAME})"
+        fi
+        GATE_NET_NAME=""
+    fi
+    return 0
+}
+
+# Kendi kendini toparlama: önceki koşulardan artmış kapı ağlarını siler.
+# GÜVENLİ, çünkü `docker network rm` KULLANIMDAKİ ağı reddeder — aynı anda
+# koşan başka bir deploy'un ağına dokunulmaz. Konteynerler bilinçli olarak
+# süpürülmez: ayakta bir kapı postgres'i canlı bir deploy'a ait olabilir.
+gate_sweep_orphan_networks() {
+    local n
+    for n in $(docker network ls --filter "name=^hukdok_gate_net_" --format '{{.Name}}' 2>/dev/null); do
+        if docker network rm "$n" >/dev/null 2>&1; then
+            say "  artık kalmış kapı ağı silindi: ${n}"
+        fi
+    done
+    return 0
+}
+trap gate_db_down EXIT
+trap 'gate_db_down; exit 130' INT TERM
+
+# Boş bir Postgres kaldırır ve TCP'den yanıt verene dek bekler.
+gate_db_up() {
+    local suffix="" deadline
+    gate_sweep_orphan_networks
+    # Çakışma dayanıklılığı: ad PID+RANDOM'dan türer, üstelik kullanımda
+    # olmadığı doğrulanır. Aynı anda iki deploy ya da kalıntı bir konteyner
+    # kapıyı kilitlemesin (kalıntıyı SİLMEYİZ — başka bir koşunun canlı
+    # konteyneri olabilir; biz başka ad seçeriz).
+    for _ in 1 2 3 4 5; do
+        suffix="$$_${RANDOM}"
+        if ! docker container inspect "hukdok_gate_pg_${suffix}" >/dev/null 2>&1 \
+           && ! docker container inspect "hukdok_gate_run_${suffix}" >/dev/null 2>&1 \
+           && ! docker network inspect "hukdok_gate_net_${suffix}" >/dev/null 2>&1; then
+            break
+        fi
+        suffix=""
+    done
+    [ -n "$suffix" ] || { say "  boşta kapı konteyneri adı bulunamadı"; return 1; }
+
+    GATE_NET_NAME="hukdok_gate_net_${suffix}"
+    docker network create "$GATE_NET_NAME" >/dev/null 2>&1 \
+        || { GATE_NET_NAME=""; say "  kapı ağı yaratılamadı"; return 1; }
+
+    # Test konteynerinin adı da şimdiden belli olsun: script öldürülürse
+    # gate_db_down onu adıyla bulup silebilsin (bkz. gate_db_down sıra notu).
+    GATE_RUN_NAME="hukdok_gate_run_${suffix}"
+    GATE_PG_NAME="hukdok_gate_pg_${suffix}"
+    # Ne -p ne --network host: konteyner YALNIZ kendi ağından erişilebilir.
+    docker run -d --name "$GATE_PG_NAME" --network "$GATE_NET_NAME" \
+        -e POSTGRES_USER="$GATE_DB_USER" -e POSTGRES_PASSWORD="$GATE_DB_PASS" \
+        -e POSTGRES_DB="$GATE_DB_NAME" \
+        "$GATE_PG_IMAGE" >/dev/null 2>&1 \
+        || { say "  kapı postgres'i başlatılamadı (${GATE_PG_IMAGE} var mı?)"; return 1; }
+
+    # pg_isready'i -h 127.0.0.1 ile sor: initdb sırasında sunucu yalnız unix
+    # soketten yanıt verir, TCP'yi sormak "erken hazır" yanılgısını keser.
+    deadline=$((SECONDS + 60))
+    until docker exec "$GATE_PG_NAME" \
+              pg_isready -h 127.0.0.1 -U "$GATE_DB_USER" -d "$GATE_DB_NAME" >/dev/null 2>&1; do
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            docker logs "$GATE_PG_NAME" --tail 20 2>&1 || true
+            say "  kapı postgres'i 60 sn'de hazır olmadı"
+            return 1
+        fi
+        sleep 1
+    done
+    return 0
+}
 
 GATE_ONLY=0
 for arg in "$@"; do
@@ -78,15 +203,32 @@ test_gate() {
         return 0
     fi
     say "🧪 Test kapısı: ${img} (tek seferlik konteyner; çalışan stack'e dokunulmaz)..."
-    docker run --rm --entrypoint bash --user root \
+    # Kapının kendi DB'si kalkmazsa DURUR: sessizce DB'siz koşmak, tam da bu
+    # görevin kapattığı deliği (29 test SKIP → kapı yeşil) geri açardı.
+    # Bilinçli atlamak isteyen SKIP_TESTS=1 kullanır.
+    gate_db_up || { gate_db_down; fail "❌ Test kapısı KURULAMADI: geçici Postgres kalkmadı — deploy DURDU. Bilinçli atlamak için: SKIP_TESTS=1 ./deploy.sh"; }
+    # DATABASE_URL kapının KENDİ postgres'ini gösterir; testler scratch
+    # veritabanlarını orada yaratıp düşürür (conftest setdefault ile bu URL'i
+    # korur). Prod DB'sinin adresi bu konteynere hiç girmez.
+    # migrate.py: şemayı boş DB'de kurar — hem prod entrypoint'inin koştuğu
+    # yolun provası, hem de "kolon yok → SKIP" diyen testlerin (g046) önkoşulu.
+    # -rs: kalan SKIP'ler sebepleriyle basılır — kapının neyi koşmadığı görünür kalsın.
+    docker run --rm --name "$GATE_RUN_NAME" --entrypoint bash --user root \
+        --network "$GATE_NET_NAME" \
         -v "${PWD}/backend:/app:ro" -w /app \
         -e PYTHONDONTWRITEBYTECODE=1 -e HOME=/tmp \
+        -e DATABASE_URL="postgresql://${GATE_DB_USER}:${GATE_DB_PASS}@${GATE_PG_NAME}:5432/${GATE_DB_NAME}" \
         "$img" -c "pip install --no-cache-dir -q -r requirements-dev.txt || exit ${GATE_SKIP_EXIT}
-                   python -m pytest -p no:cacheprovider" || rc=$?
+                   python migrate.py || exit ${GATE_MIGRATE_EXIT}
+                   python -m pytest -p no:cacheprovider -rs" || rc=$?
+    gate_db_down          # trap yedektir; normal yolda konteyner hemen silinir
     dt=$((SECONDS - t0))
     if [ "$rc" -eq 0 ]; then
         ok "✅ Test kapısı GEÇTİ (${dt} sn)"
         return 0
+    fi
+    if [ "$rc" -eq "$GATE_MIGRATE_EXIT" ]; then
+        fail "❌ Test kapısı KALDI: şema migrasyonu BOŞ veritabanında koşmadı (${dt} sn) — bu kod prod'da entrypoint'te de düşerdi, konteyner kalkmazdı. Deploy DURDU."
     fi
     if [ "$rc" -eq "$GATE_SKIP_EXIT" ]; then
         # Sessiz atlama YASAK: erişim yoksa uyar ama deploy'u bloke etme.
