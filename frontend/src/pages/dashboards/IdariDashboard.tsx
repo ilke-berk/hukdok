@@ -94,9 +94,9 @@ export default function IdariDashboard() {
     (async () => {
       setLoading(true);
       try {
-        const casesData = await getCases({ limit: 8, offset: 0 });
+        const casesData = await getCases<DashboardCase>({ limit: 8, offset: 0 });
         if (cancelled) return;
-        setRecentCases((casesData?.cases || []) as DashboardCase[]);
+        setRecentCases(casesData?.cases ?? []);
         setLoadError(null);
       } catch (error) {
         if (cancelled) return;
