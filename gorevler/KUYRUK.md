@@ -114,6 +114,33 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G039 | bant:docs | bagimli:- | 12.08 kararlarını ADR'ye yaz (UYAP · kanonik yazım · K1 kodu · ES/Redis reddi)
 - [x] G040 | bant:docs | bagimli:G039 | FAZ C görev dosyalarını arşivle (G026-G029)
 
+## Aktif plan: FAZ D — veritabanı + FAZ F şeması (2026-08-12; sonunda DEPLOY #10)
+
+<!-- Kaynak: temizlik planı §6 + faz-f-aktarim-gereksinimleri-2026-08-12.md §1.
+     ÖN KOŞUL KARŞILANDI (2026-08-12, prod'da salt-okunur ölçüldü): case_relations ve
+     daily_activity_reports üzerinde 0 mükerrer → iki UNIQUE de risksiz eklenebilir.
+     case_relations'ta prod'da yalnız 1 satır var — FAZ F oraya 510 TKU grubu yazacak,
+     yani UNIQUE'i eklemek için SON KOLAY AN.
+     G041 fazın çıpası: mekanizma tamir edilmeden G044/G045'in kısıtları da doğmaz.
+     G045 ve G046 aynı tuzağa düşmemeli — kısıt/index DAİMA ("index", ...) op'una.
+     E'DEN TAŞINANLAR: E7 (avukat filtresi, D'nin index'ini bekliyordu) → G043,
+     E6 (missing_required denormalize, şema işi) → G046. Plan §7 envanteri güncel kalır.
+     G047 planda yoktu: G038'in kapısı migrasyon testlerini KOŞMUYOR (ölçüldü, 6 test
+     sessizce SKIP) — D tamamen migrasyon işi olduğu için D deploy'undan ÖNCE kapanmalı.
+     KUYRUĞA GİRMEYEN: index düşürme listesinin prod'da uygulanması (deploy kararı),
+     FAZ F veri dolumu (ayrı faz), 220 mahsur export kaydı (2026-08-12'de pending'e
+     çevrildi, kullanıcı işi bitti).
+     Bant: G048 frontend (tek paralel dilim), kalanı backend = seri. -->
+
+- [ ] G041 | bant:backend | bagimli:- | D 6.1: eksik kısıt/index'leri çalışan op türüne taşı (8 kalem, prod'da doğrulandı)
+- [ ] G042 | bant:backend | bagimli:G041 | D 6.2-a: kullanılmayan index temizliği (52 aday / 31 MB — unique/primary ZORUNLU dışlanır)
+- [ ] G043 | bant:backend | bagimli:G042 | D 6.2-b: eksik FK/kısmi/fonksiyonel index'ler + E7 avukat filtresi
+- [ ] G044 | bant:backend | bagimli:G041 | Şema: FAZ F'nin 11 yeni kolonu + Uzmanlık Alanı adlandırması
+- [ ] G045 | bant:backend | bagimli:G044 | case_esas_numbers: esas numarası tarihçesi tablosu
+- [ ] G046 | bant:backend | bagimli:G044 | E6: missing_required denormalize + D2/D8 bağlamsal zorunluluk kapısı
+- [ ] G047 | bant:backend | bagimli:- | Deploy kapısı migrasyon testlerini koşmuyor (kendi postgres'ini kaldırmalı)
+- [ ] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı
+
 ## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
 
 <!-- FAZ C işçilerinin bulduğu, kapsam dışı bırakılan kalemler. -->
