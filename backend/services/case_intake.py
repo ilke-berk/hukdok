@@ -248,7 +248,14 @@ def merge_fields(docs: List[Dict]) -> Dict[str, Dict]:
     # belgelerin en erken belge_tarihi'nden türet (plan: merge_dates).
     opening = _field_vote(docs, "dava_acilis_tarihi")
     if opening["value"] is None:
-        candidates = [(d, _belge_tarihi(d)) for d in docs if _is_dilekce(d) and _belge_tarihi(d)]
+        # Tarih tek kez okunur ve dolu olanlar toplanır: kavrama biçiminde
+        # (filtrede bir, değerde bir çağrı) tip daraltması mümkün değildi —
+        # eleman tipi date|None kalıyor, min()/isoformat() tipsiz oluyordu.
+        candidates: List[Tuple[Dict, date]] = []
+        for d in docs:
+            tarih = _belge_tarihi(d) if _is_dilekce(d) else None
+            if tarih:
+                candidates.append((d, tarih))
         if candidates:
             doc, earliest = min(candidates, key=lambda t: t[1])
             opening = {
@@ -487,7 +494,9 @@ def policy_overlap_warnings(policies: List[Dict]) -> List[Dict]:
                 continue
             a_start, a_end = parse_iso_date(a.get("baslangic")), parse_iso_date(a.get("bitis"))
             b_start, b_end = parse_iso_date(b.get("baslangic")), parse_iso_date(b.get("bitis"))
-            if None in (a_start, a_end, b_start, b_end):
+            # `None in (...)` ile aynı kapı, açık yazımı: tip daraltması
+            # yalnız açık `is None` zincirinde çalışır.
+            if a_start is None or a_end is None or b_start is None or b_end is None:
                 continue
             # Uç uca dönemler (eski bitiş == yeni başlangıç) yenileme desenidir,
             # çakışma DEĞİLDİR — sınırda kesişme uyarı üretmez.

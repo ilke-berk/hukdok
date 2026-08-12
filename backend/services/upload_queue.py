@@ -44,7 +44,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from database import SessionLocal
 from file_utils import safe_remove
@@ -125,7 +125,9 @@ def enqueue_upload(
             db.add(row)
             db.commit()
             db.refresh(row)
-            outbox_id = row.id
+            # cast: modeller eski stil Column() ile tanımlı; mypy örnek alanını
+            # Column[int] görür (Mapped[] geçişine kadar bu modülde tekrarlanır).
+            outbox_id = cast(int, row.id)
         except Exception:
             # Faz 3-E (3.6): açık transaction'ı bırak; dıştaki except fallback'e
             # düşürür (rollback da patlarsa yine aynı yere düşer — bare yeterli).
@@ -225,7 +227,7 @@ def _attempt_upload(outbox_id: int) -> None:
             # nihai kayıp. Belge tarafına da işle ki 'pending'de asılı kalmasın.
             row.attempts = (row.attempts or 0) + 1
             _finalize_failed(db, row, f"Spool dosyası diskte yok: {row.spool_path}")
-            _record_doc_attempt(row.kind, row.document_id, None)
+            _record_doc_attempt(cast(str, row.kind), row.document_id, None)
             return
 
         row.attempts = (row.attempts or 0) + 1
@@ -233,10 +235,11 @@ def _attempt_upload(outbox_id: int) -> None:
 
         # Deneme anındaki alanları kopyala; upload sırasında session açık kalmasın
         # (yükleme dakikalar sürebilir, pool bağlantısını işgal etmesin).
-        attempt_no = row.attempts
-        kind, doc_id = row.kind, row.document_id
-        spool_path = row.spool_path
-        target_filename, target_folder = row.target_filename, row.target_folder
+        attempt_no = cast(int, row.attempts)
+        kind, doc_id = cast(str, row.kind), cast(Optional[int], row.document_id)
+        spool_path = cast(str, row.spool_path)
+        target_filename = cast(str, row.target_filename)
+        target_folder = cast(str, row.target_folder)
     except Exception:
         # Faz 3-E (3.6): sayaç commit'i düştüyse upload'a GEÇME (zehirli dosya
         # bekçisi sayaca dayanır); istisna _worker_loop'ta WARNING'e düşer.
@@ -305,7 +308,10 @@ def _attempt_upload(outbox_id: int) -> None:
                 row.spool_path = None
                 db.commit()
 
-            if url_saved:
+            # doc_id kontrolü etkisizdir (url_saved yalnız document_id doluyken
+            # True olabilir — _record_doc_attempt boş id'de False döner); açık
+            # yazılması notify_hukukbot'un int sözleşmesini tipçe garanti eder.
+            if url_saved and doc_id is not None:
                 try:
                     from services.export_publisher import notify_hukukbot
                     notify_hukukbot(doc_id)
@@ -465,7 +471,7 @@ def _scan_once() -> int:
             .order_by(models.UploadOutbox.id)
             .all()
         )
-        due_ids = [row.id for row in pending if _is_due(row, now)]
+        due_ids = [cast(int, row.id) for row in pending if _is_due(row, now)]
     finally:
         db.close()
 

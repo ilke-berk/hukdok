@@ -38,6 +38,7 @@ flock hepsinde "alınmış" görünür ve hepsi lider olurdu.
 """
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import IO, Optional
@@ -89,6 +90,13 @@ def _try_lock_file(path: Path) -> Optional[IO[bytes]]:
     except OSError:
         fh.close()
         return None
+
+    # fcntl YOK → Windows host-run. Platform daraltması davranışı değiştirmez
+    # (msvcrt yalnız win32'de vardır; fcntl'siz bir POSIX'te eski kod da
+    # msvcrt import'unda ImportError'a düşüp handle'ı kilitsiz döndürürdü) ama
+    # tip denetimi için şart: typeshed msvcrt'yi win32'ye koşullu bildirir.
+    if sys.platform != "win32":
+        return fh
 
     try:
         import msvcrt

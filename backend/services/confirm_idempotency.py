@@ -40,7 +40,7 @@ yansıyan nihai başarısızlık yoktur); replay/claim olayları INFO.
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 
 from sqlalchemy.exc import IntegrityError
 
@@ -132,7 +132,9 @@ def begin(process_id: str, owner: Optional[str]) -> Tuple[str, Optional[dict]]:
                 )
                 return ("in_progress", None)
             try:
-                payload = json.loads(row.response_json)
+                # cast: modeller eski stil Column() ile tanımlı, mypy örnek
+                # alanını Column[str] görüyor (Mapped[] geçişine kadar).
+                payload = json.loads(cast(str, row.response_json))
             except ValueError:
                 logger.warning(
                     "ConfirmReceipt yanıtı çözümlenemedi: %s", process_id
@@ -141,7 +143,8 @@ def begin(process_id: str, owner: Optional[str]) -> Tuple[str, Optional[dict]]:
             return ("replay", payload)
 
         # in_progress: yaşayan istek mi, önceki süreçten kalan bayat kilit mi?
-        if _age_seconds(row.updated_at or row.created_at) < STALE_IN_PROGRESS_SECONDS:
+        last_touch = cast(Optional[datetime], row.updated_at or row.created_at)
+        if _age_seconds(last_touch) < STALE_IN_PROGRESS_SECONDS:
             return ("in_progress", None)
 
         # Bayat kilit devralma — optimistic guard: iki eşzamanlı devralma

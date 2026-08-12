@@ -28,11 +28,15 @@ extend-immutable-calls = [
     "Form", "Path", "Cookie", "Security",
 ]
 
-# Mypy kademeli (plan §3.1): yalnızca managers/ + routes/ + config/ taranır,
-# strict hedeflenmez. Kapsam genişletmek için files listesine modül ekleyin.
+# Mypy kademeli (plan §3.1): yalnızca aşağıdaki paketler taranır, strict
+# hedeflenmez. Kapsam genişletmek için files listesine modül ekleyin — kademe
+# kademe: bir kademe açılırken o kademenin TÜM hataları kapatılır (G035'te
+# services/ böyle eklendi, 25 hata tip daraltmasıyla kapandı).
+# DİKKAT: kökü birden taramak (`mypy .`) bugün modül-yolu çakışmasında patlar
+# (schemas_intake.py duplicate module name); ayrı bir iş.
 [tool.mypy]
 python_version = "3.10"
-files = ["managers", "routes", "config"]
+files = ["managers", "routes", "config", "services"]
 ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"

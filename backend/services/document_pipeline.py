@@ -13,7 +13,7 @@ import uuid
 import time as perf_time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import HTTPException, BackgroundTasks, UploadFile
 
@@ -567,10 +567,13 @@ def convert_pdfa_and_queue_uploads(
         # kuyruk arızası arşivlemeyi eskisinden kötü yapmamalı.
         from services.upload_queue import enqueue_upload
         ham_upload_src = ham_source_path or source_path
+        # Bu noktada dönüşüm başarılıdır: yukarıdaki kapı (conversion_error)
+        # pdfa_temp_file boş/yok ise zaten pending katmanına dönmüştü.
+        islenmis_src = cast(str, pdfa_temp_file)
         if enqueue_upload("ham", ham_upload_src, ham_filename, ham_folder, document_id=doc_id) is None:
             background_tasks.add_task(async_ham_upload, ham_upload_src, ham_filename, ham_folder)
-        if enqueue_upload("islenmis", pdfa_temp_file, new_filename, islenmis_folder, document_id=doc_id) is None:
-            background_tasks.add_task(async_islenmis_upload, pdfa_temp_file, new_filename, islenmis_folder, doc_id)
+        if enqueue_upload("islenmis", islenmis_src, new_filename, islenmis_folder, document_id=doc_id) is None:
+            background_tasks.add_task(async_islenmis_upload, islenmis_src, new_filename, islenmis_folder, doc_id)
         timings["2_ham_upload"] = 0.00
         timings["3b_gizli_upload"] = 0.00
         results["sharepoint_ham"] = f"Arka Plana Atıldı ({ham_filename})"

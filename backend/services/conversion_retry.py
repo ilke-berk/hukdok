@@ -38,7 +38,7 @@ import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 from database import SessionLocal
 from file_utils import safe_remove
@@ -313,13 +313,15 @@ def _janitor(now: Optional[datetime] = None) -> None:
             .all()
         )
         for doc in rows:
-            path = doc.conversion_spool_path
+            # cast: modeller eski stil Column() ile tanımlı, mypy örnek alanını
+            # Column[str] / Column[datetime] görür (Mapped[] geçişine kadar).
+            path = cast(Optional[str], doc.conversion_spool_path)
             if not path:
                 continue
             referenced.add(path)
             cutoff_reason = None
             if doc.deleted_at is not None:
-                deleted_at = _as_utc(doc.deleted_at)
+                deleted_at = _as_utc(cast(Optional[datetime], doc.deleted_at))
                 if deleted_at and deleted_at < now - timedelta(days=DELETED_SPOOL_RETENTION_DAYS):
                     cutoff_reason = "soft-delete"
             elif doc.conversion_status == "failed":
