@@ -1292,7 +1292,10 @@ const NewCase = () => {
 
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
-                                                <Scale className="w-3 h-3" /> Alt Tür (Yargı Türü Alt Kırılımı)
+                                                {/* Seçenekler `specialties` listesinden gelir; eski "Dava Türü Alt
+                                                    Kırılımı" adı alanın taşıdığı veriyi yanlış anlatıyordu
+                                                    (FAZ F §1.4 / G048). Kolon adı sub_type olarak kaldı. */}
+                                                <Scale className="w-3 h-3" /> Uzmanlık Alanı
                                             </Label>
                                             <Popover>
                                                 <PopoverTrigger asChild>
@@ -1307,7 +1310,7 @@ const NewCase = () => {
                                                 </PopoverTrigger>
                                                 <PopoverContent className="w-full p-0 max-h-64" align="start">
                                                     <Command>
-                                                        <CommandInput placeholder="Alt tür ara..." />
+                                                        <CommandInput placeholder="Uzmanlık alanı ara..." />
                                                         <CommandEmpty>Kayıt bulunamadı.</CommandEmpty>
                                                         <CommandGroup className="overflow-auto max-h-56">
                                                             {specialties.map((s) => (
