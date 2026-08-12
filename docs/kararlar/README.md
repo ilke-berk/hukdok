@@ -20,6 +20,10 @@ tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 | [011](011-bellek-swap-yasagi.md) | Swap yasak, bellek limitleri repoda, `MALLOC_ARENA_MAX=2` |
 | [012](012-soft-delete-baglar-korunur.md) | Soft-delete: bağlar koparılmaz, `active` alanına dokunulmaz |
 | [013](013-bagimlilik-yamalama-ve-calisma-zamani.md) | Bağımlılık yamalama sırası, tarihli ignore listesiyle denetim kapısı, `node:24` + `python:3.12` |
+| [014](014-uyap-avukati-on-doldurulmaz.md) | UYAP Avukatı ön-doldurulmaz; zorunluluk bağlamsallaşır |
+| [015](015-kanonik-dava-konusu-yazimi.md) | Kanonik dava konusu yazımı; asıl düzeltme veri değil kural |
+| [016](016-ofis-no-kategori-rejimi.md) | Ofis no kategori rejimi: `K1` ileriye dönük, geçmiş dokunulmaz |
+| [017](017-elasticsearch-ve-redis-kapsam-disi.md) | Elasticsearch ve Redis kapsam dışı: bellek bütçesi + kullanılmayan index'ler |
 
 ## Dosya biçimi
 
