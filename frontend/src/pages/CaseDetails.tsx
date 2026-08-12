@@ -13,6 +13,12 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useCases } from "@/hooks/useCases";
+import { useConfig } from "@/hooks/useConfig";
+import {
+    MEDICAL_CARD_FIELDS, PROCESS_CARD_FIELDS,
+    filledFields, formatCardValue, closedListState,
+    type CardFieldDef, type ClosedListKey,
+} from "@/lib/caseCardFields";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +67,18 @@ interface CaseDetailsData {
     klasor_no_2?: string;
     atama_tarihi?: string;
     notes?: string;
+    // FAZ F aktarım alanları (G044 kolonları açtı, okuma yolu get_case'te hazır).
+    // Yazma yolu FAZ F'nin işi — kartta SALT OKUNUR gösterilir.
+    islah_tutari?: number;
+    arsiv_tarihi?: string;
+    istinaf_basvuran_taraf?: string;
+    arabuluculuk_no?: string;
+    arabuluculuk_karar_tarihi?: string;
+    tibbi_surec?: string;
+    tibbi_olay?: string;
+    iddia_edilen_kusur?: string;
+    hastada_olusan_zarar?: string;
+    uygulanan_yontem?: string;
     related_cases?: { id: number; esas_no?: string; tracking_no?: string; file_type?: string; court?: string; status: string }[];
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
@@ -104,11 +122,78 @@ const CopyButton = ({ value }: { value: string }) => {
     );
 };
 
+/**
+ * Kapalı liste değeri — serbest metin gibi değil, rozet olarak basılır.
+ * Liste BOŞken damga vurulmaz: alleged_faults tam olarak boş doğuyor (G044),
+ * her kaydı "liste dışı" işaretlemek yanlış alarm olurdu.
+ */
+const ClosedListValue = ({ value, options }: { value: string; options: { name: string }[] }) => {
+    const state = closedListState(value, options);
+    return (
+        <Badge
+            variant="outline"
+            className={`w-fit font-normal ${state === "off-list" ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : ""}`}
+            title={state === "off-list" ? "Bu değer kapalı listede yok — aktarımdan gelmiş olabilir" : undefined}
+        >
+            {value}
+        </Badge>
+    );
+};
+
+/**
+ * FAZ F aktarım alanlarının grup kartı. Dosya Bilgileri kartıyla AYNI desen —
+ * boş alan satırı basılmaz, grubun tamamı boşsa kart hiç doğmaz (aktarım
+ * partiler hâlinde gelecek; dosyaların çoğunda bu alanlar uzun süre boş kalır).
+ */
+const TransferFieldsCard = ({
+    title, description, icon, fields, data, closedLists,
+}: {
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    fields: CardFieldDef[];
+    data: Record<string, unknown>;
+    closedLists: Record<ClosedListKey, { name: string }[]>;
+}) => {
+    const visible = filledFields(data, fields);
+    if (visible.length === 0) return null;
+    return (
+        <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
+            <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                    {icon}
+                    {title}
+                </CardTitle>
+                <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {visible.map(f => (
+                        <div key={f.key} className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{f.label}</span>
+                            {f.type === "closedList" ? (
+                                <ClosedListValue
+                                    value={formatCardValue(data[f.key], f.type)}
+                                    options={f.list ? closedLists[f.list] : []}
+                                />
+                            ) : (
+                                <span className="font-medium">{formatCardValue(data[f.key], f.type)}</span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
 const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
     const { getCase, getRelatedCases, addCaseRelation, removeCaseRelation } = useCases();
+    // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
+    const { allegedFaults, appealingParties } = useConfig();
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
     const [activeTab, setActiveTab] = useState("overview");
@@ -605,6 +690,26 @@ const CaseDetails = () => {
                             </Card>
                         )}
 
+                        {/* FAZ F aktarım alanları — beş tıbbi alan TEK grupta (G048);
+                            karta dağıtılınca malpraktis dosyasının tıbbi tablosu okunmuyordu. */}
+                        <TransferFieldsCard
+                            title="Tıbbi Bilgiler"
+                            description="Tıbbi süreç, olay ve iddia edilen kusur"
+                            icon={<Activity className="w-4 h-4 text-primary" />}
+                            fields={MEDICAL_CARD_FIELDS}
+                            data={caseData}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                        />
+
+                        <TransferFieldsCard
+                            title="Süreç Bilgileri"
+                            description="Arabuluculuk, kanun yolu ve arşiv bilgileri"
+                            icon={<Scale className="w-4 h-4 text-primary" />}
+                            fields={PROCESS_CARD_FIELDS}
+                            data={caseData}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                        />
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader>
@@ -637,6 +742,14 @@ const CaseDetails = () => {
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
                                             <span className="text-muted-foreground">Hükmedilen Toplam</span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_toplam as number)}</span>
+                                        </div>
+                                    )}
+                                    {/* Islah tutarı = ıslahla EKLENEN miktar (FAZ F §1.1); güncel
+                                        talep dava değeridir. Ayrı satır, aynı gizleme kuralı. */}
+                                    {caseData.islah_tutari != null && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">Islah Tutarı</span>
+                                            <span className="font-semibold text-lg">{formatCurrency(caseData.islah_tutari as number)}</span>
                                         </div>
                                     )}
                                 </CardContent>

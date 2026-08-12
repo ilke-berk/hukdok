@@ -39,9 +39,10 @@ export const INTAKE_FIELDS: IntakeFieldDef[] = [
   // Yargı Birimi: mahkeme adından backend'de türetilir (route 4b), NewCase ile
   // aynı kaynak (courtTypesByParent) sunulur
   { key: "judicial_unit",           draftKey: "judicial_unit",  label: "Yargı Birimi",       widget: "select",   enabled: true, section: "Dosya Kimliği" },
-  // Alt Tür: NewCase ile aynı — specialties listesi (etiket yanıltıcı olsa da
-  // eski veride sub_type uzmanlık tutar; veri tutarlılığı için aynı kaynak)
-  { key: "sub_type",                                            priorsKey: "sub_type",       label: "Dosya Alt Türü", widget: "combobox", enabled: true, section: "Dosya Kimliği" },
+  // Uzmanlık Alanı: NewCase ile aynı — specialties listesi. Etiket 2026-08-12'de
+  // düzeldi (FAZ F §1.4 / G044+G048): alan zaten uzmanlık tutuyordu, adı yanıltıcıydı.
+  // Kolon adı (`sub_type`) BİLİNÇLİ korundu — değişen yalnız Türkçe ad.
+  { key: "sub_type",                                            priorsKey: "sub_type",       label: "Uzmanlık Alanı", widget: "combobox", enabled: true, section: "Dosya Kimliği" },
   // Geçici gizli (2026-08-04): Ek Alt Kırılım dropdown'u güncellenecek, sonra
   // kullanıma açılacak (NewCase'teki blok ve required_fields.py ile birlikte
   // geri al). enabled:false → state kurulmaz; enrich modunda alan davaya

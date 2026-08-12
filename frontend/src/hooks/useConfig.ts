@@ -61,6 +61,11 @@ const CONFIG_KEYS = {
     specialties: ["config", "specialties"],
     clientCategories: ["config", "client_categories"],
     fileStatuses: ["config", "file_statuses"],
+    // FAZ F'nin iki KAPALI listesi (G044 backend'de açtı, G048 karta bağladı).
+    // Dava kartındaki iddia_edilen_kusur / istinaf_basvuran_taraf değerleri
+    // BURADAN gelir; frontend'de sabit değer listesi tutulmaz.
+    allegedFaults: ["config", "alleged_faults"],
+    appealingParties: ["config", "appealing_parties"],
 } as const;
 
 export const useConfig = () => {
@@ -124,6 +129,8 @@ export const useConfig = () => {
     const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), ...queryOpts });
     const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), ...queryOpts });
     const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), ...queryOpts });
+    const allegedFaultsQ = useQuery({ queryKey: CONFIG_KEYS.allegedFaults, queryFn: () => fetchJson("/api/config/alleged_faults"), ...queryOpts });
+    const appealingPartiesQ = useQuery({ queryKey: CONFIG_KEYS.appealingParties, queryFn: () => fetchJson("/api/config/appealing_parties"), ...queryOpts });
     const requiredCaseFieldsQ = useQuery({
         queryKey: ["config", "required_case_fields"],
         queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
@@ -140,7 +147,7 @@ export const useConfig = () => {
     const listQueries = [
         lawyersQ, statusesQ, doctypesQ, emailRecipientsQ, caseSubjectsQ, fileTypesQ,
         courtTypesQ, partyRolesQ, bureauTypesQ, citiesQ, specialtiesQ,
-        clientCategoriesQ, fileStatusesQ,
+        clientCategoriesQ, fileStatusesQ, allegedFaultsQ, appealingPartiesQ,
     ];
     const isConfigError = listQueries.some(q => q.isError);
     const isRequiredFieldsError = requiredCaseFieldsQ.isError;
@@ -157,7 +164,8 @@ export const useConfig = () => {
         emailRecipientsQ.isLoading || caseSubjectsQ.isLoading ||
         fileTypesQ.isLoading || courtTypesQ.isLoading || partyRolesQ.isLoading ||
         bureauTypesQ.isLoading || citiesQ.isLoading || specialtiesQ.isLoading ||
-        clientCategoriesQ.isLoading || fileStatusesQ.isLoading;
+        clientCategoriesQ.isLoading || fileStatusesQ.isLoading ||
+        allegedFaultsQ.isLoading || appealingPartiesQ.isLoading;
 
     const typeToKey: Record<string, (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS]> = {
         lawyers: CONFIG_KEYS.lawyers,
@@ -257,6 +265,8 @@ export const useConfig = () => {
         specialties: specialtiesQ.data ?? EMPTY,
         clientCategories: clientCategoriesQ.data ?? EMPTY,
         fileStatuses: fileStatusesQ.data ?? EMPTY,
+        allegedFaults: allegedFaultsQ.data ?? EMPTY,
+        appealingParties: appealingPartiesQ.data ?? EMPTY,
         requiredCaseFields: requiredCaseFieldsQ.data?.fields ?? EMPTY_REQUIRED,
         requiredPartyRule: requiredCaseFieldsQ.data?.party_rule ?? null,
         isLoading,
