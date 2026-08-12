@@ -150,13 +150,25 @@ function AnaTemizMi {
 # Izin/yasak desenleri iki aracta IKIZ tutulur; git mv tasima gorevleri icin eklendi.
 # 2026-08-11 G013 dersi: script gorevleri "bash -n" (salt sozdizim, yan etkisiz) ister;
 # listede yoktu, docs bandindaki isci dogrulama kosamadan BLOKE kaldi.
+#
+# 2026-08-12 G038 dersi (ayni desen, ucuncu tekrar): deploy.sh test kapisi "kanitlandi"
+# duzeyinde kabul kriteri tasiyor; kanit "docker run" (yeni imajdan tek seferlik konteyner)
+# ve kapinin kendisini kosturmak ister. Ikisi de listede yoktu -> BLOKE.
+#   - "docker run:*" eklendi. Yerel makinede kalir: prod'a giden tek yol ssh ve o
+#     $yasakOrtak'ta. "docker compose run" BILEREK EKLENMEDI - .env'i (gercek
+#     DATABASE_URL) tasir ve migrasyon testi ulastigi Postgres'te scratch veritabani
+#     yaratip dusurur; temiz ortamli "docker run" bu yuzden sart.
+#   - "bash deploy.sh" DEGIL, yalnizca "bash deploy.sh --gate-only" eklendi. Ciplak
+#     deploy.sh git pull --ff-only (:68) ve docker compose up -d (:111) kosar; gozetimsiz
+#     bir gece oturumunda ikisi de istenmez. --gate-only kapiyi deploy akisindan yalitir
+#     (G038 raporundaki tasarim) ve "cikis kodu goruldu" kanitini tek basina uretir.
 $ortakAraclar  = '"Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git mv:*)" "Bash(npm:*)" "Bash(npx:*)" "Bash(bash -n:*)" "PowerShell(git status:*)" "PowerShell(git diff:*)" "PowerShell(git log:*)" "PowerShell(git show:*)" "PowerShell(git mv:*)" "PowerShell(bash -n:*)"'
 $yasakOrtak    = '"Bash(git push:*)" "Bash(ssh:*)" "Bash(scp:*)" "Bash(gcloud:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(git restore:*)" "Bash(git merge:*)" "Bash(git worktree:*)" "PowerShell(git push:*)" "PowerShell(ssh:*)" "PowerShell(scp:*)" "PowerShell(gcloud:*)" "PowerShell(git reset:*)" "PowerShell(git checkout:*)" "PowerShell(git restore:*)" "PowerShell(git merge:*)" "PowerShell(git worktree:*)"'
-$izinBackend   = $ortakAraclar + ' "Bash(docker compose:*)" "Bash(git add:*)" "Bash(git commit:*)" "PowerShell(docker compose:*)" "PowerShell(git add:*)" "PowerShell(git commit:*)"'
+$izinBackend   = $ortakAraclar + ' "Bash(docker compose:*)" "Bash(docker run:*)" "Bash(bash deploy.sh --gate-only:*)" "Bash(git add:*)" "Bash(git commit:*)" "PowerShell(docker compose:*)" "PowerShell(docker run:*)" "PowerShell(bash deploy.sh --gate-only:*)" "PowerShell(git add:*)" "PowerShell(git commit:*)"'
 $izinWorktree  = $ortakAraclar + ' "Bash(git add:*)" "Bash(git commit:*)" "PowerShell(git add:*)" "PowerShell(git commit:*)"'
 $yasakBackend  = $yasakOrtak
 $yasakWorktree = $yasakOrtak + ' "Bash(docker:*)" "PowerShell(docker:*)"'
-$denetBackend  = $ortakAraclar + ' "Bash(docker compose:*)" "PowerShell(docker compose:*)"'
+$denetBackend  = $ortakAraclar + ' "Bash(docker compose:*)" "Bash(docker run:*)" "Bash(bash deploy.sh --gate-only:*)" "PowerShell(docker compose:*)" "PowerShell(docker run:*)" "PowerShell(bash deploy.sh --gate-only:*)"'
 $denetWorktree = $ortakAraclar
 
 # --- serit durumu ---
