@@ -161,7 +161,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      kalanı backend = seri. Bu kuyrukta gerçek paralellik YOK. -->
 
 - [x] G049 | bant:backend | bagimli:- | G045 RET: sync_current_esas geri dönüşte UniqueViolation + yalancı yeşil test
-- [ ] G050 | bant:backend | bagimli:- | Deploy kapısı kendi postgres'ini kaldırmalı (28 test sessizce atlanıyor)
+- [x] G050 | bant:backend | bagimli:- | Deploy kapısı kendi postgres'ini kaldırmalı (28 test sessizce atlanıyor)
 - [ ] G051 | bant:backend | bagimli:G049 | E1+E3: dava kartı selectinload + arama count()'unun atılması
 - [ ] G052 | bant:backend | bagimli:- | E2: intake mahkeme sözlüğü TTL cache (mekanizma hazır)
 - [ ] G053 | bant:backend | bagimli:- | E4: bantlı/erken çıkışlı Levenshtein (maliyetin %69'u)
