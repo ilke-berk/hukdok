@@ -5,3 +5,6 @@ pytest==8.3.5
 httpx==0.28.1
 ruff==0.15.21
 mypy==2.2.0
+# Kapsam ölçümü — YALNIZ CI'da --cov bayraklarıyla koşar (pyproject addopts'a girmez;
+# bkz. .github/workflows/ci.yml "pytest (kapsam kapısı)")
+pytest-cov==7.1.0

@@ -46,4 +46,15 @@ disable_error_code = ["assignment"]
 testpaths = ["tests"]
 # Uygulama modülleri backend kökünden import edilir (import zinciri /app'e göre)
 pythonpath = ["."]
+# DİKKAT: --cov bayrakları buraya GİRMEZ. İki sebep: (1) lokal koşuyu yavaşlatır,
+# (2) pytest-cov prod imajında yoktur (requirements-dev.txt) — addopts'a girerse
+# dev araçsız konteynerde `python -m pytest` "unrecognized arguments" ile ölür.
+# Kapsam yalnız CI adımında ölçülür (.github/workflows/ci.yml).
 addopts = "-q"
+
+# Kapsam ölçümü uygulama kodunu sayar; test ve yardımcı scriptler hariç.
+[tool.coverage.run]
+omit = [
+    "tests/*",
+    "scripts/*",
+]

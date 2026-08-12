@@ -55,8 +55,13 @@ jobs:
       - name: mypy (Faz 3.1 — managers/ + routes/)
         run: mypy
 
-      - name: pytest
-        run: pytest
+      # Kapsam kapısı bir HEDEF değil, gerilemeyi yakalayan TABANdır.
+      # Eşik 58: 2026-08-12'de ölçülen %60,03'ün 2 puan altı (G030). Ölçüm
+      # ayarı backend/pyproject.toml [tool.coverage.run] (tests/ + scripts/ hariç).
+      # --cov bayrakları bilinçli olarak addopts'a değil BURAYA yazılır: lokal
+      # koşuyu yavaşlatmasın ve pytest-cov'suz konteynerde pytest kırılmasın.
+      - name: pytest (kapsam kapısı)
+        run: pytest --cov=. --cov-report=term-missing:skip-covered --cov-fail-under=58
 
   frontend:
     runs-on: ubuntu-latest
