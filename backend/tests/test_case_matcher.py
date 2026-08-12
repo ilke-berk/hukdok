@@ -1,17 +1,25 @@
 """case_matcher testleri — eşleştirme skorları (plan 2.1/3).
 
-Saf skorlayıcılar doğrudan; find_matching_case ise database.SessionLocal
+Saf skorlayıcılar doğrudan; find_matching_case ise DB katmanı (`_fetch_*`)
 monkeypatch'lenerek sahte dava anlık görüntüleriyle test edilir.
+
+Sahte yükleyiciler bilinçli olarak DARALTMA YAPMAZ (bütün davaları, bütün
+taraflarıyla döndürür). Böylece testler yalnız skorlamayı ölçmekle kalmaz,
+G054'ün güvenlik savını da kilitler: skorlama SQL ön filtresine BAĞIMLI
+olmamalı — eşleşmeyen taraf sonucu değiştirmemeli. SQL'in kendisi gerçek
+Postgres'e karşı `tests/test_case_matcher_sql.py` ile ölçülür.
 """
 from types import SimpleNamespace
 
 import pytest
 
+import case_matcher
 import database
 from case_matcher import (
     _court_similarity,
     _esas_no_similarity,
     _normalize,
+    _score_cases,
     find_matching_case,
 )
 
@@ -102,26 +110,8 @@ class TestCourtSimilarity:
 
 # ── find_matching_case (sahte DB ile uçtan uca skorlama) ─────────────────────
 
-class _FakeQuery:
-    def __init__(self, cases):
-        self._cases = cases
-
-    def options(self, *a, **k):
-        return self
-
-    def filter(self, *a, **k):
-        return self
-
-    def all(self):
-        return self._cases
-
-
 class _FakeSession:
-    def __init__(self, cases):
-        self._cases = cases
-
-    def query(self, *a, **k):
-        return _FakeQuery(self._cases)
+    """Sorguları sahte yükleyiciler karşılıyor — oturumun tek işi kapanmak."""
 
     def close(self):
         pass
@@ -144,12 +134,42 @@ def _case(id, esas_no, court, parties, tracking_no="TRK", status="Açık"):
     )
 
 
+def _party_row(p):
+    return {"name": p.name, "role": p.role, "party_type": p.party_type}
+
+
 @pytest.fixture
 def with_cases(monkeypatch):
-    """database.SessionLocal'ı verilen davaları döndüren sahteyle değiştirir."""
+    """case_matcher'ın üç DB yükleyicisini bellek içi sahtelerle değiştirir."""
 
     def _install(cases):
-        monkeypatch.setattr(database, "SessionLocal", lambda: _FakeSession(cases))
+        def _parties(db, doc_names_norm):
+            return {c.id: [_party_row(p) for p in c.parties] for c in cases if c.parties}
+
+        def _case_rows(db, party_case_ids, esas_no, mahkeme, narrow):
+            return [
+                {"id": c.id, "esas_no": c.esas_no or "", "court": c.court or ""}
+                for c in cases
+            ]
+
+        def _display(db, case_ids):
+            wanted = set(case_ids)
+            info = {
+                c.id: {
+                    "tracking_no": c.tracking_no,
+                    "responsible_lawyer_name": c.responsible_lawyer_name or "",
+                    "status": c.status or "",
+                }
+                for c in cases
+                if c.id in wanted
+            }
+            parties = {c.id: [_party_row(p) for p in c.parties] for c in cases if c.id in wanted}
+            return info, parties
+
+        monkeypatch.setattr(case_matcher, "_fetch_candidate_parties", _parties)
+        monkeypatch.setattr(case_matcher, "_fetch_case_rows", _case_rows)
+        monkeypatch.setattr(case_matcher, "_fetch_display", _display)
+        monkeypatch.setattr(database, "SessionLocal", _FakeSession)
 
     return _install
 
@@ -240,3 +260,55 @@ class TestFindMatchingCase:
         )
         # Kısmi eşleşme (içerme, iki taraf da ≥6 karakter) → +15
         assert best["score"] == 15
+
+
+# ── Aday daraltmanın güvenlik savı (G054) ────────────────────────────────────
+
+_COURT = "İstanbul 5. Tüketici Mahkemesi"
+
+
+def _row(name, party_type="CLIENT"):
+    return {"name": name, "role": "", "party_type": party_type}
+
+
+class TestOnFiltreGuvenligi:
+    """SQL ön filtresi eşleşmeyen tarafları çekmiyor — skorlama etkilenmemeli."""
+
+    @pytest.mark.parametrize(
+        "doc_names",
+        [
+            ["Ali Veli"],                    # tam eşleşme
+            ["Ali Veli Mirasçıları"],        # kısmi eşleşme (içerme)
+            ["Bulunmayan Kişi"],             # hiç eşleşme yok
+        ],
+    )
+    def test_eslesmeyen_taraflar_skoru_degistirmez(self, doc_names):
+        case_rows = [{"id": 1, "esas_no": "2024/1", "court": _COURT}]
+        matching = _row("Ali Veli")
+        full = {1: [_row("Zeta Sigorta AŞ", "COUNTER"), matching, _row("Hasan Kaya", "THIRD")]}
+        narrowed = {1: [matching]}
+
+        args = (doc_names, None, _COURT, 10)
+        assert _score_cases(case_rows, full, *args) == _score_cases(case_rows, narrowed, *args)
+
+    def test_ayni_adli_iki_taraftan_ILKI_puanlanir(self):
+        """Puan taraf SIRASINA bağlı (`break`) — ön filtre sırayı korumalı.
+
+        İki taraf aynı ada normalize oluyorsa yalnız ilki puanlanır; müvekkil
+        (+30) ile karşı taraf (+12) arasındaki fark buna bağlıdır. Bu yüzden
+        `_fetch_candidate_parties` satırları `case_parties.id` ile sıralar.
+        """
+        case_rows = [{"id": 1, "esas_no": "", "court": ""}]
+        client_first = {1: [_row("Ali Veli", "CLIENT"), _row("ALİ VELİ", "COUNTER")]}
+        counter_first = {1: [_row("ALİ VELİ", "COUNTER"), _row("Ali Veli", "CLIENT")]}
+
+        args = (["Ali Veli"], None, None, 1)
+        assert _score_cases(case_rows, client_first, *args)[0]["score"] == 30
+        assert _score_cases(case_rows, counter_first, *args)[0]["score"] == 12
+
+    def test_taraf_bilgisi_olmayan_dava_skorlanabilir(self):
+        """Ön filtre hiç taraf getirmese de esas/mahkeme puanı üretilebilmeli."""
+        case_rows = [{"id": 7, "esas_no": "2024/123", "court": _COURT}]
+        candidates = _score_cases(case_rows, {}, [], "2024/123", _COURT, 40)
+        assert [c["case_id"] for c in candidates] == [7]
+        assert candidates[0]["score"] == 100
