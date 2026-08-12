@@ -24,7 +24,8 @@ KURALI burada ve testli, uygulaması FAZ F'nin aktarım scriptinin işi.
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -121,6 +122,14 @@ def test_guncel_satir_kisiti_kismi_unique():
     Türetme kuralının ("cases.esas_no = is_current satırının kopyası") tek
     yazma yoluna bırakılması yetmez: yarın bir aktarım scripti doğrudan INSERT
     ederse kısıt son savunmadır.
+
+    G049: bu test METNE bakar ve BİLEREK KALIR — migrasyonun kısıtı tanımlamayı
+    bırakmasını (silinmesini/daraltılmasını) yakalayan tek kontrol budur; kısıt
+    şemadan çıkarsa davranış testi de sessizce yeşile döner. Metin testinin
+    YALNIZ BAŞINA yeterli sanılması G045'in RET sebebiydi, o yüzden yanına iki
+    davranış testi eklendi: `test_guncel_satir_kisiti_davranista_zorlaniyor`
+    (sqlite, fixture artık migrasyon index'lerini kuruyor) ve gerçek Postgres'e
+    karşı `test_migration_path.py::test_esas_geri_donusu_kismi_unique_*`.
     """
     sql = next(s for s in _index_ops(TABLO) if "uq_case_esas_current" in s)
     assert "UNIQUE" in sql.upper()
@@ -181,7 +190,17 @@ def test_parse_esas_history_uzun_rakam_dizisini_yutmuyor():
 
 @pytest.fixture()
 def db_env(monkeypatch):
-    """Paylaşılan in-memory sqlite + case_manager.SessionLocal yönlendirmesi."""
+    """Paylaşılan in-memory sqlite + case_manager.SessionLocal yönlendirmesi.
+
+    G049 — HARNESS KÖRLÜĞÜ KAPATILDI: `create_all` yalnız MODELDEKİ kısıtları
+    kurar; `uq_case_esas_current` gibi yalnız migrasyonda tanımlı kısmi unique
+    index'ler sqlite'ta hiç oluşmuyordu. Sonuç: G045'in "geri dönüş" testi
+    burada yeşil, gerçek Postgres'te `duplicate key ... uq_case_esas_current`
+    ile 500'dü. Migrasyonun `("index", TABLO, ...)` SQL'leri fixture'a OLDUĞU
+    GİBİ uygulanır — sqlite de kısmi unique index destekler, dolayısıyla kısıt
+    artık birim koşuda da gerçekten zorlanır. SQL'ler elle tekrarlanmaz:
+    migrasyon değişirse fixture kendiliğinden uyar.
+    """
     from database import Base
     from managers import case_manager
 
@@ -191,6 +210,9 @@ def db_env(monkeypatch):
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        for sql in _index_ops(TABLO):
+            conn.execute(text(sql))
     maker = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     monkeypatch.setattr(case_manager, "SessionLocal", maker)
     yield SimpleNamespace(sessions=maker, manager=case_manager)
@@ -290,6 +312,67 @@ def test_ayni_numara_ikinci_kez_yazilinca_yeni_satir_acilmiyor(db_env):
         ("2024/145", "YEREL", False),
     ]
     _invariant(db_env, case_id)
+
+
+def test_guncel_satir_kisiti_davranista_zorlaniyor(db_env):
+    """Kısıt METİNDE değil ŞEMADA var mı — ikinci güncel satır gerçekten reddediliyor mu?
+
+    G049: `test_guncel_satir_kisiti_kismi_unique` yalnız migrasyon SQL'inin
+    metnine bakıyordu; fixture ise kısıtı hiç kurmuyordu. İki kör nokta üst
+    üste gelince "kısıt var" iddiası test edilmemiş bir inanç hâline gelmişti.
+    Burada doğrudan INSERT edilir — kısıt son savunma olarak deneniyor.
+    """
+    case_id = _dava(db_env)
+
+    db = db_env.sessions()
+    try:
+        db.add(models.CaseEsasNumber(
+            case_id=case_id, esas_no="2024/145", stage="YEREL", is_current=True,
+        ))
+        with pytest.raises(IntegrityError):
+            db.flush()
+    finally:
+        db.rollback()
+        db.close()
+
+    # Kısıt tutunca tarihçe bozulmadan kaldı
+    assert _satirlar(db_env, case_id) == [("2017/325", "YEREL", True)]
+
+
+def test_esas_gecis_siralari_ileri_geri_tekrar(db_env):
+    """G049 kabul kriteri: üç geçiş sırası da kısıtı ihlal etmeden yürüyor.
+
+    G045 denetiminde patlayan sıra GERİ dönüştü: hedef satırın id'si eski
+    güncel satırınkinden KÜÇÜK olduğu için SQLAlchemy tek flush'ta önce ona
+    True yazıyor ve o an iki güncel satır oluyordu. `sync_current_esas` artık
+    düşürmeyi ayrı bir flush'ta önden yazıyor ("önce boşalt, sonra işaretle").
+
+    İnvariant her adımdan SONRA doğrulanır: bir dava başına en fazla bir güncel
+    satır ve `cases.esas_no` tam olarak o satırın kopyası.
+    """
+    case_id = _dava(db_env)                                   # 1. ileri: ilk satır
+    _invariant(db_env, case_id)
+    assert _satirlar(db_env, case_id) == [("2017/325", "YEREL", True)]
+
+    assert db_env.manager.update_case(case_id, {"esas_no": "2024/145"}) is True
+    _invariant(db_env, case_id)                               # 2. ileri: yeni numara
+    assert _kolon(db_env, case_id) == "2024/145"
+
+    # 3. GERİ: tarihçedeki DAHA ESKİ (küçük id'li) satıra dönüş — patlayan yol
+    assert db_env.manager.update_case(case_id, {"esas_no": "2017/325"}) is True
+    _invariant(db_env, case_id)
+    assert _satirlar(db_env, case_id) == [
+        ("2017/325", "YEREL", True),
+        ("2024/145", "YEREL", False),
+    ]
+
+    # 4. TEKRAR: aynı numara yeniden yazılıyor (aktarım tekrar koşacak, §0)
+    assert db_env.manager.update_case(case_id, {"esas_no": "2017/325"}) is True
+    _invariant(db_env, case_id)
+    assert _satirlar(db_env, case_id) == [
+        ("2017/325", "YEREL", True),
+        ("2024/145", "YEREL", False),
+    ]
 
 
 def test_enrich_case_de_ayni_yoldan_geciyor(db_env):

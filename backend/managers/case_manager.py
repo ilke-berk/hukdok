@@ -137,6 +137,7 @@ def sync_current_esas(db, case, esas_no, court=None, source=None,
         db.flush()          # FK için dava id'si şart
 
     target = None
+    demoted = False
     rows = db.query(models.CaseEsasNumber).filter(
         models.CaseEsasNumber.case_id == case.id
     ).all()
@@ -145,6 +146,23 @@ def sync_current_esas(db, case, esas_no, court=None, source=None,
             target = row
         elif row.is_current:
             row.is_current = False
+            demoted = True
+
+    # ÖNCE BOŞALT, SONRA İŞARETLE (G049 — G045 denetim bulgusu).
+    # `uq_case_esas_current` kısmi unique index'i ertelenebilir DEĞİLDİR: ihlal
+    # flush'ın SONUNDA değil, ihlal eden ifadenin kendisinde patlar. SQLAlchemy
+    # aynı flush'taki UPDATE'leri PK sırasına göre yayar; tarihçede ZATEN VAR
+    # OLAN daha eski bir numaraya geri dönüşte hedefin id'si küçük olduğu için
+    # önce ona True yazılır → o an iki güncel satır olur → UniqueViolation
+    # (gerçek kullanıcı yolu: yazım hatası düzeltme, görevsizlik sonrası dönüş).
+    # Bu yüzden düşürme AYRI ve ÖNCE gelen bir flush'ta yazılır; aradaki anda
+    # dava "güncel satırsız" kalır, ki kısıt bunu serbest bırakır.
+    # Toplu tek UPDATE alternatifi (`query(...).update({is_current: False})`)
+    # de kısıtı sağlardı ama hedefi de gereksizce düşürüp geri kaldırırdı ve
+    # ORM kimlik haritasını `synchronize_session` ile elle senkronlamayı
+    # gerektirirdi — akış aynı, riski fazla.
+    if demoted:
+        db.flush()
 
     if row_value is None:
         return None

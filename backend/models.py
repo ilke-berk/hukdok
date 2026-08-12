@@ -194,6 +194,7 @@ class CaseEsasNumber(Base):
 
     case = relationship("Case", back_populates="esas_numbers")
 
+
 class CaseStageLog(Base):
     __tablename__ = "case_stage_logs"
 

@@ -497,6 +497,87 @@ def test_create_all_mevcut_tabloya_index_eklemiyor(admin_engine):
         assert "tenant_id" in columns["clients"]
 
 
+def test_esas_geri_donusu_kismi_unique_kisitini_ihlal_etmiyor(admin_engine):
+    """G049 — `sync_current_esas` GERÇEK Postgres'te, gerçek kısıtla.
+
+    G045 denetimi burada patlamıştı: `uq_case_esas_current` kısmi unique
+    index'i yalnız MİGRASYONDA tanımlıdır, sqlite birim testleri ise
+    `create_all` ile kurulur — kısıt harness'ın kör noktasındaydı ve tarihçedeki
+    daha eski bir esasa GERİ DÖNÜŞ prod'da `duplicate key ...
+    uq_case_esas_current` ile 500 üretirken testler yeşildi. (Kör noktanın
+    kendisi de kapandı: test_g045 fixture'ı artık migrasyon index'lerini
+    sqlite'a uyguluyor — bu test onun Postgres'teki ikizi ve son sözü.)
+
+    Üç geçiş sırası da denenir: ileri (yeni numara), geri (tarihçedeki eski
+    numara — patlayan yol), tekrar (aynı numaranın yeniden yazımı, aktarımın
+    idempotency şartı). Her adımdan sonra "dava başına en fazla bir güncel
+    satır + kolon o satırın kopyası" invariantı doğrulanır.
+
+    Postgres'siz ortamda `admin_engine` fixture'ı tüm modülü sebebiyle birlikte
+    SKIP eder ("Gerçek Postgres'e ulaşılamadı ...") — bu test sqlite'ta
+    KOŞULAMAZ, çünkü ölçtüğü şey tam olarak migrasyonla kurulan şemadır.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import sessionmaker
+
+    import models
+    from managers.case_manager import sync_current_esas
+
+    with _scratch_database(admin_engine, "esascurrent") as engine:
+        _run_init_db(engine)
+        assert "uq_case_esas_current" in _live_indexes(engine), (
+            "kısmi unique index kurulmamış — bu testin ölçtüğü şey yok"
+        )
+
+        session = sessionmaker(bind=engine, autoflush=False)()
+        try:
+            case = models.Case(tracking_no="HA.G049.0001.2026", status="DERDEST")
+            session.add(case)
+            session.flush()
+
+            def _uygula(esas_no):
+                """Esası yazar, commit eder, invariantı doğrular, tarihçeyi döner."""
+                sync_current_esas(session, case, esas_no, source="g049-test")
+                session.commit()
+                rows = (
+                    session.query(models.CaseEsasNumber)
+                    .filter(models.CaseEsasNumber.case_id == case.id)
+                    .order_by(models.CaseEsasNumber.id)
+                    .all()
+                )
+                guncel = [r.esas_no for r in rows if r.is_current]
+                assert len(guncel) <= 1, f"birden çok güncel satır: {guncel}"
+                assert guncel == [case.esas_no], (
+                    f"kolon={case.esas_no!r} ile güncel satır {guncel} ayrıştı"
+                )
+                return [(r.esas_no, bool(r.is_current)) for r in rows]
+
+            # 1. ileri — ilk satır
+            assert _uygula("2017/325") == [("2017/325", True)]
+            # 2. ileri — yeni numara, eskisi tarihçede kalır
+            assert _uygula("2024/145") == [("2017/325", False), ("2024/145", True)]
+            # 3. GERİ — hedefin id'si KÜÇÜK; G045'te tam burada patlıyordu
+            assert _uygula("2017/325") == [("2017/325", True), ("2024/145", False)]
+            # 4. TEKRAR — idempotency: yeni satır açılmaz, kısıt yine tutar
+            assert _uygula("2017/325") == [("2017/325", True), ("2024/145", False)]
+
+            case_id = case.id
+        finally:
+            session.close()
+
+        # Kısıt yalnız akışı değil, doğrudan INSERT'i de reddetmeli: aktarım
+        # scriptleri `sync_current_esas`i atlarsa son savunma budur.
+        with pytest.raises(IntegrityError):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO case_esas_numbers (case_id, esas_no, stage, is_current) "
+                        "VALUES (:case_id, '2030/1', 'YEREL', true)"
+                    ),
+                    {"case_id": case_id},
+                )
+
+
 def test_unique_index_mukerrer_veride_anlasilir_hatayla_duruyor(admin_engine):
     """Savunmacı UNIQUE (G041): ham PG hatası yerine tablo/kolon/grup sayısı.
 
