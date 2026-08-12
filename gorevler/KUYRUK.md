@@ -110,7 +110,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G035 | bant:backend | bagimli:G031 | B.6: mypy kapsamı services/ (ölçüldü: 25 hata / 6 dosya)
 - [x] G036 | bant:frontend | bagimli:- | Main'de canlı 4 tip hatası (sahte tsc kapısının borcu)
 - [x] G037 | bant:backend | bagimli:G030,G036 | CI'daki sahte tsc kapısını gerçeğe çevir
-- [ ] G038 | bant:backend | bagimli:G030 | B.2: deploy.sh test kapısı (RİSKLİ — izin açıldı, --gate-only ZORUNLU)
+- [x] G038 | bant:backend | bagimli:G030 | B.2: deploy.sh test kapısı (RİSKLİ — izin açıldı, --gate-only ZORUNLU)
 - [x] G039 | bant:docs | bagimli:- | 12.08 kararlarını ADR'ye yaz (UYAP · kanonik yazım · K1 kodu · ES/Redis reddi)
 - [x] G040 | bant:docs | bagimli:G039 | FAZ C görev dosyalarını arşivle (G026-G029)
 
