@@ -137,7 +137,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G043 | bant:backend | bagimli:G042 | D 6.2-b: eksik FK/kısmi/fonksiyonel index'ler + E7 avukat filtresi
 - [x] G044 | bant:backend | bagimli:G041 | Şema: FAZ F'nin 11 yeni kolonu + Uzmanlık Alanı adlandırması
 - [ ] G045 | bant:backend | bagimli:G044 | case_esas_numbers: esas numarası tarihçesi tablosu | BLOKE(denetim RET - rapor: C:\Users\ilkeb\OneDrive\Masaüstü\hukudok-automator-main\otomasyon\loglar\denetim_20260812-172101_G045.out.log)
-- [ ] G046 | bant:backend | bagimli:G044 | E6: missing_required denormalize + D2/D8 bağlamsal zorunluluk kapısı
+- [x] G046 | bant:backend | bagimli:G044 | E6: missing_required denormalize + D2/D8 bağlamsal zorunluluk kapısı
 - [ ] G047 | bant:backend | bagimli:- | Deploy kapısı migrasyon testlerini koşmuyor (kendi postgres'ini kaldırmalı)
 - [x] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı | BLOKE(eski worktree duruyor - elle incele)
 
