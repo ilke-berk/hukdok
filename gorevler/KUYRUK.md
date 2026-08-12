@@ -165,7 +165,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G051 | bant:backend | bagimli:G049 | E1+E3: dava kartı selectinload + arama count()'unun atılması
 - [x] G052 | bant:backend | bagimli:- | E2: intake mahkeme sözlüğü TTL cache (mekanizma hazır)
 - [x] G053 | bant:backend | bagimli:- | E4: bantlı/erken çıkışlı Levenshtein (maliyetin %69'u)
-- [ ] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (tepe bellek 244 MB) | BLOKE(claude cikis kodu 1 - kota/ag olabilir)
+- [x] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (işçi erişim kesilmesiyle düştü — DİRİJAN DEVRİ ile bitirildi, bağımsız denetim YOK)
 - [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var)
 - [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
 
