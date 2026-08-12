@@ -169,6 +169,19 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var) | BLOKE(HESAP ERİŞİMİ: claude CLI "organization has disabled Claude subscription access for Claude Code" diyor; kod/kuyruk sorunu DEĞİL, işçi hiç başlayamadı - erişim dönünce eki sil)
 - [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
 
+## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
+
+- **`appealing_parties` seed'i iki worker arasında yarışıyor.** Prod açılışında tek ERROR:
+  `Seed AppealingParties Error: UniqueViolation ... Key (code)=(DAVACI) already exists`
+  (`seed_data.py:316`). İki uvicorn worker'ı (pid 16 + 17) aynı anda tohumluyor, biri
+  kazanıyor, diğeri kısıta çarpıyor. **Veri DOĞRU** — prod'da 3 satır, 0 mükerrer;
+  kısıt görevini yapmış. Ama her açılışta bir ERROR basılıyor ve bu, log sözleşmesini
+  ("nihai başarısızlık TEK ERROR", `analyzer.py::_failed_event`) aşındırır: izleme
+  gürültüye alışır. G044'ün getirdiği yeni tablo, yani bu deploy'un ürünü.
+  Çözüm yönü: seed'i lider kilidine almak (`services/singleton_lock.py`, APScheduler ve
+  upload outbox zaten orada) ya da `ON CONFLICT DO NOTHING`. Diğer seed'ler de aynı
+  desende mi — taranmalı.
+
 ## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
 
 <!-- FAZ C işçilerinin bulduğu, kapsam dışı bırakılan kalemler. -->
