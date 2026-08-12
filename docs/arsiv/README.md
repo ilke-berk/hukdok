@@ -20,7 +20,7 @@ kod haklıdır.
 
 | Yol | İçerik |
 | --- | --- |
-| [`gorevler/`](gorevler/README.md) | Kapanmış gece kuyruğu görev dosyaları (G001–G025) — tanım + oturum raporu. Aynı şerh geçerli: tarihseldir. |
+| [`gorevler/`](gorevler/README.md) | Kapanmış gece kuyruğu görev dosyaları (G001–G029) — tanım + oturum raporu. Aynı şerh geçerli: tarihseldir. |
 
 ## Aktif (arşiv olmayan) dokümanlar
 
