@@ -18,7 +18,11 @@ class Case(Base):
     esas_no = Column(String, index=True)
     status = Column(String, default="DERDEST") # "DERDEST", "DANIŞ", "MAHZEN"
     file_type = Column(String) # DOSYA_TURLERI
-    sub_type = Column(String) # MAHKEME_TURLERI
+    # Uzmanlık Alanı (eski adı "Dava Türü Alt Kırılımı" — FAZ F §1.4 ile yeniden
+    # adlandırıldı). Kolon ADI bilinçli DEĞİŞMEDİ: değer `specialties` referans
+    # listesinden gelir (frontend NewCase.tsx, reference_lists.DEPENDENCIES) ve
+    # rename bir ETİKET kararıdır — bkz. G044 raporu.
+    sub_type = Column(String) # SPECIALTIES → Uzmanlık Alanı
     service_type = Column(String) # Algorithm Block 5
     subject = Column(String) # DAVA_KONULARI
     court = Column(String)
@@ -107,6 +111,24 @@ class Case(Base):
     # Kesinleşme / İnfaz
     kesinlesme_tarihi = Column(Date, nullable=True)
     infaz_tarihi = Column(Date, nullable=True)
+
+    # ─── FAZ F aktarım alanları (şartname §1.1, G044) ────────────────────────
+    # Adlar BU TURDA kesinleşti: export sütun sabitliği taahhüdü verildikten
+    # sonra ad değiştirmek taahhüt ihlali olur (şartname §1.4). Hepsi NULL kabul
+    # eder — aktarım partiler hâlinde geleceği için "henüz gelmedi" normal
+    # durumdur. Yazma yolu FAZ F'nin işi; burada şema + okuma yolu var.
+    islah_tutari = Column(Numeric(precision=20, scale=2), nullable=True)  # ıslahla EKLENEN miktar (güncel talep = dava değeri)
+    arsiv_tarihi = Column(Date, nullable=True)                  # dosya kapanış süresi + ön muhasebe analizinin dayanağı
+    istinaf_basvuran_taraf = Column(String(50), nullable=True)  # KAPALI liste (appealing_parties): Davacı | Davalı | Her İki Taraf
+    arabuluculuk_no = Column(String(100), nullable=True)        # 435 arabuluculuk föyünde esas numarasının yerini tutuyor
+    arabuluculuk_karar_tarihi = Column(Date, nullable=True)
+    # Tıbbi analiz alanları: üçü branş bazlı BÜYÜYEN sözlük (serbest metin),
+    # iddia_edilen_kusur ise KAPALI liste (alleged_faults).
+    tibbi_surec = Column(String(300), nullable=True)
+    tibbi_olay = Column(String(300), nullable=True)
+    iddia_edilen_kusur = Column(String(200), nullable=True)
+    hastada_olusan_zarar = Column(String(300), nullable=True)
+    uygulanan_yontem = Column(String(200), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
@@ -410,6 +432,41 @@ class FileStatus(Base):
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+class AllegedFault(Base):
+    """İddia Edilen Kusur — KAPALI referans listesi (FAZ F şartnamesi §1.1).
+
+    `cases.iddia_edilen_kusur` bu listenin ADINI denormalize taşır; diğer 13
+    liste ile aynı mekanizma (LIST_REGISTRY + DEPENDENCIES), yeni bir yol yok.
+    Karşı tarafın cevabı listeyi "hiçbir branşta değişmeyen 7 değer" olarak
+    tanımlıyor ama DEĞERLERİ paket içinde gelmedi → seed BİLİNÇLİ olarak boş;
+    7 değer geldiğinde yönetim panelinden/seed'den doldurulur (bkz. seed_data).
+    """
+    __tablename__ = "alleged_faults"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "TESHIS-HATASI"
+    name = Column(String, nullable=False)                            # e.g. "Teşhis Hatası"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class AppealingParty(Base):
+    """İstinaf Başvuran Taraf — kapalı liste (Davacı / Davalı / Her İki Taraf).
+
+    Temyizle simetri (şartname §1.1, S5). `cases.istinaf_basvuran_taraf` adı
+    denormalize taşır; değerler şartnamede yazılı olduğu için seed'lidir.
+    """
+    __tablename__ = "appealing_parties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "DAVACI"
+    name = Column(String, nullable=False)                            # e.g. "Davacı"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
 
 class HearingDate(Base):
     """Duruşma zaptından çıkarılan bir sonraki duruşma tarihleri."""

@@ -74,6 +74,8 @@ class DynamicConfig:
         self.__specialties: List[Dict] = []
         self.__client_categories: List[Dict] = []
         self.__file_statuses: List[Dict] = []
+        self.__alleged_faults: List[Dict] = []
+        self.__appealing_parties: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -240,4 +242,23 @@ class DynamicConfig:
         with self._lock:
             self.__file_statuses = items
             TechnicalLogger.log("INFO", f"DynamicConfig: File Statuses updated ({len(items)} items)")
+
+    # FAZ F'nin iki kapalı listesi (G044). LIST_REGISTRY'deki `setter` adı
+    # buradaki metoda getattr ile bağlanır (reference_lists.refresh_cache) —
+    # setter yoksa liste her güncellendiğinde AttributeError'a düşer.
+    def get_alleged_faults(self) -> List[Dict]:
+        return self.__alleged_faults
+
+    def set_alleged_faults(self, items: List[Dict]):
+        with self._lock:
+            self.__alleged_faults = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Alleged Faults updated ({len(items)} items)")
+
+    def get_appealing_parties(self) -> List[Dict]:
+        return self.__appealing_parties
+
+    def set_appealing_parties(self, items: List[Dict]):
+        with self._lock:
+            self.__appealing_parties = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Appealing Parties updated ({len(items)} items)")
 

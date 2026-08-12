@@ -21,6 +21,8 @@ def seed_all_lists():
     _seed_specialties()
     _seed_client_categories()
     _seed_file_statuses()
+    _seed_appealing_parties()
+    # `alleged_faults` BİLİNÇLİ olarak seed'lenmez — bkz. APPEALING_PARTIES yorumu.
 
 
 def _seed_file_types():
@@ -279,5 +281,38 @@ def _seed_file_statuses():
         logger.info(f"Seeded {len(names)} file_statuses")
     except Exception as e:
         logger.error(f"Seed FileStatuses Error: {e}")
+    finally:
+        db.close()
+
+
+# İstinaf Başvuran Taraf — KAPALI liste, üç değer (FAZ F şartnamesi §1.1, S5:
+# "temyizle simetri"). Değerler şartnamede AYNEN yazılı olduğu için seed'lenir.
+#
+# İkiz listesi `alleged_faults` (İddia Edilen Kusur) BİLİNÇLİ olarak BOŞ doğar:
+# şartname onu "hiçbir branşta değişmeyen KAPALI 7 değerli liste" diye tanımlıyor
+# ama yedi değerin KENDİSİ teslim paketinde YOK. Uydurulmuş yedi kusur adı,
+# aktarımda gerçek değerlerle çakışıp mükerrer/yanlış eşleşme üretirdi — boş liste
+# görünür bir eksiktir, uydurma veri görünmez bir hatadır. Değerler geldiğinde
+# buraya bir _seed_alleged_faults() eklenir ya da yönetim panelinden girilir.
+APPEALING_PARTIES = [
+    ("DAVACI", "Davacı"),
+    ("DAVALI", "Davalı"),
+    ("HER-IKI-TARAF", "Her İki Taraf"),
+]
+
+
+def _seed_appealing_parties():
+    db = SessionLocal()
+    try:
+        added = 0
+        for idx, (code, name) in enumerate(APPEALING_PARTIES):
+            if not db.query(models.AppealingParty).filter_by(code=code).first():
+                db.add(models.AppealingParty(code=code, name=name, active=True, sequence=idx))
+                added += 1
+        db.commit()
+        if added:
+            logger.info(f"Seeded {added} new appealing_parties")
+    except Exception as e:
+        logger.error(f"Seed AppealingParties Error: {e}")
     finally:
         db.close()

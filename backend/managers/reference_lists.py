@@ -91,6 +91,9 @@ LIST_REGISTRY = {
     "specialties":       ListSpec(models.Specialty, ("code", "name"), "set_specialties"),
     "client_categories": ListSpec(models.ClientCategory, ("code", "name"), "set_client_categories"),
     "file_statuses":     ListSpec(models.FileStatus, ("code", "name"), "set_file_statuses"),
+    # FAZ F'nin iki KAPALI listesi (G044) — mekanizma aynı, yeni yol yok.
+    "alleged_faults":    ListSpec(models.AllegedFault, ("code", "name"), "set_alleged_faults"),
+    "appealing_parties": ListSpec(models.AppealingParty, ("code", "name"), "set_appealing_parties"),
 }
 
 # refresh_cache("email_recipients") gibi eski çağrılar için takma adlar
@@ -134,10 +137,13 @@ DEPENDENCIES = {
     "case_subjects":     [DepSpec(models.Case, "subject", "dava")],
     "file_statuses":     [DepSpec(models.Case, "dosya_son_durumu", "dava")],
     "client_categories": [DepSpec(models.Client, "category", "müvekkil")],
-    # Uzmanlıklar hem müvekkil kartında hem davanın alt tür alanlarında kullanılıyor
+    # Uzmanlıklar hem müvekkil kartında hem davanın uzmanlık alanı alanlarında
+    # kullanılıyor (sub_type = Uzmanlık Alanı, eski adı "Dava Türü Alt Kırılımı" — G044)
     "specialties":       [DepSpec(models.Client, "specialty", "müvekkil"),
-                          DepSpec(models.Case, "sub_type", "dava (alt tür)"),
+                          DepSpec(models.Case, "sub_type", "dava (uzmanlık alanı)"),
                           DepSpec(models.Case, "sub_type_extra", "dava (ek alt kırılım)")],
+    "alleged_faults":    [DepSpec(models.Case, "iddia_edilen_kusur", "dava")],
+    "appealing_parties": [DepSpec(models.Case, "istinaf_basvuran_taraf", "dava")],
     "doctypes":          [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
     "party_roles":       [DepSpec(models.CaseParty, "role", "dava tarafı", clearable=False)],
     "cities":            [DepSpec(models.Client, "il", "müvekkil"),
@@ -167,6 +173,7 @@ LIST_TITLES = {
     "party_roles": "Taraf Rolleri", "bureau_types": "Büro Türleri",
     "cities": "Şehirler", "specialties": "Uzmanlıklar",
     "client_categories": "Kategoriler", "file_statuses": "Dosya Durumları",
+    "alleged_faults": "İddia Edilen Kusurlar", "appealing_parties": "İstinaf Başvuran Taraflar",
 }
 
 COLUMN_TITLES = {
@@ -546,6 +553,8 @@ def get_cities():            return get_items("cities")
 def get_specialties():       return get_items("specialties")
 def get_client_categories(): return get_items("client_categories")
 def get_file_statuses():     return get_items("file_statuses")
+def get_alleged_faults():    return get_items("alleged_faults")
+def get_appealing_parties(): return get_items("appealing_parties")
 
 
 def get_court_types(parent_code: str = None):
@@ -582,6 +591,8 @@ def add_city(code: str, name: str):             return add_item("cities", code=c
 def add_specialty(code: str, name: str):        return add_item("specialties", code=code, name=name)
 def add_client_category(code: str, name: str):  return add_item("client_categories", code=code, name=name)
 def add_file_status(code: str, name: str):      return add_item("file_statuses", code=code, name=name)
+def add_alleged_fault(code: str, name: str):    return add_item("alleged_faults", code=code, name=name)
+def add_appealing_party(code: str, name: str):  return add_item("appealing_parties", code=code, name=name)
 
 
 def add_court_type(code: str, name: str, parent_code: str):
@@ -644,3 +655,5 @@ def delete_city(code: str):             return delete_item("cities", code)
 def delete_specialty(code: str):        return delete_item("specialties", code)
 def delete_client_category(code: str):  return delete_item("client_categories", code)
 def delete_file_status(code: str):      return delete_item("file_statuses", code)
+def delete_alleged_fault(code: str):    return delete_item("alleged_faults", code)
+def delete_appealing_party(code: str):  return delete_item("appealing_parties", code)

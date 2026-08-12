@@ -230,6 +230,18 @@ def get_case(case_id: int, tenant_id: str = None):
             "yeni_esas_no": item.yeni_esas_no,
             "kesinlesme_tarihi": item.kesinlesme_tarihi.isoformat() if item.kesinlesme_tarihi else None,
             "infaz_tarihi": item.infaz_tarihi.isoformat() if item.infaz_tarihi else None,
+            # FAZ F alanları (G044) — yazma yolu FAZ F'nin işi, okuma burada.
+            # NULL = "aktarım henüz gelmedi"; float(None) patlar, is not None şart.
+            "islah_tutari": float(item.islah_tutari) if item.islah_tutari is not None else None,
+            "arsiv_tarihi": item.arsiv_tarihi.isoformat() if item.arsiv_tarihi else None,
+            "istinaf_basvuran_taraf": item.istinaf_basvuran_taraf,
+            "arabuluculuk_no": item.arabuluculuk_no,
+            "arabuluculuk_karar_tarihi": item.arabuluculuk_karar_tarihi.isoformat() if item.arabuluculuk_karar_tarihi else None,
+            "tibbi_surec": item.tibbi_surec,
+            "tibbi_olay": item.tibbi_olay,
+            "iddia_edilen_kusur": item.iddia_edilen_kusur,
+            "hastada_olusan_zarar": item.hastada_olusan_zarar,
+            "uygulanan_yontem": item.uygulanan_yontem,
         }
         result["service_type"] = item.service_type
         result["missing_required_fields"] = compute_missing_fields(result, result["parties"])

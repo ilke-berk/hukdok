@@ -32,6 +32,8 @@ from managers.reference_lists import (
     get_specialties, add_specialty, delete_specialty,
     get_client_categories, add_client_category, delete_client_category,
     get_file_statuses, add_file_status, delete_file_status,
+    get_alleged_faults, add_alleged_fault, delete_alleged_fault,
+    get_appealing_parties, add_appealing_party, delete_appealing_party,
     reorder_list, rename_item, update_item, delete_item, get_usage,
     resolve_list_type, LIST_REGISTRY,
 )
@@ -512,6 +514,62 @@ def api_delete_file_status(code: str, user: dict = Depends(require_admin)):
     success = delete_file_status(code)
     if not success:
         raise HTTPException(status_code=404, detail="File status not found")
+    return {"status": "success"}
+
+
+# ─── ALLEGED FAULTS / APPEALING PARTIES (FAZ F kapalı listeleri, G044) ───────
+#
+# Dava kartındaki `iddia_edilen_kusur` ve `istinaf_basvuran_taraf` alanları
+# serbest metin DEĞİL bu listelerden seçilir; arayüz değerleri buradan okur
+# (frontend'de sabit liste tutulmaz — G048 kriteri).
+
+@router.get("/api/config/alleged_faults")
+def api_get_alleged_faults(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_alleged_faults()
+    if not data:
+        data = get_alleged_faults()
+    return data
+
+
+@router.post("/api/config/alleged_faults")
+def api_add_alleged_fault(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_alleged_fault(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add alleged fault")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/alleged_faults/{code}")
+def api_delete_alleged_fault(code: str, user: dict = Depends(require_admin)):
+    success = delete_alleged_fault(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Alleged fault not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/appealing_parties")
+def api_get_appealing_parties(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_appealing_parties()
+    if not data:
+        data = get_appealing_parties()
+    return data
+
+
+@router.post("/api/config/appealing_parties")
+def api_add_appealing_party(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_appealing_party(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add appealing party")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/appealing_parties/{code}")
+def api_delete_appealing_party(code: str, user: dict = Depends(require_admin)):
+    success = delete_appealing_party(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Appealing party not found")
     return {"status": "success"}
 
 

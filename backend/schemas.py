@@ -374,6 +374,21 @@ class CaseRead(BaseModel):
     # Kesinleşme / İnfaz
     kesinlesme_tarihi: Optional[date] = None
     infaz_tarihi: Optional[date] = None
+    # FAZ F aktarım alanları (G044) — hepsi opsiyonel: aktarım partiler hâlinde
+    # geleceği için boş gelmek NORMAL durumdur, doğrulama hatası değil.
+    # istinaf_basvuran_taraf ve iddia_edilen_kusur KAPALI referans listelerinden
+    # gelir (appealing_parties / alleged_faults); tip serbest metindir çünkü değer
+    # listenin ADIDIR — diğer 13 listede de (sub_type, bureau_type…) desen budur.
+    islah_tutari: Optional[float] = None
+    arsiv_tarihi: Optional[date] = None
+    istinaf_basvuran_taraf: Optional[str] = None
+    arabuluculuk_no: Optional[str] = None
+    arabuluculuk_karar_tarihi: Optional[date] = None
+    tibbi_surec: Optional[str] = None
+    tibbi_olay: Optional[str] = None
+    iddia_edilen_kusur: Optional[str] = None
+    hastada_olusan_zarar: Optional[str] = None
+    uygulanan_yontem: Optional[str] = None
     created_at: datetime
     parties: List[CasePartyCreate] = []
     lawyers: List[CaseLawyerCreate] = []

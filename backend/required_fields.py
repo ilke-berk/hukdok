@@ -15,7 +15,10 @@ REQUIRED_CASE_FIELDS = [
     {"field": "court", "label": "Mahkeme"},
     {"field": "file_type", "label": "Yargı Türü"},
     {"field": "judicial_unit", "label": "Yargı Birimi"},
-    {"field": "sub_type", "label": "Dosya Alt Türü"},
+    # Etiket 2026-08-12'de değişti (FAZ F §1.4 / G044): "Dosya Alt Türü" →
+    # "Uzmanlık Alanı". Kolon adı (`sub_type`) BİLİNÇLİ korundu; değişen alanın
+    # Türkçe adıdır, taşıdığı veri değil (değer `specialties` listesinden gelir).
+    {"field": "sub_type", "label": "Uzmanlık Alanı"},
     # Geçici olarak listeden çıkarıldı (2026-08-04): Ek Alt Kırılım alanı UI'da
     # gizlendi (dropdown güncellenecek); görünmeyen alan "eksik" uyarısı
     # üretmesin. Alan geri açılınca bu satırı da geri al.

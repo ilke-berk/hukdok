@@ -616,6 +616,37 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_cases_tracking_name_block "
         "ON cases (substr(tracking_no, 4, 10))",
     ]),
+
+    # ─── 31. FAZ F ŞEMASI: 10 YENİ CASES KOLONU (G044) ───────────────────────
+    #
+    # Kaynak: docs/plan/faz-f-aktarim-gereksinimleri-2026-08-12.md §1.1.
+    # Şartname bu kalemi "11 yeni kolon" diye sayar; on birincisi kolon DEĞİL
+    # `case_esas_numbers` TABLOSUDUR (§1.3) ve G045'in işidir — burada 10 kolon var.
+    #
+    # Hepsi NULL kabul eder ve DEFAULT'suzdur: aktarım partiler hâlinde gelecek,
+    # "henüz gelmedi" ile "boş bırakıldı" ayrımı 0/'' ile karartılmamalı
+    # (hukmedilen_* kolonlarıyla aynı gerekçe, madde 23).
+    #
+    # İki alan KAPALI referans listesine bağlıdır — `iddia_edilen_kusur` →
+    # alleged_faults, `istinaf_basvuran_taraf` → appealing_parties. Liste
+    # TABLOLARI modelde tanımlı olduğu için create_all yaratır (calendar_events
+    # / upload_outbox ile aynı yol); burada yalnız adı taşıyan denormalize
+    # kolonlar açılır — diğer 13 liste de tam olarak böyle çalışır.
+    # Kısıt/index EKLENMEDİ: bu on kolonun hiçbiri tekil değil ve bugün hiçbir
+    # sorgunun filtresi değil; ölçülmemiş index eklemek G042'nin temizlediği
+    # sınıftan borç üretirdi. FAZ F'nin sorguları ölçülünce eklenir.
+    ("columns", "cases", {
+        "islah_tutari":              "NUMERIC(20,2)",   # ıslahla EKLENEN miktar
+        "arsiv_tarihi":              "DATE",            # dosya kapanış süresi analizi
+        "istinaf_basvuran_taraf":    "VARCHAR(50)",     # kapalı liste (appealing_parties)
+        "arabuluculuk_no":           "VARCHAR(100)",    # 435 föyde esas no yerine geçiyor
+        "arabuluculuk_karar_tarihi": "DATE",
+        "tibbi_surec":               "VARCHAR(300)",    # büyüyen sözlük
+        "tibbi_olay":                "VARCHAR(300)",    # büyüyen sözlük (bugün 214 değer)
+        "iddia_edilen_kusur":        "VARCHAR(200)",    # KAPALI liste (alleged_faults)
+        "hastada_olusan_zarar":      "VARCHAR(300)",    # büyüyen sözlük (bugün 89 değer)
+        "uygulanan_yontem":          "VARCHAR(200)",    # branşa göre kapalı liste
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
