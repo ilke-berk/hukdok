@@ -139,7 +139,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G045 | bant:backend | bagimli:G044 | case_esas_numbers: esas numarası tarihçesi tablosu | BLOKE(denetim RET - rapor: C:\Users\ilkeb\OneDrive\Masaüstü\hukudok-automator-main\otomasyon\loglar\denetim_20260812-172101_G045.out.log)
 - [ ] G046 | bant:backend | bagimli:G044 | E6: missing_required denormalize + D2/D8 bağlamsal zorunluluk kapısı
 - [ ] G047 | bant:backend | bagimli:- | Deploy kapısı migrasyon testlerini koşmuyor (kendi postgres'ini kaldırmalı)
-- [ ] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı | BLOKE(eski worktree duruyor - elle incele)
+- [x] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı | BLOKE(eski worktree duruyor - elle incele)
 
 ## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
 
