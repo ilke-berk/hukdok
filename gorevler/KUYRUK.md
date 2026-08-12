@@ -136,10 +136,38 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G042 | bant:backend | bagimli:G041 | D 6.2-a: kullanılmayan index temizliği (52 aday / 31 MB — unique/primary ZORUNLU dışlanır)
 - [x] G043 | bant:backend | bagimli:G042 | D 6.2-b: eksik FK/kısmi/fonksiyonel index'ler + E7 avukat filtresi
 - [x] G044 | bant:backend | bagimli:G041 | Şema: FAZ F'nin 11 yeni kolonu + Uzmanlık Alanı adlandırması
-- [ ] G045 | bant:backend | bagimli:G044 | case_esas_numbers: esas numarası tarihçesi tablosu | BLOKE(denetim RET - rapor: C:\Users\ilkeb\OneDrive\Masaüstü\hukudok-automator-main\otomasyon\loglar\denetim_20260812-172101_G045.out.log)
+- [x] G045 | bant:backend | bagimli:G044 | case_esas_numbers: esas tarihçesi (denetim RET — G049 DEVRALDI, satır kapatıldı)
 - [x] G046 | bant:backend | bagimli:G044 | E6: missing_required denormalize + D2/D8 bağlamsal zorunluluk kapısı
-- [ ] G047 | bant:backend | bagimli:- | Deploy kapısı migrasyon testlerini koşmuyor (kendi postgres'ini kaldırmalı)
-- [x] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı | BLOKE(eski worktree duruyor - elle incele)
+- [x] G047 | bant:backend | bagimli:- | Deploy kapısı migrasyon testlerini koşmuyor (süreç dışarıdan öldü — G050 DEVRALDI)
+- [x] G048 | bant:frontend | bagimli:G044 | Frontend: Uzmanlık Alanı + 11 yeni alanın arayüz karşılığı
+
+## Aktif plan: FAZ E — sorgu algoritmaları + FAZ D devirleri (2026-08-12; DEPLOY #10 bunun sonunda)
+
+<!-- Kaynak: temizlik planı §7 + §12 FAZ E madde envanteri. E6 ve E7 FAZ D'de bitti
+     (G046, G043) — kalan altı madde burada, plan §7'nin RİSK SIRASINDA: ucuz olanlar
+     önce, UNION (E8) en sonda ve kendi doğrulama kapısıyla.
+     İKİ DEVİR FAZ D'DEN: G049 = G045'in denetim RET'i (main'de CANLI 500 — backend bandı
+     doğrudan main'e yazar, RET commit'i geri almaz; G046 onun üstüne kuruldu). G050 =
+     G047 (süreç dışarıdan öldürüldü, log'lar boş, commit yok — temiz yeniden deneme).
+     G049 KUYRUĞUN İLKİ: main'deki canlı hata, ve G055 aynı arama koduna dokunacak.
+     ÖLÇÜM GÜNCELLENDİ: deploy kapısında 6 değil **28** test sessizce atlanıyor
+     (1156+31 vs konteynerde 1184+3) — FAZ D'nin DB'li testleri de aynı deliğe düştü.
+     E8 UYARISI: kazanç ölçüldü ve KÜÇÜK (tek terim ≥3 karakter 4,0×; tipik 2 karakterlik
+     aramada 1,27×). Riski kazancından büyük olabilir; görev dosyasında açık DURMA İZNİ var.
+     Ayrıca G045 arama koluna esas tarihçesini ekledi — E8'in kapsamı planda yazandan geniş.
+     KUYRUĞA GİRMEYEN: party_check SQL göçü (G017'nin durma kriteri düşürdü, plan §7),
+     FAZ F veri dolumu, index düşürme listesinin prod'da uygulanması (deploy kararı).
+     Bant: G056 docs (E8'den SONRA — erken koşarsa yazdığı çıpalar sabaha bayat olur),
+     kalanı backend = seri. Bu kuyrukta gerçek paralellik YOK. -->
+
+- [ ] G049 | bant:backend | bagimli:- | G045 RET: sync_current_esas geri dönüşte UniqueViolation + yalancı yeşil test
+- [ ] G050 | bant:backend | bagimli:- | Deploy kapısı kendi postgres'ini kaldırmalı (28 test sessizce atlanıyor)
+- [ ] G051 | bant:backend | bagimli:G049 | E1+E3: dava kartı selectinload + arama count()'unun atılması
+- [ ] G052 | bant:backend | bagimli:- | E2: intake mahkeme sözlüğü TTL cache (mekanizma hazır)
+- [ ] G053 | bant:backend | bagimli:- | E4: bantlı/erken çıkışlı Levenshtein (maliyetin %69'u)
+- [ ] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (tepe bellek 244 MB)
+- [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var)
+- [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
 
 ## Sıradaki temizlik adayları (FAZ C'den çıktı, kuyruğa YAZILMADI — kullanıcı onayı bekler)
 
