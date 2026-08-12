@@ -70,11 +70,32 @@ timeout'ları bu katmanla eşit olmalıdır (`nginx.conf:12`). Bkz.
 1. `python migrate.py` — şema migrasyonları **uvicorn'dan önce, tek süreçte**. Gerekçe
    modül docstring'inde: "her worker kendi migrasyonunu koşarsa DDL yarışı olur"; çıkış
    kodu 1 ise entrypoint `set -e` ile durur, "sessiz şema sapması yerine fail-fast"
-   (`backend/migrate.py:1-10`). Migrasyonlar `backend/database.py:131` `_MIGRATIONS`
-   listesinden idempotent uygulanır (`database.py:529` `check_and_migrate_tables`).
+   (`backend/migrate.py:1-10`). Migrasyonlar `backend/database.py:136` `_MIGRATIONS`
+   listesinden idempotent uygulanır (`database.py:654` `check_and_migrate_tables`).
    `migrate.py` ayrı süreç olduğu için `DB_STATEMENT_TIMEOUT_MS=0` atar — uygulama
    engine'inin 30 sn'lik sınırı backfill UPDATE'lerini kesmesin (`backend/migrate.py:20-26`).
 2. `uvicorn api:app --workers ${UVICORN_WORKERS:-2}`.
+
+### Migrasyon op türleri ve `create_all` tuzağı
+
+`init_db()` önce `Base.metadata.create_all()` koşturur, `check_and_migrate_tables()` tablo/kolon
+listesini **sonra** okur (`database.py:108-112`). Sonuç: `("table", …)` ve `("columns", …)`
+op'ları **koşulludur** — modelde tanımlı bir tablo/kolon create_all tarafından zaten
+yaratılmışsa op atlanır (`database.py:732`, `database.py:713`) ve **gövdesine iliştirilmiş** `CREATE INDEX` /
+`CONSTRAINT … UNIQUE` ifadeleri o kurulumda hiç çalışmaz. `("index", …)` op'u ise koşulsuz
+koşar; `IF NOT EXISTS` onu idempotent kılar. Kural: kalıcı olması istenen kısıt/index **daima**
+`("index", …)` op'una yazılır (`database.py:130-135` şerhi).
+
+FAZ D 6.1 (G041) bu boşluğu kapattı: tablo op'larına gömülü olduğu için hiç oluşmamış kısıt ve
+index'ler 28. maddeye taşındı — `uq_case_relation`, `uq_daily_report`, `idx_case_relations_*`,
+`idx_daily_reports_user` ve `ix_clients_name`. UNIQUE'ler `ALTER TABLE ADD CONSTRAINT` ile
+değil `CREATE UNIQUE INDEX IF NOT EXISTS` ile eklenir (ADD CONSTRAINT idempotent değildir).
+Mükerrer veride migrasyon **bilinçli durur** (sessiz atlama şemayı sessizce saptırırdı), ama
+önce `_unique_index_duplicate_report` (`database.py:595`) hangi tabloda kaç mükerrer grup
+olduğunu örnek anahtarlarla raporlar. Kalan bilinen boşluk: `("columns", …)` op'larının
+post-SQL index'leri sıfırdan kurulumda hâlâ oluşmuyor (en kritiği `uq_cases_sistem_no`) —
+mevcut kurulumlarda kolon migrasyonla eklendiği için varlar. Mekanizmanın tamamı
+`backend/tests/test_migration_path.py`'de gerçek Postgres'e karşı kilitli.
 
 ### Lider kilidi: hangi iş kaç kere koşar
 

@@ -18,9 +18,13 @@ veritabanında `init_db()` gerçekten koşturulur, sonuç `information_schema` /
 Marker: `dbtest` (pyproject.toml'da kayıtlı). İşaretsiz koşuda da çalışırlar;
 dışlamak için `-m "not dbtest"`.
 
-DİKKAT — `test_table_op_index_sqlleri_bugun_hic_calismiyor` BUGÜNKÜ KUSURU
-iddia eder (xfail değil, geçen bir assertion). FAZ D 6.1 kusuru düzeltince o
-test bilinçli olarak TERS ÇEVRİLECEK; ayrıntı testin docstring'inde.
+TARİHÇE — G031'de bu dosya iki testle BUGÜNKÜ KUSURU kilitliyordu (`("table", ...)`
+ve `("columns", ...)` op'larına iliştirilmiş index SQL'lerinin sıfırdan kurulumda
+hiç koşmaması). FAZ D 6.1 (G041) birincisini düzeltti: ilgili test ters çevrildi
+(`test_table_op_index_niyetleri_semada_karsilikli`) ve ADI değil KAPSAMAYI —
+(tablo, kolonlar, unique, kısmi) imzasını — kilitliyor. İkincisi düzeltilmedi,
+DARALTILDI: iddiası "hiç çalışmıyor" değil, "yalnız kolon sonradan eklendiğinde
+çalışıyor"dur; her iki yön de test edilir.
 """
 import os
 import re
@@ -42,6 +46,21 @@ _INDEX_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Hem migrasyondaki DDL'i hem pg_indexes.indexdef'i ayrıştırır: tek fark
+# "USING btree" parçasıdır (opsiyonel). Bilinçli olarak database.py'nin kendi
+# ayrıştırıcısından BAĞIMSIZ — üretim kodunu kendi regex'iyle doğrulamak
+# kendini onaylayan bir test olurdu.
+_INDEX_SIG_RE = re.compile(
+    r"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"\w]+\s+"
+    r"ON\s+(?:[\"\w]+\.)?(?P<table>[\"\w]+)\s*(?:USING\s+\w+\s*)?"
+    r"\((?P<cols>[^()]*)\)\s*(?P<rest>.*)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_TABLE_UNIQUE_RE = re.compile(
+    r"CONSTRAINT\s+(?P<name>\w+)\s+UNIQUE\s*\((?P<cols>[^()]*)\)", re.IGNORECASE
+)
+
 
 # ─── yardımcılar ─────────────────────────────────────────────────────────────
 
@@ -55,6 +74,40 @@ def _index_names(sqls):
     return names
 
 
+def _index_signature(sql):
+    """(tablo, (kolon,...), unique?, kısmi?) — index'in ADDAN BAĞIMSIZ kimliği.
+
+    G041 kararı: tablo op'larındaki üç index kalemi mevcut kurulumlarda BAŞKA
+    adla (modeldeki `index=True`nin ürettiği `ix_*`) zaten var. Aynı kolona
+    ikinci bir index eklemek yerine kapsama üzerinden doğrularız.
+    """
+    match = _INDEX_SIG_RE.match(sql.strip())
+    if not match:
+        return None
+    columns = []
+    for raw in match.group("cols").split(","):
+        parts = raw.strip().strip('"').split()
+        if not parts:                        # boş kolon listesi → ayrıştırılamadı
+            return None
+        columns.append(parts[0].strip('"').lower())   # DESC/ASC/opclass atılır
+    return (
+        match.group("table").strip('"').lower(),
+        tuple(columns),
+        bool(match.group("unique")),
+        bool(match.group("rest").strip().rstrip(";")),   # WHERE → kısmi index
+    )
+
+
+def _live_index_signatures(engine):
+    """{imza: [index adı, ...]} — şemada gerçekten var olan index'ler."""
+    signatures: dict = {}
+    for name, definition in _live_indexes(engine).items():
+        signature = _index_signature(definition)
+        if signature:
+            signatures.setdefault(signature, []).append(name)
+    return signatures
+
+
 def _table_op_index_names():
     """`("table", ...)` op'larının 4. elemanındaki index adları."""
     names = []
@@ -62,6 +115,18 @@ def _table_op_index_names():
         if op[0] == "table":
             names.extend(_index_names(op[3]))
     return names
+
+
+def _table_op_unique_constraints():
+    """`("table", ...)` CREATE gövdesindeki `CONSTRAINT x UNIQUE (...)` kalemleri."""
+    found = []
+    for op in database._MIGRATIONS:
+        if op[0] != "table":
+            continue
+        for match in _TABLE_UNIQUE_RE.finditer(op[2]):
+            columns = tuple(c.strip().lower() for c in match.group("cols").split(","))
+            found.append((op[1], match.group("name"), columns))
+    return found
 
 
 def _columns_op_post_index_names():
@@ -267,44 +332,76 @@ def test_ikinci_init_db_kosusu_semayi_degistirmiyor(fresh_db):
     assert after["indexes"] == before["indexes"], "ikinci koşu index'leri değiştirdi"
 
 
-def test_table_op_index_sqlleri_bugun_hic_calismiyor(fresh_db):
-    """BUGÜNKÜ KUSURU KİLİTLER — FAZ D 6.1 düzeltince TERS ÇEVRİLECEK.
+def test_table_op_index_niyetleri_semada_karsilikli(fresh_db):
+    """G031'in kilitlediği kusurun TERSİ (FAZ D 6.1 / G041).
 
-    `("table", ...)` op'ları `if table in tables: continue` ile korunuyor;
-    `tables` ise `init_db()`'nin ÖNCE koşturduğu `create_all()`'dan sonra
-    okunuyor. İlgili tabloların hepsi models.py'de tanımlı olduğu için
-    create_all onları zaten yaratır → op atlanır → op'a iliştirilmiş
-    `CREATE INDEX` ifadeleri HİÇ çalışmaz. (Bu index'lerin models.py'de
-    karşılığı da yok, yani hiçbir yoldan oluşmuyorlar.)
+    `("table", ...)` op'ları `if table in tables: continue` ile korunur ve
+    `tables`, `init_db()`'nin ÖNCE koşturduğu `create_all()`'dan sonra okunur →
+    modelde tanımlı tablolarda op atlanır, gövdesindeki `CREATE INDEX` ifadeleri
+    o kurulumda hiç koşmaz. G041 bu kalemleri koşulsuz çalışan `("index", ...)`
+    op'una taşıdı.
 
-    FAZ D 6.1 bunu düzelttiğinde: bu testi silmek yerine assertion'ı ters
-    çevirin (index'ler artık OLUŞMALI) — kusurun geri gelmesini yakalar.
+    Doğrulama ADLA DEĞİL KAPSAMAYLA yapılır: üç kalem (idx_stage_logs_case,
+    idx_export_outbox_status, idx_client_policies_client) mevcut kurulumlarda
+    modelin `index=True` karşılığı sayesinde BAŞKA ADLA zaten vardı; aynı kolona
+    ikinci index eklemek mükerrer üretirdi (G041 kararı, database.py madde 28).
+    Aranan şey "şu adlı index" değil, "şu tablo+kolonlar üzerinde bir index".
     """
-    olmamasi_gerekenler = _table_op_index_names()
-    assert olmamasi_gerekenler, "table op'larında hiç index SQL'i yok — test anlamsızlaştı"
-    # Görev dosyasındaki somut örnekler listede gerçekten var mı?
-    assert "idx_case_relations_source" in olmamasi_gerekenler
-    assert "idx_export_outbox_status" in olmamasi_gerekenler
+    hedefler = []
+    for op in database._MIGRATIONS:
+        if op[0] != "table":
+            continue
+        for sql in op[3]:
+            signature = _index_signature(sql)
+            assert signature, f"index SQL'i ayrıştırılamadı: {sql}"
+            hedefler.append((sql, signature))
+    assert hedefler, "table op'larında hiç index SQL'i yok — test anlamsızlaştı"
+    # G041 görev dosyasındaki somut örnekler gerçekten bu listede mi?
+    assert "idx_case_relations_source" in _table_op_index_names()
+    assert "idx_export_outbox_status" in _table_op_index_names()
 
-    indexes = _live_indexes(fresh_db)
-    olusanlar = sorted(name for name in olmamasi_gerekenler if name in indexes)
-    assert olusanlar == [], (
-        "Bu index'ler artık oluşuyor: " + ", ".join(olusanlar) + ". Kusur düzeltilmişse "
-        "bu testi ters çevirin (bkz. docstring, FAZ D 6.1)."
+    canli = _live_index_signatures(fresh_db)
+    karsiliksiz = sorted(sql.strip() for sql, signature in hedefler if signature not in canli)
+    assert karsiliksiz == [], (
+        "Bu tablo-op index niyetlerinin şemada karşılığı yok:\n  " + "\n  ".join(karsiliksiz)
     )
 
 
-def test_columns_op_post_index_sqlleri_bugun_hic_calismiyor(fresh_db):
-    """AYNI KUSURUN İKİNCİ YÜZÜ — FAZ D 6.1 ile birlikte TERS ÇEVRİLECEK.
+def test_table_op_unique_kisitlari_semada_karsilikli(fresh_db):
+    """Tablo op'larının gövdesindeki `CONSTRAINT ... UNIQUE (...)` kalemleri.
 
-    `("columns", ...)` op'unda `(DDL, [post SQL])` biçimindeki spec'lerin post
-    SQL'leri yalnız kolon GERÇEKTEN eklendiğinde koşar. Sıfırdan kurulumda
-    kolonu create_all zaten yarattığı için op atlanır → post SQL'ler hiç
-    çalışmaz. Ölçüldü (2026-08-12): 10 index'in tamamı oluşmuyor.
+    Index'lerle aynı sebeple hiç koşmuyorlardı; G041 ikisini de
+    `CREATE UNIQUE INDEX IF NOT EXISTS` olarak taşıdı (ALTER TABLE ADD
+    CONSTRAINT idempotent değil, ikinci koşuda patlardı). PG unique kısıtı
+    zaten unique index ile uyguladığı için kapsama denk.
+    """
+    kisitlar = _table_op_unique_constraints()
+    assert kisitlar, "table op'larında hiç UNIQUE kısıt yok — test anlamsızlaştı"
+    assert {name for _, name, _ in kisitlar} >= {"uq_case_relation", "uq_daily_report"}
 
-    En kritiği `uq_cases_sistem_no`: sıfırdan kurulan bir veritabanında
-    cases.sistem_no TEKİLLİĞİ ZORLANMAZ (models.py'de unique=True yok).
-    Mevcut prod veritabanında index var (kolon oraya migrasyonla eklenmişti).
+    canli = _live_index_signatures(fresh_db)
+    eksik = [
+        f"{name} → {table}({', '.join(columns)})"
+        for table, name, columns in kisitlar
+        if (table, columns, True, False) not in canli
+    ]
+    assert eksik == [], "Bu UNIQUE kısıtların şemada karşılığı yok: " + ", ".join(eksik)
+
+
+def test_columns_op_post_sqlleri_yalnizca_kolon_sonradan_eklendiginde_kosuyor(fresh_db):
+    """G031'in ikinci testi — DARALTILDI (FAZ D 6.1 kararı, G041).
+
+    Eski adı `..._bugun_hic_calismiyor` idi ve YANILTICIYDI: post SQL'ler
+    "hiç" değil, "kolon create_all tarafından zaten yaratılmışsa"
+    çalışmıyor. Kolon gerçekten sonradan eklendiğinde koşuyorlar — prod'da
+    ölçüldü (idx_clients_tenant, idx_clients_deleted_at mevcut), ters yönü
+    `test_columns_op_post_sqli_kolon_eklendiginde_kosuyor` kanıtlıyor.
+
+    Bu test kalan gerçek boşluğu kilitler: SIFIRDAN kurulan bir veritabanında
+    10 post-SQL index'inin hiçbiri oluşmaz. En kritiği `uq_cases_sistem_no` —
+    yeni bir kurulumda cases.sistem_no TEKİLLİĞİ ZORLANMAZ (models.py'de
+    unique=True yok). G041 kapsamı tablo op'larıydı; bu kalem FAZ D'nin index
+    görevine (G043) devredildi, kapanınca bu testin de yönü çevrilmeli.
     """
     beklenen_yok = _columns_op_post_index_names()
     assert beklenen_yok, "columns op'larında hiç post index SQL'i yok — test anlamsızlaştı"
@@ -313,9 +410,33 @@ def test_columns_op_post_index_sqlleri_bugun_hic_calismiyor(fresh_db):
     indexes = _live_indexes(fresh_db)
     olusanlar = sorted(name for name in beklenen_yok if name in indexes)
     assert olusanlar == [], (
-        "Bu post-SQL index'leri artık oluşuyor: " + ", ".join(olusanlar) +
-        ". Kusur düzeltilmişse bu testi ters çevirin (bkz. docstring, FAZ D 6.1)."
+        "Bu post-SQL index'leri sıfırdan kurulumda artık oluşuyor: " + ", ".join(olusanlar) +
+        ". Boşluk kapandıysa bu testi ters çevirin (bkz. docstring, G043)."
     )
+
+
+def test_columns_op_post_sqli_kolon_eklendiginde_kosuyor(admin_engine):
+    """Yukarıdaki testin TERS YÖNÜ: mekanizma bozuk değil, koşulu dar.
+
+    `clients` tablosu `tenant_id` kolonu OLMADAN önceden yaratılır; init_db
+    kolonu ekler ve spec'in post SQL'i (idx_clients_tenant) koşar. Bu ayrım
+    olmadan "post SQL'ler çalışmıyor" cümlesi mekanizmayı haksız yere suçlar.
+    """
+    import models
+
+    with _scratch_database(admin_engine, "colpost") as engine:
+        with engine.begin() as conn:
+            conn.execute(CreateTable(models.Client.__table__))
+            conn.execute(text("ALTER TABLE clients DROP COLUMN tenant_id"))
+
+        assert "idx_clients_tenant" not in _live_indexes(engine)
+
+        _run_init_db(engine)
+
+        assert "tenant_id" in _live_columns(engine)["clients"]
+        assert "idx_clients_tenant" in _live_indexes(engine), (
+            "kolon sonradan eklendiği halde post SQL koşmadı"
+        )
 
 
 def test_trigram_indexleri_sifirdan_kurulumda_olusuyor(fresh_db):
@@ -340,7 +461,8 @@ def test_create_all_mevcut_tabloya_index_eklemiyor(admin_engine):
 
     Ters yön de aynı testte: `("index", "clients", ...)` op'u mevcut tabloya
     index eklemeyi BAŞARIR — yani boşluk create_all'a özgüdür, migrasyon
-    mekanizmasının tamamına değil.
+    mekanizmasının tamamına değil. G041 `ix_clients_name`'i tam da bu yüzden
+    "index" op'una taşıdı: create_all'ın kapatamadığı boşluğu migrasyon kapatır.
     """
     import models
 
@@ -351,18 +473,82 @@ def test_create_all_mevcut_tabloya_index_eklemiyor(admin_engine):
         onceki = _live_indexes(engine)
         assert "ix_clients_name" not in onceki, "CreateTable index de üretmiş — test kurgusu geçersiz"
 
+        # create_all TEK BAŞINA mevcut tabloya models.py index'ini eklemiyor —
+        # G041 sonrası bu davranış init_db üzerinden ölçülemez (migrasyon kapatıyor).
+        database.Base.metadata.create_all(bind=engine)
+        assert "ix_clients_name" not in _live_indexes(engine), (
+            "create_all mevcut tabloya index eklemiş — bu testin dayandığı davranış değişti"
+        )
+
         _run_init_db(engine)
 
         columns = _live_columns(engine)
         indexes = _live_indexes(engine)
 
-        # create_all mevcut clients tablosuna models.py index'ini EKLEMEDİ
-        assert "ix_clients_name" not in indexes, (
-            "create_all mevcut tabloya index eklemiş — bu testin dayandığı davranış değişti"
+        # G041: migrasyonun "index" op'u create_all'ın bıraktığı boşluğu kapatıyor.
+        # Prod'da ix_clients_name'in yokluğunun sebebi tam olarak bu boşluktu.
+        assert "ix_clients_name" in indexes, (
+            "ix_clients_name migrasyonla da oluşmadı — G041'in kapattığı boşluk geri geldi"
         )
-        # Ama migrasyonun kendi ("index", "clients", ...) op'u mevcut tabloya
-        # index eklemeyi başardı — boşluk yalnız create_all tarafında.
+        # Migrasyonun kendi ("index", "clients", ...) op'u mevcut tabloya index ekler
         assert "idx_clients_tc_no" in indexes
         # Diğer tablolar normal kuruldu (kurulum yarıda kalmadı)
         assert "cases" in columns
         assert "tenant_id" in columns["clients"]
+
+
+def test_unique_index_mukerrer_veride_anlasilir_hatayla_duruyor(admin_engine):
+    """Savunmacı UNIQUE (G041): ham PG hatası yerine tablo/kolon/grup sayısı.
+
+    Mükerrer varken migrasyonun DURMASI kasıtlıdır (sessizce atlamak şemayı
+    sessizce saptırırdı); denetlenen şey duruşun anlaşılırlığıdır. NULL'lu
+    satırlar yanlış alarm üretmemeli: PG'de çoklu NULL unique index'i ihlal
+    etmez, oysa GROUP BY NULL'ları eşit sayar.
+    """
+    with _scratch_database(admin_engine, "uqguard") as engine:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE t (a INTEGER, b INTEGER)"))
+            conn.execute(text("INSERT INTO t (a, b) VALUES (1, 1), (1, 1), (2, 2)"))
+
+        sql = "CREATE UNIQUE INDEX IF NOT EXISTS uq_t_ab ON t (a, b)"
+        with engine.connect() as conn:
+            rapor = database._unique_index_duplicate_report(conn, sql)
+            assert rapor is not None
+            assert "uq_t_ab" in rapor and "t(a, b)" in rapor
+            assert "1 mükerrer grup" in rapor
+            assert "×2" in rapor, "örnek anahtar/adet raporda yok: " + rapor
+
+            # NULL'lar mükerrer sayılmaz
+            conn.execute(text("DELETE FROM t WHERE a = 1"))
+            conn.execute(text("INSERT INTO t (a, b) VALUES (NULL, NULL), (NULL, NULL)"))
+            conn.commit()
+            assert database._unique_index_duplicate_report(conn, sql) is None
+
+            # Index gerçekten yaratılabiliyor ve ikinci çağrıda kontrol atlanıyor
+            conn.execute(text(sql))
+            conn.commit()
+            assert database._unique_index_duplicate_report(conn, sql) is None
+
+
+def test_mukerrer_veride_migrasyon_fail_fast_duruyor(admin_engine, monkeypatch):
+    """Kontrol gerçekten migrasyon yoluna bağlı mı — konteyner kalkmamalı.
+
+    `_unique_index_duplicate_report`'un tek başına doğru cevap vermesi yetmez;
+    `check_and_migrate_tables` onu "index" op'undan ÖNCE çağırmazsa savunma
+    ölü koddur.
+    """
+    with _scratch_database(admin_engine, "uqstop") as engine:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE dup_probe (a INTEGER)"))
+            conn.execute(text("INSERT INTO dup_probe (a) VALUES (5), (5)"))
+
+        monkeypatch.setattr(database, "_MIGRATIONS", [
+            ("index", "dup_probe",
+             ["CREATE UNIQUE INDEX IF NOT EXISTS uq_dup_probe ON dup_probe (a)"]),
+        ])
+        monkeypatch.setattr(database, "engine", engine)
+
+        with pytest.raises(RuntimeError, match="mükerrer grup"):
+            database.check_and_migrate_tables()
+
+        assert "uq_dup_probe" not in _live_indexes(engine)

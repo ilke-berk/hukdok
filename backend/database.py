@@ -7,6 +7,7 @@ Environment Variables:
 """
 import os
 import logging
+import re
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 import sys
@@ -125,6 +126,13 @@ def init_db():
 #   ("drop",    tablo, [kolon, ...])  — kolonu VERİYLE BİRLİKTE siler; modeldeki tanım ve
 #                                       "columns" op'undaki satır da kaldırılmış olmalı,
 #                                       yoksa sonraki açılışta kolon geri eklenir
+#
+# DİKKAT — "table" ve "columns" op'ları KOŞULLUDUR: init_db() önce create_all() koşturur,
+# migrasyon tablo/kolon listesini SONRA okur. Modelde tanımlı bir tablo/kolon create_all
+# tarafından zaten yaratılmışsa ilgili op atlanır → gövdesine iliştirilmiş CREATE INDEX /
+# UNIQUE kısıt ifadeleri o kurulumda HİÇ çalışmaz. Kalıcı olması istenen kısıt ve index
+# DAİMA ayrı bir ("index", ...) op'una yazılır (madde 28 bu boşluğun kapatılmasıdır);
+# "index" op'u koşulsuz koşar, IF NOT EXISTS onu idempotent kılar.
 _MIGRATIONS = [
     # 1. SEQUENCE for Lawyers, DocTypes, Statuses
     ("columns", "lawyers",  {"sequence": "INTEGER DEFAULT 0"}),
@@ -501,6 +509,51 @@ _MIGRATIONS = [
         "conversion_attempts":   "INTEGER DEFAULT 0",
         "conversion_spool_path": "TEXT",
     }),
+
+    # 28. TABLO OP'LARINA GÖMÜLÜ KISIT/INDEX'LERİN KURTARILMASI (FAZ D 6.1, G041)
+    #
+    # 6/9/12/14/18. maddelerdeki ("table", ...) op'ları modelde de tanımlı tabloları
+    # yaratır; create_all onları önce yarattığı için op atlanır ve gövdesindeki
+    # UNIQUE kısıt + CREATE INDEX ifadeleri hiç koşmaz (yukarıdaki DİKKAT şerhi).
+    # Aşağısı o kalemleri GERÇEKTEN koşan "index" op'una taşır. Özgün satırlar
+    # tablo op'larında bilinçli KALDI: tablo gerçekten yoksa (client_policies prod'da
+    # böyle doğdu — ölçüldü) index'ler oradan gelir, IF NOT EXISTS iki yolu çakıştırmaz.
+    #
+    # UNIQUE'ler ALTER TABLE ADD CONSTRAINT ile DEĞİL, CREATE UNIQUE INDEX ile:
+    # ADD CONSTRAINT idempotent değildir, ikinci açılışta patlar. İşlevsel fark yok
+    # (PG unique kısıtı zaten unique index ile uygular), mükerrer veride ikisi de
+    # migrasyonu DURDURUR — kasıtlı; bkz. _unique_index_duplicate_report.
+    #
+    # BURAYA ALINMAYAN ÜÇ KALEM (2026-08-12 ölçümü, mükerrer index üretirdi):
+    #   idx_stage_logs_case        → case_stage_logs.case_id modelde index=True,
+    #                                ix_case_stage_logs_case_id mevcut kurulumlarda VAR
+    #   idx_export_outbox_status   → export_outbox.status modelde index=True,
+    #                                ix_export_outbox_status VAR
+    #   idx_client_policies_client → client_policies tablo op'undan doğduğu için
+    #                                bu ad zaten VAR (create_all yolunda ise
+    #                                ix_client_policies_client_id oluşur)
+    # Üçünde de kolon her iki kurulum yolunda da index'li — eksik olan yalnız ADdır,
+    # kapsama değil. Aynı kolona ikinci index eklemek G042'nin temizlik listesine
+    # düşerdi. Testi ad değil KAPSAMA üzerinden kilitliyoruz
+    # (tests/test_migration_path.py::test_table_op_index_niyetleri_semada_karsilikli).
+    ("index", "case_relations", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_relation "
+        "ON case_relations (source_case_id, target_case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_case_relations_source ON case_relations (source_case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_case_relations_target ON case_relations (target_case_id)",
+    ]),
+    ("index", "daily_activity_reports", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_daily_report "
+        "ON daily_activity_reports (user_email, report_date)",
+        "CREATE INDEX IF NOT EXISTS idx_daily_reports_user "
+        "ON daily_activity_reports (user_email, is_acknowledged)",
+    ]),
+    # clients.name modelde index=True ama clients tablosu o tanımdan ÖNCE vardı:
+    # create_all MEVCUT tabloya index eklemez → prod'da ix_clients_name yok (ölçüldü).
+    # Sıfırdan kurulumda create_all zaten yaratır, burası no-op'a düşer.
+    ("index", "clients", [
+        "CREATE INDEX IF NOT EXISTS ix_clients_name ON clients (name)",
+    ]),
 ]
 
 # 13. TRIGRAM ARAMA INDEX'LERI (pg_trgm) — yalnızca performans, hatası fatal değil.
@@ -521,6 +574,81 @@ _TRGM_INDEXES = {
     "idx_case_parties_name_trgm": ("case_parties", "name"),
     "idx_case_lawyers_name_trgm": ("case_lawyers", "name"),
 }
+
+
+# ─── UNIQUE index savunması ──────────────────────────────────────────────────
+#
+# Mükerrer veri üzerinde CREATE UNIQUE INDEX patlar ve migrasyon durur; DURMASI
+# doğrudur (sessizce atlamak şemayı sessizce saptırır, sonraki adımlar tekilliğin
+# var olduğunu varsayar). Kusurlu olan mesajdır: PG "duplicate key value violates
+# unique constraint" der, hangi tabloda kaç grup olduğunu söylemez. Aşağıdaki
+# ön kontrol mükerrerleri sayıp örnek anahtarlarla raporlar — konteyner yine
+# kalkmaz, ama nöbetçi ne yapacağını bilir.
+_UNIQUE_INDEX_RE = re.compile(
+    r"CREATE\s+UNIQUE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?P<name>\w+)\s+"
+    r"ON\s+(?P<table>\w+)\s*\((?P<cols>[^()]*)\)\s*(?P<rest>.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_SIMPLE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _unique_index_duplicate_report(conn, sql: str):
+    """UNIQUE index SQL'i mükerrer veriye takılacaksa anlaşılır özet, değilse None.
+
+    Yalnız `CREATE UNIQUE INDEX ... ON tablo (kolon, ...) [WHERE ...]` biçimindeki
+    düz kolon index'lerini denetler; ifade index'i gibi ayrıştırılamayan biçimlerde
+    None döner — koruma o zaman Postgres'in kendi hatasıdır (migrasyon yine durur,
+    yalnız mesaj ham kalır).
+
+    NULL içeren satırlar dışlanır: PG'de çoklu NULL unique index'i ihlal etmez,
+    GROUP BY ise NULL'ları eşit sayar → dışlanmasa yanlış alarm üretirdi.
+    """
+    from sqlalchemy import text
+
+    match = _UNIQUE_INDEX_RE.match(sql.strip())
+    if not match:
+        return None
+    name, table = match.group("name"), match.group("table")
+    rest = match.group("rest").strip().rstrip(";")
+    if rest and not rest.upper().startswith("WHERE"):
+        return None
+    columns = [col.strip() for col in match.group("cols").split(",")]
+    if not _SIMPLE_IDENTIFIER_RE.match(table) or not all(
+        _SIMPLE_IDENTIFIER_RE.match(col) for col in columns
+    ):
+        return None
+
+    # Index zaten varsa mükerrer de olamaz (index'in kendisi engelliyor) — her
+    # açılışta tabloyu boşuna taramayalım.
+    if conn.execute(text("SELECT to_regclass(:n)"), {"n": name}).scalar() is not None:
+        return None
+
+    conditions = [f"{col} IS NOT NULL" for col in columns]
+    if rest:
+        conditions.append(f"({rest[len('WHERE'):].strip()})")
+    where_sql = " AND ".join(conditions)
+    col_list = ", ".join(columns)
+
+    group_count = conn.execute(text(
+        f"SELECT COUNT(*) FROM (SELECT 1 FROM {table} WHERE {where_sql} "
+        f"GROUP BY {col_list} HAVING COUNT(*) > 1) d"
+    )).scalar() or 0
+    if not group_count:
+        return None
+
+    samples = conn.execute(text(
+        f"SELECT {col_list}, COUNT(*) AS n FROM {table} WHERE {where_sql} "
+        f"GROUP BY {col_list} HAVING COUNT(*) > 1 ORDER BY n DESC, {col_list} LIMIT 3"
+    )).all()
+    ornekler = "; ".join(
+        "(" + ", ".join(repr(value) for value in row[:-1]) + f") ×{row[-1]}"
+        for row in samples
+    )
+    return (
+        f"UNIQUE index '{name}' oluşturulamaz: {table}({col_list}) üzerinde "
+        f"{group_count} mükerrer grup var. Örnekler: {ornekler}. "
+        "Migrasyon bilinçli olarak durdu — önce mükerrer satırları temizleyin."
+    )
 
 
 def check_and_migrate_tables():
@@ -547,6 +675,23 @@ def check_and_migrate_tables():
                 conn.rollback()
                 logger.error(f"Migration error for {context}: {e}")
                 raise RuntimeError(f"Migration failed for {context}: {e}") from e
+
+        def _guard_unique_index(sql: str, context: str):
+            """UNIQUE index'ten önce mükerrer ön kontrolü; sorun varsa fail-fast.
+
+            Ön kontrolün KENDİSİ patlarsa (yetki, beklenmedik biçim) migrasyon
+            durdurulmaz — WARNING'le geçilir ve asıl DDL yine denenir; mükerrer
+            varsa PG'nin ham hatası kapıyı zaten kapatır. Nihai ERROR init_db'de
+            tek satır olarak basılır (log sözleşmesi).
+            """
+            try:
+                report = _unique_index_duplicate_report(conn, sql)
+            except Exception as e:
+                conn.rollback()
+                logger.warning(f"Mükerrer ön kontrolü koşturulamadı ({context}): {e}")
+                return
+            if report:
+                raise RuntimeError(report)
 
         for op in _MIGRATIONS:
             kind, table = op[0], op[1]
@@ -597,6 +742,7 @@ def check_and_migrate_tables():
                 if table not in tables:
                     continue
                 for sql in op[2]:
+                    _guard_unique_index(sql, f"{table} (index)")
                     _exec(sql, f"{table} (index)")
 
         # pg_trgm — performans amaçlı; yetki/uzantı eksikse uygulamayı durdurmaz
