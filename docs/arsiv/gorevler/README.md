@@ -75,6 +75,15 @@ Kapanış tarihi = dosyaya dokunan son commit'in tarihi.
 | [G024](G024.md) | backend | Ofis dosyalarında SSRF: harici bağlı görsel temizliksiz soffice'e gidiyor |
 | [G025](G025.md) | backend | G023 gerilemesi: `&lt;` ile başlayan gövde metni sessizce yok oluyordu |
 
+### FAZ C — temizlik (kapanış: 2026-08-12)
+
+| Dosya | Bant | Konu |
+| --- | --- | --- |
+| [G026](G026.md) | frontend | Ölü `ui/sidebar.tsx` + kaskadı; sahte `tsc --noEmit` kapısını BULDU |
+| [G027](G027.md) | frontend | `CaseGroup.tsx` + kalan ölü `ui/` bileşenleri + sahipsiz npm |
+| [G028](G028.md) | backend | Ölü katmanlar: LogManager sınıfı, DatabaseManager, SyncLog, AnalysisCache, route alias'ları |
+| [G029](G029.md) | docs | Kapanmış görev dosyalarını arşivle (G001–G025) — bu dizini kuran görev |
+
 ## Bilinen tuzak: dosya içindeki yol yazımları
 
 Bu dosyalar `gorevler/gorev/` altındayken yazıldı; içlerinde `gorevler/gorev/G0NN.md`
