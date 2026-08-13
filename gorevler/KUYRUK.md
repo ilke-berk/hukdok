@@ -166,8 +166,8 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G052 | bant:backend | bagimli:- | E2: intake mahkeme sözlüğü TTL cache (mekanizma hazır)
 - [x] G053 | bant:backend | bagimli:- | E4: bantlı/erken çıkışlı Levenshtein (maliyetin %69'u)
 - [x] G054 | bant:backend | bagimli:- | E5: find_matching_case SQL daraltma (işçi erişim kesilmesiyle düştü — dirijan devri; bağımsız denetim SONRADAN koşuldu: GECTI, 509 girdi / 0 fark)
-- [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var) | BLOKE(HESAP ERİŞİMİ: claude CLI "organization has disabled Claude subscription access for Claude Code" diyor; kod/kuyruk sorunu DEĞİL, işçi hiç başlayamadı - erişim dönünce eki sil)
-- [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
+- [x] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (BLOKE hesap erişimiyle değil, ana oturumda çözüldü: yazmadan önce ölçüm koşuldu — kazanç index'siz de büyük çıktı, kullanıcı onayıyla index'ler geri eklenmedi; 20/20 gerçek sorgu eski koda eşdeğer, yol boyunca gerçek bir SQLAlchemy bug'ı bulunup kanıtlanmış kırmızıyla düzeltildi)
+- [x] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (355 çıpa tarandı, 192 düzeltildi; CLAUDE.md test sayıları + FAZ D/E mimari notları güncellendi)
 
 ## Aktif plan: Kapsam boşlukları — korumasız kritik yollar (2026-08-13)
 
