@@ -5,10 +5,52 @@ Her _seed_* fonksiyonu idempotenttir: yalnızca eksik kayıtları ekler
 """
 import logging
 
+from sqlalchemy.exc import IntegrityError
+
 from database import SessionLocal
 import models
 
 logger = logging.getLogger("AdminManager")
+
+
+def _ekle_yarissiz(db, nesne) -> bool:
+    """Tek satırı SAVEPOINT içinde ekler; yarışta kaybetmek HATA DEĞİLDİR.
+
+    Neden gerekli (Deploy #10, 2026-08-13 prod'da gözlendi): backend uvicorn'u
+    2 worker ile kalkar ve HER İKİSİ de açılışta `seed_all_lists()` koşar.
+    Buradaki desen "var mı diye bak → yoksa ekle → commit" ve bu **atomik
+    değil**: iki worker aynı anda "yok" görüp ikisi de eklemeye çalışır, biri
+    kısıta çarpar. Prod log'u:
+
+        Seed AppealingParties Error: (psycopg2.errors.UniqueViolation)
+        duplicate key ... Key (code)=(DAVACI) already exists.   (:316)
+
+    Veri DOĞRUYDU (kısıt görevini yaptı, 3 satır / 0 mükerrer) ama her açılışta
+    bir ERROR basılıyordu — log sözleşmesi gereği ERROR "nihai başarısızlık"
+    demektir (`analyzer.py::_failed_event`); iyi huylu bir yarışın ERROR basması
+    izlemeyi gürültüye alıştırır.
+
+    Yarış DOKUZ seed fonksiyonunun hepsinde vardı; yalnız `appealing_parties`
+    görünür oldu çünkü Deploy #10 ile gelen tek YENİ (ve boş) tablo oydu —
+    diğerleri zaten doluydu, ikinci worker hiçbir şey eklemeye çalışmıyordu.
+
+    Neden SAVEPOINT, neden toptan rollback değil: tek bir `except IntegrityError
+    → rollback` o commit'teki DİĞER satırları da geri alırdı. Satır başına
+    savepoint yalnız çakışan satırı düşürür, kalanlar yazılır — her araya-girme
+    sırası için doğru sonuç. Diyalektten de bağımsız (Postgres ve sqlite).
+
+    Neden lider kilidi DEĞİL: `services/singleton_lock.py` süreç-tekilliğini
+    konteyner İÇİNDE sağlar; `docker compose up -d` sırasında eski ve yeni
+    konteyner kısa süre birlikte yaşayabilir ve o yarışı kilit kapsamaz.
+    Kısıt-tabanlı çözüm her durumda doğrudur.
+    """
+    try:
+        with db.begin_nested():
+            db.add(nesne)
+        return True
+    except IntegrityError:
+        logger.debug("Seed satırı başka bir worker tarafından eklenmiş — atlandı")
+        return False
 
 
 def seed_all_lists():
@@ -43,8 +85,8 @@ def _seed_file_types():
         added = 0
         for idx, (code, name) in enumerate(items):
             if not db.query(models.FileType).filter_by(code=code).first():
-                db.add(models.FileType(code=code, name=name, active=True, sequence=idx))
-                added += 1
+                if _ekle_yarissiz(db, models.FileType(code=code, name=name, active=True, sequence=idx)):
+                    added += 1
         db.commit()
         if added:
             logger.info(f"Seeded {added} new file_types")
@@ -94,7 +136,7 @@ def _seed_court_types():
             for name in names:
                 if (name, parent) not in existing_keys:
                     code = (parent[:3] + "-" + name[:6]).upper().replace(" ", "")
-                    db.add(models.CourtType(code=f"{code}-{seq}", name=name, parent_code=parent, active=True, sequence=seq))
+                    _ekle_yarissiz(db, models.CourtType(code=f"{code}-{seq}", name=name, parent_code=parent, active=True, sequence=seq))
                     seq += 1
                     added += 1
         db.commit()
@@ -123,12 +165,12 @@ def _seed_party_roles():
         added = 0
         for name in main_roles:
             if name not in existing:
-                db.add(models.PartyRole(code=_norm(name), name=name, role_type="MAIN", active=True, sequence=seq))
+                _ekle_yarissiz(db, models.PartyRole(code=_norm(name), name=name, role_type="MAIN", active=True, sequence=seq))
                 seq += 1
                 added += 1
         for name in third_roles:
             if name not in existing:
-                db.add(models.PartyRole(code="3-" + _norm(name), name=name, role_type="THIRD", active=True, sequence=seq))
+                _ekle_yarissiz(db, models.PartyRole(code="3-" + _norm(name), name=name, role_type="THIRD", active=True, sequence=seq))
                 seq += 1
                 added += 1
         db.commit()
@@ -148,7 +190,7 @@ def _seed_bureau_types():
         names = ["ALEYHE", "DR ÖZEL", "HASTANE ÖZEL MÜVEKKİL", "LEXİS", "RÜCU", "VEKALETLİ TAKİP", "VEKALETSİZ TAKİP", "ÖZEL"]
         for idx, name in enumerate(names):
             code = name.replace(" ", "-")
-            db.add(models.BureauType(code=code, name=name, active=True, sequence=idx))
+            _ekle_yarissiz(db, models.BureauType(code=code, name=name, active=True, sequence=idx))
         db.commit()
         logger.info(f"Seeded {len(names)} bureau_types")
     except Exception as e:
@@ -178,7 +220,7 @@ def _seed_cities():
         sorted_names = sorted(names, key=lambda x: x.lower())
         for idx, name in enumerate(sorted_names):
             code = name.upper().replace(" ", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C").replace("I", "I")
-            db.add(models.City(code=code, name=name, active=True, sequence=idx))
+            _ekle_yarissiz(db, models.City(code=code, name=name, active=True, sequence=idx))
         db.commit()
         logger.info(f"Seeded {len(names)} cities")
     except Exception as e:
@@ -212,7 +254,7 @@ def _seed_specialties():
         sorted_names = sorted(names, key=lambda x: x.lower())
         for idx, name in enumerate(sorted_names):
             code = name[:20].upper().replace(" ", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C").replace("(", "").replace(")", "")
-            db.add(models.Specialty(code=f"{code}-{idx}", name=name, active=True, sequence=idx))
+            _ekle_yarissiz(db, models.Specialty(code=f"{code}-{idx}", name=name, active=True, sequence=idx))
         db.commit()
         logger.info(f"Seeded {len(names)} specialties")
     except Exception as e:
@@ -243,8 +285,8 @@ def _seed_client_categories():
         for code, name in items:
             if code in existing:
                 continue
-            db.add(models.ClientCategory(code=code, name=name, active=True, sequence=next_seq + added))
-            added += 1
+            if _ekle_yarissiz(db, models.ClientCategory(code=code, name=name, active=True, sequence=next_seq + added)):
+                added += 1
         if added:
             db.commit()
             logger.info(f"Seeded {added} client_categories")
@@ -276,7 +318,7 @@ def _seed_file_statuses():
         ]
         for idx, name in enumerate(names):
             code = name.upper().replace(" ", "-").replace("/", "-").replace("İ", "I").replace("Ş", "S").replace("Ğ", "G").replace("Ü", "U").replace("Ö", "O").replace("Ç", "C")
-            db.add(models.FileStatus(code=code, name=name, active=True, sequence=idx))
+            _ekle_yarissiz(db, models.FileStatus(code=code, name=name, active=True, sequence=idx))
         db.commit()
         logger.info(f"Seeded {len(names)} file_statuses")
     except Exception as e:
@@ -307,8 +349,8 @@ def _seed_appealing_parties():
         added = 0
         for idx, (code, name) in enumerate(APPEALING_PARTIES):
             if not db.query(models.AppealingParty).filter_by(code=code).first():
-                db.add(models.AppealingParty(code=code, name=name, active=True, sequence=idx))
-                added += 1
+                if _ekle_yarissiz(db, models.AppealingParty(code=code, name=name, active=True, sequence=idx)):
+                    added += 1
         db.commit()
         if added:
             logger.info(f"Seeded {added} new appealing_parties")

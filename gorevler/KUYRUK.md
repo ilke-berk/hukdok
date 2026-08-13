@@ -208,6 +208,14 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
   doğrulandı. **Kural: gerçek DB'ye bağlanan yeni bir test yazan, üç ortamın üçünü de
   düşünmeli** — "DB'ye ulaşılamıyorsa SKIP" yetmez, "şema göçmemişse de SKIP" gerekir.
 
+- ✅ **KAPANDI — G058 (2026-08-13).** Yarış dokuz seed fonksiyonunun **hepsinde** varmış;
+  yalnız `appealing_parties` görünür olmuş çünkü Deploy #10'un getirdiği tek YENİ (ve boş)
+  tablo oydu. Düzeltme satır başına SAVEPOINT (`seed_data._ekle_yarissiz`) — lider kilidi
+  DEĞİL, çünkü kilit konteyner içinde tekilleştirir ve `up -d` sırasında eski/yeni konteyner
+  kısa süre birlikte yaşayabilir. Lokalde tablo boşaltılıp `--force-recreate` ile doğrulandı:
+  **0 ERROR**, kazanan worker "Seeded 3 new appealing_parties" INFO'su basıyor, kaybeden
+  sessiz. Aşağıdaki özgün kayıt tarihsel iz olarak duruyor.
+
 - **`appealing_parties` seed'i iki worker arasında yarışıyor.** Prod açılışında tek ERROR:
   `Seed AppealingParties Error: UniqueViolation ... Key (code)=(DAVACI) already exists`
   (`seed_data.py:316`). İki uvicorn worker'ı (pid 16 + 17) aynı anda tohumluyor, biri
