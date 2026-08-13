@@ -60,6 +60,15 @@ services:
       # (bkz. docker-compose.override.yml.example — gitignore'da, prod'a gitmez).
     environment:
       - PYTHONUNBUFFERED=1
+      # GÜVENLİK — bu satırı SİLME (G057). vault.py sırları (GEMINI_API_KEY,
+      # SHAREPOINT_CLIENT_SECRET) keyring üzerinden okumaya çalışır. Bu satır
+      # düşerse keyring backend'i ÖNCELİĞE göre kendi seçer ve bu imajda kurulu
+      # backend'lerin en yüksek öncelikli olanı keyrings.alt.file.PlaintextKeyring
+      # (0.5; fail=0, null=-1) — yani sırlar DÜZ METİN dosyaya yazılırdı.
+      # null backend hiçbir şey saklamaz; get_secret ortam değişkenine düşer,
+      # prod'un gerçek yolu budur (2026-08-13'te ölçüldü: aktif backend null,
+      # düz metin dosyası yok). Kod tarafında ikinci bir kapı da var
+      # (vault._backend_write_safe) ama tek savunmaya güvenme.
       - PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
       - PORT=8001 # Override default port
       # glibc thread başına ayrı malloc arena açar; PDF/görüntü dönüşümünün dev

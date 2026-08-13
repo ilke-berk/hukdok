@@ -21,6 +21,15 @@ if getattr(sys, 'frozen', False):
 else:
     ENV_PATH = BASE_DIR / ".env"
 # vault_sync.json should be in AppData (Writable)
+#
+# NOT (G057): bu bir WINDOWS yoludur ve masaüstü çağından kalmadır. Linux
+# konteynerinde `Path.home()/"AppData"/...` diye bir yer yoktur; prod'da
+# 2026-08-13'te bakıldı — `/root/AppData` HİÇ OLUŞMAMIŞ. Zararsız olmasının
+# sebebi yolun hiç yazılmaması: senkron yalnız `.env` keyring'e taşınacaksa
+# koşar, konteynerde ise backend null olduğu için o yola zaten girilmiyor.
+# BİLEREK düzeltilmedi — düzeltmek konteynerde yeni bir yazılabilir dizin
+# ihtiyacı doğurur ve bugün hiçbir şeyi çözmez. Ölü ama sessiz olmasın diye
+# burada işaretlendi.
 DATA_DIR = Path.home() / "AppData" / "Local" / "HukuDok" / "data"
 SYNC_STATE_FILE = DATA_DIR / "vault_sync.json"
 
@@ -61,6 +70,40 @@ def _update_last_synced_mtime(mtime: float):
         logger.warning(f"Failed to update vault sync state: {e}")
 
 
+# ── Düz metin backend'e sır YAZMA koruması (G057) ────────────────────────────
+#
+# Konteynerde `docker-compose.yml` `PYTHON_KEYRING_BACKEND=...null.Keyring`
+# veriyor; null backend hiçbir şey saklamaz ve `get_secret` aşağıdaki env
+# fallback'ine düşer — bugünkü prod davranışı budur.
+#
+# AMA o env satırı düşerse keyring backend'i ÖNCELİĞE göre kendi seçer ve bu
+# imajda kurulu backend'lerin en yüksek öncelikli olanı
+# `keyrings.alt.file.PlaintextKeyring`'dir (0.5; fail=0, null=-1). O durumda
+# `set_password` iki sırrı da DÜZ METİN dosyaya yazardı. Prod'da 2026-08-13'te
+# ölçüldü: aktif backend null, düz metin dosyası yok — yani bugün güvenli, ama
+# güvenliği tek bir yorumsuz compose satırına yaslıydı.
+#
+# Bu kapı o yaslanmayı kaldırır: yazma yolu düz metin bir backend gördüğünde
+# YAZMAZ. Okuma yolu etkilenmez (env fallback zaten var), yani işlevsel kayıp
+# yok — yalnız sırların diske düz metin düşmesi engellenir.
+# Windows geliştirme makinesindeki `WinVaultKeyring` bu kapıya TAKILMAZ.
+_UNSAFE_BACKEND_MODULE_PREFIX = "keyrings.alt"
+
+# Uyarı süreç başına BİR kez: `get_secret` her çağrıda sync'i yokluyor, her
+# seferinde WARNING basmak log sözleşmesini gürültüye boğardı.
+_unsafe_backend_warned = False
+
+
+def _backend_write_safe() -> tuple[bool, str]:
+    """Aktif keyring backend'ine sır yazmak güvenli mi? (güvenli_mi, backend_adı)"""
+    try:
+        kr = keyring.get_keyring()
+    except Exception as e:  # backend çözülemedi — yazma, oku ve devam et
+        return False, f"<backend okunamadı: {type(e).__name__}>"
+    ad = f"{type(kr).__module__}.{type(kr).__name__}"
+    return (not type(kr).__module__.startswith(_UNSAFE_BACKEND_MODULE_PREFIX)), ad
+
+
 def sync_env_to_vault_if_needed():
     """
     Smart Sync: Checks if .env is newer than the last sync.
@@ -71,6 +114,18 @@ def sync_env_to_vault_if_needed():
 
     # If .env is missing or hasn't changed since last sync, skip
     if env_mtime == 0 or env_mtime <= last_sync:
+        return
+
+    safe, backend_name = _backend_write_safe()
+    if not safe:
+        global _unsafe_backend_warned
+        if not _unsafe_backend_warned:
+            _unsafe_backend_warned = True
+            logger.warning(
+                f"Keyring backend '{backend_name}' sırları DÜZ METİN saklar — "
+                "senkron atlandı, sırlar yalnız ortam değişkeninden okunacak. "
+                "Beklenen ayar: PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring"
+            )
         return
 
     logger.info(".env change detected (Newer than last sync). Updating Vault...")
