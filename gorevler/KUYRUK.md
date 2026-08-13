@@ -189,9 +189,9 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      dallanmayı kapsam uğruna test etmek değersiz test üretme riski taşır.
      Bant: üçü de backend = seri. Aralarında dosya çakışması YOK, bağımlılık yok. -->
 
-- [ ] G057 | bant:backend | bagimli:- | vault.py %0: sır yolu tek env satırına yaslanıyor (PlaintextKeyring riski)
-- [ ] G058 | bant:backend | bagimli:- | seed_data.py: worker yarışı (prod'da canlı ERROR) + %9 kapsam
-- [ ] G059 | bant:backend | bagimli:- | auth_verifier.py %25: kimlik kapısı test edilmiyor
+- [x] G057 | bant:backend | bagimli:- | vault.py %0: sır yolu tek env satırına yaslanıyor (PlaintextKeyring riski)
+- [x] G058 | bant:backend | bagimli:- | seed_data.py: worker yarışı (prod'da canlı ERROR) + %9 kapsam
+- [x] G059 | bant:backend | bagimli:- | auth_verifier.py %25: kimlik kapısı test edilmiyor
 
 ## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
 
