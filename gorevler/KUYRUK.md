@@ -171,6 +171,19 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 ## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
 
+- **DERS — kapı merdiveninin kör noktası: ÇIPLAK Postgres.** Deploy #10'un push'unda CI
+  backend'i kırmızıya döndü, üç kapımızın (lokal konteyner, `deploy.sh --gate-only`, denetçi)
+  üçü de yeşildi. Sebep: DB'li testler için üç ortam **üç farklı** DB durumu sunuyor —
+  lokal konteyner *tablo + veri*, deploy kapısı *tablo, veri yok* (kendi postgres'ini
+  **migrasyonlu** kaldırıyor, G050), CI ise **çıplak postgres, hiç tablo yok**.
+  `test_case_matcher_sql.py` (G054) yalnız "veri boş mu"yu koruyordu, "tablo var mı"yı
+  değil → `UndefinedTable` FAIL, ardından modül kapsamlı bağlantıda transaction abort
+  olduğu için 3 test daha `InFailedSqlTransaction` ile domino (1 gerçek hata, 4 kırmızı).
+  Düzeltildi: fixture `to_regclass` ile şema kontrolü yapıp SKIP ediyor + `autouse`
+  rollback domino'yu kesiyor; CI koşulu çıplak postgres konteyneriyle **taklit edilerek**
+  doğrulandı. **Kural: gerçek DB'ye bağlanan yeni bir test yazan, üç ortamın üçünü de
+  düşünmeli** — "DB'ye ulaşılamıyorsa SKIP" yetmez, "şema göçmemişse de SKIP" gerekir.
+
 - **`appealing_parties` seed'i iki worker arasında yarışıyor.** Prod açılışında tek ERROR:
   `Seed AppealingParties Error: UniqueViolation ... Key (code)=(DAVACI) already exists`
   (`seed_data.py:316`). İki uvicorn worker'ı (pid 16 + 17) aynı anda tohumluyor, biri

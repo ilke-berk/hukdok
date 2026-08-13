@@ -39,9 +39,23 @@ _ALLOWED = [chr(c) for c in list(range(0x20, 0x180)) + list(range(0x300, 0x370))
 _EXCEPTIONS = [chr(c) for c in (0x85, 0xA0, 0xDF, 0x149)]
 
 
+# Sorguların dokunduğu tablolar. `_fetch_candidate_parties` → case_parties,
+# `_fetch_case_rows` → cases, `find_matching_case` → ikisi de (+ `_fetch_display`).
+_GEREKEN_TABLOLAR = ("cases", "case_parties")
+
+
 @pytest.fixture(scope="module")
 def conn():
-    """Salt-okunur bağlantı; DB yoksa tüm modül SKIP."""
+    """Salt-okunur bağlantı; DB yoksa YA DA şema göçmemişse tüm modül SKIP.
+
+    Şema kontrolü ayrı bir adımdır ve CI tarafından öğretildi: GitHub Actions'ın
+    `postgres` servisi ÇIPLAK kalkar — bağlantı kurulur, `SELECT 1` çalışır, ama
+    tablo yoktur. O durumda ilk sorgu `UndefinedTable` fırlatıp testi FAIL ediyordu
+    ve modül kapsamlı bağlantıda transaction abort olduğu için kalan testler
+    `InFailedSqlTransaction` ile domino gidiyordu (1 gerçek hata → 4 kırmızı).
+    Modülün en baştaki sözleşmesi "ulaşılamıyorsa SKIP, FAIL değil" — şema
+    yokluğu da aynı sınıftır: bu testlerin ölçtüğü şey orada mevcut değildir.
+    """
     url = os.getenv("DATABASE_URL") or ""
     if not url.startswith("postgresql"):
         pytest.skip("DATABASE_URL postgresql:// değil")
@@ -57,10 +71,36 @@ def conn():
         pytest.skip(f"Gerçek Postgres'e ulaşılamadı ({type(exc).__name__}) — SQL ön filtre testi atlandı")
 
     try:
+        eksik = [
+            t for t in _GEREKEN_TABLOLAR
+            if connection.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{t}"}).scalar() is None
+        ]
+    except Exception as exc:
+        connection.close()
+        engine.dispose()
+        pytest.skip(f"Şema sorgulanamadı ({type(exc).__name__})")
+    if eksik:
+        connection.close()
+        engine.dispose()
+        pytest.skip(f"Şema göçmemiş — eksik tablo: {', '.join(eksik)} (çıplak Postgres, migrasyon koşmamış)")
+
+    try:
         yield connection
     finally:
         connection.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _islem_temizligi(conn):
+    """Her testten sonra rollback: modül kapsamlı bağlantıda bir testin bıraktığı
+    abort'lu transaction, kalan testleri `InFailedSqlTransaction` ile domino
+    düşürüyordu — tek gerçek hata dört kırmızı gibi okunuyordu."""
+    yield
+    try:
+        conn.rollback()
+    except Exception:
+        pass
 
 
 class _Session:
