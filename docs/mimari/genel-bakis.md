@@ -14,45 +14,46 @@ onaylar, belge SharePoint arşivine + veritabanına yazılır ve hukukbot'a akta
 | Servis | İmaj / kaynak | Yayınlanan port | Bellek | Sağlık kontrolü |
 | --- | --- | --- | --- | --- |
 | `postgres` | `postgres:15-alpine` (`docker-compose.yml:4`) | `127.0.0.1:5432` (`:15`) | 512m, `memswap=mem` (`:21-22`) | `pg_isready`, 10s (`:28-32`) |
-| `backend` (`hukdok_backend`) | `./backend/Dockerfile` (`:37-39`) | `127.0.0.1:8001` (`:50`) | 2g, `memswap=mem` (`:79-80`) | `/healthz`, 30s, start_period 60s (`:86-97`) |
-| `frontend` | `./frontend/Dockerfile` (`:106-108`) | `8080:80` (`:113`) | 128m, `memswap=mem` (`:115-116`) | yok; `depends_on: backend healthy` (`:122-124`) |
+| `backend` (`hukdok_backend`) | `./backend/Dockerfile` (`:37-39`) | `127.0.0.1:8001` (`:54`) | 2g, `memswap=mem` (`:92-93`) | `/healthz`, 30s, start_period 60s (`:99-110`) |
+| `frontend` | `./frontend/Dockerfile` (`:119-121`) | `8080:80` (`:126`) | 128m, `memswap=mem` (`:128-129`) | yok; `depends_on: backend healthy` (`:135-137`) |
 
 Üç kural bu tabloda gizli, üçü de bilinçli:
 
 - **`memswap_limit == mem_limit` — swap yasak.** Gerekçe konfigde yazılı: "swap'a taşma,
   2026-07-29 kesintilerindeki I/O fırtınasının mekanizmasıydı" (`docker-compose.yml:19-20`).
 - **Backend portu localhost'a sabit.** API-key'li `/export` route'ları public porttan
-  erişilememeli (`docker-compose.yml:47-49`). Hukukbot public port yerine ortak
+  erişilememeli (`docker-compose.yml:51-53`). Hukukbot public port yerine ortak
   `hukuk_shared` Docker ağından `http://hukdok_backend:8001` ile konuşur (`:43-44`);
-  bu ağ **external**'dır ve önceden `docker network create hukuk_shared` ile kurulur (`:139-142`).
-- **Backend'de kaynak kodu bind-mount'u YOK** (`docker-compose.yml:54-56`) — konteyner
+  bu ağ **external**'dır ve önceden `docker network create hukuk_shared` ile kurulur (`:149-155`).
+- **Backend'de kaynak kodu bind-mount'u YOK** (`docker-compose.yml:58-60`) — konteyner
   imajdaki kodu çalıştırır. Kod değişikliği ancak rebuild ile görünür. Lokal hot-reload
   isteniyorsa `docker-compose.override.yml.example` kopyalanır (gitignore'da).
 
 Bellek ayarına eşlik eden `MALLOC_ARENA_MAX=2` de aynı OOM incelemesinden gelir: glibc
 thread başına arena açıyor, PDF/görüntü dönüşümünün geçici tahsisleri arena'larda kalıp
-RSS'i kalıcı yükseltiyordu (`docker-compose.yml:61-64`).
+RSS'i kalıcı yükseltiyordu (`docker-compose.yml:74-77`).
 
 ## 2. İki katmanlı nginx
 
 Repodaki `nginx.conf` **konteyner** nginx'idir (`listen 80`, `nginx.conf:8`; compose bunu
 8080'de yayınlar). SPA'yı `/usr/share/nginx/html` kökünden servis eder ve `try_files` ile
-`/index.html`'e düşer (`nginx.conf:21-25`).
+`/index.html`'e düşer (`nginx.conf:43-47`).
 
-Backend'e proxy'lenen location'ların **tam** listesi:
+Backend'e proxy'lenen location'ların listesi:
 
 | Location | Not |
 | --- | --- |
-| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:27-31`) |
-| `/api` | genel API (`nginx.conf:42`) |
-| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:50-57`) |
-| `/confirm` | onay + arşivleme (`nginx.conf:59`) |
-| `/preview-email-body` | (`nginx.conf:67`) |
-| `/refresh` | liste tazeleme (`nginx.conf:75`) |
+| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:49-59`) |
+| `/api` | genel API (`nginx.conf:64`) |
+| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:72-79`) |
+| `/confirm` | onay + arşivleme (`nginx.conf:81`) |
+| `/preview-email-body` | (`nginx.conf:89`) |
+| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:97-107`) |
+| `/refresh` | liste tazeleme (`nginx.conf:109`) |
 
 **`/export` bu listede YOKTUR ve asla eklenmez** — konfigin kendi uyarısı: "DIKKAT: /export
 buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir, public'e proxy'lenmez"
-(`nginx.conf:40-41`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
+(`nginx.conf:62-63`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama
@@ -70,8 +71,8 @@ timeout'ları bu katmanla eşit olmalıdır (`nginx.conf:12`). Bkz.
 1. `python migrate.py` — şema migrasyonları **uvicorn'dan önce, tek süreçte**. Gerekçe
    modül docstring'inde: "her worker kendi migrasyonunu koşarsa DDL yarışı olur"; çıkış
    kodu 1 ise entrypoint `set -e` ile durur, "sessiz şema sapması yerine fail-fast"
-   (`backend/migrate.py:1-10`). Migrasyonlar `backend/database.py:136` `_MIGRATIONS`
-   listesinden idempotent uygulanır (`database.py:654` `check_and_migrate_tables`).
+   (`backend/migrate.py:1-10`). Migrasyonlar `backend/database.py:142` `_MIGRATIONS`
+   listesinden idempotent uygulanır (`database.py:939` `check_and_migrate_tables`).
    `migrate.py` ayrı süreç olduğu için `DB_STATEMENT_TIMEOUT_MS=0` atar — uygulama
    engine'inin 30 sn'lik sınırı backfill UPDATE'lerini kesmesin (`backend/migrate.py:20-26`).
 2. `uvicorn api:app --workers ${UVICORN_WORKERS:-2}`.
@@ -79,19 +80,19 @@ timeout'ları bu katmanla eşit olmalıdır (`nginx.conf:12`). Bkz.
 ### Migrasyon op türleri ve `create_all` tuzağı
 
 `init_db()` önce `Base.metadata.create_all()` koşturur, `check_and_migrate_tables()` tablo/kolon
-listesini **sonra** okur (`database.py:108-112`). Sonuç: `("table", …)` ve `("columns", …)`
+listesini **sonra** okur (`database.py:113-117`). Sonuç: `("table", …)` ve `("columns", …)`
 op'ları **koşulludur** — modelde tanımlı bir tablo/kolon create_all tarafından zaten
-yaratılmışsa op atlanır (`database.py:732`, `database.py:713`) ve **gövdesine iliştirilmiş** `CREATE INDEX` /
+yaratılmışsa op atlanır (`database.py:1016-1017`, `database.py:993-994`) ve **gövdesine iliştirilmiş** `CREATE INDEX` /
 `CONSTRAINT … UNIQUE` ifadeleri o kurulumda hiç çalışmaz. `("index", …)` op'u ise koşulsuz
 koşar; `IF NOT EXISTS` onu idempotent kılar. Kural: kalıcı olması istenen kısıt/index **daima**
-`("index", …)` op'una yazılır (`database.py:130-135` şerhi).
+`("index", …)` op'una yazılır (`database.py:136-141` şerhi).
 
 FAZ D 6.1 (G041) bu boşluğu kapattı: tablo op'larına gömülü olduğu için hiç oluşmamış kısıt ve
 index'ler 28. maddeye taşındı — `uq_case_relation`, `uq_daily_report`, `idx_case_relations_*`,
 `idx_daily_reports_user` ve `ix_clients_name`. UNIQUE'ler `ALTER TABLE ADD CONSTRAINT` ile
 değil `CREATE UNIQUE INDEX IF NOT EXISTS` ile eklenir (ADD CONSTRAINT idempotent değildir).
 Mükerrer veride migrasyon **bilinçli durur** (sessiz atlama şemayı sessizce saptırırdı), ama
-önce `_unique_index_duplicate_report` (`database.py:595`) hangi tabloda kaç mükerrer grup
+önce `_unique_index_duplicate_report` (`database.py:880`) hangi tabloda kaç mükerrer grup
 olduğunu örnek anahtarlarla raporlar. Kalan bilinen boşluk: `("columns", …)` op'larının
 post-SQL index'leri sıfırdan kurulumda hâlâ oluşmuyor (en kritiği `uq_cases_sistem_no`) —
 mevcut kurulumlarda kolon migrasyonla eklendiği için varlar. Mekanizmanın tamamı
@@ -111,24 +112,24 @@ Ayrım kritik: yol AÇILAMAZSA (OSError) sıradaki adaya geçilir; dosya açıl�
 süreçte çıkarsa zincir durur ve worker lider OLMAZ (yoksa iki lider doğardı). Hiçbir aday
 açılamazsa fail-open korunur — her worker kendini lider sayar (arıza günü arkaplan işleri
 tamamen durmasın; en kötü durum tekli davranışın N kopyası) ama sessiz değil: süreç başına
-TEK `CRITICAL` log satırı atılır (`singleton_lock.py:132-142`), log tabanlı alarm bunu yakalar.
+TEK `CRITICAL` log satırı atılır (`singleton_lock.py:139`), log tabanlı alarm bunu yakalar.
 
 | İş | Kapsam | Kod |
 | --- | --- | --- |
-| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)` | yalnız lider | `api.py:163-177` |
-| APScheduler: dönüşüm retry, `CronTrigger(hour=2, minute=30, Europe/Istanbul)` | yalnız lider | `api.py:184-190` |
-| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:195-197` |
-| SharePoint upload outbox worker'ı | yalnız lider | `api.py:206-213` |
-| Liste tazeleme (refresh) thread'i | **worker başına — bilinçli** | `api.py:149-159` |
+| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)` | yalnız lider | `api.py:158-172` |
+| APScheduler: dönüşüm retry, `CronTrigger(hour=2, minute=30, Europe/Istanbul)` | yalnız lider | `api.py:178-185` |
+| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:191` |
+| SharePoint upload outbox worker'ı | yalnız lider | `api.py:201-204` |
+| Liste tazeleme (refresh) thread'i | **worker başına — bilinçli** | `api.py:144-154` |
 
 Refresh thread'inin istisna olmasının gerekçesi kodda yazılı: DynamicConfig, matcher ve
 searcher **süreç içi singleton**'lardır; yalnız liderde koşsaydı diğer worker'lar boş
 listelerle kalırdı. Bilinen sınır da orada kabul edilmiş: `/refresh` yalnız isteği işleyen
 worker'ı tazeler, diğeri kendi refresh'ine kadar bayat kalır — "liste değişiklikleri nadir,
-kabul edilen takas" (`api.py:149-156`).
+kabul edilen takas" (`api.py:149-151`).
 
 02:30 saatinin seçimi de tesadüf değil: gece yarısı raporu (00:00) ve host pg_dump'ı
-(03:30) ile çakışmasın diye (`api.py:181-182`).
+(03:30) ile çakışmasın diye (`api.py:173-177`).
 
 ## 4. Kimlik ve tenant
 
@@ -173,7 +174,7 @@ sinyalleriyle birleştirir:
 | `ok` | 200 | hepsi temiz |
 
 Yanıt gövdesi `status`, `version` (imaja gömülü git SHA) ve `checks` alanlarını taşır.
-Sonuç 10 saniyelik TTL cache'te tutulur (`api.py:449` `_HEALTHZ_CACHE_TTL_SECONDS = 10.0`) —
+Sonuç 10 saniyelik TTL cache'te tutulur (`api.py:444` `_HEALTHZ_CACHE_TTL_SECONDS = 10.0`) —
 compose healthcheck'i (30s), GCP uptime check ve deploy kapısı aynı anda yokladığında DB'ye
 yığılmasın diye.
 

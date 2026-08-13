@@ -16,9 +16,9 @@
 | --- | --- | --- |
 | Prod DB boyutu | **67 MB** | temizlik planı §6.0 prod ölçümü (2026-08-12) |
 | `cases` satır sayısı | **14.395** | aynı |
-| Backend konteyner bellek limiti | **2 GB**, `memswap_limit` eşit → **swap YOK** | `docker-compose.yml:83-84` |
-| 2026-07-29 OOM'unda ölçülen backend anon bellek | **3,57 GB** | `docs/mimari/deploy-ve-altyapi.md:146` |
-| `cases` üzerindeki GIN trigram index'leri | 6 adet, **26.896 kB ≈ 26 MB**, **hiçbiri hiç taranmamış** (`idx_scan = 0`) | temizlik planı §6.0 madde 3 |
+| Backend konteyner bellek limiti | **2 GB**, `memswap_limit` eşit → **swap YOK** | `docker-compose.yml:92-93` |
+| 2026-07-29 OOM'unda ölçülen backend anon bellek | **3,57 GB** | `docs/mimari/deploy-ve-altyapi.md:224` |
+| `cases` üzerindeki GIN trigram index'leri (ölçüm anında) | 6 adet, **26.896 kB ≈ 26 MB**, **hiçbiri hiç taranmamış** (`idx_scan = 0`) — **G042'de DÜŞÜRÜLDÜ, bkz. güncel not** | temizlik planı §6.0 madde 3 |
 | Aday indeksi DB yüklemesi (tanıdık sorgu) | 1.998 + 49.857 satır, **~550 ms** | `backend/routes/parties.py:8-11` (docstring, G017 ölçümü) |
 | Hazırlanmış aday indeksinin bellekteki boyutu | **~34 MB**, **worker başına** (2 worker) | `backend/routes/parties.py:41-45` |
 
@@ -35,12 +35,17 @@
    bilinçli olarak kapalı ([`011`](011-bellek-swap-yasagi.md)) ve bu kutu 2026-07-29'da
    3,57 GB'lık bir anon bellek büyümesiyle bir kez yenildi. Aynı VM'e 1 GB'lık bir JVM
    koymak, kök nedeni kapatılmış bir arızayı yeniden davet etmektir.
-2. **Elimizdeki tam metin altyapısı zaten kullanılmıyor.** `cases` üzerinde 26 MB'lık
-   altı GIN trigram index'i duruyor ve **hiçbiri bir kez bile taranmamış**. Yeni bir arama
-   motoru eklemeden önce cevaplanacak soru şu: mevcut index'ler neden devrede değil?
-   Kullanılmayan bir altyapının üstüne ikincisini kurmak, sorunu çözmez, ikiye çıkarır.
-   (Bu index'ler FAZ D 6.2'nin **düşürme** adaylarıdır — yani bugünkü yönelim ES'in
-   tersidir: kullanılmayan arama altyapısını *azaltmak*.)
+2. **Elimizdeki tam metin altyapısı zaten kullanılmıyordu.** Bu kayıt yazıldığında `cases`
+   üzerinde 26 MB'lık altı GIN trigram index'i duruyordu ve **hiçbiri bir kez bile
+   taranmamıştı** — sebep veri azlığı değil, aramanın 13 kolonu tek bir OR/EXISTS ağacında
+   birleştirmesiydi; planlayıcı o ağaçta index seçemiyordu. Bu index'ler FAZ D 6.2'de
+   (G042) **düşürüldü** (bkz. [`018-index-temizligi-37-kalem.md`](018-index-temizligi-37-kalem.md)).
+   **Güncel not (G055, E8, 2026-08-13):** arama motoru UNION + çok terimli için
+   INTERSECT-of-UNION'a yeniden yazıldı ve **index'ler geri eklenmedi** — ölçüm, kazancın
+   trigram index'lerden değil sorgunun bağımsız SELECT'lere bölünmesinden geldiğini,
+   çok terimli aramada index'siz bile ölçülebilir (5-9×) olduğunu gösterdi. Yani bu
+   maddenin sonucu değişmedi (Elasticsearch hâlâ kapsam dışı) ama gerekçesi güncellendi:
+   "kullanılmayan altyapı" artık yok, arama kendi kod değişikliğiyle hızlandı.
 3. **Ölçek yok.** 14.395 satır ve 67 MB, Postgres için küçük veridir. Arama bugün yavaşsa
    sebebi motor değil, index seçimi ve sorgu şeklidir — FAZ D 6.2'nin konusu.
 

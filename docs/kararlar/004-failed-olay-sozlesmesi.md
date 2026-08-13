@@ -26,7 +26,7 @@
   - *Varsayılan veriyle `complete` döndürmek* — kullanıcıya uydurma alan gösteriyordu;
     frontend artık `AnalysisFailedError` fırlatıp formu doldurmuyor.
   - Route'un beklenmedik istisnada ürettiği `{"status": "error", "message"}` olayı bu
-    sözleşmenin **dışında** bırakılmıştır ve aynen korunur (`analyzer.py:390-391`).
+    sözleşmenin **dışında** bırakılmıştır ve aynen korunur (`analyzer.py:396-397`).
 - **Test:** `backend/tests/test_faz4_failed_event.py`,
   `frontend/src/lib/analyzeDocument.test.ts`
 - **İlgili:** [`docs/mimari/belge-isleme-hatti.md`](../mimari/belge-isleme-hatti.md)

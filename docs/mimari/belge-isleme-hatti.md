@@ -12,7 +12,7 @@
 İstek başına yapılan iki yan iş:
 
 - Her `/process` çağrısında bayat PROCESS_CACHE girdileri süpürülür — disk taraması +
-  payload silme olduğu için executor'a atılır (`processing.py:431-433`).
+  payload silme olduğu için executor'a atılır (`processing.py:440-441`).
 - Ofis dosya numarası **paralel bir task** olarak SharePoint sayacından tahsis edilir
   (aşağıda §6).
 
@@ -66,17 +66,17 @@ Karar kaydı: [`004-failed-olay-sozlesmesi.md`](../kararlar/004-failed-olay-sozl
 
 `/process`'te kabul edilen dosya `/confirm`'e kadar PROCESS_CACHE'te yaşar. Cache
 `managers/ttl_cache.py`'deki `DiskTTLCache`'tir ve **bellekte state tutmaz**: her girdi bir
-`<dir>/<key>.json` meta dosyasıdır, her işlem diski okur (`ttl_cache.py:82-93`).
+`<dir>/<key>.json` meta dosyasıdır, her işlem diski okur (`managers/ttl_cache.py:97-98`).
 
 Gerekçe docstring'de: uvicorn `--workers N`'de worker'lar arası paylaşım ve restart
 kalıcılığı gerekiyordu; süreç-içi indeks + sidecar deseni "worker A evict etti, worker B
 hâlâ biliyor" tipi bayatlama sorunları doğururdu. `pop()` süreçler arası atomiktir — meta
 dosyası önce rastgele adlı bir claim dosyasına `os.replace` ile taşınır, yarışan iki
-pop'tan yalnız biri kazanır (`ttl_cache.py:99-108`).
+pop'tan yalnız biri kazanır (`managers/ttl_cache.py:106-109`).
 
 TTL 1800 sn'dir (`config/settings.py:89`). Boot'ta bir süpürme koşar: bayat girdiler ve
 payload dosyaları temizlenir, taze girdiler restart'ı **atlatır** — özelliğin amacı budur
-(`api.py:215-223`).
+(`api.py:210-218`).
 
 Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.md).
 
@@ -100,7 +100,7 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    çarpmak yerine hızlı ve dürüst sinyal (`config/settings.py:76-78`).
 5. **E-posta** (avukat bildirimi; isteğe bağlı müvekkil bildirimi).
 6. **Dava zenginleştirme**: belge bir davaya bağlıysa `_auto_update_case_status`
-   (`processing.py:152`) ve `_auto_enrich_case_data` (`processing.py:205`) çalışır;
+   (`processing.py:160`) ve `_auto_enrich_case_data` (`processing.py:213`) çalışır;
    duruşma tarihi varsa kaydedilir.
 7. **İdempotency kaydının kapatılması**: `confirm_idempotency.complete(process_id, payload)`.
    Pipeline istisna atarsa ve belge **yaratılmamışsa** kayıt `release` edilir → tekrar
@@ -110,7 +110,7 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
 
 `/confirm`'de dönüşüm **tüm** yollara rağmen başarısızsa belge kaybolmaz: orijinal kendi
 uzantısıyla arşive gider, kayıt `conversion_status='pending'` ile açılır ve gece job'ı
-yeniden dener (`backend/models.py:508-521`).
+yeniden dener (`backend/models.py:616-618`).
 
 | `conversion_status` | Anlamı |
 | --- | --- |
@@ -125,9 +125,9 @@ Kolon üçlüsü `conversion_status` / `conversion_attempts` / `conversion_spool
 olarak kayıtlıdır.
 
 Gece job'ı `services/conversion_retry.py`'dir, 02:30 TR'de lider worker'da koşar
-(`api.py:184-190`). En fazla `MAX_CONVERSION_ATTEMPTS = 5` deneme yapar
+(`api.py:178-185`). En fazla `MAX_CONVERSION_ATTEMPTS = 5` deneme yapar
 (`conversion_retry.py:53`); deneme sayacı dönüşümden **önce** commit edilir, böylece
-zehirli bir dosya sonsuz döngü kurmaz (`upload_queue.py:206` ile aynı desen). Başarıda
+zehirli bir dosya sonsuz döngü kurmaz (`upload_queue.py:233-234` ile aynı desen). Başarıda
 PDF/A üretilir, arşive **senkron** yüklenir (outbox'a verilmez — gerekçe ADR 008'de),
 statü `NULL`'lanır ve hukukbot hook'u yeniden çağrılır.
 
@@ -191,7 +191,7 @@ Sabitler: `RESERVE_MAX_ATTEMPTS = 4`, backoff tabanı 0.3 sn, tavan 2.0 sn, jitt
 İstek yolunda tahsis `counter_fetch_timeout_seconds` (10 sn) ile sınırlıdır. Timeout'ta
 `"TIMEOUT___"` sentinel'i döner; arkadaki thread tahsisi bitirebileceği için **numara
 atlanır**. Bu bilinçli bir takastır: "mükerrere tercih edilir"
-(`processing.py:440-461`).
+(`processing.py:441-469`).
 
 ## 7. SharePoint upload outbox
 
@@ -200,10 +200,10 @@ thread satırları sırayla işler; geçici hatada üstel backoff ile yeniden de
 tükenince satır nihai `failed` olur. Açılıştaki ilk tarama **startup reconcile**'dır —
 önceki süreçten kalan pending satırları toparlar (`upload_queue.py:1-20`).
 
-- Backoff merdiveni: `(60, 300, 900, 3600, 3h, 6h, 12h)` saniye (`upload_queue.py:53`)
-- `MAX_ATTEMPTS = 8` (`:54`), poll aralığı 60 sn (`:58`)
+- Backoff merdiveni: `(60, 300, 900, 3600, 3h, 6h, 12h)` saniye (`upload_queue.py:57`)
+- `MAX_ATTEMPTS = 8` (`:58`), poll aralığı 60 sn (`:62`)
 
-Worker **yalnız lider worker'da** başlar (`api.py:206-213`) — her worker kendi thread'ini
+Worker **yalnız lider worker'da** başlar (`api.py:201-204`) — her worker kendi thread'ini
 açarsa aynı satır N kez yüklenir. Karar kaydı:
 [`005-upload-outbox-tek-worker.md`](../kararlar/005-upload-outbox-tek-worker.md).
 

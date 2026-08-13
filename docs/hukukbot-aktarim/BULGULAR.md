@@ -9,20 +9,27 @@
 ### 1. `after_id` cursor'ı async upload ile yarışıyor — belge sonsuza dek atlanabilir ⚠️ EN KRİTİK
 
 **Sorun:** SharePoint upload'ı background task'te çalışır ve `sharepoint_url` DB'ye
-upload bittikten *sonra* yazılır (`services/document_pipeline.py:204-226`,
-`async_islenmis_upload`). Reconcile doğrudan `case_documents` tablosunu `after_id`
-ile tararsa: id=100'ün upload'ı yavaş/retry'da, id=105 tamamlandı, cursor 105'i
-geçti → 100 hazır olduğunda cursor onu bir daha görmez. Belge sessizce kaybolur.
+upload bittikten *sonra* yazılır (`services/document_pipeline.py:249-330`,
+`async_islenmis_upload`; yazım `:279`). Reconcile doğrudan `case_documents` tablosunu
+`after_id` ile tararsa: id=100'ün upload'ı yavaş/retry'da, id=105 tamamlandı, cursor
+105'i geçti → 100 hazır olduğunda cursor onu bir daha görmez. Belge sessizce kaybolur.
 
 **Düzeltme:** `GET /export/documents` listesini ham belge tablosundan değil
 **outbox tablosundan** servis et. Outbox satırı yalnızca "upload başarılı +
 `webUrl` DB'ye yazıldı" anında oluştuğu için outbox `id` sırası = aktarılabilirlik
 sırası olur; geç tamamlanan upload daha büyük outbox id'siyle listeye girer ve
 yarış tamamen kaybolur. Webhook enqueue de aynı noktaya konur
-(`document_pipeline.py:220` civarı, `sharepoint_url` commit'inin hemen ardından).
+(`document_pipeline.py:318-325`, `sharepoint_url` commit'inin hemen ardından).
 
 **Ek kazanç:** Bu değişiklik #3'teki "başarısız upload listede görünmesin"
 gereksinimini de bedavaya çözer.
+
+**Güncel not (Faz 3-A, `services/upload_queue.py`):** yukarıdaki `async_islenmis_upload`
+artık ASIL yol değil — kalıcı outbox/retry kuyruğu (`upload_queue.py`) asıl yol oldu,
+`document_pipeline.py`'deki fire-and-forget fonksiyonlar kodun kendi docstring'inde
+"Faz 3-A'dan beri yalnız fallback: asıl yol upload_queue outbox'ıdır" diye işaretli
+(`document_pipeline.py:239,304`). Bu bulgunun asıl önerisi (outbox tabanlı liste)
+zaten uygulandı; anlatı burada tarihsel bağlam olarak kalıyor.
 
 ### 2. `POST localhost:<hukukbot>` Docker'da çalışmaz
 
@@ -37,7 +44,7 @@ kullan. Faz 3, Faz 4'ten önce test edilecekse bu ilk günden ayağa dolanır.
 
 ### 3. Export filtresinde `link_mode` ve `sharepoint_url` eksik
 
-**Sorun:** `CaseDocument.link_mode` üç değer alır (`models.py:428-432`):
+**Sorun:** `CaseDocument.link_mode` üç değer alır (`models.py:582-586`):
 `LINKED`, `TEST` (deneme yüklemeleri), `UNLINKED` (davaya bağlanamamış).
 Tür filtresi tek başına yetmez — TEST belgeleri hukukbot RAG'ine gitmemeli.
 Ayrıca upload'ı kalıcı başarısız kayıtlarda `sharepoint_url` NULL kalır;
@@ -76,7 +83,7 @@ network'ünden erişilir olmalı. API key + network izolasyonu birlikte.
 ### 6. Graph download zaten yazılmış — plandaki "eklenir" maddesi hazır iş
 
 `download_file_from_sharepoint(folder, filename)` mevcut
-(`sharepoint/sharepoint_uploader_graph.py:226`) ve `routes/documents.py:239`'daki
+(`sharepoint/sharepoint_uploader_graph.py:421-439`) ve `routes/documents.py:319-346`'daki
 indirme akışı (klasör `SHAREPOINT_FOLDER_ISLENMIS_NAME` env'inden, dosya adı
 `stored_filename`) export endpoint'inde aynen yeniden kullanılır. Tek not:
 fonksiyon dosyayı komple belleğe alır, stream etmez — plandaki "stream'ler"
@@ -85,8 +92,8 @@ ifadesi teknik olarak yanlıştı; boyut limiti olduğu için kabul edilebilir.
 ### 7. Tür filtresi SQL `IN` ile yapılamaz — DB'de karışık kod formatı var
 
 DB'de hem pad'li (`ARA-KRR_______`) hem kısa (`ARA-KRR`) kodlar karışık
-(`routes/documents.py:372` yorumu + `scripts/backfill_belge_turu_adi.py` bunun
-kanıtı). Normalize mantığı hazır: `file_utils.py:212`. Filtre ya Python'da
+(`routes/documents.py:452-453` yorumu + `scripts/backfill_belge_turu_adi.py` bunun
+kanıtı). Normalize mantığı hazır: `file_utils.py:264-272`. Filtre ya Python'da
 normalize edilerek yapılır ya da allowlist'in her iki varyantı SQL'e verilir.
 
 ### 8. Outbox retry'ının restart'ta kaybolması kabul edilebilir
@@ -125,27 +132,29 @@ kayıp); cursor başarısız kayıtta beklerse tek bozuk PDF tüm kuyruğu kilit
 Hukdok export API'sine eklenmesi gerekenler: listeye `status=` filtresi + `nack` endpoint'i.
 `after_id` parametresi yalnızca backfill modu için kalır.
 
-### 10. `http://hukdok-backend:8001` çözünmez — hukdok'un compose'unda o isimde servis yok
+### 10. `http://hukdok-backend:8001` çözünmez — hukdok'un compose'unda o isimde servis yok — ✅ ÇÖZÜLDÜ
 
-**Sorun:** Hukdok compose'unda backend servisi `backend` adında ve `container_name`
-tanımlı değil (`docker-compose.yml:25`). Paylaşılan `hukuk_shared` network'ünde
+**Sorun (o zamanki hâl):** Hukdok compose'unda backend servisi `backend` adında ve
+`container_name` tanımlı değildi. Paylaşılan `hukuk_shared` network'ünde
 `hukdok-backend` DNS'te çözünmez; `backend` adı ise fazla genel — hukukbot tarafında
 da `backend`/`api` gibi bir servis olursa DNS çakışır.
 
-**Düzeltme:** Hukdok compose'una `container_name: hukdok_backend` (veya network
-alias) ekle ve `hukuk_shared` external network'üne katıl. Doğru URL'ler:
+**Düzeltme (uygulandı):** `docker-compose.yml:45`'te `container_name: hukdok_backend`
+eklendi (yorumda "BULGULAR #10" diye anılıyor), `hukuk_shared` external network'üne
+katıldı. Doğru URL'ler:
 - Hukukbot → hukdok: `http://hukdok_backend:8001`
 - Hukdok → hukukbot: `http://hukukbot_api:8010/ingest/hukdok` (onların verdiği isim doğru)
 
-### 11. Hukdok backend portu host'ta herkese açık — /export eklenmeden önce daraltılmalı
+### 11. Hukdok backend portu host'ta herkese açık — /export eklenmeden önce daraltılmalı — ✅ ÇÖZÜLDÜ
 
-**Sorun:** `docker-compose.yml:30`'da `ports: "8001:8001"` → 0.0.0.0'a bind eder
-(postgres'in aksine; o `127.0.0.1:5432:5432` ile doğru yapılmış). Bugün Azure AD
-auth her route'u koruyor; ama API-key'li `/export` eklenince bu port üzerinden
-public erişim riski doğar — BULGULAR #5'teki "sadece iç network" hedefiyle çelişir.
+**Sorun (o zamanki hâl):** `ports: "8001:8001"` → 0.0.0.0'a bind ederdi (postgres'in
+aksine; o `127.0.0.1:5432:5432` ile doğru yapılmıştı). Bugün Azure AD auth her
+route'u koruyor; ama API-key'li `/export` eklenince bu port üzerinden public erişim
+riski doğar — BULGULAR #5'teki "sadece iç network" hedefiyle çelişir.
 
-**Düzeltme:** `127.0.0.1:8001:8001` yap (host nginx reverse proxy localhost'tan
-erişmeye devam eder; hukukbot zaten paylaşılan Docker network'ünden konuşacak).
+**Düzeltme (uygulandı):** `docker-compose.yml:54`'te `127.0.0.1:8001:8001` yapıldı
+(yorumda "BULGULAR #11" diye anılıyor) — host nginx reverse proxy localhost'tan
+erişmeye devam eder; hukukbot zaten paylaşılan Docker network'ünden konuşur.
 
 ### 12. Ingest'te crash penceresi: store'a çift yükleme
 
@@ -173,7 +182,7 @@ aday allowlist ve karar bekleyen kalemler için bkz. [KOD_LISTESI.md](KOD_LISTES
 | 3 | TEST/NULL-url filtresi eksik | Kirli veri RAG'e sızar | `link_mode` filtresi + 404 |
 | 4 | Metadata güncellemeleri yayılmaz | Bilinçli sınırlama | Plana "kapsam dışı" yazıldı + backfill modu |
 | 5 | Export public'e açık olmasın | Güvenlik sıkılaştırma | Sadece iç network |
-| 6 | Download hazır | İyi haber | `documents.py:239` akışını yeniden kullan |
+| 6 | Download hazır | İyi haber | `documents.py:319-346` akışını yeniden kullan |
 | 7 | Karışık kod formatı | Uygulama detayı | Normalize ederek filtrele |
 | 8 | BackgroundTasks kalıcı değil | Kabul edilebilir | Reconcile emniyet ağı yeterli |
 | 9 | Cursor vs pending çelişkisi | Sessiz kayıp / kuyruk kilidi | `status=pending` polling + nack; cursor sadece backfill'de |

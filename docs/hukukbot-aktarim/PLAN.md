@@ -48,7 +48,7 @@ export_outbox
 
 Hook noktası: `services/document_pipeline.py` → `async_islenmis_upload` içinde,
 `doc_rec.sharepoint_url = response_data["webUrl"]` commit'inin hemen ardından
-(yaklaşık satır 220). Tür allowlist'ine uyan **ve** `link_mode != "TEST"` olan
+(`document_pipeline.py:318-325`). Tür allowlist'ine uyan **ve** `link_mode != "TEST"` olan
 belgeler için outbox satırı aç + webhook POST'u dene.
 
 ### 2. Export router — `backend/routes/export.py`
@@ -63,9 +63,9 @@ Mevcut modüler yapıya yeni router:
   `esas_no`, `muvekkil_adi`, `avukat_kodu`, dava bilgileri, `tracking_no`,
   `sharepoint_url`, `stored_filename`, `uploaded_at`).
 - `GET /export/documents/{id}/file` — SharePoint'ten PDF'i indirip döner.
-  **Yeni Graph kodu gerekmez**: `sharepoint/sharepoint_uploader_graph.py:226`'daki
+  **Yeni Graph kodu gerekmez**: `sharepoint/sharepoint_uploader_graph.py:421-439`'daki
   `download_file_from_sharepoint(folder, stored_filename)` ve
-  `routes/documents.py:239`'daki mevcut indirme akışı aynen yeniden kullanılır
+  `routes/documents.py:319-346`'daki mevcut indirme akışı aynen yeniden kullanılır
   (klasör `SHAREPOINT_FOLDER_ISLENMIS_NAME` env'inden). Graph kimlik bilgileri
   sadece hukdok'ta kalır. Not: fonksiyon dosyayı belleğe alır (stream değil);
   upload boyut limiti olduğu için kabul edilebilir.
@@ -80,7 +80,7 @@ bağlanmaz — yalnızca iç Docker network'ünden erişilir (BULGULAR #5).
 
 **Tür filtresi:** karar + bilirkişi raporu `belge_turu` kodlarının allowlist'i
 (env/config). DB'de hem pad'li (`ARA-KRR_______`) hem kısa (`ARA-KRR`) kod karışık
-durumda olduğundan filtre SQL `IN` ile YAPILMAZ; `file_utils.py:212`'deki normalize
+durumda olduğundan filtre SQL `IN` ile YAPILMAZ; `file_utils.py:264-272`'deki normalize
 mantığıyla Python'da karşılaştırılır (veya allowlist'in her iki varyantı SQL'e verilir).
 Liste onaylandı: [KOD_LISTESI.md](KOD_LISTESI.md) — v1 allowlist'i yalnızca "kesin dahil"
 12 kod (9 karar + 3 bilirkişi); "karar bekleyen" kalemlerin tümü hariç (2026-07-06).

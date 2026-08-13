@@ -12,7 +12,8 @@
   (`frontend/src/lib/formDraft.ts:49-53`).
 - **Karar:** İki katman:
   1. Taslaklar **sessionStorage**'da tutulur, `localStorage`'da değil
-     (`formDraft.ts:10-11`, `:87-93`). Sürümlü zarf + `maxAgeMs` bayatlama denetimi ile.
+     (`formDraft.ts:10-11`, `:14-19`). Sürümlü zarf + `maxAgeMs` bayatlama denetimi ile
+     (seçenek `:32`, kontrol `:168-172`).
   2. Çıkış akışı, temizlikten **önce** `suppressAllDrafts()` çağırır (`formDraft.ts:71-73`).
      Bayrak kuruluyken hiçbir `DraftStore.save` diske yazmaz ve `attachUnloadGuard` ne uyarı
      diyaloğu ne flush üretir. Bayrak modül-içi bellektedir — redirect/reload sayfayı

@@ -34,7 +34,7 @@
   hizalıdır (önceki süreç pipeline ortasında ölmüş olabilir — deploy/OOM). Pipeline istisna
   atarsa ve belge yaratılmamışsa kayıt `release` edilir, tekrar denemek serbest kalır.
   İlişkili bir idempotency kararı intake tarafında da vardır: `/commit`'in 409'u nihai
-  değildir, muhafazakâr eşleşmeyle çözümlenir (`routes/case_intake.py:1029-1033`).
+  değildir, muhafazakâr eşleşmeyle çözümlenir (`routes/case_intake.py:1096-1107`).
 - **Test:** `backend/tests/test_faz3_confirm_idempotency.py`
 - **İlgili:** [`docs/mimari/belge-isleme-hatti.md`](../mimari/belge-isleme-hatti.md),
   [`003-process-cache-disk.md`](003-process-cache-disk.md)

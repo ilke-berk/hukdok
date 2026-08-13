@@ -31,7 +31,7 @@
    `backend/scripts/retag_tracking_nos.py:32-38`); eklenmesi ileriye dönüktür.
 2. **Mevcut 1.658 `X1` kaydı ve 73 Kurum föyü DOKUNULMAZ.** Geriye dönük retag yapılmaz.
 3. **Kategori raporlaması `clients.category` alanına taşınır.** Alan zaten var
-   (`backend/models.py:239`) ve aktarımla 8.409 satırın tamamında dolu geliyor
+   (`backend/models.py:314`) ve aktarımla 8.409 satırın tamamında dolu geliyor
    (Müvekkil Tipi eşlemesi). Rapor ve filtre bu alandan okur, ofis numarasının ilk
    bloğundan değil.
 
@@ -51,8 +51,10 @@ bakmaktadır. Karşı tarafın endişesi kod değiştirmeden karşılanmış olu
 Kimliğin dokunulmazlığının somut sebebi: ofis numarası **kod tabanının dışında** yaşıyor —
 SharePoint arşiv klasör adlarında ve gönderilmiş dış yazışmalarda. Bunlar DB'den geri
 alınamaz. Aynı gerçeğin sistem içindeki izi de var: eski sistem numarası hâlâ aranabilir
-bir kolon olarak taşınıyor (`Case.klasor_no_2`, `backend/models.py:49`, "Eski sistem no —
-gizli, aranabilir"; arama yolu `managers/case_manager.py:317,332,361,366`). Bir kez
+bir kolon olarak taşınıyor (`Case.klasor_no_2`, `backend/models.py:53`, "Eski sistem no —
+gizli, aranabilir"; arama yolu (E8/G055 UNION yeniden yazımından sonra)
+`managers/case_manager.py:608` (terim SELECT'i), `:745,750` (relevance sıralaması),
+`:352,785` (sonuç sözlüğü), `:929` (güncelleme yazımı)). Bir kez
 dağıtılan numara, sistem onu değiştirse bile aranmaya devam ediyor.
 
 ## Reddedilenler
@@ -85,7 +87,7 @@ dağıtılan numara, sistem onu değiştirse bile aranmaya devam ediyor.
   kopyası (`NewCase.tsx`, `IntakeReviewStep.tsx`, `QuickCaseModal.tsx`) ve üçünden ikisi
   sapmış. Tekilleştirme temizlik planında ayrı kalem olarak duruyor (§9 sonu).
 - **Ofis numarası tekilliği bir index'e bağlı:** `ix_cases_tracking_no`
-  (`backend/managers/case_manager.py:32`, `indisunique = true`, `pg_constraint` karşılığı
+  (`backend/managers/case_manager.py:41`, `indisunique = true`, `pg_constraint` karşılığı
   YOK). FAZ D 6.2'nin "kullanılmayan index'i düşür" çalışması bu index'i **dışlamak
   zorundadır** — `idx_scan = 0` görünür, çünkü kısıt doğrulaması sayacı artırmaz.
 - **`retag_tracking_nos.py` yaşayan bir risktir.** Karar (b)'yi reddettiğine göre script

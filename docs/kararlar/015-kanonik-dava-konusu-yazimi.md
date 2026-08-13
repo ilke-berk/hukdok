@@ -5,7 +5,7 @@
 - **Durum:** kabul — kullanıcı yetkisiyle verildi (12.08.2026)
 - **Bağlam:** HUKDOK teslim paketinde en yaygın dava konusu iki farklı yazımla duruyor.
   Aktarım öncesi hangisinin kanonik olduğuna karar verilmezse 7.710 kayıt iki ayrı
-  değere bölünerek gelir; `cases.subject` (`backend/models.py:23`) serbest metin bir
+  değere bölünerek gelir; `cases.subject` (`backend/models.py:27`) serbest metin bir
   kolondur ve arama, raporlama, dış yazışma hepsi bu metne bakar.
 - **Karar:** Kanonik yazım —
 
@@ -45,7 +45,7 @@ kuralını** kapsar: kayıt anında `trim` + iç boşluk sadeleştirme. Bu FAZ F
 **Kod okumasının çıkardığı iki ayrı gerçek — uygulamadan önce bilinmesi gereken:**
 
 1. **Referans listesi yolu boşluğu ZATEN sadeleştiriyor.** `add_item`
-   (`backend/managers/reference_lists.py:226`) ve `update_item` (`:424`) adı
+   (`backend/managers/reference_lists.py:228`) ve `update_item` (`:407`) adı
    `normalize_list_name` → `tr_title`'dan geçiriyor; `tr_title` (`:49-56`)
    `tr_lower(s).split()` + `" ".join(...)` yaptığı için baş/son boşluk ve tekrar eden iç
    boşluk kayboluyor. Mükerrer denetimi de `tr_upper` (`:41`) ile aynı sadeleştirmeyi
@@ -61,7 +61,7 @@ kuralını** kapsar: kayıt anında `trim` + iç boşluk sadeleştirme. Bu FAZ F
    küçük kalıyor (`:54-55`). **Bu ADR'nin seçtiği kanonik değer bugünkü referans listesi
    yazma yolundan geçemiyor.**
 3. **Dava kaydının kendi yolunda hiç normalizasyon YOK.** `Case.subject` hem yeni kayıtta
-   (`backend/managers/case_manager.py:862`) hem güncellemede (`:525`) forma ne yazıldıysa
+   (`backend/managers/case_manager.py:1278`) hem güncellemede (`:919`) forma ne yazıldıysa
    ham hâliyle yazılıyor — `trim` bile yok. Sondaki boşluğun girebileceği yer burasıdır.
 
 **Sonuç — D7'nin hedefi kaynak belgede eksik yazılmış.** FAZ F tablosu D7'nin dokunduğu

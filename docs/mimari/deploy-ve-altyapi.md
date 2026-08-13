@@ -46,12 +46,12 @@ Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
   1-2 sn yarış var; tek atımlık `curl` buna yakalanmıştı → 30 sn poll.
 
 Ortam düğmeleri (`deploy.sh:37-40`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
-prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:52`).
+prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:53`).
 
 ### Test kapısı (G038 · G050)
 
 `test_gate()` (`deploy.sh:195-239`) build'den **sonra**, `up -d`'den **önce** koşar
-(`:325-326`). Testler kalırsa deploy `exit 1` ile durur ve çalışan stack'e hiç dokunulmaz —
+(`:327`). Testler kalırsa deploy `exit 1` ile durur ve çalışan stack'e hiç dokunulmaz —
 kırık kod prod'a çıkamaz. Ölçülen süre: **~59-61 sn** (geçici Postgres kalkışı ~5 sn +
 pip install ~7 sn + `migrate.py` ~1 sn + 1190 test ~45 sn). G050 öncesi 44 sn'ydi; 15 sn'lik
 artış DB gerektiren 29 testin artık **gerçekten koşmasının** bedelidir. 120 sn'lik
@@ -146,18 +146,18 @@ Aynı uç dört yerden yoklanır ve dördü de farklı şey yapar:
 | Yoklayan | Aralık | Başarısızlıkta |
 | --- | --- | --- |
 | `deploy.sh` kapısı | 3 sn, 120 sn tavan | deploy `exit 1` + rollback komutu |
-| Docker healthcheck (`docker-compose.yml:86-97`) | 30 sn, 3 retry, 60 sn start_period | konteyner "unhealthy" **işaretlenir**; Docker restart ETMEZ (`:90-92`) |
-| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:27-31`) |
+| Docker healthcheck (`docker-compose.yml:99-110`) | 30 sn, 3 retry, 60 sn start_period | konteyner "unhealthy" **işaretlenir**; Docker restart ETMEZ (`:104-105`) |
+| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:49-59`) |
 | GCP uptime check | — | alarm |
 
 Healthcheck komutu `curl` değil stdlib `urllib` kullanır — `python:slim` imajında `curl`
-yoktur (`docker-compose.yml:87-88`).
+yoktur (`docker-compose.yml:100-101`).
 
 ## 4. Sürüm izi
 
 ```
-deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:316)
-  → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:40-42, :109-111)
+deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:317)
+  → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:40-42, :121-123)
     → backend Dockerfile ARG/ENV  → /healthz "version"
     → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti
 ```
@@ -233,7 +233,7 @@ görülür), `file` = sayfa önbelleği (baskı altında kendiliğinden bırakı
 
 `infra/gcp/ops-agent-config.yaml` üç kaynağı Cloud Logging'e taşır: Docker json-file
 logları (iki katmanlı JSON parse + `severity` yükseltme), `net-watchdog.log`, `mem-watch.log`.
-Backend'in `LOG_FORMAT=json` ayarı (`docker-compose.yml:65-68`) tam da bu zincir içindir.
+Backend'in `LOG_FORMAT=json` ayarı (`docker-compose.yml:81`) tam da bu zincir içindir.
 
 `infra/gcp/apply_monitoring.sh` **lokal makineden** koşar (gcloud auth'lu) ve idempotenttir:
 log tabanlı metrik + `infra/gcp/policy-*.json`'daki üç alarm politikasını uygular:
@@ -250,8 +250,14 @@ alarmı tetiklemez, gerçek alarm log yolundan gelir.
 ## 9. CI
 
 `.github/workflows/ci.yml` iki bağımsız job koşar: **backend** (`ruff` → `mypy` → `pytest`,
-PostgreSQL servis konteyneriyle) ve **frontend** (`npm ci` → lint → `tsc --noEmit` → vitest
-→ build). Python ve Node sürümleri prod imajlarıyla hizalıdır.
+PostgreSQL servis konteyneriyle) ve **frontend** (`npm ci` → lint → `npx tsc -b --force` →
+vitest → build). Python ve Node sürümleri prod imajlarıyla hizalıdır.
+
+**Çıplak `tsc --noEmit` DEĞİL, `tsc -b --force`:** kök `tsconfig.json` solution-style'dır
+(`"files": []` + `references`), yani çıplak `tsc --noEmit` hiçbir dosya bulamaz ve tip
+hatası dururken bile **exit 0** döner — sahte bir kapı (G026 bulgusu, G037'de gerçeğe
+çevrildi). `-b` referansları gerçekten izler (`tsconfig.app.json` + `tsconfig.node.json`);
+`--force` inkremental önbelleği atlar (`ci.yml:91-98`).
 
 Dosyanın notu: merge kapısı için GitHub'da branch protection **manuel** ayarlanır
 (Settings → Branches → main → Require status checks: backend, frontend).

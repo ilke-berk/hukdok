@@ -9,8 +9,8 @@
   compose override'ında ve `daemon.json`'daydı — VM kaybında konfig geri gelmezdi.
 - **Karar:** Üç ayar, üçü de `docker-compose.yml`'de (repoda):
   1. Her serviste `mem_limit` **ve** `memswap_limit` **eşit** — swap tamamen kapalı.
-     backend 2g (`:79-80`), postgres 512m (`:21-22`), frontend 128m (`:115-116`).
-  2. Backend'de `MALLOC_ARENA_MAX=2` (`:64`).
+     backend 2g (`:92-93`), postgres 512m (`:21-22`), frontend 128m (`:128-129`).
+  2. Backend'de `MALLOC_ARENA_MAX=2` (`:77`).
   3. Log rotasyonu servis bazında (json-file, 50m×3) — `daemon.json`'a bağımlı değil.
 - **Gerekçe (kodda birebir):**
   - Swap için: "memswap=mem → swap yok: swap'a taşma, 2026-07-29 kesintilerindeki I/O
@@ -19,9 +19,9 @@
     daemon.json'daydı — VM kaybında konfig repo'dan geri gelsin" (`:17-18`).
   - Arena için: "glibc thread başına ayrı malloc arena açar; PDF/görüntü dönüşümünün dev
     geçici tahsisleri arena'larda kalıp RSS'i kalıcı yükseltiyordu (2026-07-29 OOM
-    incelemesi). 2 arena, 2 vCPU için yeterli" (`:61-63`).
+    incelemesi). 2 arena, 2 vCPU için yeterli" (`:74-77`).
   - Backend limitinin kabul edilen sonucu: "Limit aşımında konteyner OOM-kill edilir ve
-    restart olur — **tüm VM'in ağ/SSH kaybetmesinden iyidir**" (`:76-78`).
+    restart olur — **tüm VM'in ağ/SSH kaybetmesinden iyidir**" (`:89-91`).
 - **Reddedilenler:** *Swap'ı açık bırakıp limiti yükseltmek* — arıza mekanizması swap'ın
   kendisiydi. *Limitleri yalnız sunucuda tutmak* — VM yeniden kurulumunda kaybolurdu.
 - **Tamamlayıcı:** `infra/scripts/mem-watch.sh` 5 dakikada bir anon/file bellek yazar ve

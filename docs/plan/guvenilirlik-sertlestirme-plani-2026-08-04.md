@@ -8,6 +8,14 @@
 
 **Uygulama takibi:** Oturum paketleri ve güncel durum [guvenilirlik-sertlestirme-uygulama-takibi.md](guvenilirlik-sertlestirme-uygulama-takibi.md) dosyasında — çalışmaya oradan başla, bu dosyadan yalnız ilgili faz bölümünü oku.
 
+> **TARİHSEL NOT (G056, 2026-08-13):** Takip dosyası bu planın **FAZ 0-6'sının tamamının
+> tamamlandığını** ve bu dosyanın artık "arşiv adayı" olduğunu kaydediyor. Aşağıdaki
+> tablolardaki `dosya.py:satır` çıpaları **tespit anındaki** koda işaret eder — o günden
+> beri kod büyük ölçüde değişti (bazı çıpalar artık başka bir fonksiyona denk geliyor,
+> bazılarının anlattığı mekanizma tamamen silindi). Bu satırları güncel kod konumu olarak
+> OKUMA; yalnız "ne bulunmuştu, ne yapılmıştı" tarihsel kaydı olarak oku. Güncel mimari için
+> `docs/mimari/`, güncel kararlar için `docs/kararlar/`.
+
 ---
 
 ## Özet teşhis

@@ -14,7 +14,7 @@
 - **Gerekçe:** Kodda birebir yazılıdır —
   `# Hanyaloğlu Acar + LexisBio ortak çalıştığı için yeni davalar paylaşımlı (tenant_id=NULL).`
   `# tenant_id Depends'i token doğrulaması için kalıyor ama damgalamada kullanılmıyor.`
-  (`backend/routes/cases.py:48-49`; aynısı `backend/routes/clients.py:28-29`).
+  (`backend/routes/cases.py:55-56`; aynısı `backend/routes/clients.py:35-36`).
   `NULL` semantiği `auth_helpers.py` docstring'inde "paylaşılan/legacy" olarak tanımlıdır
   (`:1-4`) — yani hem eski kayıtlar hem yeni ortak kayıtlar aynı yolu kullanır.
 - **Reddedilenler:** Katı tenant damgalaması (her kayda oluşturucu tenant yazmak). Kolon ve

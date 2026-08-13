@@ -9,21 +9,21 @@
   outbox satırı N kez yüklenir ve günlük rapor N kez üretilir.
 - **Karar:** `backend/services/singleton_lock.py` — dosya kilidi (`flock LOCK_EX | LOCK_NB`,
   Windows'ta `msvcrt`). Kilidi alan worker "lider"dir; süreç-tekil işler yalnız onda başlar
-  (`api.py:163`, `:206`). **Liste tazeleme thread'i bilinçli istisnadır** ve her worker'da
-  koşar (`api.py:157-158`).
+  (`api.py:158`, `:201`). **Liste tazeleme thread'i bilinçli istisnadır** ve her worker'da
+  koşar (`api.py:144-154`).
 - **Gerekçe:**
   - Lider seçimi için: "Kilit süreç yaşadıkça tutulur; süreç ölünce çekirdek kilidi bırakır
     → uvicorn'un yeniden doğurduğu worker kendi lifespan'inde kilidi devralır (kendi
     kendini onarır — liderlik sabit bir worker'a bağlı değildir)" (`singleton_lock.py:8-12`).
     Kilit lifespan sırasında, yani **fork sonrası** açılır; import anında değil.
-  - Refresh thread'inin istisna olması için (`api.py:149-156`): "DynamicConfig, matcher ve
+  - Refresh thread'inin istisna olması için (`api.py:144-148`): "DynamicConfig, matcher ve
     searcher süreç İÇİ singleton'lardır — yalnız liderde koşsaydı diğer worker'lar taze
     cache dosyası yokken boş listelerle kalırdı. Duplikasyonun tek gerçek zararı cache
     dosyası yazma yarışıydı → `cache_manager.save_cache` tekil temp adla atomik yazacak
     şekilde düzeltildi."
 - **Kabul edilen sınır (kodda açıkça):** "`/refresh` endpoint'i yalnız isteği işleyen
   worker'ı tazeler; diğeri kendi refresh'ine (boot ya da kendi `/refresh`'i) kadar bayat
-  kalır — liste değişiklikleri nadir, kabul edilen takas" (`api.py:154-156`).
+  kalır — liste değişiklikleri nadir, kabul edilen takas" (`api.py:149-151`).
   Aynı biçimde Gemini devre kesicisi ve `health.py` sayaçları da süreç içidir
   (`gemini_client.py:98-100`).
 - **Reddedilenler:** *Her worker'da outbox worker'ı çalıştırmak* — aynı satır N kez

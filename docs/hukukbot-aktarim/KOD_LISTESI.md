@@ -82,7 +82,7 @@ Adında "KRR" geçen ama içerik olarak usul/idari nitelikte, RAG değeri düş�
 ## Uygulama notu
 
 Allowlist env/config'de **kısa (normalize) kodlarla** tutulur; karşılaştırma
-`file_utils.py:212`'deki normalize mantığıyla yapılır (pad'li `ARA-KRR_______`,
+`file_utils.py:264-272`'deki normalize mantığıyla yapılır (pad'li `ARA-KRR_______`,
 kısa `ARA-KRR` ve `ARAKRR` hepsi eşleşir). Doctype listesi admin panelinden
 değiştirilebilir olduğundan allowlist de koda gömülmez — env değişikliğiyle
 güncellenir (prod'da `.env` değişimi `up -d` ile recreate gerektirir).

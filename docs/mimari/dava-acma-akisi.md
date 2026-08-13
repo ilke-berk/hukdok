@@ -16,25 +16,33 @@ listesinde uyarı olarak görünür ve panelden filtrelenebilir (`required_field
 Reddedilen alternatif de orada kayıtlıdır: "DANIŞ'a düşürme denendi, dönüşüm kaybı riski
 nedeniyle vazgeçildi: DANIŞ yolunda müvekkil kaydı oluşturulmuyor" (`required_fields.py:5-6`).
 
-`REQUIRED_CASE_FIELDS` (`required_fields.py:13-31`): `esas_no`, `court`, `file_type`,
+`REQUIRED_CASE_FIELDS` (`required_fields.py:39-63`): `esas_no`, `court`, `file_type`,
 `judicial_unit`, `sub_type`, `opening_date`, `subject`, `responsible_lawyer_name`,
 `uyap_lawyer_name`, `service_type`, `acceptance_date`, `bureau_type`, `atama_tarihi`.
 
+**Güncel not (G046, FAZ D — bu satır ADR-014'te de anlatılıyor):** liste artık düz bir
+alan adı listesi DEĞİL, liste-of-dict + isteğe bağlı bir `skip_when` "kapı"sı taşıyor —
+`esas_no` alanı `file_type ∈ ESAS_BEKLENMEYEN_TURLER` (ARABULUCULUK/SAVCILIK/DANIŞMANLIK/
+TAHKİM) ise zorunlu SAYILMAZ (D2). 13 alanın **12'si hâlâ koşulsuz**, yalnız `esas_no`
+bağlamsal. Aynı mekanizma (`missing_required_bucket` kolonu, `MISSING_BUCKET_MANUAL`/
+`MISSING_BUCKET_AKTARIM` kovaları) `uyap_lawyer_name`'e henüz **bağlanmadı** — bkz.
+[`014-uyap-avukati-on-doldurulmaz.md`](../kararlar/014-uyap-avukati-on-doldurulmaz.md).
+
 `sub_type_extra` (Uzmanlık / Tıbbi İşlem) listeden **geçici** olarak çıkarılmıştır
 (2026-08-04): alan UI'da gizlendiği için görünmeyen alan "eksik" uyarısı üretmesin; alan
-geri açılınca satır da geri alınacak (`required_fields.py:19-22`).
+geri açılınca satır da geri alınacak (`required_fields.py:51-54`).
 
 Ayrıca `compute_missing_fields` karşı taraf TC'sini denetler ama **yalnız COUNTER**
 taraflar için: müvekkil TC'si `Client` kaydında yaşar, form yalnız karşı taraf TC'si
 girebilir — aksi halde her yeni dosya yanlış "eksik" işaretlenirdi
-(`required_fields.py:33-36`, `:55-58`).
+(`required_fields.py:65-68`, mantık `:127-132`).
 
 Frontend bu listeyi `GET /api/config/required_case_fields` üzerinden okur; **ikinci bir
 liste tutulmaz** (`required_fields.py:8-10`).
 
 ## 2. Mükerrer kontrolü
 
-`GET /api/cases/check-duplicate` (`backend/routes/cases.py:173`) esas no (ve isteğe bağlı
+`GET /api/cases/check-duplicate` (`backend/routes/cases.py:190`) esas no (ve isteğe bağlı
 mahkeme) ile mevcut davaları arar; form kaydetmeden önce uyarı gösterir.
 
 ## 3. Otonom intake sihirbazı
@@ -43,12 +51,12 @@ Backend uçları `backend/routes/case_intake.py`'dedir:
 
 | Uç | Satır | İş |
 | --- | --- | --- |
-| `POST /api/case-intake/expand-eml` | `:208` | `.eml` dosyasını gövde + eklere açar (gövde PDF'e çevrilir) |
-| `POST /api/case-intake/analyze` | `:329` | Tek belgeyi analiz eder, NDJSON stream döner, tam PDF'i PROCESS_CACHE'e koyar |
-| `POST /api/case-intake/merge` | `:583` | N belgenin çıkarımlarını tek taslakta birleştirir |
-| `POST /api/case-intake/commit` | `:998` | Yeni dava kaydı + belge arşivleme + poliçe beslemesi |
-| `POST /api/case-intake/apply` | `:1156` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme |
-| `POST /api/case-intake/keepalive` | `:1254` | Review adımında PROCESS_CACHE TTL'sini tazeler |
+| `POST /api/case-intake/expand-eml` | `:209` | `.eml` dosyasını gövde + eklere açar (gövde PDF'e çevrilir) |
+| `POST /api/case-intake/analyze` | `:330` | Tek belgeyi analiz eder, NDJSON stream döner, tam PDF'i PROCESS_CACHE'e koyar |
+| `POST /api/case-intake/merge` | `:651` | N belgenin çıkarımlarını tek taslakta birleştirir |
+| `POST /api/case-intake/commit` | `:1066` | Yeni dava kaydı + belge arşivleme + poliçe beslemesi |
+| `POST /api/case-intake/apply` | `:1224` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme |
+| `POST /api/case-intake/keepalive` | `:1322` | Review adımında PROCESS_CACHE TTL'sini tazeler |
 
 Sihirbaz akışı: yükle → analiz → (birden çok belge varsa) birleştir → kullanıcı incelemesi
 → commit (ya da mevcut davaya apply).
@@ -59,11 +67,11 @@ periyodik olarak TTL'yi tazeler.
 
 ## 4. `/commit` ve 409'un idempotent çözümlenmesi
 
-Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1025`). `add_case`
+Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`). `add_case`
 `duplicate_tracking_no` dönerse akış **nihai 409 vermez**; önce muhafazakâr bir eşleşme
 denenir (`case_manager.find_idempotent_commit_match`).
 
-Gerekçe kodda yazılı (`case_intake.py:1029-1033`):
+Gerekçe kodda yazılı (`case_intake.py:1097-1101`):
 
 > Faz 3-D (plan 3.5): 409 artık nihai değil — yanıtı kaybolan önceki commit'in KENDİ
 > davasına çarpmış olabiliriz (çift tıklama / timeout sonrası tekrar). Muhafazakâr eşleşme
@@ -73,7 +81,7 @@ Gerekçe kodda yazılı (`case_intake.py:1029-1033`):
 Eşleşme tutarsa `idempotent_reuse = True` ile mevcut dava döner. Tutmazsa gerçek çakışmadır:
 `[TRACKING_NO_COLLISION]` ERROR telemetrisi yazılır ve 409 atılır. Bu telemetrinin
 `add_case`'ten buraya taşınması bilinçlidir — sayaç önerisi hâlâ dolu numara üretiyorsa
-buradan görülür (`case_intake.py:1046-1053`).
+buradan görülür (`case_intake.py:1114-1120`).
 
 ## 5. Ofis dosya numarası (`tracking_no`)
 
@@ -111,7 +119,7 @@ idi)" (`caseNumberUtils.ts:197`).
 
 ### Sıra bloğu
 
-`GET /api/cases/client-sequence` (`backend/routes/cases.py:116`) müvekkile/isim bloğuna ait
+`GET /api/cases/client-sequence` (`backend/routes/cases.py:123`) müvekkile/isim bloğuna ait
 bir sonraki sırayı önerir.
 
 ## 6. Taslak kalıcılığı ve logout susturması
@@ -146,7 +154,7 @@ Karar kaydı: [`007-logout-taslak-susturmasi.md`](../kararlar/007-logout-taslak-
 
 ## 7. Taraf eşleştirme — tanıdık sorgu / çıkar çatışması
 
-`POST /api/parties/check` (`backend/routes/parties.py:16`) uçtur; mantık `backend/party_check.py`
+`POST /api/parties/check` (`backend/routes/parties.py:143`) uçtur; mantık `backend/party_check.py`
 içinde **saf modül** olarak durur — DB erişimi yoktur, satırlar route katmanından dict olarak
 gelir, böylece DB'siz birim test edilebilir (`party_check.py:4-7`).
 
@@ -162,13 +170,14 @@ Fuzzy kademesinin dar tutulması bilinçli: "'Ali Veli' ↔ 'Ali Beki' eşleşme
 ismin aynı olması yetmez, soyisim de eşleşmeli" (`party_check.py:16-17`).
 
 **Normalizasyon**: NFD + birleşik-işaret temizliği → Türkçe upper → diakritik katlama →
-unvan temizliği → boşluk sadeleştirme (`party_check.py:53-68`). NFD adımı şart: bazı
-kayıtlarda `i̇` (i + U+0307) gibi görünmez karakterler var; temizlenmezse birebir aynı isim
-exact yerine fuzzy'ye düşer ya da hiç eşleşmez (`party_check.py:56-59`).
+unvan temizliği → boşluk sadeleştirme (`party_check.py:61-80`, `normalize_person_name`).
+NFD adımı şart: bazı kayıtlarda `i̇` (i + U+0307) gibi görünmez karakterler var;
+temizlenmezse birebir aynı isim exact yerine fuzzy'ye düşer ya da hiç eşleşmez
+(`party_check.py:65-67`).
 
 Kurumsal isimler fuzzy'den muaftır — sigorta şirketleri birbirine benzediği için gürültü
 üretirdi; `_CORPORATE_WORDS` normalize edilmiş isimde **kelime olarak** aranır ("HASAN"daki
-"AS" gibi substring yanlış pozitiflerini önlemek için) (`party_check.py:41-47`).
+"AS" gibi substring yanlış pozitiflerini önlemek için) (`party_check.py:51-54`).
 
 **`conflict=True` tek bir koşulda üretilir**: CLIENT olmayan bir sorgu, `contact_type="Client"`
 bir cari kaydıyla eşleşirse (karşı taraf ofisin müvekkili → çıkar çatışması riski). Müvekkil
@@ -180,10 +189,10 @@ tarafa bakılır" (`party_check.py:19-25`).
 
 Bir belge `/confirm`'de bir davaya bağlanınca iki yardımcı koşar:
 
-- `_auto_update_case_status(case_id, belge_turu_kodu, uploaded_by)` — `backend/routes/processing.py:152`
-- `_auto_enrich_case_data(case_id, avukat_kodu, karsi_taraf, uploaded_by)` — `:205`
+- `_auto_update_case_status(case_id, belge_turu_kodu, uploaded_by)` — `backend/routes/processing.py:160`
+- `_auto_enrich_case_data(case_id, avukat_kodu, karsi_taraf, uploaded_by)` — `:213`
 
-İkisi de `/confirm` akışından çağrılır (`processing.py:861`, `:867`) ve hata durumunda
+İkisi de `/confirm` akışından çağrılır (`processing.py:869`, `:875`) ve hata durumunda
 akışı devirmez; oturum kapatma/rollback davranışları test altındadır
 (`backend/tests/test_faz0_hardening.py`, `backend/tests/test_faz3_e_hardening.py`).
 

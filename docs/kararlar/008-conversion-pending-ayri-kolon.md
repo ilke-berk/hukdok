@@ -8,7 +8,7 @@
   Belgenin kaybolmaması ve daha sonra yeniden denenebilmesi gerekir. Belgenin ayrıca bir
   `upload_status` alanı vardır (işlenmiş kopyanın SharePoint yükleme durumu).
 - **Karar:** `CaseDocument` üzerinde **üç yeni kolon**: `conversion_status`,
-  `conversion_attempts`, `conversion_spool_path` (`backend/models.py:508-521`).
+  `conversion_attempts`, `conversion_spool_path` (`backend/models.py:616-618`).
   Dönüşüm başarısızsa orijinal **kendi uzantısıyla** arşive gider ve kayıt
   `conversion_status='pending'` ile açılır; 02:30 TR'deki gece job'ı
   (`services/conversion_retry.py`) spool'daki orijinalden yeniden dener.
@@ -19,7 +19,7 @@
   | `'pending'` | gece yeniden denenecek |
   | `'failed'` | denemeler tükendi (`MAX_CONVERSION_ATTEMPTS = 5`); tek nihai ERROR, spool elle kurtarma için saklanır |
 
-- **Gerekçe (kodda "KARAR NOTU" başlığıyla, `models.py:518-521`):** "`upload_status`'a yeni
+- **Gerekçe (kodda "KARAR NOTU" başlığıyla, `models.py:611-615`):** "`upload_status`'a yeni
   değer DEĞİL, ayrı alan — `upload_status` işlenmiş kopyanın SharePoint yükleme durumudur
   ve pending belgede orijinalin yüklemesini izlemeye devam eder (dik boyutlar; belge kartı
   göstergesi ve `idx_case_docs_upload_status` partial index'i bozulmaz)."

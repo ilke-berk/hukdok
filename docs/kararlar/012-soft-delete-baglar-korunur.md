@@ -9,7 +9,7 @@
 - **Karar:** `cases`, `clients`, `case_documents` tablolarında soft-delete —
   `deleted_at` / `deleted_by` / `delete_reason` kolonları. Kayıt DB'de kalır, listelerden
   gizlenir, admin geri alabilir. Silme sırasında **`CaseParty.client_id` NULL'lanmaz** ve
-  **`Client.active` alanına dokunulmaz** (`backend/routes/clients.py:239-245`).
+  **`Client.active` alanına dokunulmaz** (`backend/routes/clients.py:246-251`).
 - **Gerekçe (docstring'den birebir):** "`CaseParty.client_id` BİLİNÇLİ NULL'lanmaz (eski
   hard-delete davranışıydı) — bağlar kopmadığı için restore sıfır maliyetli; taraf
   görünümleri zaten `p.client.name if p.client else p.name` ile çalışıyor.
@@ -22,7 +22,7 @@
   işaretlemek* — kullanıcı alanıyla sistem durumunu aynı kolona sıkıştırırdı.
   *Silmede bağları koparmak* — restore'u veri yeniden kurmaya dönüştürürdü.
 - **Sonuçları:** Tüm kullanıcı sorguları `deleted_at IS NULL` filtreler
-  (`backend/auth_helpers.py`); silinenleri gören tek yol admin panelidir (`api.py:416`).
+  (`backend/auth_helpers.py`); silinenleri gören tek yol admin panelidir (`api.py:411-412`).
   Silinmiş davanın belgesi hukukbot outbox'ına girmez, ama **dava restore edilirse belgeleri
   tekrar akabilir** — export filtresi dinamiktir, "istenen davranış"
   (`services/export_publisher.py:62-64`).

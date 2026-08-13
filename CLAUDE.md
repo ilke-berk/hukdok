@@ -23,7 +23,7 @@ host 8080 → konteyner 80). Backend portu bilinçli localhost'a sabit: API-key'
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer
 kayıt kaynağıydı). Konteynerler düz HTTP konuşur; TLS prod'daki **host** nginx'inde
 sonlanır (konfigi repo DIŞINDA, sunucuda; iki katmanın timeout'ları eşit tutulmalı —
-bkz. `nginx.conf:10-14`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:40`).
+bkz. `nginx.conf:10-14`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:62`).
 
 **Backend açılışı** (`backend/docker-entrypoint.sh`): önce `migrate.py` tek süreçte
 koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn
@@ -54,9 +54,26 @@ route'un beklenmedik istisnasından gelir ve bu sözleşmenin dışındadır.
 
 **Tenant modeli:** `cases`/`clients` tablolarında `tenant_id` kolonu VAR ama iki tenant
 (Hanyaloğlu Acar + LexisBio) ortak çalışır: yeni kayıtlar bilinçli `tenant_id=NULL`
-(paylaşımlı havuz — `routes/cases.py:48`, `routes/clients.py:28`); sorgular
+(paylaşımlı havuz — `routes/cases.py:54`, `routes/clients.py:35`); sorgular
 "`tenant_id == X OR IS NULL`" deseniyle filtreler (`auth_helpers.py`). Girişte tenant
 `ALLOWED_TENANTS` env listesine karşı doğrulanır (`auth_verifier.py`).
+
+**Dava şeması (FAZ D+E, G044-G046):** `cases.esas_no` TÜRETİLMİŞTİR — gerçek kaynak
+`case_esas_numbers` tablosu (esas numarası tarihçesi: aşama başına bir satır, dava
+başına en fazla bir `is_current=True`); tek yazma yolu `case_manager.sync_current_esas`,
+arama eski esas numarasıyla da bu tabloya JOIN'lenerek çalışır (E8, aşağıdaki arama
+maddesi). Eksik zorunlu alan bayrağı `cases.missing_required_bucket` de
+TÜRETİLMİŞTİR (NULL = eksik yok, `MANUAL`/`AKTARIM` kovaları); tek yazma yolu
+`case_manager.refresh_missing_required`, kural `required_fields.py`'de D2/D8
+bağlamına göre değişir.
+
+**Dava arama (E8, G055):** `case_manager.get_cases` 13-14 kolon/ilişkiyi tek bir
+OR/EXISTS ağacında DEĞİL, her terim için bağımsız `UNION`'lanan `SELECT`'lerle arar;
+çok terimli sorguda AND semantiği `UNION`'ların `INTERSECT`'iyle kurulur
+(`_search_term_ids`, `_term_case_id_selects`). `cases` üzerindeki altı GIN trigram
+index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
+G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
+kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
 
 **Sürüm izi:** deploy git SHA'sını `APP_VERSION` build arg'ı ile imaja gömer →
 `/healthz` "version" alanı + login rozeti. `/healthz` derindir (DB `SELECT 1`;
@@ -74,7 +91,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.10-slim)
-docker compose exec -T backend python -m pytest            # 2026-08-11: 905 passed, 2 skipped
+docker compose exec -T backend python -m pytest            # 2026-08-13: 1285 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -84,7 +101,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-08-11: 317 passed (25 dosya)
+npm --prefix frontend test                                 # 2026-08-13: 332 passed (26 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
@@ -109,12 +126,20 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 - **OneDrive + Docker build cache:** repo OneDrive altında; `requirements*.txt` değişse
   bile pip katmanı CACHED geçebilir. Şüphede `docker compose build --progress=plain` ile
   pip adımının gerçekten koştuğunu doğrula.
+- **Migrasyon op türleri koşullu/koşulsuz karışımı:** `database.py::_MIGRATIONS`'ta
+  `("table", ...)`/`("columns", ...)` KOŞULLUDUR — `init_db()` önce `create_all()`
+  koşturur, ilgili tablo/kolon zaten oradaysa op atlanır ve gövdesine gömülü CREATE
+  INDEX/UNIQUE kısıtları o kurulumda HİÇ çalışmaz. Kalıcı olması gereken kısıt/index
+  DAİMA ayrı bir `("index", ...)` op'una yazılır (koşulsuz, `IF NOT EXISTS` ile
+  idempotent) — G041 bu boşluğu 8 kalemde kapattı; `deploy.sh --gate-only` kendi
+  Postgres'ini migrasyonlu kaldırıp bunu doğrular, CI ise ÇIPLAK postgres kullanır
+  (tablo bile yok) — üç ortamın üçü de farklı bir DB durumu sunar (bkz. G050 raporu).
 - **Doctype `_` padding:** belge türü kodları `_` ile pad'lidir (örn. `TEBLIGAT______`,
   `constants.py:10`). Karşılaştırmadan önce normalize et; ham `==`/`in` kısaltmaları
   sızdırır (export allowlist'i bu yüzden normalize eder, `services/export_publisher.py`).
 - **AVG TLS araya girmesi (lokal):** konteynerden Gemini'ye SSL hatasında çözüm
   `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` env'i (`docker-compose.override.yml.example:15`,
-  `api.py:93`; `.env.example:93`).
+  `api.py:88`; `.env.example:93`).
 - **pytest çift -q:** `backend/pyproject.toml` `addopts = "-q"` içerir; komuta bir `-q`
   daha eklersen özet satırı ("N passed") hiç basılmaz.
 - **Log sözleşmesi:** deneme-düzeyi hatalar WARNING, nihai başarısızlık TEK ERROR
@@ -129,7 +154,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
-| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:41`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
+| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:62`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
 | `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları | Süreç dosyaları |
 | `otomasyon/` | Gece koşucuları (`gece-kosusu.ps1`, `kuyruk-kosusu.ps1`) + logları | Süreç dosyaları |
 | `infra/` | Sunucu birimleri: systemd timer'lar, watchdog scriptleri (`infra/README.md`) | Güncel |

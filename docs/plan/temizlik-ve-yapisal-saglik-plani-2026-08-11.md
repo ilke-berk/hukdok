@@ -64,23 +64,31 @@ biriken şey ağırlıkla emniyet ağı ve doküman — şişkinlik değil.
 
 ## 2. FAZ 0 — Canlı arızalar (temizlik değil; en yüksek öncelik)
 
-| # | Arıza | Kanıt | Etki |
-| --- | --- | --- | --- |
-| **0.1** | **SSRF: .eml gövdesi LibreOffice'e giderken uzak kaynak çekiyor** | Bağımsız iki probe ile üretildi: `<table background="http://…/PROBE.png">` → sunucu kaydında `GET /TABLE_PROBE.png`. `routes/case_intake.py:96-101` yalnız `<script>`, `<link>`, `<img src=…>` siliyor; `pdf/format_converter.py:305-325` soffice'te ağ kapatan bayrak yok | Avukat kötü niyetli bir .eml'i sihirbaza sürükleyince prod VM saldırganın seçtiği adrese istek atıyor (kör SSRF + izleme pikseli). Kimlik doğrulamalı uç → uzaktan-kimliksiz değil, "confused deputy" |
-| **0.2** | Mükerrer dava kapısı **iki katmanda birden** hata yutuyor | Frontend `useCases.ts:200-210` → `[]`; **backend** `case_manager.py:805-807` `except: return []`; `routes/cases.py:185` 200 + boş matches döndürüyor | DB hatasında mükerrer kapısı sessizce açılıyor. **Yalnız frontend'i düzeltmek yetmez** — backend ayağı da düzelmeli |
-| **0.3** | `useConfig` hatayı boş listeye çeviriyor | `useConfig.ts:66` ve `:112` | Konfig ucu düşünce zorunlu alan kapısı sessizce açılıyor |
-| **0.4** | Ofis dosya no sıra tahsisi hatada `1`e düşüyor | `routes/cases.py:168-170` `except: return {"sequence": 1}` | Sıra çakışması riski |
-| **0.5** | Ofis no kategori kodu çatallanması | `caseNumberUtils.ts:111-118` kategori **adı** bekliyor; `NewCase.tsx:341` ve `IntakeReviewStep.tsx:242` **kod** ("D1") geçiyor → `block1` sessizce `"X1"`e düşüyor. `QuickCaseModal.tsx` doğru | Canlı veride **X1 = 1.658 kayıt (%11,6)**. Bkz. aşağıdaki karar kutusu |
-| **0.6** | Prod export/hukukbot sağlık denetimi | Lokal `export_outbox` 0 satır → keşif bu yüzeyi **görmüş olamaz** | Prod'da birikmiş `failed` satır olabilir; salt-okunur bakılmalı, çıkan arıza bu listeye eklenmeli |
-| **0.7** | `/preview-client-email-body` nginx'te proxy'lenmiyor | `nginx.conf` location listesi: `/`, `= /healthz`, `/api`, `/process`, `/confirm`, `/preview-email-body`, `/refresh` — müvekkil olanı **yok**. `frontend/vite.config.ts` dev proxy'sinde **ikisi de yok** | Müvekkil bilgilendirme AI metni sessizce yanlış tonlu frontend fallback'ine düşüyor. Aynı allowlist üç yerde elle tutuluyor ve üçü de sapmış |
-| **0.8** | `/api/documents` bağlantısız belgelerde tenant izolasyonu **yok** | `routes/documents.py:169` `or_(Case.tenant_id==tid, Case.tenant_id.is_(None), CaseDocument.case_id.is_(None))` — üçüncü şart tenant kısıtını devre dışı bırakıyor; uçta `get_current_user` bağımlılığı bile yok | Her tenant tüm bağlantısız belgeleri görüyor (`uploaded_by`, `stored_filename`, `muvekkil_adi` dahil). Tekil belge yolları `get_tenant_owned_document` ile "case_id yoksa yalnız yükleyen" kuralını uyguluyor — **liste ucu bu korumanın dışında** |
+> **TARİHSEL NOT (G056, 2026-08-13):** Aşağıdaki tablo bir KEŞİF anıdır (2026-08-11);
+> 0.1–0.4 ve 0.7–0.8 o günden beri **düzeltildi** (bkz. sırasıyla G023/G024, G014, G019,
+> G014, G018, G016) — `dosya.py:satır` çıpaları artık o düzeltmelerden ÖNCEKİ koda işaret
+> eder, güncel konum DEĞİLDİR. 0.5 hâlâ **açık** (aşağıdaki karar kutusu ADR-016 ile
+> kapandı ama kod tarafı — çağrı noktalarının isim yerine kod geçirmesi — hâlâ yapılmadı);
+> onun çıpaları güncellendi. 0.6 hâlâ kullanıcı kararı bekliyor.
 
-> **KARAR GEREKTİRİR (0.5).** Düzeltme deploy edilince aynı müvekkil kategorisi dün X1, bugün
-> D1/H1 üretir — arşivde iki rejim oluşur. Üç seçenek: **(a)** dokunma, iki rejimi kabul et;
-> **(b)** `backend/scripts/retag_tracking_nos.py` ile 1.658 kaydı geriye dönük düzelt (SharePoint
-> klasör adları ve dış yazışmalardaki referanslar DB'den ayrışır — kapsam ve geri dönüş yazılı
-> olmalı); **(c)** yalnız yeni kayıtlar + eskiler için eşleme tablosu. Bu **operasyonel** bir
-> karar, teknik değil. Seçim `docs/kararlar/` altına ADR olarak yazılmalı.
+| # | Arıza | Kanıt (tespit anındaki) | Etki |
+| --- | --- | --- | --- |
+| **0.1** ✅ | **SSRF: .eml gövdesi LibreOffice'e giderken uzak kaynak çekiyor** | Bağımsız iki probe ile üretildi: `<table background="http://…/PROBE.png">` → sunucu kaydında `GET /TABLE_PROBE.png`. `routes/case_intake.py:96-101` yalnız `<script>`, `<link>`, `<img src=…>` siliyor; `pdf/format_converter.py:305-325` soffice'te ağ kapatan bayrak yok | Avukat kötü niyetli bir .eml'i sihirbaza sürükleyince prod VM saldırganın seçtiği adrese istek atıyor (kör SSRF + izleme pikseli). Kimlik doğrulamalı uç → uzaktan-kimliksiz değil, "confused deputy" |
+| **0.2** ✅ | Mükerrer dava kapısı **iki katmanda birden** hata yutuyor | Frontend `useCases.ts:200-210` → `[]`; **backend** `case_manager.py:805-807` `except: return []`; `routes/cases.py:185` 200 + boş matches döndürüyor | DB hatasında mükerrer kapısı sessizce açılıyor. **Yalnız frontend'i düzeltmek yetmez** — backend ayağı da düzelmeli |
+| **0.3** ✅ | `useConfig` hatayı boş listeye çeviriyor | `useConfig.ts:66` ve `:112` | Konfig ucu düşünce zorunlu alan kapısı sessizce açılıyor |
+| **0.4** ✅ | Ofis dosya no sıra tahsisi hatada `1`e düşüyor | `routes/cases.py:168-170` `except: return {"sequence": 1}` | Sıra çakışması riski |
+| **0.5** ⚠️ AÇIK | Ofis no kategori kodu çatallanması | `caseNumberUtils.ts:111-118` kategori **adı** bekliyor; `NewCase.tsx:428,451` ve `IntakeReviewStep.tsx:245,249,571-572` **kod** ("D1") geçiyor → `block1` sessizce `"X1"`e düşüyor. `QuickCaseModal.tsx` doğru | Canlı veride **X1 = 1.658 kayıt (%11,6)**. Bkz. aşağıdaki karar kutusu |
+| **0.6** ⏳ Kullanıcı kararı | Prod export/hukukbot sağlık denetimi | Lokal `export_outbox` 0 satır → keşif bu yüzeyi **görmüş olamaz** | Prod'da birikmiş `failed` satır olabilir; salt-okunur bakılmalı, çıkan arıza bu listeye eklenmeli |
+| **0.7** ✅ | `/preview-client-email-body` nginx'te proxy'lenmiyor | `nginx.conf` location listesi: `/`, `= /healthz`, `/api`, `/process`, `/confirm`, `/preview-email-body`, `/refresh` — müvekkil olanı **yok**. `frontend/vite.config.ts` dev proxy'sinde **ikisi de yok** | Müvekkil bilgilendirme AI metni sessizce yanlış tonlu frontend fallback'ine düşüyor. Aynı allowlist üç yerde elle tutuluyor ve üçü de sapmış |
+| **0.8** ✅ | `/api/documents` bağlantısız belgelerde tenant izolasyonu **yok** | `routes/documents.py:169` `or_(Case.tenant_id==tid, Case.tenant_id.is_(None), CaseDocument.case_id.is_(None))` — üçüncü şart tenant kısıtını devre dışı bırakıyor; uçta `get_current_user` bağımlılığı bile yok | Her tenant tüm bağlantısız belgeleri görüyor (`uploaded_by`, `stored_filename`, `muvekkil_adi` dahil). Tekil belge yolları `get_tenant_owned_document` ile "case_id yoksa yalnız yükleyen" kuralını uyguluyor — **liste ucu bu korumanın dışında** |
+
+> **KARAR — 0.5 (2026-08-12, ADR-016 ile kapandı).** Düzeltme deploy edilince aynı müvekkil
+> kategorisi dün X1, bugün D1/H1 üretir — arşivde iki rejim oluşur. Karar: **(a) dokunma,
+> iki rejimi kabul et** — geçmiş 1.658 kayıt DOKUNULMAZ, yalnız `K1` kodu ileriye dönük
+> açılır, raporlama `clients.category`'ye taşınır. Ayrıntı ve gerekçe
+> [`016-ofis-no-kategori-rejimi.md`](../kararlar/016-ofis-no-kategori-rejimi.md)'de. Kod
+> tarafı (çağrı noktalarının isim yerine kod geçirmesi) bu ADR'nin kapsamı DIŞINDA — ayrı
+> bir frontend işi olarak kalıyor.
 
 > **`service_type` ayrı bir iş olarak ayrıldı.** Canlı: `count(*)/count(service_type)` =
 > **14.345 / 0**. Yazma yolunu düzeltmek (kayıt yüküne alanı ekle) FAZ 0'a girer. **Backfill
@@ -204,6 +212,12 @@ temizliği bloke eder. *(M)*
 
 ## 5. FAZ C — Ölü kod ve tekrar temizliği
 
+> **TAMAMLANDI (G026-G029, 2026-08-12).** Aşağıdaki tablo silinmeden ÖNCEki envanterdir;
+> tüm satırlar (config_manager setter'ları hariç — o CANLI çıktı, bilerek silinmedi) artık
+> gerçekten silinmiş durumda. `log_manager.py:26-192`/`:214-329` gibi çıpalar artık
+> **DEAD** — `class LogManager` dosyadan tamamen kalktı, dosya 172 satıra indi ve yalnız
+> `TechnicalLogger`'ı taşıyor (`log_manager.py:56-172`).
+
 > **PAZARLIKSIZ KURAL (denetim dersi):** `getattr`/string-dispatch taraması yapılmadan hiçbir
 > sembol ölü sayılmaz. Taslak bu yüzden **canlı kod silmeye** kalkıyordu.
 
@@ -277,19 +291,27 @@ olmadan listeliyor** — bu C değil **FAZ 0** maddesidir, doğrulanıp oraya ta
 
 ### 6.1 Kök neden: migrasyon op'ları sessizce hiç çalışmıyor *(kritik, ortamdan bağımsız)*
 
-`database.py:110` `create_all()` **önce** koşuyor; `:543` tablo listesini **sonra** okuyor;
-`:589-590` `if table in tables: continue` → `("table", …)` op'ları **hiç çalışmıyor**.
-Canlı doğrulama: `uq_case_relation`, `uq_daily_report` UNIQUE kısıtları yok;
-`idx_case_relations_source/target`, `idx_daily_reports_user` yok. Ters yön: `create_all` mevcut
-tabloya index eklemez → `models.py:212` `index=True` karşılığı `ix_clients_name` yok.
+> **UYGULANDI (G041, FAZ D 6.1).** Bu alt bölüm bir KEŞİF anıdır; aşağıdaki "canlı
+> doğrulama" satırı artık YANLIŞ — eksik kısıtların hepsi `("index", …)` op'una taşındı ve
+> prod'da doğrulandı, bkz. güncel çıpalar. Kök neden teşhisi (mekanizmanın kendisi) hâlâ
+> doğru bilgi, yalnız "bugün eksik" iddiası tarihsel.
+
+`database.py:113-117` `create_all()` **önce** koşuyor; `:952` tablo listesini **sonra** okuyor;
+`:1017` `if table in tables: continue` → `("table", …)` op'ları **hiç çalışmıyor**.
+Tespit anındaki canlı doğrulama: `uq_case_relation`, `uq_daily_report` UNIQUE kısıtları
+yoktu; `idx_case_relations_source/target`, `idx_daily_reports_user` yoktu — **G041'den beri
+hepsi `("index", …)` op'unda var** (`database.py:546-561`). Ters yön: `create_all` mevcut
+tabloya index eklemez → `models.py:294` (`Client.name`) `index=True` karşılığı
+`ix_clients_name` de aynı op'ta artık var.
 
 Kök neden tek noktada: `models.py`'de `__table_args__` / `UniqueConstraint` / `Index(` →
 **sıfır eşleşme**. ORM bileşik kısıtı ifade edemiyor, her kısıt `database.py`'ye düşüyor ve
 orada da çalışmıyor.
 
-**Çözüm ucuz:** yeni mekanizma ya da Alembic gerekmiyor. `database.py:106`'daki
+**Çözüm ucuz:** yeni mekanizma ya da Alembic gerekmiyor. `database.py:136-141`'deki
 `("index", tablo, [...])` op türü zaten tanımlı, idempotent ve **çalışıyor** (canlı kanıt:
-`idx_case_docs_conversion_pending`). Eksik kısıtlar bu mevcut op türüne taşınır. *(S/M)*
+`idx_case_docs_conversion_pending`, `database.py:511`). Eksik kısıtlar bu mevcut op türüne
+taşınır. *(S/M)* — **yapıldı, G041.**
 
 > **Prod riski + geri dönüş.** `migrate.py` fail-fast: UNIQUE index prod'da patlarsa **konteyner
 > kalkmaz**. Önce `GROUP BY … HAVING count(*)>1` ile doğrula. Migrasyon adım adım commit'lediği
@@ -348,24 +370,35 @@ Sorgu türü ↔ erişim yolu eşleşmesi (**düzeltilmiş rakamlarla**, lokal �
 | ~~Tanıdık sorgu~~ | eşitlik + bulanık isim | ~~Tüm tablo Python'a (51.855 satır)~~ | ~~1 isim ~600 ms + 20 isimde 10,5 sn~~ | **DÜŞTÜ — durma kriteri karşılandı** (aşağı bak) |
 | `find_matching_case` | bulanık eşleştirme | Tüm aktif dava + tarafları belleğe | 2.953 ms; **tepe bellek 244 MB (gerçek RSS deltası ~290 MB)** | SQL'de aday daraltma + yalnız gerekli kolonlar |
 | Avukat filtresi | eşitlik | İki `.all()` + Python | 116 ms, doğrusal büyür | index + SQL filtre |
-| Dava araması | 13 kollu OR × terim sayısı | 11 trgm index'inin hiçbiri kullanılamıyor | 83 ms → UNION **20 ms = 4,0×** (tek terim, ≥3 karakter). 2 karakterde 97 → 77 ms = **1,27×** | UNION — ama bkz. uyarı |
-| Arama `count()` | aggregate | `search_cases:816`'da `_total` **atılıyor** | Her tuşta ikinci tam tarama | `with_total=False` **yalnız o çağrıya** |
+| Dava araması | 13 kollu OR × terim sayısı | 11 trgm index'inin hiçbiri kullanılamıyor | 83 ms → UNION **20 ms = 4,0×** (tek terim, ≥3 karakter). 2 karakterde 97 → 77 ms = **1,27×** | UNION — **UYGULANDI (G055), bkz. uyarı** |
+| Arama `count()` | aggregate | `search_cases:1225`'de `_total` **atılıyor** | Her tuşta ikinci tam tarama | `with_total=False` **yalnız o çağrıya** |
 | `missing_required` | korele EXISTS | Satır başına alt sorgu | 81 ms vs 19 ms | denormalize bayrak |
 | Intake merge mahkeme sözlüğü | DISTINCT | Her çağrıda tam tarama | 17,8 ms | TTL cache |
 | ~~Dava kartı~~ | ilişki yükleme | ~~Lazy → N+1~~ | ~~5 sorgu / 58 ms~~ | **DÜŞTÜ — teşhis doğrulanmadı (G051, aşağı bak)** |
 
-> **UNION uyarısı.** Taslaktaki "123 ms → 6,9 ms (18×)" **hiçbir kurulumda tekrar üretilemedi.**
-> Gerçek: tek terim ve ≥3 karakterde 4,0×; tipik 2 karakterlik aramada 1,27×. Sebep: `cases.notes`
-> aranan tek trgm'siz kolon, UNION planında Seq Scan hayatta kalıyor. Ayrıca sorgu tek OR değil —
-> `case_manager.py:302-347` her terim için OR üretip AND'liyor, yani **çok terimli sorgu
-> INTERSECT-of-UNION gerektirir**. Kabul kriteri: en az 20 gerçek sorguda eski/yeni id kümesi
-> **ve ilk 25'in sırası** birebir aynı. Çok terimli hal kapsam dışıysa yazılsın; kapsamdaysa
-> emek **L**.
+> **UNION uyarısı (tespit anında, index'ler VARKEN ölçülmüştü).** Taslaktaki "123 ms → 6,9 ms
+> (18×)" **hiçbir kurulumda tekrar üretilemedi.** Gerçek: tek terim ve ≥3 karakterde 4,0×;
+> tipik 2 karakterlik aramada 1,27×. Sebep: `cases.notes` aranan tek trgm'siz kolon, UNION
+> planında Seq Scan hayatta kalıyor. Ayrıca sorgu tek OR değil — eski kod (bu tespit
+> anında) her terim için OR üretip AND'liyordu, yani **çok terimli sorgu INTERSECT-of-UNION
+> gerektirir**. Kabul kriteri: en az 20 gerçek sorguda eski/yeni id kümesi **ve ilk 25'in
+> sırası** birebir aynı.
+>
+> **UYGULANDI (2026-08-13, G055).** G042 altı trgm index'i düşürdükten SONRA (bugünkü prod
+> şeması, index'siz) yeniden ölçüldü: UNION rewrite **index'siz bile** büyük kazanç veriyor —
+> tek terim ≥3 karakter 7,2×, çok terimli AND **8,9×** (raw SQL, id-only); uçtan uca
+> `get_cases()` üzerinden tek terim 1,2×, 2 karakter kazanç yok, çok terimli **6,7×**.
+> Trigram index'ler **bilinçli geri EKLENMEDİ** — kazanç zaten index'siz yeterliydi, ADR-018'in
+> 26 MB'lık bahsi bozulmadı. `case_manager.py`'deki eski 13-14 kollu OR ağacı **tamamen
+> kaldırıldı**; yerine `_term_case_id_selects`/`_search_term_ids` (per-terim UNION) +
+> `intersect()` (çok terimli AND) geldi (`case_manager.py:588-643` yardımcılar,
+> `:714-730` birleştirme). 20/20 gerçek sorgu (7'si çok terimli) eski koda birebir eşdeğer
+> doğrulandı. Ayrıntı: [`gorevler/gorev/G055.md`](../../gorevler/gorev/G055.md).
 
 > **`count()` uyarısı.** Taslak "sonuç atılıyor, kaldır" diyordu — **liste yolunda atılmıyor.**
 > `routes/cases.py:97-103` `total`'ı `X-Total-Count` başlığına yazıyor;
 > `CaseList.tsx:270` sayfalamayı ondan hesaplıyor. `with_total=False` genel uygulanırsa
-> **sayfalama sessizce bozulur.** Yalnız `search_cases:816` yolunda uygulanır.
+> **sayfalama sessizce bozulur.** Yalnız `search_cases:1225` yolunda uygulanır.
 >
 > **UYGULANDI (2026-08-12, G051).** `get_cases(..., with_total=False)` COUNT'u hiç
 > koşmuyor ve toplam yerine `-1` döndürüyor (`len(items)` bilinçli DEĞİL: gerçek toplam

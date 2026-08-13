@@ -107,16 +107,21 @@ ve onun `lop`/`duck` bağımlılıkları), `docx/node_modules/nanoid` (prod say�
 | 6 | `node:20` → `node:24`, `python:3.10` → `python:3.12` | backend (altyapı) | EOL borcu kapanır | 2, 3 |
 | 7 | Denetim kapıları (K3) | CI | regresyon kapanır | 1–6 yeşil |
 
-**Adım 4 pazarlıksız ön koşullu.** `backend/auth_verifier.py` bugün **hiçbir testte
-çalışmıyor** (`backend/tests/` altında `AuthVerifier`/`verify_token` için sıfır eşleşme).
-Yani PyJWT yükseltmesi bugün **kör** yapılır ve arıza modeli "herkes içeri girer" ya da
-"kimse giremez"dir. Test önce yazılır.
+**Adım 4 pazarlıksız ön koşullu — ✅ KARŞILANDI (G059, 2026-08-13, `c1dd168`).**
+Bu kayıt yazıldığında `backend/auth_verifier.py` **hiçbir testte çalışmıyordu**
+(`backend/tests/` altında `AuthVerifier`/`verify_token` için sıfır eşleşme) ve arıza
+modeli "herkes içeri girer" ya da "kimse giremez"di. `backend/tests/test_auth_verifier.py`
+artık var: `AuthVerifier.verify_token`'ı gerçek RS256 imzalarla, tenant allowlist'i,
+dev-bypass ve süre dolumu yollarıyla test ediyor. **Adım 4'ün (PyJWT 2.13.0) ön koşulu
+karşılandı** — yükseltme artık kör değil.
 
-> **Ölçüm düzeltmesi:** görev tanımı "PyJWT ve python-multipart'ın ikisinin de test kapsamı
-> ince" diyordu. Gerçek asimetrik: python-multipart **5 test dosyasında** gerçek multipart
-> gövdesiyle uçtan uca koşuyor (`test_case_intake_analyze.py:263`, `test_eml_expand.py:114`,
+> **Ölçüm düzeltmesi (yazıldığı an için doğruydu, artık KISMEN bayat):** görev tanımı
+> "PyJWT ve python-multipart'ın ikisinin de test kapsamı ince" diyordu. O zamanki gerçek
+> asimetrik: python-multipart **5 test dosyasında** gerçek multipart gövdesiyle uçtan uca
+> koşuyordu (`test_case_intake_analyze.py:263`, `test_eml_expand.py:128`,
 > `test_faz3_confirm_idempotency.py:324`, `test_faz3_f_conversion_pending.py:441`,
-> `test_faz4_failed_event.py:426`); PyJWT'nin kapsamı **sıfır**.
+> `test_faz4_failed_event.py:426`); PyJWT'nin kapsamı **sıfırdı** — G059 bunu kapattı,
+> yukarıdaki not bkz.
 
 ### K2 — Fix sürümü olmayan tek açık: PyJWT `PYSEC-2025-183` / `CVE-2025-45768` — **ignore**
 
@@ -143,7 +148,7 @@ Kalan 5 PyJWT açığının bu koda uygulanabilirliği (yükseltme gerekçesinin
 python-multipart tarafının uygulanabilirliği de aynı yöntemle ayrıştı:
 `UPLOAD_DIR`/`UPLOAD_KEEP_FILENAME` path traversal'ı (0.0.22) **uygulanmaz** — starlette bu
 seçenekleri kullanmaz; preamble/epilogue ve part-header DoS'ları (0.0.26/0.0.27)
-**ulaşılabilir** — `nginx.conf:7,56` `client_max_body_size 50M` bayt sayısını sınırlar,
+**ulaşılabilir** — `nginx.conf:7,78` `client_max_body_size 50M` bayt sayısını sınırlar,
 CPU'yu sınırlamaz; `QuerystringParser` `;` ayırıcı farklılığı (0.0.30) `Form(...)` uçları
 üzerinden **ulaşılabilir** (`routes/processing.py:306+`).
 
@@ -182,7 +187,7 @@ adımında raporlanır; adım 6'dan sonra o da kapıya alınır.
 > `frontend/Dockerfile:8-9` yalnız `package.json`'ı kopyalayıp `npm install` koşuyor;
 > `package-lock.json` kurulum anında **ortamda değil**. Yani prod imajı lock'un tarif
 > ettiği ağacı değil, build anında yeniden çözülmüş bir ağacı yayınlıyor — oysa CI
-> `npm ci` ile lock'u kuruyor (`ci.yml:78`). **Denetlenen ağaç ile yayınlanan ağaç aynı
+> `npm ci` ile lock'u kuruyor (`ci.yml:86`). **Denetlenen ağaç ile yayınlanan ağaç aynı
 > değil.** Kapıdan önce Dockerfile `COPY frontend/package.json frontend/package-lock.json
 > frontend/.npmrc ./` + `npm ci` yapmalı.
 
@@ -196,7 +201,7 @@ Doğrulanmış takvimler (kaynak: nodejs/Release `schedule.json`, endoflife.date
 | Python | 3.10 | **2026-10-31 — 2,7 ay kaldı** | **3.12** | 2028-10-31 |
 
 **Tahmini kırılma yüzeyi — Node 20 → 24.** İki yerde birden değişir: `frontend/Dockerfile:2`
-(`FROM node:20 AS builder`) ve `ci.yml:72` (`node-version: "20"`). İkisi de aynı commit'te
+(`FROM node:20 AS builder`) ve `ci.yml:80` (`node-version: "20"`). İkisi de aynı commit'te
 değişmezse CI ile imaj ayrışır. Doğrulama zaten var: `npm ci` + `eslint` + `tsc --noEmit` +
 299 vitest + `npm run build`. Ek getiri: vite 8 (`engines: ^20.19.0 || >=22.12.0`) ancak bu
 adımdan sonra rahatça alınabilir → 12 dev advisory'sinin yolu açılır.
