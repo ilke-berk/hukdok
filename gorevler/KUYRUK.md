@@ -169,6 +169,30 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G055 | bant:backend | bagimli:G051,G049 | E8: dava araması UNION + çok terimli INTERSECT-of-UNION (RİSKLİ — durma izni var) | BLOKE(HESAP ERİŞİMİ: claude CLI "organization has disabled Claude subscription access for Claude Code" diyor; kod/kuyruk sorunu DEĞİL, işçi hiç başlayamadı - erişim dönünce eki sil)
 - [ ] G056 | bant:docs | bagimli:G055 | Yaşayan dokümanlardaki bayat satır çıpalarını süpür (FAZ D+E borcu)
 
+## Aktif plan: Kapsam boşlukları — korumasız kritik yollar (2026-08-13)
+
+<!-- Kaynak: kapsam raporu (2026-08-13, konteynerde koşuldu): TOPLAM %64, 12.527
+     ifadenin 4.517'si test edilmiyor. Bu üç görev "kapsamı yükseltmek" için DEĞİL,
+     ölçülen üç somut riski kapatmak için var — kapsam kovalamak değersiz test üretir.
+     G057 fazın çıpası: prod'da ölçüldü ki sır yolunun güvenliği docker-compose.yml:63'teki
+     TEK bir env satırına yaslanıyor ve o satırın yorumu bile yok; düşerse keyring
+     otomatik seçimle PlaintextKeyring'e (öncelik 0.5, kurulu backend'lerin en yükseği)
+     düşer ve iki sırrı düz metin dosyaya yazar.
+     G058 sadece kapsam değil, Deploy #10'un getirdiği CANLI kusuru da kapatıyor.
+     KUYRUĞA GİRMEYEN (kullanıcı onayı bekler): yetki_belgesi_generator.py (%0, 116
+     ifade, routes/documents.py'den canlı) ve report_builder.py (%0, 103 ifade,
+     routes/cases.py takvim raporu) — ikisi de korumasız ama G057-G059 kadar keskin
+     değil. reference_list_export.py (%0, 51) için ÖNCE getattr/dinamik-dispatch
+     taraması gerekir: grep hiç çağıran bulamadı, ölü OLABİLİR ama projenin pazarlıksız
+     kuralı taramasız ölü saymayı yasaklıyor. Büyük mutlak boşluklar (analyzer.py 281,
+     routes/config.py 256, udf_converter.py 234 satır) bilinçli DIŞARIDA: oradaki
+     dallanmayı kapsam uğruna test etmek değersiz test üretme riski taşır.
+     Bant: üçü de backend = seri. Aralarında dosya çakışması YOK, bağımlılık yok. -->
+
+- [ ] G057 | bant:backend | bagimli:- | vault.py %0: sır yolu tek env satırına yaslanıyor (PlaintextKeyring riski)
+- [ ] G058 | bant:backend | bagimli:- | seed_data.py: worker yarışı (prod'da canlı ERROR) + %9 kapsam
+- [ ] G059 | bant:backend | bagimli:- | auth_verifier.py %25: kimlik kapısı test edilmiyor
+
 ## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
 
 - **DERS — kapı merdiveninin kör noktası: ÇIPLAK Postgres.** Deploy #10'un push'unda CI
