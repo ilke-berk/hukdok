@@ -8,6 +8,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import intersect, select, union
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -584,6 +585,63 @@ def _attach_esas_matches(db, cases_list: list, q, exact: bool, min_len: int) -> 
         row["esas_matches"] = by_case.get(row["id"], [])
 
 
+def _term_case_id_selects(term: str, exact: bool) -> list:
+    """Tek bir arama teriminin eşleşebileceği kolon/ilişkilerin AYRI SELECT'leri (E8, G055).
+
+    Eskiden bunlar tek bir OR/EXISTS ağacında birleşiyordu ve planlayıcı o ağaçta
+    trigram index seçemiyordu (ADR-018). Her kol bağımsız SELECT olunca Postgres
+    her birini kendi başına optimize edip çağıran tarafta UNION'lar — index
+    geri gelmese bile ölçülen kazanç büyük (bkz. G055 raporu).
+    Exact modda `notes` ve `case_history.old_value` YOK — eski OR ağacındaki
+    davranışın aynısı, normal moddaki 14 koldan ikisi eksik kalır.
+    """
+    pattern = term if exact else f"%{term}%"
+    contains = f"%{term}%"
+    selects = [
+        select(models.Case.id).where(models.Case.esas_no.ilike(pattern)),
+        # Eski/aşama esasları (G045): görevsizlik-bozma sonrası numara değişse de
+        # dosya eski numarasıyla bulunur.
+        select(models.Case.id)
+        .join(models.CaseEsasNumber, models.CaseEsasNumber.case_id == models.Case.id)
+        .where(models.CaseEsasNumber.esas_no.ilike(pattern)),
+        select(models.Case.id).where(models.Case.tracking_no.ilike(pattern)),
+        select(models.Case.id).where(models.Case.klasor_no_2.ilike(pattern)),  # Eski sistem no
+        select(models.Case.id).where(models.Case.tku_no.ilike(pattern)),  # Eski sistem olay no (TKU-784)
+        select(models.Case.id).where(models.Case.sistem_no.ilike(pattern)),  # Eski sistem kayıt no (SSTMN-9425)
+        select(models.Case.id).where(models.Case.court.ilike(contains)),
+        select(models.Case.id).where(models.Case.subject.ilike(contains)),
+        select(models.Case.id).where(models.Case.responsible_lawyer_name.ilike(contains)),
+        select(models.Case.id).where(models.Case.uyap_lawyer_name.ilike(contains)),
+        select(models.Case.id)
+        .join(models.CaseParty, models.CaseParty.case_id == models.Case.id)
+        .where(models.CaseParty.name.ilike(contains)),
+        select(models.Case.id)
+        .join(models.CaseLawyer, models.CaseLawyer.case_id == models.Case.id)
+        .where(models.CaseLawyer.name.ilike(contains)),
+    ]
+    if not exact:
+        selects.append(select(models.Case.id).where(models.Case.notes.ilike(pattern)))
+        selects.append(
+            select(models.Case.id)
+            .join(models.CaseHistory, models.CaseHistory.case_id == models.Case.id)
+            .where(models.CaseHistory.old_value.ilike(pattern))
+        )
+    return selects
+
+
+def _search_term_ids(term: str, exact: bool):
+    """Bir terimin eşleştiği TÜM dava id'lerinin UNION'u (tek terim = tek OR grubu).
+
+    UNION'u ADLANDIRILMIŞ bir subquery'ye sarıp tek kolonlu düz bir `select()`
+    döndürür — çok terimli aramada bunların `intersect()`'i alınacak
+    (`INTERSECT`-of-`UNION`, E8) ve iç içe `CompoundSelect`'in doğrudan
+    `.in_()`'e verilmesi SQLAlchemy 2.x'te `_scalar_type()` üzerinde
+    `NotImplementedError` fırlatıyor — düz `select()` bu sorunu taşımıyor.
+    """
+    term_subq = union(*_term_case_id_selects(term, exact)).subquery()
+    return select(term_subq.c.id)
+
+
 def get_cases(
     limit: int = 50,
     offset: int = 0,
@@ -655,65 +713,24 @@ def get_cases(
 
         min_len = 1 if exact else 2
         if q and len(q) >= min_len:
-            from sqlalchemy import or_, and_
             terms = q.strip().split()
-            term_filters = []
-
+            term_id_queries = []
             for term in terms:
                 if not exact and len(term) < 2:
                     continue
-                search_pattern = term if exact else f"%{term}%"
+                term_id_queries.append(_search_term_ids(term, exact))
 
-                if exact:
-                    # Exact mode: case number fields exact match + tüm diğer alanlar contains
-                    contains = f"%{term}%"
-                    conditions = [
-                        models.Case.esas_no.ilike(search_pattern),
-                        # Eski/aşama esasları (G045): görevsizlik-bozma sonrası
-                        # numara değişse de dosya eski numarasıyla bulunur.
-                        models.Case.esas_numbers.any(
-                            models.CaseEsasNumber.esas_no.ilike(search_pattern)
-                        ),
-                        models.Case.tracking_no.ilike(search_pattern),
-                        models.Case.klasor_no_2.ilike(search_pattern),
-                        models.Case.tku_no.ilike(search_pattern),      # Eski sistem olay no
-                        models.Case.sistem_no.ilike(search_pattern),   # Eski sistem kayıt no
-                        models.Case.court.ilike(contains),
-                        models.Case.subject.ilike(contains),
-                        models.Case.responsible_lawyer_name.ilike(contains),
-                        models.Case.uyap_lawyer_name.ilike(contains),
-                        models.Case.parties.any(models.CaseParty.name.ilike(contains)),
-                        models.Case.lawyers.any(models.CaseLawyer.name.ilike(contains)),
-                    ]
-                else:
-                    # Normal mode: search all fields
-                    conditions = [
-                        models.Case.tracking_no.ilike(search_pattern),
-                        models.Case.esas_no.ilike(search_pattern),
-                        # Eski/aşama esasları (G045) — bkz. exact dalındaki not
-                        models.Case.esas_numbers.any(
-                            models.CaseEsasNumber.esas_no.ilike(search_pattern)
-                        ),
-                        models.Case.klasor_no_2.ilike(search_pattern),  # Eski sistem no
-                        models.Case.tku_no.ilike(search_pattern),       # Eski sistem olay no (TKU-784)
-                        models.Case.sistem_no.ilike(search_pattern),    # Eski sistem kayıt no (SSTMN-9425)
-                        models.Case.court.ilike(search_pattern),
-                        models.Case.subject.ilike(search_pattern),
-                        models.Case.notes.ilike(search_pattern),
-                        models.Case.responsible_lawyer_name.ilike(search_pattern),
-                        models.Case.uyap_lawyer_name.ilike(search_pattern),
-                        models.Case.parties.any(models.CaseParty.name.ilike(search_pattern)),
-                        models.Case.lawyers.any(models.CaseLawyer.name.ilike(search_pattern)),
-                        models.Case.history.any(models.CaseHistory.old_value.ilike(search_pattern)),
-                    ]
-
-                term_filters.append(or_(*conditions))
-
-            if term_filters:
-                query = query.filter(and_(*term_filters))
+            # Çok terimli arama AND semantiği: her terim AYRI eşleşmeli
+            # (INTERSECT-of-UNION, E8). Tek terimde intersect hiç koşmaz.
+            if term_id_queries:
+                combined_ids = (
+                    term_id_queries[0] if len(term_id_queries) == 1
+                    else intersect(*term_id_queries)
+                )
+                query = query.filter(models.Case.id.in_(combined_ids))
 
         # Toplam sayı — sayfalama (offset/limit) uygulanmadan önce.
-        # Filtreler .any()/EXISTS tabanlı olduğundan satır çoğalması yok.
+        # UNION'lı id kümesi zaten DISTINCT'tir, satır çoğalması yok.
         # İstenmezse COUNT hiç koşmaz: aramada bu, her tuş vuruşunda ikinci bir
         # tam taramayı ortadan kaldırır (E3).
         total = query.count() if with_total else -1
