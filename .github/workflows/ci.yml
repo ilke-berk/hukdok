@@ -52,6 +52,36 @@ jobs:
       - name: Bağımlılıkları kur
         run: pip install -r requirements.txt -r requirements-dev.txt
 
+      # ADR-013 K3 — audit-ignore.txt satırları "Gözden geçirme: YYYY-MM-DD"
+      # taşır; süresi geçmiş satır varsa kapı ignore'u sessizce kalıcılaştırmak
+      # yerine kırmızıya döner (ignore ya gerçekten kapanır ya insan bilinçli uzatır).
+      - name: audit-ignore.txt tarih kapısı
+        run: |
+          today=$(date +%Y-%m-%d)
+          expired=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in \#*) continue ;; esac
+            review=$(echo "$line" | grep -oP 'Gözden geçirme: \K[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)
+            if [ -z "$review" ]; then
+              echo "audit-ignore.txt satırında tarih yok: $line"
+              expired=1
+              continue
+            fi
+            if [[ "$review" < "$today" ]]; then
+              echo "SÜRESİ GEÇMİŞ ignore satırı (gözden geçirilmeli): $line"
+              expired=1
+            fi
+          done < audit-ignore.txt
+          [ "$expired" -eq 0 ]
+
+      # Argümansız pip-audit KURULU ortamı tarar (requirements.txt +
+      # requirements-dev.txt'in tamamı, transitif kapanış dahil) — ADR-013 K3.
+      - name: pip-audit
+        run: |
+          IGNORE_ARGS=$(grep -v '^\s*#' audit-ignore.txt | grep -v '^\s*$' | awk '{print "--ignore-vuln " $1}' | tr '\n' ' ')
+          pip-audit --strict $IGNORE_ARGS
+
       - name: ruff (Faz 3.1)
         run: ruff check .
 
@@ -84,6 +114,18 @@ jobs:
       - name: Bağımlılıkları kur
         # legacy-peer-deps .npmrc'den gelir (React 18 + MSAL v5)
         run: npm ci
+
+      # ADR-013 K3 — prod tarafı bloklayıcı kapı. npm'in kendi CLI'ında
+      # --ignore-vuln yok; scripts/check-npm-audit.mjs audit-ignore.txt'e
+      # (tarihli, gerekçeli) karşı denetler — bkz. o dosyanın başlığı.
+      - name: npm audit (prod, audit-ignore.txt ile)
+        run: node scripts/check-npm-audit.mjs
+
+      # Geliştirme zinciri (vite/esbuild/rollup — tarayıcıya inmez) bilgi
+      # amaçlı raporlanır, BLOKLAMAZ (ADR-013 K3). Kapıya alınması vite'nin
+      # major sürüm geçişine bağlı — K1'de yok, ayrı bir karar.
+      - name: npm audit (geliştirme zinciri — bilgi amaçlı, bloklamaz)
+        run: npm audit --audit-level=moderate || true
 
       - name: ESLint (Faz 3.2'den beri zorunlu)
         run: npm run lint

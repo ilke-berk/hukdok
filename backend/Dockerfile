@@ -20,6 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements file
 COPY requirements.txt .
 
+# pip'in kendisi de pip-audit'in taradığı ortamda - K3 kapısı pip'i de
+# tarar, bu yüzden imajın taban pip'ini de güncel tutuyoruz
+RUN pip install --no-cache-dir --upgrade pip
+
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 

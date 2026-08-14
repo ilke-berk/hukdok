@@ -1,0 +1,6 @@
+# ADR-013 K3 — pip-audit --ignore-vuln listesi.
+# Format: <vuln-id>  # gerekçe (kod-referanslı). Gözden geçirme: YYYY-MM-DD
+# .github/workflows/ci.yml "audit-ignore.txt tarih kapısı" adımı, tarihi geçmiş
+# satırları CI'ı kırmızıya çevirerek yakalar — ignore kalıcılaşamaz.
+
+PYSEC-2026-1845  # pytest 8.3.5, fix 9.0.3 - requirements-dev.txt'te, prod imajina GIRMEZ (backend/docker-entrypoint.sh + Dockerfile prod'da yalniz requirements.txt kurar). ADR-013 K5 majoru bilincli en dusuk oncelige koydu: "868 testin toplanmasini etkileyebilir" riski olculmedi. Ayri bir is olarak degerlendirilmeli. Gözden geçirme: 2027-02-14

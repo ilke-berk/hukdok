@@ -8,3 +8,5 @@ mypy==2.2.0
 # Kapsam ölçümü — YALNIZ CI'da --cov bayraklarıyla koşar (pyproject addopts'a girmez;
 # bkz. .github/workflows/ci.yml "pytest (kapsam kapısı)")
 pytest-cov==7.1.0
+# ADR-013 K3 denetim kapısı — bkz. .github/workflows/ci.yml "pip-audit" adımı
+pip-audit==2.10.1
