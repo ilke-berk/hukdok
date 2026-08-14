@@ -196,8 +196,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
-     Tamamı yalnız main'de: prod 984aae8'de (Deploy #11), fa645ab sonrası HİÇBİR commit
-     deploy edilmedi — deploy kararı kullanıcıda. -->
+     DEPLOY #12 (2026-08-14 ~19:00 TR, kullanıcı onayıyla): prod = 74c867a — bu bölümün
+     tamamı canlıda. Akış: push → CI yeşil → deploy.sh (sunucu test kapısı 1280 passed /
+     8 env-skip, healthz sürüm teyidi, açılışta 0 ERROR — G058 fix'i ilk gerçek prod
+     açılışında doğrulandı). Rollback: ./rollback.sh 984aae8 · dump:
+     predeploy_74c867a_20260814-154636.dump. -->
 
 - ✅ **K1'in 7 adımı + K3 kapıları + K4 çalışma zamanları** (`fa645ab`..`431e384` + `78a47fb`):
   npm minör yamaları, dotenv/requests/multipart/Pillow/cryptography(49.0.0)/PyJWT(2.13.0)/
@@ -275,7 +278,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
 - ✅ KAPANDI (2026-08-14) — pip/npm yükseltmeleri: ADR-013 K1-K4 + react-router v6→v7
   uygulandı (yukarıdaki "ADR-013 uygulaması" bölümü). Kalan tek parça vite majörü
-  (dev-zinciri, bloklamıyor); **deploy edilmedi**, karar kullanıcıda
+  (dev-zinciri, bloklamıyor); Deploy #12 ile 2026-08-14'te prod'a çıktı (74c867a)
 - **B.2'nin ikinci yarısı: main dalına branch protection** (GitHub Settings → Branches →
   Require status checks: backend, frontend). `ci.yml:4-5` bunun manuel adım olduğunu
   zaten yazıyor; otomasyon GitHub ayarı değiştiremez
