@@ -1,5 +1,5 @@
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
@@ -35,7 +35,7 @@ extend-immutable-calls = [
 # DİKKAT: kökü birden taramak (`mypy .`) bugün modül-yolu çakışmasında patlar
 # (schemas_intake.py duplicate module name); ayrı bir iş.
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 files = ["managers", "routes", "config", "services"]
 ignore_missing_imports = true
 check_untyped_defs = true
