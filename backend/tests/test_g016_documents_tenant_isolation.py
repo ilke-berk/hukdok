@@ -128,14 +128,14 @@ def test_linked_documents_behaviour_unchanged(db_env):
 
 def test_deleted_case_documents_hidden(db_env):
     """Soft-delete edilmiş davanın belgeleri listelenmez (mevcut davranış)."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     _seed(db_env)
     models = db_env.models
     db = db_env.sessions()
     try:
         case = db.query(models.Case).filter(models.Case.tenant_id == T1).first()
-        case.deleted_at = datetime.utcnow()
+        case.deleted_at = datetime.now(timezone.utc)
         db.commit()
     finally:
         db.close()
@@ -145,7 +145,7 @@ def test_deleted_case_documents_hidden(db_env):
 
 def test_deleted_document_hidden(db_env):
     """Soft-delete edilmiş bağlantısız belge sahibine de görünmez."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     _seed(db_env)
     models = db_env.models
@@ -154,7 +154,7 @@ def test_deleted_document_hidden(db_env):
         doc = db.query(models.CaseDocument).filter(
             models.CaseDocument.original_filename == "a-bagsiz.pdf"
         ).first()
-        doc.deleted_at = datetime.utcnow()
+        doc.deleted_at = datetime.now(timezone.utc)
         db.commit()
     finally:
         db.close()
