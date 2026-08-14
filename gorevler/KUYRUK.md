@@ -193,6 +193,28 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G058 | bant:backend | bagimli:- | seed_data.py: worker yarışı (prod'da canlı ERROR) + %9 kapsam
 - [x] G059 | bant:backend | bagimli:- | auth_verifier.py %25: kimlik kapısı test edilmiyor
 
+## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
+
+<!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
+     Tamamı yalnız main'de: prod 984aae8'de (Deploy #11), fa645ab sonrası HİÇBİR commit
+     deploy edilmedi — deploy kararı kullanıcıda. -->
+
+- ✅ **K1'in 7 adımı + K3 kapıları + K4 çalışma zamanları** (`fa645ab`..`431e384` + `78a47fb`):
+  npm minör yamaları, dotenv/requests/multipart/Pillow/cryptography(49.0.0)/PyJWT(2.13.0)/
+  msal, fastapi 0.141.1, node:20→24 + python:3.10→3.12, pip-audit + npm audit CI kapıları
+  (tarihli ignore listeleriyle).
+- ✅ **react-router-dom v6 → react-router v7.18.2** (`262333c` bayraklar + `eab6185` paket
+  + `31580ec` ADR şerhi): v6.30.4'te iki future flag (`v7_startTransition`,
+  `v7_relativeSplatPath`) önce ayrı commit'le açılıp konsol kanıtıyla doğrulandı; sonra
+  22 dosyada import `react-router-dom` → `react-router`, `future` prop'u kaldırıldı
+  (v7'de FutureConfig boş). `audit-ignore.txt`'ten 3 GHSA satırı silindi;
+  `check-npm-audit.mjs` → **0 bilinen açık**. Kapılar: vitest 332/332, eslint 0 hata,
+  `tsc -b --force` temiz, build OK, Docker imaj duman testi (login yönlendirme + 404 splat)
+  geçti. Login arkası sayfalar MSAL istediğinden tıklanamadı — deploy öncesi girişli kısa
+  gezinti önerilir.
+- **Bilinçli AÇIK kalan:** vite 5.4 majörü (dev zinciri esbuild advisory'si; CI'da
+  bloklamayan bilgi kapısında, ADR-013 K5 satır "vite (dev)" — ayrı iş).
+
 ## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
 
 - **DERS — kapı merdiveninin kör noktası: ÇIPLAK Postgres.** Deploy #10'un push'unda CI
@@ -251,7 +273,9 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - 0.6 prod export + hukukbot sağlık denetimi (ssh)
 - A.2 gerçek müvekkil verisinin OneDrive senkronundan çıkarılması (140 MB SQLite + 139 MB PDF)
 - service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
-- pip/npm yükseltmeleri (G022 ADR'si hazır; uygulama onayı kullanıcıda)
+- ✅ KAPANDI (2026-08-14) — pip/npm yükseltmeleri: ADR-013 K1-K4 + react-router v6→v7
+  uygulandı (yukarıdaki "ADR-013 uygulaması" bölümü). Kalan tek parça vite majörü
+  (dev-zinciri, bloklamıyor); **deploy edilmedi**, karar kullanıcıda
 - **B.2'nin ikinci yarısı: main dalına branch protection** (GitHub Settings → Branches →
   Require status checks: backend, frontend). `ci.yml:4-5` bunun manuel adım olduğunu
   zaten yazıyor; otomasyon GitHub ayarı değiştiremez
