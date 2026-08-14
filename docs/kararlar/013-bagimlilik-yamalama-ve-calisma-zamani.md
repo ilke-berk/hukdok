@@ -299,3 +299,13 @@ fastapi 0.141.1, starlette 1.5.0). Yani çalışma zamanı yükseltmesi bir hijy
   `auth_verifier` karakterizasyon testi plan B.3 kapsamındadır.
 - **İlgili:** [`docs/plan/temizlik-ve-yapisal-saglik-plani-2026-08-11.md`](../plan/temizlik-ve-yapisal-saglik-plani-2026-08-11.md) §3 (A.5/A.6),
   [`docs/mimari/deploy-ve-altyapi.md`](../mimari/deploy-ve-altyapi.md)
+
+> **ŞERH (2026-08-14) — K5'teki "`react-router-dom` v6→v7 majörü GEREKMEZ" hükmü aşıldı;
+> migrasyon yapıldı.** K5 satırı 2026-08-11 ölçümündeki advisory seti için doğruydu
+> (`@remix-run/router` 1.23.3 transitif yaması yetiyordu). K1 adım 7'de (`431e384`)
+> `audit-ignore.txt`'e tarihli girilen üç yeni kayıt — `GHSA-wrjc-x8rr-h8h6`,
+> `GHSA-337j-9hxr-rhxg`, `GHSA-jjmj-jmhj-qwj2` — yalnız react-router 7.13+/7.18+ ile
+> kapanıyor ve v6 hattına yama hiç yayımlanmadı ("Patched versions: None").
+> 2026-08-14'te `react-router-dom ^6.30.1` → `react-router ^7.18.2` geçişi iki commit'le
+> yapıldı (v6 future-flag ön adımı `262333c` + paket değişimi `eab6185`); üç ignore
+> satırı silindi, `scripts/check-npm-audit.mjs` 0 bilinen açıkla yeşil.
