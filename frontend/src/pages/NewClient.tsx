@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { Card, CardContent } from "@/components/ui/card";

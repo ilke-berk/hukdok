@@ -1,5 +1,5 @@
 import { useMsal } from "@azure/msal-react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router";
 import {
   Home,
   Upload,

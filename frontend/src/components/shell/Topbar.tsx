@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { Menu, Search, Bell, Plus, X } from "lucide-react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { PlaceholderBadge } from "@/components/PlaceholderBadge";

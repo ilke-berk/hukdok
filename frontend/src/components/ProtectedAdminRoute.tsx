@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate } from "react-router";
 import { useMsal } from "@azure/msal-react";
 import { Loader2 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";

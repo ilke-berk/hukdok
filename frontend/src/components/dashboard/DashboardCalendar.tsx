@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { CalendarPlus, ChevronLeft, ChevronRight, Gavel, Trash2, Clock, User, Printer, FileBarChart, FileText, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api";

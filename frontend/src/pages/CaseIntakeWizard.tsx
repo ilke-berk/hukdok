@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { FlowButton, FlowCard, FlowStageStrip, type FlowStage } from "@/components/flow/primitives";
 import { IntakeUploadStep } from "@/components/intake/IntakeUploadStep";

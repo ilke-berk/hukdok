@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { FlowDropZone } from "@/components/flow/FlowDropZone";
 import { FlowStageStrip, type FlowStage } from "@/components/flow/primitives";

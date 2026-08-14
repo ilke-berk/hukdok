@@ -11,7 +11,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router";
 import { useCases, CASE_LIST_ERROR } from "../hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useConfig } from "../hooks/useConfig";

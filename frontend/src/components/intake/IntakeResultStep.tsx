@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Clock, ExternalLink, RotateCcw } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { FlowButton, FlowCard } from "@/components/flow/primitives";
 import type { ApplyUpdatedField, CommitResult } from "@/lib/caseIntake";

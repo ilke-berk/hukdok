@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router";
 import { MsalProvider, useMsal } from "@azure/msal-react";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -74,7 +74,7 @@ const AppContent = () => {
           onClose={() => setActivityReport(null)}
         />
       )}
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter>
       <Routes>
         {/* Public Route */}
         <Route path="/login" element={<Login />} />

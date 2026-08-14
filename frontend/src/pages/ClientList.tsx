@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
   ShieldCheck, AlertTriangle, ExternalLink,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useClients, ClientData } from "../hooks/useClients";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useAuthRequest } from "@/hooks/useAuthRequest";

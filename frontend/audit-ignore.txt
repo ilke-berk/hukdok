@@ -4,6 +4,5 @@
 # kırmızıya çevirir (ignore kalıcılaşamaz). Advisory ID, npm audit --json
 # çıktısındaki via[].url'in son parçasından türetilir.
 
-GHSA-wrjc-x8rr-h8h6  # react-router: Link/useNavigate ters slash ile open redirect (CVE-2025-68470 bypass). Fix >=7.18.0 gerektiriyor - react-router-dom en yuksek 6.x (6.30.4) zaten kurulu, v7 major surum gecisi ayri bir migrasyon isi (ADR-013 K1'de yok). Gözden geçirme: 2027-02-14
-GHSA-337j-9hxr-rhxg  # react-router: SSR hydration'da deserializeErrors() ile constructor injection. Fix >=7.18.0 gerektiriyor - projede SSR YOK (Dockerfile: vite build -> statik dist -> nginx serve), etki yuzeyi bu deploy sekliyle daralir ama v7'ye kadar acik kalir. Gözden geçirme: 2027-02-14
-GHSA-jjmj-jmhj-qwj2  # react-router-dom: Open redirect leading to XSS, aralik >=6.30.2 <=6.30.4 (yani KURULU surum 6.30.4 de dahil). react-router-dom tarafinda HIC patch yayinlanmadi (GitHub advisory "Patched versions: None") - fix yalniz react-router paketinin kendisinde 7.13.0+'ta. v6 hattinda kalindigi surece kapanmiyor. Gözden geçirme: 2027-02-14
+# (Şu an aktif ignore yok. react-router'ın 3 GHSA kaydı v7.18.2 geçişiyle
+# kapandı — 2026-08-14, react-router-dom v6 → react-router v7 migrasyonu.)
