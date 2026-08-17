@@ -274,8 +274,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - 0.5 ofis no kategori rejimi: X1 = 1.658 kayıt → dokunma / retag / eşleme tablosu (ADR şart)
 - 0.6 prod export + hukukbot sağlık denetimi (ssh)
-- A.2 gerçek müvekkil verisinin OneDrive senkronundan çıkarılması (140 MB SQLite + 139 MB PDF)
 - service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
+- ✅ KAPANDI (2026-08-17) — A.2 gerçek müvekkil verisi OneDrive senkronundan çıkarıldı:
+  134 MB legacy SQLite + 139 MB kalibrasyon verisi `C:\hukdok-veri\` altına **taşındı**
+  (silinmedi), veri taşıyan 3 eski lokal imaj etiketi silindi. Araçlar `CALIB_DATA_DIR`
+  env'inden okuyor; konteynerde doğrulandı. Ayrıntı: temizlik planı A.2 altındaki blok
 - ✅ KAPANDI (2026-08-14) — pip/npm yükseltmeleri: ADR-013 K1-K4 + react-router v6→v7
   uygulandı (yukarıdaki "ADR-013 uygulaması" bölümü). Kalan tek parça vite majörü
   (dev-zinciri, bloklamıyor); Deploy #12 ile 2026-08-14'te prod'a çıktı (74c867a)

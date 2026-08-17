@@ -107,14 +107,37 @@ kilitlenmemeliler.
 gzip'li karşılığı **361.003 bayt**. Tek config satırı. *(S)*
 *Not: ~10 kullanıcı ölçeğinde bu tek seferlik bir kazanç — büyük ama dar.*
 
-**A.2 Gerçek müvekkil verisini geliştirme makinesinden kaldır.** *(Taslakta yanlış çerçevelenmişti
-— bkz. §10.)* `backend/data/hukudok.db` **140 MB** legacy SQLite (kodda sıfır referans) ve
-`backend/calibration/` **139 MB** gerçek müvekkil PDF'i, `C:\Users\...\OneDrive\Masaüstü\...`
-altında — yani **üçüncü taraf buluta senkronlanıyor**. İçerik: 1.998 müvekkil, 14.345 dava,
-49.857 taraf. Gerçek eylem: (1) legacy SQLite'ı sil, (2) calibration'ı OneDrive senkronu
-dışına taşı, (3) eski lokal imaj etiketlerini temizle, (4) `backend/.dockerignore` yaz.
+**A.2 Gerçek müvekkil verisini geliştirme makinesinden kaldır.** ✅ **UYGULANDI (2026-08-17).**
+*(Taslakta yanlış çerçevelenmişti — bkz. §10.)* `backend/data/hukudok.db` **140 MB** legacy
+SQLite (kodda sıfır referans) ve `backend/calibration/` **139 MB** gerçek müvekkil PDF'i,
+`C:\Users\...\OneDrive\Masaüstü\...` altında — yani **üçüncü taraf buluta senkronlanıyor**.
+İçerik: 1.998 müvekkil, 14.345 dava, 49.857 taraf. Gerçek eylem: (1) legacy SQLite'ı sil,
+(2) calibration'ı OneDrive senkronu dışına taşı, (3) eski lokal imaj etiketlerini temizle,
+(4) `backend/.dockerignore` yaz.
 **Bu bir KVKK/veri envanteri maddesidir, prod sızıntısı değil** — prod build context'i git
 klonu olduğu için bu dosyalar prod imajında yok. *(S)*
+
+> **Ne yapıldı (2026-08-17, kullanıcı kararıyla — silme yerine taşıma):**
+> 1. `backend/data/hukudok.db` → `C:\hukdok-veri\legacy-sqlite\` (133,9 MB; SHA-256 taşıma
+>    öncesi/sonrası birebir doğrulandı). `backend/data/` altında yalnız 362 baytlık runtime
+>    state kaldı (`mojibake_map.json`, `vault_sync.json`).
+> 2. `backend/calibration/{demetler,results}` → `C:\hukdok-veri\calibration\` (41 dosya /
+>    15,3 MB + 218 dosya / 122,5 MB; sayı ve boyut doğrulandı). Repo klasöründe yalnız
+>    araçlar + `ca_bundle.pem` kaldı (0,3 MB). Script'ler yolu **`CALIB_DATA_DIR`** env'inden
+>    okuyor; `docker-compose.override.yml` bunu `/app/calibration-data` olarak bağlıyor
+>    (konteynerde doğrulandı: 41/218 dosya görünüyor, `results` yazılabilir, üç script
+>    derleniyor, duman testi dosyaları 5/5 + 2/2 erişilebilir). Değişen dosyaların hepsi
+>    gitignore'da — commit üretmez.
+> 3. Veri taşıyan eski lokal imaj etiketleri silindi: `backend:5341afe`, `backend:bd67d3b`
+>    (ikisinde de `/app/data` 134 MB + `/app/calibration` 139 MB) ve `kopya-backend:latest`
+>    (`/app/data` 134 MB). İlk ikisi `main` üzerindeki commit'lerden yeniden build edilebilir;
+>    hiçbiri bir konteyner tarafından kullanılmıyordu, prod imajları ayrı. Veri içermeyen
+>    frontend etiketleri (`5341afe`, `bd67d3b`, `kopya-frontend:latest`) bilerek duruyor.
+> 4. `backend/.dockerignore` zaten yazılmıştı; `backend:latest` doğrulandı — `/app/data` 4 KB,
+>    `/app/calibration` yok.
+>
+> **Kalan risk yok, ama not:** veri artık yedeklenmeyen bir yerel klasörde
+> (`C:\hukdok-veri\`). Kalibrasyon demetleri prompt regresyonunun tek kopyasıdır.
 
 **A.3 `init: true`.** Her soffice dönüşümü 5 zombie süreç bırakıyor (ölçüldü: 212 → 230);
 konteynerde reaper yok. *(S)*
