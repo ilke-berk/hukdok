@@ -125,6 +125,28 @@ describe("useConfig — hata ≠ boş liste (G019)", () => {
     expect(api().isConfigError).toBe(false);
   });
 
+  it("karar sonucu listeleri (G060 uçları) resmî sırayla gelir, hata yakmaz (G061)", async () => {
+    routeMock({
+      "/api/config/local_decisions": { ok: true, body: [{ code: "DERDEST", name: "Derdest" }] },
+      // Sıra bilinçli alfabetik DEĞİL: kayıt sırası = resmi havuz sırası korunmalı
+      "/api/config/appeal_decisions": {
+        ok: true,
+        body: [{ code: "KALDIRMA", name: "Kaldırma" }, { code: "BASVURU_RET", name: "Başvuru Ret" }],
+      },
+      "/api/config/required_case_fields": { ok: true, body: { fields: [], party_rule: null } },
+    });
+    const api = mount();
+
+    await waitFor(() => api().appealDecisions.length > 0, "istinaf karar listesi doldu");
+
+    expect(api().appealDecisions.map(i => i.name)).toEqual(["Kaldırma", "Başvuru Ret"]);
+    expect(api().localDecisions.map(i => i.name)).toEqual(["Derdest"]);
+    // Verilmeyen uçlar routeMock'ta boş döner — boş liste hata DEĞİLDİR (G019 ayrımı)
+    expect(api().cassationDecisions).toEqual([]);
+    expect(api().revisionDecisions).toEqual([]);
+    expect(api().isConfigError).toBe(false);
+  });
+
   it("tekrar dene başarılı olunca hata state'i temizlenir", async () => {
     routeMock({ "/api/config/": { ok: false, body: {} } });
     const api = mount();

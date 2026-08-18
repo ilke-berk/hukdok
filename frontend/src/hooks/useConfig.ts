@@ -66,6 +66,13 @@ const CONFIG_KEYS = {
     // BURADAN gelir; frontend'de sabit değer listesi tutulmaz.
     allegedFaults: ["config", "alleged_faults"],
     appealingParties: ["config", "appealing_parties"],
+    // Karar sonucu RESMÎ listeleri (G060 kurdu, G061 takip paneline bağladı).
+    // Takip panelindeki karar durumu dropdown'ları BURADAN okur; kayıt sırası
+    // resmi havuz sırasıdır (backend sequence ile sıralı döner).
+    localDecisions: ["config", "local_decisions"],
+    appealDecisions: ["config", "appeal_decisions"],
+    cassationDecisions: ["config", "cassation_decisions"],
+    revisionDecisions: ["config", "revision_decisions"],
 } as const;
 
 export const useConfig = () => {
@@ -131,6 +138,10 @@ export const useConfig = () => {
     const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), ...queryOpts });
     const allegedFaultsQ = useQuery({ queryKey: CONFIG_KEYS.allegedFaults, queryFn: () => fetchJson("/api/config/alleged_faults"), ...queryOpts });
     const appealingPartiesQ = useQuery({ queryKey: CONFIG_KEYS.appealingParties, queryFn: () => fetchJson("/api/config/appealing_parties"), ...queryOpts });
+    const localDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.localDecisions, queryFn: () => fetchJson("/api/config/local_decisions"), ...queryOpts });
+    const appealDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.appealDecisions, queryFn: () => fetchJson("/api/config/appeal_decisions"), ...queryOpts });
+    const cassationDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.cassationDecisions, queryFn: () => fetchJson("/api/config/cassation_decisions"), ...queryOpts });
+    const revisionDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.revisionDecisions, queryFn: () => fetchJson("/api/config/revision_decisions"), ...queryOpts });
     const requiredCaseFieldsQ = useQuery({
         queryKey: ["config", "required_case_fields"],
         queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
@@ -148,6 +159,7 @@ export const useConfig = () => {
         lawyersQ, statusesQ, doctypesQ, emailRecipientsQ, caseSubjectsQ, fileTypesQ,
         courtTypesQ, partyRolesQ, bureauTypesQ, citiesQ, specialtiesQ,
         clientCategoriesQ, fileStatusesQ, allegedFaultsQ, appealingPartiesQ,
+        localDecisionsQ, appealDecisionsQ, cassationDecisionsQ, revisionDecisionsQ,
     ];
     const isConfigError = listQueries.some(q => q.isError);
     const isRequiredFieldsError = requiredCaseFieldsQ.isError;
@@ -165,7 +177,9 @@ export const useConfig = () => {
         fileTypesQ.isLoading || courtTypesQ.isLoading || partyRolesQ.isLoading ||
         bureauTypesQ.isLoading || citiesQ.isLoading || specialtiesQ.isLoading ||
         clientCategoriesQ.isLoading || fileStatusesQ.isLoading ||
-        allegedFaultsQ.isLoading || appealingPartiesQ.isLoading;
+        allegedFaultsQ.isLoading || appealingPartiesQ.isLoading ||
+        localDecisionsQ.isLoading || appealDecisionsQ.isLoading ||
+        cassationDecisionsQ.isLoading || revisionDecisionsQ.isLoading;
 
     const typeToKey: Record<string, (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS]> = {
         lawyers: CONFIG_KEYS.lawyers,
@@ -267,6 +281,10 @@ export const useConfig = () => {
         fileStatuses: fileStatusesQ.data ?? EMPTY,
         allegedFaults: allegedFaultsQ.data ?? EMPTY,
         appealingParties: appealingPartiesQ.data ?? EMPTY,
+        localDecisions: localDecisionsQ.data ?? EMPTY,
+        appealDecisions: appealDecisionsQ.data ?? EMPTY,
+        cassationDecisions: cassationDecisionsQ.data ?? EMPTY,
+        revisionDecisions: revisionDecisionsQ.data ?? EMPTY,
         requiredCaseFields: requiredCaseFieldsQ.data?.fields ?? EMPTY_REQUIRED,
         requiredPartyRule: requiredCaseFieldsQ.data?.party_rule ?? null,
         isLoading,

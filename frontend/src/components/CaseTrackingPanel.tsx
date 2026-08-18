@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useCases, CaseTrackingUpdate } from "@/hooks/useCases";
-import { useConfig } from "@/hooks/useConfig";
+import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import {
-    STAGES, STAGE_KEYS, STAGE_FIELDS,
+    STAGES, STAGE_KEYS, STAGE_FIELDS, DecisionListKey,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
     rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
@@ -26,8 +26,20 @@ interface Props {
 
 const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props) => {
     const { updateCaseTracking } = useCases();
-    const { fileStatuses } = useConfig();
+    const {
+        fileStatuses,
+        localDecisions, appealDecisions, cassationDecisions, revisionDecisions,
+    } = useConfig();
     const [saving, setSaving] = useState(false);
+
+    // Karar durumu dropdown seçenekleri — resmî kapalı listeler (G060 uçları, G061).
+    // Sıra = resmi havuz sırası (backend sequence ile sıralı döner).
+    const decisionLists: Record<DecisionListKey, ConfigItem[]> = {
+        local_decisions: localDecisions,
+        appeal_decisions: appealDecisions,
+        cassation_decisions: cassationDecisions,
+        revision_decisions: revisionDecisions,
+    };
 
     const currentStage = (caseData.case_stage as string) ?? null;
     const currentIdx   = currentStage ? STAGE_KEYS.indexOf(currentStage) : -1;
@@ -349,15 +361,31 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                             onBlur={e => setField(f.key, normalizeMoney(e.target.value))}
                                             className={inputCls} />
                                     )}
-                                    {f.type === "select" && (
-                                        <select
-                                            value={fieldValue(f.key)}
-                                            onChange={e => setField(f.key, e.target.value)}
-                                            className={inputCls}>
-                                            <option value="">Seçiniz</option>
-                                            {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
-                                        </select>
-                                    )}
+                                    {f.type === "select" && (() => {
+                                        // optionsFrom → resmî kapalı liste (config); yoksa gömülü options
+                                        // (karar_turu/karar_lehine — davranışları birebir korunur).
+                                        const fromConfig = f.optionsFrom ? decisionLists[f.optionsFrom].map(o => o.name) : null;
+                                        const names = fromConfig ?? f.options ?? [];
+                                        const value = fieldValue(f.key);
+                                        // Kayıtlı değer listeden çıkarılmışsa KAYBOLMASIN: geçici seçenek
+                                        // olarak eklenir. Liste boşken (yüklenemedi/boş doğdu) "liste dışı"
+                                        // damgası vurulmaz — closedListState "unknown" kuralının select
+                                        // karşılığı (caseCardFields.ts, G048).
+                                        const missing = fromConfig !== null && value !== "" && !fromConfig.includes(value);
+                                        const offList = missing && fromConfig.length > 0;
+                                        return (
+                                            <select
+                                                value={value}
+                                                onChange={e => setField(f.key, e.target.value)}
+                                                className={inputCls}>
+                                                <option value="">Seçiniz</option>
+                                                {missing && (
+                                                    <option value={value}>{offList ? `${value} (liste dışı)` : value}</option>
+                                                )}
+                                                {names.map(o => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                        );
+                                    })()}
                                     {f.type === "textarea" && (
                                         <textarea rows={2}
                                             value={fieldValue(f.key)}

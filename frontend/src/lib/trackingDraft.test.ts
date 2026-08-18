@@ -1,6 +1,7 @@
 // trackingDraft — panel geneli tek taslak birim testleri (Faz 1)
 import { describe, it, expect } from "vitest";
 import {
+    STAGE_FIELDS,
     TRACKING_DRAFT_KEYS,
     initTrackingDraft,
     setDraftField,
@@ -41,6 +42,47 @@ describe("initTrackingDraft", () => {
         expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_maddi");
         expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_manevi");
         expect(TRACKING_DRAFT_KEYS).toContain("hukmedilen_toplam");
+    });
+});
+
+describe("karar durumu alanları — resmî kapalı listeler (G061)", () => {
+    const field = (stage: string, key: string) =>
+        STAGE_FIELDS[stage].find(f => f.key === key);
+
+    it("dört karar durumu select'i config listesine bağlı, gömülü options taşımaz", () => {
+        const bindings: [string, string, string][] = [
+            ["KARAR",          "yerel_karar_durumu",    "local_decisions"],
+            ["ISTINAF",        "istinaf_karar_durumu",  "appeal_decisions"],
+            ["TEMYIZ",         "temyiz_karar_durumu",   "cassation_decisions"],
+            ["KARAR_DUZELTME", "karar_duzeltme_durumu", "revision_decisions"],
+        ];
+        for (const [stage, key, list] of bindings) {
+            const f = field(stage, key);
+            expect(f, `${stage}.${key} tanımlı olmalı`).toBeDefined();
+            expect(f!.type).toBe("select");
+            expect(f!.optionsFrom).toBe(list);
+            // Eski gömülü diziler ("ONANMADI/BOZULDU/…") kaldırıldı — tek kaynak config
+            expect(f!.options).toBeUndefined();
+        }
+    });
+
+    it("yeni alanlar taslak anahtarlarında — dirty/patch akışına girerler", () => {
+        expect(TRACKING_DRAFT_KEYS).toContain("yerel_karar_durumu");
+        expect(TRACKING_DRAFT_KEYS).toContain("temyiz_karar_durumu");
+        let d = initTrackingDraft(caseData);
+        d = setDraftField(d, "yerel_karar_durumu", "Derdest");
+        expect(buildPatch(d)).toEqual({ yerel_karar_durumu: "Derdest" });
+    });
+
+    it("karar_turu/karar_lehine gömülü options'ları BİREBİR duruyor (bilinçli ayrı kaba alanlar)", () => {
+        expect(field("KARAR", "karar_turu")).toEqual({
+            label: "Karar Türü", key: "karar_turu", type: "select",
+            options: ["KABUL", "RED", "KISMI_KABUL", "FERAGAT", "UZLASMA", "DUSME"],
+        });
+        expect(field("KARAR", "karar_lehine")).toEqual({
+            label: "Karar Lehine", key: "karar_lehine", type: "select",
+            options: ["LEHINE", "ALEYHINE", "KISMI"],
+        });
     });
 });
 

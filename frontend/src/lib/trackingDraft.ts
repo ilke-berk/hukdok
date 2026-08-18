@@ -6,11 +6,24 @@
 // alanları PATCH'ler (backend exclude_unset: gönderilmeyen dokunulmaz,
 // null gönderilen silinir). Aşama geçişi (case_stage) taslağın DIŞINDA kalır.
 
+/** Karar sonucu resmî kapalı listeleri (G060 backend uçları). Dropdown seçenekleri
+ *  panelde useConfig üzerinden bu anahtarlarla çözülür — frontend'de sabit değer
+ *  listesi tutulmaz (G048 kuralı); liste güncellemesi panelden gelir. */
+export type DecisionListKey =
+    | "local_decisions"      // Yerel Karar Durumları    → yerel_karar_durumu
+    | "appeal_decisions"     // İstinaf Karar Durumları  → istinaf_karar_durumu
+    | "cassation_decisions"  // Temyiz Onama Durumları   → temyiz_karar_durumu
+    | "revision_decisions";  // Karar Düzeltme Durumları → karar_duzeltme_durumu
+
 export interface FieldDef {
     label: string;
     key: string;
     type: "date" | "text" | "select" | "textarea" | "money";
     options?: string[];
+    /** Seçenekleri resmî kapalı listeden alan select (G061). `options` ile birlikte
+     *  kullanılmaz — gömülü options yalnız karar_turu/karar_lehine kaba
+     *  sınıflandırmalarında kalır (bilinçli AYRI alanlardır, listelere bağlanmaz). */
+    optionsFrom?: DecisionListKey;
     wide?: boolean; // 2 kolon kaplar
 }
 
@@ -51,6 +64,7 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
         { label: "Kesinleşme Tarihi",   key: "kesinlesme_tarihi",   type: "date" },
         { label: "Karar Türü",          key: "karar_turu",          type: "select", options: ["KABUL","RED","KISMI_KABUL","FERAGAT","UZLASMA","DUSME"] },
         { label: "Karar Lehine",        key: "karar_lehine",        type: "select", options: ["LEHINE","ALEYHINE","KISMI"] },
+        { label: "Karar Durumu",        key: "yerel_karar_durumu",  type: "select", optionsFrom: "local_decisions" },
         { label: "Karar No",            key: "karar_no",            type: "text" },
         { label: "Hükmedilen Maddi",    key: "hukmedilen_maddi",    type: "money" },
         { label: "Hükmedilen Manevi",   key: "hukmedilen_manevi",   type: "money" },
@@ -63,13 +77,14 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
         { label: "Esas No",         key: "istinaf_esas_no",         type: "text" },
         { label: "Karar No",        key: "istinaf_karar_no",        type: "text" },
         { label: "Karar Tarihi",    key: "istinaf_karar_tarihi",    type: "date" },
-        { label: "Karar Durumu",    key: "istinaf_karar_durumu",    type: "select", options: ["ONANMADI","BOZULDU","DÜZELTILEREK_ONANMADI","KISMI_BOZMA","FERAGAT","DUSME"] },
+        { label: "Karar Durumu",    key: "istinaf_karar_durumu",    type: "select", optionsFrom: "appeal_decisions" },
         { label: "Tebliğ Tarihi",   key: "istinaf_teblig_tarihi",   type: "date" },
         { label: "Açıklama",        key: "istinaf_karar_aciklama",  type: "textarea", wide: true },
     ],
     TEMYIZ: [
         { label: "Mahkeme",        key: "temyiz_mahkemesi",        type: "text", wide: true },
         { label: "Karar Tarihi",   key: "temyiz_karar_tarihi",     type: "date" },
+        { label: "Karar Durumu",   key: "temyiz_karar_durumu",     type: "select", optionsFrom: "cassation_decisions" },
         { label: "Esas No",        key: "temyiz_esas_no",          type: "text" },
         { label: "Karar No",       key: "temyiz_karar_no",         type: "text" },
         { label: "Tarih Bilgisi",  key: "temyiz_basvuru_tarihi",   type: "date" },
@@ -78,7 +93,7 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
         { label: "Açıklama",       key: "temyiz_karar_aciklama",   type: "textarea", wide: true },
     ],
     KARAR_DUZELTME: [
-        { label: "Kararı Durumu",  key: "karar_duzeltme_durumu",        type: "select", options: ["ONANMADI","BOZULDU","DÜZELTILEREK_ONANMADI","FERAGAT","DUSME"] },
+        { label: "Kararı Durumu",  key: "karar_duzeltme_durumu",        type: "select", optionsFrom: "revision_decisions" },
         { label: "Esas No",        key: "karar_duzeltme_esas_no",       type: "text" },
         { label: "Karar No",       key: "karar_duzeltme_karar_no",      type: "text" },
         { label: "Tebliğ Tarihi",  key: "karar_duzeltme_teblig_tarihi", type: "date" },
