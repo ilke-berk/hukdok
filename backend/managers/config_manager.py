@@ -76,6 +76,11 @@ class DynamicConfig:
         self.__file_statuses: List[Dict] = []
         self.__alleged_faults: List[Dict] = []
         self.__appealing_parties: List[Dict] = []
+        # Karar sonucu resmi listeleri (G060)
+        self.__local_decisions: List[Dict] = []
+        self.__appeal_decisions: List[Dict] = []
+        self.__cassation_decisions: List[Dict] = []
+        self.__revision_decisions: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -261,4 +266,37 @@ class DynamicConfig:
         with self._lock:
             self.__appealing_parties = items
             TechnicalLogger.log("INFO", f"DynamicConfig: Appealing Parties updated ({len(items)} items)")
+
+    # Karar sonucu resmi listeleri (G060) — aynı getattr sözleşmesi.
+    def get_local_decisions(self) -> List[Dict]:
+        return self.__local_decisions
+
+    def set_local_decisions(self, items: List[Dict]):
+        with self._lock:
+            self.__local_decisions = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Local Decisions updated ({len(items)} items)")
+
+    def get_appeal_decisions(self) -> List[Dict]:
+        return self.__appeal_decisions
+
+    def set_appeal_decisions(self, items: List[Dict]):
+        with self._lock:
+            self.__appeal_decisions = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Appeal Decisions updated ({len(items)} items)")
+
+    def get_cassation_decisions(self) -> List[Dict]:
+        return self.__cassation_decisions
+
+    def set_cassation_decisions(self, items: List[Dict]):
+        with self._lock:
+            self.__cassation_decisions = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Cassation Decisions updated ({len(items)} items)")
+
+    def get_revision_decisions(self) -> List[Dict]:
+        return self.__revision_decisions
+
+    def set_revision_decisions(self, items: List[Dict]):
+        with self._lock:
+            self.__revision_decisions = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Revision Decisions updated ({len(items)} items)")
 

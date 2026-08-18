@@ -4,6 +4,7 @@ Her _seed_* fonksiyonu idempotenttir: yalnızca eksik kayıtları ekler
 (veya tablo tamamen boşsa doldurur).
 """
 import logging
+import re
 
 from sqlalchemy.exc import IntegrityError
 
@@ -65,6 +66,11 @@ def seed_all_lists():
     _seed_file_statuses()
     _seed_appealing_parties()
     # `alleged_faults` BİLİNÇLİ olarak seed'lenmez — bkz. APPEALING_PARTIES yorumu.
+    # Karar sonucu resmi listeleri (G060) — değerler DEGER_HAVUZLARI'ndan birebir.
+    _seed_local_decisions()
+    _seed_appeal_decisions()
+    _seed_cassation_decisions()
+    _seed_revision_decisions()
 
 
 def _seed_file_types():
@@ -358,3 +364,94 @@ def _seed_appealing_parties():
         logger.error(f"Seed AppealingParties Error: {e}")
     finally:
         db.close()
+
+
+def _karar_kodu(ad: str) -> str:
+    """Karar listesi kodu üretim kuralı (G060): tr_upper → Türkçe karakter
+    sadeleştirme → alfasayısal olmayan koşular `_`. Kod ASCII ve DEĞİŞMEZ
+    kimliktir; ad panelden düzeltilse de kod sabit kalır."""
+    buyuk = " ".join(ad.replace("i", "İ").upper().split())
+    sade = buyuk.translate(str.maketrans("ÇĞİÖŞÜ", "CGIOSU"))
+    return re.sub(r"[^A-Z0-9]+", "_", sade).strip("_")
+
+
+# Karar sonuçlarının RESMİ havuzları — kaynak: 10.08 teslim paketinin
+# DEGER_HAVUZLARI sayfası (Yerel 28 · İstinaf 3 · Temyiz 3 · KD 2),
+# KARAR_ASAMALARI tasarım paketinin "kapalı havuzlar" değişmezi.
+# YAZIMLAR BİREBİR KORUNUR: seed bu yüzden add_item'dan değil doğrudan model
+# satırından yazar (_seed_appealing_parties deseni) — add_item'ın
+# normalize_list_name'i "Red/Esastan"ı "Red/esastan"a çevirirdi. Ekip güncel
+# liste gönderirse düzeltme yönetim panelinden yapılır.
+_YEREL_KARAR_ADLARI = [
+    "Açılmamış Sayılması (HMK 150. Md)",
+    "Adli Para Cezası",
+    "Anlaşma",
+    "Anlaşmama",
+    "Beraat",
+    "Birleştirme",
+    "Derdest",
+    "Düşme Kararı",
+    "Hapis Cezası",
+    "Hapis Cezasının Paraya Çevrilmesi",
+    "Hükmün Açıklanmasının Geri Bırakılması (HAGB)",
+    "İflas",
+    "Kabul",
+    "Kabul/Kısmen",
+    "Kapalı",
+    "Karar Verilmesine Yer Olmadığına (HMK 331 Md.)",
+    "Kovuşturmaya Yer Olmadığına (KYOK)",
+    "Red/Arabuluculuk Ön Şart",
+    "Red/Dilekçenin Reddi",
+    "Red/Esastan",
+    "Red/Feragat",
+    "Red/Görev",
+    "Red/Husumet",
+    "Red/İdari Merciye Tevdi",
+    "Red/MSK Kararı Gereği",
+    "Red/Yargı Yolu",
+    "Red/Yetkisizlik",
+    "Red/Zamanaşımı",
+]
+_ISTINAF_KARAR_ADLARI = ["Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret"]
+_TEMYIZ_KARAR_ADLARI = ["Bozma", "Onama", "Düzelterek Onama"]
+_KARAR_DUZELTME_ADLARI = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
+
+LOCAL_DECISIONS = [(_karar_kodu(ad), ad) for ad in _YEREL_KARAR_ADLARI]
+APPEAL_DECISIONS = [(_karar_kodu(ad), ad) for ad in _ISTINAF_KARAR_ADLARI]
+CASSATION_DECISIONS = [(_karar_kodu(ad), ad) for ad in _TEMYIZ_KARAR_ADLARI]
+REVISION_DECISIONS = [(_karar_kodu(ad), ad) for ad in _KARAR_DUZELTME_ADLARI]
+
+
+def _seed_karar_listesi(model, degerler, liste_adi: str):
+    """Dört karar listesinin ortak seed'i — _seed_appealing_parties deseninin
+    parametrik hâli (satır başına SAVEPOINT yarış koruması dahil, G058)."""
+    db = SessionLocal()
+    try:
+        added = 0
+        for idx, (code, name) in enumerate(degerler):
+            if not db.query(model).filter_by(code=code).first():
+                if _ekle_yarissiz(db, model(code=code, name=name, active=True, sequence=idx)):
+                    added += 1
+        db.commit()
+        if added:
+            logger.info(f"Seeded {added} new {liste_adi}")
+    except Exception as e:
+        logger.error(f"Seed {liste_adi} Error: {e}")
+    finally:
+        db.close()
+
+
+def _seed_local_decisions():
+    _seed_karar_listesi(models.LocalDecision, LOCAL_DECISIONS, "local_decisions")
+
+
+def _seed_appeal_decisions():
+    _seed_karar_listesi(models.AppealDecision, APPEAL_DECISIONS, "appeal_decisions")
+
+
+def _seed_cassation_decisions():
+    _seed_karar_listesi(models.CassationDecision, CASSATION_DECISIONS, "cassation_decisions")
+
+
+def _seed_revision_decisions():
+    _seed_karar_listesi(models.RevisionDecision, REVISION_DECISIONS, "revision_decisions")

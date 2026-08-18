@@ -34,6 +34,10 @@ from managers.reference_lists import (
     get_file_statuses, add_file_status, delete_file_status,
     get_alleged_faults, add_alleged_fault, delete_alleged_fault,
     get_appealing_parties, add_appealing_party, delete_appealing_party,
+    get_local_decisions, add_local_decision, delete_local_decision,
+    get_appeal_decisions, add_appeal_decision, delete_appeal_decision,
+    get_cassation_decisions, add_cassation_decision, delete_cassation_decision,
+    get_revision_decisions, add_revision_decision, delete_revision_decision,
     reorder_list, rename_item, update_item, delete_item, get_usage,
     resolve_list_type, LIST_REGISTRY,
 )
@@ -570,6 +574,113 @@ def api_delete_appealing_party(code: str, user: dict = Depends(require_admin)):
     success = delete_appealing_party(code)
     if not success:
         raise HTTPException(status_code=404, detail="Appealing party not found")
+    return {"status": "success"}
+
+
+# ─── KARAR SONUCU RESMİ LİSTELERİ (G060) ─────────────────────────────────────
+#
+# Dört aşamanın kapalı havuzları (DEGER_HAVUZLARI 2026-08-10): yerel / istinaf /
+# temyiz / karar düzeltme sonuçları. Takip panelinin karar dropdown'ları bu
+# uçlardan okur (G061); frontend'de sabit liste tutulmaz (G048 kuralı).
+# Kullanımdaki değerin silinmesi api.py'deki ItemInUseError handler'ıyla 409'a düşer.
+
+@router.get("/api/config/local_decisions")
+def api_get_local_decisions(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_local_decisions()
+    if not data:
+        data = get_local_decisions()
+    return data
+
+
+@router.post("/api/config/local_decisions")
+def api_add_local_decision(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_local_decision(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add local decision")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/local_decisions/{code}")
+def api_delete_local_decision(code: str, user: dict = Depends(require_admin)):
+    success = delete_local_decision(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Local decision not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/appeal_decisions")
+def api_get_appeal_decisions(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_appeal_decisions()
+    if not data:
+        data = get_appeal_decisions()
+    return data
+
+
+@router.post("/api/config/appeal_decisions")
+def api_add_appeal_decision(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_appeal_decision(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add appeal decision")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/appeal_decisions/{code}")
+def api_delete_appeal_decision(code: str, user: dict = Depends(require_admin)):
+    success = delete_appeal_decision(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Appeal decision not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/cassation_decisions")
+def api_get_cassation_decisions(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_cassation_decisions()
+    if not data:
+        data = get_cassation_decisions()
+    return data
+
+
+@router.post("/api/config/cassation_decisions")
+def api_add_cassation_decision(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_cassation_decision(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add cassation decision")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/cassation_decisions/{code}")
+def api_delete_cassation_decision(code: str, user: dict = Depends(require_admin)):
+    success = delete_cassation_decision(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Cassation decision not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/revision_decisions")
+def api_get_revision_decisions(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_revision_decisions()
+    if not data:
+        data = get_revision_decisions()
+    return data
+
+
+@router.post("/api/config/revision_decisions")
+def api_add_revision_decision(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_revision_decision(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add revision decision")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/revision_decisions/{code}")
+def api_delete_revision_decision(code: str, user: dict = Depends(require_admin)):
+    success = delete_revision_decision(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Revision decision not found")
     return {"status": "success"}
 
 

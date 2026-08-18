@@ -717,6 +717,22 @@ _MIGRATIONS = [
             [f"UPDATE cases SET missing_required_bucket = {missing_bucket_sql('cases')}"],
         ),
     }),
+
+    # ─── 34. YEREL KARAR DURUMU KOLONU (G060) ────────────────────────────────
+    #
+    # Karar sonuçları resmi havuzlara bağlanır (DEGER_HAVUZLARI 2026-08-10).
+    # Dört kapalı liste TABLOSU (local/appeal/cassation/revision_decisions)
+    # modelde tanımlı olduğu için create_all yaratır — madde 31'deki
+    # alleged_faults/appealing_parties ile aynı yol, tablo op'u gerekmez.
+    # İstinaf/temyiz/karar düzeltme durum kolonları zaten var; YEREL kararın
+    # liste bağlı kolonu yoktu — `karar_turu` 6 değere ezen AYRI bir kaba
+    # alandır, davranışı değişmez. NULL + DEFAULT'suz (madde 31 gerekçesi:
+    # "henüz girilmedi" '' ile karartılmaz). Index BİLİNÇLİ yok: alan bugün
+    # tüm kayıtlarda boş (18.08 prod kopyası ölçümü) ve hiçbir sorgunun
+    # filtresi değil; ölçülmeden index eklenmez (G042 dersi).
+    ("columns", "cases", {
+        "yerel_karar_durumu": "VARCHAR(100)",   # kapalı liste (local_decisions)
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

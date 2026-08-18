@@ -94,6 +94,12 @@ LIST_REGISTRY = {
     # FAZ F'nin iki KAPALI listesi (G044) — mekanizma aynı, yeni yol yok.
     "alleged_faults":    ListSpec(models.AllegedFault, ("code", "name"), "set_alleged_faults"),
     "appealing_parties": ListSpec(models.AppealingParty, ("code", "name"), "set_appealing_parties"),
+    # Karar sonucu RESMİ listeleri (G060) — dört aşamanın kapalı havuzları
+    # (DEGER_HAVUZLARI 2026-08-10); mekanizma yine aynı.
+    "local_decisions":     ListSpec(models.LocalDecision, ("code", "name"), "set_local_decisions"),
+    "appeal_decisions":    ListSpec(models.AppealDecision, ("code", "name"), "set_appeal_decisions"),
+    "cassation_decisions": ListSpec(models.CassationDecision, ("code", "name"), "set_cassation_decisions"),
+    "revision_decisions":  ListSpec(models.RevisionDecision, ("code", "name"), "set_revision_decisions"),
 }
 
 # refresh_cache("email_recipients") gibi eski çağrılar için takma adlar
@@ -144,6 +150,12 @@ DEPENDENCIES = {
                           DepSpec(models.Case, "sub_type_extra", "dava (ek alt kırılım)")],
     "alleged_faults":    [DepSpec(models.Case, "iddia_edilen_kusur", "dava")],
     "appealing_parties": [DepSpec(models.Case, "istinaf_basvuran_taraf", "dava")],
+    # Karar sonucu listeleri (G060): ad, aşamanın durum kolonunda denormalize.
+    # `karar_turu` (kaba 6'lık) BİLİNÇLİ bağlanmadı — o alan bu listelerin dışında.
+    "local_decisions":     [DepSpec(models.Case, "yerel_karar_durumu", "dava")],
+    "appeal_decisions":    [DepSpec(models.Case, "istinaf_karar_durumu", "dava")],
+    "cassation_decisions": [DepSpec(models.Case, "temyiz_karar_durumu", "dava")],
+    "revision_decisions":  [DepSpec(models.Case, "karar_duzeltme_durumu", "dava")],
     "doctypes":          [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
     "party_roles":       [DepSpec(models.CaseParty, "role", "dava tarafı", clearable=False)],
     "cities":            [DepSpec(models.Client, "il", "müvekkil"),
@@ -174,6 +186,8 @@ LIST_TITLES = {
     "cities": "Şehirler", "specialties": "Uzmanlıklar",
     "client_categories": "Kategoriler", "file_statuses": "Dosya Durumları",
     "alleged_faults": "İddia Edilen Kusurlar", "appealing_parties": "İstinaf Başvuran Taraflar",
+    "local_decisions": "Yerel Karar Durumları", "appeal_decisions": "İstinaf Karar Durumları",
+    "cassation_decisions": "Temyiz Onama Durumları", "revision_decisions": "Karar Düzeltme Durumları",
 }
 
 COLUMN_TITLES = {
@@ -555,6 +569,10 @@ def get_client_categories(): return get_items("client_categories")
 def get_file_statuses():     return get_items("file_statuses")
 def get_alleged_faults():    return get_items("alleged_faults")
 def get_appealing_parties(): return get_items("appealing_parties")
+def get_local_decisions():      return get_items("local_decisions")
+def get_appeal_decisions():     return get_items("appeal_decisions")
+def get_cassation_decisions():  return get_items("cassation_decisions")
+def get_revision_decisions():   return get_items("revision_decisions")
 
 
 def get_court_types(parent_code: str = None):
@@ -593,6 +611,10 @@ def add_client_category(code: str, name: str):  return add_item("client_categori
 def add_file_status(code: str, name: str):      return add_item("file_statuses", code=code, name=name)
 def add_alleged_fault(code: str, name: str):    return add_item("alleged_faults", code=code, name=name)
 def add_appealing_party(code: str, name: str):  return add_item("appealing_parties", code=code, name=name)
+def add_local_decision(code: str, name: str):      return add_item("local_decisions", code=code, name=name)
+def add_appeal_decision(code: str, name: str):     return add_item("appeal_decisions", code=code, name=name)
+def add_cassation_decision(code: str, name: str):  return add_item("cassation_decisions", code=code, name=name)
+def add_revision_decision(code: str, name: str):   return add_item("revision_decisions", code=code, name=name)
 
 
 def add_court_type(code: str, name: str, parent_code: str):
@@ -657,3 +679,7 @@ def delete_client_category(code: str):  return delete_item("client_categories", 
 def delete_file_status(code: str):      return delete_item("file_statuses", code)
 def delete_alleged_fault(code: str):    return delete_item("alleged_faults", code)
 def delete_appealing_party(code: str):  return delete_item("appealing_parties", code)
+def delete_local_decision(code: str):      return delete_item("local_decisions", code)
+def delete_appeal_decision(code: str):     return delete_item("appeal_decisions", code)
+def delete_cassation_decision(code: str):  return delete_item("cassation_decisions", code)
+def delete_revision_decision(code: str):   return delete_item("revision_decisions", code)

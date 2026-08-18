@@ -349,6 +349,7 @@ class CaseRead(BaseModel):
     karar_tarihi: Optional[date] = None
     karar_turu: Optional[str] = None
     karar_lehine: Optional[str] = None
+    yerel_karar_durumu: Optional[str] = None   # kapalı liste (local_decisions, G060)
     karar_no: Optional[str] = None
     karar_teblig_tarihi: Optional[date] = None
     karar_aciklama: Optional[str] = None
@@ -413,6 +414,7 @@ class CaseTrackingUpdate(BaseModel):
     karar_tarihi: Optional[date] = None
     karar_turu: Optional[str] = None
     karar_lehine: Optional[str] = None
+    yerel_karar_durumu: Optional[str] = None   # kapalı liste (local_decisions, G060)
     karar_no: Optional[str] = None
     karar_teblig_tarihi: Optional[date] = None
     karar_aciklama: Optional[str] = None

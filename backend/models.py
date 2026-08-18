@@ -69,6 +69,9 @@ class Case(Base):
     karar_tarihi = Column(Date, nullable=True)
     karar_turu = Column(String(50), nullable=True)          # KABUL | RED | KISMI_KABUL | FERAGAT | UZLASMA | DUSME
     karar_lehine = Column(String(20), nullable=True)        # LEHINE | ALEYHINE | KISMI
+    # Yerel kararın RESMİ sonucu — kapalı liste (local_decisions, G060). Yukarıdaki
+    # kaba 6'lık `karar_turu`ndan AYRI bir alandır; o alanın davranışı değişmez.
+    yerel_karar_durumu = Column(String(100), nullable=True)
     karar_no = Column(String(50), nullable=True)
     karar_teblig_tarihi = Column(Date, nullable=True)
     karar_aciklama = Column(String, nullable=True)
@@ -516,6 +519,74 @@ class AppealingParty(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)   # e.g. "DAVACI"
     name = Column(String, nullable=False)                            # e.g. "Davacı"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+# Karar sonucu RESMİ listeleri (G060) — kaynak: 10.08 teslim paketinin
+# DEGER_HAVUZLARI sayfası (KARAR_ASAMALARI tasarım paketinin "kapalı havuzlar"
+# değişmezi). Dördü de appealing_parties deseninin kopyasıdır; ad, `cases`in
+# ilgili aşama durum kolonunda denormalize taşınır (DEPENDENCIES). Kod ASCII
+# ve DEĞİŞMEZ kimliktir (üretim kuralı: seed_data._karar_kodu).
+
+class LocalDecision(Base):
+    """Yerel Karar Durumu — kapalı resmi liste (28 değer, seed'li).
+
+    `cases.yerel_karar_durumu` adı denormalize taşır. `cases.karar_turu`
+    (kaba 6'lık küme) AYRI bir alandır ve bu listeye BAĞLI DEĞİLDİR (G060).
+    """
+    __tablename__ = "local_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "RED_ESASTAN"
+    name = Column(String, nullable=False)                            # e.g. "Red/Esastan"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class AppealDecision(Base):
+    """İstinaf Karar Durumu — kapalı resmi liste (3 değer, seed'li).
+
+    `cases.istinaf_karar_durumu` adı taşır. İstinaf BAŞVURAN tarafı tutan
+    `appealing_parties`ten ayrı bir listedir.
+    """
+    __tablename__ = "appeal_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "KALDIRMA"
+    name = Column(String, nullable=False)                            # e.g. "Kaldırma"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class CassationDecision(Base):
+    """Temyiz Onama Durumu — kapalı resmi liste (3 değer, seed'li).
+
+    `cases.temyiz_karar_durumu` adı taşır.
+    """
+    __tablename__ = "cassation_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "ONAMA"
+    name = Column(String, nullable=False)                            # e.g. "Onama"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class RevisionDecision(Base):
+    """Karar Düzeltme Durumu — kapalı resmi liste (2 değer, seed'li).
+
+    `cases.karar_duzeltme_durumu` adı taşır.
+    """
+    __tablename__ = "revision_decisions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "KARAR_DUZELTME_RET"
+    name = Column(String, nullable=False)                            # e.g. "Karar Düzeltme Ret"
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
