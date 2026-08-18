@@ -160,6 +160,7 @@ class Case(Base):
     relations_as_target = relationship("CaseRelation", foreign_keys="CaseRelation.target_case_id", cascade="all, delete-orphan")
     stage_logs = relationship("CaseStageLog", back_populates="case", cascade="all, delete-orphan")
     esas_numbers = relationship("CaseEsasNumber", back_populates="case", cascade="all, delete-orphan")
+    stage_decisions = relationship("CaseStageDecision", back_populates="case", cascade="all, delete-orphan")
 
 
 class CaseEsasNumber(Base):
@@ -196,6 +197,66 @@ class CaseEsasNumber(Base):
     created_at = Column(DateTime(timezone=True), default=func.now())
 
     case = relationship("Case", back_populates="esas_numbers")
+
+
+class CaseStageDecision(Base):
+    """Bir davanın aşama/karar TARİHÇESİ (KARAR_ASAMALARI tasarım paketi 17.08, G062).
+
+    Karar künyesi `cases` üzerinde aşama başına TEK SLOT'tur (yerel karar_no/
+    karar_tarihi, istinaf_* 8, temyiz_* 9, karar_duzeltme_* 6 alan); aynı
+    aşamanın ikinci kararı eskisini ezer. Kanıt vakası id-2271: Danıştay 2023
+    Bozma + 2026 Onama tek slota sığmaz. Master analizinde 915 föyün %10,9'u
+    çok aşamalı. Slot alanları prod'da bugün 0 dolu (18.08 ölçümü) → veri göçü
+    yok, tablo sıfırdan doğar.
+
+    Desen `case_esas_numbers`ın (G045/G049) karar ikizidir: aşama etiketli
+    satırlar + TEK yazma yolu (`managers/stage_decisions.py`) + türetilmiş
+    tek-slot fotoğraf. `cases`teki slot kolonları KALIR ama o aşama tarihçeden
+    yazıldığı andan itibaren TÜRETİLMİŞTİR: her stage'in EN YÜKSEK sira_no'lu
+    satırının kopyası ("son aşama fotoğrafı").
+
+    * `stage` etiket seti `case_esas_numbers` ile AYNI, ONCEKI HARİÇ — ONCEKI
+      yalnız esas numarası kavramıdır (`stage_decisions.DECISION_STAGES`).
+    * `sira_no` — aynı aşamanın kaçıncı kararı; SIRALAMA BUNUNLA yapılır,
+      tarihle DEĞİL (tasarım paketi: 170 föyde karar tarihleri güvenilmez).
+    * `karar_durumu` — stage'in G060 resmi listesinin ADI (YEREL →
+      local_decisions, ISTINAF → appeal_decisions, TEMYIZ →
+      cassation_decisions, KARAR_DUZELTME → revision_decisions); kapalı havuz
+      denetimi tek yazma yolundadır.
+    * `dogrulama_durumu` — tahmin yasağının taşıyıcısı: UYAP | BELGE |
+      TURETILDI | BELIRSIZ. server_default da BELIRSIZ: tek yazma yolunu
+      atlayan ham INSERT bile damgasız satır bırakamaz.
+    * `kaynak_id` — bu karar hangi karardan doğdu (bozma → yeni yerel karar).
+      ondelete=SET NULL: kaynak silinirse türeyen kayıt öksüz kalır, SİLİNMEZ.
+
+    Kolonlarda `index=True` BİLİNÇLİ YOK (G042 dersi): `id` PK ikizi olurdu,
+    `case_id`yi `uq_case_stage_decision` (case_id, stage, sira_no) ÖNEK
+    kolonuyla karşılar; `kaynak_id`nin FK index'i (G043 kuralı: index'siz FK
+    kolonu kalmaz) ve unique kısıt `database._MIGRATIONS`'ta ayrı bir
+    `("index", ...)` op'undadır (G041 kuralı) — tablo op'una gömülse hiç
+    koşmazlardı; tabloyu create_all yaratır.
+    """
+    __tablename__ = "case_stage_decisions"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    # YEREL | ISTINAF | TEMYIZ | KARAR_DUZELTME (stage_decisions.DECISION_STAGES)
+    stage = Column(String(20), nullable=False)
+    sira_no = Column(Integer, nullable=False)
+    mahkeme = Column(String(200), nullable=True)          # istinaf_mahkemesi ile aynı sınır
+    esas_no = Column(String(50), nullable=True)           # aşamanın esas no'su (kart kimliğine dokunmaz)
+    karar_no = Column(String(50), nullable=True)
+    karar_tarihi = Column(Date, nullable=True)
+    karar_durumu = Column(String(100), nullable=True)     # G060 kapalı listesinin adı
+    teblig_tarihi = Column(Date, nullable=True)
+    basvuran_taraf = Column(String(50), nullable=True)    # istinaf_basvuran_taraf ile aynı sınır
+    aciklama = Column(String, nullable=True)
+    dogrulama_durumu = Column(String(20), nullable=False, default="BELIRSIZ", server_default="BELIRSIZ")
+    kaynak_id = Column(Integer, ForeignKey("case_stage_decisions.id", ondelete="SET NULL"), nullable=True)
+    source = Column(String(100), nullable=True)           # provenance: "takip-paneli", "HUKDOK_TESLIM_*"…
+    created_at = Column(DateTime(timezone=True), default=func.now())
+
+    case = relationship("Case", back_populates="stage_decisions")
 
 
 class CaseStageLog(Base):

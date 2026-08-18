@@ -467,6 +467,34 @@ class CaseStageLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CaseStageDecisionRead(BaseModel):
+    """Aşama/karar tarihçesi satırı (`case_stage_decisions`, G062).
+
+    Sıralama sözleşmesi `sira_no`dur, tarih DEĞİL (tasarım paketi: 170 föyde
+    karar tarihleri güvenilmez). `dogrulama_durumu` tahmin yasağının damgası
+    (UYAP|BELGE|TURETILDI|BELIRSIZ). Okuma/yazma UÇLARI FAZ F + UI işidir;
+    şema tabloyla birlikte doğar ki dış sözleşme tek yerden türesin.
+    """
+    id: int
+    case_id: int
+    stage: str
+    sira_no: int
+    mahkeme: Optional[str] = None
+    esas_no: Optional[str] = None
+    karar_no: Optional[str] = None
+    karar_tarihi: Optional[date] = None
+    karar_durumu: Optional[str] = None       # stage'in G060 kapalı listesinin adı
+    teblig_tarihi: Optional[date] = None
+    basvuran_taraf: Optional[str] = None
+    aciklama: Optional[str] = None
+    dogrulama_durumu: str = "BELIRSIZ"
+    kaynak_id: Optional[int] = None
+    source: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ---- İlişkili Davalar ----
 
 class CaseRelationCreate(BaseModel):

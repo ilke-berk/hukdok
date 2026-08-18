@@ -733,6 +733,45 @@ _MIGRATIONS = [
     ("columns", "cases", {
         "yerel_karar_durumu": "VARCHAR(100)",   # kapalı liste (local_decisions)
     }),
+
+    # ─── 35. AŞAMA/KARAR TARİHÇESİ KISITI (G062) ─────────────────────────────
+    #
+    # `case_stage_decisions`: aynı yargı aşamasının birden çok kararını taşıyan
+    # tarihçe tablosu (kanıt vakası id-2271: Danıştay 2023 Bozma + 2026 Onama —
+    # cases'teki tek slot ikinciyi birincinin üstüne yazardı). Desen madde
+    # 32'deki `case_esas_numbers`ın karar ikizi: tablo modelde tanımlı olduğu
+    # için create_all yaratır, ("table", ...) op'u yazılsaydı ölü kod olurdu;
+    # kısıt bu yüzden koşulsuz çalışan ("index", ...) op'unda (G041 kuralı).
+    # Tek yazma yolu `managers/stage_decisions.py`; her yazım sonrası aşamanın
+    # en yüksek sira_no'lu satırı cases'teki tek-slot kolonlara fotoğraf olarak
+    # senkronlanır.
+    #
+    #   uq_case_stage_decision → aynı davada aynı aşamanın sıra numarası tekil.
+    #                            Sıralama ve "son karar" seçimi (fotoğraf) bu
+    #                            üçlüye dayanır, TARİHE DEĞİL (tasarım paketi:
+    #                            170 föyde karar tarihleri güvenilmez). FAZ F
+    #                            aktarımı tekrar tekrar koşacağı için
+    #                            idempotency'nin de dayanağıdır.
+    #
+    #   idx_..._kaynak         → kaynak_id self-FK'sının index'i. Sorgu filtresi
+    #                            olduğu için DEĞİL, G043'ün FK kuralı gereği:
+    #                            index'siz FK, referans verilen satırın
+    #                            silinmesini (admin düzeltme yolu tam da bunu
+    #                            yapar) tabloyu SEQ SCAN'le doğrulamaya zorlar;
+    #                            test_g043_index_ve_avukat_filtresi.py'nin
+    #                            "index'siz FK kolonu kalmadı" bekçisi bunu
+    #                            şema kuralı olarak kilitler.
+    #
+    # Başka index YOK (G042 dersi): `case_id`yi unique'in ÖNEK kolonu zaten
+    # karşılar; kalan kolonlar bugün hiçbir sorgunun filtresi değil ve tablo
+    # sıfırdan doğuyor (slot alanları prod'da 0 dolu, 18.08 ölçümü) —
+    # ölçülmeden index eklenmez.
+    ("index", "case_stage_decisions", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_stage_decision "
+        "ON case_stage_decisions (case_id, stage, sira_no)",
+        "CREATE INDEX IF NOT EXISTS idx_case_stage_decisions_kaynak "
+        "ON case_stage_decisions (kaynak_id)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

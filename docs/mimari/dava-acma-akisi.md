@@ -199,3 +199,32 @@ akışı devirmez; oturum kapatma/rollback davranışları test altındadır
 Aşama geçişleri `case_stage_logs`, alan değişiklikleri `case_history` tablosuna yazılır
 (`backend/models.py`); intake zenginleştirmesi kaynağını `intake-enrich: <belge adları>`
 imzasıyla bırakır.
+
+## 9. Aşama/karar tarihçesi — `case_stage_decisions` (G062)
+
+Karar künyesi `cases`te aşama başına **tek slottu** (yerel `karar_no`/`karar_tarihi`,
+`istinaf_*`, `temyiz_*`, `karar_duzeltme_*`); aynı aşamanın ikinci kararı eskisini
+eziyordu (kanıt vakası id-2271: Danıştay 2023 Bozma + 2026 Onama). `case_stage_decisions`
+tablosu bu kararların tarihçesini taşır — desen `case_esas_numbers`ın (G045) karar ikizidir
+(`backend/models.py::CaseStageDecision`).
+
+- **Tek yazma yolu** `backend/managers/stage_decisions.py`'dir (add/delete/get). Aşama
+  kümesi `DECISION_STAGES = YEREL|ISTINAF|TEMYIZ|KARAR_DUZELTME` — `ONCEKI` bilinçli yok,
+  o yalnız esas numarası kavramıdır.
+- **Sıralama `sira_no` iledir, tarihle değil** (tasarım paketi: 170 föyde karar tarihleri
+  güvenilmez). `UNIQUE (case_id, stage, sira_no)` kısıtı `uq_case_stage_decision`
+  migrasyonun `("index", …)` op'undadır (`backend/database.py` madde 35, G041 kuralı).
+- **Senkron kuralı:** her yazım/silmeden sonra aşamanın **en yüksek `sira_no`'lu** satırı
+  `cases`teki o aşamanın slot kolonlarına "son aşama fotoğrafı" olarak yazılır
+  (`stage_decisions._PHOTO_COLUMNS`); satır kalmazsa fotoğraf temizlenir. Slot kolonları
+  o andan itibaren türetilmiştir. `cases.esas_no`/`court`a asla yazılmaz (tek yazma yolu
+  `sync_current_esas`), `karar_turu`/`karar_lehine` türetmesi kapsam dışıdır.
+- **Kapalı havuz:** `karar_durumu` stage'in G060 resmi listesine karşı doğrulanır
+  (YEREL→`local_decisions`, ISTINAF→`appeal_decisions`, TEMYIZ→`cassation_decisions`,
+  KARAR_DUZELTME→`revision_decisions`).
+- **Tahmin yasağı:** `dogrulama_durumu` UYAP|BELGE|TURETILDI|BELIRSIZ; verilmezse
+  BELIRSIZ (server_default dahil — ham INSERT bile damgasız satır bırakamaz). `kaynak_id`
+  self-FK'sı kararın soyunu tutar (bozma → yeni yerel), ON DELETE SET NULL.
+
+Okuma/yazma uçları ve UI bu görevin kapsamı dışında bırakıldı (FAZ F aktarımı ve sonrası);
+testler `backend/tests/test_g062_stage_decisions.py`.
