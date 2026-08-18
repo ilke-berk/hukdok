@@ -368,6 +368,9 @@ def get_case(case_id: int, tenant_id: str = None):
             "karar_tarihi": item.karar_tarihi.isoformat() if item.karar_tarihi else None,
             "karar_turu": item.karar_turu,
             "karar_lehine": item.karar_lehine,
+            # Yerel kararın RESMİ sonucu — kapalı liste (local_decisions, G060);
+            # okuma yolu bu satır (G065). Kaba `karar_turu`ndan AYRI alandır.
+            "yerel_karar_durumu": item.yerel_karar_durumu,
             "karar_no": item.karar_no,
             "karar_teblig_tarihi": item.karar_teblig_tarihi.isoformat() if item.karar_teblig_tarihi else None,
             "karar_aciklama": item.karar_aciklama,
@@ -1542,7 +1545,7 @@ TRACKING_FIELDS = [
     # Dosya durumu
     "status",
     # Yerel Karar
-    "karar_tarihi", "karar_turu", "karar_lehine",
+    "karar_tarihi", "karar_turu", "karar_lehine", "yerel_karar_durumu",
     "karar_no", "karar_teblig_tarihi", "karar_aciklama",
     "hukmedilen_maddi", "hukmedilen_manevi", "hukmedilen_toplam",
     # İstinaf
