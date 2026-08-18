@@ -156,7 +156,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
 | `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:62`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
 | `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları | Süreç dosyaları |
-| `otomasyon/` | Gece koşucuları (`gece-kosusu.ps1`, `kuyruk-kosusu.ps1`) + logları | Süreç dosyaları |
+| `otomasyon/` | Gece koşucuları — güncel: Workflow v3 (`.claude/workflows/gece-kuyrugu.js`, başlatıcı `/gece-kuyrugu`); CLI koşucuları `gece-kosusu.ps1`/`kuyruk-kosusu.ps1` (org ayarı CLI'yi kapattı, 2026-08-18) + loglar | Süreç dosyaları |
 | `infra/` | Sunucu birimleri: systemd timer'lar, watchdog scriptleri (`infra/README.md`) | Güncel |
 
 ## Kod konvansiyonları

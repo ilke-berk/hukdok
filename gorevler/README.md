@@ -8,7 +8,10 @@ Gelecek geliştirme planlarının **kalıcı yürütme sistemi**. Sertleştirme 
   komutları. İşçi oturumu raporunu bu dosyanın "Rapor" bölümüne yazar (KUYRUK'a asla dokunmaz —
   paralel çalışmada çakışma çıkmaması bu sayede garanti).
 
-Akış: `/plan-hazirla` (gündüz, seninle) → onay → `otomasyon\kuyruk-kosusu.ps1` (gece, gözetimsiz).
+Akış: `/plan-hazirla` (gündüz, seninle) → onay → gece koşucusu (gece, gözetimsiz).
+Güncel koşucu: **`/gece-kuyrugu`** (Workflow tabanlı v3 — org ayarı `claude` CLI erişimini
+kapattığı için tek çalışan yol, 2026-08-18). CLI açıkken alternatif: `otomasyon\kuyruk-kosusu.ps1`.
+Ayrıntı: [otomasyon/README.md](../otomasyon/README.md).
 
 ## Arşivleme kuralı
 

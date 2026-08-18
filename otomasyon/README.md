@@ -73,6 +73,11 @@ type nul > otomasyon\DURDUR
 
 # Kuyruk koşusu (v2) — gelecek planlar için kalıcı sistem
 
+> **DURUM (2026-08-18): bu koşucu ÇALIŞAMIYOR.** Kurumsal ayar `claude` CLI erişimini
+> kapattı; `kuyruk-kosusu.ps1` görevleri `claude -p` süreçleri açarak koşturur ve ilk
+> çağrıda düşer (G060'ın BLOKE sebebi buydu). Güncel koşucu aşağıdaki **v3 Workflow
+> koşucusu**dur; bu bölüm mekanizma referansı olarak ve CLI geri açılırsa diye korunuyor.
+
 `gece-kosusu.ps1` sertleştirme planına özeldir ve onu bitirecek. Ondan sonraki tüm planlar
 için genel sistem: **görev kuyruğu + şerit bazlı paralellik**.
 
@@ -117,3 +122,81 @@ Sertleştirme planının kalan paketleri için paralel worktree bilinçli olarak
 3. Backend pytest tek compose stack'inde koşuyor — iki paralel oturum aynı konteyneri ve
    lokal PG'yi paylaşır, testler birbirini bozar (flaky → model olmayan hatayı "düzeltir").
 4. Seri koşu zaten yetişiyor: kalan 5 kod paketi ≈ 1-2 gece.
+
+---
+
+# Kuyruk koşusu (v3) — Workflow koşucusu (GÜNCEL)
+
+CLI erişimi kurumsal ayarla kapanınca (2026-08-18, G060 BLOKE'si) koşucu, ayrı `claude -p`
+süreçleri yerine **açık bir Claude Code oturumunun İÇİNDE Workflow aracıyla** koşan çok-ajanlı
+bir betiğe taşındı: [`.claude/workflows/gece-kuyrugu.js`](../.claude/workflows/gece-kuyrugu.js).
+Desen, kolay-ilan projesinin gece hattından uyarlandı; **kuyruk sözleşmesi değişmedi** —
+`KUYRUK.md` satır formatı, `gorev/<id>.md` dosyaları, bant kuralları, `gorev-devam` /
+`gorev-denetle` skill sözleşmeleri ve ` | BLOKE(sebep)` işaretleri aynen geçerli.
+`/plan-hazirla` çıktısı olduğu gibi koşulur.
+
+## Mekanizma (görev başına zincir)
+
+```
+Plan (KUYRUK.md + gorev/<id>.md + ön kontroller → bağımlılık dalgaları)
+  └─ her görev:
+     Uygula   → gorev-devam sözleşmesi + ilerleme-kapılı döngü (hata "parmak izi"
+                aynı kalırsa erken durur; sert tavan 8 tur)
+     Teşhis   → takılırsa TAZE bağlamda kök neden + farklı yaklaşımla 1 yeniden deneme
+                (üçüncü cevabı en değerlisi: "sorun görev tanımında" → sabaha SORU)
+     Kapı     → MEKANİK: test bütünlüğü (silinen/gevşetilen test, skip/xfail,
+                pyproject-vitest zayıflatma, noqa/ts-ignore) + kırmızı-yeşil kanıtı
+                (eklenen test, taban koddan açılan kanıt worktree'sinde KOŞULUR ve
+                kırmızı olmak ZORUNDADIR; backend kanıtı DATABASE_URL'siz tek seferlik
+                `docker run` konteynerinde — dbtest'ler 3-ortam kuralı gereği SKIP)
+     Denetle  → gorev-denetle sözleşmesi, temiz context (GECTI/RET + bulgular)
+     Onar     → yalnız RET'te TEK hak: bulguyu önce doğrula, düzelt, YENİDEN denetim
+     Teslim   → backend: KUYRUK'ta [x] (iş zaten main'de). frontend/docs: yerel
+                `merge --no-ff` + ana dizinde TAM vitest (kırmızıysa merge geri alınır,
+                worktree korunur, BLOKE) → [x] + pathspec commit
+Rapor (otomasyon/loglar/kuyruk-workflow_<tarih>.md + commit)
+```
+
+- **Bant kuralları aynı:** backend ana dizinde ve SERİ (lokal konteyner
+  `docker-compose.override.yml` ile `./backend:/app` bind-mount eder — pytest yalnız ana
+  dizini doğru test eder); frontend/docs `C:\dev\hukudok-wt\<id>` worktree'sinde
+  (OneDrive dışı), dal `gorev/<id>`.
+- **Ana dizin mutex'i:** backend görev zinciri bütünüyle + tüm merge/işaretleme adımları
+  tek sıradan geçer; worktree bantlarının uygulaması paralel kalır.
+- **`Durum: TAMAM` kısayolu:** görev dosyasının Rapor'unda "Durum: TAMAM" yazan ama
+  KUYRUK'ta açık kalan görev (ana oturumda bitirilmiş iş — ilk örnek G060) yeniden
+  UYGULANMAZ; doğrudan bağımsız denetime girer, GECTI ise işaretlenir.
+- Push/PR YOK — kolay-ilan uyarlamasından bilinçli fark: bu projede push + deploy daima
+  insan kararı (CLAUDE.md; agent push'u auto-mode sınıflandırıcısınca zaten engelli).
+
+## Çalıştırma
+
+Önerilen: açık bir oturumda **`/gece-kuyrugu`** skill'i (ön kontrolleri + çağrıyı + sabah
+özetini o yönetir). Elle: Workflow aracı, `scriptPath: .claude/workflows/gece-kuyrugu.js`,
+`args: { "tarih": "YYYY-AA-GG" }`. Parametre tablosu skill dosyasında.
+
+- **İlk koşu ve her yeni plandan sonraki ilk koşu KURU olmalı** (`kuru: true`) — plan ve
+  dalgalar yazılmadan görünür.
+- Koşu sırasında ana dizinde başka oturum/koşucu ÇALIŞMAMALI (tek koşucu kuralı).
+- Oturum açık kalmalı; makine uykusu için sunum modu (skill adım 1.4).
+
+## Sabah kontrol listesi
+
+1. `otomasyon/loglar/kuyruk-workflow_<tarih>.md` — özet, **Bloke** ve **Karar bekleyenler**
+   bölümleri (en değerli kısım), **İzin engelleri**.
+2. `gorevler/KUYRUK.md` — yeni `[x]`'ler ve ` | BLOKE(sebep)` ekleri (çözünce eki elle sil).
+3. `git log --oneline` — görev commit'leri + `chore: kuyruk durumu` işaretleri.
+4. `C:\dev\hukudok-wt\` — bloke görevlerin korunan worktree'leri (incele, birleştir/sil).
+5. Memnunsan push + CI + (nokta hazırsa) deploy — hepsi senin kararın.
+
+## Guardrail'ler (bilerek böyle)
+
+- Koşucu ve tüm ajanları **asla**: `git push`, `ssh`, `scp`, `gcloud`, deploy/rollback,
+  `git reset --hard` (tek istisna: teslim adımının kendi kaydettiği SHA'ya merge geri alma),
+  `docker compose down -v`, KUYRUK'a işçi eliyle dokunma.
+- **İzin listesi bilinçli genişletilmedi.** Engellenen komutlar rapora "İzin engelleri"
+  olarak düşer; `.claude/settings*.json` YALNIZ bu ölçümle ve elle genişletilir — koşucu
+  kendi izin dosyasına dokunamaz (kolay-ilan hattının "ajan kendi iznini genişletemez"
+  ilkesi).
+- Token bütçesi tabanı: kalan bütçe eşiğin altına inince yeni görev başlatılmaz; kuyruk
+  açık kalır, yarım iş bırakılmaz.
