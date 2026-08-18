@@ -193,6 +193,31 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G058 | bant:backend | bagimli:- | seed_data.py: worker yarışı (prod'da canlı ERROR) + %9 kapsam
 - [x] G059 | bant:backend | bagimli:- | auth_verifier.py %25: kimlik kapısı test edilmiyor
 
+## Aktif plan: Karar aşamaları düzeltmeleri — FAZ F ön hazırlık (2026-08-18)
+
+<!-- Kaynak: KARAR_ASAMALARI_TASARIM_PAKETI_2026-08-17.xlsx (veri ekibinin çok-aşamalı
+     karar tasarım görevi) + 18.08 oturum bulguları: bizim şemada da karar künyesi TEK SLOT
+     (models.py:69-108) ve TÜM karar alanları prod kopyasında 0 dolu (temiz başlangıç,
+     backfill yok). KULLANICI KARARLARI (18.08): (1) hedef model bizim sistem — dava TEK
+     kart, çoklu müvekkil; kart föy bazında BÖLÜNMEZ (SistemNo'lar case_foys eşleme
+     tablosunda yaşar); (2) işlenmiş belgeler KORUNUR — aktarım UPDATE-in-place, belge
+     envanter denkliği kabul kriteri; (3) dropdown'lar resmi havuzlarla kurulsun — havuzlar
+     10.08 paketinin DEGER_HAVUZLARI sayfasında bulundu (Yerel 28 · İstinaf 3 · Temyiz 3 ·
+     KD 2), görev dosyasına gömüldü.
+     ZİNCİR GEREKÇESİ: G060→G062→G063→G064 hepsi models.py+database.py hub'ına dokunur ve
+     migration üretir → README kural 2 gereği zincirli; G061 tek paralel dilim (frontend).
+     KUYRUĞA GİRMEYEN: FAZ F tam 68-sütun eşlemesi + D1-D7 davranış kuralları + 4 kabul
+     raporu (final export + CEVAP xlsx bekliyor — ayrı plan turu); aşama zinciri UI görünümü
+     (FAZ F sonrası); dağınık ~510 TKU grubunun birleştirme kararı (kullanıcı kararı bekler;
+     öneri: ilk turda case_relations ile bağla); karar_turu 28→6 türetme eşlemesi (aktarım
+     kuralları turunda). Bant: G061 frontend (paralel), kalanı backend = seri. -->
+
+- [ ] G060 | bant:backend | bagimli:- | Karar sonucu resmi listeleri (4 havuz) + yerel_karar_durumu kolonu + seed
+- [ ] G061 | bant:frontend | bagimli:G060 | Takip paneli karar dropdown'larını resmi listelere bağla
+- [ ] G062 | bant:backend | bagimli:G060 | case_stage_decisions: aşama/karar tarihçesi + BELİRSİZ damgası + son-aşama senkronu
+- [ ] G063 | bant:backend | bagimli:G062 | case_foys: SistemNo → kart+müvekkil föy eşleme tablosu
+- [ ] G064 | bant:backend | bagimli:G063 | Aktarım yazma yolu çekirdeği: idempotent iskelet + kuru koşu + belge envanter denkliği
+
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
