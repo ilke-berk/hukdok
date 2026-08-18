@@ -161,6 +161,11 @@ class Case(Base):
     stage_logs = relationship("CaseStageLog", back_populates="case", cascade="all, delete-orphan")
     esas_numbers = relationship("CaseEsasNumber", back_populates="case", cascade="all, delete-orphan")
     stage_decisions = relationship("CaseStageDecision", back_populates="case", cascade="all, delete-orphan")
+    # Föyler BİLİNÇLİ cascade'siz + passive_deletes="all" (G063): kartın hard
+    # delete'i föy bağını sessizce koparmamalı — ORM çocuğun FK'sını NULL'lamaz,
+    # karar veritabanınındır ve NOT NULL + ondelete'siz FK yazımı reddeder.
+    # Kartın normal silmesi zaten SOFT'tur (deleted_at); föy envanteri korunur.
+    foys = relationship("CaseFoy", back_populates="case", passive_deletes="all")
 
 
 class CaseEsasNumber(Base):
@@ -257,6 +262,61 @@ class CaseStageDecision(Base):
     created_at = Column(DateTime(timezone=True), default=func.now())
 
     case = relationship("Case", back_populates="stage_decisions")
+
+
+class CaseFoy(Base):
+    """SistemNo → kart + müvekkil FÖY eşlemesi (kullanıcı kararı 18.08, G063).
+
+    Karar şudur: **dava TEK kart kalır, müvekkiller kartın altında; kart föy
+    bazında BÖLÜNMEZ.** Ama karşı tarafın tüm teslimleri (ilk yükleme, partili
+    ek teslimler, düzeltme listeleri, karar aşamaları sayfası) sonsuza dek
+    SistemNo anahtarlıdır ve bir kartta birden çok SistemNo yaşar — ön analiz:
+    1.211 mevcut kart 2+ föyü birleşik taşıyor, TKU'da 1.537 çok üyeli grup /
+    4.030 satır. `cases.sistem_no` TEK kolonu bunu taşıyamaz; bu tablo kartın
+    kimliğini bölmeden föyleri kartın altına asar.
+
+    `cases.sistem_no`/`cases.tku_no` kolonlarına BU TURDA DOKUNULMADI (prod'da
+    ikisi de 0 dolu); nihai tekilleştirme FAZ F aktarım turunun işidir.
+
+    * `sistem_no` UNIQUE — aktarımın idempotency anahtarı: teslim partiler
+      hâlinde ve düzeltme listeleriyle tekrar tekrar gelecek, aynı föy ikinci
+      kez yazılınca satır İKİLENMEZ, güncellenir (`managers/foy_map.upsert_foy`).
+      Kısıt `("index", ...)` op'unda (G041); modelde `unique=True` YOK —
+      create_all yolu ile migrasyon yolu aynı ADI üretsin diye.
+    * `case_id` FK'sında `ondelete` BİLİNÇLİ VERİLMEDİ (NO ACTION/RESTRICT):
+      dava soft-delete kullanır (`deleted_at`), hard-delete föy bağını sessizce
+      koparmamalı — belge koruma şartının (18.08) kardeş kuralı.
+    * `case_party_id` FK'sı `ondelete="RESTRICT"`: `CaseDocument.case_party_id`
+      SET NULL tuzağının tekrarı istenmiyor. Bir tarafın silinmesi föyün hangi
+      müvekkile ait olduğunu sessizce unutturamaz; silme ENGELLENİR.
+    * Per-föy EK alanlar (dava değeri, son durum, hizmet türü…) bu turda
+      AÇILMADI — kolon seti FAZ F tam eşleme turunda 68 sütunluk eşleme
+      tablosuyla kararlaştırılır (YAGNI). Çekirdek = kimlik + bağ; föyler arası
+      FARKLI kalan değerlerin (10.08 ölçümü: Hasar No 144, Dava Değeri 211, Son
+      Durum 332, Durum 137 grupta farklı) taşıyıcısı olacak satır BURADA hazır.
+
+    Kolonlarda `index=True` BİLİNÇLİ YOK (G042 dersi): `id` index'i PK ikizi
+    olurdu; `sistem_no`/`case_id`/`case_party_id`/`tku_no` index'leri
+    `database._MIGRATIONS`'ta ayrı bir `("index", ...)` op'undadır — tablo
+    op'una gömülselerdi HİÇ koşmazlardı (G041), tabloyu create_all yaratır.
+    """
+    __tablename__ = "case_foys"
+
+    id = Column(Integer, primary_key=True)
+    # Micro Kolay Ofis kayıt kimliği (SSTMN-9425 gibi) — teslimlerin anahtarı
+    sistem_no = Column(String(50), nullable=False)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    case_party_id = Column(
+        Integer, ForeignKey("case_parties.id", ondelete="RESTRICT"), nullable=True
+    )
+    tku_no = Column(String(50), nullable=True)     # olay/vaka grup anahtarı (TKU-784)
+    hasar_no = Column(String(100), nullable=True)  # föyler arası 144 grupta FARKLI
+    source = Column(String(100), nullable=True)    # hangi teslim paketi yazdı
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+    case = relationship("Case", back_populates="foys")
+    case_party = relationship("CaseParty", foreign_keys=[case_party_id])
 
 
 class CaseStageLog(Base):

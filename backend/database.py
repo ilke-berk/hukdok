@@ -772,6 +772,52 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_case_stage_decisions_kaynak "
         "ON case_stage_decisions (kaynak_id)",
     ]),
+
+    # ─── 36. FÖY EŞLEME TABLOSU KISITI (G063) ────────────────────────────────
+    #
+    # `case_foys`: SistemNo → kart + müvekkil eşlemesi. Kullanıcı kararı (18.08)
+    # "dava TEK kart kalır, kart föy bazında BÖLÜNMEZ" iken karşı tarafın tüm
+    # teslimleri sonsuza dek SistemNo anahtarlı — bir kartta birden çok SistemNo
+    # yaşayacak (1.211 kart 2+ föyü birleşik taşıyor). Desen madde 32/35'in
+    # (case_esas_numbers, case_stage_decisions) üçüncü kardeşi: tablo modelde
+    # tanımlı olduğu için create_all yaratır, ("table", ...) op'u ölü kod
+    # olurdu; kısıt/index bu yüzden koşulsuz çalışan ("index", ...) op'unda
+    # (G041 kuralı). Tek yazma yolu `managers/foy_map.py`.
+    #
+    #   uq_case_foys_sistem_no → AKTARIMIN IDEMPOTENCY ANAHTARI. Teslim partiler
+    #                            hâlinde ve düzeltme listeleriyle tekrar tekrar
+    #                            gelecek; aynı föyün ikinci yazımı satır
+    #                            İKİLEMEZ, günceller. `cases.sistem_no`daki
+    #                            (uq_cases_sistem_no) tekilliğin föy düzeyindeki
+    #                            karşılığı — o kolona bu turda DOKUNULMADI.
+    #
+    #   idx_case_foys_case       → hem "kartın föyleri" toplu sorgusunun
+    #   idx_case_foys_case_party   müşterisi hem de G043'ün FK kuralı gereği:
+    #                              index'siz FK, referans verilen satırın
+    #                              silinmesini SEQ SCAN'e zorlar — burada bu yol
+    #                              SICAK, çünkü case_party_id'nin RESTRICT'i her
+    #                              taraf silmesinde bu tabloyu sorgulatır
+    #                              (bekçi: test_g043_index_ve_avukat_filtresi.py
+    #                              ::test_index_siz_fk_kolonu_kalmadi).
+    #
+    #   idx_case_foys_tku        → görev taslağının açık kalemi ("tku_no
+    #                              index'li"). Müşterisi belirli: TKU çok üyeli
+    #                              1.537 grup / 4.030 satırın mutabakatı föyleri
+    #                              olay anahtarıyla toplar. G042'nin yasakladığı
+    #                              "ölçülmemiş index" sınıfı DEĞİL — kolon
+    #                              tekil değil ve tablo sıfırdan doğuyor,
+    #                              maliyet aktarım öncesi sıfır.
+    #
+    # Başka index YOK: `sistem_no`yu unique zaten karşılar, kalan kolonlar
+    # (hasar_no, source) bugün hiçbir sorgunun filtresi değil.
+    ("index", "case_foys", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_foys_sistem_no "
+        "ON case_foys (sistem_no)",
+        "CREATE INDEX IF NOT EXISTS idx_case_foys_case ON case_foys (case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_case_foys_case_party "
+        "ON case_foys (case_party_id)",
+        "CREATE INDEX IF NOT EXISTS idx_case_foys_tku ON case_foys (tku_no)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

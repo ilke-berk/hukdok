@@ -228,3 +228,39 @@ tablosu bu kararların tarihçesini taşır — desen `case_esas_numbers`ın (G0
 
 Okuma/yazma uçları ve UI bu görevin kapsamı dışında bırakıldı (FAZ F aktarımı ve sonrası);
 testler `backend/tests/test_g062_stage_decisions.py`.
+
+## 10. Föy modeli — kart bölünmez, SistemNo `case_foys`ta yaşar (G063)
+
+Kullanıcı kararı (18.08): **dava TEK kart kalır, müvekkiller kartın altında; kart föy
+bazında BÖLÜNMEZ.** Karşı tarafın teslimleri ise sonsuza dek SistemNo anahtarlıdır ve bir
+kartta birden çok SistemNo yaşar (ön analiz: 1.211 mevcut kart 2+ föyü birleşik taşıyor;
+TKU'da 1.537 çok üyeli grup / 4.030 satır). `cases.sistem_no` **tek kolonu** bunu taşıyamaz:
+föyler arası farklı kalan kimlik alanları (10.08 ölçümü — Hasar No 144, Dava Değeri 211, Son
+Durum 332, Durum 137 grupta farklı) tek karta ezilirse veri kaybolur.
+
+`case_foys` bu yüzden kartın kimliğini bölmeden föyleri kartın altına asar
+(`backend/models.py::CaseFoy`): `sistem_no` · `case_id` · `case_party_id` · `tku_no` ·
+`hasar_no` · `source`. Desen `case_esas_numbers` (G045) ve `case_stage_decisions` (G062)
+kardeşlerinin aynısıdır.
+
+- **Tek yazma yolu** `backend/managers/foy_map.py`: `upsert_foy` / `get_foy` /
+  `get_case_foys` / `map_sistem_no_to_case`. Fonksiyonlar commit etmez (flush eder).
+- **`sistem_no` UNIQUE = aktarımın idempotency anahtarı.** Teslim partiler hâlinde ve
+  düzeltme listeleriyle tekrar gelecek; ikinci yazım satır ikilemez, günceller. Kısıt
+  `uq_case_foys_sistem_no` migrasyonun `("index", …)` op'undadır (`backend/database.py`
+  madde 36, G041 kuralı) — modelde `unique=True` yoktur, iki kurulum yolu aynı adı üretsin
+  diye. Anahtar kırpılmaz, sınırı aşarsa reddedilir (kırpma iki föyü tek satıra çökertirdi);
+  kimlik olmayan alanlar WARNING'le kırpılır.
+- **Silme kuralları — sessiz kopma yok.** `case_id` FK'sında `ondelete` bilinçli VERİLMEDİ
+  (NO ACTION/RESTRICT): dava silmesi zaten SOFT'tur (`deleted_at`) ve föy envanterine
+  dokunmaz; bir hard-delete denemesi ise veritabanınca reddedilir. `case_party_id` ise
+  `ON DELETE RESTRICT` — `CaseDocument.case_party_id`'nin SET NULL tuzağının tekrarı
+  istenmiyor: föyün hangi müvekkile ait olduğu bir taraf silmesiyle unutulamaz. `Case.foys`
+  ilişkisi `passive_deletes="all"` ile ORM'in araya girmesini de kapatır.
+- **Kapsam sınırı:** `cases.sistem_no` / `cases.tku_no` kolonlarına bu turda DOKUNULMADI
+  (prod'da ikisi de 0 dolu); nihai tekilleştirme FAZ F aktarım turunun işidir. Per-föy ek
+  alanlar (dava değeri, son durum, hizmet türü…) da açılmadı — kolon seti 68 sütunluk eşleme
+  tablosuyla birlikte kararlaştırılacak (YAGNI). Çekirdek = kimlik + bağ.
+
+Okuma/yazma uçları ve UI kapsam dışıdır; testler `backend/tests/test_g063_case_foys.py`
+(şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT).
