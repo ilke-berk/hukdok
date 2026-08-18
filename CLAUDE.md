@@ -54,7 +54,7 @@ route'un beklenmedik istisnasından gelir ve bu sözleşmenin dışındadır.
 
 **Tenant modeli:** `cases`/`clients` tablolarında `tenant_id` kolonu VAR ama iki tenant
 (Hanyaloğlu Acar + LexisBio) ortak çalışır: yeni kayıtlar bilinçli `tenant_id=NULL`
-(paylaşımlı havuz — `routes/cases.py:54`, `routes/clients.py:35`); sorgular
+(paylaşımlı havuz — `routes/cases.py:55`, `routes/clients.py:35`); sorgular
 "`tenant_id == X OR IS NULL`" deseniyle filtreler (`auth_helpers.py`). Girişte tenant
 `ALLOWED_TENANTS` env listesine karşı doğrulanır (`auth_verifier.py`).
 
@@ -163,7 +163,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 
 - Yorum ve doküman dili Türkçe, tanımlayıcılar İngilizce; mevcut dosyanın üslubunu koru.
 - Lint/type kapıları `backend/pyproject.toml`'da: ruff `E,F,B` (E501 kapalı,
-  line-length 120), mypy kademeli — yalnız `managers/ routes/ config/` taranır.
+  line-length 120), mypy kademeli — yalnız `managers/ routes/ config/ services/` taranır.
 - Bir iş = TEK commit: kod + test + doküman birlikte; `git add -A` yerine dosya listesi.
   Push/deploy daima insan kararı — otomasyon oturumları push/ssh/deploy YAPMAZ.
 - Hata işlemede stream sözleşmesine ve log sözleşmesine uy (yukarıda).
