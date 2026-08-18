@@ -12,14 +12,15 @@ PostgreSQL; kimlik Azure AD (MSAL). Bu dosya sıfır-context bir oturumun giriş
 ## Mimari özet
 
 **Servisler** (`docker-compose.yml`): `postgres` (postgres:15-alpine, 127.0.0.1:5432),
-`backend` (`hukdok_backend`, python:3.10-slim, 127.0.0.1:8001), `frontend` (nginx,
+`backend` (`hukdok_backend`, python:3.12-slim, 127.0.0.1:8001), `frontend` (nginx,
 host 8080 → konteyner 80). Backend portu bilinçli localhost'a sabit: API-key'li
 `/export` route'ları public'e açılmaz; hukukbot ortak `hukuk_shared` Docker ağından
 `http://hukdok_backend:8001` ile konuşur.
 
 **İki katmanlı nginx:** Repodaki `nginx.conf` **konteyner** nginx'idir: `listen 80`
 (compose 8080:80 yayınlar), SPA'yı servis eder; `/api`, `/process`, `/confirm`,
-`/preview-email-body`, `/refresh`, `/healthz` → `backend:8001` proxy.
+`/preview-email-body`, `/preview-client-email-body`, `/refresh`, `/healthz` →
+`backend:8001` proxy.
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer
 kayıt kaynağıydı). Konteynerler düz HTTP konuşur; TLS prod'daki **host** nginx'inde
 sonlanır (konfigi repo DIŞINDA, sunucuda; iki katmanın timeout'ları eşit tutulmalı —
@@ -90,7 +91,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 # Lokal stack (kod İMAJDAN çalışır — bkz. tuzaklar)
 docker compose up -d
 
-# Backend testleri KONTEYNERDE koşar (imaj python:3.10-slim)
+# Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
 docker compose exec -T backend python -m pytest            # 2026-08-13: 1285 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
