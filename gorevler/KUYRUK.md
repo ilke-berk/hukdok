@@ -212,7 +212,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      öneri: ilk turda case_relations ile bağla); karar_turu 28→6 türetme eşlemesi (aktarım
      kuralları turunda). Bant: G061 frontend (paralel), kalanı backend = seri. -->
 
-- [ ] G060 | bant:backend | bagimli:- | Karar sonucu resmi listeleri (4 havuz) + yerel_karar_durumu kolonu + seed
+- [ ] G060 | bant:backend | bagimli:- | Karar sonucu resmi listeleri (4 havuz) + yerel_karar_durumu kolonu + seed | BLOKE(claude cikis kodu 1 - kota/ag olabilir)
 - [ ] G061 | bant:frontend | bagimli:G060 | Takip paneli karar dropdown'larını resmi listelere bağla
 - [ ] G062 | bant:backend | bagimli:G060 | case_stage_decisions: aşama/karar tarihçesi + BELİRSİZ damgası + son-aşama senkronu
 - [ ] G063 | bant:backend | bagimli:G062 | case_foys: SistemNo → kart+müvekkil föy eşleme tablosu
