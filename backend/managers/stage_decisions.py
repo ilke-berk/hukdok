@@ -39,6 +39,7 @@ import logging
 from datetime import date
 from typing import Any, Dict, Optional, cast
 
+from sqlalchemy import case as sa_case
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -50,7 +51,13 @@ logger = logging.getLogger("CaseManager")
 
 # Etiket seti case_esas_numbers ile AYNI, ONCEKI HARİÇ: ONCEKI yalnız esas
 # numarası kavramıdır (görevsizlik öncesi numara), bir kararın aşaması olamaz.
+# Sıra KRONOLOJİKTİR (yerel → istinaf → temyiz → karar düzeltme); okuma yolu
+# aşama sırasını ikinci bir listeden değil BUNDAN türetir (_STAGE_RANK).
 DECISION_STAGES = ("YEREL", "ISTINAF", "TEMYIZ", "KARAR_DUZELTME")
+
+# Aşama → kronolojik sıra. Tanınmayan etiket (şema büyürse ya da elle yazılmış
+# ham satır varsa) sona düşer — okuma yolu satır YUTMAZ.
+_STAGE_RANK: Dict[str, int] = {stage: index for index, stage in enumerate(DECISION_STAGES)}
 
 # Tahmin yasağının taşıyıcısı — satır hangi kaynakla doğrulandı?
 DOGRULAMA_UYAP = "UYAP"            # UYAP kaydından okundu
@@ -410,15 +417,28 @@ def delete_stage_decision(db: Session, case: models.Case, decision_id: int) -> b
 
 
 def get_stage_decisions(db: Session, case_id: int) -> list:
-    """Davanın karar tarihçesi — (stage, sira_no) sırasıyla ORM satırları.
+    """Davanın karar tarihçesi — (aşama kronolojisi, sira_no) sırasıyla ORM satırları.
 
-    Sıra SÖZLEŞMEDİR: karar sırası `sira_no`dan okunur, tarihten değil.
-    Okuma/yazma UÇLARI bu görevin kapsamı dışında (FAZ F + UI ayrı işler);
-    testler ve gelecekteki route katmanı bu tek noktadan okur.
+    Sıra SÖZLEŞMEDİR: aşama İÇİNDEKİ karar sırası `sira_no`dan okunur, tarihten
+    değil (tasarım paketi: 170 föyde karar tarihleri güvenilmez). Aşamalar
+    ARASINDAKİ sıra `DECISION_STAGES` kronolojisidir (G072): alfabetik sıra
+    zaman çizgisini "istinaf → karar düzeltme → temyiz → yerel" diye ters
+    gösterirdi. Rank ayrı bir listeden değil `DECISION_STAGES`ten türetilir —
+    yeni bir aşama eklendiği anda sıralama da onu kapsar.
+
+    Okuma ucunun TEK giriş noktası burasıdır (`routes/cases.py`
+    `GET /api/cases/{id}/stage-decisions`); yazma yolu değişmedi.
     """
     return (
         db.query(models.CaseStageDecision)
         .filter(models.CaseStageDecision.case_id == case_id)
-        .order_by(models.CaseStageDecision.stage, models.CaseStageDecision.sira_no)
+        .order_by(
+            sa_case(
+                _STAGE_RANK,
+                value=models.CaseStageDecision.stage,
+                else_=len(DECISION_STAGES),
+            ),
+            models.CaseStageDecision.sira_no,
+        )
         .all()
     )

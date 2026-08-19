@@ -16,7 +16,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Bu paket DEPLOY GEREKTİRİR (backend route + frontend); deploy kararı kullanıcıda ve
      19.08 direktifi gereği ÖNCE LOKALDE doğrulanır. -->
 
-- [ ] G072 | bant:backend | bagimli:- | Aşama tarihçesi okuma yolu (route + şema); 4.971 satır bugün görünmüyor
+- [x] G072 | bant:backend | bagimli:- | Aşama tarihçesi okuma yolu (route + şema); 4.971 satır bugün görünmüyor
 - [ ] G073 | bant:backend | bagimli:- | Takip/kart alan yerleşimi: arabuluculuk + arşiv tarihi takibe, dosya_son_durumu tek yere
 - [ ] G074 | bant:frontend | bagimli:G072,G073 | Takip panelinde aşama zaman çizgisi + kart gruplarının sadeleşmesi
 

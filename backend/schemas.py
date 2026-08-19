@@ -495,6 +495,39 @@ class CaseStageDecisionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CaseEsasNumberRead(BaseModel):
+    """Esas numarası tarihçesi satırı (`case_esas_numbers`, G045).
+
+    Aşama tarihçesi yanıtında yalnız GÜNCEL OLMAYAN satırlar için kullanılır
+    (`CaseStageDecisionsResponse.onceki_esaslar`): güncel numara zaten
+    `cases.esas_no`dur, onu ikinci kez döndürmek ikinci doğruluk kaynağı olurdu.
+    """
+    id: int
+    case_id: int
+    esas_no: str
+    stage: str
+    court: Optional[str] = None
+    is_current: bool = False
+    source: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CaseStageDecisionsResponse(BaseModel):
+    """`GET /api/cases/{id}/stage-decisions` yanıtı (G072).
+
+    İki liste BİLİNÇLİ AYRI: `decisions` kararların künyesi (hangi aşamada ne
+    karar çıktı), `onceki_esaslar` ise NUMARANIN tarihçesi (görevsizlik/
+    yetkisizlik sonrası değişen esas no). Aynı zaman çizgisinin parçalarıdır
+    ama farklı şeylerdir; tek listede birleştirmek "önceki esas"ı karar sanan
+    bir arayüz üretirdi.
+    """
+    case_id: int
+    decisions: List[CaseStageDecisionRead] = []
+    onceki_esaslar: List[CaseEsasNumberRead] = []
+
+
 # ---- İlişkili Davalar ----
 
 class CaseRelationCreate(BaseModel):

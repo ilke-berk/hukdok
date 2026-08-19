@@ -23,13 +23,15 @@ from auth_helpers import (
 from dependencies import get_current_user, get_current_tenant
 from schemas import (
     CaseCreate, CaseListRead, CaseRelationCreate, RelatedCaseSummary, RelatedCasesResponse,
-    CaseTrackingUpdate, CaseStageLogRead,
+    CaseTrackingUpdate, CaseStageLogRead, CaseEsasNumberRead, CaseStageDecisionRead,
+    CaseStageDecisionsResponse,
 )
 from database import SessionLocal
 from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
     update_case_tracking, get_case_stage_log, find_duplicate_cases,
 )
+from managers.stage_decisions import get_stage_decisions
 import models
 
 
@@ -499,6 +501,55 @@ def api_get_case_stage_log(
 ):
     """Davanın aşama tarihçesini döner."""
     return get_case_stage_log(case_id, tenant_id=tenant_id)
+
+
+@router.get("/api/cases/{case_id}/stage-decisions", response_model=CaseStageDecisionsResponse)
+def api_get_case_stage_decisions(
+    case_id: int,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Davanın karar/aşama tarihçesi + güncel olmayan esas numaraları (G072).
+
+    `case_stage_decisions` 2026-08-19 aktarımıyla doldu (4.971 satır) ama okuma
+    ucu yoktu; takip paneli yalnız `cases` üzerindeki tek-slot FOTOĞRAFI
+    gösteriyordu — aynı aşamanın önceki kararı (kanıt vakası id-2271: Danıştay
+    2023 Bozma + 2026 Onama) ekranda hiç görünmüyordu.
+
+    AYRI ROUTE olmasının gerekçesi: kart yanıtı (`GET /api/cases/{id}`) zaten
+    taraf + avukat + belge + esas tarihçesi taşıyor ve bu satırlar yalnız takip
+    sekmesi açılınca gerekiyor; her kart açılışını ek bir tarihçe okumasıyla
+    yüklemenin karşılığı yok.
+
+    Tenant kapısı ÖNCE davayı çözer (G016 dersi: bağlı kaynağın izolasyonu
+    kaynağın kendisinden değil, sahibinden gelir) — başka tenant'ın davası ya da
+    silinmiş dava 404'tür, satırlar hiç okunmaz. Tarihçesi olmayan dava boş
+    listelerle 200 döner: "veri yok" hata değildir.
+    """
+    db = SessionLocal()
+    try:
+        case = get_tenant_owned_case(db, case_id, tenant_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+
+        # Güncel esas numarası bu listeye GİRMEZ: o `cases.esas_no`nun kendisi
+        # (türetilmiş kopyası) — tarihçe yalnız "artık kullanılmayan numaralar".
+        onceki_esaslar = (
+            db.query(models.CaseEsasNumber)
+            .filter(
+                models.CaseEsasNumber.case_id == case_id,
+                models.CaseEsasNumber.is_current.is_(False),
+            )
+            .order_by(models.CaseEsasNumber.created_at, models.CaseEsasNumber.id)
+            .all()
+        )
+
+        return CaseStageDecisionsResponse(
+            case_id=case_id,
+            decisions=[CaseStageDecisionRead.model_validate(row) for row in get_stage_decisions(db, case_id)],
+            onceki_esaslar=[CaseEsasNumberRead.model_validate(row) for row in onceki_esaslar],
+        )
+    finally:
+        db.close()
 
 
 @router.post("/api/cases/{case_id}/hearing-dates")
