@@ -219,6 +219,23 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G064 | bant:backend | bagimli:G063 | Aktarım yazma yolu çekirdeği: idempotent iskelet + kuru koşu + belge envanter denkliği
 - [x] G065 | bant:backend | bagimli:G060 | yerel_karar_durumu okuma/yazma yolu: get_case serialize + takip whitelist (G061 bulgusu; G062 ile dosya çakışması yok)
 
+## Aktif plan: Kapalı havuz sınırı — 18.08 boşluk analizinin 3. maddesinin kalanı (2026-08-19)
+
+<!-- Kaynak: KARAR_ASAMALARI_TASARIM_PAKETI_2026-08-17.xlsx "4 · Kapalı havuzlar" değişmezi +
+     18.08'de teyit edilen 4 boşluk. Üçü bu gece kapandı: (1) tek slot → G062
+     case_stage_decisions, (2) BELİRSİZ damgası → G062 dogrulama_durumu, (4) SistemNo
+     tekilliği → G063 case_foys. 3. madde (karar durumu serbest String(100)) YARIM kaldı:
+     G060 listeleri + G061 dropdown'ı + G065 yazma yolu geldi ama kapalılık YALNIZ ARAYÜZDE —
+     manager katmanı doğrulamıyor (case_manager.py:371 yalnız yorum). Yeni tarihçe yolunda
+     açık YOK (stage_decisions.py:170 doğruluyor); asimetri bu yüzden doğdu.
+     Dört alan BİRLİKTE ele alınır — G065 raporunun şartı; tek alan sıkılaştırmak kardeş
+     alanlar arasında yeni asimetri üretir.
+     KUYRUĞA GİRMEYEN: şemayı sıkılaştırma (kolonlar String(100) kalır — değerler ada göre
+     denormalize ve resmi liste panelden düzenlenebilir), backfill (alanlar 18.08 ölçümünde
+     0 dolu), 4 listenin AdminPage yönetim sekmesi (G061 denetçisinin ayrı önerisi). -->
+
+- [ ] G066 | bant:backend | bagimli:- | Dört karar durumu alanında kapalı liste doğrulaması (takip yazma yolu; kapalılık bugün yalnız UI'da)
+
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
