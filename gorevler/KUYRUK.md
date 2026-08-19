@@ -3,6 +3,23 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Aşama tarihçesi görünürlüğü + takip/kart ayrımı (2026-08-19, kullanıcı kararı)
+
+<!-- Kullanıcı 2026-08-19'da "ilk önceliğimiz bu olsun" dedi. Kaynak: aynı gün yapılan
+     HUKDOK tam aktarımı (3813ebe) `case_stage_decisions`e 4.971 satır yazdı — YEREL 3.098,
+     İSTİNAF 1.236, TEMYİZ 574, K.Düzeltme 63 — ve tablonun NE ROUTE'U NE EKRANI var
+     (G062 bilinçli olarak arayüzsüz bırakmıştı). Kullanıcı ayrıca takip/kart ayrımının
+     yanlış yapıldığını söyledi; inceleme onu doğruladı, üç sapma ölçüldü (G073).
+     DÖRDÜNCÜ sapma aynı gün kapandı: `istinaf_basvuran_taraf` kart eşlemesi ile aşama
+     fotoğrafı arasında İKİ YAZICIYDI, ikinci koşuda 5 kart salınıyordu (3813ebe).
+     Sıra: G072 ve G073 paralel (ikisi de backend bandı → seri koşar), G074 ikisini bekler.
+     Bu paket DEPLOY GEREKTİRİR (backend route + frontend); deploy kararı kullanıcıda ve
+     19.08 direktifi gereği ÖNCE LOKALDE doğrulanır. -->
+
+- [ ] G072 | bant:backend | bagimli:- | Aşama tarihçesi okuma yolu (route + şema); 4.971 satır bugün görünmüyor
+- [ ] G073 | bant:backend | bagimli:- | Takip/kart alan yerleşimi: arabuluculuk + arşiv tarihi takibe, dosya_son_durumu tek yere
+- [ ] G074 | bant:frontend | bagimli:G072,G073 | Takip panelinde aşama zaman çizgisi + kart gruplarının sadeleşmesi
+
 ## Aktif plan: Sertleştirme kalanı — FAZ 4/5 (4-A ve 5-A klasik yolla bitti; kalan 3 paket burada)
 
 <!-- 4-B iki göreve bölündü (G001 backend + G002 frontend); "failed" olay sözleşmesi iki görev
