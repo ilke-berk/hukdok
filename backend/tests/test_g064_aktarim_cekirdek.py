@@ -252,10 +252,11 @@ def test_kapsam_kilidi_ikinci_yazici_dogurmadi():
         "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
         "karar_duzeltme_durumu", "sistem_no", "tku_no",
     }
-    # Bilinçli yazılmayanlar (script docstring'inde gerekçeli): uzmanlık ad
-    # eşleme tablosu gelmedi, teslim avukat adlarının aksanını düşürüyor,
-    # hizmet türü bitmask semantiği kararlaşmadı.
-    assert not yazilanlar & {"sub_type", "responsible_lawyer_name", "service_type"}
+    # Bilinçli yazılmayanlar (script docstring'inde gerekçeli): teslim avukat
+    # adlarının aksanını düşürüyor, hizmet türü bitmask semantiği kararlaşmadı.
+    assert not yazilanlar & {"responsible_lawyer_name", "service_type"}
+    # `court`/`sub_type` yazılır AMA yalnız içerik farkında (yazım bizim).
+    assert hukdok_aktarim.ICERIK_KARSILASTIRMALI_ALANLAR == {"court", "sub_type"}
     # Toptan taraf silme belge-taraf bağını SESSİZCE koparırdı (SET NULL tuzağı)
     assert "delete(models.CaseParty" not in kaynak
     assert "CaseParty).delete" not in kaynak
@@ -823,27 +824,44 @@ def test_kapali_liste_taninmayan_degeri_yazmaz(uc_kart, tmp_path):
         db.close()
 
 
-def test_mahkeme_adi_yalniz_bos_kartta_yazilir(uc_kart, tmp_path):
-    """`court` BOSA_YAZILAN: teslimin BÜYÜK HARF yazımı dolu alanı geriletmez."""
+def test_icerik_farkinda_yazilir_yazim_farkinda_yazilmaz(uc_kart, tmp_path):
+    """`court`/`sub_type`: içerik teslimin, yazım bizim.
+
+    Ölçüm (2026-08-19): `court`ta 562 farkın 480'i yalnız BÜYÜK HARF/noktalama,
+    82'si gerçekten başka mahkeme; `sub_type`ta 7.390 farkın 7.039'u yazım.
+    Yazımı da üstüne yazmak G067-G070'te düzeltilen mahkeme adı kimliğini ve
+    referans listelerinin `tr_title` formatını geriletirdi.
+    """
     db = uc_kart()
     try:
-        dolu = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
-        dolu.court = "Bakırköy 3. Tüketici Mahkemesi"
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        kartlar["D-1"].court = "Bakırköy 3. Tüketici Mahkemesi"
+        kartlar["D-1"].sub_type = "Ortopedi Ve Travmatoloji"
+        kartlar["D-3"].court = "İzmir 4. İdare Mahkemesi"
         db.commit()
     finally:
         db.close()
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("SSTMN-1", "D-1", **{"Yerel Mahkeme": "BAKIRKÖY 3. TÜKETİCİ MAHKEMESİ"}),
-        _satir("SSTMN-2", "D-2", **{"Yerel Mahkeme": "ANKARA 9. TÜKETİCİ MAHKEMESİ"}),
-    ], basliklar=BASLIKLAR + ["Yerel Mahkeme"])
+        # yalnız yazım farkı → dokunulmaz
+        _satir("SSTMN-1", "D-1", **{"Yerel Mahkeme": "BAKIRKÖY 3. TÜKETİCİ MAHKEMESİ",
+                                    "Dava Türü Alt Kırılımı": "ORTOPEDİ VE TRAVMATOLOJİ"}),
+        # kart boştu → dolar (BÜYÜK HARF gelen uzmanlık `tr_title`e çevrilir)
+        _satir("SSTMN-2", "D-2", **{"Yerel Mahkeme": "ANKARA 9. TÜKETİCİ MAHKEMESİ",
+                                    "Dava Türü Alt Kırılımı": "ÇOCUK SAĞLIĞI VE HASTALIKLARI"}),
+        # GERÇEK içerik farkı → teslim kazanır
+        _satir("SSTMN-3", "D-3", **{"Yerel Mahkeme": "İzmir 15. Asliye Hukuk Mahkemesi"}),
+    ], basliklar=BASLIKLAR + ["Yerel Mahkeme", "Dava Türü Alt Kırılımı"])
 
     aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
     db = uc_kart()
     try:
         kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
-        assert kartlar["D-1"].court == "Bakırköy 3. Tüketici Mahkemesi"   # korundu
+        assert kartlar["D-1"].court == "Bakırköy 3. Tüketici Mahkemesi"   # yazım: korundu
+        assert kartlar["D-1"].sub_type == "Ortopedi Ve Travmatoloji"      # yazım: korundu
         assert kartlar["D-2"].court == "ANKARA 9. TÜKETİCİ MAHKEMESİ"     # boştu, doldu
+        assert kartlar["D-2"].sub_type == "Çocuk Sağlığı Ve Hastalıkları"  # tr_title
+        assert kartlar["D-3"].court == "İzmir 15. Asliye Hukuk Mahkemesi"  # içerik: değişti
     finally:
         db.close()
 

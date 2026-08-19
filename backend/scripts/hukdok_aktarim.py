@@ -57,12 +57,11 @@ para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, ü�
 (`last_status`, `bureau_type`, `arabuluculuk_no`, `istinaf_basvuran_taraf`) ve
 G044'ün tıbbi beşlisi.
 
-**Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `sub_type`
-(teslim BÜYÜK HARF, 77 ham değer ↔ 44 seed; uzmanlık ad eşleme tablosu
-gelmedi) · `responsible_lawyer_name` (teslim aksanları düşürmüş: "Tugce Ungor"
+**Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `responsible_lawyer_name` (teslim aksanları düşürmüş: "Tugce Ungor"
 — bizdeki yazım daha doğru) · `service_type` (bitmask semantiği kararlaşmadı) ·
 `Ek Alt Kırılım*` (karşı tarafın kendi uyarısı: dosya açılış etiketi, güncel
-değil) · `Para Birimi`/`MüvekkilNo` (taşınmaz). `court` yalnız BOŞSA yazılır.
+değil) · `Para Birimi`/`MüvekkilNo` (taşınmaz). `court` ve `sub_type` İÇERİK
+farkında yazılır, yalnız yazım farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
 Karar künyesi
 (`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ — o kolonların tek yazma yolu
 `managers/stage_decisions.py`ın aşama fotoğrafıdır (G062); buradan yazmak
@@ -97,7 +96,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # olarak kapalıdır — script tek başına da koşabilmeli.
 import models
 from managers import case_manager, foy_map
-from managers.reference_lists import tr_upper
+from managers.reference_lists import tr_title, tr_upper
 from required_fields import AKTARIM_SOURCE_PREFIX
 from services import belge_envanteri
 
@@ -155,6 +154,7 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "arabuluculuk_no":           ("Arabuluculuk Numarası",),
     "arabuluculuk_karar_tarihi": ("Arabuluculuk Karar Tarihi",),
     "istinaf_basvuran":          ("İstinaf Mahkemesi Başvuran Taraf",),
+    "uzmanlik_alani":            ("Dava Türü Alt Kırılımı", "Uzmanlık Alanı"),
     "tibbi_surec":               ("Tıbbi Süreç",),
     "iddia_edilen_kusur":        ("İddia Edilen Kusur",),
     "hastada_olusan_zarar":      ("Hastada Oluşan Zarar",),
@@ -446,13 +446,27 @@ def _metin_alan(deger: Any, alan: str) -> Optional[str]:
     return _kirp(_metin(deger), alan)
 
 
+def _baslik_bicimli(deger: Any, alan: str) -> Optional[str]:
+    """Teslimin BÜYÜK HARF metnini bizim saklama biçimimize çevirir.
+
+    Uzmanlık alanı teslimde "ÇOCUK SAĞLIĞI VE HASTALIKLARI" gibi gelir; bizim
+    referans listelerimizin saklama formatı `tr_title` ("Çocuk Sağlığı Ve
+    Hastalıkları"). Ham hâliyle yazmak 7.039 kartta yalnız yazımı bozardı —
+    içerik zaten aynı. Eşleme SÖZLÜĞÜ değildir (77 ham değer ↔ 44 seed işi
+    duruyor); yalnız biçim düzeltir.
+    """
+    metin = _metin(deger)
+    return _kirp(tr_title(metin), alan) if metin else None
+
+
 # Kart alanı → (kaynak sütun anahtarı, dönüştürücü)
 KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # --- kimlik/sınıflandırma
     "file_type":    ("ana_tur", _esleme(ANA_TUR_ESLEMESI)),
     "status":       ("durum", _esleme(DURUM_ESLEMESI)),
     "subject":      ("dava_konusu", _metin_alan),
-    "court":        ("yerel_mahkeme", _metin_alan),          # BOSA_YAZ — aşağı bak
+    "court":        ("yerel_mahkeme", _metin_alan),          # İÇERİK modu — aşağı bak
+    "sub_type":     ("uzmanlik_alani", _baslik_bicimli),     # İÇERİK modu
     "esas_no":      ("esas", _metin_alan),                   # ÖZEL: esas tarihçesi
     # --- tarihler
     "opening_date":    ("dava_tarihi", _tarih),
@@ -483,11 +497,18 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     "uygulanan_yontem":     ("uygulanan_yontem", _metin_alan),
 }
 
-# YALNIZ boşsa yazılan alanlar. `court`: teslimin mahkeme adları BÜYÜK HARF
-# (2026-08-19 ölçümü: 562 föyde fark, çoğu yalnız yazım) — bizim yazımımız
-# G067-G070'te kimlik olarak düzeltildi, üzerine yazmak geriletirdi. Boş olan
-# 31 kartı ise teslim doldurabilir.
-BOSA_YAZILAN_ALANLAR = frozenset({"court"})
+# İÇERİK farkı varsa yazılan, YAZIM farkı varsa dokunulmayan alanlar.
+#
+# Ölçüm (2026-08-19, 7.932 eşleşen föy): `court`ta 562 farkın 480'i yalnız
+# yazım (BÜYÜK HARF / eksik nokta), 82'si GERÇEK başka mahkeme ("İzmir 4.
+# İdare" ↔ "İzmir 15. Asliye Hukuk"). `sub_type`ta 7.390 farkın 7.039'u yazım,
+# 351'i gerçekten başka uzmanlık ("Göğüs Cerrahisi" ↔ "Genel Cerrahi").
+#
+# Kural: içerik teslimin (kaynak orada, bilgi daha güncel), yazım bizim
+# (G067-G070 mahkeme adı kimliği + referans listelerinin `tr_title` formatı).
+# Karşılaştırma `_baslik_anahtari` ile: aksan, büyük/küçük harf ve noktalama
+# yok sayılır.
+ICERIK_KARSILASTIRMALI_ALANLAR = frozenset({"court", "sub_type"})
 
 # Türetilen alanlar: değeri TEK sütundan gelmeyenler.
 KART_TURETILEN: Dict[str, Callable[[Dict[str, Any], str], Any]] = {}
@@ -772,10 +793,11 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
         if alan in celiskili_alanlar:
             continue
         eski = getattr(case, alan)
-        if alan in BOSA_YAZILAN_ALANLAR and _metin(eski) is not None:
-            continue                      # dolu değeri geriletme (bkz. `court`)
         if eski == yeni:
             continue
+        if (alan in ICERIK_KARSILASTIRMALI_ALANLAR
+                and _baslik_anahtari(eski) == _baslik_anahtari(yeni)):
+            continue                      # yalnız yazım farkı — bizimki kalır
         if alan == "esas_no":
             # Türetilmiş alan: kolon + tarihçe TEK yoldan (G045). Buradan
             # setattr etmek `case_esas_numbers`ı bypass edip ikinci doğruluk
