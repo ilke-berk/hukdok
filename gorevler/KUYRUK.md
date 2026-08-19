@@ -286,7 +286,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
          Rozet ancak "dolu ama düşük güvenli" durum olsaydı bilgi taşırdı; o durum yok. -->
 
 - [x] G069 | bant:backend | bagimli:- | judicial_unit üst mahkeme boşluğu: Yargıtay daireleri Bölge Adliye'ye yazılıyor (bugün latent, FAZ F'de pahalı)
-- [ ] G070 | bant:backend | bagimli:G069 | Yargı yeri sözlüğünü kendi verimizden kapat (166 KISMİ değer; panele taşınmaz — gerekçe yukarıda)
+- [x] G070 | bant:backend | bagimli:G069 | Yargı yeri sözlüğünü kendi verimizden kapat (166 KISMİ değer; panele taşınmaz — gerekçe yukarıda)
 
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
