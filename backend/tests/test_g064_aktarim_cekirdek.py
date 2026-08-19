@@ -571,11 +571,11 @@ def test_belge_bagi_koparsa_kosu_geri_alinir_ve_nonzero_doner(belgeli_kart, tmp_
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [_satir("SSTMN-1", "D-1")])
     gercek = hukdok_aktarim._kart_alanlarini_yaz
 
-    def _bagi_kopar(db, case, satir, source):
+    def _bagi_kopar(db, case, satir, source, **kwargs):
         db.query(models.CaseDocument).filter(
             models.CaseDocument.case_id == case.id
         ).update({"case_party_id": None}, synchronize_session=False)
-        return gercek(db, case, satir, source)
+        return gercek(db, case, satir, source, **kwargs)
 
     monkeypatch.setattr(hukdok_aktarim, "_kart_alanlarini_yaz", _bagi_kopar)
 
@@ -722,6 +722,73 @@ def test_kardes_foy_celiskisi_raporlaniyor_kunye_yazilmiyor(uc_kart, tmp_path):
         assert len(foy_map.get_case_foys(db, kart.id)) == 2   # iki föy TEK kartta
     finally:
         db.close()
+
+
+def test_kardes_foyler_kart_alaninda_uzlasmazsa_alan_yazilmaz(uc_kart, tmp_path):
+    """19.08 provasının bulgusu: kart alanı TEK SLOT, föy ise kart başına çok.
+
+    Satır satır yazınca kartta "en son işlenen föy" kalıyor ve ikinci koşuda
+    başka föy kazanıp alan SALINIYORDU (gerçek koşuda kart#195: 12 föyün
+    ikisi farklı Arşiv Tarihi taşıyor → 2. ve 3. koşu her seferinde 6
+    değişiklik). Uzlaşmayan alan artık YAZILMAZ, rapora düşer.
+    """
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("id-9899", "D-1", **{"Arşiv Tarihi": "12.07.2023", "Hasar No": "H-A"}),
+        _satir("id-9902", "D-1", **{"Arşiv Tarihi": "07.06.2017", "Hasar No": "H-B"}),
+        _satir("id-9908", "D-1", **{"Arşiv Tarihi": "12.07.2023"}),
+        _satir("SSTMN-2", "D-2", **{"Arşiv Tarihi": "15.03.2021"}),   # uzlaşan kart
+    ])
+
+    ilk = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    celiski = [c for c in ilk.celiskiler if c.alan == "arsiv_tarihi"]
+    assert len(celiski) == 1 and celiski[0].kume == "KART"
+    assert "id-9902=2017-06-07" in celiski[0].degerler
+
+    db = uc_kart()
+    try:
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        assert kartlar["D-1"].arsiv_tarihi is None          # kur'a çekilmedi
+        assert kartlar["D-2"].arsiv_tarihi == date(2021, 3, 15)   # uzlaşan yazıldı
+        # Föyler yine de asıldı: çelişki kartı yazmayı engeller, kimliği DEĞİL.
+        assert len(foy_map.get_case_foys(db, kartlar["D-1"].id)) == 3
+        assert foy_map.get_foy(db, "id-9902").hasar_no == "H-B"
+    finally:
+        db.close()
+
+    fotograf = _kart_fotografi(uc_kart)
+    ikinci = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    assert ikinci.alan_degisikligi == 0 and ikinci.kart_degisen == 0
+    assert _kart_fotografi(uc_kart) == fotograf             # salınım bitti
+
+
+def test_kart_degisen_ayni_kartin_iki_foyunu_tek_kart_sayar(uc_kart, tmp_path):
+    """Özet satırındaki "N kart" KART sayar, satır değil (provada 52 kart
+    "58 kart" diye raporlanmıştı)."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Islah Tutarı": "1.000,00"}),
+        _satir("SSTMN-2", "D-1", **{"Tıbbi Olay": "Enfeksiyon"}),
+    ])
+
+    sonuc = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    assert sonuc.alan_degisikligi == 2      # iki ayrı alan yazıldı
+    assert sonuc.kart_degisen == 1          # ama TEK kartta
+
+
+def test_klasor_no_basligi_tku_grup_anahtari_olarak_okunur(tmp_path):
+    """Teslim paketinde TKU'nun başlığı "Klasör No"dur; aday listesi bunu
+    tanımazsa föyler tku_no'suz doğar (19.08 provasında 90/90 boştu)."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        {"SistemNo": "SSTMN-1", "Klasör No": "TKU-784", "DosyaNo": "D-1"},
+    ], basliklar=["SistemNo", "Klasör No", "DosyaNo"])
+
+    satirlar, bulunanlar = xlsx_oku(paket)
+
+    assert bulunanlar["tku_no"] == "Klasör No"
+    assert satirlar[0].degerler["tku_no"] == "TKU-784"
+    assert bulunanlar["dosya_no"] == "DosyaNo"      # KLASORNO ≠ KLASORNO2
 
 
 def test_ayni_paketteki_mukerrer_sistem_no_satir_ikilemiyor(uc_kart, tmp_path):

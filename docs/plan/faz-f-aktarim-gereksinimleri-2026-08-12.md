@@ -93,6 +93,75 @@ kopyası. Tek yazma yolu, tek türetme kuralı, **ikinci doğruluk kaynağı yok
 export sütun sabitliği taahhüdü verildikten sonra ad değiştirmek taahhüt ihlali olur.
 Aynı gerekçeyle §1.1'deki beş tıbbi alanın adları da bu turda kesinleşir.
 
+### 1.5 Müvekkil bazlı iş ilişkisi alanları — `case_parties` genişlemesi
+
+**Kaynak:** `HUKDOK_TESLIM_PAKETI_2026-08-18.xlsx` × lokal restore kopyası (30.07,
+14.345 kart) üzerinde 19.08.2026'da ölçüldü.
+
+**Sorun:** master her müvekkil için ayrı föy açar; biz aynı davanın müvekkillerini tek
+kartta toplarız (18.08 kullanıcı kararı, §1.3'ün kardeşi). Föyler arası farklı kalan
+alanların bir kısmı **davanın** değil, **o müvekkille yaptığımız işin** bilgisidir. Kart
+üzerinde tek kutuda tutulurlarsa birleşmede biri sessizce çöpe gider.
+
+Kanıt vakası — kart#520, tek dava (Adana 2. Tüketici, aynı esas), iki müvekkil:
+
+| | Selda Bahçe Dr. (föy 1) | Ak Sigorta (föy 2) |
+| --- | --- | --- |
+| Hizmet Türü | Takip (doktor müvekkil) | Lexis Rapor |
+| Sorumlu Avukat | Berna Burcu Başyurt | Ayşe Acar Yücel |
+| İş Kabul Tarihi | 28.08.2020 | 22.09.2021 |
+| Son Durum | Kesin Lehe | Lexis Rapor Gönderildi |
+
+Ölçüm: 1.136 **temiz** çok föylü kartta (aynı mahkeme + aynı esas, farklı müvekkil —
+yani gerçekten "tek dava, çok müvekkil") föyler arası **ikisi de dolu ve farklı** olan
+alanlar:
+
+| Taraf alanı | Kaynak sütun | Farklı kart |
+| --- | --- | --- |
+| `hizmet_turu` | Hizmet Türü | 929 |
+| `is_kabul_tarihi` | İş Kabul Tarihi | 993 |
+| `muvekkil_tipi` | Müvekkil Tipi | 857 |
+| `is_durumu` | Son Durum | 358 |
+| `sorumlu_avukat` | Sorumlu Avukatlar | 249 |
+| `kayit_durumu` (Aktif/Arşiv) | Durum | 147 |
+| `sigortali` | Sigortalı | 193 |
+| `hasar_no` | Hasar No | 136 |
+| `hukuk_no` | Hukuk No | 27 |
+
+**Karar: bu alanlar `case_foys`'a kolon olarak DEĞİL, `case_parties`'e yazılır.**
+`case_foys.case_party_id` föyü zaten o taraf satırına bağlıyor (G063); föy tablosu
+kimlik + idempotency taşıyıcısı olarak kalır, iş ilişkisi verisi tarafta yaşar. Gerekçe:
+bizim modelimizde föy = "o davadaki o müvekkil"; veriyi ikinci bir yere kopyalamak ikinci
+doğruluk kaynağı doğururdu.
+
+**Kapsam dışı — bilerek:** dava düzeyi alanların föy başına saklanması. Dava Tarihi
+(409 kart), Yerel Mahkeme Karar Durumu (354), Karşı Taraf (170), karar künyesi: aynı
+davanın iki satıra ayrı ayrı yazılmasından doğan **kaymadır**, gerçek çokluk değil. Tek
+değere uzlaştırılır, çelişki §3'ün rapor borcuna eklenir. **Dava Değeri** (223 kart) de
+buraya girer: tipik desen doktor föyünde tutar, sigorta föyünde 0 — sıfır olmayan alınır.
+
+**`Buro Özel Türü` taşınmaz:** `Hizmet Türü` ile aynı eksenin ikinci yazımıdır (8.409
+föyde DR ÖZEL↔Takip (doktor müvekkil) 2.428 · LEXİS↔Lexis Rapor 2.213 · VEKALETSİZ
+1.947 · VEKALETLİ 1.648 — %98,6 birebir). §1.1'in 68 sütunluk eşlemesinden bir kalem düşer.
+
+> **Yan etki — mevcut modelleme hatası:** `cases.service_type` bugün **kartın** üzerinde.
+> Doktor + sigorta ikilisinin bulunduğu 822 kartta tek kart tek hizmet türü taşıyamaz;
+> oradaki değer şu an zaten müvekkillerden birinin. Hizmet türü tarafa taşınınca
+> `cases.service_type` ya **türetilmiş** olur (kartın taraflarındaki hizmet türleri
+> kümesi) ya da yalnız tek müvekkilli kartlarda anlamlı kalır — hangisi olursa olsun
+> **tek yazma yolu** şart (`sync_current_esas` deseni).
+
+> **Ara kural D9 (19.08'de canlıya alındı):** bu alanların evi açılana kadar aktarım,
+> kardeş föylerin uzlaşmadığı KART alanını **yazmıyor** — kur'a çekip birinin değerini
+> kartta bırakmak, koşudan koşuya salınan bir alan üretiyordu. Yani veri şimdilik
+> kaybolmuyor ama **kartta da görünmüyor**; §1.5 uygulanınca her föy kendi değerini
+> taşıyacak ve kural gereksiz kalacak.
+
+**Kabul kriteri:** (1) aktarım koşusundan sonra 1.136 temiz kartın her birinde föy sayısı
+kadar taraf satırı hizmet türü + kabul tarihi ile dolu; (2) koşu öncesi/sonrası belge
+envanteri DENK (belge koruma şartı, 18.08); (3) ikinci koşu satır ikilemez (SistemNo
+idempotency); (4) taraf satırları toptan silinip yeniden yazılmaz — UPDATE-in-place.
+
 ---
 
 ## 2. Davranış değişiklikleri (kolon değil, kod)
@@ -107,6 +176,7 @@ Aynı gerekçeyle §1.1'deki beş tıbbi alanın adları da bu turda kesinleşir
 | **D5** | Yer tutucu tarihler **NULL**: `01.01.1900` (217), metin biçimli (40), gelecek tarihler (4: `01.01.2030`×3, `01.01.2027`) | Aktarım scripti |
 | **D6** | Mükerrer gruplar **otomatik BİRLEŞTİRİLMEZ**. Sigortalı farklı → ayrı föy (160 grup); hizmet türü farklı → ayrı föy (14 grup) | Aktarım scripti |
 | **D7** | Kanonik dava konusu yazımına kapanma + kayıt anında `trim` / iç boşluk sadeleştirme | Referans listesi yazma yolu |
+| **D9** | **Kardeş föyler bir KART alanında uzlaşmıyorsa o alan YAZILMAZ**, çelişki raporuna düşer (künye ile aynı desen). §1.5'in evi açılana kadarki ara kural; olmadan aktarım idempotent DEĞİL — 19.08 provasında kart#195/#12954 yüzünden her koşu 6 sahte "değişiklik" üretiyordu | Aktarım scripti (`kart_alan_celiskileri`) |
 
 > **D1 uyarısı:** çıkar çatışması motoru G017'de (A.4) yeni optimize edildi. Sigortalı
 > istisnası oraya eklenirken 1.324.050 isim çifti üzerinde kanıtlanmış davranış
@@ -206,9 +276,14 @@ kodları X1 kalsa bile.
 ```
 FAZ B (emniyet ağı)
    └─> FAZ D  6.1 migrasyon mekanizması + 6.2 index
-         └─> ŞEMA: 11 kolon + case_esas_numbers + Uzmanlık Alanı rename
+         └─> ŞEMA: 11 kolon + case_esas_numbers + case_parties iş ilişkisi alanları (§1.5)
+             + Uzmanlık Alanı rename
                └─> FAZ F  yazma yolu + 7 davranış kuralı + 4 rapor
 ```
+
+§1.5 aktarım yazma yolunun **ÖNKOŞULU**: taraf alanları açılmadan koşulan bir aktarım,
+birleştirdiği 1.136 kartta müvekkillerden birinin hizmet türü/avukatı/kabul tarihini
+sessizce düşürür — sonradan telafisi teslimden yeniden okumakla olur.
 
 `case_esas_numbers` ve yeni kolonlar **D'nin arkasında** durur: `("table", …)` op'unun
 kısıt/index SQL'i çalışmadığı sürece yeni tablo da korumasız doğar.

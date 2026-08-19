@@ -73,7 +73,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, cast
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, cast
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -110,7 +110,12 @@ DEGISTIREN = "hukdok_aktarim"
 # işi DEĞİLDİR; buradaki küme yalnız çekirdeği besler.
 SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "sistem_no":    ("SistemNo", "Sistem No"),
-    "tku_no":       ("TKU", "TKU No", "TKU No."),
+    # "Klasör No": teslim paketinde TKU grup anahtarının GERÇEK başlığı budur
+    # (SUTUN_SOZLUGU sayfası #4, KİMLİK, 8.152 dolu; değerler "TKU-784"). 100
+    # föylük provada (19.08) föylerin TAMAMI tku_no'suz doğmuştu — aday listesi
+    # yalnız "TKU*" varyantlarını tanıyordu. `dosya_no`nun "Klasör No.2"
+    # adayıyla çakışmaz: başlık anahtarları KLASORNO ≠ KLASORNO2.
+    "tku_no":       ("TKU", "TKU No", "TKU No.", "Klasör No"),
     "hasar_no":     ("Hasar No", "Hasar Numarası"),
     "dosya_no":     ("Dosya No", "DosyaNo", "Klasör No.2"),
     "arsiv_tarihi": ("Arşiv Tarihi",),
@@ -199,17 +204,25 @@ class AktarimSonucu:
     foy_yeni: int = 0
     foy_guncellenen: int = 0
     alan_degisikligi: int = 0
-    kart_degisen: int = 0
     atlanan: int = 0
     dry_run: bool = False
     yazildi: bool = False              # commit edildi mi?
     kaynak_imzasi: str = ""
     rapor_satirlari: List[RaporSatiri] = field(default_factory=list)
     celiskiler: List[Celiski] = field(default_factory=list)
+    # KART kimlikleri — sayaç DEĞİL küme: bir kartın iki föyü de alan
+    # değiştirirse bu "iki kart" değildir. Özet satırı "N kart" yazıyor;
+    # sayaç sürümü 100 föylük provada 52 kartı "58 kart" diye raporladı.
+    degisen_kartlar: Set[int] = field(default_factory=set)
     envanter_once: Optional[belge_envanteri.BelgeEnvanteri] = None
     envanter_sonra: Optional[belge_envanteri.BelgeEnvanteri] = None
     envanter_farki: Dict[str, Tuple[Any, Any]] = field(default_factory=dict)
     raporlar: List[Path] = field(default_factory=list)
+
+    @property
+    def kart_degisen(self) -> int:
+        """Alanı değişen BENZERSİZ kart sayısı (özet satırının "N kart"ı)."""
+        return len(self.degisen_kartlar)
 
     @property
     def hatalar(self) -> List[RaporSatiri]:
@@ -476,6 +489,78 @@ def _eslesme_anahtari(deger: Any) -> str:
 # Satır işleme
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _kart_id_tahmini(satir: HamSatir, foy_haritasi: Dict[str, int],
+                     dosya_haritasi: Dict[str, List[int]],
+                     sistem_no: str) -> Optional[int]:
+    """`_kart_coz`un ÖN GEÇİŞ ikizi: DB'ye gitmez, istisna atmaz, None döner.
+
+    Yalnız kesin eşleşme sayılır — belirsiz/eşleşmeyen satır uzlaşıya girmez;
+    onun akıbetini asıl döngü (`_kart_coz`) belirler.
+    """
+    case_id = foy_haritasi.get(sistem_no)
+    if case_id is not None:
+        return case_id
+    adaylar: List[int] = []
+    for parca in _dosya_no_parcalari(satir.degerler.get("dosya_no")):
+        for aday in dosya_haritasi.get(parca) or []:
+            if aday not in adaylar:
+                adaylar.append(aday)
+    return adaylar[0] if len(adaylar) == 1 else None
+
+
+def kart_alan_celiskileri(
+    satirlar: Sequence[HamSatir], *, foy_haritasi: Dict[str, int],
+    dosya_haritasi: Dict[str, List[int]],
+) -> Tuple[Dict[int, Set[str]], List[Celiski]]:
+    """Aynı kartın föyleri bir KART alanında çelişiyorsa o alan YAZILMAZ.
+
+    **Neden (19.08 provasının bulgusu):** kart alanları TEK SLOT'tur, föy ise
+    kart başına birden çok. Satır satır yazınca kartta kalan değer "en son
+    işlenen föy"ünkidir; ikinci koşuda satır sırası değişince başka föy
+    kazanır ve alan koşudan koşuya SALINIR. 100 föylük provada kart#195
+    (12 föy; 10'u 2023-07-12, id-9902 2017-06-07, id-9908 2017-07-12) ve
+    kart#12954 yüzünden 2. ve 3. koşu her seferinde 6 "değişiklik" üretti —
+    oysa ne bizde ne teslimde bir şey değişmişti. Bu, G064'ün kabul kriterini
+    ("aynı girdiyle ikinci koşu 0 değişiklik") doğrudan ihlal ediyordu.
+
+    Çözüm tahmin ETMEK değil, tahmini REDDETMEK: çelişen alan yazılmaz, çelişki
+    kardeş-föy raporuna düşer (KUNYE_ALANLARI ile aynı desen — künye de
+    yazılmaz, raporlanır). Föyler arası gerçekten farklı olan değerlerin kalıcı
+    evi FAZ F §1.5'tir (`case_parties`/föy düzeyi alanlar); o ev açılana kadar
+    doğru davranış, kartta hangi föyün kazandığını kur'aya bırakmamaktır.
+
+    Döner: ({case_id: {çelişen alan}}, [rapor satırı]).
+    """
+    degerler: Dict[Tuple[int, str], List[Tuple[str, Any]]] = {}
+    for satir in satirlar:
+        sistem_no = _metin(satir.degerler.get("sistem_no"))
+        if not sistem_no:
+            continue
+        case_id = _kart_id_tahmini(satir, foy_haritasi, dosya_haritasi, sistem_no)
+        if case_id is None:
+            continue
+        for alan, (kaynak, donustur) in KART_ALANLARI.items():
+            try:
+                deger = donustur(satir.degerler.get(kaynak), alan)
+            except SatirHatasi:
+                continue          # bozuk satır zaten düşecek; uzlaşıyı kirletmesin
+            if deger is None:
+                continue          # "bu teslimde yok" çelişki DEĞİLDİR
+            degerler.setdefault((case_id, alan), []).append((sistem_no, deger))
+
+    celiskili: Dict[int, Set[str]] = {}
+    celiskiler: List[Celiski] = []
+    for (case_id, alan), uyeler in sorted(degerler.items()):
+        if len({d for _, d in uyeler}) < 2:
+            continue
+        celiskili.setdefault(case_id, set()).add(alan)
+        celiskiler.append(Celiski(
+            kume="KART", kume_anahtari=str(case_id), alan=alan,
+            degerler=" | ".join(f"{s}={d}" for s, d in sorted(uyeler)),
+        ))
+    return celiskili, celiskiler
+
+
 def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
               dosya_haritasi: Dict[str, List[int]], sistem_no: str) -> models.Case:
     """Satırın kartını bulur. Bulunamazsa SatirHatasi — kart YARATILMAZ."""
@@ -508,17 +593,21 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
 
 
 def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
-                         source: str) -> List[str]:
+                         source: str,
+                         celiskili_alanlar: Set[str] = frozenset()) -> List[str]:
     """DAR alan kümesini kartın ÜZERİNE yazar (UPDATE-in-place); değişenleri döner.
 
     Değişmeyen alan için ne UPDATE ne `case_history` satırı üretilir — ikinci
     koşunun "0 değişiklik" kabul kriteri buna dayanır. `None` gelen alan
     KORUNUR (partili teslimde eksik sütun mevcut değeri silmez).
+    `celiskili_alanlar` kardeş föylerin uzlaşamadığı alanlardır: dönüşüm YİNE
+    koşar (bozuk değer satırı düşürmeye devam etsin diye) ama yazım atlanır —
+    gerekçe `kart_alan_celiskileri` docstring'inde.
     """
     degisenler: List[str] = []
     for alan, (kaynak, donustur) in KART_ALANLARI.items():
         yeni = donustur(satir.degerler.get(kaynak), alan)
-        if yeni is None:
+        if yeni is None or alan in celiskili_alanlar:
             continue
         eski = getattr(case, alan)
         if eski == yeni:
@@ -543,7 +632,8 @@ def _gecmis_metni(deger: Any) -> Optional[str]:
 
 def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  dosya_haritasi: Dict[str, List[int]], source: str,
-                 foy_source: str, sonuc: AktarimSonucu) -> int:
+                 foy_source: str, sonuc: AktarimSonucu,
+                 kart_celiskileri: Optional[Dict[int, Set[str]]] = None) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
@@ -566,7 +656,10 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         source=foy_source,
     )
 
-    degisenler = _kart_alanlarini_yaz(db, case, satir, source)
+    degisenler = _kart_alanlarini_yaz(
+        db, case, satir, source,
+        celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
+    )
 
     if yeni_foy:
         # Föyün kartla EŞLENMESİ de bir değişikliktir; provenance imzası
@@ -587,7 +680,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         case_manager.refresh_missing_required(db, case)
     if degisenler:
         sonuc.alan_degisikligi += len(degisenler)
-        sonuc.kart_degisen += 1
+        sonuc.degisen_kartlar.add(cast(int, case.id))
 
     sonuc.islenen += 1
     return cast(int, case.id)
@@ -686,6 +779,19 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
             db, [_metin(s.degerler.get("sistem_no")) for s in satirlar]
         )
         dosya_haritasi = _dosya_no_haritasi(db)
+
+        # ÖN GEÇİŞ (yazmaz): kardeş föylerin kart alanlarında uzlaşıp
+        # uzlaşmadığı ÖNCE bilinmeli — satır satır yazarken öğrenilseydi ilk
+        # föy zaten kartı bir kez ezmiş olurdu.
+        kart_celiskileri, kart_celiski_raporu = kart_alan_celiskileri(
+            satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
+        )
+        if kart_celiski_raporu:
+            logger.warning(
+                f"{len(kart_celiski_raporu)} kart alanında kardeş föyler uzlaşmadı — "
+                f"o alanlar YAZILMADI (rapora düştü)"
+            )
+
         kunye_kayitlari: List[Dict[str, Any]] = []
 
         for satir in satirlar:
@@ -696,6 +802,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         db, satir,
                         foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
+                        kart_celiskileri=kart_celiskileri,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.
@@ -730,7 +837,10 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         satir.degerler.get("karar_tarihi"), "karar_tarihi"),
                 })
 
-        sonuc.celiskiler = celiskileri_bul(kunye_kayitlari)
+        # Künye çelişkileri (yazılmayan alanlar) + kart alanı çelişkileri
+        # (yazımı ATLANAN alanlar) TEK raporda buluşur: ikisi de "kardeş föyler
+        # uzlaşmadı, kartta kur'a çekmedik" demektir.
+        sonuc.celiskiler = kart_celiski_raporu + celiskileri_bul(kunye_kayitlari)
 
         db.flush()
         sonuc.envanter_sonra = belge_envanteri.snapshot(db)
