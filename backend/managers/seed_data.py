@@ -13,6 +13,44 @@ import models
 
 logger = logging.getLogger("AdminManager")
 
+# Yargı Birimi (court_types) referans sözlüğü — parent_code → birim adları.
+# Modül düzeyinde durur ki `services.judicial_unit.PATTERNS`'in ürettiği HER kanonik
+# değerin burada karşılığı olduğu testle kilitlenebilsin (G069): sözlükte olmayan bir
+# kanonik değer, dava formundaki Yargı Birimi seçicisinde HİÇ görünmez.
+# "(İLK DERECE)" ekli girdiler üst mahkemenin ilk derece sıfatıyla baktığı işleri
+# ayırır; eksiz ad (BÖLGE ADLİYE… / YARGITAY…) kanun yolu merciini gösterir.
+COURT_TYPES_SEED: "dict[str, list[str]]" = {
+    "Ceza": [
+        "AĞIR CEZA MAHKEMESİ", "ASLİYE CEZA MAHKEMESİ",
+        "Bölge Adliye Mah. Ceza Dairesi", "ÇOCUK AĞIR CEZA MAHKEMESİ",
+        "ÇOCUK MAHKEMESİ", "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ",
+        "İCRA CEZA HAKİMLİĞİ", "İNFAZ HAKİMLİĞİ",
+        "İSTİNAF CEZA DAİRESİ (İLK DERECE)", "SULH CEZA HAKİMLİĞİ",
+        "YARGITAY CEZA DAİRESİ (İLK DERECE)",
+        # 2026-08-19 (G069): temyiz mercii — eskiden Bölge Adliye'ye yazılıyordu
+        "YARGITAY CEZA DAİRESİ",
+    ],
+    "Hukuk": [
+        "AİLE MAHKEMESİ", "ASLİYE HUKUK MAHKEMESİ", "ASLİYE TİCARET MAHKEMESİ",
+        "BAM HUKUK DAİRESİ (İLK DERECE)", "BÖLGE ADLİYE MAH. HUKUK DAİRESİ",
+        "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ", "İCRA HUKUK MAHKEMESİ",
+        "İŞ MAHKEMESİ", "KADASTRO MAHKEMESİ", "KADASTRO MAHKEMESİ (MÜŞ)",
+        "SULH HUKUK MAHKEMESİ", "TÜKETİCİ MAHKEMESİ",
+        # 2026-07-31: judicial_unit backfill'inin eski veride bulduğu birimler
+        "NOTERLİK", "TÜKETİCİ HAKEM HEYETİ",
+        # 2026-08-19 (G069): temyiz mercii — eskiden Bölge Adliye'ye yazılıyordu
+        "YARGITAY HUKUK DAİRESİ",
+    ],
+    "İcra": ["İCRA DAİRESİ"],
+    "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
+    "İdare": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
+    "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ", "ARABULUCULUK BÜROSU"],
+    "Savcılık": ["CUMHURİYET BAŞSAVCILIĞI"],
+    "Tahkim": ["TAHKIM MAHKEMESİ", "MİLLETLERARASI TAHKİM", "TOBB TAHKİM MAHKEMESİ", "TAHKİM HEYETİ"],
+    "Vergi": ["VERGİ MAHKEMESİ", "BÖLGE İDARE MAHKEMESİ (VERGİ)", "DANIŞTAY"],
+    "Danışmanlık": [],
+}
+
 
 def _ekle_yarissiz(db, nesne) -> bool:
     """Tek satırı SAVEPOINT içinde ekler; yarışta kaybetmek HATA DEĞİLDİR.
@@ -105,33 +143,7 @@ def _seed_file_types():
 def _seed_court_types():
     db = SessionLocal()
     try:
-        data = {
-            "Ceza": [
-                "AĞIR CEZA MAHKEMESİ", "ASLİYE CEZA MAHKEMESİ",
-                "Bölge Adliye Mah. Ceza Dairesi", "ÇOCUK AĞIR CEZA MAHKEMESİ",
-                "ÇOCUK MAHKEMESİ", "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ",
-                "İCRA CEZA HAKİMLİĞİ", "İNFAZ HAKİMLİĞİ",
-                "İSTİNAF CEZA DAİRESİ (İLK DERECE)", "SULH CEZA HAKİMLİĞİ",
-                "YARGITAY CEZA DAİRESİ (İLK DERECE)",
-            ],
-            "Hukuk": [
-                "AİLE MAHKEMESİ", "ASLİYE HUKUK MAHKEMESİ", "ASLİYE TİCARET MAHKEMESİ",
-                "BAM HUKUK DAİRESİ (İLK DERECE)", "BÖLGE ADLİYE MAH. HUKUK DAİRESİ",
-                "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ", "İCRA HUKUK MAHKEMESİ",
-                "İŞ MAHKEMESİ", "KADASTRO MAHKEMESİ", "KADASTRO MAHKEMESİ (MÜŞ)",
-                "SULH HUKUK MAHKEMESİ", "TÜKETİCİ MAHKEMESİ",
-                # 2026-07-31: judicial_unit backfill'inin eski veride bulduğu birimler
-                "NOTERLİK", "TÜKETİCİ HAKEM HEYETİ",
-            ],
-            "İcra": ["İCRA DAİRESİ"],
-            "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
-            "İdare": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
-            "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ", "ARABULUCULUK BÜROSU"],
-            "Savcılık": ["CUMHURİYET BAŞSAVCILIĞI"],
-            "Tahkim": ["TAHKIM MAHKEMESİ", "MİLLETLERARASI TAHKİM", "TOBB TAHKİM MAHKEMESİ", "TAHKİM HEYETİ"],
-            "Vergi": ["VERGİ MAHKEMESİ", "BÖLGE İDARE MAHKEMESİ (VERGİ)", "DANIŞTAY"],
-            "Danışmanlık": [],
-        }
+        data = COURT_TYPES_SEED
         added = 0
         seq = db.query(models.CourtType).count()
         existing_keys = {

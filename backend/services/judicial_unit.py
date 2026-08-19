@@ -37,6 +37,15 @@ PATTERNS: "list[tuple[str, str, str]]" = [
     (r"\bIS MAHKEMESI\b",                 "İŞ MAHKEMESİ",                         "Hukuk"),
     (r"\bAILE MAHKEMESI\b",               "AİLE MAHKEMESİ",                       "Hukuk"),
     (r"\bKADASTRO\b",                     "KADASTRO MAHKEMESİ",                   "Hukuk"),
+    # Yargıtay daireleri — genel "HUKUK/CEZA DAIRESI" alternatifinden ÖNCE gelmeli (G069):
+    # aksi halde TEMYİZ mercii İSTİNAF'a (Bölge Adliye) yazılır. İlk derece mahkemesi
+    # kalıplarından SONRA durur ki "… Asliye Hukuk Mahkemesi (Yargıtay bozması)" gibi
+    # atıflar mahkemenin kendi türünü bozmasın.
+    # Ad neden "YARGITAY" değil: judicial_unit bir yargı BİRİMİ (court_types) alanıdır ve
+    # her değer tek bir parent_code taşır; Yargıtay hem hukuk hem ceza dairesi barındırır.
+    # Kardeş kurum Bölge Adliye de bu yüzden tek değil İKİ kanonik değerle taşınır.
+    (r"\bYARGITAY\b.*(\bCEZA\b|\bCD\b)",  "YARGITAY CEZA DAİRESİ",                "Ceza"),
+    (r"\bYARGITAY\b.*(\bHUKUK\b|\bHD\b)", "YARGITAY HUKUK DAİRESİ",               "Hukuk"),
     # BAM/istinaf daireleri — ASLIYE eşleşmez ("ADLIYE" farklı kelime), yine de İCRA'dan sonra
     (r"(BOLGE ADLIYE|ISTINAF|BAM\b).*(CEZA)|CEZA DAIRESI",   "BÖLGE ADLİYE MAH. CEZA DAİRESİ",  "Ceza"),
     (r"(BOLGE ADLIYE|ISTINAF|BAM\b).*(HUKUK)|HUKUK DAIRESI", "BÖLGE ADLİYE MAH. HUKUK DAİRESİ", "Hukuk"),
