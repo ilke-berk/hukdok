@@ -262,6 +262,32 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G067 | bant:backend | bagimli:- | Mahkeme adı için yapısal kimlik kapısı (services/court_name.py: yer/tür doğrulaması + kelime sınırı + Yargıtay daire okuması)
 - [x] G068 | bant:backend | bagimli:G067 | Analiz hattında mahkeme adı: güven kilidi + LLM çapraz kontrolü + BELİRSİZ
 
+<!-- 2026-08-19 koşusu sonrası: G067 (cffc130) + G068 (a31cea6) GECTI, denetim 2/2 temiz,
+     paket 1538+3. Bağımsız davranış doğrulaması (rapora güvenilmedi, probe yeniden koşuldu):
+     YARGITAY 11. HD tek satırda korunuyor · MANAVGAT ve İSTANBUL ANADOLU artık okunuyor ·
+     TATVAN→VAN ve BAĞRI→AĞRI bozulmaları BİTTİ (yer uydurulmuyor, boş kalıyor) · gerçek AĞRI
+     hâlâ doğru. Kendi 2.163 kart değerimizde kapsam: TAM 1.983 · KISMİ 166 · YOK 14
+     (koşu öncesi "yeri tanınmayan" 747 tekildi).
+     Koşucunun bıraktığı 4 sorunun kararı (kullanıcı "sen karar ver" dedi, 2026-08-19):
+     (1) judicial_unit üst mahkeme boşluğu → İŞ: G069. Ölçüldü, gerçek: "Yargıtay 11. Hukuk
+         Dairesi" → BÖLGE ADLİYE MAH. HUKUK DAİRESİ, genel kurul → None. Bugün LATENT
+         (Yargıtay taşıyan 0 kart; istinaf/temyiz mahkemesi kolonları 0 dolu) → düzeltmesi
+         BEDAVA; FAZ F temyizi kartlara yazınca pahalı (G066'nın gerekçesiyle aynı sınıf).
+     (2) yer sözlüğü → İŞ: G070, ama panele TAŞINMADAN: sözlük kullanıcı verisi değil
+         ayrıştırıcı bilgisidir; panelde yanlış girdi belge okumasını sessizce bozar.
+         Kapatma yöntemi ölçüm: kalan 166 KISMİ değer eksik yerleri isim isim söylüyor.
+     (3) TAM güvende çapraz kontrol yapılmaması → KALICI KABUL, görev açılmadı. Regex TAM'ı
+         yalnız başlıktan/hüküm cümlesinden ve yer+tür doğrulanmışken üretiyor; her belgede
+         ikinci bir LLM okuması gecikme ve token maliyeti getirir, ölçülmüş bir kazancı yok.
+         "Erişilemez dal" ÖLÜ KOD DEĞİL: kapı iki okumayla (ör. parti/aktarım yolu)
+         çağrıldığında canlıdır, birim testiyle kilitli kalır.
+     (4) Güven damgasının UI rozeti → ERTELENDİ, görev açılmadı. Tasarım gereği belirsiz
+         değer YAZILMIYOR (alan boş geliyor) — kullanıcı onay ekranında zaten görüyor.
+         Rozet ancak "dolu ama düşük güvenli" durum olsaydı bilgi taşırdı; o durum yok. -->
+
+- [ ] G069 | bant:backend | bagimli:- | judicial_unit üst mahkeme boşluğu: Yargıtay daireleri Bölge Adliye'ye yazılıyor (bugün latent, FAZ F'de pahalı)
+- [ ] G070 | bant:backend | bagimli:G069 | Yargı yeri sözlüğünü kendi verimizden kapat (166 KISMİ değer; panele taşınmaz — gerekçe yukarıda)
+
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
