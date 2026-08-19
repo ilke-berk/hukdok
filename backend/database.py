@@ -644,7 +644,7 @@ _MIGRATIONS = [
         "islah_tutari":              "NUMERIC(20,2)",   # ıslahla EKLENEN miktar
         "arsiv_tarihi":              "DATE",            # dosya kapanış süresi analizi
         "istinaf_basvuran_taraf":    "VARCHAR(50)",     # kapalı liste (appealing_parties)
-        "arabuluculuk_no":           "VARCHAR(100)",    # 435 föyde esas no yerine geçiyor
+        "arabuluculuk_no":           "VARCHAR(100)",    # teslimde 8.409'da 1 dolu (G076 ölçümü)
         "arabuluculuk_karar_tarihi": "DATE",
         "tibbi_surec":               "VARCHAR(300)",    # büyüyen sözlük
         "tibbi_olay":                "VARCHAR(300)",    # büyüyen sözlük (bugün 214 değer)

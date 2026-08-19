@@ -1591,9 +1591,11 @@ TRACKING_FIELDS = [
     "dosya_son_durumu",
     # Dosya durumu
     "status",
-    # Arabuluculuk — davanın ÖN AŞAMASI (435 föy; 148 kartta dava ile aynı
-    # kartta birleşti). Kart alanı olarak durunca zaman çizgisinin ilk adımı
-    # başka ekranda kalıyordu (G073).
+    # Arabuluculuk — davanın ÖN AŞAMASI (teslimde 435 föy `Ana Tür =
+    # ARABULUCULUK`; 148 kartta dava ile aynı kartta birleşti). Kart alanı
+    # olarak durunca zaman çizgisinin ilk adımı başka ekranda kalıyordu (G073).
+    # NOT (G076): numara SÜTUNU teslimde 8.409 satırın 1'inde dolu — alanın
+    # bugünkü tek gerçekçi dolum yolu buradan, elle giriştir.
     "arabuluculuk_no", "arabuluculuk_karar_tarihi",
     # Yerel Karar
     "karar_tarihi", "karar_turu", "karar_lehine", "yerel_karar_durumu",

@@ -1369,7 +1369,13 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
             aciklama = _metin(satir.degerler.get("aciklama"))
             damga = GUVEN_ESLEMESI.get(
                 _baslik_anahtari(_metin(satir.degerler.get("guven")) or ""), "BELIRSIZ")
-            for deneme in (durum, None):
+            # İki deneme: önce kaynağın durumu, reddedilirse durumsuz + şerh.
+            # Bayrak AYRI taşınır: "deneme is None" fallback'i BELİRTMEZ — durum
+            # zaten boşken ilk deneme de None olur ve o okuma açıklamaya Python'ın
+            # `None`'unu basardı ("havuz dışı durum: None"; 2026-08-19 koşusunda
+            # 833 satır, hepsi kullanıcıya bu hâliyle görünüyordu, G076).
+            for havuz_disi in (False, True):
+                deneme = None if havuz_disi else durum
                 try:
                     stage_decisions.add_stage_decision(
                         db, case, stage=stage, sira_no=sira,
@@ -1380,14 +1386,14 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
                         karar_durumu=deneme,
                         teblig_tarihi=_tarih(satir.degerler.get("teblig_tarihi"), "teblig_tarihi"),
                         basvuran_taraf=_basvuran_taraf(satir, stage, foy_satirlari),
-                        aciklama=aciklama if deneme is not None else
-                        " · ".join(x for x in (aciklama, f"havuz dışı durum: {durum}") if x),
+                        aciklama=" · ".join(x for x in (aciklama, f"havuz dışı durum: {durum}") if x)
+                        if havuz_disi else aciklama,
                         dogrulama_durumu=damga, source=source,
                     )
                     sonuc.asama_eklenen += 1
                     break
                 except stage_decisions.InvalidDecisionStatusError:
-                    if deneme is None:
+                    if havuz_disi:
                         raise
                     sonuc.havuz_disi_durum += 1
                     logger.warning(

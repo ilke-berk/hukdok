@@ -20,6 +20,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G073 | bant:backend | bagimli:- | Takip/kart alan yerleşimi: arabuluculuk + arşiv tarihi takibe, dosya_son_durumu tek yere
 - [x] G074 | bant:frontend | bagimli:G072,G073 | Takip panelinde aşama zaman çizgisi + kart gruplarının sadeleşmesi
 - [x] G075 | bant:frontend | bagimli:G074 | Takip paneli 14.344 kartta kilitli: bilinmeyen aşama "gelinmemiş" sayılıyor
+- [x] G076 | bant:backend | bagimli:G074 | Aktarımın iki açık kalemi: "havuz dışı durum: None" şerhi + arabuluculuk sütunu
 
 ## Aktif plan: Sertleştirme kalanı — FAZ 4/5 (4-A ve 5-A klasik yolla bitti; kalan 3 paket burada)
 

@@ -123,7 +123,11 @@ class Case(Base):
     islah_tutari = Column(Numeric(precision=20, scale=2), nullable=True)  # ıslahla EKLENEN miktar (güncel talep = dava değeri)
     arsiv_tarihi = Column(Date, nullable=True)                  # dosya kapanış süresi + ön muhasebe analizinin dayanağı
     istinaf_basvuran_taraf = Column(String(50), nullable=True)  # KAPALI liste (appealing_parties): Davacı | Davalı | Her İki Taraf
-    arabuluculuk_no = Column(String(100), nullable=True)        # 435 arabuluculuk föyünde esas numarasının yerini tutuyor
+    # DÜZELTME (G076, teslim paketi ölçüldü): "435 föyde esas no yerine geçiyor"
+    # iddiası YANLIŞTI. 435 rakamı `Ana Tür = ARABULUCULUK` föy sayısıdır;
+    # "Arabuluculuk Numarası" sütunu 8.409 satırın YALNIZ 1'inde dolu. Alan
+    # kaynakta boş — dolduğu yer bugün için kullanıcının elle girişidir.
+    arabuluculuk_no = Column(String(100), nullable=True)
     arabuluculuk_karar_tarihi = Column(Date, nullable=True)
     # Tıbbi analiz alanları: üçü branş bazlı BÜYÜYEN sözlük (serbest metin),
     # iddia_edilen_kusur ise KAPALI liste (alleged_faults).
