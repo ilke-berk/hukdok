@@ -236,6 +236,32 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G066 | bant:backend | bagimli:- | Dört karar durumu alanında kapalı liste doğrulaması (takip yazma yolu; ana oturumda koşuldu; bağımsız denetim GECTI; commit 0e19afe — kapalılık artık manager katmanında, ret 400; NOT: liste BOŞSA doğrulama WARNING'le atlanır ve 400'ün detail'i arayüze ulaşmıyor, G066.md raporunda)
 
+## Aktif plan: Mahkeme adı kimliği — okuma hatalarının kök nedeni (2026-08-19)
+
+<!-- Tetikleyici: veri ekibinin 17.08 hata bildirimi (A: şehir bozulması 21 belge · E: daire
+     basamak düşmesi 12 föy). Ekip TEKNİK DEĞİL — "ayrıştırıcıyı düzeltin" talebi bir çözüm
+     reçetesi değil, semptom bildirimi. Tasarım bizim: adı serbest string üretmek yerine
+     YAPISAL KİMLİĞE (yer · sıra · kanonik tür · daire) çevirip her bileşeni doğrulamak,
+     doğrulanamayanı ÜRETMEMEK. İki mevcut ev desenimizin taşınmasıdır:
+     case_intake.detect_conflicts (çelişki → hakem) ve stage_decisions.dogrulama_durumu
+     (tahmin yasağı → BELİRSİZ damgası). Yeni sözlük yazılmaz: tür kanonikleştirmesi
+     services/judicial_unit.PATTERNS'ten okunur.
+     BU BİZİM DE SORUNUMUZ (2026-08-19 ölçümü, lokal prod kopyası): cases.court 2.163 tekil
+     serbest string; 747 tekil (3.183 kayıt) değerin yeri il DEĞİL (Şişli/Bakırköy/Beyoğlu —
+     ayrıştırıcı hiç kapsamıyor); kendi kartımızdaki "Tatvan 2. Asliye Hukuk" ayrıştırıcıya
+     verildiğinde "VAN 2. ASLİYE HUKUK MAHKEMESİ" dönüyor (AGRI vakasıyla aynı sınıf).
+     Bant seri, ikisi de backend; G068 G067'nin kapısını çağırır → zincirli.
+     KUYRUĞA GİRMEYEN: (1) yargı yeri sözlüğünün panele taşınması (yeni tablo+migrasyon+
+     AdminPage sekmesi — hub dosyalar, ayrı görev), (2) cases.court backfill'i (2.163 değerin
+     kanonikleştirilmesi — gerçek müvekkil verisi, kullanıcı kararı), (3) analiz sonucu
+     JSON'una güven alanı + UI rozeti (frontend bandı), (4) veri ekibinin 112 satırlık
+     BELGE_KONTROLU okuması (xlsx elimizde yok — kullanıcı işi), (5) parti üreticisinin
+     kendisi: 18.08 partisini üreten kod bu repoda DEĞİL (git + oturum kayıtlarında yok),
+     yeri kullanıcıya soruldu. -->
+
+- [ ] G067 | bant:backend | bagimli:- | Mahkeme adı için yapısal kimlik kapısı (services/court_name.py: yer/tür doğrulaması + kelime sınırı + Yargıtay daire okuması)
+- [ ] G068 | bant:backend | bagimli:G067 | Analiz hattında mahkeme adı: güven kilidi + LLM çapraz kontrolü + BELİRSİZ
+
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
