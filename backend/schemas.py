@@ -410,6 +410,10 @@ class CaseRead(BaseModel):
 class CaseTrackingUpdate(BaseModel):
     case_stage: Optional[str] = None
     dosya_son_durumu: Optional[str] = None
+    # Arabuluculuk — davanın ön aşaması (G073; kolonlar G044'te açılmıştı,
+    # yazma yolu bu turda takip paneline verildi)
+    arabuluculuk_no: Optional[str] = None
+    arabuluculuk_karar_tarihi: Optional[date] = None
     # Yerel Karar
     karar_tarihi: Optional[date] = None
     karar_turu: Optional[str] = None
@@ -449,9 +453,10 @@ class CaseTrackingUpdate(BaseModel):
     karar_duzeltme_teblig_tarihi: Optional[date] = None
     karar_duzeltme_aciklama: Optional[str] = None
     yeni_esas_no: Optional[str] = None
-    # Kesinleşme / İnfaz
+    # Kesinleşme / İnfaz + kapanış (arşiv, G073)
     kesinlesme_tarihi: Optional[date] = None
     infaz_tarihi: Optional[date] = None
+    arsiv_tarihi: Optional[date] = None
     note: Optional[str] = None
 
 

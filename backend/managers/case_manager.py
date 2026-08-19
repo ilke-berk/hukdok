@@ -1579,11 +1579,22 @@ def get_case_document_filenames(case_id: int) -> dict:
 
 
 # Takip panelinin güncelleyebildiği alanlar (case_stage dahil).
+#
+# Yerleşim kuralı (G073): bu liste dosyanın ZAMAN ÇİZGİSİDİR — arabuluculuktan
+# (dava öncesi) arşive (kapanış) kadar "dosya nerede" bilgisi buradan yazılır.
+# Kartta kalanlar ise statik künye (kim, hangi mahkeme, hangi klasör). Aynı alan
+# İKİ ekrandan YAZILMAZ; kart grupları salt okunurdur
+# (`frontend/src/lib/caseCardFields.ts` başlığı), G074 okuma kopyalarını da
+# kaldırır.
 TRACKING_FIELDS = [
     "case_stage",
     "dosya_son_durumu",
     # Dosya durumu
     "status",
+    # Arabuluculuk — davanın ÖN AŞAMASI (435 föy; 148 kartta dava ile aynı
+    # kartta birleşti). Kart alanı olarak durunca zaman çizgisinin ilk adımı
+    # başka ekranda kalıyordu (G073).
+    "arabuluculuk_no", "arabuluculuk_karar_tarihi",
     # Yerel Karar
     "karar_tarihi", "karar_turu", "karar_lehine", "yerel_karar_durumu",
     "karar_no", "karar_teblig_tarihi", "karar_aciklama",
@@ -1600,8 +1611,9 @@ TRACKING_FIELDS = [
     "karar_duzeltme_durumu", "karar_duzeltme_esas_no", "karar_duzeltme_karar_no",
     "karar_duzeltme_tarihi", "karar_duzeltme_teblig_tarihi",
     "karar_duzeltme_aciklama", "yeni_esas_no",
-    # Kesinleşme / İnfaz
-    "kesinlesme_tarihi", "infaz_tarihi",
+    # Kesinleşme / İnfaz — ve dosyanın KAPANIŞ olayı: arşiv, KESINLESME/KAPALI
+    # aşamalarının devamıdır; kartta durunca yaşam çizgisi ikiye bölünüyordu (G073).
+    "kesinlesme_tarihi", "infaz_tarihi", "arsiv_tarihi",
 ]
 
 
