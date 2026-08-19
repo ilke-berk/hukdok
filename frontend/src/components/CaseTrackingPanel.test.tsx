@@ -269,14 +269,17 @@ describe("CaseTrackingPanel — aşama tarihçesi (G074)", () => {
     });
 
     it("case_stage BOŞ olsa da tarihçe görünür (kartların neredeyse tamamı böyle)", async () => {
-        // isReached=false → alan formu basılmaz; tarihçe o kapının DIŞINDA olmalı,
-        // yoksa 4.971 satırın hiçbiri ekrana gelmezdi.
+        // Tarihçe `case_stage`ten BAĞIMSIZ okunur; aşama boş diye gizlenseydi
+        // 4.971 satırın hiçbiri ekrana gelmezdi. (G075'te alan formunun kilidi
+        // de kalktı — bu test o kilidin varlığına DEĞİL, tarihçenin
+        // görünürlüğüne bakar.)
         stageDecisionsMock.mockResolvedValue({
             case_id: 1, decisions: [KARAR_SATIRI], onceki_esaslar: [],
         });
         await renderPanelAsync({});
 
-        expect(container.textContent).toContain("Bu aşamaya henüz gelinmedi");
+        expect(container.textContent).toContain("Aşama girilmemiş");
+        expect(container.textContent).toContain("Bu aşamanın geçmiş kararları (1)");
         expect(container.textContent).toContain("Ankara 3. Asliye Hukuk");
     });
 
@@ -384,5 +387,126 @@ describe("CaseTrackingPanel — aşamadan bağımsız alanlar (G073 → G074)", 
         await act(async () => { saveBtn!.click(); });
 
         expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { arsiv_tarihi: "2026-01-02" });
+    });
+});
+
+describe("CaseTrackingPanel — aşama bilinmiyorken panel kilitlenmez (G075)", () => {
+    let container: HTMLDivElement;
+    let root: Root | null = null;
+    const renderPanelAsync = makeAsyncRenderer(() => container, r => { root = r; });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        stageDecisionsMock.mockResolvedValue({ case_id: 1, decisions: [], onceki_esaslar: [] });
+        configMock.fileStatuses = [];
+        configMock.localDecisions = [];
+        configMock.appealDecisions = [];
+        configMock.cassationDecisions = [];
+        configMock.revisionDecisions = [];
+        container = document.createElement("div");
+        document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+        if (root) {
+            act(() => root!.unmount());
+            root = null;
+        }
+        container.remove();
+    });
+
+    const labels = () =>
+        Array.from(container.querySelectorAll("label")).map(l => l.textContent?.trim());
+
+    it("case_stage BOŞKEN aşama alanları basılır — 'gelinmedi' kilidi yok", async () => {
+        // Kusur buydu: currentIdx = -1 → isReached her aşamada false → 14.344
+        // kartın hiçbirinde karar künyesi ne görünüyor ne düzeltilebiliyordu.
+        await renderPanelAsync({ karar_no: "2014/88" });
+
+        expect(container.textContent).not.toContain("Bu aşamaya henüz gelinmedi");
+        expect(labels()).toContain("Karar No");
+    });
+
+    it("aşama bilinmiyorken aktarımdan gelen künye alana basılır", async () => {
+        await renderPanelAsync({ karar_no: "2014/88" });
+
+        const wrap = Array.from(container.querySelectorAll("label"))
+            .find(l => l.textContent?.trim() === "Karar No")?.parentElement;
+        expect(wrap?.querySelector("input")?.value).toBe("2014/88");
+    });
+
+    it("aşama bilinmiyorken KAPALI sekmesi 'Dava kapatılmış' DEMEZ (iddia üretmez)", async () => {
+        await renderPanelAsync({});
+        const kapaliBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.includes("Kapalı"));
+        act(() => { kapaliBtn!.click(); });
+
+        expect(container.textContent).not.toContain("Dava kapatılmış");
+    });
+
+    it("aşama BİLİNİYORSA gelecek aşama hâlâ kilitli (mevcut davranış korunur)", async () => {
+        await renderPanelAsync({ case_stage: "KARAR" });
+        const temyizBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.includes("Temyiz") || b.textContent?.includes("Tem."));
+        act(() => { temyizBtn!.click(); });
+
+        expect(container.textContent).toContain("Bu aşamaya henüz gelinmedi");
+    });
+
+    it("karar kaydı varsa en ileri aşama ÖNERİLİR (yazılmaz)", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [
+                { ...KARAR_SATIRI, id: 31, stage: "YEREL", sira_no: 1 },
+                { ...KARAR_SATIRI, id: 32, stage: "ISTINAF", sira_no: 1 },
+            ],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({});
+
+        expect(container.textContent).toContain("Karar kayıtlarına göre bu dosya en az");
+        expect(container.textContent).toContain("İstinaf");
+        // ÖNERİ yalnız öneridir: hiçbir şey kaydedilmedi
+        expect(updateCaseTrackingMock).not.toHaveBeenCalled();
+    });
+
+    it("öneri kullanıcı onayıyla MEVCUT aşama geçişi yolundan yazılır", async () => {
+        updateCaseTrackingMock.mockResolvedValue(true);
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [{ ...KARAR_SATIRI, id: 33, stage: "ISTINAF", sira_no: 1 }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({});
+
+        const ayarlaBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.trim() === "Aşamayı ayarla");
+        act(() => { ayarlaBtn!.click(); });
+
+        // Onay dialogu açılır — tek tıkla sessiz yazma YOK
+        const gecBtn = Array.from(document.querySelectorAll("button"))
+            .find(b => b.textContent?.trim() === "Geç");
+        expect(gecBtn).toBeDefined();
+        expect(updateCaseTrackingMock).not.toHaveBeenCalled();
+
+        await act(async () => { gecBtn!.click(); });
+
+        expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { case_stage: "ISTINAF", note: null });
+    });
+
+    it("aşama boş ve karar da yoksa öneri basılmaz — uydurmuyoruz", async () => {
+        await renderPanelAsync({});
+        expect(container.textContent).not.toContain("Karar kayıtlarına göre");
+    });
+
+    it("aşama biliniyorsa öneri basılmaz", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [{ ...KARAR_SATIRI, id: 34, stage: "TEMYIZ", sira_no: 1 }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "KARAR" });
+
+        expect(container.textContent).not.toContain("Karar kayıtlarına göre");
     });
 });

@@ -4,6 +4,7 @@ import {
     STAGE_FIELDS,
     PANEL_FIELDS,
     DECISION_STAGE_BY_PANEL_KEY,
+    suggestedStageFromDecisions,
     TRACKING_DRAFT_KEYS,
     initTrackingDraft,
     setDraftField,
@@ -242,5 +243,33 @@ describe("aşama etiketi eşlemesi (G072 route'u)", () => {
         for (const key of Object.keys(DECISION_STAGE_BY_PANEL_KEY)) {
             expect(STAGE_FIELDS[key]).toBeDefined();
         }
+    });
+});
+
+describe("suggestedStageFromDecisions — aşama önerisi (G075)", () => {
+    it("en İLERİ aşamayı verir, sıra karışık gelse de", () => {
+        expect(suggestedStageFromDecisions(["YEREL", "TEMYIZ", "ISTINAF"])).toBe("TEMYIZ");
+        expect(suggestedStageFromDecisions(["ISTINAF", "YEREL"])).toBe("ISTINAF");
+        expect(suggestedStageFromDecisions(["YEREL"])).toBe("KARAR");
+    });
+
+    it("backend etiketi panel anahtarına çevrilir (YEREL → KARAR)", () => {
+        expect(suggestedStageFromDecisions(["YEREL"])).toBe("KARAR");
+        expect(STAGE_FIELDS[suggestedStageFromDecisions(["YEREL"])!]).toBeDefined();
+    });
+
+    it("karar yoksa öneri de yok — uydurmuyoruz", () => {
+        expect(suggestedStageFromDecisions([])).toBeNull();
+    });
+
+    it("tanınmayan etiket sessizce atlanır, kalanı yine değerlendirilir", () => {
+        expect(suggestedStageFromDecisions(["YENI_ASAMA"])).toBeNull();
+        expect(suggestedStageFromDecisions(["YENI_ASAMA", "ISTINAF"])).toBe("ISTINAF");
+    });
+
+    it("öneri KESINLESME/KAPALI olamaz — onlar karar aşaması değil", () => {
+        const oneri = suggestedStageFromDecisions(["YEREL", "ISTINAF", "TEMYIZ", "KARAR_DUZELTME"]);
+        expect(oneri).toBe("KARAR_DUZELTME");
+        expect(["KESINLESME", "KAPALI"]).not.toContain(oneri);
     });
 });

@@ -146,6 +146,31 @@ export const DECISION_STAGE_BY_PANEL_KEY: Record<string, string> = {
     KARAR_DUZELTME: "KARAR_DUZELTME",
 };
 
+/**
+ * Karar kayıtlarından türetilen EN İLERİ panel aşaması — ÖNERİ üretir, YAZMAZ (G075).
+ *
+ * `cases.case_stage` yalnız kullanıcı "Bu Aşamaya Geç" dediğinde yazılır;
+ * HUKDOK aktarımı ona hiç dokunmadı (lokal: 14.345 aktif kartın 14.344'ünde
+ * BOŞ) — oysa 3.303 kartın karar tarihçesi var. Temyiz kararı olan bir dosya
+ * en az temyiz aşamasına GELMİŞTİR; bu bir tahmin değil kayıttan okunan bir
+ * alt sınırdır. Yine de kolona SESSİZCE yazılmaz: değer, kullanıcının onayıyla
+ * mevcut aşama geçişi yolundan (CaseStageLog kaydı üreterek) girer.
+ *
+ * Tanınmayan etiket sessizce atlanır; hiç karar yoksa `null`.
+ */
+export function suggestedStageFromDecisions(stages: string[]): string | null {
+    let bestKey: string | null = null;
+    let bestIdx = -1;
+    for (const stage of stages) {
+        const panelKey = Object.keys(DECISION_STAGE_BY_PANEL_KEY)
+            .find(key => DECISION_STAGE_BY_PANEL_KEY[key] === stage);
+        if (!panelKey) continue;
+        const idx = STAGE_KEYS.indexOf(panelKey);
+        if (idx > bestIdx) { bestIdx = idx; bestKey = panelKey; }
+    }
+    return bestKey;
+}
+
 export type TrackingValue = string | null;
 
 export interface TrackingDraft {

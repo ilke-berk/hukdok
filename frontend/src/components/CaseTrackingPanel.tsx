@@ -5,7 +5,7 @@ import {
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import {
     STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, DECISION_STAGE_BY_PANEL_KEY,
-    DecisionListKey, FieldDef,
+    suggestedStageFromDecisions, DecisionListKey, FieldDef,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
     rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
@@ -125,10 +125,21 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     }, [dirty]);
 
     const selectedIdx  = STAGE_KEYS.indexOf(selectedKey);
-    const isReached    = selectedIdx <= currentIdx;
+    // Aşama BİLİNMİYORSA hiçbir aşama "gelinmemiş" sayılamaz (G075). `case_stage`
+    // yalnız kullanıcı "Bu Aşamaya Geç" dediğinde yazılıyor ve lokal kopyada
+    // 14.345 aktif kartın 14.344'ünde BOŞ → kapı `currentIdx = -1` ile her
+    // aşamada kapalı kalıyordu: panel 2.074 yerel + 1.159 istinaf + 448 temyiz
+    // künyesini ne gösteriyor ne düzelttiriyordu. Bilinmeyen aşamayı "bu
+    // aşamaya gelinmedi" diye okumak da bir İDDİADIR; bilmiyorsak kilitlemeyiz.
+    const stageBilinmiyor = !currentStage;
+    const isReached    = stageBilinmiyor || selectedIdx <= currentIdx;
     const fields       = STAGE_FIELDS[selectedKey] ?? [];
     const gecmisKararlar = asamaSatirlari(selectedKey);
     const oncekiEsaslar  = tarihce?.onceki_esaslar ?? [];
+    // Aşama boşken karar kayıtlarından türeyen ÖNERİ (yazmaz — kullanıcı onaylar)
+    const onerilenAsama  = stageBilinmiyor
+        ? suggestedStageFromDecisions((tarihce?.decisions ?? []).map(d => d.stage))
+        : null;
 
     // Timeline'a tıklanınca: yalnız görünüm değişir, taslak sıfırlanMAZ
     const handleStageClick = (key: string) => setSelectedKey(key);
@@ -330,6 +341,31 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                             {currentStage ? "Bu aşama için henüz veri girilmemiş." : "Takip bilgisi girmek için aşağıdaki zaman çizelgesini kullanın."}
                         </p>
                     )}
+
+                    {/* ── Aşama önerisi (G075) ──
+                        Aşama boş ama karar kaydı VAR: "temyiz kararı olan dosya en az
+                        temyiz aşamasındadır" kayıttan okunan bir alt sınırdır. Kolona
+                        SESSİZCE yazmıyoruz — değer kullanıcının onayıyla, mevcut aşama
+                        geçişi yolundan (CaseStageLog kaydı üreterek) giriyor. */}
+                    {stageBilinmiyor && onerilenAsama && (
+                        <div className="mt-3 flex items-center gap-2 flex-wrap rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
+                            <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span className="text-xs text-muted-foreground">
+                                Karar kayıtlarına göre bu dosya en az{" "}
+                                <span className="font-semibold text-foreground">
+                                    {STAGES.find(s => s.key === onerilenAsama)?.label}
+                                </span>{" "}
+                                aşamasında görünüyor.
+                            </span>
+                            <Button
+                                size="sm" variant="outline"
+                                className="h-6 px-2 text-[11px] ml-auto"
+                                onClick={() => openStageDialog(STAGES[STAGE_KEYS.indexOf(onerilenAsama)])}
+                            >
+                                Aşamayı ayarla
+                            </Button>
+                        </div>
+                    )}
                     {/* ── Önceki esas numaraları (SALT OKUNUR, G072) ──
                         Görevsizlik/yetkisizlik sonrası numara değişir; eski numara
                         kayıt değeridir (aktarımda 517 satır) ve bugüne kadar hiçbir
@@ -463,8 +499,9 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         )}
                     </div>
 
-                    {/* KAPALI */}
-                    {selectedKey === "KAPALI" && isReached && (
+                    {/* KAPALI — "kapatılmış" bir İDDİADIR: yalnız aşama gerçekten
+                        KAPALI ise basılır (aşama bilinmiyorken basılamaz, G075). */}
+                    {selectedKey === "KAPALI" && currentStage === "KAPALI" && (
                         <p className="text-sm text-muted-foreground">Dava kapatılmış.</p>
                     )}
 
