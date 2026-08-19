@@ -324,6 +324,18 @@ async def item_in_use_handler(request, exc: ItemInUseError):
     return JSONResponse(status_code=409, content={"detail": str(exc), "usage": exc.usage})
 
 
+# Kapalı havuz dışı karar durumu (G066): istemci HATALI DEĞER gönderdi → 400.
+# 422 DEĞİL, çünkü 422 bu uygulamada şema doğrulamasının (FastAPI/Pydantic)
+# imzasıdır; buradaki ret referans verisine bağlıdır, gövde şeması geçerlidir.
+# 500 hiç değil (G003 durum kodu disiplini): kod bozuk değil, değer yanlış.
+from managers.stage_decisions import InvalidDecisionStatusError  # noqa: E402
+
+
+@app.exception_handler(InvalidDecisionStatusError)
+async def invalid_decision_status_handler(request, exc: InvalidDecisionStatusError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
 # ─── 503 "sistem meşgul" ağı (Faz 5-B, plan 5.3) ──────────────────────────────
 # Doygunluk sinyalleri 500'e mahkûm edilmemeli: 500 "kod bozuk, tekrar deneme
 # boşuna" der; kullanıcı ya vazgeçer ya da aynı belgeyi tekrar tekrar yükleyip

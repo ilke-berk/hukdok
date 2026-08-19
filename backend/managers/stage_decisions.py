@@ -26,6 +26,10 @@ Kurallar:
   havuz). Karşılaştırma liste ADI iledir ve tablonun İÇERİĞİNE bakılır —
   `active` filtresi BİLİNÇLİ YOK: tarihçe "ne olduğunu" kaydeder; bir değerin
   dropdown'dan kaldırılmış olması tarihsel gerçeği geçersizleştirmez.
+  Aynı kapı G066'dan beri takip panelinin yazma yoluna da açık:
+  `validated_status_for_column` (`case_manager.update_case_tracking` çağırır) —
+  böylece `cases`teki dört karar durumu kolonuna yazan İKİ yol da aynı havuzu
+  aynı normalizasyonla denetler.
 * `dogrulama_durumu` tahmin yasağının taşıyıcısıdır: verilmezse BELIRSIZ,
   UYAP|BELGE|TURETILDI|BELIRSIZ dışı değer reddedilir.
 * Fonksiyonlar COMMIT ETMEZ (flush eder) — işlem sınırı çağıranındır
@@ -128,6 +132,17 @@ class DuplicateStageDecisionError(Exception):
     """
 
 
+class InvalidDecisionStatusError(ValueError):
+    """Karar durumu değeri aşamanın G060 kapalı havuzunda yok (G066).
+
+    `ValueError` ALT SINIFI: bu modülün tarihçe yolunu `pytest.raises(ValueError)`
+    ile kilitleyen G062 testleri ve `ValueError` yakalayan çağıranlar aynen
+    çalışmaya devam eder. Ayrı tip olmasının tek nedeni HTTP eşlemesi —
+    `api.py` bunu 400'e çevirir; genel `except Exception` yollarının hatayı
+    500'e/False'a yutması (G003 durum kodu disiplini) böyle önlenir.
+    """
+
+
 def _clamped(value: Optional[str], column: str) -> Optional[str]:
     """Kısa metin alanını boşluk-normalize edip kolon sınırına kırpar.
 
@@ -178,11 +193,60 @@ def _validated_karar_durumu(db: Session, stage: str, value: Optional[str]) -> Op
     ad = " ".join(str(value).split())
     liste = STAGE_DECISION_LISTS[stage]
     if db.query(liste.id).filter(liste.name == ad).first() is None:
-        raise ValueError(
+        raise InvalidDecisionStatusError(
             f"{stage} için geçersiz karar durumu: {ad!r} — değer "
             f"{liste.__tablename__} resmi listesinde yok (kapalı havuz, G060)"
         )
     return ad
+
+
+# ─── Takip yazma yolunun kapısı (G066) ───────────────────────────────────────
+# `cases` üzerindeki dört karar durumu kolonu → aşama etiketi. ÜÇÜNCÜ BİR KOPYA
+# DEĞİL: eşleme `_PHOTO_COLUMNS`tan TÜRETİLİR (görev kuralı). Kaynak olarak
+# `reference_lists.LIST_REGISTRY` yerine burası seçildi, çünkü aynı kolonlara
+# yazan iki yol (tarihçe fotoğrafı + takip paneli) artık TEK haritayı okuyor;
+# yeni bir aşama `_PHOTO_COLUMNS`a eklendiği anda doğrulama da onu kapsar.
+DECISION_STATUS_COLUMNS: Dict[str, str] = {
+    kolonlar["karar_durumu"]: stage
+    for stage, kolonlar in _PHOTO_COLUMNS.items()
+    if "karar_durumu" in kolonlar
+}
+
+
+def validated_status_for_column(db: Session, column: str, value: Any) -> Any:
+    """`cases.<column>` karar durumu ise kapalı havuza karşı doğrular (G066).
+
+    Karar durumu OLMAYAN kolon dokunulmadan geri döner — çağıran (takip
+    panelinin whitelist döngüsü) alanları tek tek ayıklamak zorunda kalmasın.
+
+    İki bilinçli sözleşme (görev dosyasının 2. ve 3. karar noktaları):
+
+    * `active` filtresi YOK — tarihçe yoluyla SİMETRİ. İki yol aynı kolona
+      yazıyor ve fotoğraf senkronu ikisini birbirine bağlıyor; dropdown'dan
+      kaldırılmış (pasif) bir değeri takip panelinde reddetmek, tarihçeden
+      gelen aynı değeri kabul etmekle çelişirdi.
+    * Liste BOŞSA doğrulama devre dışıdır (uyarıyla) — tarihçe yolundan
+      BİLİNÇLİ AYRIŞMA. `case_stage_decisions` yepyeni bir tablodur, tek
+      yazıcısı bu modüldür; orada "boş liste = hiçbir şey geçmez" bedelsizdir.
+      Takip paneli ise 14.403 kartın CANLI ana yoludur: seed'i koşmamış ya da
+      listesi boşaltılmış bir kurulumda aynı sertlik, yapılandırma boşluğunu
+      kullanıcının veri girememesine çevirirdi. Boş liste = "havuz henüz
+      kurulmamış" sayılır; deneme-düzeyi durum olduğu için WARNING (log
+      sözleşmesi), sessiz değil.
+    """
+    stage = DECISION_STATUS_COLUMNS.get(column)
+    if stage is None:
+        return value
+    if value is None or not str(value).strip():
+        return None
+    liste = STAGE_DECISION_LISTS[stage]
+    if db.query(liste.id).first() is None:
+        logger.warning(
+            f"{liste.__tablename__} resmi listesi BOŞ — {column} kapalı havuz "
+            f"doğrulaması atlandı (seed koşmamış olabilir)"
+        )
+        return " ".join(str(value).split())
+    return _validated_karar_durumu(db, stage, value)
 
 
 def _next_sira_no(db: Session, case_id: int, stage: str) -> int:

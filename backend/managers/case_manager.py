@@ -28,6 +28,11 @@ from managers.lawyer_resolver import (
     _norm_name, _split_persons, _resolve_lawyer_aliases, _value_matches,
     canonicalize_lawyers,
 )
+# G066: karar durumu kapalı havuz kapısı tarihçe modülünde yaşar (ikinci
+# uygulama çıkarılmadı). Import yönü tek yönlüdür — `stage_decisions` yalnız
+# `models`/`db_errors` import eder, `case_manager`ı ÇAĞIRMAZ: döngü yok,
+# "sonra import" hilesine gerek kalmadı.
+from managers import stage_decisions
 
 logger = logging.getLogger("AdminManager")
 
@@ -1580,6 +1585,13 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
 
     data yalnız güncellenecek alanları içermeli (exclude_unset); None değer
     alanı temizler.
+
+    Dört karar durumu alanı (yerel/istinaf/temyiz/karar düzeltme) G060 kapalı
+    havuzlarına karşı doğrulanır (G066): kapalılık artık yalnız arayüzde değil
+    — API'yi doğrudan çağıran da liste dışı değer yazamaz. Doğrulama YAZIMDAN
+    ÖNCE toptan koşar: bir alan reddedilirse HİÇBİRİ yazılmaz, hata
+    `InvalidDecisionStatusError` olarak yükselir (api.py 400'e çevirir) — bu
+    fonksiyonun `False` dönüşü "dava bulunamadı/yazılamadı" anlamını korur.
     """
     db = SessionLocal()
     try:
@@ -1593,7 +1605,12 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
         new_stage = data.get("case_stage")
         note = data.pop("note", None)
 
-        for field, value in tracking_changes(data):
+        # Kapalı havuz kapısı (G066) ÖNCE, yazım SONRA: kısmi uygulama olmasın.
+        degisiklikler = [
+            (field, stage_decisions.validated_status_for_column(db, field, value))
+            for field, value in tracking_changes(data)
+        ]
+        for field, value in degisiklikler:
             setattr(case, field, value)
 
         if new_stage and new_stage != old_stage:
@@ -1608,6 +1625,11 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
 
         db.commit()
         return True
+    except stage_decisions.InvalidDecisionStatusError:
+        # İstemci hatası — nihai başarısızlık DEĞİL: ERROR basılmaz (log
+        # sözleşmesi) ve False'a yutulmaz; route katmanına 400 olarak çıkar.
+        db.rollback()
+        raise
     except Exception as e:
         logger.error(f"update_case_tracking error: {e}")
         db.rollback()
