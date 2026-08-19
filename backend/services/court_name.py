@@ -89,7 +89,19 @@ UST_MAHKEMELER: tuple[str, ...] = (
 # seçtiren bir UI listesidir (routes/config.py). Oraya yüzlerce adliye yeri
 # basmak o listeyi bozar. Kapsam bilinçli olarak EKSİK kalabilir: sözlükte
 # olmayan yer `None` üretir (KISMI güven), YANLIŞ yer üretmez.
-# Panele taşınması ayrı bir görevdir (yeni tablo + migrasyon + panel sekmesi).
+#
+# NEDEN panele TAŞINMIYOR (G070 kararı, 2026-08-19): bu sözlük kullanıcı verisi
+# değil AYRIŞTIRICI bilgisidir. Panelde yönetilse yanlış/eksik bir girdi doğrudan
+# belge okumasını bozar ve hatayı kimsenin göremeyeceği bir yere taşır (`cities`in
+# aksine — orada yanlış girdi yalnız bir dropdown'ı bozar). Sözlük kodda kalır,
+# kapsamı GÖZLE değil TESTLE ölçülür: `tests/test_g070_yer_kapsami.py`.
+#
+# BAKIM KURALI (G070): buraya yalnız GERÇEK yargı yeri adı, yalnız KANONİK
+# yazımıyla girer ve yalnız kendi kart verimizde ÖLÇÜLDÜĞÜ için girer (tahminle
+# liste şişirilmez). Kısaltma ("İSTANBUL AND.", "EREĞLİ KDZ") ve yazım bozulması
+# ("BAKİRKÖY", "DİYARBAKİR") GİRMEZ: eşleşen yüzey aynı zamanda kimliktir, ikinci
+# bir yazım aynı yargı yerine İKİNCİ bir kimlik açar ve modülün varlık sebebini
+# (gruplama/mükerrer tespiti) çürütür. Varyant→kanonik eşlemesi ayrı bir görevdir.
 BILESIK_YARGI_YERLERI: tuple[str, ...] = (
     "İSTANBUL ANADOLU",
     "ANKARA BATI",
@@ -100,9 +112,10 @@ YARGI_YERLERI: tuple[str, ...] = (
     "BAKIRKÖY", "KARTAL", "KADIKÖY", "ŞİŞLİ", "BEYOĞLU", "ÜSKÜDAR", "EYÜP",
     "GAZİOSMANPAŞA", "KÜÇÜKÇEKMECE", "BÜYÜKÇEKMECE", "SİLİVRİ", "ŞİLE",
     "PENDİK", "MALTEPE", "SULTANBEYLİ", "BEYKOZ", "ÇATALCA", "TUZLA",
+    "SARIYER", "FATİH", "BEŞİKTAŞ", "BAĞCILAR", "ZEYTİNBURNU", "ÜMRANİYE",
     # Kocaeli / Sakarya / Yalova / Bilecik
     "GEBZE", "KÖRFEZ", "KANDIRA", "KARAMÜRSEL", "AKYAZI", "HENDEK", "GEYVE",
-    "KARASU", "ÇINARCIK", "BOZÜYÜK", "SÖĞÜT", "OSMANELİ",
+    "KARASU", "ÇINARCIK", "BOZÜYÜK", "SÖĞÜT", "OSMANELİ", "GÖLCÜK", "KOCAALİ",
     # Bursa / Balıkesir / Çanakkale
     "İNEGÖL", "GEMLİK", "MUSTAFAKEMALPAŞA", "KARACABEY", "ORHANGAZİ", "İZNİK",
     "YENİŞEHİR", "MUDANYA", "BANDIRMA", "EDREMİT", "AYVALIK", "BURHANİYE",
@@ -110,7 +123,7 @@ YARGI_YERLERI: tuple[str, ...] = (
     "GELİBOLU", "BİGA", "ÇAN", "AYVACIK", "EZİNE", "BAYRAMİÇ",
     # İzmir / Manisa / Aydın / Muğla / Denizli
     "KARŞIYAKA", "BERGAMA", "ÖDEMİŞ", "TORBALI", "TİRE", "MENEMEN", "ALİAĞA",
-    "ÇEŞME", "URLA", "SELÇUK", "KINIK", "KİRAZ", "BAYINDIR", "FOÇA",
+    "ÇEŞME", "URLA", "SELÇUK", "KINIK", "KİRAZ", "BAYINDIR", "FOÇA", "KARABURUN",
     "SEFERİHİSAR", "DİKİLİ", "AKHİSAR", "SALİHLİ", "TURGUTLU", "SOMA",
     "ALAŞEHİR", "KULA", "SARIGÖL", "DEMİRCİ", "GÖRDES", "KIRKAĞAÇ",
     "NAZİLLİ", "SÖKE", "KUŞADASI", "DİDİM", "ÇİNE", "GERMENCİK",
@@ -119,7 +132,7 @@ YARGI_YERLERI: tuple[str, ...] = (
     # Antalya / Isparta / Burdur
     "ALANYA", "MANAVGAT", "SERİK", "KAŞ", "KUMLUCA", "KORKUTELİ", "GAZİPAŞA",
     "ELMALI", "FİNİKE", "YALVAÇ", "EĞİRDİR", "ŞARKİKARAAĞAÇ", "SENİRKENT",
-    "GÖLHİSAR", "TEFENNİ",
+    "GÖLHİSAR", "TEFENNİ", "KEMER", "BUCAK",
     # İç Anadolu
     "POLATLI", "ÇUBUK", "ŞEREFLİKOÇHİSAR", "BEYPAZARI", "KIZILCAHAMAM",
     "HAYMANA", "NALLIHAN", "ELMADAĞ", "KALECİK", "SİNCAN", "GÖLBAŞI",
@@ -127,13 +140,15 @@ YARGI_YERLERI: tuple[str, ...] = (
     "KULU", "CİHANBEYLİ", "KARAPINAR", "DEVELİ", "BÜNYAN", "YAHYALI",
     "PINARBAŞI", "ÜRGÜP", "AVANOS", "GÜLŞEHİR", "DERİNKUYU", "ERMENEK",
     "KAMAN", "MUCUR", "SORGUN", "YERKÖY", "BOĞAZLIYAN", "AKDAĞMADENİ",
-    "SUNGURLU", "OSMANCIK", "İSKİLİP", "SİVRİHİSAR", "ÇİFTELER",
+    "SUNGURLU", "OSMANCIK", "İSKİLİP", "SİVRİHİSAR", "ÇİFTELER", "ÇEKEREK",
+    "BAYAT",
     # Ege/İç Batı
     "SANDIKLI", "DİNAR", "BOLVADİN", "EMİRDAĞ", "ŞUHUT", "TAVŞANLI", "SİMAV",
-    "GEDİZ", "EMET", "BANAZ", "EŞME", "SİVASLI",
+    "GEDİZ", "EMET", "BANAZ", "EŞME", "SİVASLI", "ALTINTAŞ",
     # Karadeniz
     "BAFRA", "ÇARŞAMBA", "VEZİRKÖPRÜ", "TERME", "ALAÇAM", "AKÇAABAT",
     "VAKFIKEBİR", "ARAKLI", "SÜRMENE", "MAÇKA", "ÜNYE", "FATSA", "BULANCAK",
+    "ÇAYKARA", "ESPİYE",
     "ŞEBİNKARAHİSAR", "TİREBOLU", "GÖRELE", "TOSYA", "TAŞKÖPRÜ", "İNEBOLU",
     "CİDE", "DEVREKANİ", "SAFRANBOLU", "ÇAYCUMA", "DEVREK", "ALAPLI",
     "BOYABAT", "GERZE", "AYANCIK", "DURAĞAN", "AMASRA", "AKÇAKOCA",
@@ -150,12 +165,13 @@ YARGI_YERLERI: tuple[str, ...] = (
     "PATNOS", "ELEŞKİRT", "TUTAK", "BULANIK", "MALAZGİRT", "VARTO",
     "KOZLUK", "KURTALAN", "KIZILTEPE", "MİDYAT", "NUSAYBİN", "DERİK",
     "CİZRE", "SİLOPİ", "YÜKSEKOVA", "ŞEMDİNLİ", "SOLHAN", "TERCAN", "GÖLE",
+    "HINIS", "KARAYAZI", "LİCE", "NURDAĞI",
     # Akdeniz / Çukurova
     "CEYHAN", "KOZAN", "KARAİSALI", "KARATAŞ", "TARSUS", "SİLİFKE", "ANAMUR",
     "ERDEMLİ", "MUT", "GÜLNAR", "İSKENDERUN", "DÖRTYOL", "REYHANLI",
     "KIRIKHAN", "SAMANDAĞ", "ERZİN", "YAYLADAĞI", "ALTINÖZÜ", "KAHTA",
     "BESNİ", "ELBİSTAN", "AFŞİN", "PAZARCIK", "TÜRKOĞLU", "GÖKSUN",
-    "KADİRLİ", "DÜZİÇİ",
+    "KADİRLİ", "DÜZİÇİ", "ANDIRIN", "İMAMOĞLU",
     # Trakya
     "ÇORLU", "ÇERKEZKÖY", "MALKARA", "HAYRABOLU", "MURATLI", "ŞARKÖY",
     "KEŞAN", "UZUNKÖPRÜ", "İPSALA", "LÜLEBURGAZ", "BABAESKİ", "VİZE",
