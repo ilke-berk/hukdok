@@ -118,6 +118,8 @@ def test_gelecek_tarih_null_olur():
     ("15/03/2021", date(2021, 3, 15)),
     (datetime(2021, 3, 15, 10, 30), date(2021, 3, 15)),
     (date(2021, 3, 15), date(2021, 3, 15)),
+    ("2021-03-15 00:00:00", date(2021, 3, 15)),   # METİN hücre + saat eki
+    ("2021-03-15T10:30:00", date(2021, 3, 15)),
 ])
 def test_gercek_tarihler_cozulur(ham, beklenen):
     assert hukdok_aktarim._tarih(ham, "arsiv_tarihi") == beklenen
@@ -242,8 +244,18 @@ def test_kapsam_kilidi_ikinci_yazici_dogurmadi():
     kaynak = Path(hukdok_aktarim.__file__).read_text(encoding="utf-8")
     for yasak in ("case.sistem_no", "case.tku_no", "case.karar_no", "case.karar_tarihi"):
         assert f"{yasak} =" not in kaynak, f"{yasak} kolonuna yazılıyor"
-    assert set(hukdok_aktarim.KART_ALANLARI) == {"arsiv_tarihi", "islah_tutari", "tibbi_olay"}
-    assert "karar_no" not in hukdok_aktarim.KART_ALANLARI
+    yazilanlar = set(hukdok_aktarim.KART_ALANLARI) | set(hukdok_aktarim.KART_TURETILEN)
+    # Künye + aşama kolonları hiçbir tura girmez: tek yazma yolu stage_decisions.
+    assert not yazilanlar & {
+        "karar_no", "karar_tarihi", "yerel_karar_durumu", "karar_teblig_tarihi",
+        "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
+        "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
+        "karar_duzeltme_durumu", "sistem_no", "tku_no",
+    }
+    # Bilinçli yazılmayanlar (script docstring'inde gerekçeli): uzmanlık ad
+    # eşleme tablosu gelmedi, teslim avukat adlarının aksanını düşürüyor,
+    # hizmet türü bitmask semantiği kararlaşmadı.
+    assert not yazilanlar & {"sub_type", "responsible_lawyer_name", "service_type"}
     # Toptan taraf silme belge-taraf bağını SESSİZCE koparırdı (SET NULL tuzağı)
     assert "delete(models.CaseParty" not in kaynak
     assert "CaseParty).delete" not in kaynak
@@ -720,6 +732,137 @@ def test_kardes_foy_celiskisi_raporlaniyor_kunye_yazilmiyor(uc_kart, tmp_path):
         kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
         assert kart.karar_no is None                     # ikinci yazıcı doğmadı
         assert len(foy_map.get_case_foys(db, kart.id)) == 2   # iki föy TEK kartta
+    finally:
+        db.close()
+
+
+def test_yazilan_alanlarin_hepsi_gercek_kart_kolonu():
+    """Eşleme sözlüğündeki her anahtar `Case` modelinde VAR olmalı.
+
+    Bekçi sebebi: DB'de modelde KARŞILIĞI OLMAYAN kolonlar da var (`last_status`
+    eski kalıntı). Sözlüğe öylesi bir ad yazılırsa hata koşu ortasında
+    `AttributeError` olarak patlar — burada saniyesinde yakalanır.
+    """
+    kolonlar = {c.name for c in models.Case.__table__.columns}
+    yazilanlar = set(hukdok_aktarim.KART_ALANLARI) | set(hukdok_aktarim.KART_TURETILEN)
+    assert yazilanlar <= kolonlar, f"modelde yok: {sorted(yazilanlar - kolonlar)}"
+    # Kaynak sütun anahtarları da okunabilir olmalı (SUTUN_ADAYLARI'nda tanımlı)
+    kaynaklar = {kaynak for kaynak, _ in hukdok_aktarim.KART_ALANLARI.values()}
+    assert kaynaklar <= set(hukdok_aktarim.SUTUN_ADAYLARI)
+
+
+def test_tam_esleme_kart_alanlarini_yaziyor(uc_kart, tmp_path):
+    """Tam eşleme turu: sınıflandırma + tarih + para + tıbbi alanlar kartta."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{
+            "Ana Tür": "İDARE", "Durum": "Arşiv", "Dava Konusu": "Tazminat (Tıbbi Kötü Uygulama)",
+            "Dava Tarihi": "03.01.2023", "Dava Değeri TL": "250.000,00",
+            "Manevi Dava Değeri TL": "100.000,00", "Son Durum": "Kesin Lehe",
+            "Hukuk No": "460592", "Hasar No": "3509162150001",
+            "İddia Edilen Kusur": "Tanı Hatası", "Uygulanan Yöntem": "Sezaryen",
+            "İstinaf Mahkemesi Başvuran Taraf": "DAVALI-DAVACI",
+        }),
+    ], basliklar=BASLIKLAR + ["Ana Tür", "Durum", "Dava Konusu", "Dava Tarihi",
+                              "Dava Değeri TL", "Manevi Dava Değeri TL", "Son Durum",
+                              "Hukuk No", "İddia Edilen Kusur", "Uygulanan Yöntem",
+                              "İstinaf Mahkemesi Başvuran Taraf"])
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
+        assert kart.file_type == "İdare" and kart.status == "MAHZEN"
+        assert kart.subject == "Tazminat (Tıbbi Kötü Uygulama)"
+        assert kart.opening_date == date(2023, 1, 3)
+        assert kart.manevi_tazminat == Decimal("100000")
+        assert kart.maddi_tazminat == Decimal("150000")     # D4: 250.000 − 100.000
+        assert kart.dosya_son_durumu == "Kesin Lehe"
+        assert (kart.hukuk_no, kart.hasar_dosya_no) == ("460592", "3509162150001")
+        assert kart.iddia_edilen_kusur == "Tanı Hatası"
+        assert kart.istinaf_basvuran_taraf == "Her İki Taraf"   # birleşik yazım
+    finally:
+        db.close()
+
+
+def test_d4_manevi_dava_degerini_asarsa_maddi_yazilmaz(uc_kart, tmp_path):
+    """D4: manevi > dava değeri olan 98 satırda maddi UYDURULMAZ, NULL kalır."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Dava Değeri TL": "50000", "Manevi Dava Değeri TL": "80000"}),
+        _satir("SSTMN-2", "D-2", **{"Dava Değeri TL": "80000", "Manevi Dava Değeri TL": "80000"}),
+    ], basliklar=BASLIKLAR + ["Dava Değeri TL", "Manevi Dava Değeri TL"])
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        assert kartlar["D-1"].maddi_tazminat == Decimal("0")  # dokunulmadı (model default)
+        yazilan = {h.field_name for h in db.query(models.CaseHistory).all()}
+        assert "maddi_tazminat" not in yazilan or kartlar["D-2"].maddi_tazminat == Decimal("0")
+        assert kartlar["D-2"].maddi_tazminat == Decimal("0")  # 0 DOĞRU (NULL ≠ 0)
+    finally:
+        db.close()
+
+
+def test_kapali_liste_taninmayan_degeri_yazmaz(uc_kart, tmp_path):
+    """Teslimde 17 yazım var, bizim liste üç değerli — eşlemesi olmayan BOŞ kalır."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"İstinaf Mahkemesi Başvuran Taraf": "SANIK MÜDAFİ"}),
+        _satir("SSTMN-2", "D-2", **{"Ana Tür": "BİLİNMEYEN TÜR"}),
+    ], basliklar=BASLIKLAR + ["İstinaf Mahkemesi Başvuran Taraf", "Ana Tür"])
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        assert kartlar["D-1"].istinaf_basvuran_taraf is None
+        assert kartlar["D-2"].file_type is None               # uydurma tür yazılmadı
+    finally:
+        db.close()
+
+
+def test_mahkeme_adi_yalniz_bos_kartta_yazilir(uc_kart, tmp_path):
+    """`court` BOSA_YAZILAN: teslimin BÜYÜK HARF yazımı dolu alanı geriletmez."""
+    db = uc_kart()
+    try:
+        dolu = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
+        dolu.court = "Bakırköy 3. Tüketici Mahkemesi"
+        db.commit()
+    finally:
+        db.close()
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Yerel Mahkeme": "BAKIRKÖY 3. TÜKETİCİ MAHKEMESİ"}),
+        _satir("SSTMN-2", "D-2", **{"Yerel Mahkeme": "ANKARA 9. TÜKETİCİ MAHKEMESİ"}),
+    ], basliklar=BASLIKLAR + ["Yerel Mahkeme"])
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        assert kartlar["D-1"].court == "Bakırköy 3. Tüketici Mahkemesi"   # korundu
+        assert kartlar["D-2"].court == "ANKARA 9. TÜKETİCİ MAHKEMESİ"     # boştu, doldu
+    finally:
+        db.close()
+
+
+def test_esas_kolonu_tarihce_yolundan_yazilir(uc_kart, tmp_path):
+    """`esas_no` TÜRETİLMİŞ (G045): setattr değil `sync_current_esas`."""
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Esas": "2023/1660", "Yerel Mahkeme": "Şanlıurfa 1. Tüketici Mahkemesi"}),
+    ], basliklar=BASLIKLAR + ["Esas", "Yerel Mahkeme"])
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
+        assert kart.esas_no == "2023/1660"
+        satirlar = db.query(models.CaseEsasNumber).filter_by(case_id=kart.id).all()
+        assert len(satirlar) == 1 and satirlar[0].is_current
+        assert satirlar[0].court == "Şanlıurfa 1. Tüketici Mahkemesi"
     finally:
         db.close()
 

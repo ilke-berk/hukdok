@@ -48,6 +48,21 @@ export const PROCESS_CARD_FIELDS: CardFieldDef[] = [
     { key: "arsiv_tarihi", label: "Arşiv Tarihi", type: "date" },
 ];
 
+/**
+ * Büro/işletme bilgileri: dosyanın hukuki değil TİCARİ tarafı — işi ne zaman
+ * kabul ettik, hangi kova altında takip ediyoruz, bugünkü durumu ne.
+ *
+ * Backend bu üç alanı zaten döndürüyordu (`case_manager.get_case`) ama kartta
+ * hiç basılmıyordu; HUKDOK aktarımı üçünü de doldurunca (2026-08-19 tam koşusu:
+ * kabul tarihi 5.382 · büro türü 5.156 · son durum 6.200 kart) veri görünmez
+ * kalıyordu. Aktarılan veriyi göremeyen kullanıcı doğrulayamaz da.
+ */
+export const OFFICE_CARD_FIELDS: CardFieldDef[] = [
+    { key: "acceptance_date", label: "İş Kabul Tarihi", type: "date" },
+    { key: "bureau_type", label: "Büro Özel Türü", type: "text" },
+    { key: "dosya_son_durumu", label: "Dosya Son Durumu", type: "text" },
+];
+
 /** Boş = null | undefined | yalnız boşluk. 0 ve "0" DOLUDUR. */
 export const isFilled = (value: unknown): boolean =>
     value !== null && value !== undefined && String(value).trim() !== "";

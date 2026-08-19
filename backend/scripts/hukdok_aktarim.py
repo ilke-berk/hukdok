@@ -46,11 +46,24 @@ Pazarlıksız kurallar
 * `statement_timeout` koşu süresince açıkça yükseltilir (§8 madde 6): engine
   30 sn ile bağlanır, toplu yazma bunu meşru aşar.
 
-Bu turda YAZILAN kart alanları (DAR küme — iskeleti kanıtlamaya yeter)
----------------------------------------------------------------------
-`arsiv_tarihi` (tarih/D5 yer tutucu kuralı) · `islah_tutari` (TR biçimli sayı)
-· `tibbi_olay` (serbest metin/kırpma). Üçü de FARKLI bir dönüşüm sınıfını
-kanıtlar; dördüncüsü aynı sınıfların kopyası olurdu. Karar künyesi
+YAZILAN kart alanları (tam eşleme turu, 2026-08-19)
+---------------------------------------------------
+`KART_ALANLARI` + `KART_TURETILEN` sözlükleri tek doğruluk kaynağıdır; hepsi
+`kart_degerleri()`ndan geçer. Kabaca: sınıflandırma (`file_type`, `status`,
+`subject`, `court`), esas (`esas_no` — tarihçe yolundan), tarihler
+(`opening_date`, `acceptance_date`, `arsiv_tarihi`, `arabuluculuk_karar_tarihi`),
+para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, üç
+`hukmedilen_*`), dosya numaraları (`hasar_dosya_no`, `hukuk_no`), süreç
+(`last_status`, `bureau_type`, `arabuluculuk_no`, `istinaf_basvuran_taraf`) ve
+G044'ün tıbbi beşlisi.
+
+**Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `sub_type`
+(teslim BÜYÜK HARF, 77 ham değer ↔ 44 seed; uzmanlık ad eşleme tablosu
+gelmedi) · `responsible_lawyer_name` (teslim aksanları düşürmüş: "Tugce Ungor"
+— bizdeki yazım daha doğru) · `service_type` (bitmask semantiği kararlaşmadı) ·
+`Ek Alt Kırılım*` (karşı tarafın kendi uyarısı: dosya açılış etiketi, güncel
+değil) · `Para Birimi`/`MüvekkilNo` (taşınmaz). `court` yalnız BOŞSA yazılır.
+Karar künyesi
 (`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ — o kolonların tek yazma yolu
 `managers/stage_decisions.py`ın aşama fotoğrafıdır (G062); buradan yazmak
 ikinci bir yazıcı doğururdu. Künye yalnız OKUNUR ve kardeş-föy çelişki
@@ -123,6 +136,29 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "tibbi_olay":   ("Tıbbi Olay",),
     "karar_no":     ("Karar No",),
     "karar_tarihi": ("Karar Tarihi",),
+    # --- tam eşleme turu (2026-08-19): kart alanlarının kaynak sütunları
+    "ana_tur":                   ("Ana Tür",),
+    "durum":                     ("Durum",),
+    "dava_konusu":               ("Dava Konusu",),
+    "yerel_mahkeme":             ("Yerel Mahkeme",),
+    "esas":                      ("Esas",),
+    "dava_tarihi":               ("Dava Tarihi",),
+    "is_kabul_tarihi":           ("İş Kabul Tarihi",),
+    "dava_degeri":               ("Dava Değeri TL", "Dava Değeri"),
+    "manevi_dava_degeri":        ("Manevi Dava Değeri TL", "Manevi Dava Değeri"),
+    "hukmedilen_maddi":          ("Hükmedilen Maddi",),
+    "hukmedilen_manevi":         ("Hükmedilen Manevi",),
+    "hukmedilen_toplam":         ("Hükmedilen Toplam",),
+    "son_durum":                 ("Son Durum",),
+    "buro_ozel_turu":            ("Buro Özel Türü",),
+    "hukuk_no":                  ("Hukuk No",),
+    "arabuluculuk_no":           ("Arabuluculuk Numarası",),
+    "arabuluculuk_karar_tarihi": ("Arabuluculuk Karar Tarihi",),
+    "istinaf_basvuran":          ("İstinaf Mahkemesi Başvuran Taraf",),
+    "tibbi_surec":               ("Tıbbi Süreç",),
+    "iddia_edilen_kusur":        ("İddia Edilen Kusur",),
+    "hastada_olusan_zarar":      ("Hastada Oluşan Zarar",),
+    "uygulanan_yontem":          ("Uygulanan Yöntem",),
 }
 
 # Satırın kimliği: bu sütun yoksa dosya bu script için okunamaz.
@@ -295,6 +331,14 @@ def _tarih(deger: Any, alan: str) -> Optional[date]:
             return _tarih_suz(datetime.strptime(ham, bicim).date(), alan)
         except ValueError:
             continue
+    # Saat ekli METİN hücreler: pakette çoğu tarih hücresi gerçek tarih tipinde
+    # gelir, ama METİN olarak yazılmış olanlar "2024-07-16 00:00:00" biçiminde
+    # okunur (tam eşleme koşusunda 6 satır bu yüzden DÜŞMÜŞTÜ). Tarih kısmı
+    # ayrıştırılabiliyorsa satırı düşürmek için sebep yok.
+    try:
+        return _tarih_suz(datetime.fromisoformat(ham).date(), alan)
+    except ValueError:
+        pass
     raise SatirHatasi(f"{alan} çözümlenemedi: {ham!r}")
 
 
@@ -358,12 +402,113 @@ def _tarih_yumusak(deger: Any, alan: str) -> str:
     return cozulen.isoformat() if cozulen else ""
 
 
+def _esleme(sozluk: Dict[str, str]) -> Callable[[Any, str], Optional[str]]:
+    """Kapalı havuz eşlemesi — tanınmayan değer YAZILMAZ (None döner).
+
+    Tahmin yasağının dönüştürücü hâli: teslimin serbest metnini bizim listemize
+    zorlamak yerine, eşlemesi olmayanı boş bırakırız. Örnek: "İstinaf Başvuran
+    Taraf" sütununda 17 farklı yazım var (DAVACI · DAVALI-DAVACI · SANIK
+    MÜDAFİ · bir hastane adı); bizim kapalı listemiz üç değerli.
+    """
+    def donustur(deger: Any, alan: str) -> Optional[str]:
+        metin = _metin(deger)
+        if metin is None:
+            return None
+        # Anahtar başlık eşlemesiyle AYNI normalizasyondan geçer (TR büyük harf
+        # + aksan sadeleştirme + yalnız harf/rakam): "İDARE"→IDARE,
+        # "DAVACI/ DAVALI" ile "DAVACI-DAVALI" tek anahtarda buluşur.
+        return sozluk.get(_baslik_anahtari(metin))
+    return donustur
+
+
+# Ana Tür → cases.file_type. Değerler DB'den doğrulandı (2026-08-19): 14.345
+# kartın file_type havuzu Hukuk/İcra/Tahkim/İdare/Arabuluculuk/Ceza/Vergi/
+# Danışmanlık/Savcılık. Teslimdeki 8 tür bunların dokuzuna birebir oturuyor.
+ANA_TUR_ESLEMESI = {
+    "HUKUK": "Hukuk", "IDARE": "İdare", "CEZA": "Ceza",
+    "ARABULUCULUK": "Arabuluculuk", "ICRA": "İcra", "SAVCILIK": "Savcılık",
+    "TAHKIM": "Tahkim", "DANISMANLIK": "Danışmanlık",
+}
+
+# Durum → cases.status. Bizim havuz iki değerli (DERDEST/MAHZEN), teslimin de.
+DURUM_ESLEMESI = {"AKTIF": "DERDEST", "ARSIV": "MAHZEN"}
+
+# İstinaf başvuran taraf → G044'ün kapalı listesi (Davacı/Davalı/Her İki Taraf).
+# Birleşik yazımların hepsi "Her İki Taraf"tır; listede olmayan 8 satır
+# (DİĞER DAVALI, SANIK MÜDAFİ, FERİ MÜDAHİL, bir hastane adı) YAZILMAZ.
+ISTINAF_BASVURAN_ESLEMESI = {
+    "DAVACI": "Davacı", "DAVALI": "Davalı",
+    "DAVALIDAVACI": "Her İki Taraf", "DAVACIDAVALI": "Her İki Taraf",
+}
+
+
+def _metin_alan(deger: Any, alan: str) -> Optional[str]:
+    return _kirp(_metin(deger), alan)
+
+
 # Kart alanı → (kaynak sütun anahtarı, dönüştürücü)
 KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
-    "arsiv_tarihi": ("arsiv_tarihi", _tarih),
-    "islah_tutari": ("islah_tutari", _sayi),
-    "tibbi_olay":   ("tibbi_olay", lambda d, alan: _kirp(_metin(d), alan)),
+    # --- kimlik/sınıflandırma
+    "file_type":    ("ana_tur", _esleme(ANA_TUR_ESLEMESI)),
+    "status":       ("durum", _esleme(DURUM_ESLEMESI)),
+    "subject":      ("dava_konusu", _metin_alan),
+    "court":        ("yerel_mahkeme", _metin_alan),          # BOSA_YAZ — aşağı bak
+    "esas_no":      ("esas", _metin_alan),                   # ÖZEL: esas tarihçesi
+    # --- tarihler
+    "opening_date":    ("dava_tarihi", _tarih),
+    "acceptance_date": ("is_kabul_tarihi", _tarih),
+    "arsiv_tarihi":    ("arsiv_tarihi", _tarih),
+    # --- para
+    "islah_tutari":     ("islah_tutari", _sayi),
+    "manevi_tazminat":  ("manevi_dava_degeri", _sayi),
+    "hukmedilen_maddi":  ("hukmedilen_maddi", _sayi),
+    "hukmedilen_manevi": ("hukmedilen_manevi", _sayi),
+    "hukmedilen_toplam": ("hukmedilen_toplam", _sayi),
+    # --- takip/dosya numaraları
+    # DB'de bir de `last_status` kolonu var ama MODELDE YOK (eski kalıntı);
+    # takip panelinin yazdığı alan `dosya_son_durumu`dur (14.220 kartta dolu).
+    "dosya_son_durumu": ("son_durum", _metin_alan),
+    "bureau_type":    ("buro_ozel_turu", _metin_alan),
+    "hasar_dosya_no": ("hasar_no", _metin_alan),
+    "hukuk_no":       ("hukuk_no", _metin_alan),
+    # --- süreç
+    "arabuluculuk_no":           ("arabuluculuk_no", _metin_alan),
+    "arabuluculuk_karar_tarihi": ("arabuluculuk_karar_tarihi", _tarih),
+    "istinaf_basvuran_taraf":    ("istinaf_basvuran", _esleme(ISTINAF_BASVURAN_ESLEMESI)),
+    # --- tıbbi beşli (G044)
+    "tibbi_surec":          ("tibbi_surec", _metin_alan),
+    "tibbi_olay":           ("tibbi_olay", _metin_alan),
+    "iddia_edilen_kusur":   ("iddia_edilen_kusur", _metin_alan),
+    "hastada_olusan_zarar": ("hastada_olusan_zarar", _metin_alan),
+    "uygulanan_yontem":     ("uygulanan_yontem", _metin_alan),
 }
+
+# YALNIZ boşsa yazılan alanlar. `court`: teslimin mahkeme adları BÜYÜK HARF
+# (2026-08-19 ölçümü: 562 föyde fark, çoğu yalnız yazım) — bizim yazımımız
+# G067-G070'te kimlik olarak düzeltildi, üzerine yazmak geriletirdi. Boş olan
+# 31 kartı ise teslim doldurabilir.
+BOSA_YAZILAN_ALANLAR = frozenset({"court"})
+
+# Türetilen alanlar: değeri TEK sütundan gelmeyenler.
+KART_TURETILEN: Dict[str, Callable[[Dict[str, Any], str], Any]] = {}
+
+
+def _maddi_tazminat(degerler: Dict[str, Any], alan: str) -> Optional[Decimal]:
+    """D4 — maddi = Dava Değeri − Manevi; NEGATİFSE hesaplama yapılmaz.
+
+    Şartname §2/D4: 98 satırda manevi > dava değeri; orada maddi NULL kalır
+    (uydurma sayı üretmek yerine boş). Manevi = Dava Değeri olan satırlarda
+    maddi = 0 DOĞRUDUR ve yazılır (NULL ≠ 0 kuralı).
+    """
+    dava_degeri = _sayi(degerler.get("dava_degeri"), "dava_degeri")
+    if dava_degeri is None:
+        return None
+    manevi = _sayi(degerler.get("manevi_dava_degeri"), "manevi_dava_degeri") or Decimal(0)
+    fark = dava_degeri - manevi
+    return None if fark < 0 else fark
+
+
+KART_TURETILEN["maddi_tazminat"] = _maddi_tazminat
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -489,6 +634,25 @@ def _eslesme_anahtari(deger: Any) -> str:
 # Satır işleme
 # ═══════════════════════════════════════════════════════════════════════════
 
+def kart_degerleri(satir: HamSatir) -> Dict[str, Any]:
+    """Satırın kart alanlarına çevrilmiş NİHAİ değerleri — TEK dönüşüm noktası.
+
+    Hem yazma yolu hem çelişki ön geçişi buradan okur: ikisi farklı yerde
+    dönüştürseydi "çelişkili" sayılan değerle yazılan değer ayrışabilirdi.
+    `None` (bu teslimde yok) sözlüğe GİRMEZ — "boşalt" anlamı yok.
+    """
+    degerler: Dict[str, Any] = {}
+    for alan, (kaynak, donustur) in KART_ALANLARI.items():
+        deger = donustur(satir.degerler.get(kaynak), alan)
+        if deger is not None:
+            degerler[alan] = deger
+    for alan, hesapla in KART_TURETILEN.items():
+        deger = hesapla(satir.degerler, alan)
+        if deger is not None:
+            degerler[alan] = deger
+    return degerler
+
+
 def _kart_id_tahmini(satir: HamSatir, foy_haritasi: Dict[str, int],
                      dosya_haritasi: Dict[str, List[int]],
                      sistem_no: str) -> Optional[int]:
@@ -539,13 +703,11 @@ def kart_alan_celiskileri(
         case_id = _kart_id_tahmini(satir, foy_haritasi, dosya_haritasi, sistem_no)
         if case_id is None:
             continue
-        for alan, (kaynak, donustur) in KART_ALANLARI.items():
-            try:
-                deger = donustur(satir.degerler.get(kaynak), alan)
-            except SatirHatasi:
-                continue          # bozuk satır zaten düşecek; uzlaşıyı kirletmesin
-            if deger is None:
-                continue          # "bu teslimde yok" çelişki DEĞİLDİR
+        try:
+            satir_degerleri = kart_degerleri(satir)
+        except SatirHatasi:
+            continue              # bozuk satır zaten düşecek; uzlaşıyı kirletmesin
+        for alan, deger in satir_degerleri.items():
             degerler.setdefault((case_id, alan), []).append((sistem_no, deger))
 
     celiskili: Dict[int, Set[str]] = {}
@@ -605,14 +767,26 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     gerekçe `kart_alan_celiskileri` docstring'inde.
     """
     degisenler: List[str] = []
-    for alan, (kaynak, donustur) in KART_ALANLARI.items():
-        yeni = donustur(satir.degerler.get(kaynak), alan)
-        if yeni is None or alan in celiskili_alanlar:
+    degerler = kart_degerleri(satir)
+    for alan, yeni in degerler.items():
+        if alan in celiskili_alanlar:
             continue
         eski = getattr(case, alan)
+        if alan in BOSA_YAZILAN_ALANLAR and _metin(eski) is not None:
+            continue                      # dolu değeri geriletme (bkz. `court`)
         if eski == yeni:
             continue
-        setattr(case, alan, yeni)
+        if alan == "esas_no":
+            # Türetilmiş alan: kolon + tarihçe TEK yoldan (G045). Buradan
+            # setattr etmek `case_esas_numbers`ı bypass edip ikinci doğruluk
+            # kaynağı doğururdu; eski esas da kayıtta kalmalı.
+            case_manager.sync_current_esas(
+                db, case, yeni,
+                court=degerler.get("court") or case.court,
+                source=source,
+            )
+        else:
+            setattr(case, alan, yeni)
         db.add(models.CaseHistory(
             case_id=case.id, field_name=alan,
             old_value=_gecmis_metni(eski), new_value=_gecmis_metni(yeni),

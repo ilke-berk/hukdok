@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -15,7 +15,7 @@ import {
 import { useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import {
-    MEDICAL_CARD_FIELDS, PROCESS_CARD_FIELDS,
+    MEDICAL_CARD_FIELDS, OFFICE_CARD_FIELDS, PROCESS_CARD_FIELDS,
     filledFields, formatCardValue, closedListState,
     type CardFieldDef, type ClosedListKey,
 } from "@/lib/caseCardFields";
@@ -706,6 +706,15 @@ const CaseDetails = () => {
                             description="Arabuluculuk, kanun yolu ve arşiv bilgileri"
                             icon={<Scale className="w-4 h-4 text-primary" />}
                             fields={PROCESS_CARD_FIELDS}
+                            data={caseData}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                        />
+
+                        <TransferFieldsCard
+                            title="Büro Bilgileri"
+                            description="İş kabulü, takip kovası ve dosyanın son durumu"
+                            icon={<Briefcase className="w-4 h-4 text-primary" />}
+                            fields={OFFICE_CARD_FIELDS}
                             data={caseData}
                             closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
                         />
