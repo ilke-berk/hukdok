@@ -252,9 +252,8 @@ def test_kapsam_kilidi_ikinci_yazici_dogurmadi():
         "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
         "karar_duzeltme_durumu", "sistem_no", "tku_no",
     }
-    # Bilinçli yazılmayanlar (script docstring'inde gerekçeli): teslim avukat
-    # adlarının aksanını düşürüyor, hizmet türü bitmask semantiği kararlaşmadı.
-    assert not yazilanlar & {"responsible_lawyer_name", "service_type"}
+    # Bilinçli yazılmayan: hizmet türünün 5 haneli bitmask semantiği kararlaşmadı.
+    assert not yazilanlar & {"service_type"}
     # `court`/`sub_type` yazılır AMA yalnız içerik farkında (yazım bizim).
     assert hukdok_aktarim.ICERIK_KARSILASTIRMALI_ALANLAR == {"court", "sub_type"}
     # Toptan taraf silme belge-taraf bağını SESSİZCE koparırdı (SET NULL tuzağı)
@@ -881,6 +880,49 @@ def test_esas_kolonu_tarihce_yolundan_yazilir(uc_kart, tmp_path):
         satirlar = db.query(models.CaseEsasNumber).filter_by(case_id=kart.id).all()
         assert len(satirlar) == 1 and satirlar[0].is_current
         assert satirlar[0].court == "Şanlıurfa 1. Tüketici Mahkemesi"
+    finally:
+        db.close()
+
+
+def test_avukat_listesi_case_lawyers_satirlarina_acilir(uc_kart, tmp_path):
+    """Teslimde "Sorumlu Avukatlar" bir LİSTE; bizde tek kutu + `case_lawyers`.
+
+    Tek isimli föy kartın `responsible_lawyer_name`ini de yazar; çoklu föy
+    YAZMAZ (hangisi sorumlu belli değil) ama isimlerin hepsi satır olur.
+    Yazım teslimin aksansız hâli değil BİZİM kayıtlı yazımımızdır.
+    """
+    db = uc_kart()
+    try:
+        kart = db.query(models.Case).filter_by(klasor_no_2="D-3").one()
+        kart.responsible_lawyer_name = "Tuğçe Üngör Yanık"     # doğru yazım kaynağı
+        db.commit()
+    finally:
+        db.close()
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Sorumlu Avukatlar": "Tugce Ungor Yanık,"}),
+        _satir("SSTMN-2", "D-2", **{"Sorumlu Avukatlar": "Ayse Acar Yucel, Barıs Yucel,"}),
+    ], basliklar=BASLIKLAR + ["Sorumlu Avukatlar"])
+
+    ilk = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert ilk.avukat_eklenen == 3                     # 1 + 2 isim
+
+    db = uc_kart()
+    try:
+        kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
+        # tek isim → kart alanı da yazıldı, BİZİM yazımımızla
+        assert kartlar["D-1"].responsible_lawyer_name == "Tuğçe Üngör Yanık"
+        # çoklu isim → kart alanı yazılmadı, satırlar açıldı
+        assert kartlar["D-2"].responsible_lawyer_name is None
+        adlar = {r.name for r in db.query(models.CaseLawyer).filter_by(case_id=kartlar["D-2"].id)}
+        assert adlar == {"Ayse Acar Yucel", "Barıs Yucel"}
+    finally:
+        db.close()
+
+    ikinci = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert ikinci.avukat_eklenen == 0 and ikinci.alan_degisikligi == 0
+    db = uc_kart()
+    try:
+        assert db.query(models.CaseLawyer).count() == 3    # satır İKİLENMEDİ
     finally:
         db.close()
 

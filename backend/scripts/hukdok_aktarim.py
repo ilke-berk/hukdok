@@ -57,11 +57,16 @@ para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, ü�
 (`last_status`, `bureau_type`, `arabuluculuk_no`, `istinaf_basvuran_taraf`) ve
 G044'ün tıbbi beşlisi.
 
-**Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `responsible_lawyer_name` (teslim aksanları düşürmüş: "Tugce Ungor"
-— bizdeki yazım daha doğru) · `service_type` (bitmask semantiği kararlaşmadı) ·
-`Ek Alt Kırılım*` (karşı tarafın kendi uyarısı: dosya açılış etiketi, güncel
-değil) · `Para Birimi`/`MüvekkilNo` (taşınmaz). `court` ve `sub_type` İÇERİK
-farkında yazılır, yalnız yazım farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
+Avukatlar AYRI yoldan gider: "Sorumlu Avukatlar" bir listedir, `case_lawyers`
+satırlarına YALNIZ-EKLEME ile açılır; kartın tek kutusu (`responsible_lawyer_name`)
+ancak föyde TEK isim varsa yazılır. Yazım teslimin aksansız hâli değil bizim
+kayıtlı yazımımızdır (`avukat_haritasi_kur`).
+
+**Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `service_type`
+(bitmask semantiği kararlaşmadı) · `Ek Alt Kırılım*` (karşı tarafın kendi
+uyarısı: dosya açılış etiketi, güncel değil) · `Para Birimi`/`MüvekkilNo`
+(taşınmaz). `court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
+farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
 Karar künyesi
 (`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ — o kolonların tek yazma yolu
 `managers/stage_decisions.py`ın aşama fotoğrafıdır (G062); buradan yazmak
@@ -87,7 +92,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, cast
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -155,6 +160,7 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "arabuluculuk_karar_tarihi": ("Arabuluculuk Karar Tarihi",),
     "istinaf_basvuran":          ("İstinaf Mahkemesi Başvuran Taraf",),
     "uzmanlik_alani":            ("Dava Türü Alt Kırılımı", "Uzmanlık Alanı"),
+    "avukatlar":                 ("Sorumlu Avukatlar", "Sorumlu Avukat"),
     "tibbi_surec":               ("Tıbbi Süreç",),
     "iddia_edilen_kusur":        ("İddia Edilen Kusur",),
     "hastada_olusan_zarar":      ("Hastada Oluşan Zarar",),
@@ -240,6 +246,7 @@ class AktarimSonucu:
     foy_yeni: int = 0
     foy_guncellenen: int = 0
     alan_degisikligi: int = 0
+    avukat_eklenen: int = 0
     atlanan: int = 0
     dry_run: bool = False
     yazildi: bool = False              # commit edildi mi?
@@ -446,6 +453,65 @@ def _metin_alan(deger: Any, alan: str) -> Optional[str]:
     return _kirp(_metin(deger), alan)
 
 
+# ─── Avukat adı eşlemesi ─────────────────────────────────────────────────────
+# Teslim avukat adlarını AKSANSIZ yazıyor ("Tugce Ungor Yanık"), üstelik
+# "Sorumlu Avukatlar" bir LİSTEDİR (7.313 föyde tek isim, 1.085'inde çoklu);
+# bizde `cases.responsible_lawyer_name` TEK kutu, çoklu iş `case_lawyers`
+# tablosunun. Ölçüm (2026-08-19): teslimde 12 farklı ad var; 8'inin doğru
+# yazımı zaten kartlarımızda ("Tuğçe Üngör Yanık"), 4'ü bizde hiç geçmiyor.
+#
+# Öncelik: (1) kartlardaki mevcut yazım — aksanlar doğru, (2) resmî `lawyers`
+# listesi (BÜYÜK HARF saklanıyor → tr_title), (3) teslimin ham adı (tr_title).
+# Harita koşu başında DB'den kurulur; dönüştürücüler saf kalsın diye modül
+# düzeyinde yaşar ve koşu sonunda temizlenir.
+_AVUKAT_HARITASI: Dict[str, str] = {}
+
+
+def avukat_haritasi_kur(db) -> Dict[str, str]:
+    """{normalize ad: gösterilecek yazım} — koşu başında BİR kez okunur."""
+    _AVUKAT_HARITASI.clear()
+    for (ad,) in db.query(models.Lawyer.name).filter(models.Lawyer.name.isnot(None)):
+        if ad and ad.strip():
+            _AVUKAT_HARITASI.setdefault(_baslik_anahtari(ad), tr_title(ad))
+    # Kart yazımları resmî listeyi EZER: orada aksanlar korunmuş.
+    sorgu = db.query(models.Case.responsible_lawyer_name).filter(
+        models.Case.responsible_lawyer_name.isnot(None),
+        models.Case.responsible_lawyer_name != "",
+    ).distinct()
+    for (ad,) in sorgu:
+        temiz = (ad or "").strip()
+        if temiz and ";" not in temiz:      # "A;B" birleşik kayıtlar ad değildir
+            _AVUKAT_HARITASI[_baslik_anahtari(temiz)] = temiz
+    return _AVUKAT_HARITASI
+
+
+def _avukat_adlari(deger: Any) -> List[str]:
+    """Teslimin virgüllü listesini bizim yazımımızla ad listesine çevirir."""
+    ham = _metin(deger)
+    if not ham:
+        return []
+    adlar: List[str] = []
+    for parca in ham.split(","):
+        temiz = " ".join(parca.split())
+        if not temiz:
+            continue
+        ad = _AVUKAT_HARITASI.get(_baslik_anahtari(temiz)) or tr_title(temiz)
+        if ad not in adlar:
+            adlar.append(ad)
+    return adlar
+
+
+def _tek_avukat(deger: Any, alan: str) -> Optional[str]:
+    """`responsible_lawyer_name` YALNIZ tek isimli föylerde yazılır.
+
+    Çoklu föyde "sorumlu" hangisi belli değildir; ilkini seçmek uydurma olurdu
+    (K1 kararının aynısı: yanlış veri boş veriden pahalıdır). Çoklu listenin
+    tamamı `case_lawyers` satırlarına yazılır — bilgi kaybolmaz.
+    """
+    adlar = _avukat_adlari(deger)
+    return _kirp(adlar[0], alan) if len(adlar) == 1 else None
+
+
 def _baslik_bicimli(deger: Any, alan: str) -> Optional[str]:
     """Teslimin BÜYÜK HARF metnini bizim saklama biçimimize çevirir.
 
@@ -467,6 +533,7 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     "subject":      ("dava_konusu", _metin_alan),
     "court":        ("yerel_mahkeme", _metin_alan),          # İÇERİK modu — aşağı bak
     "sub_type":     ("uzmanlik_alani", _baslik_bicimli),     # İÇERİK modu
+    "responsible_lawyer_name": ("avukatlar", _tek_avukat),  # yalnız tek isimli föy
     "esas_no":      ("esas", _metin_alan),                   # ÖZEL: esas tarihçesi
     # --- tarihler
     "opening_date":    ("dava_tarihi", _tarih),
@@ -818,6 +885,42 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     return degisenler
 
 
+def _avukatlari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[str]:
+    """Föyün avukat listesini `case_lawyers`e YALNIZ-EKLEME ile işler.
+
+    Silme YOK (belge koruma şartının kardeşi: toptan silip yeniden yazmak
+    bağları koparır) ve mükerrer YOK — normalize ada göre bakılır, ikinci koşu
+    hiçbir satır eklemez. `lawyer_id` resmî listede karşılığı varsa bağlanır;
+    yoksa satır yine yazılır (ad kaybolmasın), bağ boş kalır.
+    """
+    adlar = _avukat_adlari(satir.degerler.get("avukatlar"))
+    if not adlar:
+        return []
+    mevcut = {
+        _baslik_anahtari(satir_.name): satir_
+        for satir_ in db.query(models.CaseLawyer).filter(
+            models.CaseLawyer.case_id == case.id
+        )
+    }
+    eklenen: List[str] = []
+    for ad in adlar:
+        if _baslik_anahtari(ad) in mevcut:
+            continue
+        resmi = db.query(models.Lawyer.id).filter(
+            func.upper(models.Lawyer.name) == tr_upper(ad)
+        ).first()
+        db.add(models.CaseLawyer(
+            case_id=case.id, name=ad, lawyer_id=resmi[0] if resmi else None,
+        ))
+        db.add(models.CaseHistory(
+            case_id=case.id, field_name="avukat", old_value=None, new_value=ad,
+            changed_by=DEGISTIREN, source=source,
+        ))
+        mevcut[_baslik_anahtari(ad)] = None      # aynı satırda ikilenmesin
+        eklenen.append(ad)
+    return eklenen
+
+
 def _gecmis_metni(deger: Any) -> Optional[str]:
     if deger is None:
         return None
@@ -856,6 +959,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         db, case, satir, source,
         celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
     )
+    eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
 
     if yeni_foy:
         # Föyün kartla EŞLENMESİ de bir değişikliktir; provenance imzası
@@ -870,7 +974,11 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     else:
         sonuc.foy_guncellenen += 1
 
-    if degisenler or yeni_foy:
+    if eklenen_avukatlar:
+        sonuc.avukat_eklenen += len(eklenen_avukatlar)
+        sonuc.degisen_kartlar.add(cast(int, case.id))
+
+    if degisenler or yeni_foy or eklenen_avukatlar:
         # Türetilmiş eksik-alan kovasını TEK yazma yolundan tazele (D8):
         # aktarım imzası yeni düştüyse kayıt AKTARIM kovasına geçmeli.
         case_manager.refresh_missing_required(db, case)
@@ -975,6 +1083,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
             db, [_metin(s.degerler.get("sistem_no")) for s in satirlar]
         )
         dosya_haritasi = _dosya_no_haritasi(db)
+        avukat_haritasi_kur(db)
 
         # ÖN GEÇİŞ (yazmaz): kardeş föylerin kart alanlarında uzlaşıp
         # uzlaşmadığı ÖNCE bilinmeli — satır satır yazarken öğrenilseydi ilk
@@ -1115,6 +1224,7 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  yeni föy          : {sonuc.foy_yeni}",
         f"  güncellenen föy   : {sonuc.foy_guncellenen}",
         f"  alan değişikliği  : {sonuc.alan_degisikligi} ({sonuc.kart_degisen} kart)",
+        f"  avukat satırı     : {sonuc.avukat_eklenen}",
         f"  atlanan (kart yok): {sonuc.atlanan}",
         f"  satır hatası      : {len(sonuc.hatalar)}",
         f"  kardeş çelişkisi  : {len(sonuc.celiskiler)}",
