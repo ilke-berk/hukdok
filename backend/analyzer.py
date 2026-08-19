@@ -686,11 +686,22 @@ def _pre_extract_fields(
         TechnicalLogger.log("WARNING", f"[PRE] Müvekkil arama hatası: {e}")
 
     # 5. Mahkeme Adı (Hibrit Regex)
+    # G068: düz adın YANINDA yapısal kimliği de saklanır — güven damgası kilidi
+    # belirler (bkz. _court_kilitli) ve LLM okumasıyla çapraz kontrol bileşen
+    # bazlı yapılır. Kimlik, adın kendisi AYNI kapıdan (`_court_ayristir`)
+    # geçirilerek okunur: `duz_ad()` yalnız DOĞRULANMIŞ bileşenleri yazdığı için
+    # yeniden ayrıştırma kayıpsızdır ve iki okuma (regex + LLM) tek kapıyı paylaşır.
     try:
         from extractors.court_extractor import find_court_name
         pre_extracted["court"] = find_court_name(extracted_text)
+        kimlik = _court_ayristir(pre_extracted["court"])
+        pre_extracted["court_identity"] = kimlik
+        pre_extracted["court_guven"] = kimlik.guven if kimlik is not None else None
         if pre_extracted["court"]:
-            TechnicalLogger.log("INFO", f"🏛️ [PRE] Mahkeme bulundu: {pre_extracted['court']}")
+            TechnicalLogger.log(
+                "INFO",
+                f"🏛️ [PRE] Mahkeme bulundu: {pre_extracted['court']} (güven={pre_extracted['court_guven']})",
+            )
     except Exception as e:
         TechnicalLogger.log("WARNING", f"[PRE] Mahkeme çıkarımı hatası: {e}")
 
@@ -698,6 +709,38 @@ def _pre_extract_fields(
     from constants import is_hearing_doctype
     if is_hearing_doctype(preset_belge_turu_kodu):
         _pre_extract_hearing(pre_extracted, extracted_text)
+
+
+def _court_ayristir(metin: Any) -> Any:
+    """Serbest mahkeme adını G067 yapısal kapısından geçirir (G068'in TEK kapısı).
+
+    Kapı `services/court_name.parse_court_name`'dir; yer/tür listeleri
+    `court_extractor`'ın tek kaynağından okunur (DynamicConfig → fallback).
+    Regex ön çıkarımı da, LLM çıktısı da bu kapıdan geçer — iki okuma simetriktir.
+    Döner: `CourtName` (güven damgası dahil) ya da hiçbir mahkeme izi yoksa None.
+    """
+    if not metin or not str(metin).strip():
+        return None
+    try:
+        from extractors.court_extractor import _config_listeleri
+        from services.court_name import parse_court_name
+        yerler, turler = _config_listeleri()
+        return parse_court_name(str(metin), yerler=yerler, turler=turler)
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"[COURT] Mahkeme adı ayrıştırılamadı: {e}")
+        return None
+
+
+def _court_kilitli(pre_extracted: Dict[str, Any]) -> bool:
+    """Mahkeme ön çıkarımı LLM'e 'DEĞİŞTİRME' kilidi kuruyor mu? (G068)
+
+    Kilit YALNIZ tam güvenli okumada kurulur: yer + kanonik tür birlikte
+    doğrulanmışsa (`GUVEN_TAM`). KISMI/YOK okumada alan LLM'e sorulmaya devam
+    eder — regex değeri prompt'a kilit değil İPUCU olarak girer ve iki okuma
+    `_resolve_court`'ta çapraz kontrol edilir.
+    """
+    from services.court_name import GUVEN_TAM
+    return bool(pre_extracted.get("court")) and pre_extracted.get("court_guven") == GUVEN_TAM
 
 
 def _detect_missing_fields(pre_extracted: Dict[str, Any]) -> List[str]:
@@ -709,7 +752,10 @@ def _detect_missing_fields(pre_extracted: Dict[str, Any]) -> List[str]:
         missing_fields.append("esas_no")
     if not pre_extracted["muvekkil_candidates"]:
         missing_fields.append("muvekkil")
-    if not pre_extracted["court"]:
+    # Mahkeme (G068): diğer alanlardan FARKLI — "bulundu" yetmez, okumanın
+    # yapısal olarak doğrulanmış (TAM) olması gerekir. Diğer alanların kilit
+    # mantığı DEĞİŞMEDİ.
+    if not _court_kilitli(pre_extracted):
         missing_fields.append("court")
     return missing_fields
 
@@ -939,12 +985,145 @@ def _apply_preset_and_karsi_taraf(
     debug_info.append(f"- Karşı Taraf: Kullanıcıya Bırakıldı (AI önerisi: {ai_karsi_taraf or 'yok'})")
 
 
+def _court_kimlik(metin: Any) -> Any:
+    """`_court_ayristir` + tahmin yasağı: `GUVEN_YOK` sonuç KİMLİK DEĞİLDİR.
+
+    (court_name modül sözleşmesi: türü doğrulanamayan sonuç kimlik olarak
+    kullanılmamalıdır.) Çapraz kontrole yalnız buradan geçen okumalar girer.
+    """
+    from services.court_name import GUVEN_YOK
+
+    kimlik = _court_ayristir(metin)
+    if kimlik is None or kimlik.guven == GUVEN_YOK:
+        return None
+    return kimlik
+
+
+def _court_capraz_kontrol(regex_kimlik: Any, ai_kimlik: Any) -> Tuple[str, List[str]]:
+    """İki bağımsız okumanın yapısal kimliklerini bileşen bazında karşılaştırır.
+
+    Karar (G068 karar noktası 1): uyuşmazlıkta HİÇBİRİ kazanmaz — çelişen bileşen
+    BOŞ bırakılır, ortak bileşenler yazılır. Yanlış değeri sisteme yazmak boş
+    alandan pahalıdır (kullanıcı onay ekranında alanı görüp düzeltebiliyor).
+    Bir okumanın sustuğu bileşen ÇELİŞKİ DEĞİLDİR (yokluk ≠ karşıt iddia).
+    Tür çelişirse iki okuma farklı mahkemeyi gösteriyordur: "ANKARA 3." gibi
+    gövdesiz bir ad üretmek yerine alan tümüyle boş bırakılır.
+
+    Döner: (yazılacak ad — boş olabilir, çelişen bileşen etiketleri).
+    """
+    catisma: List[str] = []
+
+    def _ortak(a: Any, b: Any, etiket: str) -> Any:
+        if a is not None and b is not None and a != b:
+            catisma.append(etiket)
+            return None
+        return a if a is not None else b
+
+    yer = _ortak(regex_kimlik.yer, ai_kimlik.yer, "yer")
+    sira = _ortak(regex_kimlik.sira, ai_kimlik.sira, "sıra no")
+    tur_kanonik = _ortak(regex_kimlik.tur_kanonik, ai_kimlik.tur_kanonik, "tür")
+    daire_no = _ortak(regex_kimlik.daire_no, ai_kimlik.daire_no, "daire no")
+    daire_adi = _ortak(regex_kimlik.daire_adi, ai_kimlik.daire_adi, "daire adı")
+
+    if "tür" in catisma:
+        return "", catisma
+
+    parcalar: List[str] = []
+    if yer:
+        parcalar.append(yer)
+    if sira is not None:
+        parcalar.append(f"{sira}.")
+    parcalar.append(regex_kimlik.tur_yuzey or ai_kimlik.tur_yuzey or tur_kanonik)
+    # Basamak koruması (G068 madde 4): daire numarası çelişiyorsa (11 vs 1)
+    # daire yan cümlesi TÜMÜYLE düşer — numarasız "HUKUK DAİRESİ" yarım doğrudur.
+    if "daire no" not in catisma and "daire adı" not in catisma and daire_adi:
+        parcalar.append(f"{daire_no}. {daire_adi}" if daire_no is not None else daire_adi)
+    return " ".join(p for p in parcalar if p), catisma
+
+
+def _resolve_court(
+    data: Dict[str, Any],
+    pre_extracted: Dict[str, Any],
+    debug_info: List[str],
+) -> List[str]:
+    """🏛️ MAHKEME — iki bağımsız okuma (regex + LLM), tek kapı, uydurma yok (G068).
+
+    Döner: kullanıcıya `status:"warning"` olayı olarak akıtılacak mesajlar.
+    Belirsizlik nihai başarısızlık DEĞİLDİR: `failed` üretilmez, log WARNING'dir.
+    """
+    from services.court_name import GUVEN_YOK
+
+    uyarilar: List[str] = []
+    regex_ad = pre_extracted.get("court") or ""
+    regex_kimlik = pre_extracted.get("court_identity")
+    if regex_kimlik is not None and regex_kimlik.guven == GUVEN_YOK:
+        # Tür doğrulanamadı → KİMLİK değildir, çapraz kontrole katılmaz. Ama
+        # değeri LLM'inki gibi ATILMAZ: regex yüzeyi belgeden KOPYALANMIŞTIR
+        # (üretilmiş değil), sözlüğümüz eksik olabilir ("… BÖLGE ADLİYE
+        # MAHKEMESİ" dairesiz). Doğrulanmış bir okuma yoksa son çare kalır.
+        regex_kimlik = None
+
+    # 1) KİLİT: regex TAM güvenle okuduysa alan LLM'e hiç sorulmadı; modelin
+    #    çıktısı bağımsız bir okuma değil (prompt'ta "DEĞİŞTİRME" yazıyordu),
+    #    bu yüzden çapraz kontrol edilmez — bugünkü davranış birebir korunur.
+    if _court_kilitli(pre_extracted):
+        data["court"] = pre_extracted["court"]
+        debug_info.append(f"- Mahkeme: REGEX/KİLİT ({pre_extracted['court']})")
+        return uyarilar
+
+    ham_ai = str(data.get("court") or "").strip()
+    ai_kimlik = _court_kimlik(ham_ai)
+    if ham_ai and ai_kimlik is None:
+        # Tanınmayan tür: değer KABUL EDİLMEZ (kapının tahmin yasağı).
+        TechnicalLogger.log(
+            "WARNING",
+            "🏛️ [COURT] LLM mahkeme adı kapıdan geçmedi (tür doğrulanamadı) — değer yazılmadı.",
+        )
+        debug_info.append("- Mahkeme: LLM REDDEDİLDİ (tanınmayan tür)")
+
+    if regex_kimlik is not None and ai_kimlik is not None:
+        ad, catisma = _court_capraz_kontrol(regex_kimlik, ai_kimlik)
+        data["court"] = ad
+        if catisma:
+            ozet = ", ".join(catisma)
+            TechnicalLogger.log(
+                "WARNING",
+                f"🏛️ [COURT] İki okuma uyuşmadı ({ozet}) — çelişen bileşen boş bırakıldı. "
+                f"Regex: {regex_kimlik.duz_ad()} | LLM: {ai_kimlik.duz_ad()}",
+            )
+            debug_info.append(f"- Mahkeme: ÇAPRAZ KONTROL ÇELİŞKİSİ ({ozet}) → '{ad}'")
+            uyarilar.append(
+                f"⚠️ Mahkeme adında iki okuma uyuşmadı ({ozet}). Çelişen kısım boş bırakıldı, "
+                "lütfen onay ekranında kontrol edin."
+            )
+        else:
+            debug_info.append(f"- Mahkeme: ÇAPRAZ KONTROL UYUŞTU ({ad})")
+    elif ai_kimlik is not None:
+        # Doğrulanmış tek okuma LLM'inki (regex ya sustu ya da türü tanınmadı).
+        data["court"] = ai_kimlik.duz_ad()
+        debug_info.append(f"- Mahkeme: LLM/KAPI ({data['court']})")
+    elif regex_kimlik is not None:
+        # Tek kaynak: regex KISMI okudu, LLM doğrulanabilir bir ad vermedi →
+        # kapıdan geçen bileşenler yazılır (doğrulanmamış yer üretilmemiştir).
+        data["court"] = regex_kimlik.duz_ad()
+        debug_info.append(f"- Mahkeme: REGEX/KISMİ ({data['court']})")
+    else:
+        # Hiçbir okuma kapıdan geçmedi: geriye yalnız regex'in belgeden kopyaladığı
+        # yüzey kalır (yoksa boş). LLM'in üretimi buraya ASLA düşmez.
+        data["court"] = regex_ad
+        debug_info.append(f"- Mahkeme: {'REGEX/DOĞRULANMADI (' + regex_ad + ')' if regex_ad else 'BOŞ'}")
+    return uyarilar
+
+
 def _resolve_tarih_esas_court(
     data: Dict[str, Any],
     pre_extracted: Dict[str, Any],
     debug_info: List[str],
-) -> None:
-    """Tarih / Esas No / Mahkeme alanlarında regex ↔ LLM önceliğini uygular."""
+) -> List[str]:
+    """Tarih / Esas No / Mahkeme alanlarında regex ↔ LLM önceliğini uygular.
+
+    Döner: mahkeme çapraz kontrolünden çıkan uyarı mesajları (stream'e `warning`).
+    """
     # 📅 TARİH
     if pre_extracted.get("tarih"):
         data["tarih"] = pre_extracted["tarih"]
@@ -962,22 +1141,8 @@ def _resolve_tarih_esas_court(
         debug_info.append(f"- Esas No: LLM ({data.get('esas_no', 'BOŞ')})")
 
 
-    # 🏛️ MAHKEME
-    ai_court = data.get("court", "")
-    regex_court = pre_extracted.get("court", "")
-
-    if regex_court:
-        # Eğer AI boşsa veya regex daha uzunsa regex'i kullan
-        if not ai_court or len(regex_court) > len(ai_court):
-            data["court"] = regex_court
-            debug_info.append(f"- Mahkeme: REGEX ({regex_court})")
-        else:
-            # AI daha detaylı veya tam (örn: Dava Dairesi dahil), AI'da kal ama regex'i logla
-            debug_info.append(f"- Mahkeme: LLM (Regex de buldu: {regex_court})")
-    elif ai_court:
-         debug_info.append(f"- Mahkeme: LLM ({ai_court})")
-    else:
-         debug_info.append("- Mahkeme: BOŞ")
+    # 🏛️ MAHKEME (G068) — "uzun olan kazanır" sezgisi yerine yapısal çapraz kontrol
+    return _resolve_court(data, pre_extracted, debug_info)
 
 
 def _resolve_muvekkil_fields(
@@ -1420,6 +1585,10 @@ async def analyze_file_generator(
             "esas_no": None,
             "muvekkil_candidates": [],
             "court": None,
+            # G068: mahkemenin yapısal kimliği + güven damgası (iç sözleşme;
+            # analiz sonucu JSON şemasına EKLENMEZ).
+            "court_identity": None,
+            "court_guven": None,
             "sonraki_durusma_tarihi": None,
             "sonraki_durusma_saati": None,
         }
@@ -1488,7 +1657,12 @@ async def analyze_file_generator(
 
         # === POST-PROCESSING: Pre-Extracted Değerleri Uygula ===
         # Artık regex'leri tekrar çalıştırmıyoruz, pre-extraction'daki sonuçları kullan
-        _resolve_tarih_esas_court(data, pre_extracted, debug_info)
+        court_uyarilari = _resolve_tarih_esas_court(data, pre_extracted, debug_info)
+        # Mahkeme belirsizliği nihai başarısızlık DEĞİLDİR (G068 karar 2):
+        # sözleşmede zaten var olan "warning" olayıyla kullanıcıya bildirilir,
+        # akış "complete" ile normal biter.
+        for _court_uyari in court_uyarilari:
+            yield {"status": "warning", "message": _court_uyari}
 
         # 👤 MÜVEKKİL (Hibrit Matcher hala gerekli)
         _resolve_muvekkil_fields(data, pre_extracted, lawyers, debug_info)

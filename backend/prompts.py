@@ -63,9 +63,14 @@ def get_system_instruction(
             found_items.append(f"Avukat: {pre_extracted['avukat_kodu']}")
         if pre_extracted.get("muvekkil_candidates"):
             found_items.append(f"Müvekkil Adayları: {', '.join(pre_extracted['muvekkil_candidates'])}")
-        if pre_extracted.get("court"):
+        # 🏛️ MAHKEME (G068): ön çıkarım YALNIZ kilitliyken (regex tam güvenle
+        # okuduğunda, yani alan missing_fields'ten düştüğünde) "DEĞİŞTİRME"
+        # bloğuna girer. Doğrulanmamış okuma kilit değil İPUCU'dur ve aşağıdaki
+        # mahkeme görevinin içine yazılır — modelin belgeyi okuma hakkı elinden
+        # alınmaz (regex "AĞRI" derse LLM düzeltebilmelidir).
+        if pre_extracted.get("court") and "court" not in missing_fields:
             found_items.append(f"Mahkeme: {pre_extracted['court']}")
-        
+
         if found_items:
             pre_context = f"""
     ÖN ÇIKARIM BİLGİSİ (Zaten bulundu, DEĞİŞTİRME):
@@ -88,11 +93,21 @@ def get_system_instruction(
     
 
     if "court" in missing_fields:
-        task_items.append("""
+        # G068: doğrulanmamış regex okuması ipucu olarak verilir — model kendi
+        # okumasını yapar, iki okuma sonra yapısal olarak çapraz kontrol edilir.
+        court_hint = ""
+        if pre_extracted and pre_extracted.get("court"):
+            court_hint = f"""
+       - ÖN OKUMA (regex, DOĞRULANMAMIŞ): "{pre_extracted['court']}"
+         Bu bir kilit DEĞİL, yalnızca ipucudur. Belgeye kendin bak ve gördüğünü yaz;
+         ön okuma yanlışsa DÜZELT (özellikle il/ilçe adında ve daire numarasının
+         basamağında hata olabilir)."""
+        task_items.append(f"""
     🏛️ MAHKEME ADI: Bu belgeyi çıkaran (karar veren) mahkemenin TAM adını bul.
        - Karar başlığındaki adı kullan (örn: "Ankara Bölge İdare Mahkemesi 10. İdari Dava Dairesi")
        - Belgede atıf yapılan alt/üst mahkemeleri değil, bu kararın SAHİBİ olan mahkemeyi yaz.
-       - Bulamazsan: null""")
+       - Yeri (il/ilçe), sıra numarasını ve daire numarasını belgede yazdığı gibi ver.
+       - Bulamazsan: null{court_hint}""")
     
     if "muvekkil" in missing_fields:
         if mode == "VERIFICATION":
