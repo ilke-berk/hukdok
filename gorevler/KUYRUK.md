@@ -288,6 +288,27 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G069 | bant:backend | bagimli:- | judicial_unit üst mahkeme boşluğu: Yargıtay daireleri Bölge Adliye'ye yazılıyor (bugün latent, FAZ F'de pahalı)
 - [x] G070 | bant:backend | bagimli:G069 | Yargı yeri sözlüğünü kendi verimizden kapat (166 KISMİ değer; panele taşınmaz — gerekçe yukarıda)
 
+<!-- 2026-08-19b koşusu: G069 (6ce04e9) + G070 (8151d13) GECTI, paket 1601+3. Bağımsız
+     doğrulama (rapora güvenilmedi, ölçüm kendi scriptimle tekrarlandı, sayılar birebir):
+     Yargıtay 11. HD → YARGITAY HUKUK DAİRESİ (eskiden BÖLGE ADLİYE) · BAM vakaları
+     değişmedi · kapsam TAM 1.983→2.039, KISMİ 166→110 tekil.
+     G069'un BİLİNÇLİ SAPMASI KABUL EDİLDİ (2026-08-19): görev dosyası tek `YARGITAY`
+     kanonik değeri önermişti, işçi `YARGITAY HUKUK DAİRESİ` + `YARGITAY CEZA DAİRESİ`
+     ikilisini seçti. Gerekçe geçerli: `judicial_unit` değerleri TEK `parent_code` taşır,
+     Yargıtay hem hukuk hem ceza dairesi barındırır → tek değer parent'ı keyfî seçmeye
+     zorlardı; kardeş kurum Bölge Adliye de aynı sebeple ikili. Yan sonuç kabul edildi:
+     "Yargıtay Hukuk Genel Kurulu" → YARGITAY HUKUK DAİRESİ (birim alanının çözünürlüğü
+     daire/kurul ayrımını taşımıyor; tam ad `cases.court`ta duruyor, bugün 0 kart).
+     G070'in bıraktığı iki kalem: (a) dolgu kelime + tür önceliği → İŞ: G071 (aşağıda,
+     bağımsız doğrulandı: "Şişli Nöbetçi Sulh Hukuk" → yer=None olurken "Şişli 1. Sulh
+     Hukuk" TAM okunuyor; ayrıca "İzmir İl Tüketici Hakem Heyeti" → TÜKETİCİ MAHKEMESİ
+     sınıflanıyor). (b) varyant→kanonik yer eşlemesi (C+D sınıfı, 32 tekil: "Bakirköy",
+     "Ereğli Kdz", "Afyon") KUYRUĞA YAZILMADI — `cases.court` backfill'iyle birlikte
+     düşünülmeli, o da gerçek müvekkil verisi = KULLANICI KARARI. Sözlüğe ikinci yazım
+     eklemek çözüm değil (aynı yere iki kimlik açar, G070 kararı). -->
+
+- [ ] G071 | bant:backend | bagimli:- | Dolgu kelime toleransı + tür önceliği: "Nöbetçi" mahkemede yer düşüyor, hakem heyeti mahkeme sayılıyor
+
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
 <!-- "Kullanıcı kararı bekleyenler"deki pip/npm yükseltmeleri kalemi burada kapandı.
