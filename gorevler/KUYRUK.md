@@ -259,7 +259,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      kendisi: 18.08 partisini üreten kod bu repoda DEĞİL (git + oturum kayıtlarında yok),
      yeri kullanıcıya soruldu. -->
 
-- [ ] G067 | bant:backend | bagimli:- | Mahkeme adı için yapısal kimlik kapısı (services/court_name.py: yer/tür doğrulaması + kelime sınırı + Yargıtay daire okuması)
+- [x] G067 | bant:backend | bagimli:- | Mahkeme adı için yapısal kimlik kapısı (services/court_name.py: yer/tür doğrulaması + kelime sınırı + Yargıtay daire okuması)
 - [ ] G068 | bant:backend | bagimli:G067 | Analiz hattında mahkeme adı: güven kilidi + LLM çapraz kontrolü + BELİRSİZ
 
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
