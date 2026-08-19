@@ -511,6 +511,38 @@ def test_belirsiz_eslesme_yanlis_karta_yazmaz(db_env, tmp_path):
     assert _sayimlar(db_env)["CaseFoy"] == 0
 
 
+def test_ikinci_anahtar_esas_ve_tur_ile_belirsizligi_cozer(db_env, tmp_path):
+    """Belirsizliğin tipik hâli ikiz kartlarımız: aynı klasör no hem dava hem
+    arabuluculuk kartında. Föyün Ana Tür + Esas'ı hangisi olduğunu söyler
+    (257 belirsiz satırın 223'ü bu iki kriterle çözülüyor, ölçüldü)."""
+    db = db_env()
+    try:
+        _kart(db, "HA.G064.H", "D-IKIZ", file_type="Hukuk", esas_no="2023/449")
+        _kart(db, "HA.G064.A", "D-IKIZ", file_type="Arabuluculuk", esas_no="2023/166")
+        _kart(db, "HA.G064.X", "D-KOR", file_type="Hukuk")
+        _kart(db, "HA.G064.Y", "D-KOR", file_type="Hukuk")
+        db.commit()
+    finally:
+        db.close()
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("H-1", "D-IKIZ", **{"Ana Tür": "HUKUK", "Esas": "2023/449"}),
+        _satir("ARB-1", "D-IKIZ", **{"Ana Tür": "ARABULUCULUK", "Esas": "2023/166"}),
+        _satir("H-9", "D-KOR", **{"Ana Tür": "HUKUK"}),      # ikisi de aynı: ayrılmaz
+    ], basliklar=BASLIKLAR + ["Ana Tür", "Esas"])
+
+    sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = db_env()
+    try:
+        kartlar = {c.tracking_no: c for c in db.query(models.Case).all()}
+        assert foy_map.get_foy(db, "H-1").case_id == kartlar["HA.G064.H"].id
+        assert foy_map.get_foy(db, "ARB-1").case_id == kartlar["HA.G064.A"].id
+        assert foy_map.get_foy(db, "H-9") is None            # ayrılamayan YAZILMADI
+    finally:
+        db.close()
+    assert len(sonuc.hatalar) == 1 and "esas/tür de ayırmadı" in sonuc.hatalar[0].sebep
+
+
 def test_dry_run_hicbir_tabloya_yazmaz(uc_kart, tmp_path):
     """Kabul kriteri: `--dry-run` hiçbir tabloya yazmaz — öncesi/sonrası TÜM
     sayımlar ve kart alanları eşit; ürünü rapordur."""
@@ -882,6 +914,45 @@ def test_esas_kolonu_tarihce_yolundan_yazilir(uc_kart, tmp_path):
         assert satirlar[0].court == "Şanlıurfa 1. Tüketici Mahkemesi"
     finally:
         db.close()
+
+
+def test_taraflar_yalniz_eklenir_mevcut_satira_dokunulmaz(belgeli_kart, tmp_path):
+    """Belge koruma şartı: mevcut taraf satırı GÜNCELLENMEZ/SİLİNMEZ, yalnız
+    eksik ad eklenir. `case_documents.case_party_id` SET NULL olduğu için
+    toptan yeniden yazma belge-taraf bağını sessizce koparırdı."""
+    fabrika, case_id, taraf_id = belgeli_kart
+    db = fabrika()
+    try:
+        mevcut = db.get(models.CaseParty, taraf_id)
+        mevcut_ad, mevcut_rol = mevcut.name, mevcut.role
+    finally:
+        db.close()
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("SSTMN-1", "D-1", **{
+            "Müvekkil": mevcut_ad,                       # zaten var → eklenmez
+            "Karşı Taraf": "Turgut Keser; Ramazan Keser",  # ikisi de yeni
+            "Sigortalı": "AK SİGORTA A.Ş.",
+            "Taraf Sıfatı": "Feri Müdahil",
+        }),
+    ], basliklar=BASLIKLAR + ["Müvekkil", "Karşı Taraf", "Sigortalı", "Taraf Sıfatı"])
+
+    ilk = aktarimi_kos(fabrika, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert ilk.taraf_eklenen == 3 and not ilk.envanter_farki
+
+    db = fabrika()
+    try:
+        korunan = db.get(models.CaseParty, taraf_id)
+        assert (korunan.name, korunan.role) == (mevcut_ad, mevcut_rol)   # DOKUNULMADI
+        yeni = {p.name: (p.party_type, p.role)
+                for p in db.query(models.CaseParty).filter(models.CaseParty.id != taraf_id)}
+        assert yeni["Turgut Keser"] == ("COUNTER", "Karşı Taraf")
+        assert yeni["AK SİGORTA A.Ş."] == ("THIRD", "Sigortalı")      # D1
+        assert db.query(models.CaseDocument).one().case_party_id == taraf_id
+    finally:
+        db.close()
+
+    ikinci = aktarimi_kos(fabrika, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert ikinci.taraf_eklenen == 0                    # idempotent
 
 
 def test_avukat_listesi_case_lawyers_satirlarina_acilir(uc_kart, tmp_path):

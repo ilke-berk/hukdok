@@ -102,6 +102,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import models
 from managers import case_manager, foy_map
 from managers.reference_lists import tr_title, tr_upper
+from party_check import normalize_party_key
 from required_fields import AKTARIM_SOURCE_PREFIX
 from services import belge_envanteri
 
@@ -161,6 +162,11 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "istinaf_basvuran":          ("İstinaf Mahkemesi Başvuran Taraf",),
     "uzmanlik_alani":            ("Dava Türü Alt Kırılımı", "Uzmanlık Alanı"),
     "avukatlar":                 ("Sorumlu Avukatlar", "Sorumlu Avukat"),
+    "muvekkil":                  ("Müvekkil",),
+    "karsi_taraf":               ("Karşı Taraf",),
+    "sigortali":                 ("Sigortalı",),
+    "davali_idare":              ("Davalı İdare",),
+    "taraf_sifati":              ("Taraf Sıfatı",),
     "tibbi_surec":               ("Tıbbi Süreç",),
     "iddia_edilen_kusur":        ("İddia Edilen Kusur",),
     "hastada_olusan_zarar":      ("Hastada Oluşan Zarar",),
@@ -247,6 +253,7 @@ class AktarimSonucu:
     foy_guncellenen: int = 0
     alan_degisikligi: int = 0
     avukat_eklenen: int = 0
+    taraf_eklenen: int = 0
     atlanan: int = 0
     dry_run: bool = False
     yazildi: bool = False              # commit edildi mi?
@@ -741,13 +748,14 @@ def kart_degerleri(satir: HamSatir) -> Dict[str, Any]:
     return degerler
 
 
-def _kart_id_tahmini(satir: HamSatir, foy_haritasi: Dict[str, int],
+def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                      dosya_haritasi: Dict[str, List[int]],
                      sistem_no: str) -> Optional[int]:
-    """`_kart_coz`un ÖN GEÇİŞ ikizi: DB'ye gitmez, istisna atmaz, None döner.
+    """`_kart_coz`un ÖN GEÇİŞ ikizi: istisna atmaz, None döner.
 
-    Yalnız kesin eşleşme sayılır — belirsiz/eşleşmeyen satır uzlaşıya girmez;
-    onun akıbetini asıl döngü (`_kart_coz`) belirler.
+    İKİNCİ ANAHTARI DA UYGULAR — yoksa asıl döngü satırı bir karta yazarken ön
+    geçiş o satırı hiç saymaz ve "kardeş föyler uzlaşıyor mu" sorusu eksik
+    veriyle cevaplanırdı.
     """
     case_id = foy_haritasi.get(sistem_no)
     if case_id is not None:
@@ -757,11 +765,13 @@ def _kart_id_tahmini(satir: HamSatir, foy_haritasi: Dict[str, int],
         for aday in dosya_haritasi.get(parca) or []:
             if aday not in adaylar:
                 adaylar.append(aday)
-    return adaylar[0] if len(adaylar) == 1 else None
+    if len(adaylar) == 1:
+        return adaylar[0]
+    return _ikinci_anahtarla_coz(db, satir, adaylar) if adaylar else None
 
 
 def kart_alan_celiskileri(
-    satirlar: Sequence[HamSatir], *, foy_haritasi: Dict[str, int],
+    db, satirlar: Sequence[HamSatir], *, foy_haritasi: Dict[str, int],
     dosya_haritasi: Dict[str, List[int]],
 ) -> Tuple[Dict[int, Set[str]], List[Celiski]]:
     """Aynı kartın föyleri bir KART alanında çelişiyorsa o alan YAZILMAZ.
@@ -788,7 +798,7 @@ def kart_alan_celiskileri(
         sistem_no = _metin(satir.degerler.get("sistem_no"))
         if not sistem_no:
             continue
-        case_id = _kart_id_tahmini(satir, foy_haritasi, dosya_haritasi, sistem_no)
+        case_id = _kart_id_tahmini(db, satir, foy_haritasi, dosya_haritasi, sistem_no)
         if case_id is None:
             continue
         try:
@@ -811,6 +821,55 @@ def kart_alan_celiskileri(
     return celiskili, celiskiler
 
 
+def _esas_uyuyor(case: models.Case, esas: Optional[str]) -> bool:
+    """Kartın esası föyünkiyle aynı mı? (`;` ile birleşik yazılmışlar dahil)
+
+    Bizdeki 672 kayıtta esas kirli ("2021/588;2026/4", "2025768;2025/768") —
+    tam-değer karşılaştırması bu kartları eşleştiremezdi.
+    """
+    if not esas or not case.esas_no:
+        return False
+    anahtar = _baslik_anahtari(esas)
+    return any(_baslik_anahtari(p) == anahtar for p in _AYRAC.split(case.esas_no))
+
+
+def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[int]:
+    """Dosya No birden çok karta düşünce ESAS + DOSYA TÜRÜ ile ayırır.
+
+    Belirsizliğin tipik hâli bizim ikiz kartlarımızdır: aynı klasör numarası
+    hem dava hem arabuluculuk kartında yazılı (örn. `1056.003.00` → HUKUK
+    kartı + ARABU kartı). Föyün Ana Tür'ü ve esası hangisini kastettiğini
+    söyler. Ölçüm (2026-08-19, 257 belirsiz satır): esas+tür 179'unu, yalnız
+    esas 12'sini, yalnız tür 32'sini ayırıyor; 34'ü insanda kalıyor.
+
+    Sıra ÖNEMLİ: önce ikisi birden, sonra esas, sonra tür. Tek bir kriterle
+    "tek aday kaldı" demek, diğer kriterin çeliştiği bir kartı seçmek olabilir.
+    Hiçbiri tek adaya inmiyorsa None döner — satır rapora düşer, tahmin YOK.
+    """
+    kartlar = [k for k in (db.get(models.Case, aday) for aday in adaylar)
+               if k is not None and k.deleted_at is None]
+    if len(kartlar) == 1:
+        return cast(int, kartlar[0].id)
+    if not kartlar:
+        return None
+
+    esas = _metin(satir.degerler.get("esas"))
+    tur = _esleme(ANA_TUR_ESLEMESI)(satir.degerler.get("ana_tur"), "file_type")
+    esas_uyan = [k for k in kartlar if _esas_uyuyor(k, esas)]
+    tur_uyan = [k for k in kartlar if tur and k.file_type == tur]
+
+    for aday_kume in ([k for k in esas_uyan if k in tur_uyan], esas_uyan, tur_uyan):
+        if len(aday_kume) == 1:
+            secilen = aday_kume[0]
+            logger.info(
+                f"Belirsiz eşleşme ikinci anahtarla çözüldü: "
+                f"{_metin(satir.degerler.get('sistem_no'))} → kart {secilen.id} "
+                f"(esas={esas!r}, tür={tur!r})"
+            )
+            return cast(int, secilen.id)
+    return None
+
+
 def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
               dosya_haritasi: Dict[str, List[int]], sistem_no: str) -> models.Case:
     """Satırın kartını bulur. Bulunamazsa SatirHatasi — kart YARATILMAZ."""
@@ -830,11 +889,14 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                 f"Kart bulunamadı (Dosya No {gosterim!r} klasor_no_2 ile eşleşmiyor)"
             )
         if len(adaylar) > 1:
-            raise SatirHatasi(
-                f"Belirsiz eşleşme: Dosya No {gosterim!r} {len(adaylar)} kartla eşleşiyor "
-                f"({', '.join(str(a) for a in adaylar[:5])})"
-            )
-        case_id = adaylar[0]
+            case_id = _ikinci_anahtarla_coz(db, satir, adaylar)
+            if case_id is None:
+                raise SatirHatasi(
+                    f"Belirsiz eşleşme: Dosya No {gosterim!r} {len(adaylar)} kartla eşleşiyor "
+                    f"({', '.join(str(a) for a in adaylar[:5])}) — esas/tür de ayırmadı"
+                )
+        else:
+            case_id = adaylar[0]
 
     case = db.get(models.Case, case_id)
     if case is None or case.deleted_at is not None:
@@ -883,6 +945,71 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
         ))
         degisenler.append(alan)
     return degisenler
+
+
+# Taraf sütunu → (party_type, varsayılan rol). Rol, föyün "Taraf Sıfatı"
+# sütunundan gelir; o boşsa buradaki varsayılan yazılır.
+TARAF_SUTUNLARI: Tuple[Tuple[str, str, str], ...] = (
+    ("muvekkil",     "CLIENT", "Müvekkil"),
+    ("karsi_taraf",  "COUNTER", "Karşı Taraf"),
+    # D1 (şartname §2): Sigortalı taraf kaydı olur, `THIRD`, rol adı
+    # "Sigortalı"; KARŞI TARAF DEĞİLDİR — çıkar çatışması kontrolünden hariç,
+    # aramaya dahil.
+    ("sigortali",    "THIRD", "Sigortalı"),
+    ("davali_idare", "THIRD", "Davalı İdare"),
+)
+
+
+def _taraf_adlari(deger: Any) -> List[str]:
+    """`;` ile birleşik taraf listesini adlara böler (3.201 föyde çoklu)."""
+    ham = _metin(deger)
+    if not ham:
+        return []
+    adlar: List[str] = []
+    for parca in _AYRAC.split(ham):
+        ad = " ".join(parca.split())
+        if ad and ad not in adlar:
+            adlar.append(ad)
+    return adlar
+
+
+def _taraflari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[str]:
+    """Föyün taraflarını `case_parties`e YALNIZ-EKLEME ile işler.
+
+    **Silme ve toptan yeniden yazma YASAK** (18.08 belge koruma şartı):
+    `case_documents.case_party_id` FK'sı `ondelete=SET NULL` — mevcut taraf
+    satırlarını silip yeniden yazan bir aktarım belge-taraf bağını HATA
+    VERMEDEN koparırdı. Bu yüzden mevcut satıra DOKUNULMAZ (rolü bile
+    güncellenmez); yalnız kartta hiç olmayan ad eklenir.
+
+    Ad eşleşmesi `party_check.normalize_party_key` ile: "X A.Ş." ile "X Anonim
+    Şirketi" aynı anahtara düşer, kelime sırası önemsizdir. Ölçüm (2026-08-19):
+    föy müvekkillerinin %99,6'sı kartta zaten taraf olarak vardı — bu fonksiyon
+    çoğunlukla eksik kalanı tamamlar.
+    """
+    sifat = _metin(satir.degerler.get("taraf_sifati"))
+    eklenen: List[str] = []
+    mevcut = {
+        normalize_party_key(p.name): p
+        for p in db.query(models.CaseParty).filter(models.CaseParty.case_id == case.id)
+    }
+    for kaynak, party_type, varsayilan_rol in TARAF_SUTUNLARI:
+        rol = (sifat or varsayilan_rol) if party_type == "CLIENT" else varsayilan_rol
+        for ad in _taraf_adlari(satir.degerler.get(kaynak)):
+            anahtar = normalize_party_key(ad)
+            if not anahtar or anahtar in mevcut:
+                continue
+            db.add(models.CaseParty(
+                case_id=case.id, name=ad, role=rol, party_type=party_type,
+                client_id=None,
+            ))
+            db.add(models.CaseHistory(
+                case_id=case.id, field_name="taraf", old_value=None,
+                new_value=f"{ad} ({rol})", changed_by=DEGISTIREN, source=source,
+            ))
+            mevcut[anahtar] = None            # aynı satırda ikilenmesin
+            eklenen.append(ad)
+    return eklenen
 
 
 def _avukatlari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[str]:
@@ -960,6 +1087,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
     )
     eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
+    eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
 
     if yeni_foy:
         # Föyün kartla EŞLENMESİ de bir değişikliktir; provenance imzası
@@ -977,8 +1105,11 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     if eklenen_avukatlar:
         sonuc.avukat_eklenen += len(eklenen_avukatlar)
         sonuc.degisen_kartlar.add(cast(int, case.id))
+    if eklenen_taraflar:
+        sonuc.taraf_eklenen += len(eklenen_taraflar)
+        sonuc.degisen_kartlar.add(cast(int, case.id))
 
-    if degisenler or yeni_foy or eklenen_avukatlar:
+    if degisenler or yeni_foy or eklenen_avukatlar or eklenen_taraflar:
         # Türetilmiş eksik-alan kovasını TEK yazma yolundan tazele (D8):
         # aktarım imzası yeni düştüyse kayıt AKTARIM kovasına geçmeli.
         case_manager.refresh_missing_required(db, case)
@@ -1089,7 +1220,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         # uzlaşmadığı ÖNCE bilinmeli — satır satır yazarken öğrenilseydi ilk
         # föy zaten kartı bir kez ezmiş olurdu.
         kart_celiskileri, kart_celiski_raporu = kart_alan_celiskileri(
-            satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
+            db, satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
         )
         if kart_celiski_raporu:
             logger.warning(
@@ -1225,6 +1356,7 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  güncellenen föy   : {sonuc.foy_guncellenen}",
         f"  alan değişikliği  : {sonuc.alan_degisikligi} ({sonuc.kart_degisen} kart)",
         f"  avukat satırı     : {sonuc.avukat_eklenen}",
+        f"  taraf satırı      : {sonuc.taraf_eklenen}",
         f"  atlanan (kart yok): {sonuc.atlanan}",
         f"  satır hatası      : {len(sonuc.hatalar)}",
         f"  kardeş çelişkisi  : {len(sonuc.celiskiler)}",
