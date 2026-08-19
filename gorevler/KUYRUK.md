@@ -234,7 +234,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      denormalize ve resmi liste panelden düzenlenebilir), backfill (alanlar 18.08 ölçümünde
      0 dolu), 4 listenin AdminPage yönetim sekmesi (G061 denetçisinin ayrı önerisi). -->
 
-- [ ] G066 | bant:backend | bagimli:- | Dört karar durumu alanında kapalı liste doğrulaması (takip yazma yolu; kapalılık bugün yalnız UI'da)
+- [x] G066 | bant:backend | bagimli:- | Dört karar durumu alanında kapalı liste doğrulaması (takip yazma yolu; ana oturumda koşuldu; bağımsız denetim GECTI; commit 0e19afe — kapalılık artık manager katmanında, ret 400; NOT: liste BOŞSA doğrulama WARNING'le atlanır ve 400'ün detail'i arayüze ulaşmıyor, G066.md raporunda)
 
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
