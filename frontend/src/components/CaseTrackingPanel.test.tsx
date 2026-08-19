@@ -7,8 +7,15 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 const updateCaseTrackingMock = vi.hoisted(() => vi.fn());
+// G074: panel açılışta aşama tarihçesini de okur (salt okunur, ayrı route).
+// Varsayılan boş yanıt — bu bloğun testleri tarihçeye bakmaz.
+const stageDecisionsMock = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useCases", () => ({
-    useCases: () => ({ updateCaseTracking: updateCaseTrackingMock }),
+    useCases: () => ({
+        updateCaseTracking: updateCaseTrackingMock,
+        getCaseStageDecisions: stageDecisionsMock,
+    }),
+    CASE_STAGE_DECISIONS_ERROR: "Aşama tarihçesi alınamadı — sunucuya ulaşılamadı.",
 }));
 
 // Her test kendi listelerini doldurur; boş dizi = "liste boş ya da yüklenemedi".
@@ -25,6 +32,7 @@ vi.mock("@/hooks/useConfig", () => ({
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import { CASE_STAGE_DECISIONS_ERROR } from "@/hooks/useCases";
 import CaseTrackingPanel from "./CaseTrackingPanel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,6 +43,7 @@ describe("CaseTrackingPanel — karar durumu dropdown'ları (G061)", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        stageDecisionsMock.mockResolvedValue({ case_id: 1, decisions: [], onceki_esaslar: [] });
         configMock.fileStatuses = [];
         configMock.localDecisions = [];
         configMock.appealDecisions = [];
@@ -161,5 +170,219 @@ describe("CaseTrackingPanel — karar durumu dropdown'ları (G061)", () => {
         await act(async () => { saveBtn!.click(); });
 
         expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { yerel_karar_durumu: "Derdest" });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G074 — aşama zaman çizgisi (salt okunur) + aşamadan bağımsız alanlar
+// ═══════════════════════════════════════════════════════════════════════════
+
+const KARAR_SATIRI = {
+    id: 11, case_id: 1, stage: "YEREL", sira_no: 1,
+    mahkeme: "Ankara 3. Asliye Hukuk", esas_no: "2013/205", karar_no: "2014/88",
+    karar_tarihi: "2014-03-09", karar_durumu: "Kabul", teblig_tarihi: "2014-04-01",
+    basvuran_taraf: "Davalı", aciklama: "kısmen kabul", dogrulama_durumu: "TURETILDI",
+    kaynak_id: null, source: "HUKDOK_TESLIM_tam_teslim.xlsx", created_at: null,
+};
+
+/** Efekt içindeki okuma sözü de akıtılır — tarihçe render edilmiş olur. */
+function makeAsyncRenderer(getContainer: () => HTMLDivElement, setRoot: (r: Root) => void) {
+    return async (caseData: Record<string, unknown>) => {
+        const root = createRoot(getContainer());
+        setRoot(root);
+        await act(async () => {
+            root.render(
+                <CaseTrackingPanel caseId={1} caseData={caseData} onRefresh={() => {}} />,
+            );
+        });
+    };
+}
+
+describe("CaseTrackingPanel — aşama tarihçesi (G074)", () => {
+    let container: HTMLDivElement;
+    let root: Root | null = null;
+    const renderPanelAsync = makeAsyncRenderer(() => container, r => { root = r; });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        stageDecisionsMock.mockResolvedValue({ case_id: 1, decisions: [], onceki_esaslar: [] });
+        configMock.fileStatuses = [];
+        configMock.localDecisions = [];
+        configMock.appealDecisions = [];
+        configMock.cassationDecisions = [];
+        configMock.revisionDecisions = [];
+        container = document.createElement("div");
+        document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+        if (root) {
+            act(() => root!.unmount());
+            root = null;
+        }
+        container.remove();
+    });
+
+    it("seçili aşamanın geçmiş kararları künyesiyle listelenir", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1, decisions: [KARAR_SATIRI], onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "KARAR" });
+
+        expect(container.textContent).toContain("Bu aşamanın geçmiş kararları (1)");
+        expect(container.textContent).toContain("Ankara 3. Asliye Hukuk");
+        expect(container.textContent).toContain("Esas 2013/205");
+        expect(container.textContent).toContain("Karar 2014/88");
+        expect(container.textContent).toContain("09.03.2014");        // karar tarihi tr-TR
+        expect(container.textContent).toContain("Kabul");
+        expect(container.textContent).toContain("Tebliğ: 01.04.2014");
+        expect(container.textContent).toContain("Başvuran: Davalı");
+        expect(container.textContent).toContain("kısmen kabul");
+    });
+
+    it("her satırda doğrulama damgası rozeti var (tahmin yasağı)", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [KARAR_SATIRI, { ...KARAR_SATIRI, id: 12, sira_no: 2, dogrulama_durumu: "BELIRSIZ" }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "KARAR" });
+
+        expect(container.textContent).toContain("Türetildi");
+        expect(container.textContent).toContain("Belirsiz");
+    });
+
+    it("id-2271: aynı aşamanın İKİ kararı da basılır, sira_no sırası korunur", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [
+                { ...KARAR_SATIRI, id: 21, stage: "TEMYIZ", sira_no: 1, karar_durumu: "Bozma", aciklama: null },
+                { ...KARAR_SATIRI, id: 22, stage: "TEMYIZ", sira_no: 2, karar_durumu: "Onama", aciklama: null },
+            ],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "TEMYIZ" });
+
+        const kutu = container.textContent ?? "";
+        expect(kutu).toContain("Bu aşamanın geçmiş kararları (2)");
+        expect(kutu.indexOf("Bozma")).toBeLessThan(kutu.indexOf("Onama"));
+    });
+
+    it("case_stage BOŞ olsa da tarihçe görünür (kartların neredeyse tamamı böyle)", async () => {
+        // isReached=false → alan formu basılmaz; tarihçe o kapının DIŞINDA olmalı,
+        // yoksa 4.971 satırın hiçbiri ekrana gelmezdi.
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1, decisions: [KARAR_SATIRI], onceki_esaslar: [],
+        });
+        await renderPanelAsync({});
+
+        expect(container.textContent).toContain("Bu aşamaya henüz gelinmedi");
+        expect(container.textContent).toContain("Ankara 3. Asliye Hukuk");
+    });
+
+    it("seçili aşamanın satırı yoksa kutu hiç basılmaz (boş kutu gürültüsü yok)", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [{ ...KARAR_SATIRI, stage: "TEMYIZ" }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "KARAR" });   // YEREL seçili, satır TEMYIZ'de
+
+        expect(container.textContent).not.toContain("Bu aşamanın geçmiş kararları");
+    });
+
+    it("hata ≠ boş tarihçe: okuma başarısızsa uyarı basılır (G002 disiplini)", async () => {
+        stageDecisionsMock.mockRejectedValue(new Error(CASE_STAGE_DECISIONS_ERROR));
+        await renderPanelAsync({ case_stage: "KARAR" });
+
+        expect(container.textContent).toContain("Aşama tarihçesi alınamadı");
+        expect(container.textContent).not.toContain("Bu aşamanın geçmiş kararları");
+    });
+
+    it("önceki esas numaraları ayrı blokta görünür", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [],
+            onceki_esaslar: [{
+                id: 5, case_id: 1, esas_no: "2013/1136", stage: "ONCEKI",
+                court: "Ankara 3. Asliye Hukuk", is_current: false, source: null, created_at: null,
+            }],
+        });
+        await renderPanelAsync({ case_stage: "KARAR" });
+
+        expect(container.textContent).toContain("Önceki Esas Numaraları");
+        expect(container.textContent).toContain("2013/1136");
+    });
+
+    it("önceki esas yoksa blok basılmaz", async () => {
+        await renderPanelAsync({ case_stage: "KARAR" });
+        expect(container.textContent).not.toContain("Önceki Esas Numaraları");
+    });
+});
+
+describe("CaseTrackingPanel — aşamadan bağımsız alanlar (G073 → G074)", () => {
+    let container: HTMLDivElement;
+    let root: Root | null = null;
+    const renderPanelAsync = makeAsyncRenderer(() => container, r => { root = r; });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        stageDecisionsMock.mockResolvedValue({ case_id: 1, decisions: [], onceki_esaslar: [] });
+        configMock.fileStatuses = [];
+        container = document.createElement("div");
+        document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+        if (root) {
+            act(() => root!.unmount());
+            root = null;
+        }
+        container.remove();
+    });
+
+    function inputByLabel(label: string): HTMLInputElement {
+        const wrap = Array.from(container.querySelectorAll("label"))
+            .find(l => l.textContent?.trim() === label)?.parentElement;
+        const el = wrap?.querySelector("input");
+        if (!el) throw new Error("'" + label + "' etiketli input bulunamadı");
+        return el;
+    }
+
+    function typeInto(el: HTMLInputElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        act(() => {
+            setter.call(el, value);
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+    }
+
+    it("üç alan case_stage BOŞKEN de düzenlenebilir (aşama sekmesine gömülmediler)", async () => {
+        await renderPanelAsync({});
+
+        expect(inputByLabel("Arabuluculuk No")).toBeDefined();
+        expect(inputByLabel("Arabuluculuk Karar Tarihi")).toBeDefined();
+        expect(inputByLabel("Arşiv Tarihi")).toBeDefined();
+    });
+
+    it("aktarımdan gelen değerler alana basılır", async () => {
+        await renderPanelAsync({ arsiv_tarihi: "2021-03-15", arabuluculuk_no: "ARB-2020/9" });
+
+        expect(inputByLabel("Arşiv Tarihi").value).toBe("2021-03-15");
+        expect(inputByLabel("Arabuluculuk No").value).toBe("ARB-2020/9");
+    });
+
+    it("değişiklik taslağa girer ve Kaydet PATCH'inde gider", async () => {
+        updateCaseTrackingMock.mockResolvedValue(true);
+        await renderPanelAsync({});
+
+        typeInto(inputByLabel("Arşiv Tarihi"), "2026-01-02");
+        expect(container.textContent).toContain("Kaydedilmemiş");
+
+        const saveBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.includes("Kaydet"));
+        await act(async () => { saveBtn!.click(); });
+
+        expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { arsiv_tarihi: "2026-01-02" });
     });
 });

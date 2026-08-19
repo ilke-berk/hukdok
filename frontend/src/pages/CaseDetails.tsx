@@ -701,9 +701,12 @@ const CaseDetails = () => {
                             closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
                         />
 
+                        {/* G074: arabuluculuk + arşiv alanları buradan ÇIKTI — takip
+                            panelinden yazılıyorlar (G073). Kartta yalnız kanun yolu
+                            künyesi kaldı; aynı değeri iki ekranda göstermiyoruz. */}
                         <TransferFieldsCard
-                            title="Süreç Bilgileri"
-                            description="Arabuluculuk, kanun yolu ve arşiv bilgileri"
+                            title="Kanun Yolu Bilgileri"
+                            description="İstinaf başvurusunu yapan taraf"
                             icon={<Scale className="w-4 h-4 text-primary" />}
                             fields={PROCESS_CARD_FIELDS}
                             data={caseData}
@@ -712,7 +715,7 @@ const CaseDetails = () => {
 
                         <TransferFieldsCard
                             title="Büro Bilgileri"
-                            description="İş kabulü, takip kovası ve dosyanın son durumu"
+                            description="İş kabulü ve büro özel türü"
                             icon={<Briefcase className="w-4 h-4 text-primary" />}
                             fields={OFFICE_CARD_FIELDS}
                             data={caseData}

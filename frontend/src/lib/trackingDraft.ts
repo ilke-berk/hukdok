@@ -107,13 +107,44 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
     KAPALI: [],
 };
 
-// Taslağın kapsadığı tüm anahtarlar (aşama alanları + dosya son durumu)
+/**
+ * AŞAMADAN BAĞIMSIZ takip alanları (G073 → G074).
+ *
+ * Arabuluculuk davanın ÖN aşaması, arşiv tarihi KAPANIŞ olayıdır; ikisi de
+ * `STAGE_FIELDS`teki bir aşama sekmesine ait değil. Sekmeye gömülemezler,
+ * çünkü aşama alanları yalnız "gelinmiş" aşamada (`isReached`) düzenlenebilir
+ * ve `case_stage` lokal kopyada 14.345 kartın 14.344'ünde BOŞ — sekmeye
+ * konsalar 3.346 dolu arşiv tarihinin hiçbiri düzenlenemezdi. Bu yüzden
+ * `dosya_son_durumu` ile aynı yerde, her zaman görünür bloktalar.
+ */
+export const PANEL_FIELDS: FieldDef[] = [
+    { label: "Arabuluculuk No",           key: "arabuluculuk_no",            type: "text" },
+    { label: "Arabuluculuk Karar Tarihi", key: "arabuluculuk_karar_tarihi",  type: "date" },
+    { label: "Arşiv Tarihi",              key: "arsiv_tarihi",               type: "date" },
+];
+
+// Taslağın kapsadığı tüm anahtarlar (aşama alanları + aşamadan bağımsızlar)
 export const TRACKING_DRAFT_KEYS: string[] = [
     ...new Set([
         ...Object.values(STAGE_FIELDS).flat().map(f => f.key),
+        ...PANEL_FIELDS.map(f => f.key),
         "dosya_son_durumu",
     ]),
 ];
+
+/**
+ * Panel aşama anahtarı → `case_stage_decisions.stage` etiketi (G072 route'u).
+ *
+ * Tek fark YEREL'dedir: panel tarihsel olarak "KARAR" der, backend "YEREL".
+ * `KESINLESME`/`KAPALI` haritada YOKTUR — onlar karar aşaması değil dosya
+ * durumudur (`DECISION_STAGES` ONCEKI'yi dışlarken uyguladığı ayrımın aynısı).
+ */
+export const DECISION_STAGE_BY_PANEL_KEY: Record<string, string> = {
+    KARAR: "YEREL",
+    ISTINAF: "ISTINAF",
+    TEMYIZ: "TEMYIZ",
+    KARAR_DUZELTME: "KARAR_DUZELTME",
+};
 
 export type TrackingValue = string | null;
 

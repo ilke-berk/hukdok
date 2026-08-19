@@ -106,7 +106,51 @@ export interface CaseTrackingUpdate {
     // Kesinleşme / İnfaz
     kesinlesme_tarihi?: string | null;
     infaz_tarihi?: string | null;
+    // Aşamadan bağımsız takip alanları (G073): ön aşama + kapanış
+    arabuluculuk_no?: string | null;
+    arabuluculuk_karar_tarihi?: string | null;
+    arsiv_tarihi?: string | null;
     note?: string | null;
+}
+
+/** `case_stage_decisions` satırı — backend `CaseStageDecisionRead` (G062/G072). */
+export interface CaseStageDecision {
+    id: number;
+    case_id: number;
+    stage: string;
+    /** Aşama İÇİNDEKİ karar sırası; sıralama tarihle DEĞİL bununla yapılır. */
+    sira_no: number;
+    mahkeme?: string | null;
+    esas_no?: string | null;
+    karar_no?: string | null;
+    karar_tarihi?: string | null;
+    karar_durumu?: string | null;
+    teblig_tarihi?: string | null;
+    basvuran_taraf?: string | null;
+    aciklama?: string | null;
+    /** Tahmin yasağının damgası: UYAP | BELGE | TURETILDI | BELIRSIZ. */
+    dogrulama_durumu: string;
+    kaynak_id?: number | null;
+    source?: string | null;
+    created_at?: string | null;
+}
+
+/** `case_esas_numbers` satırı — yanıtta yalnız GÜNCEL OLMAYANLAR döner (G072). */
+export interface CaseEsasNumberEntry {
+    id: number;
+    case_id: number;
+    esas_no: string;
+    stage: string;
+    court?: string | null;
+    is_current: boolean;
+    source?: string | null;
+    created_at?: string | null;
+}
+
+export interface CaseStageDecisions {
+    case_id: number;
+    decisions: CaseStageDecision[];
+    onceki_esaslar: CaseEsasNumberEntry[];
 }
 
 export interface CaseStageLogEntry {
@@ -129,6 +173,9 @@ export const CASE_SEQUENCE_ERROR =
 /** G019: mükerrer kontrolü yapılamadı — "mükerrer yok" DEĞİL, "bilinmiyor". */
 export const CASE_DUPLICATE_CHECK_ERROR =
     "Mükerrer dava kontrolü yapılamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
+/** G074: aynı disiplin tarihçede — sessiz `[]` "karar geçmişi yok" diye okunurdu. */
+export const CASE_STAGE_DECISIONS_ERROR =
+    "Aşama tarihçesi alınamadı — sunucuya ulaşılamadı.";
 
 export const useCases = () => {
     const { authRequest } = useAuthRequest();
@@ -326,6 +373,30 @@ export const useCases = () => {
         return !!(response && response.ok);
     }, [authenticatedRequest]);
 
+    /**
+     * Aşama/karar tarihçesi + güncel olmayan esas numaraları (G072 route'u).
+     *
+     * G002 disiplini: hata YUTMAZ. Sessiz `[]` fallback'i "bu davada geçmiş
+     * karar yok" diye okunurdu — oysa aktarım 4.971 satır yazdı; panelde
+     * "tarihçe yok" ile "tarihçe alınamadı" AYNI şey değildir.
+     */
+    const getCaseStageDecisions = useCallback(async (caseId: number): Promise<CaseStageDecisions> => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/stage-decisions`, "GET");
+        if (!response || !response.ok) throw new Error(CASE_STAGE_DECISIONS_ERROR);
+        let body: unknown;
+        try {
+            body = await response.json();
+        } catch {
+            throw new Error(CASE_STAGE_DECISIONS_ERROR);
+        }
+        const govde = body as Partial<CaseStageDecisions> | null;
+        // Sözleşme dışı gövde de "bilinmiyor"dur; boş tarihçeye çevirmeyiz.
+        if (!Array.isArray(govde?.decisions) || !Array.isArray(govde?.onceki_esaslar)) {
+            throw new Error(CASE_STAGE_DECISIONS_ERROR);
+        }
+        return { case_id: caseId, decisions: govde.decisions, onceki_esaslar: govde.onceki_esaslar };
+    }, [authenticatedRequest]);
+
     const getCaseStageLog = useCallback(async (caseId: number): Promise<CaseStageLogEntry[]> => {
         const response = await authenticatedRequest(`/api/cases/${caseId}/stage-log`, "GET");
         if (response && response.ok) return await response.json();
@@ -367,6 +438,7 @@ export const useCases = () => {
         // Dava takip
         updateCaseTracking,
         getCaseStageLog,
+        getCaseStageDecisions,
         // Belge bağlama
         getDocuments,
         linkDocument,

@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
-import { useCases, CaseTrackingUpdate } from "@/hooks/useCases";
+import {
+    useCases, CaseTrackingUpdate, CaseStageDecisions, CASE_STAGE_DECISIONS_ERROR,
+} from "@/hooks/useCases";
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import {
-    STAGES, STAGE_KEYS, STAGE_FIELDS, DecisionListKey,
+    STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, DECISION_STAGE_BY_PANEL_KEY,
+    DecisionListKey, FieldDef,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
     rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
@@ -15,6 +18,25 @@ import { CheckCircle2, Circle, ChevronRight, Save, Info, AlertTriangle } from "l
 
 const inputCls = "w-full px-3 py-2 text-sm rounded-lg border bg-background border-border focus:border-primary focus:outline-none";
 
+const trTarih = (v: unknown) => (v ? new Date(v as string).toLocaleDateString("tr-TR") : null);
+
+/**
+ * `dogrulama_durumu` rozeti — tahmin yasağının ekran karşılığı (G062).
+ *
+ * Kullanıcı "bu bilgi nereden geldi"yi görmeden karara güvenmemeli. Lokal
+ * ölçüm (2026-08-19 aktarımı): 3.604 satır TURETILDI, 1.367 satır BELIRSIZ —
+ * hiçbiri UYAP/BELGE değil, yani rozet bugün ÇOĞUNLUKLA uyarı basacak.
+ */
+const DAMGA_STILI: Record<string, string> = {
+    UYAP:      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+    BELGE:     "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+    TURETILDI: "bg-muted text-muted-foreground border-border",
+    BELIRSIZ:  "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+};
+const DAMGA_ETIKETI: Record<string, string> = {
+    UYAP: "UYAP", BELGE: "Belge", TURETILDI: "Türetildi", BELIRSIZ: "Belirsiz",
+};
+
 interface Props {
     caseId: number;
     caseData: Record<string, unknown>;
@@ -25,7 +47,7 @@ interface Props {
 }
 
 const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props) => {
-    const { updateCaseTracking } = useCases();
+    const { updateCaseTracking, getCaseStageDecisions } = useCases();
     const {
         fileStatuses,
         localDecisions, appealDecisions, cassationDecisions, revisionDecisions,
@@ -50,6 +72,30 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     // Aşama geçiş onay dialogu
     const [stageDialog, setStageDialog] = useState<{ key: string; label: string } | null>(null);
     const [stageNote, setStageNote]     = useState("");
+
+    // ── Aşama/karar tarihçesi (SALT OKUNUR, G072 route'u) ───────────────────
+    // Kaydetme akışına karışmaz: taslağın parçası değil, ayrı okuma.
+    const [tarihce, setTarihce] = useState<CaseStageDecisions | null>(null);
+    const [tarihceHatasi, setTarihceHatasi] = useState<string | null>(null);
+
+    useEffect(() => {
+        let iptal = false;
+        setTarihce(null);
+        setTarihceHatasi(null);
+        getCaseStageDecisions(caseId)
+            .then(sonuc => { if (!iptal) setTarihce(sonuc); })
+            .catch(hata => {
+                if (!iptal) setTarihceHatasi(hata instanceof Error ? hata.message : CASE_STAGE_DECISIONS_ERROR);
+            });
+        return () => { iptal = true; };
+    }, [caseId, getCaseStageDecisions]);
+
+    /** Panel aşamasının karar satırları — backend zaten sira_no sırasında döndürür. */
+    const asamaSatirlari = (panelKey: string) => {
+        const etiket = DECISION_STAGE_BY_PANEL_KEY[panelKey];
+        if (!etiket || !tarihce) return [];
+        return tarihce.decisions.filter(d => d.stage === etiket);
+    };
 
     // ── Panel geneli TEK taslak: tüm aşamaların alanları + dosya_son_durumu ──
     const [draft, setDraft] = useState<TrackingDraft>(() => initTrackingDraft(caseData));
@@ -81,6 +127,8 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     const selectedIdx  = STAGE_KEYS.indexOf(selectedKey);
     const isReached    = selectedIdx <= currentIdx;
     const fields       = STAGE_FIELDS[selectedKey] ?? [];
+    const gecmisKararlar = asamaSatirlari(selectedKey);
+    const oncekiEsaslar  = tarihce?.onceki_esaslar ?? [];
 
     // Timeline'a tıklanınca: yalnız görünüm değişir, taslak sıfırlanMAZ
     const handleStageClick = (key: string) => setSelectedKey(key);
@@ -90,6 +138,67 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     };
 
     const fieldValue = (key: string) => draft.values[key] ?? "";
+
+    /** Tek alan bloğu (etiket + kontrol). Aşama alanları ile aşamadan bağımsız
+     *  alanlar AYNI kontrolü kullansın diye ayrıldı — iki kopya iki davranış olurdu. */
+    const renderField = (f: FieldDef) => (
+        <div key={f.key} className={f.wide ? "sm:col-span-2" : ""}>
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
+                {f.label}
+            </label>
+            {f.type === "date" && (
+                <input type="date"
+                    value={fieldValue(f.key)}
+                    onChange={e => setField(f.key, e.target.value)}
+                    className={inputCls} />
+            )}
+            {f.type === "text" && (
+                <input type="text"
+                    value={fieldValue(f.key)}
+                    onChange={e => setField(f.key, e.target.value)}
+                    className={inputCls} />
+            )}
+            {f.type === "money" && (
+                <input type="text" inputMode="decimal"
+                    placeholder="150000 veya 1.500,25"
+                    value={fieldValue(f.key)}
+                    onChange={e => setField(f.key, e.target.value)}
+                    onBlur={e => setField(f.key, normalizeMoney(e.target.value))}
+                    className={inputCls} />
+            )}
+            {f.type === "select" && (() => {
+                // optionsFrom → resmî kapalı liste (config); yoksa gömülü options
+                // (karar_turu/karar_lehine — davranışları birebir korunur).
+                const fromConfig = f.optionsFrom ? decisionLists[f.optionsFrom].map(o => o.name) : null;
+                const names = fromConfig ?? f.options ?? [];
+                const value = fieldValue(f.key);
+                // Kayıtlı değer listeden çıkarılmışsa KAYBOLMASIN: geçici seçenek
+                // olarak eklenir. Liste boşken (yüklenemedi/boş doğdu) "liste dışı"
+                // damgası vurulmaz — closedListState "unknown" kuralının select
+                // karşılığı (caseCardFields.ts, G048).
+                const missing = fromConfig !== null && value !== "" && !fromConfig.includes(value);
+                const offList = missing && fromConfig.length > 0;
+                return (
+                    <select
+                        value={value}
+                        onChange={e => setField(f.key, e.target.value)}
+                        className={inputCls}>
+                        <option value="">Seçiniz</option>
+                        {missing && (
+                            <option value={value}>{offList ? `${value} (liste dışı)` : value}</option>
+                        )}
+                        {names.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                );
+            })()}
+            {f.type === "textarea" && (
+                <textarea rows={2}
+                    value={fieldValue(f.key)}
+                    onChange={e => setField(f.key, e.target.value)}
+                    className={`${inputCls} resize-none`} />
+            )}
+        </div>
+    );
 
     // Tek Kaydet: yalnız değişen alanlar PATCH'lenir (boşaltılan alan null → silinir)
     const saveAll = async () => {
@@ -221,7 +330,31 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                             {currentStage ? "Bu aşama için henüz veri girilmemiş." : "Takip bilgisi girmek için aşağıdaki zaman çizelgesini kullanın."}
                         </p>
                     )}
-                    {/* ── Dosya Son Durumu seçici — taslağın parçası ── */}
+                    {/* ── Önceki esas numaraları (SALT OKUNUR, G072) ──
+                        Görevsizlik/yetkisizlik sonrası numara değişir; eski numara
+                        kayıt değeridir (aktarımda 517 satır) ve bugüne kadar hiçbir
+                        ekranda yoktu. `cases.esas_no` GÜNCEL olanı taşır, bu liste
+                        yalnız artık kullanılmayanları. */}
+                    {oncekiEsaslar.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-primary/15">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
+                                Önceki Esas Numaraları
+                            </p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                {oncekiEsaslar.map(e => (
+                                    <span key={e.id} className="text-sm">
+                                        <span className="font-medium">{e.esas_no}</span>
+                                        {e.court && <span className="text-muted-foreground"> · {e.court}</span>}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Aşamadan bağımsız takip alanları — taslağın parçası ──
+                        Arabuluculuk davanın ÖN aşaması, arşiv KAPANIŞ olayı;
+                        `dosya_son_durumu` ile birlikte hiçbir aşama sekmesine ait
+                        değiller (G073 yerleşim kararı). */}
                     <div className="mt-4 pt-3 border-t border-primary/15">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Dosya Son Durumu</p>
                         <select
@@ -234,6 +367,9 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                 <option key={opt.code} value={opt.name}>{opt.name}</option>
                             ))}
                         </select>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 mt-4">
+                            {PANEL_FIELDS.map(renderField)}
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -248,6 +384,9 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                             const future   = idx > currentIdx;
                             const selected = stage.key === selectedKey;
                             const stageDirty = (STAGE_FIELDS[stage.key] ?? []).some(f => dirtyKeys(draft).includes(f.key));
+                            // Sekmeli görünümün bedeli: kullanıcı diğer aşamada karar
+                            // olduğunu bilmezdi. Sayaç bunu görünür kılar (G074).
+                            const kararSayisi = asamaSatirlari(stage.key).length;
 
                             return (
                                 <div key={stage.key} className="flex items-center">
@@ -258,6 +397,14 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                     >
                                         {stageDirty && (
                                             <span className="absolute -top-0.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" title="Kaydedilmemiş değişiklik" />
+                                        )}
+                                        {kararSayisi > 0 && (
+                                            <span
+                                                className="absolute -top-1 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary/15 text-primary border border-primary/30 text-[9px] font-bold flex items-center justify-center"
+                                                title={`${kararSayisi} kayıtlı karar`}
+                                            >
+                                                {kararSayisi}
+                                            </span>
                                         )}
                                         <div className={`
                                             w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all
@@ -336,64 +483,63 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                     {/* Aşama alanları — inline düzenlenebilir */}
                     {fields.length > 0 && isReached && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-                            {fields.map(f => (
-                                <div key={f.key} className={f.wide ? "sm:col-span-2" : ""}>
-                                    <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
-                                        {f.label}
-                                    </label>
-                                    {f.type === "date" && (
-                                        <input type="date"
-                                            value={fieldValue(f.key)}
-                                            onChange={e => setField(f.key, e.target.value)}
-                                            className={inputCls} />
-                                    )}
-                                    {f.type === "text" && (
-                                        <input type="text"
-                                            value={fieldValue(f.key)}
-                                            onChange={e => setField(f.key, e.target.value)}
-                                            className={inputCls} />
-                                    )}
-                                    {f.type === "money" && (
-                                        <input type="text" inputMode="decimal"
-                                            placeholder="150000 veya 1.500,25"
-                                            value={fieldValue(f.key)}
-                                            onChange={e => setField(f.key, e.target.value)}
-                                            onBlur={e => setField(f.key, normalizeMoney(e.target.value))}
-                                            className={inputCls} />
-                                    )}
-                                    {f.type === "select" && (() => {
-                                        // optionsFrom → resmî kapalı liste (config); yoksa gömülü options
-                                        // (karar_turu/karar_lehine — davranışları birebir korunur).
-                                        const fromConfig = f.optionsFrom ? decisionLists[f.optionsFrom].map(o => o.name) : null;
-                                        const names = fromConfig ?? f.options ?? [];
-                                        const value = fieldValue(f.key);
-                                        // Kayıtlı değer listeden çıkarılmışsa KAYBOLMASIN: geçici seçenek
-                                        // olarak eklenir. Liste boşken (yüklenemedi/boş doğdu) "liste dışı"
-                                        // damgası vurulmaz — closedListState "unknown" kuralının select
-                                        // karşılığı (caseCardFields.ts, G048).
-                                        const missing = fromConfig !== null && value !== "" && !fromConfig.includes(value);
-                                        const offList = missing && fromConfig.length > 0;
-                                        return (
-                                            <select
-                                                value={value}
-                                                onChange={e => setField(f.key, e.target.value)}
-                                                className={inputCls}>
-                                                <option value="">Seçiniz</option>
-                                                {missing && (
-                                                    <option value={value}>{offList ? `${value} (liste dışı)` : value}</option>
+                            {fields.map(renderField)}
+                        </div>
+                    )}
+
+                    {/* ── Bu aşamanın geçmiş kararları (SALT OKUNUR, G072/G074) ──
+                        `isReached` kapısının DIŞINDA: tarihçe `case_stage`ten
+                        bağımsızdır ve lokal kopyada 14.345 kartın 14.344'ünde
+                        `case_stage` BOŞ — kapıya bağlansaydı 4.971 satırın
+                        hiçbiri görünmezdi. */}
+                    {tarihceHatasi && (
+                        <p className="mt-4 text-xs text-amber-700 dark:text-amber-400">{tarihceHatasi}</p>
+                    )}
+                    {gecmisKararlar.length > 0 && (
+                        <div className="mt-5 pt-4 border-t border-border/60">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                                Bu aşamanın geçmiş kararları ({gecmisKararlar.length})
+                            </p>
+                            <div className="space-y-2">
+                                {gecmisKararlar.map(satir => {
+                                    const kunye = [
+                                        satir.esas_no && `Esas ${satir.esas_no}`,
+                                        satir.karar_no && `Karar ${satir.karar_no}`,
+                                        trTarih(satir.karar_tarihi),
+                                    ].filter(Boolean).join(" · ");
+                                    const ek = [
+                                        satir.teblig_tarihi && `Tebliğ: ${trTarih(satir.teblig_tarihi)}`,
+                                        satir.basvuran_taraf && `Başvuran: ${satir.basvuran_taraf}`,
+                                    ].filter(Boolean).join(" · ");
+                                    return (
+                                        <div key={satir.id} className="rounded-lg border bg-background/50 px-3 py-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                                                    {satir.sira_no}
+                                                </Badge>
+                                                {satir.karar_durumu && (
+                                                    <span className="text-sm font-semibold">{satir.karar_durumu}</span>
                                                 )}
-                                                {names.map(o => <option key={o} value={o}>{o}</option>)}
-                                            </select>
-                                        );
-                                    })()}
-                                    {f.type === "textarea" && (
-                                        <textarea rows={2}
-                                            value={fieldValue(f.key)}
-                                            onChange={e => setField(f.key, e.target.value)}
-                                            className={`${inputCls} resize-none`} />
-                                    )}
-                                </div>
-                            ))}
+                                                <Badge
+                                                    variant="outline"
+                                                    className={`ml-auto text-[10px] px-1.5 py-0 ${DAMGA_STILI[satir.dogrulama_durumu] ?? DAMGA_STILI.BELIRSIZ}`}
+                                                    title="Bu satır hangi kaynakla doğrulandı?"
+                                                >
+                                                    {DAMGA_ETIKETI[satir.dogrulama_durumu] ?? satir.dogrulama_durumu}
+                                                </Badge>
+                                            </div>
+                                            {satir.mahkeme && (
+                                                <p className="text-xs text-foreground mt-0.5">{satir.mahkeme}</p>
+                                            )}
+                                            {kunye && <p className="text-xs text-muted-foreground mt-0.5">{kunye}</p>}
+                                            {ek && <p className="text-xs text-muted-foreground mt-0.5">{ek}</p>}
+                                            {satir.aciklama && (
+                                                <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{satir.aciklama}</p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
                 </CardContent>

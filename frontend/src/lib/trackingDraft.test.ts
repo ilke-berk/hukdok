@@ -2,6 +2,8 @@
 import { describe, it, expect } from "vitest";
 import {
     STAGE_FIELDS,
+    PANEL_FIELDS,
+    DECISION_STAGE_BY_PANEL_KEY,
     TRACKING_DRAFT_KEYS,
     initTrackingDraft,
     setDraftField,
@@ -186,5 +188,59 @@ describe("commitDraft", () => {
         expect(isDirty(d)).toBe(false);
         expect(d.values.kesinlesme_tarihi).toBe("2026-08-01");
         expect(buildPatch(d)).toEqual({});
+    });
+});
+
+describe("aşamadan bağımsız alanlar (G073 → G074)", () => {
+    it("üç alan taslak anahtarlarında — panelden yazılabilirler", () => {
+        for (const key of ["arabuluculuk_no", "arabuluculuk_karar_tarihi", "arsiv_tarihi"]) {
+            expect(TRACKING_DRAFT_KEYS).toContain(key);
+        }
+    });
+
+    it("hiçbir aşama sekmesine gömülmediler (case_stage boşken de düzenlenebilsinler)", () => {
+        // Aşama alanları yalnız "gelinmiş" aşamada basılır; case_stage lokal
+        // kopyada 14.345 kartın 14.344'ünde BOŞ — sekmeye konsalar görünmezlerdi.
+        const stageKeys = Object.values(STAGE_FIELDS).flat().map(f => f.key);
+        for (const f of PANEL_FIELDS) expect(stageKeys).not.toContain(f.key);
+        expect(PANEL_FIELDS.map(f => f.key)).toEqual([
+            "arabuluculuk_no", "arabuluculuk_karar_tarihi", "arsiv_tarihi",
+        ]);
+    });
+
+    it("dirty/patch akışına normal girerler", () => {
+        let d = initTrackingDraft({ arsiv_tarihi: "2021-03-15" });
+        expect(isDirty(d)).toBe(false);
+        d = setDraftField(d, "arsiv_tarihi", "2026-01-02");
+        d = setDraftField(d, "arabuluculuk_no", "ARB-2020/9");
+        expect(buildPatch(d)).toEqual({ arsiv_tarihi: "2026-01-02", arabuluculuk_no: "ARB-2020/9" });
+    });
+
+    it("boşaltılan arşiv tarihi null gider (backend siler)", () => {
+        let d = initTrackingDraft({ arsiv_tarihi: "2021-03-15" });
+        d = setDraftField(d, "arsiv_tarihi", "");
+        expect(buildPatch(d)).toEqual({ arsiv_tarihi: null });
+    });
+});
+
+describe("aşama etiketi eşlemesi (G072 route'u)", () => {
+    it("panelin KARAR'ı backend'in YEREL'idir; diğer üçü birebir", () => {
+        expect(DECISION_STAGE_BY_PANEL_KEY).toEqual({
+            KARAR: "YEREL",
+            ISTINAF: "ISTINAF",
+            TEMYIZ: "TEMYIZ",
+            KARAR_DUZELTME: "KARAR_DUZELTME",
+        });
+    });
+
+    it("KESINLESME/KAPALI karar aşaması DEĞİL — haritada yok", () => {
+        expect(DECISION_STAGE_BY_PANEL_KEY.KESINLESME).toBeUndefined();
+        expect(DECISION_STAGE_BY_PANEL_KEY.KAPALI).toBeUndefined();
+    });
+
+    it("haritanın anahtarları gerçek panel aşamalarıdır", () => {
+        for (const key of Object.keys(DECISION_STAGE_BY_PANEL_KEY)) {
+            expect(STAGE_FIELDS[key]).toBeDefined();
+        }
     });
 });

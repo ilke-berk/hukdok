@@ -37,30 +37,38 @@ export const MEDICAL_CARD_FIELDS: CardFieldDef[] = [
 ];
 
 /**
- * Yargılama çevresindeki süreç bilgileri: dava öncesi (arabuluculuk), karar
- * sonrası (istinaf başvuranı) ve kapanış (arşiv). Tazminat/tarih kartlarına
- * dağıtmak yerine tek grupta — hepsi "dosyanın seyri" bilgisi.
+ * Kanun yolu bilgisi: kartta kalan TEK süreç alanı.
+ *
+ * G074'te üç alan buradan ÇIKTI — `arabuluculuk_no`,
+ * `arabuluculuk_karar_tarihi` (davanın ön aşaması) ve `arsiv_tarihi`
+ * (kapanış olayı) artık takip panelinden YAZILIYOR (G073 `TRACKING_FIELDS`);
+ * aynı alanı iki ekranda göstermek "hangisi doğru?" sorusunu doğururdu.
+ *
+ * `istinaf_basvuran_taraf` KALDI: takip panelinin yazma yolunda değil (aşama
+ * fotoğrafının hedefi, tek yazıcısı `stage_decisions`), yani "hangisinden
+ * düzeltirim" belirsizliği doğurmuyor. Takip panelindeki aşama tarihçesi onu
+ * satır bazında da gösterir — kart özet, tarihçe ayrıntıdır.
  */
 export const PROCESS_CARD_FIELDS: CardFieldDef[] = [
-    { key: "arabuluculuk_no", label: "Arabuluculuk No", type: "text" },
-    { key: "arabuluculuk_karar_tarihi", label: "Arabuluculuk Karar Tarihi", type: "date" },
     { key: "istinaf_basvuran_taraf", label: "İstinaf Başvuran Taraf", type: "closedList", list: "appealing_parties" },
-    { key: "arsiv_tarihi", label: "Arşiv Tarihi", type: "date" },
 ];
 
 /**
  * Büro/işletme bilgileri: dosyanın hukuki değil TİCARİ tarafı — işi ne zaman
  * kabul ettik, hangi kova altında takip ediyoruz, bugünkü durumu ne.
  *
- * Backend bu üç alanı zaten döndürüyordu (`case_manager.get_case`) ama kartta
- * hiç basılmıyordu; HUKDOK aktarımı üçünü de doldurunca (2026-08-19 tam koşusu:
- * kabul tarihi 5.382 · büro türü 5.156 · son durum 6.200 kart) veri görünmez
- * kalıyordu. Aktarılan veriyi göremeyen kullanıcı doğrulayamaz da.
+ * Backend bu alanları zaten döndürüyordu (`case_manager.get_case`) ama kartta
+ * hiç basılmıyordu; HUKDOK aktarımı doldurunca (2026-08-19 tam koşusu:
+ * kabul tarihi 5.382 · büro türü 5.156 kart) veri görünmez kalıyordu.
+ * Aktarılan veriyi göremeyen kullanıcı doğrulayamaz da.
+ *
+ * `dosya_son_durumu` G074'te buradan ÇIKTI: takip paneli onu ZATEN yazıyordu,
+ * kart 2026-08-19'da yalnız okuma amaçlı basmıştı — aynı değerin iki ekranda
+ * durması bu görevin kapattığı sapmanın ta kendisiydi.
  */
 export const OFFICE_CARD_FIELDS: CardFieldDef[] = [
     { key: "acceptance_date", label: "İş Kabul Tarihi", type: "date" },
     { key: "bureau_type", label: "Büro Özel Türü", type: "text" },
-    { key: "dosya_son_durumu", label: "Dosya Son Durumu", type: "text" },
 ];
 
 /** Boş = null | undefined | yalnız boşluk. 0 ve "0" DOLUDUR. */

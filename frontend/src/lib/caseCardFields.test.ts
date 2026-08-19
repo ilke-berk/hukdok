@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-    MEDICAL_CARD_FIELDS, PROCESS_CARD_FIELDS,
+    MEDICAL_CARD_FIELDS, PROCESS_CARD_FIELDS, OFFICE_CARD_FIELDS,
     isFilled, hasAnyValue, filledFields, formatCardValue, closedListState,
 } from "./caseCardFields";
+import { TRACKING_DRAFT_KEYS } from "./trackingDraft";
 
 describe("caseCardFields — alan tanımları (G048)", () => {
     it("beş tıbbi alan TEK grupta toplanır, dağıtılmaz", () => {
@@ -91,5 +92,35 @@ describe("caseCardFields — kapalı liste denetimi", () => {
 
     it("değer boşsa durum sorulmaz", () => {
         expect(closedListState(null, parties)).toBe("unknown");
+    });
+});
+
+describe("caseCardFields — bir kavram tek ekranda (G073 → G074)", () => {
+    const TASINANLAR = ["arabuluculuk_no", "arabuluculuk_karar_tarihi", "arsiv_tarihi"];
+
+    it("takibe taşınan üç alan kart gruplarından ÇIKTI", () => {
+        const kartAnahtarlari = [...MEDICAL_CARD_FIELDS, ...PROCESS_CARD_FIELDS, ...OFFICE_CARD_FIELDS]
+            .map(f => f.key);
+        for (const key of TASINANLAR) expect(kartAnahtarlari).not.toContain(key);
+    });
+
+    it("dosya_son_durumu karttan çıktı — panel onu ZATEN yazıyordu", () => {
+        expect(OFFICE_CARD_FIELDS.map(f => f.key)).toEqual(["acceptance_date", "bureau_type"]);
+    });
+
+    it("kartta yazılabilir alan kalmadı: kart listeleri ile takip taslağının kesişimi BOŞ", () => {
+        // Kabul kriterinin mekanik kilidi — aynı alan iki ekranda düzenlenemez.
+        const kartAnahtarlari = new Set(
+            [...MEDICAL_CARD_FIELDS, ...PROCESS_CARD_FIELDS, ...OFFICE_CARD_FIELDS].map(f => f.key),
+        );
+        const kesisim = TRACKING_DRAFT_KEYS.filter(k => kartAnahtarlari.has(k));
+        expect(kesisim).toEqual([]);
+    });
+
+    it("kanun yolu grubu boşalmadı: istinaf_basvuran_taraf kartta kaldı", () => {
+        // Takip panelinin yazma yolunda DEĞİL (aşama fotoğrafının hedefi) —
+        // "hangisinden düzeltirim" belirsizliği doğurmuyor, bu yüzden kalıyor.
+        expect(PROCESS_CARD_FIELDS.map(f => f.key)).toEqual(["istinaf_basvuran_taraf"]);
+        expect(TRACKING_DRAFT_KEYS).not.toContain("istinaf_basvuran_taraf");
     });
 });
