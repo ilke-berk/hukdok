@@ -103,6 +103,41 @@ def parse_esas_history(raw) -> list:
     return seen
 
 
+def add_historical_esas(db, case, esas_no, *, stage: str = ESAS_STAGE_ONCEKI,
+                        court=None, source=None):
+    """GEÇMİŞ bir esas numarasını tarihçeye ekler — `is_current`'a DOKUNMAZ.
+
+    `sync_current_esas`ın kardeşi ama tersi yönde: o "bugünkü numara budur"
+    der, bu "bu numara da bu davaya aitti" der. Ayrı fonksiyon olmasının
+    sebebi güncel işaretin tek yerden yönetilmesi: aktarımın getirdiği eski
+    numara (teslimin "Eski Dosya No" sütunu + `Karar_Asamalari`nın "Önceki"
+    satırları) kartın güncel esasını EZMEMELİ.
+
+    Aynı (esas_no, stage) satırı varsa hiçbir şey yapılmaz ve **None döner** —
+    dönüş değeri "yeni satır açıldı mı" sorusunun cevabıdır; aktarımın
+    "ikinci koşu 0 değişiklik" ölçümü buna dayanır (şartname §0).
+    """
+    value = " ".join(str(esas_no or "").split())
+    if not value or len(value) > _ESAS_NO_MAX:
+        return None
+    if case.id is None:
+        db.flush()
+    mevcut = db.query(models.CaseEsasNumber).filter(
+        models.CaseEsasNumber.case_id == case.id,
+        models.CaseEsasNumber.esas_no == value,
+        models.CaseEsasNumber.stage == stage,
+    ).first()
+    if mevcut is not None:
+        return None                      # zaten var: yeni satır AÇILMADI
+    row = models.CaseEsasNumber(
+        case_id=case.id, esas_no=value, stage=stage, court=court,
+        is_current=False, source=source,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
 def sync_current_esas(db, case, esas_no, court=None, source=None,
                       stage: str = ESAS_STAGE_YEREL):
     """`cases.esas_no`ya yazan TEK yol; tarihçeyi `is_current` ile senkron tutar.

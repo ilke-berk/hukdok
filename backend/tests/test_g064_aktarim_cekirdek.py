@@ -812,7 +812,9 @@ def test_tam_esleme_kart_alanlarini_yaziyor(uc_kart, tmp_path):
         assert kart.dosya_son_durumu == "Kesin Lehe"
         assert (kart.hukuk_no, kart.hasar_dosya_no) == ("460592", "3509162150001")
         assert kart.iddia_edilen_kusur == "Tanı Hatası"
-        assert kart.istinaf_basvuran_taraf == "Her İki Taraf"   # birleşik yazım
+        # `istinaf_basvuran_taraf` KART yolundan yazılmaz — tek yazıcı aşama
+        # fotoğrafı (G062); 68 sütundaki değer aşama satırına beslenir.
+        assert kart.istinaf_basvuran_taraf is None
     finally:
         db.close()
 
@@ -912,6 +914,157 @@ def test_esas_kolonu_tarihce_yolundan_yazilir(uc_kart, tmp_path):
         satirlar = db.query(models.CaseEsasNumber).filter_by(case_id=kart.id).all()
         assert len(satirlar) == 1 and satirlar[0].is_current
         assert satirlar[0].court == "Şanlıurfa 1. Tüketici Mahkemesi"
+    finally:
+        db.close()
+
+
+def _asama_paketi_yaz(yol, foy_satirlari, asama_satirlari):
+    """İki sayfalı sentetik paket: Sheet + Karar_Asamalari."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Föyler"
+    ws.append(BASLIKLAR)
+    for satir in foy_satirlari:
+        ws.append([satir.get(b) for b in BASLIKLAR])
+    ah = ["SistemNo", "AsamaNo", "Aşama", "Mahkeme", "Esas No", "Karar No",
+          "Karar Tarihi", "Karar Durumu", "Tebliğ Tarihi", "Güven"]
+    wa = wb.create_sheet("Karar_Asamalari")
+    wa.append(ah)
+    for satir in asama_satirlari:
+        wa.append([satir.get(b) for b in ah])
+    wb.save(yol)
+    wb.close()
+    return Path(yol)
+
+
+def test_karar_asamalari_stage_decisions_tablosuna_aktarilir(uc_kart, tmp_path):
+    """Teslimin aşama katmanı → `case_stage_decisions` (G062'nin tek yazma yolu).
+
+    "Önceki" bir KARAR değildir: görevsizlik öncesi esas numarasıdır, esas
+    tarihçesine ONCEKI olarak düşer ve GÜNCEL işareti değiştirmez.
+    """
+    db = uc_kart()
+    try:
+        # Kapalı havuzlar (G060 seed'i) — tarihçe yolunda BOŞ liste "hiçbir şey
+        # geçmez" demektir, bu yüzden test de gerçek listeyle koşmalı.
+        db.add(models.LocalDecision(code="RED-ESAS", name="Red/Esastan"))
+        db.add(models.AppealDecision(code="BASVURU-RET", name="Başvuru Ret"))
+        db.commit()
+    finally:
+        db.close()
+    paket = _asama_paketi_yaz(
+        tmp_path / "teslim.xlsx",
+        [_satir("H-1", "D-1"), _satir("H-2", "D-2")],
+        [
+            {"SistemNo": "H-1", "AsamaNo": 1, "Aşama": "Önceki", "Esas No": "2020/865",
+             "Güven": "KESİN"},
+            {"SistemNo": "H-1", "AsamaNo": 2, "Aşama": "Yerel", "Mahkeme": "İstanbul 8. Tüketici",
+             "Esas No": "2024/37", "Karar No": "2026/106", "Karar Tarihi": "02.03.2026",
+             "Karar Durumu": "Red/Esastan", "Tebliğ Tarihi": "03.04.2026", "Güven": "KESİN"},
+            {"SistemNo": "H-1", "AsamaNo": 3, "Aşama": "İstinaf", "Mahkeme": "İSTANBUL BİM 7. HD",
+             "Karar No": "2026/500", "Karar Durumu": "Başvuru Ret", "Güven": "BELİRSİZ"},
+            # havuz dışı durum: satır YAZILIR, durum boş kalır
+            {"SistemNo": "H-2", "AsamaNo": 1, "Aşama": "Yerel", "Esas No": "2023/1",
+             "Karar Durumu": "Lexis Rapor Gönderildi", "Güven": "KESİN"},
+        ])
+
+    ilk = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    assert ilk.asama_eklenen == 3 and ilk.onceki_esas_eklenen == 1
+    assert ilk.havuz_disi_durum == 1
+
+    db = uc_kart()
+    try:
+        kart1 = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
+        satirlar = {d.stage: d for d in db.query(models.CaseStageDecision)
+                    .filter_by(case_id=kart1.id)}
+        assert set(satirlar) == {"YEREL", "ISTINAF"}
+        assert satirlar["YEREL"].karar_no == "2026/106"
+        assert satirlar["YEREL"].karar_durumu == "Red/Esastan"
+        assert satirlar["YEREL"].teblig_tarihi == date(2026, 4, 3)
+        # Güven=KESİN ama kaynak "68-türetme": damga TURETILDI, UYAP DEĞİL
+        assert satirlar["YEREL"].dogrulama_durumu == "TURETILDI"
+        assert satirlar["ISTINAF"].dogrulama_durumu == "BELIRSIZ"
+        # tek-slot fotoğraf da tazelendi (G062 senkronu)
+        assert kart1.karar_no == "2026/106"
+        # "Önceki" esas tarihçeye düştü, GÜNCEL işareti almadı
+        onceki = db.query(models.CaseEsasNumber).filter_by(
+            case_id=kart1.id, stage="ONCEKI").one()
+        assert onceki.esas_no == "2020/865" and onceki.is_current is False
+        # havuz dışı durum: satır var, durum boş, değer açıklamada
+        kart2 = db.query(models.Case).filter_by(klasor_no_2="D-2").one()
+        d2 = db.query(models.CaseStageDecision).filter_by(case_id=kart2.id).one()
+        assert d2.karar_durumu is None and "Lexis Rapor" in (d2.aciklama or "")
+    finally:
+        db.close()
+
+    ikinci = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert ikinci.asama_eklenen == 0 and ikinci.onceki_esas_eklenen == 0
+
+
+def test_basvuran_taraf_68_sutundan_asama_satirina_akar(uc_kart, tmp_path):
+    """Kolonun tek yazıcısı aşama fotoğrafı; 68 sütundaki değer boş kalan
+    aşama satırını besler (ikinci yazıcı doğmasın diye)."""
+    db = uc_kart()
+    try:
+        db.add(models.AppealDecision(code="KALDIRMA", name="Kaldırma"))
+        db.commit()
+    finally:
+        db.close()
+    paket = _asama_paketi_yaz(
+        tmp_path / "teslim.xlsx",
+        [{"SistemNo": "H-1", "Dosya No": "D-1", "TKU": "TKU-1"}],
+        [{"SistemNo": "H-1", "AsamaNo": 1, "Aşama": "İstinaf", "Karar No": "2025/7",
+          "Karar Durumu": "Kaldırma", "Güven": "KESİN"}],
+    )
+    # 68 sütunluk sayfaya başvuran taraf ekle (aşama sayfasında YOK)
+    import openpyxl
+    wb = openpyxl.load_workbook(paket)
+    ws = wb["Föyler"]
+    ws.cell(row=1, column=len(BASLIKLAR) + 1, value="İstinaf Mahkemesi Başvuran Taraf")
+    ws.cell(row=2, column=len(BASLIKLAR) + 1, value="DAVACI- DAVALI")
+    wb.save(paket)
+
+    aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = uc_kart()
+    try:
+        kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
+        satir = db.query(models.CaseStageDecision).filter_by(case_id=kart.id).one()
+        assert satir.basvuran_taraf == "Her İki Taraf"
+        assert kart.istinaf_basvuran_taraf == "Her İki Taraf"   # fotoğraf tazeledi
+    finally:
+        db.close()
+
+
+def test_kardes_foyler_asamada_celisirse_asama_yazilmaz(uc_kart, tmp_path):
+    """279 kartta kardeş föyler aynı aşamayı FARKLI anlatıyor — kur'a yok."""
+    db = uc_kart()
+    try:
+        db.add(models.LocalDecision(code="KABUL-KISMEN", name="Kabul/Kısmen"))
+        db.commit()
+    finally:
+        db.close()
+    paket = _asama_paketi_yaz(
+        tmp_path / "teslim.xlsx",
+        [_satir("id-1", "D-1"), _satir("id-2", "D-1")],
+        [
+            {"SistemNo": "id-1", "AsamaNo": 1, "Aşama": "Yerel", "Karar No": "2021/963",
+             "Karar Durumu": "Kabul/Kısmen", "Güven": "KESİN"},
+            {"SistemNo": "id-2", "AsamaNo": 1, "Aşama": "Yerel", "Karar No": "2021/693",
+             "Karar Durumu": "Kabul/Kısmen", "Güven": "KESİN"},
+        ])
+
+    sonuc = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    assert sonuc.asama_eklenen == 0
+    celiski = [c for c in sonuc.celiskiler if c.alan == "asama:YEREL"]
+    assert len(celiski) == 1 and "2021/963" in celiski[0].degerler
+    db = uc_kart()
+    try:
+        assert db.query(models.CaseStageDecision).count() == 0
     finally:
         db.close()
 
