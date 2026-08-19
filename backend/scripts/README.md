@@ -27,5 +27,6 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 | `export_avukatlar_excel.py` | avukat CSV'sinden xlsx üretimi |
 | `export_davalar_ornek_excel.py` | Örnek 10 davayı xlsx'e aktarma |
 | `index_envanteri.py` | Index envanteri + güvenli düşürme listesi (SALT OKUNUR; `--json`) |
+| `hukdok_aktarim.py` | HUKDOK teslim paketi → kart aktarımı (idempotent; `--dry-run`, `--limit`, `--sheet`). Belge envanteri denk değilse koşuyu geri alır ve NONZERO çıkar. `import_excel_cases.py`'nin halefi — o script KULLANILMAZ (idempotent değil, hata yolunda veri kaybı) |
 
 İşi biten script silinebilir — git geçmişi saklar.
