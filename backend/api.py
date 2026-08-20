@@ -183,9 +183,26 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
                 misfire_grace_time=3600,
             )
+            # G085: yaklaşan süre/duruşma tarayıcısı — AYNI scheduler (yeni
+            # thread/scheduler YOK, 3-E devri) → yalnız lider worker'da koşar;
+            # iki worker'da koşsaydı aynı avukata çift bildirim yazılırdı
+            # (dedupe onu yutar ama yarışı beslemenin anlamı yok). 06:00 TR:
+            # gece işleri (00:00 rapor, 02:30 dönüşüm, 03:30 pg_dump) bitmiş
+            # olur ve uyarı mesai başlangıcında hazır durur.
+            from services.deadline_scanner import scan_deadlines
+            scheduler.add_job(
+                scan_deadlines,
+                CronTrigger(hour=6, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
+                id="deadline_scan",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
             scheduler.start()
             app.state.scheduler = scheduler
-            logging.info("Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR; dönüşüm retry 02:30 TR).")
+            logging.info(
+                "Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR; dönüşüm retry 02:30 TR; "
+                "süre/duruşma taraması 06:00 TR)."
+            )
 
             # Backend kapalıyken kaçırılan günleri arka planda tamamla
             threading.Thread(target=catch_up_missed_reports, daemon=True).start()
