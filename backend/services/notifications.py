@@ -28,17 +28,37 @@ Kanal: yalnız uygulama içi. **E-posta gönderimi bu sistemin parçası değild
 Log sözleşmesi: bu modül ERROR üretmez. Dedupe çakışması NORMAL akıştır
 (DEBUG), beklenmedik DB hatası çağırana yükselir — nihai başarısızlığı
 loglamak çağıranın işidir.
+
+Üreticiler
+----------
+`notify_document_processed` (G082): belge arşive yüklenip `sharepoint_url`
+COMMIT edildikten sonra davanın sorumlu avukat(lar)ına "belge işlendi"
+bildirimi yazar. Alıcı `services.notification_targeting` (G080) ile çözülür;
+mail gönderim yollarına DOKUNULMAZ — mailin kime gittiği değişmez, bildirim
+metni yalnız o mailin sonucunu bilgi olarak taşır.
 """
 import datetime as dt
 import logging
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from database import SessionLocal
 import models
 
 logger = logging.getLogger(__name__)
+
+# "Belge işlendi" bildiriminin tür etiketi (frontend filtresi bunu tüketecek).
+DOC_PROCESSED_TYPE = "belge_islendi"
+
+# Müvekkil bilgilendirme mailinin sonucu bildirim METNİNDE bilgi olarak geçer:
+# None = hiç gönderilmedi/atlandı, True = gönderildi, False = denendi ve hata.
+DOC_PROCESSED_MAIL_TEXT: dict[Optional[bool], str] = {
+    True: "Müvekkil bilgilendirmesi gönderildi.",
+    False: "Müvekkil bilgilendirmesi gönderilemedi.",
+    None: "Müvekkil bilgilendirmesi gönderilmedi.",
+}
 
 
 def normalize_email(value: Optional[str]) -> str:
@@ -129,3 +149,130 @@ def _find_by_dedupe(db: Session, dedupe_key: str) -> Optional[int]:
         .first()
     )
     return int(row[0]) if row else None
+
+
+# ─── Üretici: "belge işlendi" (G082) ─────────────────────────────────────────
+
+def mail_status_text(email_sent: Optional[bool]) -> str:
+    """Belgenin müvekkil-maili durumunu bildirim cümlesine çevirir.
+
+    `email_sent` üç değerlidir (`models.CaseDocument.email_sent`): None hiç
+    denenmedi/atlandı, True gönderildi, False denendi ve hata aldı. Bildirim
+    metni bu durumu yalnız BİLGİ olarak taşır — bu modül mail göndermez ve
+    mevcut mail yollarına dokunmaz.
+    """
+    if email_sent is None:
+        return DOC_PROCESSED_MAIL_TEXT[None]
+    return DOC_PROCESSED_MAIL_TEXT[bool(email_sent)]
+
+
+def document_processed_dedupe_key(document_id: int, recipient_email: str) -> str:
+    """"Belge işlendi" bildiriminin idempotency anahtarı.
+
+    Önek G082 tanımındaki `doc-processed:<doc_id>`; alıcı e-postası BİLİNÇLİ
+    olarak anahtara eklenir. Sebep: `dedupe_key` GLOBAL tekildir
+    (`uq_notifications_dedupe`) ve bir bildirim satırı TEK `recipient_email`
+    taşır — çıplak anahtar, iki sorumlusu olan davada ("Tuğçe Üngör
+    Yanık;Serap Turgal", G080 bu ayracı bilinçli destekler) ikinci avukatın
+    bildirimini sessizce yutardı. Tek alıcılı davada (ölçülen normal hâl)
+    davranış tanımdakiyle aynıdır: aynı belge için ikinci çağrı satır İKİLEMEZ.
+    """
+    return f"doc-processed:{document_id}:{normalize_email(recipient_email)}"
+
+
+def _case_label(case: Any) -> str:
+    """Bildirim gövdesindeki dava künyesi: ofis dosya no + esas no + mahkeme."""
+    parcalar = []
+    for deger in (
+        getattr(case, "tracking_no", None),
+        getattr(case, "esas_no", None),
+        getattr(case, "court", None),
+    ):
+        metin = (deger or "").strip() if isinstance(deger, str) else ""
+        if metin:
+            parcalar.append(metin)
+    return " · ".join(parcalar)
+
+
+def notify_document_processed(document_id: int, db: Optional[Session] = None) -> list[int]:
+    """Arşivlenen belge için davanın sorumlu avukat(lar)ına bildirim üretir.
+
+    ÇAĞRI ZAMANI: yalnız `sharepoint_url` COMMIT edildikten sonra
+    (`upload_queue._attempt_upload` başarı yolu). Yükleme başarısızsa bildirim
+    ÜRETİLMEZ — kullanıcıya "işlendi" demek yanlış bilgi olurdu.
+
+    Alıcı çözülemezse (sorumlu alanı boş, dış avukat, tanınmayan yazım) bildirim
+    üretilmez ve **WARNING** loglanır: bu nihai bir başarısızlık değildir, belge
+    arşive girmiştir — log sözleşmesi gereği ERROR YAZILMAZ.
+
+    `db` verilmezse kendi oturumunu açar (yükleme akışının transaction'ından
+    yapısal olarak ayrık kalsın). Yazılan/mevcut bildirim id'lerini döner.
+    """
+    if not document_id:
+        return []
+    session = db if db is not None else SessionLocal()
+    try:
+        doc = (
+            session.query(models.CaseDocument)
+            .filter(models.CaseDocument.id == document_id)
+            .first()
+        )
+        if doc is None:
+            logger.warning(
+                "Belge işlendi bildirimi üretilemedi: belge kaydı yok (doc=%s)",
+                document_id,
+            )
+            return []
+
+        case = None
+        case_id = cast(Optional[int], doc.case_id)
+        if case_id:
+            case = session.query(models.Case).filter(models.Case.id == case_id).first()
+
+        from services.notification_targeting import resolve_case_recipients
+        recipients = resolve_case_recipients(session, case) if case is not None else []
+        if not recipients:
+            sorumlu = getattr(case, "responsible_lawyer_name", None) if case is not None else None
+            logger.warning(
+                "Belge işlendi bildirimi hedefsiz: sorumlu avukat çözülemedi "
+                "(doc=%s, case=%s, sorumlu=%r)",
+                document_id, case_id, sorumlu,
+            )
+            return []
+
+        belge_adi = (
+            cast(Optional[str], doc.belge_turu_adi)
+            or cast(Optional[str], doc.original_filename)
+            or "Belge"
+        )
+        kunye = _case_label(case)
+        title = f"Belge işlendi: {belge_adi}"
+        satirlar = [f"Dava: {kunye}"] if kunye else []
+        satirlar.append(f"Belge: {cast(Optional[str], doc.original_filename) or belge_adi}")
+        satirlar.append(mail_status_text(cast(Optional[bool], doc.email_sent)))
+        body = "\n".join(satirlar)
+
+        ids: list[int] = []
+        for email in recipients:
+            ids.append(
+                create_notification(
+                    session,
+                    recipient_email=email,
+                    type=DOC_PROCESSED_TYPE,
+                    title=title,
+                    body=body,
+                    severity="info",
+                    tenant_id=cast(Optional[str], getattr(case, "tenant_id", None)),
+                    case_id=case_id,
+                    document_id=document_id,
+                    dedupe_key=document_processed_dedupe_key(document_id, email),
+                )
+            )
+        logger.info(
+            "Belge işlendi bildirimi yazıldı (doc=%s, alıcı=%s)",
+            document_id, len(ids),
+        )
+        return ids
+    finally:
+        if db is None:
+            session.close()

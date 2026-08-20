@@ -190,6 +190,27 @@ def _record_doc_attempt(kind: str, document_id, web_url, db=None) -> bool:
     return _record_upload_result(document_id, web_url, db=db)
 
 
+def _notify_document_processed(document_id: int) -> None:
+    """Sorumlu avukata "belge işlendi" bildirimi (G082) — akışı BOZMAZ.
+
+    Yalnız `sharepoint_url` COMMIT edildikten sonra çağrılır (başarısız yükleme
+    bildirim ÜRETMEZ). Bildirim servisi kendi oturumunu açar; buradaki
+    try/except ikinci emniyet ağıdır: bildirim yazılamasa bile satır 'uploaded'
+    kalır, belge URL'si yerinde durur, hukukbot hook'u çoktan açılmıştır.
+
+    Log sözleşmesi: bildirim üretilememesi NİHAİ başarısızlık değildir (belge
+    arşive girdi) → WARNING; ERROR-oranı alarmı bundan çalmaz.
+    """
+    try:
+        from services.notifications import notify_document_processed
+        notify_document_processed(document_id)
+    except Exception as e:
+        logger.warning(
+            f"Belge işlendi bildirimi üretilemedi (doc={document_id}): {e}",
+            extra={"doc_id": document_id},
+        )
+
+
 def _finalize_failed(db, row, reason: str) -> None:
     """Satırı nihai failed yapar — Faz 3-A'daki TEK ERROR log noktası."""
     row.status = "failed"
@@ -320,6 +341,12 @@ def _attempt_upload(outbox_id: int) -> None:
                     TechnicalLogger.log(
                         "ERROR", f"Hukukbot export hook error (doc={doc_id}): {hook_err}"
                     )
+                # G082: bildirim üretimi EN SONDA ve kendi try/except'inde —
+                # sıra da kapsama da bilinçli: satır 'uploaded', belge URL'si
+                # commit edilmiş ve hukukbot hook'u açılmış olduktan sonra
+                # koşar, dolayısıyla arızası arşivleme akışının hiçbir adımını
+                # geri saramaz.
+                _notify_document_processed(doc_id)
             return
 
         # Başarısız deneme: belge sayacına işle, sonra retry mi nihai mi karar ver.
