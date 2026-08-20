@@ -952,3 +952,46 @@ class ExportOutbox(Base):
     delivered_at = Column(DateTime(timezone=True), nullable=True)
 
     document = relationship("CaseDocument")
+
+
+class Notification(Base):
+    """
+    Uygulama içi bildirim (G081) — `DailyActivityReport` deseninin genelleştirilmişi:
+    kullanıcı başına satır + okundu işareti.
+
+    KANAL: yalnız uygulama içi. E-posta gönderimi bu sistemin parçası DEĞİLDİR
+    (kullanıcı kararı, 2026-08-20) — burada satır açılır, kullanıcı uygulamada görür.
+    `daily_activity_reports` AYRI mekanizmadır ve bu tablo onu devralmaz.
+
+    `dedupe_key` YAZMA YOLUNUN IDEMPOTENCY ANAHTARIDIR: aynı anahtarla ikinci
+    çağrı satır İKİLEMEZ, mevcut kaydın id'sini döndürür (tek yazma yolu
+    `services/notifications.create_notification`). Gece tarayıcısı aynı işi her
+    gece yeniden görecek — anahtar "aynı olayın aynı gün tekrarı" kapsamında
+    seçilir. NULL bırakılırsa dedupe uygulanmaz (Postgres UNIQUE index'i çok
+    NULL'a izin verir) — bilinçli tekrar üretilebilen bildirimler için.
+
+    `case_id`/`document_id` `ondelete="SET NULL"`: silinen dava/belge bildirimi
+    ÖKSÜZ bırakır, SİLMEZ — bildirim kullanıcıya gösterilmiş bir olaydır ve
+    bağlamı kaybolsa da kaydı kalmalıdır (CASCADE olsaydı okunmamış uyarı
+    sessizce yok olurdu).
+
+    Index'ler modelde DEĞİL migrasyonda: tabloyu `create_all` yarattığı için
+    ("table", ...) op'u ölü kod olur; kısıt/index koşulsuz koşan ("index",
+    "notifications", ...) op'una yazılır (G041 kuralı, database.py madde 37).
+    """
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=True)              # Azure AD tenant (tid); NULL = paylaşımlı havuz
+    recipient_email = Column(String(320), nullable=False)  # DAİMA küçük harf (yazma yolu normalize eder)
+    type = Column(String(50), nullable=False)              # "durusma_yaklasti", "eksik_alan" vb.
+    severity = Column(String(20), nullable=False, default="info", server_default="info")
+    title = Column(String(300), nullable=False)
+    body = Column(String, nullable=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="SET NULL"), nullable=True)
+    document_id = Column(Integer, ForeignKey("case_documents.id", ondelete="SET NULL"), nullable=True)
+    due_date = Column(Date, nullable=True)                 # Bildirimin işaret ettiği tarih (duruşma vb.)
+    dedupe_key = Column(String(200), nullable=True)        # UNIQUE (migrasyon) — idempotency anahtarı
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    dismissed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now())

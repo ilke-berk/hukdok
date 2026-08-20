@@ -818,6 +818,50 @@ _MIGRATIONS = [
         "ON case_foys (case_party_id)",
         "CREATE INDEX IF NOT EXISTS idx_case_foys_tku ON case_foys (tku_no)",
     ]),
+
+    # ─── 37. UYGULAMA İÇİ BİLDİRİM TABLOSU KISITLARI (G081) ──────────────────
+    #
+    # `notifications`: kullanıcı başına bildirim satırı (models.Notification).
+    # Desen madde 32/35/36'nın (case_esas_numbers, case_stage_decisions,
+    # case_foys) dördüncü kardeşi: tablo modelde tanımlı olduğu için create_all
+    # yaratır, ("table", ...) op'u ölü kod olurdu; kısıt/index bu yüzden
+    # koşulsuz çalışan ("index", ...) op'una yazılır (G041 kuralı).
+    #
+    #   uq_notifications_dedupe    → YAZMA YOLUNUN IDEMPOTENCY ANAHTARI.
+    #                                services/notifications.create_notification
+    #                                aynı anahtarla ikinci çağrıda IntegrityError
+    #                                yakalayıp mevcut id'yi döndürür — gece
+    #                                tarayıcısı (G085) ve yükleme retry'ı buna
+    #                                dayanır. NULL dedupe_key dedupe DIŞIDIR
+    #                                (Postgres UNIQUE index'i çok NULL'a izin verir).
+    #
+    #   idx_notifications_recipient → okuma uçlarının TEK sorgu deseni:
+    #                                "bu kullanıcının bildirimleri, yeniden eskiye"
+    #                                (routes/notifications.py). Sıralama kolonu
+    #                                index'e DESC olarak girer ki liste ucu
+    #                                sıralama adımını atlayabilsin.
+    #
+    #   idx_notifications_case      → G043 kuralı: index'siz FK kolonu kalmaz
+    #   idx_notifications_document    (referans verilen satırın silinmesi SEQ
+    #                                 SCAN'e düşerdi; burada yol SICAK çünkü
+    #                                 SET NULL her dava/belge silmesinde bu
+    #                                 tabloyu sorgulatır — bekçi:
+    #                                 test_g043_index_ve_avukat_filtresi.py
+    #                                 ::test_index_siz_fk_kolonu_kalmadi).
+    #
+    # Başka index YOK (G042 dersi): `read_at`/`type`/`severity` bugün hiçbir
+    # sorgunun TEK filtresi değil (okunmamış sayımı da recipient önekiyle
+    # başlar) ve tablo sıfırdan doğuyor — ölçülmeden index eklenmez.
+    ("index", "notifications", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedupe "
+        "ON notifications (dedupe_key)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_recipient "
+        "ON notifications (recipient_email, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_case "
+        "ON notifications (case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_document "
+        "ON notifications (document_id)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

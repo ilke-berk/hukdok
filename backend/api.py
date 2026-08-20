@@ -414,7 +414,7 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 # --- ROUTES ---
-from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake, client_errors
+from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake, client_errors, notifications
 
 app.include_router(config.router)
 # Frontend hata beacon'ı — bilinçli auth'suz (auth kırıkken de rapor gelsin);
@@ -432,6 +432,8 @@ app.include_router(processing.router)
 # Otonom dava açma — intake analiz endpoint'i (Faz 2)
 app.include_router(case_intake.router)
 app.include_router(activity.router)
+# Uygulama içi bildirim (G081) — `/api` altında, nginx istisnası gerektirmez
+app.include_router(notifications.router)
 # Hukukbot export API'si: Azure AD auth'un DIŞINDA, X-API-Key ile korunur.
 # Host nginx'e bağlanmaz — yalnızca iç Docker network'ünden erişilir (BULGULAR #5).
 app.include_router(export.router)
