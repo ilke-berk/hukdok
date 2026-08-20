@@ -7,7 +7,6 @@ import {
   Scale,
   FolderOpen,
   Clock,
-  Activity,
   ArrowRight,
   ChevronRight,
   Users,
@@ -17,7 +16,7 @@ import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
-import { PlaceholderBadge } from "@/components/PlaceholderBadge";
+import { TimedWorkPanel } from "@/components/dashboard/TimedWorkPanel";
 
 interface DashboardCase {
   id: number;
@@ -338,32 +337,15 @@ export default function IdariDashboard() {
             <DashboardCalendar eyebrow="03 · Takvim" />
           </div>
 
-          {/* Süreli İşler (placeholder, backend hazır olunca dolacak) */}
+          {/* Süreli İşler — G086 (idari yarı): G087'nin idari görünüm uçlarından
+              gerçek veri. Soru "hangi süre kime bildirildi ve okundu mu". */}
           <div>
-          <SectionHeader
-            eyebrow="04 · İnceleme"
-            title="Süreli İşler"
-            italic="— avukat bilgilendirmesi"
-            meta={<PlaceholderBadge />}
-          />
-          <HairlineCard className="mt-3 relative">
-            <div className="grid place-items-center gap-3 py-8 text-center text-[var(--fg-subtle)]">
-              <Activity className="w-8 h-8 opacity-40" />
-              <div>
-                <p className="text-[13px] text-[var(--fg-muted)] font-medium">Yakında aktif olacak</p>
-                <p className="text-[11px] mt-1.5 max-w-[24ch] mx-auto leading-relaxed">
-                  Belgelerden tespit edilen süreler ve sorumlu avukat bildirimleri burada listelenecek.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate("/activity-history")}
-                className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] inline-flex items-center gap-1 mt-2 pb-1 border-b border-[var(--border)] hover:border-[var(--brand)]"
-              >
-                Aktivite Geçmişi <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-          </HairlineCard>
+            <SectionHeader
+              eyebrow="04 · İnceleme"
+              title="Süreli İşler"
+              italic="— avukat bilgilendirmesi"
+            />
+            <TimedWorkPanel />
           </div>
         </div>
       </section>
