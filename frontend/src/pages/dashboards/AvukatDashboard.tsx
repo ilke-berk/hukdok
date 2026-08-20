@@ -9,7 +9,6 @@ import {
   Gavel,
   Clock,
   User,
-  FileText,
   Archive,
 } from "lucide-react";
 import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
@@ -18,6 +17,7 @@ import { apiClient } from "@/lib/api";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
+import { RecentDocumentsPanel } from "@/components/dashboard/RecentDocumentsPanel";
 import { PlaceholderBadge } from "@/components/PlaceholderBadge";
 
 interface DashboardCase {
@@ -321,32 +321,14 @@ export default function AvukatDashboard() {
           </HairlineCard>
         </div>
 
-        {/* Yeni İşlenen Belgeler — placeholder */}
+        {/* Yeni İşlenen Belgeler — G079: gerçek veri (GET /api/documents/recent) */}
         <div className="lg:col-span-2">
           <SectionHeader
             eyebrow="04 · Belgeler"
             title="Yeni İşlenen"
             italic="— son 24 saat"
-            meta={<PlaceholderBadge />}
           />
-          <HairlineCard className="mt-3">
-            <div className="grid place-items-center gap-3 py-8 text-center text-[var(--fg-subtle)]">
-              <FileText className="w-8 h-8 opacity-40" />
-              <div>
-                <p className="text-[13px] text-[var(--fg-muted)] font-medium">Yakında aktif olacak</p>
-                <p className="text-[11px] mt-1.5 max-w-[28ch] mx-auto leading-relaxed">
-                  AI ile analiz edilip davaya bağlanan yeni belgeler burada akış halinde görünecek.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate("/upload")}
-                className="font-mono text-[10px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] inline-flex items-center gap-1 mt-2 pb-1 border-b border-[var(--border)] hover:border-[var(--brand)]"
-              >
-                Belge Yükle <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-          </HairlineCard>
+          <RecentDocumentsPanel onUpload={() => navigate("/upload")} />
         </div>
       </section>
 
