@@ -403,22 +403,10 @@ export const useCases = () => {
         return [];
     }, [authenticatedRequest]);
 
-    // --- Belge Bağlama ---
-
-    /** link_mode'a göre belgeleri getirir (ör. bağlantısız belgeler için "UNLINKED"). */
-    const getDocuments = useCallback(async (linkMode?: string, limit = 100) => {
-        const params = new URLSearchParams({ limit: String(limit) });
-        if (linkMode) params.set("link_mode", linkMode);
-        const response = await authenticatedRequest(`/api/documents?${params.toString()}`, "GET");
-        if (response && response.ok) return await response.json();
-        return [];
-    }, [authenticatedRequest]);
-
-    /** Bağlantısız bir belgeyi bir davaya bağlar. */
-    const linkDocument = useCallback(async (docId: number, caseId: number) => {
-        const response = await authenticatedRequest(`/api/documents/${docId}/link`, "PATCH", { case_id: caseId });
-        return !!(response && response.ok);
-    }, [authenticatedRequest]);
+    // Belge bağlama yardımcıları (getDocuments/linkDocument) G077'de kaldırıldı:
+    // belge yüklerken dava bağlantısı artık zorunlu (Index.tsx onay butonu dava
+    // yoksa QuickCaseModal'ı açıp DANIŞ kaydı açtırıyor), bağlantısız belge
+    // üretilemiyor. Uçlar da (GET /api/documents, PATCH .../link) düştü.
 
     return {
         saveCase,
@@ -439,9 +427,6 @@ export const useCases = () => {
         updateCaseTracking,
         getCaseStageLog,
         getCaseStageDecisions,
-        // Belge bağlama
-        getDocuments,
-        linkDocument,
         isLoading
     };
 };

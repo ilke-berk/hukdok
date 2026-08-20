@@ -3,6 +3,16 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## Tek görev: "Bağlantısız Belgeler" sayfasının kaldırılması (2026-08-20, kullanıcı kararı)
+
+<!-- Sayfanın çözdüğü sorunu DANIŞ akışı çözdü: onay butonu dava bağlantısı yoksa
+     QuickCaseModal'ı açıyor, bağlantısız onay yolu UI'da kalmadı. Lokal restore
+     kopyasında da UNLINKED belge YOK (229 belgenin tamamı LINKED). Kullanıcı A+B
+     (sayfa + ölü uçlar) birlikte dedi. DEPLOY GEREKTİRİR; deploy öncesi prod'da
+     UNLINKED sayımı şart (görev dosyasındaki sorgu). -->
+
+- [x] G077 | bant:frontend+backend | bagimli:- | Bağlantısız Belgeler sayfası + GET /api/documents + PATCH .../link kaldırılır
+
 ## ÖNCELİK 1 — Aşama tarihçesi görünürlüğü + takip/kart ayrımı (2026-08-19, kullanıcı kararı)
 
 <!-- Kullanıcı 2026-08-19'da "ilk önceliğimiz bu olsun" dedi. Kaynak: aynı gün yapılan

@@ -16,9 +16,9 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import and_, false, func, or_
+from sqlalchemy import func
 
-from auth_helpers import get_tenant_owned_case, get_tenant_owned_document, tenant_filter_clause
+from auth_helpers import get_tenant_owned_document
 from dependencies import get_current_user, get_current_tenant
 from database import SessionLocal
 import models
@@ -150,107 +150,6 @@ def get_case_documents(
             }
             for d in docs
         ]
-    finally:
-        db.close()
-
-
-@router.get("/api/documents")
-def get_all_documents(
-    limit: int = 50,
-    link_mode: Optional[str] = None,
-    tenant_id: str = Depends(get_current_tenant),
-    user: dict = Depends(get_current_user),
-):
-    """Belge listesi — bağlı belgeler tenant zincirinden, bağlantısızlar sahibinden yetkilenir.
-
-    Erişim kuralı `auth_helpers.get_tenant_owned_document` ile AYNIdır (tekil belge
-    uçlarının kuralı liste ucuna taşındı): `case_id` doluysa dava tenant'ı eşleşmeli
-    (NULL = paylaşılan legacy) ve dava silinmemiş olmalı; `case_id` NULL ise (UNLINKED/
-    TEST) yalnız belgeyi yükleyen kullanıcı görür. Aksi halde bağlantısız belgeler
-    tenant'tan bağımsız olarak herkese listeleniyordu.
-    """
-    db = SessionLocal()
-    try:
-        # Kimlik: uploaded_by_email aynı üçlü fallback ile yazılıyor
-        # (services/document_pipeline.py) — okuma tarafı onunla eşleşmeli.
-        upn = (
-            user.get("preferred_username") or user.get("upn") or user.get("email") or ""
-        ).strip().lower()
-        # Kimliksiz token → bağlantısız belge hiç görünmez (fail-closed)
-        unlinked_owned = (
-            and_(
-                models.CaseDocument.case_id.is_(None),
-                func.lower(models.CaseDocument.uploaded_by_email) == upn,
-            )
-            if upn
-            else false()
-        )
-        q = (
-            db.query(models.CaseDocument)
-            .outerjoin(models.Case, models.CaseDocument.case_id == models.Case.id)
-            .filter(
-                or_(
-                    and_(
-                        models.CaseDocument.case_id.isnot(None),
-                        tenant_filter_clause(models.Case, tenant_id),
-                        # Soft-delete: silinmiş davanın belgeleri listelenmez
-                        models.Case.deleted_at.is_(None),
-                    ),
-                    unlinked_owned,
-                )
-            )
-            # Soft-delete: silinmiş belgeler listelenmez
-            .filter(models.CaseDocument.deleted_at.is_(None))
-        )
-        if link_mode:
-            q = q.filter(models.CaseDocument.link_mode == link_mode.upper())
-        docs = q.order_by(models.CaseDocument.uploaded_at.desc()).limit(limit).all()
-        return [
-            {
-                "id": d.id,
-                "case_id": d.case_id,
-                "original_filename": d.original_filename,
-                "stored_filename": d.stored_filename,
-                "belge_turu_kodu": d.belge_turu_kodu,
-                "belge_turu_adi": d.belge_turu_adi,
-                "muvekkil_adi": d.muvekkil_adi,
-                "case_party_id": d.case_party_id,
-                "case_party_name": d.case_party.name if d.case_party else None,
-                "avukat_kodu": d.avukat_kodu,
-                "esas_no": d.esas_no,
-                "link_mode": d.link_mode,
-                "uploaded_by": d.uploaded_by,
-                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
-            }
-            for d in docs
-        ]
-    finally:
-        db.close()
-
-
-@router.patch("/api/documents/{doc_id}/link")
-def link_document_to_case(
-    doc_id: int,
-    payload: dict,
-    tenant_id: str = Depends(get_current_tenant),
-    user: dict = Depends(get_current_user),
-):
-    """Bağlantısız bir belgeyi sonradan bir davaya bağlar. Body: { "case_id": 123 }"""
-    db = SessionLocal()
-    try:
-        doc = get_tenant_owned_document(db, doc_id, tenant_id, user)
-        if not doc:
-            raise HTTPException(status_code=404, detail="Belge bulunamadı")
-        new_case_id = payload.get("case_id")
-        if not new_case_id:
-            raise HTTPException(status_code=400, detail="case_id gerekli")
-        case = get_tenant_owned_case(db, new_case_id, tenant_id)
-        if not case:
-            raise HTTPException(status_code=404, detail="Dava bulunamadı")
-        doc.case_id = new_case_id
-        doc.link_mode = "LINKED"
-        db.commit()
-        return {"status": "success", "message": f"Belge #{doc_id} dava #{new_case_id}'ye bağlandı"}
     finally:
         db.close()
 

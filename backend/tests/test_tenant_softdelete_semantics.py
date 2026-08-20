@@ -6,7 +6,8 @@ kopyalanmış** hâlleriyle de yaşıyor, ve soft-delete (`deleted_at`) filtresi
 desenden BAĞIMSIZ olarak her sorguya ayrı ayrı ekleniyor. İkisi tek tek doğru
 olup birleşimde kaçan bir kopya, başka tenant'ın ya da silinmiş bir kaydın
 kullanıcıya dönmesi demek. FAZ 0.8 tam bu sınıftan bir delik buldu
-(`/api/documents` bağlantısız belgeler, bkz. `test_g016_documents_tenant_isolation.py`).
+(`GET /api/documents` bağlantısız belgeleri tenant'tan bağımsız listeliyordu;
+G016 ile kapatıldı, uç ise G077'de tamamen kaldırıldı — testi de onunla düştü).
 
 Bu dosya bugünkü davranışı kilitler; FAZ E sorgu yollarını yeniden yazdığında
 ağ ısırır. **Kaynak kod DEĞİŞTİRİLMEDİ** — aşağıda bulunan sapmalar da
