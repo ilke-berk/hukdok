@@ -29,4 +29,6 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 | `index_envanteri.py` | Index envanteri + güvenli düşürme listesi (SALT OKUNUR; `--json`) |
 | `hukdok_aktarim.py` | HUKDOK teslim paketi → kart aktarımı (idempotent; `--dry-run`, `--limit`, `--sheet`). Belge envanteri denk değilse koşuyu geri alır ve NONZERO çıkar. `import_excel_cases.py`'nin halefi — o script KULLANILMAZ (idempotent değil, hata yolunda veri kaybı) |
 
+| `mukerrer_kart_raporu.py` | Aynı davayı gösteren kart grupları → iki CSV onay listesi (SALT OKUNUR; `--rapor-dizini`). Kart BİRLEŞTİRMEZ — `tracking_no` müvekkil bazlı ofis dosya numarasıdır, tek davada birden çok müvekkilin ayrı kartı olması doğrudur. "Aynı dava" hükmü `services/case_relations_auto.py`tan gelir |
+
 İşi biten script silinebilir — git geçmişi saklar.

@@ -89,16 +89,27 @@ class KartOzeti:
     esas_no: Optional[str] = None
 
 
+# Kimlik sayılan esas biçimi: dört haneli yıl + '/' + EN AZ BİR RAKAM. Ölçümde
+# (2026-08-20, 14.345 kart) 13.506 kart bu kalıba uyuyor; kalanların büyük kısmı
+# numarası girilmemiş yer tutucular: 397 kart 'YYYY/' ve 208 kart '2014/???'.
+# Bunları kimlik saymak felakettir — aynı mahkemedeki tüm '2019/' kartları
+# birbirinin ikizi ilan edilirdi.
+_ESAS_KALIBI = re.compile(r"^\d{4}/\d")
+
+
 def esas_anahtari(deger: Optional[str]) -> str:
     """Esas numarasını karşılaştırılabilir hâle getirir ('2020 / 1777' → '2020/1777').
 
-    Boş/eksik değer boş string döner ve ASLA eşleşme üretmez: iki kartın da esas
-    numarası yoksa bu bir ikizlik kanıtı değildir.
+    Kimlik olarak KULLANILAMAYACAK değer boş string döner ve asla eşleşme üretmez:
+    boş/eksik değerler, yer tutucular ('2021/', '2014/???') ve kalıba uymayan tekil
+    yazımlar. "Bu iki kart aynı davadır" hükmü veren bir anahtarda şüphe, eşleşme
+    değil sessizlik lehine çözülür.
     """
     metin = (deger or "").strip()
     if not metin:
         return ""
-    return re.sub(r"\s+", "", metin).upper()
+    anahtar = re.sub(r"\s+", "", metin).upper()
+    return anahtar if _ESAS_KALIBI.match(anahtar) else ""
 
 
 def _mahkeme_anahtari(deger: Optional[str]) -> str:
@@ -205,8 +216,8 @@ def _esas_eslesmeleri(db: Session, case, tenant_id: str) -> Set[int]:
     tekrar eder, tek başına esas eşleşmesi rastlantıdır.
     """
     ham = (case.esas_no or "").strip()
-    if not ham:
-        return set()
+    if not esas_anahtari(ham):
+        return set()  # yer tutucu/eksik esas ikizlik kanıtı değildir
     adaylar = (
         db.query(models.Case.id, models.Case.court, models.Case.file_type)
         .filter(

@@ -116,6 +116,20 @@ def test_esas_anahtari_bosu_bos_dondurur():
     assert esas_anahtari("2020 / 1777") == "2020/1777"
 
 
+@pytest.mark.parametrize("yer_tutucu", ["2021/", "2014/???", "2023", "/4954", "9.1801"])
+def test_numarasiz_esas_kimlik_sayilmaz(yer_tutucu):
+    """Canlı veride 397 kart 'YYYY/', 208 kart '2014/???' taşıyor. Bunlar kimlik
+    sayılsaydı aynı mahkemedeki tüm '2019/' kartları birbirinin ikizi olurdu."""
+    assert esas_anahtari(yer_tutucu) == ""
+
+
+def test_yer_tutucu_esas_ayni_dava_uretmez():
+    """Aynı mahkeme + aynı tür + iki tarafta da '2019/' → AYNI_DAVA DEĞİL."""
+    a = _ozet(1, "İdare", "Ankara 17. İdare Mahkemesi", "2019/")
+    b = _ozet(2, "İdare", "Ankara 17. İdare Mahkemesi", "2019/")
+    assert siniflandir(a, b) == ilis.YENIDEN_ACILAN
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. sqlite — iki dedektör uçtan uca
 # ═══════════════════════════════════════════════════════════════════════════
@@ -209,12 +223,14 @@ def test_esas_dedektoru_farkli_turu_baglamiyor(oturum):
     assert ilis.iliskileri_bul(oturum, a, TENANT) == []
 
 
-def test_bos_esasli_kartlar_birbirine_baglanmiyor(oturum):
-    """Boş esas SQL'de eşleşseydi tüm esassız kartlar tek yumak olurdu."""
+@pytest.mark.parametrize("esas", ["", "2019/"])
+def test_kimliksiz_esasli_kartlar_birbirine_baglanmiyor(oturum, esas):
+    """Boş ya da yer tutucu esas SQL'de eşleşseydi bütün numarasız kartlar tek
+    yumak olurdu (canlı veride 397 kart 'YYYY/' taşıyor)."""
     a = _kart(oturum, "D1.A....0001.HUKUK.00000", file_type="Hukuk",
-              court="Ankara 3. Tüketici Mahkemesi", esas_no="")
+              court="Ankara 3. Tüketici Mahkemesi", esas_no=esas)
     _kart(oturum, "D1.B....0001.HUKUK.00000", file_type="Hukuk",
-          court="Ankara 3. Tüketici Mahkemesi", esas_no="")
+          court="Ankara 3. Tüketici Mahkemesi", esas_no=esas)
     assert ilis.iliskileri_bul(oturum, a, TENANT) == []
 
 

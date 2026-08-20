@@ -202,6 +202,32 @@ tasarlanmalı ve ilişki türü ayrıştırılmalı (aynı davanın föyü / yen
   593 çok kartlı TKU grubu. Üçü de veri modeli kararı bekliyor, kod performansı
   değil.
 
+## 8. Ek ölçüm (aynı gün, TKU bulgusu üzerine) — aynı dava / mükerrer kart
+
+§6'nın açık bıraktığı "peki ne yapacağız" sorusu aynı gün koda döküldü:
+`services/case_relations_auto.py` (panelin otomatik ilişki katmanı) +
+`scripts/mukerrer_kart_raporu.py` (onay listesi). Kartlar **birleştirilmiyor**,
+bağlanıyor — `tracking_no` müvekkil bazlı ofis dosya numarasıdır.
+
+İki dedektör kullanılıyor: TKU ortaklığı **ve** esas + mahkeme + tür ikizliği.
+İkinci dedektörde kritik bir eleme var: **numarası girilmemiş esas kimlik
+sayılmaz.** Canlı veride 397 kart `YYYY/`, 208 kart `2014/???` taşıyor; bunlar
+kimlik sayılsaydı aynı mahkemedeki bütün `2019/` kartları birbirinin ikizi ilan
+edilirdi (eleme öncesi 508 çift → sonrası 223).
+
+| Ölçüt | Değer |
+| --- | --- |
+| Aday çift | TKU 807 · esas ikizi 223 |
+| "Aynı dava" çifti | 223 |
+| **Aynı dava grubu** | **149 grup / 327 kart** |
+| Mükerrer kart şüphesi (aynı dava + AYNI müvekkil) | **55 çift** |
+| — karşı tarafı da ortak (gerçek mükerrer adayı) | **52** |
+| — karşı tarafı farklı (esas no yanlış girilmiş olabilir) | 3 |
+
+Son satır raporun karar verdirici kolonu: aynı mahkeme + aynı esas ama davalılar
+bambaşkaysa bu mükerrer kayıt değil, veri hatasıdır. Kanıt vakası: Gaziantep 2.
+Tüketici **2017/1210** — kartlardan biri "Çeliksoy", diğeri "Oğul" davalı.
+
 ## Ekler — koşuyu tekrarlamak
 
 ```bash
