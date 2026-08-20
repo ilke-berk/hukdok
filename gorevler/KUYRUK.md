@@ -32,7 +32,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G078 | bant:backend | bagimli:- | Pano akışı için yeni uç: GET /api/documents/recent (+ mail durumu alanları)
 - [ ] G079 | bant:frontend | bagimli:G078 | Avukat panosu "Yeni İşlenen — son 24 saat" paneli + mail rozeti
-- [ ] G080 | bant:backend | bagimli:- | Bildirim hedefleme: dava → sorumlu avukatın ofis maili (allowlist, hedefsiz sayacı)
+- [x] G080 | bant:backend | bagimli:- | Bildirim hedefleme: dava → sorumlu avukatın ofis maili (allowlist, hedefsiz sayacı)
 - [ ] G081 | bant:backend | bagimli:- | notifications tablosu + yazma yolu (dedupe_key) + /api/notifications uçları
 - [ ] G082 | bant:backend | bagimli:G080,G081 | "Belge işlendi" bildirimi sorumlu avukata; mail yollarına dokunulmaz
 - [ ] G083 | bant:frontend | bagimli:G081 | Topbar zil paneli: dropdown + okunmamış rozeti + 60 sn polling
