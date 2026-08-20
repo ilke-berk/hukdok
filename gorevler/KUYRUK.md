@@ -30,7 +30,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Sıra: G078 ve G080/G081/G084 backend bandı (seri). Frontend G079/G083/G086 paralel bant.
      Bu paket DEPLOY GEREKTİRİR; 19.08 direktifi gereği önce LOKALDE doğrulanır. -->
 
-- [ ] G078 | bant:backend | bagimli:- | Pano akışı için yeni uç: GET /api/documents/recent (+ mail durumu alanları)
+- [x] G078 | bant:backend | bagimli:- | Pano akışı için yeni uç: GET /api/documents/recent (+ mail durumu alanları)
 - [ ] G079 | bant:frontend | bagimli:G078 | Avukat panosu "Yeni İşlenen — son 24 saat" paneli + mail rozeti
 - [ ] G080 | bant:backend | bagimli:- | Bildirim hedefleme: dava → sorumlu avukatın ofis maili (allowlist, hedefsiz sayacı)
 - [ ] G081 | bant:backend | bagimli:- | notifications tablosu + yazma yolu (dedupe_key) + /api/notifications uçları
