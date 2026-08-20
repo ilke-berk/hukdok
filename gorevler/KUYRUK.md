@@ -3,6 +3,43 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Uygulama içi bildirim sistemi + pano placeholder'ları (2026-08-20, kullanıcı kararı)
+
+<!-- Kullanıcı 2026-08-20'de "işlenen belgenin bildirimi sorumlu avukata gitsin, ayrıca
+     yaklaşan tebliğ/dava bildirimleri olsun" dedi; aynı oturumda üç YAKINDA rozetli pano
+     bölümünün de doldurulmasını istedi. Kararlar ve ölçümler (lokal prod-restore kopyası):
+
+     KANAL: yalnız uygulama içi (zil). E-POSTA GÖNDERİMİ BUGÜNKÜ GİBİ KALIR — email_sender.py
+     ve document_pipeline.py'nin mail yollarına DOKUNULMAZ (G082'de kabul kriteri).
+     KAPSAM: yalnız Hanyaloğlu Acar. Alıcı allowlist'i NOTIFICATION_DOMAINS env'inden.
+     KESİLENLER: arşiv/PDF-A hatası ve "müvekkil maili gitmedi" bildirimleri KAPSAM DIŞI.
+
+     KİMLİK — yeni kolon GEREKMEDİ: lawyers.gorev='AVUKAT' olan 7 kişinin HEPSİ ofis mailli
+     (@hanyaloglu-acar.av.tr); DIŞ AVUKAT 69 ve DİĞER 2 kaydın HİÇBİRİ ofis mailli değil.
+     3 idari personel email_recipients'ta. Murat Arslan 294 davada sorumlu ama lawyers'ta YOK
+     → ikinci kaynak şart. Kapsama ~%98,6; hedefsiz kalan 97 dava (Arşiv Dosya Yöneticisi 93,
+     Asu Barış Karamık 4) idari panelde sayaçla görünür.
+
+     SÜRE VERİSİ: cases.karar_teblig_tarihi 0 DOLU — kaynak orası değil. Gerçek kaynak
+     case_stage_decisions.teblig_tarihi (750 dolu, hepsi YEREL, en yeni 12.08, son 60 günde 23).
+     Panel ilk gün bir avuç uyarı gösterecek; beklenti buna göre.
+
+     G078 NOTU: eski GET /api/documents ucu G077 ile BİLİNÇLİ KALDIRILDI (83024b3) — DİRİLTİLMEZ.
+     Pano akışı için amaca özel yeni uç yazılır, TEST/UNLINKED belge döndürmez.
+
+     Sıra: G078 ve G080/G081/G084 backend bandı (seri). Frontend G079/G083/G086 paralel bant.
+     Bu paket DEPLOY GEREKTİRİR; 19.08 direktifi gereği önce LOKALDE doğrulanır. -->
+
+- [ ] G078 | bant:backend | bagimli:- | Pano akışı için yeni uç: GET /api/documents/recent (+ mail durumu alanları)
+- [ ] G079 | bant:frontend | bagimli:G078 | Avukat panosu "Yeni İşlenen — son 24 saat" paneli + mail rozeti
+- [ ] G080 | bant:backend | bagimli:- | Bildirim hedefleme: dava → sorumlu avukatın ofis maili (allowlist, hedefsiz sayacı)
+- [ ] G081 | bant:backend | bagimli:- | notifications tablosu + yazma yolu (dedupe_key) + /api/notifications uçları
+- [ ] G082 | bant:backend | bagimli:G080,G081 | "Belge işlendi" bildirimi sorumlu avukata; mail yollarına dokunulmaz
+- [ ] G083 | bant:frontend | bagimli:G081 | Topbar zil paneli: dropdown + okunmamış rozeti + 60 sn polling
+- [ ] G084 | bant:backend | bagimli:- | legal_deadlines: kanuni süre motoru (adli tatil + tatil kaydırma, saf fonksiyon)
+- [ ] G085 | bant:backend | bagimli:G080,G081,G084 | Gece tarayıcı 06:00 TR: yaklaşan süre + duruşma bildirimleri (T-15/7/3/1)
+- [ ] G086 | bant:frontend | bagimli:G083,G085 | "Süre Uyarıları" (avukat) + "Süreli İşler" (idari) panelleri
+
 ## Tek görev: "Bağlantısız Belgeler" sayfasının kaldırılması (2026-08-20, kullanıcı kararı)
 
 <!-- Sayfanın çözdüğü sorunu DANIŞ akışı çözdü: onay butonu dava bağlantısı yoksa
@@ -13,7 +50,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G077 | bant:frontend+backend | bagimli:- | Bağlantısız Belgeler sayfası + GET /api/documents + PATCH .../link kaldırılır
 
-## ÖNCELİK 1 — Aşama tarihçesi görünürlüğü + takip/kart ayrımı (2026-08-19, kullanıcı kararı)
+## Kapanmış öncelik — Aşama tarihçesi görünürlüğü + takip/kart ayrımı (2026-08-19, kullanıcı kararı)
 
 <!-- Kullanıcı 2026-08-19'da "ilk önceliğimiz bu olsun" dedi. Kaynak: aynı gün yapılan
      HUKDOK tam aktarımı (3813ebe) `case_stage_decisions`e 4.971 satır yazdı — YEREL 3.098,
