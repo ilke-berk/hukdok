@@ -39,7 +39,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G084 | bant:backend | bagimli:- | legal_deadlines: kanuni süre motoru (adli tatil + tatil kaydırma, saf fonksiyon)
 - [x] G085 | bant:backend | bagimli:G080,G081,G084 | Gece tarayıcı 06:00 TR: yaklaşan süre + duruşma bildirimleri (T-15/7/3/1)
 - [x] G087 | bant:backend | bagimli:- | İdari bildirim görünümü uçları: dağılım (kime gitti/okundu) + hedefsiz sayacı
-- [ ] G086 | bant:frontend | bagimli:G087 | KALAN: "Süreli İşler" (idari) paneli — avukat yarısı eb89e02 ile main'de
+- [x] G086 | bant:frontend | bagimli:G087 | KALAN: "Süreli İşler" (idari) paneli — avukat yarısı eb89e02 ile main'de
 
 ## Tek görev: "Bağlantısız Belgeler" sayfasının kaldırılması (2026-08-20, kullanıcı kararı)
 
