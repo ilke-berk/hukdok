@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import {
   Scale,
   FolderOpen,
-  AlertTriangle,
   CalendarDays,
   ArrowRight,
   Gavel,
@@ -18,7 +17,7 @@ import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
 import { RecentDocumentsPanel } from "@/components/dashboard/RecentDocumentsPanel";
-import { PlaceholderBadge } from "@/components/PlaceholderBadge";
+import { DeadlineWarningsPanel } from "@/components/dashboard/DeadlineWarningsPanel";
 
 interface DashboardCase {
   id: number;
@@ -213,26 +212,14 @@ export default function AvukatDashboard() {
         </div>
       </section>
 
-      {/* Süre / Vade Uyarıları — backend otomatik tespit hazır olunca dolacak */}
+      {/* Süre / Vade Uyarıları — G086: G085 gece tarayıcısının bildirimlerinden gerçek veri */}
       <section>
         <SectionHeader
           eyebrow="02 · Süre / Vade"
           title="Süre Uyarıları"
-          italic="— belgelerden otomatik tespit"
-          meta={<PlaceholderBadge />}
+          italic="— tebliğ ve duruşma tarihlerinden"
         />
-        <HairlineCard className="mt-3">
-          <div className="grid place-items-center gap-3 py-8 text-center text-[var(--fg-subtle)]">
-            <AlertTriangle className="w-8 h-8 opacity-40" />
-            <div>
-              <p className="text-[13px] text-[var(--fg-muted)] font-medium">Yakında aktif olacak</p>
-              <p className="text-[11px] mt-1.5 max-w-[36ch] mx-auto leading-relaxed">
-                Tebligat ve karar metinlerinden tespit edilen cevap, istinaf ve itiraz süreleri burada
-                geri sayımıyla listelenecek.
-              </p>
-            </div>
-          </div>
-        </HairlineCard>
+        <DeadlineWarningsPanel />
       </section>
 
       {/* Duruşmalar | Yeni İşlenen Belgeler */}
