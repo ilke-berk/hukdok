@@ -221,12 +221,30 @@ edilirdi (eleme öncesi 508 çift → sonrası 223).
 | "Aynı dava" çifti | 223 |
 | **Aynı dava grubu** | **149 grup / 327 kart** |
 | Mükerrer kart şüphesi (aynı dava + AYNI müvekkil) | **55 çift** |
-| — karşı tarafı da ortak (gerçek mükerrer adayı) | **52** |
-| — karşı tarafı farklı (esas no yanlış girilmiş olabilir) | 3 |
 
-Son satır raporun karar verdirici kolonu: aynı mahkeme + aynı esas ama davalılar
-bambaşkaysa bu mükerrer kayıt değil, veri hatasıdır. Kanıt vakası: Gaziantep 2.
-Tüketici **2017/1210** — kartlardan biri "Çeliksoy", diğeri "Oğul" davalı.
+Bu 55 çiftin yarısı da mükerrer DEĞİL. Kullanıcının 20.08'de yakaladığı ayrıntı
+(föy satırlarında **Sigortalı** sütunu farklı) üç ayraçlı bir hüküm kolonuna
+dönüştü — keskinlikten körlüğe doğru sıralı:
+
+| Hüküm | Çift | Anlamı |
+| --- | --- | --- |
+| `FARKLI_HASAR_DOSYASI` | 15 | `case_foys.hasar_no` ayrık → farklı sigortalı dosyaları |
+| `SIGORTALI_KARSILASTIRILAMADI` | 14 | bir tarafta hiç kişi sigortalı kayıtlı değil |
+| **`MUKERRER_ADAYI`** | **13** | karşılaştırıldı, ayıran bir şey bulunamadı |
+| `FARKLI_SIGORTALI` | 11 | sigortalı hekimler ayrık → ayrı kart doğru |
+| `KARSI_TARAF_FARKLI` | 2 | aynı dava bile değil; esas no yanlış girilmiş |
+
+Kanıt vakaları: **TKU-80** (İstanbul 9. İdare 2020/550 — hasar 3745261180001'de
+dört hekim, 6528666170001'de Engin Can Dr.; karşı taraf "Abdukadir" ↔
+"Abdulkadir" yazılmış, bu yüzden hasar numarası isim ayraçlarından ÖNCE
+bakılıyor) ve **Gaziantep 2. Tüketici 2017/1210** (biri "Çeliksoy", diğeri
+"Oğul" davalı).
+
+Sigortalı okuması iki rolü birden kapsıyor: aktarımın yazdığı `THIRD`/"Sigortalı"
+(613 satır) **ve** eski import'un bıraktığı `THIRD`/"Diğer Davalı" (11.499).
+Yalnız rol adına güvenmek sigortalı bilgisinin %95'ini görmezden gelmek olurdu.
+Ayrıca kurumlar (hastane, üniversite, bakanlık) kişi sayılmıyor — onlarca davanın
+ortak davalısı oldukları için kesişimleri "aynı hekim" yanılgısı üretiyordu.
 
 ## Ekler — koşuyu tekrarlamak
 

@@ -11,18 +11,21 @@ Neden birleştirme YOK
 ---------------------
 `tracking_no` müvekkil isim bloğu taşıyan ofis dosya numarasıdır. Tek davada
 birden çok müvekkil varsa (tıbbi malpraktiste kural: aynı davada birkaç hekim)
-her müvekkilin ayrı ofis dosyası olması DOĞRUDUR — 2026-08-20 ölçümünde aynı-dava
-çiftlerinin 149'undan 121'i farklı isim bloğu taşıyor. Bunları birleştirmek ofis
+her müvekkilin ayrı ofis dosyası olması DOĞRUDUR. Bunları birleştirmek ofis
 numaralarını yok eder ve `case_documents` bağlarını riske atar.
 
 Geriye asıl şüpheli sınıf kalır: **aynı dava + aynı müvekkil + iki kart**
-(ölçümde 28 çift). Bu script onu ayrı bir dosyaya çıkarır.
+(2026-08-20 ölçümü: 149 aynı-dava grubu / 327 kart içinde 55 böyle çift). Ama bu
+çiftlerin YARISI da mükerrer değildir — `_hukum` üç ayraçla eler (bkz. oradaki
+docstring): hasar dosya numarası, sigortalı hekim, karşı taraf. Ölçülen dağılım:
+15 farklı hasar dosyası · 11 farklı sigortalı · 2 karşı taraf farklı · 14
+karşılaştırılamadı · **13 gerçek mükerrer adayı**.
 
 İki dosya
 ---------
-1. `mukerrer-kart-suphesi_<damga>.csv` — aynı dava, AYNI isim bloğu. Gerçek
-   mükerrer kart adayları; belge ve föy sayıları da yazılır ki hangi kartın
-   yaşayacağına bakarak karar verilebilsin.
+1. `mukerrer-kart-suphesi_<damga>.csv` — aynı dava, AYNI isim bloğu; `hukum`
+   kolonu yukarıdaki sınıfı taşır ve gerçek adaylar başa sıralanır. Belge ve föy
+   sayıları da yazılır ki hangi kartın yaşayacağına bakarak karar verilebilsin.
 2. `ayni-dava-gruplari_<damga>.csv` — aynı davayı gösteren TÜM kart grupları
    (farklı müvekkilli olanlar dahil), kart başına bir satır. Bu dosya
    birleştirme listesi DEĞİL, envanterdir.
@@ -42,7 +45,7 @@ import csv
 import logging
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
@@ -124,6 +127,26 @@ def _esas_ciftleri(db, kartlar: Dict[int, object]) -> Set[Tuple[int, int]]:
     return ciftler
 
 
+def _hasar_numaralari(db, kart_idler: Iterable[int]) -> Dict[int, Set[str]]:
+    """Kart başına hasar dosya numaraları (`case_foys.hasar_no`)."""
+    import models
+
+    idler = sorted(set(kart_idler))
+    if not idler:
+        return {}
+    sonuc: Dict[int, Set[str]] = defaultdict(set)
+    for case_id, hasar_no in (
+        db.query(models.CaseFoy.case_id, models.CaseFoy.hasar_no)
+        .filter(models.CaseFoy.case_id.in_(idler), models.CaseFoy.hasar_no.isnot(None))
+        .distinct()
+        .all()
+    ):
+        temiz = (hasar_no or "").strip()
+        if temiz:
+            sonuc[case_id].add(temiz)
+    return sonuc
+
+
 def _sayimlar(db, kart_idler: Iterable[int]) -> Tuple[Dict[int, int], Dict[int, int]]:
     """Kart başına belge ve föy sayısı — hangi kartın yaşayacağına bakarken gerekli."""
     from sqlalchemy import func
@@ -164,21 +187,84 @@ def _karsi_taraf(kart) -> str:
     return " / ".join(_taraf_adlari(kart, "COUNTER")[:3])
 
 
-def _karsi_taraf_ortak(sol, sag) -> str:
-    """Mükerrer kart mı, yoksa esas numarası yanlış girilmiş İKİ AYRI dava mı?
+def _sigortali(kart) -> str:
+    """Sigortalı/diğer davalı adları — hekimler bu satırlarda yaşar.
 
-    Ayırt eden şey karşı taraftır: aynı mahkeme + aynı esas ama karşı taraflar
-    bambaşkaysa (canlı örnek: Gaziantep 2. Tüketici 2017/1210 kartlarından biri
-    'Çeliksoy', diğeri 'Oğul' davalı) bu bir mükerrer kayıt DEĞİL, bir veri
-    hatasıdır. İnsan onayının ilk baktığı kolon budur.
+    İki rol birden okunur: aktarım `THIRD` + rol "Sigortalı" yazar (613 satır) ama
+    eski import aynı kişileri "Diğer Davalı" rolüyle bırakmış (11.499 satır). Rol
+    adına göre süzmek, sigortalı bilgisinin %95'ini görmezden gelmek olurdu.
     """
+    return " / ".join(_taraf_adlari(kart, "THIRD")[:4])
+
+
+# Kurum adlarında geçen kelimeler. `party_check._is_corporate` YETMEZ: o yalnız
+# ticari şirketi tanır (SİGORTA/A.Ş./LTD); hastane, üniversite ve bakanlık ondan
+# geçer. Bu ayrım burada şart, çünkü hastane ve Sağlık Bakanlığı ONLARCA davanın
+# ortak davalısıdır — sigortalı karşılaştırmasında kurum kesişimi "aynı hekim"
+# sanılırsa iki ayrı hekim dosyası mükerrer ilan edilir.
+_KURUM_TOKENLARI = frozenset({
+    "HASTANE", "HASTANESI", "UNIVERSITE", "UNIVERSITESI", "FAKULTE", "FAKULTESI",
+    "BAKANLIGI", "BAKANLIK", "MUDURLUGU", "BELEDIYE", "BELEDIYESI", "KURUMU",
+    "MERKEZI", "VAKIF", "VAKFI", "DERNEGI", "POLIKLINIK", "POLIKLINIGI",
+    "VALILIGI", "REKTORLUGU", "ARASTIRMA",
+})
+
+
+def _kurum_mu(ad: str) -> bool:
+    from party_check import _is_corporate, normalize_person_name
+
+    norm = normalize_person_name(ad)
+    return _is_corporate(norm) or bool(set(norm.split()) & _KURUM_TOKENLARI)
+
+
+def _kisi_adlari(adlar: List[str]) -> List[str]:
+    """Kurumları eleyip yalnız gerçek kişileri bırakır (sigortalı hekimler)."""
+    return [ad for ad in adlar if not _kurum_mu(ad)]
+
+
+def _ayrik(sol_adlar: List[str], sag_adlar: List[str]) -> bool:
+    """İki taraf listesi tamamen ayrık mı (ikisi de doluysa)?"""
     from party_check import normalize_party_key
 
-    sol_taraf = {normalize_party_key(ad) for ad in _taraf_adlari(sol, "COUNTER")}
-    sag_taraf = {normalize_party_key(ad) for ad in _taraf_adlari(sag, "COUNTER")}
-    if not sol_taraf or not sag_taraf:
-        return "BILINMIYOR"
-    return "EVET" if sol_taraf & sag_taraf else "HAYIR"
+    sol = {normalize_party_key(ad) for ad in sol_adlar}
+    sag = {normalize_party_key(ad) for ad in sag_adlar}
+    return bool(sol) and bool(sag) and not (sol & sag)
+
+
+def _hukum(sol, sag, sol_hasar: Set[str], sag_hasar: Set[str]) -> str:
+    """Bu iki kart gerçekten mükerrer mi — yoksa AYRI durmaları mı doğru?
+
+    Aynı mahkeme + aynı esas iki kartı "aynı dava" yapar ama "aynı KART olmalıydı"
+    yapmaz. Üç ayraç, keskinlikten körlüğe doğru sıralanır:
+
+    1. **Hasar dosya numarası** (`case_foys.hasar_no`) — sigorta dosyası kodudur,
+       yazım hatası taşımaz. Ayrıksa kartlar farklı sigortalı dosyalarıdır.
+       Canlı kanıt TKU-80: İstanbul 9. İdare 2020/550 altında iki kart, hasar
+       3745261180001 (dört hekim) ve 6528666170001 (Engin Can Dr.).
+    2. **Sigortalı/diğer davalı** — aynı davada her sigortalı hekim için ayrı kart
+       açılmışsa mükerrer değil, doğru kayıttır.
+    3. **Karşı taraf** — davalılar bambaşkaysa aynı dava bile değildir; esas
+       numarası yanlış girilmiştir (Gaziantep 2. Tüketici 2017/1210: biri
+       'Çeliksoy', diğeri 'Oğul').
+
+    Sıra hasar numarasıyla başlar çünkü isim tabanlı ayraçlar yazım hatasına
+    yenik düşer: TKU-80'de karşı taraf 'Abdukadir' ↔ 'Abdulkadir' yazılmış, isme
+    bakan bir hüküm o çifti "esas no hatası" sanırdı.
+    """
+    if sol_hasar and sag_hasar and not (sol_hasar & sag_hasar):
+        return "FARKLI_HASAR_DOSYASI"
+    sol_kisi = _kisi_adlari(_taraf_adlari(sol, "THIRD"))
+    sag_kisi = _kisi_adlari(_taraf_adlari(sag, "THIRD"))
+    if _ayrik(sol_kisi, sag_kisi):
+        return "FARKLI_SIGORTALI"
+    if _ayrik(_taraf_adlari(sol, "COUNTER"), _taraf_adlari(sag, "COUNTER")):
+        return "KARSI_TARAF_FARKLI"
+    if not (sol_kisi and sag_kisi):
+        # Bir tarafta hiç kişi sigortalı yok (yalnız hastane/bakanlık kayıtlı, ya da
+        # taraf satırı hiç girilmemiş): karşılaştırma YAPILAMADI. Bunu
+        # "mükerrer adayı" saymak, ölçmediğimiz şeyi bulgu gibi göstermek olurdu.
+        return "SIGORTALI_KARSILASTIRILAMADI"
+    return "MUKERRER_ADAYI"
 
 
 def gruplari_kur(
@@ -256,6 +342,7 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
 
         ilgili_idler = {kid for sol, sag, _ in ayni_dava_ciftleri for kid in (sol, sag)}
         belge_sayisi, foy_sayisi = _sayimlar(db, ilgili_idler)
+        hasar_numaralari = _hasar_numaralari(db, ilgili_idler)
 
         rapor_dizini.mkdir(parents=True, exist_ok=True)
         damga = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -267,22 +354,30 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
             blok_sol, blok_sag = _isim_blogu(sol.tracking_no), _isim_blogu(sag.tracking_no)
             if not blok_sol or blok_sol != blok_sag:
                 continue
+            sol_hasar = hasar_numaralari.get(sol_id, set())
+            sag_hasar = hasar_numaralari.get(sag_id, set())
             supheli.append((
-                _karsi_taraf_ortak(sol, sag),
+                _hukum(sol, sag, sol_hasar, sag_hasar),
                 kanit, sol.file_type, sol.court, sol.esas_no, blok_sol,
                 sol_id, sol.tracking_no, _muvekkil(sol), _karsi_taraf(sol),
+                _sigortali(sol), " / ".join(sorted(sol_hasar)),
                 belge_sayisi.get(sol_id, 0), foy_sayisi.get(sol_id, 0),
                 sag_id, sag.tracking_no, _muvekkil(sag), _karsi_taraf(sag),
+                _sigortali(sag), " / ".join(sorted(sag_hasar)),
                 belge_sayisi.get(sag_id, 0), foy_sayisi.get(sag_id, 0),
             ))
-        # Karşı tarafı ortak olanlar başa: gerçek mükerrer adayları listenin
-        # tepesinde dursun, esas numarası yanlış girilmiş çiftler aşağıda.
-        supheli.sort(key=lambda satir: {"EVET": 0, "BILINMIYOR": 1}.get(str(satir[0]), 2))
+        # Gerçek mükerrer adayları listenin tepesinde dursun; "ayrı durması doğru"
+        # diye ayrılan çiftler aşağıda referans olarak kalsın.
+        _HUKUM_SIRASI = {"MUKERRER_ADAYI": 0, "SIGORTALI_KARSILASTIRILAMADI": 1,
+                         "KARSI_TARAF_FARKLI": 2, "FARKLI_SIGORTALI": 3}
+        supheli.sort(key=lambda satir: _HUKUM_SIRASI.get(str(satir[0]), 3))
         supheli_yol = _csv_yaz(
             rapor_dizini / f"mukerrer-kart-suphesi_{damga}.csv",
-            ("karsi_taraf_ortak", "kanit", "tur", "mahkeme", "esas_no", "isim_blogu",
-             "kart_a", "ofis_no_a", "muvekkil_a", "karsi_taraf_a", "belge_a", "foy_a",
-             "kart_b", "ofis_no_b", "muvekkil_b", "karsi_taraf_b", "belge_b", "foy_b"),
+            ("hukum", "kanit", "tur", "mahkeme", "esas_no", "isim_blogu",
+             "kart_a", "ofis_no_a", "muvekkil_a", "karsi_taraf_a", "sigortali_a",
+             "hasar_no_a", "belge_a", "foy_a",
+             "kart_b", "ofis_no_b", "muvekkil_b", "karsi_taraf_b", "sigortali_b",
+             "hasar_no_b", "belge_b", "foy_b"),
             supheli,
         )
 
@@ -317,7 +412,7 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
             "esas_cifti": len(esas_ciftleri),
             "ayni_dava_cifti": len(ayni_dava_ciftleri),
             "mukerrer_suphesi": len(supheli),
-            "karsi_taraf_ortak": sum(1 for satir in supheli if satir[0] == "EVET"),
+            "hukumler": dict(Counter(str(satir[0]) for satir in supheli)),
             "grup": len(gruplar),
             "grup_karti": len(ilgili_idler),
             "raporlar": [supheli_yol, envanter_yol],
@@ -336,9 +431,9 @@ def ozet_metni(ozet: Dict[str, object]) -> str:
         f"  aynı dava çifti   : {ozet['ayni_dava_cifti']}",
         f"  aynı dava grubu   : {ozet['grup']} ({ozet['grup_karti']} kart)",
         f"  mükerrer şüphesi  : {ozet['mukerrer_suphesi']} çift (aynı dava + AYNI müvekkil)",
-        f"    karşı taraf ortak: {ozet['karsi_taraf_ortak']} (gerçek mükerrer adayı; "
-        "kalanında esas no yanlış girilmiş olabilir)",
     ]
+    for hukum, adet in sorted(ozet["hukumler"].items(), key=lambda p: -p[1]):  # type: ignore[union-attr]
+        satirlar.append(f"    {hukum:22s}: {adet}")
     for yol in ozet["raporlar"]:  # type: ignore[union-attr]
         satirlar.append(f"  rapor             : {yol}")
     satirlar.append("=" * 78)
