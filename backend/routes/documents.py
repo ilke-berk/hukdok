@@ -11,14 +11,16 @@ import mimetypes
 import os
 import tempfile
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
-from auth_helpers import get_tenant_owned_document
+from auth_helpers import get_tenant_owned_document, tenant_filter_clause
 from dependencies import get_current_user, get_current_tenant
 from database import SessionLocal
 import models
@@ -149,6 +151,71 @@ def get_case_documents(
                 "email_error": d.email_error,
             }
             for d in docs
+        ]
+    finally:
+        db.close()
+
+
+@router.get("/api/documents/recent")
+def get_recent_documents(
+    since_hours: int = Query(24, ge=1, le=720),
+    limit: int = Query(50, ge=1, le=200),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Avukat panosunun "Yeni İşlenen" akışı: son N saatte işlenmiş belgeler.
+
+    G077 ile kaldırılan `GET /api/documents` ucunun DEVAMI DEĞİLDİR: o uç
+    bağlantısız belgeleri bağlamak içindi ve diriltilmiyor. Buranın tek işi
+    dava bağlamı OLAN belgeleri kronolojik akış olarak vermektir:
+
+    - `case_id IS NULL` (TEST/UNLINKED) satırlar hiç dönmez → inner join.
+      Kimlik (`user`) bağımlılığı bu yüzden gerekmez: sahiplik kuralı yalnız
+      bağlantısız belgeler içindi, onlar zaten kapsam dışı. Kimlik doğrulaması
+      `get_current_tenant` zincirinde (get_current_user) yapılır.
+    - Yetki kuralı `auth_helpers.get_tenant_owned_document` ile AYNI: davanın
+      tenant'ı eşleşmeli (NULL = paylaşılan legacy havuz), silinmiş dava ve
+      silinmiş belge dönmez.
+
+    `email_sent`/`email_error` yalnızca OKUNUR — bu uç mail göndermez, mevcut
+    gönderim davranışını değiştirmez (kullanıcı kararı: durum panoda görünsün).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.CaseDocument, models.Case)
+            .join(models.Case, models.CaseDocument.case_id == models.Case.id)
+            .options(joinedload(models.CaseDocument.case_party))
+            .filter(
+                models.CaseDocument.deleted_at.is_(None),
+                models.CaseDocument.uploaded_at >= cutoff,
+                models.Case.deleted_at.is_(None),
+                tenant_filter_clause(models.Case, tenant_id),
+            )
+            .order_by(models.CaseDocument.uploaded_at.desc(), models.CaseDocument.id.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": d.id,
+                "case_id": d.case_id,
+                "tracking_no": c.tracking_no,
+                # Belgede geçen esas no önce; yoksa davanın güncel esas'ı
+                # (cases.esas_no türetilmiştir — case_esas_numbers'tan senkronlanır).
+                "esas_no": d.esas_no or c.esas_no,
+                "original_filename": d.original_filename,
+                "belge_turu_kodu": d.belge_turu_kodu,
+                "belge_turu_adi": d.belge_turu_adi,
+                "case_party_name": d.case_party.name if d.case_party else None,
+                "muvekkil_adi": (d.case_party.name if d.case_party else None) or d.muvekkil_adi,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+                "uploaded_by": d.uploaded_by,
+                "email_sent": d.email_sent,
+                "email_error": d.email_error,
+            }
+            for d, c in rows
         ]
     finally:
         db.close()
