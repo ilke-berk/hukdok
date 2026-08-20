@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
-    Link2, Trash2, Plus, ExternalLink,
+    Link2, Trash2, Plus, ExternalLink, Pin, Sparkles,
     User, Scale, Gavel, FileText, Building2, BarChart3,
 } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
@@ -13,8 +13,13 @@ import AddRelationModal from "./AddRelationModal";
 
 // ---- Tipler ----
 export type RelationType =
+    // Elle kurulan bağlar (AddRelationModal'daki seçenekler)
     | "ICRA_CEZA" | "ICRA_HUKUK" | "ASIL_TEMYIZ"
-    | "ASIL_YENIDEN" | "BIRLESEN" | "AYRISTIRILAN" | "ILGILI";
+    | "ASIL_YENIDEN" | "BIRLESEN" | "AYRISTIRILAN" | "ILGILI"
+    // Otomatik katman — backend'de services/case_relations_auto.py üretir,
+    // hiçbir tabloya yazılmaz (TKU grubu + esas/mahkeme ikizi dedektörleri)
+    | "AYNI_DAVA" | "YENIDEN_ACILAN" | "ARABULUCULUK_ONCULU"
+    | "ICRA_PARALEL" | "CEZA_PARALEL" | "SAVCILIK_PARALEL" | "ADLI_IDARI_PARALEL";
 
 export interface RelatedCase {
     id: number;
@@ -45,7 +50,19 @@ const RELATION_TYPE_LABELS: Record<string, string> = {
     BIRLESEN:     "Birleştirilen",
     AYRISTIRILAN: "Ayrıştırılan",
     ILGILI:       "İlgili Dava",
+    // Otomatik katman
+    AYNI_DAVA:           "Aynı Dava",
+    YENIDEN_ACILAN:      "Yeniden Açılan / Mahkeme Değişikliği",
+    ARABULUCULUK_ONCULU: "Arabuluculuk → Dava",
+    ICRA_PARALEL:        "İcra Takibi",
+    CEZA_PARALEL:        "Ceza Dosyası",
+    SAVCILIK_PARALEL:    "Savcılık Dosyası",
+    ADLI_IDARI_PARALEL:  "Adli ↔ İdari Paralel",
 };
+
+// AYNI_DAVA sıradan bir ilişki değil, bir UYARIDIR: iki kart tek davayı gösteriyor
+// (ölçümde çoğu "aynı dava, farklı müvekkil"). Panelde ayrı renkle durur.
+const AYNI_DAVA = "AYNI_DAVA";
 
 // ---- Dosya türü meta ----
 const fileTypeMeta: Record<string, { color: string; bg: string; border: string; icon: React.ReactNode }> = {
@@ -82,16 +99,22 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
     const { getRelatedCases, removeCaseRelation, addCaseRelation } = useCases();
 
     const [manualList, setManualList] = useState<RelatedCase[]>([]);
+    const [autoList, setAutoList] = useState<RelatedCase[]>([]);
     const [loading, setLoading] = useState(true);
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [pinningId, setPinningId] = useState<number | null>(null);
 
     const load = async () => {
         setLoading(true);
         const result = await getRelatedCases(caseId);
-        const list = result?.manual ?? [];
-        setManualList(list);
-        onCountChange?.(list.length);
+        const manual = result?.manual ?? [];
+        const automatic = result?.automatic ?? [];
+        setManualList(manual);
+        setAutoList(automatic);
+        // Rozet sayısı iki katmanı birden sayar: kullanıcı için "bu davanın kaç
+        // ilişkisi var" sorusunun cevabı bağın elle mi kurulduğuna bakmaz.
+        onCountChange?.(manual.length + automatic.length);
         setLoading(false);
     };
 
@@ -107,6 +130,25 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
             toast.error("Bağlantı kaldırılamadı");
         }
         setDeletingId(null);
+    };
+
+    /** Otomatik öneriyi kalıcı bağa çevirir — kayıt manuel katmana taşınır.
+     *  Backend elle bağlanmış kartı otomatik listede tekrar etmediği için satır
+     *  yeniden yüklemede kendiliğinden "Sistemin bulduğu"ndan çıkar. */
+    const handlePin = async (rc: RelatedCase) => {
+        setPinningId(rc.id);
+        const result = await addCaseRelation(caseId, {
+            target_case_id: rc.id,
+            relation_type: rc.relation_type,
+            note: rc.match_reason,
+        });
+        if (result) {
+            toast.success("Bağlantı kalıcı hâle getirildi");
+            await load();
+        } else {
+            toast.error("Bağlantı kaydedilemedi");
+        }
+        setPinningId(null);
     };
 
     const handleAddRelation = async (targetCaseId: number, relationType: string, note: string | null) => {
@@ -134,7 +176,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
     }
 
     // ---- Empty ----
-    if (manualList.length === 0) {
+    if (manualList.length === 0 && autoList.length === 0) {
         return (
             <>
                 <div className="flex justify-between items-center mb-4">
@@ -175,7 +217,9 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                         İlişkili Davalar
                     </h3>
-                    <Badge variant="secondary" className="text-xs px-2">{manualList.length}</Badge>
+                    <Badge variant="secondary" className="text-xs px-2">
+                        {manualList.length + autoList.length}
+                    </Badge>
                 </div>
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddModalOpen(true)}>
                     <Plus className="w-3.5 h-3.5" />
@@ -183,17 +227,46 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                 </Button>
             </div>
 
-            <div className="space-y-2.5">
-                {manualList.map(rc => (
-                    <RelatedCaseCard
-                        key={rc.id}
-                        rc={rc}
-                        isDeleting={deletingId === rc.relation_id}
-                        onNavigate={() => navigate(`/cases/${rc.id}`)}
-                        onDelete={() => rc.relation_id && handleDelete(rc.relation_id)}
-                    />
-                ))}
-            </div>
+            {manualList.length > 0 && (
+                <div className="space-y-2.5">
+                    {manualList.map(rc => (
+                        <RelatedCaseCard
+                            key={rc.id}
+                            rc={rc}
+                            isDeleting={deletingId === rc.relation_id}
+                            onNavigate={() => navigate(`/cases/${rc.id}`)}
+                            onDelete={() => rc.relation_id && handleDelete(rc.relation_id)}
+                        />
+                    ))}
+                </div>
+            )}
+
+            {autoList.length > 0 && (
+                <div className={manualList.length > 0 ? "mt-6" : ""}>
+                    <div className="flex items-center gap-2 mb-3">
+                        <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Sistemin bulduğu
+                        </h4>
+                        <Badge variant="secondary" className="text-xs px-2">{autoList.length}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                        Eski sistemin TKU numarası ile aynı mahkeme/esas eşleşmesinden türetildi;
+                        kayıtlı bir bağlantı değildir.
+                    </p>
+                    <div className="space-y-2.5">
+                        {autoList.map(rc => (
+                            <RelatedCaseCard
+                                key={rc.id}
+                                rc={rc}
+                                isPinning={pinningId === rc.id}
+                                onNavigate={() => navigate(`/cases/${rc.id}`)}
+                                onPin={() => handlePin(rc)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <AddRelationModal
                 open={addModalOpen}
@@ -211,17 +284,24 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
 interface CardProps {
     rc: RelatedCase;
     isDeleting?: boolean;
+    isPinning?: boolean;
     onNavigate: () => void;
     onDelete?: () => void;
+    onPin?: () => void;
 }
 
-const RelatedCaseCard = ({ rc, isDeleting, onNavigate, onDelete }: CardProps) => {
+const RelatedCaseCard = ({ rc, isDeleting, isPinning, onNavigate, onDelete, onPin }: CardProps) => {
     const ftMeta = getFileTypeMeta(rc.file_type);
     const st = getStatusStyle(rc.status);
     const relationLabel = RELATION_TYPE_LABELS[rc.relation_type] ?? rc.relation_type;
+    const isAyniDava = rc.relation_type === AYNI_DAVA;
 
     return (
-        <div className="group rounded-none border border-border/60 bg-card/60 hover:border-border transition-all overflow-hidden">
+        <div className={`group rounded-none border bg-card/60 transition-all overflow-hidden ${
+            isAyniDava
+                ? "border-[#c47a1e]/50 hover:border-[#c47a1e]"
+                : "border-border/60 hover:border-border"
+        }`}>
             <div className="p-4 flex flex-col sm:flex-row sm:items-start gap-4">
                 {/* Sol: bilgiler */}
                 <div className="flex-1 min-w-0 space-y-2">
@@ -233,8 +313,12 @@ const RelatedCaseCard = ({ rc, isDeleting, onNavigate, onDelete }: CardProps) =>
                                 {rc.file_type}
                             </span>
                         )}
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-secondary/40 text-muted-foreground border border-border/50">
-                            <Link2 className="w-3 h-3 text-primary" />
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                            isAyniDava
+                                ? "bg-[#c47a1e]/10 text-[#c47a1e] border-[#c47a1e]/30"
+                                : "bg-secondary/40 text-muted-foreground border-border/50"
+                        }`}>
+                            <Link2 className={`w-3 h-3 ${isAyniDava ? "text-[#c47a1e]" : "text-primary"}`} />
                             {relationLabel}
                         </span>
                         <Badge className={`text-[10px] px-2 py-0.5 border-0 ${st.bg} ${st.text}`}>
@@ -264,10 +348,18 @@ const RelatedCaseCard = ({ rc, isDeleting, onNavigate, onDelete }: CardProps) =>
                         </div>
                     )}
 
-                    {/* Not */}
+                    {/* Not (elle bağlarda kullanıcının notu) */}
                     {rc.note && (
                         <p className="text-xs text-muted-foreground italic border-l-2 border-primary/30 pl-2.5 mt-1">
                             {rc.note}
+                        </p>
+                    )}
+
+                    {/* Gerekçe — otomatik ilişkinin hangi kanıttan geldiği.
+                        Elle bağlarda gösterilmez, orada gerekçe kullanıcının kendisidir. */}
+                    {!rc.is_manual && rc.match_reason && (
+                        <p className="text-xs text-muted-foreground border-l-2 border-border pl-2.5 mt-1">
+                            {rc.match_reason}
                         </p>
                     )}
                 </div>
@@ -293,6 +385,18 @@ const RelatedCaseCard = ({ rc, isDeleting, onNavigate, onDelete }: CardProps) =>
                         >
                             <Trash2 className="w-3.5 h-3.5" />
                             {isDeleting ? "..." : "Sil"}
+                        </Button>
+                    )}
+                    {onPin && (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5 h-8 text-xs"
+                            onClick={onPin}
+                            disabled={isPinning}
+                        >
+                            <Pin className="w-3.5 h-3.5" />
+                            {isPinning ? "..." : "Kalıcı Bağla"}
                         </Button>
                     )}
                 </div>
