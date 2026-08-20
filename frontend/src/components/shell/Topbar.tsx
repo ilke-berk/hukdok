@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useNavigate } from "react-router";
-import { Menu, Search, Bell, Plus, X } from "lucide-react";
+import { Menu, Search, Plus, X } from "lucide-react";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { PlaceholderBadge } from "@/components/PlaceholderBadge";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { usePageSearchContext } from "@/components/system/PageSearch";
 import { GlobalSearchDropdown } from "@/components/system/GlobalSearchDropdown";
 
@@ -122,17 +122,8 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
           )}
         </div>
 
-        <div className="relative">
-          <button
-            type="button"
-            aria-label="Bildirimler"
-            className="w-[38px] h-[38px] grid place-items-center border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] cursor-pointer rounded-[4px] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--fg)]"
-            onClick={() => { /* TODO: bildirim paneli */ }}
-          >
-            <Bell className="w-4 h-4" />
-          </button>
-          <PlaceholderBadge position="corner" />
-        </div>
+        {/* G083: zil artık gerçek panele bağlı — "YAKINDA" rozeti kaldırıldı. */}
+        <NotificationBell />
         <button
           type="button"
           onClick={() => navigate("/upload")}
