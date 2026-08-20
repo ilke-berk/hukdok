@@ -32,6 +32,7 @@ from managers.case_manager import (
     update_case_tracking, get_case_stage_log, find_duplicate_cases,
 )
 from managers.stage_decisions import get_stage_decisions
+from services import case_relations_auto
 import models
 
 
@@ -361,7 +362,12 @@ def get_case_relations(
     case_id: int,
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Manuel olarak bağlanan ilişkili davaları getirir."""
+    """İlişkili davaları getirir: elle bağlananlar + otomatik tespit edilenler.
+
+    Otomatik katman `services.case_relations_auto`ta hesaplanır (TKU grubu + esas/
+    mahkeme ikizi) ve hiçbir tabloya yazılmaz. Elle bağlanmış bir kart otomatik
+    listede TEKRAR ETMEZ: kullanıcının kendi kurduğu bağ, türettiğimizden önceliklidir.
+    """
     db = SessionLocal()
     try:
         case = get_tenant_owned_case(db, case_id, tenant_id)
@@ -374,8 +380,10 @@ def get_case_relations(
         ).all()
 
         manual_list = []
+        elle_baglanan_idler = set()
         for row in manual_rows:
             other_id = row.target_case_id if row.source_case_id == case_id else row.source_case_id
+            elle_baglanan_idler.add(other_id)
             other = (
                 db.query(models.Case)
                 .options(selectinload(models.Case.parties))
@@ -396,7 +404,23 @@ def get_case_relations(
                     note=row.note,
                 ))
 
-        return RelatedCasesResponse(manual=manual_list, automatic=[])
+        automatic_list = []
+        for diger, relation_type, reason, score in case_relations_auto.iliskileri_bul(
+            db, case, tenant_id
+        ):
+            if diger.id in elle_baglanan_idler:
+                continue
+            automatic_list.append(_case_to_summary(
+                case=diger,
+                relation_id=None,
+                relation_type=relation_type,
+                match_reason=reason,
+                score=score,
+                is_manual=False,
+                note=None,
+            ))
+
+        return RelatedCasesResponse(manual=manual_list, automatic=automatic_list)
 
     finally:
         db.close()
