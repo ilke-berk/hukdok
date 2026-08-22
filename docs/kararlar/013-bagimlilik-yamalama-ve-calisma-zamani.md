@@ -183,6 +183,28 @@ K1'in 1. ve 2. adımından sonra prod tarafı **0'a** indiği için kapı kuruld
 Geliştirme zinciri (12 açık, vite 8 majörüne bağlı) **ayrı ve bloke etmeyen** bir bilgi
 adımında raporlanır; adım 6'dan sonra o da kapıya alınır.
 
+> **Şerh — 2026-08-22 (G089): geliştirme zinciri artık BLOKLAYICI, "beklemede" değil.**
+>
+> Bu kaydın "tarayıcıya inmez" gerekçesi eksikti: **geliştirme makinesinin dosya sistemi
+> de bir saldırı yüzeyidir.** 2026-08-22 güvenlik denetiminin B-1 bulgusu vite 5.4.19'da
+> iki somut yol gösterdi — `server.fs.deny` bypass'ı (dev sunucusundan repo dışı dosya
+> okuma) ve esbuild'in dev sunucusuna cross-origin istek atıp yanıtı okuyabilme kusuru.
+> İkisinin de kurbanı bundle değil, geliştiricinin diski.
+>
+> Bekleme sebebi ("vite majörü") kapandı: **vite ^6.4.3** kuruldu ve `npm audit` ağacın
+> tamamında (dev dahil) **0 açık** veriyor. `ci.yml`'daki bilgi adımından `|| true`
+> düştü — kapının açık kalması bundan sonra yeni bir açığın sessizce girmesi demekti.
+>
+> **Hedef neden 6, 8 değil (ölçümle):** 5.4.21 (5.x hattının sonu) hâlâ 1 high + 1
+> moderate — 5.x'e yama gelmedi. 6.4.3 ve 7.3.6 temiz. npm'in önerdiği 8.2.2 ise
+> `lovable-tagger@1.1.11`'in `vite >=5.0.0 <8.0.0` peer'ini kırar
+> (`frontend/vite.config.ts:4,57`, yalnız `mode === 'development'` altında kullanılıyor
+> ama peer çözümü yine de patlar). Muhafazakâr olan 6 seçildi.
+>
+> **Yan kazanç:** `vitest@4.1.10`'un peer'i `vite ^6 || ^7 || ^8` — yani ağaç bugüne
+> kadar **gizliden uyumsuzdu**, sessiz kalmasının tek sebebi `frontend/.npmrc`'deki
+> `legacy-peer-deps=true` idi. Yükseltme bu uyumsuzluğu da kapattı.
+
 > **Frontend kapısının ön koşulu — bugün kapı yanlış ağacı ölçüyor.**
 > `frontend/Dockerfile:8-9` yalnız `package.json`'ı kopyalayıp `npm install` koşuyor;
 > `package-lock.json` kurulum anında **ortamda değil**. Yani prod imajı lock'un tarif
@@ -236,7 +258,7 @@ fastapi 0.141.1, starlette 1.5.0). Yani çalışma zamanı yükseltmesi bir hijy
 | `@remix-run/router` | 1.23.2 | 1.23.3 | 1 (+ `react-router` 3 + `react-router-dom` 1) | **Transitif yama — `react-router-dom` v6→v7 majörü GEREKMEZ.** Açık aralığı `6.0.0 - 7.17.0` görünse de kök neden router'da ve 1.23.3 yaması `^6.30` altında çözülüyor |
 | lodash (recharts üzerinden) | 4.17.23 | ≥4.17.24 | 2 | `^4` içinde yama |
 | postcss (dev) | ≤8.5.22 | ≥8.5.23 | 2 | `^8` içinde yama |
-| vite (dev) | 5.4.x | 8.2.1 | 3 (+ esbuild 1, rollup 1) | **Semver majör ×3.** `engines: ^20.19.0 \|\| >=22.12.0` → K4'ün Node adımına bağlı. Bloke etmeyen kapıda kalır |
+| vite (dev) | ~~5.4.x~~ **6.4.3 (uygulandı, G089)** | ~~8.2.1~~ **6.4.3** | 3 (+ esbuild 1, rollup 1) | **UYGULANDI 2026-08-22.** 8 hedefi reddedildi: `lovable-tagger` peer'i `<8.0.0`. 6.4.3 ile ağaç (dev dahil) 0 açık; kapı bloklayıcıya çevrildi — bkz. K3 şerhi |
 
 ---
 
@@ -277,6 +299,12 @@ fastapi 0.141.1, starlette 1.5.0). Yani çalışma zamanı yükseltmesi bir hijy
   üretir. Önce kapı, sonra otomasyon.
 - **`npm audit fix --force`** — vite 5 → 8 majörünü, dolayısıyla Node engine kısıtını
   sessizce içeri alır. Yalnız majör olmayan düzeltme uygulanır.
+- **vite 8.2.2 (npm'in önerdiği hedef)** *(2026-08-22, G089)* — `lovable-tagger@1.1.11`
+  peer'i `vite >=5.0.0 <8.0.0`; eklenti yalnız `mode === 'development'` altında yükleniyor
+  ama peer çözümü yine de kırılır. **vite 7.3.6** de temiz ve elenmedi, yalnız ertelendi:
+  aynı açıkları 6 da kapatıyor, majörü tek adım atmak tercih edildi. **Yeniden açma
+  tetikleyicisi:** 6.x hattına yamasız yeni bir açık gelmesi, ya da `lovable-tagger`'ın
+  düşmesi/peer aralığını genişletmesi.
 - **`python:3.13-slim`** — `psycopg2-binary==2.9.9`'un cp313 tekerleği yok; çalışma zamanı
   işini bağımlılık işine bağlar. **Yeniden açma:** psycopg2-binary yükseltildikten sonra.
 - **`node:22`** — LTS ama 2025-10-21'den beri bakım fazında; 24 ile aynı emeğe iki yıl daha

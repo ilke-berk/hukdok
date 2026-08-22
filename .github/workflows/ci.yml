@@ -121,11 +121,16 @@ jobs:
       - name: npm audit (prod, audit-ignore.txt ile)
         run: node scripts/check-npm-audit.mjs
 
-      # Geliştirme zinciri (vite/esbuild/rollup — tarayıcıya inmez) bilgi
-      # amaçlı raporlanır, BLOKLAMAZ (ADR-013 K3). Kapıya alınması vite'nin
-      # major sürüm geçişine bağlı — K1'de yok, ayrı bir karar.
-      - name: npm audit (geliştirme zinciri — bilgi amaçlı, bloklamaz)
-        run: npm audit --audit-level=moderate || true
+      # Geliştirme zinciri (vite/esbuild/rollup) ARTIK BLOKLAYICI (G089).
+      # Bekleme sebebi vite majör geçişiydi; vite 6.4.3 ile ağacın tamamı
+      # (dev dahil) 0 açık — `|| true` düştü. Gerekçe: geliştirme makinesinin
+      # dosya sistemi de bir saldırı yüzeyi (2026-08-22 denetimi B-1:
+      # server.fs.deny bypass + esbuild cross-origin okuma), bkz. ADR-013 K3.
+      # DİKKAT: bu adım audit-ignore.txt'i OKUMAZ. Prod tarafına tarihli bir
+      # ignore satırı eklenirse burası yine kırmızı olur — o gün bu adım da
+      # aynı listeyi okuyacak şekilde (check-npm-audit.mjs) öğretilmeli.
+      - name: npm audit (geliştirme zinciri dahil — bloklayıcı)
+        run: npm audit --audit-level=moderate
 
       - name: ESLint (Faz 3.2'den beri zorunlu)
         run: npm run lint
