@@ -92,7 +92,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-08-22: 2014 passed, 3 skipped
+docker compose exec -T backend python -m pytest            # 2026-08-22: 2019 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).

@@ -65,7 +65,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      ensure_cache_dir → biri EEXIST ile sahte ERROR. Log sözleşmesi + GCP ERROR
      alarmı + "açılış 0 ERROR" deploy kapısını kirletiyor. Tek satır: exist_ok=True. -->
 
-- [ ] G099 | bant:backend | bagimli:- | cache_manager: makedirs yarışı sahte ERROR basıyor (exist_ok=True)
+- [x] G099 | bant:backend | bagimli:- | cache_manager: makedirs yarışı sahte ERROR basıyor (exist_ok=True)
 
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 

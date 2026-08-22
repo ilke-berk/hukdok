@@ -23,12 +23,20 @@ CACHE_FILE = CACHE_DIR / "list_cache.json"
 
 
 def ensure_cache_dir():
-    """Ensures that the cache directory exists."""
-    if not os.path.exists(CACHE_DIR):
-        try:
-            os.makedirs(CACHE_DIR)
-        except Exception as e:
-            logger.error(f"Failed to create cache directory: {e}")
+    """Ensures that the cache directory exists.
+
+    G099: `exists` ön kontrolü YOK — backend 2 uvicorn worker'la kalkar ve ikisi
+    lifespan'de aynı anda buraya girer; "yok" görüp `makedirs` çağıran ikinci
+    worker EEXIST ile sahte bir ERROR basıyordu (her açılışta bir tık, GCP
+    ERROR-oranı alarmını ve "açılış 0 ERROR" deploy kapısını kirletiyordu).
+    `exist_ok=True` yarışı ortadan kaldırır; kalan hata (izin yok, salt-okunur
+    FS) gerçek bir başarısızlıktır ve ERROR olarak kalır. Çağırana yükselmez —
+    açılış cache yüzünden durmaz.
+    """
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+    except Exception as e:
+        logger.error(f"Failed to create cache directory: {e}")
 
 
 def load_cache():
