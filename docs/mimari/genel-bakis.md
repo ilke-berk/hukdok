@@ -133,9 +133,12 @@ kabul edilen takas" (`api.py:149-151`).
 
 ## 4. Kimlik ve tenant
 
-Kimlik Azure AD'dir. `backend/auth_verifier.py` token'ın doğrulanmamış header'ından `tid`
-okur, `ALLOWED_TENANTS` env listesine karşı kontrol eder, ilgili tenant'ın JWKS'inden imza
-anahtarını alır ve RS256 + audience doğrulaması yapar.
+Kimlik Azure AD'dir. `backend/auth_verifier.py` token'ın imzasız decode edilen
+claim'lerinden `tid` okur, `ALLOWED_TENANTS` env listesine karşı kontrol eder, ilgili
+tenant'ın JWKS'inden imza anahtarını alır ve RS256 imza + `aud` + `iss` + `exp`
+doğrulaması yapar; sunucu tarafı oturum tutulmaz. Tarayıcı akışı (MSAL, sessionStorage,
+401 yenilemesi, çıkış yolları), süre tablosu, Graph app-only akışı ve açık kalemler
+[`kimlik-ve-token.md`](kimlik-ve-token.md)'dedir — burada tekrarlanmaz.
 
 Tenant modeli **paylaşımlı havuzdur**: `cases`/`clients` tablolarında `tenant_id` kolonu
 vardır ama yeni kayıtlar bilinçli `NULL` yazılır, çünkü Hanyaloğlu Acar + LexisBio ortak
@@ -185,7 +188,8 @@ yalnız görünürlük sağlar; ERROR tabanlı alarmlar log yolundan gelir (bkz.
 ## 7. Frontend
 
 React + Vite SPA. Kimlik `@azure/msal-react` ile kurulur; token `acquireTokenSilent` ile
-alınıp `Authorization: Bearer` olarak eklenir (`frontend/src/lib/api.ts`). API katmanının
+alınıp `Authorization: Bearer` olarak eklenir (`frontend/src/lib/api.ts`; 401'de tek
+yenileme + tekrar, ayrıntı [`kimlik-ve-token.md`](kimlik-ve-token.md)). API katmanının
 iki zaman aşımı kademesi vardır — etkileşimli çağrılar için kısa, uzun süren uçlar
 (`/process`, `/confirm`, `/api/case-intake/*`, indirme) için nginx'in 300s penceresiyle
 hizalı uzun kademe. GET'ler 502/503/504'te sınırlı sayıda yeniden denenir; POST'lar
@@ -198,5 +202,6 @@ hizalı uzun kademe. GET'ler 502/503/504'te sınırlı sayıda yeniden denenir; 
 | `/process` → `/confirm` zinciri, olay sözleşmesi, zaman bütçeleri | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) |
 | Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
 | Gemini, Graph/SharePoint, e-posta, ayar tablosu | [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
+| Kullanıcı oturumu, token doğrulama zinciri, süreler, Graph app-only kimlik | [`kimlik-ve-token.md`](kimlik-ve-token.md) |
 | deploy/rollback, systemd birimleri, izleme, yedekleme | [`deploy-ve-altyapi.md`](deploy-ve-altyapi.md) |
 | Kalıcı mimari kararlar ve gerekçeleri | [`docs/kararlar/`](../kararlar/) |

@@ -151,7 +151,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | Yol | Ne | Güvenilirlik |
 | --- | --- | --- |
 | `CLAUDE.md` | Bu dosya — giriş noktası | Güncel tutulur |
-| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, dış bağımlılıklar, deploy ve altyapı | GÜNCEL — kodla çelişirse doküman düzeltilir |
+| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, dış bağımlılıklar, deploy ve altyapı, kimlik ve token (`kimlik-ve-token.md`) | GÜNCEL — kodla çelişirse doküman düzeltilir |
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
