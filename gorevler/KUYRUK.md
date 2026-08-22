@@ -81,7 +81,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      DEPLOY GEREKTİRİR ve deploy sonrası insan turu ister (yazdır popup'ları,
      PDF aç, belge yükle); geri dönüş başlık adına -Report-Only eki. -->
 
-- [ ] G100 | bant:frontend | bagimli:- | Yazdırma popup'larında inline script/handler kaldırılır (CSP enforce ön koşulu)
+- [x] G100 | bant:frontend | bagimli:- | Yazdırma popup'larında inline script/handler kaldırılır (CSP enforce ön koşulu)
 - [ ] G101 | bant:docs | bagimli:G100 | CSP zorlayıcıya geçer: -Report-Only eki düşer
 
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
