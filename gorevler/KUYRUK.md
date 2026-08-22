@@ -407,7 +407,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      düşünülmeli, o da gerçek müvekkil verisi = KULLANICI KARARI. Sözlüğe ikinci yazım
      eklemek çözüm değil (aynı yere iki kimlik açar, G070 kararı). -->
 
-- [ ] G071 | bant:backend | bagimli:- | Dolgu kelime toleransı + tür önceliği: "Nöbetçi" mahkemede yer düşüyor, hakem heyeti mahkeme sayılıyor
+- [x] G071 | bant:backend | bagimli:- | Dolgu kelime toleransı + tür önceliği: "Nöbetçi" mahkemede yer düşüyor, hakem heyeti mahkeme sayılıyor
 
 ## ADR-013 uygulaması (2026-08-14 gündüz oturumları — kuyruğa GİRMEDİ, kullanıcıyla koşuldu)
 
