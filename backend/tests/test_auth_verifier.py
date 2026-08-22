@@ -46,17 +46,23 @@ def _iss_v1(tid):
 
 
 _ISS_YOK = object()
+_SCP_YOK = object()
 
 
 def _token(anahtar, **claims):
     """Verilen claim'lerle gerçekten RS256 imzalı token üretir.
 
     `iss` verilmezse `tid`'den v2 biçimiyle türetilir (G092 — issuer artık
-    doğrulanıyor); `iss=_ISS_YOK` ile claim tamamen düşürülür.
+    doğrulanıyor); `iss=_ISS_YOK` ile claim tamamen düşürülür. Aynı biçimde
+    `scp=_SCP_YOK` claim'i düşürür.
+
+    Varsayılanlar G096 ile hedef biçime çekildi: `aud = api://<client_id>` ve
+    `scp = access_as_user` (G092 gözlemi 2026-08-22: 10 doğrulama, 0 sapma).
     """
     govde = {
         "tid": TENANT,
-        "aud": CLIENT_ID,
+        "aud": f"api://{CLIENT_ID}",
+        "scp": "access_as_user",
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         "preferred_username": "test@ornek.gecersiz",
     }
@@ -65,6 +71,8 @@ def _token(anahtar, **claims):
         del govde["iss"]
     elif "iss" not in govde:
         govde["iss"] = _iss_v2(govde["tid"])
+    if govde.get("scp") is _SCP_YOK:
+        del govde["scp"]
     return jwt.encode(govde, anahtar, algorithm="RS256")
 
 
@@ -78,8 +86,6 @@ def _ortam(monkeypatch, anahtar):
 
     # `_jwks_clients` SINIF düzeyinde ve testler arası sızar — her testte sıfırla.
     monkeypatch.setattr(AuthVerifier, "_jwks_clients", {})
-    # G092 tek-seferlik gözlem bayrağı da sınıf düzeyinde — testler arası sızmasın.
-    monkeypatch.setattr(AuthVerifier, "_scope_audience_warned", False)
 
     class _SahteJWKS:
         def __init__(self, *a, **kw):
@@ -100,8 +106,8 @@ def test_gecerli_token_kabul_ediliyor(anahtar):
     assert claims["tid"] == TENANT
 
 
-def test_api_onekli_audience_da_kabul(anahtar):
-    """Azure AD token'ın `aud`'unu `api://<client_id>` biçiminde de verebilir."""
+def test_api_onekli_audience_kabul(anahtar):
+    """Tek kabul edilen audience biçimi: `api://<client_id>` (G096)."""
     assert AuthVerifier.verify_token(_token(anahtar, aud=f"api://{CLIENT_ID}")) is not None
 
 
@@ -197,61 +203,83 @@ def test_iss_ikinci_tenant_kendi_issiyle_geciyor(anahtar, iss_uret):
     assert AuthVerifier.verify_token(_token(anahtar, tid=BASKA_TENANT, iss=iss_uret(BASKA_TENANT))) is not None
 
 
-# ── scp/aud gözlem modu (G092) — davranışsız, süreç başına bir WARNING ──────
+# ── scp zorunlu + audience yalnız api:// (G096) ──────────────────────────────
+# G092 bu bölümü "kabul + bir kez WARNING" (gözlem modu) olarak yazmıştı. Ölçüm
+# 2026-08-22'de gerçek Azure AD girişiyle yapıldı (10 doğrulama, 0 sapma) ve
+# gözlem modu kaldırıldı: sapma artık RET. Testler ters çevrildi, silinmedi.
 
-def _gozlem_kayitlari(caplog):
-    return [r for r in caplog.records if "gözlem" in r.getMessage()]
+def _scope_kayitlari(caplog):
+    return [r for r in caplog.records if "scope eksik" in r.getMessage()]
 
 
-def test_scp_eksik_token_kabul_ama_bir_kez_warning(anahtar, caplog):
+def test_scp_claimi_yoksa_reddediliyor_ve_warning(anahtar, caplog):
+    """G092'de kabul+WARNING idi; G096 ile ret. İmza/aud/iss doğru, YALNIZ scp yok."""
     with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
-        assert AuthVerifier.verify_token(_token(anahtar, aud=f"api://{CLIENT_ID}")) is not None
-    kayitlar = _gozlem_kayitlari(caplog)
+        assert AuthVerifier.verify_token(_token(anahtar, scp=_SCP_YOK)) is None
+    kayitlar = _scope_kayitlari(caplog)
     assert len(kayitlar) == 1
     assert kayitlar[0].levelno == logging.WARNING
-    assert "access_as_user=False" in kayitlar[0].getMessage()
+    assert "scp=None" in kayitlar[0].getMessage()
 
 
-def test_scp_yanlis_token_kabul_ama_warning(anahtar, caplog):
+def test_scp_access_as_user_icermiyorsa_reddediliyor(anahtar, caplog):
+    """G092'de kabul+WARNING idi; G096 ile ret. Log gözlenen scp'yi taşır."""
     with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
-        token = _token(anahtar, aud=f"api://{CLIENT_ID}", scp="User.Read")
-        assert AuthVerifier.verify_token(token) is not None
-    kayitlar = _gozlem_kayitlari(caplog)
+        assert AuthVerifier.verify_token(_token(anahtar, scp="User.Read")) is None
+    kayitlar = _scope_kayitlari(caplog)
     assert len(kayitlar) == 1
     assert "'User.Read'" in kayitlar[0].getMessage()
 
 
-def test_ciplak_client_id_audience_kabul_ama_bir_kez_warning(anahtar, caplog):
-    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
-        assert AuthVerifier.verify_token(_token(anahtar, aud=CLIENT_ID, scp="access_as_user")) is not None
-    kayitlar = _gozlem_kayitlari(caplog)
-    assert len(kayitlar) == 1
-    assert "ciplak_client_id=True" in kayitlar[0].getMessage()
-    assert CLIENT_ID in kayitlar[0].getMessage()
+def test_scp_alt_dizgi_eslesmesi_yetmiyor(anahtar):
+    """`access_as_user` boşlukla ayrılmış TAM bir scope olmalı; ön/son ek sızmaz."""
+    assert AuthVerifier.verify_token(_token(anahtar, scp="access_as_user_x")) is None
+    assert AuthVerifier.verify_token(_token(anahtar, scp="x_access_as_user")) is None
 
 
-def test_api_onekli_aud_ve_dogru_scp_warning_basmiyor(anahtar, caplog):
-    """Hedef biçim (api:// aud + access_as_user scp) gözlem üretmez."""
+def test_ciplak_client_id_audience_reddediliyor(anahtar, caplog):
+    """G092'de kabul+WARNING idi; G096 ile ret (O4: aynı uygulamanın ID token'ı
+    access token yerine geçemez). scp doğru, YALNIZ aud çıplak."""
+    with caplog.at_level(logging.ERROR, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, aud=CLIENT_ID, scp="access_as_user")) is None
+    assert any("invalid token" in r.getMessage().lower() for r in caplog.records)
+    assert _scope_kayitlari(caplog) == []
+
+
+def test_api_onekli_aud_ve_dogru_scp_kabul(anahtar, caplog):
+    """Hedef biçim (api:// aud + access_as_user scp) kabul, scope uyarısı yok."""
     with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
-        token = _token(anahtar, aud=f"api://{CLIENT_ID}", scp="access_as_user Baska.Scope")
+        token = _token(anahtar, aud=f"api://{CLIENT_ID}", scp="access_as_user")
         assert AuthVerifier.verify_token(token) is not None
-    assert _gozlem_kayitlari(caplog) == []
+    assert _scope_kayitlari(caplog) == []
 
 
-def test_gozlem_log_seli_yok_ayni_surecte_tek_warning(anahtar, caplog):
+def test_scp_birden_cok_scope_biri_access_as_user_kabul(anahtar):
+    for scp in ("access_as_user Baska.Scope", "Baska.Scope access_as_user", "A access_as_user B"):
+        assert AuthVerifier.verify_token(_token(anahtar, scp=scp)) is not None, scp
+
+
+def test_scope_reddi_her_istekte_loglanir(anahtar, caplog):
+    """Gözlem modundaki süreç-başına-bir-kez bayrağı kalktı; her ret kendi WARNING'ini basar."""
     with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
         for _ in range(3):
-            assert AuthVerifier.verify_token(_token(anahtar)) is not None
-    assert len(_gozlem_kayitlari(caplog)) == 1
+            assert AuthVerifier.verify_token(_token(anahtar, scp=_SCP_YOK)) is None
+    assert len(_scope_kayitlari(caplog)) == 3
 
 
-def test_gozlem_logunda_ham_token_yok(anahtar, caplog):
-    token = _token(anahtar)
+def test_gozlem_modu_kaldirildi():
+    assert not hasattr(AuthVerifier, "_scope_audience_warned")
+    assert not hasattr(AuthVerifier, "_observe_scope_audience")
+
+
+@pytest.mark.parametrize("claims", [{}, {"scp": _SCP_YOK}, {"scp": "User.Read"}, {"aud": CLIENT_ID}])
+def test_loglarda_ham_token_yok(anahtar, caplog, claims):
+    """Kabul ve her ret yolunda: token ya da imza parçası hiçbir log satırına sızmaz."""
+    token = _token(anahtar, **claims)
     with caplog.at_level(logging.DEBUG, logger="AuthVerifier"):
-        assert AuthVerifier.verify_token(token) is not None
+        AuthVerifier.verify_token(token)
     for r in caplog.records:
         assert token not in r.getMessage()
-        # imza parçası bile sızmamalı
         assert token.rsplit(".", 1)[1] not in r.getMessage()
 
 

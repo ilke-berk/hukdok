@@ -77,21 +77,28 @@ ile başlığı alır ve `AuthVerifier.verify_token` çağırır; `None` döners
 **Durum tutulmaz: sunucu tarafı oturum/session yoktur**, her istek token'ıyla kendi
 başına doğrulanır.
 
-`verify_token` adımları (`auth_verifier.py:61-142`):
+`verify_token` adımları (`auth_verifier.py:58-142`):
 
 | # | Adım | Satır | Başarısızlıkta |
 | --- | --- | --- | --- |
-| 1 | İmzasız decode (`verify_signature: False`) — yalnız `tid` okumak için | `:72-73` | — |
-| 2 | Dev bypass: **üç env birden** (`ENV=development` + `ALLOW_DEV_TENANT=true` + `DEV_MODE=true`) ve `tid == "dev-tenant"` ise imzasız claim'ler kabul (WARNING) | `:84-88` | prod'da kapalı (§2.2) |
-| 3 | `tid ∈ ALLOWED_TENANTS` (env, virgülle ayrık) | `:76-78`, `:92-94` | `None` → 401 |
-| 4 | Tenant'ın JWKS'i: `https://login.microsoftonline.com/{tid}/discovery/v2.0/keys`, `PyJWKClient` tenant başına cache'lenir | `:97-103` | — |
-| 5 | `AZURE_CLIENT_ID` env şart | `:109-112` | ERROR + `None` |
-| 6 | `jwt.decode`: **RS256** imza + `aud ∈ {client_id, api://client_id}` + `iss ∈ {login.microsoftonline.com/{tid}/v2.0, sts.windows.net/{tid}/}` + `exp` | `:114-130`, `_expected_issuers` `:24-35` | `ExpiredSignatureError` → WARNING; diğer `InvalidTokenError` → ERROR; `None` → 401 |
-| 7 | G092 gözlem (davranışsız): `scp`'de `access_as_user` yoksa ya da `aud` çıplak client_id ise süreç başına **bir kez** WARNING — token yine kabul | `_observe_scope_audience` `:38-58`, `:132` | — |
+| 1 | İmzasız decode (`verify_signature: False`) — yalnız `tid` okumak için | `:69-70` | — |
+| 2 | Dev bypass: **üç env birden** (`ENV=development` + `ALLOW_DEV_TENANT=true` + `DEV_MODE=true`) ve `tid == "dev-tenant"` ise imzasız claim'ler kabul (WARNING) | `:81-85` | prod'da kapalı (§2.2) |
+| 3 | `tid ∈ ALLOWED_TENANTS` (env, virgülle ayrık) | `:73-75`, `:89-91` | `None` → 401 |
+| 4 | Tenant'ın JWKS'i: `https://login.microsoftonline.com/{tid}/discovery/v2.0/keys`, `PyJWKClient` tenant başına cache'lenir | `:94-100` | — |
+| 5 | `AZURE_CLIENT_ID` env şart | `:107-110` | ERROR + `None` |
+| 6 | `jwt.decode`: **RS256** imza + `aud` **yalnız** `api://<client_id>` + `iss ∈ {login.microsoftonline.com/{tid}/v2.0, sts.windows.net/{tid}/}` + `exp` | `:112-128`, `_expected_issuers` `:24-35` | `ExpiredSignatureError` → WARNING; diğer `InvalidTokenError` (yanlış/çıplak `aud` dahil) → ERROR; `None` → 401 |
+| 7 | `scp` şart (G096): boşlukla ayrılmış scope listesinde `access_as_user` yoksa (claim eksik dahil) ret; WARNING gözlenen `scp`'yi taşır, token'ı taşımaz | `_has_required_scope` `:38-56`, `:131-132` | WARNING + `None` → 401 |
 
 Issuer'ın iki biçimi birden kabul edilir çünkü hangisinin geleceği app registration'daki
-`accessTokenAcceptedVersion`'a bağlıdır ve repodan bilinemez (`:27-30`). `scp`/`aud`
-gözlemi faz 2 (zorlama) için ölçüm verisidir; §6'da açık kalem.
+`accessTokenAcceptedVersion`'a bağlıdır ve repodan bilinemez (`:27-30`).
+
+`aud`/`scp` zorlaması (G096) iki aşamada geldi: G092 önce **gözlem modu** koydu
+(sapma = süreç başına bir WARNING, token kabul). Ölçüm 2026-08-22'de lokalde gerçek
+Azure AD girişiyle yapıldı: 10 doğrulama, gözlem WARNING'i **hiç basılmadı** (0 sapma)
+→ gerçek access token `aud = api://<client_id>` ve `scp`'de `access_as_user` taşıyor.
+Bunun üzerine G096 gözlem kodunu kaldırdı ve sapmayı rete çevirdi. Kapanan bulgu O4:
+çıplak `<client_id>` audience'ı kabul edilirken aynı uygulamanın **ID token'ı** access
+token yerine geçebiliyordu; artık geçemez.
 
 Kullanıcı kimliği claim'lerden **üçlü fallback** ile okunur:
 `preferred_username | upn | email` (`auth_verifier.py:149`, `routes/config.py:55,65`).
@@ -203,7 +210,6 @@ Yani "e-posta domain kısıtımız var" doğru DEĞİLDİR; kısıt tenant düze
 | Kalem | Durum | Kaynak |
 | --- | --- | --- |
 | CSP zorlayıcı değil | Konteyner nginx yalnız `Content-Security-Policy-Report-Only` basar (`nginx.conf:54`, G091). Zorlayıcıya geçişin ön koşulu insan turuyla toplanan ihlal listesi — [`deploy-ve-altyapi.md` §11](deploy-ve-altyapi.md#11-konteyner-nginx-güvenlik-başlıkları-g091) | açık |
-| `scp` zorunluluğu + audience daraltma | G092 **gözlem modunda** bıraktı: `access_as_user` eksik ya da `aud` çıplak client_id ise yalnız WARNING, token kabul (`auth_verifier.py:38-58`). Zorlama faz 2, ayrı görev | açık |
 | Token iptali gecikmesi | CAE (Continuous Access Evaluation) yok; verilmiş access token `exp`'e kadar backend'de geçerli. Azaltıcılar: idle timeout (30 dk) ve refresh token tavanı (§3.2, teyit edilmedi) | açık |
 | Yetkilendirme granülaritesi | Tenant üyeliği = tam erişim; rol/grup claim'i okunmaz; tek ayrım `ADMIN_EMAILS` | açık |
 | Entra süre politikaları | §3.2'deki değerler tenant'ta teyit edilmedi | kullanıcı adımı |

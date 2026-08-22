@@ -15,10 +15,10 @@ class AuthVerifier:
     # Simple cache for JWKS clients to avoid re-creation
     _jwks_clients = {}
 
-    # G092 gözlem modu: `scp`/`aud` biçimi süreç başına BİR KEZ loglanır
-    # (`verify_token` her istekte koşar; istek başına log = log seli).
-    # Desen `routes/export.py::_weak_key_warned` ile aynı. Testler sıfırlar.
-    _scope_audience_warned = False
+    # G096: access token'da bulunması ŞART olan delegated scope. Frontend MSAL
+    # `api://<client_id>/access_as_user` ister (`frontend/src/config/msalConfig.ts`);
+    # bu scope'u taşımayan token (örn. aynı uygulamanın ID token'ı) reddedilir.
+    REQUIRED_SCOPE = "access_as_user"
 
     @staticmethod
     def _expected_issuers(tenant_id: str) -> list:
@@ -35,27 +35,24 @@ class AuthVerifier:
         ]
 
     @staticmethod
-    def _observe_scope_audience(claims: Dict[str, Any], client_id: str) -> None:
-        """G092 gözlem modu (davranışsız): `scp` ve `aud` biçimini ölçmek için
-        süreç başına bir kez WARNING basar; token KABUL EDİLMEYE devam eder.
+    def _has_required_scope(claims: Dict[str, Any]) -> bool:
+        """G096: `scp` claim'i boşlukla ayrılmış scope listesidir; içinde
+        `REQUIRED_SCOPE` yoksa token bu API için verilmemiştir (ID token ya da
+        başka bir kaynağa ait access token). Ret sebebi WARNING ile loglanır —
+        gözlenen `scp` değeri yazılır, token'ın kendisi ASLA yazılmaz.
 
-        Faz 2 (scp zorunluluğu + audience daraltma) bu çıktıya bakan AYRI bir
-        görevdir. Token'ın kendisi ASLA loglanmaz — yalnız `aud` ve `scp` claim'leri.
+        Gerekçe: G092 gözlem turu (2026-08-22, gerçek Azure AD girişi, 10
+        doğrulama) sapma göstermedi; gerçek token `access_as_user` taşıyor.
         """
-        if AuthVerifier._scope_audience_warned:
-            return
-        aud = claims.get("aud")
         scp = claims.get("scp")
         scopes = scp.split() if isinstance(scp, str) else []
-        scp_eksik = "access_as_user" not in scopes
-        aud_ciplak = aud == client_id
-        if scp_eksik or aud_ciplak:
-            AuthVerifier._scope_audience_warned = True
-            logger.warning(
-                "Auth gözlem (G092, bir kez): audience=%r (ciplak_client_id=%s) scp=%r "
-                "(access_as_user=%s) — token kabul edildi, yalnız ölçüm.",
-                aud, aud_ciplak, scp, not scp_eksik,
-            )
+        if AuthVerifier.REQUIRED_SCOPE in scopes:
+            return True
+        logger.warning(
+            "Auth: scope eksik — scp=%r icinde %r yok, token reddedildi.",
+            scp, AuthVerifier.REQUIRED_SCOPE,
+        )
+        return False
 
     @staticmethod
     def verify_token(token: str) -> Optional[Dict[str, Any]]:
@@ -103,15 +100,16 @@ class AuthVerifier:
             signing_key = AuthVerifier._jwks_clients[token_tenant].get_signing_key_from_jwt(token)
 
             # 4. Verify Signature + Audience
-            # aud, bu uygulama için verilmiş token'ları kabul etsin diye client_id'ye sabitlenir.
-            # Azure AD scope formatına göre token'ın aud'u "api://<client_id>" veya direkt "<client_id>"
-            # olabilir; ikisini de geçerli kabul ediyoruz.
+            # aud YALNIZ "api://<client_id>" (G096). Çıplak "<client_id>" audience'ı
+            # aynı uygulamanın ID token'ında gelir; kabul edilseydi ID token access
+            # token yerine geçerdi (O4 bulgusu). G092 gözlemi (2026-08-22, 10 doğrulama,
+            # 0 sapma) gerçek access token'ın api:// biçiminde geldiğini doğruladı.
             client_id = os.getenv("AZURE_CLIENT_ID")
             if not client_id:
                 logger.error("Auth: AZURE_CLIENT_ID env var is not set")
                 return None
 
-            allowed_audiences = [client_id, f"api://{client_id}"]
+            allowed_audiences = [f"api://{client_id}"]
 
             # 5. Issuer (G092): `iss` tid'den türetilen iki biçimden biri olmalı.
             # PyJWT `issuer=` listesini kabul eder; `iss` yoksa MissingRequiredClaimError,
@@ -129,7 +127,9 @@ class AuthVerifier:
                 }
             )
 
-            AuthVerifier._observe_scope_audience(claims, client_id)
+            # 6. Scope (G096): imza/aud/iss/exp geçti; `scp` içinde access_as_user şart.
+            if not AuthVerifier._has_required_scope(claims):
+                return None
             return claims
             
         except jwt.ExpiredSignatureError:
