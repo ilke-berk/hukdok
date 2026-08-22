@@ -223,9 +223,15 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
     @media print{body{padding:25px 35px}}
   </style>
 </head>
-<body>${content}<script>window.onload=function(){window.print()}${"</"}script></body>
+<body>${content}</body>
 </html>`);
         win.document.close();
+        // G100: yazdırma tetiği popup'ın İÇİNDEN (inline script etiketi — CSP
+        // script-src-elem ihlali) değil AÇANDAN verilir. document.close()
+        // yüklemeyi senkron bitirmiş olabilir: readyState "complete" ise load
+        // olayı hiç gelmez → doğrudan yazdır.
+        if (win.document.readyState === "complete") win.print();
+        else win.addEventListener("load", () => win.print(), { once: true });
     }
 
     async function handleDownloadUdf() {

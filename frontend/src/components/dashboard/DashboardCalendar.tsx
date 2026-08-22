@@ -200,7 +200,7 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
         .empty { color: #666; font-size: 13px; }
         @media print { body { margin: 8mm; } }
       </style></head>
-      <body onload="window.print()">
+      <body>
         <h1>Takvim Raporu</h1>
         <p class="sub">${fmtRange} · ${rows.length} kayıt</p>
         ${body}
@@ -210,6 +210,12 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
     w.document.open();
     w.document.write(html);
     w.document.close();
+    // G100: yazdırma tetiği popup'ın İÇİNDEN (inline onload/script — CSP
+    // script-src-attr/elem ihlali) değil AÇANDAN verilir. document.close()
+    // yüklemeyi senkron bitirmiş olabilir: readyState "complete" ise load
+    // olayı hiç gelmez → doğrudan yazdır.
+    if (w.document.readyState === "complete") w.print();
+    else w.addEventListener("load", () => w.print(), { once: true });
   };
 
   const loadHearings = useCallback(() => {
