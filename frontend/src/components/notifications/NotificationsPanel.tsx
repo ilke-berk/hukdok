@@ -1,6 +1,6 @@
 import { AlertTriangle, BellOff, CheckCheck, Loader2 } from "lucide-react";
 import { formatAgo } from "@/lib/relativeTime";
-import type { NotificationItem } from "@/hooks/useNotifications";
+import type { NotificationItem, NotificationMarkError } from "@/hooks/useNotifications";
 
 export const NOTIFICATIONS_EMPTY_TEXT = "Bildiriminiz yok.";
 
@@ -9,6 +9,12 @@ type NotificationsPanelProps = {
   isLoading: boolean;
   /** Liste ucundan gelen hata metni. `null` = hata yok. */
   error: string | null;
+  /**
+   * Başarısız okundu işaretlemesi (G098). `id` dolu ise o satırın altında,
+   * `null` ise başlıktaki "tümünü okundu işaretle" butonunun altında çizilir.
+   * Toast değil: panel içinde, satır düzeyinde, `listError` üslubuyla.
+   */
+  markError?: NotificationMarkError | null;
   unreadCount: number;
   onSelect: (item: NotificationItem) => void;
   onMarkAllRead: () => void;
@@ -27,11 +33,24 @@ export function NotificationsPanel({
   items,
   isLoading,
   error,
+  markError = null,
   unreadCount,
   onSelect,
   onMarkAllRead,
   onRetry,
 }: NotificationsPanelProps) {
+  const isaretHatasi = (id: number | null) =>
+    markError && markError.id === id ? (
+      <span
+        role="alert"
+        data-testid="mark-error"
+        className="inline-flex items-center gap-1 text-[11px] text-[var(--danger,#b3261e)]"
+      >
+        <AlertTriangle className="w-3 h-3 shrink-0" />
+        {markError.message}
+      </span>
+    ) : null;
+
   return (
     <div
       role="dialog"
@@ -52,6 +71,11 @@ export function NotificationsPanel({
           Tümünü okundu işaretle
         </button>
       </div>
+      {markError && markError.id === null && (
+        <div className="px-3.5 py-1.5 border-b border-[var(--border)] flex justify-end">
+          {isaretHatasi(null)}
+        </div>
+      )}
 
       <div className="max-h-[380px] overflow-y-auto">
         {error ? (
@@ -112,6 +136,9 @@ export function NotificationsPanel({
                       <span className="block mt-0.5 text-[11.5px] text-[var(--fg-muted)] line-clamp-2">
                         {item.body}
                       </span>
+                    )}
+                    {markError && markError.id === item.id && (
+                      <span className="block mt-1">{isaretHatasi(item.id)}</span>
                     )}
                   </span>
                 </button>

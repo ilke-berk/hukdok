@@ -38,6 +38,20 @@ export const NOTIFICATION_POLL_MS = 60_000;
 export const NOTIFICATION_LIST_ERROR =
     "Bildirimler alınamadı — sunucuya ulaşılamadı.";
 
+/** Okundu işaretleme başarısız olunca panelde satır/başlık düzeyinde gösterilen metin (G098). */
+export const NOTIFICATION_MARK_ERROR = "İşaretlenemedi — tekrar deneyin.";
+
+/**
+ * Başarısız okundu işaretlemesinin yeri: `id` dolu = o satır (`markRead`),
+ * `id === null` = "tümünü okundu işaretle" (`markAllRead`). Toast DEĞİL —
+ * G002 toast seli dersi; bir sonraki başarılı işlemde ya da panel kapanınca
+ * temizlenir.
+ */
+export interface NotificationMarkError {
+    id: number | null;
+    message: string;
+}
+
 export interface NotificationsApi {
     unreadCount: number;
     items: NotificationItem[];
@@ -47,6 +61,10 @@ export interface NotificationsApi {
     loadList: () => Promise<void>;
     markRead: (id: number) => Promise<void>;
     markAllRead: () => Promise<void>;
+    // G098'de eklendi; opsiyonel tutuldu ki hook'u mock'layan eski tüketiciler
+    // (NotificationBell.test.tsx `hookState`) alan eklemeden derlenmeye devam etsin.
+    markError?: NotificationMarkError | null;
+    clearMarkError?: () => void;
 }
 
 export const useNotifications = (): NotificationsApi => {
@@ -56,6 +74,9 @@ export const useNotifications = (): NotificationsApi => {
     const [items, setItems] = useState<NotificationItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [listError, setListError] = useState<string | null>(null);
+    const [markError, setMarkError] = useState<NotificationMarkError | null>(null);
+
+    const clearMarkError = useCallback(() => setMarkError(null), []);
 
     const refreshCount = useCallback(async () => {
         const response = await authRequest("/api/notifications/count", "GET");
@@ -81,6 +102,8 @@ export const useNotifications = (): NotificationsApi => {
             // "bildirim yok" ekranı, ulaşılamayan sunucuyu maskelememeli.
             if (!Array.isArray(data)) throw new Error(NOTIFICATION_LIST_ERROR);
             setItems(data as NotificationItem[]);
+            // Başarılı bir işlem bayat işaretleme hatasını temizler.
+            setMarkError(null);
         } catch {
             setItems([]);
             setListError(NOTIFICATION_LIST_ERROR);
@@ -91,7 +114,13 @@ export const useNotifications = (): NotificationsApi => {
 
     const markRead = useCallback(async (id: number) => {
         const response = await authRequest(`/api/notifications/${id}/read`, "POST");
-        if (!response || !response.ok) return;
+        // Başarısızlık (HTTP hatası ya da `authRequest` null = 401/ağ) sessiz
+        // geçilmez: yerel durum DEĞİŞMEZ, satır düzeyinde hata gösterilir.
+        if (!response || !response.ok) {
+            setMarkError({ id, message: NOTIFICATION_MARK_ERROR });
+            return;
+        }
+        setMarkError(null);
         setItems((prev) =>
             prev.map((n) =>
                 n.id === id && !n.is_read
@@ -106,7 +135,11 @@ export const useNotifications = (): NotificationsApi => {
 
     const markAllRead = useCallback(async () => {
         const response = await authRequest("/api/notifications/read-all", "POST");
-        if (!response || !response.ok) return;
+        if (!response || !response.ok) {
+            setMarkError({ id: null, message: NOTIFICATION_MARK_ERROR });
+            return;
+        }
+        setMarkError(null);
         const simdi = new Date().toISOString();
         setItems((prev) =>
             prev.map((n) => (n.is_read ? n : { ...n, is_read: true, read_at: simdi })),
@@ -164,5 +197,7 @@ export const useNotifications = (): NotificationsApi => {
         loadList,
         markRead,
         markAllRead,
+        markError,
+        clearMarkError,
     };
 };
