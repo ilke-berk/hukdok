@@ -57,7 +57,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G097 aynı bant (seri), farklı dosyalar. -->
 
 - [ ] G097 | bant:backend | bagimli:- | Bildirim tarayıcısı: boot telafisi + retention + tz/duruşma sınırı testleri
-- [ ] G098 | bant:frontend | bagimli:- | Zil paneli hijyeni: updater yan etkisi + markRead geri bildirimi + 401 testi
+- [x] G098 | bant:frontend | bagimli:- | Zil paneli hijyeni: updater yan etkisi + markRead geri bildirimi + 401 testi
 
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
