@@ -90,6 +90,28 @@ if ssl_cert and os.path.exists(ssl_cert):
     os.environ["REQUESTS_CA_BUNDLE"] = ssl_cert
 
 
+def warn_if_dev_mode_outside_development() -> bool:
+    """G093 (O6): DEV_MODE=true iken CORS `allow_origin_regex=".*"` +
+    `allow_credentials=True` açılır (aşağıdaki CORS bloğu). Bu kombinasyon prod'da
+    HER origin'in kimlikli istek atabilmesi demektir. G5 guard'ı ters yönü kollar
+    (bypass'ın yanlışlıkla kapalı kalması); bu guard dev modunun yanlışlıkla AÇIK
+    kalmasını kollar. Uygulama bilinçli DÜŞÜRÜLMEZ (lokal geliştirici ENV'i
+    unutunca stack kalkmasın) — sinyal kanalı CRITICAL log (GCP log alarmı).
+    Döndürdüğü bool yalnız test kolaylığı: uyarı basıldıysa True."""
+    if os.getenv("DEV_MODE", "").strip().lower() != "true":
+        return False
+    if os.getenv("ENV") == "development":
+        return False
+    logging.critical(
+        "DEV_MODE=true ama ENV=%r (development değil) — CORS tüm origin'lere (wildcard "
+        "allow_origin_regex='.*') kimlikli istek (allow_credentials=True) açık. Bu ayar "
+        "PROD'DA TEHLİKELİDİR: DEV_MODE yalnız lokal geliştirme içindir, prod'da "
+        "false/tanımsız olmalı.",
+        os.getenv("ENV"),
+    )
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("API Starting...")
@@ -103,6 +125,11 @@ async def lifespan(app: FastAPI):
             "ENV=development + ALLOW_DEV_TENANT=true ayarlı ama DEV_MODE=true değil — "
             "dev auth bypass DEVRE DIŞI. Bu değişkenler prod ortamında set edilmemeli."
         )
+
+    # G093: konfigürasyon çürümesi uyarıları — ikisi de yalnız log basar, düşürmez.
+    warn_if_dev_mode_outside_development()
+    from sharepoint.auth_graph import check_client_secret_expiry
+    check_client_secret_expiry()
 
     # Faz 3-E: lifespan'deki yedek init_db KALDIRILDI — migrasyonun tek sahibi
     # entrypoint'teki migrate.py (3-A'daki "import models" düzeltmesinden beri

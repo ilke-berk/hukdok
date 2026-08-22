@@ -2,6 +2,8 @@ import os
 import time
 import msal
 import logging
+from datetime import date, datetime
+from typing import Optional
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -12,6 +14,55 @@ import health
 # Global variable to hold the MSAL app instances (Dictionary for Multi-Config)
 _MSAL_APPS = {}
 logger = logging.getLogger("AuthGraph")
+
+# G093 (O7): client secret bitiş tarihi uyarı eşiği (gün). Entra'daki secret'ın
+# ömrü başka hiçbir yerde izlenmiyor; bu eşiğin altında açılışta WARNING,
+# tarih geçince CRITICAL basılır. 30 gün = bir rotasyon turu için rahat pay.
+SECRET_EXPIRY_WARN_DAYS = 30
+SECRET_EXPIRES_AT_ENV = "SHAREPOINT_CLIENT_SECRET_EXPIRES_AT"
+
+
+def check_client_secret_expiry(today: Optional[date] = None) -> Optional[str]:
+    """Açılışta (lifespan) bir kez koşar; yalnız log basar, asla istisna atmaz.
+
+    `SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` (ISO tarih, örn. 2027-03-15):
+    - tanımsız/boş → sessiz, hiçbir şey olmaz (geriye tam uyumlu)
+    - kalan gün ≤ SECRET_EXPIRY_WARN_DAYS → WARNING (kalan gün sayısıyla)
+    - tarih geçmiş → CRITICAL
+    - ayrıştırılamıyor → bir kez WARNING, yok sayılır (toleranslı ayrıştırma;
+      config/settings.py sözleşmesiyle aynı — konfig hatası uygulamayı düşürmez)
+    Secret'ın KENDİSİ bu fonksiyona hiç girmez; log satırlarında yalnız tarih var.
+    Dönüş: basılan seviye adı ("warning"/"critical") ya da None — test kolaylığı.
+    /healthz'e bilinçli EKLENMEZ (gövde dışarıya açık).
+    """
+    raw = (os.getenv(SECRET_EXPIRES_AT_ENV) or "").strip()
+    if not raw:
+        return None
+    try:
+        expires_at = datetime.fromisoformat(raw).date()
+    except ValueError:
+        logger.warning(
+            "%s=%r ayrıştırılamadı (ISO tarih bekleniyor, örn. 2027-03-15) — "
+            "secret ömrü izlenmiyor, değer yok sayıldı.", SECRET_EXPIRES_AT_ENV, raw,
+        )
+        return "warning"
+    today = today or date.today()
+    remaining = (expires_at - today).days
+    if remaining < 0:
+        logger.critical(
+            "SharePoint client secret'ının süresi DOLDU (%s, %d gün önce) — Graph "
+            "çağrıları 401 dönecek, arşivleme akışı durur. Entra'da yeni secret "
+            "üretilip SHAREPOINT_CLIENT_SECRET ve %s güncellenmeli.",
+            expires_at.isoformat(), -remaining, SECRET_EXPIRES_AT_ENV,
+        )
+        return "critical"
+    if remaining <= SECRET_EXPIRY_WARN_DAYS:
+        logger.warning(
+            "SharePoint client secret'ının süresi %d gün sonra doluyor (%s) — "
+            "Entra'da rotasyon planlanmalı.", remaining, expires_at.isoformat(),
+        )
+        return "warning"
+    return None
 
 
 def _get_msal_app(config_type: str = "default") -> msal.ConfidentialClientApplication:
