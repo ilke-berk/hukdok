@@ -59,6 +59,14 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G097 | bant:backend | bagimli:- | Bildirim tarayıcısı: boot telafisi + retention + tz/duruşma sınırı testleri
 - [x] G098 | bant:frontend | bagimli:- | Zil paneli hijyeni: updater yan etkisi + markRead geri bildirimi + 401 testi
 
+## Tek görev: cache_manager makedirs yarışı (2026-08-22, kullanıcı isteği)
+
+<!-- 22.08 gece koşularında iki açılışta da görüldü: 2 worker aynı anda
+     ensure_cache_dir → biri EEXIST ile sahte ERROR. Log sözleşmesi + GCP ERROR
+     alarmı + "açılış 0 ERROR" deploy kapısını kirletiyor. Tek satır: exist_ok=True. -->
+
+- [ ] G099 | bant:backend | bagimli:- | cache_manager: makedirs yarışı sahte ERROR basıyor (exist_ok=True)
+
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
 <!-- Kaynak: docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md (§2 bulgular,
