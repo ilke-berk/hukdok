@@ -102,7 +102,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-08-22: 542 passed (41 dosya)
+npm --prefix frontend test                                 # 2026-08-22: 550 passed (43 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
