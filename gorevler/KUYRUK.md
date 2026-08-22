@@ -493,7 +493,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
   postgres `127.0.0.1:5432` — ikisi bilinçli localhost'ta, frontend değil). GCP
   güvenlik duvarı 8080'i kapatıyorsa iş yok; açıksa konteyner nginx'ine TLS'siz
   düz HTTP ile erişilir ve host nginx katmanı atlanır (`/export` yine kapalı —
-  `nginx.conf:62`). Ölçüm ssh gerektirmez:
+  `nginx.conf:75`). Ölçüm ssh gerektirmez:
   `gcloud compute firewall-rules list --format="table(name,direction,allowed[].map().firewall_rule().list(),sourceRanges.list())"`
   Düzeltme `- "127.0.0.1:8080:80"` olur; ÖN KOŞUL host nginx upstream'inin
   gerçekten localhost olduğunun doğrulanması (konfig repo dışında). Recreate ister.

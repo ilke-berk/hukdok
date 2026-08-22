@@ -24,7 +24,7 @@ host 8080 → konteyner 80). Backend portu bilinçli localhost'a sabit: API-key'
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer
 kayıt kaynağıydı). Konteynerler düz HTTP konuşur; TLS prod'daki **host** nginx'inde
 sonlanır (konfigi repo DIŞINDA, sunucuda; iki katmanın timeout'ları eşit tutulmalı —
-bkz. `nginx.conf:10-14`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:62`).
+bkz. `nginx.conf:10-14`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:75`).
 
 **Backend açılışı** (`backend/docker-entrypoint.sh`): önce `migrate.py` tek süreçte
 koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn
@@ -92,7 +92,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-08-13: 1285 passed, 3 skipped
+docker compose exec -T backend python -m pytest            # 2026-08-22: 1954 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -102,7 +102,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-08-13: 332 passed (26 dosya)
+npm --prefix frontend test                                 # 2026-08-22: 517 passed (38 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
@@ -155,7 +155,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
-| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:62`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
+| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:75`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
 | `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları | Süreç dosyaları |
 | `otomasyon/` | Gece koşucuları — güncel: Workflow v3 (`.claude/workflows/gece-kuyrugu.js`, başlatıcı `/gece-kuyrugu`); CLI koşucuları `gece-kosusu.ps1`/`kuyruk-kosusu.ps1` (org ayarı CLI'yi kapattı, 2026-08-18) + loglar | Süreç dosyaları |
 | `infra/` | Sunucu birimleri: systemd timer'lar, watchdog scriptleri (`infra/README.md`) | Güncel |
