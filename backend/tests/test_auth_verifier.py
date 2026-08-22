@@ -37,8 +37,23 @@ def baska_anahtar():
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
+def _iss_v2(tid):
+    return f"https://login.microsoftonline.com/{tid}/v2.0"
+
+
+def _iss_v1(tid):
+    return f"https://sts.windows.net/{tid}/"
+
+
+_ISS_YOK = object()
+
+
 def _token(anahtar, **claims):
-    """Verilen claim'lerle gerçekten RS256 imzalı token üretir."""
+    """Verilen claim'lerle gerçekten RS256 imzalı token üretir.
+
+    `iss` verilmezse `tid`'den v2 biçimiyle türetilir (G092 — issuer artık
+    doğrulanıyor); `iss=_ISS_YOK` ile claim tamamen düşürülür.
+    """
     govde = {
         "tid": TENANT,
         "aud": CLIENT_ID,
@@ -46,6 +61,10 @@ def _token(anahtar, **claims):
         "preferred_username": "test@ornek.gecersiz",
     }
     govde.update(claims)
+    if govde.get("iss") is _ISS_YOK:
+        del govde["iss"]
+    elif "iss" not in govde:
+        govde["iss"] = _iss_v2(govde["tid"])
     return jwt.encode(govde, anahtar, algorithm="RS256")
 
 
@@ -59,6 +78,8 @@ def _ortam(monkeypatch, anahtar):
 
     # `_jwks_clients` SINIF düzeyinde ve testler arası sızar — her testte sıfırla.
     monkeypatch.setattr(AuthVerifier, "_jwks_clients", {})
+    # G092 tek-seferlik gözlem bayrağı da sınıf düzeyinde — testler arası sızmasın.
+    monkeypatch.setattr(AuthVerifier, "_scope_audience_warned", False)
 
     class _SahteJWKS:
         def __init__(self, *a, **kw):
@@ -139,6 +160,99 @@ def test_ALLOWED_TENANTS_bossa_hicbir_tenant_gecmiyor(anahtar, monkeypatch):
     """Env boşsa allowlist boş kümedir → fail-closed (herkese açık DEĞİL)."""
     monkeypatch.setenv("ALLOWED_TENANTS", "")
     assert AuthVerifier.verify_token(_token(anahtar)) is None
+
+
+# ── Issuer doğrulaması (G092) — tid'den türetilir, iki biçim de kabul ────────
+
+def test_iss_v2_bicimi_kabul(anahtar):
+    assert AuthVerifier.verify_token(_token(anahtar, iss=_iss_v2(TENANT))) is not None
+
+
+def test_iss_v1_bicimi_kabul(anahtar):
+    assert AuthVerifier.verify_token(_token(anahtar, iss=_iss_v1(TENANT))) is not None
+
+
+def test_iss_yanlis_reddediliyor(anahtar, caplog):
+    """Doğru tenant + doğru imza + doğru aud; YALNIZ `iss` yanlış → ret."""
+    with caplog.at_level(logging.ERROR, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, iss="https://saldirgan.gecersiz/v2.0")) is None
+    assert any("invalid token" in r.getMessage().lower() for r in caplog.records)
+
+
+def test_iss_baska_tenantin_issi_reddediliyor(anahtar):
+    """`iss` allowlist'teki BAŞKA tenant'a ait olsa bile `tid` ile uyuşmuyorsa ret —
+    sabit bir tenant listesine değil, token'ın kendi tid'ine bağlanır."""
+    assert AuthVerifier.verify_token(_token(anahtar, tid=TENANT, iss=_iss_v2(BASKA_TENANT))) is None
+
+
+def test_iss_claimi_yoksa_reddediliyor(anahtar, caplog):
+    with caplog.at_level(logging.ERROR, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, iss=_ISS_YOK)) is None
+    assert any("iss" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("iss_uret", [_iss_v2, _iss_v1])
+def test_iss_ikinci_tenant_kendi_issiyle_geciyor(anahtar, iss_uret):
+    """`ALLOWED_TENANTS`'taki ikinci tenant kendi iss'iyle (v1 ve v2) geçer."""
+    assert AuthVerifier.verify_token(_token(anahtar, tid=BASKA_TENANT, iss=iss_uret(BASKA_TENANT))) is not None
+
+
+# ── scp/aud gözlem modu (G092) — davranışsız, süreç başına bir WARNING ──────
+
+def _gozlem_kayitlari(caplog):
+    return [r for r in caplog.records if "gözlem" in r.getMessage()]
+
+
+def test_scp_eksik_token_kabul_ama_bir_kez_warning(anahtar, caplog):
+    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, aud=f"api://{CLIENT_ID}")) is not None
+    kayitlar = _gozlem_kayitlari(caplog)
+    assert len(kayitlar) == 1
+    assert kayitlar[0].levelno == logging.WARNING
+    assert "access_as_user=False" in kayitlar[0].getMessage()
+
+
+def test_scp_yanlis_token_kabul_ama_warning(anahtar, caplog):
+    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
+        token = _token(anahtar, aud=f"api://{CLIENT_ID}", scp="User.Read")
+        assert AuthVerifier.verify_token(token) is not None
+    kayitlar = _gozlem_kayitlari(caplog)
+    assert len(kayitlar) == 1
+    assert "'User.Read'" in kayitlar[0].getMessage()
+
+
+def test_ciplak_client_id_audience_kabul_ama_bir_kez_warning(anahtar, caplog):
+    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, aud=CLIENT_ID, scp="access_as_user")) is not None
+    kayitlar = _gozlem_kayitlari(caplog)
+    assert len(kayitlar) == 1
+    assert "ciplak_client_id=True" in kayitlar[0].getMessage()
+    assert CLIENT_ID in kayitlar[0].getMessage()
+
+
+def test_api_onekli_aud_ve_dogru_scp_warning_basmiyor(anahtar, caplog):
+    """Hedef biçim (api:// aud + access_as_user scp) gözlem üretmez."""
+    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
+        token = _token(anahtar, aud=f"api://{CLIENT_ID}", scp="access_as_user Baska.Scope")
+        assert AuthVerifier.verify_token(token) is not None
+    assert _gozlem_kayitlari(caplog) == []
+
+
+def test_gozlem_log_seli_yok_ayni_surecte_tek_warning(anahtar, caplog):
+    with caplog.at_level(logging.WARNING, logger="AuthVerifier"):
+        for _ in range(3):
+            assert AuthVerifier.verify_token(_token(anahtar)) is not None
+    assert len(_gozlem_kayitlari(caplog)) == 1
+
+
+def test_gozlem_logunda_ham_token_yok(anahtar, caplog):
+    token = _token(anahtar)
+    with caplog.at_level(logging.DEBUG, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(token) is not None
+    for r in caplog.records:
+        assert token not in r.getMessage()
+        # imza parçası bile sızmamalı
+        assert token.rsplit(".", 1)[1] not in r.getMessage()
 
 
 # ── DEV bypass — güvenlik kritik: prod'da KAPALI olmalı ──────────────────────

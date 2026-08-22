@@ -15,6 +15,48 @@ class AuthVerifier:
     # Simple cache for JWKS clients to avoid re-creation
     _jwks_clients = {}
 
+    # G092 gözlem modu: `scp`/`aud` biçimi süreç başına BİR KEZ loglanır
+    # (`verify_token` her istekte koşar; istek başına log = log seli).
+    # Desen `routes/export.py::_weak_key_warned` ile aynı. Testler sıfırlar.
+    _scope_audience_warned = False
+
+    @staticmethod
+    def _expected_issuers(tenant_id: str) -> list:
+        """`tid`'den türetilen kabul edilebilir `iss` değerleri.
+
+        Azure AD, app registration'daki `accessTokenAcceptedVersion` ayarına göre
+        v2 (`login.microsoftonline.com/{tid}/v2.0`) ya da v1 (`sts.windows.net/{tid}/`)
+        issuer basar; hangisinin geldiği repodan bilinemez, ikisi de kabul edilir.
+        Sabit tenant gömülmez — `ALLOWED_TENANTS`'taki her tenant kendi iss'iyle geçer.
+        """
+        return [
+            f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+            f"https://sts.windows.net/{tenant_id}/",
+        ]
+
+    @staticmethod
+    def _observe_scope_audience(claims: Dict[str, Any], client_id: str) -> None:
+        """G092 gözlem modu (davranışsız): `scp` ve `aud` biçimini ölçmek için
+        süreç başına bir kez WARNING basar; token KABUL EDİLMEYE devam eder.
+
+        Faz 2 (scp zorunluluğu + audience daraltma) bu çıktıya bakan AYRI bir
+        görevdir. Token'ın kendisi ASLA loglanmaz — yalnız `aud` ve `scp` claim'leri.
+        """
+        if AuthVerifier._scope_audience_warned:
+            return
+        aud = claims.get("aud")
+        scp = claims.get("scp")
+        scopes = scp.split() if isinstance(scp, str) else []
+        scp_eksik = "access_as_user" not in scopes
+        aud_ciplak = aud == client_id
+        if scp_eksik or aud_ciplak:
+            AuthVerifier._scope_audience_warned = True
+            logger.warning(
+                "Auth gözlem (G092, bir kez): audience=%r (ciplak_client_id=%s) scp=%r "
+                "(access_as_user=%s) — token kabul edildi, yalnız ölçüm.",
+                aud, aud_ciplak, scp, not scp_eksik,
+            )
+
     @staticmethod
     def verify_token(token: str) -> Optional[Dict[str, Any]]:
         """
@@ -71,17 +113,23 @@ class AuthVerifier:
 
             allowed_audiences = [client_id, f"api://{client_id}"]
 
+            # 5. Issuer (G092): `iss` tid'den türetilen iki biçimden biri olmalı.
+            # PyJWT `issuer=` listesini kabul eder; `iss` yoksa MissingRequiredClaimError,
+            # listede yoksa InvalidIssuerError — ikisi de InvalidTokenError'a düşer.
             claims = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
                 audience=allowed_audiences,
+                issuer=AuthVerifier._expected_issuers(token_tenant),
                 options={
                     "verify_aud": True,
+                    "verify_iss": True,
                     "verify_exp": True
                 }
             )
-            
+
+            AuthVerifier._observe_scope_audience(claims, client_id)
             return claims
             
         except jwt.ExpiredSignatureError:
