@@ -61,7 +61,6 @@ frontend/
 │   ├── lib/                     # Yardımcı modüller
 │   │   ├── api.ts               # Axios instance + endpoint sarmalayıcıları
 │   │   ├── caseNumberUtils.ts   # Dava no validasyon/format
-│   │   ├── documentUtils.ts     # Belge işlemleri
 │   │   ├── directoryStorage.ts  # File System Access API
 │   │   ├── validation.ts        # Zod şemaları
 │   │   └── utils.ts             # Tailwind clsx birleştirici
