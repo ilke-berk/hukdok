@@ -85,7 +85,7 @@ bırakır (`analyzer.py:93-95`).
 ## 2. Microsoft Graph / SharePoint
 
 İki modül: `backend/sharepoint/auth_graph.py` (app-only token) ve
-`backend/sharepoint/sharepoint_uploader_graph.py` (drive işlemleri). Kimlik `msal==1.34.0`
+`backend/sharepoint/sharepoint_uploader_graph.py` (drive işlemleri). Kimlik `msal==1.37.0`
 ile client-credentials akışıdır; env değişkenleri `SHAREPOINT_TENANT_ID`,
 `SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`.
 
@@ -163,16 +163,16 @@ Tümü **tam sürüme sabitlenmiştir** (`backend/requirements.txt`). Ana kaleml
 
 | Paket | Sürüm | Rol |
 | --- | --- | --- |
-| `fastapi` / `uvicorn` | 0.121.3 / 0.38.0 | web çerçevesi + ASGI sunucu |
+| `fastapi` / `uvicorn` | 0.141.1 / 0.38.0 | web çerçevesi + ASGI sunucu |
 | `google-genai` | 2.11.0 | Gemini |
-| `msal` | 1.34.0 | Graph app-only kimlik |
+| `msal` | 1.37.0 | Graph app-only kimlik |
 | `sqlalchemy` / `psycopg2-binary` | 2.0.25 / 2.9.9 | ORM + PostgreSQL sürücüsü |
 | `pydantic` / `pydantic-settings` | 2.12.5 / 2.11.0 | şema + ayar yükleme |
 | `pymupdf` | 1.26.7 | PDF metin çıkarma |
-| `Pillow` | 11.1.0 | görüntü işleme |
+| `Pillow` | 12.3.0 | görüntü işleme |
 | `slowapi` | 0.1.9 | hız sınırı |
 | `apscheduler` | 3.10.4 | zamanlanmış işler |
-| `PyJWT` / `cryptography` | 2.8.0 / 42.0.5 | Azure AD token doğrulama |
+| `PyJWT` / `cryptography` | 2.13.0 / 50.0.0 | Azure AD token doğrulama |
 | `keyring` / `keyrings.alt` | 25.7.0 / 5.0.0 | vault (Windows Credential Manager) |
 | `defusedxml` | 0.7.1 | güvenli XML ayrıştırma |
 | `reportlab` / `openpyxl` / `flashtext` | 4.2.5 / 3.1.5 / 2.7 | PDF üretimi, Excel, hızlı anahtar kelime araması |
