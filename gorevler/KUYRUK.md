@@ -82,7 +82,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      PDF aç, belge yükle); geri dönüş başlık adına -Report-Only eki. -->
 
 - [x] G100 | bant:frontend | bagimli:- | Yazdırma popup'larında inline script/handler kaldırılır (CSP enforce ön koşulu)
-- [ ] G101 | bant:docs | bagimli:G100 | CSP zorlayıcıya geçer: -Report-Only eki düşer
+- [x] G101 | bant:docs | bagimli:G100 | CSP zorlayıcıya geçer: -Report-Only eki düşer
 
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
