@@ -30,6 +30,12 @@ PATTERNS: "list[tuple[str, str, str]]" = [
     (r"\bCOCUK MAHKEMESI\b",              "ÇOCUK MAHKEMESİ",                      "Ceza"),
     (r"FIKRI.{0,4}SINAI HAKLAR CEZA",     "FİKRİ VE SINAİ HAKLAR CEZA MAHKEMESİ", "Ceza"),
     (r"FIKRI.{0,4}SINAI HAKLAR HUKUK",    "FİKRİ VE SINAİ HAKLAR HUKUK MAHKEMESİ", "Hukuk"),
+    # Hakem heyeti / tahkim MAHKEME DEĞİL, ayrı mercidir — bu yüzden ikisi de çıplak
+    # `\bTUKETICI\b` sıfatından ÖNCE gelir (G071): "İzmir İl Tüketici Hakem Heyeti"
+    # aksi halde TÜKETİCİ MAHKEMESİ yazılıyordu. TAHKİM, HAKEM HEYETİ'nden önce
+    # KALIR: "Sigorta Tahkim … hakem heyeti" tüketici hakem heyeti değildir.
+    (r"\bTAHKIM\b",                       "TAHKİM HEYETİ",                        "Tahkim"),
+    (r"\bHAKEM HEYETI\b",                 "TÜKETİCİ HAKEM HEYETİ",                "Hukuk"),
     (r"\bTUKETICI\b",                     "TÜKETİCİ MAHKEMESİ",                   "Hukuk"),
     (r"\bASLIYE TICARET\b|\bTICARET MAHKEMESI\b", "ASLİYE TİCARET MAHKEMESİ",     "Hukuk"),
     (r"\bASLIYE HUKUK\b",                 "ASLİYE HUKUK MAHKEMESİ",               "Hukuk"),
@@ -54,8 +60,6 @@ PATTERNS: "list[tuple[str, str, str]]" = [
     (r"\bIDARE MAHKEME",                  "İDARE MAHKEMESİ",                      "İdari Yargı"),
     (r"\bVERGI\b",                        "VERGİ MAHKEMESİ",                      "İdari Yargı"),
     (r"\bDANISTAY\b",                     "DANIŞTAY",                             "İdari Yargı"),
-    (r"\bTAHKIM\b",                       "TAHKİM HEYETİ",                        "Tahkim"),
-    (r"\bHAKEM HEYETI\b",                 "TÜKETİCİ HAKEM HEYETİ",                "Hukuk"),
     (r"ARABULUCU",                        "ARABULUCULUK BÜROSU",                  "Arabuluculuk"),
     (r"NOTERLIG|NOTERLIK",                "NOTERLİK",                             "Hukuk"),
     (r"SAVCILI[GK]",                      "CUMHURİYET BAŞSAVCILIĞI",              "Savcılık"),

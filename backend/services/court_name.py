@@ -253,6 +253,36 @@ _SIRA_RE = re.compile(r"(\d+)\s*\.\s*$")
 _BOS_GECIS_RE = re.compile(r"[\s\d./,()\-:'’|]*")
 _GECIS_ISTISNA = ("ADLİYESİ",)
 
+# Yer ile tür çapası arasına giren, KİMLİĞİ DEĞİŞTİRMEYEN kelimeler (G071).
+#
+# Neden KAPALI liste, neden "arada N kelimeye izin ver" değil: genel tolerans yer
+# eşleşmesini gevşetir ve G067/G070'in karşı-örneklerini (metinde geçen ilgisiz bir
+# yer adını mahkemenin yeri sanmak) geri getirir. Liste dışı bir kelime KISMİ
+# bırakır — yanlış yer üretmekten iyidir.
+#
+# Listeye girme ölçütü: kelime mercinin KİMLİĞİNİ değiştirmemeli.
+#   - `NÖBETÇİ`   : nöbetçi mahkeme o mahkemenin kendisidir, ayrı bir yargı yeri değil.
+#   - `CUMHURİYET`: "… Cumhuriyet Başsavcılığı" — kurum adının parçası (kanonik tür
+#                   zaten CUMHURİYET BAŞSAVCILIĞI'dır, yüzey çapası "BAŞSAVCILIĞI").
+#   - `İL`/`İLÇE` : 6502 s.K. "İl/İlçe Tüketici Hakem Heyeti" — idari kademe eki.
+# `ASKERİ YÜKSEK` BİLİNÇLE DIŞARIDA: AYİM bir idare mahkemesi DEĞİL ayrı bir
+# yüksek mahkemedir; dolgu sayılsa "Ankara 3. Askeri Yüksek İdare Mahkemesi"
+# yer=ANKARA + tür=İDARE MAHKEMESİ diye YANLIŞ okunurdu. KISMİ kalması doğrudur.
+DOLGU_KELIMELER: tuple[str, ...] = ("NÖBETÇİ", "CUMHURİYET", "İLÇE", "İL")
+
+_DOLGU_RE = re.compile(
+    _SINIR_ONCE
+    + "(?:"
+    + "|".join(re.escape(k).replace(r"\ ", r"\s+") for k in sorted(DOLGU_KELIMELER, key=len, reverse=True))
+    + ")"
+    + _SINIR_SONRA
+)
+
+# Çapa ile kurum soneki arasına giren en çok 2 kelime ("TÜKETİCİ **HAKEM** HEYETİ").
+# Yalnız HEMEN sağdaki sonek YOKSA denenir ve yalnız kanonik türü DEĞİŞTİRİYORSA
+# kabul edilir — bkz. `_ara_kelimeli_sonek`.
+_TUR_SON_ARALI_RE = re.compile(rf"\s*(?:{_KELIME}\s+){{1,2}}{_TUR_SON}{_SINIR_SONRA}")
+
 
 def _bosluk_sadelestir(metin: str) -> str:
     return re.sub(r"\s+", " ", metin).strip()
@@ -344,7 +374,12 @@ def _tur_capasi(norm: str) -> tuple[int, int, str] | None:
 
 
 def _yer_bul(onek: str, adaylar: tuple[str, ...]) -> str | None:
-    """Öneğin SONUNA en yakın doğrulanmış yeri döner; arada harf varsa vazgeçer."""
+    """Öneğin SONUNA en yakın doğrulanmış yeri döner; arada harf varsa vazgeçer.
+
+    Tek istisna, kimliği değiştirmeyen KAPALI dolgu listesidir (`DOLGU_KELIMELER`):
+    `Şişli Nöbetçi Sulh Hukuk` ve `Bakırköy Cumhuriyet Başsavcılığı` yerini bu
+    yüzden kaybediyordu (G071). Liste dışı her harf yine vazgeçirir.
+    """
     rx = _yer_regex(adaylar)
     if rx is None:
         return None
@@ -356,9 +391,29 @@ def _yer_bul(onek: str, adaylar: tuple[str, ...]) -> str | None:
     gecis = onek[son.end():]
     for istisna in _GECIS_ISTISNA:
         gecis = gecis.replace(istisna, " ")
+    gecis = _DOLGU_RE.sub(" ", gecis)
     if not _BOS_GECIS_RE.fullmatch(gecis):
         return None
     return _bosluk_sadelestir(son.group(0))
+
+
+def _ara_kelimeli_sonek(norm: str, bas: int, son: int) -> int:
+    """Çapa ile kurum soneki arasına giren 1-2 kelimeyi tür yüzeyine katar.
+
+    Yalnız kanonik tür DEĞİŞİYORSA uygulanır — yani ara kelimeler mercinin
+    kendisini değiştiriyorsa. `TÜKETİCİ` + `HAKEM HEYETİ` böyle bir çifttir
+    (hakem heyeti mahkeme değildir); buna karşılık `… MAHKEMESİ KALEM MÜDÜRLÜĞÜ`
+    gibi ekler türü değiştirmez ve yüzeye KATILMAZ. Bu kısıt olmasa genişleme
+    mevcut yüzeyleri sessizce büyütürdü.
+    """
+    m = _TUR_SON_ARALI_RE.match(norm, son)
+    if not m:
+        return son
+    dar = derive_judicial_unit(_bosluk_sadelestir(norm[bas:son]))
+    genis = derive_judicial_unit(_bosluk_sadelestir(norm[bas:m.end()]))
+    if genis and genis != dar:
+        return m.end()
+    return son
 
 
 def _sira_ve_yer(onek: str, adaylar: tuple[str, ...]) -> tuple[int | None, str | None]:
@@ -478,6 +533,10 @@ def parse_court_name(
     sonek = _TUR_SON_RE.match(norm, son)
     if sonek:
         son = sonek.end()
+    elif capa is not None:
+        # Sonek 1-2 kelime ötedeyse ve tür bunu gerektiriyorsa genişlet (G071):
+        # "TÜKETİCİ **HAKEM HEYETİ**" bir mahkeme değildir.
+        son = _ara_kelimeli_sonek(norm, bas, son)
 
     # Daire: önce çapanın İÇİNDE ara (BAM kalıbı daireyi de yutar), sonra sağında
     daire_no: int | None = None
