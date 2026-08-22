@@ -3,6 +3,42 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Kimlik/token sertleştirmesi (2026-08-22, kullanıcı isteği)
+
+<!-- Kaynak: 2026-08-22 token güvenliği analizi (bu oturum; kalıcı özeti G094'ün
+     yazacağı docs/mimari/kimlik-ve-token.md olacak). Analiz koddan doğrulandı:
+     MSAL Browser v5 + PKCE, sessionStorage, api:// scope'lu access token, backend
+     stateless JWT doğrulaması. Sekiz bulgudan ÜÇÜ gözetimsiz koşulabilir.
+
+     ÜÇÜ NEDEN GÖZETİMSİZ KOŞAMIYOR (bilinçli kuyruk DIŞI, kullanıcı adımı bekliyor):
+     - CSP zorlayıcıya geçiş (O2): G091'in kendi notu bunu ayrı göreve bıraktı —
+       ön koşul, tarayıcı turuyla toplanan ihlal listesi. Gece oturumu tarayıcı açamaz.
+     - scp zorunluluğu + audience daraltma (O4 faz 2): Azure AD'nin gerçekte hangi
+       aud/scp bastığı app registration ayarına bağlı, repodan bilinemez. G092 gözlem
+       WARNING'lerini basacak; faz 2 O ÇIKTIYA bakan ayrı görev.
+     - Token iptali gecikmesi / CAE (O1): mimari karar, kullanıcı onayı gerekir.
+
+     SIRA: G092 ve G093 backend bandı (zaten seri). G094 docs bandıdır ama İKİSİNİ
+     DE bekler — doküman son hale karşı yazılmazsa yazıldığı gece bayatlar.
+     G095 frontend bandıdır ve hiçbirine bağlı değil: backend bandıyla PARALEL
+     koşabilir (tek paralellik fırsatı bu). Dosya kesişimi yok — G092/G093 backend/**,
+     G095 yalnız frontend/src/lib/api.ts + hooks/useIdleTimeout.ts.
+
+     G095 KAYNAĞI: 2026-08-22 süre/çakışma incelemesi. Token ömürleri arasında
+     kullanıcıya hata olarak yansıyan çakışma BULUNMADI (access token bitişini MSAL'in
+     300 sn yenileme payı + api.ts'in 401-tekrar katmanı yutuyor; PROCESS_CACHE 30 dk
+     dolsa bile /confirm dosya fallback'ine düşüyor). Çıkan iki kusur kozmetik/israf
+     düzeyinde ve G095'te toplandı.
+
+     G092 DEPLOY ÖNCESİ İNSAN TURU İSTER: iss zorlaması gerçek Azure AD token'ına
+     karşı hiç denenmemiş olur (testler sentetik claim'lerle koşuyor). Lokal gerçek
+     giriş turu görev dosyasındaki "KAPSAMADIĞI doğrulama" başlığında. -->
+
+- [ ] G092 | bant:backend | bagimli:- | Token doğrulama: issuer kontrolü + scp/aud gözlem modu
+- [ ] G093 | bant:backend | bagimli:- | Konfigürasyon uyarıları: DEV_MODE prod guard + SharePoint secret expiry
+- [ ] G094 | bant:docs | bagimli:G092,G093,G095 | Kimlik ve token mimarisi dokümanı
+- [ ] G095 | bant:frontend | bagimli:- | Oturum kapanış yolu: #/login artığı + boşa giden 401 turu
+
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
 <!-- Kaynak: docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md (§2 bulgular,
