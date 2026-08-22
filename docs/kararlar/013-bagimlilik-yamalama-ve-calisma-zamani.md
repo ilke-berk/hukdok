@@ -148,7 +148,7 @@ Kalan 5 PyJWT açığının bu koda uygulanabilirliği (yükseltme gerekçesinin
 python-multipart tarafının uygulanabilirliği de aynı yöntemle ayrıştı:
 `UPLOAD_DIR`/`UPLOAD_KEEP_FILENAME` path traversal'ı (0.0.22) **uygulanmaz** — starlette bu
 seçenekleri kullanmaz; preamble/epilogue ve part-header DoS'ları (0.0.26/0.0.27)
-**ulaşılabilir** — `nginx.conf:7,78` `client_max_body_size 50M` bayt sayısını sınırlar,
+**ulaşılabilir** — `nginx.conf:7,91` `client_max_body_size 50M` bayt sayısını sınırlar,
 CPU'yu sınırlamaz; `QuerystringParser` `;` ayırıcı farklılığı (0.0.30) `Form(...)` uçları
 üzerinden **ulaşılabilir** (`routes/processing.py:306+`).
 

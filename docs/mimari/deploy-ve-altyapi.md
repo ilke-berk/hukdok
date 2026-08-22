@@ -147,7 +147,7 @@ Aynı uç dört yerden yoklanır ve dördü de farklı şey yapar:
 | --- | --- | --- |
 | `deploy.sh` kapısı | 3 sn, 120 sn tavan | deploy `exit 1` + rollback komutu |
 | Docker healthcheck (`docker-compose.yml:99-110`) | 30 sn, 3 retry, 60 sn start_period | konteyner "unhealthy" **işaretlenir**; Docker restart ETMEZ (`:104-105`) |
-| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:49-59`) |
+| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:62-72`) |
 | GCP uptime check | — | alarm |
 
 Healthcheck komutu `curl` değil stdlib `urllib` kullanır — `python:slim` imajında `curl`
@@ -290,3 +290,38 @@ Karar kaydı: [`006-gece-otomasyonu-serit-modeli.md`](../kararlar/006-gece-otoma
 
 Her iki koşucu da koşulsuz yasaklarla kilitlidir: `git push`, `ssh`, `gcloud`,
 deploy/rollback scriptleri, `docker compose down -v`, `git reset --hard`.
+
+## 11. Konteyner nginx güvenlik başlıkları (G091)
+
+Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:38-54`): `X-Frame-Options`,
+`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ve **yalnızca
+`Content-Security-Policy-Report-Only`** — zorlayıcı `Content-Security-Policy`
+bilerek yoktur. Beşi de `always` ile biter, yani hata yanıtlarında (413/429/5xx) da gider.
+
+CSP'nin Report-Only olmasının sebebi: bilinen bir XSS yolu yok (React varsayılan kaçışı
+var, `dangerouslySetInnerHTML` hiç kullanılmıyor), yani bu bir açık kapatma değil
+derinlemesine savunmadır; ve `frontend/index.html:38`'deki inline
+`<script type="application/ld+json">` bloğunun `script-src`e tabi olup olmadığı tarayıcı
+sürümüne göre değiştiği için ölçmeden zorlayıcı politika yazmak sayfayı kırabilir.
+**Zorlayıcıya geçişin ön koşulu:** imaj yeniden kurulduktan sonra (`docker compose build
+frontend && docker compose up -d frontend`) gerçek bir tur (login → dava listesi → belge
+yükleme) atılıp tarayıcı konsolundaki CSP ihlal raporlarının toplanması; politika o listeye
+göre daraltılır ve `-Report-Only` eki ancak ondan sonra düşürülür.
+
+Politikanın izin verdiği dış kaynaklar ve gerekçeleri koddan doğrulanmıştır:
+
+| Direktif | Kaynak | Neden |
+| --- | --- | --- |
+| `style-src` | `https://fonts.googleapis.com` + `'unsafe-inline'` | Google Fonts stil dosyası (`frontend/index.html:53-55`); `'unsafe-inline'` Radix/Tailwind'in çalışma zamanında enjekte ettiği inline stiller için — daraltması ayrı iş |
+| `font-src` | `https://fonts.gstatic.com` | aynı `<link>` zincirinin çektiği font dosyaları |
+| `connect-src` / `frame-src` | `https://login.microsoftonline.com` | MSAL sessiz token yenilemesi bu origin'e iframe açar (`frontend/src/config/msalConfig.ts:12`) |
+| `img-src` | `data:` `blob:` | `URL.createObjectURL` ile üretilen indirme/önizleme bağlantıları |
+
+Sözdizimi denetimi çalışan stack'e dokunmadan, tek kullanımlık konteynerle koşar
+(`backend` upstream'i çözülebilsin diye compose ağına bağlanır):
+
+```
+docker run --rm --network hukudok-automator-main_hukudok-network \
+  -v "//c/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  nginx:alpine nginx -t
+```
