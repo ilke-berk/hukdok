@@ -36,7 +36,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G092 | bant:backend | bagimli:- | Token doğrulama: issuer kontrolü + scp/aud gözlem modu
 - [x] G093 | bant:backend | bagimli:- | Konfigürasyon uyarıları: DEV_MODE prod guard + SharePoint secret expiry
-- [ ] G094 | bant:docs | bagimli:G092,G093,G095 | Kimlik ve token mimarisi dokümanı
+- [x] G094 | bant:docs | bagimli:G092,G093,G095 | Kimlik ve token mimarisi dokümanı
 - [x] G095 | bant:frontend | bagimli:- | Oturum kapanış yolu: #/login artığı + boşa giden 401 turu
 
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
