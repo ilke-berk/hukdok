@@ -39,6 +39,7 @@ metni yalnız o mailin sonucunu bilgi olarak taşır.
 """
 import datetime as dt
 import logging
+import os
 from typing import Any, Optional, cast
 
 from sqlalchemy.exc import IntegrityError
@@ -48,6 +49,95 @@ from database import SessionLocal
 import models
 
 logger = logging.getLogger(__name__)
+
+# ─── Retention (G097) ────────────────────────────────────────────────────────
+#
+# Tablo başka hiçbir yoldan küçülmez: her eşik daralması yeni satır açar
+# (süre×alıcı başına 4'e kadar), `dismissed_at`'i yazan uç yok. Purge kuralı
+# tek cümle: **okunmuş VE N günden eski satır silinir; okunmamış satır ASLA
+# silinmez** — kullanıcı görmediği uyarıyı kaybetmesin. Okunmamış-ama-eski
+# satırlar sayılıp loglanır ("okunmayan uyarı birikiyor mu" ölçüm noktası).
+#
+# N `config/settings.py` sözleşmesiyle okunur: boot'ta bir kez, bozuk değer
+# uygulamayı DÜŞÜRMEZ (WARNING + varsayılan). settings.py'ye alan eklenmedi —
+# bildirim politikası limit/bütçe değil, kendi modülünde durur (confirm
+# idempotency RETENTION_DAYS'i gibi).
+DEFAULT_NOTIFICATION_RETENTION_DAYS = 90
+
+
+def _parse_retention_days(raw: Optional[str]) -> int:
+    """`NOTIFICATION_RETENTION_DAYS` değerini toleranslı ayrıştırır.
+
+    Boş/eksik → varsayılan. Sayı değilse ya da 1'den küçükse WARNING +
+    varsayılan: 0 gün "bugün okunanı bu gece sil" demek olurdu, negatif anlamsız.
+    """
+    if raw is None or not raw.strip():
+        return DEFAULT_NOTIFICATION_RETENTION_DAYS
+    try:
+        gun = int(raw.strip())
+    except (TypeError, ValueError):
+        gun = 0
+    if gun < 1:
+        logger.warning(
+            "Gecersiz env degeri NOTIFICATION_RETENTION_DAYS=%r — varsayilan kullaniliyor: %s",
+            raw, DEFAULT_NOTIFICATION_RETENTION_DAYS,
+        )
+        return DEFAULT_NOTIFICATION_RETENTION_DAYS
+    return gun
+
+
+#: Okunmuş bildirimin saklanma süresi (gün). Tek kaynak; tüketici burayı okur.
+NOTIFICATION_RETENTION_DAYS = _parse_retention_days(os.environ.get("NOTIFICATION_RETENTION_DAYS"))
+
+
+def _retention_cutoff(bugun: Optional[dt.date]) -> dt.datetime:
+    """`created_at < cutoff` sınırı (UTC, tz-aware — kolon timestamptz)."""
+    gun = bugun or dt.datetime.now(dt.timezone.utc).date()
+    baslangic = dt.datetime(gun.year, gun.month, gun.day, tzinfo=dt.timezone.utc)
+    return baslangic - dt.timedelta(days=NOTIFICATION_RETENTION_DAYS)
+
+
+def count_unread_stale(bugun: Optional[dt.date] = None, db: Optional[Session] = None) -> int:
+    """Okunmamış ama retention sınırından eski satır sayısı (silinmez, ölçülür)."""
+    session = db if db is not None else SessionLocal()
+    try:
+        cutoff = _retention_cutoff(bugun)
+        return int(
+            session.query(models.Notification.id)
+            .filter(models.Notification.read_at.is_(None))
+            .filter(models.Notification.created_at < cutoff)
+            .count()
+        )
+    finally:
+        if db is None:
+            session.close()
+
+
+def purge_old_notifications(bugun: Optional[dt.date] = None, db: Optional[Session] = None) -> int:
+    """Okunmuş (`read_at IS NOT NULL`) ve N günden eski bildirimleri siler.
+
+    Okunmamış satıra DOKUNMAZ. `bugun` yalnız test/elle koşu içindir (sınır
+    UTC gün başından geriye N gün). Silinen satır sayısını döner; commit
+    burada yapılır. İstisna çağırana yükselir — nihai başarısızlığı loglamak
+    çağıranın işidir (modül sözleşmesi).
+    """
+    session = db if db is not None else SessionLocal()
+    try:
+        cutoff = _retention_cutoff(bugun)
+        silinen = (
+            session.query(models.Notification)
+            .filter(models.Notification.read_at.isnot(None))
+            .filter(models.Notification.created_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        session.commit()
+        return int(silinen or 0)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        if db is None:
+            session.close()
 
 # "Belge işlendi" bildiriminin tür etiketi (frontend filtresi bunu tüketecek).
 DOC_PROCESSED_TYPE = "belge_islendi"

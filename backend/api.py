@@ -234,6 +234,13 @@ async def lifespan(app: FastAPI):
             # Backend kapalıyken kaçırılan günleri arka planda tamamla
             threading.Thread(target=catch_up_missed_reports, daemon=True).start()
             logging.info("Catch-up thread başlatıldı.")
+            # G097: süre/duruşma taraması için de boot telafisi — lider
+            # 06:00-07:00 TR arasında kapalıysa misfire penceresi (3600 sn)
+            # kaçar ve o gün tarama hiç koşmazdı. Aynı desen: bir kez, thread'de,
+            # yalnız liderde; dedupe aynı gün cron'la çift satır üretmez.
+            from services.deadline_scanner import boot_catch_up_scan
+            threading.Thread(target=boot_catch_up_scan, daemon=True).start()
+            logging.info("Süre tarayıcısı boot telafi thread'i başlatıldı.")
         except ImportError:
             logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
 

@@ -37,6 +37,28 @@ Satır düzeyi başarısızlık **WARNING** (tur devam eder), turun tamamı içi
 Tur her hâlükârda biter, ertesi gece kaldığı yerden devam eder — bildirim üretimi
 idempotent olduğu için kaçırılan gece veri kaybı değildir.
 
+Boot telafisi (G097)
+--------------------
+Cron job'ının `misfire_grace_time` penceresi bir saattir: lider 06:00-07:00 TR
+arasında kapalıysa o gün tarama HİÇ koşmaz. Bu yüzden lider worker boot'unda
+(`api.py` lifespan, `is_leader` bloğu) `boot_catch_up_scan` arka plan thread'inde
+**bir kez** `scan_deadlines` çağırır — günlük raporun `catch_up_missed_reports`
+deseni. Dedupe anahtarı eşik+alıcı bazlı olduğundan aynı gün cron + telafi
+birlikte koşsa da satır ikilenmez. Telafi kaçırılan günün eşiğini değil,
+**bugünün kalan gününe uyan en dar eşiği** üretir (T-7 günü kaçtıysa T-5'te
+yine `:7:` anahtarı). **Kaçan T-1 telafi EDİLMEZ**: son gün geçtiyse kalan<0 →
+`esik_sec` None — sistem geçmiş bir süreyi "yaklaşıyor" diye duyuramaz; bu
+bilinçli kabuldür. Telafi hatası yutulur ve TEK WARNING loglanır (deneme
+düzeyi — nihai iş gece cron'undur).
+
+Retention (G097)
+----------------
+Tur sonunda aynı job içinde (yeni job/scheduler YOK, 3-E devri)
+`services.notifications.purge_old_notifications` koşar: okunmuş ve
+`NOTIFICATION_RETENTION_DAYS` (varsayılan 90) günden eski satırlar silinir,
+okunmamış satır ASLA silinmez; okunmamış-eski sayısı `okunmamis_eski` sayacı
+olarak loglanır. Silinen sayı dönüş sözlüğünde `purged` anahtarıdır.
+
 Kapsam dışı (bilinçli): e-posta gönderimi YOK (kanal yalnız uygulama içi, kullanıcı
 kararı 2026-08-20); `cases` üzerindeki tek-slot karar alanları taranmaz (tarihçe
 tablosu tek gerçek kaynaktır, G062).
@@ -59,7 +81,12 @@ from services.notification_targeting import resolve_case_recipients, resolve_rec
 # Dava künyesi ("ofis no · esas no · mahkeme") G082 ile AYNI biçimde yazılır;
 # ikinci bir kopya tutulmaz (notification_targeting'in lawyer_resolver'dan
 # normalize edici alması ile aynı gerekçe: biçim iki yerde ayrışmasın).
-from services.notifications import _case_label, create_notification
+from services.notifications import (
+    _case_label,
+    count_unread_stale,
+    create_notification,
+    purge_old_notifications,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +134,8 @@ _SAYAC_ANAHTARLARI = (
     "kuralsiz",
     "atlanan",
     "hata",
+    "purged",          # retention ile silinen okunmuş-eski satır (G097)
+    "okunmamis_eski",  # okunmamış ama retention sınırını aşmış satır — SİLİNMEZ, ölçülür
 )
 
 
@@ -282,12 +311,26 @@ def _durusma_govdesi(case: Any, durusma: Any, kalan: int) -> str:
 
 
 def _durusma_adaylari(db: Session, gun: date, sayaclar: dict[str, int]) -> list[_Aday]:
-    """Gelecek duruşmalardan yaklaşanları çıkarır."""
-    rows = (
+    """Gelecek duruşmalardan yaklaşanları çıkarır.
+
+    Üst sınır SQL'de (G097): en geniş eşik 3 gün → daha uzak duruşma zaten
+    `esik_sec` ile elenirdi; tüm gelecek takvimi çekip Python'da elemek tablo
+    büyüdükçe boşuna I/O olurdu. `atlanan` sayacının anlamı korunur ("eşik
+    dışı gelecek duruşma"): sınır dışı kalanlar satır çekilmeden COUNT ile
+    sayılır — sayaç sözleşmesi (G085 testleri) değişmez, veri transferi düşer.
+    """
+    ust_sinir = gun + timedelta(days=max(DURUSMA_ESIKLERI))
+    temel = (
         db.query(models.HearingDate, models.Case)
         .join(models.Case, models.Case.id == models.HearingDate.case_id)
         .filter(models.HearingDate.hearing_date >= gun)
         .filter(models.Case.deleted_at.is_(None))
+    )
+    sayaclar["atlanan"] += int(
+        temel.filter(models.HearingDate.hearing_date > ust_sinir).count()
+    )
+    rows = (
+        temel.filter(models.HearingDate.hearing_date <= ust_sinir)
         .order_by(models.HearingDate.id)
         .all()
     )
@@ -402,8 +445,38 @@ def scan_deadlines(bugun: Optional[date] = None, db: Optional[Session] = None) -
                 "tur tamamlandı, ertesi gece yeniden denenecek.",
                 sayaclar["hata"],
             )
+
+        # Retention (G097): aynı job, tur sonunda. Başarısızlığı turu
+        # başarısız yapmaz — bildirimler yazıldı; temizlik ertesi gece
+        # yeniden denenir (WARNING, deneme düzeyi).
+        try:
+            sayaclar["purged"] = purge_old_notifications(bugun=gun, db=session)
+            sayaclar["okunmamis_eski"] = count_unread_stale(bugun=gun, db=session)
+        except Exception as e:
+            logger.warning("Bildirim retention temizliği yapılamadı: %s", e)
+        if sayaclar["okunmamis_eski"]:
+            logger.info(
+                "Okunmamış ve retention sınırını aşmış bildirim: %s (silinmedi)",
+                sayaclar["okunmamis_eski"],
+            )
         logger.info("Süre taraması bitti (%s): %s", gun.isoformat(), sayaclar)
         return sayaclar
     finally:
         if db is None:
             session.close()
+
+
+def boot_catch_up_scan() -> Optional[dict[str, int]]:
+    """Lider boot'unda bir kerelik telafi taraması (modül şerhi: Boot telafisi).
+
+    `api.py` bunu daemon thread'de çağırır; lifespan'i bloklamaz. Her istisna
+    burada yutulur ve TEK WARNING loglanır — thread'den taşan istisna kimseye
+    ulaşmaz, gece cron'u asıl iştir. Başarıda sayaçları döner (test/elle koşu).
+    """
+    try:
+        sayaclar = scan_deadlines()
+        logger.info("Boot telafi taraması bitti: %s", sayaclar)
+        return sayaclar
+    except Exception as e:
+        logger.warning("Boot telafi taraması yapılamadı (gece cron'u yeniden dener): %s", e)
+        return None
