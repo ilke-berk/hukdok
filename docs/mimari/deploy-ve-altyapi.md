@@ -294,19 +294,40 @@ deploy/rollback scriptleri, `docker compose down -v`, `git reset --hard`.
 ## 11. Konteyner nginx güvenlik başlıkları (G091)
 
 Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:38-54`): `X-Frame-Options`,
-`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ve **yalnızca
-`Content-Security-Policy-Report-Only`** — zorlayıcı `Content-Security-Policy`
-bilerek yoktur. Beşi de `always` ile biter, yani hata yanıtlarında (413/429/5xx) da gider.
+`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ve **zorlayıcı
+`Content-Security-Policy`** (`nginx.conf:54`, G101). Beşi de `always` ile biter, yani hata
+yanıtlarında (413/429/5xx) da gider. `Content-Security-Policy-Report-Only` başlığı artık
+yoktur.
 
-CSP'nin Report-Only olmasının sebebi: bilinen bir XSS yolu yok (React varsayılan kaçışı
-var, `dangerouslySetInnerHTML` hiç kullanılmıyor), yani bu bir açık kapatma değil
-derinlemesine savunmadır; ve `frontend/index.html:38`'deki inline
+**Tarihçe — neden önce Report-Only kondu (G091):** bilinen bir XSS yolu yok (React
+varsayılan kaçışı var, `dangerouslySetInnerHTML` hiç kullanılmıyor), yani bu bir açık
+kapatma değil derinlemesine savunmadır; ve `frontend/index.html:38`'deki inline
 `<script type="application/ld+json">` bloğunun `script-src`e tabi olup olmadığı tarayıcı
-sürümüne göre değiştiği için ölçmeden zorlayıcı politika yazmak sayfayı kırabilir.
-**Zorlayıcıya geçişin ön koşulu:** imaj yeniden kurulduktan sonra (`docker compose build
-frontend && docker compose up -d frontend`) gerçek bir tur (login → dava listesi → belge
-yükleme) atılıp tarayıcı konsolundaki CSP ihlal raporlarının toplanması; politika o listeye
-göre daraltılır ve `-Report-Only` eki ancak ondan sonra düşürülür.
+sürümüne göre değiştiği için ölçmeden zorlayıcı politika yazmak sayfayı kırabilirdi.
+Enforce'a geçişin ön koşulu (imaj yeniden kurulup gerçek bir turla ihlal listesinin
+toplanması) **geçildi (G101)**; politika metni G091'dekiyle birebir aynı kaldı, yalnız
+başlık adı değişti.
+
+**2026-08-22 ihlal turu (lokal 8080, Report-Only başlıkla):**
+
+- Gezilen: login (SSO), pano, `/upload`, `/cases`, `/clients`, `/activity-history`,
+  `/admin`, tema geçişi, zil paneli.
+- `script-src`, `style-src`, `font-src`, `img-src`, `frame-src`: **0 ihlal**. Google Fonts
+  yüklendi, `index.html`'deki inline `ld+json` bloğu raporlanmadı, MSAL yönlendirmesi sorunsuz.
+- `connect-src`: 32 ihlal, hepsi `http://localhost:8001` — yalnız lokal `.env`'deki
+  `VITE_API_URL` artefaktı. `.env.example`/compose/`deploy.sh`'de bu değişken yok; prod API'yi
+  aynı origin'den konteyner nginx proxy'siyle çağırır, dolayısıyla prod'da oluşmaz.
+- Kod okumasıyla bulunan iki inline-script yazdırma popup'ı (Takvim "Yazdır", Yetki Belgesi
+  "Yazdır") turun tetiklemediği enforce kırıcılardı; **G100** ön koşul olarak bunları
+  kapattı (tetik popup'ın içinden değil açandan verilir).
+
+**Deploy sonrası insan turu (zorunlu):** login → pano → Takvim "Yazdır" → Yetki Belgesi
+"Yazdır" (G100) → dava kartından PDF açma → belge yükleme. Tarayıcı konsolunda "Refused to"
+satırı **olmamalı**. İhlal görülürse geri dönüş: `nginx.conf:54`'teki başlık adına
+`-Report-Only` ekini geri koymak — tek satır, ama başlık imajdan geldiği için frontend imajı
+rebuild ister (`docker compose build frontend && docker compose up -d frontend`; prod'da
+`deploy.sh`). Lokal `.env`'de `VITE_API_URL` doluysa `connect-src` ihlali görülür — lokal
+artefakttır, prod'u temsil etmez.
 
 Politikanın izin verdiği dış kaynaklar ve gerekçeleri koddan doğrulanmıştır:
 
