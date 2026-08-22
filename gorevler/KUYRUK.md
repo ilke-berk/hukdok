@@ -3,6 +3,39 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
+
+<!-- Kaynak: docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md (§2 bulgular,
+     §5 düzeltme planı). Denetim 7864baf (prod) → 3a5801c arası 51 commit'i taradı:
+     HTTP yüzeyi 140 → 146 uç (+8 yeni / -2 kaldırılan), yeni uçların hepsi auth+tenant
+     kapılı, uygulama kodunda yeni kritik açık YOK. Prod bağımlılıkları pip-audit ile
+     temiz. Düzeltme gerektiren dört kalem burada.
+
+     ÖLÇÜMLE BELİRLENEN İKİ NOKTA (tahmin değil, kurup denetleyerek):
+     1. Vite 5.x hattına yama GELMEDİ — 5.4.21 (hattın sonu) hâlâ 1 high + 1 moderate.
+        İlk temiz sürüm 6.4.3. npm'in önerdiği 8.2.2 lovable-tagger peer'ini
+        (vite >=5.0.0 <8.0.0) kırar → hedef 6.4.3.
+     2. frontend/src/lib/documentUtils.ts ÖLÜ (hiçbir yerden import edilmiyor) ama
+        cdnjs'ten SRI'sız script enjekte ediyor → silinir, CSP'yi de sadeleştirir.
+
+     Sıra: G088 ve G090 frontend bandı (aynı bant, seri; farklı dosyalar, zincir yok).
+     G089 ana dizinde koşar (npm paketi — worktree'de kalıcı olmaz) ve G088'i bekler
+     (ikisi de vite.config.ts'e dokunabilir). G091 G090'ı bekler.
+     G089 ve G091 DEPLOY GEREKTİRİR; 19.08 direktifi gereği önce LOKALDE doğrulanır.
+
+     GÖZETİMSİZ KOŞUDAN BİLİNÇLİ OLARAK ÇIKARILAN İKİ DOĞRULAMA (2026-08-22 kararı):
+     - G089 tarayıcı duman testi: major sürüm geçişinin riski derleme değil çalışma
+       zamanıdır; gece oturumu tarayıcı açamaz. Kapılar yeşil olsa bile deploy öncesi
+       insan turu ŞART (görev dosyasında "KAPSAMADIĞI doğrulama" başlığı).
+     - G091 `docker compose build/up`: docs bandı worktree'de koşar; ana stack'i
+       ilgisiz bir işin yan etkisi olarak yeniden kurmak kabul edilmez. Görev yalnız
+       tek seferlik konteynerle `nginx -t` yapar; başlığın canlı doğrulaması insana kalır. -->
+
+- [ ] G088 | bant:frontend | bagimli:- | Vite dev sunucusu 127.0.0.1'e bağlanır (LAN vektörü)
+- [ ] G090 | bant:frontend | bagimli:- | Ölü pdf.js CDN yükleyicisi silinir (SRI'sız üçüncü taraf script)
+- [ ] G089 | bant:backend | bagimli:G088 | Vite 5.4.19 → 6.4.3; CI dev-zincir kapısı bloklayıcıya döner
+- [ ] G091 | bant:docs | bagimli:G090 | CSP başlığı (Report-Only) konteyner nginx'ine eklenir
+
 ## ÖNCELİK 1 — Uygulama içi bildirim sistemi + pano placeholder'ları (2026-08-20, kullanıcı kararı)
 
 <!-- Kullanıcı 2026-08-20'de "işlenen belgenin bildirimi sorumlu avukata gitsin, ayrıca
@@ -455,6 +488,24 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 ## Kullanıcı kararı bekleyenler (otomasyona GİRMEZ — ssh/deploy/veri kararı ister)
 
+- **Güvenlik D-3: prod'da 8080 portu dışarı açık mı?** `docker-compose.yml:126`
+  frontend'i `"8080:80"` ile TÜM arayüzlere yayınlıyor (backend `127.0.0.1:8001`,
+  postgres `127.0.0.1:5432` — ikisi bilinçli localhost'ta, frontend değil). GCP
+  güvenlik duvarı 8080'i kapatıyorsa iş yok; açıksa konteyner nginx'ine TLS'siz
+  düz HTTP ile erişilir ve host nginx katmanı atlanır (`/export` yine kapalı —
+  `nginx.conf:62`). Ölçüm ssh gerektirmez:
+  `gcloud compute firewall-rules list --format="table(name,direction,allowed[].map().firewall_rule().list(),sourceRanges.list())"`
+  Düzeltme `- "127.0.0.1:8080:80"` olur; ÖN KOŞUL host nginx upstream'inin
+  gerçekten localhost olduğunun doğrulanması (konfig repo dışında). Recreate ister.
+  Ayrıntı: `docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md` §5 D-3
+- **Güvenlik D-4: idari bildirim uçlarının yetkisi.** `/api/notifications/overview`
+  ve `/unresolved-targets` (`routes/notifications.py:181,245`) `require_admin`
+  DEĞİL — giriş yapan herkes başkalarına giden süre/duruşma uyarılarını ve okunma
+  durumunu görüyor. Bu 2026-08-20 kararınız (rol kavramı yok, "idari pano" bir
+  localStorage toggle'ı) ve denetim bunu kod hatası saymıyor; sızan alanlar
+  sınırlı (başlıklarda müvekkil PII yok, gövde yayınlanmıyor). Geri almak
+  isterseniz iki satır + `test_g087_bildirim_yonetim_uclari.py` güncellemesi.
+  **Otomasyona verilmedi: kararınızı sessizce tersine çevirmemek için.**
 - 0.5 ofis no kategori rejimi: X1 = 1.658 kayıt → dokunma / retag / eşleme tablosu (ADR şart)
 - 0.6 prod export + hukukbot sağlık denetimi (ssh)
 - service_type backfill (reçete canlı veride çürüdü, ayrı keşif gerekiyor)
