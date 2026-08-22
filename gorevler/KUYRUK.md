@@ -40,6 +40,25 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G095 | bant:frontend | bagimli:- | Oturum kapanış yolu: #/login artığı + boşa giden 401 turu
 - [ ] G096 | bant:backend | bagimli:- | Token doğrulama faz 2: scp zorunlu + audience yalnız api:// (G092 ölçümü 2026-08-22: 0 sapma)
 
+## ÖNCELİK 1 — Bildirim sistemi denetim bulguları (2026-08-22, kullanıcı isteği)
+
+<!-- Kaynak: 2026-08-22 bildirim sistemi incelemesi (canlı UI + DB + bağımsız kod
+     denetimi ajanı). Sistem sağlam: dedupe UNIQUE koşulsuz index'te, lider kilidi
+     canlıda teyitli (pid 10 kurdu / pid 11 atladı), IDOR+allowlist+saat dilimi testli,
+     mail yolları git diff ile DOKUNULMAMIŞ. İki "orta" + dört "düşük" bulgu:
+     G097 (backend): boot telafisi (misfire'da gün kaçıyor, T-1 hiç üretilmiyor) +
+       retention (tablo sınırsız büyür, dismissed_at yazan yok) + bugun_tr/duruşma
+       üst sınır testleri. Okunmamış satır ASLA silinmez.
+     G098 (frontend): loadList updater içinde (canlıda mükerrer ÖLÇÜLMEDİ, hijyen) +
+       markRead sessiz hata + 401/null testi.
+     Bilinçli DIŞARIDA: idari uçların herkese açıklığı (20.08 kullanıcı kararı),
+     dismissed_at'i yazan uç (ayrı tasarım), dedupe anahtarı sapması (gerekçeli+testli).
+     Paralellik: G097 backend, G098 frontend — dosya kesişimi yok, paralel. G096 ile
+     G097 aynı bant (seri), farklı dosyalar. -->
+
+- [ ] G097 | bant:backend | bagimli:- | Bildirim tarayıcısı: boot telafisi + retention + tz/duruşma sınırı testleri
+- [ ] G098 | bant:frontend | bagimli:- | Zil paneli hijyeni: updater yan etkisi + markRead geri bildirimi + 401 testi
+
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
 <!-- Kaynak: docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md (§2 bulgular,
