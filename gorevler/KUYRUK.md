@@ -67,6 +67,23 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G099 | bant:backend | bagimli:- | cache_manager: makedirs yarışı sahte ERROR basıyor (exist_ok=True)
 
+## ÖNCELİK 1 — CSP zorlayıcıya geçiş (2026-08-22, kullanıcı isteği)
+
+<!-- Kaynak: 2026-08-22 CSP ihlal turu (lokal 8080, Report-Only, SSO girişli
+     tarayıcı turu: login/pano/upload/cases/clients/activity/admin/tema/zil).
+     script/style/font/img/frame: 0 ihlal. connect-src 32 ihlal = lokal .env
+     VITE_API_URL artefaktı (prod aynı origin, oluşmaz). Kod okumasıyla iki
+     enforce kırıcı: yazdırma popup'larında inline onload/<script>
+     (DashboardCalendar.tsx:203, YetkiBelgesiModal.tsx:226) — kontrol deneyi ana
+     dokümanda script-src-attr/elem report'u verdi. Popup mirası lokal panelde
+     doğrulanamadı (popup engelleyici); G100 belirsizliği kökten kaldırır.
+     Sıra: G100 frontend → G101 docs (nginx.conf tek satır + doküman). G101
+     DEPLOY GEREKTİRİR ve deploy sonrası insan turu ister (yazdır popup'ları,
+     PDF aç, belge yükle); geri dönüş başlık adına -Report-Only eki. -->
+
+- [ ] G100 | bant:frontend | bagimli:- | Yazdırma popup'larında inline script/handler kaldırılır (CSP enforce ön koşulu)
+- [ ] G101 | bant:docs | bagimli:G100 | CSP zorlayıcıya geçer: -Report-Only eki düşer
+
 ## ÖNCELİK 1 — Güvenlik denetimi düzeltmeleri (2026-08-22, kullanıcı isteği)
 
 <!-- Kaynak: docs/arsiv/saldiri-yuzeyi-guvenlik-denetimi-2026-08-22.md (§2 bulgular,
