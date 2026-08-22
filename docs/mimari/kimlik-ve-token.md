@@ -209,7 +209,6 @@ Yani "e-posta domain kısıtımız var" doğru DEĞİLDİR; kısıt tenant düze
 
 | Kalem | Durum | Kaynak |
 | --- | --- | --- |
-| CSP zorlayıcı değil | Konteyner nginx yalnız `Content-Security-Policy-Report-Only` basar (`nginx.conf:54`, G091). Zorlayıcıya geçişin ön koşulu insan turuyla toplanan ihlal listesi — [`deploy-ve-altyapi.md` §11](deploy-ve-altyapi.md#11-konteyner-nginx-güvenlik-başlıkları-g091) | açık |
 | Token iptali gecikmesi | CAE (Continuous Access Evaluation) yok; verilmiş access token `exp`'e kadar backend'de geçerli. Azaltıcılar: idle timeout (30 dk) ve refresh token tavanı (§3.2, teyit edilmedi) | açık |
 | Yetkilendirme granülaritesi | Tenant üyeliği = tam erişim; rol/grup claim'i okunmaz; tek ayrım `ADMIN_EMAILS` | açık |
 | Entra süre politikaları | §3.2'deki değerler tenant'ta teyit edilmedi | kullanıcı adımı |
