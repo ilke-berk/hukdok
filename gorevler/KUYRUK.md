@@ -33,7 +33,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G088 | bant:frontend | bagimli:- | Vite dev sunucusu 127.0.0.1'e bağlanır (LAN vektörü)
 - [x] G090 | bant:frontend | bagimli:- | Ölü pdf.js CDN yükleyicisi silinir (SRI'sız üçüncü taraf script)
-- [ ] G089 | bant:backend | bagimli:G088 | Vite 5.4.19 → 6.4.3; CI dev-zincir kapısı bloklayıcıya döner
+- [x] G089 | bant:backend | bagimli:G088 | Vite 5.4.19 → 6.4.3; CI dev-zincir kapısı bloklayıcıya döner
 - [ ] G091 | bant:docs | bagimli:G090 | CSP başlığı (Report-Only) konteyner nginx'ine eklenir
 
 ## ÖNCELİK 1 — Uygulama içi bildirim sistemi + pano placeholder'ları (2026-08-20, kullanıcı kararı)
