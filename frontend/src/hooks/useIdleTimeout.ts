@@ -31,9 +31,10 @@ export const useIdleTimeout = (timeoutMinutes: number = 30, warningMinutes: numb
         if (timeoutId.current) clearTimeout(timeoutId.current);
         if (warningId.current) clearTimeout(warningId.current);
 
-        // Logout and redirect to login
+        // Logout and redirect to login — BrowserRouter rotası (App.tsx);
+        // hash fragment'li eski hedef HashRouter döneminden kalma artıktı (G095).
         instance.logoutRedirect({
-            postLogoutRedirectUri: window.location.origin + '/#/login',
+            postLogoutRedirectUri: window.location.origin + '/login',
         });
     };
 

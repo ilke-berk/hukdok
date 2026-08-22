@@ -112,6 +112,43 @@ const GET_RETRY_DELAYS_MS = [500, 1000];
 const RETRYABLE_GET_STATUSES = new Set([502, 503, 504]);
 
 /**
+ * Oturum kurtarılamadı (token yok ya da yenileme sonrası da 401): flush olayı
+ * yayınla, kullanıcıyı uyar, tek seferlik logout redirect'e git.
+ * `_isLoggingOut` bekçisi eşzamanlı çağrılarda tek logout garantiler.
+ */
+function handleSessionExpired(): void {
+    console.error("⛔ Unauthorized Access (401) - Logging out...");
+
+    // Sessiz yenileme tutmadı → logout kaçınılmaz; redirect öncesi açık
+    // taslaklar sessionStorage'a flush edilsin (sihirbaz dinler).
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+
+    // Prevent multiple logout triggers for concurrent 401s
+    const w = window as Window & { _isLoggingOut?: boolean };
+    if (w._isLoggingOut) return;
+    w._isLoggingOut = true;
+
+    // Alert the user and logout
+    import("sonner").then(({ toast }) => {
+        toast.error("Oturum süresi doldu", {
+            description: "Güvenlik nedeniyle tekrar giriş yapmanız gerekiyor.",
+            duration: 3000
+        });
+
+        // Small delay to allow toast to be seen (optional)
+        setTimeout(() => {
+            // BrowserRouter'dayız (App.tsx) — hash fragment'li eski hedef HashRouter artığıydı (G095).
+            msalInstance.logoutRedirect({
+                postLogoutRedirectUri: window.location.origin + '/login',
+            }).catch(err => {
+                console.error("Logout failed:", err);
+                w._isLoggingOut = false;
+            });
+        }, 500);
+    });
+}
+
+/**
  * Global API Client wrapper
  * automatically handles Bearer Token injection
  */
@@ -123,11 +160,20 @@ export const apiClient = {
         // Get Token
         const token = await getAuthToken();
 
+        // G095: token alınamıyorsa (hesap yok / refresh token tavana çarptı)
+        // ağa hiç çıkılmaz — backend zaten 401 basacak, forceRefresh edinimi de
+        // null dönecekti; tur tamamen boşaydı (upload'da koca FormData gövdesi).
+        // Oturum-bitti dalı aynen çalışır, çağırana sentetik 401 Response döner
+        // (sözleşme: apiClient.fetch daima Response döner, istisna FIRLATMAZ).
+        if (!token) {
+            console.warn(`🔒 API Request: token yok, istek atlandı → ${options.method || 'GET'} ${url}`);
+            handleSessionExpired();
+            return new Response(null, { status: 401, statusText: "Unauthorized" });
+        }
+
         // Prepare Headers
         const headers = new Headers(options.headers);
-        if (token) {
-            headers.set("Authorization", `Bearer ${token}`);
-        }
+        headers.set("Authorization", `Bearer ${token}`);
 
         // Ensure Content-Type is JSON unless specified otherwise (or FormData)
         if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -213,35 +259,7 @@ export const apiClient = {
 
         // Handle 401 Unauthorized globally if needed
         if (response.status === 401) {
-            console.error("⛔ Unauthorized Access (401) - Logging out...");
-
-            // Sessiz yenileme tutmadı → logout kaçınılmaz; redirect öncesi açık
-            // taslaklar sessionStorage'a flush edilsin (sihirbaz dinler).
-            window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
-
-            // Prevent multiple logout triggers for concurrent 401s
-            const w = window as Window & { _isLoggingOut?: boolean };
-            if (!w._isLoggingOut) {
-                w._isLoggingOut = true;
-                
-                // Alert the user and logout
-                import("sonner").then(({ toast }) => {
-                    toast.error("Oturum süresi doldu", {
-                        description: "Güvenlik nedeniyle tekrar giriş yapmanız gerekiyor.",
-                        duration: 3000
-                    });
-
-                    // Small delay to allow toast to be seen (optional)
-                    setTimeout(() => {
-                        msalInstance.logoutRedirect({
-                            postLogoutRedirectUri: window.location.origin + '/#/login',
-                        }).catch(err => {
-                            console.error("Logout failed:", err);
-                            w._isLoggingOut = false;
-                        });
-                    }, 500);
-                });
-            }
+            handleSessionExpired();
         }
 
         return response;

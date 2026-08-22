@@ -64,15 +64,67 @@ describe("apiClient.fetch", () => {
         expect((options.headers as Headers).get("Authorization")).toBe("Bearer test-token");
     });
 
-    it("token alınamazsa Authorization header'ı eklenmez", async () => {
+    // G095: Bu test eskiden "token alınamazsa Authorization header'ı eklenmez
+    // ama istek yine de gider" sözleşmesini kilitliyordu. O tur tamamen boşaydı
+    // (backend 401 basar, forceRefresh edinimi de null döner → logout). Yeni
+    // sözleşme: token yoksa ağa HİÇ çıkılmaz, sentetik 401 Response döner ve
+    // oturum-bitti dalı aynen tetiklenir. Aşağıdaki testler bunu kilitler.
+    it("token alınamazsa fetch HİÇ çağrılmaz ve 401 Response döner (istisna fırlamaz)", async () => {
         msalMocks.getActiveAccount.mockReturnValue(null);
         msalMocks.getAllAccounts.mockReturnValue([]);
         const fetchMock = stubFetch();
 
+        const response = await apiClient.fetch("/api/cases");
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(response).toBeInstanceOf(Response);
+        expect(response.status).toBe(401);
+        expect(response.ok).toBe(false);
+    });
+
+    it("acquireTokenSilent fırlatınca da (refresh tavanı) ağa çıkılmaz, 401 döner", async () => {
+        msalMocks.acquireTokenSilent.mockRejectedValue(new Error("interaction_required"));
+        const fetchMock = stubFetch();
+
+        const response = await apiClient.fetch("/process", { method: "POST", body: new FormData() });
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(response.status).toBe(401);
+    });
+
+    it("token alınamazsa flush olayı yayınlanır ve logout /login hedefiyle tetiklenir", async () => {
+        msalMocks.getActiveAccount.mockReturnValue(null);
+        msalMocks.getAllAccounts.mockReturnValue([]);
+        stubFetch();
+        const flushListener = vi.fn();
+        window.addEventListener(SESSION_EXPIRED_EVENT, flushListener);
+
         await apiClient.fetch("/api/cases");
 
-        const [, options] = fetchMock.mock.calls[0];
-        expect((options.headers as Headers).get("Authorization")).toBe(null);
+        expect(flushListener).toHaveBeenCalledTimes(1);
+        await vi.waitFor(() => expect(toastError).toHaveBeenCalled(), { timeout: 2000 });
+        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
+            timeout: 2000,
+        });
+        expect(msalMocks.logoutRedirect).toHaveBeenCalledWith({
+            postLogoutRedirectUri: window.location.origin + "/login",
+        });
+        window.removeEventListener(SESSION_EXPIRED_EVENT, flushListener);
+    });
+
+    it("eşzamanlı iki token'sız istek tek logout tetikler (_isLoggingOut bekçisi)", async () => {
+        msalMocks.getActiveAccount.mockReturnValue(null);
+        msalMocks.getAllAccounts.mockReturnValue([]);
+        const fetchMock = stubFetch();
+
+        const responses = await Promise.all([apiClient.fetch("/api/a"), apiClient.fetch("/api/b")]);
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(responses.map((r) => r.status)).toEqual([401, 401]);
+        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
+            timeout: 2000,
+        });
+        expect(msalMocks.logoutRedirect).toHaveBeenCalledTimes(1);
     });
 
     it("başında / olmayan endpoint'e / eklenir", async () => {
@@ -145,6 +197,10 @@ describe("apiClient.fetch", () => {
         await vi.waitFor(() => expect(toastError).toHaveBeenCalled(), { timeout: 2000 });
         await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
             timeout: 2000,
+        });
+        // G095: BrowserRouter rotası — HashRouter artığı hash fragment'i DEĞİL
+        expect(msalMocks.logoutRedirect).toHaveBeenCalledWith({
+            postLogoutRedirectUri: window.location.origin + "/login",
         });
     });
 
