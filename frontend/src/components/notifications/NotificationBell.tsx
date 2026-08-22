@@ -25,7 +25,15 @@ export function NotificationBell() {
     loadList,
     markRead,
     markAllRead,
+    markError,
+    clearMarkError,
   } = useNotifications();
+
+  // Panel kapanınca satır düzeyindeki işaretleme hatası temizlenir (G098):
+  // bir sonraki açılışta bayat "işaretlenemedi" görünmesin.
+  useEffect(() => {
+    if (!open) clearMarkError?.();
+  }, [open, clearMarkError]);
 
   // Dışarı tıklama + Escape kapatır. Dinleyiciler yalnız panel AÇIKKEN bağlanır.
   useEffect(() => {
@@ -47,13 +55,13 @@ export function NotificationBell() {
   }, [open]);
 
   const zileTiklandi = useCallback(() => {
-    setOpen((onceki) => {
-      // Her açılışta liste yeniden çekilir: panel kapalıyken gelen bildirimler
-      // (ve başka sekmede yapılan okumalar) bayat görünmesin.
-      if (!onceki) void loadList();
-      return !onceki;
-    });
-  }, [loadList]);
+    // Her açılışta liste yeniden çekilir: panel kapalıyken gelen bildirimler
+    // (ve başka sekmede yapılan okumalar) bayat görünmesin.
+    // Yan etki bilinçli olarak state updater'ının DIŞINDA (G098): React updater'ı
+    // yeniden çağırabilir, updater içindeki istek mükerrerleşirdi.
+    if (!open) void loadList();
+    setOpen(!open);
+  }, [open, loadList]);
 
   const bildirimeTiklandi = useCallback(async (item: NotificationItem) => {
     if (!item.is_read) await markRead(item.id);
@@ -93,6 +101,7 @@ export function NotificationBell() {
           items={items}
           isLoading={isLoading}
           error={listError}
+          markError={markError ?? null}
           unreadCount={unreadCount}
           onSelect={(item) => { void bildirimeTiklandi(item); }}
           onMarkAllRead={() => { void markAllRead(); }}
