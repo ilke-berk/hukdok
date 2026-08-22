@@ -34,7 +34,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      karşı hiç denenmemiş olur (testler sentetik claim'lerle koşuyor). Lokal gerçek
      giriş turu görev dosyasındaki "KAPSAMADIĞI doğrulama" başlığında. -->
 
-- [ ] G092 | bant:backend | bagimli:- | Token doğrulama: issuer kontrolü + scp/aud gözlem modu
+- [x] G092 | bant:backend | bagimli:- | Token doğrulama: issuer kontrolü + scp/aud gözlem modu
 - [ ] G093 | bant:backend | bagimli:- | Konfigürasyon uyarıları: DEV_MODE prod guard + SharePoint secret expiry
 - [ ] G094 | bant:docs | bagimli:G092,G093,G095 | Kimlik ve token mimarisi dokümanı
 - [ ] G095 | bant:frontend | bagimli:- | Oturum kapanış yolu: #/login artığı + boşa giden 401 turu
