@@ -6,7 +6,15 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   envDir: "..",
   server: {
-    host: "0.0.0.0",
+    // BILEREK localhost - GERI ALMA. Tum-arayuz bindi (wildcard adres)
+    // dev sunucusunu aga acar; ayni Wi-Fi'daki herkes erisebilir (LAN vektoru).
+    // Vite'in bilinen aciklarindan ikisi tam olarak Windows'a ozgudur
+    // (server.fs.deny bypass, launch-editor NTLMv2 hash sizmasi) ve
+    // gelistirme Windows'ta yapiliyor. Aciklarin kendisini kapatan is
+    // G089 (vite yukseltmesi); burasi yalnizca vektoru daraltir.
+    // Uzaktan erisim gerekiyorsa bu satiri degil, tek seferlik
+    // `npm run dev -- --host` bayragini kullan.
+    host: "127.0.0.1",
     port: 8000,
     strictPort: true,
     proxy: {
