@@ -37,23 +37,23 @@ RSS'i kalıcı yükseltiyordu (`docker-compose.yml:74-77`).
 
 Repodaki `nginx.conf` **konteyner** nginx'idir (`listen 80`, `nginx.conf:8`; compose bunu
 8080'de yayınlar). SPA'yı `/usr/share/nginx/html` kökünden servis eder ve `try_files` ile
-`/index.html`'e düşer (`nginx.conf:43-47`).
+`/index.html`'e düşer (`nginx.conf:56-60`).
 
 Backend'e proxy'lenen location'ların listesi:
 
 | Location | Not |
 | --- | --- |
-| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:49-59`) |
-| `/api` | genel API (`nginx.conf:64`) |
-| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:72-79`) |
-| `/confirm` | onay + arşivleme (`nginx.conf:81`) |
-| `/preview-email-body` | (`nginx.conf:89`) |
-| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:97-107`) |
-| `/refresh` | liste tazeleme (`nginx.conf:109`) |
+| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:62-72`) |
+| `/api` | genel API (`nginx.conf:77`) |
+| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:85-92`) |
+| `/confirm` | onay + arşivleme (`nginx.conf:94`) |
+| `/preview-email-body` | (`nginx.conf:102`) |
+| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:110-120`) |
+| `/refresh` | liste tazeleme (`nginx.conf:122`) |
 
 **`/export` bu listede YOKTUR ve asla eklenmez** — konfigin kendi uyarısı: "DIKKAT: /export
 buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir, public'e proxy'lenmez"
-(`nginx.conf:62-63`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
+(`nginx.conf:75-76`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama

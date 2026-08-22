@@ -11,7 +11,7 @@
   1. **`/export` konteyner nginx'ine hiç eklenmez.** Yalnız iç Docker ağından
      (`hukuk_shared`, `http://hukdok_backend:8001`) erişilir. Konfigdeki uyarı birebir:
      `# DIKKAT: /export buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir,
-     public'e proxy'lenmez` (`nginx.conf:62-63`). Backend portu da bu yüzden
+     public'e proxy'lenmez` (`nginx.conf:75-76`). Backend portu da bu yüzden
      `127.0.0.1:8001`'e sabittir (`docker-compose.yml:50-54`).
   2. **API anahtarı, fail-closed.** Router'ın tamamı `require_export_api_key` bağımlılığıyla
      korunur (`backend/routes/export.py:67`).
