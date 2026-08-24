@@ -131,8 +131,12 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      KİMLİK — yeni kolon GEREKMEDİ: lawyers.gorev='AVUKAT' olan 7 kişinin HEPSİ ofis mailli
      (@hanyaloglu-acar.av.tr); DIŞ AVUKAT 69 ve DİĞER 2 kaydın HİÇBİRİ ofis mailli değil.
      3 idari personel email_recipients'ta. Murat Arslan 294 davada sorumlu ama lawyers'ta YOK
-     → ikinci kaynak şart. Kapsama ~%98,6; hedefsiz kalan 97 dava (Arşiv Dosya Yöneticisi 93,
-     Asu Barış Karamık 4) idari panelde sayaçla görünür.
+     → ikinci kaynak şart. Kapsama ~%98,6; hedefsiz kalan 98 dava (Arşiv Dosya Yöneticisi 93,
+     Asu Barış Karamık 4, AGH 1) idari panelde sayaçla görünür.
+     [2026-08-24 duman turunda lokal restore kopyasında yeniden ölçüldü: sorumlusu yazılı
+     7.093 davanın 98'i hedefsiz (kapsama %98,6 aynı). 20.08'de 97 yazılmıştı; üçüncü isim
+     "AGH" (1 dava) o gün listede yoktu. G086/G087 görev raporlarındaki 97 rakamı
+     20.08 fotoğrafıdır, bilerek DEĞİŞTİRİLMEDİ.]
 
      SÜRE VERİSİ: cases.karar_teblig_tarihi 0 DOLU — kaynak orası değil. Gerçek kaynak
      case_stage_decisions.teblig_tarihi (750 dolu, hepsi YEREL, en yeni 12.08, son 60 günde 23).
