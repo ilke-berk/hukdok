@@ -3,6 +3,23 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## Tek görev: Otomatik ilişki katmanı ekrana bağlanır (2026-08-25, kullanıcı kararı)
+
+<!-- Kaynak: 2026-08-25 migrasyon demosu hazırlığı. Kullanıcı Gökçınar kartında (14142)
+     bağlantılı davaların görünmediğini bildirdi; teşhis: backend automatic listesi DOLU
+     (servis 14142 için 4 ilişki üretiyor, TKU-788 → 14139/14140/14141/14143), ama
+     RelatedCasesPanel (4e3eec4, 20.08) hiçbir sayfaya monte edilmemiş — commit yalnız
+     bileşen + testine dokunmuş. CaseDetails yalnız result.manual çiziyor ve elle bağ
+     0 satır (aktarım bilinçli ilişki YAZMAZ, okurken hesaplanır). Kullanıcı A (header
+     çiplerine automatic'i katmak) yerine B'yi seçti: tasarlanan panel monte edilir,
+     manual-only ikiz kod sökülür (tek yazar panel olur). Saf frontend; backend işi YOK.
+     Tasarım kararı görev dosyasında: panel header kartı ile Tabs arasına her zaman
+     görünür bölüm olarak, sekme içine DEĞİL; header'daki eski inline çip bölümü kalkar.
+     İnsan adımı (KAPSAMADIĞI doğrulama): frontend imaj rebuild + girişli tarayıcı turu
+     (14142'de 4 ilişki, 13364'te İcra+Tüketici paralelleri, 4442'de Bölge İdare bağı). -->
+
+- [ ] G102 | bant:frontend | bagimli:- | RelatedCasesPanel CaseDetails'e monte edilir; manual-only çip kodu sökülür
+
 ## ÖNCELİK 1 — Kimlik/token sertleştirmesi (2026-08-22, kullanıcı isteği)
 
 <!-- Kaynak: 2026-08-22 token güvenliği analizi (bu oturum; kalıcı özeti G094'ün
