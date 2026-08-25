@@ -18,7 +18,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      İnsan adımı (KAPSAMADIĞI doğrulama): frontend imaj rebuild + girişli tarayıcı turu
      (14142'de 4 ilişki, 13364'te İcra+Tüketici paralelleri, 4442'de Bölge İdare bağı). -->
 
-- [ ] G102 | bant:frontend | bagimli:- | RelatedCasesPanel CaseDetails'e monte edilir; manual-only çip kodu sökülür
+- [x] G102 | bant:frontend | bagimli:- | RelatedCasesPanel CaseDetails'e monte edilir; manual-only çip kodu sökülür
 
 ## ÖNCELİK 1 — Kimlik/token sertleştirmesi (2026-08-22, kullanıcı isteği)
 
