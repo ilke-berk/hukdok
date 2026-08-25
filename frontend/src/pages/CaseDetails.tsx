@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Link2, Building2, Plus, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import AddRelationModal from "@/components/AddRelationModal";
+import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
@@ -85,28 +85,6 @@ interface CaseDetailsData {
     lawyers?: { name: string; lawyer_id?: number | null }[];
     documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null }[];
     [key: string]: unknown;
-}
-
-// Tip badge renkleri (CaseGroup ile tutarlı)
-const fileTypeMeta: Record<string, { color: string; bg: string; border: string; dot: string; icon: React.ReactNode }> = {
-    Hukuk:   { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", dot: "bg-[var(--brand)]", icon: <Scale className="w-4 h-4" /> },
-    İcra:    { color: "text-[#c47a1e]",     bg: "bg-[#c47a1e]/10",     border: "border-[#c47a1e]/30",     dot: "bg-[#c47a1e]",     icon: <Building2 className="w-4 h-4" /> },
-    Ceza:    { color: "text-[#a8323b]",     bg: "bg-[#a8323b]/10",     border: "border-[#a8323b]/30",     dot: "bg-[#a8323b]",     icon: <Gavel className="w-4 h-4" /> },
-    İdare:   { color: "text-[#7a3f8a]",     bg: "bg-[#7a3f8a]/10",     border: "border-[#7a3f8a]/30",     dot: "bg-[#7a3f8a]",     icon: <FileText className="w-4 h-4" /> },
-    Ticaret: { color: "text-[#2f8a5d]",     bg: "bg-[#2f8a5d]/10",     border: "border-[#2f8a5d]/30",     dot: "bg-[#2f8a5d]",     icon: <BarChart3 className="w-4 h-4" /> },
-};
-const getFileTypeMeta = (type?: string) =>
-    fileTypeMeta[type ?? ""] ?? { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", dot: "bg-[var(--brand)]", icon: <FileText className="w-4 h-4" /> };
-
-interface RelatedCaseBrief {
-    id: number;
-    tracking_no: string;
-    esas_no?: string | null;
-    court?: string | null;
-    status: string;
-    file_type?: string | null;
-    relation_id?: number;
-    is_manual: boolean;
 }
 
 const CopyButton = ({ value }: { value: string }) => {
@@ -191,7 +169,7 @@ const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
-    const { getCase, getRelatedCases, addCaseRelation, removeCaseRelation } = useCases();
+    const { getCase } = useCases();
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
     const { allegedFaults, appealingParties } = useConfig();
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
@@ -211,40 +189,11 @@ const CaseDetails = () => {
         }
         setActiveTab(tab);
     };
-    const [relatedBrief, setRelatedBrief] = useState<RelatedCaseBrief[]>([]);
-    const [addRelationOpen, setAddRelationOpen] = useState(false);
     const [resendDoc, setResendDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
     const [resendLoading, setResendLoading] = useState(false);
     // Belge soft-delete diyaloğu — gerekçe zorunlu (min 3), dava silme kalıbıyla birebir
     const [deleteDoc, setDeleteDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
     const [deleteDocReason, setDeleteDocReason] = useState("");
-
-    const fetchRelated = async () => {
-        if (!id) return;
-        const result = await getRelatedCases(parseInt(id));
-        if (result) setRelatedBrief(result.manual ?? []);
-    };
-
-    const handleAddRelation = async (targetCaseId: number, relationType: string, note: string | null) => {
-        const result = await addCaseRelation(parseInt(id!), { target_case_id: targetCaseId, relation_type: relationType, note });
-        if (result) {
-            toast.success("Dava bağlantısı eklendi");
-            await fetchRelated();
-            return true;
-        }
-        toast.error("Bağlantı eklenemedi");
-        return false;
-    };
-
-    const handleRemoveRelation = async (relationId: number) => {
-        const ok = await removeCaseRelation(parseInt(id!), relationId);
-        if (ok) {
-            toast.success("Bağlantı kaldırıldı");
-            await fetchRelated();
-        } else {
-            toast.error("Bağlantı kaldırılamadı");
-        }
-    };
 
     const handleResendConfirm = async (
         to: string[],
@@ -327,7 +276,6 @@ const CaseDetails = () => {
             setLoadingLocal(false);
         };
         fetchCaseData();
-        fetchRelated();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
@@ -519,80 +467,16 @@ const CaseDetails = () => {
                                     </div>
                                 </div>
 
-                                {/* İlişkili davalar — her zaman görünür */}
-                                <div className="pt-4 border-t border-border/40">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                                            <Link2 className="w-3.5 h-3.5 text-primary" />
-                                            Bağlantılı Davalar
-                                            {relatedBrief.length > 0 && (
-                                                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{relatedBrief.length}</span>
-                                            )}
-                                        </p>
-                                        <button
-                                            onClick={() => setAddRelationOpen(true)}
-                                            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/10"
-                                        >
-                                            <Plus className="w-3.5 h-3.5" />
-                                            Dava Bağla
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {/* Mevcut dava — aktif */}
-                                        <div className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-none border-2 ${style.bg} border-current ${style.text} cursor-default`}>
-                                            <Gavel className="w-4 h-4 shrink-0" />
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-bold leading-none">{caseData.file_type || "Bu Dava"}</span>
-                                                <span className="text-[10px] opacity-70 font-mono mt-0.5 tabular-nums">{caseData.esas_no || caseData.tracking_no}</span>
-                                            </div>
-                                            <span className={`w-2 h-2 rounded-full ${style.dot} ring-2 ring-current ring-offset-1 ring-offset-transparent`} />
-                                        </div>
-
-                                        {/* Bağlı davalar */}
-                                        {relatedBrief.map(rc => {
-                                            const meta = getFileTypeMeta(rc.file_type ?? undefined);
-                                            const rst = getStatusStyle(rc.status);
-                                            return (
-                                                <div key={rc.id} className="group flex items-center gap-1">
-                                                    <button
-                                                        onClick={() => navigate(`/cases/${rc.id}`)}
-                                                        className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-none border border-border/60 bg-card/60 hover:border-primary/40 hover:bg-primary/5 text-muted-foreground hover:text-foreground transition-all"
-                                                    >
-                                                        <span className={`${meta.color}`}>{meta.icon}</span>
-                                                        <div className="flex flex-col items-start">
-                                                            <span className="text-xs font-bold leading-none">{rc.file_type || "Dava"}</span>
-                                                            <span className="text-[10px] opacity-60 font-mono mt-0.5 tabular-nums">{rc.esas_no || rc.tracking_no}</span>
-                                                        </div>
-                                                        <span className={`w-1.5 h-1.5 rounded-full ${rst.dot}`} />
-                                                    </button>
-                                                    {rc.relation_id && (
-                                                        <button
-                                                            onClick={() => handleRemoveRelation(rc.relation_id!)}
-                                                            className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                                                            title="Bağlantıyı kaldır"
-                                                        >
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-
-                                        {/* Boş durum */}
-                                        {relatedBrief.length === 0 && (
-                                            <button
-                                                onClick={() => setAddRelationOpen(true)}
-                                                className="flex items-center gap-2 px-3.5 py-2.5 rounded-none border border-dashed border-border/60 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all text-xs"
-                                            >
-                                                <Plus className="w-3.5 h-3.5" />
-                                                Bağlantılı dava ekle
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </CardContent>
+                </div>
+
+                {/* İlişkili davalar — elle kurulan bağlar + otomatik katman
+                    (services/case_relations_auto.py) TEK panelde. Bilerek sekme
+                    İÇİNDE değil: deep-link/ilk-yük durumlarında hep görünür (G102). */}
+                <div className="bg-[var(--bg-elevated)] border border-[var(--border)] p-6">
+                    <RelatedCasesPanel caseId={parseInt(id!)} />
                 </div>
 
                 {/* Tabs Container */}
@@ -1092,13 +976,6 @@ const CaseDetails = () => {
                 </Tabs>
 
             </main>
-
-            <AddRelationModal
-                open={addRelationOpen}
-                currentCaseId={parseInt(id!)}
-                onClose={() => setAddRelationOpen(false)}
-                onSave={handleAddRelation}
-            />
 
             <EmailModal
                 isOpen={resendDoc != null}
