@@ -59,6 +59,17 @@ MAX_IMAGE_PIXELS = 89478485
 MAX_IMAGE_WIDTH = 10000
 MAX_IMAGE_HEIGHT = 10000
 
+
+class PdfBuildError(RuntimeError):
+    """ReportLab doc.build aşamasının LayoutError DIŞI çökmesi.
+
+    Yerleşim/bölme içindekiler LayoutError dışı istisnalarla da çökebiliyor
+    (2026-08-28 prod arızası: splitInRow + görselli hücrede Table._splitCell'in
+    okuduğu .height platypus Image'da yok → AttributeError). convert_udf_to_pdf
+    bu sinyali LayoutError ile aynı şekilde degrade fallback'ine bağlar.
+    """
+
+
 # Font Registration Logic
 try:
     pdfmetrics.registerFont(TTFont('DejaVuSerif', str(BACKEND_DIR / 'fonts' / 'DejaVuSerif.ttf')))
@@ -319,6 +330,14 @@ class ParagraphHandler:
                 ratio = min(MAX_INLINE_IMAGE_WIDTH / w, MAX_INLINE_IMAGE_HEIGHT / h)
                 img.drawWidth = w * ratio
                 img.drawHeight = h * ratio
+
+            # Satır-içi tablo bölmesi (Table._splitCell, splitInRow=1) hücre
+            # flowable'larının .width/.height'ını okur; platypus Image bunları
+            # wrap()'te setlemez, __getattr__ AttributeError fırlatır
+            # ("<Image @ 0x..>.height"). Nihai çizim boyutları burada işlenir
+            # ki görselli hücre bölünürken çökmesin.
+            img.width = img.drawWidth
+            img.height = img.drawHeight
 
             return img
         except Exception as e:
@@ -727,7 +746,15 @@ class UDFConverter:
 
             canvas.restoreState()
 
-        doc.build(self.pdf_elements, onFirstPage=on_page, onLaterPages=on_page)
+        try:
+            doc.build(self.pdf_elements, onFirstPage=on_page, onLaterPages=on_page)
+        except LayoutError:
+            raise
+        except Exception as e:
+            # ReportLab içindekiler (bölme, hücre yerleşimi) LayoutError dışı
+            # istisnayla da çökebiliyor; çağırana tek tip sinyal ver ki
+            # degrade fallback'i tetiklenebilsin.
+            raise PdfBuildError(f"{type(e).__name__}: {e}") from e
         TechnicalLogger.log("INFO", "PDF oluşturma tamamlandı")
 
     def _cleanup(self):
@@ -765,16 +792,17 @@ def convert_udf_to_pdf(
         converter = UDFConverter(udf_path, output_path)
         try:
             path = converter.convert()
-        except LayoutError as e:
-            # Katman 1 fallback: sayfaya sığmayan düzen (dev tablo hücresi vb.)
-            # iş akışını kesmesin — tablolar düzleştirilerek bir kez daha dene.
+        except (LayoutError, PdfBuildError) as e:
+            # Katman 1 fallback: sayfaya sığmayan düzen ya da build çökmesi
+            # (dev tablo hücresi, bölme içi hata vb.) iş akışını kesmesin —
+            # tablolar düzleştirilerek bir kez daha dene.
             TechnicalLogger.log(
-                "WARNING", f"UDF layout hatası, tablolar düzleştirilerek yeniden deneniyor: {e}"
+                "WARNING", f"UDF build/yerleşim hatası, tablolar düzleştirilerek yeniden deneniyor: {e}"
             )
             converter = UDFConverter(udf_path, output_path, degrade_tables=True)
             try:
                 path = converter.convert()
-            except LayoutError as e2:
+            except (LayoutError, PdfBuildError) as e2:
                 raise ValueError(
                     "Belge düzeni PDF sayfasına yerleştirilemedi; "
                     "basitleştirilmiş dönüşüm de başarısız oldu."

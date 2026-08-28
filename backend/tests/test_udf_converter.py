@@ -4,13 +4,25 @@
 paragraf içeriyordu; splitByRow satır içinde bölemediği için ReportLab
 "too large on page" fırlatıyordu. Ayrıca columnSpans yüzde değeri mutlak
 punto sanılıp tablo 100pt'lik şeride sıkışıyordu.
+
+2026-08-28 prod arızası: görselli tablo hücresi satır-içi bölmeye girince
+Table._splitCell hücre flowable'larının .height'ını okuyor; platypus Image
+bu özniteliği setlemediği için AttributeError ("<Image @ 0x..>.height")
+fırlatıyordu. Hata LayoutError olmadığı için degrade fallback'i de devreye
+girmiyor, dönüşüm komple düşüyordu (aynı belge 13 denemede 13 kez).
 """
+import base64
+import io
+from xml.etree.ElementTree import Element
+
 import fitz  # pymupdf
 import pytest
+from PIL import Image as PILImage
 from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate
 from reportlab.platypus.doctemplate import LayoutError
 
-from udf_converter import UDFConverter, convert_udf_to_pdf
+from udf_converter import ParagraphHandler, UDFConverter, convert_udf_to_pdf
 
 
 def _make_udf_xml(path, content_text, elements_xml):
@@ -26,6 +38,26 @@ def _make_udf_xml(path, content_text, elements_xml):
     )
     with open(path, "w", encoding="utf-8") as f:
         f.write(xml)
+
+
+def _png_b64(width=300, height=500):
+    pil = PILImage.new("RGB", (width, height), (200, 30, 30))
+    buf = io.BytesIO()
+    pil.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _image_table_udf(path, content_text, img_height=500):
+    """Tek hücrede görsel + uzun metin: satır sayfaya sığmaz, satır-içi bölme gerekir."""
+    elements = (
+        '<table tableName="Sabit" columnCount="1" columnSpans="100" '
+        'border="borderCell">\n'
+        '<row rowName="row"><cell>'
+        f'<paragraph><image imageData="{_png_b64(height=img_height)}" /></paragraph>'
+        f'<paragraph><content startOffset="0" length="{len(content_text)}" /></paragraph>'
+        "</cell></row>\n</table>"
+    )
+    _make_udf_xml(path, content_text, elements)
 
 
 def _single_cell_table_udf(path, content_text, column_spans="100"):
@@ -165,3 +197,75 @@ class TestDegradeFallback:
 
         with pytest.raises(ValueError, match="okunamadı"):
             convert_udf_to_pdf(str(src), str(tmp_path / "bozuk.pdf"))
+
+
+class TestImageInTableSplit:
+    """2026-08-28 arızası: görselli hücrenin satır-içi bölmesi çökmemeli."""
+
+    def test_inline_image_carries_layout_height(self):
+        """Table._splitCell'in okuduğu .width/.height gerçek öznitelik olmalı."""
+        conv = UDFConverter("dummy.udf", "dummy.pdf")
+        node = Element("image", {"imageData": _png_b64()})
+
+        img = ParagraphHandler()._process_inline_image(node, conv)
+
+        assert img is not None
+        # __getattr__ fallback'ine düşmeden instance sözlüğünde bulunmalı
+        assert "width" in img.__dict__ and "height" in img.__dict__
+        assert img.width == img.drawWidth
+        assert img.height == img.drawHeight
+
+    def test_image_row_splits_across_pages(self, tmp_path):
+        """Görsel + uzun metinli tek satır sayfaya sığmaz; bölünmeli, çökmemeli."""
+        long_text = "Tazminat talebine ilişkin inceleme metni. " * 300
+        src = tmp_path / "gorselli_tablo.udf"
+        out = tmp_path / "gorselli_tablo.pdf"
+        _image_table_udf(str(src), long_text)
+
+        result_path, warnings = convert_udf_to_pdf(str(src), str(out))
+
+        with fitz.open(result_path) as doc:
+            assert doc.page_count > 1
+            assert any(page.get_images() for page in doc), "görsel PDF'e gömülmeli"
+            full_text = "".join(page.get_text() for page in doc)
+            assert "inceleme metni" in full_text
+        # Gerçek satır-içi bölme çalışmalı; degrade fallback'ine düşülmemeli
+        assert not any("basitleştirilmiş" in w for w in warnings)
+
+
+class TestBuildCrashFallback:
+    """Katman 1 genişletmesi: doc.build'in LayoutError DIŞI çökmesi de
+    (PdfBuildError'a sarılıp) degrade fallback'ini tetiklemeli."""
+
+    def test_build_crash_triggers_degraded_retry(self, tmp_path, monkeypatch):
+        src = tmp_path / "cokme.udf"
+        out = tmp_path / "cokme.pdf"
+        _single_cell_table_udf(str(src), "Çökme sonrası kurtarma içeriği.")
+
+        calls = []
+        orig_build = SimpleDocTemplate.build
+
+        def flaky_build(self, *args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise KeyError("splitInRow simülasyonu")
+            return orig_build(self, *args, **kwargs)
+
+        monkeypatch.setattr(SimpleDocTemplate, "build", flaky_build)
+        result_path, warnings = convert_udf_to_pdf(str(src), str(out))
+
+        assert len(calls) == 2, "önce normal, sonra degrade build denenmeli"
+        assert any("basitleştirilmiş" in w for w in warnings)
+        with fitz.open(result_path) as doc:
+            assert "kurtarma içeriği" in doc[0].get_text()
+
+    def test_build_crash_twice_raises_clear_message(self, tmp_path, monkeypatch):
+        src = tmp_path / "cifte_cokme.udf"
+        _single_cell_table_udf(str(src), "İçerik.")
+
+        def always_crash(self, *args, **kwargs):
+            raise KeyError("simülasyon")
+
+        monkeypatch.setattr(SimpleDocTemplate, "build", always_crash)
+        with pytest.raises(ValueError, match="yerleştirilemedi"):
+            convert_udf_to_pdf(str(src), str(tmp_path / "cifte_cokme.pdf"))
