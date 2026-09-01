@@ -114,6 +114,38 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    Pipeline istisna atarsa ve belge **yaratılmamışsa** kayıt `release` edilir → tekrar
    denemek serbest kalır.
 
+### Arşiv adı tekliği (2026-09-01 arızası)
+
+Hedef ad frontend'in ürettiği `TARİH_TÜR_ESAS_KarşıTaraf.pdf` kalıbıdır ve teklik
+bileşeni taşımaz; Graph yüklemeleri ise `conflictBehavior=replace` ile gider
+(`sharepoint/sharepoint_uploader_graph.py`). Bu ikili, aynı davada aynı türden ve aynı
+belge tarihli iki belgede (toplu yüklemede yaygın) ikinci yüklemenin birincinin dosyasını
+**sessizce değiştirmesine** yol açıyordu — 2026-09-01 tespiti: 102 mükerrer ad grubu /
+240 kayıt; ezilen içerik SharePoint sürüm geçmişinde kaldığı için kurtarılabilir durumda.
+
+Koruma `services/archive_names.py`'dedir ve `convert_pdfa_and_queue_uploads` hedef adları
+**kuyruğa girmeden** benzersizleştirir (tek boğaz noktası: `/confirm` + intake commit):
+
+- **İşlenmiş arşiv** tekliği **stem** (uzantısız gövde) düzeyindedir: pending belge
+  `X.udf` saklanır, gece job'ı `X.pdf`'e döner — tam-ad tekliği bu geçişte yine ezerdi.
+  Ad uzayı `case_documents.stored_filename` + `upload_outbox(kind='islenmis')`'tir;
+  çakışmada `_2`, `_3`... soneki üretilir.
+- **HAM arşiv** adı (`yükleme-tarihi_orijinal-ad`) DB kolonu olmadığından teklik
+  `upload_outbox(kind='ham')` tarihçesine karşı tam-ad eşitliğiyle denetlenir (tarih
+  öneki gereği çakışma zaten aynı gün içindedir).
+- **Yarış**: eşzamanlı iki `/confirm` aynı adı seçebilir; `resolve_stored_name_race`
+  INSERT **sonrası** aynı stem'de en küçük id'ye adı bırakır, kaybeden satır
+  deterministik `_<doc_id>` sonekini alıp DB'de yeniden adlanır — kuyruklama bu addan
+  sonra yapılır.
+- Nihai ad `results["stored_filename"]` ile çağırana döner; e-posta eki, indirme ve
+  frontend gösterimi arşivdeki gerçek adı kullanır. Adlandırma katmanındaki her arıza
+  WARNING + adayın aynen kullanılması demektir (bugünkü davranışa geri düşüş) —
+  arşivlemeyi eskisinden kötü yapamaz.
+
+Fix öncesi ezilen dosyalar `scripts/repair_overwritten_documents.py` ile sürüm
+geçmişinden kurtarılır (varsayılan dry-run; `--apply` DB satırlarını yeni ada/URL'e
+çevirir, `--notify-hukukbot` export edilmişleri yeniden bildirir).
+
 ## 4. Dönüşüm, `conversion_status` ve gece retry'ı
 
 `/confirm`'de dönüşüm **tüm** yollara rağmen başarısızsa belge kaybolmaz: orijinal kendi
@@ -137,7 +169,11 @@ Gece job'ı `services/conversion_retry.py`'dir, 02:30 TR'de lider worker'da koş
 (`conversion_retry.py:53`); deneme sayacı dönüşümden **önce** commit edilir, böylece
 zehirli bir dosya sonsuz döngü kurmaz (`upload_queue.py:233-234` ile aynı desen). Başarıda
 PDF/A üretilir, arşive **senkron** yüklenir (outbox'a verilmez — gerekçe ADR 008'de),
-statü `NULL`'lanır ve hukukbot hook'u yeniden çağrılır.
+statü `NULL`'lanır ve hukukbot hook'u yeniden çağrılır. Yüklemeden önce `.pdf` adı
+`archive_names.unique_islenmis_name(..., exclude_doc_id=doc)` ile denetlenir: teklik
+korumasından önce açılmış eski kayıtlarla stem çakışması varsa başka belgenin dosyası
+ezilmez; kendi önceki gece denemeleri çakışma sayılmaz (aynı ada yeniden yükleme kendi
+dosyası için idempotenttir).
 
 ## 5. Zaman bütçeleri
 
