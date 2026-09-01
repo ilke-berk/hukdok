@@ -32,6 +32,11 @@ class DeleteRequest(BaseModel):
     email: Optional[str] = None
 
 
+class AppSettingUpdate(BaseModel):
+    """Yönetici aç/kapa ayarı — /api/admin/settings/{key} gövdesi."""
+    value: bool
+
+
 class ReorderRequest(BaseModel):
     type: str
     ordered_ids: List[str]

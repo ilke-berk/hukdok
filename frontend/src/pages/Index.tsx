@@ -707,12 +707,16 @@ const Index = () => {
     const qs = belgeTuruKodu ? `?belge_turu_kodu=${encodeURIComponent(belgeTuruKodu)}` : "";
     apiClient.fetch(`/api/cases/${linkedCase.id}/client-notice-target${qs}`)
       .then(res => res.ok ? res.json() : Promise.reject(res))
-      .then((result: { eligible: boolean; lawyer: { name: string; email: string } | null; client_name: string | null }) => {
+      .then((result: { eligible: boolean; feature_enabled?: boolean; lawyer: { name: string; email: string } | null; client_name: string | null }) => {
         if (cancelled) return;
         setClientNoticeLawyer(result.lawyer);
         setClientNoticeClientName(result.client_name);
         setClientNotifyEligible(!!result.eligible);
-        if (result.eligible && !result.lawyer) {
+        // Ana anahtar kapalıysa sebep belge/dava değil yönetici kararıdır —
+        // "neden gitmiyor" sorusuna net cevap verilsin diye ayrı mesaj.
+        if (result.feature_enabled === false) {
+          setClientWarning("Müvekkil bilgilendirme özelliği yönetici tarafından kapalı — Yönetim Paneli → Özellikler sekmesinden açılabilir.");
+        } else if (result.eligible && !result.lawyer) {
           setClientWarning("Davanın sorumlu avukatı bulunamadı — müvekkil bilgilendirmesi gönderilemez.");
         } else if (result.eligible && result.lawyer && !result.lawyer.email) {
           setClientWarning(`Sorumlu avukatın (${result.lawyer.name}) kayıtlı e-postası yok — bilgilendirme gönderilemez.`);

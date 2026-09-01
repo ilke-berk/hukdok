@@ -610,6 +610,23 @@ class FileStatus(Base):
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
+class AppSetting(Base):
+    """Uygulama düzeyi anahtar-değer ayarları (yönetici panelinden aç/kapa).
+
+    Referans listelerinden farklı: satırlar seed'lenmez, yalnız yönetici bir
+    ayarı DEĞİŞTİRDİĞİNDE yazılır; satır yoksa kodun tanımladığı varsayılan
+    geçerlidir (services/app_settings.py::SETTINGS_REGISTRY — tek kayıt yolu da
+    orasıdır, tablo doğrudan yazılmaz). Değerler string saklanır ("true"/"false");
+    tip yorumu registry'dedir.
+    """
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True, nullable=False)   # e.g. "client_notice_enabled"
+    value = Column(String, nullable=False)                          # "true" / "false"
+    updated_by = Column(String, nullable=True)                      # değiştiren yöneticinin e-postası
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
 class AllegedFault(Base):
     """İddia Edilen Kusur — KAPALI referans listesi (FAZ F şartnamesi §1.1).
 

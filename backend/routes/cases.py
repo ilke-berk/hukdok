@@ -232,11 +232,14 @@ def get_case_client_notice_target(
     geçirip müvekkile iletir). Bu endpoint modalda göstermek için:
       - sorumlu avukatı (lawyer: {name, email})
       - bilgilendirme metninde hitap edilecek müvekkil adını (client_name)
-      - belge türü uygunluğunu (eligible)
+      - gönderim uygunluğunu (eligible = ana anahtar VE belge türü filtresi)
+      - ana anahtarın durumunu (feature_enabled — kapalıysa arayüz "özellik
+        kapalı" der, belge türü mesajıyla karışmaz)
     döndürür.
     """
-    from email_sender import should_notify_client
+    from email_sender import doctype_allows_client_notice
     from managers.config_manager import DynamicConfig
+    from services.app_settings import client_notice_enabled
 
     db = SessionLocal()
     try:
@@ -273,8 +276,10 @@ def get_case_client_notice_target(
                 # Avukat lawyers config'inde bulunamadı; en azından adı döndür.
                 lawyer = {"name": responsible_name, "email": ""}
 
+        feature_on = client_notice_enabled(db=db)
         return {
-            "eligible": should_notify_client(belge_turu_kodu),
+            "eligible": feature_on and doctype_allows_client_notice(belge_turu_kodu),
+            "feature_enabled": feature_on,
             "lawyer": lawyer,
             "client_name": client_name,
         }
