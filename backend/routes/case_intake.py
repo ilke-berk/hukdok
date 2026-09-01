@@ -971,7 +971,9 @@ async def _archive_intake_documents(
                 )
                 await document_pipeline.send_notification_email(
                     email_file_path=email_file_path,
-                    new_filename=new_filename,
+                    # 2026-09-01: ad çakışmasında pipeline benzersiz ad üretir —
+                    # e-posta eki arşivdeki gerçek adı taşımalı.
+                    new_filename=step_results.get("stored_filename") or new_filename,
                     avukat_kodu=avukat_kodu,
                     email_metadata=email_metadata,
                     custom_to=options.email_to,

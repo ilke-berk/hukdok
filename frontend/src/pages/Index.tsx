@@ -865,6 +865,13 @@ const Index = () => {
       const result = await response.json();
       const confirmFlags = extractConfirmFlags(result);
 
+      // 2026-09-01: ad çakışmasında backend benzersiz ad üretir (…_2.pdf) —
+      // yerel kopya, toast ve batch listesi arşivdeki gerçek adı göstersin.
+      const serverStoredName = result?.results?.stored_filename;
+      if (typeof serverStoredName === "string" && serverStoredName) {
+        newFilename = serverStoredName;
+      }
+
       console.log("Confirmation complete:", result);
 
       // 3-D: aynı process_id ile tekrar gönderim — işlem ilk seferde zaten

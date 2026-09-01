@@ -771,15 +771,20 @@ async def confirm_process(
         results["local_save"] = "Atlandı (Web Mode)"
         results["final_path"] = None
 
+        # 2026-09-01: pipeline ad çakışmasında hedefi benzersizleştirmiş
+        # olabilir — e-posta eki / indirme / ajanda adları arşivdeki GERÇEK adı
+        # taşımalı, nihai ad results["stored_filename"]'dedir.
+        final_stored_name = results.get("stored_filename") or new_filename
+
         # Faz 3-F: dönüşüm pending'e düştüyse elde PDF/A yok; e-posta eki ve
         # indirme dosyası source_path'tir (cache hit'te analiz PDF'i — gerçek
         # bir PDF; cache miss'te orijinalin kendisi). Ek/indirme ADI dosyanın
         # GERÇEK türünü taşımalı: içerik PDF değilse .pdf maskesi takılmaz.
-        effective_filename = new_filename
+        effective_filename = final_stored_name
         if results.get("conversion_pending") and Path(final_local_path).suffix.lower() != ".pdf":
             effective_filename = (
                 results.get("archived_filename")
-                or Path(new_filename).with_suffix(Path(final_local_path).suffix.lower()).name
+                or Path(final_stored_name).with_suffix(Path(final_local_path).suffix.lower()).name
             )
 
         timings["5_logging"] = 0.00
@@ -891,7 +896,7 @@ async def confirm_process(
                 sonraki_durusma_tarihi=sonraki_durusma_tarihi,
                 sonraki_durusma_saati=sonraki_durusma_saati,
                 avukat_adi=avukat_adi,
-                new_filename=new_filename,
+                new_filename=final_stored_name,
                 current_user_name=current_user_name,
                 results=results,
             )

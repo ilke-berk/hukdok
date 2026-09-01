@@ -198,6 +198,12 @@ def _process_one(doc_id: int, islenmis_folder: str) -> str:
 
     # ── Yükleme (senkron; uploader'ın 3-B iç retry'ı dahil) ──
     pdf_name = Path(stored_filename).with_suffix(".pdf").name
+    # 2026-09-01: benzersizleştirme öncesi açılmış eski kayıtlarla stem
+    # çakışması olabilir — .pdf adı başka belgeye aitse onun dosyasını ezme.
+    # exclude self: kendi satırları/önceki gece denemeleri çakışma sayılmaz,
+    # aynı ada yeniden yüklemek kendi dosyamız için idempotenttir.
+    from services.archive_names import unique_islenmis_name
+    pdf_name = unique_islenmis_name(pdf_name, exclude_doc_id=doc_id)
     web_url = None
     try:
         from sharepoint.sharepoint_uploader_graph import upload_file_to_sharepoint

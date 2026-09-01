@@ -415,6 +415,12 @@ def _register_pending_conversion(
         raise HTTPException(status_code=500, detail=f"{conversion_error} (Hata: {error_id})")
     results["case_document_id"] = doc_id
 
+    # 2026-09-01: pending adı new_filename'in stem'ini taşır (yukarıda
+    # benzersizleştirildi); yine de INSERT sonrası yarış burada da çözülür.
+    from services.archive_names import resolve_stored_name_race
+    pending_filename = resolve_stored_name_race(doc_id, pending_filename)
+    results["stored_filename"] = pending_filename
+
     # İki arşive de ORİJİNAL gider — kendi uzantısıyla. stored_filename da
     # pending_filename'dir: belge kartı indirmesi ve hukukbot dosya ucu arşivde
     # GERÇEKTEN duran adı görür; gece job'ı başarınca .pdf adına güncellenir.
@@ -473,7 +479,22 @@ def convert_pdfa_and_queue_uploads(
     500 atılmaz — belge conversion_pending olarak kaydedilir, orijinal kendi
     uzantısıyla arşivlenir ve (None, doc_id) döner; yalnız pending katmanı da
     kurulamazsa HTTPException(500) fırlatılır (eski davranış taban çizgisidir).
+
+    2026-09-01 arızası: hedef adlar kuyruğa girmeden benzersizleştirilir —
+    frontend'in ürettiği ad teklik taşımaz ve aynı ada ikinci yükleme
+    SharePoint'te öncekini eziyordu (conflictBehavior=replace). Nihai ad
+    results["stored_filename"] ile çağırana döner (yarış çözümü adı
+    değiştirmiş olabilir); e-posta/indirme adları buradan okunmalı.
     """
+    from services.archive_names import (
+        resolve_stored_name_race,
+        unique_ham_name,
+        unique_islenmis_name,
+    )
+    new_filename = unique_islenmis_name(new_filename)
+    ham_filename = unique_ham_name(ham_filename)
+    results["stored_filename"] = new_filename
+
     pdfa_temp_file = None
     doc_id = None
     try:
@@ -555,6 +576,13 @@ def convert_pdfa_and_queue_uploads(
             uploaded_by_email=current_user_email,
         )
         results["case_document_id"] = doc_id
+
+        # 2026-09-01: eşzamanlı /confirm'lerin aynı adı seçtiği yarış INSERT
+        # sonrası çözülür; kuyruklama nihai adla yapılır (kayıt None ise ad
+        # kontrolsüz kalır — bugünkü davranış, kuyruk yine de çalışır).
+        if doc_id:
+            new_filename = resolve_stored_name_race(doc_id, new_filename)
+            results["stored_filename"] = new_filename
 
         # Both archives queued together only after successful PDF/A conversion.
         # HAM arşive orijinal ham dosya gider (dönüştürülmüş formatlarda
