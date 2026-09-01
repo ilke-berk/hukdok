@@ -349,16 +349,24 @@ def download_document(
             raise HTTPException(status_code=502, detail="Belge SharePoint'ten alınamadı") from e
 
         raw_name = doc.original_filename or doc.stored_filename
-        safe_name = unicodedata.normalize("NFKD", raw_name).encode("ascii", "ignore").decode("ascii") or "belge"
 
         if inline:
-            # Tarayıcıda okuma için: doğru MIME tipi + inline disposition.
-            media_type = mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
+            # Tarayıcıda okuma için MIME tipi ve ad, ARŞİVDE FİİLEN SERVİS EDİLEN
+            # dosyadan (stored_filename) türetilir — orijinal ad dönüşüm ÖNCESİ
+            # türü taşır: .udf/.tif orijinalli belgelerin arşiv kopyası PDF'tir,
+            # tip orijinalden tahmin edilince tarayıcı içeriği açamayacağını
+            # sanıp GUID adla indiriyordu (2026-09-02 bulgusu). conversion_pending
+            # belgeler arşivde .udf durur → octet-stream kalır ve inmeye devam
+            # eder (tarayıcı UDF gösteremez, inmesi doğru davranış).
+            served_name = str(doc.stored_filename)
+            media_type = mimetypes.guess_type(served_name)[0] or "application/octet-stream"
             disposition = "inline"
         else:
+            served_name = raw_name
             media_type = "application/octet-stream"
             disposition = "attachment"
 
+        safe_name = unicodedata.normalize("NFKD", served_name).encode("ascii", "ignore").decode("ascii") or "belge"
         headers = {"Content-Disposition": f'{disposition}; filename="{safe_name}"'}
         return Response(content=content, media_type=media_type, headers=headers)
     finally:
