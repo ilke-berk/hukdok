@@ -369,20 +369,34 @@ Kurallar:
 # Metin, büronun müvekkillerine gönderdiği gerçek bilgilendirme maillerinin
 # sıcak, birinci ağızdan tonunu taklit eder (CLIENT_NOTICE_EXAMPLES'a bakınız).
 #
-# GATING: Şu an tüm belge türlerinde bilgilendirme hazırlanır. İleride yalnızca
-# belirli belge türlerinde gönderilmesi istendiğinde:
-#   1. CLIENT_NOTIFY_ALL_DOCTYPES = False yap
-#   2. CLIENT_NOTIFICATION_DOCTYPES setine izinli belge türü kodlarını ekle
-#      (örn. {"KARAR-BLG", "DURUSMA-ZPT"})
+# GATING iki katmanlıdır:
+#   1. ANA ANAHTAR (yönetici paneli > Özellikler): `app_settings.client_notice_enabled`
+#      — varsayılan KAPALI; kapalıyken hiçbir belgede bilgilendirme hazırlanmaz.
+#   2. Belge türü filtresi: anahtar açıkken tüm türlerde hazırlanır. İleride
+#      yalnızca belirli türlerde istenirse:
+#        - CLIENT_NOTIFY_ALL_DOCTYPES = False yap
+#        - CLIENT_NOTIFICATION_DOCTYPES setine izinli kodları ekle
+#          (örn. {"KARAR-BLG", "DURUSMA-ZPT"})
 CLIENT_NOTIFY_ALL_DOCTYPES = True
 CLIENT_NOTIFICATION_DOCTYPES: set[str] = set()
 
 
-def should_notify_client(belge_turu_kodu: str | None) -> bool:
-    """Bu belge türü için müvekkil bilgilendirmesi hazırlanmalı mı?"""
+def doctype_allows_client_notice(belge_turu_kodu: str | None) -> bool:
+    """Belge türü filtresi (ana anahtardan bağımsız, saf)."""
     if CLIENT_NOTIFY_ALL_DOCTYPES:
         return True
     return (belge_turu_kodu or "").strip() in CLIENT_NOTIFICATION_DOCTYPES
+
+
+def should_notify_client(belge_turu_kodu: str | None, db=None) -> bool:
+    """Bu belge için müvekkil bilgilendirmesi hazırlanmalı mı?
+
+    Ana anahtar (DB'den okunur, varsayılan kapalı) VE belge türü filtresi.
+    `db` verilmezse ayar okuması kendi kısa oturumunu açar.
+    """
+    from services.app_settings import client_notice_enabled
+
+    return client_notice_enabled(db=db) and doctype_allows_client_notice(belge_turu_kodu)
 
 
 # Büronun müvekkillere gönderdiği gerçek bilgilendirme maillerinden örnekler.

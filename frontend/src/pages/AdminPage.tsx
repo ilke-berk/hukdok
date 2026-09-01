@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Edit2, Loader2, GripVertical, Eye, Download } from "lucide-react";
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
+import { FeatureSettingsCard } from "@/components/admin/FeatureSettingsCard";
 import { toast } from "sonner";
 import {
     Table,
@@ -756,6 +757,7 @@ const AdminPage = () => {
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="file_statuses">Dosya Durumları</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="cities">Şehirler</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="features">Özellikler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="activity_test">Aktivite Raporu Testi</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="deleted">Silinenler</TabsTrigger>
                     </TabsList>
@@ -1327,6 +1329,11 @@ const AdminPage = () => {
                         </TabsContent>
 
                     </DndContext>
+
+                    {/* Özellik anahtarları (uygulama düzeyi aç/kapa) — DnD dışında */}
+                    <TabsContent value="features">
+                        <FeatureSettingsCard />
+                    </TabsContent>
 
                     {/* Aktivite Raporu Test Paneli — DnD dışında */}
                     <ActivityTestPanel />

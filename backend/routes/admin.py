@@ -1,8 +1,11 @@
-"""Admin uçları — soft-delete edilen kayıtların listesi ve geri alma.
+"""Admin uçları — soft-delete edilen kayıtların listesi/geri alma + özellik ayarları.
 
 Silinen kayıtları görebilen TEK yol burasıdır; tüm kullanıcı-yüzü sorgular
 (case_manager, auth_helpers) deleted_at IS NULL filtreler. require_admin
 routes/config.py'deki ADMIN_EMAILS tabanlı kontroldür.
+
+Özellik ayarları (`/api/admin/settings`): services/app_settings.py registry'sindeki
+aç/kapa anahtarları — yönetim paneli "Özellikler" sekmesi buradan okur/yazar.
 """
 import logging
 
@@ -13,10 +16,39 @@ from auth_helpers import tenant_filter_clause
 from database import SessionLocal
 from dependencies import get_current_tenant
 from routes.config import require_admin
+from schemas import AppSettingUpdate
+from services import app_settings
 import models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+# ─── ÖZELLİK AYARLARI ────────────────────────────────────────────────────────
+
+@router.get("/api/admin/settings")
+def api_get_app_settings(user: dict = Depends(require_admin)):
+    """Bilinen tüm aç/kapa ayarları + etkin değerleri (satır yoksa varsayılan)."""
+    return {"settings": app_settings.list_settings()}
+
+
+@router.put("/api/admin/settings/{key}")
+def api_update_app_setting(
+    key: str,
+    payload: AppSettingUpdate,
+    user: dict = Depends(require_admin),
+):
+    """Ayarı açar/kapatır. Yalnız registry'deki anahtarlar kabul edilir."""
+    if key not in app_settings.SETTINGS_REGISTRY:
+        raise HTTPException(status_code=404, detail="Bilinmeyen ayar")
+    email = user.get("preferred_username") or user.get("upn") or user.get("email")
+    try:
+        app_settings.set_setting_bool(key, payload.value, updated_by=email)
+    except Exception as e:
+        logger.error(f"Ayar yazılamadı ({key}={payload.value}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ayar kaydedilemedi. Lütfen tekrar deneyin.") from e
+    logger.info(f"[ADMIN-SETTING] {key} = {payload.value} (by={email})")
+    return {"status": "success", "key": key, "value": payload.value}
 
 
 @router.get("/api/admin/deleted-records")

@@ -826,12 +826,15 @@ async def confirm_process(
         # Müvekkil bilgilendirme metni müvekkile DEĞİL, davanın sorumlu avukatına
         # "[Müvekkil Bilgilendirme]" konu başlığıyla, AYRI bir e-posta olarak gönderilir.
         # Avukat metni gözden geçirip müvekkiline iletir.
-        # Şimdilik tüm belge türlerinde gönderilir; should_notify_client ileride sınırlayacak.
+        # should_notify_client = yönetici ana anahtarı (varsayılan KAPALI, yönetim
+        # paneli > Özellikler) VE belge türü filtresi. Arayüz kutuyu göstermese de
+        # asıl kapı burasıdır — bayat/elle istek anahtarı aşamaz.
         from email_sender import should_notify_client
+        notice_allowed = should_notify_client(belge_turu_kodu)
         if (
             send_email
             and send_client_notice
-            and should_notify_client(belge_turu_kodu)
+            and notice_allowed
             and email_file_path and os.path.exists(email_file_path)
         ):
             await document_pipeline.send_client_notice_email(
@@ -846,7 +849,12 @@ async def confirm_process(
                 timings=timings,
             )
         else:
-            results["client_notice"] = "Atlandı"
+            # Kullanıcı istemişken sistem kapısının engellediği durumu ayırt et —
+            # "bazen gidiyor bazen gitmiyor" teşhisinde iz bırakır.
+            if send_email and send_client_notice and not notice_allowed:
+                results["client_notice"] = "Atlandı (özellik yönetici panelinden kapalı)"
+            else:
+                results["client_notice"] = "Atlandı"
             results["client_notice_success"] = None
 
         download_id = None

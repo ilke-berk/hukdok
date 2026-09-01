@@ -98,7 +98,15 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
 4. **PDF/A dönüşümü + arşiv upload kuyruğu** — executor'da, bütçeli (§5). Semafor dolarsa
    `ConversionBusyError` → **503** ("sistem meşgul"), 504'e kadar bekleyip nginx'e
    çarpmak yerine hızlı ve dürüst sinyal (`config/settings.py:76-78`).
-5. **E-posta** (avukat bildirimi; isteğe bağlı müvekkil bildirimi).
+5. **E-posta** (avukat bildirimi; isteğe bağlı müvekkil bildirimi). Müvekkil
+   bilgilendirmesi ("[Müvekkil Bilgilendirme]" konulu, sorumlu avukata giden ayrı mail)
+   üç şarta bağlıdır: ana avukat maili gönderiliyor (`send_email`) + kullanıcı istedi
+   (`send_client_notice`) + **yönetici ana anahtarı açık**
+   (`email_sender.should_notify_client` → `services/app_settings.client_notice_enabled`,
+   varsayılan KAPALI, yönetim paneli > Özellikler'den açılır). Asıl kapı sunucudadır:
+   arayüz kutuyu göstermese de bayat/elle `send_client_notice=true` isteği anahtarı
+   aşamaz; kapalıyken sonuç `client_notice: "Atlandı (özellik yönetici panelinden
+   kapalı)"` olur (`routes/processing.py` confirm bloğu).
 6. **Dava zenginleştirme**: belge bir davaya bağlıysa `_auto_update_case_status`
    (`processing.py:160`) ve `_auto_enrich_case_data` (`processing.py:213`) çalışır;
    duruşma tarihi varsa kaydedilir.
