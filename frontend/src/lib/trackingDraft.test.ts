@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
     STAGE_FIELDS,
     PANEL_FIELDS,
+    EVENT_FIELDS,
     DECISION_STAGE_BY_PANEL_KEY,
     suggestedStageFromDecisions,
     TRACKING_DRAFT_KEYS,
@@ -243,6 +244,51 @@ describe("aşama etiketi eşlemesi (G072 route'u)", () => {
         for (const key of Object.keys(DECISION_STAGE_BY_PANEL_KEY)) {
             expect(STAGE_FIELDS[key]).toBeDefined();
         }
+    });
+});
+
+describe("belgeleme olayı alanları (G103 → G106)", () => {
+    it("iki alan tanımı sözleşmeyle BİREBİR: anahtar/etiket/liste (G103/G105 ortak)", () => {
+        expect(EVENT_FIELDS).toEqual([
+            { label: "Olay Türü",     key: "olay_turu",     type: "select", optionsFrom: "event_types" },
+            { label: "Hükümdeki Rol", key: "hukumdeki_rol", type: "select", optionsFrom: "judgment_roles" },
+        ]);
+    });
+
+    it("iki alan taslak anahtarlarında — dirty/patch akışına girerler", () => {
+        expect(TRACKING_DRAFT_KEYS).toContain("olay_turu");
+        expect(TRACKING_DRAFT_KEYS).toContain("hukumdeki_rol");
+    });
+
+    it("hiçbir aşama sekmesine gömülmediler (değer tek slot, güncel kademeye göre)", () => {
+        const stageKeys = Object.values(STAGE_FIELDS).flat().map(f => f.key);
+        for (const f of EVENT_FIELDS) expect(stageKeys).not.toContain(f.key);
+        // G073 üçlüsüne de karışmadılar — PANEL_FIELDS envanteri fotoğraflı
+        for (const f of EVENT_FIELDS) {
+            expect(PANEL_FIELDS.map(p => p.key)).not.toContain(f.key);
+        }
+    });
+
+    it("seçim taslağa girer; dokunulmayan alan patch'e GİRMEZ", () => {
+        let d = initTrackingDraft(caseData);
+        d = setDraftField(d, "olay_turu", "Belgeleme Olayı");
+        // toEqual kesin: hukumdeki_rol dokunulmadı, patch'te YOK
+        expect(buildPatch(d)).toEqual({ olay_turu: "Belgeleme Olayı" });
+    });
+
+    it("boş seçim alanı temizler — null gider (backend NULL yazar)", () => {
+        let d = initTrackingDraft({ olay_turu: "Tıbbi Olay", hukumdeki_rol: "Tek Gerekçe" });
+        d = setDraftField(d, "olay_turu", "");
+        expect(buildPatch(d)).toEqual({ olay_turu: null });
+    });
+
+    it("taslak kalıcılığı iki alanı da kapsar: rebase dirty değeri KORUR", () => {
+        let d = initTrackingDraft(caseData);
+        d = setDraftField(d, "hukumdeki_rol", "Yan Gerekçe");
+        d = rebaseDraft(d, { ...caseData, olay_turu: "Tıbbi Olay" });
+        expect(d.values.olay_turu).toBe("Tıbbi Olay");      // temiz → sunucu değeri
+        expect(d.values.hukumdeki_rol).toBe("Yan Gerekçe"); // dirty → korunur
+        expect(dirtyKeys(d)).toEqual(["hukumdeki_rol"]);
     });
 });
 
