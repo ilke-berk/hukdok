@@ -29,7 +29,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G103 | bant:backend | bagimli:- | Belgeleme olayı alanları: iki kolon + iki kapalı liste (seed'li) + yazma/okuma yolu + olay_turu filtresi
 - [x] G104 | bant:backend | bagimli:G103 | Aktarım eşlemesi: Olay Türü + Hükümdeki Rol sütunları teslimden kartlara (toleranslı başlık)
 - [x] G105 | bant:frontend | bagimli:- | Kart UI: iki kapalı liste alanı + "belgeleme olayı olabilir" rozeti (NULL≠0) + liste filtresi
-- [ ] G106 | bant:frontend | bagimli:- | Takip paneline Olay Türü + Hükümdeki Rol yazma arayüzü (02.09 koşusunun bıraktığı boşluk; G061/G065 emsali) | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
+- [ ] G106 | bant:frontend | bagimli:- | Takip paneline Olay Türü + Hükümdeki Rol yazma arayüzü (02.09b BLOKE çözüldü: G073 kilidine tam-liste istisnası görev tanımına yazıldı; worktree'de hazır uygulama var)
 
 ## Tek görev: Otomatik ilişki katmanı ekrana bağlanır (2026-08-25, kullanıcı kararı)
 
