@@ -3,6 +3,33 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Belgeleme olayı alanları (2026-09-02, kullanıcı kararı)
+
+<!-- Kaynak: veri ekibinin HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25.md ölçümü (3.946
+     belge tarandı, 302 isabet elle okundu: bağlı föylerin ~%14'ü belgeleme olayı taşıyor;
+     45 dosyada "kusur yok ama tazminat var" görünümü). Kullanıcı 02.09'da iki alanın
+     açılmasına karar verdi: cases.olay_turu + cases.hukumdeki_rol, ikisi de kapalı liste.
+     KARARLAR: (1) listeler SEED'Lİ doğar (alleged_faults'un aksine karşı taraf teyidi
+     GEREKMİYOR — değerleri 25.08 belgesi öneriyor, biz sabitledik); (2) olay_turu'na
+     üçüncü değer KARMA ("Tıbbi + Belgeleme") — kart alanı tek slot, karma dosya tahminle
+     tekilleştirilmez; (3) hukumdeki_rol TEK SLOT + güncel kademe kuralı — aşama bazlı rol
+     TARİHÇESİ bilinçli ertelendi (ihtiyaç doğunca stage_decisions desenine taşınır);
+     (4) alanlar hiçbir bağlamda ZORUNLU DEĞİL, boş = "karar okunmadı"; (5) rozet koşulu
+     NULL≠0 kuralına bağlı (hukmedilen_maddi === 0, null değil).
+     SÖZLEŞME G103 + G105 dosyalarında DONDURULDU (G001/G002 deseni) → G105 frontend
+     bandında PARALEL koşabilir; dosya kesişimi yok. G104 aynı bant + G103'ün şemasını
+     kullanıyor → zincirli.
+     KUYRUĞA GİRMEYENLER: olay kaydı tablosunun kendisi (olay_id/TKU olay katmanı — FAZ F
+     tasarım turu, ayrı plan); Gemini'nin karar metninden olay türü/rol ÖNERMESİ (tahmin
+     yasağı — önce aktarım verisiyle isabet ölçülür, kullanıcı kararı); alleged_faults'a
+     31.08 notundaki 9 değerin seed'lenmesi (karşı tarafın "kapalı liste" teyidi yazılı
+     ama kullanıcı onayı alınmadı — gündüz işi); veri ekibine gidecek cevap yazısı
+     (kullanıcı/gündüz işi). -->
+
+- [ ] G103 | bant:backend | bagimli:- | Belgeleme olayı alanları: iki kolon + iki kapalı liste (seed'li) + yazma/okuma yolu + olay_turu filtresi
+- [ ] G104 | bant:backend | bagimli:G103 | Aktarım eşlemesi: Olay Türü + Hükümdeki Rol sütunları teslimden kartlara (toleranslı başlık)
+- [ ] G105 | bant:frontend | bagimli:- | Kart UI: iki kapalı liste alanı + "belgeleme olayı olabilir" rozeti (NULL≠0) + liste filtresi
+
 ## Tek görev: Otomatik ilişki katmanı ekrana bağlanır (2026-08-25, kullanıcı kararı)
 
 <!-- Kaynak: 2026-08-25 migrasyon demosu hazırlığı. Kullanıcı Gökçınar kartında (14142)
