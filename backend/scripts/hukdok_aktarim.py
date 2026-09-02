@@ -46,16 +46,18 @@ Pazarlıksız kurallar
 * `statement_timeout` koşu süresince açıkça yükseltilir (§8 madde 6): engine
   30 sn ile bağlanır, toplu yazma bunu meşru aşar.
 
-YAZILAN kart alanları (tam eşleme turu, 2026-08-19)
----------------------------------------------------
+YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02)
+-----------------------------------------------------------------------
 `KART_ALANLARI` + `KART_TURETILEN` sözlükleri tek doğruluk kaynağıdır; hepsi
 `kart_degerleri()`ndan geçer. Kabaca: sınıflandırma (`file_type`, `status`,
 `subject`, `court`), esas (`esas_no` — tarihçe yolundan), tarihler
 (`opening_date`, `acceptance_date`, `arsiv_tarihi`, `arabuluculuk_karar_tarihi`),
 para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, üç
 `hukmedilen_*`), dosya numaraları (`hasar_dosya_no`, `hukuk_no`), süreç
-(`last_status`, `bureau_type`, `arabuluculuk_no`, `istinaf_basvuran_taraf`) ve
-G044'ün tıbbi beşlisi.
+(`dosya_son_durumu`, `bureau_type`, `arabuluculuk_no`), G044'ün tıbbi beşlisi
+ve belgeleme olayı alanları (`olay_turu`, `hukumdeki_rol` — G103 kapalı
+listelerine AD bazlı eşleme; tanınmayan değer YAZILMAZ, satır raporuna düşer;
+G104).
 
 Avukatlar AYRI yoldan gider: "Sorumlu Avukatlar" bir listedir, `case_lawyers`
 satırlarına YALNIZ-EKLEME ile açılır; kartın tek kutusu (`responsible_lawyer_name`)
@@ -100,7 +102,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # E402 (import'tan önce sys.path kurulumu) scripts/* için pyproject'te bilinçli
 # olarak kapalıdır — script tek başına da koşabilmeli.
 import models
-from managers import case_manager, foy_map, stage_decisions
+from managers import case_manager, foy_map, seed_data, stage_decisions
 from managers.reference_lists import tr_title, tr_upper
 from party_check import normalize_party_key
 from required_fields import AKTARIM_SOURCE_PREFIX
@@ -171,6 +173,13 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     "iddia_edilen_kusur":        ("İddia Edilen Kusur",),
     "hastada_olusan_zarar":      ("Hastada Oluşan Zarar",),
     "uygulanan_yontem":          ("Uygulanan Yöntem",),
+    # --- belgeleme olayı alanları (G104, 25.08 belgesi §5): başlıklar karşı
+    # tarafla yazılı olarak henüz SABİTLENMEDİ — aday desen toleranslıdır
+    # (_baslik_anahtari aksan/büyük-küçük/boşluk farklarını zaten yutar) ve
+    # başlık teslimde YOKSA alan "bu teslimde yok" sayılır: eski paketlerle
+    # koşu davranış değiştirmez (None sözleşmesi).
+    "olay_turu":                 ("Olay Türü",),
+    "hukumdeki_rol":             ("Hükümdeki Rol",),
 }
 
 # Satırın kimliği: bu sütun yoksa dosya bu script için okunamaz.
@@ -219,6 +228,19 @@ class SatirAtlandi(SatirHatasi):
     Eşleştirme köprüsü %97,4; kalan satırların kartı henüz yok ve bu turda
     kart YARATILMIYOR. Beklenen bir sonucu "hata" saymak, gerçek hataları
     gürültüde boğardı — ama satır yine de rapora düşer.
+    """
+
+
+class AlanHatasi(Exception):
+    """TEK alanın yazımını düşüren DEĞER hatası — satır işlenmeye DEVAM eder.
+
+    `SatirHatasi`nın alan-düzeyi kardeşi (G104): kapalı listede karşılığı
+    olmayan değer föyün DİĞER alanlarını düşürmez; yalnız bu alan yazılmaz,
+    sebep satır raporuna HATA olarak düşer (tahmin yasağı — karşı tarafın
+    düzeltme listesi konusudur, koşu NONZERO çıkar). SAVEPOINT gerekmez:
+    dönüşüm yazımdan ÖNCE koşar, geri alınacak bir şey yoktur. Bilinçli olarak
+    `SatirHatasi`ndan TÜREMEZ — türeseydi satır işleme/ön geçiş yolları bunu
+    "satır düştü" sanırdı; `kart_degerleri` alan düzeyinde yakalar.
     """
 
 
@@ -535,6 +557,88 @@ def _baslik_bicimli(deger: Any, alan: str) -> Optional[str]:
     return _kirp(tr_title(metin), alan) if metin else None
 
 
+# ─── Belgeleme olayı alanları (G104) ─────────────────────────────────────────
+# Değer eşlemesi AD bazlıdır ve KAPALI listeye karşı yapılır; adların tek
+# doğruluk kaynağı G103 seed sabitleridir (`seed_data.EVENT_TYPES` /
+# `JUDGMENT_ROLES`) — burada tekrarlanmaz, liste değişirse eşleme kendiliğinden
+# uyar. `_esleme`den farkı RAPORLAMADIR: İstinaf eşlemesinde tanınmayan değer
+# sessizce boş kalır (17 yazım ölçülüp bilinçli kabul edildi); bu iki alanda
+# değer havuzu henüz ölçülmedi — tanınmayan değer `AlanHatasi` ile satır
+# raporuna düşer, sessiz boşluk kusuru düzeltme listesinden gizlerdi.
+_OLAY_TURU_ADLARI: Dict[str, str] = dict(seed_data.EVENT_TYPES)
+OLAY_TURU_ESLEMESI: Dict[str, str] = {
+    _baslik_anahtari(ad): ad for ad in _OLAY_TURU_ADLARI.values()
+}
+HUKUMDEKI_ROL_ESLEMESI: Dict[str, str] = {
+    _baslik_anahtari(ad): ad for _kod, ad in seed_data.JUDGMENT_ROLES
+}
+# 31.08 teslim kuralı: ` ; ` ile birlikte gelen {Tıbbi Olay, Belgeleme Olayı}
+# kapalı listenin KARMA değerine normalize edilir (kart alanı TEK SLOT; karma
+# durum açık değerle taşınır, yazım birebir kapalı liste adıdır — G103).
+_OLAY_TURU_KARMA_PARCALARI = frozenset(
+    {_OLAY_TURU_ADLARI["TIBBI"], _OLAY_TURU_ADLARI["BELGELEME"]}
+)
+
+
+def _kapali_liste_parcalari(deger: Any, alan: str, harita: Dict[str, str]) -> List[str]:
+    """Hücreyi ` ; ` ayracıyla parçalar, her parçayı kapalı liste ADINA çözer.
+
+    Dönen liste mükerrersiz KANONİK adlardır (bizim yazımımız; karşılaştırma
+    `_baslik_anahtari` ile — aksan/büyük-küçük/noktalama toleranslı). Yer
+    tutucu parçalar D5'in ORTAK sözlüğüyle NULL sayılır (tarih yoluyla aynı
+    davranış: "-" bir alanda yer tutucuysa diğerinde de öyledir). Tanınmayan
+    parça `AlanHatasi` atar — hücrenin tanınan kısmını yazmak tahmin olurdu.
+    """
+    ham = _metin(deger)
+    if ham is None:
+        return []
+    adlar: List[str] = []
+    for parca in _AYRAC.split(ham):
+        temiz = " ".join(parca.split())
+        if not temiz:
+            continue
+        if tr_upper(temiz) in YER_TUTUCULAR:
+            logger.warning(f"{alan}: yer tutucu değer NULL'landı ({temiz!r})")
+            continue
+        ad = harita.get(_baslik_anahtari(temiz))
+        if ad is None:
+            raise AlanHatasi(f"kapalı listede karşılığı yok: {temiz!r}")
+        if ad not in adlar:
+            adlar.append(ad)
+    return adlar
+
+
+def _olay_turu(deger: Any, alan: str) -> Optional[str]:
+    """`cases.olay_turu` — tek değer ya da {Tıbbi, Belgeleme} → KARMA.
+
+    Başka çok değerli kombinasyon (örn. tekil + KARMA) TANIMSIZDIR: normalize
+    etmek tahmin olurdu; alan yazılmaz, satır rapora düşer. Aynı değerin
+    mükerrer yazımı ("Tıbbi Olay ; Tıbbi Olay") tek değerdir — belirsizlik yok.
+    """
+    adlar = _kapali_liste_parcalari(deger, alan, OLAY_TURU_ESLEMESI)
+    if not adlar:
+        return None
+    if len(adlar) == 1:
+        return adlar[0]
+    if set(adlar) == _OLAY_TURU_KARMA_PARCALARI:
+        return _OLAY_TURU_ADLARI["KARMA"]
+    raise AlanHatasi(f"çok değerli hücre tanımsız kombinasyon: {' ; '.join(adlar)}")
+
+
+def _hukumdeki_rol(deger: Any, alan: str) -> Optional[str]:
+    """`cases.hukumdeki_rol` — çok değer TANIMSIZDIR (SÖZLEŞME, 31.08).
+
+    Rol, belgeleme olgusunun GÜNCEL kademedeki hükümde oynadığı roldür; iki
+    rol aynı anda oynanmaz — çok değerli hücre yazılmaz, satır rapora düşer.
+    """
+    adlar = _kapali_liste_parcalari(deger, alan, HUKUMDEKI_ROL_ESLEMESI)
+    if not adlar:
+        return None
+    if len(adlar) > 1:
+        raise AlanHatasi(f"çok değerli hücre tanımsız: {' ; '.join(adlar)}")
+    return adlar[0]
+
+
 # Kart alanı → (kaynak sütun anahtarı, dönüştürücü)
 KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # --- kimlik/sınıflandırma
@@ -576,6 +680,12 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     "iddia_edilen_kusur":   ("iddia_edilen_kusur", _metin_alan),
     "hastada_olusan_zarar": ("hastada_olusan_zarar", _metin_alan),
     "uygulanan_yontem":     ("uygulanan_yontem", _metin_alan),
+    # --- belgeleme olayı alanları (G104): kapalı liste ADLARI (G103 şeması).
+    # Dolu hücre kuralı METİN alanlarıyla aynı sınıf (varsayılan üzerine
+    # yazma); İÇERİK modu GEREKSİZ — dönüştürücü çıktısı zaten kanonik ad,
+    # yalnız-yazım farkı bu alanlarda oluşamaz.
+    "olay_turu":            ("olay_turu", _olay_turu),
+    "hukumdeki_rol":        ("hukumdeki_rol", _hukumdeki_rol),
 }
 
 # İÇERİK farkı varsa yazılan, YAZIM farkı varsa dokunulmayan alanlar.
@@ -736,16 +846,27 @@ def _eslesme_anahtari(deger: Any) -> str:
 # Satır işleme
 # ═══════════════════════════════════════════════════════════════════════════
 
-def kart_degerleri(satir: HamSatir) -> Dict[str, Any]:
+def kart_degerleri(satir: HamSatir,
+                   atlanan_alanlar: Optional[List[Tuple[str, str]]] = None) -> Dict[str, Any]:
     """Satırın kart alanlarına çevrilmiş NİHAİ değerleri — TEK dönüşüm noktası.
 
     Hem yazma yolu hem çelişki ön geçişi buradan okur: ikisi farklı yerde
     dönüştürseydi "çelişkili" sayılan değerle yazılan değer ayrışabilirdi.
     `None` (bu teslimde yok) sözlüğe GİRMEZ — "boşalt" anlamı yok.
+
+    `AlanHatasi` atan dönüştürücü (kapalı liste alanları, G104) satırı
+    DÜŞÜRMEZ: alan sözlüğe girmez, `(alan, sebep)` çifti `atlanan_alanlar`a
+    eklenir (verilmişse) ve yazma yolu satır raporuna düşürür. Çelişki ön
+    geçişi toplamadan çağırır — aynı kusur rapora İKİ kez düşmesin.
     """
     degerler: Dict[str, Any] = {}
     for alan, (kaynak, donustur) in KART_ALANLARI.items():
-        deger = donustur(satir.degerler.get(kaynak), alan)
+        try:
+            deger = donustur(satir.degerler.get(kaynak), alan)
+        except AlanHatasi as exc:
+            if atlanan_alanlar is not None:
+                atlanan_alanlar.append((alan, str(exc)))
+            continue
         if deger is not None:
             degerler[alan] = deger
     for alan, hesapla in KART_TURETILEN.items():
@@ -913,7 +1034,8 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
 
 def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
                          source: str,
-                         celiskili_alanlar: Set[str] = frozenset()) -> List[str]:
+                         celiskili_alanlar: Set[str] = frozenset(),
+                         atlanan_alanlar: Optional[List[Tuple[str, str]]] = None) -> List[str]:
     """DAR alan kümesini kartın ÜZERİNE yazar (UPDATE-in-place); değişenleri döner.
 
     Değişmeyen alan için ne UPDATE ne `case_history` satırı üretilir — ikinci
@@ -921,10 +1043,11 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     KORUNUR (partili teslimde eksik sütun mevcut değeri silmez).
     `celiskili_alanlar` kardeş föylerin uzlaşamadığı alanlardır: dönüşüm YİNE
     koşar (bozuk değer satırı düşürmeye devam etsin diye) ama yazım atlanır —
-    gerekçe `kart_alan_celiskileri` docstring'inde.
+    gerekçe `kart_alan_celiskileri` docstring'inde. `atlanan_alanlar`
+    `kart_degerleri`ye aynen geçer (G104 alan-düzeyi rapor toplayıcısı).
     """
     degisenler: List[str] = []
-    degerler = kart_degerleri(satir)
+    degerler = kart_degerleri(satir, atlanan_alanlar)
     for alan, yeni in degerler.items():
         if alan in celiskili_alanlar:
             continue
@@ -1125,9 +1248,11 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         source=foy_source,
     )
 
+    atlanan_alanlar: List[Tuple[str, str]] = []
     degisenler = _kart_alanlarini_yaz(
         db, case, satir, source,
         celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
+        atlanan_alanlar=atlanan_alanlar,
     )
     eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
     eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
@@ -1159,6 +1284,20 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     if degisenler:
         sonuc.alan_degisikligi += len(degisenler)
         sonuc.degisen_kartlar.add(cast(int, case.id))
+
+    # G104 — alan-düzeyi atlamalar satır raporuna HATA olarak düşer (satır
+    # İŞLENDİ, yalnız o alan yazılmadı; sebep sütunu bunu açıkça söyler).
+    # SATIR düşerse (SatirHatasi yukarı fırlar) buraya hiç gelinmez ve rapora
+    # yalnız satır-düzeyi kayıt düşer — ikileme yok.
+    for alan, sebep in atlanan_alanlar:
+        sonuc.rapor_satirlari.append(RaporSatiri(
+            satir_no=satir.satir_no, sistem_no=sistem_no,
+            dosya_no=_metin(satir.degerler.get("dosya_no")) or "",
+            tur="HATA", sebep=f"{alan} yazılmadı: {sebep}",
+        ))
+        logger.warning(
+            f"Satır {satir.satir_no} ({sistem_no}) {alan} yazılmadı: {sebep}"
+        )
 
     sonuc.islenen += 1
     return cast(int, case.id)
