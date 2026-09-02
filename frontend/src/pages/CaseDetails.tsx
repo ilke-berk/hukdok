@@ -16,7 +16,7 @@ import { useCases } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import {
     MEDICAL_CARD_FIELDS, OFFICE_CARD_FIELDS, PROCESS_CARD_FIELDS,
-    filledFields, formatCardValue, closedListState,
+    filledFields, formatCardValue, closedListState, isDocumentationEventCandidate,
     type CardFieldDef, type ClosedListKey,
 } from "@/lib/caseCardFields";
 import { useEffect, useState } from "react";
@@ -79,6 +79,12 @@ interface CaseDetailsData {
     iddia_edilen_kusur?: string;
     hastada_olusan_zarar?: string;
     uygulanan_yontem?: string;
+    // G105 belgeleme olayı alanları + rozet girdileri. Hükmedilen tutarlarda
+    // NULL ≠ 0: null/undefined = girilmedi, sayısal 0 = talep reddedildi.
+    olay_turu?: string;
+    hukumdeki_rol?: string;
+    hukmedilen_maddi?: number;
+    hukmedilen_manevi?: number;
     related_cases?: { id: number; esas_no?: string; tracking_no?: string; file_type?: string; court?: string; status: string }[];
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
@@ -171,7 +177,7 @@ const CaseDetails = () => {
     const navigate = useNavigate();
     const { getCase } = useCases();
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
-    const { allegedFaults, appealingParties } = useConfig();
+    const { allegedFaults, appealingParties, eventTypes, judgmentRoles } = useConfig();
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
     const [activeTab, setActiveTab] = useState("overview");
@@ -403,6 +409,19 @@ const CaseDetails = () => {
                                     <Badge className={`text-sm px-3 py-1 font-semibold ${style.bg} ${style.text} hover:${style.bg} border-0`}>
                                         {caseData.status}
                                     </Badge>
+                                    {/* G105: maddi red + manevi kabul imzası — bilgilendirme
+                                        rozeti (tıklanmaz). NULL ≠ 0: maddi tutar girilmemişse
+                                        (null) rozet DOĞMAZ; olay_turu dolunca kaybolur. */}
+                                    {isDocumentationEventCandidate(caseData) && (
+                                        <Badge
+                                            variant="outline"
+                                            className="text-sm px-3 py-1 font-medium gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                            title="Maddi talep reddedilmiş (0 TL), manevi tazminata hükmedilmiş; olay türü henüz işaretlenmemiş. Dosya belgeleme olayı olabilir — Olay Türü alanı doldurulunca bu uyarı kalkar."
+                                        >
+                                            <AlertTriangle className="w-3.5 h-3.5" />
+                                            Belgeleme olayı olabilir
+                                        </Badge>
+                                    )}
                                 </div>
 
                                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -582,7 +601,7 @@ const CaseDetails = () => {
                             icon={<Activity className="w-4 h-4 text-primary" />}
                             fields={MEDICAL_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
                         />
 
                         {/* G074: arabuluculuk + arşiv alanları buradan ÇIKTI — takip
@@ -594,7 +613,7 @@ const CaseDetails = () => {
                             icon={<Scale className="w-4 h-4 text-primary" />}
                             fields={PROCESS_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
                         />
 
                         <TransferFieldsCard
@@ -603,7 +622,7 @@ const CaseDetails = () => {
                             icon={<Briefcase className="w-4 h-4 text-primary" />}
                             fields={OFFICE_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties }}
+                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
                         />
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

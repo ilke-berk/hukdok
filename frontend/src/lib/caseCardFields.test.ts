@@ -6,18 +6,22 @@ import {
 import { TRACKING_DRAFT_KEYS } from "./trackingDraft";
 
 describe("caseCardFields — alan tanımları (G048)", () => {
-    it("beş tıbbi alan TEK grupta toplanır, dağıtılmaz", () => {
+    it("tıbbi alanlar TEK grupta toplanır, dağıtılmaz (G105 ile yedi alan)", () => {
         expect(MEDICAL_CARD_FIELDS.map(f => f.key)).toEqual([
             "tibbi_surec", "tibbi_olay", "iddia_edilen_kusur",
             "hastada_olusan_zarar", "uygulanan_yontem",
+            // G105: iki kapalı liste beşlinin ALTINA girdi — sıra kabul kriteri.
+            "olay_turu", "hukumdeki_rol",
         ]);
     });
 
-    it("iki kapalı liste alanı serbest metin DEĞİL, backend listesine bağlıdır", () => {
+    it("dört kapalı liste alanı serbest metin DEĞİL, backend listesine bağlıdır", () => {
         const closed = [...MEDICAL_CARD_FIELDS, ...PROCESS_CARD_FIELDS]
             .filter(f => f.type === "closedList");
         expect(closed.map(f => [f.key, f.list])).toEqual([
             ["iddia_edilen_kusur", "alleged_faults"],
+            ["olay_turu", "event_types"],
+            ["hukumdeki_rol", "judgment_roles"],
             ["istinaf_basvuran_taraf", "appealing_parties"],
         ]);
         // Sabit değer listesi frontend'de TUTULMAZ — yalnız liste anahtarı taşınır.

@@ -210,6 +210,8 @@ export const useCases = () => {
         q?: string;
         exact?: boolean;
         fileType?: string;
+        /** G105 Olay Türü filtresi — değer listenin ADIdır (ör. "Belgeleme Olayı"). */
+        olayTuru?: string;
         urgentDays?: number;
         missingRequired?: boolean;
     } = {}): Promise<{ cases: T[]; total: number }> => {
@@ -222,6 +224,8 @@ export const useCases = () => {
         if (options.q) params.append("q", options.q);
         if (options.exact) params.append("exact", "true");
         if (options.fileType && options.fileType !== "ALL") params.append("file_type", options.fileType);
+        // "Tümü" (ALL) seçiliyken param GÖNDERİLMEZ — status/lawyer ile aynı desen.
+        if (options.olayTuru && options.olayTuru !== "ALL") params.append("olay_turu", options.olayTuru);
         if (options.urgentDays !== undefined) params.append("urgent_days", String(options.urgentDays));
         if (options.missingRequired) params.append("missing_required", "true");
 
