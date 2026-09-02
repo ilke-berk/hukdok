@@ -27,7 +27,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      (kullanıcı/gündüz işi). -->
 
 - [x] G103 | bant:backend | bagimli:- | Belgeleme olayı alanları: iki kolon + iki kapalı liste (seed'li) + yazma/okuma yolu + olay_turu filtresi
-- [ ] G104 | bant:backend | bagimli:G103 | Aktarım eşlemesi: Olay Türü + Hükümdeki Rol sütunları teslimden kartlara (toleranslı başlık)
+- [x] G104 | bant:backend | bagimli:G103 | Aktarım eşlemesi: Olay Türü + Hükümdeki Rol sütunları teslimden kartlara (toleranslı başlık)
 - [x] G105 | bant:frontend | bagimli:- | Kart UI: iki kapalı liste alanı + "belgeleme olayı olabilir" rozeti (NULL≠0) + liste filtresi
 
 ## Tek görev: Otomatik ilişki katmanı ekrana bağlanır (2026-08-25, kullanıcı kararı)
