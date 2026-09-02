@@ -403,6 +403,10 @@ class CaseRead(BaseModel):
     iddia_edilen_kusur: Optional[str] = None
     hastada_olusan_zarar: Optional[str] = None
     uygulanan_yontem: Optional[str] = None
+    # Belgeleme olayı alanları (G103) — kapalı listeler (event_types /
+    # judgment_roles); NULL = "karar okunmadı", hiçbir bağlamda zorunlu değil.
+    olay_turu: Optional[str] = None
+    hukumdeki_rol: Optional[str] = None
     created_at: datetime
     parties: List[CasePartyCreate] = []
     lawyers: List[CaseLawyerCreate] = []
@@ -462,6 +466,11 @@ class CaseTrackingUpdate(BaseModel):
     kesinlesme_tarihi: Optional[date] = None
     infaz_tarihi: Optional[date] = None
     arsiv_tarihi: Optional[date] = None
+    # Belgeleme olayı alanları (G103) — kapalı listeler (event_types /
+    # judgment_roles); yazma yolu takip paneli, doğrulama update_case_tracking
+    # kapısında (G066 davranış eşi, case_manager._EVENT_LIST_COLUMNS)
+    olay_turu: Optional[str] = None
+    hukumdeki_rol: Optional[str] = None
     note: Optional[str] = None
 
 

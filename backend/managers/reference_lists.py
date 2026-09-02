@@ -100,6 +100,10 @@ LIST_REGISTRY = {
     "appeal_decisions":    ListSpec(models.AppealDecision, ("code", "name"), "set_appeal_decisions"),
     "cassation_decisions": ListSpec(models.CassationDecision, ("code", "name"), "set_cassation_decisions"),
     "revision_decisions":  ListSpec(models.RevisionDecision, ("code", "name"), "set_revision_decisions"),
+    # Belgeleme olayı listeleri (G103) — 25.08 ölçümü + 02.09 kullanıcı kararı;
+    # mekanizma yine aynı.
+    "event_types":    ListSpec(models.EventType, ("code", "name"), "set_event_types"),
+    "judgment_roles": ListSpec(models.JudgmentRole, ("code", "name"), "set_judgment_roles"),
 }
 
 # refresh_cache("email_recipients") gibi eski çağrılar için takma adlar
@@ -156,6 +160,9 @@ DEPENDENCIES = {
     "appeal_decisions":    [DepSpec(models.Case, "istinaf_karar_durumu", "dava")],
     "cassation_decisions": [DepSpec(models.Case, "temyiz_karar_durumu", "dava")],
     "revision_decisions":  [DepSpec(models.Case, "karar_duzeltme_durumu", "dava")],
+    # Belgeleme olayı listeleri (G103): ad, `cases`in ilgili kolonunda denormalize.
+    "event_types":    [DepSpec(models.Case, "olay_turu", "dava")],
+    "judgment_roles": [DepSpec(models.Case, "hukumdeki_rol", "dava")],
     "doctypes":          [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
     "party_roles":       [DepSpec(models.CaseParty, "role", "dava tarafı", clearable=False)],
     "cities":            [DepSpec(models.Client, "il", "müvekkil"),
@@ -188,6 +195,7 @@ LIST_TITLES = {
     "alleged_faults": "İddia Edilen Kusurlar", "appealing_parties": "İstinaf Başvuran Taraflar",
     "local_decisions": "Yerel Karar Durumları", "appeal_decisions": "İstinaf Karar Durumları",
     "cassation_decisions": "Temyiz Onama Durumları", "revision_decisions": "Karar Düzeltme Durumları",
+    "event_types": "Olay Türleri", "judgment_roles": "Hükümdeki Roller",
 }
 
 COLUMN_TITLES = {
@@ -573,6 +581,8 @@ def get_local_decisions():      return get_items("local_decisions")
 def get_appeal_decisions():     return get_items("appeal_decisions")
 def get_cassation_decisions():  return get_items("cassation_decisions")
 def get_revision_decisions():   return get_items("revision_decisions")
+def get_event_types():          return get_items("event_types")
+def get_judgment_roles():       return get_items("judgment_roles")
 
 
 def get_court_types(parent_code: str = None):
@@ -615,6 +625,8 @@ def add_local_decision(code: str, name: str):      return add_item("local_decisi
 def add_appeal_decision(code: str, name: str):     return add_item("appeal_decisions", code=code, name=name)
 def add_cassation_decision(code: str, name: str):  return add_item("cassation_decisions", code=code, name=name)
 def add_revision_decision(code: str, name: str):   return add_item("revision_decisions", code=code, name=name)
+def add_event_type(code: str, name: str):          return add_item("event_types", code=code, name=name)
+def add_judgment_role(code: str, name: str):       return add_item("judgment_roles", code=code, name=name)
 
 
 def add_court_type(code: str, name: str, parent_code: str):
@@ -683,3 +695,5 @@ def delete_local_decision(code: str):      return delete_item("local_decisions",
 def delete_appeal_decision(code: str):     return delete_item("appeal_decisions", code)
 def delete_cassation_decision(code: str):  return delete_item("cassation_decisions", code)
 def delete_revision_decision(code: str):   return delete_item("revision_decisions", code)
+def delete_event_type(code: str):          return delete_item("event_types", code)
+def delete_judgment_role(code: str):       return delete_item("judgment_roles", code)

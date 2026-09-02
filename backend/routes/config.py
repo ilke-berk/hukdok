@@ -38,6 +38,8 @@ from managers.reference_lists import (
     get_appeal_decisions, add_appeal_decision, delete_appeal_decision,
     get_cassation_decisions, add_cassation_decision, delete_cassation_decision,
     get_revision_decisions, add_revision_decision, delete_revision_decision,
+    get_event_types, add_event_type, delete_event_type,
+    get_judgment_roles, add_judgment_role, delete_judgment_role,
     reorder_list, rename_item, update_item, delete_item, get_usage,
     resolve_list_type, LIST_REGISTRY,
 )
@@ -681,6 +683,63 @@ def api_delete_revision_decision(code: str, user: dict = Depends(require_admin))
     success = delete_revision_decision(code)
     if not success:
         raise HTTPException(status_code=404, detail="Revision decision not found")
+    return {"status": "success"}
+
+
+# ─── BELGELEME OLAYI LİSTELERİ (G103) ────────────────────────────────────────
+#
+# Dava kartındaki `olay_turu` ve `hukumdeki_rol` alanları serbest metin DEĞİL
+# bu listelerden seçilir (25.08 belgeleme olayı ölçümü + 02.09 kullanıcı
+# kararı); arayüz değerleri buradan okur, frontend'de sabit liste tutulmaz
+# (G048 kuralı). Kullanımdaki değerin silinmesi ItemInUseError ile 409'a düşer.
+
+@router.get("/api/config/event_types")
+def api_get_event_types(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_event_types()
+    if not data:
+        data = get_event_types()
+    return data
+
+
+@router.post("/api/config/event_types")
+def api_add_event_type(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_event_type(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add event type")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/event_types/{code}")
+def api_delete_event_type(code: str, user: dict = Depends(require_admin)):
+    success = delete_event_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Event type not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/judgment_roles")
+def api_get_judgment_roles(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_judgment_roles()
+    if not data:
+        data = get_judgment_roles()
+    return data
+
+
+@router.post("/api/config/judgment_roles")
+def api_add_judgment_role(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_judgment_role(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add judgment role")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/judgment_roles/{code}")
+def api_delete_judgment_role(code: str, user: dict = Depends(require_admin)):
+    success = delete_judgment_role(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Judgment role not found")
     return {"status": "success"}
 
 

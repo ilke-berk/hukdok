@@ -109,6 +109,11 @@ def seed_all_lists():
     _seed_appeal_decisions()
     _seed_cassation_decisions()
     _seed_revision_decisions()
+    # Belgeleme olayı listeleri (G103) — alleged_faults'un aksine SEED'Lİ:
+    # değerler karşı taraf teyidi beklemiyor, 25.08 belgesi + 02.09 kullanıcı
+    # kararı ile bizde sabitlendi.
+    _seed_event_types()
+    _seed_judgment_roles()
 
 
 def _seed_file_types():
@@ -451,6 +456,42 @@ def _seed_karar_listesi(model, degerler, liste_adi: str):
         logger.error(f"Seed {liste_adi} Error: {e}")
     finally:
         db.close()
+
+
+# Belgeleme olayı KAPALI listeleri (G103) — kaynak: veri ekibinin 25.08 ölçümü
+# (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25) + 02.09 kullanıcı kararı.
+# `alleged_faults`un aksine SEED'LİDİR: değerler karşı taraf teyidi beklemiyor,
+# bizde sabitlendi. Kod ASCII ve DEĞİŞMEZ kimliktir (APPEALING_PARTIES deseni);
+# ad panelden düzeltilse de kod sabit kalır. KARMA bilinçli: kart alanı tek
+# slot, ölçümün "yan gerekçe" sınıfında iki tür birlikte görülüyor — karma
+# durum açık değerle taşınır, tahminle tekilleştirilmez.
+EVENT_TYPES = [
+    ("TIBBI", "Tıbbi Olay"),
+    ("BELGELEME", "Belgeleme Olayı"),
+    ("KARMA", "Tıbbi + Belgeleme"),
+]
+
+# Hükümdeki Rol: belgeleme olgusunun GÜNCEL kademedeki hükümde oynadığı rol
+# ("saptandı" ≠ "kazandırdı") — kademe değişince değer düzeltme partisiyle
+# güncellenir (E-9/bayat hüküm kuralı).
+JUDGMENT_ROLES = [
+    ("TEK-GEREKCE", "Tek Gerekçe"),
+    ("YAN-GEREKCE", "Yan Gerekçe"),
+    ("YALNIZ-SAPTAMA", "Yalnız Saptama"),
+    ("REDDEDILMIS-IDDIA", "Reddedilmiş İddia"),
+]
+
+
+def _seed_event_types():
+    # `_seed_karar_listesi` adı G060'tan kalmadır; gövdesi jenerik kapalı-liste
+    # seed'idir (model + değerler + ad, satır başına SAVEPOINT yarış koruması
+    # dahil — G058). Kopyalamak yerine çağrılır; ad testle kilitli olduğu için
+    # yeniden adlandırılmadı (test_g060::test_seed_yarissiz_ekleme_kullaniyor).
+    _seed_karar_listesi(models.EventType, EVENT_TYPES, "event_types")
+
+
+def _seed_judgment_roles():
+    _seed_karar_listesi(models.JudgmentRole, JUDGMENT_ROLES, "judgment_roles")
 
 
 def _seed_local_decisions():

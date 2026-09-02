@@ -136,6 +136,14 @@ class Case(Base):
     iddia_edilen_kusur = Column(String(200), nullable=True)
     hastada_olusan_zarar = Column(String(300), nullable=True)
     uygulanan_yontem = Column(String(200), nullable=True)
+    # Belgeleme olayı alanları (G103) — iki KAPALI liste (event_types /
+    # judgment_roles). Veri ekibinin 25.08 ölçümü: bağlı föylerin ~%14'ünde
+    # tazminatın kaynağı tıbbi olay değil BELGELEME olayı (aydınlatma ihlali /
+    # tıbbi kayıt eksikliği) ve aynı olgu yargı kademesine göre rol değiştiriyor
+    # ("saptandı" ≠ "kazandırdı"). Ad denormalize taşınır (iddia_edilen_kusur
+    # deseni). NULL = "karar okunmadı" — meşru durumdur, backfill YOK.
+    olay_turu = Column(String(100), nullable=True)      # KAPALI liste (event_types)
+    hukumdeki_rol = Column(String(100), nullable=True)  # KAPALI liste (judgment_roles)
 
     # ─── EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────────
     # TÜRETİLMİŞ kolon: NULL = eksik yok, aksi hâlde kaydın kovası
@@ -729,6 +737,48 @@ class RevisionDecision(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)   # e.g. "KARAR_DUZELTME_RET"
     name = Column(String, nullable=False)                            # e.g. "Karar Düzeltme Ret"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+# Belgeleme olayı KAPALI listeleri (G103) — kaynak: veri ekibinin 25.08 ölçümü
+# (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25) + 02.09 kullanıcı kararı.
+# İkisi de appealing_parties deseninin kopyasıdır; ad, `cases`in ilgili
+# kolonunda denormalize taşınır (DEPENDENCIES). `alleged_faults`un aksine
+# SEED'LİDİR: değerler karşı taraf teyidi beklemiyor, bizde sabitlendi
+# (bkz. seed_data.EVENT_TYPES / JUDGMENT_ROLES).
+
+class EventType(Base):
+    """Olay Türü — kapalı liste (3 değer, seed'li).
+
+    `cases.olay_turu` adı denormalize taşır. KARMA ("Tıbbi + Belgeleme")
+    bilinçli: kart alanı tek slot ve ölçümün "yan gerekçe" sınıfında iki tür
+    birlikte görülüyor — karma durum açık değerle taşınır, tahminle
+    tekilleştirilmez.
+    """
+    __tablename__ = "event_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "BELGELEME"
+    name = Column(String, nullable=False)                            # e.g. "Belgeleme Olayı"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class JudgmentRole(Base):
+    """Hükümdeki Rol — kapalı liste (4 değer, seed'li).
+
+    Belgeleme olgusunun GÜNCEL kademedeki hükümde oynadığı rol ("saptandı" ≠
+    "kazandırdı"); `cases.hukumdeki_rol` adı taşır. E-9/bayat hüküm kuralıyla
+    uyumlu: kademe değişince değer düzeltme partisiyle güncellenir.
+    """
+    __tablename__ = "judgment_roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "YAN-GEREKCE"
+    name = Column(String, nullable=False)                            # e.g. "Yan Gerekçe"
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())

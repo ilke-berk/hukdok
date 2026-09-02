@@ -264,3 +264,44 @@ kardeşlerinin aynısıdır.
 
 Okuma/yazma uçları ve UI kapsam dışıdır; testler `backend/tests/test_g063_case_foys.py`
 (şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT).
+
+## 11. Belgeleme olayı alanları — `olay_turu` + `hukumdeki_rol` (G103)
+
+Veri ekibinin 25.08 ölçümü (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25): bağlı föylerin
+~%14'ünde tazminatın kaynağı tıbbi olay değil **belgeleme olayı** (aydınlatma ihlali /
+tıbbi kayıt eksikliği) — 45 dosyada "kusur yok ama tazminat var" görünümü doğdu; ayrıca
+aynı olgu yargı kademesine göre rol değiştiriyor ("saptandı" ≠ "kazandırdı"). Kullanıcı
+kararı (02.09): iki alan, kapalı liste mekanizmasının kopyası, zorunluluk yok, tahmin
+yazılmaz.
+
+- **İki kolon:** `cases.olay_turu` ve `cases.hukumdeki_rol`, VARCHAR(100) NULL +
+  DEFAULT'suz (`backend/database.py` madde 38). **NULL = "karar okunmadı"** — meşru
+  durumdur, backfill YOK. Hiçbir bağlamda zorunlu değiller (`required_fields.py`
+  DEĞİŞMEDİ; kilit: test dosyasındaki `test_alanlar_hicbir_baglamda_zorunlu_degil`).
+- **İki KAPALI liste** — `appealing_parties` deseninin kopyası (model + LIST_REGISTRY +
+  DEPENDENCIES + seed + config route + DynamicConfig setter'ı):
+  `event_types` (Olay Türleri, seed'li 3 değer: Tıbbi Olay · Belgeleme Olayı ·
+  Tıbbi + Belgeleme) ve `judgment_roles` (Hükümdeki Roller, seed'li 4 değer:
+  Tek Gerekçe · Yan Gerekçe · Yalnız Saptama · Reddedilmiş İddia) —
+  `backend/models.py::EventType/JudgmentRole`, `seed_data.EVENT_TYPES/JUDGMENT_ROLES`.
+  `alleged_faults`un aksine SEED'LİDİR: değerler karşı taraf teyidi beklemiyor. KARMA
+  bilinçli: kart alanı tek slot, ölçümün "yan gerekçe" sınıfında iki tür birlikte
+  görülüyor — karma durum açık değerle taşınır, tahminle tekilleştirilmez.
+- **Hükümdeki Rol'ün anlamı:** belgeleme olgusunun **güncel kademedeki** hükümde
+  oynadığı rol; kademe değişince değer düzeltme partisiyle güncellenir (E-9/bayat
+  hüküm kuralıyla uyumlu).
+- **Yazma yolu takip panelidir:** iki alan `TRACKING_FIELDS`te; `update_case_tracking`
+  yazımdan önce G066 davranış eşi bir kapıdan geçirir
+  (`case_manager._EVENT_LIST_COLUMNS` + `validated_event_list_value`): liste dışı
+  değer `InvalidDecisionStatusError` ile reddedilir (api.py 400'e çevirir), liste
+  BOŞSA doğrulama WARNING'le atlanır (seed'i koşmamış kurulum kilitlenmez), None
+  gönderimi alanı temizler, `active` filtresi yok.
+- **Okuma/filtre:** `get_case` çıktısında iki alan; `get_cases(olay_turu=...)` +
+  `GET /api/cases?olay_turu=` `file_type` kalıbıyla eşitlik filtresi (değer listenin
+  ADIDIR, "ALL" = filtre yok).
+- **Uçlar:** `GET/POST/DELETE /api/config/event_types` ve `/api/config/judgment_roles`
+  (`backend/routes/config.py`; POST/DELETE admin — alleged_faults kalıbı).
+
+UI (kart alanları, rozet, liste filtresi dropdown'ı) G105'in işidir; testler
+`backend/tests/test_g103_belgeleme_olayi.py` (şema kilitleri + sqlite seed/kapı/filtre
+davranışı + route 400/403 + gerçek Postgres'te migrasyon yolu).

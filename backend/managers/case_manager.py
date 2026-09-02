@@ -6,7 +6,7 @@ referans listeleri managers/reference_lists.py'dedir.
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import intersect, select, union
 from sqlalchemy.exc import IntegrityError
@@ -456,6 +456,10 @@ def get_case(case_id: int, tenant_id: str = None):
             "iddia_edilen_kusur": item.iddia_edilen_kusur,
             "hastada_olusan_zarar": item.hastada_olusan_zarar,
             "uygulanan_yontem": item.uygulanan_yontem,
+            # Belgeleme olayı alanları (G103) — kapalı listeler (event_types /
+            # judgment_roles); NULL = "karar okunmadı", meşru durum.
+            "olay_turu": item.olay_turu,
+            "hukumdeki_rol": item.hukumdeki_rol,
         }
         result["service_type"] = item.service_type
         result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
@@ -697,6 +701,7 @@ def get_cases(
     urgent_days: int = None,
     missing_required: bool = False,
     missing_bucket: str = None,
+    olay_turu: str = None,
     with_total: bool = True,
 ) -> "tuple[list[dict], int]":
     """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür.
@@ -714,6 +719,9 @@ def get_cases(
     davranış korunur ve borç gizlenmez — kova seçimi panelin işidir ve frontend
     bu görevin kapsamı DIŞINDADIR (ayrı iş). Tanınmayan değer sessizce sonucu
     saptırmasın diye yok sayılır ve WARNING'lenir.
+
+    `olay_turu` (G103): belgeleme olayı filtresi — `file_type` kalıbıyla
+    eşitlik (değer listenin ADIDIR, ör. "Belgeleme Olayı"; "ALL" = filtre yok).
     """
     try:
         db = SessionLocal()
@@ -728,6 +736,10 @@ def get_cases(
 
         if file_type and file_type != "ALL":
             query = query.filter(models.Case.file_type == file_type)
+
+        # Belgeleme olayı filtresi (G103) — file_type kalıbıyla eşitlik
+        if olay_turu and olay_turu != "ALL":
+            query = query.filter(models.Case.olay_turu == olay_turu)
 
         if missing_required:
             # E6: sıcak yolda tek kolon okunur; kural + hesap yazma yolunda
@@ -1616,6 +1628,11 @@ TRACKING_FIELDS = [
     # Kesinleşme / İnfaz — ve dosyanın KAPANIŞ olayı: arşiv, KESINLESME/KAPALI
     # aşamalarının devamıdır; kartta durunca yaşam çizgisi ikiye bölünüyordu (G073).
     "kesinlesme_tarihi", "infaz_tarihi", "arsiv_tarihi",
+    # Belgeleme olayı alanları (G103) — kapalı listeler (event_types /
+    # judgment_roles); yazımdan önce `_EVENT_LIST_COLUMNS` kapısından geçerler
+    # (G066 davranış eşi). Hükümdeki rol karar bağlamlı olduğu için yazma yolu
+    # takip paneli seçildi; hiçbir bağlamda zorunlu değiller.
+    "olay_turu", "hukumdeki_rol",
 ]
 
 
@@ -1629,6 +1646,61 @@ def tracking_changes(data: dict) -> list:
     return [(f, data[f]) for f in TRACKING_FIELDS if f in data]
 
 
+# Belgeleme olayı alanlarının kapalı listeleri (G103) — kolon → (model, liste
+# adı). G066 kapısının (stage_decisions.DECISION_STATUS_COLUMNS) ikizidir ama
+# kaynak G060 karar havuzları değil event_types/judgment_roles olduğu için
+# `_PHOTO_COLUMNS`tan türetilemez; harita burada yaşar çünkü bu alanların tek
+# yazma yolu takip panelidir (tarihçe/fotoğraf yolu bu kolonlara yazmaz).
+_EVENT_LIST_COLUMNS: Dict[str, Tuple[Any, str]] = {   # değer: (liste modeli, liste adı)
+    "olay_turu": (models.EventType, "event_types"),
+    "hukumdeki_rol": (models.JudgmentRole, "judgment_roles"),
+}
+
+
+def validated_event_list_value(db, column: str, value):
+    """`cases.<column>` belgeleme olayı alanıysa kapalı listesine karşı doğrular.
+
+    Davranış G066 (`stage_decisions.validated_status_for_column`) ile BİLİNÇLİ
+    eş — aynı kolon ailesine iki farklı kural koymamak için:
+      * belgeleme olayı alanı OLMAYAN kolon dokunulmadan döner,
+      * None/boş → None (alan temizlenir),
+      * liste BOŞSA doğrulama atlanır (WARNING, log sözleşmesi) — seed'i
+        koşmamış kurulumda veri girişi kilitlenmesin,
+      * listede olmayan değer `InvalidDecisionStatusError` (api.py 400'e
+        çevirir; yeni exception tipi + handler açmamak için aynı tip),
+      * `active` filtresi YOK (G066 karar noktasıyla simetri: dropdown'dan
+        kaldırılmış değer mevcut kayıttan geri yazılabilmeli).
+    """
+    entry = _EVENT_LIST_COLUMNS.get(column)
+    if entry is None:
+        return value
+    model, liste_adi = entry
+    if value is None or not str(value).strip():
+        return None
+    ad = " ".join(str(value).split())
+    if db.query(model.id).first() is None:
+        logger.warning(
+            f"{liste_adi} listesi BOŞ — {column} kapalı liste doğrulaması "
+            f"atlandı (seed koşmamış olabilir)"
+        )
+        return ad
+    if db.query(model.id).filter(model.name == ad).first() is None:
+        raise stage_decisions.InvalidDecisionStatusError(
+            f"{column} için geçersiz değer: {ad!r} — değer {liste_adi} "
+            f"kapalı listesinde yok (G103)"
+        )
+    return ad
+
+
+def _validated_tracking_value(db, field: str, value):
+    """Takip yazma yolunun iki kapısı sırayla: G066 karar havuzları (aşama
+    karar durumu kolonları) + G103 belgeleme olayı listeleri. Kümeler ayrık —
+    bir alan en fazla bir kapıya takılır, diğerinden dokunulmadan geçer."""
+    return validated_event_list_value(
+        db, field, stage_decisions.validated_status_for_column(db, field, value)
+    )
+
+
 def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str = "MANUAL", tenant_id: str = None) -> bool:
     """Dava takip bilgilerini günceller ve aşama değişmişse CaseStageLog kaydı ekler.
 
@@ -1637,8 +1709,10 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
 
     Dört karar durumu alanı (yerel/istinaf/temyiz/karar düzeltme) G060 kapalı
     havuzlarına karşı doğrulanır (G066): kapalılık artık yalnız arayüzde değil
-    — API'yi doğrudan çağıran da liste dışı değer yazamaz. Doğrulama YAZIMDAN
-    ÖNCE toptan koşar: bir alan reddedilirse HİÇBİRİ yazılmaz, hata
+    — API'yi doğrudan çağıran da liste dışı değer yazamaz. İki belgeleme olayı
+    alanı (olay_turu/hukumdeki_rol) aynı davranışla kendi listelerine karşı
+    doğrulanır (G103, `_EVENT_LIST_COLUMNS`). Doğrulama YAZIMDAN ÖNCE toptan
+    koşar: bir alan reddedilirse HİÇBİRİ yazılmaz, hata
     `InvalidDecisionStatusError` olarak yükselir (api.py 400'e çevirir) — bu
     fonksiyonun `False` dönüşü "dava bulunamadı/yazılamadı" anlamını korur.
     """
@@ -1654,9 +1728,10 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
         new_stage = data.get("case_stage")
         note = data.pop("note", None)
 
-        # Kapalı havuz kapısı (G066) ÖNCE, yazım SONRA: kısmi uygulama olmasın.
+        # Kapalı liste kapıları (G066 karar havuzları + G103 belgeleme olayı
+        # listeleri) ÖNCE, yazım SONRA: kısmi uygulama olmasın.
         degisiklikler = [
-            (field, stage_decisions.validated_status_for_column(db, field, value))
+            (field, _validated_tracking_value(db, field, value))
             for field, value in tracking_changes(data)
         ]
         for field, value in degisiklikler:

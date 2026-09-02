@@ -81,6 +81,9 @@ class DynamicConfig:
         self.__appeal_decisions: List[Dict] = []
         self.__cassation_decisions: List[Dict] = []
         self.__revision_decisions: List[Dict] = []
+        # Belgeleme olayı listeleri (G103)
+        self.__event_types: List[Dict] = []
+        self.__judgment_roles: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -299,4 +302,21 @@ class DynamicConfig:
         with self._lock:
             self.__revision_decisions = items
             TechnicalLogger.log("INFO", f"DynamicConfig: Revision Decisions updated ({len(items)} items)")
+
+    # Belgeleme olayı listeleri (G103) — aynı getattr sözleşmesi.
+    def get_event_types(self) -> List[Dict]:
+        return self.__event_types
+
+    def set_event_types(self, items: List[Dict]):
+        with self._lock:
+            self.__event_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Event Types updated ({len(items)} items)")
+
+    def get_judgment_roles(self) -> List[Dict]:
+        return self.__judgment_roles
+
+    def set_judgment_roles(self, items: List[Dict]):
+        with self._lock:
+            self.__judgment_roles = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Judgment Roles updated ({len(items)} items)")
 

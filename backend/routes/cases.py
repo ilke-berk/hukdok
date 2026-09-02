@@ -95,12 +95,14 @@ def get_cases_api(
     file_type: Optional[str] = None,
     urgent_days: Optional[int] = Query(None, ge=1, le=365),
     missing_required: bool = False,
+    # Belgeleme olayı filtresi (G103) — değer listenin ADI (ör. "Belgeleme Olayı")
+    olay_turu: Optional[str] = None,
     tenant_id: str = Depends(get_current_tenant),
 ):
     items, total = get_cases(
         limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact,
         tenant_id=tenant_id, file_type=file_type, urgent_days=urgent_days,
-        missing_required=missing_required,
+        missing_required=missing_required, olay_turu=olay_turu,
     )
     # Gövde geriye dönük uyumlu (dizi) kalır; toplam sayı header ile taşınır
     response.headers["X-Total-Count"] = str(total)

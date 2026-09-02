@@ -862,6 +862,28 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_notifications_document "
         "ON notifications (document_id)",
     ]),
+
+    # ─── 38. BELGELEME OLAYI ALANLARI (G103) ─────────────────────────────────
+    #
+    # Veri ekibinin 25.08 ölçümü (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25):
+    # bağlı föylerin ~%14'ünde tazminatın kaynağı tıbbi olay değil BELGELEME
+    # olayı (aydınlatma ihlali / tıbbi kayıt eksikliği) — 45 dosyada "kusur yok
+    # ama tazminat var" görünümü doğdu; ayrıca aynı olgu yargı kademesine göre
+    # rol değiştiriyor ("saptandı" ≠ "kazandırdı"). Kullanıcı kararı (02.09):
+    # iki alan, kapalı liste mekanizmasının kopyası, zorunluluk yok, tahmin
+    # yazılmaz.
+    #
+    # İki KAPALI liste TABLOSU (event_types / judgment_roles) modelde tanımlı
+    # olduğu için create_all yaratır — madde 31'in alleged_faults /
+    # appealing_parties yoluyla aynı, tablo op'u gerekmez (unique code model
+    # tanımında). Kolonlar NULL + DEFAULT'suz (madde 31 gerekçesi): NULL =
+    # "karar okunmadı" meşru durumdur, backfill YOK. Index BİLİNÇLİ yok:
+    # alanlar sıfır dolulukla doğuyor ve tek müşterileri (liste filtresi)
+    # eşitlik sorgusu — ölçülmeden index eklenmez (G042 dersi).
+    ("columns", "cases", {
+        "olay_turu":     "VARCHAR(100)",   # kapalı liste (event_types)
+        "hukumdeki_rol": "VARCHAR(100)",   # kapalı liste (judgment_roles)
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────
