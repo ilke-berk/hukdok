@@ -126,7 +126,7 @@ const CaseList = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { getCases, getCaseStats } = useCases();
-  const { lawyers } = useConfig();
+  const { lawyers, eventTypes } = useConfig();
 
   // Core data state
   const [cases, setCases] = useState<Case[]>([]);
@@ -150,6 +150,8 @@ const CaseList = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [selectedLawyer, setSelectedLawyer] = useState<string>("ALL");
   const [selectedFileType, setSelectedFileType] = useState<string>("ALL");
+  // G105: Olay Türü filtresi — değer listenin ADIdır (sözleşme: olay_turu param'ı)
+  const [selectedOlayTuru, setSelectedOlayTuru] = useState<string>("ALL");
   const [onlyUrgent, setOnlyUrgent] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -171,6 +173,7 @@ const CaseList = () => {
         lawyer: selectedLawyer,
         q: debouncedSearch || undefined,
         fileType: selectedFileType,
+        olayTuru: selectedOlayTuru,
         urgentDays: onlyUrgent ? URGENT_WINDOW_DAYS : undefined,
         missingRequired: onlyMissing || undefined,
       });
@@ -188,7 +191,7 @@ const CaseList = () => {
     } finally {
       if (reqId === reqIdRef.current) setIsLoading(false);
     }
-  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, debouncedSearch, onlyUrgent, onlyMissing]);
+  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, selectedOlayTuru, debouncedSearch, onlyUrgent, onlyMissing]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -213,7 +216,7 @@ const CaseList = () => {
   useEffect(() => { fetchCases(); }, [fetchCases]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
-  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, onlyUrgent, onlyMissing]);
+  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, selectedOlayTuru, onlyUrgent, onlyMissing]);
 
   // case_id → en yakın yaklaşan duruşmaya kalan gün (0..URGENT_WINDOW_DAYS)
   const urgentByCase = useMemo(() => {
@@ -242,6 +245,7 @@ const CaseList = () => {
     setSelectedStatus("ALL");
     setSelectedLawyer("ALL");
     setSelectedFileType("ALL");
+    setSelectedOlayTuru("ALL");
     setOnlyUrgent(false);
     setOnlyMissing(false);
     setSearchQuery("");
@@ -262,6 +266,7 @@ const CaseList = () => {
     selectedStatus !== "ALL" && "status",
     selectedLawyer !== "ALL" && "lawyer",
     selectedFileType !== "ALL" && "filetype",
+    selectedOlayTuru !== "ALL" && "olayturu",
     onlyUrgent && "urgent",
     onlyMissing && "missing",
   ].filter(Boolean).length;
@@ -392,6 +397,23 @@ const CaseList = () => {
                 <SelectItem value="Ceza">Ceza</SelectItem>
                 <SelectItem value="İcra">İcra</SelectItem>
                 <SelectItem value="İdari">İdari</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* G105: Olay Türü — event_types kapalı listesinden beslenir;
+              seçim liste isteğine olay_turu param'ı olarak gider (değer = ad) */}
+          <div>
+            <Eyebrow>Olay Türü</Eyebrow>
+            <Select value={selectedOlayTuru} onValueChange={setSelectedOlayTuru}>
+              <SelectTrigger className="mt-2 h-10 bg-[var(--bg)] border-[var(--border)] text-[13px] rounded-[3px]">
+                <SelectValue placeholder="Olay türü seçin" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Tümü</SelectItem>
+                {eventTypes.map(t => (
+                  <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

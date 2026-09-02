@@ -13,7 +13,11 @@
 export type CardFieldType = "text" | "date" | "closedList";
 
 /** Kapalı liste alanlarının değerlerini besleyen backend referans listesi. */
-export type ClosedListKey = "alleged_faults" | "appealing_parties";
+export type ClosedListKey =
+    | "alleged_faults"
+    | "appealing_parties"
+    | "event_types"
+    | "judgment_roles";
 
 export interface CardFieldDef {
     /** Backend alan adı (CaseRead ile birebir). */
@@ -25,8 +29,12 @@ export interface CardFieldDef {
 }
 
 /**
- * Beş tıbbi alan TEK grupta durur (G048 kriteri): dava kartına dağıtılınca
+ * Tıbbi alanlar TEK grupta durur (G048 kriteri): dava kartına dağıtılınca
  * malpraktis dosyasının tıbbi tablosu okunamaz hâle geliyordu.
+ *
+ * G105: `olay_turu` + `hukumdeki_rol` beşlinin ALTINA girdi (aynı kural —
+ * başka karta dağıtılmaz). İkisi de kapalı liste; değerler backend'in
+ * event_types / judgment_roles uçlarından gelir (sözleşme G103 ile ortak).
  */
 export const MEDICAL_CARD_FIELDS: CardFieldDef[] = [
     { key: "tibbi_surec", label: "Tıbbi Süreç", type: "text" },
@@ -34,6 +42,8 @@ export const MEDICAL_CARD_FIELDS: CardFieldDef[] = [
     { key: "iddia_edilen_kusur", label: "İddia Edilen Kusur", type: "closedList", list: "alleged_faults" },
     { key: "hastada_olusan_zarar", label: "Hastada Oluşan Zarar", type: "text" },
     { key: "uygulanan_yontem", label: "Uygulanan Yöntem", type: "text" },
+    { key: "olay_turu", label: "Olay Türü", type: "closedList", list: "event_types" },
+    { key: "hukumdeki_rol", label: "Hükümdeki Rol", type: "closedList", list: "judgment_roles" },
 ];
 
 /**
@@ -118,3 +128,23 @@ export const closedListState = (
     const target = normalize(String(value));
     return options.some(o => normalize(o.name ?? "") === target) ? "in-list" : "off-list";
 };
+
+/**
+ * "Belgeleme olayı olabilir" rozeti (G105 — 25.08 veri bulgusu, kullanıcı
+ * kararı 02.09): maddi talep tamamen REDDEDİLMİŞ (hükmedilen maddi tam olarak
+ * 0) ama manevi tazminata hükmedilmişse dosya belgeleme-olayı imzası taşıyor
+ * olabilir; olay türü işaretlenene dek kart başlığında bilgi rozeti çıkar.
+ *
+ * NULL ≠ 0 kuralı BİREBİR: hukmedilen_maddi null/undefined = "girilmedi",
+ * imza SAYILMAZ; yalnız SAYISAL 0 "reddedildi" demektir. `olay_turu`
+ * dolduğunda rozet kaybolur — kullanıcı sınıflandırmayı yapmıştır.
+ */
+export const isDocumentationEventCandidate = (data: {
+    hukmedilen_maddi?: number | null;
+    hukmedilen_manevi?: number | null;
+    olay_turu?: string | null;
+}): boolean =>
+    data.hukmedilen_maddi === 0 &&
+    typeof data.hukmedilen_manevi === "number" &&
+    data.hukmedilen_manevi > 0 &&
+    !isFilled(data.olay_turu);
