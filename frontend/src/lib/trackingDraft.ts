@@ -15,15 +15,24 @@ export type DecisionListKey =
     | "cassation_decisions"  // Temyiz Onama Durumları   → temyiz_karar_durumu
     | "revision_decisions";  // Karar Düzeltme Durumları → karar_duzeltme_durumu
 
+/** Belgeleme olayı kapalı listeleri (G103 uçları; config query'leri G105'te). */
+export type EventListKey =
+    | "event_types"      // Olay Türleri      → olay_turu
+    | "judgment_roles";  // Hükümdeki Roller  → hukumdeki_rol
+
+/** Panel select'lerinin config listesi anahtarları (karar + belgeleme listeleri). */
+export type PanelListKey = DecisionListKey | EventListKey;
+
 export interface FieldDef {
     label: string;
     key: string;
     type: "date" | "text" | "select" | "textarea" | "money";
     options?: string[];
-    /** Seçenekleri resmî kapalı listeden alan select (G061). `options` ile birlikte
-     *  kullanılmaz — gömülü options yalnız karar_turu/karar_lehine kaba
-     *  sınıflandırmalarında kalır (bilinçli AYRI alanlardır, listelere bağlanmaz). */
-    optionsFrom?: DecisionListKey;
+    /** Seçenekleri resmî kapalı listeden alan select (G061; belgeleme listeleri
+     *  G106'da aynı desene katıldı). `options` ile birlikte kullanılmaz — gömülü
+     *  options yalnız karar_turu/karar_lehine kaba sınıflandırmalarında kalır
+     *  (bilinçli AYRI alanlardır, listelere bağlanmaz). */
+    optionsFrom?: PanelListKey;
     wide?: boolean; // 2 kolon kaplar
 }
 
@@ -123,11 +132,28 @@ export const PANEL_FIELDS: FieldDef[] = [
     { label: "Arşiv Tarihi",              key: "arsiv_tarihi",               type: "date" },
 ];
 
+/**
+ * Belgeleme olayı alanları (G103 → G106; sözleşme G103/G105 ile ORTAK).
+ *
+ * Değer TEK SLOT'tur ve GÜNCEL kademedeki hükmü anlatır — aşama sekmesine
+ * gömülmez (sekmeye konsa "aşama başına değer" iddiası doğardı); genel dosya
+ * alanları bölümünde, `PANEL_FIELDS` grubunun yanında düzenlenir. Ayrı sabit
+ * tutuldu: `PANEL_FIELDS` G073'ün arabuluculuk/arşiv üçlüsüdür ve envanteri
+ * testle fotoğraflanmıştır. Seçenekler karar dropdown'ları gibi resmî kapalı
+ * listeden gelir (`useConfig().eventTypes` / `judgmentRoles`); liste dışı
+ * değer backend'de 400, boş seçim alanı TEMİZLER (None → NULL).
+ */
+export const EVENT_FIELDS: FieldDef[] = [
+    { label: "Olay Türü",     key: "olay_turu",     type: "select", optionsFrom: "event_types" },
+    { label: "Hükümdeki Rol", key: "hukumdeki_rol", type: "select", optionsFrom: "judgment_roles" },
+];
+
 // Taslağın kapsadığı tüm anahtarlar (aşama alanları + aşamadan bağımsızlar)
 export const TRACKING_DRAFT_KEYS: string[] = [
     ...new Set([
         ...Object.values(STAGE_FIELDS).flat().map(f => f.key),
         ...PANEL_FIELDS.map(f => f.key),
+        ...EVENT_FIELDS.map(f => f.key),
         "dosya_son_durumu",
     ]),
 ];

@@ -112,13 +112,18 @@ describe("caseCardFields — bir kavram tek ekranda (G073 → G074)", () => {
         expect(OFFICE_CARD_FIELDS.map(f => f.key)).toEqual(["acceptance_date", "bureau_type"]);
     });
 
-    it("kartta yazılabilir alan kalmadı: kart listeleri ile takip taslağının kesişimi BOŞ", () => {
-        // Kabul kriterinin mekanik kilidi — aynı alan iki ekranda düzenlenemez.
+    it("kart-taslak kesişimi TAM LİSTE kilitli: yalnız kartta salt-okunur belgeleme ikilisi", () => {
+        // Kural KORUNUYOR: aynı alan iki ekranda DÜZENLENEMEZ. olay_turu/hukumdeki_rol
+        // kartta salt-okunur gösterimdir (TransferFieldsCard düzenleme kontrolü
+        // taşımaz), düzenleme TEK yerde — takip panelinde (G105 gösterim + G106 yazma;
+        // G061/G065 emsali). Tam-liste beklentisi gelecekteki kazara eklemeleri
+        // yakalamaya devam eder: yeni bir ortak anahtar ancak BİLİNÇLİ kararla
+        // (planlayıcı istisnasıyla) bu listeye girebilir.
         const kartAnahtarlari = new Set(
             [...MEDICAL_CARD_FIELDS, ...PROCESS_CARD_FIELDS, ...OFFICE_CARD_FIELDS].map(f => f.key),
         );
         const kesisim = TRACKING_DRAFT_KEYS.filter(k => kartAnahtarlari.has(k));
-        expect(kesisim).toEqual([]);
+        expect([...kesisim].sort()).toEqual(["hukumdeki_rol", "olay_turu"].sort());
     });
 
     it("kanun yolu grubu boşalmadı: istinaf_basvuran_taraf kartta kaldı", () => {

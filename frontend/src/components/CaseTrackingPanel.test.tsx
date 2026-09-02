@@ -25,6 +25,10 @@ const configMock = vi.hoisted(() => ({
     appealDecisions: [] as { code?: string; name: string }[],
     cassationDecisions: [] as { code?: string; name: string }[],
     revisionDecisions: [] as { code?: string; name: string }[],
+    // Belgeleme olayı listeleri (G103/G105; panel G106'da bağlandı) — gerçek
+    // useConfig daima dizi döndürür (EMPTY fallback), mock yüzeyi eşitlenir.
+    eventTypes: [] as { code?: string; name: string }[],
+    judgmentRoles: [] as { code?: string; name: string }[],
 }));
 vi.mock("@/hooks/useConfig", () => ({
     useConfig: () => configMock,
@@ -508,5 +512,158 @@ describe("CaseTrackingPanel — aşama bilinmiyorken panel kilitlenmez (G075)", 
         await renderPanelAsync({ case_stage: "KARAR" });
 
         expect(container.textContent).not.toContain("Karar kayıtlarına göre");
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G106 — Olay Türü + Hükümdeki Rol yazma arayüzü (G103'ün UI eşi)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("CaseTrackingPanel — belgeleme olayı alanları (G106)", () => {
+    let container: HTMLDivElement;
+    let root: Root | null = null;
+    const renderPanelAsync = makeAsyncRenderer(() => container, r => { root = r; });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        stageDecisionsMock.mockResolvedValue({ case_id: 1, decisions: [], onceki_esaslar: [] });
+        configMock.fileStatuses = [];
+        configMock.localDecisions = [];
+        configMock.appealDecisions = [];
+        configMock.cassationDecisions = [];
+        configMock.revisionDecisions = [];
+        configMock.eventTypes = [];
+        configMock.judgmentRoles = [];
+        container = document.createElement("div");
+        document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+        if (root) {
+            act(() => root!.unmount());
+            root = null;
+        }
+        container.remove();
+    });
+
+    /** G103 seed'lerinin adları — sözleşmedeki 3+4 değer. */
+    const OLAY_TURLERI = [
+        { code: "TIBBI", name: "Tıbbi Olay" },
+        { code: "BELGELEME", name: "Belgeleme Olayı" },
+        { code: "KARMA", name: "Tıbbi + Belgeleme" },
+    ];
+    const HUKUM_ROLLERI = [
+        { code: "TEK-GEREKCE", name: "Tek Gerekçe" },
+        { code: "YAN-GEREKCE", name: "Yan Gerekçe" },
+        { code: "YALNIZ-SAPTAMA", name: "Yalnız Saptama" },
+        { code: "REDDEDILMIS-IDDIA", name: "Reddedilmiş İddia" },
+    ];
+
+    function selectByLabel(label: string): HTMLSelectElement {
+        const wrap = Array.from(container.querySelectorAll("label"))
+            .find(l => l.textContent?.trim() === label)?.parentElement;
+        const sel = wrap?.querySelector("select");
+        if (!sel) throw new Error(`'${label}' etiketli select bulunamadı`);
+        return sel;
+    }
+
+    const optionTexts = (sel: HTMLSelectElement) =>
+        Array.from(sel.options).map(o => o.textContent);
+
+    /** React controlled select'e kullanıcı seçimi (value tracker aşımı). */
+    function chooseOption(sel: HTMLSelectElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+        act(() => {
+            setter.call(sel, value);
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+    }
+
+    async function clickSave() {
+        const saveBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.includes("Kaydet"));
+        expect(saveBtn).toBeDefined();
+        await act(async () => { saveBtn!.click(); });
+    }
+
+    it("iki dropdown genel bölümde, değerler useConfig listelerinden SIRALI gelir", async () => {
+        configMock.eventTypes = OLAY_TURLERI;
+        configMock.judgmentRoles = HUKUM_ROLLERI;
+        // case_stage BOŞ: alanlar aşama sekmesine bağlı DEĞİL, yine görünmeli
+        await renderPanelAsync({});
+
+        expect(optionTexts(selectByLabel("Olay Türü")))
+            .toEqual(["Seçiniz", "Tıbbi Olay", "Belgeleme Olayı", "Tıbbi + Belgeleme"]);
+        expect(optionTexts(selectByLabel("Hükümdeki Rol")))
+            .toEqual(["Seçiniz", "Tek Gerekçe", "Yan Gerekçe", "Yalnız Saptama", "Reddedilmiş İddia"]);
+    });
+
+    it("tek-slot kuralı ekranda söylenir: değerler güncel kademeye göre", async () => {
+        await renderPanelAsync({});
+        expect(container.textContent).toContain("Belgeleme Olayı");
+        expect(container.textContent).toContain("güncel kademedeki hükme göredir");
+    });
+
+    it("seçim + kaydet → payload'da olay_turu; dokunulmayan hukumdeki_rol payload'a GİRMEZ", async () => {
+        configMock.eventTypes = OLAY_TURLERI;
+        configMock.judgmentRoles = HUKUM_ROLLERI;
+        updateCaseTrackingMock.mockResolvedValue(true);
+        await renderPanelAsync({});
+
+        chooseOption(selectByLabel("Olay Türü"), "Belgeleme Olayı");
+        expect(container.textContent).toContain("Kaydedilmemiş");
+        await clickSave();
+
+        // toHaveBeenCalledWith kesin nesne eşleşmesi: hukumdeki_rol YOK
+        expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { olay_turu: "Belgeleme Olayı" });
+    });
+
+    it("iki alan birden seçilirse ikisi de doğru adlarla gider", async () => {
+        configMock.eventTypes = OLAY_TURLERI;
+        configMock.judgmentRoles = HUKUM_ROLLERI;
+        updateCaseTrackingMock.mockResolvedValue(true);
+        await renderPanelAsync({});
+
+        chooseOption(selectByLabel("Olay Türü"), "Tıbbi + Belgeleme");
+        chooseOption(selectByLabel("Hükümdeki Rol"), "Yalnız Saptama");
+        await clickSave();
+
+        expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, {
+            olay_turu: "Tıbbi + Belgeleme",
+            hukumdeki_rol: "Yalnız Saptama",
+        });
+    });
+
+    it("boş seçim alanı TEMİZLER: null gider (karar okunmadı'ya dönüş meşru)", async () => {
+        configMock.eventTypes = OLAY_TURLERI;
+        updateCaseTrackingMock.mockResolvedValue(true);
+        await renderPanelAsync({ olay_turu: "Tıbbi Olay" });
+
+        const sel = selectByLabel("Olay Türü");
+        expect(sel.value).toBe("Tıbbi Olay");   // kayıtlı değer basılı
+        chooseOption(sel, "");
+        await clickSave();
+
+        expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { olay_turu: null });
+    });
+
+    it("listeden çıkarılmış kayıtlı değer kaybolmaz — karar dropdown deseni birebir", async () => {
+        configMock.judgmentRoles = HUKUM_ROLLERI;
+        await renderPanelAsync({ hukumdeki_rol: "ESKI-ROL" });
+
+        const sel = selectByLabel("Hükümdeki Rol");
+        expect(sel.value).toBe("ESKI-ROL");
+        expect(optionTexts(sel)).toEqual([
+            "Seçiniz", "ESKI-ROL (liste dışı)",
+            "Tek Gerekçe", "Yan Gerekçe", "Yalnız Saptama", "Reddedilmiş İddia",
+        ]);
+    });
+
+    it("liste boş/yüklenemediyse form kırılmaz: Seçiniz + kayıtlı değer (damgasız)", async () => {
+        await renderPanelAsync({ olay_turu: "Tıbbi Olay" });
+
+        const sel = selectByLabel("Olay Türü");
+        expect(sel.value).toBe("Tıbbi Olay");
+        expect(optionTexts(sel)).toEqual(["Seçiniz", "Tıbbi Olay"]);
     });
 });

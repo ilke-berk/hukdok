@@ -110,6 +110,10 @@ export interface CaseTrackingUpdate {
     arabuluculuk_no?: string | null;
     arabuluculuk_karar_tarihi?: string | null;
     arsiv_tarihi?: string | null;
+    // Belgeleme olayı (G103 kapalı listeleri, panel yazma yolu G106) — değer tek
+    // slot, güncel kademedeki hükme göre; boş seçim temizler (None → NULL)
+    olay_turu?: string | null;
+    hukumdeki_rol?: string | null;
     note?: string | null;
 }
 

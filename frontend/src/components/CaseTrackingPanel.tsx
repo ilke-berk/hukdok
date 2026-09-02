@@ -4,8 +4,8 @@ import {
 } from "@/hooks/useCases";
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import {
-    STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, DECISION_STAGE_BY_PANEL_KEY,
-    suggestedStageFromDecisions, DecisionListKey, FieldDef,
+    STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, EVENT_FIELDS, DECISION_STAGE_BY_PANEL_KEY,
+    suggestedStageFromDecisions, PanelListKey, FieldDef,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
     rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
@@ -51,16 +51,20 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     const {
         fileStatuses,
         localDecisions, appealDecisions, cassationDecisions, revisionDecisions,
+        eventTypes, judgmentRoles,
     } = useConfig();
     const [saving, setSaving] = useState(false);
 
-    // Karar durumu dropdown seçenekleri — resmî kapalı listeler (G060 uçları, G061).
+    // Select seçenekleri — resmî kapalı listeler (karar listeleri G060/G061;
+    // belgeleme listeleri G103/G105, panele G106'da bağlandı).
     // Sıra = resmi havuz sırası (backend sequence ile sıralı döner).
-    const decisionLists: Record<DecisionListKey, ConfigItem[]> = {
+    const configLists: Record<PanelListKey, ConfigItem[]> = {
         local_decisions: localDecisions,
         appeal_decisions: appealDecisions,
         cassation_decisions: cassationDecisions,
         revision_decisions: revisionDecisions,
+        event_types: eventTypes,
+        judgment_roles: judgmentRoles,
     };
 
     const currentStage = (caseData.case_stage as string) ?? null;
@@ -180,7 +184,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
             {f.type === "select" && (() => {
                 // optionsFrom → resmî kapalı liste (config); yoksa gömülü options
                 // (karar_turu/karar_lehine — davranışları birebir korunur).
-                const fromConfig = f.optionsFrom ? decisionLists[f.optionsFrom].map(o => o.name) : null;
+                const fromConfig = f.optionsFrom ? configLists[f.optionsFrom].map(o => o.name) : null;
                 const names = fromConfig ?? f.options ?? [];
                 const value = fieldValue(f.key);
                 // Kayıtlı değer listeden çıkarılmışsa KAYBOLMASIN: geçici seçenek
@@ -405,6 +409,26 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         </select>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4 mt-4">
                             {PANEL_FIELDS.map(renderField)}
+                        </div>
+                    </div>
+
+                    {/* ── Belgeleme olayı alanları (G103 → G106) ──
+                        Değer TEK SLOT — güncel kademedeki hükmü anlatır; aşama
+                        sekmesine gömülmez (sekme "aşama başına değer" iddiası
+                        doğururdu). Karar dropdown'larının bileşen deseni birebir
+                        (renderField select yolu: Seçiniz + liste dışı damgası). */}
+                    <div className="mt-4 pt-3 border-t border-primary/15">
+                        <p
+                            className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1"
+                            title="Değerler dosyanın güncel kademesindeki hükme göredir; kademe değişince burada güncellenir."
+                        >
+                            Belgeleme Olayı
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                            Değerler güncel kademedeki hükme göredir; kademe değişince burada güncellenir.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                            {EVENT_FIELDS.map(renderField)}
                         </div>
                     </div>
                 </CardContent>
