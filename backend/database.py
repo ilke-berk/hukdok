@@ -884,6 +884,39 @@ _MIGRATIONS = [
         "olay_turu":     "VARCHAR(100)",   # kapalı liste (event_types)
         "hukumdeki_rol": "VARCHAR(100)",   # kapalı liste (judgment_roles)
     }),
+
+    # ─── 39. VERİ TESLİM DEFTERİ KISITLARI (G107) ────────────────────────────
+    #
+    # `aktarim_teslimleri` (models.AktarimTeslimi): veri ekibinin teslim
+    # paketleri için defter + durum makinesi (services/teslim_kutusu.py; plan
+    # docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md §2.1). Madde 37 ile
+    # aynı desen: tablo modelde tanımlı → create_all yaratır, ("table", ...) op'u
+    # ölü kod olurdu; kısıt/index koşulsuz ("index", ...) op'unda (G041 kuralı).
+    #
+    #   uq_aktarim_teslimleri_sha256 → İÇERİK TEKİLLİĞİ. Aynı sha256 ikinci kez
+    #                                  gelince yeni satır 'yinelenen' olarak
+    #                                  açılır (izlenebilirlik: ilk id notta) —
+    #                                  bu yüzden index KISMİDİR: yinelenen
+    #                                  satırlar dışarıda, gerçek teslim başına
+    #                                  tek satır. Eşzamanlı iki kayıt denemesi
+    #                                  IntegrityError'la yakalanır ve ikincisi
+    #                                  'yinelenen'e düşer (teslim_kaydet).
+    #
+    #   idx_aktarim_teslimleri_bekleyen → gece turunun ve boot telafisinin TEK
+    #                                  tarama deseni: "bekleyen teslimler, eskiden
+    #                                  yeniye". Partial: nihai durumlar (uygulandi/
+    #                                  basarisiz/reddedildi/yinelenen) çoğunluk
+    #                                  olacak, dışarıda kalsın (madde 26 gerekçesi).
+    #
+    # Başka index YOK (G042 dersi): `dosya_adi` zincir kontrolünde aranır ama
+    # tablo onlarca satırlık kalacak — ölçülmeden index eklenmez.
+    ("index", "aktarim_teslimleri", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_aktarim_teslimleri_sha256 "
+        "ON aktarim_teslimleri (sha256) WHERE durum <> 'yinelenen'",
+        "CREATE INDEX IF NOT EXISTS idx_aktarim_teslimleri_bekleyen "
+        "ON aktarim_teslimleri (created_at) "
+        "WHERE durum IN ('alindi', 'dogrulandi', 'kuru_kosuldu', 'inceleme_bekliyor')",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

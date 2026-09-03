@@ -5,7 +5,7 @@ Not (G028, 2026-08-12): `sync_logs` ve `analysis_cache` modelleri (`SyncLog`,
 kaldırıldı. **Tablolar DB'de duruyor** — bilinçli olarak DROP edilmedi (veri kaybı
 riski + migrate.py fail-fast). Artıkları görürsen: model yok, kullanan kod yok.
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -1062,3 +1062,61 @@ class Notification(Base):
     read_at = Column(DateTime(timezone=True), nullable=True)
     dismissed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now())
+
+
+class AktarimTeslimi(Base):
+    """
+    Veri teslim defteri (G107, plan `docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`
+    §2.1) — veri ekibinin bıraktığı her teslim paketi (xlsx) için bir satır.
+
+    `UploadOutbox` deseninin kardeşi: dosya spool'a kopyalanır, satır burada
+    açılır, durum makinesi `services/teslim_kutusu.py`'de yürür:
+
+        alindi → dogrulandi → kuru_kosuldu → [kapı] → uygulaniyor → uygulandi
+                     │              │                      │
+                 reddedildi   inceleme_bekliyor        basarisiz
+        yinelenen (aynı sha256 daha önce alınmış; nihai, işlenmez)
+
+    Geçişler tek yönlüdür ve her biri `durum_gecmisi` JSON listesine zaman
+    damgasıyla eklenir. `sha256` içeriğin kimliğidir: aynı içerik ikinci kez
+    gelirse İZLENEBİLİRLİK için yeni bir `yinelenen` satırı açılır (ilk id
+    notta) — tekillik bu yüzden yalnız yinelenen-dışı satırlar üzerinde
+    (kısmi UNIQUE index, migrasyon madde 39).
+
+    Sayaçlar (`okunan` … `kart_degisen`, `envanter_denk`) `AktarimSonucu`'ndan
+    kopyalanır: kuru koşu yazar, gerçek uygulama üzerine yazar. Kapı kararı ve
+    gerekçesi burada durur ki admin paneli "neden inceleme bekliyor" sorusuna
+    veritabanından cevap versin.
+
+    Index'ler modelde DEĞİL migrasyonda (G041 kuralı): tabloyu `create_all`
+    yarattığı için ("table", ...) op'u ölü kod olurdu; kısıt/index koşulsuz
+    koşan ("index", "aktarim_teslimleri", ...) op'una yazılır.
+    """
+    __tablename__ = "aktarim_teslimleri"
+
+    id = Column(Integer, primary_key=True)
+    dosya_adi = Column(String(255), nullable=False)          # teslim dosyasının adı
+    sha256 = Column(String(64), nullable=False)              # içerik özeti; kısmi UNIQUE (migrasyon)
+    kaynak = Column(String(20), nullable=False)              # "sharepoint" | "yukleme"
+    sharepoint_item_id = Column(String(200), nullable=True)  # Graph driveItem id (yükleme yolunda NULL)
+    spool_path = Column(String, nullable=True)               # <spool>/<id>_<dosya_adi>; janitor temizlerse NULL
+    durum = Column(String(30), nullable=False, default="alindi")
+    durum_gecmisi = Column(JSON, nullable=True)              # [{"durum", "at", "not"}, ...]
+    onceki_teslim_adi = Column(String(255), nullable=True)   # DEGISIKLIK_OZETI "Önceki teslim"
+    zincir_tamam = Column(Boolean, nullable=True)            # önceki teslim defterde uygulandi mı (NULL = özet yok)
+    okunan = Column(Integer, nullable=True)
+    islenen = Column(Integer, nullable=True)
+    atlanan = Column(Integer, nullable=True)
+    hata_sayisi = Column(Integer, nullable=True)
+    alan_degisikligi = Column(Integer, nullable=True)
+    kart_degisen = Column(Integer, nullable=True)
+    envanter_denk = Column(Boolean, nullable=True)           # not sonuc.envanter_farki
+    kapi_karari = Column(String(20), nullable=True)          # "otomatik" | "inceleme"
+    kapi_gerekcesi = Column(String, nullable=True)           # eşik dışı kuralların listesi, ";" ayraçlı
+    rapor_dizini = Column(String, nullable=True)             # spool altındaki rapor klasörü
+    cevap_yuklendi = Column(Boolean, nullable=False, default=False, server_default="false")
+    uygulayan = Column(String(320), nullable=True)           # admin e-postası ya da "gece-job"
+    hata_mesaji = Column(String, nullable=True)              # basarisiz/reddedildi sebebi (≤ 2000 karakter)
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+    done_at = Column(DateTime(timezone=True), nullable=True)  # nihai duruma geçiş anı
