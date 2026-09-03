@@ -65,6 +65,13 @@ export function NotificationBell() {
 
   const bildirimeTiklandi = useCallback(async (item: NotificationItem) => {
     if (!item.is_read) await markRead(item.id);
+    // Veri teslimi bildirimi davaya bağlı değildir (case_id NULL); hedefi
+    // Yönetim > Veri Teslimleri sekmesidir (G117).
+    if (item.type === "veri_teslim") {
+      setOpen(false);
+      navigate("/admin?tab=deliveries");
+      return;
+    }
     // Davası olmayan bildirim (ör. genel duyuru) panelde kalır — gidecek yer yok.
     if (item.case_id) {
       setOpen(false);

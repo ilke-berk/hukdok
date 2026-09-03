@@ -181,6 +181,13 @@ const hataMetni = async (res: Response, yedek: string): Promise<string> => {
     return yedek;
 };
 
+// apiClient'ın zaman aşımı (`ApiTimeoutError`, ad üzerinden tanınır — sınıfı
+// içe almak test mock'unu bağlar). Kuru koşu/uygulama 8.409 satırda 45-60 sn
+// sürebilir; istemci kesse de sunucu işi bitirir, liste tazelenince görünür (G117).
+const ZAMAN_ASIMI_METNI =
+    "İstek zaman aşımına uğradı; işlem sunucuda sürüyor olabilir, listeyi yenileyin.";
+const zamanAsimiMi = (e: unknown): boolean => e instanceof Error && e.name === "ApiTimeoutError";
+
 function DurumRozeti({ durum }: { durum: TeslimDurum }) {
     const ton = DURUM_TON[durum] ?? "neutral";
     return (
@@ -284,7 +291,8 @@ export function DeliveryInboxCard() {
             toast.success(`Kuru koşu tamamlandı${karar ? ` · kapı: ${karar}` : ""}${gerekce}`);
             void load();
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Kuru koşu başlatılamadı");
+            toast.error(zamanAsimiMi(e) ? ZAMAN_ASIMI_METNI : e instanceof Error ? e.message : "Kuru koşu başlatılamadı");
+            if (zamanAsimiMi(e)) void load();
         } finally {
             setBusyId(null);
         }
@@ -351,7 +359,8 @@ export function DeliveryInboxCard() {
             setOnayTeslim(null);
             void load();
         } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Uygulama başlatılamadı");
+            toast.error(zamanAsimiMi(e) ? ZAMAN_ASIMI_METNI : e instanceof Error ? e.message : "Uygulama başlatılamadı");
+            if (zamanAsimiMi(e)) void load();
         } finally {
             setIsApplying(false);
         }
