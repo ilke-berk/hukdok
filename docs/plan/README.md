@@ -5,7 +5,7 @@ Burada **hâlâ yürüyen** planlar ve uygulama takibi durur. Bir plan bittiğin
 
 | Dosya | Ne işe yarar |
 | --- | --- |
-| [`veri-teslim-otomasyonu-plani-2026-09-03.md`](veri-teslim-otomasyonu-plani-2026-09-03.md) | **Kuyrukta (G107–G114).** Veri ekibinin teslim paketleri SharePoint klasöründen kendiliğinden alınır, kuru koşu + kapı + gece uygulaması, cevap paketi geri yüklenir; ikinci faz okunmayan sayfalar (Düzeltme_Logu, Silinen_Föyler/Kapsam_Dışı, DEGER_HAVUZLARI) |
+| [`veri-teslim-otomasyonu-plani-2026-09-03.md`](veri-teslim-otomasyonu-plani-2026-09-03.md) | **Kod tamam (G107–G114 main'de), kapanış prod kurulumunu bekliyor.** Veri ekibinin teslim paketleri SharePoint klasöründen kendiliğinden alınır, kuru koşu + kapı + 04:00 gece uygulaması, cevap paketi geri yüklenir; ikinci faz sayfaları (Düzeltme_Logu, Silinen_Föyler/Kapsam_Dışı, DEGER_HAVUZLARI) okunuyor. Açık kalanlar §8 (tara ucu, kapsam rozeti, insan adımları). Yaşayan doküman: [`docs/mimari/veri-teslim-hatti.md`](../mimari/veri-teslim-hatti.md) |
 | [`temizlik-ve-yapisal-saglik-plani-2026-08-11.md`](temizlik-ve-yapisal-saglik-plani-2026-08-11.md) | **Onay bekliyor.** Temizlik/DB/sorgu/ölçek planı — 25 ajanlı keşif + denetim panelinin ürünü. Kapsam dışı bırakılanlar §9'da, taslakta düzeltilen 10 hata §10'da |
 | [`guvenilirlik-sertlestirme-uygulama-takibi.md`](guvenilirlik-sertlestirme-uygulama-takibi.md) | Sertleştirme paketlerinin tek doğruluk kaynağı (durum tablosu) |
 | [`guvenilirlik-sertlestirme-plani-2026-08-04.md`](guvenilirlik-sertlestirme-plani-2026-08-04.md) | Ana plan — faz ve madde numaralarının tanımı (KAPANDI 2026-08-11) |

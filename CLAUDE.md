@@ -31,8 +31,19 @@ koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn
 `--workers ${UVICORN_WORKERS:-2}`. **2 worker + lider kilidi:** süreç-tekil arkaplan
 işleri kilit dosyası üzerinden (flock/msvcrt, `services/singleton_lock.py`) yalnız
 lider worker'da başlar (`api.py` lifespan): APScheduler (günlük aktivite raporu 00:00 TR,
-dönüşüm retry 02:30 TR) + SharePoint upload outbox worker'ı (`services/upload_queue.py`).
+dönüşüm retry 02:30 TR, veri teslim turu 04:00 TR, süre/duruşma taraması 06:00 TR) +
+SharePoint upload outbox worker'ı (`services/upload_queue.py`).
 Refresh thread'i ise BİLEREK worker-başınadır (süreç-içi singleton cache'ler).
+
+**Veri teslim hattı:** veri ekibi `HUKDOK_TESLIM_*.xlsx` paketini SharePoint
+`<SHAREPOINT_FOLDER_TESLIM_NAME>/gelen/` klasörüne bırakır → gözcü (`services/teslim_kutusu.py`,
+`list_folder_children` + sha256) dosyayı `aktarim_teslimleri` defterine ve spool'a alır →
+doğrula → kuru koş (`scripts/hukdok_aktarim.aktarimi_kos`, yalnız import edilir) → kapı
+(env eşikleri `TESLIM_KAPI_*`; ilk teslim ve envanter farkı daima `inceleme_bekliyor`) →
+04:00 TR gece turu lider worker'da uygular (turda en fazla BİR teslim; boot telafisi
+yalnız tarar + kuru koşar) → cevap paketi `cevap/<teslim>/` (`services/teslim_cevap.py`).
+Anahtar admin panelinde `veri_teslim_otomasyonu`, varsayılan KAPALI. Ayrıntı
+`docs/mimari/veri-teslim-hatti.md`; veri ekibine verilen sözleşme `docs/veri-teslim/SOZLESME.md`.
 
 **Belge akışı:** `/process` → `analyzer.analyze_file_generator` NDJSON stream'i →
 kullanıcı onayı → `/confirm` (idempotent: `process_id` anahtarlı `ConfirmReceipt` DB

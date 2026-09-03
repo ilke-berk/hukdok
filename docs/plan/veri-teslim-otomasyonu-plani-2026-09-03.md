@@ -7,6 +7,11 @@
 
 > **Yaşayan plan.** Kuyruk görevleri `gorevler/gorev/G107`–`G114`. Buradaki her "bugün
 > şöyle" iddiası 03.09.2026'da koddan okunarak doğrulandı; kod değişince bu dosya düzeltilir.
+>
+> **Durum (03.09.2026 gece, G114):** G107–G113 kodu main'de; hattın yaşayan dokümanı
+> [`docs/mimari/veri-teslim-hatti.md`](../mimari/veri-teslim-hatti.md), veri ekibine
+> verilecek sözleşme [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md). Plan
+> KAPANMADI: §7 kabul kriterleri prod'da henüz gözlenmedi ve §8'deki kalemler açık.
 
 ---
 
@@ -28,7 +33,7 @@ klasörüne** taşır; WhatsApp yalnız "dosyayı bıraktım" haberi için kalı
 | Parça | Nerede | Durum |
 | --- | --- | --- |
 | İdempotent yazma yolu, kuru koşu, belge envanteri kapısı, çıkış kodları, CSV raporlar | `backend/scripts/hukdok_aktarim.py` (`aktarimi_kos`, `AktarimSonucu`) | Hazır; süreç içinden çağrılabilir (testler zaten `from scripts import hukdok_aktarim` yapıyor) |
-| Graph app-only token + SharePoint indirme/yükleme | `backend/sharepoint/auth_graph.py`, `sharepoint_uploader_graph.py` (`download_file_from_sharepoint`, `upload_file_to_sharepoint`) | Hazır; **klasör listeleme yardımcısı YOK** |
+| Graph app-only token + SharePoint indirme/yükleme | `backend/sharepoint/auth_graph.py`, `sharepoint_uploader_graph.py` (`download_file_from_sharepoint`, `upload_file_to_sharepoint`) | Hazır; klasör listeleme yardımcısı plan yazıldığında YOKTU — G109 `list_folder_children` ile eklendi |
 | Kalıcı kuyruk + tek worker deseni | `services/upload_queue.py`, `models.UploadOutbox` | Desen olarak kopyalanır |
 | Lider worker'da APScheduler (00:00 rapor, 02:30 dönüşüm, 06:00 süre taraması) + boot telafisi | `api.py` lifespan, `services/deadline_scanner.py` | Yeni job aynı scheduler'a eklenir |
 | Admin anahtarları + `require_admin` | `services/app_settings.py`, `routes/admin.py`, `routes/config.py` | Toggle ve uçlar buraya |
@@ -42,7 +47,11 @@ klasörüne** taşır; WhatsApp yalnız "dosyayı bıraktım" haberi için kalı
 Eski Değer, Yeni Değer, Gerekçe, Tarih), `Silinen_Föyler` (10 × 54 + gerekçe + tarih),
 `Kapsam_Dışı` (51 × 54 + gerekçe + tarih).
 
-**Script bugün yalnız `Sheet` + `Karar_Asamalari` okur.** Diğer yedi sayfa kullanılmıyor.
+**Script plan yazıldığında yalnız `Sheet` + `Karar_Asamalari` okuyordu.** G112/G113 ile
+`Düzeltme_Logu`, `DEGER_HAVUZLARI` (servis tarafında, fark raporu), `Silinen_Föyler` ve
+`Kapsam_Dışı` de okunur; `DEGISIKLIK_OZETI`'ni teslim gözcüsü zincir kontrolü için okur.
+`SUTUN_SOZLUGU`, `SINIFLANDIRMA_MODELI`, `HUKDOK_TALEPLERI` okunmaz (bilinçli — insan
+belgesi).
 
 ## 2. Hedef mimari
 
@@ -125,9 +134,13 @@ zaten commit oldu), WARNING + defterde `cevap_yuklendi=false`, ertesi gece yenid
 
 - Dosya adı `HUKDOK_TESLIM_*.xlsx`; klasör `03_VERI_TESLIM/gelen/`. Aynı dosya adı
   yeniden yüklenirse içerik sha256'sı farklıysa yeni teslim sayılır.
-- Zorunlu sayfalar: `Sheet` (68 sütun, ad ve sıra sabit — Talep 10 taahhüdü),
-  `DEGISIKLIK_OZETI` ("Önceki teslim" ve "Bu teslim" satırları). `Karar_Asamalari`
-  isteğe bağlı (yoksa aşama yazılmaz, hata değil).
+- Zorunlu sayfa: `Sheet` (68 sütun, ad ve sıra sabit — Talep 10 taahhüdü; `SistemNo` +
+  `Dosya No` başlıkları yoksa red). `DEGISIKLIK_OZETI` ("Önceki teslim" ve "Bu teslim"
+  satırları) plan yazılırken zorunlu düşünülmüştü; **kod isteğe bağlı sayıyor** —
+  sayfa yoksa `zincir_tamam=NULL` ve kapı bunu ihlal saymaz (yalnız `is False` →
+  `zincir_eksik`), paket öteki eşiklerin içindeyse otomatik uygulanır. Sözleşme koda göre
+  yazıldı ("her teslime ekleyin"); zinciri sayfasız pakette de zorlamak istenirse kapıya
+  ayrı kural gerekir (§8). `Karar_Asamalari` isteğe bağlı (yoksa aşama yazılmaz, hata değil).
 - Partili teslim: eksik sütun mevcut değeri **silmez** ("None = bu teslimde yok").
   Alan boşaltma açık düzeltme yoluyla: `Düzeltme_Logu`'nda Yeni Değer `(boş)` (G112).
 - Kapalı liste değerleri `DEGER_HAVUZLARI`'yla gelir; bizde karşılığı olmayan değer
@@ -151,20 +164,23 @@ zaten commit oldu), WARNING + defterde `cevap_yuklendi=false`, ertesi gece yenid
 - **Mükerrer kart birleştirme.** D6 kuralı: otomatik birleştirme yok.
 - **`aktarimi_kos`'u `managers/` altına taşımak.** 1.816 satırlık script yerinde kalır;
   servis `scripts.hukdok_aktarim`'ı import eder. `backend/scripts/README.md`'deki "hiçbiri
-  API tarafından import edilmez" cümlesi G114'te düzeltilir.
+  API tarafından import edilmez" cümlesi G114'te düzeltildi (istisna açıkça yazılı).
 
 ## 6. Görevler ve bağımlılık
 
 ```
-G107 (backend) defter + servis çekirdeği (kaydet/doğrula/kuru koş/kapı/uygula)
-  └─▶ G108 (backend) admin uçları + bildirim + app_settings anahtarı
-        └─▶ G109 (backend) SharePoint listeleme + gece job 04:00 + boot telafisi
-              └─▶ G110 (backend) cevap paketi: eşleşme CSV + SharePoint'e geri yükleme
-                    └─▶ G112 (backend) Düzeltme_Logu provenance + DEGER_HAVUZLARI farkı
-                          └─▶ G113 (backend) Silinen_Föyler / Kapsam_Dışı föy işareti
-G111 (frontend) admin "Veri Teslimleri" sekmesi — sözleşme G108'de DONDURULDU, paralel
-G114 (docs) mimari doküman + teslim sözleşmesi + README düzeltmeleri — G110, G111, G113 sonrası
+G107 (backend) defter + servis çekirdeği (kaydet/doğrula/kuru koş/kapı/uygula)      TAMAM
+  └─▶ G108 (backend) admin uçları + bildirim + app_settings anahtarı                 TAMAM
+        └─▶ G109 (backend) SharePoint listeleme + gece job 04:00 + boot telafisi     TAMAM (tara ucu hariç — §8)
+              └─▶ G110 (backend) cevap paketi: eşleşme CSV + SharePoint'e geri yükleme TAMAM
+                    └─▶ G112 (backend) Düzeltme_Logu provenance + DEGER_HAVUZLARI farkı TAMAM
+                          └─▶ G113 (backend) Silinen_Föyler / Kapsam_Dışı föy işareti  TAMAM (rozet hariç — §8)
+G111 (frontend) admin "Veri Teslimleri" sekmesi — sözleşme G108'de DONDURULDU, paralel   TAMAM
+G114 (docs) mimari doküman + teslim sözleşmesi + README düzeltmeleri — G110, G111, G113 sonrası TAMAM
 ```
+
+Durumlar görev dosyalarının `DURUM:` satırından (`gorevler/gorev/G107`–`G114`); kodun
+güncel hâli [`docs/mimari/veri-teslim-hatti.md`](../mimari/veri-teslim-hatti.md)'de.
 
 **İnsan adımları (kuyruk kapsamı DIŞI):** SharePoint'te `03_VERI_TESLIM/gelen` ve `cevap`
 klasörlerini açmak + veri ekibine paylaşım vermek; `.env`'e `SHAREPOINT_FOLDER_TESLIM_NAME`
@@ -179,3 +195,22 @@ uygulanması; sözleşme metnini veri ekibine iletmek.
    değişiklik (mevcut idempotency testi bu hattan da geçer).
 3. `cevap/<teslim>/` altında üç çıktı; Talep #9 eşleşme dosyası dahil.
 4. Belge envanteri her koşuda denk; denk değilse `basarisiz` + tek ERROR.
+
+Kriterlerin dördü de kodda testli (`backend/tests/test_g107`–`test_g113`), ama plan
+**prod'da ilk gerçek teslim gözlenmeden kapanmaz**.
+
+## 8. Açık kalanlar (03.09.2026, G114)
+
+Plan kapanmadı; kuyruk turu bittiğinde şunlar açık:
+
+| Kalem | Durum | Kim / ne |
+| --- | --- | --- |
+| `POST /api/admin/aktarim/tara` yer tutucu | Panelin "Şimdi tara" düğmesi gözcüyü ÇAĞIRMIYOR, sıfır + `not` dönüyor (`routes/admin.py:311-325`). G109 raporundaki sebep: G108 testi yanıtı birebir kilitliyor; uç gövdesi + test tek küçük görev | yeni kuyruk görevi (5 dk) |
+| Kapsam dışı föy rozeti (frontend) | `get_case` çıktısında `foyler[]` (`kapsam_durumu` dahil) hazır; kart panelinde gösterim yok | yeni frontend görevi |
+| Prod kurulumu | SharePoint'te `03_VERI_TESLIM/gelen` + `cevap` klasörleri, veri ekibine paylaşım; `.env`'e `SHAREPOINT_FOLDER_TESLIM_NAME` (+ isteğe bağlı `TESLIM_KAPI_*`), `docker compose up -d` (recreate); admin panelden anahtar | insan |
+| `DEGISIKLIK_OZETI` yokken zincir kapısı | Sayfasız pakette `teslim_dogrula` `zincir_tamam=NULL` yazar (`services/teslim_kutusu.py:784-786`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik` sayar (`:846`) → paket zincir kontrolü olmadan otomatik uygulanabilir. §3'ün "zorunlu" varsayımı kodda yok; sözleşme koda göre düzeltildi. İstenirse kapıya `zincir_bilinmiyor` (NULL → inceleme) kuralı + test: küçük görev, karar insanın | insan kararı → yeni kuyruk görevi |
+| İlk teslim | Defter boşken kapı `ilk_teslim` der — ilk paket `inceleme_bekliyor`dan elle uygulanır; 20.08 ölçümü (40.908 alan değişikliği) burada insan gözü ister | insan |
+| Sözleşmenin iletilmesi | `docs/veri-teslim/SOZLESME.md` veri ekibine gönderilir; `Düzeltme_Logu` sütun-adı öneki ve `(boş)` yazımı orada tanımlı | insan |
+| Cevap klasörü ara klasörleri | Graph yol-adresli PUT'un `cevap/<teslim>/` klasörlerini açtığı koddan kanıtlanmadı; ilk gerçek yükleme gözle doğrulanır, açılmazsa klasörü önce yaratan küçük ek | ilk teslimden sonra |
+| eTag ayrı kolon | Bugün `sharepoint_item_id` içinde `<id>@<eTag>`; ayrı kolon istenirse `sharepoint_item_anahtari` + `_bilinen_sp_anahtarlari` tek dokunma noktası | isteğe bağlı |
+| Ters yön (sigorta Excel'i) | §5 — ayrı plan | — |
