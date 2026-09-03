@@ -190,6 +190,44 @@ def test_duzeltme_logu_zorunlu_baslik_yoksa_tek_warning_bos(tmp_path, caplog):
     assert len(uyarilar) == 1 and "sutun" in uyarilar[0].getMessage()
 
 
+GERCEK_LOG_BASLIKLARI = ["Excel Satırı", "SistemNo", "DosyaNo", "Eski Değer", "Yeni Değer",
+                         "Gerekçe", "Tarih"]
+
+
+def test_duzeltme_logu_gercek_duzen_sutun_adi_gerekce_onekinden(tmp_path, caplog):
+    """Gerçek paket (HUKDOK_TESLIM_PAKETI_2026-08-18) sütun adı için AYRI BAŞLIK taşımaz;
+    ad Gerekçe'nin "[Sütun Adı]" önekinde gelir. Sayfa OKUNUR (tek WARNING: öneksiz
+    satırlar uygulanamaz); öneksiz satır — "(boş)" talimatı dahil — tahmin edilmez."""
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_satir("S-1", "D-1")], log_basliklar=GERCEK_LOG_BASLIKLARI, log=[
+        _log("S-1", None, "Kanama", gerekce="[Tıbbi Olay] epikriz teyidi", tarih="18.07.2026", eski="Enfeksiyon"),
+        _log("S-1", None, "(boş)", gerekce="Format: geçersiz değer silindi", eski="Mhzn"),      # öneksiz
+        _log("S-1", None, "Kaldırma", gerekce="[İstinaf Karar Durumu] Yazılım artığı temizliği"),  # bilinmeyen
+        _log("S-2", None, "2019/12", gerekce=" [Karar No] UYAP teyidi", tarih="18.07.2026"),
+        _log("S-2", None, "x", gerekce=None),                                                   # gerekçe yok
+    ])
+    with caplog.at_level(logging.WARNING, logger="HukdokAktarim"):
+        kayitlar = duzeltme_logunu_oku(paket)
+    assert set(kayitlar) == {("S-1", "tibbi_olay"), ("S-2", "karar_no")}
+    k = kayitlar[("S-1", "tibbi_olay")]
+    assert (k.yeni, k.gerekce, k.bosalt, k.tarih) == ("Kanama", "[Tıbbi Olay] epikriz teyidi", False,
+                                                      datetime(2026, 7, 18))
+    assert kayitlar[("S-2", "karar_no")].gerekce == "[Karar No] UYAP teyidi"
+    uyarilar = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(uyarilar) == 1 and "sutun" in uyarilar[0].getMessage()
+
+
+def test_duzeltme_logu_sutun_basligi_varsa_onek_yerine_o(tmp_path, caplog):
+    """Ayrı sütun başlığı öncelikli; hücresi boşsa önek devreye girer; WARNING yok."""
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_satir("S-1", "D-1")], log=[
+        _log("S-1", "Arşiv Tarihi", "01.02.2020", gerekce="[Tıbbi Olay] önek değil başlık kazanır"),
+        _log("S-1", None, "Kanama", gerekce="[Tıbbi Olay] sütun hücresi boş → önek"),
+    ])
+    with caplog.at_level(logging.WARNING, logger="HukdokAktarim"):
+        kayitlar = duzeltme_logunu_oku(paket)
+    assert set(kayitlar) == {("S-1", "arsiv_tarihi"), ("S-1", "tibbi_olay")}
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. sqlite — provenance, boşaltma, idempotency
 # ═══════════════════════════════════════════════════════════════════════════
@@ -303,6 +341,19 @@ def test_provenance_uzun_gerekce_source_sinirina_kirpilir(dolu_kart, tmp_path):
     sonuc = aktarimi_kos(dolu_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
     (tibbi,) = _tarihce(dolu_kart, "tibbi_olay")
     assert len(tibbi[2]) == hukdok_aktarim._SOURCE_SINIRI and tibbi[2].startswith(sonuc.kaynak_imzasi)
+
+
+def test_provenance_gercek_duzen_gerekce_onekiyle_calisir(dolu_kart, tmp_path):
+    """Sütun-adı başlığı olmayan gerçek düzende provenance İNERT DEĞİL: önekli gerekçe
+    tarihçeye düşer, imza korunur (kova testi)."""
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_satir("S-1", "D-1", **{"Tıbbi Olay": "Kanama"})],
+                       log_basliklar=GERCEK_LOG_BASLIKLARI,
+                       log=[_log("S-1", None, "Kanama", gerekce="[Tıbbi Olay] epikrizde kanama yazıyor")])
+    sonuc = aktarimi_kos(dolu_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    assert sonuc.cikis_kodu == CIKIS_TAMAM and sonuc.alan_degisikligi == 1
+    (tibbi,) = _tarihce(dolu_kart, "tibbi_olay")
+    assert tibbi[2] == f"{sonuc.kaynak_imzasi} · gerekçe: [Tıbbi Olay] epikrizde kanama yazıyor"
+    assert is_aktarim_source(tibbi[2])
 
 
 def test_bosaltma_uclu_sart_null_tarihce_ikinci_kosu_sifir(dolu_kart, tmp_path):
@@ -483,6 +534,42 @@ def test_havuz_okuyucu_genis_bicim_ve_sayfa_yoksa_bos(tmp_path):
     assert tc.havuz_degerlerini_oku(yok) == {}
 
 
+def test_havuz_okuyucu_gercek_duzen_baslik_ucuncu_satirda_parantezli_ek(tmp_path):
+    """Gerçek paket düzeni: 1. satır "RESMİ DEĞER HAVUZLARI", 2. satır boş, 3. satır başlık;
+    havuz adları parantezli ek taşır; sözleşmedeki "Yargıtay Onama Durumu" sayfada
+    "Temyiz Onama Durumu". Sözlük anahtarı sayfadaki yazımı KORUR."""
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_satir("S-1", "D-1")],
+                       havuz_basliklar=("RESMİ DEĞER HAVUZLARI", None), havuz=[
+        (None, None),
+        ("Havuz / Sütun", "Değer"),
+        ("İddia Edilen Kusur (kapalı, 7)", "Uygulama Hatası"),
+        ("İddia Edilen Kusur (kapalı, 7)", "Tanı Hatası"),
+        ("Uygulanan Yöntem (kadın doğum)", "Sezaryen"),         # eşlemesi yok → atlanır
+        ("Temyiz Onama Durumu", "Onama"),
+        ("Dosya Son Durumu", "Derdest"),                        # eşlemesi yok → atlanır
+    ])
+    assert tc.havuz_degerlerini_oku(paket) == {
+        "İddia Edilen Kusur (kapalı, 7)": ["Uygulama Hatası", "Tanı Hatası"],
+        "Temyiz Onama Durumu": ["Onama"],
+    }
+    assert tc._havuz_anahtari("İddia Edilen Kusur (kapalı, 7)") == tk._anahtar("İddia Edilen Kusur")
+    assert tc.HAVUZ_LISTE_ESLEMESI[tc._havuz_anahtari("Temyiz Onama Durumu")] == "cassation_decisions"
+    assert tc.HAVUZ_LISTE_ESLEMESI[tc._havuz_anahtari("Yargıtay Onama Durumu")] == "cassation_decisions"
+    # geniş biçimde de başlık ilk satır olmayabilir
+    genis = _paket_yaz(tmp_path / "g.xlsx", [_satir("S-1", "D-1")],
+                       havuz_basliklar=("SAYFA BAŞLIĞI", None),
+                       havuz=[(None, None), ("İstinaf Karar Durumu", "Temyiz Onama Durumu"),
+                              ("Kaldırma", "Onama")])
+    assert tc.havuz_degerlerini_oku(genis) == {"İstinaf Karar Durumu": ["Kaldırma"],
+                                               "Temyiz Onama Durumu": ["Onama"]}
+    # tarama sınırının ötesindeki başlık bulunmaz → havuzsuz (INFO), hata yok
+    uzak = _paket_yaz(tmp_path / "u.xlsx", [_satir("S-1", "D-1")],
+                      havuz_basliklar=("SAYFA BAŞLIĞI", None),
+                      havuz=[(None, None)] * tc.HAVUZ_BASLIK_TARAMA + [("Havuz / Sütun", "Değer"),
+                                                                        ("Olay Türü", "Tıbbi Olay")])
+    assert tc.havuz_degerlerini_oku(uzak) == {}
+
+
 def test_havuz_eslemesi_sozlesme_ve_registry():
     """Sabit küçük sözlük: altı havuz, hepsi LIST_REGISTRY'de (yalnız okunur)."""
     from managers.reference_lists import LIST_REGISTRY
@@ -534,6 +621,28 @@ def test_havuz_farki_iki_yon_yazim_toleransli_listeye_yazmaz(db_env):
         ("İstinaf Karar Durumu", "appeal_decisions", tc.YON_TESLIMDE_VAR, "Kaldırma/Yeniden Hüküm"),
         ("İstinaf Karar Durumu", "appeal_decisions", tc.YON_BIZDE_VAR, "Başvuru Ret"),
         ("İddia Edilen Kusur", "alleged_faults", tc.YON_TESLIMDE_VAR, "Teşhis Hatası"),
+    ]
+    assert _liste_sayimlari(db_env) == once                       # listeye YAZMA yok
+
+
+def test_havuz_farki_parantezli_ek_ve_temyiz_adi_gercek_paket(db_env):
+    """Gerçek paketin havuz adlarıyla fark: "İddia Edilen Kusur (kapalı, 7)" alleged_faults'a,
+    "Temyiz Onama Durumu" cassation_decisions'a karşı bakılır; havuz sütunu sayfadaki yazım."""
+    _liste_doldur(db_env)
+    once = _liste_sayimlari(db_env)
+    db = db_env()
+    try:
+        farklar = tc.havuz_farki(db, {
+            "İddia Edilen Kusur (kapalı, 7)": ["Uygulama Hatası", "Tanı Hatası"],
+            "Temyiz Onama Durumu": ["Onama"],
+            "İstinaf Karar Durumu": ["Kaldırma", "Başvuru Ret"],          # tam örtüşme
+        })
+    finally:
+        db.close()
+    assert farklar == [
+        ("İddia Edilen Kusur (kapalı, 7)", "alleged_faults", tc.YON_TESLIMDE_VAR, "Uygulama Hatası"),
+        ("İddia Edilen Kusur (kapalı, 7)", "alleged_faults", tc.YON_TESLIMDE_VAR, "Tanı Hatası"),
+        ("Temyiz Onama Durumu", "cassation_decisions", tc.YON_TESLIMDE_VAR, "Onama"),
     ]
     assert _liste_sayimlari(db_env) == once                       # listeye YAZMA yok
 

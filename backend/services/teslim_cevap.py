@@ -94,15 +94,32 @@ _IN_PARCASI = 500
 # ─── DEGER_HAVUZLARI (G112) ──────────────────────────────────────────────────
 #: Teslim paketinin kapalı liste değerleri sayfası.
 HAVUZ_SAYFASI = "DEGER_HAVUZLARI"
+#: Havuz adındaki parantezli EK: gerçek paket (HUKDOK_TESLIM_PAKETI_2026-08-18,
+#: `DEGER_HAVUZLARI` 3. satırdan itibaren) havuzu "İddia Edilen Kusur (kapalı, 7)",
+#: "Uygulanan Yöntem (kadın doğum)" gibi yazar. Ek, etiket temizliğiyle atılır
+#: (değer tahmini değil); sözlük anahtarı ve fark satırındaki havuz adı sayfadaki
+#: yazımı KORUR.
+_HAVUZ_EKI = re.compile(r"\([^)]*\)")
+
+
+def _havuz_anahtari(ad: Any) -> str:
+    """Havuz adı → eşleme anahtarı: parantezli ek atılır, sonra `tk._anahtar`
+    ("İddia Edilen Kusur (kapalı, 7)" = "İDDİA EDİLEN KUSUR")."""
+    return tk._anahtar(_HAVUZ_EKI.sub(" ", str(ad or "")))
+
+
 #: "Havuz / Sütun" (başlık anahtarı) → `reference_lists.LIST_REGISTRY` anahtarı.
 #: Sabit KÜÇÜK sözlük (görev sözleşmesi); eşlemesi olmayan havuz atlanır.
+#: "Temyiz Onama Durumu": sözleşmedeki "Yargıtay Onama Durumu" havuzunun gerçek
+#: paketteki adı (aynı liste — temyiz mercii Yargıtay); ikisi de tanınır.
 HAVUZ_LISTE_ESLEMESI: Dict[str, str] = {
-    tk._anahtar("İddia Edilen Kusur"):         "alleged_faults",
-    tk._anahtar("İstinaf Karar Durumu"):       "appeal_decisions",
-    tk._anahtar("Yargıtay Onama Durumu"):      "cassation_decisions",
-    tk._anahtar("Yerel Mahkeme Karar Durumu"): "local_decisions",
-    tk._anahtar("Olay Türü"):                  "event_types",
-    tk._anahtar("Hükümdeki Rol"):              "judgment_roles",
+    _havuz_anahtari("İddia Edilen Kusur"):         "alleged_faults",
+    _havuz_anahtari("İstinaf Karar Durumu"):       "appeal_decisions",
+    _havuz_anahtari("Yargıtay Onama Durumu"):      "cassation_decisions",
+    _havuz_anahtari("Temyiz Onama Durumu"):        "cassation_decisions",
+    _havuz_anahtari("Yerel Mahkeme Karar Durumu"): "local_decisions",
+    _havuz_anahtari("Olay Türü"):                  "event_types",
+    _havuz_anahtari("Hükümdeki Rol"):              "judgment_roles",
 }
 #: Uzun biçim başlık adayları (havuz adı sütunu + değer sütunu). Uzun biçim
 #: bulunamazsa GENİŞ biçim denenir: eşlemesi olan her başlık bir havuzdur,
@@ -112,6 +129,10 @@ HAVUZ_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
     "havuz": ("Havuz / Sütun", "Havuz/Sütun", "Havuz", "Sütun"),
     "deger": ("Değer", "Değerler", "Havuz Değeri", "Havuz Değerleri", "İzinli Değerler"),
 }
+#: Başlık satırı ilk satır OLMAYABİLİR: gerçek paket 1. satırda "RESMİ DEĞER
+#: HAVUZLARI" sayfa başlığı, 2. satır boş, 3. satırda ("Havuz / Sütun", "Değer")
+#: taşır. Başlık ilk bu kadar satırda aranır; bulunamazsa sayfa havuzsuz sayılır.
+HAVUZ_BASLIK_TARAMA = 10
 #: Fark CSV'sinin sütunları (sıra sabit).
 HAVUZ_FARKI_BASLIKLARI: Tuple[str, ...] = ("havuz", "liste", "yon", "deger")
 YON_TESLIMDE_VAR = "teslimde var / bizde yok"
@@ -283,13 +304,42 @@ def _havuz_parcalari(deger: Any) -> List[str]:
     return parcalar
 
 
+def _havuz_basligi_bul(satirlar: Sequence[Sequence[Any]]) -> Tuple[Optional[int], Dict[str, int]]:
+    """İlk `HAVUZ_BASLIK_TARAMA` satırda başlık satırını bulur → (satır indeksi, uzun
+    biçim sütun indeksleri). Önce UZUN biçim (havuz + değer başlığı aynı satırda);
+    yoksa GENİŞ biçim (eşlemesi olan en az bir başlık taşıyan ilk satır; indeksler
+    boş). Hiçbiri yoksa (None, {}). Sayfa başlığı ("RESMİ DEĞER HAVUZLARI") ve boş
+    satırlar hiçbir adaya uymadığı için doğal olarak atlanır."""
+    genis: Optional[int] = None
+    for si, satir in enumerate(satirlar[:HAVUZ_BASLIK_TARAMA]):
+        dosyadaki: Dict[str, int] = {}
+        for i, ham in enumerate(satir):
+            anahtar = tk._anahtar(ham)
+            if anahtar and anahtar not in dosyadaki:
+                dosyadaki[anahtar] = i
+        indeksler: Dict[str, int] = {}
+        for alan, adaylar in HAVUZ_SUTUNLARI.items():
+            for aday in adaylar:
+                if tk._anahtar(aday) in dosyadaki:
+                    indeksler[alan] = dosyadaki[tk._anahtar(aday)]
+                    break
+        if "havuz" in indeksler and "deger" in indeksler:
+            return si, indeksler
+        if genis is None and any(_havuz_anahtari(h) in HAVUZ_LISTE_ESLEMESI for h in satir if h is not None):
+            genis = si
+    return genis, {}
+
+
 def havuz_degerlerini_oku(yol: Path, *, sheet: str = HAVUZ_SAYFASI) -> Dict[str, List[str]]:
     """`DEGER_HAVUZLARI` → {havuz adı (sayfadaki yazım): [değer, ...]}; sayfa yoksa {}.
 
-    Uzun biçim ("Havuz / Sütun" + "Değer" sütunları, satır başına bir değer ya da
-    `;` ile birleşik) önce denenir; yoksa geniş biçim (eşlemesi olan her başlık bir
-    havuz, değerler aşağı iner). İkisi de havuz vermiyorsa INFO + {} (hata değil —
-    sayfa isteğe bağlıdır). Eşlemesi olmayan havuzlar sözlüğe GİRMEZ.
+    Başlık satırı ilk `HAVUZ_BASLIK_TARAMA` satırda ARANIR (gerçek paket 3. satırda
+    taşır — `_havuz_basligi_bul`). Uzun biçim ("Havuz / Sütun" + "Değer" sütunları,
+    satır başına bir değer ya da `;` ile birleşik) önce denenir; yoksa geniş biçim
+    (eşlemesi olan her başlık bir havuz, değerler aşağı iner). İkisi de havuz
+    vermiyorsa INFO + {} (hata değil — sayfa isteğe bağlıdır). Eşleme
+    `_havuz_anahtari` ile (parantezli ek atılır); eşlemesi olmayan havuzlar sözlüğe
+    GİRMEZ, girenler sayfadaki yazımıyla ("İddia Edilen Kusur (kapalı, 7)") anahtarlanır.
     """
     import openpyxl
 
@@ -301,39 +351,26 @@ def havuz_degerlerini_oku(yol: Path, *, sheet: str = HAVUZ_SAYFASI) -> Dict[str,
         satirlar = [list(s or ()) for s in wb[sheet].iter_rows(values_only=True)]
     finally:
         wb.close()
-    if not satirlar:
-        return {}
-    baslik = satirlar[0]
-    dosyadaki: Dict[str, int] = {}
-    for i, ham in enumerate(baslik):
-        anahtar = tk._anahtar(ham)
-        if anahtar and anahtar not in dosyadaki:
-            dosyadaki[anahtar] = i
-    indeksler: Dict[str, int] = {}
-    for alan, adaylar in HAVUZ_SUTUNLARI.items():
-        for aday in adaylar:
-            if tk._anahtar(aday) in dosyadaki:
-                indeksler[alan] = dosyadaki[tk._anahtar(aday)]
-                break
+    baslik_i, indeksler = _havuz_basligi_bul(satirlar)
 
     havuzlar: Dict[str, List[str]] = {}
-    if "havuz" in indeksler and "deger" in indeksler:
+    if baslik_i is not None and "havuz" in indeksler and "deger" in indeksler:
         hi, di = indeksler["havuz"], indeksler["deger"]
-        for ham in satirlar[1:]:
+        for ham in satirlar[baslik_i + 1:]:
             havuz = _metin(ham[hi]) if hi < len(ham) else None
-            if not havuz or tk._anahtar(havuz) not in HAVUZ_LISTE_ESLEMESI:
+            if not havuz or _havuz_anahtari(havuz) not in HAVUZ_LISTE_ESLEMESI:
                 continue
             liste = havuzlar.setdefault(havuz, [])
             for deger in _havuz_parcalari(ham[di] if di < len(ham) else None):
                 if deger not in liste:
                     liste.append(deger)
-    else:
-        for i, ham_baslik in enumerate(baslik):
+    elif baslik_i is not None:
+        for i, ham_baslik in enumerate(satirlar[baslik_i]):
             havuz = _metin(ham_baslik)
-            if not havuz or tk._anahtar(havuz) not in HAVUZ_LISTE_ESLEMESI:
+            if not havuz or _havuz_anahtari(havuz) not in HAVUZ_LISTE_ESLEMESI:
                 continue
             liste = havuzlar.setdefault(havuz, [])
-            for ham in satirlar[1:]:
+            for ham in satirlar[baslik_i + 1:]:
                 for deger in _havuz_parcalari(ham[i] if i < len(ham) else None):
                     if deger not in liste:
                         liste.append(deger)
@@ -351,7 +388,7 @@ def havuz_farki(db: Session, havuzlar: Dict[str, List[str]]) -> List[Tuple[str, 
     """
     farklar: List[Tuple[str, str, str, str]] = []
     for havuz, degerler in havuzlar.items():
-        liste = HAVUZ_LISTE_ESLEMESI.get(tk._anahtar(havuz))
+        liste = HAVUZ_LISTE_ESLEMESI.get(_havuz_anahtari(havuz))
         if liste is None:
             continue
         model: Any = reference_lists.LIST_REGISTRY[liste].model

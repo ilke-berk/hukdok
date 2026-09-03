@@ -865,16 +865,24 @@ BOSALTMA_ISARETI = "(boş)"
 
 DUZELTME_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
     "sistem_no": ("SistemNo", "Sistem No"),
-    # Değişen sütunun ADI — karşı tarafla başlık henüz yazılı sabitlenmedi
-    # (G114 sözleşmesi); aday desen toleranslı, `_baslik_anahtari` yazım
-    # farklarını yutar.
+    # Değişen sütunun ADI — gerçek paket (HUKDOK_TESLIM_PAKETI_2026-08-18,
+    # 20.042 satır) bunun için AYRI BAŞLIK TAŞIMAZ: başlıklar Excel Satırı,
+    # SistemNo, DosyaNo, Eski Değer, Yeni Değer, Gerekçe, Tarih. Sütun adı
+    # orada Gerekçe metninin köşeli parantezli ÖNEKİNDE gelir
+    # ("[Hükmedilen Manevi] Outlook otomasyonu parti-2 …" — 20.042 satırın
+    # 10.662'sinde; `_GEREKCE_SUTUN_ONEKI`). Ayrı başlık gelirse o önceliklidir
+    # (aday desen toleranslı); ikisi de yoksa satırın alanı bilinmez → yok sayılır.
     "sutun":     ("Sütun", "Sütun Adı", "Alan", "Alan Adı", "Kolon", "Değişen Sütun", "Değişen Alan"),
     "eski":      ("Eski Değer",),
     "yeni":      ("Yeni Değer",),
     "gerekce":   ("Gerekçe",),
     "tarih":     ("Tarih",),
 }
-_DUZELTME_ZORUNLU = ("sistem_no", "sutun", "yeni")
+_DUZELTME_ZORUNLU = ("sistem_no", "yeni")
+#: Sütun adının ikinci kaynağı: Gerekçe'nin başındaki "[Sütun Adı]" öneki.
+#: Öneksiz gerekçe ("Teyitli kaynak: AXA 2023 listesi", "Format: geçersiz değer
+#: silindi") sütun söylemez — o satır tahmin edilmez, yok sayılır (DEBUG).
+_GEREKCE_SUTUN_ONEKI = re.compile(r"^\s*\[([^\]]+)\]")
 # "Tarih" hücresi saatli metin de gelebilir ("02.08.2026 14:05"); sıralama için.
 _DUZELTME_TARIH_BICIMLERI: Tuple[str, ...] = tuple(
     f"{b}{ek}" for b in _TARIH_BICIMLERI for ek in ("", " %H:%M", " %H:%M:%S")
@@ -960,11 +968,15 @@ def duzeltme_logunu_oku(yol: Path, *, sheet: str = DUZELTME_SAYFASI) -> Duzeltme
     """`Düzeltme_Logu` sayfasını okur → {(SistemNo, kart alanı): en yeni kayıt}.
 
     Sayfa yoksa BOŞ sözlük (hata değil — eski paketlerde yok). Zorunlu başlık
-    (SistemNo / sütun adı / Yeni Değer) yoksa sayfa uygulanamaz: TEK WARNING +
-    boş (provenance yan üründür, koşuyu durdurmaz; boşaltma talimatı da
-    okunamadığı için uygulanmaz — güvenli taraf). Bilinmeyen sütun adı DEBUG
-    ile yok sayılır. Aynı (SistemNo, alan) için birden çok satır → en yeni
-    `Tarih` kazanır (tarihsiz satır en eski sayılır; eşitlikte sonraki satır).
+    (SistemNo / Yeni Değer) ya da sütun adı kaynağının İKİSİ (sütun başlığı,
+    Gerekçe) yoksa sayfa uygulanamaz: TEK WARNING + boş (provenance yan üründür,
+    koşuyu durdurmaz; boşaltma talimatı da okunamadığı için uygulanmaz — güvenli
+    taraf). Sütun başlığı yok ama Gerekçe varsa sayfa OKUNUR: sütun adı Gerekçe'nin
+    "[Sütun Adı]" önekinden alınır (gerçek paketin düzeni), TEK WARNING öneksiz
+    satırların — boşaltma talimatları dahil — uygulanamayacağını söyler. Sütun
+    adı olmayan ya da bilinmeyen satır DEBUG ile yok sayılır. Aynı (SistemNo,
+    alan) için birden çok satır → en yeni `Tarih` kazanır (tarihsiz satır en
+    eski sayılır; eşitlikte sonraki satır).
     """
     import openpyxl
 
@@ -990,25 +1002,45 @@ def duzeltme_logunu_oku(yol: Path, *, sheet: str = DUZELTME_SAYFASI) -> Duzeltme
                     indeksler[alan] = dosyadaki[_baslik_anahtari(aday)]
                     break
         eksik = [a for a in _DUZELTME_ZORUNLU if a not in indeksler]
+        if "sutun" not in indeksler and "gerekce" not in indeksler:
+            eksik.append("sutun")
         if eksik:
             logger.warning(
                 f"{sheet}: zorunlu başlık(lar) yok ({', '.join(eksik)}) — sayfa okunmadı; "
                 f"okunan başlıklar: {', '.join(str(b) for b in baslik if b)}"
             )
             return {}
+        if "sutun" not in indeksler:
+            logger.warning(
+                f"{sheet}: sütun adı başlığı yok (sutun) — sütun adı Gerekçe'nin [Sütun Adı] "
+                f"önekinden okunacak; öneksiz satırlar (boşaltma talimatları dahil) uygulanamaz"
+            )
 
         def hucre(ham: Sequence[Any], alan: str) -> Any:
             i = indeksler.get(alan)
             return ham[i] if i is not None and i < len(ham) else None
 
+        def sutun_adi(ham: Sequence[Any]) -> Optional[str]:
+            """Sütun başlığı varsa ve doluysa o; yoksa Gerekçe'nin [..] öneki; yoksa None."""
+            acik = _metin(hucre(ham, "sutun"))
+            if acik:
+                return acik
+            onek = _GEREKCE_SUTUN_ONEKI.match(str(hucre(ham, "gerekce") or ""))
+            return _metin(onek.group(1)) if onek else None
+
         kayitlar: DuzeltmeHaritasi = {}
         bilinmeyen = 0
+        sutunsuz = 0
         for sira, ham in enumerate(akis, start=2):
             if ham is None:
                 continue
             sistem_no = _metin(hucre(ham, "sistem_no"))
-            sutun = _metin(hucre(ham, "sutun"))
-            if not sistem_no or not sutun:
+            if not sistem_no:
+                continue
+            sutun = sutun_adi(ham)
+            if not sutun:
+                sutunsuz += 1
+                logger.debug(f"{sheet} satır {sira}: sütun adı yok (başlık da önek de yok) — yok sayıldı")
                 continue
             alan = DUZELTME_ALAN_HARITASI.get(_baslik_anahtari(sutun))
             if alan is None:
@@ -1028,6 +1060,7 @@ def duzeltme_logunu_oku(yol: Path, *, sheet: str = DUZELTME_SAYFASI) -> Duzeltme
         logger.info(
             f"{sheet}: {len(kayitlar)} (SistemNo, alan) kaydı okundu"
             f"{f', {bilinmeyen} satır bilinmeyen sütun adıyla yok sayıldı' if bilinmeyen else ''}"
+            f"{f', {sutunsuz} satır sütun adsız yok sayıldı' if sutunsuz else ''}"
         )
         return kayitlar
     finally:
