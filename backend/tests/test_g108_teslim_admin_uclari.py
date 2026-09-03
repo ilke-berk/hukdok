@@ -259,8 +259,9 @@ def test_liste_en_yeni_once_esikler_etkin(env):
         "okunan", "islenen", "atlanan", "hata_sayisi", "alan_degisikligi", "kart_degisen",
         "envanter_denk", "kapi_karari", "kapi_gerekcesi", "cevap_yuklendi", "uygulayan",
         "hata_mesaji", "created_at", "updated_at", "done_at",
+        "yapi_farki",                                              # G115: liste ucunda da (03.09 kullanıcı kararı)
     }
-    assert set(satir) == beklenen                                  # liste dışı: durum_gecmisi, spool_path
+    assert set(satir) == beklenen                                  # liste dışı: durum_gecmisi, spool_path, yapi
     assert satir["durum"] == "inceleme_bekliyor" and satir["kapi_karari"] == "inceleme"
     assert isinstance(satir["created_at"], str) and "T" in satir["created_at"]   # ISO 8601
 

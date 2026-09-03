@@ -102,6 +102,8 @@ def test_model_sozlesme_kolonlari():
         "okunan", "islenen", "atlanan", "hata_sayisi", "alan_degisikligi", "kart_degisen",
         "envanter_denk", "kapi_karari", "kapi_gerekcesi", "rapor_dizini", "cevap_yuklendi",
         "uygulayan", "hata_mesaji", "created_at", "updated_at", "done_at",
+        # G115 (03.09 kullanıcı kararı): paketin sayfa/başlık yapısı — yapı farkı tespiti.
+        "yapi",
     }
     assert kolonlar == beklenen
     assert models.AktarimTeslimi.__tablename__ == "aktarim_teslimleri"
