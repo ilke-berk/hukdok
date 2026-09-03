@@ -241,6 +241,16 @@ describe("resolveTimeoutMs (uç eşlemesi)", () => {
         expect(resolveTimeoutMs("/api/config/export/clients")).toBe(LONG_TIMEOUT_MS);
     });
 
+    it("veri teslimi (admin aktarım) uçları uzun katmandadır; diğer admin uçları varsayılanda (G117)", () => {
+        // Kuru koşu/uygulama 8.409 satırda 45-60 sn sürüyor; 30 sn'de kesilince
+        // ikinci tıklama 409 görüyordu (03.09 lokal test bulgusu).
+        expect(resolveTimeoutMs("/api/admin/aktarim/teslimler/1/uygula")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/admin/aktarim/teslimler/1/kuru-kos")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/admin/aktarim/teslimler?limit=50")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/admin/settings")).toBe(DEFAULT_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/admin/deleted-records")).toBe(DEFAULT_TIMEOUT_MS);
+    });
+
     it("FormData gövdesi = dosya yükleme → yol ne olursa olsun uzun katman", () => {
         expect(resolveTimeoutMs("/api/herhangi-bir-uc", { body: new FormData() })).toBe(LONG_TIMEOUT_MS);
     });

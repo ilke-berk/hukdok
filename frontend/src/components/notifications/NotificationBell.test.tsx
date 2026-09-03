@@ -199,6 +199,17 @@ describe("NotificationBell", () => {
     expect(panel()).not.toBeNull();
   });
 
+  it("veri_teslim bildirimi davasız olsa da Yönetim > Veri Teslimleri sekmesine gider (G117)", async () => {
+    render({ items: [bildirim({ id: 11, type: "veri_teslim", case_id: null, document_id: null })] });
+    await tikla(zil());
+
+    await tikla(Array.from(container.querySelectorAll("li button"))[0]);
+
+    expect(hookMocks.markRead).toHaveBeenCalledWith(11);
+    expect(navigateMock).toHaveBeenCalledWith("/admin?tab=deliveries");
+    expect(panel()).toBeNull(); // gezinmeden önce kapanır
+  });
+
   it("'Tümünü okundu işaretle' hook'u çağırır", async () => {
     render({ unreadCount: 2, items: [bildirim({ id: 1 }), bildirim({ id: 2 })] });
     await tikla(zil());

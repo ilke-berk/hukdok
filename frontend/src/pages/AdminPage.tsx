@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfig, ConfigItem, ListUsage, DeleteMode } from "@/hooks/useConfig";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -169,8 +170,24 @@ const SortableRow = ({ id, children, className }: { id: string, children: React.
     );
 };
 
+// Yönetim sekmeleri — `TabsTrigger value` listesiyle birebir. URL'deki `?tab=`
+// yalnız bu kümedeyse başlangıç sekmesi olur (G117: bildirimden sekmeye gitme).
+const ADMIN_TABS = [
+    "lawyers", "statuses", "doctypes", "case_subjects", "emails", "case_types", "court_types",
+    "party_roles", "bureau_types", "client_categories", "file_statuses", "specialties", "cities",
+    "features", "deliveries", "activity_test", "deleted",
+] as const;
+const DEFAULT_ADMIN_TAB = "lawyers";
+
+function resolveInitialAdminTab(tab: string | null): string {
+    return tab && (ADMIN_TABS as readonly string[]).includes(tab) ? tab : DEFAULT_ADMIN_TAB;
+}
+
 const AdminPage = () => {
     useSetPageTitle("Yönetim", ["Yönetici Paneli"]);
+    // Yalnız GİRİŞTE okunur; sekme değişince URL güncellenmez (kapsam dar, G117).
+    const [searchParams] = useSearchParams();
+    const [initialTab] = useState(() => resolveInitialAdminTab(searchParams.get("tab")));
     const {
         lawyers, statuses, doctypes, emailRecipients, caseSubjects,
         fileTypes, courtTypes, partyRoles, bureauTypes, cities, specialties, clientCategories,
@@ -182,7 +199,7 @@ const AdminPage = () => {
         reorderList, updateItem, deleteItem, fetchUsage
     } = useConfig();
 
-    const [activeTab, setActiveTab] = useState("lawyers");
+    const [activeTab, setActiveTab] = useState(initialTab);
 
     // Local State for Optimistic Sorting
     const [localLawyers, setLocalLawyers] = useState<ConfigItem[]>([]);
@@ -743,7 +760,7 @@ const AdminPage = () => {
                     </DialogContent>
                 </Dialog>
 
-                <Tabs defaultValue="lawyers" className="w-full" onValueChange={v => { setActiveTab(v); setListSearch(""); }}>
+                <Tabs defaultValue={initialTab} className="w-full" onValueChange={v => { setActiveTab(v); setListSearch(""); }}>
                     <TabsList className="flex flex-wrap h-auto gap-1 justify-start mb-6 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="lawyers">Avukatlar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="statuses">Durumlar</TabsTrigger>

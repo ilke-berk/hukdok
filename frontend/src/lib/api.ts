@@ -70,6 +70,7 @@ const LONG_TIMEOUT_PREFIXES = [
     "/api/config/export/",        // dosya export indirmesi
     "/api/activity/admin/",       // rapor üretimi/toplu e-posta tetikleri
     "/refresh",                   // SharePoint config listelerinin yeniden yüklenmesi
+    "/api/admin/aktarim/",        // veri teslimi kuru koşu/uygulama: 8.409 satırda 45-60 sn (nginx 300 sn) (G117)
 ];
 // Yolun İÇİNDE geçen işaretler (ör. /api/documents/{id}/download).
 const LONG_TIMEOUT_MARKERS = ["/download", "/resend-email", "/send-emails"];
