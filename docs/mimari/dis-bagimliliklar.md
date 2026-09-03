@@ -128,8 +128,21 @@ hiç retry görmezdi (`:67-69`). 429/503'te Graph'ın `Retry-After` başlığın
 
 Arşiv klasör adları env'den gelir: ham belgeler `SHAREPOINT_FOLDER_HAM_NAME`
 (`01_HAM_ARSIV`), işlenmiş kopyalar ve teknik/veritabanı yedekleri
-`SHAREPOINT_FOLDER_ISLENMIS_NAME` (`02_YEDEK_ARSIV`). Ofis numarası sayacı bir SharePoint
+`SHAREPOINT_FOLDER_ISLENMIS_NAME` (`02_YEDEK_ARSIV`), veri ekibinin teslim paketleri
+`SHAREPOINT_FOLDER_TESLIM_NAME` (`03_VERI_TESLIM`; `gelen/` okunur, `cevap/<teslim>/`
+yazılır — `.env.example:27-29`). Ofis numarası sayacı bir SharePoint
 liste öğesinde tutulur ve `managers/counter_manager.py` üzerinden ETag'li güncellenir.
+
+### Klasör listeleme — `list_folder_children`
+
+Uploader'daki tek listeleme çağrısı, G109 teslim gözcüsü için (`sharepoint_uploader_graph.py:448-482`):
+`GET /drives/{drive}/root:/{folder}:/children` — `$select=id,name,size,eTag,file,lastModifiedDateTime`,
+`$top=200` (Graph tavanı, `:443-445`), `@odata.nextLink` sonuna kadar izlenir (nextLink'te
+`params=None` — bağlantı parametreleri kendi taşır), yalnız `file` anahtarlı öğeler döner
+(alt klasörler elenir). **404 → boş liste + WARNING**: "klasör henüz açılmadı" kurulum
+eksiğidir, gece job'ı ERROR basmasın; diğer HTTP hataları yükselir. Ortak session (transport
+retry) + `_with_fresh_token_on_401` kullanır. Tüketicisi ve eTag'li ucuz eleme
+[`veri-teslim-hatti.md`](veri-teslim-hatti.md) §2'de.
 
 ## 3. E-posta
 

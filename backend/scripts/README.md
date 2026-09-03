@@ -1,8 +1,13 @@
 # Tek Seferlik / Operasyonel Scriptler
 
-Uygulama kodundan ayrı tutulan, elle çalıştırılan scriptler. Hiçbiri API
-tarafından import edilmez; Docker imajına girseler de çalışma zamanında
-kullanılmazlar.
+Uygulama kodundan ayrı tutulan, elle çalıştırılan scriptler. **Tek istisna
+`hukdok_aktarim.py`:** veri teslim hattı (`services/teslim_kutusu.py`,
+`services/teslim_cevap.py`) `from scripts import hukdok_aktarim` ile onu
+çalışma zamanında import eder ve `aktarimi_kos` / `xlsx_oku` / `ozet_metni`'yi
+çağırır — script yine elle de koşulabilir, ama artık API'nin bir bağımlılığıdır
+(imza değişikliği `services/` tarafını kırar; bkz.
+`docs/mimari/veri-teslim-hatti.md`). Diğerleri API tarafından import edilmez;
+Docker imajına girseler de çalışma zamanında kullanılmazlar.
 
 Çalıştırma (backend kökünden veya konteyner içinden `/app`):
 
@@ -27,7 +32,7 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 | `export_avukatlar_excel.py` | avukat CSV'sinden xlsx üretimi |
 | `export_davalar_ornek_excel.py` | Örnek 10 davayı xlsx'e aktarma |
 | `index_envanteri.py` | Index envanteri + güvenli düşürme listesi (SALT OKUNUR; `--json`) |
-| `hukdok_aktarim.py` | HUKDOK teslim paketi → kart aktarımı (idempotent; `--dry-run`, `--limit`, `--sheet`). Belge envanteri denk değilse koşuyu geri alır ve NONZERO çıkar. `import_excel_cases.py`'nin halefi — o script KULLANILMAZ (idempotent değil, hata yolunda veri kaybı) |
+| `hukdok_aktarim.py` | HUKDOK teslim paketi → kart aktarımı (idempotent; `--dry-run`, `--limit`, `--sheet`). Belge envanteri denk değilse koşuyu geri alır ve NONZERO çıkar. `import_excel_cases.py`'nin halefi — o script KULLANILMAZ (idempotent değil, hata yolunda veri kaybı). **API tarafından da import edilir** (`services/teslim_kutusu.py` — otomatik teslim hattı; yukarıdaki istisna) |
 
 | `mukerrer_kart_raporu.py` | Aynı davayı gösteren kart grupları → iki CSV onay listesi (SALT OKUNUR; `--rapor-dizini`). Kart BİRLEŞTİRMEZ — `tracking_no` müvekkil bazlı ofis dosya numarasıdır, tek davada birden çok müvekkilin ayrı kartı olması doğrudur. "Aynı dava" hükmü `services/case_relations_auto.py`tan gelir |
 
