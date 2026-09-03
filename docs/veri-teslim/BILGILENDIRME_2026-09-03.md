@@ -249,7 +249,7 @@ kullanabilmemiz için önceden anlaşma ister. **SERBEST** satırlar için bildi
 | `Dosya No` biçiminin değişmesi (ör. `13.021.00` → `13-021`) | **KIRICI** | Eşleşme köprüsü kopar; tüm satırlar "kart bulunamadı" olur |
 | `SistemNo` / `Dosya No` başlığının değişmesi | **KIRICI** | Paket reddedilir |
 | `Sheet` sayfasının adının değişmesi | **KIRICI** | Paket reddedilir |
-| §3.2'deki 40 başlıktan birinin **kelime** değişikliği | **KIRICI (sessiz)** | Hata yok; alan "bu teslimde yok" sayılır, o sütundaki güncellemeler hiç işlenmez |
+| §3.2'deki okunan 37 başlıktan birinin **kelime** değişikliği | **KIRICI (sessiz)** | Hata yok; alan "bu teslimde yok" sayılır, o sütundaki güncellemeler hiç işlenmez |
 | Sayfa adlarının değişmesi (`Karar_Asamalari`, `Düzeltme_Logu`, `DEGER_HAVUZLARI`) | **KIRICI (sessiz)** | Sayfa atlanır, içeriği işlenmez |
 | Çok değer ayracının değişmesi (`;` yerine `,` / `/`) | **KIRICI** | Hücre tek değer sanılır; kapalı listede tanınmaz, yazılmaz |
 | Tarih yazımının değişmesi (`2026-08-18`, `18/08/26`) | **KIRICI** | Çözülemeyen tarih boş yazılır |
@@ -423,7 +423,7 @@ hukdok_teslim_spec:
     csv_bicimi: "UTF-8 BOM, ';' ayraç"
   bildirim_gerektiren:
     kirici: ["SistemNo değişimi", "Dosya No biçimi", "Sheet adı", "SistemNo/Dosya No başlığı",
-             "okunan 40 başlıktan birinin kelime değişimi", "sayfa adı değişimi",
+             "okunan 37 başlıktan birinin kelime değişimi", "sayfa adı değişimi",
              "ayraç/tarih/sayı biçimi", "dosya biçimi"]
     bildirilmeli: ["yeni kapalı liste değeri", "Ana Tür/Durum/Son Durum yeni değer",
                    "yeni sütun", "kalıcı sütun kaldırma", "yeni sayfa", "yeni aşama adı"]
