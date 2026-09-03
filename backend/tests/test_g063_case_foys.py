@@ -68,16 +68,25 @@ def test_model_ve_kolonlar_gorev_taslagina_uygun():
     assert row.__tablename__ == TABLO
     columns = row.__table__.columns
     # Çekirdek = kimlik + bağ. Per-föy EK alanlar (dava değeri, son durum,
-    # hizmet türü…) bu turda BİLİNÇLİ açılmadı — kolon seti FAZ F tam eşleme
+    # hizmet türü…) G063 turunda BİLİNÇLİ açılmadı — kolon seti FAZ F tam eşleme
     # turunda 68 sütunluk eşleme tablosuyla kararlaştırılır (YAGNI).
+    # G113 (2026-09-03, kullanıcı kararı): kapsam işareti üçlüsü eklendi —
+    # veri ekibinin Silinen_Föyler / Kapsam_Dışı sayfaları föyü SİLMEZ,
+    # işaretler (belge koruma şartı). Küme yine TAM eşitlikle kilitli.
     assert set(columns.keys()) == {
         "id", "sistem_no", "case_id", "case_party_id", "tku_no", "hasar_no",
         "source", "created_at", "updated_at",
+        "kapsam_durumu", "kapsam_gerekcesi", "kapsam_tarihi",
     }
     assert columns["sistem_no"].type.length == 50
     assert columns["tku_no"].type.length == 50
     assert columns["hasar_no"].type.length == 100
     assert columns["source"].type.length == 100
+    # G113 sözleşmesi: NULL = kapsamda (varsayılan hâl, backfill YOK).
+    assert columns["kapsam_durumu"].type.length == 20
+    assert columns["kapsam_durumu"].nullable
+    assert columns["kapsam_gerekcesi"].nullable
+    assert columns["kapsam_tarihi"].nullable
     # Zorunlular: anahtarsız ya da kartsız föy eşlemeyi anlamsızlaştırır
     assert not columns["sistem_no"].nullable
     assert not columns["case_id"].nullable
