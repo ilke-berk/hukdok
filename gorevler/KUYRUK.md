@@ -30,6 +30,16 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G113 | bant:backend | bagimli:G112 | Silinen_Föyler / Kapsam_Dışı → case_foys kapsam işareti (silme yok; çelişki ve ilişki hesabından hariç)
 - [x] G114 | bant:docs | bagimli:G110,G111,G113 | docs/mimari/veri-teslim-hatti.md + docs/veri-teslim/SOZLESME.md + genel-bakis/scripts README/CLAUDE.md düzeltmeleri
 
+<!-- 03.09 gündüz lokal uçtan uca testin bulguları (kullanıcı kararı, aynı gün): tara ucu
+     yer tutucu kalmıştı (G109 dokunmadı), veri_teslim bildirimi tıklanınca gitmiyor +
+     admin aktarım uçları 30 sn'de kesiliyor, yapı değişikliği (yeni/kaybolan sütun-sayfa)
+     hiç yakalanmıyor. G116 küçük ve önce; G115 onun arkasında (backend seri). G117 frontend
+     PARALEL. -->
+
+- [ ] G116 | bant:backend | bagimli:- | POST /api/admin/aktarim/tara yer tutucusu → sharepoint_tara + kuru koşu (G108 testi güncellenir)
+- [ ] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet
+- [ ] G117 | bant:frontend | bagimli:- | veri_teslim bildirimi → /admin?tab=deliveries + AdminPage ?tab okuma + /api/admin/aktarim/ uzun zaman aşımı
+
 ## ÖNCELİK 1 — Belgeleme olayı alanları (2026-09-02, kullanıcı kararı)
 
 <!-- Kaynak: veri ekibinin HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25.md ölçümü (3.946
