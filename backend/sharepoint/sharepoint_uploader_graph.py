@@ -439,6 +439,49 @@ def download_file_from_sharepoint(folder_name: str, filename: str) -> tuple[byte
     return _with_fresh_token_on_401(_download)
 
 
+#: Klasör listelemede sayfa boyu (`$top`); Graph tavanı 200'dür.
+_LIST_PAGE_SIZE = 200
+#: Listelemede istenen alanlar — gözcü (G109) yalnız bunlara bakar.
+_LIST_SELECT = "id,name,size,eTag,file,lastModifiedDateTime"
+
+
+def list_folder_children(folder_name: str) -> list[dict]:
+    """Klasördeki DOSYALARI listeler (G109 SharePoint teslim gözcüsü).
+
+    `GET /drives/{drive}/root:/{folder}:/children?$select=…&$top=200`;
+    `@odata.nextLink` sonuna kadar izlenir, sayfalar tek listede birleşir.
+    Yalnız `file` anahtarı taşıyan öğeler döner (alt klasörler elenir).
+
+    Klasör yoksa (404) **boş liste + WARNING**: gece job'ı "klasör henüz
+    açılmadı" diye ERROR basmasın — o bir kurulum eksiği, arıza değil. Diğer
+    HTTP hataları yükselir (transport retry ortak session'da; ilk 401'de token
+    zorla yenilenip bir kez daha denenir — `_with_fresh_token_on_401`).
+    Deneme düzeyi log WARNING'dir; nihai ERROR çağıranın işidir (log sözleşmesi).
+    """
+    _load_env()
+    session = _get_shared_session()
+    safe_path = quote(folder_name)
+
+    def _list(token: str) -> list[dict]:
+        _site_id, drive_id = _get_site_and_drive_id(token, config_type="default")
+        url: str | None = f"{GRAPH}/drives/{drive_id}/root:/{safe_path}:/children"
+        params: dict | None = {"$select": _LIST_SELECT, "$top": _LIST_PAGE_SIZE}
+        items: list[dict] = []
+        while url:
+            r = session.get(url, headers=_headers(token), params=params, timeout=(10, 60))
+            if r.status_code == 404:
+                logger.warning(f"SharePoint klasörü bulunamadı, boş liste dönüyor: {folder_name}")
+                return []
+            r.raise_for_status()
+            data = r.json()
+            items.extend(item for item in data.get("value", []) if "file" in item)
+            url = data.get("@odata.nextLink")
+            params = None  # nextLink sorgu parametrelerini kendi taşır
+        return items
+
+    return _with_fresh_token_on_401(_list)
+
+
 def _update_list_item_fields(session, token, drive_id, item_id, fields):
     """Updates the ListItem fields for a given DriveItem."""
     logger.info(f"📝 Metadata Güncelleniyor: {fields}")

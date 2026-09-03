@@ -9,10 +9,12 @@ spool'a girer; buradaki fonksiyonlar durum makinesini yürütür:
              reddedildi   inceleme_bekliyor        basarisiz
     yinelenen (aynı sha256 daha önce alınmış; nihai, işlenmez)
 
-Bu modül **hiçbir uç ve zamanlayıcı açmaz**: admin uçları G108'in, SharePoint
-gözcüsü + gece job'ı G109'un, cevap paketi G110'un işidir; hepsi buradaki
-fonksiyonları çağırır. Gerçek yazma yolu `scripts/hukdok_aktarim.aktarimi_kos`
-(G064) — burada YALNIZ import edilir, değiştirilmez.
+Bu modül **hiçbir uç ve zamanlayıcı açmaz**: admin uçları G108'in, cevap
+paketi G110'un işidir; SharePoint gözcüsü (`sharepoint_tara`), gece turu
+(`gece_turu`) ve boot telafisi (`boot_catch_up`) G109 ile buraya geldi ama
+zamanlayıcı KAYDI `api.py` lifespan'indedir (lider worker, 04:00 TR). Gerçek
+yazma yolu `scripts/hukdok_aktarim.aktarimi_kos` (G064) — burada YALNIZ
+import edilir, değiştirilmez.
 
 Tasarım kararları
 -----------------
@@ -51,6 +53,31 @@ Tasarım kararları
   dersi: anahtar global tekil, alıcı sonda) — aynı geçiş ikinci kez satır
   ikilemez. Bildirim yan üründür: her türlü hatası WARNING ile yutulur, durum
   makinesi bozulmaz. `yinelenen` bildirim üretmez (bilgi defterde, alarm değil).
+* **SharePoint gözcüsü** (G109, `sharepoint_tara`): `<SHAREPOINT_FOLDER_TESLIM_NAME>/gelen`
+  klasörü `list_folder_children` ile listelenir; ad kalıbı `HUKDOK_TESLIM_*.xlsx`
+  (harf duyarsız) dışındakiler `atlanan`. Ucuz eleme: `sharepoint_item_id`
+  kolonuna driveItem id'si ile eTag BİRLİKTE (`<id>@<eTag>`) yazılır — aynı
+  anahtar defterdeyse dosya indirilmez (`yinelenen` sayılır); eTag değiştiyse
+  (dosya yerinde güncellendi) indirilir ve sha256 eşleşirse `teslim_kaydet`
+  zaten `yinelenen` satırı açar. Ayrı eTag kolonu için model/migrasyon
+  değişikliği görev kapsamı dışıydı; kolon ID+sürüm anahtarıdır, panel bu
+  alanı göstermez. Tek dosyanın hatası WARNING, tur devam eder; LİSTELEME
+  hatası yükselir — tur düzeyinde tek ERROR'a (gece) ya da WARNING'e (boot)
+  çağıran karar verir. Anahtar (`veri_teslim_otomasyonu`) kapalıysa hiç listelenmez.
+* **Gece turu** (`gece_turu`, 04:00 TR): `acilis_toparla` → `sharepoint_tara` →
+  bekleyen (`alindi`/`dogrulandi`/`kuru_kosuldu`, `created_at` sırası) her
+  satıra `teslimi_isle(otomatik_uygula=…)`. **Aynı turda en fazla BİR teslim
+  uygulanır**: ilki uygulandıysa sonrakiler `otomatik_uygula=False` ile koşar
+  ve kapı "otomatik" dese bile `inceleme_bekliyor`a alınır (gerekçe
+  `tek_uygulama`) — ikinci paket aynı gece geldiyse insan baksın. Anahtar
+  kapalıysa tur hiçbir durum değiştirmez. `inceleme_bekliyor` satırlarına
+  dokunulmaz (insan bekliyor; her gece yeniden kuru koşturmak boşuna).
+* **Boot telafisi** (`boot_catch_up`): lider açılışında daemon thread'de bir
+  kez; `acilis_toparla` (anahtardan bağımsız — kesilmiş elle uygulama da
+  toparlanmalı) + `sharepoint_tara` + yalnız `alindi`/`dogrulandi` satırlara
+  `teslimi_isle(otomatik_uygula=False)`. **Uygulama yalnız cron'da** (plan
+  §2.3); `kuru_kosuldu` satırlar her restart'ta yeniden kuru koşturulmaz.
+  Her istisna tek WARNING ile yutulur (`deadline_scanner.boot_catch_up_scan`).
 """
 from __future__ import annotations
 
@@ -73,7 +100,8 @@ from managers.reference_lists import tr_upper
 import models
 from required_fields import AKTARIM_SOURCE_PREFIX
 from scripts import hukdok_aktarim
-from services import belge_envanteri
+from services import app_settings, belge_envanteri
+from sharepoint import sharepoint_uploader_graph as _spu
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +127,20 @@ NIHAI_DURUMLAR = frozenset({DURUM_YINELENEN, DURUM_REDDEDILDI, DURUM_UYGULANDI, 
 ISLENEBILIR_DURUMLAR = frozenset({DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME})
 #: Gece turunun / boot telafisinin taradığı "bekleyen" kümesi (partial index ile aynı liste).
 BEKLEYEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME)
+#: Gece turunun baştan (doğrula → kuru koş → kapı → uygula) ele aldığı durumlar —
+#: `inceleme_bekliyor` DIŞARIDA (insan kararı bekliyor, her gece yeniden koşturulmaz).
+GECE_ISLENEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU)
+#: Boot telafisinin ele aldığı durumlar — yalnız henüz kuru koşulmamış olanlar
+#: (`kuru_kosuldu` gece uygulanmayı bekliyor; her restart'ta yeniden koşturmak boşuna).
+BOOT_ISLENEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI)
+
+#: SharePoint teslim klasörü (env `SHAREPOINT_FOLDER_TESLIM_NAME` yoksa) ve gelen alt klasörü.
+TESLIM_KLASORU_VARSAYILAN = "03_VERI_TESLIM"
+TESLIM_GELEN_ALT_KLASORU = "gelen"
+#: Gözcünün aldığı dosya adı kalıbı (harf duyarsız); dışındakiler `atlanan`.
+TESLIM_AD_KALIBI = re.compile(r"^HUKDOK_TESLIM_.*\.xlsx$", re.IGNORECASE)
+#: Gece turunda ikinci uygulanabilir teslimi incelemeye alan kural etiketi.
+KAPI_TEK_UYGULAMA = "tek_uygulama"
 
 _KURU_KOS_DURUMLARI = frozenset({DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME})
 _KAPI_DURUMLARI = frozenset({DURUM_KURU_KOSULDU, DURUM_INCELEME})
@@ -808,3 +850,183 @@ def acilis_toparla(*, db: Optional[Session] = None) -> int:
         if kalanlar:
             session.commit()
         return len(kalanlar)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SharePoint gözcüsü + gece turu + boot telafisi (G109)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def teslim_gelen_klasoru() -> str:
+    """`<SHAREPOINT_FOLDER_TESLIM_NAME | 03_VERI_TESLIM>/gelen` — env çağrı anında okunur."""
+    kok = os.getenv("SHAREPOINT_FOLDER_TESLIM_NAME", "").strip().strip("/") or TESLIM_KLASORU_VARSAYILAN
+    return f"{kok}/{TESLIM_GELEN_ALT_KLASORU}"
+
+
+def sharepoint_item_anahtari(item: dict) -> str:
+    """`sharepoint_item_id` kolonuna yazılan ucuz-eleme anahtarı: `<driveItem id>@<eTag>`
+    (eTag'in tırnakları atılır; modül şerhi: SharePoint gözcüsü)."""
+    etag = str(item.get("eTag") or "").strip().strip('"')
+    return f"{str(item.get('id') or '').strip()}@{etag}"
+
+
+def _bilinen_sp_anahtarlari(db: Session) -> set:
+    satirlar = (
+        db.query(models.AktarimTeslimi.sharepoint_item_id)
+        .filter(models.AktarimTeslimi.sharepoint_item_id.isnot(None))
+        .all()
+    )
+    return {str(anahtar) for (anahtar,) in satirlar}
+
+
+def sharepoint_tara(*, db: Optional[Session] = None) -> dict:
+    """Gelen klasörünü listeler, yeni teslim dosyalarını indirip deftere yazar.
+
+    Döner: `{"yeni", "yinelenen", "atlanan"}` — `yinelenen` hem ucuz elemeyi
+    (aynı id+eTag defterde) hem indirme sonrası sha256 yinelenenini sayar;
+    `atlanan` ad kalıbına uymayanlardır. Anahtar kapalıysa listelemez, sıfır
+    döner. Tek dosyanın indirme/kayıt hatası WARNING'dir, tur sürer; LİSTELEME
+    hatası yükselir (tur düzeyinde ele alınır — modül şerhi).
+    """
+    sayac = {"yeni": 0, "yinelenen": 0, "atlanan": 0}
+    with _oturum(db) as session:
+        if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
+            logger.info("SharePoint teslim taraması atlandı: veri_teslim_otomasyonu kapalı")
+            return sayac
+        klasor = teslim_gelen_klasoru()
+        dosyalar = _spu.list_folder_children(klasor)
+        bilinen = _bilinen_sp_anahtarlari(session)
+        for item in dosyalar:
+            ad = str(item.get("name") or "").strip()
+            if not TESLIM_AD_KALIBI.match(ad):
+                sayac["atlanan"] += 1
+                logger.info("SharePoint teslim klasöründe kalıp dışı dosya atlandı: %s", ad)
+                continue
+            anahtar = sharepoint_item_anahtari(item)
+            if anahtar in bilinen:
+                sayac["yinelenen"] += 1
+                continue
+            try:
+                icerik, _ctype = _spu.download_file_from_sharepoint(klasor, ad)
+                teslim_id = teslim_kaydet(
+                    icerik=icerik, dosya_adi=ad, kaynak="sharepoint",
+                    sharepoint_item_id=anahtar, db=session,
+                )
+            except Exception as exc:
+                session.rollback()
+                logger.warning("SharePoint teslim dosyası alınamadı (%s/%s): %s", klasor, ad, exc)
+                continue
+            bilinen.add(anahtar)
+            if _teslim_getir(session, teslim_id).durum == DURUM_YINELENEN:
+                sayac["yinelenen"] += 1
+            else:
+                sayac["yeni"] += 1
+        logger.info(
+            "SharePoint teslim taraması (%s): %s dosya — yeni %s, yinelenen %s, atlanan %s",
+            klasor, len(dosyalar), sayac["yeni"], sayac["yinelenen"], sayac["atlanan"],
+        )
+        return sayac
+
+
+def _bekleyen_idler(db: Session, durumlar: Tuple[str, ...]) -> List[int]:
+    satirlar = (
+        db.query(models.AktarimTeslimi.id)
+        .filter(models.AktarimTeslimi.durum.in_(durumlar))
+        .order_by(models.AktarimTeslimi.created_at, models.AktarimTeslimi.id)
+        .all()
+    )
+    return [int(tid) for (tid,) in satirlar]
+
+
+def _tek_uygulama_incelemeye(session: Session, teslim_id: int, uygulanan_id: int) -> str:
+    """Aynı turda ikinci uygulanabilir teslim: kapı "otomatik" dese de insana bırakılır."""
+    teslim = _teslim_getir(session, teslim_id)
+    parcalar: List[str] = [str(teslim.kapi_gerekcesi)] if teslim.kapi_gerekcesi else []
+    parcalar.append(
+        f"{KAPI_TEK_UYGULAMA} (aynı gece turunda teslim #{uygulanan_id} uygulandı — "
+        "ikincisi insan kararına bırakıldı)"
+    )
+    teslim.kapi_karari = KAPI_INCELEME
+    teslim.kapi_gerekcesi = "; ".join(parcalar)
+    _durum_gecir(teslim, DURUM_INCELEME, not_=parcalar[-1])
+    session.commit()
+    logger.info("Teslim #%s gece turunda incelemeye alındı: %s", teslim.id, parcalar[-1])
+    bildir(teslim_id, DURUM_INCELEME, db=session)
+    return DURUM_INCELEME
+
+
+def _bekleyenleri_isle(session: Session, durumlar: Tuple[str, ...], *,
+                       otomatik_uygula: bool) -> Tuple[dict, Optional[int]]:
+    """Bekleyenleri `created_at` sırasıyla işler; (id → son durum, uygulanan id) döner.
+
+    `otomatik_uygula=True` iken bile en fazla BİR teslim uygulanır; sonrakiler
+    kuru koşuda kalırsa `tek_uygulama` gerekçesiyle incelemeye alınır. Satır
+    düzeyi beklenmedik istisna WARNING'dir (nihai `basarisiz` ERROR'unu
+    `teslimi_isle` zaten basar), tur sürer.
+    """
+    sonuc: dict = {}
+    uygulanan_id: Optional[int] = None
+    for teslim_id in _bekleyen_idler(session, durumlar):
+        try:
+            durum = teslimi_isle(
+                teslim_id, otomatik_uygula=otomatik_uygula and uygulanan_id is None, db=session,
+            )
+            if durum == DURUM_UYGULANDI:
+                uygulanan_id = teslim_id
+            elif otomatik_uygula and uygulanan_id is not None and durum == DURUM_KURU_KOSULDU:
+                durum = _tek_uygulama_incelemeye(session, teslim_id, uygulanan_id)
+        except Exception as exc:
+            session.rollback()
+            logger.warning("Teslim #%s turda işlenemedi (%s): %s", teslim_id, type(exc).__name__, exc)
+            durum = "hata"
+        sonuc[teslim_id] = durum
+    return sonuc, uygulanan_id
+
+
+def gece_turu() -> dict:
+    """04:00 TR gece turu (lider worker, APScheduler `veri_teslim` job'ı) — modül şerhi.
+
+    Döner: `{"etkin", "toparlanan", "tara", "durumlar", "uygulanan"}`. Tarama
+    başarısızlığı tur başına TEK ERROR'dur ve bekleyenlerin işlenmesini
+    engellemez (dün indirilen paket bugün yine uygulanabilir).
+    """
+    ozet: dict = {"etkin": False, "toparlanan": 0, "tara": None, "durumlar": {}, "uygulanan": None}
+    with _oturum(None) as session:
+        if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
+            logger.info("Gece veri teslim turu atlandı: veri_teslim_otomasyonu kapalı")
+            return ozet
+        ozet["etkin"] = True
+        ozet["toparlanan"] = acilis_toparla(db=session)
+        try:
+            ozet["tara"] = sharepoint_tara(db=session)
+        except Exception as exc:
+            session.rollback()
+            logger.error("Gece veri teslim turu: SharePoint taraması başarısız — %s: %s",
+                         type(exc).__name__, exc)
+        ozet["durumlar"], ozet["uygulanan"] = _bekleyenleri_isle(
+            session, GECE_ISLENEN_DURUMLAR, otomatik_uygula=True,
+        )
+    logger.info("Gece veri teslim turu bitti: %s", ozet)
+    return ozet
+
+
+def boot_catch_up() -> Optional[dict]:
+    """Lider boot'unda bir kerelik telafi (modül şerhi: Boot telafisi) — UYGULAMA YOK.
+
+    `api.py` daemon thread'de çağırır; her istisna burada yutulur, TEK WARNING
+    loglanır (thread'den taşan istisna kimseye ulaşmaz; 04:00 cron'u asıl iştir).
+    """
+    ozet: dict = {"etkin": False, "toparlanan": 0, "tara": None, "durumlar": {}}
+    try:
+        with _oturum(None) as session:
+            ozet["toparlanan"] = acilis_toparla(db=session)
+            if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
+                logger.info("Veri teslim boot telafisi: anahtar kapalı — yalnız açılış toparlaması yapıldı")
+                return ozet
+            ozet["etkin"] = True
+            ozet["tara"] = sharepoint_tara(db=session)
+            ozet["durumlar"], _ = _bekleyenleri_isle(session, BOOT_ISLENEN_DURUMLAR, otomatik_uygula=False)
+        logger.info("Veri teslim boot telafisi bitti: %s", ozet)
+        return ozet
+    except Exception as exc:
+        logger.warning("Veri teslim boot telafisi yapılamadı (04:00 turu yeniden dener): %s", exc)
+        return None
