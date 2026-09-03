@@ -44,6 +44,13 @@ Tasarım kararları
   (`kapi_esikleri()`; sözleşmedeki `KAPI_ESIKLERI` adı aynı fonksiyonun
   takma adıdır) — recreate'siz `.env` değişikliği yine gelmez, ama test ve
   admin paneli monkeypatch/os.environ ile anlık değer görür.
+* **Bildirim** (G108, `bildir`): eşik dışı (`inceleme_bekliyor`) ve nihai
+  (`reddedildi` / `basarisiz` / `uygulandi`) durumlarda ADMIN_EMAILS kümesine
+  uygulama içi bildirim düşer (`services.notifications.create_notification`,
+  `type="veri_teslim"`). `dedupe_key` teslim + durum + ALICI üçlüsüdür (G082
+  dersi: anahtar global tekil, alıcı sonda) — aynı geçiş ikinci kez satır
+  ikilemez. Bildirim yan üründür: her türlü hatası WARNING ile yutulur, durum
+  makinesi bozulmaz. `yinelenen` bildirim üretmez (bilgi defterde, alarm değil).
 """
 from __future__ import annotations
 
@@ -109,6 +116,16 @@ KAPI_KURALLARI: Tuple[str, ...] = (
 
 #: Gece turu otomatik uygularken `uygulayan` kolonuna yazılan değer.
 GECE_UYGULAYAN = "gece-job"
+
+#: Bildirim tür etiketi (frontend filtresi / G111 paneli bunu tüketir).
+BILDIRIM_TURU = "veri_teslim"
+#: Bildirim üreten geçişler → (başlık fiili, severity). Diğer durumlar sessizdir.
+BILDIRIM_OLAYLARI: dict = {
+    DURUM_INCELEME: ("inceleme bekliyor", "warning"),
+    DURUM_BASARISIZ: ("başarısız", "warning"),
+    DURUM_REDDEDILDI: ("reddedildi", "warning"),
+    DURUM_UYGULANDI: ("uygulandı", "info"),
+}
 
 #: Teslim paketinin veri sayfası ve değişiklik özeti sayfası (plan §1, §3).
 VERI_SAYFASI = "Sheet"
@@ -301,6 +318,85 @@ def _reddet(db: Session, teslim: models.AktarimTeslimi, mesaj: str) -> str:
     db.commit()
     logger.warning("Teslim #%s (%s) reddedildi: %s", teslim.id, teslim.dosya_adi, kirpik)
     return DURUM_REDDEDILDI
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Bildirim (G108) — ADMIN_EMAILS'e uygulama içi, dedupe'lu, hatası yutulur
+# ═══════════════════════════════════════════════════════════════════════════
+
+def bildirim_dedupe_key(teslim_id: int, durum: str, email: str) -> str:
+    """`teslim:<id>:<durum>:<alıcı>` — alıcı SONDA (G082 dersi: anahtar global tekil)."""
+    from services.notifications import normalize_email
+
+    return f"teslim:{teslim_id}:{durum}:{normalize_email(email)}"
+
+
+def _bildirim_govdesi(teslim: models.AktarimTeslimi, olay: str) -> str:
+    """Kapı gerekçesi (inceleme) / hata mesajı (red, başarısız) / sayaç özeti (uygulandı)."""
+    if olay == DURUM_INCELEME and teslim.kapi_gerekcesi:
+        return f"Kapı: {teslim.kapi_gerekcesi}"
+    if olay in (DURUM_REDDEDILDI, DURUM_BASARISIZ) and teslim.hata_mesaji:
+        return str(teslim.hata_mesaji)
+    parcalar = [
+        f"okunan {teslim.okunan if teslim.okunan is not None else '-'}",
+        f"işlenen {teslim.islenen if teslim.islenen is not None else '-'}",
+        f"atlanan {teslim.atlanan if teslim.atlanan is not None else '-'}",
+        f"hata {teslim.hata_sayisi if teslim.hata_sayisi is not None else '-'}",
+        f"alan değişikliği {teslim.alan_degisikligi if teslim.alan_degisikligi is not None else '-'}",
+    ]
+    if teslim.uygulayan:
+        parcalar.append(f"uygulayan {teslim.uygulayan}")
+    return ", ".join(parcalar)
+
+
+def bildir(teslim_id: int, olay: str, *, db: Optional[Session] = None) -> List[int]:
+    """Teslim geçişi için ADMIN_EMAILS kümesine bildirim yazar; yazılan/mevcut id'leri döner.
+
+    Yalnız `BILDIRIM_OLAYLARI`ndaki geçişler bildirim üretir (diğerleri boş
+    liste). Alıcı kümesi boşsa WARNING + boş liste. Her türlü hata (DB, kimlik,
+    import) WARNING ile YUTULUR — bildirim yan üründür, durum makinesi ve
+    çağıran uç bozulmaz. Aynı geçiş ikinci kez çağrılırsa dedupe mevcut satırı
+    döner, yeni satır açmaz.
+    """
+    tanim = BILDIRIM_OLAYLARI.get(olay)
+    if tanim is None:
+        return []
+    fiil, severity = tanim
+    try:
+        from routes.config import _admin_emails
+        from services.notifications import create_notification
+
+        alicilar = sorted(_admin_emails())
+        if not alicilar:
+            logger.warning("Teslim #%s bildirimi hedefsiz: ADMIN_EMAILS boş (olay=%s)", teslim_id, olay)
+            return []
+        with _oturum(db) as session:
+            teslim = _teslim_getir(session, teslim_id)
+            title = f"Veri teslimi {fiil}: {teslim.dosya_adi}"
+            body = _bildirim_govdesi(teslim, olay)
+            ids: List[int] = []
+            for email in alicilar:
+                try:
+                    ids.append(create_notification(
+                        session,
+                        recipient_email=email,
+                        type=BILDIRIM_TURU,
+                        title=title,
+                        body=body,
+                        severity=severity,
+                        dedupe_key=bildirim_dedupe_key(int(teslim.id), olay, email),
+                    ))
+                except Exception as exc:
+                    session.rollback()
+                    logger.warning(
+                        "Teslim #%s bildirimi yazılamadı (alıcı=%s, olay=%s): %s",
+                        teslim_id, email, olay, exc,
+                    )
+            logger.info("Teslim #%s bildirimi (%s): %s alıcı", teslim_id, olay, len(ids))
+            return ids
+    except Exception as exc:
+        logger.warning("Teslim #%s bildirimi atlandı (olay=%s): %s", teslim_id, olay, exc)
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -605,51 +701,61 @@ def kapi_degerlendir(teslim_id: int, *, db: Optional[Session] = None) -> str:
 
 
 def teslim_uygula(teslim_id: int, *, uygulayan: str, db: Optional[Session] = None) -> str:
-    """Gerçek yazım → 'uygulandi' | 'basarisiz'. Yalnız kuru_kosuldu / inceleme_bekliyor'dan."""
+    """Gerçek yazım → 'uygulandi' | 'basarisiz' (+ admin bildirimi). Yalnız
+    kuru_kosuldu / inceleme_bekliyor'dan."""
     with _oturum(db) as session:
-        teslim = _teslim_getir(session, teslim_id)
-        _durum_kontrol(teslim, _UYGULA_DURUMLARI, "uygulama")
-        yol = _spool_yolu(teslim)
-        if yol is None:
-            return _basarisiz(session, teslim, f"teslim dosyası spool'da yok: {teslim.spool_path or '-'}")
-        rapor = _rapor_dizini(teslim)
-        teslim.rapor_dizini = str(rapor)
-        teslim.uygulayan = uygulayan
-        dosya_adi = str(teslim.dosya_adi)
-        _durum_gecir(teslim, DURUM_UYGULANIYOR, not_=f"uygulayan: {uygulayan}")
-        session.commit()                     # çökme izi: açılışta acilis_toparla bunu görür
+        durum = _teslim_uygula(session, teslim_id, uygulayan=uygulayan)
+        bildir(teslim_id, durum, db=session)
+        return durum
 
-        try:
-            sonuc = _aktarimi_calistir(session, yol=yol, dosya_adi=dosya_adi, rapor=rapor, dry_run=False)
-        except Exception as exc:
-            teslim = _teslim_getir(session, teslim_id)
-            return _basarisiz(session, teslim, f"uygulama istisnası — {type(exc).__name__}: {exc}")
 
+def _teslim_uygula(session: Session, teslim_id: int, *, uygulayan: str) -> str:
+    """`teslim_uygula` gövdesi — durum makinesi (bildirim dış sarmalayıcıda)."""
+    teslim = _teslim_getir(session, teslim_id)
+    _durum_kontrol(teslim, _UYGULA_DURUMLARI, "uygulama")
+    yol = _spool_yolu(teslim)
+    if yol is None:
+        return _basarisiz(session, teslim, f"teslim dosyası spool'da yok: {teslim.spool_path or '-'}")
+    rapor = _rapor_dizini(teslim)
+    teslim.rapor_dizini = str(rapor)
+    teslim.uygulayan = uygulayan
+    dosya_adi = str(teslim.dosya_adi)
+    _durum_gecir(teslim, DURUM_UYGULANIYOR, not_=f"uygulayan: {uygulayan}")
+    session.commit()                     # çökme izi: açılışta acilis_toparla bunu görür
+
+    try:
+        sonuc = _aktarimi_calistir(session, yol=yol, dosya_adi=dosya_adi, rapor=rapor, dry_run=False)
+    except Exception as exc:
         teslim = _teslim_getir(session, teslim_id)
-        _sayaclari_yaz(teslim, sonuc)
-        _ozet_yaz(rapor / "uygulama-ozeti.txt", sonuc)
-        if sonuc.yazildi:
-            _durum_gecir(teslim, DURUM_UYGULANDI, not_=_sayac_notu(sonuc))
-            session.commit()
-            logger.info("Teslim #%s uygulandı (%s): %s", teslim.id, uygulayan, _sayac_notu(sonuc))
-            return DURUM_UYGULANDI
-        if sonuc.envanter_farki:
-            # ERROR'u aktarimi_kos zaten bastı ("Aktarım GERİ ALINDI") — ikincisi yazılmaz.
-            return _basarisiz(
-                session, teslim,
-                "belge envanteri denk değil, koşu geri alındı: "
-                + belge_envanteri.bicimle(sonuc.envanter_farki).replace("\n", " | "),
-                error_log=False,
-            )
-        return _basarisiz(session, teslim, "aktarım commit etmedi (sebep bildirilmedi)")
+        return _basarisiz(session, teslim, f"uygulama istisnası — {type(exc).__name__}: {exc}")
+
+    teslim = _teslim_getir(session, teslim_id)
+    _sayaclari_yaz(teslim, sonuc)
+    _ozet_yaz(rapor / "uygulama-ozeti.txt", sonuc)
+    if sonuc.yazildi:
+        _durum_gecir(teslim, DURUM_UYGULANDI, not_=_sayac_notu(sonuc))
+        session.commit()
+        logger.info("Teslim #%s uygulandı (%s): %s", teslim.id, uygulayan, _sayac_notu(sonuc))
+        return DURUM_UYGULANDI
+    if sonuc.envanter_farki:
+        # ERROR'u aktarimi_kos zaten bastı ("Aktarım GERİ ALINDI") — ikincisi yazılmaz.
+        return _basarisiz(
+            session, teslim,
+            "belge envanteri denk değil, koşu geri alındı: "
+            + belge_envanteri.bicimle(sonuc.envanter_farki).replace("\n", " | "),
+            error_log=False,
+        )
+    return _basarisiz(session, teslim, "aktarım commit etmedi (sebep bildirilmedi)")
 
 
 def teslimi_isle(teslim_id: int, *, otomatik_uygula: bool, db: Optional[Session] = None) -> str:
     """doğrula → kuru koş → kapı → (otomatik_uygula ve kapı 'otomatik' ise) uygula; son durumu döner.
 
     İşlenebilir olmayan (nihai ya da `uygulaniyor`) satıra DOKUNMAZ, mevcut
-    durumu döner — G108 yükleme ucu `yinelenen` satırı da buradan geçirir.
-    Otomatik uygulama `uygulayan="gece-job"` imzasıyla yapılır.
+    durumu döner ve bildirim ÜRETMEZ — G108 yükleme ucu `yinelenen` satırı da
+    buradan geçirir. Otomatik uygulama `uygulayan="gece-job"` imzasıyla yapılır.
+    Eşik dışı / nihai sonuçta admin bildirimi (`bildir`) buradan düşer;
+    uygulama yolu kendi bildirimini `teslim_uygula` içinde verir.
     """
     with _oturum(db) as session:
         teslim = _teslim_getir(session, teslim_id)
@@ -658,14 +764,19 @@ def teslimi_isle(teslim_id: int, *, otomatik_uygula: bool, db: Optional[Session]
             return str(teslim.durum)
         durum = teslim_dogrula(teslim_id, db=session)
         if durum != DURUM_DOGRULANDI:
+            bildir(teslim_id, durum, db=session)
             return durum
         durum = teslim_kuru_kos(teslim_id, db=session)
         if durum != DURUM_KURU_KOSULDU:
+            bildir(teslim_id, durum, db=session)
             return durum
         karar = kapi_degerlendir(teslim_id, db=session)
         if karar == KAPI_OTOMATIK and otomatik_uygula:
             return teslim_uygula(teslim_id, uygulayan=GECE_UYGULAYAN, db=session)
-        return str(_teslim_getir(session, teslim_id).durum)
+        durum = str(_teslim_getir(session, teslim_id).durum)
+        if durum == DURUM_INCELEME:
+            bildir(teslim_id, durum, db=session)
+        return durum
 
 
 def acilis_toparla(*, db: Optional[Session] = None) -> int:

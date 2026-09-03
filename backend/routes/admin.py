@@ -6,22 +6,43 @@ routes/config.py'deki ADMIN_EMAILS tabanlı kontroldür.
 
 Özellik ayarları (`/api/admin/settings`): services/app_settings.py registry'sindeki
 aç/kapa anahtarları — yönetim paneli "Özellikler" sekmesi buradan okur/yazar.
+
+Veri teslim defteri (`/api/admin/aktarim/*`, G108): veri ekibinin teslim
+paketleri için "yedek giriş yolu" + gündüz işlemleri — defteri oku, xlsx yükle,
+kuru koş, raporları indir, bilinçli onayla uygula, taramayı tetikle. Durum
+makinesi `services/teslim_kutusu.py`'de; buradaki uçlar yalnız çağırır. İstek
+başına TEK oturum açılır ve servis fonksiyonlarına `db=` ile verilir (test
+yalnız bu modülün `SessionLocal`'ını değiştirir). Sözleşme gorevler/gorev/G108.md
+"SÖZLEŞME" tablosunda dondurulmuştur (G111 paneli buna göre yazıldı).
 """
 import logging
+from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import or_
 
 from auth_helpers import tenant_filter_clause
 from database import SessionLocal
 from dependencies import get_current_tenant
 from routes.config import require_admin
-from schemas import AppSettingUpdate
+from schemas import AktarimTeslimiOut, AktarimTeslimiOzetOut, AppSettingUpdate, TeslimUygulaRequest
 from services import app_settings
+from services import teslim_kutusu as tk
 import models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+#: Yükleme ucunun kabul ettiği en büyük teslim paketi (bayt) — sözleşme: 50 MB.
+TESLIM_YUKLEME_SINIRI = 50 * 1024 * 1024
+#: Rapor indirme ucunun servis ettiği uzantılar → içerik türü.
+_RAPOR_TURLERI = {".csv": "text/csv; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
+
+
+def _admin_email(user: dict) -> str:
+    return str(user.get("preferred_username") or user.get("upn") or user.get("email") or "")
 
 
 # ─── ÖZELLİK AYARLARI ────────────────────────────────────────────────────────
@@ -49,6 +70,259 @@ def api_update_app_setting(
         raise HTTPException(status_code=500, detail="Ayar kaydedilemedi. Lütfen tekrar deneyin.") from e
     logger.info(f"[ADMIN-SETTING] {key} = {payload.value} (by={email})")
     return {"status": "success", "key": key, "value": payload.value}
+
+
+# ─── VERİ TESLİM DEFTERİ (G108) ──────────────────────────────────────────────
+
+def _teslim_veya_404(db, teslim_id: int) -> models.AktarimTeslimi:
+    teslim = db.get(models.AktarimTeslimi, teslim_id)
+    if teslim is None:
+        raise HTTPException(status_code=404, detail="Teslim bulunamadı")
+    return teslim
+
+
+def _rapor_dizini(teslim: models.AktarimTeslimi) -> Optional[Path]:
+    """Teslimin rapor klasörü (varsa ve gerçekten dizinse)."""
+    if not teslim.rapor_dizini:
+        return None
+    dizin = Path(str(teslim.rapor_dizini))
+    return dizin if dizin.is_dir() else None
+
+
+def _rapor_dosyalari(dizin: Optional[Path]) -> list:
+    if dizin is None:
+        return []
+    return sorted(
+        (p for p in dizin.iterdir() if p.is_file() and p.suffix.lower() in _RAPOR_TURLERI),
+        key=lambda p: p.name,
+    )
+
+
+@router.get("/api/admin/aktarim/teslimler")
+def api_teslimler(
+    limit: int = Query(50, ge=1, le=500),
+    user: dict = Depends(require_admin),
+):
+    """Defter (en yeni önce) + kapı eşikleri + otomasyon anahtarı."""
+    db = SessionLocal()
+    try:
+        satirlar = (
+            db.query(models.AktarimTeslimi)
+            .order_by(models.AktarimTeslimi.created_at.desc(), models.AktarimTeslimi.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return {
+            "teslimler": [AktarimTeslimiOzetOut.model_validate(t) for t in satirlar],
+            "esikler": tk.kapi_esikleri(),
+            "etkin": app_settings.veri_teslim_otomasyonu_etkin(db=db),
+        }
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/aktarim/teslimler/{teslim_id}")
+def api_teslim(teslim_id: int, user: dict = Depends(require_admin)):
+    """Tek teslim, `durum_gecmisi` ve `spool_path` dahil."""
+    db = SessionLocal()
+    try:
+        return AktarimTeslimiOut.model_validate(_teslim_veya_404(db, teslim_id))
+    finally:
+        db.close()
+
+
+def _dosyayi_oku(file: UploadFile) -> bytes:
+    """Yükleme gövdesini sınıra kadar okur; sınırı aşarsa 413 (belleğe tamamı alınmaz).
+
+    Senkron okuma bilinçli: uç `def`tir (threadpool'da koşar) — ardındaki kuru
+    koşu saniyeler sürer, event loop'u tutmamalı.
+    """
+    parcalar: list = []
+    toplam = 0
+    while True:
+        parca = file.file.read(1024 * 1024)
+        if not parca:
+            break
+        toplam += len(parca)
+        if toplam > TESLIM_YUKLEME_SINIRI:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dosya {TESLIM_YUKLEME_SINIRI // (1024 * 1024)} MB sınırını aşıyor",
+            )
+        parcalar.append(parca)
+    return b"".join(parcalar)
+
+
+@router.post("/api/admin/aktarim/teslimler", status_code=201)
+def api_teslim_yukle(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_admin),
+):
+    """Elle yükleme (yedek giriş yolu): deftere kaydet + doğrula + kuru koş + kapı.
+
+    Otomasyon anahtarından BAĞIMSIZ çalışır. Otomatik uygulama YAPILMAZ — kapı
+    "otomatik" dese bile satır `kuru_kosuldu`da kalır, yönetici "Uygula" der.
+    Aynı içerik ikinci kez → 201 + `durum="yinelenen"` (defter izi).
+    """
+    dosya_adi = (file.filename or "").strip()
+    if not dosya_adi.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Yalnız .xlsx teslim paketi kabul edilir")
+    icerik = _dosyayi_oku(file)
+    if not icerik:
+        raise HTTPException(status_code=400, detail="Dosya boş")
+
+    db = SessionLocal()
+    try:
+        teslim_id = tk.teslim_kaydet(icerik=icerik, dosya_adi=dosya_adi, kaynak="yukleme", db=db)
+        durum = tk.teslimi_isle(teslim_id, otomatik_uygula=False, db=db)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Teslim yüklemesi başarısız ({dosya_adi}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Teslim kaydedilemedi. Lütfen tekrar deneyin.") from e
+    finally:
+        db.close()
+    logger.info(f"[ADMIN-TESLIM] #{teslim_id} yüklendi: {dosya_adi} → {durum} (by={_admin_email(user)})")
+    return {"id": teslim_id, "durum": durum}
+
+
+@router.post("/api/admin/aktarim/teslimler/{teslim_id}/kuru-kos")
+def api_teslim_kuru_kos(teslim_id: int, user: dict = Depends(require_admin)):
+    """Yeniden doğrula + kuru koş + kapı (`teslimi_isle`, uygulama YOK).
+
+    Yalnız işlenebilir durumlarda (`alindi`/`dogrulandi`/`kuru_kosuldu`/
+    `inceleme_bekliyor`); nihai ya da `uygulaniyor` satırda 409.
+    """
+    db = SessionLocal()
+    try:
+        teslim = _teslim_veya_404(db, teslim_id)
+        if teslim.durum not in tk.ISLENEBILIR_DURUMLAR:
+            raise HTTPException(
+                status_code=409,
+                detail=f"'{teslim.durum}' durumundaki teslim kuru koşulamaz",
+            )
+        try:
+            durum = tk.teslimi_isle(teslim_id, otomatik_uygula=False, db=db)
+        except ValueError as e:                        # yarış: durum bu arada değişti
+            db.rollback()
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Teslim #{teslim_id} kuru koşu başarısız: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Kuru koşu başarısız. Lütfen tekrar deneyin.") from e
+        db.expire_all()
+        teslim = _teslim_veya_404(db, teslim_id)
+        logger.info(f"[ADMIN-TESLIM] #{teslim_id} kuru koşu → {durum} (by={_admin_email(user)})")
+        return {
+            "id": teslim_id,
+            "durum": durum,
+            "kapi_karari": teslim.kapi_karari,
+            "kapi_gerekcesi": teslim.kapi_gerekcesi,
+        }
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/aktarim/teslimler/{teslim_id}/uygula")
+def api_teslim_uygula(
+    teslim_id: int,
+    payload: TeslimUygulaRequest,
+    user: dict = Depends(require_admin),
+):
+    """Gerçek yazım — bilinçli onay (`{"onay": true}`) şart; anahtardan bağımsız.
+
+    Yalnız `kuru_kosuldu` / `inceleme_bekliyor` satırda; diğerinde 409.
+    `uygulayan` = yöneticinin e-postası.
+    """
+    if not payload.onay:
+        raise HTTPException(status_code=400, detail="Uygulama için açık onay (onay=true) gerekir")
+    email = _admin_email(user)
+    if not email:
+        raise HTTPException(status_code=403, detail="Yönetici kimliği çözülemedi")
+    db = SessionLocal()
+    try:
+        teslim = _teslim_veya_404(db, teslim_id)
+        if teslim.durum not in (tk.DURUM_KURU_KOSULDU, tk.DURUM_INCELEME):
+            raise HTTPException(
+                status_code=409,
+                detail=f"'{teslim.durum}' durumundaki teslim uygulanamaz",
+            )
+        try:
+            durum = tk.teslim_uygula(teslim_id, uygulayan=email, db=db)
+        except ValueError as e:                        # yarış: durum bu arada değişti
+            db.rollback()
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Teslim #{teslim_id} uygulama ucu başarısız: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Uygulama başarısız. Lütfen tekrar deneyin.") from e
+        logger.info(f"[ADMIN-TESLIM] #{teslim_id} uygula → {durum} (by={email})")
+        return {"id": teslim_id, "durum": durum}
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/aktarim/teslimler/{teslim_id}/raporlar")
+def api_teslim_raporlar(teslim_id: int, user: dict = Depends(require_admin)):
+    """Rapor klasöründeki CSV/TXT dosyaları (ad + boyut); klasör yoksa boş liste."""
+    db = SessionLocal()
+    try:
+        teslim = _teslim_veya_404(db, teslim_id)
+        dosyalar = _rapor_dosyalari(_rapor_dizini(teslim))
+    finally:
+        db.close()
+    return {"dosyalar": [{"ad": p.name, "boyut": p.stat().st_size} for p in dosyalar]}
+
+
+@router.get("/api/admin/aktarim/teslimler/{teslim_id}/raporlar/{ad:path}")
+def api_teslim_rapor_indir(teslim_id: int, ad: str, user: dict = Depends(require_admin)):
+    """Tek rapor dosyasını indirir. Yol bileşeni (`..`, `/`, `\\`) 400; listede olmayan ad 404.
+
+    `{ad:path}` bilinçli: `..%2F` çözümlenince tek segment kalıbına uymayıp
+    404'e düşerdi — burada yakalanıp 400 ile açıkça reddedilir.
+    """
+    if (
+        not ad
+        or ad != Path(ad).name
+        or ".." in ad
+        or "/" in ad
+        or "\\" in ad
+        or ad.startswith(".")
+    ):
+        raise HTTPException(status_code=400, detail="Geçersiz rapor adı")
+    db = SessionLocal()
+    try:
+        teslim = _teslim_veya_404(db, teslim_id)
+        dizin = _rapor_dizini(teslim)
+    finally:
+        db.close()
+    if dizin is None:
+        raise HTTPException(status_code=404, detail="Rapor bulunamadı")
+    dosya = dizin / ad
+    kok = dizin.resolve()
+    if (
+        dosya.suffix.lower() not in _RAPOR_TURLERI
+        or not dosya.is_file()
+        or kok not in dosya.resolve().parents
+    ):
+        raise HTTPException(status_code=404, detail="Rapor bulunamadı")
+    return FileResponse(path=str(dosya), media_type=_RAPOR_TURLERI[dosya.suffix.lower()], filename=ad)
+
+
+@router.post("/api/admin/aktarim/tara")
+def api_teslim_tara(user: dict = Depends(require_admin)):
+    """SharePoint teslim klasörünü tara (G109 gözcüsü gelene kadar yer tutucu).
+
+    Anahtar kapalıyken hiçbir şey yapmaz ve bunu söyler; açıkken de gözcü
+    henüz olmadığı için sıfır döner — uç ŞİMDİ açık ki G111 sözleşmesi tam olsun.
+    """
+    db = SessionLocal()
+    try:
+        etkin = app_settings.veri_teslim_otomasyonu_etkin(db=db)
+    finally:
+        db.close()
+    if not etkin:
+        return {"yeni": 0, "yinelenen": 0, "not": "Veri teslim otomasyonu kapalı — tarama yapılmadı"}
+    return {"yeni": 0, "yinelenen": 0, "not": "SharePoint gözcüsü henüz yok"}
 
 
 @router.get("/api/admin/deleted-records")

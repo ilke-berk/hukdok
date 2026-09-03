@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 # konulu, sorumlu avukata giden ve avukatın müvekkile ilettiği metin) üretilsin
 # mi? Varsayılan KAPALI — kullanıcı kararı (2026-09-01): yönetici panelinden
 # açılana kadar hiçbir belgede gitmez.
+#
+# veri_teslim_otomasyonu (G108): veri ekibinin teslim paketlerini SharePoint'ten
+# tarayan gözcü + gece otomatik uygulama hattının TEK anahtarı. Varsayılan
+# KAPALI. Kapalıyken elle yükleme ucu çalışmaya devam eder (yedek giriş yolu),
+# "Şimdi tara" ve gece job'ı (G109) hiçbir şey yapmaz, gece otomatik uygulama
+# YAPILMAZ; elle "Uygula" anahtardan bağımsızdır (yönetici bilinçli tıklıyor).
 SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
     "client_notice_enabled": {
         "default": False,
@@ -41,7 +47,18 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
             "Kapalıyken bu mail hiçbir belgede gönderilmez."
         ),
     },
+    "veri_teslim_otomasyonu": {
+        "default": False,
+        "label": "Veri teslim otomasyonu",
+        "description": (
+            "Veri ekibinin teslim paketleri SharePoint'ten otomatik taranır, kuru koşulur ve "
+            "kapıdan geçenler gece otomatik uygulanır. Kapalıyken tarama ve gece uygulaması "
+            "yapılmaz; elle yükleme ve elle \"Uygula\" çalışmaya devam eder."
+        ),
+    },
 }
+
+VERI_TESLIM_OTOMASYONU_KEY = "veri_teslim_otomasyonu"
 
 
 def _parse_bool(raw: Optional[str], default: bool) -> bool:
@@ -133,3 +150,8 @@ def list_settings(db: Optional[Session] = None) -> list[dict[str, Any]]:
 def client_notice_enabled(db: Optional[Session] = None) -> bool:
     """Müvekkil bilgilendirme özelliği açık mı? (yönetici anahtarı)"""
     return get_setting_bool("client_notice_enabled", db=db)
+
+
+def veri_teslim_otomasyonu_etkin(db: Optional[Session] = None) -> bool:
+    """Veri teslim otomasyonu (SharePoint gözcüsü + gece uygulaması) açık mı? (G108)"""
+    return get_setting_bool(VERI_TESLIM_OTOMASYONU_KEY, db=db)

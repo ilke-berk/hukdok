@@ -37,6 +37,51 @@ class AppSettingUpdate(BaseModel):
     value: bool
 
 
+# ---- Veri teslim defteri (G108 — /api/admin/aktarim/*) ----
+
+class AktarimTeslimiOzetOut(BaseModel):
+    """Teslim satırının liste görünümü (`durum_gecmisi` ve `spool_path` liste dışı).
+
+    Sözleşme: gorevler/gorev/G108.md — G111 paneli bu alanları okur; tarihler
+    ISO 8601 string olarak serileştirilir.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    dosya_adi: str
+    sha256: str
+    kaynak: str
+    durum: str
+    onceki_teslim_adi: Optional[str] = None
+    zincir_tamam: Optional[bool] = None
+    okunan: Optional[int] = None
+    islenen: Optional[int] = None
+    atlanan: Optional[int] = None
+    hata_sayisi: Optional[int] = None
+    alan_degisikligi: Optional[int] = None
+    kart_degisen: Optional[int] = None
+    envanter_denk: Optional[bool] = None
+    kapi_karari: Optional[str] = None
+    kapi_gerekcesi: Optional[str] = None
+    cevap_yuklendi: Optional[bool] = None
+    uygulayan: Optional[str] = None
+    hata_mesaji: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    done_at: Optional[datetime] = None
+
+
+class AktarimTeslimiOut(AktarimTeslimiOzetOut):
+    """Tek teslim (tam): liste alanları + durum geçmişi + spool yolu."""
+    durum_gecmisi: Optional[List[Dict[str, Any]]] = None
+    spool_path: Optional[str] = None
+
+
+class TeslimUygulaRequest(BaseModel):
+    """`POST /api/admin/aktarim/teslimler/{id}/uygula` gövdesi — bilinçli onay şart."""
+    onay: bool = False
+
+
 class ReorderRequest(BaseModel):
     type: str
     ordered_ids: List[str]
