@@ -36,7 +36,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      hiç yakalanmıyor. G116 küçük ve önce; G115 onun arkasında (backend seri). G117 frontend
      PARALEL. -->
 
-- [ ] G116 | bant:backend | bagimli:- | POST /api/admin/aktarim/tara yer tutucusu → sharepoint_tara + kuru koşu (G108 testi güncellenir)
+- [x] G116 | bant:backend | bagimli:- | POST /api/admin/aktarim/tara yer tutucusu → sharepoint_tara + kuru koşu (G108 testi güncellenir)
 - [ ] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet
 - [ ] G117 | bant:frontend | bagimli:- | veri_teslim bildirimi → /admin?tab=deliveries + AdminPage ?tab okuma + /api/admin/aktarim/ uzun zaman aşımı
 
