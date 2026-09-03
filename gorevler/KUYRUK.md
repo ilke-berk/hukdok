@@ -37,7 +37,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      PARALEL. -->
 
 - [x] G116 | bant:backend | bagimli:- | POST /api/admin/aktarim/tara yer tutucusu → sharepoint_tara + kuru koşu (G108 testi güncellenir)
-- [ ] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet
+- [x] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet
 - [x] G117 | bant:frontend | bagimli:- | veri_teslim bildirimi → /admin?tab=deliveries + AdminPage ?tab okuma + /api/admin/aktarim/ uzun zaman aşımı
 - [ ] G118 | bant:backend | bagimli:G115 | Belirsiz eşleşmede üçüncü anahtar: satırın Müvekkil adı ↔ kartın CLIENT tarafları (normalize_party_key, tam eşitlik); gerçek paketle 33 → ? ölçümü
 
