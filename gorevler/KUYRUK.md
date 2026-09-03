@@ -28,7 +28,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G111 | bant:frontend | bagimli:- | Admin paneli "Veri Teslimleri" sekmesi (liste, yükle, tara, kuru koş, raporlar, onaylı uygula) — G108 sözleşmesine göre
 - [x] G112 | bant:backend | bagimli:G110 | Düzeltme_Logu provenance + "(boş)" açık boşaltma yolu (üçlü şart) + DEGER_HAVUZLARI fark raporu
 - [x] G113 | bant:backend | bagimli:G112 | Silinen_Föyler / Kapsam_Dışı → case_foys kapsam işareti (silme yok; çelişki ve ilişki hesabından hariç)
-- [ ] G114 | bant:docs | bagimli:G110,G111,G113 | docs/mimari/veri-teslim-hatti.md + docs/veri-teslim/SOZLESME.md + genel-bakis/scripts README/CLAUDE.md düzeltmeleri
+- [x] G114 | bant:docs | bagimli:G110,G111,G113 | docs/mimari/veri-teslim-hatti.md + docs/veri-teslim/SOZLESME.md + genel-bakis/scripts README/CLAUDE.md düzeltmeleri
 
 ## ÖNCELİK 1 — Belgeleme olayı alanları (2026-09-02, kullanıcı kararı)
 
