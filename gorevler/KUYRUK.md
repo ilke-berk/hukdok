@@ -3,6 +3,33 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Veri teslim otomasyonu / "teslim gelen kutusu" (2026-09-03, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md. Veri ekibinin xlsx
+     teslimleri bugün WhatsApp/e-posta → masaüstü → elle docker exec ile aktarılıyor; FAZ F §0
+     "aktarım tekrar eden süreçtir" dedi ama her tekrar insan eli istiyor. Kanal SharePoint
+     03_VERI_TESLIM/gelen klasörüne taşınır; gece 04:00 TR (pg_dump 03:30 sonrası) lider
+     worker: tara → defter (aktarim_teslimleri) → doğrula → kuru koş → kapı (eşikler env'den;
+     ilk teslim DAİMA inceleme) → uygula → cevap paketi (Talep #9 eşleşme CSV dahil) →
+     bildirim. hukdok_aktarim.py DEĞİŞMEZ, servis onu import eder (G107-G110'da diff SIFIR).
+     SÖZLEŞMELER DONDURULDU: tablo/servis imzaları G107'de, API uçları G108'de (= G111
+     frontend, PARALEL). Backend zinciri seri: G107→G108→G109→G110→G112→G113. G114 docs
+     üçünü bekler.
+     KUYRUĞA GİRMEYENLER (insan adımı): SharePoint'te 03_VERI_TESLIM/gelen + cevap
+     klasörlerini açmak ve veri ekibine paylaşım vermek; .env'e SHAREPOINT_FOLDER_TESLIM_NAME
+     + TESLIM_KAPI_* yazmak (up -d recreate); özellik anahtarını panelden açmak; ilk
+     teslimi elle "Uygula"; SOZLESME.md'yi veri ekibine iletmek; frontend'de kapsam dışı
+     föy rozeti (G113 yalnız backend, UI sonraki tur). -->
+
+- [ ] G107 | bant:backend | bagimli:- | Teslim defteri (aktarim_teslimleri) + services/teslim_kutusu.py çekirdeği: kaydet/doğrula/kuru koş/kapı/uygula
+- [ ] G108 | bant:backend | bagimli:G107 | Teslim admin uçları (/api/admin/aktarim/*) + admin bildirimi + veri_teslim_otomasyonu anahtarı
+- [ ] G109 | bant:backend | bagimli:G108 | SharePoint gözcüsü (list_folder_children) + gece job 04:00 TR + boot telafisi
+- [ ] G110 | bant:backend | bagimli:G109 | Cevap paketi: SistemNo→cases.id eşleşme CSV (Talep #9) + raporların 03_VERI_TESLIM/cevap'a geri yüklenmesi
+- [ ] G111 | bant:frontend | bagimli:- | Admin paneli "Veri Teslimleri" sekmesi (liste, yükle, tara, kuru koş, raporlar, onaylı uygula) — G108 sözleşmesine göre
+- [ ] G112 | bant:backend | bagimli:G110 | Düzeltme_Logu provenance + "(boş)" açık boşaltma yolu (üçlü şart) + DEGER_HAVUZLARI fark raporu
+- [ ] G113 | bant:backend | bagimli:G112 | Silinen_Föyler / Kapsam_Dışı → case_foys kapsam işareti (silme yok; çelişki ve ilişki hesabından hariç)
+- [ ] G114 | bant:docs | bagimli:G110,G111,G113 | docs/mimari/veri-teslim-hatti.md + docs/veri-teslim/SOZLESME.md + genel-bakis/scripts README/CLAUDE.md düzeltmeleri
+
 ## ÖNCELİK 1 — Belgeleme olayı alanları (2026-09-02, kullanıcı kararı)
 
 <!-- Kaynak: veri ekibinin HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25.md ölçümü (3.946
