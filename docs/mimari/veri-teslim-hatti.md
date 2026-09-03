@@ -306,6 +306,11 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
 - **İlk teslim daima inceleme** (`ilk_teslim` kuralı) — defter boşken otomatik uygulama yok;
   ilk teslimi insan "Uygula" der.
 - **Aynı gecede tek uygulama** (§5).
+- **`DEGISIKLIK_OZETI` yokken zincir denetlenmez ve kapı durmaz:** `zincir_tamam=NULL`
+  (`services/teslim_kutusu.py:784-786`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik`
+  sayar (`:846`, §4 tablosu) — sayfasız paket öteki eşiklerin içindeyse otomatik uygulanır.
+  Sözleşme bunu açıkça söyler ("her teslime ekleyin"); NULL'ı da inceleme saydırmak
+  plan §8'de açık kalem.
 - **`POST /api/admin/aktarim/tara` yer tutucudur**: panelin "Şimdi tara" düğmesi
   (`DeliveryInboxCard.tsx:238`) gözcüyü çağırmaz, sıfır + `not` döner
   (`routes/admin.py:311-325`). Sebep G109 raporunda: G108 testi yanıtı birebir kilitliyor,

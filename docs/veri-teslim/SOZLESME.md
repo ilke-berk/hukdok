@@ -27,7 +27,7 @@ haberi için kalır.
 | Sayfa adı | Zorunlu mu | Ne olmalı |
 | --- | --- | --- |
 | `Sheet` | **Zorunlu** | Ana veri sayfası: föy başına bir satır, 68 sütun, sütun adları ve sırası önceki teslimlerdeki gibi sabit. `SistemNo` ve `Dosya No` sütunları **mutlaka** bulunmalı — ikisi olmadan dosya reddedilir. |
-| `DEGISIKLIK_OZETI` | Zorunlu | "Önceki teslim" ve "Bu teslim" satırları (aşağıda §3). Sayfa yoksa dosya reddedilmez ama otomatik uygulanmaz, mutlaka insan incelemesine düşer. |
+| `DEGISIKLIK_OZETI` | İsteğe bağlı — **her teslime ekleyin** | "Önceki teslim" ve "Bu teslim" satırları (aşağıda §3). Sayfa yoksa dosya reddedilmez; ama zincir kontrolü (§3) **yapılamaz** — sistem önceki teslimi bilmez, "zincir bilinmiyor" notu düşer ve paket öteki eşiklerin içindeyse **yine otomatik uygulanabilir**. Atlanan teslimin yakalanmasını istiyorsanız bu sayfayı hiç eksik bırakmayın. |
 | `Karar_Asamalari` | İsteğe bağlı | Föy başına yargı aşamaları (Yerel → İstinaf → Temyiz → Karar Düzeltme). Yoksa aşama bilgisi yazılmaz, hata değildir. |
 | `Düzeltme_Logu` | İsteğe bağlı | Hücre düzeltme günlüğü: `SistemNo`, `Eski Değer`, `Yeni Değer`, `Gerekçe`, `Tarih`. Gerekçe bizde o alanın değişiklik tarihçesine işlenir. Değişen sütunun adını gerekçenin başında köşeli parantezle yazın: `[Hükmedilen Manevi] Outlook otomasyonu parti-2`. Sütun adı yazılmayan satır işlenmez. |
 | `DEGER_HAVUZLARI` | İsteğe bağlı | Kapalı liste değerleri: "Havuz / Sütun" ve "Değer" sütunları (bugünkü paketteki düzen). Bizim listelerimizle karşılaştırılır; fark varsa cevap klasörüne rapor düşer (§6). |
@@ -52,7 +52,9 @@ paketin **dosya adı** olarak okur. Kabul edilen yazımlar:
 Neden önemli: sistem, "önceki teslim" dediğiniz dosyanın gerçekten bizde uygulanmış olduğunu
 kontrol eder (**zincir kontrolü**). Bir teslim atlanmışsa ya da ad yanlış yazılmışsa paket
 otomatik uygulanmaz, insan incelemesine düşer. Ad, bıraktığınız dosyanın adıyla birebir
-olmalıdır.
+olmalıdır. Bu kontrol yalnız sayfa **varsa** çalışır: sayfa hiç yoksa sistem zinciri
+denetleyemez ve paketi bu açıdan durdurmaz (§2 tablosu) — sayfayı eksik bırakmak zincir
+güvencesinden vazgeçmek demektir.
 
 ## 4. Partili teslim ve alan boşaltma
 

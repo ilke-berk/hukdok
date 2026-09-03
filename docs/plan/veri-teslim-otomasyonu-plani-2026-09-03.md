@@ -134,9 +134,13 @@ zaten commit oldu), WARNING + defterde `cevap_yuklendi=false`, ertesi gece yenid
 
 - Dosya adı `HUKDOK_TESLIM_*.xlsx`; klasör `03_VERI_TESLIM/gelen/`. Aynı dosya adı
   yeniden yüklenirse içerik sha256'sı farklıysa yeni teslim sayılır.
-- Zorunlu sayfalar: `Sheet` (68 sütun, ad ve sıra sabit — Talep 10 taahhüdü),
-  `DEGISIKLIK_OZETI` ("Önceki teslim" ve "Bu teslim" satırları). `Karar_Asamalari`
-  isteğe bağlı (yoksa aşama yazılmaz, hata değil).
+- Zorunlu sayfa: `Sheet` (68 sütun, ad ve sıra sabit — Talep 10 taahhüdü; `SistemNo` +
+  `Dosya No` başlıkları yoksa red). `DEGISIKLIK_OZETI` ("Önceki teslim" ve "Bu teslim"
+  satırları) plan yazılırken zorunlu düşünülmüştü; **kod isteğe bağlı sayıyor** —
+  sayfa yoksa `zincir_tamam=NULL` ve kapı bunu ihlal saymaz (yalnız `is False` →
+  `zincir_eksik`), paket öteki eşiklerin içindeyse otomatik uygulanır. Sözleşme koda göre
+  yazıldı ("her teslime ekleyin"); zinciri sayfasız pakette de zorlamak istenirse kapıya
+  ayrı kural gerekir (§8). `Karar_Asamalari` isteğe bağlı (yoksa aşama yazılmaz, hata değil).
 - Partili teslim: eksik sütun mevcut değeri **silmez** ("None = bu teslimde yok").
   Alan boşaltma açık düzeltme yoluyla: `Düzeltme_Logu`'nda Yeni Değer `(boş)` (G112).
 - Kapalı liste değerleri `DEGER_HAVUZLARI`'yla gelir; bizde karşılığı olmayan değer
@@ -204,6 +208,7 @@ Plan kapanmadı; kuyruk turu bittiğinde şunlar açık:
 | `POST /api/admin/aktarim/tara` yer tutucu | Panelin "Şimdi tara" düğmesi gözcüyü ÇAĞIRMIYOR, sıfır + `not` dönüyor (`routes/admin.py:311-325`). G109 raporundaki sebep: G108 testi yanıtı birebir kilitliyor; uç gövdesi + test tek küçük görev | yeni kuyruk görevi (5 dk) |
 | Kapsam dışı föy rozeti (frontend) | `get_case` çıktısında `foyler[]` (`kapsam_durumu` dahil) hazır; kart panelinde gösterim yok | yeni frontend görevi |
 | Prod kurulumu | SharePoint'te `03_VERI_TESLIM/gelen` + `cevap` klasörleri, veri ekibine paylaşım; `.env`'e `SHAREPOINT_FOLDER_TESLIM_NAME` (+ isteğe bağlı `TESLIM_KAPI_*`), `docker compose up -d` (recreate); admin panelden anahtar | insan |
+| `DEGISIKLIK_OZETI` yokken zincir kapısı | Sayfasız pakette `teslim_dogrula` `zincir_tamam=NULL` yazar (`services/teslim_kutusu.py:784-786`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik` sayar (`:846`) → paket zincir kontrolü olmadan otomatik uygulanabilir. §3'ün "zorunlu" varsayımı kodda yok; sözleşme koda göre düzeltildi. İstenirse kapıya `zincir_bilinmiyor` (NULL → inceleme) kuralı + test: küçük görev, karar insanın | insan kararı → yeni kuyruk görevi |
 | İlk teslim | Defter boşken kapı `ilk_teslim` der — ilk paket `inceleme_bekliyor`dan elle uygulanır; 20.08 ölçümü (40.908 alan değişikliği) burada insan gözü ister | insan |
 | Sözleşmenin iletilmesi | `docs/veri-teslim/SOZLESME.md` veri ekibine gönderilir; `Düzeltme_Logu` sütun-adı öneki ve `(boş)` yazımı orada tanımlı | insan |
 | Cevap klasörü ara klasörleri | Graph yol-adresli PUT'un `cevap/<teslim>/` klasörlerini açtığı koddan kanıtlanmadı; ilk gerçek yükleme gözle doğrulanır, açılmazsa klasörü önce yaratan küçük ek | ilk teslimden sonra |
