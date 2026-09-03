@@ -37,7 +37,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      PARALEL. -->
 
 - [x] G116 | bant:backend | bagimli:- | POST /api/admin/aktarim/tara yer tutucusu → sharepoint_tara + kuru koşu (G108 testi güncellenir)
-- [ ] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet
+- [ ] G115 | bant:backend | bagimli:G116 | Teslim yapı farkı tespiti: başlık/sayfa listesi deftere, önceki teslimle fark → kapı yapi_degisti + bildirim gövdesi + özet | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
 - [x] G117 | bant:frontend | bagimli:- | veri_teslim bildirimi → /admin?tab=deliveries + AdminPage ?tab okuma + /api/admin/aktarim/ uzun zaman aşımı
 
 ## ÖNCELİK 1 — Belgeleme olayı alanları (2026-09-02, kullanıcı kararı)
