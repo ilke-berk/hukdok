@@ -78,6 +78,14 @@ Tasarım kararları
   `teslimi_isle(otomatik_uygula=False)`. **Uygulama yalnız cron'da** (plan
   §2.3); `kuru_kosuldu` satırlar her restart'ta yeniden kuru koşturulmaz.
   Her istisna tek WARNING ile yutulur (`deadline_scanner.boot_catch_up_scan`).
+* **Cevap paketi** (G110, `services/teslim_cevap.py`): rapor dizinine her kuru koşu ve
+  uygulamada `ozet.txt` (`ozet_metni` + "kapı kararı" satırı; kapı değerlendirilince
+  satır tazelenir) yazılır. `teslim_uygula` başarı yolunda cevap yüklemesini BİR kez
+  dener (admin "Uygula" da buradan geçer); `gece_turu` sonunda `uygulandi` +
+  `cevap_yuklendi=False` kalan teslimler (bu turda uygulanan HARİÇ — az önce denendi)
+  yeniden denenir, retry böylece ertesi geceye kalır. Yükleme hatası teslim durumunu
+  DEĞİŞTİRMEZ (WARNING). `teslim_cevap` bu modülü import eder; buradaki çağrılar döngü
+  olmasın diye fonksiyon içinde import edilir.
 """
 from __future__ import annotations
 
@@ -182,6 +190,12 @@ _YER_TUTUCULAR = frozenset({"-", "--", "—", "–", "YOK", "N/A", "NA", "İLK",
 
 HATA_MESAJI_SINIRI = 2000
 _GUVENSIZ_AD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+#: Rapor dizinindeki koşu özeti (`ozet_metni` + kapı kararı satırı) — cevap paketinde
+#: `ozet_<teslim>.txt` adıyla yüklenir (G110).
+OZET_DOSYASI = "ozet.txt"
+_KAPI_SATIRI_ONEKI = "  kapı kararı       : "
+_KAPI_HENUZ_YOK = "henüz değerlendirilmedi"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -340,6 +354,54 @@ def _ozet_yaz(yol: Path, sonuc: hukdok_aktarim.AktarimSonucu) -> None:
         yol.write_text(hukdok_aktarim.ozet_metni(sonuc) + "\n", encoding="utf-8")
     except OSError as exc:
         logger.warning("Teslim özeti yazılamadı (%s): %s", yol, exc)
+
+
+def _kapi_satiri(karar: Optional[str], gerekce: Optional[str]) -> str:
+    """`ozet.txt`'nin son satırı: kapı kararı (+ gerekçe); karar yoksa "henüz değerlendirilmedi"."""
+    metin = str(karar) if karar else _KAPI_HENUZ_YOK
+    if gerekce:
+        metin += f" — {gerekce}"
+    return _KAPI_SATIRI_ONEKI + metin
+
+
+def _ozet_dosyasi_yaz(rapor: Path, sonuc: hukdok_aktarim.AktarimSonucu,
+                      karar: Optional[str], gerekce: Optional[str]) -> None:
+    """`<rapor>/ozet.txt` = ozet_metni + kapı satırı (G110 cevap paketinin `ozet_<teslim>.txt`i)."""
+    try:
+        (rapor / OZET_DOSYASI).write_text(
+            hukdok_aktarim.ozet_metni(sonuc) + "\n" + _kapi_satiri(karar, gerekce) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("Teslim özeti yazılamadı (%s): %s", rapor / OZET_DOSYASI, exc)
+
+
+def _ozet_kapi_guncelle(rapor_dizini: Optional[str], karar: Optional[str], gerekce: Optional[str]) -> None:
+    """`ozet.txt`'deki kapı satırını tazeler (kapı kuru koşudan SONRA değerlendirilir); dosya yoksa sessiz."""
+    if not rapor_dizini:
+        return
+    yol = Path(rapor_dizini) / OZET_DOSYASI
+    try:
+        if not yol.is_file():
+            return
+        satirlar = [s for s in yol.read_text(encoding="utf-8").splitlines()
+                    if not s.startswith(_KAPI_SATIRI_ONEKI)]
+        satirlar.append(_kapi_satiri(karar, gerekce))
+        yol.write_text("\n".join(satirlar) + "\n", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Teslim özetinde kapı satırı güncellenemedi (%s): %s", yol, exc)
+
+
+def _cevap_dene(teslim_id: int, *, db: Session) -> bool:
+    """`teslim_cevap.cevap_yukle` — her istisna WARNING ile yutulur (cevap yan üründür, durum değişmez)."""
+    from services import teslim_cevap
+
+    try:
+        return teslim_cevap.cevap_yukle(teslim_id, db=db)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Teslim #%s cevap yüklemesi yapılamadı (%s): %s", teslim_id, type(exc).__name__, exc)
+        return False
 
 
 def _basarisiz(db: Session, teslim: models.AktarimTeslimi, mesaj: str, *, error_log: bool = True) -> str:
@@ -679,6 +741,7 @@ def teslim_kuru_kos(teslim_id: int, *, db: Optional[Session] = None) -> str:
         teslim = _teslim_getir(session, teslim_id)
         _sayaclari_yaz(teslim, sonuc)
         _ozet_yaz(rapor / "kuru-kosu-ozeti.txt", sonuc)
+        _ozet_dosyasi_yaz(rapor, sonuc, None, None)      # kapı henüz yok; kapi_degerlendir tazeler
         _durum_gecir(teslim, DURUM_KURU_KOSULDU, not_=_sayac_notu(sonuc))
         session.commit()
         logger.info("Teslim #%s kuru koşuldu: %s", teslim.id, _sayac_notu(sonuc))
@@ -738,6 +801,7 @@ def kapi_degerlendir(teslim_id: int, *, db: Optional[Session] = None) -> str:
         if ihlaller and teslim.durum != DURUM_INCELEME:
             _durum_gecir(teslim, DURUM_INCELEME, not_=gerekce)
         session.commit()
+        _ozet_kapi_guncelle(str(teslim.rapor_dizini) if teslim.rapor_dizini else None, karar, gerekce)
         logger.info("Teslim #%s kapı: %s%s", teslim.id, karar, f" — {gerekce}" if gerekce else "")
         return karar
 
@@ -748,6 +812,8 @@ def teslim_uygula(teslim_id: int, *, uygulayan: str, db: Optional[Session] = Non
     with _oturum(db) as session:
         durum = _teslim_uygula(session, teslim_id, uygulayan=uygulayan)
         bildir(teslim_id, durum, db=session)
+        if durum == DURUM_UYGULANDI:
+            _cevap_dene(teslim_id, db=session)       # G110: bir deneme; kalanı gece turu
         return durum
 
 
@@ -774,6 +840,11 @@ def _teslim_uygula(session: Session, teslim_id: int, *, uygulayan: str) -> str:
     teslim = _teslim_getir(session, teslim_id)
     _sayaclari_yaz(teslim, sonuc)
     _ozet_yaz(rapor / "uygulama-ozeti.txt", sonuc)
+    _ozet_dosyasi_yaz(
+        rapor, sonuc,
+        str(teslim.kapi_karari) if teslim.kapi_karari else None,
+        str(teslim.kapi_gerekcesi) if teslim.kapi_gerekcesi else None,
+    )
     if sonuc.yazildi:
         _durum_gecir(teslim, DURUM_UYGULANDI, not_=_sayac_notu(sonuc))
         session.commit()
@@ -1005,8 +1076,27 @@ def gece_turu() -> dict:
         ozet["durumlar"], ozet["uygulanan"] = _bekleyenleri_isle(
             session, GECE_ISLENEN_DURUMLAR, otomatik_uygula=True,
         )
+        _bekleyen_cevaplari_yukle(session, haric=ozet["uygulanan"])
     logger.info("Gece veri teslim turu bitti: %s", ozet)
     return ozet
+
+
+def _bekleyen_cevaplari_yukle(session: Session, *, haric: Optional[int]) -> dict:
+    """G110: `uygulandi` + `cevap_yuklendi=False` teslimlerin cevap paketini yeniden dener.
+
+    `haric` bu turda uygulanan teslimdir — `teslim_uygula` az önce denedi, aynı gece
+    ikinci deneme boşuna; retry ertesi geceye kalır. Sonuç `ozet`e EKLENMEZ (dönüş
+    şekli G109 sözleşmesi), INFO satırıyla loglanır.
+    """
+    from services import teslim_cevap
+
+    sonuc = teslim_cevap.bekleyen_cevaplari_yukle(session, haric=haric)
+    if sonuc:
+        logger.info(
+            "Gece veri teslim turu: cevap paketi %s teslimde denendi — yüklenen %s: %s",
+            len(sonuc), sum(1 for v in sonuc.values() if v), sonuc,
+        )
+    return sonuc
 
 
 def boot_catch_up() -> Optional[dict]:
