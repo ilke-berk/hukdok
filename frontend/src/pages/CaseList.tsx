@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
-import { usePageSearch } from "@/components/system/PageSearch";
+import { usePageSearch } from "@/hooks/usePageSearch";
 import {
   Search, FolderOpen, Scale, FileText,
   Plus, ChevronRight, ChevronLeft, ChevronDown,

@@ -1,30 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
+// Context, tipler ve useConfirm hook'u ayrı dosyada: bu dosya yalnız bileşen
+// export eder (react-refresh/only-export-components).
+import { ConfirmContext, type ConfirmOptions, type ConfirmTone } from "@/hooks/useConfirm";
 
-export type ConfirmTone = "destructive" | "warning" | "info";
-
-export interface ConfirmOptions {
-  tone: ConfirmTone;
-  title: string;
-  body?: ReactNode;
-  context?: string;
-  details?: { label: string; value: string }[];
-  irreversible?: boolean;
-  /** Doldurulması zorunlu eşleştirme metni (örn. "SİL"). Confirm bu metin yazılana kadar disabled kalır. */
-  checkRequired?: string;
-  cancelLabel?: string;
-  confirmLabel?: string;
-}
+export type { ConfirmOptions, ConfirmTone };
 
 type ResolveFn = (value: boolean) => void;
-
-interface ConfirmContextValue {
-  confirm: (options: ConfirmOptions) => Promise<boolean>;
-}
-
-const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 
 const toneConfig: Record<ConfirmTone, { color: string; bg: string; soft: string; icon: typeof AlertTriangle; eyebrow: string; confirmLabel: string }> = {
   destructive: {
@@ -212,12 +196,4 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
       </Dialog>
     </ConfirmContext.Provider>
   );
-}
-
-export function useConfirm() {
-  const ctx = useContext(ConfirmContext);
-  if (!ctx) {
-    throw new Error("useConfirm must be used inside <ConfirmDialogProvider>");
-  }
-  return ctx.confirm;
 }

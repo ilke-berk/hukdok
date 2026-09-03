@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Outlet } from "react-router";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
-import { PageTitleProvider } from "@/hooks/usePageTitle";
-import { DashboardViewProvider } from "@/hooks/useDashboardView";
+import { PageTitleProvider } from "@/components/system/PageTitleProvider";
+import { DashboardViewProvider } from "@/components/system/DashboardViewProvider";
 import { PageSearchProvider } from "@/components/system/PageSearch";
 
 export function ShellLayout() {

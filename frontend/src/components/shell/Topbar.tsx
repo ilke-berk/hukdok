@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 import { Menu, Search, Plus, X } from "lucide-react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { usePageSearchContext } from "@/components/system/PageSearch";
+import { usePageSearchContext } from "@/hooks/usePageSearch";
 import { GlobalSearchDropdown } from "@/components/system/GlobalSearchDropdown";
 
 type TopbarProps = {

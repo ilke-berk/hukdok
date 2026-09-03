@@ -165,9 +165,9 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
     applyFiles(prev => prev.filter(f => f.id !== id));
   }, [applyFiles]);
 
-  const patchFile = (id: string, patch: Partial<IntakeFile>) => {
+  const patchFile = useCallback((id: string, patch: Partial<IntakeFile>) => {
     applyFiles(prev => prev.map(f => (f.id === id ? { ...f, ...patch } : f)));
-  };
+  }, [applyFiles]);
 
   /**
    * Adım 2: dosyaları SIRAYLA analiz eder (plan İş Kalemi 2 — backend tek
@@ -238,7 +238,7 @@ export function useCaseIntake(initialEnrichCaseId: number | null = null) {
     } finally {
       setIsMerging(false);
     }
-  }, [isAnalyzing]);
+  }, [isAnalyzing, patchFile]);
 
   /** Merge'i elle tekrar dener (analiz sonuçları durur, yalnız merge koşar). */
   const retryMerge = useCallback(async (analyzedFiles: IntakeFile[]) => {

@@ -16,7 +16,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfig } from "@/hooks/useConfig";
 import { HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
@@ -61,11 +61,6 @@ interface AnalysisResultsProps {
   linkedCase?: LinkedCaseData | null;
 }
 
-interface Lawyer {
-  code?: string;
-  name: string;
-}
-
 interface DocTypeItem {
   code?: string;
   name: string;
@@ -77,7 +72,13 @@ export const AnalysisResults = ({
   linkedCase,
 }: AnalysisResultsProps) => {
   const { toast } = useToast();
-  const [lawyerOptions, setLawyerOptions] = useState<Lawyer[]>([]);
+  // `data` değişince koşan sıfırlama effect'i üst bileşenin callback'ini çağırır;
+  // callback'in kimliği her render'da değişebildiğinden bağımlılığa konmaz
+  // (konsa her üst render sıfırlama yapardı) — güncel referans ref'ten okunur.
+  const onValidationChangeRef = useRef(onValidationChange);
+  onValidationChangeRef.current = onValidationChange;
+  // (lawyerOptions state'i kaldırıldı: hiçbir yerde okunmuyordu, yalnız bağlı dava
+  // effect'inin bağımlılığında duruyordu.)
   const [docTypeOptions, setDocTypeOptions] = useState<DocTypeItem[]>([]);
   const [editedData, setEditedData] = useState(data);
   const [openDocType, setOpenDocType] = useState(false);
@@ -103,14 +104,13 @@ export const AnalysisResults = ({
     return v;
   });
 
-  const { lawyers: loadedLawyers, doctypes: loadedDocTypes, isLoading: isConfigLoading } = useConfig();
+  const { doctypes: loadedDocTypes, isLoading: isConfigLoading } = useConfig();
 
   useEffect(() => {
     if (!isConfigLoading) {
-      setLawyerOptions(loadedLawyers);
       setDocTypeOptions(loadedDocTypes);
     }
-  }, [loadedLawyers, loadedDocTypes, isConfigLoading]);
+  }, [loadedDocTypes, isConfigLoading]);
 
   useEffect(() => {
     const normalizedData = { ...data };
@@ -139,25 +139,29 @@ export const AnalysisResults = ({
       karsi_taraf: false,
       sonraki_durusma_tarihi: false,
     });
-    onValidationChange(false, normalizedData);
+    onValidationChangeRef.current(false, normalizedData);
   }, [data]);
 
   useEffect(() => {
     setEditedData(prev => ({ ...prev, muvekkiller: localClientList }));
   }, [localClientList]);
 
+  // Bağlı davadan gelen alanlar YAMA olarak toplanır ve fonksiyonel set ile
+  // uygulanır: effect editedData/approvedFields'i okumaz, dolayısıyla kullanıcı
+  // düzenlemeleri effect'i yeniden tetiklemez ve dava bilgileri yalnız
+  // linkedCase değiştiğinde bir kez yüklenir. (Eski bağımlılık listesindeki
+  // lawyerOptions gövdede kullanılmıyordu; avukat listesi yüklenince aynı
+  // yamayı + toast'ı ikinci kez uyguluyordu — düşürüldü.)
   useEffect(() => {
     if (!linkedCase) return;
 
-    const nextData = { ...editedData };
-    const nextApprovals = { ...approvedFields };
-    let hasChanges = false;
+    const dataPatch: Partial<AnalysisData> = {};
+    const approvalPatch: Partial<Record<"esas_no" | "muvekkil_kodu" | "karsi_taraf", boolean>> = {};
     const changedFields: string[] = [];
 
     if (linkedCase.esas_no) {
-      nextData.esas_no = linkedCase.esas_no;
-      nextApprovals.esas_no = true;
-      hasChanges = true;
+      dataPatch.esas_no = linkedCase.esas_no;
+      approvalPatch.esas_no = true;
       changedFields.push("Esas No");
     }
 
@@ -181,10 +185,9 @@ export const AnalysisResults = ({
     }
 
     if (linkedMuvekkil) {
-      nextData.muvekkil_kodu = toTitleCase(linkedMuvekkil);
-      nextApprovals.muvekkil_kodu = true;
+      dataPatch.muvekkil_kodu = toTitleCase(linkedMuvekkil);
+      approvalPatch.muvekkil_kodu = true;
       setLocalClientList(linkedMuvekkilList);
-      hasChanges = true;
       changedFields.push("Müvekkil");
     }
 
@@ -197,24 +200,23 @@ export const AnalysisResults = ({
     }
 
     if (linkedKarsiTaraf) {
-      nextData.karsi_taraf = toTitleCase(Array.isArray(linkedKarsiTaraf)
+      dataPatch.karsi_taraf = toTitleCase(Array.isArray(linkedKarsiTaraf)
         ? linkedKarsiTaraf.join(", ")
         : linkedKarsiTaraf);
-      nextApprovals.karsi_taraf = true;
-      hasChanges = true;
+      approvalPatch.karsi_taraf = true;
       changedFields.push("Karşı Taraf");
     }
 
-    if (hasChanges) {
-      setEditedData(nextData);
-      setApprovedFields(nextApprovals);
+    if (changedFields.length > 0) {
+      setEditedData(prev => ({ ...prev, ...dataPatch }));
+      setApprovedFields(prev => ({ ...prev, ...approvalPatch }));
       toast({
         title: "✅ Dava Bilgileri Yüklendi",
         description: `Güncellenen alanlar: ${changedFields.join(", ")}`,
         variant: "default",
       });
     }
-  }, [linkedCase, lawyerOptions]);
+  }, [linkedCase, toast]);
 
   // ─── Utility Functions ───────────────────────────────────────────────────────
 
@@ -422,7 +424,7 @@ export const AnalysisResults = ({
 
   useEffect(() => {
     onValidationChange(allFieldsApproved, { ...editedData, generated_filename: currentGeneratedFilename });
-  }, [editedData, approvedFields, onValidationChange, currentGeneratedFilename]);
+  }, [editedData, approvedFields, allFieldsApproved, onValidationChange, currentGeneratedFilename]);
 
   const handleFieldChange = (field: keyof typeof editedData, value: unknown) => {
     setEditedData((prev) => ({ ...prev, [field]: value }));

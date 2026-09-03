@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -147,7 +147,9 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     const printRef = useRef<HTMLDivElement>(null);
 
-    function lookupAvukat(ad: string): { tc: string; sicil: string; address: string } {
+    // useConfig'in `lawyers` dizisi react-query cache'inden gelir (kimliği
+    // veri değişmedikçe sabit), bu yüzden bağımlılık olarak güvenli.
+    const lookupAvukat = useCallback((ad: string): { tc: string; sicil: string; address: string } => {
         const cache = loadCache();
         const normalAd = normalizeName(ad);
         const cached = cache[normalAd] || { tc: "", sicil: "" };
@@ -160,7 +162,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
             };
         }
         return { tc: cached.tc || "", sicil: cached.sicil || "", address: "" };
-    }
+    }, [lawyers]);
 
     useEffect(() => {
         if (step !== 2) return;
@@ -171,13 +173,19 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
             if (v.address) setBuroAdres(v.address);
         }
 
-        setYetkiliDetaylar(prev => yetkiliAdlar.map(ad => {
-            const existing = prev.find(d => d.ad === ad);
-            if (existing) return existing;
-            const l = lookupAvukat(ad);
-            return { ad, tc: l.tc, sicil: l.sicil, address: l.address };
-        }));
-    }, [step, verenAd, yetkiliAdlar.join(",")]);
+        // Değişen yoksa aynı diziyi döndür: verenDetay.ad güncellemesiyle gelen
+        // ikinci koşuda gereksiz render olmasın.
+        setYetkiliDetaylar(prev => {
+            const next = yetkiliAdlar.map(ad => {
+                const existing = prev.find(d => d.ad === ad);
+                if (existing) return existing;
+                const l = lookupAvukat(ad);
+                return { ad, tc: l.tc, sicil: l.sicil, address: l.address };
+            });
+            const unchanged = next.length === prev.length && next.every((d, i) => d === prev[i]);
+            return unchanged ? prev : next;
+        });
+    }, [step, verenAd, verenDetay.ad, yetkiliAdlar, lookupAvukat]);
 
     function toggleYetkili(ad: string) {
         setYetkiliAdlar(prev =>

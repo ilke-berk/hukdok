@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
-import { usePageSearch } from "@/components/system/PageSearch";
+import { usePageSearch } from "@/hooks/usePageSearch";
 import {
   Phone, Mail, MapPin, Loader2,
   Users, Gavel, Stethoscope, Building2, User2, UserPlus,

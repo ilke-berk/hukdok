@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { EMPTY_NEW_CASE_FORM, type NewCaseFormValues } from "@/lib/newCaseDraft";
-import { buildCasePayload, editModeFormValues, type CasePayloadInput } from "./NewCase";
+import { buildCasePayload, editModeFormValues, type CasePayloadInput } from "@/lib/newCasePayload";
 
 // =====================================================================
 // G020 — `service_type` kayıt yüküne giriyor mu?

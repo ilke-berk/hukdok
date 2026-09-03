@@ -26,4 +26,6 @@ function Badge({ className, variant, ...props }: BadgeProps) {
   return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
-export { Badge, badgeVariants };
+// badgeVariants dışarı verilmez: bileşen-dışı export fast-refresh'i kırar
+// (react-refresh/only-export-components) ve kullanan yok.
+export { Badge };

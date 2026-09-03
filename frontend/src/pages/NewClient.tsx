@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -44,11 +44,13 @@ const NewClient = () => {
     useSetPageTitle("Yeni Müvekkil", ["Avukat Paneli", "Müvekkiller", "Yeni"]);
     const { saveClient, updateClient, deleteClient, getClientCaseSummary, clients, isLoading } = useClients();
     const { cities, specialties, clientCategories } = useConfig();
-    const TURKEY_CITIES = cities.map(c => c.name ?? "");
-    const SPECIALTIES = specialties.map(s => s.name ?? "");
-    const categories = clientCategories.length > 0
+    // Listeler memo'lu: düzenleme modu effect'inin bağımlılığındalar; her
+    // render'da yeni dizi üretilse effect her render'da formu yeniden doldururdu.
+    const TURKEY_CITIES = useMemo(() => cities.map(c => c.name ?? ""), [cities]);
+    const SPECIALTIES = useMemo(() => specialties.map(s => s.name ?? ""), [specialties]);
+    const categories = useMemo(() => clientCategories.length > 0
         ? clientCategories.map(c => c.name ?? "")
-        : ["Doktor", "Kurum", "Özel Hastane", "Bireysel", "Sigorta Şirketi", "Diğer"];
+        : ["Doktor", "Kurum", "Özel Hastane", "Bireysel", "Sigorta Şirketi", "Diğer"], [clientCategories]);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -154,7 +156,7 @@ const NewClient = () => {
                 });
             }
         }
-    }, [editModeClient, clients, isLoading]);
+    }, [editModeClient, clients, isLoading, TURKEY_CITIES, SPECIALTIES, categories]);
 
     // Soft-delete gerekçesi (zorunlu, min 3 karakter) — backend Query kısıtıyla birebir
     const [deleteReason, setDeleteReason] = useState("");

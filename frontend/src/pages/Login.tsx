@@ -4,7 +4,7 @@ import { useMsal } from "@azure/msal-react";
 import { Scale, Lock, Loader2, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { loginRequest } from "@/config/msalConfig";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme } from "@/hooks/useTheme";
 
 const ALLOWED_DOMAINS = [
   "@hanyaloglu-acar.av.tr",

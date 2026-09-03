@@ -283,26 +283,32 @@ const Index = () => {
   // Arama filtresi
   const filteredCases = caseSearch.trim().length >= 2 ? searchResults.slice(0, 8) : allCases.slice(0, 8);
 
-  // linkedCase seçildiğinde parties ID'leriyle dolu tam dava verisini çek
+  // linkedCase seçildiğinde parties ID'leriyle dolu tam dava verisini çek.
+  // Effect nesnenin kendisine DEĞİL iki türetilmiş değere bağlıdır: `linkedCase`
+  // bağımlılığa konsa fetch sonrası merge (yeni nesne kimliği) effect'i yeniden
+  // koşturur ve CLIENT tarafı olmayan davada sonsuz fetch döngüsü açar.
+  const linkedCaseId = linkedCase?.id;
+  // Tüm CLIENT partilerin ID'si varsa tekrar çekme (sadece CLIENT partiler dropdown için gerekli)
+  const hasClientPartyIds = useMemo(() => {
+    const parties = (linkedCase as (IndexCaseData & { parties?: { id?: number; party_type?: string }[] }) | null)?.parties ?? [];
+    const clientParties = parties.filter(p => p.party_type === "CLIENT");
+    return clientParties.length > 0 && clientParties.every(p => p.id != null);
+  }, [linkedCase]);
   useEffect(() => {
-    if (!linkedCase?.id) {
+    if (!linkedCaseId) {
       setSelectedPartyId(null);
       return;
     }
-    // Tüm CLIENT partilerin ID'si varsa tekrar çekme (sadece CLIENT partiler dropdown için gerekli)
-    const parties = (linkedCase as IndexCaseData & { parties?: { id?: number; party_type?: string }[] }).parties ?? [];
-    const clientParties = parties.filter(p => p.party_type === "CLIENT");
-    const hasClientPartyIds = clientParties.length > 0 && clientParties.every(p => p.id != null);
     if (hasClientPartyIds) return;
 
-    apiClient.fetch(`/api/cases/${linkedCase.id}`)
+    apiClient.fetch(`/api/cases/${linkedCaseId}`)
       .then(r => r.json())
       .then((fullCase: IndexCaseData) => {
         setLinkedCase(prev => prev?.id === fullCase.id ? { ...prev, ...fullCase } : prev);
       })
       .catch(() => { /* parties olmadan da devam edilebilir */ });
     setSelectedPartyId(null);
-  }, [linkedCase?.id]);
+  }, [linkedCaseId, hasClientPartyIds]);
 
   const handleFileSelect = (files: File | File[]) => {
     // Convert to array for consistent handling

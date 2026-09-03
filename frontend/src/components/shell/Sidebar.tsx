@@ -13,7 +13,7 @@ import {
   LogOut,
   Scale,
 } from "lucide-react";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme } from "@/hooks/useTheme";
 import { clearAppStorage } from "@/lib/appStorage";
 import { resumeAllDrafts, suppressAllDrafts } from "@/lib/formDraft";
 import { useDashboardView } from "@/hooks/useDashboardView";

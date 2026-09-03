@@ -1,5 +1,5 @@
 import { useTheme } from "next-themes";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
@@ -37,4 +37,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
   );
 };
 
-export { Toaster, toast };
+// `toast` buradan yeniden export edilmez: çağıranlar doğrudan "sonner"dan alır;
+// bileşen-dışı export fast-refresh'i kırıyordu (react-refresh/only-export-components).
+export { Toaster };

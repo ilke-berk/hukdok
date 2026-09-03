@@ -1,16 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
-
-export type DashboardView = "avukat" | "idari";
+import { useCallback, useEffect, useState, ReactNode } from "react";
+import { DashboardViewContext, type DashboardView } from "@/hooks/useDashboardView";
 
 const STORAGE_KEY = "hukdok.dashboard.view";
 const DEFAULT_VIEW: DashboardView = "avukat";
-
-type ContextValue = {
-  view: DashboardView;
-  setView: (v: DashboardView) => void;
-};
-
-const DashboardViewContext = createContext<ContextValue | null>(null);
 
 function readStored(): DashboardView {
   try {
@@ -35,12 +27,4 @@ export function DashboardViewProvider({ children }: { children: ReactNode }) {
       {children}
     </DashboardViewContext.Provider>
   );
-}
-
-export function useDashboardView(): ContextValue {
-  const ctx = useContext(DashboardViewContext);
-  if (!ctx) {
-    throw new Error("useDashboardView must be used inside <DashboardViewProvider>");
-  }
-  return ctx;
 }
