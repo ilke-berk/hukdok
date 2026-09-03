@@ -432,16 +432,78 @@ def test_anahtar_settings_listesinde_varsayilan_kapali(env, monkeypatch):
     assert app_settings.veri_teslim_otomasyonu_etkin() is True
 
 
-def test_tara_kapaliyken_hicbir_sey_yapmaz_acikken_yer_tutucu(env, monkeypatch):
+def test_tara_kapaliyken_gozcu_cagrilmaz_acikken_tarar_ve_kuru_kosar(env, monkeypatch, caplog):
+    """G116: anahtar kapalı → `sharepoint_tara` ÇAĞRILMAZ (sayaç 0) + eski `not`;
+    açık → gözcü sayaçları (`not` YOK) + bu çağrıda `alindi`ya düşen teslim
+    `teslimi_isle(otomatik_uygula=False)` ile kuru koşuya sokulur → `islenen`.
+    Gözcü istisnası → 502 + detail, log'da ERROR yok; tek teslimin işleme
+    istisnası tarama sonucunu düşürmez (`durum: "hata"`)."""
     monkeypatch.setattr(app_settings, "SessionLocal", env.db)
+    tara_cagri = []
+    isle_cagri = []
+
+    def _sahte_tara(*, db=None):
+        """Gözcü taklidi: deftere `alindi` bir satır düşürür (sha256 çağrı başına farklı — kısmi UNIQUE)."""
+        tara_cagri.append(db)
+        n = len(tara_cagri)
+        teslim = models.AktarimTeslimi(
+            dosya_adi=f"HUKDOK_TESLIM_SP_{n}.xlsx", sha256=str(n).ljust(64, "c"), kaynak="sharepoint",
+            sharepoint_item_id=f"item-{n}:etag-{n}", durum=tk.DURUM_ALINDI, durum_gecmisi=[],
+        )
+        db.add(teslim)
+        db.commit()
+        return {"yeni": 1, "yinelenen": 0, "atlanan": 2}
+
+    def _sahte_isle(teslim_id, *, otomatik_uygula, db=None):
+        isle_cagri.append((teslim_id, otomatik_uygula))
+        return "inceleme_bekliyor"
+
+    monkeypatch.setattr(tk, "sharepoint_tara", _sahte_tara)
+    monkeypatch.setattr(tk, "teslimi_isle", _sahte_isle)
     client = env.client()
+
+    # 1. Anahtar kapalı: gözcü çağrılmadı, eski metin
     r = client.post(f"{BASE}/tara")
     assert r.status_code == 200
-    assert r.json()["yeni"] == 0 and r.json()["yinelenen"] == 0 and "kapalı" in r.json()["not"]
+    assert r.json() == {"yeni": 0, "yinelenen": 0, "not": "Veri teslim otomasyonu kapalı — tarama yapılmadı"}
+    assert tara_cagri == [] and isle_cagri == []
 
+    # 2. Anahtar açık: gözcü sayaçları + yalnız yeni alınan teslim kuru koşuya girdi
     client.put(f"{SETTINGS_URL}/{KEY}", json={"value": True})
     r = client.post(f"{BASE}/tara")
-    assert r.json() == {"yeni": 0, "yinelenen": 0, "not": "SharePoint gözcüsü henüz yok"}
+    assert r.status_code == 200, r.text
+    assert r.json() == {"yeni": 1, "yinelenen": 0, "atlanan": 2, "islenen": [{"id": 1, "durum": "inceleme_bekliyor"}]}
+    assert len(tara_cagri) == 1 and isle_cagri == [(1, False)]     # otomatik_uygula=False (gündüz kuralı)
+
+    # 3. Önceden `alindi` kalan satır (id 1) ikinci taramada YENİDEN işlenmez; yeni gelen (id 2) işlenir
+    r = client.post(f"{BASE}/tara")
+    assert r.json()["islenen"] == [{"id": 2, "durum": "inceleme_bekliyor"}]
+    assert isle_cagri == [(1, False), (2, False)]
+
+    # 4. Tek teslimin işleme istisnası: tarama sonucu düşmez, WARNING
+    def _isle_patla(teslim_id, *, otomatik_uygula, db=None):
+        raise RuntimeError("kuru koşu patladı")
+
+    monkeypatch.setattr(tk, "teslimi_isle", _isle_patla)
+    with caplog.at_level(logging.WARNING):
+        r = client.post(f"{BASE}/tara")
+    assert r.status_code == 200
+    assert r.json()["islenen"] == [{"id": 3, "durum": "hata", "mesaj": "kuru koşu patladı"}]
+    assert any("işlenemedi" in rec.getMessage() and rec.levelno == logging.WARNING for rec in caplog.records)
+    assert not [rec for rec in caplog.records if rec.levelno >= logging.ERROR]
+
+    # 5. Gözcü istisnası: 502 + detail, log'da ERROR yok
+    def _tara_patla(*, db=None):
+        raise RuntimeError("Graph 503 — klasör listelenemedi")
+
+    monkeypatch.setattr(tk, "sharepoint_tara", _tara_patla)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        r = client.post(f"{BASE}/tara")
+    assert r.status_code == 502
+    assert r.json() == {"detail": "SharePoint taraması başarısız: Graph 503 — klasör listelenemedi"}
+    assert any(rec.levelno == logging.WARNING and "taraması başarısız" in rec.getMessage() for rec in caplog.records)
+    assert not [rec for rec in caplog.records if rec.levelno >= logging.ERROR]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
