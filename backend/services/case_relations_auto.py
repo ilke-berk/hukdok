@@ -29,6 +29,12 @@ bloğu taşıyor. Bu modül kartları bağlar, birleştirmez.
 TKU okuması iki kolondan yapılır: `case_foys.tku_no` (aktarımın yazdığı, tek gerçek
 kaynak) ve `cases.tku_no` (eski Full_Rapor_TKU aktarımının bıraktığı legacy kolon;
 aktarım buraya bilinçli yazmaz ama prod'da dolu olabilir).
+
+Kapsam dışı föy (G113, `case_foys.kapsam_durumu IS NOT NULL` — veri ekibinin
+`Silinen_Föyler` / `Kapsam_Dışı` sayfaları) TKU okumasına GİRMEZ: mükerrer ya da
+malpraktis dışı bir föyün TKU'su üzerinden kartları birbirine bağlamak, ekibin
+geri çektiği bir bağı panelde yaşatmak olurdu. Föy silinmez, yalnız süzülür; legacy
+`cases.tku_no` kolonunun kapsam bilgisi yoktur, olduğu gibi okunmaya devam eder.
 """
 from __future__ import annotations
 
@@ -156,7 +162,11 @@ def _tku_kumesi(db: Session, case) -> Set[str]:
         degerler.add(kart_tku)
     satirlar = (
         db.query(models.CaseFoy.tku_no)
-        .filter(models.CaseFoy.case_id == case.id, models.CaseFoy.tku_no.isnot(None))
+        .filter(
+            models.CaseFoy.case_id == case.id,
+            models.CaseFoy.tku_no.isnot(None),
+            models.CaseFoy.kapsam_durumu.is_(None),      # G113: kapsam dışı föy süzülür
+        )
         .distinct()
         .all()
     )
@@ -182,6 +192,7 @@ def _tku_eslesmeleri(
         .filter(
             models.CaseFoy.tku_no.in_(liste),
             models.CaseFoy.case_id != haric_case_id,
+            models.CaseFoy.kapsam_durumu.is_(None),      # G113: kapsam dışı föy süzülür
             models.Case.deleted_at.is_(None),
             tenant_filter_clause(models.Case, tenant_id),
         )

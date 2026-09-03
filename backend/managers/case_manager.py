@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import intersect, select, union
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import is_unique_violation
@@ -233,6 +233,26 @@ def _esas_row_dict(row) -> dict:
     }
 
 
+def _foy_row_dict(row) -> dict:
+    """Föy satırının (`case_foys`, G063) kart gösterimi + kapsam işareti (G113).
+
+    `kapsam_durumu` NULL = kapsamda; `SILINDI` | `KAPSAM_DISI` işaretli föy
+    silinmemiştir, yalnız veri ekibince kapsamdan çıkarılmıştır (gerekçe +
+    tarih yanında). Frontend rozeti sonraki turun işi; sözleşme burada.
+    """
+    return {
+        "id": row.id,
+        "sistem_no": row.sistem_no,
+        "tku_no": row.tku_no,
+        "hasar_no": row.hasar_no,
+        "source": row.source,
+        "case_party_id": row.case_party_id,
+        "kapsam_durumu": row.kapsam_durumu,
+        "kapsam_gerekcesi": row.kapsam_gerekcesi,
+        "kapsam_tarihi": row.kapsam_tarihi.isoformat() if row.kapsam_tarihi else None,
+    }
+
+
 def _apply_tenant_filter(query, tenant_id: Optional[str]):
     """Sorguya tenant izolasyon + soft-delete filtresi uygular.
     tenant_id'si NULL olan kayıtlar (eski/migrasyon öncesi) her tenant'a görünür.
@@ -352,9 +372,19 @@ def get_case(case_id: int, tenant_id: str = None):
     # ve sözlük `parties`i `documents`ten önce materyalize eder — PK identity
     # map'ten gelir. Bu iddiayı tests/test_g051_kart_ve_arama_sorgulari.py
     # belge sayısını artırarak kilitler.
+    #
+    # `foys` (G113) TEK İSTİSNA ve selectinload DEĞİL, `joinedload`: föyler
+    # kart satırına LEFT JOIN'le AYNI ifadede gelir — ek sorgu açılmaz, kartın
+    # sorgu sayısı 6'da kalır (G051 kilidi). Kart başına föy sayısı küçüktür
+    # (ölçüm 10.08: en kalabalık kart 12 föy), satır çoğalması önemsiz; ayrı
+    # bir round-trip ise her kart açılışına eklenirdi.
     try:
         db = SessionLocal()
-        query = db.query(models.Case).filter(models.Case.id == case_id)
+        query = (
+            db.query(models.Case)
+            .options(joinedload(models.Case.foys))
+            .filter(models.Case.id == case_id)
+        )
         query = _apply_tenant_filter(query, tenant_id)
         item = query.first()
         if not item:
@@ -402,6 +432,10 @@ def get_case(case_id: int, tenant_id: str = None):
             # Soft-delete: silinen belgeler dava kartında görünmez (ilişki ham
             # geldiği için filtre burada — routes/documents.py listeleriyle tutarlı)
             "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents if d.deleted_at is None],
+            # Kartın föyleri (G063) + kapsam işareti (G113); joinedload ile
+            # yukarıdaki sorguda geldi, burada ek sorgu açılmaz. Sıra: sistem_no
+            # (foy_map.get_case_foys ile aynı sözleşme).
+            "foyler": [_foy_row_dict(f) for f in sorted(item.foys, key=lambda f: f.sistem_no)],
             # Takip alanları
             "case_stage": item.case_stage,
             "dosya_son_durumu": item.dosya_son_durumu,

@@ -457,6 +457,11 @@ class CaseRead(BaseModel):
     lawyers: List[CaseLawyerCreate] = []
     history: List[Dict[str, Any]] = []
     documents: List[Dict[str, Any]] = []
+    # Kartın föyleri (`case_foys`, G063) + kapsam işareti (G113): {id, sistem_no,
+    # tku_no, hasar_no, source, case_party_id, kapsam_durumu, kapsam_gerekcesi,
+    # kapsam_tarihi}. `kapsam_durumu` NULL = kapsamda; SILINDI | KAPSAM_DISI
+    # işaretli föy kart panelinde "kapsam dışı föy" olarak gösterilir (UI sonraki tur).
+    foyler: List[Dict[str, Any]] = []
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -306,6 +306,15 @@ class CaseFoy(Base):
       tablosuyla kararlaştırılır (YAGNI). Çekirdek = kimlik + bağ; föyler arası
       FARKLI kalan değerlerin (10.08 ölçümü: Hasar No 144, Dava Değeri 211, Son
       Durum 332, Durum 137 grupta farklı) taşıyıcısı olacak satır BURADA hazır.
+    * **Kapsam işareti** (G113, kullanıcı kararı 03.09): veri ekibi kapsamdan
+      çıkardığı föyleri `Silinen_Föyler` (mükerrer/hatalı açılış → `SILINDI`)
+      ve `Kapsam_Dışı` (malpraktis dışı → `KAPSAM_DISI`) sayfalarında gerekçe +
+      tarihle gönderir. Föy SİLİNMEZ (kart ve belgeler dokunulmaz — belge
+      koruma şartı), yalnız işaretlenir: `kapsam_durumu` NULL = kapsamda.
+      İşaretli föy kardeş-föy uzlaşısına ve TKU ilişki hesabına KATILMAZ
+      (`scripts/hukdok_aktarim.py`, `services/case_relations_auto.py`); föy
+      ana sayfada yeniden görünürse işaret NULL'a çekilir (tarihçeli).
+      Backfill YOK, DEFAULT YOK — NULL varsayılan hâldir.
 
     Kolonlarda `index=True` BİLİNÇLİ YOK (G042 dersi): `id` index'i PK ikizi
     olurdu; `sistem_no`/`case_id`/`case_party_id`/`tku_no` index'leri
@@ -324,6 +333,10 @@ class CaseFoy(Base):
     tku_no = Column(String(50), nullable=True)     # olay/vaka grup anahtarı (TKU-784)
     hasar_no = Column(String(100), nullable=True)  # föyler arası 144 grupta FARKLI
     source = Column(String(100), nullable=True)    # hangi teslim paketi yazdı
+    # Kapsam işareti (G113): SILINDI | KAPSAM_DISI; NULL = kapsamda.
+    kapsam_durumu = Column(String(20), nullable=True)
+    kapsam_gerekcesi = Column(String, nullable=True)   # veri ekibinin gerekçesi
+    kapsam_tarihi = Column(Date, nullable=True)        # kapsamdan çıkarılma tarihi
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 

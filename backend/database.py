@@ -917,6 +917,27 @@ _MIGRATIONS = [
         "ON aktarim_teslimleri (created_at) "
         "WHERE durum IN ('alindi', 'dogrulandi', 'kuru_kosuldu', 'inceleme_bekliyor')",
     ]),
+
+    # ─── 40. FÖY KAPSAM İŞARETİ (G113) ────────────────────────────────────────
+    #
+    # Veri ekibi kapsamdan çıkardığı föyleri `Silinen_Föyler` (mükerrer/hatalı
+    # açılış) ve `Kapsam_Dışı` (malpraktis dışı) sayfalarında gerekçe + tarihle
+    # gönderiyor; bu föyler bizde `case_foys`'ta canlı görünüyor ve TKU ilişki
+    # katmanına giriyordu. Kullanıcı kararı (03.09): föy SİLİNMEZ (belge koruma
+    # şartı — kart ve belgeler dokunulmaz), yalnız işaretlenir.
+    #
+    # Kolonlar NULL + DEFAULT'suz: NULL = kapsamda (varsayılan hâl), backfill
+    # gerekmez. `kapsam_durumu` kapalı değer kümesi (SILINDI | KAPSAM_DISI)
+    # kod düzeyinde (scripts/hukdok_aktarim.KAPSAM_SAYFALARI); CHECK kısıtı
+    # bilinçli YOK (madde 31 gerekçesi: liste büyürse migrasyon değil kod
+    # değişir). Index YOK (G042/G041): `kapsam_durumu IS NULL` filtresi föy
+    # okumalarına (case_id ile zaten index'li) eklenen bir süzgeçtir, tek
+    # başına hiçbir sorgunun filtresi değil — ölçülmeden index eklenmez.
+    ("columns", "case_foys", {
+        "kapsam_durumu":    "VARCHAR(20)",    # SILINDI | KAPSAM_DISI; NULL = kapsamda
+        "kapsam_gerekcesi": "VARCHAR",        # veri ekibinin gerekçe metni
+        "kapsam_tarihi":    "DATE",           # kapsamdan çıkarılma tarihi
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

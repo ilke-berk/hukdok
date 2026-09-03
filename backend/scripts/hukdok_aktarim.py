@@ -83,6 +83,23 @@ uygulanmaz, satır raporuna düşer. Boşaltma `ICERIK_KARSILASTIRMALI_ALANLAR`
 `cases.sistem_no`/`cases.tku_no` da yazılmaz (nihai tekilleştirme tam eşleme
 turunun işi).
 
+Kapsam sayfaları (G113, 2026-09-03)
+-----------------------------------
+Veri ekibi kapsamdan çıkardığı föyleri `Silinen_Föyler` (mükerrer/hatalı
+açılış → `SILINDI`) ve `Kapsam_Dışı` (malpraktis dışı → `KAPSAM_DISI`)
+sayfalarında gerekçe + tarihle gönderir (`KAPSAM_SAYFALARI`). Föy SİLİNMEZ
+(kart ve belgeler dokunulmaz — belge koruma şartı), `case_foys.kapsam_durumu`
+/ `kapsam_gerekcesi` / `kapsam_tarihi` ile İŞARETLENİR; tarihçe kart düzeyinde
+("föy kapsam dışı: <gerekçe>"). Bizde olmayan SistemNo ATLANDI'ya düşer, sayfa
+yoksa hata değildir. Kapsam dışı föy kart düzeyine YAZMAZ: kardeş-föy
+uzlaşısına (`kart_alan_celiskileri`, künye toplayıcısı, aşama katmanı)
+KATILMAZ (D9) ve kart alanı/avukat/taraf yazımı atlanır — yalnız föy kimliği
+(`case_foys` satırı) kartın altında kalır. Geri dönüş: föy ana sayfada (`Sheet`
+— sayfa AD listesinin tek kaynağı) yeniden görünür ve paketin kapsam
+sayfalarında YOKSA işaret NULL'a çekilir ("kapsama geri alındı"). Aynı pakette
+hem ana sayfada hem kapsam sayfasında olan föy kapsam sayfasının dediğidir
+(gerekçeli, bilinçli liste); ana sayfa satırı yalnız kimlik yazar.
+
 `scripts/import_excel_cases.py` KULLANILMAZ ve çağrılmaz (temizlik planı §8:
 idempotent değil, hata yolunda sessiz veri kaybı, `-2` mükerrer üretimi).
 """
@@ -288,6 +305,11 @@ class AktarimSonucu:
     onceki_esas_eklenen: int = 0
     havuz_disi_durum: int = 0
     atlanan: int = 0
+    # G113 — kapsam sayfaları: işaretlenen (değişen) föy, kapsama geri alınan
+    # föy, bizde olmayan SistemNo (ATLANDI). İkinci koşuda üçü de 0'dır.
+    kapsam_isaretlenen: int = 0
+    kapsam_geri_alinan: int = 0
+    kapsam_atlanan: int = 0
     dry_run: bool = False
     yazildi: bool = False              # commit edildi mi?
     kaynak_imzasi: str = ""
@@ -1180,8 +1202,13 @@ def kart_alan_celiskileri(
     db, satirlar: Sequence[HamSatir], *, foy_haritasi: Dict[str, int],
     dosya_haritasi: Dict[str, List[int]],
     duzeltmeler: Optional[DuzeltmeHaritasi] = None,
+    kapsam_disi: Optional[Set[str]] = None,
 ) -> Tuple[Dict[int, Set[str]], List[Celiski]]:
     """Aynı kartın föyleri bir KART alanında çelişiyorsa o alan YAZILMAZ.
+
+    `kapsam_disi` (G113): paketin kapsam sayfalarındaki SistemNo'lar uzlaşıya
+    KATILMAZ (D9) — mükerrer/hatalı açılış föyünün eski değeri kartı
+    "çelişkili" gösterip kapsamdaki föyün değerini engellememeli.
 
     **Neden (19.08 provasının bulgusu):** kart alanları TEK SLOT'tur, föy ise
     kart başına birden çok. Satır satır yazınca kartta kalan değer "en son
@@ -1210,6 +1237,8 @@ def kart_alan_celiskileri(
         sistem_no = _metin(satir.degerler.get("sistem_no"))
         if not sistem_no:
             continue
+        if kapsam_disi and sistem_no in kapsam_disi:
+            continue              # kapsam dışı föy uzlaşıya katılmaz (G113/D9)
         case_id = _kart_id_tahmini(db, satir, foy_haritasi, dosya_haritasi, sistem_no)
         if case_id is None:
             continue
@@ -1550,13 +1579,18 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  dosya_haritasi: Dict[str, List[int]], source: str,
                  foy_source: str, sonuc: AktarimSonucu,
                  kart_celiskileri: Optional[Dict[int, Set[str]]] = None,
-                 duzeltmeler: Optional[DuzeltmeHaritasi] = None) -> int:
+                 duzeltmeler: Optional[DuzeltmeHaritasi] = None,
+                 kapsam_disi: Set[str] = frozenset()) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
     savepoint'i geri alırken föyü de geri alır. Yarım föy (kimlik yazılmış,
     veri yazılmamış) bırakmak, düzeltme listesiyle zaten geri gelecek bir satır
     için sessiz bozulma olurdu.
+
+    `kapsam_disi` (G113): SistemNo paketin kapsam sayfasındaysa yalnız föy
+    KİMLİĞİ yazılır (föy kartın altında kalır, silinmez); kart alanları,
+    avukat ve taraf yazımı ATLANIR — kapsam dışı föy kart düzeyine yazmaz.
     """
     sistem_no = _metin(satir.degerler.get("sistem_no"))
     if not sistem_no:
@@ -1575,15 +1609,24 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
 
     atlanan_alanlar: List[Tuple[str, str]] = []
     bosaltilanlar: List[str] = []
-    degisenler = _kart_alanlarini_yaz(
-        db, case, satir, source,
-        celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
-        atlanan_alanlar=atlanan_alanlar,
-        sistem_no=sistem_no, duzeltmeler=duzeltmeler, bosaltilanlar=bosaltilanlar,
-    )
-    sonuc.bosaltilan += len(bosaltilanlar)
-    eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
-    eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
+    degisenler: List[str] = []
+    eklenen_avukatlar: List[str] = []
+    eklenen_taraflar: List[str] = []
+    if sistem_no in kapsam_disi:
+        logger.info(
+            f"{sistem_no} paketin kapsam sayfasında: kart alanı/avukat/taraf yazılmadı "
+            f"(kart {case.id})"
+        )
+    else:
+        degisenler = _kart_alanlarini_yaz(
+            db, case, satir, source,
+            celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
+            atlanan_alanlar=atlanan_alanlar,
+            sistem_no=sistem_no, duzeltmeler=duzeltmeler, bosaltilanlar=bosaltilanlar,
+        )
+        sonuc.bosaltilan += len(bosaltilanlar)
+        eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
+        eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
 
     if yeni_foy:
         # Föyün kartla EŞLENMESİ de bir değişikliktir; provenance imzası
@@ -1872,6 +1915,196 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
                     break
 
 
+# ─── Kapsam sayfaları (Silinen_Föyler / Kapsam_Dışı) — G113 ─────────────────
+# Veri ekibinin kapsamdan çıkardığı föyler: ana sayfanın 54 sütunu + "…
+# Gerekçesi" + "Tarih". Buradan yalnız ÜÇ şey okunur (SistemNo, gerekçe, tarih);
+# föyün diğer sütunları kart düzeyine yazılmaz — kapsam dışı föy kartı
+# beslemez. Sayfa adı eşleşmesi başlık anahtarıyla (aksan/alt çizgi duyarsız:
+# "Silinen_Föyler" ≡ "SILINEN FOYLER").
+KAPSAM_SILINDI = "SILINDI"
+KAPSAM_DISI = "KAPSAM_DISI"
+KAPSAM_SAYFALARI: Dict[str, str] = {
+    "Silinen_Föyler": KAPSAM_SILINDI,    # mükerrer / hatalı açılış
+    "Kapsam_Dışı": KAPSAM_DISI,          # malpraktis dışı
+}
+KAPSAM_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
+    "sistem_no": ("SistemNo", "Sistem No"),
+    "gerekce":   ("Silinme Gerekçesi", "Kapsam Dışı Gerekçesi", "Gerekçe"),
+    "tarih":     ("Tarih", "Silinme Tarihi", "Kapsam Dışı Tarihi"),
+}
+# Gerekçe sütununun adı sayfaya göre değişir ("… Gerekçesi"); aday listesinde
+# birebir yoksa başlık anahtarı bu sonekle bitiyorsa o sütun kabul edilir.
+_GEREKCE_SONEKLERI = ("GEREKCESI", "GEREKCE")
+# Kapsam tarihçesinin `case_history.field_name` değeri — kart düzeyinde satır.
+KAPSAM_TARIHCE_ALANI = "case_foys.kapsam_durumu"
+_KAPSAM_PARCA = 1000                     # geri dönüş sorgusunun IN parça boyu
+
+
+@dataclass
+class KapsamKaydi:
+    sayfa: str                         # hangi sayfadan okundu
+    satir_no: int
+    sistem_no: str
+    durum: str                         # KAPSAM_SILINDI | KAPSAM_DISI
+    gerekce: Optional[str]
+    tarih: Optional[date]
+
+
+def _kapsam_sutun_indeksleri(baslik: Sequence[Any]) -> Dict[str, int]:
+    dosyadaki: Dict[str, int] = {}
+    for i, ham in enumerate(baslik):
+        anahtar = _baslik_anahtari(ham)
+        if anahtar and anahtar not in dosyadaki:
+            dosyadaki[anahtar] = i
+    indeksler: Dict[str, int] = {}
+    for alan, adaylar in KAPSAM_SUTUNLARI.items():
+        for aday in adaylar:
+            if _baslik_anahtari(aday) in dosyadaki:
+                indeksler[alan] = dosyadaki[_baslik_anahtari(aday)]
+                break
+    if "gerekce" not in indeksler:
+        for anahtar, i in dosyadaki.items():
+            if anahtar.endswith(_GEREKCE_SONEKLERI):
+                indeksler["gerekce"] = i
+                break
+    return indeksler
+
+
+def kapsam_kayitlarini_oku(yol: Path) -> Dict[str, KapsamKaydi]:
+    """`Silinen_Föyler` / `Kapsam_Dışı` sayfalarını okur → {SistemNo: kayıt}.
+
+    Sayfa yoksa boş sözlük (hata değil — eski paketlerde bu sayfalar yok).
+    Sayfa varsa `SistemNo` sütunu ZORUNLUDUR (yoksa AktarimHatasi: sayfa
+    uygulanamaz, tahmin yok); gerekçe/tarih sütunu yoksa alan None kalır ve
+    tek WARNING düşer. Aynı SistemNo ikinci kez gelirse (sayfa içi ya da iki
+    sayfa arası) ilk kayıt kazanır, WARNING düşer. Çözümlenemeyen tarih föyü
+    düşürmez: tarih None, WARNING (`_tarih` sözleşmesinin yumuşak hâli —
+    işaretin özü durum + gerekçedir).
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
+    try:
+        sayfa_adlari = {_baslik_anahtari(ad): ad for ad in wb.sheetnames}
+        kayitlar: Dict[str, KapsamKaydi] = {}
+        for beklenen, durum in KAPSAM_SAYFALARI.items():
+            ad = sayfa_adlari.get(_baslik_anahtari(beklenen))
+            if ad is None:
+                logger.info(f"{beklenen!r} sayfası yok — kapsam işareti ({durum}) atlandı")
+                continue
+            akis = wb[ad].iter_rows(values_only=True)
+            baslik = next(akis, None)
+            if baslik is None:
+                continue
+            indeksler = _kapsam_sutun_indeksleri(baslik)
+            if "sistem_no" not in indeksler:
+                raise AktarimHatasi(f"{ad}: zorunlu sütun yok: SistemNo")
+            for alan in ("gerekce", "tarih"):
+                if alan not in indeksler:
+                    logger.warning(f"{ad}: {alan} sütunu yok — işaret {alan}siz yazılacak")
+            for sira, ham in enumerate(akis, start=2):
+                if ham is None or all(_metin(h) is None for h in ham):
+                    continue
+                hucreler = {a: (ham[i] if i < len(ham) else None) for a, i in indeksler.items()}
+                sistem_no = _metin(hucreler.get("sistem_no"))
+                if not sistem_no:
+                    continue
+                if sistem_no in kayitlar:
+                    onceki = kayitlar[sistem_no]
+                    logger.warning(
+                        f"{ad} satır {sira}: {sistem_no} zaten {onceki.sayfa} satır "
+                        f"{onceki.satir_no}'da — ilk kayıt kazandı"
+                    )
+                    continue
+                try:
+                    tarih = _tarih(hucreler.get("tarih"), "kapsam_tarihi")
+                except SatirHatasi as exc:
+                    logger.warning(f"{ad} satır {sira} ({sistem_no}): {exc} — tarih boş yazıldı")
+                    tarih = None
+                kayitlar[sistem_no] = KapsamKaydi(
+                    sayfa=ad, satir_no=sira, sistem_no=sistem_no, durum=durum,
+                    gerekce=_metin(hucreler.get("gerekce")), tarih=tarih,
+                )
+        return kayitlar
+    finally:
+        wb.close()
+
+
+def kapsam_isaretlerini_yaz(db, kayitlar: Dict[str, KapsamKaydi], *,
+                            islenen: Set[str], source: str,
+                            sonuc: AktarimSonucu) -> None:
+    """Föy kapsam işaretlerini yazar ve geri alır — İDEMPOTENT, silme YOK.
+
+    * **İşaretleme:** SistemNo `case_foys`'ta varsa üç alan (durum, gerekçe,
+      tarih) yazılır; aynı değerler zaten yazılıysa hiçbir şey olmaz (ne UPDATE
+      ne tarihçe — ikinci koşu 0 değişiklik). Tarihçe satırı KART düzeyinde
+      (`case_history`, alan `case_foys.kapsam_durumu`): "föy kapsam dışı:
+      <gerekçe>". Bizde olmayan SistemNo ATLANDI'ya düşer (koşu kırmızı olmaz).
+    * **Geri dönüş:** bu koşuda ana sayfadan İŞLENEN (`islenen`) ve paketin
+      kapsam sayfalarında OLMAYAN föy işaretliyse işaret NULL'a çekilir,
+      tarihçeye "kapsama geri alındı" düşer. Yalnız başarıyla işlenen satırlar
+      sayılır: düşen satırın savepoint'i geri alındı, onun adına kapsam kararı
+      da verilmez.
+    * Kart, belge, taraf satırlarına DOKUNULMAZ (belge koruma şartı).
+
+    Ana döngüden SONRA çağrılır: paketin ana sayfasında ilk kez gelen bir
+    SistemNo ancak o zaman `case_foys`'ta olur.
+    """
+    for sistem_no, kayit in sorted(kayitlar.items()):
+        foy = foy_map.get_foy(db, sistem_no)
+        if foy is None:
+            sonuc.kapsam_atlanan += 1
+            sonuc.rapor_satirlari.append(RaporSatiri(
+                satir_no=kayit.satir_no, sistem_no=sistem_no, dosya_no="",
+                tur="ATLANDI", sebep=f"{kayit.sayfa}: föy bizde yok — kapsam işareti yazılmadı",
+            ))
+            logger.warning(f"{kayit.sayfa} satır {kayit.satir_no} ({sistem_no}) ATLANDI: föy bizde yok")
+            continue
+        if (foy.kapsam_durumu, foy.kapsam_gerekcesi, foy.kapsam_tarihi) == (
+                kayit.durum, kayit.gerekce, kayit.tarih):
+            continue                      # aynı işaret — idempotent
+        eski = foy.kapsam_durumu
+        foy.kapsam_durumu = kayit.durum
+        foy.kapsam_gerekcesi = kayit.gerekce
+        foy.kapsam_tarihi = kayit.tarih
+        db.add(models.CaseHistory(
+            case_id=foy.case_id, field_name=KAPSAM_TARIHCE_ALANI,
+            old_value=f"{sistem_no}: {eski or 'kapsamda'}",
+            new_value=f"{sistem_no}: {kayit.durum} — föy kapsam dışı: {kayit.gerekce or '-'}",
+            changed_by=DEGISTIREN, source=source,
+        ))
+        sonuc.kapsam_isaretlenen += 1
+        logger.info(
+            f"Föy {sistem_no} kapsam dışı işaretlendi: {kayit.durum} "
+            f"({kayit.sayfa} satır {kayit.satir_no}, kart {foy.case_id})"
+        )
+
+    geri_alinacak = sorted(islenen - set(kayitlar))
+    for i in range(0, len(geri_alinacak), _KAPSAM_PARCA):
+        parca = geri_alinacak[i:i + _KAPSAM_PARCA]
+        isaretliler = (
+            db.query(models.CaseFoy)
+            .filter(models.CaseFoy.sistem_no.in_(parca),
+                    models.CaseFoy.kapsam_durumu.isnot(None))
+            .order_by(models.CaseFoy.sistem_no)
+            .all()
+        )
+        for foy in isaretliler:
+            eski = foy.kapsam_durumu
+            foy.kapsam_durumu = None
+            foy.kapsam_gerekcesi = None
+            foy.kapsam_tarihi = None
+            db.add(models.CaseHistory(
+                case_id=foy.case_id, field_name=KAPSAM_TARIHCE_ALANI,
+                old_value=f"{foy.sistem_no}: {eski}",
+                new_value=f"{foy.sistem_no}: kapsamda — kapsama geri alındı",
+                changed_by=DEGISTIREN, source=source,
+            ))
+            sonuc.kapsam_geri_alinan += 1
+            logger.info(f"Föy {foy.sistem_no} kapsama geri alındı (eski: {eski}, kart {foy.case_id})")
+    db.flush()
+
+
 def _statement_timeout_yukselt(db, ms: int) -> bool:
     """Koşu süresince statement_timeout'u yükseltir (yalnız Postgres).
 
@@ -1901,6 +2134,20 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
     # Düzeltme_Logu (G112) limit'ten bağımsız okunur: SistemNo anahtarlı,
     # yalnız işlenen satırların kayıtları kullanılır.
     duzeltmeler = duzeltme_logunu_oku(girdi)
+    # Kapsam sayfaları (G113) da limit'ten bağımsız: SistemNo anahtarlı, bizde
+    # olmayan föy zaten ATLANDI'ya düşer.
+    kapsam_kayitlari = kapsam_kayitlarini_oku(girdi)
+    kapsam_disi: Set[str] = set(kapsam_kayitlari)
+    if kapsam_disi:
+        asama_oncesi = len(asama_satirlari)
+        asama_satirlari = [
+            s for s in asama_satirlari
+            if (_metin(s.degerler.get("sistem_no")) or "") not in kapsam_disi
+        ]
+        if len(asama_satirlari) != asama_oncesi:
+            logger.info(
+                f"{asama_oncesi - len(asama_satirlari)} aşama satırı kapsam dışı föye ait — atlandı"
+            )
     kaynak_imzasi = source or f"{AKTARIM_SOURCE_PREFIX}_{girdi.name}"
     foy_source = kaynak_imzasi[:100]
     if len(kaynak_imzasi) > 100:
@@ -1932,7 +2179,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         # föy zaten kartı bir kez ezmiş olurdu.
         kart_celiskileri, kart_celiski_raporu = kart_alan_celiskileri(
             db, satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
-            duzeltmeler=duzeltmeler,
+            duzeltmeler=duzeltmeler, kapsam_disi=kapsam_disi,
         )
         if kart_celiski_raporu:
             logger.warning(
@@ -1941,6 +2188,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
             )
 
         kunye_kayitlari: List[Dict[str, Any]] = []
+        islenen_sistem_nolar: Set[str] = set()
 
         for satir in satirlar:
             sistem_no = _metin(satir.degerler.get("sistem_no")) or ""
@@ -1951,6 +2199,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
                         kart_celiskileri=kart_celiskileri, duzeltmeler=duzeltmeler,
+                        kapsam_disi=kapsam_disi,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.
@@ -1976,6 +2225,9 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                 # Aynı dosyada ikinci kez geçen SistemNo doğrudan bu karta
                 # düşsün (Dosya No köprüsüne ikinci kez gitmeye gerek yok).
                 foy_haritasi[sistem_no] = case_id
+                islenen_sistem_nolar.add(sistem_no)
+                if sistem_no in kapsam_disi:
+                    continue              # künye uzlaşısına katılmaz (G113/D9)
                 kunye_kayitlari.append({
                     "sistem_no": sistem_no,
                     "case_id": case_id,
@@ -1988,6 +2240,14 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         # Künye çelişkileri (yazılmayan alanlar) + kart alanı çelişkileri
         # (yazımı ATLANAN alanlar) TEK raporda buluşur: ikisi de "kardeş föyler
         # uzlaşmadı, kartta kur'a çekmedik" demektir.
+        # Kapsam işaretleri (G113) ana döngüden SONRA: paketin ana sayfasında
+        # ilk kez gelen föy ancak şimdi `case_foys`'ta; geri dönüş de yalnız
+        # başarıyla işlenen satırlara bakar.
+        kapsam_isaretlerini_yaz(
+            db, kapsam_kayitlari, islenen=islenen_sistem_nolar,
+            source=kaynak_imzasi, sonuc=sonuc,
+        )
+
         # Aşama katmanı ana döngüden SONRA: föy→kart haritası ancak burada tam
         # (bir föy kartına ilk kez bu koşuda bağlanmış olabilir).
         asamalari_yaz(
@@ -2083,6 +2343,8 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  aşama satırı      : {sonuc.asama_eklenen} (önceki esas: {sonuc.onceki_esas_eklenen}"
         f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''})",
         f"  atlanan (kart yok): {sonuc.atlanan}",
+        f"  kapsam işareti    : {sonuc.kapsam_isaretlenen} işaretlendi, "
+        f"{sonuc.kapsam_geri_alinan} geri alındı, {sonuc.kapsam_atlanan} atlandı (föy yok)",
         f"  satır hatası      : {len(sonuc.hatalar)}",
         f"  kardeş çelişkisi  : {len(sonuc.celiskiler)}",
         f"  yazıldı mı        : {'HAYIR (kuru koşu)' if sonuc.dry_run else ('EVET' if sonuc.yazildi else 'HAYIR')}",
