@@ -22,7 +22,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      föy rozeti (G113 yalnız backend, UI sonraki tur). -->
 
 - [x] G107 | bant:backend | bagimli:- | Teslim defteri (aktarim_teslimleri) + services/teslim_kutusu.py çekirdeği: kaydet/doğrula/kuru koş/kapı/uygula
-- [ ] G108 | bant:backend | bagimli:G107 | Teslim admin uçları (/api/admin/aktarim/*) + admin bildirimi + veri_teslim_otomasyonu anahtarı
+- [x] G108 | bant:backend | bagimli:G107 | Teslim admin uçları (/api/admin/aktarim/*) + admin bildirimi + veri_teslim_otomasyonu anahtarı
 - [ ] G109 | bant:backend | bagimli:G108 | SharePoint gözcüsü (list_folder_children) + gece job 04:00 TR + boot telafisi
 - [ ] G110 | bant:backend | bagimli:G109 | Cevap paketi: SistemNo→cases.id eşleşme CSV (Talep #9) + raporların 03_VERI_TESLIM/cevap'a geri yüklenmesi
 - [x] G111 | bant:frontend | bagimli:- | Admin paneli "Veri Teslimleri" sekmesi (liste, yükle, tara, kuru koş, raporlar, onaylı uygula) — G108 sözleşmesine göre
