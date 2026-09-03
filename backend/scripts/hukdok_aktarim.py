@@ -1277,8 +1277,50 @@ def _esas_uyuyor(case: models.Case, esas: Optional[str]) -> bool:
     return any(_baslik_anahtari(p) == anahtar for p in _AYRAC.split(case.esas_no))
 
 
+def _satir_muvekkil_anahtarlari(satir: HamSatir) -> Set[str]:
+    """Föyün `Müvekkil` sütunundaki adların birleştirme anahtarları (G118).
+
+    `;` ile birleşik çoklu ad ayrı ayrı anahtarlanır; boş sütun → boş küme.
+    `Sigortalı` bu turda BİLEREK dışarıda: sigortalı bizde CLIENT değil
+    THIRD'dür (D1), müvekkil anahtarı olarak kullanılamaz.
+    """
+    anahtarlar: Set[str] = set()
+    for ad in _taraf_adlari(satir.degerler.get("muvekkil")):
+        anahtar = normalize_party_key(ad)
+        if anahtar:
+            anahtarlar.add(anahtar)
+    return anahtarlar
+
+
+def _kart_muvekkil_anahtarlari(db, case_id: int) -> Set[str]:
+    """Kartın müvekkil adlarının birleştirme anahtarları (G118).
+
+    Küme = `case_parties` içinde `party_type == "CLIENT"` olan satırların
+    `name`'i + o satır bir müvekkil kaydına bağlıysa (`client_id`) silinmemiş
+    `clients.name`. Kart tablosunda ayrı bir `client_id` kolonu YOK — kartın
+    müvekkil bağı yalnız taraf satırı üzerinden kurulur. `case_parties`
+    soft-delete taşımaz; kartın kendisi çağırandan önce elenmiştir.
+    """
+    anahtarlar: Set[str] = set()
+    taraflar = db.query(models.CaseParty).filter(
+        models.CaseParty.case_id == case_id,
+        models.CaseParty.party_type == "CLIENT",
+    )
+    for taraf in taraflar:
+        adlar = [taraf.name]
+        if taraf.client_id is not None:
+            muvekkil = db.get(models.Client, taraf.client_id)
+            if muvekkil is not None and muvekkil.deleted_at is None:
+                adlar.append(muvekkil.name)
+        for ad in adlar:
+            anahtar = normalize_party_key(ad or "")
+            if anahtar:
+                anahtarlar.add(anahtar)
+    return anahtarlar
+
+
 def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[int]:
-    """Dosya No birden çok karta düşünce ESAS + DOSYA TÜRÜ ile ayırır.
+    """Dosya No birden çok karta düşünce ESAS + DOSYA TÜRÜ + MÜVEKKİL ile ayırır.
 
     Belirsizliğin tipik hâli bizim ikiz kartlarımızdır: aynı klasör numarası
     hem dava hem arabuluculuk kartında yazılı (örn. `1056.003.00` → HUKUK
@@ -1286,9 +1328,31 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
     söyler. Ölçüm (2026-08-19, 257 belirsiz satır): esas+tür 179'unu, yalnız
     esas 12'sini, yalnız tür 32'sini ayırıyor; 34'ü insanda kalıyor.
 
-    Sıra ÖNEMLİ: önce ikisi birden, sonra esas, sonra tür. Tek bir kriterle
-    "tek aday kaldı" demek, diğer kriterin çeliştiği bir kartı seçmek olabilir.
-    Hiçbiri tek adaya inmiyorsa None döner — satır rapora düşer, tahmin YOK.
+    **Üçüncü anahtar — müvekkil adı (G118):** 03.09 lokal uçtan uca testinde
+    18.08 paketinin kalan 33 belirsiz satırının tipik hâli aynı davanın İKİ
+    MÜVEKKİLLİ kartıydı (ofis numarası müvekkil bazlı): esas ve tür ikisinde de
+    aynı, ayıran tek şey satırın `Müvekkil` sütunu. Karşılaştırma
+    `party_check.normalize_party_key` ile TAM anahtar eşitliğidir (şirket eki
+    eşitleme + kelime sırası bağımsız; bulanık/kısmi eşleşme YOK). Kartın
+    kümesi `_kart_muvekkil_anahtarlari`, satırınki `_satir_muvekkil_anahtarlari`;
+    kesişim boş değilse kart "müvekkile uyuyor" sayılır.
+
+    Aday eleme sırası (her adımda "tek aday kaldıysa seç"):
+
+    1. esas ∩ tür   2. esas   3. tür                         (2026-08-19 üçlüsü)
+    4. esas ∩ tür ∩ müvekkil   5. esas ∩ müvekkil   6. tür ∩ müvekkil   7. müvekkil
+
+    Sıra ÖNEMLİ: tek bir kriterle "tek aday kaldı" demek, diğer kriterin
+    çeliştiği bir kartı seçmek olabilir; müvekkil tek başına seçilmeden önce
+    esas/tür ile çelişmeyen aday aranır, 7. adım yalnız esas ve tür hiçbir şey
+    söylemiyorsa devreye girer. Müvekkil sütunu boşsa ya da hiçbir adaya
+    uymuyorsa 4-7 boş kalır ve davranış eski üçlüyle birebir aynıdır. İki aday
+    da aynı müvekkil anahtarını taşıyorsa (gerçek mükerrer) hiçbir adım tek
+    adaya inmez → None; satır "esas/tür/müvekkil de ayırmadı" ile rapora
+    düşer, tahmin YOK.
+
+    Ölçüm (2026-09-03, 18.08 paketi, kuru koşu): belirsiz eşleşme 33 → sonuç
+    G118 raporunda (gorevler/gorev/G118.md); paket repoya girmez.
     """
     kartlar = [k for k in (db.get(models.Case, aday) for aday in adaylar)
                if k is not None and k.deleted_at is None]
@@ -1297,20 +1361,47 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
     if not kartlar:
         return None
 
+    sistem_no = _metin(satir.degerler.get("sistem_no"))
     esas = _metin(satir.degerler.get("esas"))
     tur = _esleme(ANA_TUR_ESLEMESI)(satir.degerler.get("ana_tur"), "file_type")
     esas_uyan = [k for k in kartlar if _esas_uyuyor(k, esas)]
     tur_uyan = [k for k in kartlar if tur and k.file_type == tur]
 
-    for aday_kume in ([k for k in esas_uyan if k in tur_uyan], esas_uyan, tur_uyan):
-        if len(aday_kume) == 1:
-            secilen = aday_kume[0]
-            logger.info(
-                f"Belirsiz eşleşme ikinci anahtarla çözüldü: "
-                f"{_metin(satir.degerler.get('sistem_no'))} → kart {secilen.id} "
-                f"(esas={esas!r}, tür={tur!r})"
-            )
-            return cast(int, secilen.id)
+    def _sec(kriter: str, aday_kume: List[models.Case], muvekkil: Optional[Set[str]]) -> Optional[int]:
+        if len(aday_kume) != 1:
+            return None
+        secilen = aday_kume[0]
+        logger.info(
+            f"Belirsiz eşleşme ikinci anahtarla çözüldü: {sistem_no} → kart {secilen.id} "
+            f"(kriter={kriter}, esas={esas!r}, tür={tur!r}"
+            f"{f', müvekkil={sorted(muvekkil)!r}' if muvekkil else ''})"
+        )
+        return cast(int, secilen.id)
+
+    # 1-3: eski üçlü — müvekkil sorgusu yapılmadan önce denenir (DB'ye gitmez)
+    for kriter, aday_kume in (
+        ("esas+tür", [k for k in esas_uyan if k in tur_uyan]),
+        ("esas", esas_uyan),
+        ("tür", tur_uyan),
+    ):
+        case_id = _sec(kriter, aday_kume, None)
+        if case_id is not None:
+            return case_id
+
+    # 4-7: üçüncü anahtar (G118) — yalnız Müvekkil sütunu doluysa
+    muvekkil = _satir_muvekkil_anahtarlari(satir)
+    if not muvekkil:
+        return None
+    muvekkil_uyan = [k for k in kartlar if muvekkil & _kart_muvekkil_anahtarlari(db, k.id)]
+    for kriter, aday_kume in (
+        ("esas+tür+müvekkil", [k for k in esas_uyan if k in tur_uyan and k in muvekkil_uyan]),
+        ("esas+müvekkil", [k for k in esas_uyan if k in muvekkil_uyan]),
+        ("tür+müvekkil", [k for k in tur_uyan if k in muvekkil_uyan]),
+        ("müvekkil", muvekkil_uyan),
+    ):
+        case_id = _sec(kriter, aday_kume, muvekkil)
+        if case_id is not None:
+            return case_id
     return None
 
 
@@ -1335,9 +1426,12 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
         if len(adaylar) > 1:
             case_id = _ikinci_anahtarla_coz(db, satir, adaylar)
             if case_id is None:
+                # Müvekkil sütunu doluysa üçüncü anahtar da denenmiş demektir;
+                # sebep metni bunu söyler (G118). Boşsa metin eski hâliyle kalır.
+                kriterler = "esas/tür/müvekkil" if _satir_muvekkil_anahtarlari(satir) else "esas/tür"
                 raise SatirHatasi(
                     f"Belirsiz eşleşme: Dosya No {gosterim!r} {len(adaylar)} kartla eşleşiyor "
-                    f"({', '.join(str(a) for a in adaylar[:5])}) — esas/tür de ayırmadı"
+                    f"({', '.join(str(a) for a in adaylar[:5])}) — {kriterler} de ayırmadı"
                 )
         else:
             case_id = adaylar[0]
