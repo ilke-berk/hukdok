@@ -1130,6 +1130,25 @@ class AktarimTeslimi(Base):
     cevap_yuklendi = Column(Boolean, nullable=False, default=False, server_default="false")
     uygulayan = Column(String(320), nullable=True)           # admin e-postası ya da "gece-job"
     hata_mesaji = Column(String, nullable=True)              # basarisiz/reddedildi sebebi (≤ 2000 karakter)
+    # G115: paketin sayfa/başlık yapısı — `teslim_dogrula` doldurur:
+    # {"sayfalar": [..], "basliklar": [..ham..], "taninan": [..alan adı..],
+    #  "taninmayan": [..ham..], "fark": {..yapi_farki()..}}. "fark" anahtarı bir
+    # önceki `uygulandi` teslimle karşılaştırmanın sonucudur (kapı + bildirim +
+    # özet bunu okur); ayrı kolon açılmadı — fark yapının türevidir.
+    yapi = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
     done_at = Column(DateTime(timezone=True), nullable=True)  # nihai duruma geçiş anı
+
+    @property
+    def yapi_farki(self):
+        """Bir önceki uygulanmış teslime göre yapı farkı (`yapi["fark"]`); yoksa None.
+
+        `AktarimTeslimiOzetOut.yapi_farki` serializer'ı buradan okur (liste ve
+        tekil uç) — `yapi`nin kendisi liste dışıdır.
+        """
+        yapi = self.yapi
+        if not isinstance(yapi, dict):
+            return None
+        fark = yapi.get("fark")
+        return fark if isinstance(fark, dict) else None

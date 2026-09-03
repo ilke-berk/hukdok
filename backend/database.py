@@ -938,6 +938,23 @@ _MIGRATIONS = [
         "kapsam_gerekcesi": "VARCHAR",        # veri ekibinin gerekçe metni
         "kapsam_tarihi":    "DATE",           # kapsamdan çıkarılma tarihi
     }),
+
+    # ─── 41. TESLİM YAPISI (G115) ─────────────────────────────────────────────
+    #
+    # `aktarim_teslimleri.yapi` (models.AktarimTeslimi.yapi): teslim paketinin
+    # sayfa listesi + `Sheet` başlıkları (ham, tanınan alan adları, tanınmayan
+    # ham başlıklar) + bir önceki `uygulandi` teslime göre fark
+    # (services/teslim_kutusu.yapi_farki). Doğrulama adımı doldurur; kapı
+    # `yapi_degisti` kuralını, bildirim gövdesi ve `ozet.txt` "yapı farkı"
+    # satırlarını buradan okur. NULL = eski kayıt / henüz doğrulanmadı (fark
+    # hesabında "önceki yapı bilinmiyor" sayılır, ihlal üretmez).
+    #
+    # Sıfırdan kurulumda create_all kolonu modelden yaratır, bu op atlanır;
+    # mevcut kurulumda ALTER TABLE ADD COLUMN. Index BİLİNÇLİ yok (G042):
+    # kolon yalnız satır id'siyle okunur, hiçbir sorgunun filtresi değil.
+    ("columns", "aktarim_teslimleri", {
+        "yapi": "JSON",
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

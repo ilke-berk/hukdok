@@ -69,6 +69,11 @@ class AktarimTeslimiOzetOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     done_at: Optional[datetime] = None
+    # G115: bir önceki uygulanmış teslime göre yapı farkı (model property'si
+    # `AktarimTeslimi.yapi_farki`; `yapi` kolonunun kendisi liste dışı) —
+    # {"yeni_basliklar", "kaybolan_basliklar", "yeni_sayfalar",
+    #  "kaybolan_sayfalar", "taninmayan_basliklar"}; doğrulanmamışsa None.
+    yapi_farki: Optional[Dict[str, Any]] = None
 
 
 class AktarimTeslimiOut(AktarimTeslimiOzetOut):

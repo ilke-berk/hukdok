@@ -94,6 +94,17 @@ Tasarım kararları
   yazar, dedupe `teslim:<id>:havuz:<alıcı>` (aynı teslim için bir kez; kuru koşu +
   uygulama ikilemez). Listeye YAZMA YOK. Her istisna WARNING — yan ürün, durum makinesi
   bozulmaz.
+* **Yapı farkı** (G115, `yapi_farki`): doğrulama adımı paketin sayfa listesini ve
+  `Sheet` başlıklarını (ham + `SUTUN_ADAYLARI` ile tanınan alan adları + tanınmayan
+  ham başlıklar) `aktarim_teslimleri.yapi` JSON'una yazar ve defterde `uygulandi`
+  olan EN SON teslimin yapısıyla karşılaştırır (`yapi["fark"]`). Karşılaştırma
+  başlık anahtarıyla (aksan/boşluk farkı fark DEĞİLDİR); yalnız `IZLENEN_SAYFALAR`
+  izlenir (`SUTUN_SOZLUGU` gibi okunmayan sayfalar fark değildir). Önceki teslim yoksa
+  ya da `yapi`si NULL ise (eski kayıt) yalnız `taninmayan_basliklar` dolar. Kapı:
+  yeni/kaybolan başlık ya da kaybolan sayfa → `yapi_degisti` ihlali; tanınmayan
+  başlık TEK BAŞINA ihlal değildir (bugünkü paketin okunmayan sütunları her teslimde
+  var), yeni sayfa bilgidir. Bildirim gövdesine ve `ozet.txt`'ye "yapı farkı"
+  satırları düşer; yeni bildirim türü/olayı AÇILMAZ, fark tek WARNING satırıdır.
 """
 from __future__ import annotations
 
@@ -169,8 +180,10 @@ KAPI_INCELEME = "inceleme"
 #: Kapı kuralı adları — `kapi_gerekcesi` bu etiketlerle başlar (G111 paneli okur).
 KAPI_KURALLARI: Tuple[str, ...] = (
     "envanter_denk_degil", "ilk_teslim", "zincir_eksik", "bos_teslim",
-    "hata_orani", "eslesmeyen_orani", "alan_degisikligi",
+    "hata_orani", "eslesmeyen_orani", "alan_degisikligi", "yapi_degisti",
 )
+#: G115: önceki uygulanmış teslime göre başlık/sayfa değişikliği kuralı.
+KAPI_YAPI_DEGISTI = "yapi_degisti"
 
 #: Gece turu otomatik uygularken `uygulayan` kolonuna yazılan değer.
 GECE_UYGULAYAN = "gece-job"
@@ -204,6 +217,29 @@ _GUVENSIZ_AD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 OZET_DOSYASI = "ozet.txt"
 _KAPI_SATIRI_ONEKI = "  kapı kararı       : "
 _KAPI_HENUZ_YOK = "henüz değerlendirilmedi"
+#: `ozet.txt`'deki yapı farkı satırlarının öneki (kapı satırından ÖNCE; kapı satırı
+#: dosyanın son satırı kalır — G110 cevap paketi sözleşmesi).
+_YAPI_SATIRI_ONEKI = "  yapı farkı        : "
+_YAPI_FARKI_YOK = "yok"
+
+#: G115: yapı farkında izlenen sayfa adları — `teslim_kutusu`/`hukdok_aktarim`'ın
+#: OKUDUĞU sayfalar. Bunların dışındakiler (`SUTUN_SOZLUGU` vb.) fark sayılmaz.
+#: Karşılaştırma `_anahtar` ile (aksan/boşluk/alt çizgi duyarsız).
+IZLENEN_SAYFALAR: Tuple[str, ...] = (
+    "Sheet", "DEGISIKLIK_OZETI", "Karar_Asamalari", "Düzeltme_Logu",
+    "DEGER_HAVUZLARI", "Silinen_Föyler", "Kapsam_Dışı",
+)
+#: Bildirim/özet/gerekçede kategori başına gösterilen en çok başlık; fazlası "… (+N)".
+YAPI_LISTE_SINIRI = 20
+#: Fark kategorileri → insan etiketi (bildirim gövdesi ve özet satırları bu sırayla).
+_FARK_ETIKETLERI: Tuple[Tuple[str, str], ...] = (
+    ("yeni_basliklar", "yeni başlık"),
+    ("kaybolan_basliklar", "kaybolan başlık"),
+    ("kaybolan_sayfalar", "kaybolan sayfa"),
+    ("yeni_sayfalar", "yeni sayfa"),
+)
+#: Kapı ihlali üreten kategoriler (`yeni_sayfalar` bilgi, `taninmayan_basliklar` tek başına değil).
+_IHLAL_KATEGORILERI: Tuple[str, ...] = ("yeni_basliklar", "kaybolan_basliklar", "kaybolan_sayfalar")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -372,12 +408,23 @@ def _kapi_satiri(karar: Optional[str], gerekce: Optional[str]) -> str:
     return _KAPI_SATIRI_ONEKI + metin
 
 
+def _yapi_satirlari(fark: Optional[dict]) -> List[str]:
+    """`ozet.txt` "yapı farkı" satırları: her kalem ayrı satır; fark yoksa tek "yok" satırı (G115)."""
+    kalemler = fark_kalemleri(fark)
+    if not kalemler:
+        return [_YAPI_SATIRI_ONEKI + _YAPI_FARKI_YOK]
+    return [f"{_YAPI_SATIRI_ONEKI}{etiket}: {ad}" for etiket, ad in kalemler]
+
+
 def _ozet_dosyasi_yaz(rapor: Path, sonuc: hukdok_aktarim.AktarimSonucu,
-                      karar: Optional[str], gerekce: Optional[str]) -> None:
-    """`<rapor>/ozet.txt` = ozet_metni + kapı satırı (G110 cevap paketinin `ozet_<teslim>.txt`i)."""
+                      karar: Optional[str], gerekce: Optional[str],
+                      fark: Optional[dict] = None) -> None:
+    """`<rapor>/ozet.txt` = ozet_metni + yapı farkı satırları + kapı satırı (G110 cevap
+    paketinin `ozet_<teslim>.txt`i; kapı satırı SON satırdır)."""
     try:
         (rapor / OZET_DOSYASI).write_text(
-            hukdok_aktarim.ozet_metni(sonuc) + "\n" + _kapi_satiri(karar, gerekce) + "\n",
+            "\n".join([hukdok_aktarim.ozet_metni(sonuc), *_yapi_satirlari(fark),
+                       _kapi_satiri(karar, gerekce)]) + "\n",
             encoding="utf-8",
         )
     except OSError as exc:
@@ -385,7 +432,9 @@ def _ozet_dosyasi_yaz(rapor: Path, sonuc: hukdok_aktarim.AktarimSonucu,
 
 
 def _ozet_kapi_guncelle(rapor_dizini: Optional[str], karar: Optional[str], gerekce: Optional[str]) -> None:
-    """`ozet.txt`'deki kapı satırını tazeler (kapı kuru koşudan SONRA değerlendirilir); dosya yoksa sessiz."""
+    """`ozet.txt`'deki kapı satırını tazeler (kapı kuru koşudan SONRA değerlendirilir); dosya yoksa sessiz.
+
+    Yapı farkı satırları yerinde kalır — kapı satırı yeniden sona eklenir."""
     if not rapor_dizini:
         return
     yol = Path(rapor_dizini) / OZET_DOSYASI
@@ -443,10 +492,21 @@ def bildirim_dedupe_key(teslim_id: int, durum: str, email: str) -> str:
     return f"teslim:{teslim_id}:{durum}:{normalize_email(email)}"
 
 
+def _yapi_farki_blogu(fark: Optional[dict]) -> str:
+    """Bildirim gövdesindeki "Yapı farkı:" bloğu (G115) — her kalem ayrı satır; fark yoksa boş."""
+    kalemler = fark_kalemleri(fark)
+    if not kalemler:
+        return ""
+    return "\n".join(["Yapı farkı:", *(f"  {etiket}: {ad}" for etiket, ad in kalemler)])
+
+
 def _bildirim_govdesi(teslim: models.AktarimTeslimi, olay: str) -> str:
-    """Kapı gerekçesi (inceleme) / hata mesajı (red, başarısız) / sayaç özeti (uygulandı)."""
+    """Kapı gerekçesi (+ yapı farkı bloğu) (inceleme) / hata mesajı (red, başarısız) /
+    sayaç özeti (uygulandı)."""
     if olay == DURUM_INCELEME and teslim.kapi_gerekcesi:
-        return f"Kapı: {teslim.kapi_gerekcesi}"
+        govde = f"Kapı: {teslim.kapi_gerekcesi}"
+        blok = _yapi_farki_blogu(teslim.yapi_farki)
+        return f"{govde}\n{blok}" if blok else govde
     if olay in (DURUM_REDDEDILDI, DURUM_BASARISIZ) and teslim.hata_mesaji:
         return str(teslim.hata_mesaji)
     parcalar = [
@@ -630,7 +690,143 @@ def _aktarimi_calistir(db: Session, *, yol: Path, dosya_adi: str, rapor: Path,
 # ═══════════════════════════════════════════════════════════════════════════
 
 class _YapiHatasi(Exception):
-    """Teslim paketi yapısal olarak kabul edilemez → `reddedildi`."""
+    """Teslim paketi yapısal olarak kabul edilemez → `reddedildi`.
+
+    `yapi`: o ana kadar okunabilen yapı (en azından `sayfalar`) — red yolunda da
+    deftere yazılır; dosya hiç açılamadıysa None.
+    """
+
+    def __init__(self, mesaj: str, *, yapi: Optional[dict] = None) -> None:
+        super().__init__(mesaj)
+        self.yapi = yapi
+
+
+# ─── Yapı (G115) ─────────────────────────────────────────────────────────────
+
+def _bos_yapi() -> dict:
+    return {"sayfalar": [], "basliklar": [], "taninan": [], "taninmayan": []}
+
+
+def _baslik_satiri(ws) -> List[str]:
+    """`Sheet` ilk satırındaki dolu başlıklar (ham yazım, kırpılmış, sıra korunur)."""
+    ilk = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None) or ()
+    return [str(h).strip() for h in ilk if h is not None and str(h).strip()]
+
+
+def _anahtarli(adlar: Optional[List[Any]]) -> dict:
+    """{başlık anahtarı: ilk ham yazım} — mükerrer/boş anahtar atılır."""
+    sonuc: dict = {}
+    for ad in adlar or []:
+        anahtar = hukdok_aktarim._baslik_anahtari(ad)
+        if anahtar and anahtar not in sonuc:
+            sonuc[anahtar] = str(ad).strip()
+    return sonuc
+
+
+def basliklari_tani(basliklar: List[str]) -> Tuple[List[str], List[str]]:
+    """(tanınan alan adları, tanınmayan ham başlıklar) — `SUTUN_ADAYLARI` ×
+    `_baslik_anahtari` (`hukdok_aktarim._sutun_indeksleri` ile aynı kural: alan
+    başına ilk eşleşen aday)."""
+    dosyadaki = _anahtarli(list(basliklar))
+    aday_anahtarlari = {
+        hukdok_aktarim._baslik_anahtari(aday)
+        for adaylar in hukdok_aktarim.SUTUN_ADAYLARI.values() for aday in adaylar
+    }
+    taninan = [
+        alan for alan, adaylar in hukdok_aktarim.SUTUN_ADAYLARI.items()
+        if any(hukdok_aktarim._baslik_anahtari(aday) in dosyadaki for aday in adaylar)
+    ]
+    taninmayan = [ham for anahtar, ham in dosyadaki.items() if anahtar not in aday_anahtarlari]
+    return taninan, taninmayan
+
+
+def yapi_farki(onceki: Optional[dict], simdiki: dict) -> dict:
+    """Önceki uygulanmış teslimin yapısına göre fark (G115 sözleşmesi).
+
+    Karşılaştırma başlık/sayfa ANAHTARIYLA (aksan, boşluk, büyük-küçük harf farkı
+    fark DEĞİLDİR); listelerde ŞİMDİKİ ya da ÖNCEKİ paketin ham yazımı döner.
+    Sayfalarda yalnız `IZLENEN_SAYFALAR` izlenir. `onceki` None ise (ilk teslim ya
+    da eski kayıtta `yapi` NULL) yalnız `taninmayan_basliklar` dolar.
+    """
+    fark: dict = {
+        "yeni_basliklar": [], "kaybolan_basliklar": [],
+        "yeni_sayfalar": [], "kaybolan_sayfalar": [],
+        "taninmayan_basliklar": [str(b) for b in (simdiki.get("taninmayan") or [])],
+    }
+    if not isinstance(onceki, dict):
+        return fark
+    simdi_b = _anahtarli(simdiki.get("basliklar"))
+    once_b = _anahtarli(onceki.get("basliklar"))
+    fark["yeni_basliklar"] = [ham for anahtar, ham in simdi_b.items() if anahtar not in once_b]
+    fark["kaybolan_basliklar"] = [ham for anahtar, ham in once_b.items() if anahtar not in simdi_b]
+
+    izlenen = {_anahtar(ad) for ad in IZLENEN_SAYFALAR}
+    simdi_s = {a: h for a, h in _anahtarli(simdiki.get("sayfalar")).items() if a in izlenen}
+    once_s = {a: h for a, h in _anahtarli(onceki.get("sayfalar")).items() if a in izlenen}
+    fark["yeni_sayfalar"] = [ham for anahtar, ham in simdi_s.items() if anahtar not in once_s]
+    fark["kaybolan_sayfalar"] = [ham for anahtar, ham in once_s.items() if anahtar not in simdi_s]
+    return fark
+
+
+def _kisalt(adlar: List[Any]) -> List[str]:
+    """En çok `YAPI_LISTE_SINIRI` ad; fazlası tek "… (+N)" kalemi."""
+    adlar = [str(a) for a in adlar]
+    if len(adlar) <= YAPI_LISTE_SINIRI:
+        return adlar
+    return adlar[:YAPI_LISTE_SINIRI] + [f"… (+{len(adlar) - YAPI_LISTE_SINIRI})"]
+
+
+def fark_kalemleri(fark: Optional[dict]) -> List[Tuple[str, str]]:
+    """[(etiket, ad)] — bildirim/özet satırları; yeni/kaybolan başlık + kaybolan/yeni sayfa,
+    kategori başına en çok 20 ad. Tanınmayan başlıklar buraya GİRMEZ (her teslimde var)."""
+    if not isinstance(fark, dict):
+        return []
+    kalemler: List[Tuple[str, str]] = []
+    for anahtar, etiket in _FARK_ETIKETLERI:
+        for ad in _kisalt(list(fark.get(anahtar) or [])):
+            kalemler.append((etiket, ad))
+    return kalemler
+
+
+def _ihlal_var(fark: Optional[dict]) -> bool:
+    return isinstance(fark, dict) and any(fark.get(k) for k in _IHLAL_KATEGORILERI)
+
+
+def _fark_gerekcesi(fark: dict) -> str:
+    """`yapi_degisti (yeni: A, B; kaybolan: C; kaybolan sayfa: D)` — yalnız dolu parçalar."""
+    parcalar = []
+    for anahtar, etiket in (("yeni_basliklar", "yeni"), ("kaybolan_basliklar", "kaybolan"),
+                            ("kaybolan_sayfalar", "kaybolan sayfa")):
+        adlar = list(fark.get(anahtar) or [])
+        if adlar:
+            parcalar.append(f"{etiket}: {', '.join(_kisalt(adlar))}")
+    return f"{KAPI_YAPI_DEGISTI} ({'; '.join(parcalar)})"
+
+
+def _fark_ozeti(fark: dict) -> str:
+    """Tek satırlık log özeti: `yeni: A, B; kaybolan: C; kaybolan sayfa: D; yeni sayfa: E`."""
+    parcalar = []
+    for anahtar, etiket in _FARK_ETIKETLERI:
+        adlar = list(fark.get(anahtar) or [])
+        if adlar:
+            parcalar.append(f"{etiket}: {', '.join(_kisalt(adlar))}")
+    return "; ".join(parcalar)
+
+
+def _onceki_yapi(db: Session, *, haric: int) -> Optional[dict]:
+    """Defterde `uygulandi` olan EN SON teslimin `yapi`si (done_at, sonra id); yoksa None."""
+    from sqlalchemy import nullslast
+
+    satir = (
+        db.query(models.AktarimTeslimi.yapi)
+        .filter(models.AktarimTeslimi.durum == DURUM_UYGULANDI,
+                models.AktarimTeslimi.id != haric)
+        .order_by(nullslast(models.AktarimTeslimi.done_at.desc()), models.AktarimTeslimi.id.desc())
+        .first()
+    )
+    if satir is None or not isinstance(satir[0], dict):
+        return None
+    return satir[0]
 
 
 def onceki_teslim_adi_oku(ws) -> Optional[str]:
@@ -663,37 +859,44 @@ def onceki_teslim_adi_oku(ws) -> Optional[str]:
     return None
 
 
-def _yapi_dogrula(yol: Path) -> Tuple[Optional[str], bool]:
-    """(önceki teslim adı, özet sayfası var mı) — kabul edilemezse `_YapiHatasi`."""
+def _yapi_dogrula(yol: Path) -> Tuple[Optional[str], bool, dict]:
+    """(önceki teslim adı, özet sayfası var mı, yapı) — kabul edilemezse `_YapiHatasi`
+    (o ana kadar okunan yapı istisnada taşınır: red yolunda da `sayfalar` dolu)."""
     import openpyxl
 
+    yapi = _bos_yapi()
     try:
         wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
     except Exception as exc:
         raise _YapiHatasi(f"dosya açılamadı ({type(exc).__name__}): {exc}") from exc
     try:
+        yapi["sayfalar"] = [str(ad) for ad in wb.sheetnames]
         if VERI_SAYFASI not in wb.sheetnames:
             raise _YapiHatasi(
-                f"'{VERI_SAYFASI}' sayfası yok (mevcut: {', '.join(wb.sheetnames) or '-'})"
+                f"'{VERI_SAYFASI}' sayfası yok (mevcut: {', '.join(wb.sheetnames) or '-'})",
+                yapi=yapi,
             )
         ozet_var = OZET_SAYFASI in wb.sheetnames
         onceki = onceki_teslim_adi_oku(wb[OZET_SAYFASI]) if ozet_var else None
+        yapi["basliklar"] = _baslik_satiri(wb[VERI_SAYFASI])
     finally:
         wb.close()
+    yapi["taninan"], yapi["taninmayan"] = basliklari_tani(yapi["basliklar"])
 
     try:
         _, bulunan = hukdok_aktarim.xlsx_oku(yol, sheet=VERI_SAYFASI, limit=0)
     except hukdok_aktarim.AktarimHatasi as exc:
-        raise _YapiHatasi(str(exc)) from exc
+        raise _YapiHatasi(str(exc), yapi=yapi) from exc
     except Exception as exc:
-        raise _YapiHatasi(f"başlıklar okunamadı ({type(exc).__name__}): {exc}") from exc
+        raise _YapiHatasi(f"başlıklar okunamadı ({type(exc).__name__}): {exc}", yapi=yapi) from exc
     eksik = [alan for alan in ZORUNLU_BASLIKLAR if alan not in bulunan]
     if eksik:
         raise _YapiHatasi(
             f"'{VERI_SAYFASI}' sayfasında zorunlu başlık(lar) yok: {', '.join(eksik)} "
-            f"(bulunan: {', '.join(sorted(bulunan)) or '-'})"
+            f"(bulunan: {', '.join(sorted(bulunan)) or '-'})",
+            yapi=yapi,
         )
-    return onceki, ozet_var
+    return onceki, ozet_var, yapi
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -776,9 +979,17 @@ def teslim_dogrula(teslim_id: int, *, db: Optional[Session] = None) -> str:
         if yol is None:
             return _reddet(session, teslim, f"teslim dosyası spool'da yok: {teslim.spool_path or '-'}")
         try:
-            onceki, ozet_var = _yapi_dogrula(yol)
+            onceki, ozet_var, yapi = _yapi_dogrula(yol)
         except _YapiHatasi as exc:
+            if exc.yapi is not None:
+                teslim.yapi = exc.yapi                  # red yolunda da sayfalar deftere (G115)
             return _reddet(session, teslim, str(exc))
+
+        # G115: yapı + bir önceki uygulanmış teslime göre fark (kapı/bildirim/özet okur).
+        fark = yapi_farki(_onceki_yapi(session, haric=int(teslim.id)), yapi)
+        teslim.yapi = {**yapi, "fark": fark}
+        if fark_kalemleri(fark):
+            logger.warning("Teslim #%s (%s) yapı farkı: %s", teslim.id, teslim.dosya_adi, _fark_ozeti(fark))
 
         teslim.onceki_teslim_adi = onceki
         if not ozet_var:
@@ -819,7 +1030,7 @@ def teslim_kuru_kos(teslim_id: int, *, db: Optional[Session] = None) -> str:
         teslim = _teslim_getir(session, teslim_id)
         _sayaclari_yaz(teslim, sonuc)
         _ozet_yaz(rapor / "kuru-kosu-ozeti.txt", sonuc)
-        _ozet_dosyasi_yaz(rapor, sonuc, None, None)      # kapı henüz yok; kapi_degerlendir tazeler
+        _ozet_dosyasi_yaz(rapor, sonuc, None, None, teslim.yapi_farki)   # kapı henüz yok; kapi_degerlendir tazeler
         _durum_gecir(teslim, DURUM_KURU_KOSULDU, not_=_sayac_notu(sonuc))
         session.commit()
         logger.info("Teslim #%s kuru koşuldu: %s", teslim.id, _sayac_notu(sonuc))
@@ -859,6 +1070,9 @@ def kapi_ihlalleri(db: Session, teslim: models.AktarimTeslimi, esikler: Optional
             ihlaller.append(f"eslesmeyen_orani {eslesmeyen_orani:.4f} > {esik['eslesmeyen_orani']}")
     if (teslim.alan_degisikligi or 0) > esik["alan_degisikligi"]:
         ihlaller.append(f"alan_degisikligi {teslim.alan_degisikligi} > {esik['alan_degisikligi']}")
+    fark = teslim.yapi_farki                         # G115: doğrulama adımı yazdı; NULL = bilinmiyor
+    if _ihlal_var(fark):
+        ihlaller.append(_fark_gerekcesi(fark))
     return ihlaller
 
 
@@ -923,6 +1137,7 @@ def _teslim_uygula(session: Session, teslim_id: int, *, uygulayan: str) -> str:
         rapor, sonuc,
         str(teslim.kapi_karari) if teslim.kapi_karari else None,
         str(teslim.kapi_gerekcesi) if teslim.kapi_gerekcesi else None,
+        teslim.yapi_farki,
     )
     if sonuc.yazildi:
         _durum_gecir(teslim, DURUM_UYGULANDI, not_=_sayac_notu(sonuc))
