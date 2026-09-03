@@ -35,8 +35,12 @@ Pazarlıksız kurallar
   düşer. Yarım föy yazıp devam etmek, düzeltme listesiyle zaten geri gelecek
   bir satır için sessiz veri bozulması olurdu.
 * **`None` = "bu teslimde yok", "boşalt" DEĞİL** (foy_map ile aynı sözleşme):
-  partili teslimde eksik sütun mevcut değeri silmez. Alan boşaltma bu turda
-  YOK — açık bir düzeltme yolu gerektirir.
+  partili teslimde eksik sütun mevcut değeri silmez. Alan boşaltmanın TEK
+  yolu açık düzeltme talimatıdır (G112, `Düzeltme_Logu` sayfası): Yeni Değer
+  `(boş)` VE `Sheet`'te o hücre gerçekten boş VE bizde dolu — ÜÇLÜ şart
+  sağlanmadan boşaltma yok (`_bosaltma_talimatlari`). Aynı sayfanın
+  "Gerekçe" sütunu değişen alanın `case_history.source` imzasına provenance
+  olarak eklenir; imza `HUKDOK_TESLIM_` ile başlamaya devam eder.
 * **Kart YARATILMAZ.** Bu ağırlıkla bir UPDATE dalgasıdır (eşleştirme köprüsü
   DosyaNo↔`klasor_no_2` %97,4); eşleşmeyen satır rapora düşer. Kart açmak
   ofis dosya numarasını SharePoint sayacından ATOMİK tahsis etmeyi gerektirir
@@ -70,11 +74,14 @@ uyarısı: dosya açılış etiketi, güncel değil) · `Para Birimi`/`Müvekkil
 (taşınmaz). `court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
 farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
 Karar künyesi
-(`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ — o kolonların tek yazma yolu
-`managers/stage_decisions.py`ın aşama fotoğrafıdır (G062); buradan yazmak
-ikinci bir yazıcı doğururdu. Künye yalnız OKUNUR ve kardeş-föy çelişki
-raporunu üretir. `cases.sistem_no`/`cases.tku_no` da yazılmaz (nihai
-tekilleştirme tam eşleme turunun işi).
+(`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ ve BOŞALTILMAZ — o kolonların
+tek yazma yolu `managers/stage_decisions.py`ın aşama fotoğrafıdır (G062);
+buradan yazmak ikinci bir yazıcı doğururdu. Künye yalnız OKUNUR ve kardeş-föy
+çelişki raporunu üretir; `Düzeltme_Logu`'ndaki künye boşaltma talimatı
+uygulanmaz, satır raporuna düşer. Boşaltma `ICERIK_KARSILASTIRMALI_ALANLAR`
+(`court`/`sub_type`) için de geçersizdir (yazım bizim; rapora düşer).
+`cases.sistem_no`/`cases.tku_no` da yazılmaz (nihai tekilleştirme tam eşleme
+turunun işi).
 
 `scripts/import_excel_cases.py` KULLANILMAZ ve çağrılmaz (temizlik planı §8:
 idempotent değil, hata yolunda sessiz veri kaybı, `-2` mükerrer üretimi).
@@ -274,6 +281,7 @@ class AktarimSonucu:
     foy_yeni: int = 0
     foy_guncellenen: int = 0
     alan_degisikligi: int = 0
+    bosaltilan: int = 0                # alan_degisikligi'nin alt kümesi (G112 açık boşaltma)
     avukat_eklenen: int = 0
     taraf_eklenen: int = 0
     asama_eklenen: int = 0
@@ -843,6 +851,243 @@ def _eslesme_anahtari(deger: Any) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Düzeltme_Logu (G112) — gerekçe provenance + açık boşaltma talimatı
+# ═══════════════════════════════════════════════════════════════════════════
+# Veri ekibinin hücre değişiklik günlüğü: her satır bir (SistemNo, sütun)
+# düzeltmesidir — eski/yeni değer, GEREKÇE ve tarih. Bugüne dek okunmuyordu;
+# `case_history`ye yalnız "eski→yeni" düşüyordu. Sütun adı → kart alanı
+# çevirisi KART_ALANLARI'nın ters haritasıdır (yeni sözlük İCAT EDİLMEZ):
+# bilinmeyen sütun adı DEBUG ile yok sayılır — sayfa 20k satır, rapora
+# düşürmek gürültü olurdu.
+DUZELTME_SAYFASI = "Düzeltme_Logu"
+#: Yeni Değer hücresinde AÇIK boşaltma işareti (üçlü şartın birinci ayağı).
+BOSALTMA_ISARETI = "(boş)"
+
+DUZELTME_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
+    "sistem_no": ("SistemNo", "Sistem No"),
+    # Değişen sütunun ADI — karşı tarafla başlık henüz yazılı sabitlenmedi
+    # (G114 sözleşmesi); aday desen toleranslı, `_baslik_anahtari` yazım
+    # farklarını yutar.
+    "sutun":     ("Sütun", "Sütun Adı", "Alan", "Alan Adı", "Kolon", "Değişen Sütun", "Değişen Alan"),
+    "eski":      ("Eski Değer",),
+    "yeni":      ("Yeni Değer",),
+    "gerekce":   ("Gerekçe",),
+    "tarih":     ("Tarih",),
+}
+_DUZELTME_ZORUNLU = ("sistem_no", "sutun", "yeni")
+# "Tarih" hücresi saatli metin de gelebilir ("02.08.2026 14:05"); sıralama için.
+_DUZELTME_TARIH_BICIMLERI: Tuple[str, ...] = tuple(
+    f"{b}{ek}" for b in _TARIH_BICIMLERI for ek in ("", " %H:%M", " %H:%M:%S")
+)
+
+# Künye/aşama kolonları: `Düzeltme_Logu` bunları ADLANDIRABİLİR ama tek yazma
+# yolu stage_decisions'ın fotoğrafıdır (G062) — boşaltma talimatı UYGULANMAZ,
+# satır raporuna düşer (tahmin yasağının boşaltma tarafı: sessizce yutulmaz).
+_DUZELTME_KUNYE_KAYNAKLARI: Dict[str, str] = {
+    "karar_no": "karar_no",
+    "karar_tarihi": "karar_tarihi",
+    "istinaf_basvuran": "istinaf_basvuran_taraf",
+}
+
+
+def _duzeltme_alan_haritasi() -> Dict[str, str]:
+    """{başlık anahtarı: kart alanı} — KART_ALANLARI'nın SUTUN_ADAYLARI üzerinden ters haritası."""
+    harita: Dict[str, str] = {}
+    for alan, (kaynak, _donustur) in KART_ALANLARI.items():
+        for aday in SUTUN_ADAYLARI.get(kaynak, ()):
+            harita.setdefault(_baslik_anahtari(aday), alan)
+    for kaynak, alan in _DUZELTME_KUNYE_KAYNAKLARI.items():
+        for aday in SUTUN_ADAYLARI.get(kaynak, ()):
+            harita.setdefault(_baslik_anahtari(aday), alan)
+    return harita
+
+
+DUZELTME_ALAN_HARITASI: Dict[str, str] = _duzeltme_alan_haritasi()
+#: Boşaltılması YASAK alanlar: künye (tek yazıcı stage_decisions) + içerik modu.
+BOSALTMA_DISI_ALANLAR: frozenset = frozenset(_DUZELTME_KUNYE_KAYNAKLARI.values()) | ICERIK_KARSILASTIRMALI_ALANLAR
+
+# `case_history.source` sınırı modelden okunur (imza + gerekçe buraya sığmalı).
+_SOURCE_SINIRI: int = models.CaseHistory.source.property.columns[0].type.length or 300
+
+
+@dataclass
+class DuzeltmeKaydi:
+    satir_no: int                      # Düzeltme_Logu'ndaki 1 tabanlı satır
+    sistem_no: str
+    alan: str                          # kart alanı (KART_ALANLARI anahtarı) ya da künye adı
+    yeni: Optional[str]                # ham "Yeni Değer" metni
+    bosalt: bool                       # Yeni Değer == (boş)
+    gerekce: Optional[str]
+    tarih: Optional[datetime]
+
+
+DuzeltmeHaritasi = Dict[Tuple[str, str], DuzeltmeKaydi]
+
+
+def _bosalt_isareti_mi(yeni: Optional[str]) -> bool:
+    """Yeni Değer `(boş)` mu? Parantez ANLAMLIDIR: çıplak "boş" bir metin değeridir,
+    boşaltma talimatı değil (`_baslik_anahtari` noktalamayı attığı için burada kullanılmaz);
+    büyük/küçük harf ve iç boşluk toleranslı ("( BOŞ )")."""
+    if not yeni:
+        return False
+    return re.sub(r"\s+", "", tr_upper(yeni)) == re.sub(r"\s+", "", tr_upper(BOSALTMA_ISARETI))
+
+
+def _duzeltme_tarihi(deger: Any) -> Optional[datetime]:
+    """"Tarih" hücresi → datetime; çözülemezse None (en eski sayılır, uyarı yok)."""
+    if deger is None:
+        return None
+    if isinstance(deger, datetime):
+        return deger
+    if isinstance(deger, date):
+        return datetime(deger.year, deger.month, deger.day)
+    ham = " ".join(str(deger).split())
+    if not ham:
+        return None
+    try:
+        return datetime.fromisoformat(ham)
+    except ValueError:
+        pass
+    for bicim in _DUZELTME_TARIH_BICIMLERI:
+        try:
+            return datetime.strptime(ham, bicim)
+        except ValueError:
+            continue
+    return None
+
+
+def duzeltme_logunu_oku(yol: Path, *, sheet: str = DUZELTME_SAYFASI) -> DuzeltmeHaritasi:
+    """`Düzeltme_Logu` sayfasını okur → {(SistemNo, kart alanı): en yeni kayıt}.
+
+    Sayfa yoksa BOŞ sözlük (hata değil — eski paketlerde yok). Zorunlu başlık
+    (SistemNo / sütun adı / Yeni Değer) yoksa sayfa uygulanamaz: TEK WARNING +
+    boş (provenance yan üründür, koşuyu durdurmaz; boşaltma talimatı da
+    okunamadığı için uygulanmaz — güvenli taraf). Bilinmeyen sütun adı DEBUG
+    ile yok sayılır. Aynı (SistemNo, alan) için birden çok satır → en yeni
+    `Tarih` kazanır (tarihsiz satır en eski sayılır; eşitlikte sonraki satır).
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
+    try:
+        if sheet not in wb.sheetnames:
+            logger.info(f"{sheet!r} sayfası yok — düzeltme logu okunmadı")
+            return {}
+        ws = wb[sheet]
+        akis = ws.iter_rows(values_only=True)
+        baslik = next(akis, None)
+        if baslik is None:
+            return {}
+        dosyadaki: Dict[str, int] = {}
+        for i, ham in enumerate(baslik):
+            anahtar = _baslik_anahtari(ham)
+            if anahtar and anahtar not in dosyadaki:
+                dosyadaki[anahtar] = i
+        indeksler: Dict[str, int] = {}
+        for alan, adaylar in DUZELTME_SUTUNLARI.items():
+            for aday in adaylar:
+                if _baslik_anahtari(aday) in dosyadaki:
+                    indeksler[alan] = dosyadaki[_baslik_anahtari(aday)]
+                    break
+        eksik = [a for a in _DUZELTME_ZORUNLU if a not in indeksler]
+        if eksik:
+            logger.warning(
+                f"{sheet}: zorunlu başlık(lar) yok ({', '.join(eksik)}) — sayfa okunmadı; "
+                f"okunan başlıklar: {', '.join(str(b) for b in baslik if b)}"
+            )
+            return {}
+
+        def hucre(ham: Sequence[Any], alan: str) -> Any:
+            i = indeksler.get(alan)
+            return ham[i] if i is not None and i < len(ham) else None
+
+        kayitlar: DuzeltmeHaritasi = {}
+        bilinmeyen = 0
+        for sira, ham in enumerate(akis, start=2):
+            if ham is None:
+                continue
+            sistem_no = _metin(hucre(ham, "sistem_no"))
+            sutun = _metin(hucre(ham, "sutun"))
+            if not sistem_no or not sutun:
+                continue
+            alan = DUZELTME_ALAN_HARITASI.get(_baslik_anahtari(sutun))
+            if alan is None:
+                bilinmeyen += 1
+                logger.debug(f"{sheet} satır {sira}: bilinmeyen sütun adı {sutun!r} — yok sayıldı")
+                continue
+            yeni = _metin(hucre(ham, "yeni"))
+            kayit = DuzeltmeKaydi(
+                satir_no=sira, sistem_no=sistem_no, alan=alan, yeni=yeni,
+                bosalt=_bosalt_isareti_mi(yeni),
+                gerekce=_metin(hucre(ham, "gerekce")),
+                tarih=_duzeltme_tarihi(hucre(ham, "tarih")),
+            )
+            mevcut = kayitlar.get((sistem_no, alan))
+            if mevcut is None or (kayit.tarih or datetime.min) >= (mevcut.tarih or datetime.min):
+                kayitlar[(sistem_no, alan)] = kayit
+        logger.info(
+            f"{sheet}: {len(kayitlar)} (SistemNo, alan) kaydı okundu"
+            f"{f', {bilinmeyen} satır bilinmeyen sütun adıyla yok sayıldı' if bilinmeyen else ''}"
+        )
+        return kayitlar
+    finally:
+        wb.close()
+
+
+def _bosaltma_talimatlari(
+    satir: HamSatir, sistem_no: str, duzeltmeler: Optional[DuzeltmeHaritasi],
+) -> Tuple[List[Tuple[str, DuzeltmeKaydi]], List[Tuple[str, str]]]:
+    """Föyün `(boş)` talimatlarını ikiye ayırır: (uygulanabilir, reddedilen).
+
+    Uygulanabilir = üçlü şartın ilk iki ayağı: log `(boş)` diyor VE `Sheet`'te
+    o sütun VAR ve hücre GERÇEKTEN boş. Sütunun paketten büsbütün eksik olması
+    "hücre boş" DEĞİLDİR (partili teslim: `Sheet` teyit edemiyor → boşaltma
+    yok). Üçüncü ayak (bizde dolu) yazma anında karta bakılarak ölçülür.
+    Reddedilen = künye ya da içerik-modu alanı: talimat uygulanmaz, sebep
+    satır raporuna düşer (`(alan, sebep)`).
+    """
+    if not duzeltmeler:
+        return [], []
+    uygulanabilir: List[Tuple[str, DuzeltmeKaydi]] = []
+    reddedilen: List[Tuple[str, str]] = []
+    for (s_no, alan), kayit in duzeltmeler.items():
+        if s_no != sistem_no or not kayit.bosalt:
+            continue
+        if alan in BOSALTMA_DISI_ALANLAR:
+            neden = ("karar künyesi tek yazıcı stage_decisions" if alan not in ICERIK_KARSILASTIRMALI_ALANLAR
+                     else "içerik-karşılaştırmalı alan (yazım bizim)")
+            reddedilen.append((alan, f"boşaltılmadı — {neden} (Düzeltme_Logu satır {kayit.satir_no})"))
+            continue
+        kaynak = KART_ALANLARI[alan][0]
+        if kaynak not in satir.degerler or _metin(satir.degerler.get(kaynak)) is not None:
+            logger.debug(
+                f"{sistem_no} {alan}: Düzeltme_Logu (boş) diyor ama Sheet hücresi "
+                f"{'yok' if kaynak not in satir.degerler else 'dolu'} — boşaltma yok"
+            )
+            continue
+        uygulanabilir.append((alan, kayit))
+    return uygulanabilir, reddedilen
+
+
+def _provenance_imzasi(source: str, kayit: Optional[DuzeltmeKaydi], *, bosaltma: bool = False) -> str:
+    """`case_history.source`: imza (`HUKDOK_TESLIM_*`, KORUNUR) + Düzeltme_Logu gerekçesi.
+
+    Gerekçesiz değişiklikte imza eski biçimiyle kalır (log satırı yoksa hiçbir
+    ek yok). `(boş)` satırının gerekçesi yalnız boşaltma kaydına eklenir; aynı
+    satır bir DEĞER yazımına gerekçe olamaz (çelişkili talimat — imza sade kalır).
+    """
+    if kayit is None:
+        return source
+    if bosaltma:
+        ek = f"boşaltıldı: {kayit.gerekce or '-'}"
+    elif kayit.bosalt or not kayit.gerekce:
+        return source
+    else:
+        ek = f"gerekçe: {kayit.gerekce}"
+    return f"{source} · {ek}"[:_SOURCE_SINIRI]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Satır işleme
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -901,6 +1146,7 @@ def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
 def kart_alan_celiskileri(
     db, satirlar: Sequence[HamSatir], *, foy_haritasi: Dict[str, int],
     dosya_haritasi: Dict[str, List[int]],
+    duzeltmeler: Optional[DuzeltmeHaritasi] = None,
 ) -> Tuple[Dict[int, Set[str]], List[Celiski]]:
     """Aynı kartın föyleri bir KART alanında çelişiyorsa o alan YAZILMAZ.
 
@@ -919,6 +1165,11 @@ def kart_alan_celiskileri(
     evi FAZ F §1.5'tir (`case_parties`/föy düzeyi alanlar); o ev açılana kadar
     doğru davranış, kartta hangi föyün kazandığını kur'aya bırakmamaktır.
 
+    Açık boşaltma (G112) da bir DEĞERDİR: bir föy `(boş)` derken kardeşi değer
+    taşıyorsa alan çelişkilidir — aksi hâlde satır sırasına göre kart bir
+    koşuda boşalır, diğerinde dolar (idempotency ihlali). `BOSALTMA_ISARETI`
+    uzlaşı kümesine üye olarak girer.
+
     Döner: ({case_id: {çelişen alan}}, [rapor satırı]).
     """
     degerler: Dict[Tuple[int, str], List[Tuple[str, Any]]] = {}
@@ -935,6 +1186,9 @@ def kart_alan_celiskileri(
             continue              # bozuk satır zaten düşecek; uzlaşıyı kirletmesin
         for alan, deger in satir_degerleri.items():
             degerler.setdefault((case_id, alan), []).append((sistem_no, deger))
+        for alan, _kayit in _bosaltma_talimatlari(satir, sistem_no, duzeltmeler)[0]:
+            if alan not in satir_degerleri:
+                degerler.setdefault((case_id, alan), []).append((sistem_no, BOSALTMA_ISARETI))
 
     celiskili: Dict[int, Set[str]] = {}
     celiskiler: List[Celiski] = []
@@ -1035,7 +1289,10 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
 def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
                          source: str,
                          celiskili_alanlar: Set[str] = frozenset(),
-                         atlanan_alanlar: Optional[List[Tuple[str, str]]] = None) -> List[str]:
+                         atlanan_alanlar: Optional[List[Tuple[str, str]]] = None,
+                         *, sistem_no: Optional[str] = None,
+                         duzeltmeler: Optional[DuzeltmeHaritasi] = None,
+                         bosaltilanlar: Optional[List[str]] = None) -> List[str]:
     """DAR alan kümesini kartın ÜZERİNE yazar (UPDATE-in-place); değişenleri döner.
 
     Değişmeyen alan için ne UPDATE ne `case_history` satırı üretilir — ikinci
@@ -1045,6 +1302,16 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     koşar (bozuk değer satırı düşürmeye devam etsin diye) ama yazım atlanır —
     gerekçe `kart_alan_celiskileri` docstring'inde. `atlanan_alanlar`
     `kart_degerleri`ye aynen geçer (G104 alan-düzeyi rapor toplayıcısı).
+
+    G112: `duzeltmeler` verilirse (a) değişen alanın `case_history.source`
+    imzasına `Düzeltme_Logu` gerekçesi eklenir (`_provenance_imzasi`), (b)
+    `(boş)` talimatı ÜÇLÜ şartla uygulanır — log `(boş)` + `Sheet` hücresi
+    gerçekten boş (`_bosaltma_talimatlari`) + bizde dolu — alan NULL yazılır,
+    tarihçeye "boşaltıldı: <gerekçe>" düşer, alan adı `bosaltilanlar`a eklenir
+    (dönüş listesinde de yer alır). Bizde zaten boşsa hiçbir şey yazılmaz
+    (ikinci koşu 0 değişiklik). Künye/içerik alanı talimatı `atlanan_alanlar`a
+    düşer, uygulanmaz. `esas_no` boşaltması da tek yoldan (`sync_current_esas`
+    boş değerle kolonu temizler, tarihçe satırları kalır).
     """
     degisenler: List[str] = []
     degerler = kart_degerleri(satir, atlanan_alanlar)
@@ -1068,12 +1335,36 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
             )
         else:
             setattr(case, alan, yeni)
+        kayit = duzeltmeler.get((sistem_no or "", alan)) if duzeltmeler else None
         db.add(models.CaseHistory(
             case_id=case.id, field_name=alan,
             old_value=_gecmis_metni(eski), new_value=_gecmis_metni(yeni),
-            changed_by=DEGISTIREN, source=source,
+            changed_by=DEGISTIREN, source=_provenance_imzasi(source, kayit),
         ))
         degisenler.append(alan)
+
+    uygulanabilir, reddedilen = _bosaltma_talimatlari(satir, sistem_no or "", duzeltmeler)
+    if atlanan_alanlar is not None:
+        atlanan_alanlar.extend(reddedilen)
+    for alan, kayit in uygulanabilir:
+        if alan in celiskili_alanlar or alan in degerler:
+            continue
+        eski = getattr(case, alan)
+        if eski is None or eski == "":
+            continue                      # üçüncü ayak: bizde zaten boş — idempotent
+        if alan == "esas_no":
+            case_manager.sync_current_esas(db, case, None, source=source)
+        else:
+            setattr(case, alan, None)
+        db.add(models.CaseHistory(
+            case_id=case.id, field_name=alan,
+            old_value=_gecmis_metni(eski), new_value=None,
+            changed_by=DEGISTIREN, source=_provenance_imzasi(source, kayit, bosaltma=True),
+        ))
+        degisenler.append(alan)
+        if bosaltilanlar is not None:
+            bosaltilanlar.append(alan)
+        logger.info(f"{sistem_no} {alan} boşaltıldı (Düzeltme_Logu satır {kayit.satir_no})")
     return degisenler
 
 
@@ -1225,7 +1516,8 @@ def _gecmis_metni(deger: Any) -> Optional[str]:
 def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  dosya_haritasi: Dict[str, List[int]], source: str,
                  foy_source: str, sonuc: AktarimSonucu,
-                 kart_celiskileri: Optional[Dict[int, Set[str]]] = None) -> int:
+                 kart_celiskileri: Optional[Dict[int, Set[str]]] = None,
+                 duzeltmeler: Optional[DuzeltmeHaritasi] = None) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
@@ -1249,11 +1541,14 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     )
 
     atlanan_alanlar: List[Tuple[str, str]] = []
+    bosaltilanlar: List[str] = []
     degisenler = _kart_alanlarini_yaz(
         db, case, satir, source,
         celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
         atlanan_alanlar=atlanan_alanlar,
+        sistem_no=sistem_no, duzeltmeler=duzeltmeler, bosaltilanlar=bosaltilanlar,
     )
+    sonuc.bosaltilan += len(bosaltilanlar)
     eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
     eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
 
@@ -1570,6 +1865,9 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
     girdi = Path(girdi)
     satirlar, bulunan_basliklar = xlsx_oku(girdi, sheet=sheet, limit=limit)
     asama_satirlari = asama_satirlarini_oku(girdi) if limit is None else []
+    # Düzeltme_Logu (G112) limit'ten bağımsız okunur: SistemNo anahtarlı,
+    # yalnız işlenen satırların kayıtları kullanılır.
+    duzeltmeler = duzeltme_logunu_oku(girdi)
     kaynak_imzasi = source or f"{AKTARIM_SOURCE_PREFIX}_{girdi.name}"
     foy_source = kaynak_imzasi[:100]
     if len(kaynak_imzasi) > 100:
@@ -1601,6 +1899,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         # föy zaten kartı bir kez ezmiş olurdu.
         kart_celiskileri, kart_celiski_raporu = kart_alan_celiskileri(
             db, satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
+            duzeltmeler=duzeltmeler,
         )
         if kart_celiski_raporu:
             logger.warning(
@@ -1618,7 +1917,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         db, satir,
                         foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
-                        kart_celiskileri=kart_celiskileri,
+                        kart_celiskileri=kart_celiskileri, duzeltmeler=duzeltmeler,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.
@@ -1745,6 +2044,7 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  yeni föy          : {sonuc.foy_yeni}",
         f"  güncellenen föy   : {sonuc.foy_guncellenen}",
         f"  alan değişikliği  : {sonuc.alan_degisikligi} ({sonuc.kart_degisen} kart)",
+        f"  boşaltılan alan   : {sonuc.bosaltilan} (Düzeltme_Logu açık talimatı)",
         f"  avukat satırı     : {sonuc.avukat_eklenen}",
         f"  taraf satırı      : {sonuc.taraf_eklenen}",
         f"  aşama satırı      : {sonuc.asama_eklenen} (önceki esas: {sonuc.onceki_esas_eklenen}"

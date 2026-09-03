@@ -86,6 +86,14 @@ Tasarım kararları
   yeniden denenir, retry böylece ertesi geceye kalır. Yükleme hatası teslim durumunu
   DEĞİŞTİRMEZ (WARNING). `teslim_cevap` bu modülü import eder; buradaki çağrılar döngü
   olmasın diye fonksiyon içinde import edilir.
+* **Değer havuzu farkı** (G112, `_havuz_farki_dene`): kuru koşu ve uygulama başarı
+  yolunda, defter commit'inden SONRA `teslim_cevap.havuz_farki_csv_uret` çağrılır —
+  `DEGER_HAVUZLARI` sayfası ile referans listelerinin iki yönlü farkı rapor dizinine
+  `deger-havuzu-farki_<teslim>.csv` olarak düşer (cevap paketi otomatik alır); fark
+  yoksa dosya yok. Fark varsa `havuz_bildir` ADMIN_EMAILS'e `type="veri_teslim"` bildirimi
+  yazar, dedupe `teslim:<id>:havuz:<alıcı>` (aynı teslim için bir kez; kuru koşu +
+  uygulama ikilemez). Listeye YAZMA YOK. Her istisna WARNING — yan ürün, durum makinesi
+  bozulmaz.
 """
 from __future__ import annotations
 
@@ -453,6 +461,76 @@ def _bildirim_govdesi(teslim: models.AktarimTeslimi, olay: str) -> str:
     return ", ".join(parcalar)
 
 
+#: Değer havuzu farkı bildiriminin dedupe etiketi (`teslim:<id>:havuz:<alıcı>`); durum
+#: makinesinin `BILDIRIM_OLAYLARI`ndan AYRI — durum geçişi değildir.
+BILDIRIM_HAVUZ = "havuz"
+
+
+def havuz_bildir(teslim_id: int, govde: str, *, db: Optional[Session] = None) -> List[int]:
+    """G112: `DEGER_HAVUZLARI` farkı için ADMIN_EMAILS'e uyarı; `bildir` ile aynı sözleşme
+    (alıcı yoksa WARNING + boş, her hata WARNING ile yutulur, dedupe alıcı sonda)."""
+    try:
+        from routes.config import _admin_emails
+        from services.notifications import create_notification
+
+        alicilar = sorted(_admin_emails())
+        if not alicilar:
+            logger.warning("Teslim #%s havuz farkı bildirimi hedefsiz: ADMIN_EMAILS boş", teslim_id)
+            return []
+        with _oturum(db) as session:
+            teslim = _teslim_getir(session, teslim_id)
+            title = f"Veri teslimi değer havuzu farkı: {teslim.dosya_adi}"
+            ids: List[int] = []
+            for email in alicilar:
+                try:
+                    ids.append(create_notification(
+                        session,
+                        recipient_email=email,
+                        type=BILDIRIM_TURU,
+                        title=title,
+                        body=govde,
+                        severity="warning",
+                        dedupe_key=bildirim_dedupe_key(int(teslim.id), BILDIRIM_HAVUZ, email),
+                    ))
+                except Exception as exc:
+                    session.rollback()
+                    logger.warning("Teslim #%s havuz farkı bildirimi yazılamadı (alıcı=%s): %s",
+                                   teslim_id, email, exc)
+            logger.info("Teslim #%s havuz farkı bildirimi: %s alıcı", teslim_id, len(ids))
+            return ids
+    except Exception as exc:
+        logger.warning("Teslim #%s havuz farkı bildirimi atlandı: %s", teslim_id, exc)
+        return []
+
+
+def _havuz_farki_dene(db: Session, teslim_id: int, *, rapor: Path, dosya_adi: str) -> Optional[Path]:
+    """G112: fark CSV'si (`teslim_cevap.havuz_farki_csv_uret`) + fark varsa `havuz_bildir`.
+
+    Defter commit'inden SONRA çağrılır; her istisna WARNING ile yutulur (yan ürün).
+    Yalnız OKUR; dönüşte oturumun okuma transaction'ı kapatılır (`commit`) — çağıran
+    "commit'li defter" varsayımıyla devam eder (sqlite StaticPool'da açık transaction
+    sonraki oturumun BEGIN'ini patlatırdı).
+    """
+    from services import teslim_cevap
+
+    hedef = rapor / f"deger-havuzu-farki_{teslim_cevap.teslim_adi_uzantisiz(dosya_adi)}.csv"
+    try:
+        farklar = teslim_cevap.teslim_havuz_farki(teslim_id, db=db)
+        yol = teslim_cevap.havuz_farki_csv_yaz(farklar, hedef)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Teslim #%s değer havuzu farkı bakılamadı (%s): %s", teslim_id, type(exc).__name__, exc)
+        return None
+    if yol is None:
+        return None
+    ozet = teslim_cevap.havuz_farki_ozeti(farklar)
+    logger.info("Teslim #%s değer havuzu farkı var: %s", teslim_id, ozet)
+    havuz_bildir(teslim_id, ozet, db=db)
+    db.commit()                              # dedupe yolunda açık kalan okuma transaction'ı
+    return yol
+
+
 def bildir(teslim_id: int, olay: str, *, db: Optional[Session] = None) -> List[int]:
     """Teslim geçişi için ADMIN_EMAILS kümesine bildirim yazar; yazılan/mevcut id'leri döner.
 
@@ -745,6 +823,7 @@ def teslim_kuru_kos(teslim_id: int, *, db: Optional[Session] = None) -> str:
         _durum_gecir(teslim, DURUM_KURU_KOSULDU, not_=_sayac_notu(sonuc))
         session.commit()
         logger.info("Teslim #%s kuru koşuldu: %s", teslim.id, _sayac_notu(sonuc))
+        _havuz_farki_dene(session, teslim_id, rapor=rapor, dosya_adi=dosya_adi)      # G112
         return DURUM_KURU_KOSULDU
 
 
@@ -849,6 +928,7 @@ def _teslim_uygula(session: Session, teslim_id: int, *, uygulayan: str) -> str:
         _durum_gecir(teslim, DURUM_UYGULANDI, not_=_sayac_notu(sonuc))
         session.commit()
         logger.info("Teslim #%s uygulandı (%s): %s", teslim.id, uygulayan, _sayac_notu(sonuc))
+        _havuz_farki_dene(session, teslim_id, rapor=rapor, dosya_adi=dosya_adi)      # G112
         return DURUM_UYGULANDI
     if sonuc.envanter_farki:
         # ERROR'u aktarimi_kos zaten bastı ("Aktarım GERİ ALINDI") — ikincisi yazılmaz.

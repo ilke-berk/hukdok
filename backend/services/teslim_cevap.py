@@ -16,6 +16,12 @@ Cevap klasörünün içeriği:
   uçları da listeler) ve oradan yüklenir.
 * `ozet_<teslim>.txt` — `teslim_kutusu`'nun rapor dizinine bıraktığı `ozet.txt`
   (`ozet_metni(sonuc)` + kapı kararı satırı) yüklenirken bu adı alır.
+* `deger-havuzu-farki_<teslim>.csv` — teslimin `DEGER_HAVUZLARI` sayfasındaki kapalı liste
+  değerleri ile bizim referans listelerimizin farkı, İKİ yönlü (`teslimde var / bizde yok`
+  + `bizde var / teslimde yok`; `HAVUZ_FARKI_BASLIKLARI`). Fark YOKSA dosya üretilmez (varsa
+  bayat kopya silinir). Üretim `teslim_kutusu` kuru koşu/uygulama adımındadır
+  (`havuz_farki_csv_uret`, G112); fark varsa admin bildirimi de oradan düşer. Referans
+  listesine YAZMA YOK — tahmin yasağı, `alleged_faults` seed'lenmez kararı korunur.
 * rapor dizinindeki diğer CSV/TXT'ler (`satir-raporu_*.csv`, `kardes-foy-celiskileri_*.csv`,
   `kuru-kosu-ozeti.txt`, `uygulama-ozeti.txt`) kendi adlarıyla.
 
@@ -54,11 +60,13 @@ from __future__ import annotations
 import csv
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
 
+from managers import reference_lists
 import models
 from scripts import hukdok_aktarim
 from services import app_settings
@@ -82,6 +90,35 @@ CEVAP_TURLERI: Dict[str, str] = {".csv": "text/csv", ".txt": "text/plain"}
 DENEME_NOTU_ONEKI = "cevap yükleme denemesi #"
 _SATIR_RAPORU_KALIBI = "satir-raporu_*.csv"
 _IN_PARCASI = 500
+
+# ─── DEGER_HAVUZLARI (G112) ──────────────────────────────────────────────────
+#: Teslim paketinin kapalı liste değerleri sayfası.
+HAVUZ_SAYFASI = "DEGER_HAVUZLARI"
+#: "Havuz / Sütun" (başlık anahtarı) → `reference_lists.LIST_REGISTRY` anahtarı.
+#: Sabit KÜÇÜK sözlük (görev sözleşmesi); eşlemesi olmayan havuz atlanır.
+HAVUZ_LISTE_ESLEMESI: Dict[str, str] = {
+    tk._anahtar("İddia Edilen Kusur"):         "alleged_faults",
+    tk._anahtar("İstinaf Karar Durumu"):       "appeal_decisions",
+    tk._anahtar("Yargıtay Onama Durumu"):      "cassation_decisions",
+    tk._anahtar("Yerel Mahkeme Karar Durumu"): "local_decisions",
+    tk._anahtar("Olay Türü"):                  "event_types",
+    tk._anahtar("Hükümdeki Rol"):              "judgment_roles",
+}
+#: Uzun biçim başlık adayları (havuz adı sütunu + değer sütunu). Uzun biçim
+#: bulunamazsa GENİŞ biçim denenir: eşlemesi olan her başlık bir havuzdur,
+#: değerler o sütunda aşağı iner (sayfa düzeni karşı tarafla yazılı
+#: sabitlenmedi — G114 sözleşmesi).
+HAVUZ_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
+    "havuz": ("Havuz / Sütun", "Havuz/Sütun", "Havuz", "Sütun"),
+    "deger": ("Değer", "Değerler", "Havuz Değeri", "Havuz Değerleri", "İzinli Değerler"),
+}
+#: Fark CSV'sinin sütunları (sıra sabit).
+HAVUZ_FARKI_BASLIKLARI: Tuple[str, ...] = ("havuz", "liste", "yon", "deger")
+YON_TESLIMDE_VAR = "teslimde var / bizde yok"
+YON_BIZDE_VAR = "bizde var / teslimde yok"
+#: Bir hücrede birden çok değer: `;`, satır sonu ya da `|` ile (değerlerin kendisi
+#: `/` içerir — "Red/Esastan" — o yüzden `/` ayraç DEĞİLDİR).
+_HAVUZ_AYRAC = re.compile(r"[;\r\n|]+")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -230,6 +267,153 @@ def eslesme_csv_uret(teslim_id: int, hedef: Path, *, db: Optional[Session] = Non
         teslim_id, hedef, len(kayitlar), eslesen, len(kayitlar) - eslesen,
     )
     return hedef
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEGER_HAVUZLARI fark raporu (G112) — yalnız RAPOR, listeye yazma YOK
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _havuz_parcalari(deger: Any) -> List[str]:
+    """Hücreyi değerlere böler (boşluk-normalize, mükerrersiz, boşlar atılır)."""
+    parcalar: List[str] = []
+    for ham in _HAVUZ_AYRAC.split(str(deger) if deger is not None else ""):
+        metin = _metin(ham)
+        if metin and metin not in parcalar:
+            parcalar.append(metin)
+    return parcalar
+
+
+def havuz_degerlerini_oku(yol: Path, *, sheet: str = HAVUZ_SAYFASI) -> Dict[str, List[str]]:
+    """`DEGER_HAVUZLARI` → {havuz adı (sayfadaki yazım): [değer, ...]}; sayfa yoksa {}.
+
+    Uzun biçim ("Havuz / Sütun" + "Değer" sütunları, satır başına bir değer ya da
+    `;` ile birleşik) önce denenir; yoksa geniş biçim (eşlemesi olan her başlık bir
+    havuz, değerler aşağı iner). İkisi de havuz vermiyorsa INFO + {} (hata değil —
+    sayfa isteğe bağlıdır). Eşlemesi olmayan havuzlar sözlüğe GİRMEZ.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
+    try:
+        if sheet not in wb.sheetnames:
+            logger.info("%r sayfası yok — değer havuzu farkı bakılmadı", sheet)
+            return {}
+        satirlar = [list(s or ()) for s in wb[sheet].iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    if not satirlar:
+        return {}
+    baslik = satirlar[0]
+    dosyadaki: Dict[str, int] = {}
+    for i, ham in enumerate(baslik):
+        anahtar = tk._anahtar(ham)
+        if anahtar and anahtar not in dosyadaki:
+            dosyadaki[anahtar] = i
+    indeksler: Dict[str, int] = {}
+    for alan, adaylar in HAVUZ_SUTUNLARI.items():
+        for aday in adaylar:
+            if tk._anahtar(aday) in dosyadaki:
+                indeksler[alan] = dosyadaki[tk._anahtar(aday)]
+                break
+
+    havuzlar: Dict[str, List[str]] = {}
+    if "havuz" in indeksler and "deger" in indeksler:
+        hi, di = indeksler["havuz"], indeksler["deger"]
+        for ham in satirlar[1:]:
+            havuz = _metin(ham[hi]) if hi < len(ham) else None
+            if not havuz or tk._anahtar(havuz) not in HAVUZ_LISTE_ESLEMESI:
+                continue
+            liste = havuzlar.setdefault(havuz, [])
+            for deger in _havuz_parcalari(ham[di] if di < len(ham) else None):
+                if deger not in liste:
+                    liste.append(deger)
+    else:
+        for i, ham_baslik in enumerate(baslik):
+            havuz = _metin(ham_baslik)
+            if not havuz or tk._anahtar(havuz) not in HAVUZ_LISTE_ESLEMESI:
+                continue
+            liste = havuzlar.setdefault(havuz, [])
+            for ham in satirlar[1:]:
+                for deger in _havuz_parcalari(ham[i] if i < len(ham) else None):
+                    if deger not in liste:
+                        liste.append(deger)
+    if not havuzlar:
+        logger.info("%r sayfasında eşlemesi olan havuz yok — değer havuzu farkı bakılmadı", sheet)
+    return havuzlar
+
+
+def havuz_farki(db: Session, havuzlar: Dict[str, List[str]]) -> List[Tuple[str, str, str, str]]:
+    """(havuz, liste, yön, değer) satırları — iki yön; karşılaştırma `tk._anahtar` ile
+    (aksan/büyük-küçük/noktalama duyarsız: "RED/ESASTAN" = "Red/Esastan").
+
+    Referans listesi `LIST_REGISTRY` üzerinden yalnız OKUNUR; `active` filtresi yok
+    (dropdown'dan kaldırılmış değer de "bizde var"dır — stage_decisions ile aynı okuma).
+    """
+    farklar: List[Tuple[str, str, str, str]] = []
+    for havuz, degerler in havuzlar.items():
+        liste = HAVUZ_LISTE_ESLEMESI.get(tk._anahtar(havuz))
+        if liste is None:
+            continue
+        model: Any = reference_lists.LIST_REGISTRY[liste].model
+        bizdekiler: Dict[str, str] = {}
+        for (ad,) in db.query(model.name).order_by(model.id):
+            metin = _metin(ad)
+            if metin:
+                bizdekiler.setdefault(tk._anahtar(metin), metin)
+        teslimdekiler = {tk._anahtar(d): d for d in degerler}
+        for anahtar, deger in teslimdekiler.items():
+            if anahtar not in bizdekiler:
+                farklar.append((havuz, liste, YON_TESLIMDE_VAR, deger))
+        for anahtar, ad in bizdekiler.items():
+            if anahtar not in teslimdekiler:
+                farklar.append((havuz, liste, YON_BIZDE_VAR, ad))
+    return farklar
+
+
+def teslim_havuz_farki(teslim_id: int, *, db: Optional[Session] = None) -> List[Tuple[str, str, str, str]]:
+    """Teslimin spool dosyasındaki `DEGER_HAVUZLARI` ile referans listelerinin farkı
+    (boş liste = fark yok ya da sayfa yok). Referans listelerine YAZMAZ."""
+    with tk._oturum(db) as session:
+        teslim = tk._teslim_getir(session, teslim_id)
+        yol = tk._spool_yolu(teslim)
+        if yol is None:
+            raise ValueError(f"Teslim #{teslim.id} dosyası spool'da yok: {teslim.spool_path or '-'}")
+        havuzlar = havuz_degerlerini_oku(yol)
+        farklar = havuz_farki(session, havuzlar) if havuzlar else []
+    if havuzlar and not farklar:
+        logger.info("Teslim #%s değer havuzları referans listeleriyle örtüşüyor (%s havuz)",
+                    teslim_id, len(havuzlar))
+    return farklar
+
+
+def havuz_farki_csv_yaz(farklar: Sequence[Tuple[str, str, str, str]], hedef: Path) -> Optional[Path]:
+    """Fark varsa CSV'yi `hedef`e yazar ve yolu döner; yoksa dosya ÜRETİLMEZ (bayat
+    kopya varsa silinir — listeye değer eklendiyse eski fark cevap paketine girmesin), None."""
+    hedef = Path(hedef)
+    if not farklar:
+        if hedef.is_file():
+            hedef.unlink()
+        return None
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    _csv_yaz(hedef, HAVUZ_FARKI_BASLIKLARI, farklar)
+    logger.info("Değer havuzu farkı yazıldı: %s (%s satır)", hedef, len(farklar))
+    return hedef
+
+
+def havuz_farki_csv_uret(teslim_id: int, hedef: Path, *, db: Optional[Session] = None) -> Optional[Path]:
+    """`teslim_havuz_farki` + `havuz_farki_csv_yaz`: fark yoksa None (dosya yok)."""
+    return havuz_farki_csv_yaz(teslim_havuz_farki(teslim_id, db=db), hedef)
+
+
+def havuz_farki_ozeti(farklar: Sequence[Tuple[str, str, str, str]]) -> str:
+    """Bildirim gövdesi: yön başına sayı + havuz adları."""
+    teslimde = [f for f in farklar if f[2] == YON_TESLIMDE_VAR]
+    bizde = [f for f in farklar if f[2] == YON_BIZDE_VAR]
+    havuzlar = sorted({f[0] for f in farklar})
+    return (
+        f"{len(farklar)} fark — {YON_TESLIMDE_VAR}: {len(teslimde)}, {YON_BIZDE_VAR}: {len(bizde)} "
+        f"(havuz: {', '.join(havuzlar)}). Listeye yazılmadı; rapor cevap paketinde."
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
