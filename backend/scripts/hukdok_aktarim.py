@@ -50,7 +50,8 @@ Pazarlıksız kurallar
 * `statement_timeout` koşu süresince açıkça yükseltilir (§8 madde 6): engine
   30 sn ile bağlanır, toplu yazma bunu meşru aşar.
 
-YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02)
+YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02;
+G120 eki 2026-09-04)
 -----------------------------------------------------------------------
 `KART_ALANLARI` + `KART_TURETILEN` sözlükleri tek doğruluk kaynağıdır; hepsi
 `kart_degerleri()`ndan geçer. Kabaca: sınıflandırma (`file_type`, `status`,
@@ -58,10 +59,13 @@ YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02)
 (`opening_date`, `acceptance_date`, `arsiv_tarihi`, `arabuluculuk_karar_tarihi`),
 para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, üç
 `hukmedilen_*`), dosya numaraları (`hasar_dosya_no`, `hukuk_no`), süreç
-(`dosya_son_durumu`, `bureau_type`, `arabuluculuk_no`), G044'ün tıbbi beşlisi
-ve belgeleme olayı alanları (`olay_turu`, `hukumdeki_rol` — G103 kapalı
+(`dosya_son_durumu`, `bureau_type`, `arabuluculuk_no`), G044'ün tıbbi beşlisi,
+belgeleme olayı alanları (`olay_turu`, `hukumdeki_rol` — G103 kapalı
 listelerine AD bazlı eşleme; tanınmayan değer YAZILMAZ, satır raporuna düşer;
-G104).
+G104) ve DB-2026-002'nin föy düzeyi iki sütunu (`muvekkil_tipi`, `hizmet_turu`
+— G119 kapalı listelerine aynı desenle AD bazlı eşleme; ` ; ` ile çok değer
+TANIMSIZ, yazılmaz + rapor; G120). `hizmet_turu` ile `service_type` AYRI
+alanlardır (aşağıda).
 
 Avukatlar AYRI yoldan gider: "Sorumlu Avukatlar" bir listedir, `case_lawyers`
 satırlarına YALNIZ-EKLEME ile açılır; kartın tek kutusu (`responsible_lawyer_name`)
@@ -69,7 +73,8 @@ ancak föyde TEK isim varsa yazılır. Yazım teslimin aksansız hâli değil bi
 kayıtlı yazımımızdır (`avukat_haritasi_kur`).
 
 **Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `service_type`
-(bitmask semantiği kararlaşmadı) · `Ek Alt Kırılım*` (karşı tarafın kendi
+(bitmask semantiği kararlaşmadı; DB-2026-002'nin `Hizmet Türü` sütunu bu
+kolona DEĞİL `hizmet_turu`ya gider — G119 ayrımı) · `Ek Alt Kırılım*` (karşı tarafın kendi
 uyarısı: dosya açılış etiketi, güncel değil) · `Para Birimi`/`MüvekkilNo`
 (taşınmaz). `court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
 farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
@@ -204,6 +209,12 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     # koşu davranış değiştirmez (None sözleşmesi).
     "olay_turu":                 ("Olay Türü",),
     "hukumdeki_rol":             ("Hükümdeki Rol",),
+    # --- DB-2026-002 (04.09.2026, G120): HUKDOK_TESLIM_PAKETI_2026-09-04'ten
+    # itibaren `Sheet`te föy düzeyinde gelen iki kapalı-liste sütunu. Başlık
+    # anahtarları MUVEKKILTIPI ≠ MUVEKKIL ("Müvekkil" taraf sütunu) — çapraz
+    # bağlanmaz. Başlık teslimde YOKSA alan atlanır (None sözleşmesi).
+    "muvekkil_tipi":             ("Müvekkil Tipi",),
+    "hizmet_turu":               ("Hizmet Türü",),
 }
 
 # Satırın kimliği: bu sütun yoksa dosya bu script için okunamaz.
@@ -669,6 +680,46 @@ def _hukumdeki_rol(deger: Any, alan: str) -> Optional[str]:
     return adlar[0]
 
 
+# ─── Müvekkil Tipi + Hizmet Türü (G120, DB-2026-002) ────────────────────────
+# G104 deseninin birebir kopyası: AD bazlı eşleme, kanonik adların tek kaynağı
+# G119 seed sabitleri (`seed_data.CLIENT_TYPES` / `SERVICE_TYPES`); tanınmayan
+# değer `AlanHatasi` ile satır raporuna düşer. İki alan da föy düzeyinde TEK
+# değerdir: büro bir föyde tek müvekkil tipini temsil eder, tek hizmet verir —
+# ` ; ` ile çok değer TANIMSIZ (hukumdeki_rol kuralı), KARMA benzeri
+# normalizasyon YOK. `cases.service_type` (ofis dosya numarasının hizmet bloğu)
+# AYRI bir alandır ve burada yazılmaya devam ETMEZ.
+MUVEKKIL_TIPI_ESLEMESI: Dict[str, str] = {
+    _baslik_anahtari(ad): ad for _kod, ad in seed_data.CLIENT_TYPES
+}
+HIZMET_TURU_ESLEMESI: Dict[str, str] = {
+    _baslik_anahtari(ad): ad for _kod, ad in seed_data.SERVICE_TYPES
+}
+
+
+def _tekil_kapali_liste(deger: Any, alan: str, harita: Dict[str, str]) -> Optional[str]:
+    """Tek slotlu kapalı-liste alanı: tam olarak BİR kanonik ad ya da None.
+
+    Çok değerli hücre tanımsızdır → `AlanHatasi` (yazılmaz, satır rapora
+    düşer). Mükerrer yazım tek değerdir (`_kapali_liste_parcalari`).
+    """
+    adlar = _kapali_liste_parcalari(deger, alan, harita)
+    if not adlar:
+        return None
+    if len(adlar) > 1:
+        raise AlanHatasi(f"çok değerli hücre tanımsız: {' ; '.join(adlar)}")
+    return adlar[0]
+
+
+def _muvekkil_tipi(deger: Any, alan: str) -> Optional[str]:
+    """`cases.muvekkil_tipi` — büronun bu föyde KİMİ temsil ettiği (E-8 okuma yönü)."""
+    return _tekil_kapali_liste(deger, alan, MUVEKKIL_TIPI_ESLEMESI)
+
+
+def _hizmet_turu(deger: Any, alan: str) -> Optional[str]:
+    """`cases.hizmet_turu` — takip mi rapor mu ("Lexis Rapor" dava takibi değildir)."""
+    return _tekil_kapali_liste(deger, alan, HIZMET_TURU_ESLEMESI)
+
+
 # Kart alanı → (kaynak sütun anahtarı, dönüştürücü)
 KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # --- kimlik/sınıflandırma
@@ -716,6 +767,10 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # yalnız-yazım farkı bu alanlarda oluşamaz.
     "olay_turu":            ("olay_turu", _olay_turu),
     "hukumdeki_rol":        ("hukumdeki_rol", _hukumdeki_rol),
+    # --- Müvekkil Tipi + Hizmet Türü (G120, DB-2026-002): G119 kapalı liste
+    # ADLARI; aynı sınıf (varsayılan üzerine yazma, İÇERİK modu gereksiz).
+    "muvekkil_tipi":        ("muvekkil_tipi", _muvekkil_tipi),
+    "hizmet_turu":          ("hizmet_turu", _hizmet_turu),
 }
 
 # İÇERİK farkı varsa yazılan, YAZIM farkı varsa dokunulmayan alanlar.
