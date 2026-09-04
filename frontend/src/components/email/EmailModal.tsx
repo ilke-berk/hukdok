@@ -212,7 +212,7 @@ export function EmailModal({
                 const data = await response.json();
                 generated[recipient.email] = data.body || "";
             } catch {
-                generated[recipient.email] = `Sayın ${recipient.name},\n\nBelge ektedir.\n\nSaygılarımızla,\nHukuDok Belge Arşiv Sistemi`;
+                generated[recipient.email] = `Sayın ${recipient.name},\n\nBelge ektedir.\n\nSaygılarımızla,\nHukDok Belge Arşiv Sistemi`;
             }
         });
 
@@ -241,7 +241,7 @@ export function EmailModal({
                 const data = await response.json();
                 noticeBody = data.body || "";
             } catch {
-                noticeBody = `Sayın ${clientNoticeName},\n\nDosyanıza yeni bir belge işlenmiş olup bilginize sunulmuştur.\n\nSaygılarımızla,\nHukuDok Belge Arşiv Sistemi`;
+                noticeBody = `Sayın ${clientNoticeName},\n\nDosyanıza yeni bir belge işlenmiş olup bilginize sunulmuştur.\n\nSaygılarımızla,\nHukDok Belge Arşiv Sistemi`;
             }
         })() : Promise.resolve();
 

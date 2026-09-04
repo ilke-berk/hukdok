@@ -512,7 +512,7 @@ app.include_router(export.router)
 
 @app.get("/")
 def health_check():
-    return {"status": "running", "message": "HukuDok API Active (Web Mode)"}
+    return {"status": "running", "message": "HukDok API Active (Web Mode)"}
 
 
 # Derin sağlık ucu (Faz 2-A): docker-compose healthcheck + deploy sağlık
@@ -569,7 +569,7 @@ def healthz(response: Response):
 
 
 def get_port():
-    parser = argparse.ArgumentParser(description="HukuDok Backend API")
+    parser = argparse.ArgumentParser(description="HukDok Backend API")
     parser.add_argument("--port", type=int, default=8001, help="Port to run the API on")
     args, _ = parser.parse_known_args()
     return args.port

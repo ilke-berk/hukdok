@@ -1,5 +1,5 @@
 """
-E-posta Gönderim Modülü - HukuDok
+E-posta Gönderim Modülü - HukDok
 
 Microsoft Graph API kullanarak PDF ekli e-posta gönderir.
 Gönderici: arsiv@lexisbio.onmicrosoft.com
@@ -323,7 +323,7 @@ def _generate_ai_email_body(recipient_name: str, context: dict, sender_name: str
         # Daha hızlı yanıt için Flash modelini kullan
         model_name = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash-lite")
 
-        imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
+        imza = f"{sender_name}\nHukDok Belge Arşiv Sistemi" if sender_name else "HukDok Belge Arşiv Sistemi"
         prompt = f"""
 Sen kurumsal bir hukuk bürosunda çalışan profesyonel bir asistansın.
 Aşağıdaki bilgilere göre {recipient_name} isimli avukata/muhataba gönderilmek üzere nazik ve profesyonel bir e-posta metni yaz.
@@ -333,7 +333,7 @@ Baglam:
 - Belge Türü: {context.get('belge_turu')}
 - Tarih: {context.get('tarih_str')}
 {f"- Tebliğ Tarihi: {context.get('teblig_tarihi_str')}" if context.get('teblig_tarihi_str') else ""}
-- Konu: HukuDok sistemi üzerinden otomatik arşivlenen belgenin bildirimi.
+- Konu: HukDok sistemi üzerinden otomatik arşivlenen belgenin bildirimi.
 
 Kurallar:
 1. Hitap: "Sayın {recipient_name}," şeklinde başla.
@@ -492,7 +492,7 @@ Kurallar:
 5. Kapanışta mutlaka güven veren bir cümle kullan: "Gelişmeler hususunda sizi bilgilendireceğim." (veya "...bilgilendireceğiz.").
 6. En sona kısa bir iyi dilek ekle: "İyi günler dilerim." gibi.
 7. Hukuki olarak emin olmadığın hiçbir sonuç/yorum UYDURMA; yalnızca verilen gelişmeye sadık kal.
-8. İmza bloğu, "HukuDok", "Belge Arşiv Sistemi" gibi sistem ifadeleri EKLEME. Sadece e-posta gövdesini ver (konu başlığı yazma)."""
+8. İmza bloğu, "HukDok", "Belge Arşiv Sistemi" gibi sistem ifadeleri EKLEME. Sadece e-posta gövdesini ver (konu başlığı yazma)."""
         response = _breaker_guarded_generate(client, model_name, prompt)
         if response is None:
             return None
@@ -537,7 +537,7 @@ def generate_email_preview(recipient_name: str, context: dict, sender_name: str 
         tarih_str = context.get("tarih_str", "")
         belge_turu = context.get("belge_turu", "Belge")
         extra_info = f"\nBelgenin tebliğ tarihi: {teblig_tarihi_str}\n" if teblig_tarihi_str else ""
-        imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
+        imza = f"{sender_name}\nHukDok Belge Arşiv Sistemi" if sender_name else "HukDok Belge Arşiv Sistemi"
         body = f"""Sayın {recipient_name},
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.
@@ -661,11 +661,11 @@ def send_document_notification(
         active_message = recipient_specific_message or custom_message
 
         if active_message:
-            # "HukuDok Belge Arşiv Sistemi" imzasının önüne sender_name ekle
-            if sender_name and sender_name not in active_message and "HukuDok Belge Arşiv Sistemi" in active_message:
+            # "HukDok Belge Arşiv Sistemi" imzasının önüne sender_name ekle
+            if sender_name and sender_name not in active_message and "HukDok Belge Arşiv Sistemi" in active_message:
                 body = active_message.replace(
-                    "HukuDok Belge Arşiv Sistemi",
-                    f"{sender_name}\nHukuDok Belge Arşiv Sistemi"
+                    "HukDok Belge Arşiv Sistemi",
+                    f"{sender_name}\nHukDok Belge Arşiv Sistemi"
                 )
             else:
                 body = active_message
@@ -681,7 +681,7 @@ def send_document_notification(
             if context.get("teblig_tarihi_str"):
                 extra_info = f"\nBelgenin tebliğ tarihi: {context.get('teblig_tarihi_str')}\n"
 
-            imza = f"{sender_name}\nHukuDok Belge Arşiv Sistemi" if sender_name else "HukuDok Belge Arşiv Sistemi"
+            imza = f"{sender_name}\nHukDok Belge Arşiv Sistemi" if sender_name else "HukDok Belge Arşiv Sistemi"
             body = f"""Sayın {recipient_name},
 
 {muvekkil_text} {tarih_str} tarihli {belge_turu} belgesi ektedir.

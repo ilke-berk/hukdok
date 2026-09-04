@@ -230,7 +230,7 @@ def send_unmailed_summary(doc_ids: list[int], report_date: date, user_email: str
             f"{date_str} tarihinde aşağıdaki belgeler e-posta gönderilmeden arşivlendi:\n\n"
             + "\n".join(lines)
             + "\n\nBu belgeler için gerekli e-posta bildirimini ilgili dava sayfasından yapabilirsiniz.\n\n"
-            "Saygılarımızla,\nHukuDok Belge Arşiv Sistemi"
+            "Saygılarımızla,\nHukDok Belge Arşiv Sistemi"
         )
 
         sender = config["sender"]
@@ -244,7 +244,7 @@ def send_unmailed_summary(doc_ids: list[int], report_date: date, user_email: str
         token = get_graph_token()
         payload = {
             "message": {
-                "subject": f"[HukuDok] Mailsiz Arşiv Özeti — {date_str}",
+                "subject": f"[HukDok] Mailsiz Arşiv Özeti — {date_str}",
                 "body": {"contentType": "Text", "content": body},
                 "toRecipients": [{"emailAddress": {"address": user_email}}],
             },
