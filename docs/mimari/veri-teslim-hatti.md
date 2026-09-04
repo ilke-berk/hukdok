@@ -274,8 +274,9 @@ listesi eşlemesi (`HAVUZ_LISTE_ESLEMESI`, `:115-123`: İddia Edilen Kusur, İst
 Durumu, Yargıtay/Temyiz Onama Durumu, Yerel Mahkeme Karar Durumu, Olay Türü, Hükümdeki Rol).
 Başlık satırı ilk 10 satırda aranır (gerçek paket 3. satırda taşır, `:132-135`); uzun biçim
 ("Havuz / Sütun" + "Değer") önce, yoksa geniş biçim (`:307-330`). Yalnız **rapor + bildirim**:
-referans listesine yazma **yok** — tahmin yasağı, `alleged_faults` seed'lenmez kararı
-(`:19-24`, `:294`).
+referans listesine yazma **yok** — tahmin yasağı (`:19-24`, `:294`). `alleged_faults`
+04.09.2026'ya kadar bu yasak gereği boştu; dokuz değer veri ekibinin DB-2026-001 yazılı
+bildirimiyle geldi ve `seed_data.ALLEGED_FAULTS` ile seed'lendi (paketten değil, bildirimden).
 
 **`Silinen_Föyler` / `Kapsam_Dışı` (G113, `scripts/hukdok_aktarim.py:1924-1934`, `:1973`).**
 Föy **silinmez**, `case_foys.kapsam_durumu` (`SILINDI` | `KAPSAM_DISI`) + `kapsam_gerekcesi` +

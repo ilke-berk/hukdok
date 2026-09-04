@@ -284,7 +284,8 @@ yazılmaz.
   Tıbbi + Belgeleme) ve `judgment_roles` (Hükümdeki Roller, seed'li 4 değer:
   Tek Gerekçe · Yan Gerekçe · Yalnız Saptama · Reddedilmiş İddia) —
   `backend/models.py::EventType/JudgmentRole`, `seed_data.EVENT_TYPES/JUDGMENT_ROLES`.
-  `alleged_faults`un aksine SEED'LİDİR: değerler karşı taraf teyidi beklemiyor. KARMA
+  SEED'LİDİR: değerler karşı taraf teyidi beklemiyor (`alleged_faults` da 04.09.2026'dan
+  beri seed'li: 9 değer DB-2026-001 bildirimiyle geldi, `seed_data.ALLEGED_FAULTS`). KARMA
   bilinçli: kart alanı tek slot, ölçümün "yan gerekçe" sınıfında iki tür birlikte
   görülüyor — karma durum açık değerle taşınır, tahminle tekilleştirilmez.
 - **Hükümdeki Rol'ün anlamı:** belgeleme olgusunun **güncel kademedeki** hükümde

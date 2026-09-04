@@ -180,11 +180,12 @@ def test_seed_yarissiz_ekleme_kullaniyor():
         assert "_seed_karar_listesi" in fn.__code__.co_names
 
 
-def test_alleged_faults_hala_seedlenmiyor():
-    """Korunum: G044 kararı (uydurma 7 kusur değeri yazılmaz) bu görevle
-    DEĞİŞMEDİ — seed'li olan yalnız iki yeni listedir."""
-    assert not hasattr(seed_data, "ALLEGED_FAULTS")
-    assert "AllegedFault" not in seed_data.seed_all_lists.__code__.co_names
+def test_alleged_faults_ayni_seed_yolundan_geciyor():
+    """G044 "uydurma değer yazılmaz" kararı korunuyor: liste ancak değerler
+    yazılı gelince (DB-2026-001, 04.09.2026) doldu ve iki yeni listeyle aynı
+    jenerik seed yolunu kullanıyor (ayrıntı test_g044)."""
+    assert len(seed_data.ALLEGED_FAULTS) == 9
+    assert "_seed_karar_listesi" in seed_data._seed_alleged_faults.__code__.co_names
 
 
 # ═══════════════════════════════════════════════════════════════════════════

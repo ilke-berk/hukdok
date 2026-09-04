@@ -657,9 +657,9 @@ class AllegedFault(Base):
 
     `cases.iddia_edilen_kusur` bu listenin ADINI denormalize taşır; diğer 13
     liste ile aynı mekanizma (LIST_REGISTRY + DEPENDENCIES), yeni bir yol yok.
-    Karşı tarafın cevabı listeyi "hiçbir branşta değişmeyen 7 değer" olarak
-    tanımlıyor ama DEĞERLERİ paket içinde gelmedi → seed BİLİNÇLİ olarak boş;
-    7 değer geldiğinde yönetim panelinden/seed'den doldurulur (bkz. seed_data).
+    Değerler 04.09.2026'ya kadar hiçbir pakette gelmediği için seed BİLİNÇLİ
+    boştu; veri ekibinin DB-2026-001 bildirimiyle 9 değer (eski 7 + 2 yeni)
+    yazılı geldi ve seed'lendi (`seed_data.ALLEGED_FAULTS`).
     """
     __tablename__ = "alleged_faults"
 

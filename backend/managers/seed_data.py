@@ -103,7 +103,9 @@ def seed_all_lists():
     _seed_client_categories()
     _seed_file_statuses()
     _seed_appealing_parties()
-    # `alleged_faults` BİLİNÇLİ olarak seed'lenmez — bkz. APPEALING_PARTIES yorumu.
+    # `alleged_faults` 04.09.2026'ya kadar BİLİNÇLİ boştu; dokuz değer veri
+    # ekibinin DB-2026-001 bildirimiyle geldi — bkz. ALLEGED_FAULTS yorumu.
+    _seed_alleged_faults()
     # Karar sonucu resmi listeleri (G060) — değerler DEGER_HAVUZLARI'ndan birebir.
     _seed_local_decisions()
     _seed_appeal_decisions()
@@ -353,12 +355,11 @@ def _seed_file_statuses():
 # İstinaf Başvuran Taraf — KAPALI liste, üç değer (FAZ F şartnamesi §1.1, S5:
 # "temyizle simetri"). Değerler şartnamede AYNEN yazılı olduğu için seed'lenir.
 #
-# İkiz listesi `alleged_faults` (İddia Edilen Kusur) BİLİNÇLİ olarak BOŞ doğar:
-# şartname onu "hiçbir branşta değişmeyen KAPALI 7 değerli liste" diye tanımlıyor
-# ama yedi değerin KENDİSİ teslim paketinde YOK. Uydurulmuş yedi kusur adı,
-# aktarımda gerçek değerlerle çakışıp mükerrer/yanlış eşleşme üretirdi — boş liste
-# görünür bir eksiktir, uydurma veri görünmez bir hatadır. Değerler geldiğinde
-# buraya bir _seed_alleged_faults() eklenir ya da yönetim panelinden girilir.
+# İkiz listesi `alleged_faults` (İddia Edilen Kusur) 04.09.2026'ya kadar BİLİNÇLİ
+# BOŞ doğdu: şartname onu "KAPALI 7 değerli liste" diye tanımlıyordu ama değerlerin
+# KENDİSİ hiçbir pakette gelmemişti; uydurma ad aktarımda gerçek değerle çakışırdı.
+# Değerler veri ekibinin DB-2026-001 bildirimiyle (04.09.2026) yazılı geldi:
+# eski 7 + 2 yeni = 9, bkz. ALLEGED_FAULTS.
 APPEALING_PARTIES = [
     ("DAVACI", "Davacı"),
     ("DAVALI", "Davalı"),
@@ -460,8 +461,9 @@ def _seed_karar_listesi(model, degerler, liste_adi: str):
 
 # Belgeleme olayı KAPALI listeleri (G103) — kaynak: veri ekibinin 25.08 ölçümü
 # (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25) + 02.09 kullanıcı kararı.
-# `alleged_faults`un aksine SEED'LİDİR: değerler karşı taraf teyidi beklemiyor,
-# bizde sabitlendi. Kod ASCII ve DEĞİŞMEZ kimliktir (APPEALING_PARTIES deseni);
+# SEED'LİDİR: değerler karşı taraf teyidi beklemiyor, bizde sabitlendi
+# (alleged_faults 04.09.2026'ya kadar bu yüzden boştu). Kod ASCII ve DEĞİŞMEZ
+# kimliktir (APPEALING_PARTIES deseni);
 # ad panelden düzeltilse de kod sabit kalır. KARMA bilinçli: kart alanı tek
 # slot, ölçümün "yan gerekçe" sınıfında iki tür birlikte görülüyor — karma
 # durum açık değerle taşınır, tahminle tekilleştirilmez.
@@ -480,6 +482,31 @@ JUDGMENT_ROLES = [
     ("YALNIZ-SAPTAMA", "Yalnız Saptama"),
     ("REDDEDILMIS-IDDIA", "Reddedilmiş İddia"),
 ]
+
+
+# İddia Edilen Kusur KAPALI listesi — kaynak: veri ekibinin Format Değişiklik
+# Bildirimi DB-2026-001 (04.09.2026, REV-2): eski yedi değer + iki yeni değer
+# ("Uzmanlık Dışı Girişim", "İddia Belgeden Belirlenemiyor"). Sıra bildirimdeki
+# sıradır. Kod ASCII ve DEĞİŞMEZ kimliktir (APPEALING_PARTIES deseni); ad
+# panelden düzeltilse de kod sabit kalır. Aktarım (`hukdok_aktarim`) bu alanı
+# METİN olarak yazar, liste dropdown + DEGER_HAVUZLARI fark raporunu besler.
+# "İddia Belgeden Belirlenemiyor" ≠ boş: belge okundu, iddia katmanı yok;
+# belge okunmadıysa hücre boş kalır (NULL ≠ 0 kuralı, bildirim metni).
+ALLEGED_FAULTS = [
+    ("UYGULAMA-HATASI", "Uygulama Hatası"),
+    ("KOMPLIKASYON-YONETIMI", "Komplikasyon Yönetimi"),
+    ("AYDINLATMA", "Aydınlatma"),
+    ("TANI-HATASI", "Tanı Hatası"),
+    ("ORGANIZASYON-HATASI", "Organizasyon Hatası"),
+    ("TAKIP-EKSIKLIGI", "Takip Eksikliği"),
+    ("ENDIKASYON-HATASI", "Endikasyon Hatası"),
+    ("UZMANLIK-DISI-GIRISIM", "Uzmanlık Dışı Girişim"),
+    ("IDDIA-BELGEDEN-BELIRLENEMIYOR", "İddia Belgeden Belirlenemiyor"),
+]
+
+
+def _seed_alleged_faults():
+    _seed_karar_listesi(models.AllegedFault, ALLEGED_FAULTS, "alleged_faults")
 
 
 def _seed_event_types():

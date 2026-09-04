@@ -258,16 +258,27 @@ def test_istinaf_basvuran_taraf_uc_degerle_seedleniyor():
     assert "_seed_appealing_parties" in seed_all_lists.__code__.co_names
 
 
-def test_iddia_edilen_kusur_uydurma_degerle_doldurulmadi():
-    """7 değerin KENDİSİ teslim paketinde yok → liste boş doğar (bilinçli).
-
-    Uydurulmuş kusur adları aktarımda gerçek değerlerle çakışırdı; boş liste
-    görünür bir eksiktir, uydurma veri görünmez bir hatadır.
+def test_iddia_edilen_kusur_bildirimdeki_dokuz_degerle_seedleniyor():
+    """Liste 04.09.2026'ya kadar bilinçli boştu (uydurma değer yazılmaz);
+    değerler veri ekibinin DB-2026-001 bildirimiyle yazılı geldi: eski 7 + 2
+    yeni, bildirimdeki sırayla. Kodlar ASCII ve tekil (APPEALING_PARTIES deseni).
     """
+    import re
+
     import managers.seed_data as seed_data
 
-    assert not hasattr(seed_data, "ALLEGED_FAULTS")
-    assert "AllegedFault" not in seed_data.seed_all_lists.__code__.co_names
+    beklenen = [
+        "Uygulama Hatası", "Komplikasyon Yönetimi", "Aydınlatma", "Tanı Hatası",
+        "Organizasyon Hatası", "Takip Eksikliği", "Endikasyon Hatası",
+        "Uzmanlık Dışı Girişim", "İddia Belgeden Belirlenemiyor",
+    ]
+    assert [name for _, name in seed_data.ALLEGED_FAULTS] == beklenen
+    kodlar = [code for code, _ in seed_data.ALLEGED_FAULTS]
+    assert len(set(kodlar)) == 9
+    for code in kodlar:
+        assert re.fullmatch(r"[A-Z0-9-]+", code), f"ASCII dışı kod {code!r}"
+    assert "_seed_alleged_faults" in seed_data.seed_all_lists.__code__.co_names
+    assert "_seed_karar_listesi" in seed_data._seed_alleged_faults.__code__.co_names
 
 
 def test_kapali_liste_endpointleri_kayitli():

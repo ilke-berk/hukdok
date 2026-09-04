@@ -21,7 +21,8 @@ Cevap klasörünün içeriği:
   + `bizde var / teslimde yok`; `HAVUZ_FARKI_BASLIKLARI`). Fark YOKSA dosya üretilmez (varsa
   bayat kopya silinir). Üretim `teslim_kutusu` kuru koşu/uygulama adımındadır
   (`havuz_farki_csv_uret`, G112); fark varsa admin bildirimi de oradan düşer. Referans
-  listesine YAZMA YOK — tahmin yasağı, `alleged_faults` seed'lenmez kararı korunur.
+  listesine YAZMA YOK — tahmin yasağı (liste yalnız yazılı bildirimle dolar; `alleged_faults`
+  bu yolla 04.09.2026'da DB-2026-001 ile seed'lendi, paketten değil).
 * rapor dizinindeki diğer CSV/TXT'ler (`satir-raporu_*.csv`, `kardes-foy-celiskileri_*.csv`,
   `kuru-kosu-ozeti.txt`, `uygulama-ozeti.txt`) kendi adlarıyla.
 
