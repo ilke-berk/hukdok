@@ -955,6 +955,26 @@ _MIGRATIONS = [
     ("columns", "aktarim_teslimleri", {
         "yapi": "JSON",
     }),
+
+    # ─── 42. MÜVEKKİL TİPİ + HİZMET TÜRÜ (G119) ───────────────────────────────
+    #
+    # Veri ekibinin Format Değişiklik Bildirimi DB-2026-002 (04.09.2026): ilk
+    # teslim paketinden itibaren `Sheet` sayfasında föy düzeyinde iki yeni
+    # sütun, 8.409 föyün tamamında dolu. Müvekkil Tipi = büronun bu föyde kimi
+    # temsil ettiği (E-8 okuma yönü); Hizmet Türü = takip mi rapor mu ("Lexis
+    # Rapor" 2.218 föy dava takibi değil). Bugüne kadar sessizce yok
+    # sayılıyordu.
+    #
+    # Madde 38'in birebir kopyası: iki KAPALI liste TABLOSU (client_types /
+    # service_types) modelde tanımlı → create_all yaratır, tablo op'u gerekmez
+    # (unique code model tanımında). Kolonlar NULL + DEFAULT'suz: NULL =
+    # "bilinmiyor", backfill YOK (aktarım eşlemesi G120'nin işi). Index
+    # BİLİNÇLİ yok: alanlar sıfır dolulukla doğuyor, tek müşteri (hizmet_turu
+    # liste filtresi) eşitlik sorgusu — ölçülmeden index eklenmez (G042).
+    ("columns", "cases", {
+        "muvekkil_tipi": "VARCHAR(100)",   # kapalı liste (client_types)
+        "hizmet_turu":   "VARCHAR(100)",   # kapalı liste (service_types)
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

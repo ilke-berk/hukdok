@@ -144,6 +144,18 @@ class Case(Base):
     # deseni). NULL = "karar okunmadı" — meşru durumdur, backfill YOK.
     olay_turu = Column(String(100), nullable=True)      # KAPALI liste (event_types)
     hukumdeki_rol = Column(String(100), nullable=True)  # KAPALI liste (judgment_roles)
+    # Müvekkil Tipi + Hizmet Türü (G119) — veri ekibinin Format Değişiklik
+    # Bildirimi DB-2026-002 (04.09.2026): `Sheet` sayfasına föy düzeyinde iki
+    # yeni sütun, 8.409 föyün tamamında dolu. Müvekkil Tipi = büronun bu föyde
+    # KİMİ temsil ettiği (E-8: karar durumu/tutarlar müvekkil yönünden okunur);
+    # Hizmet Türü = takip mi rapor mu ("Lexis Rapor" 2.218 föy dava takibi
+    # değil). İki KAPALI liste (client_types / service_types), ad denormalize
+    # (olay_turu deseni). NULL = "bilinmiyor", backfill YOK. Mevcut
+    # `service_type` (ofis dosya no'nun 5 haneli hizmet bloğu) ile İLGİSİZ;
+    # `client_categories`/`bureau_types` de KULLANILMAZ (başka varlık/sütunun
+    # listeleri, değer havuzları örtüşmüyor — G119 tasarım kararı).
+    muvekkil_tipi = Column(String(100), nullable=True)  # KAPALI liste (client_types)
+    hizmet_turu = Column(String(100), nullable=True)    # KAPALI liste (service_types)
 
     # ─── EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────────
     # TÜRETİLMİŞ kolon: NULL = eksik yok, aksi hâlde kaydın kovası
@@ -792,6 +804,48 @@ class JudgmentRole(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)   # e.g. "YAN-GEREKCE"
     name = Column(String, nullable=False)                            # e.g. "Yan Gerekçe"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+# Müvekkil Tipi / Hizmet Türü KAPALI listeleri (G119) — kaynak: veri ekibinin
+# Format Değişiklik Bildirimi DB-2026-002 (04.09.2026). EventType deseninin
+# birebir kopyası; ad `cases.muvekkil_tipi` / `cases.hizmet_turu` kolonunda
+# denormalize taşınır (DEPENDENCIES). SEED'LİDİR: değerler bildirimde yazılı
+# geldi (seed_data.CLIENT_TYPES / SERVICE_TYPES). Mevcut client_categories
+# (müvekkil varlığının kategorisi) ve bureau_types (Büro Özel Türü sütunu)
+# BİLİNÇLİ kullanılmadı: başka varlık/sütunun listeleri, havuzlar örtüşmüyor.
+
+class ClientType(Base):
+    """Müvekkil Tipi — kapalı liste (5 değer, seed'li).
+
+    Büronun bu föyde KİMİ temsil ettiği; kaydın hangi yönden okunacağını
+    belirler (E-8: karar durumu ve tutarlar müvekkil yönünden yazılır).
+    Föy düzeyi bir alandır — müvekkil düzeyindeki `Client.category` değil.
+    """
+    __tablename__ = "client_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "SIGORTA"
+    name = Column(String, nullable=False)                            # e.g. "Sigorta"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class ServiceType(Base):
+    """Hizmet Türü — kapalı liste (9 değer, seed'li).
+
+    Büronun verdiği hizmetin türü; dosyanın takip mi rapor mu olduğunu ayırır
+    ("Lexis Rapor" föyleri dava takibi değildir — ayrım yapılmazsa dava
+    sonucu istatistikleri yanlış çıkar). `cases.hizmet_turu` adı taşır.
+    """
+    __tablename__ = "service_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # e.g. "LEXIS-RAPOR"
+    name = Column(String, nullable=False)                            # e.g. "Lexis Rapor"
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())

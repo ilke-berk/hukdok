@@ -40,6 +40,8 @@ from managers.reference_lists import (
     get_revision_decisions, add_revision_decision, delete_revision_decision,
     get_event_types, add_event_type, delete_event_type,
     get_judgment_roles, add_judgment_role, delete_judgment_role,
+    get_client_types, add_client_type, delete_client_type,
+    get_service_types, add_service_type, delete_service_type,
     reorder_list, rename_item, update_item, delete_item, get_usage,
     resolve_list_type, LIST_REGISTRY,
 )
@@ -740,6 +742,63 @@ def api_delete_judgment_role(code: str, user: dict = Depends(require_admin)):
     success = delete_judgment_role(code)
     if not success:
         raise HTTPException(status_code=404, detail="Judgment role not found")
+    return {"status": "success"}
+
+
+# ─── MÜVEKKİL TİPİ / HİZMET TÜRÜ LİSTELERİ (G119) ───────────────────────────
+#
+# Dava kartındaki `muvekkil_tipi` ve `hizmet_turu` alanları serbest metin
+# DEĞİL bu listelerden seçilir (veri ekibinin DB-2026-002 bildirimi,
+# 04.09.2026); event_types kalıbının birebir kopyası. `client_categories` ve
+# `bureau_types` uçlarıyla KARIŞTIRILMAZ — ayrı varlık/sütun listeleri.
+
+@router.get("/api/config/client_types")
+def api_get_client_types(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_client_types()
+    if not data:
+        data = get_client_types()
+    return data
+
+
+@router.post("/api/config/client_types")
+def api_add_client_type(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_client_type(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add client type")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/client_types/{code}")
+def api_delete_client_type(code: str, user: dict = Depends(require_admin)):
+    success = delete_client_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Client type not found")
+    return {"status": "success"}
+
+
+@router.get("/api/config/service_types")
+def api_get_service_types(user: dict = Depends(get_current_user)):
+    config = DynamicConfig.get_instance()
+    data = config.get_service_types()
+    if not data:
+        data = get_service_types()
+    return data
+
+
+@router.post("/api/config/service_types")
+def api_add_service_type(item: ConfigItem, user: dict = Depends(require_admin)):
+    success = add_service_type(item.code, item.name)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add service type")
+    return {"status": "success"}
+
+
+@router.delete("/api/config/service_types/{code}")
+def api_delete_service_type(code: str, user: dict = Depends(require_admin)):
+    success = delete_service_type(code)
+    if not success:
+        raise HTTPException(status_code=404, detail="Service type not found")
     return {"status": "success"}
 
 

@@ -116,6 +116,10 @@ def seed_all_lists():
     # kararı ile bizde sabitlendi.
     _seed_event_types()
     _seed_judgment_roles()
+    # Müvekkil Tipi / Hizmet Türü (G119) — DB-2026-002 (04.09.2026) bildirimiyle
+    # yazılı geldi, seed'li.
+    _seed_client_types()
+    _seed_service_types()
 
 
 def _seed_file_types():
@@ -507,6 +511,46 @@ ALLEGED_FAULTS = [
 
 def _seed_alleged_faults():
     _seed_karar_listesi(models.AllegedFault, ALLEGED_FAULTS, "alleged_faults")
+
+
+# Müvekkil Tipi + Hizmet Türü KAPALI listeleri (G119) — kaynak: veri ekibinin
+# Format Değişiklik Bildirimi DB-2026-002 (04.09.2026). Sıra bildirimdeki
+# sıradır. Kod ASCII ve DEĞİŞMEZ kimliktir (APPEALING_PARTIES deseni); ad
+# panelden düzeltilse de kod sabit kalır. Mevcut `client_categories` /
+# `bureau_types` listeleri KULLANILMAZ ve DEĞİŞMEZ (başka varlık/sütunun
+# listeleri; eşleme köprüsü gündüz kararı). Aktarım eşlemesi G120'nin işi.
+#
+# Müvekkil Tipi: büronun bu föyde KİMİ temsil ettiği — kaydın okuma yönünü
+# belirler (E-8: karar durumu ve tutarlar müvekkil yönünden yazılır).
+CLIENT_TYPES = [
+    ("SIGORTA", "Sigorta"),
+    ("DOKTOR", "Doktor"),
+    ("KURUM", "Kurum"),
+    ("HASTA", "Hasta"),
+    ("DIGER-SAGLIK-CALISANI", "Diğer Sağlık Çalışanı"),
+]
+
+# Hizmet Türü: takip mi rapor mu — "Lexis Rapor" föyleri dava takibi değildir,
+# ayrım yapılmazsa dava sonucu istatistikleri yanlış çıkar.
+SERVICE_TYPES = [
+    ("TAKIP-DOKTOR-MUVEKKIL", "Takip (doktor müvekkil)"),
+    ("LEXIS-RAPOR", "Lexis Rapor"),
+    ("VEKALETSIZ-TAKIP", "Vekaletsiz Takip"),
+    ("VEKALETLI-TAKIP", "Vekaletli Takip"),
+    ("VEKALET-UCRETI-ALACAGI", "Vekalet Ücreti Alacağı"),
+    ("TAKIP-HASTA-VEKILLIGI", "Takip (hasta vekilliği)"),
+    ("TAKIP-KURUM-VEKILLIGI", "Takip (kurum vekilliği)"),
+    ("DANISMANLIK", "Danışmanlık"),
+    ("TAKIP-SAGLIK-PERSONELI", "Takip (sağlık personeli)"),
+]
+
+
+def _seed_client_types():
+    _seed_karar_listesi(models.ClientType, CLIENT_TYPES, "client_types")
+
+
+def _seed_service_types():
+    _seed_karar_listesi(models.ServiceType, SERVICE_TYPES, "service_types")
 
 
 def _seed_event_types():

@@ -494,6 +494,11 @@ def get_case(case_id: int, tenant_id: str = None):
             # judgment_roles); NULL = "karar okunmadı", meşru durum.
             "olay_turu": item.olay_turu,
             "hukumdeki_rol": item.hukumdeki_rol,
+            # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
+            # service_types); NULL = "bilinmiyor". `service_type` (ofis no bloğu,
+            # hemen aşağıda) ile İLGİSİZ.
+            "muvekkil_tipi": item.muvekkil_tipi,
+            "hizmet_turu": item.hizmet_turu,
         }
         result["service_type"] = item.service_type
         result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
@@ -736,6 +741,7 @@ def get_cases(
     missing_required: bool = False,
     missing_bucket: str = None,
     olay_turu: str = None,
+    hizmet_turu: str = None,
     with_total: bool = True,
 ) -> "tuple[list[dict], int]":
     """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür.
@@ -756,6 +762,10 @@ def get_cases(
 
     `olay_turu` (G103): belgeleme olayı filtresi — `file_type` kalıbıyla
     eşitlik (değer listenin ADIDIR, ör. "Belgeleme Olayı"; "ALL" = filtre yok).
+
+    `hizmet_turu` (G119): hizmet türü filtresi — aynı kalıp (değer listenin
+    ADIDIR, ör. "Lexis Rapor"). Müvekkil Tipi için filtre BİLİNÇLİ yok
+    (sözleşme).
     """
     try:
         db = SessionLocal()
@@ -774,6 +784,10 @@ def get_cases(
         # Belgeleme olayı filtresi (G103) — file_type kalıbıyla eşitlik
         if olay_turu and olay_turu != "ALL":
             query = query.filter(models.Case.olay_turu == olay_turu)
+
+        # Hizmet türü filtresi (G119) — aynı kalıp
+        if hizmet_turu and hizmet_turu != "ALL":
+            query = query.filter(models.Case.hizmet_turu == hizmet_turu)
 
         if missing_required:
             # E6: sıcak yolda tek kolon okunur; kural + hesap yazma yolunda
@@ -1667,6 +1681,9 @@ TRACKING_FIELDS = [
     # (G066 davranış eşi). Hükümdeki rol karar bağlamlı olduğu için yazma yolu
     # takip paneli seçildi; hiçbir bağlamda zorunlu değiller.
     "olay_turu", "hukumdeki_rol",
+    # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
+    # service_types), aynı kapıdan geçerler; hiçbir bağlamda zorunlu değiller.
+    "muvekkil_tipi", "hizmet_turu",
 ]
 
 
@@ -1688,6 +1705,9 @@ def tracking_changes(data: dict) -> list:
 _EVENT_LIST_COLUMNS: Dict[str, Tuple[Any, str]] = {   # değer: (liste modeli, liste adı)
     "olay_turu": (models.EventType, "event_types"),
     "hukumdeki_rol": (models.JudgmentRole, "judgment_roles"),
+    # Müvekkil Tipi / Hizmet Türü (G119, DB-2026-002) — aynı kapı, aynı davranış.
+    "muvekkil_tipi": (models.ClientType, "client_types"),
+    "hizmet_turu": (models.ServiceType, "service_types"),
 }
 
 

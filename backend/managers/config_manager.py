@@ -84,6 +84,9 @@ class DynamicConfig:
         # Belgeleme olayı listeleri (G103)
         self.__event_types: List[Dict] = []
         self.__judgment_roles: List[Dict] = []
+        # Müvekkil Tipi / Hizmet Türü listeleri (G119)
+        self.__client_types: List[Dict] = []
+        self.__service_types: List[Dict] = []
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -319,4 +322,21 @@ class DynamicConfig:
         with self._lock:
             self.__judgment_roles = items
             TechnicalLogger.log("INFO", f"DynamicConfig: Judgment Roles updated ({len(items)} items)")
+
+    # Müvekkil Tipi / Hizmet Türü listeleri (G119) — aynı getattr sözleşmesi.
+    def get_client_types(self) -> List[Dict]:
+        return self.__client_types
+
+    def set_client_types(self, items: List[Dict]):
+        with self._lock:
+            self.__client_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Client Types updated ({len(items)} items)")
+
+    def get_service_types(self) -> List[Dict]:
+        return self.__service_types
+
+    def set_service_types(self, items: List[Dict]):
+        with self._lock:
+            self.__service_types = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: Service Types updated ({len(items)} items)")
 

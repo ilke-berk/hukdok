@@ -104,6 +104,10 @@ LIST_REGISTRY = {
     # mekanizma yine aynı.
     "event_types":    ListSpec(models.EventType, ("code", "name"), "set_event_types"),
     "judgment_roles": ListSpec(models.JudgmentRole, ("code", "name"), "set_judgment_roles"),
+    # Müvekkil Tipi / Hizmet Türü (G119) — DB-2026-002 (04.09.2026); mekanizma
+    # yine aynı. client_categories/bureau_types ile KARIŞTIRILMAZ (ayrı listeler).
+    "client_types":   ListSpec(models.ClientType, ("code", "name"), "set_client_types"),
+    "service_types":  ListSpec(models.ServiceType, ("code", "name"), "set_service_types"),
 }
 
 # refresh_cache("email_recipients") gibi eski çağrılar için takma adlar
@@ -163,7 +167,10 @@ DEPENDENCIES = {
     # Belgeleme olayı listeleri (G103): ad, `cases`in ilgili kolonunda denormalize.
     "event_types":    [DepSpec(models.Case, "olay_turu", "dava")],
     "judgment_roles": [DepSpec(models.Case, "hukumdeki_rol", "dava")],
-    "doctypes":          [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
+    # Müvekkil Tipi / Hizmet Türü (G119): ad, `cases`in ilgili kolonunda denormalize.
+    "client_types":   [DepSpec(models.Case, "muvekkil_tipi", "dava")],
+    "service_types":  [DepSpec(models.Case, "hizmet_turu", "dava")],
+    "doctypes":        [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
     "party_roles":       [DepSpec(models.CaseParty, "role", "dava tarafı", clearable=False)],
     "cities":            [DepSpec(models.Client, "il", "müvekkil"),
                           DepSpec(models.Lawyer, "city", "avukat")],
@@ -196,6 +203,7 @@ LIST_TITLES = {
     "local_decisions": "Yerel Karar Durumları", "appeal_decisions": "İstinaf Karar Durumları",
     "cassation_decisions": "Temyiz Onama Durumları", "revision_decisions": "Karar Düzeltme Durumları",
     "event_types": "Olay Türleri", "judgment_roles": "Hükümdeki Roller",
+    "client_types": "Müvekkil Tipleri", "service_types": "Hizmet Türleri",
 }
 
 COLUMN_TITLES = {
@@ -583,6 +591,8 @@ def get_cassation_decisions():  return get_items("cassation_decisions")
 def get_revision_decisions():   return get_items("revision_decisions")
 def get_event_types():          return get_items("event_types")
 def get_judgment_roles():       return get_items("judgment_roles")
+def get_client_types():         return get_items("client_types")
+def get_service_types():        return get_items("service_types")
 
 
 def get_court_types(parent_code: str = None):
@@ -627,6 +637,8 @@ def add_cassation_decision(code: str, name: str):  return add_item("cassation_de
 def add_revision_decision(code: str, name: str):   return add_item("revision_decisions", code=code, name=name)
 def add_event_type(code: str, name: str):          return add_item("event_types", code=code, name=name)
 def add_judgment_role(code: str, name: str):       return add_item("judgment_roles", code=code, name=name)
+def add_client_type(code: str, name: str):         return add_item("client_types", code=code, name=name)
+def add_service_type(code: str, name: str):        return add_item("service_types", code=code, name=name)
 
 
 def add_court_type(code: str, name: str, parent_code: str):
@@ -697,3 +709,5 @@ def delete_cassation_decision(code: str):  return delete_item("cassation_decisio
 def delete_revision_decision(code: str):   return delete_item("revision_decisions", code)
 def delete_event_type(code: str):          return delete_item("event_types", code)
 def delete_judgment_role(code: str):       return delete_item("judgment_roles", code)
+def delete_client_type(code: str):         return delete_item("client_types", code)
+def delete_service_type(code: str):        return delete_item("service_types", code)

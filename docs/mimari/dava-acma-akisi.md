@@ -306,3 +306,48 @@ yazılmaz.
 UI (kart alanları, rozet, liste filtresi dropdown'ı) G105'in işidir; testler
 `backend/tests/test_g103_belgeleme_olayi.py` (şema kilitleri + sqlite seed/kapı/filtre
 davranışı + route 400/403 + gerçek Postgres'te migrasyon yolu).
+
+## 12. Müvekkil Tipi + Hizmet Türü — `muvekkil_tipi` + `hizmet_turu` (G119)
+
+Veri ekibinin Format Değişiklik Bildirimi **DB-2026-002** (04.09.2026): ilk teslim
+paketinden itibaren `Sheet` sayfasında föy düzeyinde iki yeni sütun geliyor, 8.409 föyün
+tamamında dolu. **Müvekkil Tipi** büronun bu föyde kimi temsil ettiğidir — kaydın hangi
+yönden okunacağını belirler (E-8: karar durumu ve tutarlar müvekkil yönünden yazılır).
+**Hizmet Türü** büronun verdiği hizmetin türüdür — "Lexis Rapor" föyleri dava takibi
+değil rapor işidir; ayrım yapılmazsa dava sonucu istatistikleri yanlış çıkar. Bu turdan
+önce iki sütun sessizce yok sayılıyordu.
+
+- **Tasarım kararı (04.09):** mevcut `client_categories` (müvekkil VARLIĞININ kategorisi,
+  `Client.category`) ve `bureau_types` ("Büro Özel Türü" — ayrı bir teslim sütunu,
+  `cases.bureau_type`) **kullanılmadı ve değişmedi**: ikisi de başka varlık/sütunun
+  listesi, değer havuzları örtüşmüyor (Hizmet Türü 9 ≠ bureau_types 8; Müvekkil Tipi föy
+  düzeyi, `Client.category` müvekkil düzeyi). İki YENİ liste açıldı; Müvekkil Tipi ↔
+  `Client.category` köprüsü gündüz kararıdır. Mevcut `cases.service_type` (ofis dosya
+  numarasının 5 haneli hizmet bloğu, `required_fields.py`'de "Hizmet Türü" etiketli) de
+  AYRI bir alandır — yeni `hizmet_turu` onunla karıştırılmaz.
+- **İki kolon:** `cases.muvekkil_tipi` ve `cases.hizmet_turu`, VARCHAR(100) NULL +
+  DEFAULT'suz (`backend/database.py` madde 42, madde 38'in kopyası). **NULL =
+  "bilinmiyor"**, backfill YOK (aktarım eşlemesi G120). Hiçbir bağlamda zorunlu değiller
+  (`required_fields.py` DEĞİŞMEDİ; kilit `test_alanlar_hicbir_baglamda_zorunlu_degil`).
+- **İki KAPALI liste** — `event_types` deseninin kopyası (model + LIST_REGISTRY +
+  DEPENDENCIES + seed + config route + DynamicConfig setter'ı):
+  `client_types` (Müvekkil Tipleri, seed'li 5 değer: Sigorta · Doktor · Kurum · Hasta ·
+  Diğer Sağlık Çalışanı) ve `service_types` (Hizmet Türleri, seed'li 9 değer: Takip
+  (doktor müvekkil) · Lexis Rapor · Vekaletsiz Takip · Vekaletli Takip · Vekalet Ücreti
+  Alacağı · Takip (hasta vekilliği) · Takip (kurum vekilliği) · Danışmanlık · Takip
+  (sağlık personeli)) — `backend/models.py::ClientType/ServiceType`,
+  `seed_data.CLIENT_TYPES/SERVICE_TYPES`, sıra bildirimdeki sıra, kodlar ASCII ve değişmez.
+- **Yazma yolu takip panelidir:** iki alan `TRACKING_FIELDS`te; `update_case_tracking`
+  aynı kapıdan geçirir (`case_manager._EVENT_LIST_COLUMNS`e iki satır eklendi,
+  `validated_event_list_value` değişmedi): liste dışı değer `InvalidDecisionStatusError`
+  (400), liste BOŞSA WARNING'le geç, None gönderimi temizler, `active` filtresi yok.
+- **Okuma/filtre:** `get_case` çıktısında iki alan; `get_cases(hizmet_turu=...)` +
+  `GET /api/cases?hizmet_turu=` `olay_turu` kalıbıyla eşitlik filtresi (değer listenin
+  ADIDIR, "ALL" = filtre yok). Müvekkil Tipi için filtre BİLİNÇLİ yok (sözleşme).
+- **Uçlar:** `GET/POST/DELETE /api/config/client_types` ve `/api/config/service_types`
+  (`backend/routes/config.py`; POST/DELETE admin — event_types kalıbı).
+
+Aktarım eşlemesi (`scripts/hukdok_aktarim.py`, iki yeni `Sheet` sütunu) G120'nin, kart
+UI'ı G121'in işidir; testler `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
+(şema kilitleri + sqlite seed/kapı/filtre davranışı + route 400/403 + gerçek Postgres'te
+migrasyon yolu + `client_categories`/`bureau_types` değişmezlik kilidi).

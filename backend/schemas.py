@@ -457,6 +457,11 @@ class CaseRead(BaseModel):
     # judgment_roles); NULL = "karar okunmadı", hiçbir bağlamda zorunlu değil.
     olay_turu: Optional[str] = None
     hukumdeki_rol: Optional[str] = None
+    # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
+    # service_types, DB-2026-002); NULL = "bilinmiyor", hiçbir bağlamda zorunlu
+    # değil. `service_type` (ofis dosya no hizmet bloğu) ile İLGİSİZ.
+    muvekkil_tipi: Optional[str] = None
+    hizmet_turu: Optional[str] = None
     created_at: datetime
     parties: List[CasePartyCreate] = []
     lawyers: List[CaseLawyerCreate] = []
@@ -526,6 +531,11 @@ class CaseTrackingUpdate(BaseModel):
     # kapısında (G066 davranış eşi, case_manager._EVENT_LIST_COLUMNS)
     olay_turu: Optional[str] = None
     hukumdeki_rol: Optional[str] = None
+    # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
+    # service_types); yazma yolu takip paneli, doğrulama aynı kapıda
+    # (case_manager._EVENT_LIST_COLUMNS, G066 davranış eşi)
+    muvekkil_tipi: Optional[str] = None
+    hizmet_turu: Optional[str] = None
     note: Optional[str] = None
 
 
