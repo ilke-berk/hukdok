@@ -22,7 +22,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G119 | bant:backend | bagimli:- | Müvekkil Tipi + Hizmet Türü: cases'e iki kolon + client_types(5)/service_types(9) seed'li listeler + config uçları + kart yolu + hizmet_turu filtresi
 - [ ] G120 | bant:backend | bagimli:G119 | Aktarım eşlemesi: Müvekkil Tipi + Hizmet Türü sütunları teslimden kartlara (G104 deseni, AlanHatasi)
-- [ ] G121 | bant:frontend | bagimli:- | Kart UI: iki kapalı liste alanı büro kartında + liste filtresi Hizmet Türü — G119 sözleşmesine göre
+- [ ] G121 | bant:frontend | bagimli:- | Kart UI: iki kapalı liste alanı büro kartında + liste filtresi Hizmet Türü — G119 sözleşmesine göre | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
 - [ ] G122 | bant:docs | bagimli:G120,G121 | Bilgilendirme sürüm 1.1 (okunan başlıklar koddan, kapalı listeler, DB-2026 şerhleri) + SOZLESME + veri-teslim-hatti + dava-acma-akisi
 
 ## ÖNCELİK 1 — Veri teslim otomasyonu / "teslim gelen kutusu" (2026-09-03, kullanıcı kararı)
