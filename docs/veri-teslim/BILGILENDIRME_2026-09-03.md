@@ -1,12 +1,19 @@
 # HUKDOK Veri Teslim Hattı — Veri Ekibi Bilgilendirmesi
 
-**Tarih:** 03.09.2026 · **Gönderen:** HukuDok ekibi (Hanyaloğlu Acar + LexisBio) ·
-**Muhatap:** MicroKolayOfis master'ını hazırlayan veri ekibi · **Sürüm:** 1.0
+**Tarih:** 03.09.2026 (ilk sürüm) · **Gönderen:** HukuDok ekibi (Hanyaloğlu Acar + LexisBio) ·
+**Muhatap:** MicroKolayOfis master'ını hazırlayan veri ekibi · **Sürüm:** 1.1 (04.09.2026)
 
 > Bu belge yapılandırılmış yazıldı: tablolar, birebir yazımlar ve sondaki makine-okur özet
 > (§9), kendi yapay zekâ asistanınıza "teslim öncesi kontrol" ve "cevap paketi yorumlama"
 > görevi olarak doğrudan verilebilir. Buradaki her kural çalışan sistemden okunarak yazıldı;
 > tahmin ya da niyet değil, bugün geçerli davranıştır.
+
+**Değişiklik geçmişi**
+
+| Sürüm | Tarih | Ne değişti |
+| --- | --- | --- |
+| 1.0 | 03.09.2026 | İlk sürüm |
+| 1.1 | 04.09.2026 | Format Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve aynı gün verdiğimiz cevap işlendi: `Müvekkil Tipi` + `Hizmet Türü` artık **okunuyor** (§3.2; "bekleyen alan" değil); okunan başlık listesi sistemden yeniden sayıldı (42 alan / 54 kabul edilen yazım); kapalı listelerimizin tam envanteri (§3.8 — `İddia Edilen Kusur` 9 değerle doldu); `Karar_Asamalari`'nda `Önceki` etiketi (§3.5); DB-2026 kalemlerinin bizdeki karşılığı ilgili bölümlere tarihli şerh olarak girdi; §5 tablosu, §6 örnek bildirim numarası, §9 özet |
 
 ---
 
@@ -104,13 +111,14 @@ Ad karşılaştırması büyük/küçük harf, aksan ve boşluk farkını yutar:
 `ARSIV TARIHI`, `arsiv_tarihi` aynı sütundur. Kelime değişikliği yutulmaz:
 `Arşiv Tarihi` → `Arşive Kaldırma Tarihi` farklı sütundur.
 
-**Sistemin bugün okuduğu başlıklar** (18.08 paketindeki 68 sütunun 37'si; aşağıda kabul
-edilen yazımlarıyla, bazı alanlar için birden çok yazım tanınır):
+**Sistemin bugün okuduğu başlıklar** — **42 alan, 54 kabul edilen yazım** (04.09.2026'da
+çalışan sistemden sayıldı; bazı alanlar için birden çok yazım tanınır, `/` ile ayrılanlar
+aynı alandır):
 
 | Alan grubu | Kabul edilen başlıklar |
 | --- | --- |
 | Kimlik (zorunlu) | `SistemNo` / `Sistem No` · `Dosya No` / `DosyaNo` / `Klasör No.2` |
-| Kimlik (isteğe bağlı) | `Klasör No` / `TKU` / `TKU No` · `Hasar No` / `Hasar Numarası` · `Hukuk No` · `Arabuluculuk Numarası` |
+| Kimlik (isteğe bağlı) | `Klasör No` / `TKU` / `TKU No` / `TKU No.` · `Hasar No` / `Hasar Numarası` · `Hukuk No` · `Arabuluculuk Numarası` |
 | Sınıflandırma | `Ana Tür` · `Durum` · `Dava Konusu` · `Dava Türü Alt Kırılımı` / `Uzmanlık Alanı` · `Buro Özel Türü` · `Son Durum` |
 | Künye | `Yerel Mahkeme` · `Esas` · `Karar No` · `Karar Tarihi` · `İstinaf Mahkemesi Başvuran Taraf` |
 | Tarihler | `Dava Tarihi` · `İş Kabul Tarihi` · `Arşiv Tarihi` · `Arabuluculuk Karar Tarihi` |
@@ -118,27 +126,54 @@ edilen yazımlarıyla, bazı alanlar için birden çok yazım tanınır):
 | Taraflar | `Müvekkil` · `Karşı Taraf` · `Sigortalı` · `Davalı İdare` · `Taraf Sıfatı` · `Sorumlu Avukatlar` / `Sorumlu Avukat` |
 | Klinik kodlama | `Tıbbi Süreç` · `Tıbbi Olay` · `İddia Edilen Kusur` · `Hastada Oluşan Zarar` · `Uygulanan Yöntem` |
 | Belgeleme olayı | `Olay Türü` · `Hükümdeki Rol` |
+| Föy düzeyi kapalı listeler (yeni, 04.09) | `Müvekkil Tipi` · `Hizmet Türü` |
 
-**Okunmayan 31 sütun ve nedeni** (paketten çıkarmanız gerekmez; olduğu gibi kalabilir):
+**04.09.2026 bildiriminin bu listeye etkisi (DB-2026 şerhleri):**
+
+- **DB-2026-002 — `Müvekkil Tipi` + `Hizmet Türü`:** 1.0'daki "bekleyen alan" durumu
+  kapandı; iki sütun artık **okunur** ve föy düzeyinde kartın iki ayrı alanına yazılır.
+  İkisi de kapalı listedir (değerler §3.8); tek değer beklenir, ` ; ` ile çok değerli hücre
+  bu iki alanda **yazılmaz** ve satır raporuna düşer. Aynı davanın föyleri farklı müvekkil
+  tipi söylerse bu **beklenen** bir kardeş föy çelişkisidir: alan karta yazılmaz, çelişki
+  raporunda görünür (§4) — hata saymayın.
+- **DB-2026-003 — artık gelmeyecek sütunlar:** on dört sütunun bir sonraki paketten
+  itibaren gelmeyeceğini (on birinin kaynaktan silindiğini) bildirdiniz; bizde iş
+  çıkarmadı. Kural §3.4'tekidir: gelmeyen sütun = "bu teslimde bu bilgi yok", bizdeki
+  değer korunur, hata üretmez. Hangi başlıkların kalktığının kaynağı bildiriminizin kendi
+  listesidir (`Kaldirilan_Sutunlar` sayfası); bu belge o listeyi tekrar etmez. Not:
+  `Arabuluculuk Numarası` bizde **kimlik alanı değildir** — eşleşme köprüsü yalnız
+  `Dosya No`dur; bu sütunun gelmemesi eşleşmeyi etkilemez.
+- **DB-2026-006 — `Olay Türü` / `Hükümdeki Rol`:** bu iki sütun sizde henüz
+  üretilmiyor (04.09). Alanlar bizde açık; sütun gelmeyince ya da boş gelince alan boş
+  kalır, bu meşru bir durumdur ("karar okunmadı"), hata değildir.
+- **DB-2026-007 — `Dava Türü Alt Kırılımı` → `Uzmanlık Alanı`:** iki başlık da aynı
+  alana bağlıdır (yukarıdaki tabloda `/` ile); adı değiştirmeniz bizde iş çıkarmadı,
+  ikisinden hangisi gelirse gelsin okunur.
+
+**Okunmayan sütunlar** (18.08 paketindeki 68 sütunun kalan 29'u; paketten çıkarmanız
+gerekmez, olduğu gibi kalabilir — DB-2026-003 ile kaldırdıklarınız için de aynı kural):
 
 | Sütunlar | Neden okunmuyor |
 | --- | --- |
-| `Yerel Mahkeme Karar Tarihi`, `Yerel Mahkeme Tebliğ Tarihi`, `Yerel Mahkeme Karar Durumu`, `Yerel Mahkeme Kararı Açıklaması`, `İstinaf Mahkemesi`, `İstinaf Mahkeme Esas`, `İstinaf Mahkeme Başvuru Tar.`, `İstinaf Mahkeme Karar No`, `İstinaf Mahkeme Karar Tar.`, `İstinaf Karar Durumu`, `İstinaf Karar Açıklamalar`, `Temyiz Mahkemesi`, `Temyiz_Esas_No`, `Temyiz Karar Tarihi`, `Yargıtay Onama Durumu`, `Karar Düzeltme Kararı Durumu`, `Eski Dosya No` (17) | **Yargı zinciri `Karar_Asamalari` sayfasından okunur.** `Sheet` yalnız güncel aşamayı yatay taşıyor; bizde karar künyesinin tek yazma yolu aşama tarihçesidir, aynı bilgiyi iki kaynaktan yazmak çelişki üretirdi. `Eski Dosya No` da aşama sayfasındaki önceki esas satırlarından gelir. Bu sütunları `Sheet`'te tutmaya devam edin; kardeş föy çelişki raporu bunlardan yararlanır |
+| `Yerel Mahkeme Karar Tarihi`, `Yerel Mahkeme Tebliğ Tarihi`, `Yerel Mahkeme Karar Durumu`, `Yerel Mahkeme Kararı Açıklaması`, `İstinaf Mahkemesi`, `İstinaf Mahkeme Esas`, `İstinaf Mahkeme Başvuru Tar.`, `İstinaf Mahkeme Karar No`, `İstinaf Mahkeme Karar Tar.`, `İstinaf Karar Durumu`, `İstinaf Karar Açıklamalar`, `Temyiz Mahkemesi`, `Temyiz_Esas_No`, `Temyiz Karar Tarihi`, `Yargıtay Onama Durumu`, `Karar Düzeltme Kararı Durumu`, `Eski Dosya No` (17) | **Yargı zinciri `Karar_Asamalari` sayfasından okunur.** `Sheet` yalnız güncel aşamayı yatay taşıyor; bizde karar künyesinin tek yazma yolu aşama tarihçesidir, aynı bilgiyi iki kaynaktan yazmak çelişki üretirdi. `Eski Dosya No` da aşama sayfasındaki `Önceki` satırlarından gelir (§3.5). Bu sütunları `Sheet`'te tutmaya devam edin; kardeş föy çelişki raporu bunlardan yararlanır |
 | `Dosya - Föy Bilgileri`, `Para Birimi TL`, `Bilirkişi Rapor Sonuç`, `Poliçe Başlangıç Tarihi`, `Ek Alt Kırılım 1`–`4`, `Arabuluculuk Merkezi`, `Soruşturma İtiraz Mahkemesi` (10) | **Sizin sözlüğünüzün "ölü sütun" listesi** (24.08 veri sözlüğü §10: doluluk 0 ya da tek değer, "modelinize taşımayın") |
 | `Ek Alt Kırılım` (1) | Sizin uyarınız: dosya açılış etiketi, karardan okunmamış, kanıt değil |
 | `MüvekkilNo` (1) | 12.08 mutabakatı: sisteme aktarılmayacak; cari kartlar isim + vergi/TC ile kurulur |
-| `Müvekkil Tipi`, `Hizmet Türü` (2) | **Bekleyen alanlar.** Föy (müvekkil) düzeyi bilgi; bizde kartın tek kutusuna sığmıyor (aynı davada doktor föyü "Takip", sigorta föyü "Lexis Rapor"). Taraf düzeyine taşınma kararı verildi, henüz uygulanmadı. Uygulanınca bildireceğiz; o zamana kadar bu iki sütun okunmaz |
 
 Yeni bir sütun eklediğinizde de aynı kural geçerlidir: **tanınmayan başlık sessizce
 atlanır**, paket hata vermeden işlenir, ama o sütundaki bilgi bize ulaşmaz. Sütunun
 işlenmesi için önce §6 bildirimi, sonra bizim tarafta alan + eşleme açılması gerekir.
+Bildirimle gönderdiğiniz ek sayfalar (`Kaldirilan_Sutunlar`, `S37_Kanonik`,
+`Yazim_Standardi`) da bu sınıftadır: okunmaz, paketi bozmaz, arşiv olarak kalabilir.
 
 **Hücre değerleri:**
 
 | Tür | Beklenen | Notlar |
 | --- | --- | --- |
-| Tarih | Excel tarih hücresi ya da `GG.AA.YYYY` metni | `01.01.1900`, 1900 ve öncesi, gelecek tarihler **yer tutucu** sayılır ve boş yazılır (uyarı düşer, satır düşmez) |
-| Sayı | Excel sayı hücresi ya da Türkçe yazım (`12.500,00`) | `NULL ≠ 0` kuralı korunur: boş = bilinmiyor, `0` = hükmedilmedi |
+| Tarih | Excel tarih hücresi ya da `GG.AA.YYYY` metni | `01.01.1900`, 1900 ve öncesi, gelecek tarihler **yer tutucu** sayılır ve boş yazılır (uyarı düşer, satır düşmez). DB-2026-009 ile teyit: Excel tarih hücresi tam istediğimiz biçim, değişiklik yok |
+| Sayı | Excel sayı hücresi ya da Türkçe yazım (`12.500,00`) | `NULL ≠ 0` kuralı korunur: boş = bilinmiyor, `0` = hükmedilmedi. DB-2026-009 ile teyit: Excel sayı hücresi tam istediğimiz biçim |
+| Ad alanları (`Müvekkil`, `Karşı Taraf`, `Sigortalı`, `Davalı İdare`, `Sorumlu Avukatlar`) | Serbest metin | DB-2026-008 (İlk Harf Büyük yazımı) bizde **değişiklik sayılmaz**: taraf ve müvekkil karşılaştırması büyük/küçük harf, aksan ve I/ı-İ/i farkından bağımsız anahtarla yapılır (`AK SİGORTA A.Ş.` = `Ak Sigorta A.Ş.` = `Ak Sigorta Anonim Şirketi`); kartta zaten olan taraf yeniden yazılmaz, yalnız kartta hiç olmayan ad eklenir. Avukat adı bizim kayıtlı yazımımızla yazılır. Ad alanları **eşleşme anahtarı değildir** (köprü `Dosya No`); müvekkil adı yalnız aynı `Dosya No`ya birden çok kart düştüğünde üçüncü ayırt edici olarak kullanılır (§4) |
+| `Müvekkil Tipi`, `Hizmet Türü` | Tek değer, bizdeki kapalı listeden (§3.8) | ` ; ` ile çok değer **yazılmaz**, rapora düşer; tanınmayan değer yazılmaz. Boş = bilinmiyor (bildiriminiz "tamamı dolu" diyor — ilk cevap paketinde `yazılmadı` satırı beklemiyoruz) |
 | Yer tutucu metin | `-`, `--`, `—`, `?`, `YOK`, `BELİRSİZ`, `BOŞ`, `N/A`, `NA` | Hepsi "boş" sayılır |
 | Çok değerli hücre | ` ; ` (noktalı virgül) ile ayrılır | Satır sonu da ayraç sayılır. Virgül ayraç **değildir** |
 | Kapalı liste değeri | Bizde de olan yazım | Aksan/büyük-küçük farkı yutulur; kelime farkı yutulmaz. Tanınmayan değer **yazılmaz**, satır raporunda görünür |
@@ -178,10 +213,23 @@ koparır; paket insan incelemesine düşer. İlk teslimde `—` ya da `yok` yaz�
 
 ### 3.5 `Karar_Asamalari`
 
-Beklenen başlıklar: `SistemNo`, `AsamaNo` / `Aşama No`, `Aşama` (`Yerel`, `İstinaf`,
-`Temyiz`, `Karar Düzeltme`), `Mahkeme`, `Esas No`, `Karar No`, `Karar Tarihi`,
-`Karar Durumu`, `Tebliğ Tarihi`, `Başvuran Taraf`, `Güven`, `Açıklama`. Bugünkü 21 sütunlu
-sayfanız uyumludur; fazladan sütun sorun değildir.
+Beklenen başlıklar: `SistemNo`, `AsamaNo` / `Aşama No`, `Aşama`, `Mahkeme`, `Esas No`,
+`Karar No`, `Karar Tarihi`, `Karar Durumu`, `Tebliğ Tarihi`, `Başvuran Taraf`, `Güven`,
+`Açıklama`. Bugünkü 21 sütunlu sayfanız uyumludur; fazladan sütun sorun değildir.
+
+**`Aşama` sütununun değer havuzu:**
+
+| Değer | Sistem ne yapar |
+| --- | --- |
+| `Yerel`, `İstinaf`, `Temyiz`, `Karar Düzeltme` | Karar aşaması: kartın aşama tarihçesine künye olarak yazılır |
+| `Önceki` | **Kabul edilir ama karar aşaması değildir** (DB-2026-004, 04.09): satırın `Esas No`su kartın **esas numarası tarihçesine** önceki esas olarak yazılır (görevsizlik/yenileme öncesi numara); kartın güncel esası değişmez, "tanınmayan aşama" raporu üretilmez. Bu satırları **filtrelemeyin, gönderin** — `Sheet`'teki `Eski Dosya No` tek slottur, `Önceki` satırları birden çok eski esası taşıyabildiği için bizim için daha zengindir (04.09 ricamız: filtrelenmiş 664 satır) |
+| Başka değer | Satır sessizce atlanır (aşama yazılmaz) |
+
+`Karar Durumu` bizde aşama başına kapalı havuzdur (§3.8). Havuz dışı bir değer satırı
+**düşürmez**: durum boş kalır, gelen değer aşamanın açıklama alanına taşınır ve cevap
+raporuna yazılır (DB-2026-005 cevabı). Havuzumuzda **lehe/aleyhe ekseni yoktur**, usul
+sonucu tutulur — "Kesin Lehe", "Karar Aleyhe" gibi yön taşıyan yazımların karşılığı
+olmayacaktır; yön bilgisini ayrı bir sütunda tutuyorsanız §6 ile bildirin.
 
 Aynı davaya bağlı iki föy aynı aşama için farklı künye söylerse o aşama yazılmaz, çelişki
 raporuna düşer.
@@ -198,7 +246,33 @@ işaret kaldırılır. Bizde olmayan SistemNo raporda "atlandı" olur.
 Bugünkü düzen uygundur: 3. satırda `Havuz / Sütun` ve `Değer` başlıkları, havuz başına bir
 satır bir değer. Karşılaştırılan havuzlar: `İddia Edilen Kusur`, `Yerel Mahkeme Karar
 Durumu`, `İstinaf Karar Durumu`, `Yargıtay Onama Durumu` (ya da `Temyiz Onama Durumu`),
-`Olay Türü`, `Hükümdeki Rol`. Diğer havuzlar atlanır.
+`Olay Türü`, `Hükümdeki Rol`. Diğer havuzlar atlanır — `Müvekkil Tipi` ve `Hizmet Türü`
+havuzları da (04.09): bu ikisi için fark raporu üretilmez; tanınmayan bir değer `Sheet`
+işlenirken satır raporunda görünür (§4).
+
+### 3.8 Kapalı listelerimiz — bizde geçerli değer havuzları (04.09.2026)
+
+Aşağıdaki listeler çalışan sistemin referans listelerinden birebir alınmıştır. Listeye
+ekleme yalnız §6 bildirimi + bizim tarafta insan kararıyla olur; paketle gelen yeni değer
+listeye **eklenmez**. Listenin alana nasıl uygulandığı alandan alana değişir, "Uygulama"
+sütununu okuyun (aksan/büyük-küçük farkı her yerde yutulur, kelime farkı yutulmaz — §3.2):
+
+| Alan (sütun) | Değer sayısı | Değerler (bizim yazımımız) | Uygulama | Kaynak |
+| --- | --- | --- | --- | --- |
+| `İddia Edilen Kusur` | 9 | Uygulama Hatası · Komplikasyon Yönetimi · Aydınlatma · Tanı Hatası · Organizasyon Hatası · Takip Eksikliği · Endikasyon Hatası · Uzmanlık Dışı Girişim · İddia Belgeden Belirlenemiyor | `Sheet`'ten **metin olarak olduğu gibi yazılır** (aktarımda liste doğrulaması yok); liste kart ekranındaki seçimi ve `DEGER_HAVUZLARI` fark raporunu (§3.7) besler. Bu yüzden listedışı yazım karta girer ve kart ekranında liste dışı görünür — yazımı bu tabloya uydurun | DB-2026-001 (04.09): liste bu bildirimle doldu; 1.0'da bilinçli boştu. "İddia Belgeden Belirlenemiyor" ≠ boş (belge okundu, iddia katmanı yok) |
+| `Müvekkil Tipi` | 5 | Sigorta · Doktor · Kurum · Hasta · Diğer Sağlık Çalışanı | Liste doğrulamalı: tanınmayan değer **yazılmaz**, satır raporuna `HATA` düşer; ` ; ` ile çok değer yazılmaz | DB-2026-002 (04.09) |
+| `Hizmet Türü` | 9 | Takip (doktor müvekkil) · Lexis Rapor · Vekaletsiz Takip · Vekaletli Takip · Vekalet Ücreti Alacağı · Takip (hasta vekilliği) · Takip (kurum vekilliği) · Danışmanlık · Takip (sağlık personeli) | aynı | DB-2026-002 (04.09) |
+| `Olay Türü` | 3 | Tıbbi Olay · Belgeleme Olayı · Tıbbi + Belgeleme | Liste doğrulamalı; `Tıbbi Olay ; Belgeleme Olayı` ikilisi üçüncü değere çözülür, başka kombinasyon yazılmaz (§3.2) | 25.08 belgeniz + 02.09 kararımız |
+| `Hükümdeki Rol` | 4 | Tek Gerekçe · Yan Gerekçe · Yalnız Saptama · Reddedilmiş İddia | Liste doğrulamalı; tek değer | 25.08 belgeniz + 02.09 kararımız |
+| `Karar Durumu` — `Yerel` aşaması | 28 | Açılmamış Sayılması (HMK 150. Md) · Adli Para Cezası · Anlaşma · Anlaşmama · Beraat · Birleştirme · Derdest · Düşme Kararı · Hapis Cezası · Hapis Cezasının Paraya Çevrilmesi · Hükmün Açıklanmasının Geri Bırakılması (HAGB) · İflas · Kabul · Kabul/Kısmen · Kapalı · Karar Verilmesine Yer Olmadığına (HMK 331 Md.) · Kovuşturmaya Yer Olmadığına (KYOK) · Red/Arabuluculuk Ön Şart · Red/Dilekçenin Reddi · Red/Esastan · Red/Feragat · Red/Görev · Red/Husumet · Red/İdari Merciye Tevdi · Red/MSK Kararı Gereği · Red/Yargı Yolu · Red/Yetkisizlik · Red/Zamanaşımı | `Karar_Asamalari`'ndan; havuz dışı değer satırı düşürmez: durum boş kalır, değer açıklamaya taşınır, rapora yazılır (§3.5) | 10.08 `DEGER_HAVUZLARI`nız; DB-2026-005 cevabımızla gönderilen kanonik liste |
+| `Karar Durumu` — `İstinaf` | 3 | Kaldırma · Kaldırma/Yeniden Hüküm · Başvuru Ret | aynı | aynı |
+| `Karar Durumu` — `Temyiz` | 3 | Bozma · Onama · Düzelterek Onama | aynı | aynı |
+| `Karar Durumu` — `Karar Düzeltme` | 2 | Karar Düzeltme Kabul · Karar Düzeltme Ret | aynı | aynı |
+| `Başvuran Taraf` / `İstinaf Mahkemesi Başvuran Taraf` | 3 | Davacı · Davalı · Her İki Taraf | `Davalı/Davacı` ve `Davacı/Davalı` yazımları "Her İki Taraf"a çözülür; başka yazım **boş bırakılır** (rapora düşmez) | bizim listemiz |
+
+DB-2026-010'daki dört açık havuz (kanonik yazım standardı getirdiğiniz serbest metin
+alanları) bizde **sözlüksüz metin alanıdır**: değer olduğu gibi yazılır, yazım
+standardınız bizde iş çıkarmaz.
 
 ---
 
@@ -221,7 +295,7 @@ CSV'ler noktalı virgül ayraçlı ve UTF-8'dir; Türkçe Excel'de doğrudan aç
 | Sebep | Anlamı | Sizden beklenen |
 | --- | --- | --- |
 | `kart bulunamadı` (ATLANDI) | `Dosya No` bizim klasör numaralarımızla eşleşmedi | Dosya No'yu kontrol edin; bizde kart yoksa bu satır her pakette atlanır, sorun değil |
-| `belirsiz eşleşme` (HATA) | Aynı Dosya No bizde 2+ kartla eşleşiyor, esas no da ayırmadı | Satıra `Esas` ve `Ana Tür` ekleyin; hâlâ ayrılmıyorsa bize bildirin |
+| `belirsiz eşleşme` (HATA) | Aynı Dosya No bizde 2+ kartla eşleşiyor; `Esas`, `Ana Tür` ve `Müvekkil` adı (üçüncü anahtar, tam anahtar eşitliği — bulanık eşleşme yok) da ayırmadı | Satırda `Esas`, `Ana Tür` ve `Müvekkil` dolu olsun; hâlâ ayrılmıyorsa bize bildirin |
 | `Dosya No boş` (HATA) | Kimlik eksik | Doldurun |
 | `<alan> yazılmadı: tanınmayan değer …` (HATA) | Kapalı listede karşılığı yok | Ya yazımı bizimkine uydurun ya da yeni değer bildirin (§6) |
 | `<alan> yazılmadı: çok değerli hücre tanımsız …` | `Olay Türü`/`Hükümdeki Rol` için izin verilmeyen kombinasyon | Tek değere indirin |
@@ -249,14 +323,15 @@ kullanabilmemiz için önceden anlaşma ister. **SERBEST** satırlar için bildi
 | `Dosya No` biçiminin değişmesi (ör. `13.021.00` → `13-021`) | **KIRICI** | Eşleşme köprüsü kopar; tüm satırlar "kart bulunamadı" olur |
 | `SistemNo` / `Dosya No` başlığının değişmesi | **KIRICI** | Paket reddedilir |
 | `Sheet` sayfasının adının değişmesi | **KIRICI** | Paket reddedilir |
-| §3.2'deki okunan 37 başlıktan birinin **kelime** değişikliği | **KIRICI (sessiz)** | Hata yok; alan "bu teslimde yok" sayılır, o sütundaki güncellemeler hiç işlenmez |
+| §3.2'deki okunan 42 alandan birinin başlığında **kelime** değişikliği | **KIRICI (sessiz)** | Hata yok; alan "bu teslimde yok" sayılır, o sütundaki güncellemeler hiç işlenmez. (DB-2026-007 bu sınıfa girmedi: `Uzmanlık Alanı` zaten tanınan ikinci yazımdı) |
 | Sayfa adlarının değişmesi (`Karar_Asamalari`, `Düzeltme_Logu`, `DEGER_HAVUZLARI`) | **KIRICI (sessiz)** | Sayfa atlanır, içeriği işlenmez |
 | Çok değer ayracının değişmesi (`;` yerine `,` / `/`) | **KIRICI** | Hücre tek değer sanılır; kapalı listede tanınmaz, yazılmaz |
-| Tarih yazımının değişmesi (`2026-08-18`, `18/08/26`) | **KIRICI** | Çözülemeyen tarih boş yazılır |
-| Sayı yazımının değişmesi (`12,500.00` İngiliz biçimi) | **KIRICI** | Yanlış tutar okunabilir |
+| Tarih yazımının değişmesi (`2026-08-18`, `18/08/26`) | **KIRICI** | Çözülemeyen tarih boş yazılır. Excel tarih hücresi (DB-2026-009) tam istediğimiz biçimdir |
+| Sayı yazımının değişmesi (`12,500.00` İngiliz biçimi) | **KIRICI** | Yanlış tutar okunabilir. Excel sayı hücresi (DB-2026-009) tam istediğimiz biçimdir |
 | Dosya biçimi `.xlsm` / `.csv`, ad kalıbı dışı | **KIRICI** | Dosya yok sayılır ya da reddedilir |
-| Kapalı listeye **yeni değer** (`İddia Edilen Kusur`, karar durumları, `Olay Türü`, `Hükümdeki Rol`) | **BİLDİRİLMELİ** | Değer yazılmaz, rapora düşer; biz listeye ekleyince sonraki pakette işlenir |
-| `Ana Tür` / `Durum` / `Son Durum` / `Hizmet Türü`'ne yeni değer | **BİLDİRİLMELİ** | Eşleme sözlüğümüzde yoksa satır hata verir ya da alan yazılmaz |
+| Kapalı listeye **yeni değer** (`Müvekkil Tipi`, `Hizmet Türü`, `Olay Türü`, `Hükümdeki Rol`, karar durumları) | **BİLDİRİLMELİ** | Değer yazılmaz, rapora düşer (karar durumunda: durum boş, değer açıklamaya); biz listeye ekleyince sonraki pakette işlenir |
+| `İddia Edilen Kusur`'a yeni değer | **BİLDİRİLMELİ** | Değer karta **metin olarak yazılır** (§3.8) ama listemizde olmadığı için kart ekranında liste dışı görünür ve `DEGER_HAVUZLARI` fark raporuna düşer; DB-2026-001'in dokuz değeri bugün listemizdedir |
+| `Ana Tür` / `Durum` / `Son Durum`'a yeni değer | **BİLDİRİLMELİ** | Eşleme sözlüğümüzde yoksa satır hata verir ya da alan yazılmaz |
 | **Yeni sütun** eklenmesi | **BİLDİRİLMELİ** | Sütun sessizce yok sayılır. Yeni bilgi taşıyorsa bizim tarafta alan + eşleme açılır; bildirimden sonra genelde bir teslim döngüsü sürer |
 | Bir sütunun **kalıcı** kaldırılması | **BİLDİRİLMELİ** | Paket bozulmaz (alan korunur), ama "artık gelmiyor" bilgisini belgeleyelim |
 | `Düzeltme_Logu`'na ayrı `Sütun` başlığı açılması | **BİLDİRİLMELİ (olumlu)** | Önek yerine başlık okunur; önceden haber verin ki doğrulayalım |
@@ -266,7 +341,8 @@ kullanabilmemiz için önceden anlaşma ister. **SERBEST** satırlar için bildi
 | Satır sayısı, satır sırası, yalnız değişen föylerin gönderilmesi | SERBEST | Partili teslim desteklenir |
 | Boş hücreler | SERBEST | "Bu teslimde yok" sayılır, silmez |
 | Okunmayan sayfaların içeriği (`SUTUN_SOZLUGU` vb.) | SERBEST | |
-| Büyük/küçük harf, aksan, boşluk farkı (başlıkta ve kapalı liste değerinde) | SERBEST | Yutulur |
+| Büyük/küçük harf, aksan, boşluk farkı — başlıkta, kapalı liste değerinde **ve ad alanlarında** (`Müvekkil`, `Karşı Taraf`, `Sigortalı`, `Davalı İdare`, `Sorumlu Avukatlar`) | SERBEST | Yutulur. DB-2026-008 (İlk Harf Büyük) bu sınıftadır: 33.441 hücre bizde "değişmiş" görünmez, `Yazim_Standardi` tablosuna ihtiyacımız yok |
+| Bildirimle gelen ek sayfalar (`Kaldirilan_Sutunlar`, `S37_Kanonik`, `Yazim_Standardi`) | SERBEST | Okunmaz, arşiv olarak kalabilir |
 
 **Genel kural:** "Sistem hata vermedi" demek "işlendi" demek değildir. Sessiz kayıp yolları
 (sütun adı, sayfa adı, ayraç) ancak cevap paketindeki sayılarla yakalanır. Her cevapta
@@ -284,11 +360,13 @@ değişiklik + test + yayına alma gerekir). Bildirilmemiş bir değişiklikle g
 Kanal: e-posta (tercih) ya da WhatsApp; ekli `.md` ya da `.xlsx` dosyası olabilir. Sistem bu
 bildirimi otomatik okumaz; HukuDok ekibi okuyup uygular ve size "hazır" der.
 
-Her değişiklik için bir kayıt; alanların tamamı doldurulur:
+Her değişiklik için bir kayıt; alanların tamamı doldurulur. Numara dizisi sizde devam
+eder: `DB-2026-001`…`010` REV-2 (04.09.2026) ile kullanıldı, sonraki bildirim `DB-2026-011`
+ile başlar; aşağıdaki `DB-2026-0NN` yer tutucudur:
 
 ```
 DEĞİŞİKLİK BİLDİRİMİ
-Bildirim no        : DB-2026-001
+Bildirim no        : DB-2026-0NN
 Tarih              : 15.09.2026
 Tür                : yeni sütun | sütun adı değişikliği | sütun kaldırma | yeni sayfa |
                      sayfa adı değişikliği | yeni kapalı liste değeri | kimlik biçimi |
@@ -309,7 +387,7 @@ Makine-okur eşdeğeri (asistanınız üretebilir; biz her ikisini de kabul eder
 
 ```json
 {
-  "bildirim_no": "DB-2026-001",
+  "bildirim_no": "DB-2026-0NN",
   "tarih": "2026-09-15",
   "tur": "yeni_sutun",
   "sayfa": "Sheet",
@@ -352,7 +430,9 @@ yeni biçimi göndermeyin.
 2. `Sheet` var; `SistemNo` ve `Dosya No` dolu; sütun adları önceki paketle aynı.
 3. `DEGISIKLIK_OZETI`'nde "Önceki teslim" satırı, bir önceki dosyanın tam adıyla.
 4. Çok değerli hücrelerde ayraç `;`; tarihler `GG.AA.YYYY`; sayılar Türkçe biçim.
-5. Kapalı listelerde yalnız bizde de olan değerler; yeni değer için önce §6 bildirimi.
+5. Kapalı listelerde (§3.8: `Müvekkil Tipi`, `Hizmet Türü`, `Olay Türü`, `Hükümdeki Rol`,
+   `Karar Durumu`, `İddia Edilen Kusur`) yalnız bizde de olan değerler; yeni değer için
+   önce §6 bildirimi.
 6. `(boş)` talimatları `Düzeltme_Logu`'nda `[Sütun Adı]` önekli.
 7. Yapısal bir değişiklik varsa §6 bildirimi gönderildi ve "hazır" cevabı alındı.
 8. Bir önceki paketin cevap klasörü okundu; `ESLESMEDI` ve `HATA` satırları ele alındı.
@@ -363,7 +443,14 @@ yeni biçimi göndermeyin.
 
 ```yaml
 hukdok_teslim_spec:
-  surum: "2026-09-03"
+  surum: "1.1"
+  surum_tarihi: "2026-09-04"
+  degisiklik_gecmisi:
+    - {surum: "1.0", tarih: "2026-09-03", not: "ilk sürüm"}
+    - {surum: "1.1", tarih: "2026-09-04", not: "DB-2026-001…010 (REV-2) + cevabımız işlendi; Müvekkil Tipi/Hizmet Türü okunuyor; kapalı liste envanteri"}
+  islenen_bildirimler: ["DB-2026-001", "DB-2026-002", "DB-2026-003", "DB-2026-004", "DB-2026-005",
+                        "DB-2026-006", "DB-2026-007", "DB-2026-008", "DB-2026-009", "DB-2026-010"]
+  sonraki_bildirim_no: "DB-2026-011"
   klasor: "03_VERI_TESLIM/gelen"
   cevap_klasoru: "03_VERI_TESLIM/cevap/<paket_adi_uzantisiz>/"
   dosya_adi_kalibi: "^HUKDOK_TESLIM_.*\\.xlsx$"   # büyük/küçük harf duyarsız
@@ -380,6 +467,53 @@ hukdok_teslim_spec:
     kimlik: "SistemNo (değişmez)"
     eslesme_koprusu: "Dosya No ↔ HukuDok klasör numarası"
     sutun_eslesme: "ada göre; sıra serbest; aksan/boşluk/büyük-küçük yutulur; kelime farkı yutulmaz"
+    okunan_alan_sayisi: 42
+    okunan_baslik_yazim_sayisi: 54
+    okunan_baslik:            # aynı satırdaki yazımlar aynı alandır
+      - ["SistemNo", "Sistem No"]
+      - ["Dosya No", "DosyaNo", "Klasör No.2"]
+      - ["Klasör No", "TKU", "TKU No", "TKU No."]
+      - ["Hasar No", "Hasar Numarası"]
+      - ["Hukuk No"]
+      - ["Arabuluculuk Numarası"]
+      - ["Ana Tür"]
+      - ["Durum"]
+      - ["Dava Konusu"]
+      - ["Dava Türü Alt Kırılımı", "Uzmanlık Alanı"]
+      - ["Buro Özel Türü"]
+      - ["Son Durum"]
+      - ["Yerel Mahkeme"]
+      - ["Esas"]
+      - ["Karar No"]
+      - ["Karar Tarihi"]
+      - ["İstinaf Mahkemesi Başvuran Taraf"]
+      - ["Dava Tarihi"]
+      - ["İş Kabul Tarihi"]
+      - ["Arşiv Tarihi"]
+      - ["Arabuluculuk Karar Tarihi"]
+      - ["Dava Değeri TL", "Dava Değeri"]
+      - ["Manevi Dava Değeri TL", "Manevi Dava Değeri"]
+      - ["Islah Tutarı", "İslah Tutarı"]
+      - ["Hükmedilen Maddi"]
+      - ["Hükmedilen Manevi"]
+      - ["Hükmedilen Toplam"]
+      - ["Müvekkil"]
+      - ["Karşı Taraf"]
+      - ["Sigortalı"]
+      - ["Davalı İdare"]
+      - ["Taraf Sıfatı"]
+      - ["Sorumlu Avukatlar", "Sorumlu Avukat"]
+      - ["Tıbbi Süreç"]
+      - ["Tıbbi Olay"]
+      - ["İddia Edilen Kusur"]
+      - ["Hastada Oluşan Zarar"]
+      - ["Uygulanan Yöntem"]
+      - ["Olay Türü"]
+      - ["Hükümdeki Rol"]
+      - ["Müvekkil Tipi"]
+      - ["Hizmet Türü"]
+    kimlik_olmayan_alan: ["Arabuluculuk Numarası", "Müvekkil"]   # köprü yalnız Dosya No
+    gelmeyen_sutun: "DB-2026-003: bu teslimde yok sayılır, mevcut değer korunur, hata yok"
     tanimayan_sutun: "sessizce yok sayılır"
     bos_hucre: "bu teslimde yok; mevcut değer korunur"
     cok_deger_ayraci: ";"
@@ -387,6 +521,42 @@ hukdok_teslim_spec:
     sayi: "Excel sayısı veya Türkçe biçim (12.500,00)"
     yer_tutucu_metin: ["-", "--", "—", "?", "YOK", "BELİRSİZ", "BOŞ", "N/A", "NA"]
     null_sifir_farki: true
+    ad_alanlari_harf_duyarsiz: true   # DB-2026-008: İlk Harf Büyük değişiklik sayılmaz
+  kapali_listeler:                    # §3.8 — bizdeki değer havuzları (04.09.2026)
+    iddia_edilen_kusur:
+      uygulama: "metin olarak yazılır; liste kart seçimini + DEGER_HAVUZLARI farkını besler"
+      degerler: ["Uygulama Hatası", "Komplikasyon Yönetimi", "Aydınlatma", "Tanı Hatası",
+                 "Organizasyon Hatası", "Takip Eksikliği", "Endikasyon Hatası",
+                 "Uzmanlık Dışı Girişim", "İddia Belgeden Belirlenemiyor"]
+    muvekkil_tipi:
+      uygulama: "doğrulamalı; tanınmayan/çok değer yazılmaz + satır raporu"
+      degerler: ["Sigorta", "Doktor", "Kurum", "Hasta", "Diğer Sağlık Çalışanı"]
+    hizmet_turu:
+      uygulama: "doğrulamalı; tanınmayan/çok değer yazılmaz + satır raporu"
+      degerler: ["Takip (doktor müvekkil)", "Lexis Rapor", "Vekaletsiz Takip", "Vekaletli Takip",
+                 "Vekalet Ücreti Alacağı", "Takip (hasta vekilliği)", "Takip (kurum vekilliği)",
+                 "Danışmanlık", "Takip (sağlık personeli)"]
+    olay_turu:
+      uygulama: "doğrulamalı; 'Tıbbi Olay ; Belgeleme Olayı' → 'Tıbbi + Belgeleme'"
+      degerler: ["Tıbbi Olay", "Belgeleme Olayı", "Tıbbi + Belgeleme"]
+    hukumdeki_rol:
+      uygulama: "doğrulamalı; tek değer"
+      degerler: ["Tek Gerekçe", "Yan Gerekçe", "Yalnız Saptama", "Reddedilmiş İddia"]
+    karar_durumu:
+      uygulama: "Karar_Asamalari; havuz dışı → durum boş, değer açıklamaya, rapora; lehe/aleyhe ekseni yok"
+      yerel: ["Açılmamış Sayılması (HMK 150. Md)", "Adli Para Cezası", "Anlaşma", "Anlaşmama", "Beraat",
+              "Birleştirme", "Derdest", "Düşme Kararı", "Hapis Cezası", "Hapis Cezasının Paraya Çevrilmesi",
+              "Hükmün Açıklanmasının Geri Bırakılması (HAGB)", "İflas", "Kabul", "Kabul/Kısmen", "Kapalı",
+              "Karar Verilmesine Yer Olmadığına (HMK 331 Md.)", "Kovuşturmaya Yer Olmadığına (KYOK)",
+              "Red/Arabuluculuk Ön Şart", "Red/Dilekçenin Reddi", "Red/Esastan", "Red/Feragat", "Red/Görev",
+              "Red/Husumet", "Red/İdari Merciye Tevdi", "Red/MSK Kararı Gereği", "Red/Yargı Yolu",
+              "Red/Yetkisizlik", "Red/Zamanaşımı"]
+      istinaf: ["Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret"]
+      temyiz: ["Bozma", "Onama", "Düzelterek Onama"]
+      karar_duzeltme: ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
+    basvuran_taraf:
+      uygulama: "tanınmayan yazım boş bırakılır"
+      degerler: ["Davacı", "Davalı", "Her İki Taraf"]
   degisiklik_ozeti:
     etiket: "Önceki teslim"
     deger: "önceki dosya adı; '·' sonrası yok sayılır; ilk teslimde '—' veya 'yok'"
@@ -399,6 +569,8 @@ hukdok_teslim_spec:
     sutunlar: ["SistemNo", "AsamaNo", "Aşama", "Mahkeme", "Esas No", "Karar No",
                "Karar Tarihi", "Karar Durumu", "Tebliğ Tarihi", "Başvuran Taraf", "Güven", "Açıklama"]
     asama_degerleri: ["Yerel", "İstinaf", "Temyiz", "Karar Düzeltme"]
+    asama_onceki: "'Önceki' kabul edilir: karar aşaması değil, Esas No kartın esas tarihçesine önceki esas olarak yazılır — bu satırları GÖNDERİN (DB-2026-004)"
+    taninmayan_asama: "satır sessizce atlanır"
   kapsam_sayfalari:
     sutunlar: ["SistemNo", "Silinme Gerekçesi | Kapsam Dışı Gerekçesi | Gerekçe", "Tarih"]
     etki: "föy işaretlenir, silinmez"
@@ -407,6 +579,7 @@ hukdok_teslim_spec:
     karsilastirilan: ["İddia Edilen Kusur", "Yerel Mahkeme Karar Durumu", "İstinaf Karar Durumu",
                       "Yargıtay Onama Durumu", "Olay Türü", "Hükümdeki Rol"]
     taninmayan_deger: "yazılmaz; rapora düşer; listeye otomatik eklenmez"
+    karsilastirilmayan: ["Müvekkil Tipi", "Hizmet Türü"]   # fark raporu yok; satır raporu var
   kapi:
     hata_orani_azami: 0.02
     eslesmeyen_orani_azami: 0.05
@@ -423,13 +596,16 @@ hukdok_teslim_spec:
     csv_bicimi: "UTF-8 BOM, ';' ayraç"
   bildirim_gerektiren:
     kirici: ["SistemNo değişimi", "Dosya No biçimi", "Sheet adı", "SistemNo/Dosya No başlığı",
-             "okunan 37 başlıktan birinin kelime değişimi", "sayfa adı değişimi",
+             "okunan 42 alandan birinin başlığında kelime değişimi", "sayfa adı değişimi",
              "ayraç/tarih/sayı biçimi", "dosya biçimi"]
-    bildirilmeli: ["yeni kapalı liste değeri", "Ana Tür/Durum/Son Durum yeni değer",
+    bildirilmeli: ["yeni kapalı liste değeri (Müvekkil Tipi, Hizmet Türü, Olay Türü, Hükümdeki Rol, karar durumları)",
+                   "İddia Edilen Kusur yeni değer (metin yazılır, liste dışı görünür)",
+                   "Ana Tür/Durum/Son Durum yeni değer",
                    "yeni sütun", "kalıcı sütun kaldırma", "yeni sayfa", "yeni aşama adı"]
     serbest: ["sütun sırası", "satır sayısı/sırası", "boş hücre", "okunmayan sayfa içeriği",
-              "aksan/boşluk/büyük-küçük"]
-  bildirim_kanali: "e-posta veya WhatsApp, §6 şablonu, teslimden bir döngü önce"
+              "aksan/boşluk/büyük-küçük (başlık, kapalı liste değeri, ad alanları)",
+              "bildirim ek sayfaları (Kaldirilan_Sutunlar, S37_Kanonik, Yazim_Standardi)"]
+  bildirim_kanali: "e-posta veya WhatsApp, §6 şablonu, teslimden bir döngü önce; numara dizisi DB-2026-011'den devam eder; cevabımız gelmeden yeni biçimi göndermeyin"
 ```
 
 ---

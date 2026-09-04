@@ -1,6 +1,7 @@
 # Dava açma akışı — manuel form, intake sihirbazı, ofis numarası
 
-> **Son doğrulama: 2026-08-11 · 2eade56**
+> **Son doğrulama: 2026-09-04 · 88409da** (§1-§10 önceki doğrulama 2026-08-11 · 2eade56;
+> §11-§13 bu tarihte koddan sayıldı)
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 Dava iki yoldan açılır: elle doldurulan form (`/new-case/form`) ve belgeden türeten otonom
@@ -347,7 +348,40 @@ değil rapor işidir; ayrım yapılmazsa dava sonucu istatistikleri yanlış ç�
 - **Uçlar:** `GET/POST/DELETE /api/config/client_types` ve `/api/config/service_types`
   (`backend/routes/config.py`; POST/DELETE admin — event_types kalıbı).
 
-Aktarım eşlemesi (`scripts/hukdok_aktarim.py`, iki yeni `Sheet` sütunu) G120'nin, kart
-UI'ı G121'in işidir; testler `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
+Aktarım eşlemesi (`scripts/hukdok_aktarim.py`, iki yeni `Sheet` sütunu) G120'nin işidir
+ve **uygulandı** (`SUTUN_ADAYLARI` + `KART_ALANLARI` iki kayıt; tanınmayan/çok değer
+`AlanHatasi`, `backend/tests/test_g120_aktarim_muvekkil_hizmet.py`); kart UI'ı G121'in
+işidir ve uygulandı (büro kartında `bureau_type` altında iki alan, liste filtresi
+`hizmet_turu`). G119 testleri `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
 (şema kilitleri + sqlite seed/kapı/filtre davranışı + route 400/403 + gerçek Postgres'te
 migrasyon yolu + `client_categories`/`bureau_types` değişmezlik kilidi).
+
+## 13. Kapalı liste envanteri — dava kartının FAZ F listeleri (04.09.2026)
+
+`managers/reference_lists.LIST_REGISTRY` toplam **23** liste taşır; hepsi aynı mekanizmadır
+(model + `ListSpec` + `DynamicConfig` setter'ı, `seed_all_lists` yalnız boş tabloyu
+doldurur). Bunların **10'u** dava kartının kapalı-havuz alanlarını besler ve 04.09.2026
+itibarıyla **hepsi seed'lidir** — sayılar `managers/seed_data.py` sabitlerinden:
+
+| Liste anahtarı | Seed sabiti | Değer | Beslediği alan | Kaynak / görev |
+| --- | --- | --- | --- | --- |
+| `alleged_faults` | `ALLEGED_FAULTS` | 9 | `cases.iddia_edilen_kusur` (aktarım METİN yazar; liste kart seçimi + `DEGER_HAVUZLARI` farkı) | DB-2026-001 (04.09), `9608031` — **G044'ten 04.09'a kadar bilinçli boştu**, "seed'lenmez" ifadesi tarihseldir |
+| `appealing_parties` | `APPEALING_PARTIES` | 3 | aşama `basvuran_taraf` (`İstinaf Mahkemesi Başvuran Taraf`) | G044 |
+| `local_decisions` | `LOCAL_DECISIONS` | 28 | `case_stage_decisions.karar_durumu` (YEREL) | G060, 10.08 `DEGER_HAVUZLARI` |
+| `appeal_decisions` | `APPEAL_DECISIONS` | 3 | aynı (ISTINAF) | G060 |
+| `cassation_decisions` | `CASSATION_DECISIONS` | 3 | aynı (TEMYIZ) | G060 |
+| `revision_decisions` | `REVISION_DECISIONS` | 2 | aynı (KARAR_DUZELTME) | G060 |
+| `event_types` | `EVENT_TYPES` | 3 | `cases.olay_turu` | G103 (§11) |
+| `judgment_roles` | `JUDGMENT_ROLES` | 4 | `cases.hukumdeki_rol` | G103 (§11) |
+| `client_types` | `CLIENT_TYPES` | 5 | `cases.muvekkil_tipi` | G119 (§12), DB-2026-002 |
+| `service_types` | `SERVICE_TYPES` | 9 | `cases.hizmet_turu` | G119 (§12), DB-2026-002 |
+
+Kalan 13 liste (`lawyers`, `statuses`, `doctypes`, `case_subjects`, `emails`, `file_types`,
+`court_types`, `party_roles`, `bureau_types`, `cities`, `specialties`, `client_categories`,
+`file_statuses`) kart havuzu değil, kurulum listeleridir; `lawyers`/`statuses`/`doctypes`/
+`case_subjects`/`emails` seed'siz doğar (`seed_all_lists`'te çağrı yok), diğer sekizi
+seed'lidir (`court_types` için `COURT_TYPES_SEED` sözlüğü). `DEGER_HAVUZLARI` fark raporu bu
+envanterin yalnız altısını karşılaştırır (`services/teslim_cevap.py::HAVUZ_LISTE_ESLEMESI`;
+`client_types`/`service_types` eşlemede yok — bkz.
+[`veri-teslim-hatti.md` §7](veri-teslim-hatti.md)). Veri ekibine verilen değer
+tablosu `docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.8 ile birebir aynıdır.

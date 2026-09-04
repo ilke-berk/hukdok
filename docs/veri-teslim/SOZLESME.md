@@ -1,7 +1,13 @@
 # HUKDOK veri teslim sözleşmesi — veri ekibi için
 
-**Sürüm:** 03.09.2026 · **Muhatap:** MicroKolayOfis master'ını temizleyen veri ekibi ·
-**Karşı taraf:** HukuDok (Hanyaloğlu Acar + LexisBio ortak sistemi)
+**Sürüm:** 04.09.2026 (1.1; ilk sürüm 03.09.2026) · **Muhatap:** MicroKolayOfis master'ını
+temizleyen veri ekibi · **Karşı taraf:** HukuDok (Hanyaloğlu Acar + LexisBio ortak sistemi)
+
+Bu metin kısa sözleşmedir; sütun/sayfa/değer ayrıntıları ve makine-okur özet ayrı
+bilgilendirme belgesindedir (`BILGILENDIRME_2026-09-03.md`, sürüm 1.1). 04.09.2026'daki
+Format Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve cevabımız her iki belgeye işlendi:
+`Müvekkil Tipi` ve `Hizmet Türü` sütunları artık okunur, `İddia Edilen Kusur` listemiz
+dokuz değerle doludur.
 
 Bu metin, teslim paketinin **nasıl bırakılacağını** ve karşılığında **ne alınacağını**
 anlatır. Teslim artık WhatsApp/e-posta ile değil, paylaşılan SharePoint klasörüne bırakılarak
@@ -26,7 +32,7 @@ haberi için kalır.
 
 | Sayfa adı | Zorunlu mu | Ne olmalı |
 | --- | --- | --- |
-| `Sheet` | **Zorunlu** | Ana veri sayfası: föy başına bir satır, 68 sütun, sütun adları ve sırası önceki teslimlerdeki gibi sabit. `SistemNo` ve `Dosya No` sütunları **mutlaka** bulunmalı — ikisi olmadan dosya reddedilir. |
+| `Sheet` | **Zorunlu** | Ana veri sayfası: föy başına bir satır. Sütunlar **ada göre** okunur, sıra serbesttir; sütun adları önceki teslimlerdeki ve bildirdiğiniz (DB-2026) yazımlarla aynı kalır — adı değişen sütun hata vermez, "bu teslimde yok" sayılır. `SistemNo` ve `Dosya No` sütunları **mutlaka** bulunmalı — ikisi olmadan dosya reddedilir. Okunan başlıkların tam listesi bilgilendirme belgesi §3.2'dedir. |
 | `DEGISIKLIK_OZETI` | İsteğe bağlı — **her teslime ekleyin** | "Önceki teslim" ve "Bu teslim" satırları (aşağıda §3). Sayfa yoksa dosya reddedilmez; ama zincir kontrolü (§3) **yapılamaz** — sistem önceki teslimi bilmez, "zincir bilinmiyor" notu düşer ve paket öteki eşiklerin içindeyse **yine otomatik uygulanabilir**. Atlanan teslimin yakalanmasını istiyorsanız bu sayfayı hiç eksik bırakmayın. |
 | `Karar_Asamalari` | İsteğe bağlı | Föy başına yargı aşamaları (Yerel → İstinaf → Temyiz → Karar Düzeltme). Yoksa aşama bilgisi yazılmaz, hata değildir. |
 | `Düzeltme_Logu` | İsteğe bağlı | Hücre düzeltme günlüğü: `SistemNo`, `Eski Değer`, `Yeni Değer`, `Gerekçe`, `Tarih`. Gerekçe bizde o alanın değişiklik tarihçesine işlenir. Değişen sütunun adını gerekçenin başında köşeli parantezle yazın: `[Hükmedilen Manevi] Outlook otomasyonu parti-2`. Sütun adı yazılmayan satır işlenmez. |
@@ -82,14 +88,23 @@ raporda "atlandı" olarak görünür, hata değildir.
 
 ## 6. Kapalı liste değerleri — "bizde olmayan değer yazılmaz"
 
-Kapalı listeli alanlar (İddia Edilen Kusur, Yerel Mahkeme Karar Durumu, İstinaf Karar
-Durumu, Temyiz/Yargıtay Onama Durumu, Olay Türü, Hükümdeki Rol) için kural:
+Kapalı listeli alanlar (Müvekkil Tipi, Hizmet Türü, Olay Türü, Hükümdeki Rol, Yerel
+Mahkeme Karar Durumu, İstinaf Karar Durumu, Temyiz/Yargıtay Onama Durumu, İddia Edilen
+Kusur) için kural — güncel değer havuzları bilgilendirme belgesi §3.8'dedir:
 
-- Bizim listemizde **karşılığı olmayan** bir değer karta **yazılmaz**, satır raporunda
-  "tanınmayan değer" olarak görünür. Listeye kendiliğinden ekleme yapılmaz — tahmin yasağı.
-- `DEGER_HAVUZLARI` sayfası paketle geliyorsa iki yönlü fark çıkarılır: sizde olup bizde
+- Müvekkil Tipi, Hizmet Türü, Olay Türü, Hükümdeki Rol: bizim listemizde **karşılığı
+  olmayan** bir değer karta **yazılmaz**, satır raporunda "tanınmayan değer" olarak görünür.
+  Karar durumları: havuz dışı değer satırı düşürmez, durum boş kalır, değer açıklamaya
+  taşınır ve rapora yazılır. Listeye kendiliğinden ekleme yapılmaz — tahmin yasağı.
+- İddia Edilen Kusur: değer karta **metin olarak olduğu gibi yazılır**; listemiz (04.09'dan
+  beri dokuz değer) kart ekranındaki seçimi ve aşağıdaki havuz farkı raporunu besler.
+  Liste dışı yazım karta girer ama ekranda liste dışı görünür — yazımı listeye uydurun.
+- `DEGER_HAVUZLARI` sayfası paketle geliyorsa altı havuz için (İddia Edilen Kusur, üç
+  karar durumu, Olay Türü, Hükümdeki Rol) iki yönlü fark çıkarılır: sizde olup bizde
   olmayanlar ve bizde olup sizde olmayanlar. Fark varsa cevap klasörüne
-  `deger-havuzu-farki_<teslim>.csv` düşer; fark yoksa dosya üretilmez.
+  `deger-havuzu-farki_<teslim>.csv` düşer; fark yoksa dosya üretilmez. Müvekkil Tipi ve
+  Hizmet Türü havuzları karşılaştırılmaz; bu ikisinde tanınmayan değer yalnız satır
+  raporunda görünür.
 - Yeni bir değer eklenmesi gerekiyorsa bunu yazılı bildirin; listeye ekleme insan kararıyla
   yapılır, sonraki teslimde değer yazılır.
 
@@ -133,8 +148,13 @@ o an ulaşılamazsa ertesi gece yeniden denenir.
 ## 9. Kısa kontrol listesi
 
 1. Dosya adı `HUKDOK_TESLIM_…xlsx`, klasör `03_VERI_TESLIM/gelen/`.
-2. `Sheet` sayfası var; `SistemNo` ve `Dosya No` sütunları var; 68 sütun adı ve sırası sabit.
+2. `Sheet` sayfası var; `SistemNo` ve `Dosya No` sütunları var; sütun adları önceki teslim ve
+   bildirimlerle aynı (sıra serbest).
 3. `DEGISIKLIK_OZETI`'nde "Önceki teslim: <bir önceki dosyanın tam adı>" satırı var.
 4. Boşaltmak istediğiniz alanlar `Düzeltme_Logu`'nda `(boş)` + gerekçe + `[Sütun Adı]` önekiyle.
-5. Kapalı listeli alanlarda yalnız bizde de olan değerler; yeni değer için önce yazılı bildirim.
-6. Günde bir paket; ertesi sabah `cevap/<teslim>/` klasörüne bakın.
+5. Kapalı listeli alanlarda (Müvekkil Tipi, Hizmet Türü, Olay Türü, Hükümdeki Rol, karar
+   durumları, İddia Edilen Kusur) yalnız bizde de olan değerler; yeni değer için önce yazılı
+   bildirim (sıradaki numara DB-2026-011).
+6. `Karar_Asamalari`'nda `Aşama = Önceki` satırlarını filtrelemeyin, gönderin (eski esas
+   numarası olarak işlenir).
+7. Günde bir paket; ertesi sabah `cevap/<teslim>/` klasörüne bakın.

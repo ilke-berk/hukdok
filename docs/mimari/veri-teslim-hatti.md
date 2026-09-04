@@ -1,6 +1,6 @@
 # Veri teslim hattı — SharePoint gelen kutusu → defter → 04:00 kapısı → cevap paketi
 
-> **Son doğrulama: 2026-09-03 · 85229ca**
+> **Son doğrulama: 2026-09-04 · 88409da**
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 > Veri ekibine verilen dış sözleşme ayrı dosyadadır:
 > [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) (kod yolu içermez).
@@ -269,14 +269,48 @@ teslimde eksik sütun mevcut değeri **silmez** ("None = bu teslimde yok"). Kün
 (`karar_no`/`karar_tarihi`/istinaf başvuran) ve içerik-karşılaştırmalı alanlar (`court`,
 `sub_type`) boşaltılamaz — talimat satır raporuna düşer (`:913-920`, `:937`).
 
-**`DEGER_HAVUZLARI` (G112, `services/teslim_cevap.py:94-142`).** Altı havuz → referans
-listesi eşlemesi (`HAVUZ_LISTE_ESLEMESI`, `:115-123`: İddia Edilen Kusur, İstinaf Karar
-Durumu, Yargıtay/Temyiz Onama Durumu, Yerel Mahkeme Karar Durumu, Olay Türü, Hükümdeki Rol).
-Başlık satırı ilk 10 satırda aranır (gerçek paket 3. satırda taşır, `:132-135`); uzun biçim
-("Havuz / Sütun" + "Değer") önce, yoksa geniş biçim (`:307-330`). Yalnız **rapor + bildirim**:
-referans listesine yazma **yok** — tahmin yasağı (`:19-24`, `:294`). `alleged_faults`
-04.09.2026'ya kadar bu yasak gereği boştu; dokuz değer veri ekibinin DB-2026-001 yazılı
-bildirimiyle geldi ve `seed_data.ALLEGED_FAULTS` ile seed'lendi (paketten değil, bildirimden).
+**`DEGER_HAVUZLARI` (G112, `services/teslim_cevap.py:94-142`).** Yedi havuz başlığı → altı
+referans listesi eşlemesi (`HAVUZ_LISTE_ESLEMESI`, `:116-124`: İddia Edilen Kusur →
+`alleged_faults`, İstinaf Karar Durumu → `appeal_decisions`, Yargıtay/Temyiz Onama Durumu →
+`cassation_decisions`, Yerel Mahkeme Karar Durumu → `local_decisions`, Olay Türü →
+`event_types`, Hükümdeki Rol → `judgment_roles`). G119'un iki listesi (`client_types`,
+`service_types`) **eşlemede YOK**: `Müvekkil Tipi`/`Hizmet Türü` havuzu gelse de fark raporu
+üretmez (bildirim sütunları `Sheet`te föy düzeyinde; tanınmayan değer aktarımın satır
+raporuna düşer — aşağıda). Başlık satırı ilk 10 satırda aranır (gerçek paket 3. satırda
+taşır, `:133-136`); uzun biçim ("Havuz / Sütun" + "Değer") önce, yoksa geniş biçim
+(`:306-331`). Yalnız **rapor + bildirim**: referans listesine yazma **yok** — tahmin yasağı
+(`:19-24`, `:294`). `alleged_faults` 04.09.2026'ya kadar bu yasak gereği boştu; dokuz değer
+veri ekibinin DB-2026-001 yazılı bildirimiyle geldi ve `seed_data.ALLEGED_FAULTS` ile
+seed'lendi (paketten değil, bildirimden; `9608031`). Aktarım `iddia_edilen_kusur`u yine
+**metin** olarak yazar (`scripts/hukdok_aktarim.py:761`, `_metin_alan`) — liste doğrulaması
+kart ekranı + bu fark raporu içindir.
+
+**`Sheet` föy düzeyi kapalı listeler (G120, `scripts/hukdok_aktarim.py`).** DB-2026-002'nin
+iki sütunu `Müvekkil Tipi` → `cases.muvekkil_tipi`, `Hizmet Türü` → `cases.hizmet_turu`
+(`SUTUN_ADAYLARI` iki kayıt, `KART_ALANLARI` iki kayıt; başlık anahtarı MUVEKKILTIPI ≠
+MUVEKKIL, taraf sütunuyla çapraz bağlanmaz). Değer eşlemesi AD bazlı, kanonik adların tek
+kaynağı `seed_data.CLIENT_TYPES`/`SERVICE_TYPES` (literal kopya yok); tanınmayan değer ve
+` ; ` ile çok değer `AlanHatasi` → alan yazılmaz, satır raporuna `tur=HATA`, föyün diğer
+alanları işlenir (G104 deseni). Kardeş föy çelişkisi bu iki alanda **beklenen** durumdur
+(bildirim: "föy başına değişir") — mekanizma neyse o, özel istisna yok. Okunan alan sayısı
+bu ekle 42 (`SUTUN_ADAYLARI`, 54 başlık yazımı); veri ekibine giden liste
+`docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.2 (sürüm 1.1) ile birebir.
+
+**DB-2026 bildirimi ve cevabı — tarihli şerh (04.09.2026).** Veri ekibinin Format
+Değişiklik Bildirimi REV-2 on kalemdi (DB-2026-001…010; ilk geçerli paket
+`HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx`); HukuDok aynı gün "hazır, bırakın" + beş cevap
+verdi. Bizde iş çıkaran ikisi: DB-001 (`ALLEGED_FAULTS` 9 değer seed, `9608031`) ve DB-002
+(G119 şema + G120 aktarım + G121 UI). Kod dokunulmadan kapananlar: DB-003 (on dört sütun
+artık gelmiyor — "bu teslimde yok" sözleşmesi, mevcut değer korunur; `Arabuluculuk
+Numarası` kimlik alanı değil, köprü `Dosya No`), DB-004 (`Karar_Asamalari`'nda `Önceki`
+etiketi `ASAMA_ONCEKI` ile esas tarihçesine gider, `:1617-1623`; satırların gönderilmesi
+istendi), DB-005 (kanonik karar listemiz = `seed_data` dört liste 28/3/3/2, lehe/aleyhe
+ekseni yok), DB-006 (`Olay Türü`/`Hükümdeki Rol` veri ekibinde henüz üretilmiyor; NULL
+meşru), DB-007 (`Uzmanlık Alanı` zaten `uzmanlik_alani`nın ikinci adayı, `:194`), DB-008
+(ad alanları İlk Harf Büyük — taraf anahtarı `party_check.normalize_party_key` harf
+duyarsız, `:1661`), DB-009/010 (tarih/tutar tipi ve serbest metin havuzları: değişiklik yok).
+Ek sayfalar (`Kaldirilan_Sutunlar`, `S37_Kanonik`, `Yazim_Standardi`) okunmaz. Bildirimin
+kendi metni repoda değildir; işlenmiş hâli bilgilendirme belgesi 1.1'dedir.
 
 **`Silinen_Föyler` / `Kapsam_Dışı` (G113, `scripts/hukdok_aktarim.py:1924-1934`, `:1973`).**
 Föy **silinmez**, `case_foys.kapsam_durumu` (`SILINDI` | `KAPSAM_DISI`) + `kapsam_gerekcesi` +
@@ -340,4 +374,5 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
 | Graph klasör listeleme | `backend/sharepoint/sharepoint_uploader_graph.py:448-482` — bkz. [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
 | Veri ekibine verilen sözleşme | [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) |
 | Plan ve açık kalanlar | [`docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`](../plan/veri-teslim-otomasyonu-plani-2026-09-03.md) |
-| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py` |
+| Veri ekibine verilen bilgilendirme (sütun/sayfa/değer ayrıntısı, makine-okur özet) | [`docs/veri-teslim/BILGILENDIRME_2026-09-03.md`](../veri-teslim/BILGILENDIRME_2026-09-03.md) (sürüm 1.1; dosya adı sabit — yol veri ekibinde) |
+| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py` |
