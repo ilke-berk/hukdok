@@ -17,7 +17,10 @@ export type ClosedListKey =
     | "alleged_faults"
     | "appealing_parties"
     | "event_types"
-    | "judgment_roles";
+    | "judgment_roles"
+    // G121 (DB-2026-002): büro kartındaki muvekkil_tipi / hizmet_turu listeleri.
+    | "client_types"
+    | "service_types";
 
 export interface CardFieldDef {
     /** Backend alan adı (CaseRead ile birebir). */
@@ -75,10 +78,18 @@ export const PROCESS_CARD_FIELDS: CardFieldDef[] = [
  * `dosya_son_durumu` G074'te buradan ÇIKTI: takip paneli onu ZATEN yazıyordu,
  * kart 2026-08-19'da yalnız okuma amaçlı basmıştı — aynı değerin iki ekranda
  * durması bu görevin kapattığı sapmanın ta kendisiydi.
+ *
+ * G121 (DB-2026-002, 04.09.2026): `muvekkil_tipi` + `hizmet_turu` büro özel
+ * türünün ALTINA girdi — büro/hizmet bilgisi tek grupta kalır, tıbbi karta
+ * KONMAZ. İkisi de kapalı liste; değerler backend'in client_types /
+ * service_types uçlarından gelir (sözleşme G119 ile ortak). "Lexis Rapor"
+ * hizmet türü dava takibi değildir; ayrım kartta ve liste filtresinde görünür.
  */
 export const OFFICE_CARD_FIELDS: CardFieldDef[] = [
     { key: "acceptance_date", label: "İş Kabul Tarihi", type: "date" },
     { key: "bureau_type", label: "Büro Özel Türü", type: "text" },
+    { key: "muvekkil_tipi", label: "Müvekkil Tipi", type: "closedList", list: "client_types" },
+    { key: "hizmet_turu", label: "Hizmet Türü", type: "closedList", list: "service_types" },
 ];
 
 /** Boş = null | undefined | yalnız boşluk. 0 ve "0" DOLUDUR. */

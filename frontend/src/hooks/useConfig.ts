@@ -70,6 +70,11 @@ const CONFIG_KEYS = {
     // olay_turu / hukumdeki_rol alanlarına ve liste filtresine bağladı).
     eventTypes: ["config", "event_types"],
     judgmentRoles: ["config", "judgment_roles"],
+    // Müvekkil Tipi / Hizmet Türü KAPALI listeleri (DB-2026-002; G119 uçları,
+    // G121 büro kartındaki muvekkil_tipi / hizmet_turu alanlarına ve liste
+    // filtresine bağladı).
+    clientTypes: ["config", "client_types"],
+    serviceTypes: ["config", "service_types"],
     // Karar sonucu RESMÎ listeleri (G060 kurdu, G061 takip paneline bağladı).
     // Takip panelindeki karar durumu dropdown'ları BURADAN okur; kayıt sırası
     // resmi havuz sırasıdır (backend sequence ile sıralı döner).
@@ -144,6 +149,8 @@ export const useConfig = () => {
     const appealingPartiesQ = useQuery({ queryKey: CONFIG_KEYS.appealingParties, queryFn: () => fetchJson("/api/config/appealing_parties"), ...queryOpts });
     const eventTypesQ = useQuery({ queryKey: CONFIG_KEYS.eventTypes, queryFn: () => fetchJson("/api/config/event_types"), ...queryOpts });
     const judgmentRolesQ = useQuery({ queryKey: CONFIG_KEYS.judgmentRoles, queryFn: () => fetchJson("/api/config/judgment_roles"), ...queryOpts });
+    const clientTypesQ = useQuery({ queryKey: CONFIG_KEYS.clientTypes, queryFn: () => fetchJson("/api/config/client_types"), ...queryOpts });
+    const serviceTypesQ = useQuery({ queryKey: CONFIG_KEYS.serviceTypes, queryFn: () => fetchJson("/api/config/service_types"), ...queryOpts });
     const localDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.localDecisions, queryFn: () => fetchJson("/api/config/local_decisions"), ...queryOpts });
     const appealDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.appealDecisions, queryFn: () => fetchJson("/api/config/appeal_decisions"), ...queryOpts });
     const cassationDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.cassationDecisions, queryFn: () => fetchJson("/api/config/cassation_decisions"), ...queryOpts });
@@ -165,7 +172,7 @@ export const useConfig = () => {
         lawyersQ, statusesQ, doctypesQ, emailRecipientsQ, caseSubjectsQ, fileTypesQ,
         courtTypesQ, partyRolesQ, bureauTypesQ, citiesQ, specialtiesQ,
         clientCategoriesQ, fileStatusesQ, allegedFaultsQ, appealingPartiesQ,
-        eventTypesQ, judgmentRolesQ,
+        eventTypesQ, judgmentRolesQ, clientTypesQ, serviceTypesQ,
         localDecisionsQ, appealDecisionsQ, cassationDecisionsQ, revisionDecisionsQ,
     ];
     const isConfigError = listQueries.some(q => q.isError);
@@ -186,6 +193,7 @@ export const useConfig = () => {
         clientCategoriesQ.isLoading || fileStatusesQ.isLoading ||
         allegedFaultsQ.isLoading || appealingPartiesQ.isLoading ||
         eventTypesQ.isLoading || judgmentRolesQ.isLoading ||
+        clientTypesQ.isLoading || serviceTypesQ.isLoading ||
         localDecisionsQ.isLoading || appealDecisionsQ.isLoading ||
         cassationDecisionsQ.isLoading || revisionDecisionsQ.isLoading;
 
@@ -291,6 +299,8 @@ export const useConfig = () => {
         appealingParties: appealingPartiesQ.data ?? EMPTY,
         eventTypes: eventTypesQ.data ?? EMPTY,
         judgmentRoles: judgmentRolesQ.data ?? EMPTY,
+        clientTypes: clientTypesQ.data ?? EMPTY,
+        serviceTypes: serviceTypesQ.data ?? EMPTY,
         localDecisions: localDecisionsQ.data ?? EMPTY,
         appealDecisions: appealDecisionsQ.data ?? EMPTY,
         cassationDecisions: cassationDecisionsQ.data ?? EMPTY,

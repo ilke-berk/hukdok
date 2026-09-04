@@ -85,6 +85,9 @@ interface CaseDetailsData {
     hukumdeki_rol?: string;
     hukmedilen_maddi?: number;
     hukmedilen_manevi?: number;
+    // G121 (DB-2026-002) büro kartı kapalı liste alanları — NULL = bilinmiyor.
+    muvekkil_tipi?: string;
+    hizmet_turu?: string;
     related_cases?: { id: number; esas_no?: string; tracking_no?: string; file_type?: string; court?: string; status: string }[];
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
@@ -177,7 +180,17 @@ const CaseDetails = () => {
     const navigate = useNavigate();
     const { getCase } = useCases();
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
-    const { allegedFaults, appealingParties, eventTypes, judgmentRoles } = useConfig();
+    const { allegedFaults, appealingParties, eventTypes, judgmentRoles, clientTypes, serviceTypes } = useConfig();
+    // G105 dersi: closedLists HER kartta aynı tam nesnedir — tek yerde genişletmek
+    // diğer kartlarda boş dropdown/damgasız rozet üretir. G121 iki anahtar ekledi.
+    const closedLists = {
+        alleged_faults: allegedFaults,
+        appealing_parties: appealingParties,
+        event_types: eventTypes,
+        judgment_roles: judgmentRoles,
+        client_types: clientTypes,
+        service_types: serviceTypes,
+    };
     const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
     const [loadingLocal, setLoadingLocal] = useState(true);
     const [activeTab, setActiveTab] = useState("overview");
@@ -601,7 +614,7 @@ const CaseDetails = () => {
                             icon={<Activity className="w-4 h-4 text-primary" />}
                             fields={MEDICAL_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
+                            closedLists={closedLists}
                         />
 
                         {/* G074: arabuluculuk + arşiv alanları buradan ÇIKTI — takip
@@ -613,16 +626,16 @@ const CaseDetails = () => {
                             icon={<Scale className="w-4 h-4 text-primary" />}
                             fields={PROCESS_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
+                            closedLists={closedLists}
                         />
 
                         <TransferFieldsCard
                             title="Büro Bilgileri"
-                            description="İş kabulü ve büro özel türü"
+                            description="İş kabulü, büro özel türü, müvekkil tipi ve hizmet türü"
                             icon={<Briefcase className="w-4 h-4 text-primary" />}
                             fields={OFFICE_CARD_FIELDS}
                             data={caseData}
-                            closedLists={{ alleged_faults: allegedFaults, appealing_parties: appealingParties, event_types: eventTypes, judgment_roles: judgmentRoles }}
+                            closedLists={closedLists}
                         />
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
