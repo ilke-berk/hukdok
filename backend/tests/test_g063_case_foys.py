@@ -81,6 +81,8 @@ def test_model_ve_kolonlar_gorev_taslagina_uygun():
         "source", "created_at", "updated_at",
         "kapsam_durumu", "kapsam_gerekcesi", "kapsam_tarihi",
         "mko_id", "muvekkil_no", "muvekkil_tipi", "hizmet_turu", "durum",
+        # G125: teslimdeki ham satır (JSON) — kayıpsızlık şartı.
+        "ham_veri",
     }
     assert columns["sistem_no"].type.length == 50
     assert columns["tku_no"].type.length == 50

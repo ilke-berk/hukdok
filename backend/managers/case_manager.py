@@ -251,6 +251,8 @@ def _foy_row_dict(row) -> dict:
         "muvekkil_tipi": row.muvekkil_tipi,
         "hizmet_turu": row.hizmet_turu,
         "durum": row.durum,
+        # G125 ham satır (orijinal başlık → değer); NULL = ham satırsız eski kayıt
+        "ham_veri": row.ham_veri,
         "source": row.source,
         "case_party_id": row.case_party_id,
         "kapsam_durumu": row.kapsam_durumu,

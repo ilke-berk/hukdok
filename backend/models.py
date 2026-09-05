@@ -368,6 +368,12 @@ class CaseFoy(Base):
     muvekkil_tipi = Column(String(100), nullable=True)
     hizmet_turu = Column(String(100), nullable=True)
     durum = Column(String(20), nullable=True)
+    # G125 (05.09.2026, kullanıcı kararı "kayıpsız"): föyün teslimdeki HAM satırı
+    # — orijinal sütun başlığı → değer (tarih ISO, Decimal metin), boş hücre
+    # hariç, tanınmayan sütun dahil. Kart alanına yazılamayan değer (kardeş föy
+    # çelişkisi 1.180 kart, mükerrer eşleşme, yeni alan) burada durur; paket
+    # dosyasına geri dönmek gerekmez. Son teslimin fotoğrafıdır (üzerine yazılır).
+    ham_veri = Column(JSON, nullable=True)
     source = Column(String(100), nullable=True)    # hangi teslim paketi yazdı
     # Kapsam işareti (G113): SILINDI | KAPSAM_DISI; NULL = kapsamda.
     kapsam_durumu = Column(String(20), nullable=True)

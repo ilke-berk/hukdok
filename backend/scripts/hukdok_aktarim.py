@@ -305,7 +305,12 @@ class AlanHatasi(Exception):
 @dataclass
 class HamSatir:
     satir_no: int                      # xlsx'teki 1 tabanlı satır numarası
-    degerler: Dict[str, Any]
+    degerler: Dict[str, Any]           # tanınan alan → değer (SUTUN_ADAYLARI)
+    # G125: satırın TAMAMI orijinal başlıklarla, JSON'a çevrilmiş (tarih ISO,
+    # Decimal metin) — tanınmayan sütun dahil, boş hücre hariç. `case_foys.
+    # ham_veri`ye yazılır: kart alanına yazılamayan (çelişki/mükerrer/kartsız)
+    # her değer föyde kalır, paket dosyasına geri dönmek gerekmez.
+    ham: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -872,6 +877,7 @@ def xlsx_oku(yol: Path, *, sheet: Optional[str] = None,
                 f"okunan başlıklar: {', '.join(str(b) for b in baslik_satiri if b)}"
             )
 
+        basliklar = [(i, str(b).strip()) for i, b in enumerate(baslik_satiri) if _metin(b) is not None]
         satirlar: List[HamSatir] = []
         for sira, ham in enumerate(satir_akisi, start=2):
             if limit is not None and len(satirlar) >= limit:
@@ -884,10 +890,29 @@ def xlsx_oku(yol: Path, *, sheet: Optional[str] = None,
                     alan: (ham[i] if i < len(ham) else None)
                     for alan, i in indeksler.items()
                 },
+                ham={
+                    baslik: _ham_json(ham[i])
+                    for i, baslik in basliklar
+                    if i < len(ham) and _metin(ham[i]) is not None
+                },
             ))
         return satirlar, bulunanlar
     finally:
         wb.close()
+
+
+def _ham_json(deger: Any) -> Any:
+    """Hücre değerini JSON'a sığar hâle getirir (ham satır, G125): tarih ISO
+    metin, Decimal metin (hassasiyet kaybı yok), sayı/metin olduğu gibi."""
+    if isinstance(deger, datetime):
+        return deger.date().isoformat() if deger.time() == datetime.min.time() else deger.isoformat()
+    if isinstance(deger, date):
+        return deger.isoformat()
+    if isinstance(deger, Decimal):
+        return str(deger)
+    if isinstance(deger, (int, float, str, bool)):
+        return deger
+    return str(deger)
 
 
 def _sutun_indeksleri(baslik_satiri: Sequence[Any]) -> Tuple[Dict[str, int], Dict[str, str]]:
@@ -1814,6 +1839,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         tku_no=_metin(satir.degerler.get("tku_no")),
         hasar_no=_metin(satir.degerler.get("hasar_no")),
         source=foy_source,
+        ham_veri=satir.ham or None,       # G125 ham satır (54 sütun, orijinal başlık)
         **foy_degerleri(satir),           # G123 föy düzeyi alanlar (kayıpsız)
     )
 

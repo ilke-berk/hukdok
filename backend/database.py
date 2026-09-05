@@ -1031,6 +1031,13 @@ _MIGRATIONS = [
     # Sekiz yeni liste tablosu (currencies, medical_*, patient_harms,
     # applied_methods, cassation_courts, appeal_courts,
     # defendant_administrations) modelde tanımlı → create_all yaratır.
+    # ─── 45. FÖYÜN HAM SATIRI (G125) ──────────────────────────────────────────
+    # `case_foys.ham_veri` JSON: teslimdeki satırın tamamı (orijinal başlık →
+    # değer). Madde 41 (`aktarim_teslimleri.yapi`) deseni: NULL = eski kayıt.
+    # Index yok (satır id'siyle okunur). ~8.400 föy × 54 hücre, birkaç MB.
+    ("columns", "case_foys", {
+        "ham_veri": "JSON",
+    }),
     ("index", "cases", [
         "ALTER TABLE cases ALTER COLUMN tibbi_surec TYPE VARCHAR",
         "ALTER TABLE cases ALTER COLUMN tibbi_olay TYPE VARCHAR",

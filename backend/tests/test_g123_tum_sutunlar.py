@@ -300,6 +300,46 @@ def test_get_case_yeni_alanlari_donduruyor(kart, tmp_path, monkeypatch):
     assert [e["esas_no"] for e in veri["esas_numbers"]] == ["2024/10", "2021/588"]
 
 
+def test_ham_satir_foyde_kayipsiz_saklanir(kart, tmp_path):
+    """G125: föyün 54 sütunluk ham satırı orijinal başlıklarla JSON'da durur —
+    tanınmayan sütun dahil, boş hücre hariç; tarih ISO. Kartta yazılamayan değer
+    (çelişki/mükerrer) böylece paket dosyasına dönmeden bulunur. İkinci koşu
+    aynı fotoğrafı yazar (değişiklik yok); dar paket eski fotoğrafı silmez."""
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_tam_satir(**{"Tanınmayan Sütun": "X"})],
+                       basliklar=BASLIKLAR + ["Tanınmayan Sütun", "Bos Sutun"])
+
+    aktarimi_kos(kart, girdi=paket, rapor_dizini=tmp_path / "r1")
+
+    db = kart()
+    try:
+        ham = db.query(models.CaseFoy).one().ham_veri
+        assert ham["SistemNo"] == "H-1" and ham["Dosya - Föy Bilgileri"] == 9425
+        assert ham["Tanınmayan Sütun"] == "X"                       # tanınmayan da saklanır
+        assert "Bos Sutun" not in ham                               # boş hücre yok
+        assert ham["İstinaf Mahkeme Başvuru Tar."] == "2025-11-24"  # tarih ISO
+        assert ham["Dava Değeri TL"] == 250000
+    finally:
+        db.close()
+
+    dar = _paket_yaz(tmp_path / "dar.xlsx", [_satir("H-1", "D-1")],
+                     basliklar=["SistemNo", "Dosya No", "Klasör No"])
+    aktarimi_kos(kart, girdi=dar, rapor_dizini=tmp_path / "r2")
+    db = kart()
+    try:
+        ham2 = db.query(models.CaseFoy).one().ham_veri
+        assert ham2 == {"SistemNo": "H-1", "Dosya No": "D-1", "Klasör No": "TKU-123"}  # son teslimin fotoğrafı
+    finally:
+        db.close()
+
+
+def test_get_case_ham_veriyi_donduruyor(kart, tmp_path, monkeypatch):
+    paket = _paket_yaz(tmp_path / "t.xlsx", [_tam_satir()])
+    aktarimi_kos(kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
+    monkeypatch.setattr(case_manager, "SessionLocal", kart)
+    foy = case_manager.get_case(1)["foyler"][0]
+    assert foy["ham_veri"]["Müvekkil Tipi"] == "Doktor"
+
+
 def test_xlsx_oku_mko_id_ve_para_birimi(tmp_path):
     paket = _paket_yaz(tmp_path / "t.xlsx", [_tam_satir()])
     satirlar, bulunanlar = xlsx_oku(paket)

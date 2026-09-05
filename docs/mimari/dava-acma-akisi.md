@@ -268,6 +268,13 @@ kardeşlerinin aynısıdır.
   181 kart — kart alanı D9 gereği yazılmaz, bilgi föyde kayıpsız durur (tanınan değer
   kanonik adla, tanınmayan hücre teslimdeki ham yazımıyla; `hukdok_aktarim.foy_degerleri`).
   Kolonlar migrasyon madde 43'te; `("columns", …)` op'u + create_all aynı şemaya çıkar.
+- **Ham satır (G125, 05.09.2026 — "kayıpsız" şartı):** `case_foys.ham_veri` JSON, teslimdeki
+  satırın tamamı orijinal başlıklarla (tarih ISO, Decimal metin; boş hücre hariç,
+  tanınmayan sütun dahil; `HamSatir.ham`, `xlsx_oku`). Kart alanına yazılamayan değer
+  (kardeş föy çelişkisi — 04.09 paketinde 1.180 kart / 6.835 alan —, mükerrer eşleşme,
+  henüz açılmamış alan) föyde durur; paket dosyasına dönmek gerekmez. Son teslimin
+  fotoğrafıdır (üzerine yazılır; dar paket dar fotoğraf bırakır). Kartın föy panelinde
+  "Teslimdeki ham satırlar" açılır bloğu. Migrasyon madde 45.
 - **Okuma ve UI (G123):** `case_manager.get_case` föyleri `foyler` listesinde döner; kart
   ekranındaki `CaseFoyPanel` (frontend/src/components) SistemNo/TKU/hasar no + föy düzeyi
   üçlü + kapsam rozetini basar. Dava araması `case_foys.tku_no` ve `sistem_no` kollarını da

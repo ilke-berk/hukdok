@@ -67,6 +67,23 @@ describe("CaseFoyPanel", () => {
         expect(rozet?.textContent).toBe("Kapsam dışı");
     });
 
+    it("ham satır varsa açılır blokta tüm sütunlar görünür (G125)", () => {
+        const hamli: CaseFoyEntry[] = [{
+            ...foyler[0],
+            ham_veri: { "Dava Değeri TL": 250000, "İş Kabul Tarihi": "2020-08-28", "Tanınmayan Sütun": "X" },
+        }];
+        act(() => root.render(<CaseFoyPanel foyler={hamli} />));
+        const blok = container.querySelector("[data-testid='foy-ham-veri']");
+        expect(blok?.textContent).toContain("Dava Değeri TL");
+        expect(blok?.textContent).toContain("250000");
+        expect(blok?.textContent).toContain("Tanınmayan Sütun");
+    });
+
+    it("ham satır yoksa blok hiç basılmaz", () => {
+        act(() => root.render(<CaseFoyPanel foyler={foyler} />));
+        expect(container.querySelector("[data-testid='foy-ham-veri']")).toBeNull();
+    });
+
     it("etiket yardımcıları: havuz kodu Türkçe, ham yazım olduğu gibi", () => {
         expect(foyDurumEtiketi("DERDEST")).toBe("Aktif");
         expect(foyDurumEtiketi("MAHZEN")).toBe("Arşiv");

@@ -26,6 +26,8 @@ export interface CaseFoyEntry {
     /** Kart status havuzu: DERDEST | MAHZEN (eşlenemeyen teslim yazımı ham gelir). */
     durum?: string | null;
     source?: string | null;
+    /** G125: teslimdeki ham satır (orijinal başlık → değer); NULL = ham satırsız eski kayıt. */
+    ham_veri?: Record<string, unknown> | null;
     /** NULL = kapsamda; SILINDI | KAPSAM_DISI = veri ekibi kapsamdan çıkardı (silinmedi). */
     kapsam_durumu?: string | null;
     kapsam_gerekcesi?: string | null;
@@ -100,6 +102,30 @@ export default function CaseFoyPanel({ foyler }: Props) {
                         </tbody>
                     </table>
                 </div>
+                {/* G125: ham satır — kart alanına yazılamayan (çelişki/mükerrer) değer
+                    burada bulunur; paket dosyasına dönmek gerekmez. Açılır blok. */}
+                {foyler.some(f => f.ham_veri && Object.keys(f.ham_veri).length > 0) && (
+                    <details className="mt-3" data-testid="foy-ham-veri">
+                        <summary className="text-xs text-muted-foreground cursor-pointer select-none">
+                            Teslimdeki ham satırlar (tüm sütunlar)
+                        </summary>
+                        <div className="mt-2 space-y-3">
+                            {foyler.filter(f => f.ham_veri && Object.keys(f.ham_veri).length > 0).map(f => (
+                                <div key={f.id}>
+                                    <p className="font-mono text-[11px] font-semibold mb-1">{f.sistem_no}</p>
+                                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 text-[11px]">
+                                        {Object.entries(f.ham_veri as Record<string, unknown>).map(([k, v]) => (
+                                            <div key={k} className="flex gap-2 min-w-0">
+                                                <dt className="text-muted-foreground shrink-0">{k}:</dt>
+                                                <dd className="truncate" title={String(v)}>{String(v)}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                </div>
+                            ))}
+                        </div>
+                    </details>
+                )}
             </CardContent>
         </Card>
     );

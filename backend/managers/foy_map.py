@@ -60,6 +60,7 @@ _UPDATABLE = (
     "case_party_id", "tku_no", "hasar_no", "source",
     # G123 föy düzeyi teslim alanları (models.CaseFoy gerekçesi)
     "mko_id", "muvekkil_no", "muvekkil_tipi", "hizmet_turu", "durum",
+    "ham_veri",     # G125 ham satır (JSON, son teslimin fotoğrafı)
 )
 
 
@@ -185,6 +186,7 @@ def upsert_foy(
     muvekkil_tipi: Optional[str] = None,
     hizmet_turu: Optional[str] = None,
     durum: Optional[str] = None,
+    ham_veri: Optional[Dict[str, Any]] = None,
 ) -> models.CaseFoy:
     """Föyü kartın (ve varsa müvekkilin) altına yazar — İDEMPOTENT.
 
@@ -210,6 +212,8 @@ def upsert_foy(
         "muvekkil_tipi": _clamped(muvekkil_tipi, "muvekkil_tipi"),
         "hizmet_turu": _clamped(hizmet_turu, "hizmet_turu"),
         "durum": _clamped(durum, "durum"),
+        # G125: JSON, kırpılmaz; None = bu teslimde yok (eski fotoğraf korunur)
+        "ham_veri": dict(ham_veri) if ham_veri else None,
     }
 
     mevcut = get_foy(db, anahtar)
