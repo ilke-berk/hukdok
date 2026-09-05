@@ -319,6 +319,18 @@ hatalısını geçirelim, lokal migrasyon bitince hepsini elden geçiririz." 04.
 - **Taraf rolü:** `Aleyhine Başvurulan`, `Alacaklı`, `Katılan` seed'e girdi (paket: 429 ·
   83 · 3 föy) — aktarım rol metnini zaten yazıyordu, dropdown "liste dışı" gösteriyordu.
 
+**Kartsız föyler için kart açma (G126, 05.09.2026):** aktarımın "kart yaratmaz" kuralı
+değişmedi; `scripts/kartsiz_foy_kart_ac.py --input <paket> [--apply]` ayrı bir adımdır.
+Ne SistemNo'su ne DosyaNo parçası bir karta düşen föyleri DosyaNo'ya göre gruplar
+(aynı DosyaNo'daki ARB + HUKUK föyleri tek kart; künye asıl davanın föyünden) ve
+`case_manager.add_case` ile MİNİMAL kart açar: ofis no `retag_tracking_nos` kuralıyla
+(kategori kodu Müvekkil Tipi'nden, 10 karakter isim bloğu, blok başına DB max+1 sıra,
+tür, `00000`), klasör no = DosyaNo, durum, tür, konu, mahkeme, esas, dava tarihi.
+Taraf/avukat YAZMAZ (aktarımın işi; add_case'in otomatik cari kart davranışı böylece
+tetiklenmez). Sonraki aktarım koşusu föyleri DosyaNo köprüsüyle bağlar. Lokal 05.09:
+217 föy → 210 kart, ardından aktarım 217 yeni föy / 632 taraf / 244 avukat, kartsız 0.
+Testler `backend/tests/test_g126_kartsiz_foy_kart_ac.py`.
+
 Dropdown yapılmayanlar (bilinçli): kimlikler, tarihler, tutarlar, taraf adları, esas
 numaraları, açıklama metinleri, Para Birimi dışında tek değerli sütunlar. Tıbbi Olay 667
 değerle dropdown değil arama-önerili çok seçimlidir. İlişkisel tasnif tablosu (parça
