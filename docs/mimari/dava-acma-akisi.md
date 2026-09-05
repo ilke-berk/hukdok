@@ -331,6 +331,19 @@ tetiklenmez). Sonraki aktarım koşusu föyleri DosyaNo köprüsüyle bağlar. L
 217 föy → 210 kart, ardından aktarım 217 yeni föy / 632 taraf / 244 avukat, kartsız 0.
 Testler `backend/tests/test_g126_kartsiz_foy_kart_ac.py`.
 
+**Mükerrer kart birleştirme (G127, 05.09.2026):** eski aktarımın aynı dava için açtığı ikiz
+kartlar (aynı esas + müvekkil kümesi; mahkeme ikisi de doluysa aynı) aktarımın "belirsiz
+eşleşme" kuralına takılıyor, föy hiçbir karta yazılmıyordu. `scripts/mukerrer_kart_birlestir.py
+--cift kalan:mukerrer [--apply]` mükerrerin her şeyini kalan karta taşır (taraf/avukat AD bazlı
+tekil; belge `case_id` + `case_party_id` yeniden bağlanır — SET NULL tuzağı yok; föy, aşama
+satırı [kalanda o aşama boşsa], esas tarihçesi, ilişki, duruşma, bildirim, aşama günlüğü
+yeniden işaretlenir; `klasor_no_2` birleşimi; boş kart alanları tamamlanır; DERDEST üstün) ve
+mükerreri SOFT siler (`deleted_at`/`active=False`/`delete_reason`, ofis no mükerrerde kalır).
+Tarihçe mükerrerde kalır, kalana `mukerrer_birlestirme` notu düşer. "Kartlar birleştirilmez,
+bağlanır" (TKU) kuralı ayrı davalar içindir; burada AYNI dava iki kez açılmış. Mükerrer
+olmayan çift ön koşulda REDDEDİLİR. Lokal 05.09: 8 çift birleşti, aktarım 9 föyü bağladı,
+belge envanteri DENK. Testler `backend/tests/test_g127_mukerrer_kart_birlestir.py`.
+
 Dropdown yapılmayanlar (bilinçli): kimlikler, tarihler, tutarlar, taraf adları, esas
 numaraları, açıklama metinleri, Para Birimi dışında tek değerli sütunlar. Tıbbi Olay 667
 değerle dropdown değil arama-önerili çok seçimlidir. İlişkisel tasnif tablosu (parça
