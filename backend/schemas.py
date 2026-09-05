@@ -462,15 +462,21 @@ class CaseRead(BaseModel):
     # değil. `service_type` (ofis dosya no hizmet bloğu) ile İLGİSİZ.
     muvekkil_tipi: Optional[str] = None
     hizmet_turu: Optional[str] = None
+    # Dava değeri ham hâli + para birimi (G123) — `maddi_tazminat` bundan
+    # türetilir; NULL = bilinmiyor.
+    dava_degeri: Optional[float] = None
+    para_birimi: Optional[str] = None
     created_at: datetime
     parties: List[CasePartyCreate] = []
     lawyers: List[CaseLawyerCreate] = []
     history: List[Dict[str, Any]] = []
     documents: List[Dict[str, Any]] = []
-    # Kartın föyleri (`case_foys`, G063) + kapsam işareti (G113): {id, sistem_no,
-    # tku_no, hasar_no, source, case_party_id, kapsam_durumu, kapsam_gerekcesi,
-    # kapsam_tarihi}. `kapsam_durumu` NULL = kapsamda; SILINDI | KAPSAM_DISI
-    # işaretli föy kart panelinde "kapsam dışı föy" olarak gösterilir (UI sonraki tur).
+    # Kartın föyleri (`case_foys`, G063) + kapsam işareti (G113) + föy düzeyi
+    # teslim alanları (G123): {id, sistem_no, tku_no, hasar_no, mko_id,
+    # muvekkil_no, muvekkil_tipi, hizmet_turu, durum, source, case_party_id,
+    # kapsam_durumu, kapsam_gerekcesi, kapsam_tarihi}. `kapsam_durumu` NULL =
+    # kapsamda; SILINDI | KAPSAM_DISI işaretli föy kartın föy panelinde
+    # "kapsam dışı" rozetiyle gösterilir (CaseFoyPanel, G123).
     foyler: List[Dict[str, Any]] = []
 
     model_config = ConfigDict(from_attributes=True)

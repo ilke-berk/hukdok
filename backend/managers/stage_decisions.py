@@ -20,8 +20,8 @@ Kurallar:
   Tarihçesi hiç yazılmamış aşamaların slot kolonlarına dokunulmaz (takip
   paneli o kolonları elle yazmaya devam ediyor; birleşik yol G065'in işi).
 * `karar_turu`/`karar_lehine` türetmesi BİLİNÇLİ KAPSAM DIŞI (kaba alanlar,
-  ayrı karar); YEREL fotoğrafı görev tanımı gereği karar_no + karar_tarihi +
-  yerel_karar_durumu üçlüsüyle sınırlıdır.
+  ayrı karar); YEREL fotoğrafı karar_no + karar_tarihi + yerel_karar_durumu +
+  (G123'ten beri) karar_teblig_tarihi + karar_aciklama beşlisidir.
 * `karar_durumu` stage'in G060 resmi listesine karşı doğrulanır (kapalı
   havuz). Karşılaştırma liste ADI iledir ve tablonun İÇERİĞİNE bakılır —
   `active` filtresi BİLİNÇLİ YOK: tarihçe "ne olduğunu" kaydeder; bir değerin
@@ -90,6 +90,12 @@ _PHOTO_COLUMNS = {
         "karar_no": "karar_no",
         "karar_tarihi": "karar_tarihi",
         "karar_durumu": "yerel_karar_durumu",
+        # G123 (05.09.2026): teslimin "Yerel Mahkeme Tebliğ Tarihi" ve "Yerel
+        # Mahkeme Kararı Açıklaması" sütunları Karar_Asamalari'ndan bu tabloya
+        # giriyordu ama kart kolonuna hiç yansımıyordu; takip panelinin iki
+        # kutusu boş kalıyordu. İstinaf/temyiz fotoğrafıyla aynı desen.
+        "teblig_tarihi": "karar_teblig_tarihi",
+        "aciklama": "karar_aciklama",
     },
     "ISTINAF": {
         "mahkeme": "istinaf_mahkemesi",

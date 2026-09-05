@@ -133,7 +133,9 @@ def test_ters_harita_kart_alanlarindan_kurulur_yeni_sozluk_yok():
     assert h[k("İstinaf Mahkemesi Başvuran Taraf")] == "istinaf_basvuran_taraf"
     # KART_ALANLARI'nda olmayan sütunlar haritada YOK (bilinmeyen → yok sayılır)
     assert k("İstinaf Karar Durumu") not in h
-    assert k("Dava Değeri TL") not in h and k("Müvekkil") not in h
+    assert k("Temyiz Mahkemesi") not in h and k("Müvekkil") not in h
+    # G123: dava değeri ham hâliyle kart alanı oldu → artık haritada
+    assert h[k("Dava Değeri TL")] == "dava_degeri"
     # Haritadaki her kart alanı gerçekten KART_ALANLARI'nda ya da künye
     for alan in set(h.values()):
         assert alan in hukdok_aktarim.KART_ALANLARI or alan in hukdok_aktarim.BOSALTMA_DISI_ALANLAR

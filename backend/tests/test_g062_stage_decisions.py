@@ -181,11 +181,15 @@ def test_fotograf_haritasi_yasakli_kolonlara_dokunmuyor():
     assert not hedefler & {"karar_turu", "karar_lehine", "esas_no", "court", "yeni_esas_no"}
 
 
-def test_yerel_fotografi_gorev_tanimindaki_ucluyle_sinirli():
+def test_yerel_fotografi_besli():
+    """G062 üçlüsü + G123'ün tebliğ tarihi ve açıklaması (takip panelinin iki
+    kutusu teslimden hiç dolmuyordu). `karar_turu`/`karar_lehine` yine yok."""
     assert stage_decisions._PHOTO_COLUMNS["YEREL"] == {
         "karar_no": "karar_no",
         "karar_tarihi": "karar_tarihi",
         "karar_durumu": "yerel_karar_durumu",
+        "teblig_tarihi": "karar_teblig_tarihi",
+        "aciklama": "karar_aciklama",
     }
 
 

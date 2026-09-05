@@ -33,6 +33,8 @@ interface Case {
   opening_date?: string;
   responsible_lawyer_name?: string;
   file_type?: string;
+  /** Uzmanlık alanı (G123: kartta ve listede basılır; 6.464 kart doluydu, görünmüyordu). */
+  sub_type?: string;
   subject?: string;
   hasar_dosya_no?: string;
   hukuk_no?: string;
@@ -640,6 +642,11 @@ const CaseList = () => {
                           {c.subject && (
                             <div className="text-[11px] text-[var(--fg-muted)] italic mt-1 truncate max-w-[320px]">
                               {c.subject}
+                            </div>
+                          )}
+                          {c.sub_type && (
+                            <div className="font-mono text-[9.5px] tracking-[0.06em] uppercase text-[var(--fg-subtle)] mt-1 truncate max-w-[320px]">
+                              {c.sub_type}
                             </div>
                           )}
                         </td>

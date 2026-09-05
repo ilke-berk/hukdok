@@ -56,7 +56,11 @@ for _column in models.CaseFoy.__table__.columns:
 
 # Upsert'in güncelleyebildiği alanlar (kimlik `sistem_no` ile bağ `case_id`
 # hariç — ikisi de ayrı ele alınır).
-_UPDATABLE = ("case_party_id", "tku_no", "hasar_no", "source")
+_UPDATABLE = (
+    "case_party_id", "tku_no", "hasar_no", "source",
+    # G123 föy düzeyi teslim alanları (models.CaseFoy gerekçesi)
+    "mko_id", "muvekkil_no", "muvekkil_tipi", "hizmet_turu", "durum",
+)
 
 
 def _clamped(value: Optional[str], column: str) -> Optional[str]:
@@ -176,6 +180,11 @@ def upsert_foy(
     tku_no: Optional[str] = None,
     hasar_no: Optional[str] = None,
     source: Optional[str] = None,
+    mko_id: Optional[str] = None,
+    muvekkil_no: Optional[str] = None,
+    muvekkil_tipi: Optional[str] = None,
+    hizmet_turu: Optional[str] = None,
+    durum: Optional[str] = None,
 ) -> models.CaseFoy:
     """Föyü kartın (ve varsa müvekkilin) altına yazar — İDEMPOTENT.
 
@@ -195,6 +204,12 @@ def upsert_foy(
         "tku_no": _clamped(tku_no, "tku_no"),
         "hasar_no": _clamped(hasar_no, "hasar_no"),
         "source": _clamped(source, "source"),
+        # G123 föy düzeyi alanlar — None "bu teslimde yok" demektir (korunur)
+        "mko_id": _clamped(mko_id, "mko_id"),
+        "muvekkil_no": _clamped(muvekkil_no, "muvekkil_no"),
+        "muvekkil_tipi": _clamped(muvekkil_tipi, "muvekkil_tipi"),
+        "hizmet_turu": _clamped(hizmet_turu, "hizmet_turu"),
+        "durum": _clamped(durum, "durum"),
     }
 
     mevcut = get_foy(db, anahtar)

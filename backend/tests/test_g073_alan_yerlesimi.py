@@ -100,6 +100,9 @@ def test_takip_fotograf_ortusmesi_karar_kunyesiyle_sinirli_kaldi():
     kesisim = _fotograf_hedefleri() & set(TRACKING_FIELDS)
     assert kesisim == {
         "karar_no", "karar_tarihi", "yerel_karar_durumu",
+        # G123 (05.09.2026): YEREL fotoğrafı tebliğ tarihi + açıklamayı da
+        # taşır — istinaf/temyiz ile aynı desen, üç taşınan alanla ilgisi yok.
+        "karar_teblig_tarihi", "karar_aciklama",
         "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
         "istinaf_karar_tarihi", "istinaf_karar_durumu", "istinaf_teblig_tarihi",
         "istinaf_karar_aciklama",

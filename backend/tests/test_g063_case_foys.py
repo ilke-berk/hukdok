@@ -73,10 +73,14 @@ def test_model_ve_kolonlar_gorev_taslagina_uygun():
     # G113 (2026-09-03, kullanıcı kararı): kapsam işareti üçlüsü eklendi —
     # veri ekibinin Silinen_Föyler / Kapsam_Dışı sayfaları föyü SİLMEZ,
     # işaretler (belge koruma şartı). Küme yine TAM eşitlikle kilitli.
+    # G123 (2026-09-05, kullanıcı kararı "54 sütunun tamamı"): föy düzeyi
+    # beşli — kart tek slotunda kardeş föy çelişkisiyle kaybolan Müvekkil
+    # Tipi / Hizmet Türü / Durum + teslimin iki kimliği (MKO föy id, MüvekkilNo).
     assert set(columns.keys()) == {
         "id", "sistem_no", "case_id", "case_party_id", "tku_no", "hasar_no",
         "source", "created_at", "updated_at",
         "kapsam_durumu", "kapsam_gerekcesi", "kapsam_tarihi",
+        "mko_id", "muvekkil_no", "muvekkil_tipi", "hizmet_turu", "durum",
     }
     assert columns["sistem_no"].type.length == 50
     assert columns["tku_no"].type.length == 50

@@ -259,12 +259,24 @@ kardeşlerinin aynısıdır.
   istenmiyor: föyün hangi müvekkile ait olduğu bir taraf silmesiyle unutulamaz. `Case.foys`
   ilişkisi `passive_deletes="all"` ile ORM'in araya girmesini de kapatır.
 - **Kapsam sınırı:** `cases.sistem_no` / `cases.tku_no` kolonlarına bu turda DOKUNULMADI
-  (prod'da ikisi de 0 dolu); nihai tekilleştirme FAZ F aktarım turunun işidir. Per-föy ek
-  alanlar (dava değeri, son durum, hizmet türü…) da açılmadı — kolon seti 68 sütunluk eşleme
-  tablosuyla birlikte kararlaştırılacak (YAGNI). Çekirdek = kimlik + bağ.
+  (prod'da ikisi de 0 dolu); nihai tekilleştirme FAZ F aktarım turunun işidir. Çekirdek =
+  kimlik + bağ.
+- **Föy düzeyi alanlar (G123, 05.09.2026 — "54 sütunun tamamı" kullanıcı kararı):**
+  `mko_id` (teslimin "Dosya - Föy Bilgileri" kimliği) · `muvekkil_no` ("MüvekkilNo") ·
+  `muvekkil_tipi` · `hizmet_turu` · `durum`. Gerekçe ölçülü: 04.09 paketinde kart tek
+  slotuna sığmayan kardeş-föy çelişkisi hizmet türünde 973, müvekkil tipinde 891, durumda
+  181 kart — kart alanı D9 gereği yazılmaz, bilgi föyde kayıpsız durur (tanınan değer
+  kanonik adla, tanınmayan hücre teslimdeki ham yazımıyla; `hukdok_aktarim.foy_degerleri`).
+  Kolonlar migrasyon madde 43'te; `("columns", …)` op'u + create_all aynı şemaya çıkar.
+- **Okuma ve UI (G123):** `case_manager.get_case` föyleri `foyler` listesinde döner; kart
+  ekranındaki `CaseFoyPanel` (frontend/src/components) SistemNo/TKU/hasar no + föy düzeyi
+  üçlü + kapsam rozetini basar. Dava araması `case_foys.tku_no` ve `sistem_no` kollarını da
+  UNION'a katar (`_term_case_id_selects`) — legacy `cases.tku_no` boş olduğu için TKU
+  araması o güne dek boş dönüyordu.
 
-Okuma/yazma uçları ve UI kapsam dışıdır; testler `backend/tests/test_g063_case_foys.py`
-(şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT).
+Yazma ucu yoktur (tek yazıcı aktarım); testler `backend/tests/test_g063_case_foys.py`
+(şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT) ve
+`test_g123_tum_sutunlar.py` (föy düzeyi alanlar, çelişkide kayıpsızlık, arama kolları).
 
 ## 11. Belgeleme olayı alanları — `olay_turu` + `hukumdeki_rol` (G103)
 

@@ -245,6 +245,12 @@ def _foy_row_dict(row) -> dict:
         "sistem_no": row.sistem_no,
         "tku_no": row.tku_no,
         "hasar_no": row.hasar_no,
+        # G123 föy düzeyi teslim alanları
+        "mko_id": row.mko_id,
+        "muvekkil_no": row.muvekkil_no,
+        "muvekkil_tipi": row.muvekkil_tipi,
+        "hizmet_turu": row.hizmet_turu,
+        "durum": row.durum,
         "source": row.source,
         "case_party_id": row.case_party_id,
         "kapsam_durumu": row.kapsam_durumu,
@@ -412,6 +418,10 @@ def get_case(case_id: int, tenant_id: str = None):
             "uyap_lawyer_name": item.uyap_lawyer_name,
             "maddi_tazminat": float(item.maddi_tazminat),
             "manevi_tazminat": float(item.manevi_tazminat),
+            # Dava değeri HAM hâli + para birimi (G123): maddi bundan türetilir,
+            # NULL = bilinmiyor (float(None) patlar, is not None şart).
+            "dava_degeri": float(item.dava_degeri) if item.dava_degeri is not None else None,
+            "para_birimi": item.para_birimi,
             "acceptance_date": item.acceptance_date.isoformat() if item.acceptance_date else None,
             "bureau_type": item.bureau_type,
             "sub_type_extra": item.sub_type_extra,
@@ -694,6 +704,15 @@ def _term_case_id_selects(term: str, exact: bool) -> list:
         select(models.Case.id).where(models.Case.klasor_no_2.ilike(pattern)),  # Eski sistem no
         select(models.Case.id).where(models.Case.tku_no.ilike(pattern)),  # Eski sistem olay no (TKU-784)
         select(models.Case.id).where(models.Case.sistem_no.ilike(pattern)),  # Eski sistem kayıt no (SSTMN-9425)
+        # Föy kimlikleri (G123): aktarım TKU/SistemNo'yu `case_foys`a yazar,
+        # `cases.tku_no`/`sistem_no` legacy kolonları boş kaldı (lokal: 0 kart);
+        # TKU ile arama bu iki kol olmadan hiçbir şey bulmuyordu.
+        select(models.Case.id)
+        .join(models.CaseFoy, models.CaseFoy.case_id == models.Case.id)
+        .where(models.CaseFoy.tku_no.ilike(pattern)),
+        select(models.Case.id)
+        .join(models.CaseFoy, models.CaseFoy.case_id == models.Case.id)
+        .where(models.CaseFoy.sistem_no.ilike(pattern)),
         select(models.Case.id).where(models.Case.court.ilike(contains)),
         select(models.Case.id).where(models.Case.subject.ilike(contains)),
         select(models.Case.id).where(models.Case.responsible_lawyer_name.ilike(contains)),

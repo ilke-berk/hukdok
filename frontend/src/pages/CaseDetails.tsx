@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
+import CaseFoyPanel, { type CaseFoyEntry } from "@/components/CaseFoyPanel";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 
@@ -88,6 +89,14 @@ interface CaseDetailsData {
     // G121 (DB-2026-002) büro kartı kapalı liste alanları — NULL = bilinmiyor.
     muvekkil_tipi?: string;
     hizmet_turu?: string;
+    // G123: uzmanlık alanı kartta basılır; dava değeri ham hâli + para birimi;
+    // esas tarihçesi (güncel önce) ve föyler (case_foys) API'de zaten vardı,
+    // kart bugüne dek hiçbirini göstermiyordu.
+    sub_type?: string;
+    dava_degeri?: number | null;
+    para_birimi?: string | null;
+    esas_numbers?: { esas_no: string; stage: string; court?: string | null; is_current: boolean; source?: string | null }[];
+    foyler?: CaseFoyEntry[];
     related_cases?: { id: number; esas_no?: string; tracking_no?: string; file_type?: string; court?: string; status: string }[];
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
@@ -583,6 +592,28 @@ const CaseDetails = () => {
                                                 <span className="font-mono font-medium text-sm truncate" title={caseData.klasor_no_2 as string}>{caseData.klasor_no_2 as string}</span>
                                             </div>
                                         )}
+                                        {/* G123: uzmanlık alanı 6.464 kartta doluydu, yalnız Yeni Dava
+                                            formunda görünüyordu. */}
+                                        {caseData.sub_type && (
+                                            <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Uzmanlık Alanı</span>
+                                                <span className="font-medium">{caseData.sub_type}</span>
+                                            </div>
+                                        )}
+                                        {/* G123: esas tarihçesi — güncel olmayan numaralar (görevsizlik/
+                                            yenileme öncesi "Önceki" esas, teslimin "Eski Dosya No"su).
+                                            Güncel numara başlıkta; burada yalnız eskiler. */}
+                                        {(caseData.esas_numbers ?? []).some(e => !e.is_current) && (
+                                            <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Önceki Esas No</span>
+                                                <span className="font-mono font-medium text-sm">
+                                                    {(caseData.esas_numbers ?? [])
+                                                        .filter(e => !e.is_current)
+                                                        .map(e => e.court ? `${e.esas_no} (${e.court})` : e.esas_no)
+                                                        .join(" · ")}
+                                                </span>
+                                            </div>
+                                        )}
                                         {caseData.atama_tarihi && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
                                                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Atama Tarihi</span>
@@ -605,6 +636,10 @@ const CaseDetails = () => {
                                 </CardContent>
                             </Card>
                         )}
+
+                        {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
+                            hizmet türü, durum (kart tek slotunda çelişince burada durur). */}
+                        <CaseFoyPanel foyler={caseData.foyler} />
 
                         {/* FAZ F aktarım alanları — beş tıbbi alan TEK grupta (G048);
                             karta dağıtılınca malpraktis dosyasının tıbbi tablosu okunmuyordu. */}
@@ -670,6 +705,17 @@ const CaseDetails = () => {
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
                                             <span className="text-muted-foreground">Hükmedilen Toplam</span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_toplam as number)}</span>
+                                        </div>
+                                    )}
+                                    {/* G123: teslimin ham "Dava Değeri" satırı — maddi tazminat
+                                        bundan türetilir (dava değeri − manevi); ham değer görünmeyince
+                                        türetme doğrulanamıyordu. Para birimi teslimden gelir. */}
+                                    {caseData.dava_degeri != null && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
+                                            <span className="text-muted-foreground">
+                                                Dava Değeri{caseData.para_birimi ? ` (${caseData.para_birimi})` : ""}
+                                            </span>
+                                            <span className="font-semibold text-lg">{formatCurrency(caseData.dava_degeri as number)}</span>
                                         </div>
                                     )}
                                     {/* Islah tutarı = ıslahla EKLENEN miktar (FAZ F §1.1); güncel

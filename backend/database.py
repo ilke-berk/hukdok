@@ -975,6 +975,50 @@ _MIGRATIONS = [
         "muvekkil_tipi": "VARCHAR(100)",   # kapalı liste (client_types)
         "hizmet_turu":   "VARCHAR(100)",   # kapalı liste (service_types)
     }),
+
+    # ─── 43. TESLİMİN 54 SÜTUNUNUN TAMAMI (G123) ──────────────────────────────
+    #
+    # 04.09.2026 paketinin 54 sütunundan bizde karşılığı olmayan üçü (Dosya -
+    # Föy Bilgileri, Para Birimi TL, MüvekkilNo) ve ham hâli saklanmayan
+    # "Dava Değeri TL" için kolon; artı föy düzeyinde gelen üç bilginin
+    # (Müvekkil Tipi, Hizmet Türü, Durum) kart tek slotunda kardeş-föy
+    # çelişkisiyle kaybolmaması için `case_foys`ta föy başına kopyası.
+    #
+    # Madde 42 deseni: NULL + DEFAULT'suz, backfill YOK (aktarımın sonraki
+    # koşusu doldurur). Index BİLİNÇLİ yok (G042): hiçbiri bir sorgunun
+    # filtresi değil, kart/föy okumasıyla gelir.
+    ("columns", "cases", {
+        "dava_degeri": "NUMERIC(20, 2)",   # "Dava Değeri TL" ham değeri (maddi bundan türetilir)
+        "para_birimi": "VARCHAR(10)",      # "Para Birimi TL"
+    }),
+    ("columns", "case_foys", {
+        "mko_id":        "VARCHAR(20)",    # "Dosya - Föy Bilgileri" (MKO föy kimliği)
+        "muvekkil_no":   "VARCHAR(50)",    # "MüvekkilNo" (MKO cari numarası)
+        "muvekkil_tipi": "VARCHAR(100)",   # föy düzeyi (kart: cases.muvekkil_tipi)
+        "hizmet_turu":   "VARCHAR(100)",   # föy düzeyi (kart: cases.hizmet_turu)
+        "durum":         "VARCHAR(20)",    # DERDEST | MAHZEN (kart: cases.status)
+    }),
+    # Yerel aşama fotoğrafı G123'te iki kolon büyüdü (managers/stage_decisions
+    # `_PHOTO_COLUMNS["YEREL"]`: tebliğ tarihi + açıklama). Fotoğraf yalnız
+    # aşamaya satır yazılınca tazelenir; 18.08 aktarımının yazdığı mevcut
+    # YEREL satırlarındaki tebliğ/açıklama karta hiç yansımazdı. Bu op'un
+    # UPDATE'leri yalnız BOŞ kart kolonunu en yüksek sira_no'lu YEREL
+    # satırından doldurur — dolu (elle girilmiş) değere DOKUNMAZ, ikinci
+    # koşuda 0 satır günceller (idempotent; "index" op'u koşulsuz koşar).
+    ("index", "cases", [
+        """UPDATE cases c SET karar_teblig_tarihi = d.teblig_tarihi
+           FROM case_stage_decisions d
+           WHERE d.case_id = c.id AND d.stage = 'YEREL'
+             AND d.sira_no = (SELECT MAX(sira_no) FROM case_stage_decisions x
+                              WHERE x.case_id = c.id AND x.stage = 'YEREL')
+             AND c.karar_teblig_tarihi IS NULL AND d.teblig_tarihi IS NOT NULL""",
+        """UPDATE cases c SET karar_aciklama = d.aciklama
+           FROM case_stage_decisions d
+           WHERE d.case_id = c.id AND d.stage = 'YEREL'
+             AND d.sira_no = (SELECT MAX(sira_no) FROM case_stage_decisions x
+                              WHERE x.case_id = c.id AND x.stage = 'YEREL')
+             AND c.karar_aciklama IS NULL AND d.aciklama IS NOT NULL""",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

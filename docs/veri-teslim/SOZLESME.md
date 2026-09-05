@@ -7,7 +7,8 @@ Bu metin kısa sözleşmedir; sütun/sayfa/değer ayrıntıları ve makine-okur 
 bilgilendirme belgesindedir (`BILGILENDIRME_2026-09-03.md`, sürüm 1.1). 04.09.2026'daki
 Format Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve cevabımız her iki belgeye işlendi:
 `Müvekkil Tipi` ve `Hizmet Türü` sütunları artık okunur, `İddia Edilen Kusur` listemiz
-dokuz değerle doludur.
+dokuz değerle doludur. 05.09.2026 (bilgilendirme sürüm 1.2): 04.09 paketinin 54 sütununun
+**tamamı** okunur; dosyanızda değişiklik gerekmez.
 
 Bu metin, teslim paketinin **nasıl bırakılacağını** ve karşılığında **ne alınacağını**
 anlatır. Teslim artık WhatsApp/e-posta ile değil, paylaşılan SharePoint klasörüne bırakılarak

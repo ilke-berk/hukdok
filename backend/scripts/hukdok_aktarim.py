@@ -51,7 +51,7 @@ Pazarlıksız kurallar
   30 sn ile bağlanır, toplu yazma bunu meşru aşar.
 
 YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02;
-G120 eki 2026-09-04)
+G120 eki 2026-09-04; G123 eki 2026-09-05)
 -----------------------------------------------------------------------
 `KART_ALANLARI` + `KART_TURETILEN` sözlükleri tek doğruluk kaynağıdır; hepsi
 `kart_degerleri()`ndan geçer. Kabaca: sınıflandırma (`file_type`, `status`,
@@ -65,7 +65,13 @@ listelerine AD bazlı eşleme; tanınmayan değer YAZILMAZ, satır raporuna dü�
 G104) ve DB-2026-002'nin föy düzeyi iki sütunu (`muvekkil_tipi`, `hizmet_turu`
 — G119 kapalı listelerine aynı desenle AD bazlı eşleme; ` ; ` ile çok değer
 TANIMSIZ, yazılmaz + rapor; G120). `hizmet_turu` ile `service_type` AYRI
-alanlardır (aşağıda).
+alanlardır (aşağıda). G123 (05.09.2026, "54 sütunun tamamı"): `dava_degeri`
+(ham "Dava Değeri TL"; `maddi_tazminat` türetmesi sürer), `para_birimi`,
+`istinaf_basvuru_tarihi` (Karar_Asamalari'nda karşılığı yok, Sheet'ten karta)
+ve "Eski Dosya No" → esas tarihçesine ONCEKI (`add_historical_esas`).
+Föy düzeyi (`case_foys`, `foy_degerleri`): `mko_id` (Dosya - Föy Bilgileri),
+`muvekkil_no` (MüvekkilNo), `muvekkil_tipi`, `hizmet_turu`, `durum` — kart
+tek slotunda kardeş föy çelişkisiyle kaybolan bilgi föyde kayıpsız durur.
 
 Avukatlar AYRI yoldan gider: "Sorumlu Avukatlar" bir listedir, `case_lawyers`
 satırlarına YALNIZ-EKLEME ile açılır; kartın tek kutusu (`responsible_lawyer_name`)
@@ -75,8 +81,10 @@ kayıtlı yazımımızdır (`avukat_haritasi_kur`).
 **Bilinçli YAZILMAYANLAR** (gerekçeleri ölçümle, 2026-08-19): `service_type`
 (bitmask semantiği kararlaşmadı; DB-2026-002'nin `Hizmet Türü` sütunu bu
 kolona DEĞİL `hizmet_turu`ya gider — G119 ayrımı) · `Ek Alt Kırılım*` (karşı tarafın kendi
-uyarısı: dosya açılış etiketi, güncel değil) · `Para Birimi`/`MüvekkilNo`
-(taşınmaz). `court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
+uyarısı: dosya açılış etiketi, güncel değil; 04.09 paketinden zaten çıktı).
+`Para Birimi`/`MüvekkilNo` 12.08'de "taşınmaz" denmişti, G123 ile kullanıcı
+kararıyla alınır (para birimi karta, müvekkil no föye; cari kart KURULMAZ).
+`court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
 farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
 Karar künyesi
 (`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ ve BOŞALTILMAZ — o kolonların
@@ -215,6 +223,21 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     # bağlanmaz. Başlık teslimde YOKSA alan atlanır (None sözleşmesi).
     "muvekkil_tipi":             ("Müvekkil Tipi",),
     "hizmet_turu":               ("Hizmet Türü",),
+    # --- G123 (05.09.2026): 04.09 paketinin 54 sütunundan bugüne dek hiç
+    # okunmayan beşi. `mko_id` SistemNo'nun rakam kısmıdır (8.408/8.409
+    # satırda birebir) ama teslimin kendi kimliğidir, olduğu gibi saklanır;
+    # `muvekkil_no` 12.08 mutabakatıyla dışarıda bırakılmıştı, kullanıcı
+    # kararıyla (05.09) föy düzeyinde alınır — cari kart kurmaz. `eski_dosya_no`
+    # değerleri esas numarasıdır ("2021/588") → esas tarihçesine ONCEKI.
+    # `istinaf_basvuru_tarihi` Karar_Asamalari'nda karşılığı olmayan tek
+    # zincir alanı: aşama fotoğrafı yazmaz, Sheet'ten karta doğrudan gider.
+    "mko_id":                    ("Dosya - Föy Bilgileri", "Föy Id", "MKO Id"),
+    "muvekkil_no":               ("MüvekkilNo", "Müvekkil No"),
+    "para_birimi":               ("Para Birimi TL", "Para Birimi"),
+    "eski_dosya_no":             ("Eski Dosya No", "Eski Esas No"),
+    "istinaf_basvuru_tarihi":    ("İstinaf Mahkeme Başvuru Tar.",
+                                  "İstinaf Mahkeme Başvuru Tarihi",
+                                  "İstinaf Başvuru Tarihi"),
 }
 
 # Satırın kimliği: bu sütun yoksa dosya bu script için okunamaz.
@@ -771,6 +794,12 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # ADLARI; aynı sınıf (varsayılan üzerine yazma, İÇERİK modu gereksiz).
     "muvekkil_tipi":        ("muvekkil_tipi", _muvekkil_tipi),
     "hizmet_turu":          ("hizmet_turu", _hizmet_turu),
+    # --- G123: dava değeri HAM hâli (maddi türetmesi aynen sürer, aşağıda),
+    # para birimi ve Karar_Asamalari'nda karşılığı olmayan istinaf başvuru
+    # tarihi. Üçü de varsayılan sınıf (dolu hücre üzerine yazar, tarihçeli).
+    "dava_degeri":          ("dava_degeri", _sayi),
+    "para_birimi":          ("para_birimi", _metin_alan),
+    "istinaf_basvuru_tarihi": ("istinaf_basvuru_tarihi", _tarih),
 }
 
 # İÇERİK farkı varsa yazılan, YAZIM farkı varsa dokunulmayan alanlar.
@@ -1229,6 +1258,37 @@ def kart_degerleri(satir: HamSatir,
         if deger is not None:
             degerler[alan] = deger
     return degerler
+
+
+def foy_degerleri(satir: HamSatir) -> Dict[str, Optional[str]]:
+    """Föy düzeyi teslim alanları (G123) — KAYIPSIZ, föyün kendi değeri.
+
+    Kart tek slotunda kardeş föyler çelişince kart alanı yazılmaz (D9); bu
+    sözlük föyün kendisine yazıldığı için o bilgi kaybolmaz. Kapalı liste
+    alanları kart dönüştürücüsünden geçer: tanınan değer kanonik adla,
+    tanınmayan/çok değerli hücre (`AlanHatasi`) teslimdeki HAM yazımıyla
+    kalır — föyde tahmin de yok, kayıp da yok. `durum` kart havuzuna eşlenir
+    (Aktif→DERDEST, Arşiv→MAHZEN), eşlenemeyen yazım ham kalır. `None` =
+    "bu teslimde yok" (foy_map korur).
+    """
+    def _kapali(alan: str, donustur: Callable[[Any, str], Optional[str]]) -> Optional[str]:
+        ham = _metin(satir.degerler.get(alan))
+        if ham is None:
+            return None
+        try:
+            return donustur(ham, alan) or ham
+        except AlanHatasi:
+            return ham
+
+    durum_ham = _metin(satir.degerler.get("durum"))
+    return {
+        "mko_id": _metin(satir.degerler.get("mko_id")),
+        "muvekkil_no": _metin(satir.degerler.get("muvekkil_no")),
+        "muvekkil_tipi": _kapali("muvekkil_tipi", _muvekkil_tipi),
+        "hizmet_turu": _kapali("hizmet_turu", _hizmet_turu),
+        "durum": (DURUM_ESLEMESI.get(_baslik_anahtari(durum_ham), durum_ham)
+                  if durum_ham is not None else None),
+    }
 
 
 def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
@@ -1754,6 +1814,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         tku_no=_metin(satir.degerler.get("tku_no")),
         hasar_no=_metin(satir.degerler.get("hasar_no")),
         source=foy_source,
+        **foy_degerleri(satir),           # G123 föy düzeyi alanlar (kayıpsız)
     )
 
     atlanan_alanlar: List[Tuple[str, str]] = []
@@ -1776,6 +1837,15 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         sonuc.bosaltilan += len(bosaltilanlar)
         eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
         eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
+        # G123 — Sheet'in "Eski Dosya No" sütunu bir esas numarasıdır
+        # ("2021/588"); Karar_Asamalari'nın "Önceki" satırlarıyla AYNI yola,
+        # esas tarihçesine ONCEKI olarak düşer (güncel işaret DEĞİŞMEZ; aynı
+        # numara ikinci kez None döner → idempotent, ikinci koşu 0 satır).
+        if case_manager.add_historical_esas(
+            db, case, _metin(satir.degerler.get("eski_dosya_no")), source=source,
+        ) is not None:
+            sonuc.onceki_esas_eklenen += 1
+            sonuc.degisen_kartlar.add(cast(int, case.id))
 
     if yeni_foy:
         # Föyün kartla EŞLENMESİ de bir değişikliktir; provenance imzası

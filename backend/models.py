@@ -156,6 +156,13 @@ class Case(Base):
     # listeleri, değer havuzları örtüşmüyor — G119 tasarım kararı).
     muvekkil_tipi = Column(String(100), nullable=True)  # KAPALI liste (client_types)
     hizmet_turu = Column(String(100), nullable=True)    # KAPALI liste (service_types)
+    # Dava değeri + para birimi (G123, 05.09.2026): teslimin "Dava Değeri TL"
+    # HAM değeri ve "Para Birimi TL" sütunu. `maddi_tazminat` bundan TÜRETİLİR
+    # (D4: dava değeri − manevi); ham değer saklanmayınca türetme geri
+    # çözülemiyor, "dava değeri kaçtı?" sorusu cevapsız kalıyordu. NULL =
+    # bilinmiyor, backfill YOK.
+    dava_degeri = Column(Numeric(precision=20, scale=2), nullable=True)
+    para_birimi = Column(String(10), nullable=True)     # "TL" (teslimde tek değer)
 
     # ─── EKSİK ZORUNLU ALAN BAYRAĞI (FAZ E 6 + FAZ F D2/D8, G046) ────────────
     # TÜRETİLMİŞ kolon: NULL = eksik yok, aksi hâlde kaydın kovası
@@ -344,6 +351,17 @@ class CaseFoy(Base):
     )
     tku_no = Column(String(50), nullable=True)     # olay/vaka grup anahtarı (TKU-784)
     hasar_no = Column(String(100), nullable=True)  # föyler arası 144 grupta FARKLI
+    # Föy düzeyi teslim alanları (G123, 05.09.2026): kart tek slotunda kardeş
+    # föyler çelişince (04.09 paketi: hizmet türü 973, müvekkil tipi 891, durum
+    # 181 kart) kart alanı YAZILMAZ ve bilgi kaybolurdu; föyün kendi değeri
+    # burada kalır. `muvekkil_tipi`/`hizmet_turu` kart düzeyindeki kapalı liste
+    # ADIDIR (tanınmayan değer ham metin olarak kalır — föyde kayıp yok),
+    # `durum` kart status havuzuyla aynı (DERDEST | MAHZEN).
+    mko_id = Column(String(20), nullable=True)        # "Dosya - Föy Bilgileri" (MKO föy kimliği)
+    muvekkil_no = Column(String(50), nullable=True)   # "MüvekkilNo" (MKO cari numarası)
+    muvekkil_tipi = Column(String(100), nullable=True)
+    hizmet_turu = Column(String(100), nullable=True)
+    durum = Column(String(20), nullable=True)
     source = Column(String(100), nullable=True)    # hangi teslim paketi yazdı
     # Kapsam işareti (G113): SILINDI | KAPSAM_DISI; NULL = kapsamda.
     kapsam_durumu = Column(String(20), nullable=True)
