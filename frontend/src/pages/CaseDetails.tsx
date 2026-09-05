@@ -713,7 +713,7 @@ const CaseDetails = () => {
                                     {caseData.dava_degeri != null && (
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
                                             <span className="text-muted-foreground">
-                                                Dava Değeri{caseData.para_birimi ? ` (${caseData.para_birimi})` : ""}
+                                                Dava Değeri ({caseData.para_birimi ?? "TL"})
                                             </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.dava_degeri as number)}</span>
                                         </div>

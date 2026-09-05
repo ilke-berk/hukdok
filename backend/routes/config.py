@@ -42,6 +42,14 @@ from managers.reference_lists import (
     get_judgment_roles, add_judgment_role, delete_judgment_role,
     get_client_types, add_client_type, delete_client_type,
     get_service_types, add_service_type, delete_service_type,
+    get_currencies, add_currency, delete_currency,
+    get_medical_processes, add_medical_process, delete_medical_process,
+    get_medical_events, add_medical_event, delete_medical_event,
+    get_patient_harms, add_patient_harm, delete_patient_harm,
+    get_applied_methods, add_applied_method, delete_applied_method,
+    get_cassation_courts, add_cassation_court, delete_cassation_court,
+    get_appeal_courts, add_appeal_court, delete_appeal_court,
+    get_defendant_administrations, add_defendant_administration, delete_defendant_administration,
     reorder_list, rename_item, update_item, delete_item, get_usage,
     resolve_list_type, LIST_REGISTRY,
 )
@@ -800,6 +808,49 @@ def api_delete_service_type(code: str, user: dict = Depends(require_admin)):
     if not success:
         raise HTTPException(status_code=404, detail="Service type not found")
     return {"status": "success"}
+
+
+# ─── G124 LİSTELERİ (para birimi + teslim havuzları) ─────────────────────────
+# client_types üçlüsünün (GET herkese, POST/DELETE yöneticiye) sekiz kopyası;
+# gövde birebir aynı olduğu için tek fabrikadan kaydedilir. Yol adları
+# LIST_REGISTRY anahtarıdır: /api/config/<liste>.
+
+def _register_simple_list(list_key: str, getter, adder, deleter, label: str) -> None:
+    def api_get(user: dict = Depends(get_current_user)):
+        config = DynamicConfig.get_instance()
+        data = getattr(config, f"get_{list_key}")()
+        if not data:
+            data = getter()
+        return data
+
+    def api_add(item: ConfigItem, user: dict = Depends(require_admin)):
+        if not adder(item.code, item.name):
+            raise HTTPException(status_code=500, detail=f"Failed to add {label}")
+        return {"status": "success"}
+
+    def api_delete(code: str, user: dict = Depends(require_admin)):
+        if not deleter(code):
+            raise HTTPException(status_code=404, detail=f"{label} not found")
+        return {"status": "success"}
+
+    router.add_api_route(f"/api/config/{list_key}", api_get, methods=["GET"], name=f"api_get_{list_key}")
+    router.add_api_route(f"/api/config/{list_key}", api_add, methods=["POST"], name=f"api_add_{list_key}")
+    router.add_api_route(f"/api/config/{list_key}/{{code}}", api_delete, methods=["DELETE"],
+                         name=f"api_delete_{list_key}")
+
+
+for _key, _getter, _adder, _deleter, _label in (
+    ("currencies", get_currencies, add_currency, delete_currency, "currency"),
+    ("medical_processes", get_medical_processes, add_medical_process, delete_medical_process, "medical process"),
+    ("medical_events", get_medical_events, add_medical_event, delete_medical_event, "medical event"),
+    ("patient_harms", get_patient_harms, add_patient_harm, delete_patient_harm, "patient harm"),
+    ("applied_methods", get_applied_methods, add_applied_method, delete_applied_method, "applied method"),
+    ("cassation_courts", get_cassation_courts, add_cassation_court, delete_cassation_court, "cassation court"),
+    ("appeal_courts", get_appeal_courts, add_appeal_court, delete_appeal_court, "appeal court"),
+    ("defendant_administrations", get_defendant_administrations, add_defendant_administration,
+     delete_defendant_administration, "defendant administration"),
+):
+    _register_simple_list(_key, _getter, _adder, _deleter, _label)
 
 
 # ─── SEED ─────────────────────────────────────────────────────────────────────

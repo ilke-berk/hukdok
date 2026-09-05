@@ -4,11 +4,13 @@ import {
 } from "@/hooks/useCases";
 import { useConfig, ConfigItem } from "@/hooks/useConfig";
 import {
-    STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, EVENT_FIELDS, DECISION_STAGE_BY_PANEL_KEY,
+    STAGES, STAGE_KEYS, STAGE_FIELDS, PANEL_FIELDS, EVENT_FIELDS, VALUE_FIELDS, MEDICAL_FIELDS,
+    DECISION_STAGE_BY_PANEL_KEY,
     suggestedStageFromDecisions, PanelListKey, FieldDef,
     TrackingDraft, initTrackingDraft, setDraftField, dirtyKeys, isDirty,
     rebaseDraft, buildPatch, commitDraft, normalizeMoney,
 } from "@/lib/trackingDraft";
+import { joinValues, splitValues } from "@/lib/multiValue";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +54,8 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
         fileStatuses,
         localDecisions, appealDecisions, cassationDecisions, revisionDecisions,
         eventTypes, judgmentRoles,
+        currencies, medicalProcesses, medicalEvents, allegedFaults, patientHarms,
+        appliedMethods, cassationCourts, appealCourts,
     } = useConfig();
     const [saving, setSaving] = useState(false);
 
@@ -65,6 +69,15 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
         revision_decisions: revisionDecisions,
         event_types: eventTypes,
         judgment_roles: judgmentRoles,
+        // G124: para birimi + teslim havuzlarından kurulan listeler
+        currencies,
+        medical_processes: medicalProcesses,
+        medical_events: medicalEvents,
+        alleged_faults: allegedFaults,
+        patient_harms: patientHarms,
+        applied_methods: appliedMethods,
+        cassation_courts: cassationCourts,
+        appeal_courts: appealCourts,
     };
 
     const currentStage = (caseData.case_stage as string) ?? null;
@@ -186,7 +199,9 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                 // (karar_turu/karar_lehine — davranışları birebir korunur).
                 const fromConfig = f.optionsFrom ? configLists[f.optionsFrom].map(o => o.name) : null;
                 const names = fromConfig ?? f.options ?? [];
-                const value = fieldValue(f.key);
+                // G124: boş alan ekranda varsayılanı gösterir (para birimi "TL");
+                // taslak değişmez, kayıt için kullanıcı seçmeli.
+                const value = fieldValue(f.key) || f.defaultValue || "";
                 // Kayıtlı değer listeden çıkarılmışsa KAYBOLMASIN: geçici seçenek
                 // olarak eklenir. Liste boşken (yüklenemedi/boş doğdu) "liste dışı"
                 // damgası vurulmaz — closedListState "unknown" kuralının select
@@ -212,6 +227,89 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                     onChange={e => setField(f.key, e.target.value)}
                     className={`${inputCls} resize-none`} />
             )}
+            {f.type === "combo" && (() => {
+                // G124: serbest metin + liste önerisi (datalist). Değer doğrulanmaz;
+                // listede olmayan yazım "liste dışı" damgasıyla kalır (temizlik
+                // yönetim panelinden).
+                const names = f.optionsFrom ? configLists[f.optionsFrom].map(o => o.name) : [];
+                const value = fieldValue(f.key);
+                const offList = names.length > 0 && value !== "" && !names.includes(value);
+                const listId = `dl-${f.key}`;
+                return (
+                    <>
+                        <input type="text" list={listId}
+                            value={value}
+                            onChange={e => setField(f.key, e.target.value)}
+                            className={inputCls}
+                            data-off-list={offList ? "true" : undefined} />
+                        <datalist id={listId}>
+                            {names.map(o => <option key={o} value={o} />)}
+                        </datalist>
+                        {offList && (
+                            <p className="text-[10px] text-amber-600 mt-0.5">liste dışı yazım</p>
+                        )}
+                    </>
+                );
+            })()}
+            {f.type === "multiselect" && (() => {
+                // G124: " ; " ayraçlı çok değerli alan — parçalar rozet olarak
+                // listelenir, yeni parça listeden (datalist) seçilir ya da yazılıp
+                // Enter ile eklenir. Backend her parçayı listeye karşı doğrular;
+                // liste dışı parça burada da damgalanır.
+                const names = f.optionsFrom ? configLists[f.optionsFrom].map(o => o.name) : [];
+                const parts = splitValues(fieldValue(f.key));
+                const listId = `dl-${f.key}`;
+                const has = (v: string) => parts.some(p => p.toLocaleLowerCase("tr-TR") === v.toLocaleLowerCase("tr-TR"));
+                const add = (raw: string) => {
+                    const v = raw.replace(/\s+/g, " ").trim();
+                    if (!v || has(v)) return;
+                    setField(f.key, joinValues([...parts, v]));
+                };
+                const remove = (v: string) => {
+                    const next = parts.filter(p => p !== v);
+                    setField(f.key, next.length ? joinValues(next) : null);
+                };
+                return (
+                    <div className="space-y-1.5" data-multiselect={f.key}>
+                        {parts.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                                {parts.map(p => {
+                                    const offList = names.length > 0 && !names.includes(p);
+                                    return (
+                                        <span key={p}
+                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border ${offList ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-secondary/40"}`}
+                                            title={offList ? "liste dışı — yönetim panelinden listeye eklenebilir" : undefined}>
+                                            {p}
+                                            <button type="button" aria-label={`${p} kaldır`}
+                                                className="ml-0.5 opacity-60 hover:opacity-100"
+                                                onClick={() => remove(p)}>×</button>
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <input type="text" list={listId} placeholder="Ekle…"
+                            className={inputCls}
+                            onKeyDown={e => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    add(e.currentTarget.value);
+                                    e.currentTarget.value = "";
+                                }
+                            }}
+                            onChange={e => {
+                                // datalist'ten seçim tam adla gelir → anında ekle
+                                if (names.includes(e.target.value)) {
+                                    add(e.target.value);
+                                    e.target.value = "";
+                                }
+                            }} />
+                        <datalist id={listId}>
+                            {names.filter(n => !has(n)).map(o => <option key={o} value={o} />)}
+                        </datalist>
+                    </div>
+                );
+            })()}
         </div>
     );
 
@@ -429,6 +527,31 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                             {EVENT_FIELDS.map(renderField)}
+                        </div>
+                    </div>
+
+                    {/* ── Dava değeri + para birimi (G124) ── */}
+                    <div className="mt-4 pt-3 border-t border-primary/15">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
+                            Dava Değeri
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                            {VALUE_FIELDS.map(renderField)}
+                        </div>
+                    </div>
+
+                    {/* ── Tıbbi tasnif (G124): beş çok değerli alan, listeler teslim
+                        havuzlarından; kartın "Tıbbi Bilgiler" bölümü aynı kolonları
+                        salt okunur gösterir. */}
+                    <div className="mt-4 pt-3 border-t border-primary/15">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                            Tıbbi Tasnif
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mb-2">
+                            Birden çok değer seçilebilir; değerler kapalı listelerden gelir, listede olmayan yazım işaretlenir.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                            {MEDICAL_FIELDS.map(renderField)}
                         </div>
                     </div>
                 </CardContent>

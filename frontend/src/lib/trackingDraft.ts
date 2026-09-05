@@ -20,19 +20,35 @@ export type EventListKey =
     | "event_types"      // Olay Türleri      → olay_turu
     | "judgment_roles";  // Hükümdeki Roller  → hukumdeki_rol
 
-/** Panel select'lerinin config listesi anahtarları (karar + belgeleme listeleri). */
-export type PanelListKey = DecisionListKey | EventListKey;
+/** G124 listeleri: para birimi + teslim havuzlarından kurulan tıbbi/mahkeme listeleri. */
+export type PoolListKey =
+    | "currencies"          // Para Birimleri          → para_birimi
+    | "medical_processes"   // Tıbbi Süreçler          → tibbi_surec (çok değerli)
+    | "medical_events"      // Tıbbi Olaylar           → tibbi_olay (çok değerli)
+    | "alleged_faults"      // İddia Edilen Kusurlar   → iddia_edilen_kusur (çok değerli)
+    | "patient_harms"       // Hastada Oluşan Zararlar → hastada_olusan_zarar (çok değerli)
+    | "applied_methods"     // Uygulanan Yöntemler     → uygulanan_yontem (çok değerli)
+    | "cassation_courts"    // Temyiz Mahkemeleri      → temyiz_mahkemesi (öneri)
+    | "appeal_courts";      // İstinaf Mahkemeleri     → istinaf_mahkemesi (öneri)
+
+/** Panel select'lerinin config listesi anahtarları (karar + belgeleme + G124 listeleri). */
+export type PanelListKey = DecisionListKey | EventListKey | PoolListKey;
 
 export interface FieldDef {
     label: string;
     key: string;
-    type: "date" | "text" | "select" | "textarea" | "money";
+    /** `multiselect`: " ; " ayraçlı çok değerli alan, parçalar listeden (G124).
+     *  `combo`: serbest metin + liste önerisi (datalist) — doğrulanmaz (G124). */
+    type: "date" | "text" | "select" | "textarea" | "money" | "multiselect" | "combo";
     options?: string[];
     /** Seçenekleri resmî kapalı listeden alan select (G061; belgeleme listeleri
      *  G106'da aynı desene katıldı). `options` ile birlikte kullanılmaz — gömülü
      *  options yalnız karar_turu/karar_lehine kaba sınıflandırmalarında kalır
      *  (bilinçli AYRI alanlardır, listelere bağlanmaz). */
     optionsFrom?: PanelListKey;
+    /** Boş alanın ekranda gösterilen varsayılanı (yalnız görünüm; kayıt için
+     *  kullanıcı seçmeli — para birimi "TL", G124). */
+    defaultValue?: string;
     wide?: boolean; // 2 kolon kaplar
 }
 
@@ -82,7 +98,7 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
     ],
     ISTINAF: [
         { label: "Başvuru Tarihi",  key: "istinaf_basvuru_tarihi",  type: "date" },
-        { label: "Mahkeme",         key: "istinaf_mahkemesi",       type: "text", wide: true },
+        { label: "Mahkeme",         key: "istinaf_mahkemesi",       type: "combo", optionsFrom: "appeal_courts", wide: true },
         { label: "Esas No",         key: "istinaf_esas_no",         type: "text" },
         { label: "Karar No",        key: "istinaf_karar_no",        type: "text" },
         { label: "Karar Tarihi",    key: "istinaf_karar_tarihi",    type: "date" },
@@ -91,7 +107,7 @@ export const STAGE_FIELDS: Record<string, FieldDef[]> = {
         { label: "Açıklama",        key: "istinaf_karar_aciklama",  type: "textarea", wide: true },
     ],
     TEMYIZ: [
-        { label: "Mahkeme",        key: "temyiz_mahkemesi",        type: "text", wide: true },
+        { label: "Mahkeme",        key: "temyiz_mahkemesi",        type: "combo", optionsFrom: "cassation_courts", wide: true },
         { label: "Karar Tarihi",   key: "temyiz_karar_tarihi",     type: "date" },
         { label: "Karar Durumu",   key: "temyiz_karar_durumu",     type: "select", optionsFrom: "cassation_decisions" },
         { label: "Esas No",        key: "temyiz_esas_no",          type: "text" },
@@ -148,12 +164,37 @@ export const EVENT_FIELDS: FieldDef[] = [
     { label: "Hükümdeki Rol", key: "hukumdeki_rol", type: "select", optionsFrom: "judgment_roles" },
 ];
 
+/**
+ * Dava değeri + para birimi (G124). Para birimi kapalı liste (currencies);
+ * boş alan ekranda "TL" gösterir (varsayılan), kayıt için seçim gerekir.
+ */
+export const VALUE_FIELDS: FieldDef[] = [
+    { label: "Dava Değeri",  key: "dava_degeri",  type: "money" },
+    { label: "Para Birimi",  key: "para_birimi",  type: "select", optionsFrom: "currencies", defaultValue: "TL" },
+];
+
+/**
+ * Tıbbi tasnif beşlisi (G124) — ÇOK DEĞERLİ (" ; " ayraçlı), parçalar teslim
+ * havuzlarından kurulan kapalı listelerden seçilir; backend her parçayı kendi
+ * listesine karşı doğrular (case_manager._MULTI_LIST_COLUMNS). Kartta salt
+ * okunur gösterim (caseCardFields.MEDICAL_CARD_FIELDS) aynı kolonları okur.
+ */
+export const MEDICAL_FIELDS: FieldDef[] = [
+    { label: "Tıbbi Süreç",          key: "tibbi_surec",          type: "multiselect", optionsFrom: "medical_processes" },
+    { label: "Tıbbi Olay",           key: "tibbi_olay",           type: "multiselect", optionsFrom: "medical_events" },
+    { label: "İddia Edilen Kusur",   key: "iddia_edilen_kusur",   type: "multiselect", optionsFrom: "alleged_faults" },
+    { label: "Hastada Oluşan Zarar", key: "hastada_olusan_zarar", type: "multiselect", optionsFrom: "patient_harms" },
+    { label: "Uygulanan Yöntem",     key: "uygulanan_yontem",     type: "multiselect", optionsFrom: "applied_methods" },
+];
+
 // Taslağın kapsadığı tüm anahtarlar (aşama alanları + aşamadan bağımsızlar)
 export const TRACKING_DRAFT_KEYS: string[] = [
     ...new Set([
         ...Object.values(STAGE_FIELDS).flat().map(f => f.key),
         ...PANEL_FIELDS.map(f => f.key),
         ...EVENT_FIELDS.map(f => f.key),
+        ...VALUE_FIELDS.map(f => f.key),
+        ...MEDICAL_FIELDS.map(f => f.key),
         "dosya_son_durumu",
     ]),
 ];

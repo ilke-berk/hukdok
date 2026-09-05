@@ -75,6 +75,16 @@ const CONFIG_KEYS = {
     // filtresine bağladı).
     clientTypes: ["config", "client_types"],
     serviceTypes: ["config", "service_types"],
+    // G124: para birimi + teslim havuzlarından kurulan listeler (takip paneli
+    // dava değeri / tıbbi tasnif / mahkeme önerileri).
+    currencies: ["config", "currencies"],
+    medicalProcesses: ["config", "medical_processes"],
+    medicalEvents: ["config", "medical_events"],
+    patientHarms: ["config", "patient_harms"],
+    appliedMethods: ["config", "applied_methods"],
+    cassationCourts: ["config", "cassation_courts"],
+    appealCourts: ["config", "appeal_courts"],
+    defendantAdministrations: ["config", "defendant_administrations"],
     // Karar sonucu RESMÎ listeleri (G060 kurdu, G061 takip paneline bağladı).
     // Takip panelindeki karar durumu dropdown'ları BURADAN okur; kayıt sırası
     // resmi havuz sırasıdır (backend sequence ile sıralı döner).
@@ -151,6 +161,14 @@ export const useConfig = () => {
     const judgmentRolesQ = useQuery({ queryKey: CONFIG_KEYS.judgmentRoles, queryFn: () => fetchJson("/api/config/judgment_roles"), ...queryOpts });
     const clientTypesQ = useQuery({ queryKey: CONFIG_KEYS.clientTypes, queryFn: () => fetchJson("/api/config/client_types"), ...queryOpts });
     const serviceTypesQ = useQuery({ queryKey: CONFIG_KEYS.serviceTypes, queryFn: () => fetchJson("/api/config/service_types"), ...queryOpts });
+    const currenciesQ = useQuery({ queryKey: CONFIG_KEYS.currencies, queryFn: () => fetchJson("/api/config/currencies"), ...queryOpts });
+    const medicalProcessesQ = useQuery({ queryKey: CONFIG_KEYS.medicalProcesses, queryFn: () => fetchJson("/api/config/medical_processes"), ...queryOpts });
+    const medicalEventsQ = useQuery({ queryKey: CONFIG_KEYS.medicalEvents, queryFn: () => fetchJson("/api/config/medical_events"), ...queryOpts });
+    const patientHarmsQ = useQuery({ queryKey: CONFIG_KEYS.patientHarms, queryFn: () => fetchJson("/api/config/patient_harms"), ...queryOpts });
+    const appliedMethodsQ = useQuery({ queryKey: CONFIG_KEYS.appliedMethods, queryFn: () => fetchJson("/api/config/applied_methods"), ...queryOpts });
+    const cassationCourtsQ = useQuery({ queryKey: CONFIG_KEYS.cassationCourts, queryFn: () => fetchJson("/api/config/cassation_courts"), ...queryOpts });
+    const appealCourtsQ = useQuery({ queryKey: CONFIG_KEYS.appealCourts, queryFn: () => fetchJson("/api/config/appeal_courts"), ...queryOpts });
+    const defendantAdministrationsQ = useQuery({ queryKey: CONFIG_KEYS.defendantAdministrations, queryFn: () => fetchJson("/api/config/defendant_administrations"), ...queryOpts });
     const localDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.localDecisions, queryFn: () => fetchJson("/api/config/local_decisions"), ...queryOpts });
     const appealDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.appealDecisions, queryFn: () => fetchJson("/api/config/appeal_decisions"), ...queryOpts });
     const cassationDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.cassationDecisions, queryFn: () => fetchJson("/api/config/cassation_decisions"), ...queryOpts });
@@ -174,6 +192,8 @@ export const useConfig = () => {
         clientCategoriesQ, fileStatusesQ, allegedFaultsQ, appealingPartiesQ,
         eventTypesQ, judgmentRolesQ, clientTypesQ, serviceTypesQ,
         localDecisionsQ, appealDecisionsQ, cassationDecisionsQ, revisionDecisionsQ,
+        currenciesQ, medicalProcessesQ, medicalEventsQ, patientHarmsQ, appliedMethodsQ,
+        cassationCourtsQ, appealCourtsQ, defendantAdministrationsQ,
     ];
     const isConfigError = listQueries.some(q => q.isError);
     const isRequiredFieldsError = requiredCaseFieldsQ.isError;
@@ -195,7 +215,10 @@ export const useConfig = () => {
         eventTypesQ.isLoading || judgmentRolesQ.isLoading ||
         clientTypesQ.isLoading || serviceTypesQ.isLoading ||
         localDecisionsQ.isLoading || appealDecisionsQ.isLoading ||
-        cassationDecisionsQ.isLoading || revisionDecisionsQ.isLoading;
+        cassationDecisionsQ.isLoading || revisionDecisionsQ.isLoading ||
+        currenciesQ.isLoading || medicalProcessesQ.isLoading || medicalEventsQ.isLoading ||
+        patientHarmsQ.isLoading || appliedMethodsQ.isLoading || cassationCourtsQ.isLoading ||
+        appealCourtsQ.isLoading || defendantAdministrationsQ.isLoading;
 
     const typeToKey: Record<string, (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS]> = {
         lawyers: CONFIG_KEYS.lawyers,
@@ -301,6 +324,15 @@ export const useConfig = () => {
         judgmentRoles: judgmentRolesQ.data ?? EMPTY,
         clientTypes: clientTypesQ.data ?? EMPTY,
         serviceTypes: serviceTypesQ.data ?? EMPTY,
+        // G124 listeleri
+        currencies: currenciesQ.data ?? EMPTY,
+        medicalProcesses: medicalProcessesQ.data ?? EMPTY,
+        medicalEvents: medicalEventsQ.data ?? EMPTY,
+        patientHarms: patientHarmsQ.data ?? EMPTY,
+        appliedMethods: appliedMethodsQ.data ?? EMPTY,
+        cassationCourts: cassationCourtsQ.data ?? EMPTY,
+        appealCourts: appealCourtsQ.data ?? EMPTY,
+        defendantAdministrations: defendantAdministrationsQ.data ?? EMPTY,
         localDecisions: localDecisionsQ.data ?? EMPTY,
         appealDecisions: appealDecisionsQ.data ?? EMPTY,
         cassationDecisions: cassationDecisionsQ.data ?? EMPTY,

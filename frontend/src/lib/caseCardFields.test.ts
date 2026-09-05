@@ -126,7 +126,14 @@ describe("caseCardFields — bir kavram tek ekranda (G073 → G074)", () => {
             [...MEDICAL_CARD_FIELDS, ...PROCESS_CARD_FIELDS, ...OFFICE_CARD_FIELDS].map(f => f.key),
         );
         const kesisim = TRACKING_DRAFT_KEYS.filter(k => kartAnahtarlari.has(k));
-        expect([...kesisim].sort()).toEqual(["hukumdeki_rol", "olay_turu"].sort());
+        // G124 (05.09.2026, bilinçli karar): tıbbi beşli de aynı desene girdi —
+        // kartta salt-okunur gösterim, düzenleme yalnız takip panelinde (çok
+        // seçimli, listeler teslim havuzlarından). Kural yine korunuyor: hiçbir
+        // alan iki ekranda DÜZENLENMİYOR.
+        expect([...kesisim].sort()).toEqual([
+            "hukumdeki_rol", "olay_turu",
+            "tibbi_surec", "tibbi_olay", "iddia_edilen_kusur", "hastada_olusan_zarar", "uygulanan_yontem",
+        ].sort());
     });
 
     it("kanun yolu grubu boşalmadı: istinaf_basvuran_taraf kartta kaldı", () => {

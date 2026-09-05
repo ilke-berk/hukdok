@@ -6,9 +6,9 @@ referans listeleri managers/reference_lists.py'dedir.
 import logging
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import intersect, select, union
+from sqlalchemy import func, intersect, select, union
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -1703,6 +1703,13 @@ TRACKING_FIELDS = [
     # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
     # service_types), aynı kapıdan geçerler; hiçbir bağlamda zorunlu değiller.
     "muvekkil_tipi", "hizmet_turu",
+    # G124 — dava değeri + para birimi (currencies kapısı) ve tıbbi beşli
+    # (çok değerli; parça parça kendi listelerine karşı, `_MULTI_LIST_COLUMNS`).
+    # Tıbbi beşlinin öteki yazıcısı aktarımdır (metin, doğrulamasız); panel
+    # yazımı liste kapısından geçer.
+    "dava_degeri", "para_birimi",
+    "tibbi_surec", "tibbi_olay", "iddia_edilen_kusur", "hastada_olusan_zarar",
+    "uygulanan_yontem",
 ]
 
 
@@ -1727,7 +1734,50 @@ _EVENT_LIST_COLUMNS: Dict[str, Tuple[Any, str]] = {   # değer: (liste modeli, l
     # Müvekkil Tipi / Hizmet Türü (G119, DB-2026-002) — aynı kapı, aynı davranış.
     "muvekkil_tipi": (models.ClientType, "client_types"),
     "hizmet_turu": (models.ServiceType, "service_types"),
+    # Para birimi (G124) — aynı kapı (tek değer, kapalı liste currencies).
+    "para_birimi": (models.Currency, "currencies"),
 }
+
+# G124 — ÇOK DEĞERLİ kapalı liste kolonları: hücre " ; " ile birleşik metin,
+# her parça kendi listesine karşı doğrulanır (davranış `validated_event_list_value`
+# ile aynı: boş → None, liste BOŞSA atlanır, tanınmayan parça 400). Parçalar
+# normalize edilip (boşluk/mükerrer) listedeki KANONİK yazımla yeniden
+# birleştirilir — aktarımın yazdığı ham metinle aynı ayraç (services.multi_value).
+_MULTI_LIST_COLUMNS: Dict[str, Tuple[Any, str]] = {
+    "tibbi_surec": (models.MedicalProcess, "medical_processes"),
+    "tibbi_olay": (models.MedicalEvent, "medical_events"),
+    "iddia_edilen_kusur": (models.AllegedFault, "alleged_faults"),
+    "hastada_olusan_zarar": (models.PatientHarm, "patient_harms"),
+    "uygulanan_yontem": (models.AppliedMethod, "applied_methods"),
+}
+
+
+def validated_multi_list_value(db, column: str, value):
+    """`cases.<column>` çok değerli kapalı liste alanıysa parça parça doğrular."""
+    from services.multi_value import join_values, split_values
+
+    entry = _MULTI_LIST_COLUMNS.get(column)
+    if entry is None:
+        return value
+    model, liste_adi = entry
+    parcalar = split_values(value)
+    if not parcalar:
+        return None
+    if db.query(model.id).first() is None:
+        logger.warning(
+            f"{liste_adi} listesi BOŞ — {column} kapalı liste doğrulaması "
+            f"atlandı (havuz seed'i koşmamış olabilir)"
+        )
+        return join_values(parcalar)
+    kanonik: List[str] = []
+    for parca in parcalar:
+        satir = db.query(model.name).filter(func.lower(model.name) == parca.lower()).first()
+        if satir is None:
+            raise stage_decisions.InvalidDecisionStatusError(
+                f"{column}: '{parca}' {liste_adi} listesinde yok"
+            )
+        kanonik.append(satir[0])
+    return join_values(kanonik)
 
 
 def validated_event_list_value(db, column: str, value):
@@ -1769,8 +1819,11 @@ def _validated_tracking_value(db, field: str, value):
     """Takip yazma yolunun iki kapısı sırayla: G066 karar havuzları (aşama
     karar durumu kolonları) + G103 belgeleme olayı listeleri. Kümeler ayrık —
     bir alan en fazla bir kapıya takılır, diğerinden dokunulmadan geçer."""
-    return validated_event_list_value(
-        db, field, stage_decisions.validated_status_for_column(db, field, value)
+    return validated_multi_list_value(
+        db, field,
+        validated_event_list_value(
+            db, field, stage_decisions.validated_status_for_column(db, field, value)
+        ),
     )
 
 

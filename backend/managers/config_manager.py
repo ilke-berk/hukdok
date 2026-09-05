@@ -87,6 +87,15 @@ class DynamicConfig:
         # Müvekkil Tipi / Hizmet Türü listeleri (G119)
         self.__client_types: List[Dict] = []
         self.__service_types: List[Dict] = []
+        # G124 listeleri — tek sözlükte; getter/setter'lar getattr sözleşmesini
+        # (refresh_cache → set_<liste>) korur, gövde `_g124_get/_g124_set`.
+        self.__g124_lists: Dict[str, List[Dict]] = {
+            k: [] for k in (
+                "currencies", "medical_processes", "medical_events", "patient_harms",
+                "applied_methods", "cassation_courts", "appeal_courts",
+                "defendant_administrations",
+            )
+        }
         self.__mojibake_map: Dict[str, str] = {}
 
         self._load_mojibake_map()  # Load on init
@@ -339,4 +348,30 @@ class DynamicConfig:
         with self._lock:
             self.__service_types = items
             TechnicalLogger.log("INFO", f"DynamicConfig: Service Types updated ({len(items)} items)")
+
+    # ─── G124 listeleri (para birimi + teslim havuzları) ─────────────────
+    def _g124_get(self, key: str) -> List[Dict]:
+        return self.__g124_lists[key]
+
+    def _g124_set(self, key: str, items: List[Dict]):
+        with self._lock:
+            self.__g124_lists[key] = items
+            TechnicalLogger.log("INFO", f"DynamicConfig: {key} updated ({len(items)} items)")
+
+    def get_currencies(self) -> List[Dict]:                 return self._g124_get("currencies")
+    def set_currencies(self, items: List[Dict]):            self._g124_set("currencies", items)
+    def get_medical_processes(self) -> List[Dict]:          return self._g124_get("medical_processes")
+    def set_medical_processes(self, items: List[Dict]):     self._g124_set("medical_processes", items)
+    def get_medical_events(self) -> List[Dict]:             return self._g124_get("medical_events")
+    def set_medical_events(self, items: List[Dict]):        self._g124_set("medical_events", items)
+    def get_patient_harms(self) -> List[Dict]:              return self._g124_get("patient_harms")
+    def set_patient_harms(self, items: List[Dict]):         self._g124_set("patient_harms", items)
+    def get_applied_methods(self) -> List[Dict]:            return self._g124_get("applied_methods")
+    def set_applied_methods(self, items: List[Dict]):       self._g124_set("applied_methods", items)
+    def get_cassation_courts(self) -> List[Dict]:           return self._g124_get("cassation_courts")
+    def set_cassation_courts(self, items: List[Dict]):      self._g124_set("cassation_courts", items)
+    def get_appeal_courts(self) -> List[Dict]:              return self._g124_get("appeal_courts")
+    def set_appeal_courts(self, items: List[Dict]):         self._g124_set("appeal_courts", items)
+    def get_defendant_administrations(self) -> List[Dict]:  return self._g124_get("defendant_administrations")
+    def set_defendant_administrations(self, items: List[Dict]): self._g124_set("defendant_administrations", items)
 

@@ -542,6 +542,16 @@ class CaseTrackingUpdate(BaseModel):
     # (case_manager._EVENT_LIST_COLUMNS, G066 davranış eşi)
     muvekkil_tipi: Optional[str] = None
     hizmet_turu: Optional[str] = None
+    # G124 — dava değeri + para birimi (kapalı liste currencies) ve tıbbi
+    # beşli (ÇOK DEĞERLİ, " ; " ayraçlı; her parça kendi listesine karşı
+    # doğrulanır: case_manager._MULTI_LIST_COLUMNS). None = alan temizlenir.
+    dava_degeri: Optional[float] = None
+    para_birimi: Optional[str] = None
+    tibbi_surec: Optional[str] = None
+    tibbi_olay: Optional[str] = None
+    iddia_edilen_kusur: Optional[str] = None
+    hastada_olusan_zarar: Optional[str] = None
+    uygulanan_yontem: Optional[str] = None
     note: Optional[str] = None
 
 

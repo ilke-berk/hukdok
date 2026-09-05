@@ -136,8 +136,11 @@ export const closedListState = (
     options: { name: string }[] | undefined,
 ): ClosedListState => {
     if (!isFilled(value) || !options || options.length === 0) return "unknown";
-    const target = normalize(String(value));
-    return options.some(o => normalize(o.name ?? "") === target) ? "in-list" : "off-list";
+    // G124: çok değerli hücre (" ; " ayraçlı) — HER parça listede olmalı.
+    // Tek değerli hücre için davranış eskisiyle birebir (tek parça).
+    const names = new Set(options.map(o => normalize(o.name ?? "")));
+    const parts = String(value).split(/[;\r\n]+/).map(normalize).filter(Boolean);
+    return parts.every(p => names.has(p)) ? "in-list" : "off-list";
 };
 
 /**

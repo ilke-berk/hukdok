@@ -131,11 +131,17 @@ class Case(Base):
     arabuluculuk_karar_tarihi = Column(Date, nullable=True)
     # Tıbbi analiz alanları: üçü branş bazlı BÜYÜYEN sözlük (serbest metin),
     # iddia_edilen_kusur ise KAPALI liste (alleged_faults).
-    tibbi_surec = Column(String(300), nullable=True)
-    tibbi_olay = Column(String(300), nullable=True)
-    iddia_edilen_kusur = Column(String(200), nullable=True)
-    hastada_olusan_zarar = Column(String(300), nullable=True)
-    uygulanan_yontem = Column(String(200), nullable=True)
+    # G124 (05.09.2026): beşi de ÇOK DEĞERLİ (" ; " ayraçlı; 04.09 paketinde
+    # tıbbi olay 9, hastada oluşan zarar 8 parçaya kadar) — 200/300 sınırı
+    # 18 hücreyi kırpıyordu (veri kaybı). Sınır kaldırıldı; değerler kapalı
+    # listelerden (medical_processes / medical_events / alleged_faults /
+    # patient_harms / applied_methods) parça parça doğrulanır, metin olarak
+    # birleşik saklanır (services.multi_value).
+    tibbi_surec = Column(String, nullable=True)
+    tibbi_olay = Column(String, nullable=True)
+    iddia_edilen_kusur = Column(String, nullable=True)
+    hastada_olusan_zarar = Column(String, nullable=True)
+    uygulanan_yontem = Column(String, nullable=True)
     # Belgeleme olayı alanları (G103) — iki KAPALI liste (event_types /
     # judgment_roles). Veri ekibinin 25.08 ölçümü: bağlı föylerin ~%14'ünde
     # tazminatın kaynağı tıbbi olay değil BELGELEME olayı (aydınlatma ihlali /
@@ -864,6 +870,115 @@ class ServiceType(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)   # e.g. "LEXIS-RAPOR"
     name = Column(String, nullable=False)                            # e.g. "Lexis Rapor"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+# ─── G124 (05.09.2026): teslim havuzlarından kurulan kapalı listeler ─────────
+#
+# 04.09 paketinin 54 sütunu değer yapısı açısından ölçüldü (kullanıcı kararı
+# 05.09: "menüleri listedeki bilgilerden oluşturalım"). Aşağıdaki sekiz liste
+# ClientType deseninin birebir kopyasıdır (kod ASCII + değişmez kimlik, ad
+# denormalize taşınır). `currencies` seed sabitinden gelir (TL/USD/EUR); diğer
+# yedisi teslim paketinin kendi değerlerinden `scripts/deger_havuzu_seed.py`
+# ile kurulur — yazımlar OLDUĞU GİBİ alınır (ekibin bozuk yazımları dahil,
+# "geçirelim, sonra elden geçiririz"), temizlik yönetim panelinin işi.
+
+class Currency(Base):
+    """Para birimi — kapalı liste (TL varsayılan, USD, EUR). `cases.para_birimi`."""
+    __tablename__ = "currencies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)   # "TL"
+    name = Column(String, nullable=False)                            # "TL"
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class MedicalProcess(Base):
+    """Tıbbi Süreç havuzu (paket: 97 atomik değer). `cases.tibbi_surec` çok değerli."""
+    __tablename__ = "medical_processes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class MedicalEvent(Base):
+    """Tıbbi Olay havuzu (paket: 667 atomik değer). `cases.tibbi_olay` çok değerli."""
+    __tablename__ = "medical_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class PatientHarm(Base):
+    """Hastada Oluşan Zarar havuzu (paket: 258). `cases.hastada_olusan_zarar` çok değerli."""
+    __tablename__ = "patient_harms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class AppliedMethod(Base):
+    """Uygulanan Yöntem havuzu (paket: 260). `cases.uygulanan_yontem` çok değerli."""
+    __tablename__ = "applied_methods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class CassationCourt(Base):
+    """Temyiz mahkemesi (Danıştay daireleri / Yargıtay HD; paket: 41 yazım).
+    `cases.temyiz_mahkemesi` öneri listesi — doğrulama YOK (serbest metin kalır)."""
+    __tablename__ = "cassation_courts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class AppealCourt(Base):
+    """İstinaf mahkemesi (BAM/BİM daireleri; paket: 221 yazım).
+    `cases.istinaf_mahkemesi` öneri listesi — doğrulama YOK."""
+    __tablename__ = "appeal_courts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    sequence = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class DefendantAdministration(Base):
+    """Davalı idare (paket: 10 değer, "SAĞLIK BAKANLIĞI" 122 föy). Taraf adı
+    önerisi — `case_parties.name` serbest metin kalır."""
+    __tablename__ = "defendant_administrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())

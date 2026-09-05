@@ -108,6 +108,19 @@ LIST_REGISTRY = {
     # yine aynı. client_categories/bureau_types ile KARIŞTIRILMAZ (ayrı listeler).
     "client_types":   ListSpec(models.ClientType, ("code", "name"), "set_client_types"),
     "service_types":  ListSpec(models.ServiceType, ("code", "name"), "set_service_types"),
+    # G124 (05.09.2026): teslim havuzlarından kurulan listeler + para birimi.
+    # Mekanizma yine aynı. Tıbbi dördü ÇOK DEĞERLİ kolonlara bağlıdır
+    # (" ; " ayraçlı; DEPENDENCIES notu), iki mahkeme + davalı idare ÖNERİ
+    # listesidir (alan serbest metin kalır, doğrulanmaz).
+    "currencies":                ListSpec(models.Currency, ("code", "name"), "set_currencies"),
+    "medical_processes":         ListSpec(models.MedicalProcess, ("code", "name"), "set_medical_processes"),
+    "medical_events":            ListSpec(models.MedicalEvent, ("code", "name"), "set_medical_events"),
+    "patient_harms":             ListSpec(models.PatientHarm, ("code", "name"), "set_patient_harms"),
+    "applied_methods":           ListSpec(models.AppliedMethod, ("code", "name"), "set_applied_methods"),
+    "cassation_courts":          ListSpec(models.CassationCourt, ("code", "name"), "set_cassation_courts"),
+    "appeal_courts":             ListSpec(models.AppealCourt, ("code", "name"), "set_appeal_courts"),
+    "defendant_administrations": ListSpec(models.DefendantAdministration, ("code", "name"),
+                                          "set_defendant_administrations"),
 }
 
 # refresh_cache("email_recipients") gibi eski çağrılar için takma adlar
@@ -178,6 +191,23 @@ DEPENDENCIES = {
                           DepSpec(models.Case, "uyap_lawyer_name", "dava (UYAP avukatı)"),
                           DepSpec(models.CaseLawyer, "name", "dava avukatı", clearable=False)],
     "emails":            [],
+    # G124: para birimi kart kolonunda denormalize; iki mahkeme listesi kart
+    # kolonlarına ÖNERİ verir (doğrulanmaz) ama ad yine denormalize durur —
+    # yeniden adlandırma/silme yayılımı aynı mekanizmayla çalışır.
+    "currencies":       [DepSpec(models.Case, "para_birimi", "dava")],
+    "cassation_courts": [DepSpec(models.Case, "temyiz_mahkemesi", "dava")],
+    "appeal_courts":    [DepSpec(models.Case, "istinaf_mahkemesi", "dava")],
+    # Tıbbi dördü ÇOK DEĞERLİ kolonlara bağlıdır (" ; " ayraçlı metin). Bağ
+    # kolon-düzeyi TAM eşleşmeyle çalışır: tek değerli hücre yeniden
+    # adlandırma/silme yayılımını görür, birleşik hücre GÖRMEZ (ekranda
+    # "liste dışı" damgasıyla görünür kalır). Parça-düzeyi yayılım ayrı iş.
+    "medical_processes": [DepSpec(models.Case, "tibbi_surec", "dava")],
+    "medical_events":    [DepSpec(models.Case, "tibbi_olay", "dava")],
+    "patient_harms":     [DepSpec(models.Case, "hastada_olusan_zarar", "dava")],
+    "applied_methods":   [DepSpec(models.Case, "uygulanan_yontem", "dava")],
+    # Davalı idare taraf ADI önerisidir; case_parties.name'e bağlanmaz (bir
+    # idare adı yeniden adlandırılınca taraf kayıtları elle güncellenir).
+    "defendant_administrations": [],
 }
 
 
@@ -204,6 +234,11 @@ LIST_TITLES = {
     "cassation_decisions": "Temyiz Onama Durumları", "revision_decisions": "Karar Düzeltme Durumları",
     "event_types": "Olay Türleri", "judgment_roles": "Hükümdeki Roller",
     "client_types": "Müvekkil Tipleri", "service_types": "Hizmet Türleri",
+    "currencies": "Para Birimleri",
+    "medical_processes": "Tıbbi Süreçler", "medical_events": "Tıbbi Olaylar",
+    "patient_harms": "Hastada Oluşan Zararlar", "applied_methods": "Uygulanan Yöntemler",
+    "cassation_courts": "Temyiz Mahkemeleri", "appeal_courts": "İstinaf Mahkemeleri",
+    "defendant_administrations": "Davalı İdareler",
 }
 
 COLUMN_TITLES = {
@@ -593,6 +628,14 @@ def get_event_types():          return get_items("event_types")
 def get_judgment_roles():       return get_items("judgment_roles")
 def get_client_types():         return get_items("client_types")
 def get_service_types():        return get_items("service_types")
+def get_currencies():                return get_items("currencies")
+def get_medical_processes():         return get_items("medical_processes")
+def get_medical_events():            return get_items("medical_events")
+def get_patient_harms():             return get_items("patient_harms")
+def get_applied_methods():           return get_items("applied_methods")
+def get_cassation_courts():          return get_items("cassation_courts")
+def get_appeal_courts():             return get_items("appeal_courts")
+def get_defendant_administrations(): return get_items("defendant_administrations")
 
 
 def get_court_types(parent_code: str = None):
@@ -639,6 +682,14 @@ def add_event_type(code: str, name: str):          return add_item("event_types"
 def add_judgment_role(code: str, name: str):       return add_item("judgment_roles", code=code, name=name)
 def add_client_type(code: str, name: str):         return add_item("client_types", code=code, name=name)
 def add_service_type(code: str, name: str):        return add_item("service_types", code=code, name=name)
+def add_currency(code: str, name: str):                return add_item("currencies", code=code, name=name)
+def add_medical_process(code: str, name: str):         return add_item("medical_processes", code=code, name=name)
+def add_medical_event(code: str, name: str):           return add_item("medical_events", code=code, name=name)
+def add_patient_harm(code: str, name: str):            return add_item("patient_harms", code=code, name=name)
+def add_applied_method(code: str, name: str):          return add_item("applied_methods", code=code, name=name)
+def add_cassation_court(code: str, name: str):         return add_item("cassation_courts", code=code, name=name)
+def add_appeal_court(code: str, name: str):            return add_item("appeal_courts", code=code, name=name)
+def add_defendant_administration(code: str, name: str): return add_item("defendant_administrations", code=code, name=name)
 
 
 def add_court_type(code: str, name: str, parent_code: str):
@@ -711,3 +762,11 @@ def delete_event_type(code: str):          return delete_item("event_types", cod
 def delete_judgment_role(code: str):       return delete_item("judgment_roles", code)
 def delete_client_type(code: str):         return delete_item("client_types", code)
 def delete_service_type(code: str):        return delete_item("service_types", code)
+def delete_currency(code: str):                return delete_item("currencies", code)
+def delete_medical_process(code: str):         return delete_item("medical_processes", code)
+def delete_medical_event(code: str):           return delete_item("medical_events", code)
+def delete_patient_harm(code: str):            return delete_item("patient_harms", code)
+def delete_applied_method(code: str):          return delete_item("applied_methods", code)
+def delete_cassation_court(code: str):         return delete_item("cassation_courts", code)
+def delete_appeal_court(code: str):            return delete_item("appeal_courts", code)
+def delete_defendant_administration(code: str): return delete_item("defendant_administrations", code)

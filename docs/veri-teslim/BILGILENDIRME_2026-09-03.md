@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | 1.0 | 03.09.2026 | İlk sürüm |
 | 1.1 | 04.09.2026 | Format Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve aynı gün verdiğimiz cevap işlendi: `Müvekkil Tipi` + `Hizmet Türü` artık **okunuyor** (§3.2; "bekleyen alan" değil); okunan başlık listesi sistemden yeniden sayıldı (42 alan / 54 kabul edilen yazım); kapalı listelerimizin tam envanteri (§3.8 — `İddia Edilen Kusur` 9 değerle doldu); `Karar_Asamalari`'nda `Önceki` etiketi (§3.5); DB-2026 kalemlerinin bizdeki karşılığı ilgili bölümlere tarihli şerh olarak girdi; §5 tablosu, §6 örnek bildirim numarası, §9 özet |
-| 1.2 | 05.09.2026 | 04.09 paketinin **54 sütununun tamamı** okunur hâle geldi: `Dosya - Föy Bilgileri`, `Para Birimi TL`, `MüvekkilNo`, `Eski Dosya No`, `İstinaf Mahkeme Başvuru Tar.` artık **okunuyor** (§3.2; okunan liste 47 alan / 66 yazım); `Yerel Mahkeme Tebliğ Tarihi` ve `Yerel Mahkeme Kararı Açıklaması` `Karar_Asamalari`'ndan karta da yansıyor; `Müvekkil Tipi` / `Hizmet Türü` / `Durum` föy düzeyinde de saklanır — kardeş föy çelişkisinde kart alanı boş kalır ama föy değeri kaybolmaz (§3.2 şerhi). Dosyanızda değişiklik gerekmez |
+| 1.2 | 05.09.2026 | 04.09 paketinin **54 sütununun tamamı** okunur hâle geldi: `Dosya - Föy Bilgileri`, `Para Birimi TL`, `MüvekkilNo`, `Eski Dosya No`, `İstinaf Mahkeme Başvuru Tar.` artık **okunuyor** (§3.2; okunan liste 47 alan / 66 yazım); `Yerel Mahkeme Tebliğ Tarihi` ve `Yerel Mahkeme Kararı Açıklaması` `Karar_Asamalari`'ndan karta da yansıyor; `Müvekkil Tipi` / `Hizmet Türü` / `Durum` föy düzeyinde de saklanır — kardeş föy çelişkisinde kart alanı boş kalır ama föy değeri kaybolmaz (§3.2 şerhi); kapalı listelerimiz paketinizin değer havuzlarıyla olduğu gibi dolduruldu, tıbbi beşli çok değerli hücreler kırpılmadan saklanır, üç taraf rolü listeye girdi. Dosyanızda değişiklik gerekmez |
 
 ---
 
@@ -163,6 +163,15 @@ aynı alandır):
   paketinde hizmet türü 973, müvekkil tipi 891, durum 181 kart) kart alanı §4 gereği boş
   kalır ama her föyün değeri kartta "Föyler" panelinde görünür — kayıp yok, bu satırlar
   çelişki raporunda yine listelenir.
+  **Değer havuzları (aynı gün):** kapalı listelerimiz 04.09 paketinizin değerleriyle
+  OLDUĞU GİBİ dolduruldu — dört karar durumu havuzu, `İddia Edilen Kusur`, tıbbi dört
+  liste (`Tıbbi Süreç` 97 · `Tıbbi Olay` 667 · `Hastada Oluşan Zarar` 258 · `Uygulanan
+  Yöntem` 260 atomik değer), `Temyiz Mahkemesi` (38), `İstinaf Mahkemesi` (217),
+  `Davalı İdare` (10). Bozuk yazımlar ("Karar Aaleyhe", "YARGITAY .....HD") bizde de
+  var; birlikte temizleyeceğiz, listeleri elden geçirince yeni kanonik yazımı size
+  bildiririz. Bu paket için "tanınmayan değer" raporu boş kalır. Tıbbi beşlinin çok
+  değerli hücreleri (` ; `) artık kırpılmadan tam saklanır. `Taraf Sıfatı`'ndaki
+  `Aleyhine Başvurulan`, `Alacaklı`, `Katılan` rol listemize girdi.
 
 **Okunmayan sütunlar** (18.08 paketindeki 68 sütunun kalan 24'ü; 04.09 paketindeki 54
 sütunun **hepsi okunur**. Paketten çıkarmanız gerekmez, olduğu gibi kalabilir —

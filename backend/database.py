@@ -1019,6 +1019,25 @@ _MIGRATIONS = [
                               WHERE x.case_id = c.id AND x.stage = 'YEREL')
              AND c.karar_aciklama IS NULL AND d.aciklama IS NOT NULL""",
     ]),
+
+    # ─── 44. TIBBİ BEŞLİ KOLON SINIRI KALKTI (G124) ───────────────────────────
+    #
+    # Beş tasnif alanı ÇOK DEĞERLİ (" ; " ayraçlı, 9 parçaya kadar); 200/300
+    # karakter sınırı 04.09 paketinin kuru koşusunda 18 hücreyi kırpıyordu.
+    # Modelde sınır kalktı (madde 43'ün yeni kolonlarıyla aynı gün); mevcut
+    # kurulumda tip değişikliği ancak ALTER ile gelir — create_all mevcut
+    # kolonu değiştirmez. Genişletme veri kaybetmez ve idempotenttir
+    # ("index" op'u koşulsuz koşar; ikinci koşu aynı tipi yeniden yazar).
+    # Sekiz yeni liste tablosu (currencies, medical_*, patient_harms,
+    # applied_methods, cassation_courts, appeal_courts,
+    # defendant_administrations) modelde tanımlı → create_all yaratır.
+    ("index", "cases", [
+        "ALTER TABLE cases ALTER COLUMN tibbi_surec TYPE VARCHAR",
+        "ALTER TABLE cases ALTER COLUMN tibbi_olay TYPE VARCHAR",
+        "ALTER TABLE cases ALTER COLUMN iddia_edilen_kusur TYPE VARCHAR",
+        "ALTER TABLE cases ALTER COLUMN hastada_olusan_zarar TYPE VARCHAR",
+        "ALTER TABLE cases ALTER COLUMN uygulanan_yontem TYPE VARCHAR",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

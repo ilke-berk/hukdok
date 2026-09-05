@@ -120,6 +120,11 @@ def seed_all_lists():
     # yazılı geldi, seed'li.
     _seed_client_types()
     _seed_service_types()
+    # Para birimi (G124) — TL varsayılan (sıra 0), USD, EUR. Teslim
+    # havuzlarından kurulan yedi liste (tıbbi beşlinin dördü, iki mahkeme,
+    # davalı idare) BURADA SEED'LENMEZ: değerler paketten gelir,
+    # scripts/deger_havuzu_seed.py ile kurulur.
+    _seed_currencies()
 
 
 def _seed_file_types():
@@ -183,6 +188,10 @@ def _seed_party_roles():
         main_roles = [
             "Davacı", "Davalı", "Müşteki", "Sanık", "İhbar Olunan", "Müdahil",
             "Şüpheli", "Borçlu", "Başvurucu", "Feri Müdahil", "Müdahil Davalı",
+            # G124 (05.09.2026, kullanıcı kararı): 04.09 paketinin "Taraf Sıfatı"
+            # sütununda olup listede olmayan üç rol (429 · 83 · 3 föy) — aktarım
+            # rol metnini yazıyordu, dropdown "liste dışı" gösteriyordu.
+            "Aleyhine Başvurulan", "Alacaklı", "Katılan",
         ]
         third_roles = ["Tanık", "Bilirkişi", "Uzman", "Arabulucu", "Diğer"]
 
@@ -547,6 +556,21 @@ SERVICE_TYPES = [
 
 def _seed_client_types():
     _seed_karar_listesi(models.ClientType, CLIENT_TYPES, "client_types")
+
+
+# Para birimi (G124, 05.09.2026 kullanıcı kararı): "yaygın değerler, varsayılan
+# TL, dolar ve euro da olsun". Teslimde tek değer var ("TL", 8.402 föy); ad
+# kodla aynı — panelde TL ilk sırada gelir ve boş alanın varsayılanıdır.
+CURRENCIES = [
+    ("TL", "TL"),
+    ("USD", "USD"),
+    ("EUR", "EUR"),
+]
+VARSAYILAN_PARA_BIRIMI = "TL"
+
+
+def _seed_currencies():
+    _seed_karar_listesi(models.Currency, CURRENCIES, "currencies")
 
 
 def _seed_service_types():

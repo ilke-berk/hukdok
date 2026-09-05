@@ -278,6 +278,46 @@ Yazma ucu yoktur (tek yazıcı aktarım); testler `backend/tests/test_g063_case_
 (şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT) ve
 `test_g123_tum_sutunlar.py` (föy düzeyi alanlar, çelişkide kayıpsızlık, arama kolları).
 
+## 11. Değer havuzları ve çok değerli alanlar (G124)
+
+Kullanıcı kararı (05.09.2026): "menüleri listedeki bilgilerden oluşturalım; onların
+hatalısını geçirelim, lokal migrasyon bitince hepsini elden geçiririz." 04.09 paketinin
+54 sütunu değer yapısı açısından ölçüldü; sonuç üç kalem:
+
+- **Çok değerli beşli.** Tıbbi Süreç · Tıbbi Olay · İddia Edilen Kusur · Hastada Oluşan
+  Zarar · Uygulanan Yöntem bir hücrede 9 parçaya kadar değer taşır (`" ; "` ayraçlı);
+  200/300 kolon sınırı kuru koşuda 18 hücreyi kırpıyordu. Sınır kalktı (migrasyon madde
+  44, `ALTER … TYPE VARCHAR`), değer aynı metin kolonunda birleşik durur; ayırma/birleştirme
+  tek yerde: `services/multi_value.py` (frontend ikizi `lib/multiValue.ts`, aynı ayraç,
+  virgül ayraç DEĞİLDİR). Takip paneli beşliyi çok seçimli düzenler
+  (`trackingDraft.MEDICAL_FIELDS`, tip `multiselect`); yazma kapısı her parçayı kendi
+  listesine karşı doğrular (`case_manager._MULTI_LIST_COLUMNS` → tanınan parça KANONİK
+  yazımla birleşir, tanınmayan 400, liste boşsa atlanır). Kart "Tıbbi Bilgiler" bölümü
+  salt okunur; `closedListState` parça parça bakar.
+- **Sekiz yeni kapalı liste** (ClientType deseni, `LIST_REGISTRY` + `DEPENDENCIES` +
+  `LIST_TITLES` + DynamicConfig getter/setter + `/api/config/<liste>` üçlüsü — route'lar
+  `routes/config._register_simple_list` fabrikasından): `currencies` (seed sabiti TL/USD/EUR,
+  TL varsayılan; `cases.para_birimi`, takip paneli `VALUE_FIELDS`), `medical_processes`,
+  `medical_events`, `patient_harms`, `applied_methods` (tıbbi beşlinin dördü;
+  `alleged_faults` zaten vardı), `cassation_courts` ve `appeal_courts` (temyiz/istinaf
+  mahkemesi ÖNERİ listesi — alan serbest metin kalır, panelde `combo` tipi = datalist,
+  doğrulanmaz), `defendant_administrations` (davalı idare taraf adı önerisi, bağsız).
+- **Havuz seed'i paketten:** `scripts/deger_havuzu_seed.py --input <paket> [--apply]`
+  `Sheet` sütunlarının atomik değerlerini ilgili listeye YENİ satır olarak ekler (mevcut
+  ada dokunmaz, silmez, yeniden adlandırmaz; kod `_karar_kodu`, çakışmada `_2` soneki;
+  sıra = sıklık). Dört karar durumu listesi de buradan beslenir — ekibin bozuk yazımları
+  ("Karar Aaleyhe", "YARGITAY .....HD") OLDUĞU GİBİ girer; temizlik yönetim panelinden.
+  Lokal koşu (05.09): 1.579 yeni satır, ikinci koşu 0. Gerçek paket repoya girmez;
+  testler `backend/tests/test_g124_deger_havuzlari.py`.
+- **Taraf rolü:** `Aleyhine Başvurulan`, `Alacaklı`, `Katılan` seed'e girdi (paket: 429 ·
+  83 · 3 föy) — aktarım rol metnini zaten yazıyordu, dropdown "liste dışı" gösteriyordu.
+
+Dropdown yapılmayanlar (bilinçli): kimlikler, tarihler, tutarlar, taraf adları, esas
+numaraları, açıklama metinleri, Para Birimi dışında tek değerli sütunlar. Tıbbi Olay 667
+değerle dropdown değil arama-önerili çok seçimlidir. İlişkisel tasnif tablosu (parça
+başına satır) ertelendi: filtre/istatistik ihtiyacı doğunca `multi_value` tek yeri
+değişir.
+
 ## 11. Belgeleme olayı alanları — `olay_turu` + `hukumdeki_rol` (G103)
 
 Veri ekibinin 25.08 ölçümü (HUKDOK_BELGELEME_OLAYI_BULGUSU_2026-08-25): bağlı föylerin

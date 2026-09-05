@@ -29,6 +29,15 @@ const configMock = vi.hoisted(() => ({
     // useConfig daima dizi döndürür (EMPTY fallback), mock yüzeyi eşitlenir.
     eventTypes: [] as { code?: string; name: string }[],
     judgmentRoles: [] as { code?: string; name: string }[],
+    // G124 listeleri (para birimi + teslim havuzları) — aynı EMPTY sözleşmesi.
+    currencies: [] as { code?: string; name: string }[],
+    medicalProcesses: [] as { code?: string; name: string }[],
+    medicalEvents: [] as { code?: string; name: string }[],
+    allegedFaults: [] as { code?: string; name: string }[],
+    patientHarms: [] as { code?: string; name: string }[],
+    appliedMethods: [] as { code?: string; name: string }[],
+    cassationCourts: [] as { code?: string; name: string }[],
+    appealCourts: [] as { code?: string; name: string }[],
 }));
 vi.mock("@/hooks/useConfig", () => ({
     useConfig: () => configMock,
