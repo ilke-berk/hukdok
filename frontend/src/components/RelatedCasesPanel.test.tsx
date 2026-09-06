@@ -10,11 +10,13 @@ import { createRoot, type Root } from "react-dom/client";
 const getRelatedCasesMock = vi.hoisted(() => vi.fn());
 const addCaseRelationMock = vi.hoisted(() => vi.fn());
 const removeCaseRelationMock = vi.hoisted(() => vi.fn());
+const rejectCaseRelationMock = vi.hoisted(() => vi.fn());
 vi.mock("@/hooks/useCases", () => ({
     useCases: () => ({
         getRelatedCases: getRelatedCasesMock,
         addCaseRelation: addCaseRelationMock,
         removeCaseRelation: removeCaseRelationMock,
+        rejectCaseRelation: rejectCaseRelationMock,
     }),
 }));
 
@@ -101,6 +103,48 @@ describe("RelatedCasesPanel — otomatik ilişki katmanı", () => {
     const buton = (metin: string) =>
         Array.from(container.querySelectorAll("button"))
             .find(b => b.textContent?.includes(metin));
+
+    // G128 — öneri katmanı: aynı hasta + aynı doktor, onay bekler.
+    const oneri: RelatedCase = {
+        id: 5594,
+        tracking_no: "D1.O_ERDENER..0007.ICRAA.00000",
+        esas_no: "2014/5156",
+        court: "İstanbul 37. İcra Müdürlüğü",
+        status: "DERDEST",
+        file_type: "İcra",
+        parties: [{ name: "Semra Kurt", role: "Borçlu" }],
+        relation_type: "ICRA_PARALEL",
+        match_reason: "Aynı hasta (Semra Kurt) + aynı doktor (Oktay Erdener) — aynı tıbbi vaka olabilir, onay bekler",
+        is_manual: false,
+    };
+
+    it("öneri bölümü ayrı başlıkla çiziliyor, rozete sayılmıyor, Bağla + Reddet var", async () => {
+        const sayac = vi.fn();
+        await renderPanel({ manual: [], automatic: [ayniDava], suggested: [oneri] } as never, sayac);
+        const blok = container.querySelector("[data-testid='related-suggested']");
+        expect(blok?.textContent).toContain("Öneri: aynı hasta ve doktor");
+        expect(blok?.textContent).toContain("2014/5156");
+        expect(blok?.textContent).toContain("aynı tıbbi vaka olabilir");
+        expect(sayac).toHaveBeenLastCalledWith(1);            // yalnız otomatik + elle sayılır
+        expect(Array.from(blok!.querySelectorAll("button")).map(b => b.textContent?.trim())).toEqual(
+            expect.arrayContaining(["Git", "Bağla", "Reddet"]),
+        );
+    });
+
+    it("Reddet öneriyi backend'e yazıyor ve listeyi yeniliyor", async () => {
+        rejectCaseRelationMock.mockResolvedValue(true);
+        await renderPanel({ manual: [], automatic: [], suggested: [oneri] } as never);
+        getRelatedCasesMock.mockResolvedValue({ manual: [], automatic: [], suggested: [] });
+        await act(async () => { buton("Reddet")!.click(); });
+        expect(rejectCaseRelationMock).toHaveBeenCalledWith(803, 5594);
+        expect(container.querySelector("[data-testid='related-suggested']")).toBeNull();
+    });
+
+    it("yalnız öneri varken boş durum GÖSTERİLMEZ", async () => {
+        await renderPanel({ manual: [], automatic: [], suggested: [oneri] } as never);
+        expect(container.textContent).not.toContain("bağlantı yok");
+        expect(container.querySelector("[data-testid='related-suggested']")).not.toBeNull();
+    });
 
     it("otomatik ilişkiler çiziliyor (eski panel yalnız manual'ı gösteriyordu)", async () => {
         await renderPanel({ manual: [], automatic: [ayniDava, arabuluculuk] });

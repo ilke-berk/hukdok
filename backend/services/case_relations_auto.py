@@ -20,6 +20,21 @@ hesaplamak idempotentliği bedavaya getirir, migrasyon istemez.
   çifti aşağıdaki türlere artıksız bölünüyor.
 * **Esas + mahkeme + tür ikizi** — TKU'nun kör noktası: aynı mahkemede aynı esas
   numarasıyla duran 199 kart grubunun 24'ünde hiçbir kartın TKU'su yok.
+* **Hasar dosya numarası** (G128, 06.09.2026) — sigortanın hasar numarası tanım
+  gereği TEK olaydır; föy (`case_foys.hasar_no`) ve kart (`cases.hasar_dosya_no`)
+  kolonlarından okunur, ikisi de ";" ile çok değerli. Lokal ölçüm (05.09): 237
+  çiftin 61'i TKU'da yok.
+
+Öneri katmanı (G128) — `onerileri_bul`
+--------------------------------------
+Aynı HASTA adı (karşı taraf, kişi) + aynı DOKTOR adı (müvekkil/sigortalı, kişi)
+taşıyan kartlar "aynı tıbbi vaka olabilir" önerisidir: otomatik BAĞLANMAZ, panelde
+ayrı bölümde durur, avukat "Bağla" derse `case_relations`a elle bağ olarak yazılır,
+"Reddet" derse `relation_type=ONERI_RED` satırı düşer ve bir daha önerilmez.
+Sigorta/kurum adları doktor yerine SAYILMAZ — ölçümde AXA üzerinden 4.660 sahte çift
+çıkıyordu; kişi + kişi eşleşmesi 1.176 çift, 528'i TKU ile örtüşüyor (%45'i TKU'nun
+bilmediği, çoğu TKU'suz kart). Ad karşılaştırması `party_check.normalize_party_key`
+(unvan/aksan/şirket eki yutulur), kelime bazlı tam eşleşme; bulanık eşleşme YOK.
 
 Kartlar BİRLEŞTİRİLMEZ. `tracking_no` müvekkil isim bloğu taşıyan ofis dosya
 numarasıdır; tek davada birden çok müvekkil varsa her müvekkilin ayrı ofis dosyası
@@ -42,10 +57,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 import models
 from auth_helpers import tenant_filter_clause
+from party_check import _is_corporate, normalize_party_key
 from services.judicial_unit import normalize_court
 
 # ── İlişki türleri ────────────────────────────────────────────────────────────
@@ -59,6 +76,10 @@ CEZA_PARALEL = "CEZA_PARALEL"
 SAVCILIK_PARALEL = "SAVCILIK_PARALEL"
 ADLI_IDARI_PARALEL = "ADLI_IDARI_PARALEL"    # Hukuk ↔ İdare (aynı olay, iki yargı kolu)
 ILGILI = "ILGILI"
+# Öneri katmanı (G128): reddedilen öneri `case_relations`ta bu türle durur —
+# panelde gösterilmez, yalnız "bir daha önerme" kaydıdır.
+ONERI_RED = "ONERI_RED"
+ONERI_PUANI = 50                              # ILGILI'nin (60) altında: onay bekler
 
 # Güven puanı: panelde sıralama içindir, olasılık DEĞİLDİR. AYNI_DAVA en tepede
 # durmalı — kullanıcının ilk görmesi gereken "bu aslında tek dava" uyarısıdır.
@@ -218,6 +239,79 @@ def _tku_eslesmeleri(
     return sonuc
 
 
+# Hasar numarası yer tutucuları: teslimde "0" ve "-" doluluk sayılıyor.
+_HASAR_YER_TUTUCU = frozenset({"", "0", "-", "—", "?"})
+
+
+def hasar_parcalari(deger: Optional[str]) -> Set[str]:
+    """';' ile çok değerli hasar numarasını anahtar kümesine çevirir (4+ karakter)."""
+    sonuc: Set[str] = set()
+    for ham in (deger or "").replace("\n", ";").split(";"):
+        temiz = "".join(ham.split()).upper()
+        if temiz not in _HASAR_YER_TUTUCU and len(temiz) >= 4:
+            sonuc.add(temiz)
+    return sonuc
+
+
+def _hasar_kumesi(db: Session, case) -> Set[str]:
+    """Kartın hasar numaraları — kart kolonu + kapsamdaki föyler."""
+    degerler = hasar_parcalari(getattr(case, "hasar_dosya_no", None))
+    satirlar = (
+        db.query(models.CaseFoy.hasar_no)
+        .filter(
+            models.CaseFoy.case_id == case.id,
+            models.CaseFoy.hasar_no.isnot(None),
+            models.CaseFoy.kapsam_durumu.is_(None),
+        )
+        .all()
+    )
+    for (deger,) in satirlar:
+        degerler |= hasar_parcalari(deger)
+    return degerler
+
+
+def _hasar_eslesmeleri(
+    db: Session, hasarlar: Set[str], haric_case_id: int, tenant_id: str
+) -> Dict[int, Set[str]]:
+    """Hasar numarasını paylaşan diğer kartlar → {case_id: {hasar, …}}.
+
+    SQL LIKE ile aday daraltılır (kolonlar ';' ile çok değerli), kesin eşleşme
+    Python'da `hasar_parcalari` üzerinden yapılır — "3509162150001" içinde
+    "9162150" gibi alt dizi rastlantıları böylece elenir.
+    """
+    if not hasarlar:
+        return {}
+    liste = sorted(hasarlar)
+    sonuc: Dict[int, Set[str]] = {}
+    foy_satirlari = (
+        db.query(models.CaseFoy.case_id, models.CaseFoy.hasar_no)
+        .join(models.Case, models.Case.id == models.CaseFoy.case_id)
+        .filter(
+            or_(*[models.CaseFoy.hasar_no.like(f"%{h}%") for h in liste]),
+            models.CaseFoy.case_id != haric_case_id,
+            models.CaseFoy.kapsam_durumu.is_(None),
+            models.Case.deleted_at.is_(None),
+            tenant_filter_clause(models.Case, tenant_id),
+        )
+        .all()
+    )
+    kart_satirlari = (
+        db.query(models.Case.id, models.Case.hasar_dosya_no)
+        .filter(
+            or_(*[models.Case.hasar_dosya_no.like(f"%{h}%") for h in liste]),
+            models.Case.id != haric_case_id,
+            models.Case.deleted_at.is_(None),
+            tenant_filter_clause(models.Case, tenant_id),
+        )
+        .all()
+    )
+    for case_id, deger in list(foy_satirlari) + list(kart_satirlari):
+        ortak = hasar_parcalari(deger) & hasarlar
+        if ortak:
+            sonuc.setdefault(case_id, set()).update(ortak)
+    return sonuc
+
+
 def _esas_eslesmeleri(db: Session, case, tenant_id: str) -> Set[int]:
     """Aynı esas + aynı mahkeme + aynı tür kartlar (TKU'dan bağımsız dedektör).
 
@@ -262,7 +356,8 @@ def kart_ozeti(kart: Any) -> KartOzeti:
     )
 
 
-def _gerekce(tkular: Set[str], esas_ikizi: bool, esas_no: Optional[str]) -> str:
+def _gerekce(tkular: Set[str], esas_ikizi: bool, esas_no: Optional[str],
+             hasarlar: Optional[Set[str]] = None) -> str:
     parcalar: List[str] = []
     if tkular:
         etiketler = ", ".join(sorted(t for t in tkular if t))
@@ -270,6 +365,8 @@ def _gerekce(tkular: Set[str], esas_ikizi: bool, esas_no: Optional[str]) -> str:
     if esas_ikizi:
         numara = (esas_no or "").strip()
         parcalar.append(f"aynı mahkemede aynı esas ({numara})" if numara else "aynı mahkeme + esas")
+    if hasarlar:
+        parcalar.append(f"aynı hasar dosya no ({', '.join(sorted(hasarlar))})")
     return " · ".join(parcalar) if parcalar else "İlişkili kayıt"
 
 
@@ -282,8 +379,9 @@ def iliskileri_bul(db: Session, case: Any, tenant_id: str) -> List[Tuple[Any, st
     tkular = _tku_kumesi(db, case)
     tku_eslesme = _tku_eslesmeleri(db, sorted(tkular), case.id, tenant_id)
     esas_eslesme = _esas_eslesmeleri(db, case, tenant_id)
+    hasar_eslesme = _hasar_eslesmeleri(db, _hasar_kumesi(db, case), case.id, tenant_id)
 
-    aday_idler = set(tku_eslesme) | esas_eslesme
+    aday_idler = set(tku_eslesme) | esas_eslesme | set(hasar_eslesme)
     if not aday_idler:
         return []
 
@@ -300,9 +398,107 @@ def iliskileri_bul(db: Session, case: Any, tenant_id: str) -> List[Tuple[Any, st
         ozet = kart_ozeti(kart)
         tur = siniflandir(kaynak_ozet, ozet)
         gerekce = _gerekce(
-            tku_eslesme.get(ozet.id, set()), ozet.id in esas_eslesme, ozet.esas_no
+            tku_eslesme.get(ozet.id, set()), ozet.id in esas_eslesme, ozet.esas_no,
+            hasar_eslesme.get(ozet.id),
         )
         sonuc.append((kart, tur, gerekce, GUVEN_PUANI.get(tur, GUVEN_PUANI[ILGILI])))
 
     sonuc.sort(key=lambda satir: (-satir[3], satir[0].id))
+    return sonuc[:AZAMI_ILISKI]
+
+
+# ── Öneri katmanı: aynı hasta + aynı doktor (G128) ────────────────────────
+_KURUM_KELIMELERI = frozenset({
+    "BAKANLIGI", "BAKANLIK", "VALILIGI", "VALILIK", "UNIVERSITESI", "UNIVERSITE",
+    "HASTANESI", "HASTANE", "REKTORLUGU", "BELEDIYESI", "BELEDIYE", "KURUMU", "KURUM",
+    "MERKEZI", "MUDURLUGU", "SAGLIK", "TIP", "KLINIK", "POLIKLINIK", "VAKFI", "VAKIF",
+})
+_AZAMI_ADAY = 200
+
+
+def kisi_anahtari(ad: Optional[str]) -> str:
+    """Kişi adının karşılaştırma anahtarı; kurum/sigorta adı ise boş döner."""
+    anahtar = normalize_party_key(ad or "")
+    if not anahtar or len(anahtar) < 6 or _is_corporate(anahtar):
+        return ""
+    if set(anahtar.split()) & _KURUM_KELIMELERI:
+        return ""
+    return anahtar
+
+
+def _kisi_kumeleri(parties: Sequence[Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """({hasta anahtarı: görünen ad}, {doktor anahtarı: görünen ad}): hasta = karşı
+    taraf kişileri, doktor = müvekkil/üçüncü taraf kişileri (sigorta ve kurum düşer).
+    Anahtar kelime-sıralı normalize (karşılaştırma), görünen ad kayıttaki yazım
+    (gerekçe metni)."""
+    hasta: Dict[str, str] = {}
+    doktor: Dict[str, str] = {}
+    for p in parties:
+        ad = getattr(p, "name", None) or ""
+        anahtar = kisi_anahtari(ad)
+        if not anahtar:
+            continue
+        if p.party_type == "COUNTER":
+            hasta.setdefault(anahtar, ad.strip())
+        elif p.party_type in ("CLIENT", "THIRD"):
+            doktor.setdefault(anahtar, ad.strip())
+    return hasta, doktor
+
+
+def onerileri_bul(db: Session, case: Any, tenant_id: str,
+                  haric_idler: Optional[Set[int]] = None) -> List[Tuple[Any, str, str, int]]:
+    """Aynı hasta + aynı doktor taşıyan kartlar: (kart, tür, gerekçe, puan).
+
+    Otomatik katmandan AYRI döner (route `suggested`); `haric_idler` otomatik
+    ilişkiler, elle bağlar ve reddedilen öneriler — bunlar yeniden önerilmez.
+    Aday daraltma: hastanın en uzun kelimesi SQL LIKE ile aranır, kesin karar
+    Python'da tam anahtar eşitliğiyle verilir (bulanık eşleşme yok).
+    """
+    hasta, doktor = _kisi_kumeleri(getattr(case, "parties", None) or [])
+    if not hasta or not doktor:
+        return []
+    haric = set(haric_idler or ()) | {case.id}
+
+    kelimeler = {max(h.split(), key=len) for h in hasta}
+    kelimeler = {k for k in kelimeler if len(k) >= 4}
+    if not kelimeler:
+        return []
+    aday_satirlari = (
+        db.query(models.CaseParty.case_id)
+        .join(models.Case, models.Case.id == models.CaseParty.case_id)
+        .filter(
+            models.CaseParty.party_type == "COUNTER",
+            or_(*[models.CaseParty.name.ilike(f"%{k}%") for k in sorted(kelimeler)]),
+            models.CaseParty.case_id != case.id,
+            models.Case.deleted_at.is_(None),
+            tenant_filter_clause(models.Case, tenant_id),
+        )
+        .distinct()
+        .limit(_AZAMI_ADAY)
+        .all()
+    )
+    aday_idler = {cid for (cid,) in aday_satirlari} - haric
+    if not aday_idler:
+        return []
+    kartlar = (
+        db.query(models.Case)
+        .options(selectinload(models.Case.parties))
+        .filter(models.Case.id.in_(sorted(aday_idler)))
+        .all()
+    )
+    kaynak_ozet = kart_ozeti(case)
+    sonuc: List[Tuple[Any, str, str, int]] = []
+    for kart in kartlar:
+        k_hasta, k_doktor = _kisi_kumeleri(kart.parties)
+        ortak_hasta = set(hasta) & set(k_hasta)
+        ortak_doktor = set(doktor) & set(k_doktor)
+        if not ortak_hasta or not ortak_doktor:
+            continue
+        tur = siniflandir(kaynak_ozet, kart_ozeti(kart))
+        hasta_adlari = ", ".join(hasta[a] for a in sorted(ortak_hasta))
+        doktor_adlari = ", ".join(doktor[a] for a in sorted(ortak_doktor))
+        gerekce = (f"Aynı hasta ({hasta_adlari}) + aynı doktor ({doktor_adlari}) — "
+                   "aynı tıbbi vaka olabilir, onay bekler")
+        sonuc.append((kart, tur, gerekce, ONERI_PUANI))
+    sonuc.sort(key=lambda satir: satir[0].id)
     return sonuc[:AZAMI_ILISKI]

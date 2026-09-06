@@ -22,7 +22,7 @@ from auth_helpers import (
 )
 from dependencies import get_current_user, get_current_tenant
 from schemas import (
-    CaseCreate, CaseListRead, CaseRelationCreate, RelatedCaseSummary, RelatedCasesResponse,
+    CaseCreate, CaseListRead, CaseRelationCreate, CaseRelationReject, RelatedCaseSummary, RelatedCasesResponse,
     CaseTrackingUpdate, CaseStageLogRead, CaseEsasNumberRead, CaseStageDecisionRead,
     CaseStageDecisionsResponse,
 )
@@ -393,6 +393,8 @@ def get_case_relations(
         for row in manual_rows:
             other_id = row.target_case_id if row.source_case_id == case_id else row.source_case_id
             elle_baglanan_idler.add(other_id)
+            if row.relation_type == case_relations_auto.ONERI_RED:
+                continue                    # G128: reddedilen öneri — listelenmez, yalnız hariç tutar
             other = (
                 db.query(models.Case)
                 .options(selectinload(models.Case.parties))
@@ -429,8 +431,59 @@ def get_case_relations(
                 note=None,
             ))
 
-        return RelatedCasesResponse(manual=manual_list, automatic=automatic_list)
+        # G128 — öneri katmanı: aynı hasta + aynı doktor; otomatik/elle bağlı ve
+        # reddedilmiş kartlar önerilmez. Otomatik BAĞLANMAZ: "Bağla" elle bağ yazar,
+        # "Reddet" ONERI_RED satırı düşer.
+        suggested_list = []
+        haric = {int(i) for i in elle_baglanan_idler} | {int(s.id) for s in automatic_list}
+        for diger, relation_type, reason, score in case_relations_auto.onerileri_bul(
+            db, case, tenant_id, haric
+        ):
+            suggested_list.append(_case_to_summary(
+                case=diger, relation_id=None, relation_type=relation_type,
+                match_reason=reason, score=score, is_manual=False, note=None,
+            ))
 
+        return RelatedCasesResponse(manual=manual_list, automatic=automatic_list,
+                                    suggested=suggested_list)
+
+    finally:
+        db.close()
+
+
+@router.post("/api/cases/{case_id}/relations/reject", response_model=dict)
+def reject_case_relation(
+    case_id: int,
+    data: CaseRelationReject,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Öneriyi reddet (G128): ONERI_RED satırı — panelde görünmez, bir daha önerilmez.
+    İki kart arasında zaten bir bağ (elle ya da ret) varsa 409."""
+    db = SessionLocal()
+    try:
+        if data.target_case_id == case_id:
+            raise HTTPException(status_code=400, detail="Dava kendisiyle ilişkilendirilemez")
+        source = get_tenant_owned_case(db, case_id, tenant_id)
+        target = get_tenant_owned_case(db, data.target_case_id, tenant_id)
+        if not source or not target:
+            raise HTTPException(status_code=404, detail="Dava bulunamadı")
+        existing = db.query(models.CaseRelation).filter(
+            ((models.CaseRelation.source_case_id == case_id) & (models.CaseRelation.target_case_id == data.target_case_id)) |
+            ((models.CaseRelation.source_case_id == data.target_case_id) & (models.CaseRelation.target_case_id == case_id))
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Bu iki dava arasında zaten bir kayıt var")
+        relation = models.CaseRelation(
+            source_case_id=case_id,
+            target_case_id=data.target_case_id,
+            relation_type=case_relations_auto.ONERI_RED,
+            note="Aynı hasta + doktor önerisi reddedildi",
+            created_by=user.get("name") or user.get("preferred_username"),
+        )
+        db.add(relation)
+        db.commit()
+        return {"id": relation.id, "status": "rejected"}
     finally:
         db.close()
 

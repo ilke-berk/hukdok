@@ -344,6 +344,20 @@ bağlanır" (TKU) kuralı ayrı davalar içindir; burada AYNI dava iki kez açı
 olmayan çift ön koşulda REDDEDİLİR. Lokal 05.09: 8 çift birleşti, aktarım 9 föyü bağladı,
 belge envanteri DENK. Testler `backend/tests/test_g127_mukerrer_kart_birlestir.py`.
 
+**Aynı tıbbi vaka tespiti (G128, 06.09.2026):** ilişki katmanı üç kademe oldu
+(`services/case_relations_auto.py`): (1) **kesin, otomatik** — TKU grubu, esas + mahkeme +
+tür ikizi ve YENİ **hasar dosya numarası** (`case_foys.hasar_no` + `cases.hasar_dosya_no`,
+";" çok değerli, 4+ karakter, "0"/"-" yer tutucu; lokal ölçüm 237 çift / 61'i TKU'suz);
+(2) **öneri, onay bekler** — `onerileri_bul`: aynı HASTA (karşı taraf, kişi) + aynı DOKTOR
+(müvekkil/sigortalı, kişi) adı; sigorta ve kurum adları doktor SAYILMAZ (AXA üzerinden
+4.660 sahte çift ölçüldü), ad karşılaştırması `normalize_party_key` ile tam eşleşme, bulanık
+yok; route `suggested` listesinde döner, panelde "Öneri: aynı hasta ve doktor" bölümü,
+rozete sayılmaz. "Bağla" mevcut elle bağ ucuna yazar; "Reddet"
+(`POST /api/cases/{id}/relations/reject`) `case_relations`a `ONERI_RED` satırı düşer —
+panelde görünmez, bir daha önerilmez. (3) Destekleyici sinyaller (tıbbi olay/zarar, aile
+soyadı, tarih yakınlığı) henüz kullanılmıyor. Testler `backend/tests/test_g128_hasar_ve_oneri.py`,
+`frontend/src/components/RelatedCasesPanel.test.tsx`.
+
 Dropdown yapılmayanlar (bilinçli): kimlikler, tarihler, tutarlar, taraf adları, esas
 numaraları, açıklama metinleri, Para Birimi dışında tek değerli sütunlar. Tıbbi Olay 667
 değerle dropdown değil arama-önerili çok seçimlidir. İlişkisel tasnif tablosu (parça

@@ -39,6 +39,8 @@ export interface RelatedCase {
 export interface RelatedCasesResponse {
     manual: RelatedCase[];
     automatic: RelatedCase[];
+    /** G128: aynı hasta + aynı doktor önerileri — onay bekler (Bağla / Reddet). */
+    suggested?: RelatedCase[];
 }
 
 // ---- İlişki etiketi Türkçeleri ----
@@ -96,10 +98,12 @@ interface RelatedCasesPanelProps {
 
 const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) => {
     const navigate = useNavigate();
-    const { getRelatedCases, removeCaseRelation, addCaseRelation } = useCases();
+    const { getRelatedCases, removeCaseRelation, addCaseRelation, rejectCaseRelation } = useCases();
 
     const [manualList, setManualList] = useState<RelatedCase[]>([]);
     const [autoList, setAutoList] = useState<RelatedCase[]>([]);
+    const [suggestedList, setSuggestedList] = useState<RelatedCase[]>([]);
+    const [rejectingId, setRejectingId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [addModalOpen, setAddModalOpen] = useState(false);
     const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -112,6 +116,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
         const automatic = result?.automatic ?? [];
         setManualList(manual);
         setAutoList(automatic);
+        setSuggestedList(result?.suggested ?? []);   // G128: öneri, rozete SAYILMAZ (onay bekler)
         // Rozet sayısı iki katmanı birden sayar: kullanıcı için "bu davanın kaç
         // ilişkisi var" sorusunun cevabı bağın elle mi kurulduğuna bakmaz.
         onCountChange?.(manual.length + automatic.length);
@@ -151,6 +156,19 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
         setPinningId(null);
     };
 
+    /** G128: öneriyi reddet — backend ONERI_RED yazar, kart bir daha önerilmez. */
+    const handleReject = async (rc: RelatedCase) => {
+        setRejectingId(rc.id);
+        const ok = await rejectCaseRelation(caseId, rc.id);
+        if (ok) {
+            toast.success("Öneri reddedildi; bir daha önerilmeyecek");
+            await load();
+        } else {
+            toast.error("Öneri reddedilemedi");
+        }
+        setRejectingId(null);
+    };
+
     const handleAddRelation = async (targetCaseId: number, relationType: string, note: string | null) => {
         const result = await addCaseRelation(caseId, { target_case_id: targetCaseId, relation_type: relationType, note });
         if (result) {
@@ -176,7 +194,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
     }
 
     // ---- Empty ----
-    if (manualList.length === 0 && autoList.length === 0) {
+    if (manualList.length === 0 && autoList.length === 0 && suggestedList.length === 0) {
         return (
             <>
                 <div className="flex justify-between items-center mb-4">
@@ -268,6 +286,35 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                 </div>
             )}
 
+            {suggestedList.length > 0 && (
+                <div className={manualList.length + autoList.length > 0 ? "mt-6" : ""} data-testid="related-suggested">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Öneri: aynı hasta ve doktor
+                        </h4>
+                        <Badge variant="secondary" className="text-xs px-2">{suggestedList.length}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                        Karşı taraf ve müvekkil adları birebir aynı; aynı tıbbi vaka olabilir. Otomatik
+                        bağlanmadı — "Bağla" kalıcı bağ yazar, "Reddet" bir daha önermez.
+                    </p>
+                    <div className="space-y-2.5">
+                        {suggestedList.map(rc => (
+                            <RelatedCaseCard
+                                key={rc.id}
+                                rc={rc}
+                                isPinning={pinningId === rc.id}
+                                isRejecting={rejectingId === rc.id}
+                                onNavigate={() => navigate(`/cases/${rc.id}`)}
+                                onPin={() => handlePin(rc)}
+                                onReject={() => handleReject(rc)}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <AddRelationModal
                 open={addModalOpen}
                 currentCaseId={caseId}
@@ -285,12 +332,15 @@ interface CardProps {
     rc: RelatedCase;
     isDeleting?: boolean;
     isPinning?: boolean;
+    isRejecting?: boolean;
     onNavigate: () => void;
     onDelete?: () => void;
     onPin?: () => void;
+    /** G128: yalnız öneri satırlarında — reddet, bir daha önerme. */
+    onReject?: () => void;
 }
 
-const RelatedCaseCard = ({ rc, isDeleting, isPinning, onNavigate, onDelete, onPin }: CardProps) => {
+const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, onDelete, onPin, onReject }: CardProps) => {
     const ftMeta = getFileTypeMeta(rc.file_type);
     const st = getStatusStyle(rc.status);
     const relationLabel = RELATION_TYPE_LABELS[rc.relation_type] ?? rc.relation_type;
@@ -396,7 +446,19 @@ const RelatedCaseCard = ({ rc, isDeleting, isPinning, onNavigate, onDelete, onPi
                             disabled={isPinning}
                         >
                             <Pin className="w-3.5 h-3.5" />
-                            {isPinning ? "..." : "Kalıcı Bağla"}
+                            {isPinning ? "..." : (onReject ? "Bağla" : "Kalıcı Bağla")}
+                        </Button>
+                    )}
+                    {onReject && (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-destructive"
+                            onClick={onReject}
+                            disabled={isRejecting}
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            {isRejecting ? "..." : "Reddet"}
                         </Button>
                     )}
                 </div>

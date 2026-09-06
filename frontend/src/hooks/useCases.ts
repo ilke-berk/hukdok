@@ -372,6 +372,12 @@ export const useCases = () => {
     }, [authenticatedRequest]);
 
     /** Manuel bağlantıyı sil */
+    /** G128: aynı hasta + doktor önerisini reddet — bir daha önerilmez (ONERI_RED). */
+    const rejectCaseRelation = useCallback(async (caseId: number, targetCaseId: number) => {
+        const response = await authenticatedRequest(`/api/cases/${caseId}/relations/reject`, "POST", { target_case_id: targetCaseId });
+        return !!(response && response.ok);
+    }, [authenticatedRequest]);
+
     const removeCaseRelation = useCallback(async (caseId: number, relationId: number) => {
         const response = await authenticatedRequest(`/api/cases/${caseId}/relations/${relationId}`, "DELETE");
         return !!(response && response.ok);
@@ -434,6 +440,7 @@ export const useCases = () => {
         getRelatedCases,
         addCaseRelation,
         removeCaseRelation,
+        rejectCaseRelation,
         // Dava takip
         updateCaseTracking,
         getCaseStageLog,

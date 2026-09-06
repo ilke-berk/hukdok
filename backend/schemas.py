@@ -668,3 +668,10 @@ class RelatedCaseSummary(BaseModel):
 class RelatedCasesResponse(BaseModel):
     manual: List[RelatedCaseSummary]
     automatic: List[RelatedCaseSummary]
+    # G128: aynı hasta + aynı doktor önerileri — onay bekler (Bağla / Reddet).
+    suggested: List[RelatedCaseSummary] = []
+
+
+class CaseRelationReject(BaseModel):
+    """Öneriyi reddet (G128): `case_relations`a ONERI_RED satırı düşer, bir daha önerilmez."""
+    target_case_id: int
