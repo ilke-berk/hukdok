@@ -7,6 +7,7 @@ import {
   Users,
   Clock,
   ShieldCheck,
+  Table2,
   ChevronsLeft,
   Moon,
   Sun,
@@ -60,7 +61,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     .toUpperCase() || "—";
 
   const navItems: NavItemDef[] = isAdminUser
-    ? [...NAV, { id: "admin", label: "Yönetim", path: "/admin", Icon: ShieldCheck }]
+    ? [
+        ...NAV,
+        // G133: Raporlar yalnız yöneticide (test aşaması, require_admin) — Yönetim'den önce.
+        { id: "reports", label: "Raporlar", path: "/reports", Icon: Table2 },
+        { id: "admin", label: "Yönetim", path: "/admin", Icon: ShieldCheck },
+      ]
     : NAV;
 
   const isActive = (item: NavItemDef) => {

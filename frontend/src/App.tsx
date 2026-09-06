@@ -28,6 +28,7 @@ import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
 import CaseDetails from "./pages/CaseDetails";
 import ActivityHistory from "./pages/ActivityHistory";
+import ReportsPage from "./pages/ReportsPage";
 import { useEffect, useState } from "react";
 
 const queryClient = new QueryClient();
@@ -96,6 +97,14 @@ const AppContent = () => {
           <Route path="/clients" element={<ClientList />} />
           <Route path="/cases/:id" element={<CaseDetails />} />
           <Route path="/activity-history" element={<ActivityHistory />} />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedAdminRoute>
+                <ReportsPage />
+              </ProtectedAdminRoute>
+            }
+          />
           <Route
             path="/admin"
             element={
