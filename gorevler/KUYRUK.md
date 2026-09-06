@@ -17,7 +17,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      KUYRUĞA GİRMEYENLER (insan adımı): gerçek Gemini ile asistan duman testi; prod .env'e 4 env;
      admin panelden anahtarı açma; deploy. -->
 
-- [ ] G130 | bant:backend | bagimli:- | Raporlama temeli: registry beyaz listesi + RaporTanimi şeması + Core sorgu motoru (tenant/soft-delete) + /api/reports/catalog + /preview
+- [x] G130 | bant:backend | bagimli:- | Raporlama temeli: registry beyaz listesi + RaporTanimi şeması + Core sorgu motoru (tenant/soft-delete) + /api/reports/catalog + /preview
 - [ ] G131 | bant:backend | bagimli:G130 | report_templates + report_runs tabloları, şablon CRUD, /export xlsx/csv (write_only + yield_per), koşu logu (kim/ne zaman/sha256), çıktı saklama + temizlik, /runs
 - [ ] G132 | bant:backend | bagimli:G131 | Rapor asistanı: Gemini JSON şemalı /chat NDJSON (tanım sunucuda yeniden doğrulanır), rapor_asistani anahtarı, GEMINI_RAPOR_MODEL
 - [ ] G133 | bant:frontend | bagimli:- | Raporlar sayfası iskeleti: /reports route + Sidebar + api.ts timeout + lib/reports.ts tipleri + Rapor Oluşturucu (kaynak/kolon/filtre/sıralama) + önizleme tablosu
