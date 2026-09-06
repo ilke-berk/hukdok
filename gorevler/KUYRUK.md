@@ -3,6 +3,28 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Raporlama modülü: kullanıcı tanımlı listeler + şablon + indirme logu + AI asistan (2026-09-06, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md (sözleşme §2 orada DONDU — görevler ona uyar).
+     Kullanıcı kararları: yalnız yönetici (test aşaması), Excel+CSV, her indirme kim/ne zaman/ne ile
+     loglanır ve çıktı saklanır, aynı ekranda AI asistan (manuel yol hep açık). Planlayıcı kararları:
+     serbest SQL YOK (registry beyaz listesi), asistan DB'ye dokunmaz (tanım üretir, sunucu yeniden
+     doğrular), indirme tek yol (/export) → tek log, `rapor_asistani` anahtarı varsayılan KAPALI
+     (kullanıcı isterse AÇIK — tek satır), v1'de index yok (G042). G123-G129 gündüz kuyruksuz
+     koştuğu için id'ler G130'dan başlar. Zincir: backend G130→G131→G132 seri; frontend G133 G130
+     ile PARALEL (sözleşme plandan), G134→G135 zincirli; G136 docs en son. Hub dosyalara
+     (App.tsx/Sidebar.tsx/api.ts) yalnız G133 dokunur. Tahmin 2 gece.
+     KUYRUĞA GİRMEYENLER (insan adımı): gerçek Gemini ile asistan duman testi; prod .env'e 4 env;
+     admin panelden anahtarı açma; deploy. -->
+
+- [ ] G130 | bant:backend | bagimli:- | Raporlama temeli: registry beyaz listesi + RaporTanimi şeması + Core sorgu motoru (tenant/soft-delete) + /api/reports/catalog + /preview
+- [ ] G131 | bant:backend | bagimli:G130 | report_templates + report_runs tabloları, şablon CRUD, /export xlsx/csv (write_only + yield_per), koşu logu (kim/ne zaman/sha256), çıktı saklama + temizlik, /runs
+- [ ] G132 | bant:backend | bagimli:G131 | Rapor asistanı: Gemini JSON şemalı /chat NDJSON (tanım sunucuda yeniden doğrulanır), rapor_asistani anahtarı, GEMINI_RAPOR_MODEL
+- [ ] G133 | bant:frontend | bagimli:- | Raporlar sayfası iskeleti: /reports route + Sidebar + api.ts timeout + lib/reports.ts tipleri + Rapor Oluşturucu (kaynak/kolon/filtre/sıralama) + önizleme tablosu
+- [ ] G134 | bant:frontend | bagimli:G133 | Şablonlar (kaydet/yükle/güncelle/sil/paylaş) + Excel/CSV indirme + İndirme geçmişi sekmesi + saklanan çıktıyı indir
+- [ ] G135 | bant:frontend | bagimli:G134 | Asistan paneli: NDJSON sohbet, tanımı oluşturucuya uygula, eylem yürütme (önizle/indir, kaynak=asistan), anahtar kapısı
+- [ ] G136 | bant:docs | bagimli:G132,G135 | docs/mimari/raporlama.md + CLAUDE.md paragrafı + plan durum şerhi + .env.example teyidi (koddan doğrulanmış)
+
 ## ÖNCELİK 1 — Veri ekibinin DB-2026 format bildirimi (2026-09-04, kullanıcı kararı)
 
 <!-- Kaynak: veri ekibinin 04.09.2026 Format Değişiklik Bildirimi REV-2 (on kalem
