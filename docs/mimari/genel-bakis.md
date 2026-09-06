@@ -213,6 +213,7 @@ hizalı uzun kademe. GET'ler 502/503/504'te sınırlı sayıda yeniden denenir; 
 | `/process` → `/confirm` zinciri, olay sözleşmesi, zaman bütçeleri | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) |
 | Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
 | Veri teslim hattı: SharePoint gelen kutusu, defter, 04:00 kapısı, cevap paketi | [`veri-teslim-hatti.md`](veri-teslim-hatti.md) |
+| Raporlama: kayıt defteri (serbest SQL yok), önizleme, Excel/CSV export + koşu logu, şablonlar, AI asistan + `rapor_asistani` anahtarı | [`raporlama.md`](raporlama.md) |
 | Gemini, Graph/SharePoint, e-posta, ayar tablosu | [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
 | Kullanıcı oturumu, token doğrulama zinciri, süreler, Graph app-only kimlik | [`kimlik-ve-token.md`](kimlik-ve-token.md) |
 | deploy/rollback, systemd birimleri, izleme, yedekleme | [`deploy-ve-altyapi.md`](deploy-ve-altyapi.md) |
