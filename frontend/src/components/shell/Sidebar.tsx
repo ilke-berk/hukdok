@@ -125,8 +125,11 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         transition: "transform 240ms cubic-bezier(0.4,0,0.2,1), box-shadow 240ms ease",
       }}
     >
+      {/* grid-cols minmax(0,1fr) + alt satırlarda min-w-0: uzun kullanıcı adı
+          (ör. "Hanyaloğlu-Acar Hukuk Bürosu") aksi hâlde auto kolonu 216px'in
+          üstüne genişletip footer'ı sağdan kırpıyordu; artık truncate çalışır. */}
       <div
-        className="w-[216px] grid"
+        className="w-[216px] grid grid-cols-[minmax(0,1fr)]"
         style={{ gridTemplateRows: "auto 1fr auto" }}
       >
         {/* Mark + collapse */}
@@ -190,8 +193,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         {/* Footer: user + view switcher + theme/logout */}
-        <div className="border-t border-[var(--border)] pt-3.5 grid gap-2.5">
-          <div className="flex items-center gap-2.5 px-1.5 py-2">
+        <div className="border-t border-[var(--border)] pt-3.5 grid grid-cols-[minmax(0,1fr)] gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 px-1.5 py-2 min-w-0">
             <div className="w-[34px] h-[34px] rounded-full bg-[var(--brand)] text-[var(--brand-fg)] grid place-items-center font-display font-medium text-[13px] tracking-[0.02em] shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
               {initials}
             </div>
