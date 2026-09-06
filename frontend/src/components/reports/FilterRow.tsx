@@ -35,10 +35,16 @@ function degerMetni(v: FiltreDeger | undefined): string {
     return String(v);
 }
 
-function ikiliEleman(v: FiltreDeger | undefined, i: 0 | 1): string {
+/** İkili değerin ucu, sözleşme tipiyle (sayı number KALIR; boş/eksik → ""). */
+function ikiliUc(v: FiltreDeger | undefined, i: 0 | 1): string | number {
     if (!Array.isArray(v)) return "";
     const x = v[i];
-    return x === undefined || x === null ? "" : String(x);
+    return x === undefined || x === null ? "" : x;
+}
+
+/** İkili değerin ucunun girdi kutusundaki metni (yalnız görüntü; state'e yazılmaz). */
+function ikiliEleman(v: FiltreDeger | undefined, i: 0 | 1): string {
+    return String(ikiliUc(v, i));
 }
 
 /**
@@ -66,7 +72,8 @@ export function FilterRow({ filtre, kolonlar, onChange, onRemove }: FilterRowPro
 
     const ikiliAyarla = (i: 0 | 1, metin: string) => {
         if (!tip) return;
-        const mevcut: (string | number)[] = [ikiliEleman(filtre.deger, 0), ikiliEleman(filtre.deger, 1)];
+        // Düzenlenmeyen uç ham tipiyle korunur (sayı/para between: [min, max] JSON number, §2.1).
+        const mevcut: (string | number)[] = [ikiliUc(filtre.deger, 0), ikiliUc(filtre.deger, 1)];
         mevcut[i] = metniDegereCevir(tip, metin);
         degerAyarla(mevcut);
     };

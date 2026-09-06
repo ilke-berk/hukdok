@@ -228,16 +228,17 @@ export function degerSekleUyarla(op: FiltreOp, onceki: FiltreDeger | undefined):
     if (sekil === "ikili") {
         const a = Array.isArray(onceki) ? onceki[0] : onceki;
         const b = Array.isArray(onceki) ? onceki[1] : undefined;
-        return [degerMetni(a), degerMetni(b)];
+        return [ikiliUc(a), ikiliUc(b)];
     }
     // liste
     if (Array.isArray(onceki)) return onceki;
     return ilk === undefined || typeof ilk === "boolean" ? [] : [ilk];
 }
 
-function degerMetni(v: FiltreDeger | undefined): string {
+/** `between` ucu: sayı number KALIR (§2.1 `[min, max]` JSON number), metin olduğu gibi; boş/mantık → "". */
+function ikiliUc(v: FiltreDeger | undefined): string | number {
     if (v === undefined || v === null || typeof v === "boolean" || Array.isArray(v)) return "";
-    return String(v);
+    return v;
 }
 
 /**

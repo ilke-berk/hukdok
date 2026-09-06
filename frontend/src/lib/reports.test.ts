@@ -70,6 +70,13 @@ describe("değer biçimi — between dizi, in liste (§2.1 JSON)", () => {
         expect(degerSekleUyarla("eq", ["2025-01-01", "2025-12-31"])).toBe("2025-01-01");
     });
 
+    it("eq → between sayıda: number stringleşmez (§2.1 [min, max] JSON number); boş/mantık uç \"\" olur", () => {
+        expect(degerSekleUyarla("between", 1000)).toEqual([1000, ""]);
+        expect(degerSekleUyarla("between", [1000, 5000])).toEqual([1000, 5000]);
+        expect(degerSekleUyarla("between", true)).toEqual(["", ""]);
+        expect(degerSekleUyarla("between", undefined)).toEqual(["", ""]);
+    });
+
     it("eq → in: tekil değer tek elemanlı listeye sarılır; in → is_null: değer düşer", () => {
         expect(degerSekleUyarla("in", "Derdest")).toEqual(["Derdest"]);
         expect(degerSekleUyarla("is_null", ["Derdest"])).toBeUndefined();

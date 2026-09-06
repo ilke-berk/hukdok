@@ -274,6 +274,28 @@ describe("ReportsPage (G133)", () => {
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
     });
 
+    it("para between: iki uç da JSON number gider, düzenlenmeyen uç metne dönmez", async () => {
+        sunucuKur();
+        await render();
+
+        tikla(butonBul("Filtre ekle"));
+        let satirlar = container.querySelectorAll("[data-testid='filtre-satiri']");
+        sec(byLabel<HTMLSelectElement>("Alan", satirlar[0]), "maddi_tazminat");
+        // eq'te sayı yazılır, sonra between'e geçilir: ilk uç Number olarak korunmalı
+        yaz(byLabel<HTMLInputElement>("Değer", satirlar[0]), "1000");
+        sec(byLabel<HTMLSelectElement>("Operatör", satirlar[0]), "between");
+        satirlar = container.querySelectorAll("[data-testid='filtre-satiri']");
+        expect(byLabel<HTMLInputElement>("Başlangıç", satirlar[0]).value).toBe("1000");
+        yaz(byLabel<HTMLInputElement>("Bitiş", satirlar[0]), "5000");
+        // Uçlardan biri yeniden düzenlenince diğeri de sayı kalmalı
+        yaz(byLabel<HTMLInputElement>("Başlangıç", satirlar[0]), "2000");
+
+        await tiklaVeBekle(butonBul("Önizle"));
+        expect(sonPreviewGovdesi().tanim.filtreler).toEqual([
+            { alan: "maddi_tazminat", op: "between", deger: [2000, 5000] },
+        ]);
+    });
+
     it("filtre alanında türetilmiş kolon YOK; op listesi kolon tipine göre §2.2'yi aşmaz", async () => {
         sunucuKur();
         await render();
