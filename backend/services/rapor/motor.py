@@ -9,7 +9,10 @@ G131 export'u bunu tüketir, bellek disiplini K3).
 Güvenlik sınırı: istemciden gelen string'ler yalnız (a) registry sözlüğünde
 ANAHTAR olarak aranır, (b) `contains` için `%`/`_`/`\\` kaçışlı ILIKE
 parametresi olur, (c) `in` listesi bağlı parametre olur. Hiçbiri SQL metnine
-girmez. Sıralama ve filtre ifadeleri daima `Kolon.ifade`'dir.
+girmez. Sıralama ve filtre ifadeleri daima `Kolon.ifade`'dir; filtrelenebilir
+türetilmiş kolonda (G137) koşulu registry'nin `Kolon.filtre_ifadesi`si kurar
+(EXISTS), atom koşulu (`_ifade_kosulu`) yine buradan alır. Op denetimi iki
+katman: tip tablosu (`TIP_OPLARI`) + kolonun alt kümesi (`Kolon.oplar`).
 
 Serileştirme (plan §2.4): tarih/zaman ISO 8601 string, Decimal → float (JSON
 number), bool olduğu gibi, NULL → null.
@@ -134,6 +137,11 @@ def tanimi_dogrula(tanim: RaporTanimi) -> tuple[VeriKaynagi, list[tuple[Kolon, F
             raise RaporDogrulamaHatasi(alan, f"kolon filtrelenemez: {f.alan}")
         if f.op not in TIP_OPLARI[kolon.tip]:
             raise RaporDogrulamaHatasi(alan, f"'{f.op}' operatörü '{kolon.tip}' tipinde izinli değil")
+        if f.op not in kolon.oplar:
+            # Türetilmiş kolonda tip tablosunun alt kümesi (`Kolon.izinli_oplar`, plan §4.2)
+            raise RaporDogrulamaHatasi(
+                alan, f"'{f.op}' operatörü '{f.alan}' kolonunda izinli değil (izinli: {', '.join(kolon.oplar)})",
+            )
         filtreler.append((kolon, f, _deger_cevir(kolon, f, alan)))
     for i, s in enumerate(tanim.siralama):
         alan = f"siralama[{i}]"
@@ -185,14 +193,14 @@ def _tarih_kosulu(kolon: Kolon, op: str, deger: Any):
     return and_(ifade >= a, ifade <= b)
 
 
-def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
-    ifade, op = kolon.ifade, filtre.op
+def _ifade_kosulu(ifade: Any, op: str, deger: Any):
+    """Tarih dışı atom koşul: verilen ifade üzerinde op. Türetilmiş kolonların
+    EXISTS filtreleri (`Kolon.filtre_ifadesi`) de bunu alır — ILIKE kaçışı ve
+    `ne`/`in` semantiği TEK yerde (kopya yok)."""
     if op == "is_null":
         return ifade.is_(None)
     if op == "not_null":
         return ifade.isnot(None)
-    if kolon.tip == "tarih":
-        return _tarih_kosulu(kolon, op, deger)
     if op == "eq":
         return ifade == deger
     if op == "ne":
@@ -209,7 +217,17 @@ def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
     if op == "between":
         a, b = deger
         return and_(ifade >= a, ifade <= b)
-    raise RaporDogrulamaHatasi(filtre.alan, f"tanınmayan operatör: {op}")     # pragma: no cover — TIP_OPLARI eler
+    raise ValueError(f"tanınmayan operatör: {op}")     # pragma: no cover — TIP_OPLARI eler
+
+
+def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
+    op = filtre.op
+    if kolon.filtre_ifadesi is not None:
+        # Türetilmiş + filtrelenebilir (plan §4.2): registry EXISTS'i kurar, atom koşulu buradan alır
+        return kolon.filtre_ifadesi(op, deger, _ifade_kosulu)
+    if kolon.tip == "tarih" and op not in DEGERSIZ_OPLAR:
+        return _tarih_kosulu(kolon, op, deger)
+    return _ifade_kosulu(kolon.ifade, op, deger)
 
 
 def sorgu_kur(tanim: RaporTanimi, tenant_id: str) -> Select:

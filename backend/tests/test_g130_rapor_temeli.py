@@ -142,8 +142,9 @@ def _degerler(cevap, anahtar):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_katalog_sekli(env):
-    """Kabul: plan §2.4 şekli; 4 kaynak sırayla; `limitler.onizleme_sayfa_boyu_max == 200`;
-    her liste kolonun seçenekleri dolu; türetilmiş kolonlar filtrelenemez/sıralanamaz."""
+    """Kabul: plan §2.4 şekli (+ §4.2 alanları, G137); 4 kaynak sırayla;
+    `limitler.onizleme_sayfa_boyu_max == 200`; her liste kolonun seçenekleri dolu;
+    türetilmiş kolonlar sıralanamaz (filtre G137'den beri kolon bazında — test_g137)."""
     r = env.client().get(CATALOG)
     assert r.status_code == 200, r.text
     govde = r.json()
@@ -153,15 +154,16 @@ def test_katalog_sekli(env):
 
     turetilmis_sayisi = liste_sayisi = 0
     for kaynak in govde["veri_kaynaklari"]:
-        assert set(kaynak) == {"anahtar", "etiket", "aciklama", "varsayilan_kolonlar", "kolonlar"}
+        assert set(kaynak) == {"anahtar", "etiket", "aciklama", "varsayilan_kolonlar", "kolonlar",
+                               "hizli_filtreler", "kolon_setleri"}
         anahtarlar = [k["anahtar"] for k in kaynak["kolonlar"]]
         assert len(anahtarlar) == len(set(anahtarlar))
         assert "id" in anahtarlar
         assert set(kaynak["varsayilan_kolonlar"]) <= set(anahtarlar)
         assert kaynak["varsayilan_kolonlar"]
         for k in kaynak["kolonlar"]:
-            assert set(k) == {"anahtar", "etiket", "tip", "filtrelenebilir", "siralanabilir", "turetilmis",
-                              "secenekler"}
+            assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
+                              "turetilmis", "secenekler", "oneriler", "oneri_kesik"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]
             if k["tip"] == "liste":
@@ -171,7 +173,7 @@ def test_katalog_sekli(env):
                 assert k["secenekler"] is None
             if k["turetilmis"]:
                 turetilmis_sayisi += 1
-                assert k["filtrelenebilir"] is False and k["siralanabilir"] is False
+                assert k["siralanabilir"] is False
     assert turetilmis_sayisi >= 4 + 1 + 2 + 2
     assert liste_sayisi >= 10
 
@@ -318,7 +320,9 @@ def test_422_filtre_siralama_in_tavanlari(env):
 
 
 def test_422_turetilmis_filtrelenemez_siralanamaz(env):
-    f = {"alan": "muvekkil_adlari", "op": "contains", "deger": "Dr"}
+    """`filtre_ifadesi` taşımayan türetilmiş kolon (foy_sayisi) filtrelenemez; türetilmiş
+    hiçbir kolon sıralanamaz. (Taraf kolonları G137 ile filtrelenebilir oldu — test_g137.)"""
+    f = {"alan": "foy_sayisi", "op": "gte", "deger": 1}
     d = _422(_onizle(env.client(), _tanim(filtreler=[f])), "filtreler[0]")
     assert "filtrelenemez" in d["sebep"]
     s = {"alan": "foy_sayisi", "yon": "desc"}
@@ -541,7 +545,8 @@ def test_motor_dogrulama_hatasi_sinifi():
 
 
 def test_registry_kendini_denetler():
-    """Kayıt defteri yüklenirken yasak kolon / seçeneksiz liste / filtrelenebilir türetilmiş reddedilir."""
+    """Kayıt defteri yüklenirken yasak kolon / seçeneksiz liste / filtre ifadesiz filtrelenebilir
+    türetilmiş reddedilir (G137: türetilmiş filtre kolon bazında)."""
     for kaynak in registry.KAYNAKLAR.values():
         for kolon in kaynak.kolonlar.values():
             if kolon.tip == "liste":

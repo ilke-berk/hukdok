@@ -90,13 +90,19 @@ def _kolon_satiri(kolon: Kolon) -> str:
         if secenekler:
             parcalar.append("|".join(secenekler))
     if kolon.turetilmis:
-        parcalar.append("türetilmiş (filtre/sıralama yok)")
+        if kolon.filtrelenebilir:
+            parcalar.append(f"türetilmiş (filtre yalnız: {'|'.join(kolon.oplar)}; sıralama yok)")
+        else:
+            parcalar.append("türetilmiş (filtre/sıralama yok)")
     return " · ".join(parcalar)
 
 
 def katalog_metni() -> str:
     """Sistem talimatına gömülen kompakt katalog: her kaynak için başlık +
-    varsayılan kolonlar + `anahtar · etiket · tip[ · seçenekler]` satırları."""
+    varsayılan kolonlar + `anahtar · etiket · tip[ · seçenekler]` satırları.
+    G137'nin kullanılabilirlik alanları (`grup`, `kontrol`, `hizli_filtreler`,
+    `kolon_setleri`, `oneriler`) BİLEREK gömülmez — prompt gürültüsü (öneriler
+    300'e kadar değer); yalnız yeni kolonlar doğal olarak girer (plan §4.2)."""
     bloklar: list[str] = []
     for kaynak in registry.KAYNAKLAR.values():
         satirlar = [

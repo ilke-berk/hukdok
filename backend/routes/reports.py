@@ -5,7 +5,9 @@ Test aşamasında yalnız yöneticiler (`require_admin`, `routes/config.py`) +
 `docs/plan/raporlama-plani-2026-09-06.md` §2.4 — G133/G134 frontend'i buna göre yazılır.
 
 Uçlar:
-- `GET /catalog`, `POST /preview` (G130) — önizleme LOGLANMAZ (K4).
+- `GET /catalog`, `POST /preview` (G130) — önizleme LOGLANMAZ (K4). Katalog
+  G137'den beri tenant'a özel (öneriler tenant kurallı) ve süreç içi 60 sn
+  önbelleklidir (`_katalogu_getir`; DISTINCT öneri sorguları her açılışta koşmasın).
 - `GET/POST /templates`, `PUT/DELETE /templates/{id}` (G131, K5): sahip yalnız
   `olusturan` düzenler/siler (403); GET kendi + `paylasimli=true`; soft delete.
 - `POST /export` (G131, K3/K4): COUNT → tavan (413) → koşu satırı (`kosu_baslat`)
@@ -30,6 +32,7 @@ listesidir; sözleşme tek `{"alan","sebep"}` ister (`schemas_rapor.pydantic_hat
 import datetime as dt
 import json
 import logging
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -75,17 +78,45 @@ def _dogrula(model, govde: dict[str, Any]):
 
 # ─── G130: katalog + önizleme ────────────────────────────────────────────────
 
+KATALOG_ONBELLEK_SN = 60.0
+# Anahtar (oturum fabrikası, tenant): öneriler tenant kurallı; fabrika prod'da tektir,
+# testlerde monkeypatch'lenir — farklı fabrika = farklı veritabanı, bayat gövde sızmaz.
+# Süreç içi (worker başına) ve kilitli: sync route threadpool'da koşar.
+_katalog_onbellek: dict[tuple[Any, str], tuple[float, dict[str, Any]]] = {}
+_katalog_kilidi = threading.Lock()
+_saat = time.monotonic          # testler monkeypatch'ler (60 sn sınırı)
+
+
+def katalog_onbellegini_sifirla() -> None:
+    with _katalog_kilidi:
+        _katalog_onbellek.clear()
+
+
+def _katalogu_getir(tenant_id: str) -> dict[str, Any]:
+    anahtar = (SessionLocal, tenant_id)
+    simdi = _saat()
+    with _katalog_kilidi:
+        kayit = _katalog_onbellek.get(anahtar)
+        if kayit is not None and simdi - kayit[0] < KATALOG_ONBELLEK_SN:
+            return kayit[1]
+    db = SessionLocal()
+    try:
+        govde = registry.katalog(db, motor.limitler(), tenant_id)
+    finally:
+        db.close()
+    with _katalog_kilidi:
+        _katalog_onbellek[anahtar] = (simdi, govde)
+    return govde
+
+
 @router.get("/catalog")
 def api_catalog(
     user: dict = Depends(require_admin),
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Kayıt defteri: veri kaynakları, kolonlar (tip/filtre/sıralama/seçenek) + limitler."""
-    db = SessionLocal()
-    try:
-        return registry.katalog(db, motor.limitler())
-    finally:
-        db.close()
+    """Kayıt defteri: veri kaynakları, kolonlar (tip/grup/kontrol/filtre/sıralama/seçenek/öneri),
+    hızlı filtreler, kolon setleri + limitler. 60 sn süreç içi önbellek (tenant anahtarlı)."""
+    return _katalogu_getir(tenant_id)
 
 
 @router.post("/preview", response_model=OnizlemeCevabi)
