@@ -247,3 +247,109 @@ Tahmin: backend zinciri 3 oturum, frontend zinciri 3 oturum paralel → **2 gece
 2. gece G132 ∥ G135, ardından G136). Riskler: (r1) G133 sözleşmeye göre yazılır, G130 sözleşmeyi bozarsa G134
 öncesi uyum düzeltmesi gerekir; (r2) `App.tsx`/`Sidebar.tsx`/`api.ts` hub dosyalarına yalnız G133 dokunur;
 (r3) asistan kalitesi ancak gerçek Gemini ile ölçülür — gece testleri sahte istemciyle geçer, gündüz duman testi şart.
+
+---
+
+## 4. İkinci tur — kullanılabilirlik yeniden tasarımı (2026-09-07, kullanıcı kararı; G137-G140)
+
+**Kullanıcı bulgusu (07.09 gece, lokal kullanım + ekran görüntüsü):** "filtre seçilebiliyorsa bile nasıl
+yapılacağını anlamadım; çok yazı var; çok sütun olduğu için karışık; kategorilerin içinden filtreleme yapılmıyor;
+tarih filtresini göremedim." Ekranda: kaynak Müvekkiller seçiliyken tablo hâlâ dava satırlarını gösteriyor
+(bayat önizleme), Filtreler bölümü ekranın altında görünmüyor, kolon listesi tip rozetleriyle dolu, filtre
+üç adım (alan → operatör → değer) ve alan listesi 80+ öğeli düz `<select>`. Planlayıcı teşhisi: v1 bir
+"sorgu kurucu"ydu; hedef kitle (yönetici/avukat) için **"süz ve gör"** arayüzü gerekir.
+
+### 4.1 Hedef ekran (Rapor sekmesi)
+
+1. **Kaynak seçimi** üstte dört kart (Davalar · Müvekkiller · Belgeler · Föyler, tek satır açıklama). Kaynak
+   değişince taslak o kaynağın varsayılan kolonlarına döner ve önizleme HEMEN yenilenir — ekranda hiçbir zaman
+   başka kaynağın satırı kalmaz.
+2. **Filtre şeridi** önizlemenin üstünde, kaynağa özel ve katalogdan gelir (`hizli_filtreler`). Kontroller
+   tipe göre hazır: tarih aralığı (alan değiştirici + "bu yıl / geçen yıl / son 30 gün / son 12 ay" kısayolları),
+   çoklu seçim (kapalı listeler: Durum, Kategori, Hizmet Türü… — checkbox'lı açılır, seçilenler çip),
+   metin "içerir", sayı/para "en az – en çok", "boş olanlar" anahtarı. **Operatör açılır listesi YOK**: operatör
+   kontrolden türetilir (§4.3). "+ Başka alan" → aranabilir ve GRUPLU alan seçici (cmdk `Command`, kurulu);
+   seçilen alan şeride aynı türde bir kontrol olarak eklenir. Etkin filtreler çip olarak görünür, tek tıkla
+   kalkar, "Temizle" hepsini siler.
+3. **Kolonlar** ana ekranda liste olarak DURMAZ: "Kolonlar (8)" düğmesi bir yan panel (shadcn `Sheet`) açar —
+   gruplu checkbox listesi (`grup`), üstte hazır setler (`kolon_setleri`: "Temel", "İletişim", "Karar takibi",
+   "Tazminat"…), seçilenlerin sırası aynı panelde (mevcut dnd + ↑↓). Tip rozetleri (`abc/123/liste`) kalkar.
+4. **Sıralama** ayrı bölüm değil: tablo başlığına tık (artan/azalan/kaldır, en fazla 3, `siralanabilir` olanlar).
+5. **Önizleme otomatik**: yapısal değişiklikte hemen, metin/sayı/tarih yazarken 600 ms gecikme ya da odak
+   çıkışı; yalnız geçerli tanımda; yarış koruması mevcut (`reqIdRef`). "Önizleme bayat" rozeti KALKAR; yerine
+   başlıkta "güncelleniyor…" durumu. Önizle düğmesi yalnız hata durumunda "Tekrar dene".
+6. **Açılış**: sayfa Davalar + varsayılan kolonlar + filtresiz listeyle DOLU açılır.
+7. **Metin azaltma**: açıklamalar tooltip'e, Eyebrow başlıklar kısa, kaynak açıklaması kartta tek satır.
+8. Şablon çubuğu, Excel/CSV düğmeleri, sekmeler, asistan paneli ve `eylem` yürütme davranışı korunur; asistanın
+   uyguladığı tanım artık otomatik önizlenir.
+
+### 4.2 Katalog sözleşmesi genişlemesi (G137 — DONDU; G138 buna göre PARALEL yazılır)
+
+`KatalogKolon`'a ek alanlar: `"grup": str` (kaynağa göre sabit küme: Davalar → `Kimlik · Taraflar · Mahkeme ve
+konu · Tarihler · Tutarlar · Karar ve aşama · Tıbbi · Aktarım · Sistem`; Müvekkiller → `Kimlik · İletişim ·
+Vekalet · Sınıflandırma · Sistem`; Belgeler → `Belge · Dava · Yükleme · Sistem`; Föyler → `Kimlik · Sınıflandırma ·
+Kapsam · Sistem`), `"kontrol": "tarih_araligi" | "coklu_secim" | "metin_icerir" | "sayi_araligi" | "mantik"`
+(tipten türetilir: tarih→tarih_araligi, liste→coklu_secim, metin→metin_icerir, sayi/para→sayi_araligi,
+mantik→mantik; filtrelenemeyen kolonda `null`).
+`VeriKaynagi`'na ek: `"hizli_filtreler": [{"alan": str, "alternatifler": [str, ...]}]` (sıralı; `alternatifler`
+yalnız tarih aralığı kontrolünde alan değiştirici — ör. Davalar: `opening_date` ↔ `karar_tarihi` ↔
+`kesinlesme_tarihi` ↔ `created_at`), `"kolon_setleri": [{"ad": str, "kolonlar": [str, ...]}]`.
+Hızlı filtre listeleri (planlayıcı; işçi etiketleri koddan alır):
+- Davalar: `opening_date` (alternatifler yukarıda) · `status` · `responsible_lawyer_name` · `court` ·
+  `muvekkil_adlari` · `muvekkil_kategorisi` · `hizmet_turu` · `maddi_tazminat`
+- Müvekkiller: `category` · `il` · `client_type` · `dava_sayisi`
+- Belgeler: `uploaded_at` · `belge_turu_adi` · `uploaded_by` · `link_mode`
+- Föyler: `durum` · `hizmet_turu` · `muvekkil_tipi` · `kapsam_durumu`
+Kolon setleri (Davalar): "Temel" (= varsayılan), "Karar takibi" (`tracking_no, esas_no, court, status, case_stage,
+karar_tarihi, karar_turu, karar_lehine, kesinlesme_tarihi`), "Tazminat" (`tracking_no, muvekkil_adlari, court,
+maddi_tazminat, manevi_tazminat, hukmedilen_toplam, dava_degeri, para_birimi`), "Taraflar" (`tracking_no,
+muvekkil_adlari, karsi_taraf_adlari, sigortali_adlari, muvekkil_kategorisi, responsible_lawyer_name`);
+Müvekkiller: "Temel", "İletişim" (`name, category, phone, mobile_phone, email, address, il`), "Vekalet"
+(`name, vekalet_no, buro_vekalet_no, vekaletname_tarihi, gecerlilik_tarihi, noterlik`).
+
+**Taraf bağlantılı filtreler (Davalar, K1/K2 korunarak):** türetilmiş kolon kuralı gevşer — `filtrelenebilir`
+artık kolon bazında; bu kolonlar `siralanabilir=False` kalır, filtre EXISTS alt sorgusuyla (`case_parties`
+→ `clients`), silinmiş müvekkil kartı ve tenant kuralı `cases` üzerinden:
+| anahtar | etiket | tip | kaynak | op'lar |
+| --- | --- | --- | --- | --- |
+| `muvekkil_adlari` | Müvekkiller | metin | `case_parties.party_type='CLIENT'` adları | contains, is_null, not_null |
+| `karsi_taraf_adlari` | Karşı Taraflar | metin | `party_type='COUNTER'` | contains, is_null, not_null |
+| `sigortali_adlari` (YENİ) | Sigortalılar | metin | `role='Sigortalı'` (her party_type) | contains, is_null, not_null |
+| `muvekkil_kategorisi` (YENİ) | Müvekkil Kategorisi | liste | CLIENT tarafların `clients.category` (DISTINCT + seed) | eq, in, is_null |
+`contains` bu kolonlarda "herhangi bir taraf adı içerir" anlamındadır (EXISTS), birleştirilmiş metin üzerinde değil.
+**Metin alanlarında öneri listesi (kullanıcı bulgusu 07.09: "manuel elle girilirse çok sorun yaşanır"):**
+`KatalogKolon.oneriler: [str, ...] | null` — kayıt defterinde `onerili=True` işaretli metin kolonlarının
+DISTINCT değerleri (silinmemiş + tenant kuralı, boş hariç, en fazla 300, alfabetik; aşarsa ilk 300 ve
+`oneri_kesik: true`). İşaretlenecekler: Davalar `responsible_lawyer_name, uyap_lawyer_name, court,
+judicial_unit, sub_type, muvekkil_adlari, karsi_taraf_adlari, sigortali_adlari` (taraf adları için
+`case_parties.name` DISTINCT, ilgili party_type/role); Müvekkiller `il, sektor, specialty, noterlik`;
+Belgeler `uploaded_by, belge_turu_adi`; Föyler `hizmet_turu` zaten liste. Frontend `metin_icerir` kontrolü
+öneri varsa combobox (yazdıkça daralan liste, seçince `contains` yerine `eq`; serbest yazım yine `contains`)
+olur. Katalog cevabı süreç içi 60 sn önbelleklenir (DISTINCT sorguları her açılışta koşmasın).
+Asistan prompt'u kataloğu otomatik gömdüğü için `kontrol`/`grup`/`hizli_filtreler`/`oneriler` prompt'a
+GİRMEZ (gürültü; öneriler 300'e kadar değer); yalnız yeni kolonlar girer.
+
+### 4.3 Kontrol → operatör eşlemesi (frontend, G138)
+
+| kontrol | kullanıcı girdisi | üretilen filtre |
+| --- | --- | --- |
+| tarih_araligi | başlangıç + bitiş / yalnız biri / kısayol | `between` / `gte` / `lte` |
+| coklu_secim | 1 seçim / n seçim | `eq` / `in` |
+| metin_icerir | metin | `contains` |
+| sayi_araligi | en az + en çok / yalnız biri | `between` / `gte` / `lte` |
+| mantik | Evet/Hayır | `eq true/false` |
+| (her kontrolde) "boş olanlar" anahtarı | — | `is_null` (değer girdisi kilitlenir) |
+Gelişmiş op'lar (`ne`, `not_null`, tam `eq` metinde) çipin "…" menüsünden; §2.1 sözleşmesi ve sunucu doğrulaması
+DEĞİŞMEZ — bu yalnız sunum katmanıdır. Şablon/asistan tanımı yüklenince filtreler aynı kontrollere geri
+çözülür (op → kontrol; çözülemeyen op "gelişmiş" çipi olarak gösterilir, kaybolmaz).
+
+### 4.4 Görevler
+
+| Görev | Bant | Bağımlı | İçerik |
+| --- | --- | --- | --- |
+| G137 | backend | – | Katalog genişlemesi (grup, kontrol, hizli_filtreler, kolon_setleri) + taraf bağlantılı 4 filtre (EXISTS) + testler |
+| G138 | frontend | – (sözleşme §4.2'den) | Filtre şeridi + operatörsüz kontroller + gruplu alan seçici + otomatik önizleme + başlıktan sıralama + kaynak değişiminde anında yenileme |
+| G139 | frontend | G138 | Kaynak kartları + Kolonlar yan paneli (gruplar, setler, sıra) + açılışta dolu liste + metin sadeleştirme + responsive + asistan/şablon uyumu |
+| G140 | docs | G137,G139 | `docs/mimari/raporlama.md` + bu plan durum şerhi; koddan doğrulanmış |
+Zincir: backend G137 tek; frontend G138→G139 (ikisi de `ReportsPage.tsx`); G140 en son. Hub dosyalara
+(App.tsx/Sidebar.tsx/api.ts) DOKUNULMAZ. Tahmin: 1 gece.

@@ -3,6 +3,23 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Raporlama ikinci tur: kullanılabilirlik yeniden tasarımı (2026-09-07, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md §4 (hedef ekran §4.1, katalog sözleşmesi §4.2 DONDU,
+     kontrol→op §4.3). Kullanıcı bulgusu (lokal kullanım + ekran görüntüsü): filtre anlaşılmıyor, çok
+     yazı/çok sütun, kategoriden süzülemiyor, tarih filtresi görünmüyor, elle yazım hata üretiyor, kaynak
+     değişince tablo bayat kalıyor. Karar: sorgu kurucu → "süz ve gör": kaynak kartları, hızlı filtre şeridi
+     (operatörsüz, seçimli/öneri listeli kontroller), gruplu aranabilir alan seçici, kolonlar yan panelde
+     gruplu + hazır setler, otomatik önizleme, başlıktan sıralama, dolu açılış. Backend: katalog genişlemesi
+     + taraf bağlantılı EXISTS filtreleri (müvekkil adı/kategorisi, karşı taraf, sigortalı); migrasyon YOK.
+     Zincir: G137 tek backend; G138 G137 ile PARALEL (sözleşme plandan), G139 G138'i bekler (ReportsPage);
+     G140 docs en son. Hub dosyalara dokunulmaz. Tahmin 1 gece. -->
+
+- [ ] G137 | bant:backend | bagimli:- | Rapor kataloğu genişlemesi: grup/kontrol/hızlı filtre/kolon seti/öneriler + taraf bağlantılı 4 filtre (EXISTS, tenant kurallı) + 60 sn önbellek
+- [ ] G138 | bant:frontend | bagimli:- | Rapor ekranı: filtre şeridi + operatörsüz kontroller (tarih/çoklu seçim/combobox) + gruplu alan seçici + otomatik önizleme + başlıktan sıralama + kaynak değişiminde anında yenileme
+- [ ] G139 | bant:frontend | bagimli:G138 | Rapor ekranı: kaynak kartları + Kolonlar yan paneli (gruplar/setler/sıra) + dolu açılış + metin sadeleştirme + responsive
+- [ ] G140 | bant:docs | bagimli:G137,G139 | raporlama.md ikinci tur + plan §4 durum/kanıt şerhi (koddan doğrulanmış)
+
 ## ÖNCELİK 1 — Raporlama modülü: kullanıcı tanımlı listeler + şablon + indirme logu + AI asistan (2026-09-06, kullanıcı kararı)
 
 <!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md (sözleşme §2 orada DONDU — görevler ona uyar).
