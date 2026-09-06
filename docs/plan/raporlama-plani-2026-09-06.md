@@ -34,7 +34,12 @@ farklar ek alan/ek sınır/ek index türündedir.
 
 Koşu sonuçları (işçi raporları): backend `pytest` 2637 passed / 3 skipped (G132 sonrası), ruff + mypy temiz;
 frontend `vitest` 728 passed / 60 dosya (G135 sonrası), eslint 0 uyarı, `tsc -b --force` exit 0.
-Gerçek Gemini duman testi YAPILMADI (gündüz, insan adımı — istemler G132, adım listesi G135 raporunda).
+Gerçek Gemini duman testi 07.09'da lokalde YAPILDI (`models/gemini-3.6-flash`, servis katmanından, 8 istem):
+3 örnek istem + takip mesajları + belirsizlik + katalog dışı alan + para/eşanlam senaryoları beklendiği gibi;
+tek bulgu "davaları listele" için `tanim=null` + `eylem=onizle` + yanıltıcı mesaj → sunucu koruması (tanım
+yoksa eylem düşer) + prompt kuralı daraltıldı (kaynak belliyse varsayılan tanım, soru yalnız zorunlu bilgi
+eksikse); ayrıntı G132.md raporu "Duman testi" bölümü. Üretilen tanımlar lokal DB'de koşuldu (358 dava, 206
+müvekkil). G134'ün nginx arkasında HTTP duman testi hâlâ insan adımı (giriş gerekir).
 
 ---
 

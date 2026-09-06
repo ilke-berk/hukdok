@@ -273,4 +273,10 @@ async def sohbet(
                 "status": "warning",
                 "message": f"Asistanın ürettiği tanım doğrulanamadı ({e.alan}: {e.sebep}); tanım olmadan devam ediliyor.",
             }
+    if tanim is None and eylem is not None:
+        # Sözleşme (prompt + K7): tanım yoksa eylem de yok. Gerçek Gemini duman testinde
+        # (07.09) model "davaları listele" için tanim=null + eylem=onizle döndürdü; istemci
+        # bu eylemi mevcut tanım üzerinde yürütürdü. Model kuralı ihlal etse de sunucu keser.
+        logger.warning("Rapor asistani tanim=null ile eylem=%s dondurdu — eylem dusuruldu", eylem)
+        eylem = None
     yield SohbetTamamlandi(cevap=cevap.cevap, tanim=tanim, eylem=eylem).model_dump()

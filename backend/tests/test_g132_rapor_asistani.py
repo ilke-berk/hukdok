@@ -257,6 +257,20 @@ def test_asistan_soru_sorarsa_tanim_null_warning_yok(env):
     assert olaylar[-1] == {"status": "complete", "cevap": "Hangi yıl?", "tanim": None, "eylem": None}
 
 
+def test_tanim_null_ile_gelen_eylem_sunucuda_dusurulur(env, caplog):
+    """Gerçek Gemini duman testi bulgusu (07.09): model kuralı ihlal edip tanim=null +
+    eylem=onizle döndürdü. Sözleşme 'tanım yoksa eylem yok' — sunucu keser, WARNING
+    loglar (ERROR değil; nihai başarısızlık yok), akış yine complete ile biter."""
+    env.ac()
+    env.gemini.sonuc = _yanit(json.dumps(_cevap(tanim=None, cevap="Liste aşağıda.", eylem="onizle"), ensure_ascii=False))
+    with caplog.at_level(logging.WARNING):
+        olaylar = _olaylar(env.client().post(CHAT, json={"mesajlar": _mesajlar("davaları listele")}))
+    assert [o["status"] for o in olaylar] == ["info", "complete"]
+    assert olaylar[-1]["tanim"] is None and olaylar[-1]["eylem"] is None
+    assert any("eylem dusuruldu" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert not [r for r in caplog.records if r.levelno == logging.ERROR]
+
+
 def _failed_sozlesmesi(olaylar, kod):
     assert [o for o in olaylar if o["status"] == "complete"] == []
     son = olaylar[-1]

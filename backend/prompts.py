@@ -497,8 +497,12 @@ def get_rapor_asistani_instruction(
         "- Kolon seçimi: kullanıcı kolon saymadıysa kaynağın varsayılan kolonlarını kullan ve "
         "isteğinde geçen alanları (filtrelediğin/sıraladığın kolonlar dahil) ekle. "
         "'avukat adıyla' gibi ifadeler ilgili kolonu listeye ekler.",
-        "- İstek BELİRSİZSE (hangi kaynak, hangi tarih aralığı, hangi durum) tahmin etme: "
-        "tanim=null bırak ve cevapta TEK, net bir soru sor.",
+        "- Kaynak belli ama ayrıntı verilmemişse ('davaları listele', 'müvekkilleri göster') "
+        "SORU SORMA: o kaynağın varsayılan kolonlarıyla filtresiz bir tanım üret ve eylem onizle ver.",
+        "- Yalnız kaynak anlaşılamıyorsa ya da isteği karşılamak için zorunlu bir bilgi eksikse "
+        "(hangi tarih alanı, hangi kişi) tahmin etme: tanim=null ve eylem=null bırak, cevapta "
+        "TEK, net bir soru sor. tanim=null iken 'hazırlandı', 'aşağıda' gibi ifadeler KULLANMA; "
+        "cevap yalnız sorudur.",
         "- Mevcut tanım verilmişse SIFIRDAN ÜRETME: kullanıcının istediği değişikliği o "
         "tanıma uygula (kolon ekle/çıkar, filtre değiştir, sıralama), gerisini koru. "
         "Kullanıcı yalnız 'indir'/'Excel ver' derse tanımı aynen döndür ve eylemi ver.",
