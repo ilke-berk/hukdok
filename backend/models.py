@@ -1345,3 +1345,88 @@ class AktarimTeslimi(Base):
             return None
         fark = yapi.get("fark")
         return fark if isinstance(fark, dict) else None
+
+
+class ReportTemplate(Base):
+    """
+    Favori rapor şablonu (G131, plan `docs/plan/raporlama-plani-2026-09-06.md`
+    §2.5, karar K5) — bir yöneticinin kaydettiği `RaporTanimi` + ad/açıklama.
+
+    NEDEN DB'DE (localStorage değil): (1) `paylasimli=True` şablonu diğer
+    yöneticiler de görür — kullanıcılar arası paylaşım tarayıcıda olmaz;
+    (2) çıkıştaki `clearAppStorage()` tarayıcı deposunu siler, şablon kaybolurdu;
+    (3) `report_runs.sablon_id` ile "hangi tanımdan indirildi" denetim izi kurulur.
+
+    `tanim` JSON = `schemas_rapor.RaporTanimi` (kayıt anında motor doğrulamasından
+    geçer; katalog sonradan değişirse yükleme anında yeniden doğrulanır).
+    `olusturan` = yönetici e-postası (küçük harf; `routes/activity._get_user_email`
+    üçlüsü). Sahiplik kuralı route'ta: yalnız `olusturan` düzenler/siler (403).
+    Soft delete: `deleted_at` dolu satır listelenmez; koşu satırları FK ile
+    ona bağlı kalır (`ON DELETE SET NULL` yalnız hard delete için).
+    `tenant_id` yazılır (gelecek ayrım), okuma `tenant_filter_clause` ile.
+
+    Index YOK (K10, G042 kuralı): tablo sıfır dolulukla doğuyor; ölçülünce
+    `database.py` `("index", "report_templates", ...)` op'u eklenir
+    (madde 46 şerhi). `("table", ...)` op'u YAZILMAZ — create_all yaratır.
+    """
+    __tablename__ = "report_templates"
+
+    id = Column(Integer, primary_key=True)
+    ad = Column(String(120), nullable=False)
+    aciklama = Column(String(500), nullable=True)
+    tanim = Column(JSON, nullable=False)                     # RaporTanimi (plan §2.1)
+    olusturan = Column(String(255), nullable=False)          # yönetici e-postası (küçük harf)
+    paylasimli = Column(Boolean, nullable=False, default=False, server_default="false")
+    tenant_id = Column(String(64), nullable=True)            # NULL = paylaşımlı havuz
+    created_at = Column(DateTime(timezone=True), default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(String(255), nullable=True)
+
+
+class ReportRun(Base):
+    """
+    Rapor koşusu / indirme logu (G131, plan §2.5, karar K4): her BAŞARILI ya da
+    üretim sırasında HATA VEREN export için bir satır — "kim, ne zaman, hangi
+    tanım, kaç satır, hangi dosya (boyut + sha256)". Önizleme (`/preview`) satır
+    YAZMAZ; satır tavanı aşımı (413) da üretime girmediği için yazmaz.
+
+    NEDEN DB'DE: denetim izi — indirilen çıktının kendisi `dosya_yolu`nda
+    saklanır (`RAPOR_CIKTI_DIZINI`), `sha256` saklanan dosya ile indirilen
+    baytların AYNI olduğunu kanıtlar (dosya önce diske yazılır, sonra
+    `FileResponse` ile aynı dosya verilir). `tanim` anlık görüntüdür: şablon
+    sonradan değişse/silinse de "o gün ne indirildi" sorusu cevaplanır.
+
+    Yaşam döngüsü (`services/rapor/kosu_logu.py`): `kosu_baslat` satırı açar
+    (satır sayısı COUNT ile önceden bilinir), `kosu_bitir` dosya bilgisini ya
+    da `hata`yı yazar (hata durumunda satır SİLİNMEZ). `temizle`
+    `RAPOR_CIKTI_SAKLAMA_GUN`den eski dosyayı siler ve `dosya_yolu=NULL` yapar;
+    satır kalır (log), indirme 410 döner.
+
+    Performans index'i YOK (K10): `baslangic` sıralı listeleme az satırla
+    ölçülmeden index almaz; `("table", ...)` op'u yazılmaz (create_all). Tek
+    index FK kolonu `sablon_id` içindir (G043 kuralı: index'siz FK yok) ve
+    modelde DEĞİL migrasyondadır — `("index", "report_runs", ...)`, database.py
+    madde 46.
+    """
+    __tablename__ = "report_runs"
+
+    id = Column(Integer, primary_key=True)
+    sablon_id = Column(Integer, ForeignKey("report_templates.id", ondelete="SET NULL"), nullable=True)
+    tanim = Column(JSON, nullable=False)                     # tanım anlık görüntüsü
+    format = Column(String(8), nullable=False)               # "xlsx" | "csv"
+    kaynak = Column(String(16), nullable=False, default="manuel", server_default="manuel")  # "manuel" | "asistan"
+    veri_kaynagi = Column(String(32), nullable=False)        # registry anahtarı (davalar, ...)
+    kolon_sayisi = Column(Integer, nullable=False)
+    satir_sayisi = Column(Integer, nullable=False)
+    kullanici = Column(String(255), nullable=False)          # yönetici e-postası (küçük harf)
+    tenant_id = Column(String(64), nullable=True)
+    baslangic = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    sure_ms = Column(Integer, nullable=True)
+    dosya_adi = Column(String(255), nullable=False)          # indirme adı (Content-Disposition)
+    dosya_yolu = Column(String(500), nullable=True)          # RAPOR_CIKTI_DIZINI altındaki yol; temizlenince NULL
+    dosya_boyutu = Column(Integer, nullable=True)
+    sha256 = Column(String(64), nullable=True)
+    hata = Column(String(500), nullable=True)                # üretim hatası özeti (satır silinmez)
+
+    sablon = relationship("ReportTemplate")

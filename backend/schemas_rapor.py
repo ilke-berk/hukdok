@@ -10,7 +10,8 @@ ikisi de aynı `RaporDogrulamaHatasi` ile 422'ye `{"alan", "sebep"}` taşır.
 K6 (plan §1): asistanın ürettiği tanım da bu şemadan ve aynı motor doğrulamasından
 geçer — tek doğrulama yolu.
 """
-from typing import Any, Literal
+import datetime as dt
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -115,6 +116,75 @@ class OnizlemeCevabi(BaseModel):
     sayfa_boyu: int
 
 
+# ─── G131: şablon / export / koşu şemaları (plan §2.4) ───────────────────────
+
+ExportFormati = Literal["xlsx", "csv"]
+ExportKaynagi = Literal["manuel", "asistan"]
+
+
+class SablonIstegi(BaseModel):
+    """`POST/PUT /api/reports/templates` gövdesi — tam gövde (kısmi değil)."""
+    model_config = ConfigDict(extra="forbid")
+
+    ad: str = Field(min_length=1, max_length=120)
+    aciklama: Optional[str] = Field(default=None, max_length=500)
+    tanim: RaporTanimi
+    paylasimli: bool = False
+
+
+class RaporSablonu(BaseModel):
+    """Şablon cevabı (`RaporSablonu`, plan §2.4) — ORM satırından `model_validate`."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ad: str
+    aciklama: Optional[str]
+    tanim: RaporTanimi
+    olusturan: str
+    paylasimli: bool
+    created_at: Optional[dt.datetime]
+    updated_at: Optional[dt.datetime]
+
+
+class ExportIstegi(BaseModel):
+    """`POST /api/reports/export` gövdesi."""
+    model_config = ConfigDict(extra="forbid")
+
+    tanim: RaporTanimi
+    format: ExportFormati = "xlsx"
+    sablon_id: Optional[int] = None
+    kaynak: ExportKaynagi = "manuel"
+
+
+class RaporKosusu(BaseModel):
+    """Koşu/indirme log satırı (`RaporKosusu`, plan §2.4). `dosya_mevcut` =
+    `dosya_yolu` dolu VE dosya diskte (route hesaplar)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sablon_id: Optional[int]
+    sablon_adi: Optional[str]
+    format: str
+    kaynak: str
+    veri_kaynagi: str
+    kolon_sayisi: int
+    satir_sayisi: int
+    kullanici: str
+    baslangic: Optional[dt.datetime]
+    sure_ms: Optional[int]
+    dosya_adi: str
+    dosya_boyutu: Optional[int]
+    sha256: Optional[str]
+    dosya_mevcut: bool
+    hata: Optional[str] = None
+    tanim: dict[str, Any]
+
+
+class KosuListesi(BaseModel):
+    toplam: int
+    kosular: list[RaporKosusu]
+
+
 def pydantic_hatasini_cevir(hata: ValidationError) -> RaporDogrulamaHatasi:
     """Pydantic'in ilk hatasını sözleşmedeki `{"alan","sebep"}` biçimine indirger.
 
@@ -131,7 +201,8 @@ def pydantic_hatasini_cevir(hata: ValidationError) -> RaporDogrulamaHatasi:
 
 
 __all__ = [
-    "DEGERSIZ_OPLAR", "FILTRE_MAX", "IN_DEGER_MAX", "KOLON_MAX", "KolonBasligi", "KolonTipi",
-    "ONIZLEME_SAYFA_BOYU_MAX", "Op", "OnizlemeCevabi", "OnizlemeIstegi", "Filtre", "RaporDogrulamaHatasi",
-    "RaporTanimi", "SIRALAMA_MAX", "Siralama", "TIP_OPLARI", "pydantic_hatasini_cevir",
+    "DEGERSIZ_OPLAR", "ExportFormati", "ExportIstegi", "ExportKaynagi", "FILTRE_MAX", "IN_DEGER_MAX",
+    "KOLON_MAX", "KolonBasligi", "KolonTipi", "KosuListesi", "ONIZLEME_SAYFA_BOYU_MAX", "Op", "OnizlemeCevabi",
+    "OnizlemeIstegi", "Filtre", "RaporDogrulamaHatasi", "RaporKosusu", "RaporSablonu", "RaporTanimi",
+    "SIRALAMA_MAX", "SablonIstegi", "Siralama", "TIP_OPLARI", "pydantic_hatasini_cevir",
 ]

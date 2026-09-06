@@ -1045,6 +1045,23 @@ _MIGRATIONS = [
         "ALTER TABLE cases ALTER COLUMN hastada_olusan_zarar TYPE VARCHAR",
         "ALTER TABLE cases ALTER COLUMN uygulanan_yontem TYPE VARCHAR",
     ]),
+
+    # ─── 46. RAPORLAMA TABLOLARI (G131) ───────────────────────────────────────
+    # `report_templates` (favori rapor şablonları) ve `report_runs` (indirme
+    # logu + saklanan çıktı) modelde tanımlı (`models.ReportTemplate`,
+    # `models.ReportRun`) → iki tablo `create_all` ile doğar; ("table", ...)
+    # op'u ölü kod olurdu, YAZILMADI (G041 kuralı). K10 (raporlama planı) gereği
+    # PERFORMANS INDEX'İ YOK: tablolar sıfır dolulukla doğuyor,
+    # `report_runs(baslangic)` / `report_templates(olusturan)` ihtiyacı
+    # ölçülünce buraya eklenir. TEK istisna FK kolonu: `report_runs.sablon_id →
+    # report_templates(id) ON DELETE SET NULL` — index'siz FK, şablon silinince
+    # tam tablo taraması demektir ve G043 bekçisi (`test_index_siz_fk_kolonu_kalmadi`)
+    # bunu yapısal olarak yasaklar; ölçüm sorusu değil, FK kuralı. Koşulsuz
+    # ("index", ...) op'unda, IF NOT EXISTS ile idempotent. CHECK kısıtı
+    # (format IN ('xlsx','csv')) uygulama katmanında (Pydantic Literal).
+    ("index", "report_runs", [
+        "CREATE INDEX IF NOT EXISTS idx_report_runs_sablon ON report_runs (sablon_id)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

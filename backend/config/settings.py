@@ -97,6 +97,16 @@ class Settings(BaseSettings):
     gemini_retry_deadline_seconds: float = 170.0
     gemini_http_timeout_ms: int = 120_000
 
+    # ── Raporlama modülü (G131, plan §2.7) ───────────────────────────────
+    # Export satır tavanı; COUNT bu değeri aşarsa /export 413 döner.
+    # (Katalogdaki `limitler.export_max_satir` G130'da aynı env'i okur.)
+    rapor_max_satir: int = 50_000
+    # Saklanan çıktı dizini; boşsa <backend>/data/rapor_ciktilari
+    # (konteynerde /app/data = backend-data volume'u — recreate'i atlatır).
+    rapor_cikti_dizini: str = ""
+    # Çıktı saklama süresi (gün); dolunca dosya silinir, koşu satırı kalır (410).
+    rapor_cikti_saklama_gun: int = 30
+
     @field_validator("*", mode="before")
     @classmethod
     def _tolerant_env(cls, value, info):
