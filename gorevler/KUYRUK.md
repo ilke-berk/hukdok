@@ -23,7 +23,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G133 | bant:frontend | bagimli:- | Raporlar sayfası iskeleti: /reports route + Sidebar + api.ts timeout + lib/reports.ts tipleri + Rapor Oluşturucu (kaynak/kolon/filtre/sıralama) + önizleme tablosu
 - [x] G134 | bant:frontend | bagimli:G133 | Şablonlar (kaydet/yükle/güncelle/sil/paylaş) + Excel/CSV indirme + İndirme geçmişi sekmesi + saklanan çıktıyı indir
 - [x] G135 | bant:frontend | bagimli:G134 | Asistan paneli: NDJSON sohbet, tanımı oluşturucuya uygula, eylem yürütme (önizle/indir, kaynak=asistan), anahtar kapısı
-- [ ] G136 | bant:docs | bagimli:G132,G135 | docs/mimari/raporlama.md + CLAUDE.md paragrafı + plan durum şerhi + .env.example teyidi (koddan doğrulanmış)
+- [x] G136 | bant:docs | bagimli:G132,G135 | docs/mimari/raporlama.md + CLAUDE.md paragrafı + plan durum şerhi + .env.example teyidi (koddan doğrulanmış)
 
 ## ÖNCELİK 1 — Veri ekibinin DB-2026 format bildirimi (2026-09-04, kullanıcı kararı)
 
