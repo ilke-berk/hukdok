@@ -1,13 +1,16 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMsal } from "@azure/msal-react";
+import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { ConfirmContext, type ConfirmOptions } from "@/hooks/useConfirm";
 import { Eyebrow, HairlineCard } from "@/components/dashboard/primitives";
+import { FlowButton } from "@/components/flow/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { ReportBuilder } from "@/components/reports/ReportBuilder";
+import { AssistantPanel } from "@/components/reports/AssistantPanel";
 import { PreviewTable } from "@/components/reports/PreviewTable";
 import { TemplateBar, TemplatesTable } from "@/components/reports/TemplateBar";
 import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "@/components/reports/SaveTemplateDialog";
@@ -15,12 +18,14 @@ import { ExportButtons } from "@/components/reports/ExportButtons";
 import { RunsTable } from "@/components/reports/RunsTable";
 import { kaynakIcinBaslangic, tanimOlustur, yeniSatirId, type OlusturucuDurumu } from "@/components/reports/builderState";
 import {
-    createTemplate, deleteTemplate, downloadRun, dosyayiIndir, getCatalog, listRuns, listTemplates,
+    createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, getCatalog, listRuns, listTemplates,
     previewReport, tanimGecerliMi, updateTemplate,
-    RAPOR_KATALOG_HATASI, RAPOR_KOSU_INDIRME_HATASI, RAPOR_KOSU_LISTE_HATASI, RAPOR_ONIZLEME_HATASI,
+    RAPOR_EXPORT_HATASI, RAPOR_KATALOG_HATASI, RAPOR_KOSU_INDIRME_HATASI, RAPOR_KOSU_LISTE_HATASI, RAPOR_ONIZLEME_HATASI,
     RAPOR_SABLON_KAYIT_HATASI, RAPOR_SABLON_LISTE_HATASI, RAPOR_SABLON_SILME_HATASI, RaporApiError,
-    type Katalog, type OnizlemeCevabi, type RaporKosuListesi, type RaporKosusu, type RaporSablonu, type RaporTanimi,
+    type AsistanEylemi, type Katalog, type OnizlemeCevabi, type RaporKosuListesi, type RaporKosusu, type RaporSablonu,
+    type RaporTanimi,
 } from "@/lib/reports";
+import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi } from "@/lib/reportsChat";
 
 const VARSAYILAN_SAYFA_BOYU = 50;
 const KOSU_SAYFA_BOYU = 50;
@@ -65,8 +70,9 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 /**
  * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor" (oluşturucu +
  * önizleme + şablon çubuğu + indirme, G133/G134), "Şablonlar" (liste tablosu), "İndirme geçmişi"
- * (sunucu sayfalı koşular). Asistan (G135) bu iskelete eklenir.
- * Sözleşme: docs/plan/raporlama-plani-2026-09-06.md §2 (lib/reports.ts).
+ * (sunucu sayfalı koşular). Asistan (G135): başlıktaki "Asistan" düğmesi yalnız `rapor_asistani`
+ * anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula` ile oluşturucuya köprüler.
+ * Sözleşme: docs/plan/raporlama-plani-2026-09-06.md §2 (lib/reports.ts, lib/reportsChat.ts).
  */
 const ReportsPage = () => {
     useSetPageTitle("Raporlar", ["Raporlar"]);
@@ -122,6 +128,13 @@ const ReportsPage = () => {
     const [kosuSurumu, setKosuSurumu] = useState(0);
     const kosuReqRef = useRef(0);
 
+    // ---- Asistan (G135) ----
+    // Anahtar kapısı (K8): null = henüz okunmadı (düğme gizli), false = kapalı (gizli), true = görünür.
+    const [asistanAnahtari, setAsistanAnahtari] = useState<boolean | null>(null);
+    const [asistanAcik, setAsistanAcik] = useState(false);
+    // `/chat` 409 döndü: anahtar bu oturumda kapatılmış — düğme pasif + ipucu, panelde şerit.
+    const [asistan409, setAsistan409] = useState(false);
+
     const katalogYukle = useCallback(async () => {
         setKatalogYukleniyor(true);
         try {
@@ -164,6 +177,16 @@ const ReportsPage = () => {
     useEffect(() => {
         void sablonlariYukle();
     }, [sablonlariYukle]);
+    // Anahtar üçüncü istek: okunamazsa sessizce kapalı sayılır (toast yok; manuel akış etkilenmez).
+    useEffect(() => {
+        let iptal = false;
+        void raporAsistaniAcikMi().then(acik => {
+            if (!iptal) setAsistanAnahtari(acik);
+        });
+        return () => {
+            iptal = true;
+        };
+    }, []);
 
     const kosulariYukle = useCallback(async (offset: number) => {
         const reqId = ++kosuReqRef.current;
@@ -378,6 +401,58 @@ const ReportsPage = () => {
         setKosuSurumu(v => v + 1);
     };
 
+    // ---- Asistan köprüsü (G135) ----
+    /**
+     * Asistan tanımını oluşturucuya koyar (onay sorulmaz — kullanıcı "uygula"ya bastı ya da
+     * asistan `eylem` döndürdü); şablon seçimi düşer, önizleme varsa bayat rozeti kendiliğinden çıkar.
+     * `eylem`: `onizle` → mevcut önizleme yolu; `indir_*` → `/export` + `kaynak:"asistan"` (K7, tek log yolu).
+     * true = tanım uygulandı (eylem başarısız olsa bile); false = kaynak katalogda yok, hiçbir şey değişmedi.
+     */
+    const asistanTanimiUygula = useCallback(async (hedef: RaporTanimi, eylem: AsistanEylemi | null): Promise<boolean> => {
+        const hedefKaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === hedef.veri_kaynagi);
+        if (!katalog || !hedefKaynak) {
+            toast.error("Asistan tanımı uygulanamadı", { description: `Veri kaynağı katalogda yok: ${hedef.veri_kaynagi}` });
+            return false;
+        }
+        setDurum(tanimdanDurum(hedef));
+        setSeciliSablonId(null);
+        if (tab !== "rapor") sekmeyeGit("rapor");
+        if (!eylem) {
+            toast.success("Asistan tanımı oluşturucuya uygulandı");
+            return true;
+        }
+        if (!tanimGecerliMi(hedef, hedefKaynak)) {
+            toast.error("Asistan tanımı eksik", {
+                description: "Tanım oluşturucuya kondu ama eksik/geçersiz — düzeltip Önizle'ye basın.",
+            });
+            return true;
+        }
+        if (eylem === "onizle") {
+            void onizlemeAl(hedef, 1);
+            return true;
+        }
+        const format = eylem === "indir_xlsx" ? "xlsx" : "csv";
+        try {
+            const sonuc = await exportReport(hedef, format, null, "asistan");
+            dosyayiIndir(sonuc);
+            toast.success(`İndirildi: ${sonuc.dosyaAdi}`);
+            setKosuSurumu(v => v + 1);
+        } catch (err) {
+            console.error(err);
+            const mesaj = err instanceof Error ? err.message : RAPOR_EXPORT_HATASI;
+            if (err instanceof RaporApiError && err.status === 413) {
+                toast.error("Rapor satır tavanını aşıyor", { description: mesaj });
+            } else {
+                toast.error("Rapor indirilemedi", { description: mesaj });
+            }
+        }
+        return true;
+    }, [katalog, tab, sekmeyeGit, onizlemeAl]);
+
+    const onAsistanKapali = useCallback(() => setAsistan409(true), []);
+
+    const asistanDugmesiGorunur = asistanAnahtari === true;
+
     const raporSekmesi = katalogHatasi ? (
         <DataErrorBanner description={katalogHatasi} onRetry={katalogYukle} isRetrying={katalogYukleniyor} />
     ) : !katalog ? (
@@ -451,6 +526,19 @@ const ReportsPage = () => {
                         Veri kaynağı ve kolonları seçin, filtreleyin, sunucudan önizleyin; şablon olarak kaydedin, Excel/CSV indirin. Test aşaması — yalnız yöneticiler.
                     </p>
                 </div>
+                {asistanDugmesiGorunur && (
+                    <FlowButton
+                        variant={asistanAcik ? "primary" : "secondary"}
+                        size="sm"
+                        onClick={() => setAsistanAcik(v => !v)}
+                        disabled={asistan409}
+                        title={asistan409 ? ASISTAN_KAPALI_MESAJI : "Rapor asistanı — isteğinizi yazın, tanımı oluşturucuya uygulayın"}
+                        className="shrink-0"
+                    >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Asistan
+                    </FlowButton>
+                )}
             </div>
 
             <Tabs value={tab} onValueChange={v => sekmeyeGit(resolveTab(v))} className="w-full">
@@ -505,6 +593,16 @@ const ReportsPage = () => {
                 baslangic={diyalog?.hedef ? { ad: diyalog.hedef.ad, aciklama: diyalog.hedef.aciklama, paylasimli: diyalog.hedef.paylasimli } : null}
                 onSubmit={diyalogKaydet}
                 kaydediliyor={sablonIsleniyor}
+            />
+
+            <AssistantPanel
+                acik={asistanDugmesiGorunur && asistanAcik}
+                onKapat={() => setAsistanAcik(false)}
+                katalog={katalog}
+                mevcutTanim={tanimGecerli ? tanim : null}
+                kapali={asistan409}
+                onKapali={onAsistanKapali}
+                onTanimUygula={asistanTanimiUygula}
             />
         </div>
     );
