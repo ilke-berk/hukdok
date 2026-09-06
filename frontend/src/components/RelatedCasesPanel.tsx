@@ -32,6 +32,8 @@ export interface RelatedCase {
     relation_id?: number;
     relation_type: RelationType | string;
     match_reason: string;
+    /** Otomatik/öneri güven puanı (G129: öneride 50 taban + tıbbi olay 15 + aile soyadı 10). */
+    confidence_score?: number | null;
     is_manual: boolean;
     note?: string | null;
 }
@@ -296,8 +298,9 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                         <Badge variant="secondary" className="text-xs px-2">{suggestedList.length}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">
-                        Karşı taraf ve müvekkil adları birebir aynı; aynı tıbbi vaka olabilir. Otomatik
-                        bağlanmadı — "Bağla" kalıcı bağ yazar, "Reddet" bir daha önermez.
+                        Karşı taraf ve müvekkil adları birebir aynı; aynı tıbbi vaka olabilir. Aynı tıbbi
+                        olay ve ortak aile soyadı puanı artırır (en yüksek 75). Otomatik bağlanmadı —
+                        "Bağla" kalıcı bağ yazar, "Reddet" bir daha önermez.
                     </p>
                     <div className="space-y-2.5">
                         {suggestedList.map(rc => (
@@ -375,6 +378,15 @@ const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, o
                             <span className={`w-1.5 h-1.5 rounded-full mr-1 ${st.dot}`} />
                             {rc.status}
                         </Badge>
+                        {onReject && rc.confidence_score != null && (
+                            <span
+                                className="text-[10px] px-2 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                title="Öneri puanı: hasta + doktor 50, aynı tıbbi olay +15, ortak aile soyadı +10"
+                                data-testid="oneri-puan"
+                            >
+                                puan {rc.confidence_score}
+                            </span>
+                        )}
                     </div>
 
                     {/* Esas no + Mahkeme */}

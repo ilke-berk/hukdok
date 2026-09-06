@@ -36,6 +36,14 @@ Sigorta/kurum adları doktor yerine SAYILMAZ — ölçümde AXA üzerinden 4.660
 bilmediği, çoğu TKU'suz kart). Ad karşılaştırması `party_check.normalize_party_key`
 (unvan/aksan/şirket eki yutulur), kelime bazlı tam eşleşme; bulanık eşleşme YOK.
 
+Üçüncü kademe (G129) — `destekleyici_sinyaller`
+------------------------------------------------
+Öneri puanını artırır, öneri ÜRETMEZ: aynı tıbbi olay (+15; `tibbi_olay` ' ; ' çok
+değerli, en az bir ortak değer) ve karşı tarafta ortak aile soyadı (+10; aynı soyadı
+altında iki karttan birden çok kişi — hasta + yakını). Taban 50, tavan 75; öneriler
+puana göre sıralanır, gerekçe metnine "+ aynı tıbbi olay (…)" / "+ ortak aile soyadı
+(…)" eklenir.
+
 Kartlar BİRLEŞTİRİLMEZ. `tracking_no` müvekkil isim bloğu taşıyan ofis dosya
 numarasıdır; tek davada birden çok müvekkil varsa her müvekkilin ayrı ofis dosyası
 olması doğrudur — aynı ölçümde AYNI_DAVA çiftlerinin 149'undan 121'i farklı isim
@@ -62,8 +70,9 @@ from sqlalchemy.orm import Session, selectinload
 
 import models
 from auth_helpers import tenant_filter_clause
-from party_check import _is_corporate, normalize_party_key
+from party_check import _is_corporate, normalize_party_key, normalize_person_name
 from services.judicial_unit import normalize_court
+from services.multi_value import split_values
 
 # ── İlişki türleri ────────────────────────────────────────────────────────────
 # Elle kurulan bağların türleriyle (ICRA_CEZA, ASIL_TEMYIZ, BIRLESEN…) aynı alanı
@@ -80,6 +89,10 @@ ILGILI = "ILGILI"
 # panelde gösterilmez, yalnız "bir daha önerme" kaydıdır.
 ONERI_RED = "ONERI_RED"
 ONERI_PUANI = 50                              # ILGILI'nin (60) altında: onay bekler
+# Üçüncü kademe (G129, 06.09.2026): destekleyici sinyaller öneri puanını artırır,
+# tek başına öneri ÜRETMEZ (hasta + doktor şart). Tavan 75: elle bağın altında kalır.
+TIBBI_OLAY_PUANI = 15                         # iki kart aynı tıbbi olayı taşıyor
+SOYADI_PUANI = 10                             # karşı tarafta ortak aile soyadı (hasta yakınları)
 
 # Güven puanı: panelde sıralama içindir, olasılık DEĞİLDİR. AYNI_DAVA en tepede
 # durmalı — kullanıcının ilk görmesi gereken "bu aslında tek dava" uyarısıdır.
@@ -445,6 +458,54 @@ def _kisi_kumeleri(parties: Sequence[Any]) -> Tuple[Dict[str, str], Dict[str, st
     return hasta, doktor
 
 
+def _tibbi_olay_haritasi(kart: Any) -> Dict[str, str]:
+    """{karşılaştırma anahtarı: kayıttaki yazım} — `tibbi_olay` ' ; ' ile çok değerli."""
+    return {deger.casefold(): deger for deger in split_values(getattr(kart, "tibbi_olay", None))}
+
+
+def _soyadi_haritasi(parties: Sequence[Any]) -> Dict[str, Set[str]]:
+    """Karşı taraftaki KİŞİLERİN soyadı → kişi anahtarları (aile kümesi için)."""
+    harita: Dict[str, Set[str]] = {}
+    for p in parties:
+        if getattr(p, "party_type", None) != "COUNTER":
+            continue
+        ad = getattr(p, "name", None) or ""
+        anahtar = kisi_anahtari(ad)
+        if not anahtar:
+            continue
+        kelimeler = normalize_person_name(ad).split()
+        if kelimeler and len(kelimeler[-1]) >= 3:
+            harita.setdefault(kelimeler[-1], set()).add(anahtar)
+    return harita
+
+
+def destekleyici_sinyaller(kaynak: Any, aday: Any) -> Tuple[int, List[str]]:
+    """Üçüncü kademe (G129): (ek puan, gerekçe parçaları) — saf fonksiyon.
+
+    * Aynı tıbbi olay: iki kartın `tibbi_olay` listeleri en az bir değerde kesişiyor.
+    * Aile soyadı: karşı tarafta ortak bir soyadı altında iki karttan toplanınca
+      BİRDEN ÇOK kişi var (hasta + yakını) — tek kişinin kendi soyadı sinyal
+      sayılmaz, o zaten hasta eşleşmesinin kendisidir.
+    """
+    puan = 0
+    parcalar: List[str] = []
+    kaynak_olay = _tibbi_olay_haritasi(kaynak)
+    ortak_olay = sorted(set(kaynak_olay) & set(_tibbi_olay_haritasi(aday)))
+    if ortak_olay:
+        puan += TIBBI_OLAY_PUANI
+        parcalar.append("aynı tıbbi olay (" + ", ".join(kaynak_olay[k] for k in ortak_olay) + ")")
+    kaynak_soyad = _soyadi_haritasi(getattr(kaynak, "parties", None) or [])
+    aday_soyad = _soyadi_haritasi(getattr(aday, "parties", None) or [])
+    aile = sorted(
+        soyad for soyad in set(kaynak_soyad) & set(aday_soyad)
+        if len(kaynak_soyad[soyad] | aday_soyad[soyad]) >= 2
+    )
+    if aile:
+        puan += SOYADI_PUANI
+        parcalar.append("ortak aile soyadı (" + ", ".join(s.title() for s in aile) + ")")
+    return puan, parcalar
+
+
 def onerileri_bul(db: Session, case: Any, tenant_id: str,
                   haric_idler: Optional[Set[int]] = None) -> List[Tuple[Any, str, str, int]]:
     """Aynı hasta + aynı doktor taşıyan kartlar: (kart, tür, gerekçe, puan).
@@ -497,8 +558,10 @@ def onerileri_bul(db: Session, case: Any, tenant_id: str,
         tur = siniflandir(kaynak_ozet, kart_ozeti(kart))
         hasta_adlari = ", ".join(hasta[a] for a in sorted(ortak_hasta))
         doktor_adlari = ", ".join(doktor[a] for a in sorted(ortak_doktor))
-        gerekce = (f"Aynı hasta ({hasta_adlari}) + aynı doktor ({doktor_adlari}) — "
-                   "aynı tıbbi vaka olabilir, onay bekler")
-        sonuc.append((kart, tur, gerekce, ONERI_PUANI))
-    sonuc.sort(key=lambda satir: satir[0].id)
+        ek_puan, ekler = destekleyici_sinyaller(case, kart)
+        gerekce = (f"Aynı hasta ({hasta_adlari}) + aynı doktor ({doktor_adlari})"
+                   + "".join(f" + {ek}" for ek in ekler)
+                   + " — aynı tıbbi vaka olabilir, onay bekler")
+        sonuc.append((kart, tur, gerekce, ONERI_PUANI + ek_puan))
+    sonuc.sort(key=lambda satir: (-satir[3], satir[0].id))
     return sonuc[:AZAMI_ILISKI]

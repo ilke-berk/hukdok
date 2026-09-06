@@ -354,8 +354,13 @@ tür ikizi ve YENİ **hasar dosya numarası** (`case_foys.hasar_no` + `cases.has
 yok; route `suggested` listesinde döner, panelde "Öneri: aynı hasta ve doktor" bölümü,
 rozete sayılmaz. "Bağla" mevcut elle bağ ucuna yazar; "Reddet"
 (`POST /api/cases/{id}/relations/reject`) `case_relations`a `ONERI_RED` satırı düşer —
-panelde görünmez, bir daha önerilmez. (3) Destekleyici sinyaller (tıbbi olay/zarar, aile
-soyadı, tarih yakınlığı) henüz kullanılmıyor. Testler `backend/tests/test_g128_hasar_ve_oneri.py`,
+panelde görünmez, bir daha önerilmez. (3) **Destekleyici sinyaller (G129, 06.09.2026)** —
+`destekleyici_sinyaller`: aynı tıbbi olay (+15; `tibbi_olay` çok değerli, en az bir ortak
+değer) ve karşı tarafta ortak aile soyadı (+10; aynı soyadı altında iki karttan birden çok
+kişi, tek kişinin kendi soyadı sayılmaz). Öneri üretmez, puanı artırır (taban 50, tavan 75),
+öneriler puana göre sıralanır, panelde "puan N" rozeti; gerekçeye "+ aynı tıbbi olay (…)" /
+"+ ortak aile soyadı (…)" eklenir. Tarih yakınlığı ve hastada oluşan zarar bilinçli dışarıda
+(ölçülmeden puan yok). Testler `backend/tests/test_g128_hasar_ve_oneri.py`,
 `frontend/src/components/RelatedCasesPanel.test.tsx`.
 
 Dropdown yapılmayanlar (bilinçli): kimlikler, tarihler, tutarlar, taraf adları, esas

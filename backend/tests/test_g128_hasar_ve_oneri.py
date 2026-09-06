@@ -100,7 +100,8 @@ def test_oneri_ayni_hasta_ve_doktor_bulur_sigorta_uzerinden_bulmaz(oturum):
     assert turler[ayni_vaka.id] == ilis.ICRA_PARALEL and turler[sigortali_doktor.id] == ilis.ADLI_IDARI_PARALEL
     gerekce = next(g for k, _, g, _ in sonuc if k.id == ayni_vaka.id)
     assert "Semra Kurt" in gerekce and "Oktay Erdener" in gerekce and "onay bekler" in gerekce
-    assert all(p == ilis.ONERI_PUANI for _, _, _, p in sonuc)
+    # kaynak karşı tarafında Semra + Murat Kurt: aile soyadı sinyali (+10) her adayda
+    assert all(p == ilis.ONERI_PUANI + ilis.SOYADI_PUANI for _, _, _, p in sonuc)
 
 
 def test_oneri_haric_tutulanlari_ve_reddedileni_atlar(oturum):
@@ -121,6 +122,54 @@ def test_oneri_hasta_ya_da_doktor_yoksa_bos(oturum):
     _kart(oturum, "S3.AXA........0010.HUKUK.00000", file_type="Hukuk",
           muvekkil=("Axa Sigorta A.Ş.",), karsi=("Semra Kurt",))
     assert ilis.onerileri_bul(oturum, yalniz_sigorta, TENANT) == []
+
+
+# ── Üçüncü kademe (G129): tıbbi olay + aile soyadı puanı ──────────────────
+
+def _ozet_kart(**alanlar):
+    class K:
+        pass
+    k = K()
+    k.tibbi_olay = alanlar.get("tibbi_olay")
+    k.parties = [type("P", (), {"party_type": t, "name": n})() for t, n in alanlar.get("parties", [])]
+    return k
+
+
+def test_destekleyici_sinyaller_tibbi_olay_ve_aile_soyadi():
+    kaynak = _ozet_kart(tibbi_olay="Omuz Distosisi ; Asfiksik Doğum",
+                        parties=[("COUNTER", "Semra Kurt"), ("COUNTER", "Murat Kurt")])
+    aday = _ozet_kart(tibbi_olay="asfiksik doğum", parties=[("COUNTER", "Semra Kurt")])
+    puan, ekler = ilis.destekleyici_sinyaller(kaynak, aday)
+    assert puan == ilis.TIBBI_OLAY_PUANI + ilis.SOYADI_PUANI
+    assert ekler == ["aynı tıbbi olay (Asfiksik Doğum)", "ortak aile soyadı (Kurt)"]
+
+
+def test_tek_kisinin_soyadi_aile_sinyali_degildir():
+    """Hasta eşleşmesinin kendisi soyadı sinyali sayılmaz: iki kartta da yalnız
+    'Semra Kurt' varsa aile kümesi yok, puan 0."""
+    kaynak = _ozet_kart(parties=[("COUNTER", "Semra Kurt")])
+    aday = _ozet_kart(parties=[("COUNTER", "Semra Kurt")])
+    assert ilis.destekleyici_sinyaller(kaynak, aday) == (0, [])
+    # kurum karşı taraf soyadı üretmez
+    kurum = _ozet_kart(parties=[("COUNTER", "Sağlık Bakanlığı")])
+    assert ilis.destekleyici_sinyaller(kurum, kurum) == (0, [])
+
+
+def test_ucuncu_kademe_puani_artirir_ve_siralar_ama_tek_basina_oneri_uretmez(oturum):
+    kaynak = _kart(oturum, "A.1", file_type="Hukuk", tibbi_olay="Omuz Distosisi",
+                   muvekkil=("Oktay Erdener",), karsi=("Semra Kurt",))
+    zayif = _kart(oturum, "B.1", file_type="İcra", muvekkil=("Oktay Erdener",), karsi=("Semra Kurt",))
+    guclu = _kart(oturum, "C.1", file_type="Ceza", tibbi_olay="omuz distosisi ; Kırık",
+                  muvekkil=("Oktay Erdener",), karsi=("Semra Kurt", "Ayşe Kurt"))
+    _kart(oturum, "D.1", file_type="Hukuk", tibbi_olay="Omuz Distosisi",
+          muvekkil=("Oktay Erdener",), karsi=("Ali Veli",))           # olay aynı ama hasta yok → öneri YOK
+
+    sonuc = ilis.onerileri_bul(oturum, kaynak, TENANT)
+
+    assert [(k.id, p) for k, _, _, p in sonuc] == [(guclu.id, 75), (zayif.id, 50)]   # puana göre sıralı
+    gerekce = sonuc[0][2]
+    assert "+ aynı tıbbi olay (Omuz Distosisi)" in gerekce and "+ ortak aile soyadı (Kurt)" in gerekce
+    assert "+" not in sonuc[1][2].split("—")[0].replace("Aynı hasta (Semra Kurt) + aynı doktor (Oktay Erdener)", "")
 
 
 # ── Route: reddet + suggested ─────────────────────────────────────────────

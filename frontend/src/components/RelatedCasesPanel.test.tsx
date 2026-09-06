@@ -114,9 +114,17 @@ describe("RelatedCasesPanel — otomatik ilişki katmanı", () => {
         file_type: "İcra",
         parties: [{ name: "Semra Kurt", role: "Borçlu" }],
         relation_type: "ICRA_PARALEL",
-        match_reason: "Aynı hasta (Semra Kurt) + aynı doktor (Oktay Erdener) — aynı tıbbi vaka olabilir, onay bekler",
+        match_reason: "Aynı hasta (Semra Kurt) + aynı doktor (Oktay Erdener) + aynı tıbbi olay (Omuz Distosisi) — aynı tıbbi vaka olabilir, onay bekler",
+        confidence_score: 65,
         is_manual: false,
     };
+
+    it("öneri satırında puan rozeti var, otomatik satırda yok (G129)", async () => {
+        await renderPanel({ manual: [], automatic: [ayniDava], suggested: [oneri] } as never);
+        const rozetler = container.querySelectorAll("[data-testid='oneri-puan']");
+        expect(rozetler).toHaveLength(1);
+        expect(rozetler[0].textContent).toContain("puan 65");
+    });
 
     it("öneri bölümü ayrı başlıkla çiziliyor, rozete sayılmıyor, Bağla + Reddet var", async () => {
         const sayac = vi.fn();
