@@ -22,16 +22,21 @@ sqlite fabrikasına monkeypatch'ler — `routes/admin.py` deseni).
 Gövde doğrulama BİLİNÇLİ elle: FastAPI'nin varsayılan 422 gövdesi `[{loc,msg,type}]`
 listesidir; sözleşme tek `{"alan","sebep"}` ister (`schemas_rapor.pydantic_hatasini_cevir`).
 
-`/chat` BURADA YOK — G132.
+- `POST /chat` (G132, K6-K8): rapor asistanı NDJSON akışı (plan §2.6,
+  `services/rapor/asistan.sohbet`). Sıra: yönetici (403) → `rapor_asistani`
+  anahtarı (kapalıysa akış açılmadan 409) → gövde (422). Asistan DB'ye
+  dokunmaz; indirme yine `/export` ile (`kaynak: "asistan"`, K7).
 """
 import datetime as dt
+import json
 import logging
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -44,9 +49,10 @@ from dependencies import get_current_tenant
 from routes.config import require_admin
 from schemas_rapor import (
     ExportIstegi, KosuListesi, OnizlemeCevabi, OnizlemeIstegi, RaporDogrulamaHatasi, RaporKosusu, RaporSablonu,
-    SablonIstegi, pydantic_hatasini_cevir,
+    SablonIstegi, SohbetIstegi, pydantic_hatasini_cevir,
 )
-from services.rapor import cikti, kosu_logu, motor, registry
+from services import app_settings
+from services.rapor import asistan, cikti, kosu_logu, motor, registry
 
 logger = logging.getLogger(__name__)
 
@@ -360,3 +366,32 @@ def api_run_download(
         path=str(dosya), media_type=cikti.MEDYA_TURLERI.get(format, "application/octet-stream"),
         filename=dosya_adi, headers={"X-Rapor-Kosu-Id": str(run_id)},
     )
+
+
+# ─── G132: rapor asistanı ────────────────────────────────────────────────────
+
+@router.post("/chat")
+async def api_chat(
+    govde: dict[str, Any] = Body(...),
+    user: dict = Depends(require_admin),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Rapor asistanı — NDJSON akışı (plan §2.6). Anahtar kapalıysa 409 (K8);
+    gövde sınırları (mesaj ≤20, içerik ≤4000, son mesaj `user`) 422."""
+    if not app_settings.rapor_asistani_etkin():
+        raise HTTPException(status_code=409, detail="rapor_asistani kapalı")
+    istek = _dogrula(SohbetIstegi, govde)
+
+    async def akis():
+        try:
+            async for olay in asistan.sohbet(istek.mesajlar, istek.mevcut_tanim, tenant_id):
+                yield json.dumps(olay, ensure_ascii=False, default=str) + "\n"
+        except Exception as e:
+            # Sözleşme dışı beklenmedik istisna (processing.py deseni); asistanın kendi
+            # nihai başarısızlığı `failed` olayıyla yukarıda akar, buraya düşmez.
+            hata_id = str(uuid.uuid4())[:8]
+            logger.error("Rapor asistani akis hatasi [ID: %s]: %s", hata_id, e)
+            yield json.dumps({"status": "error", "message": f"Beklenmedik hata (Kod: {hata_id})"},
+                             ensure_ascii=False) + "\n"
+
+    return StreamingResponse(akis(), media_type="application/x-ndjson")

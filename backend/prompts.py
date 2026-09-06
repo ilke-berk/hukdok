@@ -444,3 +444,82 @@ def get_case_intake_arbiter_instruction() -> str:
         "belirsizliği belirt.",
         "- Yalnızca sana verilen çelişen alanlar için karar döndür.",
     ])
+
+
+def get_rapor_asistani_instruction(
+    katalog_metni: str,
+    bugun: str,
+    mevcut_tanim_json: Optional[str] = None,
+) -> str:
+    """Rapor asistanı sistem talimatı (G132, plan §2.6 / K6-K7).
+
+    `katalog_metni` kayıt defterinden (`services/rapor/asistan.katalog_metni`)
+    üretilir — burada elle kolon listesi YOKTUR; bu modül registry'yi import
+    etmez (prompt katmanı DB/model katmanına bağlanmaz). `bugun` ISO tarih:
+    "bu yıl", "geçen ay" gibi göreli ifadeler buna göre mutlak aralığa çevrilir.
+    `mevcut_tanim_json` verildiyse asistan sıfırdan üretmez, onu değiştirir.
+
+    Kurallar (plan §2.6): yalnız katalog anahtarları; belirsizse SORU sor ve
+    tanim=null; "indir"/"Excel"/"CSV" isteğinde `eylem`; kullanıcıya veri
+    döndürme (asistan satır görmez, K6); Türkçe ve kısa.
+    """
+    sections = [
+        "Sen bir Türk hukuk bürosunun belge/dava yönetim sisteminde RAPOR ASİSTANISIN. "
+        "Kullanıcı doğal dille bir liste/rapor ister; sen bunu aşağıdaki KATALOG ile sınırlı "
+        "bir RAPOR TANIMINA çevirirsin. Veriyi SEN GÖRMEZSİN ve sorgu çalıştırmazsın: "
+        "tanımı sunucu çalıştırır, kullanıcı sonucu ekranda/Excel'de görür.",
+        "",
+        f"Bugünün tarihi: {bugun}.",
+        "",
+        "ÇIKTI (JSON şeması zorunlu):",
+        "- cevap: kullanıcıya gösterilecek KISA Türkçe metin (1-3 cümle): ne hazırladığını "
+        "ya da neyi sorduğunu söyle. Satır/veri UYDURMA; 'şu kadar dava var' gibi sayı verme.",
+        "- tanim: RaporTanimi ya da null. veri_kaynagi + kolonlar (anahtar listesi) + filtreler "
+        "+ siralama (en çok 3).",
+        "- eylem: 'onizle' | 'indir_xlsx' | 'indir_csv' | null. Kullanıcı 'indir', 'Excel', "
+        "'xlsx' derse indir_xlsx; 'CSV' derse indir_csv; yalnız listelemek/görmek isterse onizle. "
+        "tanim null ise eylem de null.",
+        "",
+        "KURALLAR:",
+        "- YALNIZ katalogdaki veri kaynağı ve kolon ANAHTARLARINI kullan (etiketleri değil). "
+        "Katalogda olmayan bir alan istenirse uydurma; cevapta bunun raporlanamadığını söyle ve "
+        "en yakın kolonu öner.",
+        "- Filtre operatörleri kolon TİPİNE göre sınırlıdır (aşağıdaki tablo). Türetilmiş "
+        "kolonlar (işaretli) filtrelenemez ve sıralanamaz; yalnız kolon listesine girer.",
+        "- Filtre değeri daima METİN olarak yazılır: tek değerli op'larda 'deger', "
+        "'in' ve 'between' için 'degerler' (between tam iki öğe: [başlangıç, bitiş]). "
+        "is_null / not_null değer almaz. Tarih ISO biçiminde (YYYY-AA-GG); "
+        "'2025'te açılan' → opening_date between ['2025-01-01','2025-12-31']. "
+        "Mantık kolonunda 'true'/'false'. Para/sayı düz rakam ('150000').",
+        "- Liste tipi kolonda değer, listelenen seçeneklerden biri olmalı (aynen kopyala). "
+        "Kullanıcı seçeneği eşanlamlısıyla söylerse en yakın seçeneği seç.",
+        "- 'boş', 'girilmemiş', 'henüz yok' → is_null; 'dolu', 'girilmiş', 'verilmiş' → not_null.",
+        "- Kolon seçimi: kullanıcı kolon saymadıysa kaynağın varsayılan kolonlarını kullan ve "
+        "isteğinde geçen alanları (filtrelediğin/sıraladığın kolonlar dahil) ekle. "
+        "'avukat adıyla' gibi ifadeler ilgili kolonu listeye ekler.",
+        "- İstek BELİRSİZSE (hangi kaynak, hangi tarih aralığı, hangi durum) tahmin etme: "
+        "tanim=null bırak ve cevapta TEK, net bir soru sor.",
+        "- Mevcut tanım verilmişse SIFIRDAN ÜRETME: kullanıcının istediği değişikliği o "
+        "tanıma uygula (kolon ekle/çıkar, filtre değiştir, sıralama), gerisini koru. "
+        "Kullanıcı yalnız 'indir'/'Excel ver' derse tanımı aynen döndür ve eylemi ver.",
+        "- Sohbet geçmişindeki önceki isteklerini bağlam olarak kullan; en son kullanıcı "
+        "mesajına cevap ver.",
+        "- Türkçe yaz, kısa tut, teknik anahtar adlarını kullanıcıya sayma (etiketleriyle konuş).",
+        "",
+        "TİP → İZİNLİ OPERATÖRLER:",
+        "- metin: eq, ne, contains, in, is_null, not_null",
+        "- liste: eq, ne, in, is_null, not_null",
+        "- tarih: eq, gte, lte, between, is_null, not_null",
+        "- sayi / para: eq, gte, lte, between, is_null, not_null",
+        "- mantik: eq, is_null",
+        "",
+        "KATALOG (kaynak → anahtar · etiket · tip [· seçenekler]):",
+        katalog_metni,
+    ]
+    if mevcut_tanim_json:
+        sections += [
+            "",
+            "MEVCUT TANIM (kullanıcının ekranındaki; değişiklik istiyorsa bunu güncelle):",
+            mevcut_tanim_json,
+        ]
+    return "\n".join(sections)

@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     rapor_cikti_dizini: str = ""
     # Çıktı saklama süresi (gün); dolunca dosya silinir, koşu satırı kalır (410).
     rapor_cikti_saklama_gun: int = 30
+    # Rapor asistanı Gemini modeli (G132, plan K9). Boşsa GEMINI_INTAKE_MODEL
+    # (`case_intake_analyzer.get_intake_model`); devre kesici model-başına
+    # olduğundan asistan intake motorundan ayrı bir modele alınabilir.
+    gemini_rapor_model: str = ""
 
     @field_validator("*", mode="before")
     @classmethod

@@ -185,6 +185,94 @@ class KosuListesi(BaseModel):
     kosular: list[RaporKosusu]
 
 
+# ─── G132: rapor asistanı (plan §2.6, K6-K7) ─────────────────────────────────
+#
+# İki ayrı şema ailesi vardır ve bu BİLİNÇLİDİR:
+#
+# * `SohbetIstegi` — istemciden gelen `/chat` gövdesi (sınırlar: mesaj ≤20,
+#   içerik ≤4000; `extra="forbid"`). `mevcut_tanim` gerçek `RaporTanimi`dir.
+# * `RaporAsistanCevabi` + `AsistanTanimi` + `AsistanFiltre` — Gemini'ye
+#   `response_schema` olarak verilen aile. `RaporTanimi` BURADA KULLANILAMAZ:
+#   (a) `extra="forbid"` → `additionalProperties:false` üretir; google-genai
+#   2.11.0 Developer API modunda `additionalProperties`'i desteklemez
+#   (`_raise_for_unsupported_mldev_properties` truthy değeri reddeder, `false`
+#   süzülmeden API'ye gider — kabulü SDK garantisi dışında); (b) `Filtre.deger:
+#   Any` tipsiz özellik üretir. Bu yüzden asistan filtresi değeri METİN taşır
+#   (`deger`) ya da metin listesi (`degerler`, `in`/`between`); sunucu
+#   (`services/rapor/asistan.tanimi_dogrula`) kolon tipine göre çevirir ve
+#   sonucu AYNI `RaporTanimi` + `motor.tanimi_dogrula` yolundan geçirir (K6).
+#   Geçmeyen tanım istemciye hiçbir zaman `tanim` olarak gitmez.
+
+SOHBET_MESAJ_MAX = 20
+SOHBET_ICERIK_MAX = 4000
+
+SohbetRolu = Literal["user", "assistant"]
+AsistanEylemi = Literal["onizle", "indir_xlsx", "indir_csv"]
+
+
+class SohbetMesaji(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rol: SohbetRolu
+    icerik: str = Field(min_length=1, max_length=SOHBET_ICERIK_MAX)
+
+
+class SohbetIstegi(BaseModel):
+    """`POST /api/reports/chat` gövdesi (plan §2.4). Son mesaj kullanıcıya ait
+    olmalı — Gemini `contents` dizisi kullanıcı sırasıyla biter."""
+    model_config = ConfigDict(extra="forbid")
+
+    mesajlar: list[SohbetMesaji] = Field(min_length=1, max_length=SOHBET_MESAJ_MAX)
+    mevcut_tanim: Optional[RaporTanimi] = None
+
+    @field_validator("mesajlar")
+    @classmethod
+    def _son_mesaj_kullanicinin(cls, v: list[SohbetMesaji]) -> list[SohbetMesaji]:
+        if v and v[-1].rol != "user":
+            raise ValueError("son mesaj kullanıcıya ait olmalı (rol=user)")
+        return v
+
+
+class AsistanFiltre(BaseModel):
+    """Gemini'nin ürettiği filtre: değer METİN (tek) ya da metin listesi
+    (`in`/`between`); tip çevirisi sunucuda (yukarıdaki şerh)."""
+
+    alan: str
+    op: Op
+    deger: Optional[str] = None
+    degerler: Optional[list[str]] = None
+
+
+class AsistanSiralama(BaseModel):
+    alan: str
+    yon: Literal["asc", "desc"] = "asc"
+
+
+class AsistanTanimi(BaseModel):
+    veri_kaynagi: str
+    kolonlar: list[str]
+    filtreler: list[AsistanFiltre] = Field(default_factory=list)
+    siralama: list[AsistanSiralama] = Field(default_factory=list)
+
+
+class RaporAsistanCevabi(BaseModel):
+    """Gemini `response_schema` (plan §2.6): kısa Türkçe `cevap`, isteğe bağlı
+    `tanim` (belirsizlikte null + soru), isteğe bağlı `eylem` (K7)."""
+
+    cevap: str
+    tanim: Optional[AsistanTanimi] = None
+    eylem: Optional[AsistanEylemi] = None
+
+
+class SohbetTamamlandi(BaseModel):
+    """`complete` olayının gövdesi (plan §2.6) — route'un ürettiği son olay."""
+
+    status: Literal["complete"] = "complete"
+    cevap: str
+    tanim: Optional[RaporTanimi] = None
+    eylem: Optional[AsistanEylemi] = None
+
+
 def pydantic_hatasini_cevir(hata: ValidationError) -> RaporDogrulamaHatasi:
     """Pydantic'in ilk hatasını sözleşmedeki `{"alan","sebep"}` biçimine indirger.
 
@@ -201,8 +289,10 @@ def pydantic_hatasini_cevir(hata: ValidationError) -> RaporDogrulamaHatasi:
 
 
 __all__ = [
-    "DEGERSIZ_OPLAR", "ExportFormati", "ExportIstegi", "ExportKaynagi", "FILTRE_MAX", "IN_DEGER_MAX",
-    "KOLON_MAX", "KolonBasligi", "KolonTipi", "KosuListesi", "ONIZLEME_SAYFA_BOYU_MAX", "Op", "OnizlemeCevabi",
-    "OnizlemeIstegi", "Filtre", "RaporDogrulamaHatasi", "RaporKosusu", "RaporSablonu", "RaporTanimi",
-    "SIRALAMA_MAX", "SablonIstegi", "Siralama", "TIP_OPLARI", "pydantic_hatasini_cevir",
+    "AsistanEylemi", "AsistanFiltre", "AsistanSiralama", "AsistanTanimi", "DEGERSIZ_OPLAR", "ExportFormati",
+    "ExportIstegi", "ExportKaynagi", "FILTRE_MAX", "IN_DEGER_MAX", "KOLON_MAX", "KolonBasligi", "KolonTipi",
+    "KosuListesi", "ONIZLEME_SAYFA_BOYU_MAX", "Op", "OnizlemeCevabi", "OnizlemeIstegi", "Filtre",
+    "RaporAsistanCevabi", "RaporDogrulamaHatasi", "RaporKosusu", "RaporSablonu", "RaporTanimi", "SIRALAMA_MAX",
+    "SOHBET_ICERIK_MAX", "SOHBET_MESAJ_MAX", "SablonIstegi", "Siralama", "SohbetIstegi", "SohbetMesaji",
+    "SohbetRolu", "SohbetTamamlandi", "TIP_OPLARI", "pydantic_hatasini_cevir",
 ]

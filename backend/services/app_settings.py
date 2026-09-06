@@ -37,6 +37,13 @@ logger = logging.getLogger(__name__)
 # KAPALI. Kapalıyken elle yükleme ucu çalışmaya devam eder (yedek giriş yolu),
 # "Şimdi tara" ve gece job'ı (G109) hiçbir şey yapmaz, gece otomatik uygulama
 # YAPILMAZ; elle "Uygula" anahtardan bağımsızdır (yönetici bilinçli tıklıyor).
+#
+# rapor_asistani (G132, plan K8): rapor ekranındaki AI sohbet paneli — doğal
+# dil isteğini Gemini ile rapor tanımına çevirir (`services/rapor/asistan.py`).
+# Varsayılan KAPALI (Gemini maliyetli). Kapalıyken `POST /api/reports/chat`
+# 409 döner ve panel gizlenir; manuel rapor (katalog/önizleme/export/şablon)
+# anahtardan BAĞIMSIZ çalışmaya devam eder. Kullanıcı isterse varsayılan
+# AÇIK yapılır — tek satır (`"default": True`).
 SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
     "client_notice_enabled": {
         "default": False,
@@ -56,9 +63,20 @@ SETTINGS_REGISTRY: dict[str, dict[str, Any]] = {
             "yapılmaz; elle yükleme ve elle \"Uygula\" çalışmaya devam eder."
         ),
     },
+    "rapor_asistani": {
+        "default": False,
+        "label": "Rapor asistanı (AI)",
+        "description": (
+            "Rapor ekranındaki sohbet paneli: doğal dille yazılan istek Gemini ile rapor "
+            "tanımına çevrilir (asistan veriyi görmez, yalnız tanım üretir; her istek Gemini "
+            "çağrısıdır). Kapalıyken panel gizlenir; manuel rapor tanımlama, önizleme, "
+            "Excel/CSV indirme ve şablonlar çalışmaya devam eder."
+        ),
+    },
 }
 
 VERI_TESLIM_OTOMASYONU_KEY = "veri_teslim_otomasyonu"
+RAPOR_ASISTANI_KEY = "rapor_asistani"
 
 
 def _parse_bool(raw: Optional[str], default: bool) -> bool:
@@ -155,3 +173,8 @@ def client_notice_enabled(db: Optional[Session] = None) -> bool:
 def veri_teslim_otomasyonu_etkin(db: Optional[Session] = None) -> bool:
     """Veri teslim otomasyonu (SharePoint gözcüsü + gece uygulaması) açık mı? (G108)"""
     return get_setting_bool(VERI_TESLIM_OTOMASYONU_KEY, db=db)
+
+
+def rapor_asistani_etkin(db: Optional[Session] = None) -> bool:
+    """Rapor asistanı (Gemini sohbet paneli, `/api/reports/chat`) açık mı? (G132, K8)"""
+    return get_setting_bool(RAPOR_ASISTANI_KEY, db=db)
