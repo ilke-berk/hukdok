@@ -1,8 +1,8 @@
 // Raporlama modülü — tipler + API fonksiyonları (G133).
 // Backend sözleşmesi: backend/schemas_rapor.py + docs/plan/raporlama-plani-2026-09-06.md §2.
 // Sözleşme DONDURULMUŞTUR: alan adları ve op listeleri plandaki JSON'la birebir; bir
-// değişiklik gerekirse ÖNCE plan dosyası güncellenir. Şablon/koşu/chat FONKSİYONLARI
-// G134/G135'te bu dosyaya eklenir — tipleri şimdiden burada (tek okuma turu).
+// değişiklik gerekirse ÖNCE plan dosyası güncellenir. Şablon/export/koşu fonksiyonları
+// G134'te eklendi (dosyanın sonu); chat fonksiyonları G135'te eklenir — tipleri burada.
 import { apiClient } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -411,3 +411,184 @@ export async function previewReport(tanim: RaporTanimi, sayfa: number, sayfaBoyu
     if (!res.ok) throw await raporHatasiCevir(res, RAPOR_ONIZLEME_HATASI);
     return (await res.json()) as OnizlemeCevabi;
 }
+
+// ---------------------------------------------------------------------------
+// §2.4 Şablonlar (G134)
+// ---------------------------------------------------------------------------
+
+export const RAPOR_SABLON_LISTE_HATASI = "Rapor şablonları yüklenemedi.";
+export const RAPOR_SABLON_KAYIT_HATASI = "Şablon kaydedilemedi.";
+export const RAPOR_SABLON_SILME_HATASI = "Şablon silinemedi.";
+export const RAPOR_SABLON_YETKI_HATASI = "Bu şablon size ait değil; yalnız sahibi güncelleyebilir/silebilir.";
+
+/** `GET /api/reports/templates` — kendi + paylaşımlılar (silinmişler hariç). */
+export async function listTemplates(): Promise<RaporSablonu[]> {
+    const res = await apiClient.fetch("/api/reports/templates");
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_SABLON_LISTE_HATASI);
+    return (await res.json()) as RaporSablonu[];
+}
+
+/** `POST /api/reports/templates` — gövde `{ad, aciklama, tanim, paylasimli}` (§2.4), 201. */
+export async function createTemplate(govde: RaporSablonuGovdesi): Promise<RaporSablonu> {
+    const res = await apiClient.fetch("/api/reports/templates", {
+        method: "POST",
+        body: JSON.stringify(govde),
+    });
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_SABLON_KAYIT_HATASI);
+    return (await res.json()) as RaporSablonu;
+}
+
+/** `PUT /api/reports/templates/{id}` — TAM gövde (kısmi değil); başkasının şablonu → 403. */
+export async function updateTemplate(id: number, govde: RaporSablonuGovdesi): Promise<RaporSablonu> {
+    const res = await apiClient.fetch(`/api/reports/templates/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(govde),
+    });
+    if (res.status === 403) throw new RaporApiError(RAPOR_SABLON_YETKI_HATASI, 403);
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_SABLON_KAYIT_HATASI);
+    return (await res.json()) as RaporSablonu;
+}
+
+/** `DELETE /api/reports/templates/{id}` — 204 (soft); başkasının şablonu → 403. */
+export async function deleteTemplate(id: number): Promise<void> {
+    const res = await apiClient.fetch(`/api/reports/templates/${id}`, { method: "DELETE" });
+    if (res.status === 403) throw new RaporApiError(RAPOR_SABLON_YETKI_HATASI, 403);
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_SABLON_SILME_HATASI);
+}
+
+/**
+ * Şablonun sahibi mi? `olusturan` sunucuda küçük harfli e-postadır (`require_admin`
+ * `preferred_username|upn|email` üçlüsünü lower'lar); istemci MSAL `username`'i aynı
+ * biçime indirger. Sahip değilse Güncelle/Sil UI'da HİÇ gösterilmez (sunucu 403 zaten atar).
+ */
+export function sablonSahibiMi(sablon: Pick<RaporSablonu, "olusturan">, kullanici: string | undefined | null): boolean {
+    if (!kullanici) return false;
+    return sablon.olusturan.trim().toLowerCase() === kullanici.trim().toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// §2.4 Export + koşular (G134)
+// ---------------------------------------------------------------------------
+
+export const RAPOR_EXPORT_HATASI = "Rapor dosyası oluşturulamadı.";
+export const RAPOR_KOSU_LISTE_HATASI = "İndirme geçmişi yüklenemedi.";
+export const RAPOR_KOSU_INDIRME_HATASI = "Saklanan çıktı indirilemedi.";
+export const RAPOR_KOSU_SURESI_DOLDU = "Çıktının saklama süresi dolmuş; raporu yeniden oluşturup indirin.";
+
+export interface IndirilenDosya {
+    blob: Blob;
+    /** Sunucunun `Content-Disposition`'ından; istemci ad UYDURMAZ. */
+    dosyaAdi: string;
+}
+
+export interface ExportSonucu extends IndirilenDosya {
+    /** `X-Rapor-Kosu-Id` başlığı (İndirme geçmişi satırı); başlık yoksa null. */
+    kosuId: number | null;
+}
+
+/**
+ * `Content-Disposition: attachment; filename="..."` → dosya adı (`AdminPage.tsx` handleExport
+ * deseni). RFC 5987 `filename*=UTF-8''...` varsa o yeğlenir (Türkçe ad güvenli).
+ */
+export function dispositionDosyaAdi(disposition: string | null | undefined): string | null {
+    if (!disposition) return null;
+    const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+    if (utf8) {
+        try {
+            return decodeURIComponent(utf8.trim());
+        } catch {
+            // düşer: düz filename'e bak
+        }
+    }
+    const duz = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+    return duz ? duz.trim() : null;
+}
+
+function yedekDosyaAdi(onek: string, format: RaporFormati): string {
+    // Sunucu başlığı yoksa (proxy sıyırmış olabilir) uzantı en azından doğru olsun;
+    // normal yolda BU AD HİÇ kullanılmaz (test: başlık kazanır).
+    return `${onek}.${format}`;
+}
+
+/**
+ * `POST /api/reports/export` — gövde `{tanim, format, sablon_id, kaynak}` (§2.4 birebir).
+ * 413 `{"detail":{"sebep":"satir_limiti","toplam","limit"}}` → okunur `RaporApiError`
+ * (`raporHatasiCevir`). Dosya adı `Content-Disposition`'dan, koşu id'si `X-Rapor-Kosu-Id`'den.
+ */
+export async function exportReport(
+    tanim: RaporTanimi,
+    format: RaporFormati,
+    sablonId: number | null,
+    kaynak: RaporKaynagi,
+): Promise<ExportSonucu> {
+    const res = await apiClient.fetch("/api/reports/export", {
+        method: "POST",
+        body: JSON.stringify({ tanim, format, sablon_id: sablonId, kaynak }),
+    });
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_EXPORT_HATASI);
+    const blob = await res.blob();
+    const dosyaAdi = dispositionDosyaAdi(res.headers.get("Content-Disposition")) ?? yedekDosyaAdi("hukdok-rapor", format);
+    const kosuHam = res.headers.get("X-Rapor-Kosu-Id");
+    const kosuId = kosuHam !== null && /^\d+$/.test(kosuHam.trim()) ? Number(kosuHam.trim()) : null;
+    return { blob, dosyaAdi, kosuId };
+}
+
+/** `GET /api/reports/runs?limit=&offset=` — tüm yöneticilerin koşuları, yeni→eski. */
+export async function listRuns(limit: number, offset: number): Promise<RaporKosuListesi> {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const res = await apiClient.fetch(`/api/reports/runs?${q.toString()}`);
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_KOSU_LISTE_HATASI);
+    return (await res.json()) as RaporKosuListesi;
+}
+
+/** `GET /api/reports/runs/{id}/download` — saklanan dosya; temizlenmişse 410 → okunur mesaj. */
+export async function downloadRun(id: number): Promise<IndirilenDosya> {
+    const res = await apiClient.fetch(`/api/reports/runs/${id}/download`);
+    if (res.status === 410) throw new RaporApiError(RAPOR_KOSU_SURESI_DOLDU, 410);
+    if (!res.ok) throw await raporHatasiCevir(res, RAPOR_KOSU_INDIRME_HATASI);
+    const blob = await res.blob();
+    const dosyaAdi = dispositionDosyaAdi(res.headers.get("Content-Disposition")) ?? yedekDosyaAdi(`hukdok-rapor-${id}`, "xlsx");
+    return { blob, dosyaAdi };
+}
+
+/**
+ * Blob'u tarayıcıya indirtir (`<a download>`; `AdminPage.tsx` handleExport kalıbı).
+ * Ad daima sunucudan gelen `dosyaAdi`dir.
+ */
+export function dosyayiIndir(dosya: IndirilenDosya): void {
+    const url = URL.createObjectURL(dosya.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = dosya.dosyaAdi;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Biçimlendirme (RunsTable / TemplateBar)
+// ---------------------------------------------------------------------------
+
+const iki = (n: number) => String(n).padStart(2, "0");
+
+/** ISO datetime → yerel `dd.MM.yyyy HH:mm`; parse edilemezse ham metin. */
+export function tarihSaatBicimle(iso: string | null | undefined): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return `${iki(d.getDate())}.${iki(d.getMonth() + 1)}.${d.getFullYear()} ${iki(d.getHours())}:${iki(d.getMinutes())}`;
+}
+
+/** Bayt → "12,3 KB" / "1,2 MB" (tr-TR ondalık); null → "—". */
+export function boyutBicimle(bayt: number | null | undefined): string {
+    if (bayt === null || bayt === undefined || !Number.isFinite(bayt)) return "—";
+    if (bayt < 1024) return `${bayt} B`;
+    const kb = bayt / 1024;
+    if (kb < 1024) return `${kb.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} KB`;
+    const mb = kb / 1024;
+    return `${mb.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} MB`;
+}
+
+export const FORMAT_ETIKETLERI: Record<RaporFormati, string> = { xlsx: "Excel", csv: "CSV" };
+export const KAYNAK_ETIKETLERI: Record<RaporKaynagi, string> = { manuel: "Manuel", asistan: "Asistan" };

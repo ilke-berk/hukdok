@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Table2 } from "lucide-react";
 import type { OnizlemeCevabi } from "@/lib/reports";
 import { hucreBicimle } from "@/lib/reports";
@@ -13,6 +14,8 @@ type PreviewTableProps = {
     onRetry: () => void;
     onSayfa: (sayfa: number) => void;
     bayat: boolean;
+    /** Araç çubuğunun sağ yuvası — G134 indirme düğmeleri (ExportButtons). */
+    araclar?: ReactNode;
 };
 
 const TH_CLS = "text-left px-4 py-2.5 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold whitespace-nowrap";
@@ -20,9 +23,9 @@ const SAGA_YASLI = new Set(["sayi", "para"]);
 
 /**
  * Önizleme tablosu (sağ sütun): başlıklar katalog etiketiyle, tarih dd.MM.yyyy, para tr-TR,
- * `null` "—"; sayfalayıcı CaseList kalıbı. Araç çubuğu düğmelerini (kaydet/indir) G134 ekler.
+ * `null` "—"; sayfalayıcı CaseList kalıbı. Araç çubuğunun sağ yuvası `araclar` (G134: ExportButtons).
  */
-export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat }: PreviewTableProps) {
+export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat, araclar }: PreviewTableProps) {
     const toplamSayfa = cevap ? Math.ceil(cevap.toplam / cevap.sayfa_boyu) || 1 : 1;
 
     return (
@@ -48,7 +51,10 @@ export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat 
                         </span>
                     )}
                 </div>
-                {yukleniyor && <Loader2 className="w-4 h-4 animate-spin text-[var(--fg-subtle)]" aria-label="Yükleniyor" />}
+                <div className="flex items-center gap-2 shrink-0">
+                    {yukleniyor && <Loader2 className="w-4 h-4 animate-spin text-[var(--fg-subtle)]" aria-label="Yükleniyor" />}
+                    {araclar}
+                </div>
             </div>
 
             {hata ? (
