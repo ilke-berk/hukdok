@@ -87,6 +87,13 @@ index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
 G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
 kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
 
+**Raporlama (G130-G135):** yönetici `/reports`'ta kayıt defterindeki kolon/filtreyle liste kurar →
+`GET /api/reports/catalog` · `POST /preview` (loglanmaz) · `POST /export` (xlsx/csv; `report_runs`
+satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
+SQL YOK (K1: istemci yalnız `services/rapor/registry.py` anahtarlarını gönderir, sorgu Core ile kurulur,
+tenant+soft-delete `kisitlar`dan). AI asistan `POST /chat` (NDJSON) admin anahtarı `rapor_asistani`
+(varsayılan KAPALI) ister; tanımı manuelle AYNI doğrulamadan geçer (K6). Ayrıntı `docs/mimari/raporlama.md`.
+
 **Sürüm izi:** deploy git SHA'sını `APP_VERSION` build arg'ı ile imaja gömer →
 `/healthz` "version" alanı + login rozeti. `/healthz` derindir (DB `SELECT 1`;
 başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
@@ -156,13 +163,18 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
   daha eklersen özet satırı ("N passed") hiç basılmaz.
 - **Log sözleşmesi:** deneme-düzeyi hatalar WARNING, nihai başarısızlık TEK ERROR
   (`analyzer.py::_failed_event` docstring'i). Retry yollarına yeni ERROR ekleme.
+- **Rapor asistanı tanımı doğrulanmadan kullanılmaz:** Gemini'nin döndürdüğü tanım
+  `services/rapor/asistan.tanimi_dogrula` → `RaporTanimi` + `motor.tanimi_dogrula` yolundan
+  geçmeden istemciye `tanim` olarak GİTMEZ (geçmezse `warning` + `tanim=null`); Gemini
+  `response_schema`'sına `RaporTanimi` verilmez (`extra="forbid"` → `additionalProperties`,
+  SDK Developer API'de desteklenmez — `schemas_rapor.py:188-204`).
 
 ## Doküman haritası
 
 | Yol | Ne | Güvenilirlik |
 | --- | --- | --- |
 | `CLAUDE.md` | Bu dosya — giriş noktası | Güncel tutulur |
-| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, dış bağımlılıklar, deploy ve altyapı, kimlik ve token (`kimlik-ve-token.md`) | GÜNCEL — kodla çelişirse doküman düzeltilir |
+| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, veri teslim hattı, raporlama (`raporlama.md`), dış bağımlılıklar, deploy ve altyapı, kimlik ve token (`kimlik-ve-token.md`) | GÜNCEL — kodla çelişirse doküman düzeltilir |
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |

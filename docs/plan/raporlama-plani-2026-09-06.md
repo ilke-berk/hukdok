@@ -1,6 +1,7 @@
 # Raporlama modülü planı — kullanıcı tanımlı listeler, favori şablonlar, indirme logu, AI asistan
 
-**Tarih:** 06.09.2026 · **Karar:** kullanıcı (06.09 sohbeti) · **Durum:** kuyruğa yazıldı (G130-G136), onay bekliyor.
+**Tarih:** 06.09.2026 · **Karar:** kullanıcı (06.09 sohbeti) · **Durum:** **uygulandı — G130-G135**
+(2026-09-06 gece koşusu, main'de; deploy edilmedi), dokümante G136 (`docs/mimari/raporlama.md`).
 **Kapsam kararları (kullanıcı):** test aşamasında yalnız yöneticiler (`require_admin`); çıktı Excel + CSV;
 her indirme "kim, ne zaman, ne" ile loglanır ve çıktının kendisi sistemde saklanır; aynı ekranda AI sohbet
 asistanı doğal dille rapor tanımı üretir (manuel yol her zaman açık kalır).
@@ -8,6 +9,32 @@ asistanı doğal dille rapor tanımı üretir (manuel yol her zaman açık kalı
 > **Bu dosya sözleşme kaynağıdır.** G130-G136 görevleri aşağıdaki JSON şemalarına ve uç adlarına birebir
 > uyar; bir görev sözleşmeyi değiştirmek zorunda kalırsa ÖNCE burayı günceller ve raporunda yazar.
 > Sayılar/yollar koddan doğrulanır (ALTIN KURAL, `CLAUDE.md`).
+
+## 0. Durum ve kanıt (G136 şerhi, 2026-09-06)
+
+Altı görev de TAMAM ve main'de; yaşayan doküman `docs/mimari/raporlama.md` (koddan doğrulanmış uç/env/
+tablo/limit referansları). Kod ile bu sözleşme arasındaki farklar aşağıda §2'nin ilgili yerlerine
+"**Uygulamada değişti**" şerhiyle işlenmiştir; dış sözleşme (uç adları, gövdeler, olaylar) değişmedi,
+farklar ek alan/ek sınır/ek index türündedir.
+
+| Kabul kriteri (plan) | Nasıl kanıtlandı (test dosyası; işçi raporları G130-G135) |
+| --- | --- |
+| K1 serbest SQL yok; bilinmeyen anahtar/op/tip 422 | `backend/tests/test_g130_rapor_temeli.py` (422 yolları, `contains` kaçışı, istemci string'i derlenmiş SQL'e girmez — bağlı parametre) |
+| K2 tenant + soft-delete dört kaynakta | `test_g130_rapor_temeli.py` (başka tenant / `deleted_at` dolu satır listelenmez, 4 kaynak); `test_g131_rapor_export_ve_log.py` (export + `/runs` + download tenant kısıtı) |
+| K3 akışlı export, bellek | `test_g131_rapor_export_ve_log.py` (export `satirlari_akit` iteratörünü tüketir; `write_only`); G131 raporu ölçümü: 50.000 satır xlsx tepe 8,4 MB / csv 2,1 MB (tracemalloc) |
+| K4 yalnız export loglanır; sha256 = indirilen = saklanan; 410 | `test_g131_rapor_export_ve_log.py` (önizleme koşu yazmaz; koşu satırının tüm alanları; sha256 eşitliği; temizlik + 410 + `dosya_mevcut=false`; hata yolunda satır kalır) |
+| K5 şablonlar DB'de, sahiplik 403, paylaşım | `test_g131_rapor_export_ve_log.py` (CRUD + 403 + paylaşımlı görünürlük); `frontend/src/pages/ReportsPage.sablon.test.tsx`, `frontend/src/lib/reports.export.test.ts` |
+| K6 asistan tanımı aynı doğrulamadan geçer; geçersiz tanım istemciye gitmez; DB'ye dokunmaz | `backend/tests/test_g132_rapor_asistani.py` (katalog dışı kolon → `warning` + `tanim=null`; 8 doğrulama yolu; `SessionLocal`/`client.aio` yok bekçileri) |
+| K7 indirme yalnız `/export`, `kaynak:"asistan"` | `frontend/src/pages/ReportsPage.asistan.test.tsx` (`indir_xlsx` → export gövdesi `kaynak:"asistan"`); `test_g131_rapor_export_ve_log.py` (`kaynak=asistan` koşu satırı) |
+| K8 anahtar varsayılan kapalı; 409; panel gizli | `test_g132_rapor_asistani.py` (varsayılan, admin settings listesi, 409 gövde ayrıştırılmadan); `ReportsPage.asistan.test.tsx` (anahtar kapalı → düğme/panel yok, manuel akış çalışır) |
+| K9 model env'i + intake fallback | `test_g132_rapor_asistani.py` (`get_rapor_model` üç kademe) |
+| K10 index ölçülmeden yazılmaz; kısıt `("index",...)` op'unda | `test_g131_rapor_export_ve_log.py` (migrasyon kuralı bekçisi: modelde index yok, FK op'u `IF NOT EXISTS`, `("table",...)` yok); FK istisnası `test_g043_index_ve_avukat_filtresi.py::test_index_siz_fk_kolonu_kalmadi` |
+| §2.6 akış sözleşmesi; `complete`/`failed` son olay; log sözleşmesi | `test_g132_rapor_asistani.py` (5 Gemini hatası → doğru `error_kod` + TEK ERROR `caplog`); `frontend/src/lib/reportsChat.test.ts` (NDJSON okuyucu, son olay, tanınmayan etiket → `analysis_error`) |
+| §2.4 gövdeler birebir (frontend) | `frontend/src/pages/ReportsPage.test.tsx`, `frontend/src/lib/reports.test.ts` (önizleme gövdesi, tip↔op tablosu, `between`/`in` biçimi) |
+
+Koşu sonuçları (işçi raporları): backend `pytest` 2637 passed / 3 skipped (G132 sonrası), ruff + mypy temiz;
+frontend `vitest` 728 passed / 60 dosya (G135 sonrası), eslint 0 uyarı, `tsc -b --force` exit 0.
+Gerçek Gemini duman testi YAPILMADI (gündüz, insan adımı — istemler G132, adım listesi G135 raporunda).
 
 ---
 
@@ -65,6 +92,10 @@ Kurallar: `kolonlar` sıralıdır, en az 1, en fazla 60, tekrarsız; her anahtar
 
 Türetilmiş kolonlar (`turetilmis: true`) filtrelenemez ve sıralanamaz (v1); katalog bunu `filtrelenebilir=false` ile bildirir.
 
+> **Uygulamada değişti / netleşti (G136):** `ne` operatörü NULL satırı da döndürür
+> (`services/rapor/motor.py:198-201` — "durum ≠ X"te boş da farklıdır). DateTime kolonlarda tarih
+> filtresi gün aralığıdır (`eq` = `[gün, gün+1)`, `motor.py:164-185`; gün sınırı DB saat dilimi, prod UTC).
+
 ### 2.3 Veri kaynakları (registry — `backend/services/rapor/registry.py`)
 
 | anahtar | etiket | çekirdek tablo | JOIN / türetilmiş kolonlar (en az) |
@@ -86,6 +117,12 @@ UI etiketleriyle aynı (`CaseList`/`CaseDetails` başlıkları). Kapalı listeli
 `link_mode`, `stage`...) `liste` tipinde ve `secenekler` katalogda dolu (seed sabitleri/DISTINCT).
 Türetilmiş metin birleştirmeleri **`func.aggregate_strings`** ile (SQLAlchemy 2.0.25; testler sqlite koşar).
 
+> **Uygulamada değişti (G136):** (a) katalog dışı liste genişledi — `clients.tc_no`, `source_ids`, belge
+> `email_error` / `conversion_spool_path` da dışarıda (`services/rapor/registry.py:17-19`, `:453`);
+> (b) `belgeler`/`foyler` JOIN kolonları `dava_tracking_no`/`dava_subject` türetilmiş sayılır → filtrelenemez
+> ve sıralanamaz (`registry.py:371-372`, `:416-417`); (c) davasız (`case_id IS NULL`) belge INNER JOIN
+> nedeniyle rapora girmez; (d) koddan sayılan kolon adedi davalar 86 / müvekkiller 25 / belgeler 20 / föyler 18.
+
 ### 2.4 HTTP uçları (`backend/routes/reports.py`, hepsi `Depends(require_admin)` + `get_current_tenant`)
 
 | Uç | Gövde / parametre | Cevap |
@@ -104,6 +141,13 @@ Türetilmiş metin birleştirmeleri **`func.aggregate_strings`** ile (SQLAlchemy
 `RaporSablonu`: `{"id","ad","aciklama","tanim","olusturan","paylasimli","created_at","updated_at"}`.
 `RaporKosusu`: `{"id","sablon_id","sablon_adi","format","kaynak","veri_kaynagi","kolon_sayisi","satir_sayisi",
 "kullanici","baslangic","sure_ms","dosya_adi","dosya_boyutu","sha256","dosya_mevcut","tanim"}`.
+
+> **Uygulamada değişti (G136):** (a) `RaporKosusu`ya ek alan `hata: str|null` (`schemas_rapor.py:179`; üretim
+> hatası özeti, istemci yok sayabilir); (b) `/runs` `limit` tavanı 200 (`routes/reports.py:61`, `:322`);
+> (c) `/export`: `sablon_id` bulunamazsa 404 (`:255-256`), üretim hatası 500 `"Rapor üretilemedi"` + koşu satırı
+> `hata` ile kalır (`:275-285`), 413'te koşu satırı YAZILMAZ; (d) `/chat` gövde sınırları: mesaj ≤20, içerik
+> ≤4000 karakter, son mesaj `user` → 422 (`schemas_rapor.py:206-233`); (e) 422 gövdesi HER zaman
+> `{"detail": {"alan", "sebep"}}` (yapısal Pydantic hataları dahil — route gövdeyi elle doğrular).
 
 ### 2.5 Tablolar (`models.py` + `database.py::_MIGRATIONS`)
 
@@ -126,6 +170,11 @@ Modelde tanımlı olacakları için `("table", ...)` op'u ölü koddur (G041): m
 `("index", ...)` op'u yazılır; K10 gereği v1'de index yok → migrasyon kaydı sadece `create_all` + docstring şerhi.
 `tenant_id` yazılır (gelecek ayrım için), okuma `tenant_filter_clause` ile.
 
+> **Uygulamada değişti (G136):** K10'un TEK istisnası `idx_report_runs_sablon ON report_runs (sablon_id)`
+> (`database.py:1062-1064`, koşulsuz `("index", ...)` op'u, `IF NOT EXISTS`): G043 bekçisi
+> `test_index_siz_fk_kolonu_kalmadi` index'siz FK'yı yapısal olarak yasaklar — ölçüm sorusu değil, FK kuralı.
+> `baslangic`/`olusturan` için index yok (K10 korunur). `format` CHECK'i DB'de değil Pydantic `Literal`'da.
+
 ### 2.6 Asistan akış sözleşmesi (`/api/reports/chat`, NDJSON — `analyzer._failed_event` ile uyumlu)
 
 ```
@@ -141,6 +190,16 @@ biçimde (anahtar · etiket · tip · seçenekler) gömer; kurallar: yalnız kat
 (`tanim=null`), `mevcut_tanim` verildiyse onu değiştirerek üret, veri döndürme (asistan satır görmez).
 Log sözleşmesi: denemeler WARNING, nihai TEK ERROR.
 
+> **Uygulamada değişti (G136):** Gemini `response_schema`'sındaki `tanim` `RaporTanimi` DEĞİL, ayrı
+> `AsistanTanimi`dir (`schemas_rapor.py:188-204`, `:236-264`): `RaporTanimi`nin `extra="forbid"`i
+> `additionalProperties:false` üretir (google-genai 2.11.0 Developer API modunda desteklenmez) ve
+> `Filtre.deger: Any` tipsiz özellik olur. Asistan filtre değeri metin (`deger`) ya da metin listesi
+> (`degerler`, `in`/`between`) taşır; sunucu kolon tipine göre çevirir ve **aynı** `RaporTanimi` +
+> `motor.tanimi_dogrula` yolundan geçirir (K6). İstemciye giden `complete.tanim` yine `RaporTanimi`
+> (`SohbetTamamlandi`, `:267-273`) — dış sözleşme değişmedi. Geçersiz tanımda `eylem` de `null`a düşer.
+> Ek olay: route'un beklenmedik istisnası `{"status":"error","message"}` (sözleşme dışı, `/process` deseni).
+> Baştaki asistan mesajları `contents`'e alınmaz (Gemini dizisi kullanıcıyla başlar).
+
 ### 2.7 Env (`.env.example`'a eklenir)
 
 ```
@@ -150,6 +209,11 @@ Log sözleşmesi: denemeler WARNING, nihai TEK ERROR.
 # RAPOR_CIKTI_SAKLAMA_GUN=30
 # GEMINI_RAPOR_MODEL=models/gemini-3.6-flash   # yoksa GEMINI_INTAKE_MODEL
 ```
+
+> **Teyit (G136):** dördü de `.env.example`'da şerhli ve yorumlu (`:55`, `:59`, `:62`, `:66`; blok `:49-66`);
+> `config/settings.py:100-112` varsayılanları aynı. Bilinen sınır: `RAPOR_MAX_SATIR`ı iki okuyucu okur —
+> export tavanı `settings.rapor_max_satir` (boot'ta donar), katalogdaki `export_max_satir` `motor.limitler()`
+> `os.getenv` (her çağrı); prod'da aynı değer, fark test zamanı. Tek kaynağa indirmek bekleyen tek satır.
 
 ---
 
