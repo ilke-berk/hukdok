@@ -21,7 +21,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G131 | bant:backend | bagimli:G130 | report_templates + report_runs tabloları, şablon CRUD, /export xlsx/csv (write_only + yield_per), koşu logu (kim/ne zaman/sha256), çıktı saklama + temizlik, /runs
 - [ ] G132 | bant:backend | bagimli:G131 | Rapor asistanı: Gemini JSON şemalı /chat NDJSON (tanım sunucuda yeniden doğrulanır), rapor_asistani anahtarı, GEMINI_RAPOR_MODEL
 - [x] G133 | bant:frontend | bagimli:- | Raporlar sayfası iskeleti: /reports route + Sidebar + api.ts timeout + lib/reports.ts tipleri + Rapor Oluşturucu (kaynak/kolon/filtre/sıralama) + önizleme tablosu
-- [ ] G134 | bant:frontend | bagimli:G133 | Şablonlar (kaydet/yükle/güncelle/sil/paylaş) + Excel/CSV indirme + İndirme geçmişi sekmesi + saklanan çıktıyı indir
+- [x] G134 | bant:frontend | bagimli:G133 | Şablonlar (kaydet/yükle/güncelle/sil/paylaş) + Excel/CSV indirme + İndirme geçmişi sekmesi + saklanan çıktıyı indir
 - [ ] G135 | bant:frontend | bagimli:G134 | Asistan paneli: NDJSON sohbet, tanımı oluşturucuya uygula, eylem yürütme (önizle/indir, kaynak=asistan), anahtar kapısı
 - [ ] G136 | bant:docs | bagimli:G132,G135 | docs/mimari/raporlama.md + CLAUDE.md paragrafı + plan durum şerhi + .env.example teyidi (koddan doğrulanmış)
 
