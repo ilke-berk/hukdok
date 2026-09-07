@@ -2,6 +2,8 @@
 
 **Tarih:** 06.09.2026 · **Karar:** kullanıcı (06.09 sohbeti) · **Durum:** **uygulandı — G130-G135**
 (2026-09-06 gece koşusu, main'de; deploy edilmedi), dokümante G136 (`docs/mimari/raporlama.md`).
+**İkinci tur (§4, 07.09 kullanıcı kararı): uygulandı — G137-G139** (2026-09-07 gece, main'de; deploy
+edilmedi), dokümante G140 (`raporlama.md` ikinci tur; durum/kanıt §4.5).
 **Kapsam kararları (kullanıcı):** test aşamasında yalnız yöneticiler (`require_admin`); çıktı Excel + CSV;
 her indirme "kim, ne zaman, ne" ile loglanır ve çıktının kendisi sistemde saklanır; aynı ekranda AI sohbet
 asistanı doğal dille rapor tanımı üretir (manuel yol her zaman açık kalır).
@@ -252,6 +254,11 @@ Tahmin: backend zinciri 3 oturum, frontend zinciri 3 oturum paralel → **2 gece
 
 ## 4. İkinci tur — kullanılabilirlik yeniden tasarımı (2026-09-07, kullanıcı kararı; G137-G140)
 
+> **Durum (G140 şerhi, 2026-09-07): uygulandı — G137 (backend), G138 + G139 (frontend), main'de; deploy
+> edilmedi.** Aşağıdaki maddelerde kod ile plan arasındaki farklar "**Uygulamada değişti**" şerhiyle
+> yerinde işaretlidir; aynı farklar `docs/mimari/raporlama.md` §12 tablosunda F11-F22 olarak, kabul
+> kriteri → test dosyası kanıtı §4.5'te. Sunucu sözleşmesi (§2) DEĞİŞMEDİ — §4.2 katalog eki, §4.3 sunum katmanıdır.
+
 **Kullanıcı bulgusu (07.09 gece, lokal kullanım + ekran görüntüsü):** "filtre seçilebiliyorsa bile nasıl
 yapılacağını anlamadım; çok yazı var; çok sütun olduğu için karışık; kategorilerin içinden filtreleme yapılmıyor;
 tarih filtresini göremedim." Ekranda: kaynak Müvekkiller seçiliyken tablo hâlâ dava satırlarını gösteriyor
@@ -271,13 +278,24 @@ tarih filtresini göremedim." Ekranda: kaynak Müvekkiller seçiliyken tablo hâ
    kontrolden türetilir (§4.3). "+ Başka alan" → aranabilir ve GRUPLU alan seçici (cmdk `Command`, kurulu);
    seçilen alan şeride aynı türde bir kontrol olarak eklenir. Etkin filtreler çip olarak görünür, tek tıkla
    kalkar, "Temizle" hepsini siler.
+   **Uygulamada değişti (G138):** etiket "Filtreleri temizle" (kolon panelindeki "Temizle" ile çakışmasın;
+   `QuickFilters.tsx:103`); hızlı yuva × ile silinmez, boşa döner — yalnız "+ Başka alan" ile eklenen şeritten
+   kalkar; cmdk bulanık skoru yerine düz alt-dize filtresi (`FieldPicker.tsx:11-15`).
 3. **Kolonlar** ana ekranda liste olarak DURMAZ: "Kolonlar (8)" düğmesi bir yan panel (shadcn `Sheet`) açar —
    gruplu checkbox listesi (`grup`), üstte hazır setler (`kolon_setleri`: "Temel", "İletişim", "Karar takibi",
    "Tazminat"…), seçilenlerin sırası aynı panelde (mevcut dnd + ↑↓). Tip rozetleri (`abc/123/liste`) kalkar.
+   **Uygulamada değişti (G139):** `Sheet` yeni npm paketi değil, `@radix-ui/react-dialog` üzerine yerel
+   `components/ui/sheet.tsx`; kolon değişikliği panel AÇIKKEN anında önizlenir (kapanışta toplu değil);
+   sayfa `max-w-[1600px]` tavanı kaldırıldı (tam genişlik kuralı). Tip yalnız satır `title` ipucunda — ipucu
+   türetilmiş kolonda hâlâ "filtrelenemez" der (`ColumnPicker.tsx:285`, taraf kolonlarında yanlış; açık NOT).
 4. **Sıralama** ayrı bölüm değil: tablo başlığına tık (artan/azalan/kaldır, en fazla 3, `siralanabilir` olanlar).
 5. **Önizleme otomatik**: yapısal değişiklikte hemen, metin/sayı/tarih yazarken 600 ms gecikme ya da odak
    çıkışı; yalnız geçerli tanımda; yarış koruması mevcut (`reqIdRef`). "Önizleme bayat" rozeti KALKAR; yerine
    başlıkta "güncelleniyor…" durumu. Önizle düğmesi yalnız hata durumunda "Tekrar dene".
+   **Uygulamada değişti (G138):** `useDebounce` kancası kullanılmadı — efekt + `gecikmeliRef`/`zamanlayiciRef`
+   (`ReportsPage.tsx:271-298`), aynı sözleşme (600 ms, tek istek); geçersiz taslakta SON GEÇERLİ önizleme
+   ekranda kalır + "taslak eksik" ipucu (boşa düşürülmez); şablon/asistan tanımı yüklenince dolu filtreler
+   şeridin BAŞINA gelir (tanım sırası korunur — şablon eşitliği kapısı için şart).
 6. **Açılış**: sayfa Davalar + varsayılan kolonlar + filtresiz listeyle DOLU açılır.
 7. **Metin azaltma**: açıklamalar tooltip'e, Eyebrow başlıklar kısa, kaynak açıklaması kartta tek satır.
 8. Şablon çubuğu, Excel/CSV düğmeleri, sekmeler, asistan paneli ve `eylem` yürütme davranışı korunur; asistanın
@@ -317,6 +335,11 @@ artık kolon bazında; bu kolonlar `siralanabilir=False` kalır, filtre EXISTS a
 | `sigortali_adlari` (YENİ) | Sigortalılar | metin | `role='Sigortalı'` (her party_type) | contains, is_null, not_null |
 | `muvekkil_kategorisi` (YENİ) | Müvekkil Kategorisi | liste | CLIENT tarafların `clients.category` (DISTINCT + seed) | eq, in, is_null |
 `contains` bu kolonlarda "herhangi bir taraf adı içerir" anlamındadır (EXISTS), birleştirilmiş metin üzerinde değil.
+**Uygulamada değişti (G137):** Müvekkiller `dava_sayisi` de filtrelenebilir türetilmiş oldu (hızlı filtre listesinde;
+COUNT alt sorgusu doğrudan karşılaştırılır, `_skaler_filtre`; `is_null` boş küme döner ama 422 yemez) —
+`foy_sayisi`/`belge_sayisi` filtrelenemez kaldı. `muvekkil_kategorisi` seçim ifadesi DISTINCT değil ("Doktor ; Doktor"
+görünebilir; sqlite `group_concat(DISTINCT x, ayraç)` yok; filtre EXISTS olduğundan doğruluk etkilenmez).
+`gruplar` kaynağa ayrıca yazılmadı — grup sırası kolon sırasından okunur. Migrasyon yok.
 **Metin alanlarında öneri listesi (kullanıcı bulgusu 07.09: "manuel elle girilirse çok sorun yaşanır"):**
 `KatalogKolon.oneriler: [str, ...] | null` — kayıt defterinde `onerili=True` işaretli metin kolonlarının
 DISTINCT değerleri (silinmemiş + tenant kuralı, boş hariç, en fazla 300, alfabetik; aşarsa ilk 300 ve
@@ -328,6 +351,10 @@ Belgeler `uploaded_by, belge_turu_adi`; Föyler `hizmet_turu` zaten liste. Front
 olur. Katalog cevabı süreç içi 60 sn önbelleklenir (DISTINCT sorguları her açılışta koşmasın).
 Asistan prompt'u kataloğu otomatik gömdüğü için `kontrol`/`grup`/`hizli_filtreler`/`oneriler` prompt'a
 GİRMEZ (gürültü; öneriler 300'e kadar değer); yalnız yeni kolonlar girer.
+**Uygulamada değişti (G137):** "alfabetik" = `ORDER BY kolon` (DB collation, Türkçe locale değil); önbellek
+worker BAŞINA (`UVICORN_WORKERS=2` → 60 sn içinde iki worker farklı fotoğraf verebilir), anahtar
+`(SessionLocal, tenant_id)`, `time.monotonic` (`routes/reports.py:81-109`); env yok, sabit `KATALOG_ONBELLEK_SN`.
+Combobox seçimi taraf kolonlarında `eq` ÜRETMEZ (`oplar`da yok) — §4.3 şerhi.
 
 ### 4.3 Kontrol → operatör eşlemesi (frontend, G138)
 
@@ -347,6 +374,9 @@ DEĞİŞMEZ — bu yalnız sunum katmanıdır.
 seçimi `eq` kolonun `oplar`ında varsa `eq`, yoksa `contains` gönderir; "…" menüsü yalnız `oplar`daki op'ları
 listeler. Kontrol türü yine `kontrol` alanından gelir. Şablon/asistan tanımı yüklenince filtreler aynı kontrollere geri
 çözülür (op → kontrol; çözülemeyen op "gelişmiş" çipi olarak gösterilir, kaybolmaz).
+**Uygulamada değişti (G138, G140 doğruladı):** tablo `lib/reports.ts:373-408` `kontroldenFiltre` ile birebir; gidiş-dönüş
+`filtredenKontrol` (`:415-451`) — tek istisna tek değerli `in` → `eq` (eş anlamlı). "…" menüsü = kolonun `oplar`ı ∖
+kontrolün doğal op'ları (`KONTROL_DOGAL_OPLARI`, `:454-466`); gelişmiş çip hızlı yuvayı ezmez (yuva boş kalır).
 
 ### 4.4 Görevler
 
@@ -358,3 +388,34 @@ listeler. Kontrol türü yine `kontrol` alanından gelir. Şablon/asistan tanım
 | G140 | docs | G137,G139 | `docs/mimari/raporlama.md` + bu plan durum şerhi; koddan doğrulanmış |
 Zincir: backend G137 tek; frontend G138→G139 (ikisi de `ReportsPage.tsx`); G140 en son. Hub dosyalara
 (App.tsx/Sidebar.tsx/api.ts) DOKUNULMAZ. Tahmin: 1 gece.
+
+### 4.5 Durum ve kanıt (G140 şerhi, 2026-09-07)
+
+Dört görev de TAMAM ve main'de (G137 · G138 · G139 · G140). Kabul kriteri → kanıt (test dosyası; işçi
+raporları G137-G139, koddan G140 doğruladı):
+
+| Kabul kriteri (plan §4) | Nasıl kanıtlandı |
+| --- | --- |
+| §4.2 katalog her kolonda `grup` + `kontrol` + `oneriler` (+ `oplar`), her kaynakta `hizli_filtreler` + `kolon_setleri` | `backend/tests/test_g137_rapor_katalog_genisleme.py` (şekil; grup kapalı kümede, boş grup yok; kontrol↔tip eşlemesi; hızlı filtre + set listeleri plan §4.2 ile birebir); `test_g130_rapor_temeli.py::test_katalog_sekli` (anahtar kümeleri güncellendi) |
+| §4.2 taraf filtreleri: `muvekkil_adlari contains` yalnız CLIENT tarafı, aynı adlı karşı taraf bulunmaz; `sigortali_adlari` rol bazlı; `muvekkil_kategorisi in` silinmiş müvekkil kartını saymaz | `test_g137_rapor_katalog_genisleme.py` (taraf filtreleri; `is_null`/`not_null`; ILIKE kaçışı + zehir string bağlı parametrede; `dava_sayisi` karşılaştırma) |
+| §4.2 türetilmişte yalnız izinli op'lar, diğerleri 422 `{"alan","sebep"}`; sıralama 422 | `test_g137_rapor_katalog_genisleme.py` (izinsiz op 7 varyant; sıralama 422); `test_g130_rapor_temeli.py::test_422_turetilmis_filtrelenemez_siralanamaz` (`foy_sayisi` hâlâ filtrelenemez); `test_g132_rapor_asistani.py` (asistanın `muvekkil_adlari eq` tanımı → `warning` + `tanim=null`) |
+| §4.2 öneriler tenant + soft-delete kurallı, ≤300, `oneri_kesik` | `test_g137_rapor_katalog_genisleme.py` (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + bayrak, `db=None`) |
+| §4.2 katalog önbelleği 60 sn — ikinci çağrı DISTINCT sorgusu koşturmaz | `test_g137_rapor_katalog_genisleme.py` (monotonic monkeypatch + sorgu sayacı; veri değişimi 60 sn gizlenir) |
+| §4.2 asistan katalog metni öneri/hızlı filtre alanlarını içermez | `test_g137_rapor_katalog_genisleme.py` (300+ değerle metin uzunluğu sabit, `hizli_filtreler` kelimesi yok) |
+| §4.2 migrasyon yok; ruff + mypy temiz | G137 raporu: `pytest` 2670 passed / 3 skipped, ruff + mypy temiz; `models.py`/`database.py` diff'te yok |
+| §4.3 kontrol → op tablosu; "boş olanlar" → `is_null`; gelişmiş op'lar "…" menüsünden; yüklemede geri çözme | `frontend/src/lib/reports.test.ts` (kontrol başına op, 22 örnekli gidiş-dönüş, `gelismisOplar`, kısayollar, `tanimGecerliMi` taraf kolonu kapısı); `components/reports/builderState.test.ts` (tanımdan çözme, sıra korunur, gelişmiş çip yuvayı ezmez); `QuickFilters.test.tsx` |
+| §4.1 madde 1 kaynak kartları; kaynak değişince eski satırlar ANINDA düşer | `components/reports/SourceCards.test.tsx`; `pages/ReportsPage.test.tsx` (kart tıklaması, aynı kart istek üretmez, cevap gelmeden eski satırlar kaybolur, şerit yeni kaynağın hızlı filtreleri) |
+| §4.1 madde 2 filtre şeridi (kontroller, çipler, "+ Başka alan", temizle) | `QuickFilters.test.tsx`, `ReportsPage.test.tsx` (şerit → §2.1 gövdesi birebir: `between` dizi, `in` liste, number) |
+| §4.1 madde 3 "Kolonlar (N)" yan paneli (setler, gruplar, tümünü seç, sıra, tavan, "Temel" üretimi) | `components/reports/ColumnSheet.test.tsx`; `ReportsPage.test.tsx` (set → önizleme, grup tümünü seç, kapanışta ek istek yok) |
+| §4.1 madde 4 başlıktan sıralama (döngü, tavan 3) | `components/reports/PreviewTable.test.tsx`; `builderState.test.ts::siralamaDongusu`; `ReportsPage.sablon.test.tsx` (sıralama tanım gövdesinden) |
+| §4.1 madde 5 otomatik önizleme (yapısal hemen / 600 ms / odak çıkışı / yalnız geçerli tanım / yarış) | `ReportsPage.test.tsx` (sahte zamanlayıcı; "taslak eksik"te istek gitmez; bayat rozeti DOM'da yok) |
+| §4.1 madde 6 dolu açılış | `ReportsPage.test.tsx` (açılışta tek istek, varsayılan tanım) |
+| §4.1 madde 7 metin azaltma (açıklama tek yer, tip rozeti yok, "Rapor Oluşturucu" yok) | `ReportsPage.test.tsx` sadeleştirme senaryosu |
+| §4.1 madde 8 şablon/asistan uyumu; asistan tanımı otomatik önizlenir | `ReportsPage.sablon.test.tsx`, `ReportsPage.asistan.test.tsx` (`eylem=null` → otomatik önizleme; `onizle` → yeniden istek; `indir_xlsx` → `kaynak:"asistan"`) |
+| Hub dosyalar (`App.tsx`/`Sidebar.tsx`/`api.ts`) ve `package.json` değişmedi | G138/G139 raporları; `Sidebar.tsx` yalnız G133 satırı (`:67`) |
+
+Koşu sonuçları (işçi raporları): backend `pytest` 2670 passed / 3 skipped (G137), ruff + mypy temiz;
+frontend `vitest` 798 passed / 65 dosya (G139), eslint 0 uyarı, `tsc -b --force` 0. Tarayıcıda görsel duman
+testi YAPILMADI (backend/MSAL gerektirir) — sabah gerçek ekranda kart satırının `lg` altı kaydırması, Sheet
+genişliği, araç çubuğu sarması göz kontrolü ister (G139 raporu). Açık NOT: `ColumnPicker.tsx:285` ipucu
+(yukarıda), `lib/api.test.ts` "tek logout" testinin yük altında bir kez düşmesi (hub, kapsam dışı).
