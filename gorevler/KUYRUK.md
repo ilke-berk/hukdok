@@ -10,7 +10,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G143 → G144 zincirli (ikisi de ReportsPage.tsx). Test-değiştirme izinleri baştan. Docs G145 sonra. -->
 
 - [x] G143 | bant:frontend | bagimli:- | Asistan ön planda: AssistantBar en üstte + inline konuşma + tanım otomatik uygulanır + geri al; araç çubuğu düğmesi ve yan panel kalkar
-- [ ] G144 | bant:frontend | bagimli:G143 | Favori önerisi: export sonrası "bu formatı '…' adıyla ekleyeyim mi?" kartı + ad önerisi + TemplateBar "☆ Favorilere ekle"
+- [x] G144 | bant:frontend | bagimli:G143 | Favori önerisi: export sonrası "bu formatı '…' adıyla ekleyeyim mi?" kartı + ad önerisi + TemplateBar "☆ Favorilere ekle"
 
 ## ÖNCELİK 1 — Raporlama üçüncü tur: "veriden kapalı liste" + müvekkil şeridi (2026-09-07 gündüz, kullanıcı kararı)
 
