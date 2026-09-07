@@ -90,7 +90,8 @@ function yuvayaUyarMi(durum: KontrolDurumu, yuva: SeritOgesi): boolean {
 /**
  * Sunucu tanımı → oluşturucu durumu (şablon / koşu / asistan). Filtreler `filtredenKontrol`
  * ile çözülür (yuvanın `sunum`u ile — `dava_sayisi gte 1` var/yok anahtarına, `email is_null` boş
- * anahtarına, `arama contains` arama kutusuna, `in` içindeki `null` "(boş)" seçimine); hızlı filtre
+ * anahtarına, `arama contains` arama kutusuna, `in` içindeki `null` "Boş" seçimine, tarih/sayı/metin
+ * `is_null` kontrolün "Boş" çipine — §7.1, gelişmiş çip değil); hızlı filtre
  * yuvasına düşenler (alan yuva alanı ya da bir alternatifi, yuva boşken) yuvayı doldurur, kalanlar
  * "+ Başka alan" ile eklenmiş gibi görünür. Dolu öğeler TANIMDAKİ SIRAYLA önce gelir, boş yuvalar
  * arkasından — böylece `tanimOlustur` filtre sırasını korur (şablon karşılaştırması ve gidiş-dönüş

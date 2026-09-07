@@ -192,7 +192,35 @@ describe("tanimdanDurum ↔ tanimOlustur — gidiş-dönüş", () => {
         expect(tanimOlustur(d).filtreler).toEqual(tanim.filtreler);
     });
 
-    it("§5.3 müvekkil şeridi gidiş-dönüş: arama contains → arama kutusu, in içinde null → (boş) seçimi, gte 1 → var/yok, is_null → boş anahtarı; JSON aynı", () => {
+    it("§7.1 gidiş-dönüş: tarih/sayı/metin `is_null` yuvanın \"Boş\" çipine çözülür (bos: true, hızlı yuva — gelişmiş DEĞİL); JSON aynı", () => {
+        const tanim: RaporTanimi = {
+            veri_kaynagi: "davalar", kolonlar: ["tracking_no"],
+            filtreler: [
+                { alan: "opening_date", op: "is_null" },
+                { alan: "maddi_tazminat", op: "is_null" },
+                { alan: "subject", op: "is_null" },   // yuva yok → eklenen metin kontrolü, çip açık
+            ],
+            siralama: [],
+        };
+        const d = tanimdanDurum(tanim, DAVALAR);
+        expect(d.serit.map(o => [o.durum.alan, o.durum.kontrol, o.hizli])).toEqual([
+            ["opening_date", "tarih_araligi", true],
+            ["maddi_tazminat", "sayi_araligi", true],
+            ["subject", "metin_icerir", false],
+            ["status", "coklu_secim", true],
+        ]);
+        expect(d.serit[0].durum).toEqual({ kontrol: "tarih_araligi", alan: "opening_date", baslangic: "", bitis: "", bos: true });
+        expect(d.serit[0].alanSecenekleri).toEqual(["opening_date", "karar_tarihi"]);
+        expect(d.serit[1].durum).toEqual({ kontrol: "sayi_araligi", alan: "maddi_tazminat", en_az: null, en_cok: null, bos: true });
+        expect(d.serit[2].durum).toEqual({ kontrol: "metin_icerir", alan: "subject", metin: "", tam: false, bos: true });
+        expect(d.serit.some(o => o.durum.kontrol === "gelismis")).toBe(false);
+        expect(JSON.stringify(tanimOlustur(d))).toBe(JSON.stringify(tanim));
+        // Çip kapanınca (bos: false) filtre düşer, yuva boş kalır
+        const kapali = { ...d, serit: d.serit.map(o => (o.durum.kontrol === "tarih_araligi" ? { ...o, durum: { ...o.durum, bos: false } } : o)) };
+        expect(tanimOlustur(kapali).filtreler).toEqual(tanim.filtreler.slice(1));
+    });
+
+    it("§5.3 müvekkil şeridi gidiş-dönüş: arama contains → arama kutusu, in içinde null → Boş seçimi, gte 1 → var/yok, is_null → boş anahtarı; JSON aynı", () => {
         const tanim: RaporTanimi = {
             veri_kaynagi: "muvekkiller",
             kolonlar: ["name"],

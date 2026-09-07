@@ -219,7 +219,7 @@ describe("QuickFilters (G138)", () => {
         expect(container.querySelector("[data-testid='etkin-filtre-sayisi']")).toBeNull();
     });
 
-    it("tarih aralığı: başlangıç gte (gecikmeli), bitiş → between iki ISO; kısayol sabit tarihle anında; alan değiştirici değeri korur; boş yalnız çipin \"…\" menüsünden (is_null)", () => {
+    it("tarih aralığı: başlangıç gte (gecikmeli), bitiş → between iki ISO; kısayol sabit tarihle anında; alan değiştirici değeri korur; boş kontrolün \"Boş\" çipinden (is_null), \"…\" menüsünde değil", () => {
         render();
         yaz(byLabel("Açılış Tarihi başlangıç"), "2025-01-01");
         expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "opening_date", op: "gte", deger: "2025-01-01" }], gecikmeli: true });
@@ -240,14 +240,24 @@ describe("QuickFilters (G138)", () => {
         expect(kontroller()).toEqual(["karar_tarihi", "status", "court", "maddi_tazminat", "active"]);
         expect(container.querySelector("[aria-label='Karar Tarihi başlangıç']")).not.toBeNull();
 
-        // "boş olanlar" kutucuğu YOK (§5.1 madde 8); boşluk çipin "…" menüsünden — gelişmiş is_null çipi
+        // "boş olanlar" kutucuğu YOK; §7.1: boşluk kontrolün "Boş" çipinden — "…" menüsünde artık "boş" yok
         expect(container.querySelector("[aria-label$='boş olanlar']")).toBeNull();
         tikla(byLabel("Karar Tarihi filtre seçenekleri"));
-        expect(Array.from(byLabel("Karar Tarihi gelişmiş").querySelectorAll("button")).map(b => b.textContent)).toEqual(["eşittir", "boş", "dolu"]);
-        tikla(Array.from(byLabel("Karar Tarihi gelişmiş").querySelectorAll("button")).find(b => b.textContent === "boş")!);
-        expect(sonFiltreler().filtreler).toEqual([{ alan: "karar_tarihi", op: "is_null" }]);
-        expect(container.querySelector("[aria-label='Karar Tarihi başlangıç']")).toBeNull();
-        expect(cipler()).toEqual(["Karar Tarihigelişmişboş"]);
+        expect(Array.from(byLabel("Karar Tarihi gelişmiş").querySelectorAll("button")).map(b => b.textContent)).toEqual(["eşittir", "dolu"]);
+        tikla(byLabel("Karar Tarihi filtre seçenekleri")); // kapat
+        tikla(byLabel("Karar Tarihi boş"));
+        expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "karar_tarihi", op: "is_null" }], gecikmeli: false });
+        // Kontrol yerinde kalır (gelişmiş çip DEĞİL), girdiler kilitli, değerler saklı
+        expect($("[data-testid='filtre-kontrolu'][data-alan='karar_tarihi']").getAttribute("data-kontrol")).toBe("tarih_araligi");
+        expect(byLabel<HTMLInputElement>("Karar Tarihi başlangıç").disabled).toBe(true);
+        expect(byLabel<HTMLInputElement>("Karar Tarihi başlangıç").value).toBe("2026-08-09");
+        expect(byLabel("Karar Tarihi boş").getAttribute("aria-pressed")).toBe("true");
+        expect(cipler()).toEqual(["Karar Tarihiboş"]);
+        expect(container.querySelectorAll("[data-gelismis='true']")).toHaveLength(0);
+        // Çip kapanınca eski aralık geri gelir
+        tikla(byLabel("Karar Tarihi boş"));
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "karar_tarihi", op: "between", deger: ["2026-08-09", "2026-09-07"] }]);
+        expect(byLabel<HTMLInputElement>("Karar Tarihi başlangıç").disabled).toBe(false);
 
         // Çipin × düğmesi: yuva kendi alanına ve boşa döner (şeritten kalkmaz)
         tikla(byLabel("Karar Tarihi filtresini kaldır"));
@@ -255,7 +265,7 @@ describe("QuickFilters (G138)", () => {
         expect(kontroller()).toEqual(["opening_date", "status", "court", "maddi_tazminat", "active"]);
     });
 
-    it("çoklu seçim: checkbox'lı açılır, 1 seçim eq, 2 seçim in; serbest metin girişi YOK; sayaç ve çip; listenin sonunda (boş)", () => {
+    it("çoklu seçim: checkbox'lı açılır, 1 seçim eq, 2 seçim in; serbest metin girişi YOK; sayaç ve çip; listenin sonunda Boş", () => {
         render();
         const durum = $("[data-testid='filtre-kontrolu'][data-alan='status']");
         expect(durum.querySelector("input[type='text']")).toBeNull();
@@ -263,7 +273,8 @@ describe("QuickFilters (G138)", () => {
         tikla(byLabel("Durum seç"));
         const liste = byLabel("Durum seçenekleri");
         expect(Array.from(liste.querySelectorAll("input[type='checkbox']")).map(i => i.getAttribute("aria-label")))
-            .toEqual(["Durum: Derdest", "Durum: Karar", "Durum: Kesin", "Durum: (boş)"]);
+            .toEqual(["Durum: Derdest", "Durum: Karar", "Durum: Kesin", "Durum: Boş"]);
+        expect(liste.textContent).not.toContain("(boş)");
         // 3 seçenek ≤ 8: "Sık" bölümü yok
         expect(liste.querySelector("[data-bolum]")).toBeNull();
         tikla(byLabel("Durum: Derdest"));
@@ -329,11 +340,14 @@ describe("QuickFilters (G138)", () => {
             { alan: "karsi_taraf_adlari", op: "contains", deger: "Sigorta A.Ş." },
         ]);
         // Tam eşitlik menü öğesi taraf çipinde yok (eq izinli değil), mahkeme çipinde var
+        // §7.1: "boş" menüde değil (kontrolün "Boş" çipi var)
         tikla(byLabel("Karşı Taraflar filtre seçenekleri"));
-        expect(Array.from(byLabel("Karşı Taraflar gelişmiş").querySelectorAll("button")).map(b => b.textContent)).toEqual(["boş", "dolu"]);
+        expect(Array.from(byLabel("Karşı Taraflar gelişmiş").querySelectorAll("button")).map(b => b.textContent)).toEqual(["dolu"]);
         tikla(byLabel("Mahkeme filtre seçenekleri"));
         expect(Array.from(byLabel("Mahkeme gelişmiş").querySelectorAll("button")).map(b => b.textContent))
-            .toEqual(["Tam eşitlik", "eşit değil", "şunlardan biri", "boş", "dolu"]);
+            .toEqual(["Tam eşitlik", "eşit değil", "şunlardan biri", "dolu"]);
+        expect(byLabel("Karşı Taraflar boş").getAttribute("aria-pressed")).toBe("false");
+        expect(byLabel("Mahkeme boş").getAttribute("aria-pressed")).toBe("false");
     });
 
     it("+ Başka alan: gruplu ve aranabilir; yalnız filtrelenebilir; şerittekiler (alternatif dahil) gizli; seçim aynı türde kontrol ekler, × şeritten kaldırır", () => {
@@ -390,7 +404,7 @@ describe("QuickFilters (G138)", () => {
         sec(byLabel<HTMLSelectElement>("Durum değeri"), "Karar");
         expect(sonFiltreler().filtreler).toEqual([{ alan: "status", op: "ne", deger: "Karar" }]);
 
-        // Gelişmiş çipin menüsü: diğer izinli op'lar + basit kontrole dön
+        // Gelişmiş çipin menüsü: diğer izinli op'lar + basit kontrole dön (gelişmiş çipte "boş" hâlâ op olarak listelenir)
         tikla(byLabel("Durum filtre seçenekleri"));
         const gelismisMenu = byLabel("Durum gelişmiş");
         expect(Array.from(gelismisMenu.querySelectorAll("button")).map(b => b.textContent))
@@ -446,10 +460,20 @@ describe("QuickFilters (G138)", () => {
         el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     });
 
-    it("§5.1 sıra: arama kutusu en üstte ayrı satır, kategori görünür çipler, il/uzmanlık çoklu seçim, var/yok anahtarı, iki boş anahtarı; \"boş olanlar\" DOM'da YOK", () => {
+    it("§5.1 sıra: arama kutusu en üstte ayrı satır, kategori görünür çipler, il/uzmanlık çoklu seçim, var/yok anahtarı, iki boş anahtarı TEK \"Eksik bilgi\" hücresinde; \"boş olanlar\"/\"(boş)\" DOM'da YOK", () => {
         renderMuvekkil();
         expect(kontroller()).toEqual(["arama", "category", "il", "specialty", "dava_sayisi", "email", "mobile_phone"]);
         expect(sunumlar()).toEqual(["arama", "cipler", "varsayilan", "varsayilan", "var_yok", "bos_anahtari", "bos_anahtari"]);
+        // §7.1 madde 4: iki boş anahtarı tek hücrede, başlık "Eksik bilgi", kutucuklar yan yana; eski katalog → rozetsiz
+        const hucreler = container.querySelectorAll("[data-testid='eksik-bilgi']");
+        expect(hucreler).toHaveLength(1);
+        const hucre = hucreler[0];
+        expect(hucre.textContent).toContain("Eksik bilgi");
+        expect(Array.from(hucre.querySelectorAll("[data-testid='filtre-kontrolu']")).map(k => k.getAttribute("data-alan"))).toEqual(["email", "mobile_phone"]);
+        expect(hucre.querySelectorAll("input[type='checkbox']")).toHaveLength(2);
+        expect(hucre.querySelector("[data-testid='sayi-rozeti']")).toBeNull();
+        expect(container.querySelectorAll("[data-testid='filtre-kontrolu'][data-kontrol='bos_anahtari']")).toHaveLength(2);
+        expect(container.textContent).not.toContain("(boş)");
         // Arama kutusu şeridin en üstünde, ızgaranın DIŞINDA; placeholder katalog açıklamasından
         const serit = $("[data-testid='filtre-seridi']");
         const arama = $("[data-testid='arama-kutusu']");
@@ -473,7 +497,7 @@ describe("QuickFilters (G138)", () => {
         expect(container.querySelector("[data-testid='etkin-filtreler']")).toBeNull();
     });
 
-    it("İl: birden fazla değer in; \"(boş)\" null öğesi ekler (yalnız boş → is_null); Sık ilk 8 + Tümü; arama daraltır; seçili çipler ×; klavye ↑↓ Enter Esc", () => {
+    it("İl: birden fazla değer in; \"Boş\" null öğesi ekler (yalnız boş → is_null); Sık ilk 8 + Tümü; arama daraltır; seçili çipler ×; klavye ↑↓ Enter Esc", () => {
         renderMuvekkil();
         expect(container.querySelector("[aria-label='İl seçenekleri']")).toBeNull();
         tikla(byLabel("İl seç"));
@@ -481,16 +505,17 @@ describe("QuickFilters (G138)", () => {
         const bolum = (ad: string) => liste().querySelector(`[data-bolum='${ad}']`)!;
         const secenekler = (kok: ParentNode) => Array.from(kok.querySelectorAll("[role='option']")).map(o => o.getAttribute("data-deger"));
         expect(secenekler(bolum("Sık"))).toEqual(ILLER.slice(0, SIK_SECENEK_SAYISI));
-        expect(secenekler(bolum("Tümü"))).toEqual([...ILLER, ""]); // katalog sırası (sıklık), sonda (boş)
-        expect(liste().textContent).toContain("(boş)");
+        expect(secenekler(bolum("Tümü"))).toEqual([...ILLER, ""]); // katalog sırası (sıklık), sonda Boş
+        expect(liste().textContent).toContain("Boş");
+        expect(liste().textContent).not.toContain("(boş)");
 
         tikla(byLabel("İl: Ankara"));
         expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "il", op: "eq", deger: "Ankara" }], gecikmeli: false });
         tikla(byLabel("İl: İzmir"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "in", deger: ["Ankara", "İzmir"] }]);
-        tikla(byLabel("İl: (boş)"));
+        tikla(byLabel("İl: Boş"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "in", deger: ["Ankara", "İzmir", null] }]);
-        expect(cipler()).toEqual(["İlAnkara, İzmir, boş"]);
+        expect(cipler()).toEqual(["İlAnkara, İzmir, Boş"]);
         // Sık ve Tümü'de aynı öğe iki kez listelenir; ikisi de işaretli
         expect(Array.from(liste().querySelectorAll("[aria-label='İl: Ankara']")).every(i => (i as HTMLInputElement).checked)).toBe(true);
         // Seçilenler düğmenin altında çip; × düşürür
@@ -499,7 +524,7 @@ describe("QuickFilters (G138)", () => {
         tikla(byLabel("İl: Ankara kaldır"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "in", deger: ["İzmir", null] }]);
 
-        // Arama: Sık kaybolur, Tümü daralır (tr-TR); (boş) sorguya uymaz
+        // Arama: Sık kaybolur, Tümü daralır (tr-TR); Boş sorguya uymaz
         const ara = byLabel<HTMLInputElement>("İl ara");
         yaz(ara, "kay");
         expect(liste().querySelector("[data-bolum]")).toBeNull();
@@ -516,7 +541,7 @@ describe("QuickFilters (G138)", () => {
         expect(liste().querySelector("[data-aktif='true']")?.getAttribute("data-deger")).toBe("İzmir");
         tus(ara, "Enter");
         expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "in", deger: [null, "Kayseri"] }]);
-        // Yalnız (boş) kalınca is_null
+        // Yalnız Boş kalınca is_null; çip özeti op etiketiyle "boş"
         tikla(byLabel("İl: Kayseri kaldır"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "is_null" }]);
         expect(cipler()).toEqual(["İlboş"]);
@@ -534,7 +559,7 @@ describe("QuickFilters (G138)", () => {
         tikla(byLabel("Müvekkil Türü seç"));
         const liste = byLabel("Müvekkil Türü seçenekleri");
         expect(Array.from(liste.querySelectorAll("input[type='checkbox']")).map(i => i.getAttribute("aria-label")))
-            .toEqual(["Müvekkil Türü: Gerçek kişi", "Müvekkil Türü: Tüzel kişi", "Müvekkil Türü: (boş)"]);
+            .toEqual(["Müvekkil Türü: Gerçek kişi", "Müvekkil Türü: Tüzel kişi", "Müvekkil Türü: Boş"]);
         expect(liste.textContent).not.toContain("Individual");
         tikla(byLabel("Müvekkil Türü: Gerçek kişi"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "client_type", op: "eq", deger: "Individual" }]);
@@ -544,12 +569,16 @@ describe("QuickFilters (G138)", () => {
         expect(byLabel("Müvekkil Türü seç").textContent).toBe("Gerçek kişi, Tüzel kişi");
     });
 
-    it("Kategori çip satırı: ≤ 12 düz, fazlası \"+N\"; çoklu seçim in (1 → eq); (boş) sonda; seçili çipler daraltılınca da görünür", () => {
+    it("Kategori çip satırı: ≤ 12 düz, fazlası \"+N\"; çoklu seçim in (1 → eq); Boş sonda ayırıcıyla, daima görünür (sayıma girmez); seçili çipler daraltılınca da görünür", () => {
         renderMuvekkil();
         const grup = () => byLabel("Kategori seçenekleri");
         const gorunen = () => Array.from(grup().querySelectorAll("button[data-deger]")).map(b => b.getAttribute("data-deger"));
-        expect(gorunen()).toEqual(KATEGORILER.slice(0, CIP_DUZ_SINIRI));
-        expect(byLabel("Kategori tümünü göster").textContent).toBe("+2"); // Laboratuvar, Diğer ve (boş) → 14 seçenek, 12 görünür
+        // 13 kategori: 12 düz + Boş (sayım dışı, daima sonda) → "+1"
+        expect(gorunen()).toEqual([...KATEGORILER.slice(0, CIP_DUZ_SINIRI), ""]);
+        expect(byLabel("Kategori tümünü göster").textContent).toBe("+1");
+        expect(grup().querySelector("[data-testid='bos-ayirici']")).not.toBeNull();
+        expect(byLabel("Kategori: Boş").className).toContain("italic");
+        expect(grup().textContent).not.toContain("(boş)");
         tikla(byLabel("Kategori: Doktor"));
         expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "category", op: "eq", deger: "Doktor" }], gecikmeli: false });
         expect(byLabel("Kategori: Doktor").getAttribute("aria-pressed")).toBe("true");
@@ -557,15 +586,16 @@ describe("QuickFilters (G138)", () => {
         expect(sonFiltreler().filtreler).toEqual([{ alan: "category", op: "in", deger: ["Doktor", "Hasta"] }]);
         tikla(byLabel("Kategori tümünü göster"));
         expect(gorunen()).toEqual([...KATEGORILER, ""]);
-        tikla(byLabel("Kategori: (boş)"));
+        tikla(byLabel("Kategori: Boş"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "category", op: "in", deger: ["Doktor", "Hasta", null] }]);
         tikla(byLabel("Kategori daha az göster"));
         expect(gorunen()).toEqual([...KATEGORILER.slice(0, CIP_DUZ_SINIRI), ""]);
         expect(byLabel("Kategori tümünü göster").textContent).toBe("+1");
-        expect(cipler()).toEqual(["KategoriDoktor, Hasta, boş"]);
+        expect(cipler()).toEqual(["KategoriDoktor, Hasta, Boş"]);
         tikla(byLabel("Kategori: Doktor"));
         tikla(byLabel("Kategori: Hasta"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "category", op: "is_null" }]);
+        expect(cipler()).toEqual(["Kategoriboş"]);
     });
 
     it("arama kutusu: contains gecikmeli, odak çıkışı hemen, × temizler; Filtreleri temizle aramayı da siler", () => {
@@ -628,7 +658,7 @@ describe("QuickFilters (G138)", () => {
         expect(sonFiltreler().filtreler).toEqual([]);
     });
 
-    it("şablon/asistan tanımı şeride çözülür: arama kutusu dolu, (boş) seçili, var/yok basılı, boş anahtarı işaretli; JSON kayıpsız", () => {
+    it("şablon/asistan tanımı şeride çözülür: arama kutusu dolu, Boş seçili, var/yok basılı, boş anahtarı işaretli; JSON kayıpsız", () => {
         const tanim: RaporTanimi = {
             veri_kaynagi: "muvekkiller", kolonlar: ["name"], siralama: [],
             filtreler: [
@@ -640,17 +670,176 @@ describe("QuickFilters (G138)", () => {
         };
         renderMuvekkil(tanimdanDurum(tanim, MUVEKKILLER).serit);
         expect(byLabel<HTMLInputElement>("Ara").value).toBe("Ayşe");
-        expect(byLabel("İl seç").textContent).toBe("Ankara, (boş)");
+        expect(byLabel("İl seç").textContent).toBe("Ankara, Boş");
         expect(byLabel("Davası var: var").getAttribute("aria-pressed")).toBe("true");
         expect(byLabel<HTMLInputElement>("E-postası yok").checked).toBe(true);
-        expect(cipler()).toEqual(["Araiçerir \"Ayşe\"", "İlAnkara, boş", "Dava Sayısıvar", "E-postaboş"]);
+        expect(cipler()).toEqual(["Araiçerir \"Ayşe\"", "İlAnkara, Boş", "Dava Sayısıvar", "E-postaboş"]);
         expect(container.querySelectorAll("[data-gelismis='true']")).toHaveLength(0);
         tikla(byLabel("İl seç"));
-        expect(byLabel<HTMLInputElement>("İl: (boş)").checked).toBe(true);
+        expect(byLabel<HTMLInputElement>("İl: Boş").checked).toBe(true);
         // Değişiklik yapıp geri alınca aynı JSON
         tikla(byLabel("İl: Bursa"));
         tikla(byLabel("İl: Bursa"));
         expect(sonFiltreler().filtreler).toEqual(tanim.filtreler);
+    });
+
+    // -----------------------------------------------------------------------
+    // G146 — §7.1 sayı rozetleri · sıfırlılar soluk sonda · "Boş" birinci sınıf · her kontrolde boş çipi · "Eksik bilgi"
+    // -----------------------------------------------------------------------
+
+    /** §7.2 sayılı katalog (G145 sözleşmesi): `secenekler` sunucudan sayıya göre azalan, sıfırlılar sonda. */
+    const MUVEKKILLER_SAYILI: KatalogVeriKaynagi = {
+        ...MUVEKKILLER,
+        kolonlar: MUVEKKILLER.kolonlar.map(k => {
+            switch (k.anahtar) {
+                case "category": {
+                    const sayilar: Record<string, number> = {};
+                    KATEGORILER.forEach((s, i) => { sayilar[s] = i < 10 ? (10 - i) * 150 + 3 : 0; }); // Doktor 1.503 … Eczane 153; Klinik/Laboratuvar/Diğer 0
+                    return { ...k, secenek_sayilari: sayilar, bos_sayisi: 27 };
+                }
+                case "il": {
+                    const sayilar: Record<string, number> = {};
+                    ILLER.forEach((s, i) => { sayilar[s] = i < 8 ? 1443 - i * 100 : 0; }); // Mersin, Kayseri 0
+                    return { ...k, secenek_sayilari: sayilar, bos_sayisi: 0 };
+                }
+                case "email": return { ...k, bos_sayisi: 1200 };
+                case "mobile_phone": return { ...k, bos_sayisi: 8 };
+                case "name": return { ...k, bos_sayisi: 2 };
+                default: return k;
+            }
+        }),
+    };
+    const renderSayili = (baslangic: SeritOgesi[] = kaynakIcinBaslangic(MUVEKKILLER_SAYILI).serit) => render(baslangic, MUVEKKILLER_SAYILI);
+    const rozet = (el: Element | null) => el?.querySelector("[data-testid='sayi-rozeti']")?.textContent ?? null;
+
+    it("§7.1 çip satırı: rozet tr-TR (1.503), sıra katalogdan, sıfırlılar soluk (opacity-60) ama tıklanır; \"+N\" önce sıfırlıları gizler; Boş çipi ayırıcıyla sonda, rozet bos_sayisi", () => {
+        renderSayili();
+        const grup = () => byLabel("Kategori seçenekleri");
+        const gorunen = () => Array.from(grup().querySelectorAll("button[data-deger]")).map(b => b.getAttribute("data-deger"));
+        expect(rozet(byLabel("Kategori: Doktor"))).toBe("1.503");
+        expect(rozet(byLabel("Kategori: Hasta"))).toBe("1.353");
+        expect(rozet(byLabel("Kategori: Boş"))).toBe("27");
+        // Daraltılmış: 10 sıfırsız + sıfırlılardan ilk 2 (Klinik, Laboratuvar) — Diğer gizli; Boş sayım dışı
+        expect(gorunen()).toEqual([...KATEGORILER.slice(0, CIP_DUZ_SINIRI), ""]);
+        expect(byLabel("Kategori tümünü göster").textContent).toBe("+1");
+        expect(byLabel("Kategori: Klinik").getAttribute("data-sifir")).toBe("true");
+        expect(byLabel("Kategori: Klinik").className).toContain("opacity-60");
+        expect(rozet(byLabel("Kategori: Klinik"))).toBe("0");
+        expect(byLabel("Kategori: Doktor").className).not.toContain("opacity-60");
+        // Sıfırlı seçilebilir
+        tikla(byLabel("Kategori: Klinik"));
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "category", op: "eq", deger: "Klinik" }]);
+        expect(byLabel("Kategori: Klinik").getAttribute("aria-pressed")).toBe("true");
+        tikla(byLabel("Kategori tümünü göster"));
+        expect(gorunen()).toEqual([...KATEGORILER, ""]);
+        expect(rozet(byLabel("Kategori: Diğer"))).toBe("0");
+        expect(container.textContent).not.toContain("(boş)");
+    });
+
+    it("§7.1 sıfırlılar önce gizlenir: sıfırlılar katalogda sonda olmasa da daraltma onları gizler, sıra yine katalogdan", () => {
+        // Katalog tutarsızlığı senaryosu: sıfırlı bir seçenek listenin başında
+        const kaynak: KatalogVeriKaynagi = {
+            ...MUVEKKILLER_SAYILI,
+            kolonlar: MUVEKKILLER_SAYILI.kolonlar.map(k => k.anahtar === "category"
+                ? { ...k, secenekler: ["Yok", ...KATEGORILER], secenek_sayilari: { ...k.secenek_sayilari, Yok: 0 } }
+                : k),
+        };
+        render(kaynakIcinBaslangic(kaynak).serit, kaynak);
+        const gorunen = Array.from(byLabel("Kategori seçenekleri").querySelectorAll("button[data-deger]")).map(b => b.getAttribute("data-deger"));
+        // 14 seçenek: 10 sıfırsız + ilk 2 sıfırlı (Yok, Klinik) katalog SIRASIYLA; Laboratuvar/Diğer gizli
+        expect(gorunen).toEqual(["Yok", ...KATEGORILER.slice(0, 11), ""]);
+        expect(byLabel("Kategori tümünü göster").textContent).toBe("+2");
+    });
+
+    it("§7.1 çoklu seçim açılırı: rozetler, Sık sıfırsız ilk 8, Tümü'de sıfırlılar sonda soluk, Boş satırı ayırıcıyla en altta (rozet 0 → soluk ama var); seçili çipte Boş", () => {
+        renderSayili();
+        tikla(byLabel("İl seç"));
+        const liste = byLabel("İl seçenekleri");
+        const degerler = (kok: ParentNode) => Array.from(kok.querySelectorAll("[role='option']")).map(o => o.getAttribute("data-deger"));
+        expect(degerler(liste.querySelector("[data-bolum='Sık']")!)).toEqual(ILLER.slice(0, 8));
+        expect(degerler(liste.querySelector("[data-bolum='Tümü']")!)).toEqual([...ILLER, ""]);
+        const tumu = liste.querySelector("[data-bolum='Tümü']")!;
+        const satir = (deger: string) => tumu.querySelector<HTMLElement>(`[role='option'][data-deger='${deger}']`)!;
+        expect(rozet(satir("İstanbul"))).toBe("1.443");
+        expect(rozet(satir("Mersin"))).toBe("0");
+        expect(satir("Mersin").className).toContain("opacity-60");
+        expect(satir("").className).toContain("italic");
+        expect(satir("").className).toContain("border-t");
+        expect(rozet(satir(""))).toBe("0");
+        expect(satir("").className).toContain("opacity-60");
+        tikla(byLabel("İl: Kayseri"));
+        tikla(byLabel("İl: Boş"));
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "il", op: "in", deger: ["Kayseri", null] }]);
+        expect(byLabel("İl seç").textContent).toBe("Kayseri, Boş");
+        expect(cipler()).toEqual(["İlKayseri, Boş"]);
+        expect(container.textContent).not.toContain("(boş)");
+    });
+
+    it("§7.1 madde 4: \"Eksik bilgi\" hücresi — iki boş anahtarı yan yana, kutucuklar \"<etiket> · N\"; is_null üretir; hücre yalnız bos_anahtari yuvası varsa", () => {
+        renderSayili();
+        const hucre = $("[data-testid='eksik-bilgi']");
+        expect(hucre.querySelector("span")?.textContent).toBe("Eksik bilgi");
+        expect(byLabel("E-postası yok").closest("label")?.textContent).toBe("E-postası yok · 1.200");
+        expect(byLabel("Cep telefonu yok").closest("label")?.textContent).toBe("Cep telefonu yok · 8");
+        expect(hucre.querySelectorAll("[data-testid='sayi-rozeti']")).toHaveLength(2);
+        // Hücre ızgarada TEK; ayrı "E-posta" başlıklı kontrol yok
+        expect(container.querySelectorAll("[data-testid='eksik-bilgi']")).toHaveLength(1);
+        expect(kontroller()).toEqual(["arama", "category", "il", "specialty", "dava_sayisi", "email", "mobile_phone"]);
+        tikla(byLabel("E-postası yok"));
+        expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "email", op: "is_null" }], gecikmeli: false });
+        tikla(byLabel("Cep telefonu yok"));
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "email", op: "is_null" }, { alan: "mobile_phone", op: "is_null" }]);
+        expect(cipler()).toEqual(["E-postaboş", "Cep Telefonuboş"]);
+        // Çip ×: kutucuk kapanır, hücre kalır
+        tikla(byLabel("E-posta filtresini kaldır"));
+        expect(byLabel<HTMLInputElement>("E-postası yok").checked).toBe(false);
+        expect(container.querySelectorAll("[data-testid='eksik-bilgi']")).toHaveLength(1);
+
+        // bos_anahtari yuvası olmayan kaynakta hücre yok
+        act(() => root!.unmount());
+        root = null;
+        render();
+        expect(container.querySelector("[data-testid='eksik-bilgi']")).toBeNull();
+    });
+
+    it("§7.1 madde 3: \"+ Başka alan\" ile eklenen metin kontrolünde Boş çipi (rozet bos_sayisi) → is_null, girdi kilitli; arama kutusunda çip YOK", () => {
+        renderSayili();
+        expect(container.querySelector("[aria-label='Ara boş']")).toBeNull();
+        tikla(butonBul("Başka alan"));
+        tikla($("[data-testid='alan-secici'] [cmdk-item][data-alan='name']"));
+        yaz(byLabel("Ad içerir"), "Ay");
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "name", op: "contains", deger: "Ay" }]);
+        expect(rozet(byLabel("Ad boş"))).toBe("2");
+        tikla(byLabel("Ad boş"));
+        expect(sonFiltreler()).toEqual({ filtreler: [{ alan: "name", op: "is_null" }], gecikmeli: false });
+        expect(byLabel<HTMLInputElement>("Ad içerir").disabled).toBe(true);
+        expect(cipler()).toEqual(["Adboş"]);
+        expect(container.querySelectorAll("[data-gelismis='true']")).toHaveLength(0);
+        tikla(byLabel("Ad boş"));
+        expect(sonFiltreler().filtreler).toEqual([{ alan: "name", op: "contains", deger: "Ay" }]);
+        expect(container.querySelector("[aria-label='Ara boş']")).toBeNull();
+    });
+
+    it("§7.1 gidiş-dönüş: şablondaki tarih/sayı `is_null` şeritte Boş çipine (basılı, girdiler kilitli) çözülür — gelişmiş çip değil; JSON aynı", () => {
+        const tanim: RaporTanimi = {
+            veri_kaynagi: "davalar", kolonlar: ["tracking_no"], siralama: [],
+            filtreler: [{ alan: "opening_date", op: "is_null" }, { alan: "maddi_tazminat", op: "is_null" }],
+        };
+        render(tanimdanDurum(tanim, KAYNAK).serit);
+        expect(byLabel("Açılış Tarihi boş").getAttribute("aria-pressed")).toBe("true");
+        expect(byLabel<HTMLInputElement>("Açılış Tarihi başlangıç").disabled).toBe(true);
+        expect(byLabel("Maddi Tazminat boş").getAttribute("aria-pressed")).toBe("true");
+        expect(byLabel<HTMLInputElement>("Maddi Tazminat en az").disabled).toBe(true);
+        expect(container.querySelectorAll("[data-gelismis='true']")).toHaveLength(0);
+        expect(kontroller()).toEqual(["opening_date", "maddi_tazminat", "status", "court", "active"]);
+        expect(cipler()).toEqual(["Açılış Tarihiboş", "Maddi Tazminatboş"]);
+        // Değiştir-geri al → aynı JSON
+        tikla(byLabel("Maddi Tazminat boş"));
+        tikla(byLabel("Maddi Tazminat boş"));
+        expect(sonFiltreler().filtreler).toEqual(tanim.filtreler);
+        // Eski katalog sahtesi (sayı alanları yok): çipler rozetsiz, çökmez
+        expect(container.querySelectorAll("[data-testid='sayi-rozeti']")).toHaveLength(0);
+        expect(container.textContent).not.toContain("(boş)");
     });
 
     it("kalıp kaynak bağımsız: Davalar'da `court` veriden çoklu seçim gelince aynı bileşen (checkbox listesi, in), combobox değil", () => {
