@@ -164,7 +164,7 @@ def test_katalog_sekli(env):
         for k in kaynak["kolonlar"]:
             # G141 (plan §5.2): + secilebilir / secenek_kaynagi / secenek_etiketleri
             assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
-                              "turetilmis", "secilebilir", "oplar", "secenekler", "secenek_kaynagi",
+                              "turetilmis", "secilebilir", "aciklama", "oplar", "secenekler", "secenek_kaynagi",
                               "secenek_etiketleri", "oneriler", "oneri_kesik"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]

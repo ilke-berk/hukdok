@@ -134,6 +134,9 @@ class Kolon:
     secenek_etiketleri: Optional[Mapping[str, str]] = None
     # False → yalnız filtre alanı (sanal `arama`): kolon listesine/sıralamaya giremez.
     secilebilir: bool = True
+    # Kullanıcıya yönelik kısa açıklama (arama kutusu yer tutucusu: hangi alanlarda arar).
+    # Katalogda `aciklama`; G142 frontend isteğe bağlı okur (plan §5.2 şerhi 07.09).
+    aciklama: Optional[str] = None
 
     @property
     def oplar(self) -> tuple[str, ...]:
@@ -235,13 +238,14 @@ def _arama_filtresi(ifadeler: tuple[Any, ...], ek_filtreler: tuple[FiltreIfadesi
     return filtre
 
 
-def _arama(*ifadeler: Any, ek_filtreler: tuple[FiltreIfadesi, ...] = ()) -> Kolon:
+def _arama(*ifadeler: Any, aciklama: str, ek_filtreler: tuple[FiltreIfadesi, ...] = ()) -> Kolon:
     """Kaynağın sanal arama kolonu (plan §5.2): yalnız filtre (`secilebilir=False`), yalnız `contains`,
-    seçim ifadesi yok (`NULL` — motor bu kolonu hiçbir zaman SELECT'e almaz, `tanimi_dogrula` 422 verir)."""
+    seçim ifadesi yok (`NULL` — motor bu kolonu hiçbir zaman SELECT'e almaz, `tanimi_dogrula` 422 verir).
+    `aciklama` arama kutusunun yer tutucusudur (hangi alanlarda aradığını söyler)."""
     return replace(
         _turetilmis(ARAMA_KOLONU, "Ara", "metin", null(), filtrelenebilir=True, secilebilir=False,
                     filtre_ifadesi=_arama_filtresi(ifadeler, ek_filtreler), izinli_oplar=("contains",)),
-        grup=ARAMA_GRUBU,
+        grup=ARAMA_GRUBU, aciklama=aciklama,
     )
 
 
@@ -430,6 +434,7 @@ _DAVA_GRUPLARI = (ARAMA_GRUBU, "Kimlik", "Taraflar", "Mahkeme ve konu", "Tarihle
 _DAVA_KOLONLARI: list[Kolon] = [
     # Plan §5.2: tek arama kutusu — ofis no / esas no / konu / mahkeme + müvekkil ve karşı taraf adları (EXISTS)
     _arama(_C.tracking_no, _C.esas_no, _C.subject, _C.court,
+           aciklama="Ofis dosya no, esas no, konu, mahkeme veya taraf adı…",
            ek_filtreler=(_taraf_filtresi(_party_type("CLIENT")), _taraf_filtresi(_party_type("COUNTER")))),
     *_grup(
         "Kimlik",
@@ -645,7 +650,8 @@ MUVEKKIL_TIPI_ETIKETLERI: Mapping[str, str] = {
 }
 _MUVEKKIL_KOLONLARI: list[Kolon] = [
     # Plan §5.1/5.2: tek arama kutusu — ad · cari kod · e-posta · telefon · cep
-    _arama(_M.name, _M.cari_kod, _M.email, _M.phone, _M.mobile_phone),
+    _arama(_M.name, _M.cari_kod, _M.email, _M.phone, _M.mobile_phone,
+           aciklama="Ad, cari kod, e-posta veya telefon…"),
     *_grup(
         "Kimlik",
         _kolon(_M, "name", "Müvekkil Adı"),
@@ -737,7 +743,8 @@ _D = models.CaseDocument
 _BELGE_GRUPLARI = (ARAMA_GRUBU, "Belge", "Dava", "Yükleme", "Sistem")
 _BELGE_KOLONLARI: list[Kolon] = [
     # Plan §5.2: dosya adı · dava ofis no · özet
-    _arama(_D.original_filename, models.Case.tracking_no, _D.ai_summary),
+    _arama(_D.original_filename, models.Case.tracking_no, _D.ai_summary,
+           aciklama="Dosya adı, ofis dosya no veya özet…"),
     *_grup(
         "Belge",
         _kolon(_D, "original_filename", "Orijinal Dosya Adı"),
@@ -808,7 +815,8 @@ _F = models.CaseFoy
 _FOY_GRUPLARI = (ARAMA_GRUBU, "Kimlik", "Sınıflandırma", "Kapsam", "Sistem")
 _FOY_KOLONLARI: list[Kolon] = [
     # Plan §5.2: sistem no · TKU · hasar no · dava ofis no
-    _arama(_F.sistem_no, _F.tku_no, _F.hasar_no, models.Case.tracking_no),
+    _arama(_F.sistem_no, _F.tku_no, _F.hasar_no, models.Case.tracking_no,
+           aciklama="SistemNo, TKU, hasar no veya ofis dosya no…"),
     *_grup(
         "Kimlik",
         _kolon(_F, "sistem_no", "SistemNo"),
@@ -1082,6 +1090,7 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         "siralanabilir": kolon.siralanabilir,
         "turetilmis": kolon.turetilmis,
         "secilebilir": kolon.secilebilir,
+        "aciklama": kolon.aciklama,
         # Kolon başına izinli op'lar (taraf kolonlarında tip tablosunun alt kümesi, ör. `eq` yok):
         # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
         "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],

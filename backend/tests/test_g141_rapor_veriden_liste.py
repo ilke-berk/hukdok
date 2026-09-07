@@ -420,6 +420,9 @@ def test_arama_katalogda_secilebilir_false_setlerde_ve_varsayilanda_yok(env):
         assert a["filtrelenebilir"] and not a["siralanabilir"] and a["turetilmis"]
         assert a["oplar"] == ["contains"] and a["kontrol"] == "metin_icerir"
         assert a["secenekler"] is None and a["oneriler"] is None
+        # 07.09 karar: arama kutusu yer tutucusu katalogdan (`aciklama`), diğer kolonlarda null
+        assert isinstance(a["aciklama"], str) and a["aciklama"].endswith("…")
+        assert all(k["aciklama"] is None for k in kaynak["kolonlar"] if k["anahtar"] != "arama")
         assert "arama" not in kaynak["varsayilan_kolonlar"]
         for ks in kaynak["kolon_setleri"]:
             assert "arama" not in ks["kolonlar"], (anahtar, ks["ad"])

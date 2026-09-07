@@ -484,8 +484,9 @@ def get_rapor_asistani_instruction(
         "- YALNIZ katalogdaki veri kaynağı ve kolon ANAHTARLARINI kullan (etiketleri değil). "
         "Katalogda olmayan bir alan istenirse uydurma; cevapta bunun raporlanamadığını söyle ve "
         "en yakın kolonu öner.",
-        "- Filtre operatörleri kolon TİPİNE göre sınırlıdır (aşağıdaki tablo). Türetilmiş "
-        "kolonlar (işaretli) filtrelenemez ve sıralanamaz; yalnız kolon listesine girer.",
+        "- Filtre operatörleri kolon TİPİNE göre sınırlıdır (aşağıdaki tablo); katalogda bir kolon için "
+        "daha dar bir op listesi yazıyorsa o geçerlidir. Türetilmiş kolonlar sıralanamaz; 'yalnız filtre' "
+        "işaretli kolon (ör. arama) kolon listesine GİRMEZ.",
         "- Filtre değeri daima METİN olarak yazılır: tek değerli op'larda 'deger', "
         "'in' ve 'between' için 'degerler' (between tam iki öğe: [başlangıç, bitiş]). "
         "is_null / not_null değer almaz. Tarih ISO biçiminde (YYYY-AA-GG); "
