@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { BookmarkPlus, Download, Loader2, Pencil, RefreshCw, Save, Trash2, Users } from "lucide-react";
+import { BookmarkPlus, Download, Loader2, Pencil, RefreshCw, Save, Star, Trash2, Users } from "lucide-react";
 import type { RaporSablonu } from "@/lib/reports";
 import { sablonSahibiMi, tarihSaatBicimle } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -47,15 +47,22 @@ type TemplateBarProps = {
     /** Taslak geçerli mi? Değilse Kaydet/Güncelle kapalı. */
     taslakGecerli: boolean;
     isleniyor: boolean;
+    /**
+     * G144: taslakla BİREBİR aynı tanımlı kayıtlı şablon (varsa) — "★ Kayıtlı: <ad>" gösterilir;
+     * yoksa "☆ Favorilere ekle" bağlantısı (öneri kartını açar). Eski çağıranlar için isteğe bağlı.
+     */
+    kayitli?: RaporSablonu | null;
+    onFavoriEkle?: () => void;
 };
 
 /**
  * Rapor sekmesi üstündeki şablon çubuğu (G134): şablon seçimi (kendi + paylaşımlı), Yükle,
  * Kaydet (yeni ad), Güncelle ve Sil (yalnız sahibi — başkasınınkinde düğme HİÇ yok).
+ * G144: seçimin yanında kalıcı "☆ Favorilere ekle" (taslak kayıtlı değilken) ya da "★ Kayıtlı: <ad>".
  */
 export function TemplateBar({
     sablonlar, yukleniyor, hata, onRetry, kullanici, seciliId, onSecim, onYukle, onKaydet, onGuncelle, onSil,
-    taslakGecerli, isleniyor,
+    taslakGecerli, isleniyor, kayitli = null, onFavoriEkle,
 }: TemplateBarProps) {
     const secili = useMemo(() => sablonlar.find(s => s.id === seciliId) ?? null, [sablonlar, seciliId]);
     const sahip = secili ? sablonSahibiMi(secili, kullanici) : false;
@@ -82,6 +89,28 @@ export function TemplateBar({
                 </select>
                 {secili && <PaylasimRozeti sablon={secili} sahip={sahip} />}
                 {yukleniyor && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--fg-subtle)]" aria-label="Şablonlar yükleniyor" />}
+                {kayitli ? (
+                    <span
+                        data-testid="favori-kayitli"
+                        className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--brand)] max-w-[240px] truncate"
+                        title={`Bu format kayıtlı: ${kayitli.ad}`}
+                    >
+                        <Star className="w-3 h-3 shrink-0 fill-current" aria-hidden="true" />
+                        Kayıtlı: {kayitli.ad}
+                    </span>
+                ) : onFavoriEkle && (
+                    <button
+                        type="button"
+                        data-testid="favori-ekle-baglantisi"
+                        className={`${LINK_BTN_CLS} inline-flex items-center gap-1`}
+                        onClick={onFavoriEkle}
+                        disabled={!taslakGecerli || isleniyor}
+                        title={taslakGecerli ? "Bu formatı favori şablon olarak ekle" : "Eklemek için geçerli bir tanım gerekir"}
+                    >
+                        <Star className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        Favorilere ekle
+                    </button>
+                )}
 
                 <div className="flex items-center gap-1.5 ml-auto">
                     <FlowButton
