@@ -205,12 +205,43 @@ export async function raporAsistaniAcikMi(): Promise<boolean> {
     }
 }
 
-/** Boş sohbette gösterilen örnek istemler (tıklayınca girdiye yazılır). */
-export const ORNEK_ISTEMLER: readonly string[] = [
+/**
+ * Örnek istemler kaynağa göre (G143): AssistantBar çipleri seçili veri kaynağının örneklerini gösterir
+ * (tıklayınca girdiye yazılır, ikinci tık gönderir). Tanınmayan/boş kaynak → genel liste.
+ */
+const ORNEK_ISTEMLER_KAYNAGA_GORE: Record<string, readonly string[]> = {
+    davalar: [
+        "2025'te açılan derdest davaları avukat adıyla listele, Excel ver",
+        "Derdest davaları ofis numarası, konu ve mahkeme kolonlarıyla listele",
+        "Bu yıl açılan davaları açılış tarihine göre yeniden eskiye sırala",
+    ],
+    muvekkiller: [
+        "Ankara'daki doktor müvekkillerin telefon ve e-postasını göster",
+        "İstanbul'daki müvekkilleri ad ve şehir kolonlarıyla Excel olarak indir",
+        "Birden fazla davası olan müvekkilleri dava sayısına göre sırala",
+    ],
+    belgeler: [
+        "Son 30 günde işlenen tebligatları dava ofis numarasıyla listele",
+        "Bu ay eklenen belgeleri türüne ve davasına göre CSV olarak indir",
+        "Dönüşümü başarısız belgeleri dosya adı ve hata ile göster",
+    ],
+    foyler: [
+        "Karar aşamasındaki föyleri dava ofis numarası ve konusuyla listele",
+        "Bu yıl kapanan föyleri son durumuna göre sırala",
+        "Föyleri dosya numarası ve aşamasıyla Excel olarak indir",
+    ],
+};
+
+const ORNEK_ISTEMLER_GENEL: readonly string[] = [
     "Derdest davaları ofis numarası, konu ve mahkeme kolonlarıyla listele",
-    "Bu yıl açılan davaları açılış tarihine göre yeniden eskiye sırala",
     "İstanbul'daki müvekkilleri ad ve şehir kolonlarıyla Excel olarak indir",
+    "Son 30 günde işlenen belgeleri dava ofis numarasıyla listele",
 ];
+
+/** Seçili kaynağın örnek istemleri (3); kaynak tanınmıyor/boşsa genel liste. Sonuç değişmez (readonly). */
+export function ornekIstemler(veriKaynagi: string | null | undefined): readonly string[] {
+    return ORNEK_ISTEMLER_KAYNAGA_GORE[veriKaynagi ?? ""] ?? ORNEK_ISTEMLER_GENEL;
+}
 
 /** Panel mesaj listesi kaydı — sunucuya gitmez; `AsistanMesaji`'ne `sohbetGecmisi` çevirir. */
 export interface SohbetKaydi {

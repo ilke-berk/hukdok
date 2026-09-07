@@ -10,7 +10,7 @@ import type { AsistanMesaji, RaporTanimi } from "./reports";
 import {
     ASISTAN_AKIS_EKSIK, ASISTAN_KAPALI_MESAJI, ASISTAN_MESAJ_MAX, ASISTAN_YETKI_MESAJI,
     AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, errorKodIpucu, gecmisiKirp, raporAsistaniAcikMi, sohbetGecmisi, tanimOzeti,
+    chatReport, errorKodIpucu, gecmisiKirp, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimOzeti,
 } from "./reportsChat";
 
 /** Ham chunk'ları (satır sınırına saygı göstermeden) veren sahte akış yanıtı. */
@@ -300,5 +300,27 @@ describe("raporAsistaniAcikMi — anahtar kapısı (K8)", () => {
 
         fetchMock.mockResolvedValueOnce(undefined);
         expect(await raporAsistaniAcikMi()).toBe(false);
+    });
+});
+
+describe("ornekIstemler (G143) — kaynağa göre örnek çipleri", () => {
+    it("dört kaynağın her biri için 3 farklı örnek; davalar Excel + avukat, müvekkiller Ankara/doktor örneğini içerir", () => {
+        for (const k of ["davalar", "muvekkiller", "belgeler", "foyler"]) {
+            const liste = ornekIstemler(k);
+            expect(liste).toHaveLength(3);
+            expect(new Set(liste).size).toBe(3);
+        }
+        expect(ornekIstemler("davalar")).toContain("2025'te açılan derdest davaları avukat adıyla listele, Excel ver");
+        expect(ornekIstemler("muvekkiller")).toContain("Ankara'daki doktor müvekkillerin telefon ve e-postasını göster");
+        expect(ornekIstemler("davalar")).not.toEqual(ornekIstemler("muvekkiller"));
+    });
+
+    it("tanınmayan / boş / null kaynak genel listeye düşer; aynı kaynak aynı referansı döner (render kararlı)", () => {
+        const genel = ornekIstemler(null);
+        expect(genel).toHaveLength(3);
+        expect(ornekIstemler("")).toBe(genel);
+        expect(ornekIstemler(undefined)).toBe(genel);
+        expect(ornekIstemler("yok_boyle")).toBe(genel);
+        expect(ornekIstemler("davalar")).toBe(ornekIstemler("davalar"));
     });
 });

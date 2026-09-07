@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-// ReportsPage (G135 → G138) — Asistan paneli: anahtar kapısı (kapalı → düğme yok, manuel akış çalışır);
-// gönderilen gövde `{mesajlar (≤20), mevcut_tanim}`; `complete`+`tanim` → "Oluşturucuya uygula"
-// oluşturucu state'ini değiştirir (öncesinde değişmez) ve uygulanan tanım OTOMATİK önizlenir (G138:
-// `eylem=null` olsa da; bayat rozeti yok); `eylem:"indir_xlsx"` → otomatik uygulama + `/export`
-// `kaynak:"asistan"`; `eylem:"onizle"` → önizleme; `warning` şerit; `failed` error_kod ipucu
-// (tanınmayan → analysis_error); 409 → şerit + düğme pasif; Enter/Shift+Enter.
-// G139: Asistan düğmesi araç çubuğunda; kaynak kartla, kolonlar yan panelde (kanıt: önizleme gövdesi + "Kolonlar (N)").
+// ReportsPage (G135 → G138 → G143) — Asistan ÖN PLANDA: anahtar açıkken Rapor sekmesinin İLK öğesi
+// AssistantBar (anahtar okunana dek iskelet; kapalı/409 → satır yok, araç çubuğunda "Asistan" düğmesi de
+// yok, yan panel `Sheet` asistan için kullanılmaz; manuel akış çalışır); gönderilen gövde `{mesajlar (≤20),
+// mevcut_tanim}`; `complete`+`tanim` → tanım DÜĞME BEKLEMEDEN uygulanır, `/preview` asistan tanımıyla,
+// toast "Rapor hazırlandı · N kayıt"; "Geri al" eski taslağı ve önizlemeyi geri getirir (tek adım; manuel
+// değişiklik adımı düşürür); `eylem:"indir_xlsx"` → `/export` `kaynak:"asistan"` (K7); `eylem:"onizle"`;
+// `tanim=null` (soru) → uygulama yok, balon var; `warning` şerit; `failed` error_kod ipucu (tanınmayan →
+// analysis_error); örnek çipi girdiye yazar, ikinci tık gönderir, çipler kaynağa göre; Enter gönderir.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -42,6 +43,7 @@ vi.mock("@azure/msal-react", () => msalMock);
 
 import ReportsPage from "./ReportsPage";
 import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
+import { ornekIstemler } from "@/lib/reportsChat";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -181,7 +183,7 @@ const cagrilar = (url: string, method?: string) =>
     (fetchMock.mock.calls as Cagri[]).filter(([u, o]) => u === url && (!method || (o?.method ?? "GET") === method));
 const govde = (c: Cagri) => JSON.parse(c[1]!.body as string);
 
-describe("ReportsPage asistan paneli (G135/G138)", () => {
+describe("ReportsPage asistan satırı (G135/G138/G143)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
     let indirmeler: string[];
@@ -215,6 +217,8 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         anahtar?: boolean;
         /** `/api/admin/settings` ucu tümden patlasın (ağ hatası). */
         ayarHatasi?: boolean;
+        /** Anahtar cevabı elle çözülür (iskelet testi). */
+        ayarBekle?: Promise<unknown>;
         chat?: (govde: { mesajlar: unknown[]; mevcut_tanim: unknown }) => unknown;
         exportCevabi?: () => unknown;
     };
@@ -230,6 +234,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             if (url === "/api/reports/templates" && method === "GET") return okJson([]);
             if (url === "/api/admin/settings") {
                 if (ayar.ayarHatasi) throw new Error("ağ yok");
+                if (ayar.ayarBekle) return ayar.ayarBekle;
                 return ayarlar(ayar.anahtar ?? true);
             }
             if (url === "/api/reports/chat" && method === "POST") {
@@ -280,7 +285,11 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         if (!el) throw new Error("aria-label bulunamadı: " + label);
         return el;
     };
-    const panel = () => $("[data-testid='asistan-paneli']");
+    const satir = () => $("[data-testid='asistan-satiri']");
+    const konusma = () => $("[data-testid='asistan-konusmasi']");
+    const konusmaVar = () => container.querySelector("[data-testid='asistan-konusmasi']") !== null;
+    const girdi = () => byLabel<HTMLInputElement>("Asistana mesaj");
+    const cipMetinleri = () => Array.from(container.querySelectorAll("[data-testid='ornek-istem']")).map(c => c.textContent?.trim());
     const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
     const onizlemeler = () => cagrilar("/api/reports/preview", "POST");
     const sonOnizleme = () => govde(onizlemeler().at(-1)!);
@@ -303,8 +312,8 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         return p;
     }
 
-    function yaz(el: HTMLTextAreaElement, value: string) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    function yaz(el: HTMLInputElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
         act(() => {
             setter.call(el, value);
             el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -323,17 +332,17 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         await bekle(8);
     }
 
-    /** Paneli açıp mesaj gönderir (Enter). */
+    /** Üst satırdan mesaj gönderir (Enter). */
     async function gonder(metin: string) {
-        const girdi = byLabel<HTMLTextAreaElement>("Asistana mesaj");
-        yaz(girdi, metin);
-        await tus(girdi, "Enter");
+        const g = girdi();
+        yaz(g, metin);
+        await tus(g, "Enter");
         await bekle(8);
     }
 
     // ---------------------------------------------------------------- anahtar kapısı
 
-    it("anahtar kapalıyken Asistan düğmesi ve panel yok; manuel akış (otomatik önizleme) etkilenmez", async () => {
+    it("anahtar kapalıyken asistan satırı, araç çubuğu düğmesi ve yan panel yok; manuel akış (otomatik önizleme) etkilenmez", async () => {
         sunucuKur({ anahtar: false });
         await render();
 
@@ -341,7 +350,12 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         // Sıra: katalog ilk istek (G133 sözleşmesi), anahtar sonra
         expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/catalog");
         expect(butonVar("Asistan")).toBe(false);
-        expect(container.querySelector("[data-testid='asistan-paneli']")).toBeNull();
+        expect(container.querySelector("[data-testid='asistan-satiri']")).toBeNull();
+        expect(container.querySelector("[data-testid='asistan-iskelet']")).toBeNull();
+        expect(container.querySelector("[aria-label='Asistana mesaj']")).toBeNull();
+        expect(document.body.querySelector("[data-testid='asistan-paneli']")).toBeNull();
+        // Rapor sekmesinin ilk öğesi kaynak kartları
+        expect($("[data-testid='rapor-sekmesi']").firstElementChild?.getAttribute("data-testid")).toBe("kaynak-kartlari");
 
         // Açılış önizlemesi geldi; kolon değişimi (yan panel) hemen yeniden önizler
         expect(onizlemeler()).toHaveLength(1);
@@ -351,38 +365,98 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(sonOnizleme().tanim.kolonlar).toEqual(["tracking_no", "subject", "status"]);
     });
 
-    it("anahtar okunamazsa (uç hatası) panel yine gizli, toast yok", async () => {
+    it("anahtar okunamazsa (uç hatası) satır yine gizli, toast yok", async () => {
         sunucuKur({ ayarHatasi: true });
         await render();
 
         expect(butonVar("Asistan")).toBe(false);
+        expect(container.querySelector("[data-testid='asistan-satiri']")).toBeNull();
         expect(toastMocks.error).not.toHaveBeenCalled();
         expect(seciliKaynak()).toBe("davalar");
     });
 
-    it("anahtar açıkken düğme görünür; tıklayınca panel + 3 örnek istem; çip girdiye yazılır; kapat düğmesi", async () => {
+    it("anahtar okunana dek iskelet; açık gelince satır Rapor sekmesinin İLK öğesi, kartların üstünde", async () => {
+        let coz: (v: unknown) => void = () => undefined;
+        sunucuKur({ ayarBekle: new Promise(r => { coz = r; }) });
+        await render();
+
+        expect(container.querySelector("[data-testid='asistan-iskelet']")).not.toBeNull();
+        expect(container.querySelector("[data-testid='asistan-satiri']")).toBeNull();
+        // İskelet manuel akışı bekletmez: açılış önizlemesi geldi
+        expect(onizlemeler()).toHaveLength(1);
+
+        await act(async () => { coz(ayarlar(true)); });
+        await bekle(8);
+
+        expect(container.querySelector("[data-testid='asistan-iskelet']")).toBeNull();
+        const sekme = $("[data-testid='rapor-sekmesi']");
+        expect(sekme.firstElementChild?.getAttribute("data-testid")).toBe("asistan-satiri");
+        const kartlar = $("[data-testid='kaynak-kartlari']");
+        expect(Boolean(satir().compareDocumentPosition(kartlar) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+        // Eski araç çubuğu düğmesi ve yan panel yok; konuşma alanı gönderene dek kapalı
+        expect(butonVar("Asistan")).toBe(false);
+        expect(document.body.querySelector("[data-testid='asistan-paneli']")).toBeNull();
+        expect(document.body.querySelector("[role='complementary']")).toBeNull();
+        expect(konusmaVar()).toBe(false);
+        expect(girdi().placeholder).toContain("Ne listelemek istiyorsunuz");
+        expect(satir().textContent).toContain("veya aşağıdan seçin");
+    });
+
+    // ---------------------------------------------------------------- çipler + konuşma alanı
+
+    it("örnek çipleri kaynağa göre (3); ilk tık girdiye yazar, aynı çipe ikinci tık gönderir; kart değişince çipler değişir", async () => {
         sunucuKur({ anahtar: true });
         await render();
 
-        expect(container.querySelector("[data-testid='asistan-paneli']")).toBeNull();
-        await tikla(butonBul("Asistan"));
-        const p = panel();
-        expect(p.getAttribute("aria-label")).toBe("Rapor asistanı");
-        const ornekler = p.querySelectorAll("[data-testid='ornek-istem']");
-        expect(ornekler).toHaveLength(3);
+        expect(cipMetinleri()).toEqual([...ornekIstemler("davalar")]);
+        expect(cipMetinleri()).toHaveLength(3);
+        const cip = container.querySelectorAll("[data-testid='ornek-istem']")[1];
 
-        await tikla(ornekler[1]);
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").value).toBe(ornekler[1].textContent);
+        await tikla(cip);
+        expect(girdi().value).toBe(cip.textContent);
         // Henüz gönderilmedi
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(0);
+        expect(konusmaVar()).toBe(false);
 
-        await tikla(byLabel("Asistanı kapat"));
-        expect(container.querySelector("[data-testid='asistan-paneli']")).toBeNull();
+        await tikla(cip);
+        await bekle(8);
+        const post = cagrilar("/api/reports/chat", "POST");
+        expect(post).toHaveLength(1);
+        expect(govde(post[0]).mesajlar).toEqual([{ rol: "user", icerik: cip.textContent }]);
+        expect(konusmaVar()).toBe(true);
+        expect(girdi().value).toBe("");
+
+        // Müvekkiller kartı → müvekkil örnekleri
+        await tikla($("[data-kaynak='muvekkiller']"));
+        expect(cipMetinleri()).toEqual([...ornekIstemler("muvekkiller")]);
+        expect(cipMetinleri()[0]).toContain("Ankara");
     });
 
-    // ---------------------------------------------------------------- gövde + uygula
+    it("konuşma alanı: 'Konuşmayı kapat' alanı kapatır, satır kalır, geçmiş korunur; yeni mesaj yeniden açar", async () => {
+        sunucuKur({ anahtar: true });
+        await render();
 
-    it("Enter gönderir: gövde {mesajlar, mevcut_tanim}; complete+tanim → özet kartı; uygula ANCAK düğmeyle; uygulanınca OTOMATİK önizlenir (eylem null olsa da)", async () => {
+        await gonder("merhaba");
+        expect(konusma().querySelectorAll("[data-testid='sohbet-kullanici']")).toHaveLength(1);
+        expect(konusma().querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(1);
+
+        await tikla(byLabel("Konuşmayı kapat"));
+        expect(konusmaVar()).toBe(false);
+        expect(container.querySelector("[data-testid='asistan-satiri']")).not.toBeNull();
+
+        await gonder("tekrar");
+        expect(konusmaVar()).toBe(true);
+        expect(konusma().querySelectorAll("[data-testid='sohbet-kullanici']")).toHaveLength(2);
+        // Geçmiş sunucuya taşındı (K6: istemci taşır)
+        const post = cagrilar("/api/reports/chat", "POST");
+        expect(govde(post[1]).mesajlar).toEqual([
+            { rol: "user", icerik: "merhaba" }, { rol: "assistant", icerik: "Hazır." }, { rol: "user", icerik: "tekrar" },
+        ]);
+    });
+
+    // ---------------------------------------------------------------- gövde + otomatik uygulama + geri al
+
+    it("Enter gönderir: gövde {mesajlar, mevcut_tanim}; complete+tanim → tanım DÜĞME BEKLEMEDEN uygulanır, /preview asistan tanımıyla, toast satır sayısıyla; 'Geri al' eski taslağı ve önizlemeyi geri getirir", async () => {
         sunucuKur({
             chat: () => akis([
                 { status: "info", message: "Rapor tanımı hazırlanıyor" },
@@ -393,7 +467,6 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         // Açılış önizlemesi: referans
         expect(onizlemeler()).toHaveLength(1);
 
-        await tikla(butonBul("Asistan"));
         await gonder("Derdest davaları listele");
 
         const post = cagrilar("/api/reports/chat", "POST");
@@ -403,37 +476,100 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(g.mesajlar).toEqual([{ rol: "user", icerik: "Derdest davaları listele" }]);
         expect(g.mevcut_tanim).toEqual(VARSAYILAN_TANIM);
 
-        const p = panel();
-        expect(p.querySelector("[data-testid='sohbet-kullanici']")?.textContent).toBe("Derdest davaları listele");
-        const asistan = p.querySelector("[data-testid='sohbet-asistan']")!;
+        const k = konusma();
+        expect(k.querySelector("[data-testid='sohbet-kullanici']")?.textContent).toBe("Derdest davaları listele");
+        const asistan = k.querySelector("[data-testid='sohbet-asistan']")!;
         expect(asistan.textContent).toContain("Derdest davaları hazırladım.");
         const ozet = asistan.querySelector("[data-testid='tanim-ozeti']")!;
         expect(ozet.textContent).toContain("Davalar");
         expect(ozet.textContent).toContain("3"); // kolon
         // Girdi temizlendi, akış durumu bitince kilit kalktı
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").value).toBe("");
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").disabled).toBe(false);
+        expect(girdi().value).toBe("");
+        expect(girdi().disabled).toBe(false);
 
-        // Uygulamadan ÖNCE oluşturucu değişmedi, yeni önizleme yok
-        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
-        expect(onizlemeler()).toHaveLength(1);
-
-        await tikla(butonBul("Oluşturucuya uygula", asistan));
-
+        // OTOMATİK uygulandı: düğme yok, rozet var, oluşturucu değişti, önizleme asistan tanımıyla
+        expect(butonVar("Oluşturucuya uygula", asistan)).toBe(false);
+        expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
         expect(seciliKaynak()).toBe("davalar");
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
         // Filtre şeride çözüldü (status eq Derdest → çoklu seçim çipi); operatör seçici yok
         expect(cipler()).toEqual(["DurumDerdest"]);
         expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
-        expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
-        expect(butonVar("Oluşturucuya uygula", asistan)).toBe(false);
-        expect(toastMocks.success).toHaveBeenCalledWith("Asistan tanımı oluşturucuya uygulandı");
-        // Uygulanan tanım kendiliğinden önizlendi (sıralama dahil); bayat rozeti yok
         expect(onizlemeler()).toHaveLength(2);
         expect(sonOnizleme()).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
+        expect(toastMocks.success).toHaveBeenCalledWith("Rapor hazırlandı · 3 kayıt");
+        expect(toastMocks.success).not.toHaveBeenCalledWith("Asistan tanımı oluşturucuya uygulandı");
         // Eylem yoktu: export yok
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
+
+        // Geri al: eski taslak + önizleme geri gelir; bağlantı düşer, düğme geri gelir (yeniden uygulanabilir)
+        await tikla($("[data-testid='tanim-geri-al']", asistan));
+        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        expect(cipler()).toEqual([]);
+        expect(onizlemeler()).toHaveLength(3);
+        expect(sonOnizleme()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 10 });
+        expect(asistan.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
+        expect(butonVar("Oluşturucuya uygula", asistan)).toBe(true);
+
+        // Yeniden uygula (düğme) → yine rozet + Geri al
+        await tikla(butonBul("Oluşturucuya uygula", asistan));
+        expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
+        expect(onizlemeler()).toHaveLength(4);
+        expect(asistan.querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+    });
+
+    it("Geri al tek adımdır: manuel değişiklik (kolon paneli) adımı düşürür; 'Geri al' yalnız SON uygulanan balonda", async () => {
+        let sayac = 0;
+        sunucuKur({
+            chat: () => {
+                sayac += 1;
+                return akis([{ status: "complete", cevap: `cevap ${sayac}`, tanim: sayac === 1 ? ASISTAN_TANIMI : MUVEKKIL_TANIMI, eylem: null }]);
+            },
+        });
+        await render();
+
+        await gonder("birinci");
+        const [ilk] = Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
+        expect(ilk.querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+
+        // Manuel değişiklik: kolon panelinden "Durum" (asistan seçmişti) çıkarılır → adım düşer
+        await tikla(byLabel("Durum", await kolonPaneliAc()));
+        expect(seciliKolonlar()).toEqual(["tracking_no", "opening_date"]);
+        expect(container.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(ilk.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+
+        // İkinci uygulama (kaynak değişir, onay SORULMAZ) → Geri al yalnız ikinci balonda
+        await gonder("ikinci");
+        expect(confirmMock.fn).not.toHaveBeenCalled();
+        expect(seciliKaynak()).toBe("muvekkiller");
+        const balonlar = Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
+        expect(balonlar).toHaveLength(2);
+        expect(balonlar[0].querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(balonlar[1].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+
+        // Geri al: kaynak davalar'a, manuel değişiklik SONRASI taslağa (status çıkarılmış hali) döner
+        await tikla($("[data-testid='tanim-geri-al']"));
+        expect(seciliKaynak()).toBe("davalar");
+        expect(seciliKolonlar()).toEqual(["tracking_no", "opening_date"]);
+        expect(container.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+    });
+
+    it("tanim=null ve eylem yok (asistan soru sordu): uygulama yok, önizleme yok, balon var, Geri al yok", async () => {
+        sunucuKur({
+            chat: () => akis([{ status: "complete", cevap: "Hangi yılı istiyorsunuz?", tanim: null, eylem: null }]),
+        });
+        await render();
+        await gonder("davaları listele");
+
+        const asistan = konusma().querySelector("[data-testid='sohbet-asistan']")!;
+        expect(asistan.textContent).toContain("Hangi yılı istiyorsunuz?");
+        expect(asistan.querySelector("[data-testid='tanim-ozeti']")).toBeNull();
+        expect(asistan.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(onizlemeler()).toHaveLength(1);
+        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        expect(toastMocks.success).not.toHaveBeenCalled();
     });
 
     it("ikinci mesajda geçmiş taşınır (user, assistant, user); hata kayıtları geçmişe girmez; en fazla 20", async () => {
@@ -446,7 +582,6 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             },
         });
         await render();
-        await tikla(butonBul("Asistan"));
 
         await gonder("birinci");
         await gonder("ikinci");
@@ -472,12 +607,11 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
 
     // ---------------------------------------------------------------- eylemler (K7)
 
-    it("eylem indir_xlsx: tanım OTOMATİK uygulanır + /export gövdesi {tanim, format:xlsx, sablon_id:null, kaynak:asistan}; dosya adı başlıktan", async () => {
+    it("eylem indir_xlsx: tanım uygulanır + /export gövdesi {tanim, format:xlsx, sablon_id:null, kaynak:asistan}; dosya adı başlıktan", async () => {
         sunucuKur({
             chat: () => akis([{ status: "complete", cevap: "Excel hazırlanıyor.", tanim: ASISTAN_TANIMI, eylem: "indir_xlsx" }]),
         });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("Derdest davaları Excel indir");
         await bekle(8);
 
@@ -488,12 +622,15 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(g).toEqual({ tanim: ASISTAN_TANIMI, format: "xlsx", sablon_id: null, kaynak: "asistan" });
         expect(indirmeler).toEqual(["hukdok-rapor-davalar-20260906-1500.xlsx"]);
         expect(toastMocks.success).toHaveBeenCalledWith("İndirildi: hukdok-rapor-davalar-20260906-1500.xlsx");
+        // İndirme yolunda ikinci "hazırlandı" toast'ı yok (tek bildirim)
+        expect(toastMocks.success).toHaveBeenCalledTimes(1);
 
-        // Oluşturucu da değişti, kart "uygulandı" rozetinde, düğme yok
+        // Oluşturucu da değişti, kart "uygulandı" rozetinde, düğme yok, Geri al var
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
-        const asistan = panel().querySelector("[data-testid='sohbet-asistan']")!;
+        const asistan = konusma().querySelector("[data-testid='sohbet-asistan']")!;
         expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
         expect(butonVar("Oluşturucuya uygula", asistan)).toBe(false);
+        expect(asistan.querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
         expect(asistan.textContent).toContain("Excel indirme");
     });
 
@@ -503,7 +640,6 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             exportCevabi: () => failJson(413, { detail: { sebep: "satir_limiti", toplam: 120000, limit: 50000 } }),
         });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("müvekkilleri csv indir");
         await bekle(8);
 
@@ -524,7 +660,6 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             chat: () => akis([{ status: "complete", cevap: "Önizliyorum.", tanim: ASISTAN_TANIMI, eylem: "onizle" }]),
         });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("önizle");
         await bekle(8);
 
@@ -534,41 +669,47 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
+        expect(toastMocks.success).toHaveBeenCalledWith("Rapor hazırlandı · 3 kayıt");
     });
 
-    it("eylem onizle + tanim null: oluşturucudaki mevcut tanımla YENİDEN önizler (aynı tanım olsa da)", async () => {
+    it("eylem onizle + tanim null: oluşturucudaki mevcut tanımla YENİDEN önizler (aynı tanım olsa da); Geri al yok", async () => {
         sunucuKur({
             chat: () => akis([{ status: "complete", cevap: "Mevcut tanımı önizliyorum.", tanim: null, eylem: "onizle" }]),
         });
         await render();
         expect(onizlemeler()).toHaveLength(1);
-        await tikla(butonBul("Asistan"));
         await gonder("bunu önizle");
         await bekle(8);
 
         const prev = onizlemeler();
         expect(prev).toHaveLength(2);
         expect(govde(prev[1]).tanim).toEqual(VARSAYILAN_TANIM);
-        expect(panel().querySelector("[data-testid='tanim-ozeti']")).toBeNull();
+        expect(konusma().querySelector("[data-testid='tanim-ozeti']")).toBeNull();
+        expect(container.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
     });
 
-    it("asistan tanımının veri kaynağı katalogda yoksa uygulanmaz: toast + oluşturucu değişmez", async () => {
+    it("asistan tanımının veri kaynağı katalogda yoksa otomatik uygulanmaz: toast + oluşturucu değişmez; düğme kalır", async () => {
         sunucuKur({
             chat: () => akis([{ status: "complete", cevap: "?", tanim: { ...ASISTAN_TANIMI, veri_kaynagi: "yok_boyle" }, eylem: null }]),
         });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("x");
-        const asistan = panel().querySelector("[data-testid='sohbet-asistan']")!;
-        await tikla(butonBul("Oluşturucuya uygula", asistan));
 
         expect(toastMocks.error).toHaveBeenCalledWith("Asistan tanımı uygulanamadı", expect.objectContaining({ description: expect.stringContaining("yok_boyle") }));
         expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        const asistan = konusma().querySelector("[data-testid='sohbet-asistan']")!;
         expect(butonVar("Oluşturucuya uygula", asistan)).toBe(true);
+        expect(asistan.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(onizlemeler()).toHaveLength(1);
+        expect(toastMocks.success).not.toHaveBeenCalled();
+
+        // Düğme de aynı yoldan reddeder
+        await tikla(butonBul("Oluşturucuya uygula", asistan));
+        expect(toastMocks.error).toHaveBeenCalledTimes(2);
         expect(onizlemeler()).toHaveLength(1);
     });
 
-    // ---------------------------------------------------------------- warning / failed / 409
+    // ---------------------------------------------------------------- warning / failed / 409 / 403
 
     it("warning olayları asistan mesajının altında sarı şerit olarak görünür", async () => {
         sunucuKur({
@@ -578,13 +719,12 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             ]),
         });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("belirsiz istek");
 
-        const seritler = panel().querySelectorAll("[data-testid='sohbet-uyari']");
+        const seritler = konusma().querySelectorAll("[data-testid='sohbet-uyari']");
         expect(seritler).toHaveLength(1);
         expect(seritler[0].textContent).toContain("Tanım doğrulanamadı, tanım=null ile devam");
-        expect(panel().querySelector("[data-testid='tanim-ozeti']")).toBeNull();
+        expect(konusma().querySelector("[data-testid='tanim-ozeti']")).toBeNull();
         expect(butonVar("Oluşturucuya uygula")).toBe(false);
     });
 
@@ -599,43 +739,39 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
             },
         });
         await render();
-        await tikla(butonBul("Asistan"));
 
         await gonder("ilk");
-        let hatalar = panel().querySelectorAll("[data-testid='sohbet-hata']");
+        let hatalar = konusma().querySelectorAll("[data-testid='sohbet-hata']");
         expect(hatalar).toHaveLength(1);
         expect(hatalar[0].querySelector("[role='alert']")).not.toBeNull();
         expect(hatalar[0].textContent).toContain("Yapay zekâ servisi şu an yoğun.");
         expect(hatalar[0].textContent).toContain("biraz sonra");
         // Girdi yeniden açık — tekrar denenebilir
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").disabled).toBe(false);
+        expect(girdi().disabled).toBe(false);
 
         await gonder("ikinci");
-        hatalar = panel().querySelectorAll("[data-testid='sohbet-hata']");
+        hatalar = konusma().querySelectorAll("[data-testid='sohbet-hata']");
         expect(hatalar).toHaveLength(2);
         expect(hatalar[1].textContent).toContain("Bilinmeyen sorun.");
         expect(hatalar[1].textContent).toContain("Beklenmeyen bir hata oldu");
         expect(hatalar[1].textContent).toContain("yepyeni_etiket");
-        // Hata toast'a gitmez — panelde okunur
+        // Hata toast'a gitmez — konuşmada okunur
         expect(toastMocks.error).not.toHaveBeenCalled();
     });
 
-    it("409: panelde okunur uyarı şeridi, girdi kilitli, başlık düğmesi pasif + ipucu; manuel akış çalışır", async () => {
+    it("409: satır ve konuşma kalkar, tek toast ile bildirilir; manuel akış çalışır", async () => {
         sunucuKur({ chat: () => failJson(409, { detail: "rapor_asistani kapalı" }) });
         await render();
-        const dugme = butonBul("Asistan");
-        expect(dugme.disabled).toBe(false);
-        await tikla(dugme);
+        expect(container.querySelector("[data-testid='asistan-satiri']")).not.toBeNull();
         await gonder("merhaba");
 
-        const serit = panel().querySelector("[data-testid='asistan-kapali-seridi']")!;
-        expect(serit.getAttribute("role")).toBe("alert");
-        expect(serit.textContent).toContain("kapalı");
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").disabled).toBe(true);
-        expect(panel().querySelectorAll("[data-testid='sohbet-hata']")).toHaveLength(1);
-
-        expect(butonBul("Asistan").disabled).toBe(true);
-        expect(butonBul("Asistan").title).toContain("kapalı");
+        expect(container.querySelector("[data-testid='asistan-satiri']")).toBeNull();
+        expect(container.querySelector("[data-testid='asistan-konusmasi']")).toBeNull();
+        expect(container.querySelector("[aria-label='Asistana mesaj']")).toBeNull();
+        expect(butonVar("Asistan")).toBe(false);
+        expect(toastMocks.error).toHaveBeenCalledTimes(1);
+        expect(toastMocks.error).toHaveBeenCalledWith("Rapor asistanı kapalı", expect.objectContaining({ description: expect.stringContaining("kapalı") }));
+        expect($("[data-testid='rapor-sekmesi']").firstElementChild?.getAttribute("data-testid")).toBe("kaynak-kartlari");
 
         // Manuel yol etkilenmez: kolon değişimi (yan panel) hemen önizler
         expect(onizlemeler()).toHaveLength(1);
@@ -643,52 +779,55 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(onizlemeler()).toHaveLength(2);
     });
 
-    it("403: yönetici uyarısı panelde", async () => {
+    it("403: yönetici uyarısı konuşmada; satır kalır (403 anahtar değil, yetki)", async () => {
         sunucuKur({ chat: () => failJson(403, { detail: "admin gerekli" }) });
         await render();
-        await tikla(butonBul("Asistan"));
         await gonder("merhaba");
 
-        const hata = panel().querySelector("[data-testid='sohbet-hata']")!;
+        const hata = konusma().querySelector("[data-testid='sohbet-hata']")!;
         expect(hata.textContent).toContain("yalnız yöneticilere");
-        expect(butonBul("Asistan").disabled).toBe(false); // 403 anahtar değil, yetki
+        expect(container.querySelector("[data-testid='asistan-satiri']")).not.toBeNull();
+        expect(girdi().disabled).toBe(false);
+        expect(toastMocks.error).not.toHaveBeenCalled();
     });
 
     // ---------------------------------------------------------------- girdi davranışı
 
-    it("Shift+Enter göndermez; boş mesaj gönderilmez; gönderim sırasında girdi ve Gönder kilitli; Sohbeti temizle", async () => {
+    it("boş mesaj gönderilmez (Enter/Gönder pasif); gönderim sırasında girdi, Gönder ve çipler kilitli, akış durumu; Sohbeti temizle", async () => {
         const bekleyen = bekleyenAkis([{ status: "complete", cevap: "ok", tanim: null, eylem: null }]);
         sunucuKur({ chat: () => bekleyen.res });
         await render();
-        await tikla(butonBul("Asistan"));
-        const girdi = byLabel<HTMLTextAreaElement>("Asistana mesaj");
+        const g = girdi();
 
         // Boş → gönderilmez
-        await tus(girdi, "Enter");
+        await tus(g, "Enter");
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(0);
         expect(butonBul("Gönder").disabled).toBe(true);
-
-        yaz(girdi, "satır 1");
-        await tus(girdi, "Enter", true);
+        yaz(g, "   ");
+        await tus(g, "Enter");
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(0);
-        expect(girdi.value).toBe("satır 1");
+        expect(konusmaVar()).toBe(false);
+
+        yaz(g, "satır 1");
+        expect(butonBul("Gönder").disabled).toBe(false);
 
         // Gönder → akış bekliyor → kilitli
-        await tus(girdi, "Enter");
+        await tus(g, "Enter");
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(1);
-        expect(girdi.disabled).toBe(true);
+        expect(g.disabled).toBe(true);
         expect(butonBul("Gönder").disabled).toBe(true);
-        expect(panel().querySelector("[data-testid='akis-durumu']")).not.toBeNull();
+        expect(Array.from(container.querySelectorAll<HTMLButtonElement>("[data-testid='ornek-istem']")).every(b => b.disabled)).toBe(true);
+        expect(konusma().querySelector("[data-testid='akis-durumu']")).not.toBeNull();
         expect(byLabel<HTMLButtonElement>("Sohbeti temizle").disabled).toBe(true);
 
         await act(async () => { bekleyen.coz(); });
         await bekle(8);
-        expect(girdi.disabled).toBe(false);
-        expect(panel().querySelector("[data-testid='akis-durumu']")).toBeNull();
-        expect(panel().querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(1);
+        expect(g.disabled).toBe(false);
+        expect(konusma().querySelector("[data-testid='akis-durumu']")).toBeNull();
+        expect(konusma().querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(1);
 
         await tikla(byLabel("Sohbeti temizle"));
-        expect(panel().querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(0);
-        expect(panel().querySelector("[data-testid='asistan-bos']")).not.toBeNull();
+        expect(konusma().querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(0);
+        expect(konusma().querySelector("[data-testid='asistan-bos']")).not.toBeNull();
     });
 });

@@ -1,18 +1,16 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMsal } from "@azure/msal-react";
-import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { ConfirmContext, type ConfirmOptions } from "@/hooks/useConfirm";
 import { Eyebrow, HairlineCard } from "@/components/dashboard/primitives";
-import { FlowButton } from "@/components/flow/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { SourceCards } from "@/components/reports/SourceCards";
 import { ColumnSheet } from "@/components/reports/ColumnSheet";
 import { QuickFilters } from "@/components/reports/QuickFilters";
-import { AssistantPanel } from "@/components/reports/AssistantPanel";
+import { AssistantBar } from "@/components/reports/AssistantBar";
 import { PreviewTable } from "@/components/reports/PreviewTable";
 import { TemplateBar, TemplatesTable } from "@/components/reports/TemplateBar";
 import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "@/components/reports/SaveTemplateDialog";
@@ -67,13 +65,18 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 
 /**
  * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor", "Şablonlar" (liste
- * tablosu), "İndirme geçmişi" (sunucu sayfalı koşular). Asistan (G135): araç çubuğundaki "Asistan"
- * düğmesi yalnız `rapor_asistani` anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula`
- * ile taslağa köprüler.
+ * tablosu), "İndirme geçmişi" (sunucu sayfalı koşular).
  *
- * G139 — Rapor sekmesi yerleşimi (plan §4.1): kaynak kartları (SourceCards) → filtre şeridi
- * (QuickFilters) → araç çubuğu (sol: "Kolonlar (N)" yan paneli + şablon çubuğu; sağ: Excel/CSV +
- * Asistan) → tam genişlik önizleme tablosu. Sol "sorgu kurucu" sütunu YOK; katalog gelince ilk
+ * G143 — asistan ÖN PLANDA (plan §6.1): Rapor sekmesinin ilk öğesi `AssistantBar` (tam genişlik,
+ * marka kenarlı satır + inline konuşma); yalnız `rapor_asistani` anahtarı açıkken (anahtar
+ * okunana dek iskelet; kapalı/409 → satır yok, manuel akış aynen). Asistan geçerli `tanim`
+ * döndürünce `asistanTanimiUygula` tanımı DÜĞME BEKLEMEDEN taslağa koyar, önizleme kendiliğinden
+ * yenilenir, toast "Rapor hazırlandı · N kayıt"; uygulamadan önceki taslak `oncekiTaslak`ta —
+ * balondaki "Geri al" tek adım geri döner. Eski araç çubuğu düğmesi ve yan panel (`AssistantPanel`) yok.
+ *
+ * G139 — Rapor sekmesi yerleşimi (plan §4.1): [asistan satırı] → kaynak kartları (SourceCards) →
+ * filtre şeridi (QuickFilters) → araç çubuğu (sol: "Kolonlar (N)" yan paneli + şablon çubuğu; sağ:
+ * Excel/CSV) → tam genişlik önizleme tablosu. Sol "sorgu kurucu" sütunu YOK; katalog gelince ilk
  * kaynak (Davalar) + varsayılan kolonlar + filtresiz önizleme kendiliğinden yüklenir — sayfa dolu açılır.
  *
  * G138 — önizleme OTOMATİKTİR: geçerli taslak son istenenden farklıysa yapısal değişiklikte hemen,
@@ -143,12 +146,15 @@ const ReportsPage = () => {
     const [kosuSurumu, setKosuSurumu] = useState(0);
     const kosuReqRef = useRef(0);
 
-    // ---- Asistan (G135) ----
-    // Anahtar kapısı (K8): null = henüz okunmadı (düğme gizli), false = kapalı (gizli), true = görünür.
+    // ---- Asistan (G135 → G143) ----
+    // Anahtar kapısı (K8): null = henüz okunmadı (satır iskelet), false = kapalı (satır yok), true = satır.
     const [asistanAnahtari, setAsistanAnahtari] = useState<boolean | null>(null);
-    const [asistanAcik, setAsistanAcik] = useState(false);
-    // `/chat` 409 döndü: anahtar bu oturumda kapatılmış — düğme pasif + ipucu, panelde şerit.
+    // `/chat` 409 döndü: anahtar bu oturumda kapatılmış — satır kalkar (toast ile bildirilir).
     const [asistan409, setAsistan409] = useState(false);
+    // Asistan uygulamasından ÖNCEKİ taslak — "Geri al" tek adım (G143); başka her taslak yazımı düşürür.
+    const [oncekiTaslak, setOncekiTaslak] = useState<OlusturucuDurumu | null>(null);
+    // Otomatik uygulama sonrası ilk önizleme cevabında "Rapor hazırlandı · N kayıt" toast'ı.
+    const asistanToastRef = useRef(false);
 
     const katalogYukle = useCallback(async () => {
         setKatalogYukleniyor(true);
@@ -253,9 +259,16 @@ const ReportsPage = () => {
             setCevap(data);
             setOnizlemeHatasi(null);
             setSonTanim(hedefTanim);
+            if (asistanToastRef.current) {
+                // G143: asistan tanımı uygulandı ve önizleme geldi — satır sayısıyla tek toast.
+                asistanToastRef.current = false;
+                toast.success(`Rapor hazırlandı · ${data.toplam} kayıt`);
+            }
         } catch (err) {
             if (reqId !== reqIdRef.current) return;
             console.error(err);
+            // Önizleme düştü: "hazırlandı" toast'ı yok, şerit yeter.
+            asistanToastRef.current = false;
             // Hata ≠ boş liste: tablo boşa düşmez, şerit çıkar (G002 kuralı).
             setOnizlemeHatasi(err instanceof Error ? err.message : RAPOR_ONIZLEME_HATASI);
         } finally {
@@ -315,6 +328,8 @@ const ReportsPage = () => {
      */
     const durumDegisti = (next: OlusturucuDurumu, gecikmeli = false) => {
         gecikmeliRef.current = gecikmeli;
+        // Her taslak yazımı asistanın "Geri al" adımını düşürür (asistan uygulaması ardından yeniden koyar).
+        setOncekiTaslak(null);
         if (next.veri_kaynagi !== durum.veri_kaynagi) {
             reqIdRef.current += 1;
             zamanlayiciyiDurdur();
@@ -498,12 +513,13 @@ const ReportsPage = () => {
         setKosuSurumu(v => v + 1);
     };
 
-    // ---- Asistan köprüsü (G135 / G138) ----
+    // ---- Asistan köprüsü (G135 / G138 / G143) ----
     /**
-     * Asistan tanımını oluşturucuya koyar (onay sorulmaz — kullanıcı "uygula"ya bastı ya da
-     * asistan `eylem` döndürdü); şablon seçimi düşer. Uygulanan tanım OTOMATİK önizlenir
-     * (`eylem=null` olsa da, §4.1 madde 8); `eylem:"onizle"` mevcut tanımla da olsa yeniden ister;
-     * `indir_*` → `/export` + `kaynak:"asistan"` (K7, tek log yolu).
+     * Asistan tanımını oluşturucuya koyar (onay sorulmaz — asistan tanım üretti, G143 otomatik yol);
+     * şablon seçimi düşer; uygulamadan önceki taslak `oncekiTaslak`a alınır ("Geri al", tek adım).
+     * Uygulanan tanım OTOMATİK önizlenir (`eylem=null` olsa da, §4.1 madde 8) ve önizleme gelince
+     * "Rapor hazırlandı · N kayıt" toast'ı çıkar; `eylem:"onizle"` mevcut tanımla da olsa yeniden ister;
+     * `indir_*` → `/export` + `kaynak:"asistan"` (K7, tek log yolu; indirme toast'ı yeter).
      * true = tanım uygulandı (eylem başarısız olsa bile); false = kaynak katalogda yok, hiçbir şey değişmedi.
      */
     const asistanTanimiUygula = async (hedef: RaporTanimi, eylem: AsistanEylemi | null): Promise<boolean> => {
@@ -512,22 +528,22 @@ const ReportsPage = () => {
             toast.error("Asistan tanımı uygulanamadı", { description: `Veri kaynağı katalogda yok: ${hedef.veri_kaynagi}` });
             return false;
         }
+        const onceki = durum;
         durumDegisti(tanimdanDurum(hedef, hedefKaynak));
+        // durumDegisti geri-al adımını düşürür; asistan yolu hemen ardından koyar (aynı batch, son yazım kazanır).
+        setOncekiTaslak(onceki);
         setSeciliSablonId(null);
         if (tab !== "rapor") sekmeyeGit("rapor");
-        if (!eylem) {
-            toast.success("Asistan tanımı oluşturucuya uygulandı");
-            return true;
-        }
         if (!tanimGecerliMi(hedef, hedefKaynak)) {
             toast.error("Asistan tanımı eksik", {
                 description: "Tanım oluşturucuya kondu ama eksik/geçersiz — düzeltin, önizleme kendiliğinden yenilenir.",
             });
             return true;
         }
-        if (eylem === "onizle") {
+        if (!eylem || eylem === "onizle") {
             // Aynı tanım daha önce istenmiş olsa da yeniden önizle: efekt "son istenen"i boş görür.
-            sonIstenenRef.current = null;
+            if (eylem === "onizle") sonIstenenRef.current = null;
+            asistanToastRef.current = true;
             return true;
         }
         const format = eylem === "indir_xlsx" ? "xlsx" : "csv";
@@ -548,9 +564,21 @@ const ReportsPage = () => {
         return true;
     };
 
-    const onAsistanKapali = useCallback(() => setAsistan409(true), []);
+    /** "Geri al": asistan uygulamasından önceki taslak geri gelir; efekt önizlemeyi kendiliğinden yeniler. */
+    const asistanGeriAl = () => {
+        if (!oncekiTaslak) return;
+        durumDegisti(oncekiTaslak);
+        setSeciliSablonId(null);
+    };
 
-    const asistanDugmesiGorunur = asistanAnahtari === true;
+    // 409: anahtar bu oturumda kapatılmış — satır kalkar; kullanıcıya tek toast (manuel akış etkilenmez).
+    const onAsistanKapali = useCallback(() => {
+        setAsistan409(true);
+        toast.error("Rapor asistanı kapalı", { description: ASISTAN_KAPALI_MESAJI });
+    }, []);
+
+    // Satır: anahtar okunana dek iskelet (null); kapalı (false) ya da 409 → hiç render yok.
+    const asistanSatiriGorunur = asistanAnahtari !== false && !asistan409;
 
     const raporSekmesi = katalogHatasi ? (
         <DataErrorBanner description={katalogHatasi} onRetry={katalogYukle} isRetrying={katalogYukleniyor} />
@@ -560,6 +588,20 @@ const ReportsPage = () => {
         </HairlineCard>
     ) : (
         <section data-testid="rapor-sekmesi" className="grid gap-7 min-w-0">
+            {/* 0. Asistan satırı (G143) — anahtar açıkken sekmenin ilk öğesi; inline konuşma altında açılır */}
+            {asistanSatiriGorunur && (
+                <AssistantBar
+                    yukleniyor={asistanAnahtari === null}
+                    katalog={katalog}
+                    veriKaynagi={durum.veri_kaynagi}
+                    mevcutTanim={tanimGecerli ? tanim : null}
+                    onKapali={onAsistanKapali}
+                    onTanimUygula={asistanTanimiUygula}
+                    geriAlinabilir={oncekiTaslak !== null}
+                    onGeriAl={asistanGeriAl}
+                />
+            )}
+
             {/* 1. Kaynak kartları */}
             <SourceCards kaynaklar={katalog.veri_kaynaklari} secili={durum.veri_kaynagi} onSec={onKaynakSec} />
 
@@ -574,7 +616,7 @@ const ReportsPage = () => {
                     />
                 )}
 
-                {/* 3. Araç çubuğu: sol kolonlar + şablon, sağ indirme + asistan */}
+                {/* 3. Araç çubuğu: sol kolonlar + şablon, sağ indirme */}
                 <div
                     data-testid="arac-cubugu"
                     className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5 border-b border-[var(--border)] bg-[var(--bg)]"
@@ -607,19 +649,6 @@ const ReportsPage = () => {
                             satirSayisi={onizlenenSatirSayisi}
                             onIndirildi={onIndirildi}
                         />
-                        {asistanDugmesiGorunur && (
-                            <FlowButton
-                                variant={asistanAcik ? "primary" : "secondary"}
-                                size="sm"
-                                onClick={() => setAsistanAcik(v => !v)}
-                                disabled={asistan409}
-                                title={asistan409 ? ASISTAN_KAPALI_MESAJI : "Rapor asistanı — isteğinizi yazın, tanımı taslağa uygulayın"}
-                                className="shrink-0"
-                            >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                Asistan
-                            </FlowButton>
-                        )}
                     </div>
                 </div>
 
@@ -708,16 +737,6 @@ const ReportsPage = () => {
                 baslangic={diyalog?.hedef ? { ad: diyalog.hedef.ad, aciklama: diyalog.hedef.aciklama, paylasimli: diyalog.hedef.paylasimli } : null}
                 onSubmit={diyalogKaydet}
                 kaydediliyor={sablonIsleniyor}
-            />
-
-            <AssistantPanel
-                acik={asistanDugmesiGorunur && asistanAcik}
-                onKapat={() => setAsistanAcik(false)}
-                katalog={katalog}
-                mevcutTanim={tanimGecerli ? tanim : null}
-                kapali={asistan409}
-                onKapali={onAsistanKapali}
-                onTanimUygula={asistanTanimiUygula}
             />
         </div>
     );

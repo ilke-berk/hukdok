@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Sparkles, Wand2 } from "lucide-react";
+import { AlertTriangle, Check, Sparkles, Undo2, Wand2 } from "lucide-react";
 import type { Katalog } from "@/lib/reports";
 import { EYLEM_ETIKETLERI, errorKodIpucu, tanimOzeti, type SohbetKaydi } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
@@ -7,16 +7,19 @@ type AssistantMessageProps = {
     kayit: SohbetKaydi;
     /** Tanım özetinde veri kaynağı etiketi için (anahtar → etiket). */
     katalog: Katalog | null;
-    /** "Oluşturucuya uygula" — yalnız tanım dolu ve henüz uygulanmamışken görünür. */
+    /** "Oluşturucuya uygula" — yalnız tanım dolu ve (otomatik uygulama reddedildiği için) uygulanmamışken görünür. */
     onUygula?: (kayit: SohbetKaydi) => void;
+    /** "Geri al" (G143) — yalnız bu kaydın uygulaması geri alınabilirken verilir (tek adım). */
+    onGeriAl?: () => void;
 };
 
 /**
- * Tek sohbet balonu (G135): kullanıcı sağda; asistan solda — `warning` olayları sarı şerit,
- * `failed` kırmızı kutu + `error_kod` ipucu; `tanim` varsa özet kartı (kaynak, kolon/filtre
- * sayısı) + "Oluşturucuya uygula". `eylem` doluysa tanım zaten otomatik uygulanmıştır (rozet).
+ * Tek sohbet balonu (G135 → G143): kullanıcı sağda; asistan solda — `warning` olayları sarı şerit,
+ * `failed` kırmızı kutu + `error_kod` ipucu; `tanim` varsa özet kartı (kaynak, kolon/filtre sayısı).
+ * G143: tanım OTOMATİK uygulanır — kart "uygulandı" rozeti + "Geri al" bağlantısı (tek adım) taşır;
+ * "Oluşturucuya uygula" yalnız otomatik uygulama reddedilmişse (kaynak katalogda yok) görünür.
  */
-export function AssistantMessage({ kayit, katalog, onUygula }: AssistantMessageProps) {
+export function AssistantMessage({ kayit, katalog, onUygula, onGeriAl }: AssistantMessageProps) {
     if (kayit.rol === "user") {
         return (
             <div className="flex justify-end" data-testid="sohbet-kullanici">
@@ -110,6 +113,17 @@ export function AssistantMessage({ kayit, katalog, onUygula }: AssistantMessageP
                                 <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--fg-subtle)]">
                                     · {EYLEM_ETIKETLERI[kayit.eylem]}
                                 </span>
+                            )}
+                            {kayit.uygulandi && onGeriAl && (
+                                <button
+                                    type="button"
+                                    onClick={onGeriAl}
+                                    data-testid="tanim-geri-al"
+                                    title="Asistan uygulamadan önceki taslağa dön (tek adım)"
+                                    className="ml-auto inline-flex items-center gap-1 text-[12px] text-[var(--fg-muted)] underline underline-offset-2 hover:text-[var(--fg)] transition-colors"
+                                >
+                                    <Undo2 className="w-3.5 h-3.5" /> Geri al
+                                </button>
                             )}
                         </div>
                     </div>

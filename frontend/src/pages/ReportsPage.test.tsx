@@ -687,8 +687,9 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(onceGelir(serit, cubuk)).toBe(true);
         expect(onceGelir(cubuk, tablo)).toBe(true);
 
-        // Araç çubuğu: sol kolon düğmesi + şablon, sağ indirme (+ asistan anahtarla)
+        // Araç çubuğu: sol kolon düğmesi + şablon, sağ indirme (G143: "Asistan" düğmesi artık yok — satır üstte)
         expect(cubuk.querySelector("[data-testid='kolon-dugmesi']")).not.toBeNull();
+        expect(Array.from(cubuk.querySelectorAll("button")).map(b => b.textContent?.trim())).not.toContain("Asistan");
         expect(cubuk.querySelector("#rapor-sablon")).not.toBeNull();
         expect(Array.from(cubuk.querySelectorAll("button")).map(b => b.textContent?.trim())).toEqual(
             expect.arrayContaining(["Excel indir", "CSV indir"]),
