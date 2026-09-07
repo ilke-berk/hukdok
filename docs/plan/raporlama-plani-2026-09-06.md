@@ -419,3 +419,85 @@ frontend `vitest` 798 passed / 65 dosya (G139), eslint 0 uyarı, `tsc -b --force
 testi YAPILMADI (backend/MSAL gerektirir) — sabah gerçek ekranda kart satırının `lg` altı kaydırması, Sheet
 genişliği, araç çubuğu sarması göz kontrolü ister (G139 raporu). Açık NOT: `ColumnPicker.tsx:285` ipucu
 (yukarıda), `lib/api.test.ts` "tek logout" testinin yük altında bir kez düşmesi (hub, kapsam dışı).
+
+---
+
+## 5. Üçüncü tur — arama/filtre kuralı: "veriden kapalı liste" + müvekkil şeridi (2026-09-07 gündüz, kullanıcı kararı; G141-G142)
+
+**Kullanıcı bulgusu (07.09 sabah, lokal):** "birden fazla şehir seçilemiyor; Müvekkil Türü ayrı ve anlamsız;
+filtrelemede hâlâ sorun var, önce müvekkil için düşünelim." Planlayıcı ölçümü (lokal DB, 1.998 kart): İl 79
+farklı değer (temiz yazım), Kategori 11, Uzmanlık 44 (1.214 doktorda dolu), Müvekkil Türü ham İngilizce kod
+(Individual 1.898 / Corporate 99 / "Gerçek Kişi" 1 — kategoriyle aynı bilgi), Kayıt Türü tek değer ("Client"),
+vekalet geçerlilik hiç dolu değil, e-posta 1.187 / cep 1.392 dolu, Sektör 597 farklı yazım (gerçek serbest metin).
+Teşhis: §4.2 "tipten kontrol" kuralı yetersiz — teknik olarak metin ama fiilen kapalı liste olan alanlar
+(il, uzmanlık, mahkeme, avukat, yükleyen…) çoklu seçim olmalı; "içerir" yalnız gerçekten serbest metinde.
+
+### 5.1 Hedef (müvekkil şeridi; kalıp diğer kaynaklara sonraki adımda)
+
+1. **Tek arama kutusu** en üstte: ad · cari kod · e-posta · telefon · cep üzerinde birden "içerir".
+2. **Kategori çipleri** doğrudan görünür (açılır liste değil), çoklu seçim.
+3. **İl** aranabilir çoklu seçim; en sık kullanılan 8 değer üstte, gerisi yazdıkça.
+4. **Uzmanlık** aranabilir çoklu seçim.
+5. **Dava durumu**: "davası var / yok" anahtarı (isteyen "+ Başka alan"dan sayı aralığı).
+6. **İletişim**: "e-postası yok" / "telefonu yok" anahtarları.
+7. **Gizlenenler** (hızlı şeritte yok, "+ Başka alan"dan ulaşılır): Müvekkil Türü (etiketleri "Gerçek kişi /
+   Tüzel kişi"), Kayıt Türü, vekalet alanları.
+8. **"boş olanlar" kutucukları KALKAR**; çoklu seçim listelerinde "(boş)" seçeneği; tarih/sayı aralıklarında
+   boş için çipin "…" menüsü (`is_null`) yeter.
+
+### 5.2 Sözleşme genişlemesi (G141 — DONDU; G142 buna göre PARALEL)
+
+- **Veriden kapalı liste:** metin kolonda `secenek_esigi` (kayıt defterinde kolon bazında `veriden_liste=True`
+  işareti; varsayılan eşik `RAPOR_SECENEK_ESIGI=100` env) — DISTINCT değer sayısı eşiğin altındaysa katalogda
+  `kontrol="coklu_secim"`, `secenekler` = DISTINCT (tenant + soft-delete kurallı, boş hariç, **sıklığa göre**
+  azalan, en fazla eşik kadar), `secenek_kaynagi="veri"`; eşik aşılırsa `kontrol="metin_icerir"` + `oneriler`
+  (G137 davranışı). `tip` **"metin" kalır** (op tablosu değişmez: `in`/`eq`/`contains` hepsi izinli).
+  İşaretlenecekler: Müvekkiller `il, specialty, client_type(sabit etiketli)`; Davalar `court, judicial_unit,
+  responsible_lawyer_name, uyap_lawyer_name, sub_type, karar_turu, case_stage, dosya_son_durumu`; Belgeler
+  `uploaded_by, belge_turu_adi`; Föyler `muvekkil_tipi` (zaten liste). Sabit `liste` kolonlarda
+  `secenek_kaynagi="sabit"`.
+- **Seçenek etiketleri:** `KatalogKolon.secenek_etiketleri: {deger: etiket} | null` — ham kod saklanan
+  alanlarda (client_type: `Individual→"Gerçek kişi"`, `Corporate→"Tüzel kişi"`, `Gerçek Kişi→"Gerçek kişi (eski
+  yazım)"`); filtre değeri HAM kod olarak gider, yalnız gösterim etiketli.
+- **`in` listesinde boş:** §2.1 `Filtre.deger` `in` için `list[str|number|null]`; `null` öğesi "(boş)"
+  demektir → motor `IN (...) OR IS NULL` (tek başına `[null]` = `is_null`). Asistan çevirisi (`AsistanFiltre`)
+  `degerler` metin listesinde `"(boş)"` sabitini `null`'a çevirir. Diğer op'larda `null` reddedilir (422).
+- **Sanal arama kolonu:** her kaynağa `arama` (etiket "Ara", tip metin, `secilebilir=False`, `siralanabilir=False`,
+  `turetilmis=True`, yalnız `contains`): Müvekkiller `name|cari_kod|email|phone|mobile_phone`; Davalar
+  `tracking_no|esas_no|subject|court|muvekkil_adlari(EXISTS)|karsi_taraf_adlari(EXISTS)`; Belgeler
+  `original_filename|dava_tracking_no|ai_summary`; Föyler `sistem_no|tku_no|hasar_no|dava_tracking_no`.
+  Katalog kolonuna `secilebilir: bool` alanı (varsayılan true); `secilebilir=false` kolon `kolonlar`
+  listesinde 422, kolon setlerinde yok, `katalog_metni`'ne "yalnız filtre" şerhiyle girer.
+- **Hızlı filtre sunumu:** `HizliFiltre.sunum: "varsayilan" | "arama" | "cipler" | "var_yok" | "bos_anahtari"`
+  + `etiket: str|null` (anahtar metni, ör. "Davası var", "E-postası yok"). Eşleme (frontend §5.3):
+  `arama` → arama kutusu (`contains`); `cipler` → görünür çip satırı (çoklu, `in`); `var_yok` → sayı kolonunda
+  anahtar: açık = `gte 1`, kapalı = filtre yok, "yok" = `eq 0`; `bos_anahtari` → açık = `is_null`.
+  Müvekkiller hızlı filtreleri (sıra): `arama(arama)` · `category(cipler)` · `il` · `specialty` ·
+  `dava_sayisi(var_yok,"Davası var")` · `email(bos_anahtari,"E-postası yok")` · `mobile_phone(bos_anahtari,
+  "Cep telefonu yok")`. Davalar listesi değişmez (+ `arama` başa). Belgeler/Föyler: `arama` başa.
+- **Sık kullanılanlar üstte:** `secenekler` sıklığa göre geldiği için ek alan gerekmez; frontend ilk 8'i
+  "sık" bölümü olarak gösterir.
+- Sunucu sözleşmesi dışında değişiklik yok: `/preview`/`/export` gövdesi aynı; DB/migrasyon yok.
+
+### 5.3 Frontend (G142) kontrol kuralları
+
+| kontrol / sunum | görünüm | üretilen filtre |
+| --- | --- | --- |
+| arama | tek kutu, 600 ms gecikme, temizle × | `arama contains "…"` |
+| cipler | görünür çip satırı (≤ 12 seçenek; fazlası "+N" açılır) | `in [...]` (1 seçim → `eq`) |
+| coklu_secim (veriden) | aranabilir açılır: "Sık" (ilk 8) + "Tümü" + "(boş)" seçeneği | `in [..., null]` |
+| var_yok | üçlü anahtar: hepsi / var / yok | — / `gte 1` / `eq 0` |
+| bos_anahtari | tek kutucuk "X yok" | `is_null` |
+| (kaldırıldı) "boş olanlar" yan kutucuğu | — | tarih/sayı için çip "…" menüsünde `is_null` |
+
+Şablon/asistan tanımı gidiş-dönüşü korunur: `in` içindeki `null` "(boş)" çipi olarak görünür; `arama`
+kolonu şeridin arama kutusuna çözülür; `secilebilir=false` kolon Kolonlar panelinde listelenmez.
+
+### 5.4 Görevler
+
+| Görev | Bant | Bağımlı | İçerik |
+| --- | --- | --- | --- |
+| G141 | backend | – | Veriden kapalı liste (eşik + sıklık sırası), `secenek_etiketleri`, `in` içinde `null`, sanal `arama` kolonu + `secilebilir`, `HizliFiltre.sunum/etiket`, müvekkil hızlı filtre listesi; asistan çevirisi "(boş)" |
+| G142 | frontend | – (sözleşme §5.2'den) | Arama kutusu, kategori çipleri, veriden çoklu seçim ("Sık"/"Tümü"/"(boş)"), var/yok ve "X yok" anahtarları, "boş olanlar" kutucuklarının kaldırılması, `secilebilir=false` gizleme, şablon/asistan gidiş-dönüş |
+Test-değiştirme izni iki görevde de BAŞTAN yazılı (G138/G139 dersi). Docs: `raporlama.md` güncellemesi
+bir sonraki docs turuna (G143) bırakılır — bu turda kod + test.
