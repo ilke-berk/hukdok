@@ -1,8 +1,10 @@
 // Rapor Oluşturucu'nun yerel durumu (G133 → G138 filtre şeridi). Sunucu sözleşmesi
 // `RaporTanimi`'dir (lib/reports.ts); burada filtreler §4.3 kontrol durumu olarak tutulur
 // ve `tanimOlustur` ile her zaman aynı JSON'a derlenir. Boş kontrol tanıma GİRMEZ.
-import type { Filtre, KatalogVeriKaynagi, KontrolDurumu, RaporTanimi, Siralama, SiralamaYonu } from "@/lib/reports";
-import { TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kontroldenFiltre } from "@/lib/reports";
+import type {
+    Filtre, HizliFiltreSunumu, KatalogVeriKaynagi, KontrolDurumu, RaporTanimi, Siralama, SiralamaYonu,
+} from "@/lib/reports";
+import { TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kolonSecilebilirMi, kontroldenFiltre } from "@/lib/reports";
 
 /** Şeritteki bir kontrol: hızlı filtre yuvası (kaynağın listesi) ya da "+ Başka alan" ile eklenen. */
 export interface SeritOgesi {
@@ -13,6 +15,15 @@ export interface SeritOgesi {
     alanSecenekleri: string[];
     /** Kaynağın hızlı filtre yuvası: × ile silinmez, boşa döner. Eklenen alan: × şeritten kaldırır. */
     hizli: boolean;
+    /** §5.2 sunum — kontrol bileşeni bununla seçilir (§5.3); eklenen alanda `varsayilan`. */
+    sunum: HizliFiltreSunumu;
+    /** §5.2 anahtar metni (`var_yok`/`bos_anahtari`: "Davası var", "E-postası yok"); yoksa kolon etiketi. */
+    etiket: string | null;
+}
+
+/** "+ Başka alan" ile eklenen öğe (yuva değil, `varsayilan` sunum). */
+export function eklenenOge(durum: KontrolDurumu): SeritOgesi {
+    return { id: yeniSatirId(), durum, alanSecenekleri: [], hizli: false, sunum: "varsayilan", etiket: null };
 }
 
 export interface OlusturucuDurumu {
@@ -40,11 +51,15 @@ function hizliYuvalar(kaynak: KatalogVeriKaynagi): SeritOgesi[] {
             const k = kolonOf(kaynak, a);
             return k !== undefined && k.filtrelenebilir && k.kontrol === "tarih_araligi";
         });
+        // Eski katalog cevabı (`sunum` yok) varsayılan sunumla açılır.
+        const sunum: HizliFiltreSunumu = hf.sunum ?? "varsayilan";
         yuvalar.push({
             id: yeniSatirId(),
-            durum: bosKontrol(kolon),
+            durum: bosKontrol(kolon, sunum),
             alanSecenekleri: kolon.kontrol === "tarih_araligi" && alternatifler.length > 0 ? [hf.alan, ...alternatifler] : [],
             hizli: true,
+            sunum,
+            etiket: hf.etiket ?? null,
         });
     }
     return yuvalar;
@@ -52,43 +67,58 @@ function hizliYuvalar(kaynak: KatalogVeriKaynagi): SeritOgesi[] {
 
 /** Kaynak seçilince/değişince başlangıç durumu: varsayılan kolonlar, hızlı filtreler boş, sıralama boş. */
 export function kaynakIcinBaslangic(kaynak: KatalogVeriKaynagi): OlusturucuDurumu {
-    const gecerli = new Set(kaynak.kolonlar.map(k => k.anahtar));
     return {
         veri_kaynagi: kaynak.anahtar,
-        kolonlar: kaynak.varsayilan_kolonlar.filter(k => gecerli.has(k)),
+        // §5.2: `secilebilir=false` (sanal arama) varsayılan listeye sızsa da kolon olamaz; katalogda olmayan elenir.
+        kolonlar: kaynak.varsayilan_kolonlar.filter(k => kolonSecilebilirMi(kolonOf(kaynak, k))),
         serit: hizliYuvalar(kaynak),
         siralama: [],
     };
 }
 
 /**
+ * Çözülen kontrol yuvanın sunumuna oturuyor mu? (`var_yok`/`bos_anahtari` yuvası yalnız kendi türünü,
+ * `arama`/`cipler`/`varsayilan` yuvası kolonun katalog kontrolünü alır; gelişmiş çip yuvayı ezmez.)
+ */
+function yuvayaUyarMi(durum: KontrolDurumu, yuva: SeritOgesi): boolean {
+    if (durum.kontrol === "gelismis") return false;
+    if (yuva.sunum === "var_yok") return durum.kontrol === "var_yok";
+    if (yuva.sunum === "bos_anahtari") return durum.kontrol === "bos_anahtari";
+    return durum.kontrol !== "var_yok" && durum.kontrol !== "bos_anahtari";
+}
+
+/**
  * Sunucu tanımı → oluşturucu durumu (şablon / koşu / asistan). Filtreler `filtredenKontrol`
- * ile çözülür; hızlı filtre yuvasına düşenler (alan yuva alanı ya da bir alternatifi, yuva boşken)
- * yuvayı doldurur, kalanlar "+ Başka alan" ile eklenmiş gibi görünür. Dolu öğeler TANIMDAKİ
- * SIRAYLA önce gelir, boş yuvalar arkasından — böylece `tanimOlustur` filtre sırasını korur
- * (şablon karşılaştırması ve gidiş-dönüş için şart). Çözülemeyen op gelişmiş çip.
+ * ile çözülür (yuvanın `sunum`u ile — `dava_sayisi gte 1` var/yok anahtarına, `email is_null` boş
+ * anahtarına, `arama contains` arama kutusuna, `in` içindeki `null` "(boş)" seçimine); hızlı filtre
+ * yuvasına düşenler (alan yuva alanı ya da bir alternatifi, yuva boşken) yuvayı doldurur, kalanlar
+ * "+ Başka alan" ile eklenmiş gibi görünür. Dolu öğeler TANIMDAKİ SIRAYLA önce gelir, boş yuvalar
+ * arkasından — böylece `tanimOlustur` filtre sırasını korur (şablon karşılaştırması ve gidiş-dönüş
+ * için şart). Çözülemeyen op gelişmiş çip; yuvaya oturmayan (ör. `dava_sayisi gte 5` var/yok yuvasında)
+ * kolonun kendi kontrolüyle eklenen alan olur, yuva boş kalır.
  */
 export function tanimdanDurum(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi): OlusturucuDurumu {
     const bosYuvalar = hizliYuvalar(kaynak);
     const dolu: SeritOgesi[] = [];
     for (const f of tanim.filtreler) {
         const kolon = kolonOf(kaynak, f.alan);
-        const durum = filtredenKontrol(f, kolon);
         const yuvaIdx = bosYuvalar.findIndex(y =>
             y.durum.alan === f.alan || y.alanSecenekleri.includes(f.alan),
         );
         if (yuvaIdx >= 0) {
-            const [yuva] = bosYuvalar.splice(yuvaIdx, 1);
+            const yuva = bosYuvalar[yuvaIdx];
+            const durum = filtredenKontrol(f, kolon, yuva.sunum);
             // Alternatif alana çözülen tarih filtresi yuvanın alan değiştiricisini o alana çeker;
-            // gelişmiş çipe düşen filtre yuvanın kontrolünü ezmez (yuva yeniden boş açılır).
-            if (durum.kontrol === "gelismis") {
-                dolu.push({ id: yeniSatirId(), durum, alanSecenekleri: [], hizli: false });
-                bosYuvalar.push(yuva);
-            } else {
+            // gelişmiş çipe/başka kontrole düşen filtre yuvanın kontrolünü ezmez (yuva boş kalır).
+            bosYuvalar.splice(yuvaIdx, 1);
+            if (yuvayaUyarMi(durum, yuva)) {
                 dolu.push({ ...yuva, durum });
+            } else {
+                dolu.push(eklenenOge(filtredenKontrol(f, kolon)));
+                bosYuvalar.push(yuva);
             }
         } else {
-            dolu.push({ id: yeniSatirId(), durum, alanSecenekleri: [], hizli: false });
+            dolu.push(eklenenOge(filtredenKontrol(f, kolon)));
         }
     }
     return {
@@ -108,7 +138,7 @@ export function seritiTemizle(serit: SeritOgesi[], kaynak: KatalogVeriKaynagi): 
     for (const o of serit) {
         if (!o.hizli) continue;
         const yuvaKolon = o.alanSecenekleri.length > 0 ? kolonOf(kaynak, o.alanSecenekleri[0]) : kolonOf(kaynak, o.durum.alan);
-        if (yuvaKolon) yeni.push({ ...o, durum: bosKontrol(yuvaKolon) });
+        if (yuvaKolon) yeni.push({ ...o, durum: bosKontrol(yuvaKolon, o.sunum) });
     }
     return yeni;
 }

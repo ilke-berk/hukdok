@@ -64,6 +64,7 @@ function kolon(k: KolonSahtesi): KatalogKolon {
         kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
         oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
         oneriler: null, oneri_kesik: false,
+        secenek_kaynagi: k.tip === "liste" ? "sabit" : null, secenek_etiketleri: null, secilebilir: true,
         ...k,
     };
 }

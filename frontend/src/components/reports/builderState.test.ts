@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 // lib/reports `apiClient`'ı içe aktarır; msalConfig `window` ister — node ortamında sahte.
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: vi.fn() } }));
 
-import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KatalogVeriKaynagi, type KolonTipi, type RaporTanimi } from "@/lib/reports";
-import { kaynakIcinBaslangic, seritFiltreleri, siralamaDongusu, tanimOlustur, tanimdanDurum } from "./builderState";
+import {
+    OP_BY_TIP, type FiltreKontrolu, type HizliFiltre, type KatalogKolon, type KatalogVeriKaynagi, type KolonTipi, type RaporTanimi,
+} from "@/lib/reports";
+import { kaynakIcinBaslangic, seritFiltreleri, seritiTemizle, siralamaDongusu, tanimOlustur, tanimdanDurum } from "./builderState";
 
 const KONTROL: Record<KolonTipi, FiltreKontrolu> = {
     metin: "metin_icerir", liste: "coklu_secim", tarih: "tarih_araligi", sayi: "sayi_araligi", para: "sayi_araligi", mantik: "mantik",
@@ -20,9 +22,12 @@ function kolon(k: KolonSahtesi): KatalogKolon {
         kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
         oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
         oneriler: null, oneri_kesik: false,
+        secenek_kaynagi: k.tip === "liste" ? "sabit" : null, secenek_etiketleri: null, secilebilir: true,
         ...k,
     };
 }
+const hf = (alan: string, ek: Partial<HizliFiltre> = {}): HizliFiltre =>
+    ({ alan, alternatifler: [], sunum: "varsayilan", etiket: null, ...ek });
 
 const DAVALAR: KatalogVeriKaynagi = {
     anahtar: "davalar",
@@ -39,12 +44,42 @@ const DAVALAR: KatalogVeriKaynagi = {
         kolon({ anahtar: "muvekkil_adlari", etiket: "Müvekkiller", tip: "metin", filtrelenebilir: false, siralanabilir: false, turetilmis: true }),
     ],
     hizli_filtreler: [
-        { alan: "opening_date", alternatifler: ["karar_tarihi", "silinmis_alan"] },
-        { alan: "status", alternatifler: [] },
-        { alan: "muvekkil_adlari", alternatifler: [] }, // filtrelenemez → yuva açılmaz
-        { alan: "maddi_tazminat", alternatifler: [] },
+        hf("opening_date", { alternatifler: ["karar_tarihi", "silinmis_alan"] }),
+        hf("status"),
+        hf("muvekkil_adlari"), // filtrelenemez → yuva açılmaz
+        hf("maddi_tazminat"),
     ],
     kolon_setleri: [{ ad: "Temel", kolonlar: ["tracking_no", "subject"] }],
+};
+
+/** §5.1 müvekkil şeridi (katalog sahtesi §5.2 sözleşmesiyle): arama · kategori çipleri · il · uzmanlık · davası var/yok · e-postası yok · cep yok. */
+const MUVEKKILLER: KatalogVeriKaynagi = {
+    anahtar: "muvekkiller",
+    etiket: "Müvekkiller",
+    aciklama: "",
+    varsayilan_kolonlar: ["name", "arama", "category"],
+    kolonlar: [
+        kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
+        kolon({ anahtar: "arama", etiket: "Ara", tip: "metin", turetilmis: true, siralanabilir: false, secilebilir: false, oplar: ["contains"] }),
+        kolon({ anahtar: "category", etiket: "Kategori", tip: "liste", secenekler: ["Doktor", "Hasta"], grup: "Sınıflandırma" }),
+        kolon({ anahtar: "il", etiket: "İl", tip: "metin", kontrol: "coklu_secim", secenek_kaynagi: "veri", secenekler: ["İstanbul", "Ankara", "İzmir"], grup: "İletişim" }),
+        kolon({ anahtar: "specialty", etiket: "Uzmanlık", tip: "metin", kontrol: "coklu_secim", secenek_kaynagi: "veri", secenekler: ["Ortopedi"], grup: "Sınıflandırma" }),
+        kolon({ anahtar: "client_type", etiket: "Müvekkil Türü", tip: "metin", kontrol: "coklu_secim", secenek_kaynagi: "veri",
+            secenekler: ["Individual", "Corporate"], secenek_etiketleri: { Individual: "Gerçek kişi", Corporate: "Tüzel kişi" }, grup: "Sınıflandırma" }),
+        kolon({ anahtar: "dava_sayisi", etiket: "Dava Sayısı", tip: "sayi", turetilmis: true, siralanabilir: false, grup: "Sistem" }),
+        kolon({ anahtar: "email", etiket: "E-posta", tip: "metin", grup: "İletişim" }),
+        kolon({ anahtar: "mobile_phone", etiket: "Cep Telefonu", tip: "metin", grup: "İletişim" }),
+    ],
+    hizli_filtreler: [
+        hf("arama", { sunum: "arama" }),
+        hf("category", { sunum: "cipler" }),
+        hf("il"),
+        hf("specialty"),
+        hf("dava_sayisi", { sunum: "var_yok", etiket: "Davası var" }),
+        hf("email", { sunum: "bos_anahtari", etiket: "E-postası yok" }),
+        hf("mobile_phone", { sunum: "bos_anahtari", etiket: "Cep telefonu yok" }),
+    ],
+    kolon_setleri: [{ ad: "Temel", kolonlar: ["name", "arama"] }],
 };
 
 describe("kaynakIcinBaslangic", () => {
@@ -61,6 +96,24 @@ describe("kaynakIcinBaslangic", () => {
         expect(d.siralama).toEqual([]);
         // Boş yuvalar tanıma girmez
         expect(tanimOlustur(d)).toEqual({ veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] });
+        // Eklenen/yuva ayrımı: yuvalar varsayılan sunumla, etiket yok
+        expect(d.serit.map(o => [o.sunum, o.etiket])).toEqual([["varsayilan", null], ["varsayilan", null], ["varsayilan", null]]);
+    });
+
+    it("§5.1 müvekkil şeridi: yuvalar §5.2 sırası ve sunumuyla; var/yok ve boş anahtarı kendi kontrolüyle; `secilebilir=false` varsayılan kolondan düşer", () => {
+        const d = kaynakIcinBaslangic(MUVEKKILLER);
+        expect(d.kolonlar).toEqual(["name", "category"]);
+        expect(d.serit.map(o => [o.durum.alan, o.durum.kontrol, o.sunum, o.etiket])).toEqual([
+            ["arama", "metin_icerir", "arama", null],
+            ["category", "coklu_secim", "cipler", null],
+            ["il", "coklu_secim", "varsayilan", null],
+            ["specialty", "coklu_secim", "varsayilan", null],
+            ["dava_sayisi", "var_yok", "var_yok", "Davası var"],
+            ["email", "bos_anahtari", "bos_anahtari", "E-postası yok"],
+            ["mobile_phone", "bos_anahtari", "bos_anahtari", "Cep telefonu yok"],
+        ]);
+        expect(d.serit.every(o => o.hizli)).toBe(true);
+        expect(tanimOlustur(d).filtreler).toEqual([]);
     });
 });
 
@@ -137,6 +190,63 @@ describe("tanimdanDurum ↔ tanimOlustur — gidiş-dönüş", () => {
         const d = tanimdanDurum(tanim, DAVALAR);
         expect(d.serit[0].durum).toEqual({ kontrol: "gelismis", alan: "eski_alan", op: "eq", deger: "x" });
         expect(tanimOlustur(d).filtreler).toEqual(tanim.filtreler);
+    });
+
+    it("§5.3 müvekkil şeridi gidiş-dönüş: arama contains → arama kutusu, in içinde null → (boş) seçimi, gte 1 → var/yok, is_null → boş anahtarı; JSON aynı", () => {
+        const tanim: RaporTanimi = {
+            veri_kaynagi: "muvekkiller",
+            kolonlar: ["name"],
+            filtreler: [
+                { alan: "arama", op: "contains", deger: "Ayşe" },
+                { alan: "category", op: "in", deger: ["Doktor", "Hasta"] },
+                { alan: "il", op: "in", deger: ["Ankara", null] },
+                { alan: "client_type", op: "eq", deger: "Individual" },   // yuva yok → eklenen alan (çoklu seçim, ham kod)
+                { alan: "dava_sayisi", op: "gte", deger: 1 },
+                { alan: "email", op: "is_null" },
+                { alan: "mobile_phone", op: "contains", deger: "05" },    // boş anahtarı yuvasına oturmaz → eklenen metin, yuva boş kalır
+            ],
+            siralama: [],
+        };
+        const d = tanimdanDurum(tanim, MUVEKKILLER);
+        expect(d.serit.map(o => [o.durum.alan, o.durum.kontrol, o.sunum, o.hizli])).toEqual([
+            ["arama", "metin_icerir", "arama", true],
+            ["category", "coklu_secim", "cipler", true],
+            ["il", "coklu_secim", "varsayilan", true],
+            ["client_type", "coklu_secim", "varsayilan", false],
+            ["dava_sayisi", "var_yok", "var_yok", true],
+            ["email", "bos_anahtari", "bos_anahtari", true],
+            ["mobile_phone", "metin_icerir", "varsayilan", false],
+            ["specialty", "coklu_secim", "varsayilan", true],
+            ["mobile_phone", "bos_anahtari", "bos_anahtari", true],
+        ]);
+        expect(d.serit[2].durum).toEqual({ kontrol: "coklu_secim", alan: "il", secili: ["Ankara", null] });
+        expect(d.serit[4].durum).toEqual({ kontrol: "var_yok", alan: "dava_sayisi", durum: "var" });
+        expect(d.serit[5].durum).toEqual({ kontrol: "bos_anahtari", alan: "email", acik: true });
+        expect(JSON.stringify(tanimOlustur(d))).toBe(JSON.stringify(tanim));
+
+        // `dava_sayisi gte 5` var/yok yuvasına oturmaz: sayı aralığı olarak eklenen alan, yuva boş kalır
+        const d2 = tanimdanDurum({ ...tanim, filtreler: [{ alan: "dava_sayisi", op: "gte", deger: 5 }] }, MUVEKKILLER);
+        expect(d2.serit.filter(o => o.durum.alan === "dava_sayisi").map(o => [o.durum.kontrol, o.hizli]))
+            .toEqual([["sayi_araligi", false], ["var_yok", true]]);
+        expect(tanimOlustur(d2).filtreler).toEqual([{ alan: "dava_sayisi", op: "gte", deger: 5 }]);
+    });
+
+    it("seritiTemizle: yuvalar kendi sunumuyla boşa döner (arama dahil), eklenenler kalkar", () => {
+        const d = tanimdanDurum({
+            veri_kaynagi: "muvekkiller", kolonlar: ["name"], siralama: [],
+            filtreler: [{ alan: "arama", op: "contains", deger: "x" }, { alan: "dava_sayisi", op: "eq", deger: 0 }, { alan: "name", op: "contains", deger: "y" }],
+        }, MUVEKKILLER);
+        const temiz = seritiTemizle(d.serit, MUVEKKILLER);
+        expect(temiz.map(o => [o.durum.alan, o.durum.kontrol, o.sunum])).toEqual([
+            ["arama", "metin_icerir", "arama"],
+            ["dava_sayisi", "var_yok", "var_yok"],
+            ["category", "coklu_secim", "cipler"],
+            ["il", "coklu_secim", "varsayilan"],
+            ["specialty", "coklu_secim", "varsayilan"],
+            ["email", "bos_anahtari", "bos_anahtari"],
+            ["mobile_phone", "bos_anahtari", "bos_anahtari"],
+        ]);
+        expect(seritFiltreleri(temiz)).toEqual([]);
     });
 });
 

@@ -27,6 +27,7 @@ function kolon(k: KolonSahtesi): KatalogKolon {
         kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
         oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
         oneriler: null, oneri_kesik: false,
+        secenek_kaynagi: k.tip === "liste" ? "sabit" : null, secenek_etiketleri: null, secilebilir: true,
         ...k,
     };
 }
@@ -39,6 +40,8 @@ const KAYNAK: KatalogVeriKaynagi = {
     kolonlar: [
         kolon({ anahtar: "tracking_no", etiket: "Ofis No", tip: "metin", grup: "Kimlik" }),
         kolon({ anahtar: "subject", etiket: "Konu", tip: "metin", grup: "Kimlik" }),
+        // §5.2 sanal arama kolonu: yalnız filtre — panelde ve setlerde YOK
+        kolon({ anahtar: "arama", etiket: "Ara", tip: "metin", grup: "Kimlik", turetilmis: true, siralanabilir: false, secilebilir: false, oplar: ["contains"] }),
         kolon({ anahtar: "muvekkil_adlari", etiket: "Müvekkiller", tip: "metin", grup: "Taraflar", filtrelenebilir: false, siralanabilir: false, turetilmis: true }),
         kolon({ anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", grup: "Tarihler" }),
         kolon({ anahtar: "karar_tarihi", etiket: "Karar Tarihi", tip: "tarih", grup: "Tarihler" }),
@@ -47,7 +50,7 @@ const KAYNAK: KatalogVeriKaynagi = {
     ],
     hizli_filtreler: [],
     kolon_setleri: [
-        { ad: "Temel", kolonlar: ["tracking_no", "subject"] },
+        { ad: "Temel", kolonlar: ["tracking_no", "subject", "arama"] }, // arama sızsa da elenir
         { ad: "Karar takibi", kolonlar: ["tracking_no", "status", "karar_tarihi"] },
         { ad: "Tazminat", kolonlar: ["tracking_no", "maddi_tazminat", "olmayan_kolon"] },
     ],
@@ -245,6 +248,30 @@ describe("ColumnSheet (G139)", () => {
         expect(byLabel<HTMLInputElement>("Ek Kolon", p2).disabled).toBe(true);
         // Katalogda "Temel" seti yok → varsayılandan üretilir
         expect(setler(p2).map(s => s.getAttribute("data-kolon-seti"))).toEqual(["Temel"]);
+    });
+
+    it("§5.2 `secilebilir=false` kolon (sanal arama) listede, aramada ve setlerde yok; grup sayacı onu saymaz; düğme sayacı seçimden", () => {
+        render();
+        const p = ac();
+        expect(p.querySelector("[aria-label='Ara']")).toBeNull();
+        expect(Array.from(p.querySelectorAll("input[type='checkbox']")).map(i => i.getAttribute("aria-label"))).not.toContain("Ara");
+        // Kimlik grubu 2 kolon (arama sayılmaz) ve tümü seçili
+        expect(byLabel<HTMLInputElement>("Kimlik tümünü seç", p).checked).toBe(true);
+        expect(p.querySelector("[data-kolon-grubu='Kimlik']")?.textContent).toContain("2/2");
+        // Temel seti aramayı düşürür: 2 kolon, tık = [tracking_no, subject]
+        expect(setler(p)[0].textContent).toContain("2");
+        tikla(setler(p)[1]);
+        tikla(setler(p)[0]);
+        expect(onChange).toHaveBeenLastCalledWith(["tracking_no", "subject"]);
+        expect(seciliSira(p)).toEqual(["tracking_no", "subject"]);
+        // Kolon aramasına anahtarı ("arama") yazınca da çıkmaz
+        const arama = byLabel<HTMLInputElement>("Kolon ara", p);
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        act(() => {
+            setter.call(arama, "aram");
+            arama.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        expect((p as Element).textContent).toContain("Aramaya uyan kolon yok");
     });
 
     it("Paneli kapat düğmesi paneli kapatır; seçim korunur", () => {
