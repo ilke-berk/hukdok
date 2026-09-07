@@ -10,13 +10,16 @@ import { FlowButton } from "@/components/flow/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { ReportBuilder } from "@/components/reports/ReportBuilder";
+import { QuickFilters } from "@/components/reports/QuickFilters";
 import { AssistantPanel } from "@/components/reports/AssistantPanel";
 import { PreviewTable } from "@/components/reports/PreviewTable";
 import { TemplateBar, TemplatesTable } from "@/components/reports/TemplateBar";
 import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "@/components/reports/SaveTemplateDialog";
 import { ExportButtons } from "@/components/reports/ExportButtons";
 import { RunsTable } from "@/components/reports/RunsTable";
-import { kaynakIcinBaslangic, tanimOlustur, yeniSatirId, type OlusturucuDurumu } from "@/components/reports/builderState";
+import {
+    kaynakIcinBaslangic, siralamaDongusu, tanimOlustur, tanimdanDurum, type OlusturucuDurumu,
+} from "@/components/reports/builderState";
 import {
     createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, getCatalog, listRuns, listTemplates,
     previewReport, tanimGecerliMi, updateTemplate,
@@ -29,8 +32,10 @@ import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi } from "@/lib/reportsChat";
 
 const VARSAYILAN_SAYFA_BOYU = 50;
 const KOSU_SAYFA_BOYU = 50;
+/** Yazarak girilen değerde (metin/sayı/tarih) önizleme bu kadar bekler; yapısal değişiklik hemen (§4.1 madde 5). */
+export const ONIZLEME_GECIKME_MS = 600;
 
-const BOS_DURUM: OlusturucuDurumu = { veri_kaynagi: "", kolonlar: [], filtreler: [], siralama: [] };
+const BOS_DURUM: OlusturucuDurumu = { veri_kaynagi: "", kolonlar: [], serit: [], siralama: [] };
 
 // Sekmeler — `TabsTrigger value` listesiyle birebir; URL'deki `?tab=` yalnız bu kümedeyse
 // geçerlidir (AdminPage.tsx ADMIN_TABS deseni). Sekme değişince URL de güncellenir (replace).
@@ -46,16 +51,6 @@ const TAB_TRIGGER_CLS =
     "rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] " +
     "data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase";
 
-/** Sunucu tanımı → oluşturucu durumu (filtre satırlarına yalnız React key için `id`). */
-function tanimdanDurum(tanim: RaporTanimi): OlusturucuDurumu {
-    return {
-        veri_kaynagi: tanim.veri_kaynagi,
-        kolonlar: [...tanim.kolonlar],
-        filtreler: tanim.filtreler.map(f => ({ ...f, id: yeniSatirId() })),
-        siralama: tanim.siralama.map(s => ({ alan: s.alan, yon: s.yon })),
-    };
-}
-
 const ayniTanim = (a: RaporTanimi, b: RaporTanimi) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -69,10 +64,15 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 
 /**
  * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor" (oluşturucu +
- * önizleme + şablon çubuğu + indirme, G133/G134), "Şablonlar" (liste tablosu), "İndirme geçmişi"
- * (sunucu sayfalı koşular). Asistan (G135): başlıktaki "Asistan" düğmesi yalnız `rapor_asistani`
- * anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula` ile oluşturucuya köprüler.
- * Sözleşme: docs/plan/raporlama-plani-2026-09-06.md §2 (lib/reports.ts, lib/reportsChat.ts).
+ * filtre şeridi + önizleme + şablon çubuğu + indirme, G133/G134/G138), "Şablonlar" (liste tablosu),
+ * "İndirme geçmişi" (sunucu sayfalı koşular). Asistan (G135): başlıktaki "Asistan" düğmesi yalnız
+ * `rapor_asistani` anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula` ile oluşturucuya köprüler.
+ *
+ * G138 — önizleme OTOMATİKTİR: geçerli taslak son istenenden farklıysa yapısal değişiklikte hemen,
+ * yazarak girilen değerde 600 ms sonra ya da odak çıkışında istenir (`gecikmeliRef`); geçersiz
+ * tanımda istek gitmez; yarış koruması `reqIdRef`. Kaynak değişince eski cevap ANINDA düşer —
+ * ekranda başka kaynağın satırı kalmaz. "Bayat" rozeti/Önizle düğmesi yok.
+ * Sözleşme: docs/plan/raporlama-plani-2026-09-06.md §2 + §4 (lib/reports.ts, lib/reportsChat.ts).
  */
 const ReportsPage = () => {
     useSetPageTitle("Raporlar", ["Raporlar"]);
@@ -103,12 +103,19 @@ const ReportsPage = () => {
     const [cevap, setCevap] = useState<OnizlemeCevabi | null>(null);
     const [onizlemeHatasi, setOnizlemeHatasi] = useState<string | null>(null);
     const [onizleniyor, setOnizleniyor] = useState(false);
-    // Son önizlenen tanım — sayfa değişimi BU tanımla gider (oluşturucudaki taslakla değil);
-    // bayat rozeti taslağın bundan ayrıldığını söyler.
+    // Son BAŞARIYLA önizlenen tanım — sayfa değişimi bu tanımla gider (taslakla değil);
+    // indirme toast'ındaki satır sayısı yalnız taslak buna eşitken yazılır.
     const [sonTanim, setSonTanim] = useState<RaporTanimi | null>(null);
 
     // Yarış koruması: geç dönen eski önizleme yenisini ezmesin (CaseList.tsx deseni).
     const reqIdRef = useRef(0);
+    // Otomatik önizleme: son İSTENEN tanım (hata dönse de) — aynı tanım yeniden istenmez.
+    const sonIstenenRef = useRef<RaporTanimi | null>(null);
+    // Son durum değişikliği "yazarak" mı geldi (600 ms bekle) — efekt bir kez okur, sıfırlar.
+    const gecikmeliRef = useRef(false);
+    const zamanlayiciRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Odak çıkışında bekleyen isteği hemen atmak için güncel geçerli taslak.
+    const taslakRef = useRef<RaporTanimi | null>(null);
 
     // ---- Şablonlar ----
     const [sablonlar, setSablonlar] = useState<RaporSablonu[]>([]);
@@ -218,14 +225,15 @@ const ReportsPage = () => {
 
     const tanim = useMemo(() => tanimOlustur(durum), [durum]);
     const tanimGecerli = tanimGecerliMi(tanim, kaynak);
+    taslakRef.current = tanimGecerli ? tanim : null;
 
     const sayfaBoyu = Math.min(VARSAYILAN_SAYFA_BOYU, katalog?.limitler.onizleme_sayfa_boyu_max ?? VARSAYILAN_SAYFA_BOYU);
-
-    const bayat = sonTanim !== null && !ayniTanim(sonTanim, tanim);
 
     const seciliSablon = useMemo(() => sablonlar.find(s => s.id === seciliSablonId) ?? null, [sablonlar, seciliSablonId]);
     // Koşuya şablon kimliği yalnız taslak şablonla birebir aynıyken yazılır (geçmişte "şablon adı" yanıltmasın).
     const exportSablonId = seciliSablon && ayniTanim(seciliSablon.tanim, tanim) ? seciliSablon.id : null;
+    // Toast'taki satır sayısı yalnız görünen önizleme taslağa aitken.
+    const onizlenenSatirSayisi = cevap && sonTanim && ayniTanim(sonTanim, tanim) ? cevap.toplam : null;
 
     const onizlemeAl = useCallback(async (hedefTanim: RaporTanimi, sayfa: number) => {
         const reqId = ++reqIdRef.current;
@@ -246,9 +254,59 @@ const ReportsPage = () => {
         }
     }, [sayfaBoyu]);
 
-    const onOnizle = () => {
-        if (!tanimGecerli) return;
-        void onizlemeAl(tanim, 1);
+    const zamanlayiciyiDurdur = useCallback(() => {
+        if (zamanlayiciRef.current) {
+            clearTimeout(zamanlayiciRef.current);
+            zamanlayiciRef.current = null;
+        }
+    }, []);
+
+    // ---- Otomatik önizleme (§4.1 madde 5) ----
+    useEffect(() => {
+        zamanlayiciyiDurdur();
+        if (!kaynak || !tanimGecerli) return;
+        if (sonIstenenRef.current && ayniTanim(sonIstenenRef.current, tanim)) return;
+        const gecikmeli = gecikmeliRef.current;
+        gecikmeliRef.current = false;
+        const iste = () => {
+            zamanlayiciRef.current = null;
+            sonIstenenRef.current = tanim;
+            void onizlemeAl(tanim, 1);
+        };
+        if (!gecikmeli) {
+            iste();
+            return;
+        }
+        zamanlayiciRef.current = setTimeout(iste, ONIZLEME_GECIKME_MS);
+        return zamanlayiciyiDurdur;
+    }, [tanim, tanimGecerli, kaynak, onizlemeAl, zamanlayiciyiDurdur]);
+
+    /** Odak çıkışı: bekleyen gecikmeli istek varsa hemen at. */
+    const hemenOnizle = useCallback(() => {
+        if (!zamanlayiciRef.current) return;
+        zamanlayiciyiDurdur();
+        const t = taslakRef.current;
+        if (!t) return;
+        sonIstenenRef.current = t;
+        void onizlemeAl(t, 1);
+    }, [onizlemeAl, zamanlayiciyiDurdur]);
+
+    /**
+     * Tek durum yazma yolu. Kaynak değişiyorsa eski önizleme ANINDA düşer (cevap null, süren
+     * istek yok sayılır) — efekt yeni kaynağın varsayılan tanımını hemen ister.
+     */
+    const durumDegisti = (next: OlusturucuDurumu, gecikmeli = false) => {
+        gecikmeliRef.current = gecikmeli;
+        if (next.veri_kaynagi !== durum.veri_kaynagi) {
+            reqIdRef.current += 1;
+            zamanlayiciyiDurdur();
+            sonIstenenRef.current = null;
+            setCevap(null);
+            setOnizlemeHatasi(null);
+            setSonTanim(null);
+            setOnizleniyor(false);
+        }
+        setDurum(next);
     };
 
     const onSayfa = (sayfa: number) => {
@@ -257,19 +315,27 @@ const ReportsPage = () => {
     };
 
     const onRetry = () => {
-        // Hata anındaki tanımla tekrar; hiç başarılı önizleme yoksa taslakla.
-        const hedef = sonTanim ?? (tanimGecerli ? tanim : null);
+        // Hata anındaki tanımla tekrar; hiç istek yoksa geçerli taslakla.
+        const hedef = sonIstenenRef.current ?? (tanimGecerli ? tanim : null);
         if (!hedef) return;
+        sonIstenenRef.current = hedef;
         void onizlemeAl(hedef, cevap?.sayfa ?? 1);
     };
+
+    const onSirala = (alan: string) =>
+        durumDegisti({ ...durum, siralama: siralamaDongusu(durum.siralama, alan) });
+
+    const siralanabilirMi = (anahtar: string) => kaynak?.kolonlar.find(k => k.anahtar === anahtar)?.siralanabilir ?? false;
 
     // ---- Tanım yükleme (şablon / koşu) ----
     /**
      * Tanımı oluşturucuya koyar: veri kaynağı katalogda yoksa reddeder; kaynak değişiyorsa
      * kullanıcıya sorar (kolon/filtre/sıralama seçimleri tümüyle değişir). true = yüklendi.
+     * Filtreler şeride `tanimdanDurum` ile çözülür; çözülemeyen op gelişmiş çip olarak kalır.
      */
-    const tanimiYukle = useCallback(async (hedef: RaporTanimi, etiket: string): Promise<boolean> => {
-        if (!katalog || !katalog.veri_kaynaklari.some(v => v.anahtar === hedef.veri_kaynagi)) {
+    const tanimiYukle = async (hedef: RaporTanimi, etiket: string): Promise<boolean> => {
+        const hedefKaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === hedef.veri_kaynagi);
+        if (!katalog || !hedefKaynak) {
             toast.error("Tanım yüklenemedi", { description: `Veri kaynağı katalogda yok: ${hedef.veri_kaynagi}` });
             return false;
         }
@@ -282,9 +348,9 @@ const ReportsPage = () => {
             });
             if (!ok) return false;
         }
-        setDurum(tanimdanDurum(hedef));
+        durumDegisti(tanimdanDurum(hedef, hedefKaynak));
         return true;
-    }, [katalog, durum.veri_kaynagi, confirm]);
+    };
 
     const onSablonYukle = async (sablon: RaporSablonu) => {
         const ok = await tanimiYukle(sablon.tanim, sablon.ad);
@@ -401,20 +467,21 @@ const ReportsPage = () => {
         setKosuSurumu(v => v + 1);
     };
 
-    // ---- Asistan köprüsü (G135) ----
+    // ---- Asistan köprüsü (G135 / G138) ----
     /**
      * Asistan tanımını oluşturucuya koyar (onay sorulmaz — kullanıcı "uygula"ya bastı ya da
-     * asistan `eylem` döndürdü); şablon seçimi düşer, önizleme varsa bayat rozeti kendiliğinden çıkar.
-     * `eylem`: `onizle` → mevcut önizleme yolu; `indir_*` → `/export` + `kaynak:"asistan"` (K7, tek log yolu).
+     * asistan `eylem` döndürdü); şablon seçimi düşer. Uygulanan tanım OTOMATİK önizlenir
+     * (`eylem=null` olsa da, §4.1 madde 8); `eylem:"onizle"` mevcut tanımla da olsa yeniden ister;
+     * `indir_*` → `/export` + `kaynak:"asistan"` (K7, tek log yolu).
      * true = tanım uygulandı (eylem başarısız olsa bile); false = kaynak katalogda yok, hiçbir şey değişmedi.
      */
-    const asistanTanimiUygula = useCallback(async (hedef: RaporTanimi, eylem: AsistanEylemi | null): Promise<boolean> => {
+    const asistanTanimiUygula = async (hedef: RaporTanimi, eylem: AsistanEylemi | null): Promise<boolean> => {
         const hedefKaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === hedef.veri_kaynagi);
         if (!katalog || !hedefKaynak) {
             toast.error("Asistan tanımı uygulanamadı", { description: `Veri kaynağı katalogda yok: ${hedef.veri_kaynagi}` });
             return false;
         }
-        setDurum(tanimdanDurum(hedef));
+        durumDegisti(tanimdanDurum(hedef, hedefKaynak));
         setSeciliSablonId(null);
         if (tab !== "rapor") sekmeyeGit("rapor");
         if (!eylem) {
@@ -423,12 +490,13 @@ const ReportsPage = () => {
         }
         if (!tanimGecerliMi(hedef, hedefKaynak)) {
             toast.error("Asistan tanımı eksik", {
-                description: "Tanım oluşturucuya kondu ama eksik/geçersiz — düzeltip Önizle'ye basın.",
+                description: "Tanım oluşturucuya kondu ama eksik/geçersiz — düzeltin, önizleme kendiliğinden yenilenir.",
             });
             return true;
         }
         if (eylem === "onizle") {
-            void onizlemeAl(hedef, 1);
+            // Aynı tanım daha önce istenmiş olsa da yeniden önizle: efekt "son istenen"i boş görür.
+            sonIstenenRef.current = null;
             return true;
         }
         const format = eylem === "indir_xlsx" ? "xlsx" : "csv";
@@ -447,7 +515,7 @@ const ReportsPage = () => {
             }
         }
         return true;
-    }, [katalog, tab, sekmeyeGit, onizlemeAl]);
+    };
 
     const onAsistanKapali = useCallback(() => setAsistan409(true), []);
 
@@ -483,27 +551,34 @@ const ReportsPage = () => {
                     <ReportBuilder
                         katalog={katalog}
                         durum={durum}
-                        onChange={setDurum}
-                        onOnizle={onOnizle}
-                        onizleAktif={tanimGecerli}
-                        onizleniyor={onizleniyor}
-                        bayat={bayat}
+                        onChange={next => durumDegisti(next)}
                     />
                 </HairlineCard>
                 <HairlineCard padded={false} className="min-w-0">
+                    {kaynak && (
+                        <QuickFilters
+                            kaynak={kaynak}
+                            serit={durum.serit}
+                            onChange={(serit, gecikmeli) => durumDegisti({ ...durum, serit }, gecikmeli)}
+                            onHemen={hemenOnizle}
+                        />
+                    )}
                     <PreviewTable
                         cevap={cevap}
                         yukleniyor={onizleniyor}
                         hata={onizlemeHatasi}
                         onRetry={onRetry}
                         onSayfa={onSayfa}
-                        bayat={bayat}
+                        gecersiz={!tanimGecerli}
+                        siralama={durum.siralama}
+                        siralanabilirMi={siralanabilirMi}
+                        onSirala={onSirala}
                         araclar={
                             <ExportButtons
                                 tanim={tanim}
                                 aktif={tanimGecerli}
                                 sablonId={exportSablonId}
-                                satirSayisi={cevap && !bayat ? cevap.toplam : null}
+                                satirSayisi={onizlenenSatirSayisi}
                                 onIndirildi={onIndirildi}
                             />
                         }
@@ -523,7 +598,7 @@ const ReportsPage = () => {
                         Raporlar
                     </h1>
                     <p className="mt-1 text-[12px] text-[var(--fg-muted)]">
-                        Veri kaynağı ve kolonları seçin, filtreleyin, sunucudan önizleyin; şablon olarak kaydedin, Excel/CSV indirin. Test aşaması — yalnız yöneticiler.
+                        Veri kaynağı ve kolonları seçin, şeritten süzün; önizleme kendiliğinden yenilenir. Şablon olarak kaydedin, Excel/CSV indirin. Test aşaması — yalnız yöneticiler.
                     </p>
                 </div>
                 {asistanDugmesiGorunur && (

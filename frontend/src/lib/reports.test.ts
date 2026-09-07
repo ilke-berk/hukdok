@@ -7,9 +7,11 @@ const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: fetchMock } }));
 
 import {
-    OP_BY_TIP, RaporApiError, degerSekleUyarla, filtreTamamMi, hucreBicimle, opDegerSekli, opsForTip,
-    previewReport, getCatalog, raporHatasiCevir, tanimGecerliMi, tarihBicimle,
-    type KatalogVeriKaynagi, type KolonTipi, type RaporTanimi,
+    KONTROL_DOGAL_OPLARI, OP_BY_TIP, RaporApiError, bosKontrol, degerSekleUyarla, filtreTamamMi, filtredenKontrol,
+    gelismisOplar, hucreBicimle, kolonOplari, kontrolDoluMu, kontrolOzeti, kontroldenFiltre, opDegerSekli, opsForTip,
+    previewReport, getCatalog, raporHatasiCevir, tanimGecerliMi, tarihBicimle, tarihKisayolu,
+    type Filtre, type FiltreKontrolu, type FiltreOp, type KatalogKolon, type KatalogVeriKaynagi, type KolonTipi,
+    type KontrolDurumu, type RaporTanimi,
 } from "./reports";
 
 const okJson = (payload: unknown, status = 200) =>
@@ -19,21 +21,43 @@ const failJson = (status: number, payload: unknown) =>
 const failText = (status: number) =>
     ({ ok: false, status, json: async () => { throw new Error("json değil"); } }) as unknown as Response;
 
+// §4.2 katalog şekli: tipten türetilen `kontrol`, tip tablosu kadar `oplar` (aksi verilmedikçe).
+const KONTROL: Record<KolonTipi, FiltreKontrolu> = {
+    metin: "metin_icerir", liste: "coklu_secim", tarih: "tarih_araligi", sayi: "sayi_araligi", para: "sayi_araligi", mantik: "mantik",
+};
+type KolonSahtesi = Pick<KatalogKolon, "anahtar" | "etiket" | "tip"> & Partial<KatalogKolon>;
+function kolon(k: KolonSahtesi): KatalogKolon {
+    const filtrelenebilir = k.filtrelenebilir ?? true;
+    return {
+        filtrelenebilir, siralanabilir: true, turetilmis: false, secenekler: null, grup: "Kimlik",
+        kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
+        oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
+        oneriler: null, oneri_kesik: false,
+        ...k,
+    };
+}
+
 const KAYNAK: KatalogVeriKaynagi = {
     anahtar: "davalar",
     etiket: "Davalar",
     aciklama: "",
     varsayilan_kolonlar: ["tracking_no", "subject"],
     kolonlar: [
-        { anahtar: "tracking_no", etiket: "Ofis No", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-        { anahtar: "subject", etiket: "Konu", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-        { anahtar: "status", etiket: "Durum", tip: "liste", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: ["Derdest", "Karar"] },
-        { anahtar: "opening_date", etiket: "Açılış", tip: "tarih", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-        { anahtar: "maddi_tazminat", etiket: "Maddi", tip: "para", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-        { anahtar: "active", etiket: "Aktif", tip: "mantik", filtrelenebilir: true, siralanabilir: false, turetilmis: false, secenekler: null },
-        { anahtar: "muvekkil_adlari", etiket: "Müvekkiller", tip: "metin", filtrelenebilir: false, siralanabilir: false, turetilmis: true, secenekler: null },
+        kolon({ anahtar: "tracking_no", etiket: "Ofis No", tip: "metin" }),
+        kolon({ anahtar: "subject", etiket: "Konu", tip: "metin" }),
+        kolon({ anahtar: "status", etiket: "Durum", tip: "liste", secenekler: ["Derdest", "Karar"] }),
+        kolon({ anahtar: "opening_date", etiket: "Açılış", tip: "tarih", grup: "Tarihler" }),
+        kolon({ anahtar: "maddi_tazminat", etiket: "Maddi", tip: "para", grup: "Tutarlar" }),
+        kolon({ anahtar: "active", etiket: "Aktif", tip: "mantik", siralanabilir: false }),
+        kolon({ anahtar: "muvekkil_adlari", etiket: "Müvekkiller", tip: "metin", filtrelenebilir: false, siralanabilir: false, turetilmis: true, grup: "Taraflar" }),
+        // §4.2 taraf bağlantılı: türetilmiş AMA filtrelenebilir, `eq` yok (EXISTS "herhangi biri içerir")
+        kolon({ anahtar: "karsi_taraf_adlari", etiket: "Karşı Taraflar", tip: "metin", siralanabilir: false, turetilmis: true, grup: "Taraflar",
+            oplar: ["contains", "is_null", "not_null"], oneriler: ["Sigorta A.Ş.", "Hastane"] }),
     ],
+    hizli_filtreler: [{ alan: "opening_date", alternatifler: [] }, { alan: "status", alternatifler: [] }],
+    kolon_setleri: [{ ad: "Temel", kolonlar: ["tracking_no", "subject"] }],
 };
+const kolonOf = (anahtar: string) => KAYNAK.kolonlar.find(k => k.anahtar === anahtar)!;
 
 describe("§2.2 tip ↔ op tablosu", () => {
     it("her tipin op listesi plandaki tabloyla birebir aynıdır (aşılmaz)", () => {
@@ -108,9 +132,21 @@ describe("tanimGecerliMi — Önizle kapısı", () => {
         expect(tanimGecerliMi(temel, KAYNAK)).toBe(true);
     });
 
-    it("türetilmiş kolon filtre/sıralama alanı olamaz ama kolon olarak seçilebilir", () => {
+    it("filtrelenemeyen türetilmiş kolon filtre/sıralama alanı olamaz ama kolon olarak seçilebilir", () => {
         expect(tanimGecerliMi({ ...temel, kolonlar: ["muvekkil_adlari"] }, KAYNAK)).toBe(true);
         expect(tanimGecerliMi({ ...temel, filtreler: [{ alan: "muvekkil_adlari", op: "eq", deger: "x" }] }, KAYNAK)).toBe(false);
+        expect(tanimGecerliMi({ ...temel, siralama: [{ alan: "muvekkil_adlari", yon: "asc" }] }, KAYNAK)).toBe(false);
+    });
+
+    it("§4.2 taraf kolonu: türetilmiş ama filtrelenebilir — kapı kolonun `oplar`ına bakar (contains geçer, eq geçmez), sıralanamaz", () => {
+        expect(tanimGecerliMi({ ...temel, filtreler: [{ alan: "karsi_taraf_adlari", op: "contains", deger: "Sigorta" }] }, KAYNAK)).toBe(true);
+        expect(tanimGecerliMi({ ...temel, filtreler: [{ alan: "karsi_taraf_adlari", op: "is_null" }] }, KAYNAK)).toBe(true);
+        expect(tanimGecerliMi({ ...temel, filtreler: [{ alan: "karsi_taraf_adlari", op: "eq", deger: "Sigorta" }] }, KAYNAK)).toBe(false);
+        expect(tanimGecerliMi({ ...temel, siralama: [{ alan: "karsi_taraf_adlari", yon: "asc" }] }, KAYNAK)).toBe(false);
+        expect(kolonOplari(kolonOf("karsi_taraf_adlari"))).toEqual(["contains", "is_null", "not_null"]);
+        expect(kolonOplari(kolonOf("muvekkil_adlari"))).toEqual([]);
+        // `oplar` boş/eksikse tip tablosuna düşülür (eski katalog cevabı)
+        expect(kolonOplari({ tip: "liste", filtrelenebilir: true, oplar: [] })).toEqual(OP_BY_TIP.liste);
     });
 
     it("eksik filtre satırı, alan seçilmemiş sıralama ve 4. sıralama geçersizdir", () => {
@@ -213,5 +249,159 @@ describe("HTTP fonksiyonları", () => {
         fetchMock.mockResolvedValueOnce(okJson(katalog));
         expect(await getCatalog()).toEqual(katalog);
         expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/catalog");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// G138 — §4.3 kontrol ↔ op çevirisi (sunum katmanı; sunucu sözleşmesi değişmez)
+// ---------------------------------------------------------------------------
+
+describe("§4.3 kontroldenFiltre — her kontrol doğru op'u üretir", () => {
+    const tarih = (ek: Partial<Extract<KontrolDurumu, { kontrol: "tarih_araligi" }>>): KontrolDurumu =>
+        ({ ...bosKontrol(kolonOf("opening_date")), ...ek } as KontrolDurumu);
+    const sayi = (ek: Partial<Extract<KontrolDurumu, { kontrol: "sayi_araligi" }>>): KontrolDurumu =>
+        ({ ...bosKontrol(kolonOf("maddi_tazminat")), ...ek } as KontrolDurumu);
+
+    it("boş kontrol tanıma girmez (null); kontrolDoluMu false", () => {
+        for (const anahtar of ["opening_date", "maddi_tazminat", "status", "subject", "active"]) {
+            const b = bosKontrol(kolonOf(anahtar));
+            expect(kontroldenFiltre(b)).toBeNull();
+            expect(kontrolDoluMu(b)).toBe(false);
+        }
+    });
+
+    it("tarih aralığı: iki uç between (ISO iki öğe), yalnız başlangıç gte, yalnız bitiş lte", () => {
+        expect(kontroldenFiltre(tarih({ baslangic: "2025-01-01", bitis: "2025-12-31" })))
+            .toEqual({ alan: "opening_date", op: "between", deger: ["2025-01-01", "2025-12-31"] });
+        expect(kontroldenFiltre(tarih({ baslangic: "2025-01-01" }))).toEqual({ alan: "opening_date", op: "gte", deger: "2025-01-01" });
+        expect(kontroldenFiltre(tarih({ bitis: "2025-12-31" }))).toEqual({ alan: "opening_date", op: "lte", deger: "2025-12-31" });
+    });
+
+    it("sayı/para aralığı: between iki JSON number, gte/lte number; 0 geçerli bir uçtur", () => {
+        expect(kontroldenFiltre(sayi({ en_az: 1000, en_cok: 5000 }))).toEqual({ alan: "maddi_tazminat", op: "between", deger: [1000, 5000] });
+        expect(kontroldenFiltre(sayi({ en_az: 0 }))).toEqual({ alan: "maddi_tazminat", op: "gte", deger: 0 });
+        expect(kontroldenFiltre(sayi({ en_cok: 99.5 }))).toEqual({ alan: "maddi_tazminat", op: "lte", deger: 99.5 });
+    });
+
+    it("çoklu seçim: 1 seçim eq, n seçim in (dizi); serbest metin yolu YOK", () => {
+        const b = bosKontrol(kolonOf("status"));
+        expect(kontroldenFiltre({ ...b, secili: ["Derdest"] } as KontrolDurumu)).toEqual({ alan: "status", op: "eq", deger: "Derdest" });
+        expect(kontroldenFiltre({ ...b, secili: ["Derdest", "Karar"] } as KontrolDurumu)).toEqual({ alan: "status", op: "in", deger: ["Derdest", "Karar"] });
+        expect(Object.keys(b)).not.toContain("metin");
+    });
+
+    it("metin: contains; combobox seçimi (tam) eq; boşluk kırpılır", () => {
+        const b = bosKontrol(kolonOf("subject"));
+        expect(kontroldenFiltre({ ...b, metin: " Tazminat " } as KontrolDurumu)).toEqual({ alan: "subject", op: "contains", deger: "Tazminat" });
+        expect(kontroldenFiltre({ ...b, metin: "Tazminat", tam: true } as KontrolDurumu)).toEqual({ alan: "subject", op: "eq", deger: "Tazminat" });
+        expect(kontroldenFiltre({ ...b, metin: "   " } as KontrolDurumu)).toBeNull();
+    });
+
+    it("mantık: eq true/false; null boş", () => {
+        const b = bosKontrol(kolonOf("active"));
+        expect(kontroldenFiltre({ ...b, deger: true } as KontrolDurumu)).toEqual({ alan: "active", op: "eq", deger: true });
+        expect(kontroldenFiltre({ ...b, deger: false } as KontrolDurumu)).toEqual({ alan: "active", op: "eq", deger: false });
+    });
+
+    it("her kontrolde \"boş olanlar\" → is_null, değersiz (girilen değer yok sayılır)", () => {
+        expect(kontroldenFiltre(tarih({ bos: true, baslangic: "2025-01-01" }))).toEqual({ alan: "opening_date", op: "is_null" });
+        expect(kontroldenFiltre({ ...bosKontrol(kolonOf("status")), bos: true, secili: ["Derdest"] } as KontrolDurumu)).toEqual({ alan: "status", op: "is_null" });
+        expect(kontroldenFiltre({ ...bosKontrol(kolonOf("active")), bos: true } as KontrolDurumu)).toEqual({ alan: "active", op: "is_null" });
+    });
+
+    it("gelişmiş çip filtreyi olduğu gibi taşır (deger yoksa anahtar da yok)", () => {
+        expect(kontroldenFiltre({ kontrol: "gelismis", alan: "status", op: "ne", deger: "Karar" })).toEqual({ alan: "status", op: "ne", deger: "Karar" });
+        expect(kontroldenFiltre({ kontrol: "gelismis", alan: "status", op: "not_null" })).toEqual({ alan: "status", op: "not_null" });
+    });
+});
+
+describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız çözülür", () => {
+    const ORNEKLER: Array<[string, Filtre, FiltreKontrolu | "gelismis"]> = [
+        ["opening_date", { alan: "opening_date", op: "between", deger: ["2025-01-01", "2025-12-31"] }, "tarih_araligi"],
+        ["opening_date", { alan: "opening_date", op: "gte", deger: "2025-01-01" }, "tarih_araligi"],
+        ["opening_date", { alan: "opening_date", op: "lte", deger: "2025-12-31" }, "tarih_araligi"],
+        ["opening_date", { alan: "opening_date", op: "is_null" }, "tarih_araligi"],
+        ["opening_date", { alan: "opening_date", op: "eq", deger: "2025-01-01" }, "gelismis"],
+        ["opening_date", { alan: "opening_date", op: "not_null" }, "gelismis"],
+        ["maddi_tazminat", { alan: "maddi_tazminat", op: "between", deger: [1000, 5000] }, "sayi_araligi"],
+        ["maddi_tazminat", { alan: "maddi_tazminat", op: "gte", deger: 0 }, "sayi_araligi"],
+        ["maddi_tazminat", { alan: "maddi_tazminat", op: "lte", deger: 10 }, "sayi_araligi"],
+        ["maddi_tazminat", { alan: "maddi_tazminat", op: "eq", deger: 1000 }, "gelismis"],
+        ["status", { alan: "status", op: "eq", deger: "Derdest" }, "coklu_secim"],
+        ["status", { alan: "status", op: "in", deger: ["Derdest", "Karar"] }, "coklu_secim"],
+        ["status", { alan: "status", op: "is_null" }, "coklu_secim"],
+        ["status", { alan: "status", op: "ne", deger: "Karar" }, "gelismis"],
+        ["status", { alan: "status", op: "not_null" }, "gelismis"],
+        ["subject", { alan: "subject", op: "contains", deger: "Tazminat" }, "metin_icerir"],
+        ["subject", { alan: "subject", op: "eq", deger: "Tazminat" }, "metin_icerir"],
+        ["subject", { alan: "subject", op: "in", deger: ["a", "b"] }, "gelismis"],
+        ["subject", { alan: "subject", op: "ne", deger: "x" }, "gelismis"],
+        ["active", { alan: "active", op: "eq", deger: true }, "mantik"],
+        ["active", { alan: "active", op: "is_null" }, "mantik"],
+        ["karsi_taraf_adlari", { alan: "karsi_taraf_adlari", op: "contains", deger: "Sigorta" }, "metin_icerir"],
+    ];
+
+    it.each(ORNEKLER)("%s %j → %s ve gidiş-dönüş aynı filtreyi verir", (anahtar, f, beklenenKontrol) => {
+        const d = filtredenKontrol(f, kolonOf(anahtar));
+        expect(d.kontrol).toBe(beklenenKontrol);
+        expect(kontroldenFiltre(d)).toEqual(f);
+    });
+
+    it("tek değerli `in` eş anlamlı `eq`'e normalize olur (bilinen tek istisna)", () => {
+        const d = filtredenKontrol({ alan: "status", op: "in", deger: ["Derdest"] }, kolonOf("status"));
+        expect(d.kontrol).toBe("coklu_secim");
+        expect(kontroldenFiltre(d)).toEqual({ alan: "status", op: "eq", deger: "Derdest" });
+    });
+
+    it("kolon yok ya da filtrelenemez → gelişmiş çip; değer tipi uymayan op da gelişmiş", () => {
+        expect(filtredenKontrol({ alan: "yok", op: "eq", deger: "x" }, undefined).kontrol).toBe("gelismis");
+        expect(filtredenKontrol({ alan: "muvekkil_adlari", op: "contains", deger: "x" }, kolonOf("muvekkil_adlari")).kontrol).toBe("gelismis");
+        // between ama tek öğe: tarih kontrolüne oturmaz, kaybolmaz
+        const d = filtredenKontrol({ alan: "opening_date", op: "between", deger: ["2025-01-01"] }, kolonOf("opening_date"));
+        expect(d.kontrol).toBe("gelismis");
+        expect(kontroldenFiltre(d)).toEqual({ alan: "opening_date", op: "between", deger: ["2025-01-01"] });
+    });
+});
+
+describe("gelişmiş op'lar ve çip özeti", () => {
+    it("\"…\" menüsü yalnız kolonun `oplar`ında olup kontrolün doğal üretmediklerini sunar", () => {
+        expect(gelismisOplar(kolonOf("status"))).toEqual(["ne", "not_null"]);
+        expect(gelismisOplar(kolonOf("opening_date"))).toEqual(["eq", "not_null"]);
+        expect(gelismisOplar(kolonOf("subject"))).toEqual(["ne", "in", "not_null"]);
+        expect(gelismisOplar(kolonOf("active"))).toEqual([]);
+        // Taraf kolonu: oplar [contains, is_null, not_null] → yalnız not_null
+        expect(gelismisOplar(kolonOf("karsi_taraf_adlari"))).toEqual(["not_null"]);
+        const her: FiltreOp[] = ["eq", "ne", "contains", "in", "gte", "lte", "between", "is_null", "not_null"];
+        for (const k of Object.keys(KONTROL_DOGAL_OPLARI) as FiltreKontrolu[]) {
+            for (const op of KONTROL_DOGAL_OPLARI[k]) expect(her).toContain(op);
+        }
+    });
+
+    it("özet: tarih dd.MM.yyyy aralığı, sayı tr-TR, çoklu virgülle, metin içerir/=, boş, gelişmiş op etiketi", () => {
+        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", bos: false, baslangic: "2025-01-01", bitis: "2025-12-31" }, "tarih")).toBe("01.01.2025 – 31.12.2025");
+        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", bos: false, baslangic: "2025-01-01", bitis: "" }, "tarih")).toBe("≥ 01.01.2025");
+        expect(kontrolOzeti({ kontrol: "sayi_araligi", alan: "a", bos: false, en_az: 1000, en_cok: null }, "para")).toBe("≥ 1.000");
+        expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", bos: false, secili: ["Derdest", "Karar"] }, "liste")).toBe("Derdest, Karar");
+        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", bos: false, metin: "x", tam: false }, "metin")).toBe("içerir \"x\"");
+        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", bos: false, metin: "x", tam: true }, "metin")).toBe("= \"x\"");
+        expect(kontrolOzeti({ kontrol: "mantik", alan: "a", bos: true, deger: true }, "mantik")).toBe("boş");
+        expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "ne", deger: "Karar" }, "liste")).toBe("eşit değil Karar");
+        expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "not_null" }, "liste")).toBe("dolu");
+    });
+});
+
+describe("tarihKisayolu — sabit bugünle", () => {
+    const bugun = new Date(2026, 8, 7); // 7 Eylül 2026 (yerel)
+
+    it("bu yıl 1 Ocak–bugün; geçen yıl tam yıl", () => {
+        expect(tarihKisayolu("bu_yil", bugun)).toEqual(["2026-01-01", "2026-09-07"]);
+        expect(tarihKisayolu("gecen_yil", bugun)).toEqual(["2025-01-01", "2025-12-31"]);
+    });
+
+    it("son 30 gün bugün dahil; son 12 ay bir yıl önceki aynı gün", () => {
+        expect(tarihKisayolu("son_30_gun", bugun)).toEqual(["2026-08-09", "2026-09-07"]);
+        expect(tarihKisayolu("son_12_ay", bugun)).toEqual(["2025-09-07", "2026-09-07"]);
+        // Ay/yıl sınırı: 1 Ocak'tan 30 gün geri geçen yılın Aralık'ına düşer
+        expect(tarihKisayolu("son_30_gun", new Date(2026, 0, 1))).toEqual(["2025-12-03", "2026-01-01"]);
     });
 });

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-// ReportsPage (G135) — Asistan paneli: anahtar kapısı (kapalı → düğme yok, manuel akış çalışır);
+// ReportsPage (G135 → G138) — Asistan paneli: anahtar kapısı (kapalı → düğme yok, manuel akış çalışır);
 // gönderilen gövde `{mesajlar (≤20), mevcut_tanim}`; `complete`+`tanim` → "Oluşturucuya uygula"
-// oluşturucu state'ini değiştirir (öncesinde değişmez) + bayat rozeti; `eylem:"indir_xlsx"` →
-// otomatik uygulama + `/export` `kaynak:"asistan"`; `eylem:"onizle"` → önizleme; `warning` şerit;
-// `failed` error_kod ipucu (tanınmayan → analysis_error); 409 → şerit + düğme pasif; Enter/Shift+Enter.
+// oluşturucu state'ini değiştirir (öncesinde değişmez) ve uygulanan tanım OTOMATİK önizlenir (G138:
+// `eylem=null` olsa da; bayat rozeti yok); `eylem:"indir_xlsx"` → otomatik uygulama + `/export`
+// `kaynak:"asistan"`; `eylem:"onizle"` → önizleme; `warning` şerit; `failed` error_kod ipucu
+// (tanınmayan → analysis_error); 409 → şerit + düğme pasif; Enter/Shift+Enter.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -39,6 +40,7 @@ const msalMock = vi.hoisted(() => {
 vi.mock("@azure/msal-react", () => msalMock);
 
 import ReportsPage from "./ReportsPage";
+import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,6 +50,22 @@ class ResizeObserverStub {
     disconnect() { /* jsdom */ }
 }
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
+Element.prototype.scrollIntoView = function () { /* jsdom */ };
+
+const KONTROL: Record<KolonTipi, FiltreKontrolu> = {
+    metin: "metin_icerir", liste: "coklu_secim", tarih: "tarih_araligi", sayi: "sayi_araligi", para: "sayi_araligi", mantik: "mantik",
+};
+type KolonSahtesi = Pick<KatalogKolon, "anahtar" | "etiket" | "tip"> & Partial<KatalogKolon>;
+function kolon(k: KolonSahtesi): KatalogKolon {
+    const filtrelenebilir = k.filtrelenebilir ?? true;
+    return {
+        filtrelenebilir, siralanabilir: true, turetilmis: false, secenekler: null, grup: "Kimlik",
+        kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
+        oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
+        oneriler: null, oneri_kesik: false,
+        ...k,
+    };
+}
 
 const KATALOG = {
     veri_kaynaklari: [
@@ -57,11 +75,13 @@ const KATALOG = {
             aciklama: "Dava kartları",
             varsayilan_kolonlar: ["tracking_no", "subject"],
             kolonlar: [
-                { anahtar: "tracking_no", etiket: "Ofis No", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "subject", etiket: "Konu", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "status", etiket: "Durum", tip: "liste", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: ["Derdest", "Karar"] },
-                { anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
+                kolon({ anahtar: "tracking_no", etiket: "Ofis No", tip: "metin" }),
+                kolon({ anahtar: "subject", etiket: "Konu", tip: "metin" }),
+                kolon({ anahtar: "status", etiket: "Durum", tip: "liste", secenekler: ["Derdest", "Karar"] }),
+                kolon({ anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", grup: "Tarihler" }),
             ],
+            hizli_filtreler: [{ alan: "opening_date", alternatifler: [] }, { alan: "status", alternatifler: [] }],
+            kolon_setleri: [{ ad: "Temel", kolonlar: ["tracking_no", "subject"] }],
         },
         {
             anahtar: "muvekkiller",
@@ -69,9 +89,11 @@ const KATALOG = {
             aciklama: "",
             varsayilan_kolonlar: ["name"],
             kolonlar: [
-                { anahtar: "name", etiket: "Ad", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "city", etiket: "Şehir", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
+                kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
+                kolon({ anahtar: "city", etiket: "Şehir", tip: "metin", grup: "İletişim" }),
             ],
+            hizli_filtreler: [{ alan: "city", alternatifler: [] }],
+            kolon_setleri: [{ ad: "Temel", kolonlar: ["name"] }],
         },
     ],
     limitler: { onizleme_sayfa_boyu_max: 200, export_max_satir: 50000 },
@@ -157,7 +179,7 @@ const cagrilar = (url: string, method?: string) =>
     (fetchMock.mock.calls as Cagri[]).filter(([u, o]) => u === url && (!method || (o?.method ?? "GET") === method));
 const govde = (c: Cagri) => JSON.parse(c[1]!.body as string);
 
-describe("ReportsPage asistan paneli (G135)", () => {
+describe("ReportsPage asistan paneli (G135/G138)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
     let indirmeler: string[];
@@ -258,6 +280,9 @@ describe("ReportsPage asistan paneli (G135)", () => {
     };
     const panel = () => $("[data-testid='asistan-paneli']");
     const seciliKolonlar = () => Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
+    const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
+    const onizlemeler = () => cagrilar("/api/reports/preview", "POST");
+    const sonOnizleme = () => govde(onizlemeler().at(-1)!);
 
     function yaz(el: HTMLTextAreaElement, value: string) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
@@ -289,7 +314,7 @@ describe("ReportsPage asistan paneli (G135)", () => {
 
     // ---------------------------------------------------------------- anahtar kapısı
 
-    it("anahtar kapalıyken Asistan düğmesi ve panel yok; manuel önizleme akışı etkilenmez", async () => {
+    it("anahtar kapalıyken Asistan düğmesi ve panel yok; manuel akış (otomatik önizleme) etkilenmez", async () => {
         sunucuKur({ anahtar: false });
         await render();
 
@@ -299,9 +324,12 @@ describe("ReportsPage asistan paneli (G135)", () => {
         expect(butonVar("Asistan")).toBe(false);
         expect(container.querySelector("[data-testid='asistan-paneli']")).toBeNull();
 
-        await tikla(butonBul("Önizle"));
-        expect(cagrilar("/api/reports/preview", "POST")).toHaveLength(1);
+        // Açılış önizlemesi geldi; kolon değişimi hemen yeniden önizler
+        expect(onizlemeler()).toHaveLength(1);
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+        await tikla(byLabel("Durum"));
+        expect(onizlemeler()).toHaveLength(2);
+        expect(sonOnizleme().tanim.kolonlar).toEqual(["tracking_no", "subject", "status"]);
     });
 
     it("anahtar okunamazsa (uç hatası) panel yine gizli, toast yok", async () => {
@@ -321,11 +349,11 @@ describe("ReportsPage asistan paneli (G135)", () => {
         await tikla(butonBul("Asistan"));
         const p = panel();
         expect(p.getAttribute("aria-label")).toBe("Rapor asistanı");
-        const cipler = p.querySelectorAll("[data-testid='ornek-istem']");
-        expect(cipler).toHaveLength(3);
+        const ornekler = p.querySelectorAll("[data-testid='ornek-istem']");
+        expect(ornekler).toHaveLength(3);
 
-        await tikla(cipler[1]);
-        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").value).toBe(cipler[1].textContent);
+        await tikla(ornekler[1]);
+        expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").value).toBe(ornekler[1].textContent);
         // Henüz gönderilmedi
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(0);
 
@@ -335,7 +363,7 @@ describe("ReportsPage asistan paneli (G135)", () => {
 
     // ---------------------------------------------------------------- gövde + uygula
 
-    it("Enter gönderir: gövde {mesajlar, mevcut_tanim}; complete+tanim → özet kartı; uygula ANCAK düğmeyle; bayat rozeti", async () => {
+    it("Enter gönderir: gövde {mesajlar, mevcut_tanim}; complete+tanim → özet kartı; uygula ANCAK düğmeyle; uygulanınca OTOMATİK önizlenir (eylem null olsa da)", async () => {
         sunucuKur({
             chat: () => akis([
                 { status: "info", message: "Rapor tanımı hazırlanıyor" },
@@ -343,9 +371,8 @@ describe("ReportsPage asistan paneli (G135)", () => {
             ]),
         });
         await render();
-        // Önce manuel önizleme: bayat rozeti için referans
-        await tikla(butonBul("Önizle"));
-        expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
+        // Açılış önizlemesi: referans
+        expect(onizlemeler()).toHaveLength(1);
 
         await tikla(butonBul("Asistan"));
         await gonder("Derdest davaları listele");
@@ -368,26 +395,26 @@ describe("ReportsPage asistan paneli (G135)", () => {
         expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").value).toBe("");
         expect(byLabel<HTMLTextAreaElement>("Asistana mesaj").disabled).toBe(false);
 
-        // Uygulamadan ÖNCE oluşturucu değişmedi
+        // Uygulamadan ÖNCE oluşturucu değişmedi, yeni önizleme yok
         expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
-        expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
+        expect(onizlemeler()).toHaveLength(1);
 
         await tikla(butonBul("Oluşturucuya uygula", asistan));
 
         expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("davalar");
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
-        const filtreler = container.querySelectorAll("[data-testid='filtre-satiri']");
-        expect(filtreler).toHaveLength(1);
-        expect(byLabel<HTMLSelectElement>("Alan", filtreler[0]).value).toBe("status");
-        expect(container.querySelectorAll("[data-testid='siralama-satiri']")).toHaveLength(1);
+        // Filtre şeride çözüldü (status eq Derdest → çoklu seçim çipi); operatör seçici yok
+        expect(cipler()).toEqual(["DurumDerdest"]);
+        expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
         expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
         expect(butonVar("Oluşturucuya uygula", asistan)).toBe(false);
         expect(toastMocks.success).toHaveBeenCalledWith("Asistan tanımı oluşturucuya uygulandı");
-        // Önizleme artık bayat
-        expect(container.querySelector("[data-testid='bayat-rozeti']")).not.toBeNull();
-        // Eylem yoktu: ne export ne yeni önizleme
+        // Uygulanan tanım kendiliğinden önizlendi (sıralama dahil); bayat rozeti yok
+        expect(onizlemeler()).toHaveLength(2);
+        expect(sonOnizleme()).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 50 });
+        expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
+        // Eylem yoktu: export yok
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
-        expect(cagrilar("/api/reports/preview", "POST")).toHaveLength(1);
     });
 
     it("ikinci mesajda geçmiş taşınır (user, assistant, user); hata kayıtları geçmişe girmez; en fazla 20", async () => {
@@ -470,6 +497,7 @@ describe("ReportsPage asistan paneli (G135)", () => {
         expect(confirmMock.fn).not.toHaveBeenCalled();
         expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("muvekkiller");
         expect(seciliKolonlar()).toEqual(["name", "city"]);
+        expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
     });
 
     it("eylem onizle: tanım uygulanır ve önizleme asistanın tanımıyla istenir; export yok", async () => {
@@ -481,27 +509,27 @@ describe("ReportsPage asistan paneli (G135)", () => {
         await gonder("önizle");
         await bekle(8);
 
-        const prev = cagrilar("/api/reports/preview", "POST");
-        expect(prev).toHaveLength(1);
-        expect(govde(prev[0])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 50 });
+        const prev = onizlemeler();
+        expect(prev).toHaveLength(2); // açılış + asistan
+        expect(govde(prev[1])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 50 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
-        // Önizlenen = taslak → bayat değil
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
     });
 
-    it("eylem onizle + tanim null: oluşturucudaki mevcut tanımla önizler", async () => {
+    it("eylem onizle + tanim null: oluşturucudaki mevcut tanımla YENİDEN önizler (aynı tanım olsa da)", async () => {
         sunucuKur({
             chat: () => akis([{ status: "complete", cevap: "Mevcut tanımı önizliyorum.", tanim: null, eylem: "onizle" }]),
         });
         await render();
+        expect(onizlemeler()).toHaveLength(1);
         await tikla(butonBul("Asistan"));
         await gonder("bunu önizle");
         await bekle(8);
 
-        const prev = cagrilar("/api/reports/preview", "POST");
-        expect(prev).toHaveLength(1);
-        expect(govde(prev[0]).tanim).toEqual(VARSAYILAN_TANIM);
+        const prev = onizlemeler();
+        expect(prev).toHaveLength(2);
+        expect(govde(prev[1]).tanim).toEqual(VARSAYILAN_TANIM);
         expect(panel().querySelector("[data-testid='tanim-ozeti']")).toBeNull();
     });
 
@@ -518,6 +546,7 @@ describe("ReportsPage asistan paneli (G135)", () => {
         expect(toastMocks.error).toHaveBeenCalledWith("Asistan tanımı uygulanamadı", expect.objectContaining({ description: expect.stringContaining("yok_boyle") }));
         expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
         expect(butonVar("Oluşturucuya uygula", asistan)).toBe(true);
+        expect(onizlemeler()).toHaveLength(1);
     });
 
     // ---------------------------------------------------------------- warning / failed / 409
@@ -589,9 +618,10 @@ describe("ReportsPage asistan paneli (G135)", () => {
         expect(butonBul("Asistan").disabled).toBe(true);
         expect(butonBul("Asistan").title).toContain("kapalı");
 
-        // Manuel yol etkilenmez
-        await tikla(butonBul("Önizle"));
-        expect(cagrilar("/api/reports/preview", "POST")).toHaveLength(1);
+        // Manuel yol etkilenmez: kolon değişimi hemen önizler
+        expect(onizlemeler()).toHaveLength(1);
+        await tikla(byLabel("Durum"));
+        expect(onizlemeler()).toHaveLength(2);
     });
 
     it("403: yönetici uyarısı panelde", async () => {

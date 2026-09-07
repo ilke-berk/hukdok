@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// ReportsPage (G134) — şablonlar, Excel/CSV indirme ve İndirme geçmişi sekmesi: şablon kaydetme
+// ReportsPage (G134 → G138) — şablonlar, Excel/CSV indirme ve İndirme geçmişi sekmesi: şablon kaydetme
 // gövdesi + listede görünme; başkasının şablonunda Güncelle/Sil yok + paylaşımlı rozeti; export
 // gövdesi §2.4 birebir + dosya adı Content-Disposition'dan; 413 mesajı; geçmiş satırları +
-// dosya_mevcut=false pasif + 410; "Tanımı yükle" oluşturucu state'ini tümüyle değiştirir; ?tab=.
+// dosya_mevcut=false pasif + 410; "Tanımı yükle" oluşturucu state'ini tümüyle değiştirir ve filtreler
+// şeride çözülür (G138: yüklenen tanım otomatik önizlenir, Önizle düğmesi yok); ?tab=.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -39,16 +40,33 @@ const msalMock = vi.hoisted(() => {
 vi.mock("@azure/msal-react", () => msalMock);
 
 import ReportsPage from "./ReportsPage";
+import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// Radix Switch (diyalogdaki "Paylaşımlı") useSize ile ResizeObserver ister; jsdom'da yok.
+// Radix Switch (diyalogdaki "Paylaşımlı") useSize ile ResizeObserver ister; cmdk de — jsdom'da yok.
 class ResizeObserverStub {
     observe() { /* jsdom */ }
     unobserve() { /* jsdom */ }
     disconnect() { /* jsdom */ }
 }
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
+Element.prototype.scrollIntoView = function () { /* jsdom */ };
+
+const KONTROL: Record<KolonTipi, FiltreKontrolu> = {
+    metin: "metin_icerir", liste: "coklu_secim", tarih: "tarih_araligi", sayi: "sayi_araligi", para: "sayi_araligi", mantik: "mantik",
+};
+type KolonSahtesi = Pick<KatalogKolon, "anahtar" | "etiket" | "tip"> & Partial<KatalogKolon>;
+function kolon(k: KolonSahtesi): KatalogKolon {
+    const filtrelenebilir = k.filtrelenebilir ?? true;
+    return {
+        filtrelenebilir, siralanabilir: true, turetilmis: false, secenekler: null, grup: "Kimlik",
+        kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
+        oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
+        oneriler: null, oneri_kesik: false,
+        ...k,
+    };
+}
 
 const KATALOG = {
     veri_kaynaklari: [
@@ -58,11 +76,13 @@ const KATALOG = {
             aciklama: "Dava kartları",
             varsayilan_kolonlar: ["tracking_no", "subject"],
             kolonlar: [
-                { anahtar: "tracking_no", etiket: "Ofis No", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "subject", etiket: "Konu", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "status", etiket: "Durum", tip: "liste", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: ["Derdest", "Karar"] },
-                { anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
+                kolon({ anahtar: "tracking_no", etiket: "Ofis No", tip: "metin" }),
+                kolon({ anahtar: "subject", etiket: "Konu", tip: "metin" }),
+                kolon({ anahtar: "status", etiket: "Durum", tip: "liste", secenekler: ["Derdest", "Karar"] }),
+                kolon({ anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", grup: "Tarihler" }),
             ],
+            hizli_filtreler: [{ alan: "opening_date", alternatifler: [] }, { alan: "status", alternatifler: [] }],
+            kolon_setleri: [{ ad: "Temel", kolonlar: ["tracking_no", "subject"] }],
         },
         {
             anahtar: "muvekkiller",
@@ -70,9 +90,11 @@ const KATALOG = {
             aciklama: "",
             varsayilan_kolonlar: ["name"],
             kolonlar: [
-                { anahtar: "name", etiket: "Ad", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
-                { anahtar: "city", etiket: "Şehir", tip: "metin", filtrelenebilir: true, siralanabilir: true, turetilmis: false, secenekler: null },
+                kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
+                kolon({ anahtar: "city", etiket: "Şehir", tip: "metin", grup: "İletişim" }),
             ],
+            hizli_filtreler: [{ alan: "city", alternatifler: [] }],
+            kolon_setleri: [{ ad: "Temel", kolonlar: ["name"] }],
         },
     ],
     limitler: { onizleme_sayfa_boyu_max: 200, export_max_satir: 50000 },
@@ -137,7 +159,7 @@ function KonumGozcusu() {
     return null;
 }
 
-describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
+describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
     let indirmeler: string[];
@@ -207,6 +229,12 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         });
     }
 
+    async function bekle(tur = 4) {
+        for (let i = 0; i < tur; i++) {
+            await act(async () => { await Promise.resolve(); });
+        }
+    }
+
     async function render(url = "/reports") {
         root = createRoot(container);
         await act(async () => {
@@ -217,8 +245,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
                 </MemoryRouter>,
             );
         });
-        await act(async () => { await Promise.resolve(); });
-        await act(async () => { await Promise.resolve(); });
+        await bekle();
     }
 
     const $ = <T extends Element>(sel: string, kok: ParentNode = container): T => {
@@ -258,8 +285,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         await act(async () => {
             el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
         });
-        await act(async () => { await Promise.resolve(); });
-        await act(async () => { await Promise.resolve(); });
+        await bekle();
     }
     /** Radix Tabs tetikleyicisi mousedown ile etkinleşir. */
     async function sekme(metin: string) {
@@ -268,11 +294,12 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         await act(async () => {
             t.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
         });
-        await act(async () => { await Promise.resolve(); });
-        await act(async () => { await Promise.resolve(); });
+        await bekle();
     }
     const aktifSekme = () => container.querySelector("[role='tab'][data-state='active']")?.textContent?.trim();
     const seciliKolonlar = () => Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
+    const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
+    const sonOnizleme = () => govde(cagrilar("/api/reports/preview", "POST").at(-1)!);
 
     it("şablon kaydetme: diyalog gövdesi {ad, aciklama, tanim, paylasimli} gider; şablon seçimde ve listede görünür", async () => {
         sunucuKur();
@@ -362,19 +389,23 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
             kaynak: "manuel",
         });
         expect(indirmeler).toEqual(["hukdok-rapor-davalar-20260906-1405.xlsx"]);
-        expect(toastMocks.success).toHaveBeenCalledWith("İndirildi: hukdok-rapor-davalar-20260906-1405.xlsx");
+        // Açılış önizlemesi otomatik geldi → toast satır sayısını taşır
+        expect(toastMocks.success).toHaveBeenCalledWith("İndirildi: hukdok-rapor-davalar-20260906-1405.xlsx · 3 satır");
     });
 
-    it("CSV indir yüklü şablonla: sablon_id yazılır, format csv; toast satır sayısını önizlemeden alır", async () => {
+    it("CSV indir yüklü şablonla: sablon_id yazılır, format csv; yüklenen tanım kendiliğinden önizlenir, toast satır sayısını önizlemeden alır", async () => {
         sunucuKur();
         await render();
         const secim = $<HTMLSelectElement>("#rapor-sablon");
         sec(secim, "1");
         await tikla(butonBul("Yükle"));
         expect(seciliKolonlar()).toEqual(["tracking_no", "status"]);
-        await tikla(butonBul("Önizle"));
-        await tikla(butonBul("CSV indir"));
+        // Şablon filtresi şeride çözüldü (status eq Derdest → çoklu seçim, çip) ve önizlendi
+        expect(cipler()).toEqual(["DurumDerdest"]);
+        expect(sonOnizleme().tanim).toEqual(KENDI_SABLON.tanim);
+        expect(butonVar("Önizle")).toBe(false);
 
+        await tikla(butonBul("CSV indir"));
         const g = govde(cagrilar("/api/reports/export", "POST")[0]);
         expect(g.format).toBe("csv");
         expect(g.sablon_id).toBe(1);
@@ -458,7 +489,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         expect(container.querySelectorAll("[data-testid='kosu-satiri']")).toHaveLength(2);
     });
 
-    it("\"Tanımı yükle\": oluşturucu state'i tümüyle değişir (kaynak, kolonlar, filtre), Rapor sekmesine geçer; kaynak değişimi onay ister", async () => {
+    it("\"Tanımı yükle\": oluşturucu state'i tümüyle değişir (kaynak, kolonlar, filtre şeride çözülür), Rapor sekmesine geçer ve önizlenir; kaynak değişimi onay ister", async () => {
         sunucuKur();
         await render("/reports?tab=gecmis");
         // Koşu 10 muvekkiller kaynağı — mevcut taslak davalar → onay
@@ -470,19 +501,18 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
 
         expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("muvekkiller");
         expect(seciliKolonlar()).toEqual(["name", "city"]);
-        const filtreler = container.querySelectorAll("[data-testid='filtre-satiri']");
-        expect(filtreler).toHaveLength(1);
-        expect(byLabel<HTMLSelectElement>("Alan", filtreler[0]).value).toBe("city");
-        expect(byLabel<HTMLSelectElement>("Operatör", filtreler[0]).value).toBe("contains");
+        // city contains İstanbul → hızlı filtre yuvası (metin kontrolü) dolu, çip görünür; operatör seçici yok
+        expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
+        expect(cipler()).toEqual(["Şehiriçerir \"İstanbul\""]);
+        expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
         // Koşunun şablonu yok → seçim boş
         expect($<HTMLSelectElement>("#rapor-sablon").value).toBe("");
 
-        // Önizle bu tanımla gider (state gerçekten değişti)
-        await tikla(butonBul("Önizle"));
-        expect(govde(cagrilar("/api/reports/preview", "POST")[0]).tanim).toEqual(BASKASININ_SABLONU.tanim);
+        // Otomatik önizleme bu tanımla gitti (state gerçekten değişti); eski kaynağın satırı yok
+        expect(sonOnizleme().tanim).toEqual(BASKASININ_SABLONU.tanim);
     });
 
-    it("şablon yükleme: onay reddedilirse state değişmez; aynı kaynakta onay sorulmaz", async () => {
+    it("şablon yükleme: onay reddedilirse state değişmez; aynı kaynakta onay sorulmaz; sıralama tanıma girer", async () => {
         sunucuKur();
         await render();
         const secim = $<HTMLSelectElement>("#rapor-sablon");
@@ -492,12 +522,14 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         expect(confirmMock.fn).toHaveBeenCalledTimes(1);
         expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("davalar");
         expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        expect(cagrilar("/api/reports/preview", "POST")).toHaveLength(1); // yalnız açılış
 
         sec(secim, "1");
         await tikla(butonBul("Yükle"));
         expect(confirmMock.fn).toHaveBeenCalledTimes(1); // aynı kaynak → sorulmadı
         expect(seciliKolonlar()).toEqual(["tracking_no", "status"]);
-        expect(container.querySelectorAll("[data-testid='siralama-satiri']")).toHaveLength(1);
+        expect(sonOnizleme().tanim.siralama).toEqual([{ alan: "opening_date", yon: "desc" }]);
+        expect(sonOnizleme().tanim.filtreler).toEqual([{ alan: "status", op: "eq", deger: "Derdest" }]);
         expect(toastMocks.success).toHaveBeenCalledWith("Şablon yüklendi: Benim şablonum");
     });
 
@@ -506,6 +538,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
         fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
             if (url === "/api/reports/templates/1" && opts?.method === "DELETE") return { ok: true, status: 204 };
             if (url === "/api/reports/catalog") return okJson(KATALOG);
+            if (url === "/api/reports/preview") return okJson(ONIZLEME);
             if (url === "/api/reports/templates") return okJson([KENDI_SABLON, BASKASININ_SABLONU]);
             throw new Error("beklenmeyen uç: " + url);
         });
@@ -527,6 +560,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134)", () => {
                 return okJson({ ...KENDI_SABLON, ...JSON.parse(opts.body as string), updated_at: "2026-09-06T13:00:00Z" });
             }
             if (url === "/api/reports/catalog") return okJson(KATALOG);
+            if (url === "/api/reports/preview") return okJson(ONIZLEME);
             if (url === "/api/reports/templates") return okJson([KENDI_SABLON, BASKASININ_SABLONU]);
             throw new Error("beklenmeyen uç: " + url);
         });

@@ -56,15 +56,40 @@ export const TANIM_LIMITLERI = {
 // §2.4 Katalog + önizleme cevabı
 // ---------------------------------------------------------------------------
 
+/** Filtre kontrol türü (§4.2; tipten türetilir, filtrelenemeyen kolonda null). */
+export type FiltreKontrolu = "tarih_araligi" | "coklu_secim" | "metin_icerir" | "sayi_araligi" | "mantik";
+
 export interface KatalogKolon {
     anahtar: string;
     etiket: string;
     tip: KolonTipi;
     filtrelenebilir: boolean;
     siralanabilir: boolean;
+    /** Türetilmiş kolon; §4.2'den beri filtrelenebilirlik kolon bazındadır (taraf kolonları EXISTS ile süzülür). */
     turetilmis: boolean;
     /** Kapalı liste (`liste` tipi) seçenekleri; diğer tiplerde null. */
     secenekler: string[] | null;
+    /** Kaynağa göre kapalı grup kümesi (§4.2) — alan seçicideki başlık. */
+    grup: string;
+    /** Filtre kontrolü; filtrelenemeyen kolonda null. */
+    kontrol: FiltreKontrolu | null;
+    /** Kolon başına izinli op listesi (§4.3 şerhi); filtrelenemeyen kolonda `[]`. */
+    oplar: FiltreOp[];
+    /** `onerili` metin kolonlarının DISTINCT değerleri (≤300); yoksa null. */
+    oneriler: string[] | null;
+    /** Öneri listesi 300'ü aşıp kesildi. */
+    oneri_kesik: boolean;
+}
+
+/** Şeritte hazır gelen filtre; `alternatifler` yalnız tarih aralığında alan değiştirici (§4.2). */
+export interface HizliFiltre {
+    alan: string;
+    alternatifler: string[];
+}
+
+export interface KolonSeti {
+    ad: string;
+    kolonlar: string[];
 }
 
 export interface KatalogVeriKaynagi {
@@ -73,6 +98,9 @@ export interface KatalogVeriKaynagi {
     aciklama: string;
     varsayilan_kolonlar: string[];
     kolonlar: KatalogKolon[];
+    /** Sıralı (§4.2). */
+    hizli_filtreler: HizliFiltre[];
+    kolon_setleri: KolonSeti[];
 }
 
 export interface KatalogLimitleri {
@@ -242,12 +270,22 @@ function ikiliUc(v: FiltreDeger | undefined): string | number {
 }
 
 /**
- * Bir filtre satırı gönderilebilir mi? (§2.1: `between` iki dolu uç, `in` en az 1 değer,
- * tekil op boş olamaz; `is_null`/`not_null` değer gerektirmez.) Tip uyumu op listesiyle sınanır.
+ * Kolonun izinli op'ları: katalog `oplar` (§4.3 şerhi; taraf kolonlarında `eq` yok) — alan
+ * yoksa/boşsa tip tablosuna düşülür. Filtrelenemeyen kolonda boş.
  */
-export function filtreTamamMi(f: Filtre, tip: KolonTipi | undefined): boolean {
+export function kolonOplari(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar">): readonly FiltreOp[] {
+    if (!kolon.filtrelenebilir) return [];
+    return kolon.oplar && kolon.oplar.length > 0 ? kolon.oplar : opsForTip(kolon.tip);
+}
+
+/**
+ * Bir filtre satırı gönderilebilir mi? (§2.1: `between` iki dolu uç, `in` en az 1 değer,
+ * tekil op boş olamaz; `is_null`/`not_null` değer gerektirmez.) Tip uyumu op listesiyle sınanır;
+ * `oplar` verilirse (kolon başına izinli liste) tip tablosu yerine o kullanılır.
+ */
+export function filtreTamamMi(f: Filtre, tip: KolonTipi | undefined, oplar?: readonly FiltreOp[]): boolean {
     if (!f.alan || !tip) return false;
-    if (!opsForTip(tip).includes(f.op)) return false;
+    if (!(oplar ?? opsForTip(tip)).includes(f.op)) return false;
     const sekil = opDegerSekli(f.op);
     if (sekil === "yok") return true;
     const d = f.deger;
@@ -263,8 +301,10 @@ export function filtreTamamMi(f: Filtre, tip: KolonTipi | undefined): boolean {
 }
 
 /**
- * Tanım Önizle düğmesine yeter mi? Kolon yoksa geçersiz; eksik filtre satırı ya da
- * alan seçilmemiş sıralama da geçersiz (sunucuya 422 yedirmemek için).
+ * Tanım otomatik önizlemeye yeter mi? Kolon yoksa geçersiz; eksik filtre ya da alan
+ * seçilmemiş sıralama da geçersiz (sunucuya 422 yedirmemek için). Filtre/sıralama kapısı
+ * motorla aynı: kolon bazında `filtrelenebilir`/`siralanabilir` + kolonun `oplar` listesi
+ * (§4.2: türetilmiş taraf kolonları EXISTS ile filtrelenebilir; `turetilmis` tek başına engel değildir).
  */
 export function tanimGecerliMi(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi | undefined): boolean {
     if (!kaynak || tanim.veri_kaynagi !== kaynak.anahtar) return false;
@@ -274,15 +314,244 @@ export function tanimGecerliMi(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi | 
     if (tanim.siralama.length > TANIM_LIMITLERI.siralama_max) return false;
     const kolonOf = (anahtar: string) => kaynak.kolonlar.find(k => k.anahtar === anahtar);
     if (!tanim.kolonlar.every(k => kolonOf(k) !== undefined)) return false;
-    // Türetilmiş kolon filtrelenemez/sıralanamaz (§2.2) — UI listelemez, kapı da geçirmez.
     if (!tanim.filtreler.every(f => {
         const k = kolonOf(f.alan);
-        return k !== undefined && k.filtrelenebilir && !k.turetilmis && filtreTamamMi(f, k.tip);
+        return k !== undefined && k.filtrelenebilir && filtreTamamMi(f, k.tip, kolonOplari(k));
     })) return false;
     return tanim.siralama.every(s => {
         const k = kolonOf(s.alan);
-        return k !== undefined && k.siralanabilir && !k.turetilmis;
+        return k !== undefined && k.siralanabilir;
     });
+}
+
+// ---------------------------------------------------------------------------
+// §4.3 Kontrol ↔ op çevirisi (G138) — sunum katmanı; sunucu sözleşmesi DEĞİŞMEZ
+// ---------------------------------------------------------------------------
+
+/**
+ * Şeritteki bir kontrolün durumu. Boş kontrol (değer girilmemiş) tanıma GİRMEZ
+ * (`kontroldenFiltre` → null); `bos` açıkken değer girdisi kilitlenir ve `is_null` gider.
+ * `gelismis`: §4.3 tablosuna çözülemeyen op (`ne`, `not_null`, tarih/sayıda `eq`, metinde `in`)
+ * — filtre olduğu gibi korunur, çip olarak gösterilir, kaybolmaz.
+ */
+export type KontrolDurumu =
+    | { kontrol: "tarih_araligi"; alan: string; bos: boolean; baslangic: string; bitis: string }
+    | { kontrol: "sayi_araligi"; alan: string; bos: boolean; en_az: number | null; en_cok: number | null }
+    | { kontrol: "coklu_secim"; alan: string; bos: boolean; secili: string[] }
+    | { kontrol: "metin_icerir"; alan: string; bos: boolean; metin: string; tam: boolean }
+    | { kontrol: "mantik"; alan: string; bos: boolean; deger: boolean | null }
+    | { kontrol: "gelismis"; alan: string; op: FiltreOp; deger?: FiltreDeger };
+
+/** Kolon için değer girilmemiş (boş) kontrol; filtrelenemeyen kolonda gelişmiş çipe düşer. */
+export function bosKontrol(kolon: Pick<KatalogKolon, "anahtar" | "kontrol" | "tip" | "filtrelenebilir" | "oplar">): KontrolDurumu {
+    const alan = kolon.anahtar;
+    switch (kolon.kontrol) {
+        case "tarih_araligi": return { kontrol: "tarih_araligi", alan, bos: false, baslangic: "", bitis: "" };
+        case "sayi_araligi": return { kontrol: "sayi_araligi", alan, bos: false, en_az: null, en_cok: null };
+        case "coklu_secim": return { kontrol: "coklu_secim", alan, bos: false, secili: [] };
+        case "metin_icerir": return { kontrol: "metin_icerir", alan, bos: false, metin: "", tam: false };
+        case "mantik": return { kontrol: "mantik", alan, bos: false, deger: null };
+        default: return { kontrol: "gelismis", alan, op: kolonOplari(kolon)[0] ?? "eq" };
+    }
+}
+
+/** Kontrol değer taşıyor mu (tanıma girecek mi)? */
+export function kontrolDoluMu(d: KontrolDurumu): boolean {
+    return kontroldenFiltre(d) !== null;
+}
+
+const sayiMi = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const metinMi = (v: unknown): v is string => typeof v === "string";
+const metinListesiMi = (v: unknown): v is string[] => Array.isArray(v) && v.every(metinMi);
+
+/**
+ * §4.3 tablosu: kontrol durumu → sunucu filtresi. Boş kontrol → null (tanıma girmez).
+ * tarih/sayı: iki uç → `between`, yalnız başlangıç → `gte`, yalnız bitiş → `lte`;
+ * çoklu seçim: 1 → `eq`, n → `in`; metin: `contains` (combobox seçiminde `tam` → `eq`);
+ * mantık: `eq true/false`; her kontrolde "boş olanlar" → `is_null` (değersiz).
+ */
+export function kontroldenFiltre(d: KontrolDurumu): Filtre | null {
+    if (d.kontrol === "gelismis") {
+        return d.deger === undefined ? { alan: d.alan, op: d.op } : { alan: d.alan, op: d.op, deger: d.deger };
+    }
+    if (d.bos) return { alan: d.alan, op: "is_null" };
+    switch (d.kontrol) {
+        case "tarih_araligi": {
+            const b = d.baslangic.trim();
+            const e = d.bitis.trim();
+            if (b && e) return { alan: d.alan, op: "between", deger: [b, e] };
+            if (b) return { alan: d.alan, op: "gte", deger: b };
+            if (e) return { alan: d.alan, op: "lte", deger: e };
+            return null;
+        }
+        case "sayi_araligi": {
+            const a = sayiMi(d.en_az) ? d.en_az : null;
+            const c = sayiMi(d.en_cok) ? d.en_cok : null;
+            if (a !== null && c !== null) return { alan: d.alan, op: "between", deger: [a, c] };
+            if (a !== null) return { alan: d.alan, op: "gte", deger: a };
+            if (c !== null) return { alan: d.alan, op: "lte", deger: c };
+            return null;
+        }
+        case "coklu_secim":
+            if (d.secili.length === 0) return null;
+            if (d.secili.length === 1) return { alan: d.alan, op: "eq", deger: d.secili[0] };
+            return { alan: d.alan, op: "in", deger: [...d.secili] };
+        case "metin_icerir": {
+            const m = d.metin.trim();
+            if (!m) return null;
+            return { alan: d.alan, op: d.tam ? "eq" : "contains", deger: m };
+        }
+        case "mantik":
+            if (d.deger === null) return null;
+            return { alan: d.alan, op: "eq", deger: d.deger };
+    }
+}
+
+/**
+ * Sunucu filtresi → kontrol durumu (şablon/asistan/koşu tanımı şeride çözülürken). §4.3'e
+ * çözülemeyen op ya da kontrolsüz kolon → `gelismis` (filtre kaybolmaz). Gidiş-dönüş:
+ * `kontroldenFiltre(filtredenKontrol(f, k)) ≡ f` — tek istisna tek değerli `in` (→ `eq`, eş anlamlı).
+ */
+export function filtredenKontrol(f: Filtre, kolon: Pick<KatalogKolon, "anahtar" | "kontrol" | "tip" | "filtrelenebilir" | "oplar"> | undefined): KontrolDurumu {
+    const gelismis: KontrolDurumu = f.deger === undefined
+        ? { kontrol: "gelismis", alan: f.alan, op: f.op }
+        : { kontrol: "gelismis", alan: f.alan, op: f.op, deger: f.deger };
+    if (!kolon || !kolon.kontrol) return gelismis;
+    const bos = bosKontrol(kolon);
+    if (bos.kontrol === "gelismis") return gelismis;
+    if (f.op === "is_null") return { ...bos, bos: true };
+    const d = f.deger;
+    switch (bos.kontrol) {
+        case "tarih_araligi":
+            if (f.op === "between" && Array.isArray(d) && d.length === 2 && metinMi(d[0]) && metinMi(d[1])) {
+                return { ...bos, baslangic: d[0], bitis: d[1] };
+            }
+            if (f.op === "gte" && metinMi(d)) return { ...bos, baslangic: d };
+            if (f.op === "lte" && metinMi(d)) return { ...bos, bitis: d };
+            return gelismis;
+        case "sayi_araligi":
+            if (f.op === "between" && Array.isArray(d) && d.length === 2 && sayiMi(d[0]) && sayiMi(d[1])) {
+                return { ...bos, en_az: d[0], en_cok: d[1] };
+            }
+            if (f.op === "gte" && sayiMi(d)) return { ...bos, en_az: d };
+            if (f.op === "lte" && sayiMi(d)) return { ...bos, en_cok: d };
+            return gelismis;
+        case "coklu_secim":
+            if (f.op === "eq" && metinMi(d)) return { ...bos, secili: [d] };
+            if (f.op === "in" && metinListesiMi(d) && d.length > 0) return { ...bos, secili: [...d] };
+            return gelismis;
+        case "metin_icerir":
+            if (f.op === "contains" && metinMi(d)) return { ...bos, metin: d, tam: false };
+            if (f.op === "eq" && metinMi(d)) return { ...bos, metin: d, tam: true };
+            return gelismis;
+        case "mantik":
+            if (f.op === "eq" && typeof d === "boolean") return { ...bos, deger: d };
+            return gelismis;
+    }
+}
+
+/** Kontrolün kendi ürettiği op'lar (§4.3); "…" menüsü `oplar` ∖ bunları gelişmiş op olarak sunar. */
+export const KONTROL_DOGAL_OPLARI: Record<FiltreKontrolu, readonly FiltreOp[]> = {
+    tarih_araligi: ["between", "gte", "lte", "is_null"],
+    sayi_araligi: ["between", "gte", "lte", "is_null"],
+    coklu_secim: ["eq", "in", "is_null"],
+    metin_icerir: ["contains", "eq", "is_null"],
+    mantik: ["eq", "is_null"],
+};
+
+/** Çipin "…" menüsündeki gelişmiş op'lar: kolonun izinli listesinde olup kontrolün doğal üretmedikleri. */
+export function gelismisOplar(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar" | "kontrol">): FiltreOp[] {
+    const dogal = kolon.kontrol ? KONTROL_DOGAL_OPLARI[kolon.kontrol] : [];
+    return kolonOplari(kolon).filter(op => !dogal.includes(op));
+}
+
+const TR_OZET_SAYI = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 });
+
+function degerOzeti(v: FiltreDeger | undefined, tip: KolonTipi): string {
+    if (v === undefined) return "";
+    if (Array.isArray(v)) return v.map(x => degerOzeti(x, tip)).join(", ");
+    if (typeof v === "boolean") return v ? "Evet" : "Hayır";
+    if (typeof v === "number") return TR_OZET_SAYI.format(v);
+    if (tip === "tarih") return tarihBicimle(v);
+    return v;
+}
+
+/** Çipte basılan kısa özet: "Derdest, Karar" · "01.01.2025 – 31.12.2025" · "≥ 1.000" · "içerir \"x\"" · "boş". */
+export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi): string {
+    if (d.kontrol === "gelismis") {
+        const deger = degerOzeti(d.deger, tip);
+        return deger ? `${OP_ETIKETLERI[d.op]} ${deger}` : OP_ETIKETLERI[d.op];
+    }
+    if (d.bos) return "boş";
+    switch (d.kontrol) {
+        case "tarih_araligi": {
+            const b = d.baslangic.trim();
+            const e = d.bitis.trim();
+            if (b && e) return `${tarihBicimle(b)} – ${tarihBicimle(e)}`;
+            if (b) return `≥ ${tarihBicimle(b)}`;
+            if (e) return `≤ ${tarihBicimle(e)}`;
+            return "";
+        }
+        case "sayi_araligi": {
+            const a = d.en_az;
+            const c = d.en_cok;
+            if (a !== null && c !== null) return `${TR_OZET_SAYI.format(a)} – ${TR_OZET_SAYI.format(c)}`;
+            if (a !== null) return `≥ ${TR_OZET_SAYI.format(a)}`;
+            if (c !== null) return `≤ ${TR_OZET_SAYI.format(c)}`;
+            return "";
+        }
+        case "coklu_secim":
+            return d.secili.join(", ");
+        case "metin_icerir": {
+            const m = d.metin.trim();
+            if (!m) return "";
+            return d.tam ? `= "${m}"` : `içerir "${m}"`;
+        }
+        case "mantik":
+            return d.deger === null ? "" : d.deger ? "Evet" : "Hayır";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tarih kısayolları (şerit: bu yıl / geçen yıl / son 30 gün / son 12 ay)
+// ---------------------------------------------------------------------------
+
+export type TarihKisayolu = "bu_yil" | "gecen_yil" | "son_30_gun" | "son_12_ay";
+
+export const TARIH_KISAYOL_ETIKETLERI: Record<TarihKisayolu, string> = {
+    bu_yil: "Bu yıl",
+    gecen_yil: "Geçen yıl",
+    son_30_gun: "Son 30 gün",
+    son_12_ay: "Son 12 ay",
+};
+
+/** Yerel tarih → `YYYY-MM-DD` (UTC kayması olmadan; `<input type=date>` biçimi). */
+export function isoGun(d: Date): string {
+    const iki = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${iki(d.getMonth() + 1)}-${iki(d.getDate())}`;
+}
+
+/**
+ * Kısayol → [başlangıç, bitiş] ISO gün. "Bu yıl" 1 Ocak–bugün, "geçen yıl" tam yıl,
+ * "son 30 gün" bugün dahil 30 gün, "son 12 ay" bir yıl önceki aynı günden bugüne.
+ * `bugun` testte sabitlenir.
+ */
+export function tarihKisayolu(ad: TarihKisayolu, bugun: Date = new Date()): [string, string] {
+    const y = bugun.getFullYear();
+    switch (ad) {
+        case "bu_yil":
+            return [`${y}-01-01`, isoGun(bugun)];
+        case "gecen_yil":
+            return [`${y - 1}-01-01`, `${y - 1}-12-31`];
+        case "son_30_gun": {
+            const b = new Date(bugun.getFullYear(), bugun.getMonth(), bugun.getDate() - 29);
+            return [isoGun(b), isoGun(bugun)];
+        }
+        case "son_12_ay": {
+            const b = new Date(bugun.getFullYear() - 1, bugun.getMonth(), bugun.getDate());
+            return [isoGun(b), isoGun(bugun)];
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
