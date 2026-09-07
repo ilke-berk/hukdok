@@ -1,6 +1,31 @@
 // Raporlar sayfası ortak sınıf dizileri (G133) — redesign token'larıyla (tokens.css)
 // hizalı; Radix Select yerine bilinçli native <select>: filtre satırında kompakt
 // kalır ve jsdom testinde `change` olayıyla sürülebilir (CaseTrackingPanel deseni).
+// G138: şerit açılırları (çoklu seçim, combobox, alan seçici, çip menüsü) portal'sız,
+// yerinde `absolute` paneldir — jsdom'da `container` içinde kalır; kapanış bu kancayla.
+import { useEffect, useRef } from "react";
+
+/** `acik` iken dışarı tıklama ya da Escape → `kapat`. Dönen ref panel köküne verilir. */
+export function useDisariTiklama<T extends HTMLElement>(acik: boolean, kapat: () => void) {
+    const ref = useRef<T>(null);
+    useEffect(() => {
+        if (!acik) return;
+        const tik = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) kapat();
+        };
+        const tus = (e: KeyboardEvent) => {
+            if (e.key === "Escape") kapat();
+        };
+        document.addEventListener("mousedown", tik);
+        document.addEventListener("keydown", tus);
+        return () => {
+            document.removeEventListener("mousedown", tik);
+            document.removeEventListener("keydown", tus);
+        };
+    }, [acik, kapat]);
+    return ref;
+}
+
 export const INPUT_CLS =
     "w-full h-8 px-2.5 text-[12px] rounded-[3px] border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)] " +
     "placeholder:text-[var(--fg-subtle)] focus:outline-none focus:border-[var(--brand)] disabled:opacity-50";

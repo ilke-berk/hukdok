@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Table2 } from "lucide-react";
-import type { OnizlemeCevabi } from "@/lib/reports";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Loader2, Table2 } from "lucide-react";
+import type { OnizlemeCevabi, Siralama } from "@/lib/reports";
 import { hucreBicimle } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
@@ -13,7 +13,14 @@ type PreviewTableProps = {
     hata: string | null;
     onRetry: () => void;
     onSayfa: (sayfa: number) => void;
-    bayat: boolean;
+    /** Taslak geçersiz (kolon yok / eksik gelişmiş filtre) — istek gitmez, boş durumda ipucu. */
+    gecersiz: boolean;
+    /** Etkin sıralama (en fazla 3, sıralı); başlık oku ve sıra numarası buradan. */
+    siralama: Siralama[];
+    /** Kolon başlığa tıkla sıralanabilir mi (`siralanabilir`)? */
+    siralanabilirMi: (anahtar: string) => boolean;
+    /** Başlık tıklaması: yok → artan → azalan → kaldır (builderState.siralamaDongusu). */
+    onSirala: (anahtar: string) => void;
     /** Araç çubuğunun sağ yuvası — G134 indirme düğmeleri (ExportButtons). */
     araclar?: ReactNode;
 };
@@ -23,10 +30,14 @@ const SAGA_YASLI = new Set(["sayi", "para"]);
 
 /**
  * Önizleme tablosu (sağ sütun): başlıklar katalog etiketiyle, tarih dd.MM.yyyy, para tr-TR,
- * `null` "—"; sayfalayıcı CaseList kalıbı. Araç çubuğunun sağ yuvası `araclar` (G134: ExportButtons).
+ * `null` "—"; sayfalayıcı CaseList kalıbı. G138: önizleme otomatiktir — başlıkta "güncelleniyor…"
+ * durumu, "bayat" rozeti yok; `siralanabilir` başlıklar tıklanarak sıralanır (§4.1 madde 4).
  */
-export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat, araclar }: PreviewTableProps) {
+export function PreviewTable({
+    cevap, yukleniyor, hata, onRetry, onSayfa, gecersiz, siralama, siralanabilirMi, onSirala, araclar,
+}: PreviewTableProps) {
     const toplamSayfa = cevap ? Math.ceil(cevap.toplam / cevap.sayfa_boyu) || 1 : 1;
+    const siraOf = (anahtar: string) => siralama.findIndex(s => s.alan === anahtar);
 
     return (
         <div className="flex flex-col">
@@ -45,14 +56,28 @@ export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat,
                             Toplam {cevap.toplam.toLocaleString("tr-TR")} kayıt
                         </span>
                     )}
-                    {bayat && cevap && (
-                        <span className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[var(--brand)]">
-                            tanım değişti — yeniden önizleyin
+                    {gecersiz && !yukleniyor && (
+                        <span
+                            data-testid="taslak-eksik"
+                            role="status"
+                            title="Önizleme için en az bir kolon seçin ve filtreleri tamamlayın"
+                            className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[var(--brand)]"
+                        >
+                            taslak eksik — en az bir kolon seçin ve filtreleri tamamlayın
+                        </span>
+                    )}
+                    {yukleniyor && (
+                        <span
+                            data-testid="guncelleniyor"
+                            role="status"
+                            className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.12em] uppercase text-[var(--fg-subtle)]"
+                        >
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            güncelleniyor…
                         </span>
                     )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                    {yukleniyor && <Loader2 className="w-4 h-4 animate-spin text-[var(--fg-subtle)]" aria-label="Yükleniyor" />}
                     {araclar}
                 </div>
             </div>
@@ -65,7 +90,11 @@ export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat,
                 <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
                     <Table2 className="w-9 h-9 opacity-30" />
                     <p className="text-[13px]">
-                        {yukleniyor ? "Önizleme alınıyor…" : "Veri kaynağı ve kolonları seçip Önizle'ye basın."}
+                        {yukleniyor
+                            ? "Önizleme alınıyor…"
+                            : gecersiz
+                                ? "Önizleme için en az bir kolon seçin ve filtreleri tamamlayın."
+                                : "Önizleme hazırlanıyor…"}
                     </p>
                 </div>
             ) : cevap.satirlar.length === 0 ? (
@@ -78,11 +107,43 @@ export function PreviewTable({ cevap, yukleniyor, hata, onRetry, onSayfa, bayat,
                     <table className="w-full border-collapse">
                         <thead>
                             <tr className="bg-[var(--bg)] border-b border-[var(--border)]">
-                                {cevap.kolonlar.map(k => (
-                                    <th key={k.anahtar} className={`${TH_CLS} ${SAGA_YASLI.has(k.tip) ? "text-right" : ""}`}>
-                                        {k.etiket}
-                                    </th>
-                                ))}
+                                {cevap.kolonlar.map(k => {
+                                    const sira = siraOf(k.anahtar);
+                                    const yon = sira >= 0 ? siralama[sira].yon : null;
+                                    const sagda = SAGA_YASLI.has(k.tip);
+                                    const tiklanabilir = siralanabilirMi(k.anahtar);
+                                    return (
+                                        <th
+                                            key={k.anahtar}
+                                            aria-sort={yon === "asc" ? "ascending" : yon === "desc" ? "descending" : "none"}
+                                            className={`${TH_CLS} ${sagda ? "text-right" : ""}`}
+                                        >
+                                            {tiklanabilir ? (
+                                                <button
+                                                    type="button"
+                                                    aria-label={`${k.etiket} sırala`}
+                                                    title={yon === null ? "Artan sırala" : yon === "asc" ? "Azalan sırala" : "Sıralamayı kaldır"}
+                                                    onClick={() => onSirala(k.anahtar)}
+                                                    className={[
+                                                        "inline-flex items-center gap-1 uppercase tracking-[0.18em] hover:text-[var(--fg)] transition-colors",
+                                                        sagda ? "flex-row-reverse" : "",
+                                                        yon ? "text-[var(--brand)]" : "",
+                                                    ].join(" ")}
+                                                >
+                                                    {k.etiket}
+                                                    {yon === "asc" && <ArrowUp className="w-3 h-3" aria-hidden />}
+                                                    {yon === "desc" && <ArrowDown className="w-3 h-3" aria-hidden />}
+                                                    {yon === null && <ArrowUpDown className="w-3 h-3 opacity-30" aria-hidden />}
+                                                    {yon && siralama.length > 1 && (
+                                                        <span className="text-[8px] tabular-nums opacity-70">{sira + 1}</span>
+                                                    )}
+                                                </button>
+                                            ) : (
+                                                k.etiket
+                                            )}
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
                         <tbody>
