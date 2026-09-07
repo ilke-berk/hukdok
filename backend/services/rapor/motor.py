@@ -13,6 +13,9 @@ girmez. Sıralama ve filtre ifadeleri daima `Kolon.ifade`'dir; filtrelenebilir
 türetilmiş kolonda (G137) koşulu registry'nin `Kolon.filtre_ifadesi`si kurar
 (EXISTS), atom koşulu (`_ifade_kosulu`) yine buradan alır. Op denetimi iki
 katman: tip tablosu (`TIP_OPLARI`) + kolonun alt kümesi (`Kolon.oplar`).
+G141: `in` listesindeki `null` öğesi "(boş)" demektir → `IN (...) OR IS NULL`
+(yalnız `[null]` = `IS NULL`); `secilebilir=False` kolon (sanal `arama`)
+kolon listesine ve sıralamaya giremez (422), yalnız filtre.
 
 Serileştirme (plan §2.4): tarih/zaman ISO 8601 string, Decimal → float (JSON
 number), bool olduğu gibi, NULL → null.
@@ -99,12 +102,13 @@ def _deger_cevir(kolon: Kolon, filtre: Filtre, alan: str) -> Any:
     if op in DEGERSIZ_OPLAR:
         return None
     if deger is None:
-        raise RaporDogrulamaHatasi(alan, f"'{op}' için değer gerekli")
+        raise RaporDogrulamaHatasi(alan, f"'{op}' için değer gerekli (null yalnız 'in' listesinde)")
     if tip in ("metin", "liste"):
         if op == "in":
             if not isinstance(deger, list) or not deger:
                 raise RaporDogrulamaHatasi(alan, "'in' boş olmayan liste ister")
-            return [_metin(d, alan) for d in deger]
+            # `null` öğesi "(boş)" (plan §5.2): tip denetimi atlanır, motor IS NULL'a çevirir
+            return [None if d is None else _metin(d, alan) for d in deger]
         return _metin(deger, alan)
     if tip == "tarih":
         if op == "between":
@@ -128,7 +132,9 @@ def tanimi_dogrula(tanim: RaporTanimi) -> tuple[VeriKaynagi, list[tuple[Kolon, F
     Yapısal sınırlar (adet/tekrar) Pydantic'te; burada anahtar/op/tip/değer."""
     kaynak = _kaynak(tanim)
     for i, anahtar in enumerate(tanim.kolonlar):
-        _kolon(kaynak, anahtar, f"kolonlar[{i}]")
+        if not _kolon(kaynak, anahtar, f"kolonlar[{i}]").secilebilir:
+            # Sanal `arama` (G141): yalnız filtre alanı, SELECT'e girmez
+            raise RaporDogrulamaHatasi(f"kolonlar[{i}]", f"yalnız filtre alanı, kolon listesine giremez: {anahtar}")
     filtreler: list[tuple[Kolon, Filtre, Any]] = []
     for i, f in enumerate(tanim.filtreler):
         alan = f"filtreler[{i}]"
@@ -146,6 +152,8 @@ def tanimi_dogrula(tanim: RaporTanimi) -> tuple[VeriKaynagi, list[tuple[Kolon, F
     for i, s in enumerate(tanim.siralama):
         alan = f"siralama[{i}]"
         kolon = _kolon(kaynak, s.alan, alan)
+        if not kolon.secilebilir:
+            raise RaporDogrulamaHatasi(alan, f"yalnız filtre alanı, sıralamaya giremez: {s.alan}")
         if not kolon.siralanabilir:
             raise RaporDogrulamaHatasi(alan, f"kolon sıralanamaz: {s.alan}")
     return kaynak, filtreler
@@ -209,7 +217,13 @@ def _ifade_kosulu(ifade: Any, op: str, deger: Any):
     if op == "contains":
         return ifade.ilike(f"%{_ilike_kacis(deger)}%", escape=_ILIKE_KACIS)
     if op == "in":
-        return ifade.in_(deger)
+        # `null` öğesi "(boş)" (plan §5.2): IN (dolu) OR IS NULL; yalnız [null] = IS NULL
+        dolu = [d for d in deger if d is not None]
+        if len(dolu) == len(deger):
+            return ifade.in_(deger)
+        if not dolu:
+            return ifade.is_(None)
+        return or_(ifade.in_(dolu), ifade.is_(None))
     if op == "gte":
         return ifade >= deger
     if op == "lte":

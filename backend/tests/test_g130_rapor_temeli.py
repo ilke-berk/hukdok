@@ -162,15 +162,20 @@ def test_katalog_sekli(env):
         assert set(kaynak["varsayilan_kolonlar"]) <= set(anahtarlar)
         assert kaynak["varsayilan_kolonlar"]
         for k in kaynak["kolonlar"]:
+            # G141 (plan §5.2): + secilebilir / secenek_kaynagi / secenek_etiketleri
             assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
-                              "turetilmis", "oplar", "secenekler", "oneriler", "oneri_kesik"}
+                              "turetilmis", "secilebilir", "oplar", "secenekler", "secenek_kaynagi",
+                              "secenek_etiketleri", "oneriler", "oneri_kesik"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]
             if k["tip"] == "liste":
                 liste_sayisi += 1
                 assert k["secenekler"], f"{kaynak['anahtar']}.{k['anahtar']} seçeneksiz liste"
+                assert k["secenek_kaynagi"] == "sabit"
+            elif k["secenek_kaynagi"] == "veri":
+                assert isinstance(k["secenekler"], list)     # veriden liste, eşik altı (G141)
             else:
-                assert k["secenekler"] is None
+                assert k["secenekler"] is None and k["secenek_kaynagi"] is None
             if k["turetilmis"]:
                 turetilmis_sayisi += 1
                 assert k["siralanabilir"] is False

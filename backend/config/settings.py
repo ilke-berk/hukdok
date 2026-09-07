@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # (`case_intake_analyzer.get_intake_model`); devre kesici model-başına
     # olduğundan asistan intake motorundan ayrı bir modele alınabilir.
     gemini_rapor_model: str = ""
+    # Veriden kapalı liste eşiği (G141, plan §5.2): `veriden_liste` işaretli metin
+    # kolonda DISTINCT değer sayısı bu eşiği aşmıyorsa katalog `coklu_secim` +
+    # sıklık sıralı seçenek verir; aşıyorsa `metin_icerir` + öneriler (G137).
+    rapor_secenek_esigi: int = 100
 
     @field_validator("*", mode="before")
     @classmethod

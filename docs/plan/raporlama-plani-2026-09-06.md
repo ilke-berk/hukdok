@@ -453,9 +453,13 @@ Teşhis: §4.2 "tipten kontrol" kuralı yetersiz — teknik olarak metin ama fii
   azalan, en fazla eşik kadar), `secenek_kaynagi="veri"`; eşik aşılırsa `kontrol="metin_icerir"` + `oneriler`
   (G137 davranışı). `tip` **"metin" kalır** (op tablosu değişmez: `in`/`eq`/`contains` hepsi izinli).
   İşaretlenecekler: Müvekkiller `il, specialty, client_type(sabit etiketli)`; Davalar `court, judicial_unit,
-  responsible_lawyer_name, uyap_lawyer_name, sub_type, karar_turu, case_stage, dosya_son_durumu`; Belgeler
-  `uploaded_by, belge_turu_adi`; Föyler `muvekkil_tipi` (zaten liste). Sabit `liste` kolonlarda
-  `secenek_kaynagi="sabit"`.
+  responsible_lawyer_name, uyap_lawyer_name, sub_type`; Belgeler `uploaded_by, belge_turu_adi`. Zaten `liste`
+  tipli olanlar işaretlenmez, sabit kalır (`secenek_kaynagi="sabit"`, kontrol zaten `coklu_secim`): Davalar
+  `karar_turu, case_stage, dosya_son_durumu`; Föyler `muvekkil_tipi`; Müvekkiller `client_type`. (G141 uygulama
+  notu, 07.09 gece: "veriden liste" yalnız düz+önerili METİN kolonda tanımlıdır — liste kolonda anlamsız.)
+  Eşik karşılaştırması `≤` (DISTINCT sayısı = eşik → yine `coklu_secim`). Veriden liste eşik ALTINDA öneri
+  katmanı KOŞMAZ (`oneriler=null`, `oneri_kesik=false`) — `secenekler` ve `oneriler` birbirinin yerine geçer,
+  frontend `kontrol`e bakar. `secilebilir=false` kolon `siralama`da da 422.
 - **Seçenek etiketleri:** `KatalogKolon.secenek_etiketleri: {deger: etiket} | null` — ham kod saklanan
   alanlarda (client_type: `Individual→"Gerçek kişi"`, `Corporate→"Tüzel kişi"`, `Gerçek Kişi→"Gerçek kişi (eski
   yazım)"`); filtre değeri HAM kod olarak gider, yalnız gösterim etiketli.

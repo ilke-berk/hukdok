@@ -40,18 +40,34 @@ taşımak ZORUNDA ve `izinli_oplar` ile tip tablosunun alt kümesine daralır;
 (`muvekkil_adlari`, `karsi_taraf_adlari`, `sigortali_adlari`,
 `muvekkil_kategorisi`) `case_parties` (→ `clients`) EXISTS'iyle süzülür;
 silinmiş müvekkil kartı sayılmaz, tenant kuralı `cases` üzerinden gelir.
+
+**G141 (plan §5) — kontrol türü kolon TİPİNDEN değil VERİDEN:** "birden fazla şehir
+seçilemiyor" sınıfı sorunun kökü `kontrol`ün tipten türemesiydi. `veriden_liste`
+işaretli metin kolonda (`il`, `court`, `responsible_lawyer_name`…) tenant +
+soft-delete kurallı DISTINCT değer sayısı `settings.rapor_secenek_esigi`
+(env `RAPOR_SECENEK_ESIGI`, varsayılan 100) eşiğini aşmıyorsa katalog
+`kontrol="coklu_secim"` + `secenekler` (SIKLIĞA göre azalan, sonra ad) +
+`secenek_kaynagi="veri"` verir; aşıyorsa G137 davranışı (`metin_icerir` +
+`oneriler`). `tip` metin KALIR (op tablosu değişmez). Sabit `liste` kolonda
+`secenek_kaynagi="sabit"`; `secenek_etiketleri` ham kod saklanan alanda gösterim
+haritasıdır (`client_type`), filtre değeri ham gider. Her kaynağın sanal `arama`
+kolonu (`secilebilir=False`, yalnız `contains`) birden çok kolonda OR'lu ILIKE
+arar; kolon listesine/sıralamaya giremez, kolon setlerinde yok. `HizliFiltre.sunum`
+(`SUNUMLAR`) + `etiket` frontend şeridinin (plan §5.3) sunum ipucudur;
+`_kendini_denetle` sunum-kolon uyumunu import anında zorlar.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, or_, select
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, null, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
 import models
 from auth_helpers import tenant_filter_clause
+from config.settings import settings
 from managers.seed_data import (
     APPEAL_DECISIONS, APPEALING_PARTIES, CASSATION_DECISIONS, CLIENT_TYPES, CURRENCIES, EVENT_TYPES,
     JUDGMENT_ROLES, LOCAL_DECISIONS, REVISION_DECISIONS, SERVICE_TYPES,
@@ -71,6 +87,13 @@ KONTROLLER: dict[str, str] = {
     "para": "sayi_araligi",
     "mantik": "mantik",
 }
+
+# Hızlı filtre sunumları (plan §5.2/§5.3): `arama` yalnız `arama` kolonunda, `cipler` yalnız
+# seçenekli kolonda (liste ya da veriden liste), `var_yok` yalnız sayı/para, `bos_anahtari`
+# `is_null` alan her kolonda; `varsayilan` kontrol türüne göre (G137 davranışı).
+SUNUMLAR = ("varsayilan", "arama", "cipler", "var_yok", "bos_anahtari")
+ARAMA_KOLONU = "arama"
+ARAMA_GRUBU = "Arama"
 
 # ─── Tipler ──────────────────────────────────────────────────────────────────
 
@@ -104,6 +127,13 @@ class Kolon:
     izinli_oplar: Optional[tuple[str, ...]] = None
     # Türetilmiş önerili kolonda öneri sorgusu: tenant_id → DISTINCT string Select (sıralı).
     oneri_sorgusu: Optional[Callable[[str], Select]] = None
+    # G141: metin kolonda veriden kapalı liste (eşik altı → coklu_secim; `onerili` ZORUNLU — eşik
+    # üstü G137 önerilerine düşer). Denetim: yalnız düz metin kolonda.
+    veriden_liste: bool = False
+    # Ham kod saklanan alanda gösterim etiketleri {deger: etiket}; filtre değeri HAM gider.
+    secenek_etiketleri: Optional[Mapping[str, str]] = None
+    # False → yalnız filtre alanı (sanal `arama`): kolon listesine/sıralamaya giremez.
+    secilebilir: bool = True
 
     @property
     def oplar(self) -> tuple[str, ...]:
@@ -111,6 +141,8 @@ class Kolon:
 
     @property
     def kontrol(self) -> Optional[str]:
+        """Tipten türeyen kontrol (G137). `veriden_liste` kolonda nihai kontrol veriye bağlıdır —
+        `_kolon_katalogu` eşik sonucuna göre `coklu_secim`e çevirir."""
         return KONTROLLER[self.tip] if self.filtrelenebilir else None
 
 
@@ -118,6 +150,8 @@ class Kolon:
 class HizliFiltre:
     alan: str
     alternatifler: tuple[str, ...] = ()       # yalnız tarih aralığı kontrolünde alan değiştirici
+    sunum: str = "varsayilan"                 # `SUNUMLAR` (plan §5.2)
+    etiket: Optional[str] = None              # anahtar metni ("Davası var", "E-postası yok")
 
 
 @dataclass(frozen=True)
@@ -165,26 +199,49 @@ def _adlar(cift_listesi) -> tuple[str, ...]:
 
 
 def _kolon(model, anahtar: str, etiket: str, *, liste: tuple[str, ...] | None = None,
-           secenek_tablosu: Any = None, tip: Optional[str] = None, onerili: bool = False) -> Kolon:
-    """Düz tablo kolonu → Kolon. `liste` verilirse tip `liste` ve seçenekler dolu."""
+           secenek_tablosu: Any = None, tip: Optional[str] = None, onerili: bool = False,
+           veriden_liste: bool = False, secenek_etiketleri: Optional[Mapping[str, str]] = None) -> Kolon:
+    """Düz tablo kolonu → Kolon. `liste` verilirse tip `liste` ve seçenekler dolu.
+    `veriden_liste` (G141) metin kolonu eşik altında çoklu seçime çevirir; öneri katmanı
+    eşik üstü yedeği olduğundan `onerili` otomatik açılır."""
     col = getattr(model, anahtar)
     bulunan, zaman = _tip_bul(col)
     if liste is not None or secenek_tablosu is not None:
         return Kolon(anahtar, etiket, "liste", col, secenekler=tuple(liste or ()),
-                     secenek_tablosu=secenek_tablosu)
-    return Kolon(anahtar, etiket, tip or bulunan, col, zaman_damgali=zaman, onerili=onerili)
+                     secenek_tablosu=secenek_tablosu, secenek_etiketleri=secenek_etiketleri)
+    return Kolon(anahtar, etiket, tip or bulunan, col, zaman_damgali=zaman, onerili=onerili or veriden_liste,
+                 veriden_liste=veriden_liste, secenek_etiketleri=secenek_etiketleri)
 
 
 def _turetilmis(anahtar: str, etiket: str, tip: str, ifade, *, filtrelenebilir: bool = False,
                 filtre_ifadesi: Optional[FiltreIfadesi] = None, izinli_oplar: Optional[tuple[str, ...]] = None,
                 onerili: bool = False, oneri_sorgusu: Optional[Callable[[str], Select]] = None,
                 liste: tuple[str, ...] | None = None, secenek_tablosu: Any = None,
-                secenek_ifadesi: Any = None) -> Kolon:
+                secenek_ifadesi: Any = None, secilebilir: bool = True) -> Kolon:
     """Türetilmiş kolon: sıralanamaz; filtre yalnız `filtre_ifadesi` ile (plan §4.2)."""
     return Kolon(
         anahtar, etiket, tip, ifade, filtrelenebilir=filtrelenebilir, siralanabilir=False, turetilmis=True,
         secenekler=tuple(liste or ()), secenek_tablosu=secenek_tablosu, secenek_ifadesi=secenek_ifadesi,
         onerili=onerili, filtre_ifadesi=filtre_ifadesi, izinli_oplar=izinli_oplar, oneri_sorgusu=oneri_sorgusu,
+        secilebilir=secilebilir,
+    )
+
+
+def _arama_filtresi(ifadeler: tuple[Any, ...], ek_filtreler: tuple[FiltreIfadesi, ...] = ()) -> FiltreIfadesi:
+    """Sanal `arama` kolonunun koşulu: verilen kolonların HERHANGİ birinde `contains` (OR'lu ILIKE;
+    kaçış motorun atom koşulundan) + isteğe bağlı EXISTS filtreleri (taraf adları)."""
+    def filtre(op: str, deger: Any, atom: AtomKosul):
+        return or_(*(atom(ifade, op, deger) for ifade in ifadeler), *(f(op, deger, atom) for f in ek_filtreler))
+    return filtre
+
+
+def _arama(*ifadeler: Any, ek_filtreler: tuple[FiltreIfadesi, ...] = ()) -> Kolon:
+    """Kaynağın sanal arama kolonu (plan §5.2): yalnız filtre (`secilebilir=False`), yalnız `contains`,
+    seçim ifadesi yok (`NULL` — motor bu kolonu hiçbir zaman SELECT'e almaz, `tanimi_dogrula` 422 verir)."""
+    return replace(
+        _turetilmis(ARAMA_KOLONU, "Ara", "metin", null(), filtrelenebilir=True, secilebilir=False,
+                    filtre_ifadesi=_arama_filtresi(ifadeler, ek_filtreler), izinli_oplar=("contains",)),
+        grup=ARAMA_GRUBU,
     )
 
 
@@ -326,7 +383,9 @@ def _muvekkil_kategorileri():
 
 def _muvekkil_kategorisi_filtresi(op: str, deger: Any, atom: AtomKosul):
     """EXISTS `case_parties JOIN clients`: silinmiş müvekkil kartı sayılmaz (`clients.deleted_at IS NULL`);
-    tenant kuralı `cases` üzerinden (K2). `is_null` = kategorili canlı müvekkil kartı olan CLIENT taraf yok."""
+    tenant kuralı `cases` üzerinden (K2). `is_null` = kategorili canlı müvekkil kartı olan CLIENT taraf yok.
+    `in` listesindeki `null` (G141, "(boş)") aynı anlamdadır: "kategorili taraf yok" VEYA EXISTS(in dolu)
+    — kartın kategorisi NULL olan bir taraf aramak DEĞİL (satır düzeyi `IS NULL` burada yanıltırdı)."""
     P, M = models.CaseParty, models.Client
     varlik = (
         select(P.id)
@@ -334,8 +393,14 @@ def _muvekkil_kategorisi_filtresi(op: str, deger: Any, atom: AtomKosul):
         .where(and_(P.case_id == models.Case.id, P.party_type == "CLIENT", M.deleted_at.is_(None)))
         .correlate(models.Case)
     )
+    kategorisiz = ~varlik.where(M.category.isnot(None)).exists()
     if op == "is_null":
-        return ~varlik.where(M.category.isnot(None)).exists()
+        return kategorisiz
+    if op == "in" and any(d is None for d in deger):
+        dolu = [d for d in deger if d is not None]
+        if not dolu:
+            return kategorisiz
+        return or_(kategorisiz, varlik.where(atom(M.category, op, dolu)).exists())
     return varlik.where(atom(M.category, op, deger)).exists()
 
 
@@ -360,16 +425,19 @@ def _skaler_filtre(ifade) -> FiltreIfadesi:
 
 
 _C = models.Case
-_DAVA_GRUPLARI = ("Kimlik", "Taraflar", "Mahkeme ve konu", "Tarihler", "Tutarlar", "Karar ve aşama", "Tıbbi",
-                  "Aktarım", "Sistem")
+_DAVA_GRUPLARI = (ARAMA_GRUBU, "Kimlik", "Taraflar", "Mahkeme ve konu", "Tarihler", "Tutarlar", "Karar ve aşama",
+                  "Tıbbi", "Aktarım", "Sistem")
 _DAVA_KOLONLARI: list[Kolon] = [
+    # Plan §5.2: tek arama kutusu — ofis no / esas no / konu / mahkeme + müvekkil ve karşı taraf adları (EXISTS)
+    _arama(_C.tracking_no, _C.esas_no, _C.subject, _C.court,
+           ek_filtreler=(_taraf_filtresi(_party_type("CLIENT")), _taraf_filtresi(_party_type("COUNTER")))),
     *_grup(
         "Kimlik",
         _kolon(_C, "tracking_no", "Ofis Dosya No"),
         _kolon(_C, "esas_no", "Esas No"),
         _kolon(_C, "status", "Durum", liste=DAVA_DURUMLARI),
         _kolon(_C, "file_type", "Dava Türü", liste=DAVA_TURLERI, secenek_tablosu=models.FileType),
-        _kolon(_C, "sub_type", "Uzmanlık Alanı", onerili=True),
+        _kolon(_C, "sub_type", "Uzmanlık Alanı", veriden_liste=True),
         _kolon(_C, "sub_type_extra", "Ek Alt Kırılım"),
         _kolon(_C, "service_type", "Hizmet Tipi"),
         _kolon(_C, "bureau_type", "Büro Özel Türü", secenek_tablosu=models.BureauType,
@@ -380,8 +448,8 @@ _DAVA_KOLONLARI: list[Kolon] = [
         _kolon(_C, "hukumdeki_rol", "Hükümdeki Rol", liste=_adlar(JUDGMENT_ROLES), secenek_tablosu=models.JudgmentRole),
         _kolon(_C, "muvekkil_tipi", "Müvekkil Tipi", liste=_adlar(CLIENT_TYPES), secenek_tablosu=models.ClientType),
         _kolon(_C, "hizmet_turu", "Hizmet Türü", liste=_adlar(SERVICE_TYPES), secenek_tablosu=models.ServiceType),
-        _kolon(_C, "responsible_lawyer_name", "Sorumlu Avukat", onerili=True),
-        _kolon(_C, "uyap_lawyer_name", "UYAP Avukatı", onerili=True),
+        _kolon(_C, "responsible_lawyer_name", "Sorumlu Avukat", veriden_liste=True),
+        _kolon(_C, "uyap_lawyer_name", "UYAP Avukatı", veriden_liste=True),
     ),
     *_grup(
         "Taraflar",
@@ -405,8 +473,8 @@ _DAVA_KOLONLARI: list[Kolon] = [
     ),
     *_grup(
         "Mahkeme ve konu",
-        _kolon(_C, "court", "Mahkeme", onerili=True),
-        _kolon(_C, "judicial_unit", "Yargı Birimi", onerili=True),
+        _kolon(_C, "court", "Mahkeme", veriden_liste=True),
+        _kolon(_C, "judicial_unit", "Yargı Birimi", veriden_liste=True),
         _kolon(_C, "subject", "Dava Konusu"),
     ),
     *_grup(
@@ -521,7 +589,9 @@ DAVALAR = VeriKaynagi(
     varsayilan_kolonlar=_DAVA_VARSAYILAN,
     gruplar=_DAVA_GRUPLARI,
     # Plan §4.2 hızlı filtre listesi (sıralı); tarih alanının alternatifleri alan değiştirici.
+    # Plan §5.2: `arama` başa (Davalar listesi başka değişmez).
     hizli_filtreler=(
+        HizliFiltre(ARAMA_KOLONU, sunum="arama"),
         HizliFiltre("opening_date", ("karar_tarihi", "kesinlesme_tarihi", "created_at")),
         HizliFiltre("status"),
         HizliFiltre("responsible_lawyer_name"),
@@ -564,9 +634,18 @@ def _dava_sayisi():
 
 
 _M = models.Client
-_MUVEKKIL_GRUPLARI = ("Kimlik", "İletişim", "Vekalet", "Sınıflandırma", "Sistem")
+_MUVEKKIL_GRUPLARI = (ARAMA_GRUBU, "Kimlik", "İletişim", "Vekalet", "Sınıflandırma", "Sistem")
 _DAVA_SAYISI = _dava_sayisi()
+# clients.client_type ham İngilizce kod saklar (Individual 1.898 / Corporate 99 / "Gerçek Kişi" 1 — 07.09
+# ölçümü); gösterim etiketli, filtre değeri HAM (plan §5.2).
+MUVEKKIL_TIPI_ETIKETLERI: Mapping[str, str] = {
+    "Individual": "Gerçek kişi",
+    "Corporate": "Tüzel kişi",
+    "Gerçek Kişi": "Gerçek kişi (eski yazım)",
+}
 _MUVEKKIL_KOLONLARI: list[Kolon] = [
+    # Plan §5.1/5.2: tek arama kutusu — ad · cari kod · e-posta · telefon · cep
+    _arama(_M.name, _M.cari_kod, _M.email, _M.phone, _M.mobile_phone),
     *_grup(
         "Kimlik",
         _kolon(_M, "name", "Müvekkil Adı"),
@@ -580,7 +659,7 @@ _MUVEKKIL_KOLONLARI: list[Kolon] = [
         _kolon(_M, "phone", "Telefon"),
         _kolon(_M, "mobile_phone", "Cep Telefonu"),
         _kolon(_M, "address", "Adres"),
-        _kolon(_M, "il", "İl", onerili=True),
+        _kolon(_M, "il", "İl", veriden_liste=True),
     ),
     *_grup(
         "Vekalet",
@@ -595,9 +674,11 @@ _MUVEKKIL_KOLONLARI: list[Kolon] = [
     *_grup(
         "Sınıflandırma",
         _kolon(_M, "contact_type", "Kayıt Türü", liste=MUVEKKIL_ILETISIM_TURLERI),
-        _kolon(_M, "client_type", "Müvekkil Türü", liste=MUVEKKIL_TIPLERI_CARI),
+        _kolon(_M, "client_type", "Müvekkil Türü", liste=MUVEKKIL_TIPLERI_CARI,
+               secenek_etiketleri=MUVEKKIL_TIPI_ETIKETLERI),
         _kolon(_M, "category", "Kategori", secenek_tablosu=models.ClientCategory, liste=MUVEKKIL_KATEGORILERI),
-        _kolon(_M, "specialty", "Uzmanlık", onerili=True),
+        _kolon(_M, "specialty", "Uzmanlık", veriden_liste=True),
+        # Sektör 597 farklı yazım (07.09 ölçümü) — gerçek serbest metin, yalnız öneri (G137)
         _kolon(_M, "sektor", "Sektör", onerili=True),
     ),
     *_grup(
@@ -624,11 +705,17 @@ MUVEKKILLER = VeriKaynagi(
     kolonlar=_sozluk(_MUVEKKIL_KOLONLARI),
     varsayilan_kolonlar=_MUVEKKIL_VARSAYILAN,
     gruplar=_MUVEKKIL_GRUPLARI,
+    # Plan §5.2 müvekkil şeridi (sıralı): arama kutusu · kategori çipleri · il · uzmanlık · "Davası var"
+    # anahtarı · "E-postası yok" · "Cep telefonu yok". Müvekkil Türü / Kayıt Türü / vekalet alanları
+    # şeritte YOK ("+ Başka alan"dan ulaşılır, §5.1 madde 7).
     hizli_filtreler=(
-        HizliFiltre("category"),
+        HizliFiltre(ARAMA_KOLONU, sunum="arama"),
+        HizliFiltre("category", sunum="cipler"),
         HizliFiltre("il"),
-        HizliFiltre("client_type"),
-        HizliFiltre("dava_sayisi"),
+        HizliFiltre("specialty"),
+        HizliFiltre("dava_sayisi", sunum="var_yok", etiket="Davası var"),
+        HizliFiltre("email", sunum="bos_anahtari", etiket="E-postası yok"),
+        HizliFiltre("mobile_phone", sunum="bos_anahtari", etiket="Cep telefonu yok"),
     ),
     kolon_setleri=(
         KolonSeti("Temel", _MUVEKKIL_VARSAYILAN),
@@ -647,14 +734,16 @@ def _belge_kisitlari(tenant_id: str) -> list[ColumnElement]:
 
 
 _D = models.CaseDocument
-_BELGE_GRUPLARI = ("Belge", "Dava", "Yükleme", "Sistem")
+_BELGE_GRUPLARI = (ARAMA_GRUBU, "Belge", "Dava", "Yükleme", "Sistem")
 _BELGE_KOLONLARI: list[Kolon] = [
+    # Plan §5.2: dosya adı · dava ofis no · özet
+    _arama(_D.original_filename, models.Case.tracking_no, _D.ai_summary),
     *_grup(
         "Belge",
         _kolon(_D, "original_filename", "Orijinal Dosya Adı"),
         _kolon(_D, "stored_filename", "Arşiv Dosya Adı"),
         _kolon(_D, "belge_turu_kodu", "Belge Türü Kodu"),
-        _kolon(_D, "belge_turu_adi", "Belge Türü", onerili=True),
+        _kolon(_D, "belge_turu_adi", "Belge Türü", veriden_liste=True),
         _kolon(_D, "muvekkil_adi", "Müvekkil"),
         _kolon(_D, "avukat_kodu", "Avukat Kodu"),
         _kolon(_D, "esas_no", "Esas No"),
@@ -673,7 +762,7 @@ _BELGE_KOLONLARI: list[Kolon] = [
         _kolon(_D, "upload_status", "Yükleme Durumu", liste=BELGE_UPLOAD_DURUMLARI),
         _kolon(_D, "conversion_status", "Dönüşüm Durumu", liste=BELGE_DONUSUM_DURUMLARI),
         _kolon(_D, "email_sent", "E-posta Gönderildi"),
-        _kolon(_D, "uploaded_by", "Yükleyen", onerili=True),
+        _kolon(_D, "uploaded_by", "Yükleyen", veriden_liste=True),
         _kolon(_D, "uploaded_by_email", "Yükleyen E-posta"),
         _kolon(_D, "uploaded_at", "Yükleme Tarihi"),
     ),
@@ -698,6 +787,7 @@ BELGELER = VeriKaynagi(
     varsayilan_kolonlar=_BELGE_VARSAYILAN,
     gruplar=_BELGE_GRUPLARI,
     hizli_filtreler=(
+        HizliFiltre(ARAMA_KOLONU, sunum="arama"),
         HizliFiltre("uploaded_at"),
         HizliFiltre("belge_turu_adi"),
         HizliFiltre("uploaded_by"),
@@ -715,8 +805,10 @@ def _foy_kisitlari(tenant_id: str) -> list[ColumnElement]:
 
 
 _F = models.CaseFoy
-_FOY_GRUPLARI = ("Kimlik", "Sınıflandırma", "Kapsam", "Sistem")
+_FOY_GRUPLARI = (ARAMA_GRUBU, "Kimlik", "Sınıflandırma", "Kapsam", "Sistem")
 _FOY_KOLONLARI: list[Kolon] = [
+    # Plan §5.2: sistem no · TKU · hasar no · dava ofis no
+    _arama(_F.sistem_no, _F.tku_no, _F.hasar_no, models.Case.tracking_no),
     *_grup(
         "Kimlik",
         _kolon(_F, "sistem_no", "SistemNo"),
@@ -761,6 +853,7 @@ FOYLER = VeriKaynagi(
     varsayilan_kolonlar=_FOY_VARSAYILAN,
     gruplar=_FOY_GRUPLARI,
     hizli_filtreler=(
+        HizliFiltre(ARAMA_KOLONU, sunum="arama"),
         HizliFiltre("durum"),
         HizliFiltre("hizmet_turu"),
         HizliFiltre("muvekkil_tipi"),
@@ -804,6 +897,41 @@ def _kolonu_denetle(kaynak: VeriKaynagi, kolon: Kolon) -> None:
             raise ValueError(f"{ad}: öneri yalnız metin kolonda")
         if kolon.turetilmis and kolon.oneri_sorgusu is None:
             raise ValueError(f"{ad}: önerili türetilmiş kolonun oneri_sorgusu yok")
+    if kolon.veriden_liste:
+        # Eşik üstü yedeği G137 önerileri: `onerili` şart; türetilmişte GROUP BY ifadesi tanımsız
+        if kolon.tip != "metin" or kolon.turetilmis or not kolon.onerili:
+            raise ValueError(f"{ad}: veriden liste yalnız düz, önerili metin kolonda")
+    if kolon.secenek_etiketleri is not None and kolon.tip != "liste" and not kolon.veriden_liste:
+        raise ValueError(f"{ad}: seçenek etiketleri yalnız seçenekli kolonda")
+    if not kolon.secilebilir:
+        if not (kolon.turetilmis and kolon.filtrelenebilir) or kolon.siralanabilir:
+            raise ValueError(f"{ad}: seçilemeyen kolon yalnız filtrelenebilir türetilmiş olabilir")
+        if kolon.grup != ARAMA_GRUBU:
+            raise ValueError(f"{ad}: seçilemeyen kolon '{ARAMA_GRUBU}' grubunda olmalı")
+    elif kolon.grup == ARAMA_GRUBU:
+        raise ValueError(f"{ad}: '{ARAMA_GRUBU}' grubu yalnız seçilemeyen kolon içindir")
+
+
+def _hizli_filtreyi_denetle(kaynak: VeriKaynagi, hf: HizliFiltre) -> None:
+    """Sunum ↔ kolon uyumu (plan §5.2): `arama` yalnız `arama` kolonunda; `cipler` yalnız seçenekli
+    kolonda; `var_yok` yalnız sayı/para; `bos_anahtari` `is_null` alan kolonda; `etiket` yalnız anahtar
+    sunumlarında anlamlı (var_yok / bos_anahtari)."""
+    ad = f"{kaynak.anahtar}: hızlı filtre {hf.alan}"
+    kolon = kaynak.kolonlar[hf.alan]
+    if hf.sunum not in SUNUMLAR:
+        raise ValueError(f"{ad}: tanınmayan sunum {hf.sunum!r}")
+    if (hf.sunum == "arama") != (hf.alan == ARAMA_KOLONU):
+        raise ValueError(f"{ad}: 'arama' sunumu yalnız ve ancak '{ARAMA_KOLONU}' kolonunda")
+    if hf.sunum == "cipler" and kolon.tip != "liste" and not kolon.veriden_liste:
+        raise ValueError(f"{ad}: 'cipler' sunumu yalnız seçenekli kolonda")
+    if hf.sunum == "var_yok" and kolon.tip not in ("sayi", "para"):
+        raise ValueError(f"{ad}: 'var_yok' sunumu yalnız sayı/para kolonda")
+    if hf.sunum == "bos_anahtari" and "is_null" not in kolon.oplar:
+        raise ValueError(f"{ad}: 'bos_anahtari' sunumu is_null izinli kolon ister")
+    if hf.etiket is not None and hf.sunum not in ("var_yok", "bos_anahtari"):
+        raise ValueError(f"{ad}: etiket yalnız anahtar sunumlarında (var_yok / bos_anahtari)")
+    if hf.alternatifler and (kolon.tip != "tarih" or hf.sunum != "varsayilan"):
+        raise ValueError(f"{ad}: alternatifler yalnız tarih hızlı filtresinde (varsayılan sunum)")
 
 
 def _kendini_denetle() -> None:
@@ -815,14 +943,15 @@ def _kendini_denetle() -> None:
         for anahtar in kaynak.varsayilan_kolonlar:
             if anahtar not in kaynak.kolonlar:
                 raise ValueError(f"{kaynak.anahtar}: varsayılan kolon katalogda yok: {anahtar}")
+            if not kaynak.kolonlar[anahtar].secilebilir:
+                raise ValueError(f"{kaynak.anahtar}: varsayılan kolon seçilemez: {anahtar}")
         gorulen: set[str] = set()
         for hf in kaynak.hizli_filtreler:
             for anahtar in (hf.alan, *hf.alternatifler):
                 kolon = kaynak.kolonlar.get(anahtar)
                 if kolon is None or not kolon.filtrelenebilir:
                     raise ValueError(f"{kaynak.anahtar}: hızlı filtre katalogda yok ya da filtrelenemez: {anahtar}")
-            if hf.alternatifler and kaynak.kolonlar[hf.alan].tip != "tarih":
-                raise ValueError(f"{kaynak.anahtar}: alternatifler yalnız tarih hızlı filtresinde: {hf.alan}")
+            _hizli_filtreyi_denetle(kaynak, hf)
             if hf.alan in gorulen:
                 raise ValueError(f"{kaynak.anahtar}: hızlı filtre tekrarı: {hf.alan}")
             gorulen.add(hf.alan)
@@ -834,6 +963,8 @@ def _kendini_denetle() -> None:
             for anahtar in ks.kolonlar:
                 if anahtar not in kaynak.kolonlar:
                     raise ValueError(f"{kaynak.anahtar}: kolon seti '{ks.ad}' katalogda olmayan kolon: {anahtar}")
+                if not kaynak.kolonlar[anahtar].secilebilir:
+                    raise ValueError(f"{kaynak.anahtar}: kolon seti '{ks.ad}' seçilemeyen kolon içeriyor: {anahtar}")
 
 
 _kendini_denetle()
@@ -900,29 +1031,72 @@ def onerileri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
     return degerler[:ONERI_MAX], len(degerler) > ONERI_MAX
 
 
+def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
+                              tenant_id: str) -> Optional[list[str]]:
+    """`veriden_liste` metin kolonun seçenekleri (plan §5.2): kaynağın tenant + soft-delete kısıtı,
+    boş hariç, `GROUP BY` + `COUNT` ile SIKLIĞA göre azalan (eşitlikte ad); DISTINCT sayısı
+    `settings.rapor_secenek_esigi`ni aşarsa `None` (→ katalog `metin_icerir` + G137 önerileri).
+    İşaretsiz kolonda ya da `db` yoksa `None`. Sorgu `LIMIT eşik+1` ile kesilir — eşik aşımı
+    tüm DISTINCT'i çekmeden anlaşılır."""
+    if not kolon.veriden_liste or db is None:
+        return None
+    esik = max(0, int(settings.rapor_secenek_esigi))
+    ifade = kolon.ifade
+    sorgu = (
+        select(ifade, func.count())
+        .select_from(kaynak.from_clause)
+        .where(and_(*kaynak.kisitlar(tenant_id), ifade.isnot(None), ifade != ""))
+        .group_by(ifade)
+        .order_by(func.count().desc(), ifade)
+        .limit(esik + 1)
+    )
+    satirlar = db.execute(sorgu).all()
+    if len(satirlar) > esik:
+        return None
+    return [str(deger) for deger, _sayi in satirlar]
+
+
 def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str) -> dict[str, Any]:
-    oneriler, kesik = onerileri_getir(kaynak, kolon, db, tenant_id)
+    # Seçenek kaynağı (plan §5.2): sabit `liste` → "sabit"; veriden liste eşik altı → "veri";
+    # aksi hâlde yok. Veriden liste eşik altında öneri katmanı KOŞMAZ (ikisi birbirinin yerine).
+    secenekler: Optional[list[str]] = None
+    secenek_kaynagi: Optional[str] = None
+    kontrol = kolon.kontrol
+    if kolon.tip == "liste":
+        secenekler, secenek_kaynagi = secenekleri_getir(kolon, db), "sabit"
+    else:
+        secenekler = veriden_secenekleri_getir(kaynak, kolon, db, tenant_id)
+        if secenekler is not None:
+            secenek_kaynagi, kontrol = "veri", KONTROLLER["liste"]
+    if secenekler is None:
+        oneriler, kesik = onerileri_getir(kaynak, kolon, db, tenant_id)
+    else:
+        oneriler, kesik = None, False
     return {
         "anahtar": kolon.anahtar,
         "etiket": kolon.etiket,
         "tip": kolon.tip,
         "grup": kolon.grup,
-        "kontrol": kolon.kontrol,
+        "kontrol": kontrol,
         "filtrelenebilir": kolon.filtrelenebilir,
         "siralanabilir": kolon.siralanabilir,
         "turetilmis": kolon.turetilmis,
+        "secilebilir": kolon.secilebilir,
         # Kolon başına izinli op'lar (taraf kolonlarında tip tablosunun alt kümesi, ör. `eq` yok):
         # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
         "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],
-        "secenekler": secenekleri_getir(kolon, db) if kolon.tip == "liste" else None,
+        "secenekler": secenekler,
+        "secenek_kaynagi": secenek_kaynagi,
+        "secenek_etiketleri": dict(kolon.secenek_etiketleri) if kolon.secenek_etiketleri is not None else None,
         "oneriler": oneriler,
         "oneri_kesik": kesik,
     }
 
 
 def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> dict[str, Any]:
-    """`GET /api/reports/catalog` gövdesi (plan §2.4 + §4.2). Öneriler tenant kurallı
-    olduğundan gövde tenant'a özeldir — route süreç içi 60 sn önbellekler."""
+    """`GET /api/reports/catalog` gövdesi (plan §2.4 + §4.2 + §5.2). Öneriler ve veriden
+    seçenekler tenant kurallı olduğundan gövde tenant'a özeldir — route süreç içi 60 sn
+    önbellekler (GROUP BY sorguları da önbelleğin içinde)."""
     return {
         "veri_kaynaklari": [
             {
@@ -932,7 +1106,9 @@ def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> 
                 "varsayilan_kolonlar": list(kaynak.varsayilan_kolonlar),
                 "kolonlar": [_kolon_katalogu(kaynak, kolon, db, tenant_id) for kolon in kaynak.kolonlar.values()],
                 "hizli_filtreler": [
-                    {"alan": hf.alan, "alternatifler": list(hf.alternatifler)} for hf in kaynak.hizli_filtreler
+                    {"alan": hf.alan, "alternatifler": list(hf.alternatifler), "sunum": hf.sunum,
+                     "etiket": hf.etiket}
+                    for hf in kaynak.hizli_filtreler
                 ],
                 "kolon_setleri": [{"ad": ks.ad, "kolonlar": list(ks.kolonlar)} for ks in kaynak.kolon_setleri],
             }

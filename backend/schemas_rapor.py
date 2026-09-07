@@ -54,14 +54,20 @@ class Filtre(BaseModel):
 
     alan: str = Field(min_length=1, max_length=100)
     op: Op
+    # `in` listesinde `null` öğesi "(boş)" demektir (plan §5.2, G141): motor
+    # `IN (...) OR IS NULL` kurar; tek başına `[null]` = `is_null`. Başka op'un
+    # listesinde (`between`) `null` yapısal olarak reddedilir.
     deger: Any = None
 
     @field_validator("deger")
     @classmethod
     def _in_sinirini_denetle(cls, v: Any, info):
         # `in` listesi tavanı: tip bilinmeden de yapısal olarak kesilir
-        if isinstance(v, list) and len(v) > IN_DEGER_MAX:
-            raise ValueError(f"'in' değeri en fazla {IN_DEGER_MAX} öğe alır")
+        if isinstance(v, list):
+            if len(v) > IN_DEGER_MAX:
+                raise ValueError(f"'in' değeri en fazla {IN_DEGER_MAX} öğe alır")
+            if info.data.get("op") != "in" and any(d is None for d in v):
+                raise ValueError("null yalnız 'in' listesinde")
         return v
 
 
@@ -235,7 +241,8 @@ class SohbetIstegi(BaseModel):
 
 class AsistanFiltre(BaseModel):
     """Gemini'nin ürettiği filtre: değer METİN (tek) ya da metin listesi
-    (`in`/`between`); tip çevirisi sunucuda (yukarıdaki şerh)."""
+    (`in`/`between`); tip çevirisi sunucuda (yukarıdaki şerh). `in` listesinde
+    `"(boş)"` sabiti sunucuda `null`'a çevrilir (`asistan.BOS_SABITLERI`, G141)."""
 
     alan: str
     op: Op

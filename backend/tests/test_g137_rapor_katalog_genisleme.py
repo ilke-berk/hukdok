@@ -28,20 +28,28 @@ CATALOG = "/api/reports/catalog"
 PREVIEW = "/api/reports/preview"
 SILINDI = dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.timezone.utc)
 
+# G141: her kaynağa sanal `arama` kolonunun grubu "Arama" eklendi (plan §5.2).
 GRUPLAR = {
-    "davalar": ("Kimlik", "Taraflar", "Mahkeme ve konu", "Tarihler", "Tutarlar", "Karar ve aşama", "Tıbbi",
+    "davalar": ("Arama", "Kimlik", "Taraflar", "Mahkeme ve konu", "Tarihler", "Tutarlar", "Karar ve aşama", "Tıbbi",
                 "Aktarım", "Sistem"),
-    "muvekkiller": ("Kimlik", "İletişim", "Vekalet", "Sınıflandırma", "Sistem"),
-    "belgeler": ("Belge", "Dava", "Yükleme", "Sistem"),
-    "foyler": ("Kimlik", "Sınıflandırma", "Kapsam", "Sistem"),
+    "muvekkiller": ("Arama", "Kimlik", "İletişim", "Vekalet", "Sınıflandırma", "Sistem"),
+    "belgeler": ("Arama", "Belge", "Dava", "Yükleme", "Sistem"),
+    "foyler": ("Arama", "Kimlik", "Sınıflandırma", "Kapsam", "Sistem"),
 }
 KONTROL = {"tarih": "tarih_araligi", "liste": "coklu_secim", "metin": "metin_icerir", "sayi": "sayi_araligi",
            "para": "sayi_araligi", "mantik": "mantik"}
-ONERILI = {
-    "davalar": {"responsible_lawyer_name", "uyap_lawyer_name", "court", "judicial_unit", "sub_type",
-                "muvekkil_adlari", "karsi_taraf_adlari", "sigortali_adlari"},
-    "muvekkiller": {"il", "sektor", "specialty", "noterlik"},
+# G141 (plan §5.2): işaretli metin kolonlar bu küçük veride eşik ALTINDA kalır → `secenekler` (veriden,
+# sıklık sıralı) + `kontrol=coklu_secim`, `oneriler=None`; öneri katmanı yalnız işaretsiz önerili kolonlarda.
+VERIDEN = {
+    "davalar": {"responsible_lawyer_name", "uyap_lawyer_name", "court", "judicial_unit", "sub_type"},
+    "muvekkiller": {"il", "specialty"},
     "belgeler": {"uploaded_by", "belge_turu_adi"},
+    "foyler": set(),
+}
+ONERILI = {
+    "davalar": {"muvekkil_adlari", "karsi_taraf_adlari", "sigortali_adlari"},
+    "muvekkiller": {"sektor", "noterlik"},
+    "belgeler": set(),
     "foyler": set(),
 }
 
@@ -170,14 +178,15 @@ def _422(r, alan_parcasi):
 
 def test_katalog_yeni_alanlarin_sekli(env):
     """Kabul: her kolonda `grup` + `kontrol` + `oneriler`/`oneri_kesik`; her kaynakta
-    `hizli_filtreler` + `kolon_setleri` (plan §4.2 şekli)."""
+    `hizli_filtreler` (+ G141 `sunum`/`etiket`) + `kolon_setleri` (plan §4.2 şekli).
+    G141: veriden liste kolonlar eşik altında `secenekler` taşır, `oneriler` yalnız işaretsiz önerililerde."""
     kaynaklar = _katalog(env.client())
     assert set(kaynaklar) == set(GRUPLAR)
     for anahtar, kaynak in kaynaklar.items():
         assert isinstance(kaynak["hizli_filtreler"], list) and kaynak["hizli_filtreler"]
         assert isinstance(kaynak["kolon_setleri"], list) and kaynak["kolon_setleri"]
         for hf in kaynak["hizli_filtreler"]:
-            assert set(hf) == {"alan", "alternatifler"} and isinstance(hf["alternatifler"], list)
+            assert set(hf) == {"alan", "alternatifler", "sunum", "etiket"} and isinstance(hf["alternatifler"], list)
         for ks in kaynak["kolon_setleri"]:
             assert set(ks) == {"ad", "kolonlar"} and ks["ad"] and ks["kolonlar"]
         for k in kaynak["kolonlar"]:
@@ -188,6 +197,8 @@ def test_katalog_yeni_alanlarin_sekli(env):
                 assert isinstance(k["oneriler"], list)
             else:
                 assert k["oneriler"] is None
+            if k["anahtar"] in VERIDEN[anahtar]:
+                assert isinstance(k["secenekler"], list) and k["secenek_kaynagi"] == "veri", (anahtar, k["anahtar"])
 
 
 def test_katalog_grup_kumesi_kaynaga_gore_kapali_ve_dolu(env):
@@ -203,17 +214,21 @@ def test_katalog_grup_kumesi_kaynaga_gore_kapali_ve_dolu(env):
 
 
 def test_katalog_kontrol_tip_eslemesi(env):
-    """`kontrol` tipten türetilir; filtrelenemeyen kolonda null."""
+    """`kontrol` tipten türetilir; filtrelenemeyen kolonda null. G141: veriden liste kolon eşik altında
+    (`secenek_kaynagi="veri"`) tip metin kalsa da `coklu_secim`."""
     kaynaklar = _katalog(env.client())
     for kaynak in kaynaklar.values():
         for k in kaynak["kolonlar"]:
-            if k["filtrelenebilir"]:
-                assert k["kontrol"] == KONTROL[k["tip"]], (kaynak["anahtar"], k["anahtar"])
-            else:
+            if not k["filtrelenebilir"]:
                 assert k["kontrol"] is None, (kaynak["anahtar"], k["anahtar"])
+            elif k["secenek_kaynagi"] == "veri":
+                assert k["tip"] == "metin" and k["kontrol"] == "coklu_secim", (kaynak["anahtar"], k["anahtar"])
+            else:
+                assert k["kontrol"] == KONTROL[k["tip"]], (kaynak["anahtar"], k["anahtar"])
     davalar = _kolonlar(kaynaklar["davalar"])
     assert davalar["opening_date"]["kontrol"] == "tarih_araligi"
     assert davalar["status"]["kontrol"] == "coklu_secim"
+    assert davalar["court"]["kontrol"] == "coklu_secim" and davalar["court"]["tip"] == "metin"
     assert davalar["muvekkil_adlari"]["kontrol"] == "metin_icerir"
     assert davalar["muvekkil_kategorisi"]["kontrol"] == "coklu_secim"
     assert davalar["maddi_tazminat"]["kontrol"] == "sayi_araligi"
@@ -233,12 +248,13 @@ def test_katalog_hizli_filtreler_plan_listesi(env):
     """Plan §4.2 hızlı filtre listeleri, sıralı; her anahtar katalogda ve filtrelenebilir;
     alternatifler yalnız tarih kontrolünde."""
     kaynaklar = _katalog(env.client())
+    # G141 (plan §5.2): her listede `arama` başa; Müvekkiller şeridi yeniden kuruldu (test_g141 sunumları doğrular)
     beklenen = {
-        "davalar": ["opening_date", "status", "responsible_lawyer_name", "court", "muvekkil_adlari",
+        "davalar": ["arama", "opening_date", "status", "responsible_lawyer_name", "court", "muvekkil_adlari",
                     "muvekkil_kategorisi", "hizmet_turu", "maddi_tazminat"],
-        "muvekkiller": ["category", "il", "client_type", "dava_sayisi"],
-        "belgeler": ["uploaded_at", "belge_turu_adi", "uploaded_by", "link_mode"],
-        "foyler": ["durum", "hizmet_turu", "muvekkil_tipi", "kapsam_durumu"],
+        "muvekkiller": ["arama", "category", "il", "specialty", "dava_sayisi", "email", "mobile_phone"],
+        "belgeler": ["arama", "uploaded_at", "belge_turu_adi", "uploaded_by", "link_mode"],
+        "foyler": ["arama", "durum", "hizmet_turu", "muvekkil_tipi", "kapsam_durumu"],
     }
     for anahtar, liste in beklenen.items():
         kaynak = kaynaklar[anahtar]
@@ -249,8 +265,9 @@ def test_katalog_hizli_filtreler_plan_listesi(env):
                 assert kolonlar[alan]["filtrelenebilir"], (anahtar, alan)
             if hf["alternatifler"]:
                 assert kolonlar[hf["alan"]]["kontrol"] == "tarih_araligi"
-    acilis = kaynaklar["davalar"]["hizli_filtreler"][0]
-    assert acilis == {"alan": "opening_date", "alternatifler": ["karar_tarihi", "kesinlesme_tarihi", "created_at"]}
+    acilis = kaynaklar["davalar"]["hizli_filtreler"][1]
+    assert acilis == {"alan": "opening_date", "alternatifler": ["karar_tarihi", "kesinlesme_tarihi", "created_at"],
+                      "sunum": "varsayilan", "etiket": None}
 
 
 def test_katalog_kolon_setleri_plan_listesi(env):
@@ -298,14 +315,17 @@ def test_katalog_yeni_taraf_kolonlari(env):
 
 def test_oneriler_onerili_kolonlar_ve_kurallar(env):
     """Kabul: öneriler yalnız `onerili` metin kolonlarda; DISTINCT; boş/NULL hariç; silinmiş dava ve
-    başka tenant hariç; NULL tenant (legacy) dahil."""
+    başka tenant hariç; NULL tenant (legacy) dahil. G141: avukat/mahkeme artık veriden seçenek
+    (aynı kurallar; sıklık eşitliğinde ad sırası)."""
     kaynaklar = _katalog(env.client())
     for anahtar, onerili in ONERILI.items():
         kolonlar = _kolonlar(kaynaklar[anahtar])
         assert {a for a, k in kolonlar.items() if k["oneriler"] is not None} == onerili, anahtar
+        assert {a for a, k in kolonlar.items() if k["secenek_kaynagi"] == "veri"} == VERIDEN[anahtar], anahtar
     davalar = _kolonlar(kaynaklar["davalar"])
-    assert davalar["responsible_lawyer_name"]["oneriler"] == ["Av. Ali", "Av. Veli"]
-    assert davalar["court"]["oneriler"] == ["Ankara 2. Asliye Hukuk", "Bursa 1. Asliye Hukuk"]
+    assert davalar["responsible_lawyer_name"]["secenekler"] == ["Av. Ali", "Av. Veli"]
+    assert davalar["court"]["secenekler"] == ["Ankara 2. Asliye Hukuk", "Bursa 1. Asliye Hukuk"]
+    assert davalar["responsible_lawyer_name"]["oneriler"] is None
     assert davalar["responsible_lawyer_name"]["oneri_kesik"] is False
     # Taraf adı önerileri: ilgili party_type/role, silinmiş dava (c5) ve başka tenant (c4) dışarıda
     assert davalar["muvekkil_adlari"]["oneriler"] == ["Anadolu Hastanesi", "Dr. Ayşe", "Kapanan Hastane",
@@ -317,7 +337,7 @@ def test_oneriler_onerili_kolonlar_ve_kurallar(env):
 def test_oneriler_tenant_kurali(env):
     """Başka tenant'ın yöneticisi kendi + legacy NULL kayıtların önerilerini görür."""
     davalar = _kolonlar(_katalog(env.client(tid=T2))["davalar"])
-    assert davalar["responsible_lawyer_name"]["oneriler"] == ["Av. Veli", "Av. Yabanci"]
+    assert davalar["responsible_lawyer_name"]["secenekler"] == ["Av. Veli", "Av. Yabanci"]
     assert davalar["muvekkil_adlari"]["oneriler"] == ["Anadolu Yabanci", "Dr. Ayşe", "Sigortalı Doktor Ltd"]
     assert davalar["sigortali_adlari"]["oneriler"] == ["Sigortalı Doktor Ltd", "Yabanci Sigortali"]
 
@@ -345,11 +365,11 @@ def test_oneriler_muvekkil_ve_belge_kaynaklari_soft_delete(env):
         db.close()
     kaynaklar = _katalog(env.client())
     muv = _kolonlar(kaynaklar["muvekkiller"])
-    assert muv["il"]["oneriler"] == ["Bursa", "İzmir"]
+    assert muv["il"]["secenekler"] == ["Bursa", "İzmir"]      # G141 veriden seçenek; silinmiş kart dışarıda
     assert muv["sektor"]["oneriler"] == ["Sağlık"]          # boş string hariç
     belge = _kolonlar(kaynaklar["belgeler"])
-    assert belge["uploaded_by"]["oneriler"] == ["Ayşe"]     # silinmiş dava dışarıda
-    assert belge["belge_turu_adi"]["oneriler"] == ["Dilekçe"]   # silinmiş belge dışarıda
+    assert belge["uploaded_by"]["secenekler"] == ["Ayşe"]     # silinmiş dava dışarıda
+    assert belge["belge_turu_adi"]["secenekler"] == ["Dilekçe"]   # silinmiş belge dışarıda
 
 
 def test_oneriler_300_kesme_ve_bayrak(env):
@@ -615,16 +635,16 @@ def test_katalog_onbellegi_veri_degisimini_60_sn_gizler(env, monkeypatch):
     saat = [5000.0]
     monkeypatch.setattr(env.route, "_saat", lambda: saat[0])
     client = env.client()
-    assert _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["oneriler"] == ["Av. Ali", "Av. Veli"]
+    assert _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"] == ["Av. Ali", "Av. Veli"]
     db = env.db()
     try:
         db.add(models.Case(tracking_no="HA.G137.yeni", tenant_id=T1, status="DERDEST", responsible_lawyer_name="Av. Yeni"))
         db.commit()
     finally:
         db.close()
-    assert "Av. Yeni" not in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["oneriler"]
+    assert "Av. Yeni" not in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"]
     saat[0] += 60.0
-    assert "Av. Yeni" in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["oneriler"]
+    assert "Av. Yeni" in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

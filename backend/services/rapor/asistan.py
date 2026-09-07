@@ -57,6 +57,9 @@ logger = logging.getLogger(__name__)
 _GEMINI_ROLU = {"user": "user", "assistant": "model"}
 _TRUE_METINLERI = frozenset({"true", "1", "evet", "doğru", "dogru", "aktif"})
 _FALSE_METINLERI = frozenset({"false", "0", "hayır", "hayir", "yanlış", "yanlis", "pasif"})
+# `in` listesinde "(boş)" → `null` (plan §5.2, G141): Gemini şeması metin listesi taşır, sözleşme
+# `null` öğesi ister; küçük harf + boşluksuz karşılaştırılır.
+BOS_SABITLERI = frozenset({"(boş)", "(bos)"})
 
 
 # ─── Model seçimi (K9) ───────────────────────────────────────────────────────
@@ -89,7 +92,10 @@ def _kolon_satiri(kolon: Kolon) -> str:
         secenekler = registry.secenekleri_getir(kolon, None)
         if secenekler:
             parcalar.append("|".join(secenekler))
-    if kolon.turetilmis:
+    if not kolon.secilebilir:
+        # Sanal `arama` (G141): kolon listesine/sıralamaya giremez, yalnız filtre
+        parcalar.append(f"yalnız filtre (kolon listesine girmez; op: {'|'.join(kolon.oplar)})")
+    elif kolon.turetilmis:
         if kolon.filtrelenebilir:
             parcalar.append(f"türetilmiş (filtre yalnız: {'|'.join(kolon.oplar)}; sıralama yok)")
         else:
@@ -102,7 +108,9 @@ def katalog_metni() -> str:
     varsayılan kolonlar + `anahtar · etiket · tip[ · seçenekler]` satırları.
     G137'nin kullanılabilirlik alanları (`grup`, `kontrol`, `hizli_filtreler`,
     `kolon_setleri`, `oneriler`) BİLEREK gömülmez — prompt gürültüsü (öneriler
-    300'e kadar değer); yalnız yeni kolonlar doğal olarak girer (plan §4.2)."""
+    300'e kadar değer); yalnız yeni kolonlar doğal olarak girer (plan §4.2).
+    G141'in veriden seçenekleri de gömülmez (DB yok, K6; `secenekleri_getir(db=None)`
+    yalnız sabit çekirdek); sanal `arama` kolonu "yalnız filtre" şerhiyle girer."""
     bloklar: list[str] = []
     for kaynak in registry.KAYNAKLAR.values():
         satirlar = [
@@ -150,11 +158,18 @@ def _tekil_deger(kolon: Optional[Kolon], deger: str) -> Any:
     return deger.strip() if kolon.tip == "tarih" else deger
 
 
+def _bos_mu(deger: str) -> bool:
+    return deger.strip().lower() in BOS_SABITLERI
+
+
 def _filtre_degeri(kolon: Optional[Kolon], f: AsistanFiltre) -> Any:
     if f.op in DEGERSIZ_OPLAR:
         return None
     if f.op in ("in", "between"):
         liste = list(f.degerler) if f.degerler is not None else ([f.deger] if f.deger is not None else [])
+        if f.op == "in":
+            # "(boş)" → null (plan §5.2); `between`de çevrilmez — Pydantic "null yalnız 'in' listesinde" der
+            return [None if _bos_mu(str(d)) else _tekil_deger(kolon, str(d)) for d in liste]
         return [_tekil_deger(kolon, str(d)) for d in liste]
     if f.deger is None and f.degerler:
         return _tekil_deger(kolon, str(f.degerler[0]))

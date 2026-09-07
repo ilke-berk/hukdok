@@ -494,6 +494,8 @@ def get_rapor_asistani_instruction(
         "- Liste tipi kolonda değer, listelenen seçeneklerden biri olmalı (aynen kopyala). "
         "Kullanıcı seçeneği eşanlamlısıyla söylerse en yakın seçeneği seç.",
         "- 'boş', 'girilmemiş', 'henüz yok' → is_null; 'dolu', 'girilmiş', 'verilmiş' → not_null.",
+        "- 'in' listesine boş değeri de dahil etmek için '(boş)' öğesini ekle "
+        "(örn. 'Ankara ya da ili boş olanlar' → il in ['Ankara','(boş)']).",
         "- Kolon seçimi: kullanıcı kolon saymadıysa kaynağın varsayılan kolonlarını kullan ve "
         "isteğinde geçen alanları (filtrelediğin/sıraladığın kolonlar dahil) ekle. "
         "'avukat adıyla' gibi ifadeler ilgili kolonu listeye ekler.",
