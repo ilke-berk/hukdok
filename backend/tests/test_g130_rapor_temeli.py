@@ -163,9 +163,10 @@ def test_katalog_sekli(env):
         assert kaynak["varsayilan_kolonlar"]
         for k in kaynak["kolonlar"]:
             # G141 (plan §5.2): + secilebilir / secenek_kaynagi / secenek_etiketleri
+            # G145 (plan §7.2): + secenek_sayilari / bos_sayisi
             assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
-                              "turetilmis", "secilebilir", "aciklama", "oplar", "secenekler", "secenek_kaynagi",
-                              "secenek_etiketleri", "oneriler", "oneri_kesik"}
+                              "turetilmis", "secilebilir", "aciklama", "oplar", "secenekler", "secenek_sayilari",
+                              "secenek_kaynagi", "secenek_etiketleri", "oneriler", "oneri_kesik", "bos_sayisi"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]
             if k["tip"] == "liste":
@@ -208,7 +209,9 @@ def test_katalog_yasak_kolonlar_ve_asgari_kume(env):
 
 
 def test_katalog_secenekler_tablo_ve_distinct_katmani(env):
-    """Seçenekler = sabit çekirdek + referans tablosu (aktif) + kolondaki DISTINCT değerler."""
+    """Seçenekler = sabit çekirdek + referans tablosu (aktif) + kolondaki DISTINCT değerler.
+    G145: sıra sayıya göre azalan — T1 görünümünde KARAR (c2, legacy) ve OZEL_DURUM (c1) 1'er,
+    sabit listenin kalanı 0 ve sonda (kendi sırasıyla)."""
     db = env.db()
     try:
         db.add(models.EventType(code="TEST-OLAY", name="Panelden Eklenen", active=True, sequence=9))
@@ -224,7 +227,7 @@ def test_katalog_secenekler_tablo_ve_distinct_katmani(env):
     assert olay[:3] == ["Tıbbi Olay", "Belgeleme Olayı", "Tıbbi + Belgeleme"]
     assert "Panelden Eklenen" in olay and "Pasif Olay" not in olay
     durum = davalar["status"]["secenekler"]
-    assert durum[:2] == ["DANIŞ", "DERDEST"] and "OZEL_DURUM" in durum
+    assert durum[:2] == ["KARAR", "OZEL_DURUM"] and durum[2:4] == ["DANIŞ", "DERDEST"]
     assert len(durum) == len(set(durum))
 
 

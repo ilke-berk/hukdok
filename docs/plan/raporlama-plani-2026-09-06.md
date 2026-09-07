@@ -602,6 +602,11 @@ düşüyor.
   sayısı; kaynak başına TEK sorgu (`SELECT COUNT(*) FILTER (WHERE col IS NULL) …` — sqlite'ta `SUM(CASE …)`;
   metin kolonda boş string de boş sayılır). Türetilmiş kolonlarda `null` (hesaplanmaz).
 - Katalog önbelleği (60 sn, tenant) hepsini kapsar; G145 raporu lokalde katalog süresini ölçer (hedef < 300 ms).
+  > **G145 şerhi (07.09):** türetilmiş `liste` kolonda (`muvekkil_kategorisi` — EXISTS başına GROUP BY pahalı)
+  > `secenek_sayilari = null`, sıra sabit listenin kendi sırası; `bos_sayisi` de `null` (türetilmiş). Sabit listede
+  > veride görülen ek değerler artık tenant + soft-delete kurallı (K2; veriden liste ile aynı). Boş sayısında
+  > `COUNT(*) FILTER` iki motorda da (sqlite ≥3.30) kullanıldı. Ölçüm lokal (14.5k dava): önbelleksiz medyan 242 ms
+  > (taban 185 ms; kaynak başına tek UNION ALL GROUP BY + tek FILTER sorgusu).
 - Asistan katalog metnine sayılar GİRMEZ.
 - Sözleşme dışı değişiklik yok; `/preview`/`/export` aynı.
 

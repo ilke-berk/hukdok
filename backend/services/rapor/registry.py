@@ -55,13 +55,29 @@ kolonu (`secilebilir=False`, yalnız `contains`) birden çok kolonda OR'lu ILIKE
 arar; kolon listesine/sıralamaya giremez, kolon setlerinde yok. `HizliFiltre.sunum`
 (`SUNUMLAR`) + `etiket` frontend şeridinin (plan §5.3) sunum ipucudur;
 `_kendini_denetle` sunum-kolon uyumunu import anında zorlar.
+
+**G145 (plan §7.2) — seçenek sayıları + boş sayısı:** `secenekler` dolu her kolonda
+`secenek_sayilari` (`{deger: n}`) ve sıra SAYIYA göre azalan (eşitlikte sabit listenin
+kendi sırası / veriden: ad; sıfırlılar listede KALIR, sonda). Sabit `liste` kolonda
+sayı kaynağın `kisitlar(tenant_id)` ile kaynak başına TEK `GROUP BY` (UNION ALL)
+sorgusundan gelir (`liste_sayilari` → `secenekleri_sayili_getir`) — bu G130'un DISTINCT katmanının da yerine geçer,
+yani panelden eklenmemiş "veride görülen" değerler artık tenant + soft-delete
+kurallıdır (veriden liste ve önerilerle aynı kural, K2). Türetilmiş `liste` kolonda
+(`muvekkil_kategorisi`: EXISTS başına GROUP BY pahalı) sayı hesaplanmaz → `null`,
+sıra değişmez. `bos_sayisi` filtrelenebilir + `is_null` izinli + türetilmiş OLMAYAN
+her kolonda: kaynak başına TEK `SUM(CASE …)` sorgusu (`bos_sayilari`); metin/liste
+kolonda `IS NULL OR TRIM(col) = ''` (motorun `is_null` filtresi yalnız `IS NULL` —
+katalog sayısı "boş ya da NULL" anlamındadır, filtre semantiği değişmedi).
+Asistan katalog metnine sayılar girmez (`secenekleri_getir(db=None)` yolu aynı).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Literal, Mapping, Optional, overload
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, null, or_, select
+from sqlalchemy import (
+    Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, literal, null, or_, select, union_all,
+)
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
@@ -888,6 +904,9 @@ def _kolonu_denetle(kaynak: VeriKaynagi, kolon: Kolon) -> None:
         raise ValueError(f"{ad} kataloga giremez")
     if kolon.tip == "liste" and not kolon.secenekler and kolon.secenek_tablosu is None:
         raise ValueError(f"{ad}: seçeneksiz liste kolon")
+    if kolon.tip == "liste" and not kolon.turetilmis and _tip_bul(kolon.ifade)[0] != "metin":
+        # G145: `liste_sayilari` UNION ALL'ı düz liste kolonlarını tek `deger` sütununda birleştirir
+        raise ValueError(f"{ad}: düz liste kolonun DB tipi metin olmalı (UNION ALL tip uyumu)")
     if not kolon.grup or kolon.grup not in kaynak.gruplar:
         raise ValueError(f"{ad}: grup kaynağın kapalı kümesinde değil: {kolon.grup!r}")
     if kolon.turetilmis:
@@ -1013,6 +1032,101 @@ def secenekleri_getir(kolon: Kolon, db: Optional[Session]) -> list[str]:
     return list(gorulen)
 
 
+def _sayiya_gore_sirala(secenekler: list[str], sayilar: Mapping[str, int]) -> list[str]:
+    """Plan §7.2 sırası: sayıya göre azalan; eşitlikte verilen sıra (kararlı sıralama —
+    sabit çekirdek → tablo → veriden ad sırası) korunur; sıfırlılar doğal olarak sonda."""
+    return sorted(secenekler, key=lambda d: -sayilar.get(d, 0))
+
+
+def _duz_liste_kolonlari(kaynak: VeriKaynagi) -> list[Kolon]:
+    """Sayısı hesaplanan liste kolonları: düz (türetilmiş olmayan) `liste` tipi."""
+    return [k for k in kaynak.kolonlar.values() if k.tip == "liste" and not k.turetilmis]
+
+
+def liste_sayilari(kaynak: VeriKaynagi, db: Optional[Session], tenant_id: str,
+                   kolonlar: Optional[list[Kolon]] = None) -> dict[str, dict[str, int]]:
+    """Kaynağın düz `liste` kolonlarında veride görülen değerlerin sayıları
+    `{kolon_anahtari: {deger: n}}` — kaynak başına TEK sorgu (G145 ölçümü 07.09, lokal 14.5k dava:
+    18 ayrı GROUP BY 95 ms → UNION ALL tek sorgu 42 ms; GROUPING SETS 23 ms ama Postgres'e özel,
+    testler sqlite koşar → dialect-bağımsız UNION ALL seçildi). Her parça kaynağın
+    `kisitlar(tenant_id)` ile `GROUP BY kolon` (tenant + soft-delete, K2), NULL/"" hariç; UNION ALL
+    tip uyumu için düz liste kolonun DB tipi metin olmalı (`_kolonu_denetle` zorlar). İç sözlük
+    değere göre alfabetik (Python sırası — sqlite/Postgres collation farkı katalog sırasına sızmaz).
+    `db` yoksa ya da kolon yoksa `{}`."""
+    if db is None:
+        return {}
+    if kolonlar is None:
+        kolonlar = _duz_liste_kolonlari(kaynak)
+    if not kolonlar:
+        return {}
+    parcalar = [
+        select(literal(k.anahtar).label("kolon"), k.ifade.label("deger"), func.count().label("n"))
+        .select_from(kaynak.from_clause)
+        .where(and_(*kaynak.kisitlar(tenant_id), k.ifade.isnot(None), k.ifade != ""))
+        .group_by(k.ifade)
+        for k in kolonlar
+    ]
+    sorgu = union_all(*parcalar) if len(parcalar) > 1 else parcalar[0]
+    sonuc: dict[str, dict[str, int]] = {k.anahtar: {} for k in kolonlar}
+    for kolon_adi, deger, sayi in db.execute(sorgu).all():
+        sonuc[str(kolon_adi)][str(deger)] = int(sayi)
+    return {ad: dict(sorted(sayilar.items())) for ad, sayilar in sonuc.items()}
+
+
+def secenekleri_sayili_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
+                             veri_sayilari: Optional[Mapping[str, int]] = None,
+                             ) -> tuple[list[str], Optional[dict[str, int]]]:
+    """`liste` kolonun seçenekleri + kayıt sayıları (G145). Düz kolonda sabit çekirdek + referans
+    tablosu (aktif) + veride görülen değerler (`veri_sayilari`; verilmezse `liste_sayilari` bu kolon
+    için koşar) — DISTINCT katmanının tenant kurallı ikizi; eşleşmeyen sabit değer `0`; sıra
+    `_sayiya_gore_sirala`. Türetilmiş liste kolonda (`secenek_ifadesi`) sayı hesaplanmaz →
+    (`secenekleri_getir` sırası, `None`). `db` yoksa (sabit çekirdek, `None`)."""
+    if kolon.tip != "liste":
+        return [], None
+    if db is None or kolon.turetilmis:
+        return secenekleri_getir(kolon, db), None
+    gorulen: dict[str, None] = dict.fromkeys(kolon.secenekler)
+    if kolon.secenek_tablosu is not None:
+        T = kolon.secenek_tablosu
+        for ad in db.execute(select(T.name).where(T.active.is_(True)).order_by(T.sequence, T.id)).scalars():
+            if ad:
+                gorulen.setdefault(str(ad))
+    if veri_sayilari is None:
+        veri_sayilari = liste_sayilari(kaynak, db, tenant_id, [kolon]).get(kolon.anahtar, {})
+    for deger in veri_sayilari:
+        gorulen.setdefault(deger)
+    secenekler = _sayiya_gore_sirala(list(gorulen), veri_sayilari)
+    return secenekler, {d: veri_sayilari.get(d, 0) for d in secenekler}
+
+
+def _bos_kosulu(kolon: Kolon):
+    """Boş kayıt koşulu: metin/liste kolonda `IS NULL OR TRIM(col) = ''`, diğer tiplerde `IS NULL`."""
+    if kolon.tip in ("metin", "liste"):
+        return or_(kolon.ifade.is_(None), func.trim(kolon.ifade) == "")
+    return kolon.ifade.is_(None)
+
+
+def bos_sayilari(kaynak: VeriKaynagi, db: Optional[Session], tenant_id: str) -> dict[str, int]:
+    """Kaynağın boş kayıt sayıları `{kolon_anahtari: n}` — TEK sorgu (plan §7.2): filtrelenebilir,
+    `is_null` izinli, türetilmiş OLMAYAN her kolon için `COUNT(*) FILTER (WHERE <boş>)` (Postgres ve
+    sqlite ≥3.30 — konteyner 3.46; ölçüm 07.09: `SUM(CASE)` 44 ms → FILTER 34 ms, davalar);
+    boş koşulu `_bos_kosulu`. Kaynağın `kisitlar(tenant_id)` uygulanır (tenant + soft-delete, K2).
+    Satır yoksa `0`. `db` yoksa `{}`."""
+    if db is None:
+        return {}
+    kolonlar = [k for k in kaynak.kolonlar.values()
+                if k.filtrelenebilir and not k.turetilmis and "is_null" in k.oplar]
+    if not kolonlar:
+        return {}
+    sorgu = (
+        select(*(func.count().filter(_bos_kosulu(k)).label(k.anahtar) for k in kolonlar))
+        .select_from(kaynak.from_clause)
+        .where(and_(*kaynak.kisitlar(tenant_id)))
+    )
+    satir = db.execute(sorgu).one()
+    return {k.anahtar: int(satir._mapping[k.anahtar]) for k in kolonlar}
+
+
 def _oneri_sorgusu(kaynak: VeriKaynagi, kolon: Kolon, tenant_id: str) -> Select:
     if kolon.oneri_sorgusu is not None:
         return kolon.oneri_sorgusu(tenant_id)
@@ -1039,13 +1153,24 @@ def onerileri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
     return degerler[:ONERI_MAX], len(degerler) > ONERI_MAX
 
 
-def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
-                              tenant_id: str) -> Optional[list[str]]:
+@overload
+def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
+                              *, sayili: Literal[False] = False) -> Optional[list[str]]: ...
+
+
+@overload
+def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
+                              *, sayili: Literal[True]) -> Optional[list[tuple[str, int]]]: ...
+
+
+def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
+                              *, sayili: bool = False) -> Optional[list[str]] | Optional[list[tuple[str, int]]]:
     """`veriden_liste` metin kolonun seçenekleri (plan §5.2): kaynağın tenant + soft-delete kısıtı,
     boş hariç, `GROUP BY` + `COUNT` ile SIKLIĞA göre azalan (eşitlikte ad); DISTINCT sayısı
     `settings.rapor_secenek_esigi`ni aşarsa `None` (→ katalog `metin_icerir` + G137 önerileri).
     İşaretsiz kolonda ya da `db` yoksa `None`. Sorgu `LIMIT eşik+1` ile kesilir — eşik aşımı
-    tüm DISTINCT'i çekmeden anlaşılır."""
+    tüm DISTINCT'i çekmeden anlaşılır. `sayili=True` (G145) aynı sorgunun `(deger, sayi)`
+    çiftlerini verir — katalog `secenek_sayilari`ni EK sorgu olmadan buradan alır."""
     if not kolon.veriden_liste or db is None:
         return None
     esik = max(0, int(settings.rapor_secenek_esigi))
@@ -1061,21 +1186,35 @@ def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Se
     satirlar = db.execute(sorgu).all()
     if len(satirlar) > esik:
         return None
+    if sayili:
+        return [(str(deger), int(sayi)) for deger, sayi in satirlar]
     return [str(deger) for deger, _sayi in satirlar]
 
 
-def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str) -> dict[str, Any]:
+def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
+                    bos_sayilari_kaynak: Optional[Mapping[str, int]] = None,
+                    liste_sayilari_kaynak: Optional[Mapping[str, Mapping[str, int]]] = None) -> dict[str, Any]:
     # Seçenek kaynağı (plan §5.2): sabit `liste` → "sabit"; veriden liste eşik altı → "veri";
     # aksi hâlde yok. Veriden liste eşik altında öneri katmanı KOŞMAZ (ikisi birbirinin yerine).
+    # G145: `secenek_sayilari` sabit listede kaynağın tek GROUP BY sorgusundan, veriden listede
+    # G141 sorgusunun sayısı, türetilmiş listede `None`; `bos_sayisi` kaynağın tek sorgusundan
+    # (`_kaynak_katalogu` ikisini bir kez hesaplayıp dağıtır; verilmezse kolon başına koşar).
     secenekler: Optional[list[str]] = None
+    secenek_sayilari: Optional[dict[str, int]] = None
     secenek_kaynagi: Optional[str] = None
     kontrol = kolon.kontrol
     if kolon.tip == "liste":
-        secenekler, secenek_kaynagi = secenekleri_getir(kolon, db), "sabit"
+        veri_sayilari = liste_sayilari_kaynak.get(kolon.anahtar, {}) if liste_sayilari_kaynak is not None else None
+        secenekler, secenek_sayilari = secenekleri_sayili_getir(kaynak, kolon, db, tenant_id, veri_sayilari)
+        secenek_kaynagi = "sabit"
     else:
-        secenekler = veriden_secenekleri_getir(kaynak, kolon, db, tenant_id)
-        if secenekler is not None:
+        ciftler = veriden_secenekleri_getir(kaynak, kolon, db, tenant_id, sayili=True)
+        if ciftler is not None:
+            secenekler, secenek_sayilari = [d for d, _n in ciftler], dict(ciftler)
             secenek_kaynagi, kontrol = "veri", KONTROLLER["liste"]
+    if bos_sayilari_kaynak is None:
+        bos_sayilari_kaynak = bos_sayilari(kaynak, db, tenant_id)
+    bos_sayisi = bos_sayilari_kaynak.get(kolon.anahtar) if db is not None else None
     if secenekler is None:
         oneriler, kesik = onerileri_getir(kaynak, kolon, db, tenant_id)
     else:
@@ -1095,17 +1234,27 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
         "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],
         "secenekler": secenekler,
+        "secenek_sayilari": secenek_sayilari,
         "secenek_kaynagi": secenek_kaynagi,
         "secenek_etiketleri": dict(kolon.secenek_etiketleri) if kolon.secenek_etiketleri is not None else None,
         "oneriler": oneriler,
         "oneri_kesik": kesik,
+        "bos_sayisi": bos_sayisi,
     }
 
 
+def _kaynak_katalogu(kaynak: VeriKaynagi, db: Optional[Session], tenant_id: str) -> list[dict[str, Any]]:
+    """Kaynağın kolon kataloğu; boş sayıları ve liste sayıları kaynak başına BİR kez (ikişer sorgu)
+    hesaplanır ve kolonlara dağıtılır (G145)."""
+    bos = bos_sayilari(kaynak, db, tenant_id)
+    liste = liste_sayilari(kaynak, db, tenant_id)
+    return [_kolon_katalogu(kaynak, kolon, db, tenant_id, bos, liste) for kolon in kaynak.kolonlar.values()]
+
+
 def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> dict[str, Any]:
-    """`GET /api/reports/catalog` gövdesi (plan §2.4 + §4.2 + §5.2). Öneriler ve veriden
-    seçenekler tenant kurallı olduğundan gövde tenant'a özeldir — route süreç içi 60 sn
-    önbellekler (GROUP BY sorguları da önbelleğin içinde)."""
+    """`GET /api/reports/catalog` gövdesi (plan §2.4 + §4.2 + §5.2 + §7.2). Öneriler, veriden
+    seçenekler, seçenek/boş sayıları tenant kurallı olduğundan gövde tenant'a özeldir — route
+    süreç içi 60 sn önbellekler (GROUP BY ve SUM(CASE) sorguları da önbelleğin içinde)."""
     return {
         "veri_kaynaklari": [
             {
@@ -1113,7 +1262,7 @@ def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> 
                 "etiket": kaynak.etiket,
                 "aciklama": kaynak.aciklama,
                 "varsayilan_kolonlar": list(kaynak.varsayilan_kolonlar),
-                "kolonlar": [_kolon_katalogu(kaynak, kolon, db, tenant_id) for kolon in kaynak.kolonlar.values()],
+                "kolonlar": _kaynak_katalogu(kaynak, db, tenant_id),
                 "hizli_filtreler": [
                     {"alan": hf.alan, "alternatifler": list(hf.alternatifler), "sunum": hf.sunum,
                      "etiket": hf.etiket}
