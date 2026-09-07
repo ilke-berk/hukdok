@@ -87,7 +87,8 @@ index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
 G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
 kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
 
-**Raporlama (G130-G135):** yönetici `/reports`'ta kayıt defterindeki kolon/filtreyle liste kurar →
+**Raporlama (G130-G139):** yönetici `/reports`'ta kaynak kartı + katalogdan gelen filtre şeridiyle
+(operatör seçici yok; kontrol türü/grup/öneri katalogda, 60 sn önbellekli) liste kurar →
 `GET /api/reports/catalog` · `POST /preview` (loglanmaz) · `POST /export` (xlsx/csv; `report_runs`
 satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
 SQL YOK (K1: istemci yalnız `services/rapor/registry.py` anahtarlarını gönderir, sorgu Core ile kurulur,
