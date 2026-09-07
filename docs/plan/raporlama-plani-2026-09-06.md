@@ -505,3 +505,16 @@ kolonu şeridin arama kutusuna çözülür; `secilebilir=false` kolon Kolonlar p
 | G142 | frontend | – (sözleşme §5.2'den) | Arama kutusu, kategori çipleri, veriden çoklu seçim ("Sık"/"Tümü"/"(boş)"), var/yok ve "X yok" anahtarları, "boş olanlar" kutucuklarının kaldırılması, `secilebilir=false` gizleme, şablon/asistan gidiş-dönüş |
 Test-değiştirme izni iki görevde de BAŞTAN yazılı (G138/G139 dersi). Docs: `raporlama.md` güncellemesi
 bir sonraki docs turuna (G143) bırakılır — bu turda kod + test.
+
+**Durum (07.09 gündüz koşusu, `2026-09-07d`): uygulandı — G141 `e1beb64`, G142 `52c04b3`; 0 BLOKE, 39 dk;
+backend 2712 passed, frontend 836 passed.** Koşu sonrası kararlar (planlayıcı, aynı gün, `5a3f2e0`):
+- **Eşik DEĞİŞMEDİ (100):** lokal veride `court` 2.306 farklı değer — çoklu seçim listesi anlamsız; mahkeme
+  "içerir" + öneri (G137) olarak kalır. Eşik 150'ye çekilse de kapanmazdı; ileride il → mahkeme türü gibi
+  kademeli filtre ayrı iş.
+- **`KatalogKolon.aciklama` eklendi** (sözleşmeye ek alan; `arama` kolonlarında yer tutucu metin, diğerlerinde
+  `null`) — G142 zaten isteğe bağlı okuyordu; plan §5.2'de yazılı değildi, uygulamada eklendi.
+- **Deploy sırası:** G141 ve G142 birlikte deploy edilir; frontend `in` içinde `null` gönderiyor, eski backend
+  422 verir.
+- `prompts.py` "türetilmiş filtrelenemez" cümlesi G137'den beri bayattı → düzeltildi (aynı commit).
+- Kalan docs işi G143: `raporlama.md` §2.1 katalog sözleşmesi (yeni alanlar), §8 kullanıcı akışı (arama kutusu,
+  çipler, var/yok, "(boş)"), veriden liste kuralı ve eşik env'i.
