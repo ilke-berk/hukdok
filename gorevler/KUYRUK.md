@@ -15,7 +15,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Zincir: G137 tek backend; G138 G137 ile PARALEL (sözleşme plandan), G139 G138'i bekler (ReportsPage);
      G140 docs en son. Hub dosyalara dokunulmaz. Tahmin 1 gece. -->
 
-- [ ] G137 | bant:backend | bagimli:- | Rapor kataloğu genişlemesi: grup/kontrol/hızlı filtre/kolon seti/öneriler + taraf bağlantılı 4 filtre (EXISTS, tenant kurallı) + 60 sn önbellek
+- [x] G137 | bant:backend | bagimli:- | Rapor kataloğu genişlemesi: grup/kontrol/hızlı filtre/kolon seti/öneriler + taraf bağlantılı 4 filtre (EXISTS, tenant kurallı) + 60 sn önbellek
 - [ ] G138 | bant:frontend | bagimli:- | Rapor ekranı: filtre şeridi + operatörsüz kontroller (tarih/çoklu seçim/combobox) + gruplu alan seçici + otomatik önizleme + başlıktan sıralama + kaynak değişiminde anında yenileme
 - [ ] G139 | bant:frontend | bagimli:G138 | Rapor ekranı: kaynak kartları + Kolonlar yan paneli (gruplar/setler/sıra) + dolu açılış + metin sadeleştirme + responsive
 - [ ] G140 | bant:docs | bagimli:G137,G139 | raporlama.md ikinci tur + plan §4 durum/kanıt şerhi (koddan doğrulanmış)
