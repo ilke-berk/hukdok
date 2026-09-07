@@ -18,7 +18,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G137 | bant:backend | bagimli:- | Rapor kataloğu genişlemesi: grup/kontrol/hızlı filtre/kolon seti/öneriler + taraf bağlantılı 4 filtre (EXISTS, tenant kurallı) + 60 sn önbellek
 - [x] G138 | bant:frontend | bagimli:- | Rapor ekranı: filtre şeridi + operatörsüz kontroller (tarih/çoklu seçim/combobox) + gruplu alan seçici + otomatik önizleme + başlıktan sıralama + kaynak değişiminde anında yenileme
 - [x] G139 | bant:frontend | bagimli:G138 | Rapor ekranı: kaynak kartları + Kolonlar yan paneli (gruplar/setler/sıra) + dolu açılış + metin sadeleştirme + responsive
-- [ ] G140 | bant:docs | bagimli:G137,G139 | raporlama.md ikinci tur + plan §4 durum/kanıt şerhi (koddan doğrulanmış)
+- [x] G140 | bant:docs | bagimli:G137,G139 | raporlama.md ikinci tur + plan §4 durum/kanıt şerhi (koddan doğrulanmış)
 
 ## ÖNCELİK 1 — Raporlama modülü: kullanıcı tanımlı listeler + şablon + indirme logu + AI asistan (2026-09-06, kullanıcı kararı)
 
