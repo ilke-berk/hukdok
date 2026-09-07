@@ -31,7 +31,9 @@ import {
 } from "@/lib/reports";
 import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi } from "@/lib/reportsChat";
 
-const VARSAYILAN_SAYFA_BOYU = 50;
+// Önizleme bir ÖRNEKTİR (kullanıcı kararı 07.09: "5-10 satırlık örnek + toplam kaç satır olduğu yeter");
+// tam liste Excel/CSV'de. Kullanıcı 10/25/50 arasında değiştirebilir (PreviewTable alt çubuğu).
+const VARSAYILAN_SAYFA_BOYU = 10;
 const KOSU_SAYFA_BOYU = 50;
 /** Yazarak girilen değerde (metin/sayı/tarih) önizleme bu kadar bekler; yapısal değişiklik hemen (§4.1 madde 5). */
 export const ONIZLEME_GECIKME_MS = 600;
@@ -233,7 +235,8 @@ const ReportsPage = () => {
     const tanimGecerli = tanimGecerliMi(tanim, kaynak);
     taslakRef.current = tanimGecerli ? tanim : null;
 
-    const sayfaBoyu = Math.min(VARSAYILAN_SAYFA_BOYU, katalog?.limitler.onizleme_sayfa_boyu_max ?? VARSAYILAN_SAYFA_BOYU);
+    const [ornekBoyu, setOrnekBoyu] = useState<number>(VARSAYILAN_SAYFA_BOYU);
+    const sayfaBoyu = Math.min(ornekBoyu, katalog?.limitler.onizleme_sayfa_boyu_max ?? ornekBoyu);
 
     const seciliSablon = useMemo(() => sablonlar.find(s => s.id === seciliSablonId) ?? null, [sablonlar, seciliSablonId]);
     // Koşuya şablon kimliği yalnız taslak şablonla birebir aynıyken yazılır (geçmişte "şablon adı" yanıltmasın).
@@ -259,6 +262,15 @@ const ReportsPage = () => {
             if (reqId === reqIdRef.current) setOnizleniyor(false);
         }
     }, [sayfaBoyu]);
+
+    // Örnek boyu değişince (10/25/50) görünen önizleme 1. sayfadan yenilenir; ilk render'da istek yok.
+    const oncekiSayfaBoyuRef = useRef(sayfaBoyu);
+    useEffect(() => {
+        if (oncekiSayfaBoyuRef.current === sayfaBoyu) return;
+        oncekiSayfaBoyuRef.current = sayfaBoyu;
+        const taslak = taslakRef.current;
+        if (taslak) void onizlemeAl(taslak, 1);
+    }, [sayfaBoyu, onizlemeAl]);
 
     const zamanlayiciyiDurdur = useCallback(() => {
         if (zamanlayiciRef.current) {
@@ -618,6 +630,8 @@ const ReportsPage = () => {
                     hata={onizlemeHatasi}
                     onRetry={onRetry}
                     onSayfa={onSayfa}
+                    sayfaBoyu={sayfaBoyu}
+                    onSayfaBoyu={setOrnekBoyu}
                     gecersiz={!tanimGecerli}
                     siralama={durum.siralama}
                     siralanabilirMi={siralanabilirMi}

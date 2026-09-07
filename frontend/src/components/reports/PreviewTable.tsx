@@ -12,6 +12,9 @@ type PreviewTableProps = {
     hata: string | null;
     onRetry: () => void;
     onSayfa: (sayfa: number) => void;
+    /** Örnek boyu (10/25/50; kullanıcı kararı 07.09: önizleme küçük bir örnek + toplam sayı). */
+    sayfaBoyu?: number;
+    onSayfaBoyu?: (sayfaBoyu: number) => void;
     /** Taslak geçersiz (kolon yok / eksik gelişmiş filtre) — istek gitmez, boş durumda ipucu. */
     gecersiz: boolean;
     /** Etkin sıralama (en fazla 3, sıralı); başlık oku ve sıra numarası buradan. */
@@ -26,6 +29,8 @@ type PreviewTableProps = {
     filtreVar?: boolean;
 };
 
+const ORNEK_BOYU_SECENEKLERI = [10, 25, 50] as const;
+
 const TH_CLS = "text-left px-4 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold whitespace-nowrap";
 const SAGA_YASLI = new Set(["sayi", "para"]);
 
@@ -36,7 +41,7 @@ const SAGA_YASLI = new Set(["sayi", "para"]);
  * Sayaç "N kayıt · M kolon" (§4.1 madde 7); boş sonuçta filtre gevşetme ipucu + Temizle kısayolu.
  */
 export function PreviewTable({
-    cevap, yukleniyor, hata, onRetry, onSayfa, gecersiz, siralama, siralanabilirMi, onSirala,
+    cevap, yukleniyor, hata, onRetry, onSayfa, sayfaBoyu, onSayfaBoyu, gecersiz, siralama, siralanabilirMi, onSirala,
     onFiltreleriTemizle, filtreVar = false,
 }: PreviewTableProps) {
     const toplamSayfa = cevap ? Math.ceil(cevap.toplam / cevap.sayfa_boyu) || 1 : 1;
@@ -49,15 +54,26 @@ export function PreviewTable({
                 <div className="flex items-center gap-3 min-w-0">
                     <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase text-[var(--fg)] font-semibold">
                         <Table2 className="w-3.5 h-3.5 text-[var(--fg-muted)]" />
-                        Önizleme
+                        Örnek
                     </span>
                     {cevap && !hata && (
-                        <span
-                            data-testid="toplam-rozeti"
-                            className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
-                        >
-                            {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
-                        </span>
+                        <>
+                            <span
+                                data-testid="toplam-rozeti"
+                                title="Raporun tamamındaki kayıt sayısı; tablo yalnız bir örnek gösterir, tam liste Excel/CSV'de"
+                                className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
+                            >
+                                {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
+                            </span>
+                            {cevap.toplam > cevap.satirlar.length && (
+                                <span
+                                    data-testid="ornek-ipucu"
+                                    className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[var(--fg-subtle)] tabular-nums"
+                                >
+                                    ilk {cevap.satirlar.length} satır gösteriliyor
+                                </span>
+                            )}
+                        </>
                     )}
                     {gecersiz && !yukleniyor && (
                         <span
@@ -183,9 +199,21 @@ export function PreviewTable({
 
             {cevap && !hata && cevap.toplam > 0 && (
                 <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)] bg-[var(--bg)]">
-                    <Eyebrow>
-                        Sayfa boyu {cevap.sayfa_boyu}
-                    </Eyebrow>
+                    <label className="inline-flex items-center gap-2">
+                        <Eyebrow>Örnek boyu</Eyebrow>
+                        <select
+                            aria-label="Örnek boyu"
+                            data-testid="ornek-boyu"
+                            value={sayfaBoyu ?? cevap.sayfa_boyu}
+                            disabled={!onSayfaBoyu || yukleniyor}
+                            onChange={e => onSayfaBoyu?.(Number(e.target.value))}
+                            className="h-7 px-2 font-mono text-[11px] tabular-nums border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)]"
+                        >
+                            {ORNEK_BOYU_SECENEKLERI.map(n => (
+                                <option key={n} value={n}>{n} satır</option>
+                            ))}
+                        </select>
+                    </label>
                     <div className="flex items-center gap-2">
                         <FlowButton
                             variant="ghost"

@@ -108,7 +108,7 @@ const ONIZLEME = {
     satirlar: [{ tracking_no: "2025/12", subject: "Tazminat" }],
     toplam: 3,
     sayfa: 1,
-    sayfa_boyu: 50,
+    sayfa_boyu: 10,
 };
 
 const VARSAYILAN_TANIM = { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] };
@@ -429,7 +429,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(toastMocks.success).toHaveBeenCalledWith("Asistan tanımı oluşturucuya uygulandı");
         // Uygulanan tanım kendiliğinden önizlendi (sıralama dahil); bayat rozeti yok
         expect(onizlemeler()).toHaveLength(2);
-        expect(sonOnizleme()).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 50 });
+        expect(sonOnizleme()).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         // Eylem yoktu: export yok
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
@@ -529,7 +529,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
 
         const prev = onizlemeler();
         expect(prev).toHaveLength(2); // açılış + asistan
-        expect(govde(prev[1])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 50 });
+        expect(govde(prev[1])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();

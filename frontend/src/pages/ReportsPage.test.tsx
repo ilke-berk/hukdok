@@ -127,7 +127,7 @@ const ONIZLEME = {
     ],
     toplam: 120,
     sayfa: 1,
-    sayfa_boyu: 50,
+    sayfa_boyu: 10,
 };
 
 const MUVEKKIL_ONIZLEME = {
@@ -135,7 +135,7 @@ const MUVEKKIL_ONIZLEME = {
     satirlar: [{ name: "Ayşe Yılmaz" }],
     toplam: 1,
     sayfa: 1,
-    sayfa_boyu: 50,
+    sayfa_boyu: 10,
 };
 
 const VARSAYILAN_TANIM = { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] };
@@ -286,7 +286,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
 
         // Otomatik önizleme: tek istek, varsayılan tanım, tablo dolu — kullanıcı hiçbir şeye basmadı
         expect(previewCagrilari()).toHaveLength(1);
-        expect(sonPreviewGovdesi()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 50 });
+        expect(sonPreviewGovdesi()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
         expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
 
@@ -448,7 +448,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
                 siralama: [{ alan: "opening_date", yon: "desc" }],
             },
             sayfa: 1,
-            sayfa_boyu: 50,
+            sayfa_boyu: 10,
         });
         expect($("th[aria-sort='descending']").textContent).toContain("Açılış Tarihi");
 
@@ -595,7 +595,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         vi.useFakeTimers();
         sunucuKur();
         await render();
-        expect(container.textContent).toContain("1 / 3");
+        expect(container.textContent).toContain("1 / 12");   // 120 kayıt / örnek boyu 10
 
         // Taslağı yazarak değiştir (600 ms bekliyor) — sayfa değişimi yine önizlenen tanımla gitmeli
         yaz(byLabel<HTMLInputElement>("Konu içerir"), "Taz");
@@ -604,7 +604,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         const govde = sonPreviewGovdesi();
         expect(govde.sayfa).toBe(2);
         expect(govde.tanim).toEqual(VARSAYILAN_TANIM);
-        expect(container.textContent).toContain("2 / 3");
+        expect(container.textContent).toContain("2 / 12");
         expect(butonBul("Geri").disabled).toBe(false);
 
         // Süre dolunca taslak sayfa 1'den önizlenir

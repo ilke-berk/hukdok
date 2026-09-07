@@ -109,7 +109,7 @@ const ONIZLEME = {
     satirlar: [{ tracking_no: "2025/12", subject: "Tazminat" }],
     toplam: 3,
     sayfa: 1,
-    sayfa_boyu: 50,
+    sayfa_boyu: 10,
 };
 
 const KENDI_SABLON = {
