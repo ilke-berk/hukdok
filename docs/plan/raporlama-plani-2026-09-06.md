@@ -516,5 +516,53 @@ backend 2712 passed, frontend 836 passed.** Koşu sonrası kararlar (planlayıc�
 - **Deploy sırası:** G141 ve G142 birlikte deploy edilir; frontend `in` içinde `null` gönderiyor, eski backend
   422 verir.
 - `prompts.py` "türetilmiş filtrelenemez" cümlesi G137'den beri bayattı → düzeltildi (aynı commit).
-- Kalan docs işi G143: `raporlama.md` §2.1 katalog sözleşmesi (yeni alanlar), §8 kullanıcı akışı (arama kutusu,
-  çipler, var/yok, "(boş)"), veriden liste kuralı ve eşik env'i.
+- Kalan docs işi G145: `raporlama.md` §2.1 katalog sözleşmesi (yeni alanlar), §8 kullanıcı akışı (arama kutusu,
+  çipler, var/yok, "(boş)"), veriden liste kuralı ve eşik env'i, asistan-önde düzen ve favori önerisi (§6).
+
+---
+
+## 6. Dördüncü tur — asistan ön planda + favori önerisi (2026-09-07 gündüz, kullanıcı kararı; G143-G144)
+
+**Kullanıcı isteği:** "AI asistan daha ön planda olsun; buton yerine göze çarpan, kullanıcıyı işini onunla
+yapmaya teşvik eden bir format. Kullanıcı seçince favori format tipini '…' adıyla ekleyeyim mi diye sorsun,
+evet derse kaydetsin." Gündüz ayrıca uygulandı (kuyruksuz): kaynak kartları minimal (`25403e7`), "Filtreler"
+etiketi/sayaç, "Örnek" etiketi, "ilk N satır" notu, kolon paneli alt açıklaması kaldırıldı (`86e2df4`).
+Backend değişikliği YOK (asistan `/chat` ve şablon CRUD uçları yeter).
+
+### 6.1 Asistan-önde düzen (G143)
+
+1. Rapor sekmesinin EN ÜSTÜNE (kaynak kartlarının üstü) **AssistantBar**: tam genişlik, göze çarpan kart
+   (marka rengi vurgulu kenar), tek satır girdi "Ne listelemek istiyorsunuz? Yazın, asistan raporu hazırlasın…",
+   gönder düğmesi (Enter gönderir), altında örnek istem çipleri (`ORNEK_ISTEMLER`, seçili kaynağa göre 3-4).
+   Sağ altta küçük "veya aşağıdan seçin ↓" notu. Anahtar kapalıysa (`rapor_asistani=false` ya da 409) satır
+   HİÇ görünmez; araç çubuğundaki eski "Asistan" düğmesi ve yan panel KALKAR.
+2. Gönderince **konuşma alanı satırın altında açılır** (inline, kapatılabilir; `AssistantPanel`in mesaj listesi/
+   NDJSON akışı/uyarı şeritleri buraya taşınır — mantık `reportsChat.ts` ve mevcut olay işleme aynen).
+3. **Otomatik uygulama:** asistan geçerli `tanim` döndürdüğünde (eylem olsun olmasın) tanım oluşturucuya uygulanır
+   ve önizleme yenilenir; kullanıcıya kısa toast ("Rapor hazırlandı · N kayıt"). `eylem=indir_*` mevcut yolla
+   (`/export`, `kaynak:"asistan"`). Asistanın soru sorduğu (`tanim=null`) cevaplar konuşma alanında kalır.
+   Uygulamadan önceki tanım "Geri al" bağlantısıyla bir adım geri alınabilir (kullanıcı beklemediği bir
+   değişiklik görürse).
+4. Konuşma geçmişi sayfa ömrü boyunca (K6 aynı); "Sohbeti temizle" korunur.
+
+### 6.2 Favori (şablon) önerisi (G144)
+
+1. **Tetik:** başarılı Excel/CSV indirme sonrası (manuel ya da asistan kaynaklı) mevcut tanım hiçbir kayıtlı
+   şablonla birebir eşleşmiyorsa (`ayniTanim`) araç çubuğunun altında **FavoriOnerisi** kartı çıkar:
+   "Bu formatı favorilere **'<önerilen ad>'** adıyla ekleyeyim mi?" — ad düzenlenebilir girdi, "Ekle" ve
+   "Şimdi değil". Ekle → `createTemplate({ad, aciklama:"", tanim, paylasimli:false})` → toast + şablon
+   çubuğunda seçili olur. "Şimdi değil" → o tanım için (sayfa ömründe) bir daha sorulmaz.
+2. **Ad önerisi** `sablonAdiOner(tanim, katalog)` (saf, `lib/reports.ts`): "<Kaynak etiketi> · <en fazla iki
+   filtre özeti>" (`kontrolOzeti` ile: "Doktor", "Ankara", "2025"), 60 karakter tavanı; aynı ad varsa " (2)".
+3. Öneri kartı asistan konuşma alanıyla ve toast'larla çakışmaz: tek satır, kapatılabilir; "İndirme geçmişi"
+   sekmesinde çıkmaz.
+4. Ek: şablon çubuğunda mevcut tanım kayıtlı değilken kalıcı küçük "☆ Favorilere ekle" bağlantısı (aynı kartı
+   açar) — indirme yapmadan da eklenebilsin.
+
+### 6.3 Görevler
+
+| Görev | Bant | Bağımlı | İçerik |
+| --- | --- | --- | --- |
+| G143 | frontend | – | AssistantBar en üstte + inline konuşma + otomatik uygulama + geri al; araç çubuğu düğmesi ve yan panel kalkar |
+| G144 | frontend | G143 (ReportsPage ortak) | Favori önerisi kartı + ad önerisi + "☆ Favorilere ekle" |
+Test-değiştirme izinleri baştan (ReportsPage*.test, AssistantPanel/AssistantMessage testleri, TemplateBar testi).
