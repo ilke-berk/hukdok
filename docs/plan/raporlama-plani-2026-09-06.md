@@ -340,7 +340,12 @@ GİRMEZ (gürültü; öneriler 300'e kadar değer); yalnız yeni kolonlar girer.
 | mantik | Evet/Hayır | `eq true/false` |
 | (her kontrolde) "boş olanlar" anahtarı | — | `is_null` (değer girdisi kilitlenir) |
 Gelişmiş op'lar (`ne`, `not_null`, tam `eq` metinde) çipin "…" menüsünden; §2.1 sözleşmesi ve sunucu doğrulaması
-DEĞİŞMEZ — bu yalnız sunum katmanıdır. Şablon/asistan tanımı yüklenince filtreler aynı kontrollere geri
+DEĞİŞMEZ — bu yalnız sunum katmanıdır.
+**Uygulamada eklendi (07.09, G137 sonrası):** `KatalogKolon.oplar: [str]` — kolon başına izinli op listesi
+(filtrelenemeyen kolonda `[]`). Taraf kolonlarında (`muvekkil_adlari`, `karsi_taraf_adlari`, `sigortali_adlari`)
+`eq` YOK (yalnız `contains`/`is_null`/`not_null`; EXISTS "herhangi bir taraf içerir"). Frontend kuralı: combobox
+seçimi `eq` kolonun `oplar`ında varsa `eq`, yoksa `contains` gönderir; "…" menüsü yalnız `oplar`daki op'ları
+listeler. Kontrol türü yine `kontrol` alanından gelir. Şablon/asistan tanımı yüklenince filtreler aynı kontrollere geri
 çözülür (op → kontrol; çözülemeyen op "gelişmiş" çipi olarak gösterilir, kaybolmaz).
 
 ### 4.4 Görevler

@@ -218,6 +218,13 @@ def test_katalog_kontrol_tip_eslemesi(env):
     assert davalar["muvekkil_kategorisi"]["kontrol"] == "coklu_secim"
     assert davalar["maddi_tazminat"]["kontrol"] == "sayi_araligi"
     assert davalar["active"]["kontrol"] == "mantik"
+    # Kolon başına izinli op listesi (G138 combobox kararı: `eq` yoksa seçim `contains` gönderir)
+    assert davalar["muvekkil_adlari"]["oplar"] == ["contains", "is_null", "not_null"]
+    assert "eq" in davalar["responsible_lawyer_name"]["oplar"]
+    assert davalar["muvekkil_kategorisi"]["oplar"] == ["eq", "in", "is_null"]
+    for kaynak in kaynaklar.values():
+        for k in kaynak["kolonlar"]:
+            assert (k["oplar"] == []) == (not k["filtrelenebilir"]), (kaynak["anahtar"], k["anahtar"])
     assert davalar["foy_sayisi"]["kontrol"] is None and davalar["belge_sayisi"]["kontrol"] is None
     assert _kolonlar(kaynaklar["belgeler"])["dava_subject"]["kontrol"] is None
 

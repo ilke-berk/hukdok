@@ -887,6 +887,9 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         "filtrelenebilir": kolon.filtrelenebilir,
         "siralanabilir": kolon.siralanabilir,
         "turetilmis": kolon.turetilmis,
+        # Kolon başına izinli op'lar (taraf kolonlarında tip tablosunun alt kümesi, ör. `eq` yok):
+        # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
+        "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],
         "secenekler": secenekleri_getir(kolon, db) if kolon.tip == "liste" else None,
         "oneriler": oneriler,
         "oneri_kesik": kesik,

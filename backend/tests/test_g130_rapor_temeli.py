@@ -163,7 +163,7 @@ def test_katalog_sekli(env):
         assert kaynak["varsayilan_kolonlar"]
         for k in kaynak["kolonlar"]:
             assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
-                              "turetilmis", "secenekler", "oneriler", "oneri_kesik"}
+                              "turetilmis", "oplar", "secenekler", "oneriler", "oneri_kesik"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]
             if k["tip"] == "liste":
