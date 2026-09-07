@@ -566,3 +566,59 @@ Backend değişikliği YOK (asistan `/chat` ve şablon CRUD uçları yeter).
 | G143 | frontend | – | AssistantBar en üstte + inline konuşma + otomatik uygulama + geri al; araç çubuğu düğmesi ve yan panel kalkar |
 | G144 | frontend | G143 (ReportsPage ortak) | Favori önerisi kartı + ad önerisi + "☆ Favorilere ekle" |
 Test-değiştirme izinleri baştan (ReportsPage*.test, AssistantPanel/AssistantMessage testleri, TemplateBar testi).
+
+**Durum (07.09 gündüz koşusu `2026-09-07e`): uygulandı — G143 `eefdf81`, G144 `fd96c78`; 0 BLOKE, 45 dk;
+frontend 873 passed.**
+
+---
+
+## 7. Beşinci tur — seçenek sayıları, veriye göre sıralama, "Boş" birinci sınıf seçenek (2026-09-07 gündüz, kullanıcı kararı; G145-G146)
+
+**Kullanıcı bulgusu (kategori çipleri ekran görüntüsü):** "(boş) neden parantez içinde; sıralama iyi değil;
+olmayanlar seçilebilsin, ileride veriler doldurulabilir; boş olanları seçme seçeneği çok hoşuma gitti ama
+yetersiz." Ayrıca "E-postası yok" ve "Cep telefonu yok" anahtarları ayrı hücrelerde, biri tek başına satıra
+düşüyor.
+
+### 7.1 Hedef
+
+1. **Her seçenekte kayıt sayısı** rozeti (Doktor 1.443 · Bireysel 423 · …), çipler ve açılır listeler kayıt
+   sayısına göre azalan sırada; **sıfır kayıtlı seçenekler en sonda, soluk ama seçilebilir** (ileride veri
+   dolunca kendiliğinden öne geçer). Sabit listeler (Durum, Kategori…) de sayılır.
+2. **"Boş" birinci sınıf seçenek:** parantezsiz "Boş" etiketi, kendi stili (italik + ayırıcı çizgi), yanında o
+   alanda boş olan kayıt sayısı; her çoklu seçimde ve çip satırında.
+3. **Boş seçimi her kontrolde:** tarih aralığı, tutar aralığı ve metin/arama kontrollerinde de "Boş olanlar"
+   küçük bir çip olarak (yan kutucuk değil, kontrolün içinde/yanında tek tık) — `is_null`; seçiliyken aralık
+   girdileri kilitli.
+4. **"X yok" anahtarları tek hücrede:** `bos_anahtari` sunumlu hızlı filtreler "Eksik bilgi" başlığı altında
+   yan yana kutucuklar (e-postası yok · cep telefonu yok · …), her biri sayı rozetli.
+
+### 7.2 Sözleşme genişlemesi (G145 — DONDU; G146 paralel)
+
+- `KatalogKolon.secenek_sayilari: {deger: n} | null` — `secenekler` dolu her kolonda (sabit ya da veriden),
+  kaynağın `kisitlar(tenant_id)` ile GROUP BY; sabit listede veride hiç geçmeyen değer `0`. Veriden listede
+  zaten hesaplanan sayı kullanılır (ek sorgu yok). `secenekler` sırası: **sayıya göre azalan**, eşitlikte sabit
+  listenin kendi sırası / alfabetik; sıfırlılar sonda.
+- `KatalogKolon.bos_sayisi: int | null` — filtrelenebilir, `is_null` izinli her kolonda o alanda NULL/boş kayıt
+  sayısı; kaynak başına TEK sorgu (`SELECT COUNT(*) FILTER (WHERE col IS NULL) …` — sqlite'ta `SUM(CASE …)`;
+  metin kolonda boş string de boş sayılır). Türetilmiş kolonlarda `null` (hesaplanmaz).
+- Katalog önbelleği (60 sn, tenant) hepsini kapsar; G145 raporu lokalde katalog süresini ölçer (hedef < 300 ms).
+- Asistan katalog metnine sayılar GİRMEZ.
+- Sözleşme dışı değişiklik yok; `/preview`/`/export` aynı.
+
+### 7.3 Frontend kuralları (G146)
+
+| yer | kural |
+| --- | --- |
+| ChipSelect / çoklu seçim listesi | seçenek etiketi + küçük sayı rozeti; sıra katalogdan (değiştirilmez); sayı 0 → soluk (`opacity-60`), yine tıklanır, rozet "0" |
+| "Boş" seçeneği | ayrı çip/satır: etiket **Boş**, italik, önünde ince ayırıcı; rozet `bos_sayisi`; `bos_sayisi=0` iken de görünür (soluk) |
+| tarih/sayı/metin kontrolü | girdinin sağında "Boş" çipi (toggle) → `is_null`; seçiliyken girdiler kilitli; çip özeti "boş" |
+| `bos_anahtari` yuvaları | tek "Eksik bilgi" hücresinde yan yana; her kutucuk "<etiket> · N" |
+| Sık/Tümü bölümü | "Sık" = katalog ilk 8 (zaten sıklık sıralı); 0'lılar yalnız "Tümü"de |
+
+### 7.4 Görevler
+
+| Görev | Bant | Bağımlı | İçerik |
+| --- | --- | --- | --- |
+| G145 | backend | – | `secenek_sayilari` + sıklık sırası (sabit listeler dahil) + `bos_sayisi` (kaynak başına tek sorgu) + önbellek + ölçüm |
+| G146 | frontend | – (sözleşme §7.2'den) | Sayı rozetleri, sıfırlılar soluk sonda, "Boş" birinci sınıf seçenek (parantezsiz), her kontrolde boş çipi, "Eksik bilgi" hücresi |
+Docs turu G147: `raporlama.md` §2.1/§8 (§5, §6, §7 birlikte).

@@ -3,6 +3,17 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Raporlama beşinci tur: seçenek sayıları + sıralama + "Boş" birinci sınıf (2026-09-07 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md §7. Kullanıcı (kategori çipleri): "(boş) neden parantez
+     içinde; sıralama iyi değil; olmayanlar seçilebilsin, ileride veri dolar; boş seçeneği çok iyi ama
+     yetersiz". Backend katalog: secenek_sayilari + sıklık sırası + bos_sayisi (kaynak başına tek sorgu);
+     frontend: rozetler, sıfırlılar soluk sonda, Boş çipi her kontrolde, Eksik bilgi hücresi.
+     G145 ∥ G146 (sözleşme plandan). Test-değiştirme izinleri baştan. Docs G147 sonra. -->
+
+- [ ] G145 | bant:backend | bagimli:- | Katalog: secenek_sayilari + sıklık sırası (sabit listeler dahil, sıfırlılar sonda) + bos_sayisi (kaynak başına tek sorgu) + ölçüm
+- [ ] G146 | bant:frontend | bagimli:- | Şerit: sayı rozetleri + sıfırlılar soluk/sonda + "Boş" parantezsiz birinci sınıf seçenek + tarih/sayı/metinde boş çipi + "Eksik bilgi" hücresi
+
 ## ÖNCELİK 1 — Raporlama dördüncü tur: asistan ön planda + favori önerisi (2026-09-07 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md §6. Kullanıcı: "AI asistan daha ön planda, buton yerine
