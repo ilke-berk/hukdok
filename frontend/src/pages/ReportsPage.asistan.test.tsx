@@ -5,6 +5,7 @@
 // `eylem=null` olsa da; bayat rozeti yok); `eylem:"indir_xlsx"` → otomatik uygulama + `/export`
 // `kaynak:"asistan"`; `eylem:"onizle"` → önizleme; `warning` şerit; `failed` error_kod ipucu
 // (tanınmayan → analysis_error); 409 → şerit + düğme pasif; Enter/Shift+Enter.
+// G139: Asistan düğmesi araç çubuğunda; kaynak kartla, kolonlar yan panelde (kanıt: önizleme gövdesi + "Kolonlar (N)").
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -279,10 +280,27 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         return el;
     };
     const panel = () => $("[data-testid='asistan-paneli']");
-    const seciliKolonlar = () => Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
     const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
     const onizlemeler = () => cagrilar("/api/reports/preview", "POST");
     const sonOnizleme = () => govde(onizlemeler().at(-1)!);
+    /** G139: kaynak kartla seçilir (`role=radio` + `aria-checked`). */
+    const seciliKaynak = () => container.querySelector("[data-kaynak][aria-checked='true']")?.getAttribute("data-kaynak") ?? null;
+    /**
+     * G139: kolon listesi ana ekranda durmaz — seçili kolonların kanıtı SON önizleme gövdesi
+     * (uygulanan tanım kendiliğinden önizlenir) + "Kolonlar (N)" düğme metni.
+     */
+    const seciliKolonlar = () => {
+        const kolonlar = sonOnizleme().tanim.kolonlar as string[];
+        expect($("[data-testid='kolon-dugmesi']").textContent?.trim()).toBe(`Kolonlar (${kolonlar.length})`);
+        return kolonlar;
+    };
+    /** Kolon checkbox'ları yan panelde (Radix portal → document.body); açıp paneli döndürür. */
+    async function kolonPaneliAc(): Promise<ParentNode> {
+        await tikla($("[data-testid='kolon-dugmesi']"));
+        const p = document.body.querySelector("[data-testid='kolon-paneli']");
+        if (!p) throw new Error("kolon paneli açılmadı");
+        return p;
+    }
 
     function yaz(el: HTMLTextAreaElement, value: string) {
         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
@@ -324,10 +342,10 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(butonVar("Asistan")).toBe(false);
         expect(container.querySelector("[data-testid='asistan-paneli']")).toBeNull();
 
-        // Açılış önizlemesi geldi; kolon değişimi hemen yeniden önizler
+        // Açılış önizlemesi geldi; kolon değişimi (yan panel) hemen yeniden önizler
         expect(onizlemeler()).toHaveLength(1);
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
-        await tikla(byLabel("Durum"));
+        await tikla(byLabel("Durum", await kolonPaneliAc()));
         expect(onizlemeler()).toHaveLength(2);
         expect(sonOnizleme().tanim.kolonlar).toEqual(["tracking_no", "subject", "status"]);
     });
@@ -338,7 +356,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
 
         expect(butonVar("Asistan")).toBe(false);
         expect(toastMocks.error).not.toHaveBeenCalled();
-        expect(container.querySelector("#rapor-kaynak")).not.toBeNull();
+        expect(seciliKaynak()).toBe("davalar");
     });
 
     it("anahtar açıkken düğme görünür; tıklayınca panel + 3 örnek istem; çip girdiye yazılır; kapat düğmesi", async () => {
@@ -401,7 +419,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
 
         await tikla(butonBul("Oluşturucuya uygula", asistan));
 
-        expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("davalar");
+        expect(seciliKaynak()).toBe("davalar");
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
         // Filtre şeride çözüldü (status eq Derdest → çoklu seçim çipi); operatör seçici yok
         expect(cipler()).toEqual(["DurumDerdest"]);
@@ -495,7 +513,7 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(toastMocks.error).toHaveBeenCalledWith("Rapor satır tavanını aşıyor", expect.objectContaining({ description: expect.stringContaining("limit") }));
         // Kaynak değişti (davalar → muvekkiller) — asistan uygulamasında onay SORULMAZ
         expect(confirmMock.fn).not.toHaveBeenCalled();
-        expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("muvekkiller");
+        expect(seciliKaynak()).toBe("muvekkiller");
         expect(seciliKolonlar()).toEqual(["name", "city"]);
         expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
     });
@@ -618,9 +636,9 @@ describe("ReportsPage asistan paneli (G135/G138)", () => {
         expect(butonBul("Asistan").disabled).toBe(true);
         expect(butonBul("Asistan").title).toContain("kapalı");
 
-        // Manuel yol etkilenmez: kolon değişimi hemen önizler
+        // Manuel yol etkilenmez: kolon değişimi (yan panel) hemen önizler
         expect(onizlemeler()).toHaveLength(1);
-        await tikla(byLabel("Durum"));
+        await tikla(byLabel("Durum", await kolonPaneliAc()));
         expect(onizlemeler()).toHaveLength(2);
     });
 

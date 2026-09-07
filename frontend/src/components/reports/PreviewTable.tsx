@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Loader2, Table2 } from "lucide-react";
 import type { OnizlemeCevabi, Siralama } from "@/lib/reports";
 import { hucreBicimle } from "@/lib/reports";
@@ -21,27 +20,31 @@ type PreviewTableProps = {
     siralanabilirMi: (anahtar: string) => boolean;
     /** Başlık tıklaması: yok → artan → azalan → kaldır (builderState.siralamaDongusu). */
     onSirala: (anahtar: string) => void;
-    /** Araç çubuğunun sağ yuvası — G134 indirme düğmeleri (ExportButtons). */
-    araclar?: ReactNode;
+    /** Boş sonuçta "Filtreleri temizle" kısayolu — şeridi boşaltır (G139); verilmezse kısayol çıkmaz. */
+    onFiltreleriTemizle?: () => void;
+    /** Etkin filtre var mı — boş sonuç mesajı ve kısayol buna göre (filtresiz boş kaynakta "gevşetin" denmez). */
+    filtreVar?: boolean;
 };
 
 const TH_CLS = "text-left px-4 py-2.5 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold whitespace-nowrap";
 const SAGA_YASLI = new Set(["sayi", "para"]);
 
 /**
- * Önizleme tablosu (sağ sütun): başlıklar katalog etiketiyle, tarih dd.MM.yyyy, para tr-TR,
+ * Önizleme tablosu (tam genişlik, G139): başlıklar katalog etiketiyle, tarih dd.MM.yyyy, para tr-TR,
  * `null` "—"; sayfalayıcı CaseList kalıbı. G138: önizleme otomatiktir — başlıkta "güncelleniyor…"
  * durumu, "bayat" rozeti yok; `siralanabilir` başlıklar tıklanarak sıralanır (§4.1 madde 4).
+ * Sayaç "N kayıt · M kolon" (§4.1 madde 7); boş sonuçta filtre gevşetme ipucu + Temizle kısayolu.
  */
 export function PreviewTable({
-    cevap, yukleniyor, hata, onRetry, onSayfa, gecersiz, siralama, siralanabilirMi, onSirala, araclar,
+    cevap, yukleniyor, hata, onRetry, onSayfa, gecersiz, siralama, siralanabilirMi, onSirala,
+    onFiltreleriTemizle, filtreVar = false,
 }: PreviewTableProps) {
     const toplamSayfa = cevap ? Math.ceil(cevap.toplam / cevap.sayfa_boyu) || 1 : 1;
     const siraOf = (anahtar: string) => siralama.findIndex(s => s.alan === anahtar);
 
     return (
         <div className="flex flex-col">
-            {/* Araç çubuğu */}
+            {/* Tablo başlığı */}
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]">
                 <div className="flex items-center gap-3 min-w-0">
                     <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase text-[var(--fg)] font-semibold">
@@ -53,7 +56,7 @@ export function PreviewTable({
                             data-testid="toplam-rozeti"
                             className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
                         >
-                            Toplam {cevap.toplam.toLocaleString("tr-TR")} kayıt
+                            {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
                         </span>
                     )}
                     {gecersiz && !yukleniyor && (
@@ -77,9 +80,6 @@ export function PreviewTable({
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    {araclar}
-                </div>
             </div>
 
             {hata ? (
@@ -98,9 +98,16 @@ export function PreviewTable({
                     </p>
                 </div>
             ) : cevap.satirlar.length === 0 ? (
-                <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
+                <div data-testid="bos-sonuc" className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
                     <Table2 className="w-9 h-9 opacity-30" />
-                    <p className="text-[13px]">Bu kriterlere uyan kayıt yok.</p>
+                    <p className="text-[13px]">
+                        {filtreVar ? "Bu filtrelerle kayıt yok — filtreleri gevşetin." : "Bu kaynakta kayıt yok."}
+                    </p>
+                    {filtreVar && onFiltreleriTemizle && (
+                        <FlowButton variant="secondary" size="sm" onClick={onFiltreleriTemizle}>
+                            Filtreleri temizle
+                        </FlowButton>
+                    )}
                 </div>
             ) : (
                 <div className={`overflow-x-auto ${yukleniyor ? "opacity-60" : ""}`}>

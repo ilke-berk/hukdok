@@ -14,7 +14,9 @@ veriyi görmez, sorgu çalıştırmaz. **Test aşamasında yalnız yöneticiler*
 `Depends(get_current_tenant)` (`backend/dependencies.py:71`) ile korunur.
 
 ```
-Rapor Oluşturucu (frontend/src/components/reports/ReportBuilder.tsx)
+Rapor sekmesi (frontend/src/pages/ReportsPage.tsx — G139: kaynak kartları SourceCards.tsx → filtre şeridi
+QuickFilters.tsx → araç çubuğu: "Kolonlar (N)" yan paneli ColumnSheet.tsx + şablon çubuğu + Excel/CSV + Asistan
+→ tam genişlik PreviewTable.tsx; ReportBuilder.tsx KALDIRILDI)
    │ GET /api/reports/catalog ──▶ registry.katalog()  (kaynaklar · kolonlar · tipler · seçenekler · limitler)
    │ POST /api/reports/preview ─▶ motor.onizle()      (sayfalı, LOGLANMAZ)
    │ POST /api/reports/export ──▶ COUNT → 413? → report_runs satırı → dosya <RAPOR_CIKTI_DIZINI>/<run_id>-<slug>.<ext>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, GripVertical, Search, X } from "lucide-react";
 import {
     DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
@@ -8,7 +8,7 @@ import {
     SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { KatalogKolon } from "@/lib/reports";
+import type { KatalogKolon, KolonSeti } from "@/lib/reports";
 import { TANIM_LIMITLERI } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { ICON_BTN_CLS, INPUT_CLS, LINK_BTN_CLS } from "./ui";
@@ -16,23 +16,47 @@ import { ICON_BTN_CLS, INPUT_CLS, LINK_BTN_CLS } from "./ui";
 type ColumnPickerProps = {
     kolonlar: KatalogKolon[];
     secili: string[];
+    /** Kaynağın varsayılan kolonları — katalogda "Temel" seti yoksa o adla ilk set olur. */
     varsayilan: string[];
+    /** Katalog `kolon_setleri` (§4.2); tık = seçimi setle DEĞİŞTİRİR. */
+    setler: KolonSeti[];
     onChange: (next: string[]) => void;
 };
 
-const TIP_KISA: Record<KatalogKolon["tip"], string> = {
-    metin: "abc", liste: "liste", tarih: "tarih", sayi: "123", para: "₺", mantik: "e/h",
+const TIP_ETIKETI: Record<KatalogKolon["tip"], string> = {
+    metin: "metin", liste: "liste", tarih: "tarih", sayi: "sayı", para: "para", mantik: "evet/hayır",
 };
 
+const TEMEL_SET_ADI = "Temel";
+
+/** Sıra bağımsız aynı küme mi (set rozeti "seçili" vurgusu için). */
+function ayniKume(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const s = new Set(a);
+    return b.every(k => s.has(k));
+}
+
 /**
- * Katalog kolonları (arama + checkbox) ve seçilenlerin sıralı listesi (sürükle-bırak
- * dnd-kit + ↑↓ düğmeleri: klavye/erişilebilirlik ve jsdom testi için ikinci yol).
- * Seçim sırası = rapordaki kolon sırası (§2.1 "kolonlar sıralıdır").
+ * Kolon seçici (G133 → G139 yan panel gövdesi): üstte hazır setler (`kolon_setleri`, "Temel" =
+ * varsayılan), arama, `grup` başlıklı checkbox listesi (grup başlığında "tümünü seç"), altta
+ * seçilenlerin sıralı listesi (dnd-kit + ↑↓: klavye/erişilebilirlik ve jsdom testi için ikinci yol).
+ * Tip rozeti YOK — tip yalnız satırın `title` ipucunda. Seçim sırası = rapordaki kolon sırası
+ * (§2.1 "kolonlar sıralıdır"); set tıklaması sırayı setin sırasına çeker.
  */
-export function ColumnPicker({ kolonlar, secili, varsayilan, onChange }: ColumnPickerProps) {
+export function ColumnPicker({ kolonlar, secili, varsayilan, setler, onChange }: ColumnPickerProps) {
     const [arama, setArama] = useState("");
 
-    const etiketOf = useMemo(() => new Map(kolonlar.map(k => [k.anahtar, k])), [kolonlar]);
+    const kolonOf = useMemo(() => new Map(kolonlar.map(k => [k.anahtar, k])), [kolonlar]);
+
+    // Katalogdaki setler (geçersiz anahtarlar düşer); "Temel" yoksa varsayılan kolonlarla başa eklenir.
+    const hazirSetler = useMemo(() => {
+        const temiz = setler
+            .map(s => ({ ad: s.ad, kolonlar: s.kolonlar.filter(k => kolonOf.has(k)) }))
+            .filter(s => s.kolonlar.length > 0);
+        if (temiz.some(s => s.ad === TEMEL_SET_ADI)) return temiz;
+        const temel = varsayilan.filter(k => kolonOf.has(k));
+        return temel.length > 0 ? [{ ad: TEMEL_SET_ADI, kolonlar: temel }, ...temiz] : temiz;
+    }, [setler, varsayilan, kolonOf]);
 
     const gorunen = useMemo(() => {
         const q = arama.trim().toLocaleLowerCase("tr-TR");
@@ -42,11 +66,41 @@ export function ColumnPicker({ kolonlar, secili, varsayilan, onChange }: ColumnP
         );
     }, [kolonlar, arama]);
 
+    // Gruplar katalogdaki ilk görülme sırasıyla; aramada boş kalan grup çıkmaz.
+    const gruplar = useMemo(() => {
+        const sira: string[] = [];
+        const uyeler = new Map<string, KatalogKolon[]>();
+        for (const k of gorunen) {
+            const g = k.grup || "Diğer";
+            if (!uyeler.has(g)) {
+                sira.push(g);
+                uyeler.set(g, []);
+            }
+            uyeler.get(g)!.push(k);
+        }
+        return sira.map(ad => ({ ad, kolonlar: uyeler.get(ad)! }));
+    }, [gorunen]);
+
+    const seciliKume = useMemo(() => new Set(secili), [secili]);
     const tavanDolu = secili.length >= TANIM_LIMITLERI.kolon_max;
 
     const toggle = (anahtar: string) => {
-        if (secili.includes(anahtar)) onChange(secili.filter(k => k !== anahtar));
+        if (seciliKume.has(anahtar)) onChange(secili.filter(k => k !== anahtar));
         else if (!tavanDolu) onChange([...secili, anahtar]);
+    };
+
+    /** Grup başlığı: hepsi seçiliyse grubu kaldır; değilse eksikleri tavana kadar ekle. */
+    const grupToggle = (uyeler: KatalogKolon[]) => {
+        const anahtarlar = uyeler.map(k => k.anahtar);
+        const hepsi = anahtarlar.every(k => seciliKume.has(k));
+        if (hepsi) {
+            const kume = new Set(anahtarlar);
+            onChange(secili.filter(k => !kume.has(k)));
+            return;
+        }
+        const yer = TANIM_LIMITLERI.kolon_max - secili.length;
+        const eksik = anahtarlar.filter(k => !seciliKume.has(k)).slice(0, Math.max(0, yer));
+        if (eksik.length > 0) onChange([...secili, ...eksik]);
     };
 
     const tasi = (index: number, yon: -1 | 1) => {
@@ -70,29 +124,39 @@ export function ColumnPicker({ kolonlar, secili, varsayilan, onChange }: ColumnP
     };
 
     return (
-        <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-                <Eyebrow>Kolonlar</Eyebrow>
-                <div className="flex items-center gap-3">
-                    <button
-                        type="button"
-                        className={LINK_BTN_CLS}
-                        onClick={() => onChange(varsayilan.filter(k => etiketOf.has(k)))}
-                        disabled={varsayilan.length === 0}
-                    >
-                        Varsayılanları seç
-                    </button>
-                    <button
-                        type="button"
-                        className={LINK_BTN_CLS}
-                        onClick={() => onChange([])}
-                        disabled={secili.length === 0}
-                    >
-                        Temizle
-                    </button>
+        <div className="flex flex-col gap-4 min-h-0">
+            {/* Hazır setler */}
+            {hazirSetler.length > 0 && (
+                <div className="flex flex-col gap-2">
+                    <Eyebrow>Hazır setler</Eyebrow>
+                    <div role="group" aria-label="Kolon setleri" className="flex flex-wrap gap-1.5">
+                        {hazirSetler.map(s => {
+                            const aktif = ayniKume(s.kolonlar, secili);
+                            return (
+                                <button
+                                    key={s.ad}
+                                    type="button"
+                                    data-kolon-seti={s.ad}
+                                    aria-pressed={aktif}
+                                    onClick={() => onChange([...s.kolonlar])}
+                                    title={`${s.kolonlar.length} kolon — seçimi bu setle değiştirir`}
+                                    className={[
+                                        "px-2.5 py-1 text-[11.5px] border rounded-[3px] transition-colors",
+                                        aktif
+                                            ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                                            : "border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:border-[var(--fg-muted)]",
+                                    ].join(" ")}
+                                >
+                                    {s.ad}
+                                    <span className="ml-1 font-mono text-[9.5px] tabular-nums opacity-70">{s.kolonlar.length}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
-            </div>
+            )}
 
+            {/* Arama */}
             <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--fg-subtle)] pointer-events-none" />
                 <input
@@ -105,84 +169,142 @@ export function ColumnPicker({ kolonlar, secili, varsayilan, onChange }: ColumnP
                 />
             </div>
 
+            {/* Gruplu liste */}
             <div
                 role="group"
                 aria-label="Katalog kolonları"
-                className="max-h-56 overflow-y-auto border border-[var(--border)] bg-[var(--bg)] divide-y divide-[var(--border)]"
+                className="max-h-[38vh] overflow-y-auto border border-[var(--border)] bg-[var(--bg)]"
             >
-                {gorunen.length === 0 ? (
+                {gruplar.length === 0 ? (
                     <div className="px-3 py-4 text-[12px] text-[var(--fg-subtle)]">Aramaya uyan kolon yok.</div>
                 ) : (
-                    gorunen.map(k => {
-                        const isaretli = secili.includes(k.anahtar);
-                        const kilitli = !isaretli && tavanDolu;
-                        return (
-                            <label
-                                key={k.anahtar}
-                                className={[
-                                    "flex items-center gap-2.5 px-3 py-1.5 text-[12px] cursor-pointer",
-                                    kilitli ? "opacity-50 cursor-not-allowed" : "hover:bg-[var(--bg-elevated)]",
-                                ].join(" ")}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={isaretli}
-                                    disabled={kilitli}
-                                    onChange={() => toggle(k.anahtar)}
-                                    aria-label={k.etiket}
-                                    className="accent-[var(--brand)]"
-                                />
-                                <span className="flex-1 min-w-0 truncate text-[var(--fg)]">{k.etiket}</span>
-                                {k.turetilmis && (
-                                    <span
-                                        title="Türetilmiş kolon — filtrelenemez, sıralanamaz"
-                                        className="font-mono text-[9px] tracking-[0.12em] uppercase text-[var(--fg-subtle)] border border-[var(--border)] px-1"
-                                    >
-                                        türetilmiş
-                                    </span>
-                                )}
-                                <span className="font-mono text-[9.5px] tracking-[0.08em] text-[var(--fg-subtle)] shrink-0">
-                                    {TIP_KISA[k.tip] ?? k.tip}
-                                </span>
-                            </label>
-                        );
-                    })
+                    gruplar.map(g => (
+                        <GrupBolumu
+                            key={g.ad}
+                            ad={g.ad}
+                            kolonlar={g.kolonlar}
+                            seciliKume={seciliKume}
+                            tavanDolu={tavanDolu}
+                            onToggle={toggle}
+                            onGrupToggle={() => grupToggle(g.kolonlar)}
+                        />
+                    ))
                 )}
             </div>
 
+            {/* Seçili · sıra */}
             <div className="flex items-center justify-between">
                 <Eyebrow>Seçili · sıra</Eyebrow>
-                <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--fg-subtle)] tabular-nums">
-                    {secili.length} / {TANIM_LIMITLERI.kolon_max}
-                </span>
+                <div className="flex items-center gap-3">
+                    <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--fg-subtle)] tabular-nums">
+                        {secili.length} / {TANIM_LIMITLERI.kolon_max}
+                    </span>
+                    <button
+                        type="button"
+                        className={LINK_BTN_CLS}
+                        onClick={() => onChange([])}
+                        disabled={secili.length === 0}
+                    >
+                        Temizle
+                    </button>
+                </div>
             </div>
 
             {secili.length === 0 ? (
                 <div className="border border-dashed border-[var(--border)] px-3 py-3 text-[12px] text-[var(--fg-subtle)]">
-                    Henüz kolon seçilmedi — rapor için en az bir kolon gerekir.
+                    Kolon seçilmedi — rapor için en az bir kolon gerekir.
                 </div>
             ) : (
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                    <SortableContext items={secili} strategy={verticalListSortingStrategy}>
-                        <ol aria-label="Seçili kolonlar" className="flex flex-col gap-1">
-                            {secili.map((anahtar, i) => (
-                                <SeciliKolon
-                                    key={anahtar}
-                                    anahtar={anahtar}
-                                    etiket={etiketOf.get(anahtar)?.etiket ?? anahtar}
-                                    sira={i + 1}
-                                    ilk={i === 0}
-                                    son={i === secili.length - 1}
-                                    onYukari={() => tasi(i, -1)}
-                                    onAsagi={() => tasi(i, 1)}
-                                    onKaldir={() => toggle(anahtar)}
-                                />
-                            ))}
-                        </ol>
-                    </SortableContext>
-                </DndContext>
+                <div className="max-h-[30vh] overflow-y-auto">
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                        <SortableContext items={secili} strategy={verticalListSortingStrategy}>
+                            <ol aria-label="Seçili kolonlar" className="flex flex-col gap-1">
+                                {secili.map((anahtar, i) => (
+                                    <SeciliKolon
+                                        key={anahtar}
+                                        anahtar={anahtar}
+                                        etiket={kolonOf.get(anahtar)?.etiket ?? anahtar}
+                                        sira={i + 1}
+                                        ilk={i === 0}
+                                        son={i === secili.length - 1}
+                                        onYukari={() => tasi(i, -1)}
+                                        onAsagi={() => tasi(i, 1)}
+                                        onKaldir={() => toggle(anahtar)}
+                                    />
+                                ))}
+                            </ol>
+                        </SortableContext>
+                    </DndContext>
+                </div>
             )}
         </div>
+    );
+}
+
+type GrupBolumuProps = {
+    ad: string;
+    kolonlar: KatalogKolon[];
+    seciliKume: Set<string>;
+    tavanDolu: boolean;
+    onToggle: (anahtar: string) => void;
+    onGrupToggle: () => void;
+};
+
+/** Bir grup: başlıkta "tümünü seç" (kısmi seçimde indeterminate), altında üyeler. */
+function GrupBolumu({ ad, kolonlar, seciliKume, tavanDolu, onToggle, onGrupToggle }: GrupBolumuProps) {
+    const seciliSayisi = kolonlar.filter(k => seciliKume.has(k.anahtar)).length;
+    const hepsi = seciliSayisi === kolonlar.length;
+    const kismi = seciliSayisi > 0 && !hepsi;
+    const grupRef = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+        if (grupRef.current) grupRef.current.indeterminate = kismi;
+    }, [kismi]);
+
+    return (
+        <section data-kolon-grubu={ad} className="border-b border-[var(--border)] last:border-b-0">
+            <label className="flex items-center gap-2.5 px-3 py-1.5 bg-[var(--bg-elevated)] cursor-pointer sticky top-0">
+                <input
+                    ref={grupRef}
+                    type="checkbox"
+                    checked={hepsi}
+                    disabled={!hepsi && tavanDolu}
+                    onChange={onGrupToggle}
+                    aria-label={`${ad} tümünü seç`}
+                    className="accent-[var(--brand)]"
+                />
+                <span className="flex-1 font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)] font-semibold">
+                    {ad}
+                </span>
+                <span className="font-mono text-[9.5px] tabular-nums text-[var(--fg-subtle)]">
+                    {seciliSayisi}/{kolonlar.length}
+                </span>
+            </label>
+            {kolonlar.map(k => {
+                const isaretli = seciliKume.has(k.anahtar);
+                const kilitli = !isaretli && tavanDolu;
+                const ipucu = `${k.etiket} · ${TIP_ETIKETI[k.tip] ?? k.tip}${k.turetilmis ? " · türetilmiş (filtrelenemez, sıralanamaz)" : ""}`;
+                return (
+                    <label
+                        key={k.anahtar}
+                        title={ipucu}
+                        className={[
+                            "flex items-center gap-2.5 pl-7 pr-3 py-1.5 text-[12px] cursor-pointer",
+                            kilitli ? "opacity-50 cursor-not-allowed" : "hover:bg-[var(--bg-elevated)]",
+                        ].join(" ")}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={isaretli}
+                            disabled={kilitli}
+                            onChange={() => onToggle(k.anahtar)}
+                            aria-label={k.etiket}
+                            className="accent-[var(--brand)]"
+                        />
+                        <span className="flex-1 min-w-0 truncate text-[var(--fg)]">{k.etiket}</span>
+                    </label>
+                );
+            })}
+        </section>
     );
 }
 
