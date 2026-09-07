@@ -38,7 +38,7 @@ export function ColumnSheet({ kaynak, secili, onChange }: ColumnSheetProps) {
                 <Columns3 className="w-3.5 h-3.5" />
                 Kolonlar ({secili.length})
             </button>
-            <SheetContent side="right" className="sm:max-w-lg overflow-y-auto" data-testid="kolon-paneli">
+            <SheetContent side="right" className="sm:max-w-xl overflow-y-auto" data-testid="kolon-paneli">
                 <SheetHeader>
                     <SheetTitle>Kolonlar</SheetTitle>
                     <SheetDescription>

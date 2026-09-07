@@ -124,7 +124,7 @@ export function ColumnPicker({ kolonlar, secili, varsayilan, setler, onChange }:
     };
 
     return (
-        <div className="flex flex-col gap-4 min-h-0">
+        <div className="flex flex-col gap-6 min-h-0">
             {/* Hazır setler */}
             {hazirSetler.length > 0 && (
                 <div className="flex flex-col gap-2">
@@ -296,7 +296,7 @@ function GrupBolumu({ ad, kolonlar, seciliKume, tavanDolu, onToggle, onGrupToggl
                         key={k.anahtar}
                         title={ipucu}
                         className={[
-                            "flex items-center gap-2.5 pl-7 pr-3 py-1.5 text-[12px] cursor-pointer",
+                            "flex items-center gap-2.5 pl-7 pr-3 py-2 text-[12px] cursor-pointer",
                             kilitli ? "opacity-50 cursor-not-allowed" : "hover:bg-[var(--bg-elevated)]",
                         ].join(" ")}
                     >

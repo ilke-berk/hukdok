@@ -23,7 +23,7 @@ const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
-      "fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className,
     )}
     {...props}
@@ -52,7 +52,10 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
       <SheetPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-[var(--bg-elevated)] border-[var(--border)] p-5 shadow-lg transition ease-in-out",
+          // `theme-classic`: portal içeriği Shell'in tema kapsamı DIŞINDA (document.body) açılır;
+          // token'lar (tokens.css) yalnız .theme-classic altında tanımlı — sınıf olmadan zemin
+          // şeffaf kalır (07.09 kullanıcı ekran görüntüsü). `.dark .theme-classic` html'deki dark ile eşleşir.
+          "theme-classic fixed z-50 flex flex-col gap-5 bg-[var(--bg-elevated)] text-[var(--fg)] border-[var(--border)] p-6 shadow-xl transition ease-in-out",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300",
           SIDE_CLS[side],
           className,

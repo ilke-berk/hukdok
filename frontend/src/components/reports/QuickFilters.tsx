@@ -81,7 +81,7 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
     };
 
     return (
-        <div data-testid="filtre-seridi" className="flex flex-col gap-3 px-4 py-3 border-b border-[var(--border)]">
+        <div data-testid="filtre-seridi" className="flex flex-col gap-4 px-5 py-4 border-b border-[var(--border)]">
             <div className="flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
                     <Filter className="w-3 h-3" />
@@ -105,7 +105,7 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
                 </div>
             </div>
 
-            <div className="grid gap-x-3 gap-y-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                 {serit.map(o => {
                     const kolon: KatalogKolon | undefined = kolonOf(o.durum.alan);
                     if (!kolon) return null;
@@ -138,7 +138,7 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
             </div>
 
             {etkin.length > 0 && (
-                <div data-testid="etkin-filtreler" className="flex flex-wrap items-center gap-1.5">
+                <div data-testid="etkin-filtreler" className="flex flex-wrap items-center gap-2 pt-1">
                     {etkin.map(o => {
                         const kolon = kolonOf(o.durum.alan);
                         if (!kolon) return null;

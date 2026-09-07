@@ -547,7 +547,7 @@ const ReportsPage = () => {
             <p className="text-[13px] text-[var(--fg-subtle)]">Rapor kataloğu yükleniyor…</p>
         </HairlineCard>
     ) : (
-        <section data-testid="rapor-sekmesi" className="grid gap-5 min-w-0">
+        <section data-testid="rapor-sekmesi" className="grid gap-7 min-w-0">
             {/* 1. Kaynak kartları */}
             <SourceCards kaynaklar={katalog.veri_kaynaklari} secili={durum.veri_kaynagi} onSec={onKaynakSec} />
 
@@ -565,7 +565,7 @@ const ReportsPage = () => {
                 {/* 3. Araç çubuğu: sol kolonlar + şablon, sağ indirme + asistan */}
                 <div
                     data-testid="arac-cubugu"
-                    className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg)]"
+                    className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5 border-b border-[var(--border)] bg-[var(--bg)]"
                 >
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 flex-1">
                         {kaynak && <ColumnSheet kaynak={kaynak} secili={durum.kolonlar} onChange={kolonlar => durumDegisti({ ...durum, kolonlar })} />}

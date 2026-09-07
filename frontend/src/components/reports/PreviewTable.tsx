@@ -26,7 +26,7 @@ type PreviewTableProps = {
     filtreVar?: boolean;
 };
 
-const TH_CLS = "text-left px-4 py-2.5 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold whitespace-nowrap";
+const TH_CLS = "text-left px-4 py-3 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] font-semibold whitespace-nowrap";
 const SAGA_YASLI = new Set(["sayi", "para"]);
 
 /**
@@ -45,7 +45,7 @@ export function PreviewTable({
     return (
         <div className="flex flex-col">
             {/* Tablo başlığı */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[var(--border)]">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border)]">
                 <div className="flex items-center gap-3 min-w-0">
                     <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase text-[var(--fg)] font-semibold">
                         <Table2 className="w-3.5 h-3.5 text-[var(--fg-muted)]" />
@@ -163,7 +163,7 @@ export function PreviewTable({
                                             <td
                                                 key={k.anahtar}
                                                 className={[
-                                                    "px-4 py-2 text-[12px] align-top whitespace-nowrap max-w-[320px] truncate",
+                                                    "px-4 py-2.5 text-[12px] align-top whitespace-nowrap max-w-[320px] truncate",
                                                     SAGA_YASLI.has(k.tip) ? "text-right tabular-nums" : "",
                                                     k.tip === "tarih" ? "font-mono text-[11px] tabular-nums" : "",
                                                     bos ? "text-[var(--fg-subtle)]" : "text-[var(--fg)]",
