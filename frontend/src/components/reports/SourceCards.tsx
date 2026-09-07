@@ -44,20 +44,16 @@ export function SourceCards({ kaynaklar, secili, onSec }: SourceCardsProps) {
                         onClick={() => onSec(k.anahtar)}
                         title={k.aciklama || k.etiket}
                         className={[
-                            "flex items-start gap-3 text-left px-5 py-4 border rounded-none transition-colors",
-                            "min-w-[220px] shrink-0 lg:min-w-0 lg:shrink",
+                            // Minimal (kullanıcı 07.09): yalnız simge + ad; açıklama `title` ipucunda kalır.
+                            "flex items-center justify-center gap-2.5 px-5 py-3 border rounded-none transition-colors",
+                            "min-w-[160px] shrink-0 lg:min-w-0 lg:shrink",
                             aktif
                                 ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--fg)]"
                                 : "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] hover:border-[var(--fg-muted)] hover:text-[var(--fg)]",
                         ].join(" ")}
                     >
-                        <Simge className={`w-4 h-4 mt-0.5 shrink-0 ${aktif ? "text-[var(--brand)]" : "text-[var(--fg-subtle)]"}`} />
-                        <span className="min-w-0 flex flex-col gap-1">
-                            <span className="font-display text-[15px] tracking-[-0.01em] font-medium leading-tight">{k.etiket}</span>
-                            {k.aciklama && (
-                                <span className="text-[11px] leading-snug text-[var(--fg-subtle)] truncate">{k.aciklama}</span>
-                            )}
-                        </span>
+                        <Simge className={`w-4 h-4 shrink-0 ${aktif ? "text-[var(--brand)]" : "text-[var(--fg-subtle)]"}`} />
+                        <span className="font-display text-[15px] tracking-[-0.01em] font-medium leading-tight">{k.etiket}</span>
                     </button>
                 );
             })}

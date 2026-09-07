@@ -280,8 +280,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(kartlar().map(k => k.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller"]);
         expect(kartlar().map(k => k.getAttribute("role"))).toEqual(["radio", "radio"]);
         expect(seciliKaynak()).toBe("davalar");
-        expect(kartlar()[0].textContent).toContain("Davalar");
-        expect(kartlar()[0].textContent).toContain("Dava kartları");
+        expect(kartlar()[0].textContent?.trim()).toBe("Davalar");   // minimal kart (07.09): açıklama metinde yok
         expect(container.querySelector("#rapor-kaynak")).toBeNull();
 
         // Kolonlar yalnız yan panelde: sayfada liste yok, düğme sayıyı taşır, panel kapalı
@@ -305,14 +304,14 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(container.querySelector("[data-testid='guncelleniyor']")).toBeNull();
 
-        // Sadeleştirme: kaynak açıklaması yalnız kartta (bir kez), tip rozeti hiçbir yerde yok
-        expect(container.textContent?.split("Dava kartları")).toHaveLength(2);
+        // Sadeleştirme (07.09 minimal kart): kaynak açıklaması ekranda hiç yok (yalnız kart title'ı), tip rozeti yok
+        expect(container.textContent).not.toContain("Dava kartları");
         const p = await kolonPaneliAc();
         const panelMetni = (p as Element).textContent ?? "";
         expect(panelMetni).not.toContain("abc");
         expect(panelMetni).not.toContain("123");
         expect(panelMetni).not.toContain("Dava kartları");
-        expect(container.textContent?.split("Dava kartları")).toHaveLength(2);
+        expect(container.textContent).not.toContain("Dava kartları");
         await kolonPaneliKapat();
     });
 

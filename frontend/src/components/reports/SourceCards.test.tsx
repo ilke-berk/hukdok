@@ -54,8 +54,9 @@ describe("SourceCards (G139)", () => {
         expect(kartlar().map(k => k.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller", "belgeler", "foyler"]);
         expect(kartlar().every(k => k.getAttribute("role") === "radio")).toBe(true);
         expect(kartlar().map(k => k.getAttribute("aria-checked"))).toEqual(["false", "false", "true", "false"]);
-        expect(kartlar()[0].textContent).toContain("Davalar");
-        expect(kartlar()[0].textContent).toContain("Dava kartları");
+        // Minimal kart (07.09): metin yalnız etiket; açıklama title ipucunda
+        expect(kartlar()[0].textContent?.trim()).toBe("Davalar");
+        expect(kartlar()[0].textContent).not.toContain("Dava kartları");
         expect(kartlar()[1].textContent?.trim()).toBe("Müvekkiller");
         expect(kartlar()[1].title).toBe("Müvekkiller");
         expect(kartlar()[0].title).toBe("Dava kartları");
