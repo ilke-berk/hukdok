@@ -46,7 +46,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, select
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
@@ -290,12 +290,33 @@ def _taraf_adi_onerileri(kosul: TarafKosulu) -> Callable[[str], Select]:
     return sorgu
 
 
+def _ad_anahtari(ifade):
+    """Taraf adı ↔ müvekkil kartı adı karşılaştırma anahtarı (SQL tarafı): büyük harf + 'İ'→'I'
+    katlaması. `upper`/`replace` hem Postgres hem sqlite'ta var; en_US upper 'İ'yi korur, Türkçe
+    yazımda 'İBRAHİM' ile 'IBRAHIM' eşleşsin diye katlanır. `party_check.normalize_person_name`
+    kadar kapsamlı değil (unvan/diakritik yok) — bilinçli: SQL'de koşmalı, ölçüm 07.09 lokal:
+    1.998 karttan 965'i isimle eşleşiyor, `client_id` ile yalnız 9 taraf satırı bağlı."""
+    # 'ı' da katlanır: Postgres upper('ı')='I' zaten, sqlite (testler) ASCII dışını büyütmez.
+    return func.replace(func.replace(func.upper(func.trim(ifade)), "İ", "I"), "ı", "I")
+
+
+def kart_eslesmesi(P, M):
+    """Taraf satırı ↔ müvekkil kartı bağı: `client_id` doluysa YALNIZ o (isim bakılmaz);
+    boşsa ad anahtarı eşitliği. Veri gerçeği (07.09): 16.192 CLIENT taraf satırından 9'unda
+    `client_id` dolu — yalnız id ile bağ, "Dava Sayısı"nı herkes için 0 gösteriyordu
+    (kullanıcı bulgusu). `routes/clients.py` case-summary hâlâ yalnız id ile (kapsam dışı, NOT)."""
+    return or_(
+        P.client_id == M.id,
+        and_(P.client_id.is_(None), _ad_anahtari(P.name) == _ad_anahtari(M.name)),
+    )
+
+
 def _muvekkil_kategorileri():
     """Seçim ifadesi: CLIENT tarafların (silinmemiş) müvekkil kartı kategorileri birleşik."""
     P, M = models.CaseParty, models.Client
     return (
         select(func.aggregate_strings(M.category, AYRAC))
-        .select_from(P.__table__.join(M.__table__, P.client_id == M.id))
+        .select_from(P.__table__.join(M.__table__, kart_eslesmesi(P, M)))
         .where(and_(P.case_id == models.Case.id, P.party_type == "CLIENT", M.deleted_at.is_(None),
                     M.category.isnot(None)))
         .correlate(models.Case)
@@ -309,7 +330,7 @@ def _muvekkil_kategorisi_filtresi(op: str, deger: Any, atom: AtomKosul):
     P, M = models.CaseParty, models.Client
     varlik = (
         select(P.id)
-        .select_from(P.__table__.join(M.__table__, P.client_id == M.id))
+        .select_from(P.__table__.join(M.__table__, kart_eslesmesi(P, M)))
         .where(and_(P.case_id == models.Case.id, P.party_type == "CLIENT", M.deleted_at.is_(None)))
         .correlate(models.Case)
     )
@@ -529,11 +550,14 @@ def _muvekkil_kisitlari(tenant_id: str) -> list[ColumnElement]:
 
 
 def _dava_sayisi():
+    """Müvekkil kartının (silinmemiş) dava sayısı; bağ `kart_eslesmesi` (id ya da ad anahtarı),
+    yalnız CLIENT taraf satırları (karşı taraf/üçüncü kişi olarak geçtiği davalar sayılmaz)."""
     P = models.CaseParty
     return (
         select(func.count(func.distinct(P.case_id)))
         .select_from(P.__table__.join(models.Case.__table__, P.case_id == models.Case.id))
-        .where(and_(P.client_id == models.Client.id, models.Case.deleted_at.is_(None)))
+        .where(and_(kart_eslesmesi(P, models.Client), P.party_type == "CLIENT",
+                    models.Case.deleted_at.is_(None)))
         .correlate(models.Client)
         .scalar_subquery()
     )

@@ -461,6 +461,42 @@ def test_taraf_contains_ilike_kacisi_motor_yardimcisiyla(env):
     assert "EXISTS" in str(derlenmis).upper()
 
 
+def test_kart_baglari_client_id_yoksa_ad_anahtariyla_kurulur(env):
+    """Kullanıcı bulgusu (07.09): canlı veride 16.192 CLIENT taraf satırından 9'unda `client_id` dolu,
+    bağ fiilen isimle; yalnız id ile bağ "Dava Sayısı"nı herkes için 0 gösteriyordu. Kural
+    (`registry.kart_eslesmesi`): id doluysa YALNIZ id; boşsa ad anahtarı (upper + trim + İ→I)."""
+    with env.db() as db:
+        m_dr = db.query(models.Client).filter_by(name="Dr. Ayşe").one()
+        m_yeni = models.Client(name="İbrahim Yılmaz", tenant_id=T1, category="Doktor")
+        db.add(m_yeni)
+        db.flush()
+        c1 = db.query(models.Case).filter_by(tracking_no="HA.G137.1").one()
+        c6 = db.query(models.Case).filter_by(tracking_no="HA.G137.6").one()
+        db.add_all([
+            # client_id YOK, ad farklı yazımla eşleşir (küçük/büyük + İ/I + boşluk) → sayılır
+            models.CaseParty(case_id=c6.id, name=" ibrahim yilmaz".replace("i", "İ", 1), role="Davalı",
+                             party_type="CLIENT"),
+            # client_id BAŞKA karta bağlı ama adı aynı → isimle SAYILMAZ (id öncelikli)
+            models.CaseParty(case_id=c1.id, client_id=m_dr.id, name="İbrahim Yılmaz", role="Davalı",
+                             party_type="CLIENT"),
+            # aynı ad ama KARŞI taraf → sayılmaz
+            models.CaseParty(case_id=c1.id, name="İbrahim Yılmaz", role="Davacı", party_type="COUNTER"),
+        ])
+        db.commit()
+    env.route.katalog_onbellegini_sifirla()
+    client = env.client()
+    r = _onizle(client, _tanim(kaynak="muvekkiller", kolonlar=("name", "dava_sayisi"),
+                               filtreler=[{"alan": "name", "op": "eq", "deger": "İbrahim Yılmaz"}]))
+    assert r.status_code == 200, r.text
+    assert r.json()["satirlar"] == [{"name": "İbrahim Yılmaz", "dava_sayisi": 1}]
+    # Dava kaynağı: c6'nın müvekkil kategorisi artık isimle bağlanan karttan gelir
+    r = _onizle(client, _tanim(kolonlar=("tracking_no", "muvekkil_kategorisi"),
+                               filtreler=[{"alan": "tracking_no", "op": "eq", "deger": "HA.G137.6"}]))
+    assert r.json()["satirlar"] == [{"tracking_no": "HA.G137.6", "muvekkil_kategorisi": "Doktor"}]
+    r = _onizle(client, _tanim(filtreler=[{"alan": "muvekkil_kategorisi", "op": "eq", "deger": "Doktor"}]))
+    assert {s["tracking_no"] for s in r.json()["satirlar"]} == {"HA.G137.1", "HA.G137.2", "HA.G137.6"}
+
+
 def test_dava_sayisi_hizli_filtresi_karsilastirilir(env):
     """Müvekkiller hızlı filtresi `dava_sayisi` (plan §4.2): COUNT alt sorgusu doğrudan süzülür."""
     client = env.client()
