@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import type { AsistanEylemi, Katalog, RaporTanimi } from "@/lib/reports";
 import {
     ASISTAN_KAPALI_MESAJI, AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
@@ -186,7 +186,6 @@ export function AssistantBar({
         >
             <div className="px-5 py-4 grid gap-3 bg-[var(--brand-soft)]">
                 <div className="flex items-center gap-3">
-                    <Sparkles className="w-5 h-5 text-[var(--brand)] shrink-0" aria-hidden="true" />
                     <input
                         ref={girdiRef}
                         type="text"
