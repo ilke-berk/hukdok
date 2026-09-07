@@ -14,7 +14,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      test-değiştirme izinleri BAŞTAN yazıldı (G138/G139 dersi). Docs turu G143 sonra. Tahmin: 1 koşu. -->
 
 - [x] G141 | bant:backend | bagimli:- | Katalog: veriden kapalı liste (eşik + sıklık), secenek_etiketleri, `in` içinde null, sanal arama kolonu + secilebilir, HizliFiltre.sunum/etiket, müvekkil hızlı filtreleri, asistan "(boş)"
-- [ ] G142 | bant:frontend | bagimli:- | Rapor şeridi: arama kutusu + kategori çipleri + veriden çoklu seçim (Sık/Tümü/(boş)) + var-yok ve "X yok" anahtarları + "boş olanlar" kaldırıldı + secilebilir=false gizli
+- [x] G142 | bant:frontend | bagimli:- | Rapor şeridi: arama kutusu + kategori çipleri + veriden çoklu seçim (Sık/Tümü/(boş)) + var-yok ve "X yok" anahtarları + "boş olanlar" kaldırıldı + secilebilir=false gizli
 
 ## ÖNCELİK 1 — Raporlama ikinci tur: kullanılabilirlik yeniden tasarımı (2026-09-07, kullanıcı kararı)
 
