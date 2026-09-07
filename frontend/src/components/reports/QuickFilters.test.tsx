@@ -154,6 +154,9 @@ describe("QuickFilters (G138)", () => {
     }
     const renderMuvekkil = (baslangic: SeritOgesi[] = kaynakIcinBaslangic(MUVEKKILLER).serit) => render(baslangic, MUVEKKILLER);
 
+    // Minimal (07.09): "Filtreler N" sayacı kalktı; etkin sayısı çip satırından okunur.
+    const etkinCipSayisi = () => container.querySelectorAll("[data-testid='etkin-filtreler'] [data-testid='filtre-cipi']").length;
+
     const sonFiltreler = () => {
         const son = [...kayit].reverse().find(k => "filtreler" in k) as { filtreler: Filtre[]; gecikmeli: boolean } | undefined;
         if (!son) throw new Error("onChange hiç çağrılmadı");
@@ -268,7 +271,7 @@ describe("QuickFilters (G138)", () => {
         tikla(byLabel("Durum: Karar"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "status", op: "in", deger: ["Derdest", "Karar"] }]);
         expect(byLabel<HTMLInputElement>("Durum: Karar").checked).toBe(true);
-        expect($("[data-testid='etkin-filtre-sayisi']").textContent).toBe("1");
+        expect(etkinCipSayisi()).toBe(1);
         expect(cipler()).toEqual(["DurumDerdest, Karar"]);
         // Tik kaldır → tekrar eq
         tikla(byLabel("Durum: Derdest"));
@@ -424,7 +427,7 @@ describe("QuickFilters (G138)", () => {
         tikla($("[data-testid='alan-secici'] [cmdk-item][data-alan='subject']"));
         yaz(byLabel("Konu içerir"), "x");
         expect(sonFiltreler().filtreler).toHaveLength(3);
-        expect($("[data-testid='etkin-filtre-sayisi']").textContent).toBe("3");
+        expect(etkinCipSayisi()).toBe(3);
 
         tikla(butonBul("Filtreleri temizle"));
         expect(sonFiltreler().filtreler).toEqual([]);
@@ -574,7 +577,7 @@ describe("QuickFilters (G138)", () => {
         odakCik(kutu);
         expect(kayit.at(-1)).toEqual({ hemen: true });
         expect(cipler()).toEqual(["Araiçerir \"Ayşe\""]);
-        expect($("[data-testid='etkin-filtre-sayisi']").textContent).toBe("1");
+        expect(etkinCipSayisi()).toBe(1);
         tikla(byLabel("Ara temizle"));
         expect(sonFiltreler()).toEqual({ filtreler: [], gecikmeli: false });
         expect(kutu.value).toBe("");
@@ -615,7 +618,7 @@ describe("QuickFilters (G138)", () => {
         expect(cipler()).toEqual(["E-postaboş"]);
         tikla(byLabel("Cep telefonu yok"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "email", op: "is_null" }, { alan: "mobile_phone", op: "is_null" }]);
-        expect($("[data-testid='etkin-filtre-sayisi']").textContent).toBe("2");
+        expect(etkinCipSayisi()).toBe(2);
         // Çip ×: yuva boş anahtarı olarak kalır (kontrol türü değişmez), kutucuk açılmamış
         tikla(byLabel("E-posta filtresini kaldır"));
         expect(sonFiltreler().filtreler).toEqual([{ alan: "mobile_phone", op: "is_null" }]);

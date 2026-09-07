@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from "react";
-import { Filter } from "lucide-react";
 import type { KatalogKolon, KatalogVeriKaynagi, KontrolDurumu } from "@/lib/reports";
 import { TANIM_LIMITLERI, bosKontrol, kontrolDoluMu } from "@/lib/reports";
 import { FieldPicker } from "./FieldPicker";
@@ -91,16 +90,8 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
 
     return (
         <div data-testid="filtre-seridi" className="flex flex-col gap-4 px-5 py-4 border-b border-[var(--border)]">
-            <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-                    <Filter className="w-3 h-3" />
-                    Filtreler
-                    {etkinSayisi > 0 && (
-                        <span data-testid="etkin-filtre-sayisi" className="px-1 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums">
-                            {etkinSayisi}
-                        </span>
-                    )}
-                </span>
+            {/* Minimal (07.09): "Filtreler" etiketi ve sayaç kalktı; yalnız eylemler sağda. */}
+            <div className="flex items-center justify-end gap-2">
                 <div className="flex items-center gap-3">
                     <FieldPicker kolonlar={eklenebilir} onSec={alanEkle} disabled={tavanDolu} />
                     <button

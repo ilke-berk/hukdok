@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Columns3 } from "lucide-react";
 import type { KatalogVeriKaynagi } from "@/lib/reports";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ColumnPicker } from "./ColumnPicker";
 
 type ColumnSheetProps = {
@@ -39,11 +39,9 @@ export function ColumnSheet({ kaynak, secili, onChange }: ColumnSheetProps) {
                 Kolonlar ({secili.length})
             </button>
             <SheetContent side="right" className="sm:max-w-xl overflow-y-auto" data-testid="kolon-paneli">
+                {/* Minimal (07.09): alt açıklama kalktı; sıra bilgisi seçili listenin numaralarında zaten var. */}
                 <SheetHeader>
-                    <SheetTitle>Kolonlar</SheetTitle>
-                    <SheetDescription>
-                        {kaynak.etiket} · seçim sırası rapordaki kolon sırasıdır.
-                    </SheetDescription>
+                    <SheetTitle>Kolonlar · {kaynak.etiket}</SheetTitle>
                 </SheetHeader>
                 <ColumnPicker
                     kolonlar={kaynak.kolonlar}

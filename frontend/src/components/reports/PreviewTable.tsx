@@ -52,28 +52,15 @@ export function PreviewTable({
             {/* Tablo başlığı */}
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border)]">
                 <div className="flex items-center gap-3 min-w-0">
-                    <span className="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.14em] uppercase text-[var(--fg)] font-semibold">
-                        <Table2 className="w-3.5 h-3.5 text-[var(--fg-muted)]" />
-                        Örnek
-                    </span>
+                    {/* Minimal (07.09): "Örnek" etiketi ve "ilk N satır" notu kalktı; toplam rozeti yeter. */}
                     {cevap && !hata && (
-                        <>
-                            <span
-                                data-testid="toplam-rozeti"
-                                title="Raporun tamamındaki kayıt sayısı; tablo yalnız bir örnek gösterir, tam liste Excel/CSV'de"
-                                className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
-                            >
-                                {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
-                            </span>
-                            {cevap.toplam > cevap.satirlar.length && (
-                                <span
-                                    data-testid="ornek-ipucu"
-                                    className="font-mono text-[9.5px] tracking-[0.12em] uppercase text-[var(--fg-subtle)] tabular-nums"
-                                >
-                                    ilk {cevap.satirlar.length} satır gösteriliyor
-                                </span>
-                            )}
-                        </>
+                        <span
+                            data-testid="toplam-rozeti"
+                            title="Raporun tamamındaki kayıt sayısı; tablo yalnız bir örnek gösterir, tam liste Excel/CSV'de"
+                            className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
+                        >
+                            {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
+                        </span>
                     )}
                     {gecersiz && !yukleniyor && (
                         <span
