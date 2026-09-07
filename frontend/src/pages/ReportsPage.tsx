@@ -15,13 +15,14 @@ import { PreviewTable } from "@/components/reports/PreviewTable";
 import { TemplateBar, TemplatesTable } from "@/components/reports/TemplateBar";
 import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "@/components/reports/SaveTemplateDialog";
 import { ExportButtons } from "@/components/reports/ExportButtons";
+import { FavoritePrompt } from "@/components/reports/FavoritePrompt";
 import { RunsTable } from "@/components/reports/RunsTable";
 import {
     kaynakIcinBaslangic, seritiTemizle, siralamaDongusu, tanimOlustur, tanimdanDurum, type OlusturucuDurumu,
 } from "@/components/reports/builderState";
 import {
     createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, getCatalog, listRuns, listTemplates,
-    previewReport, tanimGecerliMi, updateTemplate,
+    previewReport, sablonAdiOner, tanimGecerliMi, updateTemplate,
     RAPOR_EXPORT_HATASI, RAPOR_KATALOG_HATASI, RAPOR_KOSU_INDIRME_HATASI, RAPOR_KOSU_LISTE_HATASI, RAPOR_ONIZLEME_HATASI,
     RAPOR_SABLON_KAYIT_HATASI, RAPOR_SABLON_LISTE_HATASI, RAPOR_SABLON_SILME_HATASI, RaporApiError,
     type AsistanEylemi, type Katalog, type OnizlemeCevabi, type RaporKosuListesi, type RaporKosusu, type RaporSablonu,
@@ -66,6 +67,12 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 /**
  * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor", "Şablonlar" (liste
  * tablosu), "İndirme geçmişi" (sunucu sayfalı koşular).
+ *
+ * G144 — favori önerisi (plan §6.2): başarılı export (manuel `ExportButtons` ya da asistan `indir_*`)
+ * sonrasında taslak hiçbir kayıtlı şablonla birebir aynı değilse (`ayniTanim`) ve "Şimdi değil" denmemişse
+ * araç çubuğunun altında `FavoritePrompt` çıkar; ad `sablonAdiOner` ile önerilir, Ekle → `createTemplate`
+ * (`paylasimli:false`) + seçili. Şablon çubuğunda kalıcı "☆ Favorilere ekle" (reddi geçersiz kılar) /
+ * "★ Kayıtlı: <ad>". Kart tanım değişince kapanır; yalnız Rapor sekmesi ağacındadır.
  *
  * G143 — asistan ÖN PLANDA (plan §6.1): Rapor sekmesinin ilk öğesi `AssistantBar` (tam genişlik,
  * marka kenarlı satır + inline konuşma); yalnız `rapor_asistani` anahtarı açıkken (anahtar
@@ -135,6 +142,15 @@ const ReportsPage = () => {
     const [seciliSablonId, setSeciliSablonId] = useState<number | null>(null);
     const [sablonIsleniyor, setSablonIsleniyor] = useState(false);
     const [diyalog, setDiyalog] = useState<{ mod: SablonDiyalogModu; hedef: RaporSablonu | null } | null>(null);
+
+    // ---- Favori önerisi (G144, plan §6.2) ----
+    // Kartın açıldığı tanım; taslak bundan ayrılınca kart kapanır (efekt aşağıda). null = kart yok.
+    const [favoriOnerisi, setFavoriOnerisi] = useState<RaporTanimi | null>(null);
+    // "Şimdi değil"/× denen tanımların JSON anahtarı — sayfa ömrü; "☆ Favorilere ekle" bunu geçersiz kılar.
+    const reddedilenlerRef = useRef<Set<string>>(new Set());
+    // Export cevabı beklerken şablon listesi değişmiş olabilir; karar anındaki listeyle bakılır.
+    const sablonlarRef = useRef<RaporSablonu[]>([]);
+    sablonlarRef.current = sablonlar;
 
     // ---- Koşular (İndirme geçmişi) ----
     const [kosular, setKosular] = useState<RaporKosuListesi | null>(null);
@@ -249,6 +265,18 @@ const ReportsPage = () => {
     const exportSablonId = seciliSablon && ayniTanim(seciliSablon.tanim, tanim) ? seciliSablon.id : null;
     // Toast'taki satır sayısı yalnız görünen önizleme taslağa aitken.
     const onizlenenSatirSayisi = cevap && sonTanim && ayniTanim(sonTanim, tanim) ? cevap.toplam : null;
+    // G144: taslakla birebir aynı tanımlı kayıtlı şablon (seçili olması şart değil) → çubukta "★ Kayıtlı", öneri yok.
+    const kayitliSablon = useMemo(() => sablonlar.find(s => ayniTanim(s.tanim, tanim)) ?? null, [sablonlar, tanim]);
+    // Kart yalnız açıldığı tanım taslakla aynıyken ve tanım kayıtlı değilken görünür.
+    const favoriGorunur = favoriOnerisi !== null && !kayitliSablon && ayniTanim(favoriOnerisi, tanim);
+    const favoriAdOnerisi = useMemo(
+        () => (favoriOnerisi && katalog ? sablonAdiOner(favoriOnerisi, katalog, sablonlar.map(s => s.ad)) : ""),
+        [favoriOnerisi, katalog, sablonlar],
+    );
+    // Tanım değişince kart kapanır (yeniden aynı tanıma dönülse de yeni bir export/bağlantı gerekir).
+    useEffect(() => {
+        if (favoriOnerisi && !ayniTanim(favoriOnerisi, tanim)) setFavoriOnerisi(null);
+    }, [favoriOnerisi, tanim]);
 
     const onizlemeAl = useCallback(async (hedefTanim: RaporTanimi, sayfa: number) => {
         const reqId = ++reqIdRef.current;
@@ -508,9 +536,47 @@ const ReportsPage = () => {
         }
     };
 
+    // ---- Favori önerisi (G144) ----
+    /**
+     * Öneri kartını açar: tanım kayıtlı bir şablonla birebir aynıysa açılmaz; `zorla` değilse
+     * "Şimdi değil" denmiş tanım da açılmaz (export tetiği). "☆ Favorilere ekle" `zorla` ile gelir.
+     */
+    const favoriOner = (hedef: RaporTanimi, zorla = false) => {
+        if (sablonlarRef.current.some(s => ayniTanim(s.tanim, hedef))) return;
+        if (!zorla && reddedilenlerRef.current.has(JSON.stringify(hedef))) return;
+        setFavoriOnerisi(hedef);
+    };
+
+    /** "Şimdi değil" / ×: bu tanım için sayfa ömründe bir daha sorulmaz. */
+    const favoriReddet = () => {
+        if (favoriOnerisi) reddedilenlerRef.current.add(JSON.stringify(favoriOnerisi));
+        setFavoriOnerisi(null);
+    };
+
+    /** "Ekle" / Enter: `POST /templates` ({ad, aciklama:"", tanim, paylasimli:false}); listeye eklenir ve seçili olur. */
+    const favoriEkle = async (ad: string) => {
+        if (!favoriOnerisi || sablonIsleniyor) return;
+        setSablonIsleniyor(true);
+        try {
+            const yeni = await createTemplate({ ad, aciklama: "", tanim: favoriOnerisi, paylasimli: false });
+            setSablonlar(prev => [yeni, ...prev]);
+            setSeciliSablonId(yeni.id);
+            setFavoriOnerisi(null);
+            toast.success("Favorilere eklendi", { description: yeni.ad });
+        } catch (err) {
+            console.error(err);
+            // Kart açık kalır: kullanıcı adı düzeltip yeniden deneyebilir.
+            toast.error(RAPOR_SABLON_KAYIT_HATASI, { description: err instanceof Error ? err.message : undefined });
+        } finally {
+            setSablonIsleniyor(false);
+        }
+    };
+
     const onIndirildi = () => {
         // Sekme açıksa efekt yeniden çeker; kapalıysa açılınca çeker (sürüm bağımlılığı).
         setKosuSurumu(v => v + 1);
+        // G144: başarılı manuel export → kayıtsız tanım için favori önerisi (tanım export edilenle aynı: aynı render).
+        favoriOner(tanim);
     };
 
     // ---- Asistan köprüsü (G135 / G138 / G143) ----
@@ -529,7 +595,8 @@ const ReportsPage = () => {
             return false;
         }
         const onceki = durum;
-        durumDegisti(tanimdanDurum(hedef, hedefKaynak));
+        const uygulanan = tanimdanDurum(hedef, hedefKaynak);
+        durumDegisti(uygulanan);
         // durumDegisti geri-al adımını düşürür; asistan yolu hemen ardından koyar (aynı batch, son yazım kazanır).
         setOncekiTaslak(onceki);
         setSeciliSablonId(null);
@@ -552,6 +619,9 @@ const ReportsPage = () => {
             dosyayiIndir(sonuc);
             toast.success(`İndirildi: ${sonuc.dosyaAdi}`);
             setKosuSurumu(v => v + 1);
+            // G144: asistan indirmesi de tetikler — kartın tanımı oluşturucunun derleyeceği tanımdır
+            // (şeride çözülüp geri derlenen hal; `tanim` memo'su bir sonraki render'da buna eşittir).
+            favoriOner(tanimOlustur(uygulanan));
         } catch (err) {
             console.error(err);
             const mesaj = err instanceof Error ? err.message : RAPOR_EXPORT_HATASI;
@@ -638,6 +708,8 @@ const ReportsPage = () => {
                                 onSil={s => void onSablonSil(s)}
                                 taslakGecerli={tanimGecerli}
                                 isleniyor={sablonIsleniyor}
+                                kayitli={kayitliSablon}
+                                onFavoriEkle={() => favoriOner(tanim, true)}
                             />
                         </div>
                     </div>
@@ -651,6 +723,17 @@ const ReportsPage = () => {
                         />
                     </div>
                 </div>
+
+                {/* 3b. Favori önerisi (G144) — araç çubuğunun altında tek satır; yalnız Rapor sekmesinde (bu ağaç) */}
+                {favoriGorunur && (
+                    <FavoritePrompt
+                        onerilenAd={favoriAdOnerisi}
+                        onEkle={favoriEkle}
+                        onSimdiDegil={favoriReddet}
+                        onKapat={favoriReddet}
+                        kaydediliyor={sablonIsleniyor}
+                    />
+                )}
 
                 {/* 4. Önizleme — tam genişlik */}
                 <PreviewTable

@@ -615,6 +615,96 @@ export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi, etiketler?: Recor
 }
 
 // ---------------------------------------------------------------------------
+// §6.2 Favori (şablon) ad önerisi (G144)
+// ---------------------------------------------------------------------------
+
+/** Önerilen şablon adı en fazla bu kadar karakter (tekrar eki dahil). */
+export const SABLON_AD_ONERI_MAX = 60;
+/** Ada giren filtre özeti sayısı tavanı. */
+const SABLON_AD_FILTRE_MAX = 2;
+const AD_AYRAC = " · ";
+
+const ilkHarfKucuk = (s: string) => (s ? s.charAt(0).toLocaleLowerCase("tr-TR") + s.slice(1) : s);
+const yil = (iso: string) => /^(\d{4})-\d{2}-\d{2}/.exec(iso.trim())?.[1] ?? null;
+
+/**
+ * Tek filtrenin ada girecek kısa özeti; "" = ada girmez. Çip özetinden (`kontrolOzeti`) daha kısa:
+ * çoklu seçim değerleri ("Doktor"), metin yalnız aranan ("Ankara"), tarih aralığı aynı yıldaysa yıl
+ * ("2025"), var/yok ve boş anahtarı hızlı filtre etiketiyle ("davası var"); sayı/gelişmiş op kolon
+ * etiketiyle ("Maddi ≥ 1.000"). Sanal arama kolonu (`secilebilir=false`) ve katalogda olmayan alan girmez.
+ */
+function filtreAdOzeti(f: Filtre, kaynak: KatalogVeriKaynagi): string {
+    const kolon = kaynak.kolonlar.find(k => k.anahtar === f.alan);
+    if (!kolon || kolon.secilebilir === false) return "";
+    const hf = kaynak.hizli_filtreler.find(h => h.alan === f.alan);
+    const d = filtredenKontrol(f, kolon, hf?.sunum ?? "varsayilan");
+    const ozet = kontrolOzeti(d, kolon.tip, kolon.secenek_etiketleri);
+    switch (d.kontrol) {
+        case "coklu_secim":
+            return ozet;
+        case "metin_icerir":
+            return d.metin.trim();
+        case "tarih_araligi": {
+            const b = yil(d.baslangic);
+            const e = yil(d.bitis);
+            if (b && e) return b === e ? b : `${b}–${e}`;
+            return ozet ? `${kolon.etiket} ${ozet}` : "";
+        }
+        case "var_yok": {
+            const kucuk = kolon.etiket.toLocaleLowerCase("tr-TR");
+            if (d.durum === "hepsi") return "";
+            if (d.durum === "var") return hf?.etiket ? ilkHarfKucuk(hf.etiket) : `${kucuk} var`;
+            return `${kucuk} yok`;
+        }
+        case "bos_anahtari":
+            if (!d.acik) return "";
+            return hf?.etiket ? ilkHarfKucuk(hf.etiket) : `${kolon.etiket.toLocaleLowerCase("tr-TR")} boş`;
+        case "mantik":
+            if (d.deger === null) return "";
+            return d.deger ? kolon.etiket : `${kolon.etiket} değil`;
+        default:
+            return ozet ? `${kolon.etiket} ${ozet}` : "";
+    }
+}
+
+/**
+ * Favori önerisi için ad (§6.2, saf): "<Kaynak etiketi> · <en fazla iki filtre özeti>"; filtre yoksa
+ * "<Kaynak> · Temel". Toplam `SABLON_AD_ONERI_MAX` (60) karakteri aşmaz ("…" ile kısaltılır);
+ * `mevcutAdlar` içinde aynı ad (büyük/küçük harf duyarsız) varsa " (2)", " (3)"… eki — ek dahil tavan korunur.
+ */
+export function sablonAdiOner(
+    tanim: RaporTanimi,
+    katalog: Pick<Katalog, "veri_kaynaklari">,
+    mevcutAdlar: readonly string[] = [],
+): string {
+    const kaynak = katalog.veri_kaynaklari.find(k => k.anahtar === tanim.veri_kaynagi);
+    const kaynakEtiketi = (kaynak?.etiket ?? tanim.veri_kaynagi).trim() || tanim.veri_kaynagi;
+    const ozetler: string[] = [];
+    if (kaynak) {
+        for (const f of tanim.filtreler) {
+            if (ozetler.length >= SABLON_AD_FILTRE_MAX) break;
+            const o = filtreAdOzeti(f, kaynak).replace(/\s+/g, " ").trim();
+            if (o && !ozetler.includes(o)) ozetler.push(o);
+        }
+    }
+    const taban = [kaynakEtiketi, ...(ozetler.length > 0 ? ozetler : ["Temel"])].join(AD_AYRAC);
+
+    const kisalt = (s: string, tavan: number) => {
+        const t = Math.max(1, tavan);
+        return s.length <= t ? s : (t === 1 ? "…" : s.slice(0, t - 1).trimEnd() + "…");
+    };
+    const anahtar = (s: string) => s.trim().toLocaleLowerCase("tr-TR");
+    const mevcut = new Set(mevcutAdlar.map(anahtar));
+
+    let aday = kisalt(taban, SABLON_AD_ONERI_MAX);
+    for (let n = 2; mevcut.has(anahtar(aday)); n++) {
+        const ek = ` (${n})`;
+        aday = kisalt(taban, SABLON_AD_ONERI_MAX - ek.length) + ek;
+    }
+    return aday;
+}
+
+// ---------------------------------------------------------------------------
 // Tarih kısayolları (şerit: bu yıl / geçen yıl / son 30 gün / son 12 ay)
 // ---------------------------------------------------------------------------
 
