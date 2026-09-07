@@ -282,7 +282,15 @@ function GrupBolumu({ ad, kolonlar, seciliKume, tavanDolu, onToggle, onGrupToggl
             {kolonlar.map(k => {
                 const isaretli = seciliKume.has(k.anahtar);
                 const kilitli = !isaretli && tavanDolu;
-                const ipucu = `${k.etiket} · ${TIP_ETIKETI[k.tip] ?? k.tip}${k.turetilmis ? " · türetilmiş (filtrelenemez, sıralanamaz)" : ""}`;
+                // G137 sonrası türetilmiş kolonların bir kısmı filtrelenebilir (taraf kolonları, dava_sayisi);
+                // ipucu bayrağa değil, katalogdaki gerçek yeteneklere bakar.
+                const kisitlar = [
+                    !k.filtrelenebilir ? "filtrelenemez" : null,
+                    !k.siralanabilir ? "sıralanamaz" : null,
+                ].filter(Boolean);
+                const kisitMetni = kisitlar.length ? ` (${kisitlar.join(", ")})` : "";
+                const ek = k.turetilmis ? ` · türetilmiş${kisitMetni}` : kisitMetni ? ` ·${kisitMetni}` : "";
+                const ipucu = `${k.etiket} · ${TIP_ETIKETI[k.tip] ?? k.tip}${ek}`;
                 return (
                     <label
                         key={k.anahtar}
