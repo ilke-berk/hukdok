@@ -5,7 +5,8 @@ import { TANIM_LIMITLERI, bosKontrol, kontrolDoluMu } from "@/lib/reports";
 import { FieldPicker } from "./FieldPicker";
 import { FilterChip } from "./FilterChip";
 import { FilterControl } from "./FilterControl";
-import { yeniSatirId, type SeritOgesi } from "./builderState";
+import { SearchBox } from "./SearchBox";
+import { eklenenOge, type SeritOgesi } from "./builderState";
 import { ICON_BTN_CLS, LINK_BTN_CLS } from "./ui";
 
 type QuickFiltersProps = {
@@ -20,9 +21,11 @@ type QuickFiltersProps = {
 };
 
 /**
- * Filtre şeridi (§4.1 madde 2): kaynağın `hizli_filtreler`i sırayla hazır kontroller, "+ Başka alan"
- * ile eklenenler aynı türde kontrol, etkin filtreler çip satırında (× / "…" gelişmiş), "Filtreleri
- * temizle" hepsini boşaltır. Operatör seçici YOK — op kontrolden türetilir (§4.3, lib/reports.ts).
+ * Filtre şeridi (§4.1 madde 2 / §5.1): `sunum=arama` yuvası en üstte tam genişlik arama kutusu (ayrı
+ * satır); kaynağın diğer `hizli_filtreler`i sırayla hazır kontroller (bileşen `sunum`a göre — çip
+ * satırı, var/yok, "X yok", aranabilir çoklu seçim…), "+ Başka alan" ile eklenenler aynı türde kontrol,
+ * etkin filtreler çip satırında (× / "…" gelişmiş; "(boş)" → "boş"), "Filtreleri temizle" hepsini
+ * (aramayı da) boşaltır. Operatör seçici YOK — op kontrolden türetilir (§4.3/§5.3, lib/reports.ts).
  */
 export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickFiltersProps) {
     const kolonHaritasi = useMemo(() => new Map(kaynak.kolonlar.map(k => [k.anahtar, k])), [kaynak]);
@@ -49,13 +52,15 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
     const ogeDegistir = (id: string, durum: KontrolDurumu, gecikmeli?: boolean) =>
         onChange(serit.map(o => (o.id === id ? { ...o, durum } : o)), gecikmeli);
 
+    /** Yuvanın kendi kolonu (alan değiştirici alternatife çekilmişse ilk seçenek). */
+    const yuvaKolonu = (o: SeritOgesi): KatalogKolon | undefined =>
+        o.alanSecenekleri.length > 0 ? kolonOf(o.alanSecenekleri[0]) ?? kolonOf(o.durum.alan) : kolonOf(o.durum.alan);
+
     /** Çipin × düğmesi: yuva boşa döner, eklenen alan şeritten kalkar. */
     const ogeKaldir = (o: SeritOgesi) => {
-        const kolon = kolonOf(o.durum.alan);
+        const kolon = yuvaKolonu(o);
         if (o.hizli && kolon) {
-            // Alan değiştirici alternatife çekilmişse yuva kendi alanına döner.
-            const yuvaKolon = o.alanSecenekleri.length > 0 ? kolonOf(o.alanSecenekleri[0]) ?? kolon : kolon;
-            onChange(serit.map(x => (x.id === o.id ? { ...x, durum: bosKontrol(yuvaKolon) } : x)));
+            onChange(serit.map(x => (x.id === o.id ? { ...x, durum: bosKontrol(kolon, o.sunum) } : x)));
         } else {
             onChange(serit.filter(x => x.id !== o.id));
         }
@@ -67,18 +72,22 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
     const alanEkle = (anahtar: string) => {
         const kolon = kolonOf(anahtar);
         if (!kolon || !kolon.filtrelenebilir) return;
-        onChange([...serit, { id: yeniSatirId(), durum: bosKontrol(kolon), alanSecenekleri: [], hizli: false }]);
+        onChange([...serit, eklenenOge(bosKontrol(kolon))]);
     };
 
     const temizle = () => {
         const yeni: SeritOgesi[] = [];
         for (const o of serit) {
             if (!o.hizli) continue;
-            const yuvaKolon = o.alanSecenekleri.length > 0 ? kolonOf(o.alanSecenekleri[0]) : kolonOf(o.durum.alan);
-            if (yuvaKolon) yeni.push({ ...o, durum: bosKontrol(yuvaKolon) });
+            const kolon = yuvaKolonu(o);
+            if (kolon) yeni.push({ ...o, durum: bosKontrol(kolon, o.sunum) });
         }
         onChange(yeni);
     };
+
+    // Arama yuvaları ayrı satırda (şeridin üstü), kalan kontroller ızgarada.
+    const aramaYuvalari = serit.filter(o => o.sunum === "arama" && o.durum.kontrol === "metin_icerir");
+    const digerOgeler = serit.filter(o => !aramaYuvalari.includes(o));
 
     return (
         <div data-testid="filtre-seridi" className="flex flex-col gap-4 px-5 py-4 border-b border-[var(--border)]">
@@ -105,37 +114,59 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
                 </div>
             </div>
 
-            <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {serit.map(o => {
-                    const kolon: KatalogKolon | undefined = kolonOf(o.durum.alan);
-                    if (!kolon) return null;
-                    return (
-                        <div key={o.id} className="relative flex items-start gap-1 min-w-0">
-                            <div className="flex-1 min-w-0">
-                                <FilterControl
-                                    oge={o}
-                                    kolon={kolon}
-                                    kolonOf={kolonOf}
-                                    onChange={(durum, gecikmeli) => ogeDegistir(o.id, durum, gecikmeli)}
-                                    onHemen={onHemen}
-                                    bugun={bugun}
-                                />
+            {aramaYuvalari.map(o => {
+                const kolon = kolonOf(o.durum.alan);
+                if (!kolon || o.durum.kontrol !== "metin_icerir") return null;
+                const d = o.durum;
+                return (
+                    <div key={o.id} data-testid="filtre-kontrolu" data-alan={d.alan} data-kontrol={d.kontrol} data-sunum="arama">
+                        <SearchBox
+                            etiket={kolon.etiket}
+                            placeholder={kolon.aciklama}
+                            metin={d.metin}
+                            onYaz={metin => ogeDegistir(o.id, { ...d, metin, tam: false }, true)}
+                            onTemizle={() => ogeDegistir(o.id, { ...d, metin: "", tam: false })}
+                            onHemen={onHemen}
+                        />
+                    </div>
+                );
+            })}
+
+            {digerOgeler.length > 0 && (
+                <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    {digerOgeler.map(o => {
+                        const kolon: KatalogKolon | undefined = kolonOf(o.durum.alan);
+                        if (!kolon) return null;
+                        // Çip satırı geniş: ızgarada tam satır kaplar.
+                        const genis = o.sunum === "cipler" && o.durum.kontrol === "coklu_secim";
+                        return (
+                            <div key={o.id} className={"relative flex items-start gap-1 min-w-0" + (genis ? " col-span-full" : "")}>
+                                <div className="flex-1 min-w-0">
+                                    <FilterControl
+                                        oge={o}
+                                        kolon={kolon}
+                                        kolonOf={kolonOf}
+                                        onChange={(durum, gecikmeli) => ogeDegistir(o.id, durum, gecikmeli)}
+                                        onHemen={onHemen}
+                                        bugun={bugun}
+                                    />
+                                </div>
+                                {!o.hizli && (
+                                    <button
+                                        type="button"
+                                        className={ICON_BTN_CLS + " mt-4 shrink-0"}
+                                        aria-label={`${kolon.etiket} alanını şeritten kaldır`}
+                                        onClick={() => alaniKaldir(o.id)}
+                                        title="Alanı şeritten kaldır"
+                                    >
+                                        ×
+                                    </button>
+                                )}
                             </div>
-                            {!o.hizli && (
-                                <button
-                                    type="button"
-                                    className={ICON_BTN_CLS + " mt-4 shrink-0"}
-                                    aria-label={`${kolon.etiket} alanını şeritten kaldır`}
-                                    onClick={() => alaniKaldir(o.id)}
-                                    title="Alanı şeritten kaldır"
-                                >
-                                    ×
-                                </button>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
+                        );
+                    })}
+                </div>
+            )}
 
             {etkin.length > 0 && (
                 <div data-testid="etkin-filtreler" className="flex flex-wrap items-center gap-2 pt-1">

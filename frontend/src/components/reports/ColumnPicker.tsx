@@ -9,11 +9,12 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { KatalogKolon, KolonSeti } from "@/lib/reports";
-import { TANIM_LIMITLERI } from "@/lib/reports";
+import { TANIM_LIMITLERI, kolonSecilebilirMi } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { ICON_BTN_CLS, INPUT_CLS, LINK_BTN_CLS } from "./ui";
 
 type ColumnPickerProps = {
+    /** Kaynağın tüm kolonları; §5.2 `secilebilir=false` (sanal arama) burada elenir — listede ve setlerde yok. */
     kolonlar: KatalogKolon[];
     secili: string[];
     /** Kaynağın varsayılan kolonları — katalogda "Temel" seti yoksa o adla ilk set olur. */
@@ -43,9 +44,10 @@ function ayniKume(a: string[], b: string[]): boolean {
  * Tip rozeti YOK — tip yalnız satırın `title` ipucunda. Seçim sırası = rapordaki kolon sırası
  * (§2.1 "kolonlar sıralıdır"); set tıklaması sırayı setin sırasına çeker.
  */
-export function ColumnPicker({ kolonlar, secili, varsayilan, setler, onChange }: ColumnPickerProps) {
+export function ColumnPicker({ kolonlar: tumKolonlar, secili, varsayilan, setler, onChange }: ColumnPickerProps) {
     const [arama, setArama] = useState("");
 
+    const kolonlar = useMemo(() => tumKolonlar.filter(kolonSecilebilirMi), [tumKolonlar]);
     const kolonOf = useMemo(() => new Map(kolonlar.map(k => [k.anahtar, k])), [kolonlar]);
 
     // Katalogdaki setler (geçersiz anahtarlar düşer); "Temel" yoksa varsayılan kolonlarla başa eklenir.

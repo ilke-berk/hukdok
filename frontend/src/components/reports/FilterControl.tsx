@@ -1,10 +1,13 @@
-import { useState } from "react";
-import type { FiltreDeger, KatalogKolon, KolonTipi, KontrolDurumu, TarihKisayolu } from "@/lib/reports";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { X } from "lucide-react";
+import type { FiltreDeger, KatalogKolon, KolonTipi, KontrolDurumu, Secim, TarihKisayolu } from "@/lib/reports";
 import {
-    OP_ETIKETLERI, TARIH_KISAYOL_ETIKETLERI, opDegerSekli, tarihKisayolu,
+    OP_ETIKETLERI, TARIH_KISAYOL_ETIKETLERI, kolonOplari, opDegerSekli, secenekEtiketi, tarihKisayolu,
 } from "@/lib/reports";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import type { SeritOgesi } from "./builderState";
+import { ChipSelect } from "./ChipSelect";
+import { BosAnahtari, VarYokAnahtari } from "./ToggleFilter";
 import { INPUT_CLS, SELECT_CLS, useDisariTiklama } from "./ui";
 
 type FilterControlProps = {
@@ -22,6 +25,9 @@ type FilterControlProps = {
 };
 
 const KISAYOLLAR: TarihKisayolu[] = ["bu_yil", "gecen_yil", "son_30_gun", "son_12_ay"];
+
+/** "Sık" bölümü: sıklık sıralı listenin ilk bu kadarı (§5.2). */
+export const SIK_SECENEK_SAYISI = 8;
 
 /** Öneri listesi düz alt-dize ile daralır (cmdk bulanık skoru değil; FieldPicker ile aynı kural). */
 function altDizeFiltresi(value: string, search: string): number {
@@ -44,16 +50,37 @@ function sayiOku(metin: string): number | null {
 /** Sayı ucu kutu metni (null → ""). */
 const sayiMetni = (v: number | null) => (v === null ? "" : String(v));
 
+/** Çoklu seçimde "(boş)" seçeneği: kolon `is_null` izin veriyorsa (veriden liste ya da `liste` tipi). */
+function bosSecenegiVarMi(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar">): boolean {
+    return kolonOplari(kolon).includes("is_null");
+}
+
 /**
- * Şerit kontrolü (§4.1 madde 2 / §4.3): operatör seçici YOK — op kontrolden türetilir.
- * tarih aralığı (alan değiştirici + kısayollar), çoklu seçim (checkbox'lı açılır), metin
- * (öneri varsa cmdk combobox: seçim → `eq` (kolon `oplar`ında varsa), yazım → `contains`),
- * sayı/para aralığı, mantık Evet/Hayır; her kontrolde "boş olanlar" anahtarı (`is_null`,
- * değer girdisi kilitlenir). Gelişmiş çip (çözülemeyen op) yalnız değer girdisi taşır.
+ * Şerit kontrolü (§4.1 madde 2 / §4.3 / §5.3): operatör seçici YOK — op kontrolden türetilir.
+ * Kontrol bileşeni `oge.sunum` + `durum.kontrol` ikilisinden seçilir: tarih aralığı (alan değiştirici +
+ * kısayollar), çoklu seçim (aranabilir açılır: "Sık"/"Tümü"/"(boş)"; `sunum=cipler` görünür çip satırı),
+ * metin (öneri varsa cmdk combobox), sayı/para aralığı, mantık Evet/Hayır, var/yok üçlü anahtar,
+ * "X yok" kutucuğu. "boş olanlar" yan kutucuğu YOK (§5.1 madde 8) — tarih/sayı/metin/mantık boşluğu
+ * çipin "…" menüsünden. Arama kutusu (`sunum=arama`) QuickFilters'ta ayrı satırdadır (SearchBox).
  */
 export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }: FilterControlProps) {
     const d = oge.durum;
     const etiket = kolon.etiket;
+
+    if (d.kontrol === "var_yok") {
+        return (
+            <div data-testid="filtre-kontrolu" data-alan={d.alan} data-kontrol={d.kontrol} data-sunum={oge.sunum} className="min-w-0">
+                <VarYokAnahtari etiket={oge.etiket ?? etiket} durum={d.durum} onChange={durum => onChange({ ...d, durum })} />
+            </div>
+        );
+    }
+    if (d.kontrol === "bos_anahtari") {
+        return (
+            <div data-testid="filtre-kontrolu" data-alan={d.alan} data-kontrol={d.kontrol} data-sunum={oge.sunum} className="min-w-0">
+                <BosAnahtari etiket={oge.etiket ?? `${etiket} boş`} acik={d.acik} onChange={acik => onChange({ ...d, acik })} />
+            </div>
+        );
+    }
 
     const alanDegistirici = oge.alanSecenekleri.length > 0 && d.kontrol !== "gelismis" ? (
         <select
@@ -70,38 +97,22 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
         <span className={ETIKET_CLS}>{etiket}</span>
     );
 
-    const bosAnahtari = d.kontrol !== "gelismis" ? (
-        <label className="inline-flex items-center gap-1 text-[10.5px] text-[var(--fg-subtle)] cursor-pointer select-none whitespace-nowrap">
-            <input
-                type="checkbox"
-                aria-label={`${etiket} boş olanlar`}
-                checked={d.bos}
-                onChange={e => onChange({ ...d, bos: e.target.checked })}
-                className={CHECK_CLS}
-            />
-            boş olanlar
-        </label>
-    ) : null;
-
-    const kilitli = d.kontrol !== "gelismis" && d.bos;
-
     return (
         <div
             data-testid="filtre-kontrolu"
             data-alan={d.alan}
             data-kontrol={d.kontrol}
+            data-sunum={oge.sunum}
             className="flex flex-col gap-1 min-w-0"
         >
             <div className="flex items-center justify-between gap-2">
                 {alanDegistirici}
-                {bosAnahtari}
             </div>
-            <div className={kilitli ? "opacity-50" : ""}>
+            <div>
                 {d.kontrol === "tarih_araligi" && (
                     <TarihAraligi
                         etiket={etiket}
                         durum={d}
-                        kilitli={kilitli}
                         onChange={onChange}
                         onHemen={onHemen}
                         bugun={bugun}
@@ -113,7 +124,6 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                             type="number"
                             aria-label={`${etiket} en az`}
                             placeholder="en az"
-                            disabled={kilitli}
                             value={sayiMetni(d.en_az)}
                             onChange={e => onChange({ ...d, en_az: sayiOku(e.target.value) }, true)}
                             onBlur={onHemen}
@@ -123,7 +133,6 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                             type="number"
                             aria-label={`${etiket} en çok`}
                             placeholder="en çok"
-                            disabled={kilitli}
                             value={sayiMetni(d.en_cok)}
                             onChange={e => onChange({ ...d, en_cok: sayiOku(e.target.value) }, true)}
                             onBlur={onHemen}
@@ -132,13 +141,23 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                     </div>
                 )}
                 {d.kontrol === "coklu_secim" && (
-                    <CokluSecim
-                        etiket={etiket}
-                        secenekler={kolon.secenekler ?? []}
-                        secili={d.secili}
-                        kilitli={kilitli}
-                        onChange={secili => onChange({ ...d, secili })}
-                    />
+                    oge.sunum === "cipler" ? (
+                        <ChipSelect
+                            etiket={etiket}
+                            kolon={kolon}
+                            secili={d.secili}
+                            bosSecenegi={bosSecenegiVarMi(kolon)}
+                            onChange={secili => onChange({ ...d, secili })}
+                        />
+                    ) : (
+                        <CokluSecim
+                            etiket={etiket}
+                            kolon={kolon}
+                            secili={d.secili}
+                            bosSecenegi={bosSecenegiVarMi(kolon)}
+                            onChange={secili => onChange({ ...d, secili })}
+                        />
+                    )
                 )}
                 {d.kontrol === "metin_icerir" && (
                     kolon.oneriler && kolon.oneriler.length > 0 ? (
@@ -147,7 +166,6 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                             oneriler={kolon.oneriler}
                             kesik={kolon.oneri_kesik}
                             metin={d.metin}
-                            kilitli={kilitli}
                             onYaz={metin => onChange({ ...d, metin, tam: false }, true)}
                             onSec={metin => onChange({ ...d, metin, tam: kolon.oplar.includes("eq") })}
                             onHemen={onHemen}
@@ -157,7 +175,6 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                             type="text"
                             aria-label={`${etiket} içerir`}
                             placeholder="içerir…"
-                            disabled={kilitli}
                             value={d.metin}
                             onChange={e => onChange({ ...d, metin: e.target.value, tam: false }, true)}
                             onBlur={onHemen}
@@ -168,7 +185,6 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
                 {d.kontrol === "mantik" && (
                     <select
                         aria-label={`${etiket} değeri`}
-                        disabled={kilitli}
                         value={d.deger === null ? "" : String(d.deger)}
                         onChange={e => onChange({ ...d, deger: e.target.value === "" ? null : e.target.value === "true" })}
                         className={KUCUK_SELECT_CLS}
@@ -197,13 +213,12 @@ export function FilterControl({ oge, kolon, kolonOf, onChange, onHemen, bugun }:
 type TarihAraligiProps = {
     etiket: string;
     durum: Extract<KontrolDurumu, { kontrol: "tarih_araligi" }>;
-    kilitli: boolean;
     onChange: (durum: KontrolDurumu, gecikmeli?: boolean) => void;
     onHemen: () => void;
     bugun?: () => Date;
 };
 
-function TarihAraligi({ etiket, durum: d, kilitli, onChange, onHemen, bugun }: TarihAraligiProps) {
+function TarihAraligi({ etiket, durum: d, onChange, onHemen, bugun }: TarihAraligiProps) {
     const kisayolSec = (ad: string) => {
         if (!ad) return;
         const [baslangic, bitis] = tarihKisayolu(ad as TarihKisayolu, bugun ? bugun() : new Date());
@@ -214,7 +229,6 @@ function TarihAraligi({ etiket, durum: d, kilitli, onChange, onHemen, bugun }: T
             <input
                 type="date"
                 aria-label={`${etiket} başlangıç`}
-                disabled={kilitli}
                 value={d.baslangic}
                 onChange={e => onChange({ ...d, baslangic: e.target.value }, true)}
                 onBlur={onHemen}
@@ -223,7 +237,6 @@ function TarihAraligi({ etiket, durum: d, kilitli, onChange, onHemen, bugun }: T
             <input
                 type="date"
                 aria-label={`${etiket} bitiş`}
-                disabled={kilitli}
                 value={d.bitis}
                 onChange={e => onChange({ ...d, bitis: e.target.value }, true)}
                 onBlur={onHemen}
@@ -231,7 +244,6 @@ function TarihAraligi({ etiket, durum: d, kilitli, onChange, onHemen, bugun }: T
             />
             <select
                 aria-label={`${etiket} kısayol`}
-                disabled={kilitli}
                 value=""
                 onChange={e => kisayolSec(e.target.value)}
                 className={KUCUK_SELECT_CLS + " w-auto"}
@@ -248,64 +260,180 @@ function TarihAraligi({ etiket, durum: d, kilitli, onChange, onHemen, bugun }: T
 
 type CokluSecimProps = {
     etiket: string;
-    secenekler: string[];
-    secili: string[];
-    kilitli: boolean;
-    onChange: (secili: string[]) => void;
+    kolon: Pick<KatalogKolon, "secenekler" | "secenek_etiketleri">;
+    secili: Secim[];
+    /** Listenin sonunda "(boş)" seçeneği. */
+    bosSecenegi: boolean;
+    onChange: (secili: Secim[]) => void;
 };
 
-/** Kapalı liste: checkbox'lı açılır, seçilenler düğmede özetlenir. Serbest metin girişi YOK. */
-function CokluSecim({ etiket, secenekler, secili, kilitli, onChange }: CokluSecimProps) {
-    const [acik, setAcik] = useState(false);
-    const ref = useDisariTiklama<HTMLDivElement>(acik, () => setAcik(false));
+type ListeBolumu = { ad: "Sık" | "Tümü" | null; secenekler: Secim[] };
 
-    const toggle = (s: string) =>
+/**
+ * Aranabilir çoklu seçim (§5.1 madde 3-4 / §5.3): açılırda arama kutusu; sorgu boşken "Sık" (ilk 8,
+ * katalog sıklık sırası) + "Tümü" bölümleri, listenin sonunda "(boş)"; yazdıkça Tümü daralır (etiket ve
+ * ham kod üzerinde, tr-TR). Seçilenler düğmenin altında çip (× ile düşer). Etiketli gösterim, HAM değer.
+ * Klavye: ↑↓ öğe gezer, Enter işaretler, Esc kapatır (`useDisariTiklama`). Serbest metin girişi YOK.
+ */
+export function CokluSecim({ etiket, kolon, secili, bosSecenegi, onChange }: CokluSecimProps) {
+    const [acik, setAcik] = useState(false);
+    const [arama, setArama] = useState("");
+    const [aktif, setAktif] = useState(0);
+    const ref = useDisariTiklama<HTMLDivElement>(acik, () => setAcik(false));
+    const listeRef = useRef<HTMLDivElement>(null);
+
+    const secenekler = useMemo<Secim[]>(
+        () => [...(kolon.secenekler ?? []), ...(bosSecenegi ? [null] : [])],
+        [kolon.secenekler, bosSecenegi],
+    );
+
+    const bolumler = useMemo<ListeBolumu[]>(() => {
+        const q = arama.trim().toLocaleLowerCase("tr-TR");
+        if (q) {
+            const uyan = secenekler.filter(s =>
+                secenekEtiketi(kolon, s).toLocaleLowerCase("tr-TR").includes(q)
+                || (s !== null && s.toLocaleLowerCase("tr-TR").includes(q)),
+            );
+            return [{ ad: null, secenekler: uyan }];
+        }
+        const dolu = secenekler.filter(s => s !== null);
+        if (dolu.length <= SIK_SECENEK_SAYISI) return [{ ad: null, secenekler }];
+        return [
+            { ad: "Sık", secenekler: dolu.slice(0, SIK_SECENEK_SAYISI) },
+            { ad: "Tümü", secenekler },
+        ];
+    }, [secenekler, arama, kolon]);
+
+    // Klavye gezintisi için düz görünen liste (bölüm sırasıyla).
+    const duz = useMemo(() => bolumler.flatMap(b => b.secenekler), [bolumler]);
+
+    useEffect(() => {
+        setAktif(0);
+    }, [arama, acik]);
+
+    useEffect(() => {
+        if (!acik) return;
+        const el = listeRef.current?.querySelector<HTMLElement>("[data-aktif='true']");
+        el?.scrollIntoView?.({ block: "nearest" });
+    }, [aktif, acik]);
+
+    const toggle = (s: Secim) =>
         onChange(secili.includes(s) ? secili.filter(x => x !== s) : [...secili, s]);
 
     const ozet = secili.length === 0
         ? "Hepsi"
-        : secili.length <= 2 ? secili.join(", ") : `${secili.length} seçili`;
+        : secili.length <= 2 ? secili.map(s => secenekEtiketi(kolon, s)).join(", ") : `${secili.length} seçili`;
+
+    const tus = (e: KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setAktif(i => (duz.length === 0 ? 0 : Math.min(i + 1, duz.length - 1)));
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setAktif(i => Math.max(i - 1, 0));
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (duz.length > 0) toggle(duz[Math.min(aktif, duz.length - 1)]);
+        }
+    };
+
+    let sira = -1;
 
     return (
-        <div ref={ref} className="relative">
+        <div ref={ref} className="relative flex flex-col gap-1">
             <button
                 type="button"
                 aria-label={`${etiket} seç`}
                 aria-expanded={acik}
                 aria-haspopup="listbox"
-                disabled={kilitli}
                 onClick={() => setAcik(v => !v)}
                 className={KUCUK_SELECT_CLS + " text-left truncate " + (secili.length > 0 ? "text-[var(--fg)]" : "text-[var(--fg-subtle)]")}
             >
                 {ozet}
             </button>
-            {acik && (
-                <div
-                    role="listbox"
-                    aria-label={`${etiket} seçenekleri`}
-                    aria-multiselectable="true"
-                    className="absolute z-30 mt-1 min-w-full max-h-56 overflow-y-auto border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md p-1 flex flex-col"
-                >
-                    {secenekler.length === 0 && (
-                        <span className="px-2 py-1 text-[11px] text-[var(--fg-subtle)]">Seçenek listesi boş.</span>
-                    )}
-                    {secenekler.map(s => (
-                        <label
-                            key={s}
-                            role="option"
-                            aria-selected={secili.includes(s)}
-                            className="flex items-center gap-2 px-2 py-1 text-[12px] text-[var(--fg)] hover:bg-[var(--bg)] cursor-pointer whitespace-nowrap"
+            {secili.length > 0 && (
+                <div data-testid="secili-cipler" className="flex flex-wrap gap-1">
+                    {secili.map(s => (
+                        <span
+                            key={s ?? " bos"}
+                            data-deger={s ?? ""}
+                            className={"inline-flex items-center gap-0.5 pl-1.5 pr-0.5 py-0.5 text-[11px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg)] rounded-[3px]" + (s === null ? " italic" : "")}
                         >
-                            <input
-                                type="checkbox"
-                                aria-label={`${etiket}: ${s}`}
-                                checked={secili.includes(s)}
-                                onChange={() => toggle(s)}
-                                className={CHECK_CLS}
-                            />
-                            {s}
-                        </label>
+                            {secenekEtiketi(kolon, s)}
+                            <button
+                                type="button"
+                                aria-label={`${etiket}: ${secenekEtiketi(kolon, s)} kaldır`}
+                                onClick={() => toggle(s)}
+                                className="w-4 h-4 grid place-items-center text-[var(--fg-subtle)] hover:text-[var(--brand)]"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        </span>
                     ))}
+                </div>
+            )}
+            {acik && (
+                <div className="absolute top-full left-0 z-30 mt-1 min-w-full w-max max-w-[320px] border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md flex flex-col">
+                    <input
+                        type="search"
+                        aria-label={`${etiket} ara`}
+                        placeholder="Ara…"
+                        autoFocus
+                        value={arama}
+                        onChange={e => setArama(e.target.value)}
+                        onKeyDown={tus}
+                        className={KUCUK_INPUT_CLS + " rounded-none border-0 border-b border-[var(--border)] [&::-webkit-search-cancel-button]:hidden"}
+                    />
+                    <div
+                        ref={listeRef}
+                        role="listbox"
+                        aria-label={`${etiket} seçenekleri`}
+                        aria-multiselectable="true"
+                        className="max-h-56 overflow-y-auto p-1 flex flex-col"
+                    >
+                        {duz.length === 0 && (
+                            <span className="px-2 py-1 text-[11px] text-[var(--fg-subtle)]">
+                                {secenekler.length === 0 ? "Seçenek listesi boş." : "Aramaya uyan seçenek yok."}
+                            </span>
+                        )}
+                        {bolumler.map(b => (
+                            <div key={b.ad ?? "liste"} data-bolum={b.ad ?? undefined} className="flex flex-col">
+                                {b.ad && (
+                                    <span className="px-2 pt-1.5 pb-0.5 font-mono text-[9.5px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">{b.ad}</span>
+                                )}
+                                {b.secenekler.map(s => {
+                                    sira += 1;
+                                    const i = sira;
+                                    const metin = secenekEtiketi(kolon, s);
+                                    const isaretli = secili.includes(s);
+                                    return (
+                                        <label
+                                            key={s ?? " bos"}
+                                            role="option"
+                                            aria-selected={isaretli}
+                                            data-aktif={i === aktif ? "true" : undefined}
+                                            data-deger={s ?? ""}
+                                            onMouseEnter={() => setAktif(i)}
+                                            className={[
+                                                "flex items-center gap-2 px-2 py-1 text-[12px] text-[var(--fg)] cursor-pointer whitespace-nowrap rounded-[2px]",
+                                                i === aktif ? "bg-[var(--bg)]" : "hover:bg-[var(--bg)]",
+                                                s === null ? "italic text-[var(--fg-muted)]" : "",
+                                            ].join(" ")}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                aria-label={`${etiket}: ${metin}`}
+                                                checked={isaretli}
+                                                onChange={() => toggle(s)}
+                                                className={CHECK_CLS}
+                                            />
+                                            {metin}
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>
@@ -319,7 +447,6 @@ type MetinComboboxProps = {
     oneriler: string[];
     kesik: boolean;
     metin: string;
-    kilitli: boolean;
     onYaz: (metin: string) => void;
     onSec: (metin: string) => void;
     onHemen: () => void;
@@ -329,7 +456,7 @@ type MetinComboboxProps = {
  * Öneri listeli metin: cmdk `Command` — yazdıkça daralır; listeden seçim `onSec` (→ `eq`, kolon
  * `oplar`ında varsa), serbest yazım `onYaz` (→ `contains`). Liste yalnız odaktayken açılır.
  */
-function MetinCombobox({ etiket, oneriler, kesik, metin, kilitli, onYaz, onSec, onHemen }: MetinComboboxProps) {
+function MetinCombobox({ etiket, oneriler, kesik, metin, onYaz, onSec, onHemen }: MetinComboboxProps) {
     const [acik, setAcik] = useState(false);
     const ref = useDisariTiklama<HTMLDivElement>(acik, () => setAcik(false));
 
@@ -345,14 +472,13 @@ function MetinCombobox({ etiket, oneriler, kesik, metin, kilitli, onYaz, onSec, 
                 <CommandInput
                     aria-label={`${etiket} içerir`}
                     placeholder="içerir…"
-                    disabled={kilitli}
                     value={metin}
                     onValueChange={v => { onYaz(v); setAcik(true); }}
                     onFocus={() => setAcik(true)}
                     onBlur={onHemen}
                     className="h-7 py-0 text-[11.5px] placeholder:text-[var(--fg-subtle)]"
                 />
-                {acik && !kilitli && (
+                {acik && (
                     // cmdk List kendi aria-label'ını basar ("Suggestions"); testler `[cmdk-list]` ile bulur.
                     <CommandList className="absolute left-0 right-0 z-30 mt-1 max-h-56 border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md">
                         <CommandEmpty className="py-2 text-[11px] text-[var(--fg-subtle)]">
@@ -416,10 +542,16 @@ function ikiliUc(v: FiltreDeger | undefined, i: 0 | 1): string | number {
     return x === undefined || x === null ? "" : x;
 }
 
+/** `in` listesi → seçim listesi (`null` "(boş)" korunur, sayı metne çevrilir). */
+function listeSecimleri(v: FiltreDeger | undefined): Secim[] {
+    if (!Array.isArray(v)) return [];
+    return v.map(x => (x === null ? null : String(x)));
+}
+
 /**
  * Gelişmiş çipin değer girdisi: op çipin "…" menüsünden gelir, burada yalnız değer düzenlenir
- * (tekil: tipe göre metin/sayı/tarih/liste seçimi/Evet-Hayır; `in` metinde virgülle; `between` iki kutu;
- * `is_null`/`not_null` değersiz).
+ * (tekil: tipe göre metin/sayı/tarih/liste seçimi/Evet-Hayır; `in` seçenekli kolonda çoklu seçim,
+ * metinde virgülle; `between` iki kutu; `is_null`/`not_null` değersiz).
  */
 function GelismisDeger({ etiket, kolon, durum: d, onChange, onHemen }: GelismisDegerProps) {
     const sekil = opDegerSekli(d.op);
@@ -455,18 +587,16 @@ function GelismisDeger({ etiket, kolon, durum: d, onChange, onHemen }: GelismisD
     }
 
     if (sekil === "liste") {
-        if (tip === "liste") {
-            const secenekler = kolon.secenekler ?? [];
-            const secili = Array.isArray(d.deger) ? d.deger.map(String) : [];
+        if (kolon.secenekler && kolon.secenekler.length > 0) {
             return (
                 <div className="grid grid-cols-[auto_1fr] gap-1 items-center">
                     {opRozeti}
-                    <CokluSecim etiket={etiket} secenekler={secenekler} secili={secili} kilitli={false}
+                    <CokluSecim etiket={etiket} kolon={kolon} secili={listeSecimleri(d.deger)} bosSecenegi={bosSecenegiVarMi(kolon)}
                         onChange={liste => degerAyarla(liste)} />
                 </div>
             );
         }
-        const metin = Array.isArray(d.deger) ? d.deger.join(", ") : "";
+        const metin = listeSecimleri(d.deger).filter((x): x is string => x !== null).join(", ");
         return (
             <div className="grid grid-cols-[auto_1fr] gap-1 items-center">
                 {opRozeti}
@@ -497,14 +627,14 @@ function GelismisDeger({ etiket, kolon, durum: d, onChange, onHemen }: GelismisD
             </div>
         );
     }
-    if (tip === "liste") {
+    if (kolon.secenekler && kolon.secenekler.length > 0) {
         return (
             <div className="grid grid-cols-[auto_1fr] gap-1 items-center">
                 {opRozeti}
                 <select aria-label={`${etiket} değeri`} value={tekilMetin(d.deger)}
                     onChange={e => degerAyarla(e.target.value === "" ? undefined : e.target.value)} className={KUCUK_SELECT_CLS}>
                     <option value="">Seçiniz</option>
-                    {(kolon.secenekler ?? []).map(s => <option key={s} value={s}>{s}</option>)}
+                    {kolon.secenekler.map(s => <option key={s} value={s}>{secenekEtiketi(kolon, s)}</option>)}
                 </select>
             </div>
         );

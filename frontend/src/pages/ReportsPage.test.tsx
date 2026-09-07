@@ -67,6 +67,7 @@ function kolon(k: KolonSahtesi): KatalogKolon {
         kontrol: filtrelenebilir ? KONTROL[k.tip] : null,
         oplar: filtrelenebilir ? [...OP_BY_TIP[k.tip]] : [],
         oneriler: null, oneri_kesik: false,
+        secenek_kaynagi: k.tip === "liste" ? "sabit" : null, secenek_etiketleri: null, secilebilir: true,
         ...k,
     };
 }
@@ -105,9 +106,14 @@ const KATALOG = {
             varsayilan_kolonlar: ["name"],
             kolonlar: [
                 kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
+                // §5.2 sanal arama kolonu: yalnız filtre (Kolonlar panelinde yok), şeritte arama kutusu
+                kolon({ anahtar: "arama", etiket: "Ara", tip: "metin", turetilmis: true, siralanabilir: false, secilebilir: false, oplar: ["contains"] }),
                 kolon({ anahtar: "il", etiket: "İl", tip: "metin", grup: "İletişim" }),
             ],
-            hizli_filtreler: [{ alan: "il", alternatifler: [] }],
+            hizli_filtreler: [
+                { alan: "arama", alternatifler: [], sunum: "arama", etiket: null },
+                { alan: "il", alternatifler: [], sunum: "varsayilan", etiket: null },
+            ],
             kolon_setleri: [{ ad: "Temel", kolonlar: ["name"] }],
         },
     ],
@@ -505,8 +511,10 @@ describe("ReportsPage (G133/G138/G139)", () => {
         // Son geçerli önizleme ekranda kalır, başlıkta "taslak eksik" ipucu; istek yok
         expect($("[data-testid='taslak-eksik']").textContent).toContain("en az bir kolon seçin");
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-        // Şerit değişikliği de geçersizken istek üretmez
-        await tiklaVeBekle(byLabel("Açılış Tarihi boş olanlar"));
+        // Şerit değişikliği de geçersizken istek üretmez ("boş olanlar" kutucuğu yok — çoklu seçimle)
+        expect(container.querySelector("[aria-label$='boş olanlar']")).toBeNull();
+        await tiklaVeBekle(byLabel("Durum seç"));
+        await tiklaVeBekle(byLabel("Durum: Derdest"));
         expect(previewCagrilari()).toHaveLength(1);
 
         p = await kolonPaneliAc();
@@ -515,9 +523,44 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(previewCagrilari()).toHaveLength(2);
         expect(container.querySelector("[data-testid='taslak-eksik']")).toBeNull();
         expect(sonPreviewGovdesi().tanim).toEqual({
-            veri_kaynagi: "davalar", kolonlar: ["tracking_no"], filtreler: [{ alan: "opening_date", op: "is_null" }], siralama: [],
+            veri_kaynagi: "davalar", kolonlar: ["tracking_no"], filtreler: [{ alan: "status", op: "eq", deger: "Derdest" }], siralama: [],
         });
-        expect(byLabel<HTMLInputElement>("Açılış Tarihi başlangıç").disabled).toBe(true);
+        expect(byLabel<HTMLInputElement>("Durum: Derdest").checked).toBe(true);
+    });
+
+    it("arama kutusu (§5.3): yazarken 600 ms tek istek, `arama contains`; × temizler ve hemen filtresiz ister; `arama` Kolonlar panelinde yok", async () => {
+        vi.useFakeTimers();
+        sunucuKur();
+        await render();
+        await tiklaVeBekle($("[data-kaynak='muvekkiller']"));
+        expect(previewCagrilari()).toHaveLength(2);
+        expect(seritAlanlari()).toEqual(["arama", "il"]);
+
+        const kutu = byLabel<HTMLInputElement>("Ara");
+        yaz(kutu, "A");
+        yaz(kutu, "Ay");
+        await act(async () => { vi.advanceTimersByTime(ONIZLEME_GECIKME_MS - 1); });
+        yaz(kutu, "Ayşe");
+        await act(async () => { vi.advanceTimersByTime(ONIZLEME_GECIKME_MS - 1); });
+        await bekle();
+        expect(previewCagrilari()).toHaveLength(2); // zamanlayıcı her tuşta sıfırlandı
+        await act(async () => { vi.advanceTimersByTime(1); });
+        await bekle();
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim).toEqual({
+            veri_kaynagi: "muvekkiller", kolonlar: ["name"], filtreler: [{ alan: "arama", op: "contains", deger: "Ayşe" }], siralama: [],
+        });
+        expect(container.querySelector("[data-testid='filtre-cipi'][data-alan='arama']")?.textContent).toContain("içerir \"Ayşe\"");
+
+        await tiklaVeBekle(byLabel("Ara temizle"));
+        expect(previewCagrilari()).toHaveLength(4);
+        expect(sonPreviewGovdesi().tanim.filtreler).toEqual([]);
+        expect(kutu.value).toBe("");
+
+        const p = await kolonPaneliAc();
+        expect(p.querySelector("[aria-label='Ara']")).toBeNull();
+        expect(byLabel<HTMLInputElement>("Ad", p).checked).toBe(true);
+        await kolonPaneliKapat();
     });
 
     it("kart ile kaynak değişince eski kaynağın satırları ANINDA kaybolur, kolonlar/şerit yeni kaynağa döner, önizleme kendiliğinden yenilenir", async () => {
@@ -545,7 +588,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(container.textContent).not.toContain("2025/12");
         expect(container.textContent).toContain("Önizleme alınıyor");
         expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (1)");
-        expect(seritAlanlari()).toEqual(["il"]);
+        expect(seritAlanlari()).toEqual(["arama", "il"]);
         expect(container.querySelector("[data-testid='filtre-cipi']")).toBeNull();
         // Yeni kaynak hemen istendi (bekleyen "x" filtresi eski kaynakla gitmedi)
         expect(previewCagrilari()).toHaveLength(2);

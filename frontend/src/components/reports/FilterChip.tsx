@@ -15,10 +15,10 @@ type FilterChipProps = {
 
 type MenuOgesi = { anahtar: string; etiket: string; secili?: boolean; uygula: () => void };
 
-/** Mevcut kontrolün tekil değeri (gelişmiş `ne`/`eq`'e geçerken korunur). */
+/** Mevcut kontrolün tekil değeri (gelişmiş `ne`/`eq`'e geçerken korunur; "(boş)" seçimi taşınmaz). */
 function tekilDeger(d: KontrolDurumu): string | number | undefined {
     switch (d.kontrol) {
-        case "coklu_secim": return d.secili[0];
+        case "coklu_secim": return d.secili.find((s): s is string => s !== null);
         case "metin_icerir": return d.metin.trim() || undefined;
         case "tarih_araligi": return d.baslangic.trim() || d.bitis.trim() || undefined;
         case "sayi_araligi": return d.en_az ?? d.en_cok ?? undefined;
@@ -28,15 +28,16 @@ function tekilDeger(d: KontrolDurumu): string | number | undefined {
 
 /**
  * Etkin filtre çipi: `etiket · özet` · "…" menüsü (gelişmiş op'lar: kolonun `oplar`ında olup
- * kontrolün doğal üretmedikleri — `ne`/`not_null`; metinde "tam eşitlik" anahtarı) · ×.
- * Gelişmiş çipte menü: diğer izinli op'lar + "Basit kontrole dön". Sunucu sözleşmesi değişmez.
+ * kontrolün doğal üretmedikleri — `ne`/`not_null`, tarih/sayı/metinde `is_null` "boş" (§5.1 madde 8);
+ * metinde "tam eşitlik" anahtarı) · ×. Özet etiketli (`secenek_etiketleri`), "(boş)" → "boş".
+ * Gelişmiş çipte menü: diğer izinli op'lar + "Basit kontrole dön" (yuvanın sunumuyla). Sunucu sözleşmesi değişmez.
  */
 export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps) {
     const [menuAcik, setMenuAcik] = useState(false);
     const ref = useDisariTiklama<HTMLSpanElement>(menuAcik, () => setMenuAcik(false));
     const d = oge.durum;
     const etiket = kolon.etiket;
-    const ozet = kontrolOzeti(d, kolon.tip);
+    const ozet = kontrolOzeti(d, kolon.tip, kolon.secenek_etiketleri);
     const gelismis = d.kontrol === "gelismis";
 
     const menu: MenuOgesi[] = [];
@@ -53,7 +54,7 @@ export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps
             });
         }
         if (kolon.kontrol) {
-            menu.push({ anahtar: "basit", etiket: "Basit kontrole dön", uygula: () => onDegistir(bosKontrol(kolon)) });
+            menu.push({ anahtar: "basit", etiket: "Basit kontrole dön", uygula: () => onDegistir(bosKontrol(kolon, oge.sunum)) });
         }
     } else {
         if (d.kontrol === "metin_icerir" && kolon.oplar.includes("eq")) {
@@ -64,7 +65,8 @@ export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps
                 uygula: () => onDegistir({ ...d, tam: !d.tam }),
             });
         }
-        for (const op of gelismisOplar(kolon)) {
+        const tur = d.kontrol === "var_yok" || d.kontrol === "bos_anahtari" ? d.kontrol : undefined;
+        for (const op of gelismisOplar(kolon, tur)) {
             menu.push({
                 anahtar: op,
                 etiket: OP_ETIKETLERI[op],

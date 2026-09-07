@@ -18,8 +18,12 @@ export type FiltreOp =
     | "gte" | "lte" | "between"
     | "is_null" | "not_null";
 
-/** `deger` biçimi: str / number / bool / list (in, between). `is_null`/`not_null` değer taşımaz. */
-export type FiltreDeger = string | number | boolean | (string | number)[];
+/**
+ * `deger` biçimi: str / number / bool / list (in, between). `is_null`/`not_null` değer taşımaz.
+ * §5.2: `in` listesinde `null` öğesi "(boş)" demektir (motor `IN (...) OR IS NULL`); diğer op'larda
+ * `null` sunucuda 422 — `filtreTamamMi` `between` uçlarında reddeder.
+ */
+export type FiltreDeger = string | number | boolean | (string | number | null)[];
 
 export interface Filtre {
     alan: string;
@@ -59,6 +63,12 @@ export const TANIM_LIMITLERI = {
 /** Filtre kontrol türü (§4.2; tipten türetilir, filtrelenemeyen kolonda null). */
 export type FiltreKontrolu = "tarih_araligi" | "coklu_secim" | "metin_icerir" | "sayi_araligi" | "mantik";
 
+/**
+ * Seçenek listesinin kaynağı (§5.2): `sabit` = `liste` tipi kapalı küme; `veri` = metin kolonun DISTINCT
+ * değerleri (sıklığa göre azalan — ilk 8 "Sık" bölümü); seçeneksiz kolonda null.
+ */
+export type SecenekKaynagi = "sabit" | "veri";
+
 export interface KatalogKolon {
     anahtar: string;
     etiket: string;
@@ -67,7 +77,7 @@ export interface KatalogKolon {
     siralanabilir: boolean;
     /** Türetilmiş kolon; §4.2'den beri filtrelenebilirlik kolon bazındadır (taraf kolonları EXISTS ile süzülür). */
     turetilmis: boolean;
-    /** Kapalı liste (`liste` tipi) seçenekleri; diğer tiplerde null. */
+    /** Kapalı liste seçenekleri (`liste` tipi ya da §5.2 veriden liste); diğerlerinde null. SIRASI katalogdan — istemci yeniden sıralamaz. */
     secenekler: string[] | null;
     /** Kaynağa göre kapalı grup kümesi (§4.2) — alan seçicideki başlık. */
     grup: string;
@@ -79,12 +89,28 @@ export interface KatalogKolon {
     oneriler: string[] | null;
     /** Öneri listesi 300'ü aşıp kesildi. */
     oneri_kesik: boolean;
+    /** §5.2 seçenek kaynağı; seçeneksiz kolonda null. */
+    secenek_kaynagi: SecenekKaynagi | null;
+    /** §5.2 ham kod → gösterim etiketi (client_type: Individual→"Gerçek kişi"); filtre değeri HAM gider. */
+    secenek_etiketleri: Record<string, string> | null;
+    /** §5.2 false = yalnız filtre (sanal `arama` kolonu): Kolonlar panelinde ve setlerde yok, `kolonlar`da 422. */
+    secilebilir: boolean;
+    /** Kolon açıklaması (arama kutusu placeholder'ı); sunucu vermezse yok. */
+    aciklama?: string | null;
 }
 
-/** Şeritte hazır gelen filtre; `alternatifler` yalnız tarih aralığında alan değiştirici (§4.2). */
+/** Hızlı filtre yuvasının sunumu (§5.2): kontrol seçimi `kontrol` + `sunum` ikilisinden (§5.3). */
+export type HizliFiltreSunumu = "varsayilan" | "arama" | "cipler" | "var_yok" | "bos_anahtari";
+
+/**
+ * Şeritte hazır gelen filtre; `alternatifler` yalnız tarih aralığında alan değiştirici (§4.2);
+ * `sunum`/`etiket` §5.2 (anahtar metni, ör. "Davası var", "E-postası yok").
+ */
 export interface HizliFiltre {
     alan: string;
     alternatifler: string[];
+    sunum: HizliFiltreSunumu;
+    etiket: string | null;
 }
 
 export interface KolonSeti {
@@ -251,8 +277,9 @@ export function opDegerSekli(op: FiltreOp): DegerSekli {
 export function degerSekleUyarla(op: FiltreOp, onceki: FiltreDeger | undefined): FiltreDeger | undefined {
     const sekil = opDegerSekli(op);
     if (sekil === "yok") return undefined;
-    const ilk = Array.isArray(onceki) ? onceki[0] : onceki;
-    if (sekil === "tekil") return ilk;
+    // Listedeki `null` "(boş)" öğesidir — tekil/ikili şekle taşınmaz (o op'larda sunucu reddeder).
+    const ilk = Array.isArray(onceki) ? onceki.find(x => x !== null) : onceki;
+    if (sekil === "tekil") return ilk ?? undefined;
     if (sekil === "ikili") {
         const a = Array.isArray(onceki) ? onceki[0] : onceki;
         const b = Array.isArray(onceki) ? onceki[1] : undefined;
@@ -264,7 +291,7 @@ export function degerSekleUyarla(op: FiltreOp, onceki: FiltreDeger | undefined):
 }
 
 /** `between` ucu: sayı number KALIR (§2.1 `[min, max]` JSON number), metin olduğu gibi; boş/mantık → "". */
-function ikiliUc(v: FiltreDeger | undefined): string | number {
+function ikiliUc(v: FiltreDeger | null | undefined): string | number {
     if (v === undefined || v === null || typeof v === "boolean" || Array.isArray(v)) return "";
     return v;
 }
@@ -276,6 +303,20 @@ function ikiliUc(v: FiltreDeger | undefined): string | number {
 export function kolonOplari(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar">): readonly FiltreOp[] {
     if (!kolon.filtrelenebilir) return [];
     return kolon.oplar && kolon.oplar.length > 0 ? kolon.oplar : opsForTip(kolon.tip);
+}
+
+/** Rapor kolonu olarak seçilebilir mi? (§5.2 `secilebilir`; alan yoksa — eski katalog — evet.) Katalogda olmayan kolon hayır. */
+export function kolonSecilebilirMi(kolon: Pick<KatalogKolon, "secilebilir"> | undefined): boolean {
+    if (!kolon) return false;
+    return kolon.secilebilir !== false;
+}
+
+/** Kolonun seçenek etiketi (§5.2 `secenek_etiketleri` ∨ ham değer); `null` → "(boş)". Filtre değeri daima HAM. */
+export const BOS_SECENEK_ETIKETI = "(boş)";
+
+export function secenekEtiketi(kolon: Pick<KatalogKolon, "secenek_etiketleri">, deger: string | null): string {
+    if (deger === null) return BOS_SECENEK_ETIKETI;
+    return kolon.secenek_etiketleri?.[deger] ?? deger;
 }
 
 /**
@@ -313,7 +354,8 @@ export function tanimGecerliMi(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi | 
     if (tanim.filtreler.length > TANIM_LIMITLERI.filtre_max) return false;
     if (tanim.siralama.length > TANIM_LIMITLERI.siralama_max) return false;
     const kolonOf = (anahtar: string) => kaynak.kolonlar.find(k => k.anahtar === anahtar);
-    if (!tanim.kolonlar.every(k => kolonOf(k) !== undefined)) return false;
+    // §5.2 `secilebilir=false` (sanal arama kolonu) `kolonlar`da 422 — kapı da reddeder.
+    if (!tanim.kolonlar.every(k => kolonSecilebilirMi(kolonOf(k)))) return false;
     if (!tanim.filtreler.every(f => {
         const k = kolonOf(f.alan);
         return k !== undefined && k.filtrelenebilir && filtreTamamMi(f, k.tip, kolonOplari(k));
@@ -328,29 +370,52 @@ export function tanimGecerliMi(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi | 
 // §4.3 Kontrol ↔ op çevirisi (G138) — sunum katmanı; sunucu sözleşmesi DEĞİŞMEZ
 // ---------------------------------------------------------------------------
 
+/** Çoklu seçimde seçili değer: ham kod ya da `null` = "(boş)" (§5.2 `in` içinde `null`). */
+export type Secim = string | null;
+
+/** Var/yok anahtarının üç durumu (§5.3): hepsi = filtre yok, var = `gte 1`, yok = `eq 0`. */
+export type VarYokDurumu = "hepsi" | "var" | "yok";
+
+/** Şerit kontrol türleri: katalog `kontrol`ü + §5.3 sunum kontrolleri (`var_yok`, `bos_anahtari`). */
+export type KontrolTuru = FiltreKontrolu | "var_yok" | "bos_anahtari";
+
 /**
  * Şeritteki bir kontrolün durumu. Boş kontrol (değer girilmemiş) tanıma GİRMEZ
- * (`kontroldenFiltre` → null); `bos` açıkken değer girdisi kilitlenir ve `is_null` gider.
- * `gelismis`: §4.3 tablosuna çözülemeyen op (`ne`, `not_null`, tarih/sayıda `eq`, metinde `in`)
+ * (`kontroldenFiltre` → null). "boş olanlar" yan kutucuğu YOK (§5.1 madde 8): çoklu seçimde
+ * "(boş)" seçeneği (`secili` içinde `null`), `var_yok`/`bos_anahtari` sunum kontrolleri; tarih/sayı/
+ * metin/mantık boşluğu çipin "…" menüsünden `is_null` (gelişmiş çip).
+ * `gelismis`: §4.3 tablosuna çözülemeyen op (`ne`, `not_null`, tarih/sayıda `eq`/`is_null`, metinde `in`)
  * — filtre olduğu gibi korunur, çip olarak gösterilir, kaybolmaz.
  */
 export type KontrolDurumu =
-    | { kontrol: "tarih_araligi"; alan: string; bos: boolean; baslangic: string; bitis: string }
-    | { kontrol: "sayi_araligi"; alan: string; bos: boolean; en_az: number | null; en_cok: number | null }
-    | { kontrol: "coklu_secim"; alan: string; bos: boolean; secili: string[] }
-    | { kontrol: "metin_icerir"; alan: string; bos: boolean; metin: string; tam: boolean }
-    | { kontrol: "mantik"; alan: string; bos: boolean; deger: boolean | null }
+    | { kontrol: "tarih_araligi"; alan: string; baslangic: string; bitis: string }
+    | { kontrol: "sayi_araligi"; alan: string; en_az: number | null; en_cok: number | null }
+    | { kontrol: "coklu_secim"; alan: string; secili: Secim[] }
+    | { kontrol: "metin_icerir"; alan: string; metin: string; tam: boolean }
+    | { kontrol: "mantik"; alan: string; deger: boolean | null }
+    | { kontrol: "var_yok"; alan: string; durum: VarYokDurumu }
+    | { kontrol: "bos_anahtari"; alan: string; acik: boolean }
     | { kontrol: "gelismis"; alan: string; op: FiltreOp; deger?: FiltreDeger };
 
-/** Kolon için değer girilmemiş (boş) kontrol; filtrelenemeyen kolonda gelişmiş çipe düşer. */
-export function bosKontrol(kolon: Pick<KatalogKolon, "anahtar" | "kontrol" | "tip" | "filtrelenebilir" | "oplar">): KontrolDurumu {
+type KontrolKolonu = Pick<KatalogKolon, "anahtar" | "kontrol" | "tip" | "filtrelenebilir" | "oplar">;
+
+/**
+ * Kolon (+ hızlı filtre sunumu) için değer girilmemiş (boş) kontrol; filtrelenemeyen kolonda gelişmiş
+ * çipe düşer. `var_yok` yalnız sayı aralığı kolonunda, `bos_anahtari` `is_null` izinli kolonda anlamlıdır;
+ * uymuyorsa kolonun kendi kontrolü (katalog tutarsızlığına karşı).
+ */
+export function bosKontrol(kolon: KontrolKolonu, sunum: HizliFiltreSunumu = "varsayilan"): KontrolDurumu {
     const alan = kolon.anahtar;
+    if (sunum === "var_yok" && kolon.kontrol === "sayi_araligi") return { kontrol: "var_yok", alan, durum: "hepsi" };
+    if (sunum === "bos_anahtari" && kolon.kontrol && kolonOplari(kolon).includes("is_null")) {
+        return { kontrol: "bos_anahtari", alan, acik: false };
+    }
     switch (kolon.kontrol) {
-        case "tarih_araligi": return { kontrol: "tarih_araligi", alan, bos: false, baslangic: "", bitis: "" };
-        case "sayi_araligi": return { kontrol: "sayi_araligi", alan, bos: false, en_az: null, en_cok: null };
-        case "coklu_secim": return { kontrol: "coklu_secim", alan, bos: false, secili: [] };
-        case "metin_icerir": return { kontrol: "metin_icerir", alan, bos: false, metin: "", tam: false };
-        case "mantik": return { kontrol: "mantik", alan, bos: false, deger: null };
+        case "tarih_araligi": return { kontrol: "tarih_araligi", alan, baslangic: "", bitis: "" };
+        case "sayi_araligi": return { kontrol: "sayi_araligi", alan, en_az: null, en_cok: null };
+        case "coklu_secim": return { kontrol: "coklu_secim", alan, secili: [] };
+        case "metin_icerir": return { kontrol: "metin_icerir", alan, metin: "", tam: false };
+        case "mantik": return { kontrol: "mantik", alan, deger: null };
         default: return { kontrol: "gelismis", alan, op: kolonOplari(kolon)[0] ?? "eq" };
     }
 }
@@ -362,20 +427,20 @@ export function kontrolDoluMu(d: KontrolDurumu): boolean {
 
 const sayiMi = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const metinMi = (v: unknown): v is string => typeof v === "string";
-const metinListesiMi = (v: unknown): v is string[] => Array.isArray(v) && v.every(metinMi);
+const secimMi = (v: unknown): v is Secim => v === null || metinMi(v);
+const secimListesiMi = (v: unknown): v is Secim[] => Array.isArray(v) && v.every(secimMi);
 
 /**
- * §4.3 tablosu: kontrol durumu → sunucu filtresi. Boş kontrol → null (tanıma girmez).
+ * §4.3 + §5.3 tablosu: kontrol durumu → sunucu filtresi. Boş kontrol → null (tanıma girmez).
  * tarih/sayı: iki uç → `between`, yalnız başlangıç → `gte`, yalnız bitiş → `lte`;
- * çoklu seçim: 1 → `eq`, n → `in`; metin: `contains` (combobox seçiminde `tam` → `eq`);
- * mantık: `eq true/false`; her kontrolde "boş olanlar" → `is_null` (değersiz).
+ * çoklu seçim: 1 dolu → `eq`, n → `in` ("(boş)" = `null` öğesi), yalnız "(boş)" → `is_null`;
+ * metin: `contains` (combobox seçiminde `tam` → `eq`); mantık: `eq true/false`;
+ * var_yok: var → `gte 1`, yok → `eq 0`, hepsi → yok; bos_anahtari: açık → `is_null`.
  */
 export function kontroldenFiltre(d: KontrolDurumu): Filtre | null {
-    if (d.kontrol === "gelismis") {
-        return d.deger === undefined ? { alan: d.alan, op: d.op } : { alan: d.alan, op: d.op, deger: d.deger };
-    }
-    if (d.bos) return { alan: d.alan, op: "is_null" };
     switch (d.kontrol) {
+        case "gelismis":
+            return d.deger === undefined ? { alan: d.alan, op: d.op } : { alan: d.alan, op: d.op, deger: d.deger };
         case "tarih_araligi": {
             const b = d.baslangic.trim();
             const e = d.bitis.trim();
@@ -392,10 +457,13 @@ export function kontroldenFiltre(d: KontrolDurumu): Filtre | null {
             if (c !== null) return { alan: d.alan, op: "lte", deger: c };
             return null;
         }
-        case "coklu_secim":
+        case "coklu_secim": {
             if (d.secili.length === 0) return null;
-            if (d.secili.length === 1) return { alan: d.alan, op: "eq", deger: d.secili[0] };
+            const dolu = d.secili.filter((s): s is string => s !== null);
+            if (dolu.length === 0) return { alan: d.alan, op: "is_null" };
+            if (d.secili.length === 1) return { alan: d.alan, op: "eq", deger: dolu[0] };
             return { alan: d.alan, op: "in", deger: [...d.secili] };
+        }
         case "metin_icerir": {
             const m = d.metin.trim();
             if (!m) return null;
@@ -404,23 +472,37 @@ export function kontroldenFiltre(d: KontrolDurumu): Filtre | null {
         case "mantik":
             if (d.deger === null) return null;
             return { alan: d.alan, op: "eq", deger: d.deger };
+        case "var_yok":
+            if (d.durum === "var") return { alan: d.alan, op: "gte", deger: 1 };
+            if (d.durum === "yok") return { alan: d.alan, op: "eq", deger: 0 };
+            return null;
+        case "bos_anahtari":
+            return d.acik ? { alan: d.alan, op: "is_null" } : null;
     }
 }
 
 /**
- * Sunucu filtresi → kontrol durumu (şablon/asistan/koşu tanımı şeride çözülürken). §4.3'e
- * çözülemeyen op ya da kontrolsüz kolon → `gelismis` (filtre kaybolmaz). Gidiş-dönüş:
- * `kontroldenFiltre(filtredenKontrol(f, k)) ≡ f` — tek istisna tek değerli `in` (→ `eq`, eş anlamlı).
+ * Sunucu filtresi → kontrol durumu (şablon/asistan/koşu tanımı şeride çözülürken). `sunum` verilirse
+ * önce sunum kontrolü denenir (`var_yok`: `gte 1`/`eq 0`; `bos_anahtari`: `is_null`), oturmazsa kolonun
+ * kendi kontrolü. Çözülemeyen op ya da kontrolsüz kolon → `gelismis` (filtre kaybolmaz). Gidiş-dönüş:
+ * `kontroldenFiltre(filtredenKontrol(f, k)) ≡ f` — istisnalar eş anlamlı: tek değerli `in` → `eq`,
+ * `in [null]` → `is_null`.
  */
-export function filtredenKontrol(f: Filtre, kolon: Pick<KatalogKolon, "anahtar" | "kontrol" | "tip" | "filtrelenebilir" | "oplar"> | undefined): KontrolDurumu {
+export function filtredenKontrol(f: Filtre, kolon: KontrolKolonu | undefined, sunum: HizliFiltreSunumu = "varsayilan"): KontrolDurumu {
     const gelismis: KontrolDurumu = f.deger === undefined
         ? { kontrol: "gelismis", alan: f.alan, op: f.op }
         : { kontrol: "gelismis", alan: f.alan, op: f.op, deger: f.deger };
     if (!kolon || !kolon.kontrol) return gelismis;
-    const bos = bosKontrol(kolon);
-    if (bos.kontrol === "gelismis") return gelismis;
-    if (f.op === "is_null") return { ...bos, bos: true };
     const d = f.deger;
+    if (sunum === "var_yok" || sunum === "bos_anahtari") {
+        const sunumBos = bosKontrol(kolon, sunum);
+        if (sunumBos.kontrol === "var_yok") {
+            if (f.op === "gte" && d === 1) return { ...sunumBos, durum: "var" };
+            if (f.op === "eq" && d === 0) return { ...sunumBos, durum: "yok" };
+        }
+        if (sunumBos.kontrol === "bos_anahtari" && f.op === "is_null") return { ...sunumBos, acik: true };
+    }
+    const bos = bosKontrol(kolon);
     switch (bos.kontrol) {
         case "tarih_araligi":
             if (f.op === "between" && Array.isArray(d) && d.length === 2 && metinMi(d[0]) && metinMi(d[1])) {
@@ -438,7 +520,8 @@ export function filtredenKontrol(f: Filtre, kolon: Pick<KatalogKolon, "anahtar" 
             return gelismis;
         case "coklu_secim":
             if (f.op === "eq" && metinMi(d)) return { ...bos, secili: [d] };
-            if (f.op === "in" && metinListesiMi(d) && d.length > 0) return { ...bos, secili: [...d] };
+            if (f.op === "in" && secimListesiMi(d) && d.length > 0) return { ...bos, secili: [...d] };
+            if (f.op === "is_null") return { ...bos, secili: [null] };
             return gelismis;
         case "metin_icerir":
             if (f.op === "contains" && metinMi(d)) return { ...bos, metin: d, tam: false };
@@ -447,43 +530,58 @@ export function filtredenKontrol(f: Filtre, kolon: Pick<KatalogKolon, "anahtar" 
         case "mantik":
             if (f.op === "eq" && typeof d === "boolean") return { ...bos, deger: d };
             return gelismis;
+        default:
+            return gelismis;
     }
 }
 
-/** Kontrolün kendi ürettiği op'lar (§4.3); "…" menüsü `oplar` ∖ bunları gelişmiş op olarak sunar. */
-export const KONTROL_DOGAL_OPLARI: Record<FiltreKontrolu, readonly FiltreOp[]> = {
-    tarih_araligi: ["between", "gte", "lte", "is_null"],
-    sayi_araligi: ["between", "gte", "lte", "is_null"],
+/**
+ * Kontrolün kendi ürettiği op'lar (§4.3/§5.3); "…" menüsü `oplar` ∖ bunları gelişmiş op olarak sunar.
+ * `is_null` yalnız çoklu seçimde ("(boş)" seçeneği) ve boş anahtarında doğaldır; tarih/sayı/metin/mantıkta
+ * "boş" çipin "…" menüsünden gelir (§5.1 madde 8).
+ */
+export const KONTROL_DOGAL_OPLARI: Record<KontrolTuru, readonly FiltreOp[]> = {
+    tarih_araligi: ["between", "gte", "lte"],
+    sayi_araligi: ["between", "gte", "lte"],
     coklu_secim: ["eq", "in", "is_null"],
-    metin_icerir: ["contains", "eq", "is_null"],
-    mantik: ["eq", "is_null"],
+    metin_icerir: ["contains", "eq"],
+    mantik: ["eq"],
+    var_yok: ["gte", "eq"],
+    bos_anahtari: ["is_null"],
 };
 
-/** Çipin "…" menüsündeki gelişmiş op'lar: kolonun izinli listesinde olup kontrolün doğal üretmedikleri. */
-export function gelismisOplar(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar" | "kontrol">): FiltreOp[] {
-    const dogal = kolon.kontrol ? KONTROL_DOGAL_OPLARI[kolon.kontrol] : [];
+/**
+ * Çipin "…" menüsündeki gelişmiş op'lar: kolonun izinli listesinde olup kontrolün doğal üretmedikleri.
+ * `tur` verilmezse kolonun katalog kontrolü (sunum kontrollerinde çip kendi türünü verir).
+ */
+export function gelismisOplar(kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar" | "kontrol">, tur?: KontrolTuru): FiltreOp[] {
+    const etkin = tur ?? kolon.kontrol;
+    const dogal = etkin ? KONTROL_DOGAL_OPLARI[etkin] : [];
     return kolonOplari(kolon).filter(op => !dogal.includes(op));
 }
 
 const TR_OZET_SAYI = new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 });
 
-function degerOzeti(v: FiltreDeger | undefined, tip: KolonTipi): string {
+function degerOzeti(v: FiltreDeger | null | undefined, tip: KolonTipi, etiketler?: Record<string, string> | null): string {
     if (v === undefined) return "";
-    if (Array.isArray(v)) return v.map(x => degerOzeti(x, tip)).join(", ");
+    if (v === null) return "boş";
+    if (Array.isArray(v)) return v.map(x => degerOzeti(x, tip, etiketler)).join(", ");
     if (typeof v === "boolean") return v ? "Evet" : "Hayır";
     if (typeof v === "number") return TR_OZET_SAYI.format(v);
     if (tip === "tarih") return tarihBicimle(v);
-    return v;
+    return etiketler?.[v] ?? v;
 }
 
-/** Çipte basılan kısa özet: "Derdest, Karar" · "01.01.2025 – 31.12.2025" · "≥ 1.000" · "içerir \"x\"" · "boş". */
-export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi): string {
-    if (d.kontrol === "gelismis") {
-        const deger = degerOzeti(d.deger, tip);
-        return deger ? `${OP_ETIKETLERI[d.op]} ${deger}` : OP_ETIKETLERI[d.op];
-    }
-    if (d.bos) return "boş";
+/**
+ * Çipte basılan kısa özet: "Derdest, Karar" · "01.01.2025 – 31.12.2025" · "≥ 1.000" · "içerir \"x\"" · "boş".
+ * `etiketler` (§5.2 `secenek_etiketleri`) verilirse ham kod yerine etiket; "(boş)" → "boş".
+ */
+export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi, etiketler?: Record<string, string> | null): string {
     switch (d.kontrol) {
+        case "gelismis": {
+            const deger = degerOzeti(d.deger, tip, etiketler);
+            return deger ? `${OP_ETIKETLERI[d.op]} ${deger}` : OP_ETIKETLERI[d.op];
+        }
         case "tarih_araligi": {
             const b = d.baslangic.trim();
             const e = d.bitis.trim();
@@ -501,7 +599,7 @@ export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi): string {
             return "";
         }
         case "coklu_secim":
-            return d.secili.join(", ");
+            return d.secili.map(s => degerOzeti(s, tip, etiketler)).join(", ");
         case "metin_icerir": {
             const m = d.metin.trim();
             if (!m) return "";
@@ -509,6 +607,10 @@ export function kontrolOzeti(d: KontrolDurumu, tip: KolonTipi): string {
         }
         case "mantik":
             return d.deger === null ? "" : d.deger ? "Evet" : "Hayır";
+        case "var_yok":
+            return d.durum === "hepsi" ? "" : d.durum;
+        case "bos_anahtari":
+            return d.acik ? "boş" : "";
     }
 }
 
