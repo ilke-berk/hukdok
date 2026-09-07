@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
-// ReportsPage (G133 → G138) — Rapor Oluşturucu + filtre şeridi + önizleme tablosunun sözleşmeye
-// bağlanışı: katalog yüklenir ve önizleme KENDİLİĞİNDEN istenir (Önizle düğmesi/bayat rozeti yok),
-// kolon/şerit/başlık-sıralaması plan §2.1 gövdesiyle /api/reports/preview'a gider, yazarken 600 ms
-// tek istek, geçersiz tanımda istek yok, kaynak değişince eski satırlar ANINDA kaybolur, 422 okunur
-// mesaja döner, ağ hatası boş listeye DÖNMEZ (DataErrorBanner), sayfa değişimi son önizlenen tanımla
-// `sayfa` gönderir; /reports yalnız yöneticiye açılır, Sidebar "Raporlar" yalnız yöneticide.
+// ReportsPage (G133 → G139) — kaynak kartları + filtre şeridi + Kolonlar yan paneli + önizleme
+// tablosunun sözleşmeye bağlanışı: sayfa DOLU açılır (katalog yüklenir, önizleme KENDİLİĞİNDEN
+// varsayılan tanımla istenir; Önizle düğmesi/bayat rozeti/sol sütun yok), kolon/şerit/başlık-sıralaması
+// plan §2.1 gövdesiyle /api/reports/preview'a gider, yazarken 600 ms tek istek, geçersiz tanımda istek
+// yok, kart tıklaması kaynağı değiştirir ve eski satırlar ANINDA kaybolur, kolon setleri yan panelden
+// seçimi değiştirir, boş sonuçta filtre kısayolu, 422 okunur mesaja döner, ağ hatası boş listeye
+// DÖNMEZ (DataErrorBanner), sayfa değişimi son önizlenen tanımla `sayfa` gönderir; /reports yalnız
+// yöneticiye açılır, Sidebar "Raporlar" yalnız yöneticide.
+// Seçili kolonların birincil kanıtı: "Kolonlar (N)" düğme metni + /preview gövdesindeki `kolonlar`
+// (yan panel Radix portal'ında açılır; panel içi `document.body` üzerinden okunur).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -88,12 +92,16 @@ const KATALOG = {
                 { alan: "subject", alternatifler: [] },
                 { alan: "maddi_tazminat", alternatifler: [] },
             ],
-            kolon_setleri: [{ ad: "Temel", kolonlar: ["tracking_no", "subject"] }],
+            kolon_setleri: [
+                { ad: "Temel", kolonlar: ["tracking_no", "subject"] },
+                { ad: "Karar takibi", kolonlar: ["tracking_no", "status", "opening_date"] },
+                { ad: "Tazminat", kolonlar: ["tracking_no", "maddi_tazminat"] },
+            ],
         },
         {
             anahtar: "muvekkiller",
             etiket: "Müvekkiller",
-            aciklama: "",
+            aciklama: "Cari kartlar",
             varsayilan_kolonlar: ["name"],
             kolonlar: [
                 kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
@@ -144,7 +152,7 @@ const sonPreviewGovdesi = () => {
     return JSON.parse(opts!.body as string);
 };
 
-describe("ReportsPage (G133/G138)", () => {
+describe("ReportsPage (G133/G138/G139)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
 
@@ -205,22 +213,14 @@ describe("ReportsPage (G133/G138)", () => {
         if (!el) throw new Error("aria-label bulunamadı: " + label);
         return el;
     };
-    const butonBul = (metin: string): HTMLButtonElement => {
-        const b = Array.from(container.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
+    const butonBul = (metin: string, root: ParentNode = container): HTMLButtonElement => {
+        const b = Array.from(root.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
         if (!b) throw new Error("düğme bulunamadı: " + metin);
         return b;
     };
     const butonVar = (metin: string) =>
         Array.from(container.querySelectorAll("button")).some(x => x.textContent?.trim() === metin);
 
-    /** React controlled select'e kullanıcı seçimi: prototip setter + change (value tracker aşımı). */
-    function sec(sel: HTMLSelectElement, value: string) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
-        act(() => {
-            setter.call(sel, value);
-            sel.dispatchEvent(new Event("change", { bubbles: true }));
-        });
-    }
     function yaz(el: HTMLInputElement, value: string) {
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
         act(() => {
@@ -247,24 +247,48 @@ describe("ReportsPage (G133/G138)", () => {
         Array.from(tr.querySelectorAll("td")).map(td => td.textContent));
     const seritAlanlari = () =>
         Array.from(container.querySelectorAll("[data-testid='filtre-kontrolu']")).map(k => k.getAttribute("data-alan"));
+    /** Kartlardaki seçili kaynak (`role=radio` + `aria-checked`). */
+    const seciliKaynak = () => container.querySelector("[data-kaynak][aria-checked='true']")?.getAttribute("data-kaynak") ?? null;
+    const kartlar = () => Array.from(container.querySelectorAll("[data-kaynak]"));
+    const kolonDugmesi = () => $<HTMLButtonElement>("[data-testid='kolon-dugmesi']");
+    /** Yan panel Radix portal'ında: gövdeden okunur. */
+    const kolonPaneli = () => document.body.querySelector("[data-testid='kolon-paneli']");
+    async function kolonPaneliAc(): Promise<ParentNode> {
+        await tiklaVeBekle(kolonDugmesi());
+        const p = kolonPaneli();
+        if (!p) throw new Error("kolon paneli açılmadı");
+        return p;
+    }
+    async function kolonPaneliKapat() {
+        await tiklaVeBekle(byLabel("Paneli kapat", document.body));
+        expect(kolonPaneli()).toBeNull();
+    }
+    const panelKolonlari = (p: ParentNode) => Array.from(p.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
 
-    it("katalog yüklenir; açılışta önizleme KENDİLİĞİNDEN varsayılan tanımla istenir; Önizle düğmesi ve operatör listesi yok", async () => {
+    it("sayfa DOLU açılır: katalog yüklenir, Davalar kartı seçili, önizleme KENDİLİĞİNDEN varsayılan tanımla istenir; sol sütun/Önizle/operatör/tip rozeti yok", async () => {
         sunucuKur();
         await render();
 
         expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/catalog");
-        const kaynak = $<HTMLSelectElement>("#rapor-kaynak");
-        expect(Array.from(kaynak.options).map(o => o.textContent)).toEqual(["Davalar", "Müvekkiller"]);
-        expect(kaynak.value).toBe("davalar");
+        // Kaynak kartları (radio grubu): katalog sırası, ilk kart seçili; eski select yok
+        expect(kartlar().map(k => k.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller"]);
+        expect(kartlar().map(k => k.getAttribute("role"))).toEqual(["radio", "radio"]);
+        expect(seciliKaynak()).toBe("davalar");
+        expect(kartlar()[0].textContent).toContain("Davalar");
+        expect(kartlar()[0].textContent).toContain("Dava kartları");
+        expect(container.querySelector("#rapor-kaynak")).toBeNull();
 
-        const secili = Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
-        expect(secili).toEqual(["tracking_no", "subject"]);
+        // Kolonlar yalnız yan panelde: sayfada liste yok, düğme sayıyı taşır, panel kapalı
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (2)");
+        expect(container.querySelector("[data-kolon]")).toBeNull();
+        expect(kolonPaneli()).toBeNull();
+        expect(container.textContent).not.toContain("Rapor Oluşturucu");
 
-        // Otomatik önizleme: tek istek, varsayılan tanım, tablo dolu
+        // Otomatik önizleme: tek istek, varsayılan tanım, tablo dolu — kullanıcı hiçbir şeye basmadı
         expect(previewCagrilari()).toHaveLength(1);
         expect(sonPreviewGovdesi()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 50 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("Toplam 120 kayıt");
+        expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
 
         // Şerit: kaynağın hızlı filtreleri sırayla; eski arayüz izleri yok
         expect(seritAlanlari()).toEqual(["opening_date", "status", "subject", "maddi_tazminat"]);
@@ -274,6 +298,99 @@ describe("ReportsPage (G133/G138)", () => {
         expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(container.querySelector("[data-testid='guncelleniyor']")).toBeNull();
+
+        // Sadeleştirme: kaynak açıklaması yalnız kartta (bir kez), tip rozeti hiçbir yerde yok
+        expect(container.textContent?.split("Dava kartları")).toHaveLength(2);
+        const p = await kolonPaneliAc();
+        const panelMetni = (p as Element).textContent ?? "";
+        expect(panelMetni).not.toContain("abc");
+        expect(panelMetni).not.toContain("123");
+        expect(panelMetni).not.toContain("Dava kartları");
+        expect(container.textContent?.split("Dava kartları")).toHaveLength(2);
+        await kolonPaneliKapat();
+    });
+
+    it("kart tıklaması kaynağı değiştirir (aria-checked), aynı karta yeniden basmak yeni istek üretmez", async () => {
+        sunucuKur();
+        await render();
+        expect(previewCagrilari()).toHaveLength(1);
+
+        await tiklaVeBekle(kartlar()[0]); // zaten seçili
+        expect(previewCagrilari()).toHaveLength(1);
+        expect(seciliKaynak()).toBe("davalar");
+
+        await tiklaVeBekle($("[data-kaynak='muvekkiller']"));
+        expect(seciliKaynak()).toBe("muvekkiller");
+        expect(kartlar().map(k => k.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+        expect(previewCagrilari()).toHaveLength(2);
+        expect(sonPreviewGovdesi().tanim).toEqual({ veri_kaynagi: "muvekkiller", kolonlar: ["name"], filtreler: [], siralama: [] });
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (1)");
+        expect(satirlar()).toEqual([["Ayşe Yılmaz"]]);
+    });
+
+    it("Kolonlar yan paneli: 3 hazır set + gruplar; set tıklaması seçimi değiştirir ve önizleme yenilenir; grup 'tümünü seç'; kapanınca ek istek yok", async () => {
+        sunucuKur();
+        await render();
+        expect(previewCagrilari()).toHaveLength(1);
+
+        const p = await kolonPaneliAc();
+        const setler = Array.from(p.querySelectorAll("[data-kolon-seti]"));
+        expect(setler.map(s => s.getAttribute("data-kolon-seti"))).toEqual(["Temel", "Karar takibi", "Tazminat"]);
+        expect(setler.map(s => s.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
+        expect(Array.from(p.querySelectorAll("[data-kolon-grubu]")).map(g => g.getAttribute("data-kolon-grubu")))
+            .toEqual(["Kimlik", "Karar ve aşama", "Tarihler", "Tutarlar", "Taraflar"]);
+        expect(panelKolonlari(p)).toEqual(["tracking_no", "subject"]);
+
+        // Set: seçim setle DEĞİŞİR (sıra setin sırası), önizleme hemen
+        await tiklaVeBekle(setler[1]);
+        expect(previewCagrilari()).toHaveLength(2);
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date"]);
+        expect(panelKolonlari(p)).toEqual(["tracking_no", "status", "opening_date"]);
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (3)");
+        expect(Array.from(p.querySelectorAll("[data-kolon-seti]")).map(s => s.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
+
+        // Grup başlığı: Tutarlar'ın tümü (maddi_tazminat) eklenir; ikinci tık grubu kaldırır
+        await tiklaVeBekle(byLabel("Tutarlar tümünü seç", p));
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date", "maddi_tazminat"]);
+        await tiklaVeBekle(byLabel("Tutarlar tümünü seç", p));
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date"]);
+        expect(previewCagrilari()).toHaveLength(4);
+
+        await kolonPaneliKapat();
+        expect(previewCagrilari()).toHaveLength(4);
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (3)");
+    });
+
+    it("boş sonuçta 'filtreleri gevşetin' + Filtreleri temizle kısayolu: şerit boşalır, önizleme filtresiz yenilenir", async () => {
+        const bosCevap = { ...ONIZLEME, satirlar: [], toplam: 0 };
+        fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
+            if (url === "/api/reports/catalog") return okJson(KATALOG);
+            if (url === "/api/reports/templates") return okJson([]);
+            if (url === "/api/admin/settings") return okJson({ settings: [] });
+            if (url === "/api/reports/preview") {
+                const govde = JSON.parse(opts!.body as string);
+                const cevap = govde.tanim.filtreler.length > 0 ? bosCevap : ONIZLEME;
+                return okJson({ ...cevap, sayfa: govde.sayfa, sayfa_boyu: govde.sayfa_boyu });
+            }
+            throw new Error("beklenmeyen uç: " + url);
+        });
+        await render();
+        expect(container.querySelector("[data-testid='bos-sonuc']")).toBeNull();
+
+        await tiklaVeBekle(byLabel("Durum seç"));
+        await tiklaVeBekle(byLabel("Durum: Derdest"));
+        expect(previewCagrilari()).toHaveLength(2);
+        const bos = $("[data-testid='bos-sonuc']");
+        expect(bos.textContent).toContain("Bu filtrelerle kayıt yok");
+        expect(bos.textContent).toContain("filtreleri gevşetin");
+        expect(container.querySelector("tbody")).toBeNull();
+
+        await tiklaVeBekle(butonBul("Filtreleri temizle", bos));
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim).toEqual(VARSAYILAN_TANIM);
+        expect(container.querySelector("[data-testid='bos-sonuc']")).toBeNull();
+        expect(container.querySelector("[data-testid='filtre-cipi']")).toBeNull();
+        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
     });
 
     it("kolon + şerit + başlık sıralaması gövdeyi §2.1 ile birebir gönderir (between dizi, in liste, sayı number); tablo biçimleri", async () => {
@@ -281,12 +398,14 @@ describe("ReportsPage (G133/G138)", () => {
         await render();
         expect(previewCagrilari()).toHaveLength(1);
 
-        // Kolon ekle (checkbox) ve sırayı değiştir (↓) — yapısal: her biri hemen önizlenir
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Açılış Tarihi"));
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Maddi Tazminat"));
-        await tiklaVeBekle(byLabel<HTMLButtonElement>("Ofis No aşağı"));
+        // Kolon ekle (yan panel checkbox) ve sırayı değiştir (↓) — yapısal: her biri hemen önizlenir
+        const p = await kolonPaneliAc();
+        await tiklaVeBekle(byLabel<HTMLInputElement>("Açılış Tarihi", p));
+        await tiklaVeBekle(byLabel<HTMLInputElement>("Maddi Tazminat", p));
+        await tiklaVeBekle(byLabel<HTMLButtonElement>("Ofis No aşağı", p));
         expect(previewCagrilari()).toHaveLength(4);
         expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["subject", "tracking_no", "opening_date", "maddi_tazminat"]);
+        await kolonPaneliKapat();
 
         // Durum in [Derdest, Karar] — checkbox'lı açılır, serbest metin yok
         await tiklaVeBekle(byLabel("Durum seç"));
@@ -340,7 +459,7 @@ describe("ReportsPage (G133/G138)", () => {
             ["2025/12", "Tazminat", "07.03.2025", "1.234,50"],
             ["2025/13", "—", "—", "—"],
         ]);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("Toplam 120 kayıt");
+        expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
         expect(Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.getAttribute("data-alan")))
             .toEqual(["opening_date", "status", "maddi_tazminat"]);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
@@ -378,8 +497,11 @@ describe("ReportsPage (G133/G138)", () => {
         await render();
         expect(previewCagrilari()).toHaveLength(1);
 
-        await tiklaVeBekle(butonBul("Temizle")); // ColumnPicker: kolon yok → geçersiz
+        let p = await kolonPaneliAc();
+        await tiklaVeBekle(butonBul("Temizle", p)); // yan panel: kolon yok → geçersiz
+        await kolonPaneliKapat();
         expect(previewCagrilari()).toHaveLength(1);
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (0)");
         // Son geçerli önizleme ekranda kalır, başlıkta "taslak eksik" ipucu; istek yok
         expect($("[data-testid='taslak-eksik']").textContent).toContain("en az bir kolon seçin");
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
@@ -387,7 +509,9 @@ describe("ReportsPage (G133/G138)", () => {
         await tiklaVeBekle(byLabel("Açılış Tarihi boş olanlar"));
         expect(previewCagrilari()).toHaveLength(1);
 
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Ofis No"));
+        p = await kolonPaneliAc();
+        await tiklaVeBekle(byLabel<HTMLInputElement>("Ofis No", p));
+        await kolonPaneliKapat();
         expect(previewCagrilari()).toHaveLength(2);
         expect(container.querySelector("[data-testid='taslak-eksik']")).toBeNull();
         expect(sonPreviewGovdesi().tanim).toEqual({
@@ -396,7 +520,7 @@ describe("ReportsPage (G133/G138)", () => {
         expect(byLabel<HTMLInputElement>("Açılış Tarihi başlangıç").disabled).toBe(true);
     });
 
-    it("kaynak değişince eski kaynağın satırları ANINDA kaybolur, kolonlar/şerit yeni kaynağa döner, önizleme kendiliğinden yenilenir", async () => {
+    it("kart ile kaynak değişince eski kaynağın satırları ANINDA kaybolur, kolonlar/şerit yeni kaynağa döner, önizleme kendiliğinden yenilenir", async () => {
         sunucuKur();
         await render();
         expect(satirlar()).toHaveLength(2);
@@ -413,13 +537,14 @@ describe("ReportsPage (G133/G138)", () => {
             }
             throw new Error("beklenmeyen uç: " + url);
         });
-        sec($<HTMLSelectElement>("#rapor-kaynak"), "muvekkiller");
+        tikla($("[data-kaynak='muvekkiller']"));
         await bekle(1);
 
+        expect(seciliKaynak()).toBe("muvekkiller");
         expect(container.querySelector("tbody")).toBeNull();
         expect(container.textContent).not.toContain("2025/12");
         expect(container.textContent).toContain("Önizleme alınıyor");
-        expect(Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"))).toEqual(["name"]);
+        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (1)");
         expect(seritAlanlari()).toEqual(["il"]);
         expect(container.querySelector("[data-testid='filtre-cipi']")).toBeNull();
         // Yeni kaynak hemen istendi (bekleyen "x" filtresi eski kaynakla gitmedi)
@@ -429,7 +554,7 @@ describe("ReportsPage (G133/G138)", () => {
         await act(async () => { coz!(); });
         await bekle();
         expect(satirlar()).toEqual([["Ayşe Yılmaz"]]);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("Toplam 1 kayıt");
+        expect($("[data-testid='toplam-rozeti']").textContent).toBe("1 kayıt · 1 kolon");
     });
 
     it("422 detail.alan/sebep kullanıcıya okunur mesaj olarak gösterilir", async () => {
@@ -494,27 +619,42 @@ describe("ReportsPage (G133/G138)", () => {
         await render();
         expect($("[role='alert']").textContent).toContain("bakım");
         expect(toastMocks.error).toHaveBeenCalledTimes(1);
-        expect(container.querySelector("#rapor-kaynak")).toBeNull();
+        expect(container.querySelector("[data-kaynak]")).toBeNull();
         expect(previewCagrilari()).toHaveLength(0);
 
         sunucuKur();
         await tiklaVeBekle(butonBul("Tekrar dene"));
-        expect(container.querySelector("#rapor-kaynak")).not.toBeNull();
+        expect(seciliKaynak()).toBe("davalar");
         expect(previewCagrilari()).toHaveLength(1);
     });
 
-    it("tam genişlik kuralı: sayfa kökü mx-auto ile ortalanmaz; oluşturucu xl altında tek sütun; şerit önizlemenin üstünde", async () => {
+    it("yerleşim: kartlar → şerit → araç çubuğu → tablo; sol sütun yok; kök mx-auto/max-w ile daraltılmaz; dar ekranda kartlar ve tablo kendi içinde kaydırır", async () => {
         sunucuKur();
         await render();
         const kok = container.firstElementChild as HTMLElement;
-        expect(kok.className).toContain("max-w-[1600px]");
         expect(kok.className).not.toContain("mx-auto");
-        const bolum = $("section");
-        expect(bolum.className).toContain("grid-cols-1");
-        expect(bolum.className).toContain("xl:grid-cols-[320px_1fr]");
+        expect(kok.className).not.toMatch(/max-w-/);
+        expect(container.innerHTML).not.toContain("xl:grid-cols-[320px_1fr]");
+
+        const kartlar = $("[data-testid='kaynak-kartlari']");
         const serit = $("[data-testid='filtre-seridi']");
+        const cubuk = $("[data-testid='arac-cubugu']");
         const tablo = $("table");
-        expect(serit.compareDocumentPosition(tablo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        const onceGelir = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+        expect(onceGelir(kartlar, serit)).toBe(true);
+        expect(onceGelir(serit, cubuk)).toBe(true);
+        expect(onceGelir(cubuk, tablo)).toBe(true);
+
+        // Araç çubuğu: sol kolon düğmesi + şablon, sağ indirme (+ asistan anahtarla)
+        expect(cubuk.querySelector("[data-testid='kolon-dugmesi']")).not.toBeNull();
+        expect(cubuk.querySelector("#rapor-sablon")).not.toBeNull();
+        expect(Array.from(cubuk.querySelectorAll("button")).map(b => b.textContent?.trim())).toEqual(
+            expect.arrayContaining(["Excel indir", "CSV indir"]),
+        );
+
+        // Responsive: kartlar yatay kaydırır (lg altı), tablo kendi sarmalayıcısında kaydırır
+        expect(kartlar.className).toContain("overflow-x-auto");
+        expect(tablo.parentElement?.className).toContain("overflow-x-auto");
     });
 
     it("/reports yöneticiye açılır; yönetici değilse ana sayfaya yönlendirilir", async () => {
@@ -526,7 +666,7 @@ describe("ReportsPage (G133/G138)", () => {
             </Routes>
         );
         await render(agac, "/reports");
-        expect(container.querySelector("#rapor-kaynak")).not.toBeNull();
+        expect(container.querySelector("[data-testid='kaynak-kartlari']")).not.toBeNull();
         expect(container.querySelector("[data-testid='anasayfa']")).toBeNull();
 
         act(() => root!.unmount());
@@ -535,7 +675,7 @@ describe("ReportsPage (G133/G138)", () => {
         adminMock.value = false;
         await render(agac, "/reports");
         expect(container.querySelector("[data-testid='anasayfa']")).not.toBeNull();
-        expect(container.querySelector("#rapor-kaynak")).toBeNull();
+        expect(container.querySelector("[data-testid='kaynak-kartlari']")).toBeNull();
         warn.mockRestore();
     });
 

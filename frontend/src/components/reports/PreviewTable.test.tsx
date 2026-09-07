@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// PreviewTable (G138) — başlıktan sıralama: yalnız `siralanabilir` başlık tıklanabilir, aria-sort
+// PreviewTable (G138 → G139) — başlıktan sıralama: yalnız `siralanabilir` başlık tıklanabilir, aria-sort
 // ve ok/sıra numarası etkin sıralamadan; "güncelleniyor…" durumu; bayat rozeti yok; geçersiz
-// taslakta ipucu; hata DataErrorBanner.
+// taslakta ipucu; hata DataErrorBanner; sayaç "N kayıt · M kolon"; boş sonuçta filtre kısayolu.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,8 +99,33 @@ describe("PreviewTable (G138)", () => {
         expect(container.querySelector("[data-testid='guncelleniyor']")?.textContent).toContain("güncelleniyor");
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(container.textContent).not.toContain("yeniden önizleyin");
-        expect(container.querySelector("[data-testid='toplam-rozeti']")?.textContent).toBe("Toplam 1 kayıt");
+        expect(container.querySelector("[data-testid='toplam-rozeti']")?.textContent).toBe("1 kayıt · 3 kolon");
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    });
+
+    it("sayaç \"N kayıt · M kolon\" tr-TR binlik ayraçla; başlıkta 'Toplam' ön eki yok", () => {
+        render({ cevap: { ...CEVAP, toplam: 3064 } });
+        expect(container.querySelector("[data-testid='toplam-rozeti']")?.textContent).toBe("3.064 kayıt · 3 kolon");
+        expect(container.textContent).not.toContain("Toplam");
+    });
+
+    it("boş sonuç: filtre varken 'filtreleri gevşetin' + Filtreleri temizle kısayolu onFiltreleriTemizle çağırır; filtresizken kısayol yok", () => {
+        const onFiltreleriTemizle = vi.fn();
+        render({ cevap: { ...CEVAP, satirlar: [], toplam: 0 }, filtreVar: true, onFiltreleriTemizle });
+        const bos = container.querySelector("[data-testid='bos-sonuc']")!;
+        expect(bos.textContent).toContain("Bu filtrelerle kayıt yok — filtreleri gevşetin.");
+        expect(container.querySelector("table")).toBeNull();
+        const kisayol = Array.from(bos.querySelectorAll("button")).find(b => b.textContent?.trim() === "Filtreleri temizle");
+        expect(kisayol).toBeDefined();
+        tikla(kisayol!);
+        expect(onFiltreleriTemizle).toHaveBeenCalledTimes(1);
+
+        act(() => root!.unmount());
+        root = null;
+        render({ cevap: { ...CEVAP, satirlar: [], toplam: 0 }, filtreVar: false, onFiltreleriTemizle });
+        expect(container.querySelector("[data-testid='bos-sonuc']")?.textContent).toContain("Bu kaynakta kayıt yok.");
+        expect(container.textContent).not.toContain("gevşetin");
+        expect(container.querySelector("[data-testid='bos-sonuc'] button")).toBeNull();
     });
 
     it("cevap yokken: geçersiz taslakta kolon/filtre ipucu, geçerliyse \"hazırlanıyor\"; Önizle düğmesi yok", () => {

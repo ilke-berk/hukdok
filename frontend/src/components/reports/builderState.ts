@@ -99,6 +99,20 @@ export function tanimdanDurum(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi): O
     };
 }
 
+/**
+ * Şeridi boşaltır (G139 boş sonuç kısayolu; QuickFilters "Filtreleri temizle" ile aynı kural):
+ * hızlı yuvalar kendi alanlarında boş kontrole döner, "+ Başka alan" ile eklenenler şeritten kalkar.
+ */
+export function seritiTemizle(serit: SeritOgesi[], kaynak: KatalogVeriKaynagi): SeritOgesi[] {
+    const yeni: SeritOgesi[] = [];
+    for (const o of serit) {
+        if (!o.hizli) continue;
+        const yuvaKolon = o.alanSecenekleri.length > 0 ? kolonOf(kaynak, o.alanSecenekleri[0]) : kolonOf(kaynak, o.durum.alan);
+        if (yuvaKolon) yeni.push({ ...o, durum: bosKontrol(yuvaKolon) });
+    }
+    return yeni;
+}
+
 /** Şeritten etkin filtreler (boş kontroller düşer), şerit sırasıyla. */
 export function seritFiltreleri(serit: SeritOgesi[]): Filtre[] {
     const sonuc: Filtre[] = [];

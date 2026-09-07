@@ -9,7 +9,8 @@ import { Eyebrow, HairlineCard } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
-import { ReportBuilder } from "@/components/reports/ReportBuilder";
+import { SourceCards } from "@/components/reports/SourceCards";
+import { ColumnSheet } from "@/components/reports/ColumnSheet";
 import { QuickFilters } from "@/components/reports/QuickFilters";
 import { AssistantPanel } from "@/components/reports/AssistantPanel";
 import { PreviewTable } from "@/components/reports/PreviewTable";
@@ -18,7 +19,7 @@ import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "
 import { ExportButtons } from "@/components/reports/ExportButtons";
 import { RunsTable } from "@/components/reports/RunsTable";
 import {
-    kaynakIcinBaslangic, siralamaDongusu, tanimOlustur, tanimdanDurum, type OlusturucuDurumu,
+    kaynakIcinBaslangic, seritiTemizle, siralamaDongusu, tanimOlustur, tanimdanDurum, type OlusturucuDurumu,
 } from "@/components/reports/builderState";
 import {
     createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, getCatalog, listRuns, listTemplates,
@@ -63,10 +64,15 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 }
 
 /**
- * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor" (oluşturucu +
- * filtre şeridi + önizleme + şablon çubuğu + indirme, G133/G134/G138), "Şablonlar" (liste tablosu),
- * "İndirme geçmişi" (sunucu sayfalı koşular). Asistan (G135): başlıktaki "Asistan" düğmesi yalnız
- * `rapor_asistani` anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula` ile oluşturucuya köprüler.
+ * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor", "Şablonlar" (liste
+ * tablosu), "İndirme geçmişi" (sunucu sayfalı koşular). Asistan (G135): araç çubuğundaki "Asistan"
+ * düğmesi yalnız `rapor_asistani` anahtarı açıkken görünür; sağ panel tanımı `asistanTanimiUygula`
+ * ile taslağa köprüler.
+ *
+ * G139 — Rapor sekmesi yerleşimi (plan §4.1): kaynak kartları (SourceCards) → filtre şeridi
+ * (QuickFilters) → araç çubuğu (sol: "Kolonlar (N)" yan paneli + şablon çubuğu; sağ: Excel/CSV +
+ * Asistan) → tam genişlik önizleme tablosu. Sol "sorgu kurucu" sütunu YOK; katalog gelince ilk
+ * kaynak (Davalar) + varsayılan kolonlar + filtresiz önizleme kendiliğinden yüklenir — sayfa dolu açılır.
  *
  * G138 — önizleme OTOMATİKTİR: geçerli taslak son istenenden farklıysa yapısal değişiklikte hemen,
  * yazarak girilen değerde 600 ms sonra ya da odak çıkışında istenir (`gecikmeliRef`); geçersiz
@@ -327,6 +333,19 @@ const ReportsPage = () => {
 
     const siralanabilirMi = (anahtar: string) => kaynak?.kolonlar.find(k => k.anahtar === anahtar)?.siralanabilir ?? false;
 
+    /** Kart tıklaması: taslak yeni kaynağın varsayılanına döner (aynı kart yeniden tıklanırsa hiçbir şey olmaz). */
+    const onKaynakSec = (anahtar: string) => {
+        const yeni = katalog?.veri_kaynaklari.find(k => k.anahtar === anahtar);
+        if (!yeni || yeni.anahtar === durum.veri_kaynagi) return;
+        durumDegisti(kaynakIcinBaslangic(yeni));
+    };
+
+    /** Boş sonuç kısayolu: şerit boşalır (yuvalar boş kontrole, eklenen alanlar kalkar), önizleme hemen yenilenir. */
+    const onFiltreleriTemizle = () => {
+        if (!kaynak) return;
+        durumDegisti({ ...durum, serit: seritiTemizle(durum.serit, kaynak) });
+    };
+
     // ---- Tanım yükleme (şablon / koşu) ----
     /**
      * Tanımı oluşturucuya koyar: veri kaynağı katalogda yoksa reddeder; kaynak değişiyorsa
@@ -528,92 +547,99 @@ const ReportsPage = () => {
             <p className="text-[13px] text-[var(--fg-subtle)]">Rapor kataloğu yükleniyor…</p>
         </HairlineCard>
     ) : (
-        <div className="grid gap-5">
-            <HairlineCard>
-                <TemplateBar
-                    sablonlar={sablonlar}
-                    yukleniyor={sablonYukleniyor}
-                    hata={sablonHatasi}
-                    onRetry={sablonlariYukle}
-                    kullanici={kullanici}
-                    seciliId={seciliSablonId}
-                    onSecim={setSeciliSablonId}
-                    onYukle={s => void onSablonYukle(s)}
-                    onKaydet={() => setDiyalog({ mod: "yeni", hedef: null })}
-                    onGuncelle={s => void onSablonGuncelle(s)}
-                    onSil={s => void onSablonSil(s)}
-                    taslakGecerli={tanimGecerli}
-                    isleniyor={sablonIsleniyor}
+        <section data-testid="rapor-sekmesi" className="grid gap-5 min-w-0">
+            {/* 1. Kaynak kartları */}
+            <SourceCards kaynaklar={katalog.veri_kaynaklari} secili={durum.veri_kaynagi} onSec={onKaynakSec} />
+
+            <HairlineCard padded={false} className="min-w-0">
+                {/* 2. Filtre şeridi */}
+                {kaynak && (
+                    <QuickFilters
+                        kaynak={kaynak}
+                        serit={durum.serit}
+                        onChange={(serit, gecikmeli) => durumDegisti({ ...durum, serit }, gecikmeli)}
+                        onHemen={hemenOnizle}
+                    />
+                )}
+
+                {/* 3. Araç çubuğu: sol kolonlar + şablon, sağ indirme + asistan */}
+                <div
+                    data-testid="arac-cubugu"
+                    className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg)]"
+                >
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 flex-1">
+                        {kaynak && <ColumnSheet kaynak={kaynak} secili={durum.kolonlar} onChange={kolonlar => durumDegisti({ ...durum, kolonlar })} />}
+                        <div className="min-w-0 flex-1">
+                            <TemplateBar
+                                sablonlar={sablonlar}
+                                yukleniyor={sablonYukleniyor}
+                                hata={sablonHatasi}
+                                onRetry={sablonlariYukle}
+                                kullanici={kullanici}
+                                seciliId={seciliSablonId}
+                                onSecim={setSeciliSablonId}
+                                onYukle={s => void onSablonYukle(s)}
+                                onKaydet={() => setDiyalog({ mod: "yeni", hedef: null })}
+                                onGuncelle={s => void onSablonGuncelle(s)}
+                                onSil={s => void onSablonSil(s)}
+                                taslakGecerli={tanimGecerli}
+                                isleniyor={sablonIsleniyor}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-auto">
+                        <ExportButtons
+                            tanim={tanim}
+                            aktif={tanimGecerli}
+                            sablonId={exportSablonId}
+                            satirSayisi={onizlenenSatirSayisi}
+                            onIndirildi={onIndirildi}
+                        />
+                        {asistanDugmesiGorunur && (
+                            <FlowButton
+                                variant={asistanAcik ? "primary" : "secondary"}
+                                size="sm"
+                                onClick={() => setAsistanAcik(v => !v)}
+                                disabled={asistan409}
+                                title={asistan409 ? ASISTAN_KAPALI_MESAJI : "Rapor asistanı — isteğinizi yazın, tanımı taslağa uygulayın"}
+                                className="shrink-0"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Asistan
+                            </FlowButton>
+                        )}
+                    </div>
+                </div>
+
+                {/* 4. Önizleme — tam genişlik */}
+                <PreviewTable
+                    cevap={cevap}
+                    yukleniyor={onizleniyor}
+                    hata={onizlemeHatasi}
+                    onRetry={onRetry}
+                    onSayfa={onSayfa}
+                    gecersiz={!tanimGecerli}
+                    siralama={durum.siralama}
+                    siralanabilirMi={siralanabilirMi}
+                    onSirala={onSirala}
+                    filtreVar={tanim.filtreler.length > 0}
+                    onFiltreleriTemizle={onFiltreleriTemizle}
                 />
             </HairlineCard>
-            <section className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5 items-start min-w-0">
-                <HairlineCard className="xl:sticky xl:top-2">
-                    <ReportBuilder
-                        katalog={katalog}
-                        durum={durum}
-                        onChange={next => durumDegisti(next)}
-                    />
-                </HairlineCard>
-                <HairlineCard padded={false} className="min-w-0">
-                    {kaynak && (
-                        <QuickFilters
-                            kaynak={kaynak}
-                            serit={durum.serit}
-                            onChange={(serit, gecikmeli) => durumDegisti({ ...durum, serit }, gecikmeli)}
-                            onHemen={hemenOnizle}
-                        />
-                    )}
-                    <PreviewTable
-                        cevap={cevap}
-                        yukleniyor={onizleniyor}
-                        hata={onizlemeHatasi}
-                        onRetry={onRetry}
-                        onSayfa={onSayfa}
-                        gecersiz={!tanimGecerli}
-                        siralama={durum.siralama}
-                        siralanabilirMi={siralanabilirMi}
-                        onSirala={onSirala}
-                        araclar={
-                            <ExportButtons
-                                tanim={tanim}
-                                aktif={tanimGecerli}
-                                sablonId={exportSablonId}
-                                satirSayisi={onizlenenSatirSayisi}
-                                onIndirildi={onIndirildi}
-                            />
-                        }
-                    />
-                </HairlineCard>
-            </section>
-        </div>
+        </section>
     );
 
     return (
-        <div className="grid gap-7 max-w-[1600px]">
-            {/* Üst başlık */}
-            <div className="flex items-baseline justify-between gap-4">
-                <div>
-                    <Eyebrow>01 · Raporlar</Eyebrow>
-                    <h1 className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium">
-                        Raporlar
-                    </h1>
-                    <p className="mt-1 text-[12px] text-[var(--fg-muted)]">
-                        Veri kaynağı ve kolonları seçin, şeritten süzün; önizleme kendiliğinden yenilenir. Şablon olarak kaydedin, Excel/CSV indirin. Test aşaması — yalnız yöneticiler.
-                    </p>
-                </div>
-                {asistanDugmesiGorunur && (
-                    <FlowButton
-                        variant={asistanAcik ? "primary" : "secondary"}
-                        size="sm"
-                        onClick={() => setAsistanAcik(v => !v)}
-                        disabled={asistan409}
-                        title={asistan409 ? ASISTAN_KAPALI_MESAJI : "Rapor asistanı — isteğinizi yazın, tanımı oluşturucuya uygulayın"}
-                        className="shrink-0"
-                    >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Asistan
-                    </FlowButton>
-                )}
+        <div className="grid gap-7">
+            {/* Üst başlık — kısa; kullanım ipucu başlığın title'ında (metin azaltma, §4.1 madde 7) */}
+            <div>
+                <Eyebrow>01 · Raporlar</Eyebrow>
+                <h1
+                    className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium"
+                    title="Kaynağı kartla seçin, şeritten süzün; önizleme kendiliğinden yenilenir. Test aşaması — yalnız yöneticiler."
+                >
+                    Raporlar
+                </h1>
             </div>
 
             <Tabs value={tab} onValueChange={v => sekmeyeGit(resolveTab(v))} className="w-full">

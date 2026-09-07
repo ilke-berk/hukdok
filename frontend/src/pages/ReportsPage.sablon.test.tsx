@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-// ReportsPage (G134 → G138) — şablonlar, Excel/CSV indirme ve İndirme geçmişi sekmesi: şablon kaydetme
+// ReportsPage (G134 → G139) — şablonlar, Excel/CSV indirme ve İndirme geçmişi sekmesi: şablon kaydetme
 // gövdesi + listede görünme; başkasının şablonunda Güncelle/Sil yok + paylaşımlı rozeti; export
 // gövdesi §2.4 birebir + dosya adı Content-Disposition'dan; 413 mesajı; geçmiş satırları +
 // dosya_mevcut=false pasif + 410; "Tanımı yükle" oluşturucu state'ini tümüyle değiştirir ve filtreler
 // şeride çözülür (G138: yüklenen tanım otomatik önizlenir, Önizle düğmesi yok); ?tab=.
+// G139: kaynak kartla seçilir, kolonlar yan panelde — seçili kolon kanıtı önizleme gövdesi + "Kolonlar (N)".
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -297,9 +298,19 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
         await bekle();
     }
     const aktifSekme = () => container.querySelector("[role='tab'][data-state='active']")?.textContent?.trim();
-    const seciliKolonlar = () => Array.from(container.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
     const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
     const sonOnizleme = () => govde(cagrilar("/api/reports/preview", "POST").at(-1)!);
+    /** G139: kaynak kartla seçilir (`role=radio` + `aria-checked`). */
+    const seciliKaynak = () => container.querySelector("[data-kaynak][aria-checked='true']")?.getAttribute("data-kaynak") ?? null;
+    /**
+     * G139: kolon listesi ana ekranda durmaz — seçili kolonların kanıtı SON önizleme gövdesi
+     * (taslak her yapısal değişiklikte kendiliğinden önizlenir) + "Kolonlar (N)" düğme metni.
+     */
+    const seciliKolonlar = () => {
+        const kolonlar = sonOnizleme().tanim.kolonlar as string[];
+        expect($("[data-testid='kolon-dugmesi']").textContent?.trim()).toBe(`Kolonlar (${kolonlar.length})`);
+        return kolonlar;
+    };
 
     it("şablon kaydetme: diyalog gövdesi {ad, aciklama, tanim, paylasimli} gider; şablon seçimde ve listede görünür", async () => {
         sunucuKur();
@@ -499,7 +510,7 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
         expect(aktifSekme()).toBe("Rapor");
         expect(sonKonum).toBe("/reports");
 
-        expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("muvekkiller");
+        expect(seciliKaynak()).toBe("muvekkiller");
         expect(seciliKolonlar()).toEqual(["name", "city"]);
         // city contains İstanbul → hızlı filtre yuvası (metin kontrolü) dolu, çip görünür; operatör seçici yok
         expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
@@ -520,9 +531,9 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
         confirmMock.fn.mockResolvedValueOnce(false);
         await tikla(butonBul("Yükle"));
         expect(confirmMock.fn).toHaveBeenCalledTimes(1);
-        expect($<HTMLSelectElement>("#rapor-kaynak").value).toBe("davalar");
-        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        expect(seciliKaynak()).toBe("davalar");
         expect(cagrilar("/api/reports/preview", "POST")).toHaveLength(1); // yalnız açılış
+        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
 
         sec(secim, "1");
         await tikla(butonBul("Yükle"));
