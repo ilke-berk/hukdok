@@ -66,8 +66,8 @@ kurallıdır (veriden liste ve önerilerle aynı kural, K2). Türetilmiş `liste
 (`muvekkil_kategorisi`: EXISTS başına GROUP BY pahalı) sayı hesaplanmaz → `null`,
 sıra değişmez. `bos_sayisi` filtrelenebilir + `is_null` izinli + türetilmiş OLMAYAN
 her kolonda: kaynak başına TEK `SUM(CASE …)` sorgusu (`bos_sayilari`); metin/liste
-kolonda `IS NULL OR TRIM(col) = ''` (motorun `is_null` filtresi yalnız `IS NULL` —
-katalog sayısı "boş ya da NULL" anlamındadır, filtre semantiği değişmedi).
+kolonda `IS NULL OR TRIM(col) = ''` — motorun `is_null`/`not_null`/`in [null]` filtreleri de
+metin/liste kolonda AYNI koşulu kullanır (`motor._bos`, 07.09 kararı): rozetle sonuç eşit.
 Asistan katalog metnine sayılar girmez (`secenekleri_getir(db=None)` yolu aynı).
 """
 from __future__ import annotations

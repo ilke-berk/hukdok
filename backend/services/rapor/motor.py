@@ -201,29 +201,37 @@ def _tarih_kosulu(kolon: Kolon, op: str, deger: Any):
     return and_(ifade >= a, ifade <= b)
 
 
-def _ifade_kosulu(ifade: Any, op: str, deger: Any):
+def _bos(ifade: Any, metin: bool):
+    """"Boş" koşulu: metin/liste kolonda `IS NULL OR TRIM(col) = ''` (G145 kataloğunun `bos_sayisi`
+    ile AYNI anlam — rozet 120 derken filtre 95 bulmasın, 07.09 kararı); diğer tiplerde `IS NULL`."""
+    if metin:
+        return or_(ifade.is_(None), func.trim(ifade) == "")
+    return ifade.is_(None)
+
+
+def _ifade_kosulu(ifade: Any, op: str, deger: Any, metin: bool = False):
     """Tarih dışı atom koşul: verilen ifade üzerinde op. Türetilmiş kolonların
     EXISTS filtreleri (`Kolon.filtre_ifadesi`) de bunu alır — ILIKE kaçışı ve
-    `ne`/`in` semantiği TEK yerde (kopya yok)."""
+    `ne`/`in` semantiği TEK yerde (kopya yok). `metin`: boşluk anlamı (`_bos`)."""
     if op == "is_null":
-        return ifade.is_(None)
+        return _bos(ifade, metin)
     if op == "not_null":
-        return ifade.isnot(None)
+        return ~_bos(ifade, metin)
     if op == "eq":
         return ifade == deger
     if op == "ne":
-        # NULL satırlar "eşit değil"e dahil — kullanıcı beklentisi (boş da farklıdır)
-        return or_(ifade != deger, ifade.is_(None))
+        # NULL/boş satırlar "eşit değil"e dahil — kullanıcı beklentisi (boş da farklıdır)
+        return or_(ifade != deger, _bos(ifade, metin))
     if op == "contains":
         return ifade.ilike(f"%{_ilike_kacis(deger)}%", escape=_ILIKE_KACIS)
     if op == "in":
-        # `null` öğesi "(boş)" (plan §5.2): IN (dolu) OR IS NULL; yalnız [null] = IS NULL
+        # `null` öğesi "Boş" (plan §5.2/§7): IN (dolu) OR boş; yalnız [null] = boş
         dolu = [d for d in deger if d is not None]
         if len(dolu) == len(deger):
             return ifade.in_(deger)
         if not dolu:
-            return ifade.is_(None)
-        return or_(ifade.in_(dolu), ifade.is_(None))
+            return _bos(ifade, metin)
+        return or_(ifade.in_(dolu), _bos(ifade, metin))
     if op == "gte":
         return ifade >= deger
     if op == "lte":
@@ -241,7 +249,8 @@ def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
         return kolon.filtre_ifadesi(op, deger, _ifade_kosulu)
     if kolon.tip == "tarih" and op not in DEGERSIZ_OPLAR:
         return _tarih_kosulu(kolon, op, deger)
-    return _ifade_kosulu(kolon.ifade, op, deger)
+    # Metin/liste kolonda "boş" = NULL ya da boş string (katalog `bos_sayisi` ile aynı anlam)
+    return _ifade_kosulu(kolon.ifade, op, deger, metin=kolon.tip in ("metin", "liste"))
 
 
 def sorgu_kur(tanim: RaporTanimi, tenant_id: str) -> Select:

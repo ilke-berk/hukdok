@@ -287,27 +287,29 @@ def test_client_type_secenek_etiketleri_ve_ham_filtre(env):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_in_null_il_ankara_veya_bos(env):
-    """Kabul: `{"alan":"il","op":"in","deger":["Ankara",null]}` Ankara VEYA il NULL kartları döner
-    ("" NULL değildir, gelmez); yalnız `[null]` = is_null; null'suz liste eski davranış."""
+    """Kabul: `{"alan":"il","op":"in","deger":["Ankara",null]}` Ankara VEYA il BOŞ kartları döner;
+    yalnız `[null]` = is_null; null'suz liste eski davranış. 07.09 (G145 sonrası): metin kolonda "boş" =
+    NULL ya da boş string — katalog `bos_sayisi` rozetiyle aynı anlam (`motor._bos`), "" de gelir."""
     client = env.client()
     r = _onizle(client, _tanim(filtreler=[{"alan": "il", "op": "in", "deger": ["Ankara", None]}]))
-    assert _adlar(r) == {"Ankaralı Bir", "Ankaralı İki", "Ankaralı Üç", "İlsiz Kart"}
+    assert _adlar(r) == {"Ankaralı Bir", "Ankaralı İki", "Ankaralı Üç", "İlsiz Kart", "Boş İlli Kart"}
     r = _onizle(client, _tanim(filtreler=[{"alan": "il", "op": "in", "deger": [None]}]))
-    assert _adlar(r) == {"İlsiz Kart"}
+    assert _adlar(r) == {"İlsiz Kart", "Boş İlli Kart"}
     r = _onizle(client, _tanim(filtreler=[{"alan": "il", "op": "in", "deger": ["İzmir", "İstanbul"]}]))
     assert _adlar(r) == {"İzmirli", "İstanbullu Bir", "İstanbullu İki"}
     r = _onizle(client, _tanim(filtreler=[{"alan": "il", "op": "is_null"}]))
-    assert _adlar(r) == {"İlsiz Kart"}
+    assert _adlar(r) == {"İlsiz Kart", "Boş İlli Kart"}
 
 
 def test_in_null_davalar_court_ve_turetilmis_muvekkil_kategorisi(env):
-    """Davalar `court in [Ankara 1, null]`: c1 + c3 (NULL), c4 ("" değil). Türetilmiş `muvekkil_kategorisi
+    """Davalar `court in [Ankara 1, null]`: c1 + c3 (NULL) + c4 ("" — 07.09'dan beri boş string de boş,
+    `motor._bos`, katalog rozetiyle aynı anlam). Türetilmiş `muvekkil_kategorisi
     in ["Doktor", null]`: Doktor kartlı taraf (c1) VEYA kategorili taraf yok (c3 kategorisiz kart, c4 tarafsız,
     c2 Kurum → gelmez); yalnız `[null]` = is_null."""
     client = env.client()
     r = _onizle(client, _tanim("davalar", ("tracking_no",),
                                [{"alan": "court", "op": "in", "deger": ["Ankara 1. Asliye Hukuk", None]}]))
-    assert _adlar(r, "tracking_no") == {"HA.G141.1", "HA.G141.3"}
+    assert _adlar(r, "tracking_no") == {"HA.G141.1", "HA.G141.3", "HA.G141.4"}
     r = _onizle(client, _tanim("davalar", ("tracking_no",),
                                [{"alan": "muvekkil_kategorisi", "op": "in", "deger": ["Doktor", None]}]))
     assert _adlar(r, "tracking_no") == {"HA.G141.1", "HA.G141.3", "HA.G141.4"}

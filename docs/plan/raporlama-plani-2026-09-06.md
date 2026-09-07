@@ -627,3 +627,15 @@ düşüyor.
 | G145 | backend | – | `secenek_sayilari` + sıklık sırası (sabit listeler dahil) + `bos_sayisi` (kaynak başına tek sorgu) + önbellek + ölçüm |
 | G146 | frontend | – (sözleşme §7.2'den) | Sayı rozetleri, sıfırlılar soluk sonda, "Boş" birinci sınıf seçenek (parantezsiz), her kontrolde boş çipi, "Eksik bilgi" hücresi |
 Docs turu G147: `raporlama.md` §2.1/§8 (§5, §6, §7 birlikte).
+
+**Durum (07.09 gündüz koşusu `2026-09-07f`): uygulandı — G145 `6343916`, G146 `6d4fef2`; 0 BLOKE, 32 dk;
+backend 2727 passed, frontend 887 passed; katalog süresi lokalde medyan 242 ms (< 300 hedefi).**
+Koşu sonrası kararlar (planlayıcı, aynı gün):
+- **Boş semantiği eşitlendi (motor):** katalog `bos_sayisi` metin/liste kolonda boş string'i de sayıyordu,
+  filtre yalnız NULL süzüyordu → `motor._bos`: metin/liste kolonda `is_null`/`not_null`/`in [.., null]`/`ne`
+  artık `IS NULL OR TRIM(col) = ''` (rozetle sonuç eşit); tarih/sayı/mantıkta yalnız NULL. G141 testlerinin
+  iki beklentisi buna göre güncellendi, G145'e tutarlılık testi eklendi.
+- DISTINCT katmanının tenant + soft-delete kurallı olması KABUL (K2 ile tutarlı; prod'da pratik fark yok).
+- Tarih/sayı/metinde `is_null` "…" menüsünden kalktı (Boş çipi var) — KABUL.
+- "Boş" çipi "+N" sayımı dışında daima görünür — KABUL (tasarım).
+- Görsel doğrulama: lokal stack G145+G146 ile tazelendi; tarayıcı kontrolü kullanıcıda.

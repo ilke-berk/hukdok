@@ -316,3 +316,34 @@ def test_onizleme_govdesi_degismedi(env):
     assert set(govde) == {"kolonlar", "satirlar", "toplam", "sayfa", "sayfa_boyu"}
     assert govde["toplam"] == 1 and govde["satirlar"][0]["tracking_no"] == "HA.G145.3"
     assert set(govde["kolonlar"][0]) == {"anahtar", "etiket", "tip"}
+
+
+def _filtrele(client, alan, op, deger=None, kaynak="davalar"):
+    f = {"alan": alan, "op": op}
+    if deger is not None or op == "in":
+        f["deger"] = deger
+    r = client.post(PREVIEW, json={"tanim": {"veri_kaynagi": kaynak, "kolonlar": ["tracking_no"],
+                                             "filtreler": [f], "siralama": []}})
+    assert r.status_code == 200, r.text
+    return {s["tracking_no"] for s in r.json()["satirlar"]}, r.json()["toplam"]
+
+
+def test_bos_filtresi_rozetle_ayni_anlam(env):
+    """07.09 kararı (G145 karar bekleyeni): katalog `bos_sayisi` metin kolonda boş string'i de sayar;
+    filtre `is_null` de aynı satırları bulmalı — rozet 2 derken filtre 1 bulmasın. `not_null` tersi,
+    `in [.., null]` boş string'i de kapsar; tarih/sayı kolonlarında yalnız NULL (davranış aynı)."""
+    client = env.client()
+    davalar = _kolonlar(_katalog(client)["davalar"])
+    bos, toplam = _filtrele(client, "subject", "is_null")
+    assert toplam == davalar["subject"]["bos_sayisi"] == 2 and bos == {"HA.G145.2", "HA.G145.3"}
+    dolu, _ = _filtrele(client, "subject", "not_null")
+    assert "HA.G145.1" in dolu and not (dolu & bos)
+    # in içinde null: "Kalp ameliyatı" VEYA boş (boş string dahil)
+    kume, _ = _filtrele(client, "subject", "in", ["Kalp ameliyatı", None])
+    assert kume == {"HA.G145.1", "HA.G145.2", "HA.G145.3"}
+    # yalnız [null] = boş; `ne` boşları da kapsar
+    assert _filtrele(client, "subject", "in", [None])[0] == bos
+    assert _filtrele(client, "subject", "ne", "Kalp ameliyatı")[0] == bos
+    # tarih kolonunda anlam değişmedi: yalnız NULL
+    tarih_bos, tarih_toplam = _filtrele(client, "opening_date", "is_null")
+    assert tarih_toplam == davalar["opening_date"]["bos_sayisi"] == 2
