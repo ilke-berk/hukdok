@@ -7,10 +7,10 @@ const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: fetchMock } }));
 
 import {
-    KONTROL_DOGAL_OPLARI, OP_BY_TIP, RaporApiError, bosKontrol, degerSekleUyarla, filtreTamamMi, filtredenKontrol,
-    gelismisOplar, hucreBicimle, kolonOplari, kolonSecilebilirMi, kontrolDoluMu, kontrolOzeti, kontroldenFiltre,
-    opDegerSekli, opsForTip, previewReport, getCatalog, raporHatasiCevir, secenekEtiketi, tanimGecerliMi, tarihBicimle,
-    tarihKisayolu,
+    BOS_ETIKETI, KONTROL_DOGAL_OPLARI, OP_BY_TIP, RaporApiError, bosKontrol, bosSayisi, degerSekleUyarla, filtreTamamMi,
+    filtredenKontrol, gelismisOplar, hucreBicimle, kolonOplari, kolonSecilebilirMi, kontrolDoluMu, kontrolOzeti,
+    kontroldenFiltre, opDegerSekli, opsForTip, previewReport, getCatalog, raporHatasiCevir, sayiRozeti, secenekEtiketi,
+    secenekSayisi, tanimGecerliMi, tarihBicimle, tarihKisayolu,
     type Filtre, type FiltreKontrolu, type FiltreOp, type HizliFiltre, type KatalogKolon, type KatalogVeriKaynagi,
     type KolonTipi, type KontrolDurumu, type KontrolTuru, type RaporTanimi,
 } from "./reports";
@@ -144,11 +144,11 @@ describe("değer biçimi — between dizi, in liste (§2.1 JSON)", () => {
         expect(filtreTamamMi({ alan: "x", op: "eq", deger: "a" }, undefined)).toBe(false);
     });
 
-    it("§5.2 `in` listesinde `null` \"(boş)\" geçerlidir; `between` ucunda null geçersiz; tekil op'a taşınmaz", () => {
+    it("§5.2 `in` listesinde `null` \"Boş\" geçerlidir; `between` ucunda null geçersiz; tekil op'a taşınmaz", () => {
         expect(filtreTamamMi({ alan: "court", op: "in", deger: ["Ankara", null] }, "metin")).toBe(true);
         expect(filtreTamamMi({ alan: "court", op: "in", deger: [null] }, "metin")).toBe(true);
         expect(filtreTamamMi({ alan: "opening_date", op: "between", deger: ["2025-01-01", null] }, "tarih")).toBe(false);
-        // in → eq: ilk DOLU değer; yalnız (boş) → değersiz
+        // in → eq: ilk DOLU değer; yalnız Boş → değersiz
         expect(degerSekleUyarla("eq", [null, "Ankara"])).toBe("Ankara");
         expect(degerSekleUyarla("eq", [null])).toBeUndefined();
         expect(degerSekleUyarla("between", [null, "x"])).toEqual(["", "x"]);
@@ -157,11 +157,33 @@ describe("değer biçimi — between dizi, in liste (§2.1 JSON)", () => {
 });
 
 describe("§5.2 seçenek etiketi ve seçilebilirlik", () => {
-    it("secenekEtiketi: etiket haritasından, yoksa ham; null → \"(boş)\"", () => {
+    it("secenekEtiketi: etiket haritasından, yoksa ham; null → \"Boş\" (§7.1 parantezsiz, tek sabit)", () => {
         expect(secenekEtiketi(kolonOf("client_type"), "Individual")).toBe("Gerçek kişi");
         expect(secenekEtiketi(kolonOf("client_type"), "Bilinmeyen")).toBe("Bilinmeyen");
         expect(secenekEtiketi(kolonOf("court"), "Ankara 1. Asliye")).toBe("Ankara 1. Asliye");
-        expect(secenekEtiketi(kolonOf("court"), null)).toBe("(boş)");
+        expect(secenekEtiketi(kolonOf("court"), null)).toBe("Boş");
+        expect(BOS_ETIKETI).toBe("Boş");
+        expect(BOS_ETIKETI).not.toContain("(");
+    });
+
+    it("§7.2 secenekSayisi/bosSayisi: katalogdan; 0 gerçek sayı; null seçenek boş sayısı; eski katalog (alan yok) → null; sayiRozeti tr-TR binlik", () => {
+        const sayili = kolon({
+            anahtar: "category", etiket: "Kategori", tip: "liste", secenekler: ["Doktor", "Hasta", "Eczane"],
+            secenek_sayilari: { Doktor: 1443, Hasta: 423, Eczane: 0 }, bos_sayisi: 17,
+        });
+        expect(secenekSayisi(sayili, "Doktor")).toBe(1443);
+        expect(secenekSayisi(sayili, "Eczane")).toBe(0);
+        expect(secenekSayisi(sayili, "Bilinmeyen")).toBeNull();
+        expect(secenekSayisi(sayili, null)).toBe(17);
+        expect(bosSayisi(sayili)).toBe(17);
+        // Eski katalog sahtesi: alanlar hiç yok / null → rozetsiz (null), çökmez
+        expect(secenekSayisi(kolonOf("status"), "Derdest")).toBeNull();
+        expect(secenekSayisi(kolonOf("status"), null)).toBeNull();
+        expect(bosSayisi(kolonOf("status"))).toBeNull();
+        expect(bosSayisi(kolon({ anahtar: "x", etiket: "X", tip: "metin", secenek_sayilari: null, bos_sayisi: null }))).toBeNull();
+        expect(sayiRozeti(1443)).toBe("1.443");
+        expect(sayiRozeti(0)).toBe("0");
+        expect(sayiRozeti(1234567)).toBe("1.234.567");
     });
 
     it("kolonSecilebilirMi: secilebilir=false hayır, alan yoksa (eski katalog) evet, katalogda olmayan hayır", () => {
@@ -345,7 +367,7 @@ describe("§4.3 kontroldenFiltre — her kontrol doğru op'u üretir", () => {
         expect(Object.keys(b)).not.toContain("bos");
     });
 
-    it("§5.2 çoklu seçimde \"(boş)\": seçimle birlikte `in` içinde null öğesi, yalnız (boş) → is_null; etiketli kolon HAM kodla gider", () => {
+    it("§5.2 çoklu seçimde \"Boş\": seçimle birlikte `in` içinde null öğesi, yalnız Boş → is_null; etiketli kolon HAM kodla gider", () => {
         const b = bosKontrol(kolonOf("court"));
         expect(b).toEqual({ kontrol: "coklu_secim", alan: "court", secili: [] });
         expect(kontroldenFiltre({ ...b, secili: ["Ankara 1. Asliye", null] } as KontrolDurumu))
@@ -376,7 +398,7 @@ describe("§4.3 kontroldenFiltre — her kontrol doğru op'u üretir", () => {
 
     it("§5.3 arama kutusu (`arama` kolonu, sunum arama): metin kontrolü, yalnız contains", () => {
         const b = bosKontrol(kolonOf("arama"), "arama");
-        expect(b).toEqual({ kontrol: "metin_icerir", alan: "arama", metin: "", tam: false });
+        expect(b).toEqual({ kontrol: "metin_icerir", alan: "arama", metin: "", tam: false, bos: false });
         expect(kontroldenFiltre({ ...b, metin: "Ayşe" } as KontrolDurumu)).toEqual({ alan: "arama", op: "contains", deger: "Ayşe" });
     });
 
@@ -393,12 +415,24 @@ describe("§4.3 kontroldenFiltre — her kontrol doğru op'u üretir", () => {
         expect(kontroldenFiltre({ ...b, deger: false } as KontrolDurumu)).toEqual({ alan: "active", op: "eq", deger: false });
     });
 
-    it("\"boş olanlar\" anahtarı hiçbir kontrolde YOK (§5.1 madde 8): tarih/sayı/metin/mantık boşluğu gelişmiş çipten is_null", () => {
-        for (const anahtar of ["opening_date", "maddi_tazminat", "subject", "active", "status"]) {
+    it("§7.1 \"Boş\" çipi: tarih/sayı/metin kontrolü `bos` bayrağıyla açılır (false), açıkken girdiler yok sayılıp is_null; mantık/çoklu seçimde bayrak yok", () => {
+        for (const anahtar of ["opening_date", "maddi_tazminat", "subject"]) {
+            expect(bosKontrol(kolonOf(anahtar))).toHaveProperty("bos", false);
+        }
+        for (const anahtar of ["active", "status"]) {
             expect(Object.keys(bosKontrol(kolonOf(anahtar)))).not.toContain("bos");
         }
-        expect(kontroldenFiltre({ kontrol: "gelismis", alan: "opening_date", op: "is_null" })).toEqual({ alan: "opening_date", op: "is_null" });
+        // Açık çip: girilmiş değerler DURUMDA KALIR ama filtreye girmez (kapatınca geri gelir)
+        expect(kontroldenFiltre(tarih({ baslangic: "2025-01-01", bitis: "2025-12-31", bos: true }))).toEqual({ alan: "opening_date", op: "is_null" });
+        expect(kontroldenFiltre(sayi({ en_az: 1000, bos: true }))).toEqual({ alan: "maddi_tazminat", op: "is_null" });
+        const metin = bosKontrol(kolonOf("subject"));
+        expect(kontroldenFiltre({ ...metin, metin: "Tazminat", bos: true } as KontrolDurumu)).toEqual({ alan: "subject", op: "is_null" });
+        expect(kontrolDoluMu({ ...metin, bos: true } as KontrolDurumu)).toBe(true);
+        // Kapalı çip: eski davranış
         expect(kontroldenFiltre(tarih({ baslangic: "2025-01-01" }))).toEqual({ alan: "opening_date", op: "gte", deger: "2025-01-01" });
+        expect(kontroldenFiltre({ ...metin, metin: "Tazminat", bos: false } as KontrolDurumu)).toEqual({ alan: "subject", op: "contains", deger: "Tazminat" });
+        // Mantıkta boşluk hâlâ gelişmiş çipten
+        expect(kontroldenFiltre({ kontrol: "gelismis", alan: "active", op: "is_null" })).toEqual({ alan: "active", op: "is_null" });
     });
 
     it("gelişmiş çip filtreyi olduğu gibi taşır (deger yoksa anahtar da yok)", () => {
@@ -412,12 +446,13 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         ["opening_date", { alan: "opening_date", op: "between", deger: ["2025-01-01", "2025-12-31"] }, "tarih_araligi"],
         ["opening_date", { alan: "opening_date", op: "gte", deger: "2025-01-01" }, "tarih_araligi"],
         ["opening_date", { alan: "opening_date", op: "lte", deger: "2025-12-31" }, "tarih_araligi"],
-        ["opening_date", { alan: "opening_date", op: "is_null" }, "gelismis"],
+        ["opening_date", { alan: "opening_date", op: "is_null" }, "tarih_araligi"],   // §7.1 "Boş" çipi (gelişmiş değil)
         ["opening_date", { alan: "opening_date", op: "eq", deger: "2025-01-01" }, "gelismis"],
         ["opening_date", { alan: "opening_date", op: "not_null" }, "gelismis"],
         ["maddi_tazminat", { alan: "maddi_tazminat", op: "between", deger: [1000, 5000] }, "sayi_araligi"],
         ["maddi_tazminat", { alan: "maddi_tazminat", op: "gte", deger: 0 }, "sayi_araligi"],
         ["maddi_tazminat", { alan: "maddi_tazminat", op: "lte", deger: 10 }, "sayi_araligi"],
+        ["maddi_tazminat", { alan: "maddi_tazminat", op: "is_null" }, "sayi_araligi"],  // §7.1 "Boş" çipi
         ["maddi_tazminat", { alan: "maddi_tazminat", op: "eq", deger: 1000 }, "gelismis"],
         ["status", { alan: "status", op: "eq", deger: "Derdest" }, "coklu_secim"],
         ["status", { alan: "status", op: "in", deger: ["Derdest", "Karar"] }, "coklu_secim"],
@@ -428,7 +463,7 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         ["subject", { alan: "subject", op: "eq", deger: "Tazminat" }, "metin_icerir"],
         ["subject", { alan: "subject", op: "in", deger: ["a", "b"] }, "gelismis"],
         ["subject", { alan: "subject", op: "ne", deger: "x" }, "gelismis"],
-        ["subject", { alan: "subject", op: "is_null" }, "gelismis"],
+        ["subject", { alan: "subject", op: "is_null" }, "metin_icerir"],               // §7.1 "Boş" çipi
         ["active", { alan: "active", op: "eq", deger: true }, "mantik"],
         ["active", { alan: "active", op: "is_null" }, "gelismis"],
         ["karsi_taraf_adlari", { alan: "karsi_taraf_adlari", op: "contains", deger: "Sigorta" }, "metin_icerir"],
@@ -439,7 +474,7 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         ["court", { alan: "court", op: "contains", deger: "Ank" }, "gelismis"],
         ["client_type", { alan: "client_type", op: "in", deger: ["Individual", "Corporate"] }, "coklu_secim"],
         ["arama", { alan: "arama", op: "contains", deger: "Ayşe" }, "metin_icerir"],
-        ["email", { alan: "email", op: "is_null" }, "gelismis"],
+        ["email", { alan: "email", op: "is_null" }, "metin_icerir"],                   // sunumsuz: metin kontrolünün "Boş" çipi
         ["dava_sayisi", { alan: "dava_sayisi", op: "gte", deger: 1 }, "sayi_araligi"],
     ];
 
@@ -447,6 +482,22 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         const d = filtredenKontrol(f, kolonOf(anahtar));
         expect(d.kontrol).toBe(beklenenKontrol);
         expect(kontroldenFiltre(d)).toEqual(f);
+    });
+
+    it("§7.1 gidiş-dönüş: tarih/sayı/metin `is_null` → kontrolün \"Boş\" çipi açık (bos: true), girdiler boş; geri aynı JSON", () => {
+        expect(filtredenKontrol({ alan: "opening_date", op: "is_null" }, kolonOf("opening_date")))
+            .toEqual({ kontrol: "tarih_araligi", alan: "opening_date", baslangic: "", bitis: "", bos: true });
+        expect(filtredenKontrol({ alan: "maddi_tazminat", op: "is_null" }, kolonOf("maddi_tazminat")))
+            .toEqual({ kontrol: "sayi_araligi", alan: "maddi_tazminat", en_az: null, en_cok: null, bos: true });
+        expect(filtredenKontrol({ alan: "subject", op: "is_null" }, kolonOf("subject")))
+            .toEqual({ kontrol: "metin_icerir", alan: "subject", metin: "", tam: false, bos: true });
+        // Dolu filtre çipi kapalı açar
+        expect(filtredenKontrol({ alan: "opening_date", op: "gte", deger: "2025-01-01" }, kolonOf("opening_date"))).toHaveProperty("bos", false);
+        // Sunumlu yuva öncelikli: `bos_anahtari` yuvası is_null'ı hâlâ kendi alır
+        expect(filtredenKontrol({ alan: "email", op: "is_null" }, kolonOf("email"), "bos_anahtari").kontrol).toBe("bos_anahtari");
+        // `is_null` izinsiz kolon (sanal arama, oplar [contains]) → çip yok, gelişmiş (kaybolmaz)
+        expect(filtredenKontrol({ alan: "arama", op: "is_null" }, kolonOf("arama")).kontrol).toBe("gelismis");
+        expect(kontroldenFiltre(filtredenKontrol({ alan: "arama", op: "is_null" }, kolonOf("arama")))).toEqual({ alan: "arama", op: "is_null" });
     });
 
     it("tek değerli `in` eş anlamlı `eq`'e, `in [null]` eş anlamlı `is_null`'a normalize olur (bilinen iki istisna)", () => {
@@ -469,7 +520,7 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         expect(yok).toEqual({ kontrol: "var_yok", alan: "dava_sayisi", durum: "yok" });
         expect(kontroldenFiltre(yok)).toEqual({ alan: "dava_sayisi", op: "eq", deger: 0 });
         expect(filtredenKontrol({ alan: "dava_sayisi", op: "gte", deger: 5 }, dava, "var_yok"))
-            .toEqual({ kontrol: "sayi_araligi", alan: "dava_sayisi", en_az: 5, en_cok: null });
+            .toEqual({ kontrol: "sayi_araligi", alan: "dava_sayisi", en_az: 5, en_cok: null, bos: false });
         expect(filtredenKontrol({ alan: "dava_sayisi", op: "eq", deger: 2 }, dava, "var_yok").kontrol).toBe("gelismis");
 
         const email = kolonOf("email");
@@ -477,7 +528,7 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
         expect(bos).toEqual({ kontrol: "bos_anahtari", alan: "email", acik: true });
         expect(kontroldenFiltre(bos)).toEqual({ alan: "email", op: "is_null" });
         expect(filtredenKontrol({ alan: "email", op: "contains", deger: "@" }, email, "bos_anahtari"))
-            .toEqual({ kontrol: "metin_icerir", alan: "email", metin: "@", tam: false });
+            .toEqual({ kontrol: "metin_icerir", alan: "email", metin: "@", tam: false, bos: false });
         // arama/cipler sunumu kolonun kontrolünü değiştirmez
         expect(filtredenKontrol({ alan: "arama", op: "contains", deger: "x" }, kolonOf("arama"), "arama").kontrol).toBe("metin_icerir");
         expect(filtredenKontrol({ alan: "court", op: "in", deger: ["Ankara 1. Asliye", null] }, kolonOf("court"), "cipler"))
@@ -495,14 +546,14 @@ describe("§4.3 filtredenKontrol — şablon/asistan tanımı şeride kayıpsız
 });
 
 describe("gelişmiş op'lar ve çip özeti", () => {
-    it("\"…\" menüsü yalnız kolonun `oplar`ında olup kontrolün doğal üretmediklerini sunar; tarih/sayı/metin/mantıkta \"boş\" (is_null) buradadır", () => {
+    it("\"…\" menüsü yalnız kolonun `oplar`ında olup kontrolün doğal üretmediklerini sunar; §7.1: tarih/sayı/metinde \"boş\" (is_null) kontrolün çipi → menüde DEĞİL; mantıkta menüde", () => {
         expect(gelismisOplar(kolonOf("status"))).toEqual(["ne", "not_null"]);
-        expect(gelismisOplar(kolonOf("opening_date"))).toEqual(["eq", "is_null", "not_null"]);
-        expect(gelismisOplar(kolonOf("subject"))).toEqual(["ne", "in", "is_null", "not_null"]);
+        expect(gelismisOplar(kolonOf("opening_date"))).toEqual(["eq", "not_null"]);
+        expect(gelismisOplar(kolonOf("subject"))).toEqual(["ne", "in", "not_null"]);
         expect(gelismisOplar(kolonOf("active"))).toEqual(["is_null"]);
-        // Taraf kolonu: oplar [contains, is_null, not_null] → is_null + not_null
-        expect(gelismisOplar(kolonOf("karsi_taraf_adlari"))).toEqual(["is_null", "not_null"]);
-        // Veriden liste: "(boş)" seçeneği doğal → is_null menüde değil; contains gelişmiş
+        // Taraf kolonu: oplar [contains, is_null, not_null] → yalnız not_null (is_null "Boş" çipi)
+        expect(gelismisOplar(kolonOf("karsi_taraf_adlari"))).toEqual(["not_null"]);
+        // Veriden liste: "Boş" seçeneği doğal → is_null menüde değil; contains gelişmiş
         expect(gelismisOplar(kolonOf("court"))).toEqual(["ne", "contains", "not_null"]);
         // Sunum kontrolleri kendi türüyle: var/yok gte+eq doğal, boş anahtarı is_null doğal
         expect(gelismisOplar(kolonOf("dava_sayisi"), "var_yok")).toEqual(["lte", "between", "is_null", "not_null"]);
@@ -511,27 +562,33 @@ describe("gelişmiş op'lar ve çip özeti", () => {
         for (const k of Object.keys(KONTROL_DOGAL_OPLARI) as KontrolTuru[]) {
             for (const op of KONTROL_DOGAL_OPLARI[k]) expect(her).toContain(op);
         }
-        for (const k of ["tarih_araligi", "sayi_araligi", "metin_icerir", "mantik"] as FiltreKontrolu[]) {
-            expect(KONTROL_DOGAL_OPLARI[k]).not.toContain("is_null");
+        for (const k of ["tarih_araligi", "sayi_araligi", "metin_icerir", "coklu_secim"] as FiltreKontrolu[]) {
+            expect(KONTROL_DOGAL_OPLARI[k]).toContain("is_null");
         }
+        expect(KONTROL_DOGAL_OPLARI.mantik).not.toContain("is_null");
     });
 
-    it("özet: tarih dd.MM.yyyy aralığı, sayı tr-TR, çoklu virgülle ((boş) → boş, etiketli), metin içerir/=, var/yok, boş anahtarı, gelişmiş op etiketi", () => {
-        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", baslangic: "2025-01-01", bitis: "2025-12-31" }, "tarih")).toBe("01.01.2025 – 31.12.2025");
-        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", baslangic: "2025-01-01", bitis: "" }, "tarih")).toBe("≥ 01.01.2025");
-        expect(kontrolOzeti({ kontrol: "sayi_araligi", alan: "a", en_az: 1000, en_cok: null }, "para")).toBe("≥ 1.000");
+    it("özet: tarih dd.MM.yyyy aralığı, sayı tr-TR, çoklu virgülle (`in` içindeki null → \"Boş\", yalnız boş → \"boş\", etiketli), metin içerir/=, \"Boş\" çipi → boş, var/yok, boş anahtarı, gelişmiş op etiketi", () => {
+        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", baslangic: "2025-01-01", bitis: "2025-12-31", bos: false }, "tarih")).toBe("01.01.2025 – 31.12.2025");
+        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", baslangic: "2025-01-01", bitis: "", bos: false }, "tarih")).toBe("≥ 01.01.2025");
+        expect(kontrolOzeti({ kontrol: "tarih_araligi", alan: "a", baslangic: "2025-01-01", bitis: "", bos: true }, "tarih")).toBe("boş");
+        expect(kontrolOzeti({ kontrol: "sayi_araligi", alan: "a", en_az: 1000, en_cok: null, bos: false }, "para")).toBe("≥ 1.000");
+        expect(kontrolOzeti({ kontrol: "sayi_araligi", alan: "a", en_az: 1000, en_cok: null, bos: true }, "para")).toBe("boş");
         expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: ["Derdest", "Karar"] }, "liste")).toBe("Derdest, Karar");
-        expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: ["Ankara", null] }, "metin")).toBe("Ankara, boş");
+        expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: ["Ankara", null] }, "metin")).toBe("Ankara, Boş");
         expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: [null] }, "metin")).toBe("boş");
         expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: ["Individual", "X"] }, "metin", { Individual: "Gerçek kişi" })).toBe("Gerçek kişi, X");
-        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", metin: "x", tam: false }, "metin")).toBe("içerir \"x\"");
-        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", metin: "x", tam: true }, "metin")).toBe("= \"x\"");
+        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", metin: "x", tam: false, bos: false }, "metin")).toBe("içerir \"x\"");
+        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", metin: "x", tam: true, bos: false }, "metin")).toBe("= \"x\"");
+        expect(kontrolOzeti({ kontrol: "metin_icerir", alan: "a", metin: "x", tam: false, bos: true }, "metin")).toBe("boş");
         expect(kontrolOzeti({ kontrol: "var_yok", alan: "a", durum: "var" }, "sayi")).toBe("var");
         expect(kontrolOzeti({ kontrol: "var_yok", alan: "a", durum: "hepsi" }, "sayi")).toBe("");
         expect(kontrolOzeti({ kontrol: "bos_anahtari", alan: "a", acik: true }, "metin")).toBe("boş");
         expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "ne", deger: "Karar" }, "liste")).toBe("eşit değil Karar");
         expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "not_null" }, "liste")).toBe("dolu");
-        expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "in", deger: ["Individual", null] }, "metin", { Individual: "Gerçek kişi" })).toBe("şunlardan biri Gerçek kişi, boş");
+        expect(kontrolOzeti({ kontrol: "gelismis", alan: "a", op: "in", deger: ["Individual", null] }, "metin", { Individual: "Gerçek kişi" })).toBe("şunlardan biri Gerçek kişi, Boş");
+        // "(boş)" metni hiçbir özette yok
+        expect(kontrolOzeti({ kontrol: "coklu_secim", alan: "a", secili: ["Ankara", null] }, "metin")).not.toContain("(boş)");
     });
 });
 

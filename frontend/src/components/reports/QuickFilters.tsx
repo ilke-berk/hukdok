@@ -1,12 +1,21 @@
 import { useCallback, useMemo } from "react";
 import type { KatalogKolon, KatalogVeriKaynagi, KontrolDurumu } from "@/lib/reports";
-import { TANIM_LIMITLERI, bosKontrol, kontrolDoluMu } from "@/lib/reports";
+import { TANIM_LIMITLERI, bosKontrol, bosSayisi, kontrolDoluMu } from "@/lib/reports";
 import { FieldPicker } from "./FieldPicker";
 import { FilterChip } from "./FilterChip";
 import { FilterControl } from "./FilterControl";
 import { SearchBox } from "./SearchBox";
+import { BosKutucugu } from "./ToggleFilter";
 import { eklenenOge, type SeritOgesi } from "./builderState";
 import { ICON_BTN_CLS, LINK_BTN_CLS } from "./ui";
+
+/** "Eksik bilgi" hücresinin başlığı (§7.1 madde 4). */
+export const EKSIK_BILGI_BASLIGI = "Eksik bilgi";
+
+const HUCRE_ETIKET_CLS = "font-mono text-[9.5px] tracking-[0.14em] uppercase text-[var(--fg-subtle)] whitespace-nowrap";
+
+/** `bos_anahtari` sunumlu, kendi kontrolüyle açılmış yuva — "Eksik bilgi" hücresinde toplanır. */
+const eksikBilgiYuvasi = (o: SeritOgesi) => o.sunum === "bos_anahtari" && o.durum.kontrol === "bos_anahtari";
 
 type QuickFiltersProps = {
     kaynak: KatalogVeriKaynagi;
@@ -20,11 +29,13 @@ type QuickFiltersProps = {
 };
 
 /**
- * Filtre şeridi (§4.1 madde 2 / §5.1): `sunum=arama` yuvası en üstte tam genişlik arama kutusu (ayrı
- * satır); kaynağın diğer `hizli_filtreler`i sırayla hazır kontroller (bileşen `sunum`a göre — çip
- * satırı, var/yok, "X yok", aranabilir çoklu seçim…), "+ Başka alan" ile eklenenler aynı türde kontrol,
- * etkin filtreler çip satırında (× / "…" gelişmiş; "(boş)" → "boş"), "Filtreleri temizle" hepsini
- * (aramayı da) boşaltır. Operatör seçici YOK — op kontrolden türetilir (§4.3/§5.3, lib/reports.ts).
+ * Filtre şeridi (§4.1 madde 2 / §5.1 / §7.1): `sunum=arama` yuvası en üstte tam genişlik arama kutusu
+ * (ayrı satır); kaynağın diğer `hizli_filtreler`i sırayla hazır kontroller (bileşen `sunum`a göre — çip
+ * satırı, var/yok, aranabilir çoklu seçim…); `bos_anahtari` yuvaları ("E-postası yok", "Cep telefonu
+ * yok"…) ızgarada TEK "Eksik bilgi" hücresinde yan yana kutucuklar, her biri `bos_sayisi` rozetli
+ * (hücre yalnız böyle yuva varsa, ilk yuvanın yerinde). "+ Başka alan" ile eklenenler aynı türde kontrol,
+ * etkin filtreler çip satırında (× / "…" gelişmiş), "Filtreleri temizle" hepsini (aramayı da) boşaltır.
+ * Operatör seçici YOK — op kontrolden türetilir (§4.3/§5.3, lib/reports.ts).
  */
 export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickFiltersProps) {
     const kolonHaritasi = useMemo(() => new Map(kaynak.kolonlar.map(k => [k.anahtar, k])), [kaynak]);
@@ -84,9 +95,33 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
         onChange(yeni);
     };
 
-    // Arama yuvaları ayrı satırda (şeridin üstü), kalan kontroller ızgarada.
+    // Arama yuvaları ayrı satırda (şeridin üstü), kalan kontroller ızgarada; boş anahtarı yuvaları tek hücrede.
     const aramaYuvalari = serit.filter(o => o.sunum === "arama" && o.durum.kontrol === "metin_icerir");
     const digerOgeler = serit.filter(o => !aramaYuvalari.includes(o));
+    const eksikBilgiYuvalari = digerOgeler.filter(eksikBilgiYuvasi);
+
+    const eksikBilgiHucresi = eksikBilgiYuvalari.length > 0 && (
+        <div data-testid="eksik-bilgi" className="flex flex-col gap-1 min-w-0">
+            <span className={HUCRE_ETIKET_CLS}>{EKSIK_BILGI_BASLIGI}</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 min-h-7">
+                {eksikBilgiYuvalari.map(o => {
+                    const kolon = kolonOf(o.durum.alan);
+                    const d = o.durum;
+                    if (!kolon || d.kontrol !== "bos_anahtari") return null;
+                    return (
+                        <div key={o.id} data-testid="filtre-kontrolu" data-alan={d.alan} data-kontrol={d.kontrol} data-sunum={o.sunum}>
+                            <BosKutucugu
+                                etiket={o.etiket ?? `${kolon.etiket} boş`}
+                                acik={d.acik}
+                                sayi={bosSayisi(kolon)}
+                                onChange={acik => ogeDegistir(o.id, { ...d, acik })}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
 
     return (
         <div data-testid="filtre-seridi" className="flex flex-col gap-4 px-5 py-4 border-b border-[var(--border)]">
@@ -126,6 +161,8 @@ export function QuickFilters({ kaynak, serit, onChange, onHemen, bugun }: QuickF
             {digerOgeler.length > 0 && (
                 <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                     {digerOgeler.map(o => {
+                        // Boş anahtarı yuvaları: ilkinin yerinde tek "Eksik bilgi" hücresi, diğerleri atlanır.
+                        if (eksikBilgiYuvasi(o)) return o === eksikBilgiYuvalari[0] ? <div key={o.id}>{eksikBilgiHucresi}</div> : null;
                         const kolon: KatalogKolon | undefined = kolonOf(o.durum.alan);
                         if (!kolon) return null;
                         // Çip satırı geniş: ızgarada tam satır kaplar.

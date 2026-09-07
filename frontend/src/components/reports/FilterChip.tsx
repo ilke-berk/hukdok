@@ -15,21 +15,22 @@ type FilterChipProps = {
 
 type MenuOgesi = { anahtar: string; etiket: string; secili?: boolean; uygula: () => void };
 
-/** Mevcut kontrolün tekil değeri (gelişmiş `ne`/`eq`'e geçerken korunur; "(boş)" seçimi taşınmaz). */
+/** Mevcut kontrolün tekil değeri (gelişmiş `ne`/`eq`'e geçerken korunur; "Boş" seçimi/çipi taşınmaz). */
 function tekilDeger(d: KontrolDurumu): string | number | undefined {
     switch (d.kontrol) {
         case "coklu_secim": return d.secili.find((s): s is string => s !== null);
-        case "metin_icerir": return d.metin.trim() || undefined;
-        case "tarih_araligi": return d.baslangic.trim() || d.bitis.trim() || undefined;
-        case "sayi_araligi": return d.en_az ?? d.en_cok ?? undefined;
+        case "metin_icerir": return d.bos ? undefined : d.metin.trim() || undefined;
+        case "tarih_araligi": return d.bos ? undefined : d.baslangic.trim() || d.bitis.trim() || undefined;
+        case "sayi_araligi": return d.bos ? undefined : d.en_az ?? d.en_cok ?? undefined;
         default: return undefined;
     }
 }
 
 /**
  * Etkin filtre çipi: `etiket · özet` · "…" menüsü (gelişmiş op'lar: kolonun `oplar`ında olup
- * kontrolün doğal üretmedikleri — `ne`/`not_null`, tarih/sayı/metinde `is_null` "boş" (§5.1 madde 8);
- * metinde "tam eşitlik" anahtarı) · ×. Özet etiketli (`secenek_etiketleri`), "(boş)" → "boş".
+ * kontrolün doğal üretmedikleri — `ne`/`not_null`, mantıkta `is_null` "boş"; metinde "tam eşitlik"
+ * anahtarı) · ×. Özet etiketli (`secenek_etiketleri`): `in` içindeki `null` "Boş", `is_null` "boş" (§7.1 —
+ * tarih/sayı/metinde boşluk kontrolün kendi "Boş" çipinden gelir, menüde değil).
  * Gelişmiş çipte menü: diğer izinli op'lar + "Basit kontrole dön" (yuvanın sunumuyla). Sunucu sözleşmesi değişmez.
  */
 export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps) {
