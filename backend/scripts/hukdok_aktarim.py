@@ -129,6 +129,20 @@ verilmezse aynı arayıcı) geçer. Eşik kesim GÜNÜNÜN başıdır (TR saatiy
 00:00): o gün yapılan kullanıcı değişikliği de korunur — ekibin fotoğrafı
 günün hangi saatinde alındı bilinmez, koruyucu taraf seçildi.
 
+Açık kart haritası (G154, 2026-09-08)
+-------------------------------------
+Eşleştiricinin ayıramadığı föyler (aynı Dosya No'da iki kart; hekim köklü
+ikizler, gerçek mükerrer kartlar) her pakette yeniden soruluyordu. Ekibin
+cevabı (`HUKDOK_MUKERRER_VE_YENI_KARTLAR_*_CEVAPLI.xlsx`,
+`scripts/cevapli_kart_eslemesi.py` ile CSV'ye çevrilir) `--kart-esleme <csv>`
+/ `aktarimi_kos(kart_eslemesi={SistemNo: tracking_no})` ile verilir:
+`_kart_coz` (ve ön geçiş ikizi `_kart_id_tahmini`) föy kaydından ve Dosya No
+köprüsünden ÖNCE bu haritaya bakar. Harita YALNIZ listelenen SistemNo'ları
+etkiler; `tracking_no` DB'de yoksa/silinmişse satır HATA'dır (kart
+yaratılmaz, tahmin edilmez). Kök/müvekkil çelişkisi kapısı (G153) haritadan
+ÖNCE gelir: paketin kendi içinde çelişen satır, harita verilse de yazılmaz —
+ekibin "önce bizde düzeltilecek" dediği sınıf budur.
+
 `scripts/import_excel_cases.py` KULLANILMAZ ve çağrılmaz (temizlik planı §8:
 idempotent değil, hata yolunda sessiz veri kaybı, `-2` mükerrer üretimi).
 """
@@ -187,6 +201,12 @@ TR_SAAT_DILIMI = timezone(timedelta(hours=3))
 # (belge bağı `SET NULL` tuzağı) — satır raporunda bu etiketle "elle düzeltme
 # listesi"ne düşer. HATA değil: çıkış kodunu etkilemez.
 MUVEKKIL_DEGISTI_TURU = "MUVEKKIL_DEGISTI"
+
+# G154 — açık kart haritası: {SistemNo: tracking_no}. CSV sözleşmesi
+# (`scripts/cevapli_kart_eslemesi.py` üretir): başlıklar `sistem_no,
+# tracking_no,kaynak_not`, ',' ayraç, UTF-8 (BOM'lu da olur).
+KartEslemesi = Dict[str, str]
+KART_ESLEME_BASLIKLARI = ("sistem_no", "tracking_no", "kaynak_not")
 
 # ─── Kaynak sütunlar ─────────────────────────────────────────────────────────
 # Aday adlar; ilk eşleşen kullanılır. Başlık karşılaştırması aksan ve boşluk
@@ -1493,17 +1513,91 @@ def foy_degerleri(satir: HamSatir) -> Dict[str, Optional[str]]:
     }
 
 
+def kart_eslemesini_oku(yol: Path) -> KartEslemesi:
+    """`--kart-esleme` CSV'sini okur → {SistemNo: tracking_no}.
+
+    `tracking_no`su boş satır (cevaplı script'in "çözemedim" satırı) haritaya
+    GİRMEZ — WARNING ile atlanır; aynı SistemNo iki farklı karta yazılmışsa
+    girdi hatasıdır (koşu başlamaz). Aynı karta tekrar yazım zararsız.
+    """
+    yol = Path(yol)
+    if not yol.exists():
+        raise AktarimHatasi(f"--kart-esleme dosyası yok: {yol}")
+    harita: KartEslemesi = {}
+    with open(yol, newline="", encoding="utf-8-sig") as dosya:
+        okuyucu = csv.DictReader(dosya)
+        basliklar = [(b or "").strip() for b in (okuyucu.fieldnames or [])]
+        eksik = [b for b in KART_ESLEME_BASLIKLARI[:2] if b not in basliklar]
+        if eksik:
+            raise AktarimHatasi(
+                f"--kart-esleme başlıkları eksik: {', '.join(eksik)} "
+                f"(beklenen: {', '.join(KART_ESLEME_BASLIKLARI)})"
+            )
+        for sira, kayit in enumerate(okuyucu, start=2):
+            sistem_no = _metin(kayit.get("sistem_no"))
+            tracking_no = _metin(kayit.get("tracking_no"))
+            if not sistem_no:
+                continue
+            if not tracking_no:
+                logger.warning(
+                    f"--kart-esleme satır {sira}: {sistem_no} için kart no boş — haritaya alınmadı"
+                )
+                continue
+            onceki = harita.get(sistem_no)
+            if onceki is not None and onceki != tracking_no:
+                raise AktarimHatasi(
+                    f"--kart-esleme satır {sira}: {sistem_no} iki farklı karta yazılmış "
+                    f"({onceki!r} / {tracking_no!r})"
+                )
+            harita[sistem_no] = tracking_no
+    return harita
+
+
+def _eslemeden_kart(db, sistem_no: str, kart_eslemesi: Optional[KartEslemesi]) -> Optional[int]:
+    """Açık haritadaki kartın id'si (G154); SistemNo haritada yoksa None.
+
+    Haritadaki `tracking_no` DB'de yoksa ya da kart silinmişse `SatirHatasi`:
+    kart YARATILMAZ, tahmine DÜŞÜLMEZ — ekibin verdiği numara yanlışsa satır
+    raporda görünmeli, sessizce köprüye dönmemeli.
+    """
+    if not kart_eslemesi:
+        return None
+    tracking_no = kart_eslemesi.get(sistem_no)
+    if tracking_no is None:
+        return None
+    case = (
+        db.query(models.Case)
+        .filter(models.Case.tracking_no == tracking_no, models.Case.deleted_at.is_(None))
+        .order_by(models.Case.id)
+        .first()
+    )
+    if case is None:
+        raise SatirHatasi(
+            f"--kart-esleme: {sistem_no} için verilen kart {tracking_no!r} DB'de yok ya da silinmiş"
+        )
+    logger.info(f"{sistem_no} açık haritayla kart {case.id} ({tracking_no}) — köprü atlandı")
+    return cast(int, case.id)
+
+
 def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                      dosya_haritasi: Dict[str, List[int]],
-                     sistem_no: str) -> Optional[int]:
+                     sistem_no: str,
+                     kart_eslemesi: Optional[KartEslemesi] = None) -> Optional[int]:
     """`_kart_coz`un ÖN GEÇİŞ ikizi: istisna atmaz, None döner.
 
     İKİNCİ ANAHTARI DA UYGULAR — yoksa asıl döngü satırı bir karta yazarken ön
     geçiş o satırı hiç saymaz ve "kardeş föyler uzlaşıyor mu" sorusu eksik
-    veriyle cevaplanırdı.
+    veriyle cevaplanırdı. Açık harita (G154) da aynı sebeple burada: haritayla
+    bağlanan föy kardeşleriyle uzlaşıya girmeli.
     """
     if _kok_muvekkil_celiskisi(satir) is not None:
         return None               # satır yazılmayacak (G153) — uzlaşıya katılmasın
+    try:
+        case_id = _eslemeden_kart(db, sistem_no, kart_eslemesi)
+    except SatirHatasi:
+        return None               # bilinmeyen kart: satır düşecek
+    if case_id is not None:
+        return case_id
     case_id = foy_haritasi.get(sistem_no)
     if case_id is not None:
         return case_id
@@ -1522,6 +1616,7 @@ def kart_alan_celiskileri(
     dosya_haritasi: Dict[str, List[int]],
     duzeltmeler: Optional[DuzeltmeHaritasi] = None,
     kapsam_disi: Optional[Set[str]] = None,
+    kart_eslemesi: Optional[KartEslemesi] = None,
 ) -> Tuple[Dict[int, Set[str]], List[Celiski]]:
     """Aynı kartın föyleri bir KART alanında çelişiyorsa o alan YAZILMAZ.
 
@@ -1558,7 +1653,8 @@ def kart_alan_celiskileri(
             continue
         if kapsam_disi and sistem_no in kapsam_disi:
             continue              # kapsam dışı föy uzlaşıya katılmaz (G113/D9)
-        case_id = _kart_id_tahmini(db, satir, foy_haritasi, dosya_haritasi, sistem_no)
+        case_id = _kart_id_tahmini(db, satir, foy_haritasi, dosya_haritasi, sistem_no,
+                                   kart_eslemesi=kart_eslemesi)
         if case_id is None:
             continue
         try:
@@ -1755,9 +1851,19 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
 
 
 def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
-              dosya_haritasi: Dict[str, List[int]], sistem_no: str) -> models.Case:
-    """Satırın kartını bulur. Bulunamazsa SatirHatasi — kart YARATILMAZ."""
-    case_id = foy_haritasi.get(sistem_no)
+              dosya_haritasi: Dict[str, List[int]], sistem_no: str,
+              kart_eslemesi: Optional[KartEslemesi] = None) -> models.Case:
+    """Satırın kartını bulur. Bulunamazsa SatirHatasi — kart YARATILMAZ.
+
+    Sıra: (1) açık harita `kart_eslemesi` (G154; yalnız listelenen SistemNo,
+    bilinmeyen kart → SatirHatasi) → (2) föy kaydı (`case_foys`) → (3) Dosya No
+    köprüsü + ikinci anahtarlar. Harita föy kaydından da ÖNCEDİR: ekibin
+    cevabı yanlış karta bağlı bir föyü doğru karta taşıyabilmeli
+    (`foy_map._apply_update` kart değişimini WARNING ile yapar).
+    """
+    case_id = _eslemeden_kart(db, sistem_no, kart_eslemesi)
+    if case_id is None:
+        case_id = foy_haritasi.get(sistem_no)
     if case_id is None:
         parcalar = _dosya_no_parcalari(satir.degerler.get("dosya_no"))
         if not parcalar:
@@ -2168,7 +2274,8 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  kart_celiskileri: Optional[Dict[int, Set[str]]] = None,
                  duzeltmeler: Optional[DuzeltmeHaritasi] = None,
                  kapsam_disi: Set[str] = frozenset(),
-                 kesim_tarihi: Optional[date] = None) -> int:
+                 kesim_tarihi: Optional[date] = None,
+                 kart_eslemesi: Optional[KartEslemesi] = None) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
@@ -2190,7 +2297,8 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     if celiski is not None:
         raise KokMuvekkilCeliskisi(celiski)
 
-    case = _kart_coz(db, satir, foy_haritasi, dosya_haritasi, sistem_no)
+    case = _kart_coz(db, satir, foy_haritasi, dosya_haritasi, sistem_no,
+                     kart_eslemesi=kart_eslemesi)
     yeni_foy = foy_map.get_foy(db, sistem_no) is None
 
     foy_map.upsert_foy(
@@ -3008,7 +3116,8 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                  limit: Optional[int] = None, dry_run: bool = False,
                  source: Optional[str] = None, rapor_dizini: Optional[Path] = None,
                  statement_timeout_ms: int = VARSAYILAN_TIMEOUT_MS,
-                 kesim_tarihi: Optional[date] = None) -> AktarimSonucu:
+                 kesim_tarihi: Optional[date] = None,
+                 kart_eslemesi: Optional[KartEslemesi] = None) -> AktarimSonucu:
     """Çekirdek akış: oku → normalize → föy upsert → kart alanları → raporlar.
 
     TEK transaction, TEK commit: belge envanteri kapısı commit'ten ÖNCE ölçer,
@@ -3018,8 +3127,13 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
     `kesim_tarihi` (G152): ekibin veri kesim günü; verilmezse `status`
     kesim-sonrası koruma kuralı KAPALIDIR (tek WARNING) — çağıran
     (`teslim_kutusu.kesim_tarihi_bul`, CLI) üç kaynağı sırayla dener.
+
+    `kart_eslemesi` (G154): {SistemNo: tracking_no} açık haritası; yalnız
+    listelenen föyleri etkiler, `_kart_coz`da köprüden önce denenir.
     """
     girdi = Path(girdi)
+    if kart_eslemesi:
+        logger.info(f"Açık kart haritası: {len(kart_eslemesi)} SistemNo (G154)")
     if kesim_tarihi is None:
         logger.warning(
             "Veri kesim tarihi yok — `status` kesim-sonrası koruma kuralı DEVRE DIŞI "
@@ -3076,7 +3190,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         # föy zaten kartı bir kez ezmiş olurdu.
         kart_celiskileri, kart_celiski_raporu = kart_alan_celiskileri(
             db, satirlar, foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
-            duzeltmeler=duzeltmeler, kapsam_disi=kapsam_disi,
+            duzeltmeler=duzeltmeler, kapsam_disi=kapsam_disi, kart_eslemesi=kart_eslemesi,
         )
         if kart_celiski_raporu:
             logger.warning(
@@ -3097,6 +3211,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
                         kart_celiskileri=kart_celiskileri, duzeltmeler=duzeltmeler,
                         kapsam_disi=kapsam_disi, kesim_tarihi=kesim_tarihi,
+                        kart_eslemesi=kart_eslemesi,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.
@@ -3306,6 +3421,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="ekibin veri kesim tarihi (dd.mm.yyyy ya da yyyy-mm-dd); "
                              "verilmezse DEGISIKLIK_OZETI 'Veri kesim tarihi' satırı, "
                              "yoksa paket adındaki tarih; o da yoksa status koruma kapalı")
+    parser.add_argument("--kart-esleme", default=None,
+                        help="açık kart haritası CSV'si (sistem_no,tracking_no,kaynak_not; "
+                             "scripts/cevapli_kart_eslemesi.py üretir) — yalnız listelenen "
+                             "SistemNo'lar köprü yerine bu karta bağlanır (G154)")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -3330,6 +3449,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             rapor_dizini=Path(args.rapor_dizini) if args.rapor_dizini else None,
             statement_timeout_ms=args.statement_timeout_ms,
             kesim_tarihi=_cli_kesim_tarihi(args.kesim_tarihi, Path(args.input)),
+            kart_eslemesi=kart_eslemesini_oku(Path(args.kart_esleme)) if args.kart_esleme else None,
         )
     except AktarimHatasi as exc:
         logger.error(f"Aktarım başlamadı: {exc}")
