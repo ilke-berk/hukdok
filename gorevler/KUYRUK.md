@@ -44,7 +44,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Tahmin: 1 koşu. -->
 
 - [x] G147 | bant:backend | bagimli:- | Teslim hattı `teslim` config'i: TESLIM_SHAREPOINT_* ikinci kimlik/site (düşüş: default), lru_cache (token,config) maxsize 4, 401 yenilemesi config'e sadık, gözcü+cevap çağrıları teslim config'iyle, .env.example + veri-teslim-hatti.md §1/§9 + testler
-- [ ] G148 | bant:docs | bagimli:G147 | Yeni site dokümanları: dis-bagimliliklar §2, kimlik-ve-token, deploy env listesi, SOZLESME §1 site adı (bağlantısız), plan §8 tenant ayrımı şerhi, CLAUDE.md tek cümle
+- [x] G148 | bant:docs | bagimli:G147 | Yeni site dokümanları: dis-bagimliliklar §2, kimlik-ve-token, deploy env listesi, SOZLESME §1 site adı (bağlantısız), plan §8 tenant ayrımı şerhi, CLAUDE.md tek cümle
 
 ## ÖNCELİK 1 — Raporlama beşinci tur: seçenek sayıları + sıralama + "Boş" birinci sınıf (2026-09-07 gündüz, kullanıcı kararı)
 
