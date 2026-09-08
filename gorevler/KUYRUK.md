@@ -18,7 +18,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G149 | bant:backend | bagimli:- | 370 derdest kart listesi: föysüz + DERDEST kartların xlsx raporu (salt okunur script, ekibe ek)
 - [x] G150 | bant:backend | bagimli:- | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP korunur, boş hücre imzaya girmez, çok tur sira_no, 04.09 ile 12 bayat → 0 kanıtı
-- [ ] G151 | bant:backend | bagimli:G150 | Karar durumu havuzları: Kapalı/Derdest yerel havuzdan çıkar + aktarımda "karar yok" kuralı + istinaf/temyiz/yerel seed genişlemesi ("Karar" hariç) — YENİDEN KUYRUKTA 08.09 sabah: g066/g103 örnek-değer izni + kriter düzeltmesi; taslak `stash@{0}` (işçi önce `git stash pop`)
+- [x] G151 | bant:backend | bagimli:G150 | Karar durumu havuzları: Kapalı/Derdest yerel havuzdan çıkar + aktarımda "karar yok" kuralı + istinaf/temyiz/yerel seed genişlemesi ("Karar" hariç) — YENİDEN KUYRUKTA 08.09 sabah: g066/g103 örnek-değer izni + kriter düzeltmesi; taslak `stash@{0}` (işçi önce `git stash pop`)
 - [ ] G152 | bant:backend | bagimli:G151 | `status` kesim-sonrası koruma: kullanıcı imzalı case_history varsa paket yazmaz + DEGISIKLIK_OZETI "Veri kesim tarihi" + update_case tarihçe imzası
 - [ ] G153 | bant:backend | bagimli:G152 | DosyaNo kökü → müvekkil kimliği: eşleştirme adımı, kök/müvekkil çelişkisi (H-6589) yazılmaz, föy↔müvekkil `case_party_id` bağı, "Müvekkil değişti" raporu
 - [ ] G154 | bant:backend | bagimli:G153 | Cevaplı xlsx ile 20 föyü bağlama: `cevapli_kart_eslemesi.py` + aktarımda `--kart-esleme` haritası (H-6589 hariç 19 föy)
