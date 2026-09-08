@@ -145,7 +145,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, cast
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, cast
 
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -181,6 +181,12 @@ DEGISTIREN = "hukdok_aktarim"
 # kesim eşiğinin saat dilimi (ekibin kesim tarihi TR günüdür).
 STATUS_KORUNDU_TURU = "KORUNDU"
 TR_SAAT_DILIMI = timezone(timedelta(hours=3))
+
+# G153 — föyün müvekkil bağı (`case_foys.case_party_id`) bu pakette BAŞKA bir
+# tarafa düştü: bağ güncellenir, eski CLIENT satırı silinmez/rolü değişmez
+# (belge bağı `SET NULL` tuzağı) — satır raporunda bu etiketle "elle düzeltme
+# listesi"ne düşer. HATA değil: çıkış kodunu etkilemez.
+MUVEKKIL_DEGISTI_TURU = "MUVEKKIL_DEGISTI"
 
 # ─── Kaynak sütunlar ─────────────────────────────────────────────────────────
 # Aday adlar; ilk eşleşen kullanılır. Başlık karşılaştırması aksan ve boşluk
@@ -311,6 +317,17 @@ class SatirAtlandi(SatirHatasi):
     """
 
 
+class KokMuvekkilCeliskisi(SatirHatasi):
+    """Dosya No kökünün sigortası ile `Müvekkil` hücresindeki sigorta ÇELİŞİYOR
+    (G153, H-6589 deseni: kök 3 = Ak, hücre Axa) — satır YAZILMAZ, rapora düşer.
+
+    Ekibin kararı (06.09): "bağlamayın, önce bizde düzeltilecek". İki kimlik
+    kaynağı çelişirken hangisinin doğru olduğunu tahmin etmek yasağın
+    ihlalidir; satır HATA'dır (koşu NONZERO, düzeltme listesi konusu) ve
+    `AktarimSonucu.kok_muvekkil_celiskisi` ile ayrıca sayılır.
+    """
+
+
 class AlanHatasi(Exception):
     """TEK alanın yazımını düşüren DEĞER hatası — satır işlenmeye DEVAM eder.
 
@@ -380,6 +397,13 @@ class AktarimSonucu:
     # (`kesim_tarihi` None) hep 0.
     status_korunan: int = 0
     kesim_tarihi: Optional[date] = None
+    # G153 — Dosya No kökü ↔ müvekkil: kök/müvekkil çelişkisiyle YAZILMAYAN
+    # satır (her koşuda yeniden sayılır); föy ↔ müvekkil bağı bu koşuda İLK kez
+    # kurulan föy; bağı BAŞKA tarafa geçen föy (rapor `MUVEKKIL_DEGISTI`).
+    # Aynı girdiyle ikinci koşuda son ikisi 0'dır.
+    kok_muvekkil_celiskisi: int = 0
+    foy_muvekkil_bagli: int = 0
+    foy_muvekkil_degisen: int = 0
     atlanan: int = 0
     # G113 — kapsam sayfaları: işaretlenen (değişen) föy, kapsama geri alınan
     # föy, bizde olmayan SistemNo (ATLANDI). İkinci koşuda üçü de 0'dır.
@@ -1018,6 +1042,122 @@ def _eslesme_anahtari(deger: Any) -> str:
     return tr_upper(_metin(deger) or "")
 
 
+# ─── Dosya No kökü → müvekkil kimliği (G153) ─────────────────────────────────
+# Ekip (06.09 §2): müvekkil kimliği `DosyaNo`nun ilk noktaya kadarki KÖKÜNDE
+# kodludur; sabit hane kuralı YOK ("3.1400.00" → 3, "1706.001.00" → 1706).
+# Yalnız sigorta kökleri deterministiktir; `13` "hizmet verilmemiş", `≥500`
+# özel hekim/kurum (ad gerekir) → o köklerde kural ATLANIR. 04.09 paketinde
+# ölçüm: 9→Anadolu 1814/1826, 1→Axa 1488/1491, 3→Ak 1448/1449, 2→Quick 616/621,
+# 8000→Nippon 223/223, 6→Sompo 178/178, 7→Eureko 22/22, 8→HDI 8/9; kök 5 (Koru)
+# pakette hiç yok ama ekibin listesinde var, harita ekibin listesidir.
+DOSYANO_KOK_MUVEKKILI: Dict[str, str] = {
+    "1": "Axa Sigorta A.Ş.",
+    "2": "Quick Sigorta A.Ş.",
+    "3": "Ak Sigorta A.Ş.",
+    "5": "Koru Sigorta A.Ş.",
+    "6": "Sompo Sigorta A.Ş.",
+    "7": "Eureko Sigorta A.Ş.",
+    "8": "HDI Sigorta A.Ş.",
+    "9": "Anadolu Anonim Türk Sigorta Şirketi",
+    "8000": "Türk Nippon Sigorta A.Ş.",
+}
+DOSYANO_KOK_HIZMETSIZ = "13"
+DOSYANO_KOK_HEKIM_ESIGI = 500
+
+# Sigorta adlarında MARKA dışı sözcükler (`normalize_party_key` anahtarında):
+# "Quıck Sigorta A.ş" / "Quick Sigorta A.Ş." / "S.s. Koru Sigorta Kooperatifi"
+# / "Türk Nippon Sigorta Aş" hepsi aynı markaya düşsün diye anahtar TAM
+# eşitlikle değil "marka sözcükleri ⊆ anahtar" ile karşılaştırılır. Sigorta
+# olmayan ad ("Ahmet Yılmaz", hekim/kurum) `SIGORTA` sözcüğü taşımaz → kural
+# ona hiç bakmaz.
+_SIGORTA_SOZCUGU = "SIGORTA"
+_SIGORTA_GENEL_SOZCUKLER = frozenset({
+    _SIGORTA_SOZCUGU, "AS", "LTD", "ANONIM", "SIRKETI", "TURK", "SS", "KOOPERATIFI", "HAYAT",
+})
+
+
+def _sigorta_markasi(anahtar: str) -> Optional[FrozenSet[str]]:
+    """Taraf anahtarı bir SİGORTA adıysa marka sözcükleri; değilse None."""
+    sozcukler = set(anahtar.split())
+    if _SIGORTA_SOZCUGU not in sozcukler:
+        return None
+    return frozenset(sozcukler - _SIGORTA_GENEL_SOZCUKLER)
+
+
+_KOK_MARKASI: Dict[str, FrozenSet[str]] = {
+    kok: cast(FrozenSet[str], _sigorta_markasi(normalize_party_key(ad)))
+    for kok, ad in DOSYANO_KOK_MUVEKKILI.items()
+}
+
+
+def _dosya_no_koku(deger: Any) -> Optional[str]:
+    """Dosya No'nun ilk noktaya kadarki kökü (boşluk toleranslı); boş → None.
+
+    Çok değerli hücrede (`;`) İLK numaranın kökü alınır (kart eşleşmesi de o
+    parçadan başlar). Rakamsal kökün baştaki sıfırları düşer ("03" → "3");
+    rakam dışı kök olduğu gibi döner (haritada yoktur, kural atlanır).
+    """
+    ham = _metin(deger)
+    if not ham:
+        return None
+    ilk = _AYRAC.split(ham)[0]
+    kok = "".join(ilk.split(".")[0].split())
+    if not kok:
+        return None
+    return str(int(kok)) if kok.isdigit() else kok
+
+
+def _kok_muvekkili(deger: Any) -> Optional[Tuple[str, str]]:
+    """Dosya No kökü sigorta müvekkiline eşleniyorsa `(kök, ad)`; `13`, `≥500`
+    ve haritada olmayan köklerde None (kural atlanır)."""
+    kok = _dosya_no_koku(deger)
+    if kok is None or kok not in DOSYANO_KOK_MUVEKKILI:
+        return None
+    return kok, DOSYANO_KOK_MUVEKKILI[kok]
+
+
+def _kokun_karti_mi(anahtarlar: Set[str], kok: str) -> bool:
+    """Kart kökün sigortasının KENDİ kartı mı: CLIENT anahtarlarının TAMAMI kökün
+    sigortasını içeriyor (ve en az bir CLIENT var).
+
+    "İçeren kart" yetmez — 04.09 paketinin 12 sigorta-köklü belirsiz satırında
+    ikizlerin ikisi de sigortayı taşıyordu: `S3.AXA…2915` {Axa} ile
+    `S3.M_ISIK…0001` {Mürüvvet Işık, Axa} aynı davanın iki müvekkil-bazlı
+    kartıdır; hekim kartı sigortayı ORTAK müvekkil olarak da listeler. Kök 1
+    (Axa) "sigortanın kendi föyü" demektir → müvekkili yalnız sigorta olan
+    kart; hekimin föyü hekim köküyle (≥500) gelir ve ad adımına düşer. İki
+    sigortalı kart ({Ak, Axa}, `S1.AK…0262`) de Axa'nın kartı DEĞİLDİR.
+    """
+    if not anahtarlar:
+        return False
+    marka = _KOK_MARKASI[kok]
+    return all(
+        (m := _sigorta_markasi(anahtar)) is not None and marka <= m for anahtar in anahtarlar
+    )
+
+
+def _kok_muvekkil_celiskisi(satir: HamSatir) -> Optional[str]:
+    """H-6589 deseni: kökün sigortası ile `Müvekkil` hücresinin (ilk parça)
+    sigortası FARKLI → çelişki metni; değilse None.
+
+    Yalnız hücre bir SİGORTA adıysa bakılır: hekim/kurum adı (15 föy, ekip
+    düzeltecek) ya da boş hücre çelişki DEĞİLDİR — kök adımı o satırda kartı
+    yine seçebilir. Aynı markanın başka yazımı ("Axa Hayat Sigorta", "Quıck")
+    çelişki sayılmaz (marka sözcükleri kapsanıyor).
+    """
+    kok_bilgisi = _kok_muvekkili(satir.degerler.get("dosya_no"))
+    if kok_bilgisi is None:
+        return None
+    kok, kok_adi = kok_bilgisi
+    adlar = _taraf_adlari(satir.degerler.get("muvekkil"))
+    if not adlar:
+        return None
+    hucre_markasi = _sigorta_markasi(normalize_party_key(adlar[0]))
+    if hucre_markasi is None or _KOK_MARKASI[kok] <= hucre_markasi:
+        return None
+    return f"kök/müvekkil çelişkisi: Dosya No kökü {kok} = {kok_adi}, Müvekkil hücresi {adlar[0]!r}"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Düzeltme_Logu (G112) — gerekçe provenance + açık boşaltma talimatı
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1362,6 +1502,8 @@ def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
     geçiş o satırı hiç saymaz ve "kardeş föyler uzlaşıyor mu" sorusu eksik
     veriyle cevaplanırdı.
     """
+    if _kok_muvekkil_celiskisi(satir) is not None:
+        return None               # satır yazılmayacak (G153) — uzlaşıya katılmasın
     case_id = foy_haritasi.get(sistem_no)
     if case_id is not None:
         return case_id
@@ -1514,22 +1656,34 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
     kümesi `_kart_muvekkil_anahtarlari`, satırınki `_satir_muvekkil_anahtarlari`;
     kesişim boş değilse kart "müvekkile uyuyor" sayılır.
 
+    **Dördüncü anahtar — Dosya No kökü (G153):** ekip (06.09 §2) müvekkil
+    kimliğinin `DosyaNo` kökünde kodlu olduğunu bildirdi (`DOSYANO_KOK_MUVEKKILI`:
+    1 Axa · 2 Quick · 3 Ak · …). Kök deterministik, ad ise kirli olabilir (15
+    föyde hekim adı `Müvekkil` sütununda) → kök adımı müvekkil-adı adımından
+    ÖNCE gelir: adaylardan müvekkili YALNIZ kökün sigortası olan
+    (`_kokun_karti_mi` — ikiz hekim kartı sigortayı ortak müvekkil olarak da
+    taşır, o yüzden "içeren" yetmez) kart tek ise seçilir. Kök `13` (hizmet
+    verilmemiş), `≥500` (hekim/kurum, ad gerekir) ya da haritada yoksa adım
+    ATLANIR (davranış G118 ile birebir). Kök/müvekkil çelişkisi (H-6589) bu
+    fonksiyona gelmeden satırı düşürür (`_kok_muvekkil_celiskisi`).
+
     Aday eleme sırası (her adımda "tek aday kaldıysa seç"):
 
     1. esas ∩ tür   2. esas   3. tür                         (2026-08-19 üçlüsü)
-    4. esas ∩ tür ∩ müvekkil   5. esas ∩ müvekkil   6. tür ∩ müvekkil   7. müvekkil
+    4. esas ∩ tür ∩ kök   5. esas ∩ kök   6. tür ∩ kök   7. kök          (G153)
+    8. esas ∩ tür ∩ müvekkil   9. esas ∩ müvekkil   10. tür ∩ müvekkil   11. müvekkil
 
     Sıra ÖNEMLİ: tek bir kriterle "tek aday kaldı" demek, diğer kriterin
-    çeliştiği bir kartı seçmek olabilir; müvekkil tek başına seçilmeden önce
-    esas/tür ile çelişmeyen aday aranır, 7. adım yalnız esas ve tür hiçbir şey
-    söylemiyorsa devreye girer. Müvekkil sütunu boşsa ya da hiçbir adaya
-    uymuyorsa 4-7 boş kalır ve davranış eski üçlüyle birebir aynıdır. İki aday
-    da aynı müvekkil anahtarını taşıyorsa (gerçek mükerrer) hiçbir adım tek
-    adaya inmez → None; satır "esas/tür/müvekkil de ayırmadı" ile rapora
-    düşer, tahmin YOK.
+    çeliştiği bir kartı seçmek olabilir; kök/müvekkil tek başına seçilmeden
+    önce esas/tür ile çelişmeyen aday aranır, 7. ve 11. adım yalnız esas ve tür
+    hiçbir şey söylemiyorsa devreye girer. Müvekkil sütunu boşsa ya da hiçbir
+    adaya uymuyorsa 8-11 boş kalır. İki aday da aynı müvekkil anahtarını
+    taşıyorsa (gerçek mükerrer) hiçbir adım tek adaya inmez → None; satır
+    "esas/tür/kök/müvekkil de ayırmadı" ile rapora düşer, tahmin YOK.
 
     Ölçüm (2026-09-03, 18.08 paketi, kuru koşu): belirsiz eşleşme 33 → sonuç
-    G118 raporunda (gorevler/gorev/G118.md); paket repoya girmez.
+    G118 raporunda (gorevler/gorev/G118.md); paket repoya girmez. Kök adımının
+    ölçümü (04.09 paketi) G153 raporunda.
     """
     kartlar = [k for k in (db.get(models.Case, aday) for aday in adaylar)
                if k is not None and k.deleted_at is None]
@@ -1544,14 +1698,13 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
     esas_uyan = [k for k in kartlar if _esas_uyuyor(k, esas)]
     tur_uyan = [k for k in kartlar if tur and k.file_type == tur]
 
-    def _sec(kriter: str, aday_kume: List[models.Case], muvekkil: Optional[Set[str]]) -> Optional[int]:
+    def _sec(kriter: str, aday_kume: List[models.Case], ek: str = "") -> Optional[int]:
         if len(aday_kume) != 1:
             return None
         secilen = aday_kume[0]
         logger.info(
             f"Belirsiz eşleşme ikinci anahtarla çözüldü: {sistem_no} → kart {secilen.id} "
-            f"(kriter={kriter}, esas={esas!r}, tür={tur!r}"
-            f"{f', müvekkil={sorted(muvekkil)!r}' if muvekkil else ''})"
+            f"(kriter={kriter}, esas={esas!r}, tür={tur!r}{ek})"
         )
         return cast(int, secilen.id)
 
@@ -1561,22 +1714,41 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
         ("esas", esas_uyan),
         ("tür", tur_uyan),
     ):
-        case_id = _sec(kriter, aday_kume, None)
+        case_id = _sec(kriter, aday_kume)
         if case_id is not None:
             return case_id
 
-    # 4-7: üçüncü anahtar (G118) — yalnız Müvekkil sütunu doluysa
+    kok_bilgisi = _kok_muvekkili(satir.degerler.get("dosya_no"))
     muvekkil = _satir_muvekkil_anahtarlari(satir)
+    if kok_bilgisi is None and not muvekkil:
+        return None
+    kart_anahtarlari = {k.id: _kart_muvekkil_anahtarlari(db, k.id) for k in kartlar}
+
+    # 4-7: dördüncü anahtar (G153) — yalnız kök bir sigorta müvekkiline eşleniyorsa
+    if kok_bilgisi is not None:
+        kok, kok_adi = kok_bilgisi
+        kok_uyan = [k for k in kartlar if _kokun_karti_mi(kart_anahtarlari[k.id], kok)]
+        for kriter, aday_kume in (
+            ("esas+tür+kök", [k for k in esas_uyan if k in tur_uyan and k in kok_uyan]),
+            ("esas+kök", [k for k in esas_uyan if k in kok_uyan]),
+            ("tür+kök", [k for k in tur_uyan if k in kok_uyan]),
+            ("kök", kok_uyan),
+        ):
+            case_id = _sec(kriter, aday_kume, f", kök={kok}={kok_adi!r}")
+            if case_id is not None:
+                return case_id
+
+    # 8-11: üçüncü anahtar (G118) — yalnız Müvekkil sütunu doluysa
     if not muvekkil:
         return None
-    muvekkil_uyan = [k for k in kartlar if muvekkil & _kart_muvekkil_anahtarlari(db, k.id)]
+    muvekkil_uyan = [k for k in kartlar if muvekkil & kart_anahtarlari[k.id]]
     for kriter, aday_kume in (
         ("esas+tür+müvekkil", [k for k in esas_uyan if k in tur_uyan and k in muvekkil_uyan]),
         ("esas+müvekkil", [k for k in esas_uyan if k in muvekkil_uyan]),
         ("tür+müvekkil", [k for k in tur_uyan if k in muvekkil_uyan]),
         ("müvekkil", muvekkil_uyan),
     ):
-        case_id = _sec(kriter, aday_kume, muvekkil)
+        case_id = _sec(kriter, aday_kume, f", müvekkil={sorted(muvekkil)!r}")
         if case_id is not None:
             return case_id
     return None
@@ -1603,9 +1775,14 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
         if len(adaylar) > 1:
             case_id = _ikinci_anahtarla_coz(db, satir, adaylar)
             if case_id is None:
-                # Müvekkil sütunu doluysa üçüncü anahtar da denenmiş demektir;
-                # sebep metni bunu söyler (G118). Boşsa metin eski hâliyle kalır.
-                kriterler = "esas/tür/müvekkil" if _satir_muvekkil_anahtarlari(satir) else "esas/tür"
+                # Kök bir sigortaya eşleniyorsa (G153) ve/veya Müvekkil sütunu
+                # doluysa (G118) o anahtarlar da denenmiş demektir; sebep metni
+                # bunu söyler. İkisi de yoksa metin eski hâliyle kalır.
+                kriterler = "esas/tür"
+                if _kok_muvekkili(satir.degerler.get("dosya_no")) is not None:
+                    kriterler += "/kök"
+                if _satir_muvekkil_anahtarlari(satir):
+                    kriterler += "/müvekkil"
                 raise SatirHatasi(
                     f"Belirsiz eşleşme: Dosya No {gosterim!r} {len(adaylar)} kartla eşleşiyor "
                     f"({', '.join(str(a) for a in adaylar[:5])}) — {kriterler} de ayırmadı"
@@ -1863,6 +2040,84 @@ def _taraflari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[
     return eklenen
 
 
+def _foy_muvekkil_tarafi(db, case: models.Case, satir: HamSatir) -> Optional[models.CaseParty]:
+    """`Müvekkil` hücresinin İLK parçasına anahtarı eşit CLIENT taraf satırı (G153).
+
+    Eşleşme `normalize_party_key` TAM eşitliğidir (taraf adı ya da bağlı
+    `clients.name`); birden çok satır uyarsa en eski (`id`) kazanır —
+    deterministik, ikinci koşu aynı satırı bulur. Hücre boşsa None.
+    """
+    adlar = _taraf_adlari(satir.degerler.get("muvekkil"))
+    if not adlar:
+        return None
+    anahtar = normalize_party_key(adlar[0])
+    if not anahtar:
+        return None
+    db.flush()                    # `_taraflari_yaz`ın az önce eklediği satır da görülsün
+    taraflar = (
+        db.query(models.CaseParty)
+        .filter(models.CaseParty.case_id == case.id, models.CaseParty.party_type == "CLIENT")
+        .order_by(models.CaseParty.id)
+        .all()
+    )
+    for taraf in taraflar:
+        if normalize_party_key(taraf.name or "") == anahtar:
+            return cast(models.CaseParty, taraf)
+    for taraf in taraflar:
+        if taraf.client_id is None:
+            continue
+        muvekkil = db.get(models.Client, taraf.client_id)
+        if (muvekkil is not None and muvekkil.deleted_at is None
+                and normalize_party_key(muvekkil.name or "") == anahtar):
+            return cast(models.CaseParty, taraf)
+    return None
+
+
+def _foy_muvekkilini_bagla(db, case: models.Case, satir: HamSatir, *,
+                           sistem_no: str, source: str) -> Optional[Tuple[str, str]]:
+    """Föy ↔ müvekkil bağı: `case_foys.case_party_id` = hücreye uyan CLIENT satırı (G153).
+
+    Plan 06.09 #28: 8.386 föyde bağ boştu. `_taraflari_yaz`dan SONRA çağrılır
+    (hücredeki ad kartta yoksa az önce eklenmiştir); yazım `foy_map.upsert_foy`
+    üzerinden, yani `_validated_party` kapısından geçer (çapraz kart bağı
+    reddedilir). Eşleşme yoksa (hücre boş) mevcut bağ KORUNUR (`None` = "bu
+    teslimde yok"). Aynı bağ ikinci kez gelirse hiçbir şey yazılmaz (ikinci
+    koşu 0).
+
+    Döner: `None` (bağ yok / değişmedi), `("bagli", ad)` (ilk bağ) ya da
+    `("degisti", "eski → yeni")` — bağ BAŞKA tarafa geçti: föy güncellenir,
+    tarihçeye düşer, ama eski CLIENT satırı SİLİNMEZ ve rolü değişmez (belge
+    bağı `SET NULL` tuzağı, `_taraflari_yaz` gerekçesi); "elle düzeltme
+    listesi" satır raporuna `MUVEKKIL_DEGISTI` ile düşer.
+    """
+    taraf = _foy_muvekkil_tarafi(db, case, satir)
+    if taraf is None:
+        return None
+    foy = foy_map.get_foy(db, sistem_no)
+    if foy is None:
+        return None
+    eski_id = foy.case_party_id
+    if eski_id == taraf.id:
+        return None
+    eski_ad: Optional[str] = None
+    if eski_id is not None:
+        eski = db.get(models.CaseParty, eski_id)
+        eski_ad = eski.name if eski is not None else str(eski_id)
+    foy_map.upsert_foy(db, case, sistem_no=sistem_no, case_party_id=cast(int, taraf.id))
+    db.add(models.CaseHistory(
+        case_id=case.id, field_name="case_foys.case_party_id",
+        old_value=eski_ad, new_value=taraf.name,
+        changed_by=DEGISTIREN, source=source,
+    ))
+    if eski_id is None:
+        return "bagli", cast(str, taraf.name)
+    logger.warning(
+        f"Föy {sistem_no} müvekkil bağı değişti: {eski_ad!r} → {taraf.name!r} "
+        f"(kart {case.id}; eski taraf satırı korunur, elle düzeltme listesi)"
+    )
+    return "degisti", f"{eski_ad} → {taraf.name}"
+
+
 def _avukatlari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[str]:
     """Föyün avukat listesini `case_lawyers`e YALNIZ-EKLEME ile işler.
 
@@ -1929,6 +2184,12 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     if not sistem_no:
         raise SatirHatasi("SistemNo boş (föyün kimliği)")
 
+    # G153 — kök/müvekkil çelişkisi (H-6589): iki kimlik kaynağı çelişirken
+    # satır hiçbir karta YAZILMAZ (föy kaydı olsa bile) — ekip: "bağlamayın".
+    celiski = _kok_muvekkil_celiskisi(satir)
+    if celiski is not None:
+        raise KokMuvekkilCeliskisi(celiski)
+
     case = _kart_coz(db, satir, foy_haritasi, dosya_haritasi, sistem_no)
     yeni_foy = foy_map.get_foy(db, sistem_no) is None
 
@@ -1948,6 +2209,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     degisenler: List[str] = []
     eklenen_avukatlar: List[str] = []
     eklenen_taraflar: List[str] = []
+    muvekkil_bagi: Optional[Tuple[str, str]] = None
     if sistem_no in kapsam_disi:
         logger.info(
             f"{sistem_no} paketin kapsam sayfasında: kart alanı/avukat/taraf yazılmadı "
@@ -1964,6 +2226,9 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         sonuc.bosaltilan += len(bosaltilanlar)
         eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
         eklenen_taraflar = _taraflari_yaz(db, case, satir, source)
+        # G153 — föy ↔ müvekkil bağı taraf yazımından SONRA (hücredeki ad az
+        # önce eklenmiş olabilir); kapsam dışı föy kart düzeyine yazmaz, bağ da kurmaz.
+        muvekkil_bagi = _foy_muvekkilini_bagla(db, case, satir, sistem_no=sistem_no, source=source)
         # G123 — Sheet'in "Eski Dosya No" sütunu bir esas numarasıdır
         # ("2021/588"); Karar_Asamalari'nın "Önceki" satırlarıyla AYNI yola,
         # esas tarihçesine ONCEKI olarak düşer (güncel işaret DEĞİŞMEZ; aynı
@@ -2026,6 +2291,20 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
             tur=STATUS_KORUNDU_TURU, sebep=sebep,
         ))
         logger.info(f"Satır {satir.satir_no} ({sistem_no}) kart {case.id}: {sebep}")
+
+    # G153 — föy ↔ müvekkil bağı: ilk bağ sayılır; bağ değişimi sayılır VE
+    # rapora düşer (HATA değil — çıkış kodu etkilenmez; elle düzeltme listesi).
+    if muvekkil_bagi is not None:
+        olay, metin = muvekkil_bagi
+        if olay == "bagli":
+            sonuc.foy_muvekkil_bagli += 1
+        else:
+            sonuc.foy_muvekkil_degisen += 1
+            sonuc.rapor_satirlari.append(RaporSatiri(
+                satir_no=satir.satir_no, sistem_no=sistem_no,
+                dosya_no=_metin(satir.degerler.get("dosya_no")) or "",
+                tur=MUVEKKIL_DEGISTI_TURU, sebep=f"müvekkil değişti: {metin}",
+            ))
 
     sonuc.islenen += 1
     return cast(int, case.id)
@@ -2825,6 +3104,8 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                 tur = "ATLANDI" if isinstance(exc, SatirAtlandi) else "HATA"
                 if tur == "ATLANDI":
                     sonuc.atlanan += 1
+                if isinstance(exc, KokMuvekkilCeliskisi):
+                    sonuc.kok_muvekkil_celiskisi += 1
                 sonuc.rapor_satirlari.append(RaporSatiri(
                     satir_no=satir.satir_no, sistem_no=sistem_no,
                     dosya_no=_metin(satir.degerler.get("dosya_no")) or "",
@@ -2958,6 +3239,9 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  boşaltılan alan   : {sonuc.bosaltilan} (Düzeltme_Logu açık talimatı)",
         f"  avukat satırı     : {sonuc.avukat_eklenen}",
         f"  taraf satırı      : {sonuc.taraf_eklenen}",
+        f"  föy↔müvekkil bağı : {sonuc.foy_muvekkil_bagli} bağlandı, "
+        f"{sonuc.foy_muvekkil_degisen} müvekkil değişti (rapor), "
+        f"{sonuc.kok_muvekkil_celiskisi} kök/müvekkil çelişkisi (yazılmadı)",
         f"  aşama satırı      : {sonuc.asama_eklenen} eklendi, {sonuc.asama_guncellenen} güncellendi, "
         f"{sonuc.asama_ikinci_tur} ikinci tur, {sonuc.asama_belgeli_korunan} belgeli korundu "
         f"(önceki esas: {sonuc.onceki_esas_eklenen}"
