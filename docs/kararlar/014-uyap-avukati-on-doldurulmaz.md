@@ -4,7 +4,7 @@
 
 - **Durum:** kabul — kullanıcı yetkisiyle verildi (12.08.2026)
 - **Bağlam:** HUKDOK teslim paketinde **UYAP Avukatı alanı boş geliyor** ve alan bugün
-  koşulsuz zorunlu (`backend/required_fields.py:58`). Karşı taraf ekibi bir çıkış yolu
+  koşulsuz zorunlu (`backend/required_fields.py:74`). Karşı taraf ekibi bir çıkış yolu
   önerdi: *"Sorumlu Avukatlar'ın ilk ismiyle ön-doldurup 'teyit bekliyor' işaretlemek
   mümkün mü?"* — çünkü aksi hâlde aktarılan her kayıt "eksik alan" filtresinde yanacak.
 - **Karar:** **Ön-doldurma yapılmaz.** Alan boş kalır. Çözüm veri tarafında değil
@@ -19,7 +19,7 @@
    dağılımından bağımsızdır; dosya devri, vekaletname kapsamı ve UYAP yetkilendirmesi
    birbirinden ayrı değişir. İki alan sistemde de ayrı yaşıyor: `responsible_lawyer_name`
    ve `uyap_lawyer_name` (`backend/models.py:31-32`) ayrı kolonlar ve ikisi de ayrı ayrı
-   zorunlu listede (`required_fields.py:57-58`).
+   zorunlu listede (`required_fields.py:72-74`).
 2. **Uydurma veri boş veriden pahalıdır.** Ön-doldurma 8.409 kaydın tamamına, doğruluğu
    hiç ölçülmemiş bir isim yazar. Provenance imzası bunu "uydurma" olmaktan çıkarmaz,
    yalnız izlenebilir kılar. Boş alan kimseyi yanıltmaz; yanlış dolu alan yanıltır —
@@ -49,16 +49,18 @@ yazıldığında yanlıştı ama artık **doğru** — D8 bağlamsal zorunluluk 
 mekanizması + `missing_required_bucket` kolonu, `MISSING_BUCKET_MANUAL`/`MISSING_BUCKET_AKTARIM`
 kovaları) `required_fields.py`'de kuruldu ve **D2 için kullanılıyor**: `esas_no` alanı
 `skip_when={"field": "file_type", "in": ESAS_BEKLENMEYEN_TURLER}` kapısını taşıyor
-(`REQUIRED_CASE_FIELDS`, `required_fields.py:39-63`). SQL karşılığı da artık
+(`REQUIRED_CASE_FIELDS`, `required_fields.py:51-79`). SQL karşılığı da artık
 `required_fields.py`'de yaşıyor (`missing_required_sql`, `missing_bucket_sql`,
 `case_manager.py`'deki eski `_missing_required_clause` **silindi** — tek yazma yolu
-`case_manager.refresh_missing_required`, `case_manager.py:498`).
+`case_manager.refresh_missing_required`, `case_manager.py:596`). G158 (M5, 08.09) ikinci
+bir kapı türü ekledi: `responsible_lawyer_name` çoklu avukatlı kartta
+(`skip_when_lawyers_at_least`, `required_fields.py:72-73`) eksik sayılmaz.
 
-**Ama `uyap_lawyer_name`'in kendisi hâlâ kapısız** (`required_fields.py:58`'de
+**Ama `uyap_lawyer_name`'in kendisi hâlâ kapısız** (`required_fields.py:74`'te
 `skip_when` YOK) — bu ADR'nin asıl konusu olan alan için mekanizma kurulu ama
-**kullanılmadı**. Mevcut tek bağlamsal kural hâlâ karşı taraf TC'sidir: denetim yalnız
-`COUNTER` taraf varsa işler (`required_fields.py:65-68`, SQL karşılığı
-`required_fields.py:175` `_sql_counter_party`). UYAP alanına D8 kapısını eklemek hâlâ
+**kullanılmadı**. Diğer bağlamsal kural karşı taraf TC'sidir: denetim yalnız
+`COUNTER` taraf varsa işler (`required_fields.py:81-84`, SQL karşılığı
+`required_fields.py:206` `_sql_counter_party`). UYAP alanına D8 kapısını eklemek hâlâ
 kalan iştir — mekanizma hazır, bu alana bağlanması gerekiyor.
 
 Bu, D2 ile (Ana Tür ∈ {ARABULUCULUK, SAVCILIK, DANIŞMANLIK, TAHKİM} ise esas beklenmez)

@@ -600,12 +600,17 @@ def refresh_missing_required(db, case) -> Optional[str]:
     bekliyorsa aşağıdaki sorgu onları GÖREMEZ ve bayrak bir tur bayat kalırdı.
     Taraflar ilişki üzerinden değil sorguyla okunur — `add_case` satırları
     `case_id` ile ekler, `case.parties` koleksiyonu o anda boş görünür.
+    Avukat satırları da aynı sebeple sorguyla sayılır (M5 kapısı, G158):
+    aktarım `case_lawyers`i doğrudan yazıp bu fonksiyonu çağırır.
     """
     db.flush()
     parties = db.query(models.CaseParty.party_type, models.CaseParty.tc_no).filter(
         models.CaseParty.case_id == case.id
     ).all()
-    missing = compute_missing_fields(_case_snapshot(case), parties)
+    lawyers = db.query(models.CaseLawyer.id).filter(
+        models.CaseLawyer.case_id == case.id
+    ).all()
+    missing = compute_missing_fields(_case_snapshot(case), parties, lawyers)
     is_aktarim = bool(missing) and _is_aktarim_kaydi(db, case.id)
     case.missing_required_bucket = compute_missing_bucket(missing, is_aktarim)
     return case.missing_required_bucket
@@ -640,6 +645,46 @@ def audit_missing_required_flags(db=None, limit: int = 20) -> dict:
             "sapan": sapan,
             "ornekler": [{"id": r.id, "bayrak": r.bayrak, "beklenen": r.beklenen} for r in rows],
         }
+    finally:
+        if own:
+            db.close()
+
+
+def backfill_missing_required_flags(db=None, apply: bool = False) -> dict:
+    """KURAL DEĞİŞİKLİĞİ sonrası bayrağı toplu tazeler (Postgres, G158).
+
+    `audit_missing_required_flags` bayat bayrağı bilerek onarmaz: bayatlık bir
+    yazma yolunun kaçtığını gösterir ve o yol düzeltilmelidir. Burası farklı
+    bir durum içindir — kural (`required_fields`) değişti, satırlar doğru
+    yollardan yazılmıştı ama kuralın yeni hâline göre yeniden hesaplanmalı.
+    Tek kaynak korunur: yazılan ifade migrasyon 33'ün backfill'iyle AYNI
+    `missing_bucket_sql`dir, ikinci bir kural listesi yoktur.
+
+    Varsayılan KURU KOŞU: yalnız sayar. `apply=True` yazar; oturum dışarıdan
+    verildiyse commit ÇAĞIRANIN işidir (test rollback'i için), kendi oturumunu
+    açtıysa commit eder. Dönen: {"toplam", "degisecek", "uygulanan"}; ikinci
+    koşuda `degisecek` 0'dır (idempotent — WHERE IS DISTINCT FROM).
+    """
+    from sqlalchemy import text
+
+    own = db is None
+    db = db or SessionLocal()
+    try:
+        hedef = missing_bucket_sql("cases")
+        toplam = db.execute(text("SELECT count(*) FROM cases")).scalar() or 0
+        degisecek = db.execute(text(
+            f"SELECT count(*) FROM cases WHERE missing_required_bucket IS DISTINCT FROM {hedef}"
+        )).scalar() or 0
+        uygulanan = 0
+        if apply and degisecek:
+            sonuc = db.execute(text(
+                f"UPDATE cases SET missing_required_bucket = {hedef} "
+                f"WHERE missing_required_bucket IS DISTINCT FROM {hedef}"
+            ))
+            uygulanan = sonuc.rowcount or 0
+            if own:
+                db.commit()
+        return {"toplam": toplam, "degisecek": degisecek, "uygulanan": uygulanan}
     finally:
         if own:
             db.close()

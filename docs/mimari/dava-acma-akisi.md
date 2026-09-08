@@ -17,26 +17,33 @@ listesinde uyarı olarak görünür ve panelden filtrelenebilir (`required_field
 Reddedilen alternatif de orada kayıtlıdır: "DANIŞ'a düşürme denendi, dönüşüm kaybı riski
 nedeniyle vazgeçildi: DANIŞ yolunda müvekkil kaydı oluşturulmuyor" (`required_fields.py:5-6`).
 
-`REQUIRED_CASE_FIELDS` (`required_fields.py:39-63`): `esas_no`, `court`, `file_type`,
+`REQUIRED_CASE_FIELDS` (`required_fields.py:51-79`): `esas_no`, `court`, `file_type`,
 `judicial_unit`, `sub_type`, `opening_date`, `subject`, `responsible_lawyer_name`,
 `uyap_lawyer_name`, `service_type`, `acceptance_date`, `bureau_type`, `atama_tarihi`.
 
 **Güncel not (G046, FAZ D — bu satır ADR-014'te de anlatılıyor):** liste artık düz bir
 alan adı listesi DEĞİL, liste-of-dict + isteğe bağlı bir `skip_when` "kapı"sı taşıyor —
 `esas_no` alanı `file_type ∈ ESAS_BEKLENMEYEN_TURLER` (ARABULUCULUK/SAVCILIK/DANIŞMANLIK/
-TAHKİM) ise zorunlu SAYILMAZ (D2). 13 alanın **12'si hâlâ koşulsuz**, yalnız `esas_no`
-bağlamsal. Aynı mekanizma (`missing_required_bucket` kolonu, `MISSING_BUCKET_MANUAL`/
-`MISSING_BUCKET_AKTARIM` kovaları) `uyap_lawyer_name`'e henüz **bağlanmadı** — bkz.
+TAHKİM) ise zorunlu SAYILMAZ (D2). İkinci kapı türü `skip_when_lawyers_at_least` (G158, M5):
+`responsible_lawyer_name` kutusu boş AMA kartın `case_lawyers` satırı ≥ `COKLU_AVUKAT_ESIGI`
+(2) ise alan eksik SAYILMAZ — aktarım çoklu isimli föyde kutuyu bilerek boş bırakır, sorumlu
+"belirsiz"dir, "atanmamış" değil (`required_fields.py:39-49`, `:72-73`; tek satırda kutu boşsa
+eksik kalır). 13 alanın **11'i koşulsuz**, `esas_no` ve `responsible_lawyer_name` bağlamsal.
+Kapı SQL ikizinde de aynı sayımla çevrilir (`_sql_lawyer_count`, `required_fields.py:215-217`);
+kural değiştiğinde bayrak `scripts/backfill_missing_required.py` ile (kuru koşu varsayılan,
+`--apply`) yeniden hesaplanır. Aynı mekanizma (`missing_required_bucket` kolonu,
+`MISSING_BUCKET_MANUAL`/`MISSING_BUCKET_AKTARIM` kovaları) `uyap_lawyer_name`'e henüz
+**bağlanmadı** — bkz.
 [`014-uyap-avukati-on-doldurulmaz.md`](../kararlar/014-uyap-avukati-on-doldurulmaz.md).
 
 `sub_type_extra` (Uzmanlık / Tıbbi İşlem) listeden **geçici** olarak çıkarılmıştır
 (2026-08-04): alan UI'da gizlendiği için görünmeyen alan "eksik" uyarısı üretmesin; alan
-geri açılınca satır da geri alınacak (`required_fields.py:51-54`).
+geri açılınca satır da geri alınacak (`required_fields.py:66-69`).
 
 Ayrıca `compute_missing_fields` karşı taraf TC'sini denetler ama **yalnız COUNTER**
 taraflar için: müvekkil TC'si `Client` kaydında yaşar, form yalnız karşı taraf TC'si
 girebilir — aksi halde her yeni dosya yanlış "eksik" işaretlenirdi
-(`required_fields.py:65-68`, mantık `:127-132`).
+(`required_fields.py:81-84`, mantık `:158-163`).
 
 Frontend bu listeyi `GET /api/config/required_case_fields` üzerinden okur; **ikinci bir
 liste tutulmaz** (`required_fields.py:8-10`).

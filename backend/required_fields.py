@@ -36,9 +36,24 @@ birbirine kilitler.
 # aktarım da kanonik değere eşlemek zorundadır (§1.4 ad kesinleşmesi).
 ESAS_BEKLENMEYEN_TURLER = ("Arabuluculuk", "Savcılık", "Danışmanlık", "Tahkim")
 
+# ─── M5: çoklu avukatlı kartta sorumlu avukat "belirsiz"dir, "atanmamış" değil ─
+#
+# Aktarım (`scripts/hukdok_aktarim.py::_tek_avukat`) çoklu isimli föyde
+# `responsible_lawyer_name` kutusunu BİLEREK boş bırakır — ilkini seçmek uydurma
+# olurdu — ve isimlerin tamamını `case_lawyers` satırlarına yazar. Ekip (plan
+# 08.09 §1.3 M5): ~1.031 föy 12 avukata "atanmış" değil, sorumlusu
+# ayrıştırılamamış eski dosya; "silmeyin, boşaltmayın, atanmadı saymayın".
+# Kural: kutu boş VE kartın `case_lawyers` satırı bu eşiğe ulaşıyorsa alan eksik
+# SAYILMAZ. Tek satırda kutu da dolu olmalıdır (aktarım tek isimde yazar,
+# manuel yazma yolları canonical adı daima doldurur) — boşsa eksik KALIR.
+COKLU_AVUKAT_ESIGI = 2
+
 REQUIRED_CASE_FIELDS = [
     # `skip_when`: kapı — kaydın <field> değeri <in> listesindeyse bu alan
     # zorunlu SAYILMAZ. JSON'a çevrilebilir olması şart (frontend'e gider).
+    # `skip_when_lawyers_at_least`: ikinci kapı türü — kartın `case_lawyers`
+    # satır sayısı bu eşiğe ulaşıyorsa alan zorunlu SAYILMAZ (M5, yukarıda).
+    # Kapılar bağımsızdır; biri açılırsa alan eksik listesine girmez.
     {"field": "esas_no", "label": "Esas No",
      "skip_when": {"field": "file_type", "in": list(ESAS_BEKLENMEYEN_TURLER)}},
     {"field": "court", "label": "Mahkeme"},
@@ -54,7 +69,8 @@ REQUIRED_CASE_FIELDS = [
     # {"field": "sub_type_extra", "label": "Uzmanlık / Tıbbi İşlem"},
     {"field": "opening_date", "label": "Dava Açılış Tarihi"},
     {"field": "subject", "label": "Dava Konusu"},
-    {"field": "responsible_lawyer_name", "label": "Sorumlu Avukat"},
+    {"field": "responsible_lawyer_name", "label": "Sorumlu Avukat",
+     "skip_when_lawyers_at_least": COKLU_AVUKAT_ESIGI},
     {"field": "uyap_lawyer_name", "label": "UYAP Avukatı"},
     {"field": "service_type", "label": "Hizmet Türü"},
     {"field": "acceptance_date", "label": "Kabul Tarihi"},
@@ -108,20 +124,35 @@ def _is_counter(party) -> bool:
     return (_norm(_party_field(party, "party_type")) or "COUNTER") == "COUNTER"
 
 
-def is_field_required(field_def: dict, case_data: dict) -> bool:
-    """Alan BU kayıt için zorunlu mu? (kapı yoksa daima evet)"""
+def is_field_required(field_def: dict, case_data: dict, lawyer_count: int = 0) -> bool:
+    """Alan BU kayıt için zorunlu mu? (kapı yoksa daima evet)
+
+    `lawyer_count`: kartın `case_lawyers` satır sayısı (M5 kapısının girdisi);
+    verilmezse 0 sayılır — kapı kapalı, alan zorunlu kalır.
+    """
     gate = field_def.get("skip_when")
-    if not gate:
-        return True
-    return _norm(case_data.get(gate["field"])) not in gate["in"]
+    if gate and _norm(case_data.get(gate["field"])) in gate["in"]:
+        return False
+    esik = field_def.get("skip_when_lawyers_at_least")
+    if esik and lawyer_count >= esik:
+        return False
+    return True
 
 
-def compute_missing_fields(case_data: dict, parties=None) -> list:
-    """Eksik zorunlu alanları [{field, label}] listesi olarak döndürür."""
+def compute_missing_fields(case_data: dict, parties=None, lawyers=None) -> list:
+    """Eksik zorunlu alanları [{field, label}] listesi olarak döndürür.
+
+    `parties` / `lawyers` verilmezse `case_data["parties"]` / `case_data["lawyers"]`
+    okunur (get_case/get_cases sözlükleri ikisini de taşır). `lawyers` yalnız
+    SAYILIR — M5 kapısı satır sayısına bakar, adlara değil.
+    """
+    if lawyers is None:
+        lawyers = case_data.get("lawyers") or []
+    lawyer_count = len(lawyers)
     missing = [
         {"field": f["field"], "label": f["label"]}
         for f in REQUIRED_CASE_FIELDS
-        if is_field_required(f, case_data) and _is_empty(case_data.get(f["field"]))
+        if is_field_required(f, case_data, lawyer_count) and _is_empty(case_data.get(f["field"]))
     ]
 
     if parties is None:
@@ -181,6 +212,11 @@ def _sql_counter_party(table: str, extra: str = "") -> str:
     )
 
 
+def _sql_lawyer_count(table: str) -> str:
+    """`len(lawyers)`in SQL ikizi — kartın `case_lawyers` satır sayısı."""
+    return f"(SELECT count(*) FROM case_lawyers l WHERE l.case_id = {table}.id)"
+
+
 def missing_required_sql(table: str = "cases") -> str:
     """`compute_missing_fields(...) != []` ifadesinin SQL ikizi."""
     parts = []
@@ -191,6 +227,11 @@ def missing_required_sql(table: str = "cases") -> str:
             values = ", ".join(_sql_literal(v) for v in gate["in"])
             gate_sql = f"{_sql_norm(table + '.' + gate['field'])} NOT IN ({values})"
             cond = f"({gate_sql} AND {cond})"
+        esik = f.get("skip_when_lawyers_at_least")
+        if esik:
+            # M5 kapısı: satır sayısı eşiğin altındaysa alan zorunlu (Python:
+            # `lawyer_count >= esik` → zorunlu değil; burada tersi yazılır).
+            cond = f"({_sql_lawyer_count(table)} < {int(esik)} AND {cond})"
         parts.append(cond)
 
     has_counter = _sql_counter_party(table)

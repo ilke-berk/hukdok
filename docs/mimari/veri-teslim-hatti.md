@@ -148,7 +148,7 @@ o ayarla dönen bir bağlantı Faz 3-E'nin 30 sn korumasını sessizce kaldırı
 defter oturumu aktarım süresince kapalı transaction'dadır (önce commit)
 (`services/teslim_kutusu.py:25-32`, `:593-625`). Çağrı daima `sheet="Sheet"` ve
 `source="HUKDOK_TESLIM_<dosya adı>"` ile yapılır (`:615-622`; önek
-`required_fields.py:84`).
+`required_fields.py:100`).
 
 ## 4. Kapı — eşikler ve kurallar
 
