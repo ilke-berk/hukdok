@@ -34,10 +34,18 @@ Kurallar:
   UYAP|BELGE|TURETILDI|BELIRSIZ dışı değer reddedilir.
 * Fonksiyonlar COMMIT ETMEZ (flush eder) — işlem sınırı çağıranındır
   (`sync_current_esas` ile aynı sözleşme).
+* **Yerinde güncelleme (G150):** `update_stage_decision` mevcut satırın
+  içerik alanlarını değiştirir — ama `dogrulama_durumu ∈ {BELGE, UYAP}` satır
+  KORUNUR (`ProtectedStageDecisionError`): künyede belgeye dayanan taraf
+  kazanır (veri ekibiyle ortak kural, plan 08.09 P2/A1). Paket kaynaklı ya da
+  elle girilmiş (BELIRSIZ/TURETILDI) satır güncellenir; içerik birebir aynıysa
+  hiçbir şey yazılmaz (idempotent). Tarihçe (`case_history`) çağıranın işi —
+  bu modül `add_stage_decision`ta da tarihçe yazmaz. SİLME yolu eklenmedi:
+  tek silme `delete_stage_decision` (admin düzeltme) olarak kalır.
 """
 import logging
 from datetime import date
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Tuple, cast
 
 from sqlalchemy import case as sa_case
 from sqlalchemy import func
@@ -142,6 +150,15 @@ class DuplicateStageDecisionError(Exception):
     `uq_case_stage_decision` kısıtının alan hatası karşılığı; route katmanı
     (FAZ F/UI işi) bunu 409'a çevirir. G049 dersi: bu yol GERÇEK kısıt
     kırmızısıyla test edilir, ön kontrolle değil.
+    """
+
+
+class ProtectedStageDecisionError(Exception):
+    """Belgeye/UYAP'a dayanan satır yerinde GÜNCELLENEMEZ (G150).
+
+    `dogrulama_durumu ∈ {BELGE, UYAP}` satır künyenin belgeli tarafıdır;
+    paket ya da elle yol onu ezmek isterse çağıran bu hatayı rapora çevirir
+    ("belgeli satır korundu"). Satır silinmez, değiştirilmez.
     """
 
 
@@ -324,6 +341,137 @@ def _resync_stage_photo(db: Session, case: models.Case, stage: str) -> None:
         setattr(case, case_column, getattr(son, row_field) if son is not None else None)
 
 
+# Satırın İÇERİK alanları — uzlaşı/karşılaştırma/güncelleme bu kümeyle çalışır.
+# `dogrulama_durumu`, `source`, `kaynak_id`, `sira_no` içerik DEĞİLDİR: damga ve
+# imza yalnız içerik değişince tazelenir (aynı içeriği taşıyan yeni paket satırı
+# "değişiklik" sayılmaz — idempotentlik).
+CONTENT_FIELDS: Tuple[str, ...] = (
+    "mahkeme", "esas_no", "karar_no", "karar_tarihi", "karar_durumu",
+    "teblig_tarihi", "basvuran_taraf", "aciklama",
+)
+
+
+def _content_values(
+    *,
+    mahkeme: Optional[str],
+    esas_no: Optional[str],
+    karar_no: Optional[str],
+    karar_tarihi: Optional[date],
+    karar_durumu: Optional[str],
+    teblig_tarihi: Optional[date],
+    basvuran_taraf: Optional[str],
+    aciklama: Optional[str],
+) -> Dict[str, Any]:
+    """İçerik alanlarının KOLONA YAZILACAK hâli — ekleme ve güncelleme aynı
+    normalizasyondan geçer (kırpma, boşluk katlama); `karar_durumu` buraya
+    DOĞRULANMIŞ gelir."""
+    return {
+        "mahkeme": _clamped(mahkeme, "mahkeme"),
+        "esas_no": _clamped(esas_no, "esas_no"),
+        "karar_no": _clamped(karar_no, "karar_no"),
+        "karar_tarihi": karar_tarihi,
+        "karar_durumu": karar_durumu,
+        "teblig_tarihi": teblig_tarihi,
+        "basvuran_taraf": _clamped(basvuran_taraf, "basvuran_taraf"),
+        # Serbest metin: satır sonları anlamlı olabilir, boşluk katlaması yok
+        "aciklama": (str(aciklama).strip() or None) if aciklama is not None else None,
+    }
+
+
+def stage_decision_diff(
+    db: Session,
+    row: models.CaseStageDecision,
+    *,
+    mahkeme: Optional[str] = None,
+    esas_no: Optional[str] = None,
+    karar_no: Optional[str] = None,
+    karar_tarihi: Optional[date] = None,
+    karar_durumu: Optional[str] = None,
+    teblig_tarihi: Optional[date] = None,
+    basvuran_taraf: Optional[str] = None,
+    aciklama: Optional[str] = None,
+) -> Dict[str, Tuple[Any, Any]]:
+    """Mevcut satır ile verilen içerik arasındaki FARK: {alan: (eski, yeni)}.
+
+    Hiçbir şey yazmaz. Boş sözlük = içerik birebir aynı (idempotent yol).
+    `karar_durumu` aşamanın kapalı havuzuna karşı doğrulanır — havuz dışı değer
+    `InvalidDecisionStatusError` yükseltir (ekleme yoluyla aynı kapı; çağıran
+    durumsuz + şerhli ikinci denemeyi yapar).
+    """
+    stage = cast(str, row.stage)
+    yeni = _content_values(
+        mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no, karar_tarihi=karar_tarihi,
+        karar_durumu=_validated_karar_durumu(db, stage, karar_durumu),
+        teblig_tarihi=teblig_tarihi, basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+    )
+    return {
+        alan: (getattr(row, alan), yeni[alan])
+        for alan in CONTENT_FIELDS
+        if getattr(row, alan) != yeni[alan]
+    }
+
+
+def is_protected(row: models.CaseStageDecision) -> bool:
+    """Belgeye/UYAP'a dayanan satır — yerinde güncellenmez (G150)."""
+    return row.dogrulama_durumu in (DOGRULAMA_BELGE, DOGRULAMA_UYAP)
+
+
+def update_stage_decision(
+    db: Session,
+    case: models.Case,
+    row: models.CaseStageDecision,
+    *,
+    mahkeme: Optional[str] = None,
+    esas_no: Optional[str] = None,
+    karar_no: Optional[str] = None,
+    karar_tarihi: Optional[date] = None,
+    karar_durumu: Optional[str] = None,
+    teblig_tarihi: Optional[date] = None,
+    basvuran_taraf: Optional[str] = None,
+    aciklama: Optional[str] = None,
+    dogrulama_durumu: Optional[str] = None,
+    source: Optional[str] = None,
+) -> Dict[str, Tuple[Any, Any]]:
+    """Mevcut satırın içeriğini YERİNDE günceller; değişen alanları döner (G150).
+
+    Kural (plan 08.09 §1.2 A1, kullanıcı kararı 06.09 §0):
+
+    * `dogrulama_durumu ∈ {BELGE, UYAP}` → `ProtectedStageDecisionError`,
+      hiçbir şey değişmez (künyede belgeye dayanan taraf kazanır).
+    * Paket kaynaklı (`source` HUKDOK_TESLIM_*) ya da elle girilmiş
+      (BELIRSIZ/TURETILDI) satır → içerik alanları verilen değerlerle değişir;
+      damga ve imza da tazelenir. Tarihçe kaydı ÇAĞIRANIN işidir (dönen
+      sözlükten).
+    * İçerik birebir aynıysa boş sözlük döner ve satıra (damga/imza dahil)
+      DOKUNULMAZ — aynı paketle ikinci koşu 0.
+    * Yazımdan sonra aşamanın tek-slot fotoğrafı tazelenir (satır en yüksek
+      sira_no'lu olmasa bile — ucuz ve tarihçe/fotoğraf tutarlılığı kesin).
+    * Satır BU davaya ait değilse ValueError (çapraz dava yazımı veri çöpü).
+    """
+    if row.case_id != case.id:
+        raise ValueError(f"Karar satırı {row.id} dava {case.id}'e ait değil (dava {row.case_id})")
+    if is_protected(row):
+        raise ProtectedStageDecisionError(
+            f"Belgeli aşama satırı güncellenemez: dava {case.id} {row.stage} "
+            f"sira_no={row.sira_no} ({row.dogrulama_durumu})"
+        )
+    fark = stage_decision_diff(
+        db, row, mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no,
+        karar_tarihi=karar_tarihi, karar_durumu=karar_durumu, teblig_tarihi=teblig_tarihi,
+        basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+    )
+    if not fark:
+        return {}
+    damga = _validated_dogrulama(dogrulama_durumu)
+    for alan, (_eski, yeni) in fark.items():
+        setattr(row, alan, yeni)
+    row.dogrulama_durumu = damga
+    row.source = _clamped(source, "source")
+    db.flush()
+    _resync_stage_photo(db, case, cast(str, row.stage))
+    return fark
+
+
 def add_stage_decision(
     db: Session,
     case: models.Case,
@@ -370,15 +518,11 @@ def add_stage_decision(
     values = {
         "case_id": case_id,
         "stage": stage,
-        "mahkeme": _clamped(mahkeme, "mahkeme"),
-        "esas_no": _clamped(esas_no, "esas_no"),
-        "karar_no": _clamped(karar_no, "karar_no"),
-        "karar_tarihi": karar_tarihi,
-        "karar_durumu": sonuc,
-        "teblig_tarihi": teblig_tarihi,
-        "basvuran_taraf": _clamped(basvuran_taraf, "basvuran_taraf"),
-        # Serbest metin: satır sonları anlamlı olabilir, boşluk katlaması yok
-        "aciklama": (str(aciklama).strip() or None) if aciklama is not None else None,
+        **_content_values(
+            mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no,
+            karar_tarihi=karar_tarihi, karar_durumu=sonuc, teblig_tarihi=teblig_tarihi,
+            basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+        ),
         "dogrulama_durumu": damga,
         "kaynak_id": kaynak_id,
         "source": _clamped(source, "source"),
