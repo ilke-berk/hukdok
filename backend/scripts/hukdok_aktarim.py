@@ -113,6 +113,22 @@ sayfalarında YOKSA işaret NULL'a çekilir ("kapsama geri alındı"). Aynı pak
 hem ana sayfada hem kapsam sayfasında olan föy kapsam sayfasının dediğidir
 (gerekçeli, bilinçli liste); ana sayfa satırı yalnız kimlik yazar.
 
+`status` kesim-sonrası koruma (G152, 2026-09-08)
+------------------------------------------------
+"Paket kazanır" kuralının TEK istisnası (plan 08.09 §1.5 P2, kullanıcı
+kararı): ekibin veri kesim tarihinden (`DEGISIKLIK_OZETI` "Veri kesim tarihi"
+satırı; yoksa paket adındaki tarih; o da yoksa kural KAPALI + WARNING) sonra
+`case_history`'de `field_name='status'` ve aktarım imzası TAŞIMAYAN (`source`
+`HUKDOK_TESLIM` ile başlamayan ya da NULL — dünkü elle yol) bir kayıt varsa
+paket `status`'u YAZMAZ: satır raporuna `KORUNDU` türüyle "status korundu
+(kullanıcı dd.mm.yyyy)" düşer, `status_korunan` sayacı artar (her koşuda
+yeniden sayılır — belgeli aşama gibi sessizce yutulmaz). Öteki alanlar bu
+kuraldan etkilenmez. Kesim tarihi `aktarimi_kos(kesim_tarihi=...)` ile gelir;
+teslim hattı (`teslim_kutusu.kesim_tarihi_bul`) ve CLI (`--kesim-tarihi`,
+verilmezse aynı arayıcı) geçer. Eşik kesim GÜNÜNÜN başıdır (TR saatiyle
+00:00): o gün yapılan kullanıcı değişikliği de korunur — ekibin fotoğrafı
+günün hangi saatinde alındı bilinmez, koruyucu taraf seçildi.
+
 `scripts/import_excel_cases.py` KULLANILMAZ ve çağrılmaz (temizlik planı §8:
 idempotent değil, hata yolunda sessiz veri kaybı, `-2` mükerrer üretimi).
 """
@@ -126,12 +142,12 @@ import re
 import sys
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, cast
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -159,6 +175,12 @@ CIKIS_GIRDI = 3
 VARSAYILAN_TIMEOUT_MS = 600_000
 
 DEGISTIREN = "hukdok_aktarim"
+
+# G152 — `status` kesim-sonrası koruma: satır raporundaki tür etiketi (HATA
+# değil: koşu çıkış kodunu ve teslim kapısının hata oranını ETKİLEMEZ) ve
+# kesim eşiğinin saat dilimi (ekibin kesim tarihi TR günüdür).
+STATUS_KORUNDU_TURU = "KORUNDU"
+TR_SAAT_DILIMI = timezone(timedelta(hours=3))
 
 # ─── Kaynak sütunlar ─────────────────────────────────────────────────────────
 # Aday adlar; ilk eşleşen kullanılır. Başlık karşılaştırması aksan ve boşluk
@@ -318,7 +340,7 @@ class RaporSatiri:
     satir_no: int
     sistem_no: str
     dosya_no: str
-    tur: str                           # HATA | ATLANDI
+    tur: str                           # HATA | ATLANDI | KORUNDU (G152)
     sebep: str
 
 
@@ -353,6 +375,11 @@ class AktarimSonucu:
     # G151 — büro durumu (Kapalı/Derdest) taşıyan aşama satırı: karar durumu
     # üretilmedi (künye boşsa satır yazılmadı). Her koşuda yeniden sayılır.
     buro_durumu_atlanan: int = 0
+    # G152 — kesim tarihinden sonra kullanıcı imzalı `status` değişikliği olan
+    # kart: paket `status`u yazmadı. Her koşuda yeniden sayılır; kural kapalıysa
+    # (`kesim_tarihi` None) hep 0.
+    status_korunan: int = 0
+    kesim_tarihi: Optional[date] = None
     atlanan: int = 0
     # G113 — kapsam sayfaları: işaretlenen (değişen) föy, kapsama geri alınan
     # föy, bizde olmayan SistemNo (ATLANDI). İkinci koşuda üçü de 0'dır.
@@ -1592,13 +1619,42 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
     return case
 
 
+def kesim_sonrasi_kullanici_kaydi(db, case_id: int, kesim_tarihi: date) -> Optional[datetime]:
+    """Kartta kesim gününden itibaren KULLANICI imzalı `status` tarihçesi var mı?
+
+    `case_manager._is_aktarim_kaydi`nin ikizi, yönü ters: aktarım imzası
+    (`AKTARIM_SOURCE_PREFIX`, `autoescape` şart — '_' LIKE jokeri) taşımayan
+    ya da `source` NULL olan (elle yolun dünkü imzasız hâli) kayıt aranır.
+    En yeni kaydın zamanı döner (rapor metni için); yoksa None. Eşik kesim
+    gününün başı (TR 00:00) — modül şerhi "status kesim-sonrası koruma".
+    """
+    esik = datetime.combine(kesim_tarihi, time.min, tzinfo=TR_SAAT_DILIMI)
+    satir = (
+        db.query(models.CaseHistory.changed_at)
+        .filter(
+            models.CaseHistory.case_id == case_id,
+            models.CaseHistory.field_name == "status",
+            models.CaseHistory.changed_at >= esik,
+            or_(
+                models.CaseHistory.source.is_(None),
+                ~models.CaseHistory.source.startswith(AKTARIM_SOURCE_PREFIX, autoescape=True),
+            ),
+        )
+        .order_by(models.CaseHistory.changed_at.desc(), models.CaseHistory.id.desc())
+        .first()
+    )
+    return satir[0] if satir is not None else None
+
+
 def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
                          source: str,
                          celiskili_alanlar: Set[str] = frozenset(),
                          atlanan_alanlar: Optional[List[Tuple[str, str]]] = None,
                          *, sistem_no: Optional[str] = None,
                          duzeltmeler: Optional[DuzeltmeHaritasi] = None,
-                         bosaltilanlar: Optional[List[str]] = None) -> List[str]:
+                         bosaltilanlar: Optional[List[str]] = None,
+                         kesim_tarihi: Optional[date] = None,
+                         korunanlar: Optional[List[Tuple[str, str]]] = None) -> List[str]:
     """DAR alan kümesini kartın ÜZERİNE yazar (UPDATE-in-place); değişenleri döner.
 
     Değişmeyen alan için ne UPDATE ne `case_history` satırı üretilir — ikinci
@@ -1618,6 +1674,12 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     (ikinci koşu 0 değişiklik). Künye/içerik alanı talimatı `atlanan_alanlar`a
     düşer, uygulanmaz. `esas_no` boşaltması da tek yoldan (`sync_current_esas`
     boş değerle kolonu temizler, tarihçe satırları kalır).
+
+    G152: `kesim_tarihi` verilmişse ve paket `status`u mevcut değerden farklıysa
+    kartın tarihçesine bakılır (`kesim_sonrasi_kullanici_kaydi`); kesim
+    gününden itibaren kullanıcı imzalı `status` kaydı varsa alan YAZILMAZ,
+    `(alan, "status korundu (kullanıcı dd.mm.yyyy)")` `korunanlar`a düşer.
+    Yalnız `status` — öteki alanlar bu kuralı bilmez.
     """
     degisenler: List[str] = []
     degerler = kart_degerleri(satir, atlanan_alanlar)
@@ -1630,6 +1692,14 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
         if (alan in ICERIK_KARSILASTIRMALI_ALANLAR
                 and _baslik_anahtari(eski) == _baslik_anahtari(yeni)):
             continue                      # yalnız yazım farkı — bizimki kalır
+        if alan == "status" and kesim_tarihi is not None:
+            kullanici_kaydi = kesim_sonrasi_kullanici_kaydi(db, cast(int, case.id), kesim_tarihi)
+            if kullanici_kaydi is not None:
+                if korunanlar is not None:
+                    korunanlar.append((
+                        alan, f"status korundu (kullanıcı {kullanici_kaydi.strftime('%d.%m.%Y')})",
+                    ))
+                continue                  # kesim sonrası kullanıcı kararı — paket yazmaz
         if alan == "esas_no":
             # Türetilmiş alan: kolon + tarihçe TEK yoldan (G045). Buradan
             # setattr etmek `case_esas_numbers`ı bypass edip ikinci doğruluk
@@ -1842,7 +1912,8 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  foy_source: str, sonuc: AktarimSonucu,
                  kart_celiskileri: Optional[Dict[int, Set[str]]] = None,
                  duzeltmeler: Optional[DuzeltmeHaritasi] = None,
-                 kapsam_disi: Set[str] = frozenset()) -> int:
+                 kapsam_disi: Set[str] = frozenset(),
+                 kesim_tarihi: Optional[date] = None) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
@@ -1873,6 +1944,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
 
     atlanan_alanlar: List[Tuple[str, str]] = []
     bosaltilanlar: List[str] = []
+    korunanlar: List[Tuple[str, str]] = []
     degisenler: List[str] = []
     eklenen_avukatlar: List[str] = []
     eklenen_taraflar: List[str] = []
@@ -1887,6 +1959,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
             celiskili_alanlar=(kart_celiskileri or {}).get(case.id, frozenset()),
             atlanan_alanlar=atlanan_alanlar,
             sistem_no=sistem_no, duzeltmeler=duzeltmeler, bosaltilanlar=bosaltilanlar,
+            kesim_tarihi=kesim_tarihi, korunanlar=korunanlar,
         )
         sonuc.bosaltilan += len(bosaltilanlar)
         eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
@@ -1942,6 +2015,17 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
         logger.warning(
             f"Satır {satir.satir_no} ({sistem_no}) {alan} yazılmadı: {sebep}"
         )
+
+    # G152 — kesim sonrası kullanıcı kararı korundu: HATA değil (kapı ve çıkış
+    # kodu etkilenmez), ama rapora düşer ve sayılır — sessizce yutulmaz.
+    for _alan, sebep in korunanlar:
+        sonuc.status_korunan += 1
+        sonuc.rapor_satirlari.append(RaporSatiri(
+            satir_no=satir.satir_no, sistem_no=sistem_no,
+            dosya_no=_metin(satir.degerler.get("dosya_no")) or "",
+            tur=STATUS_KORUNDU_TURU, sebep=sebep,
+        ))
+        logger.info(f"Satır {satir.satir_no} ({sistem_no}) kart {case.id}: {sebep}")
 
     sonuc.islenen += 1
     return cast(int, case.id)
@@ -2644,14 +2728,24 @@ def _statement_timeout_yukselt(db, ms: int) -> bool:
 def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                  limit: Optional[int] = None, dry_run: bool = False,
                  source: Optional[str] = None, rapor_dizini: Optional[Path] = None,
-                 statement_timeout_ms: int = VARSAYILAN_TIMEOUT_MS) -> AktarimSonucu:
+                 statement_timeout_ms: int = VARSAYILAN_TIMEOUT_MS,
+                 kesim_tarihi: Optional[date] = None) -> AktarimSonucu:
     """Çekirdek akış: oku → normalize → föy upsert → kart alanları → raporlar.
 
     TEK transaction, TEK commit: belge envanteri kapısı commit'ten ÖNCE ölçer,
     parti başına commit o kapıyı bölerdi. Kapı kırmızıysa (ya da `dry_run`)
     koşu tamamen geri alınır ve NONZERO döner.
+
+    `kesim_tarihi` (G152): ekibin veri kesim günü; verilmezse `status`
+    kesim-sonrası koruma kuralı KAPALIDIR (tek WARNING) — çağıran
+    (`teslim_kutusu.kesim_tarihi_bul`, CLI) üç kaynağı sırayla dener.
     """
     girdi = Path(girdi)
+    if kesim_tarihi is None:
+        logger.warning(
+            "Veri kesim tarihi yok — `status` kesim-sonrası koruma kuralı DEVRE DIŞI "
+            "(paket `status`u üzerine yazar)"
+        )
     satirlar, bulunan_basliklar = xlsx_oku(girdi, sheet=sheet, limit=limit)
     asama_satirlari = asama_satirlarini_oku(girdi) if limit is None else []
     # Düzeltme_Logu (G112) limit'ten bağımsız okunur: SistemNo anahtarlı,
@@ -2679,10 +2773,11 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         )
 
     sonuc = AktarimSonucu(okunan=len(satirlar), dry_run=dry_run,
-                          kaynak_imzasi=kaynak_imzasi)
+                          kaynak_imzasi=kaynak_imzasi, kesim_tarihi=kesim_tarihi)
     logger.info(
         f"Aktarım başlıyor: {girdi.name} · {len(satirlar)} satır · "
-        f"{'KURU KOŞU' if dry_run else 'YAZMA'} · bulunan sütunlar: "
+        f"{'KURU KOŞU' if dry_run else 'YAZMA'} · kesim tarihi: "
+        f"{kesim_tarihi.isoformat() if kesim_tarihi else 'yok'} · bulunan sütunlar: "
         f"{', '.join(sorted(bulunan_basliklar))}"
     )
 
@@ -2722,7 +2817,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         foy_haritasi=foy_haritasi, dosya_haritasi=dosya_haritasi,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
                         kart_celiskileri=kart_celiskileri, duzeltmeler=duzeltmeler,
-                        kapsam_disi=kapsam_disi,
+                        kapsam_disi=kapsam_disi, kesim_tarihi=kesim_tarihi,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.
@@ -2869,6 +2964,10 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''}"
         f"{f', büro durumu atlanan: {sonuc.buro_durumu_atlanan}' if sonuc.buro_durumu_atlanan else ''})",
         f"  atlanan (kart yok): {sonuc.atlanan}",
+        (f"  status korunan    : {sonuc.status_korunan} "
+         f"(kesim {sonuc.kesim_tarihi.strftime('%d.%m.%Y')} sonrası kullanıcı değişikliği)"
+         if sonuc.kesim_tarihi else
+         "  status korunan    : kural kapalı (veri kesim tarihi yok)"),
         f"  kapsam işareti    : {sonuc.kapsam_isaretlenen} işaretlendi, "
         f"{sonuc.kapsam_geri_alinan} geri alındı, {sonuc.kapsam_atlanan} atlandı (föy yok)",
         f"  satır hatası      : {len(sonuc.hatalar)}",
@@ -2886,6 +2985,24 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
 # CLI
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _cli_kesim_tarihi(verilen: Optional[str], girdi: Path) -> Optional[date]:
+    """`--kesim-tarihi` çözümü: açık değer; yoksa teslim hattıyla AYNI arayıcı
+    (özet sayfası → paket adı → yok). Çözümlenemeyen açık değer `AktarimHatasi`."""
+    if verilen:
+        try:
+            tarih = _tarih(verilen, "kesim_tarihi")
+        except SatirHatasi as exc:
+            raise AktarimHatasi(f"--kesim-tarihi {exc}") from exc
+        if tarih is None:
+            raise AktarimHatasi(f"--kesim-tarihi geçerli bir tarih değil: {verilen!r}")
+        return tarih
+    # Tembel import: teslim_kutusu bu modülü import eder (döngü); yalnız CLI
+    # yolunda ve çağrı anında gerekir.
+    from services.teslim_kutusu import kesim_tarihi_bul
+
+    return kesim_tarihi_bul(girdi, girdi.name)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="HUKDOK teslim paketini kartlara aktarır (çekirdek yazma yolu, G064)",
@@ -2901,6 +3018,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="rapor CSV'lerinin yazılacağı dizin")
     parser.add_argument("--statement-timeout-ms", type=int, default=VARSAYILAN_TIMEOUT_MS,
                         help="koşu süresince statement_timeout (0 = dokunma)")
+    parser.add_argument("--kesim-tarihi", default=None,
+                        help="ekibin veri kesim tarihi (dd.mm.yyyy ya da yyyy-mm-dd); "
+                             "verilmezse DEGISIKLIK_OZETI 'Veri kesim tarihi' satırı, "
+                             "yoksa paket adındaki tarih; o da yoksa status koruma kapalı")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -2924,6 +3045,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             source=args.source,
             rapor_dizini=Path(args.rapor_dizini) if args.rapor_dizini else None,
             statement_timeout_ms=args.statement_timeout_ms,
+            kesim_tarihi=_cli_kesim_tarihi(args.kesim_tarihi, Path(args.input)),
         )
     except AktarimHatasi as exc:
         logger.error(f"Aktarım başlamadı: {exc}")

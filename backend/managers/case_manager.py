@@ -1035,7 +1035,14 @@ def _resolve_party_client_id(db, p: dict):
     return client_id
 
 
-def update_case(case_id: int, data: dict, tenant_id: str = None):
+#: Elle (panel) yolunun `case_history.source` imzası (G152). Aktarım imzası
+#: `AKTARIM_SOURCE_PREFIX` ile başlar; bu başlamaz — `status` kesim-sonrası
+#: koruma kuralı ayrımı buradan yapar (`hukdok_aktarim.kesim_sonrasi_kullanici_kaydi`).
+PANEL_SOURCE = "panel"
+
+
+def update_case(case_id: int, data: dict, tenant_id: str = None, *,
+                changed_by: Optional[str] = None):
     """Dava alanlarını günceller.
 
     Dönüş (Faz 5-B, plan 5.3 — reference_lists.update_item ile AYNI ayrım):
@@ -1043,6 +1050,11 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
       None  — dava yok / bu tenant'a görünmüyor → route 404 döner
       False — güncelleme sırasında hata → route 500 döner
     Ayrımdan önce ikisi de False'tu; "olmayan davayı güncelle" 500 oluyordu.
+
+    Tarihçe imzası (G152): izlenen alan değişince `case_history` satırı
+    `changed_by=<kullanıcı>` (route vermezse `PANEL_SOURCE`) ve
+    `source=PANEL_SOURCE` ile yazılır — dün ikisi de NULL'dı, aktarım
+    kaydından ayırt edilemiyordu.
     """
     try:
         db = SessionLocal()
@@ -1065,7 +1077,9 @@ def update_case(case_id: int, data: dict, tenant_id: str = None):
                     case_id=case_id,
                     field_name=field,
                     old_value=str(old_val) if old_val is not None else "",
-                    new_value=str(new_val)
+                    new_value=str(new_val),
+                    changed_by=changed_by or PANEL_SOURCE,
+                    source=PANEL_SOURCE,
                 )
                 db.add(history_entry)
                 if field == "esas_no":
@@ -1888,6 +1902,10 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
     koşar: bir alan reddedilirse HİÇBİRİ yazılmaz, hata
     `InvalidDecisionStatusError` olarak yükselir (api.py 400'e çevirir) — bu
     fonksiyonun `False` dönüşü "dava bulunamadı/yazılamadı" anlamını korur.
+
+    `case_history` YALNIZ `status` için yazılır (G152 — kesim-sonrası koruma
+    kuralı bu tarihçeyi okur; imza `changed_by` + `source=PANEL_SOURCE`).
+    Öteki takip alanları bugün de tarihçesizdir (G073 kilidi), değişmedi.
     """
     db = SessionLocal()
     try:
@@ -1908,6 +1926,13 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
             for field, value in tracking_changes(data)
         ]
         for field, value in degisiklikler:
+            if field == "status" and value != case.status:
+                db.add(models.CaseHistory(
+                    case_id=case_id, field_name="status",
+                    old_value=str(case.status) if case.status is not None else "",
+                    new_value=str(value) if value is not None else None,
+                    changed_by=changed_by or PANEL_SOURCE, source=PANEL_SOURCE,
+                ))
             setattr(case, field, value)
 
         if new_stage and new_stage != old_stage:

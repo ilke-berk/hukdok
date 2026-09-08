@@ -121,7 +121,7 @@ import os
 import re
 import unicodedata
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, List, Optional, Tuple
 
@@ -220,6 +220,10 @@ ZORUNLU_BASLIKLAR: Tuple[str, ...] = ("sistem_no", "dosya_no")
 _OZET_TARAMA_SATIRI = 200
 _ONCEKI_ETIKET = "ONCEKITESLIM"
 _YER_TUTUCULAR = frozenset({"-", "--", "—", "–", "YOK", "N/A", "NA", "İLK", "ILK"})
+#: G152 — özet sayfasındaki "Veri kesim tarihi" etiketi (aynı arama deseni) ve
+#: ikinci kaynak: paket adındaki ISO tarih (`HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx`).
+_KESIM_ETIKET = "VERIKESIMTARIHI"
+_PAKET_ADI_TARIHI = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
 
 HATA_MESAJI_SINIRI = 2000
 _GUVENSIZ_AD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -691,6 +695,7 @@ def _aktarimi_calistir(db: Session, *, yol: Path, dosya_adi: str, rapor: Path,
             dry_run=dry_run,
             source=f"{AKTARIM_SOURCE_PREFIX}_{dosya_adi}",
             rapor_dizini=rapor,
+            kesim_tarihi=kesim_tarihi_bul(yol, dosya_adi),     # G152 — defter kolonu YOK
         )
     finally:
         _timeout_sifirla(conn)
@@ -841,13 +846,13 @@ def _onceki_yapi(db: Session, *, haric: int) -> Optional[dict]:
     return satir[0]
 
 
-def onceki_teslim_adi_oku(ws) -> Optional[str]:
-    """`DEGISIKLIK_OZETI` sayfasından "Önceki teslim" dosya adını çıkarır.
+def _ozet_etiket_degeri(ws, etiket_oneki: str) -> Optional[Any]:
+    """Özet sayfasında etiketi `etiket_oneki` ile başlayan İLK satırın değeri.
 
-    Etiket hücresi ("Önceki teslim", "Önceki teslim:" …) aksan/boşluk
-    duyarsız aranır; değer aynı hücrede `:` sonrasında ya da satırın sonraki
-    dolu hücresindedir. `· ` sonrası (satır/sütun sayısı) atılır. Yer tutucu
-    ("—", "yok") ya da boş değer None döner.
+    Etiket hücresi aksan/boşluk duyarsız aranır (`_anahtar`); değer aynı
+    hücrede `:` sonrasında ya da satırın sonraki dolu hücresindedir (ham
+    hücre — tarih hücresi datetime gelebilir). Etiket yoksa None, etiket var
+    ama değer boşsa "".
     """
     for satir in ws.iter_rows(min_row=1, max_row=_OZET_TARAMA_SATIRI, values_only=True):
         hucreler = list(satir or ())
@@ -856,18 +861,92 @@ def onceki_teslim_adi_oku(ws) -> Optional[str]:
             if not metin:
                 continue
             etiket, ayrac, kalan = metin.partition(":")
-            if not _anahtar(etiket).startswith(_ONCEKI_ETIKET):
+            if not _anahtar(etiket).startswith(etiket_oneki):
                 continue
-            deger = kalan.strip() if ayrac else ""
-            if not deger:
-                deger = next(
-                    (str(h).strip() for h in hucreler[i + 1:] if h is not None and str(h).strip()),
-                    "",
-                )
-            ad = deger.split("·")[0].strip()
-            if not ad or ad.upper() in _YER_TUTUCULAR:
-                return None
-            return ad
+            if ayrac and kalan.strip():
+                return kalan.strip()
+            return next(
+                (h for h in hucreler[i + 1:] if h is not None and str(h).strip()),
+                "",
+            )
+    return None
+
+
+def onceki_teslim_adi_oku(ws) -> Optional[str]:
+    """`DEGISIKLIK_OZETI` sayfasından "Önceki teslim" dosya adını çıkarır.
+
+    Etiket hücresi ("Önceki teslim", "Önceki teslim:" …) aksan/boşluk
+    duyarsız aranır; değer aynı hücrede `:` sonrasında ya da satırın sonraki
+    dolu hücresindedir. `· ` sonrası (satır/sütun sayısı) atılır. Yer tutucu
+    ("—", "yok") ya da boş değer None döner.
+    """
+    deger = _ozet_etiket_degeri(ws, _ONCEKI_ETIKET)
+    if deger is None:
+        return None
+    ad = str(deger).strip().split("·")[0].strip()
+    if not ad or ad.upper() in _YER_TUTUCULAR:
+        return None
+    return ad
+
+
+def kesim_tarihi_oku(ws) -> Optional[date]:
+    """`DEGISIKLIK_OZETI` sayfasından "Veri kesim tarihi: 30.07.2026" değerini çıkarır (G152).
+
+    Arama deseni `onceki_teslim_adi_oku` ile aynı; değer `hukdok_aktarim._tarih`
+    ile çözülür (dd.mm.yyyy / yyyy-mm-dd / tarih hücresi). Etiket yok, boş,
+    yer tutucu ya da çözümlenemeyen değer None döner (çözümlenemeyen için
+    WARNING — sessiz düşüş yok; kural kapanır, paket reddedilmez).
+    """
+    deger = _ozet_etiket_degeri(ws, _KESIM_ETIKET)
+    if deger is None or deger == "":
+        return None
+    if isinstance(deger, str) and deger.upper() in _YER_TUTUCULAR:
+        return None
+    try:
+        return hukdok_aktarim._tarih(deger, "kesim_tarihi")
+    except hukdok_aktarim.SatirHatasi as exc:
+        logger.warning("%s 'Veri kesim tarihi' çözümlenemedi: %s", OZET_SAYFASI, exc)
+        return None
+
+
+def kesim_tarihi_bul(yol: Path, dosya_adi: str) -> Optional[date]:
+    """Veri kesim tarihi — üç kaynak sırayla (G152, plan 08.09 §1.5 P2):
+
+    1. `DEGISIKLIK_OZETI` "Veri kesim tarihi" satırı (INFO),
+    2. paket adındaki ISO tarih (`..._2026-09-04.xlsx`) — WARNING: teslim günü
+       kesim günü sayılır, gerçek kesim daha erken olabilir,
+    3. hiçbiri yoksa None — kural kapalı; WARNING'i `aktarimi_kos` basar.
+    """
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
+    except Exception as exc:
+        logger.warning("Kesim tarihi için paket açılamadı (%s): %s", type(exc).__name__, exc)
+        wb = None
+    if wb is not None:
+        try:
+            if OZET_SAYFASI in wb.sheetnames:
+                tarih = kesim_tarihi_oku(wb[OZET_SAYFASI])
+                if tarih is not None:
+                    logger.info("Veri kesim tarihi %s (%s sayfası)", tarih.isoformat(), OZET_SAYFASI)
+                    return tarih
+        finally:
+            wb.close()
+
+    eslesme = _PAKET_ADI_TARIHI.search(dosya_adi or "")
+    if eslesme:
+        try:
+            tarih = date(int(eslesme.group(1)), int(eslesme.group(2)), int(eslesme.group(3)))
+        except ValueError:
+            tarih = None
+        if tarih is not None:
+            logger.warning(
+                "Veri kesim tarihi %s sayfasında yok — paket adındaki tarih %s kesim günü sayıldı "
+                "(gerçek kesim daha erken olabilir; ekipten 'Veri kesim tarihi' satırı istenir)",
+                OZET_SAYFASI, tarih.isoformat(),
+            )
+            return tarih
     return None
 
 
