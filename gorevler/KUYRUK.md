@@ -3,6 +3,49 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Veri ekibi cevabı ↔ HukuDok düzeltmeleri (2026-09-08 gündüz, kullanıcı onayı)
+
+<!-- Kaynak: docs/plan/veri-ekibi-cevabi-karsilastirma-plani-2026-09-08.md (§1 karşılaştırma tablosu, §3 görev
+     adayları, §4 kararlar, §5 yazım birliği ölçümü). Ekibin 04.09 ×3 + 06.09 e-postaları ve 4 ek kalem kalem koda
+     karşı okundu; hükümler ZATEN VAR / YAP / GEREKMEZ / KARAR. Kullanıcı 08.09: planı ve §4'teki önerileri onayladı
+     (föy düzeyi karar durumu YOK → etiket; status kesim-sonrası koruma EVET; sub_type'ta paket kazanır EVET;
+     Kapalı/Derdest havuzdan çıkar EVET; çoklu avukatlı kart eksik sayılmaz EVET; "Karar" ekibe sorulur; ek uzmanlık
+     alanı ertelendi). İlke: ekip uygulamaya hâkim değil — makul görünen istek bize verimsizse GEREKMEZ.
+     Zincir: hukdok_aktarim.py HUB → G150→G151→G152→G153→G154→G155→G156→G157→G159→G160 seri; G149 ve G158 bağımsız
+     (backend bandı zaten seri); G161 docs en son (G148'i de bekler). Test-değiştirme izinleri her dosyada baştan.
+     Prod sırası: deploy → havuz seed → G147 env+klasör → 04.09 paketi TESLİM HATTINDAN (zincir başlangıcı) →
+     kart aç → birleştir → G154 haritası → G160 yazım dönüşümü → ölçüm. Tahmin: 3 koşu (G150 büyük). -->
+
+- [ ] G149 | bant:backend | bagimli:- | 370 derdest kart listesi: föysüz + DERDEST kartların xlsx raporu (salt okunur script, ekibe ek)
+- [ ] G150 | bant:backend | bagimli:- | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP korunur, boş hücre imzaya girmez, çok tur sira_no, 04.09 ile 12 bayat → 0 kanıtı
+- [ ] G151 | bant:backend | bagimli:G150 | Karar durumu havuzları: Kapalı/Derdest yerel havuzdan çıkar + aktarımda "karar yok" kuralı + istinaf/temyiz/yerel seed genişlemesi ("Karar" hariç)
+- [ ] G152 | bant:backend | bagimli:G151 | `status` kesim-sonrası koruma: kullanıcı imzalı case_history varsa paket yazmaz + DEGISIKLIK_OZETI "Veri kesim tarihi" + update_case tarihçe imzası
+- [ ] G153 | bant:backend | bagimli:G152 | DosyaNo kökü → müvekkil kimliği: eşleştirme adımı, kök/müvekkil çelişkisi (H-6589) yazılmaz, föy↔müvekkil `case_party_id` bağı, "Müvekkil değişti" raporu
+- [ ] G154 | bant:backend | bagimli:G153 | Cevaplı xlsx ile 20 föyü bağlama: `cevapli_kart_eslemesi.py` + aktarımda `--kart-esleme` haritası (H-6589 hariç 19 föy)
+- [ ] G155 | bant:backend | bagimli:G154 | Karar_Asamalari `Başvuru Tarihi`: aşama tablosuna kolon (migrasyon), okuyucu, istinaf/temyiz başvuru tarihi fotoğrafı
+- [ ] G156 | bant:backend | bagimli:G155 | Delta paket + zincir başlangıcı: "Teslim türü: delta" satırı, kaybolan başlık bilgi (ihlal değil), `—` yalnız defter boşken zincir tamam
+- [ ] G157 | bant:backend | bagimli:G156 | Aşama çelişki raporu üreticisi repoya (servis + CLI), yer tutucu sınıfı (S5 satır 82), E-8 "müvekkil yönü farkı" etiketi, ekip cevabını geri okuma
+- [ ] G158 | bant:backend | bagimli:- | Çoklu avukatlı kart (case_lawyers ≥ 2, kutu boş) "eksik sorumlu avukat" sayılmaz — Python + SQL kuralı + backfill (≈1.031 kart)
+- [ ] G159 | bant:backend | bagimli:G157 | `tr_title` DB-008 kuralı (bağlaç küçük, kısaltma korunur, parantez sonrası büyük, yabancı ad) + `sub_type` yazım farkında paket kazanır
+- [ ] G160 | bant:backend | bagimli:G159 | `yazim_birligi.py` tek seferlik dönüşüm (dry-run/--apply, tarihçeli): sub_type 4.521, taraf adı ~3.450 + ikizler, court 1.115, subject, rol, bureau_types listesi; Sigortalı/mahkeme listeleri DOKUNULMAZ
+- [ ] G161 | bant:docs | bagimli:G148,G156,G160 | SOZLESME + mimari + plan şerhleri: eşik = hücre, delta/kesim tarihi satırları, sütun sahipliği, DB-008 genişletme + Yazim_Standardi isteği, aşama/status kuralları
+
+## ÖNCELİK 1 — Teslim hattı ikinci SharePoint kimliği: Hanyaloğlu tenant'ı (2026-09-08 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: veri ekibinin 06.09 e-postası §13 ("03_VERI_TESLIM/gelen hâlâ görünmüyor, davet gelmedi") +
+     08.09 keşfi: prod arşiv site'ı LexisBio tenant'ında (lexisbio.sharepoint.com/sites/hukukarsivtest,
+     30.07 kopyasındaki 176 belge URL'sinin tamamı), veri ekibi hesabı + kullanıcı posta kutusu Hanyaloğlu
+     tenant'ında (9776cf1f…; hanyaloglu.sharepoint.com) → 03.09 paylaşımı tenant'lar arası misafir davetine
+     düştü. Karar: YALNIZ teslim hattı (gözcü + cevap paketi) Hanyaloğlu site'ına (hukdok_arsiv) taşınır;
+     arşiv/sayaç/log/belge URL'leri LexisBio'da kalır. Kod tek-site: config_type parametresi var ama üç çağrı
+     "default"a çivili, UPLOAD_SHAREPOINT_* env'ini kimse okumuyor; Hanyaloğlu app kaydı canlı, site + Belgeler
+     drive var, 03_VERI_TESLIM yok (Graph ile doğrulandı). G147 backend → G148 docs zincirli. Test-değiştirme izni
+     (yalnız sahte imzaları) baştan yazıldı. İnsan adımları G147'de ayrı listeli (klasör, paylaşım, prod .env, up -d).
+     Tahmin: 1 koşu. -->
+
+- [ ] G147 | bant:backend | bagimli:- | Teslim hattı `teslim` config'i: TESLIM_SHAREPOINT_* ikinci kimlik/site (düşüş: default), lru_cache (token,config) maxsize 4, 401 yenilemesi config'e sadık, gözcü+cevap çağrıları teslim config'iyle, .env.example + veri-teslim-hatti.md §1/§9 + testler
+- [ ] G148 | bant:docs | bagimli:G147 | Yeni site dokümanları: dis-bagimliliklar §2, kimlik-ve-token, deploy env listesi, SOZLESME §1 site adı (bağlantısız), plan §8 tenant ayrımı şerhi, CLAUDE.md tek cümle
+
 ## ÖNCELİK 1 — Raporlama beşinci tur: seçenek sayıları + sıralama + "Boş" birinci sınıf (2026-09-07 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/plan/raporlama-plani-2026-09-06.md §7. Kullanıcı (kategori çipleri): "(boş) neden parantez
