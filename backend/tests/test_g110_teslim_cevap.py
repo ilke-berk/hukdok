@@ -83,7 +83,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(tk, "SessionLocal", maker)
     monkeypatch.setattr(app_settings, "SessionLocal", maker)
     # Gece turunun gözcüsü: boş klasör (bu dosya yüklemeyi test eder, indirmeyi değil)
-    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name: [])
+    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name, **kw: [])
 
     db = maker()
     try:

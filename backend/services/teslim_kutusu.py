@@ -64,6 +64,13 @@ Tasarım kararları
   alanı göstermez. Tek dosyanın hatası WARNING, tur devam eder; LİSTELEME
   hatası yükselir — tur düzeyinde tek ERROR'a (gece) ya da WARNING'e (boot)
   çağıran karar verir. Anahtar (`veri_teslim_otomasyonu`) kapalıysa hiç listelenmez.
+  **SharePoint config'i `TESLIM_SP_CONFIG` (= `"teslim"`, G147):** gözcünün iki Graph
+  çağrısı (listeleme + indirme) ve cevap paketi yüklemesi (`teslim_cevap`) bu config'le
+  gider — veri ekibi Hanyaloğlu tenant'ındadır, arşiv site'ı LexisBio'da; tenant'lar
+  arası paylaşım misafir davetine düşüp ulaşmadı. `TESLIM_SHAREPOINT_*` env dörtlüsü
+  tanımsızsa `sharepoint_uploader_graph`/`auth_graph` kendiliğinden arşiv kimliği ve
+  site'ına düşer (tek INFO) — klasör adları (`SHAREPOINT_FOLDER_TESLIM_NAME`, `gelen`,
+  `cevap`) site'tan bağımsızdır, yol aynı kalır. Arşiv, sayaç, `log`, export DEĞİŞMEZ.
 * **Gece turu** (`gece_turu`, 04:00 TR): `acilis_toparla` → `sharepoint_tara` →
   bekleyen (`alindi`/`dogrulandi`/`kuru_kosuldu`, `created_at` sırası) her
   satıra `teslimi_isle(otomatik_uygula=…)`. **Aynı turda en fazla BİR teslim
@@ -164,6 +171,11 @@ BOOT_ISLENEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI)
 #: SharePoint teslim klasörü (env `SHAREPOINT_FOLDER_TESLIM_NAME` yoksa) ve gelen alt klasörü.
 TESLIM_KLASORU_VARSAYILAN = "03_VERI_TESLIM"
 TESLIM_GELEN_ALT_KLASORU = "gelen"
+#: Teslim hattının SharePoint config'i (G147): gözcü listeleme/indirme ve cevap paketi
+#: yüklemesi (`teslim_cevap`) bu config'le gider — `TESLIM_SHAREPOINT_*` tanımlıysa
+#: Hanyaloğlu tenant'ındaki site, değilse arşiv kimliği/site'ı (düşüş, tek INFO).
+#: Tek sabit: iki modül aynı değeri kullanır, config adı bir yerde değişir.
+TESLIM_SP_CONFIG = _spu.CONFIG_TESLIM
 #: Gözcünün aldığı dosya adı kalıbı (harf duyarsız); dışındakiler `atlanan`.
 TESLIM_AD_KALIBI = re.compile(r"^HUKDOK_TESLIM_.*\.xlsx$", re.IGNORECASE)
 #: Gece turunda ikinci uygulanabilir teslimi incelemeye alan kural etiketi.
@@ -1259,7 +1271,7 @@ def sharepoint_tara(*, db: Optional[Session] = None) -> dict:
             logger.info("SharePoint teslim taraması atlandı: veri_teslim_otomasyonu kapalı")
             return sayac
         klasor = teslim_gelen_klasoru()
-        dosyalar = _spu.list_folder_children(klasor)
+        dosyalar = _spu.list_folder_children(klasor, config_type=TESLIM_SP_CONFIG)
         bilinen = _bilinen_sp_anahtarlari(session)
         for item in dosyalar:
             ad = str(item.get("name") or "").strip()
@@ -1272,7 +1284,7 @@ def sharepoint_tara(*, db: Optional[Session] = None) -> dict:
                 sayac["yinelenen"] += 1
                 continue
             try:
-                icerik, _ctype = _spu.download_file_from_sharepoint(klasor, ad)
+                icerik, _ctype = _spu.download_file_from_sharepoint(klasor, ad, config_type=TESLIM_SP_CONFIG)
                 teslim_id = teslim_kaydet(
                     icerik=icerik, dosya_adi=ad, kaynak="sharepoint",
                     sharepoint_item_id=anahtar, db=session,

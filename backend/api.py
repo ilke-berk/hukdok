@@ -130,6 +130,7 @@ async def lifespan(app: FastAPI):
     warn_if_dev_mode_outside_development()
     from sharepoint.auth_graph import check_client_secret_expiry
     check_client_secret_expiry()
+    check_client_secret_expiry(env_name="TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT")  # G147 teslim kimliği
 
     # Faz 3-E: lifespan'deki yedek init_db KALDIRILDI — migrasyonun tek sahibi
     # entrypoint'teki migrate.py (3-A'daki "import models" düzeltmesinden beri

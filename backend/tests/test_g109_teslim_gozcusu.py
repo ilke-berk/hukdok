@@ -213,13 +213,13 @@ def sahte_sp(monkeypatch):
     sp = SimpleNamespace(dosyalar=[], icerikler={}, listelenen=[], indirilen=[],
                          liste_hatasi=None, indirme_hatalari=set())
 
-    def _list(folder_name):
+    def _list(folder_name, **kw):
         sp.listelenen.append(folder_name)
         if sp.liste_hatasi is not None:
             raise sp.liste_hatasi
         return list(sp.dosyalar)
 
-    def _download(folder_name, filename):
+    def _download(folder_name, filename, **kw):
         sp.indirilen.append(filename)
         if filename in sp.indirme_hatalari:
             raise requests.ConnectionError(f"ağ koptu: {filename}")

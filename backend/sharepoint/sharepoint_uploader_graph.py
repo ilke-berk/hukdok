@@ -10,10 +10,34 @@ from functools import lru_cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from sharepoint.auth_graph import get_graph_token
+from sharepoint.auth_graph import CONFIG_DEFAULT, CONFIG_TESLIM, get_graph_token
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 logger = logging.getLogger("SharePointUploader")
+
+# ── G147: config'e göre site/drive ───────────────────────────────────────────
+# `default` = arşiv site'ı (`SHAREPOINT_SITE_URL`, LexisBio) — outbox upload,
+# belge indirme, sayaç, log listesi, e-posta ekleri buradan; `teslim` = veri
+# teslim hattının site'ı (`TESLIM_SHAREPOINT_SITE_URL`, Hanyaloğlu tenant'ı;
+# boşsa arşiv site'ına düşer). Drive adı önceliği: `TESLIM_SP_DRIVE_NAME` >
+# `SP_DRIVE_NAME` > "Belgeler" (hukdok_arsiv site'ının drive'ı `Belgeler`).
+_DEFAULT_DRIVE_NAME = "Belgeler"
+
+
+def _site_url_for(config_type: str) -> str | None:
+    if config_type == CONFIG_TESLIM:
+        teslim = (os.getenv("TESLIM_SHAREPOINT_SITE_URL") or "").strip()
+        if teslim:
+            return teslim
+    return (os.getenv("SHAREPOINT_SITE_URL") or "").strip() or None
+
+
+def _drive_name_for(config_type: str) -> str:
+    if config_type == CONFIG_TESLIM:
+        teslim = (os.getenv("TESLIM_SP_DRIVE_NAME") or "").strip()
+        if teslim:
+            return teslim
+    return (os.getenv("SP_DRIVE_NAME") or "").strip() or _DEFAULT_DRIVE_NAME
 
 # ── Faz 3-B: paylaşılan Session + transport-katmanı retry ────────────────────
 # İki katmanlı retry mimarisi:
@@ -98,48 +122,50 @@ def _get_shared_session() -> requests.Session:
     return _shared_session
 
 
-def _with_fresh_token_on_401(fn):
+def _with_fresh_token_on_401(fn, config_type: str = CONFIG_DEFAULT):
     """fn(token) çağrısını yapar; ilk 401'de token'ı ZORLA yenileyip bir kez
     daha dener. 401 transport retry'ına bırakılamaz: aynı Authorization
     başlığıyla tekrar denemek sonucu değiştirmez — MSAL cache'indeki token
     süresi dolmadan sunucuda geçersizleşmiş olabilir (secret rotasyonu, revoke).
+    Token verilen `config_type` ile alınır ve AYNI config'le yenilenir (G147):
+    teslim hattının 401'i arşiv kimliğini değil, kendi kimliğini tazeler.
     """
-    token = get_graph_token(config_type="default")
+    token = get_graph_token(config_type=config_type)
     try:
         return fn(token)
     except requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else None
         if status != 401:
             raise
-        logger.warning("Graph 401 döndü — token zorla yenilenip bir kez daha denenecek")
-        token = get_graph_token(config_type="default", force_refresh=True)
+        logger.warning(f"Graph 401 döndü — token zorla yenilenip bir kez daha denenecek ({config_type})")
+        token = get_graph_token(config_type=config_type, force_refresh=True)
         return fn(token)
 
 
-@lru_cache(maxsize=1)
-def _get_site_and_drive_id(token: str, config_type: str = "default") -> tuple[str, str]:
-    """Site ve drive ID çözümü.
+@lru_cache(maxsize=4)
+def _get_site_and_drive_id(token: str, config_type: str = CONFIG_DEFAULT) -> tuple[str, str]:
+    """Site ve drive ID çözümü — config'e göre site (`_site_url_for`) ve drive adı
+    (`_drive_name_for`).
 
     lru_cache anahtarının token olması BİLİNÇLİ (Faz 3-B'de korundu): token
     ~saatte bir döndüğünde kayıt kendiliğinden tazelenir (bedava TTL) ve 401
     sonrası zorla yenilenen token yeni cache anahtarı üretip ID'leri yeni
     token'la yeniden çözer. Ayrı bir TTL cache aynı davranışa fazladan kod olurdu.
+    Anahtar `(token, config_type)`; `maxsize=4` (G147): iki config'in token'ı
+    farklıdır, `maxsize=1` her config geçişinde site+drive'ı yeniden çözerdi
+    (2 Graph GET — outbox upload ile gece gözcüsü art arda koşar).
     """
     _load_env()
     session = _get_shared_session()
 
-    # Always use the main SHAREPOINT_SITE_URL (Single-Site Mode)
-    site_url = os.getenv("SHAREPOINT_SITE_URL")
-
-    if config_type == "upload":
-        logger.debug("Uploader: Using main site for upload (config='upload' -> default site).")
-
-    drive_name = os.getenv(
-        "SP_DRIVE_NAME", "Belgeler"
-    )  # Default to "Belgeler" (Documents)
+    site_url = _site_url_for(config_type)
+    drive_name = _drive_name_for(config_type)
 
     if not site_url:
-        raise RuntimeError(f"Missing env: SHAREPOINT_SITE_URL (config: {config_type})")
+        raise RuntimeError(
+            f"Missing env: {'TESLIM_SHAREPOINT_SITE_URL / ' if config_type == CONFIG_TESLIM else ''}"
+            f"SHAREPOINT_SITE_URL (config: {config_type})"
+        )
 
     u = urlparse(site_url)
     hostname = u.netloc
@@ -175,7 +201,7 @@ def _get_site_and_drive_id(token: str, config_type: str = "default") -> tuple[st
     names = [d.get("name") for d in drives]
 
     # Fallback: If drive_name is "Belgeler" but not found, look for "Documents"
-    if drive_name == "Belgeler" and "Documents" in names:
+    if drive_name == _DEFAULT_DRIVE_NAME and "Documents" in names:
         for d in drives:
             if d.get("name") == "Documents":
                 return site_id, d["id"]
@@ -327,10 +353,11 @@ def _upload_with_token(
     target_folder_name: str,
     content_type: str,
     metadata: "dict | None",
+    config_type: str = CONFIG_DEFAULT,
 ) -> dict:
     """Tek token'la tam yükleme akışı: ID çözümü → küçük PUT ya da chunk'lı yol."""
     # _get_site_and_drive_id is now Cached
-    _site_id, drive_id = _get_site_and_drive_id(token, config_type="default")
+    _site_id, drive_id = _get_site_and_drive_id(token, config_type=config_type)
 
     file_size = os.path.getsize(filepath)
 
@@ -372,10 +399,11 @@ def upload_file_to_sharepoint(
     content_type: str = "application/pdf",
     use_date_subfolder: bool = False,
     metadata: dict = None,
+    *,
+    config_type: str = CONFIG_DEFAULT,
 ) -> dict:
     """
     SharePoint'e Graph ile upload (Secure Cloud Archive Mode).
-    Uses 'upload' configuration (New Site).
 
     Args:
         filepath: Yüklenecek dosyanın yerel yolu
@@ -383,6 +411,8 @@ def upload_file_to_sharepoint(
         target_folder_name: Hedef klasör adı (örn: "01_HAM_ARSIV")
         content_type: MIME type
         use_date_subfolder: True ise YYYY-MM-DD formatında alt klasör oluşturur
+        config_type: `"default"` arşiv site'ı/kimliği (outbox, e-posta, sayaç —
+            değişmedi); `"teslim"` veri teslim hattı (G147, `teslim_cevap`)
 
     Returns:
         SharePoint API response
@@ -411,32 +441,37 @@ def upload_file_to_sharepoint(
                 target_folder_name,
                 content_type,
                 metadata,
-            )
+                config_type,
+            ),
+            config_type,
         )
     except Exception as e:
         logger.warning(f"SharePoint Upload Error: {e}")
         raise
 
 
-def download_file_from_sharepoint(folder_name: str, filename: str) -> tuple[bytes, str]:
+def download_file_from_sharepoint(
+    folder_name: str, filename: str, *, config_type: str = CONFIG_DEFAULT,
+) -> tuple[bytes, str]:
     """
     SharePoint'ten dosya içeriğini ve MIME tipini döndürür.
     Kimlik doğrulama backend service account üzerinden yapılır;
     son kullanıcının Microsoft tenant üyesi olması gerekmez.
+    `config_type="teslim"` (G147) teslim site'ından/kimliğiyle indirir (gözcü).
     """
     _load_env()
     session = _get_shared_session()
     safe_path = quote(f"{folder_name}/{filename}")
 
     def _download(token: str) -> tuple[bytes, str]:
-        _site_id, drive_id = _get_site_and_drive_id(token, config_type="default")
+        _site_id, drive_id = _get_site_and_drive_id(token, config_type=config_type)
         url = f"{GRAPH}/drives/{drive_id}/root:/{safe_path}:/content"
         r = session.get(url, headers=_headers(token), timeout=(10, 120), allow_redirects=True)
         r.raise_for_status()
         content_type = r.headers.get("Content-Type", "application/octet-stream")
         return r.content, content_type
 
-    return _with_fresh_token_on_401(_download)
+    return _with_fresh_token_on_401(_download, config_type)
 
 
 #: Klasör listelemede sayfa boyu (`$top`); Graph tavanı 200'dür.
@@ -445,12 +480,13 @@ _LIST_PAGE_SIZE = 200
 _LIST_SELECT = "id,name,size,eTag,file,lastModifiedDateTime"
 
 
-def list_folder_children(folder_name: str) -> list[dict]:
+def list_folder_children(folder_name: str, *, config_type: str = CONFIG_DEFAULT) -> list[dict]:
     """Klasördeki DOSYALARI listeler (G109 SharePoint teslim gözcüsü).
 
     `GET /drives/{drive}/root:/{folder}:/children?$select=…&$top=200`;
     `@odata.nextLink` sonuna kadar izlenir, sayfalar tek listede birleşir.
     Yalnız `file` anahtarı taşıyan öğeler döner (alt klasörler elenir).
+    `config_type="teslim"` (G147): teslim site'ı + o tenant'ın token'ı.
 
     Klasör yoksa (404) **boş liste + WARNING**: gece job'ı "klasör henüz
     açılmadı" diye ERROR basmasın — o bir kurulum eksiği, arıza değil. Diğer
@@ -463,7 +499,7 @@ def list_folder_children(folder_name: str) -> list[dict]:
     safe_path = quote(folder_name)
 
     def _list(token: str) -> list[dict]:
-        _site_id, drive_id = _get_site_and_drive_id(token, config_type="default")
+        _site_id, drive_id = _get_site_and_drive_id(token, config_type=config_type)
         url: str | None = f"{GRAPH}/drives/{drive_id}/root:/{safe_path}:/children"
         params: dict | None = {"$select": _LIST_SELECT, "$top": _LIST_PAGE_SIZE}
         items: list[dict] = []
@@ -479,7 +515,7 @@ def list_folder_children(folder_name: str) -> list[dict]:
             params = None  # nextLink sorgu parametrelerini kendi taşır
         return items
 
-    return _with_fresh_token_on_401(_list)
+    return _with_fresh_token_on_401(_list, config_type)
 
 
 def _update_list_item_fields(session, token, drive_id, item_id, fields):

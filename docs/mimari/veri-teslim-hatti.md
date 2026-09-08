@@ -1,6 +1,7 @@
 # Veri teslim hattı — SharePoint gelen kutusu → defter → 04:00 kapısı → cevap paketi
 
-> **Son doğrulama: 2026-09-04 · 88409da**
+> **Son doğrulama: 2026-09-04 · 88409da** — §1 "Site/kimlik" satırı, §2 madde 2/5 ve §9 prod kurulumu
+> 2026-09-08 · G147 ile yeniden doğrulandı (satır numaraları o commit'in koduna göre).
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 > Veri ekibine verilen dış sözleşme ayrı dosyadadır:
 > [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) (kod yolu içermez).
@@ -38,6 +39,7 @@ veri ekibi ──xlsx──▶ SharePoint <SHAREPOINT_FOLDER_TESLIM_NAME>/gelen/
 | Dosya adı kalıbı | `^HUKDOK_TESLIM_.*\.xlsx$`, harf duyarsız; dışındakiler `atlanan` sayılır | `services/teslim_kutusu.py:157`, `:1051-1054` |
 | Açma/kapama anahtarı | admin paneli `veri_teslim_otomasyonu`, **varsayılan KAPALI**; env'de değil | `services/app_settings.py:50-58`, `:155-157` |
 | Spool dizini | env `TESLIM_SPOOL_DIR`; tanımsızsa `<backend>/data/teslim_spool` (konteynerde `/app/data` volume'u → recreate'i atlatır) | `services/teslim_kutusu.py:213-225`; `.env.example:44-46` |
+| **Site/kimlik** (G147) | Teslim hattının üç Graph çağrısı (gözcü listeleme + indirme, cevap yükleme) `config_type="teslim"` ile gider — tek sabit `TESLIM_SP_CONFIG`. Kimlik: `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET` (secret önce vault, sonra env); **üçünden biri bile boşsa arşiv kimliğine (`SHAREPOINT_*`) düşer, süreç başına TEK INFO**, istisna yok. Site: `TESLIM_SHAREPOINT_SITE_URL` (boşsa `SHAREPOINT_SITE_URL`); drive adı `TESLIM_SP_DRIVE_NAME` > `SP_DRIVE_NAME` > `Belgeler`. Site+drive çözümü `(token, config_type)` anahtarlı `lru_cache(maxsize=4)` — iki config art arda koşunca ikinci turda Graph'a gidilmez; 401'de çağrının KENDİ config'i yenilenir. Arşiv, ofis-no sayacı, `log` listesi, outbox, e-posta ve hukukbot export'u `default` (LexisBio) ile aynen kalır; klasör adları site'tan bağımsızdır | `services/teslim_kutusu.py:171-178`, `:1274`, `:1287`; `services/teslim_cevap.py:532`; `sharepoint/auth_graph.py:19-31`, `:101-115` (`_read_credentials`), `:118-160` (`_get_msal_app` düşüş + INFO `:135-143`); `sharepoint/sharepoint_uploader_graph.py:17-40` (`_site_url_for`/`_drive_name_for`), `:125-142` (`_with_fresh_token_on_401`), `:145-209` (`_get_site_and_drive_id`); `.env.example:31-48` |
 
 Anahtar kapalıyken: SharePoint'e ne bakılır ne yazılır (gözcü ve cevap yüklemesi INFO ile
 atlanır), gece turu hiçbir durum değiştirmez; **elle yükleme ve elle "Uygula" çalışmaya devam
@@ -53,23 +55,26 @@ taşıyan lokal konteynerde koşan testlerin prod SharePoint'e dosya bırakması
 
 ## 2. Gözcü — `sharepoint_tara`
 
-`services/teslim_kutusu.py:1032-1078`. Sıra:
+`services/teslim_kutusu.py:1259-1305`. Sıra:
 
-1. Anahtar kapalıysa listelemeden `{"yeni":0,"yinelenen":0,"atlanan":0}` döner (`:1043-1045`).
-2. `sharepoint_uploader_graph.list_folder_children(<kök>/gelen)` — G109'da eklenen tek yeni
-   Graph çağrısı: `GET /drives/{drive}/root:/{folder}:/children`, `$select=id,name,size,eTag,
-   file,lastModifiedDateTime`, `$top=200`, `@odata.nextLink` sonuna kadar izlenir, yalnız
-   `file` anahtarlı öğeler döner. **Klasör yoksa (404) boş liste + WARNING** — "klasör henüz
-   açılmadı" bir kurulum eksiğidir, arıza değil; diğer HTTP hataları yükselir
-   (`backend/sharepoint/sharepoint_uploader_graph.py:448-482`).
+1. Anahtar kapalıysa listelemeden `{"yeni":0,"yinelenen":0,"atlanan":0}` döner (`:1270-1272`).
+2. `sharepoint_uploader_graph.list_folder_children(<kök>/gelen, config_type=TESLIM_SP_CONFIG)`
+   (`:1274`) — G109'da eklenen tek yeni Graph çağrısı: `GET /drives/{drive}/root:/{folder}:/children`,
+   `$select=id,name,size,eTag,file,lastModifiedDateTime`, `$top=200`, `@odata.nextLink` sonuna
+   kadar izlenir, yalnız `file` anahtarlı öğeler döner. **Klasör yoksa (404) boş liste + WARNING** —
+   "klasör henüz açılmadı" bir kurulum eksiğidir, arıza değil; diğer HTTP hataları yükselir
+   (`backend/sharepoint/sharepoint_uploader_graph.py:483-518`). **Config notu (G147):** çağrı
+   `"teslim"` config'iyle gider — `TESLIM_SHAREPOINT_*` tanımlıysa Hanyaloğlu tenant'ındaki site ve
+   o tenant'ın token'ı, tanımsızsa arşiv kimliği/site'ı (§1 "Site/kimlik"); klasör yolu değişmez.
 3. Ad kalıbına uymayan dosya `atlanan` (`teslim_kutusu.py:1051-1054`).
 4. **Ucuz eleme:** `sharepoint_item_id` kolonuna driveItem id'si ile eTag birlikte
    (`<id>@<eTag>`, tırnaksız) yazılır; aynı anahtar defterdeyse dosya **indirilmez** ve
    `yinelenen` sayılır (`teslim_kutusu.py:1016-1020`, `:1055-1058`). eTag değiştiyse (dosya
    yerinde güncellendi) indirilir; içerik aynıysa `teslim_kaydet` sha256 ile zaten `yinelenen`
    satırı açar. Ayrı eTag kolonu yok — G109'da model kapsam dışıydı (`:56-63`).
-5. `download_file_from_sharepoint` (`sharepoint_uploader_graph.py:421-439`) →
-   `teslim_kaydet(kaynak="sharepoint")` (`teslim_kutusu.py:1059-1064`).
+5. `download_file_from_sharepoint(..., config_type=TESLIM_SP_CONFIG)`
+   (`sharepoint_uploader_graph.py:453-474`; çağrı `teslim_kutusu.py:1287`) →
+   `teslim_kaydet(kaynak="sharepoint")` (`teslim_kutusu.py:1288-1291`).
 
 Tek dosyanın indirme/kayıt hatası **WARNING**, tur sürer; **listeleme** hatası yükselir ve
 tur düzeyindeki kararı çağıran verir — gece turu TEK ERROR basar ve bekleyenleri yine işler,
@@ -354,10 +359,21 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
   (`kapsam_durumu` dahil) hazır, kart panelinde gösterim sonraki tur.
 - **Cevap klasörü ara klasör davranışı** koddan kanıtlanmadı (§6); ilk gerçek yükleme gözle
   doğrulanır.
-- **Prod kurulumu insan adımıdır:** SharePoint'te `03_VERI_TESLIM/gelen` ve `cevap`
-  klasörleri + veri ekibine paylaşım; `.env`'e `SHAREPOINT_FOLDER_TESLIM_NAME` (cevap yüklemesi
-  onsuz HİÇ çalışmaz) ve isteniyorsa eşikler, ardından `docker compose up -d` (recreate);
-  admin panelden anahtarın açılması.
+- **Prod kurulumu insan adımıdır (G147 sonrası, ikinci site):** veri ekibi Hanyaloğlu
+  tenant'ındadır, arşiv site'ı LexisBio'da; tenant'lar arası paylaşım misafir davetine düşüp
+  ulaşmadığı için teslim hattı Hanyaloğlu tenant'ındaki `hukdok_arsiv` site'ına taşınır (arşiv
+  taşınmaz). Sıra: (1) o site'ın `Belgeler` drive'ında `03_VERI_TESLIM/gelen` (veri ekibine
+  düzenleme) ve `03_VERI_TESLIM/cevap` (görüntüleme) klasörleri açılıp paylaşılır — aynı tenant,
+  davet gerekmez; (2) Hanyaloğlu tenant'ındaki uygulama kaydının app-only `Sites.ReadWrite.All`
+  (ya da `Sites.Selected` + site izni) iznine sahip olduğu Entra'da teyit edilir, secret bitiş
+  tarihi `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`'a yazılır (lifespan ikinci çağrı,
+  `backend/api.py:133`); (3) prod `.env`'e `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` /
+  `CLIENT_SECRET` / `SITE_URL` + `SHAREPOINT_FOLDER_TESLIM_NAME` (cevap yüklemesi onsuz HİÇ
+  çalışmaz) ve isteniyorsa eşikler → `docker compose up -d` (recreate; `restart` env'i almaz,
+  bayat upstream için frontend de recreate edilir); (4) admin panelden anahtar — ilk teslim daima
+  `inceleme_bekliyor`; (5) LexisBio site'ındaki eski `03_VERI_TESLIM` (03.09 lokal testinin izi)
+  kullanıcı kararıyla silinir ya da bırakılır. Dörtlü tanımsız kaldığı sürece hat arşiv
+  kimliği/site'ıyla çalışmaya devam eder (§1 "Site/kimlik").
 - Ters yön (bizim veriyi sigorta şirketi Excel'ine işlemek), WhatsApp/e-posta ekini otomatik
   okuma, mükerrer kart birleştirme (D6) — bilinçli kapsam dışı (plan §5).
 
@@ -371,8 +387,9 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
 | Admin uçları | `backend/routes/admin.py` |
 | Defter modeli + migrasyon madde 39/40 | `backend/models.py:1080`, `backend/database.py:913-919` |
 | Zamanlayıcı kaydı + boot telafisi | `backend/api.py:227-262` |
-| Graph klasör listeleme | `backend/sharepoint/sharepoint_uploader_graph.py:448-482` — bkz. [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
+| Graph klasör listeleme | `backend/sharepoint/sharepoint_uploader_graph.py:483-518` — bkz. [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
+| İkinci kimlik/site (`teslim` config'i, düşüş kuralı) | `backend/sharepoint/auth_graph.py:19-31`, `:118-160`; `backend/sharepoint/sharepoint_uploader_graph.py:17-40`, `:145-209` |
 | Veri ekibine verilen sözleşme | [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) |
 | Plan ve açık kalanlar | [`docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`](../plan/veri-teslim-otomasyonu-plani-2026-09-03.md) |
 | Veri ekibine verilen bilgilendirme (sütun/sayfa/değer ayrıntısı, makine-okur özet) | [`docs/veri-teslim/BILGILENDIRME_2026-09-03.md`](../veri-teslim/BILGILENDIRME_2026-09-03.md) (sürüm 1.1; dosya adı sabit — yol veri ekibinde) |
-| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py` |
+| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_g147_teslim_sharepoint_kimligi.py` |

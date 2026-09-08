@@ -50,6 +50,11 @@ Tasarım kararları
   yaslanan başka bir çağrı YOK (mevcut yüklemeler düz klasöre gider;
   `use_date_subfolder` yolu hiçbir çağıranda açık değil) — gerçek SharePoint'te ilk
   cevap yüklemesi insan gözüyle doğrulanmalı (görev raporu "İzlenecekler").
+* **Yükleme teslim site'ına gider** (G147): `upload_file_to_sharepoint(...,
+  config_type=tk.TESLIM_SP_CONFIG)` — gözcüyle AYNI config (`"teslim"`); `TESLIM_SHAREPOINT_*`
+  tanımlıysa Hanyaloğlu tenant'ındaki site + o tenant'ın token'ı, değilse arşiv
+  kimliği/site'ı (düşüş `auth_graph`/`sharepoint_uploader_graph`'ta, tek INFO). Klasör
+  yolu (`<SHAREPOINT_FOLDER_TESLIM_NAME>/cevap/<teslim>/`) site'tan bağımsızdır.
 * **CSV biçimi `hukdok_aktarim._csv_yaz` ile aynı** (UTF-8 BOM + `;`): fonksiyon private
   olduğu için deseni kopyalandı (`_csv_yaz`), byte eşitliği testle kilitli.
 * **Sebep satır numarasıyla eşlenir** (`satir_no`), SistemNo ile değil: aynı SistemNo
@@ -524,6 +529,7 @@ def cevap_yukle(teslim_id: int, *, db: Optional[Session] = None) -> bool:
                 _spu.upload_file_to_sharepoint(
                     str(yol), hedef_ad, target_folder_name=klasor,
                     content_type=CEVAP_TURLERI[yol.suffix.lower()],
+                    config_type=tk.TESLIM_SP_CONFIG,
                 )
             except Exception as exc:
                 hatalar.append(f"{hedef_ad}: {type(exc).__name__}: {exc}")

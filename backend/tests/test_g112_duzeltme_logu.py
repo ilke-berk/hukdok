@@ -665,7 +665,7 @@ def teslim_env(tmp_path, monkeypatch):
     maker = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     monkeypatch.setattr(tk, "SessionLocal", maker)
     monkeypatch.setattr(app_settings, "SessionLocal", maker)
-    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name: [])
+    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name, **kw: [])
     monkeypatch.setattr(spu, "upload_file_to_sharepoint",
                         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("upload beklenmiyor")))
     db = maker()
