@@ -413,6 +413,17 @@ def _karar_kodu(ad: str) -> str:
 # satırından yazar (_seed_appealing_parties deseni) — add_item'ın
 # normalize_list_name'i "Red/Esastan"ı "Red/esastan"a çevirirdi. Ekip güncel
 # liste gönderirse düzeltme yönetim panelinden yapılır.
+#
+# G151 (kullanıcı kararı 08.09, plan §1.2 A4+A5): `Kapalı` ve `Derdest` yerel
+# havuzdan ÇIKTI — ikisi de mahkeme kararı değil büro dosya durumudur (ekip
+# 409 hücreye "havuzunuzda var diye" yazmıştı; aktarım artık ikisini "karar
+# yok" sayar — scripts/hukdok_aktarim.BURO_DURUMLARI). Yerel'e `Red/Usulden`;
+# istinafa HMK 353/1-b-2 düzelterek karar ailesi + kısmen kabul; temyize
+# `Kısmen Onama/Kısmen Bozma` eklendi (Yerel 27 · İstinaf 8 · Temyiz 4).
+# `Karar` (74 föy) BİLEREK EKLENMEDİ: anlamı belirsiz, ekibe soruldu (plan §4-6).
+# Seed yalnız EKLER; mevcut kurulumdaki `Kapalı`/`Derdest` satırlarını
+# `scripts/deger_havuzu_seed.py --kaldir` kaldırır (kuru koşu varsayılan,
+# kullanılan satır silinmez).
 _YEREL_KARAR_ADLARI = [
     "Açılmamış Sayılması (HMK 150. Md)",
     "Adli Para Cezası",
@@ -420,7 +431,6 @@ _YEREL_KARAR_ADLARI = [
     "Anlaşmama",
     "Beraat",
     "Birleştirme",
-    "Derdest",
     "Düşme Kararı",
     "Hapis Cezası",
     "Hapis Cezasının Paraya Çevrilmesi",
@@ -428,7 +438,6 @@ _YEREL_KARAR_ADLARI = [
     "İflas",
     "Kabul",
     "Kabul/Kısmen",
-    "Kapalı",
     "Karar Verilmesine Yer Olmadığına (HMK 331 Md.)",
     "Kovuşturmaya Yer Olmadığına (KYOK)",
     "Red/Arabuluculuk Ön Şart",
@@ -439,12 +448,22 @@ _YEREL_KARAR_ADLARI = [
     "Red/Husumet",
     "Red/İdari Merciye Tevdi",
     "Red/MSK Kararı Gereği",
+    "Red/Usulden",
     "Red/Yargı Yolu",
     "Red/Yetkisizlik",
     "Red/Zamanaşımı",
 ]
-_ISTINAF_KARAR_ADLARI = ["Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret"]
-_TEMYIZ_KARAR_ADLARI = ["Bozma", "Onama", "Düzelterek Onama"]
+_ISTINAF_KARAR_ADLARI = [
+    "Kaldırma",
+    "Kaldırma/Yeniden Hüküm",
+    "Başvuru Ret",
+    "Düzeltilerek Karar Verildi",
+    "Düzeltilerek Kabul Edildi",
+    "Düzeltilerek Reddine",
+    "Kısmen Kabul",
+    "Davacı İstinaf Talebinin Kabulü",
+]
+_TEMYIZ_KARAR_ADLARI = ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
 _KARAR_DUZELTME_ADLARI = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
 
 LOCAL_DECISIONS = [(_karar_kodu(ad), ad) for ad in _YEREL_KARAR_ADLARI]

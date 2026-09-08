@@ -373,11 +373,12 @@ def test_ret_kismi_yazim_birakmiyor(seedli_fabrika):
 
 def test_karar_durumu_kapisi_hala_calisiyor(seedli_fabrika):
     """Korunum: G066 kapısı zincire rağmen aynen reddediyor (gerileme yok);
-    appeal_decisions havuzu seed'den dolu, "Kısmen Kabul" havuz dışı."""
+    appeal_decisions havuzu seed'den dolu, "Lehe İstinaf" havuz dışı
+    (G151: "Kısmen Kabul" artık istinaf havuzunda — örnek değer değişti)."""
     cid = _dava_ekle(seedli_fabrika)
     with pytest.raises(InvalidDecisionStatusError):
         case_manager.update_case_tracking(
-            cid, _route_dump({"istinaf_karar_durumu": "Kısmen Kabul"}), changed_by="g103-test"
+            cid, _route_dump({"istinaf_karar_durumu": "Lehe İstinaf"}), changed_by="g103-test"
         )
 
 

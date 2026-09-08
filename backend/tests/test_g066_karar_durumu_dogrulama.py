@@ -50,7 +50,7 @@ _KARAR_LISTELERI = [
 # (kolon, geçerli değer, liste dışı değer) — dört alan da AYRI test edilir.
 DORT_ALAN = [
     ("yerel_karar_durumu", "Beraat", "Lexis Rapor Gönderildi"),
-    ("istinaf_karar_durumu", "Başvuru Ret", "Kısmen Kabul"),
+    ("istinaf_karar_durumu", "Başvuru Ret", "Lehe İstinaf"),
     ("temyiz_karar_durumu", "Onama", "usulden red"),
     ("karar_duzeltme_durumu", "Karar Düzeltme Ret", "Lehe"),
 ]
@@ -364,12 +364,12 @@ def client(oturum_fabrikasi):
 def test_route_liste_disi_degeri_400_donuyor(client, oturum_fabrikasi):
     cid = _dava_ekle(oturum_fabrikasi)
     resp = client.patch(f"/api/cases/{cid}/tracking",
-                        json={"istinaf_karar_durumu": "Kısmen Kabul"})
+                        json={"istinaf_karar_durumu": "Lehe İstinaf"})
     assert resp.status_code == 400
     detail = resp.json()["detail"]
     assert "ISTINAF" in detail                 # hangi aşama
     assert "appeal_decisions" in detail        # hangi liste
-    assert "Kısmen Kabul" in detail            # hangi değer
+    assert "Lehe İstinaf" in detail            # hangi değer
     assert _oku(oturum_fabrikasi, cid, "istinaf_karar_durumu") is None
 
 

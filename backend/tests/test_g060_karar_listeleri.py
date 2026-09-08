@@ -2,6 +2,9 @@
 
 Kaynak: KARAR_ASAMALARI_TASARIM_PAKETI_2026-08-17 "kapalı havuzlar" değişmezi +
 DEGER_HAVUZLARI (2026-08-10 teslim paketi: Yerel 28 · İstinaf 3 · Temyiz 3 · KD 2).
+G151 (08.09.2026 kullanıcı kararı): `Kapalı`/`Derdest` yerel havuzdan çıktı (büro
+durumu, karar değil), `Red/Usulden` girdi; istinafa 5, temyize 1 meşru sonuç
+eklendi → Yerel 27 · İstinaf 8 · Temyiz 4 · KD 2. `Karar` bilerek YOK.
 Dört liste `appealing_parties` deseninin (G044) kopyasıdır: model + LIST_REGISTRY
 + DEPENDENCIES + seed + config route + DynamicConfig setter'ı.
 
@@ -30,29 +33,34 @@ from managers import seed_data
 # (registry anahtarı, model, bağlı cases kolonu, Türkçe başlık, seed sabiti, adet)
 YENI_LISTELER = [
     ("local_decisions", models.LocalDecision, "yerel_karar_durumu",
-     "Yerel Karar Durumları", seed_data.LOCAL_DECISIONS, 28),
+     "Yerel Karar Durumları", seed_data.LOCAL_DECISIONS, 27),
     ("appeal_decisions", models.AppealDecision, "istinaf_karar_durumu",
-     "İstinaf Karar Durumları", seed_data.APPEAL_DECISIONS, 3),
+     "İstinaf Karar Durumları", seed_data.APPEAL_DECISIONS, 8),
     ("cassation_decisions", models.CassationDecision, "temyiz_karar_durumu",
-     "Temyiz Onama Durumları", seed_data.CASSATION_DECISIONS, 3),
+     "Temyiz Onama Durumları", seed_data.CASSATION_DECISIONS, 4),
     ("revision_decisions", models.RevisionDecision, "karar_duzeltme_durumu",
      "Karar Düzeltme Durumları", seed_data.REVISION_DECISIONS, 2),
 ]
 
-# Resmi havuz yazımları — görev dosyası/DEGER_HAVUZLARI ile BİREBİR.
+# Resmi havuz yazımları — görev dosyası/DEGER_HAVUZLARI ile BİREBİR
+# (G151 farkı: Derdest/Kapalı yok, Red/Usulden var; istinaf +5, temyiz +1).
 RESMI_YEREL = [
     "Açılmamış Sayılması (HMK 150. Md)", "Adli Para Cezası", "Anlaşma",
-    "Anlaşmama", "Beraat", "Birleştirme", "Derdest", "Düşme Kararı",
+    "Anlaşmama", "Beraat", "Birleştirme", "Düşme Kararı",
     "Hapis Cezası", "Hapis Cezasının Paraya Çevrilmesi",
     "Hükmün Açıklanmasının Geri Bırakılması (HAGB)", "İflas", "Kabul",
-    "Kabul/Kısmen", "Kapalı", "Karar Verilmesine Yer Olmadığına (HMK 331 Md.)",
+    "Kabul/Kısmen", "Karar Verilmesine Yer Olmadığına (HMK 331 Md.)",
     "Kovuşturmaya Yer Olmadığına (KYOK)", "Red/Arabuluculuk Ön Şart",
     "Red/Dilekçenin Reddi", "Red/Esastan", "Red/Feragat", "Red/Görev",
     "Red/Husumet", "Red/İdari Merciye Tevdi", "Red/MSK Kararı Gereği",
-    "Red/Yargı Yolu", "Red/Yetkisizlik", "Red/Zamanaşımı",
+    "Red/Usulden", "Red/Yargı Yolu", "Red/Yetkisizlik", "Red/Zamanaşımı",
 ]
-RESMI_ISTINAF = ["Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret"]
-RESMI_TEMYIZ = ["Bozma", "Onama", "Düzelterek Onama"]
+RESMI_ISTINAF = [
+    "Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret",
+    "Düzeltilerek Karar Verildi", "Düzeltilerek Kabul Edildi", "Düzeltilerek Reddine",
+    "Kısmen Kabul", "Davacı İstinaf Talebinin Kabulü",
+]
+RESMI_TEMYIZ = ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
 RESMI_KARAR_DUZELTME = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
 
 

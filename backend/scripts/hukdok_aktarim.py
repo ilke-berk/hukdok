@@ -350,6 +350,9 @@ class AktarimSonucu:
     asama_ikinci_tur: int = 0
     onceki_esas_eklenen: int = 0
     havuz_disi_durum: int = 0
+    # G151 — büro durumu (Kapalı/Derdest) taşıyan aşama satırı: karar durumu
+    # üretilmedi (künye boşsa satır yazılmadı). Her koşuda yeniden sayılır.
+    buro_durumu_atlanan: int = 0
     atlanan: int = 0
     # G113 — kapsam sayfaları: işaretlenen (değişen) föy, kapsama geri alınan
     # föy, bizde olmayan SistemNo (ATLANDI). İkinci koşuda üçü de 0'dır.
@@ -1719,6 +1722,24 @@ ASAMA_ONCEKI = "ONCEKI"
 # Damgayı olduğundan güçlü göstermek tahmin yasağının ihlali olurdu.
 GUVEN_ESLEMESI = {"KESIN": "TURETILDI", "BELIRSIZ": "BELIRSIZ"}
 
+# G151 — büro dosya durumları: `Kapalı` ve `Derdest` mahkeme KARARI değil,
+# büronun dosya durumudur (kullanıcı kararı 08.09, plan §1.2 A4). Yerel havuzdan
+# çıktılar (seed_data); ekip 409 hücreye "havuzunuzda var diye" yazmıştı.
+# Karar_Asamalari'nda bu değeri taşıyan satır "karar yok" sayılır: künye boşsa
+# satır YAZILMAZ, künye doluysa durum boş + şerh (`BURO_DURUMU_SERHI`). Kardeş
+# föy uzlaşısında imzaya GİRMEZ (boş hücre gibi): kardeşi gerçek sonucu
+# taşıyorsa o kazanır. Beklenen durumdur → INFO (WARNING değil), sayaç
+# `AktarimSonucu.buro_durumu_atlanan`. Anahtar `_baslik_anahtari` ile —
+# büyük/küçük harf, boşluk ve aksan toleranslı ("KAPALI", " derdest ").
+# `dosya_son_durumu`/`status` zaten Sheet'ten karta akıyor; bilgi kaybolmaz.
+BURO_DURUMLARI = frozenset({"KAPALI", "DERDEST"})
+BURO_DURUMU_SERHI = "büro durumu, karar değil"
+
+
+def _buro_durumu_mu(deger: Any) -> bool:
+    """Karar durumu hücresi büro dosya durumu mu (Kapalı/Derdest, toleranslı)?"""
+    return _baslik_anahtari(_metin(deger) or "") in BURO_DURUMLARI
+
 
 def _taraf_adlari(deger: Any) -> List[str]:
     """`;` ile birleşik taraf listesini adlara böler (3.201 föyde çoklu)."""
@@ -2045,12 +2066,24 @@ def _asama_imzasi(satir: HamSatir) -> Dict[str, str]:
         imza["mahkeme"] = mahkeme
     for alan in ("esas_no", "karar_no", "karar_durumu"):
         deger = _metin(satir.degerler.get(alan))
-        if deger:
-            imza[alan] = deger
+        if deger and not (alan == "karar_durumu" and _buro_durumu_mu(deger)):
+            imza[alan] = deger            # büro durumu karar değil → boş hücre gibi (G151)
     tarih = _tarih_yumusak(satir.degerler.get("karar_tarihi"), "karar_tarihi")
     if tarih:
         imza["karar_tarihi"] = tarih
     return imza
+
+
+def _kunye_dolu(satir: HamSatir) -> bool:
+    """Aşama satırında karar durumu DIŞINDA bir künye alanı dolu mu?
+
+    Mahkeme / esas / karar no / karar tarihi (imzadan) ya da tebliğ tarihi.
+    G151 "karar yok" kuralının ayracı: büro durumu taşıyan satır künyesizse
+    hiç yazılmaz (anlatacak karar yok), künyeliyse durumsuz yazılır.
+    """
+    if any(alan != "karar_durumu" for alan in _asama_imzasi(satir)):
+        return True
+    return bool(_tarih_yumusak(satir.degerler.get("teblig_tarihi"), "teblig_tarihi"))
 
 
 def _asama_uzlasisi(foyler: Dict[str, List[HamSatir]]) -> Optional[List[HamSatir]]:
@@ -2086,6 +2119,13 @@ def _asama_uzlasisi(foyler: Dict[str, List[HamSatir]]) -> Optional[List[HamSatir
             if len(anahtarlar) > 1:
                 return None               # iki farklı DOLU değer — gerçek çelişki
             degerler[alan] = next(iter(anahtarlar.values())) if anahtarlar else None
+        if degerler.get("karar_durumu") is None:
+            # Hiçbir kardeş gerçek sonuç söylemiyorsa büro durumu (imza dışı,
+            # G151) ilk dolu hâliyle taşınır: yazma yolu "karar yok" kuralını
+            # (sayaç + şerh) o değer üzerinden uygular.
+            degerler["karar_durumu"] = next(
+                (aday.degerler.get("karar_durumu") for aday in adaylar
+                 if _buro_durumu_mu(aday.degerler.get("karar_durumu"))), None)
         for alan in _ILK_DOLU_ALANLARI:
             degerler[alan] = next(
                 (aday.degerler.get(alan) for aday in adaylar
@@ -2162,6 +2202,14 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
       bırakılıp değer açıklamaya taşınır ve rapora yazılır (8.354 satırın
       yalnız 8'i böyle — teslim bu sayfayı bizim havuzlarımıza göre
       normalize etmiş).
+    * **Büro durumu "karar yok"tur (G151, `BURO_DURUMLARI`):** `Kapalı` /
+      `Derdest` taşıyan satır künyesizse HİÇ yazılmaz, künyeliyse durum boş +
+      "büro durumu, karar değil: X" şerhiyle yazılır; `buro_durumu_atlanan`
+      sayacı, INFO log. Havuz dışı yolundan farkı: beklenen durumdur (WARNING
+      değil) ve kardeş uzlaşısında imzaya girmez. Sheet'teki "Yerel Mahkeme
+      Karar Durumu" sütunu bu script tarafından zaten OKUNMAZ (`yerel_karar_durumu`
+      kart kolonunun tek yazıcısı aşama fotoğrafıdır) — kural tek yazma
+      yolunda uygulanınca fotoğraf da onu izler.
     """
     kart_asamalari: Dict[Tuple[int, str], Dict[str, List[HamSatir]]] = {}
     onceki_esaslar: Dict[int, List[HamSatir]] = {}
@@ -2216,11 +2264,31 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
             .all()
         )
         tuketilen: Set[int] = set()       # bu koşuda eşleşen/ele alınan mevcut satır id'leri
-        for sira, satir in enumerate(kanonik, start=1):
+        sira = 0                          # yazılan satırın konumu; atlanan satır sıra TÜKETMEZ
+        for satir in kanonik:
             durum = _metin(satir.degerler.get("karar_durumu"))
             aciklama = _metin(satir.degerler.get("aciklama"))
             damga = GUVEN_ESLEMESI.get(
                 _baslik_anahtari(_metin(satir.degerler.get("guven")) or ""), "BELIRSIZ")
+            # G151 — büro durumu (Kapalı/Derdest) "karar yok"tur: künye boşsa
+            # satır yazılmaz, doluysa durumsuz + şerh. Beklenen durum → INFO.
+            # Sayaç her koşuda yeniden sayar (havuz_disi_durum gibi; ikinci
+            # koşuda YAZMA sıfırdır — durumsuz satır birebir aynı çıkar).
+            if durum is not None and _buro_durumu_mu(durum):
+                sonuc.buro_durumu_atlanan += 1
+                if not _kunye_dolu(satir):
+                    logger.info(
+                        f"Aşama satırı büro durumu taşıyor, künye boş — yazılmadı: "
+                        f"kart {case_id} {stage} {durum!r}"
+                    )
+                    continue
+                logger.info(
+                    f"Aşama karar durumu büro durumu, durum boş yazıldı: "
+                    f"kart {case_id} {stage} {durum!r}"
+                )
+                aciklama = " · ".join(x for x in (aciklama, f"{BURO_DURUMU_SERHI}: {durum}") if x)
+                durum = None
+            sira += 1
             # İki deneme: önce kaynağın durumu, reddedilirse durumsuz + şerh.
             # Bayrak AYRI taşınır: "deneme is None" fallback'i BELİRTMEZ — durum
             # zaten boşken ilk deneme de None olur ve o okuma açıklamaya Python'ın
@@ -2798,7 +2866,8 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  aşama satırı      : {sonuc.asama_eklenen} eklendi, {sonuc.asama_guncellenen} güncellendi, "
         f"{sonuc.asama_ikinci_tur} ikinci tur, {sonuc.asama_belgeli_korunan} belgeli korundu "
         f"(önceki esas: {sonuc.onceki_esas_eklenen}"
-        f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''})",
+        f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''}"
+        f"{f', büro durumu atlanan: {sonuc.buro_durumu_atlanan}' if sonuc.buro_durumu_atlanan else ''})",
         f"  atlanan (kart yok): {sonuc.atlanan}",
         f"  kapsam işareti    : {sonuc.kapsam_isaretlenen} işaretlendi, "
         f"{sonuc.kapsam_geri_alinan} geri alındı, {sonuc.kapsam_atlanan} atlandı (föy yok)",
