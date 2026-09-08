@@ -1,6 +1,7 @@
 # Deploy ve altyapı — deploy.sh, rollback, systemd birimleri, izleme
 
-> **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır)
+> **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır);
+> §1 `.env` anahtar listesi 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -29,7 +30,18 @@ Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
 - **`.env` zorunlu anahtar denetimi** (`deploy.sh:259-267`): `POSTGRES_PASSWORD`,
   `DATABASE_URL`, `GEMINI_API_KEY`, `AZURE_CLIENT_ID`, `ALLOWED_TENANTS`,
   `SHAREPOINT_TENANT_ID`, `SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET` — biri boşsa
-  deploy iptal.
+  deploy iptal (`REQUIRED_KEYS`, `:260-262`).
+- **İsteğe bağlı: veri teslim SharePoint'i (`TESLIM_SHAREPOINT_*`, G147).**
+  `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET` / `SITE_URL`
+  (+ `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`, `TESLIM_SP_DRIVE_NAME`) zorunlu listede
+  **YOKTUR** ve deploy'u durdurmaz: boş bırakılırsa teslim hattı arşiv kimliği/site'ıyla
+  çalışır, davranış G147 öncesiyle aynı kalır (düşüş kuralı, `.env.example:31-48`;
+  [`dis-bagimliliklar.md` §2](dis-bagimliliklar.md)). Dolduğunda yalnız teslim hattı
+  (gözcü + cevap paketi) Hanyaloğlu tenant'ındaki site'a gider; arşiv env'leri değişmez.
+  Mevcut kural aynen geçerli: **`.env` değişikliği `restart` ile GELMEZ** — env yalnız
+  konteyner create'te okunur, `docker compose up -d` (recreate) gerekir; yalnız backend'i
+  recreate etmek frontend nginx'i bayat upstream IP'de bırakabildiği için stack'in tamamı
+  `up -d` edilir (kurulum sırası [`veri-teslim-hatti.md` §9](veri-teslim-hatti.md)).
 - **`hukuk_shared` ağı** yoksa oluşturulur (`:269-272`).
 - **Pre-deploy dump** (`:287-301`): `docker exec hukudok-postgres pg_dump -U hukudok_user -Fc
   hukudok > ~/backups/predeploy_<SHA>_<zaman>.dump`. Dump `MIN_DUMP_BYTES` (varsayılan 1 MiB)

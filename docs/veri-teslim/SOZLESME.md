@@ -1,7 +1,8 @@
 # HUKDOK veri teslim sözleşmesi — veri ekibi için
 
-**Sürüm:** 04.09.2026 (1.1; ilk sürüm 03.09.2026) · **Muhatap:** MicroKolayOfis master'ını
-temizleyen veri ekibi · **Karşı taraf:** HukuDok (Hanyaloğlu Acar + LexisBio ortak sistemi)
+**Sürüm:** 08.09.2026 (1.2 — §1 klasörün yeri; 1.1: 04.09.2026; ilk sürüm 03.09.2026) ·
+**Muhatap:** MicroKolayOfis master'ını temizleyen veri ekibi · **Karşı taraf:** HukuDok
+(Hanyaloğlu Acar + LexisBio ortak sistemi)
 
 Bu metin kısa sözleşmedir; sütun/sayfa/değer ayrıntıları ve makine-okur özet ayrı
 bilgilendirme belgesindedir (`BILGILENDIRME_2026-09-03.md`, sürüm 1.1). 04.09.2026'daki
@@ -19,8 +20,12 @@ haberi için kalır.
 
 ## 1. Nereye, hangi adla
 
-- **Klasör:** SharePoint'te size paylaşılan `03_VERI_TESLIM` klasörünün `gelen` alt klasörü
-  (`03_VERI_TESLIM/gelen/`).
+- **Klasör:** Hanyaloğlu Acar SharePoint'indeki **`hukdok_arsiv`** site'ı → **Belgeler**
+  kütüphanesi → `03_VERI_TESLIM` klasörünün `gelen` alt klasörü (`03_VERI_TESLIM/gelen/`).
+  Klasör size kuruluş hesabınızla (`@hanyaloglu-acar.av.tr`) paylaşılır; SharePoint /
+  OneDrive'da **"Benimle paylaşılanlar"** altında görünür, ayrı bir davet ya da misafir hesabı
+  gerekmez. Doğrudan bağlantıyı HukuDok tarafı cevap e-postasında iletir. (Cevap klasörü
+  `03_VERI_TESLIM/cevap/` de aynı yerdedir — §8.)
 - **Dosya adı:** `HUKDOK_TESLIM_` ile başlayan ve `.xlsx` ile biten bir ad; örneğin
   `HUKDOK_TESLIM_PAKETI_2026-09-15.xlsx`. Büyük/küçük harf fark etmez. Bu kalıba uymayan
   dosyalar **görmezden gelinir** (hata da vermez).
