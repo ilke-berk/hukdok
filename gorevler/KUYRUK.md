@@ -17,7 +17,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      kart aç → birleştir → G154 haritası → G160 yazım dönüşümü → ölçüm. Tahmin: 3 koşu (G150 büyük). -->
 
 - [x] G149 | bant:backend | bagimli:- | 370 derdest kart listesi: föysüz + DERDEST kartların xlsx raporu (salt okunur script, ekibe ek)
-- [ ] G150 | bant:backend | bagimli:- | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP korunur, boş hücre imzaya girmez, çok tur sira_no, 04.09 ile 12 bayat → 0 kanıtı
+- [x] G150 | bant:backend | bagimli:- | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP korunur, boş hücre imzaya girmez, çok tur sira_no, 04.09 ile 12 bayat → 0 kanıtı
 - [ ] G151 | bant:backend | bagimli:G150 | Karar durumu havuzları: Kapalı/Derdest yerel havuzdan çıkar + aktarımda "karar yok" kuralı + istinaf/temyiz/yerel seed genişlemesi ("Karar" hariç)
 - [ ] G152 | bant:backend | bagimli:G151 | `status` kesim-sonrası koruma: kullanıcı imzalı case_history varsa paket yazmaz + DEGISIKLIK_OZETI "Veri kesim tarihi" + update_case tarihçe imzası
 - [ ] G153 | bant:backend | bagimli:G152 | DosyaNo kökü → müvekkil kimliği: eşleştirme adımı, kök/müvekkil çelişkisi (H-6589) yazılmaz, föy↔müvekkil `case_party_id` bağı, "Müvekkil değişti" raporu
