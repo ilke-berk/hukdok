@@ -3,7 +3,8 @@
 Bu doküman HukuDok'taki iki ayrı kimlik akışını anlatır: **kullanıcının** tarayıcıdan
 Azure AD (Entra ID) ile oturum açıp backend'e Bearer token taşıması ve **backend'in**
 kendi başına (kullanıcıdan bağımsız) Microsoft Graph'a client-credentials ile gitmesi.
-Her iddia koddan okunmuştur; dosya:satır atıfları bu commit'teki ağaca göredir.
+Her iddia koddan okunmuştur; dosya:satır atıfları bu commit'teki ağaca göredir (§4 app-only
+akış 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı — ikinci kimlik/site).
 Entra tarafında belirlenen süreler ise **koddan okunamaz** — o kalemler ayrı ve açıkça
 "teyit edilmedi" diye işaretlidir (bkz. §3).
 
@@ -142,7 +143,7 @@ ADMIN_EMAILS = yönetim uçları**; rol/grup claim'i okunmaz (§6).
 | 401 sonrası tekrar | 1 forceRefresh + 1 tekrar istek | `api.ts:250-258` |
 | Oturum-bitti toast → redirect | 500 ms | `api.ts:139-147` |
 | Backend `exp` kontrolü | `verify_exp: True` — süresi dolan token reddedilir, pay (leeway) verilmez | `auth_verifier.py:128` |
-| Graph token yeniden deneme | 2 deneme, arada 5 s | `auth_graph.py:138-149` |
+| Graph token yeniden deneme | 2 deneme, arada 5 s (her iki config için aynı yol) | `auth_graph.py:185-197` |
 
 ### 3.2 Entra tarafında belirlenen — **TEYİT EDİLMEDİ**
 
@@ -167,23 +168,46 @@ token tavanına çarpınca ya da 30 dk hareketsiz kalınca `/login`'e döner.
 
 Kullanıcı oturumundan **tamamen bağımsızdır**; kullanıcı token'ı Graph'a hiç gitmez.
 
-- `msal.ConfidentialClientApplication(client_id, authority=login.microsoftonline.com/{SHAREPOINT_TENANT_ID}, client_credential=secret)` (`:102-108`); secret önce `vault`, yoksa env (`:93-95`). Uygulama nesnesi süreç-içi `_MSAL_APPS` sözlüğünde cache'lenir (`:15`, `:110`).
-- `get_graph_token(config_type, force_refresh)` (`:115-153`): scope
+- `msal.ConfidentialClientApplication(client_id, authority=login.microsoftonline.com/{tenant}, client_credential=secret)` (`:150-156`); tenant/client id env'den, secret önce `vault`, yoksa env (`_read_credentials`, `:101-115`). Uygulama nesneleri süreç-içi `_MSAL_APPS` sözlüğünde `config_type` anahtarıyla cache'lenir (`:16`, `:158`).
+- **İki uygulama kaydı, iki tenant (G147, 2026-09-08):** `config_type` uzayı `"default" | "teslim"`
+  (`:25-27`; başka ad `ValueError`, `:130-131`), env önekleri `SHAREPOINT_` / `TESLIM_SHAREPOINT_`
+  (`_ENV_PREFIX`, `:29`).
+  - `default` = **arşiv kimliği**, LexisBio tenant'ı (`44f029f8…`): belge arşivi, ofis-no
+    sayacı, `log` listesi, e-posta, hukukbot export'u — G147 ile DEĞİŞMEDİ.
+  - `teslim` = **yalnız veri teslim hattı** (gözcü listeleme/indirme + cevap paketi),
+    Hanyaloğlu tenant'ındaki ikinci uygulama kaydı (`9776cf1f…`), site `hukdok_arsiv`.
+    Üçlüden (`TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET`) biri bile boşsa
+    `_MSAL_APPS["teslim"]` **default setiyle** kurulur ve süreç başına tek INFO basılır
+    (`:136-143`); düşüşte bile ayrı app / ayrı token cache — `force_refresh` yolu config'e
+    sadık (`:121-125`). Hangi çağrının hangi config'le gittiği
+    [`dis-bagimliliklar.md` §2](dis-bagimliliklar.md)'deki tabloda.
+  - Tenant GUID'leri kodda değil `.env`'dedir (buradaki kısaltmalar G147 görev kaydı ve
+    08.09 Graph doğrulamasından; repodan okunamaz). **`ALLOWED_TENANTS` ile ilişkisi:** kullanıcı
+    GİRİŞİNİN kabul ettiği tenant'lar (§2, `auth_verifier.py:73-75`) aynı ikilidir — Hanyaloğlu
+    Acar + LexisBio — ama SharePoint app-only kimlikleri bundan bağımsız iki ayrı Entra
+    kaydıdır: giriş listesi değişmeden `teslim` kimliği tanımsız kalabilir (düşüş) ya da tersi.
+    Kullanıcı token'ı hiçbir config'in Graph çağrısına girmez.
+- `get_graph_token(config_type, force_refresh)` (`:163-201`): scope
   `https://graph.microsoft.com/.default`; MSAL kendi token cache'inden döndürür, başarı
-  `health.record_graph_token_ok()` ile `/healthz`'e yansır (`:143-146`).
+  `health.record_graph_token_ok()` ile `/healthz`'e yansır (`:190-194`; iki config aynı sayaca
+  yazar — `/healthz` config ayırmaz).
 - `force_refresh=True`: `remove_tokens_for_client()` ile cache düşürülür (eski msal'da app
-  nesnesi atılıp yeniden kurulur) (`:126-135`). Çağıran: uploader'daki
-  `_with_fresh_token_on_401` — ilk Graph 401'inde token zorla yenilenip **bir kez** daha
-  denenir (`sharepoint_uploader_graph.py:102-117`).
+  nesnesi atılıp yeniden kurulur) (`:174-183`). Çağıran: uploader'daki
+  `_with_fresh_token_on_401(fn, config_type)` — ilk Graph 401'inde çağrının KENDİ config'inin
+  token'ı zorla yenilenip **bir kez** daha denenir (`sharepoint_uploader_graph.py:125-142`).
+  Site/drive çözümü `(token, config_type)` anahtarlı `lru_cache(maxsize=4)`'tedir (`:145-156`).
 - Python bağımlılıkları: `msal==1.37.0`, `PyJWT==2.13.0`, `cryptography==50.0.0`
   (`backend/requirements.txt:7,20,21`).
 
-**Secret ömrü uyarısı (G093):** `check_client_secret_expiry` (`auth_graph.py:25-65`)
-lifespan'de bir kez koşar (`api.py:131-132`). `SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`
-(ISO tarih, `.env.example:15`) tanımsızsa sessiz; kalan gün ≤ 30 (`SECRET_EXPIRY_WARN_DAYS`,
-`:21`) → WARNING; tarih geçmişse → CRITICAL; ayrıştırılamazsa bir kez WARNING. Secret'ın
-kendisi fonksiyona girmez, `/healthz`'e bilinçli eklenmez (`:34-36`). Bu env'i doldurmak
-operatörün işidir; boşken secret ömrü **hiçbir yerde izlenmez**.
+**Secret ömrü uyarısı (G093 · G147):** `check_client_secret_expiry(today=None, env_name=…)`
+(`auth_graph.py:42-88`) lifespan'de **iki kez** koşar (`api.py:131-133`): önce
+`SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` (ISO tarih, `.env.example:15`), sonra
+`TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` (`:39`; `.env.example:45`). İkisi için aynı üç
+dal: tanımsızsa sessiz; kalan gün ≤ 30 (`SECRET_EXPIRY_WARN_DAYS`, `:36`) → WARNING; tarih
+geçmişse → CRITICAL; ayrıştırılamazsa bir kez WARNING. Mesajda etiket ("SharePoint" / "Veri
+teslim SharePoint") ve güncellenecek env ADI geçer (`:61-63`); secret'ın kendisi fonksiyona
+girmez, `/healthz`'e bilinçli eklenmez (`:54-56`). Bu env'leri doldurmak operatörün işidir;
+boşken ilgili kimliğin secret ömrü **hiçbir yerde izlenmez**.
 
 ## 5. Kapı gibi görünen ama kapı OLMAYAN: `ALLOWED_DOMAINS`
 
@@ -212,4 +236,4 @@ Yani "e-posta domain kısıtımız var" doğru DEĞİLDİR; kısıt tenant düze
 | Token iptali gecikmesi | CAE (Continuous Access Evaluation) yok; verilmiş access token `exp`'e kadar backend'de geçerli. Azaltıcılar: idle timeout (30 dk) ve refresh token tavanı (§3.2, teyit edilmedi) | açık |
 | Yetkilendirme granülaritesi | Tenant üyeliği = tam erişim; rol/grup claim'i okunmaz; tek ayrım `ADMIN_EMAILS` | açık |
 | Entra süre politikaları | §3.2'deki değerler tenant'ta teyit edilmedi | kullanıcı adımı |
-| Secret ömrü izleme | yalnız `SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` dolduysa çalışır; boşsa kör | operatör adımı |
+| Secret ömrü izleme | kimlik başına yalnız ilgili env (`SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` / `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`) dolduysa çalışır; boşsa o kimlik için kör | operatör adımı |

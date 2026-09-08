@@ -42,7 +42,10 @@ doğrula → kuru koş (`scripts/hukdok_aktarim.aktarimi_kos`, yalnız import ed
 (env eşikleri `TESLIM_KAPI_*`; ilk teslim ve envanter farkı daima `inceleme_bekliyor`) →
 04:00 TR gece turu lider worker'da uygular (turda en fazla BİR teslim; boot telafisi
 yalnız tarar + kuru koşar) → cevap paketi `cevap/<teslim>/` (`services/teslim_cevap.py`).
-Anahtar admin panelinde `veri_teslim_otomasyonu`, varsayılan KAPALI. Ayrıntı
+Anahtar admin panelinde `veri_teslim_otomasyonu`, varsayılan KAPALI. Teslim klasörü arşivden
+AYRI bir SharePoint kimliği/site'ındadır (Hanyaloğlu tenant'ı, `TESLIM_SHAREPOINT_*`; boşsa
+arşiv kimliğine düşer — `services/teslim_kutusu.py::TESLIM_SP_CONFIG`, `sharepoint/auth_graph.py`),
+arşiv/sayaç/export LexisBio'da kalır. Ayrıntı
 `docs/mimari/veri-teslim-hatti.md`; veri ekibine verilen sözleşme `docs/veri-teslim/SOZLESME.md`.
 
 **Belge akışı:** `/process` → `analyzer.analyze_file_generator` NDJSON stream'i →

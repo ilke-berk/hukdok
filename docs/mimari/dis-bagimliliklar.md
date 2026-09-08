@@ -1,6 +1,7 @@
 # Dış bağımlılıklar — Gemini, Microsoft Graph/SharePoint, e-posta, sistem araçları
 
-> **Son doğrulama: 2026-08-11 · 2eade56**
+> **Son doğrulama: 2026-08-11 · 2eade56** — §2 (Graph/SharePoint) 2026-09-08 · G148 ile
+> G147 sonrası koda (`11150b4`) göre yeniden doğrulandı; satır numaraları o ağaca aittir.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 HukuDok dört dış sisteme bağlıdır: **Gemini** (analiz), **Microsoft Graph** (SharePoint
@@ -86,16 +87,67 @@ bırakır (`analyzer.py:93-95`).
 
 İki modül: `backend/sharepoint/auth_graph.py` (app-only token) ve
 `backend/sharepoint/sharepoint_uploader_graph.py` (drive işlemleri). Kimlik `msal==1.37.0`
-ile client-credentials akışıdır; env değişkenleri `SHAREPOINT_TENANT_ID`,
-`SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET`, `SHAREPOINT_SITE_URL`.
+ile client-credentials akışıdır. **İki config, iki kimlik, iki site** vardır (G147, 2026-09-08);
+önceki anlatım (bir site, bir kimlik seti) artık geçerli değildir — aşağıda.
+
+### İki config: `default` (arşiv) ve `teslim` (veri teslim hattı) — G147
+
+`config_type` uzayı `"default" | "teslim"` (`auth_graph.py:25-27`; tanınmayan ad `ValueError`,
+`:130-131`). Her config'in kendi env seti, kendi MSAL uygulaması (ayrı token cache:
+`_MSAL_APPS[config_type]`, `:16`, `:158`) ve kendi site/drive çözümü vardır:
+
+| | `default` — arşiv (LexisBio tenant'ı) | `teslim` — veri teslim hattı (Hanyaloğlu tenant'ı) |
+| --- | --- | --- |
+| Kimlik env'leri | `SHAREPOINT_TENANT_ID` / `SHAREPOINT_CLIENT_ID` / `SHAREPOINT_CLIENT_SECRET` | `TESLIM_SHAREPOINT_TENANT_ID` / `TESLIM_SHAREPOINT_CLIENT_ID` / `TESLIM_SHAREPOINT_CLIENT_SECRET` (önek tablosu `_ENV_PREFIX`, `auth_graph.py:29`) |
+| Secret okuma sırası | önce `vault.get_secret`, sonra env (`_read_credentials`, `:101-115`) | aynı; tenant ya da client boşsa secret HİÇ aranmaz — vault'un sahte "Secret not found" uyarısı olmasın (`:104-105`, `:111`) |
+| Site | `SHAREPOINT_SITE_URL` | `TESLIM_SHAREPOINT_SITE_URL`, boşsa `SHAREPOINT_SITE_URL` (`_site_url_for`, `sharepoint_uploader_graph.py:27-32`) |
+| Drive (belge kütüphanesi) adı | `SP_DRIVE_NAME`, boşsa `Belgeler` | `TESLIM_SP_DRIVE_NAME` > `SP_DRIVE_NAME` > `Belgeler` (`_drive_name_for`, `:35-40`; boş dize tanımsız sayılır) |
+| Secret bitiş izleme | `SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` | `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT` (`auth_graph.py:39`; lifespan ikinci çağrı `api.py:133`) |
+| `.env` şablonu | `.env.example:9-17` | `.env.example:31-48` (tamamı yorumlu — isteğe bağlı) |
+
+**Düşüş kuralı:** `teslim` üçlüsünden (tenant / client / secret) biri bile boşsa `teslim`
+config'i **default kimlik setiyle** kurulur ve süreç başına BİR KEZ INFO basılır ("Veri teslim
+SharePoint kimliği tanımsız … arşiv kimliği kullanılıyor", `auth_graph.py:136-143`); site için
+aynı kural `TESLIM_SHAREPOINT_SITE_URL` boşken işler. Yani `TESLIM_*` tanımsız bir `.env`'de
+davranış G147 öncesiyle aynıdır, hiçbir yerde istisna yoktur. Düşüşte bile `_MSAL_APPS["teslim"]`
+ayrı bir app nesnesidir (ayrı token cache) — `force_refresh` yolu config'e sadık kalsın diye
+(`:121-125`).
+
+**Site/drive cache'i:** `_get_site_and_drive_id(token, config_type)` `@lru_cache(maxsize=4)`,
+anahtar `(token, config_type)` (`sharepoint_uploader_graph.py:145-146`). Token'ın anahtarda
+olması bilinçli: token ~saatte bir döndüğünde kayıt kendiliğinden tazelenir (bedava TTL) ve 401
+sonrası zorla yenilenen token yeni anahtar üretir; `maxsize=1` iki config art arda koşunca
+(outbox upload + gece gözcüsü) her geçişte site+drive'ı yeniden çözerdi (2 Graph GET)
+(`:150-156`). `_with_fresh_token_on_401(fn, config_type)` token'ı verilen config'le alır ve ilk
+401'de **aynı** config'i zorla yeniler (`:125-142`).
+
+**Hangi çağrı hangi config'le gider** — imzalarda varsayılan her yerde `"default"`
+(`list_folder_children` / `download_file_from_sharepoint` / `upload_file_to_sharepoint`
+keyword-only `config_type`, `:395-403`, `:453-455`, `:483`); `teslim` tarafı tek sabitten
+beslenir (`teslim_kutusu.TESLIM_SP_CONFIG = _spu.CONFIG_TESLIM`, `services/teslim_kutusu.py:174-178`):
+
+| Çağrı | Config | Kod |
+| --- | --- | --- |
+| Outbox upload (belge arşivi) | `default` | `services/upload_queue.py:275-276` (`config_type` verilmez) |
+| Belge indirme (UI / hukukbot export), dönüşüm retry, pipeline ham/işlenmiş upload, DB yedeği | `default` | `routes/documents.py:312,415`, `routes/export.py:252`, `services/conversion_retry.py:210`, `services/document_pipeline.py:243,308`, `scripts/upload_db_backup.py:32` |
+| E-posta (`/sendMail`), günlük aktivite raporu | `default` | `email_sender.py:147`, `managers/activity_manager.py:244` (`get_graph_token()` parametresiz) |
+| Ofis-no sayacı (SharePoint liste öğesi) | `default` | `managers/counter_manager.py:189-190`, `:239-240` (`_get_site_and_drive_id(token)` konumsal) |
+| Onarım scripti | `default` (açık) | `scripts/repair_overwritten_documents.py:68-77` |
+| Gözcü: teslim klasörü listeleme + indirme | `teslim` | `services/teslim_kutusu.py:1274`, `:1287` |
+| Cevap paketi yükleme | `teslim` | `services/teslim_cevap.py:529-532` |
+
+Tenant GUID'leri kodda değil `.env`'dedir; hangi tenant'ın hangisi olduğu ve giriş tenant
+listesiyle (`ALLOWED_TENANTS`) ilişkisi [`kimlik-ve-token.md` §4](kimlik-ve-token.md)'te.
+Tüketici tarafı (gözcü, cevap paketi, prod kurulum sırası)
+[`veri-teslim-hatti.md`](veri-teslim-hatti.md) §1 "Site/kimlik" ve §9'da.
 
 ### İki katmanlı retry
 
-Mimari uploader'ın başında yazılıdır (`sharepoint_uploader_graph.py:18-24`):
+Mimari uploader'ın başında yazılıdır (`sharepoint_uploader_graph.py:42-48`):
 
 - **İç katman** (bu modül, saniyeler): `urllib3.Retry` — 429/5xx ve bağlantı hatalarında
   aynı yükleme denemesi içinde kısa tekrarlar. `total=3`, `backoff_factor=1` (1-2-4 sn),
-  `status_forcelist = (429, 500, 502, 503, 504)` (`:31`, `:62-72`).
+  `status_forcelist = (429, 500, 502, 503, 504)` (`:55`, `:86-96`).
 - **Dış katman** (`services/upload_queue.py`, dakika–saat): outbox backoff, `MAX_ATTEMPTS = 8`.
 
 İç bütçenin küçük tutulması bilinçli: outbox worker'ı tek thread ve satırları seri işliyor;
@@ -103,10 +155,10 @@ uzun kesintiyi dış katman karşılar.
 
 `allowed_methods` açıkça `{GET, HEAD, PUT, POST, PATCH}` verilir — urllib3 2.x varsayılanı
 idempotent-güvenli küçük kümedir (PUT/POST/PATCH yok) ve açıkça izin verilmezse upload'lar
-hiç retry görmezdi (`:67-69`). 429/503'te Graph'ın `Retry-After` başlığına uyulur
-(`:70-71`).
+hiç retry görmezdi (`:91-93`). 429/503'te Graph'ın `Retry-After` başlığına uyulur
+(`:94-95`).
 
-> **DİKKAT** (`sharepoint_uploader_graph.py:26-30`): Retry PUT/POST/PATCH'i de kapsar; bu
+> **DİKKAT** (`sharepoint_uploader_graph.py:50-54`): Retry PUT/POST/PATCH'i de kapsar; bu
 > modüldeki çağrılar idempotent olduğu için güvenlidir (içerik PUT'u,
 > `createUploadSession` `conflictBehavior=replace`, metadata PATCH alan set'i).
 > **`sendMail` / SharePoint liste-item POST'u gibi idempotent OLMAYAN Graph çağrıları bu
@@ -117,12 +169,12 @@ hiç retry görmezdi (`:67-69`). 429/503'te Graph'ın `Retry-After` başlığın
 
 | Sabit | Değer | Satır |
 | --- | --- | --- |
-| `_SMALL_FILE_LIMIT` | 4 MiB — altında tek PUT, üstünde chunk'lı upload session | `:32` |
-| `_CHUNK_SIZE` | 5 MiB = 16 × 320 KiB (Graph parça hizalama kuralı) | `:33` |
-| `_CHUNK_RESUME_BUDGET` | 3 — yükleme başına `nextExpectedRanges` ile devam hakkı | `:34` |
+| `_SMALL_FILE_LIMIT` | 4 MiB — altında tek PUT, üstünde chunk'lı upload session | `:56` |
+| `_CHUNK_SIZE` | 5 MiB = 16 × 320 KiB (Graph parça hizalama kuralı) | `:57` |
+| `_CHUNK_RESUME_BUDGET` | 3 — yükleme başına `nextExpectedRanges` ile devam hakkı | `:58` |
 
 `SSL_CERT_FILE` env'i tanımlıysa ve dosya varsa doğrulama sertifikası olarak kullanılır
-(`:54-59`) — lokal geliştirmede AVG gibi TLS araya giren yazılımların çözümü budur.
+(`:78-83`) — lokal geliştirmede AVG gibi TLS araya giren yazılımların çözümü budur.
 
 ### Klasörler
 
@@ -130,18 +182,23 @@ Arşiv klasör adları env'den gelir: ham belgeler `SHAREPOINT_FOLDER_HAM_NAME`
 (`01_HAM_ARSIV`), işlenmiş kopyalar ve teknik/veritabanı yedekleri
 `SHAREPOINT_FOLDER_ISLENMIS_NAME` (`02_YEDEK_ARSIV`), veri ekibinin teslim paketleri
 `SHAREPOINT_FOLDER_TESLIM_NAME` (`03_VERI_TESLIM`; `gelen/` okunur, `cevap/<teslim>/`
-yazılır — `.env.example:27-29`). Ofis numarası sayacı bir SharePoint
-liste öğesinde tutulur ve `managers/counter_manager.py` üzerinden ETag'li güncellenir.
+yazılır — `.env.example:27-29`). **Teslim klasörü arşivle aynı site'ta DEĞİLDİR** (G147):
+`03_VERI_TESLIM` `teslim` config'inin site'ında (Hanyaloğlu tenant'ı, `TESLIM_SHAREPOINT_SITE_URL`)
+yaşar; klasör adı ve `gelen`/`cevap` yolu site'tan bağımsızdır, `TESLIM_*` tanımsızsa aynı ad
+arşiv site'ında aranır (düşüş kuralı, yukarıda). Ofis numarası sayacı arşiv site'ındaki bir
+SharePoint liste öğesinde tutulur ve `managers/counter_manager.py` üzerinden ETag'li güncellenir
+(`default` config; teslim site'ında sayaç/`log` listesi YOKTUR ve gerekmez).
 
 ### Klasör listeleme — `list_folder_children`
 
-Uploader'daki tek listeleme çağrısı, G109 teslim gözcüsü için (`sharepoint_uploader_graph.py:448-482`):
+Uploader'daki tek listeleme çağrısı, G109 teslim gözcüsü için (`sharepoint_uploader_graph.py:483-518`):
 `GET /drives/{drive}/root:/{folder}:/children` — `$select=id,name,size,eTag,file,lastModifiedDateTime`,
-`$top=200` (Graph tavanı, `:443-445`), `@odata.nextLink` sonuna kadar izlenir (nextLink'te
+`$top=200` (Graph tavanı, `:477-480`), `@odata.nextLink` sonuna kadar izlenir (nextLink'te
 `params=None` — bağlantı parametreleri kendi taşır), yalnız `file` anahtarlı öğeler döner
 (alt klasörler elenir). **404 → boş liste + WARNING**: "klasör henüz açılmadı" kurulum
 eksiğidir, gece job'ı ERROR basmasın; diğer HTTP hataları yükselir. Ortak session (transport
-retry) + `_with_fresh_token_on_401` kullanır. Tüketicisi ve eTag'li ucuz eleme
+retry) + `_with_fresh_token_on_401` kullanır; gözcü `config_type="teslim"` ile çağırır
+(`services/teslim_kutusu.py:1274`). Tüketicisi ve eTag'li ucuz eleme
 [`veri-teslim-hatti.md`](veri-teslim-hatti.md) §2'de.
 
 ## 3. E-posta
