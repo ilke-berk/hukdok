@@ -30,6 +30,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G160 | bant:backend | bagimli:G159 | `yazim_birligi.py` tek seferlik dönüşüm (dry-run/--apply, tarihçeli): sub_type 4.521, taraf adı ~3.450 + ikizler, court 1.115, subject, rol, bureau_types listesi; Sigortalı/mahkeme listeleri DOKUNULMAZ — TAMAM 10.09 (180d76e + cb4a5d8 noqa temizliği; kapı BLOKE'si sahte ihlaldi: `scripts/*` E402 pyproject'te zaten kapalı; bağımsız denetim GEÇTİ, lokal DB'ye uygulandı, prod'a UYGULANMADI)
 - [x] G161 | bant:docs | bagimli:G148,G156,G160 | SOZLESME + mimari + plan şerhleri: eşik = hücre, delta/kesim tarihi satırları, sütun sahipliği, DB-008 genişletme + Yazim_Standardi isteği, aşama/status kuralları
 - [ ] G162 | bant:docs | bagimli:G161 | BILGILENDIRME 1.3: §3.3/§3.4/§3.5/§3.8/§9 SOZLESME 1.3'e aynalanır (üç satır, delta, Başvuru Tarihi, aşama/KORUNDU kuralı, karar havuzları seed'den yeniden sayılır), SOZLESME giriş şerhi güncellenir (G161 izlenecek maddesi, 10.09 kullanıcı kararı)
+- [ ] G163 | bant:backend | bagimli:G160 | `yazim_birligi.py` adım 2b: tek yazımlı taraf adlarında yalnız biçim farkı (A.ş→A.Ş, ı/i, nokta) tr_title'a çekilir — "Quıck Sigorta A.ş" 578 + Koru 3.172 sınıfı (eski tr_title kalıntısı, G160 anahtar kör noktası); kuru koşu ilk 15 tekil, --apply KOŞULMAZ (10.09 kullanıcı onayı)
 
 ## ÖNCELİK 1 — Teslim hattı ikinci SharePoint kimliği: Hanyaloğlu tenant'ı (2026-09-08 gündüz, kullanıcı kararı)
 
