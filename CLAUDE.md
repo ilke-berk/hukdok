@@ -42,6 +42,13 @@ doğrula → kuru koş (`scripts/hukdok_aktarim.aktarimi_kos`, yalnız import ed
 (env eşikleri `TESLIM_KAPI_*`; ilk teslim ve envanter farkı daima `inceleme_bekliyor`) →
 04:00 TR gece turu lider worker'da uygular (turda en fazla BİR teslim; boot telafisi
 yalnız tarar + kuru koşar) → cevap paketi `cevap/<teslim>/` (`services/teslim_cevap.py`).
+`DEGISIKLIK_OZETI` üç satır taşır: "Önceki teslim" (zincir; `—` yalnız defter boşken
+başlangıçtır), "Teslim türü: tam | delta" (delta'da kaybolan sütun ihlal değil bilgi; eksik
+sütun/föy = dokunma) ve "Veri kesim tarihi" (yoksa paket adındaki tarih). Kapı eşiği
+`alan_degisikligi` KART HÜCRESİ sayar (tarih/tutar biçimi üretmez, ad yazımı üretir).
+"Paket kazanır" kuralının tek istisnası `status`: kesim gününden itibaren kullanıcı imzalı
+(`source` NULL ya da `HUKDOK_TESLIM` dışı) `case_history` kaydı varsa paket yazmaz, satır
+raporuna `KORUNDU` düşer (hata değil, `scripts/hukdok_aktarim.py::kesim_sonrasi_kullanici_kaydi`).
 Anahtar admin panelinde `veri_teslim_otomasyonu`, varsayılan KAPALI. Teslim klasörü arşivden
 AYRI bir SharePoint kimliği/site'ındadır (Hanyaloğlu tenant'ı, `TESLIM_SHAREPOINT_*`; boşsa
 arşiv kimliğine düşer — `services/teslim_kutusu.py::TESLIM_SP_CONFIG`, `sharepoint/auth_graph.py`),
@@ -80,7 +87,12 @@ arama eski esas numarasıyla da bu tabloya JOIN'lenerek çalışır (E8, aşağ�
 maddesi). Eksik zorunlu alan bayrağı `cases.missing_required_bucket` de
 TÜRETİLMİŞTİR (NULL = eksik yok, `MANUAL`/`AKTARIM` kovaları); tek yazma yolu
 `case_manager.refresh_missing_required`, kural `required_fields.py`'de D2/D8
-bağlamına göre değişir.
+bağlamına göre değişir (2+ avukatlı kartta boş sorumlu avukat kutusu eksik sayılmaz, G158).
+Aşama kararları `case_stage_decisions` (tek yazma yolu `managers/stage_decisions.py`, kart
+slotları türetilmiş fotoğraf): aktarım mevcut satırı YERİNDE günceller (paket kaynaklı ve elle
+girilmiş fark etmez, tarihçeli), yalnız `dogrulama_durumu ∈ {BELGE, UYAP}` satır korunur, esas
+VE karar tarihi farklı ise ikinci tur `sira_no+1` ile eklenir, silme yolu yok (G150; ayrıntı
+`docs/mimari/veri-teslim-hatti.md` §7.1).
 
 **Dava arama (E8, G055):** `case_manager.get_cases` 13-14 kolon/ilişkiyi tek bir
 OR/EXISTS ağacında DEĞİL, her terim için bağımsız `UNION`'lanan `SELECT`'lerle arar;

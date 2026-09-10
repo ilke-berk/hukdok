@@ -42,6 +42,9 @@ düzeltmeden bile daha doğru olabilir."** Sonuçları:
   elle girilmiş satır da paket geldiğinde güncellenir — kullanıcı kararı. Prod'da bugün paket
   kaynaklı aşama satırı YOK (aktarım hiç koşmadı), lokalde elle girilmiş satır 0; ilk prod
   uygulaması temiz yazar, kural sonraki paketler içindir.
+  **→ G150 ile uygulandı (08.09):** yerinde güncelleme + `BELGE`/`UYAP` satırı korunur + çok tur
+  `sira_no+1`; lokalde 12 bayat satır 0'a indi, ikinci koşu 0. Güncel kural
+  `docs/mimari/veri-teslim-hatti.md` §7.1; bu paragraf tarihsel bağlamdır.
 - Sistem içi (elle) düzeltme yalnız paketin taşımadığı alanlarda anlamlıdır: bağ/birleştirme,
   listeler, mahkeme adı yazımı, taraf satırları, esas tarihçesi. İçerik hatası ekibe gider.
 Prod sırası değişmez: deploy → havuz seed → paket → kart aç → birleştir → aktarım. Temizlik önce
@@ -129,9 +132,11 @@ Sonuç: 532'nin 302'si ekibe gitmeden bizde çözülür; 148'i ekibe; 81'i föy 
 (sınıf başına sayfa, 532 satır, sarı CEVABINIZ = HATA / SEBEBİ VAR / BELİRSİZ + AÇIKLAMANIZ). Tüm 532
 grup gönderildi (302 boşluk dahil: 140'ında ana sayfa dolu, aşama sayfası boş → "artık mı?" sorusu).
 Gönderim ve cevap sonrası ortak plan kullanıcı adımı. Üretici script scratchpad'de, repoya girmedi.
-(b) 12 bayat aşama satırı → "dolu aşamaya dokunulmaz" kuralı değişince (§0) yeniden koşuda düzelir; (c) yerel/istinaf aşama satırlarında
-`karar_durumu` NULL 362/322 (havuz dışı değerler: "Derdest", "Kapalı", "Karar" — sözlük tuzağı);
-(d) 921 sigortalı-tür etiketi.
+(b) 12 bayat aşama satırı → "dolu aşamaya dokunulmaz" kuralı değişince (§0) yeniden koşuda düzelir
+**(→ G150, 08.09: düzeldi, 12 → 0)**; (c) yerel/istinaf aşama satırlarında
+`karar_durumu` NULL 362/322 (havuz dışı değerler: "Derdest", "Kapalı", "Karar" — sözlük tuzağı;
+**→ G151: Derdest/Kapalı artık "karar yok", havuz 27/8/4/2; "Karar" ekibe soru**);
+(d) 921 sigortalı-tür etiketi (→ G153 "müvekkil değişti" raporu; eski satır elle temizlenir).
 
 ## 2. Kontrol listesi — katman katman
 
@@ -169,19 +174,19 @@ Gönderim ve cevap sonrası ortak plan kullanıcı adımı. Üretici script scra
 | 18 | E-9 bayat hüküm kapısı | Eski Dosya No (ONCEKI esas 523) dolu VE yerel sonuç dolu VE dosya yargılamada → yerel sonuç `Derdest` olmalı. Sayı ölç, ihlal listesi ekibe. | A |
 | 19 | Aşama kararı BELIRSIZ 1.377 / 5.026 | Bunlar aktarımdan gelen, belgeyle doğrulanmamış satırlar. Doğrulama akışı takip panelinde var; kim, hangi sırayla? Öneri: önce DERDEST kartlar, sonra karar tarihine göre yeni→eski. İnsan işi, plan dışı takvim. | B (insan) |
 | 20 | 5 kapsam satırında tarih hücresine metin | Raporda ekibe yazıldı; bekleniyor. | A |
-| 20a | Aşama imzasında boş hücre çelişki sayılıyor (302 grup) | `_asama_imzasi` boş alanı imzaya katıyor; kural kart alanlarındaki gibi olmalı: boş hücre uzlaşıya katılmaz, dolu değerler çelişmiyorsa birleşik satır yazılır. Test: kart 13210 YEREL tek satır, karar no 2021/856. | C |
+| 20a | Aşama imzasında boş hücre çelişki sayılıyor (302 grup) | `_asama_imzasi` boş alanı imzaya katıyor; kural kart alanlarındaki gibi olmalı: boş hücre uzlaşıya katılmaz, dolu değerler çelişmiyorsa birleşik satır yazılır. Test: kart 13210 YEREL tek satır, karar no 2021/856. **→ G150 ile (08.09) kapandı:** imza yalnız dolu alanlar, `_asama_uzlasisi` alan bazında; çelişki grubu 532 → 227 (lokal). | C ✔ |
 | 20b | Gerçek künye çelişkisi (148 grup) — **dokusu ölçüldü (denetim 6-7)**, üç alt sınıf: | | |
 | 20b-1 | Yazım hatası adayı **37**: aynı mahkeme + esas (+ çoğunlukla aynı tarih), karar no'da ≤1 rakam / yer değişimi / yıl farkı (2021/963 ↔ 2021/693; 2019/2034 ↔ 2019/1034; tarih 2021-04-15 ↔ 2020-04-15). Ana sayfada da farklı → sayfa artığı değil, master hatası. 9'unda çoğunluk aynı, tek föy sapıyor. | Liste ekibe, sapan föy işaretli. | A |
 | 20b-2 | Aynı dava, başka karar **61**: aynı mahkeme + esas, karar no ve/veya tarih bambaşka (5042: 2025/4243 ↔ 2023/183 aynı tarih 29.03.2023; 372: 2024/173 ↔ 2022/226 aynı tarih). Dedektör: karar no yılı ≠ karar tarihi yılı → büyük ihtimal hata; kalanı ek karar/tavzih olabilir. 17'sinde tek föy sapıyor. | Liste ekibe, "yıl uyumsuz" bayrağıyla. | A |
 | 20b-3 | Mahkeme ya da esas farklı **50** — **"farklı dava" HİPOTEZİ ÇÜRÜDÜ (denetim 8-9, tam zincir okundu):** sıfır grup farklı dava. Dağılım: mahkeme adı yazımı/eksik 24 ("Mahkemeleri"↔"Mahkemesi", "İSTANBUL BİM"↔"İSTANBUL BİM 7. İDD", "BAM 6. HD"↔"BİM 6. İDD", Anadolu "5."↔"12."); **bayat föy** 14 (yenileme sonrası bir föy eski esasta kalmış: 13440 2022/79↔2025/250, 14132 2019/56↔2023/640; eski esas kardeşin "Eski Dosya No"sunda); sütun kayması 1 (13037: esas mahkeme hücresinde); aşama yanlış dosyalanmış 1 (13107: istinaf satırında yerel mahkeme); esas eksik yazılmış 1 ("2025/"); **çok tur adayı 6** (13261: BİM 7 2021/1479 → temyiz 2022 bozma → 2025/1812 ikinci istinaf; 12955, 128, 14132, 13467): aynı davanın iki turu farklı föylere yazılmış. | 44'ü ekibe (yazım/bayat/kayma); 6 çok tur için model kararı: `case_stage_decisions.sira_no` iki turu taşıyabilir, kural "farklı tarih + farklı esas = ikinci tur, ikisini de yaz" | A + karar |
-| 20c | Yalnız karar durumu farkı (81 grup) | Önce E-8 sorusu ekibe: "aynı kararın iki föyde farklı sonucu müvekkil yönünden mi?" Evetse karar durumu föy düzeyi alan olur (`case_foys`, muvekkil_tipi deseni); hayırsa çelişki listesine eklenir. | karar |
+| 20c | Yalnız karar durumu farkı (81 grup) | Önce E-8 sorusu ekibe: "aynı kararın iki föyde farklı sonucu müvekkil yönünden mi?" Evetse karar durumu föy düzeyi alan olur (`case_foys`, muvekkil_tipi deseni); hayırsa çelişki listesine eklenir. **→ Karar 08.09 (plan 08.09 A3): föy düzeyi alan AÇILMADI**; G157 çelişki raporunda E-8 grubu "müvekkil yönü farkı" etiketiyle (hata değil), föyün değeri `ham_veri`de; SOZLESME 1.3 §6 ekibe anlatır. | karar ✔ |
 
 ### 2.4 Kapalı listeler ve yazım birliği
 
 | # | Kontrol | Nasıl | Sınıf |
 | --- | --- | --- | --- |
-| 21 | Yerel karar durumu 23 değer | Sözlük tuzağı: "Kapalı"/"Derdest" sonuç değil işlem durumu. Bizde liste değerleri makul görünüyor (Red/Esastan 1.473, Kabul/Kısmen 485…); işlem durumu değerleri geliyorsa ayrı alana mı? Ekiple kavram teyidi. | A |
-| 22 | İstinaf/temyiz karar durumu | Kartlarda 3'er değer (temiz). Ama havuz seed +22 bozuk yazımı LİSTEYE ekledi → listeden panelle sil (kartta kullanılmıyorsa). | B |
+| 21 | Yerel karar durumu 23 değer | Sözlük tuzağı: "Kapalı"/"Derdest" sonuç değil işlem durumu. Bizde liste değerleri makul görünüyor (Red/Esastan 1.473, Kabul/Kısmen 485…); işlem durumu değerleri geliyorsa ayrı alana mı? Ekiple kavram teyidi. **→ G151 ile (08.09):** `Kapalı`/`Derdest` yerel havuzdan çıktı, aktarım ikisini "karar yok" sayar (künyeli satır durumsuz + şerh, künyesiz satır yazılmaz); ekibe "yazmayın, boş bırakın" (SOZLESME 1.3 §6). Ayrı alan açılmadı — büro durumu `cases.status`. | A + C ✔ |
+| 22 | İstinaf/temyiz karar durumu | Kartlarda 3'er değer (temiz). Ama havuz seed +22 bozuk yazımı LİSTEYE ekledi → listeden panelle sil (kartta kullanılmıyorsa). **→ G151 ile (08.09):** seed istinaf 8 / temyiz 4 (HMK 353/1-b-2 ailesi, `Kısmen Onama/Kısmen Bozma`); `deger_havuzu_seed.py --kaldir` kullanılmayan satırı siler (kuru koşu varsayılan). Lokalde 2 istinaf değeri paket yazımıyla duruyor (ad düzeltmesi panelden); **bozuk 22 yazımın panel temizliği hâlâ insan adımı.** | B (kısmen) |
 | 23 | `file_type` sapması | Föylü kartta 0; "Hukuk Dava" 2 + boş 3 föysüz eski kartlarda. Kapsam dışı, yalnız kayıt. | — |
 | 24 | Tıbbi beşli havuzu (tıbbi olay 667, yöntem 260, zarar 258, süreç 97) | Büyük-küçük harf / ayraç / boşluk ikizlerini ölç, panelden birleştir. Kartlardaki ` ; ` ayraçlı değerler listeyle uyuşuyor mu (multiselect doğrulaması)? | B |
 | 25 | Taraf rolü | Föylü kartta 18 değer, büyük harf sapması YOK (`DAVALI`/`SIGORTALI` föysüz kartlarda). `party_roles` kapalı listesiyle çapraz kontrol yeter; C normalize düşük öncelik. | B (düşük) |
@@ -192,7 +197,7 @@ Gönderim ve cevap sonrası ortak plan kullanıcı adımı. Üretici script scra
 | # | Kontrol | Nasıl | Sınıf |
 | --- | --- | --- | --- |
 | 27 | Taraf adı | Föylü kartta kart içi büyük-küçük ikizi **0**; birebir çift (aynı ad + aynı tür, iki satır) **18** → dry-run script ile tekle (belge bağı `case_party_id` SET NULL tuzağına dikkat, FAZ F şartı). Kartlar arası 87 yazım ikizi (`AHMET ALP`/`Ahmet Alp`) kişi eşleştirmesini (G128 `normalize_party_key`) etkilemiyor; yazım standardı kararı kullanıcıya. | B |
-| 28 | Föy ↔ müvekkil bağı (`case_party_id` 8.386 boş) | Sözlük E-8: föy kimliği Müvekkil+Sigortalı çifti; bizde kurulmadı. Karar: aktarımda "Müvekkil" hücresini `case_parties` ile eşleyip föye bağlansın mı? Kurulursa müvekkil-ayrımı belirsizliği (20 föy sınıfı) yapısal çözülür. Kullanıcı kararı. | C (karar) |
+| 28 | Föy ↔ müvekkil bağı (`case_party_id` 8.386 boş) | Sözlük E-8: föy kimliği Müvekkil+Sigortalı çifti; bizde kurulmadı. Karar: aktarımda "Müvekkil" hücresini `case_parties` ile eşleyip föye bağlansın mı? Kurulursa müvekkil-ayrımı belirsizliği (20 föy sınıfı) yapısal çözülür. Kullanıcı kararı. **→ Karar EVET (08.09), G153 ile kuruldu:** `_foy_muvekkilini_bagla` (Müvekkil ilk parçası → CLIENT satırı), Dosya No kökü eşleştirme adımı; lokal kuru koşu 8.385/8.386 föy bağlı, belirsiz 20 → 10 (8 hekim köklü + 2 gerçek mükerrer → G154 cevaplı harita). Prod'a uygulanmadı. | C ✔ |
 | 29 | `client_id` boş 51.247 | Cari bağı bilinçli kurulmadı (G128 notu). Bu planın DIŞI; kayıt olarak durur. | — |
 | 30 | Müvekkil tipi / hizmet türü kardeş çelişkisi (973 / 891 kart) | Çelişki gerçek mi, yazım farkı mı ("Doktor"/"DOKTOR")? Normalize edilmiş karşılaştırmayla çelişki sayısını yeniden ölç; düşüyorsa C (aktarım karşılaştırmayı normalize etsin), kalan gerçek çelişki ekibe. | C + A |
 
@@ -231,7 +236,7 @@ her düzeltme `case_history`'de kaynak imzalı; A sınıfı hiçbir alan DB'de e
 ## 4. Kullanıcı kararı bekleyen sorular
 
 1. Numarasız `YYYY/` esas değerleri (409 kart) kartta kalsın mı, aktarım bunları boş mu yazsın? (#10)
-2. Föy ↔ müvekkil bağı (E-8 kimliği) kurulsun mu? (#28)
+2. ~~Föy ↔ müvekkil bağı (E-8 kimliği) kurulsun mu?~~ → karar verildi 08.09: evet, G153 ile kuruldu. (#28)
 3. ~~Föysüz 7.906 kartın sahibi~~ → karar verildi 06.09: plan dışı, olduğu gibi kalır. (#31)
 4. Taraf adı yazım standardı: büyük harf mi, başlık biçimi mi? Belge çıktılarını etkiler. (#27)
 5. BELIRSIZ 1.377 aşama kararını kim, hangi sırayla doğrulayacak? (#19)

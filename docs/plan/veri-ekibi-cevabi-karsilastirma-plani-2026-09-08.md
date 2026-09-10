@@ -6,6 +6,11 @@ güncellendi", 06.09 cevap + 4 ek) ve bizim iki metnimiz (`HUKDOK_CEVAP_20260904
 **Yöntem:** her kalem koda karşı okundu (satır referansları 08.09 `main`), sonra hüküm verildi.
 **Bu dosya `veri-kalitesi-duzenleme-plani-2026-09-06.md`'nin devamıdır**; oradaki #-numaraları korunur.
 
+> **Şerh (10.09.2026, G161):** §3 tablosuna "Durum" sütunu ve §4 kararlara sonuç eklendi; §1 tablolarındaki
+> kod satır referansları 08.09 `main`e aittir ve G150–G160 sonrası kaymıştır — güncel satırlar ve kuralların
+> kod karşılığı `docs/mimari/veri-teslim-hatti.md` §7.1'de, ekibe giden metin `docs/veri-teslim/SOZLESME.md`
+> 1.3'te. §0-3'teki "dolu aşama" kuralı G150 ile değişti (yerinde güncelleme, BELGE/UYAP korunur).
+
 > **İlke (kullanıcı, 08.09):** ekip HukuDok'un iç işleyişine hâkim değil. Onlara makul gelen bir istek
 > bizde ya zaten karşılanıyor ya gereksiz ya da verimsiz olabilir. Bu yüzden her kalem dört hükümden
 > birini alır: **ZATEN VAR** (iş yok, ekibe anlatılır) · **YAP** (bizde gerçek boşluk) · **GEREKMEZ**
@@ -103,36 +108,39 @@ güncellendi", 06.09 cevap + 4 ek) ve bizim iki metnimiz (`HUKDOK_CEVAP_20260904
 
 ## 3. Görev adayları (öncelik sırası, bant, büyüklük)
 
-| Sıra | İş | Kalem | Bant | Büyüklük | Bağımlı |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Teslim hattı Hanyaloğlu site'ı | K1 | backend → docs | G147, G148 (kuyrukta) | — |
-| 2 | 370 derdest kart listesi script + xlsx | P1 | backend (salt okunur) | küçük | — |
-| 3 | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP dokunulmaz, boş hücre imzaya girmez, çok tur `sira_no` | A1, A2 | backend | **büyük** (aktarım + test + ikinci koşu 0 kanıtı) | — |
-| 4 | Yerel havuzdan `Kapalı/Derdest` çıkar + aktarım "karar yok" kuralı; seed genişlemesi (A5); bozuk 22 yazım temizliği | A4, A5 | backend + panel | küçük | 3 ile aynı dosya → zincir |
-| 5 | `status` kesim-sonrası koruma (`case_history` aktarım-dışı imza) + `DEGISIKLIK_OZETI` "Veri kesim tarihi" | P2 | backend | orta | 3 |
-| 6 | DosyaNo kökü → müvekkil adımı + föy↔müvekkil bağı (`case_party_id`) + "Müvekkil değişti" raporu | M2, M4 | backend | orta | 3 |
-| 7 | 20 föyü cevaplı xlsx ile bağlayan script | M1 | backend (script) | küçük | 6 (kök kuralı yoksa elle kart no ile de olur) |
-| 8 | `Başvuru Tarihi` aşama kolonu + okuyucu + fotoğraf | A6 | backend (migration) | orta | 3 |
-| 9 | Delta paket: "Teslim türü" satırı, kaybolan başlık bilgi; `—` zincir başlangıcı | K6, K4 | backend | küçük | — |
-| 10 | Çelişki raporu üreticisini repoya al, yer tutucu sınıfı | A7 | backend | düşük | 3 |
-| 11 | `sub_type` yazım farkında paket yazsın (karar) | M6 | backend | küçük | 3 |
-| 12 | Çoklu avukatlı kartı eksik sayma (karar) | M5 | backend | küçük | — |
-| 13 | Sözleşme/dokümanlar: eşik = hücre, sütun sahipliği tablosu, delta kuralları, kesim tarihi satırı | K2, P5, K6 | docs | küçük | 9 |
+| Sıra | İş | Kalem | Bant | Büyüklük | Bağımlı | Durum (10.09) · kanıt |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Teslim hattı Hanyaloğlu site'ı | K1 | backend → docs | G147, G148 (kuyrukta) | — | **G147 + G148 tamam** (08.09) · `services/teslim_kutusu.TESLIM_SP_CONFIG`, `sharepoint/auth_graph.py`; prod `.env`/klasör/anahtar insan adımı bekliyor |
+| 2 | 370 derdest kart listesi script + xlsx | P1 | backend (salt okunur) | küçük | — | **G149 tamam** (08.09) · `scripts/foysuz_derdest_kartlar.py` |
+| 3 | Aşama katmanı kuralı: paket kaynaklı satır güncellenir, BELGE/UYAP dokunulmaz, boş hücre imzaya girmez, çok tur `sira_no` | A1, A2 | backend | **büyük** (aktarım + test + ikinci koşu 0 kanıtı) | — | **G150 tamam** (08.09) · `stage_decisions.update_stage_decision`/`is_protected`, `hukdok_aktarim._asama_uzlasisi`/`_asama_satirini_uygula`; lokal 04.09 paketi 310 eklendi / 116 güncellendi, 12 bayat → 0, ikinci koşu 0; çelişki grubu 532 → 227 |
+| 4 | Yerel havuzdan `Kapalı/Derdest` çıkar + aktarım "karar yok" kuralı; seed genişlemesi (A5); bozuk 22 yazım temizliği | A4, A5 | backend + panel | küçük | 3 ile aynı dosya → zincir | **G151 tamam** (08.09) · seed 27/8/4/2, `BURO_DURUMLARI`, `deger_havuzu_seed.py --kaldir`; lokalde Kapalı/Derdest silindi; **bozuk yazım panel temizliği insan adımı**, `Karar` ekibe soru |
+| 5 | `status` kesim-sonrası koruma (`case_history` aktarım-dışı imza) + `DEGISIKLIK_OZETI` "Veri kesim tarihi" | P2 | backend | orta | 3 | **G152 tamam** (08.09) · `kesim_sonrasi_kullanici_kaydi`, `KORUNDU` türü, `teslim_kutusu.kesim_tarihi_bul`, `case_manager.PANEL_SOURCE` |
+| 6 | DosyaNo kökü → müvekkil adımı + föy↔müvekkil bağı (`case_party_id`) + "Müvekkil değişti" raporu | M2, M4 | backend | orta | 3 | **G153 tamam** (08.09) · `DOSYANO_KOK_MUVEKKILI`, `_kokun_karti_mi`, `_foy_muvekkilini_bagla`, `MUVEKKIL_DEGISTI`; lokal 8.385 föy bağlı, belirsiz 20 → 10, kök çelişkisi 7 (Corpus ×4, Ergo, DN-11927, H-6589 — ekibe soru) |
+| 7 | 20 föyü cevaplı xlsx ile bağlayan script | M1 | backend (script) | küçük | 6 (kök kuralı yoksa elle kart no ile de olur) | **G154 tamam** (08.09) · `scripts/cevapli_kart_eslemesi.py` → `--kart-esleme` |
+| 8 | `Başvuru Tarihi` aşama kolonu + okuyucu + fotoğraf | A6 | backend (migration) | orta | 3 | **G155 tamam** (10.09, ikinci koşu; test_g062/g073 kilit izni) · `case_stage_decisions.basvuru_tarihi`, migrasyon 47, `_basvuru_tarihi_uzlasi`, `asama_kaynakli_kart_alanlari` |
+| 9 | Delta paket: "Teslim türü" satırı, kaybolan başlık bilgi; `—` zincir başlangıcı | K6, K4 | backend | küçük | — | **G156 tamam** (10.09) · `teslim_turu_oku`, `_DELTA_IHLAL_KATEGORILERI`, `teslim_dogrula` zincir başlangıcı |
+| 10 | Çelişki raporu üreticisini repoya al, yer tutucu sınıfı | A7 | backend | düşük | 3 | **G157 tamam** (10.09) · `services/asama_celiski_raporu.py` + CLI, S6 yer tutucu sınıfı, E-8 etiketi |
+| 11 | `sub_type` yazım farkında paket yazsın (karar) | M6 | backend | küçük | 3 | **G159 tamam** (10.09, 14 ile birlikte) · `ICERIK_KARSILASTIRMALI_ALANLAR = {"court"}`; lokal 4.521 → 196 |
+| 12 | Çoklu avukatlı kartı eksik sayma (karar) | M5 | backend | küçük | — | **G158 tamam** (08.09) · `required_fields.COKLU_AVUKAT_ESIGI`, `scripts/backfill_missing_required.py`; lokalde kova düşüşü 0 (102 kartın öteki alanları da boş) |
+| 13 | Sözleşme/dokümanlar: eşik = hücre, sütun sahipliği tablosu, delta kuralları, kesim tarihi satırı | K2, P5, K6 | docs | küçük | 9 | **G161 tamam** (10.09) · `SOZLESME.md` 1.3, `veri-teslim-hatti.md` §7.1, `dava-acma-akisi.md` §9/§10/§13, CLAUDE.md; ekibe cevap (§6) insan adımı |
+| 14 | `tr_title` DB-008 kuralı + `yazim_birligi.py` | §5.3-C/B | backend | orta | 3, 11 | **G159 + G160 tamam** (10.09) · `reference_lists.tr_title`, `scripts/yazim_birligi.py` (dry-run varsayılan; prod'da paket uygulamasından SONRA `--apply`) |
+| 15 | `bureau_types` liste düzeltmesi | §5.2 | panel/insan | küçük | — | **bekliyor** (insan, panel) |
 
 **Prod sırası (değişmedi, iki ek):** deploy → havuz seed → **G147 env + klasör** → 04.09 paketi
 **teslim hattından** (defter, zincir başlangıcı) → kart aç → birleştir → 20 föy bağla → ölçüm paketi.
 
 ---
 
-## 4. Kullanıcı kararı bekleyenler
+## 4. Kullanıcı kararları — verildi (08.09), uygulandı (08–10.09)
 
-1. **A3 — karar durumu föy düzeyi:** öneri **hayır**; föy panelinde `ham_veri` gösterimi + E-8 etiketi yeter.
-2. **P2 — `status` kesim-sonrası koruma:** öneri **evet** ("paket kazanır"ın tek istisnası).
-3. **M6 — `sub_type` yazım farkında paket yazsın:** öneri **evet**; `court` bizde kalır.
-4. **A4 — `Kapalı/Derdest` yerel havuzdan çıksın:** öneri **evet**.
-5. **M5 — çoklu avukatlı kart eksik sayılmasın:** öneri **evet**.
-6. **A5 — "Karar" (74 föy) değeri:** ekibe sorulacak, havuza şimdilik girmez.
-7. **S8 — ek uzmanlık alanı:** ertele.
+1. **A3 — karar durumu föy düzeyi:** **hayır** (verildi 08.09); föy düzeyi alan açılmadı, G157 çelişki raporunda
+   E-8 "müvekkil yönü farkı" etiketi (föy panelinde `ham_veri` gösterimi ayrı küçük iş, yapılmadı).
+2. **P2 — `status` kesim-sonrası koruma:** **evet** (verildi 08.09) → G152.
+3. **M6 — `sub_type` yazım farkında paket yazsın:** **evet** (verildi 08.09) → G159; `court` bizde kalır.
+4. **A4 — `Kapalı/Derdest` yerel havuzdan çıksın:** **evet** (verildi 08.09) → G151.
+5. **M5 — çoklu avukatlı kart eksik sayılmasın:** **evet** (verildi 08.09) → G158.
+6. **A5 — "Karar" (74 föy) değeri:** ekibe sorulacak, havuza girmedi (G151 bilerek eklemedi; SOZLESME 1.3 §6 soruyor).
+7. **S8 — ek uzmanlık alanı:** ertelendi (verildi 08.09).
 
 ## 5. Yazım birliği — yalnız büyük/küçük harf farkları (ölçüm 08.09, lokal, salt okunur)
 
@@ -217,6 +225,11 @@ haritası; Karşı Taraf 131 BÜYÜK satırın çoğu oradan çözülür).
 bağımlı: 3 ve 11) · 15 · bureau_types liste düzeltmesi (panel/insan, küçük).
 
 ## 6. Ekibe cevapta yer alacaklar (plan onaylanınca yazılır)
+
+> 10.09: aşağıdaki kalemlerin metni `docs/veri-teslim/SOZLESME.md` 1.3'te hazır (§3 üç satır, §4 delta +
+> dondurma gerekmez + kök, §6 havuzlar + Kapalı/Derdest + "Karar" sorusu, §7 eşik/K2 düzeltmesi, §10 sahiplik,
+> §11 DB-008 + `Yazim_Standardi`). Bağlantı (G147 sonrası), 370 liste eki (G149 çıktısı), `specialties` 45
+> listesi ve S5 satır 82 açıklaması cevap e-postasında ayrıca verilir — insan adımı.
 
 Bağlantı (G147 sonrası) · kapı/zincir cevabı (K2, K3, K4) · delta 3 soru (K6) · havuz kanonik listesi (A5) ·
 "Kapalı/Derdest yazmayın" (A4) · dondurma gerekmez (M4) · avukat satırları (M5) · 370 liste eki (P1) ·
