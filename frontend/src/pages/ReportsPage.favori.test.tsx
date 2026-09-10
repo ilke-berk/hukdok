@@ -490,6 +490,10 @@ describe("ReportsPage favori önerisi (G144)", () => {
         expect(kartVar()).toBe(false);
         await gonder("Derdest davaları Excel indir");
         await bekle(8);
+        // G167: kart onay bekler — indirme düğmesi tıklanır
+        expect(kartVar()).toBe(false);
+        await tikla(butonBul("Excel indir"));
+        await bekle(8);
 
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(1);
         expect(kartVar()).toBe(true);
@@ -510,6 +514,8 @@ describe("ReportsPage favori önerisi (G144)", () => {
         });
         await render();
         await gonder("Derdest davaları Excel indir");
+        await bekle(8);
+        await tikla(butonBul("Excel indir"));
         await bekle(8);
         expect(indirmeler).toEqual([]);
         expect(kartVar()).toBe(false);

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-// AssistantBar + AssistantThread (G143) — izole: iskelet (`yukleniyor`) girdi/istek üretmez; çipler
+// AssistantBar + AssistantThread (G143 → G167) — izole: iskelet (`yukleniyor`) girdi/istek üretmez; çipler
 // `ornekIstemler(veriKaynagi)`; ilk tık girdiye yazar + odak, ikinci tık gönderir; `complete`+`tanim` →
-// `onTanimUygula(tanim, eylem)` düğme beklemeden; `onTanimUygula` false → düğme kalır, Geri al yok;
+// TEYİT KARTI (uygulama YOK), Onayla/Excel/CSV düğmeleri, düzeltme bekleyen tanımı taşır, sözle onay
+// (aynı tanım + eylem) hemen yürür; `onTanimUygula` false → kart beklemede, Geri al yok;
 // `geriAlinabilir` yalnız son uygulanan balonda "Geri al", tıklanınca `onGeriAl` + balon düğmeye döner;
 // 409 → `onKapali`; "Konuşmayı kapat" geçmişi korur; Sohbeti temizle geri-al kimliğini de sıfırlar.
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -26,6 +27,7 @@ const KATALOG = {
 } as unknown as Katalog;
 
 const TANIM: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["tracking_no"], filtreler: [], siralama: [] };
+const TANIM2: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] };
 const MEVCUT: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["subject"], filtreler: [], siralama: [] };
 
 function akis(olaylar: unknown[]) {
@@ -46,7 +48,7 @@ function akis(olaylar: unknown[]) {
 
 type Props = Partial<Parameters<typeof AssistantBar>[0]>;
 
-describe("AssistantBar (G143)", () => {
+describe("AssistantBar (G143/G167)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
     let onTanimUygula: Mock<(t: RaporTanimi, e: AsistanEylemi | null) => Promise<boolean>>;
@@ -104,8 +106,8 @@ describe("AssistantBar (G143)", () => {
     };
     const girdi = () => $<HTMLInputElement>("[aria-label='Asistana mesaj']");
     const cipler = () => Array.from(container.querySelectorAll<HTMLButtonElement>("[data-testid='ornek-istem']"));
-    const butonBul = (metin: string) => {
-        const b = Array.from(container.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
+    const butonBulIcinde = (kok: ParentNode, metin: string) => {
+        const b = Array.from(kok.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
         if (!b) throw new Error("düğme bulunamadı: " + metin);
         return b;
     };
@@ -159,59 +161,110 @@ describe("AssistantBar (G143)", () => {
         expect(cipler().map(c => c.textContent?.trim())).toEqual([...ornekIstemler("davalar")]);
     });
 
-    it("complete+tanim → onTanimUygula(tanim, eylem) düğme beklemeden; rozet + (geriAlinabilir ile) Geri al; onGeriAl balonu düğmeye döndürür", async () => {
-        fetchMock.mockResolvedValue(akis([{ status: "complete", cevap: "hazır", tanim: TANIM, eylem: "onizle" }]));
+    it("complete+tanim → UYGULANMAZ (G167): teyit kartı + Onayla/Excel/CSV; düzeltme mesajı bekleyen tanımı mevcut_tanim olarak taşır; Onayla → onTanimUygula(tanim, null); Geri al kartı onay bekleyene döndürür; Excel indir → indir_xlsx", async () => {
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "hazır", tanim: TANIM, eylem: "onizle" }]));
         await render();
         yaz(girdi(), "listele");
         await enter(girdi());
 
-        expect(onTanimUygula).toHaveBeenCalledTimes(1);
-        expect(onTanimUygula).toHaveBeenCalledWith(TANIM, "onizle");
+        // Otomatik uygulama YOK
+        expect(onTanimUygula).not.toHaveBeenCalled();
         const balon = $("[data-testid='sohbet-asistan']");
-        expect(balon.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
-        expect(Array.from(balon.querySelectorAll("button")).map(b => b.textContent?.trim())).not.toContain("Oluşturucuya uygula");
+        expect(balon.querySelector("[data-testid='tanim-ozeti']")).not.toBeNull();
+        expect(balon.querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
+        expect(balon.querySelector("[data-testid='tanim-teyit-notu']")).not.toBeNull();
+        const dugmeler = (kok: Element) => Array.from(kok.querySelectorAll("button")).map(x => x.textContent?.trim());
+        expect(dugmeler(balon)).toEqual(expect.arrayContaining(["Onayla ve uygula", "Excel indir", "CSV indir"]));
+        expect(girdi().placeholder).toContain("Düzeltme");
+
+        // Düzeltme: sunucuya mevcut_tanim = BEKLEYEN tanım (oluşturucudaki MEVCUT değil)
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "güncelledim", tanim: TANIM2, eylem: null }]));
+        yaz(girdi(), "konuyu da ekle");
+        await enter(girdi());
+        expect(sohbetGovdesi().mevcut_tanim).toEqual(TANIM);
+        expect(onTanimUygula).not.toHaveBeenCalled();
+        const balon2 = container.querySelectorAll("[data-testid='sohbet-asistan']")[1];
+
+        // Onayla → onTanimUygula(TANIM2, null); rozet; bekleyen düşer (yer tutucu normale döner)
+        await tikla(butonBulIcinde(balon2, "Onayla ve uygula"));
+        expect(onTanimUygula).toHaveBeenCalledTimes(1);
+        expect(onTanimUygula).toHaveBeenCalledWith(TANIM2, null);
+        expect(balon2.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(dugmeler(balon2)).not.toContain("Onayla ve uygula");
+        expect(dugmeler(balon2)).toEqual(expect.arrayContaining(["Excel indir", "CSV indir"]));
+        expect(girdi().placeholder).not.toContain("Düzeltme");
         // Sayfa henüz geri-al adımını vermedi → bağlantı yok
-        expect(balon.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(balon2.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
 
         await yenidenRender({ geriAlinabilir: true });
-        const geriAl = $("[data-testid='tanim-geri-al']");
-        await tikla(geriAl);
+        await tikla($("[data-testid='tanim-geri-al']"));
         expect(onGeriAl).toHaveBeenCalledTimes(1);
-        expect(balon.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
-        expect(balon.querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
-        // Balon yeniden uygulanabilir: düğme → onTanimUygula(tanim, null)
-        await tikla(butonBul("Oluşturucuya uygula"));
-        expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM, null);
-        expect(balon.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balon2.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(balon2.querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
+        expect(dugmeler(balon2)).toContain("Onayla ve uygula");
+        expect(girdi().placeholder).toContain("Düzeltme");         // geri alınan tanım yeniden bekleyen
+
+        // Karttan indirme: onTanimUygula(TANIM2, indir_xlsx) → uygulandı rozeti
+        await tikla(butonBulIcinde(balon2, "Excel indir"));
+        expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM2, "indir_xlsx");
+        expect(balon2.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        await tikla(butonBulIcinde(balon2, "CSV indir"));
+        expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM2, "indir_csv");
     });
 
-    it("onTanimUygula false (kaynak katalogda yok): düğme kalır, rozet ve Geri al yok; tanim=null + eylem → mevcut tanımla eylem", async () => {
-        onTanimUygula.mockResolvedValueOnce(false);
+    it("sözle onay: bekleyen tanım AYNEN + eylemle dönerse eylem hemen yürür; onTanimUygula false → kart beklemeye devam; tanim=null + eylem → bekleyen (yoksa mevcut) tanımla eylem; soru → yalnız balon", async () => {
+        const TANIM3: RaporTanimi = { ...MEVCUT, kolonlar: ["subject", "court"] };
         fetchMock
-            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "?", tanim: TANIM, eylem: null }]))
-            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "önizliyorum", tanim: null, eylem: "onizle" }]))
-            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "soru?", tanim: null, eylem: null }]));
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "hazır?", tanim: TANIM, eylem: null }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "uyguluyorum", tanim: TANIM, eylem: "onizle" }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "uyguluyorum", tanim: TANIM, eylem: "onizle" }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "yeni", tanim: TANIM3, eylem: null }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "indiriyorum", tanim: null, eylem: "indir_csv" }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "soru?", tanim: null, eylem: null }]))
+            .mockResolvedValueOnce(akis([{ status: "complete", cevap: "önizliyorum", tanim: null, eylem: "onizle" }]));
         await render({ geriAlinabilir: true });
+        const balonlar = () => Array.from(container.querySelectorAll("[data-testid='sohbet-asistan']"));
 
         yaz(girdi(), "bir");
         await enter(girdi());
-        expect(onTanimUygula).toHaveBeenCalledWith(TANIM, null);
-        const balon = $("[data-testid='sohbet-asistan']");
-        expect(balon.querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
-        expect(balon.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
-        expect(Array.from(balon.querySelectorAll("button")).map(b => b.textContent?.trim())).toContain("Oluşturucuya uygula");
+        expect(onTanimUygula).not.toHaveBeenCalled();
 
-        yaz(girdi(), "iki");
+        // "tamam" ama sayfa reddetti (false) → rozet yok, bekleyen kalır
+        onTanimUygula.mockResolvedValueOnce(false);
+        yaz(girdi(), "tamam");
+        await enter(girdi());
+        expect(onTanimUygula).toHaveBeenCalledWith(TANIM, "onizle");
+        expect(balonlar()[1].querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
+        expect(balonlar()[1].querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+
+        // "tamam" tekrar → uygulanır: rozet + Geri al; mevcut_tanim bekleyen tanımdı
+        yaz(girdi(), "tamam");
+        await enter(girdi());
+        expect(sohbetGovdesi().mevcut_tanim).toEqual(TANIM);
+        expect(onTanimUygula).toHaveBeenCalledTimes(2);
+        expect(balonlar()[2].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar()[2].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+
+        // Yeni tanım → kart bekler; sonra tanımsız "indir" → bekleyen tanımla indirme, kart rozet alır
+        yaz(girdi(), "başka");
+        await enter(girdi());
+        expect(onTanimUygula).toHaveBeenCalledTimes(2);
+        yaz(girdi(), "csv indir");
+        await enter(girdi());
+        expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM3, "indir_csv");
+        expect(balonlar()[3].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar()[4].querySelector("[data-testid='tanim-ozeti']")).toBeNull();
+
+        // Soru: uygulama çağrısı YOK
+        yaz(girdi(), "?");
+        await enter(girdi());
+        expect(onTanimUygula).toHaveBeenCalledTimes(3);
+
+        // Bekleyen yok → tanımsız "önizle" oluşturucudaki tanımla
+        yaz(girdi(), "önizle");
         await enter(girdi());
         expect(onTanimUygula).toHaveBeenLastCalledWith(MEVCUT, "onizle");
-        expect(onTanimUygula).toHaveBeenCalledTimes(2);
-
-        yaz(girdi(), "üç");
-        await enter(girdi());
-        // Soru: uygulama çağrısı YOK
-        expect(onTanimUygula).toHaveBeenCalledTimes(2);
-        expect(container.querySelectorAll("[data-testid='sohbet-asistan']")).toHaveLength(3);
-        expect(container.querySelector("[data-testid='tanim-geri-al']")).toBeNull();
+        expect(balonlar()).toHaveLength(7);
     });
 
     it("409 → onKapali çağrılır; 'Konuşmayı kapat' alanı kapatır geçmişi korur; Sohbeti temizle boş duruma döner", async () => {

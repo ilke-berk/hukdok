@@ -5,8 +5,9 @@
 // Sohbet geçmişi sunucuda SAKLANMAZ (K6): istemci `mesajlar` listesini taşır, en fazla 20.
 import { apiClient } from "@/lib/api";
 import {
-    raporHatasiCevir,
-    type AsistanEylemi, type AsistanMesaji, type AsistanOlayi, type RaporTanimi,
+    OP_ETIKETLERI, raporHatasiCevir, secenekEtiketi, tarihBicimle,
+    type AsistanEylemi, type AsistanMesaji, type AsistanOlayi, type Filtre, type Katalog, type KatalogKolon,
+    type RaporTanimi,
 } from "@/lib/reports";
 
 /** K6: sunucuya giden geçmiş en fazla bu kadar mesaj (en yeni 20). */
@@ -284,3 +285,72 @@ export const EYLEM_ETIKETLERI: Record<AsistanEylemi, string> = {
     indir_xlsx: "Excel indirme",
     indir_csv: "CSV indirme",
 };
+
+// ---------------------------------------------------------------------------
+// G167 — teyit döngüsü: okunur tanım ayrıntısı + tanım eşitliği
+// ---------------------------------------------------------------------------
+
+export interface TanimAyrintisi {
+    /** Veri kaynağı etiketi (katalogda yoksa anahtar). */
+    kaynak: string;
+    /** Kolon etiketleri, tanımdaki sırayla (katalogda yoksa anahtar). */
+    kolonlar: string[];
+    /** "Açılış Tarihi · aralıkta · 01.04.2026 – 31.08.2026" biçiminde satırlar. */
+    filtreler: string[];
+    /** "Açılış Tarihi ↓" biçiminde satırlar. */
+    siralama: string[];
+}
+
+const BOS_DEGER = "(boş)";
+
+function tekDegerMetni(kolon: KatalogKolon | undefined, d: string | number | boolean | null): string {
+    if (d === null || d === undefined) return BOS_DEGER;
+    if (typeof d === "boolean") return d ? "Evet" : "Hayır";
+    if (kolon?.tip === "tarih" && typeof d === "string") return tarihBicimle(d);
+    if (kolon?.secenek_etiketleri && typeof d === "string") return secenekEtiketi(kolon, d);
+    return String(d);
+}
+
+function degerMetni(kolon: KatalogKolon | undefined, f: Filtre): string | null {
+    if (f.op === "is_null" || f.op === "not_null") return null;
+    const d = f.deger;
+    if (d === undefined) return null;
+    if (Array.isArray(d)) {
+        const parcalar = d.map(x => tekDegerMetni(kolon, x));
+        return f.op === "between" && parcalar.length === 2 ? `${parcalar[0]} – ${parcalar[1]}` : parcalar.join(", ");
+    }
+    return tekDegerMetni(kolon, d);
+}
+
+/**
+ * Asistan tanımını kullanıcının teyit edebileceği okunur satırlara çevirir (G167): kolon/filtre/sıralama
+ * anahtarları katalog ETİKETİYLE (bağlı kolon "Müvekkil kartı · Telefon" dahil), operatör `OP_ETIKETLERI`,
+ * tarih dd.MM.yyyy, `between` "a – b", `in` virgüllü ve `null` "(boş)", mantık Evet/Hayır, seçenek etiketi
+ * varsa o (ham değer değil). Katalogda olmayan anahtar olduğu gibi yazılır — kart hiçbir zaman boş kalmaz.
+ * Saf fonksiyon; kart bileşeni yalnız bunu basar.
+ */
+export function tanimAyrintisi(tanim: RaporTanimi, katalog: Katalog | null): TanimAyrintisi {
+    const kaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === tanim.veri_kaynagi);
+    const kolonBul = (anahtar: string) => kaynak?.kolonlar.find(k => k.anahtar === anahtar);
+    const etiket = (anahtar: string) => kolonBul(anahtar)?.etiket ?? anahtar;
+    return {
+        kaynak: kaynak?.etiket ?? tanim.veri_kaynagi,
+        kolonlar: tanim.kolonlar.map(etiket),
+        filtreler: tanim.filtreler.map(f => {
+            const deger = degerMetni(kolonBul(f.alan), f);
+            return [etiket(f.alan), OP_ETIKETLERI[f.op], ...(deger === null ? [] : [deger])].join(" · ");
+        }),
+        siralama: tanim.siralama.map(s => `${etiket(s.alan)} ${s.yon === "desc" ? "↓" : "↑"}`),
+    };
+}
+
+/** İki tanım aynı mı (kaynak, kolon sırası, filtreler, sıralama) — "tamam/uygula/indir" cevabında asistan
+ * bekleyen tanımı AYNEN döndürürse bu onaydır (G167). Alan sırası JSON sırasına bağlı kalmasın diye alan alan. */
+export function tanimAyni(a: RaporTanimi | null | undefined, b: RaporTanimi | null | undefined): boolean {
+    if (!a || !b) return false;
+    const filtre = (f: Filtre) => JSON.stringify([f.alan, f.op, f.deger ?? null]);
+    return a.veri_kaynagi === b.veri_kaynagi
+        && JSON.stringify(a.kolonlar) === JSON.stringify(b.kolonlar)
+        && JSON.stringify(a.filtreler.map(filtre)) === JSON.stringify(b.filtreler.map(filtre))
+        && JSON.stringify(a.siralama.map(s => [s.alan, s.yon])) === JSON.stringify(b.siralama.map(s => [s.alan, s.yon]));
+}

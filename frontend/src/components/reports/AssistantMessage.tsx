@@ -1,25 +1,31 @@
-import { AlertTriangle, Check, Sparkles, Undo2, Wand2 } from "lucide-react";
+import { AlertTriangle, Check, Download, Sparkles, Undo2 } from "lucide-react";
 import type { Katalog } from "@/lib/reports";
-import { EYLEM_ETIKETLERI, errorKodIpucu, tanimOzeti, type SohbetKaydi } from "@/lib/reportsChat";
+import { errorKodIpucu, tanimAyrintisi, type SohbetKaydi } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
+
+export type IndirmeFormati = "xlsx" | "csv";
 
 type AssistantMessageProps = {
     kayit: SohbetKaydi;
-    /** Tanım özetinde veri kaynağı etiketi için (anahtar → etiket). */
+    /** Tanım ayrıntısı için (anahtar → etiket; bağlı kolon etiketleri dahil). */
     katalog: Katalog | null;
-    /** "Oluşturucuya uygula" — yalnız tanım dolu ve (otomatik uygulama reddedildiği için) uygulanmamışken görünür. */
-    onUygula?: (kayit: SohbetKaydi) => void;
-    /** "Geri al" (G143) — yalnız bu kaydın uygulaması geri alınabilirken verilir (tek adım). */
+    /** "Onayla ve uygula" — tanım oluşturucuya konur, önizleme gelir (G167 teyit adımı). */
+    onOnayla?: (kayit: SohbetKaydi) => void;
+    /** "Excel indir" / "CSV indir" — kartın tanımıyla doğrudan indirme (uygulanmış olsun olmasın). */
+    onIndir?: (kayit: SohbetKaydi, format: IndirmeFormati) => void;
+    /** "Geri al" — yalnız bu kaydın uygulaması geri alınabilirken verilir (tek adım). */
     onGeriAl?: () => void;
 };
 
 /**
- * Tek sohbet balonu (G135 → G143): kullanıcı sağda; asistan solda — `warning` olayları sarı şerit,
- * `failed` kırmızı kutu + `error_kod` ipucu; `tanim` varsa özet kartı (kaynak, kolon/filtre sayısı).
- * G143: tanım OTOMATİK uygulanır — kart "uygulandı" rozeti + "Geri al" bağlantısı (tek adım) taşır;
- * "Oluşturucuya uygula" yalnız otomatik uygulama reddedilmişse (kaynak katalogda yok) görünür.
+ * Tek sohbet balonu (G135 → G143 → G167): kullanıcı sağda; asistan solda — `warning` sarı şerit,
+ * `failed` kırmızı kutu + `error_kod` ipucu; `tanim` varsa TEYİT KARTI: kaynak, kolonlar, filtreler ve
+ * sıralama OKUNUR (`tanimAyrintisi`: etiket · operatör · değer), altında "Onayla ve uygula" + "Excel indir" +
+ * "CSV indir". G167: tanım OTOMATİK UYGULANMAZ — kullanıcı önce okur, yanlışsa yazarak düzeltir (bir
+ * sonraki cevap bu tanımı günceller), doğruysa onaylar. Asistan indirme önerdiyse (`eylem: indir_*`) ilgili
+ * indirme düğmesi birincil olur ama yine tık bekler. Uygulanınca rozet + "Geri al"; indirme düğmeleri kalır.
  */
-export function AssistantMessage({ kayit, katalog, onUygula, onGeriAl }: AssistantMessageProps) {
+export function AssistantMessage({ kayit, katalog, onOnayla, onIndir, onGeriAl }: AssistantMessageProps) {
     if (kayit.rol === "user") {
         return (
             <div className="flex justify-end" data-testid="sohbet-kullanici">
@@ -53,10 +59,9 @@ export function AssistantMessage({ kayit, katalog, onUygula, onGeriAl }: Assista
     }
 
     const tanim = kayit.tanim ?? null;
-    const ozet = tanim ? tanimOzeti(tanim) : null;
-    const kaynakEtiketi = ozet
-        ? katalog?.veri_kaynaklari.find(v => v.anahtar === ozet.kaynak)?.etiket ?? ozet.kaynak
-        : null;
+    const ayrinti = tanim ? tanimAyrintisi(tanim, katalog) : null;
+    const onerilenIndirme: IndirmeFormati | null =
+        kayit.eylem === "indir_xlsx" ? "xlsx" : kayit.eylem === "indir_csv" ? "csv" : null;
 
     return (
         <div className="flex justify-start" data-testid="sohbet-asistan">
@@ -79,23 +84,40 @@ export function AssistantMessage({ kayit, katalog, onUygula, onGeriAl }: Assista
                     </div>
                 ))}
 
-                {tanim && ozet && (
+                {tanim && ayrinti && (
                     <div data-testid="tanim-ozeti" className="px-3 py-2 rounded-[4px] border border-[var(--border)] bg-[var(--bg-elevated)] grid gap-2">
                         <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">Rapor tanımı</div>
-                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
                             <dt className="text-[var(--fg-muted)]">Kaynak</dt>
-                            <dd className="text-[var(--fg)]">{kaynakEtiketi}</dd>
-                            <dt className="text-[var(--fg-muted)]">Kolon</dt>
-                            <dd className="text-[var(--fg)]">{ozet.kolon}</dd>
-                            <dt className="text-[var(--fg-muted)]">Filtre</dt>
-                            <dd className="text-[var(--fg)]">{ozet.filtre}</dd>
-                            {ozet.siralama > 0 && (
-                                <>
-                                    <dt className="text-[var(--fg-muted)]">Sıralama</dt>
-                                    <dd className="text-[var(--fg)]">{ozet.siralama}</dd>
-                                </>
-                            )}
+                            <dd className="text-[var(--fg)]" data-testid="tanim-kaynak">{ayrinti.kaynak}</dd>
+                            <dt className="text-[var(--fg-muted)]">Kolonlar</dt>
+                            <dd className="text-[var(--fg)] flex flex-wrap gap-1" data-testid="tanim-kolonlar">
+                                {ayrinti.kolonlar.map((k, i) => (
+                                    <span key={i} className="px-1.5 py-0.5 rounded-[3px] bg-[var(--bg)] border border-[var(--border)]">{k}</span>
+                                ))}
+                            </dd>
+                            <dt className="text-[var(--fg-muted)]">Filtreler</dt>
+                            <dd className="text-[var(--fg)]" data-testid="tanim-filtreler">
+                                {ayrinti.filtreler.length === 0
+                                    ? <span className="text-[var(--fg-subtle)]">yok (tüm kayıtlar)</span>
+                                    : <ul className="grid gap-0.5">{ayrinti.filtreler.map((f, i) => <li key={i}>{f}</li>)}</ul>}
+                            </dd>
+                            <dt className="text-[var(--fg-muted)]">Sıralama</dt>
+                            <dd className="text-[var(--fg)]" data-testid="tanim-siralama">
+                                {ayrinti.siralama.length === 0
+                                    ? <span className="text-[var(--fg-subtle)]">varsayılan</span>
+                                    : ayrinti.siralama.join(", ")}
+                            </dd>
                         </dl>
+
+                        {!kayit.uygulandi && (
+                            <p className="text-[11px] text-[var(--fg-subtle)]" data-testid="tanim-teyit-notu">
+                                {onerilenIndirme
+                                    ? "Asistan indirme önerdi. Doğruysa indirin; yanlışsa düzeltmeyi yazın."
+                                    : "Doğruysa onaylayın; yanlışsa düzeltmeyi yazın, asistan bu tanımı günceller."}
+                            </p>
+                        )}
+
                         <div className="flex items-center gap-2 flex-wrap">
                             {kayit.uygulandi ? (
                                 <span
@@ -105,15 +127,31 @@ export function AssistantMessage({ kayit, katalog, onUygula, onGeriAl }: Assista
                                     <Check className="w-3 h-3" /> Oluşturucuya uygulandı
                                 </span>
                             ) : (
-                                <FlowButton variant="secondary" size="sm" onClick={() => onUygula?.(kayit)} title="Tanımı sol sütundaki oluşturucuya koy">
-                                    <Wand2 className="w-3.5 h-3.5" /> Oluşturucuya uygula
+                                <FlowButton
+                                    variant={onerilenIndirme ? "secondary" : "primary"}
+                                    size="sm"
+                                    onClick={() => onOnayla?.(kayit)}
+                                        title="Tanımı onayla: oluşturucuya konur, önizleme gelir"
+                                >
+                                    <Check className="w-3.5 h-3.5" /> Onayla ve uygula
                                 </FlowButton>
                             )}
-                            {kayit.eylem && (
-                                <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--fg-subtle)]">
-                                    · {EYLEM_ETIKETLERI[kayit.eylem]}
-                                </span>
-                            )}
+                            <FlowButton
+                                variant={onerilenIndirme === "xlsx" ? "primary" : "secondary"}
+                                size="sm"
+                                onClick={() => onIndir?.(kayit, "xlsx")}
+                                title="Bu tanımla Excel indir (indirme geçmişine yazılır)"
+                            >
+                                <Download className="w-3.5 h-3.5" /> Excel indir
+                            </FlowButton>
+                            <FlowButton
+                                variant={onerilenIndirme === "csv" ? "primary" : "secondary"}
+                                size="sm"
+                                onClick={() => onIndir?.(kayit, "csv")}
+                                title="Bu tanımla CSV indir (indirme geçmişine yazılır)"
+                            >
+                                <Download className="w-3.5 h-3.5" /> CSV indir
+                            </FlowButton>
                             {kayit.uygulandi && onGeriAl && (
                                 <button
                                     type="button"

@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: fetchMock } }));
 
-import type { AsistanMesaji, RaporTanimi } from "./reports";
+import type { AsistanMesaji, Katalog, RaporTanimi } from "./reports";
 import {
     ASISTAN_AKIS_EKSIK, ASISTAN_KAPALI_MESAJI, ASISTAN_MESAJ_MAX, ASISTAN_YETKI_MESAJI,
     AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, errorKodIpucu, gecmisiKirp, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimOzeti,
+    chatReport, errorKodIpucu, gecmisiKirp, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimAyni, tanimAyrintisi,
+    tanimOzeti,
 } from "./reportsChat";
 
 /** Ham chunk'ları (satır sınırına saygı göstermeden) veren sahte akış yanıtı. */
@@ -263,6 +264,70 @@ describe("sohbetGecmisi / gecmisiKirp / tanimOzeti", () => {
 
     it("tanimOzeti kaynak + sayılar", () => {
         expect(tanimOzeti(TANIM)).toEqual({ kaynak: "davalar", kolon: 2, filtre: 1, siralama: 1 });
+    });
+});
+
+describe("G167 — tanimAyrintisi / tanimAyni", () => {
+    const KATALOG = {
+        veri_kaynaklari: [{
+            anahtar: "davalar", etiket: "Davalar", aciklama: "", varsayilan_kolonlar: [], hizli_filtreler: [], kolon_setleri: [],
+            kolonlar: [
+                { anahtar: "tracking_no", etiket: "Ofis No", tip: "metin", secenek_etiketleri: null },
+                { anahtar: "status", etiket: "Durum", tip: "liste", secenek_etiketleri: null },
+                { anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", secenek_etiketleri: null },
+                { anahtar: "muvekkil.phone", etiket: "Müvekkil kartı · Telefon", tip: "metin", secenek_etiketleri: null },
+                { anahtar: "muvekkil.client_type", etiket: "Müvekkil kartı · Müvekkil Türü", tip: "liste",
+                  secenek_etiketleri: { Individual: "Gerçek kişi" } },
+                { anahtar: "aktif", etiket: "Aktif", tip: "mantik", secenek_etiketleri: null },
+                { anahtar: "tutar", etiket: "Tutar", tip: "para", secenek_etiketleri: null },
+            ],
+        }],
+        limitler: { onizleme_sayfa_boyu_max: 200, export_max_satir: 50000 },
+    } as unknown as Katalog;
+
+    it("etiket · operatör · değer satırları; tarih dd.MM.yyyy; between 'a – b'; in virgüllü + (boş); mantık Evet; seçenek etiketi; bağlı kolon etiketi; bilinmeyen anahtar aynen", () => {
+        const tanim: RaporTanimi = {
+            veri_kaynagi: "davalar",
+            kolonlar: ["tracking_no", "muvekkil.phone", "bilinmeyen"],
+            filtreler: [
+                { alan: "opening_date", op: "between", deger: ["2026-04-01", "2026-08-31"] },
+                { alan: "status", op: "in", deger: ["Derdest", null] },
+                { alan: "muvekkil.phone", op: "is_null" },
+                { alan: "muvekkil.client_type", op: "eq", deger: "Individual" },
+                { alan: "aktif", op: "eq", deger: true },
+                { alan: "tutar", op: "gte", deger: 150000 },
+                { alan: "opening_date", op: "lte", deger: "2026-12-31" },
+            ],
+            siralama: [{ alan: "opening_date", yon: "desc" }, { alan: "tracking_no", yon: "asc" }],
+        };
+        expect(tanimAyrintisi(tanim, KATALOG)).toEqual({
+            kaynak: "Davalar",
+            kolonlar: ["Ofis No", "Müvekkil kartı · Telefon", "bilinmeyen"],
+            filtreler: [
+                "Açılış Tarihi · aralıkta · 01.04.2026 – 31.08.2026",
+                "Durum · şunlardan biri · Derdest, (boş)",
+                "Müvekkil kartı · Telefon · boş",
+                "Müvekkil kartı · Müvekkil Türü · eşittir · Gerçek kişi",
+                "Aktif · eşittir · Evet",
+                "Tutar · ≥ (en az) · 150000",
+                "Açılış Tarihi · ≤ (en çok) · 31.12.2026",
+            ],
+            siralama: ["Açılış Tarihi ↓", "Ofis No ↑"],
+        });
+        // Katalog yok / kaynak yok: anahtarlar aynen, kart boş kalmaz
+        expect(tanimAyrintisi({ ...tanim, veri_kaynagi: "yok" }, null)).toMatchObject({ kaynak: "yok", kolonlar: ["tracking_no", "muvekkil.phone", "bilinmeyen"] });
+        expect(tanimAyrintisi({ ...tanim, filtreler: [], siralama: [] }, KATALOG)).toMatchObject({ filtreler: [], siralama: [] });
+    });
+
+    it("tanimAyni: alan alan eşitlik; kolon sırası, filtre değeri ve yön farkı ayrımdır; null/undefined false", () => {
+        const a: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["x", "y"], filtreler: [{ alan: "s", op: "eq", deger: "1" }], siralama: [{ alan: "x", yon: "asc" }] };
+        expect(tanimAyni(a, JSON.parse(JSON.stringify(a)))).toBe(true);
+        expect(tanimAyni(a, { ...a, kolonlar: ["y", "x"] })).toBe(false);
+        expect(tanimAyni(a, { ...a, filtreler: [{ alan: "s", op: "eq", deger: "2" }] })).toBe(false);
+        expect(tanimAyni(a, { ...a, siralama: [{ alan: "x", yon: "desc" }] })).toBe(false);
+        expect(tanimAyni(a, { ...a, veri_kaynagi: "muvekkiller" })).toBe(false);
+        expect(tanimAyni(a, null)).toBe(false);
+        expect(tanimAyni(undefined, a)).toBe(false);
     });
 });
 

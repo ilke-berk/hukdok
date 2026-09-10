@@ -37,9 +37,12 @@ Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:550-629 — G139 yerleşimi)
    │ GET  /api/reports/runs ────▶ tüm yöneticilerin koşuları;  /runs/{id}/download → saklanan dosya (410 = temizlendi)
    │ /api/reports/templates ────▶ favori şablonlar (kendi + paylaşımlı; soft delete)
    │
-Asistan paneli (AssistantPanel.tsx) — yalnız admin anahtarı `rapor_asistani` AÇIKKEN görünür
+Asistan satırı (AssistantBar.tsx, G143) — yalnız admin anahtarı `rapor_asistani` AÇIKKEN görünür
    │ POST /api/reports/chat ────▶ NDJSON: info → [warning] → complete{cevap, tanim, eylem} | failed{error_ozet, error_kod}
    │                               Gemini JSON şemalı tek atış; `tanim` sunucuda AYNI doğrulamadan geçer (K6)
+   │ G167 TEYİT DÖNGÜSÜ: `tanim` → okunur teyit kartı (AssistantMessage: kaynak · kolon etiketleri · filtre satırları ·
+   │   sıralama; `tanimAyrintisi`), UYGULANMAZ; düzeltme mesajı `mevcut_tanim` = BEKLEYEN tanımla gider;
+   │   onay = kartta "Onayla ve uygula" | "Excel indir" | "CSV indir" | sözle (aynı tanım + eylem, `tanimAyni`)
    └─ eylem: onizle → /preview · indir_xlsx|indir_csv → /export (kaynak:"asistan")  ← tek indirme = tek log yolu (K7)
 ```
 
@@ -395,6 +398,19 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   olarak yapılır → koşu logunda "Asistan" rozeti (`ReportsPage.tsx:523`, `lib/reports.ts:863`).
   G138'den beri uygulanan tanım `eylem=null` olsa da otomatik önizlenir; `eylem:"onizle"` aynı tanımda
   bile yeniden ister (`ReportsPage.tsx:497-537`, §8.4).
+- **Teyit döngüsü (G167, 2026-09-10 — G143'ün otomatik uygulaması KALKTI):** kullanıcı bulgusu "kart yalnız
+  sayı gösteriyor (Kolon 7), teyit/düzeltme/onay yok, indirme karttan olmuyor". `complete` + `tanim` artık
+  uygulanmaz: `AssistantMessage` teyit kartı `lib/reportsChat.tanimAyrintisi(tanim, katalog)` ile kaynak etiketi,
+  kolon etiketleri (bağlı kolon "Müvekkil kartı · Telefon" dahil), filtre satırları "Etiket · op etiketi · değer"
+  (tarih dd.MM.yyyy, `between` "a – b", `in` virgüllü + "(boş)", mantık Evet/Hayır, seçenek etiketi) ve
+  sıralama "Etiket ↓" basar; katalogda olmayan anahtar aynen yazılır. `AssistantBar` `bekleyenTanim` tutar: sonraki
+  mesajlar sunucuya `mevcut_tanim` olarak BEKLEYEN tanımı taşır (düzeltme onu günceller, oluşturucudakini değil).
+  Onay üç yol: "Onayla ve uygula" → `onTanimUygula(tanim, null)`; "Excel indir"/"CSV indir" → `onTanimUygula(tanim,
+  indir_*)` (uygulanır + indirilir, K7 aynı yol; asistan `eylem: indir_*` önerdiyse o düğme birincil ama yine tık
+  bekler); SÖZLE — asistan bekleyen tanımı AYNEN (`tanimAyni`) + eylemle döndürürse hemen yürür (prompt kuralı
+  "TEYİT DÖNGÜSÜ": onay kelimelerinde tanım değişmeden + `onizle`, düzeltmede yalnız istenen alan). `tanim=null` +
+  eylem → bekleyen (yoksa oluşturucudaki) tanımla; soru → yalnız balon. "Geri al" kartı yeniden onay bekleyen
+  hâle döndürür (bekleyen = o tanım). Kart uygulandıktan sonra indirme düğmeleri kalır.
 
 ## 8. Kullanıcı akışı — Rapor sekmesi (G138 + G139, plan §4.1)
 
@@ -484,7 +500,8 @@ tik, kısayol, sıralama) → hemen; yazarak girilen değer (`onChange(..., true
 tanımla (`sonTanim`, `:318-321`). "Bayat" rozeti ve Önizle düğmesi YOK; tabloda "güncelleniyor…"
 (`PreviewTable.tsx:72-81`), geçersiz taslakta son geçerli önizleme ekranda kalır + "taslak eksik" ipucu
 (`:62-71`), hata `DataErrorBanner` + "Tekrar dene" (`onRetry`, `ReportsPage.tsx:323-329`, hata anındaki
-tanımla). Asistan tanımı `asistanTanimiUygula` (`:497-537`): `eylem=null` → otomatik önizleme;
+tanımla). Asistan tanımı `asistanTanimiUygula` (`:497-537`; G167'den beri yalnız kartın Onayla/İndir düğmesi ya da
+sözle onayla çağrılır, asistan cevabı tek başına çağırmaz): `eylem=null` → otomatik önizleme;
 `onizle` → `sonIstenenRef=null` ile aynı tanımda bile yeniden ister (`:516-520`); `indir_*` →
 `/export` `kaynak:"asistan"` (`:521-526`).
 
@@ -643,6 +660,7 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
 | `backend/tests/test_g132_rapor_asistani.py` | anahtar varsayılan/409, 403, gövde sınırları, geçerli/geçersiz tanım akışı (taraf kolonunda `eq` → 422 → `warning`), 5 Gemini hatası → `error_kod` + TEK ERROR, yanıt hataları, prompt içeriği, kod incelemesi bekçileri (SessionLocal/`client.aio` yok), Developer API uyumlu şema, `tanim=null` + eylem → eylem düşer |
 | `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek 60 sn (monotonic monkeypatch + sorgu sayacı); asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |
 | `backend/tests/test_g166_rapor_bagli_kaynaklar.py` | bağlı kolon türetimi (her ilişki × hedef kolon birebir, hariç/türetilmiş atlama, ikinci derece bağ yok), öz-denetim 4 ret, katalog `iliskiler`/`bag`/kontrol/öneri (hedef tenant kuralı), kullanıcı örneği (Nisan sonrası + müvekkil telefonu; tekil + sıralı birleşim, silinmiş kart/tenant/silinmiş dava dışarıda, tarafsız dava boş hücre), ad anahtarıyla bağ, TKU tekilleşme, tarih/mantık cast, EXISTS filtre anlamı 16 varyant (is_null/not_null/in+null/tarih between+eq/mantık/iki bağ AND), müvekkilden dava + belgeden tekil dava (sıralama), 422 kuralları, asistan katalog metni ilişki satırları + prompt kuralı + aynı doğrulama, index DDL = `_ad_anahtari` derlemesi, tarih koşulu tek kaynak |
+| `frontend/src/lib/reportsChat.test.ts` (G167 bölümü), `components/reports/AssistantBar.test.tsx`, `pages/ReportsPage.asistan.test.tsx`, `ReportsPage.favori.test.tsx` | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`; tanım UYGULANMAZ → Onayla/Excel/CSV; düzeltme `mevcut_tanim` = bekleyen; sözle onay (aynı tanım + eylem) hemen yürür, sayfa reddederse beklemede kalır; tanımsız eylem bekleyen/oluşturucu tanımıyla; `indir_*` önerisi tık bekler, 413 yolu; kaynak katalogda yok → kart yine gösterir, onayda toast; Geri al → yeniden onay bekleyen; favori kartı indirme sonrası |
 | `frontend/src/lib/reports.test.ts`, `reports.export.test.ts`, `reportsChat.test.ts` | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + 22 örnekli gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, NDJSON okuyucu, anahtar okuyucu |
 | `frontend/src/components/reports/builderState.test.ts`, `QuickFilters.test.tsx`, `PreviewTable.test.tsx`, `ColumnSheet.test.tsx`, `SourceCards.test.tsx` | yuvalar/eklenen alanlar/temizle/tanımdan çözme (sıra korunur, gelişmiş çip), şerit etkileşimleri, başlıktan sıralama + "güncelleniyor…" + boş sonuç, yan panel setler/gruplar/sıra/tavan/"Temel" üretimi, kart radiogroup |
 | `frontend/src/pages/ReportsPage.test.tsx`, `ReportsPage.sablon.test.tsx`, `ReportsPage.asistan.test.tsx` | dolu açılış (tek istek, varsayılan tanım), kart tıklaması (eski satırlar anında düşer), otomatik önizleme (yapısal hemen / 600 ms / odak), yan panel → önizleme, boş sonuç kısayolu, yerleşim sırası, şablon/indirme/geçmiş, asistan paneli + eylem + 409/anahtar |

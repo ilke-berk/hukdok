@@ -639,3 +639,21 @@ Koşu sonrası kararlar (planlayıcı, aynı gün):
 - Tarih/sayı/metinde `is_null` "…" menüsünden kalktı (Boş çipi var) — KABUL.
 - "Boş" çipi "+N" sayımı dışında daima görünür — KABUL (tasarım).
 - Görsel doğrulama: lokal stack G145+G146 ile tazelendi; tarayıcı kontrolü kullanıcıda.
+
+## 8. Altıncı tur — asistan teyit döngüsü + karttan indirme (2026-09-10 akşam, kullanıcı kararı; G167)
+
+Kullanıcı prod'da (Deploy #21) botu denedi: kart "Kaynak Davalar · Kolon 7 · Filtre 2 · Sıralama 1" gösteriyordu —
+"kaynak davalar bilgisi eksik", "kullanıcı botla biraz daha konuşabilmeli: teyit, düzeltme, onay", "indirme işini
+de buradan yapabilmeli". §6.1'in otomatik uygulaması bu üç isteğe ters düştü → kaldırıldı.
+
+1. **Okunur teyit kartı:** kaynak etiketi, kolon etiketleri (bağlı kolonlar "Müvekkil kartı · Telefon"), filtreler
+   "Etiket · operatör · değer" (tarih dd.MM.yyyy, aralık "a – b", liste virgüllü + "(boş)", mantık Evet/Hayır, seçenek
+   etiketi), sıralama "Etiket ↓" — saf `tanimAyrintisi`, katalogdan; LLM metni değil.
+2. **Uygulama onaya bağlı:** kartta "Onayla ve uygula" · "Excel indir" · "CSV indir"; asistan `indir_*` önerdiyse o
+   düğme birincil ama tık bekler. Sözle onay: kullanıcı "tamam/uygula/indir" yazar, asistan bekleyen tanımı aynen +
+   eylemle döndürürse yürür (`tanimAyni`). Düzeltme mesajları sunucuya `mevcut_tanim` = bekleyen tanımla gider.
+3. **Prompt:** "TEYİT DÖNGÜSÜ" kuralı — cevap onay sorusuyla biter; onay kelimesinde tanım değişmeden + `onizle`;
+   düzeltmede yalnız istenen alan değişir. Sunucu sözleşmesi (`RaporTanimi`, uç adları, olaylar) DEĞİŞMEDİ.
+
+**Durum (10.09 akşam, gündüz oturumu — doğrudan uygulandı):** frontend 890 passed / eslint 0 / tsc 0; backend
+asistan testleri yeşil. Mimari doküman §7 + §8.4 + §15 güncellendi. Deploy kararı kullanıcıda.

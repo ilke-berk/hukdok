@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
 import type { Katalog } from "@/lib/reports";
 import type { SohbetKaydi } from "@/lib/reportsChat";
-import { AssistantMessage } from "./AssistantMessage";
+import { AssistantMessage, type IndirmeFormati } from "./AssistantMessage";
 
 type AssistantThreadProps = {
     kayitlar: SohbetKaydi[];
@@ -10,9 +10,11 @@ type AssistantThreadProps = {
     /** `info` olayı — canlı akış durumu satırı (gönderim sürerken). */
     akisDurumu: string | null;
     katalog: Katalog | null;
-    /** Otomatik uygulama reddedilmiş kayıt için "Oluşturucuya uygula" (yeniden dene). */
-    onUygula: (kayit: SohbetKaydi) => void;
-    /** "Geri al" bağlantısı yalnız bu kayıtta görünür (son otomatik uygulama, tek adım); null = yok. */
+    /** "Onayla ve uygula" (G167 teyit adımı). */
+    onOnayla: (kayit: SohbetKaydi) => void;
+    /** "Excel indir" / "CSV indir" — kartın tanımıyla doğrudan indirme. */
+    onIndir: (kayit: SohbetKaydi, format: IndirmeFormati) => void;
+    /** "Geri al" bağlantısı yalnız bu kayıtta görünür (son uygulama, tek adım); null = yok. */
     geriAlKaydiId: number | null;
     onGeriAl: () => void;
     onTemizle: () => void;
@@ -28,7 +30,7 @@ type AssistantThreadProps = {
  * devam eder. Sohbet geçmişi yalnız bileşen state'inde (üst bileşen), sayfa yenilenince sıfırlanır.
  */
 export function AssistantThread({
-    kayitlar, gonderiliyor, akisDurumu, katalog, onUygula, geriAlKaydiId, onGeriAl, onTemizle, onKapat,
+    kayitlar, gonderiliyor, akisDurumu, katalog, onOnayla, onIndir, geriAlKaydiId, onGeriAl, onTemizle, onKapat,
 }: AssistantThreadProps) {
     const listeRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +79,7 @@ export function AssistantThread({
             >
                 {kayitlar.length === 0 && !gonderiliyor && (
                     <p data-testid="asistan-bos" className="text-[13px] text-[var(--fg-muted)]">
-                        Henüz mesaj yok. Yukarıya isteğinizi yazın; asistan raporu hazırlayıp önizlemeyi getirir.
+                        Henüz mesaj yok. Yukarıya isteğinizi yazın; asistan tanımı hazırlar, siz teyit edip uygular ya da indirirsiniz.
                     </p>
                 )}
 
@@ -86,7 +88,8 @@ export function AssistantThread({
                         key={k.id}
                         kayit={k}
                         katalog={katalog}
-                        onUygula={onUygula}
+                        onOnayla={onOnayla}
+                        onIndir={onIndir}
                         onGeriAl={k.id === geriAlKaydiId ? onGeriAl : undefined}
                     />
                 ))}
