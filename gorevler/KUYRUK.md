@@ -3,6 +3,23 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Rapor ekranı üç aşama: kolonlar → seçili kolona bağlı filtreler → önizleme (2026-09-11 gece, kullanıcı kararı)
+
+<!-- Kaynak: 10-11.09 sohbeti + onaylanan tıklanabilir taslak
+     https://claude.ai/code/artifact/45861bb5-e5fc-4bb1-8fa1-8dfe670a0f8a. Teşhis: G166 bağlı kolonları
+     ("Müvekkil kartı · İletişim") 145 kolonluk düz listede kayboluyor; ColumnPicker/FieldPicker katalogdaki
+     `bag`/`iliskiler`'e bakmıyor → "çoklu tablo yalnız asistanla" algısı. Kullanıcı isteği: iki aşamalı —
+     önce sütunlar, sonra seçilen sütunların filtresi. Planlayıcı kararı: aşama KABUĞU önce (G169), çünkü üç
+     görev de ReportsPage.tsx yerleşimine dokunur (hub); kabuk sonda olsaydı yerleşim iki kez kurulurdu.
+     Sunucu sözleşmesi (RaporTanimi/uçlar/katalog) ve lib/reports.ts DEĞİŞMEZ — iş tamamen sunum katmanı,
+     backend görevi YOK. Zincir: G169→G170→G171 seri (aynı dosyalar: ReportsPage, builderState); G172 docs
+     en son. Test-değiştirme izinleri her dosyada baştan yazıldı (G138/G139 dersi). Tahmin 2 gece. -->
+
+- [ ] G169 | bant:frontend | bagimli:- | Rapor ekranı üç aşama: StageSection kabuğu + kolon seçimi ana alana + bağlı kaynak sekmeleri (iliskiler/bag) + kaynak renkleri + yan panel kalkar
+- [ ] G170 | bant:frontend | bagimli:G169 | Rapor ekranı üç aşama: seçili kolona bağlı filtre kartları + görünmeyen alan filtresi (B bölümü) + hızlı filtreler öneri çipine + A↔B taşınma (filtre kaybolmaz)
+- [ ] G171 | bant:frontend | bagimli:G170 | Rapor ekranı üç aşama: önizleme başlığında kaynak şeridi + huni rozeti + huniden aşama 2'ye atlama + sayaç/lejant/indirme satırı + şablon çubuğu sekme üstüne + özetler
+- [ ] G172 | bant:docs | bagimli:G171 | raporlama.md §8 üçüncü tur yeniden yazımı + §1/§12/§13/§15 + CLAUDE.md paragrafı + plan §4.1 "uygulamada değişti" şerhi (koddan doğrulanmış)
+
 ## ÖNCELİK 1 — Veri ekibi cevabı ↔ HukuDok düzeltmeleri (2026-09-08 gündüz, kullanıcı onayı)
 
 <!-- Kaynak: docs/plan/veri-ekibi-cevabi-karsilastirma-plani-2026-09-08.md (§1 karşılaştırma tablosu, §3 görev
