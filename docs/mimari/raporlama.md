@@ -411,6 +411,15 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   "TEYİT DÖNGÜSÜ": onay kelimelerinde tanım değişmeden + `onizle`, düzeltmede yalnız istenen alan). `tanim=null` +
   eylem → bekleyen (yoksa oluşturucudaki) tanımla; soru → yalnız balon. "Geri al" kartı yeniden onay bekleyen
   hâle döndürür (bekleyen = o tanım). Kart uygulandıktan sonra indirme düğmeleri kalır.
+- **Yerel onay (G167 ek, 10.09 prod dersi):** Deploy #22 sonrası kullanıcı "tamam" yazdı, kart yeniden onay istedi —
+  sunucuda tekrar oynatıldığında Gemini tanımı aynen döndürdü, ama LLM çıktısı her turda birebir garanti değil
+  (`tanimAyni` düşer). Bu yüzden kısa onay/indirme mesajları ARAYÜZDE tanınır (`reportsChat.onayNiyeti`: yalnız
+  onay/indirme/dolgu kelimelerinden oluşan ≤8 kelimelik mesaj → `onizle` | `indir_xlsx` | `indir_csv`; "tamam ama
+  telefonu ekle" gibi başka kelime içeren mesaj → `null`, Gemini'ye gider) ve bekleyen tanım Gemini'ye gitmeden
+  uygulanır/indirilir; sohbete `yerel: true` bir asistan satırı düşer ("Onaylandı, …"), geçmişe de girer. Sözle onayın
+  Gemini yolu (aynen dönen tanım + eylem) onay dışı cümleler için kalır. Sunucu artık her cevapta INFO iz bırakır
+  (`asistan.py`: eylem, kaynak, kolon sayısı, filtre `alan:op` listesi, `mevcut_ile_ayni`, son mesajın ilk 60 karakteri —
+  değer yok) — "tamam" turunda modelin tanımı değiştirip değiştirmediği prod'da buradan okunur.
 
 ## 8. Kullanıcı akışı — Rapor sekmesi (G138 + G139, plan §4.1)
 

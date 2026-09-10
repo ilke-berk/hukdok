@@ -229,16 +229,16 @@ describe("AssistantBar (G143/G167)", () => {
         await enter(girdi());
         expect(onTanimUygula).not.toHaveBeenCalled();
 
-        // "tamam" ama sayfa reddetti (false) → rozet yok, bekleyen kalır
+        // onay dışı cümle Gemini'ye gider; aynı tanım + eylem döner ama sayfa reddetti (false) → rozet yok, bekleyen kalır
         onTanimUygula.mockResolvedValueOnce(false);
-        yaz(girdi(), "tamam");
+        yaz(girdi(), "bu şekilde devam edelim mi");
         await enter(girdi());
         expect(onTanimUygula).toHaveBeenCalledWith(TANIM, "onizle");
         expect(balonlar()[1].querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
         expect(balonlar()[1].querySelector("[data-testid='tanim-geri-al']")).toBeNull();
 
-        // "tamam" tekrar → uygulanır: rozet + Geri al; mevcut_tanim bekleyen tanımdı
-        yaz(girdi(), "tamam");
+        // tekrar → uygulanır: rozet + Geri al; mevcut_tanim bekleyen tanımdı
+        yaz(girdi(), "bu şekilde devam edelim mi");
         await enter(girdi());
         expect(sohbetGovdesi().mevcut_tanim).toEqual(TANIM);
         expect(onTanimUygula).toHaveBeenCalledTimes(2);
@@ -249,7 +249,7 @@ describe("AssistantBar (G143/G167)", () => {
         yaz(girdi(), "başka");
         await enter(girdi());
         expect(onTanimUygula).toHaveBeenCalledTimes(2);
-        yaz(girdi(), "csv indir");
+        yaz(girdi(), "bunu csv olarak da atar mısın");
         await enter(girdi());
         expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM3, "indir_csv");
         expect(balonlar()[3].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
@@ -261,10 +261,53 @@ describe("AssistantBar (G143/G167)", () => {
         expect(onTanimUygula).toHaveBeenCalledTimes(3);
 
         // Bekleyen yok → tanımsız "önizle" oluşturucudaki tanımla
-        yaz(girdi(), "önizle");
+        yaz(girdi(), "önizleyebilir misin");
         await enter(girdi());
         expect(onTanimUygula).toHaveBeenLastCalledWith(MEVCUT, "onizle");
         expect(balonlar()).toHaveLength(7);
+    });
+
+    it("YEREL ONAY (G167): bekleyen tanım varken 'tamam' fetch'siz onTanimUygula(tanim, onizle), sahip kart rozet; 'csv indir' → indir_csv; onay dışı mesaj Gemini'ye; bekleyen yokken 'tamam' da Gemini'ye", async () => {
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "neyi?", tanim: null, eylem: null }]));
+        await render();
+        const balonlar = () => Array.from(container.querySelectorAll("[data-testid='sohbet-asistan']"));
+
+        // Bekleyen yokken "tamam" → Gemini (soru cevabı tanımsız)
+        yaz(girdi(), "tamam");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(onTanimUygula).not.toHaveBeenCalled();
+
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "hazır?", tanim: TANIM, eylem: null }]));
+        yaz(girdi(), "listele");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(balonlar()[1].querySelector("[data-testid='tanim-ozeti']")).not.toBeNull();
+
+        // "Tamam." → fetch YOK, bekleyen tanım uygulanır, kart (balon 2) rozet
+        yaz(girdi(), "Tamam.");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(onTanimUygula).toHaveBeenCalledWith(TANIM, "onizle");
+        expect(balonlar()[1].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar()[2].textContent).toContain("Onaylandı");
+
+        // Geri al → yeniden bekleyen; "csv indir" → fetch yok, indir_csv
+        await yenidenRender({ geriAlinabilir: true });
+        await tikla($("[data-testid='tanim-geri-al']"));
+        yaz(girdi(), "csv indir");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(onTanimUygula).toHaveBeenLastCalledWith(TANIM, "indir_csv");
+        expect(balonlar()[1].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+
+        // Uygulandıktan sonra onay dışı mesaj Gemini'ye gider; yerel satırlar geçmişte asistan olarak taşınır
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "?", tanim: null, eylem: null }]));
+        yaz(girdi(), "telefonu da ekle");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        const mesajlar = sohbetGovdesi().mesajlar as { rol: string; icerik: string }[];
+        expect(mesajlar.filter(m => m.rol === "assistant" && m.icerik.startsWith("Onaylandı"))).toHaveLength(2);
     });
 
     it("409 → onKapali çağrılır; 'Konuşmayı kapat' alanı kapatır geçmişi korur; Sohbeti temizle boş duruma döner", async () => {

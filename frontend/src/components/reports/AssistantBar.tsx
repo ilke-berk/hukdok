@@ -3,7 +3,7 @@ import { Loader2, Send } from "lucide-react";
 import type { AsistanEylemi, Katalog, RaporTanimi } from "@/lib/reports";
 import {
     ASISTAN_KAPALI_MESAJI, AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, ornekIstemler, sohbetGecmisi, tanimAyni, type SohbetKaydi,
+    chatReport, onayNiyeti, ornekIstemler, sohbetGecmisi, tanimAyni, type SohbetKaydi,
 } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
 import { AssistantThread } from "./AssistantThread";
@@ -47,7 +47,9 @@ export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asi
  * (a) kartta "Onayla ve uygula" → `onTanimUygula(tanim, null)`; (b) kartta "Excel/CSV indir" →
  * `onTanimUygula(tanim, indir_*)` (uygulanır + indirilir, K7 tek log yolu); (c) SÖZLE — kullanıcı "tamam /
  * uygula / indir" yazar, asistan bekleyen tanımı AYNEN (`tanimAyni`) + eylemle döndürürse eylem hemen yürür.
- * `tanim=null` + eylem → bekleyen (yoksa oluşturucudaki) tanımla eylem; `tanim=null` + eylem yok → soru, yalnız balon.
+ * (c') YEREL ONAY — kısa onay/indirme mesajı (`onayNiyeti`) bekleyen tanım varken Gemini'ye gitmeden uygulanır (10.09 prod
+ * dersi: model 'tamam' turunda tanımı değiştirebiliyor). `tanim=null` + eylem → bekleyen (yoksa oluşturucudaki) tanımla
+ * eylem; `tanim=null` + eylem yok → soru, yalnız balon.
  * İndirme daima sayfanın `/export` + `kaynak:"asistan"` yolu (K7).
  */
 export function AssistantBar({
@@ -90,9 +92,37 @@ export function AssistantBar({
         const gecmis = sohbetGecmisi([...kayitlar, kullaniciKaydi]);
         setKayitlar(prev => [...prev, kullaniciKaydi]);
         setGirdi("");
+        setAcik(true);
+
+        // YEREL ONAY (G167, 10.09 prod dersi): bekleyen tanım varken "tamam / uygula / excel indir" gibi kısa
+        // onay mesajı Gemini'ye GİTMEZ — model tanımı değiştirip karta geri düşürebiliyordu. Bekleyen tanım
+        // olduğu gibi uygulanır/indirilir; sohbete yerel bir asistan satırı düşer (geçmişe de girer).
+        const yerelEylem = bekleyenTanim ? onayNiyeti(metin) : null;
+        if (bekleyenTanim && yerelEylem) {
+            setGonderiliyor(true);
+            setAkisDurumu(yerelEylem === "onizle" ? "Rapor uygulanıyor…" : "İndiriliyor…");
+            try {
+                const ok = await onTanimUygula(bekleyenTanim, yerelEylem);
+                const sahip = [...kayitlar].reverse().find(k => k.rol === "assistant" && tanimAyni(k.tanim, bekleyenTanim));
+                kayitEkle({
+                    id: yeniKayitId(), rol: "assistant", yerel: true,
+                    icerik: !ok ? "Tanım uygulanamadı; karttaki uyarıya bakın."
+                        : yerelEylem === "onizle" ? "Onaylandı, rapor oluşturucuya uygulandı ve önizleme getirildi."
+                        : `Onaylandı, ${yerelEylem === "indir_xlsx" ? "Excel" : "CSV"} indiriliyor.`,
+                });
+                if (ok) {
+                    if (sahip) uygulandiIsaretle(sahip.id, bekleyenTanim);
+                    else setBekleyenTanim(null);
+                }
+            } finally {
+                setGonderiliyor(false);
+                setAkisDurumu(null);
+            }
+            return;
+        }
+
         setGonderiliyor(true);
         setAkisDurumu("Gönderiliyor…");
-        setAcik(true);
 
         const controller = new AbortController();
         iptalRef.current = controller;

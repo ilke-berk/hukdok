@@ -692,7 +692,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
     });
 
-    it("SÖZLE ONAY: ilk tanım kartta bekler (eylem onizle olsa da); ikinci cevap bekleyen tanımı AYNEN + onizle döndürünce hemen uygulanır ve önizlenir; export yok", async () => {
+    it("SÖZLE ONAY: ilk tanım kartta bekler (eylem onizle olsa da); 'tamam' YEREL yürür (Gemini'ye gitmez), kart rozet alır; onay dışı cümle Gemini'ye gider ve aynen dönen tanım + eylem uygulanır", async () => {
         let sayac = 0;
         sunucuKur({
             chat: () => {
@@ -709,22 +709,57 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         const balonlar = () => Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
         expect(balonlar()[0].querySelector("[data-testid='tanim-uygulandi']")).toBeNull();
 
-        // "tamam": sunucuya mevcut_tanim = BEKLEYEN tanım gider; aynı tanım + eylem döner → sözle onay
+        // "tamam": YEREL onay — /chat çağrısı YOK, bekleyen tanım uygulanır, kartın kendisi rozet alır
         await gonder("tamam");
         await bekle(8);
-        expect(govde(cagrilar("/api/reports/chat", "POST")[1]).mevcut_tanim).toEqual(ASISTAN_TANIMI);
+        expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(1);
         expect(balonlar()).toHaveLength(2);
-        expect(balonlar()[1].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
-        expect(balonlar()[1].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+        expect(balonlar()[1].textContent).toContain("Onaylandı");
+        expect(balonlar()[0].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar()[0].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+        expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
+
+        // Geri al → yeniden bekleyen; onay DIŞI cümle Gemini'ye gider (mevcut_tanim = bekleyen); aynı tanım + onizle → uygulanır
+        await tikla($("[data-testid='tanim-geri-al']"));
+        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        await gonder("bu şekilde devam edelim mi");
+        await bekle(8);
+        expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(2);
+        expect(govde(cagrilar("/api/reports/chat", "POST")[1]).mevcut_tanim).toEqual(ASISTAN_TANIMI);
+        expect(balonlar()).toHaveLength(3);
+        expect(balonlar()[2].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
 
         const prev = onizlemeler();
-        expect(prev).toHaveLength(2); // açılış + sözle onay
+        expect(prev).toHaveLength(4); // açılış + yerel onay + geri al + sözle onay
         expect(govde(prev[1])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 10 });
+        expect(govde(prev[2])).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 10 });
+        expect(govde(prev[3])).toEqual({ tanim: ASISTAN_TANIMI, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(toastMocks.success).toHaveBeenCalledWith("Rapor hazırlandı · 3 kayıt");
+    });
+
+    it("YEREL indirme: kart beklerken 'excel indir' Gemini'ye gitmez, /export xlsx kaynak:asistan; kart rozet alır", async () => {
+        sunucuKur({
+            chat: () => akis([{ status: "complete", cevap: "Hazır.", tanim: ASISTAN_TANIMI, eylem: null }]),
+        });
+        await render();
+        await gonder("derdest davalar");
+        await bekle(8);
+        expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
+
+        await gonder("excel indir");
+        await bekle(8);
+        expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(1);
+        const exp = cagrilar("/api/reports/export", "POST");
+        expect(exp).toHaveLength(1);
+        expect(govde(exp[0])).toEqual({ tanim: ASISTAN_TANIMI, format: "xlsx", sablon_id: null, kaynak: "asistan" });
+        expect(indirmeler).toEqual(["hukdok-rapor-davalar-20260906-1500.xlsx"]);
+        const balonlar = Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
+        expect(balonlar[0].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar[1].textContent).toContain("Excel indiriliyor");
     });
 
     it("eylem onizle + tanim null: oluşturucudaki mevcut tanımla YENİDEN önizler (aynı tanım olsa da); Geri al yok", async () => {

@@ -257,6 +257,8 @@ export interface SohbetKaydi {
     hata?: { ozet: string; kod: string };
     /** Tanım oluşturucuya uygulandı (düğme yerine rozet). */
     uygulandi?: boolean;
+    /** G167: sunucuya gitmeden arayüzün ürettiği asistan satırı (yerel onay). Geçmişe girer. */
+    yerel?: boolean;
 }
 
 /**
@@ -342,6 +344,56 @@ export function tanimAyrintisi(tanim: RaporTanimi, katalog: Katalog | null): Tan
         }),
         siralama: tanim.siralama.map(s => `${etiket(s.alan)} ${s.yon === "desc" ? "↓" : "↑"}`),
     };
+}
+
+// Kısa onay/indirme mesajları (G167, 10.09 prod dersi): "tamam" Gemini'ye gidince model tanımı ufak da
+// olsa değiştirebiliyor → `tanimAyni` düşüyor, kart yeniden onay istiyordu. Onay niyeti ARAYÜZDE tanınır,
+// bekleyen tanım LLM'siz uygulanır. Mesaj yalnız bu kelimelerden oluşuyorsa (dolgu kelimeler serbest) onaydır;
+// içinde başka bir kelime varsa ("tamam ama telefonu ekle") düzeltmedir → Gemini'ye gider.
+const ONAY_KELIMELERI = new Set([
+    "tamam", "tamamdir", "evet", "onayla", "onayliyorum", "onaylandi", "onay", "uygula", "uygulayalim", "dogru",
+    "olur", "ok", "okey", "peki", "goster", "onizle", "devam", "aynen", "kabul", "yap", "olustur", "listele", "getir",
+    "hazirla", "calistir",
+]);
+const INDIRME_KELIMELERI = new Set(["indir", "indirelim", "indirebilirsin", "indirin", "indirme", "ver", "cikar", "kaydet"]);
+const EXCEL_KELIMELERI = new Set(["excel", "xlsx", "exel"]);
+const CSV_KELIMELERI = new Set(["csv"]);
+const DOLGU_KELIMELERI = new Set([
+    "ve", "hadi", "lutfen", "bunu", "simdi", "artik", "raporu", "rapor", "bu", "sekilde", "boyle", "olarak", "dosya",
+    "dosyasi", "halinde", "formatinda", "o", "zaman", "haydi", "iyi", "guzel", "super", "harika", "tesekkurler",
+    "sagol", "tanimi", "tanim", "listeyi", "liste", "onu", "sonucu", "sonuc",
+]);
+
+function kelimeler(metin: string): string[] {
+    return metin
+        .toLowerCase()
+        .replace(/i̇/g, "i")
+        .replace(/[çğıöşü]/g, c => ({ "ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u" })[c] ?? c)
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+}
+
+/**
+ * Kullanıcı mesajı bekleyen tanımı ONAYLIYOR mu (G167): yalnız onay/indirme/dolgu kelimelerinden oluşan kısa
+ * mesaj → `onizle` (onay) ya da `indir_xlsx` / `indir_csv` (indirme; format yoksa Excel). Başka kelime
+ * geçiyorsa `null` (düzeltme/soru → Gemini). Bekleyen tanım yokken çağıran bunu kullanmaz.
+ */
+export function onayNiyeti(metin: string): AsistanEylemi | null {
+    const k = kelimeler(metin);
+    if (k.length === 0 || k.length > 8) return null;
+    let onay = false, indir = false, excel = false, csv = false;
+    for (const w of k) {
+        if (ONAY_KELIMELERI.has(w)) onay = true;
+        else if (INDIRME_KELIMELERI.has(w)) indir = true;
+        else if (EXCEL_KELIMELERI.has(w)) excel = true;
+        else if (CSV_KELIMELERI.has(w)) csv = true;
+        else if (!DOLGU_KELIMELERI.has(w)) return null;
+    }
+    if (csv) return "indir_csv";
+    if (excel) return "indir_xlsx";
+    if (indir) return "indir_xlsx";
+    return onay ? "onizle" : null;
 }
 
 /** İki tanım aynı mı (kaynak, kolon sırası, filtreler, sıralama) — "tamam/uygula/indir" cevabında asistan

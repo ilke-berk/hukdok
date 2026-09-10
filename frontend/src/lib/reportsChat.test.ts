@@ -10,7 +10,7 @@ import type { AsistanMesaji, Katalog, RaporTanimi } from "./reports";
 import {
     ASISTAN_AKIS_EKSIK, ASISTAN_KAPALI_MESAJI, ASISTAN_MESAJ_MAX, ASISTAN_YETKI_MESAJI,
     AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, errorKodIpucu, gecmisiKirp, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimAyni, tanimAyrintisi,
+    chatReport, errorKodIpucu, gecmisiKirp, onayNiyeti, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimAyni, tanimAyrintisi,
     tanimOzeti,
 } from "./reportsChat";
 
@@ -317,6 +317,23 @@ describe("G167 — tanimAyrintisi / tanimAyni", () => {
         // Katalog yok / kaynak yok: anahtarlar aynen, kart boş kalmaz
         expect(tanimAyrintisi({ ...tanim, veri_kaynagi: "yok" }, null)).toMatchObject({ kaynak: "yok", kolonlar: ["tracking_no", "muvekkil.phone", "bilinmeyen"] });
         expect(tanimAyrintisi({ ...tanim, filtreler: [], siralama: [] }, KATALOG)).toMatchObject({ filtreler: [], siralama: [] });
+    });
+
+    it("onayNiyeti: kısa onay → onizle; indirme kelimeleri → format (varsayılan Excel); başka kelime → null", () => {
+        for (const m of ["tamam", "Tamam.", "evet", "Evet, doğru", "onayla", "uygula", "tamam uygula", "olur böyle", "Doğru, hadi göster",
+                         "tamamdır", "peki devam", "OK", "bu şekilde listele", "hazırla"]) {
+            expect(onayNiyeti(m), m).toBe("onizle");
+        }
+        for (const m of ["indir", "excel indir", "Excel olarak ver", "tamam, excel", "xlsx indir", "tamam indir", "excel dosyası olarak kaydet"]) {
+            expect(onayNiyeti(m), m).toBe("indir_xlsx");
+        }
+        for (const m of ["csv", "csv indir", "tamam csv olarak ver", "CSV formatında indir"]) {
+            expect(onayNiyeti(m), m).toBe("indir_csv");
+        }
+        for (const m of ["", "   ", "tamam ama telefonu da ekle", "nisan değil mart", "evet ama mahkemeyi çıkar", "doğru mu?",
+                         "tamam bir de müvekkil kategorisi olsun", "hangi kolonlar var", "tamam tamam tamam tamam tamam tamam tamam tamam tamam"]) {
+            expect(onayNiyeti(m), m).toBeNull();
+        }
     });
 
     it("tanimAyni: alan alan eşitlik; kolon sırası, filtre değeri ve yön farkı ayrımdır; null/undefined false", () => {

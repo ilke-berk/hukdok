@@ -321,4 +321,14 @@ async def sohbet(
         # bu eylemi mevcut tanım üzerinde yürütürdü. Model kuralı ihlal etse de sunucu keser.
         logger.warning("Rapor asistani tanim=null ile eylem=%s dondurdu — eylem dusuruldu", eylem)
         eylem = None
+    # G167 teşhis izi (INFO, değer yok — yalnız anahtar/op): "tamam" turunda modelin tanımı değiştirip
+    # değiştirmediği prod'da buradan okunur (10.09 dersi: log yokken sözle onay arızası körlemesine kaldı).
+    logger.info(
+        "Rapor asistani cevabi: eylem=%s kaynak=%s kolon=%s filtre=%s siralama=%s mevcut_ile_ayni=%s son_mesaj=%r",
+        eylem, tanim.veri_kaynagi if tanim else None, len(tanim.kolonlar) if tanim else 0,
+        [f"{f.alan}:{f.op}" for f in tanim.filtreler] if tanim else None,
+        [f"{s.alan}:{s.yon}" for s in tanim.siralama] if tanim else None,
+        (tanim.model_dump() == mevcut_tanim.model_dump()) if (tanim and mevcut_tanim) else None,
+        (list(mesajlar)[-1].icerik[:60] if mesajlar else ""),
+    )
     yield SohbetTamamlandi(cevap=cevap.cevap, tanim=tanim, eylem=eylem).model_dump()
