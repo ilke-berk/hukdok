@@ -224,6 +224,13 @@ _YER_TUTUCULAR = frozenset({"-", "--", "—", "–", "YOK", "N/A", "NA", "İLK",
 #: ikinci kaynak: paket adındaki ISO tarih (`HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx`).
 _KESIM_ETIKET = "VERIKESIMTARIHI"
 _PAKET_ADI_TARIHI = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
+#: G156 — özet sayfasındaki "Teslim türü: tam | delta" etiketi (aynı arama deseni).
+#: Satır yoksa/boşsa `tam`. Delta = yalnız değişen föyler/sütunlar; yazma yolu zaten
+#: "eksik sütun/föy = dokunma" (`hukdok_aktarim`), kapı ise kaybolan başlığı ihlal saymaz.
+_TESLIM_TURU_ETIKET = "TESLIMTURU"
+TESLIM_TURU_TAM = "tam"
+TESLIM_TURU_DELTA = "delta"
+TESLIM_TURLERI: Tuple[str, ...] = (TESLIM_TURU_TAM, TESLIM_TURU_DELTA)
 
 HATA_MESAJI_SINIRI = 2000
 _GUVENSIZ_AD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -256,6 +263,13 @@ _FARK_ETIKETLERI: Tuple[Tuple[str, str], ...] = (
 )
 #: Kapı ihlali üreten kategoriler (`yeni_sayfalar` bilgi, `taninmayan_basliklar` tek başına değil).
 _IHLAL_KATEGORILERI: Tuple[str, ...] = ("yeni_basliklar", "kaybolan_basliklar", "kaybolan_sayfalar")
+#: G156 — delta teslimde kaybolan başlık BİLGİDİR (yapı farkı bloğunda yine listelenir);
+#: yeni başlık ve kaybolan sayfa kuralı delta'da da aynen ihlal.
+_DELTA_IHLAL_KATEGORILERI: Tuple[str, ...] = ("yeni_basliklar", "kaybolan_sayfalar")
+#: Gerekçe parçaları: kategori → `yapi_degisti (...)` içindeki etiket.
+_GEREKCE_ETIKETLERI: Tuple[Tuple[str, str], ...] = (
+    ("yeni_basliklar", "yeni"), ("kaybolan_basliklar", "kaybolan"), ("kaybolan_sayfalar", "kaybolan sayfa"),
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -721,7 +735,14 @@ class _YapiHatasi(Exception):
 # ─── Yapı (G115) ─────────────────────────────────────────────────────────────
 
 def _bos_yapi() -> dict:
-    return {"sayfalar": [], "basliklar": [], "taninan": [], "taninmayan": []}
+    return {"sayfalar": [], "basliklar": [], "taninan": [], "taninmayan": [], "teslim_turu": TESLIM_TURU_TAM}
+
+
+def teslim_turu(teslim: models.AktarimTeslimi) -> str:
+    """Defter satırının teslim türü — `yapi["teslim_turu"]` (G156); yoksa/eski kayıtta `tam`."""
+    yapi = teslim.yapi
+    tur = yapi.get("teslim_turu") if isinstance(yapi, dict) else None
+    return tur if isinstance(tur, str) and tur in TESLIM_TURLERI else TESLIM_TURU_TAM
 
 
 def _baslik_satiri(ws) -> List[str]:
@@ -805,16 +826,22 @@ def fark_kalemleri(fark: Optional[dict]) -> List[Tuple[str, str]]:
     return kalemler
 
 
-def _ihlal_var(fark: Optional[dict]) -> bool:
-    return isinstance(fark, dict) and any(fark.get(k) for k in _IHLAL_KATEGORILERI)
+def _ihlal_kategorileri(tur: str) -> Tuple[str, ...]:
+    """Teslim türüne göre ihlal sayılan fark kategorileri (G156: delta'da kaybolan başlık bilgi)."""
+    return _DELTA_IHLAL_KATEGORILERI if tur == TESLIM_TURU_DELTA else _IHLAL_KATEGORILERI
 
 
-def _fark_gerekcesi(fark: dict) -> str:
-    """`yapi_degisti (yeni: A, B; kaybolan: C; kaybolan sayfa: D)` — yalnız dolu parçalar."""
+def _ihlal_var(fark: Optional[dict], tur: str = TESLIM_TURU_TAM) -> bool:
+    return isinstance(fark, dict) and any(fark.get(k) for k in _ihlal_kategorileri(tur))
+
+
+def _fark_gerekcesi(fark: dict, tur: str = TESLIM_TURU_TAM) -> str:
+    """`yapi_degisti (yeni: A, B; kaybolan: C; kaybolan sayfa: D)` — yalnız dolu ve
+    teslim türünde ihlal sayılan parçalar (delta'da `kaybolan` gerekçeye girmez)."""
+    kategoriler = _ihlal_kategorileri(tur)
     parcalar = []
-    for anahtar, etiket in (("yeni_basliklar", "yeni"), ("kaybolan_basliklar", "kaybolan"),
-                            ("kaybolan_sayfalar", "kaybolan sayfa")):
-        adlar = list(fark.get(anahtar) or [])
+    for anahtar, etiket in _GEREKCE_ETIKETLERI:
+        adlar = list(fark.get(anahtar) or []) if anahtar in kategoriler else []
         if adlar:
             parcalar.append(f"{etiket}: {', '.join(_kisalt(adlar))}")
     return f"{KAPI_YAPI_DEGISTI} ({'; '.join(parcalar)})"
@@ -887,6 +914,32 @@ def onceki_teslim_adi_oku(ws) -> Optional[str]:
     if not ad or ad.upper() in _YER_TUTUCULAR:
         return None
     return ad
+
+
+def teslim_turu_oku(ws) -> str:
+    """`DEGISIKLIK_OZETI` sayfasından "Teslim türü: tam | delta" değerini çıkarır (G156).
+
+    Arama deseni `onceki_teslim_adi_oku` ile aynı; karşılaştırma aksan/boşluk
+    duyarsız (`_anahtar`): "Delta", "DELTA", "delta (kısmi)" → `delta`. Satır yok,
+    boş, yer tutucu ya da `tam` → `tam`. Tanınmayan değer WARNING + `tam` (sessiz
+    düşüş yok; paket reddedilmez — tam paket kuralları daha sıkıdır).
+    """
+    deger = _ozet_etiket_degeri(ws, _TESLIM_TURU_ETIKET)
+    if deger is None or deger == "":
+        return TESLIM_TURU_TAM
+    metin = str(deger).strip()
+    if metin.upper() in _YER_TUTUCULAR:
+        return TESLIM_TURU_TAM
+    anahtar = _anahtar(metin)
+    if anahtar.startswith(_anahtar(TESLIM_TURU_DELTA)):
+        return TESLIM_TURU_DELTA
+    if anahtar.startswith(_anahtar(TESLIM_TURU_TAM)):
+        return TESLIM_TURU_TAM
+    logger.warning(
+        "%s 'Teslim türü' tanınmadı (%r; beklenen: %s) — 'tam' sayıldı",
+        OZET_SAYFASI, metin, " | ".join(TESLIM_TURLERI),
+    )
+    return TESLIM_TURU_TAM
 
 
 def kesim_tarihi_oku(ws) -> Optional[date]:
@@ -969,6 +1022,7 @@ def _yapi_dogrula(yol: Path) -> Tuple[Optional[str], bool, dict]:
             )
         ozet_var = OZET_SAYFASI in wb.sheetnames
         onceki = onceki_teslim_adi_oku(wb[OZET_SAYFASI]) if ozet_var else None
+        yapi["teslim_turu"] = teslim_turu_oku(wb[OZET_SAYFASI]) if ozet_var else TESLIM_TURU_TAM
         yapi["basliklar"] = _baslik_satiri(wb[VERI_SAYFASI])
     finally:
         wb.close()
@@ -1086,14 +1140,27 @@ def teslim_dogrula(teslim_id: int, *, db: Optional[Session] = None) -> str:
         if not ozet_var:
             teslim.zincir_tamam = None
             zincir_notu = f"'{OZET_SAYFASI}' sayfası yok — zincir bilinmiyor"
+        elif onceki is None:
+            # G156: "Önceki teslim" yer tutucu (`—`, `İLK`) ya da boş — defterde hiç
+            # uygulanmış teslim yoksa zincir BAŞLANGICIDIR (ilk teslim zaten `ilk_teslim`
+            # kuralıyla incelemeye düşer); uygulanmış teslim varken yer tutucu zincir eksiğidir.
+            teslim.zincir_tamam = not _uygulandi_var(session, haric=int(teslim.id))
+            zincir_notu = (
+                "önceki teslim belirtilmemiş, defter boş — zincir başlangıcı" if teslim.zincir_tamam
+                else "önceki teslim belirtilmemiş ama defterde uygulanmış teslim var"
+            )
         else:
-            teslim.zincir_tamam = bool(onceki) and _uygulandi_var(session, onceki, haric=int(teslim.id))
+            teslim.zincir_tamam = _uygulandi_var(session, onceki, haric=int(teslim.id))
             zincir_notu = (
                 f"önceki teslim {onceki!r} defterde uygulandı" if teslim.zincir_tamam
                 else f"önceki teslim {onceki!r} defterde uygulanmış değil"
             )
+        tur = teslim_turu(teslim)
+        if tur == TESLIM_TURU_DELTA:
+            logger.info("Teslim #%s (%s) delta teslim — kaybolan başlık kapıda bilgi sayılır",
+                        teslim.id, teslim.dosya_adi)
         teslim.hata_mesaji = None
-        _durum_gecir(teslim, DURUM_DOGRULANDI, not_=f"yapı tamam; {zincir_notu}")
+        _durum_gecir(teslim, DURUM_DOGRULANDI, not_=f"yapı tamam; teslim türü {tur}; {zincir_notu}")
         session.commit()
         logger.info("Teslim #%s doğrulandı: %s", teslim.id, zincir_notu)
         return DURUM_DOGRULANDI
@@ -1162,8 +1229,9 @@ def kapi_ihlalleri(db: Session, teslim: models.AktarimTeslimi, esikler: Optional
     if (teslim.alan_degisikligi or 0) > esik["alan_degisikligi"]:
         ihlaller.append(f"alan_degisikligi {teslim.alan_degisikligi} > {esik['alan_degisikligi']}")
     fark = teslim.yapi_farki                         # G115: doğrulama adımı yazdı; NULL = bilinmiyor
-    if _ihlal_var(fark):
-        ihlaller.append(_fark_gerekcesi(fark))
+    tur = teslim_turu(teslim)                        # G156: delta'da kaybolan başlık bilgi, ihlal değil
+    if _ihlal_var(fark, tur):
+        ihlaller.append(_fark_gerekcesi(fark, tur))
     return ihlaller
 
 

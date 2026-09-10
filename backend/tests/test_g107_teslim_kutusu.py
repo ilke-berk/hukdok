@@ -458,14 +458,16 @@ def test_dogrula_onceki_teslim_uygulanmamis_ise_zincir_eksik(iki_kart):
         assert teslim.onceki_teslim_adi == "HUKDOK_TESLIM_ONCEKI.xlsx"
         assert teslim.zincir_tamam is False
 
-        # Özet sayfası var ama "Önceki teslim" boş/yer tutucu: zincir doğrulanamadı → False
+        # Özet sayfası var ama "Önceki teslim" yer tutucu: defterde henüz UYGULANMIŞ teslim
+        # yok (yalnız inceleme_bekliyor) → zincir başlangıcı, True (G156; dolu defter
+        # senaryosu test_g156_delta_ve_zincir'de)
         tid2 = tk.teslim_kaydet(
             icerik=_paket(_uc_satir("z"), ozet="—"),
             dosya_adi="HUKDOK_TESLIM_B.xlsx", kaynak="yukleme", db=db,
         )
         assert tk.teslim_dogrula(tid2, db=db) == "dogrulandi"
         teslim2 = db.get(models.AktarimTeslimi, tid2)
-        assert teslim2.onceki_teslim_adi is None and teslim2.zincir_tamam is False
+        assert teslim2.onceki_teslim_adi is None and teslim2.zincir_tamam is True
     finally:
         db.close()
 

@@ -142,8 +142,17 @@ satırında `sistem_no` **ve** `dosya_no` bulunmalı (`:193`; script tek başın
 `sistem_no`'yu zorunlu sayar — `scripts/hukdok_aktarim.py:210` — ama `dosya_no` eşleştirme
 köprüsüdür, onsuz her satır atlanırdı). `DEGISIKLIK_OZETI` isteğe bağlıdır: yoksa
 `zincir_tamam=NULL`; varsa "Önceki teslim" etiketi ilk 200 satırda aksan/boşluk duyarsız
-aranır, yer tutucu (`—`, `yok`, `ilk`…) None sayılır (`:194-197`, `:636-663`) ve
-`zincir_tamam = (ad bulundu) AND (o ad defterde uygulandi)` (`:788`).
+aranır, yer tutucu (`—`, `yok`, `ilk`…) None sayılır (`:194-197`, `:636-663`). Ad bulunduysa
+`zincir_tamam = (o ad defterde uygulandi)`; ad yoksa (yer tutucu/boş) **G156 zincir
+başlangıcı kuralı**: defterde hiç `uygulandi` teslim yoksa `True` (ilk teslim zaten
+`ilk_teslim` kuralıyla incelemeye düşer), uygulanmış teslim varken yer tutucu `False`
+(`zincir_eksik`) (`teslim_dogrula`, `services/teslim_kutusu.py`).
+
+Aynı sayfadaki "Teslim türü: tam | delta" satırı (G156, `teslim_turu_oku`) `yapi["teslim_turu"]`
+olarak yazılır (defter kolonu yok; satır yok/boş/yer tutucu → `tam`, tanınmayan değer WARNING +
+`tam`). Delta = yalnız değişen föy/sütunlar: yazma yolu zaten eksik sütun/föye dokunmaz
+(`scripts/hukdok_aktarim.py`), kapı ise delta'da kaybolan başlığı ihlal değil **bilgi** sayar
+(§4 `yapi_degisti`); envanter denkliği, zincir ve eşik kuralları delta'da aynen geçerlidir.
 
 ### Aktarım ayrı bağlantıda koşar
 
@@ -165,7 +174,8 @@ ihlalde durup diğerleri gizlenmesin (`:43-48`). Boş liste = `otomatik`.
 | --- | --- | --- |
 | `envanter_denk_degil` | `envanter_denk is not True` | zorunlu — belge koruma şartı (`services/belge_envanteri.py:1-20`) |
 | `ilk_teslim` | defterde `uygulandi` teslim yok | zorunlu — ilk teslim daima incelemeye düşer |
-| `zincir_eksik` | `zincir_tamam is False` (özet var ama önceki teslim uygulanmış değil) | — |
+| `zincir_eksik` | `zincir_tamam is False` (özet var ama önceki teslim uygulanmış değil; yer tutucu yalnız defter boşken zincir başlangıcıdır — G156) | — |
+| `yapi_degisti` | önceki `uygulandi` teslime göre yeni başlık / kaybolan başlık / kaybolan sayfa (G115); **delta** teslimde kaybolan başlık ihlal değil bilgidir, yapı farkı bloğunda yine listelenir (G156) | `_IHLAL_KATEGORILERI` / `_DELTA_IHLAL_KATEGORILERI` |
 | `bos_teslim` | `okunan == 0` | — |
 | `hata_orani` | `hata_sayisi / okunan >` eşik | env `TESLIM_KAPI_HATA_ORANI`, varsayılan **0.02** |
 | `eslesmeyen_orani` | `atlanan / okunan >` eşik | env `TESLIM_KAPI_ESLESMEYEN_ORANI`, varsayılan **0.05** |
