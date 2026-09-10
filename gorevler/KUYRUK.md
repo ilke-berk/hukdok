@@ -22,7 +22,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G152 | bant:backend | bagimli:G151 | `status` kesim-sonrası koruma: kullanıcı imzalı case_history varsa paket yazmaz + DEGISIKLIK_OZETI "Veri kesim tarihi" + update_case tarihçe imzası
 - [x] G153 | bant:backend | bagimli:G152 | DosyaNo kökü → müvekkil kimliği: eşleştirme adımı, kök/müvekkil çelişkisi (H-6589) yazılmaz, föy↔müvekkil `case_party_id` bağı, "Müvekkil değişti" raporu
 - [x] G154 | bant:backend | bagimli:G153 | Cevaplı xlsx ile 20 föyü bağlama: `cevapli_kart_eslemesi.py` + aktarımda `--kart-esleme` haritası (H-6589 hariç 19 föy)
-- [ ] G155 | bant:backend | bagimli:G154 | Karar_Asamalari `Başvuru Tarihi`: aşama tablosuna kolon (migrasyon), okuyucu, istinaf/temyiz başvuru tarihi fotoğrafı — YENİDEN KUYRUKTA 10.09: test_g062 kolon kilidi izni (yalnız `basvuru_tarihi`); taslak `stash@{0}` (işçi önce `git stash pop`, pytest'ten önce `migrate.py`)
+- [x] G155 | bant:backend | bagimli:G154 | Karar_Asamalari `Başvuru Tarihi`: aşama tablosuna kolon (migrasyon), okuyucu, istinaf/temyiz başvuru tarihi fotoğrafı — TAMAM 10.09 (ikinci koşu; test_g062 + test_g073 kilitleri izinle büyütüldü)
 - [ ] G156 | bant:backend | bagimli:G155 | Delta paket + zincir başlangıcı: "Teslim türü: delta" satırı, kaybolan başlık bilgi (ihlal değil), `—` yalnız defter boşken zincir tamam
 - [ ] G157 | bant:backend | bagimli:G156 | Aşama çelişki raporu üreticisi repoya (servis + CLI), yer tutucu sınıfı (S5 satır 82), E-8 "müvekkil yönü farkı" etiketi, ekip cevabını geri okuma
 - [x] G158 | bant:backend | bagimli:- | Çoklu avukatlı kart (case_lawyers ≥ 2, kutu boş) "eksik sorumlu avukat" sayılmaz — Python + SQL kuralı + backfill (≈1.031 kart)
