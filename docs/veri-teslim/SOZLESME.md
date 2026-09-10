@@ -7,12 +7,12 @@
 (Hanyaloğlu Acar + LexisBio ortak sistemi)
 
 Bu metin kısa sözleşmedir; sütun/sayfa/değer ayrıntıları ve makine-okur özet ayrı
-bilgilendirme belgesindedir (`BILGILENDIRME_2026-09-03.md`, sürüm 1.2 — karar durumu
-havuzları için bu metnin §6'sı günceldir, bilgilendirme belgesinin §3.8'i 04.09
-fotoğrafıdır). 04.09.2026'daki Format Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve
-cevabımız her iki belgeye işlendi: `Müvekkil Tipi` ve `Hizmet Türü` sütunları artık okunur,
-`İddia Edilen Kusur` listemiz dokuz değerle doludur. 05.09.2026 (bilgilendirme sürüm 1.2):
-04.09 paketinin 54 sütununun **tamamı** okunur; dosyanızda değişiklik gerekmez.
+bilgilendirme belgesindedir (`BILGILENDIRME_2026-09-03.md`, sürüm 1.3 — 10.09.2026'da bu
+metinle aynı kurallara getirildi; iki belge çelişirse bize yazın). 04.09.2026'daki Format
+Değişiklik Bildirimi REV-2 (DB-2026-001…010) ve cevabımız her iki belgeye işlendi:
+`Müvekkil Tipi` ve `Hizmet Türü` sütunları artık okunur, `İddia Edilen Kusur` listemiz dokuz
+değerle doludur. 05.09.2026'dan beri 04.09 paketinin 54 sütununun **tamamı** okunur;
+dosyanızda değişiklik gerekmez.
 
 **1.3'te değişenler (kısa):** §3 artık üç satır (Önceki teslim · Teslim türü · Veri kesim
 tarihi); §4 delta teslim kuralları; §6 karar durumu havuzları yenilendi ve "Kapalı/Derdest
