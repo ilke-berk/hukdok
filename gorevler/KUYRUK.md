@@ -28,7 +28,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G158 | bant:backend | bagimli:- | Çoklu avukatlı kart (case_lawyers ≥ 2, kutu boş) "eksik sorumlu avukat" sayılmaz — Python + SQL kuralı + backfill (≈1.031 kart)
 - [x] G159 | bant:backend | bagimli:G157 | `tr_title` DB-008 kuralı (bağlaç küçük, kısaltma korunur, parantez sonrası büyük, yabancı ad) + `sub_type` yazım farkında paket kazanır
 - [x] G160 | bant:backend | bagimli:G159 | `yazim_birligi.py` tek seferlik dönüşüm (dry-run/--apply, tarihçeli): sub_type 4.521, taraf adı ~3.450 + ikizler, court 1.115, subject, rol, bureau_types listesi; Sigortalı/mahkeme listeleri DOKUNULMAZ — TAMAM 10.09 (180d76e + cb4a5d8 noqa temizliği; kapı BLOKE'si sahte ihlaldi: `scripts/*` E402 pyproject'te zaten kapalı; bağımsız denetim GEÇTİ, lokal DB'ye uygulandı, prod'a UYGULANMADI)
-- [ ] G161 | bant:docs | bagimli:G148,G156,G160 | SOZLESME + mimari + plan şerhleri: eşik = hücre, delta/kesim tarihi satırları, sütun sahipliği, DB-008 genişletme + Yazim_Standardi isteği, aşama/status kuralları
+- [x] G161 | bant:docs | bagimli:G148,G156,G160 | SOZLESME + mimari + plan şerhleri: eşik = hücre, delta/kesim tarihi satırları, sütun sahipliği, DB-008 genişletme + Yazim_Standardi isteği, aşama/status kuralları
 
 ## ÖNCELİK 1 — Teslim hattı ikinci SharePoint kimliği: Hanyaloğlu tenant'ı (2026-09-08 gündüz, kullanıcı kararı)
 
