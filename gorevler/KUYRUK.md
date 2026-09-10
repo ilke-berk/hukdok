@@ -739,8 +739,24 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
   `tsc -b --force` temiz, build OK, Docker imaj duman testi (login yönlendirme + 404 splat)
   geçti. Login arkası sayfalar MSAL istediğinden tıklanamadı — deploy öncesi girişli kısa
   gezinti önerilir.
-- **Bilinçli AÇIK kalan:** vite 5.4 majörü (dev zinciri esbuild advisory'si; CI'da
-  bloklamayan bilgi kapısında, ADR-013 K5 satır "vite (dev)" — ayrı iş).
+- ~~**Bilinçli AÇIK kalan:** vite 5.4 majörü (dev zinciri esbuild advisory'si; CI'da
+  bloklamayan bilgi kapısında, ADR-013 K5 satır "vite (dev)" — ayrı iş).~~ → G089 ile
+  kapandı (2026-08-22, vite 6.4.3; dev zinciri kapısı BLOKLAYICI oldu).
+- ✅ **CI dev zinciri kırmızısı + ignore desteği** (2026-09-10 gündüz, kuyruğa GİRMEDİ,
+  kullanıcıyla koşuldu; `551ab16` + `31f6f30`): 10.09'daki üç main push'u (f6e302c,
+  95a05a9, bf581b0) frontend job'unun "npm audit (geliştirme zinciri dahil)" adımında
+  düştü — kod hatası DEĞİL, 07.09'dan sonra yayınlanan iki upstream advisory
+  (@vitest/mocker GHSA-82fw-gwwq-j7x9 moderate, js-yaml GHSA-2883-xcg3-v3hh high; ikisi
+  de yalnız geliştirici makinesinde, prod imajına/bundle'a girmez, prod kapısı temizdi).
+  Aynı kırmızı 03.09'da da yaşanmıştı (`2a37749`). Çözüm: `npm audit fix` → vitest 4.1.11
+  + js-yaml 4.3.2, yalnız lockfile; kapılar vitest 888/888, eslint/tsc/build temiz.
+  Ardından G089'un bıraktığı boşluk kapatıldı: `check-npm-audit.mjs --dev` kipi — dev
+  adımı da `audit-ignore.txt`'i okur (ağacın tamamı, eşik moderate; prod kipi değişmedi).
+  bf581b0 lockfile'ıyla dört senaryo simülasyonu (ignore'suz kırmızı / prod yeşil /
+  tarihli ignore yeşil / süresi geçmiş kırmızı) beklendiği gibi. ADR-013 K3 şerhi +
+  audit-ignore.txt başlığı güncellendi. **Bundan sonra:** "Run failed" mailinde ilk
+  şüpheli bu adım; yama varsa `npm audit fix`, yoksa GHSA'yı gerekçeli+süreli ignore'a
+  yaz. Deploy GEREKTİRMEZ (yalnız CI + dev bağımlılığı).
 
 ## Deploy #10'da bulunanlar (2026-08-13, prod'da gözlendi — kuyruğa YAZILMADI)
 
