@@ -5,10 +5,13 @@
 Aynı değerin iki yazımı DB'de yan yana yaşıyor: kartta "Kadın Hastalıkları
 **Ve** Doğum" (eski `tr_title`) ↔ teslimde "… ve …"; taraf adı "AK SİGORTA
 A.Ş." ↔ "Ak Sigorta A.ş." ↔ "Ak Sigorta A.Ş."; mahkeme "İSTANBUL 6. TÜKETİCİ
-MAHKEMESİ" ↔ "İstanbul 6. Tüketici Mahkemesi". Bu betik yazımı BİRLEŞTİRİR,
-içeriğe dokunmaz: yalnız Türkçe büyük-harf anahtarı (`turkish_upper`, boşluk
-normalize) AYNI olan değerler dönüşür; "Perinatoloji" ↔ "Kadın Hastalıkları"
-gibi içerik farkı asla.
+MAHKEMESİ" ↔ "İstanbul 6. Tüketici Mahkemesi"; taraf "Ak Sigorta A.Ş." ↔
+"Ak Sigorta A.Ş" (yalnız SON nokta farkı, G164). Bu betik yazımı BİRLEŞTİRİR,
+içeriğe dokunmaz: yalnız Türkçe büyük-harf anahtarı (`anahtar`: `turkish_upper`
++ boşluk normalize + sondaki nokta(lar) atılır; iç noktalar kalır) AYNI olan
+değerler dönüşür; "Perinatoloji" ↔ "Kadın Hastalıkları" ya da "A.Ş" ↔ "AŞ"
+gibi içerik farkı asla. Nokta ikizinde de kural aynı: teslim yazımı varsa o
+(noktalı ya da noktasız, paket nasıl yazdıysa), yoksa baskın yazım.
 
 Adımlar (`--adim 1,2,…`; varsayılan hepsi):
 
@@ -120,12 +123,17 @@ BURO_BOSALTILACAK = "Tür Seçiniz"
 # ─── Yardımcılar ─────────────────────────────────────────────────────────────
 
 def anahtar(deger: str) -> str:
-    """Yazım-duyarsız kimlik: boşluk normalize + Türkçe BÜYÜK (`turkish_upper`)."""
-    return turkish_upper(" ".join(str(deger).split()))
+    """Yazım-duyarsız kimlik: boşluk normalize + Türkçe BÜYÜK (`turkish_upper`) + SON nokta(lar) atılır (G164).
+
+    "Ak Sigorta A.Ş." ↔ "Ak Sigorta A.Ş" ↔ "AK SİGORTA A.Ş" aynı anahtar; iç
+    noktalar içerik sayılır ve kalır ("A.Ş" ≠ "AŞ", "Sağ.Hiz." → "SAĞ.HİZ").
+    Kelime farkı ("Koru" ↔ "Koru Sigorta") ayrı kalır.
+    """
+    return " ".join(turkish_upper(" ".join(str(deger).split())).rstrip(".").split())
 
 
 def anahtar_genis(deger: str) -> str:
-    """Biçim-duyarsız kimlik (adım 2b): `anahtar` + ı/i/İ/I katlama + noktasız.
+    """Biçim-duyarsız kimlik (adım 2b): `anahtar` + ı/i/İ/I katlama + noktasız (iç noktalar da).
 
     "Quıck Sigorta A.ş" ↔ "Quick Sigorta A.Ş" ↔ "QUİCK SİGORTA A.Ş." aynı
     değeri verir; kelime ya da harf farkı ("Koru" ↔ "Koru Sigorta") vermez.
