@@ -1,6 +1,8 @@
 # Raporlama modülü — kayıt defteri → süz-ve-gör ekranı → önizleme → Excel/CSV export + koşu logu → AI asistan
 
-> **Son doğrulama: 2026-09-07 · a36e98f** (G140; ilk tur G136 · e31457e)
+> **Son doğrulama: 2026-09-07 · a36e98f** (G140; ilk tur G136 · e31457e). **G166 (2026-09-10) eki: §2.4
+> bağlı kaynak kolonları + §13 sınırlar + §15 test satırı** — o bölümlerdeki satır numaraları yok, işlev adları
+> koddan; G166 öncesi bölümlerin satır numaraları a36e98f'e aittir (registry büyüdü, kaydılar).
 > Her uç adı, env, tablo adı, alan ve limit koddan okunarak yazılmıştır; satır numaraları bu
 > commit'e aittir. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt. Plan/sözleşme dosyası
 > [`docs/plan/raporlama-plani-2026-09-06.md`](../plan/raporlama-plani-2026-09-06.md);
@@ -165,6 +167,69 @@ saat `_saat = time.monotonic` (testler monkeypatch'ler), `threading.Lock` (sync 
 koşar), `katalog_onbellegini_sifirla()` test/yönetim için. Önbellek **worker başına** (2 uvicorn
 worker → 60 sn içinde iki worker farklı fotoğraf verebilir; kabul edilebilir, §12). Oturum fabrikası
 anahtarda: testlerde monkeypatch'lenen farklı fabrika = farklı DB, bayat gövde sızmaz.
+
+### 2.4 Bağlı kaynak kolonları — kaynaklar arası birleştirme (G166, 2026-09-10)
+
+**Sorun:** "Nisan'dan sonra açılan davaların ofis no + müvekkil adı + müvekkil telefonu" tek raporla
+çıkmıyordu — telefon `muvekkiller`de, açılış tarihi `davalar`da; rapor tek kaynak seçer.
+**Çözüm (K1/K2 korunarak):** her kaynak `VeriKaynagi.iliskiler` ile bağlı kaynaklarını bildirir
+(`Iliski`, `registry.py`); bağlı kaynağın kolonları ana kataloğa **türetilir** (`_bagla` →
+`_bagli_kolonlar` → `_bagli_kolon`): anahtar `<iliski>.<kolon>` (`muvekkil.phone`), etiket
+`"<İlişki> · <Etiket>"` ("Müvekkil kartı · Telefon"), grup `"<İlişki> · <Grup>"` ("Müvekkil kartı ·
+İletişim" — kaynağın kapalı grup kümesine `_bag_gruplari` ile eklenir). Elle kolon listesi YOK:
+hedef kaynağa eklenen düz kolon bağlı tarafta kendiliğinden görünür. Bağlı kolonlar HEP çekirdek
+(`CEKIRDEK`, bağsız) kaynaktan üretilir → ikinci derece anahtar (`muvekkil.dava.x`) yoktur.
+
+| Kaynak | İlişki (`anahtar` · etiket) | Hedef | Bağ | Kolonlar |
+| --- | --- | --- | --- | --- |
+| `davalar` | `muvekkil` · Müvekkil kartı | `muvekkiller` | çoklu — `case_parties JOIN clients` `kart_eslesmesi` (id ya da ad anahtarı), `party_type='CLIENT'`, `clients.deleted_at IS NULL` (`_muvekkil_kumesi`) | hedefin seçilebilir düz kolonları; `dava_sayisi` hariç |
+| `davalar` | `foy` · Föy | `foyler` | çoklu — `case_foys.case_id` (`_foy_kumesi`) | `case_id`/`dava_tracking_no`/`dava_subject` hariç |
+| `davalar` | `belge` · Belge | `belgeler` | çoklu — `case_documents.case_id`, `deleted_at IS NULL` (`_belge_kumesi`) | aynı hariç listesi |
+| `muvekkiller` | `dava` · Dava | `davalar` | çoklu — `case_parties JOIN cases` `kart_eslesmesi`, CLIENT, `cases.deleted_at IS NULL` (`_muvekkilin_davalari_kumesi`; `dava_sayisi` ile aynı bağ) | hedefin düz kolonları; türetilmişler (`muvekkil_adlari`… `foy_sayisi`) atlanır |
+| `belgeler`, `foyler` | `dava` · Dava | `davalar` | **tekil** — `cases` zaten `from_clause` INNER JOIN'inde (`DAVA_ILISKISI_TEKIL`) | hedefin TÜM kolonları aynen kopyalanır (türetilmişler dahil: `dava.muvekkil_adlari` EXISTS'i `cases`e correlate olur) |
+| `belgeler`, `foyler` | `muvekkil` · Müvekkil kartı | `muvekkiller` | çoklu — aynı `_muvekkil_kumesi` (`cases` FROM'da olduğu için çalışır) | `dava_sayisi` hariç |
+
+Kolon sayıları (koddan, 10.09): davalar 88 → **145** (56 bağlı), müvekkiller 25 → 108, belgeler
+20 → 133, föyler 18 → 131. Eski `dava_tracking_no`/`dava_subject` kolonları şablon uyumu için kaldı.
+
+- **Çoklu bağ kolonu** (`turetilmis=True`, `filtrelenebilir=True`, `siralanabilir=False`, `bag=<iliski>`):
+  seçim `_bagli_secim` — bağlı kayıtların değerleri iç alt sorguda `GROUP BY` ile tekilleşir + sıralanır,
+  `aggregate_strings(..., " ; ")` ile birleşir (Postgres `string_agg` / sqlite `group_concat`; DISTINCT +
+  ayraç sqlite'ta birlikte olmadığından tekilleştirme iç sorguda); tarih/sayı/mantık `CAST(... AS VARCHAR)`
+  (Postgres `string_agg` metin ister; ISO tarih metni sıralamada kronolojik; `tip` hedef tipi KALIR →
+  filtre kontrolü doğru, hücre gösterimi metin — `hucreBicimle`/`cikti.py` çevrilemeyen metni olduğu gibi
+  yazar, tek değerli tarih hücresi Excel'de gerçek tarih olur). Boş değer (`_bos_kosulu`) birleşime girmez.
+  Filtre `_bagli_filtre` — EXISTS: `op` = "koşula uyan HERHANGİ bir bağlı kaydın kolonu"; `is_null` = dolu
+  değerli bağlı kayıt yok; `not_null` = var; `in` + `null` = `is_null OR in(dolu)` (`muvekkil_kategorisi`
+  ile aynı anlam); tarih kolonunda `registry.tarih_kosulu` (DateTime gün aralığı; motorun `_tarih_kosulu`
+  buna delege eder, kopya yok), diğerlerinde motorun atom koşulu. `oplar` hedef tipinin tablosu
+  (`TIP_OPLARI[tip]`); liste kolonda `secenekler` sabit çekirdek + referans tablosu + DISTINCT
+  (`secenek_ifadesi`, sayı yok → `secenek_sayilari=null`); hedefte `onerili` ya da `veriden_liste` kolon
+  bağlı tarafta `onerili` — öneri sorgusu HEDEF kaynağın tenant + soft-delete kuralıyla (`_hedef_onerileri`);
+  `bos_sayisi=null` (türetilmiş).
+- **Tekil bağ kolonu** (`belgeler`/`foyler` → `dava.*`): `replace(k, anahtar, etiket, grup, bag)` — düz kolon
+  düz kalır: filtre/sıralama/`bos_sayisi`/veriden liste (GROUP BY belge-satırı sayar) hedefle aynı;
+  `liste_sayilari` UNION ALL'ı bu kaynaklarda 18 dava liste kolonuyla büyür (test_g145 beklentisi buna göre).
+- **Tenant (K2):** kural ANA satırdan (`kisitlar`); bağlı kayıt tenant'a göre SÜZÜLMEZ — `dava_sayisi` ve
+  `muvekkil_kategorisi` ile aynı bilinçli davranış (paylaşımlı havuz, kayıtlar `tenant_id=NULL`; bkz.
+  `CLAUDE.md` tenant modeli). Soft-delete bağın içinde uygulanır (silinmiş kart/belge/dava sayılmaz).
+- **Katalog (`GET /catalog`):** kaynak gövdesine `iliskiler: [{anahtar, etiket, hedef, coklu}]`, kolona
+  `bag: str|null` eklendi; kalan alanlar aynı. Frontend değişmedi (tipler `reports.ts`'e eklendi): yan panel /
+  "+ Başka alan" grupları katalogdan okuduğu için "Müvekkil kartı · İletişim" başlıkları kendiliğinden gelir.
+  Gövde büyüdü: lokal 14.5k dava / 2k kart ile **~460 KB**, kurulum 743 ms (60 sn önbellek; ölçüm 10.09).
+- **Asistan:** `katalog_metni` bağlı kolonları tek tek GÖMMEZ (prompt gürültüsü) — ilişki başına bir satır
+  (`_iliski_satiri`: önek, hedef, hariç listesi, çoklu/tekil şerhi); prompt kuralı "BAĞLI KAYNAK KOLONLARI"
+  (`prompts.py`) kaynak seçimini "satırı ne oluşturur" ile anlatır. Asistan tanımı aynı doğrulamadan geçer (K6).
+- **Öz-denetim (`_kendini_denetle`):** ilişki anahtarı tekrarsız, hedef katalogda ve kendisi değil, çoklu bağ
+  `kume` ister / tekil istemez, her ilişkinin en az bir kolonu var; `bag`li kolon bildirilmiş ilişkiye ve
+  `<bag>.` önekine uyar, çoklu bağ kolonu türetilmiş+filtrelenebilir; noktalı anahtar yalnız bağlı kolonda.
+- **Performans — ad anahtarı ifade index'i (migrasyon 48):** `kart_eslesmesi` correlated alt sorguda satır
+  başına koşar; `_ad_anahtari` (`upper(trim(name))` + İ/ı→I) ifadesiz index'le her koşuda `clients`i baştan
+  katlıyordu. Ölçüm 10.09 lokal (14.5k dava / 2k kart): "Müvekkil Kategorisi ∈ {Doktor, (boş)}" **21.9 s → 0.5 s**
+  (bu, G137'den beri var olan `muvekkil_kategorisi` filtresinin de süresiydi), `muvekkil.vekaletname_tarihi ≥`
+  5.5 s → 12 ms, `muvekkil.phone contains` 387 → 25 ms. DDL `idx_clients_ad_anahtari` /
+  `idx_case_parties_ad_anahtari` `((replace(replace(upper(trim(name)), 'İ', 'I'), 'ı', 'I')))` — ifade
+  `_ad_anahtari` ile BİREBİR (test bekçisi derleyip karşılaştırır); koşulsuz `("index", ...)` op, IF NOT EXISTS.
 
 ## 3. Rapor tanımı ve doğrulama
 
@@ -516,6 +581,10 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
   bu adı taşıyan EN AZ BİR CLIENT taraf varsa döner; "tüm müvekkilleri X" sorusu sorulamaz. Aynı ad
   karşı tarafta olan dava dönmez (party_type ayrımı). Türetilmiş kolonlarda **sıralama yok**
   (`siralanabilir=False`, motor 422; başlık tıklanmaz).
+- **Bağlı kolon (G166, §2.4) sınırları:** çoklu bağda hücre birleşik metindir ("0532 1 ; 0533 2") — kart
+  başına ayrı satır isteniyorsa kaynak `muvekkiller` seçilip `dava.*` kullanılır (satırı ne oluşturuyorsa o
+  kaynak). Bağ tek hoptur (`muvekkil.dava.x` yok). Bağlı kayıt tenant'a göre süzülmez (paylaşımlı havuz,
+  `dava_sayisi` ile aynı). Çoklu bağ kolonu sıralanamaz. Excel'de çok değerli tarih hücresi metin kalır.
 - **Öneri listesi tavanı:** 300'ü aşınca ilk 300 (DB sırası) + `oneri_kesik=true`; combobox başlığında
   "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:361`). Sıra DB collation'ı (F13).
 - **Önbellek 60 sn / worker başına:** referans listesi ya da yeni taraf adı ekledikten sonra şeritteki
@@ -573,6 +642,7 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
 | `backend/tests/test_g131_rapor_export_ve_log.py` | şablon CRUD + sahiplik 403 + paylaşım, xlsx geri okuma + koşu satırı + sha256 = indirilen = saklanan, csv BOM/`;`/önek, 413, download traversal reddi, temizlik + 410, hata yolu, migrasyon kuralı bekçisi, akış (liste değil) |
 | `backend/tests/test_g132_rapor_asistani.py` | anahtar varsayılan/409, 403, gövde sınırları, geçerli/geçersiz tanım akışı (taraf kolonunda `eq` → 422 → `warning`), 5 Gemini hatası → `error_kod` + TEK ERROR, yanıt hataları, prompt içeriği, kod incelemesi bekçileri (SessionLocal/`client.aio` yok), Developer API uyumlu şema, `tanim=null` + eylem → eylem düşer |
 | `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek 60 sn (monotonic monkeypatch + sorgu sayacı); asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |
+| `backend/tests/test_g166_rapor_bagli_kaynaklar.py` | bağlı kolon türetimi (her ilişki × hedef kolon birebir, hariç/türetilmiş atlama, ikinci derece bağ yok), öz-denetim 4 ret, katalog `iliskiler`/`bag`/kontrol/öneri (hedef tenant kuralı), kullanıcı örneği (Nisan sonrası + müvekkil telefonu; tekil + sıralı birleşim, silinmiş kart/tenant/silinmiş dava dışarıda, tarafsız dava boş hücre), ad anahtarıyla bağ, TKU tekilleşme, tarih/mantık cast, EXISTS filtre anlamı 16 varyant (is_null/not_null/in+null/tarih between+eq/mantık/iki bağ AND), müvekkilden dava + belgeden tekil dava (sıralama), 422 kuralları, asistan katalog metni ilişki satırları + prompt kuralı + aynı doğrulama, index DDL = `_ad_anahtari` derlemesi, tarih koşulu tek kaynak |
 | `frontend/src/lib/reports.test.ts`, `reports.export.test.ts`, `reportsChat.test.ts` | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + 22 örnekli gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, NDJSON okuyucu, anahtar okuyucu |
 | `frontend/src/components/reports/builderState.test.ts`, `QuickFilters.test.tsx`, `PreviewTable.test.tsx`, `ColumnSheet.test.tsx`, `SourceCards.test.tsx` | yuvalar/eklenen alanlar/temizle/tanımdan çözme (sıra korunur, gelişmiş çip), şerit etkileşimleri, başlıktan sıralama + "güncelleniyor…" + boş sonuç, yan panel setler/gruplar/sıra/tavan/"Temel" üretimi, kart radiogroup |
 | `frontend/src/pages/ReportsPage.test.tsx`, `ReportsPage.sablon.test.tsx`, `ReportsPage.asistan.test.tsx` | dolu açılış (tek istek, varsayılan tanım), kart tıklaması (eski satırlar anında düşer), otomatik önizleme (yapısal hemen / 600 ms / odak), yan panel → önizleme, boş sonuç kısayolu, yerleşim sırası, şablon/indirme/geçmiş, asistan paneli + eylem + 409/anahtar |

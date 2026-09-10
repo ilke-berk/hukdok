@@ -155,7 +155,7 @@ def test_katalog_sekli(env):
     turetilmis_sayisi = liste_sayisi = 0
     for kaynak in govde["veri_kaynaklari"]:
         assert set(kaynak) == {"anahtar", "etiket", "aciklama", "varsayilan_kolonlar", "kolonlar",
-                               "hizli_filtreler", "kolon_setleri"}
+                               "hizli_filtreler", "kolon_setleri", "iliskiler"}     # iliskiler: G166
         anahtarlar = [k["anahtar"] for k in kaynak["kolonlar"]]
         assert len(anahtarlar) == len(set(anahtarlar))
         assert "id" in anahtarlar
@@ -163,10 +163,10 @@ def test_katalog_sekli(env):
         assert kaynak["varsayilan_kolonlar"]
         for k in kaynak["kolonlar"]:
             # G141 (plan §5.2): + secilebilir / secenek_kaynagi / secenek_etiketleri
-            # G145 (plan §7.2): + secenek_sayilari / bos_sayisi
+            # G145 (plan §7.2): + secenek_sayilari / bos_sayisi · G166: + bag
             assert set(k) == {"anahtar", "etiket", "tip", "grup", "kontrol", "filtrelenebilir", "siralanabilir",
                               "turetilmis", "secilebilir", "aciklama", "oplar", "secenekler", "secenek_sayilari",
-                              "secenek_kaynagi", "secenek_etiketleri", "oneriler", "oneri_kesik", "bos_sayisi"}
+                              "secenek_kaynagi", "secenek_etiketleri", "oneriler", "oneri_kesik", "bos_sayisi", "bag"}
             assert k["tip"] in TIP_OPLARI
             assert k["etiket"]
             if k["tip"] == "liste":

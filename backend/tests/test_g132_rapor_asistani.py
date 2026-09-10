@@ -364,7 +364,8 @@ def test_prompt_katalogu_registryden_gomer(env):
     for kaynak in registry.KAYNAKLAR.values():
         assert f"## {kaynak.anahtar} — {kaynak.etiket}" in talimat
         for kolon in kaynak.kolonlar.values():
-            assert f"\n{kolon.anahtar} · {kolon.etiket} · {kolon.tip}" in talimat
+            if kolon.bag is None:      # G166: bağlı kolonlar ilişki başına tek satırla girer (test_g166)
+                assert f"\n{kolon.anahtar} · {kolon.etiket} · {kolon.tip}" in talimat
     assert "status · Durum · liste · DANIŞ|DERDEST|" in talimat
     assert "muvekkil_adlari · Müvekkiller · metin · türetilmiş" in talimat
     # kurallar + bugün
@@ -378,7 +379,8 @@ def test_katalog_metni_tum_kolonlari_icerir_elle_liste_yok():
     for kaynak in registry.KAYNAKLAR.values():
         assert f"varsayılan kolonlar: {', '.join(kaynak.varsayilan_kolonlar)}" in metin
         for kolon in kaynak.kolonlar.values():
-            assert f"\n{kolon.anahtar} · " in metin
+            if kolon.bag is None:      # G166: bağlı kolonlar ilişki satırıyla (test_g166)
+                assert f"\n{kolon.anahtar} · " in metin
     kaynak = inspect.getsource(asistan)
     assert "registry.KAYNAKLAR" in kaynak and "secenekleri_getir" in kaynak
 

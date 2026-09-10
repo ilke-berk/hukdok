@@ -49,7 +49,7 @@ from schemas_rapor import (
     RaporTanimi, SohbetMesaji, SohbetTamamlandi, pydantic_hatasini_cevir,
 )
 from services.rapor import motor, registry
-from services.rapor.registry import Kolon
+from services.rapor.registry import Iliski, Kolon, VeriKaynagi
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +117,30 @@ def katalog_metni() -> str:
             f"## {kaynak.anahtar} — {kaynak.etiket}: {kaynak.aciklama}",
             f"varsayılan kolonlar: {', '.join(kaynak.varsayilan_kolonlar)}",
         ]
-        satirlar.extend(_kolon_satiri(k) for k in kaynak.kolonlar.values())
+        satirlar.extend(_kolon_satiri(k) for k in kaynak.kolonlar.values() if k.bag is None)
+        satirlar.extend(_iliski_satiri(kaynak, i) for i in kaynak.iliskiler)
         bloklar.append("\n".join(satirlar))
     return "\n\n".join(bloklar)
+
+
+def _iliski_satiri(kaynak: VeriKaynagi, iliski: Iliski) -> str:
+    """G166 bağlı kaynak satırı: bağlı kolonlar tek tek değil, ilişki başına bir satır
+    (hedef kaynağın kolon listesi zaten metinde; `haric`/türetilmiş atlananlar sayılır).
+    Prompt gürültüsünü sınırlar: davalar'a 56 bağlı kolon 3 satırla girer."""
+    anahtarlar = [k.anahtar[len(iliski.anahtar) + 1:] for k in kaynak.kolonlar.values() if k.bag == iliski.anahtar]
+    hedef = registry.CEKIRDEK[iliski.hedef]
+    atlanan = [k.anahtar for k in hedef.kolonlar.values() if k.secilebilir and k.anahtar not in anahtarlar]
+    parcalar = [
+        f"{iliski.anahtar}.<kolon> · {iliski.etiket} · BAĞLI: '{iliski.hedef}' kaynağının kolonları "
+        f"'{iliski.anahtar}.' önekiyle (ör. {iliski.anahtar}.{anahtarlar[0]})",
+    ]
+    if atlanan:
+        parcalar.append(f"hariç: {', '.join(atlanan)}")
+    if iliski.coklu:
+        parcalar.append("çoklu: değerler ' ; ' ile birleşik; filtre = herhangi bir bağlı kaydın kolonu; sıralama yok")
+    else:
+        parcalar.append("tekil: filtre/sıralama düz kolon gibi")
+    return " · ".join(parcalar)
 
 
 # ─── Asistan tanımı → RaporTanimi (tip çevirisi + aynı doğrulama) ────────────

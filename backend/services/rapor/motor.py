@@ -169,36 +169,10 @@ def _ilike_kacis(metin: str) -> str:
     )
 
 
-def _gun_basi(gun: dt.date) -> dt.datetime:
-    return dt.datetime.combine(gun, dt.time.min)
-
-
-def _gun_sonrasi(gun: dt.date) -> dt.datetime:
-    return _gun_basi(gun + dt.timedelta(days=1))
-
-
 def _tarih_kosulu(kolon: Kolon, op: str, deger: Any):
-    """Tarih kolonlarında karşılaştırma; DateTime kolonda (created_at gibi) gün
-    aralığı: eq = [gün, gün+1), lte = < gün+1. Gün sınırı DB oturumunun saat
-    dilimine göredir (sqlite bind'ı `date` değil `datetime` ister)."""
-    ifade = kolon.ifade
-    if kolon.zaman_damgali:
-        if op == "eq":
-            return and_(ifade >= _gun_basi(deger), ifade < _gun_sonrasi(deger))
-        if op == "gte":
-            return ifade >= _gun_basi(deger)
-        if op == "lte":
-            return ifade < _gun_sonrasi(deger)
-        a, b = deger
-        return and_(ifade >= _gun_basi(a), ifade < _gun_sonrasi(b))
-    if op == "eq":
-        return ifade == deger
-    if op == "gte":
-        return ifade >= deger
-    if op == "lte":
-        return ifade <= deger
-    a, b = deger
-    return and_(ifade >= a, ifade <= b)
+    """Tarih kolonlarında karşılaştırma — gövde `registry.tarih_kosulu`da (G166: bağlı kolon
+    EXISTS'i de aynı kuralı kullanır; DateTime kolonda gün aralığı)."""
+    return registry.tarih_kosulu(kolon.ifade, kolon.zaman_damgali, op, deger)
 
 
 def _bos(ifade: Any, metin: bool):

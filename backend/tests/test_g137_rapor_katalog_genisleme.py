@@ -191,6 +191,8 @@ def test_katalog_yeni_alanlarin_sekli(env):
             assert set(ks) == {"ad", "kolonlar"} and ks["ad"] and ks["kolonlar"]
         for k in kaynak["kolonlar"]:
             assert k["grup"], f"{anahtar}.{k['anahtar']} grupsuz"
+            if k["bag"] is not None:
+                continue       # G166: bağlı kolonların grubu/önerisi hedef kaynaktan türer (test_g166)
             assert k["grup"] in GRUPLAR[anahtar], f"{anahtar}.{k['anahtar']} grup kapalı küme dışı: {k['grup']}"
             assert isinstance(k["oneri_kesik"], bool)
             if k["anahtar"] in ONERILI[anahtar]:
@@ -205,7 +207,7 @@ def test_katalog_grup_kumesi_kaynaga_gore_kapali_ve_dolu(env):
     """Her kaynakta plan §4.2 gruplarının HEPSİ en az bir kolonla kullanılır (boş grup yok)."""
     kaynaklar = _katalog(env.client())
     for anahtar, gruplar in GRUPLAR.items():
-        kullanilan = {k["grup"] for k in kaynaklar[anahtar]["kolonlar"]}
+        kullanilan = {k["grup"] for k in kaynaklar[anahtar]["kolonlar"] if k["bag"] is None}    # G166 hariç
         assert kullanilan == set(gruplar), (anahtar, kullanilan ^ set(gruplar))
     davalar = _kolonlar(kaynaklar["davalar"])
     assert davalar["muvekkil_adlari"]["grup"] == "Taraflar" and davalar["sigortali_adlari"]["grup"] == "Taraflar"
@@ -319,7 +321,7 @@ def test_oneriler_onerili_kolonlar_ve_kurallar(env):
     (aynı kurallar; sıklık eşitliğinde ad sırası)."""
     kaynaklar = _katalog(env.client())
     for anahtar, onerili in ONERILI.items():
-        kolonlar = _kolonlar(kaynaklar[anahtar])
+        kolonlar = {a: k for a, k in _kolonlar(kaynaklar[anahtar]).items() if k["bag"] is None}   # G166 hariç
         assert {a for a, k in kolonlar.items() if k["oneriler"] is not None} == onerili, anahtar
         assert {a for a, k in kolonlar.items() if k["secenek_kaynagi"] == "veri"} == VERIDEN[anahtar], anahtar
     davalar = _kolonlar(kaynaklar["davalar"])

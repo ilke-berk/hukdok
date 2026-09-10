@@ -1079,6 +1079,23 @@ _MIGRATIONS = [
     ("index", "report_runs", [
         "CREATE INDEX IF NOT EXISTS idx_report_runs_sablon ON report_runs (sablon_id)",
     ]),
+
+    # ─── 48. TARAF ↔ MÜVEKKİL KARTI AD ANAHTARI INDEX'LERİ (G166) ─────────────
+    # `services/rapor/registry.kart_eslesmesi` taraf satırını müvekkil kartına `client_id` YA DA
+    # ad anahtarı (`upper(trim(name))` + İ/ı→I katlaması, `_ad_anahtari`) ile bağlar. Bu bağ
+    # correlated EXISTS/alt sorgu içinde satır başına koşar; ifade index'i olmadan her koşuda
+    # `clients` baştan taranıp katlanıyordu — lokal ölçüm 10.09 (14.5k dava / 2k kart):
+    # "Müvekkil Kategorisi ∈ {Doktor, (boş)}" 21.9 s → 0.5 s, "vekaletname tarihi ≥" 5.5 s → 12 ms.
+    # İfade `_ad_anahtari` ile BİREBİR aynı olmalı (Postgres `trim` → `btrim` normalizasyonu
+    # planlayıcıda eşleşir); değişirse bu DDL de değişir. Koşulsuz op, IF NOT EXISTS (G041 kuralı).
+    ("index", "clients", [
+        "CREATE INDEX IF NOT EXISTS idx_clients_ad_anahtari ON clients "
+        "((replace(replace(upper(trim(name)), 'İ', 'I'), 'ı', 'I')))",
+    ]),
+    ("index", "case_parties", [
+        "CREATE INDEX IF NOT EXISTS idx_case_parties_ad_anahtari ON case_parties "
+        "((replace(replace(upper(trim(name)), 'İ', 'I'), 'ı', 'I')))",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

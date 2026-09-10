@@ -69,14 +69,33 @@ her kolonda: kaynak başına TEK `SUM(CASE …)` sorgusu (`bos_sayilari`); metin
 kolonda `IS NULL OR TRIM(col) = ''` — motorun `is_null`/`not_null`/`in [null]` filtreleri de
 metin/liste kolonda AYNI koşulu kullanır (`motor._bos`, 07.09 kararı): rozetle sonuç eşit.
 Asistan katalog metnine sayılar girmez (`secenekleri_getir(db=None)` yolu aynı).
+
+**G166 — bağlı kaynak kolonları (kaynaklar arası birleştirme):** "Nisan'dan sonra açılan
+davaların ofis no + müvekkil adı + müvekkil telefonu" gibi istekler tek kaynakta
+karşılanamıyordu (telefon `muvekkiller`de, açılış tarihi `davalar`da). Çözüm K1'i
+bozmadan: her kaynak `iliskiler` ile bağlı kaynaklar bildirir (`Iliski`), bağlı kaynağın
+kolonları ana kataloğa `<iliski>.<kolon>` anahtarı (`muvekkil.phone`), `"<İlişki> · <Etiket>"`
+etiketi ve `"<İlişki> · <Grup>"` grubuyla TÜRETİLİR (`_bagli_kolonlar`) — elle kolon
+listesi yok, hedef kaynağa eklenen kolon bağlı tarafta kendiliğinden görünür.
+İki bağ biçimi: **çoklu** (`coklu=True`, `kume` correlated satır kümesi — davalar→müvekkil
+kartı `case_parties`/`kart_eslesmesi`, davalar→föy, davalar→belge, müvekkiller→dava):
+seçim değerleri `GROUP BY` ile tekilleştirilip `AYRAC` ile birleşir (tarih/sayı metne cast),
+filtre EXISTS ("herhangi bir bağlı kaydın kolonu"; `is_null` = dolu değerli bağlı kayıt yok),
+sıralama yok; **tekil** (`coklu=False`, hedef tablo zaten `from_clause` JOIN'inde — belgeler/
+föyler→dava): kolon aynen kopyalanır, filtre/sıralama/boş sayısı/veriden liste düz kolon gibi
+çalışır. Bağlı kolonun `bag` alanı ilişki anahtarını taşır; asistan katalog metni bağlı
+kolonları tek tek değil ilişki başına bir satırla gömer (`asistan.katalog_metni`).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Literal, Mapping, Optional, overload
 
+import datetime as dt
+
 from sqlalchemy import (
-    Boolean, Date, DateTime, Integer, Numeric, Select, and_, func, literal, null, or_, select, union_all,
+    Boolean, Date, DateTime, Integer, Numeric, Select, String, and_, cast, func, literal, null, or_, select,
+    union_all,
 )
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
@@ -153,6 +172,8 @@ class Kolon:
     # Kullanıcıya yönelik kısa açıklama (arama kutusu yer tutucusu: hangi alanlarda arar).
     # Katalogda `aciklama`; G142 frontend isteğe bağlı okur (plan §5.2 şerhi 07.09).
     aciklama: Optional[str] = None
+    # G166: bağlı kaynak kolonu — ilişki anahtarı (`muvekkil.phone` → "muvekkil"); düz kolonda None.
+    bag: Optional[str] = None
 
     @property
     def oplar(self) -> tuple[str, ...]:
@@ -180,6 +201,23 @@ class KolonSeti:
 
 
 @dataclass(frozen=True)
+class Iliski:
+    """Bağlı kaynak (G166). `coklu=True`: `kume()` ana kaynağa correlated, hedef tablodan (JOIN'li)
+    `select(literal(1))` — bağ koşulları + hedefin soft-delete kuralı içinde; seçim/filtre bunun
+    üzerine kurulur. `coklu=False`: hedef tablo ana kaynağın `from_clause`unda zaten var (INNER JOIN),
+    kolonlar aynen kopyalanır. `hedef_from`/`hedef_kisitlar` yalnız öneri sorgusu için (çoklu bağda
+    önerili metin kolonun DISTINCT değerleri hedef kaynağın tenant + soft-delete kuralıyla)."""
+    anahtar: str                              # anahtar öneki: "muvekkil" → "muvekkil.phone"
+    etiket: str                               # "Müvekkil kartı" → etiket "Müvekkil kartı · Telefon"
+    hedef: str                                # hedef kaynak anahtarı ("muvekkiller")
+    coklu: bool
+    kume: Optional[Callable[[], Select]] = None
+    hedef_from: Any = None
+    hedef_kisitlar: Optional[Callable[[str], list[ColumnElement]]] = None
+    haric: frozenset[str] = frozenset()       # hedef kolonlarından alınmayanlar (anahtar)
+
+
+@dataclass(frozen=True)
 class VeriKaynagi:
     anahtar: str
     etiket: str
@@ -192,6 +230,7 @@ class VeriKaynagi:
     hizli_filtreler: tuple[HizliFiltre, ...] = ()
     kolon_setleri: tuple[KolonSeti, ...] = ()
     birincil_anahtar: Any = field(default=None)   # deterministik sıralama için son kırıcı
+    iliskiler: tuple[Iliski, ...] = ()        # G166 bağlı kaynaklar (kolonları `kolonlar`a türetilmiş)
 
 
 # ─── Yardımcılar ─────────────────────────────────────────────────────────────
@@ -277,6 +316,145 @@ def _sozluk(kolonlar: list[Kolon]) -> dict[str, Kolon]:
             raise ValueError(f"kayıt defterinde kolon tekrarı: {k.anahtar}")
         sozluk[k.anahtar] = k
     return sozluk
+
+
+# ─── Tarih koşulu (motor + bağlı kolon filtresi ortak) ───────────────────────
+
+def _gun_basi(gun: dt.date) -> dt.datetime:
+    return dt.datetime.combine(gun, dt.time.min)
+
+
+def _gun_sonrasi(gun: dt.date) -> dt.datetime:
+    return _gun_basi(gun + dt.timedelta(days=1))
+
+
+def tarih_kosulu(ifade: Any, zaman_damgali: bool, op: str, deger: Any):
+    """Tarih kolonlarında karşılaştırma (G130 motorundan taşındı, G166 bağlı kolon EXISTS'i de
+    kullanır); DateTime kolonda (`created_at` gibi) gün aralığı: eq = [gün, gün+1), lte = < gün+1.
+    Gün sınırı DB oturumunun saat dilimine göredir (sqlite bind'ı `date` değil `datetime` ister).
+    `op` ∈ eq | gte | lte | between (değersiz op'lar çağıranda elenir)."""
+    if zaman_damgali:
+        if op == "eq":
+            return and_(ifade >= _gun_basi(deger), ifade < _gun_sonrasi(deger))
+        if op == "gte":
+            return ifade >= _gun_basi(deger)
+        if op == "lte":
+            return ifade < _gun_sonrasi(deger)
+        a, b = deger
+        return and_(ifade >= _gun_basi(a), ifade < _gun_sonrasi(b))
+    if op == "eq":
+        return ifade == deger
+    if op == "gte":
+        return ifade >= deger
+    if op == "lte":
+        return ifade <= deger
+    a, b = deger
+    return and_(ifade >= a, ifade <= b)
+
+
+def _bos_kosulu(kolon: Kolon):
+    """Boş kayıt koşulu: metin/liste kolonda `IS NULL OR TRIM(col) = ''`, diğer tiplerde `IS NULL`."""
+    if kolon.tip in ("metin", "liste"):
+        return or_(kolon.ifade.is_(None), func.trim(kolon.ifade) == "")
+    return kolon.ifade.is_(None)
+
+
+# ─── G166: bağlı kaynak kolonları ────────────────────────────────────────────
+
+def bag_anahtari(iliski: Iliski, kolon_anahtari: str) -> str:
+    return f"{iliski.anahtar}.{kolon_anahtari}"
+
+
+def _bagli_secim(iliski: Iliski, k: Kolon):
+    """Çoklu bağda seçim ifadesi: bağlı kayıtların kolon değerleri tekil (`GROUP BY`) ve sıralı,
+    `AYRAC` ile birleşik (scalar alt sorgu). Tarih/sayı/mantık metne cast edilir (Postgres
+    `string_agg` metin ister; ISO tarih metni sıralamada da kronolojik). sqlite `group_concat`
+    DISTINCT + ayraç birlikte almadığından tekilleştirme iç alt sorguda (iki motor aynı SQL)."""
+    assert iliski.kume is not None
+    deger = k.ifade if k.tip in ("metin", "liste") else cast(k.ifade, String)
+    ic = (
+        iliski.kume().with_only_columns(deger.label("v"))
+        .where(~_bos_kosulu(k))
+        .group_by(deger)
+        .order_by(deger)
+        .subquery()
+    )
+    return select(func.aggregate_strings(ic.c.v, AYRAC)).select_from(ic).scalar_subquery()
+
+
+def _bagli_filtre(iliski: Iliski, k: Kolon) -> FiltreIfadesi:
+    """Çoklu bağda EXISTS filtresi: `op` = "koşula uyan HERHANGİ bir bağlı kaydın kolonu";
+    `is_null` = dolu değerli bağlı kayıt yok, `not_null` = var; `in` listesindeki `null` ("(boş)")
+    `is_null` ile OR'lanır (`muvekkil_kategorisi` ile aynı anlam); tarih kolonunda `tarih_kosulu`
+    (DateTime gün aralığı), diğerlerinde motorun atom koşulu."""
+    def filtre(op: str, deger: Any, atom: AtomKosul):
+        assert iliski.kume is not None
+        kume = iliski.kume()
+        dolu = kume.where(~_bos_kosulu(k))
+        if op == "is_null":
+            return ~dolu.exists()
+        if op == "not_null":
+            return dolu.exists()
+        if op == "in" and any(d is None for d in deger):
+            dolular = [d for d in deger if d is not None]
+            if not dolular:
+                return ~dolu.exists()
+            return or_(~dolu.exists(), kume.where(atom(k.ifade, op, dolular)).exists())
+        if k.tip == "tarih":
+            return kume.where(tarih_kosulu(k.ifade, k.zaman_damgali, op, deger)).exists()
+        return kume.where(atom(k.ifade, op, deger)).exists()
+    return filtre
+
+
+def _hedef_onerileri(iliski: Iliski, k: Kolon) -> Callable[[str], Select]:
+    """Çoklu bağda önerili metin kolonun DISTINCT değerleri: HEDEF kaynağın tenant + soft-delete
+    kuralıyla (bağ üzerinden değil — öneri listesi "hangi değerler var" sorusudur)."""
+    assert iliski.hedef_from is not None and iliski.hedef_kisitlar is not None
+
+    def sorgu(tenant_id: str) -> Select:
+        assert iliski.hedef_kisitlar is not None
+        return (
+            select(k.ifade).distinct()
+            .select_from(iliski.hedef_from)
+            .where(and_(*iliski.hedef_kisitlar(tenant_id), k.ifade.isnot(None), k.ifade != ""))
+            .order_by(k.ifade)
+        )
+    return sorgu
+
+
+def _bagli_kolon(iliski: Iliski, k: Kolon) -> Kolon:
+    anahtar = bag_anahtari(iliski, k.anahtar)
+    etiket = f"{iliski.etiket} · {k.etiket}"
+    grup = f"{iliski.etiket} · {k.grup}"
+    if not iliski.coklu:
+        # Tekil bağ: hedef tablo FROM'da; düz kolon düz kalır (filtre/sıralama/boş sayısı/veriden liste),
+        # hedefin türetilmiş kolonları da (correlate hedef tabloya) aynen çalışır.
+        return replace(k, anahtar=anahtar, etiket=etiket, grup=grup, bag=iliski.anahtar)
+    onerili = k.onerili or k.veriden_liste
+    return Kolon(
+        anahtar, etiket, k.tip, _bagli_secim(iliski, k), grup=grup, filtrelenebilir=True, siralanabilir=False,
+        turetilmis=True, secenekler=k.secenekler, secenek_tablosu=k.secenek_tablosu,
+        secenek_ifadesi=k.ifade if k.tip == "liste" else None, zaman_damgali=k.zaman_damgali,
+        onerili=onerili, filtre_ifadesi=_bagli_filtre(iliski, k),
+        oneri_sorgusu=_hedef_onerileri(iliski, k) if onerili else None,
+        secenek_etiketleri=k.secenek_etiketleri, bag=iliski.anahtar,
+    )
+
+
+def _bagli_kolonlar(iliski: Iliski, hedef_kolonlar: list[Kolon]) -> list[Kolon]:
+    """Hedef kaynağın kolonlarından bağlı kolonlar: sanal `arama` ve `haric` daima atlanır; çoklu
+    bağda hedefin türetilmiş kolonları da atlanır (iç içe birleştirme/EXISTS tanımsız)."""
+    return [
+        _bagli_kolon(iliski, k) for k in hedef_kolonlar
+        if k.secilebilir and k.anahtar not in iliski.haric and not (iliski.coklu and k.turetilmis)
+    ]
+
+
+def _bag_gruplari(iliskiler: tuple[Iliski, ...], hedef_gruplari: dict[str, tuple[str, ...]]) -> tuple[str, ...]:
+    """Bağlı kolon grupları `"<İlişki> · <Grup>"` — hedefin `Arama` grubu hariç, hedef sırasıyla."""
+    return tuple(
+        f"{i.etiket} · {g}" for i in iliskiler for g in hedef_gruplari[i.hedef] if g != ARAMA_GRUBU
+    )
 
 
 # ─── Kapalı liste çekirdekleri ───────────────────────────────────────────────
@@ -888,6 +1066,77 @@ FOYLER = VeriKaynagi(
 )
 
 
+# ─── G166: bağlı kaynaklar ───────────────────────────────────────────────────
+# Kaynaklar arası birleştirme: her kaynak bağlı kaynaklarını bildirir, kolonları `<iliski>.<kolon>`
+# anahtarıyla türetilir. Çekirdek (bağsız) kaynaklar önce yakalanır — bağlı kolonlar HEP çekirdekten
+# üretilir (bağın bağı yok: `muvekkil.dava.x` gibi ikinci derece anahtar üretilmez).
+
+def _muvekkil_kumesi() -> Select:
+    """Davanın CLIENT taraflarının (canlı) müvekkil kartları — `muvekkil_kategorisi` ile aynı bağ
+    (`kart_eslesmesi`: `client_id` ya da ad anahtarı). `cases` FROM'da olan her kaynakta çalışır."""
+    P, M = models.CaseParty, models.Client
+    return (
+        select(literal(1))
+        .select_from(P.__table__.join(M.__table__, kart_eslesmesi(P, M)))
+        .where(and_(P.case_id == models.Case.id, P.party_type == "CLIENT", M.deleted_at.is_(None)))
+        .correlate(models.Case)
+    )
+
+
+def _foy_kumesi() -> Select:
+    F = models.CaseFoy
+    return select(literal(1)).select_from(F.__table__).where(F.case_id == models.Case.id).correlate(models.Case)
+
+
+def _belge_kumesi() -> Select:
+    D = models.CaseDocument
+    return (
+        select(literal(1)).select_from(D.__table__)
+        .where(and_(D.case_id == models.Case.id, D.deleted_at.is_(None)))
+        .correlate(models.Case)
+    )
+
+
+def _muvekkilin_davalari_kumesi() -> Select:
+    """Müvekkil kartının CLIENT tarafı olduğu silinmemiş davalar (`dava_sayisi` ile aynı bağ)."""
+    P = models.CaseParty
+    return (
+        select(literal(1))
+        .select_from(P.__table__.join(models.Case.__table__, P.case_id == models.Case.id))
+        .where(and_(kart_eslesmesi(P, models.Client), P.party_type == "CLIENT", models.Case.deleted_at.is_(None)))
+        .correlate(models.Client)
+    )
+
+
+_JOIN_KOLONLARI = frozenset({"case_id", "dava_tracking_no", "dava_subject"})     # hedefte zaten dava bağı
+MUVEKKIL_ILISKISI = Iliski("muvekkil", "Müvekkil kartı", "muvekkiller", coklu=True, kume=_muvekkil_kumesi,
+                           hedef_from=models.Client.__table__, hedef_kisitlar=_muvekkil_kisitlari,
+                           haric=frozenset({"dava_sayisi"}))
+FOY_ILISKISI = Iliski("foy", "Föy", "foyler", coklu=True, kume=_foy_kumesi, hedef_from=FOYLER.from_clause,
+                      hedef_kisitlar=_foy_kisitlari, haric=_JOIN_KOLONLARI)
+BELGE_ILISKISI = Iliski("belge", "Belge", "belgeler", coklu=True, kume=_belge_kumesi,
+                        hedef_from=BELGELER.from_clause, hedef_kisitlar=_belge_kisitlari, haric=_JOIN_KOLONLARI)
+DAVA_ILISKISI_COKLU = Iliski("dava", "Dava", "davalar", coklu=True, kume=_muvekkilin_davalari_kumesi,
+                             hedef_from=models.Case.__table__, hedef_kisitlar=_dava_kisitlari)
+DAVA_ILISKISI_TEKIL = Iliski("dava", "Dava", "davalar", coklu=False)     # belgeler/foyler: cases zaten JOIN'de
+
+CEKIRDEK: dict[str, VeriKaynagi] = {k.anahtar: k for k in (DAVALAR, MUVEKKILLER, BELGELER, FOYLER)}
+
+
+def _bagla(kaynak: VeriKaynagi, *iliskiler: Iliski) -> VeriKaynagi:
+    kolonlar = list(kaynak.kolonlar.values())
+    for iliski in iliskiler:
+        kolonlar.extend(_bagli_kolonlar(iliski, list(CEKIRDEK[iliski.hedef].kolonlar.values())))
+    gruplar = kaynak.gruplar + _bag_gruplari(iliskiler, {a: k.gruplar for a, k in CEKIRDEK.items()})
+    return replace(kaynak, kolonlar=_sozluk(kolonlar), gruplar=gruplar, iliskiler=tuple(iliskiler))
+
+
+DAVALAR = _bagla(DAVALAR, MUVEKKIL_ILISKISI, FOY_ILISKISI, BELGE_ILISKISI)
+MUVEKKILLER = _bagla(MUVEKKILLER, DAVA_ILISKISI_COKLU)
+BELGELER = _bagla(BELGELER, DAVA_ILISKISI_TEKIL, MUVEKKIL_ILISKISI)
+FOYLER = _bagla(FOYLER, DAVA_ILISKISI_TEKIL, MUVEKKIL_ILISKISI)
+
+
 # ─── Kayıt defteri ───────────────────────────────────────────────────────────
 
 KAYNAKLAR: dict[str, VeriKaynagi] = {
@@ -965,8 +1214,26 @@ def _kendini_denetle() -> None:
     for kaynak in KAYNAKLAR.values():
         if len(set(kaynak.gruplar)) != len(kaynak.gruplar) or not kaynak.gruplar:
             raise ValueError(f"{kaynak.anahtar}: grup kümesi boş ya da tekrarlı")
+        iliskiler = {i.anahtar: i for i in kaynak.iliskiler}
+        if len(iliskiler) != len(kaynak.iliskiler):
+            raise ValueError(f"{kaynak.anahtar}: ilişki anahtarı tekrarlı")
+        for iliski in kaynak.iliskiler:
+            # G166: ilişki anahtarı düz bir kolon adıyla çakışmaz; hedef katalogda; çoklu bağ kümeli
+            if iliski.hedef not in CEKIRDEK or iliski.hedef == kaynak.anahtar:
+                raise ValueError(f"{kaynak.anahtar}: ilişki hedefi geçersiz: {iliski.hedef}")
+            if iliski.coklu != (iliski.kume is not None):
+                raise ValueError(f"{kaynak.anahtar}.{iliski.anahtar}: çoklu bağ `kume` ister, tekil bağ istemez")
+            if not any(k.bag == iliski.anahtar for k in kaynak.kolonlar.values()):
+                raise ValueError(f"{kaynak.anahtar}.{iliski.anahtar}: ilişkinin hiç kolonu yok")
         for kolon in kaynak.kolonlar.values():
             _kolonu_denetle(kaynak, kolon)
+            if kolon.bag is not None:
+                if kolon.bag not in iliskiler or not kolon.anahtar.startswith(kolon.bag + "."):
+                    raise ValueError(f"{kaynak.anahtar}.{kolon.anahtar}: bağ ilişkisi bildirilmemiş: {kolon.bag}")
+                if iliskiler[kolon.bag].coklu and not (kolon.turetilmis and kolon.filtrelenebilir):
+                    raise ValueError(f"{kaynak.anahtar}.{kolon.anahtar}: çoklu bağ kolonu türetilmiş+filtrelenebilir olmalı")
+            elif "." in kolon.anahtar:
+                raise ValueError(f"{kaynak.anahtar}.{kolon.anahtar}: nokta yalnız bağlı kolon anahtarında")
         for anahtar in kaynak.varsayilan_kolonlar:
             if anahtar not in kaynak.kolonlar:
                 raise ValueError(f"{kaynak.anahtar}: varsayılan kolon katalogda yok: {anahtar}")
@@ -1099,13 +1366,6 @@ def secenekleri_sayili_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Ses
     return secenekler, {d: veri_sayilari.get(d, 0) for d in secenekler}
 
 
-def _bos_kosulu(kolon: Kolon):
-    """Boş kayıt koşulu: metin/liste kolonda `IS NULL OR TRIM(col) = ''`, diğer tiplerde `IS NULL`."""
-    if kolon.tip in ("metin", "liste"):
-        return or_(kolon.ifade.is_(None), func.trim(kolon.ifade) == "")
-    return kolon.ifade.is_(None)
-
-
 def bos_sayilari(kaynak: VeriKaynagi, db: Optional[Session], tenant_id: str) -> dict[str, int]:
     """Kaynağın boş kayıt sayıları `{kolon_anahtari: n}` — TEK sorgu (plan §7.2): filtrelenebilir,
     `is_null` izinli, türetilmiş OLMAYAN her kolon için `COUNT(*) FILTER (WHERE <boş>)` (Postgres ve
@@ -1230,6 +1490,8 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         "turetilmis": kolon.turetilmis,
         "secilebilir": kolon.secilebilir,
         "aciklama": kolon.aciklama,
+        # G166: bağlı kaynak kolonu (ilişki anahtarı); düz kolonda null
+        "bag": kolon.bag,
         # Kolon başına izinli op'lar (taraf kolonlarında tip tablosunun alt kümesi, ör. `eq` yok):
         # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
         "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],
@@ -1269,6 +1531,11 @@ def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> 
                     for hf in kaynak.hizli_filtreler
                 ],
                 "kolon_setleri": [{"ad": ks.ad, "kolonlar": list(ks.kolonlar)} for ks in kaynak.kolon_setleri],
+                # G166: bağlı kaynaklar — kolonları `kolonlar` içinde `<anahtar>.<kolon>` olarak
+                "iliskiler": [
+                    {"anahtar": i.anahtar, "etiket": i.etiket, "hedef": i.hedef, "coklu": i.coklu}
+                    for i in kaynak.iliskiler
+                ],
             }
             for kaynak in KAYNAKLAR.values()
         ],

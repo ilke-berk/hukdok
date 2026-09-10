@@ -104,6 +104,8 @@ export interface KatalogKolon {
     secenek_sayilari?: Record<string, number> | null;
     /** §7.2 alanda boş (NULL/boş metin) kayıt sayısı; türetilmiş kolonda ve eski katalogda null. */
     bos_sayisi?: number | null;
+    /** G166 bağlı kaynak kolonu: ilişki anahtarı (`muvekkil.phone` → "muvekkil"); düz kolonda/eski katalogda null. */
+    bag?: string | null;
 }
 
 /** Hızlı filtre yuvasının sunumu (§5.2): kontrol seçimi `kontrol` + `sunum` ikilisinden (§5.3). */
@@ -125,6 +127,17 @@ export interface KolonSeti {
     kolonlar: string[];
 }
 
+/**
+ * G166 bağlı kaynak: hedef kaynağın kolonları bu kaynağın `kolonlar`ında `<anahtar>.<kolon>` olarak
+ * (`muvekkil.phone`), grubu `"<etiket> · <hedef grubu>"`. `coklu` = değerler " ; " ile birleşik, sıralanamaz.
+ */
+export interface KatalogIliski {
+    anahtar: string;
+    etiket: string;
+    hedef: string;
+    coklu: boolean;
+}
+
 export interface KatalogVeriKaynagi {
     anahtar: string;
     etiket: string;
@@ -134,6 +147,8 @@ export interface KatalogVeriKaynagi {
     /** Sıralı (§4.2). */
     hizli_filtreler: HizliFiltre[];
     kolon_setleri: KolonSeti[];
+    /** G166 bağlı kaynaklar; eski katalog vermez. */
+    iliskiler?: KatalogIliski[];
 }
 
 export interface KatalogLimitleri {

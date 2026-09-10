@@ -265,8 +265,11 @@ def test_bos_sayilari_ve_liste_sayilari_kaynak_basina_tek_sorgu(env):
     for s in filtreli:
         assert s.count("FILTER (WHERE") >= 5 and "trim(" in s.lower()
     # davalar (en çok liste kolonlu kaynak): her düz liste kolonu tek UNION ALL'da; GROUP BY sayısı = kolon sayısı
-    davalar_birlesik = max(birlesik, key=lambda s: s.count("GROUP BY"))
-    assert davalar_birlesik.count("GROUP BY") == len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 18
+    # G166: belgeler/foyler tekil `dava.*` kopyalarıyla (18 liste) davaları geçer → en büyük UNION ALL
+    # artık onlarındır; davalar'ın kendi çoklu bağ kolonları türetilmiş olduğundan 18 değişmez
+    en_buyuk = max(len(registry._duz_liste_kolonlari(k)) for k in registry.KAYNAKLAR.values())
+    assert max(s.count("GROUP BY") for s in birlesik) == en_buyuk
+    assert len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 18
     env.sorgular.clear()
     client.get(CATALOG)
     assert env.sorgular == []

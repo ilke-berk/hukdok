@@ -223,7 +223,8 @@ def test_veriden_liste_isaretleri_plan_listesi(env):
         "foyler": set(),
     }
     for anahtar, kaynak in registry.KAYNAKLAR.items():
-        assert {a for a, k in kaynak.kolonlar.items() if k.veriden_liste} == beklenen[anahtar], anahtar
+        # G166: tekil bağ kopyaları (belgeler/foyler `dava.*`) hedefin işaretini taşır — çekirdek sayılır
+        assert {a for a, k in kaynak.kolonlar.items() if k.veriden_liste and k.bag is None} == beklenen[anahtar], anahtar
         for k in kaynak.kolonlar.values():
             if k.veriden_liste:
                 assert k.tip == "metin" and k.onerili and not k.turetilmis
@@ -271,7 +272,8 @@ def test_client_type_secenek_etiketleri_ve_ham_filtre(env):
     assert set(ct["secenek_etiketleri"]) <= set(ct["secenekler"])
     for anahtar, kaynak in kaynaklar.items():
         for k in kaynak["kolonlar"]:
-            if not (anahtar == "muvekkiller" and k["anahtar"] == "client_type"):
+            # G166: `muvekkil.client_type` bağlı kopyası etiket haritasını hedeften taşır
+            if k["anahtar"] not in ("client_type", "muvekkil.client_type"):
                 assert k["secenek_etiketleri"] is None, (anahtar, k["anahtar"])
     r = _onizle(env.client(), _tanim(filtreler=[{"alan": "client_type", "op": "eq", "deger": "Corporate"}]))
     assert _adlar(r) == {"Ankaralı İki", "İstanbullu Bir"}

@@ -484,6 +484,12 @@ def get_rapor_asistani_instruction(
         "- YALNIZ katalogdaki veri kaynağı ve kolon ANAHTARLARINI kullan (etiketleri değil). "
         "Katalogda olmayan bir alan istenirse uydurma; cevapta bunun raporlanamadığını söyle ve "
         "en yakın kolonu öner.",
+        "- BAĞLI KAYNAK KOLONLARI: katalogda 'x.<kolon>' satırı olan kaynaklarda, bağlı kaynağın "
+        "kolonları 'x.' önekiyle aynı raporda kullanılır (kolon, filtre; çoklu bağda sıralama yok). "
+        "Örn. 'davalar' kaynağında müvekkil telefonu = muvekkil.phone / muvekkil.mobile_phone, "
+        "föy TKU'su = foy.tku_no; 'muvekkiller' kaynağında dava ofis no = dava.tracking_no. "
+        "Kaynak seçimi: satırı NEYİN oluşturacağına göre (dava başına satır → davalar; müvekkil "
+        "başına satır → muvekkiller); başka kaynağın alanı bağlı kolonla gelir, kaynak değiştirme.",
         "- Filtre operatörleri kolon TİPİNE göre sınırlıdır (aşağıdaki tablo); katalogda bir kolon için "
         "daha dar bir op listesi yazıyorsa o geçerlidir. Türetilmiş kolonlar sıralanamaz; 'yalnız filtre' "
         "işaretli kolon (ör. arama) kolon listesine GİRMEZ.",

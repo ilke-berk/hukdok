@@ -108,7 +108,12 @@ kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler
 satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
 SQL YOK (K1: istemci yalnız `services/rapor/registry.py` anahtarlarını gönderir, sorgu Core ile kurulur,
 tenant+soft-delete `kisitlar`dan). AI asistan `POST /chat` (NDJSON) admin anahtarı `rapor_asistani`
-(varsayılan KAPALI) ister; tanımı manuelle AYNI doğrulamadan geçer (K6). Ayrıntı `docs/mimari/raporlama.md`.
+(varsayılan KAPALI) ister; tanımı manuelle AYNI doğrulamadan geçer (K6). **Kaynaklar arası birleştirme
+(G166):** kaynak `iliskiler` bildirir, bağlı kaynağın kolonları `<iliski>.<kolon>` anahtarıyla TÜRETİLİR
+(`muvekkil.phone` davalar'da; `dava.tracking_no` müvekkiller'de) — çoklu bağda değerler `" ; "` birleşik +
+EXISTS filtre, sıralama yok; belgeler/föyler → `dava.*` tekil (düz kolon gibi). Elle kolon listesi yazma;
+`kart_eslesmesi` ad anahtarı için ifade index'i migrasyon 48'de (`_ad_anahtari` ile birebir, test bekçili).
+Ayrıntı `docs/mimari/raporlama.md` §2.4.
 
 **Sürüm izi:** deploy git SHA'sını `APP_VERSION` build arg'ı ile imaja gömer →
 `/healthz` "version" alanı + login rozeti. `/healthz` derindir (DB `SELECT 1`;
