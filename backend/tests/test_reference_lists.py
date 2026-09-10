@@ -20,6 +20,7 @@ def test_tr_upper_bosluk_normalizasyonu():
 
 
 # tr_title saklama formatı: her kelimenin ilk harfi büyük, kalanı küçük
+# (bağlaç/kısaltma/parantez/yabancı ad istisnaları: tests/test_g159_tr_title.py)
 def test_tr_title_temel():
     assert tr_title("hastane özel müvekkil") == "Hastane Özel Müvekkil"
     assert tr_title("HASTANE ÖZEL MÜVEKKİL") == "Hastane Özel Müvekkil"

@@ -6,6 +6,7 @@ LIST_REGISTRY sözlüğü + generic fonksiyonlar kullanılır; route'ların bekl
 isimli sarmalayıcılar (get_lawyers, add_status, …) altta tanımlıdır.
 """
 import logging
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -46,20 +47,103 @@ def tr_lower(s: str) -> str:
     return s.replace("İ", "i").replace("I", "ı").lower()
 
 
+# ─── tr_title: DB-008 yazım standardı (G159) ────────────────────────────────
+# Veri ekibinin DB-008 kuralı (plan 08.09 §5, kullanıcı onayı 08.09): bağlaç
+# küçük, kısaltma korunur, yabancı adda I/ı kuralı yok. Naif kelime-başı
+# büyütme 4.521 kartta "… Ve …", 3.209 taraf satırında "A.ş." üretmişti.
+
+#: Küçük yazılan bağlaçlar — metnin İLK kelimesi hariç (nokta/parantez soyulmuş
+#: hâliyle karşılaştırılır: "vb." → "vb").
+BAGLACLAR = frozenset({"ve", "ile", "veya", "adına", "vb"})
+
+#: 2-3 harfli, tamamı büyük BİLİNEN kısaltmalar: kanonik yazımıyla korunur
+#: ("hd" → "HD"). Marka adı LİSTELENMEZ (AXA → Axa, QUICK → Quick); HDI
+#: ekibin örneğindeki gibi kısaltma sayılır. Küme bilinçli küçüktür — yeni
+#: kısaltma ölçümle eklenir.
+KISALTMALAR = frozenset({
+    "TC", "AŞ", "HD", "CD", "İDD", "BİM", "BAM", "HDI",
+    "TCK", "HMK", "CMK", "TBK", "TMK", "SGK",
+})
+
+#: Noktalı kısaltma deseni ("A.Ş." · "T.C." · "K.H."): tek harf + nokta
+#: tekrarı. Tamamı büyük yazılır ("a.ş." → "A.Ş.").
+_NOKTALI_KISALTMA = re.compile(r"^(?:\w\.)+\w\.?$")
+
+#: Kelime SINIRI sayılan ayraçlar: sonrasındaki harf büyür ("(tıbbi" →
+#: "(Tıbbi", "Red/esastan" → "Red/Esastan", "davalı-davacı" → "Davalı-Davacı").
+_SINIR_AYRACLARI = re.compile(r"([(\-/])")
+
+#: Yabancı ad izi (TR büyük harfli parça üzerinde): Türk alfabesinde olmayan
+#: harf (Q/W/X) ya da noktasız I'nın ünlüye komşuluğu (Türkçede "ıa"/"aı" gibi
+#: dizilim yoktur: ALLIANZ). Yabancı adda I → i ("QUICK" → "Quick");
+#: GENERALI/ZURICH gibi izsiz adlar Türkçe kuralla kalır (bilinen sınır).
+_YABANCI_IZI = re.compile(r"[QWX]|I[AEOUÖÜ]|[AEOUÖÜ]I")
+
+_PARCA = re.compile(r"^(\W*)(.*?)(\W*)$", re.DOTALL)
+
+
+def _parca_bicimle(parca: str, ilk: bool) -> str:
+    """Boşluksuz TEK parçayı (ayraçlar ayrılmış) DB-008 kuralıyla biçimler."""
+    eslesme = _PARCA.match(parca)
+    assert eslesme is not None       # desen her metne uyar
+    on, cekirdek, son = eslesme.groups()
+    if not any(ch.isalpha() for ch in cekirdek):
+        return parca                                   # "3." · "2023" · "—"
+    if _NOKTALI_KISALTMA.match(cekirdek + son[:1]):
+        return on + tr_upper(cekirdek) + son           # A.Ş. · T.C. · K.H.
+    buyuk = tr_upper(cekirdek)
+    if buyuk in KISALTMALAR:
+        return on + buyuk + son                        # HD · TCK · HDI
+    kucuk = tr_lower(cekirdek)
+    if not ilk and kucuk in BAGLACLAR:
+        return on + kucuk + son                        # ve · ile · vb.
+    if _YABANCI_IZI.search(buyuk):
+        kucuk = buyuk.replace("İ", "i").lower()        # I/ı → i (Quick, Allianz)
+        return on + kucuk[0].upper() + kucuk[1:] + son
+    ilk_harf = "İ" if kucuk[0] == "i" else kucuk[0].upper()
+    return on + ilk_harf + kucuk[1:] + son
+
+
 def tr_title(s: str) -> str:
-    """Liste adlarının saklama formatı: her kelimenin ilk harfi büyük, kalanı
-    küçük (Türkçe kurallarıyla: i→İ, ı→I). Boşluklar normalize edilir."""
-    words = []
-    for w in tr_lower(s).split():
-        first = "İ" if w[0] == "i" else w[0].upper()
-        words.append(first + w[1:])
-    return " ".join(words)
+    """Liste adlarının saklama formatı — DB-008 yazım standardı (G159).
+
+    Kelime sınırı boşluk VE `(`, `-`, `/` sonrası; her kelime Türkçe küçük +
+    ilk harf büyük (i→İ, ı→I), şu istisnalarla:
+
+    | Girdi                         | Çıktı                         | Kural                    |
+    |-------------------------------|-------------------------------|--------------------------|
+    | KADIN HASTALIKLARI VE DOĞUM   | Kadın Hastalıkları ve Doğum   | bağlaç küçük             |
+    | AK SİGORTA A.Ş.               | Ak Sigorta A.Ş.               | noktalı kısaltma         |
+    | T.C. SAĞLIK BAKANLIĞI         | T.C. Sağlık Bakanlığı         | noktalı kısaltma         |
+    | TAZMİNAT (TIBBİ HATA)         | Tazminat (Tıbbi Hata)         | parantez sonrası büyük   |
+    | YARGITAY 3. HD                | Yargıtay 3. HD                | bilinen kısaltma         |
+    | QUICK SİGORTA                 | Quick Sigorta                 | yabancı ad, I → i        |
+    | DR ÖZEL · LTD. ŞTİ.           | Dr Özel · Ltd. Şti.           | olağan kelime            |
+    | ali VELİ                      | Ali Veli                      | olağan kelime            |
+
+    İdempotent: `tr_title(tr_title(x)) == tr_title(x)`. Boşluklar normalize
+    edilir. `normalize_list_name` ve aktarımın `_baslik_bicimli`si aynı
+    fonksiyondur (istisna yok).
+    """
+    sonuc = []
+    ilk = True
+    for kelime in s.split():
+        parcalar = []
+        for parca in _SINIR_AYRACLARI.split(kelime):
+            if not parca or _SINIR_AYRACLARI.fullmatch(parca):
+                parcalar.append(parca)
+                continue
+            parcalar.append(_parca_bicimle(parca, ilk))
+            if any(ch.isalpha() for ch in parca):
+                ilk = False
+        sonuc.append("".join(parcalar))
+    return " ".join(sonuc)
 
 
 def normalize_list_name(name: str) -> str:
-    """Tüm referans listelerinin ad saklama formatı: her kelimenin ilk harfi büyük,
-    kalanı küçük ("Doktor", "Özel Müvekkil"). Avukat ve e-posta alıcısı adları da
-    dahil — istisna yoktur."""
+    """Tüm referans listelerinin ad saklama formatı = `tr_title` (DB-008):
+    "Doktor", "Özel Müvekkil", "Kadın Hastalıkları ve Doğum", "Ak Sigorta A.Ş.".
+    Avukat ve e-posta alıcısı adları da dahil — istisna yoktur."""
     return tr_title(name)
 
 

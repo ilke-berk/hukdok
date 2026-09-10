@@ -254,8 +254,9 @@ def test_kapsam_kilidi_ikinci_yazici_dogurmadi():
     }
     # Bilinçli yazılmayan: hizmet türünün 5 haneli bitmask semantiği kararlaşmadı.
     assert not yazilanlar & {"service_type"}
-    # `court`/`sub_type` yazılır AMA yalnız içerik farkında (yazım bizim).
-    assert hukdok_aktarim.ICERIK_KARSILASTIRMALI_ALANLAR == {"court", "sub_type"}
+    # `court` yazılır AMA yalnız içerik farkında (yazım bizim); `sub_type`
+    # yazım farkında da paket kazanır (G159 M6).
+    assert hukdok_aktarim.ICERIK_KARSILASTIRMALI_ALANLAR == {"court"}
     # Toptan taraf silme belge-taraf bağını SESSİZCE koparırdı (SET NULL tuzağı)
     assert "delete(models.CaseParty" not in kaynak
     assert "CaseParty).delete" not in kaynak
@@ -858,12 +859,13 @@ def test_kapali_liste_taninmayan_degeri_yazmaz(uc_kart, tmp_path):
 
 
 def test_icerik_farkinda_yazilir_yazim_farkinda_yazilmaz(uc_kart, tmp_path):
-    """`court`/`sub_type`: içerik teslimin, yazım bizim.
+    """`court`: içerik teslimin, yazım bizim. `sub_type`: paket kazanır (G159).
 
     Ölçüm (2026-08-19): `court`ta 562 farkın 480'i yalnız BÜYÜK HARF/noktalama,
-    82'si gerçekten başka mahkeme; `sub_type`ta 7.390 farkın 7.039'u yazım.
-    Yazımı da üstüne yazmak G067-G070'te düzeltilen mahkeme adı kimliğini ve
-    referans listelerinin `tr_title` formatını geriletirdi.
+    82'si gerçekten başka mahkeme. Yazımı da üstüne yazmak G067-G070'te
+    düzeltilen mahkeme adı kimliğini geriletirdi. `sub_type` ise G159 (M6)
+    ile içerik modundan çıktı: yazım farkında da `tr_title` (DB-008) biçimiyle
+    paket yazar — "Ortopedi Ve Travmatoloji" → "Ortopedi ve Travmatoloji".
     """
     db = uc_kart()
     try:
@@ -875,7 +877,7 @@ def test_icerik_farkinda_yazilir_yazim_farkinda_yazilmaz(uc_kart, tmp_path):
     finally:
         db.close()
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        # yalnız yazım farkı → dokunulmaz
+        # yalnız yazım farkı → `court` dokunulmaz, `sub_type` DB-008 biçimiyle yazılır
         _satir("SSTMN-1", "D-1", **{"Yerel Mahkeme": "BAKIRKÖY 3. TÜKETİCİ MAHKEMESİ",
                                     "Dava Türü Alt Kırılımı": "ORTOPEDİ VE TRAVMATOLOJİ"}),
         # kart boştu → dolar (BÜYÜK HARF gelen uzmanlık `tr_title`e çevrilir)
@@ -891,9 +893,9 @@ def test_icerik_farkinda_yazilir_yazim_farkinda_yazilmaz(uc_kart, tmp_path):
     try:
         kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
         assert kartlar["D-1"].court == "Bakırköy 3. Tüketici Mahkemesi"   # yazım: korundu
-        assert kartlar["D-1"].sub_type == "Ortopedi Ve Travmatoloji"      # yazım: korundu
+        assert kartlar["D-1"].sub_type == "Ortopedi ve Travmatoloji"      # yazım: paket kazanır (G159)
         assert kartlar["D-2"].court == "ANKARA 9. TÜKETİCİ MAHKEMESİ"     # boştu, doldu
-        assert kartlar["D-2"].sub_type == "Çocuk Sağlığı Ve Hastalıkları"  # tr_title
+        assert kartlar["D-2"].sub_type == "Çocuk Sağlığı ve Hastalıkları"  # tr_title (DB-008: bağlaç küçük)
         assert kartlar["D-3"].court == "İzmir 15. Asliye Hukuk Mahkemesi"  # içerik: değişti
     finally:
         db.close()

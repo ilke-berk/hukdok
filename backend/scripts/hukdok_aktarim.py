@@ -86,15 +86,16 @@ kolona DEĞİL `hizmet_turu`ya gider — G119 ayrımı) · `Ek Alt Kırılım*` 
 uyarısı: dosya açılış etiketi, güncel değil; 04.09 paketinden zaten çıktı).
 `Para Birimi`/`MüvekkilNo` 12.08'de "taşınmaz" denmişti, G123 ile kullanıcı
 kararıyla alınır (para birimi karta, müvekkil no föye; cari kart KURULMAZ).
-`court` ve `sub_type` İÇERİK farkında yazılır, yalnız yazım
-farkında dokunulmaz (`ICERIK_KARSILASTIRMALI_ALANLAR`).
+`court` İÇERİK farkında yazılır, yalnız yazım farkında dokunulmaz
+(`ICERIK_KARSILASTIRMALI_ALANLAR`); `sub_type` ise yazım farkında da paket
+kazanır (G159 M6 — biçimi `_baslik_bicimli`/`tr_title` DB-008 kuralıyla kurar).
 Karar künyesi
 (`karar_no`/`karar_tarihi`) BİLİNÇLİ YAZILMAZ ve BOŞALTILMAZ — o kolonların
 tek yazma yolu `managers/stage_decisions.py`ın aşama fotoğrafıdır (G062);
 buradan yazmak ikinci bir yazıcı doğururdu. Künye yalnız OKUNUR ve kardeş-föy
 çelişki raporunu üretir; `Düzeltme_Logu`'ndaki künye boşaltma talimatı
-uygulanmaz, satır raporuna düşer. Boşaltma `ICERIK_KARSILASTIRMALI_ALANLAR`
-(`court`/`sub_type`) için de geçersizdir (yazım bizim; rapora düşer).
+uygulanmaz, satır raporuna düşer. Boşaltma `BOSALTMA_YASAK_KART_ALANLARI`
+(`court`/`sub_type`) için de geçersizdir (rapora düşer).
 `cases.sistem_no`/`cases.tku_no` da yazılmaz (nihai tekilleştirme tam eşleme
 turunun işi).
 
@@ -703,10 +704,13 @@ def _baslik_bicimli(deger: Any, alan: str) -> Optional[str]:
     """Teslimin BÜYÜK HARF metnini bizim saklama biçimimize çevirir.
 
     Uzmanlık alanı teslimde "ÇOCUK SAĞLIĞI VE HASTALIKLARI" gibi gelir; bizim
-    referans listelerimizin saklama formatı `tr_title` ("Çocuk Sağlığı Ve
-    Hastalıkları"). Ham hâliyle yazmak 7.039 kartta yalnız yazımı bozardı —
-    içerik zaten aynı. Eşleme SÖZLÜĞÜ değildir (77 ham değer ↔ 44 seed işi
-    duruyor); yalnız biçim düzeltir.
+    referans listelerimizin saklama formatı `tr_title` — DB-008 kuralıyla
+    ("Çocuk Sağlığı ve Hastalıkları": bağlaç küçük, kısaltma korunur, G159).
+    `normalize_list_name` ile AYNI fonksiyon: liste ve kart aynı yazımı taşır.
+    Ham hâliyle yazmak binlerce kartta yalnız yazımı bozardı — içerik zaten
+    aynı. Eşleme SÖZLÜĞÜ değildir (77 ham değer ↔ 44 seed işi duruyor); yalnız
+    biçim düzeltir. `sub_type` İÇERİK modunda DEĞİLDİR (G159 M6): yazım
+    farkında da paket kazanır, çünkü biçimi zaten bu fonksiyon standartlar.
     """
     metin = _metin(deger)
     return _kirp(tr_title(metin), alan) if metin else None
@@ -902,14 +906,24 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
 #
 # Ölçüm (2026-08-19, 7.932 eşleşen föy): `court`ta 562 farkın 480'i yalnız
 # yazım (BÜYÜK HARF / eksik nokta), 82'si GERÇEK başka mahkeme ("İzmir 4.
-# İdare" ↔ "İzmir 15. Asliye Hukuk"). `sub_type`ta 7.390 farkın 7.039'u yazım,
-# 351'i gerçekten başka uzmanlık ("Göğüs Cerrahisi" ↔ "Genel Cerrahi").
+# İdare" ↔ "İzmir 15. Asliye Hukuk").
 #
 # Kural: içerik teslimin (kaynak orada, bilgi daha güncel), yazım bizim
-# (G067-G070 mahkeme adı kimliği + referans listelerinin `tr_title` formatı).
-# Karşılaştırma `_baslik_anahtari` ile: aksan, büyük/küçük harf ve noktalama
-# yok sayılır.
-ICERIK_KARSILASTIRMALI_ALANLAR = frozenset({"court", "sub_type"})
+# (G067-G070 mahkeme adı kimliği). Karşılaştırma `_baslik_anahtari` ile:
+# aksan, büyük/küçük harf ve noktalama yok sayılır.
+#
+# `sub_type` bu kümeden ÇIKTI (G159, plan 08.09 §1.3 M6, kullanıcı kararı
+# 08.09): paket kazanır — yazım farkında da yazılır. Yazım standardı ekipte
+# (DB-008: bağlaç küçük, kısaltma korunur) ve `_baslik_bicimli` aynı kuralı
+# `tr_title` ile uygular; 2026-08-19'daki "7.039 yazım farkı" o gün eski
+# `tr_title`ın "… Ve …" biçimiydi (04.09 paketiyle 4.521 kart), korunacak
+# bir "bizim yazım" kalmadı. Boşaltma yasağı ise SÜRÜYOR (aşağıda).
+ICERIK_KARSILASTIRMALI_ALANLAR = frozenset({"court"})
+
+# `Düzeltme_Logu` "(boş)" talimatının UYGULANMADIĞI kart alanları — içerik
+# modundaki `court` ve (kümeden çıksa da) `sub_type`: uzmanlık alanı tek
+# sütundan, biçimlenerek yazılır; boşaltma talimatı satır raporuna düşer.
+BOSALTMA_YASAK_KART_ALANLARI = ICERIK_KARSILASTIRMALI_ALANLAR | {"sub_type"}
 
 # Türetilen alanlar: değeri TEK sütundan gelmeyenler.
 KART_TURETILEN: Dict[str, Callable[[Dict[str, Any], str], Any]] = {}
@@ -1249,8 +1263,9 @@ def _duzeltme_alan_haritasi() -> Dict[str, str]:
 
 
 DUZELTME_ALAN_HARITASI: Dict[str, str] = _duzeltme_alan_haritasi()
-#: Boşaltılması YASAK alanlar: künye (tek yazıcı stage_decisions) + içerik modu.
-BOSALTMA_DISI_ALANLAR: frozenset = frozenset(_DUZELTME_KUNYE_KAYNAKLARI.values()) | ICERIK_KARSILASTIRMALI_ALANLAR
+#: Boşaltılması YASAK alanlar: künye (tek yazıcı stage_decisions) + içerik modu
+#: (`court`) + `sub_type` (G159: paket kazanır ama boşaltma yine rapora düşer).
+BOSALTMA_DISI_ALANLAR: frozenset = frozenset(_DUZELTME_KUNYE_KAYNAKLARI.values()) | BOSALTMA_YASAK_KART_ALANLARI
 
 # `case_history.source` sınırı modelden okunur (imza + gerekçe buraya sığmalı).
 _SOURCE_SINIRI: int = models.CaseHistory.source.property.columns[0].type.length or 300
@@ -1425,8 +1440,9 @@ def _bosaltma_talimatlari(
         if s_no != sistem_no or not kayit.bosalt:
             continue
         if alan in BOSALTMA_DISI_ALANLAR:
-            neden = ("karar künyesi tek yazıcı stage_decisions" if alan not in ICERIK_KARSILASTIRMALI_ALANLAR
-                     else "içerik-karşılaştırmalı alan (yazım bizim)")
+            neden = ("karar künyesi tek yazıcı stage_decisions" if alan not in BOSALTMA_YASAK_KART_ALANLARI
+                     else "içerik-karşılaştırmalı alan (yazım bizim)" if alan in ICERIK_KARSILASTIRMALI_ALANLAR
+                     else "uzmanlık alanı boşaltılmaz (paket yazar, silmez)")
             reddedilen.append((alan, f"boşaltılmadı — {neden} (Düzeltme_Logu satır {kayit.satir_no})"))
             continue
         kaynak = KART_ALANLARI[alan][0]
