@@ -233,9 +233,26 @@ tablosu bu kararların tarihçesini taşır — desen `case_esas_numbers`ın (G0
 - **Tahmin yasağı:** `dogrulama_durumu` UYAP|BELGE|TURETILDI|BELIRSIZ; verilmezse
   BELIRSIZ (server_default dahil — ham INSERT bile damgasız satır bırakamaz). `kaynak_id`
   self-FK'sı kararın soyunu tutar (bozma → yeni yerel), ON DELETE SET NULL.
+- **Yerinde güncelleme ve koruma (G150, 08.09.2026):** tek yazma yoluna
+  `update_stage_decision` eklendi (`managers/stage_decisions.py:435-490`): içerik alanları
+  (`CONTENT_FIELDS`, `:360-363`) yerinde değişir, damga/imza tazelenir, fotoğraf yeniden
+  senkronlanır; birebir aynı içerikte satıra dokunulmaz (ikinci koşu 0). `dogrulama_durumu ∈
+  {BELGE, UYAP}` satır **korumalıdır** (`is_protected`, `:430-432`) → `ProtectedStageDecisionError`
+  (`:168`); paket kaynaklı ve elle girilmiş (BELIRSIZ/TURETILDI) satırlar aynı yoldan
+  güncellenir — kullanıcı kararı 06.09 §0 ("son paket elle düzeltmeden daha doğru"). Silme yolu
+  yalnız `delete_stage_decision` (`:565`), aktarım silmez. Aktarımın uzlaşı/çok tur kuralları
+  [`veri-teslim-hatti.md` §7.1](veri-teslim-hatti.md).
+- **`basvuru_tarihi` (G155):** kanun yoluna başvuru tarihi satır alanı (`models.py:297`,
+  migrasyon madde 47 `database.py:1063`); fotoğraf ISTINAF → `cases.istinaf_basvuru_tarihi`,
+  TEMYIZ → `cases.temyiz_basvuru_tarihi` (`_PHOTO_COLUMNS`, `:125`, `:136`) — bu iki takip
+  alanı o günden beri aşama fotoğrafıdır; YEREL/KARAR_DUZELTME için kart kolonu yok.
+- **Büro durumu karar değil (G151):** `Kapalı`/`Derdest` yerel havuzdan çıktı
+  (`managers/seed_data.py:427-454`, liste 27); aktarım bu iki değeri "karar yok" sayar
+  (`scripts/hukdok_aktarim.BURO_DURUMLARI`). Dosyanın derdest/arşiv bilgisi `cases.status`tur.
 
 Okuma/yazma uçları ve UI bu görevin kapsamı dışında bırakıldı (FAZ F aktarımı ve sonrası);
-testler `backend/tests/test_g062_stage_decisions.py`.
+testler `backend/tests/test_g062_stage_decisions.py`, `test_g150_asama_kurali.py`,
+`test_g155_basvuru_tarihi.py`.
 
 ## 10. Föy modeli — kart bölünmez, SistemNo `case_foys`ta yaşar (G063)
 
@@ -268,6 +285,15 @@ kardeşlerinin aynısıdır.
 - **Kapsam sınırı:** `cases.sistem_no` / `cases.tku_no` kolonlarına bu turda DOKUNULMADI
   (prod'da ikisi de 0 dolu); nihai tekilleştirme FAZ F aktarım turunun işidir. Çekirdek =
   kimlik + bağ.
+- **Föy ↔ müvekkil bağı kuruldu (G153, 08.09.2026 — plan 06.09 #28 kararı):** aktarım
+  `Müvekkil` hücresinin ilk parçasına eşit CLIENT taraf satırını `case_party_id`'ye bağlar
+  (`scripts/hukdok_aktarim._foy_muvekkilini_bagla`, `upsert_foy` → `_validated_party` kapısı);
+  boş hücre mevcut bağı korur, bağ başka tarafa geçerse satır raporuna `MUVEKKIL_DEGISTI`
+  düşer ve eski taraf satırı silinmez. Müvekkil kimliği ayrıca `DosyaNo` kökünden okunur
+  (1 Axa · 2 Quick · 3 Ak · … · 8000 Nippon; 13 hizmetsiz; ≥ 500 hekim/kurum) ve eşleştirmede
+  esas/tür'den sonra, müvekkil adından önce ayırıcıdır; kök ile `Müvekkil` hücresi farklı
+  sigortaları söylüyorsa satır hiçbir karta yazılmaz. Lokal ölçüm (04.09 paketi): 8.385 föy
+  bağlandı, belirsiz eşleşme 20 → 10. Ayrıntı [`veri-teslim-hatti.md` §7.1](veri-teslim-hatti.md).
 - **Föy düzeyi alanlar (G123, 05.09.2026 — "54 sütunun tamamı" kullanıcı kararı):**
   `mko_id` (teslimin "Dosya - Föy Bilgileri" kimliği) · `muvekkil_no` ("MüvekkilNo") ·
   `muvekkil_tipi` · `hizmet_turu` · `durum`. Gerekçe ölçülü: 04.09 paketinde kart tek
@@ -477,9 +503,9 @@ itibarıyla **hepsi seed'lidir** — sayılar `managers/seed_data.py` sabitlerin
 | --- | --- | --- | --- | --- |
 | `alleged_faults` | `ALLEGED_FAULTS` | 9 | `cases.iddia_edilen_kusur` (aktarım METİN yazar; liste kart seçimi + `DEGER_HAVUZLARI` farkı) | DB-2026-001 (04.09), `9608031` — **G044'ten 04.09'a kadar bilinçli boştu**, "seed'lenmez" ifadesi tarihseldir |
 | `appealing_parties` | `APPEALING_PARTIES` | 3 | aşama `basvuran_taraf` (`İstinaf Mahkemesi Başvuran Taraf`) | G044 |
-| `local_decisions` | `LOCAL_DECISIONS` | 28 | `case_stage_decisions.karar_durumu` (YEREL) | G060, 10.08 `DEGER_HAVUZLARI` |
-| `appeal_decisions` | `APPEAL_DECISIONS` | 3 | aynı (ISTINAF) | G060 |
-| `cassation_decisions` | `CASSATION_DECISIONS` | 3 | aynı (TEMYIZ) | G060 |
+| `local_decisions` | `LOCAL_DECISIONS` | 27 | `case_stage_decisions.karar_durumu` (YEREL) | G060, 10.08 `DEGER_HAVUZLARI`; G151 (08.09): `Kapalı`/`Derdest` çıktı, `Red/Usulden` girdi |
+| `appeal_decisions` | `APPEAL_DECISIONS` | 8 | aynı (ISTINAF) | G060; G151: HMK 353/1-b-2 düzelterek karar ailesi + `Kısmen Kabul` + `Davacı İstinaf Talebinin Kabulü` (`Karar` bilerek yok) |
+| `cassation_decisions` | `CASSATION_DECISIONS` | 4 | aynı (TEMYIZ) | G060; G151: `Kısmen Onama/Kısmen Bozma` |
 | `revision_decisions` | `REVISION_DECISIONS` | 2 | aynı (KARAR_DUZELTME) | G060 |
 | `event_types` | `EVENT_TYPES` | 3 | `cases.olay_turu` | G103 (§11) |
 | `judgment_roles` | `JUDGMENT_ROLES` | 4 | `cases.hukumdeki_rol` | G103 (§11) |
@@ -494,4 +520,6 @@ seed'lidir (`court_types` için `COURT_TYPES_SEED` sözlüğü). `DEGER_HAVUZLAR
 envanterin yalnız altısını karşılaştırır (`services/teslim_cevap.py::HAVUZ_LISTE_ESLEMESI`;
 `client_types`/`service_types` eşlemede yok — bkz.
 [`veri-teslim-hatti.md` §7](veri-teslim-hatti.md)). Veri ekibine verilen değer
-tablosu `docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.8 ile birebir aynıdır.
+tablosu: karar durumu havuzları için `docs/veri-teslim/SOZLESME.md` §6 (10.09, G151 sonrası
+27/8/4/2), öteki altı liste için `docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.8 (04.09
+fotoğrafı; oradaki 28/3/3 sayıları tarihseldir).

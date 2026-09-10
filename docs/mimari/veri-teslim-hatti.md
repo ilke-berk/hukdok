@@ -1,8 +1,10 @@
 # Veri teslim hattı — SharePoint gelen kutusu → defter → 04:00 kapısı → cevap paketi
 
 > **Son doğrulama: 2026-09-04 · 88409da** — §1 "Site/kimlik" satırı, §2 madde 2/5 ve §9 prod kurulumu
-> 2026-09-08 · G147 ile yeniden doğrulandı (satır numaraları o commit'in koduna göre).
-> Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
+> 2026-09-08 · G147 ile yeniden doğrulandı; §3 doğrulama/özet satırları, §4 kapı, §7 `Düzeltme_Logu`
+> ve kapsam referansları ile **§7.1 (aktarımın yazma kuralları, G150–G159)** 2026-09-10 · G161 ile
+> `39fd10c` koduna göre yeniden doğrulandı (o bölümlerin satır numaraları bu commit'e aittir; diğer
+> bölümler 88409da/G147 satırlarını taşır). Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 > Veri ekibine verilen dış sözleşme ayrı dosyadadır:
 > [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) (kod yolu içermez).
 
@@ -137,22 +139,37 @@ karar/gerekçe tazelenir (`:865-871`). `teslimi_isle` (`:944-972`) doğrula → 
 (`otomatik_uygula` ve kapı `otomatik` ise) uygula zincirini tek çağrıda yürütür; nihai ya da
 `uygulaniyor` satıra **dokunmaz**, mevcut durumu döner.
 
-Yapı doğrulaması (`:666-696`): dosya açılmalı, `Sheet` sayfası olmalı (`:189`), başlık
-satırında `sistem_no` **ve** `dosya_no` bulunmalı (`:193`; script tek başına yalnız
-`sistem_no`'yu zorunlu sayar — `scripts/hukdok_aktarim.py:210` — ama `dosya_no` eşleştirme
-köprüsüdür, onsuz her satır atlanırdı). `DEGISIKLIK_OZETI` isteğe bağlıdır: yoksa
-`zincir_tamam=NULL`; varsa "Önceki teslim" etiketi ilk 200 satırda aksan/boşluk duyarsız
-aranır, yer tutucu (`—`, `yok`, `ilk`…) None sayılır (`:194-197`, `:636-663`). Ad bulunduysa
-`zincir_tamam = (o ad defterde uygulandi)`; ad yoksa (yer tutucu/boş) **G156 zincir
-başlangıcı kuralı**: defterde hiç `uygulandi` teslim yoksa `True` (ilk teslim zaten
-`ilk_teslim` kuralıyla incelemeye düşer), uygulanmış teslim varken yer tutucu `False`
-(`zincir_eksik`) (`teslim_dogrula`, `services/teslim_kutusu.py`).
+Yapı doğrulaması (`_yapi_dogrula`, `services/teslim_kutusu.py:1006`): dosya açılmalı, `Sheet`
+sayfası olmalı, başlık satırında `sistem_no` **ve** `dosya_no` bulunmalı (`ZORUNLU_BASLIKLAR`,
+`:218`; script tek başına yalnız `sistem_no`'yu zorunlu sayar ama `dosya_no` eşleştirme
+köprüsüdür, onsuz her satır atlanırdı). `DEGISIKLIK_OZETI` (`OZET_SAYFASI`, `:215`) isteğe
+bağlıdır; üç etiketi tek ayrıştırıcı okur (`_ozet_etiket_degeri`, `:876-899`: etiket ilk 200
+satırda — `_OZET_TARAMA_SATIRI`, `:220` — aksan/boşluk duyarsız aranır, değer aynı hücrede `:`
+sonrasında ya da sağdaki ilk dolu hücrede; yer tutucular `_YER_TUTUCULAR`, `:222`):
 
-Aynı sayfadaki "Teslim türü: tam | delta" satırı (G156, `teslim_turu_oku`) `yapi["teslim_turu"]`
-olarak yazılır (defter kolonu yok; satır yok/boş/yer tutucu → `tam`, tanınmayan değer WARNING +
-`tam`). Delta = yalnız değişen föy/sütunlar: yazma yolu zaten eksik sütun/föye dokunmaz
-(`scripts/hukdok_aktarim.py`), kapı ise delta'da kaybolan başlığı ihlal değil **bilgi** sayar
-(§4 `yapi_degisti`); envanter denkliği, zincir ve eşik kuralları delta'da aynen geçerlidir.
+- **"Önceki teslim"** (`onceki_teslim_adi_oku`, `:902`; yer tutucu `—`/`yok`/`İLK` → None).
+  Sayfa yoksa `zincir_tamam=NULL` (`teslim_dogrula`, `:1141`). Ad bulunduysa
+  `zincir_tamam = (o ad defterde uygulandi)` (`_uygulandi_var`, `:403`; çağrı `:1153`); ad
+  yoksa **G156 zincir başlangıcı kuralı** (`:1144-1151`): defterde hiç `uygulandi` teslim
+  yoksa `True` (ilk teslim zaten `ilk_teslim` kuralıyla incelemeye düşer), uygulanmış teslim
+  varken yer tutucu `False` (`zincir_eksik`). Durum geçmişi notu "zincir başlangıcı" /
+  "belirtilmemiş ama defterde uygulanmış teslim var" der.
+- **"Teslim türü: tam | delta"** (G156, `teslim_turu_oku`, `:919-943`; sabitler
+  `TESLIM_TURU_TAM`/`TESLIM_TURU_DELTA`, `:231-233`) `yapi["teslim_turu"]` olarak yazılır
+  (defter kolonu yok, `teslim_turu(teslim)` `:741` defter JSON'undan okur; satır yok/boş/yer
+  tutucu → `tam`, tanınmayan değer WARNING + `tam`). Delta = yalnız değişen föy/sütunlar: yazma
+  yolu zaten eksik sütun/föye dokunmaz (`scripts/hukdok_aktarim.py`), kapı ise delta'da
+  kaybolan başlığı ihlal değil **bilgi** sayar (`_ihlal_kategorileri`, `:829-831`;
+  `_DELTA_IHLAL_KATEGORILERI`, `:268`; §4 `yapi_degisti`); envanter denkliği, zincir ve eşik
+  kuralları delta'da aynen geçerlidir. Sözleşmedeki delta kuralları (yalnız ilgili föylerin
+  aşama/log satırları, zincir kesintisiz, aylık tam paket) kodun **dışında** kalan süreç
+  kurallarıdır — kod delta'yı "eksik = dokunma" ile taşır.
+- **"Veri kesim tarihi"** (G152, `kesim_tarihi_oku`, `:945-963`; `_tarih` ile çözülür, bozuk
+  değer WARNING + None). `kesim_tarihi_bul` (`:965-1003`) üç kaynağı sırayla dener: özet
+  sayfası (INFO) → paket adındaki ISO tarih (`_PAKET_ADI_TARIHI`, `:226`; WARNING: teslim günü
+  kesim sayıldı) → None (kural kapalı). Değer deftere yazılmaz, `_aktarimi_calistir`
+  `aktarimi_kos(kesim_tarihi=…)` parametresi olarak geçer (`:712`); ne işe yaradığı §7.1
+  "status koruması".
 
 ### Aktarım ayrı bağlantıda koşar
 
@@ -166,11 +183,11 @@ defter oturumu aktarım süresince kapalı transaction'dadır (önce commit)
 
 ## 4. Kapı — eşikler ve kurallar
 
-`kapi_ihlalleri` (`services/teslim_kutusu.py:838-862`) kuralların **hepsini** değerlendirir ve
+`kapi_ihlalleri` (`services/teslim_kutusu.py:1207-1235`) kuralların **hepsini** değerlendirir ve
 gerekçeyi `;` ile birleştirir — admin "neden inceleme" sorusuna tek bakışta cevap alsın, ilk
-ihlalde durup diğerleri gizlenmesin (`:43-48`). Boş liste = `otomatik`.
+ihlalde durup diğerleri gizlenmesin. Boş liste = `otomatik`.
 
-| Kural etiketi (`KAPI_KURALLARI`, `:170-173`) | Koşul | Eşik / kaynak |
+| Kural etiketi (`KAPI_KURALLARI`, `:193-196`) | Koşul | Eşik / kaynak |
 | --- | --- | --- |
 | `envanter_denk_degil` | `envanter_denk is not True` | zorunlu — belge koruma şartı (`services/belge_envanteri.py:1-20`) |
 | `ilk_teslim` | defterde `uygulandi` teslim yok | zorunlu — ilk teslim daima incelemeye düşer |
@@ -181,7 +198,24 @@ ihlalde durup diğerleri gizlenmesin (`:43-48`). Boş liste = `otomatik`.
 | `eslesmeyen_orani` | `atlanan / okunan >` eşik | env `TESLIM_KAPI_ESLESMEYEN_ORANI`, varsayılan **0.05** |
 | `alan_degisikligi` | `alan_degisikligi >` eşik | env `TESLIM_KAPI_ALAN_DEGISIKLIGI`, varsayılan **10000** |
 
-Eşikler env'den **çağrı anında** okunur (`kapi_esikleri`, `teslim_kutusu.py:239-248`;
+**Eşik = kart hücresi (K2).** `alan_degisikligi` föy satırı değil, kartta değeri değişen alan
+sayar: `_kart_alanlarini_yaz` değişen alan adlarını döner, `_satiri_isle` `len(degisenler)`
+toplar (`scripts/hukdok_aktarim.py:2411`); deftere `AktarimSonucu.alan_degisikligi` olarak
+geçer (`teslim_kutusu.py:420`). Tarih/tutar tip düzeyinde normalize edildiğinden biçim farkı
+değişiklik üretmez (`_tarih` `:503`, `_sayi` `:562-575`); metin alanları ham `==` ile
+karşılaştırılır (`:2004`) — ad yazımı farkı değişiklik sayılır ve paket yazar. Tek istisna
+`ICERIK_KARSILASTIRMALI_ALANLAR = {"court"}` (`:921`): yalnız yazım farkında bizimki kalır
+(`:2006-2008`). `status` istisnası (§7.1) kapı kuralı DEĞİLDİR: korunan alan `KORUNDU`
+türüyle raporlanır, `hata_sayisi`'na ve eşiklere girmez.
+
+**Zincir başlangıcı ve delta (G156):** `zincir_eksik` yalnız `zincir_tamam is False` iken
+düşer; yer tutucu "Önceki teslim" defter boşken `True` verdiğinden ilk paket ihlal listesinde
+yalnız `ilk_teslim` taşır (`:1213-1218`). `yapi_degisti` teslim türüne bakar
+(`teslim_turu(teslim)` `:1232`, `_ihlal_var(fark, tur)` `:1233`): delta'da kaybolan başlık
+gerekçeye girmez ama `fark_kalemleri` (`:817`) değişmediği için bildirim gövdesinde ve
+`ozet.txt` "yapı farkı" satırında bilgi olarak listelenir.
+
+Eşikler env'den **çağrı anında** okunur (`kapi_esikleri`, `teslim_kutusu.py:305`;
 `.env.example:32-43` üçünü yorumlu, varsayılanlarıyla taşır). Recreate'siz `.env` değişikliği
 yine gelmez ama admin paneli `esikler` alanında anlık değeri görür (`routes/admin.py:101-121`).
 Sayı olmayan değer WARNING + varsayılan (`teslim_kutusu.py:228-236`).
@@ -270,19 +304,21 @@ cevap yüklemesi gözle doğrulanmalı.
 
 ## 7. İkinci faz sayfaları — `Düzeltme_Logu`, `DEGER_HAVUZLARI`, kapsam sayfaları
 
-Hepsi `aktarimi_kos` içinde okunur (`scripts/hukdok_aktarim.py:2133-2139`), `limit`ten
+Hepsi `aktarimi_kos` içinde okunur (`scripts/hukdok_aktarim.py:3209`), `limit`ten
 bağımsız; sayfa yoksa hata değil.
 
-**`Düzeltme_Logu` (G112, `scripts/hukdok_aktarim.py:884-937`).** Her satır bir (SistemNo,
-sütun) düzeltmesidir; "Gerekçe" değişen alanın `case_history.source` imzasına provenance
-olarak eklenir, imza `HUKDOK_TESLIM_` ile başlamaya devam eder (`:37-43`). Değişen sütunun
+**`Düzeltme_Logu` (G112, `duzeltme_logunu_oku`, `scripts/hukdok_aktarim.py:1320`).** Her satır
+bir (SistemNo, sütun) düzeltmesidir; "Gerekçe" değişen alanın `case_history.source` imzasına
+provenance olarak eklenir, imza `HUKDOK_TESLIM_` ile başlamaya devam eder. Değişen sütunun
 adı ya ayrı başlıktan ("Sütun", "Alan"…) ya da gerekçenin köşeli parantezli önekinden
-(`[Hükmedilen Manevi] …`) okunur; ikisi de yoksa satır yok sayılır (`:888-907`). Alan
-boşaltmanın **tek** yolu buradadır — **üçlü şart**: log Yeni Değer `(boş)` **VE** `Sheet`'te
-o hücre gerçekten boş **VE** bizde dolu (`:37-41`, `:886`, `:957-963`, `:1092`). Partili
-teslimde eksik sütun mevcut değeri **silmez** ("None = bu teslimde yok"). Künye
-(`karar_no`/`karar_tarihi`/istinaf başvuran) ve içerik-karşılaştırmalı alanlar (`court`,
-`sub_type`) boşaltılamaz — talimat satır raporuna düşer (`:913-920`, `:937`).
+(`[Hükmedilen Manevi] …`) okunur (`sutun_adi`, `:1376`); ikisi de yoksa satır yok sayılır.
+Alan boşaltmanın **tek** yolu buradadır — **üçlü şart**: log Yeni Değer `(boş)` **VE**
+`Sheet`'te o hücre gerçekten boş **VE** bizde dolu (`_bosaltma_talimatlari`, `:1423`). Partili
+teslimde eksik sütun mevcut değeri **silmez** ("None = bu teslimde yok"). Boşaltılamayanlar
+`BOSALTMA_DISI_ALANLAR` (`:1268`) = künye kaynakları (`_DUZELTME_KUNYE_KAYNAKLARI`, `:1246`:
+`karar_no`/`karar_tarihi`/istinaf başvuran) + `BOSALTMA_YASAK_KART_ALANLARI` (`:926`) = içerik
+modundaki `court` ve — G159'da içerik kümesinden çıkmasına rağmen — `sub_type` ("paket yazar,
+silmez"); talimat satır raporuna düşer.
 
 **`DEGER_HAVUZLARI` (G112, `services/teslim_cevap.py:94-142`).** Yedi havuz başlığı → altı
 referans listesi eşlemesi (`HAVUZ_LISTE_ESLEMESI`, `:116-124`: İddia Edilen Kusur →
@@ -319,20 +355,129 @@ verdi. Bizde iş çıkaran ikisi: DB-001 (`ALLEGED_FAULTS` 9 değer seed, `96080
 artık gelmiyor — "bu teslimde yok" sözleşmesi, mevcut değer korunur; `Arabuluculuk
 Numarası` kimlik alanı değil, köprü `Dosya No`), DB-004 (`Karar_Asamalari`'nda `Önceki`
 etiketi `ASAMA_ONCEKI` ile esas tarihçesine gider, `:1617-1623`; satırların gönderilmesi
-istendi), DB-005 (kanonik karar listemiz = `seed_data` dört liste 28/3/3/2, lehe/aleyhe
-ekseni yok), DB-006 (`Olay Türü`/`Hükümdeki Rol` veri ekibinde henüz üretilmiyor; NULL
+istendi), DB-005 (kanonik karar listemiz = `seed_data` dört liste — 04.09'da 28/3/3/2; G151
+ile **27/8/4/2**: `Kapalı`/`Derdest` yerelden çıktı, `Red/Usulden` + istinaf 5 + temyiz 1 girdi,
+`managers/seed_data.py:427-467`; lehe/aleyhe ekseni yok), DB-006 (`Olay Türü`/`Hükümdeki Rol` veri ekibinde henüz üretilmiyor; NULL
 meşru), DB-007 (`Uzmanlık Alanı` zaten `uzmanlik_alani`nın ikinci adayı, `:194`), DB-008
 (ad alanları İlk Harf Büyük — taraf anahtarı `party_check.normalize_party_key` harf
 duyarsız, `:1661`), DB-009/010 (tarih/tutar tipi ve serbest metin havuzları: değişiklik yok).
 Ek sayfalar (`Kaldirilan_Sutunlar`, `S37_Kanonik`, `Yazim_Standardi`) okunmaz. Bildirimin
 kendi metni repoda değildir; işlenmiş hâli bilgilendirme belgesi 1.1'dedir.
 
-**`Silinen_Föyler` / `Kapsam_Dışı` (G113, `scripts/hukdok_aktarim.py:1924-1934`, `:1973`).**
+**`Silinen_Föyler` / `Kapsam_Dışı` (G113, `scripts/hukdok_aktarim.py:3014` `KAPSAM_SAYFALARI`,
+`:3061` `kapsam_kayitlarini_oku`, `:3121` `kapsam_isaretlerini_yaz`).**
 Föy **silinmez**, `case_foys.kapsam_durumu` (`SILINDI` | `KAPSAM_DISI`) + `kapsam_gerekcesi` +
 `kapsam_tarihi` ile işaretlenir (`backend/models.py:336-339`; kolon op'u `database.py:921`
 madde 40). İşaretli föy kardeş-föy uzlaşısına ve TKU ilişki hesabına katılmaz; ana sayfada
 yeniden görünür ve kapsam sayfalarında yoksa işaret NULL'a çekilir (`:86-101`). Bizde olmayan
 SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
+
+### 7.1 Aktarımın yazma kuralları — G150–G159 (10.09.2026, `39fd10c`)
+
+Kapı ve defter değişmedi; `aktarimi_kos`'un kart/aşama/föy yazma kuralları 08.09 planının
+(`docs/plan/veri-ekibi-cevabi-karsilastirma-plani-2026-09-08.md`) kararlarıyla değişti.
+Sözleşmedeki (§3–§7, §10) her cümlenin kod karşılığı burada.
+
+**Aşama katmanı (G150, plan A1+A2; `asamalari_yaz` docstring `scripts/hukdok_aktarim.py:2720-2760`).**
+Eski "aşamada satır varsa paket hiçbir şey yazmaz" kuralı kalktı. Kart başına, aşama başına:
+
+- Kardeş föyler **alan bazında** uzlaştırılır (`_asama_uzlasisi`, `:2602`): imzaya yalnız
+  DOLU alanlar girer (`_asama_imzasi`, `:2566-2587`; imza alanları `_IMZA_ALANLARI`,
+  `:2552-2554` = mahkeme · esas · karar no · karar tarihi · karar durumu · başvuru tarihi),
+  imza dışı alanlar ilk dolu (`_ILK_DOLU_ALANLARI`, `:2558-2560`). Boş hücre çelişki değildir;
+  aynı alanda iki farklı dolu değer gerçek çelişkidir → aşama yazılmaz, çelişki raporuna düşer.
+- Mevcut satırlara karşı uygulama (`_asama_satirini_uygula`, `:2932-2995`): içeriği birebir
+  aynı satır varsa hiç (idempotent); konumdaki satır `dogrulama_durumu ∈ {BELGE, UYAP}` ise
+  **korunur** (`stage_decisions.is_protected`, `managers/stage_decisions.py:430-432`;
+  `update_stage_decision` bu satıra `ProtectedStageDecisionError` atar, `:168`, `:470-474`) +
+  satır raporuna `ATLANDI` "belgeli aşama satırı korundu (…) — paket farkı: …" + WARNING +
+  `asama_belgeli_korunan` sayacı (`:2961-2978`); **çok tur** (`_ikinci_tur_mu`, `:2915-2929`:
+  esas VE karar tarihi farklı, dördü dolu, mevcut daha eski) → `add_stage_decision` ile
+  `sira_no+1`, `asama_ikinci_tur`; aksi → **yerinde güncelleme** (`update_stage_decision`,
+  `:435-490`: içerik alanları `CONTENT_FIELDS` `:360-363`, damga+imza tazelenir, fotoğraf
+  `_resync_stage_photo` `:336`) + alan başına `case_history`
+  `case_stage_decisions.<stage>.<sira_no>.<alan>` (`ASAMA_TARIHCE_ONEKI`, `:2563`). Paket
+  kaynaklı ve elle girilmiş satır aynı yoldan güncellenir (kullanıcı kararı 06.09 §0);
+  ayrımı yapan tek şey `dogrulama_durumu`. Silme yolu yok. Lokal kanıt G150 raporu: 04.09
+  paketi 310 eklendi / 116 güncellendi, 12 bayat satır 0'a indi, ikinci koşu 0/0/0/0.
+
+**Karar durumu havuzu ve büro durumu (G151, plan A4+A5).** `seed_data` dört liste 27/8/4/2
+(`managers/seed_data.py:427-467`; `Kapalı`/`Derdest` yerelden çıktı, `Karar` bilerek yok).
+Aktarımda `BURO_DURUMLARI = {KAPALI, DERDEST}` (`scripts/hukdok_aktarim.py:2122`,
+`_buro_durumu_mu` `:2126`, toleranslı): büro durumu imzaya girmez (boş hücre gibi, `:2581`),
+künyesiz satır (`_kunye_dolu`, `:2590-2600`) hiç yazılmaz, künyeli satır durumsuz +
+"büro durumu, karar değil" şerhiyle (`BURO_DURUMU_SERHI`, `:2123`) yazılır; sayaç
+`buro_durumu_atlanan`, INFO log. Havuz dışı öteki değerler G076 yolunda (durum boş + şerh +
+WARNING). Mevcut kurulumdaki `Kapalı`/`Derdest` satırlarını `scripts/deger_havuzu_seed.py
+--kaldir` kaldırır (kullanılan satır silinmez; prod'da deploy sonrası insan adımı).
+
+**`status` kesim-sonrası koruması (G152, plan P2 — "paket kazanır"ın tek istisnası).**
+`_kart_alanlarini_yaz` yalnız `status` alanında ve paket değeri farklıyken
+`kesim_sonrasi_kullanici_kaydi` (`:1931-1956`) çağırır: kesim GÜNÜNÜN başından (TR 00:00)
+itibaren `case_history.field_name == "status"` ve `source` NULL **ya da** `AKTARIM_SOURCE_PREFIX`
+ile başlamayan (`autoescape=True` — `_` LIKE jokeri) bir kayıt varsa alan yazılmaz,
+`korunanlar`a "status korundu (kullanıcı dd.mm.yyyy)" düşer (`:2009-2016`); `_satiri_isle`
+bunu `status_korunan` sayacına ve satır raporuna `STATUS_KORUNDU_TURU = "KORUNDU"` (`:199`,
+`:2431`) ile yazar — `HATA` değil, `hata_sayisi`/çıkış kodu/kapı etkilenmez. `kesim_tarihi`
+None ise kural kapalı, TEK WARNING (`aktarimi_kos`, `:3213`). Kaynak §3 "Veri kesim tarihi";
+CLI `--kesim-tarihi`. Elle yol imzası: `case_manager.PANEL_SOURCE = "panel"` (`:1041`),
+`update_case(..., changed_by=)` tarihçeyi `changed_by or PANEL_SOURCE` + `source=PANEL_SOURCE`
+ile yazar (`:1044`, `:1081-1082`), `update_case_tracking` `status` değişince aynı imzayla
+(`:1891`, `:1934`). `source IS NULL` bilerek kullanıcı sayılır (dünkü imzasız panel kayıtları).
+
+**Dosya No kökü → müvekkil, föy ↔ müvekkil bağı, "müvekkil değişti" (G153, plan M2+M4, 06.09 #28).**
+Harita `DOSYANO_KOK_MUVEKKILI` (`:1097-1107`: 1 Axa · 2 Quick · 3 Ak · 5 Koru · 6 Sompo ·
+7 Eureko · 8 HDI · 9 Anadolu · 8000 Nippon), `DOSYANO_KOK_HIZMETSIZ = "13"` (`:1108`),
+`DOSYANO_KOK_HEKIM_ESIGI = 500` (`:1109`); kök `_dosya_no_koku` (`:1137`), `_kok_muvekkili`
+(`:1154`). Eşleştirme sırası (`_ikinci_anahtarla_coz` docstring, `:1763-1790`): esas/tür →
+**kök** (`_kokun_karti_mi`, `:1163`: kartın CLIENT anahtarlarının TAMAMI kökün sigortasını
+içerir — ikiz hekim kartı sigortayı ortak müvekkil olarak da taşıdığından "içeren" yetmez;
+marka sözcükleri `_sigorta_markasi`/`_KOK_MARKASI`, `:1123-1131`) → müvekkil adı. Kök bir
+sigorta, `Müvekkil` hücresinin ilk parçası BAŞKA sigorta ise `_kok_muvekkil_celiskisi`
+(`:1183`) satırı `KokMuvekkilCeliskisi` (`:346`) ile düşürür: hiçbir karta yazılmaz, rapor
+`HATA` "kök/müvekkil çelişkisi", sayaç `kok_muvekkil_celiskisi`; hekim adı / boş hücre çelişki
+değildir. Föy bağı `_foy_muvekkilini_bagla` (`:2216-2260`): `_taraflari_yaz`dan (`:2144`,
+yalnız ekler) SONRA `Müvekkil` ilk parçasına eşit CLIENT satırı `foy_map.upsert_foy(case_party_id=…)`
+ile (`managers/foy_map.py:175`, `_validated_party` `:108`; model `models.py:359`
+`ON DELETE RESTRICT`), boş hücre mevcut bağı korur, ikinci koşu 0; bağ başka tarafa geçerse
+satır raporu `MUVEKKIL_DEGISTI_TURU` (`:206`, `:2450`) + WARNING, eski CLIENT satırı silinmez.
+"Taraf kaydı dondurma" diye bir işlem yoktur (sözleşme §4). Eşleşme CSV'sindeki `case_party_id`
+kolonu (`services/teslim_cevap.py:221`, `:286`) `case_foys.case_party_id`'den okunduğu için
+bu görevden itibaren dolu gelir. G154 cevaplı xlsx'i `--kart-esleme` haritasına çevirir
+(`scripts/cevapli_kart_eslemesi.py`).
+
+**`Başvuru Tarihi` (G155, plan A6).** `case_stage_decisions.basvuru_tarihi`
+(`models.py:297`; migrasyon madde 47, `database.py:1063`, koşullu `columns` op'u — kısıt yok).
+Okuyucu `ASAMA_SUTUNLARI["basvuru_tarihi"] = ("Başvuru Tarihi",)` (`:2093`), imza alanı;
+uzlaşı `_basvuru_tarihi_uzlasi` (`:2667-2685`): önce aşama sayfası, İstinaf'ta boşsa kardeş
+föylerin Sheet "İstinaf Mahkeme Başvuru Tar." değeri (Temyiz'in Sheet yedeği yok). Fotoğraf
+`_PHOTO_COLUMNS` ISTINAF → `cases.istinaf_basvuru_tarihi`, TEMYIZ → `cases.temyiz_basvuru_tarihi`
+(`managers/stage_decisions.py:125`, `:136`). İki yazıcı salınımı kapısı
+`asama_kaynakli_kart_alanlari` (`:2688`): paketin İstinaf satırı Başvuru Tarihi taşıyorsa Sheet
+sütunu kart yolunda atlanır (`_kart_alanlarini_yaz(asama_kaynakli=…)`, `:2001-2002`);
+`KART_ALANLARI["istinaf_basvuru_tarihi"]` durur (aşama satırı olmayan föyde Sheet karta gider).
+
+**Yazım — `tr_title` DB-008 kuralı ve `sub_type` paket kazanır (G159, plan M6 + §5.3-C).**
+`managers/reference_lists.tr_title` (`:107`): kelime sınırı boşluk + `(`/`-`/`/` sonrası;
+noktalı kısaltma `X.Y.` büyük, `KISALTMALAR` (`:63`) kanonik, `BAGLACLAR` (`:57`: ve · ile ·
+veya · adına · vb) küçük (ilk parça hariç), yabancı ad izi (`_YABANCI_IZI`, `:80`: Q/W/X ya da
+I-ünlü komşuluğu) I/ı → i; `normalize_list_name` = `tr_title` (`:143`). Aktarımda
+`ICERIK_KARSILASTIRMALI_ALANLAR = {"court"}` (`scripts/hukdok_aktarim.py:921`): `sub_type`
+artık yazım farkında da yazılır (lokal ölçüm 4.521 → 196 YALNIZ_HARF çifti; kalan 196 kardeş
+çelişkisi/kök çelişkisi kalıntısı), `court` yazımı bizde kalır (mahkeme adı kimliği
+G067-G070). Boşaltma yasağı `sub_type` için sürer (`BOSALTMA_YASAK_KART_ALANLARI`, `:926`).
+Tek seferlik DB dönüşümü `scripts/yazim_birligi.py` (G160; dry-run varsayılan, `--apply`,
+tarihçeli; Sigortalı/Davalı İdare/istinaf-temyiz mahkemesi/avukat adlarına DOKUNMAZ — sözleşme
+§11 DB-008 genişletme ricasının sebebi).
+
+**Çoklu avukatlı kart (G158, plan M5).** `required_fields.COKLU_AVUKAT_ESIGI = 2` (`:49`),
+`responsible_lawyer_name` tanımında `skip_when_lawyers_at_least` (`:73`): `case_lawyers` ≥ 2
+iken boş kutu eksik alan sayılmaz (Python + SQL ikizi + `scripts/backfill_missing_required.py`).
+Ayrıntı `dava-acma-akisi.md` §1.
+
+**Çelişki raporu (G157, plan A7).** `services/asama_celiski_raporu.py` — 06.09 raporunun
+üreticisi repoda; yer tutucu mahkeme adı ("daire no eksik") ayrı sınıf, E-8 "müvekkil yönü
+farkı" etiketi (hata değil), cevaplı xlsx geri okuma.
 
 ## 8. Log sözleşmesi ve bildirim
 
@@ -354,11 +499,13 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
   SharePoint sayacından atomik tahsis ister, çevrimdışı hattın işi değildir
   (`scripts/hukdok_aktarim.py:44-47`). Eşleşme köprüsü DosyaNo ↔ `klasor_no_2`.
 - **İlk teslim daima inceleme** (`ilk_teslim` kuralı) — defter boşken otomatik uygulama yok;
-  ilk teslimi insan "Uygula" der.
+  ilk teslimi insan "Uygula" der. Zincir o teslimden başlar: "Önceki teslim: —" yalnız defter
+  boşken başlangıçtır (G156, §3); prod'da başlangıç paketi 04.09'dur ve teslim hattından
+  (defter üzerinden) uygulanmalıdır — süreç adımı, kod değil (plan 08.09 K3).
 - **Aynı gecede tek uygulama** (§5).
 - **`DEGISIKLIK_OZETI` yokken zincir denetlenmez ve kapı durmaz:** `zincir_tamam=NULL`
-  (`services/teslim_kutusu.py:784-786`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik`
-  sayar (`:846`, §4 tablosu) — sayfasız paket öteki eşiklerin içindeyse otomatik uygulanır.
+  (`services/teslim_kutusu.py:1141`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik`
+  sayar (`:1215`, §4 tablosu) — sayfasız paket öteki eşiklerin içindeyse otomatik uygulanır.
   Sözleşme bunu açıkça söyler ("her teslime ekleyin"); NULL'ı da inceleme saydırmak
   plan §8'de açık kalem.
 - **`POST /api/admin/aktarim/tara` yer tutucudur**: panelin "Şimdi tara" düğmesi
@@ -402,4 +549,5 @@ SistemNo ATLANDI raporuna düşer, koşu kırmızı olmaz.
 | Veri ekibine verilen sözleşme | [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) |
 | Plan ve açık kalanlar | [`docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`](../plan/veri-teslim-otomasyonu-plani-2026-09-03.md) |
 | Veri ekibine verilen bilgilendirme (sütun/sayfa/değer ayrıntısı, makine-okur özet) | [`docs/veri-teslim/BILGILENDIRME_2026-09-03.md`](../veri-teslim/BILGILENDIRME_2026-09-03.md) (sürüm 1.1; dosya adı sabit — yol veri ekibinde) |
-| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_g147_teslim_sharepoint_kimligi.py` |
+| Aşama katmanı, havuz, status koruması, kök→müvekkil, başvuru tarihi, yazım (§7.1) | `backend/scripts/hukdok_aktarim.py`, `backend/managers/stage_decisions.py`, `backend/managers/case_manager.py:1041-1082`, `backend/managers/reference_lists.py` (`tr_title`), `backend/managers/seed_data.py:427-467` |
+| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_g147_teslim_sharepoint_kimligi.py`; §7.1 kuralları: `test_g150_asama_kurali.py`, `test_g151_havuz_kurali.py`, `test_g152_status_koruma.py`, `test_g153_dosyano_koku.py`, `test_g155_basvuru_tarihi.py`, `test_g156_delta_ve_zincir.py`, `test_g159_tr_title.py` |
