@@ -31,7 +31,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G161 | bant:docs | bagimli:G148,G156,G160 | SOZLESME + mimari + plan şerhleri: eşik = hücre, delta/kesim tarihi satırları, sütun sahipliği, DB-008 genişletme + Yazim_Standardi isteği, aşama/status kuralları
 - [x] G162 | bant:docs | bagimli:G161 | BILGILENDIRME 1.3: §3.3/§3.4/§3.5/§3.8/§9 SOZLESME 1.3'e aynalanır (üç satır, delta, Başvuru Tarihi, aşama/KORUNDU kuralı, karar havuzları seed'den yeniden sayılır), SOZLESME giriş şerhi güncellenir (G161 izlenecek maddesi, 10.09 kullanıcı kararı)
 - [x] G163 | bant:backend | bagimli:G160 | `yazim_birligi.py` adım 2b: tek yazımlı taraf adlarında yalnız biçim farkı (A.ş→A.Ş, ı/i, nokta) tr_title'a çekilir — "Quıck Sigorta A.ş" 578 + Koru 3.172 sınıfı (eski tr_title kalıntısı, G160 anahtar kör noktası); kuru koşu ilk 15 tekil, --apply KOŞULMAZ (10.09 kullanıcı onayı) — TAMAM 10.09 (1be2d23; ilk 15 onaylandı, lokale `--apply` 7.978 satır uygulandı, prod'a DEĞİL; Türk Nippon kriteri kullanıcı kararıyla düşürüldü: teslim kazanır)
-- [ ] G164 | bant:backend | bagimli:G163 | `yazim_birligi.py` anahtarı son noktayı yutar: "A.Ş"↔"A.Ş." nokta ikizleri birleşir (taraf 134 grup / 4.166 satır; teslim kazanır, yoksa baskın), kuru koşu ilk 15, --apply KOŞULMAZ (10.09 kullanıcı kararı)
+- [x] G164 | bant:backend | bagimli:G163 | `yazim_birligi.py` anahtarı son noktayı yutar: "A.Ş"↔"A.Ş." nokta ikizleri birleşir (taraf 134 grup / 4.166 satır; teslim kazanır, yoksa baskın), kuru koşu ilk 15, --apply KOŞULMAZ (10.09 kullanıcı kararı)
 
 ## ÖNCELİK 1 — Teslim hattı ikinci SharePoint kimliği: Hanyaloğlu tenant'ı (2026-09-08 gündüz, kullanıcı kararı)
 
