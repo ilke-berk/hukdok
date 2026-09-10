@@ -106,6 +106,9 @@ def test_takip_fotograf_ortusmesi_karar_kunyesiyle_sinirli_kaldi():
         "istinaf_mahkemesi", "istinaf_esas_no", "istinaf_karar_no",
         "istinaf_karar_tarihi", "istinaf_karar_durumu", "istinaf_teblig_tarihi",
         "istinaf_karar_aciklama",
+        # G155 (10.09.2026): Karar_Asamalari "Başvuru Tarihi" ISTINAF/TEMYIZ
+        # fotoğrafına girdi — künye kolonlarıyla aynı desen, taşınan alanlarla ilgisi yok.
+        "istinaf_basvuru_tarihi", "temyiz_basvuru_tarihi",
         "temyiz_mahkemesi", "temyiz_esas_no", "temyiz_karar_no",
         "temyiz_karar_tarihi", "temyiz_karar_durumu", "temyiz_teblig_tarihi",
         "temyiz_eden_durumu", "temyiz_karar_aciklama",

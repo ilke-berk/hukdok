@@ -291,6 +291,10 @@ class CaseStageDecision(Base):
     karar_tarihi = Column(Date, nullable=True)
     karar_durumu = Column(String(100), nullable=True)     # G060 kapalı listesinin adı
     teblig_tarihi = Column(Date, nullable=True)
+    # G155: kanun yoluna BAŞVURU tarihi (Karar_Asamalari "Başvuru Tarihi", 22.
+    # sütun). Fotoğrafı ISTINAF → cases.istinaf_basvuru_tarihi, TEMYIZ →
+    # cases.temyiz_basvuru_tarihi; YEREL/KARAR_DUZELTME için kart kolonu yok.
+    basvuru_tarihi = Column(Date, nullable=True)
     basvuran_taraf = Column(String(50), nullable=True)    # istinaf_basvuran_taraf ile aynı sınır
     aciklama = Column(String, nullable=True)
     dogrulama_durumu = Column(String(20), nullable=False, default="BELIRSIZ", server_default="BELIRSIZ")

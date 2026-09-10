@@ -67,7 +67,9 @@ G104) ve DB-2026-002'nin föy düzeyi iki sütunu (`muvekkil_tipi`, `hizmet_turu
 TANIMSIZ, yazılmaz + rapor; G120). `hizmet_turu` ile `service_type` AYRI
 alanlardır (aşağıda). G123 (05.09.2026, "54 sütunun tamamı"): `dava_degeri`
 (ham "Dava Değeri TL"; `maddi_tazminat` türetmesi sürer), `para_birimi`,
-`istinaf_basvuru_tarihi` (Karar_Asamalari'nda karşılığı yok, Sheet'ten karta)
+`istinaf_basvuru_tarihi` (Sheet'ten karta — G155'ten beri YALNIZ paketin
+Karar_Asamalari İstinaf satırı "Başvuru Tarihi" taşımıyorsa; aşama sayfası
+önceliklidir, Sheet sütunu aşama satırının yedek kaynağıdır)
 ve "Eski Dosya No" → esas tarihçesine ONCEKI (`add_historical_esas`).
 Föy düzeyi (`case_foys`, `foy_degerleri`): `mko_id` (Dosya - Föy Bilgileri),
 `muvekkil_no` (MüvekkilNo), `muvekkil_tipi`, `hizmet_turu`, `durum` — kart
@@ -277,8 +279,11 @@ SUTUN_ADAYLARI: Dict[str, Tuple[str, ...]] = {
     # `muvekkil_no` 12.08 mutabakatıyla dışarıda bırakılmıştı, kullanıcı
     # kararıyla (05.09) föy düzeyinde alınır — cari kart kurmaz. `eski_dosya_no`
     # değerleri esas numarasıdır ("2021/588") → esas tarihçesine ONCEKI.
-    # `istinaf_basvuru_tarihi` Karar_Asamalari'nda karşılığı olmayan tek
-    # zincir alanı: aşama fotoğrafı yazmaz, Sheet'ten karta doğrudan gider.
+    # `istinaf_basvuru_tarihi`: G155'e dek Karar_Asamalari'nda karşılığı yoktu
+    # ve Sheet'ten karta doğrudan giderdi; artık aşama sayfasının "Başvuru
+    # Tarihi" sütunu asıl kaynak, bu sütun İstinaf aşama satırının YEDEĞİ
+    # (`_basvuru_tarihi_uzlasi`) — kart yolu yalnız aşama satırı taşımıyorsa
+    # yazar (`asama_kaynakli_kart_alanlari`).
     "mko_id":                    ("Dosya - Föy Bilgileri", "Föy Id", "MKO Id"),
     "muvekkil_no":               ("MüvekkilNo", "Müvekkil No"),
     "para_birimi":               ("Para Birimi TL", "Para Birimi"),
@@ -881,8 +886,13 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     "muvekkil_tipi":        ("muvekkil_tipi", _muvekkil_tipi),
     "hizmet_turu":          ("hizmet_turu", _hizmet_turu),
     # --- G123: dava değeri HAM hâli (maddi türetmesi aynen sürer, aşağıda),
-    # para birimi ve Karar_Asamalari'nda karşılığı olmayan istinaf başvuru
-    # tarihi. Üçü de varsayılan sınıf (dolu hücre üzerine yazar, tarihçeli).
+    # para birimi ve istinaf başvuru tarihi. Üçü de varsayılan sınıf (dolu
+    # hücre üzerine yazar, tarihçeli). `istinaf_basvuru_tarihi` G155'ten beri
+    # aşama fotoğrafının (`_PHOTO_COLUMNS["ISTINAF"]`) DA hedefi: paketin
+    # İstinaf aşama satırı "Başvuru Tarihi" taşıyorsa kart yolu bu alanı
+    # ATLAR (`asama_kaynakli_kart_alanlari`), yoksa Sheet değeri hem karta
+    # hem yedek kaynak olarak aşama satırına gider — iki yazıcı aynı değeri
+    # yazar, salınım olmaz.
     "dava_degeri":          ("dava_degeri", _sayi),
     "para_birimi":          ("para_birimi", _metin_alan),
     "istinaf_basvuru_tarihi": ("istinaf_basvuru_tarihi", _tarih),
@@ -1937,8 +1947,13 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
                          duzeltmeler: Optional[DuzeltmeHaritasi] = None,
                          bosaltilanlar: Optional[List[str]] = None,
                          kesim_tarihi: Optional[date] = None,
-                         korunanlar: Optional[List[Tuple[str, str]]] = None) -> List[str]:
+                         korunanlar: Optional[List[Tuple[str, str]]] = None,
+                         asama_kaynakli: FrozenSet[str] = frozenset()) -> List[str]:
     """DAR alan kümesini kartın ÜZERİNE yazar (UPDATE-in-place); değişenleri döner.
+
+    G155: `asama_kaynakli` bu föy için aşama sayfasının taşıdığı kart alanları
+    (`asama_kaynakli_kart_alanlari`); o alanlar burada YAZILMAZ — kolonun
+    yazıcısı aşama fotoğrafıdır, Sheet değeri yalnız aşama değeri boşken gider.
 
     Değişmeyen alan için ne UPDATE ne `case_history` satırı üretilir — ikinci
     koşunun "0 değişiklik" kabul kriteri buna dayanır. `None` gelen alan
@@ -1967,7 +1982,7 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     degisenler: List[str] = []
     degerler = kart_degerleri(satir, atlanan_alanlar)
     for alan, yeni in degerler.items():
-        if alan in celiskili_alanlar:
+        if alan in celiskili_alanlar or alan in asama_kaynakli:
             continue
         eski = getattr(case, alan)
         if eski == yeni:
@@ -2057,6 +2072,9 @@ ASAMA_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
     "karar_tarihi": ("Karar Tarihi",),
     "karar_durumu": ("Karar Durumu",),
     "teblig_tarihi": ("Tebliğ Tarihi",),
+    # G155 — ekibin 06.09 §7 eklediği 22. sütun: kanun yoluna başvuru tarihi.
+    # Sütun yoksa alan okunmaz (None) — eski paketler aynen çalışır.
+    "basvuru_tarihi": ("Başvuru Tarihi",),
     "basvuran_taraf": ("Başvuran Taraf",),
     "guven":        ("Güven",),
     "aciklama":     ("Açıklama",),
@@ -2275,7 +2293,8 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
                  duzeltmeler: Optional[DuzeltmeHaritasi] = None,
                  kapsam_disi: Set[str] = frozenset(),
                  kesim_tarihi: Optional[date] = None,
-                 kart_eslemesi: Optional[KartEslemesi] = None) -> int:
+                 kart_eslemesi: Optional[KartEslemesi] = None,
+                 asama_kaynakli: Optional[Dict[str, FrozenSet[str]]] = None) -> int:
     """TEK satırın işi (kart id'sini döner) — çağıran SAVEPOINT içinde çağırır.
 
     SIRA ÖNEMLİ: föy upsert'i alan doğrulamasından ÖNCE gelir; bozuk bir alan
@@ -2330,6 +2349,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
             atlanan_alanlar=atlanan_alanlar,
             sistem_no=sistem_no, duzeltmeler=duzeltmeler, bosaltilanlar=bosaltilanlar,
             kesim_tarihi=kesim_tarihi, korunanlar=korunanlar,
+            asama_kaynakli=(asama_kaynakli or {}).get(sistem_no, frozenset()),
         )
         sonuc.bosaltilan += len(bosaltilanlar)
         eklenen_avukatlar = _avukatlari_yaz(db, case, satir, source)
@@ -2510,7 +2530,12 @@ def asama_satirlarini_oku(yol: Path, *, sheet: str = ASAMA_SAYFASI) -> List[HamS
 
 # Uzlaşı imzasının alanları: künye. Karşılaştırma anahtarı alan başına
 # normalize (mahkeme başlık anahtarı, tarih ISO, metin boşluk-normalize).
-_IMZA_ALANLARI: Tuple[str, ...] = ("mahkeme", "esas_no", "karar_no", "karar_tarihi", "karar_durumu")
+# `basvuru_tarihi` (G155) imzaya GİRER: iki kardeş föy aynı aşamaya farklı
+# başvuru tarihi yazıyorsa bu künye çelişkisidir; boş hücre G150 kuralıyla
+# imzaya katılmaz.
+_IMZA_ALANLARI: Tuple[str, ...] = (
+    "mahkeme", "esas_no", "karar_no", "karar_tarihi", "karar_durumu", "basvuru_tarihi",
+)
 # İmza dışı alanlar: kardeş föylerden İLK dolu değer alınır (föy adı sırasıyla —
 # deterministik; iki föy farklı tebliğ tarihi taşıyorsa bu bir künye çelişkisi
 # değil, ilk dolu kazanır ve föyün ham satırı `case_foys.ham_veri`de durur).
@@ -2539,9 +2564,10 @@ def _asama_imzasi(satir: HamSatir) -> Dict[str, str]:
         deger = _metin(satir.degerler.get(alan))
         if deger and not (alan == "karar_durumu" and _buro_durumu_mu(deger)):
             imza[alan] = deger            # büro durumu karar değil → boş hücre gibi (G151)
-    tarih = _tarih_yumusak(satir.degerler.get("karar_tarihi"), "karar_tarihi")
-    if tarih:
-        imza["karar_tarihi"] = tarih
+    for alan in ("karar_tarihi", "basvuru_tarihi"):
+        tarih = _tarih_yumusak(satir.degerler.get(alan), alan)
+        if tarih:
+            imza[alan] = tarih
     return imza
 
 
@@ -2622,6 +2648,52 @@ def _basvuran_taraf(satir: HamSatir, stage: str,
     return donustur(foy.degerler.get("istinaf_basvuran"), "basvuran_taraf") if foy else None
 
 
+def _basvuru_tarihi_uzlasi(satir: HamSatir, stage: str, foyler: Dict[str, List[HamSatir]],
+                           foy_satirlari: Dict[str, HamSatir]) -> Optional[date]:
+    """Birleşik satırın başvuru tarihi (G155): ÖNCE aşama sayfası, boşsa
+    İstinaf için kardeş föylerin Sheet "İstinaf Mahkeme Başvuru Tar." değeri
+    (föy adı sırasıyla İLK dolu). `_basvuran_taraf_uzlasi` deseni: Sheet
+    sütunu aşama satırının YEDEK kaynağıdır; kart kolonunun tek yazıcısı
+    aşama fotoğrafı olsun diye kart yolu bu alanı aşama satırı taşıyorsa atlar.
+    Temyiz'in Sheet'te başvuru tarihi sütunu yok — yalnız aşama sayfası."""
+    deger = _tarih(satir.degerler.get("basvuru_tarihi"), "basvuru_tarihi")
+    if deger or stage != "ISTINAF":
+        return deger
+    for foy in sorted(foyler):
+        foy_satiri = foy_satirlari.get(foy)
+        if foy_satiri is None:
+            continue
+        deger = _tarih(foy_satiri.degerler.get("istinaf_basvuru_tarihi"), "istinaf_basvuru_tarihi")
+        if deger:
+            return deger
+    return None
+
+
+def asama_kaynakli_kart_alanlari(asama_satirlari: Sequence[HamSatir]) -> Dict[str, FrozenSet[str]]:
+    """SistemNo → aşama sayfasının KENDİSİNİN taşıdığı kart alanları (G155).
+
+    Bugün tek kalem: paketin İstinaf satırı "Başvuru Tarihi" doluysa
+    `istinaf_basvuru_tarihi` kart yolunda ATLANIR — aşama sayfası öncelikli,
+    Sheet sütunu yalnız aşama değeri boşken yazar. Kural gerekçesi: kolon
+    `_PHOTO_COLUMNS["ISTINAF"]` hedefi; kart yolu Sheet değerini, fotoğraf aşama
+    değerini yazsaydı iki değer farklıyken her koşu bir tarihçe satırı üretir,
+    kolon salınırdı (basvuran_taraf'ta ölçülen kusur). Aşama değeri boşken
+    yedek kaynak zaten Sheet (`_basvuru_tarihi_uzlasi`) — iki yol aynı değeri
+    yazar, atlamaya gerek yok.
+    """
+    sonuc: Dict[str, FrozenSet[str]] = {}
+    for satir in asama_satirlari:
+        etiket = _baslik_anahtari(_metin(satir.degerler.get("asama")) or "")
+        if ASAMA_ESLEMESI.get(etiket) != "ISTINAF":
+            continue
+        if not _tarih_yumusak(satir.degerler.get("basvuru_tarihi"), "basvuru_tarihi"):
+            continue
+        sistem_no = _metin(satir.degerler.get("sistem_no"))
+        if sistem_no:
+            sonuc[sistem_no] = frozenset({"istinaf_basvuru_tarihi"})
+    return sonuc
+
+
 def _asama_sira(satir: HamSatir) -> int:
     try:
         return int(str(_metin(satir.degerler.get("asama_no")) or "0").strip())
@@ -2666,6 +2738,11 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
         - konumda satır yoksa yeni satır eklenir (sıra otomatik: aşamanın bir
           sonrakisi).
       SİLME yolu yoktur: paket bir satırı artık taşımıyorsa bizdeki kalır.
+    * **Başvuru tarihi (G155):** satırın `basvuru_tarihi`si aşama sayfasının
+      "Başvuru Tarihi" sütunundan; İstinaf'ta boşsa Sheet'in "İstinaf Mahkeme
+      Başvuru Tar." değeri yedek kaynaktır (`_basvuru_tarihi_uzlasi`). Fotoğraf
+      ISTINAF → `istinaf_basvuru_tarihi`, TEMYIZ → `temyiz_basvuru_tarihi`.
+      Sütun yoksa alan boş kalır (eski paket geriye uyumlu).
     * **"Önceki" bir karar değildir**: görevsizlik/yenileme öncesi esas
       numarasıdır, `case_esas_numbers`a ONCEKI olarak düşer (güncel işaret
       DEĞİŞMEZ).
@@ -2777,6 +2854,7 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
                         karar_tarihi=_tarih(satir.degerler.get("karar_tarihi"), "karar_tarihi"),
                         karar_durumu=deneme,
                         teblig_tarihi=_tarih(satir.degerler.get("teblig_tarihi"), "teblig_tarihi"),
+                        basvuru_tarihi=_basvuru_tarihi_uzlasi(satir, stage, foyler, foy_satirlari),
                         basvuran_taraf=_basvuran_taraf_uzlasi(satir, stage, foyler, foy_satirlari),
                         aciklama=" · ".join(x for x in (aciklama, f"havuz dışı durum: {durum}") if x)
                         if havuz_disi else aciklama,
@@ -3200,6 +3278,9 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
 
         kunye_kayitlari: List[Dict[str, Any]] = []
         islenen_sistem_nolar: Set[str] = set()
+        # G155: aşama sayfasının taşıdığı kart alanları kart yolunda atlanır
+        # (aşama sayfası öncelikli; Sheet sütunu yalnız aşama değeri boşken).
+        asama_kaynakli = asama_kaynakli_kart_alanlari(asama_satirlari)
 
         for satir in satirlar:
             sistem_no = _metin(satir.degerler.get("sistem_no")) or ""
@@ -3211,7 +3292,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
                         source=kaynak_imzasi, foy_source=foy_source, sonuc=sonuc,
                         kart_celiskileri=kart_celiskileri, duzeltmeler=duzeltmeler,
                         kapsam_disi=kapsam_disi, kesim_tarihi=kesim_tarihi,
-                        kart_eslemesi=kart_eslemesi,
+                        kart_eslemesi=kart_eslemesi, asama_kaynakli=asama_kaynakli,
                     )
             except SatirHatasi as exc:
                 # Savepoint geri alındı; bellekteki (flush edilmemiş) hâl bayat.

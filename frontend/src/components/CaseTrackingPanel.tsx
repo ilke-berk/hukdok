@@ -692,6 +692,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                         trTarih(satir.karar_tarihi),
                                     ].filter(Boolean).join(" · ");
                                     const ek = [
+                                        satir.basvuru_tarihi && `Başvuru: ${trTarih(satir.basvuru_tarihi)}`,
                                         satir.teblig_tarihi && `Tebliğ: ${trTarih(satir.teblig_tarihi)}`,
                                         satir.basvuran_taraf && `Başvuran: ${satir.basvuran_taraf}`,
                                     ].filter(Boolean).join(" · ");

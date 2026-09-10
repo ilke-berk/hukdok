@@ -1046,6 +1046,23 @@ _MIGRATIONS = [
         "ALTER TABLE cases ALTER COLUMN uygulanan_yontem TYPE VARCHAR",
     ]),
 
+    # ─── 47. AŞAMA SATIRINDA BAŞVURU TARİHİ (G155) ────────────────────────────
+    #
+    # Veri ekibi (06.09 §7) Karar_Asamalari'na "Başvuru Tarihi" sütununu
+    # ekliyor (21 → 22 sütun): istinaf/temyiz başvuru tarihi tek kaynaktan.
+    # `case_stage_decisions.basvuru_tarihi` (models.CaseStageDecision); aşama
+    # fotoğrafı ISTINAF → cases.istinaf_basvuru_tarihi, TEMYIZ →
+    # cases.temyiz_basvuru_tarihi (managers/stage_decisions `_PHOTO_COLUMNS`).
+    # Madde 41/43 deseni: NULL + DEFAULT'suz, backfill YOK (aktarımın sonraki
+    # koşusu doldurur; Sheet'in "İstinaf Mahkeme Başvuru Tar." sütunu yedek
+    # kaynak olarak aşama satırını besler). Sıfırdan kurulumda create_all
+    # kolonu modelden yaratır, bu op atlanır; mevcut kurulumda ALTER TABLE
+    # ADD COLUMN. Kısıt/index BİLİNÇLİ yok (G042): kolon satır id'siyle okunur,
+    # hiçbir sorgunun filtresi değil — bu yüzden koşullu "columns" op'u yeter.
+    ("columns", "case_stage_decisions", {
+        "basvuru_tarihi": "DATE",
+    }),
+
     # ─── 46. RAPORLAMA TABLOLARI (G131) ───────────────────────────────────────
     # `report_templates` (favori rapor şablonları) ve `report_runs` (indirme
     # logu + saklanan çıktı) modelde tanımlı (`models.ReportTemplate`,

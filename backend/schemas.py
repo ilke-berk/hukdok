@@ -585,6 +585,7 @@ class CaseStageDecisionRead(BaseModel):
     karar_tarihi: Optional[date] = None
     karar_durumu: Optional[str] = None       # stage'in G060 kapalı listesinin adı
     teblig_tarihi: Optional[date] = None
+    basvuru_tarihi: Optional[date] = None    # kanun yoluna başvuru tarihi (G155)
     basvuran_taraf: Optional[str] = None
     aciklama: Optional[str] = None
     dogrulama_durumu: str = "BELIRSIZ"

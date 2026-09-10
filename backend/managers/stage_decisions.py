@@ -22,6 +22,10 @@ Kurallar:
 * `karar_turu`/`karar_lehine` türetmesi BİLİNÇLİ KAPSAM DIŞI (kaba alanlar,
   ayrı karar); YEREL fotoğrafı karar_no + karar_tarihi + yerel_karar_durumu +
   (G123'ten beri) karar_teblig_tarihi + karar_aciklama beşlisidir.
+* `basvuru_tarihi` (G155): kanun yoluna başvuru tarihi satır alanıdır; ISTINAF
+  ve TEMYIZ fotoğrafı `cases.istinaf_basvuru_tarihi` /
+  `cases.temyiz_basvuru_tarihi` slotlarına yazar (içerik alanı — uzlaşı/
+  karşılaştırma/güncelleme kümesine dahil).
 * `karar_durumu` stage'in G060 resmi listesine karşı doğrulanır (kapalı
   havuz). Karşılaştırma liste ADI iledir ve tablonun İÇERİĞİNE bakılır —
   `active` filtresi BİLİNÇLİ YOK: tarihçe "ne olduğunu" kaydeder; bir değerin
@@ -86,13 +90,19 @@ STAGE_DECISION_LISTS: Dict[str, Any] = {   # değer: G060 liste modeli (sınıf)
 }
 
 # stage → {tarihçe kolonu: cases fotoğraf kolonu}. Satır alanı olmayan slot
-# kolonlarına (istinaf_basvuru_tarihi gibi) dokunulmaz. Bilinçli boşluklar:
+# kolonlarına dokunulmaz. Bilinçli boşluklar:
 #   * YEREL üçlüyle sınırlı (görev tanımı); karar_teblig_tarihi/karar_aciklama
 #     elle yönetilen slot olarak kalır, karar_turu/karar_lehine kapsam dışı,
 #     esas_no/court'un tek yazma yolu sync_current_esas.
 #   * TEMYIZ'de "başvuran taraf"ın şemadaki asimetrik adı `temyiz_eden_durumu`
 #     (istinaf_basvuran_taraf'ın temyiz ikizi; alan prod'da 0 dolu).
 #   * KARAR_DUZELTME'nin mahkeme/başvuran slot kolonu şemada yok.
+#   * G155: `basvuru_tarihi` (Karar_Asamalari "Başvuru Tarihi") ISTINAF ve
+#     TEMYIZ'de fotoğraflanır; YEREL/KARAR_DUZELTME'nin başvuru slot kolonu
+#     şemada yok. `istinaf_basvuru_tarihi` bu tarihten itibaren aşama
+#     fotoğrafının hedefidir — aktarım Sheet'in "İstinaf Mahkeme Başvuru Tar."
+#     sütununu aşama satırına YEDEK kaynak olarak besler ve kart yolu o alanı
+#     yalnız aşama satırı taşımıyorsa yazar (iki yazıcı salınımı önlenir).
 _PHOTO_COLUMNS = {
     "YEREL": {
         "karar_no": "karar_no",
@@ -112,6 +122,7 @@ _PHOTO_COLUMNS = {
         "karar_tarihi": "istinaf_karar_tarihi",
         "karar_durumu": "istinaf_karar_durumu",
         "teblig_tarihi": "istinaf_teblig_tarihi",
+        "basvuru_tarihi": "istinaf_basvuru_tarihi",      # G155
         "basvuran_taraf": "istinaf_basvuran_taraf",
         "aciklama": "istinaf_karar_aciklama",
     },
@@ -122,6 +133,7 @@ _PHOTO_COLUMNS = {
         "karar_tarihi": "temyiz_karar_tarihi",
         "karar_durumu": "temyiz_karar_durumu",
         "teblig_tarihi": "temyiz_teblig_tarihi",
+        "basvuru_tarihi": "temyiz_basvuru_tarihi",       # G155
         "basvuran_taraf": "temyiz_eden_durumu",
         "aciklama": "temyiz_karar_aciklama",
     },
@@ -347,7 +359,7 @@ def _resync_stage_photo(db: Session, case: models.Case, stage: str) -> None:
 # "değişiklik" sayılmaz — idempotentlik).
 CONTENT_FIELDS: Tuple[str, ...] = (
     "mahkeme", "esas_no", "karar_no", "karar_tarihi", "karar_durumu",
-    "teblig_tarihi", "basvuran_taraf", "aciklama",
+    "teblig_tarihi", "basvuru_tarihi", "basvuran_taraf", "aciklama",
 )
 
 
@@ -359,6 +371,7 @@ def _content_values(
     karar_tarihi: Optional[date],
     karar_durumu: Optional[str],
     teblig_tarihi: Optional[date],
+    basvuru_tarihi: Optional[date],
     basvuran_taraf: Optional[str],
     aciklama: Optional[str],
 ) -> Dict[str, Any]:
@@ -372,6 +385,7 @@ def _content_values(
         "karar_tarihi": karar_tarihi,
         "karar_durumu": karar_durumu,
         "teblig_tarihi": teblig_tarihi,
+        "basvuru_tarihi": basvuru_tarihi,
         "basvuran_taraf": _clamped(basvuran_taraf, "basvuran_taraf"),
         # Serbest metin: satır sonları anlamlı olabilir, boşluk katlaması yok
         "aciklama": (str(aciklama).strip() or None) if aciklama is not None else None,
@@ -388,6 +402,7 @@ def stage_decision_diff(
     karar_tarihi: Optional[date] = None,
     karar_durumu: Optional[str] = None,
     teblig_tarihi: Optional[date] = None,
+    basvuru_tarihi: Optional[date] = None,
     basvuran_taraf: Optional[str] = None,
     aciklama: Optional[str] = None,
 ) -> Dict[str, Tuple[Any, Any]]:
@@ -402,7 +417,8 @@ def stage_decision_diff(
     yeni = _content_values(
         mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no, karar_tarihi=karar_tarihi,
         karar_durumu=_validated_karar_durumu(db, stage, karar_durumu),
-        teblig_tarihi=teblig_tarihi, basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+        teblig_tarihi=teblig_tarihi, basvuru_tarihi=basvuru_tarihi,
+        basvuran_taraf=basvuran_taraf, aciklama=aciklama,
     )
     return {
         alan: (getattr(row, alan), yeni[alan])
@@ -427,6 +443,7 @@ def update_stage_decision(
     karar_tarihi: Optional[date] = None,
     karar_durumu: Optional[str] = None,
     teblig_tarihi: Optional[date] = None,
+    basvuru_tarihi: Optional[date] = None,
     basvuran_taraf: Optional[str] = None,
     aciklama: Optional[str] = None,
     dogrulama_durumu: Optional[str] = None,
@@ -458,7 +475,7 @@ def update_stage_decision(
     fark = stage_decision_diff(
         db, row, mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no,
         karar_tarihi=karar_tarihi, karar_durumu=karar_durumu, teblig_tarihi=teblig_tarihi,
-        basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+        basvuru_tarihi=basvuru_tarihi, basvuran_taraf=basvuran_taraf, aciklama=aciklama,
     )
     if not fark:
         return {}
@@ -484,6 +501,7 @@ def add_stage_decision(
     karar_tarihi: Optional[date] = None,
     karar_durumu: Optional[str] = None,
     teblig_tarihi: Optional[date] = None,
+    basvuru_tarihi: Optional[date] = None,
     basvuran_taraf: Optional[str] = None,
     aciklama: Optional[str] = None,
     dogrulama_durumu: Optional[str] = None,
@@ -521,7 +539,7 @@ def add_stage_decision(
         **_content_values(
             mahkeme=mahkeme, esas_no=esas_no, karar_no=karar_no,
             karar_tarihi=karar_tarihi, karar_durumu=sonuc, teblig_tarihi=teblig_tarihi,
-            basvuran_taraf=basvuran_taraf, aciklama=aciklama,
+            basvuru_tarihi=basvuru_tarihi, basvuran_taraf=basvuran_taraf, aciklama=aciklama,
         ),
         "dogrulama_durumu": damga,
         "kaynak_id": kaynak_id,

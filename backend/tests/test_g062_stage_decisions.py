@@ -70,8 +70,8 @@ def test_model_ve_kolonlar_gorev_taslagina_uygun():
     columns = row.__table__.columns
     assert set(columns.keys()) == {
         "id", "case_id", "stage", "sira_no", "mahkeme", "esas_no", "karar_no",
-        "karar_tarihi", "karar_durumu", "teblig_tarihi", "basvuran_taraf",
-        "aciklama", "dogrulama_durumu", "kaynak_id", "source", "created_at",
+        "karar_tarihi", "karar_durumu", "teblig_tarihi", "basvuru_tarihi",   # basvuru_tarihi: G155
+        "basvuran_taraf", "aciklama", "dogrulama_durumu", "kaynak_id", "source", "created_at",
     }
     # Sınırlar cases'teki kardeş slot kolonlarıyla hizalı — fotoğraf kopyası
     # hedef kolondan asla uzun olamaz (taşma 500'ü fotoğrafta üretirdi)

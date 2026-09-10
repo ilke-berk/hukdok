@@ -253,6 +253,18 @@ describe("CaseTrackingPanel — aşama tarihçesi (G074)", () => {
         expect(container.textContent).toContain("kısmen kabul");
     });
 
+    it("başvuru tarihi taşıyan satırda 'Başvuru: dd.mm.yyyy' basılır (G155)", async () => {
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [{ ...KARAR_SATIRI, id: 31, stage: "TEMYIZ", basvuru_tarihi: "2024-01-10" }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({ case_stage: "TEMYIZ" });
+
+        expect(container.textContent).toContain("Başvuru: 10.01.2024");
+        expect(container.textContent).toContain("Tebliğ: 01.04.2014");
+    });
+
     it("her satırda doğrulama damgası rozeti var (tahmin yasağı)", async () => {
         stageDecisionsMock.mockResolvedValue({
             case_id: 1,

@@ -130,6 +130,8 @@ export interface CaseStageDecision {
     karar_tarihi?: string | null;
     karar_durumu?: string | null;
     teblig_tarihi?: string | null;
+    /** Kanun yoluna başvuru tarihi (G155; Karar_Asamalari "Başvuru Tarihi"). */
+    basvuru_tarihi?: string | null;
     basvuran_taraf?: string | null;
     aciklama?: string | null;
     /** Tahmin yasağının damgası: UYAP | BELGE | TURETILDI | BELIRSIZ. */
