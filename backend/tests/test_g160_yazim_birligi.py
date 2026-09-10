@@ -398,3 +398,170 @@ def test_icerik_farkli_cift_donusmez(db_env, tmp_path):
     # yalnız boşluk farkı (aynı anahtar) baskına hizalanır — yazım, içerik değil
     assert kart["C"].court == "İstanbul 6. Tüketici Mahkemesi"
     assert sonuc.toplam_satir == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 5. Adım 2b (G163) — tek yazımlı, teslimsiz taraf adında yalnız biçim farkı → tr_title
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_anahtar_genis_bicim_katlar_icerik_katlamaz():
+    # ı/i/İ/I + son nokta + A.ş/A.Ş: aynı biçim kimliği
+    assert yb.anahtar_genis("Quıck Sigorta A.ş") == yb.anahtar_genis("Quick Sigorta A.Ş") \
+        == yb.anahtar_genis("QUİCK  SİGORTA A.Ş.")
+    assert yb.anahtar_genis("Türk Nippon Sigorta Aş") == yb.anahtar_genis("Türk Nippon Sigorta AŞ")
+    # kelime ekleme/çıkarma ve harf farkı: farklı
+    assert yb.anahtar_genis("Koru Sigorta A.Ş.") != yb.anahtar_genis("Koru A.Ş.")
+    assert yb.anahtar_genis("Ak Sigorta") != yb.anahtar_genis("Ag Sigorta")
+
+
+@pytest.fixture()
+def zemin_2b(db_env):
+    """Adım 2b zemini: tek yazımlı (ikizsiz, teslimsiz) bozuk biçimler + sınır durumları.
+
+    Q1..Q4: 2b'nin hedefi. Q5 korunan rol (Sigortalı). Q6/Q7 ikiz (adım 2'nin
+    işi, 2b'ye girmez). Q8 teslim anahtarlı tek yazım (teslim kazanır, 2b
+    dokunmaz). Q9 silinmiş kart. Q10 kelime düşüren sahte hedef için (test-e).
+    """
+    db = db_env()
+    try:
+        k1 = _kart(db, "Q1")
+        k2 = _kart(db, "Q2")
+        k9 = _kart(db, "Q9")
+        db.flush()
+        k9.deleted_at = models.func.now()
+        k9.active = False
+        db.add(models.CaseFoy(sistem_no="SSTMN-Q2", case_id=k2.id, ham_veri={"Müvekkil": "Yeni SİGORTA A.Ş."}))
+        t = {}
+        t["q1"] = _taraf(db, k1, "Quıck Sigorta A.ş", "Müvekkil", "CLIENT")
+        t["q2"] = _taraf(db, k1, "Koru Sigorta A.ş.", "Karşı Taraf")
+        t["q3"] = _taraf(db, k1, "Türk Nippon Sigorta Aş", "Karşı Taraf")
+        t["q4"] = _taraf(db, k2, "Sağlık Bakanlığı (davalı)", "Karşı Taraf")
+        t["q5"] = _taraf(db, k1, "Ankara Sigorta A.ş", "Sigortalı", "THIRD")          # KORUNUR
+        t["q6"] = _taraf(db, k1, "Ak Sigorta A.ş.", "Karşı Taraf")                    # ikiz → adım 2
+        t["q7"] = _taraf(db, k2, "AK SİGORTA A.Ş.", "Karşı Taraf")                    # ikiz → adım 2
+        t["q8"] = _taraf(db, k2, "Yeni SİGORTA A.Ş.", "Müvekkil", "CLIENT")           # teslimle aynı → adım 2 görür
+        t["q9"] = _taraf(db, k9, "Batı Sigorta A.ş", "Karşı Taraf")                   # silinmiş kart
+        t["q10"] = _taraf(db, k2, "Deneme Sigorta A.ş", "Karşı Taraf")
+        db.add(models.CaseDocument(case_id=k1.id, case_party_id=t["q1"].id, original_filename="q.pdf",
+                                   stored_filename="q.pdf", link_mode="LINKED"))
+        db.commit()
+        kimlikler = {ad: p.id for ad, p in t.items()}
+        kimlikler.update(k1=k1.id, k2=k2.id, k9=k9.id)
+    finally:
+        db.close()
+    return db_env, kimlikler
+
+
+def _degisim(sonuc: yb.AdimSonucu) -> Dict[int, tuple]:
+    return {d.kayit_id: (d.eski, d.yeni, d.kaynak) for d in sonuc.degisiklikler}
+
+
+def test_adim_2b_yalniz_bicim_farki_tr_title(zemin_2b):
+    """(a)-(d): tek yazımlı grupta hedef tr_title, kaynak tr_title; (f) korunan rol, silinmiş kart dışarıda."""
+    fabrika, k = zemin_2b
+    db = fabrika()
+    try:
+        sonuc = yb.adim_2b_taraf_adi_bicim(db)
+    finally:
+        db.close()
+    assert sonuc.adim == "2b" and sonuc.sayili_ornek == yb.ORNEK_SAYISI_2B
+    degisim = _degisim(sonuc)
+    assert degisim[k["q1"]] == ("Quıck Sigorta A.ş", "Quick Sigorta A.Ş", "tr_title")
+    assert degisim[k["q2"]] == ("Koru Sigorta A.ş.", "Koru Sigorta A.Ş.", "tr_title")
+    assert degisim[k["q3"]] == ("Türk Nippon Sigorta Aş", "Türk Nippon Sigorta AŞ", "tr_title")
+    assert degisim[k["q4"]] == ("Sağlık Bakanlığı (davalı)", "Sağlık Bakanlığı (Davalı)", "tr_title")
+    assert degisim[k["q10"]] == ("Deneme Sigorta A.ş", "Deneme Sigorta A.Ş", "tr_title")
+    assert k["q5"] not in degisim                       # Sigortalı KORUNUR
+    assert k["q9"] not in degisim                       # silinmiş kartın tarafı
+    assert all(d.rol for d in sonuc.degisiklikler)      # tarihçe metni için rol taşınır
+
+
+def test_adim_2b_adim_2nin_gordugu_gruplara_girmez(zemin_2b):
+    """(g): ikiz grup ve teslim anahtarlı grup adım 2'nindir; 2b aynı satırı tekrar saymaz."""
+    fabrika, k = zemin_2b
+    db = fabrika()
+    try:
+        s2, anahtarlar = yb._adim_2_hesapla(db)
+        s2b = yb.adim_2b_taraf_adi_bicim(db, anahtarlar)
+        s2b_bagimsiz = yb.adim_2b_taraf_adi_bicim(db)   # anahtar verilmeden de aynı sonuç
+    finally:
+        db.close()
+    d2, d2b = _degisim(s2), _degisim(s2b)
+    assert d2[k["q6"]] == ("Ak Sigorta A.ş.", "Ak Sigorta A.Ş.", "tr_title")   # eşitlik → tr_title (adım 2)
+    assert k["q6"] not in d2b and k["q7"] not in d2b
+    # Q8: teslim yazımı DB'deki tek yazımla aynı → adım 2 değişiklik üretmez; tr_title farklı olsa da 2b dokunmaz
+    assert k["q8"] not in d2 and k["q8"] not in d2b
+    assert yb.anahtar("Yeni SİGORTA A.Ş.") in anahtarlar
+    assert not set(d2) & set(d2b)
+    assert _degisim(s2b_bagimsiz) == d2b
+
+
+def test_adim_2b_kelime_farki_ureten_hedef_atlanir(zemin_2b, monkeypatch):
+    """(e): tr_title kelime düşürmez; koruma yine de var — sahte hedefte anahtar_genis eşit değil → atlanır."""
+    fabrika, k = zemin_2b
+    gercek = yb.tr_title
+
+    def sahte(s: str) -> str:
+        return "Deneme A.Ş" if s == "Deneme Sigorta A.ş" else gercek(s)
+
+    monkeypatch.setattr(yb, "tr_title", sahte)
+    db = fabrika()
+    try:
+        sonuc = yb.adim_2b_taraf_adi_bicim(db)
+    finally:
+        db.close()
+    degisim = _degisim(sonuc)
+    assert k["q10"] not in degisim
+    assert k["q1"] in degisim                           # diğerleri etkilenmez
+
+
+def test_adim_2b_kos_apply_tarihce_envanter_idempotent(zemin_2b, tmp_path, capsys):
+    """(h) + kabul: `--adim 2` → [2, 2b]; apply tarihçeli, satır id/bağ sabit, envanter denk, ikinci koşu 0."""
+    fabrika, k = zemin_2b
+    taraf_once, envanter_once = _taraflar(fabrika), _envanter(fabrika)
+
+    kuru = yb.kos(fabrika, adimlar=[2], cikti_dizini=tmp_path / "kuru")
+    assert [a.adim for a in kuru.adimlar] == [2, "2b"]
+    assert not kuru.yazildi and _taraflar(fabrika) == taraf_once
+    assert (tmp_path / "kuru" / "2b.csv").exists()
+    cikti = capsys.readouterr().out
+    assert "=== Adım 2b" in cikti and f"ilk {yb.ORNEK_SAYISI_2B} tekil" in cikti
+    assert "'Quıck Sigorta A.ş' → 'Quick Sigorta A.Ş'  (1 satır)" in cikti
+    assert "Quıck Sigorta A.ş,Quick Sigorta A.Ş,tr_title" in (tmp_path / "kuru" / "2b.csv").read_text(encoding="utf-8-sig")
+    assert kuru.toplam_satir == 2 + 5                   # adım 2: ikiz çifti (eşitlik → tr_title, iki satır); 2b: Q1-Q4 + Q10
+
+    sonuc = yb.kos(fabrika, adimlar=[2], apply=True, kim="test-kullanici", cikti_dizini=tmp_path)
+    assert sonuc.yazildi and not sonuc.envanter_farki
+    satirlar = {a.adim: a.satir for a in sonuc.adimlar}
+    assert satirlar == {2: 2, "2b": 5}
+
+    taraf = _taraflar(fabrika)
+    assert taraf[k["q1"]][0] == "Quick Sigorta A.Ş"
+    assert taraf[k["q2"]][0] == "Koru Sigorta A.Ş."
+    assert taraf[k["q3"]][0] == "Türk Nippon Sigorta AŞ"
+    assert taraf[k["q4"]][0] == "Sağlık Bakanlığı (Davalı)"
+    assert taraf[k["q5"]][0] == "Ankara Sigorta A.ş"    # Sigortalı KORUNDU
+    assert taraf[k["q6"]][0] == taraf[k["q7"]][0] == "Ak Sigorta A.Ş."
+    assert taraf[k["q8"]][0] == "Yeni SİGORTA A.Ş."     # teslim yazımı kazandı
+    assert taraf[k["q9"]][0] == "Batı Sigorta A.ş"      # silinmiş kart
+    # satır sayısı, id kümesi ve kart bağı değişmedi; belge bağı (case_party_id) denk
+    assert set(taraf) == set(taraf_once) and len(taraf) == len(taraf_once)
+    assert {i: v[2] for i, v in taraf.items()} == {i: v[2] for i, v in taraf_once.items()}
+    assert belge_envanteri.denk(envanter_once, _envanter(fabrika)) and _envanter(fabrika).tarafa_bagli == 1
+
+    tarihce = _tarihce(fabrika)
+    assert len(tarihce) == 7
+    assert {h.source for h in tarihce} == {"yazim_birligi"} and {h.changed_by for h in tarihce} == {"test-kullanici"}
+    kayitlar = {(h.case_id, h.field_name, h.old_value, h.new_value) for h in tarihce}
+    assert (k["k1"], "taraf", "Quıck Sigorta A.ş (Müvekkil)", "Quick Sigorta A.Ş (Müvekkil)") in kayitlar
+    assert (k["k2"], "taraf", "Sağlık Bakanlığı (davalı) (Karşı Taraf)", "Sağlık Bakanlığı (Davalı) (Karşı Taraf)") in kayitlar
+
+    ikinci = yb.kos(fabrika, adimlar=[2], apply=True, kim="test-kullanici", cikti_dizini=tmp_path / "ikinci")
+    assert ikinci.yazildi and ikinci.toplam_satir == 0
+    assert len(_tarihce(fabrika)) == 7 and _taraflar(fabrika) == taraf
+
+
+def test_adim_2b_yalniz_adim_2_ile_gelir(zemin_2b, tmp_path):
+    sonuc = yb.kos(zemin_2b[0], adimlar=[3, 5], cikti_dizini=tmp_path)
+    assert [a.adim for a in sonuc.adimlar] == [3, 5]
+    assert not (tmp_path / "2b.csv").exists()

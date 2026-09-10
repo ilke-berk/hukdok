@@ -212,6 +212,11 @@ docker compose exec -T backend python scripts/yazim_birligi.py --cikti-dizini /a
 ```
 
 Lokal: 6.574 tarihçe satırı (taraf 6.201 · sub_type 177 · subject 111 · court 83 · bureau_type 2).
+**Adım 2b (G163):** aynı komut artık adım 2 ile birlikte 2b'yi de koşar (tek yazımlı, teslimsiz taraf adında yalnız
+biçim farkı → `tr_title`; lokal kuru koşu 7.978 satır / 1.998 tekil, ilk üçü Koru 3.172 · Quıck 578 · Ankara 388) —
+`--apply` 10.09 itibarıyla LOKALDE DE KOŞULMADI: kuru koşunun bastığı ilk 15 tekil kullanıcı onayından geçince
+koşulur, prod'da da önce kuru koşu + ilk 15 gözle. "Türk Nippon Sigorta Aş" (204) 2b'ye GİRMEZ: paketin kendi yazımı
+"Aş", teslim kazanır.
 Sigortalı/Davalı İdare satırları, istinaf/temyiz mahkeme listeleri, avukat adları DOKUNULMAZ.
 Envanter farkında rollback + çıkış 2. Kuru koşuda adım 2'de "… adına Velayeten" gibi bağlaç-küçük
 teslim yazımları teslim olarak geçer (rapor notu).

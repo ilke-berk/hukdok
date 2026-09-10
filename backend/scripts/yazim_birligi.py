@@ -16,6 +16,7 @@ Adımlar (`--adim 1,2,…`; varsayılan hepsi):
 |---|------------------------|-----------------------------------------------------------------|
 | 1 | `cases.sub_type`       | föy `ham_veri["Uzmanlık Alanı"]` yazımı; yoksa DB-içi ikiz → baskın |
 | 2 | `case_parties.name`    | föy `ham_veri["Müvekkil"/"Karşı Taraf"]` yazımı; yoksa ikiz → baskın |
+| 2b| `case_parties.name`    | adım 2'nin ATLADIĞI tek yazımlı gruplar (teslim yok, ikiz yok): `tr_title`, yalnız biçim farkı (G163) |
 | 3 | `cases.court`          | DB-içi ikiz → baskın (teslim yazımı KULLANILMAZ: mahkeme adı kimliği bizim, G067-G070) |
 | 4 | `cases.subject`        | DB-içi ikiz → baskın                                            |
 | 5 | `case_parties.role`    | `party_roles` listesindeki yazım ("DAVALI" → "Davalı")          |
@@ -24,6 +25,17 @@ Adımlar (`--adim 1,2,…`; varsayılan hepsi):
 **Baskın yazım kuralı:** gruptaki en çok satırlı yazım; eşitlikte teslim
 yazımı, o da yoksa `tr_title`. Seçilen yazım tamamı BÜYÜK ise `tr_title`
 (DB-008: kart Title yazar).
+
+**Adım 2b (G163):** "Quıck Sigorta A.ş" (Deploy #20 öncesi eski `tr_title`
+artığı) gibi DB'de TEK yazımı olan ve teslim anahtarı da bulunmayan taraf
+adlarını adım 2 tasarım gereği atlar. 2b bu gruplarda `hedef = tr_title(ad)`
+alır ve YALNIZ biçim farkı varsa değiştirir: `anahtar_genis(ad) ==
+anahtar_genis(hedef)` (Türkçe BÜYÜK + ı/i/İ/I katlama + noktasız + boşluk
+normalize). Kelime ekleyen/çıkaran ya da harf değiştiren fark üretilmez
+(combining-dot "Hi̇zmetleri̇" bozuklukları olduğu gibi kalır). `--adim 2`
+her zaman 2 + 2b koşar; adım 2'nin gördüğü gruplar (anahtar bazında) 2b'ye
+GİRMEZ, aynı satır iki kez değişmez. Çıktı `2b.csv`; kuru koşuda ilk
+`ORNEK_SAYISI_2B` tekil satır sayısıyla basılır (kullanıcı onayı buradan).
 
 **DOKUNULMAZ:** rolü "Sigortalı" / "Davalı İdare" olan taraf satırları (teslim
 BÜYÜK yazar, bizim yazım korunur — ne güncellenir ne baskınlık sayımına girer),
@@ -51,6 +63,7 @@ Güvenlik:
 Kullanım (konteynerde, prod'da paket uygulamasından SONRA ve yedekle):
   docker compose exec -T backend python scripts/yazim_birligi.py                 # kuru koşu, tüm adımlar
   docker compose exec -T backend python scripts/yazim_birligi.py --adim 1,3
+  docker compose exec -T backend python scripts/yazim_birligi.py --adim 2      # 2 + 2b
   docker compose exec -T backend python scripts/yazim_birligi.py --apply --kim ilke
 """
 from __future__ import annotations
@@ -63,7 +76,7 @@ import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Union
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/ modülleri için
 
@@ -81,6 +94,9 @@ logger = logging.getLogger("yazim_birligi")
 SOURCE = "yazim_birligi"
 VARSAYILAN_CIKTI = "/tmp/yazim_birligi"
 ORNEK_SAYISI = 20
+#: Adım 2b kuru koşusunda satır sayısıyla basılan tekil (eski→yeni) sayısı — onay listesi.
+ORNEK_SAYISI_2B = 15
+ADIM_2B = "2b"
 
 CIKIS_TAMAM = 0
 CIKIS_ENVANTER = 2
@@ -106,6 +122,15 @@ BURO_BOSALTILACAK = "Tür Seçiniz"
 def anahtar(deger: str) -> str:
     """Yazım-duyarsız kimlik: boşluk normalize + Türkçe BÜYÜK (`turkish_upper`)."""
     return turkish_upper(" ".join(str(deger).split()))
+
+
+def anahtar_genis(deger: str) -> str:
+    """Biçim-duyarsız kimlik (adım 2b): `anahtar` + ı/i/İ/I katlama + noktasız.
+
+    "Quıck Sigorta A.ş" ↔ "Quick Sigorta A.Ş" ↔ "QUİCK SİGORTA A.Ş." aynı
+    değeri verir; kelime ya da harf farkı ("Koru" ↔ "Koru Sigorta") vermez.
+    """
+    return " ".join(anahtar(deger).replace("İ", "I").replace(".", " ").split())
 
 
 def _duz(deger: str) -> str:
@@ -158,11 +183,18 @@ class ListeIslemi:
 
 @dataclass
 class AdimSonucu:
-    adim: int
+    adim: Union[int, str]       # 1-6 ya da "2b" (adım 2'nin alt adımı; CSV adı da bu)
     ad: str
     degisiklikler: List[Degisiklik] = field(default_factory=list)
     liste_islemleri: List[ListeIslemi] = field(default_factory=list)
     notlar: List[str] = field(default_factory=list)
+    #: Doluysa özet, tekilleri satır sayısına göre sıralayıp bu kadarını "(N satır)" ile basar.
+    sayili_ornek: Optional[int] = None
+
+    def tekil_sayimlar(self) -> List[Tuple[Tuple[Optional[str], Optional[str]], int]]:
+        """[((eski, yeni), satır sayısı)] — çoktan aza, eşitlikte eski ada göre."""
+        sayac: Counter = Counter((d.eski, d.yeni) for d in self.degisiklikler)
+        return sorted(sayac.items(), key=lambda kv: (-kv[1], str(kv[0][0])))
 
     @property
     def satir(self) -> int:
@@ -279,10 +311,12 @@ def _taraf_satirlari(db):
     )
 
 
-def adim_2_taraf_adi(db) -> AdimSonucu:
-    """`case_parties.name`: föy teslim yazımı (Müvekkil/Karşı Taraf); yoksa DB-içi ikiz → baskın.
+def _adim_2_hesapla(db) -> Tuple[AdimSonucu, FrozenSet[str]]:
+    """Adım 2 sonucu + adım 2'nin GÖRDÜĞÜ grup anahtarları (teslim anahtarı var ya da ikiz).
 
-    Rolü `KORUNAN_ROLLER`de olan satırlar ne güncellenir ne sayıma girer.
+    Görülen küme değişiklik üretmeyen grupları da kapsar (ör. teslim yazımı
+    zaten DB'deki tek yazım): teslim/ikiz kuralı o grubu karara bağlamıştır,
+    2b'nin `tr_title`ı onun üzerine yazamaz.
     """
     sonuc = AdimSonucu(2, "taraf adı (case_parties.name)")
     teslim = _teslim_yazimlari(db, HAM_TARAF_BASLIKLARI, parcala=True)
@@ -292,6 +326,7 @@ def adim_2_taraf_adi(db) -> AdimSonucu:
     for _id, _cid, ad, _rol in satirlar:
         gruplar[anahtar(ad)][ad] += 1
     hedefler: Dict[str, Tuple[str, str]] = {}
+    gorulen = set()
     for k, sayimlar in gruplar.items():
         if k in teslim:
             hedef, kaynak = baskin_yazim(sayimlar, teslim[k]), "teslim"
@@ -303,6 +338,7 @@ def adim_2_taraf_adi(db) -> AdimSonucu:
                 kaynak = "tr_title"
         else:
             continue
+        gorulen.add(k)
         if any(v != hedef for v in sayimlar):
             hedefler[k] = (hedef, kaynak)
     for taraf_id, case_id, ad, rol in satirlar:
@@ -311,6 +347,40 @@ def adim_2_taraf_adi(db) -> AdimSonucu:
             continue
         sonuc.degisiklikler.append(Degisiklik(
             "case_parties", taraf_id, case_id, tracking.get(case_id), "name", ad, h[0], h[1], rol=rol,
+        ))
+    return sonuc, frozenset(gorulen)
+
+
+def adim_2_taraf_adi(db) -> AdimSonucu:
+    """`case_parties.name`: föy teslim yazımı (Müvekkil/Karşı Taraf); yoksa DB-içi ikiz → baskın.
+
+    Rolü `KORUNAN_ROLLER`de olan satırlar ne güncellenir ne sayıma girer.
+    Tek yazımlı, teslimsiz gruplar bilinçli atlanır — onlar adım 2b'nindir.
+    """
+    return _adim_2_hesapla(db)[0]
+
+
+def adim_2b_taraf_adi_bicim(db, adim_2_anahtarlari: Optional[FrozenSet[str]] = None) -> AdimSonucu:
+    """`case_parties.name`: adım 2'nin atladığı gruplarda yalnız biçim farkı → `tr_title` (G163).
+
+    Grup anahtarı `adim_2_anahtarlari`nda ise (teslim/ikiz kuralı karar
+    vermiş) satır 2b'ye girmez; verilmemişse adım 2 burada yeniden hesaplanır.
+    `hedef = tr_title(ad)`; `hedef != ad` VE `anahtar_genis` eşit ise değişiklik
+    (kaynak `tr_title`). Korunan roller `_taraf_satirlari` ile zaten dışarıda.
+    """
+    if adim_2_anahtarlari is None:
+        adim_2_anahtarlari = _adim_2_hesapla(db)[1]
+    sonuc = AdimSonucu(ADIM_2B, "taraf adı biçimi — tek yazımlı grup (case_parties.name)",
+                       sayili_ornek=ORNEK_SAYISI_2B)
+    tracking = _tracking(db)
+    for taraf_id, case_id, ad, rol in _taraf_satirlari(db):
+        if ad is None or anahtar(ad) in adim_2_anahtarlari:
+            continue
+        hedef = tr_title(ad)
+        if hedef == ad or anahtar_genis(hedef) != anahtar_genis(ad):
+            continue
+        sonuc.degisiklikler.append(Degisiklik(
+            "case_parties", taraf_id, case_id, tracking.get(case_id), "name", ad, hedef, "tr_title", rol=rol,
         ))
     return sonuc
 
@@ -411,6 +481,14 @@ ADIMLAR: Dict[int, Callable[[Any], AdimSonucu]] = {
 }
 
 
+def _adimi_hesapla(adim: int, db) -> List[AdimSonucu]:
+    """Bir CLI adımının sonuçları — adım 2 daima 2 + 2b döndürür (2b, 2'nin gördüğü grupları alır)."""
+    if adim == 2:
+        sonuc, anahtarlar = _adim_2_hesapla(db)
+        return [sonuc, adim_2b_taraf_adi_bicim(db, anahtarlar)]
+    return [ADIMLAR[adim](db)]
+
+
 # ─── Uygulama ────────────────────────────────────────────────────────────────
 
 def _uygula(db, sonuc: AdimSonucu, kim: str) -> None:
@@ -479,14 +557,20 @@ def _ozet_yaz(sonuc: AdimSonucu, csv_yolu: Path) -> None:
     kaynaklar = Counter(d.kaynak for d in sonuc.degisiklikler)
     if kaynaklar:
         print("  kaynak: " + ", ".join(f"{k} {n}" for k, n in sorted(kaynaklar.items())))
-    gorulen = set()
-    for d in sonuc.degisiklikler:
-        if (d.eski, d.yeni) in gorulen:
-            continue
-        gorulen.add((d.eski, d.yeni))
-        print(f"    {d.tablo}.{d.alan}: {d.eski!r} → {d.yeni!r}")
-        if len(gorulen) >= ORNEK_SAYISI:
-            break
+    if sonuc.sayili_ornek:
+        # Onay listesi: en çok satırlı tekiller önce, satır sayısıyla (adım 2b).
+        print(f"  ilk {sonuc.sayili_ornek} tekil (satır sayısına göre):")
+        for (eski, yeni), n in sonuc.tekil_sayimlar()[:sonuc.sayili_ornek]:
+            print(f"    {eski!r} → {yeni!r}  ({n} satır)")
+    else:
+        gorulen = set()
+        for d in sonuc.degisiklikler:
+            if (d.eski, d.yeni) in gorulen:
+                continue
+            gorulen.add((d.eski, d.yeni))
+            print(f"    {d.tablo}.{d.alan}: {d.eski!r} → {d.yeni!r}")
+            if len(gorulen) >= ORNEK_SAYISI:
+                break
     for li in sonuc.liste_islemleri:
         print(f"    liste {li.islem} {li.code}: {li.eski!r} → {li.yeni!r}")
     for n in sonuc.notlar:
@@ -511,11 +595,13 @@ def kos(fabrika, *, adimlar: Sequence[int] = tuple(ADIMLAR), apply: bool = False
     try:
         once = belge_envanteri.snapshot(db)
         for adim in adimlar:
-            sonuc = ADIMLAR[adim](db)
-            sonuclar.append(sonuc)
-            _ozet_yaz(sonuc, _csv_yaz(dizin, sonuc))
-            if apply and sonuc.degisiklikler:
-                _uygula(db, sonuc, kim or SOURCE)
+            # Adım 2 → [2, 2b]: ikisi de yazmadan önce hesaplanır; 2b, 2'nin
+            # gördüğü grupları anahtar bazında dışarıda tutar (aynı satır iki kez değişmez).
+            for sonuc in _adimi_hesapla(adim, db):
+                sonuclar.append(sonuc)
+                _ozet_yaz(sonuc, _csv_yaz(dizin, sonuc))
+                if apply and sonuc.degisiklikler:
+                    _uygula(db, sonuc, kim or SOURCE)
         if apply:
             sonra = belge_envanteri.snapshot(db)
             envanter_farki = belge_envanteri.diff(once, sonra)
