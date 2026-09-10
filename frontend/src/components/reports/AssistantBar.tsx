@@ -3,7 +3,7 @@ import { Loader2, Send } from "lucide-react";
 import type { AsistanEylemi, Katalog, RaporTanimi } from "@/lib/reports";
 import {
     ASISTAN_KAPALI_MESAJI, AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, onayNiyeti, ornekIstemler, sohbetGecmisi, tanimAyni, type SohbetKaydi,
+    chatReport, kaydetNiyeti, onayNiyeti, ornekIstemler, sohbetGecmisi, sonucSatiri, tanimAyni, type SohbetKaydi,
 } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
 import { AssistantThread } from "./AssistantThread";
@@ -27,6 +27,10 @@ type AssistantBarProps = {
     /** Sayfada uygulamadan önceki taslak duruyor — son uygulanan balonda "Geri al" görünür. */
     geriAlinabilir: boolean;
     onGeriAl: () => void;
+    /** G168: sayfanın son önizleme sonucu (hangi tanım, kaç kayıt) — uygulama sonrası sonuç satırı bundan yazılır. */
+    onizlemeSonucu?: { tanim: RaporTanimi; toplam: number } | null;
+    /** G168: tanımı şablon olarak kaydet; `ad` null → sayfa ad önerir. Kaydedilen ad döner, hata → null (toast sayfada). */
+    onSablonKaydet?: (tanim: RaporTanimi, ad: string | null) => Promise<string | null>;
 };
 
 let kayitSayaci = 0;
@@ -54,6 +58,7 @@ export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asi
  */
 export function AssistantBar({
     yukleniyor = false, katalog, veriKaynagi, mevcutTanim, onKapali, onTanimUygula, geriAlinabilir, onGeriAl,
+    onizlemeSonucu = null, onSablonKaydet,
 }: AssistantBarProps) {
     const [kayitlar, setKayitlar] = useState<SohbetKaydi[]>([]);
     const [girdi, setGirdi] = useState("");
@@ -64,6 +69,8 @@ export function AssistantBar({
     const [sonUygulananId, setSonUygulananId] = useState<number | null>(null);
     // G167: teyit bekleyen (henüz uygulanmamış) son asistan tanımı — düzeltmeler bunun üzerinde çalışır.
     const [bekleyenTanim, setBekleyenTanim] = useState<RaporTanimi | null>(null);
+    // G168: uygulandı, önizleme sonucu bekleniyor — sonuç gelince "N kayıt bulundu" / boş-sonuç satırı düşer.
+    const [sonucBeklenen, setSonucBeklenen] = useState<RaporTanimi | null>(null);
     const girdiRef = useRef<HTMLInputElement>(null);
     const iptalRef = useRef<AbortController | null>(null);
 
@@ -75,6 +82,18 @@ export function AssistantBar({
 
     const kayitEkle = useCallback((k: SohbetKaydi) => {
         setKayitlar(prev => [...prev, k]);
+    }, []);
+
+    // G168: önizleme sonucu uygulanan tanıma aitse sonuç satırı (yalnız bir kez).
+    useEffect(() => {
+        if (!sonucBeklenen || !onizlemeSonucu || !tanimAyni(onizlemeSonucu.tanim, sonucBeklenen)) return;
+        kayitEkle({ id: yeniKayitId(), rol: "assistant", yerel: true, icerik: sonucSatiri(sonucBeklenen, onizlemeSonucu.toplam, katalog) });
+        setSonucBeklenen(null);
+    }, [onizlemeSonucu, sonucBeklenen, katalog, kayitEkle]);
+
+    /** Uygulama (önizleme yolu) sonrası sonuç satırını bekle; indirme yolunda beklenmez (toast yeter). */
+    const sonucBekle = useCallback((tanim: RaporTanimi, eylem: AsistanEylemi | null) => {
+        if (eylem === null || eylem === "onizle") setSonucBeklenen(tanim);
     }, []);
 
     /** Uygulama sonrası ortak muhasebe: kayıt rozeti, Geri al kimliği, bekleyen tanımın düşmesi. */
@@ -93,6 +112,28 @@ export function AssistantBar({
         setKayitlar(prev => [...prev, kullaniciKaydi]);
         setGirdi("");
         setAcik(true);
+
+        // ŞABLON KAYDI (G168): "bunu haftalık rapor olarak kaydet" / "kaydet" — bekleyen (yoksa oluşturucudaki)
+        // tanım sayfanın /templates yoluyla kaydedilir; Gemini'ye gitmez.
+        const kaydet = kaydetNiyeti(metin);
+        const kaydedilecek = bekleyenTanim ?? mevcutTanim;
+        if (kaydet && kaydedilecek && onSablonKaydet) {
+            setGonderiliyor(true);
+            setAkisDurumu("Şablon kaydediliyor…");
+            try {
+                const ad = await onSablonKaydet(kaydedilecek, kaydet.ad);
+                kayitEkle({
+                    id: yeniKayitId(), rol: "assistant", yerel: true,
+                    icerik: ad
+                        ? `"${ad}" adıyla şablonlara kaydedildi; Şablonlar'dan seçebilir, adını değiştirebilirsiniz.`
+                        : "Şablon kaydedilemedi; sayfadaki uyarıya bakın.",
+                });
+            } finally {
+                setGonderiliyor(false);
+                setAkisDurumu(null);
+            }
+            return;
+        }
 
         // YEREL ONAY (G167, 10.09 prod dersi): bekleyen tanım varken "tamam / uygula / excel indir" gibi kısa
         // onay mesajı Gemini'ye GİTMEZ — model tanımı değiştirip karta geri düşürebiliyordu. Bekleyen tanım
@@ -113,6 +154,7 @@ export function AssistantBar({
                 if (ok) {
                     if (sahip) uygulandiIsaretle(sahip.id, bekleyenTanim);
                     else setBekleyenTanim(null);
+                    sonucBekle(bekleyenTanim, yerelEylem);
                 }
             } finally {
                 setGonderiliyor(false);
@@ -144,7 +186,10 @@ export function AssistantBar({
                     setAkisDurumu(sonuc.eylem === "onizle" ? "Rapor uygulanıyor…" : "İndiriliyor…");
                     kayit.uygulandi = await onTanimUygula(sonuc.tanim, sonuc.eylem);
                     kayitEkle(kayit);
-                    if (kayit.uygulandi) uygulandiIsaretle(kayit.id, sonuc.tanim);
+                    if (kayit.uygulandi) {
+                        uygulandiIsaretle(kayit.id, sonuc.tanim);
+                        sonucBekle(sonuc.tanim, sonuc.eylem);
+                    }
                     return;
                 }
                 // Yeni/değişmiş tanım: teyit kartı, uygulama YOK (G167)
@@ -190,13 +235,17 @@ export function AssistantBar({
             setGonderiliyor(false);
             setAkisDurumu(null);
         }
-    }, [girdi, gonderiliyor, kayitlar, bekleyenTanim, mevcutTanim, onTanimUygula, onKapali, kayitEkle, uygulandiIsaretle]);
+    }, [girdi, gonderiliyor, kayitlar, bekleyenTanim, mevcutTanim, onTanimUygula, onKapali, kayitEkle, uygulandiIsaretle,
+        onSablonKaydet, sonucBekle]);
 
     /** Kartta "Onayla ve uygula": tanım oluşturucuya konur, önizleme gelir. */
     const onOnayla = async (kayit: SohbetKaydi) => {
         if (!kayit.tanim || gonderiliyor) return;
         const ok = await onTanimUygula(kayit.tanim, null);
-        if (ok) uygulandiIsaretle(kayit.id, kayit.tanim);
+        if (ok) {
+            uygulandiIsaretle(kayit.id, kayit.tanim);
+            sonucBekle(kayit.tanim, null);
+        }
     };
 
     /** Kartta "Excel indir" / "CSV indir": tanım uygulanır ve indirilir (sayfanın /export yolu, K7). */
@@ -240,6 +289,7 @@ export function AssistantBar({
         setKayitlar([]);
         setSonUygulananId(null);
         setBekleyenTanim(null);
+        setSonucBeklenen(null);
     };
 
     if (yukleniyor) {

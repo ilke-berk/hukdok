@@ -28,6 +28,7 @@ const KATALOG = {
 
 const TANIM: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["tracking_no"], filtreler: [], siralama: [] };
 const TANIM2: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] };
+const TANIM2F: RaporTanimi = { ...TANIM2, filtreler: [{ alan: "status", op: "eq", deger: "Derdest" }] };
 const MEVCUT: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["subject"], filtreler: [], siralama: [] };
 
 function akis(olaylar: unknown[]) {
@@ -308,6 +309,61 @@ describe("AssistantBar (G143/G167)", () => {
         expect(fetchMock).toHaveBeenCalledTimes(3);
         const mesajlar = sohbetGovdesi().mesajlar as { rol: string; icerik: string }[];
         expect(mesajlar.filter(m => m.rol === "assistant" && m.icerik.startsWith("Onaylandı"))).toHaveLength(2);
+    });
+
+    it("G168: uygulama sonrası önizleme sonucu gelince sonuç satırı (N kayıt / boş öneri), yalnız bir kez ve yalnız o tanım için", async () => {
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "hazır?", tanim: TANIM, eylem: null }]));
+        await render({ onizlemeSonucu: { tanim: MEVCUT, toplam: 9 } });
+        const balonlar = () => Array.from(container.querySelectorAll("[data-testid='sohbet-asistan']"));
+        yaz(girdi(), "listele");
+        await enter(girdi());
+        // Eski sonuç (MEVCUT) uygulanan tanıma ait değil → satır yok
+        await tikla(butonBulIcinde(balonlar()[0], "Onayla ve uygula"));
+        expect(balonlar()).toHaveLength(1);
+        await yenidenRender({ onizlemeSonucu: { tanim: TANIM, toplam: 3216 } });
+        expect(balonlar()).toHaveLength(2);
+        expect(balonlar()[1].textContent).toContain("3.216 kayıt bulundu.");
+        // Aynı sonuç yeniden gelse de ikinci satır yok
+        await yenidenRender({ onizlemeSonucu: { tanim: TANIM, toplam: 3216 } });
+        expect(balonlar()).toHaveLength(2);
+
+        // Boş sonuç: filtreli tanımda gevşetme önerisi
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "daralttım", tanim: TANIM2F, eylem: null }]));
+        yaz(girdi(), "sadece derdestler");
+        await enter(girdi());
+        yaz(girdi(), "tamam");
+        await enter(girdi());
+        await yenidenRender({ onizlemeSonucu: { tanim: TANIM2F, toplam: 0 } });
+        const son = balonlar().at(-1)!;
+        expect(son.textContent).toContain("Sonuç boş");
+        expect(son.textContent).toContain("status · eşittir · Derdest");
+    });
+
+    it("G168: 'bunu haftalık rapor olarak kaydet' → onSablonKaydet(bekleyen, ad) fetch'siz; 'kaydet' bekleyen yokken oluşturucu tanımıyla (ad null); hata satırı", async () => {
+        const onSablonKaydet = vi.fn(async (_t: RaporTanimi, ad: string | null): Promise<string | null> => ad ?? "Davalar · Önerilen");
+        fetchMock.mockResolvedValueOnce(akis([{ status: "complete", cevap: "hazır?", tanim: TANIM, eylem: null }]));
+        await render({ onSablonKaydet });
+        const balonlar = () => Array.from(container.querySelectorAll("[data-testid='sohbet-asistan']"));
+
+        yaz(girdi(), "kaydet");
+        await enter(girdi());
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(onSablonKaydet).toHaveBeenCalledWith(MEVCUT, null);
+        expect(balonlar()[0].textContent).toContain('"Davalar · Önerilen" adıyla şablonlara kaydedildi');
+
+        yaz(girdi(), "listele");
+        await enter(girdi());
+        yaz(girdi(), "bunu Haftalık Rapor olarak kaydet");
+        await enter(girdi());
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(onSablonKaydet).toHaveBeenLastCalledWith(TANIM, "Haftalık Rapor");
+        expect(balonlar().at(-1)!.textContent).toContain('"Haftalık Rapor" adıyla');
+        expect(onTanimUygula).not.toHaveBeenCalled();          // kaydetmek uygulamak değildir
+
+        onSablonKaydet.mockResolvedValueOnce(null);
+        yaz(girdi(), "şablon olarak kaydet");
+        await enter(girdi());
+        expect(balonlar().at(-1)!.textContent).toContain("kaydedilemedi");
     });
 
     it("409 → onKapali çağrılır; 'Konuşmayı kapat' alanı kapatır geçmişi korur; Sohbeti temizle boş duruma döner", async () => {

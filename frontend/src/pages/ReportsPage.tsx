@@ -634,6 +634,31 @@ const ReportsPage = () => {
         return true;
     };
 
+    /**
+     * G168: sohbetten şablon kaydı — `ad` yoksa `sablonAdiOner`; `POST /templates` (favoriEkle ile aynı gövde);
+     * listeye eklenir ve seçili olur; hata → toast + null (asistan satırı "kaydedilemedi" yazar).
+     */
+    const asistanSablonKaydet = async (hedef: RaporTanimi, ad: string | null): Promise<string | null> => {
+        if (!katalog) return null;
+        const mevcutAdlar = sablonlarRef.current.map(s => s.ad);
+        const kesinAd = (ad ?? "").trim() || sablonAdiOner(hedef, katalog, mevcutAdlar);
+        setSablonIsleniyor(true);
+        try {
+            const yeni = await createTemplate({ ad: kesinAd, aciklama: "", tanim: hedef, paylasimli: false });
+            setSablonlar(prev => [yeni, ...prev]);
+            setSeciliSablonId(yeni.id);
+            setFavoriOnerisi(null);
+            toast.success("Şablon kaydedildi", { description: yeni.ad });
+            return yeni.ad;
+        } catch (err) {
+            console.error(err);
+            toast.error(RAPOR_SABLON_KAYIT_HATASI, { description: err instanceof Error ? err.message : undefined });
+            return null;
+        } finally {
+            setSablonIsleniyor(false);
+        }
+    };
+
     /** "Geri al": asistan uygulamasından önceki taslak geri gelir; efekt önizlemeyi kendiliğinden yeniler. */
     const asistanGeriAl = () => {
         if (!oncekiTaslak) return;
@@ -669,6 +694,8 @@ const ReportsPage = () => {
                     onTanimUygula={asistanTanimiUygula}
                     geriAlinabilir={oncekiTaslak !== null}
                     onGeriAl={asistanGeriAl}
+                    onizlemeSonucu={cevap && sonTanim ? { tanim: sonTanim, toplam: cevap.toplam } : null}
+                    onSablonKaydet={asistanSablonKaydet}
                 />
             )}
 

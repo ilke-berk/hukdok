@@ -10,7 +10,8 @@ import type { AsistanMesaji, Katalog, RaporTanimi } from "./reports";
 import {
     ASISTAN_AKIS_EKSIK, ASISTAN_KAPALI_MESAJI, ASISTAN_MESAJ_MAX, ASISTAN_YETKI_MESAJI,
     AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, errorKodIpucu, gecmisiKirp, onayNiyeti, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, tanimAyni, tanimAyrintisi,
+    chatReport, errorKodIpucu, gecmisiKirp, kaydetNiyeti, onayNiyeti, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, sonucSatiri,
+    tanimAyni, tanimAyrintisi,
     tanimOzeti,
 } from "./reportsChat";
 
@@ -334,6 +335,31 @@ describe("G167 — tanimAyrintisi / tanimAyni", () => {
                          "tamam bir de müvekkil kategorisi olsun", "hangi kolonlar var", "tamam tamam tamam tamam tamam tamam tamam tamam tamam"]) {
             expect(onayNiyeti(m), m).toBeNull();
         }
+    });
+
+    it("kaydetNiyeti (G168): adlı/adsız kaydetme kalıpları; başka kelimeli mesaj null", () => {
+        expect(kaydetNiyeti("bunu haftalık rapor olarak kaydet")).toEqual({ ad: "haftalık rapor" });
+        expect(kaydetNiyeti("Nisan Davaları adıyla kaydet")).toEqual({ ad: "Nisan Davaları" });
+        expect(kaydetNiyeti('"Derdest dosyalar" ismiyle şablona ekle.')).toEqual({ ad: "Derdest dosyalar" });
+        expect(kaydetNiyeti("bu raporu aylık takip diye sakla")).toEqual({ ad: "aylık takip" });
+        for (const m of ["kaydet", "Kaydet.", "bunu kaydet", "şablon olarak kaydet", "favorilere ekle", "şablona ekle", "bu raporu sakla", "hadi favorile"]) {
+            expect(kaydetNiyeti(m), m).toEqual({ ad: null });
+        }
+        for (const m of ["", "telefonu kaydet", "kaydettikten sonra indir", "tamam", "müvekkil adını da ekle", "kaydetme"]) {
+            expect(kaydetNiyeti(m), m).toBeNull();
+        }
+    });
+
+    it("sonucSatiri (G168): sayı tr-TR; boşta filtreler sayılır ve gevşetme önerilir; filtresiz boş kaynak", () => {
+        const tanim: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["tracking_no"],
+            filtreler: [{ alan: "status", op: "eq", deger: "Derdest" }, { alan: "opening_date", op: "gte", deger: "2026-04-01" }], siralama: [] };
+        expect(sonucSatiri(tanim, 3216, KATALOG)).toBe("3.216 kayıt bulundu.");
+        const bos = sonucSatiri(tanim, 0, KATALOG);
+        expect(bos).toContain("Sonuç boş");
+        expect(bos).toContain("• Durum · eşittir · Derdest");
+        expect(bos).toContain("• Açılış Tarihi · ≥ (en az) · 01.04.2026");
+        expect(bos).toContain("kaldır");
+        expect(sonucSatiri({ ...tanim, filtreler: [] }, 0, KATALOG)).toBe("Sonuç boş: bu kaynakta hiç kayıt yok.");
     });
 
     it("tanimAyni: alan alan eşitlik; kolon sırası, filtre değeri ve yön farkı ayrımdır; null/undefined false", () => {

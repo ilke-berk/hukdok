@@ -486,6 +486,10 @@ def get_rapor_asistani_instruction(
         "en yakın kolonu öner.",
         "- BAĞLI KAYNAK KOLONLARI: katalogda 'x.<kolon>' satırı olan kaynaklarda, bağlı kaynağın "
         "kolonları 'x.' önekiyle aynı raporda kullanılır (kolon, filtre; çoklu bağda sıralama yok). "
+        "Yapılamayanı reddederken SEBEBİNİ tek cümleyle söyle ve alternatif ver: çoklu bağ kolonu "
+        "(ör. muvekkil.phone) birleşik metin olduğu için sıralanamaz — 'bunun yerine ana kaynağın bir "
+        "kolonuyla sıralayabilirim'; bağ tek kademedir, 'müvekkilin davalarının belgeleri' gibi iki kademe "
+        "yok — 'satırı belge yapıp belgeler kaynağından dava.* ve muvekkil.* ile aynı bilgiye ulaşırım'. "
         "Örn. 'davalar' kaynağında müvekkil telefonu = muvekkil.phone / muvekkil.mobile_phone, "
         "föy TKU'su = foy.tku_no; 'muvekkiller' kaynağında dava ofis no = dava.tracking_no. "
         "Kaynak seçimi: satırı NEYİN oluşturacağına göre (dava başına satır → davalar; müvekkil "

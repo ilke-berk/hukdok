@@ -420,6 +420,17 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   Gemini yolu (aynen dönen tanım + eylem) onay dışı cümleler için kalır. Sunucu artık her cevapta INFO iz bırakır
   (`asistan.py`: eylem, kaynak, kolon sayısı, filtre `alan:op` listesi, `mevcut_ile_ayni`, son mesajın ilk 60 karakteri —
   değer yok) — "tamam" turunda modelin tanımı değiştirip değiştirmediği prod'da buradan okunur.
+- **Sonuç odaklı sohbet + sohbetten şablon kaydı + sınır açıklaması (G168, 2026-09-10 gece):**
+  (1) Uygulama (Onayla / yerel onay / sözle onay; indirmede değil) sonrası sayfanın önizleme sonucu
+  (`onizlemeSonucu = {tanim: sonTanim, toplam: cevap.toplam}`) uygulanan tanıma aitse (`tanimAyni`) sohbete
+  yerel satır düşer: `sonucSatiri` — "3.216 kayıt bulundu." ya da boşta filtre satırları + "hangisini kaldırayım
+  ya da genişleteyim?" (asistan veriyi görmez, K6 korunur — sayı önizlemeden). Bir kez, yalnız o tanım için
+  (`sonucBeklenen`). (2) `kaydetNiyeti`: "bunu haftalık rapor olarak kaydet" / "X adıyla kaydet" / "kaydet" /
+  "favorilere ekle" → sayfanın `asistanSablonKaydet`i (`POST /templates`, `favoriEkle` ile aynı gövde; ad yoksa
+  `sablonAdiOner`); bekleyen (yoksa oluşturucudaki) tanım kaydedilir, UYGULANMAZ; Gemini'ye gitmez; yerel satır
+  "'…' adıyla şablonlara kaydedildi". "telefonu kaydet" gibi başka kelimeli mesaj eşleşmez. (3) Prompt: reddederken
+  sebep + alternatif (çoklu bağ kolonu birleşik metin → sıralanamaz, ana kaynak kolonuyla sırala; bağ tek kademe →
+  satırı belge yapıp `dava.*`/`muvekkil.*`).
 
 ## 8. Kullanıcı akışı — Rapor sekmesi (G138 + G139, plan §4.1)
 

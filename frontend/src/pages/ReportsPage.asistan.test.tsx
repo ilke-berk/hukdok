@@ -221,6 +221,8 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         ayarBekle?: Promise<unknown>;
         chat?: (govde: { mesajlar: unknown[]; mevcut_tanim: unknown }) => unknown;
         exportCevabi?: () => unknown;
+        /** G168: önizleme toplamı (varsayılan ONIZLEME.toplam = 3); 0 → boş sonuç önerisi. */
+        onizlemeToplam?: number;
     };
 
     function sunucuKur(ayar: SunucuAyari = {}) {
@@ -229,9 +231,14 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
             if (url === "/api/reports/catalog") return okJson(KATALOG);
             if (url === "/api/reports/preview") {
                 const g = JSON.parse(opts!.body as string);
-                return okJson({ ...ONIZLEME, sayfa: g.sayfa, sayfa_boyu: g.sayfa_boyu });
+                const toplam = ayar.onizlemeToplam ?? ONIZLEME.toplam;
+                return okJson({ ...ONIZLEME, satirlar: toplam === 0 ? [] : ONIZLEME.satirlar, toplam, sayfa: g.sayfa, sayfa_boyu: g.sayfa_boyu });
             }
             if (url === "/api/reports/templates" && method === "GET") return okJson([]);
+            if (url === "/api/reports/templates" && method === "POST") {
+                const g = JSON.parse(opts!.body as string);
+                return okJson({ ...g, id: 99, olusturan: "admin@lexis.com.tr", created_at: "2026-09-10T20:00:00Z", updated_at: "2026-09-10T20:00:00Z" }, 201);
+            }
             if (url === "/api/admin/settings") {
                 if (ayar.ayarHatasi) throw new Error("ağ yok");
                 if (ayar.ayarBekle) return ayar.ayarBekle;
@@ -564,14 +571,16 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
 
         // İkinci uygulama (kaynak değişir; sayfa onayı SORULMAZ, kartın onayı yeter) → Geri al yalnız ikinci balonda
         await gonder("ikinci");
+        // [0] ilk kart · [1] G168 sonuç satırı ("3 kayıt bulundu.") · [2] ikinci kart
         const balonlar = Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
-        expect(balonlar).toHaveLength(2);
+        expect(balonlar).toHaveLength(3);
+        expect(balonlar[1].textContent).toContain("kayıt bulundu");
         expect(seciliKaynak()).toBe("davalar");                                   // henüz uygulanmadı
-        await tikla(butonBul("Onayla ve uygula", balonlar[1]));
+        await tikla(butonBul("Onayla ve uygula", balonlar[2]));
         expect(confirmMock.fn).not.toHaveBeenCalled();
         expect(seciliKaynak()).toBe("muvekkiller");
         expect(balonlar[0].querySelector("[data-testid='tanim-geri-al']")).toBeNull();
-        expect(balonlar[1].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
+        expect(balonlar[2].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
 
         // Geri al: kaynak davalar'a, manuel değişiklik SONRASI taslağa (status çıkarılmış hali) döner
         await tikla($("[data-testid='tanim-geri-al']"));
@@ -713,8 +722,10 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         await gonder("tamam");
         await bekle(8);
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(1);
-        expect(balonlar()).toHaveLength(2);
+        // [0] kart · [1] yerel "Onaylandı" · [2] G168 sonuç satırı
+        expect(balonlar()).toHaveLength(3);
         expect(balonlar()[1].textContent).toContain("Onaylandı");
+        expect(balonlar()[2].textContent).toContain("3 kayıt bulundu.");
         expect(balonlar()[0].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
         expect(balonlar()[0].querySelector("[data-testid='tanim-geri-al']")).not.toBeNull();
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
@@ -726,8 +737,10 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         await bekle(8);
         expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(2);
         expect(govde(cagrilar("/api/reports/chat", "POST")[1]).mevcut_tanim).toEqual(ASISTAN_TANIMI);
-        expect(balonlar()).toHaveLength(3);
-        expect(balonlar()[2].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        // [3] Gemini kartı (uygulandı) · [4] sonuç satırı
+        expect(balonlar()).toHaveLength(5);
+        expect(balonlar()[3].querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(balonlar()[4].textContent).toContain("3 kayıt bulundu.");
         expect(seciliKolonlar()).toEqual(["tracking_no", "status", "opening_date"]);
 
         const prev = onizlemeler();
@@ -739,6 +752,55 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(0);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(toastMocks.success).toHaveBeenCalledWith("Rapor hazırlandı · 3 kayıt");
+    });
+
+    it("G168 sonuç satırı: Onayla sonrası önizleme gelince '3 kayıt bulundu.'; boş sonuçta filtre listesi + gevşetme önerisi", async () => {
+        sunucuKur({ chat: () => akis([{ status: "complete", cevap: "Hazır.", tanim: ASISTAN_TANIMI, eylem: null }]) });
+        await render();
+        await gonder("derdest davalar");
+        const balonlar = () => Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
+        expect(balonlar()).toHaveLength(1);
+        await tikla(butonBul("Onayla ve uygula", balonlar()[0]));
+        await bekle(8);
+        expect(balonlar()).toHaveLength(2);
+        expect(balonlar()[1].textContent).toContain("3 kayıt bulundu.");
+        expect(toastMocks.success).toHaveBeenCalledWith("Rapor hazırlandı · 3 kayıt");
+
+        // Boş sonuç
+        act(() => root!.unmount()); root = null; container.remove();
+        container = document.createElement("div"); document.body.appendChild(container);
+        sunucuKur({ chat: () => akis([{ status: "complete", cevap: "Hazır.", tanim: ASISTAN_TANIMI, eylem: null }]), onizlemeToplam: 0 });
+        await render();
+        await gonder("derdest davalar");
+        await gonder("tamam");
+        await bekle(8);
+        const son = balonlar().at(-1)!;
+        expect(son.textContent).toContain("Sonuç boş");
+        expect(son.textContent).toContain("Durum · eşittir · Derdest");
+    });
+
+    it("G168 sohbetten şablon kaydı: 'bunu haftalık rapor olarak kaydet' → POST /templates {ad, tanim: bekleyen}, Gemini yok, toast; 'kaydet' → önerilen ad", async () => {
+        sunucuKur({ chat: () => akis([{ status: "complete", cevap: "Hazır.", tanim: ASISTAN_TANIMI, eylem: null }]) });
+        await render();
+        await gonder("derdest davalar");
+        await gonder("bunu haftalık rapor olarak kaydet");
+        await bekle(8);
+        expect(cagrilar("/api/reports/chat", "POST")).toHaveLength(1);
+        const post = cagrilar("/api/reports/templates", "POST");
+        expect(post).toHaveLength(1);
+        expect(govde(post[0])).toEqual({ ad: "haftalık rapor", aciklama: "", paylasimli: false, tanim: ASISTAN_TANIMI });
+        expect(toastMocks.success).toHaveBeenCalledWith("Şablon kaydedildi", expect.objectContaining({ description: "haftalık rapor" }));
+        const balonlar = () => Array.from(konusma().querySelectorAll("[data-testid='sohbet-asistan']"));
+        expect(balonlar().at(-1)!.textContent).toContain('"haftalık rapor" adıyla şablonlara kaydedildi');
+        // Kaydetmek uygulamak değildir: oluşturucu değişmedi, kart hâlâ onay bekliyor
+        expect(seciliKolonlar()).toEqual(["tracking_no", "subject"]);
+        expect(butonVar("Onayla ve uygula", balonlar()[0])).toBe(true);
+
+        await gonder("kaydet");
+        await bekle(8);
+        const ikinci = cagrilar("/api/reports/templates", "POST")[1];
+        expect(govde(ikinci).ad).toBe("Davalar · Derdest");        // sablonAdiOner (filtreden)
+        expect(govde(ikinci).tanim).toEqual(ASISTAN_TANIMI);
     });
 
     it("YEREL indirme: kart beklerken 'excel indir' Gemini'ye gitmez, /export xlsx kaynak:asistan; kart rozet alır", async () => {

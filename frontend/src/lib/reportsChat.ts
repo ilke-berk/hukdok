@@ -396,6 +396,44 @@ export function onayNiyeti(metin: string): AsistanEylemi | null {
     return onay ? "onizle" : null;
 }
 
+// G168 — sohbetten şablon kaydı: "bunu haftalık rapor olarak kaydet" / "kaydet" / "favorilere ekle".
+const KAYDET_FIIL = String.raw`(?:kaydet|kayıt et|kayit et|sakla|favorile|favorilere ekle|şablon(?:a|u)? (?:olarak )?(?:kaydet|ekle|yap)|sablon(?:a|u)? (?:olarak )?(?:kaydet|ekle|yap))`;
+const KAYDET_ONEK = String.raw`(?:bunu|bu raporu|bu tanımı|bu tanimi|raporu|tanımı|tanimi|lütfen|lutfen|hadi)?\s*`;
+const KAYDET_ADLI = new RegExp(String.raw`^${KAYDET_ONEK}["'“”]?(.+?)["'“”]?\s+(?:olarak|adıyla|adiyla|ismiyle|adında|adinda|diye)\s+${KAYDET_FIIL}\s*[.!]?$`, "iu");
+const KAYDET_ADSIZ = new RegExp(String.raw`^${KAYDET_ONEK}${KAYDET_FIIL}\s*[.!]?$`, "iu");
+
+/**
+ * Kullanıcı mesajı bekleyen/mevcut tanımı ŞABLON olarak kaydetmek istiyor mu (G168): `{ ad }` (ad null =
+ * öneri kullanılsın) ya da `null` (kaydetme isteği değil → Gemini). "telefonu kaydet" gibi başka kelimeli
+ * mesaj eşleşmez.
+ */
+export function kaydetNiyeti(metin: string): { ad: string | null } | null {
+    const m = metin.trim().replace(/\s+/g, " ");
+    if (!m) return null;
+    if (KAYDET_ADSIZ.test(m)) return { ad: null };          // "şablon olarak kaydet": "şablon" ad değil
+    const adli = KAYDET_ADLI.exec(m);
+    if (adli) {
+        const ad = adli[1].trim().replace(/^(?:bunu|bu raporu|raporu)\s+/iu, "");
+        return { ad: ad || null };
+    }
+    return null;
+}
+
+const TR_SAYI = new Intl.NumberFormat("tr-TR");
+
+/**
+ * Uygulama sonrası sonuç satırı (G168): önizleme toplamı sohbete yazılır; boş sonuçta filtreler sayılıp
+ * gevşetme önerilir (asistan veriyi görmez, K6 — satır sayısı zaten önizlemeden gelir).
+ */
+export function sonucSatiri(tanim: RaporTanimi, toplam: number, katalog: Katalog | null): string {
+    if (toplam > 0) return `${TR_SAYI.format(toplam)} kayıt bulundu.`;
+    const filtreler = tanimAyrintisi(tanim, katalog).filtreler;
+    if (filtreler.length === 0) return "Sonuç boş: bu kaynakta hiç kayıt yok.";
+    return "Sonuç boş. Filtreleri gevşetebilirim — hangisini kaldırayım ya da genişleteyim? "
+        + filtreler.map(f => `• ${f}`).join(" ")
+        + " (ör. \"durum filtresini kaldır\", \"tarihi bu yıla genişlet\")";
+}
+
 /** İki tanım aynı mı (kaynak, kolon sırası, filtreler, sıralama) — "tamam/uygula/indir" cevabında asistan
  * bekleyen tanımı AYNEN döndürürse bu onaydır (G167). Alan sırası JSON sırasına bağlı kalmasın diye alan alan. */
 export function tanimAyni(a: RaporTanimi | null | undefined, b: RaporTanimi | null | undefined): boolean {
