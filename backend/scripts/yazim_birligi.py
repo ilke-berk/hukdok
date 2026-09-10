@@ -67,12 +67,14 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # backend/ modülleri için
 
-import models  # noqa: E402
-from managers import reference_lists  # noqa: E402
-from managers.reference_lists import normalize_list_name, tr_title  # noqa: E402
-from scripts.hukdok_aktarim import TARAF_SUTUNLARI, _taraf_adlari  # noqa: E402
-from services import belge_envanteri  # noqa: E402
-from text_utils import turkish_upper  # noqa: E402
+# E402 (import'tan önce sys.path kurulumu) scripts/* için pyproject'te bilinçli
+# olarak kapalıdır — script tek başına da koşabilmeli (hukdok_aktarim deseni).
+import models
+from managers import reference_lists
+from managers.reference_lists import normalize_list_name, tr_title
+from scripts.hukdok_aktarim import TARAF_SUTUNLARI, _taraf_adlari
+from services import belge_envanteri
+from text_utils import turkish_upper
 
 logger = logging.getLogger("yazim_birligi")
 
