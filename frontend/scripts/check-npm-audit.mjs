@@ -1,13 +1,26 @@
 #!/usr/bin/env node
-// ADR-013 K3 — npm audit (--omit=dev) sonucunu audit-ignore.txt'e karşı denetler.
+// ADR-013 K3 — npm audit sonucunu audit-ignore.txt'e karşı denetler.
 // npm'in kendi CLI'ı --ignore-vuln taşımadığı için bu betik pip-audit'in
 // aynı desenini (dated ignore list) buraya taşır. Her satır:
 //   <GHSA-id>  # gerekçe ... Gözden geçirme: YYYY-MM-DD
 // Süresi geçmiş satır ya da ignore listesinde olmayan yeni bir advisory
 // bulunursa süreç 1 ile çıkar (CI kırmızı).
+//
+// İki kip, TEK ignore listesi (CI'daki iki adım aynı dosyayı okur):
+//   (argümansız)  prod kapısı  — `npm audit --omit=dev`; her seviye bloklar.
+//   --dev         dev zinciri  — ağacın tamamı (vite/vitest/eslint dahil, G089);
+//                 eşik moderate: low/info bloklamaz (eski
+//                 `npm audit --audit-level=moderate` adımıyla aynı eşik).
+// Ignore satırı kipten bağımsızdır: prod'a yazılan bir GHSA dev kapısında da
+// tanınır (tersi de) — aynı advisory iki kapıyı ayrı ayrı kırmızıya çevirmez.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+
+const devMode = process.argv.includes("--dev");
+const BLOCKING_SEVERITIES = devMode
+  ? new Set(["moderate", "high", "critical"])
+  : new Set(["info", "low", "moderate", "high", "critical"]);
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -28,32 +41,43 @@ for (const raw of readFileSync("audit-ignore.txt", "utf8").split("\n")) {
   ignored.set(id, line);
 }
 
+const npmArgs = ["audit", "--json"];
+if (!devMode) npmArgs.push("--omit=dev");
+
 let stdout;
 try {
   // shell: true — Windows'ta npm bir .cmd dosyasıdır, shell'siz execFileSync
   // spawn hatası verir (stdout/status kaybolur); Linux'ta (CI) zararsız.
-  stdout = execFileSync("npm", ["audit", "--omit=dev", "--json"], { encoding: "utf8", shell: true });
+  stdout = execFileSync("npm", npmArgs, { encoding: "utf8", shell: true });
 } catch (err) {
   // npm audit, açık bulunca non-zero exit döner; JSON stdout'ta yine de var.
   stdout = err.stdout ? err.stdout.toString() : "{}";
 }
 
 const data = JSON.parse(stdout || "{}");
-const found = new Set();
+const found = new Map(); // GHSA-id → severity
+const skipped = new Set(); // eşik altı (yalnız --dev'de dolabilir)
 for (const vuln of Object.values(data.vulnerabilities ?? {})) {
   for (const via of vuln.via ?? []) {
     if (typeof via === "object" && via.url) {
-      found.add(via.url.replace(/\/+$/, "").split("/").pop());
+      const id = via.url.replace(/\/+$/, "").split("/").pop();
+      if (BLOCKING_SEVERITIES.has(via.severity)) found.set(id, via.severity);
+      else skipped.add(id);
     }
   }
 }
 
-const unignored = [...found].filter((id) => !ignored.has(id));
+const label = devMode ? "dev zinciri dahil" : "prod";
+const unignored = [...found].filter(([id]) => !ignored.has(id));
 if (unignored.length > 0) {
-  console.error("Ignore listesinde olmayan npm advisory:", unignored.join(", "));
+  console.error(
+    `Ignore listesinde olmayan npm advisory (${label}):`,
+    unignored.map(([id, sev]) => `${id} [${sev}]`).join(", "),
+  );
   process.exit(1);
 }
 
 console.log(
-  `npm audit (prod) temiz: ${found.size} bilinen açığın tamamı gerekçeli/tarihli ignore listesinde (audit-ignore.txt).`,
+  `npm audit (${label}) temiz: ${found.size} bilinen açığın tamamı gerekçeli/tarihli ignore listesinde (audit-ignore.txt)` +
+    (skipped.size ? `; eşik altı (low/info) ${skipped.size} kayıt bloklamadı.` : "."),
 );

@@ -205,6 +205,18 @@ adımında raporlanır; adım 6'dan sonra o da kapıya alınır.
 > kadar **gizliden uyumsuzdu**, sessiz kalmasının tek sebebi `frontend/.npmrc`'deki
 > `legacy-peer-deps=true` idi. Yükseltme bu uyumsuzluğu da kapattı.
 
+> **Şerh — 2026-09-10: dev zinciri kapısı da `audit-ignore.txt`'i okur.**
+>
+> G089'un bıraktığı boşluk: dev zinciri adımı çıplak `npm audit --audit-level=moderate`
+> idi, ignore listesini tanımıyordu. Sonuç iki kez yaşandı — 03.09 (browserslist,
+> @humanfs/node, postcss-selector-parser) ve 10.09 (@vitest/mocker
+> GHSA-82fw-gwwq-j7x9, js-yaml GHSA-2883-xcg3-v3hh): main'e her push, kodla ilgisiz
+> bir upstream advisory yüzünden kırmızıya döndü; tek çare lockfile yamasıydı, yama yoksa
+> kapıyı kapatmaktan başka yol yoktu. Artık `scripts/check-npm-audit.mjs --dev` aynı
+> tarihli listeyi okur (ağacın tamamı, eşik moderate; low/info bloklamaz — eski adımla
+> aynı eşik). Prod kipi değişmedi (`--omit=dev`, her seviye bloklar). Kural aynı: yamayı
+> önce dene; fix yoksa GHSA'yı gerekçeli + süreli yaz, süresi geçince kapı yine kızarır.
+
 > **Frontend kapısının ön koşulu — bugün kapı yanlış ağacı ölçüyor.**
 > `frontend/Dockerfile:8-9` yalnız `package.json`'ı kopyalayıp `npm install` koşuyor;
 > `package-lock.json` kurulum anında **ortamda değil**. Yani prod imajı lock'un tarif

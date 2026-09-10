@@ -126,11 +126,14 @@ jobs:
       # (dev dahil) 0 açık — `|| true` düştü. Gerekçe: geliştirme makinesinin
       # dosya sistemi de bir saldırı yüzeyi (2026-08-22 denetimi B-1:
       # server.fs.deny bypass + esbuild cross-origin okuma), bkz. ADR-013 K3.
-      # DİKKAT: bu adım audit-ignore.txt'i OKUMAZ. Prod tarafına tarihli bir
-      # ignore satırı eklenirse burası yine kırmızı olur — o gün bu adım da
-      # aynı listeyi okuyacak şekilde (check-npm-audit.mjs) öğretilmeli.
-      - name: npm audit (geliştirme zinciri dahil — bloklayıcı)
-        run: npm audit --audit-level=moderate
+      # 2026-09-10'dan beri bu adım da AYNI audit-ignore.txt'i okur
+      # (check-npm-audit.mjs --dev): ağacın tamamı, eşik moderate (low/info
+      # bloklamaz — eski `npm audit --audit-level=moderate` ile aynı eşik).
+      # Tarihli bir ignore satırı iki kapıda birden tanınır; dev zincirindeki
+      # bir advisory fix beklerken kapıyı kırmızıda tutmak yerine gerekçeli
+      # ve süreli olarak buraya yazılır (süresi geçince kapı yine kızarır).
+      - name: npm audit (geliştirme zinciri dahil — bloklayıcı, audit-ignore.txt ile)
+        run: node scripts/check-npm-audit.mjs --dev
 
       - name: ESLint (Faz 3.2'den beri zorunlu)
         run: npm run lint

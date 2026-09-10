@@ -1,8 +1,10 @@
-# ADR-013 K3 — npm audit (--omit=dev) ignore listesi.
+# ADR-013 K3 — npm audit ignore listesi (CI'daki İKİ kapı da bunu okur:
+# prod `check-npm-audit.mjs` ve dev zinciri `check-npm-audit.mjs --dev`,
+# 2026-09-10'dan beri). Satır kipten bağımsızdır; gerekçeye hangi kapı için
+# yazıldığını (prod / dev zinciri) not düş.
 # Format: <GHSA-id>  # gerekçe (kod-referanslı). Gözden geçirme: YYYY-MM-DD
-# scripts/check-npm-audit.mjs bu dosyayı okur; tarihi geçmiş satır CI'ı
-# kırmızıya çevirir (ignore kalıcılaşamaz). Advisory ID, npm audit --json
-# çıktısındaki via[].url'in son parçasından türetilir.
+# Tarihi geçmiş satır CI'ı kırmızıya çevirir (ignore kalıcılaşamaz).
+# Advisory ID, npm audit --json çıktısındaki via[].url'in son parçasından türetilir.
 
 # (Şu an aktif ignore yok. react-router'ın 3 GHSA kaydı v7.18.2 geçişiyle
 # kapandı — 2026-08-14, react-router-dom v6 → react-router v7 migrasyonu.)
