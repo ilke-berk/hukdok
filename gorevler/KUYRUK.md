@@ -3,7 +3,28 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
-## ÖNCELİK 1 — Rapor ekranı üç aşama: kolonlar → seçili kolona bağlı filtreler → önizleme (2026-09-11 gece, kullanıcı kararı)
+## ÖNCELİK 1 — Sohbet öncelikli rapor ekranı: manuel kurucu kalkar, sohbet → tanım şeridi → tablo (2026-09-11 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 11.09 gündüz sohbeti. Kullanıcı kararı: "arayüz deli gibi sadeleşsin" — manuel kurucu (kaynak kartları,
+     filtre şeridi, kolon yan paneli) KALKAR, sohbet tek giriş noktası olur; Gemini tek bağımlılığı ve ölçülmemiş alanı
+     bilerek kabul etti. Korunması istenen üç güç sohbetin ALTINA taşınır: (1) şeffaflık + (2) elle düzeltme = düzenlenebilir
+     tanım şeridi (G173: kaynak ▾ · kolon çipleri · filtre çipleri [tık → FilterControl popover, 300 öneri] · sıralama);
+     (3) değer listeleri = asistan tanımındaki metin değerleri katalog önerilerine karşı eşlenir, eşleşmeyene aday çipleri
+     + "hangi mahkemeler var" yerel liste balonu (G174, Gemini'siz, K6 korunur). Teyit döngüsü (G167, 10.09) bu kararla
+     otomatik uygulamaya DÖNER (şerit her an ekranda, Geri al kalır) — G174 + prompt G176. Yerleşim G175 (hub ReportsPage
+     tek görevde). Sunucu sözleşmesi (RaporTanimi/uçlar/katalog) DEĞİŞMEZ; backend yalnız prompt cümleleri.
+     Bu karar G169-G172'yi (üç aşama planı) İPTAL eder — aşağıda BLOKE(İPTAL), dosyaları G177 arşive taşır.
+     Paralellik: G173 ∥ G174 ∥ G176 (farklı dosya kümeleri; G173/G174 worktree, G176 ana dizin) → G175 (G173+G174 sonrası;
+     G176 aynı gece inmezse prompt bir gece "onay sorar", zararsız) → G177 docs. Test-değiştirme izinleri her dosyada baştan.
+     Tahmin 2 gece (1. gece G173/G174/G176 + G175 aynı koşuda yetişirse; 2. gece G175/G177). -->
+
+- [ ] G173 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: `TanimSeridi` düzenlenebilir tanım şeridi (kaynak ▾ · kolon çipleri + "+ Kolon" gruplu combobox · filtre çipleri tık→FilterControl popover · "+ Filtre" · sıralama · Temizle) + builderState ek yardımcıları; sayfaya bağlanmaz
+- [ ] G174 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: asistan otomatik uygulama (G167 kartı yalnız sorunlu değerde) + `degerEsle` katalog önerilerine değer eşleme + aday çipleri + `listeNiyeti`/`DegerListesi` "hangi X'ler var" yerel liste balonu + `onFiltreEkle` prop'u (Gemini'siz, K6 korunur)
+- [ ] G175 | bant:frontend | bagimli:G173,G174 | Sohbet öncelikli rapor ekranı: yerleşim — SourceCards/QuickFilters/ColumnSheet/ColumnPicker kalkar, AssistantBar → TanimSeridi → sayaç/şablon(kompakt)/indirme satırı → PreviewTable; anahtar kapalı kartı + şerit yedek; sayfa testleri yeni kimliklerle
+- [ ] G176 | bant:backend | bagimli:- | Rapor asistanı prompt'u: TEYİT DÖNGÜSÜ → "hemen uygulanır, onay sorma, belirsizlikte tanim=null"; yaklaşık ad → `contains`; liste sorusunda "listeyi ben veremem, ekrandaki çipe tıkla"; test_g132 prompt testleri izinle
+- [ ] G177 | bant:docs | bagimli:G175,G176 | raporlama.md §7/§8/§9/§12/§13/§15 yeniden yazımı + CLAUDE.md raporlama paragrafı + plan "uygulamada değişti" şerhi + G169-G172 dosyaları `git mv` arşive (iptal şerhiyle) — koddan doğrulanmış
+
+## İPTAL — Rapor ekranı üç aşama: kolonlar → seçili kolona bağlı filtreler → önizleme (2026-09-11 gece planı; 11.09 gündüz kullanıcı kararıyla iptal, yerine yukarıdaki G173-G177)
 
 <!-- Kaynak: 10-11.09 sohbeti + onaylanan tıklanabilir taslak
      https://claude.ai/code/artifact/45861bb5-e5fc-4bb1-8fa1-8dfe670a0f8a. Teşhis: G166 bağlı kolonları
@@ -15,10 +36,10 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      backend görevi YOK. Zincir: G169→G170→G171 seri (aynı dosyalar: ReportsPage, builderState); G172 docs
      en son. Test-değiştirme izinleri her dosyada baştan yazıldı (G138/G139 dersi). Tahmin 2 gece. -->
 
-- [ ] G169 | bant:frontend | bagimli:- | Rapor ekranı üç aşama: StageSection kabuğu + kolon seçimi ana alana + bağlı kaynak sekmeleri (iliskiler/bag) + kaynak renkleri + yan panel kalkar
-- [ ] G170 | bant:frontend | bagimli:G169 | Rapor ekranı üç aşama: seçili kolona bağlı filtre kartları + görünmeyen alan filtresi (B bölümü) + hızlı filtreler öneri çipine + A↔B taşınma (filtre kaybolmaz)
-- [ ] G171 | bant:frontend | bagimli:G170 | Rapor ekranı üç aşama: önizleme başlığında kaynak şeridi + huni rozeti + huniden aşama 2'ye atlama + sayaç/lejant/indirme satırı + şablon çubuğu sekme üstüne + özetler
-- [ ] G172 | bant:docs | bagimli:G171 | raporlama.md §8 üçüncü tur yeniden yazımı + §1/§12/§13/§15 + CLAUDE.md paragrafı + plan §4.1 "uygulamada değişti" şerhi (koddan doğrulanmış)
+- [ ] G169 | bant:frontend | bagimli:- | Rapor ekranı üç aşama: StageSection kabuğu + kolon seçimi ana alana + bağlı kaynak sekmeleri (iliskiler/bag) + kaynak renkleri + yan panel kalkar | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
+- [ ] G170 | bant:frontend | bagimli:G169 | Rapor ekranı üç aşama: seçili kolona bağlı filtre kartları + görünmeyen alan filtresi (B bölümü) + hızlı filtreler öneri çipine + A↔B taşınma (filtre kaybolmaz) | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
+- [ ] G171 | bant:frontend | bagimli:G170 | Rapor ekranı üç aşama: önizleme başlığında kaynak şeridi + huni rozeti + huniden aşama 2'ye atlama + sayaç/lejant/indirme satırı + şablon çubuğu sekme üstüne + özetler | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
+- [ ] G172 | bant:docs | bagimli:G171 | raporlama.md §8 üçüncü tur yeniden yazımı + §1/§12/§13/§15 + CLAUDE.md paragrafı + plan §4.1 "uygulamada değişti" şerhi (koddan doğrulanmış) | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
 
 ## ÖNCELİK 1 — Veri ekibi cevabı ↔ HukuDok düzeltmeleri (2026-09-08 gündüz, kullanıcı onayı)
 
