@@ -490,10 +490,7 @@ describe("ReportsPage favori önerisi (G144)", () => {
         expect(kartVar()).toBe(false);
         await gonder("Derdest davaları Excel indir");
         await bekle(8);
-        // G167: kart onay bekler — indirme düğmesi tıklanır
-        expect(kartVar()).toBe(false);
-        await tikla(butonBul("Excel indir"));
-        await bekle(8);
+        // G174: değerler kataloğa uyuyor → tanım düğme beklemeden uygulanır ve indirilir (G167 onay adımı kalktı)
 
         expect(cagrilar("/api/reports/export", "POST")).toHaveLength(1);
         expect(kartVar()).toBe(true);

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Loader2, Send } from "lucide-react";
-import type { AsistanEylemi, Katalog, RaporTanimi } from "@/lib/reports";
+import type { AsistanEylemi, Katalog, KatalogKolon, RaporTanimi } from "@/lib/reports";
+import { secenekEtiketi } from "@/lib/reports";
 import {
-    ASISTAN_KAPALI_MESAJI, AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
-    chatReport, kaydetNiyeti, onayNiyeti, ornekIstemler, sohbetGecmisi, sonucSatiri, tanimAyni, type SohbetKaydi,
+    ASISTAN_KAPALI_MESAJI, AsistanFailedError, AsistanKapaliError, AsistanYetkiError, DEGER_LISTESI_MAX,
+    chatReport, degerEsle, filtreDegeriDegistir, kaydetNiyeti, listeNiyeti, onayNiyeti, ornekIstemler, sohbetGecmisi,
+    sonucSatiri, tanimAyni, type DegerSorunu, type SohbetKaydi,
 } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
 import { AssistantThread } from "./AssistantThread";
@@ -31,6 +33,11 @@ type AssistantBarProps = {
     onizlemeSonucu?: { tanim: RaporTanimi; toplam: number } | null;
     /** G168: tanımı şablon olarak kaydet; `ad` null → sayfa ad önerir. Kaydedilen ad döner, hata → null (toast sayfada). */
     onSablonKaydet?: (tanim: RaporTanimi, ad: string | null) => Promise<string | null>;
+    /**
+     * G174 (isteğe bağlı, G175 bağlar): liste balonunda tıklanan değer mevcut tanıma filtre olarak eklenir.
+     * Verilmezse değer girdi kutusuna yazılır (kullanıcı gönderir).
+     */
+    onFiltreEkle?: (alan: string, deger: string) => void;
 };
 
 let kayitSayaci = 0;
@@ -45,20 +52,24 @@ export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asi
  * konuşma alanı (`AssistantThread`) satırın altında açılır; "Kapat" alanı kapatır, geçmiş kalır (K6,
  * sayfa ömrü). Sohbet geçmişi yalnız bu bileşenin state'inde (K6): sunucu saklamaz, sayfa yenilenince sıfırlanır.
  *
- * G167 — TEYİT DÖNGÜSÜ (G143'ün otomatik uygulaması kalktı): `complete` + `tanim` → tanım UYGULANMAZ,
- * teyit kartı çıkar ve `bekleyenTanim` olur; sonraki mesajlar sunucuya `mevcut_tanim` olarak BEKLEYEN tanımı
- * taşır (kullanıcı "telefonu da ekle" derse asistan onu günceller, oluşturucudakini değil). Onay üç yolla:
- * (a) kartta "Onayla ve uygula" → `onTanimUygula(tanim, null)`; (b) kartta "Excel/CSV indir" →
- * `onTanimUygula(tanim, indir_*)` (uygulanır + indirilir, K7 tek log yolu); (c) SÖZLE — kullanıcı "tamam /
- * uygula / indir" yazar, asistan bekleyen tanımı AYNEN (`tanimAyni`) + eylemle döndürürse eylem hemen yürür.
- * (c') YEREL ONAY — kısa onay/indirme mesajı (`onayNiyeti`) bekleyen tanım varken Gemini'ye gitmeden uygulanır (10.09 prod
- * dersi: model 'tamam' turunda tanımı değiştirebiliyor). `tanim=null` + eylem → bekleyen (yoksa oluşturucudaki) tanımla
- * eylem; `tanim=null` + eylem yok → soru, yalnız balon.
+ * G174 — OTOMATİK UYGULAMA (G167 teyit döngüsünün geri alınması; 11.09 sadeleşme kararı): `complete` + `tanim`
+ * → değerler kataloğa uyuyorsa (`degerEsle.temiz`) tanım DÜĞME BEKLEMEDEN `onTanimUygula(tanim, eylem ?? "onizle")`
+ * ile uygulanır (G143 davranışı; sayfa `oncekiTaslak` + "Geri al" tutar, tanım şeridi G173 zaten ekranda). Kart
+ * yalnız şu hâllerde BEKLER (`bekleyenTanim`): (1) metin filtre değeri katalog önerilerine uymadı → sorun
+ * satırları + ≤5 aday çipi ("Kataloğda bulunamadı — şunlardan biri mi?"); aday tıklanınca değer katalog yazımıyla
+ * tanıma yazılır (`filtreDegeriDegistir`) ve sorun kalmadıysa tanım o an uygulanır; "Yine de uygula" ham tanımı
+ * uygular. (2) Sayfa uygulamayı reddetti (kaynak katalogda yok) ya da kullanıcı "Geri al" dedi → "Onayla ve uygula".
+ * Bekleyen tanım varken sonraki mesajlar sunucuya `mevcut_tanim` olarak onu taşır; YEREL ONAY (`onayNiyeti`,
+ * G167) ve sözle onay (aynı tanım + eylem, `tanimAyni`) korunur. `tanim=null` + eylem → bekleyen (yoksa
+ * oluşturucudaki) tanımla eylem; `tanim=null` + eylem yok → soru, yalnız balon.
+ * LİSTE BALONU (G174, Gemini'siz): "hangi mahkemeler var" gibi mesaj (`listeNiyeti`) katalogdan `DegerListesi`
+ * balonu açar (tek kolon) ya da "Hangisi?" çipleri (çok kolon); değer tıkı `onFiltreEkle` (verilmişse) ya da
+ * girdiye yazım. Eşleşme yoksa mesaj Gemini'ye gider.
  * İndirme daima sayfanın `/export` + `kaynak:"asistan"` yolu (K7).
  */
 export function AssistantBar({
     yukleniyor = false, katalog, veriKaynagi, mevcutTanim, onKapali, onTanimUygula, geriAlinabilir, onGeriAl,
-    onizlemeSonucu = null, onSablonKaydet,
+    onizlemeSonucu = null, onSablonKaydet, onFiltreEkle,
 }: AssistantBarProps) {
     const [kayitlar, setKayitlar] = useState<SohbetKaydi[]>([]);
     const [girdi, setGirdi] = useState("");
@@ -102,6 +113,43 @@ export function AssistantBar({
         setSonUygulananId(kayitId);
         setBekleyenTanim(prev => (tanimAyni(prev, tanim) ? null : prev));
     }, []);
+
+    const kaynakBul = useCallback(
+        (anahtar: string) => katalog?.veri_kaynaklari.find(v => v.anahtar === anahtar),
+        [katalog],
+    );
+
+    /** G174: liste balonu kaydı — kolonun değerleri katalogdan; yerel satır, geçmişe kısa metniyle girer. */
+    const listeKaydi = useCallback((kolon: KatalogKolon): SohbetKaydi => {
+        const degerler = kolon.oneriler && kolon.oneriler.length > 0 ? kolon.oneriler : (kolon.secenekler ?? []);
+        const sayi = Math.min(degerler.length, DEGER_LISTESI_MAX);
+        const kesik = kolon.oneri_kesik || degerler.length > DEGER_LISTESI_MAX;
+        return {
+            id: yeniKayitId(), rol: "assistant", yerel: true, liste: kolon,
+            icerik: `${kolon.etiket} için kayıtlı ${sayi}${kesik ? "+" : ""} değer aşağıda; tıklayınca filtre olarak eklenir.`,
+        };
+    }, []);
+
+    /**
+     * G174: bir kartın tanımını uygular (aday seçimi / yine de uygula). Başarıda kart rozet alır, bekleyen düşer,
+     * önizleme sonucu beklenir; sayfa reddederse kart bekler (Onayla düğmesiyle).
+     */
+    const kartiUygula = useCallback(async (kayitId: number, tanim: RaporTanimi, eylem: AsistanEylemi) => {
+        setGonderiliyor(true);
+        setAkisDurumu(eylem === "onizle" ? "Rapor uygulanıyor…" : "İndiriliyor…");
+        try {
+            const ok = await onTanimUygula(tanim, eylem);
+            if (ok) {
+                uygulandiIsaretle(kayitId, tanim);
+                setBekleyenTanim(null);
+                sonucBekle(tanim, eylem);
+            }
+            return ok;
+        } finally {
+            setGonderiliyor(false);
+            setAkisDurumu(null);
+        }
+    }, [onTanimUygula, uygulandiIsaretle, sonucBekle]);
 
     const gonder = useCallback(async (hamMetin?: string) => {
         const metin = (hamMetin ?? girdi).trim();
@@ -163,6 +211,19 @@ export function AssistantBar({
             return;
         }
 
+        // LİSTE BALONU (G174, Gemini'siz): "hangi mahkemeler var" → katalogdan yerel liste (K6: sunucuya gitmez).
+        // Kaynak: bekleyen tanımınki, yoksa oluşturucudaki. Eşleşme yoksa mesaj normal yoldan Gemini'ye gider.
+        const listeAdaylari = listeNiyeti(metin, kaynakBul(bekleyenTanim?.veri_kaynagi ?? veriKaynagi));
+        if (listeAdaylari && listeAdaylari.length > 0) {
+            kayitEkle(listeAdaylari.length === 1
+                ? listeKaydi(listeAdaylari[0])
+                : {
+                    id: yeniKayitId(), rol: "assistant", yerel: true, kolonAdaylari: listeAdaylari,
+                    icerik: "Hangisini listeleyeyim? " + listeAdaylari.map(k => k.etiket).join(" · "),
+                });
+            return;
+        }
+
         setGonderiliyor(true);
         setAkisDurumu("Gönderiliyor…");
 
@@ -181,19 +242,28 @@ export function AssistantBar({
                 uyarilar: sonuc.uyarilar,
             };
             if (sonuc.tanim) {
-                if (sonuc.eylem && tanimAyni(sonuc.tanim, bekleyenTanim)) {
-                    // Sözle onay: bekleyen tanım aynen + eylemle döndü → eylem hemen yürür.
-                    setAkisDurumu(sonuc.eylem === "onizle" ? "Rapor uygulanıyor…" : "İndiriliyor…");
-                    kayit.uygulandi = await onTanimUygula(sonuc.tanim, sonuc.eylem);
+                // Sözle onay (bekleyen tanım aynen + eylem) eşleme istemez; yeni tanımda değerler kataloğa bakılır (G174).
+                const sozleOnay = Boolean(sonuc.eylem) && tanimAyni(sonuc.tanim, bekleyenTanim);
+                const esleme = sozleOnay ? null : degerEsle(sonuc.tanim, katalog);
+                if (sozleOnay || esleme?.temiz) {
+                    // OTOMATİK UYGULAMA (G174): düğme beklemeden; eylem yoksa önizleme.
+                    const eylem: AsistanEylemi = sonuc.eylem ?? "onizle";
+                    setAkisDurumu(eylem === "onizle" ? "Rapor uygulanıyor…" : "İndiriliyor…");
+                    kayit.uygulandi = await onTanimUygula(sonuc.tanim, eylem);
                     kayitEkle(kayit);
                     if (kayit.uygulandi) {
                         uygulandiIsaretle(kayit.id, sonuc.tanim);
-                        sonucBekle(sonuc.tanim, sonuc.eylem);
+                        setBekleyenTanim(null);
+                        sonucBekle(sonuc.tanim, eylem);
+                    } else {
+                        // Sayfa reddetti (kaynak katalogda yok vb.): kart bekler, düzeltme bu tanım üzerinde.
+                        setBekleyenTanim(sonuc.tanim);
                     }
                     return;
                 }
-                // Yeni/değişmiş tanım: teyit kartı, uygulama YOK (G167)
+                // Değer kataloğa uymadı: kart bekler, sorun satırları + aday çipleri (G174).
                 kayit.uygulandi = false;
+                kayit.sorunlar = esleme?.sorunlar ?? [];
                 kayitEkle(kayit);
                 setBekleyenTanim(sonuc.tanim);
                 return;
@@ -236,7 +306,7 @@ export function AssistantBar({
             setAkisDurumu(null);
         }
     }, [girdi, gonderiliyor, kayitlar, bekleyenTanim, mevcutTanim, onTanimUygula, onKapali, kayitEkle, uygulandiIsaretle,
-        onSablonKaydet, sonucBekle]);
+        onSablonKaydet, sonucBekle, katalog, veriKaynagi, kaynakBul, listeKaydi]);
 
     /** Kartta "Onayla ve uygula": tanım oluşturucuya konur, önizleme gelir. */
     const onOnayla = async (kayit: SohbetKaydi) => {
@@ -253,6 +323,46 @@ export function AssistantBar({
         if (!kayit.tanim || gonderiliyor) return;
         const ok = await onTanimUygula(kayit.tanim, format === "xlsx" ? "indir_xlsx" : "indir_csv");
         if (ok) uygulandiIsaretle(kayit.id, kayit.tanim);
+    };
+
+    /**
+     * G174 aday çipi: sorunlu filtrenin değeri katalog yazımıyla tanıma yazılır (op: kolonda `eq` varsa `eq`,
+     * yoksa `contains`); başka sorun kalmadıysa tanım o an uygulanır, kaldıysa kart kalan adaylarla bekler.
+     */
+    const onAdaySec = async (kayit: SohbetKaydi, sorun: DegerSorunu, aday: string) => {
+        if (!kayit.tanim || gonderiliyor) return;
+        const kolon = kaynakBul(kayit.tanim.veri_kaynagi)?.kolonlar.find(k => k.anahtar === sorun.alan);
+        const yeni = filtreDegeriDegistir(kayit.tanim, sorun.indeks, aday, kolon);
+        const kalan = (kayit.sorunlar ?? []).filter(s => s.indeks !== sorun.indeks);
+        setKayitlar(prev => prev.map(k => (k.id === kayit.id ? { ...k, tanim: yeni, sorunlar: kalan } : k)));
+        setBekleyenTanim(yeni);
+        if (kalan.length === 0) await kartiUygula(kayit.id, yeni, kayit.eylem ?? "onizle");
+    };
+
+    /** G174 "Yine de uygula": ham değerlerle uygulanır (asistanın eylemi varsa o, yoksa önizleme). */
+    const onYineDeUygula = async (kayit: SohbetKaydi) => {
+        if (!kayit.tanim || gonderiliyor) return;
+        await kartiUygula(kayit.id, kayit.tanim, kayit.eylem ?? "onizle");
+    };
+
+    /**
+     * G174 liste balonu değer tıkı: `onFiltreEkle` verilmişse (G175) mevcut tanıma filtre olarak eklenir ve sohbete
+     * yerel satır düşer; verilmemişse girdiye doğal cümle yazılır, kullanıcı gönderir.
+     */
+    const onListeSec = (kolon: KatalogKolon, deger: string) => {
+        const metin = secenekEtiketi(kolon, deger);
+        if (onFiltreEkle) {
+            onFiltreEkle(kolon.anahtar, deger);
+            kayitEkle({ id: yeniKayitId(), rol: "assistant", yerel: true, icerik: `${kolon.etiket} · ${metin} filtre olarak eklendi.` });
+            return;
+        }
+        setGirdi(`${kolon.etiket} "${metin}" olanlar`);
+        girdiRef.current?.focus();
+    };
+
+    /** G174 "Hangisi?" kolon çipi: seçilen kolonun liste balonu. */
+    const onKolonSec = (_kayit: SohbetKaydi, kolon: KatalogKolon) => {
+        kayitEkle(listeKaydi(kolon));
     };
 
     /** "Geri al": sayfa eski taslağı geri koyar; balon yeniden onay bekleyen hâle döner. */
@@ -375,6 +485,10 @@ export function AssistantBar({
                     onGeriAl={geriAl}
                     onTemizle={temizle}
                     onKapat={() => setAcik(false)}
+                    onAdaySec={(kayit, sorun, aday) => void onAdaySec(kayit, sorun, aday)}
+                    onYineDeUygula={kayit => void onYineDeUygula(kayit)}
+                    onListeSec={onListeSec}
+                    onKolonSec={onKolonSec}
                 />
             )}
         </div>

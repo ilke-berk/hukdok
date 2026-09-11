@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Loader2, Trash2, X } from "lucide-react";
-import type { Katalog } from "@/lib/reports";
-import type { SohbetKaydi } from "@/lib/reportsChat";
+import type { Katalog, KatalogKolon } from "@/lib/reports";
+import type { DegerSorunu, SohbetKaydi } from "@/lib/reportsChat";
 import { AssistantMessage, type IndirmeFormati } from "./AssistantMessage";
 
 type AssistantThreadProps = {
@@ -10,7 +10,7 @@ type AssistantThreadProps = {
     /** `info` olayı — canlı akış durumu satırı (gönderim sürerken). */
     akisDurumu: string | null;
     katalog: Katalog | null;
-    /** "Onayla ve uygula" (G167 teyit adımı). */
+    /** "Onayla ve uygula" (bekleyen kart: uygulama reddedilmiş / geri alınmış). */
     onOnayla: (kayit: SohbetKaydi) => void;
     /** "Excel indir" / "CSV indir" — kartın tanımıyla doğrudan indirme. */
     onIndir: (kayit: SohbetKaydi, format: IndirmeFormati) => void;
@@ -20,6 +20,12 @@ type AssistantThreadProps = {
     onTemizle: () => void;
     /** Alanı kapatır — geçmiş kalır (K6: sayfa ömrü boyunca), çubuk yerinde durur. */
     onKapat: () => void;
+    /** G174: sorunlu değer kartı — aday çipi / "Yine de uygula". */
+    onAdaySec: (kayit: SohbetKaydi, sorun: DegerSorunu, aday: string) => void;
+    onYineDeUygula: (kayit: SohbetKaydi) => void;
+    /** G174: liste balonu değer tıkı / "Hangisi?" kolon çipi. */
+    onListeSec: (kolon: KatalogKolon, deger: string) => void;
+    onKolonSec: (kayit: SohbetKaydi, kolon: KatalogKolon) => void;
 };
 
 /**
@@ -31,6 +37,7 @@ type AssistantThreadProps = {
  */
 export function AssistantThread({
     kayitlar, gonderiliyor, akisDurumu, katalog, onOnayla, onIndir, geriAlKaydiId, onGeriAl, onTemizle, onKapat,
+    onAdaySec, onYineDeUygula, onListeSec, onKolonSec,
 }: AssistantThreadProps) {
     const listeRef = useRef<HTMLDivElement>(null);
 
@@ -79,7 +86,7 @@ export function AssistantThread({
             >
                 {kayitlar.length === 0 && !gonderiliyor && (
                     <p data-testid="asistan-bos" className="text-[13px] text-[var(--fg-muted)]">
-                        Henüz mesaj yok. Yukarıya isteğinizi yazın; asistan tanımı hazırlar, siz teyit edip uygular ya da indirirsiniz.
+                        Henüz mesaj yok. Yukarıya isteğinizi yazın; asistan tanımı hazırlayıp uygular, yanlışsa yazarak düzeltir ya da geri alırsınız.
                     </p>
                 )}
 
@@ -91,6 +98,10 @@ export function AssistantThread({
                         onOnayla={onOnayla}
                         onIndir={onIndir}
                         onGeriAl={k.id === geriAlKaydiId ? onGeriAl : undefined}
+                        onAdaySec={onAdaySec}
+                        onYineDeUygula={onYineDeUygula}
+                        onListeSec={onListeSec}
+                        onKolonSec={onKolonSec}
                     />
                 ))}
 
