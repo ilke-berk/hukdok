@@ -196,7 +196,9 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
     const kaynakEtiketi = kaynak?.etiket ?? durum.veri_kaynagi;
 
     return (
-        <div role="group" aria-label="Rapor tanımı" data-testid="tanim-seridi" className="flex flex-wrap items-center gap-2 w-full min-w-0">
+        // İki satır (12.09 kullanıcı kararı): üstte kaynak + kolonlar, altta filtreler + sıralama + Temizle; her satır sarar.
+        <div role="group" aria-label="Rapor tanımı" data-testid="tanim-seridi" className="flex flex-col gap-2 w-full min-w-0">
+          <div data-testid="serit-kolonlar" className="flex flex-wrap items-center gap-2 w-full min-w-0">
             {/* 1. Kaynak rozeti */}
             {salt ? (
                 <span data-testid="serit-kaynak" className={CIP_CLS + " pr-2 font-medium"}>
@@ -323,6 +325,8 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
                 </Popover>
             )}
 
+          </div>
+          <div data-testid="serit-filtreler" className="flex flex-wrap items-center gap-2 w-full min-w-0">
             {/* 4. Filtre çipleri — dolu olanlar; açık düzenleyicinin boş öğesi taslak çapa olarak */}
             {kaynak && durum.serit.map(o => {
                 const kolon = kolonOf(o.durum.alan);
@@ -427,6 +431,7 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
                     Temizle
                 </button>
             )}
+          </div>
         </div>
     );
 }

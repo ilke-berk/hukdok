@@ -234,7 +234,16 @@ describe("TanimSeridi (G173)", () => {
         const serit = $("[data-testid='tanim-seridi']");
         expect(serit.getAttribute("role")).toBe("group");
         expect(serit.getAttribute("aria-label")).toBe("Rapor tanımı");
-        expect(serit.className).toContain("flex-wrap");
+        // İki satır: üst satır kaynak + kolonlar + "+ Kolon", alt satır filtreler + "+ Filtre" + sıralama + Temizle; her biri sarar
+        expect(serit.className).toContain("flex-col");
+        const satirlar = Array.from(serit.children) as HTMLElement[];
+        expect(satirlar.map(r => r.getAttribute("data-testid"))).toEqual(["serit-kolonlar", "serit-filtreler"]);
+        for (const r of satirlar) expect(r.className).toContain("flex-wrap");
+        expect(satirlar[0].contains($("[data-testid='serit-kaynak']"))).toBe(true);
+        expect(satirlar[0].contains($("[data-testid='serit-kolon-ekle']"))).toBe(true);
+        expect(satirlar[1].contains($("[data-testid='serit-filtre-ekle']"))).toBe(true);
+        expect(satirlar[1].contains($("[data-testid='serit-temizle']"))).toBe(true);
+        expect(satirlar[1].querySelector("[data-testid^='serit-kolon-']:not([data-testid='serit-kolon-ekle'])")).toBeNull();
         expect(serit.className).not.toMatch(/max-w-/);
         expect($("[data-testid='serit-kaynak']").textContent).toContain("Davalar");
 

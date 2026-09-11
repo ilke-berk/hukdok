@@ -828,7 +828,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
         expect(dugmeler).not.toContain("Asistan");
 
         // Responsive: şerit ve sayaç satırı sarar (lg altı), tablo kendi sarmalayıcısında kaydırır
-        expect(s.className).toContain("flex-wrap");
+        for (const satir of Array.from(s.children)) expect(satir.className).toContain("flex-wrap");   // şerit iki satır, her biri sarar
         expect(sayac.className).toContain("flex-wrap");
         expect(tablo.parentElement?.className).toContain("overflow-x-auto");
     });
