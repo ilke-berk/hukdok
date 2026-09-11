@@ -18,7 +18,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G176 aynı gece inmezse prompt bir gece "onay sorar", zararsız) → G177 docs. Test-değiştirme izinleri her dosyada baştan.
      Tahmin 2 gece (1. gece G173/G174/G176 + G175 aynı koşuda yetişirse; 2. gece G175/G177). -->
 
-- [ ] G173 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: `TanimSeridi` düzenlenebilir tanım şeridi (kaynak ▾ · kolon çipleri + "+ Kolon" gruplu combobox · filtre çipleri tık→FilterControl popover · "+ Filtre" · sıralama · Temizle) + builderState ek yardımcıları; sayfaya bağlanmaz
+- [x] G173 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: `TanimSeridi` düzenlenebilir tanım şeridi (kaynak ▾ · kolon çipleri + "+ Kolon" gruplu combobox · filtre çipleri tık→FilterControl popover · "+ Filtre" · sıralama · Temizle) + builderState ek yardımcıları; sayfaya bağlanmaz
 - [ ] G174 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: asistan otomatik uygulama (G167 kartı yalnız sorunlu değerde) + `degerEsle` katalog önerilerine değer eşleme + aday çipleri + `listeNiyeti`/`DegerListesi` "hangi X'ler var" yerel liste balonu + `onFiltreEkle` prop'u (Gemini'siz, K6 korunur)
 - [ ] G175 | bant:frontend | bagimli:G173,G174 | Sohbet öncelikli rapor ekranı: yerleşim — SourceCards/QuickFilters/ColumnSheet/ColumnPicker kalkar, AssistantBar → TanimSeridi → sayaç/şablon(kompakt)/indirme satırı → PreviewTable; anahtar kapalı kartı + şerit yedek; sayfa testleri yeni kimliklerle
 - [x] G176 | bant:backend | bagimli:- | Rapor asistanı prompt'u: TEYİT DÖNGÜSÜ → "hemen uygulanır, onay sorma, belirsizlikte tanim=null"; yaklaşık ad → `contains`; liste sorusunda "listeyi ben veremem, ekrandaki çipe tıkla"; test_g132 prompt testleri izinle
