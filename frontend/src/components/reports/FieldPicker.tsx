@@ -19,13 +19,17 @@ type FieldPickerProps = {
     kolonlar: KatalogKolon[];
     onSec: (anahtar: string) => void;
     disabled?: boolean;
+    /** Düğme metni (G173 tanım şeridi "Filtre" der); varsayılan "Başka alan". */
+    etiket?: string;
+    /** Düğmenin `title` ipucu (tavan dolunca "En çok 20 filtre" gibi). */
+    title?: string;
 };
 
 /**
  * "+ Başka alan" — cmdk `Command` ile aranabilir, `grup` başlıklı alan seçici (§4.1 madde 2).
  * 80+ öğeli düz `<select>`in yerine geçer; seçim şeride aynı türde kontrol olarak eklenir.
  */
-export function FieldPicker({ kolonlar, onSec, disabled }: FieldPickerProps) {
+export function FieldPicker({ kolonlar, onSec, disabled, etiket = "Başka alan", title }: FieldPickerProps) {
     const [acik, setAcik] = useState(false);
     const ref = useDisariTiklama<HTMLDivElement>(acik, () => setAcik(false));
 
@@ -52,10 +56,11 @@ export function FieldPicker({ kolonlar, onSec, disabled }: FieldPickerProps) {
                 aria-expanded={acik}
                 aria-haspopup="dialog"
                 disabled={disabled || kolonlar.length === 0}
+                title={title}
                 onClick={() => setAcik(v => !v)}
             >
                 <Plus className="w-3 h-3" />
-                Başka alan
+                {etiket}
             </button>
             {acik && (
                 <div
