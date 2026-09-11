@@ -1,10 +1,11 @@
 import { useMemo } from "react";
-import { BookmarkPlus, Download, Loader2, Pencil, RefreshCw, Save, Star, Trash2, Users } from "lucide-react";
+import { BookmarkPlus, Download, Loader2, MoreHorizontal, Pencil, RefreshCw, Save, Star, Trash2, Users } from "lucide-react";
 import type { RaporSablonu } from "@/lib/reports";
 import { sablonSahibiMi, tarihSaatBicimle } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ICON_BTN_CLS, LINK_BTN_CLS, SELECT_CLS } from "./ui";
 
 /** Paylaşımlı şablon rozeti: sahibi görünür. */
@@ -56,9 +57,10 @@ type TemplateBarProps = {
 };
 
 /**
- * Rapor sekmesi üstündeki şablon çubuğu (G134): şablon seçimi (kendi + paylaşımlı), Yükle,
- * Kaydet (yeni ad), Güncelle ve Sil (yalnız sahibi — başkasınınkinde düğme HİÇ yok).
- * G144: seçimin yanında kalıcı "☆ Favorilere ekle" (taslak kayıtlı değilken) ya da "★ Kayıtlı: <ad>".
+ * Şablon çubuğu (G134 → G175 KOMPAKT): sayaç satırında tek satır — "Şablon" etiketi + seçim (kendi +
+ * paylaşımlı; seçilinin açıklaması `title`da), paylaşım rozeti, "☆ Favorilere ekle" / "★ Kayıtlı: <ad>"
+ * (G144), Yükle, Kaydet (yeni ad) ve yalnız sahibinde "…" menüsü (Güncelle / Sil — başkasınınkinde menü HİÇ yok).
+ * Liste hatası satır-içi not olarak aynı satırda. Davranış G134/G144 ile aynı; yalnız görsel sıkışma.
  */
 export function TemplateBar({
     sablonlar, yukleniyor, hata, onRetry, kullanici, seciliId, onSecim, onYukle, onKaydet, onGuncelle, onSil,
@@ -68,109 +70,122 @@ export function TemplateBar({
     const sahip = secili ? sablonSahibiMi(secili, kullanici) : false;
 
     return (
-        <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-                <label htmlFor="rapor-sablon" className="shrink-0">
-                    <Eyebrow>Şablon</Eyebrow>
-                </label>
-                <select
-                    id="rapor-sablon"
-                    className={`${SELECT_CLS} w-auto min-w-[220px] max-w-[360px]`}
-                    value={seciliId ?? ""}
-                    onChange={e => onSecim(e.target.value ? Number(e.target.value) : null)}
-                    disabled={yukleniyor || isleniyor}
+        <div data-testid="sablon-cubugu" className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
+            <label htmlFor="rapor-sablon" className="shrink-0">
+                <Eyebrow>Şablon</Eyebrow>
+            </label>
+            <select
+                id="rapor-sablon"
+                className={`${SELECT_CLS} h-7 w-auto min-w-[160px] max-w-[260px]`}
+                value={seciliId ?? ""}
+                onChange={e => onSecim(e.target.value ? Number(e.target.value) : null)}
+                disabled={yukleniyor || isleniyor}
+                title={secili?.aciklama || undefined}
+            >
+                <option value="">{yukleniyor ? "Şablonlar yükleniyor…" : sablonlar.length === 0 ? "Kayıtlı şablon yok" : "Şablon seçiniz"}</option>
+                {sablonlar.map(s => (
+                    <option key={s.id} value={s.id}>
+                        {s.ad}{s.paylasimli && !sablonSahibiMi(s, kullanici) ? ` · ${s.olusturan}` : ""}
+                    </option>
+                ))}
+            </select>
+            {secili && <PaylasimRozeti sablon={secili} sahip={sahip} />}
+            {yukleniyor && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--fg-subtle)]" aria-label="Şablonlar yükleniyor" />}
+            {kayitli ? (
+                <span
+                    data-testid="favori-kayitli"
+                    className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--brand)] max-w-[240px] truncate"
+                    title={`Bu format kayıtlı: ${kayitli.ad}`}
                 >
-                    <option value="">{yukleniyor ? "Şablonlar yükleniyor…" : sablonlar.length === 0 ? "Kayıtlı şablon yok" : "Şablon seçiniz"}</option>
-                    {sablonlar.map(s => (
-                        <option key={s.id} value={s.id}>
-                            {s.ad}{s.paylasimli && !sablonSahibiMi(s, kullanici) ? ` · ${s.olusturan}` : ""}
-                        </option>
-                    ))}
-                </select>
-                {secili && <PaylasimRozeti sablon={secili} sahip={sahip} />}
-                {yukleniyor && <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--fg-subtle)]" aria-label="Şablonlar yükleniyor" />}
-                {kayitli ? (
-                    <span
-                        data-testid="favori-kayitli"
-                        className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--brand)] max-w-[240px] truncate"
-                        title={`Bu format kayıtlı: ${kayitli.ad}`}
-                    >
-                        <Star className="w-3 h-3 shrink-0 fill-current" aria-hidden="true" />
-                        Kayıtlı: {kayitli.ad}
-                    </span>
-                ) : onFavoriEkle && (
-                    <button
-                        type="button"
-                        data-testid="favori-ekle-baglantisi"
-                        className={`${LINK_BTN_CLS} inline-flex items-center gap-1`}
-                        onClick={onFavoriEkle}
-                        disabled={!taslakGecerli || isleniyor}
-                        title={taslakGecerli ? "Bu formatı favori şablon olarak ekle" : "Eklemek için geçerli bir tanım gerekir"}
-                    >
-                        <Star className="w-3 h-3 shrink-0" aria-hidden="true" />
-                        Favorilere ekle
-                    </button>
-                )}
-
-                <div className="flex items-center gap-1.5 ml-auto">
-                    <FlowButton
-                        variant="secondary"
-                        size="sm"
-                        disabled={!secili || isleniyor}
-                        onClick={() => secili && onYukle(secili)}
-                        title="Şablonun tanımını oluşturucuya koy"
-                    >
-                        <Download className="w-3.5 h-3.5" />
-                        Yükle
-                    </FlowButton>
-                    <FlowButton
-                        variant="secondary"
-                        size="sm"
-                        disabled={!taslakGecerli || isleniyor}
-                        onClick={onKaydet}
-                        title={taslakGecerli ? "Taslağı yeni şablon olarak kaydet" : "Kaydetmek için geçerli bir tanım gerekir"}
-                    >
-                        <BookmarkPlus className="w-3.5 h-3.5" />
-                        Kaydet
-                    </FlowButton>
-                    {secili && sahip && (
-                        <>
-                            <FlowButton
-                                variant="secondary"
-                                size="sm"
-                                disabled={!taslakGecerli || isleniyor}
-                                onClick={() => onGuncelle(secili)}
-                                title="Seçili şablonun tanımını taslakla değiştir"
-                            >
-                                <Save className="w-3.5 h-3.5" />
-                                Güncelle
-                            </FlowButton>
-                            <FlowButton
-                                variant="ghost"
-                                size="sm"
-                                disabled={isleniyor}
-                                onClick={() => onSil(secili)}
-                                title="Şablonu sil"
-                            >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Sil
-                            </FlowButton>
-                        </>
-                    )}
-                </div>
-            </div>
-            {secili?.aciklama && (
-                <p className="text-[11px] text-[var(--fg-subtle)] leading-snug">{secili.aciklama}</p>
+                    <Star className="w-3 h-3 shrink-0 fill-current" aria-hidden="true" />
+                    Kayıtlı: {kayitli.ad}
+                </span>
+            ) : onFavoriEkle && (
+                <button
+                    type="button"
+                    data-testid="favori-ekle-baglantisi"
+                    className={`${LINK_BTN_CLS} inline-flex items-center gap-1`}
+                    onClick={onFavoriEkle}
+                    disabled={!taslakGecerli || isleniyor}
+                    title={taslakGecerli ? "Bu formatı favori şablon olarak ekle" : "Eklemek için geçerli bir tanım gerekir"}
+                >
+                    <Star className="w-3 h-3 shrink-0" aria-hidden="true" />
+                    Favorilere ekle
+                </button>
             )}
+
+            <div className="flex items-center gap-1 shrink-0">
+                <FlowButton
+                    variant="secondary"
+                    size="sm"
+                    disabled={!secili || isleniyor}
+                    onClick={() => secili && onYukle(secili)}
+                    title="Şablonun tanımını şeride koy"
+                >
+                    <Download className="w-3.5 h-3.5" />
+                    Yükle
+                </FlowButton>
+                <FlowButton
+                    variant="secondary"
+                    size="sm"
+                    disabled={!taslakGecerli || isleniyor}
+                    onClick={onKaydet}
+                    title={taslakGecerli ? "Taslağı yeni şablon olarak kaydet" : "Kaydetmek için geçerli bir tanım gerekir"}
+                >
+                    <BookmarkPlus className="w-3.5 h-3.5" />
+                    Kaydet
+                </FlowButton>
+                {secili && sahip && (
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
+                                type="button"
+                                data-testid="sablon-menu"
+                                aria-label={`${secili.ad} işlemleri`}
+                                title="Güncelle / Sil"
+                                disabled={isleniyor}
+                                className={ICON_BTN_CLS}
+                            >
+                                <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="end"
+                            aria-label="Şablon işlemleri"
+                            className="min-w-[160px] p-1 rounded-[3px] border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)] shadow-md"
+                        >
+                            <DropdownMenuItem
+                                data-islem="guncelle"
+                                disabled={!taslakGecerli}
+                                onSelect={() => onGuncelle(secili)}
+                                title="Seçili şablonun tanımını taslakla değiştir"
+                                className="gap-2 px-2 py-1.5 text-[12px] rounded-[2px] cursor-pointer focus:bg-[var(--bg)]"
+                            >
+                                <Save className="w-3.5 h-3.5 text-[var(--fg-subtle)]" />
+                                Güncelle
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                data-islem="sil"
+                                onSelect={() => onSil(secili)}
+                                title="Şablonu sil"
+                                className="gap-2 px-2 py-1.5 text-[12px] rounded-[2px] cursor-pointer focus:bg-[var(--bg)] hover:text-[var(--brand)]"
+                            >
+                                <Trash2 className="w-3.5 h-3.5 text-[var(--fg-subtle)]" />
+                                Sil
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                )}
+            </div>
             {hata && (
                 // Şerit değil, satır-içi not: sayfanın tek `role=alert`i önizleme hatasına ayrılır
                 // (önizleme şeridinin "Tekrar dene"si ile karışmasın); hata ≠ boş liste yine korunur.
-                <p data-testid="sablon-hatasi" className="text-[11px] text-[var(--danger,#b3261e)] flex items-center gap-2">
-                    <span>Şablonlar yüklenemedi: {hata}</span>
+                <span data-testid="sablon-hatasi" className="text-[11px] text-[var(--danger,#b3261e)] inline-flex items-center gap-2 min-w-0">
+                    <span className="truncate">Şablonlar yüklenemedi: {hata}</span>
                     <button type="button" className={LINK_BTN_CLS} onClick={onRetry} disabled={yukleniyor}>
                         Yeniden dene
                     </button>
-                </p>
+                </span>
             )}
         </div>
     );

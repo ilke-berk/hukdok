@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-// ReportsPage (G133 → G139) — kaynak kartları + filtre şeridi + Kolonlar yan paneli + önizleme
-// tablosunun sözleşmeye bağlanışı: sayfa DOLU açılır (katalog yüklenir, önizleme KENDİLİĞİNDEN
-// varsayılan tanımla istenir; Önizle düğmesi/bayat rozeti/sol sütun yok), kolon/şerit/başlık-sıralaması
-// plan §2.1 gövdesiyle /api/reports/preview'a gider, yazarken 600 ms tek istek, geçersiz tanımda istek
-// yok, kart tıklaması kaynağı değiştirir ve eski satırlar ANINDA kaybolur, kolon setleri yan panelden
-// seçimi değiştirir, boş sonuçta filtre kısayolu, 422 okunur mesaja döner, ağ hatası boş listeye
-// DÖNMEZ (DataErrorBanner), sayfa değişimi son önizlenen tanımla `sayfa` gönderir; /reports yalnız
-// yöneticiye açılır, Sidebar "Raporlar" yalnız yöneticide.
-// Seçili kolonların birincil kanıtı: "Kolonlar (N)" düğme metni + /preview gövdesindeki `kolonlar`
-// (yan panel Radix portal'ında açılır; panel içi `document.body` üzerinden okunur).
+// ReportsPage (G133 → G139 → G175 sohbet öncelikli yerleşim) — Rapor sekmesi üç bloktur: asistan satırı
+// (anahtar kapalıyken yerinde bilgi kartı) → tanım şeridi (TanimSeridi: kaynak rozeti · kolon çipleri · filtre
+// çipleri · sıralama · Temizle) → sayaç satırı ("N kayıt" · kompakt şablon çubuğu · Excel/CSV) → önizleme tablosu.
+// Sayfa DOLU açılır (katalog yüklenir, önizleme KENDİLİĞİNDEN varsayılan tanımla istenir; Önizle düğmesi /
+// bayat rozeti / sol sütun / kaynak kartları / filtre şeridi / Kolonlar yan paneli YOK), şeritten kolon/filtre/
+// başlık-sıralaması plan §2.1 gövdesiyle /api/reports/preview'a gider, yazarken 600 ms tek istek, geçersiz
+// tanımda istek yok, kaynak rozeti menüsü kaynağı değiştirir ve eski satırlar ANINDA kaybolur, boş sonuçta
+// filtre kısayolu, 422 okunur mesaja döner, ağ hatası boş listeye DÖNMEZ (DataErrorBanner), sayfa değişimi son
+// önizlenen tanımla `sayfa` gönderir; /reports yalnız yöneticiye açılır, Sidebar "Raporlar" yalnız yöneticide.
+// Seçili kolonların kanıtı: şeritteki kolon çipleri (`serit-kolon-<anahtar>`) + /preview gövdesindeki `kolonlar`.
+// Şerit açılırları (kaynak menüsü, "+ Kolon", filtre düzenleyici) Radix portal'ında açılır — `document.body`den okunur.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -46,7 +47,7 @@ import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } fro
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-// cmdk (alan seçici / combobox) jsdom'da ResizeObserver + scrollIntoView ister.
+// cmdk (alan seçici / combobox) ve Radix popper jsdom'da ResizeObserver + scrollIntoView ister.
 class ResizeObserverStub {
     observe() { /* jsdom */ }
     unobserve() { /* jsdom */ }
@@ -106,7 +107,7 @@ const KATALOG = {
             varsayilan_kolonlar: ["name"],
             kolonlar: [
                 kolon({ anahtar: "name", etiket: "Ad", tip: "metin" }),
-                // §5.2 sanal arama kolonu: yalnız filtre (Kolonlar panelinde yok), şeritte arama kutusu
+                // §5.2 sanal arama kolonu: yalnız filtre ("+ Kolon" listesinde yok), şeritte arama kutusu
                 kolon({ anahtar: "arama", etiket: "Ara", tip: "metin", turetilmis: true, siralanabilir: false, secilebilir: false, oplar: ["contains"] }),
                 kolon({ anahtar: "il", etiket: "İl", tip: "metin", grup: "İletişim" }),
             ],
@@ -158,13 +159,14 @@ const sonPreviewGovdesi = () => {
     return JSON.parse(opts!.body as string);
 };
 
-describe("ReportsPage (G133/G138/G139)", () => {
+describe("ReportsPage (G133/G138/G175)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
 
     beforeEach(() => {
         fetchMock.mockReset();
         toastMocks.error.mockReset();
+        toastMocks.success.mockReset();
         adminMock.value = true;
         container = document.createElement("div");
         document.body.appendChild(container);
@@ -179,7 +181,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         vi.useRealTimers();
     });
 
-    /** Varsayılan sunucu: katalog + önizleme; sayfa numarası gövdeden yankılanır, kaynağa göre satırlar. */
+    /** Varsayılan sunucu: katalog + önizleme; sayfa numarası gövdeden yankılanır, kaynağa göre satırlar. Anahtar KAPALI (ayar yok). */
     function sunucuKur(onizleme: unknown = ONIZLEME) {
         fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
             if (url === "/api/reports/catalog") return okJson(KATALOG);
@@ -209,18 +211,20 @@ describe("ReportsPage (G133/G138/G139)", () => {
         await bekle();
     }
 
-    const $ = <T extends Element>(sel: string): T => {
-        const el = container.querySelector<T>(sel);
+    const $ = <T extends Element>(sel: string, kok: ParentNode = container): T => {
+        const el = kok.querySelector<T>(sel);
         if (!el) throw new Error("bulunamadı: " + sel);
         return el;
     };
-    const byLabel = <T extends HTMLElement>(label: string, root: ParentNode = container): T => {
-        const el = root.querySelector<T>(`[aria-label="${label}"]`);
+    /** Portal'da (document.body) açılan panel — `container` da gövdenin içindedir. */
+    const $$ = <T extends Element>(sel: string): T => $(sel, document.body);
+    const byLabel = <T extends HTMLElement>(label: string, kok: ParentNode = document.body): T => {
+        const el = kok.querySelector<T>(`[aria-label="${label}"]`);
         if (!el) throw new Error("aria-label bulunamadı: " + label);
         return el;
     };
-    const butonBul = (metin: string, root: ParentNode = container): HTMLButtonElement => {
-        const b = Array.from(root.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
+    const butonBul = (metin: string, kok: ParentNode = container): HTMLButtonElement => {
+        const b = Array.from(kok.querySelectorAll("button")).find(x => x.textContent?.trim() === metin);
         if (!b) throw new Error("düğme bulunamadı: " + metin);
         return b;
     };
@@ -234,6 +238,13 @@ describe("ReportsPage (G133/G138/G139)", () => {
             el.dispatchEvent(new Event("input", { bubbles: true }));
         });
     }
+    function sec(sel: HTMLSelectElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+        act(() => {
+            setter.call(sel, value);
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+    }
     function tikla(el: Element) {
         act(() => {
             el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -241,6 +252,13 @@ describe("ReportsPage (G133/G138/G139)", () => {
     }
     async function tiklaVeBekle(el: Element) {
         tikla(el);
+        await bekle();
+    }
+    /** Radix DropdownMenu tetikleyicisi pointerdown ile açılır (click ile değil). */
+    async function bas(el: Element) {
+        act(() => {
+            el.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
+        });
         await bekle();
     }
     /** Odak çıkışı: gerçek focus()/blur() (React onBlur focusout dinler). */
@@ -251,119 +269,165 @@ describe("ReportsPage (G133/G138/G139)", () => {
     }
     const satirlar = () => Array.from(container.querySelectorAll("tbody tr")).map(tr =>
         Array.from(tr.querySelectorAll("td")).map(td => td.textContent));
-    const seritAlanlari = () =>
-        Array.from(container.querySelectorAll("[data-testid='filtre-kontrolu']")).map(k => k.getAttribute("data-alan"));
-    /** Kartlardaki seçili kaynak (`role=radio` + `aria-checked`). */
-    const seciliKaynak = () => container.querySelector("[data-kaynak][aria-checked='true']")?.getAttribute("data-kaynak") ?? null;
-    const kartlar = () => Array.from(container.querySelectorAll("[data-kaynak]"));
-    const kolonDugmesi = () => $<HTMLButtonElement>("[data-testid='kolon-dugmesi']");
-    /** Yan panel Radix portal'ında: gövdeden okunur. */
-    const kolonPaneli = () => document.body.querySelector("[data-testid='kolon-paneli']");
-    async function kolonPaneliAc(): Promise<ParentNode> {
-        await tiklaVeBekle(kolonDugmesi());
-        const p = kolonPaneli();
-        if (!p) throw new Error("kolon paneli açılmadı");
+
+    // ---- Şerit (G173/G175) yardımcıları ----
+    const serit = () => $("[data-testid='tanim-seridi']");
+    /** Kaynak rozetindeki etiket → katalog anahtarı. */
+    const seciliKaynak = () => {
+        const etiket = $("[data-testid='serit-kaynak']").textContent?.trim();
+        return KATALOG.veri_kaynaklari.find(k => k.etiket === etiket)?.anahtar ?? null;
+    };
+    async function kaynakSec(anahtar: string) {
+        await bas($("[data-testid='serit-kaynak']"));
+        tikla($$(`[role='menu'] [data-kaynak='${anahtar}']`));
+    }
+    const kolonCipleri = () => Array.from(container.querySelectorAll("[data-testid^='serit-kolon-']"))
+        .filter(e => e.getAttribute("data-testid") !== "serit-kolon-ekle")
+        .map(e => e.getAttribute("data-testid")!.replace("serit-kolon-", ""));
+    const kolonSecici = () => document.body.querySelector("[data-testid='kolon-secici']");
+    async function kolonSeciciAc() {
+        await tiklaVeBekle($("[data-testid='serit-kolon-ekle']"));
+        const p = kolonSecici();
+        if (!p) throw new Error("kolon seçici açılmadı");
         return p;
     }
-    async function kolonPaneliKapat() {
-        await tiklaVeBekle(byLabel("Paneli kapat", document.body));
-        expect(kolonPaneli()).toBeNull();
+    async function kolonEkle(anahtar: string) {
+        const p = await kolonSeciciAc();
+        await tiklaVeBekle($(`[cmdk-item][data-kolon='${anahtar}']`, p));
     }
-    const panelKolonlari = (p: ParentNode) => Array.from(p.querySelectorAll("[data-kolon]")).map(li => li.getAttribute("data-kolon"));
+    async function kolonKaldir(etiket: string) {
+        await tiklaVeBekle(byLabel(`${etiket} kolonunu kaldır`, container));
+    }
+    const filtreCipleri = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.getAttribute("data-alan"));
+    const duzenleyici = (alan: string) => document.body.querySelector(`[data-testid='filtre-duzenleyici'][data-alan='${alan}']`);
+    /** "+ Filtre" → alan → popover'daki düzenleyici (FilterControl). */
+    async function filtreAc(alan: string): Promise<ParentNode> {
+        await tiklaVeBekle($("[data-testid='serit-filtre-ekle'] button"));
+        await tiklaVeBekle($(`[data-testid='alan-secici'] [cmdk-item][data-alan='${alan}']`));
+        const p = duzenleyici(alan);
+        if (!p) throw new Error("filtre düzenleyici açılmadı: " + alan);
+        return p;
+    }
+    /** "+ Filtre" listesindeki alanlar (açar, okur, kapatır). */
+    async function filtreAlanlari(): Promise<(string | null)[]> {
+        await tiklaVeBekle($("[data-testid='serit-filtre-ekle'] button"));
+        const alanlar = Array.from($("[data-testid='alan-secici']").querySelectorAll("[cmdk-item]")).map(i => i.getAttribute("data-alan"));
+        await tiklaVeBekle($("[data-testid='serit-filtre-ekle'] button"));
+        return alanlar;
+    }
+    /** Durum çoklu seçiminde bir seçeneği işaretler; düzenleyici/listbox zaten açıksa yeniden açmaz (toggle). */
+    async function durumSec(secenek: string) {
+        const p = duzenleyici("status") ?? await filtreAc("status");
+        const ac = byLabel("Durum seç", p);
+        if (ac.getAttribute("aria-expanded") !== "true") await tiklaVeBekle(ac);
+        await tiklaVeBekle(byLabel(`Durum: ${secenek}`));
+    }
+    /** Dolu çipin gövdesinden düzenleyiciyi açar (zaten açıksa dokunmaz — gövde tıkı toggle'dır). */
+    async function cipDuzenleyiciAc(alan: string, etiket: string): Promise<ParentNode> {
+        if (!duzenleyici(alan)) await tiklaVeBekle(byLabel(`${etiket} filtresini düzenle`, container));
+        const p = duzenleyici(alan);
+        if (!p) throw new Error("çip düzenleyicisi açılmadı: " + alan);
+        return p;
+    }
+    const onceGelir = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-    it("sayfa DOLU açılır: katalog yüklenir, Davalar kartı seçili, önizleme KENDİLİĞİNDEN varsayılan tanımla istenir; sol sütun/Önizle/operatör/tip rozeti yok", async () => {
+    it("sayfa DOLU açılır: katalog yüklenir, şeritte Davalar + varsayılan kolonlar, önizleme KENDİLİĞİNDEN varsayılan tanımla istenir; kart/şerit/yan panel/Önizle/operatör yok", async () => {
         sunucuKur();
         await render();
 
         expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/catalog");
-        // Kaynak kartları (radio grubu): katalog sırası, ilk kart seçili; eski select yok
-        expect(kartlar().map(k => k.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller"]);
-        expect(kartlar().map(k => k.getAttribute("role"))).toEqual(["radio", "radio"]);
+        // Şerit: kaynak rozeti ilk kaynak, kolon çipleri varsayılan, filtre çipi yok (boş yuvalar görünmez)
         expect(seciliKaynak()).toBe("davalar");
-        expect(kartlar()[0].textContent?.trim()).toBe("Davalar");   // minimal kart (07.09): açıklama metinde yok
-        expect(container.querySelector("#rapor-kaynak")).toBeNull();
-
-        // Kolonlar yalnız yan panelde: sayfada liste yok, düğme sayıyı taşır, panel kapalı
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (2)");
-        expect(container.querySelector("[data-kolon]")).toBeNull();
-        expect(kolonPaneli()).toBeNull();
-        expect(container.textContent).not.toContain("Rapor Oluşturucu");
+        expect(kolonCipleri()).toEqual(["tracking_no", "subject"]);
+        expect(filtreCipleri()).toEqual([]);
+        expect(container.querySelector("[data-testid='serit-filtre-taslak']")).toBeNull();
+        // "+ Filtre": filtrelenebilir alanlar grup sırasıyla; türetilmiş/filtrelenemez (muvekkil_adlari) yok
+        expect(await filtreAlanlari()).toEqual(["tracking_no", "subject", "status", "opening_date", "maddi_tazminat"]);
 
         // Otomatik önizleme: tek istek, varsayılan tanım, tablo dolu — kullanıcı hiçbir şeye basmadı
         expect(previewCagrilari()).toHaveLength(1);
         expect(sonPreviewGovdesi()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
         expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("120 kayıt");
 
-        // Şerit: kaynağın hızlı filtreleri sırayla; eski arayüz izleri yok
-        expect(seritAlanlari()).toEqual(["opening_date", "status", "subject", "maddi_tazminat"]);
+        // G175: eski arayüz izleri yok — kaynak kartları, filtre şeridi, Kolonlar düğmesi/paneli, araç çubuğu, eski select
+        expect(container.querySelector("[data-testid='kaynak-kartlari']")).toBeNull();
+        expect(container.querySelector("[role='radio']")).toBeNull();
+        expect(container.querySelector("[data-testid='filtre-seridi']")).toBeNull();
+        expect(container.querySelector("[data-testid='etkin-filtreler']")).toBeNull();
+        expect(container.querySelector("[data-testid='kolon-dugmesi']")).toBeNull();
+        expect(document.body.querySelector("[data-testid='kolon-paneli']")).toBeNull();
+        expect(container.querySelector("[data-testid='arac-cubugu']")).toBeNull();
+        expect(container.querySelector("#rapor-kaynak")).toBeNull();
+        expect(container.textContent).not.toContain("Rapor Oluşturucu");
+        expect(container.textContent).not.toContain("Kolonlar (");
         expect(butonVar("Önizle")).toBe(false);
         expect(butonVar("Filtre ekle")).toBe(false);
         expect(butonVar("Sıralama ekle")).toBe(false);
         expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(container.querySelector("[data-testid='guncelleniyor']")).toBeNull();
-
-        // Sadeleştirme (07.09 minimal kart): kaynak açıklaması ekranda hiç yok (yalnız kart title'ı), tip rozeti yok
+        // Sadeleştirme: kaynak açıklaması yalnız rozet menüsünde (kapalı), tip rozeti yok
         expect(container.textContent).not.toContain("Dava kartları");
-        const p = await kolonPaneliAc();
-        const panelMetni = (p as Element).textContent ?? "";
-        expect(panelMetni).not.toContain("abc");
-        expect(panelMetni).not.toContain("123");
-        expect(panelMetni).not.toContain("Dava kartları");
-        expect(container.textContent).not.toContain("Dava kartları");
-        await kolonPaneliKapat();
+        expect(container.textContent).not.toContain("abc");
     });
 
-    it("kart tıklaması kaynağı değiştirir (aria-checked), aynı karta yeniden basmak yeni istek üretmez", async () => {
+    it("kaynak rozeti menüsü kaynağı değiştirir; aynı kaynağa yeniden basmak yeni istek üretmez", async () => {
         sunucuKur();
         await render();
         expect(previewCagrilari()).toHaveLength(1);
 
-        await tiklaVeBekle(kartlar()[0]); // zaten seçili
+        await bas($("[data-testid='serit-kaynak']"));
+        const menu = $$("[role='menu']");
+        expect(Array.from(menu.querySelectorAll("[data-kaynak]")).map(o => o.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller"]);
+        expect(menu.textContent).toContain("Cari kartlar");   // açıklama yalnız menüde
+        await tiklaVeBekle($$("[role='menu'] [data-kaynak='davalar']")); // zaten seçili
         expect(previewCagrilari()).toHaveLength(1);
         expect(seciliKaynak()).toBe("davalar");
 
-        await tiklaVeBekle($("[data-kaynak='muvekkiller']"));
+        await kaynakSec("muvekkiller");
+        await bekle();
         expect(seciliKaynak()).toBe("muvekkiller");
-        expect(kartlar().map(k => k.getAttribute("aria-checked"))).toEqual(["false", "true"]);
         expect(previewCagrilari()).toHaveLength(2);
         expect(sonPreviewGovdesi().tanim).toEqual({ veri_kaynagi: "muvekkiller", kolonlar: ["name"], filtreler: [], siralama: [] });
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (1)");
+        expect(kolonCipleri()).toEqual(["name"]);
         expect(satirlar()).toEqual([["Ayşe Yılmaz"]]);
     });
 
-    it("Kolonlar yan paneli: 3 hazır set + gruplar; set tıklaması seçimi değiştirir ve önizleme yenilenir; grup 'tümünü seç'; kapanınca ek istek yok", async () => {
+    it("+ Kolon: hazır setler + gruplar (seçilmiş kolonlar listede yok); set ekler ve önizleme yenilenir; kolon × hemen önizler; tek kolon kalınca × kapalı", async () => {
         sunucuKur();
         await render();
         expect(previewCagrilari()).toHaveLength(1);
 
-        const p = await kolonPaneliAc();
-        const setler = Array.from(p.querySelectorAll("[data-kolon-seti]"));
-        expect(setler.map(s => s.getAttribute("data-kolon-seti"))).toEqual(["Temel", "Karar takibi", "Tazminat"]);
-        expect(setler.map(s => s.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
-        expect(Array.from(p.querySelectorAll("[data-kolon-grubu]")).map(g => g.getAttribute("data-kolon-grubu")))
-            .toEqual(["Kimlik", "Karar ve aşama", "Tarihler", "Tutarlar", "Taraflar"]);
-        expect(panelKolonlari(p)).toEqual(["tracking_no", "subject"]);
+        const p = await kolonSeciciAc();
+        expect(Array.from(p.querySelectorAll("[cmdk-item][data-set]")).map(s => s.getAttribute("data-set"))).toEqual(["Temel", "Karar takibi", "Tazminat"]);
+        expect(Array.from(p.querySelectorAll("[cmdk-group]:not([hidden]) [cmdk-group-heading]")).map(h => h.textContent))
+            .toEqual(["Hazır setler", "Karar ve aşama", "Tarihler", "Tutarlar", "Taraflar"]);
+        expect(Array.from(p.querySelectorAll("[cmdk-item][data-kolon]")).map(i => i.getAttribute("data-kolon")))
+            .toEqual(["status", "opening_date", "maddi_tazminat", "muvekkil_adlari"]);
+        expect((p as Element).textContent).not.toContain("abc");
+        expect((p as Element).textContent).not.toContain("Dava kartları");
 
-        // Set: seçim setle DEĞİŞİR (sıra setin sırası), önizleme hemen
-        await tiklaVeBekle(setler[1]);
+        // Set: eksik kolonlar EKLENİR (mevcutlar korunur, set sırası), önizleme hemen, seçici kapanır
+        await tiklaVeBekle($("[cmdk-item][data-set='Karar takibi']", p));
+        expect(kolonSecici()).toBeNull();
         expect(previewCagrilari()).toHaveLength(2);
-        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date"]);
-        expect(panelKolonlari(p)).toEqual(["tracking_no", "status", "opening_date"]);
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (3)");
-        expect(Array.from(p.querySelectorAll("[data-kolon-seti]")).map(s => s.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "subject", "status", "opening_date"]);
+        expect(kolonCipleri()).toEqual(["tracking_no", "subject", "status", "opening_date"]);
 
-        // Grup başlığı: Tutarlar'ın tümü (maddi_tazminat) eklenir; ikinci tık grubu kaldırır
-        await tiklaVeBekle(byLabel("Tutarlar tümünü seç", p));
-        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date", "maddi_tazminat"]);
-        await tiklaVeBekle(byLabel("Tutarlar tümünü seç", p));
+        // ×: yapısal — hemen önizlenir
+        await kolonKaldir("Konu");
+        expect(previewCagrilari()).toHaveLength(3);
         expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "status", "opening_date"]);
-        expect(previewCagrilari()).toHaveLength(4);
-
-        await kolonPaneliKapat();
-        expect(previewCagrilari()).toHaveLength(4);
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (3)");
+        await kolonKaldir("Durum");
+        await kolonKaldir("Açılış Tarihi");
+        expect(previewCagrilari()).toHaveLength(5);
+        expect(kolonCipleri()).toEqual(["tracking_no"]);
+        const son = byLabel<HTMLButtonElement>("Ofis No kolonunu kaldır", container);
+        expect(son.disabled).toBe(true);
+        await tiklaVeBekle(son);
+        expect(previewCagrilari()).toHaveLength(5);
     });
 
     it("boş sonuçta 'filtreleri gevşetin' + Filtreleri temizle kısayolu: şerit boşalır, önizleme filtresiz yenilenir", async () => {
@@ -382,9 +446,10 @@ describe("ReportsPage (G133/G138/G139)", () => {
         await render();
         expect(container.querySelector("[data-testid='bos-sonuc']")).toBeNull();
 
-        await tiklaVeBekle(byLabel("Durum seç"));
-        await tiklaVeBekle(byLabel("Durum: Derdest"));
+        await durumSec("Derdest");
         expect(previewCagrilari()).toHaveLength(2);
+        expect(filtreCipleri()).toEqual(["status"]);
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("0 kayıt");
         const bos = $("[data-testid='bos-sonuc']");
         expect(bos.textContent).toContain("Bu filtrelerle kayıt yok");
         expect(bos.textContent).toContain("filtreleri gevşetin");
@@ -394,8 +459,37 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(previewCagrilari()).toHaveLength(3);
         expect(sonPreviewGovdesi().tanim).toEqual(VARSAYILAN_TANIM);
         expect(container.querySelector("[data-testid='bos-sonuc']")).toBeNull();
-        expect(container.querySelector("[data-testid='filtre-cipi']")).toBeNull();
+        expect(filtreCipleri()).toEqual([]);
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    });
+
+    it("şeritten filtre kaldırınca (×) ve şerit Temizle ile önizleme HEMEN istenir", async () => {
+        sunucuKur();
+        await render();
+        await durumSec("Derdest");
+        expect(previewCagrilari()).toHaveLength(2);
+        expect(sonPreviewGovdesi().tanim.filtreler).toEqual([{ alan: "status", op: "eq", deger: "Derdest" }]);
+
+        // ×: hızlı yuva boşa döner, çip düşer, istek hemen filtresiz gider
+        await tiklaVeBekle(byLabel("Durum filtresini kaldır", container));
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim).toEqual(VARSAYILAN_TANIM);
+        expect(filtreCipleri()).toEqual([]);
+
+        // Temizle: kolon eklenmiş + filtre + sıralama → varsayılana döner, tek istek
+        await kolonEkle("status");
+        await durumSec("Karar");
+        await tiklaVeBekle(byLabel("Ofis No sırala", container));
+        expect(previewCagrilari()).toHaveLength(6);
+        const temizle = $<HTMLButtonElement>("[data-testid='serit-temizle']");
+        expect(temizle.disabled).toBe(false);
+        await tiklaVeBekle(temizle);
+        expect(previewCagrilari()).toHaveLength(7);
+        expect(sonPreviewGovdesi().tanim).toEqual(VARSAYILAN_TANIM);
+        expect(kolonCipleri()).toEqual(["tracking_no", "subject"]);
+        expect(filtreCipleri()).toEqual([]);
+        expect(container.querySelector("[data-testid^='serit-siralama-']")).toBeNull();
+        expect($<HTMLButtonElement>("[data-testid='serit-temizle']").disabled).toBe(true);
     });
 
     it("kolon + şerit + başlık sıralaması gövdeyi §2.1 ile birebir gönderir (between dizi, in liste, sayı number); tablo biçimleri", async () => {
@@ -403,48 +497,48 @@ describe("ReportsPage (G133/G138/G139)", () => {
         await render();
         expect(previewCagrilari()).toHaveLength(1);
 
-        // Kolon ekle (yan panel checkbox) ve sırayı değiştir (↓) — yapısal: her biri hemen önizlenir
-        const p = await kolonPaneliAc();
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Açılış Tarihi", p));
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Maddi Tazminat", p));
-        await tiklaVeBekle(byLabel<HTMLButtonElement>("Ofis No aşağı", p));
-        expect(previewCagrilari()).toHaveLength(4);
-        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["subject", "tracking_no", "opening_date", "maddi_tazminat"]);
-        await kolonPaneliKapat();
+        // Kolon ekle ("+ Kolon") — yapısal: her biri hemen önizlenir
+        await kolonEkle("opening_date");
+        await kolonEkle("maddi_tazminat");
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "subject", "opening_date", "maddi_tazminat"]);
 
-        // Durum in [Derdest, Karar] — checkbox'lı açılır, serbest metin yok
-        await tiklaVeBekle(byLabel("Durum seç"));
-        await tiklaVeBekle(byLabel("Durum: Derdest"));
+        // Durum in [Derdest, Karar] — popover'da checkbox'lı açılır, serbest metin yok
+        await durumSec("Derdest");
         expect(sonPreviewGovdesi().tanim.filtreler).toEqual([{ alan: "status", op: "eq", deger: "Derdest" }]);
-        await tiklaVeBekle(byLabel("Durum: Karar"));
+        await durumSec("Karar");
         expect(sonPreviewGovdesi().tanim.filtreler).toEqual([{ alan: "status", op: "in", deger: ["Derdest", "Karar"] }]);
-        expect(previewCagrilari()).toHaveLength(6);
+        expect(previewCagrilari()).toHaveLength(5);
 
         // Açılış between: yazarken istek GİTMEZ, odak çıkışında gider
-        yaz(byLabel<HTMLInputElement>("Açılış Tarihi başlangıç"), "2025-01-01");
-        yaz(byLabel<HTMLInputElement>("Açılış Tarihi bitiş"), "2025-12-31");
+        const acilis = await filtreAc("opening_date");
+        yaz(byLabel<HTMLInputElement>("Açılış Tarihi başlangıç", acilis), "2025-01-01");
+        yaz(byLabel<HTMLInputElement>("Açılış Tarihi bitiş", acilis), "2025-12-31");
         await bekle();
+        expect(previewCagrilari()).toHaveLength(5);
+        await odakCik(byLabel<HTMLInputElement>("Açılış Tarihi bitiş", acilis));
         expect(previewCagrilari()).toHaveLength(6);
-        await odakCik(byLabel<HTMLInputElement>("Açılış Tarihi bitiş"));
-        expect(previewCagrilari()).toHaveLength(7);
 
         // Maddi tazminat ≥ 1000 (sayı JSON number)
-        yaz(byLabel<HTMLInputElement>("Maddi Tazminat en az"), "1000");
-        await odakCik(byLabel<HTMLInputElement>("Maddi Tazminat en az"));
-        expect(previewCagrilari()).toHaveLength(8);
+        const maddi = await filtreAc("maddi_tazminat");
+        yaz(byLabel<HTMLInputElement>("Maddi Tazminat en az", maddi), "1000");
+        await odakCik(byLabel<HTMLInputElement>("Maddi Tazminat en az", maddi));
+        expect(previewCagrilari()).toHaveLength(7);
 
-        // Başlıktan sıralama: Açılış Tarihi → artan → azalan
-        await tiklaVeBekle(byLabel("Açılış Tarihi sırala"));
+        // Başlıktan sıralama: Açılış Tarihi → artan → azalan; şeritte sıralama çipi
+        await tiklaVeBekle(byLabel("Açılış Tarihi sırala", container));
         expect(sonPreviewGovdesi().tanim.siralama).toEqual([{ alan: "opening_date", yon: "asc" }]);
-        await tiklaVeBekle(byLabel("Açılış Tarihi sırala"));
-        expect(previewCagrilari()).toHaveLength(10);
+        expect($("[data-testid='serit-siralama-opening_date']").getAttribute("data-yon")).toBe("asc");
+        await tiklaVeBekle(byLabel("Açılış Tarihi sırala", container));
+        expect(previewCagrilari()).toHaveLength(9);
+        expect($("[data-testid='serit-siralama-opening_date']").getAttribute("data-yon")).toBe("desc");
 
         const [, opts] = previewCagrilari().at(-1)!;
         expect(opts!.method).toBe("POST");
         expect(sonPreviewGovdesi()).toEqual({
             tanim: {
                 veri_kaynagi: "davalar",
-                kolonlar: ["subject", "tracking_no", "opening_date", "maddi_tazminat"],
+                kolonlar: ["tracking_no", "subject", "opening_date", "maddi_tazminat"],
                 filtreler: [
                     { alan: "opening_date", op: "between", deger: ["2025-01-01", "2025-12-31"] },
                     { alan: "status", op: "in", deger: ["Derdest", "Karar"] },
@@ -457,7 +551,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         });
         expect($("th[aria-sort='descending']").textContent).toContain("Açılış Tarihi");
 
-        // Tablo: başlık etiketle, tarih dd.MM.yyyy, para tr-TR, null "—"; toplam rozeti; etkin filtre çipleri
+        // Tablo: başlık etiketle, tarih dd.MM.yyyy, para tr-TR, null "—"; toplam rozeti; etkin filtre çipleri şeritte
         const basliklar = Array.from(container.querySelectorAll("thead th button, thead th")).filter(e => e.tagName === "TH").map(th => th.textContent?.replace(/\d$/, ""));
         expect(basliklar).toEqual(["Ofis No", "Konu", "Açılış Tarihi", "Maddi Tazminat"]);
         expect(satirlar()).toEqual([
@@ -465,18 +559,18 @@ describe("ReportsPage (G133/G138/G139)", () => {
             ["2025/13", "—", "—", "—"],
         ]);
         expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
-        expect(Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.getAttribute("data-alan")))
-            .toEqual(["opening_date", "status", "maddi_tazminat"]);
+        expect(filtreCipleri()).toEqual(["opening_date", "status", "maddi_tazminat"]);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
     });
 
     it("yazarken tek istek gider: 600 ms gecikme, her tuşta yeniden başlar; süre dolunca son değerle contains", async () => {
-        vi.useFakeTimers();
         sunucuKur();
         await render();
         expect(previewCagrilari()).toHaveLength(1);
+        const p = await filtreAc("subject");
+        vi.useFakeTimers();
 
-        const konu = byLabel<HTMLInputElement>("Konu içerir");
+        const konu = byLabel<HTMLInputElement>("Konu içerir", p);
         yaz(konu, "T");
         yaz(konu, "Ta");
         await act(async () => { vi.advanceTimersByTime(ONIZLEME_GECIKME_MS - 1); });
@@ -497,45 +591,51 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(previewCagrilari()).toHaveLength(2);
     });
 
-    it("geçersiz tanımda istek gitmez: kolonlar temizlenince ipucu, kolon geri gelince hemen önizler; is_null değersiz gider", async () => {
+    it("geçersiz tanımda istek gitmez: gelişmiş çipin değeri silinince ipucu, değer gelince hemen önizler", async () => {
         sunucuKur();
         await render();
-        expect(previewCagrilari()).toHaveLength(1);
-
-        let p = await kolonPaneliAc();
-        await tiklaVeBekle(butonBul("Temizle", p)); // yan panel: kolon yok → geçersiz
-        await kolonPaneliKapat();
-        expect(previewCagrilari()).toHaveLength(1);
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (0)");
-        // Son geçerli önizleme ekranda kalır, başlıkta "taslak eksik" ipucu; istek yok
-        expect($("[data-testid='taslak-eksik']").textContent).toContain("en az bir kolon seçin");
-        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-        // Şerit değişikliği de geçersizken istek üretmez ("boş olanlar" kutucuğu yok — çoklu seçimle)
-        expect(container.querySelector("[aria-label$='boş olanlar']")).toBeNull();
-        await tiklaVeBekle(byLabel("Durum seç"));
-        await tiklaVeBekle(byLabel("Durum: Derdest"));
-        expect(previewCagrilari()).toHaveLength(1);
-
-        p = await kolonPaneliAc();
-        await tiklaVeBekle(byLabel<HTMLInputElement>("Ofis No", p));
-        await kolonPaneliKapat();
+        await durumSec("Derdest");
         expect(previewCagrilari()).toHaveLength(2);
+
+        // Çipin "…" menüsü → "eşit değil" (gelişmiş çip, değer taşınır → geçerli, hemen önizlenir)
+        await tiklaVeBekle(byLabel("Durum filtre seçenekleri", container));
+        await tiklaVeBekle(Array.from(byLabel("Durum gelişmiş", container).querySelectorAll("button")).find(b => b.textContent?.includes("eşit değil"))!);
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim.filtreler).toEqual([{ alan: "status", op: "ne", deger: "Derdest" }]);
+        expect(container.querySelector("[data-testid='filtre-cipi'][data-alan='status']")?.getAttribute("data-gelismis")).toBe("true");
+
+        // Düzenleyicide değer silinir → tanım geçersiz: istek YOK, son geçerli önizleme kalır, "taslak eksik" ipucu
+        const panel = await cipDuzenleyiciAc("status", "Durum");
+        sec(byLabel<HTMLSelectElement>("Durum değeri", panel), "");
+        await bekle();
+        expect(previewCagrilari()).toHaveLength(3);
+        expect($("[data-testid='taslak-eksik']").textContent).toContain("filtreleri tamamlayın");
+        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+        // Geçersizken kolon değişikliği de istek üretmez
+        await kolonEkle("opening_date");
+        expect(previewCagrilari()).toHaveLength(3);
+
+        sec(byLabel<HTMLSelectElement>("Durum değeri", panel), "Karar");
+        await bekle();
+        expect(previewCagrilari()).toHaveLength(4);
         expect(container.querySelector("[data-testid='taslak-eksik']")).toBeNull();
         expect(sonPreviewGovdesi().tanim).toEqual({
-            veri_kaynagi: "davalar", kolonlar: ["tracking_no"], filtreler: [{ alan: "status", op: "eq", deger: "Derdest" }], siralama: [],
+            veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject", "opening_date"],
+            filtreler: [{ alan: "status", op: "ne", deger: "Karar" }], siralama: [],
         });
-        expect(byLabel<HTMLInputElement>("Durum: Derdest").checked).toBe(true);
     });
 
-    it("arama kutusu (§5.3): yazarken 600 ms tek istek, `arama contains`; × temizler ve hemen filtresiz ister; `arama` Kolonlar panelinde yok", async () => {
-        vi.useFakeTimers();
+    it("arama kutusu (§5.3): yazarken 600 ms tek istek, `arama contains`; × hemen filtresiz ister; `arama` + Kolon listesinde yok", async () => {
         sunucuKur();
         await render();
-        await tiklaVeBekle($("[data-kaynak='muvekkiller']"));
+        await kaynakSec("muvekkiller");
+        await bekle();
         expect(previewCagrilari()).toHaveLength(2);
-        expect(seritAlanlari()).toEqual(["arama", "il"]);
+        expect(await filtreAlanlari()).toEqual(["name", "arama", "il"]);
 
-        const kutu = byLabel<HTMLInputElement>("Ara");
+        const p = await filtreAc("arama");
+        vi.useFakeTimers();
+        const kutu = byLabel<HTMLInputElement>("Ara içerir", p);
         yaz(kutu, "A");
         yaz(kutu, "Ay");
         await act(async () => { vi.advanceTimersByTime(ONIZLEME_GECIKME_MS - 1); });
@@ -551,22 +651,22 @@ describe("ReportsPage (G133/G138/G139)", () => {
         });
         expect(container.querySelector("[data-testid='filtre-cipi'][data-alan='arama']")?.textContent).toContain("içerir \"Ayşe\"");
 
-        await tiklaVeBekle(byLabel("Ara temizle"));
+        await tiklaVeBekle(byLabel("Ara filtresini kaldır", container));
         expect(previewCagrilari()).toHaveLength(4);
         expect(sonPreviewGovdesi().tanim.filtreler).toEqual([]);
-        expect(kutu.value).toBe("");
+        expect(filtreCipleri()).toEqual([]);
+        vi.useRealTimers();
 
-        const p = await kolonPaneliAc();
-        expect(p.querySelector("[aria-label='Ara']")).toBeNull();
-        expect(byLabel<HTMLInputElement>("Ad", p).checked).toBe(true);
-        await kolonPaneliKapat();
+        const secici = await kolonSeciciAc();
+        expect(Array.from(secici.querySelectorAll("[cmdk-item][data-kolon]")).map(i => i.getAttribute("data-kolon"))).toEqual(["il"]);
     });
 
-    it("kart ile kaynak değişince eski kaynağın satırları ANINDA kaybolur, kolonlar/şerit yeni kaynağa döner, önizleme kendiliğinden yenilenir", async () => {
+    it("kaynak değişince eski kaynağın satırları ANINDA kaybolur, kolonlar/şerit yeni kaynağa döner, önizleme kendiliğinden yenilenir", async () => {
         sunucuKur();
         await render();
         expect(satirlar()).toHaveLength(2);
-        yaz(byLabel<HTMLInputElement>("Konu içerir"), "x"); // bekleyen gecikmeli değişiklik
+        const p = await filtreAc("subject");
+        yaz(byLabel<HTMLInputElement>("Konu içerir", p), "x"); // bekleyen gecikmeli değişiklik
 
         // Müvekkil önizlemesi elle çözülür: cevap gelmeden ekranda dava satırı KALMAMALI
         let coz: (() => void) | null = null;
@@ -579,16 +679,16 @@ describe("ReportsPage (G133/G138/G139)", () => {
             }
             throw new Error("beklenmeyen uç: " + url);
         });
-        tikla($("[data-kaynak='muvekkiller']"));
+        await kaynakSec("muvekkiller");
         await bekle(1);
 
         expect(seciliKaynak()).toBe("muvekkiller");
         expect(container.querySelector("tbody")).toBeNull();
         expect(container.textContent).not.toContain("2025/12");
         expect(container.textContent).toContain("Önizleme alınıyor");
-        expect(kolonDugmesi().textContent?.trim()).toBe("Kolonlar (1)");
-        expect(seritAlanlari()).toEqual(["arama", "il"]);
-        expect(container.querySelector("[data-testid='filtre-cipi']")).toBeNull();
+        expect(kolonCipleri()).toEqual(["name"]);
+        expect(filtreCipleri()).toEqual([]);
+        expect(document.body.querySelector("[data-testid='filtre-duzenleyici']")).toBeNull();
         // Yeni kaynak hemen istendi (bekleyen "x" filtresi eski kaynakla gitmedi)
         expect(previewCagrilari()).toHaveLength(2);
         expect(sonPreviewGovdesi().tanim).toEqual({ veri_kaynagi: "muvekkiller", kolonlar: ["name"], filtreler: [], siralama: [] });
@@ -597,6 +697,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         await bekle();
         expect(satirlar()).toEqual([["Ayşe Yılmaz"]]);
         expect($("[data-testid='toplam-rozeti']").textContent).toBe("1 kayıt · 1 kolon");
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("1 kayıt");
     });
 
     it("422 detail.alan/sebep kullanıcıya okunur mesaj olarak gösterilir", async () => {
@@ -609,6 +710,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         const uyari = $("[role='alert']");
         expect(uyari.textContent).toContain("Geçersiz rapor tanımı: filtreler[0].op — liste tipinde contains izinli değil");
         expect(container.querySelector("table")).toBeNull();
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("— kayıt");
     });
 
     it("ağ hatasında tablo boş listeye DÖNMEZ: DataErrorBanner + Tekrar dene; hata döngüye girmez", async () => {
@@ -634,13 +736,14 @@ describe("ReportsPage (G133/G138/G139)", () => {
     });
 
     it("sayfa değişimi `sayfa: 2` gönderir ve SON önizlenen tanımı kullanır (bekleyen taslağı değil)", async () => {
-        vi.useFakeTimers();
         sunucuKur();
         await render();
         expect(container.textContent).toContain("1 / 12");   // 120 kayıt / örnek boyu 10
+        const p = await filtreAc("subject");
+        vi.useFakeTimers();
 
         // Taslağı yazarak değiştir (600 ms bekliyor) — sayfa değişimi yine önizlenen tanımla gitmeli
-        yaz(byLabel<HTMLInputElement>("Konu içerir"), "Taz");
+        yaz(byLabel<HTMLInputElement>("Konu içerir", p), "Taz");
         await tiklaVeBekle(butonBul("İleri"));
         expect(previewCagrilari()).toHaveLength(2);
         const govde = sonPreviewGovdesi();
@@ -661,7 +764,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         await render();
         expect($("[role='alert']").textContent).toContain("bakım");
         expect(toastMocks.error).toHaveBeenCalledTimes(1);
-        expect(container.querySelector("[data-kaynak]")).toBeNull();
+        expect(container.querySelector("[data-testid='tanim-seridi']")).toBeNull();
         expect(previewCagrilari()).toHaveLength(0);
 
         sunucuKur();
@@ -670,7 +773,31 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(previewCagrilari()).toHaveLength(1);
     });
 
-    it("yerleşim: kartlar → şerit → araç çubuğu → tablo; sol sütun yok; kök mx-auto/max-w ile daraltılmaz; dar ekranda kartlar ve tablo kendi içinde kaydırır", async () => {
+    it("anahtar kapalı: asistan satırının yerinde bilgi kartı (sekmenin ilk öğesi); şerit ve tablo çalışır, şablon çubuğu ve indirme yerinde", async () => {
+        sunucuKur();   // `/api/admin/settings` boş → anahtar kapalı
+        await render();
+        const kart = $("[data-testid='asistan-kapali-karti']");
+        expect(kart.textContent).toContain("Rapor asistanı kapalı");
+        expect(kart.textContent).toContain("rapor_asistani");
+        expect($("[data-testid='rapor-sekmesi']").firstElementChild).toBe(kart);
+        expect(container.querySelector("[data-testid='asistan-satiri']")).toBeNull();
+        expect(container.querySelector("[data-testid='asistan-iskelet']")).toBeNull();
+        expect(container.querySelector("[aria-label='Asistana mesaj']")).toBeNull();
+
+        // Şerit yedek kurucu: kolon ekle → hemen önizleme; filtre → önizleme
+        expect(previewCagrilari()).toHaveLength(1);
+        await kolonEkle("status");
+        expect(previewCagrilari()).toHaveLength(2);
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "subject", "status"]);
+        await durumSec("Karar");
+        expect(previewCagrilari()).toHaveLength(3);
+        expect(sonPreviewGovdesi().tanim.filtreler).toEqual([{ alan: "status", op: "eq", deger: "Karar" }]);
+        expect($("#rapor-sablon")).not.toBeNull();
+        expect(butonVar("Excel indir")).toBe(true);
+        expect(butonVar("CSV indir")).toBe(true);
+    });
+
+    it("yerleşim: asistan (kapalı kartı) → şerit → sayaç satırı → tablo; kart/şerit/araç çubuğu yok; kök mx-auto/max-w ile daraltılmaz; dar ekranda satırlar sarar, tablo kendi içinde kaydırır", async () => {
         sunucuKur();
         await render();
         const kok = container.firstElementChild as HTMLElement;
@@ -678,25 +805,31 @@ describe("ReportsPage (G133/G138/G139)", () => {
         expect(kok.className).not.toMatch(/max-w-/);
         expect(container.innerHTML).not.toContain("xl:grid-cols-[320px_1fr]");
 
-        const kartlar = $("[data-testid='kaynak-kartlari']");
-        const serit = $("[data-testid='filtre-seridi']");
-        const cubuk = $("[data-testid='arac-cubugu']");
+        const sekme = $("[data-testid='rapor-sekmesi']");
+        const asistan = $("[data-testid='asistan-kapali-karti']");
+        const s = serit();
+        const sayac = $("[data-testid='sayac-satiri']");
         const tablo = $("table");
-        const onceGelir = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-        expect(onceGelir(kartlar, serit)).toBe(true);
-        expect(onceGelir(serit, cubuk)).toBe(true);
-        expect(onceGelir(cubuk, tablo)).toBe(true);
+        expect(sekme.firstElementChild).toBe(asistan);
+        expect(onceGelir(asistan, s)).toBe(true);
+        expect(onceGelir(s, sayac)).toBe(true);
+        expect(onceGelir(sayac, tablo)).toBe(true);
+        expect(container.querySelector("[data-testid='kaynak-kartlari']")).toBeNull();
+        expect(container.querySelector("[data-testid='filtre-seridi']")).toBeNull();
+        expect(container.querySelector("[data-testid='arac-cubugu']")).toBeNull();
+        expect(container.querySelector("[data-testid='kolon-dugmesi']")).toBeNull();
 
-        // Araç çubuğu: sol kolon düğmesi + şablon, sağ indirme (G143: "Asistan" düğmesi artık yok — satır üstte)
-        expect(cubuk.querySelector("[data-testid='kolon-dugmesi']")).not.toBeNull();
-        expect(Array.from(cubuk.querySelectorAll("button")).map(b => b.textContent?.trim())).not.toContain("Asistan");
-        expect(cubuk.querySelector("#rapor-sablon")).not.toBeNull();
-        expect(Array.from(cubuk.querySelectorAll("button")).map(b => b.textContent?.trim())).toEqual(
-            expect.arrayContaining(["Excel indir", "CSV indir"]),
-        );
+        // Sayaç satırı: sayaç + kompakt şablon çubuğu + Excel/CSV; "Asistan" düğmesi yok
+        expect(sayac.querySelector("[data-testid='kayit-sayaci']")?.textContent).toBe("120 kayıt");
+        expect(sayac.querySelector("#rapor-sablon")).not.toBeNull();
+        expect(sayac.querySelector("[data-testid='sablon-cubugu']")).not.toBeNull();
+        const dugmeler = Array.from(sayac.querySelectorAll("button")).map(b => b.textContent?.trim());
+        expect(dugmeler).toEqual(expect.arrayContaining(["Yükle", "Kaydet", "Excel indir", "CSV indir"]));
+        expect(dugmeler).not.toContain("Asistan");
 
-        // Responsive: kartlar yatay kaydırır (lg altı), tablo kendi sarmalayıcısında kaydırır
-        expect(kartlar.className).toContain("overflow-x-auto");
+        // Responsive: şerit ve sayaç satırı sarar (lg altı), tablo kendi sarmalayıcısında kaydırır
+        expect(s.className).toContain("flex-wrap");
+        expect(sayac.className).toContain("flex-wrap");
         expect(tablo.parentElement?.className).toContain("overflow-x-auto");
     });
 
@@ -709,7 +842,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
             </Routes>
         );
         await render(agac, "/reports");
-        expect(container.querySelector("[data-testid='kaynak-kartlari']")).not.toBeNull();
+        expect(container.querySelector("[data-testid='tanim-seridi']")).not.toBeNull();
         expect(container.querySelector("[data-testid='anasayfa']")).toBeNull();
 
         act(() => root!.unmount());
@@ -718,7 +851,7 @@ describe("ReportsPage (G133/G138/G139)", () => {
         adminMock.value = false;
         await render(agac, "/reports");
         expect(container.querySelector("[data-testid='anasayfa']")).not.toBeNull();
-        expect(container.querySelector("[data-testid='kaynak-kartlari']")).toBeNull();
+        expect(container.querySelector("[data-testid='tanim-seridi']")).toBeNull();
         warn.mockRestore();
     });
 
