@@ -190,6 +190,18 @@ describe("AssistantBar (G143/G167/G174)", () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it("mevcutVarsayilan (12.09): dokunulmamış varsayılan tanım sunucuya mevcut_tanim=null gider; bayrak yokken tanım gider", async () => {
+        fetchMock.mockResolvedValue(akis([{ status: "complete", cevap: "ok", tanim: null, eylem: null }]));
+        await render({ mevcutVarsayilan: true });
+        await gonder("ofis no ve doktor adıyla derdest davalar");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(sohbetGovdesi().mevcut_tanim).toBeNull();
+        await yenidenRender({ mevcutVarsayilan: false });
+        await gonder("telefonu da ekle");
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(sohbetGovdesi().mevcut_tanim).toEqual(MEVCUT);
+    });
+
     it("çipler kaynağa göre; ilk tık girdiye yazar ve odaklar, aynı çipe ikinci tık gönderir (gövde mevcut_tanim ile)", async () => {
         fetchMock.mockResolvedValue(akis([{ status: "complete", cevap: "ok", tanim: null, eylem: null }]));
         await render({ veriKaynagi: "muvekkiller" });

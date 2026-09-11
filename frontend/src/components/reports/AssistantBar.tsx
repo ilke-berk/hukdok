@@ -19,6 +19,10 @@ type AssistantBarProps = {
     veriKaynagi: string;
     /** Oluşturucudaki geçerli tanım; geçersiz/boşken null gider (sunucu 422 yedirmemek için). */
     mevcutTanim: RaporTanimi | null;
+    /** `mevcutTanim` kaynağın DOKUNULMAMIŞ başlangıç tanımıysa true (12.09 bulgusu): sunucuya "mevcut tanım" olarak
+     *  null gider, model isteği sıfırdan kurar — varsayılan kolonlar istenen kolonların üstüne binmez. Yerel yollar
+     *  (onizle yeniden önizleme, şablon kaydı) `mevcutTanim`i yine kullanır. */
+    mevcutVarsayilan?: boolean;
     /** `/chat` 409 döndü — sayfa çubuğu kaldırır (anahtar bu oturumda kapatılmış). */
     onKapali: () => void;
     /**
@@ -68,8 +72,8 @@ export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asi
  * İndirme daima sayfanın `/export` + `kaynak:"asistan"` yolu (K7).
  */
 export function AssistantBar({
-    yukleniyor = false, katalog, veriKaynagi, mevcutTanim, onKapali, onTanimUygula, geriAlinabilir, onGeriAl,
-    onizlemeSonucu = null, onSablonKaydet, onFiltreEkle,
+    yukleniyor = false, katalog, veriKaynagi, mevcutTanim, mevcutVarsayilan = false, onKapali, onTanimUygula, geriAlinabilir,
+    onGeriAl, onizlemeSonucu = null, onSablonKaydet, onFiltreEkle,
 }: AssistantBarProps) {
     const [kayitlar, setKayitlar] = useState<SohbetKaydi[]>([]);
     const [girdi, setGirdi] = useState("");
@@ -230,8 +234,10 @@ export function AssistantBar({
         const controller = new AbortController();
         iptalRef.current = controller;
         try {
-            // Düzeltmeler teyit bekleyen tanım üzerinde: sunucuya "mevcut tanım" olarak o gider.
-            const sonuc = await chatReport(gecmis, bekleyenTanim ?? mevcutTanim, { onInfo: setAkisDurumu }, controller.signal);
+            // Düzeltmeler teyit bekleyen tanım üzerinde: sunucuya "mevcut tanım" olarak o gider; dokunulmamış
+            // varsayılan tanım GİTMEZ (null) — model isteği sıfırdan kurar (`mevcutVarsayilan`).
+            const sunucuTanimi = bekleyenTanim ?? (mevcutVarsayilan ? null : mevcutTanim);
+            const sonuc = await chatReport(gecmis, sunucuTanimi, { onInfo: setAkisDurumu }, controller.signal);
             if (controller.signal.aborted) return;
             const kayit: SohbetKaydi = {
                 id: yeniKayitId(),
@@ -305,7 +311,7 @@ export function AssistantBar({
             setGonderiliyor(false);
             setAkisDurumu(null);
         }
-    }, [girdi, gonderiliyor, kayitlar, bekleyenTanim, mevcutTanim, onTanimUygula, onKapali, kayitEkle, uygulandiIsaretle,
+    }, [girdi, gonderiliyor, kayitlar, bekleyenTanim, mevcutTanim, mevcutVarsayilan, onTanimUygula, onKapali, kayitEkle, uygulandiIsaretle,
         onSablonKaydet, sonucBekle, katalog, veriKaynagi, kaynakBul, listeKaydi]);
 
     /** Kartta "Onayla ve uygula": tanım oluşturucuya konur, önizleme gelir. */

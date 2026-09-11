@@ -28,7 +28,7 @@ import {
     type AsistanEylemi, type Filtre, type Katalog, type KontrolDurumu, type OnizlemeCevabi, type RaporKosuListesi,
     type RaporKosusu, type RaporSablonu, type RaporTanimi,
 } from "@/lib/reports";
-import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi } from "@/lib/reportsChat";
+import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi, tanimAyni } from "@/lib/reportsChat";
 
 // Önizleme bir ÖRNEKTİR (kullanıcı kararı 07.09: "5-10 satırlık örnek + toplam kaç satır olduğu yeter");
 // tam liste Excel/CSV'de. Kullanıcı 10/25/50 arasında değiştirebilir (PreviewTable alt çubuğu).
@@ -271,6 +271,14 @@ const ReportsPage = () => {
     const tanim = useMemo(() => tanimOlustur(durum), [durum]);
     const tanimGecerli = tanimGecerliMi(tanim, kaynak);
     taslakRef.current = tanimGecerli ? tanim : null;
+    // Asistana "mevcut tanım" yalnız kullanıcı dokunmuşsa gider (12.09 bulgusu): sayfa varsayılan kolonlarla dolu
+    // açıldığı için model her isteği "mevcut tanımı değiştir" sayıyor, istenen kolonlar varsayılanların ÜSTÜNE
+    // ekleniyordu. Kaynağın başlangıç tanımına birebir eşitse `mevcutVarsayilan` → AssistantBar sunucuya null yollar,
+    // model isteği sıfırdan kurar; şerit/asistan değişikliği sonrası fark oluşunca yine mevcut tanım gider.
+    const mevcutVarsayilan = useMemo(
+        () => Boolean(tanimGecerli && kaynak && tanimAyni(tanim, tanimOlustur(kaynakIcinBaslangic(kaynak)))),
+        [tanim, tanimGecerli, kaynak],
+    );
 
     const [ornekBoyu, setOrnekBoyu] = useState<number>(VARSAYILAN_SAYFA_BOYU);
     const sayfaBoyu = Math.min(ornekBoyu, katalog?.limitler.onizleme_sayfa_boyu_max ?? ornekBoyu);
@@ -745,6 +753,7 @@ const ReportsPage = () => {
                     katalog={katalog}
                     veriKaynagi={durum.veri_kaynagi}
                     mevcutTanim={tanimGecerli ? tanim : null}
+                    mevcutVarsayilan={mevcutVarsayilan}
                     onKapali={onAsistanKapali}
                     onTanimUygula={asistanTanimiUygula}
                     geriAlinabilir={oncekiTaslak !== null}

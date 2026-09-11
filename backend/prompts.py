@@ -513,9 +513,11 @@ def get_rapor_asistani_instruction(
         "- 'boş', 'girilmemiş', 'henüz yok' → is_null; 'dolu', 'girilmiş', 'verilmiş' → not_null.",
         "- 'in' listesine boş değeri de dahil etmek için '(boş)' öğesini ekle "
         "(örn. 'Ankara ya da ili boş olanlar' → il in ['Ankara','(boş)']).",
-        "- Kolon seçimi: kullanıcı kolon saymadıysa kaynağın varsayılan kolonlarını kullan ve "
-        "isteğinde geçen alanları (filtrelediğin/sıraladığın kolonlar dahil) ekle. "
-        "'avukat adıyla' gibi ifadeler ilgili kolonu listeye ekler.",
+        "- KOLON SEÇİMİ: (a) kullanıcı kolonları SAYDIYSA ('ofis no ve doktor adıyla', 'sadece X ve Y', "
+        "'kolonlar: …') kolon listesi YALNIZ onlardır — varsayılan kolonları ve mevcut tanımdaki kolonları "
+        "EKLEME; filtrelediğin/sıraladığın alan listede yoksa yalnız onu ekle. (b) Kolon saymadıysa kaynağın "
+        "varsayılan kolonlarını kullan ve isteğinde geçen alanları ekle. 'X de olsun', 'X'i ekle' mevcut "
+        "listeye ekler; 'X'i çıkar' çıkarır. 'avukat adıyla' gibi ifadeler ilgili kolonu listeye ekler.",
         "- Kaynak belli ama ayrıntı verilmemişse ('davaları listele', 'müvekkilleri göster') "
         "SORU SORMA: o kaynağın varsayılan kolonlarıyla filtresiz bir tanım üret ve eylem onizle ver.",
         "- Yalnız kaynak anlaşılamıyorsa ya da isteği karşılamak için zorunlu bir bilgi eksikse "
@@ -524,7 +526,10 @@ def get_rapor_asistani_instruction(
         "cevap yalnız sorudur.",
         "- Mevcut tanım verilmişse SIFIRDAN ÜRETME: kullanıcının istediği değişikliği o "
         "tanıma uygula (kolon ekle/çıkar, filtre değiştir, sıralama), gerisini koru. "
-        "Kullanıcı yalnız 'indir'/'Excel ver' derse tanımı aynen döndür ve eylemi ver.",
+        "Kullanıcı yalnız 'indir'/'Excel ver' derse tanımı aynen döndür ve eylemi ver. "
+        "Bu kural DEĞİŞİKLİK istekleri içindir ('… da ekle', '… kaldır', 'nisan değil mart'); kullanıcı YENİ "
+        "bir liste isterse ('… davaları listele', 'bana … ver', 'X'leri göster') kolonları KOLON SEÇİMİ kuralıyla "
+        "sıfırdan kur ve filtreleri yeni isteğe göre yaz — mevcut tanımın kolon/filtrelerini taşıma.",
         "- UYGULAMA: hazırladığın tanım ekranda hemen uygulanır ve düzenlenebilir bir şeritte "
         "görünür; cevabında ne yaptığını 1-2 cümleyle söyle, onay SORMA ('Doğru mu, uygulayayım mı?' "
         "gibi soru YOK). Belirsizlikte (hangi kolon, hangi tarih alanı) tanim=null ve TEK soru. "

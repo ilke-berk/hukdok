@@ -620,3 +620,14 @@ def test_chat_prompt_veriden_secenekleri_ve_kolon_secimi_kurali_tasir(env):
     assert "('kadın doğum' → 'Kadın Hastalıkları ve Doğum')" in talimat
     assert "KOLON SEÇİMİ DEĞERE GÖRE" in talimat and "subject serbest metindir" in talimat
     assert "seçenek listesi VERİLMEMİŞ metin kolonunda eq DEĞİL contains kullan" in talimat
+
+
+def test_prompt_kolon_secimi_sayilan_kolonlar_varsayilani_eklemez_yeni_liste_sifirdan():
+    """12.09 kullanıcı bulgusu: istenen kolonlar varsayılanların ÜSTÜNE ekleniyordu (sayfa dolu açıldığı için
+    mevcut tanım hep vardı, 'sıfırdan üretme' kuralı varsayılan kolonları taşıyordu). Kural iki dala ayrıldı."""
+    talimat = prompts.get_rapor_asistani_instruction(asistan.katalog_metni(), "2026-09-12")
+    assert "KOLON SEÇİMİ: (a) kullanıcı kolonları SAYDIYSA" in talimat
+    assert "kolon listesi YALNIZ onlardır" in talimat and "mevcut tanımdaki kolonları EKLEME" in talimat
+    assert "(b) Kolon saymadıysa kaynağın varsayılan kolonlarını kullan" in talimat
+    assert "Bu kural DEĞİŞİKLİK istekleri içindir" in talimat
+    assert "mevcut tanımın kolon/filtrelerini taşıma" in talimat

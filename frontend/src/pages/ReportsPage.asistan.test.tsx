@@ -502,7 +502,8 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         const g = govde(post[0]);
         expect(Object.keys(g).sort()).toEqual(["mesajlar", "mevcut_tanim"]);
         expect(g.mesajlar).toEqual([{ rol: "user", icerik: "Derdest davaları listele" }]);
-        expect(g.mevcut_tanim).toEqual(VARSAYILAN_TANIM);
+        // Dokunulmamış sayfa (varsayılan tanım) → mevcut_tanim null: model isteği sıfırdan kurar (12.09 bulgusu)
+        expect(g.mevcut_tanim).toBeNull();
 
         const k = konusma();
         expect(k.querySelector("[data-testid='sohbet-kullanici']")?.textContent).toBe("Derdest davaları listele");

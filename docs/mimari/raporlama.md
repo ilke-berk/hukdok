@@ -394,6 +394,12 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   argümansız çağrı eski metinle birebir). Sebep: "konusu kadın doğum" isteği `subject contains "kadın doğum"`
   olmuş, gerçek değer `sub_type = "Kadın Hastalıkları ve Doğum"` → 0 satır; model listeyi görmüyordu. K6 korunur:
   bu listeler her istemciye zaten katalogla gider, satır verisi değil; asistan modülü DB'ye yine dokunmaz.
+  **Varsayılan kolon taşınması (12.09):** sayfa dolu açıldığı için `mevcut_tanim` hep gidiyor, model her isteği
+  "mevcut tanımı değiştir" sayıp istenen kolonları varsayılanların ÜSTÜNE ekliyordu. İki katman: `ReportsPage`
+  `mevcutVarsayilan` (tanım kaynağın `kaynakIcinBaslangic` tanımına `tanimAyni` ile eşitse) → `AssistantBar`
+  sunucuya `mevcut_tanim: null` yollar (bekleyen tanım varsa o gider; yerel yollar `mevcutTanim`i kullanmaya devam
+  eder); prompt "KOLON SEÇİMİ" iki dal — (a) kolon sayıldıysa YALNIZ onlar, (b) sayılmadıysa varsayılan + istenenler —
+  ve "sıfırdan üretme" kuralı yalnız değişiklik istekleri için, yeni liste isteği sıfırdan kurulur.
   Prompt kuralları: "seçenekler:" yazan kolonda değer listeden AYNEN + `eq`/`in`, yaklaşık ifade → en yakın
   seçenek + cevapta söyle; "KOLON SEÇİMİ DEĞERE GÖRE" (değer bir kolonun listesine benziyorsa o kolon, adı
   benzeyen serbest metin kolonu değil); "YAKLAŞIK AD" `contains` kuralı yalnız listesiz metin kolonunda. **G137 katalog alanları
