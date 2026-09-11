@@ -4,13 +4,12 @@ import { useMsal } from "@azure/msal-react";
 import { toast } from "sonner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { ConfirmContext, type ConfirmOptions } from "@/hooks/useConfirm";
+import { MessageSquareOff } from "lucide-react";
 import { Eyebrow, HairlineCard } from "@/components/dashboard/primitives";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
-import { SourceCards } from "@/components/reports/SourceCards";
-import { ColumnSheet } from "@/components/reports/ColumnSheet";
-import { QuickFilters } from "@/components/reports/QuickFilters";
 import { AssistantBar } from "@/components/reports/AssistantBar";
+import { TanimSeridi } from "@/components/reports/TanimSeridi";
 import { PreviewTable } from "@/components/reports/PreviewTable";
 import { TemplateBar, TemplatesTable } from "@/components/reports/TemplateBar";
 import { SaveTemplateDialog, type SablonDiyalogModu, type SablonKunyesi } from "@/components/reports/SaveTemplateDialog";
@@ -18,15 +17,16 @@ import { ExportButtons } from "@/components/reports/ExportButtons";
 import { FavoritePrompt } from "@/components/reports/FavoritePrompt";
 import { RunsTable } from "@/components/reports/RunsTable";
 import {
-    kaynakIcinBaslangic, seritiTemizle, siralamaDongusu, tanimOlustur, tanimdanDurum, type OlusturucuDurumu,
+    filtreEkle, kaynakIcinBaslangic, seritiTemizle, seritteBosOge, siralamaDongusu, tanimOlustur, tanimdanDurum,
+    type OlusturucuDurumu,
 } from "@/components/reports/builderState";
 import {
-    createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, getCatalog, listRuns, listTemplates,
-    previewReport, sablonAdiOner, tanimGecerliMi, updateTemplate,
+    createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, filtredenKontrol, getCatalog, kolonOplari,
+    kontrolDoluMu, listRuns, listTemplates, previewReport, sablonAdiOner, secenekEtiketi, tanimGecerliMi, updateTemplate,
     RAPOR_EXPORT_HATASI, RAPOR_KATALOG_HATASI, RAPOR_KOSU_INDIRME_HATASI, RAPOR_KOSU_LISTE_HATASI, RAPOR_ONIZLEME_HATASI,
     RAPOR_SABLON_KAYIT_HATASI, RAPOR_SABLON_LISTE_HATASI, RAPOR_SABLON_SILME_HATASI, RaporApiError,
-    type AsistanEylemi, type Katalog, type OnizlemeCevabi, type RaporKosuListesi, type RaporKosusu, type RaporSablonu,
-    type RaporTanimi,
+    type AsistanEylemi, type Filtre, type Katalog, type KontrolDurumu, type OnizlemeCevabi, type RaporKosuListesi,
+    type RaporKosusu, type RaporSablonu, type RaporTanimi,
 } from "@/lib/reports";
 import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi } from "@/lib/reportsChat";
 
@@ -55,6 +55,13 @@ const TAB_TRIGGER_CLS =
 
 const ayniTanim = (a: RaporTanimi, b: RaporTanimi) => JSON.stringify(a) === JSON.stringify(b);
 
+/** Yerel takvim günü `YYYY-MM-DD` (şeritteki tarih kısayolları için; `toISOString` UTC kaymasına düşmez). */
+function yerelGun(d: Date): string {
+    const ay = String(d.getMonth() + 1).padStart(2, "0");
+    const gun = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${ay}-${gun}`;
+}
+
 /**
  * Provider dışında (izole render) `useConfirm` fırlatır; App.tsx her sayfayı
  * `ConfirmDialogProvider` ile sarar, yine de sayfa çökmesin diye tarayıcı onayına düşülür.
@@ -74,17 +81,23 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
  * (`paylasimli:false`) + seçili. Şablon çubuğunda kalıcı "☆ Favorilere ekle" (reddi geçersiz kılar) /
  * "★ Kayıtlı: <ad>". Kart tanım değişince kapanır; yalnız Rapor sekmesi ağacındadır.
  *
+ * G175 — SOHBET ÖNCELİKLİ yerleşim (kullanıcı kararı 11.09: "arayüz deli gibi sadeleşsin"). Rapor sekmesi
+ * üç bloktur: `AssistantBar` (tek giriş noktası, G174 davranışı) → `TanimSeridi` (G173; uygulanan tanımın
+ * şeffaf, yerinde düzenlenebilir çip şeridi — kaynak rozeti · kolonlar · filtreler · sıralama · Temizle) →
+ * sayaç satırı ("N kayıt" · kompakt şablon çubuğu · Excel/CSV) → `FavoritePrompt` (koşullu) → `PreviewTable`.
+ * Kaynak kartları, filtre şeridi (`QuickFilters`), "Kolonlar (N)" yan paneli ve `HairlineCard` sarmalı KALKTI.
+ * Sayfa yine dolu açılır (G139: katalog gelince ilk kaynak + varsayılan kolonlar + filtresiz önizleme);
+ * şeritteki her değişiklik `durumDegisti` üzerinden otomatik önizlemeyi tetikler (G138 sözleşmesi).
+ * Anahtar kapalı / 409: sohbet birincil yol olduğundan sayfa boş kalmaz — asistan satırının yerinde tek satırlık
+ * bilgi kartı (`asistan-kapali-karti`), şerit + tablo + şablonlar çalışır (şerit tam bir yedek kurucudur).
+ * Asistanın liste balonunda (G174) tıklanan değer `onFiltreEkle` ile mevcut tanıma filtre olur (op: kolonda
+ * `eq` varsa `eq`, yoksa `contains`; aynı alanın dolu çoklu seçimi varsa değere eklenir).
+ *
  * G143 — asistan ÖN PLANDA (plan §6.1): Rapor sekmesinin ilk öğesi `AssistantBar` (tam genişlik,
- * marka kenarlı satır + inline konuşma); yalnız `rapor_asistani` anahtarı açıkken (anahtar
- * okunana dek iskelet; kapalı/409 → satır yok, manuel akış aynen). Asistan geçerli `tanim`
+ * marka kenarlı satır + inline konuşma); anahtar okunana dek iskelet. Asistan geçerli `tanim`
  * döndürünce `asistanTanimiUygula` tanımı DÜĞME BEKLEMEDEN taslağa koyar, önizleme kendiliğinden
  * yenilenir, toast "Rapor hazırlandı · N kayıt"; uygulamadan önceki taslak `oncekiTaslak`ta —
- * balondaki "Geri al" tek adım geri döner. Eski araç çubuğu düğmesi ve yan panel (`AssistantPanel`) yok.
- *
- * G139 — Rapor sekmesi yerleşimi (plan §4.1): [asistan satırı] → kaynak kartları (SourceCards) →
- * filtre şeridi (QuickFilters) → araç çubuğu (sol: "Kolonlar (N)" yan paneli + şablon çubuğu; sağ:
- * Excel/CSV) → tam genişlik önizleme tablosu. Sol "sorgu kurucu" sütunu YOK; katalog gelince ilk
- * kaynak (Davalar) + varsayılan kolonlar + filtresiz önizleme kendiliğinden yüklenir — sayfa dolu açılır.
+ * balondaki "Geri al" tek adım geri döner.
  *
  * G138 — önizleme OTOMATİKTİR: geçerli taslak son istenenden farklıysa yapısal değişiklikte hemen,
  * yazarak girilen değerde 600 ms sonra ya da odak çıkışında istenir (`gecikmeliRef`); geçersiz
@@ -117,6 +130,8 @@ const ReportsPage = () => {
     const [katalogYukleniyor, setKatalogYukleniyor] = useState(true);
 
     const [durum, setDurum] = useState<OlusturucuDurumu>(BOS_DURUM);
+    // Şeritteki tarih kısayolları için bugün (sayfa ömrü boyunca sabit; gece yarısı geçişi yeniden açılışta düzelir).
+    const [bugun] = useState(() => yerelGun(new Date()));
 
     const [cevap, setCevap] = useState<OnizlemeCevabi | null>(null);
     const [onizlemeHatasi, setOnizlemeHatasi] = useState<string | null>(null);
@@ -401,6 +416,46 @@ const ReportsPage = () => {
         durumDegisti({ ...durum, serit: seritiTemizle(durum.serit, kaynak) });
     };
 
+    /**
+     * G175 — asistanın liste balonunda (G174) tıklanan değer mevcut tanıma filtre olur: op kolonda `eq` varsa
+     * `eq`, yoksa `contains`; kontrol `filtredenKontrol` ile doğal çipe çözülür (liste → çoklu seçim, metin →
+     * tam eşitlik). Aynı alanın DOLU çoklu seçimi varsa değer ona eklenir (`in`); başka dolu kontrol varsa
+     * değeri değişir; yoksa boş yuva/eklenen öğe `filtreEkle` ile doldurulur. Önizleme `durumDegisti` ile
+     * hemen; toast "Filtre eklendi · <kolon>: <değer>". Filtre tavanı dolu ya da alan filtrelenemezse uyarı.
+     */
+    const onFiltreEkle = (alan: string, deger: string) => {
+        const kolon = kaynak?.kolonlar.find(k => k.anahtar === alan);
+        if (!kaynak || !kolon || !kolon.filtrelenebilir) {
+            toast.error("Filtre eklenemedi", { description: `Bu alan filtrelenemez: ${alan}` });
+            return;
+        }
+        const op = kolonOplari(kolon).includes("eq") ? "eq" : "contains";
+        const filtre: Filtre = { alan, op, deger };
+        const etiket = `${kolon.etiket}: ${secenekEtiketi(kolon, deger)}`;
+        const mevcut = durum.serit.find(o => o.durum.alan === alan && kontrolDoluMu(o.durum));
+        let serit = durum.serit;
+        if (mevcut) {
+            const d = mevcut.durum;
+            const yeni: KontrolDurumu = d.kontrol === "coklu_secim"
+                ? { ...d, secili: d.secili.includes(deger) ? d.secili : [...d.secili, deger] }
+                : filtredenKontrol(filtre, kolon, mevcut.sunum);
+            serit = durum.serit.map(o => (o.id === mevcut.id ? { ...o, durum: yeni } : o));
+        } else {
+            const eklenmis = filtreEkle(durum, kolon);
+            const bos = seritteBosOge(eklenmis.serit, alan);
+            if (!bos) {
+                toast.error("Filtre eklenemedi", { description: "Filtre tavanına ulaşıldı — önce bir filtreyi kaldırın." });
+                return;
+            }
+            const cozulen = filtredenKontrol(filtre, kolon, bos.sunum);
+            // Yuvanın sunumuna oturmayan çözüm (ör. var/yok yuvası) gelişmiş çip olarak korunur — filtre kaybolmaz.
+            const yeni: KontrolDurumu = kontrolDoluMu(cozulen) ? cozulen : { kontrol: "gelismis", alan, op, deger };
+            serit = eklenmis.serit.map(o => (o.id === bos.id ? { ...o, durum: yeni } : o));
+        }
+        durumDegisti({ ...durum, serit });
+        toast.success(`Filtre eklendi · ${etiket}`);
+    };
+
     // ---- Tanım yükleme (şablon / koşu) ----
     /**
      * Tanımı oluşturucuya koyar: veri kaynağı katalogda yoksa reddeder; kaynak değişiyorsa
@@ -672,7 +727,7 @@ const ReportsPage = () => {
         toast.error("Rapor asistanı kapalı", { description: ASISTAN_KAPALI_MESAJI });
     }, []);
 
-    // Satır: anahtar okunana dek iskelet (null); kapalı (false) ya da 409 → hiç render yok.
+    // Satır: anahtar okunana dek iskelet (null); kapalı (false) ya da 409 → yerinde bilgi kartı (G175).
     const asistanSatiriGorunur = asistanAnahtari !== false && !asistan409;
 
     const raporSekmesi = katalogHatasi ? (
@@ -682,9 +737,9 @@ const ReportsPage = () => {
             <p className="text-[13px] text-[var(--fg-subtle)]">Rapor kataloğu yükleniyor…</p>
         </HairlineCard>
     ) : (
-        <section data-testid="rapor-sekmesi" className="grid gap-7 min-w-0">
-            {/* 0. Asistan satırı (G143) — anahtar açıkken sekmenin ilk öğesi; inline konuşma altında açılır */}
-            {asistanSatiriGorunur && (
+        <section data-testid="rapor-sekmesi" className="grid gap-5 min-w-0">
+            {/* 0. Asistan satırı (G143/G174) — sekmenin ilk öğesi; anahtar kapalı/409 → tek satırlık bilgi kartı (G175) */}
+            {asistanSatiriGorunur ? (
                 <AssistantBar
                     yukleniyor={asistanAnahtari === null}
                     katalog={katalog}
@@ -696,73 +751,88 @@ const ReportsPage = () => {
                     onGeriAl={asistanGeriAl}
                     onizlemeSonucu={cevap && sonTanim ? { tanim: sonTanim, toplam: cevap.toplam } : null}
                     onSablonKaydet={asistanSablonKaydet}
+                    onFiltreEkle={onFiltreEkle}
+                />
+            ) : (
+                <div
+                    data-testid="asistan-kapali-karti"
+                    role="note"
+                    title={ASISTAN_KAPALI_MESAJI}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 border border-dashed border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[12px] text-[var(--fg-muted)] min-w-0"
+                >
+                    <MessageSquareOff className="w-3.5 h-3.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
+                    <span className="font-medium text-[var(--fg)]">Rapor asistanı kapalı</span>
+                    <span className="min-w-0">
+                        — yönetici panelinden <code className="font-mono text-[11px]">rapor_asistani</code> anahtarını açın.
+                        Tanım şeridi ve tablo çalışmaya devam eder.
+                    </span>
+                </div>
+            )}
+
+            {/* 1. Tanım şeridi (G173) — uygulanan tanım; her düzenleme `durumDegisti` → otomatik önizleme */}
+            {kaynak && (
+                <TanimSeridi
+                    katalog={katalog}
+                    durum={durum}
+                    onChange={durumDegisti}
+                    onHemen={hemenOnizle}
+                    onKaynakSec={onKaynakSec}
+                    bugun={bugun}
                 />
             )}
 
-            {/* 1. Kaynak kartları */}
-            <SourceCards kaynaklar={katalog.veri_kaynaklari} secili={durum.veri_kaynagi} onSec={onKaynakSec} />
-
-            <HairlineCard padded={false} className="min-w-0">
-                {/* 2. Filtre şeridi */}
-                {kaynak && (
-                    <QuickFilters
-                        kaynak={kaynak}
-                        serit={durum.serit}
-                        onChange={(serit, gecikmeli) => durumDegisti({ ...durum, serit }, gecikmeli)}
-                        onHemen={hemenOnizle}
-                    />
-                )}
-
-                {/* 3. Araç çubuğu: sol kolonlar + şablon, sağ indirme */}
-                <div
-                    data-testid="arac-cubugu"
-                    className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5 border-b border-[var(--border)] bg-[var(--bg)]"
+            {/* 2. Sayaç satırı: "N kayıt" · kompakt şablon çubuğu · Excel/CSV (lg altında sarar) */}
+            <div data-testid="sayac-satiri" className="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0">
+                <span
+                    data-testid="kayit-sayaci"
+                    title="Raporun tamamındaki kayıt sayısı; tablo yalnız bir örnek gösterir, tam liste Excel/CSV'de"
+                    className="font-mono text-[11px] tracking-[0.12em] uppercase text-[var(--fg)] font-semibold tabular-nums shrink-0"
                 >
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 flex-1">
-                        {kaynak && <ColumnSheet kaynak={kaynak} secili={durum.kolonlar} onChange={kolonlar => durumDegisti({ ...durum, kolonlar })} />}
-                        <div className="min-w-0 flex-1">
-                            <TemplateBar
-                                sablonlar={sablonlar}
-                                yukleniyor={sablonYukleniyor}
-                                hata={sablonHatasi}
-                                onRetry={sablonlariYukle}
-                                kullanici={kullanici}
-                                seciliId={seciliSablonId}
-                                onSecim={setSeciliSablonId}
-                                onYukle={s => void onSablonYukle(s)}
-                                onKaydet={() => setDiyalog({ mod: "yeni", hedef: null })}
-                                onGuncelle={s => void onSablonGuncelle(s)}
-                                onSil={s => void onSablonSil(s)}
-                                taslakGecerli={tanimGecerli}
-                                isleniyor={sablonIsleniyor}
-                                kayitli={kayitliSablon}
-                                onFavoriEkle={() => favoriOner(tanim, true)}
-                            />
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-auto">
-                        <ExportButtons
-                            tanim={tanim}
-                            aktif={tanimGecerli}
-                            sablonId={exportSablonId}
-                            satirSayisi={onizlenenSatirSayisi}
-                            onIndirildi={onIndirildi}
-                        />
-                    </div>
-                </div>
-
-                {/* 3b. Favori önerisi (G144) — araç çubuğunun altında tek satır; yalnız Rapor sekmesinde (bu ağaç) */}
-                {favoriGorunur && (
-                    <FavoritePrompt
-                        onerilenAd={favoriAdOnerisi}
-                        onEkle={favoriEkle}
-                        onSimdiDegil={favoriReddet}
-                        onKapat={favoriReddet}
-                        kaydediliyor={sablonIsleniyor}
+                    {cevap && !onizlemeHatasi ? `${cevap.toplam.toLocaleString("tr-TR")} kayıt` : onizleniyor ? "sayılıyor…" : "— kayıt"}
+                </span>
+                <div className="min-w-0 flex-1">
+                    <TemplateBar
+                        sablonlar={sablonlar}
+                        yukleniyor={sablonYukleniyor}
+                        hata={sablonHatasi}
+                        onRetry={sablonlariYukle}
+                        kullanici={kullanici}
+                        seciliId={seciliSablonId}
+                        onSecim={setSeciliSablonId}
+                        onYukle={s => void onSablonYukle(s)}
+                        onKaydet={() => setDiyalog({ mod: "yeni", hedef: null })}
+                        onGuncelle={s => void onSablonGuncelle(s)}
+                        onSil={s => void onSablonSil(s)}
+                        taslakGecerli={tanimGecerli}
+                        isleniyor={sablonIsleniyor}
+                        kayitli={kayitliSablon}
+                        onFavoriEkle={() => favoriOner(tanim, true)}
                     />
-                )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                    <ExportButtons
+                        tanim={tanim}
+                        aktif={tanimGecerli}
+                        sablonId={exportSablonId}
+                        satirSayisi={onizlenenSatirSayisi}
+                        onIndirildi={onIndirildi}
+                    />
+                </div>
+            </div>
 
-                {/* 4. Önizleme — tam genişlik */}
+            {/* 2b. Favori önerisi (G144) — sayaç satırının altında tek satır; yalnız Rapor sekmesinde (bu ağaç) */}
+            {favoriGorunur && (
+                <FavoritePrompt
+                    onerilenAd={favoriAdOnerisi}
+                    onEkle={favoriEkle}
+                    onSimdiDegil={favoriReddet}
+                    onKapat={favoriReddet}
+                    kaydediliyor={sablonIsleniyor}
+                />
+            )}
+
+            {/* 3. Önizleme — tam genişlik, kendi çerçevesinde */}
+            <div className="border border-[var(--border)] bg-[var(--bg-elevated)] min-w-0">
                 <PreviewTable
                     cevap={cevap}
                     yukleniyor={onizleniyor}
@@ -778,7 +848,7 @@ const ReportsPage = () => {
                     filtreVar={tanim.filtreler.length > 0}
                     onFiltreleriTemizle={onFiltreleriTemizle}
                 />
-            </HairlineCard>
+            </div>
         </section>
     );
 
@@ -789,7 +859,7 @@ const ReportsPage = () => {
                 <Eyebrow>01 · Raporlar</Eyebrow>
                 <h1
                     className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium"
-                    title="Kaynağı kartla seçin, şeritten süzün; önizleme kendiliğinden yenilenir. Test aşaması — yalnız yöneticiler."
+                    title="Ne istediğinizi asistana yazın ya da tanım şeridinden düzenleyin; önizleme kendiliğinden yenilenir. Test aşaması — yalnız yöneticiler."
                 >
                     Raporlar
                 </h1>

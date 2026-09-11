@@ -334,8 +334,8 @@ describe("ReportsPage favori önerisi (G144)", () => {
         expect(kart()!.textContent).toContain("Bu formatı favorilere");
         expect(kart()!.textContent).toContain("adıyla ekleyeyim mi?");
         expect(adGirdisi().value).toBe("Davalar · Temel");
-        // Kart araç çubuğunun ALTINDA, tablonun üstünde
-        const cubuk = $("[data-testid='arac-cubugu']");
+        // Kart sayaç satırının (şablon + indirme) ALTINDA, tablonun üstünde (G175)
+        const cubuk = $("[data-testid='sayac-satiri']");
         const tablo = $("table");
         const onceGelir = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
         expect(onceGelir(cubuk, kart()!)).toBe(true);
@@ -435,13 +435,18 @@ describe("ReportsPage favori önerisi (G144)", () => {
         expect(kartVar()).toBe(false);
     });
 
-    it("tanım değişince kart kapanır (kaynak kartı); yeni tanımda indirme yeniden sorar, ad yeni kaynağa göre", async () => {
+    it("tanım değişince kart kapanır (şerit kaynak rozeti); yeni tanımda indirme yeniden sorar, ad yeni kaynağa göre", async () => {
         sunucuKur();
         await render();
         await tikla(butonBul("Excel indir"));
         expect(kartVar()).toBe(true);
 
-        await tikla($("[data-kaynak='muvekkiller']"));
+        // G175: kaynak şeritteki rozet menüsünden (Radix DropdownMenu: pointerdown açar, öğe portal'da)
+        await act(async () => {
+            $("[data-testid='serit-kaynak']").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
+        });
+        await bekle();
+        await tikla($("[role='menu'] [data-kaynak='muvekkiller']", document.body));
         expect(kartVar()).toBe(false);
 
         await tikla(butonBul("Excel indir"));

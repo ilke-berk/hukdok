@@ -4,7 +4,8 @@
 // gövdesi §2.4 birebir + dosya adı Content-Disposition'dan; 413 mesajı; geçmiş satırları +
 // dosya_mevcut=false pasif + 410; "Tanımı yükle" oluşturucu state'ini tümüyle değiştirir ve filtreler
 // şeride çözülür (G138: yüklenen tanım otomatik önizlenir, Önizle düğmesi yok); ?tab=.
-// G139: kaynak kartla seçilir, kolonlar yan panelde — seçili kolon kanıtı önizleme gövdesi + "Kolonlar (N)".
+// G175: kaynak şeritteki rozetten, kolonlar şerit çipleri — seçili kolon kanıtı önizleme gövdesi + `serit-kolon-*`
+// çipleri; şablon çubuğu kompakt (Güncelle/Sil "…" menüsünde, Radix portal → document.body).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -301,17 +302,31 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
     const aktifSekme = () => container.querySelector("[role='tab'][data-state='active']")?.textContent?.trim();
     const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
     const sonOnizleme = () => govde(cagrilar("/api/reports/preview", "POST").at(-1)!);
-    /** G139: kaynak kartla seçilir (`role=radio` + `aria-checked`). */
-    const seciliKaynak = () => container.querySelector("[data-kaynak][aria-checked='true']")?.getAttribute("data-kaynak") ?? null;
+    /** G175: kaynak şeritteki rozette (etiket → katalog anahtarı). */
+    const seciliKaynak = () => {
+        const etiket = container.querySelector("[data-testid='serit-kaynak']")?.textContent?.trim();
+        return KATALOG.veri_kaynaklari.find(k => k.etiket === etiket)?.anahtar ?? null;
+    };
     /**
-     * G139: kolon listesi ana ekranda durmaz — seçili kolonların kanıtı SON önizleme gövdesi
-     * (taslak her yapısal değişiklikte kendiliğinden önizlenir) + "Kolonlar (N)" düğme metni.
+     * G175: seçili kolonların kanıtı SON önizleme gövdesi (taslak her yapısal değişiklikte kendiliğinden
+     * önizlenir) + şeritteki kolon çipleri (`serit-kolon-<anahtar>`, sıralı).
      */
     const seciliKolonlar = () => {
         const kolonlar = sonOnizleme().tanim.kolonlar as string[];
-        expect($("[data-testid='kolon-dugmesi']").textContent?.trim()).toBe(`Kolonlar (${kolonlar.length})`);
+        const cipler = Array.from(container.querySelectorAll("[data-testid^='serit-kolon-']"))
+            .filter(e => e.getAttribute("data-testid") !== "serit-kolon-ekle")
+            .map(e => e.getAttribute("data-testid")!.replace("serit-kolon-", ""));
+        expect(cipler).toEqual(kolonlar);
         return kolonlar;
     };
+    /** Kompakt şablon çubuğu: Güncelle/Sil "…" menüsünde (Radix DropdownMenu pointerdown ile açılır, portal'da). */
+    async function sablonMenuSec(islem: "guncelle" | "sil") {
+        await act(async () => {
+            $("[data-testid='sablon-menu']").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
+        });
+        await bekle();
+        await tikla($(`[role='menu'] [data-islem='${islem}']`, document.body));
+    }
 
     it("şablon kaydetme: diyalog gövdesi {ad, aciklama, tanim, paylasimli} gider; şablon seçimde ve listede görünür", async () => {
         sunucuKur();
@@ -364,14 +379,24 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
             "Şablon seçiniz", "Benim şablonum", "Ortak müvekkil listesi · baskasi@lexis.com.tr",
         ]);
 
+        // G175 kompakt çubuk: Güncelle/Sil "…" menüsünde — başkasının şablonunda menü düğmesi HİÇ yok
         sec(secim, "2");
+        expect(container.querySelector("[data-testid='sablon-menu']")).toBeNull();
         expect(butonVar("Güncelle")).toBe(false);
         expect(butonVar("Sil")).toBe(false);
         expect($("[data-testid='paylasimli-rozeti']").textContent).toContain("baskasi@lexis.com.tr");
 
         sec(secim, "1");
-        expect(butonVar("Güncelle")).toBe(true);
-        expect(butonVar("Sil")).toBe(true);
+        expect(container.querySelector("[data-testid='sablon-menu']")).not.toBeNull();
+        await act(async () => {
+            $("[data-testid='sablon-menu']").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
+        });
+        await bekle();
+        expect(Array.from($("[role='menu']", document.body).querySelectorAll("[data-islem]")).map(o => o.getAttribute("data-islem"))).toEqual(["guncelle", "sil"]);
+        await act(async () => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        });
+        await bekle();
         expect(container.querySelector("[data-testid='paylasimli-rozeti']")).toBeNull();
 
         // Tablo: başkasının satırında düzenle/sil yok, yükle var
@@ -513,9 +538,10 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
 
         expect(seciliKaynak()).toBe("muvekkiller");
         expect(seciliKolonlar()).toEqual(["name", "city"]);
-        // city contains İstanbul → hızlı filtre yuvası (metin kontrolü) dolu, çip görünür; operatör seçici yok
-        expect(byLabel<HTMLInputElement>("Şehir içerir").value).toBe("İstanbul");
+        // city contains İstanbul → hızlı filtre yuvası (metin kontrolü) dolu, şeritte çip; gövdeye tık → düzenleyici; operatör seçici yok
         expect(cipler()).toEqual(["Şehiriçerir \"İstanbul\""]);
+        await tikla(byLabel("Şehir filtresini düzenle"));
+        expect(byLabel<HTMLInputElement>("Şehir içerir", document.body.querySelector("[data-testid='filtre-duzenleyici']")!).value).toBe("İstanbul");
         expect(container.querySelector("[aria-label='Operatör']")).toBeNull();
         // Koşunun şablonu yok → seçim boş
         expect($<HTMLSelectElement>("#rapor-sablon").value).toBe("");
@@ -557,7 +583,8 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
         await render();
         const secim = $<HTMLSelectElement>("#rapor-sablon");
         sec(secim, "1");
-        await tikla(butonBul("Sil"));
+        expect(butonVar("Sil")).toBe(false);   // kompakt çubuk: Sil yalnız "…" menüsünde
+        await sablonMenuSec("sil");
         expect((confirmMock.fn.mock.calls[0] as unknown as [{ tone: string }])[0].tone).toBe("destructive");
         expect(cagrilar("/api/reports/templates/1", "DELETE")).toHaveLength(1);
         expect(Array.from(secim.options).map(o => o.value)).toEqual(["", "2"]);
@@ -578,7 +605,8 @@ describe("ReportsPage şablon / indirme / geçmiş (G134/G138)", () => {
         });
         await render();
         sec($<HTMLSelectElement>("#rapor-sablon"), "1");
-        await tikla(butonBul("Güncelle"));
+        expect(butonVar("Güncelle")).toBe(false);   // kompakt çubuk: Güncelle yalnız "…" menüsünde
+        await sablonMenuSec("guncelle");
         const put = cagrilar("/api/reports/templates/1", "PUT");
         expect(put).toHaveLength(1);
         expect(govde(put[0])).toEqual({
