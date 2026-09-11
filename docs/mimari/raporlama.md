@@ -1,13 +1,14 @@
-# Raporlama modülü — kayıt defteri → süz-ve-gör ekranı → önizleme → Excel/CSV export + koşu logu → AI asistan
+# Raporlama modülü — kayıt defteri → sohbet öncelikli ekran (asistan → tanım şeridi → tablo) → Excel/CSV export + koşu logu
 
-> **Son doğrulama: 2026-09-07 · a36e98f** (G140; ilk tur G136 · e31457e). **G166 (2026-09-10) eki: §2.4
-> bağlı kaynak kolonları + §13 sınırlar + §15 test satırı** — o bölümlerdeki satır numaraları yok, işlev adları
-> koddan; G166 öncesi bölümlerin satır numaraları a36e98f'e aittir (registry büyüdü, kaydılar).
-> Her uç adı, env, tablo adı, alan ve limit koddan okunarak yazılmıştır; satır numaraları bu
-> commit'e aittir. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt. Plan/sözleşme dosyası
+> **Son doğrulama: 2026-09-11 · c839fdb** (G177 — sohbet öncelikli ekran G173-G176; kod HEAD'i, bu doküman
+> commit'i onun üstündedir). Bu turda koddan YENİDEN okunan bölümler: giriş şeması, §1, §7 (asistan davranışı),
+> §8 (tamamı), §9, §12, §13, §15, §16 — buradaki satır numaraları c839fdb'ye aittir. Önceki turlar: G140 ·
+> a36e98f (2026-09-07; §2-§6, §10, §11, §14 satır numaraları o commit'e ait), G166 eki (2026-09-10; §2.4
+> satır numarasız, işlev adları koddan). Her uç adı, env, tablo adı, alan ve limit koddan okunarak
+> yazılmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt. Plan/sözleşme dosyası
 > [`docs/plan/raporlama-plani-2026-09-06.md`](../plan/raporlama-plani-2026-09-06.md);
-> planla kod arasındaki farklar §11'de (ilk tur §2 farkları F1-F10, ikinci tur §4 farkları
-> F11-F22) ve planın kendisinde "uygulamada değişti" şerhiyle.
+> planla kod arasındaki farklar §12'de (ilk tur §2 farkları F1-F10, ikinci tur §4 farkları F11-F22,
+> sohbet öncelikli tur F23-F28) ve planın kendisinde "uygulamada değişti" şerhiyle.
 
 Yönetici, DB'den kolon/filtre/sıralama seçerek liste üretir, önizler, Excel ya da CSV indirir;
 her indirme "kim, ne zaman, hangi tanım, kaç satır, hangi dosya" olarak loglanır ve çıktının
@@ -21,28 +22,42 @@ veriyi görmez, sorgu çalıştırmaz. **Test aşamasında yalnız yöneticiler*
 katalogdan gelen filtre şeridi (operatör seçici YOK, op kontrolden türetilir) → "Kolonlar (N)"
 yan paneli → otomatik önizleme → başlıktan sıralama. Katalog bunun için `grup`/`kontrol`/`oplar`/
 `oneriler` (kolon) ve `hizli_filtreler`/`kolon_setleri` (kaynak) alanlarını taşır; dava kaynağında
-taraf bağlantılı dört kolon EXISTS alt sorgusuyla süzülür. **Sunucu sözleşmesi (`RaporTanimi`,
-uç adları, olaylar) DEĞİŞMEDİ** — §4.2/§4.3 yalnız katalog eki + sunum katmanıdır.
+taraf bağlantılı dört kolon EXISTS alt sorgusuyla süzülür.
+
+**Sohbet öncelikli tur (G173-G176, 2026-09-11, kullanıcı kararı "arayüz deli gibi sadeleşsin"):** manuel
+kurucu (kaynak kartları, filtre şeridi, "Kolonlar (N)" yan paneli) KALKTI; sohbet tek giriş noktasıdır. Manuelin
+üç gücü sohbetin ALTINDA korunur: (1) şeffaflık — uygulanan tanım her an **tanım şeridinde** (`TanimSeridi`,
+G173) görünür; (2) düzeltme kanalı — şeritteki her çip yerinde düzenlenir (kaynak rozeti, kolon ×/"+ Kolon",
+filtre çipi → popover'da aynı `FilterControl`, "+ Filtre", sıralama ×, Temizle); (3) değer listeleri — 300 önerili
+combobox çip düzenlemesinde açılır, "hangi mahkemeler var" sorusu Gemini'ye gitmeden katalogdan liste balonu olur
+(G174). Asistanın tanımı **düğme beklemeden uygulanır** (G174; G167 teyit döngüsü geri alındı), prompt buna göre
+"onay sorma" der (G176). Anahtar kapalıyken sayfa boş kalmaz: bilgi kartı + şerit yedek kurucudur (G175).
+**Sunucu sözleşmesi (`RaporTanimi`, uç adları, olaylar) bu turda da DEĞİŞMEDİ** — backend'de yalnız prompt
+cümleleri değişti (`prompts.py`, G176); kontrol↔op çevirisi, `builderState`, katalog aynen.
 
 ```
-Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:550-629 — G139 yerleşimi)
-   SourceCards.tsx (4 kart) → QuickFilters.tsx (şerit: hızlı yuvalar + "Başka alan" + çipler)
-   → araç çubuğu: ColumnSheet.tsx "Kolonlar (N)" yan paneli + TemplateBar + Excel/CSV + Asistan
-   → PreviewTable.tsx (tam genişlik; başlıktan sıralama; "güncelleniyor…")
+Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:740-852 — G175 yerleşimi: sohbet → şerit → tablo)
+   AssistantBar.tsx (tam genişlik, örnek istemler, inline konuşma; :742-755)
+     ‖ anahtar kapalı / 409 → yerinde bilgi kartı `asistan-kapali-karti` (:756-770), şerit + tablo çalışır
+   → TanimSeridi.tsx (:773-782): Davalar ▾ · kolon çipleri · + Kolon · filtre çipleri · + Filtre · ↑/↓ sıralama · Temizle
+   → sayaç satırı `sayac-satiri` (:785-821): "N kayıt" · TemplateBar (kompakt, "…" menüsü) · ExportButtons (Excel/CSV)
+   → [FavoritePrompt (koşullu, :824-832)] → PreviewTable.tsx (:835-851; başlıktan sıralama; "güncelleniyor…")
    │ GET /api/reports/catalog ──▶ registry.katalog()  (kaynaklar · kolonlar · gruplar · kontroller · seçenek/öneri ·
-   │                               hızlı filtreler · kolon setleri · limitler) — tenant anahtarlı 60 sn süreç içi önbellek
+   │                               hızlı filtreler · kolon setleri · ilişkiler · limitler) — tenant anahtarlı 60 sn önbellek
    │ POST /api/reports/preview ─▶ motor.onizle()      (sayfalı, LOGLANMAZ; ekran her geçerli taslak değişiminde ister)
    │ POST /api/reports/export ──▶ COUNT → 413? → report_runs satırı → dosya <RAPOR_CIKTI_DIZINI>/<run_id>-<slug>.<ext>
    │                               → sha256/boyut → tembel temizlik → aynı dosya FileResponse (X-Rapor-Kosu-Id)
    │ GET  /api/reports/runs ────▶ tüm yöneticilerin koşuları;  /runs/{id}/download → saklanan dosya (410 = temizlendi)
    │ /api/reports/templates ────▶ favori şablonlar (kendi + paylaşımlı; soft delete)
    │
-Asistan satırı (AssistantBar.tsx, G143) — yalnız admin anahtarı `rapor_asistani` AÇIKKEN görünür
+Asistan satırı (AssistantBar.tsx, G143 → G174) — admin anahtarı `rapor_asistani` AÇIKKEN; ekranın BİRİNCİL yolu
    │ POST /api/reports/chat ────▶ NDJSON: info → [warning] → complete{cevap, tanim, eylem} | failed{error_ozet, error_kod}
    │                               Gemini JSON şemalı tek atış; `tanim` sunucuda AYNI doğrulamadan geçer (K6)
-   │ G167 TEYİT DÖNGÜSÜ: `tanim` → okunur teyit kartı (AssistantMessage: kaynak · kolon etiketleri · filtre satırları ·
-   │   sıralama; `tanimAyrintisi`), UYGULANMAZ; düzeltme mesajı `mevcut_tanim` = BEKLEYEN tanımla gider;
-   │   onay = kartta "Onayla ve uygula" | "Excel indir" | "CSV indir" | sözle (aynı tanım + eylem, `tanimAyni`)
+   │ G174 OTOMATİK UYGULAMA: `complete.tanim` → `degerEsle` temizse DÜĞMESİZ `onTanimUygula(tanim, eylem ?? "onizle")`
+   │   (AssistantBar.tsx:244-263); kart KISA ("Uygulandı · Davalar · 7 kolon · 2 filtre" + Excel/CSV + Geri al).
+   │   Kart yalnız BEKLER: metin filtre değeri katalog önerisine uymadı (sorun satırı + ≤5 aday çipi + "Yine de uygula")
+   │   ya da sayfa reddetti / Geri al ("Onayla ve uygula"); bekleyen tanım sonraki mesajlarda `mevcut_tanim` olur.
+   │ G174 LİSTE BALONU (Gemini'siz): "hangi mahkemeler var" → `listeNiyeti` → DegerListesi (:214-225); tık → `onFiltreEkle`
    └─ eylem: onizle → /preview · indir_xlsx|indir_csv → /export (kaynak:"asistan")  ← tek indirme = tek log yolu (K7)
 ```
 
@@ -55,12 +70,12 @@ Asistan satırı (AssistantBar.tsx, G143) — yalnız admin anahtarı `rapor_asi
 | Motor | `backend/services/rapor/motor.py` | Tanım doğrulama (tip tablosu + kolon alt kümesi), Core `select` kurma (türetilmişte `filtre_ifadesi`), önizleme, `yield_per` satır akışı |
 | Çıktı | `backend/services/rapor/cikti.py` | xlsx (openpyxl write-only) / csv üretimi, sha256 |
 | Koşu logu | `backend/services/rapor/kosu_logu.py` | `report_runs` yazma yolu, saklama dizini, path denetimi, temizlik |
-| Asistan | `backend/services/rapor/asistan.py` + `backend/prompts.py:449` | Gemini çağrısı, katalog metni (yeni katalog alanları GÖMÜLMEZ), asistan tanımı → `RaporTanimi` çevirisi |
+| Asistan | `backend/services/rapor/asistan.py` + `backend/prompts.py:449` | Gemini çağrısı, katalog metni (yeni katalog alanları GÖMÜLMEZ), asistan tanımı → `RaporTanimi` çevirisi; G176 prompt kuralları "UYGULAMA" / "YAKLAŞIK AD" / "LİSTE SORUSU" (`prompts.py:522-535`) |
 | Uçlar | `backend/routes/reports.py` | `/api/reports/*` (prefix `:62`); katalog önbelleği (`:81-109`); `api.py:487`, `:509` ile kayıtlı — `/api` altında olduğu için `nginx.conf:77` `location /api` yeter, nginx istisnası YOK |
 | Tablolar | `backend/models.py:1350-1432`, `backend/database.py:1050-1064` | `ReportTemplate`, `ReportRun`, migrasyon madde 46 — G137 migrasyon EKLEMEDİ (hepsi sorgu katmanı) |
 | Anahtar / env | `backend/services/app_settings.py:66-79`, `backend/config/settings.py:103-112` | `rapor_asistani` anahtarı; dört env |
-| Frontend — saf katman | `frontend/src/lib/reports.ts`, `frontend/src/components/reports/builderState.ts`, `frontend/src/lib/reportsChat.ts` | Katalog tipleri (`:62-104`), tip↔op ikizi `OP_BY_TIP` (`:207-214`), kontrol↔op çevirisi (`:337-466`), tarih kısayolları (`:519-555`), HTTP; şerit durumu ↔ `RaporTanimi` (`builderState.ts`) |
-| Frontend — ekran | `frontend/src/pages/ReportsPage.tsx`, `frontend/src/components/reports/{SourceCards,QuickFilters,FilterControl,FilterChip,FieldPicker,ColumnSheet,ColumnPicker,PreviewTable,TemplateBar,ExportButtons,RunsTable,AssistantPanel}.tsx`, `frontend/src/components/ui/sheet.tsx` | Route `/reports` (`App.tsx:101-104`, `ProtectedAdminRoute`), Sidebar "Raporlar" (`components/shell/Sidebar.tsx:67`, yalnız yönetici), `/api/reports/` uzun zaman aşımı listesinde (`lib/api.ts:74`, 300 sn `:58`). `ReportBuilder.tsx` ve `FilterRow.tsx` KALDIRILDI (G138/G139) |
+| Frontend — saf katman | `frontend/src/lib/reports.ts`, `frontend/src/components/reports/builderState.ts`, `frontend/src/lib/reportsChat.ts` | Katalog tipleri (`KatalogKolon :72`, `KatalogIliski :134`, `KatalogVeriKaynagi :141`, `Katalog :159`), tip↔op ikizi `OP_BY_TIP` (`:255-261`), kontrol↔op çevirisi (`kontroldenFiltre :489-534`, `filtredenKontrol :544`, `gelismisOplar :615-619`), `tanimGecerliMi` (`:397-414`), tarih kısayolları (`:777-811`), HTTP; şerit durumu ↔ `RaporTanimi` (`builderState.ts`; G173 ek yardımcıları `kolonEkle`/`kolonKaldir`/`filtreEkle`/`seritteBosOge` `:176-209`); asistan istemci mantığı (`reportsChat.ts`: NDJSON okuyucu, `onayNiyeti`, `kaydetNiyeti`, G174 `degerEsle`/`degerAdaylari`/`filtreDegeriDegistir`/`listeNiyeti` `:455-670`) |
+| Frontend — ekran | `frontend/src/pages/ReportsPage.tsx`, `frontend/src/components/reports/{AssistantBar,AssistantThread,AssistantMessage,DegerListesi,TanimSeridi,FilterControl,FilterChip,FieldPicker,SearchBox,ChipSelect,ToggleFilter,PreviewTable,TemplateBar,ExportButtons,FavoritePrompt,SaveTemplateDialog,RunsTable}.tsx`, `ui.ts` (`ls frontend/src/components/reports`, c839fdb) | Route `/reports` (`App.tsx:101`, `ProtectedAdminRoute`), Sidebar "Raporlar" (`components/shell/Sidebar.tsx:67`, yalnız yönetici), `/api/reports/` uzun zaman aşımı listesinde (`lib/api.ts:74`, 300 sn `:58`). **KALDIRILDI (G175):** `SourceCards.tsx` (+test), `QuickFilters.tsx` (+test), `ColumnSheet.tsx` (+test), `ColumnPicker.tsx`, `components/ui/sheet.tsx` (başka kullanıcısı yoktu, G175 raporu `grep` kanıtı). Daha önce: `ReportBuilder.tsx`/`FilterRow.tsx` (G138/G139), `AssistantPanel.tsx` → `AssistantBar` (G143) |
 
 ## 2. Kayıt defteri (registry) — beyaz liste
 
@@ -343,11 +358,11 @@ denetim izi. `tanim` JSON şablon sonradan değişse/silinse de "o gün ne indir
 
 ## 7. Asistan — `POST /api/reports/chat`
 
-Gövde `SohbetIstegi` (`schemas_rapor.py:220-233`): `mesajlar[{rol:"user"|"assistant", icerik}]`
+Gövde `SohbetIstegi` (`schemas_rapor.py:226`): `mesajlar[{rol:"user"|"assistant", icerik}]`
 1-20 adet, içerik 1-4000 karakter, **son mesaj `user`** olmalı; `mevcut_tanim: RaporTanimi|null`.
-Kapı sırası: 403 (yönetici) → 409 (anahtar, gövde ayrıştırılmadan) → 422 (gövde).
+Kapı sırası: 403 (yönetici) → 409 (anahtar, gövde ayrıştırılmadan, `routes/reports.py:412-413`) → 422 (gövde).
 
-Akış (`services/rapor/asistan.py:238-288`):
+Akış (`services/rapor/asistan.py:274-334` `sohbet`):
 
 ```
 {"status":"info","message":"Rapor tanımı hazırlanıyor"}
@@ -357,195 +372,343 @@ Akış (`services/rapor/asistan.py:238-288`):
 ```
 
 `complete`/`failed` SON olaydır; `failed` `analyzer._failed_event` ile üretilir (`analyzer.py:368`),
-etiket sınıflandırması `_hata_esle` (`asistan.py:218-236`; 429/5xx/devre kesici → `gemini_saturated`
-`analyzer._api_error_kod` ile). Route'un beklenmedik istisnası `{"status":"error","message":"Beklenmedik
+etiket sınıflandırması `_hata_esle` (`asistan.py:254`; 429/5xx/devre kesici → `gemini_saturated`
+`analyzer._api_error_kod` `analyzer.py:1427` ile). Route'un beklenmedik istisnası `{"status":"error","message":"Beklenmedik
 hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`, `/process` ile aynı desen).
 
 - **Gemini çağrısı YALNIZ `analyzer._gemini_call_with_retry`** (`analyzer.py:82`; devre kesici +
-  retry + health sayacı tek yerde) — `asistan.py:257`; `analyzer` tembel import edilir çünkü modül
+  retry + health sayacı tek yerde) — `asistan.py:293`; `analyzer` tembel import edilir çünkü modül
   import'u `GEMINI_MODEL_NAME` ister ve CI/lokal testler bu env olmadan `routes.reports`'u yükler
-  (`:76-81`). `config`: `system_instruction` + `response_mime_type="application/json"` +
-  `response_schema=RaporAsistanCevabi` (`:251-255`).
-- **Model (K9):** `get_rapor_model()` (`:64-73`) → `GEMINI_RAPOR_MODEL` boşsa
+  (`_analyzer`, `:79`). `config`: `system_instruction` + `response_mime_type="application/json"` +
+  `response_schema=RaporAsistanCevabi` (`:287-291`).
+- **Model (K9):** `get_rapor_model()` (`:67`) → `GEMINI_RAPOR_MODEL` boşsa
   `case_intake_analyzer.get_intake_model()` (`case_intake_analyzer.py:60`, `GEMINI_INTAKE_MODEL`).
-- **Sistem talimatı** (`prompts.py:449`): katalog `katalog_metni()` ile registry'den üretilir
-  (`asistan.py:86-115`: `## kaynak — etiket: açıklama`, varsayılan kolonlar, `anahtar · etiket · tip[ ·
+- **Sistem talimatı** (`prompts.py:449` `get_rapor_asistani_instruction`; `asistan._talimat :247`): katalog
+  `katalog_metni()` ile registry'den üretilir (`asistan.py:106`; `_kolon_satiri :89`, ilişki başına tek satır
+  `_iliski_satiri :126`: `## kaynak — etiket: açıklama`, varsayılan kolonlar, `anahtar · etiket · tip[ ·
   seçenek|seçenek][ · türetilmiş (filtre yalnız: contains|is_null|not_null; sıralama yok)]`;
   seçenekler yalnız sabit çekirdek, DB'siz), elle kolon listesi YOK. **G137 katalog alanları
   (`grup`, `kontrol`, `oplar`, `oneriler`, `hizli_filtreler`, `kolon_setleri`) BİLEREK gömülmez**
-  (`:100-105`; öneriler 300'e kadar değer = prompt gürültüsü); yeni dört taraf kolonu doğal olarak
-  girer. Bugünün tarihi göreli ifadeler için; `mevcut_tanim` JSON olarak gömülür ("sıfırdan üretme,
-  değiştir"). 07.09 duman testi sonrası kural: kaynak belli ama ayrıntı yoksa SORU SORMA, varsayılan
-  tanım + `eylem=onizle`; yalnız kaynak/zorunlu bilgi eksikse `tanim=null` + tek soru (`prompts.py:500-505`).
-- **Gemini şeması `RaporTanimi` DEĞİL** (`schemas_rapor.py:188-204`): `extra="forbid"`
+  (öneriler 300'e kadar değer = prompt gürültüsü); taraf kolonları ve bağlı kolon ilişki satırları doğal olarak
+  girer. Bugünün tarihi göreli ifadeler için; `mevcut_tanim` JSON olarak prompt SONUNA gömülür ("sıfırdan üretme,
+  değiştir", `prompts.py:519-521`, `:550-555`). 07.09 duman testi sonrası kural: kaynak belli ama ayrıntı yoksa
+  SORU SORMA, varsayılan tanım + `eylem=onizle`; yalnız kaynak/zorunlu bilgi eksikse `tanim=null` + tek soru
+  (`prompts.py:513-518`). **G176 (2026-09-11) — üç kural cümlesi, gerisi aynen:** (1) "TEYİT DÖNGÜSÜ" maddesi
+  → **"UYGULAMA"** (`:522-528`): "hazırladığın tanım ekranda hemen uygulanır ve düzenlenebilir bir şeritte
+  görünür; cevabında ne yaptığını 1-2 cümleyle söyle, onay SORMA ('Doğru mu, uygulayayım mı?' gibi soru YOK).
+  Belirsizlikte (hangi kolon, hangi tarih alanı) tanim=null ve TEK soru"; sözlü onayda ("tamam/evet/doğru/uygula/
+  onayla/göster") tanımı AYNEN döndür + `onizle`, "indir/Excel/CSV" → aynen + indirme eylemi (G167 `onayNiyeti`
+  yolu için kalır), düzeltmede ("telefonu da ekle") mevcut tanımı o kadar değiştir, gerisine dokunma (sondaki
+  "ve yine onay iste" kalktı). (2) **"YAKLAŞIK AD"** (`:529-532`): mahkeme/il/kurum/taraf adı yaklaşık ya da
+  kısaltılmış yazılırsa ("Ankara 3. Ticaret") metin kolonunda `eq` DEĞİL `contains` + en ayırt edici parça; tam
+  liste değerini bilmiyorsan uydurma; kapalı liste (seçenekli) kolonlarında "aynen kopyala" kuralı (`:505-506`)
+  geçerli. (3) **"LİSTE SORUSU"** (`:533-535`): "hangi mahkemeler var", "il seçenekleri neler" → listeyi SEN
+  VEREMEZSİN (veriyi görmüyorsun, K6): `tanim=null`, `eylem=null`; cevapta listeyi ekranda ilgili filtre çipine
+  tıklayarak ya da "hangi <alan>lar var" yazarak görebileceğini söyle — frontend `listeNiyeti` kaçırırsa güvenlik
+  ağı. Bekçi testler `test_g132_rapor_asistani.py::test_prompt_g176_*` (G176 raporu: eski prompt'ta kırmızı).
+- **Gemini şeması `RaporTanimi` DEĞİL** (`schemas_rapor.py:199-204` şerhi): `extra="forbid"`
   `additionalProperties:false` üretir (google-genai 2.11.0 Developer API modunda desteklenmez) ve
   `Filtre.deger: Any` tipsiz özellik olur. Bu yüzden `AsistanTanimi` filtre değerini METİN (`deger`)
   ya da metin listesi (`degerler`, `in`/`between`) taşır; sunucu kolon tipine göre çevirir
-  (`asistan_tanimini_cevir`, `asistan.py:164-181`: mantık `true/false/evet/hayır`, sayı/para `Decimal`,
+  (`asistan_tanimini_cevir`, `asistan.py:200`: mantık `true/false/evet/hayır`, sayı/para `Decimal`,
   tarih strip) ve sonucu **aynı** `RaporTanimi` + `motor.tanimi_dogrula` yolundan geçirir
-  (`tanimi_dogrula`, `:184-194` — K6 tek doğrulama; taraf kolonunda `eq` gibi alt küme dışı op da
+  (`tanimi_dogrula`, `:220` — K6 tek doğrulama; taraf kolonunda `eq` gibi alt küme dışı op da
   burada 422'ye düşer). Geçmezse `warning` + `tanim=null` + `eylem=null` ile yine `complete`
-  (`:270-288`); geçersiz tanım istemciye hiçbir zaman `tanim` olarak gitmez.
+  (`:306-317`, `:334`); geçersiz tanım istemciye hiçbir zaman `tanim` olarak gitmez.
 - **Sunucu koruması (07.09 duman testi):** model `tanim=null` + `eylem` döndürürse eylem düşürülür
-  (WARNING, `:282-287`) — istemci eylemi mevcut tanım üzerinde yürütmesin.
-- **Sohbet geçmişi sunucuda saklanmaz** (K6): istemci `mesajlar`ı taşır; `icerikleri_kur` son 20
+  (WARNING, `:318-323`) — istemci eylemi mevcut tanım üzerinde yürütmesin. Her cevapta INFO teşhis izi
+  (`:326-333`: eylem, kaynak, kolon sayısı, filtre `alan:op` listesi, `mevcut_ile_ayni`, son mesajın ilk 60
+  karakteri — değer yok; G167 dersi).
+- **Sohbet geçmişi sunucuda saklanmaz** (K6): istemci `mesajlar`ı taşır; `icerikleri_kur` (`:234`) son 20
   mesajı `user`/`model` rolüne eşler, baştaki asistan mesajlarını atar (Gemini dizisi kullanıcıyla
-  başlar; `:198-209`). Frontend geçmişi bileşen state'inde tutar, sayfa yenilenince sıfırlanır
-  (`lib/reportsChat.ts:86` `gecmisiKirp` en yeni 20).
+  başlar). Frontend geçmişi `AssistantBar` state'inde tutar (`kayitlar`, `AssistantBar.tsx:74`), sayfa
+  yenilenince sıfırlanır (`lib/reportsChat.ts:87` `gecmisiKirp` en yeni 20; `sohbetGecmisi :275-280` hata ve
+  boş kayıtları düşürür, yerel satırlar geçmişe GİRER).
 - **Asistan DB'ye dokunmaz:** `asistan.py` oturum fabrikası import etmez, satır görmez; `tenant_id`
-  yalnız ERROR log bağlamıdır — tanım tenant filtresini `/preview`/`/export`'ta alır (`:243-244`).
+  yalnız ERROR log bağlamıdır — tanım tenant filtresini `/preview`/`/export`'ta alır (`:279-280`).
 - **Eylem (K7):** `eylem` yalnız öneridir; indirme frontend'in `/export` çağrısıyla `kaynak:"asistan"`
-  olarak yapılır → koşu logunda "Asistan" rozeti (`ReportsPage.tsx:523`, `lib/reports.ts:863`).
-  G138'den beri uygulanan tanım `eylem=null` olsa da otomatik önizlenir; `eylem:"onizle"` aynı tanımda
-  bile yeniden ister (`ReportsPage.tsx:497-537`, §8.4).
-- **Teyit döngüsü (G167, 2026-09-10 — G143'ün otomatik uygulaması KALKTI):** kullanıcı bulgusu "kart yalnız
-  sayı gösteriyor (Kolon 7), teyit/düzeltme/onay yok, indirme karttan olmuyor". `complete` + `tanim` artık
-  uygulanmaz: `AssistantMessage` teyit kartı `lib/reportsChat.tanimAyrintisi(tanim, katalog)` ile kaynak etiketi,
-  kolon etiketleri (bağlı kolon "Müvekkil kartı · Telefon" dahil), filtre satırları "Etiket · op etiketi · değer"
-  (tarih dd.MM.yyyy, `between` "a – b", `in` virgüllü + "(boş)", mantık Evet/Hayır, seçenek etiketi) ve
-  sıralama "Etiket ↓" basar; katalogda olmayan anahtar aynen yazılır. `AssistantBar` `bekleyenTanim` tutar: sonraki
-  mesajlar sunucuya `mevcut_tanim` olarak BEKLEYEN tanımı taşır (düzeltme onu günceller, oluşturucudakini değil).
-  Onay üç yol: "Onayla ve uygula" → `onTanimUygula(tanim, null)`; "Excel indir"/"CSV indir" → `onTanimUygula(tanim,
-  indir_*)` (uygulanır + indirilir, K7 aynı yol; asistan `eylem: indir_*` önerdiyse o düğme birincil ama yine tık
-  bekler); SÖZLE — asistan bekleyen tanımı AYNEN (`tanimAyni`) + eylemle döndürürse hemen yürür (prompt kuralı
-  "TEYİT DÖNGÜSÜ": onay kelimelerinde tanım değişmeden + `onizle`, düzeltmede yalnız istenen alan). `tanim=null` +
-  eylem → bekleyen (yoksa oluşturucudaki) tanımla; soru → yalnız balon. "Geri al" kartı yeniden onay bekleyen
-  hâle döndürür (bekleyen = o tanım). Kart uygulandıktan sonra indirme düğmeleri kalır.
-- **Yerel onay (G167 ek, 10.09 prod dersi):** Deploy #22 sonrası kullanıcı "tamam" yazdı, kart yeniden onay istedi —
-  sunucuda tekrar oynatıldığında Gemini tanımı aynen döndürdü, ama LLM çıktısı her turda birebir garanti değil
-  (`tanimAyni` düşer). Bu yüzden kısa onay/indirme mesajları ARAYÜZDE tanınır (`reportsChat.onayNiyeti`: yalnız
-  onay/indirme/dolgu kelimelerinden oluşan ≤8 kelimelik mesaj → `onizle` | `indir_xlsx` | `indir_csv`; "tamam ama
-  telefonu ekle" gibi başka kelime içeren mesaj → `null`, Gemini'ye gider) ve bekleyen tanım Gemini'ye gitmeden
-  uygulanır/indirilir; sohbete `yerel: true` bir asistan satırı düşer ("Onaylandı, …"), geçmişe de girer. Sözle onayın
-  Gemini yolu (aynen dönen tanım + eylem) onay dışı cümleler için kalır. Sunucu artık her cevapta INFO iz bırakır
-  (`asistan.py`: eylem, kaynak, kolon sayısı, filtre `alan:op` listesi, `mevcut_ile_ayni`, son mesajın ilk 60 karakteri —
-  değer yok) — "tamam" turunda modelin tanımı değiştirip değiştirmediği prod'da buradan okunur.
+  olarak yapılır (`ReportsPage.tsx:671-679`) → koşu logunda "Asistan" rozeti (`RunsTable.tsx:34`,
+  `lib/reports.ts:1121` `KAYNAK_ETIKETLERI`). Uygulanan tanım `eylem=null` olsa da otomatik önizlenir;
+  `eylem:"onizle"` aynı tanımda bile yeniden ister (`asistanTanimiUygula`, `ReportsPage.tsx:646-690`, §8.4).
+- **Otomatik uygulama (G174, 2026-09-11 — G167 teyit döngüsü GERİ ALINDI, kullanıcının 11.09 sadeleşme
+  kararıyla):** G167'nin "kart + Onayla" döngüsü (10.09 bulgusu: "kart yalnız sayı gösteriyor, teyit/düzeltme/onay
+  yok") tanım şeridi (G173) her an ekranda olduğu için gereksiz sürtünme oldu. Kural (`AssistantBar.tsx` `gonder`
+  `complete` işleyicisi, `:244-270`): `sonuc.tanim` varsa — sözle onay (`Boolean(eylem) && tanimAyni(tanim,
+  bekleyenTanim)`, `:246`) ya da `degerEsle(tanim, katalog).temiz` (`:247-248`) → **düğme beklemeden**
+  `onTanimUygula(tanim, eylem ?? "onizle")` (`:250-252`; G143 davranışına dönüş). Başarıda kayıt `uygulandi=true`,
+  "Geri al" kimliği (`uygulandiIsaretle :111-115`), `bekleyenTanim=null`, `sonucBeklenen` (G168 "N kayıt bulundu"
+  satırı aynen, `:99-108`); sayfa reddederse (`false`: kaynak katalogda yok) kart bekler, `bekleyenTanim` = o tanım
+  (`:258-261`). Temiz değilse kayıt `sorunlar` ile bekleyen olur (`:264-269`). Kart iki hâlde
+  (`AssistantMessage.tsx:31-41`): UYGULANMIŞ → KISA (`data-kisa`, tek satır "Uygulandı · <kaynak> · N kolon · M
+  filtre" + Excel/CSV + Geri al, `:149-174`; ayrıntı şeritte); BEKLEYEN → okunur `<dl>` (`tanimAyrintisi`,
+  `reportsChat.ts:341-354`) + sorun satırları + "Onayla ve uygula" (yalnız sorunsuz bekleyen kartta, `:254-263`).
+  Bekleyen tanım varken sonraki mesajlar sunucuya `mevcut_tanim` olarak onu taşır (`AssistantBar.tsx:234`);
+  `tanim=null` + eylem → bekleyen (yoksa oluşturucudaki) tanımla eylem (`:271-285`); soru → yalnız balon (`:286`).
+  "Geri al" (`geriAl :369-378`) kartı yeniden bekleyen hâle döndürür. `indir_*` eylemiyle gelen temiz tanım doğrudan
+  indirilir (K7 aynı yol). Sayfa tarafı DEĞİŞMEDİ: `onTanimUygula` = `asistanTanimiUygula` (§8.4),
+  `oncekiTaslak` + "Geri al" G143'ten beri duruyordu.
+- **Değer eşleme — Gemini'siz, K6 korunur (G174, `lib/reportsChat.ts:455-568`):** öneriler zaten katalogla istemcide;
+  asistan veri görmez, eşleme arayüzde çözülür. `degerEsle(tanim, katalog)` (`:530-550`) yalnız `contains`/`eq` +
+  string değer + kolonun `oneriler` listesi varsa bakar: **`contains` için normalize değer en az bir önerinin ALT
+  DİZESİ** ("Ankara" → "Ankara 3. Asliye Ticaret" temiz), **`eq` için birebir**; `in`/`between`/`ne`/`is_null`/
+  tarih/sayı/mantık, öneri listesi olmayan/boş kolon, katalogda olmayan kolon/kaynak, `katalog=null` daima temiz.
+  Normalize `degerAnahtari` (`:471-478`): trim + `toLocaleLowerCase("tr-TR")` + NFD birleşik işaret temizliği
+  (İ/i̇ U+0307/ş/ç/ğ katlanır) + iç boşluk tekilleştirme. Tutmayan filtre `sorunlar`a `{indeks, alan, deger,
+  adaylar, kesik}` (`DegerSorunu :484-494`) ile düşer; **aday ≤5** (`DEGER_ADAY_MAX=5`, `:461`; `degerAdaylari
+  :505-521`: kelime kesişimi çok→az → ortak önek → katalog sırası; kesişimsiz ve <2 karakter ortak önekli öneri
+  aday değil); `kesik` = kolonun `oneri_kesik` (300 tavanı — aranan değer listede olmayabilir, kart notu
+  `AssistantMessage.tsx:227-231`). Aday çipi (`deger-adayi`, `:210-226`) → `onAdaySec` (`AssistantBar.tsx:332-340`):
+  değer katalog yazımıyla `filtreDegeriDegistir` (`reportsChat.ts:556-568`; **op: kolonda `eq` izinliyse `eq`,
+  yoksa `contains`**, kolon bilinmiyorsa op kalır) ile yazılır, başka sorun kalmadıysa tanım o an uygulanır
+  (`kartiUygula :137-152`), kaldıysa kart kalan adaylarla bekler (iki sorunlu filtrede sırayla). "Yine de uygula"
+  (`yine-de-uygula`, `AssistantMessage.tsx:234-241`; `onYineDeUygula :343-346`) ham tanımı `kayit.eylem ??
+  "onizle"` ile uygular.
+- **Liste balonu — "hangi X'ler var", Gemini'siz (G174):** `gonder` sırası: şablon kaydı (`kaydetNiyeti`) → yerel
+  onay (`onayNiyeti`, yalnız bekleyen tanım varken) → **liste niyeti** → Gemini (`AssistantBar.tsx:164-227`).
+  `listeNiyeti(metin, kaynak)` (`reportsChat.ts:642-670`; kaynak = bekleyen tanımınki, yoksa oluşturucudaki,
+  `:216`): ≤12 kelime; eylem fiili ("kaldır, çıkar, sil, ekle, listele, sırala, değiştir, güncelle, indir, kaydet,
+  uygula, filtrele, oluştur, yap, koy" — `LISTE_EYLEM_KELIMELERI :576-579`) geçen mesaj liste sorusu DEĞİL;
+  kalıplar "hangi … (var/mevcut/kayıtlı)", "… listesi", "… seçenekleri (neler)", "… değerleri", "… neler",
+  "… var mı" (≤4 kelime) (`:647-651`). Kolon çözümü yalnız `oneriler` ya da `secenekler` taşıyan filtrelenebilir
+  kolonlarda (`:657-658`): etiket (bağlı kolonda "·" sonrası parça) + hızlı filtre etiketi + anahtar + eşanlamlı
+  grupları (il/şehir/city, mahkeme/court, durum/status, avukat/lawyer, tür/type/tip, aşama/stage, … `:588-604`),
+  çoğul/iyelik eki düşümü ("iller"→"il", `sozcukBicimleri :610-615`), ≥3 harfli ortak gövde (`bicimUyar
+  :618-622`). En yüksek puanı paylaşanlar döner: 1 → `DegerListesi` balonu (`listeKaydi :123-131`), >1 → "Hangisi?"
+  çipleri (`kolon-adayi`, `AssistantMessage.tsx:132-147`; tık → o kolonun balonu), eşleşme yoksa `null` → mesaj
+  Gemini'ye gider (prompt "LİSTE SORUSU" güvenlik ağı). `DegerListesi.tsx` (`:22-113`): `oneriler` (yoksa
+  `secenekler`), arama kutusu `degerAnahtari` ile süzer, en çok **300** satır (`DEGER_LISTESI_MAX`,
+  `reportsChat.ts:464`), `secenek_sayilari` varsa `SayiRozeti`, `oneri_kesik`/300 aşımı notu; `role="listbox"` +
+  `role="option"` düğmeleri (Tab girer, ok/Home/End gezer, Enter/boşluk seçer). Değer tıkı (`onListeSec`,
+  `AssistantBar.tsx:352-361`): **`onFiltreEkle(alan, hamDeğer)`** verilmişse (G175 bağlar, `ReportsPage.tsx:754`)
+  mevcut tanıma filtre + yerel satır "<Etiket> · <değer> filtre olarak eklendi."; verilmezse girdiye
+  `<Etiket> "<değer>" olanlar` yazılır ve odaklanır. Sayfadaki `onFiltreEkle` (`ReportsPage.tsx:426-457`): op
+  kolonda `eq` varsa `eq`, yoksa `contains`; kontrol `filtredenKontrol` ile doğal çipe çözülür (liste → çoklu seçim,
+  metin → tam eşitlik); aynı alanın DOLU çoklu seçimi varsa değer ona eklenir (`in` — "şunlardan biri", boş sonuç
+  tuzağı önlendi), başka dolu kontrol varsa değeri değişir, yoksa `filtreEkle` + `seritteBosOge` ile boş yuva/
+  eklenen öğe doldurulur (yuvaya oturmazsa gelişmiş çip — filtre kaybolmaz); `durumDegisti` → önizleme hemen;
+  toast "Filtre eklendi · <Kolon>: <değer>"; filtre tavanı / filtrelenemez alan → hata toast'ı. Örnek istemler:
+  kaynak başına üçüncü çip "Hangi mahkemeler/şehirler/belge türleri/aşamalar var?" (`reportsChat.ts:214-235`).
+- **Yerel onay (G167 ek, 10.09 prod dersi — G174'te KORUNDU, yalnız bekleyen tanım varken anlamlı):** Deploy #22
+  sonrası kullanıcı "tamam" yazdı, kart yeniden onay istedi — sunucuda tekrar oynatıldığında Gemini tanımı aynen
+  döndürdü, ama LLM çıktısı her turda birebir garanti değil (`tanimAyni` düşer). Bu yüzden kısa onay/indirme
+  mesajları ARAYÜZDE tanınır (`reportsChat.onayNiyeti :389-404`: yalnız onay/indirme/dolgu kelimelerinden oluşan
+  ≤8 kelimelik mesaj → `onizle` | `indir_xlsx` | `indir_csv`; "tamam ama telefonu ekle" gibi başka kelime içeren
+  mesaj → `null`, Gemini'ye gider) ve bekleyen tanım Gemini'ye gitmeden uygulanır/indirilir
+  (`AssistantBar.tsx:186-212`); sohbete `yerel: true` bir asistan satırı düşer ("Onaylandı, …"), geçmişe de girer.
+  Sözle onayın Gemini yolu (aynen dönen tanım + eylem) onay dışı cümleler için kalır. Otomatik uygulamadan sonra
+  bekleyen tanım yoksa "tamam" normal yoldan Gemini'ye gider (prompt: tanımı aynen döndür + `onizle`).
 - **Sonuç odaklı sohbet + sohbetten şablon kaydı + sınır açıklaması (G168, 2026-09-10 gece):**
-  (1) Uygulama (Onayla / yerel onay / sözle onay; indirmede değil) sonrası sayfanın önizleme sonucu
-  (`onizlemeSonucu = {tanim: sonTanim, toplam: cevap.toplam}`) uygulanan tanıma aitse (`tanimAyni`) sohbete
-  yerel satır düşer: `sonucSatiri` — "3.216 kayıt bulundu." ya da boşta filtre satırları + "hangisini kaldırayım
+  (1) Uygulama (otomatik / Onayla / aday / yerel onay / sözle onay; indirmede değil, `sonucBekle :106-108`)
+  sonrası sayfanın önizleme sonucu (`onizlemeSonucu = {tanim: sonTanim, toplam: cevap.toplam}`,
+  `ReportsPage.tsx:752`) uygulanan tanıma aitse (`tanimAyni`) sohbete yerel satır düşer: `sonucSatiri`
+  (`reportsChat.ts:435-442`) — "3.216 kayıt bulundu." ya da boşta filtre satırları + "hangisini kaldırayım
   ya da genişleteyim?" (asistan veriyi görmez, K6 korunur — sayı önizlemeden). Bir kez, yalnız o tanım için
-  (`sonucBeklenen`). (2) `kaydetNiyeti`: "bunu haftalık rapor olarak kaydet" / "X adıyla kaydet" / "kaydet" /
-  "favorilere ekle" → sayfanın `asistanSablonKaydet`i (`POST /templates`, `favoriEkle` ile aynı gövde; ad yoksa
-  `sablonAdiOner`); bekleyen (yoksa oluşturucudaki) tanım kaydedilir, UYGULANMAZ; Gemini'ye gitmez; yerel satır
-  "'…' adıyla şablonlara kaydedildi". "telefonu kaydet" gibi başka kelimeli mesaj eşleşmez. (3) Prompt: reddederken
-  sebep + alternatif (çoklu bağ kolonu birleşik metin → sıralanamaz, ana kaynak kolonuyla sırala; bağ tek kademe →
-  satırı belge yapıp `dava.*`/`muvekkil.*`).
+  (`sonucBeklenen`). (2) `kaydetNiyeti` (`:417-427`): "bunu haftalık rapor olarak kaydet" / "X adıyla kaydet" /
+  "kaydet" / "favorilere ekle" → sayfanın `asistanSablonKaydet`i (`ReportsPage.tsx:696-715`; `POST /templates`,
+  `favoriEkle` ile aynı gövde; ad yoksa `sablonAdiOner`); bekleyen (yoksa oluşturucudaki) tanım kaydedilir,
+  UYGULANMAZ; Gemini'ye gitmez; yerel satır "'…' adıyla şablonlara kaydedildi". "telefonu kaydet" gibi başka
+  kelimeli mesaj eşleşmez. (3) Prompt: reddederken sebep + alternatif (çoklu bağ kolonu birleşik metin →
+  sıralanamaz, ana kaynak kolonuyla sırala; bağ tek kademe → satırı belge yapıp `dava.*`/`muvekkil.*`;
+  `prompts.py:487-496`).
 
-## 8. Kullanıcı akışı — Rapor sekmesi (G138 + G139, plan §4.1)
+## 8. Kullanıcı akışı — Rapor sekmesi (G173-G175 sohbet öncelikli; temel G138/G139)
 
 Ekran durumu tek doğruluk kaynağı `OlusturucuDurumu = {veri_kaynagi, kolonlar[], serit[], siralama[]}`
-(`builderState.ts:18-23`); sunucu tanımı her render'da `tanimOlustur` ile türetilir (`:127-134`,
-`ReportsPage.tsx:232`) — boş kontroller tanıma GİRMEZ, §2.1 JSON'u değişmez. Tek durum yazma yolu
-`durumDegisti` (`ReportsPage.tsx:304-316`).
+(`builderState.ts:29-34`); sunucu tanımı her render'da `tanimOlustur` ile türetilir (`:158-165`,
+`ReportsPage.tsx:271`) — boş kontroller tanıma GİRMEZ, §2.1 JSON'u değişmez. Tek durum yazma yolu
+`durumDegisti` (`ReportsPage.tsx:372-386`). Şerit semantiği (`SeritOgesi`, `:10-22`) DEĞİŞMEDİ: kaynağın
+`hizli_filtreler` yuvaları boş kontrol olarak açılır (`hizliYuvalar :45-66`; × ile boşa döner, durumda kalır),
+"+ Filtre" ile eklenen alan × ile şeritten kalkar; boş kontrol çip olarak GÖRÜNMEZ.
 
-### 8.1 Kaynak kartları (`SourceCards.tsx`)
+### 8.1 Yerleşim (`ReportsPage.tsx:740-852`, G175)
 
-Dört kart `role="radiogroup"`/`role="radio"` + `aria-checked`, kimlik `[data-kaynak]` (`:29-44`);
-etiket + tek satır `aciklama` (truncate) + simge; `lg` altında yatay kaydırma, `lg`+ 4 sütun (`:32`).
-Kart tıklaması `onKaynakSec` (`ReportsPage.tsx:337-341`): aynı kart = işlem yok; farklı kart →
-`kaynakIcinBaslangic(yeni)` (varsayılan kolonlar + boş hızlı yuvalar + sıralama yok,
-`builderState.ts:54-62`) ve `durumDegisti` kaynak değişimini görür: `reqIdRef` artar (süren istek yok
-sayılır), zamanlayıcı durur, `cevap/hata/sonTanim` ANINDA `null` (`:306-314`) → ekranda hiçbir zaman
-başka kaynağın satırı kalmaz; efekt yeni kaynağın varsayılan tanımını hemen ister.
-**Dolu açılış:** katalog gelince ilk kaynak (Davalar) + varsayılan kolonlar (`katalogYukle`,
-`:157-161`) → otomatik önizleme efekti ilk isteği kendiliğinden atar (madde 6).
+Rapor sekmesi üç bloktur (`section[data-testid=rapor-sekmesi]`, `grid gap-5`, max-w cap YOK — tam genişlik kuralı):
 
-### 8.2 Filtre şeridi (`QuickFilters.tsx`, `FilterControl.tsx`, `FilterChip.tsx`, `FieldPicker.tsx`)
+1. **Asistan satırı** — `AssistantBar` (`:742-755`; §7) ya da anahtar kapalı/409'da yerinde tek satırlık bilgi
+   kartı `asistan-kapali-karti` (`:756-770`, `role="note"`, `title=ASISTAN_KAPALI_MESAJI`: "Rapor asistanı kapalı —
+   yönetici panelinden `rapor_asistani` anahtarını açın. Tanım şeridi ve tablo çalışmaya devam eder."); anahtar
+   okunana dek iskelet (`yukleniyor`, `asistanAnahtari === null`). Karar `asistanSatiriGorunur` (`:731`).
+   `AssistantBar`'a bağlananlar: `onTanimUygula=asistanTanimiUygula`, `onizlemeSonucu`, `onSablonKaydet`,
+   **`onFiltreEkle`** (`:754`, G175 — liste balonu tıkı; §7).
+2. **Tanım şeridi** — `TanimSeridi` (`:773-782`; §8.2): `katalog`, `durum`, `onChange=durumDegisti`,
+   `onHemen=hemenOnizle`, `onKaynakSec` (`:407-411`: aynı kaynak no-op; farklı → `kaynakIcinBaslangic(yeni)`
+   `builderState.ts:69-77`, onay diyaloğu YOK — kart tıklaması gibi; şablon/koşu yüklemesi `tanimiYukle :465-482`
+   onayı aynen), `bugun` (yerel gün `YYYY-MM-DD`, `yerelGun :59-63`; sayfa ömrü boyunca sabit `:134`).
+3. **Sayaç satırı** `sayac-satiri` (`:785-821`, `flex-wrap`, `lg` altında sarar): `kayit-sayaci` (`:786-792`) —
+   son BAŞARILI önizlemeden "N kayıt" (tr-TR binlik), yüklenirken "sayılıyor…", hata varken "— kayıt" ·
+   `TemplateBar` kompakt (`TemplateBar.tsx:65-`, `sablon-cubugu :73`: etiket + seçim (açıklama `title`da) +
+   paylaşım rozeti + "☆ Favorilere ekle"/"★ Kayıtlı: <ad>" (`:101`, `:113`) + Yükle + Kaydet + yalnız sahibinde
+   `sablon-menu` "…" Radix `DropdownMenu` (`:143`; Güncelle `data-islem="guncelle" :158`, Sil `:168`); davranış/
+   prop sözleşmesi aynı) · `ExportButtons` (Excel/CSV; `exportSablonId :280`, `onizlenenSatirSayisi :282`).
+   Altında koşullu `FavoritePrompt` (`:824-832`, G144 aynen).
+4. **Önizleme** — `PreviewTable` ince çerçeveli düz `div` içinde (`:835-851`; `HairlineCard` sarmalı yok; §8.5).
 
-- **Yuvalar:** kaynağın `hizli_filtreler`i sırayla boş kontrol olarak açılır (`hizliYuvalar`,
-  `builderState.ts:34-51`; katalogda olmayan/filtrelenemeyen alan atlanır); tarih yuvasında
-  `alan + alternatifler` alan değiştirici `<select>` (`FilterControl.tsx:58-68`; alternatifler yalnız
-  `kontrol === "tarih_araligi"` ise). Yuva × ile silinmez, boşa döner; "+ Başka alan" ile eklenen
-  şeritten kalkar (`SeritOgesi.hizli`, `:8-16`; `QuickFilters.tsx:53-62`).
-- **Kontroller** (operatör seçici YOK; `FilterControl.tsx:47-53`): `tarih_araligi` = başlangıç +
-  bitiş `<input type=date>` + kısayol `<select>` (Bu yıl · Geçen yıl · Son 30 gün · Son 12 ay;
-  `tarihKisayolu`, `lib/reports.ts:539-555`, `bugun` testte sabit); `coklu_secim` = checkbox'lı açılır
-  liste (`CokluSecim`, `:258-313`, serbest metin YOK, seçenekler katalogdan); `metin_icerir` = düz
-  girdi ya da öneri varsa cmdk combobox (`MetinCombobox`, `:332-378`; liste düz alt-dize ile daralır,
-  `:27-31`); `sayi_araligi` = "en az / en çok" iki `number` girdisi; `mantik` = Hepsi/Evet/Hayır. Her
-  kontrolde "boş olanlar" anahtarı (`:73-84`) değer girdisini kilitler.
-- **Kontrol → op** (`kontroldenFiltre`, `lib/reports.ts:373-408`; plan §4.3 tablosu koddan doğrulandı):
+Kaynak değişince `durumDegisti` (`:376-384`): `reqIdRef` artar (süren istek yok sayılır), zamanlayıcı durur,
+`cevap/hata/sonTanim` ANINDA `null` → ekranda hiçbir zaman başka kaynağın satırı kalmaz; efekt yeni kaynağın
+varsayılan tanımını hemen ister. **Dolu açılış:** katalog gelince ilk kaynak (Davalar) + varsayılan kolonlar
+(`katalogYukle :190-208`, `:196-200`) → otomatik önizleme efekti ilk isteği kendiliğinden atar (§8.4).
+`HairlineCard` yalnız "katalog yükleniyor" (`:736-738`) ve Şablonlar/İndirme geçmişi sekmelerinde kaldı.
+Sayfa başlığı ipucu (`h1 title`, `:862`): "Ne istediğinizi asistana yazın ya da tanım şeridinden düzenleyin…".
 
-  | kontrol | girdi | üretilen filtre | kod |
-  | --- | --- | --- | --- |
-  | `tarih_araligi` | iki uç / yalnız başlangıç / yalnız bitiş / kısayol | `between [b,e]` / `gte` / `lte` | `:379-386` |
-  | `sayi_araligi` | iki uç / yalnız en az / yalnız en çok (JSON number) | `between [a,c]` / `gte` / `lte` | `:387-394` |
-  | `coklu_secim` | 1 seçim / n seçim | `eq` / `in [...]` | `:395-398` |
-  | `metin_icerir` | yazım / combobox seçimi (`tam`) | `contains` / `eq` — **yalnız kolonun `oplar`ında `eq` varsa**, aksi yine `contains` (`FilterControl.tsx:152`) | `:399-403` |
-  | `mantik` | Evet/Hayır | `eq true/false` | `:404-406` |
-  | (her kontrol) "boş olanlar" | — | `is_null` (değersiz) | `:377` |
-  | `gelismis` | çipin "…" menüsü | op olduğu gibi | `:374-376` |
+### 8.2 Tanım şeridi (`TanimSeridi.tsx`, G173)
 
-- **Çipler:** etkin (dolu) kontroller çip satırında `etiket · özet` (`kontrolOzeti`, `:480-513`) ·
-  "…" menüsü · × (`FilterChip.tsx:79-137`). Menü = kolonun `oplar`ı ∖ kontrolün doğal op'ları
-  (`KONTROL_DOGAL_OPLARI`, `gelismisOplar`, `lib/reports.ts:454-466`; ör. `ne`, `not_null`) + metinde
-  "Tam eşitlik" anahtarı (yalnız `oplar`da `eq` varsa, `FilterChip.tsx:59-66`). Gelişmiş op seçilince
-  çip `gelismis` durumuna geçer, değer girdisi `GelismisDeger` (`FilterControl.tsx:424-528`); menüde
-  "Basit kontrole dön". Etkin filtre sayacı, tavan 20'de "Başka alan" pasif (`QuickFilters.tsx:45-47`).
-  "Filtreleri temizle": yuvalar boşa döner, eklenenler kalkar (`:73-81`; aynı kural `seritiTemizle`,
-  `builderState.ts:106-114`, boş sonuç kısayolu için).
-- **"+ Başka alan"** (`FieldPicker.tsx`): cmdk `Command`, `grup` başlıklı, aranabilir (düz alt-dize,
-  `:11-15`); yalnız `filtrelenebilir` ve şeritte olmayan kolonlar (`QuickFilters.tsx:40-43`; tarih
-  alternatifleri de gizli).
-- **Yükleme (şablon / koşu / asistan tanımı):** `tanimdanDurum` (`builderState.ts:71-100`) her filtreyi
-  `filtredenKontrol` (`lib/reports.ts:415-451`) ile çözer: yuva alanına (ya da alternatifine) düşen
-  filtre yuvayı doldurur, kalanlar eklenmiş alan olur; çözülemeyen op `gelismis` çip olur ve
-  KAYBOLMAZ; gelişmiş çip yuvayı ezmez (yuva boş kalır, `:84-89`). Dolu öğeler TANIMDAKİ sırayla
-  önce, boş yuvalar sonra — filtre sırası korunur (şablon eşitliği `JSON.stringify`,
-  `ReportsPage.tsx:55`, `:240-242`). Gidiş-dönüşün tek istisnası tek değerli `in` → `eq` (eş anlamlı).
+Kontrollü bileşen (iç kopya yok; yalnız "hangi popover açık" yereldir, `acikId :103`,
+`kolonSeciciAcik :104`): `<div role="group" aria-label="Rapor tanımı" data-testid="tanim-seridi">`, `flex
+flex-wrap` (`:197`; sarar, sayfa yatay kaydırmaz), açılır paneller `max-w-[min(90vw,28rem)]` (`PANEL_CLS :58`).
+Prop sözleşmesi (`:17-31`, "G175 sayfaya bunu bağlar — DEĞİŞTİRME"):
 
-### 8.3 Kolonlar yan paneli (`ColumnSheet.tsx`, `ColumnPicker.tsx`, `ui/sheet.tsx`)
+```ts
+interface TanimSeridiProps {
+  katalog: Katalog; durum: OlusturucuDurumu;
+  onChange: (durum: OlusturucuDurumu, gecikmeli?: boolean) => void;  // sayfa durumDegisti
+  onHemen: () => void;                                                // odak çıkışı → önizleme hemen
+  onKaynakSec: (anahtar: string) => void;                             // farklı kaynak seçilince
+  bugun?: string;                                                     // YYYY-MM-DD, tarih kısayolları
+  salt?: boolean;                                                     // true → düzenleme kontrolleri gizli
+}
+```
 
-"Kolonlar (N)" düğmesi (`data-testid="kolon-dugmesi"`, `aria-expanded`, `ColumnSheet.tsx:24-40`) sağdan
-`Sheet` açar (`@radix-ui/react-dialog` üzerine shadcn şablonu, yeni npm paketi YOK; portal, `sm:max-w-lg`,
-`:41`). Panelde (`ColumnPicker.tsx`): hazır setler (`kolon_setleri`; katalogda "Temel" yoksa
-`varsayilan_kolonlar`dan üretilir, `:52-59`; tık = seçimi setin SIRASIYLA değiştirir `:141`;
-`aria-pressed` sıra bağımsız aynı küme `:33-37`) → arama → `grup` başlıklı checkbox listesi (grup
-başlığı "tümünü seç": eksikleri tavana kadar ekler / tam seçiliyse kaldırır / kısmi `indeterminate`,
-`:93-104`, `:254-281`) → "Seçili · sıra" (dnd-kit + ↑↓ + × + Temizle, `:195-239`). Tavan 60
-(`TANIM_LIMITLERI.kolon_max`, `:85`). Tip rozeti YOK — tip yalnız satır `title` ipucunda (`:285`).
-Her değişiklik anında sayfaya yazılır → otomatik önizleme (yapısal = hemen); panel kapanınca ek istek
-yok (G139 kararı 1).
+Yedi öğe sırayla (`:196-428`):
 
-### 8.4 Otomatik önizleme (`ReportsPage.tsx:270-298`)
+1. **Kaynak rozeti** `serit-kaynak` (`:198-236`): `"Davalar ▾"` — Radix `DropdownMenu` ile `katalog.veri_kaynaklari`
+   (etiket + açıklama, `data-kaynak`); farklı kaynak → `onKaynakSec(anahtar)`, aynı kaynağa tık no-op (`:226`).
+   `salt` → düz rozet (`:199-203`). Ana kaynak rengi çubuğu (`ANA_KAYNAK_RENGI`, `ui.ts:51`).
+2. **Kolon çipleri** `serit-kolon-<anahtar>` (`:238-263`): etiket; bağlı kolonda (`kolon.bag`) `"<İlişki> · "` öneki
+   (`kolonAdi :63-68` — sunucu etiketi zaten önekliyse ikilenmez) + ayrık renk çubuğu `kaynak-cubugu`
+   (`kaynakRengi`, `ui.ts:65-69`: ilişki sırasına göre `BAG_RENKLERI :54-59`, tema token'ları, renk yalnız
+   ipucu). `×` → `kolonKaldir` (`builderState.ts:189-192`; **son kolon kaldırılamaz**: düğme disabled + "En az bir
+   kolon gerekli", `:253-254`). Sürükle-sırala / ↑↓ bilerek YOK — sıra = ekleme sırası (G173 kararı).
+3. **"+ Kolon"** `serit-kolon-ekle` (`:265-322`): `Popover` + cmdk `Command` (`kolon-secici`; düz alt-dize araması
+   `altDizeFiltresi :34-38`, tr-TR küçük harf, anahtar da `keywords`). En üstte **"Hazır setler"** grubu
+   (`kolon_setleri`; katalogda olmayan/seçilemeyen anahtarlar düşer, boş set listelenmez, `hazirSetler :127-133`;
+   seçince set kolonları tekrarsız EKLENİR — seçimi değiştirmez), sonra `grup` / `"<İlişki> · <grup>"` başlıkları
+   (`kolonGruplari :112-125`, `grupBasligi :70-76`) — yalnız `secilebilir` ve henüz seçilmemiş kolonlar. 60 tavanı
+   (`TANIM_LIMITLERI.kolon_max`; `:108`, `:273-274`: disabled + "En çok 60 kolon"). Ekleme `kolonEkle`
+   (`builderState.ts:176-186`: tekrar/tavan koruması, değişiklik yoksa aynı nesne).
+4. **Filtre çipleri** (`:324-376`): dolu kontroller mevcut `FilterChip` ile (`etiket · özet` · "…" menüsü · ×);
+   G173'ün geriye uyumlu prop'ları `onAc`/`acik` ile çip gövdesi `aria-haspopup="dialog"` düğmesi olur
+   (`FilterChip.tsx:14-19`, `:111-122`) → tık popover'daki düzenleyiciyi açar (§8.3). Aynı anda tek popover.
+   `×` (`ogeKaldir :163-172`): hızlı yuva boş kontrole döner (durumda kalır, çip düşer), eklenen alan şeritten kalkar.
+   Boş öğe yalnız düzenleyicisi açıkken kesik kenarlı **taslak çapa** `serit-filtre-taslak` olarak çizilir
+   (`:344-349`); kapanınca kaybolur, öğe durumda kalır. Çapa `PopoverAnchor`; çapanın kendisine tık dışarı
+   sayılmaz (`onInteractOutside :358-362`; aksi hâlde açık çipe tık kapatıp yeniden açıyordu).
+5. **"+ Filtre"** `serit-filtre-ekle` (`:378-389`): mevcut `FieldPicker` (`etiket="Filtre"`, `alan-secici`;
+   `FieldPicker.tsx:32`, `:22-25` isteğe bağlı `etiket`/`title`). Liste = `filtrelenebilir` ve **dolu filtresi
+   olmayan** alanlar (`filtreEklenebilir :148-154`; boş hızlı yuvalar görünmez olduğundan listede KALIR — seçilince
+   yeni öğe eklenmez, yuvanın düzenleyicisi açılır); bağlı kolonlar "+ Kolon" ile aynı önekli grup başlığında.
+   Seçim `filtreAlaniSec` (`:174-181`) → `filtreEkle` (`builderState.ts:200-204`: `eklenenOge(bosKontrol(kolon))`,
+   `hizli:false`; aynı alanda boş öğe varsa ya da 20 dolu filtre varsa eklemez — idempotent) + `seritteBosOge`
+   (`:207-209`) ile düzenleyici açık gelir; doldurulmadan kapatılırsa çip yok. 20 tavanı (`filtre_max`; `:147`,
+   `:384-385`: disabled + "En çok 20 filtre"). Aynı alanda ikinci filtre yalnız asistan/şablon yolundan gelir; çip
+   olarak yine görünür/düzenlenir.
+6. **Sıralama çipleri** `serit-siralama-<alan>` (`:391-413`): `"↑ Etiket"` / `"↓ Etiket"` (`data-yon`), `×` sıralamayı
+   düşürür. Ekleme yolu tablo başlığı (§8.5); şeritte "+ Sıralama" YOK.
+7. **Temizle** `serit-temizle` (`:415-427`): `onChange(kaynakIcinBaslangic(kaynak))` — filtreler boş, kolonlar
+   kaynağın varsayılanı, sıralama boş, kaynak DEĞİŞMEZ; onay yok (geri al sayfanın işi değil). Zaten temizken
+   disabled (`zatenTemiz :185-187`).
+
+`builderState.ts` yardımcıları: mevcut `kaynakIcinBaslangic :69-77`, `tanimdanDurum :101-131`, `seritiTemizle
+:137-145` (boş sonuç kısayolu `onFiltreleriTemizle`, `ReportsPage.tsx:414-417`), `seritFiltreleri :148-155`,
+`tanimOlustur :158-165`, `siralamaDongusu :215-223` — imzaları DEĞİŞMEDİ; G173 ekleri `kolonEkle`, `kolonKaldir`,
+`filtreEkle`, `seritteBosOge` (`:167-209`, saf, kataloğa bakmaz).
+**Yükleme (şablon / koşu / asistan tanımı):** `tanimdanDurum` her filtreyi `filtredenKontrol` (`lib/reports.ts:544`)
+ile yuvanın `sunum`una göre çözer: yuva alanına (ya da alternatifine) düşen filtre yuvayı doldurur, kalanlar eklenmiş
+alan olur; çözülemeyen op `gelismis` çip olur ve KAYBOLMAZ; gelişmiş çip yuvayı ezmez (`yuvayaUyarMi :83-88`,
+`:112-120`). Dolu öğeler TANIMDAKİ sırayla önce, boş yuvalar sonra — filtre sırası korunur (şablon eşitliği
+`JSON.stringify`, `ReportsPage.tsx:56`, `:280`, `:284`). Gidiş-dönüşün tek istisnası tek değerli `in` → `eq`.
+
+### 8.3 Çip düzenleme popover'ı (`FilterControl.tsx` yeniden kullanımı) — kontrol → op tablosu
+
+Filtre çipine tık → `Popover` (`filtre-duzenleyici`, `data-alan`; `TanimSeridi.tsx:352-373`) içinde **mevcut
+`FilterControl`** (`FilterControl.tsx:67`; aynı `SeritOgesi`, `onChange=(d, gecikmeli) => ogeDegistir(...)`
+`:156-157`, `onHemen`, `bugun`). Kontrol mantığı DEĞİŞMEDİ (operatör seçici YOK): tarih yuvasında `alanSecenekleri`
+alan değiştirici `<select>` (`:88-100`; alternatifler yalnız `kontrol === "tarih_araligi"`); `tarih_araligi`
+(`:115`) = başlangıç + bitiş `<input type=date>` + kısayol (Bu yıl · Geçen yıl · Son 30 gün · Son 12 ay;
+`tarihKisayolu` `lib/reports.ts:797-811`, `isoGun :787`, `bugun` testte sabit); `sayi_araligi` (`:126`) = "en az /
+en çok"; `coklu_secim` (`:151`, `CokluSecim :301`) = aranabilir açılır liste, serbest metin YOK, sonda "Boş"
+(`:285`); `metin_icerir` (`:170-197`) = düz girdi ya da öneri varsa cmdk combobox (`MetinCombobox :490`; 300
+öneri, kesikte başlık "İlk 300 değer (liste kesildi)" `:519`); **yazım `onChange(..., true)` = gecikmeli**
+(`:179`, `:190`), combobox seçimi hemen ve `tam: kolon.oplar.includes("eq")` (`:180`); `mantik` (`:198`) =
+Hepsi/Evet/Hayır; `gelismis` (`:210`, `GelismisDeger :588`). Tarih/sayı/metin kontrolünde girdinin sağında "Boş"
+toggle çipi (`is_null` izinli kolonda; `:229`, `:479` — açıkken girdi kilitli). Odak çıkışı `onHemen`; popover
+kapanışı da blur ürettiğinden bekleyen gecikmeli önizleme kapanışta atılır.
+
+**Kontrol → op** (`kontroldenFiltre`, `lib/reports.ts:489-534`; plan §4.3 tablosu — sunucu sözleşmesi AYNEN,
+satırlar c839fdb'de yeniden okundu):
+
+| kontrol | girdi | üretilen filtre | kod |
+| --- | --- | --- | --- |
+| `gelismis` | çipin "…" menüsü | op olduğu gibi (`deger` yalnız taşıyan op'ta) | `:491-492` |
+| `tarih_araligi` | iki uç / yalnız başlangıç / yalnız bitiş / kısayol | `between [b,e]` / `gte` / `lte` | `:493-501` |
+| `sayi_araligi` | iki uç / yalnız en az / yalnız en çok (JSON number) | `between [a,c]` / `gte` / `lte` | `:502-510` |
+| `coklu_secim` | 1 seçim / n seçim / yalnız "Boş" | `eq` / `in [...]` (`null` = "Boş" öğesi) / `is_null` | `:511-517` |
+| `metin_icerir` | yazım / combobox seçimi (`tam`) | `contains` / `eq` — **yalnız kolonun `oplar`ında `eq` varsa**, aksi yine `contains` (`FilterControl.tsx:180`) | `:518-523` |
+| `mantik` | Evet/Hayır | `eq true/false` | `:524-526` |
+| `var_yok` (§5.3 sunum) | var / yok / hepsi | `gte 1` / `eq 0` / yok | `:527-530` |
+| `bos_anahtari` (§5.3 sunum) | açık | `is_null` | `:531-532` |
+| (tarih/sayı/metin) "Boş" çipi | — | `is_null` (değersiz) | `:494`, `:503`, `:519` |
+
+**"…" menüsü** (`FilterChip.tsx:50-86`): kolonun `oplar`ı ∖ kontrolün doğal op'ları (`KONTROL_DOGAL_OPLARI`
+`lib/reports.ts:601-609`, `gelismisOplar :615-619`; ör. `ne`, `not_null`) + metinde "Tam eşitlik" anahtarı
+(yalnız `oplar`da `eq` varsa, `:67-74`). Gelişmiş op seçilince çip `gelismis` durumuna geçer (`GelismisDeger`);
+menüde "Basit kontrole dön" (`:63-65`, yuvanın sunumuyla boş kontrol). Çip özeti `kontrolOzeti` (`:639-`).
+
+### 8.4 Otomatik önizleme (`ReportsPage.tsx:338-356`) — mekanizma DEĞİŞMEDİ, tetik artık şerit
 
 Efekt her `tanim` değişiminde: kaynak yok ya da taslak geçersizse (`tanimGecerliMi`,
-`lib/reports.ts:309-325` — kolon 1-60 tekrarsız, filtre ≤20, sıralama ≤3, her filtre kolon bazında
+`lib/reports.ts:397-414` — kolon 1-60 tekrarsız + `secilebilir`, filtre ≤20, sıralama ≤3, her filtre kolon bazında
 `filtrelenebilir` + `oplar` + `filtreTamamMi`, her sıralama `siralanabilir`) istek GİTMEZ; taslak son
-İSTENEN'le (`sonIstenenRef`, hata dönse de) aynıysa istek yok; yapısal değişiklik (kolon, kaynak, seçim,
-tik, kısayol, sıralama) → hemen; yazarak girilen değer (`onChange(..., true)`: tarih/sayı/metin girdileri)
-→ `ONIZLEME_GECIKME_MS = 600` (`:37`; her tuşta yeniden başlar) ya da odak çıkışında `hemenOnizle`
-(`:291-298`). Yarış koruması `reqIdRef` (`:117`, `:244-261`). Sayfa değişimi son BAŞARIYLA önizlenen
-tanımla (`sonTanim`, `:318-321`). "Bayat" rozeti ve Önizle düğmesi YOK; tabloda "güncelleniyor…"
-(`PreviewTable.tsx:72-81`), geçersiz taslakta son geçerli önizleme ekranda kalır + "taslak eksik" ipucu
-(`:62-71`), hata `DataErrorBanner` + "Tekrar dene" (`onRetry`, `ReportsPage.tsx:323-329`, hata anındaki
-tanımla). Asistan tanımı `asistanTanimiUygula` (`:497-537`; G167'den beri yalnız kartın Onayla/İndir düğmesi ya da
-sözle onayla çağrılır, asistan cevabı tek başına çağırmaz): `eylem=null` → otomatik önizleme;
-`onizle` → `sonIstenenRef=null` ile aynı tanımda bile yeniden ister (`:516-520`); `indir_*` →
-`/export` `kaynak:"asistan"` (`:521-526`).
+İSTENEN'le (`sonIstenenRef :146`, hata dönse de) aynıysa istek yok; yapısal değişiklik (kolon ×/ekle, kaynak,
+liste seçimi, tik, kısayol, sıralama, şerit Temizle, çip ×) → hemen; yazarak girilen değer (`onChange(..., true)`:
+popover'daki tarih/sayı/metin girdileri, §8.3) → `ONIZLEME_GECIKME_MS = 600` (`:38`; her tuşta yeniden başlar) ya
+da odak çıkışında `hemenOnizle` (`:358-366`). Yarış koruması `reqIdRef` (`:144`, `onizlemeAl :296-320`). Sayfa
+değişimi son BAŞARIYLA önizlenen tanımla (`sonTanim`, `onSayfa :388-391`); örnek boyu (10/25/50) değişince 1.
+sayfadan yenilenir (`:322-329`). "Bayat" rozeti ve Önizle düğmesi YOK; tabloda "güncelleniyor…"
+(`PreviewTable.tsx:75-84`), geçersiz taslakta son geçerli önizleme ekranda kalır + "taslak eksik" ipucu
+(`:65-74`), hata `DataErrorBanner` + "Tekrar dene" (`onRetry`, `ReportsPage.tsx:393-399`, hata anındaki tanımla).
+**Asistan tanımı** `asistanTanimiUygula` (`:646-690`; G174'ten beri `AssistantBar` `complete` işleyicisi DÜĞMESİZ
+çağırır — ayrıca aday çipi, "Yine de uygula", kart Onayla/İndir, yerel/sözle onay): `tanimdanDurum` → `durumDegisti`,
+`oncekiTaslak` = önceki durum ("Geri al" tek adım, `asistanGeriAl :718-722`; her başka taslak yazımı düşürür
+`:375`), şablon seçimi düşer; geçersiz tanım yine konur + hata toast'ı (`:659-664`); `eylem=null` → otomatik
+önizleme; `onizle` → `sonIstenenRef=null` ile aynı tanımda bile yeniden ister (`:665-670`); önizleme gelince
+"Rapor hazırlandı · N kayıt" toast'ı (`asistanToastRef :188`, `:305-309`); `indir_*` → `/export`
+`kaynak:"asistan"` + favori önerisi (`:671-689`).
 
-### 8.5 Önizleme tablosu ve sıralama (`PreviewTable.tsx`)
+### 8.5 Önizleme tablosu ve sıralama (`PreviewTable.tsx`) — DEĞİŞMEDİ
 
-Sayaç `"N kayıt · M kolon"` (`:59`, tr-TR binlik). `siralanabilir` başlıklar düğme (`aria-sort`, ok,
-çok alanlıda sıra numarası, ipucu döngünün sonraki adımı; `:117-153`); tık → `siralamaDongusu`
-(`builderState.ts:140-148`): yok → artan → azalan → kaldır, tavan 3, dördüncüde EN ESKİ düşer.
-Türetilmiş kolon başlığı tıklanmaz (`siralanabilirMi`, `ReportsPage.tsx:334`). Boş sonuçta
-(`data-testid="bos-sonuc"`, `:100-111`): filtre varken "Bu filtrelerle kayıt yok — filtreleri
-gevşetin." + "Filtreleri temizle" kısayolu (`onFiltreleriTemizle`, `ReportsPage.tsx:344-347`),
-filtresizken "Bu kaynakta kayıt yok.". Sayfalayıcı `sayfa / toplamSayfa` (`:184-213`).
+Başlıkta toplam rozeti `"N kayıt · M kolon"` (`toplam-rozeti`, `:56-64`, tr-TR binlik; sayaç satırındaki
+"N kayıt" ile ekranda iki kez görünür — §13 NOT). `siralanabilir` başlıklar düğme (`aria-sort`, ok, çok alanlıda
+sıra numarası, ipucu döngünün sonraki adımı; `:120-156`); tık → `onSirala` → `siralamaDongusu`
+(`builderState.ts:215-223`): yok → artan → azalan → kaldır, tavan 3, dördüncüde EN ESKİ düşer; sıralama şeritte
+çip olarak da görünür (§8.2 madde 6). Türetilmiş/çoklu bağ kolon başlığı tıklanmaz (`siralanabilirMi`,
+`ReportsPage.tsx:404`). Boş sonuçta (`bos-sonuc`, `:103-114`): filtre varken "Bu filtrelerle kayıt yok —
+filtreleri gevşetin." + "Filtreleri temizle" kısayolu (`onFiltreleriTemizle`, `ReportsPage.tsx:414-417` —
+`seritiTemizle`: yuvalar boşa döner, eklenenler kalkar; kolon/sıralama DOKUNULMAZ, şerit Temizle'den farkı bu),
+filtresizken "Bu kaynakta kayıt yok.". Alt çubuk: örnek boyu `<select>` 10/25/50 (`ORNEK_BOYU_SECENEKLERI :32`,
+`:189-203`) + sayfalayıcı `sayfa / toplamSayfa` (`:204-226`). Hücreler `hucreBicimle` (tarih dd.MM.yyyy, para
+tr-TR, `null` "—"; sayı/para sağa yaslı).
 
 ## 9. Admin anahtarı — `rapor_asistani`
 
 `SETTINGS_REGISTRY["rapor_asistani"]` (`services/app_settings.py:66-75`): label "Rapor asistanı (AI)",
-**varsayılan KAPALI** (`default: False` — Gemini maliyetli özellikler repo kültüründe kapalı doğar;
-`client_notice_enabled`, `veri_teslim_otomasyonu` gibi). Okuma `rapor_asistani_etkin()` (`:178-180`);
+**varsayılan KAPALI** (`default: False`, `:67` — Gemini maliyetli özellikler repo kültüründe kapalı doğar;
+`client_notice_enabled`, `veri_teslim_otomasyonu` gibi). Okuma `rapor_asistani_etkin()` (`:178`);
 `GET/PUT /api/admin/settings` (`routes/admin.py:50`, `:56`) ile panelden açılır — Yönetim →
-Özellikler kartı registry'den otomatik listeler. Kapalıyken `/chat` 409, araç çubuğundaki "Asistan"
-düğmesi HİÇ render edilmez (`ReportsPage.tsx:541`, `:598-610`; frontend `raporAsistaniAcikMi()`
-`GET /api/admin/settings`'i okur, hata/kayıt yok → false, sessiz; `lib/reportsChat.ts:196`).
-**Manuel rapor anahtardan bağımsızdır**: katalog, önizleme, export, şablonlar açık/kapalı fark
-etmez. Varsayılanı AÇIK yapmak tek satırdır (`app_settings.py:46-47`).
+Özellikler kartı registry'den otomatik listeler. Kapalıyken `/chat` 409 (`routes/reports.py:412-413`).
+
+**Sohbet artık ekranın BİRİNCİL yoludur (G175) — kapalıyken sayfa boş KALMAZ:** frontend
+`raporAsistaniAcikMi()` `GET /api/admin/settings`'i okur (hata/kayıt yok → false, sessiz;
+`lib/reportsChat.ts:197-207`); anahtar `false` ya da `/chat` 409 (`asistan409`, `ReportsPage.tsx:184`,
+`:724-728`) → `AssistantBar` yerine tek satırlık bilgi kartı `asistan-kapali-karti` (`:730-731`, `:756-770`:
+"Rapor asistanı kapalı — yönetici panelinden `rapor_asistani` anahtarını açın. Tanım şeridi ve tablo çalışmaya
+devam eder."); **tanım şeridi tam bir yedek kurucudur** — kaynak, kolon, filtre (300 önerili combobox dahil),
+sıralama şeritten düzenlenir; önizleme, export, şablonlar, indirme geçmişi anahtardan bağımsız çalışır (test:
+`ReportsPage.test.tsx` "anahtar kapalı: bilgi kartı + şerit/tablo/şablon/indirme çalışır"). Kullanıcı bunu bilerek
+kabul etti (G175 hedefi: "yedek bedavaya geliyor"). Anahtar yeniden açılınca sayfa yenilemesi gerekir (§13).
+**Prod durumu:** anahtar Deploy #21 (2026-09-10) ile prod'da AÇILDI (bellek notu; koddan doğrulanamaz —
+`GET /api/admin/settings` ya da Yönetim → Özellikler kartından bakılır). Uyarı: anahtar kapatılırsa kullanıcılar
+birincil yolu kaybeder, yalnız şeritle çalışır — kapatma kararı bilinçli olmalı. Varsayılanı AÇIK yapmak tek
+satırdır (`app_settings.py:46-47` yorumu, `:67`).
 
 ## 10. Env'ler (`config/settings.py:103-112`, `.env.example:55-66`)
 
@@ -592,7 +755,8 @@ Plan dosyasında aynı şerhle işaretlidir. **İlk tur — §2 sözleşmesi (G1
 | F10 | §2.6 olay listesi | route'un beklenmedik istisnası `{"status":"error","message"}` (`routes/reports.py:420-426`) | sözleşme dışı, `/process` deseni |
 
 **İkinci tur — §4 (G137-G139):** dış sözleşme yine değişmedi; farklar katalog eki, sunum katmanı
-kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
+kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır. (F16/F19/F20/F21'deki `QuickFilters`,
+`ColumnPicker`, `ui/sheet.tsx` G175'te SİLİNDİ — satırlar tarihsel, bkz. F23.)
 
 | # | Plan §4 | Kod | Sonuç |
 | --- | --- | --- | --- |
@@ -607,7 +771,19 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
 | F19 | §4.1 madde 3 "shadcn `Sheet`" | `components/ui/sheet.tsx` `@radix-ui/react-dialog` üzerine yerel şablon, yeni paket yok; kenar sınıfları düz tablo | `package.json` değişmedi |
 | F20 | §4.1 madde 3 kolon paneli | değişiklik panel açıkken ANINDA önizlenir (kapanışta toplu değil); `max-w-[1600px]` kaldırıldı (tam genişlik kuralı) | G139 kararları 1, 3 |
 | F21 | §4.1 madde 7 metin azaltma | kaynak açıklaması yalnız kartta; sayfa başlığı ipucu `h1 title`; tip rozetleri kalktı ama `ColumnPicker` satır ipucu türetilmiş kolonda hâlâ "filtrelenemez, sıralanamaz" yazar (`ColumnPicker.tsx:285`) — taraf kolonlarında yanlış | frontend kapsamı, §13 NOT |
-| F22 | §4.1 madde 5 "yalnız geçerli tanımda" | geçersiz taslakta SON GEÇERLİ önizleme ekranda kalır + "taslak eksik" ipucu; boşa düşürülmez (`PreviewTable.tsx:62-71`) | kullanıcı verisiz kalmaz, istek gitmez |
+| F22 | §4.1 madde 5 "yalnız geçerli tanımda" | geçersiz taslakta SON GEÇERLİ önizleme ekranda kalır + "taslak eksik" ipucu; boşa düşürülmez (`PreviewTable.tsx:65-74`) | kullanıcı verisiz kalmaz, istek gitmez |
+
+**Sohbet öncelikli tur — G173-G176 (2026-09-11, kullanıcı kararı "arayüz deli gibi sadeleşsin"):** plan §4.1/§6.1/§8
+gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi yine değişmedi.
+
+| # | Plan | Kod | Sonuç / sebep |
+| --- | --- | --- | --- |
+| F23 | §4.1 yerleşim: kaynak kartları → filtre şeridi → "Kolonlar (N)" yan paneli → araç çubuğu → tablo; §6.1 "asistan önde, manuel kurucu altta" | `AssistantBar` → `TanimSeridi` → sayaç/şablon/indirme satırı → `PreviewTable` (`ReportsPage.tsx:740-852`, G175); `SourceCards`/`QuickFilters`/`ColumnSheet`/`ColumnPicker`/`ui/sheet.tsx` SİLİNDİ | manuel kurucu KALKTI; şeffaflık + düzeltme kanalı tanım şeridine indi (G173) |
+| F24 | §8 teyit döngüsü (G167): kart onay bekler, "Onayla ve uygula" / karttan indirme | `complete.tanim` → `degerEsle` temizse DÜĞMESİZ uygulanır (`AssistantBar.tsx:244-263`, G174); kart yalnız değer uyuşmazlığı / sayfa reddi / Geri al'da bekler; karttan indirme ve "Geri al" kaldı | şerit her an ekranda olduğu için onay adımı sürtünme oldu — G167 kararı 11.09'da geri alındı; yerel onay (`onayNiyeti`) bekleyen tanım için korunur |
+| F25 | Kapsam kararı "manuel yol her zaman açık kalır"; K8 "anahtar kapalıyken manuel akış çalışır" | manuel KURUCU yok; yedek = tanım şeridi (kaynak/kolon/filtre/sıralama tamamı düzenlenebilir); anahtar kapalı/409 → bilgi kartı `asistan-kapali-karti` (`ReportsPage.tsx:756-770`) | karar biçim değiştirdi, özü korundu — Gemini düşse de rapor alınır (§9) |
+| F26 | Üç aşama planı (G169-G172; plan dışı kuyruk kalemi, 10-11.09 gece taslağı) | koşulmadan İPTAL; dosyalar `docs/arsiv/gorevler/G169-G172` (iptal şerhli); teşhisi ("bağlı kolonlar 145 kolonlu listede kayboluyor") "+ Kolon" combobox'ının `"<İlişki> · <grup>"` başlıkları karşıladı (`TanimSeridi.tsx:70-76`) | kullanıcı 11.09 gündüz sohbet öncelikli ekranı seçti |
+| F27 | §8.3 prompt "TEYİT DÖNGÜSÜ" (onay sorusuyla bitir) | "UYGULAMA" (onay SORMA) + "YAKLAŞIK AD" (`contains`) + "LİSTE SORUSU" (ekrana yönlendir) (`prompts.py:522-535`, G176); bekçi testler `test_prompt_g176_*` | ekranla çelişen kural düzeltildi; Gemini duman testi insan adımı (G176 raporu: 3 istem) |
+| F28 | (planda yok) asistan değer doğruluğu yalnız sunucu doğrulaması (K6) | istemcide Gemini'siz **değer eşleme** (`degerEsle`, aday çipleri) ve **liste balonu** (`listeNiyeti`, `DegerListesi`) — öneriler zaten katalogla istemcide (`reportsChat.ts:455-670`) | K6 korunur (asistan veri görmez); "Ankara 3. Ticaret" gibi yaklaşık değerler kataloğa bağlanır |
 
 ## 13. Bilinen sınırlar, işletme notları
 
@@ -623,16 +799,37 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
   kaynak). Bağ tek hoptur (`muvekkil.dava.x` yok). Bağlı kayıt tenant'a göre süzülmez (paylaşımlı havuz,
   `dava_sayisi` ile aynı). Çoklu bağ kolonu sıralanamaz. Excel'de çok değerli tarih hücresi metin kalır.
 - **Öneri listesi tavanı:** 300'ü aşınca ilk 300 (DB sırası) + `oneri_kesik=true`; combobox başlığında
-  "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:361`). Sıra DB collation'ı (F13).
+  "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:519`). Sıra DB collation'ı (F13).
+- **Aday eşleme yalnız `oneriler` taşıyan kolonlarda (G174):** `degerEsle` (`reportsChat.ts:530-550`) öneri
+  listesi olmayan metin kolonunu (ör. `subject`, `notes` zaten katalog dışı) daima temiz sayar — orada asistanın
+  yazdığı değer kontrolsüz uygulanır. **300 kesik listede aday bulunamayabilir:** aranan değer ilk 300'ün dışında
+  kalırsa satır "eşleşmedi" olur ve aday çipi çıkmayabilir; kart "Liste kesik (300 tavanı)" notu + "Yine de uygula"
+  verir (`AssistantMessage.tsx:227-231`). Aday sıralaması kelime kesişimi/önek — eşanlamlı bilmez.
+- **Liste balonu yalnız kalıp eşleşince (G174):** `listeNiyeti` (`reportsChat.ts:642-670`) Gemini'ye GİTMEZ — kalıp
+  dışı yazımlar ("mahkeme adlarını görebilir miyim") Gemini'ye düşer ve prompt "LİSTE SORUSU" kuralı çipe/`hangi
+  <alan>lar var` yazımına yönlendirir (güvenlik ağı). Gerçek katalogda "mahkeme" birden çok kolona uyarsa (Mahkeme +
+  Mahkeme İli gibi) "Hangisi?" çipleri çıkar — kullanıcıyla gözlenmeli, eşanlamlı tablosu (`ES_ANLAM_GRUPLARI
+  :588-604`) buna göre genişletilebilir (G174 raporu). Balon en çok 300 satır; `secenekler`li kolonda sayı rozeti
+  yalnız `secenek_sayilari` varsa.
+- **Gemini / anahtar kapalıyken sohbet yok — şeritle çalışılır:** `rapor_asistani` kapalı, `/chat` 409 ya da Gemini
+  `failed` (devre kesici/429) durumunda rapor yine şeritten kurulur (§9); sohbet balonu hata kaydını gösterir,
+  şerit etkilenmez. Sohbet birincil yol olduğundan Gemini kesintisi kullanıcı deneyimini düşürür, veri kaybettirmez.
+- **Sohbet geçmişi sayfa yenilemede sıfırlanır (değişmedi):** `AssistantBar` state'i (`kayitlar`), sunucu saklamaz
+  (K6); "Kapat" alanı kapatır ama geçmiş kalır (`AssistantThread` "Kapat (geçmiş kalır)"), "Temizle" siler.
 - **Önbellek 60 sn / worker başına:** referans listesi ya da yeni taraf adı ekledikten sonra şeritteki
   seçenek/öneri en geç 60 sn sonra görünür; iki worker aynı anda farklı fotoğraf verebilir (F15).
 - **`RAPOR_MAX_SATIR` iki okuyucu:** export tavanı `settings.rapor_max_satir` (boot'ta donar),
   katalogdaki `export_max_satir` `motor.limitler()` `os.getenv` (önbellek süresi içinde bir kez).
   Prod'da aynı env'i okurlar, fark yalnız test zamanı; `motor.limitler()`ın `settings`'ten okuması
   bekleyen tek satır (G131/G132 raporları) — docs bandı kod değiştirmediği için açık.
-- **NOT (frontend, kapsam dışı — G140 docs bandı dokunmadı):** `ColumnPicker.tsx:285` satır ipucu
-  `turetilmis` kolonda "türetilmiş (filtrelenemez, sıralanamaz)" yazar; taraf kolonları ve
-  `dava_sayisi` artık filtrelenebilir. Tek satırlık düzeltme (`k.filtrelenebilir`e bakmalı).
+- **KAPANDI (G175):** eski NOT "`ColumnPicker.tsx:285` satır ipucu türetilmiş kolonda 'filtrelenemez' yazar" —
+  dosya silindi; "+ Kolon" combobox'ı tip/ipucu basmaz.
+- **NOT (frontend, kapsam dışı — G175/G177 docs bandı dokunmadı):** `FilterControl.tsx:65` yorumu "Arama kutusu
+  QuickFilters'ta ayrı satırdadır" bayat — `QuickFilters` silindi; şeritte `sunum=arama` yuvası popover'daki metin
+  kontrolüyle düzenlenir. Tek satırlık yorum düzeltmesi.
+- **NOT (frontend, kapsam dışı):** "N kayıt" ekranda İKİ kez — sayaç satırı `kayit-sayaci` (`ReportsPage.tsx:786-792`)
+  ve `PreviewTable` başlık rozeti `toplam-rozeti` (`:56-64`; dosya G175 dokunma listesindeydi). Küçük temizlik
+  görevi: rozeti düşürmek (G175 raporu kararı).
 - **Saklama dizini volume'da:** `/app/data/rapor_ciktilari` `backend-data` volume'unda doğar, recreate'i
   atlatır; disk büyümesi ≈ 30 gün × günlük export × ~3 MB, ilk ay ölçülür. Temizlik **tembel**: yalnız
   export sonunda koşar (`temizle_sessiz`), zamanlayıcı yok; export yapılmayan dönemde eski dosya
@@ -649,15 +846,17 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
   testi insan adımı. Şema kabulü sorun çıkarırsa `AsistanTanimi.filtreler` düz metin `deger`e
   indirgenebilir (çevirici hazır).
 - **Anahtar yeniden açılınca sayfa yenilemesi gerekir:** frontend `asistan409` sayfa ömrü boyunca
-  kalır (G135, bilinçli).
+  kalır (G135, bilinçli; G175'te bilgi kartı da aynı bayrağa bakar, `ReportsPage.tsx:731`).
 - **Gün sınırı saat dilimi:** DateTime kolonlarda tarih filtresi DB oturumunun saat dilimine göredir
   (prod UTC; Türkiye günü 03:00'te başlar). Tarih kısayolları tarayıcının yerel gününü ISO'ya çevirir
   (`isoGun`, `lib/reports.ts:529-532`).
 - **CSV ondalık `.`:** `Decimal→float` olduğu gibi yazılır; Türkçe Excel `;` ayraçlı CSV'de `,` ondalık
   bekleyebilir — xlsx ana yol, CSV ham veri yolu; kullanıcı geri bildirimiyle karar.
-- **Tarayıcıda görsel duman testi yapılmadı (G138/G139):** yerleşim/responsive kanıtı sınıf ve sıra
-  düzeyinde testle; sabah gerçek ekranda kart satırının `lg` altı yatay kaydırması, Sheet genişliği,
-  araç çubuğunda TemplateBar'ın sarması göz kontrolü ister (G139 raporu).
+- **Tarayıcıda görsel duman testi yapılmadı (G173-G175 de gece koştu):** yerleşim/responsive kanıtı jsdom'da
+  sınıf ve sıra düzeyinde (`flex-wrap`, max-w yok); gerçek Radix popover konumlanması, `lg` altında sayaç
+  satırının/şeridin sarması, 300 önerili combobox'ın popover içinde kaydırması göz kontrolü ister (G173/G175
+  raporları). Gemini duman testi (3 istem: yaklaşık mahkeme adı → `contains`; "hangi mahkemeler var" → liste;
+  "telefonu da ekle" → yalnız `muvekkil.phone` eklenir, onay istenmez) insan adımı (G176 raporu).
 - **`lib/api.test.ts` "tek logout" testi** tam paket altında iki koşuda birer kez zaman aşımına düştü
   (G138/G139 raporları; tek başına yeşil) — hub dosyası, rapor kapsamı dışı, tekrarlarsa ayrı iş.
 
@@ -680,31 +879,34 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır.
 | `backend/tests/test_g132_rapor_asistani.py` | anahtar varsayılan/409, 403, gövde sınırları, geçerli/geçersiz tanım akışı (taraf kolonunda `eq` → 422 → `warning`), 5 Gemini hatası → `error_kod` + TEK ERROR, yanıt hataları, prompt içeriği, kod incelemesi bekçileri (SessionLocal/`client.aio` yok), Developer API uyumlu şema, `tanim=null` + eylem → eylem düşer |
 | `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek 60 sn (monotonic monkeypatch + sorgu sayacı); asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |
 | `backend/tests/test_g166_rapor_bagli_kaynaklar.py` | bağlı kolon türetimi (her ilişki × hedef kolon birebir, hariç/türetilmiş atlama, ikinci derece bağ yok), öz-denetim 4 ret, katalog `iliskiler`/`bag`/kontrol/öneri (hedef tenant kuralı), kullanıcı örneği (Nisan sonrası + müvekkil telefonu; tekil + sıralı birleşim, silinmiş kart/tenant/silinmiş dava dışarıda, tarafsız dava boş hücre), ad anahtarıyla bağ, TKU tekilleşme, tarih/mantık cast, EXISTS filtre anlamı 16 varyant (is_null/not_null/in+null/tarih between+eq/mantık/iki bağ AND), müvekkilden dava + belgeden tekil dava (sıralama), 422 kuralları, asistan katalog metni ilişki satırları + prompt kuralı + aynı doğrulama, index DDL = `_ad_anahtari` derlemesi, tarih koşulu tek kaynak |
-| `frontend/src/lib/reportsChat.test.ts` (G167 bölümü), `components/reports/AssistantBar.test.tsx`, `pages/ReportsPage.asistan.test.tsx`, `ReportsPage.favori.test.tsx` | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`; tanım UYGULANMAZ → Onayla/Excel/CSV; düzeltme `mevcut_tanim` = bekleyen; sözle onay (aynı tanım + eylem) hemen yürür, sayfa reddederse beklemede kalır; tanımsız eylem bekleyen/oluşturucu tanımıyla; `indir_*` önerisi tık bekler, 413 yolu; kaynak katalogda yok → kart yine gösterir, onayda toast; Geri al → yeniden onay bekleyen; favori kartı indirme sonrası |
-| `frontend/src/lib/reports.test.ts`, `reports.export.test.ts`, `reportsChat.test.ts` | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + 22 örnekli gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, NDJSON okuyucu, anahtar okuyucu |
-| `frontend/src/components/reports/builderState.test.ts`, `QuickFilters.test.tsx`, `PreviewTable.test.tsx`, `ColumnSheet.test.tsx`, `SourceCards.test.tsx` | yuvalar/eklenen alanlar/temizle/tanımdan çözme (sıra korunur, gelişmiş çip), şerit etkileşimleri, başlıktan sıralama + "güncelleniyor…" + boş sonuç, yan panel setler/gruplar/sıra/tavan/"Temel" üretimi, kart radiogroup |
-| `frontend/src/pages/ReportsPage.test.tsx`, `ReportsPage.sablon.test.tsx`, `ReportsPage.asistan.test.tsx` | dolu açılış (tek istek, varsayılan tanım), kart tıklaması (eski satırlar anında düşer), otomatik önizleme (yapısal hemen / 600 ms / odak), yan panel → önizleme, boş sonuç kısayolu, yerleşim sırası, şablon/indirme/geçmiş, asistan paneli + eylem + 409/anahtar |
+| `backend/tests/test_g132_rapor_asistani.py` (G176 eki, 2 test; dosyada 30 test fonksiyonu — `grep -c "def test_"`, c839fdb) | `test_prompt_g176_uygulama_kurali_teyit_dongusu_yok` ("TEYİT DÖNGÜSÜ"/"hemen uygulanmaz"/"yine onay iste" YOK; "hemen uygulanır", "düzenlenebilir bir şeritte", "onay SORMA", belirsizlik, sözlü onay, "SIFIRDAN ÜRETME", düzeltme cümlesi VAR), `test_prompt_g176_yaklasik_ad_contains_ve_liste_sorusu` (`contains` + liste sorusu cümleleri; "aynen kopyala" korunmuş; yerleşim kurallar < KATALOG < MEVCUT TANIM) — eski prompt'ta kırmızı (G176 raporu, stash ile doğrulandı) |
+| `frontend/src/lib/reportsChat.test.ts` (**42**: G167 + G174 bölümleri), `components/reports/AssistantBar.test.tsx` (**16**), `pages/ReportsPage.asistan.test.tsx` (**23**), `ReportsPage.favori.test.tsx` (**12**) | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`, `onayNiyeti`, `kaydetNiyeti`; **G174:** `degerEsle` (alt dize temiz, birebir `eq`, tutmayan → adaylar kelime kesişimine göre sıralı ≤5, öneri listesiz kolon temiz, `in`/`between`/tarih/sayı/mantık atlanır, İ/ı ve U+0307 normalize), `listeNiyeti` (olumlu kalıplar + eylem fiilli olumsuzlar, etiket/hızlı filtre/eşanlamlı çözümü, belirsizde adaylar); otomatik uygulama (temiz tanım düğmesiz uygulanır, `uygulandi` + Geri al; sorunlu değer kartı + aday tık → uygula; "Yine de uygula"; liste balonu + liste tık → `onFiltreEkle`; "Hangisi?"); düzeltme `mevcut_tanim` = bekleyen; sözle onay hemen; sayfa reddederse kart bekler; tanımsız eylem; `indir_*` ile gelen temiz tanım doğrudan indirilir, 413 yolu; Geri al → yeniden bekleyen; sayfa düzeyinde liste balonu → `eq` → `in` birleşmesi → × ile düşme + toast; favori kartı indirme sonrası |
+| `frontend/src/lib/reports.test.ts` (**50**), `reports.export.test.ts` (**14**), `reports.favori.test.ts` (**10**) | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, şablon sahipliği, favori ad önerisi |
+| `frontend/src/components/reports/TanimSeridi.test.tsx` (**14**, G173), `builderState.test.ts` (**18**: 12 + G173 `kolonEkle` ×2, `kolonKaldir`, `filtreEkle` ×3), `FilterControl.test.tsx` (**11**), `PreviewTable.test.tsx` (**7**), `TemplateBar.test.tsx` (**4**) | yedi şerit öğesi + sarma + bağlı kolon önek/renk; kontrollü davranış; kaynak menüsü (farklı → `onKaynakSec`, aynı → çağrı yok); kolon × / tek kolon disabled; "+ Kolon" grup başlıkları + arama + seçim, hazır set tekrarsız + 60 tavanı; filtre popover (metin `gecikmeli=true`, liste hemen, odak çıkışı `onHemen`, ×); 300 önerili combobox + kesik başlığı + tarih kısayolu; "+ Filtre" akışı (boş → popover açık, çip yok → doldurunca çip; boş yuva yeniden kullanımı; Escape → durumda kalır; 20 tavanı); sıralama çipi ×; Temizle; "…" gelişmiş/"Basit kontrole dön"/boş kontrol çip vermez; `salt`; yuvalar/eklenen alanlar/temizle/tanımdan çözme; kontrol→op (değişmedi); başlıktan sıralama + "güncelleniyor…" + boş sonuç; kompakt şablon çubuğu |
+| `frontend/src/pages/ReportsPage.test.tsx` (**18**), `ReportsPage.sablon.test.tsx` (**13**) | dolu açılış (tek istek, varsayılan tanım), kaynak değişimi rozet menüsünden (eski satırlar anında düşer), otomatik önizleme (yapısal hemen / 600 ms popover'daki girdide / odak), şeritten filtre kaldırınca (×) ve şerit Temizle ile önizleme HEMEN, boş sonuç kısayolu, geçersiz tanım (gelişmiş çip değeri silinerek), arama kutusu (popover'da), 422/ağ/katalog hatası, anahtar kapalı → bilgi kartı + şerit/tablo/şablon/indirme çalışır, yerleşim sırası (`flex-wrap`, max-w yok), /reports kapısı, Sidebar; şablon yükle/kaydet/Güncelle-Sil "…" menüsünden, başkasının şablonunda menü yok, koşu tanımı yükleme (çip düzenleyicisinden okunur) |
+| **KALDIRILDI (G175):** `QuickFilters.test.tsx` (23), `ColumnSheet.test.tsx` (6), `SourceCards.test.tsx` (2) | bileşenleriyle birlikte silindi; çip/kontrol davranış testleri `TanimSeridi.test.tsx`'e taşındı |
 
-Koşu sonuçları işçi raporlarından (G137/G138/G139; docs bandı yeniden koşmadı): backend `pytest`
-**2670 passed / 3 skipped**, ruff + mypy temiz (G137); frontend `vitest` **798 passed / 65 dosya**,
-eslint 0, `tsc -b --force` 0 (G139). Backend testleri konteynerde
-(`docker compose exec -T backend python -m pytest tests/test_g13*.py`), frontend host'ta
-(`npm --prefix frontend test`) koşar.
+Koşu sonuçları: frontend `npm --prefix frontend test` **916 passed / 69 dosya** — G177 docs oturumu
+2026-09-11'de c839fdb worktree'sinde KOŞTU (vitest 4.1.11, 27,8 sn; G175 raporuyla aynı sayı: 945 − 31
+kaldırılan + 2 yeni). Backend konteynerde koşmadı (docs bandı, worktree); G176 raporu (2026-09-11): `pytest`
+**3292 passed / 3 skipped**, `tests/test_g132_rapor_asistani.py` + `test_g166_rapor_bagli_kaynaklar.py` 65 passed,
+ruff + mypy temiz. Backend testleri konteynerde (`docker compose exec -T backend python -m pytest
+tests/test_g13*.py tests/test_g166*.py`), frontend host'ta (`npm --prefix frontend test`) koşar.
 
 ## 16. Nereye bakmalı
 
 | Konu | Dosya |
 | --- | --- |
-| Sözleşme (plan, dondurulmuş §2 + ikinci tur §4 + şerhler) | [`docs/plan/raporlama-plani-2026-09-06.md`](../plan/raporlama-plani-2026-09-06.md) |
+| Sözleşme (plan, dondurulmuş §2 + ikinci tur §4 + şerhler; başındaki "sohbet öncelikli ekran" şerhi §4.1/§6.1/§8'i tarihsel kılar) | [`docs/plan/raporlama-plani-2026-09-06.md`](../plan/raporlama-plani-2026-09-06.md) |
 | Uçlar + katalog önbelleği | `backend/routes/reports.py` |
 | Şemalar, sınırlar, tip↔op | `backend/schemas_rapor.py` |
 | Kayıt defteri (kolonlar, gruplar, taraf EXISTS filtreleri, öneriler, hızlı filtre/set) | `backend/services/rapor/registry.py` |
 | Motor / çıktı / koşu logu / asistan | `backend/services/rapor/{motor,cikti,kosu_logu,asistan}.py` |
-| Sistem talimatı | `backend/prompts.py:449` |
+| Sistem talimatı (G176 kuralları UYGULAMA / YAKLAŞIK AD / LİSTE SORUSU) | `backend/prompts.py:449`, `:522-535` |
 | Tablolar + madde 46 | `backend/models.py:1350-1432`, `backend/database.py:1050-1064` |
 | Anahtar / env | `backend/services/app_settings.py:41-79`, `backend/config/settings.py:103-112`, `.env.example:55-66` |
-| Frontend tipler + kontrol↔op çevirisi + API | `frontend/src/lib/reports.ts`, `frontend/src/lib/reportsChat.ts` |
+| Frontend tipler + kontrol↔op çevirisi + API | `frontend/src/lib/reports.ts`, `frontend/src/lib/reportsChat.ts` (asistan istemci mantığı: `onayNiyeti`, `kaydetNiyeti`, `degerEsle`, `listeNiyeti`) |
 | Frontend şerit durumu ↔ tanım | `frontend/src/components/reports/builderState.ts` |
-| Frontend sayfa + bileşenler | `frontend/src/pages/ReportsPage.tsx`, `frontend/src/components/reports/`, `frontend/src/components/ui/sheet.tsx` |
+| Frontend sayfa + bileşenler | `frontend/src/pages/ReportsPage.tsx` (yerleşim, `onFiltreEkle`, `asistanTanimiUygula`), `frontend/src/components/reports/` (`TanimSeridi.tsx` şerit; `AssistantBar.tsx` otomatik uygulama + liste balonu; `AssistantMessage.tsx` kart hâlleri; `DegerListesi.tsx`) |
 | Gemini devre kesici / retry / `_failed_event` | [`dis-bagimliliklar.md`](dis-bagimliliklar.md), `backend/analyzer.py:82`, `:368` |
-| Görev raporları (G130-G140) | `gorevler/gorev/G130.md` … `G140.md` |
+| Görev raporları | `gorevler/gorev/G130.md` … `G168.md`, `G173.md` … `G177.md`; iptal edilen üç aşama planı `docs/arsiv/gorevler/G169.md` … `G172.md` (tarihsel) |
