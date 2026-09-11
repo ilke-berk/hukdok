@@ -510,6 +510,22 @@ script dağınık kalan grupları o şekle getirir. **Föyler değişmez, kartla
 - Varsayılan kuru koşu (rollback); `--rapor <csv>` plan/sonuç, `--tku`, `--limit`, `--apply --kim`.
   Test: `tests/test_tku_kart_birlestir.py`.
 
+### 7.3 Tarihçe temizliği — `scripts/tarihce_temizligi.py` (11.09.2026, tek seferlik)
+
+Aktarım paketleri ve yazım birliği turu her hücre yazımını `case_history`ye satır olarak
+düşürdüğünden kart geçmişi paneli olay günlüğü değil dolgu izi gösteriyordu (lokal: 140.153
+satır, kart başına ~10). Kullanıcı kararı: gerçek olay dışındaki otomatik satırlar silinir.
+Kural (`karar`): otomatik imzalı (`HUKDOK_TESLIM*`, `yazim_birligi`) satır silinir; **istisna**
+(1) `case_foys.sistem_no` föy bağlama satırı — AKTARIM provenance imzası
+(`case_manager._is_aktarim_kaydi`, `required_fields.aktarim_kaydi_sql`) bu satırdan okunur, eksik
+alan kovası buna bağlıdır; (2) `mukerrer_birlestirme`/`tku_birlestirme` izi; (3) mahkeme/esas/status
+GERÇEK değişimi — esas `esas_anahtari` (yer tutucu kimlik değil), mahkeme `tku_kart_birlestir.
+mahkeme_uyumu` (yapısal kimlik aynıysa biçim), status büyük/küçük harf farkı biçim. Kullanıcı imzalı
+satıra dokunulmaz. `--apply` `--yedek <csv>` ister (silinen satırların dökümü). Lokalde uygulandı:
+131.188 silindi, 8.965 kaldı (8.395 föy bağlama, 187 esas, 149 status, 36 mahkeme, 192 birleştirme,
+6 kullanıcı); kova sayıları değişmedi. Sonraki paketler yine satır yazar (delta'da çok az); aktarımın
+tarihçe yazım kapsamını daraltmak ayrı iş.
+
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin
