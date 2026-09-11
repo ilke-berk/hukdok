@@ -5,9 +5,9 @@
 // Sohbet geçmişi sunucuda SAKLANMAZ (K6): istemci `mesajlar` listesini taşır, en fazla 20.
 import { apiClient } from "@/lib/api";
 import {
-    OP_ETIKETLERI, raporHatasiCevir, secenekEtiketi, tarihBicimle,
+    OP_ETIKETLERI, kolonOplari, raporHatasiCevir, secenekEtiketi, tarihBicimle,
     type AsistanEylemi, type AsistanMesaji, type AsistanOlayi, type Filtre, type Katalog, type KatalogKolon,
-    type RaporTanimi,
+    type KatalogVeriKaynagi, type RaporTanimi,
 } from "@/lib/reports";
 
 /** K6: sunucuya giden geçmiş en fazla bu kadar mesaj (en yeni 20). */
@@ -209,27 +209,28 @@ export async function raporAsistaniAcikMi(): Promise<boolean> {
 /**
  * Örnek istemler kaynağa göre (G143): AssistantBar çipleri seçili veri kaynağının örneklerini gösterir
  * (tıklayınca girdiye yazılır, ikinci tık gönderir). Tanınmayan/boş kaynak → genel liste.
+ * G174: kaynak başına üçüncü örnek "hangi … var" — yerel liste balonunu (`listeNiyeti`) keşfettirir; üçlü sayı korunur.
  */
 const ORNEK_ISTEMLER_KAYNAGA_GORE: Record<string, readonly string[]> = {
     davalar: [
         "2025'te açılan derdest davaları avukat adıyla listele, Excel ver",
         "Derdest davaları ofis numarası, konu ve mahkeme kolonlarıyla listele",
-        "Bu yıl açılan davaları açılış tarihine göre yeniden eskiye sırala",
+        "Hangi mahkemeler var?",
     ],
     muvekkiller: [
         "Ankara'daki doktor müvekkillerin telefon ve e-postasını göster",
         "İstanbul'daki müvekkilleri ad ve şehir kolonlarıyla Excel olarak indir",
-        "Birden fazla davası olan müvekkilleri dava sayısına göre sırala",
+        "Hangi şehirler var?",
     ],
     belgeler: [
         "Son 30 günde işlenen tebligatları dava ofis numarasıyla listele",
         "Bu ay eklenen belgeleri türüne ve davasına göre CSV olarak indir",
-        "Dönüşümü başarısız belgeleri dosya adı ve hata ile göster",
+        "Hangi belge türleri var?",
     ],
     foyler: [
         "Karar aşamasındaki föyleri dava ofis numarası ve konusuyla listele",
         "Bu yıl kapanan föyleri son durumuna göre sırala",
-        "Föyleri dosya numarası ve aşamasıyla Excel olarak indir",
+        "Hangi aşamalar var?",
     ],
 };
 
@@ -259,6 +260,12 @@ export interface SohbetKaydi {
     uygulandi?: boolean;
     /** G167: sunucuya gitmeden arayüzün ürettiği asistan satırı (yerel onay). Geçmişe girer. */
     yerel?: boolean;
+    /** G174: kataloğa uymayan metin filtre değerleri (`degerEsle`) — kart bekler, aday çipleri gösterir. */
+    sorunlar?: DegerSorunu[];
+    /** G174: "hangi X'ler var" cevabı — bu kolonun değer listesi balonu (`DegerListesi`). */
+    liste?: KatalogKolon;
+    /** G174: liste niyeti birden çok kolona uydu — "Hangisi?" çipleri. */
+    kolonAdaylari?: KatalogKolon[];
 }
 
 /**
@@ -443,4 +450,221 @@ export function tanimAyni(a: RaporTanimi | null | undefined, b: RaporTanimi | nu
         && JSON.stringify(a.kolonlar) === JSON.stringify(b.kolonlar)
         && JSON.stringify(a.filtreler.map(filtre)) === JSON.stringify(b.filtreler.map(filtre))
         && JSON.stringify(a.siralama.map(s => [s.alan, s.yon])) === JSON.stringify(b.siralama.map(s => [s.alan, s.yon]));
+}
+
+// ---------------------------------------------------------------------------
+// G174 — değer eşleme (katalog önerileri) + "hangi X'ler var" liste niyeti. Gemini'siz: öneriler zaten
+// katalogla istemcide (K6 korunur — asistan veri görmez, eşleme ve liste arayüzde çözülür).
+// ---------------------------------------------------------------------------
+
+/** Karta gelen en çok aday çipi. */
+export const DEGER_ADAY_MAX = 5;
+
+/** Liste balonunda gösterilen en çok satır (katalog öneri tavanıyla aynı). */
+export const DEGER_LISTESI_MAX = 300;
+
+/**
+ * Değer karşılaştırma anahtarı: `trim` + `toLocaleLowerCase("tr-TR")` + NFD birleşik işaret temizliği
+ * (İ → i, "i̇" U+0307 → i, ş/ç/ğ/ö/ü → s/c/g/o/u) + iç boşluk tekilleştirme. `caseCardFields`/`party_check`
+ * deseniyle aynı; eşleme, aday sıralaması ve liste araması bunu kullanır.
+ */
+export function degerAnahtari(s: string): string {
+    return s
+        .trim()
+        .toLocaleLowerCase("tr-TR")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/\s+/g, " ");
+}
+
+function anahtarKelimeleri(anahtar: string): string[] {
+    return anahtar.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+export interface DegerSorunu {
+    /** `tanim.filtreler` içindeki sıra. */
+    indeks: number;
+    alan: string;
+    /** Ham (asistanın yazdığı) değer. */
+    deger: string;
+    /** En yakın öneriler (≤ `DEGER_ADAY_MAX`), katalogdaki yazımıyla. */
+    adaylar: string[];
+    /** Kolonun öneri listesi 300 tavanında kesik — aranan değer listede olmayabilir. */
+    kesik: boolean;
+}
+
+export interface DegerEslemesi {
+    temiz: boolean;
+    sorunlar: DegerSorunu[];
+}
+
+/**
+ * Aday sıralaması: normalize edilmiş kelime kesişimi sayısı (çok → az), sonra ortak önek uzunluğu, sonra
+ * katalog sırası. Ne kesişimi ne de ≥2 karakter ortak öneki olan öneri aday değildir. En çok `max` aday.
+ */
+export function degerAdaylari(deger: string, oneriler: readonly string[], max = DEGER_ADAY_MAX): string[] {
+    const n = degerAnahtari(deger);
+    if (!n) return [];
+    const kelimeler = new Set(anahtarKelimeleri(n));
+    return oneriler
+        .map((o, sira) => {
+            const on = degerAnahtari(o);
+            const kesisim = new Set(anahtarKelimeleri(on).filter(w => kelimeler.has(w))).size;
+            let onek = 0;
+            while (onek < n.length && onek < on.length && n[onek] === on[onek]) onek++;
+            return { o, sira, kesisim, onek };
+        })
+        .filter(x => x.kesisim > 0 || x.onek >= 2)
+        .sort((a, b) => b.kesisim - a.kesisim || b.onek - a.onek || a.sira - b.sira)
+        .slice(0, max)
+        .map(x => x.o);
+}
+
+/**
+ * Asistan tanımındaki METİN filtre değerlerini katalog önerilerine karşı dener (saf, Gemini'siz).
+ * Yalnız `contains`/`eq` + string değer + kolonun `oneriler` listesi varsa bakılır: `contains` için normalize
+ * değer en az bir önerinin ALT DİZESİ ise temiz ("Ankara" → "Ankara 3. Asliye Ticaret"), `eq` için birebir.
+ * `in`/`between`/tarih/sayı/mantık filtreleri ve öneri listesi olmayan kolonlar daima temiz. Tutmayan satır
+ * `sorunlar`a en yakın ≤5 adayla düşer; `temiz=false` → kart bekler (AssistantBar), aksi hâlde tanım hemen uygulanır.
+ */
+export function degerEsle(tanim: RaporTanimi, katalog: Katalog | null): DegerEslemesi {
+    const kaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === tanim.veri_kaynagi);
+    const sorunlar: DegerSorunu[] = [];
+    if (kaynak) {
+        tanim.filtreler.forEach((f, indeks) => {
+            if (f.op !== "contains" && f.op !== "eq") return;
+            if (typeof f.deger !== "string") return;
+            const kolon = kaynak.kolonlar.find(k => k.anahtar === f.alan);
+            const oneriler = kolon?.oneriler;
+            if (!kolon || !oneriler || oneriler.length === 0) return;
+            const n = degerAnahtari(f.deger);
+            if (!n) return;
+            const tutuyor = f.op === "contains"
+                ? oneriler.some(o => degerAnahtari(o).includes(n))
+                : oneriler.some(o => degerAnahtari(o) === n);
+            if (tutuyor) return;
+            sorunlar.push({ indeks, alan: f.alan, deger: f.deger, adaylar: degerAdaylari(f.deger, oneriler), kesik: kolon.oneri_kesik === true });
+        });
+    }
+    return { temiz: sorunlar.length === 0, sorunlar };
+}
+
+/**
+ * Aday çipi tıklanınca: `indeks`teki filtrenin değeri katalog yazımıyla değişir; op kolonda `eq` izinliyse
+ * `eq` (aday katalogdaki tam değer), yoksa `contains`; kolon bilinmiyorsa op olduğu gibi kalır. Yeni nesne döner.
+ */
+export function filtreDegeriDegistir(
+    tanim: RaporTanimi, indeks: number, deger: string,
+    kolon: Pick<KatalogKolon, "tip" | "filtrelenebilir" | "oplar"> | undefined,
+): RaporTanimi {
+    return {
+        ...tanim,
+        filtreler: tanim.filtreler.map((f, i) => {
+            if (i !== indeks) return f;
+            const op = kolon ? (kolonOplari(kolon).includes("eq") ? "eq" : "contains") : f.op;
+            return { ...f, op, deger };
+        }),
+    };
+}
+
+// "hangi mahkemeler var" / "mahkeme listesi" / "durum seçenekleri neler" → liste niyeti. Kalıp tanıma
+// `kelimeler()` (ASCII katlama) üstünde; kolon çözümü etiket + hızlı filtre etiketi + anahtar + kısa eşanlamlılar.
+const LISTE_SORU_KELIMELERI = new Set(["hangi", "hangileri", "hangisi", "neler", "nelerdir", "nedir"]);
+const LISTE_VARLIK_KELIMELERI = new Set(["var", "mevcut", "bulunuyor", "bulunur", "kayitli", "tanimli", "gecerli", "olabilir", "kullanilabilir"]);
+const LISTE_AD_KELIMELERI = /^(?:liste(?:si|sini|sine|yi|ler)?|secenek(?:ler|leri|lerini)?|secenegi|deger(?:ler|leri|lerini)?|degeri)$/;
+/** Bu fiiller geçiyorsa liste değil eylem/düzeltme isteğidir → Gemini. */
+const LISTE_EYLEM_KELIMELERI = new Set([
+    "kaldir", "cikar", "sil", "ekle", "listele", "sirala", "degistir", "guncelle", "indir", "kaydet", "uygula", "filtrele",
+    "olustur", "yap", "koy",
+]);
+/** Kolon eşlemesine girmeyen dolgu/soru sözcükleri. */
+const LISTE_DOLGU_KELIMELERI = new Set([
+    ...LISTE_SORU_KELIMELERI, ...LISTE_VARLIK_KELIMELERI, "ne", "mi", "mu", "bana", "bize", "soyle", "soyler", "misin",
+    "misiniz", "lutfen", "sistemde", "bizde", "elimizde", "kolon", "kolonu", "kolonunda", "kolonda", "alan", "alani",
+    "alaninda", "filtre", "filtresi", "filtresinde", "icin", "icinde", "kac", "tane", "olan", "olarak", "tum", "butun",
+    "acaba", "peki", "ve", "ile", "bir", "su", "bu", "o", "farkli", "mevcut", "kayitlar", "kayitlarda", "kayit", "veri",
+    "veride", "tanimli", "toplam",
+]);
+const ES_ANLAM_GRUPLARI: readonly (readonly string[])[] = [
+    ["il", "sehir", "city"],
+    ["mahkeme", "court"],
+    ["durum", "status"],
+    ["avukat", "lawyer"],
+    ["konu", "subject"],
+    ["tur", "turu", "type", "tip"],
+    ["asama", "stage"],
+    ["muvekkil", "client"],
+    ["doktor", "doctor", "hekim"],
+    ["hastane", "hospital"],
+    ["kategori", "category"],
+    ["rol", "role"],
+    ["olay", "event"],
+    ["belge", "document", "doc"],
+    ["ilce", "district"],
+];
+const ES_ANLAM: Map<string, readonly string[]> = new Map(
+    ES_ANLAM_GRUPLARI.flatMap(g => g.map(w => [w, g] as const)),
+);
+
+/** Sözcüğün eşleme biçimleri: kendisi, çoğul/iyelik eki düşmüş hâlleri ("iller" → "il", "ili" → "il") ve eşanlamlıları. */
+function sozcukBicimleri(w: string): string[] {
+    const tekil = w.replace(/(?:lerin|larin|leri|lari|ler|lar)$/, "");
+    const iyelik = tekil.replace(/(?:si|su|i|u)$/, "");
+    const temel = [w, tekil, iyelik].filter(b => b.length >= 2);
+    return Array.from(new Set(temel.flatMap(b => [b, ...(ES_ANLAM.get(b) ?? [])])));
+}
+
+/** İki sözcük biçimi uyuşuyor mu: eşitlik, ya da ≥3 harfli ortak gövde (ek düşümü: "konusu" ~ "konu", "mahkemeyi" ~ "mahkeme"). */
+function bicimUyar(a: string, b: string): boolean {
+    if (a === b) return true;
+    if (a.length < 3 || b.length < 3) return false;
+    return a.startsWith(b) || b.startsWith(a);
+}
+
+function kolonSozcukleri(kolon: KatalogKolon, kaynak: KatalogVeriKaynagi): string[] {
+    // Bağlı kolon etiketi "Müvekkil kartı · Telefon": kolonun kendi adı son parça.
+    const etiket = kolon.etiket.split("·").pop() ?? kolon.etiket;
+    const hizli = kaynak.hizli_filtreler.find(h => h.alan === kolon.anahtar)?.etiket ?? "";
+    const anahtar = (kolon.anahtar.split(".").pop() ?? kolon.anahtar).replace(/_/g, " ");
+    const ham = [...kelimeler(etiket), ...kelimeler(hizli), ...kelimeler(anahtar)]
+        .filter(w => !LISTE_DOLGU_KELIMELERI.has(w) && !["adi", "ad", "no", "numarasi", "tarihi", "karti", "kart"].includes(w));
+    return Array.from(new Set(ham.flatMap(sozcukBicimleri)));
+}
+
+/**
+ * "Hangi X'ler var" liste niyeti (G174, Gemini'siz): mesaj bir liste sorusuysa ("hangi mahkemeler var",
+ * "mahkeme listesi", "durum seçenekleri neler", "hangi iller var", "durum değerleri") kaynağın `oneriler`
+ * ya da `secenekler` taşıyan filtrelenebilir kolonları arasında X'i arar: etiket, hızlı filtre etiketi,
+ * anahtar ve kısa eşanlamlılar ("il" → şehir/city, "mahkeme" → court). Dönüş: eşleşen kolonlar (1 → liste
+ * balonu; >1 → "Hangisi?" çipleri), liste sorusu değilse ya da hiç kolon uymuyorsa `null` (mesaj Gemini'ye
+ * gider). Eylem fiilli mesajlar ("mahkemeyi kaldır", "listele davaları", "tamam") liste sorusu DEĞİLDİR.
+ */
+export function listeNiyeti(metin: string, kaynak: KatalogVeriKaynagi | null | undefined): KatalogKolon[] | null {
+    if (!kaynak) return null;
+    const k = kelimeler(metin);
+    if (k.length === 0 || k.length > 12) return null;
+    if (k.some(w => LISTE_EYLEM_KELIMELERI.has(w))) return null;
+    const soru = k.some(w => LISTE_SORU_KELIMELERI.has(w));
+    const ad = k.some(w => LISTE_AD_KELIMELERI.test(w));
+    const varlik = k.some(w => LISTE_VARLIK_KELIMELERI.has(w));
+    // Kalıplar: "hangi … (var)" · "… listesi" · "… seçenekleri/değerleri (neler)" · "… neler (var)"
+    if (!(soru || ad || (varlik && k.length <= 4))) return null;
+
+    const icerik = k.filter(w => !LISTE_DOLGU_KELIMELERI.has(w) && !LISTE_AD_KELIMELERI.test(w));
+    if (icerik.length === 0) return null;
+    const bicimler = icerik.map(sozcukBicimleri);
+
+    const puanli = kaynak.kolonlar
+        .filter(kol => kol.filtrelenebilir && ((kol.oneriler?.length ?? 0) > 0 || (kol.secenekler?.length ?? 0) > 0))
+        .map(kol => {
+            const sozcukler = kolonSozcukleri(kol, kaynak);
+            const puan = bicimler.filter(bs => bs.some(b => sozcukler.some(s => bicimUyar(b, s)))).length;
+            return { kol, puan };
+        })
+        .filter(x => x.puan > 0)
+        .sort((a, b) => b.puan - a.puan);
+    if (puanli.length === 0) return null;
+    // En yüksek puanı paylaşanlar aday; tek kalırsa kesin.
+    const tepe = puanli[0].puan;
+    return puanli.filter(x => x.puan === tepe).map(x => x.kol);
 }
