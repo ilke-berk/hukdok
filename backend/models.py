@@ -378,6 +378,12 @@ class CaseFoy(Base):
     # çelişkisi 1.180 kart, mükerrer eşleşme, yeni alan) burada durur; paket
     # dosyasına geri dönmek gerekmez. Son teslimin fotoğrafıdır (üzerine yazılır).
     ham_veri = Column(JSON, nullable=True)
+    # TKU kart birleştirmesi (11.09.2026, kullanıcı kararı): aynı davanın
+    # müvekkil başına açılmış kartları tek karta toplanınca sönen kartın ofis
+    # dosya numarası föyün üzerinde kalır (avukatın bildiği numara kaybolmaz,
+    # aramada bulunur — case_manager._term_case_id_selects). NULL = föy hiç
+    # başka karttan taşınmadı. Yazıcı: scripts/mukerrer_kart_birlestir.birlestir.
+    onceki_tracking_no = Column(String(100), nullable=True)
     source = Column(String(100), nullable=True)    # hangi teslim paketi yazdı
     # Kapsam işareti (G113): SILINDI | KAPSAM_DISI; NULL = kapsamda.
     kapsam_durumu = Column(String(20), nullable=True)

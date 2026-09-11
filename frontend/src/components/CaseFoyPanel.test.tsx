@@ -79,6 +79,17 @@ describe("CaseFoyPanel", () => {
         expect(blok?.textContent).toContain("Tanınmayan Sütun");
     });
 
+    it("TKU birleştirmesinde taşınan föy eski ofis numarasını gösterir, taşınmayan göstermez", () => {
+        const tasinmis: CaseFoyEntry[] = [
+            foyler[0],
+            { ...foyler[1], onceki_tracking_no: "D1.H_SIMSEK...0001.HUKUK.00000" },
+        ];
+        act(() => root.render(<CaseFoyPanel foyler={tasinmis} />));
+        const rozetler = container.querySelectorAll("[data-testid='foy-onceki-ofis-no']");
+        expect(rozetler).toHaveLength(1);
+        expect(rozetler[0].textContent).toBe("eski ofis no: D1.H_SIMSEK...0001.HUKUK.00000");
+    });
+
     it("ham satır yoksa blok hiç basılmaz", () => {
         act(() => root.render(<CaseFoyPanel foyler={foyler} />));
         expect(container.querySelector("[data-testid='foy-ham-veri']")).toBeNull();

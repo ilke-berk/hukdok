@@ -253,6 +253,8 @@ def _foy_row_dict(row) -> dict:
         "durum": row.durum,
         # G125 ham satır (orijinal başlık → değer); NULL = ham satırsız eski kayıt
         "ham_veri": row.ham_veri,
+        # TKU kart birleştirmesinde sönen kartın ofis numarası (NULL = taşınmadı)
+        "onceki_tracking_no": row.onceki_tracking_no,
         "source": row.source,
         "case_party_id": row.case_party_id,
         "kapsam_durumu": row.kapsam_durumu,
@@ -760,6 +762,11 @@ def _term_case_id_selects(term: str, exact: bool) -> list:
         select(models.Case.id)
         .join(models.CaseFoy, models.CaseFoy.case_id == models.Case.id)
         .where(models.CaseFoy.sistem_no.ilike(pattern)),
+        # TKU kart birleştirmesinde sönen kartın ofis numarası föyde kalır
+        # (11.09.2026); avukat eski numarayla aradığında birleşik kart çıkar.
+        select(models.Case.id)
+        .join(models.CaseFoy, models.CaseFoy.case_id == models.Case.id)
+        .where(models.CaseFoy.onceki_tracking_no.ilike(pattern)),
         select(models.Case.id).where(models.Case.court.ilike(contains)),
         select(models.Case.id).where(models.Case.subject.ilike(contains)),
         select(models.Case.id).where(models.Case.responsible_lawyer_name.ilike(contains)),

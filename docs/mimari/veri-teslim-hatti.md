@@ -479,6 +479,37 @@ Ayrıntı `dava-acma-akisi.md` §1.
 üreticisi repoda; yer tutucu mahkeme adı ("daire no eksik") ayrı sınıf, E-8 "müvekkil yönü
 farkı" etiketi (hata değil), cevaplı xlsx geri okuma.
 
+### 7.2 TKU kart birleştirmesi — `scripts/tku_kart_birlestir.py` (11.09.2026)
+
+Ekibin defterinde her müvekkil ayrı föydür; aynı davanın föyleri aynı TKU'yu paylaşır. Eski
+aktarım bu föyleri müvekkil başına AYRI kartlara açmıştı. Hedef yapı sistemde zaten var
+(bir kart, altında birden çok föy, üstünde birden çok müvekkil — lokalde 903 kart böyle);
+script dağınık kalan grupları o şekle getirir. **Föyler değişmez, kartlar birleşir.**
+
+- **Grup** = aynı `case_foys.tku_no` + aynı esas anahtarı + birden çok canlı kart
+  (`gruplari_bul`). Esas anahtarı `case_relations_auto.esas_anahtari`: boşluk farkı yutulur,
+  yer tutucu (`2021/`, `2014/???`) kimlik sayılmaz → o kart gruba girmez. TKU tek başına yetmez:
+  ekip TKU'yu farklı davaları ilişkilendirmek için de kullanıyor (lokalde 480 grup farklı
+  mahkeme/esas) — onlar `services/case_relations_auto.py` ile bağ olarak kalır.
+- **Mahkeme uyumu** (`mahkeme_uyumu`): düz normalize eşitliği yoksa G067 yapısal kimliği
+  (`court_name.parse_court_name`) — yer + kanonik tür + daire aynı, sıra aynı ya da bir tarafta
+  yok. "Mahkemesi/Mahkemeleri", "(tüketici Mahkemesi sıfatıyla)" eki, eksik "1.", harf/aksan
+  farkı yutulur; "Ankara 5." ≠ "Ankara 15.", yer/tür farkı, kimliği çıkmayan ad (güven YOK)
+  eşleşme üretmez. Uyumsuz mahkeme ya da farklı dosya türü kart REDDEDİLİR ve rapora düşer
+  (lokal kuru koşu 11.09: 184 birleşecek, 15 ret — 10 tür, 5 mahkeme; hepsi gerçek fark).
+- **Taşıma yolu** G127'nin `mukerrer_kart_birlestir.birlestir`'i ile AYNIDIR (belge koruma,
+  taraf tekilleştirme, aşama/esas tarihçesi, soft delete); yalnız `muvekkil_ayrimi=True` ile
+  "müvekkil kümeleri aynı olmalı" koşulu gevşer, tarihçe alanı `tku_birlestirme`, silme
+  gerekçesi "TKU kart birleştirmesi: …".
+- **Kalan kart:** en çok belge → en çok föy → en eski id (`kalan_sec`). Bir kart birden çok
+  grupta geçerse (çok TKU'lu kart) sonraki gruplarda kalan karta yeniden eşlenir.
+- **Ofis dosya numarası kaybolmaz:** taşınan föy sönen kartın numarasını
+  `case_foys.onceki_tracking_no`da taşır (migrasyon 49; ilk taşınma kazanır), arama bu kolu
+  tarar (`case_manager._term_case_id_selects`), föy panelinde "eski ofis no" satırı olarak
+  görünür. Sönen kartın kendi `tracking_no`su da üzerinde kalır (unique kısıt, yeniden verilmez).
+- Varsayılan kuru koşu (rollback); `--rapor <csv>` plan/sonuç, `--tku`, `--limit`, `--apply --kim`.
+  Test: `tests/test_tku_kart_birlestir.py`.
+
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin

@@ -83,7 +83,12 @@ def test_model_ve_kolonlar_gorev_taslagina_uygun():
         "mko_id", "muvekkil_no", "muvekkil_tipi", "hizmet_turu", "durum",
         # G125: teslimdeki ham satır (JSON) — kayıpsızlık şartı.
         "ham_veri",
+        # TKU kart birleştirmesi (11.09.2026): sönen kartın ofis dosya numarası
+        # föyde kalır (avukatın bildiği numara kaybolmaz, arama bulur).
+        "onceki_tracking_no",
     }
+    assert columns["onceki_tracking_no"].type.length == 100
+    assert columns["onceki_tracking_no"].nullable
     assert columns["sistem_no"].type.length == 50
     assert columns["tku_no"].type.length == 50
     assert columns["hasar_no"].type.length == 100

@@ -1038,6 +1038,14 @@ _MIGRATIONS = [
     ("columns", "case_foys", {
         "ham_veri": "JSON",
     }),
+    # ─── 49. FÖYÜN ÖNCEKİ OFİS NUMARASI (TKU kart birleştirmesi, 11.09.2026) ──
+    # `case_foys.onceki_tracking_no`: aynı davanın müvekkil başına açılmış
+    # kartları tek karta toplanınca (scripts/tku_kart_birlestir.py) sönen kartın
+    # ofis dosya numarası föyde kalır; arama bu kolu da tarar. NULL = taşınmadı.
+    # Index yok: dolu satır az (yüzlerce), arama ILIKE ile tabloyu zaten tarıyor.
+    ("columns", "case_foys", {
+        "onceki_tracking_no": "VARCHAR(100)",
+    }),
     ("index", "cases", [
         "ALTER TABLE cases ALTER COLUMN tibbi_surec TYPE VARCHAR",
         "ALTER TABLE cases ALTER COLUMN tibbi_olay TYPE VARCHAR",

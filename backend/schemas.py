@@ -474,7 +474,9 @@ class CaseRead(BaseModel):
     # Kartın föyleri (`case_foys`, G063) + kapsam işareti (G113) + föy düzeyi
     # teslim alanları (G123): {id, sistem_no, tku_no, hasar_no, mko_id,
     # muvekkil_no, muvekkil_tipi, hizmet_turu, durum, source, case_party_id,
-    # kapsam_durumu, kapsam_gerekcesi, kapsam_tarihi}. `kapsam_durumu` NULL =
+    # onceki_tracking_no, kapsam_durumu, kapsam_gerekcesi, kapsam_tarihi}.
+    # `onceki_tracking_no`: TKU kart birleştirmesinde sönen kartın ofis
+    # numarası (NULL = föy başka karttan taşınmadı). `kapsam_durumu` NULL =
     # kapsamda; SILINDI | KAPSAM_DISI işaretli föy kartın föy panelinde
     # "kapsam dışı" rozetiyle gösterilir (CaseFoyPanel, G123).
     foyler: List[Dict[str, Any]] = []

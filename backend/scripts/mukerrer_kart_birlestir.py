@@ -69,8 +69,19 @@ def _muvekkil_kumesi(case: models.Case) -> set:
     return {normalize_party_key(p.name or "") for p in case.parties if p.party_type == "CLIENT"}
 
 
-def on_kosul(kalan: models.Case, mukerrer: models.Case) -> Optional[str]:
-    """Çift gerçekten mükerrer mi? Değilse sebep döner (birleştirme YAPILMAZ)."""
+def on_kosul(kalan: models.Case, mukerrer: models.Case, *,
+             muvekkil_ayrimi: bool = False, mahkeme_kontrolu: bool = True) -> Optional[str]:
+    """Çift gerçekten mükerrer mi? Değilse sebep döner (birleştirme YAPILMAZ).
+
+    `muvekkil_ayrimi=True` (TKU kart birleştirmesi, 11.09.2026): aynı davanın
+    müvekkil başına açılmış kartları — müvekkil kümeleri FARKLI olmak zorunda,
+    o koşul atlanır; esas + mahkeme koşulu aynen kalır. Föylerin aynı TKU'yu
+    paylaşması çağıranın (scripts/tku_kart_birlestir.py) sorumluluğudur.
+    `mahkeme_kontrolu=False`: çağıran mahkeme uyumunu KENDİ yapısal anahtarıyla
+    zaten doğruladı (court_name.parse_court_name — "Mahkemesi/Mahkemeleri",
+    "(tüketici sıfatıyla)" eki, eksik "1." yazım farkı sayılır); buradaki düz
+    metin karşılaştırması atlanır.
+    """
     if kalan.id == mukerrer.id:
         return "aynı kart"
     if kalan.deleted_at is not None or mukerrer.deleted_at is not None:
@@ -79,10 +90,10 @@ def on_kosul(kalan: models.Case, mukerrer: models.Case) -> Optional[str]:
         return f"esas no farklı ({kalan.esas_no!r} ≠ {mukerrer.esas_no!r})"
     # Mahkeme: ikisi de doluysa aynı olmalı; biri boşsa (eski aktarım mahkemesiz
     # kart açmış — #14315 örneği) esas + müvekkil eşleşmesi yeter.
-    if (kalan.court and mukerrer.court
+    if (mahkeme_kontrolu and kalan.court and mukerrer.court
             and _baslik_anahtari(kalan.court) != _baslik_anahtari(mukerrer.court)):
         return f"mahkeme farklı ({kalan.court!r} ≠ {mukerrer.court!r})"
-    if _muvekkil_kumesi(kalan) != _muvekkil_kumesi(mukerrer):
+    if not muvekkil_ayrimi and _muvekkil_kumesi(kalan) != _muvekkil_kumesi(mukerrer):
         return "müvekkil kümeleri farklı (müvekkil ayrımı — birleştirme değil)"
     return None
 
@@ -96,11 +107,21 @@ def _klasor_birlesimi(kalan: Optional[str], mukerrer: Optional[str]) -> Optional
     return ";".join(parcalar) or None
 
 
-def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str) -> BirlestirmeSonucu:
-    """Tek çifti birleştirir (flush eder, COMMIT ETMEZ — çağıranın işi)."""
+def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
+              muvekkil_ayrimi: bool = False, mahkeme_kontrolu: bool = True,
+              tarihce_alani: str = "mukerrer_birlestirme",
+              sebep_etiketi: str = "Mükerrer kart") -> BirlestirmeSonucu:
+    """Tek çifti birleştirir (flush eder, COMMIT ETMEZ — çağıranın işi).
+
+    `muvekkil_ayrimi` / `tarihce_alani` / `sebep_etiketi`: TKU kart
+    birleştirmesi (scripts/tku_kart_birlestir.py) aynı taşıma yolunu müvekkil
+    ayrımı izinli ve kendi tarihçe etiketiyle çağırır; taşınan föy sönen kartın
+    ofis numarasını `onceki_tracking_no`da taşır (her iki modda).
+    """
     sonuc = BirlestirmeSonucu(kalan.id, mukerrer.id, kalan_tracking_no=kalan.tracking_no,
                               mukerrer_tracking_no=mukerrer.tracking_no)
-    sonuc.ret = on_kosul(kalan, mukerrer)
+    sonuc.ret = on_kosul(kalan, mukerrer, muvekkil_ayrimi=muvekkil_ayrimi,
+                         mahkeme_kontrolu=mahkeme_kontrolu)
     if sonuc.ret:
         return sonuc
     t = sonuc.tasinan
@@ -136,6 +157,10 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str) -> Bir
         f.case_id = kalan.id
         if f.case_party_id in taraf_esleme:
             f.case_party_id = taraf_esleme[f.case_party_id]
+        # Sönen kartın ofis numarası föyde kalır (ilk taşınma kazanır: zincirleme
+        # birleştirmede föyün ASIL kartı korunur, ara kart değil).
+        if not f.onceki_tracking_no:
+            f.onceki_tracking_no = mukerrer.tracking_no
         t["foy"] = t.get("foy", 0) + 1
     db.flush()
     for p in silinecek_taraflar:
@@ -200,15 +225,18 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str) -> Bir
 
     # 8) Tarihçe notu + soft delete
     db.add(models.CaseHistory(
-        case_id=kalan.id, field_name="mukerrer_birlestirme",
+        case_id=kalan.id, field_name=tarihce_alani,
         old_value=mukerrer.tracking_no, new_value=kalan.tracking_no,
-        changed_by=DEGISTIREN, source=f"mukerrer #{mukerrer.id} → #{kalan.id} ({kim})",
+        changed_by=DEGISTIREN, source=f"{tarihce_alani} #{mukerrer.id} → #{kalan.id} ({kim})",
     ))
     mukerrer.deleted_at = func.now()
     mukerrer.deleted_by = kim
-    mukerrer.delete_reason = f"Mükerrer kart: #{kalan.id} {kalan.tracking_no} ile birleştirildi"
+    mukerrer.delete_reason = f"{sebep_etiketi}: #{kalan.id} {kalan.tracking_no} ile birleştirildi"
     mukerrer.active = False
     db.flush()
+    # Türetilmiş eksik-alan kovası tek yazma yolundan tazelenir (D8): kalan kart
+    # yeni taraf/föy aldı, zorunlu alan durumu değişmiş olabilir.
+    case_manager.refresh_missing_required(db, kalan)
     return sonuc
 
 

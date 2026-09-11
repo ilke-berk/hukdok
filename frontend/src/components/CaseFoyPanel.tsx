@@ -26,6 +26,8 @@ export interface CaseFoyEntry {
     /** Kart status havuzu: DERDEST | MAHZEN (eşlenemeyen teslim yazımı ham gelir). */
     durum?: string | null;
     source?: string | null;
+    /** TKU kart birleştirmesinde sönen kartın ofis dosya numarası; NULL = föy başka karttan taşınmadı. */
+    onceki_tracking_no?: string | null;
     /** G125: teslimdeki ham satır (orijinal başlık → değer); NULL = ham satırsız eski kayıt. */
     ham_veri?: Record<string, unknown> | null;
     /** NULL = kapsamda; SILINDI | KAPSAM_DISI = veri ekibi kapsamdan çıkardı (silinmedi). */
@@ -85,6 +87,15 @@ export default function CaseFoyPanel({ foyler }: Props) {
                                                     title={[kapsam, f.kapsam_gerekcesi, fmtDate(f.kapsam_tarihi)].filter(Boolean).join(" · ")}
                                                 >
                                                     {kapsam}
+                                                </span>
+                                            )}
+                                            {f.onceki_tracking_no && (
+                                                <span
+                                                    className="block text-[10px] text-muted-foreground whitespace-nowrap"
+                                                    title="TKU kart birleştirmesinde sönen kartın ofis dosya numarası"
+                                                    data-testid="foy-onceki-ofis-no"
+                                                >
+                                                    eski ofis no: {f.onceki_tracking_no}
                                                 </span>
                                             )}
                                         </td>
