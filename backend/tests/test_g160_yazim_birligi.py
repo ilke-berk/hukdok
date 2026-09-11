@@ -58,8 +58,10 @@ def test_korunan_roller_aktarimla_ayni():
 
 
 def test_adim_listesi_ayristirma():
-    assert yb._adim_listesi(None) == [1, 2, 3, 4, 5, 6]
+    # G165: adım 0 (combining-dot temizliği) varsayılan listenin BAŞINDA — adım 1'den önce koşar
+    assert yb._adim_listesi(None) == [0, 1, 2, 3, 4, 5, 6]
     assert yb._adim_listesi("3, 1,3") == [3, 1]
+    assert yb._adim_listesi("0") == [0]
     with pytest.raises(argparse.ArgumentTypeError):
         yb._adim_listesi("1,9")
 
@@ -694,3 +696,165 @@ def test_nokta_ikizi_apply_ikinci_kosu_sifir(zemin_nokta, tmp_path):
     ikinci = yb.kos(fabrika, adimlar=[2], apply=True, kim="test-kullanici", cikti_dizini=tmp_path / "ikinci")
     assert ikinci.yazildi and ikinci.toplam_satir == 0
     assert len(_tarihce(fabrika)) == 5 and _taraflar(fabrika) == taraf
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Adım 0 (G165) — combining-dot (U+0307) temizliği: "Si̇gorta" → "Sigorta"; adım 1'den ÖNCE koşar
+# ═══════════════════════════════════════════════════════════════════════════
+
+CD = "̇"   # COMBINING DOT ABOVE — eski `str.lower()` "İ"yi "i" + U+0307 yapıyordu
+
+
+@pytest.mark.parametrize("girdi,beklenen", [
+    ("Si" + CD + "gorta", "Sigorta"),
+    ("Axa Si" + CD + "gorta A.Ş.", "Axa Sigorta A.Ş."),
+    ("Hi" + CD + "zmetleri" + CD, "Hizmetleri"),
+    ("İ" + CD + "stanbul", "İstanbul"),                      # "İ̇" → "İ" (2 satır: İ̇stanbul, İbn-İ̇)
+    ("İbn-İ" + CD, "İbn-İ"),
+    ("I" + CD + "stanbul", "İstanbul"),                      # NFD girdi (I + U+0307) NFC'ye: U+0130
+    ("Sag" + CD + "lık", "Saġlık"),                     # NFC: g + U+0307 → ġ (precomposed); i̇ kuralı dışı
+    ("i" + CD + CD + "ki", "iki"),                           # çift işaret de temizlenir
+    ("Sağlik Bakanlığı", "Sağlik Bakanlığı"),                # ı→i harf bozukluğu KAPSAM DIŞI: dokunulmaz
+    ("AK SİGORTA A.Ş.", "AK SİGORTA A.Ş."),                  # U+0307 yok: büyük/küçük, nokta, boşluk aynen
+    ("  Ak  Sigorta ", "  Ak  Sigorta "),
+    ("Ak" + CD + " Sigorta", "Ak" + CD + " Sigorta"),        # öncesi i/İ değil: dokunulmaz (adım 0 raporlar)
+])
+def test_temizle_saf_kural(girdi, beklenen):
+    assert yb.temizle(girdi) == beklenen
+    assert yb.temizle(beklenen) == beklenen                  # idempotent
+
+
+@pytest.fixture()
+def zemin_0(db_env):
+    """Adım 0 zemini: U+0307 taşıyan taraf adları + mahkeme; sınır durumları.
+
+    C1 (canlı): c1 "Axa Si̇gorta A.Ş." → temiz hedefi c2'de ZATEN var; c3 "İ̇stanbul Hi̇zmetleri̇ Ltd.";
+    c4 "Sağlik Bakanlığı" (ı→i, kapsam dışı); c5 Sigortalı KORUNUR; c8 öncesi i olmayan U+0307 → dokunulmaz.
+    C2 (canlı): c2 temiz ad; c7 "AXA Si̇gorta A.Ş." → adım 0 sonrası c1/c2 ile ikiz (adım 2 çözer).
+    C3 SİLİNMİŞ: c6 ve court dokunulmaz.
+    """
+    db = db_env()
+    try:
+        k1 = _kart(db, "C1", court="İstanbul 3. Bölge İdare Mahkemesi" + CD)
+        k2 = _kart(db, "C2", court="Ankara 1. İdare Mahkemesi")
+        k3 = _kart(db, "C3", court="İzmir Mahkemesi" + CD)
+        db.flush()
+        k3.deleted_at = models.func.now()
+        k3.active = False
+        t = {}
+        t["c1"] = _taraf(db, k1, "Axa Si" + CD + "gorta A.Ş.", "Karşı Taraf")
+        t["c2"] = _taraf(db, k2, "Axa Sigorta A.Ş.", "Karşı Taraf")
+        t["c3"] = _taraf(db, k1, "İ" + CD + "stanbul Hi" + CD + "zmetleri" + CD + " Ltd.", "Karşı Taraf")
+        t["c4"] = _taraf(db, k1, "Sağlik Bakanlığı", "Karşı Taraf")
+        t["c5"] = _taraf(db, k1, "Koru Si" + CD + "gorta", "Sigortalı", "THIRD")          # KORUNUR
+        t["c6"] = _taraf(db, k3, "Batı Si" + CD + "gorta", "Karşı Taraf")                 # silinmiş kart
+        t["c7"] = _taraf(db, k2, "AXA Si" + CD + "gorta A.Ş.", "Diğer Davalı")
+        t["c8"] = _taraf(db, k1, "Ak" + CD + " Sigorta", "Karşı Taraf")                   # öncesi i/İ değil
+        db.add(models.CaseDocument(case_id=k1.id, case_party_id=t["c1"].id, original_filename="c.pdf",
+                                   stored_filename="c.pdf", link_mode="LINKED"))
+        db.commit()
+        kimlikler = {ad: p.id for ad, p in t.items()}
+        kimlikler.update(k1=k1.id, k2=k2.id, k3=k3.id)
+    finally:
+        db.close()
+    return db_env, kimlikler
+
+
+def test_adim_0_taraf_ve_court_degisir_korunan_silinmis_dokunulmaz(zemin_0):
+    """(b)+(c): taraf + court `kaynak="nfc"`; korunan rol, silinmiş kart, ı→i ve yalnız-U+0307 dışarıda."""
+    fabrika, k = zemin_0
+    db = fabrika()
+    try:
+        sonuc = yb.adim_0_combining_dot(db)
+    finally:
+        db.close()
+    assert sonuc.adim == 0 and sonuc.sayili_ornek == yb.ORNEK_SAYISI_0
+    taraf = {d.kayit_id: (d.eski, d.yeni, d.kaynak) for d in sonuc.degisiklikler if d.tablo == "case_parties"}
+    kart = {d.kayit_id: (d.eski, d.yeni, d.kaynak, d.alan) for d in sonuc.degisiklikler if d.tablo == "cases"}
+    assert taraf[k["c1"]] == ("Axa Si" + CD + "gorta A.Ş.", "Axa Sigorta A.Ş.", "nfc")
+    assert taraf[k["c3"]] == ("İ" + CD + "stanbul Hi" + CD + "zmetleri" + CD + " Ltd.",
+                              "İstanbul Hizmetleri Ltd.", "nfc")
+    assert taraf[k["c7"]] == ("AXA Si" + CD + "gorta A.Ş.", "AXA Sigorta A.Ş.", "nfc")
+    assert kart == {k["k1"]: ("İstanbul 3. Bölge İdare Mahkemesi" + CD, "İstanbul 3. Bölge İdare Mahkemesi",
+                              "nfc", "court")}
+    for ad in ("c2", "c4", "c5", "c6", "c8"):
+        assert k[ad] not in taraf, ad
+    assert sonuc.satir == 4 and sonuc.tekil == 4
+    assert all(d.rol for d in sonuc.degisiklikler if d.tablo == "case_parties")
+    # öncesi i/İ olmayan U+0307 satırı raporlanır (beklenen prod'da 0)
+    assert any("dokunulmayan: 1" in n for n in sonuc.notlar)
+
+
+def test_kos_sirasi_adim_0_once(zemin_0, tmp_path):
+    """(d): varsayılan koşu 0 → 1 → 2 → 2b → 3 → …; `--adim 0` tek başına da koşar."""
+    fabrika, k = zemin_0
+    sonuc = yb.kos(fabrika, cikti_dizini=tmp_path)
+    assert [a.adim for a in sonuc.adimlar] == [0, 1, 2, "2b", 3, 4, 5, 6]
+    assert (tmp_path / "0.csv").exists()
+    tek = yb.kos(fabrika, adimlar=[0], cikti_dizini=tmp_path / "tek")
+    assert [a.adim for a in tek.adimlar] == [0] and tek.toplam_satir == 4
+    assert not tek.yazildi
+
+
+def test_adim_0_kuru_kosu_adim_2_temiz_metni_gorur(zemin_0, tmp_path, capsys):
+    """Sıra gerekçesi: adım 0 sonrası açığa çıkan ikiz (AXA ↔ Axa) aynı koşuda adım 2'de çözülür; DB'ye yazılmaz."""
+    fabrika, k = zemin_0
+    taraf_once, kart_once = _taraflar(fabrika), {t: c.court for t, c in _kartlar(fabrika).items()}
+
+    yalniz_2 = yb.kos(fabrika, adimlar=[2], cikti_dizini=tmp_path / "yalniz2")
+    d_yalniz = _degisim(yalniz_2.adimlar[0])
+    # adım 0 koşmadı: c1/c7 kendi aralarında ikiz ama hedef hâlâ U+0307 taşır; c2'nin temiz yazımıyla BİRLEŞMEZ
+    assert CD in d_yalniz[k["c7"]][1] and d_yalniz[k["c7"]][1] != "Axa Sigorta A.Ş."
+    assert "adım 0 sonrası" not in capsys.readouterr().out
+
+    sonuc = yb.kos(fabrika, adimlar=[0, 2], cikti_dizini=tmp_path)
+    assert [a.adim for a in sonuc.adimlar] == [0, 2, "2b"]
+    d2 = _degisim(sonuc.adimlar[1])
+    assert d2[k["c7"]] == ("AXA Sigorta A.Ş.", "Axa Sigorta A.Ş.", "baskın")   # eski = adım 0 sonrası metin
+    assert k["c1"] not in d2 and k["c2"] not in d2
+    cikti = capsys.readouterr().out
+    assert "=== Adım 0" in cikti and f"ilk {yb.ORNEK_SAYISI_0} tekil" in cikti
+    assert "'Axa Si" + CD + "gorta A.Ş.' → 'Axa Sigorta A.Ş.'  (1 satır)" in cikti
+    assert "adım 0 sonrası" in cikti                              # adım 2/2b özetinde AYRICA belirtilir
+    assert "dokunulmayan: 1" in cikti
+    # kuru koşu: hiçbir şey yazılmadı
+    assert not sonuc.yazildi
+    assert _taraflar(fabrika) == taraf_once
+    assert {t: c.court for t, c in _kartlar(fabrika).items()} == kart_once
+    assert len(_tarihce(fabrika)) == 0
+    assert "Axa Si" + CD + "gorta A.Ş.,Axa Sigorta A.Ş.,nfc" in (tmp_path / "0.csv").read_text(encoding="utf-8-sig")
+
+
+def test_adim_0_apply_tarihce_envanter_idempotent(zemin_0, tmp_path):
+    """(e): apply tarihçeli (taraf + court), satır SİLİNMEZ (c1/c2 aynı adla kalır), id/bağ sabit, ikinci koşu 0."""
+    fabrika, k = zemin_0
+    taraf_once, envanter_once = _taraflar(fabrika), _envanter(fabrika)
+
+    sonuc = yb.kos(fabrika, adimlar=[0], apply=True, kim="test-kullanici", cikti_dizini=tmp_path)
+    assert sonuc.yazildi and not sonuc.envanter_farki and sonuc.toplam_satir == 4
+
+    taraf = _taraflar(fabrika)
+    assert taraf[k["c1"]][0] == taraf[k["c2"]][0] == "Axa Sigorta A.Ş."   # iki satır AYNI adla kalır
+    assert taraf[k["c3"]][0] == "İstanbul Hizmetleri Ltd."
+    assert taraf[k["c7"]][0] == "AXA Sigorta A.Ş."                         # ikiz çözümü adım 2'nin işi
+    assert taraf[k["c4"]][0] == "Sağlik Bakanlığı"
+    assert taraf[k["c5"]][0] == "Koru Si" + CD + "gorta"                   # Sigortalı KORUNDU
+    assert taraf[k["c6"]][0] == "Batı Si" + CD + "gorta"                   # silinmiş kart
+    assert taraf[k["c8"]][0] == "Ak" + CD + " Sigorta"
+    assert set(taraf) == set(taraf_once) and len(taraf) == len(taraf_once)
+    assert {i: v[2] for i, v in taraf.items()} == {i: v[2] for i, v in taraf_once.items()}
+    assert belge_envanteri.denk(envanter_once, _envanter(fabrika)) and _envanter(fabrika).tarafa_bagli == 1
+    kart = _kartlar(fabrika)
+    assert kart["C1"].court == "İstanbul 3. Bölge İdare Mahkemesi"
+    assert kart["C3"].court == "İzmir Mahkemesi" + CD
+
+    tarihce = _tarihce(fabrika)
+    assert len(tarihce) == 4
+    assert {h.source for h in tarihce} == {"yazim_birligi"} and {h.changed_by for h in tarihce} == {"test-kullanici"}
+    kayitlar = {(h.case_id, h.field_name, h.old_value, h.new_value) for h in tarihce}
+    assert (k["k1"], "taraf", "Axa Si" + CD + "gorta A.Ş. (Karşı Taraf)", "Axa Sigorta A.Ş. (Karşı Taraf)") in kayitlar
+    assert (k["k1"], "court", "İstanbul 3. Bölge İdare Mahkemesi" + CD, "İstanbul 3. Bölge İdare Mahkemesi") in kayitlar
+
+    ikinci = yb.kos(fabrika, adimlar=[0], apply=True, kim="test-kullanici", cikti_dizini=tmp_path / "ikinci")
+    assert ikinci.yazildi and ikinci.toplam_satir == 0
+    assert len(_tarihce(fabrika)) == 4 and _taraflar(fabrika) == taraf

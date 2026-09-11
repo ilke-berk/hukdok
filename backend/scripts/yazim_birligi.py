@@ -13,10 +13,11 @@ değerler dönüşür; "Perinatoloji" ↔ "Kadın Hastalıkları" ya da "A.Ş" �
 gibi içerik farkı asla. Nokta ikizinde de kural aynı: teslim yazımı varsa o
 (noktalı ya da noktasız, paket nasıl yazdıysa), yoksa baskın yazım.
 
-Adımlar (`--adim 1,2,…`; varsayılan hepsi):
+Adımlar (`--adim 0,1,2,…`; varsayılan hepsi, sırayla):
 
 | # | Hedef                  | Kaynak                                                          |
 |---|------------------------|-----------------------------------------------------------------|
+| 0 | `case_parties.name` + `cases.court` | combining-dot (U+0307) temizliği: NFC + "i̇"→"i" (G165; adım 1'den ÖNCE) |
 | 1 | `cases.sub_type`       | föy `ham_veri["Uzmanlık Alanı"]` yazımı; yoksa DB-içi ikiz → baskın |
 | 2 | `case_parties.name`    | föy `ham_veri["Müvekkil"/"Karşı Taraf"]` yazımı; yoksa ikiz → baskın |
 | 2b| `case_parties.name`    | adım 2'nin ATLADIĞI tek yazımlı gruplar (teslim yok, ikiz yok): `tr_title`, yalnız biçim farkı (G163) |
@@ -40,6 +41,24 @@ her zaman 2 + 2b koşar; adım 2'nin gördüğü gruplar (anahtar bazında) 2b'y
 GİRMEZ, aynı satır iki kez değişmez. Çıktı `2b.csv`; kuru koşuda ilk
 `ORNEK_SAYISI_2B` tekil satır sayısıyla basılır (kullanıcı onayı buradan).
 
+**Adım 0 (G165):** Deploy #20 öncesi `str.lower()` "İ"yi "i" + U+0307
+(COMBINING DOT ABOVE) yapıyordu; kalıntı ekranda "Si̇gorta" / "Hi̇zmetleri̇"
+diye çift noktalı görünür, anahtar U+0307'yi gördüğü için "Axa Si̇gorta A.Ş."
+ile "Axa Sigorta A.Ş." ikiz sayılmaz. `temizle`: NFC + "i̇"→"i" + "İ̇"→"İ";
+başka hiçbir karakter değişmez ("Sağlik" gibi ı→i harf bozukluğu KAPSAM DIŞI,
+U+0307'siz metin aynen). Kapsam yalnız `case_parties.name` (korunan roller
+dışı) + `cases.court`: diğer kolonlar lokal ölçümde 0 (clients.name,
+cases.subject/sub_type/responsible_lawyer_name/dosya_son_durumu,
+case_documents.muvekkil_adi, case_stage_decisions, case_foys.ham_veri).
+Öncesi i/İ olmayan U+0307 taşıyan satıra DOKUNULMAZ, raporda sayılır
+(beklenen 0). Adım 0 ÖNCE koşar ki adım 2/2b/3 anahtarları temiz metni görsün;
+bunun için her adımın değişikliği (kuru koşuda da) AYNI transaction'da
+uygulanır ve kuru koşu sonunda geri alınır — adım 2/2b/3 özeti "adım 0
+sonrası" hesaplandığını AYRICA yazar. Temiz hedefi DB'de zaten olan ad aynı
+string'e düşer; satır silinmez/birleştirilmez (iki satır aynı adla kalır,
+`case_party_id` sabit). Çıktı `0.csv`; kuru koşuda ilk `ORNEK_SAYISI_0` tekil
+satır sayısıyla basılır (onay listesi).
+
 **DOKUNULMAZ:** rolü "Sigortalı" / "Davalı İdare" olan taraf satırları (teslim
 BÜYÜK yazar, bizim yazım korunur — ne güncellenir ne baskınlık sayımına girer),
 `istinaf_mahkemesi`/`temyiz_mahkemesi` + `appeal_courts`/`cassation_courts`
@@ -48,7 +67,9 @@ BÜYÜK yazar, bizim yazım korunur — ne güncellenir ne baskınlık sayımın
 föylerin ham satırı (`kapsam_durumu` dolu — kardeş-föy uzlaşısıyla aynı kural).
 
 Güvenlik:
-  - VARSAYILAN KURU KOŞU: hiçbir şey yazmaz; adım başına özet (tekil değer,
+  - VARSAYILAN KURU KOŞU: DB'ye hiçbir şey KALMAZ (adım değişiklikleri aynı
+    transaction'da uygulanıp koşu sonunda geri alınır — sonraki adım önceki
+    adımın metnini görsün diye, G165); adım başına özet (tekil değer,
     satır sayısı, ilk 20 örnek) + CSV (`<cikti-dizini>/<adim>.csv`).
   - `--apply --kim <kullanıcı>`: TEK transaction; kart alanları `case_history`
     (`source="yazim_birligi"`, `changed_by=--kim`); taraf satırı yerinde UPDATE
@@ -67,6 +88,7 @@ Kullanım (konteynerde, prod'da paket uygulamasından SONRA ve yedekle):
   docker compose exec -T backend python scripts/yazim_birligi.py                 # kuru koşu, tüm adımlar
   docker compose exec -T backend python scripts/yazim_birligi.py --adim 1,3
   docker compose exec -T backend python scripts/yazim_birligi.py --adim 2      # 2 + 2b
+  docker compose exec -T backend python scripts/yazim_birligi.py --adim 0      # yalnız combining-dot temizliği
   docker compose exec -T backend python scripts/yazim_birligi.py --apply --kim ilke
 """
 from __future__ import annotations
@@ -75,7 +97,9 @@ import argparse
 import csv
 import logging
 import os
+import re
 import sys
+import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -100,6 +124,12 @@ ORNEK_SAYISI = 20
 #: Adım 2b kuru koşusunda satır sayısıyla basılan tekil (eski→yeni) sayısı — onay listesi.
 ORNEK_SAYISI_2B = 15
 ADIM_2B = "2b"
+#: Adım 0 kuru koşusunda satır sayısıyla basılan tekil (eski→yeni) sayısı — onay listesi (G165).
+ORNEK_SAYISI_0 = 15
+#: COMBINING DOT ABOVE — eski `str.lower()` artığı ("İ" → "i" + U+0307).
+COMBINING_DOT = "̇"
+#: Yalnız i/İ sonrasındaki U+0307'ler (birden çoksa hepsi) atılır; başka öncül dokunulmaz.
+_I_COMBINING_DOT = re.compile(f"([iİ]){COMBINING_DOT}+")
 
 CIKIS_TAMAM = 0
 CIKIS_ENVANTER = 2
@@ -141,6 +171,17 @@ def anahtar_genis(deger: str) -> str:
     return " ".join(anahtar(deger).replace("İ", "I").replace(".", " ").split())
 
 
+def temizle(deger: str) -> str:
+    """Adım 0 saf kuralı (G165): NFC + "i̇"→"i" + "İ̇"→"İ"; başka hiçbir karakter değişmez.
+
+    "Si̇gorta" → "Sigorta", "İ̇stanbul" → "İstanbul", NFD "I + U+0307" → "İ"
+    (NFC). Büyük/küçük harf, nokta, boşluk aynen kalır; "Sağlik" (ı→i, U+0307
+    yok) DEĞİŞMEZ. Öncesi i/İ olmayan U+0307 ("Ak̇") olduğu gibi bırakılır —
+    adım 0 böyle satıra dokunmaz, raporlar. İdempotent.
+    """
+    return _I_COMBINING_DOT.sub(r"\1", unicodedata.normalize("NFC", str(deger)))
+
+
 def _duz(deger: str) -> str:
     return " ".join(str(deger).split())
 
@@ -176,7 +217,7 @@ class Degisiklik:
     alan: str
     eski: Optional[str]
     yeni: Optional[str]
-    kaynak: str            # teslim | baskın | tr_title | liste | boşalt
+    kaynak: str            # nfc | teslim | baskın | tr_title | liste | boşalt
     rol: Optional[str] = None   # taraf satırında tarihçe metni için
 
 
@@ -191,7 +232,7 @@ class ListeIslemi:
 
 @dataclass
 class AdimSonucu:
-    adim: Union[int, str]       # 1-6 ya da "2b" (adım 2'nin alt adımı; CSV adı da bu)
+    adim: Union[int, str]       # 0-6 ya da "2b" (adım 2'nin alt adımı; CSV adı da bu)
     ad: str
     degisiklikler: List[Degisiklik] = field(default_factory=list)
     liste_islemleri: List[ListeIslemi] = field(default_factory=list)
@@ -302,6 +343,47 @@ def _kart_kolonu_donustur(db, adim: int, ad: str, kolon: str, teslim: Dict[str, 
 
 
 # ─── Adımlar ─────────────────────────────────────────────────────────────────
+
+def adim_0_combining_dot(db) -> AdimSonucu:
+    """`case_parties.name` (korunan roller dışı) + `cases.court`: `temizle` farkı → `kaynak="nfc"` (G165).
+
+    Diğer kolonlar kapsama alınmadı: lokal ölçümde (10.09) U+0307 sayısı 0.
+    Temizlik sonrası hâlâ U+0307 taşıyan (öncesi i/İ değil) satıra DOKUNULMAZ,
+    `notlar`da sayılır ve listelenir (beklenen 0). Silinmiş kartlar dışarıda.
+    """
+    sonuc = AdimSonucu(0, "combining-dot (U+0307) temizliği (case_parties.name + cases.court)",
+                       sayili_ornek=ORNEK_SAYISI_0)
+    tracking = _tracking(db)
+    dokunulmayan: List[str] = []
+
+    def _isle(tablo: str, kayit_id: int, case_id: int, tracking_no: Optional[str], alan: str,
+              deger: Optional[str], rol: Optional[str] = None) -> None:
+        if deger is None:
+            return
+        hedef = temizle(deger)
+        if COMBINING_DOT in hedef:
+            dokunulmayan.append(f"{tablo}#{kayit_id} {deger!r}")
+            return
+        if hedef == deger:
+            return
+        sonuc.degisiklikler.append(Degisiklik(tablo, kayit_id, case_id, tracking_no, alan, deger, hedef, "nfc", rol=rol))
+
+    for taraf_id, case_id, ad, rol in _taraf_satirlari(db):
+        _isle("case_parties", taraf_id, case_id, tracking.get(case_id), "name", ad, rol=rol)
+    kartlar = (
+        db.query(models.Case.id, models.Case.tracking_no, models.Case.court)
+        .filter(models.Case.deleted_at.is_(None), models.Case.court.isnot(None))
+        .all()
+    )
+    for kart_id, tracking_no, court in kartlar:
+        _isle("cases", kart_id, kart_id, tracking_no, "court", court)
+
+    sonuc.notlar.append(
+        f"U+0307 taşıyıp dokunulmayan: {len(dokunulmayan)}"
+        + (" — " + "; ".join(dokunulmayan[:ORNEK_SAYISI]) if dokunulmayan else "")
+    )
+    return sonuc
+
 
 def adim_1_uzmanlik(db) -> AdimSonucu:
     """`cases.sub_type`: föy teslim yazımı (Uzmanlık Alanı); yoksa DB-içi ikiz → baskın."""
@@ -479,7 +561,9 @@ def adim_6_buro_turu(db) -> AdimSonucu:
     return sonuc
 
 
+#: Sıra anlamlıdır: adım 0 temizliği önce koşar ki 2/2b/3 anahtarları temiz metni görsün (G165).
 ADIMLAR: Dict[int, Callable[[Any], AdimSonucu]] = {
+    0: adim_0_combining_dot,
     1: adim_1_uzmanlik,
     2: adim_2_taraf_adi,
     3: adim_3_mahkeme,
@@ -589,6 +673,13 @@ def kos(fabrika, *, adimlar: Sequence[int] = tuple(ADIMLAR), apply: bool = False
         kim: Optional[str] = None, cikti_dizini: Optional[Path] = None) -> KosuSonucu:
     """Seçili adımları hesaplar, raporlar; `apply` ise tek transaction'da yazar.
 
+    Her adımın değişikliği hesaplanır hesaplanmaz AYNI oturumda uygulanır —
+    kuru koşuda da (koşu sonunda rollback; DB'ye hiçbir şey kalmaz). Böylece
+    sonraki adımlar önceki adımın metnini görür: adım 0'ın temizlediği "AXA
+    Si̇gorta" adım 2'de "Axa Sigorta" ile ikiz olur (G165) ve kuru koşu, apply'ın
+    yapacağının birebir ön izlemesidir. Adım 0 değişiklik ürettiyse adım 2/2b/3
+    özetine "adım 0 sonrası" notu düşer.
+
     Belge envanteri kapısı commit'ten ÖNCE aynı oturumda ölçülür: fark varsa
     rollback + `envanter_farki` dolu (çıkış kodu 2). Liste işlemleri (adım 6)
     yalnız commit başarılıysa ve ondan sonra koşar.
@@ -599,6 +690,7 @@ def kos(fabrika, *, adimlar: Sequence[int] = tuple(ADIMLAR), apply: bool = False
     sonuclar: List[AdimSonucu] = []
     envanter_farki: Dict[str, Tuple[Any, Any]] = {}
     yazildi = False
+    adim_0_satir = 0
     db = fabrika()
     try:
         once = belge_envanteri.snapshot(db)
@@ -606,10 +698,18 @@ def kos(fabrika, *, adimlar: Sequence[int] = tuple(ADIMLAR), apply: bool = False
             # Adım 2 → [2, 2b]: ikisi de yazmadan önce hesaplanır; 2b, 2'nin
             # gördüğü grupları anahtar bazında dışarıda tutar (aynı satır iki kez değişmez).
             for sonuc in _adimi_hesapla(adim, db):
+                if adim_0_satir and sonuc.adim in (2, ADIM_2B, 3):
+                    sonuc.notlar.append(
+                        f"adım 0 sonrası hesaplandı: adım 0'ın {adim_0_satir} satırı bu hesapta uygulanmış "
+                        "sayıldı (aynı transaction; kuru koşuda koşu sonunda geri alınır)"
+                    )
                 sonuclar.append(sonuc)
                 _ozet_yaz(sonuc, _csv_yaz(dizin, sonuc))
-                if apply and sonuc.degisiklikler:
+                if sonuc.degisiklikler:
+                    # Kuru koşuda da uygulanır (sonraki adımlar görsün); commit yalnız apply'da.
                     _uygula(db, sonuc, kim or SOURCE)
+                if sonuc.adim == 0:
+                    adim_0_satir = sonuc.satir
         if apply:
             sonra = belge_envanteri.snapshot(db)
             envanter_farki = belge_envanteri.diff(once, sonra)
@@ -632,6 +732,7 @@ def kos(fabrika, *, adimlar: Sequence[int] = tuple(ADIMLAR), apply: bool = False
 
 
 def _adim_listesi(metin: Optional[str]) -> List[int]:
+    """Virgüllü adım listesi; boşsa hepsi, `ADIMLAR` sırasıyla (0 önce)."""
     if not metin:
         return list(ADIMLAR)
     secilen = []
@@ -651,7 +752,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--apply", action="store_true", help="Değişiklikleri veritabanına yaz (varsayılan kuru koşu)")
     parser.add_argument("--kim", help="case_history.changed_by (--apply ile zorunlu)")
     parser.add_argument("--adim", type=_adim_listesi, default=None,
-                        help="Virgüllü adım listesi, örn. 1,3 (varsayılan hepsi)")
+                        help="Virgüllü adım listesi, örn. 0,3 (varsayılan hepsi; 0 = combining-dot temizliği)")
     parser.add_argument("--cikti-dizini", default=VARSAYILAN_CIKTI, help=f"CSV dizini (varsayılan {VARSAYILAN_CIKTI})")
     args = parser.parse_args(argv)
     if args.apply and not args.kim:

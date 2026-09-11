@@ -217,6 +217,9 @@ biçim farkı → `tr_title`; lokal kuru koşu 7.978 satır / 1.998 tekil, ilk �
 `--apply` 10.09 itibarıyla LOKALDE DE KOŞULMADI: kuru koşunun bastığı ilk 15 tekil kullanıcı onayından geçince
 koşulur, prod'da da önce kuru koşu + ilk 15 gözle. "Türk Nippon Sigorta Aş" (204) 2b'ye GİRMEZ: paketin kendi yazımı
 "Aş", teslim kazanır.
+**Adım 0 (G165):** aynı komut artık combining-dot (U+0307) temizliğini adım 1'den ÖNCE koşar ("Si̇gorta" → "Sigorta",
+`case_parties.name` + `cases.court`; lokal kuru koşu 11.09: 6.351 satır / 4.398 tekil, dokunulmayan 0, adım 0 sonrası
+adım 2'de 57 nokta-ikizi satırı açığa çıkar) — `--apply` yine kullanıcı ilk 15 tekili onaylayınca, önce lokalde.
 **Nokta ikizleri (G164):** aynı koşuda gelir — anahtar artık SON noktayı yutar ("Ak Sigorta A.Ş." ↔ "A.Ş" tek grup;
 teslim kazanır, yoksa baskın), lokal kuru koşu adım 2'de nokta ikizi satırlarını bu yüzden gösterir; `--apply` yine
 ilk 15 onayından sonra.
