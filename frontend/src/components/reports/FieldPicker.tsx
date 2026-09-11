@@ -67,7 +67,8 @@ export function FieldPicker({ kolonlar, onSec, disabled, etiket = "Başka alan",
                     role="dialog"
                     aria-label="Alan seç"
                     data-testid="alan-secici"
-                    className="absolute right-0 z-30 mt-1 w-[280px] border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
+                    // Sola hizalı: düğme şeridin sol tarafında (12.09 bulgusu: `right-0` panel sol kenardan taşıp kesiliyordu)
+                    className="absolute left-0 z-30 mt-1 w-[280px] max-w-[calc(100vw-2rem)] border border-[var(--border)] bg-[var(--bg-elevated)] shadow-md"
                 >
                     <Command loop filter={altDizeFiltresi} className="bg-transparent text-[var(--fg)]">
                         <CommandInput aria-label="Alan ara" placeholder="Alan ara…" autoFocus className="h-9 text-[12px]" />

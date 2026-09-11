@@ -459,6 +459,8 @@ describe("TanimSeridi (G173)", () => {
         renderTanim({ veri_kaynagi: "davalar", kolonlar: ["tracking_no"], siralama: [], filtreler: [{ alan: "status", op: "eq", deger: "Karar" }] });
         tikla($("[data-testid='serit-filtre-ekle'] button"));
         const secici = $("[data-testid='alan-secici']");
+        expect(secici.className).toContain("left-0");   // düğme solda: panel sola hizalı, sol kenardan taşmaz (12.09)
+        expect(secici.className).not.toContain("right-0");
         const alanlar = Array.from(secici.querySelectorAll("[cmdk-item]")).map(i => i.getAttribute("data-alan"));
         // status dolu → yok; foy_sayisi filtrelenemez → yok; boş hızlı yuvalar (court, opening_date, maddi) ve bağlı kolonlar VAR
         expect(alanlar).toEqual(["tracking_no", "subject", "arama", "court", "opening_date", "karar_tarihi", "maddi_tazminat", "muvekkil.phone", "muvekkil.email", "foy.dosya_no"]);
