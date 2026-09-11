@@ -12,6 +12,19 @@ asistanı doğal dille rapor tanımı üretir (manuel yol her zaman açık kalı
 > uyar; bir görev sözleşmeyi değiştirmek zorunda kalırsa ÖNCE burayı günceller ve raporunda yazar.
 > Sayılar/yollar koddan doğrulanır (ALTIN KURAL, `CLAUDE.md`).
 
+> **Uygulamada değişti — sohbet öncelikli ekran (2026-09-11, kullanıcı kararı; G173-G177, dokümante G177):**
+> §4.1'deki yerleşim (kaynak kartları → filtre şeridi → "Kolonlar (N)" yan paneli), §6.1'in "asistan önde +
+> manuel kurucu altta" düzeni ve §8'in teyit döngüsü (kart onay bekler) ARTIK GEÇERLİ DEĞİL. Rapor sekmesi
+> `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
+> sıralama · Temizle, G173) → sayaç/şablon/indirme satırı → `PreviewTable` (G175); asistanın tanımı DÜĞME
+> BEKLEMEDEN uygulanır, kart yalnız metin filtre değeri katalog önerilerine uymayınca (aday çipleri) ya da
+> sayfa reddedince bekler (G174); prompt "TEYİT DÖNGÜSÜ" → "UYGULAMA" + "YAKLAŞIK AD" + "LİSTE SORUSU" (G176).
+> "Manuel yol her zaman açık kalır" kararı ŞERİT biçiminde korunur (kaynak/kolon/filtre/sıralama şeritten
+> düzenlenir; anahtar kapalıyken de çalışır — bilgi kartı + şerit). Üç aşama planı (G169-G172, plan dışı
+> kuyruk kalemi) koşulmadan iptal edildi (`docs/arsiv/gorevler/G169-G172`). §4.1/§6.1/§8 gövdeleri aşağıda
+> TARİHSEL olarak bırakıldı, yeniden yazılmadı; güncel anlatım `docs/mimari/raporlama.md` §7-§8, farklar §12
+> F23-F28. Sunucu sözleşmesi (§2 `RaporTanimi`, uçlar, olaylar) bu turda da DEĞİŞMEDİ.
+
 ## 0. Durum ve kanıt (G136 şerhi, 2026-09-06)
 
 Altı görev de TAMAM ve main'de; yaşayan doküman `docs/mimari/raporlama.md` (koddan doğrulanmış uç/env/

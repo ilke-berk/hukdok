@@ -84,6 +84,18 @@ Kapanış tarihi = dosyaya dokunan son commit'in tarihi.
 | [G028](G028.md) | backend | Ölü katmanlar: LogManager sınıfı, DatabaseManager, SyncLog, AnalysisCache, route alias'ları |
 | [G029](G029.md) | docs | Kapanmış görev dosyalarını arşivle (G001–G025) — bu dizini kuran görev |
 
+### Rapor ekranı üç aşama planı — İPTAL, koşulmadı (kapanış: 2026-09-11, G177 taşıdı)
+
+Kullanıcı 11.09 gündüz "sohbet öncelikli ekran" kararını verdi (G173-G177); üç aşama planı hiçbir işçi
+oturumu çalışmadan iptal edildi. Dosyalar TANIM olarak tarihseldir (Rapor bölümü boş); başlarında iptal şerhi var.
+
+| Dosya | Bant | Konu |
+| --- | --- | --- |
+| [G169](G169.md) | frontend | Aşama kabuğu (`StageSection`) + kolon seçimi ana alana + bağlı kaynak sekmeleri — İPTAL |
+| [G170](G170.md) | frontend | Seçili kolona bağlı filtre kartları + görünmeyen alan filtresi + hızlı filtreler öneriye — İPTAL |
+| [G171](G171.md) | frontend | Önizleme başlık hunisi + huniden filtreye git + aşama özetleri/araç çubuğu — İPTAL |
+| [G172](G172.md) | docs | Üç aşama için raporlama.md §8 + CLAUDE.md paragrafı — İPTAL (aynı işi sohbet öncelikli ekran için G177 yaptı) |
+
 ## Bilinen tuzak: dosya içindeki yol yazımları
 
 Bu dosyalar `gorevler/gorev/` altındayken yazıldı; içlerinde `gorevler/gorev/G0NN.md`

@@ -102,13 +102,18 @@ index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
 G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
 kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
 
-**Raporlama (G130-G139):** yönetici `/reports`'ta kaynak kartı + katalogdan gelen filtre şeridiyle
-(operatör seçici yok; kontrol türü/grup/öneri katalogda, 60 sn önbellekli) liste kurar →
+**Raporlama (G130-G176):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
+`AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
+sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda, 60 sn önbellekli) → tablo; manuel kurucu
+(kaynak kartı/filtre şeridi/kolon paneli) KALKTI, şerit yedek kurucudur →
 `GET /api/reports/catalog` · `POST /preview` (loglanmaz) · `POST /export` (xlsx/csv; `report_runs`
 satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
 SQL YOK (K1: istemci yalnız `services/rapor/registry.py` anahtarlarını gönderir, sorgu Core ile kurulur,
 tenant+soft-delete `kisitlar`dan). AI asistan `POST /chat` (NDJSON) admin anahtarı `rapor_asistani`
-(varsayılan KAPALI) ister; tanımı manuelle AYNI doğrulamadan geçer (K6). **Kaynaklar arası birleştirme
+(varsayılan KAPALI; kapalıyken sayfa boş kalmaz — bilgi kartı + şerit) ister; tanımı şeritle AYNI doğrulamadan
+geçer (K6) ve DÜĞME BEKLEMEDEN uygulanır (G174; kart yalnız metin filtre değeri katalog önerilerine uymayınca
+bekler — `degerEsle`, aday çipleri; "hangi X'ler var" listesi Gemini'siz katalogdan, `listeNiyeti`); prompt
+G176: onay sorma, yaklaşık ad → `contains`, liste sorusunda ekrana yönlendir. **Kaynaklar arası birleştirme
 (G166):** kaynak `iliskiler` bildirir, bağlı kaynağın kolonları `<iliski>.<kolon>` anahtarıyla TÜRETİLİR
 (`muvekkil.phone` davalar'da; `dava.tracking_no` müvekkiller'de) — çoklu bağda değerler `" ; "` birleşik +
 EXISTS filtre, sıralama yok; belgeler/föyler → `dava.*` tekil (düz kolon gibi). Elle kolon listesi yazma;
