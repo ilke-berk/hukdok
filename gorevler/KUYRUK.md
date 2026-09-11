@@ -22,7 +22,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G174 | bant:frontend | bagimli:- | Sohbet öncelikli rapor ekranı: asistan otomatik uygulama (G167 kartı yalnız sorunlu değerde) + `degerEsle` katalog önerilerine değer eşleme + aday çipleri + `listeNiyeti`/`DegerListesi` "hangi X'ler var" yerel liste balonu + `onFiltreEkle` prop'u (Gemini'siz, K6 korunur)
 - [x] G175 | bant:frontend | bagimli:G173,G174 | Sohbet öncelikli rapor ekranı: yerleşim — SourceCards/QuickFilters/ColumnSheet/ColumnPicker kalkar, AssistantBar → TanimSeridi → sayaç/şablon(kompakt)/indirme satırı → PreviewTable; anahtar kapalı kartı + şerit yedek; sayfa testleri yeni kimliklerle — TAMAM 11.09 gece (3b899d9 merge; kapı test-silme sahte ihlali: silinenler görev listesiyle birebir, bağımsız denetim GEÇTİ, main vitest 916 passed / 69 dosya)
 - [x] G176 | bant:backend | bagimli:- | Rapor asistanı prompt'u: TEYİT DÖNGÜSÜ → "hemen uygulanır, onay sorma, belirsizlikte tanim=null"; yaklaşık ad → `contains`; liste sorusunda "listeyi ben veremem, ekrandaki çipe tıkla"; test_g132 prompt testleri izinle
-- [ ] G177 | bant:docs | bagimli:G175,G176 | raporlama.md §7/§8/§9/§12/§13/§15 yeniden yazımı + CLAUDE.md raporlama paragrafı + plan "uygulamada değişti" şerhi + G169-G172 dosyaları `git mv` arşive (iptal şerhiyle) — koddan doğrulanmış
+- [x] G177 | bant:docs | bagimli:G175,G176 | raporlama.md §7/§8/§9/§12/§13/§15 yeniden yazımı + CLAUDE.md raporlama paragrafı + plan "uygulamada değişti" şerhi + G169-G172 dosyaları `git mv` arşive (iptal şerhiyle) — koddan doğrulanmış
 
 ## İPTAL — Rapor ekranı üç aşama: kolonlar → seçili kolona bağlı filtreler → önizleme (2026-09-11 gece planı; 11.09 gündüz kullanıcı kararıyla iptal, yerine yukarıdaki G173-G177)
 
