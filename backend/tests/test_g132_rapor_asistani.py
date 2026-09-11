@@ -25,6 +25,7 @@ os.environ.setdefault("GEMINI_MODEL_NAME", "models/test-flash")
 
 import analyzer  # noqa: E402
 import gemini_client  # noqa: E402
+import prompts  # noqa: E402
 from config.settings import Settings, settings  # noqa: E402
 from schemas_rapor import (  # noqa: E402
     AsistanTanimi, RaporAsistanCevabi, RaporDogrulamaHatasi, RaporTanimi, SohbetMesaji,
@@ -372,6 +373,41 @@ def test_prompt_katalogu_registryden_gomer(env):
     for parca in ("YALNIZ katalogdaki", "tanim=null", "indir_xlsx", "Bugünün tarihi", "is_null"):
         assert parca in talimat
     assert "notes" not in talimat and "tenant_id" not in talimat and "tc_no" not in talimat
+
+
+def test_prompt_g176_uygulama_kurali_teyit_dongusu_yok():
+    """G176: G174 tanımı düğme beklemeden uygular → prompt onay SORMAZ; 'TEYİT DÖNGÜSÜ' başlığı
+    ve 'hemen uygulanmaz' cümlesi gitti, belirsizlikte tanim=null + tek soru; G167 sözlü onay ('tamam'
+    → aynen döndür) ve 'SIFIRDAN ÜRETME' kuralı aynen kalır."""
+    talimat = prompts.get_rapor_asistani_instruction(asistan.katalog_metni(), "2026-09-11")
+    assert "TEYİT DÖNGÜSÜ" not in talimat and "hemen uygulanmaz" not in talimat
+    assert "onay bekler" not in talimat and "yine onay iste" not in talimat
+    assert "hemen uygulanır" in talimat and "düzenlenebilir bir şeritte" in talimat
+    assert "onay SORMA" in talimat
+    assert "Belirsizlikte (hangi kolon, hangi tarih alanı) tanim=null ve TEK soru" in talimat
+    assert "'tamam', 'evet', 'doğru', 'uygula', 'onayla', 'göster' derse tanımı AYNEN" in talimat
+    assert "Mevcut tanım verilmişse SIFIRDAN ÜRETME" in talimat
+    assert "mevcut tanımı o kadar değiştir, gerisine dokunma" in talimat
+
+
+def test_prompt_g176_yaklasik_ad_contains_ve_liste_sorusu():
+    """G176: yaklaşık/kısaltılmış ad → metin kolonunda `contains` (kapalı liste 'aynen kopyala' kalır);
+    liste sorusunda asistan liste VEREMEZ (K6, veri görmez) → tanim=null + ekrandaki çipe yönlendirme."""
+    talimat = prompts.get_rapor_asistani_instruction(asistan.katalog_metni(), "2026-09-11")
+    assert "YAKLAŞIK AD" in talimat and "'Ankara 3. Ticaret'" in talimat
+    assert "eq DEĞİL contains kullan ve en ayırt edici parçayı" in talimat
+    assert "tam liste değerini bilmiyorsan uydurma" in talimat
+    assert "Liste tipi kolonda değer, listelenen seçeneklerden biri olmalı (aynen kopyala)" in talimat
+    assert "LİSTE SORUSU" in talimat and "'hangi mahkemeler var'" in talimat
+    assert "listeyi SEN VEREMEZSİN" in talimat and "filtre çipine tıklayarak" in talimat
+    assert "'hangi <alan>lar var' yazarak" in talimat
+    # kural cümleleri katalogdan ÖNCE, mevcut tanım katalogdan SONRA (prompt sonu) — yerleşim değişmedi
+    mevcut = '{"veri_kaynagi": "davalar"}'
+    talimat2 = prompts.get_rapor_asistani_instruction(asistan.katalog_metni(), "2026-09-11", mevcut)
+    katalog_i = talimat2.index("KATALOG (kaynak → anahtar")
+    assert talimat2.index("LİSTE SORUSU") < katalog_i < talimat2.index("MEVCUT TANIM")
+    assert talimat2.rstrip().endswith(mevcut)
+    assert "MEVCUT TANIM" not in talimat
 
 
 def test_katalog_metni_tum_kolonlari_icerir_elle_liste_yok():

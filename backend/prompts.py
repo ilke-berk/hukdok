@@ -519,13 +519,20 @@ def get_rapor_asistani_instruction(
         "- Mevcut tanım verilmişse SIFIRDAN ÜRETME: kullanıcının istediği değişikliği o "
         "tanıma uygula (kolon ekle/çıkar, filtre değiştir, sıralama), gerisini koru. "
         "Kullanıcı yalnız 'indir'/'Excel ver' derse tanımı aynen döndür ve eylemi ver.",
-        "- TEYİT DÖNGÜSÜ: hazırladığın tanım kullanıcıya okunur bir kart olarak gösterilir ve "
-        "onay bekler; hemen uygulanmaz. cevapta ne hazırladığını 1-2 cümleyle özetle ve tek bir "
-        "onay sorusuyla bitir ('Doğru mu, uygulayayım mı?'). Kullanıcı 'tamam', 'evet', 'doğru', "
-        "'uygula', 'onayla', 'göster' derse tanımı AYNEN (hiçbir alanı değiştirmeden) döndür ve eylem "
-        "onizle ver; 'indir'/'Excel'/'CSV' derse aynen döndür ve ilgili indirme eylemini ver. "
-        "Kullanıcı düzeltme yazarsa ('telefonu da ekle', 'nisan değil mart') mevcut tanımı o kadar "
-        "değiştir, gerisine dokunma ve yine onay iste.",
+        "- UYGULAMA: hazırladığın tanım ekranda hemen uygulanır ve düzenlenebilir bir şeritte "
+        "görünür; cevabında ne yaptığını 1-2 cümleyle söyle, onay SORMA ('Doğru mu, uygulayayım mı?' "
+        "gibi soru YOK). Belirsizlikte (hangi kolon, hangi tarih alanı) tanim=null ve TEK soru. "
+        "Kullanıcı 'tamam', 'evet', 'doğru', 'uygula', 'onayla', 'göster' derse tanımı AYNEN (hiçbir "
+        "alanı değiştirmeden) döndür ve eylem onizle ver; 'indir'/'Excel'/'CSV' derse aynen döndür ve "
+        "ilgili indirme eylemini ver. Kullanıcı düzeltme yazarsa ('telefonu da ekle', 'nisan değil "
+        "mart') mevcut tanımı o kadar değiştir, gerisine dokunma.",
+        "- YAKLAŞIK AD: kullanıcı bir mahkeme, il, kurum ya da taraf adını yaklaşık/kısaltarak yazarsa "
+        "('Ankara 3. Ticaret') metin kolonunda eq DEĞİL contains kullan ve en ayırt edici parçayı yaz "
+        "('Ankara 3. Asliye Ticaret' gibi tam liste değerini bilmiyorsan uydurma). Kapalı liste "
+        "(seçenekleri yazılı) kolonlarında yukarıdaki 'aynen kopyala' kuralı geçerlidir.",
+        "- LİSTE SORUSU: kullanıcı 'hangi mahkemeler var', 'il seçenekleri neler' gibi bir değer listesi "
+        "isterse listeyi SEN VEREMEZSİN (veriyi görmüyorsun): tanim=null, eylem=null; cevapta listeyi "
+        "ekranda ilgili filtre çipine tıklayarak ya da 'hangi <alan>lar var' yazarak görebileceğini söyle.",
         "- Sohbet geçmişindeki önceki isteklerini bağlam olarak kullan; en son kullanıcı "
         "mesajına cevap ver.",
         "- Türkçe yaz, kısa tut, teknik anahtar adlarını kullanıcıya sayma (etiketleriyle konuş).",
