@@ -387,7 +387,16 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   `katalog_metni()` ile registry'den üretilir (`asistan.py:106`; `_kolon_satiri :89`, ilişki başına tek satır
   `_iliski_satiri :126`: `## kaynak — etiket: açıklama`, varsayılan kolonlar, `anahtar · etiket · tip[ ·
   seçenek|seçenek][ · türetilmiş (filtre yalnız: contains|is_null|not_null; sıralama yok)]`;
-  seçenekler yalnız sabit çekirdek, DB'siz), elle kolon listesi YOK. **G137 katalog alanları
+  sabit seçenekler çekirdekten, DB'siz), elle kolon listesi YOK. **Veriden gelen seçenek listeleri (2026-09-12):**
+  rota `/chat` 60 sn önbellekli tenant kataloğunu `run_in_threadpool` ile alır, `asistan.veri_secenekleri_katalogdan`
+  yalnız `secenek_kaynagi == "veri"` + bağsız kolonları `(kaynak, kolon) → seçenekler` olarak çıkarır,
+  `katalog_metni(veri_secenekleri)` kolon satırına `· seçenekler: a|b|c` ekler (8 bağsız kolon; katalog metni 11,3k → 15,8k karakter, lokal ölçüm 12.09;
+  argümansız çağrı eski metinle birebir). Sebep: "konusu kadın doğum" isteği `subject contains "kadın doğum"`
+  olmuş, gerçek değer `sub_type = "Kadın Hastalıkları ve Doğum"` → 0 satır; model listeyi görmüyordu. K6 korunur:
+  bu listeler her istemciye zaten katalogla gider, satır verisi değil; asistan modülü DB'ye yine dokunmaz.
+  Prompt kuralları: "seçenekler:" yazan kolonda değer listeden AYNEN + `eq`/`in`, yaklaşık ifade → en yakın
+  seçenek + cevapta söyle; "KOLON SEÇİMİ DEĞERE GÖRE" (değer bir kolonun listesine benziyorsa o kolon, adı
+  benzeyen serbest metin kolonu değil); "YAKLAŞIK AD" `contains` kuralı yalnız listesiz metin kolonunda. **G137 katalog alanları
   (`grup`, `kontrol`, `oplar`, `oneriler`, `hizli_filtreler`, `kolon_setleri`) BİLEREK gömülmez**
   (öneriler 300'e kadar değer = prompt gürültüsü); taraf kolonları ve bağlı kolon ilişki satırları doğal olarak
   girer. Bugünün tarihi göreli ifadeler için; `mevcut_tanim` JSON olarak prompt SONUNA gömülür ("sıfırdan üretme,
@@ -800,9 +809,10 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
   `dava_sayisi` ile aynı). Çoklu bağ kolonu sıralanamaz. Excel'de çok değerli tarih hücresi metin kalır.
 - **Öneri listesi tavanı:** 300'ü aşınca ilk 300 (DB sırası) + `oneri_kesik=true`; combobox başlığında
   "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:519`). Sıra DB collation'ı (F13).
-- **Aday eşleme yalnız `oneriler` taşıyan kolonlarda (G174):** `degerEsle` (`reportsChat.ts:530-550`) öneri
-  listesi olmayan metin kolonunu (ör. `subject`, `notes` zaten katalog dışı) daima temiz sayar — orada asistanın
-  yazdığı değer kontrolsüz uygulanır. **300 kesik listede aday bulunamayabilir:** aranan değer ilk 300'ün dışında
+- **Aday eşleme yalnız listesi olan kolonlarda (G174 + 2026-09-12):** `degerEsle` (`reportsChat.ts`) `oneriler`
+  yoksa `secenekler`e bakar (veriden kapalı liste ör. Uzmanlık Alanı; kodlu listede `secenek_etiketleri` etiketi
+  de kabul); listesiz serbest metin kolonunu (ör. `subject`) daima temiz sayar — orada asistanın yazdığı değer
+  kontrolsüz uygulanır. Boş sonuç satırının örnek istemleri (`gevsetmeOrnekleri`) gerçek filtrelerden türer. **300 kesik listede aday bulunamayabilir:** aranan değer ilk 300'ün dışında
   kalırsa satır "eşleşmedi" olur ve aday çipi çıkmayabilir; kart "Liste kesik (300 tavanı)" notu + "Yine de uygula"
   verir (`AssistantMessage.tsx:227-231`). Aday sıralaması kelime kesişimi/önek — eşanlamlı bilmez.
 - **Liste balonu yalnız kalıp eşleşince (G174):** `listeNiyeti` (`reportsChat.ts:642-670`) Gemini'ye GİTMEZ — kalıp

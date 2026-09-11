@@ -436,9 +436,29 @@ export function sonucSatiri(tanim: RaporTanimi, toplam: number, katalog: Katalog
     if (toplam > 0) return `${TR_SAYI.format(toplam)} kayıt bulundu.`;
     const filtreler = tanimAyrintisi(tanim, katalog).filtreler;
     if (filtreler.length === 0) return "Sonuç boş: bu kaynakta hiç kayıt yok.";
-    return "Sonuç boş. Filtreleri gevşetebilirim — hangisini kaldırayım ya da genişleteyim? "
+    return "Sonuç boş. Filtreleri gevşetebilirim — hangisini kaldırayım ya da değiştireyim? "
         + filtreler.map(f => `• ${f}`).join(" ")
-        + " (ör. \"durum filtresini kaldır\", \"tarihi bu yıla genişlet\")";
+        + ` (ör. ${gevsetmeOrnekleri(tanim, katalog).map(o => `"${o}"`).join(", ")})`;
+}
+
+/** Boş sonuçta örnek düzeltme istemleri, GERÇEK filtrelerden (2026-09-12: tarih filtresi yokken "tarihi bu yıla
+ * genişlet" önerisi saçmaydı): tarih → "<etiket> aralığını genişlet", metin contains/eq → "<etiket> değerini
+ * değiştir", liste/diğer → "<etiket> filtresini kaldır". Etiket küçük harfle, en çok iki örnek. */
+export function gevsetmeOrnekleri(tanim: RaporTanimi, katalog: Katalog | null): string[] {
+    const kaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === tanim.veri_kaynagi);
+    const ornekler: string[] = [];
+    for (const f of tanim.filtreler) {
+        const kolon = kaynak?.kolonlar.find(k => k.anahtar === f.alan);
+        const ad = (kolon?.etiket ?? f.alan).toLocaleLowerCase("tr-TR");
+        const tip = kolon?.tip;
+        let ornek: string;
+        if (tip === "tarih") ornek = `${ad} aralığını genişlet`;
+        else if (tip === "metin" && (f.op === "contains" || f.op === "eq")) ornek = `${ad} değerini değiştir`;
+        else ornek = `${ad} filtresini kaldır`;
+        if (!ornekler.includes(ornek)) ornekler.push(ornek);
+        if (ornekler.length === 2) break;
+    }
+    return ornekler;
 }
 
 /** İki tanım aynı mı (kaynak, kolon sırası, filtreler, sıralama) — "tamam/uygula/indir" cevabında asistan
@@ -521,11 +541,14 @@ export function degerAdaylari(deger: string, oneriler: readonly string[], max = 
 }
 
 /**
- * Asistan tanımındaki METİN filtre değerlerini katalog önerilerine karşı dener (saf, Gemini'siz).
- * Yalnız `contains`/`eq` + string değer + kolonun `oneriler` listesi varsa bakılır: `contains` için normalize
- * değer en az bir önerinin ALT DİZESİ ise temiz ("Ankara" → "Ankara 3. Asliye Ticaret"), `eq` için birebir.
- * `in`/`between`/tarih/sayı/mantık filtreleri ve öneri listesi olmayan kolonlar daima temiz. Tutmayan satır
- * `sorunlar`a en yakın ≤5 adayla düşer; `temiz=false` → kart bekler (AssistantBar), aksi hâlde tanım hemen uygulanır.
+ * Asistan tanımındaki METİN filtre değerlerini katalog listelerine karşı dener (saf, Gemini'siz).
+ * Yalnız `contains`/`eq` + string değer + kolonun bir listesi varsa bakılır: liste = `oneriler` (metin kolon,
+ * ≤300 DISTINCT) yoksa `secenekler` (kapalı liste — veriden gelen "Uzmanlık Alanı" gibi ya da sabit kodlu; kodlu
+ * listede `secenek_etiketleri` etiketi de kabul). 2026-09-12 dersi: "Kadın Doğum" ≠ "Kadın Hastalıkları ve Doğum"
+ * yalnız `secenekler` taşıyan kolondaydı, eşleme atlıyordu → 0 satır. `contains` için normalize değer en az bir
+ * öğenin ALT DİZESİ ise temiz ("Ankara" → "Ankara 3. Asliye Ticaret"), `eq` için birebir. `in`/`between`/tarih/
+ * sayı/mantık filtreleri ve listesiz kolonlar daima temiz. Tutmayan satır `sorunlar`a en yakın ≤5 adayla düşer;
+ * `temiz=false` → kart bekler (AssistantBar), aksi hâlde tanım hemen uygulanır.
  */
 export function degerEsle(tanim: RaporTanimi, katalog: Katalog | null): DegerEslemesi {
     const kaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === tanim.veri_kaynagi);
@@ -535,15 +558,19 @@ export function degerEsle(tanim: RaporTanimi, katalog: Katalog | null): DegerEsl
             if (f.op !== "contains" && f.op !== "eq") return;
             if (typeof f.deger !== "string") return;
             const kolon = kaynak.kolonlar.find(k => k.anahtar === f.alan);
-            const oneriler = kolon?.oneriler;
-            if (!kolon || !oneriler || oneriler.length === 0) return;
+            if (!kolon) return;
+            const onerili = (kolon.oneriler?.length ?? 0) > 0;
+            const liste = onerili ? kolon.oneriler! : (kolon.secenekler ?? []);
+            if (liste.length === 0) return;
             const n = degerAnahtari(f.deger);
             if (!n) return;
+            const etiketler = onerili ? null : kolon.secenek_etiketleri;
+            const anahtarlar = (o: string) => [degerAnahtari(o), ...(etiketler?.[o] ? [degerAnahtari(etiketler[o])] : [])];
             const tutuyor = f.op === "contains"
-                ? oneriler.some(o => degerAnahtari(o).includes(n))
-                : oneriler.some(o => degerAnahtari(o) === n);
+                ? liste.some(o => anahtarlar(o).some(a => a.includes(n)))
+                : liste.some(o => anahtarlar(o).includes(n));
             if (tutuyor) return;
-            sorunlar.push({ indeks, alan: f.alan, deger: f.deger, adaylar: degerAdaylari(f.deger, oneriler), kesik: kolon.oneri_kesik === true });
+            sorunlar.push({ indeks, alan: f.alan, deger: f.deger, adaylar: degerAdaylari(f.deger, liste), kesik: onerili && kolon.oneri_kesik === true });
         });
     }
     return { temiz: sorunlar.length === 0, sorunlar };
@@ -591,6 +618,7 @@ const ES_ANLAM_GRUPLARI: readonly (readonly string[])[] = [
     ["durum", "status"],
     ["avukat", "lawyer"],
     ["konu", "subject"],
+    ["uzmanlik", "brans", "specialty"],
     ["tur", "turu", "type", "tip"],
     ["asama", "stage"],
     ["muvekkil", "client"],
@@ -621,12 +649,17 @@ function bicimUyar(a: string, b: string): boolean {
     return a.startsWith(b) || b.startsWith(a);
 }
 
+const ANAHTAR_JENERIK = new Set(["sub", "type", "name", "id", "date", "no", "extra", "code", "at", "by", "is"]);
+
 function kolonSozcukleri(kolon: KatalogKolon, kaynak: KatalogVeriKaynagi): string[] {
     // Bağlı kolon etiketi "Müvekkil kartı · Telefon": kolonun kendi adı son parça.
     const etiket = kolon.etiket.split("·").pop() ?? kolon.etiket;
     const hizli = kaynak.hizli_filtreler.find(h => h.alan === kolon.anahtar)?.etiket ?? "";
     const anahtar = (kolon.anahtar.split(".").pop() ?? kolon.anahtar).replace(/_/g, " ");
-    const ham = [...kelimeler(etiket), ...kelimeler(hizli), ...kelimeler(anahtar)]
+    // Anahtarın jenerik parçaları eşlemeye girmez: "sub_type" → "sub" ön-ekiyle "subject"e, "type" ile "tür"e
+    // uyuyordu (2026-09-12: "hangi konular var" Uzmanlık Alanı'na düşüyordu).
+    const anahtarKelimeleri = kelimeler(anahtar).filter(w => !ANAHTAR_JENERIK.has(w));
+    const ham = [...kelimeler(etiket), ...kelimeler(hizli), ...anahtarKelimeleri]
         .filter(w => !LISTE_DOLGU_KELIMELERI.has(w) && !["adi", "ad", "no", "numarasi", "tarihi", "karti", "kart"].includes(w));
     return Array.from(new Set(ham.flatMap(sozcukBicimleri)));
 }

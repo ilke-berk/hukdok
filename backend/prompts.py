@@ -503,7 +503,13 @@ def get_rapor_asistani_instruction(
         "'2025'te açılan' → opening_date between ['2025-01-01','2025-12-31']. "
         "Mantık kolonunda 'true'/'false'. Para/sayı düz rakam ('150000').",
         "- Liste tipi kolonda değer, listelenen seçeneklerden biri olmalı (aynen kopyala). "
-        "Kullanıcı seçeneği eşanlamlısıyla söylerse en yakın seçeneği seç.",
+        "Kullanıcı seçeneği eşanlamlısıyla söylerse en yakın seçeneği seç. Satırında 'seçenekler:' "
+        "yazan metin kolonunda da aynı kural: değer o listeden AYNEN alınır, op eq ya da in (contains DEĞİL); "
+        "kullanıcı kısaltarak/yaklaşık söylerse ('kadın doğum' → 'Kadın Hastalıkları ve Doğum') en yakın "
+        "seçeneği seç ve cevapta hangi seçeneği anladığını söyle.",
+        "- KOLON SEÇİMİ DEĞERE GÖRE: kullanıcının verdiği değer bir kolonun seçenek listesindeki bir "
+        "değere benziyorsa o kolonu kullan, adı benzeyen başka kolonu değil ('konusu kadın doğum olan davalar' "
+        "→ sub_type = 'Kadın Hastalıkları ve Doğum'; subject değil — subject serbest metindir).",
         "- 'boş', 'girilmemiş', 'henüz yok' → is_null; 'dolu', 'girilmiş', 'verilmiş' → not_null.",
         "- 'in' listesine boş değeri de dahil etmek için '(boş)' öğesini ekle "
         "(örn. 'Ankara ya da ili boş olanlar' → il in ['Ankara','(boş)']).",
@@ -527,7 +533,7 @@ def get_rapor_asistani_instruction(
         "ilgili indirme eylemini ver. Kullanıcı düzeltme yazarsa ('telefonu da ekle', 'nisan değil "
         "mart') mevcut tanımı o kadar değiştir, gerisine dokunma.",
         "- YAKLAŞIK AD: kullanıcı bir mahkeme, il, kurum ya da taraf adını yaklaşık/kısaltarak yazarsa "
-        "('Ankara 3. Ticaret') metin kolonunda eq DEĞİL contains kullan ve en ayırt edici parçayı yaz "
+        "('Ankara 3. Ticaret') seçenek listesi VERİLMEMİŞ metin kolonunda eq DEĞİL contains kullan ve en ayırt edici parçayı yaz "
         "('Ankara 3. Asliye Ticaret' gibi tam liste değerini bilmiyorsan uydurma). Kapalı liste "
         "(seçenekleri yazılı) kolonlarında yukarıdaki 'aynen kopyala' kuralı geçerlidir.",
         "- LİSTE SORUSU: kullanıcı 'hangi mahkemeler var', 'il seçenekleri neler' gibi bir değer listesi "

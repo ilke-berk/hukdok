@@ -11,7 +11,7 @@ import {
     ASISTAN_AKIS_EKSIK, ASISTAN_KAPALI_MESAJI, ASISTAN_MESAJ_MAX, ASISTAN_YETKI_MESAJI, DEGER_ADAY_MAX,
     AsistanFailedError, AsistanKapaliError, AsistanYetkiError,
     chatReport, degerAdaylari, degerAnahtari, degerEsle, errorKodIpucu, filtreDegeriDegistir, gecmisiKirp, kaydetNiyeti,
-    listeNiyeti, onayNiyeti, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, sonucSatiri,
+    gevsetmeOrnekleri, listeNiyeti, onayNiyeti, ornekIstemler, raporAsistaniAcikMi, sohbetGecmisi, sonucSatiri,
     tanimAyni, tanimAyrintisi,
     tanimOzeti,
 } from "./reportsChat";
@@ -474,6 +474,8 @@ const DAVALAR: KatalogVeriKaynagi = {
         K({ anahtar: "status", etiket: "Durum", tip: "liste", oplar: ["eq", "ne", "in", "is_null", "not_null"], secenekler: ["Derdest", "Karar"] }),
         K({ anahtar: "responsible_lawyer_name", etiket: "Avukat Adı", tip: "metin", oplar: ["contains", "in"], oneriler: ["Ayşe Yılmaz", "Mehmet Kaya"] }),
         K({ anahtar: "subject", etiket: "Konu", tip: "metin", oplar: ["eq", "contains"] }),          // öneri listesi YOK
+        // 2026-09-12: veriden kapalı liste (G141 `veriden_liste`) — `secenekler` var, `oneriler` yok
+        K({ anahtar: "sub_type", etiket: "Uzmanlık Alanı", tip: "metin", oplar: ["eq", "ne", "contains", "in"], secenek_kaynagi: "veri", secenekler: ["Kadın Hastalıkları ve Doğum", "Genel Cerrahi", "Ortopedi ve Travmatoloji"] }),
         K({ anahtar: "bos_liste", etiket: "Boş Liste", tip: "metin", oplar: ["eq", "contains"], oneriler: [] }),
         K({ anahtar: "opening_date", etiket: "Açılış Tarihi", tip: "tarih", oplar: ["eq", "gte", "lte", "between"] }),
         K({ anahtar: "tutar", etiket: "Tutar", tip: "para", oplar: ["eq", "between"] }),
@@ -523,6 +525,34 @@ describe("G174 — degerAnahtari / degerEsle / degerAdaylari / filtreDegeriDegis
         expect(s.sorunlar[0].adaylar).toEqual([
             "Ankara 3. Asliye Ticaret Mahkemesi", "Ankara 1. Asliye Hukuk Mahkemesi", "Antalya 1. Asliye Ticaret Mahkemesi",
         ]);
+    });
+
+    it("secenekler (veriden kapalı liste, 2026-09-12 dersi): 'Kadın Doğum' alt dize DEĞİL → sorun, ilk aday 'Kadın Hastalıkları ve Doğum'; tam değer/alt dize temiz; kodlu listede etiket de kabul", () => {
+        const s = degerEsle(tanimla([{ alan: "sub_type", op: "contains", deger: "Kadın Doğum" }]), KATALOG_G174);
+        expect(s.temiz).toBe(false);
+        expect(s.sorunlar).toHaveLength(1);
+        expect(s.sorunlar[0]).toMatchObject({ indeks: 0, alan: "sub_type", deger: "Kadın Doğum", kesik: false });
+        expect(s.sorunlar[0].adaylar[0]).toBe("Kadın Hastalıkları ve Doğum");
+        expect(degerEsle(tanimla([{ alan: "sub_type", op: "eq", deger: "kadın hastalıkları ve doğum" }]), KATALOG_G174).temiz).toBe(true);
+        expect(degerEsle(tanimla([{ alan: "sub_type", op: "contains", deger: "Cerrahi" }]), KATALOG_G174).temiz).toBe(true);
+        // sabit kodlu liste: kod da etiket de kabul; tutmayan → sorun (aday olmayabilir)
+        expect(degerEsle(tanimla([{ alan: "client_type", op: "eq", deger: "Gerçek kişi" }], "muvekkiller"), KATALOG_G174).temiz).toBe(true);
+        expect(degerEsle(tanimla([{ alan: "client_type", op: "eq", deger: "Company" }], "muvekkiller"), KATALOG_G174).temiz).toBe(true);
+        const k = degerEsle(tanimla([{ alan: "client_type", op: "eq", deger: "Dernek" }], "muvekkiller"), KATALOG_G174);
+        expect(k.temiz).toBe(false);
+        expect(k.sorunlar[0].adaylar).toEqual([]);
+    });
+
+    it("gevsetmeOrnekleri (2026-09-12): boş sonuç örnekleri GERÇEK filtrelerden — tarih filtresi yokken 'tarih' önerisi yok; en çok iki", () => {
+        const t: RaporTanimi = { veri_kaynagi: "davalar", kolonlar: ["court"], siralama: [],
+            filtreler: [{ alan: "status", op: "eq", deger: "Derdest" }, { alan: "subject", op: "contains", deger: "kadın doğum" }, { alan: "court", op: "contains", deger: "Ankara" }] };
+        expect(gevsetmeOrnekleri(t, KATALOG_G174)).toEqual(["durum filtresini kaldır", "konu değerini değiştir"]);
+        const satir = sonucSatiri(t, 0, KATALOG_G174);
+        expect(satir).toContain("(ör. \"durum filtresini kaldır\", \"konu değerini değiştir\")");
+        expect(satir).not.toContain("tarih");
+        expect(gevsetmeOrnekleri({ ...t, filtreler: [{ alan: "opening_date", op: "gte", deger: "2026-01-01" }] }, KATALOG_G174))
+            .toEqual(["açılış tarihi aralığını genişlet"]);
+        expect(gevsetmeOrnekleri({ ...t, filtreler: [] }, KATALOG_G174)).toEqual([]);
     });
 
     it("hiç tutmayan değer → sorun; adaylar kelime kesişimine göre sıralı, en çok 5; kesik bayrağı kolondan; indeks tanımdaki sıra", () => {
@@ -650,6 +680,12 @@ describe("G174 — listeNiyeti ('hangi X'ler var')", () => {
         }
         expect(listeNiyeti("hangi durumlar var", null)).toBeNull();
         expect(listeNiyeti("hangi durumlar var", undefined)).toBeNull();
+    });
+
+    it("uzmanlık alanı (secenekler, 2026-09-12): 'hangi uzmanlık alanları var' / 'branş listesi' → sub_type; anahtarın jenerik parçası ('sub') 'konu'ya uymaz", () => {
+        expect(listeNiyeti("hangi uzmanlık alanları var", DAVALAR)?.map(k => k.anahtar)).toEqual(["sub_type"]);
+        expect(listeNiyeti("branş listesi", DAVALAR)?.map(k => k.anahtar)).toEqual(["sub_type"]);
+        expect(listeNiyeti("hangi konular var", DAVALAR)).toBeNull();
     });
 
     it("kolon çözümü: etiket, hızlı filtre etiketi ('Sorumlu avukat'), anahtar ve eşanlamlılar (il → şehir, mahkeme → court, tür → type)", () => {

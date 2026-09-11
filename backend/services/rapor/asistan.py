@@ -9,9 +9,12 @@ ile yine `complete` — kullanıcı asistanın metnini görür, ama geçersiz ta
 istemciye hiçbir zaman `tanim` olarak gitmez.
 
 Bu modül DB'YE DOKUNMAZ (K6): oturum fabrikası import etmez, satır görmez.
-Seçenek listeleri `registry.secenekleri_getir(kolon, db=None)` ile yalnız
-sabit çekirdekten gelir. İndirme frontend'in `/export` çağrısıyladır (K7);
-burada yalnız `eylem` önerilir.
+Sabit seçenek listeleri `registry.secenekleri_getir(kolon, db=None)` ile çekirdekten
+gelir; veriden gelen seçenek listeleri (G141 `veriden_liste`, ör. Uzmanlık Alanı'nın
+73 DISTINCT değeri) rotanın 60 sn önbellekli KATALOĞUNDAN `veri_secenekleri` olarak
+geçirilir (2026-09-12 dersi: "Kadın Doğum" ≠ "Kadın Hastalıkları ve Doğum" → 0 satır;
+bu listeler her istemciye zaten katalogla gidiyor, satır verisi değil — K6 korunur).
+İndirme frontend'in `/export` çağrısıyladır (K7); burada yalnız `eylem` önerilir.
 
 Olay sözleşmesi (plan §2.6, `analyzer._failed_event` ile uyumlu):
     {"status":"info","message":...}
@@ -36,7 +39,7 @@ import logging
 import uuid
 from decimal import Decimal, InvalidOperation
 from types import ModuleType
-from typing import Any, AsyncIterator, Optional, Sequence
+from typing import Any, AsyncIterator, Mapping, Optional, Sequence
 
 from google.genai import types as genai_types
 from pydantic import ValidationError
@@ -86,12 +89,34 @@ def _analyzer() -> ModuleType:
 
 # ─── Katalog metni (registry'den, elle liste YOK) ────────────────────────────
 
-def _kolon_satiri(kolon: Kolon) -> str:
+# (kaynak anahtarı, kolon anahtarı) → veriden gelen seçenekler (katalog `secenek_kaynagi == "veri"`)
+VeriSecenekleri = Mapping[tuple[str, str], Sequence[str]]
+
+
+def veri_secenekleri_katalogdan(katalog: Mapping[str, Any]) -> dict[tuple[str, str], list[str]]:
+    """Rotanın önbellekli katalog gövdesinden (`registry.katalog`) veriden gelen seçenek listelerini
+    çıkarır: yalnız `secenek_kaynagi == "veri"` ve bağlı olmayan (`bag is None`) kolonlar — bağlı kolonlar
+    prompt'a ilişki satırıyla girer, kendi satırı yok. Saf; DB'ye dokunmaz."""
+    sonuc: dict[tuple[str, str], list[str]] = {}
+    for kaynak in katalog.get("veri_kaynaklari", []):
+        for kolon in kaynak.get("kolonlar", []):
+            if kolon.get("secenek_kaynagi") != "veri" or kolon.get("bag") is not None:
+                continue
+            secenekler = [str(x) for x in (kolon.get("secenekler") or []) if x is not None and str(x) != ""]
+            if secenekler:
+                sonuc[(kaynak["anahtar"], kolon["anahtar"])] = secenekler
+    return sonuc
+
+
+def _kolon_satiri(kolon: Kolon, veriden: Optional[Sequence[str]] = None) -> str:
     parcalar = [kolon.anahtar, kolon.etiket, kolon.tip]
     if kolon.tip == "liste":
         secenekler = registry.secenekleri_getir(kolon, None)
         if secenekler:
             parcalar.append("|".join(secenekler))
+    elif veriden:
+        # Veriden gelen kapalı liste (G141): model tam değeri görsün, yaklaşık ifadeyi en yakınına çevirsin
+        parcalar.append("seçenekler: " + "|".join(veriden))
     if not kolon.secilebilir:
         # Sanal `arama` (G141): kolon listesine/sıralamaya giremez, yalnız filtre
         parcalar.append(f"yalnız filtre (kolon listesine girmez; op: {'|'.join(kolon.oplar)})")
@@ -103,21 +128,27 @@ def _kolon_satiri(kolon: Kolon) -> str:
     return " · ".join(parcalar)
 
 
-def katalog_metni() -> str:
+def katalog_metni(veri_secenekleri: Optional[VeriSecenekleri] = None) -> str:
     """Sistem talimatına gömülen kompakt katalog: her kaynak için başlık +
     varsayılan kolonlar + `anahtar · etiket · tip[ · seçenekler]` satırları.
     G137'nin kullanılabilirlik alanları (`grup`, `kontrol`, `hizli_filtreler`,
     `kolon_setleri`, `oneriler`) BİLEREK gömülmez — prompt gürültüsü (öneriler
     300'e kadar değer); yalnız yeni kolonlar doğal olarak girer (plan §4.2).
-    G141'in veriden seçenekleri de gömülmez (DB yok, K6; `secenekleri_getir(db=None)`
-    yalnız sabit çekirdek); sanal `arama` kolonu "yalnız filtre" şerhiyle girer."""
+    Sabit seçenekler `secenekleri_getir(db=None)` ile çekirdekten; G141'in veriden
+    seçenekleri yalnız `veri_secenekleri` verilirse girer (`seçenekler: a|b|c`, rota
+    kataloğundan `veri_secenekleri_katalogdan` ile; 2026-09-12 ölçümü: 8 bağsız kolon, katalog metni 11,3k → 15,8k karakter);
+    verilmezse metin eskisiyle birebir. Sanal `arama` kolonu "yalnız filtre" şerhiyle girer."""
     bloklar: list[str] = []
+    veriden = veri_secenekleri or {}
     for kaynak in registry.KAYNAKLAR.values():
         satirlar = [
             f"## {kaynak.anahtar} — {kaynak.etiket}: {kaynak.aciklama}",
             f"varsayılan kolonlar: {', '.join(kaynak.varsayilan_kolonlar)}",
         ]
-        satirlar.extend(_kolon_satiri(k) for k in kaynak.kolonlar.values() if k.bag is None)
+        satirlar.extend(
+            _kolon_satiri(k, veriden.get((kaynak.anahtar, k.anahtar)))
+            for k in kaynak.kolonlar.values() if k.bag is None
+        )
         satirlar.extend(_iliski_satiri(kaynak, i) for i in kaynak.iliskiler)
         bloklar.append("\n".join(satirlar))
     return "\n\n".join(bloklar)
@@ -244,10 +275,11 @@ def icerikleri_kur(mesajlar: Sequence[SohbetMesaji]) -> list[genai_types.Content
     ]
 
 
-def _talimat(mevcut_tanim: Optional[RaporTanimi], bugun: Optional[dt.date] = None) -> str:
+def _talimat(mevcut_tanim: Optional[RaporTanimi], bugun: Optional[dt.date] = None,
+             veri_secenekleri: Optional[VeriSecenekleri] = None) -> str:
     mevcut = json.dumps(mevcut_tanim.model_dump(), ensure_ascii=False) if mevcut_tanim is not None else None
     return get_rapor_asistani_instruction(
-        katalog_metni(), (bugun or dt.date.today()).isoformat(), mevcut_tanim_json=mevcut,
+        katalog_metni(veri_secenekleri), (bugun or dt.date.today()).isoformat(), mevcut_tanim_json=mevcut,
     )
 
 
@@ -275,9 +307,12 @@ async def sohbet(
     mesajlar: Sequence[SohbetMesaji],
     mevcut_tanim: Optional[RaporTanimi],
     tenant_id: str,
+    veri_secenekleri: Optional[VeriSecenekleri] = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Plan §2.6 olay akışı. `tenant_id` yalnız log bağlamıdır — asistan tenant
-    verisine dokunmaz; tanım tenant filtresini çalıştırıldığı uçta alır (K2)."""
+    verisine dokunmaz; tanım tenant filtresini çalıştırıldığı uçta alır (K2).
+    `veri_secenekleri`: rotanın tenant kataloğundan çıkarılan veriden seçenek listeleri
+    (`veri_secenekleri_katalogdan`); prompt'ta kolon satırına `seçenekler:` olarak girer."""
     analyzer = _analyzer()
     yield {"status": "info", "message": "Rapor tanımı hazırlanıyor"}
 
@@ -285,7 +320,7 @@ async def sohbet(
     model = get_rapor_model()
     try:
         config = genai_types.GenerateContentConfig(
-            system_instruction=_talimat(mevcut_tanim),
+            system_instruction=_talimat(mevcut_tanim, veri_secenekleri=veri_secenekleri),
             response_mime_type="application/json",
             response_schema=RaporAsistanCevabi,
         )

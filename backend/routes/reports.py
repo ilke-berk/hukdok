@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
@@ -412,10 +413,13 @@ async def api_chat(
     if not app_settings.rapor_asistani_etkin():
         raise HTTPException(status_code=409, detail="rapor_asistani kapalı")
     istek = _dogrula(SohbetIstegi, govde)
+    # Veriden gelen seçenek listeleri (Uzmanlık Alanı vb.) prompt'a girer: 60 sn önbellekli tenant
+    # kataloğu (sync DB → threadpool, olay döngüsü bloklanmaz). Asistan modülü DB görmez (K6).
+    veri_secenekleri = asistan.veri_secenekleri_katalogdan(await run_in_threadpool(_katalogu_getir, tenant_id))
 
     async def akis():
         try:
-            async for olay in asistan.sohbet(istek.mesajlar, istek.mevcut_tanim, tenant_id):
+            async for olay in asistan.sohbet(istek.mesajlar, istek.mevcut_tanim, tenant_id, veri_secenekleri):
                 yield json.dumps(olay, ensure_ascii=False, default=str) + "\n"
         except Exception as e:
             # Sözleşme dışı beklenmedik istisna (processing.py deseni); asistanın kendi

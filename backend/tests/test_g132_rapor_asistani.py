@@ -561,3 +561,62 @@ def test_env_example_ve_registry_anahtari():
     assert app_settings.RAPOR_ASISTANI_KEY == KEY
     assert KEY in app_settings.SETTINGS_REGISTRY
     assert hasattr(settings, "gemini_rapor_model")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 2026-09-12: veriden seçenek listeleri prompt'a ("Kadın Doğum" ≠ "Kadın Hastalıkları ve Doğum" dersi)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_veri_secenekleri_katalogdan_yalniz_veri_kaynakli_bagsiz_kolonlar():
+    """Saf çıkarıcı: `secenek_kaynagi == "veri"` + `bag is None` + boş olmayan liste; boş dize atlanır;
+    sabit liste, öneri listesi ve bağlı kolon girmez; boş katalog → boş sözlük."""
+    katalog = {"veri_kaynaklari": [
+        {"anahtar": "davalar", "kolonlar": [
+            {"anahtar": "sub_type", "secenek_kaynagi": "veri", "bag": None,
+             "secenekler": ["Kadın Hastalıkları ve Doğum", "Genel Cerrahi", ""]},
+            {"anahtar": "status", "secenek_kaynagi": "sabit", "bag": None, "secenekler": ["DERDEST"]},
+            {"anahtar": "court", "secenek_kaynagi": None, "bag": None, "secenekler": None, "oneriler": ["X"]},
+            {"anahtar": "muvekkil.il", "secenek_kaynagi": "veri", "bag": "muvekkil", "secenekler": ["Ankara"]},
+            {"anahtar": "bos", "secenek_kaynagi": "veri", "bag": None, "secenekler": []},
+        ]},
+    ]}
+    assert asistan.veri_secenekleri_katalogdan(katalog) == {
+        ("davalar", "sub_type"): ["Kadın Hastalıkları ve Doğum", "Genel Cerrahi"],
+    }
+    assert asistan.veri_secenekleri_katalogdan({}) == {}
+
+
+def test_katalog_metni_veri_secenekleri_kolon_satirina_girer_argumansiz_birebir():
+    eski = asistan.katalog_metni()
+    metin = asistan.katalog_metni({("davalar", "sub_type"): ["Kadın Hastalıkları ve Doğum", "Genel Cerrahi"]})
+    assert "\nsub_type · Uzmanlık Alanı · metin · seçenekler: Kadın Hastalıkları ve Doğum|Genel Cerrahi\n" in metin
+    assert "seçenekler:" not in eski
+    assert asistan.katalog_metni(None) == eski and asistan.katalog_metni({}) == eski
+    fark = [satir for satir in metin.splitlines() if satir not in eski.splitlines()]
+    assert len(fark) == 1 and fark[0].startswith("sub_type · ")
+    # bilinmeyen anahtar sessizce yok sayılır; bağlı kolon anahtarı satır üretmez
+    assert asistan.katalog_metni({("davalar", "yok"): ["a"], ("davalar", "muvekkil.il"): ["Ankara"]}) == eski
+
+
+def test_chat_prompt_veriden_secenekleri_ve_kolon_secimi_kurali_tasir(env):
+    """Rota `/chat` 60 sn önbellekli tenant kataloğundan veriden seçenekleri prompt'a geçirir (K6: asistan
+    modülü DB görmez, listeler her istemciye zaten katalogla gider); prompt 'seçenekler:' + 'KOLON SEÇİMİ
+    DEĞERE GÖRE' kurallarını taşır; YAKLAŞIK AD kuralı yalnız listesiz metin kolonuna daralır."""
+    import models
+    env.ac()
+    db = env.db()
+    try:
+        db.add_all([models.Case(tracking_no=f"HA.K.{i:03d}", tenant_id=T1, status="DERDEST",
+                                sub_type="Kadın Hastalıkları ve Doğum") for i in range(3)])
+        db.add(models.Case(tracking_no="HA.K.900", tenant_id=T1, status="DERDEST", sub_type="Genel Cerrahi"))
+        db.commit()
+    finally:
+        db.close()
+    _olaylar(env.client().post(CHAT, json={"mesajlar": _mesajlar("derdest kadın doğum davaları")}))
+    talimat = env.gemini.cagrilar[0]["config"].system_instruction
+    assert "sub_type · Uzmanlık Alanı · metin · seçenekler: Kadın Hastalıkları ve Doğum|Genel Cerrahi" in talimat
+    assert "Satırında 'seçenekler:' yazan metin kolonunda da aynı kural" in talimat
+    assert "op eq ya da in (contains DEĞİL)" in talimat
+    assert "('kadın doğum' → 'Kadın Hastalıkları ve Doğum')" in talimat
+    assert "KOLON SEÇİMİ DEĞERE GÖRE" in talimat and "subject serbest metindir" in talimat
+    assert "seçenek listesi VERİLMEMİŞ metin kolonunda eq DEĞİL contains kullan" in talimat
