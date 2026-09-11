@@ -7,9 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: vi.fn() } }));
 
 import {
-    OP_BY_TIP, type FiltreKontrolu, type HizliFiltre, type KatalogKolon, type KatalogVeriKaynagi, type KolonTipi, type RaporTanimi,
+    OP_BY_TIP, TANIM_LIMITLERI, type FiltreKontrolu, type HizliFiltre, type KatalogKolon, type KatalogVeriKaynagi, type KolonTipi,
+    type RaporTanimi,
 } from "@/lib/reports";
-import { kaynakIcinBaslangic, seritFiltreleri, seritiTemizle, siralamaDongusu, tanimOlustur, tanimdanDurum } from "./builderState";
+import {
+    filtreEkle, kaynakIcinBaslangic, kolonEkle, kolonKaldir, seritFiltreleri, seritiTemizle, seritteBosOge, siralamaDongusu,
+    tanimOlustur, tanimdanDurum,
+} from "./builderState";
 
 const KONTROL: Record<KolonTipi, FiltreKontrolu> = {
     metin: "metin_icerir", liste: "coklu_secim", tarih: "tarih_araligi", sayi: "sayi_araligi", para: "sayi_araligi", mantik: "mantik",
@@ -299,5 +303,84 @@ describe("siralamaDongusu — başlıktan sıralama", () => {
         // Mevcut alanı çevirmek tavanı tetiklemez
         s = siralamaDongusu(s, "c");
         expect(s).toEqual([{ alan: "b", yon: "desc" }, { alan: "c", yon: "desc" }, { alan: "d", yon: "asc" }]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// G173 — tanım şeridi yardımcıları: kolonEkle / kolonKaldir / filtreEkle (saf, referans korur)
+// ---------------------------------------------------------------------------
+
+describe("kolonEkle / kolonKaldir (G173)", () => {
+    it("kolonEkle: ekleme sırasıyla sona ekler; seçili olan ve listede tekrar eden atlanır; değişiklik yoksa aynı nesne", () => {
+        const d = kaynakIcinBaslangic(DAVALAR); // ["tracking_no", "subject"]
+        const e = kolonEkle(d, ["status", "tracking_no", "opening_date", "status"]);
+        expect(e.kolonlar).toEqual(["tracking_no", "subject", "status", "opening_date"]);
+        // Diğer alanlar dokunulmaz, girdi değişmez
+        expect(e.serit).toBe(d.serit);
+        expect(d.kolonlar).toEqual(["tracking_no", "subject"]);
+        expect(kolonEkle(d, ["subject"])).toBe(d);
+        expect(kolonEkle(d, [])).toBe(d);
+    });
+
+    it("kolonEkle: 60 tavanı — sığmayanlar düşer, tavanda hiç eklenmez", () => {
+        const d = { ...kaynakIcinBaslangic(DAVALAR), kolonlar: Array.from({ length: 58 }, (_, i) => `k${i}`) };
+        const e = kolonEkle(d, ["a", "b", "c"]);
+        expect(e.kolonlar).toHaveLength(TANIM_LIMITLERI.kolon_max);
+        expect(e.kolonlar.slice(-2)).toEqual(["a", "b"]);
+        expect(kolonEkle(e, ["z"])).toBe(e);
+    });
+
+    it("kolonKaldir: kolonu çıkarır, sırayı korur; SON kolon çıkarılmaz; olmayan kolon aynı nesne", () => {
+        const d = kolonEkle(kaynakIcinBaslangic(DAVALAR), ["status"]);
+        const e = kolonKaldir(d, "subject");
+        expect(e.kolonlar).toEqual(["tracking_no", "status"]);
+        expect(kolonKaldir(d, "yok")).toBe(d);
+        const tek = kolonKaldir(kolonKaldir(e, "status"), "tracking_no");
+        expect(tek.kolonlar).toEqual(["tracking_no"]);
+        expect(kolonKaldir(tek, "tracking_no")).toBe(tek);
+    });
+});
+
+describe("filtreEkle (G173)", () => {
+    const kolonOf = (a: string) => DAVALAR.kolonlar.find(k => k.anahtar === a)!;
+
+    it("yuvası olmayan alan: sona `eklenenOge(bosKontrol)` — hızlı değil, varsayılan sunum, boş (tanıma girmez)", () => {
+        const d = kaynakIcinBaslangic(DAVALAR);
+        const e = filtreEkle(d, kolonOf("subject"));
+        expect(e.serit).toHaveLength(d.serit.length + 1);
+        const son = e.serit[e.serit.length - 1];
+        expect(son.hizli).toBe(false);
+        expect(son.sunum).toBe("varsayilan");
+        expect(son.durum).toEqual({ kontrol: "metin_icerir", alan: "subject", metin: "", tam: false, bos: false });
+        expect(tanimOlustur(e).filtreler).toEqual([]);
+        expect(seritteBosOge(e.serit, "subject")).toBe(son);
+        expect(e.kolonlar).toBe(d.kolonlar);
+    });
+
+    it("aynı alanda BOŞ öğe varken (boş hızlı yuva ya da doldurulmamış eklenen) yenisi eklenmez — aynı nesne; dolu öğe varsa eklenir", () => {
+        const d = kaynakIcinBaslangic(DAVALAR);
+        // status boş hızlı yuvası var → eklenmez, hedef yuvanın kendisi
+        expect(filtreEkle(d, kolonOf("status"))).toBe(d);
+        expect(seritteBosOge(d.serit, "status")?.hizli).toBe(true);
+        // Eklenen boş alan da ikinci kez eklenmez
+        const e = filtreEkle(d, kolonOf("subject"));
+        expect(filtreEkle(e, kolonOf("subject"))).toBe(e);
+        // Yuva doluysa ikinci filtre eklenen alan olur (tanım aynı alanda iki filtreye izin verir)
+        const dolu = tanimdanDurum({ veri_kaynagi: "davalar", kolonlar: ["tracking_no"], siralama: [],
+            filtreler: [{ alan: "status", op: "eq", deger: "Karar" }] }, DAVALAR);
+        expect(seritteBosOge(dolu.serit, "status")).toBeUndefined();
+        const f = filtreEkle(dolu, kolonOf("status"));
+        expect(f.serit.filter(o => o.durum.alan === "status").map(o => o.hizli)).toEqual([true, false]);
+    });
+
+    it("20 dolu filtrede tavan: eklenmez (aynı nesne); boş öğeler tavana sayılmaz", () => {
+        const filtreler = Array.from({ length: TANIM_LIMITLERI.filtre_max }, (_, i) =>
+            ({ alan: "subject", op: "contains" as const, deger: `t${i}` }));
+        const d = tanimdanDurum({ veri_kaynagi: "davalar", kolonlar: ["tracking_no"], siralama: [], filtreler }, DAVALAR);
+        expect(seritFiltreleri(d.serit)).toHaveLength(TANIM_LIMITLERI.filtre_max);
+        expect(filtreEkle(d, kolonOf("tracking_no"))).toBe(d);
+        // 19 dolu + boş yuvalar → eklenir
+        const on9 = tanimdanDurum({ veri_kaynagi: "davalar", kolonlar: ["tracking_no"], siralama: [], filtreler: filtreler.slice(1) }, DAVALAR);
+        expect(filtreEkle(on9, kolonOf("tracking_no")).serit).toHaveLength(on9.serit.length + 1);
     });
 });

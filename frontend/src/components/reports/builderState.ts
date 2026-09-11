@@ -4,7 +4,7 @@
 import type {
     Filtre, HizliFiltreSunumu, KatalogVeriKaynagi, KontrolDurumu, RaporTanimi, Siralama, SiralamaYonu,
 } from "@/lib/reports";
-import { TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kolonSecilebilirMi, kontroldenFiltre } from "@/lib/reports";
+import { TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kolonSecilebilirMi, kontrolDoluMu, kontroldenFiltre } from "@/lib/reports";
 
 /** Şeritteki bir kontrol: hızlı filtre yuvası (kaynağın listesi) ya da "+ Başka alan" ile eklenen. */
 export interface SeritOgesi {
@@ -162,6 +162,50 @@ export function tanimOlustur(durum: OlusturucuDurumu): RaporTanimi {
         filtreler: seritFiltreleri(durum.serit),
         siralama: durum.siralama.map(s => ({ alan: s.alan, yon: s.yon })),
     };
+}
+
+// ---------------------------------------------------------------------------
+// G173 — tanım şeridi yardımcıları (TanimSeridi): saf, kataloğa bakmaz (seçilebilirlik/filtrelenebilirlik
+// kararı çağıranın — şerit listeyi zaten süzülmüş verir). Mevcut imzalar değişmez.
+// ---------------------------------------------------------------------------
+
+/**
+ * Kolon ekler: zaten seçili olanlar ve listede tekrar edenler atlanır, `kolon_max` (60) tavanı aşılmaz
+ * (sığmayanlar sırayla düşer). Sıra = ekleme sırası (§2.1 "kolonlar sıralıdır"). Değişiklik yoksa AYNI nesne.
+ */
+export function kolonEkle(durum: OlusturucuDurumu, anahtarlar: readonly string[]): OlusturucuDurumu {
+    const kolonlar = [...durum.kolonlar];
+    const kume = new Set(kolonlar);
+    for (const a of anahtarlar) {
+        if (kolonlar.length >= TANIM_LIMITLERI.kolon_max) break;
+        if (kume.has(a)) continue;
+        kume.add(a);
+        kolonlar.push(a);
+    }
+    return kolonlar.length === durum.kolonlar.length ? durum : { ...durum, kolonlar };
+}
+
+/** Kolonu çıkarır; SON kolon çıkarılmaz (tanım en az 1 kolon ister) — o durumda ve kolon yoksa AYNI nesne. */
+export function kolonKaldir(durum: OlusturucuDurumu, anahtar: string): OlusturucuDurumu {
+    if (durum.kolonlar.length <= 1 || !durum.kolonlar.includes(anahtar)) return durum;
+    return { ...durum, kolonlar: durum.kolonlar.filter(k => k !== anahtar) };
+}
+
+/**
+ * Şeride alan için boş kontrol ekler (`eklenenOge(bosKontrol(kolon))`, `hizli:false`). Aynı alanda BOŞ bir
+ * öğe zaten varsa (boş hızlı yuva ya da doldurulmadan bırakılmış eklenen alan) yenisi eklenmez — şerit o
+ * öğenin düzenleyicisini açar (`seritteBosOge`). `filtre_max` (20) dolu öğede dolunca eklenmez. Değişiklik
+ * yoksa AYNI nesne.
+ */
+export function filtreEkle(durum: OlusturucuDurumu, kolon: Parameters<typeof bosKontrol>[0]): OlusturucuDurumu {
+    if (seritteBosOge(durum.serit, kolon.anahtar)) return durum;
+    if (seritFiltreleri(durum.serit).length >= TANIM_LIMITLERI.filtre_max) return durum;
+    return { ...durum, serit: [...durum.serit, eklenenOge(bosKontrol(kolon))] };
+}
+
+/** Alanın şeritteki BOŞ öğesi (varsa) — `filtreEkle` sonrası açılacak düzenleyicinin hedefi. */
+export function seritteBosOge(serit: readonly SeritOgesi[], alan: string): SeritOgesi | undefined {
+    return serit.find(o => o.durum.alan === alan && !kontrolDoluMu(o.durum));
 }
 
 /**

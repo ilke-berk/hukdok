@@ -11,6 +11,12 @@ type FilterChipProps = {
     onDegistir: (durum: KontrolDurumu) => void;
     /** × — hızlı filtre yuvası boşa döner, eklenen alan şeritten kalkar (QuickFilters karar verir). */
     onKaldir: () => void;
+    /**
+     * G173 (isteğe bağlı, geriye uyumlu): verilirse çipin gövdesi (etiket · özet) düğme olur — tık
+     * düzenleyiciyi açar (TanimSeridi popover'ı). `acik` yalnız `aria-expanded` içindir. QuickFilters vermez.
+     */
+    onAc?: () => void;
+    acik?: boolean;
 };
 
 type MenuOgesi = { anahtar: string; etiket: string; secili?: boolean; uygula: () => void };
@@ -33,7 +39,7 @@ function tekilDeger(d: KontrolDurumu): string | number | undefined {
  * tarih/sayı/metinde boşluk kontrolün kendi "Boş" çipinden gelir, menüde değil).
  * Gelişmiş çipte menü: diğer izinli op'lar + "Basit kontrole dön" (yuvanın sunumuyla). Sunucu sözleşmesi değişmez.
  */
-export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps) {
+export function FilterChip({ oge, kolon, onDegistir, onKaldir, onAc, acik }: FilterChipProps) {
     const [menuAcik, setMenuAcik] = useState(false);
     const ref = useDisariTiklama<HTMLSpanElement>(menuAcik, () => setMenuAcik(false));
     const d = oge.durum;
@@ -79,6 +85,16 @@ export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps
         }
     }
 
+    const govde = (
+        <>
+            <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase text-[var(--fg-subtle)] shrink-0">
+                {etiket}
+                {gelismis && <span className="ml-1 text-[var(--brand)]">gelişmiş</span>}
+            </span>
+            <span className="truncate" title={ozet}>{ozet}</span>
+        </>
+    );
+
     return (
         <span
             ref={ref}
@@ -92,11 +108,18 @@ export function FilterChip({ oge, kolon, onDegistir, onKaldir }: FilterChipProps
                     : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg)]",
             ].join(" ")}
         >
-            <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase text-[var(--fg-subtle)] shrink-0">
-                {etiket}
-                {gelismis && <span className="ml-1 text-[var(--brand)]">gelişmiş</span>}
-            </span>
-            <span className="truncate" title={ozet}>{ozet}</span>
+            {onAc ? (
+                <button
+                    type="button"
+                    aria-label={`${etiket} filtresini düzenle`}
+                    aria-haspopup="dialog"
+                    aria-expanded={acik ?? false}
+                    onClick={onAc}
+                    className="inline-flex items-center gap-1 min-w-0 text-left hover:text-[var(--brand)] rounded-[2px]"
+                >
+                    {govde}
+                </button>
+            ) : govde}
             {menu.length > 0 && (
                 <button
                     type="button"

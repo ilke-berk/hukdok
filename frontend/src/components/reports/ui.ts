@@ -40,3 +40,30 @@ export const ICON_BTN_CLS =
 export const LINK_BTN_CLS =
     "font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)] hover:text-[var(--brand)] " +
     "transition-colors disabled:opacity-40 disabled:hover:text-[var(--fg-subtle)] disabled:cursor-not-allowed";
+
+// ---------------------------------------------------------------------------
+// G173 — tanım şeridinde kaynak rengi: ana kaynak + her bağlı ilişki (G166 `bag`) ayrı renk çubuğu.
+// Tema token'larıyla (tokens.css); ilişki sayısı paleti aşarsa döner. Renkler yalnız AYIRT EDİCİ
+// ipucudur — anlam metinde ("<İlişki> · <Kolon>") de taşınır, renge bağımlı bilgi yok.
+// ---------------------------------------------------------------------------
+
+/** Ana kaynağın çubuk rengi (CSS değeri). */
+export const ANA_KAYNAK_RENGI = "var(--brand)";
+
+/** Bağlı ilişkiler için sırayla dağıtılan çubuk renkleri (ana kaynaktan ayrık; tema token'ı + sabit ton). */
+export const BAG_RENKLERI: readonly string[] = [
+    "var(--fg-muted)",
+    "var(--burgundy-400)",
+    "var(--border-strong)",
+    "var(--fg-subtle)",
+];
+
+/**
+ * İlişki anahtarı → çubuk rengi. `iliskiAnahtarlari` kaynağın `iliskiler` sırasıdır (katalogdan, sabit);
+ * `bag` boşsa ana kaynak rengi; listede olmayan (eski katalog) ilk bağ rengini alır.
+ */
+export function kaynakRengi(bag: string | null | undefined, iliskiAnahtarlari: readonly string[]): string {
+    if (!bag) return ANA_KAYNAK_RENGI;
+    const i = iliskiAnahtarlari.indexOf(bag);
+    return BAG_RENKLERI[(i < 0 ? 0 : i) % BAG_RENKLERI.length];
+}
