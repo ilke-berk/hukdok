@@ -55,7 +55,9 @@ const GRUP_BASLIK_CLS =
     "[&_[cmdk-group-heading]]:font-mono [&_[cmdk-group-heading]]:text-[9.5px] [&_[cmdk-group-heading]]:tracking-[0.14em] " +
     "[&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:text-[var(--fg-subtle)]";
 /** Açılır paneller: tema token'ları + responsive tavan (dar ekranda %90, geniş ekranda 28rem). */
-const PANEL_CLS = "max-w-[min(90vw,28rem)] rounded-[3px] border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)] shadow-md";
+// `theme-classic`: Radix içerikleri portal ile body altına çizilir, Shell sarmalayıcısındaki tema sınıfının DIŞINDA
+// kalır → `--bg-elevated` tanımsız, panel şeffaf (12.09 kullanıcı bulgusu). Modal'lar da aynı sebeple bu sınıfı taşır.
+const PANEL_CLS = "theme-classic max-w-[min(90vw,28rem)] rounded-[3px] border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)] shadow-md";
 
 const HAZIR_SETLER_BASLIGI = "Hazır setler";
 

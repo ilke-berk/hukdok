@@ -288,6 +288,8 @@ describe("TanimSeridi (G173)", () => {
         expect(document.body.querySelector("[role='menu']")).toBeNull();
         bas(rozet);
         const menu = $$("[role='menu']");
+        // Portal içeriği Shell'in tema sarmalayıcısı DIŞINDA → sınıfı kendisi taşımalı (12.09: şeffaf panel bulgusu)
+        expect(menu.className).toContain("theme-classic");
         const ogeler = Array.from(menu.querySelectorAll("[data-kaynak]"));
         expect(ogeler.map(o => o.getAttribute("data-kaynak"))).toEqual(["davalar", "muvekkiller"]);
         expect(ogeler[0].getAttribute("data-secili")).toBe("true");
@@ -322,6 +324,7 @@ describe("TanimSeridi (G173)", () => {
         tikla(butonBul("Kolon"));
         const secici = () => $$("[data-testid='kolon-secici']");
         expect(secici().className).toContain("max-w-[min(90vw,28rem)]");
+        expect(secici().className).toContain("theme-classic");
         const basliklar = () => Array.from(secici().querySelectorAll("[cmdk-group]:not([hidden]) [cmdk-group-heading]")).map(h => h.textContent);
         const ogeler = () => Array.from(secici().querySelectorAll("[cmdk-item][data-kolon]")).map(i => i.getAttribute("data-kolon"));
         // tracking_no/subject seçili ve arama seçilemez → ana "Kimlik" grubu boş, listede yok; bağlı gruplar katalog sırasında

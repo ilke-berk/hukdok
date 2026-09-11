@@ -152,7 +152,7 @@ export function TemplateBar({
                         <DropdownMenuContent
                             align="end"
                             aria-label="Şablon işlemleri"
-                            className="min-w-[160px] p-1 rounded-[3px] border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)] shadow-md"
+                            className="theme-classic min-w-[160px] p-1 rounded-[3px] border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--fg)] shadow-md"
                         >
                             <DropdownMenuItem
                                 data-islem="guncelle"
