@@ -20,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
+import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { useFormDraft } from "@/hooks/useFormDraft";
 import { describeDraftAge } from "@/lib/formDraft";
@@ -1615,9 +1616,7 @@ const NewCase = () => {
                                                 <div key={i} className="text-xs border-l-2 border-primary/20 pl-3 py-1">
                                                     <div className="flex justify-between items-center mb-1">
                                                         <span className="font-bold text-primary">
-                                                            {h.field === 'esas_no' ? 'Esas No Değişti' :
-                                                                h.field === 'court' ? 'Mahkeme Değişti' :
-                                                                    h.field === 'status' ? 'Durum Değişti' : h.field}
+                                                            {tarihceEtiketi(h.field)}
                                                         </span>
                                                         <span className="text-[10px] text-muted-foreground">
                                                             {new Date(h.date).toLocaleDateString('tr-TR')} {new Date(h.date).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}

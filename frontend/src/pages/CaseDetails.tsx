@@ -31,6 +31,7 @@ import CaseTrackingPanel from "@/components/CaseTrackingPanel";
 import CaseFoyPanel, { type CaseFoyEntry } from "@/components/CaseFoyPanel";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
+import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
     DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
@@ -745,7 +746,7 @@ const CaseDetails = () => {
                                                     <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-3 rounded-lg border bg-background/50 text-sm">
                                                         <div className="flex items-center justify-between space-x-2 mb-1">
                                                             <div className="font-bold text-foreground">
-                                                                {h.field === "status" ? "Statü Değişikliği" : h.field}
+                                                                {tarihceEtiketi(h.field)}
                                                             </div>
                                                             <time className="text-xs text-muted-foreground">
                                                                 {new Date(h.date).toLocaleDateString("tr-TR")}
