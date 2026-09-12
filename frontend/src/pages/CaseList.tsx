@@ -60,18 +60,15 @@ const ITEMS_PER_PAGE = 15;
 // Yaklaşan uyarısı için pencere (gün)
 const URGENT_WINDOW_DAYS = 7;
 
-// Durum çipi sıralama önceliği — bilinmeyenler ortada, MAHZEN/KAPALI sonda
-const STATUS_ORDER = ["DANIŞ", "DERDEST", "ISTINAF", "TEMYIZ", "KARAR", "KAPALI", "MAHZEN"];
+// Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
+// Temyiz/istinaf durum değil aşamadır (case_stage); eski değerler migrasyon 50
+// ile üçlüye çekildi. Çip sırası: bilinmeyenler ortada, MAHZEN sonda.
+const STATUS_ORDER = ["DANIŞ", "DERDEST", "MAHZEN"];
 
 const STATUS_TONE: Record<string, string> = {
   DANIŞ: "text-[#3b6fa0] border-[#3b6fa0]/30 bg-[#3b6fa0]/10",
   DERDEST: "text-[#2f8a5d] border-[#2f8a5d]/30 bg-[#2f8a5d]/10",
   MAHZEN: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
-  // Eski kayıtlar için tonlar
-  ISTINAF: "text-[#c47a1e] border-[#c47a1e]/30 bg-[#c47a1e]/10",
-  TEMYIZ: "text-[#7a3f8a] border-[#7a3f8a]/30 bg-[#7a3f8a]/10",
-  KARAR: "text-[var(--brand)] border-[var(--brand)]/35 bg-[var(--brand-soft)]",
-  KAPALI: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
 };
 
 function StatusChip({ status }: { status: string }) {

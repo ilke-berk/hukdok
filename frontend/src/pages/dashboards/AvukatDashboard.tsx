@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
-  Scale,
   FolderOpen,
   CalendarDays,
   ArrowRight,
@@ -9,6 +8,7 @@ import {
   Clock,
   User,
   Archive,
+  MessageSquare,
 } from "lucide-react";
 import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
@@ -67,16 +67,17 @@ function daysFromToday(date: string): number {
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
+// Temyiz/istinaf durum değil aşamadır (cases.case_stage); eski değerler
+// migrasyon 50 ile üçlüye çekildi. Tanınmayan değer arşiv tonuyla gösterilir.
 const STATUS_TONE: Record<string, string> = {
   DERDEST: "text-[#2f8a5d] border-[#2f8a5d]/30 bg-[#2f8a5d]/10",
-  ISTINAF: "text-[#c47a1e] border-[#c47a1e]/30 bg-[#c47a1e]/10",
-  TEMYIZ: "text-[#7a3f8a] border-[#7a3f8a]/30 bg-[#7a3f8a]/10",
-  KARAR: "text-[var(--brand)] border-[var(--brand)]/30 bg-[var(--brand-soft)]",
-  KAPALI: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
+  DANIŞ: "text-[#3b6fa0] border-[#3b6fa0]/30 bg-[#3b6fa0]/10",
+  MAHZEN: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
 };
 
 function statusChip(status: string) {
-  const tone = STATUS_TONE[status] || STATUS_TONE.KAPALI;
+  const tone = STATUS_TONE[status] || STATUS_TONE.MAHZEN;
   return (
     <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-mono tracking-[0.12em] uppercase border ${tone}`}>
       {status}
@@ -147,10 +148,9 @@ export default function AvukatDashboard() {
   const statusCards = useMemo(() => {
     const s = stats.statuses || {};
     return [
-      { key: "DERDEST", label: "Derdest", value: s.DERDEST ?? stats.active, hint: "Aktif yerel dosya", Icon: Gavel },
-      { key: "ISTINAF", label: "İstinaf", value: s.ISTINAF ?? 0, hint: "BAM aşaması", Icon: Archive },
-      { key: "TEMYIZ", label: "Yargıtay", value: s.TEMYIZ ?? 0, hint: "Temyiz incelemesi", Icon: Scale },
-      { key: "KAPALI", label: "Kapalı", value: stats.closed, hint: "Arşivlenen dosya", Icon: FolderOpen },
+      { key: "DERDEST", label: "Derdest", value: s.DERDEST ?? stats.active, hint: "Aktif dava dosyası", Icon: Gavel },
+      { key: "DANIŞ", label: "Danış", value: s["DANIŞ"] ?? stats.danis_active ?? 0, hint: "Danışma dosyası", Icon: MessageSquare },
+      { key: "MAHZEN", label: "Mahzen", value: s.MAHZEN ?? stats.closed, hint: "Arşivlenen dosya", Icon: Archive },
     ];
   }, [stats]);
 
@@ -188,7 +188,7 @@ export default function AvukatDashboard() {
       {/* Dosya Durumu */}
       <section>
         <SectionHeader eyebrow="01 · Dosya Durumu" title="Genel durum" italic="— statü dağılımı" />
-        <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
           {statusCards.map(({ key, label, value, hint, Icon }) => (
             <button
               key={key}

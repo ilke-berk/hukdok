@@ -92,7 +92,10 @@ Aşama kararları `case_stage_decisions` (tek yazma yolu `managers/stage_decisio
 slotları türetilmiş fotoğraf): aktarım mevcut satırı YERİNDE günceller (paket kaynaklı ve elle
 girilmiş fark etmez, tarihçeli), yalnız `dogrulama_durumu ∈ {BELGE, UYAP}` satır korunur, esas
 VE karar tarihi farklı ise ikinci tur `sira_no+1` ile eklenir, silme yolu yok (G150; ayrıntı
-`docs/mimari/veri-teslim-hatti.md` §7.1).
+`docs/mimari/veri-teslim-hatti.md` §7.1). **Dava durumu ÜÇLÜDÜR** (`constants.CASE_STATUSES`,
+karar 020): `cases.status` yalnız DERDEST | DANIŞ | MAHZEN; temyiz/istinaf/karar/kapalı DURUM
+değil AŞAMADIR (`cases.case_stage`). Yazma yolları `normalize_case_status`'tan geçer, belge işleme
+belge türünden aşamaya yazar (`DOCTYPE_TO_STAGE_MAP`), migrasyon 50 eski değerleri üçlüye çekti.
 
 **Dava arama (E8, G055):** `case_manager.get_cases` 13-14 kolon/ilişkiyi tek bir
 OR/EXISTS ağacında DEĞİL, her terim için bağımsız `UNION`'lanan `SELECT`'lerle arar;

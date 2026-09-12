@@ -93,15 +93,20 @@ def _cleanup_process_cache():
         on_evict=lambda k, v: logger.info(f"DOWNLOAD_CACHE TTL expired: {k}")
     )
 
-# Document type → case status auto-mapping
-DOCTYPE_TO_STATUS_MAP = {
+# Belge türü → dava AŞAMASI (cases.case_stage) otomatik eşlemesi.
+# 12.09.2026 kullanıcı kararı: `cases.status` yalnız DERDEST | DANIŞ | MAHZEN
+# (constants.CASE_STATUSES) — temyizdeki dava da derdesttir. Belge türünden
+# türeyen bilgi durum değil aşamadır; eski kod status'a TEMYIZ/KARAR/INFAZ/
+# KAPALI yazıp durumu kirletiyordu (prod'da 29 kart). Aşama değerleri
+# models.Case.case_stage şerhi + frontend trackingDraft.STAGES ile aynı.
+DOCTYPE_TO_STAGE_MAP = {
     "KARAR": "KARAR",
     "TEMYIZ": "TEMYIZ",
     "INFAZ": "INFAZ",
     "FERAGAT": "KAPALI",
     "ISLAH": "DERDEST",
 }
-DTYPE_TO_STATUS_MAP_ITEMS = list(DOCTYPE_TO_STATUS_MAP.items())
+DTYPE_TO_STAGE_MAP_ITEMS = list(DOCTYPE_TO_STAGE_MAP.items())
 
 
 def refresh_lists_background():
@@ -170,28 +175,28 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
         if not case:
             return False
 
-        new_status = None
+        new_stage = None
         kod_upper = belge_turu_kodu.upper()
-        for prefix, status in DTYPE_TO_STATUS_MAP_ITEMS:
+        for prefix, stage in DTYPE_TO_STAGE_MAP_ITEMS:
             if kod_upper.startswith(prefix):
-                new_status = status
+                new_stage = stage
                 break
 
-        if new_status and new_status != case.status:
-            old_status = case.status
-            case.status = new_status
+        if new_stage and new_stage != case.case_stage:
+            old_stage = case.case_stage
+            case.case_stage = new_stage          # status'a DOKUNULMAZ (üçlü kural)
             history = models.CaseHistory(
                 case_id=case_id,
-                field_name="status",
-                old_value=old_status,
-                new_value=new_status,
+                field_name="case_stage",
+                old_value=old_stage,
+                new_value=new_stage,
                 # Faz 7 kararı 3: sessiz zenginleştirme kalır ama imzası belli olur
                 changed_by=uploaded_by,
-                source="auto-status",
+                source="auto-stage",
             )
             db.add(history)
             db.commit()
-            logging.info(f"Case {case_id} status auto-updated: {old_status} → {new_status}")
+            logging.info(f"Case {case_id} stage auto-updated: {old_stage} → {new_stage}")
             return True
 
         return False

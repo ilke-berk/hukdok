@@ -896,9 +896,9 @@ const Index = () => {
         );
       }
 
-      // --- FAZ 1: Otomatik durum güncelleme bildirimi ---
+      // --- FAZ 1: Otomatik aşama güncelleme bildirimi (12.09: durum değil aşama yazılır) ---
       if (result.results?.auto_status_update) {
-        toast.success(`🔄 Dava durumu otomatik güncellendi! (Belge türüne göre)`, { duration: 4000 });
+        toast.success(`🔄 Dava aşaması otomatik güncellendi! (Belge türüne göre)`, { duration: 4000 });
       }
 
       // --- FAZ 1.5: Otomatik eksik veri tamamlama ---

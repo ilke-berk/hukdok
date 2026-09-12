@@ -15,6 +15,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import is_unique_violation
 import models
+from constants import normalize_case_status
 from party_check import normalize_party_key, normalize_tc
 from required_fields import (
     AKTARIM_SOURCE_PREFIX,
@@ -540,14 +541,20 @@ def get_case_stats(tenant_id: str = None):
             s = (status or "").upper()
             if s == "DERDEST":
                 stats["active"] += count
-            elif s in ("KAPALI", "MAHZEN"):
+            elif s in ("KAPALI", "MAHZEN"):      # KAPALI: migrasyon 50 öncesi eski değer
                 stats["closed"] += count
-            elif s == "TEMYIZ":
-                stats["appeal"] += count
 
         for status, count in stats["statuses"].items():
             if (status or "").upper().startswith("DANI"):
                 stats["danis_active"] += count
+
+        # Üçlü kural (12.09.2026): temyiz/istinaf DURUM değil AŞAMA — `appeal`
+        # sayacı `case_stage`'ten okunur (panel geriye dönük anahtarı korur).
+        appeal_query = db.query(func.count(models.Case.id)).filter(
+            models.Case.active.is_(True),
+            models.Case.case_stage.in_(("ISTINAF", "TEMYIZ")),
+        )
+        stats["appeal"] = _apply_tenant_filter(appeal_query, tenant_id).scalar() or 0
 
         return stats
     except Exception as e:
@@ -1073,6 +1080,15 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
 
         # Fields to track for history
         tracked_fields = ["esas_no", "court", "status"]
+
+        # Üçlü kural (12.09.2026): status yalnız DERDEST | DANIŞ | MAHZEN; eski
+        # değer (TEMYIZ, KAPALI, ...) üçlüye çevrilir, aşama boşsa oraya taşınır.
+        if data.get("status") is not None:
+            data = dict(data)
+            normalized, stage = normalize_case_status(data["status"])
+            data["status"] = normalized
+            if stage and not case.case_stage:
+                case.case_stage = stage
 
         # 1. Update Case and Record History
         for field in tracked_fields:
@@ -1933,6 +1949,11 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
             for field, value in tracking_changes(data)
         ]
         for field, value in degisiklikler:
+            if field == "status":
+                # Üçlü kural (12.09.2026): takip paneli de üçlü dışına yazamaz.
+                value, stage = normalize_case_status(value)
+                if stage and not case.case_stage and not data.get("case_stage"):
+                    case.case_stage = stage
             if field == "status" and value != case.status:
                 db.add(models.CaseHistory(
                     case_id=case_id, field_name="status",

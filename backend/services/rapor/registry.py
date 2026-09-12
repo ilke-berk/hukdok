@@ -489,8 +489,9 @@ def _bag_gruplari(iliskiler: tuple[Iliski, ...], hedef_gruplari: dict[str, tuple
 
 
 # ─── Kapalı liste çekirdekleri ───────────────────────────────────────────────
-# cases.status: model şerhi (DERDEST | DANIŞ | MAHZEN) + CaseList.STATUS_ORDER.
-DAVA_DURUMLARI = ("DANIŞ", "DERDEST", "KARAR", "ISTINAF", "TEMYIZ", "KAPALI", "MAHZEN")
+# cases.status: üçlü (constants.CASE_STATUSES, kullanıcı kararı 12.09.2026) + CaseList.STATUS_ORDER.
+# Eski KARAR/ISTINAF/TEMYIZ/KAPALI değerleri migrasyon 50 ile üçlüye çekildi; aşama `case_stage`te.
+DAVA_DURUMLARI = ("DANIŞ", "DERDEST", "MAHZEN")
 # cases.case_stage: models.py şerhi + frontend trackingDraft.STAGES anahtarları.
 DAVA_ASAMALARI = ("DERDEST", "KARAR", "ISTINAF", "TEMYIZ", "KARAR_DUZELTME", "KESINLESME", "INFAZ", "KAPALI")
 KARAR_TURLERI = ("KABUL", "RED", "KISMI_KABUL", "FERAGAT", "UZLASMA", "DUSME")   # trackingDraft.STAGE_FIELDS

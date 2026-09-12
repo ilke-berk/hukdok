@@ -104,8 +104,11 @@ def test_yerel_fotografi_teblig_ve_aciklamayi_tasiyor():
 def test_fotograf_geri_doldurma_yalniz_bos_kolonu_doldurur():
     """Madde 43'ün UPDATE'leri `IS NULL` kapılı: elle girilmiş tebliğ/açıklama
     ezilmez, ikinci koşu 0 satır günceller (idempotent)."""
+    # Yalnız madde 43'ün geri doldurma UPDATE'leri (case_stage_decisions'tan okur);
+    # migrasyon 50'nin durum üçlüsü UPDATE'leri (`test_durum_uclusu`) buraya girmez.
     sqls = [sql for op in _MIGRATIONS if op[0] == "index" and op[1] == "cases"
-            for sql in op[2] if sql.lstrip().upper().startswith("UPDATE")]
+            for sql in op[2]
+            if sql.lstrip().upper().startswith("UPDATE") and "case_stage_decisions" in sql]
     assert len(sqls) == 2
     for sql in sqls:
         assert "IS NULL" in sql and "stage = 'YEREL'" in sql and "MAX(sira_no)" in sql

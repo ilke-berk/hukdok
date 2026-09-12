@@ -1104,6 +1104,29 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_case_parties_ad_anahtari ON case_parties "
         "((replace(replace(upper(trim(name)), 'İ', 'I'), 'ı', 'I')))",
     ]),
+
+    # ─── 50. DAVA DURUMU ÜÇLÜSÜ (kullanıcı kararı 12.09.2026) ─────────────────
+    # `cases.status` yalnız DERDEST | DANIŞ | MAHZEN (constants.CASE_STATUSES).
+    # Belge işleme "auto-status"u yıllardır status'a KARAR/TEMYIZ/INFAZ/KAPALI
+    # yazıyordu (prod 12.09: TEMYIZ 26, ISTINAF 2, KARAR 1). Veri düzeltmesi:
+    # (1) tarihçeye sistem imzalı satır, (2) eski değer BOŞ olan aşama kolonuna
+    # taşınır (bilgi kaybolmaz; aşama doluysa dokunulmaz), (3) status üçlüye:
+    # KAPALI → MAHZEN, kalanlar → DERDEST. Soft-silinmiş kart dahil (arama/rapor
+    # aynı kapıdan geçsin). Op türü "index" = koşulsuz düz SQL (madde 46 deseni);
+    # WHERE listesi ikinci koşuda 0 satır eşler → idempotent. Kod tarafı:
+    # constants.normalize_case_status (panel/takip kapısı), processing
+    # DOCTYPE_TO_STAGE_MAP (artık aşamaya yazar), registry.DAVA_DURUMLARI.
+    ("index", "cases", [
+        "INSERT INTO case_history (case_id, field_name, old_value, new_value, changed_at, changed_by, source) "
+        "SELECT id, 'status', status, "
+        "CASE WHEN status = 'KAPALI' THEN 'MAHZEN' ELSE 'DERDEST' END, now(), 'sistem', 'migrasyon_50_durum_uclusu' "
+        "FROM cases WHERE status IN ('KARAR', 'ISTINAF', 'TEMYIZ', 'KARAR_DUZELTME', 'KESINLESME', 'INFAZ', 'KAPALI')",
+        "UPDATE cases SET case_stage = status "
+        "WHERE status IN ('KARAR', 'ISTINAF', 'TEMYIZ', 'KARAR_DUZELTME', 'KESINLESME', 'INFAZ', 'KAPALI') "
+        "AND (case_stage IS NULL OR case_stage = '')",
+        "UPDATE cases SET status = CASE WHEN status = 'KAPALI' THEN 'MAHZEN' ELSE 'DERDEST' END "
+        "WHERE status IN ('KARAR', 'ISTINAF', 'TEMYIZ', 'KARAR_DUZELTME', 'KESINLESME', 'INFAZ', 'KAPALI')",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

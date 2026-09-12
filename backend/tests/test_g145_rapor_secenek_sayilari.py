@@ -2,7 +2,7 @@
 `bos_sayisi` (kaynak başına TEK sorgu), türetilmişte `null`, önbellek, asistan metni değişmez (plan §7.2).
 
 Düzen `test_g141_rapor_veriden_liste.env` reçetesi (sqlite StaticPool, gerçek `require_admin`); veri bu
-görevin senaryolarına göre: Durum DERDEST 2 / KARAR 1 (biri legacy NULL tenant), silinmiş DERDEST ve başka
+görevin senaryolarına göre: Durum DERDEST 2 / MAHZEN 1 (biri legacy NULL tenant), silinmiş DERDEST ve başka
 tenant DERDEST sayılmaz; boş konu ("" ve yalnız boşluk), NULL mahkeme/tarih/tutar/mantık; müvekkil türleri;
 sorgu sayacı motorun `before_cursor_execute` olayıyla (kaynak başına tek FILTER + tek UNION ALL).
 """
@@ -39,7 +39,7 @@ def _veri_yukle(db):
                      active=True, file_type="Hukuk")
     c2 = models.Case(tracking_no="HA.G145.2", tenant_id=T1, status="DERDEST", subject="", court=None,
                      opening_date=None, dava_degeri=None, file_type="Hukuk")
-    c3 = models.Case(tracking_no="HA.G145.3", tenant_id=None, status="KARAR", subject="   ",
+    c3 = models.Case(tracking_no="HA.G145.3", tenant_id=None, status="MAHZEN", subject="   ",
                      court="Bursa 2. Asliye Hukuk", opening_date=None, dava_degeri=None, active=False,
                      file_type="Panelden Tür")
     c_silinmis = models.Case(tracking_no="HA.G145.4", tenant_id=T1, status="DERDEST", subject="Silinmiş",
@@ -124,19 +124,19 @@ def _kolonlar(kaynak):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_sabit_liste_sayi_sira_sifirlilar_sonda(env):
-    """Kabul: Durum DERDEST 2 / KARAR 1 (legacy NULL tenant dahil), silinmiş ve başka tenant sayılmaz;
+    """Kabul: Durum DERDEST 2 / MAHZEN 1 (legacy NULL tenant dahil), silinmiş ve başka tenant sayılmaz;
     sıra sayıya göre azalan, sıfırlı sabit değerler listede KALIR ve kendi sırasıyla sonda;
     `secenek_sayilari` anahtar kümesi = `secenekler`, `secenek_kaynagi` sabit kalır."""
     durum = _kolonlar(_katalog(env.client())["davalar"])["status"]
-    sifirlilar = [d for d in DAVA_DURUMLARI if d not in ("DERDEST", "KARAR")]
-    assert durum["secenekler"] == ["DERDEST", "KARAR", *sifirlilar]
-    assert durum["secenek_sayilari"] == {"DERDEST": 2, "KARAR": 1, **{d: 0 for d in sifirlilar}}
+    sifirlilar = [d for d in DAVA_DURUMLARI if d not in ("DERDEST", "MAHZEN")]
+    assert durum["secenekler"] == ["DERDEST", "MAHZEN", *sifirlilar]
+    assert durum["secenek_sayilari"] == {"DERDEST": 2, "MAHZEN": 1, **{d: 0 for d in sifirlilar}}
     assert list(durum["secenek_sayilari"]) == durum["secenekler"]
     assert durum["secenek_kaynagi"] == "sabit" and durum["kontrol"] == "coklu_secim"
-    # başka tenant: kendi DERDEST'i + legacy KARAR → 1'er, sabit sıra (DERDEST önce) korunur
+    # başka tenant: kendi DERDEST'i + legacy MAHZEN → 1'er, sabit sıra (DERDEST önce) korunur
     durum2 = _kolonlar(_katalog(env.client(tid=T2))["davalar"])["status"]
-    assert durum2["secenekler"][:2] == ["DERDEST", "KARAR"]
-    assert durum2["secenek_sayilari"]["DERDEST"] == 1 and durum2["secenek_sayilari"]["KARAR"] == 1
+    assert durum2["secenekler"][:2] == ["DERDEST", "MAHZEN"]
+    assert durum2["secenek_sayilari"]["DERDEST"] == 1 and durum2["secenek_sayilari"]["MAHZEN"] == 1
 
 
 def test_sabit_liste_veride_gorulen_deger_ve_tablo_katmani_tenant_kuralli(env):
@@ -312,7 +312,7 @@ def test_asistan_katalog_metni_sayi_gommez(env):
 
 def test_onizleme_govdesi_degismedi(env):
     r = env.client().post(PREVIEW, json={"tanim": {"veri_kaynagi": "davalar", "kolonlar": ["tracking_no", "status"],
-                                                   "filtreler": [{"alan": "status", "op": "eq", "deger": "KARAR"}],
+                                                   "filtreler": [{"alan": "status", "op": "eq", "deger": "MAHZEN"}],
                                                    "siralama": []}})
     assert r.status_code == 200, r.text
     govde = r.json()

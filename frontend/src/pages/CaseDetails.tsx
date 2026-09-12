@@ -33,13 +33,12 @@ import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 
+// Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
+// Temyiz/istinaf durum değil aşamadır — CaseTrackingPanel gösterir.
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
     DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
-    ISTINAF: { bg: "bg-[#c47a1e]/15",      text: "text-[#c47a1e]",       dot: "bg-[#c47a1e]" },
-    TEMYIZ:  { bg: "bg-[#7a3f8a]/15",      text: "text-[#7a3f8a]",       dot: "bg-[#7a3f8a]" },
-    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-[var(--brand)]" },
-    INFAZ:   { bg: "bg-[#a8323b]/15",      text: "text-[#a8323b]",       dot: "bg-[#a8323b]" },
-    KAPALI:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
+    DANIŞ:   { bg: "bg-[#3b6fa0]/15",      text: "text-[#3b6fa0]",       dot: "bg-[#3b6fa0]" },
+    MAHZEN:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 
 const getStatusStyle = (status: string) =>
