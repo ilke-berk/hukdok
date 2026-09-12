@@ -777,7 +777,7 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır. (F16/F
 | --- | --- | --- | --- |
 | F11 | §4.2 katalog kolon alanları `grup/kontrol/oneriler` | + `oplar` (kolon başına izinli op listesi; `registry.py:892`) — §4.3'e şerhle eklendi | frontend combobox `eq`/`contains` kararı ve "…" menüsü buradan; taraf metin kolonlarında `eq` YOK |
 | F12 | §4.2 taraf tablosu 4 kolon; hızlı filtre listesinde `dava_sayisi` | `dava_sayisi` de filtrelenebilir türetilmiş (`_skaler_filtre`, `registry.py:586-587`); `is_null` boş küme (COUNT NULL olmaz) | denetim "hızlı filtre filtrelenebilir olmalı" zorladı; `foy_sayisi`/`belge_sayisi` filtrelenemez kaldı |
-| F13 | §4.2 öneriler "alfabetik" | `ORDER BY kolon` — DB collation sırası, Türkçe locale değil (`registry.py:861`, `:288`) | Türkçe sıra istenirse ayrı iş |
+| F13 | §4.2 öneriler "alfabetik" | **KAPANDI 12.09:** DB `ORDER BY` yalnız LIMIT kesmesi için; dönen liste `registry.tr_sira_anahtari` ile Türk alfabesine göre yeniden sıralanır (öneriler, veriden seçenekler sıklık eşitliğinde, `liste` DISTINCT katmanı) — collation bağımlılığı yok, sqlite = Postgres | `tests/test_rapor_dogruluk_duzeltmeleri.py` |
 | F14 | §4.2 `muvekkil_kategorisi` seçim ifadesi | `aggregate_strings` DISTINCT DEĞİL (sqlite `group_concat(DISTINCT x, ayraç)` yok): iki Doktor müvekkil "Doktor ; Doktor" (`registry.py:293-303`) | yalnız görünüm; filtre EXISTS olduğundan doğruluk etkilenmez |
 | F15 | §4.2 "katalog cevabı süreç içi 60 sn önbelleklenir" | worker başına (`UVICORN_WORKERS=2`), `(SessionLocal, tenant_id)` anahtarlı, `time.monotonic` (`routes/reports.py:81-109`) | 60 sn içinde iki worker farklı fotoğraf verebilir; `gruplar` kaynağa ayrıca yazılmadı |
 | F16 | §4.1 madde 2 "Temizle hepsini siler" | etiket "Filtreleri temizle" (`QuickFilters.tsx:103`); kolon panelindeki "Temizle" ayrı (`ColumnPicker.tsx:208`) | çakışma önlendi |
@@ -813,8 +813,9 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
   başına ayrı satır isteniyorsa kaynak `muvekkiller` seçilip `dava.*` kullanılır (satırı ne oluşturuyorsa o
   kaynak). Bağ tek hoptur (`muvekkil.dava.x` yok). Bağlı kayıt tenant'a göre süzülmez (paylaşımlı havuz,
   `dava_sayisi` ile aynı). Çoklu bağ kolonu sıralanamaz. Excel'de çok değerli tarih hücresi metin kalır.
-- **Öneri listesi tavanı:** 300'ü aşınca ilk 300 (DB sırası) + `oneri_kesik=true`; combobox başlığında
-  "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:519`). Sıra DB collation'ı (F13).
+- **Öneri listesi tavanı:** 300'ü aşınca ilk 300 (kesme DB sırasıyla) + `oneri_kesik=true`; combobox başlığında
+  "İlk 300 değer (liste kesildi)" (`FilterControl.tsx:519`). Dönen liste Türk alfabesi sırasındadır (F13, 12.09);
+  kesik listede HANGİ 300'ün geldiği yine DB collation'ına bağlıdır.
 - **Aday eşleme yalnız listesi olan kolonlarda (G174 + 2026-09-12):** `degerEsle` (`reportsChat.ts`) `oneriler`
   yoksa `secenekler`e bakar (veriden kapalı liste ör. Uzmanlık Alanı; kodlu listede `secenek_etiketleri` etiketi
   de kabul); listesiz serbest metin kolonunu (ör. `subject`) daima temiz sayar — orada asistanın yazdığı değer
@@ -843,9 +844,8 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 - **NOT (frontend, kapsam dışı — G175/G177 docs bandı dokunmadı):** `FilterControl.tsx:65` yorumu "Arama kutusu
   QuickFilters'ta ayrı satırdadır" bayat — `QuickFilters` silindi; şeritte `sunum=arama` yuvası popover'daki metin
   kontrolüyle düzenlenir. Tek satırlık yorum düzeltmesi.
-- **NOT (frontend, kapsam dışı):** "N kayıt" ekranda İKİ kez — sayaç satırı `kayit-sayaci` (`ReportsPage.tsx:786-792`)
-  ve `PreviewTable` başlık rozeti `toplam-rozeti` (`:56-64`; dosya G175 dokunma listesindeydi). Küçük temizlik
-  görevi: rozeti düşürmek (G175 raporu kararı).
+- **KAPANDI (12.09):** eski NOT "'N kayıt' ekranda İKİ kez" — `PreviewTable` başlık rozeti `toplam-rozeti` kaldırıldı;
+  kayıt sayısı yalnız sayaç satırında `kayit-sayaci` (`ReportsPage.tsx`).
 - **Saklama dizini volume'da:** `/app/data/rapor_ciktilari` `backend-data` volume'unda doğar, recreate'i
   atlatır; disk büyümesi ≈ 30 gün × günlük export × ~3 MB, ilk ay ölçülür. Temizlik **tembel**: yalnız
   export sonunda koşar (`temizle_sessiz`), zamanlayıcı yok; export yapılmayan dönemde eski dosya
@@ -863,11 +863,15 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
   indirgenebilir (çevirici hazır).
 - **Anahtar yeniden açılınca sayfa yenilemesi gerekir:** frontend `asistan409` sayfa ömrü boyunca
   kalır (G135, bilinçli; G175'te bilgi kartı da aynı bayrağa bakar, `ReportsPage.tsx:731`).
-- **Gün sınırı saat dilimi:** DateTime kolonlarda tarih filtresi DB oturumunun saat dilimine göredir
-  (prod UTC; Türkiye günü 03:00'te başlar). Tarih kısayolları tarayıcının yerel gününü ISO'ya çevirir
-  (`isoGun`, `lib/reports.ts:529-532`).
-- **CSV ondalık `.`:** `Decimal→float` olduğu gibi yazılır; Türkçe Excel `;` ayraçlı CSV'de `,` ondalık
-  bekleyebilir — xlsx ana yol, CSV ham veri yolu; kullanıcı geri bildirimiyle karar.
+- **Saat dilimi = Türkiye (12.09 düzeltmesi; eskiden DB oturumu UTC → gün 03:00'te başlıyordu):** sözleşmenin
+  dilimi `schemas_rapor.SAAT_DILIMI` (Europe/Istanbul). DateTime kolonda gün sınırı bind'ı saat dilimli
+  (`registry._gun_basi`, Postgres `timestamptz` ile doğru karşılaştırır; sqlite tz'yi atar), motor `timestamptz`
+  değerini Türkiye saatine çevirip `+03:00` ofsetli ISO verir (`motor._serilestir`), Excel tz'siz Türkiye saati
+  yazar (`cikti._tarihe_cevir` — openpyxl tz'li datetime'ı REDDEDİYORDU: lokal Postgres'te `uploaded_at` kolonlu
+  Excel export 500 veriyordu, 12.09 bulgusu). Tarih kısayolları tarayıcının yerel gününü ISO'ya çevirir
+  (`isoGun`, `lib/reports.ts`).
+- **CSV ondalık virgül (12.09):** `para` "1234,50" (iki basamak), ondalıklı `sayi` virgüllü, tam sayı aynen
+  (`cikti._sayi_metni`) — Türkçe Excel `;` ayraçlı CSV'de `,` ondalık bekler. xlsx ana yol.
 - **Tarayıcıda görsel duman testi yapılmadı (G173-G175 de gece koştu):** yerleşim/responsive kanıtı jsdom'da
   sınıf ve sıra düzeyinde (`flex-wrap`, max-w yok); gerçek Radix popover konumlanması, `lg` altında sayaç
   satırının/şeridin sarması, 300 önerili combobox'ın popover içinde kaydırması göz kontrolü ister (G173/G175

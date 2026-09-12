@@ -265,7 +265,7 @@ def test_export_csv_bom_ayrac_enjeksiyon(env):
     assert satirlar[1][1] == "'=CMD()|calc"
     assert satirlar[2][1] == "'+artı ile başlar"
     assert satirlar[1][2] == "01.03.2025" and satirlar[1][3] == "05.01.2026 10:30:00"
-    assert satirlar[2][4] == "-250.0"                        # sayı: önek YOK
+    assert satirlar[1][4] == "1234,50" and satirlar[2][4] == "-250,00"   # para: ondalık VİRGÜL, önek YOK (12.09)
     assert satirlar[1][5] == "Evet" and satirlar[3][2] == ""
     k = _runs(env)[0]
     assert k.format == "csv" and k.sha256 == _sha(govde) and k.dosya_boyutu == len(govde)
@@ -487,7 +487,7 @@ def test_xlsx_ve_csv_uret_dosyaya_yazar(tmp_path):
     assert ozet2.satir_sayisi == 1
     ham = (tmp_path / "r.csv").read_bytes()
     assert ham.startswith(b"\xef\xbb\xbf")
-    assert ham.decode("utf-8-sig") == "Ad;Tarih;Tutar\r\ny;02.01.2025 10:11:12;1\r\n"
+    assert ham.decode("utf-8-sig") == "Ad;Tarih;Tutar\r\ny;02.01.2025 10:11:12;1,00\r\n"
     with pytest.raises(ValueError):
         cikti.ciktiyi_yaz("pdf", kolonlar, iter([]), tmp_path / "r.pdf")
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // PreviewTable (G138 → G139) — başlıktan sıralama: yalnız `siralanabilir` başlık tıklanabilir, aria-sort
 // ve ok/sıra numarası etkin sıralamadan; "güncelleniyor…" durumu; bayat rozeti yok; geçersiz
-// taslakta ipucu; hata DataErrorBanner; sayaç "N kayıt · M kolon"; boş sonuçta filtre kısayolu.
+// taslakta ipucu; hata DataErrorBanner; başlıkta kayıt rozeti yok (sayaç sayfada); boş sonuçta filtre kısayolu.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -94,18 +94,18 @@ describe("PreviewTable (G138)", () => {
         expect(maddi.title).toBe("Sıralamayı kaldır");
     });
 
-    it("yükleniyorken başlıkta \"güncelleniyor…\" durumu; bayat rozeti DOM'da yok; toplam rozeti kalır", () => {
+    it("yükleniyorken başlıkta \"güncelleniyor…\" durumu; bayat rozeti DOM'da yok; tablo satırları kalır", () => {
         render({ yukleniyor: true });
         expect(container.querySelector("[data-testid='guncelleniyor']")?.textContent).toContain("güncelleniyor");
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
         expect(container.textContent).not.toContain("yeniden önizleyin");
-        expect(container.querySelector("[data-testid='toplam-rozeti']")?.textContent).toBe("1 kayıt · 3 kolon");
         expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     });
 
-    it("sayaç \"N kayıt · M kolon\" tr-TR binlik ayraçla; başlıkta 'Toplam' ön eki yok", () => {
+    it("başlıkta kayıt rozeti YOK (12.09: sayı yalnız sayfanın sayaç satırında); 'Toplam' ön eki yok", () => {
         render({ cevap: { ...CEVAP, toplam: 3064 } });
-        expect(container.querySelector("[data-testid='toplam-rozeti']")?.textContent).toBe("3.064 kayıt · 3 kolon");
+        expect(container.querySelector("[data-testid='toplam-rozeti']")).toBeNull();
+        expect(container.textContent).not.toContain("kayıt ·");
         expect(container.textContent).not.toContain("Toplam");
     });
 

@@ -12,6 +12,7 @@ geçer — tek doğrulama yolu.
 """
 import datetime as dt
 from typing import Any, Literal, Optional
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -21,6 +22,12 @@ FILTRE_MAX = 20
 IN_DEGER_MAX = 200
 SIRALAMA_MAX = 3
 ONIZLEME_SAYFA_BOYU_MAX = 200
+
+# ─── Sözleşmenin saat dilimi (12.09) ─────────────────────────────────────────
+# Tanımdaki tarih değerleri ve çıktıdaki zaman damgaları TÜRKİYE günü/saatidir: filtre bind'ları
+# bu dilimle kurulur (`registry.tarih_kosulu`), Postgres `timestamptz` değerleri bu dilime çevrilerek
+# serileştirilir (`motor._serilestir`) ve Excel'e yazılır (`cikti._tarihe_cevir`). DB oturumu UTC'dir.
+SAAT_DILIMI = ZoneInfo("Europe/Istanbul")
 
 # ─── Tip ↔ izinli op tablosu (plan §2.2) — TEK sabit, motor da buradan okur ──
 Op = Literal["eq", "ne", "contains", "in", "gte", "lte", "between", "is_null", "not_null"]

@@ -348,7 +348,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
         expect(previewCagrilari()).toHaveLength(1);
         expect(sonPreviewGovdesi()).toEqual({ tanim: VARSAYILAN_TANIM, sayfa: 1, sayfa_boyu: 10 });
         expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
+        expect(container.querySelector("[data-testid='toplam-rozeti']")).toBeNull();   // 12.09: sayı tek yerde
         expect($("[data-testid='kayit-sayaci']").textContent).toBe("120 kayıt");
 
         // G175: eski arayüz izleri yok — kaynak kartları, filtre şeridi, Kolonlar düğmesi/paneli, araç çubuğu, eski select
@@ -558,7 +558,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
             ["2025/12", "Tazminat", "07.03.2025", "1.234,50"],
             ["2025/13", "—", "—", "—"],
         ]);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("120 kayıt · 4 kolon");
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("120 kayıt");
         expect(filtreCipleri()).toEqual(["opening_date", "status", "maddi_tazminat"]);
         expect(container.querySelector("[data-testid='bayat-rozeti']")).toBeNull();
     });
@@ -696,7 +696,6 @@ describe("ReportsPage (G133/G138/G175)", () => {
         await act(async () => { coz!(); });
         await bekle();
         expect(satirlar()).toEqual([["Ayşe Yılmaz"]]);
-        expect($("[data-testid='toplam-rozeti']").textContent).toBe("1 kayıt · 1 kolon");
         expect($("[data-testid='kayit-sayaci']").textContent).toBe("1 kayıt");
     });
 

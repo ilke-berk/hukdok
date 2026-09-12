@@ -92,6 +92,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Literal, Mapping, Optional, overload
 
 import datetime as dt
+import unicodedata
 
 from sqlalchemy import (
     Boolean, Date, DateTime, Integer, Numeric, Select, String, and_, cast, func, literal, null, or_, select,
@@ -108,10 +109,36 @@ from managers.seed_data import (
     JUDGMENT_ROLES, LOCAL_DECISIONS, REVISION_DECISIONS, SERVICE_TYPES,
 )
 from required_fields import MISSING_BUCKETS
-from schemas_rapor import TIP_OPLARI
+from schemas_rapor import SAAT_DILIMI, TIP_OPLARI
 
 AYRAC = " ; "
 ONERI_MAX = 300           # plan §4.2: öneri listesi tavanı; aşarsa ilk 300 + `oneri_kesik`
+
+# ─── Türkçe sıralama anahtarı (12.09: öneri/seçenek listeleri DB collation'ı yerine Türk alfabesi) ──
+# DB'nin `ORDER BY kolon`u C/ICU collation'ıdır (Ç, İ, Ş sona düşer; "ankara" ile "Ankara" ayrılır).
+# Sorgu yine DB sırasıyla LIMIT'lenir (300 kesme / eşik kesmesi), dönen liste burada Türk alfabesine
+# göre yeniden sıralanır — sqlite (test) ve Postgres (prod) aynı sonucu verir, collation'a bağımlılık yok.
+_TR_ALFABE = "abcçdefgğhıijklmnoöprsştuüvyz"
+_TR_SIRA = {harf: i for i, harf in enumerate(_TR_ALFABE)}
+
+
+def _harf_anahtari(harf: str) -> tuple[tuple[int, int], int]:
+    """(birincil, ikincil): birincil = alfabe sırası (harf değilse ord, harflerden önce); ikincil = şapka
+    gibi aksan farkı (â ≈ a; yalnız birincil eşitken ayırır — ICU'nun ikincil düzeyi gibi)."""
+    if harf in _TR_SIRA:
+        return (1, _TR_SIRA[harf]), 0
+    taban = unicodedata.normalize("NFD", harf)[0]
+    if taban in _TR_SIRA:
+        return (1, _TR_SIRA[taban]), ord(harf)
+    return (0, ord(harf)), 0                    # boşluk, rakam, noktalama: harflerden önce
+
+
+def tr_sira_anahtari(metin: str) -> tuple[tuple[tuple[int, int], ...], tuple[int, ...], str]:
+    """`sorted(..., key=tr_sira_anahtari)`: Türk alfabesi sırası, büyük/küçük harf duyarsız
+    (İ→i, I→ı), aksan ikincil, eşitlikte özgün metin (kararlı)."""
+    kucuk = unicodedata.normalize("NFC", metin).replace("I", "ı").replace("İ", "i").lower()
+    harfler = [_harf_anahtari(h) for h in kucuk]
+    return tuple(b for b, _a in harfler), tuple(a for _b, a in harfler), metin
 
 # Tip → filtre kontrolü (plan §4.2; filtrelenemeyen kolonda `kontrol=null`).
 KONTROLLER: dict[str, str] = {
@@ -321,7 +348,11 @@ def _sozluk(kolonlar: list[Kolon]) -> dict[str, Kolon]:
 # ─── Tarih koşulu (motor + bağlı kolon filtresi ortak) ───────────────────────
 
 def _gun_basi(gun: dt.date) -> dt.datetime:
-    return dt.datetime.combine(gun, dt.time.min)
+    """Türkiye gününün başlangıcı, saat dilimli (`SAAT_DILIMI`). Postgres `timestamptz` kolonu
+    bu değerle karşılaştırılınca gün sınırı 03:00 UTC'ye değil TR gece yarısına düşer (12.09
+    düzeltmesi: DB oturumu UTC olduğundan "bugün yüklenen" Türkiye'de 03:00'te başlıyordu).
+    sqlite (testler) tz bilgisini atar → naive değerle birebir davranış."""
+    return dt.datetime.combine(gun, dt.time.min, tzinfo=SAAT_DILIMI)
 
 
 def _gun_sonrasi(gun: dt.date) -> dt.datetime:
@@ -331,7 +362,7 @@ def _gun_sonrasi(gun: dt.date) -> dt.datetime:
 def tarih_kosulu(ifade: Any, zaman_damgali: bool, op: str, deger: Any):
     """Tarih kolonlarında karşılaştırma (G130 motorundan taşındı, G166 bağlı kolon EXISTS'i de
     kullanır); DateTime kolonda (`created_at` gibi) gün aralığı: eq = [gün, gün+1), lte = < gün+1.
-    Gün sınırı DB oturumunun saat dilimine göredir (sqlite bind'ı `date` değil `datetime` ister).
+    Gün sınırı TÜRKİYE günüdür (`_gun_basi` saat dilimli bind; sqlite bind'ı `date` değil `datetime` ister).
     `op` ∈ eq | gte | lte | between (değersiz op'lar çağıranda elenir)."""
     if zaman_damgali:
         if op == "eq":
@@ -1293,9 +1324,9 @@ def secenekleri_getir(kolon: Kolon, db: Optional[Session]) -> list[str]:
             mevcut = db.execute(
                 select(func.distinct(ifade)).where(ifade.isnot(None)).order_by(ifade)
             ).scalars()
-            for deger in mevcut:
-                if deger not in (None, ""):
-                    gorulen.setdefault(str(deger))
+            # DISTINCT katmanı Türk alfabesiyle (çekirdek + referans tablosu kendi sırasını korur)
+            for deger in sorted((str(d) for d in mevcut if d not in (None, "")), key=tr_sira_anahtari):
+                gorulen.setdefault(deger)
     return list(gorulen)
 
 
@@ -1402,15 +1433,16 @@ def _oneri_sorgusu(kaynak: VeriKaynagi, kolon: Kolon, tenant_id: str) -> Select:
 def onerileri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
                     tenant_id: str) -> tuple[Optional[list[str]], bool]:
     """`onerili` metin kolonun DISTINCT değerleri (plan §4.2): kaynağın tenant +
-    soft-delete kısıtı, boş hariç, DB sırasıyla, en fazla `ONERI_MAX`; aşarsa ilk
-    `ONERI_MAX` + `(liste, True)`. Önerisiz kolonda `(None, False)`; `db` yoksa `([], False)`."""
+    soft-delete kısıtı, boş hariç, en fazla `ONERI_MAX` (kesme DB sırasıyla, dönen liste
+    Türk alfabesiyle — `tr_sira_anahtari`); aşarsa ilk `ONERI_MAX` + `(liste, True)`.
+    Önerisiz kolonda `(None, False)`; `db` yoksa `([], False)`."""
     if not kolon.onerili:
         return None, False
     if db is None:
         return [], False
     satirlar = db.execute(_oneri_sorgusu(kaynak, kolon, tenant_id).limit(ONERI_MAX + 1)).scalars().all()
     degerler = [str(d) for d in satirlar if d not in (None, "")]
-    return degerler[:ONERI_MAX], len(degerler) > ONERI_MAX
+    return sorted(degerler[:ONERI_MAX], key=tr_sira_anahtari), len(degerler) > ONERI_MAX
 
 
 @overload
@@ -1446,9 +1478,12 @@ def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Se
     satirlar = db.execute(sorgu).all()
     if len(satirlar) > esik:
         return None
+    # Sıklık azalan, eşitlikte Türk alfabesi (DB'nin `ORDER BY ifade`si collation sırasıydı)
+    ciftler = sorted(((str(deger), int(sayi)) for deger, sayi in satirlar),
+                     key=lambda c: (-c[1], tr_sira_anahtari(c[0])))
     if sayili:
-        return [(str(deger), int(sayi)) for deger, sayi in satirlar]
-    return [str(deger) for deger, _sayi in satirlar]
+        return ciftler
+    return [deger for deger, _sayi in ciftler]
 
 
 def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,

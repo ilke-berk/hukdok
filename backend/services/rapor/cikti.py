@@ -12,8 +12,10 @@ indirilen dosya AYNI bayttır, `report_runs.sha256` bunu kanıtlar.
 Hücre kuralları:
 - `tarih` tipinde kolonlar Excel'de GERÇEK tarih (motor ISO string verir, burada
   `date`/`datetime`'a çevrilir; biçim `DD.MM.YYYY` / `DD.MM.YYYY HH:MM`), CSV'de
-  `GG.AA.YYYY` metni (Türkçe Excel doğrudan tanır).
-- `para` → `#,##0.00`; `sayi` olduğu gibi; `mantik` → Evet/Hayır.
+  `GG.AA.YYYY` metni (Türkçe Excel doğrudan tanır). Saat dilimli zaman Türkiye saatine
+  çevrilir, tz atılır (openpyxl tz'li datetime kabul etmez).
+- `para` → `#,##0.00`; `sayi` olduğu gibi; `mantik` → Evet/Hayır. CSV'de `para` "1234,50",
+  ondalıklı `sayi` virgüllü (Türkçe Excel `;` ayraçlı dosyada `,` ondalık bekler).
 - Başlık satırı bordo zemin + beyaz kalın (`report_builder.rows_to_excel` stili,
   `4A1530`), dondurulmuş, otomatik filtreli.
 - CSV: `utf-8-sig` + `;` (`services/teslim_cevap._csv_yaz` deseni) + formül
@@ -29,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-from schemas_rapor import KolonBasligi
+from schemas_rapor import SAAT_DILIMI, KolonBasligi
 
 BASLIK_RENGI = "4A1530"           # report_builder.rows_to_excel ile aynı bordo
 SAYFA_ADI = "Rapor"
@@ -57,17 +59,38 @@ class CiktiOzeti:
 # ─── Değer çevirimleri ───────────────────────────────────────────────────────
 
 def _tarihe_cevir(deger: Any) -> Any:
-    """Motorun ISO string'ini `date`/`datetime`'a çevirir; çevrilemezse olduğu gibi."""
-    if isinstance(deger, (dt.datetime, dt.date)):
+    """Motorun ISO string'ini `date`/`datetime`'a çevirir; çevrilemezse olduğu gibi.
+    Saat dilimli değer (Postgres `timestamptz`; motor `+03:00` ile verir) Türkiye saatine çevrilip
+    tz'siz bırakılır — openpyxl tz'li datetime'ı REDDEDER ("Excel does not support timezones",
+    12.09 lokal Postgres bulgusu: `uploaded_at` kolonlu Excel export 500 veriyordu)."""
+    if isinstance(deger, dt.datetime):
+        return _yerel_saat(deger)
+    if isinstance(deger, dt.date):
         return deger
     if not isinstance(deger, str) or not deger:
         return deger
     try:
         if len(deger) == 10:
             return dt.date.fromisoformat(deger)
-        return dt.datetime.fromisoformat(deger)
+        return _yerel_saat(dt.datetime.fromisoformat(deger))
     except ValueError:
         return deger
+
+
+def _yerel_saat(zaman: dt.datetime) -> dt.datetime:
+    if zaman.tzinfo is None:
+        return zaman
+    return zaman.astimezone(SAAT_DILIMI).replace(tzinfo=None)
+
+
+def _sayi_metni(deger: Any, tip: str) -> Any:
+    """CSV sayı hücresi: Türkçe Excel `;` ayraçlı dosyada ondalık VİRGÜL bekler (12.09). `para` daima
+    iki basamak ("1234,50"); `sayi` tam sayıysa olduğu gibi, ondalıklıysa virgüllü. Sayı olmayan değer dokunulmaz."""
+    if isinstance(deger, bool) or not isinstance(deger, (int, float)):
+        return deger
+    if tip == "para":
+        return f"{deger:.2f}".replace(".", ",")
+    return str(deger).replace(".", ",") if isinstance(deger, float) else deger
 
 
 def _mantik_metni(deger: Any) -> Any:
@@ -170,6 +193,10 @@ def _csv_degerleri(kolonlar: list[KolonBasligi], satir: dict[str, Any]) -> list[
             deger = _tarih_metni(deger)
         elif kolon.tip == "mantik":
             deger = _mantik_metni(deger)
+        elif kolon.tip in ("para", "sayi") and isinstance(deger, (int, float)) and not isinstance(deger, bool):
+            # Sayıdan üretilen metin enjeksiyon korumasına GİRMEZ: "-250,00" negatif sayıdır, formül değil
+            degerler.append(_sayi_metni(deger, kolon.tip))
+            continue
         degerler.append(csv_hucresi_koru(deger))
     return degerler
 

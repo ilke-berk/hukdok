@@ -38,7 +38,8 @@ const SAGA_YASLI = new Set(["sayi", "para"]);
  * Önizleme tablosu (tam genişlik, G139): başlıklar katalog etiketiyle, tarih dd.MM.yyyy, para tr-TR,
  * `null` "—"; sayfalayıcı CaseList kalıbı. G138: önizleme otomatiktir — başlıkta "güncelleniyor…"
  * durumu, "bayat" rozeti yok; `siralanabilir` başlıklar tıklanarak sıralanır (§4.1 madde 4).
- * Sayaç "N kayıt · M kolon" (§4.1 madde 7); boş sonuçta filtre gevşetme ipucu + Temizle kısayolu.
+ * Kayıt sayacı sayfanın sayaç satırındadır (`kayit-sayaci`, G175) — başlıkta ikinci bir "N kayıt" rozeti
+ * YOK (12.09: aynı sayı iki kez basılıyordu); boş sonuçta filtre gevşetme ipucu + Temizle kısayolu.
  */
 export function PreviewTable({
     cevap, yukleniyor, hata, onRetry, onSayfa, sayfaBoyu, onSayfaBoyu, gecersiz, siralama, siralanabilirMi, onSirala,
@@ -52,16 +53,7 @@ export function PreviewTable({
             {/* Tablo başlığı */}
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border)]">
                 <div className="flex items-center gap-3 min-w-0">
-                    {/* Minimal (07.09): "Örnek" etiketi ve "ilk N satır" notu kalktı; toplam rozeti yeter. */}
-                    {cevap && !hata && (
-                        <span
-                            data-testid="toplam-rozeti"
-                            title="Raporun tamamındaki kayıt sayısı; tablo yalnız bir örnek gösterir, tam liste Excel/CSV'de"
-                            className="font-mono text-[10px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--border)] bg-[var(--bg)] text-[var(--fg-muted)] tabular-nums"
-                        >
-                            {cevap.toplam.toLocaleString("tr-TR")} kayıt · {cevap.kolonlar.length} kolon
-                        </span>
-                    )}
+                    {/* Minimal (07.09): "Örnek" etiketi ve "ilk N satır" notu kalktı; kayıt sayısı sayaç satırında. */}
                     {gecersiz && !yukleniyor && (
                         <span
                             data-testid="taslak-eksik"

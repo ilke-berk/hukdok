@@ -31,7 +31,8 @@ from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from schemas_rapor import (
-    DEGERSIZ_OPLAR, ONIZLEME_SAYFA_BOYU_MAX, TIP_OPLARI, Filtre, KolonBasligi, RaporDogrulamaHatasi, RaporTanimi,
+    DEGERSIZ_OPLAR, ONIZLEME_SAYFA_BOYU_MAX, SAAT_DILIMI, TIP_OPLARI, Filtre, KolonBasligi, RaporDogrulamaHatasi,
+    RaporTanimi,
 )
 from services.rapor import registry
 from services.rapor.registry import Kolon, VeriKaynagi
@@ -252,6 +253,10 @@ def _serilestir(deger: Any) -> Any:
         return deger
     if isinstance(deger, Decimal):
         return float(deger)
+    if isinstance(deger, dt.datetime) and deger.tzinfo is not None:
+        # Postgres `timestamptz` UTC gelir; ekran/CSV/Excel Türkiye saatini görsün (12.09: gece
+        # 22:15 UTC satırı bir önceki güne düşüyordu). ISO çıktı `+03:00` ofsetini taşır.
+        return deger.astimezone(SAAT_DILIMI).isoformat()
     if isinstance(deger, (dt.datetime, dt.date, dt.time)):
         return deger.isoformat()
     return str(deger)
