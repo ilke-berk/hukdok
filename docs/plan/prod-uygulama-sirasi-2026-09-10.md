@@ -131,6 +131,19 @@ prod'da kullanım varsa aynı olur (G151 kuralı gelen değeri zaten "karar yok"
 3. Kuru koşu raporlarını oku (panelden `raporlar`): eşleşme ~%97, kesim tarihi 30.07 uyarısı YOK
    (satır okundu), `buro_durumu_atlanan` 1-2, `KORUNDU` satırları (30.07 sonrası prod'da elle
    arşivlenen kartlar) — bu sayı G152'nin işe yaradığının kanıtı.
+   **Kullanıcı kararı (12.09.2026): prod'da elle yapılan düzeltmeler DOĞRU kabul edilir; paket bu
+   alanları üzerine yazmaz, yalnız boş alanı doldurur.** 12.09 ölçümü (prod 88daf70, salt-okunur):
+   30.07 sonrası kullanıcı imzalı tarihçe 47 satır / 37 kart — `status` 20, `esas_no` 18, `court` 10;
+   44'ü paketin (= lokal uygulama sonrası) değerinden FARKLI, yalnız 3'ü aynı. Liste ekibe iletilmek
+   üzere masaüstünde `HUKDOK_ELLE_DUZELTMELER_2026-09-12.xlsx` (OZET + ELLE_DUZELTMELER; sarı hücre =
+   defteri HukDok değeriyle güncelleyin). `X1.I_KUTLUK...0005` (kart 14411) ofis içi test, listede yok.
+   **KOD BOŞLUĞU — 12.09 KAPATILDI:** `hukdok_aktarim.kesim_sonrasi_kullanici_kaydi` eskiden yalnız
+   `field_name == "status"` bakıyordu (G152); `esas_no` ve `court` için koruma yoktu → Uygula 18 esas +
+   10 mahkeme düzeltmesini geri alırdı. 12.09 commit'i korumayı alan bazına genelledi (kesim sonrası
+   kullanıcı imzalı tarihçesi olan HER dolu alan için paket o alanı yazmaz ve boşaltmaz, bizde boşsa
+   doldurur, satır raporuna `<alan> korundu`, sayaç `korunan_alan`; `test_g152_status_koruma.py` §4).
+   Prod kuru koşu kabulü: `KORUNDU` ≥ 44 satır (47 elle satırın 3'ü paketle zaten aynı → fark yok,
+   sayılmaz) ve bu 37 kartta esas/mahkeme/durum değişikliği 0.
 4. **Uygula** (`POST .../teslimler/{id}/uygula` `{"onay": true}`; yalnız `kuru_kosuldu`/`inceleme_bekliyor`
    durumundan — `routes/admin.py:225-261`). Belge envanteri denk değilse koşu kendini geri alır.
 5. Sonuç: durum `uygulandi`, cevap paketi `cevap/HUKDOK_TESLIM_PAKETI_2026-09-04/` altına yüklenir
@@ -236,6 +249,33 @@ docker cp hukdok_backend:/app/data/HUKDOK_DERDEST_KARTLAR_$(date +%F).xlsx ~/
 
 Sonra `scp hukukoid:~/HUKDOK_DERDEST_KARTLAR_*.xlsx .` ve ekibe "güncel hâli" olarak gönder
 (09.09 mailinde söz verildi).
+
+**6g. TKU kart birleştirmesi (11.09, main 7beafc6)** — `tku_kart_birlestir.py:248-252`; kuru koşu
+varsayılan, `--apply --kim <ad>` yazar, `--rapor` plan CSV'si:
+
+```text
+docker exec hukudok-postgres pg_dump -U hukudok_user -Fc hukudok > ~/backups/pre_tku_$(date +%Y%m%d-%H%M).dump
+docker compose exec -T backend python scripts/tku_kart_birlestir.py --rapor /app/data/tku_plan.csv
+docker compose exec -T backend python scripts/tku_kart_birlestir.py --rapor /app/data/tku_sonuc.csv --apply --kim ilke
+```
+
+Lokal sonuç: 184 kart soft-delete, 186 föy taşındı, belge envanteri 229→229, 15 ret (10 tür, 5 mahkeme).
+Prod'da lokalde silinen 192 kartın 5'ine 8 belge + 1 duruşma + 2 bildirim bağlı (12.09 ölçümü) — script
+belgeleri kalan karta taşır; koşu sonrası bu 5 kart ayrıca doğrulanır (belge/duruşma/bildirim sayımı).
+Sonra 6d aktarım tekrarı (birleşen kartlarda 2 belirsiz satır kendiliğinden çözülür).
+
+**6h. Tarihçe temizliği (11.09, main c6cbe4b)** — `tarihce_temizligi.py:179-180`; kuru koşu varsayılan,
+`--yedek` silinen satırların CSV dökümü (geri alma yedeği):
+
+```text
+docker exec hukudok-postgres pg_dump -U hukudok_user -Fc hukudok > ~/backups/pre_tarihce_$(date +%Y%m%d-%H%M).dump
+docker compose exec -T backend python scripts/tarihce_temizligi.py
+docker compose exec -T backend python scripts/tarihce_temizligi.py --apply --yedek /app/data/tarihce_silinen_$(date +%Y%m%d).csv
+```
+
+Lokal sonuç: 131.188 silindi, 8.965 kaldı. KALIR: föy bağlama satırı (`case_foys.sistem_no`, AKTARIM
+provenance — silinirse 6.466 kart kova değiştirir), birleştirme izi, gerçek mahkeme/esas/status değişimi,
+kullanıcı satırı (prod'daki 47 elle düzeltme de kalır).
 
 ## 7. Kapanış kontrolleri
 

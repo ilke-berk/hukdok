@@ -116,17 +116,21 @@ sayfalarında YOKSA işaret NULL'a çekilir ("kapsama geri alındı"). Aynı pak
 hem ana sayfada hem kapsam sayfasında olan föy kapsam sayfasının dediğidir
 (gerekçeli, bilinçli liste); ana sayfa satırı yalnız kimlik yazar.
 
-`status` kesim-sonrası koruma (G152, 2026-09-08)
-------------------------------------------------
-"Paket kazanır" kuralının TEK istisnası (plan 08.09 §1.5 P2, kullanıcı
-kararı): ekibin veri kesim tarihinden (`DEGISIKLIK_OZETI` "Veri kesim tarihi"
-satırı; yoksa paket adındaki tarih; o da yoksa kural KAPALI + WARNING) sonra
-`case_history`'de `field_name='status'` ve aktarım imzası TAŞIMAYAN (`source`
-`HUKDOK_TESLIM` ile başlamayan ya da NULL — dünkü elle yol) bir kayıt varsa
-paket `status`'u YAZMAZ: satır raporuna `KORUNDU` türüyle "status korundu
-(kullanıcı dd.mm.yyyy)" düşer, `status_korunan` sayacı artar (her koşuda
-yeniden sayılır — belgeli aşama gibi sessizce yutulmaz). Öteki alanlar bu
-kuraldan etkilenmez. Kesim tarihi `aktarimi_kos(kesim_tarihi=...)` ile gelir;
+Kesim-sonrası kullanıcı koruması (G152, 2026-09-08; 12.09'da her alana genellendi)
+-----------------------------------------------------------------------------------
+"Paket kazanır" kuralının TEK istisnası (plan 08.09 §1.5 P2 + kullanıcı
+kararı 12.09 "elle düzeltilen doğru, boş olan dolsun"): ekibin veri kesim
+tarihinden (`DEGISIKLIK_OZETI` "Veri kesim tarihi" satırı; yoksa paket adındaki
+tarih; o da yoksa kural KAPALI + WARNING) sonra `case_history`'de o kart
+ALANI için (`field_name` = kolon adı: `status`, `esas_no`, `court`, ...) aktarım
+imzası TAŞIMAYAN (`source` `HUKDOK_TESLIM` ile başlamayan ya da NULL — dünkü
+elle yol) bir kayıt varsa ve alan bizde DOLUYSA paket o alanı YAZMAZ ve
+BOŞALTMAZ: satır raporuna `KORUNDU` türüyle "<alan> korundu (kullanıcı
+dd.mm.yyyy)" düşer, `korunan_alan` sayacı artar (her koşuda yeniden sayılır —
+belgeli aşama gibi sessizce yutulmaz). Bizde boş alanı paket doldurur.
+12.09 prod ölçümü: 30.07 sonrası 47 elle satır / 37 kart (status 20, esas_no
+18, court 10); eski kural yalnız `status`u koruyordu, 28 esas/mahkeme
+düzeltmesi geri alınırdı. Kesim tarihi `aktarimi_kos(kesim_tarihi=...)` ile gelir;
 teslim hattı (`teslim_kutusu.kesim_tarihi_bul`) ve CLI (`--kesim-tarihi`,
 verilmezse aynı arayıcı) geçer. Eşik kesim GÜNÜNÜN başıdır (TR saatiyle
 00:00): o gün yapılan kullanıcı değişikliği de korunur — ekibin fotoğrafı
@@ -421,7 +425,7 @@ class AktarimSonucu:
     # G152 — kesim tarihinden sonra kullanıcı imzalı `status` değişikliği olan
     # kart: paket `status`u yazmadı. Her koşuda yeniden sayılır; kural kapalıysa
     # (`kesim_tarihi` None) hep 0.
-    status_korunan: int = 0
+    korunan_alan: int = 0             # kesim sonrası kullanıcı kararı korunan alan sayısı (12.09: her alan)
     kesim_tarihi: Optional[date] = None
     # G153 — Dosya No kökü ↔ müvekkil: kök/müvekkil çelişkisiyle YAZILMAYAN
     # satır (her koşuda yeniden sayılır); föy ↔ müvekkil bağı bu koşuda İLK kez
@@ -1928,21 +1932,24 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
     return case
 
 
-def kesim_sonrasi_kullanici_kaydi(db, case_id: int, kesim_tarihi: date) -> Optional[datetime]:
-    """Kartta kesim gününden itibaren KULLANICI imzalı `status` tarihçesi var mı?
+def kesim_sonrasi_kullanici_kaydi(db, case_id: int, kesim_tarihi: date,
+                                  alan: str = "status") -> Optional[datetime]:
+    """Kartta kesim gününden itibaren KULLANICI imzalı `alan` tarihçesi var mı?
 
     `case_manager._is_aktarim_kaydi`nin ikizi, yönü ters: aktarım imzası
     (`AKTARIM_SOURCE_PREFIX`, `autoescape` şart — '_' LIKE jokeri) taşımayan
     ya da `source` NULL olan (elle yolun dünkü imzasız hâli) kayıt aranır.
     En yeni kaydın zamanı döner (rapor metni için); yoksa None. Eşik kesim
-    gününün başı (TR 00:00) — modül şerhi "status kesim-sonrası koruma".
+    gününün başı (TR 00:00) — modül şerhi "kesim-sonrası kullanıcı koruması".
+    `alan` kart kolonu adıdır ve `case_history.field_name` ile birebirdir
+    (panel yolu `status`/`esas_no`/`court`'u bu adlarla yazar).
     """
     esik = datetime.combine(kesim_tarihi, time.min, tzinfo=TR_SAAT_DILIMI)
     satir = (
         db.query(models.CaseHistory.changed_at)
         .filter(
             models.CaseHistory.case_id == case_id,
-            models.CaseHistory.field_name == "status",
+            models.CaseHistory.field_name == alan,
             models.CaseHistory.changed_at >= esik,
             or_(
                 models.CaseHistory.source.is_(None),
@@ -1989,14 +1996,33 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
     düşer, uygulanmaz. `esas_no` boşaltması da tek yoldan (`sync_current_esas`
     boş değerle kolonu temizler, tarihçe satırları kalır).
 
-    G152: `kesim_tarihi` verilmişse ve paket `status`u mevcut değerden farklıysa
-    kartın tarihçesine bakılır (`kesim_sonrasi_kullanici_kaydi`); kesim
-    gününden itibaren kullanıcı imzalı `status` kaydı varsa alan YAZILMAZ,
-    `(alan, "status korundu (kullanıcı dd.mm.yyyy)")` `korunanlar`a düşer.
-    Yalnız `status` — öteki alanlar bu kuralı bilmez.
+    G152 (12.09'da HER alana genellendi): `kesim_tarihi` verilmişse ve paket
+    değeri mevcut DOLU değerden farklıysa kartın tarihçesine bakılır
+    (`kesim_sonrasi_kullanici_kaydi(alan=...)`); kesim gününden itibaren o alan
+    için kullanıcı imzalı kayıt varsa alan YAZILMAZ, `(alan, "<alan> korundu
+    (kullanıcı dd.mm.yyyy)")` `korunanlar`a düşer. Bizde BOŞ alan korunmaz —
+    paket doldurur (kullanıcı kararı 12.09: "elle düzeltilen doğru, boş olan
+    dolsun"). Aynı kural `(boş)` boşaltma talimatına da uygulanır: kullanıcı
+    kesimden sonra doldurduysa paket boşaltamaz. Korunan `court` esas
+    tarihçesine de sızmaz (`sync_current_esas` mevcut mahkemeyi alır).
     """
     degisenler: List[str] = []
+    korunan_alanlar: Set[str] = set()
     degerler = kart_degerleri(satir, atlanan_alanlar)
+
+    def _kullanici_korudu(alan: str) -> bool:
+        if kesim_tarihi is None:
+            return False
+        kullanici_kaydi = kesim_sonrasi_kullanici_kaydi(db, cast(int, case.id), kesim_tarihi, alan)
+        if kullanici_kaydi is None:
+            return False
+        korunan_alanlar.add(alan)
+        if korunanlar is not None:
+            korunanlar.append((
+                alan, f"{alan} korundu (kullanıcı {kullanici_kaydi.strftime('%d.%m.%Y')})",
+            ))
+        return True
+
     for alan, yeni in degerler.items():
         if alan in celiskili_alanlar or alan in asama_kaynakli:
             continue
@@ -2006,21 +2032,16 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
         if (alan in ICERIK_KARSILASTIRMALI_ALANLAR
                 and _baslik_anahtari(eski) == _baslik_anahtari(yeni)):
             continue                      # yalnız yazım farkı — bizimki kalır
-        if alan == "status" and kesim_tarihi is not None:
-            kullanici_kaydi = kesim_sonrasi_kullanici_kaydi(db, cast(int, case.id), kesim_tarihi)
-            if kullanici_kaydi is not None:
-                if korunanlar is not None:
-                    korunanlar.append((
-                        alan, f"status korundu (kullanıcı {kullanici_kaydi.strftime('%d.%m.%Y')})",
-                    ))
-                continue                  # kesim sonrası kullanıcı kararı — paket yazmaz
+        if eski not in (None, "") and _kullanici_korudu(alan):
+            continue                      # kesim sonrası kullanıcı kararı — paket yazmaz
         if alan == "esas_no":
             # Türetilmiş alan: kolon + tarihçe TEK yoldan (G045). Buradan
             # setattr etmek `case_esas_numbers`ı bypass edip ikinci doğruluk
             # kaynağı doğururdu; eski esas da kayıtta kalmalı.
+            paket_mahkeme = None if "court" in korunan_alanlar else degerler.get("court")
             case_manager.sync_current_esas(
                 db, case, yeni,
-                court=degerler.get("court") or case.court,
+                court=paket_mahkeme or case.court,
                 source=source,
             )
         else:
@@ -2042,6 +2063,8 @@ def _kart_alanlarini_yaz(db, case: models.Case, satir: HamSatir,
         eski = getattr(case, alan)
         if eski is None or eski == "":
             continue                      # üçüncü ayak: bizde zaten boş — idempotent
+        if _kullanici_korudu(alan):
+            continue                      # kullanıcı kesimden sonra doldurdu — paket boşaltamaz
         if alan == "esas_no":
             case_manager.sync_current_esas(db, case, None, source=source)
         else:
@@ -2428,7 +2451,7 @@ def _satiri_isle(db, satir: HamSatir, *, foy_haritasi: Dict[str, int],
     # G152 — kesim sonrası kullanıcı kararı korundu: HATA değil (kapı ve çıkış
     # kodu etkilenmez), ama rapora düşer ve sayılır — sessizce yutulmaz.
     for _alan, sebep in korunanlar:
-        sonuc.status_korunan += 1
+        sonuc.korunan_alan += 1
         sonuc.rapor_satirlari.append(RaporSatiri(
             satir_no=satir.satir_no, sistem_no=sistem_no,
             dosya_no=_metin(satir.degerler.get("dosya_no")) or "",
@@ -3230,8 +3253,8 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         logger.info(f"Açık kart haritası: {len(kart_eslemesi)} SistemNo (G154)")
     if kesim_tarihi is None:
         logger.warning(
-            "Veri kesim tarihi yok — `status` kesim-sonrası koruma kuralı DEVRE DIŞI "
-            "(paket `status`u üzerine yazar)"
+            "Veri kesim tarihi yok — kesim-sonrası kullanıcı koruması DEVRE DIŞI "
+            "(paket kesim sonrası elle düzeltilen alanların üzerine yazar)"
         )
     satirlar, bulunan_basliklar = xlsx_oku(girdi, sheet=sheet, limit=limit)
     asama_satirlari = asama_satirlarini_oku(girdi) if limit is None else []
@@ -3460,10 +3483,10 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''}"
         f"{f', büro durumu atlanan: {sonuc.buro_durumu_atlanan}' if sonuc.buro_durumu_atlanan else ''})",
         f"  atlanan (kart yok): {sonuc.atlanan}",
-        (f"  status korunan    : {sonuc.status_korunan} "
+        (f"  alan korunan      : {sonuc.korunan_alan} "
          f"(kesim {sonuc.kesim_tarihi.strftime('%d.%m.%Y')} sonrası kullanıcı değişikliği)"
          if sonuc.kesim_tarihi else
-         "  status korunan    : kural kapalı (veri kesim tarihi yok)"),
+         "  alan korunan      : kural kapalı (veri kesim tarihi yok)"),
         f"  kapsam işareti    : {sonuc.kapsam_isaretlenen} işaretlendi, "
         f"{sonuc.kapsam_geri_alinan} geri alındı, {sonuc.kapsam_atlanan} atlandı (föy yok)",
         f"  satır hatası      : {len(sonuc.hatalar)}",

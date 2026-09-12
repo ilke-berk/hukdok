@@ -411,15 +411,20 @@ künyesiz satır (`_kunye_dolu`, `:2590-2600`) hiç yazılmaz, künyeli satır d
 WARNING). Mevcut kurulumdaki `Kapalı`/`Derdest` satırlarını `scripts/deger_havuzu_seed.py
 --kaldir` kaldırır (kullanılan satır silinmez; prod'da deploy sonrası insan adımı).
 
-**`status` kesim-sonrası koruması (G152, plan P2 — "paket kazanır"ın tek istisnası).**
-`_kart_alanlarini_yaz` yalnız `status` alanında ve paket değeri farklıyken
-`kesim_sonrasi_kullanici_kaydi` (`:1931-1956`) çağırır: kesim GÜNÜNÜN başından (TR 00:00)
-itibaren `case_history.field_name == "status"` ve `source` NULL **ya da** `AKTARIM_SOURCE_PREFIX`
-ile başlamayan (`autoescape=True` — `_` LIKE jokeri) bir kayıt varsa alan yazılmaz,
-`korunanlar`a "status korundu (kullanıcı dd.mm.yyyy)" düşer (`:2009-2016`); `_satiri_isle`
-bunu `status_korunan` sayacına ve satır raporuna `STATUS_KORUNDU_TURU = "KORUNDU"` (`:199`,
-`:2431`) ile yazar — `HATA` değil, `hata_sayisi`/çıkış kodu/kapı etkilenmez. `kesim_tarihi`
-None ise kural kapalı, TEK WARNING (`aktarimi_kos`, `:3213`). Kaynak §3 "Veri kesim tarihi";
+**Kesim-sonrası kullanıcı koruması (G152, plan P2 — "paket kazanır"ın tek istisnası;
+12.09.2026'da HER kart alanına genellendi).** `_kart_alanlarini_yaz` paket değeri bizdeki DOLU
+değerden farklı olan her alan için `kesim_sonrasi_kullanici_kaydi(alan=...)` çağırır: kesim GÜNÜNÜN
+başından (TR 00:00) itibaren `case_history.field_name == <alan>` (`status`, `esas_no`, `court`, ...;
+panel yolu kolon adıyla yazar) ve `source` NULL **ya da** `AKTARIM_SOURCE_PREFIX` ile başlamayan
+(`autoescape=True` — `_` LIKE jokeri) bir kayıt varsa alan yazılmaz, `korunanlar`a "<alan> korundu
+(kullanıcı dd.mm.yyyy)" düşer; bizde BOŞ alan korunmaz — paket doldurur (kullanıcı kararı 12.09:
+"elle düzeltilen doğru, boş olan dolsun"). Aynı kural `Düzeltme_Logu` `(boş)` talimatına da uygulanır
+(kullanıcı kesimden sonra doldurduysa paket boşaltamaz); korunan `court` `sync_current_esas`a
+geçmez (esas tarihçesine paket mahkemesi sızmaz). `_satiri_isle` bunu `korunan_alan` sayacına ve
+satır raporuna `STATUS_KORUNDU_TURU = "KORUNDU"` ile yazar — `HATA` değil, `hata_sayisi`/çıkış
+kodu/kapı etkilenmez. Gerekçe: 12.09 prod ölçümünde 30.07 sonrası 47 elle satır / 37 kart (status 20,
+esas_no 18, court 10); yalnız-status kuralı 28 esas/mahkeme düzeltmesini geri alırdı. `kesim_tarihi`
+None ise kural kapalı, TEK WARNING (`aktarimi_kos`). Kaynak §3 "Veri kesim tarihi";
 CLI `--kesim-tarihi`. Elle yol imzası: `case_manager.PANEL_SOURCE = "panel"` (`:1041`),
 `update_case(..., changed_by=)` tarihçeyi `changed_by or PANEL_SOURCE` + `source=PANEL_SOURCE`
 ile yazar (`:1044`, `:1081-1082`), `update_case_tracking` `status` değişince aynı imzayla

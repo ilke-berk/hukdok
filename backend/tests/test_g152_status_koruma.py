@@ -218,7 +218,7 @@ def test_kesim_sonrasi_kullanici_kaydi_korunur_rapor_ve_sayac(uc_kart, tmp_path)
     sonuc = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor", kesim_tarihi=KESIM)
 
     assert sonuc.cikis_kodu == CIKIS_TAMAM and sonuc.yazildi
-    assert sonuc.status_korunan == 1 and sonuc.kesim_tarihi == KESIM
+    assert sonuc.korunan_alan == 1 and sonuc.kesim_tarihi == KESIM
     kart = _kart(uc_kart, "D-1")
     assert kart.status == "MAHZEN"                       # paket yazmadı
     assert kart.tibbi_olay == "Enfeksiyon"               # kural yalnız status
@@ -227,7 +227,7 @@ def test_kesim_sonrasi_kullanici_kaydi_korunur_rapor_ve_sayac(uc_kart, tmp_path)
     assert [(r.sistem_no, r.sebep) for r in korunan] == [("SSTMN-1", "status korundu (kullanıcı 05.08.2026)")]
     assert sonuc.hatalar == []
     assert _status_tarihcesi(uc_kart, "D-1") == 1        # aktarım status satırı düşmedi
-    assert "status korunan    : 1 (kesim 30.07.2026 sonrası kullanıcı değişikliği)" in ozet_metni(sonuc)
+    assert "alan korunan      : 1 (kesim 30.07.2026 sonrası kullanıcı değişikliği)" in ozet_metni(sonuc)
 
 
 def test_kesim_gunu_de_korunur(uc_kart, tmp_path):
@@ -235,7 +235,7 @@ def test_kesim_gunu_de_korunur(uc_kart, tmp_path):
     _durum_gecmisi(uc_kart, "D-1", changed_at=datetime(2026, 7, 30, 12, 0), source="panel")
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 1
+    assert sonuc.korunan_alan == 1
     assert _kart(uc_kart, "D-1").status == "MAHZEN"
 
 
@@ -245,7 +245,7 @@ def test_kesim_oncesi_kayit_paket_yazar(uc_kart, tmp_path):
     _durum_gecmisi(uc_kart, "D-1", changed_at=datetime(2026, 7, 1, 9, 0), source="panel", changed_by="avukat")
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 0
+    assert sonuc.korunan_alan == 0
     assert _kart(uc_kart, "D-1").status == "DERDEST"
     assert _status_tarihcesi(uc_kart, "D-1") == 2
     assert not [r for r in sonuc.rapor_satirlari if r.tur == STATUS_KORUNDU_TURU]
@@ -258,7 +258,7 @@ def test_aktarim_imzali_kayit_paket_yazar(uc_kart, tmp_path):
                    source=AKTARIM_IMZASI, changed_by=hukdok_aktarim.DEGISTIREN)
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 0
+    assert sonuc.korunan_alan == 0
     assert _kart(uc_kart, "D-1").status == "DERDEST"
 
 
@@ -269,7 +269,7 @@ def test_aktarim_imzasi_like_jokerine_kanmaz(uc_kart, tmp_path):
                    source="HUKDOKxTESLIM_sahte.xlsx")
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 1
+    assert sonuc.korunan_alan == 1
     assert _kart(uc_kart, "D-1").status == "MAHZEN"
 
 
@@ -280,9 +280,9 @@ def test_kesim_tarihi_yoksa_kural_kapali_warning(uc_kart, tmp_path, caplog):
         sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor")
     uyarilar = [r for r in caplog.records if "kesim tarihi yok" in r.getMessage()]
     assert len(uyarilar) == 1 and uyarilar[0].levelno == logging.WARNING
-    assert sonuc.status_korunan == 0 and sonuc.kesim_tarihi is None
+    assert sonuc.korunan_alan == 0 and sonuc.kesim_tarihi is None
     assert _kart(uc_kart, "D-1").status == "DERDEST"
-    assert "status korunan    : kural kapalı (veri kesim tarihi yok)" in ozet_metni(sonuc)
+    assert "alan korunan      : kural kapalı (veri kesim tarihi yok)" in ozet_metni(sonuc)
 
 
 def test_paket_ayni_degeri_diyorsa_koruma_sayilmaz(uc_kart, tmp_path):
@@ -291,7 +291,7 @@ def test_paket_ayni_degeri_diyorsa_koruma_sayilmaz(uc_kart, tmp_path):
     paket = _paket_yaz(tmp_path / "t.xlsx", [_satir("SSTMN-1", "D-1", **{"Durum": "Arşiv"})],
                        basliklar=BASLIKLAR_DURUMLU)
     sonuc = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor", kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 0 and sonuc.alan_degisikligi == 0
+    assert sonuc.korunan_alan == 0 and sonuc.alan_degisikligi == 0
     assert _kart(uc_kart, "D-1").status == "MAHZEN"
 
 
@@ -303,7 +303,7 @@ def test_ikinci_kosu_yine_korur_tarihce_buyumez(uc_kart, tmp_path):
     ilk = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor", kesim_tarihi=KESIM)
     tarihce = _status_tarihcesi(uc_kart, "D-1")
     ikinci = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor", kesim_tarihi=KESIM)
-    assert (ilk.status_korunan, ikinci.status_korunan) == (1, 1)
+    assert (ilk.korunan_alan, ikinci.korunan_alan) == (1, 1)
     assert ikinci.alan_degisikligi == 0
     assert _status_tarihcesi(uc_kart, "D-1") == tarihce == 1
     assert _kart(uc_kart, "D-1").status == "MAHZEN"
@@ -313,7 +313,7 @@ def test_kuru_kosu_da_raporlar_yazmaz(uc_kart, tmp_path):
     _durum_gecmisi(uc_kart, "D-1", changed_at=datetime(2026, 8, 5, 10, 0))
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          dry_run=True, kesim_tarihi=KESIM)
-    assert sonuc.status_korunan == 1 and not sonuc.yazildi
+    assert sonuc.korunan_alan == 1 and not sonuc.yazildi
     assert _kart(uc_kart, "D-1").status == "MAHZEN" and _kart(uc_kart, "D-1").tibbi_olay is None
 
 
@@ -341,10 +341,10 @@ def test_teslim_hatti_kesim_tarihini_gecer(db_env, tmp_path, monkeypatch):
 def test_sonuc_sozlesmesi_ve_ozet_satiri():
     """`AktarimSonucu` yeni alanlar + `KORUNDU` türü hata sayılmaz."""
     sonuc = AktarimSonucu(kaynak_imzasi="x")
-    assert (sonuc.status_korunan, sonuc.kesim_tarihi) == (0, None)
+    assert (sonuc.korunan_alan, sonuc.kesim_tarihi) == (0, None)
     sonuc.rapor_satirlari.append(hukdok_aktarim.RaporSatiri(1, "S", "D", STATUS_KORUNDU_TURU, "status korundu"))
     assert sonuc.hatalar == [] and sonuc.cikis_kodu == CIKIS_TAMAM
-    assert "status korunan    : kural kapalı" in ozet_metni(sonuc)
+    assert "alan korunan      : kural kapalı" in ozet_metni(sonuc)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -433,5 +433,115 @@ def test_uctan_uca_panel_degisikligi_paketle_ezilmez(uc_kart, tmp_path, monkeypa
 
     sonuc = aktarimi_kos(uc_kart, girdi=_aktif_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
                          kesim_tarihi=date.today() - timedelta(days=1))
-    assert sonuc.status_korunan == 1
+    assert sonuc.korunan_alan == 1
     assert _kart(uc_kart, "D-1").status == "MAHZEN"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4. Koruma HER alana genellendi (12.09.2026) — esas_no / court / boşaltma / boş doldurma
+# ═══════════════════════════════════════════════════════════════════════════
+# Kullanıcı kararı 12.09: prod'da 30.07'den sonra elle yapılan 47 düzeltme
+# (status 20, esas_no 18, court 10) DOĞRU kabul edilir; paket bu alanları
+# üzerine yazmaz, yalnız bizde boş olanı doldurur. Eski kural yalnız `status`u
+# koruyordu — 28 esas/mahkeme düzeltmesi geri alınırdı (kırmızı).
+
+BASLIKLAR_ESASLI = BASLIKLAR + ["Durum", "Esas", "Yerel Mahkeme"]
+
+
+def _alan_gecmisi(fabrika, klasor, alan, yeni, *, changed_at, source="panel", changed_by="avukat"):
+    """Kartın `alan`ını `yeni` yapar ve tarihçeye kullanıcı imzalı satır düşer."""
+    db = fabrika()
+    try:
+        case = db.query(models.Case).filter(models.Case.klasor_no_2 == klasor).one()
+        db.add(models.CaseHistory(
+            case_id=case.id, field_name=alan, old_value=getattr(case, alan), new_value=yeni,
+            changed_at=changed_at, changed_by=changed_by, source=source,
+        ))
+        setattr(case, alan, yeni)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _esasli_paket(tmp_path, **ek):
+    return _paket_yaz(tmp_path / "HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx", [
+        _satir("SSTMN-1", "D-1", **{"Durum": "Aktif", "Esas": "2016/1191",
+                                    "Yerel Mahkeme": "Eskişehir Tüketici Mahkemesi",
+                                    "Tıbbi Olay": "Enfeksiyon", **ek}),
+        _satir("SSTMN-2", "D-2", **{"Durum": "Aktif", "Esas": "2024/571",
+                                    "Yerel Mahkeme": "Adana 4. Tüketici Mahkemesi"}),
+    ], basliklar=BASLIKLAR_ESASLI)
+
+
+def test_esas_ve_mahkeme_kullanici_duzeltmesi_korunur(uc_kart, tmp_path):
+    """Prod örneği (kart 1511/1883): avukat 19.08'de esası 2026/1'e, 11.08'de
+    mahkemeyi değiştirmiş; paket eski defter değerini taşıyor → ikisi de KORUNUR,
+    öteki alan (Tıbbi Olay) yazılır, rapor iki KORUNDU satırı, çıkış kodu 0.
+    Korunan mahkeme esas tarihçesine de sızmaz. Eski kodda ikisi de geri dönerdi."""
+    _alan_gecmisi(uc_kart, "D-1", "esas_no", "2026/1", changed_at=datetime(2026, 8, 19, 11, 22))
+    _alan_gecmisi(uc_kart, "D-1", "court", "İstanbul 26. Asliye Ticaret Mahkemesi",
+                  changed_at=datetime(2026, 8, 11, 9, 45), source=None, changed_by=None)
+
+    sonuc = aktarimi_kos(uc_kart, girdi=_esasli_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
+                         kesim_tarihi=KESIM)
+
+    assert sonuc.cikis_kodu == CIKIS_TAMAM and sonuc.yazildi and sonuc.hatalar == []
+    assert sonuc.korunan_alan == 2
+    kart = _kart(uc_kart, "D-1")
+    assert kart.esas_no == "2026/1"
+    assert kart.court == "İstanbul 26. Asliye Ticaret Mahkemesi"
+    assert kart.tibbi_olay == "Enfeksiyon"                       # koruma alan bazlı, kart bazlı değil
+    kart2 = _kart(uc_kart, "D-2")
+    assert (kart2.esas_no, kart2.court) == ("2024/571", "Adana 4. Tüketici Mahkemesi")   # kaydı yok → paket yazar
+    korunan = sorted((r.sistem_no, r.sebep) for r in sonuc.rapor_satirlari if r.tur == STATUS_KORUNDU_TURU)
+    assert korunan == [("SSTMN-1", "court korundu (kullanıcı 11.08.2026)"),
+                       ("SSTMN-1", "esas_no korundu (kullanıcı 19.08.2026)")]
+    assert "alan korunan      : 2 (kesim 30.07.2026 sonrası kullanıcı değişikliği)" in ozet_metni(sonuc)
+    db = uc_kart()
+    try:
+        guncel = (db.query(models.CaseEsasNumber)
+                  .filter(models.CaseEsasNumber.case_id == kart.id, models.CaseEsasNumber.is_current.is_(True))
+                  .all())
+        assert all(e.court != "Eskişehir Tüketici Mahkemesi" for e in guncel)   # paket mahkemesi sızmadı
+    finally:
+        db.close()
+
+
+def test_kesim_oncesi_esas_duzeltmesi_paket_yazar(uc_kart, tmp_path):
+    """Esas 01.07'de değişmiş, kesim 30.07 → ekip gördü, paket kazanır; sayaç 0."""
+    _alan_gecmisi(uc_kart, "D-1", "esas_no", "2026/1", changed_at=datetime(2026, 7, 1, 9, 0))
+    sonuc = aktarimi_kos(uc_kart, girdi=_esasli_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
+                         kesim_tarihi=KESIM)
+    assert sonuc.korunan_alan == 0
+    assert _kart(uc_kart, "D-1").esas_no == "2016/1191"
+
+
+def test_bizde_bos_alan_kullanici_kaydina_ragmen_dolar(uc_kart, tmp_path):
+    """"Boş bilgi varsa doldurulsun": kullanıcı kesimden sonra mahkemeyi BOŞALTMIŞ
+    (tarihçe var, alan boş) → paket doldurur, koruma sayılmaz."""
+    _alan_gecmisi(uc_kart, "D-1", "court", None, changed_at=datetime(2026, 8, 11, 9, 45))
+    assert _kart(uc_kart, "D-1").court is None
+    sonuc = aktarimi_kos(uc_kart, girdi=_esasli_paket(tmp_path), rapor_dizini=tmp_path / "rapor",
+                         kesim_tarihi=KESIM)
+    assert sonuc.korunan_alan == 0
+    assert _kart(uc_kart, "D-1").court == "Eskişehir Tüketici Mahkemesi"
+
+
+def test_bosaltma_talimati_kullanici_dolusunu_bosaltamaz(uc_kart, tmp_path):
+    """`Düzeltme_Logu` `(boş)` diyor ama kullanıcı kesimden sonra Tıbbi Olay'ı
+    doldurmuş → boşaltılmaz, KORUNDU raporu; kesim öncesi dolduysa boşaltılır."""
+    from tests.test_g112_duzeltme_logu import _log
+    from tests.test_g112_duzeltme_logu import _paket_yaz as _loglu_paket
+
+    _alan_gecmisi(uc_kart, "D-1", "tibbi_olay", "Kanama", changed_at=datetime(2026, 8, 5, 10, 0))
+    _alan_gecmisi(uc_kart, "D-2", "tibbi_olay", "Kanama", changed_at=datetime(2026, 7, 1, 10, 0))
+    paket = _loglu_paket(tmp_path / "t.xlsx", [_satir("SSTMN-1", "D-1"), _satir("SSTMN-2", "D-2")], log=[
+        _log("SSTMN-1", "Tıbbi Olay", "(boş)", gerekce="yanlış föy"),
+        _log("SSTMN-2", "Tıbbi Olay", "(boş)", gerekce="yanlış föy"),
+    ])
+    sonuc = aktarimi_kos(uc_kart, girdi=paket, rapor_dizini=tmp_path / "rapor", kesim_tarihi=KESIM)
+    assert sonuc.korunan_alan == 1
+    assert _kart(uc_kart, "D-1").tibbi_olay == "Kanama"          # kullanıcı dolusu korundu
+    assert _kart(uc_kart, "D-2").tibbi_olay is None              # kesim öncesi → talimat uygulandı
+    assert [r.sebep for r in sonuc.rapor_satirlari if r.tur == STATUS_KORUNDU_TURU] == [
+        "tibbi_olay korundu (kullanıcı 05.08.2026)"]
