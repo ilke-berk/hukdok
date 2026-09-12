@@ -5,6 +5,18 @@ uygulanmış veri adımlarını (04.09 paketi, kart açma, ikiz birleştirme, 20
 prod'da aynı sırayla tekrarlamak. Her komut koddan okunarak yazıldı (kaynaklar satır sonlarında).
 Bu doküman **koşu günü işaretlenerek** ilerletilir; bitince `docs/arsiv/`e taşınır.
 
+> **KOŞU KAYDI — 12.09.2026 01:40–04:10 UTC, TAMAMLANDI.** Prod = main **329c192** (Deploy #26,
+> koruma genellemesi; rollback `./rollback.sh 88daf70`). §4 havuz (Kapalı/Derdest silindi, 1.572
+> satır) → §5 paket (8.170 föy, 62.919 alan / 6.439 kart, 5.305 aşama, 39 KORUNDU, 29 satır hatası,
+> envanter DENK) → 6a 206 kart → 6b 8/8 ikiz → 6c 28 föy haritası → 6d tekrar (229 föy, 615 taraf,
+> hata 10) → 6e yazım (1. tur 20.352, 2. tur 1.506, 3. kuru koşu 0) → 6f derdest listesi → 6g TKU
+> (191 kart, 194 föy, 331 taraf, 14 ret) → 6h tarihçe (113.065 silindi / 8.826 kaldı) → §7 kapanış:
+> 14.431 aktif / 199 silinmiş kart, 8.399 föy, belge 2.414/860 (silinmiş kartta 0), duruşma 223,
+> kullanıcı tarihçesi 117, elle düzeltme 48/48 korundu, backend 0 ERROR. Yedekler `~/backups/`:
+> predeploy_329c192, pre_veri_0156, pre_yazim_0328, pre_tku_0357, pre_tarihce_0405. Yazma
+> script'lerini (`--apply`) auto-mod sınıflandırıcısı engelledi → kullanıcı elle koştu. TKU sonrası
+> üçüncü aktarım turu GEREKMEDİ (harita ile belirsiz satır zaten 0). Hafıza: `prod_veri_uygulama_2026-09-12`.
+
 > Kod blokları bilerek `text` etiketli: bu komutlar **sunucuda** koşar, uygulamanın "Run" düğmesi
 > lokalde çalıştırırdı. `hukdok_aktarim.py` hariç bütün script'lerde kuru koşu varsayılan, `--apply`
 > yazar. `hukdok_aktarim.py`'nin varsayılanı **YAZMAKTIR**: `--dry-run` unutulursa doğrudan yazar
