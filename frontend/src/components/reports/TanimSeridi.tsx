@@ -1,7 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { ChevronDown, Plus, X } from "lucide-react";
-import type { Katalog, KatalogIliski, KatalogKolon, KatalogVeriKaynagi, KontrolDurumu } from "@/lib/reports";
-import { TANIM_LIMITLERI, bosKontrol, kolonSecilebilirMi, kontrolDoluMu } from "@/lib/reports";
+import { ChevronDown, Plus, Sigma, X } from "lucide-react";
+import type {
+    Katalog, KatalogIliski, KatalogKolon, KatalogVeriKaynagi, KontrolDurumu, Olcum, OlcumIslemi, TarihKirilimi,
+} from "@/lib/reports";
+import {
+    KAYIT_SAYISI_ETIKETI, KIRILIMLAR, KIRILIM_ETIKETLERI, OLCUM_TIPLERI, TANIM_LIMITLERI, bosKontrol, gruplamaEtiketi,
+    kolonGruplanabilirMi, kolonSecilebilirMi, kontrolDoluMu, olcumAnahtari, olcumEtiketi,
+} from "@/lib/reports";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,7 +14,8 @@ import { FieldPicker } from "./FieldPicker";
 import { FilterChip } from "./FilterChip";
 import { FilterControl } from "./FilterControl";
 import {
-    filtreEkle, kaynakIcinBaslangic, kolonEkle, kolonKaldir, seritFiltreleri, seritteBosOge,
+    filtreEkle, gruplamaEkle, gruplamaKaldir, kaynakIcinBaslangic, kirilimDegistir, kolonEkle, kolonKaldir, olcumEkle,
+    olcumKaldir, ozetAc, ozetKapat, seritFiltreleri, seritteBosOge,
     type OlusturucuDurumu, type SeritOgesi,
 } from "./builderState";
 import { ANA_KAYNAK_RENGI, LINK_BTN_CLS, kaynakRengi } from "./ui";
@@ -104,6 +110,68 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
     /** Açık düzenleyici: `serit` öğesi id'si. Tek seferde en çok bir popover. */
     const [acikId, setAcikId] = useState<string | null>(null);
     const [kolonSeciciAcik, setKolonSeciciAcik] = useState(false);
+    const [olcumSeciciAcik, setOlcumSeciciAcik] = useState(false);
+
+    // ---- özet modu (12.09) ----
+    /** Özet = en az bir ölçüm; üst satırda kolon çipleri yerine gruplama + ölçüm çipleri. */
+    const ozet = durum.olcumler.length > 0;
+    const gruplamaTavan = durum.gruplama.length >= TANIM_LIMITLERI.gruplama_max;
+    const olcumTavan = durum.olcumler.length >= TANIM_LIMITLERI.olcum_max;
+    /** "+ Grupla" listesi: gruplanabilir (düz, seçilebilir) ve henüz gruplanmamış kolonlar; bağlı kolon önekli grupta. */
+    const gruplanabilirler = useMemo(() => {
+        const gruplu = new Set(durum.gruplama.map(g => g.alan));
+        return (kaynak?.kolonlar ?? [])
+            .filter(k => kolonGruplanabilirMi(k) && !gruplu.has(k.anahtar))
+            .map(k => (k.bag ? { ...k, grup: grupBasligi(k, iliskiOf(k.bag)) } : k));
+    }, [kaynak, durum.gruplama, iliskiOf]);
+    /** "+ Ölçüm" listesi: "Kayıt sayısı" + her sayı/para/tarih kolonu için uygun işlemler (zaten eklenen düşer). */
+    const olcumAdaylari = useMemo(() => {
+        const mevcut = new Set(durum.olcumler.map(olcumAnahtari));
+        const genel: { olcum: Olcum; etiket: string }[] = [];
+        if (!mevcut.has("sayi")) genel.push({ olcum: { islem: "sayi" }, etiket: KAYIT_SAYISI_ETIKETI });
+        const sira: string[] = [];
+        const uyeler = new Map<string, { olcum: Olcum; etiket: string }[]>();
+        for (const k of kaynak?.kolonlar ?? []) {
+            if (!kolonSecilebilirMi(k) || !["sayi", "para", "tarih"].includes(k.tip)) continue;
+            for (const islem of ["toplam", "ortalama", "min", "max"] as const satisfies readonly OlcumIslemi[]) {
+                if (!OLCUM_TIPLERI[islem].includes(k.tip)) continue;
+                const olcum: Olcum = { islem, alan: k.anahtar };
+                if (mevcut.has(olcumAnahtari(olcum))) continue;
+                const baslik = grupBasligi(k, iliskiOf(k.bag));
+                if (!uyeler.has(baslik)) {
+                    sira.push(baslik);
+                    uyeler.set(baslik, []);
+                }
+                uyeler.get(baslik)!.push({ olcum, etiket: olcumEtiketi(olcum, k) });
+            }
+        }
+        const gruplar = sira.map(baslik => ({ baslik, adaylar: uyeler.get(baslik)! }));
+        return genel.length > 0 ? [{ baslik: "Genel", adaylar: genel }, ...gruplar] : gruplar;
+    }, [kaynak, durum.olcumler, iliskiOf]);
+    const grupEkle = (anahtar: string) => {
+        const kolon = kolonOf(anahtar);
+        if (!kolon) return;
+        // Tarih kolonunda varsayılan kırılım ay ("aylara göre …" en sık istek); çipten gün/yıl'a çevrilir
+        const yeni = gruplamaEkle(durum, anahtar, kolon.tip === "tarih" ? "ay" : null);
+        if (yeni !== durum) onChange(yeni);
+    };
+    const kirilimDondur = (alan: string, mevcut: TarihKirilimi) => {
+        const sonraki = KIRILIMLAR[(KIRILIMLAR.indexOf(mevcut) + 1) % KIRILIMLAR.length];
+        onChange(kirilimDegistir(durum, alan, sonraki));
+    };
+    const olcumSec = (olcum: Olcum) => {
+        const yeni = olcumEkle(durum, olcum);
+        if (yeni !== durum) onChange(yeni);
+        setOlcumSeciciAcik(false);
+    };
+    /** Sıralama çipi etiketi: özet modunda ölçüm anahtarı / kırılımlı gruplama etiketi, listede kolon etiketi. */
+    const siralamaEtiketi = (alan: string): string => {
+        const o = durum.olcumler.find(x => olcumAnahtari(x) === alan);
+        if (o) return olcumEtiketi(o, o.alan ? kolonOf(o.alan) : undefined);
+        const g = durum.gruplama.find(x => x.alan === alan);
+        if (g) return gruplamaEtiketi(g, kolonOf(alan));
+        return kolonOf(alan)?.etiket ?? alan;
+    };
 
     // ---- kolonlar ----
     const seciliKume = useMemo(() => new Set(durum.kolonlar), [durum.kolonlar]);
@@ -186,6 +254,7 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
     const varsayilan = useMemo(() => (kaynak ? kaynakIcinBaslangic(kaynak).kolonlar : []), [kaynak]);
     const zatenTemiz = !kaynak || (
         seritFiltreleri(durum.serit).length === 0 && durum.siralama.length === 0 && ayniDizi(durum.kolonlar, varsayilan)
+        && durum.gruplama.length === 0 && durum.olcumler.length === 0
     );
     const temizle = () => {
         if (!kaynak) return;
@@ -239,8 +308,8 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
                 </DropdownMenu>
             )}
 
-            {/* 2. Kolon çipleri */}
-            {durum.kolonlar.map(anahtar => {
+            {/* 2. Kolon çipleri (liste görünümü; özet modunda yerlerini gruplama + ölçüm çipleri alır) */}
+            {!ozet && durum.kolonlar.map(anahtar => {
                 const kolon = kolonOf(anahtar);
                 const { onek, ad } = kolon ? kolonAdi(kolon, iliskiOf(kolon.bag)) : { onek: null, ad: anahtar };
                 const tamAd = kolon?.etiket ?? anahtar;
@@ -267,7 +336,7 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
             })}
 
             {/* 3. + Kolon */}
-            {!salt && kaynak && (
+            {!salt && kaynak && !ozet && (
                 <Popover open={kolonSeciciAcik} onOpenChange={setKolonSeciciAcik}>
                     <PopoverTrigger asChild>
                         <button
@@ -324,6 +393,147 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
                     </PopoverContent>
                 </Popover>
             )}
+
+            {/* 3b. Özet modu (12.09): gruplama çipleri · + Grupla · ölçüm çipleri · + Ölçüm */}
+            {ozet && kaynak && (
+                <>
+                    {durum.gruplama.map(g => {
+                        const kolon = kolonOf(g.alan);
+                        const tarih = kolon?.tip === "tarih";
+                        const kirilim: TarihKirilimi = g.kirilim ?? "gun";
+                        const etiket = kolon?.etiket ?? g.alan;
+                        return (
+                            <span key={g.alan} data-testid={`serit-grup-${g.alan}`} data-kirilim={tarih ? kirilim : undefined} className={CIP_CLS + (salt ? " pr-2" : "")}>
+                                <span aria-hidden className="w-0.5 h-3.5 rounded-sm shrink-0" style={{ background: kaynakRengi(kolon?.bag, iliskiAnahtarlari) }} />
+                                <span className={CIP_ETIKET_CLS}>Grupla ·</span>{" "}
+                                <span className="truncate" title={etiket}>{etiket}</span>
+                                {tarih && (salt ? (
+                                    <span className="text-[10.5px] text-[var(--fg-muted)]">· {KIRILIM_ETIKETLERI[kirilim]}</span>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        data-testid="serit-grup-kirilim"
+                                        title="Kırılım: gün → ay → yıl (tıklayınca değişir)"
+                                        aria-label={`${etiket} kırılımı: ${KIRILIM_ETIKETLERI[kirilim]}`}
+                                        onClick={() => kirilimDondur(g.alan, kirilim)}
+                                        className="px-1 text-[10.5px] text-[var(--fg-muted)] underline underline-offset-2 hover:text-[var(--brand)]"
+                                    >
+                                        {KIRILIM_ETIKETLERI[kirilim]}
+                                    </button>
+                                ))}
+                                {!salt && (
+                                    <button
+                                        type="button"
+                                        aria-label={`${etiket} gruplamasını kaldır`}
+                                        title="Gruplamayı kaldır"
+                                        onClick={() => onChange(gruplamaKaldir(durum, g.alan))}
+                                        className={CIP_X_CLS}
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </span>
+                        );
+                    })}
+                    {!salt && (
+                        <span data-testid="serit-grup-ekle" className="shrink-0">
+                            <FieldPicker
+                                kolonlar={gruplanabilirler}
+                                etiket="Grupla"
+                                disabled={gruplamaTavan}
+                                title={gruplamaTavan ? `En çok ${TANIM_LIMITLERI.gruplama_max} gruplama` : "Gruplama alanı ekle"}
+                                onSec={grupEkle}
+                            />
+                        </span>
+                    )}
+                    {durum.olcumler.map(o => {
+                        const anahtar = olcumAnahtari(o);
+                        const etiket = olcumEtiketi(o, o.alan ? kolonOf(o.alan) : undefined);
+                        return (
+                            <span key={anahtar} data-testid={`serit-olcum-${anahtar}`} className={CIP_CLS + (salt ? " pr-2" : "")}>
+                                <Sigma aria-hidden className="w-3 h-3 text-[var(--fg-subtle)] shrink-0" />
+                                <span className="truncate" title={etiket}>{etiket}</span>
+                                {!salt && (
+                                    <button
+                                        type="button"
+                                        aria-label={`${etiket} ölçümünü kaldır`}
+                                        title={durum.olcumler.length === 1 ? "Son ölçüm kalkınca liste görünümüne dönülür" : "Ölçümü kaldır"}
+                                        onClick={() => onChange(olcumKaldir(durum, anahtar))}
+                                        className={CIP_X_CLS}
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                )}
+                            </span>
+                        );
+                    })}
+                    {!salt && (
+                        <Popover open={olcumSeciciAcik} onOpenChange={setOlcumSeciciAcik}>
+                            <PopoverTrigger asChild>
+                                <button
+                                    type="button"
+                                    data-testid="serit-olcum-ekle"
+                                    className={LINK_BTN_CLS + " inline-flex items-center gap-0.5 shrink-0"}
+                                    disabled={olcumTavan || olcumAdaylari.length === 0}
+                                    title={olcumTavan ? `En çok ${TANIM_LIMITLERI.olcum_max} ölçüm` : "Ölçüm ekle"}
+                                    aria-haspopup="dialog"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                    Ölçüm
+                                </button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" data-testid="olcum-secici" className={PANEL_CLS + " w-[300px] p-0"}>
+                                <Command loop filter={altDizeFiltresi} className="bg-transparent text-[var(--fg)]">
+                                    <CommandInput aria-label="Ölçüm ara" placeholder="Ölçüm ara…" autoFocus className="h-9 text-[12px]" />
+                                    <CommandList className="max-h-72">
+                                        <CommandEmpty className="py-3 text-[11px] text-[var(--fg-subtle)]">Ölçüm bulunamadı.</CommandEmpty>
+                                        {olcumAdaylari.map(g => (
+                                            <CommandGroup key={g.baslik} heading={g.baslik} className={GRUP_BASLIK_CLS}>
+                                                {g.adaylar.map(a => (
+                                                    <CommandItem
+                                                        key={olcumAnahtari(a.olcum)}
+                                                        value={a.etiket}
+                                                        keywords={[olcumAnahtari(a.olcum)]}
+                                                        data-olcum={olcumAnahtari(a.olcum)}
+                                                        onSelect={() => olcumSec(a.olcum)}
+                                                        className="text-[12px] py-1"
+                                                    >
+                                                        {a.etiket}
+                                                    </CommandItem>
+                                                ))}
+                                            </CommandGroup>
+                                        ))}
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    )}
+                </>
+            )}
+
+            {/* 3c. Özet ↔ liste geçişi */}
+            {!salt && kaynak && (ozet ? (
+                <button
+                    type="button"
+                    data-testid="serit-ozet-kapat"
+                    className={LINK_BTN_CLS + " inline-flex items-center gap-1 shrink-0 ml-auto"}
+                    title="Gruplama ve ölçümleri kaldır, kolon listesine dön"
+                    onClick={() => onChange(ozetKapat(durum))}
+                >
+                    Liste görünümü
+                </button>
+            ) : (
+                <button
+                    type="button"
+                    data-testid="serit-ozet-ac"
+                    className={LINK_BTN_CLS + " inline-flex items-center gap-1 shrink-0 ml-auto"}
+                    title="Özet: kayıtları bir alana göre grupla ve say/topla"
+                    onClick={() => onChange(ozetAc(durum))}
+                >
+                    <Sigma className="w-3 h-3" />
+                    Özet
+                </button>
+            ))}
 
           </div>
           <div data-testid="serit-filtreler" className="flex flex-wrap items-center gap-2 w-full min-w-0">
@@ -396,7 +606,7 @@ export function TanimSeridi({ katalog, durum, onChange, onHemen, onKaynakSec, bu
 
             {/* 6. Sıralama çipleri (ekleme tablo başlığından) */}
             {durum.siralama.map(s => {
-                const etiket = kolonOf(s.alan)?.etiket ?? s.alan;
+                const etiket = siralamaEtiketi(s.alan);
                 const artan = s.yon === "asc";
                 return (
                     <span key={s.alan} data-testid={`serit-siralama-${s.alan}`} data-yon={s.yon} className={CIP_CLS + (salt ? " pr-2" : "")}>

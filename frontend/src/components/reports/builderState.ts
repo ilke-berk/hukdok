@@ -2,9 +2,12 @@
 // `RaporTanimi`'dir (lib/reports.ts); burada filtreler §4.3 kontrol durumu olarak tutulur
 // ve `tanimOlustur` ile her zaman aynı JSON'a derlenir. Boş kontrol tanıma GİRMEZ.
 import type {
-    Filtre, HizliFiltreSunumu, KatalogVeriKaynagi, KontrolDurumu, RaporTanimi, Siralama, SiralamaYonu,
+    Filtre, Gruplama, HizliFiltreSunumu, KatalogVeriKaynagi, KontrolDurumu, Olcum, RaporTanimi, Siralama, SiralamaYonu,
+    TarihKirilimi,
 } from "@/lib/reports";
-import { TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kolonSecilebilirMi, kontrolDoluMu, kontroldenFiltre } from "@/lib/reports";
+import {
+    TANIM_LIMITLERI, bosKontrol, filtredenKontrol, kolonSecilebilirMi, kontrolDoluMu, kontroldenFiltre, olcumAnahtari,
+} from "@/lib/reports";
 
 /** Şeritteki bir kontrol: hızlı filtre yuvası (kaynağın listesi) ya da "+ Başka alan" ile eklenen. */
 export interface SeritOgesi {
@@ -31,6 +34,9 @@ export interface OlusturucuDurumu {
     kolonlar: string[];
     serit: SeritOgesi[];
     siralama: Siralama[];
+    /** Özet modu (12.09): `olcumler` doluysa özet; boşken `tanimOlustur` iki alanı YAZMAZ (eski sözleşme). */
+    gruplama: Gruplama[];
+    olcumler: Olcum[];
 }
 
 let sayac = 0;
@@ -73,6 +79,8 @@ export function kaynakIcinBaslangic(kaynak: KatalogVeriKaynagi): OlusturucuDurum
         kolonlar: kaynak.varsayilan_kolonlar.filter(k => kolonSecilebilirMi(kolonOf(kaynak, k))),
         serit: hizliYuvalar(kaynak),
         siralama: [],
+        gruplama: [],
+        olcumler: [],
     };
 }
 
@@ -127,6 +135,8 @@ export function tanimdanDurum(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi): O
         kolonlar: [...tanim.kolonlar],
         serit: [...dolu, ...bosYuvalar],
         siralama: tanim.siralama.map(s => ({ alan: s.alan, yon: s.yon })),
+        gruplama: (tanim.gruplama ?? []).map(g => (g.kirilim ? { alan: g.alan, kirilim: g.kirilim } : { alan: g.alan })),
+        olcumler: (tanim.olcumler ?? []).map(o => (o.alan ? { islem: o.islem, alan: o.alan } : { islem: o.islem })),
     };
 }
 
@@ -156,12 +166,84 @@ export function seritFiltreleri(serit: SeritOgesi[]): Filtre[] {
 
 /** Yerel durum → sunucu gövdesi (`id`/yuva bilgisi düşer, `deger` yalnız taşıyan op'larda kalır). */
 export function tanimOlustur(durum: OlusturucuDurumu): RaporTanimi {
-    return {
+    const tanim: RaporTanimi = {
         veri_kaynagi: durum.veri_kaynagi,
         kolonlar: [...durum.kolonlar],
         filtreler: seritFiltreleri(durum.serit),
         siralama: durum.siralama.map(s => ({ alan: s.alan, yon: s.yon })),
     };
+    // Özet modu alanları yalnız doluyken (sunucu serileştirmesiyle birebir; liste görünümü gövdesi değişmez)
+    if (durum.gruplama.length > 0) tanim.gruplama = durum.gruplama.map(g => ({ ...g }));
+    if (durum.olcumler.length > 0) tanim.olcumler = durum.olcumler.map(o => ({ ...o }));
+    return tanim;
+}
+
+// ---------------------------------------------------------------------------
+// Özet modu yardımcıları (12.09): saf; gruplanabilirlik/uygunluk kararı çağıranın (şerit süzülmüş verir).
+// Özet modu = `olcumler` dolu. Sıralama çıktı kolonlarına göre süzülür (motor 422 yedirmemek için).
+// ---------------------------------------------------------------------------
+
+/** Özet modunda sıralama yalnız gruplama alanı / ölçüm anahtarı; liste modunda ölçüm anahtarları düşer. */
+function siralamayiUyarla(durum: OlusturucuDurumu): Siralama[] {
+    if (durum.olcumler.length > 0) {
+        const izinli = new Set([...durum.gruplama.map(g => g.alan), ...durum.olcumler.map(olcumAnahtari)]);
+        return durum.siralama.filter(s => izinli.has(s.alan));
+    }
+    // Liste görünümüne dönüş: ölçüm anahtarları (`sayi`, `toplam:x`) kolon değildir — düşer
+    return durum.siralama.filter(s => !s.alan.includes(":") && s.alan !== "sayi");
+}
+
+/** Özet modunu açar: ölçüm yoksa "Kayıt sayısı" eklenir; zaten açıksa AYNI nesne. */
+export function ozetAc(durum: OlusturucuDurumu): OlusturucuDurumu {
+    if (durum.olcumler.length > 0) return durum;
+    const yeni = { ...durum, olcumler: [{ islem: "sayi" as const }] };
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
+}
+
+/** Liste görünümüne döner: gruplama + ölçümler boşalır, ölçüm anahtarlı sıralama düşer; zaten kapalıysa AYNI nesne. */
+export function ozetKapat(durum: OlusturucuDurumu): OlusturucuDurumu {
+    if (durum.olcumler.length === 0 && durum.gruplama.length === 0) return durum;
+    const yeni = { ...durum, gruplama: [], olcumler: [] };
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
+}
+
+/** Gruplama ekler (özet modunu açar); aynı alan varsa ya da `gruplama_max` (3) doluysa AYNI nesne. */
+export function gruplamaEkle(durum: OlusturucuDurumu, alan: string, kirilim?: TarihKirilimi | null): OlusturucuDurumu {
+    if (durum.gruplama.some(g => g.alan === alan) || durum.gruplama.length >= TANIM_LIMITLERI.gruplama_max) return durum;
+    const g: Gruplama = kirilim ? { alan, kirilim } : { alan };
+    const yeni = ozetAc({ ...durum, gruplama: [...durum.gruplama, g] });
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
+}
+
+/** Gruplamayı kaldırır (ölçümler kalır — gruplamasız özet = tek toplam satırı); yoksa AYNI nesne. */
+export function gruplamaKaldir(durum: OlusturucuDurumu, alan: string): OlusturucuDurumu {
+    if (!durum.gruplama.some(g => g.alan === alan)) return durum;
+    const yeni = { ...durum, gruplama: durum.gruplama.filter(g => g.alan !== alan) };
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
+}
+
+/** Tarih gruplamasının kırılımını değiştirir; alan yoksa ya da aynıysa AYNI nesne. */
+export function kirilimDegistir(durum: OlusturucuDurumu, alan: string, kirilim: TarihKirilimi): OlusturucuDurumu {
+    const g = durum.gruplama.find(x => x.alan === alan);
+    if (!g || (g.kirilim ?? "gun") === kirilim) return durum;
+    return { ...durum, gruplama: durum.gruplama.map(x => (x.alan === alan ? { alan, kirilim } : x)) };
+}
+
+/** Ölçüm ekler (özet modunu açar); aynı anahtar varsa ya da `olcum_max` (5) doluysa AYNI nesne. */
+export function olcumEkle(durum: OlusturucuDurumu, olcum: Olcum): OlusturucuDurumu {
+    const anahtar = olcumAnahtari(olcum);
+    if (durum.olcumler.some(o => olcumAnahtari(o) === anahtar) || durum.olcumler.length >= TANIM_LIMITLERI.olcum_max) return durum;
+    const yeni = { ...durum, olcumler: [...durum.olcumler, olcum.alan ? { islem: olcum.islem, alan: olcum.alan } : { islem: olcum.islem }] };
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
+}
+
+/** Ölçümü kaldırır; SON ölçüm kalkınca özet kapanır (`ozetKapat`); yoksa AYNI nesne. */
+export function olcumKaldir(durum: OlusturucuDurumu, anahtar: string): OlusturucuDurumu {
+    if (!durum.olcumler.some(o => olcumAnahtari(o) === anahtar)) return durum;
+    const kalan = durum.olcumler.filter(o => olcumAnahtari(o) !== anahtar);
+    if (kalan.length === 0) return ozetKapat(durum);
+    const yeni = { ...durum, olcumler: kalan };
+    return { ...yeni, siralama: siralamayiUyarla(yeni) };
 }
 
 // ---------------------------------------------------------------------------

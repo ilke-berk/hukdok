@@ -102,7 +102,7 @@ index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
 G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
 kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
 
-**Raporlama (G130-G176):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
+**Raporlama (G130-G177 + 12.09 özet modu):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
 `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
 sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda, 60 sn önbellekli) → tablo; manuel kurucu
 (kaynak kartı/filtre şeridi/kolon paneli) KALKTI, şerit yedek kurucudur →
@@ -118,7 +118,13 @@ G176: onay sorma, yaklaşık ad → `contains`, liste sorusunda ekrana yönlendi
 (`muvekkil.phone` davalar'da; `dava.tracking_no` müvekkiller'de) — çoklu bağda değerler `" ; "` birleşik +
 EXISTS filtre, sıralama yok; belgeler/föyler → `dava.*` tekil (düz kolon gibi). Elle kolon listesi yazma;
 `kart_eslesmesi` ad anahtarı için ifade index'i migrasyon 48'de (`_ad_anahtari` ile birebir, test bekçili).
-Ayrıntı `docs/mimari/raporlama.md` §2.4.
+Ayrıntı `docs/mimari/raporlama.md` §2.4. **Özet modu (12.09):** tanım `olcumler` taşıyorsa satırlar `gruplama`
+alanlarına göre `GROUP BY` (≤3; tarihte `kirilim` gün/ay/yıl, Türkiye günü) + ölçümler (≤5; `sayi|toplam|ortalama|
+min|max`, anahtar `toplam:maddi_tazminat`); `kolonlar` özet modunda kullanılmaz ama zorunlu kalır; boş
+`gruplama`/`olcumler` JSON'a girmez (eski sözleşme birebir). Türetilmiş/çoklu bağ kolonu GRUPLANAMAZ. Şeritte
+"Σ Özet" satırı; asistan prompt'u "ÖZET RAPOR". Ayrıntı §3.1. **Saat dilimi (12.09):** rapor sözleşmesinin
+dilimi `schemas_rapor.SAAT_DILIMI` (Europe/Istanbul) — DB UTC; zaman damgalı filtre bind'ı, serileştirme ve
+Excel hücresi TR saati (openpyxl tz'li datetime'ı reddeder).
 
 **Sürüm izi:** deploy git SHA'sını `APP_VERSION` build arg'ı ile imaja gömer →
 `/healthz` "version" alanı + login rozeti. `/healthz` derindir (DB `SELECT 1`;

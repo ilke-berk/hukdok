@@ -100,6 +100,13 @@ Kurallar: `kolonlar` sıralıdır, en az 1, en fazla 60, tekrarsız; her anahtar
 `contains` ILIKE, `%`/`_` kaçışlı. `siralama` en fazla 3. Bilinmeyen anahtar/op/tip → **422** (`detail` içinde
 `alan`, `sebep`). Bu aynı doğrulama asistanın ürettiği tanıma da uygulanır (K6).
 
+> **Uygulamada genişledi (2026-09-12, kullanıcı kararı — özet modu):** iki İSTEĞE BAĞLI alan eklendi:
+> `gruplama: [{alan, kirilim?}]` (≤3; kırılım yalnız tarih kolonunda gün/ay/yıl) ve `olcumler: [{islem, alan?}]`
+> (≤5; `sayi|toplam|ortalama|min|max`). `olcumler` doluysa özet modu: `GROUP BY` gruplama, çıktı kolonları gruplama
+> alanları + ölçümler, `kolonlar` kullanılmaz ama zorunlu kalır; sıralama gruplama alanı / ölçüm anahtarıyla.
+> Boş listeler JSON'a girmez → yukarıdaki örnek ve mevcut kayıtlar birebir geçerli. Ayrıntı
+> `docs/mimari/raporlama.md` §3.1.
+
 ### 2.2 Kolon tipleri ve izinli operatörler
 
 | tip | op'lar | `deger` biçimi |

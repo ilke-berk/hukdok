@@ -22,7 +22,8 @@ import {
 } from "@/components/reports/builderState";
 import {
     createTemplate, deleteTemplate, downloadRun, dosyayiIndir, exportReport, filtredenKontrol, getCatalog, kolonOplari,
-    kontrolDoluMu, listRuns, listTemplates, previewReport, sablonAdiOner, secenekEtiketi, tanimGecerliMi, updateTemplate,
+    kontrolDoluMu, listRuns, listTemplates, ozetModu, ozetSiralamaAnahtarlari, previewReport, sablonAdiOner, secenekEtiketi,
+    tanimGecerliMi, tanimNormalize, updateTemplate,
     RAPOR_EXPORT_HATASI, RAPOR_KATALOG_HATASI, RAPOR_KOSU_INDIRME_HATASI, RAPOR_KOSU_LISTE_HATASI, RAPOR_ONIZLEME_HATASI,
     RAPOR_SABLON_KAYIT_HATASI, RAPOR_SABLON_LISTE_HATASI, RAPOR_SABLON_SILME_HATASI, RaporApiError,
     type AsistanEylemi, type Filtre, type Katalog, type KontrolDurumu, type OnizlemeCevabi, type RaporKosuListesi,
@@ -37,7 +38,7 @@ const KOSU_SAYFA_BOYU = 50;
 /** Yazarak girilen değerde (metin/sayı/tarih) önizleme bu kadar bekler; yapısal değişiklik hemen (§4.1 madde 5). */
 export const ONIZLEME_GECIKME_MS = 600;
 
-const BOS_DURUM: OlusturucuDurumu = { veri_kaynagi: "", kolonlar: [], serit: [], siralama: [] };
+const BOS_DURUM: OlusturucuDurumu = { veri_kaynagi: "", kolonlar: [], serit: [], siralama: [], gruplama: [], olcumler: [] };
 
 // Sekmeler — `TabsTrigger value` listesiyle birebir; URL'deki `?tab=` yalnız bu kümedeyse
 // geçerlidir (AdminPage.tsx ADMIN_TABS deseni). Sekme değişince URL de güncellenir (replace).
@@ -53,7 +54,8 @@ const TAB_TRIGGER_CLS =
     "rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] " +
     "data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase";
 
-const ayniTanim = (a: RaporTanimi, b: RaporTanimi) => JSON.stringify(a) === JSON.stringify(b);
+// Kanonik biçimle (12.09 özet modu: boş/eksik gruplama-ölçüm listeleri eşdeğer, alan sırası sabit)
+const ayniTanim = (a: RaporTanimi, b: RaporTanimi) => JSON.stringify(tanimNormalize(a)) === JSON.stringify(tanimNormalize(b));
 
 /** Yerel takvim günü `YYYY-MM-DD` (şeritteki tarih kısayolları için; `toISOString` UTC kaymasına düşmez). */
 function yerelGun(d: Date): string {
@@ -409,7 +411,10 @@ const ReportsPage = () => {
     const onSirala = (alan: string) =>
         durumDegisti({ ...durum, siralama: siralamaDongusu(durum.siralama, alan) });
 
-    const siralanabilirMi = (anahtar: string) => kaynak?.kolonlar.find(k => k.anahtar === anahtar)?.siralanabilir ?? false;
+    // Özet modunda (12.09) tablo başlıkları gruplama alanları + ölçüm anahtarlarıdır — hepsi sıralanabilir (motor kuralı)
+    const siralanabilirMi = (anahtar: string) => (ozetModu(tanim)
+        ? ozetSiralamaAnahtarlari(tanim).includes(anahtar)
+        : kaynak?.kolonlar.find(k => k.anahtar === anahtar)?.siralanabilir ?? false);
 
     /** Kart tıklaması: taslak yeni kaynağın varsayılanına döner (aynı kart yeniden tıklanırsa hiçbir şey olmaz). */
     const onKaynakSec = (anahtar: string) => {

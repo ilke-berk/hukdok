@@ -14,7 +14,7 @@ import datetime as dt
 from typing import Any, Literal, Optional
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_serializer
 
 # ─── Sınırlar (plan §2.1) ────────────────────────────────────────────────────
 KOLON_MAX = 60
@@ -85,6 +85,50 @@ class Siralama(BaseModel):
     yon: Literal["asc", "desc"] = "asc"
 
 
+# ─── Özet modu (12.09: gruplama + ölçüm) ─────────────────────────────────────
+# "Avukat başına kaç dava", "aylara göre açılış sayısı", "müvekkil başına toplam tazminat": tanım
+# `olcumler` taşıyorsa ÖZET MODUDUR — satırlar `gruplama` alanlarına göre gruplanır, her grup için
+# ölçümler hesaplanır (`gruplama` boşsa tek toplam satırı). `kolonlar` özet modunda KULLANILMAZ ama
+# şemada zorunlu kalır (liste görünümüne dönünce aynı kolonlar geri gelir). Gruplama yalnız düz
+# (sıralanabilir) kolonlarda; tarih kolonunda `kirilim` gün/ay/yıl (Türkiye günü, `SAAT_DILIMI`).
+# Sıralama özet modunda gruplama alanı ya da ölçüm anahtarı (`olcum_anahtari`) ile yapılır.
+GRUPLAMA_MAX = 3
+OLCUM_MAX = 5
+TarihKirilimi = Literal["gun", "ay", "yil"]
+OlcumIslemi = Literal["sayi", "toplam", "ortalama", "min", "max"]
+# Ölçüm işlemi → izinli kolon tipleri (`sayi` alan almadan da olur = COUNT(*); alanla = dolu değer sayısı)
+OLCUM_TIPLERI: dict[str, tuple[str, ...]] = {
+    "sayi": ("metin", "liste", "tarih", "sayi", "para", "mantik"),
+    "toplam": ("sayi", "para"),
+    "ortalama": ("sayi", "para"),
+    "min": ("sayi", "para", "tarih"),
+    "max": ("sayi", "para", "tarih"),
+}
+
+
+def olcum_anahtari(islem: str, alan: Optional[str]) -> str:
+    """Ölçüm kolonunun cevap/sıralama anahtarı: `sayi` (alan yok) ya da `toplam:maddi_tazminat`."""
+    return f"{islem}:{alan}" if alan else islem
+
+
+class Gruplama(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alan: str = Field(min_length=1, max_length=100)
+    kirilim: Optional[TarihKirilimi] = None     # yalnız tarih kolonunda; None = tarih kolonunda "gun"
+
+
+class Olcum(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    islem: OlcumIslemi
+    alan: Optional[str] = Field(default=None, max_length=100)
+
+    @property
+    def anahtar(self) -> str:
+        return olcum_anahtari(self.islem, self.alan)
+
+
 class RaporTanimi(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -92,6 +136,24 @@ class RaporTanimi(BaseModel):
     kolonlar: list[str] = Field(min_length=1, max_length=KOLON_MAX)
     filtreler: list[Filtre] = Field(default_factory=list, max_length=FILTRE_MAX)
     siralama: list[Siralama] = Field(default_factory=list, max_length=SIRALAMA_MAX)
+    gruplama: list[Gruplama] = Field(default_factory=list, max_length=GRUPLAMA_MAX)
+    olcumler: list[Olcum] = Field(default_factory=list, max_length=OLCUM_MAX)
+
+    @property
+    def ozet_modu(self) -> bool:
+        return bool(self.olcumler)
+
+    @model_serializer(mode="wrap")
+    def _bos_ozet_alanlarini_at(self, handler: Any) -> Any:
+        """Boş `gruplama`/`olcumler` serileştirmeye GİRMEZ: liste görünümündeki tanımın JSON'u (koşu
+        logu, şablon, asistan `mevcut_tanim`, `complete.tanim`) 12.09 öncesiyle birebir kalır — istemci
+        ve eski kayıtlar için sözleşme değişmez; özet modunda iki alan görünür."""
+        veri = handler(self)
+        if isinstance(veri, dict):
+            for alan in ("gruplama", "olcumler"):
+                if not veri.get(alan):
+                    veri.pop(alan, None)
+        return veri
 
     @field_validator("kolonlar")
     @classmethod
@@ -103,6 +165,30 @@ class RaporTanimi(BaseModel):
             if anahtar in gorulen:
                 raise ValueError(f"kolon tekrar ediyor: {anahtar}")
             gorulen.add(anahtar)
+        return v
+
+    @field_validator("gruplama")
+    @classmethod
+    def _gruplama_tekrarsiz(cls, v: list[Gruplama]) -> list[Gruplama]:
+        gorulen: set[str] = set()
+        for g in v:
+            if g.alan in gorulen:
+                raise ValueError(f"gruplama alanı tekrar ediyor: {g.alan}")
+            gorulen.add(g.alan)
+        return v
+
+    @field_validator("olcumler")
+    @classmethod
+    def _olcumler_tekrarsiz(cls, v: list[Olcum], info) -> list[Olcum]:
+        gorulen: set[str] = set()
+        for o in v:
+            if o.islem != "sayi" and not o.alan:
+                raise ValueError(f"'{o.islem}' ölçümü alan ister")
+            if o.anahtar in gorulen:
+                raise ValueError(f"ölçüm tekrar ediyor: {o.anahtar}")
+            gorulen.add(o.anahtar)
+        if not v and info.data.get("gruplama"):
+            raise ValueError("gruplama en az bir ölçüm ister (örn. kayıt sayısı)")
         return v
 
 
@@ -262,11 +348,24 @@ class AsistanSiralama(BaseModel):
     yon: Literal["asc", "desc"] = "asc"
 
 
+class AsistanGruplama(BaseModel):
+    alan: str
+    kirilim: Optional[str] = None      # gun | ay | yil (tarih kolonunda); sunucu doğrular
+
+
+class AsistanOlcum(BaseModel):
+    islem: str                          # sayi | toplam | ortalama | min | max; sunucu doğrular
+    alan: Optional[str] = None
+
+
 class AsistanTanimi(BaseModel):
     veri_kaynagi: str
     kolonlar: list[str]
     filtreler: list[AsistanFiltre] = Field(default_factory=list)
     siralama: list[AsistanSiralama] = Field(default_factory=list)
+    # 12.09 özet modu: "avukat başına kaç dava" → gruplama + olcumler (kolonlar yine dolu gelir, kullanılmaz)
+    gruplama: list[AsistanGruplama] = Field(default_factory=list)
+    olcumler: list[AsistanOlcum] = Field(default_factory=list)
 
 
 class RaporAsistanCevabi(BaseModel):

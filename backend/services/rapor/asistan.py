@@ -240,12 +240,17 @@ def asistan_tanimini_cevir(tanim: AsistanTanimi) -> dict[str, Any]:
         if deger is not None:
             govde["deger"] = deger
         filtreler.append(govde)
-    return {
+    govde_tanim: dict[str, Any] = {
         "veri_kaynagi": tanim.veri_kaynagi,
         "kolonlar": list(tanim.kolonlar),
         "filtreler": filtreler,
         "siralama": [{"alan": s.alan, "yon": s.yon} for s in tanim.siralama],
     }
+    if tanim.gruplama:
+        govde_tanim["gruplama"] = [{"alan": g.alan, **({"kirilim": g.kirilim} if g.kirilim else {})} for g in tanim.gruplama]
+    if tanim.olcumler:
+        govde_tanim["olcumler"] = [{"islem": o.islem, **({"alan": o.alan} if o.alan else {})} for o in tanim.olcumler]
+    return govde_tanim
 
 
 def tanimi_dogrula(tanim: AsistanTanimi) -> RaporTanimi:

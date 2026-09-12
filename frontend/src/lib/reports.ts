@@ -38,14 +38,38 @@ export interface Siralama {
     yon: SiralamaYonu;
 }
 
+/** Özet modu (12.09): tarih kolonunda gruplama kırılımı. */
+export type TarihKirilimi = "gun" | "ay" | "yil";
+
+export interface Gruplama {
+    alan: string;
+    /** Yalnız tarih kolonunda; yoksa gün. */
+    kirilim?: TarihKirilimi | null;
+}
+
+export type OlcumIslemi = "sayi" | "toplam" | "ortalama" | "min" | "max";
+
+export interface Olcum {
+    islem: OlcumIslemi;
+    /** `sayi` alansız = kayıt sayısı (COUNT(*)); diğer işlemler alan ister. */
+    alan?: string | null;
+}
+
 export interface RaporTanimi {
     veri_kaynagi: string;
-    /** Sıralıdır; en az 1, en fazla 60, tekrarsız. */
+    /** Sıralıdır; en az 1, en fazla 60, tekrarsız. Özet modunda sunucu KULLANMAZ ama zorunlu kalır. */
     kolonlar: string[];
     /** En fazla 20. */
     filtreler: Filtre[];
-    /** En fazla 3. */
+    /** En fazla 3. Özet modunda yalnız gruplama alanı ya da ölçüm anahtarı (`olcumAnahtari`). */
     siralama: Siralama[];
+    /**
+     * Özet modu (12.09, §3.1): `olcumler` doluysa satırlar `gruplama` alanlarına göre gruplanır, çıktı kolonları
+     * gruplama alanları + ölçümler. Boş listeler sunucu JSON'unda YOKTUR (`model_serializer`) — istemci de boşken
+     * yazmaz (`tanimOlustur`), karşılaştırmalar `tanimNormalize` ile.
+     */
+    gruplama?: Gruplama[];
+    olcumler?: Olcum[];
 }
 
 // Plan §2.1 sınırları — istemci tarafı ön-doğrulama (sunucu 422 ile yine doğrular).
@@ -54,6 +78,8 @@ export const TANIM_LIMITLERI = {
     filtre_max: 20,
     in_deger_max: 200,
     siralama_max: 3,
+    gruplama_max: 3,
+    olcum_max: 5,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -106,6 +132,8 @@ export interface KatalogKolon {
     bos_sayisi?: number | null;
     /** G166 bağlı kaynak kolonu: ilişki anahtarı (`muvekkil.phone` → "muvekkil"); düz kolonda/eski katalogda null. */
     bag?: string | null;
+    /** Özet modu (12.09): GROUP BY yapılabilir (`secilebilir && siralanabilir`); eski katalog vermez → `kolonGruplanabilirMi` türetir. */
+    gruplanabilir?: boolean;
 }
 
 /** Hızlı filtre yuvasının sunumu (§5.2): kontrol seçimi `kontrol` + `sunum` ikilisinden (§5.3). */
@@ -154,6 +182,9 @@ export interface KatalogVeriKaynagi {
 export interface KatalogLimitleri {
     onizleme_sayfa_boyu_max: number;
     export_max_satir: number;
+    /** Özet modu tavanları (12.09); eski katalog vermez → `TANIM_LIMITLERI`. */
+    gruplama_max?: number;
+    olcum_max?: number;
 }
 
 export interface Katalog {
@@ -333,6 +364,91 @@ export function kolonSecilebilirMi(kolon: Pick<KatalogKolon, "secilebilir"> | un
     return kolon.secilebilir !== false;
 }
 
+// ---------------------------------------------------------------------------
+// Özet modu (12.09, §3.1) — gruplama + ölçüm; sunucu `motor.ozet_kolonlari` / `_ozeti_dogrula` ikizi
+// ---------------------------------------------------------------------------
+
+/** Ölçüm işlemi → izinli kolon tipleri (`schemas_rapor.OLCUM_TIPLERI` ikizi). */
+export const OLCUM_TIPLERI: Record<OlcumIslemi, readonly KolonTipi[]> = {
+    sayi: ["metin", "liste", "tarih", "sayi", "para", "mantik"],
+    toplam: ["sayi", "para"],
+    ortalama: ["sayi", "para"],
+    min: ["sayi", "para", "tarih"],
+    max: ["sayi", "para", "tarih"],
+};
+
+/** Etiket kalıpları (`motor.OLCUM_ETIKETLERI` ikizi); `{}` kolon etiketi. */
+export const OLCUM_ETIKETLERI: Record<OlcumIslemi, string> = {
+    sayi: "{} sayısı",
+    toplam: "Toplam {}",
+    ortalama: "Ortalama {}",
+    min: "En küçük {}",
+    max: "En büyük {}",
+};
+export const KAYIT_SAYISI_ETIKETI = "Kayıt sayısı";
+export const KIRILIM_ETIKETLERI: Record<TarihKirilimi, string> = { gun: "gün", ay: "ay", yil: "yıl" };
+export const KIRILIMLAR: readonly TarihKirilimi[] = ["gun", "ay", "yil"];
+
+/** Ölçümün cevap/sıralama anahtarı: `sayi` (alansız) ya da `toplam:maddi_tazminat` (`olcum_anahtari` ikizi). */
+export function olcumAnahtari(o: Olcum): string {
+    return o.alan ? `${o.islem}:${o.alan}` : o.islem;
+}
+
+/** Ölçüm kolonunun etiketi ("Kayıt sayısı", "Toplam Maddi Tazminat"); kolon katalogda yoksa anahtar. */
+export function olcumEtiketi(o: Olcum, kolon: Pick<KatalogKolon, "etiket"> | undefined): string {
+    if (!o.alan) return KAYIT_SAYISI_ETIKETI;
+    return OLCUM_ETIKETLERI[o.islem].replace("{}", kolon?.etiket ?? o.alan);
+}
+
+/** Gruplama kolonunun etiketi: tarih + ay/yıl → "Açılış Tarihi (ay)"; diğerlerinde kolon etiketi. */
+export function gruplamaEtiketi(g: Gruplama, kolon: Pick<KatalogKolon, "etiket" | "tip"> | undefined): string {
+    const etiket = kolon?.etiket ?? g.alan;
+    if (kolon?.tip === "tarih" && (g.kirilim === "ay" || g.kirilim === "yil")) return `${etiket} (${KIRILIM_ETIKETLERI[g.kirilim]})`;
+    return etiket;
+}
+
+/** Özet modu = en az bir ölçüm. */
+export function ozetModu(tanim: Pick<RaporTanimi, "olcumler">): boolean {
+    return (tanim.olcumler?.length ?? 0) > 0;
+}
+
+/** Kolon GROUP BY'a girebilir mi? Katalog `gruplanabilir` (yeni sunucu) ∨ `secilebilir && siralanabilir`. */
+export function kolonGruplanabilirMi(kolon: Pick<KatalogKolon, "gruplanabilir" | "secilebilir" | "siralanabilir"> | undefined): boolean {
+    if (!kolon) return false;
+    if (typeof kolon.gruplanabilir === "boolean") return kolon.gruplanabilir;
+    return kolonSecilebilirMi(kolon) && kolon.siralanabilir;
+}
+
+/** İşlem bu kolonda yapılabilir mi? (tip tablosu + seçilebilirlik; sanal `arama` ölçüme giremez) */
+export function olcumUygunMu(islem: OlcumIslemi, kolon: Pick<KatalogKolon, "tip" | "secilebilir"> | undefined): boolean {
+    return kolon !== undefined && kolonSecilebilirMi(kolon) && OLCUM_TIPLERI[islem].includes(kolon.tip);
+}
+
+/** Özet modunda sıralanabilir anahtarlar: gruplama alanları + ölçüm anahtarları (çıktı kolonları). */
+export function ozetSiralamaAnahtarlari(tanim: Pick<RaporTanimi, "gruplama" | "olcumler">): string[] {
+    return [...(tanim.gruplama ?? []).map(g => g.alan), ...(tanim.olcumler ?? []).map(olcumAnahtari)];
+}
+
+/**
+ * Karşılaştırma/JSON için kanonik biçim: alan sırası sabit, boş `gruplama`/`olcumler` yazılmaz, `kirilim`/`alan`
+ * boşsa düşer — sunucu serileştirmesiyle birebir (şablon "★ Kayıtlı", sözle onay, favori kartı bununla karşılaştırır).
+ */
+export function tanimNormalize(t: RaporTanimi): RaporTanimi {
+    const sonuc: RaporTanimi = {
+        veri_kaynagi: t.veri_kaynagi,
+        kolonlar: [...t.kolonlar],
+        filtreler: t.filtreler.map(f => (f.deger === undefined ? { alan: f.alan, op: f.op } : { alan: f.alan, op: f.op, deger: f.deger })),
+        siralama: t.siralama.map(s => ({ alan: s.alan, yon: s.yon })),
+    };
+    if (t.gruplama && t.gruplama.length > 0) {
+        sonuc.gruplama = t.gruplama.map(g => (g.kirilim ? { alan: g.alan, kirilim: g.kirilim } : { alan: g.alan }));
+    }
+    if (t.olcumler && t.olcumler.length > 0) {
+        sonuc.olcumler = t.olcumler.map(o => (o.alan ? { islem: o.islem, alan: o.alan } : { islem: o.islem }));
+    }
+    return sonuc;
+}
+
 /**
  * §7.1 "Boş" birinci sınıf seçenek: parantezsiz, TEK sabit — çip/liste/özet/rozet metinleri buradan.
  * (Küçük harfli "boş" yalnız `is_null` op etiketi/özetidir, `OP_ETIKETLERI.is_null`.)
@@ -407,6 +523,23 @@ export function tanimGecerliMi(tanim: RaporTanimi, kaynak: KatalogVeriKaynagi | 
         const k = kolonOf(f.alan);
         return k !== undefined && k.filtrelenebilir && filtreTamamMi(f, k.tip, kolonOplari(k));
     })) return false;
+    // Özet modu (12.09): gruplama ≤3 tekrarsız gruplanabilir kolon (kırılım yalnız tarihte), ölçüm ≤5 tekrarsız
+    // uygun tipte; gruplama ölçümsüz olamaz; sıralama yalnız çıktı kolonlarıyla (`motor._ozeti_dogrula` ikizi).
+    const gruplama = tanim.gruplama ?? [];
+    const olcumler = tanim.olcumler ?? [];
+    if (gruplama.length > TANIM_LIMITLERI.gruplama_max || olcumler.length > TANIM_LIMITLERI.olcum_max) return false;
+    if (gruplama.length > 0 && olcumler.length === 0) return false;
+    if (new Set(gruplama.map(g => g.alan)).size !== gruplama.length) return false;
+    if (new Set(olcumler.map(olcumAnahtari)).size !== olcumler.length) return false;
+    if (!gruplama.every(g => {
+        const k = kolonOf(g.alan);
+        return kolonGruplanabilirMi(k) && (!g.kirilim || k?.tip === "tarih");
+    })) return false;
+    if (!olcumler.every(o => (o.alan ? olcumUygunMu(o.islem, kolonOf(o.alan)) : o.islem === "sayi"))) return false;
+    if (olcumler.length > 0) {
+        const izinli = new Set(ozetSiralamaAnahtarlari(tanim));
+        return tanim.siralama.every(s => izinli.has(s.alan));
+    }
     return tanim.siralama.every(s => {
         const k = kolonOf(s.alan);
         return k !== undefined && k.siralanabilir;

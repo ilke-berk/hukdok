@@ -156,7 +156,11 @@ export function AssistantMessage({
                             data-testid="tanim-uygulandi"
                             className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--brand)]"
                         >
-                            <Check className="w-3 h-3" /> Uygulandı · {ayrinti.kaynak} · {ozet.kolon} kolon · {ozet.filtre} filtre
+                            <Check className="w-3 h-3" /> Uygulandı · {ayrinti.kaynak}
+                            {ozet.ozet
+                                ? <> · özet: {ozet.gruplama} gruplama · {ozet.olcum} ölçüm</>
+                                : <> · {ozet.kolon} kolon</>}
+                            {" "}· {ozet.filtre} filtre
                         </span>
                         {indirmeDugmeleri}
                         {onGeriAl && (
@@ -179,12 +183,34 @@ export function AssistantMessage({
                         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
                             <dt className="text-[var(--fg-muted)]">Kaynak</dt>
                             <dd className="text-[var(--fg)]" data-testid="tanim-kaynak">{ayrinti.kaynak}</dd>
-                            <dt className="text-[var(--fg-muted)]">Kolonlar</dt>
-                            <dd className="text-[var(--fg)] flex flex-wrap gap-1" data-testid="tanim-kolonlar">
-                                {ayrinti.kolonlar.map((k, i) => (
-                                    <span key={i} className="px-1.5 py-0.5 rounded-[3px] bg-[var(--bg)] border border-[var(--border)]">{k}</span>
-                                ))}
-                            </dd>
+                            {ozet?.ozet ? (
+                                <>
+                                    {/* Özet modu (12.09): kolonlar yerine gruplama + ölçümler */}
+                                    <dt className="text-[var(--fg-muted)]">Gruplama</dt>
+                                    <dd className="text-[var(--fg)] flex flex-wrap gap-1" data-testid="tanim-gruplama">
+                                        {ayrinti.gruplama.length === 0
+                                            ? <span className="text-[var(--fg-subtle)]">yok (tek toplam satırı)</span>
+                                            : ayrinti.gruplama.map((g, i) => (
+                                                <span key={i} className="px-1.5 py-0.5 rounded-[3px] bg-[var(--bg)] border border-[var(--border)]">{g}</span>
+                                            ))}
+                                    </dd>
+                                    <dt className="text-[var(--fg-muted)]">Ölçümler</dt>
+                                    <dd className="text-[var(--fg)] flex flex-wrap gap-1" data-testid="tanim-olcumler">
+                                        {ayrinti.olcumler.map((o, i) => (
+                                            <span key={i} className="px-1.5 py-0.5 rounded-[3px] bg-[var(--bg)] border border-[var(--border)]">{o}</span>
+                                        ))}
+                                    </dd>
+                                </>
+                            ) : (
+                                <>
+                                    <dt className="text-[var(--fg-muted)]">Kolonlar</dt>
+                                    <dd className="text-[var(--fg)] flex flex-wrap gap-1" data-testid="tanim-kolonlar">
+                                        {ayrinti.kolonlar.map((k, i) => (
+                                            <span key={i} className="px-1.5 py-0.5 rounded-[3px] bg-[var(--bg)] border border-[var(--border)]">{k}</span>
+                                        ))}
+                                    </dd>
+                                </>
+                            )}
                             <dt className="text-[var(--fg-muted)]">Filtreler</dt>
                             <dd className="text-[var(--fg)]" data-testid="tanim-filtreler">
                                 {ayrinti.filtreler.length === 0

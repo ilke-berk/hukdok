@@ -265,7 +265,8 @@ describe("sohbetGecmisi / gecmisiKirp / tanimOzeti", () => {
     });
 
     it("tanimOzeti kaynak + sayılar", () => {
-        expect(tanimOzeti(TANIM)).toEqual({ kaynak: "davalar", kolon: 2, filtre: 1, siralama: 1 });
+        // 12.09 özet modu: + gruplama/olcum sayıları ve `ozet` bayrağı (liste görünümünde 0/false)
+        expect(tanimOzeti(TANIM)).toEqual({ kaynak: "davalar", kolon: 2, filtre: 1, siralama: 1, gruplama: 0, olcum: 0, ozet: false });
     });
 });
 
@@ -315,6 +316,8 @@ describe("G167 — tanimAyrintisi / tanimAyni", () => {
                 "Açılış Tarihi · ≤ (en çok) · 31.12.2026",
             ],
             siralama: ["Açılış Tarihi ↓", "Ofis No ↑"],
+            gruplama: [],          // 12.09 özet modu satırları; liste görünümünde boş
+            olcumler: [],
         });
         // Katalog yok / kaynak yok: anahtarlar aynen, kart boş kalmaz
         expect(tanimAyrintisi({ ...tanim, veri_kaynagi: "yok" }, null)).toMatchObject({ kaynak: "yok", kolonlar: ["tracking_no", "muvekkil.phone", "bilinmeyen"] });

@@ -27,12 +27,14 @@ import os
 from decimal import Decimal
 from typing import Any, Iterator, Optional
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Date, Select, String, and_, cast, func, or_, select
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.functions import FunctionElement
 
 from schemas_rapor import (
-    DEGERSIZ_OPLAR, ONIZLEME_SAYFA_BOYU_MAX, SAAT_DILIMI, TIP_OPLARI, Filtre, KolonBasligi, RaporDogrulamaHatasi,
-    RaporTanimi,
+    DEGERSIZ_OPLAR, GRUPLAMA_MAX, OLCUM_MAX, OLCUM_TIPLERI, ONIZLEME_SAYFA_BOYU_MAX, SAAT_DILIMI, TIP_OPLARI, Filtre,
+    KolonBasligi, Olcum, RaporDogrulamaHatasi, RaporTanimi,
 )
 from services.rapor import registry
 from services.rapor.registry import Kolon, VeriKaynagi
@@ -43,12 +45,91 @@ _ILIKE_KACIS = "\\"
 
 def limitler() -> dict[str, int]:
     """Katalogdaki `limitler` (plan §2.4). `RAPOR_MAX_SATIR` env'i G131 export tavanı;
-    burada yalnız istemciye bildirilir (varsayılan plan §2.7: 50000)."""
+    burada yalnız istemciye bildirilir (varsayılan plan §2.7: 50000). 12.09: özet modu tavanları."""
     try:
         export_max = int(os.getenv("RAPOR_MAX_SATIR", "50000"))
     except ValueError:
         export_max = 50000
-    return {"onizleme_sayfa_boyu_max": ONIZLEME_SAYFA_BOYU_MAX, "export_max_satir": export_max}
+    return {
+        "onizleme_sayfa_boyu_max": ONIZLEME_SAYFA_BOYU_MAX, "export_max_satir": export_max,
+        "gruplama_max": GRUPLAMA_MAX, "olcum_max": OLCUM_MAX,
+    }
+
+
+# ─── Özet modu (12.09): gruplama + ölçüm ifadeleri ───────────────────────────
+
+class tr_gun(FunctionElement):     # noqa: N801 — SQL işlevi adı
+    """Zaman damgası → TÜRKİYE günü (DATE). Postgres: `(col AT TIME ZONE 'Europe/Istanbul')::date`
+    (`timestamptz` UTC tutulur, gün sınırı TR gece yarısı — `SAAT_DILIMI` ile aynı karar); sqlite (test):
+    `date(col)` (naive). Gün/ay/yıl kırılımı bunun üstüne kurulur."""
+    type = Date()
+    inherit_cache = True
+
+
+@compiles(tr_gun)
+def _tr_gun_varsayilan(element: tr_gun, compiler: Any, **kw: Any) -> str:
+    return "date(%s)" % compiler.process(element.clauses, **kw)
+
+
+@compiles(tr_gun, "postgresql")
+def _tr_gun_postgres(element: tr_gun, compiler: Any, **kw: Any) -> str:
+    return "(%s AT TIME ZONE '%s')::date" % (compiler.process(element.clauses, **kw), SAAT_DILIMI.key)
+
+
+KIRILIM_ETIKETLERI = {"gun": "gün", "ay": "ay", "yil": "yıl"}
+OLCUM_ETIKETLERI = {"sayi": "{} sayısı", "toplam": "Toplam {}", "ortalama": "Ortalama {}", "min": "En küçük {}",
+                    "max": "En büyük {}"}
+KAYIT_SAYISI_ETIKETI = "Kayıt sayısı"
+
+
+def _grup_ifadesi(kolon: Kolon, kirilim: Optional[str]) -> tuple[Any, str]:
+    """(ifade, çıktı tipi). Tarih kolonunda kırılım: gün = Türkiye günü (DATE), ay = 'YYYY-AA', yıl = 'YYYY'
+    (ISO metnin ön eki — Postgres `cast(date AS VARCHAR)` ve sqlite'ın tarih metni aynı biçimde). Diğer tiplerde
+    kolonun kendisi."""
+    if kolon.tip != "tarih":
+        return kolon.ifade, kolon.tip
+    gun = tr_gun(kolon.ifade) if kolon.zaman_damgali else kolon.ifade
+    if kirilim in (None, "gun"):
+        return gun, "tarih"
+    uzunluk = 7 if kirilim == "ay" else 4
+    return func.substr(cast(gun, String), 1, uzunluk), "metin"
+
+
+def _olcum_ifadesi(olcum: Olcum, kolon: Optional[Kolon]) -> tuple[Any, str, str]:
+    """(ifade, etiket, çıktı tipi). `sayi` alansız = COUNT(*), alanlı = dolu değer sayısı; toplam/ortalama
+    para→para, sayi→sayi; min/max kolonun tipi."""
+    if kolon is None:
+        return func.count(), KAYIT_SAYISI_ETIKETI, "sayi"
+    etiket = OLCUM_ETIKETLERI[olcum.islem].format(kolon.etiket)
+    if olcum.islem == "sayi":
+        return func.count(kolon.ifade), etiket, "sayi"
+    if olcum.islem == "toplam":
+        return func.sum(kolon.ifade), etiket, kolon.tip
+    if olcum.islem == "ortalama":
+        return func.avg(kolon.ifade), etiket, kolon.tip
+    if olcum.islem == "min":
+        return func.min(kolon.ifade), etiket, kolon.tip
+    return func.max(kolon.ifade), etiket, kolon.tip
+
+
+def _grup_etiketi(kolon: Kolon, kirilim: Optional[str]) -> str:
+    if kolon.tip == "tarih" and kirilim in ("ay", "yil"):
+        return f"{kolon.etiket} ({KIRILIM_ETIKETLERI[kirilim]})"
+    return kolon.etiket
+
+
+def ozet_kolonlari(kaynak: VeriKaynagi, tanim: RaporTanimi) -> list[tuple[str, str, str, Any]]:
+    """Özet modunun çıktı kolonları: önce gruplama alanları (anahtar = alan), sonra ölçümler
+    (anahtar = `olcum_anahtari`). Her öğe (anahtar, etiket, tip, ifade). Doğrulama `tanimi_dogrula`da."""
+    kolonlar: list[tuple[str, str, str, Any]] = []
+    for g in tanim.gruplama:
+        kolon = kaynak.kolonlar[g.alan]
+        ifade, tip = _grup_ifadesi(kolon, g.kirilim)
+        kolonlar.append((g.alan, _grup_etiketi(kolon, g.kirilim), tip, ifade))
+    for o in tanim.olcumler:
+        ifade, etiket, tip = _olcum_ifadesi(o, kaynak.kolonlar[o.alan] if o.alan else None)
+        kolonlar.append((o.anahtar, etiket, tip, ifade))
+    return kolonlar
 
 
 # ─── Doğrulama ───────────────────────────────────────────────────────────────
@@ -150,6 +231,16 @@ def tanimi_dogrula(tanim: RaporTanimi) -> tuple[VeriKaynagi, list[tuple[Kolon, F
                 alan, f"'{f.op}' operatörü '{f.alan}' kolonunda izinli değil (izinli: {', '.join(kolon.oplar)})",
             )
         filtreler.append((kolon, f, _deger_cevir(kolon, f, alan)))
+    _ozeti_dogrula(kaynak, tanim)
+    if tanim.ozet_modu:
+        # Özet modunda sıralama yalnız gruplama alanı ya da ölçüm anahtarıyla (çıktı kolonları bunlardır)
+        izinli = {g.alan for g in tanim.gruplama} | {o.anahtar for o in tanim.olcumler}
+        for i, s in enumerate(tanim.siralama):
+            if s.alan not in izinli:
+                raise RaporDogrulamaHatasi(
+                    f"siralama[{i}]", f"özet modunda sıralama yalnız gruplama alanı ya da ölçüm anahtarıyla: {s.alan}",
+                )
+        return kaynak, filtreler
     for i, s in enumerate(tanim.siralama):
         alan = f"siralama[{i}]"
         kolon = _kolon(kaynak, s.alan, alan)
@@ -158,6 +249,29 @@ def tanimi_dogrula(tanim: RaporTanimi) -> tuple[VeriKaynagi, list[tuple[Kolon, F
         if not kolon.siralanabilir:
             raise RaporDogrulamaHatasi(alan, f"kolon sıralanamaz: {s.alan}")
     return kaynak, filtreler
+
+
+def _ozeti_dogrula(kaynak: VeriKaynagi, tanim: RaporTanimi) -> None:
+    """Gruplama: seçilebilir + sıralanabilir (düz) kolon, kırılım yalnız tarih kolonunda. Ölçüm: alanlı ise
+    kolon seçilebilir ve tipi `OLCUM_TIPLERI[islem]` içinde (toplam/ortalama sayı-para, min/max +tarih)."""
+    for i, g in enumerate(tanim.gruplama):
+        alan = f"gruplama[{i}]"
+        kolon = _kolon(kaynak, g.alan, alan)
+        if not (kolon.secilebilir and kolon.siralanabilir):
+            raise RaporDogrulamaHatasi(alan, f"kolon gruplanamaz (türetilmiş/çoklu bağ): {g.alan}")
+        if g.kirilim is not None and kolon.tip != "tarih":
+            raise RaporDogrulamaHatasi(alan, f"kırılım yalnız tarih kolonunda: {g.alan}")
+    for i, o in enumerate(tanim.olcumler):
+        alan = f"olcumler[{i}]"
+        if o.alan is None:
+            continue
+        kolon = _kolon(kaynak, o.alan, alan)
+        if not kolon.secilebilir:
+            raise RaporDogrulamaHatasi(alan, f"yalnız filtre alanı, ölçüme giremez: {o.alan}")
+        if kolon.tip not in OLCUM_TIPLERI[o.islem]:
+            raise RaporDogrulamaHatasi(
+                alan, f"'{o.islem}' ölçümü '{kolon.tip}' tipinde yapılamaz (izinli: {', '.join(OLCUM_TIPLERI[o.islem])})",
+            )
 
 
 # ─── Sorgu kurma ─────────────────────────────────────────────────────────────
@@ -230,8 +344,13 @@ def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
 
 def sorgu_kur(tanim: RaporTanimi, tenant_id: str) -> Select:
     """Core `select`: seçili kolonlar `Kolon.ifade` etiketiyle, kaynak kısıtları
-    (tenant + soft-delete) + filtreler + sıralama (+ birincil anahtar son kırıcı)."""
+    (tenant + soft-delete) + filtreler + sıralama (+ birincil anahtar son kırıcı).
+    Özet modunda (12.09): gruplama ifadeleri + ölçüm toplamları, `GROUP BY` gruplama ifadeleri; filtreler
+    yine WHERE'de (gruplamadan ÖNCE). Sıralama verilmemişse ilk ölçüm azalan ("X başına kaç" doğal sırası),
+    gruplama alanları artan kırıcı."""
     kaynak, filtreler = tanimi_dogrula(tanim)
+    if tanim.ozet_modu:
+        return _ozet_sorgusu(kaynak, tanim, tenant_id, filtreler)
     secimler = [kaynak.kolonlar[a].ifade.label(a) for a in tanim.kolonlar]
     sorgu = select(*secimler).select_from(kaynak.from_clause)
     sorgu = sorgu.where(*kaynak.kisitlar(tenant_id))
@@ -243,6 +362,27 @@ def sorgu_kur(tanim: RaporTanimi, tenant_id: str) -> Select:
         siralama.append(ifade.desc().nulls_last() if s.yon == "desc" else ifade.asc().nulls_first())
     if kaynak.birincil_anahtar is not None:
         siralama.append(kaynak.birincil_anahtar.asc())
+    return sorgu.order_by(*siralama)
+
+
+def _ozet_sorgusu(kaynak: VeriKaynagi, tanim: RaporTanimi, tenant_id: str,
+                  filtreler: list[tuple[Kolon, Filtre, Any]]) -> Select:
+    kolonlar = ozet_kolonlari(kaynak, tanim)
+    ifadeler = {anahtar: ifade for anahtar, _e, _t, ifade in kolonlar}
+    sorgu = select(*(ifade.label(anahtar) for anahtar, _e, _t, ifade in kolonlar)).select_from(kaynak.from_clause)
+    sorgu = sorgu.where(*kaynak.kisitlar(tenant_id))
+    for kolon, filtre, deger in filtreler:
+        sorgu = sorgu.where(_kosul(kolon, filtre, deger))
+    grup_ifadeleri = [ifadeler[g.alan] for g in tanim.gruplama]
+    if grup_ifadeleri:
+        sorgu = sorgu.group_by(*grup_ifadeleri)
+    siralama = []
+    for s in tanim.siralama:
+        ifade = ifadeler[s.alan]
+        siralama.append(ifade.desc().nulls_last() if s.yon == "desc" else ifade.asc().nulls_first())
+    if not siralama and tanim.gruplama:
+        siralama.append(ifadeler[tanim.olcumler[0].anahtar].desc().nulls_last())
+    siralama.extend(ifade.asc().nulls_first() for ifade in grup_ifadeleri)
     return sorgu.order_by(*siralama)
 
 
@@ -267,7 +407,12 @@ def _satir(anahtarlar: list[str], satir) -> dict[str, Any]:
 
 
 def kolon_basliklari(tanim: RaporTanimi) -> list[KolonBasligi]:
+    """Çıktı kolonları: liste görünümünde `kolonlar`, özet modunda gruplama alanları + ölçümler
+    (`ozet_kolonlari`; özet doğrulaması burada da koşar — export rotası önce bunu çağırır)."""
     kaynak = _kaynak(tanim)
+    if tanim.ozet_modu:
+        _ozeti_dogrula(kaynak, tanim)
+        return [KolonBasligi(anahtar=a, etiket=e, tip=t) for a, e, t, _i in ozet_kolonlari(kaynak, tanim)]
     basliklar = []
     for i, a in enumerate(tanim.kolonlar):
         kolon = _kolon(kaynak, a, f"kolonlar[{i}]")
@@ -275,16 +420,24 @@ def kolon_basliklari(tanim: RaporTanimi) -> list[KolonBasligi]:
     return basliklar
 
 
+def cikti_anahtarlari(tanim: RaporTanimi) -> list[str]:
+    """Satır sözlüğünün anahtarları — `sorgu_kur` etiketleriyle birebir."""
+    if tanim.ozet_modu:
+        return [g.alan for g in tanim.gruplama] + [o.anahtar for o in tanim.olcumler]
+    return list(tanim.kolonlar)
+
+
 def onizle(db: Session, tanim: RaporTanimi, tenant_id: str, sayfa: int = 1,
            sayfa_boyu: int = 50) -> tuple[list[KolonBasligi], list[dict[str, Any]], int]:
     """(kolonlar, satirlar, toplam). `sayfa` 1'den başlar; `sayfa_boyu` tavanı
-    `ONIZLEME_SAYFA_BOYU_MAX` (route Pydantic'te keser, burada da kırpılır)."""
+    `ONIZLEME_SAYFA_BOYU_MAX` (route Pydantic'te keser, burada da kırpılır). Özet modunda `toplam` = grup sayısı."""
     sayfa = max(1, sayfa)
     sayfa_boyu = max(1, min(sayfa_boyu, ONIZLEME_SAYFA_BOYU_MAX))
     sorgu = sorgu_kur(tanim, tenant_id)
+    anahtarlar = cikti_anahtarlari(tanim)
     toplam = db.execute(select(func.count()).select_from(sorgu.order_by(None).subquery())).scalar_one()
     satirlar = db.execute(sorgu.offset((sayfa - 1) * sayfa_boyu).limit(sayfa_boyu)).all()
-    return kolon_basliklari(tanim), [_satir(tanim.kolonlar, s) for s in satirlar], int(toplam)
+    return kolon_basliklari(tanim), [_satir(anahtarlar, s) for s in satirlar], int(toplam)
 
 
 def satirlari_akit(db: Session, tanim: RaporTanimi, tenant_id: str,
@@ -292,6 +445,7 @@ def satirlari_akit(db: Session, tanim: RaporTanimi, tenant_id: str,
     """Satır iteratörü (`yield_per`) — G131 export (xlsx write_only / csv) bunu tüketir;
     tüm sonuç belleğe alınmaz."""
     sorgu = sorgu_kur(tanim, tenant_id)
+    anahtarlar = cikti_anahtarlari(tanim)
     sonuc = db.execute(sorgu.execution_options(yield_per=parca or AKIS_PARCA))
     for satir in sonuc:
-        yield _satir(tanim.kolonlar, satir)
+        yield _satir(anahtarlar, satir)

@@ -475,7 +475,7 @@ def get_rapor_asistani_instruction(
         "- cevap: kullanıcıya gösterilecek KISA Türkçe metin (1-3 cümle): ne hazırladığını "
         "ya da neyi sorduğunu söyle. Satır/veri UYDURMA; 'şu kadar dava var' gibi sayı verme.",
         "- tanim: RaporTanimi ya da null. veri_kaynagi + kolonlar (anahtar listesi) + filtreler "
-        "+ siralama (en çok 3).",
+        "+ siralama (en çok 3) + isteğe bağlı gruplama/olcumler (ÖZET RAPOR kuralı).",
         "- eylem: 'onizle' | 'indir_xlsx' | 'indir_csv' | null. Kullanıcı 'indir', 'Excel', "
         "'xlsx' derse indir_xlsx; 'CSV' derse indir_csv; yalnız listelemek/görmek isterse onizle. "
         "tanim null ise eylem de null.",
@@ -544,6 +544,20 @@ def get_rapor_asistani_instruction(
         "- LİSTE SORUSU: kullanıcı 'hangi mahkemeler var', 'il seçenekleri neler' gibi bir değer listesi "
         "isterse listeyi SEN VEREMEZSİN (veriyi görmüyorsun): tanim=null, eylem=null; cevapta listeyi "
         "ekranda ilgili filtre çipine tıklayarak ya da 'hangi <alan>lar var' yazarak görebileceğini söyle.",
+        "- ÖZET RAPOR (gruplama + ölçüm): kullanıcı 'kaç', 'sayısı', 'başına', 'göre dağılım', 'toplam', "
+        "'ortalama', 'en yüksek/en düşük' gibi SAYISAL bir özet isterse liste değil özet tanımı kur: "
+        "tanim.gruplama = [{alan, kirilim?}] (en çok 3; 'avukat başına' → responsible_lawyer_name, 'aylara göre "
+        "açılış' → {alan: opening_date, kirilim: 'ay'}; kirilim gun|ay|yil YALNIZ tarih kolonunda) ve "
+        "tanim.olcumler = [{islem, alan?}] (en çok 5; islem sayi|toplam|ortalama|min|max; 'kaç dava' → "
+        "{islem:'sayi'} alansız = kayıt sayısı; 'toplam tazminat' → {islem:'toplam', alan:'maddi_tazminat'}; "
+        "toplam/ortalama yalnız sayı-para kolonunda, min/max sayı-para-tarih). Gruplama daima en az bir ölçüm "
+        "ister (sayısı belirsizse {islem:'sayi'}). Sıralama özet modunda yalnız gruplama alanı ya da ölçüm "
+        "anahtarıyla ('sayi', 'toplam:maddi_tazminat'); 'en çok davası olan' → siralama [{alan:'sayi', yon:'desc'}]. "
+        "Türetilmiş kolonlar ('türetilmiş' işaretli; ör. muvekkil_adlari) GRUPLANAMAZ — müvekkil başına dağılım "
+        "için kaynak 'muvekkiller' seçilip dava_sayisi kolonu ya da muvekkil_kategorisi yerine kategori kolonu "
+        "kullanılır; yapılamıyorsa sebebini söyle. Özet tanımında kolonlar alanını yine doldur (varsayılanlar); "
+        "sunucu özet modunda onu kullanmaz. Sayıyı SEN VERME (veriyi görmüyorsun): 'Avukat başına dava sayısı "
+        "hazırlandı' de, sonucu ekran gösterir.",
         "- Sohbet geçmişindeki önceki isteklerini bağlam olarak kullan; en son kullanıcı "
         "mesajına cevap ver.",
         "- Türkçe yaz, kısa tut, teknik anahtar adlarını kullanıcıya sayma (etiketleriyle konuş).",

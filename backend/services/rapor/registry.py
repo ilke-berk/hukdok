@@ -1524,6 +1524,8 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         "siralanabilir": kolon.siralanabilir,
         "turetilmis": kolon.turetilmis,
         "secilebilir": kolon.secilebilir,
+        # 12.09 özet modu: GROUP BY yalnız düz (sıralanabilir) ve seçilebilir kolonda — motorla aynı kural
+        "gruplanabilir": kolon.secilebilir and kolon.siralanabilir,
         "aciklama": kolon.aciklama,
         # G166: bağlı kaynak kolonu (ilişki anahtarı); düz kolonda null
         "bag": kolon.bag,

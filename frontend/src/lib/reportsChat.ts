@@ -5,7 +5,8 @@
 // Sohbet geçmişi sunucuda SAKLANMAZ (K6): istemci `mesajlar` listesini taşır, en fazla 20.
 import { apiClient } from "@/lib/api";
 import {
-    OP_ETIKETLERI, kolonOplari, raporHatasiCevir, secenekEtiketi, tarihBicimle,
+    OP_ETIKETLERI, gruplamaEtiketi, kolonOplari, olcumAnahtari, olcumEtiketi, ozetModu, raporHatasiCevir, secenekEtiketi,
+    tanimNormalize, tarihBicimle,
     type AsistanEylemi, type AsistanMesaji, type AsistanOlayi, type Filtre, type Katalog, type KatalogKolon,
     type KatalogVeriKaynagi, type RaporTanimi,
 } from "@/lib/reports";
@@ -280,12 +281,17 @@ export function sohbetGecmisi(kayitlar: SohbetKaydi[]): AsistanMesaji[] {
 }
 
 /** Tanım özeti kartı için sayılar. */
-export function tanimOzeti(tanim: RaporTanimi): { kaynak: string; kolon: number; filtre: number; siralama: number } {
+export function tanimOzeti(tanim: RaporTanimi): {
+    kaynak: string; kolon: number; filtre: number; siralama: number; gruplama: number; olcum: number; ozet: boolean;
+} {
     return {
         kaynak: tanim.veri_kaynagi,
         kolon: tanim.kolonlar.length,
         filtre: tanim.filtreler.length,
         siralama: tanim.siralama.length,
+        gruplama: tanim.gruplama?.length ?? 0,
+        olcum: tanim.olcumler?.length ?? 0,
+        ozet: ozetModu(tanim),
     };
 }
 
@@ -306,8 +312,12 @@ export interface TanimAyrintisi {
     kolonlar: string[];
     /** "Açılış Tarihi · aralıkta · 01.04.2026 – 31.08.2026" biçiminde satırlar. */
     filtreler: string[];
-    /** "Açılış Tarihi ↓" biçiminde satırlar. */
+    /** "Açılış Tarihi ↓" biçiminde satırlar (özet modunda ölçüm anahtarı etiketiyle: "Kayıt sayısı ↓"). */
     siralama: string[];
+    /** Özet modu (12.09): "Açılış Tarihi (ay)" biçiminde gruplama satırları; liste görünümünde boş. */
+    gruplama: string[];
+    /** Özet modu: "Kayıt sayısı", "Toplam Maddi Tazminat"; liste görünümünde boş. */
+    olcumler: string[];
 }
 
 const BOS_DEGER = "(boş)";
@@ -341,15 +351,26 @@ function degerMetni(kolon: KatalogKolon | undefined, f: Filtre): string | null {
 export function tanimAyrintisi(tanim: RaporTanimi, katalog: Katalog | null): TanimAyrintisi {
     const kaynak = katalog?.veri_kaynaklari.find(v => v.anahtar === tanim.veri_kaynagi);
     const kolonBul = (anahtar: string) => kaynak?.kolonlar.find(k => k.anahtar === anahtar);
-    const etiket = (anahtar: string) => kolonBul(anahtar)?.etiket ?? anahtar;
+    const olcumler = tanim.olcumler ?? [];
+    const gruplama = tanim.gruplama ?? [];
+    // Özet modunda sıralama anahtarı ölçüm olabilir ("sayi", "toplam:x") → ölçüm etiketi; gruplama alanı → kırılımlı etiket
+    const etiket = (anahtar: string) => {
+        const o = olcumler.find(x => olcumAnahtari(x) === anahtar);
+        if (o) return olcumEtiketi(o, o.alan ? kolonBul(o.alan) : undefined);
+        const g = gruplama.find(x => x.alan === anahtar);
+        if (g) return gruplamaEtiketi(g, kolonBul(g.alan));
+        return kolonBul(anahtar)?.etiket ?? anahtar;
+    };
     return {
         kaynak: kaynak?.etiket ?? tanim.veri_kaynagi,
-        kolonlar: tanim.kolonlar.map(etiket),
+        kolonlar: tanim.kolonlar.map(a => kolonBul(a)?.etiket ?? a),
         filtreler: tanim.filtreler.map(f => {
             const deger = degerMetni(kolonBul(f.alan), f);
-            return [etiket(f.alan), OP_ETIKETLERI[f.op], ...(deger === null ? [] : [deger])].join(" · ");
+            return [kolonBul(f.alan)?.etiket ?? f.alan, OP_ETIKETLERI[f.op], ...(deger === null ? [] : [deger])].join(" · ");
         }),
         siralama: tanim.siralama.map(s => `${etiket(s.alan)} ${s.yon === "desc" ? "↓" : "↑"}`),
+        gruplama: gruplama.map(g => gruplamaEtiketi(g, kolonBul(g.alan))),
+        olcumler: olcumler.map(o => olcumEtiketi(o, o.alan ? kolonBul(o.alan) : undefined)),
     };
 }
 
@@ -466,10 +487,15 @@ export function gevsetmeOrnekleri(tanim: RaporTanimi, katalog: Katalog | null): 
 export function tanimAyni(a: RaporTanimi | null | undefined, b: RaporTanimi | null | undefined): boolean {
     if (!a || !b) return false;
     const filtre = (f: Filtre) => JSON.stringify([f.alan, f.op, f.deger ?? null]);
+    const na = tanimNormalize(a);
+    const nb = tanimNormalize(b);
     return a.veri_kaynagi === b.veri_kaynagi
         && JSON.stringify(a.kolonlar) === JSON.stringify(b.kolonlar)
         && JSON.stringify(a.filtreler.map(filtre)) === JSON.stringify(b.filtreler.map(filtre))
-        && JSON.stringify(a.siralama.map(s => [s.alan, s.yon])) === JSON.stringify(b.siralama.map(s => [s.alan, s.yon]));
+        && JSON.stringify(a.siralama.map(s => [s.alan, s.yon])) === JSON.stringify(b.siralama.map(s => [s.alan, s.yon]))
+        // Özet modu (12.09): boş/eksik listeler eşdeğer (`tanimNormalize` ikisini de düşürür)
+        && JSON.stringify(na.gruplama ?? []) === JSON.stringify(nb.gruplama ?? [])
+        && JSON.stringify(na.olcumler ?? []) === JSON.stringify(nb.olcumler ?? []);
 }
 
 // ---------------------------------------------------------------------------

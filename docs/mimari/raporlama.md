@@ -286,6 +286,43 @@ saat dilimine göre, prod UTC). Türetilmişte `_kosul` (`:223-230`) `filtre_ifa
 Sıralama `desc → NULLS LAST`, `asc → NULLS FIRST`, sonda daima birincil anahtar (`:242-247`).
 Serileştirme: tarih ISO, `Decimal → float`, NULL → `null` (`:253-260`).
 
+### 3.1 Özet modu — gruplama + ölçüm (2026-09-12, kullanıcı kararı "rapor aracına geçiş")
+
+"Avukat başına kaç dava", "aylara göre açılış sayısı", "müvekkil kategorisi başına toplam tazminat" düz listeyle
+cevaplanamıyordu (asistan da prompt gereği sayı vermez). Sözleşmeye iki isteğe bağlı alan eklendi
+(`schemas_rapor.py` `Gruplama`/`Olcum`, `RaporTanimi.gruplama`/`olcumler`); K1 korunur (anahtarlar registry'den,
+sorgu Core `GROUP BY`):
+
+```json
+{"veri_kaynagi": "davalar", "kolonlar": ["tracking_no"],
+ "filtreler": [{"alan": "status", "op": "eq", "deger": "DERDEST"}],
+ "gruplama": [{"alan": "opening_date", "kirilim": "ay"}],
+ "olcumler": [{"islem": "sayi"}, {"islem": "toplam", "alan": "maddi_tazminat"}],
+ "siralama": [{"alan": "sayi", "yon": "desc"}]}
+```
+
+- **Özet modu = `olcumler` dolu.** Çıktı kolonları gruplama alanları (anahtar = alan) + ölçümler (anahtar
+  `olcum_anahtari`: `sayi`, `toplam:maddi_tazminat`); `kolonlar` KULLANILMAZ ama şemada zorunlu kalır (liste
+  görünümüne dönünce aynı kolonlar). Gruplama boşsa tek toplam satırı. Gruplama ölçümsüz → 422 "ölçüm ister".
+- **Sınırlar:** gruplama ≤3 (`GRUPLAMA_MAX`), ölçüm ≤5 (`OLCUM_MAX`), ikisi de tekrarsız; katalog `limitler`
+  `gruplama_max`/`olcum_max` taşır.
+- **Gruplanabilir kolon** = `secilebilir and siralanabilir` (katalog `gruplanabilir`): türetilmiş (taraf adları,
+  sayaçlar) ve çoklu bağ kolonları GRUPLANAMAZ (422 "gruplanamaz"); tekil bağ (`belgeler → dava.*`) gruplanır.
+- **Kırılım** yalnız tarih kolonunda (`gun | ay | yil`; yoksa gün): zaman damgalı kolonda gün `motor.tr_gun`
+  (Postgres `(col AT TIME ZONE 'Europe/Istanbul')::date`, sqlite `date(col)`), ay/yıl ISO metnin `substr`'ı
+  (`"2025-03"`, `"2025"`; tip `metin`, etiket "Açılış Tarihi (ay)").
+- **Ölçümler:** `sayi` alansız = `COUNT(*)` ("Kayıt sayısı"), alanlı = dolu değer sayısı; `toplam`/`ortalama`
+  yalnız sayı-para; `min`/`max` sayı-para-tarih (`OLCUM_TIPLERI`); etiket "Toplam X", "Ortalama X", "En küçük X",
+  "En büyük X"; tip ölçülen kolonun tipi (sayı için `sayi`).
+- **Filtreler WHERE'de** (gruplamadan ÖNCE; EXISTS filtreleri aynen). **Sıralama** özet modunda yalnız gruplama
+  alanı ya da ölçüm anahtarıyla (422 "özet modunda …"); verilmezse ilk ölçüm azalan, gruplama alanları artan kırıcı.
+- **Serileştirme uyumu:** boş `gruplama`/`olcumler` JSON'a GİRMEZ (`RaporTanimi` `model_serializer`) — koşu logu,
+  şablon, `mevcut_tanim` ve `complete.tanim` liste görünümünde 12.09 öncesiyle birebir; eski şablon/koşu kayıtları
+  olduğu gibi yüklenir.
+- **Export:** `kolon_basliklari`/`cikti_anahtarlari` özet kolonlarını verir; xlsx/csv aynı yol (`kolon_sayisi` =
+  özet kolon sayısı). Asistan şeması `AsistanGruplama`/`AsistanOlcum` (metin değerli), `asistan_tanimini_cevir`
+  boş listeleri yazmaz; prompt "ÖZET RAPOR" kuralı (`prompts.py`). Kanıt: `tests/test_rapor_ozet_modu.py`.
+
 ## 4. HTTP uçları — `backend/routes/reports.py`
 
 Hepsi `require_admin` + `get_current_tenant`; yönetici değilse 403 `"Yönetici yetkisi gerekli"`.
@@ -632,6 +669,23 @@ alan olur; çözülemeyen op `gelismis` çip olur ve KAYBOLMAZ; gelişmiş çip 
 `:112-120`). Dolu öğeler TANIMDAKİ sırayla önce, boş yuvalar sonra — filtre sırası korunur (şablon eşitliği
 `JSON.stringify`, `ReportsPage.tsx:56`, `:280`, `:284`). Gidiş-dönüşün tek istisnası tek değerli `in` → `eq`.
 
+#### 8.2.1 Özet modu satırı (12.09, §3.1)
+
+Üst satırın sonunda **"Σ Özet"** (`serit-ozet-ac`) düğmesi: `builderState.ozetAc` ile `olcumler = [{islem:"sayi"}]`
+(Kayıt sayısı) — o andan itibaren üst satır kolon çipleri yerine **gruplama çipleri** (`serit-grup-<alan>`; tarih
+kolonunda kırılım düğmesi `serit-grup-kirilim` gün → ay → yıl döner, `data-kirilim`) · **"+ Grupla"** (`FieldPicker`,
+yalnız `kolonGruplanabilirMi` olanlar; tarih seçimi varsayılan **ay** kırılımıyla; tavan 3) · **ölçüm çipleri**
+(`serit-olcum-<anahtar>`, Σ simgesi, "Toplam Maddi Tazminat") · **"+ Ölçüm"** (Radix popover `olcum-secici`, cmdk;
+"Genel → Kayıt sayısı" + sayı/para/tarih kolonlarında uygun işlemler, eklenmiş olanlar düşer; tavan 5) ·
+**"Liste görünümü"** (`serit-ozet-kapat`, `ozetKapat`). × ile son ölçüm kalkınca özet kendiliğinden kapanır
+(`olcumKaldir`), kolon çipleri geri gelir; `kolonlar` özet modunda durumda korunur. Sıralama çipi ölçüm anahtarında
+ölçüm etiketini basar; tablo başlıkları özet modunda gruplama alanı + ölçüm anahtarlarıyla sıralanır
+(`ReportsPage.siralanabilirMi`). `OlusturucuDurumu.gruplama/olcumler` daima dizi; `tanimOlustur` boşken YAZMAZ
+(sunucu serileştirmesiyle birebir — şablon "★ Kayıtlı"/sözle onay karşılaştırmaları `tanimNormalize` ile).
+Asistan kartı: "Uygulandı · Davalar · özet: 1 gruplama · 2 ölçüm · 1 filtre"; bekleyen kartta Kolonlar yerine
+Gruplama/Ölçümler satırları (`tanim-gruplama`, `tanim-olcumler`). Kanıt: `TanimSeridi.ozet.test.tsx`,
+`builderState.ozet.test.ts`, `lib/reports.ozet.test.ts`, `lib/reportsChat.ozet.test.ts`.
+
 ### 8.3 Çip düzenleme popover'ı (`FilterControl.tsx` yeniden kullanımı) — kontrol → op tablosu
 
 Filtre çipine tık → `Popover` (`filtre-duzenleyici`, `data-alan`; `TanimSeridi.tsx:352-373`) içinde **mevcut
@@ -853,9 +907,15 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 - **Bellek/süre ölçümü (G131 raporu, konteyner, 50.000 sentetik dava × 10 kolon, sqlite):** xlsx 2,6 MB /
   32,6 sn / tracemalloc tepe 8,4 MB; csv 7,3 MB / 2,3 sn / tepe 2,1 MB; `ru_maxrss` 75 → 89 MB.
   xlsx 50k satırda ~33 sn (openpyxl hücre maliyeti) — nginx 300 sn ve frontend 300 sn penceresi içinde.
-- **Önizleme maliyeti:** `davalar` tüm kolonlarla 6 korele alt sorgu taşır (4 taraf + 2 sayaç); EXISTS
-  filtreleri `case_parties(case_id)` üzerinden; otomatik önizleme her yapısal değişimde COUNT + sayfa
-  sorgusu atar — büyük filtrelerde `toplam` COUNT'u ölçülmedi (K10: index ölçülmeden yazılmaz).
+- **Önizleme maliyeti — ÖLÇÜLDÜ (12.09, lokal Postgres kopyası: 14.555 dava / 50.648 taraf / 8.395 föy):**
+  `davalar` tüm kolonlarla 6 korele alt sorgu taşır (4 taraf + 2 sayaç); EXISTS filtreleri
+  `case_parties(case_id)` üzerinden; otomatik önizleme her yapısal değişimde COUNT + sayfa sorgusu atar.
+  `EXPLAIN (ANALYZE, BUFFERS)` dört tipik tanımda (varsayılan filtresiz; taraf `contains` + tarih aralığı +
+  sıralama; varsayılan + `muvekkil.phone` + iki sayaç + `status` filtresi; belgeler varsayılan): COUNT 0,2-7,7 ms,
+  sayfa (LIMIT 10) 0,1-4,8 ms — veri boyutunda DB darboğaz DEĞİL; COUNT'u ayrı isteğe bölmek ölçülen kazanç
+  vermez, YAPILMADI (K10). Sınır: lokal kopya yazma trafiksiz (prod ölçümü `docker exec psql` sınıflandırıcıya
+  takıldı); prod'da yavaşlık hissedilirse önce aynı dört sorgu orada ölçülür (`scratchpad/explain.sql` deseni:
+  `motor.sorgu_kur` → `compile(postgresql, literal_binds)`).
 - **`/chat` NDJSON'u konteyner nginx'inden geçer** (`location /api`); `proxy_buffering` ayarı yok —
   `info` olayının canlı gelip gelmediği gündüz duman testinde gözle doğrulanır (G135 raporu adım 7).
 - **Asistan kalitesi:** 07.09 lokal duman testi 8 istemle geçti (plan §0); nginx arkasında HTTP duman
@@ -902,6 +962,8 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 | `backend/tests/test_g132_rapor_asistani.py` (G176 eki, 2 test; dosyada 30 test fonksiyonu — `grep -c "def test_"`, c839fdb) | `test_prompt_g176_uygulama_kurali_teyit_dongusu_yok` ("TEYİT DÖNGÜSÜ"/"hemen uygulanmaz"/"yine onay iste" YOK; "hemen uygulanır", "düzenlenebilir bir şeritte", "onay SORMA", belirsizlik, sözlü onay, "SIFIRDAN ÜRETME", düzeltme cümlesi VAR), `test_prompt_g176_yaklasik_ad_contains_ve_liste_sorusu` (`contains` + liste sorusu cümleleri; "aynen kopyala" korunmuş; yerleşim kurallar < KATALOG < MEVCUT TANIM) — eski prompt'ta kırmızı (G176 raporu, stash ile doğrulandı) |
 | `frontend/src/lib/reportsChat.test.ts` (**42**: G167 + G174 bölümleri), `components/reports/AssistantBar.test.tsx` (**16**), `pages/ReportsPage.asistan.test.tsx` (**23**), `ReportsPage.favori.test.tsx` (**12**) | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`, `onayNiyeti`, `kaydetNiyeti`; **G174:** `degerEsle` (alt dize temiz, birebir `eq`, tutmayan → adaylar kelime kesişimine göre sıralı ≤5, öneri listesiz kolon temiz, `in`/`between`/tarih/sayı/mantık atlanır, İ/ı ve U+0307 normalize), `listeNiyeti` (olumlu kalıplar + eylem fiilli olumsuzlar, etiket/hızlı filtre/eşanlamlı çözümü, belirsizde adaylar); otomatik uygulama (temiz tanım düğmesiz uygulanır, `uygulandi` + Geri al; sorunlu değer kartı + aday tık → uygula; "Yine de uygula"; liste balonu + liste tık → `onFiltreEkle`; "Hangisi?"); düzeltme `mevcut_tanim` = bekleyen; sözle onay hemen; sayfa reddederse kart bekler; tanımsız eylem; `indir_*` ile gelen temiz tanım doğrudan indirilir, 413 yolu; Geri al → yeniden bekleyen; sayfa düzeyinde liste balonu → `eq` → `in` birleşmesi → × ile düşme + toast; favori kartı indirme sonrası |
 | `frontend/src/lib/reports.test.ts` (**50**), `reports.export.test.ts` (**14**), `reports.favori.test.ts` (**10**) | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, şablon sahipliği, favori ad önerisi |
+| **12.09 özet modu:** `backend/tests/test_rapor_ozet_modu.py` (**26**: avukat başına sayı, ay/yıl/gün kırılımı — zaman damgalı `tr_gun`, gruplamasız tek satır, filtre WHERE'de, ölçüm anahtarıyla sıralama, özet CSV export, 12 × 422, katalog `gruplanabilir`/limitler, Postgres `AT TIME ZONE` derlemesi, asistan çevirisi, prompt kuralı); `frontend/src/lib/reports.ozet.test.ts` (**5**), `components/reports/builderState.ozet.test.ts` (**5**), `TanimSeridi.ozet.test.tsx` (**5**), `lib/reportsChat.ozet.test.ts` (**3**) | geçerlilik kapısı motor ikizi, etiketler, `tanimNormalize`; özet yardımcıları (aç/kapat, gruplama/ölçüm ekle-kaldır, kırılım, sıralama süzme, `tanimdanDurum`); şerit özet satırı (Σ Özet, çipler, kırılım döngüsü, + Grupla/+ Ölçüm listeleri, Liste görünümü, salt); asistan ayrıntı/özet/eşitlik |
+| **12.09 doğruluk düzeltmeleri:** `backend/tests/test_rapor_dogruluk_duzeltmeleri.py` (**14**) | saat dilimi bind'ı `+03:00`, UTC → TR serileştirme, Excel tz'siz, CSV ondalık virgül, Türkçe sıra (`tr_sira_anahtari`, öneriler, veriden seçenekler, DISTINCT katmanı) |
 | `frontend/src/components/reports/TanimSeridi.test.tsx` (**14**, G173), `builderState.test.ts` (**18**: 12 + G173 `kolonEkle` ×2, `kolonKaldir`, `filtreEkle` ×3), `FilterControl.test.tsx` (**11**), `PreviewTable.test.tsx` (**7**), `TemplateBar.test.tsx` (**4**) | yedi şerit öğesi + sarma + bağlı kolon önek/renk; kontrollü davranış; kaynak menüsü (farklı → `onKaynakSec`, aynı → çağrı yok); kolon × / tek kolon disabled; "+ Kolon" grup başlıkları + arama + seçim, hazır set tekrarsız + 60 tavanı; filtre popover (metin `gecikmeli=true`, liste hemen, odak çıkışı `onHemen`, ×); 300 önerili combobox + kesik başlığı + tarih kısayolu; "+ Filtre" akışı (boş → popover açık, çip yok → doldurunca çip; boş yuva yeniden kullanımı; Escape → durumda kalır; 20 tavanı); sıralama çipi ×; Temizle; "…" gelişmiş/"Basit kontrole dön"/boş kontrol çip vermez; `salt`; yuvalar/eklenen alanlar/temizle/tanımdan çözme; kontrol→op (değişmedi); başlıktan sıralama + "güncelleniyor…" + boş sonuç; kompakt şablon çubuğu |
 | `frontend/src/pages/ReportsPage.test.tsx` (**18**), `ReportsPage.sablon.test.tsx` (**13**) | dolu açılış (tek istek, varsayılan tanım), kaynak değişimi rozet menüsünden (eski satırlar anında düşer), otomatik önizleme (yapısal hemen / 600 ms popover'daki girdide / odak), şeritten filtre kaldırınca (×) ve şerit Temizle ile önizleme HEMEN, boş sonuç kısayolu, geçersiz tanım (gelişmiş çip değeri silinerek), arama kutusu (popover'da), 422/ağ/katalog hatası, anahtar kapalı → bilgi kartı + şerit/tablo/şablon/indirme çalışır, yerleşim sırası (`flex-wrap`, max-w yok), /reports kapısı, Sidebar; şablon yükle/kaydet/Güncelle-Sil "…" menüsünden, başkasının şablonunda menü yok, koşu tanımı yükleme (çip düzenleyicisinden okunur) |
 | **KALDIRILDI (G175):** `QuickFilters.test.tsx` (23), `ColumnSheet.test.tsx` (6), `SourceCards.test.tsx` (2) | bileşenleriyle birlikte silindi; çip/kontrol davranış testleri `TanimSeridi.test.tsx`'e taşındı |
