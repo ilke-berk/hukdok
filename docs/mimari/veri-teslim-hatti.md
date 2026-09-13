@@ -549,6 +549,29 @@ satıra dokunulmaz. `--apply` `--yedek <csv>` ister (silinen satırların dökü
 6 kullanıcı); kova sayıları değişmedi. Sonraki paketler yine satır yazar (delta'da çok az); aktarımın
 tarihçe yazım kapsamını daraltmak ayrı iş.
 
+### 7.4 Ekip cevabı düzeltmeleri — `scripts/ekip_cevabi_1209.py` (13.09.2026, G179)
+
+Veri ekibinin 12.09 cevabındaki kart id'li istekleri tek koşuda uygular; Ek-3 (`HUKDOK_CEVAP_EKI_3_2026-09-12.xlsx`,
+repoya girmez, `--ek3`) + dosyadaki sabit tablolar (`SABIT_CIFTLER`, `SABIT_DUZELTMELER`, `SABIT_KAPATMALAR`; her kalemin
+yanında kaynak satırı). Dört adım tek transaction'da, `--apply` yoksa geri alınır (`kos`): (1) çift kart — Ek-3 › 01'in
+37 satırı (eski 30.07 kartı `2.500`, 05.09 kartı `2.500.00`; G178 öncesi `.00` eki yüzünden açılmıştı) + §3/Ek-2 › 03
+özdeş çiftler; KALAN = 30.07 kartı / çiftin ilki, taşıma yolu `mukerrer_kart_birlestir.birlestir` (belge koruma, taraf
+tekilleştirme, soft delete, föyde `onceki_tracking_no`); ön koşul reddederse (müvekkil kümeleri farklı — H-15496'nın
+kartı iki müvekkilli Anadolu kartı) Ek-3 çiftinde kart birleşmez, yalnız föy 30.07 kartına taşınır (`_foy_tasi`); (2)
+föy taşıma — Ek-3 › 02 "Önerdiğimiz kart" dolu 8 satır, taraf bağı hedefteki aynı adlı CLIENT'a, iki kartta
+`case_history` `foy_tasima`; (3) kart düzeltmeleri — Ek-2 › 06 + §3 konu/hizmet: `muvekkil` (CLIENT adı + `clients`
+bağı), `klasor_ekle` (mükerrersiz), `klasor`, `court`, `esas_no` (`case_manager.sync_current_esas`, boşaltma dahil),
+`subject`/`hizmet_turu` (`case_subjects`/`service_types` listesinden kanonik ad, yoksa RET); eşit değer ATLANDI; (4)
+kapatma — üst mahkeme aşamasının hatalı kopyası 4 HK kartı: belgeler ekibin gösterdiği gerçek dosyanın kartına
+(`case_party_id=None`, `belge_tasima` tarihçesi), sonra soft delete (`api_delete_case` deseni); SMOKE/"Test İçin" 4
+kart hedefsiz soft delete. İkinci koşu 0 (birleşmiş çift `delete_reason` "#kalan ", taşınmış föy hedefte, eşit alan,
+kapalı kart). Uygulanmayanlar: 14393 "kontrol" (MİCRO teyidi), 28 "Rücu" kartı (liste yok; `bureau_type=Rücu`
+föysüz AXA/Sompo kartlarının çoğu "İtirazın İptali"), 14321/14322 (esas farklı → ret). Tarihçe imzası
+`changed_by=ekip_cevabi_1209`, `source="ekip cevabı 12.09.2026 (kim): kanıt"` — kesim-sonrası koruma bunu kullanıcı
+kaydı sayar (paket bu alanları ezmez; ekibin kendi düzeltmesi olduğundan zaten eşit gelir). Lokal kuru koşu 13.09:
+41 çift · 8 föy · 16 düzeltme · 8 kapatma (6 belge taşınır); `--apply` kullanıcı koşusu; yedek `C:\hukdok-veri\yedek\pre_g179_20260913.dump`.
+Test `tests/test_g179_ekip_cevabi_1209.py`. Birleşik 30 kartın geri ayrılması (Ek-3 › 03) ayrı görev (G180).
+
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin
