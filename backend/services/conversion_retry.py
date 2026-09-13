@@ -279,6 +279,12 @@ def _process_one(doc_id: int, islenmis_folder: str) -> str:
             notify_hukukbot(doc_id)
         except Exception as hook_err:
             TechnicalLogger.log("ERROR", f"Hukukbot export hook error (doc={doc_id}): {hook_err}")
+        # "Belge işlendi" bildirimi (13.09.2026): gündüz yolu (upload_queue) ile
+        # aynı sözleşme — sharepoint_url COMMIT edildikten sonra, akışı BOZMADAN.
+        # Prod ölçümünde bu yol bildirim üretmiyordu; gece tamamlanan belge
+        # avukata görünmez kalıyordu.
+        from services.upload_queue import _notify_document_processed
+        _notify_document_processed(doc_id)
 
     logger.info(
         f"Gece PDF dönüşümü tamamlandı: doc={doc_id} → {pdf_name} "

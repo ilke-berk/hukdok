@@ -218,10 +218,71 @@ def resolve_case_recipients(db: Session, case: Any) -> list[str]:
 
     Küçük harfe normalize edilmiş, tekilleştirilmiş liste döner. Allowlist dışı
     hiçbir adres dönmez. Boş liste = hedef yok (`unresolved_targets` bunları sayar).
+    Kopya alıcılar BU listeye girmez — bkz. `resolve_notification_recipients`.
     """
     if case is None:
         return []
     return resolve_recipients(db, getattr(case, "responsible_lawyer_name", None))
+
+
+def copy_recipients(db: Session, domains: Optional[tuple[str, ...]] = None) -> list[str]:
+    """Bildirim kopyası alan ofis adresleri (`email_recipients.notify_copy`, 13.09.2026).
+
+    Ölçüm gerekçesi (prod, 13.09.2026): 240 bildirimin 240'ı okunmamıştı — alıcı
+    olan sorumlu avukat hesapları sisteme hiç girmiyor, belgeyi yükleyen ve duruşmayı
+    giren ofis personeli ise hiçbir davada sorumlu olmadığından bildirim almıyordu.
+    Bayrak yönetim panelinden açılır; allowlist burada da kapıdır (dış adres kopya
+    alamaz). Sıra `sequence`, tekil, küçük harf. DB'ye YAZMAZ.
+    """
+    izinli = domains if domains is not None else notification_domains()
+    rows = (
+        db.query(models.EmailRecipient)
+        .filter(models.EmailRecipient.active.isnot(False))
+        .filter(models.EmailRecipient.notify_copy.is_(True))
+        .order_by(models.EmailRecipient.sequence.asc(), models.EmailRecipient.id.asc())
+        .all()
+    )
+    out: list[str] = []
+    for rec in rows:
+        email = normalize_email(cast(Optional[str], rec.email))
+        if email and is_allowed_email(email, izinli) and email not in out:
+            out.append(email)
+    return out
+
+
+def resolve_notification_recipients(
+    db: Session,
+    case: Any,
+    *,
+    exclude: Optional[str] = None,
+    fallback: Optional[str] = None,
+    copies: Optional[list[str]] = None,
+) -> tuple[list[str], list[str]]:
+    """Bir dava bildiriminin NİHAİ alıcı kümesi: sorumlu avukat(lar) + kopya alıcılar.
+
+    Döner: `(alicilar, sorumlular)` — ilki yazılacak tam liste, ikincisi yalnız
+    sorumlu avukattan çözülen kısım (çağıran "sorumlu çözülemedi" sayacını buna göre
+    tutar; kopya alıcı hedefsizliği MASKELEMEZ).
+
+    * `exclude`: bu adres listeden düşer — belgeyi yükleyen kişi kendi işlediği
+      belgenin bildirimini almaz (kullanıcı kararı, 13.09.2026). Sorumlu avukat
+      belgeyi kendisi yüklediyse o da düşer; kural kişiye değil eyleme bağlıdır.
+    * `fallback`: sorumlu çözülemezse denenecek ikinci serbest metin (duruşma
+      zaptındaki avukat adı).
+    * `copies`: gece taraması gibi çok satırlı turlarda kopya listesi bir kez
+      hesaplanıp verilir; None ise burada sorgulanır.
+    """
+    sorumlular = resolve_case_recipients(db, case)
+    if not sorumlular and fallback:
+        sorumlular = resolve_recipients(db, fallback)
+    kopyalar = copies if copies is not None else copy_recipients(db)
+    haric = normalize_email(exclude) if exclude else None
+    alicilar: list[str] = []
+    for email in [*sorumlular, *kopyalar]:
+        if email == haric or email in alicilar:
+            continue
+        alicilar.append(email)
+    return alicilar, sorumlular
 
 
 def unresolved_targets(db: Session) -> list[dict[str, Any]]:

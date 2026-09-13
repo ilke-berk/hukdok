@@ -592,6 +592,13 @@ class EmailRecipient(Base):
     description = Column(String, nullable=True)
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
+    # Bildirim kopyası (13.09.2026): işaretli alıcı, davanın sorumlu avukatına
+    # yazılan HER uygulama içi bildirimin (belge işlendi / süre / duruşma) kopyasını
+    # alır. Ölçüm gerekçesi: sorumlu avukat hesapları sisteme girmiyor, belgeyi
+    # yükleyen ofis personeli hiç bildirim almıyordu (240/240 okunmamış).
+    # Alan adı allowlist'i (NOTIFICATION_DOMAINS) burada da geçerlidir; belgeyi
+    # yükleyen kişi kendi belgesinin bildirimini almaz (services/notifications.py).
+    notify_copy = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 

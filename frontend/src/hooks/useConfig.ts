@@ -8,6 +8,8 @@ export interface ConfigItem {
     name: string;
     email?: string;
     description?: string;
+    /** E-posta alıcısı: sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır. */
+    notify_copy?: boolean;
     parent_code?: string;
     role_type?: string;
     tc_no?: string;

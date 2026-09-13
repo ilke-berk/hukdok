@@ -108,6 +108,87 @@ DOCTYPE_TO_STAGE_MAP = {
 }
 DTYPE_TO_STAGE_MAP_ITEMS = list(DOCTYPE_TO_STAGE_MAP.items())
 
+# Karar belgesi türü → karar TARİHÇESİ aşaması (`case_stage_decisions.stage`).
+# 13.09.2026: kullanıcının /confirm'de girdiği tebliğ tarihi yalnız e-posta
+# metnine gidiyordu; kanuni süre uyarısının kaynağı olan aşama satırına hiç
+# yazılmıyordu. Yalnız KARAR belgeleri eşlenir — TEBLIGAT (mazbata) her şeyin
+# tebliği olabilir, ondan süre türetmek yanlış alarm üretirdi. Anahtar kodun
+# harf/rakam dışı karakterleri atılmış hâlidir: prod'da aynı tür
+# "GEREKCELIKRR" / "GEREKCELI-KRR" / "GEREKCELI-KRR_" yazımlarıyla kayıtlı.
+KARAR_DOCTYPE_TO_DECISION_STAGE = {
+    "GEREKCELIKRR": "YEREL",
+    "ISTINAFKRR": "ISTINAF",
+    "YARGITAYKRR": "TEMYIZ",
+    "KRRDZLTMKRR": "KARAR_DUZELTME",
+}
+
+
+def decision_stage_for_doctype(code: Optional[str]) -> Optional[str]:
+    """Belge türü kodu bir karar belgesiyse tarihçe aşaması, değilse None."""
+    anahtar = "".join(ch for ch in (code or "").upper() if ch.isalnum())
+    return KARAR_DOCTYPE_TO_DECISION_STAGE.get(anahtar)
+
+
+def _auto_stage_teblig(
+    case_id: Optional[int],
+    belge_turu_kodu: Optional[str],
+    teblig_tarihi: Optional[str],
+    uploaded_by: Optional[str] = None,
+    source_name: Optional[str] = None,
+) -> Optional[dict]:
+    """Karar belgesiyle girilen tebliğ tarihini aşama kararına yazar (best-effort).
+
+    Tek yazma yolu `stage_decisions.fill_teblig_tarihi` (boş alan dolar, dolu
+    alan ezilmez). Sonuç `results["teblig_kaydi"]`: {"stage", "action"} ya da
+    None (karar belgesi değil / tarih yok / dokunulmadı). Hata /confirm'i
+    bozmaz — WARNING (belge arşive girdi, nihai başarısızlık değil).
+    """
+    stage = decision_stage_for_doctype(belge_turu_kodu)
+    iso = normalize_date_for_sharepoint(teblig_tarihi) if teblig_tarihi else None
+    if not case_id or not stage or not iso:
+        return None
+    from datetime import date as _date
+    from managers import stage_decisions
+    db = None
+    try:
+        db = SessionLocal()
+        case = db.query(models.Case).filter(
+            models.Case.id == case_id,
+            models.Case.deleted_at.is_(None),
+        ).first()
+        if not case:
+            return None
+        gun = _date.fromisoformat(iso)
+        action = stage_decisions.fill_teblig_tarihi(
+            db, case, stage=stage, teblig_tarihi=gun,
+            source=f"belge:{source_name}" if source_name else "belge",
+        )
+        if action is None:
+            db.rollback()
+            return None
+        db.add(models.CaseHistory(
+            case_id=case_id,
+            field_name=f"{stage}.teblig_tarihi",
+            old_value=None,
+            new_value=iso,
+            changed_by=uploaded_by,
+            source="auto-teblig",
+        ))
+        db.commit()
+        logging.info(f"Case {case_id} {stage} tebliğ tarihi belgeden yazıldı ({action}): {iso}")
+        return {"stage": stage, "action": action, "teblig_tarihi": iso}
+    except Exception as e:
+        logging.warning(f"Tebliğ tarihi aşama kararına yazılamadı (case={case_id}): {e}")
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return None
+    finally:
+        if db is not None:
+            db.close()
+
 
 def refresh_lists_background():
     """Background Task: Updates Singleton Config from Database."""
@@ -889,6 +970,11 @@ async def confirm_process(
                 )
             else:
                 results["auto_status_update"] = False
+
+            # Karar belgesiyle girilen tebliğ tarihi → aşama kararı (süre uyarısı kaynağı)
+            results["teblig_kaydi"] = _auto_stage_teblig(
+                linked_case_id, belge_turu_kodu, teblig_tarihi, current_user_name, final_stored_name
+            )
 
             results["auto_enrichment"] = _auto_enrich_case_data(
                 linked_case_id, avukat_kodu, karsi_taraf, current_user_name

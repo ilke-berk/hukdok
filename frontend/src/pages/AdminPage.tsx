@@ -377,6 +377,10 @@ const AdminPage = () => {
                     { key: "name", label: "Ad Soyad", format: "title" },
                     { key: "email", label: "E-posta" },
                     { key: "description", label: "Rol" },
+                    // Bildirim kopyası: sorumlu avukata yazılan her uygulama içi
+                    // bildirim (belge işlendi / süre / duruşma) bu kişiye de düşer;
+                    // kendi yüklediği belgenin bildirimi hariç.
+                    { key: "notify_copy", label: "Bildirim kopyası", options: [{ value: "true", label: "Evet — bildirimlerin kopyasını alır" }, { value: "false", label: "Hayır" }] },
                 ];
             case "court_types":
                 return [
@@ -449,7 +453,11 @@ const AdminPage = () => {
             type,
             id: identifierOf(type, item),
             title: item.name || item.email || "",
-            values: Object.fromEntries(fields.map(f => [f.key, item[f.key] ?? ""] as const)),
+            // Boolean alan (notify_copy) açılır listede "true"/"false" metnine çevrilir
+            values: Object.fromEntries(fields.map(f => {
+                const v = item[f.key];
+                return [f.key, typeof v === "boolean" ? String(v) : (v ?? "")] as const;
+            })),
         });
     };
 
@@ -998,7 +1006,7 @@ const AdminPage = () => {
                                 </CardHeader>
                                 <CardContent>
                                     <Table>
-                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead title="Sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır">Bildirim</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <SortableContext items={localEmails.map(i => i.email ?? "")} strategy={verticalListSortingStrategy}>
                                                 {localEmails.filter(i => trMatch(i.name, listSearch) || trMatch(i.email, listSearch) || trMatch(i.description, listSearch)).map((item) => (
@@ -1006,6 +1014,7 @@ const AdminPage = () => {
                                                         <TableCell className="font-medium">{item.name}</TableCell>
                                                         <TableCell>{item.email}</TableCell>
                                                         <TableCell>{item.description || "-"}</TableCell>
+                                                        <TableCell className="text-xs">{item.notify_copy ? <span className="text-[var(--brand)] font-semibold">Kopya alır</span> : <span className="opacity-30">—</span>}</TableCell>
                                                         <TableCell className="text-right">
                                                             <Button variant="ghost" size="icon" onClick={() => openEdit("emails", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
                                                             <Button variant="ghost" size="icon" onClick={() => openDelete("emails", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>

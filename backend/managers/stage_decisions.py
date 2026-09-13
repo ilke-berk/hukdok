@@ -489,6 +489,58 @@ def update_stage_decision(
     return fark
 
 
+def latest_stage_decision(db: Session, case_id: int, stage: str) -> Optional[models.CaseStageDecision]:
+    """Aşamanın EN YÜKSEK sira_no'lu satırı (yoksa None) — fotoğrafın kaynağı."""
+    return (
+        db.query(models.CaseStageDecision)
+        .filter(
+            models.CaseStageDecision.case_id == case_id,
+            models.CaseStageDecision.stage == _validated_stage(stage),
+        )
+        .order_by(models.CaseStageDecision.sira_no.desc())
+        .first()
+    )
+
+
+def fill_teblig_tarihi(
+    db: Session,
+    case: models.Case,
+    *,
+    stage: str,
+    teblig_tarihi: date,
+    source: Optional[str] = None,
+) -> Optional[str]:
+    """Belge işlemeden gelen tebliğ tarihini aşamanın son kararına YAZAR (13.09.2026).
+
+    Kanuni süre uyarısının tek kaynağı `teblig_tarihi`dir; prod ölçümünde bu alan
+    yalnız aktarım paketinden doluydu ve günlük kullanımda hiç girilmiyordu.
+    Kural — yalnız BOŞ alan dolar, dolu alan EZİLMEZ (belgeli/UYAP satır dâhil:
+    boş alanı belgeden doldurmak G150'nin "belgeli taraf kazanır" ilkesini
+    çiğnemez, tersine uygular). Satır yoksa yalnız tebliğ tarihini taşıyan
+    BELGE damgalı yeni satır açılır. Dönüş: "eklendi" | "dolduruldu" | None
+    (alan zaten doluydu → dokunulmadı). Commit çağıranın işidir.
+    """
+    stage = _validated_stage(stage)
+    if case.id is None:
+        db.flush()
+    row = latest_stage_decision(db, cast(int, case.id), stage)
+    if row is None:
+        add_stage_decision(
+            db, case, stage=stage, teblig_tarihi=teblig_tarihi,
+            dogrulama_durumu=DOGRULAMA_BELGE, source=source,
+            aciklama="Tebliğ tarihi belge işlemeden yazıldı",
+        )
+        return "eklendi"
+    if row.teblig_tarihi is not None:
+        return None
+    row.teblig_tarihi = teblig_tarihi
+    if not row.source:
+        row.source = _clamped(source, "source")
+    db.flush()
+    _resync_stage_photo(db, case, stage)
+    return "dolduruldu"
+
+
 def add_stage_decision(
     db: Session,
     case: models.Case,

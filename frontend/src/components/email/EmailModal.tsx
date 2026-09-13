@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api";
+import { isKararDoctype } from "@/lib/kararDoctype";
 
 interface EmailModalProps {
     isOpen: boolean;
@@ -78,6 +79,9 @@ export function EmailModal({
 
     const [sendEmail, setSendEmail] = useState(true);
     const [tebligTarihi, setTebligTarihi] = useState("");
+    // Karar belgesi mi? Backend `routes/processing.KARAR_DOCTYPE_TO_DECISION_STAGE`
+    // ile aynı küme: yalnız bu türlerde tebliğ tarihi aşama kararına yazılır.
+    const kararBelgesi = isKararDoctype(analysisContext?.belge_turu_kodu);
 
     // Recipients
     const [selectedRecipients, setSelectedRecipients] = useState<{ name: string, email: string }[]>([]);
@@ -337,7 +341,11 @@ export function EmailModal({
                                             value={tebligTarihi}
                                             onChange={(e) => setTebligTarihi(e.target.value)}
                                         />
-                                        <p className="text-[10px] text-[var(--fg-muted)]">Seçilirse e-posta metninde belirtilecektir.</p>
+                                        <p className="text-[10px] text-[var(--fg-muted)]">
+                                            {kararBelgesi
+                                                ? "Karar belgesi: girilen tebliğ tarihi dava kartındaki aşama kararına yazılır ve kanuni süre uyarısı (T-15/7/3/1) buradan üretilir."
+                                                : "Seçilirse e-posta metninde belirtilecektir."}
+                                        </p>
                                     </div>
 
                                     {/* TO Field */}

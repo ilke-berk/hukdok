@@ -77,7 +77,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
 from services.legal_deadlines import Deadline, deadline_for
-from services.notification_targeting import resolve_case_recipients, resolve_recipients
+from services.notification_targeting import copy_recipients, resolve_notification_recipients
 # Dava künyesi ("ofis no · esas no · mahkeme") G082 ile AYNI biçimde yazılır;
 # ikinci bir kopya tutulmaz (notification_targeting'in lawyer_resolver'dan
 # normalize edici alması ile aynı gerekçe: biçim iki yerde ayrışmasın).
@@ -222,8 +222,14 @@ def _sure_govdesi(case: Any, karar: Any, dl: Deadline, kalan: int) -> str:
     return "\n".join(satirlar)
 
 
-def _sure_adaylari(db: Session, gun: date, sayaclar: dict[str, int]) -> list[_Aday]:
-    """Tebliğ tarihi olan aşama kararlarından yaklaşan süreleri çıkarır."""
+def _sure_adaylari(
+    db: Session, gun: date, sayaclar: dict[str, int], kopyalar: Optional[list[str]] = None,
+) -> list[_Aday]:
+    """Tebliğ tarihi olan aşama kararlarından yaklaşan süreleri çıkarır.
+
+    `kopyalar`: kopya alıcı listesi (turda bir kez hesaplanır); None ise her
+    dava için sorgulanır (test/elle çağrı).
+    """
     rows = (
         db.query(models.CaseStageDecision, models.Case)
         .join(models.Case, models.Case.id == models.CaseStageDecision.case_id)
@@ -253,16 +259,20 @@ def _sure_adaylari(db: Session, gun: date, sayaclar: dict[str, int]) -> list[_Ad
                 sayaclar["atlanan"] += 1
                 continue
 
-            alicilar = resolve_case_recipients(db, case)
-            if not alicilar:
+            alicilar, sorumlular = resolve_notification_recipients(db, case, copies=kopyalar)
+            if not sorumlular:
+                # Sorumlu çözülemedi: kopya alıcı varsa uyarı yine ulaşır ama
+                # hedefsizlik sayaçta/logda görünür kalır (veri kalitesi sinyali).
                 sayaclar["hedefsiz"] += 1
                 logger.warning(
                     "Süre bildirimi hedefsiz: sorumlu avukat çözülemedi "
-                    "(stage_decision=%s, case=%s, sorumlu=%r)",
+                    "(stage_decision=%s, case=%s, sorumlu=%r, kopya=%s)",
                     karar_id,
                     cast(Optional[int], case.id),
                     cast(Optional[str], case.responsible_lawyer_name),
+                    len(alicilar),
                 )
+            if not alicilar:
                 continue
 
             govde = _sure_govdesi(case, karar, dl, kalan)
@@ -310,7 +320,9 @@ def _durusma_govdesi(case: Any, durusma: Any, kalan: int) -> str:
     return "\n".join(satirlar)
 
 
-def _durusma_adaylari(db: Session, gun: date, sayaclar: dict[str, int]) -> list[_Aday]:
+def _durusma_adaylari(
+    db: Session, gun: date, sayaclar: dict[str, int], kopyalar: Optional[list[str]] = None,
+) -> list[_Aday]:
     """Gelecek duruşmalardan yaklaşanları çıkarır.
 
     Üst sınır SQL'de (G097): en geniş eşik 3 gün → daha uzak duruşma zaten
@@ -350,21 +362,24 @@ def _durusma_adaylari(db: Session, gun: date, sayaclar: dict[str, int]) -> list[
                 continue
 
             # Alıcı sırası: davanın sorumlusu (diğer tüm bildirimlerle aynı
-            # kural), o çözülemezse zaptan çıkarılan duruşma avukatı. İkisi de
-            # G080 çözümleyicisinden geçer — allowlist dışı adres dönemez.
-            alicilar = resolve_case_recipients(db, case)
-            if not alicilar:
-                alicilar = resolve_recipients(db, cast(Optional[str], durusma.lawyer_name))
-            if not alicilar:
+            # kural), o çözülemezse zaptan çıkarılan duruşma avukatı; üstüne
+            # kopya alıcılar. Hepsi G080 çözümleyicisinden geçer — allowlist
+            # dışı adres dönemez.
+            alicilar, sorumlular = resolve_notification_recipients(
+                db, case, fallback=cast(Optional[str], durusma.lawyer_name), copies=kopyalar,
+            )
+            if not sorumlular:
                 sayaclar["hedefsiz"] += 1
                 logger.warning(
                     "Duruşma bildirimi hedefsiz: sorumlu avukat çözülemedi "
-                    "(hearing=%s, case=%s, sorumlu=%r, zapt=%r)",
+                    "(hearing=%s, case=%s, sorumlu=%r, zapt=%r, kopya=%s)",
                     durusma_id,
                     cast(Optional[int], case.id),
                     cast(Optional[str], case.responsible_lawyer_name),
                     cast(Optional[str], durusma.lawyer_name),
+                    len(alicilar),
                 )
+            if not alicilar:
                 continue
 
             govde = _durusma_govdesi(case, durusma, kalan)
@@ -429,8 +444,10 @@ def scan_deadlines(bugun: Optional[date] = None, db: Optional[Session] = None) -
     try:
         gun = bugun or bugun_tr()
         try:
-            adaylar = _sure_adaylari(session, gun, sayaclar)
-            adaylar.extend(_durusma_adaylari(session, gun, sayaclar))
+            # Kopya alıcılar turda BİR kez çözülür (her satır için sorgu boşuna).
+            kopyalar = copy_recipients(session)
+            adaylar = _sure_adaylari(session, gun, sayaclar, kopyalar)
+            adaylar.extend(_durusma_adaylari(session, gun, sayaclar, kopyalar))
             _yaz(session, adaylar, sayaclar)
         except Exception as e:
             # Tarama sorgusu düştü: tur yarıda kaldı → NİHAİ başarısızlık, TEK ERROR.

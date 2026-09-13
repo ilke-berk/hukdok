@@ -1127,6 +1127,15 @@ _MIGRATIONS = [
         "UPDATE cases SET status = CASE WHEN status = 'KAPALI' THEN 'MAHZEN' ELSE 'DERDEST' END "
         "WHERE status IN ('KARAR', 'ISTINAF', 'TEMYIZ', 'KARAR_DUZELTME', 'KESINLESME', 'INFAZ', 'KAPALI')",
     ]),
+
+    # ─── 51. BİLDİRİM KOPYASI BAYRAĞI (13.09.2026) ────────────────────────────
+    # `email_recipients.notify_copy`: işaretli alıcı sorumlu avukata yazılan her
+    # uygulama içi bildirimin kopyasını alır (models.EmailRecipient şerhi,
+    # services/notification_targeting.copy_recipients). Mevcut satırlar FALSE
+    # ile dolar; yönetim paneli > E-posta Alıcıları > Düzenle ile açılır.
+    ("columns", "email_recipients", {
+        "notify_copy": "BOOLEAN DEFAULT FALSE",
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import Boolean, func
 from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal
@@ -163,8 +163,8 @@ LIST_REGISTRY = {
     "statuses":          ListSpec(models.Status, ("code", "name"), "set_statuses"),
     "doctypes":          ListSpec(models.DocType, ("code", "name"), "set_doctypes"),
     "case_subjects":     ListSpec(models.CaseSubject, ("code", "name"), "set_case_subjects"),
-    "emails":            ListSpec(models.EmailRecipient, ("name", "email", "description"), "set_email_recipients", key="email",
-                                  editable=("name", "email", "description")),
+    "emails":            ListSpec(models.EmailRecipient, ("name", "email", "description", "notify_copy"), "set_email_recipients", key="email",
+                                  editable=("name", "email", "description", "notify_copy")),
     "file_types":        ListSpec(models.FileType, ("code", "name"), "set_file_types"),
     "court_types":       ListSpec(models.CourtType, ("code", "name", "parent_code"), "set_court_types", order_by=("parent_code", "sequence"),
                                   editable=("name", "parent_code")),
@@ -293,6 +293,16 @@ DEPENDENCIES = {
     # idare adı yeniden adlandırılınca taraf kayıtları elle güncellenir).
     "defendant_administrations": [],
 }
+
+
+_TRUE_WORDS = frozenset({"1", "true", "evet", "yes", "on"})
+
+
+def _as_bool(value) -> bool:
+    """Form/JSON'dan gelen boolean: gerçek bool aynen, metin küçük harf eşleşmesiyle."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in _TRUE_WORDS
 
 
 def _spec(list_type: str):
@@ -571,6 +581,12 @@ def update_item(list_type: str, identifier: str, fields: dict):
     fields = {k: v for k, v in (fields or {}).items() if k in spec.editable and v is not None}
     if not fields:
         return {"updated": 0}
+    # Boolean kolonlar (email_recipients.notify_copy) formdan "true"/"false"
+    # metni olarak gelir; SQLAlchemy Boolean metni kabul etmez, burada çevrilir.
+    for k in list(fields):
+        col = spec.model.__table__.columns.get(k)
+        if col is not None and isinstance(col.type, Boolean):
+            fields[k] = _as_bool(fields[k])
 
     # Kimlik kolonu (e-posta alıcılarında e-posta) boşaltılamaz
     if spec.key in fields and not fields[spec.key].strip():
@@ -621,6 +637,9 @@ def update_item(list_type: str, identifier: str, fields: dict):
                 raise DuplicateItemError(f"\"{new_key}\" zaten listede mevcut")
 
         for field, value in fields.items():
+            if isinstance(value, bool):
+                setattr(item, field, value)       # False de geçerli bir değerdir, None'a düşmez
+                continue
             setattr(item, field, value if field == "name" else (value or None))
 
         updated = 0

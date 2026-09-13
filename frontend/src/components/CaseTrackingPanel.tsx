@@ -153,6 +153,10 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     const fields       = STAGE_FIELDS[selectedKey] ?? [];
     const gecmisKararlar = asamaSatirlari(selectedKey);
     const oncekiEsaslar  = tarihce?.onceki_esaslar ?? [];
+    // Süresi tebliğden işleyen aşamalarda son kararın tebliğ tarihi boşsa uyarı
+    const sonKarar = gecmisKararlar.length > 0 ? gecmisKararlar[gecmisKararlar.length - 1] : null;
+    const tebligEksik = !!sonKarar && (selectedKey === "KARAR" || selectedKey === "ISTINAF")
+        && !!sonKarar.karar_tarihi && !sonKarar.teblig_tarihi;
     // Aşama boşken karar kayıtlarından türeyen ÖNERİ (yazmaz — kullanıcı onaylar)
     const onerilenAsama  = stageBilinmiyor
         ? suggestedStageFromDecisions((tarihce?.decisions ?? []).map(d => d.stage))
@@ -678,6 +682,20 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         hiçbiri görünmezdi. */}
                     {tarihceHatasi && (
                         <p className="mt-4 text-xs text-amber-700 dark:text-amber-400">{tarihceHatasi}</p>
+                    )}
+                    {/* ── Tebliğ tarihi eksik uyarısı (13.09.2026) ──
+                        Kanuni süre uyarısının TEK kaynağı aşama kararındaki tebliğ
+                        tarihidir; prod ölçümünde alan günlük kullanımda hiç
+                        girilmiyordu. Yalnız süresi tebliğden işleyen aşamalarda
+                        (yerel → istinaf, istinaf → temyiz) gösterilir. */}
+                    {tebligEksik && (
+                        <div className="mt-4 flex items-center gap-2 flex-wrap rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="text-xs text-muted-foreground">
+                                Bu aşamanın son kararında <span className="font-semibold text-foreground">tebliğ tarihi</span> yok:
+                                kanuni süre uyarısı üretilemez. Kararı işlerken tebliğ tarihini girin ya da yukarıdaki alandan ekleyin.
+                            </span>
+                        </div>
                     )}
                     {gecmisKararlar.length > 0 && (
                         <div className="mt-5 pt-4 border-t border-border/60">

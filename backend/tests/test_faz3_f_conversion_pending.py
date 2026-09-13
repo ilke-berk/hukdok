@@ -506,7 +506,16 @@ def _night_env(monkeypatch, tmp_path, doc, convert=None, upload=None):
         export_publisher, "notify_hukukbot",
         lambda doc_id: notified.append((doc_id, doc.conversion_status)),
     )
-    return SimpleNamespace(uploads=uploads, superseded=superseded, notified=notified, pdfa=pdfa)
+    # 13.09.2026: gece yolu da "belge işlendi" bildirimi üretir (gündüz yoluyla
+    # aynı sarmalayıcı) — sıra: hukukbot'tan SONRA, URL commit edilmiş hâlde.
+    bildirimler = []
+    monkeypatch.setattr(
+        upload_queue, "_notify_document_processed",
+        lambda doc_id: bildirimler.append((doc_id, doc.sharepoint_url, len(notified))),
+    )
+    return SimpleNamespace(
+        uploads=uploads, superseded=superseded, notified=notified, bildirimler=bildirimler, pdfa=pdfa,
+    )
 
 
 def _pending_doc(tmp_path, **kw):
@@ -537,6 +546,8 @@ def test_night_success_completes_flow_and_opens_hukukbot_last(monkeypatch, tmp_p
     assert env.superseded == [(7, "islenmis")]
     # Hukukbot ANCAK statü düştükten SONRA açıldı
     assert env.notified == [(7, None)]
+    # "Belge işlendi" bildirimi: URL yazılmış hâlde, hukukbot'tan sonra, bir kez
+    assert env.bildirimler == [(7, "https://sp/yeni.pdf", 1)]
     # Spool ve pdfa temp temizlendi
     assert not (tmp_path / "spool_orijinal.udf").exists()
     assert not env.pdfa.exists()

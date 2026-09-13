@@ -319,15 +319,22 @@ def notify_document_processed(document_id: int, db: Optional[Session] = None) ->
         if case_id:
             case = session.query(models.Case).filter(models.Case.id == case_id).first()
 
-        from services.notification_targeting import resolve_case_recipients
-        recipients = resolve_case_recipients(session, case) if case is not None else []
-        if not recipients:
+        # Alıcı = sorumlu avukat(lar) + kopya alıcılar (13.09.2026) − belgeyi
+        # yükleyen: kişi kendi işlediği belgenin bildirimini almaz.
+        from services.notification_targeting import resolve_notification_recipients
+        yukleyen = cast(Optional[str], getattr(doc, "uploaded_by_email", None))
+        if case is not None:
+            recipients, sorumlular = resolve_notification_recipients(session, case, exclude=yukleyen)
+        else:
+            recipients, sorumlular = [], []
+        if not sorumlular:
             sorumlu = getattr(case, "responsible_lawyer_name", None) if case is not None else None
             logger.warning(
                 "Belge işlendi bildirimi hedefsiz: sorumlu avukat çözülemedi "
-                "(doc=%s, case=%s, sorumlu=%r)",
-                document_id, case_id, sorumlu,
+                "(doc=%s, case=%s, sorumlu=%r, kopya=%s)",
+                document_id, case_id, sorumlu, len(recipients),
             )
+        if not recipients:
             return []
 
         belge_adi = (

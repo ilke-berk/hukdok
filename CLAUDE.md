@@ -65,6 +65,15 @@ outbox + reconcile'dadır, webhook yalnız gecikmeyi sıfırlar). Ofis dosya no 
 sırasında SharePoint sayacından ATOMİK tahsis edilir (ETag/If-Match; timeout'ta numara
 atlanır — mükerrere tercih edilir).
 
+**Uygulama içi bildirim** (`docs/mimari/bildirimler.md`): kanal yalnız zil, e-posta
+değil. Üreticiler `belge_islendi` (URL commit sonrası; gündüz `upload_queue` ve gece
+`conversion_retry`), `sure_yaklasti`/`durusma_yaklasti` (06:00 TR lider taraması,
+`services/deadline_scanner.py`). Alıcı = sorumlu avukat(lar) + `email_recipients.notify_copy`
+kopya alıcıları − belgeyi yükleyen (`notification_targeting.resolve_notification_recipients`);
+allowlist `NOTIFICATION_DOMAINS`. Süre uyarısının TEK kaynağı `case_stage_decisions.teblig_tarihi`;
+`/confirm`'de karar belgesiyle girilen tebliğ tarihi oraya yazılır
+(`processing.KARAR_DOCTYPE_TO_DECISION_STAGE`, boş alan dolar dolu alan ezilmez).
+
 **Stream sözleşmesi** (`analyzer.py::_failed_event`, frontend ile ORTAK referans):
 olaylar `{"status": "info"/"warning"/"error"/"complete"/"failed", ...}`.
 Nihai başarısızlık: `{"status":"failed", "error_ozet", "error_kod"}`; `error_kod`
@@ -145,7 +154,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-08-22: 2019 passed, 3 skipped
+docker compose exec -T backend python -m pytest            # 2026-09-13: 3390 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -155,7 +164,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-08-22: 550 passed (43 dosya)
+npm --prefix frontend test                                 # 2026-09-13: 940 passed (74 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
@@ -209,7 +218,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | Yol | Ne | Güvenilirlik |
 | --- | --- | --- |
 | `CLAUDE.md` | Bu dosya — giriş noktası | Güncel tutulur |
-| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, veri teslim hattı, raporlama (`raporlama.md`), dış bağımlılıklar, deploy ve altyapı, kimlik ve token (`kimlik-ve-token.md`) | GÜNCEL — kodla çelişirse doküman düzeltilir |
+| `docs/mimari/` | Yaşayan mimari dokümanları: genel bakış, belge işleme hattı, dava açma akışı, veri teslim hattı, raporlama (`raporlama.md`), bildirimler (`bildirimler.md`), dış bağımlılıklar, deploy ve altyapı, kimlik ve token (`kimlik-ve-token.md`) | GÜNCEL — kodla çelişirse doküman düzeltilir |
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
