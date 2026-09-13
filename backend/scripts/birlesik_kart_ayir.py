@@ -284,7 +284,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--apply", action="store_true", help="yaz (varsayılan kuru koşu)")
     parser.add_argument("--kim", default=DEGISTIREN, help="tarihçe imzası")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    from logging_setup import configure_logging    # log sözleşmesi: yapılandırma tek yerde
+    configure_logging()
     idler = list(args.kart)
     if args.ek3:
         idler = sorted(set(idler) | set(ek3_kartlari(Path(args.ek3))))
