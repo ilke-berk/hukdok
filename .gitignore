@@ -95,3 +95,5 @@ dava_dosyalari_full_*.csv
 dava_dosyalari_full_*.xlsx
 # TS incremental build ciktilari
 *.tsbuildinfo
+# graphify bilgi grafigi ciktisi (deneme, 38 MB; graph.json 19.5 MB) - commit etme
+graphify-out/

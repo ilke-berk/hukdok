@@ -3,6 +3,30 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
+     kural setleriyle; ölçüm lokal restore kopyasında — süreler prod'u temsil etmez, planlar eder). Öncelik raporun §5 sırası.
+     Kararlar 14.09: D3 VACUUM FULL, D7 index düşürme, D9 VALIDATE prod ÖLÇÜMÜ ister → G183 yalnız ölçer, uygulamaz;
+     F6 (TC localStorage) performans değil KVKK → G188'de ayrı; `uq_cases_sistem_no` DOKUNULMAZ; F13 font, D12 jsonb,
+     D13/D14 bilinçli açık. Trigram index'ler `_TRGM_INDEXES` sözlüğüyle (G043), düşürme `("index", ...)` op'uyla (G041/G042).
+     Zincirler: frontend G182→G184→G185→G186 (App.tsx + useConfig tüketicileri ortak), G182→G187 (AdminPage ayrı),
+     G184→G188 (App.tsx provider sırası); backend seri G183→G189→{G190,G191}→G192 (database.py ortak); docs G193 en son.
+     Paralel çiftler: G182‖G183, G184‖G189, G185/G187‖G190/G191, G186/G188‖G192. Tahmin: 3 gece. -->
+
+- [ ] G182 | bant:frontend | bagimli:- | Route düzeyinde kod bölme (React.lazy + Suspense, bayat parça tek reload) + sonner statik import + nginx `/assets/` immutable önbellek / index.html no-cache — giriş parçası gzip ≤ 300 kB, rapor/admin/dnd-kit giriş parçasında yok (F1, F2, F12, F14)
+- [ ] G183 | bant:backend | bagimli:- | `scripts/perf_olcum.py`: salt okunur ölçüm raporu (şişme oranı, SHOW ayarları, idle-in-transaction, idx_scan=0 envanteri, status/legacy kolon dağılımı, `--term` ile arama EXPLAIN ANALYZE BUFFERS) — prod doğrulama aracı, hiçbir şeyi değiştirmez (D3, D5-D7, D9 kanıtı)
+- [ ] G184 | bant:frontend | bagimli:G182 | `useConfigList(key)` liste başına hook (önbellek `useConfig` ile ortak, dönüş sözleşmesi değişmez) + QueryClient `refetchOnWindowFocus:false`; odakta 32 istek testi (F3 hook katmanı)
+- [ ] G189 | bant:backend | bagimli:G183 | Trigram index'ler gerçek kolonlara: `_TRGM_INDEXES` += `case_foys.tku_no/sistem_no/onceki_tracking_no`; boş legacy `idx_cases_tku_no_trgm`/`idx_cases_sistem_no_trgm` (+ btree) sözlükten çıkar + `_DUSURULECEK_INDEXLER`; `uq_cases_sistem_no` dokunulmaz; karar 018 eki (D2)
+- [ ] G185 | bant:frontend | bagimli:G184 | Ağır tüketiciler `useConfigList`'e: Index, CaseList, CaseDetails, NewCase, NewClient, EmailModal, IntakeReviewStep, QuickCaseModal — monte edilince yalnız kullandığı `/api/config/*` uçları çağrılır testi; AdminPage dokunulmaz (F3 tüketiciler)
+- [ ] G187 | bant:frontend | bagimli:G182 | AdminPage: 13 "query → local state" effect'i kalkar, listeler render'da türetilir, yalnız sürükleme/kaydedilmemiş düzenleme state'te; aynı içerikle refetch'te kart yeniden render olmaz testi (F4)
+- [ ] G190 | bant:backend | bagimli:G189 | Arama tek koşu: id kümesi bir kez (COUNT = len, sayfa `id IN`), çok terimli AND korunur; boş `cases.tku_no/sistem_no` kolları yazıcı yoksa çıkar; üç terimle EXPLAIN kanıtına göre `cases.court/subject/esas_no/tracking_no`, `case_esas_numbers`, `case_history.old_value` trgm kararı (`notes`/`old_value` aramadan çıkarma = kullanıcı kararı, uygulanmaz) (D1, D4)
+- [ ] G191 | bant:backend | bagimli:G189 | Bağlantı/sunucu ayarları: `_build_connect_args` += `idle_in_transaction_session_timeout` (60 s) + `lock_timeout` (5 s) env'li, migrate.py muaf; compose postgres `command:` effective_cache_size=384MB, random_page_cost=1.1, pg_stat_statements preload + tolerant CREATE EXTENSION; kilit senaryosu dbtest; recreate notu (D5, D6)
+- [ ] G186 | bant:frontend | bagimli:G185 | Rerender: CaseDetails `DocCard` modül düzeyine (Select DOM düğümü korunur testi), Index lazy state init + effect bağımlılığı primitif, NewCase düzenleme modu tek render (F5, F8, F9, F10)
+- [ ] G188 | bant:frontend | bagimli:G184 | theme-provider try/catch + ErrorBoundary içine (storage kapalıyken beyaz ekran yok testi); YetkiBelgesi TC hiç önbelleklenmez, sicil/ad sessionStorage `:v1` try/catch'li, eski anahtar silinir — KVKK maddesi (F6, F7)
+- [ ] G192 | bant:backend | bagimli:G190,G191 | Düşük etkili: `offset` tavanı 422; `routes/cases.py` ilişki + `routes/clients.py` poliçe N+1 → `in_()`; `upload_queue._scan_once` vade filtresi SQL'de (parçalı index); PK `index=True` ikizleri kalkar + `_DUSURULECEK_INDEXLER`; `cases.status` CHECK NOT VALID idempotent op (değer listesi `CASE_STATUSES`'ten; VALIDATE prod ölçümüne bağlı ayrı görev) (D8-D11, D15)
+- [ ] G193 | bant:docs | bagimli:G186,G187,G188,G192 | Performans turu dokümantasyonu: CLAUDE.md arama + nginx paragrafları, deploy-ve-altyapi (perf_olcum, compose parametreleri, env'ler, pg_stat_statements), genel-bakis (kod bölme, useConfigList), karar 018 nihai index tablosu, denetim raporuna "uygulamada değişti" şerhi — hepsi koddan doğrulanmış
+
 ## ÖNCELİK 1 — Veri ekibi 12.09 cevabı: eşleştirme düzeltmeleri (2026-09-13 gündüz, kullanıcı "başla")
 
 <!-- Kaynak: ekibin 12.09 cevabı (metin + 4 ek + inceleme: masaüstü HUKDOK_EKIP_CEVABI_2026-09-12.md). Kullanıcı
