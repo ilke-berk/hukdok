@@ -589,7 +589,7 @@ kalan kartta KALIR (hangi föyün belgesi bilinmiyor). RET: `ham_veri`siz föy, 
 kart — elle), grup birden çok DosyaNo'ya bölünüyor, müvekkil boş. Tek transaction, `--apply` yoksa geri alınır; tek
 gruplu kart ATLANDI → ikinci koşu 0. Lokal kuru koşu 13.09 (G179 uygulanmış DB): 30 kart → 23 ayrıldı / 23 yeni kart ·
 6 atlandı (G179'un föy taşımaları sonrası tek föy/tek grup: 4370, 13897, 14287, 14328, 14334, 15276) · 1 ret (15291
-G179'da 14333'e birleşmişti); `--apply` kullanıcı koşusu. Test `tests/test_g180_birlesik_kart_ayir.py`.
+G179'da 14333'e birleşmişti); `--apply` 13.09 gece uygulandı (canlı kart 14.315 → 14.338, 23 ilişki). Test `tests/test_g180_birlesik_kart_ayir.py`.
 
 ## 8. Log sözleşmesi ve bildirim
 
