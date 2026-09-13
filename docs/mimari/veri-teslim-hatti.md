@@ -569,7 +569,7 @@ kapalı kart). Uygulanmayanlar: 14393 "kontrol" (MİCRO teyidi), 28 "Rücu" kart
 föysüz AXA/Sompo kartlarının çoğu "İtirazın İptali"), 14321/14322 (esas farklı → ret). Tarihçe imzası
 `changed_by=ekip_cevabi_1209`, `source="ekip cevabı 12.09.2026 (kim): kanıt"` — kesim-sonrası koruma bunu kullanıcı
 kaydı sayar (paket bu alanları ezmez; ekibin kendi düzeltmesi olduğundan zaten eşit gelir). Lokal kuru koşu 13.09:
-41 çift · 8 föy · 16 düzeltme · 8 kapatma (6 belge taşınır); `--apply` kullanıcı koşusu; yedek `C:\hukdok-veri\yedek\pre_g179_20260913.dump`.
+41 çift · 8 föy · 16 düzeltme · 8 kapatma (6 belge taşınır); `--apply` 13.09 gece uygulandı (canlı kart 14.363 → 14.315); yedek `C:\hukdok-veri\yedek\pre_g179_20260913.dump`.
 Test `tests/test_g179_ekip_cevabi_1209.py`. Birleşik 30 kartın geri ayrılması (Ek-3 › 03) ayrı görev (G180).
 
 ## 8. Log sözleşmesi ve bildirim
