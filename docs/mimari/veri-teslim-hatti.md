@@ -570,7 +570,26 @@ föysüz AXA/Sompo kartlarının çoğu "İtirazın İptali"), 14321/14322 (esas
 `changed_by=ekip_cevabi_1209`, `source="ekip cevabı 12.09.2026 (kim): kanıt"` — kesim-sonrası koruma bunu kullanıcı
 kaydı sayar (paket bu alanları ezmez; ekibin kendi düzeltmesi olduğundan zaten eşit gelir). Lokal kuru koşu 13.09:
 41 çift · 8 föy · 16 düzeltme · 8 kapatma (6 belge taşınır); `--apply` 13.09 gece uygulandı (canlı kart 14.363 → 14.315); yedek `C:\hukdok-veri\yedek\pre_g179_20260913.dump`.
-Test `tests/test_g179_ekip_cevabi_1209.py`. Birleşik 30 kartın geri ayrılması (Ek-3 › 03) ayrı görev (G180).
+Test `tests/test_g179_ekip_cevabi_1209.py`.
+
+**Birleşik kartları ayırma — `scripts/birlesik_kart_ayir.py` (13.09.2026, G180).** Ekip §8/Ek-3 › 03: 30 kart
+farklı tür/esas föyleri (arabuluculuk + dava, soruşturma + ceza davası, aynı türde farklı esas) tek kartta taşıyor;
+kullanıcı kararı 13.09 (iki kez teyit): ekibin modeli — AYRI kart + "ilişkili dosya" bağı. Bu kartlar TKU birleştirmesinden
+GELMİYOR (föylerde `onceki_tracking_no` yok): `scripts/kartsiz_foy_kart_ac.py` aynı DosyaNo'daki ARB + HUKUK föylerini
+bilerek tek karta koyar (`TUR_ONCELIGI`), aktarımın DosyaNo köprüsü de öyle — MİCRO iki aşamaya aynı DosyaNo verir.
+Script: kart listesi `--ek3` (Ek-3 › 03 `Kart` + Ek-3 › 02'de "Önerdiğimiz kart" boş satırların "Bağlı olduğu kart"ı;
+`ek3_kartlari`) ya da `--kart`; föyün `ham_veri`si `hukdok_aktarim._sutun_indeksleri` ile HamSatir'a çevrilir
+(`foy_satiri`), grup anahtarı (dosya türü `ANA_TUR_ESLEMESI`, `case_relations_auto.esas_anahtari`); kartın kendi grubu
+(kart.file_type, esas) birebir, yoksa kartın türündeki en büyük grup (`gruplari_bul`); öteki her grup için yeni kart
+(`yeni_kart_ac`: `kartsiz_foy_kart_ac.kart_adaylari` + `ofis_numarasi`, `klasor_no_2` kalan kartla PAYLAŞILIR — sonraki
+aktarım köprüde iki kart görür, esas + tür ikinci anahtarı ayırır; esas `sync_current_esas`, taraflar
+`_taraflari_yaz`, föy ↔ müvekkil `_foy_muvekkilini_bagla`), `case_relations` (`source=kalan`, `target=yeni`,
+`AYRISTIRILAN`, çift başına bir satır), iki kartta `case_history` `kart_ayirma`, `refresh_missing_required`. Belgeler
+kalan kartta KALIR (hangi föyün belgesi bilinmiyor). RET: `ham_veri`siz föy, `onceki_tracking_no` taşıyan föy (sönen
+kart — elle), grup birden çok DosyaNo'ya bölünüyor, müvekkil boş. Tek transaction, `--apply` yoksa geri alınır; tek
+gruplu kart ATLANDI → ikinci koşu 0. Lokal kuru koşu 13.09 (G179 uygulanmış DB): 30 kart → 23 ayrıldı / 23 yeni kart ·
+6 atlandı (G179'un föy taşımaları sonrası tek föy/tek grup: 4370, 13897, 14287, 14328, 14334, 15276) · 1 ret (15291
+G179'da 14333'e birleşmişti); `--apply` kullanıcı koşusu. Test `tests/test_g180_birlesik_kart_ayir.py`.
 
 ## 8. Log sözleşmesi ve bildirim
 
