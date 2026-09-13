@@ -456,9 +456,9 @@ def test_bozuk_satir_izole_kalan_satirlar_islenir(uc_kart, tmp_path):
 
 
 @pytest.mark.parametrize("ham,beklenen", [
-    ("624.001.00;3.137.00", ["624.001.00", "3.137.00"]),
-    ("1077.001.00;1078.001.00;1.20816.00", ["1077.001.00", "1078.001.00", "1.20816.00"]),
-    (" 9.070.00 ", ["9.070.00"]),
+    ("624.001.00;3.137.00", ["624.001", "3.137"]),          # G178: sondaki .00 anahtarda yok
+    ("1077.001.00;1078.001.00;1.20816.00", ["1077.001", "1078.001", "1.20816"]),
+    (" 9.070.00 ", ["9.070"]),
     ("A-1;a-1", ["A-1"]),                       # aynı parça iki kez sayılmaz
     (None, []),
 ])
@@ -541,7 +541,7 @@ def test_ikinci_anahtar_esas_ve_tur_ile_belirsizligi_cozer(db_env, tmp_path):
         assert foy_map.get_foy(db, "H-9") is None            # ayrılamayan YAZILMADI
     finally:
         db.close()
-    assert len(sonuc.hatalar) == 1 and "esas/tür de ayırmadı" in sonuc.hatalar[0].sebep
+    assert len(sonuc.hatalar) == 1 and "esas/tür/ilk parça de ayırmadı" in sonuc.hatalar[0].sebep   # G178
 
 
 def test_dry_run_hicbir_tabloya_yazmaz(uc_kart, tmp_path):

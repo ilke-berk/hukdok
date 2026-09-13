@@ -171,12 +171,12 @@ def test_birlestirme_sonrasi_dosya_no_koprusu_tek_karta_cozulur(cift):
     fabrika, kalan_id, mukerrer_id = cift
     db = fabrika()
     try:
-        assert len(_dosya_no_haritasi(db)["3.658.00"]) == 2
+        assert len(_dosya_no_haritasi(db)["3.658"]) == 2      # G178: anahtar .00'suz
     finally:
         db.close()
     mb.ciftleri_birlestir(fabrika, [(kalan_id, mukerrer_id)], apply=True)
     db = fabrika()
     try:
-        assert _dosya_no_haritasi(db)["3.658.00"] == [kalan_id]
+        assert _dosya_no_haritasi(db)["3.658"] == [kalan_id]
     finally:
         db.close()

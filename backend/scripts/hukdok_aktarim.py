@@ -1085,9 +1085,22 @@ def _dosya_no_parcalari(deger: Any) -> List[str]:
     return parcalar
 
 
+# Ekip (12.09 cevabı §3/§8): MİCRO DosyaNo'su sondaki ".00" ekiyle gelir ("2.500.00"),
+# eski kartlarımızın `klasor_no_2`'si eksiz ("2.500"). Ek normalize edilmeden 37 föy
+# "kartsız" sayılıp 05.09'da ikinci kart açıldı (13.09 lokal ölçümü: 79 çift kart).
+# YALNIZ ".00" atılır — ".01" AYRI dosyadır (2.531.00 ≠ 2.531.01); kalan parça nokta
+# taşımalı ("1.00" dokunulmaz). Kök çıkarımı (`_dosya_no_koku`) ham değerden çalışır.
+_DOSYANO_SIFIR_EKI = ".00"
+
+
 def _eslesme_anahtari(deger: Any) -> str:
-    """Dosya No ↔ klasor_no_2 karşılaştırma anahtarı (boşluk + harf duyarsız)."""
-    return tr_upper(_metin(deger) or "")
+    """Dosya No ↔ klasor_no_2 karşılaştırma anahtarı: boşluk + harf duyarsız,
+    sondaki `.00` eki atılmış (G178)."""
+    anahtar = tr_upper(_metin(deger) or "")
+    govde = anahtar[:-len(_DOSYANO_SIFIR_EKI)]
+    if anahtar.endswith(_DOSYANO_SIFIR_EKI) and "." in govde:
+        return govde
+    return anahtar
 
 
 # ─── Dosya No kökü → müvekkil kimliği (G153) ─────────────────────────────────
@@ -1137,6 +1150,28 @@ _KOK_MARKASI: Dict[str, FrozenSet[str]] = {
     for kok, ad in DOSYANO_KOK_MUVEKKILI.items()
 }
 
+# Eski unvan / devralınan portföy (G178; ekip 12.09 cevabı §1, tercih "b"): kök Quick'in
+# (2), `Müvekkil` hücresi BİLEREK "Corpus" — Quick'in eski unvanı (kök 27 20.07.2026'da
+# kapandı, beş dosya 2.55x'e taşındı; ad, dosyanın açıldığı günkü gerçek müvekkil olarak
+# bırakıldı). Ergo aynı mantıkla HDI kökündeki (8) devir dosyası. Çelişki DEĞİLDİR ve kök
+# adımında kökün kartı sayılır. Karşılaştırma marka sözcüğüyle (`_sigorta_markasi`):
+# "Corpus Sigorta Anonim Şirketi" ↔ "Corpus Sigorta A.Ş." aynı markadır.
+DOSYANO_KOK_ESKI_UNVANLARI: Dict[str, Tuple[str, ...]] = {
+    "2": ("Corpus Sigorta A.Ş.",),
+    "8": ("Ergo Sigorta A.Ş.",),
+}
+_KOK_ESKI_MARKALARI: Dict[str, Tuple[FrozenSet[str], ...]] = {
+    kok: tuple(cast(FrozenSet[str], _sigorta_markasi(normalize_party_key(ad))) for ad in adlar)
+    for kok, adlar in DOSYANO_KOK_ESKI_UNVANLARI.items()
+}
+
+
+def _kokun_markasi_mi(kok: str, marka: FrozenSet[str]) -> bool:
+    """Sigorta markası kökün sigortası ya da kökün ESKİ unvanı mı (G178)?"""
+    if _KOK_MARKASI[kok] <= marka:
+        return True
+    return any(eski <= marka for eski in _KOK_ESKI_MARKALARI.get(kok, ()))
+
 
 def _dosya_no_koku(deger: Any) -> Optional[str]:
     """Dosya No'nun ilk noktaya kadarki kökü (boşluk toleranslı); boş → None.
@@ -1178,9 +1213,9 @@ def _kokun_karti_mi(anahtarlar: Set[str], kok: str) -> bool:
     """
     if not anahtarlar:
         return False
-    marka = _KOK_MARKASI[kok]
     return all(
-        (m := _sigorta_markasi(anahtar)) is not None and marka <= m for anahtar in anahtarlar
+        (m := _sigorta_markasi(anahtar)) is not None and _kokun_markasi_mi(kok, m)
+        for anahtar in anahtarlar
     )
 
 
@@ -1191,7 +1226,9 @@ def _kok_muvekkil_celiskisi(satir: HamSatir) -> Optional[str]:
     Yalnız hücre bir SİGORTA adıysa bakılır: hekim/kurum adı (15 föy, ekip
     düzeltecek) ya da boş hücre çelişki DEĞİLDİR — kök adımı o satırda kartı
     yine seçebilir. Aynı markanın başka yazımı ("Axa Hayat Sigorta", "Quıck")
-    çelişki sayılmaz (marka sözcükleri kapsanıyor).
+    çelişki sayılmaz (marka sözcükleri kapsanıyor). Kökün ESKİ unvanı da
+    çelişki değildir (G178: kök 2 + "Corpus", kök 8 + "Ergo" —
+    `DOSYANO_KOK_ESKI_UNVANLARI`); başka kökte aynı ad çelişkidir.
     """
     kok_bilgisi = _kok_muvekkili(satir.degerler.get("dosya_no"))
     if kok_bilgisi is None:
@@ -1201,7 +1238,7 @@ def _kok_muvekkil_celiskisi(satir: HamSatir) -> Optional[str]:
     if not adlar:
         return None
     hucre_markasi = _sigorta_markasi(normalize_party_key(adlar[0]))
-    if hucre_markasi is None or _KOK_MARKASI[kok] <= hucre_markasi:
+    if hucre_markasi is None or _kokun_markasi_mi(kok, hucre_markasi):
         return None
     return f"kök/müvekkil çelişkisi: Dosya No kökü {kok} = {kok_adi}, Müvekkil hücresi {adlar[0]!r}"
 
@@ -1793,19 +1830,30 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
     ATLANIR (davranış G118 ile birebir). Kök/müvekkil çelişkisi (H-6589) bu
     fonksiyona gelmeden satırı düşürür (`_kok_muvekkil_celiskisi`).
 
+    **Beşinci anahtar — kartın klasör listesinin İLK parçası (G178):** ekip
+    (12.09 cevabı §1) 18 satırın 8 belirsizini tek kuralla çözdü: "aday
+    kartlardan hangisinin `klasor_no_2` listesi föyün DosyaNo'suyla BAŞLIYORSA
+    o". Çok müvekkilli ikiz kart kardeş dosyaları da listeler ama listesi
+    KENDİ dosyasıyla başlar (`X1.A_HEM…0001` → `1327.001.00;1393…`,
+    `X1.M_HEM…0001` → `1326.001.00;…`). Kök ≥500 (hekim) ve müvekkil adı iki
+    kartta da geçtiği için 1-11 ayıramıyordu. Adım EN SONA konur: yalnız esas,
+    tür, kök ve ad hiçbir şey söylemiyorsa listenin sırası konuşur.
+
     Aday eleme sırası (her adımda "tek aday kaldıysa seç"):
 
     1. esas ∩ tür   2. esas   3. tür                         (2026-08-19 üçlüsü)
     4. esas ∩ tür ∩ kök   5. esas ∩ kök   6. tür ∩ kök   7. kök          (G153)
     8. esas ∩ tür ∩ müvekkil   9. esas ∩ müvekkil   10. tür ∩ müvekkil   11. müvekkil
+    12. esas ∩ tür ∩ ilk parça   13. esas ∩ ilk parça   14. tür ∩ ilk parça   15. ilk parça (G178)
 
     Sıra ÖNEMLİ: tek bir kriterle "tek aday kaldı" demek, diğer kriterin
     çeliştiği bir kartı seçmek olabilir; kök/müvekkil tek başına seçilmeden
     önce esas/tür ile çelişmeyen aday aranır, 7. ve 11. adım yalnız esas ve tür
     hiçbir şey söylemiyorsa devreye girer. Müvekkil sütunu boşsa ya da hiçbir
     adaya uymuyorsa 8-11 boş kalır. İki aday da aynı müvekkil anahtarını
-    taşıyorsa (gerçek mükerrer) hiçbir adım tek adaya inmez → None; satır
-    "esas/tür/kök/müvekkil de ayırmadı" ile rapora düşer, tahmin YOK.
+    taşıyorsa ve listeleri aynı parçayla başlıyorsa (gerçek mükerrer) hiçbir
+    adım tek adaya inmez → None; satır "esas/tür/kök/müvekkil/ilk parça de
+    ayırmadı" ile rapora düşer, tahmin YOK.
 
     Ölçüm (2026-09-03, 18.08 paketi, kuru koşu): belirsiz eşleşme 33 → sonuç
     G118 raporunda (gorevler/gorev/G118.md); paket repoya girmez. Kök adımının
@@ -1846,9 +1894,10 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
 
     kok_bilgisi = _kok_muvekkili(satir.degerler.get("dosya_no"))
     muvekkil = _satir_muvekkil_anahtarlari(satir)
-    if kok_bilgisi is None and not muvekkil:
-        return None
-    kart_anahtarlari = {k.id: _kart_muvekkil_anahtarlari(db, k.id) for k in kartlar}
+    kart_anahtarlari = (
+        {k.id: _kart_muvekkil_anahtarlari(db, k.id) for k in kartlar}
+        if kok_bilgisi is not None or muvekkil else {}
+    )
 
     # 4-7: dördüncü anahtar (G153) — yalnız kök bir sigorta müvekkiline eşleniyorsa
     if kok_bilgisi is not None:
@@ -1865,16 +1914,31 @@ def _ikinci_anahtarla_coz(db, satir: HamSatir, adaylar: List[int]) -> Optional[i
                 return case_id
 
     # 8-11: üçüncü anahtar (G118) — yalnız Müvekkil sütunu doluysa
-    if not muvekkil:
+    if muvekkil:
+        muvekkil_uyan = [k for k in kartlar if muvekkil & kart_anahtarlari[k.id]]
+        for kriter, aday_kume in (
+            ("esas+tür+müvekkil", [k for k in esas_uyan if k in tur_uyan and k in muvekkil_uyan]),
+            ("esas+müvekkil", [k for k in esas_uyan if k in muvekkil_uyan]),
+            ("tür+müvekkil", [k for k in tur_uyan if k in muvekkil_uyan]),
+            ("müvekkil", muvekkil_uyan),
+        ):
+            case_id = _sec(kriter, aday_kume, f", müvekkil={sorted(muvekkil)!r}")
+            if case_id is not None:
+                return case_id
+
+    # 12-15: beşinci anahtar (G178) — kartın klasör listesi föyün DosyaNo'suyla başlıyor
+    parcalar = _dosya_no_parcalari(satir.degerler.get("dosya_no"))
+    if not parcalar:
         return None
-    muvekkil_uyan = [k for k in kartlar if muvekkil & kart_anahtarlari[k.id]]
+    ilk = parcalar[0]
+    ilk_uyan = [k for k in kartlar if _dosya_no_parcalari(k.klasor_no_2)[:1] == [ilk]]
     for kriter, aday_kume in (
-        ("esas+tür+müvekkil", [k for k in esas_uyan if k in tur_uyan and k in muvekkil_uyan]),
-        ("esas+müvekkil", [k for k in esas_uyan if k in muvekkil_uyan]),
-        ("tür+müvekkil", [k for k in tur_uyan if k in muvekkil_uyan]),
-        ("müvekkil", muvekkil_uyan),
+        ("esas+tür+ilk parça", [k for k in esas_uyan if k in tur_uyan and k in ilk_uyan]),
+        ("esas+ilk parça", [k for k in esas_uyan if k in ilk_uyan]),
+        ("tür+ilk parça", [k for k in tur_uyan if k in ilk_uyan]),
+        ("ilk parça", ilk_uyan),
     ):
-        case_id = _sec(kriter, aday_kume, f", müvekkil={sorted(muvekkil)!r}")
+        case_id = _sec(kriter, aday_kume, f", ilk parça={ilk!r}")
         if case_id is not None:
             return case_id
     return None
@@ -1898,7 +1962,7 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
         parcalar = _dosya_no_parcalari(satir.degerler.get("dosya_no"))
         if not parcalar:
             raise SatirHatasi("Dosya No boş ve föy kaydı yok — kart eşleştirilemedi")
-        gosterim = "/".join(parcalar)
+        gosterim = str(_metin(satir.degerler.get("dosya_no")))   # ekibin gördüğü ham değer
         adaylar: List[int] = []
         for parca in parcalar:
             for aday in dosya_haritasi.get(parca) or []:
@@ -1919,6 +1983,7 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                     kriterler += "/kök"
                 if _satir_muvekkil_anahtarlari(satir):
                     kriterler += "/müvekkil"
+                kriterler += "/ilk parça"          # G178 — her satırda denenir
                 raise SatirHatasi(
                     f"Belirsiz eşleşme: Dosya No {gosterim!r} {len(adaylar)} kartla eşleşiyor "
                     f"({', '.join(str(a) for a in adaylar[:5])}) — {kriterler} de ayırmadı"

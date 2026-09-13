@@ -3,6 +3,17 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Veri ekibi 12.09 cevabı: eşleştirme düzeltmeleri (2026-09-13 gündüz, kullanıcı "başla")
+
+<!-- Kaynak: ekibin 12.09 cevabı (metin + 4 ek + inceleme: masaüstü HUKDOK_EKIP_CEVABI_2026-09-12.md). Kullanıcı
+     kararları 13.09: kart modeli EKİBİN ÖNERİSİ (arabuluculuk↔dava, soruşturma↔ceza AYRI kart + "ilişkili dosya" bağı;
+     TKU tek başına birleştirme ölçütü değil) · kod görevi gündüz doğrudan koşuldu (G178). Sıradaki (görev açılmadı,
+     kullanıcı kararıyla): 30 birleşik kartı ayır + ilişki bağı · 41 `.00` çift kartını birleştir · Ek-2 › 06 12 kart
+     düzeltmesi · 8 föy taşıma · id-14272→792, id-7231→748 · SMOKE/test kartları sil · Ek-3 sarı sütunlar + liste son hâli +
+     cevap maili. -->
+
+- [x] G178 | bant:backend | bagimli:- | DosyaNo `.00` eki normalizasyonu (`_eslesme_anahtari`) + belirsiz eşleşmede 12-15. adım "kartın klasör listesinin ilk parçası" (ekibin kuralı, 18 satırın 8'i) + Corpus→Quick / Ergo→HDI eski unvan istisnası (kök/müvekkil çelişkisi değil, kök adımında kökün kartı) — 13.09 gündüz, 205 test + ruff + mypy yeşil
+
 ## ÖNCELİK 1 — Sohbet öncelikli rapor ekranı: manuel kurucu kalkar, sohbet → tanım şeridi → tablo (2026-09-11 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: 11.09 gündüz sohbeti. Kullanıcı kararı: "arayüz deli gibi sadeleşsin" — manuel kurucu (kaynak kartları,

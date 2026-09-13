@@ -186,7 +186,7 @@ def test_ayni_muvekkilli_ikizler_none_ve_rapor_sebebi(db_env, tmp_path):
 
     assert sonuc.cikis_kodu == CIKIS_SATIR_HATASI and len(sonuc.hatalar) == 1
     assert "Belirsiz eşleşme" in sonuc.hatalar[0].sebep
-    assert "esas/tür/müvekkil de ayırmadı" in sonuc.hatalar[0].sebep
+    assert "esas/tür/müvekkil/ilk parça de ayırmadı" in sonuc.hatalar[0].sebep
     db = db_env()
     try:
         assert foy_map.get_foy(db, "F-X") is None
@@ -206,7 +206,7 @@ def test_muvekkil_eslesmeyince_sebep_yine_muvekkil_de_ayirmadi(db_env, tmp_path)
     sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
     assert len(sonuc.hatalar) == 1
-    assert "esas/tür/müvekkil de ayırmadı" in sonuc.hatalar[0].sebep
+    assert "esas/tür/müvekkil/ilk parça de ayırmadı" in sonuc.hatalar[0].sebep
 
 
 def test_ucuncu_adim_tur_muvekkille_celisse_de_kazanir(db_env, tmp_path, caplog):
@@ -263,7 +263,7 @@ def test_yedinci_adim_yalniz_muvekkil_esas_ve_tur_susunca(db_env, tmp_path, capl
 
 def test_muvekkil_sutunu_yoksa_davranis_birebir_eski(db_env, tmp_path):
     """Kabul 4: `Müvekkil` sütunu paketten büsbütün eksik → None + eski sebep
-    metni ("esas/tür de ayırmadı"), "müvekkil" sözcüğü geçmez."""
+    metni ("esas/tür/ilk parça de ayırmadı" — G178 eki dahil), "müvekkil" sözcüğü geçmez."""
     _iki_muvekkilli_ikiz(db_env)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
         _satir("F-E", "D-CIFT", **{"Ana Tür": "HUKUK", "Esas": "2023/449"}),
@@ -272,7 +272,7 @@ def test_muvekkil_sutunu_yoksa_davranis_birebir_eski(db_env, tmp_path):
     sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
     assert sonuc.cikis_kodu == CIKIS_SATIR_HATASI and len(sonuc.hatalar) == 1
-    assert sonuc.hatalar[0].sebep.endswith("— esas/tür de ayırmadı")
+    assert sonuc.hatalar[0].sebep.endswith("— esas/tür/ilk parça de ayırmadı")   # G178
     assert "müvekkil" not in sonuc.hatalar[0].sebep
 
 

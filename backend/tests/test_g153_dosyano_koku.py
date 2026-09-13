@@ -136,7 +136,8 @@ def test_kok_haritasi_ekibin_listesi():
     (["Axa Hayat Sigorta A.ş."], "1", True),          # aynı marka, başka şirket eki
     (["Axa Sigorta A.ş.", "Axa Hayat Sigorta A.ş."], "1", True),
     (["Anadolu Anonim Türk Sigorta Şirketi"], "9", True),
-    (["Ergo Sigorta A.ş."], "8", False),              # başka sigorta
+    (["Ergo Sigorta A.ş."], "8", True),               # G178: HDI kökünün ESKİ unvanı (devir) — kökün kartı
+    (["Eureko Sigorta A.ş."], "8", False),            # başka sigorta
     (["Ahmet Yılmaz"], "3", False),                   # sigorta değil
     (["Ak Sigorta A.ş."], "1", False),                # Ak ≠ Axa
     (["Mürüvvet Işık", "Axa Sigorta A.ş."], "1", False),   # ikiz HEKİM kartı: sigorta ortak müvekkil
@@ -149,7 +150,8 @@ def test_kokun_karti_mi_yalniz_sigorta_muvekkilli_kart(adlar, kok, beklenen):
 
 @pytest.mark.parametrize("dosya_no, muvekkil, celiski", [
     ("3.1400.00", "Axa Sigorta A.Ş.", True),          # H-6589 deseni: kök Ak, hücre Axa
-    ("2.054.00", "Corpus Sigorta Anonim Şirketi", True),
+    ("2.054.00", "Corpus Sigorta Anonim Şirketi", False),   # G178: Quick'in eski unvanı — çelişki değil
+    ("2.054.00", "Sompo Sigorta A.Ş.", True),
     ("9.541.00", "Axa Sigorta A.ş.; Ahmet Yılmaz", True),   # ilk parça sayılır
     ("3.1400.00", "Ak Sigorta A.Ş.", False),          # uyumlu
     ("2.054.00", "Quıck Sigorta A.ş", False),         # aynı marka, başka yazım
@@ -337,7 +339,7 @@ def test_hekim_koku_atlanir_sebep_metninde_kok_yok(db_env, tmp_path):
     sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
     assert sonuc.cikis_kodu == CIKIS_SATIR_HATASI and len(sonuc.hatalar) == 1
-    assert sonuc.hatalar[0].sebep.endswith("— esas/tür de ayırmadı")
+    assert sonuc.hatalar[0].sebep.endswith("— esas/tür/ilk parça de ayırmadı")   # G178
     assert "kök" not in sonuc.hatalar[0].sebep
     assert _foy_karti(db_env, "F-HEKIM") is None
 
@@ -353,7 +355,7 @@ def test_kok_de_ayirmayinca_sebep_metni_koku_soyler(db_env, tmp_path):
     sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
     assert len(sonuc.hatalar) == 1
-    assert sonuc.hatalar[0].sebep.endswith("— esas/tür/kök de ayırmadı")
+    assert sonuc.hatalar[0].sebep.endswith("— esas/tür/kök/ilk parça de ayırmadı")   # G178
 
 
 # ─── sqlite: kök/müvekkil çelişkisi (H-6589) ─────────────────────────────────
@@ -425,7 +427,7 @@ def test_on_gecis_celiskili_satiri_uzlasiya_katmaz(db_env):
     try:
         kart = _kart(db, "HA.G153.C", "3.1400.00", file_type="Hukuk")
         db.commit()
-        harita = {"3.1400.00": [kart.id]}
+        harita = {hukdok_aktarim._eslesme_anahtari("3.1400.00"): [kart.id]}   # G178: anahtar .00'suz
         celiskili = _satir_ham(sistem_no="H-6589", dosya_no="3.1400.00", muvekkil="Axa Sigorta A.Ş.")
         uyumlu = _satir_ham(sistem_no="H-OK", dosya_no="3.1400.00", muvekkil="Ak Sigorta A.Ş.")
         assert hukdok_aktarim._kart_id_tahmini(db, celiskili, {"H-6589": kart.id}, harita, "H-6589") is None

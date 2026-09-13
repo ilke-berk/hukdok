@@ -451,6 +451,24 @@ kolonu (`services/teslim_cevap.py:221`, `:286`) `case_foys.case_party_id`'den ok
 bu görevden itibaren dolu gelir. G154 cevaplı xlsx'i `--kart-esleme` haritasına çevirir
 (`scripts/cevapli_kart_eslemesi.py`).
 
+**DosyaNo `.00` eki, klasör listesinin ilk parçası, eski unvan istisnası (G178, ekibin 12.09 cevabı
+§1/§3/§8).** MİCRO DosyaNo'su sondaki `.00` ekiyle gelir (`2.500.00`), 30.07 dışa aktarımındaki
+kartların `klasor_no_2`'si eksiz (`2.500`); eşleşme anahtarı `_eslesme_anahtari` artık sondaki
+`.00`'ı atar (`_DOSYANO_SIFIR_EKI`; kalan parça nokta taşımalı, `.01` AYRI dosyadır, `1.00`
+dokunulmaz) — köprü haritası (`_dosya_no_haritasi`) ve paket tarafı aynı anahtarı kullandığından
+`2.500` ↔ `2.500.00` tek anahtar; `scripts/kartsiz_foy_kart_ac.py` de `ha._dosya_no_parcalari`
+üzerinden aynı anahtarı miras alır (05.09'da bu ek yüzünden 37 föye ikinci kart açılmıştı; 13.09
+lokal ölçümü: `X` ve `X.00` farklı kartlarda 79 çift — birleştirme AYRI veri adımı). Kök çıkarımı
+(`_dosya_no_koku`) ham değerden, değişmez. Belirsiz eşleşmede **beşinci anahtar** (12-15. adım,
+`_ikinci_anahtarla_coz`): aday kartlardan `klasor_no_2` listesinin İLK parçası föyün DosyaNo'suyla
+aynı olan kart — ekibin kuralı, 18 satırın 8 belirsizini tek başına çözdü (H-11235 → 794); sıra
+esas/tür → kök → müvekkil adı → ilk parça, log `kriter=…+ilk parça`, satır raporu sebep metni
+"… /ilk parça de ayırmadı" (her satırda denenir), gösterim ekibin gördüğü HAM DosyaNo.
+`DOSYANO_KOK_ESKI_UNVANLARI` (2 → Corpus Sigorta = Quick'in eski unvanı, kök 27 20.07.2026'da
+kapandı; 8 → Ergo Sigorta = HDI devri): `_kokun_markasi_mi` ile hem `_kok_muvekkil_celiskisi`
+(çelişki DEĞİL, satır yazılır) hem `_kokun_karti_mi` (kök adımında kökün kartı sayılır) bunu
+tanır; başka kökte aynı ad çelişki kalır. Test `tests/test_g178_dosyano_sifir_eki.py`.
+
 **`Başvuru Tarihi` (G155, plan A6).** `case_stage_decisions.basvuru_tarihi`
 (`models.py:297`; migrasyon madde 47, `database.py:1063`, koşullu `columns` op'u — kısıt yok).
 Okuyucu `ASAMA_SUTUNLARI["basvuru_tarihi"] = ("Başvuru Tarihi",)` (`:2093`), imza alanı;
