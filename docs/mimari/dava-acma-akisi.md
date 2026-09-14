@@ -75,7 +75,29 @@ periyodik olarak TTL'yi tazeler.
 
 ## 4. `/commit` ve 409'un idempotent çözümlenmesi
 
-Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`). `add_case`
+Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`).
+
+> **`cases.status` veritabanı kısıtı (G195, 14.09.2026):** durum yalnız
+> `constants.CASE_STATUSES` üçlüsüdür (DERDEST | DANIŞ | MAHZEN; karar 020 — temyiz/istinaf
+> AŞAMADIR). Migrasyon madde 52 (`backend/database.py::case_status_check_ddl`) bunu
+> `ck_cases_status_uclu CHECK (status IN (...)) NOT VALID` kısıtıyla veritabanına indirir;
+> değer listesi `CASE_STATUSES`'ten üretilir, op koşulsuzdur ve `pg_constraint` yoklamasıyla
+> idempotenttir, madde 50'nin veri düzeltmesinden SONRA koşar. Uygulama/script/elle SQL
+> üçlü dışı bir değer yazarsa Postgres `CheckViolation` (23514) döner — `add_case` bunu
+> tracking_no çakışması SAYMAZ, ERROR loglayıp `None` döner (route 500).
+>
+> - **`NOT VALID` uyarısı:** kısıt eklenirken mevcut satırlar TARANMAZ (prod'da eski bozuk
+>   değer migrasyonu durdurmaz), ama o andan sonra her yeni satır sürümü denetlenir: üçlü
+>   dışı eski bir satırın **HER UPDATE'i — yalnız başka bir kolon değişse bile —
+>   reddedilir**. Böyle bir kart ancak `status`'u da üçlüye çeken bir güncellemeyle
+>   düzenlenebilir.
+> - **NULL:** `status` kolonu nullable'dır (`models.py:19`) ve SQL CHECK semantiğinde
+>   `NULL` kısıttan geçer; NOT NULL ayrı karardır.
+> - **`VALIDATE CONSTRAINT` koşulu:** prod'da `scripts/perf_olcum.py` raporunun durum
+>   bölümü üçlü dışı satır = 0 gösterdiğinde ayrı görevle koşulur (kısıt o zaman
+>   `convalidated = true` olur). Testler `backend/tests/test_g195_status_check.py`.
+
+`add_case`
 `duplicate_tracking_no` dönerse akış **nihai 409 vermez**; önce muhafazakâr bir eşleşme
 denenir (`case_manager.find_idempotent_commit_match`).
 

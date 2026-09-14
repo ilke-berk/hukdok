@@ -18,6 +18,10 @@ from typing import Dict, Any
 # çağrılır (elle yazılmış ikinci bir SQL listesi tutulmaz).
 from required_fields import missing_bucket_sql
 
+# Dava durumu CHECK kısıtının (madde 52, G195) değer kaynağı. constants yalnız
+# typing import eder — döngü riski yok; üçlü burada elle ikinci kez yazılmaz.
+from constants import CASE_STATUSES
+
 logger = logging.getLogger(__name__)
 
 
@@ -141,6 +145,44 @@ def init_db():
     except Exception as e:
         logger.error(f"❌ Database Initialization Failed: {e}")
         raise e
+
+
+# ─── DAVA DURUMU CHECK KISITI (madde 52, G195) ───────────────────────────────
+#
+# Karar 020 üçlüsü (`constants.CASE_STATUSES`) veritabanı düzeyinde. Değer listesi
+# BURADAN üretilir — DDL'de elle yazılmış ikinci bir liste tutulmaz.
+CASE_STATUS_CHECK_NAME = "ck_cases_status_uclu"
+
+
+def case_status_check_expr(statuses: tuple = CASE_STATUSES) -> str:
+    """`status IN ('DERDEST', 'DANIŞ', 'MAHZEN')` — CHECK ifadesi.
+
+    Değerler verilen listeden (varsayılan `constants.CASE_STATUSES`) SQL literal
+    kuralıyla (tek tırnak ikilenir) üretilir. Boş liste her satırı reddeden bir
+    kısıt olurdu → ValueError.
+    """
+    if not statuses:
+        raise ValueError("CHECK değer listesi boş olamaz")
+    literals = ", ".join("'" + str(value).replace("'", "''") + "'" for value in statuses)
+    return f"status IN ({literals})"
+
+
+def case_status_check_ddl(statuses: tuple = CASE_STATUSES) -> str:
+    """Kısıtı YOKSA `NOT VALID` ile ekleyen idempotent DO bloğu (madde 52).
+
+    `ADD CONSTRAINT` kendi başına idempotent değildir (ikinci açılışta "already
+    exists" ile patlar) → `pg_constraint` yoklaması. Ad sabit olduğu için
+    `CASE_STATUSES` değişirse bu blok ESKİ kısıtı olduğu gibi bırakır; liste
+    değişikliği DROP + ADD yazan ayrı bir op ister.
+    """
+    return (
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        f"WHERE conname = '{CASE_STATUS_CHECK_NAME}' AND conrelid = to_regclass('cases')) THEN "
+        f"ALTER TABLE cases ADD CONSTRAINT {CASE_STATUS_CHECK_NAME} "
+        f"CHECK ({case_status_check_expr(statuses)}) NOT VALID; "
+        "END IF; END $$"
+    )
 
 
 # ─── ŞEMA MİGRASYONLARI (bildirimsel) ────────────────────────────────────────
@@ -1170,6 +1212,21 @@ _MIGRATIONS = [
     ("columns", "email_recipients", {
         "notify_copy": "BOOLEAN DEFAULT FALSE",
     }),
+
+    # ─── 52. DAVA DURUMU CHECK KISITI — NOT VALID (G195, 14.09 denetimi D9) ───
+    # Karar 020 üçlüsü bugüne dek yalnız uygulama kapısındaydı
+    # (constants.normalize_case_status); script ya da elle SQL status='TEMYIZ'
+    # yazabiliyordu. `ck_cases_status_uclu` bunu veritabanında kapatır; değer
+    # listesi CASE_STATUSES'ten (`case_status_check_expr`). `NOT VALID`: mevcut
+    # satırlar TARANMAZ → prod'daki bozuk eski bir değer migrasyonu durdurmaz;
+    # yeni INSERT ve HER UPDATE (bozuk eski satırın yalnız başka kolonu değişse
+    # bile) denetlenir. `VALIDATE CONSTRAINT` bilinçli YOK — perf_olcum durum
+    # bölümü prod'da üçlü dışı = 0 gösterince ayrı görev. SIRA ŞART: madde 50'nin
+    # veri düzeltmesinden SONRA — önce olsaydı ilk açılışta 50'nin
+    # `SET case_stage = status` UPDATE'i eski TEMYIZ satırında kısıta takılırdı.
+    # NULL CHECK'ten geçer (status nullable, models.py) — NOT NULL ayrı karar.
+    # Koşulsuz ("index", ...) op'u (G041 kuralı), pg_constraint yoklamasıyla idempotent.
+    ("index", "cases", [case_status_check_ddl()]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

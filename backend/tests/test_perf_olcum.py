@@ -298,9 +298,19 @@ def olcum_db(admin_engine):
             conn.execute(text(
                 "INSERT INTO cases (tracking_no, status, esas_no, responsible_lawyer_name) VALUES "
                 "('G183/1', 'DERDEST', '2024/1', 'Av. Bora Test'), "
-                "('G183/2', 'MAHZEN', '2024/2', NULL), "
+                "('G183/2', 'MAHZEN', '2024/2', NULL)"
+            ))
+            # G195 (kullanıcı kararı 14.09): TEMYIZ satırı kısıttan ÖNCE var olan bozuk
+            # satırdır — prod'un birebir taklidi. Kısıt düşürülür, satır eklenir, kısıt
+            # migrasyonun kendi DDL'iyle NOT VALID geri gelir (mevcut satırı taramaz).
+            import database
+
+            conn.execute(text("ALTER TABLE cases DROP CONSTRAINT ck_cases_status_uclu"))
+            conn.execute(text(
+                "INSERT INTO cases (tracking_no, status, esas_no, responsible_lawyer_name) VALUES "
                 "('G183/3', 'TEMYIZ', '2024/3', NULL)"
             ))
+            conn.execute(text(database.case_status_check_ddl()))
             case_id = conn.execute(text("SELECT id FROM cases WHERE tracking_no = 'G183/1'")).scalar()
             conn.execute(
                 text("INSERT INTO case_foys (sistem_no, case_id, tku_no) VALUES ('SSTMN-1', :c, 'TKU-1')"),
