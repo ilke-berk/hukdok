@@ -27,7 +27,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
 import { getStoredOutputDir, setStoredOutputDir } from "@/lib/directoryStorage";
-import { getTodayUploads, getTodayUploadItems, addTodayUpload, type TodayUploadItem } from "@/lib/todayUploads";
+import { getTodayUploadItems, addTodayUpload, type TodayUploadItem } from "@/lib/todayUploads";
 import { SectionHeader } from "@/components/dashboard/primitives";
 import { TodayUploadsList } from "@/components/dashboard/TodayUploadsList";
 import { useMsal } from "@azure/msal-react";
@@ -115,8 +115,10 @@ const Index = () => {
   const [processedBatch, setProcessedBatch] = useState<{ path: string, name: string }[]>([]);
 
   // Bugün arşivlenen belgeler — drop zone sayacı + "Bugünkü yüklemelerim" listesi (localStorage, güne göre).
-  const [todayCount, setTodayCount] = useState<number>(getTodayUploads());
-  const [todayItems, setTodayItems] = useState<TodayUploadItem[]>(getTodayUploadItems());
+  // G186 (F8): lazy initializer — kayıt yalnız mount'ta BİR kez okunur (eskiden her
+  // render'da iki localStorage okuması + JSON.parse). Sayaç ayrı state değil, listeden türer.
+  const [todayItems, setTodayItems] = useState<TodayUploadItem[]>(() => getTodayUploadItems());
+  const todayCount = todayItems.length;
   const { accounts } = useMsal();
 
   // Faz 3.1: Batch e-posta ayarları paylaşımı. Toggle açıkken sıradaki dosyalarda
@@ -695,10 +697,12 @@ const Index = () => {
   }, []);
 
   // Müvekkil bilgilendirme: EmailModal açılınca davanın sorumlu avukatını + müvekkil adını çek.
+  // G186 (F9): effect NESNEYE değil primitif koda bağlı — gövde yalnız belge türü kodunu
+  // kullanıyor; finalData/analysisData'nın her yeni kimliği modal açıkken fetch'i tekrarlıyordu.
+  const noticeBelgeTuruKodu = (finalData || analysisData)?.belge_turu_kodu;
   useEffect(() => {
     if (!isEmailModalOpen) return;
-    const data = finalData || analysisData;
-    const belgeTuruKodu = data?.belge_turu_kodu;
+    const belgeTuruKodu = noticeBelgeTuruKodu;
 
     if (!linkedCase?.id) {
       // Sorumlu avukat yalnızca bağlı davadan bulunabilir.
@@ -740,7 +744,7 @@ const Index = () => {
       });
 
     return () => { cancelled = true; };
-  }, [isEmailModalOpen, linkedCase?.id, finalData, analysisData]);
+  }, [isEmailModalOpen, linkedCase?.id, noticeBelgeTuruKodu]);
 
 
 
@@ -986,7 +990,6 @@ const Index = () => {
         status: isLinked ? "BAĞLANDI" : "ARŞİVLENDİ",
       });
       setTodayItems(nextItems);
-      setTodayCount(nextItems.length);
 
       // Faz 3.3: Batch modda per-file başarı toast'ları bastırılır; sayaçlar artırılır
       // ve sonunda toplu özet gösterilir. Kritik hata (e-posta fail) batch'te de toast atar.
