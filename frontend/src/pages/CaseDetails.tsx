@@ -13,7 +13,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useCases } from "@/hooks/useCases";
-import { useConfig } from "@/hooks/useConfig";
+import { useConfigList } from "@/hooks/useConfig";
 import {
     MEDICAL_CARD_FIELDS, OFFICE_CARD_FIELDS, PROCESS_CARD_FIELDS,
     filledFields, formatCardValue, closedListState, isDocumentationEventCandidate,
@@ -189,7 +189,13 @@ const CaseDetails = () => {
     const navigate = useNavigate();
     const { getCase } = useCases();
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
-    const { allegedFaults, appealingParties, eventTypes, judgmentRoles, clientTypes, serviceTypes } = useConfig();
+    // G185: yalnız kartın okuduğu altı kapalı listeye abone olunur (useConfig 32 sorgu kuruyordu).
+    const { data: allegedFaults } = useConfigList("allegedFaults");
+    const { data: appealingParties } = useConfigList("appealingParties");
+    const { data: eventTypes } = useConfigList("eventTypes");
+    const { data: judgmentRoles } = useConfigList("judgmentRoles");
+    const { data: clientTypes } = useConfigList("clientTypes");
+    const { data: serviceTypes } = useConfigList("serviceTypes");
     // G105 dersi: closedLists HER kartta aynı tam nesnedir — tek yerde genişletmek
     // diğer kartlarda boş dropdown/damgasız rozet üretir. G121 iki anahtar ekledi.
     const closedLists = {

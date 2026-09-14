@@ -29,10 +29,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { useClients, type ClientCaseSummary } from "@/hooks/useClients";
-import { useConfig } from "@/hooks/useConfig";
+import { useConfigList } from "@/hooks/useConfig";
 import { validateTCIdentity } from "@/lib/validation";
 
-// Listeler useConfig üzerinden dinamik olarak alınıyor.
+// Listeler useConfigList üzerinden dinamik olarak alınıyor (G185: yalnız okunan üç liste).
 
 const findMatch = (options: string[], value?: string) => {
     if (!value) return "";
@@ -43,7 +43,9 @@ const findMatch = (options: string[], value?: string) => {
 const NewClient = () => {
     useSetPageTitle("Yeni Müvekkil", ["Avukat Paneli", "Müvekkiller", "Yeni"]);
     const { saveClient, updateClient, deleteClient, getClientCaseSummary, clients, isLoading } = useClients();
-    const { cities, specialties, clientCategories } = useConfig();
+    const { data: cities } = useConfigList("cities");
+    const { data: specialties } = useConfigList("specialties");
+    const { data: clientCategories } = useConfigList("clientCategories");
     // Listeler memo'lu: düzenleme modu effect'inin bağımlılığındalar; her
     // render'da yeni dizi üretilse effect her render'da formu yeniden doldururdu.
     const TURKEY_CITIES = useMemo(() => cities.map(c => c.name ?? ""), [cities]);
