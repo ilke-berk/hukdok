@@ -563,3 +563,225 @@ def test_cevap_bekleyen_idler_haric(env):
         assert b not in tc.cevap_bekleyen_idler(db)
     finally:
         db.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. G194 — yükleme döngüsü AÇIK transaction dışında
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# G191 `idle_in_transaction_session_timeout` açınca, SharePoint yüklemesi (uploader iç
+# retry'ı dahil) açık transaction içinde sürerse sunucu oturumu keser ve son commit
+# `OperationalError` verir. Döngü başlamadan transaction kapanır; döngü sonrası teslim
+# YENİDEN okunur (bayat nesneye yazılmaz).
+
+@pytest.mark.parametrize("db_verilir", [True, False], ids=["db-verilen", "SessionLocal"])
+def test_g194_yukleme_sirasinda_oturumda_acik_transaction_yok(env, monkeypatch, db_verilir):
+    """Kabul: sahte upload her dosyada `session.in_transaction()` kaydeder → hepsi False;
+    `db` verilen yol (gece turu/teslim_uygula) ve `SessionLocal` yolu ayrı ayrı."""
+    tid = _uygulanmis_teslim(env)                    # anahtar kapalı: henüz deneme yok
+    _anahtar(env, True)
+
+    acilan = []
+
+    def _fabrika():
+        oturum = env.db()
+        acilan.append(oturum)
+        return oturum
+
+    monkeypatch.setattr(tk, "SessionLocal", _fabrika)
+    kayit = []
+
+    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
+        kayit.append((target_filename, [o.in_transaction() for o in acilan]))
+        return {"id": f"item-{len(kayit)}", "name": target_filename}
+
+    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
+
+    if db_verilir:
+        db = _fabrika()
+        try:
+            assert tc.cevap_yukle(tid, db=db) is True
+        finally:
+            db.close()
+    else:
+        assert tc.cevap_yukle(tid) is True
+
+    assert len(acilan) == 1                          # tek oturum: eşleşme üretimi de onu kullandı
+    assert len(kayit) >= 3                           # eşleşme CSV + ozet + satır raporu (+ diğerleri)
+    assert [durum for _, durum in kayit] == [[False]] * len(kayit)
+    teslim = _teslim(env, tid)
+    assert teslim.cevap_yuklendi is True and teslim.durum == "uygulandi"
+    notlar = _deneme_notlari(teslim)
+    assert len(notlar) == 1 and f"{len(kayit)}/{len(kayit)} dosya → {KLASOR}" in notlar[0]
+
+
+def _baska_oturumda_degistir(env, tid, **alanlar):
+    """Döngü sırasında başka bir yolun (ikinci worker, elle müdahale) teslime yazması."""
+    db = env.db()
+    try:
+        teslim = db.get(models.AktarimTeslimi, tid)
+        not_ = alanlar.pop("not_")
+        for ad, deger in alanlar.items():
+            setattr(teslim, ad, deger)
+        teslim.durum_gecmisi = list(teslim.durum_gecmisi or []) + [
+            {"durum": teslim.durum, "at": tk._simdi().isoformat(), "not": not_},
+        ]
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_g194_baska_yol_yukleyip_not_dustuyse_uzerine_yazilmaz_yalniz_not_eklenir(env, monkeypatch, caplog):
+    """Kabul: döngü sırasında `cevap_yuklendi` başka yoldan True olup `durum_gecmisi`ne not
+    düştüyse döngü sonrası yazım o notu SİLMEZ (bayat liste yeniden atanmaz), yalnız
+    deneme notu eklenir; dönüş True (bayrak DB'de True)."""
+    tid = _uygulanmis_teslim(env)
+    _anahtar(env, True)
+    cagri = []
+
+    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
+        cagri.append(target_filename)
+        if len(cagri) == 1:
+            _baska_oturumda_degistir(env, tid, cevap_yuklendi=True, not_="başka yol yükledi")
+        return {"id": f"item-{len(cagri)}", "name": target_filename}
+
+    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
+    with caplog.at_level(logging.INFO):
+        assert tc.cevap_yukle(tid) is True
+
+    teslim = _teslim(env, tid)
+    assert teslim.cevap_yuklendi is True and teslim.durum == "uygulandi"
+    son_iki = [g["not"] for g in teslim.durum_gecmisi[-2:]]
+    assert son_iki[0] == "başka yol yükledi"
+    assert son_iki[1].startswith("cevap yükleme denemesi #1: ") and f"{len(cagri)}/{len(cagri)} dosya" in son_iki[1]
+    assert "hatalar" not in son_iki[1]
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+def test_g194_dongu_sirasinda_durum_uygulandi_disina_ciktiysa_bayrak_yazilmaz(env, monkeypatch, caplog):
+    """Kabul: döngü sırasında durum `uygulandi` dışına çıktıysa (başka yol) `cevap_yuklendi`
+    YAZILMAZ ve durum ezilmez; deneme notu yeni durumla eklenir, önceki not korunur;
+    dönüş False (bayrak DB'de False), tek WARNING, ERROR yok."""
+    tid = _uygulanmis_teslim(env)
+    _anahtar(env, True)
+    cagri = []
+
+    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
+        cagri.append(target_filename)
+        if len(cagri) == 1:
+            _baska_oturumda_degistir(env, tid, durum=tk.DURUM_BASARISIZ, not_="elle başarısız")
+        return {"id": f"item-{len(cagri)}", "name": target_filename}
+
+    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
+    with caplog.at_level(logging.INFO):
+        assert tc.cevap_yukle(tid) is False
+
+    teslim = _teslim(env, tid)
+    assert teslim.durum == tk.DURUM_BASARISIZ and teslim.cevap_yuklendi is False
+    son_iki = teslim.durum_gecmisi[-2:]
+    assert son_iki[0]["not"] == "elle başarısız"
+    assert son_iki[1]["durum"] == tk.DURUM_BASARISIZ
+    assert son_iki[1]["not"].startswith("cevap yükleme denemesi #1: ") and f"{len(cagri)}/{len(cagri)} dosya" in son_iki[1]["not"]
+    uyarilar = [r.getMessage() for r in _cevap_uyarilari(caplog)]
+    assert len(uyarilar) == 1 and "durum" in uyarilar[0] and tk.DURUM_BASARISIZ in uyarilar[0]
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+@pytest.fixture()
+def pg_fabrika():
+    """Gerçek Postgres scratch DB (init_db koşmuş) + her bağlantıda
+    `SET idle_in_transaction_session_timeout = '1s'` kuran oturum fabrikası.
+
+    Scratch altyapısı `test_migration_path`'ten (gerçek veritabanına yazılmaz); DB
+    yoksa/ulaşılamıyorsa SKIP (3-ortam kuralı, test_g107 `fresh_db` ikizi)."""
+    import os
+
+    from sqlalchemy.pool import NullPool
+    from test_migration_path import _run_init_db, _scratch_database
+
+    url = os.getenv("MIGRATION_TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or ""
+    if not url.startswith("postgresql"):
+        pytest.skip("MIGRATION_TEST_DATABASE_URL/DATABASE_URL postgresql:// değil")
+    admin = create_engine(
+        url, isolation_level="AUTOCOMMIT", poolclass=NullPool, connect_args={"connect_timeout": 3},
+    )
+    try:
+        with admin.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        admin.dispose()
+        pytest.skip(f"Gerçek Postgres'e ulaşılamadı ({type(exc).__name__}) — G194 dbtest atlandı")
+    try:
+        with _scratch_database(admin, "g194") as scratch:
+            _run_init_db(scratch)
+            engine = create_engine(scratch.url, connect_args={"connect_timeout": 5})
+
+            @event.listens_for(engine, "connect")
+            def _idle_tx_1sn(dbapi_connection, _record):
+                onceki = dbapi_connection.autocommit
+                dbapi_connection.autocommit = True        # SET kendisi transaction açmasın
+                cursor = dbapi_connection.cursor()
+                cursor.execute("SET idle_in_transaction_session_timeout = '1s'")
+                cursor.close()
+                dbapi_connection.autocommit = onceki
+
+            try:
+                yield sessionmaker(bind=engine, autocommit=False, autoflush=False)
+            finally:
+                engine.dispose()
+    finally:
+        admin.dispose()
+
+
+@pytest.mark.dbtest
+def test_g194_pg_idle_in_transaction_1sn_yavas_yukleme_cevap_yuklendi(pg_fabrika, tmp_path, monkeypatch, caplog):
+    """Kabul: gerçek Postgres, `idle_in_transaction_session_timeout=1s`, sahte yükleme dosya
+    başına 1,5 sn uyur → `cevap_yukle` True, `cevap_yuklendi=True` ve deneme notu DB'de.
+    Eski kodda (yükleme açık transaction içinde) sunucu oturumu keser, son commit
+    `OperationalError` verir."""
+    import time
+
+    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "03_VERI_TESLIM")
+    spool = tmp_path / "teslim_spool"
+    monkeypatch.setenv("TESLIM_SPOOL_DIR", str(spool))
+    rapor = spool / "1_raporlar"
+    rapor.mkdir(parents=True)
+    paket = spool / TESLIM
+    paket.write_bytes(_paket(_dort_satir()))
+    (rapor / tk.OZET_DOSYASI).write_text("özet\n", encoding="utf-8")
+
+    db = pg_fabrika()
+    try:
+        assert db.execute(text("SHOW idle_in_transaction_session_timeout")).scalar() == "1s"
+        db.rollback()
+        app_settings.set_setting_bool(KEY, True, updated_by="test", db=db)
+        tid = _defter(db, dosya_adi=TESLIM, sha256="9" * 64, durum=tk.DURUM_UYGULANDI,
+                      spool_path=str(paket), rapor_dizini=str(rapor), cevap_yuklendi=False)
+    finally:
+        db.close()
+
+    cagri = []
+
+    def _yavas_upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
+        time.sleep(1.5)
+        cagri.append(target_filename)
+        return {"id": f"item-{len(cagri)}", "name": target_filename}
+
+    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _yavas_upload)
+    db = pg_fabrika()
+    try:
+        with caplog.at_level(logging.INFO):
+            assert tc.cevap_yukle(tid, db=db) is True
+    finally:
+        db.close()
+
+    assert sorted(cagri) == ["eslesme_HUKDOK_TESLIM_X.csv", "ozet_HUKDOK_TESLIM_X.txt"]
+    db = pg_fabrika()
+    try:
+        teslim = db.get(models.AktarimTeslimi, tid)
+        assert teslim.cevap_yuklendi is True and teslim.durum == tk.DURUM_UYGULANDI
+        notlar = _deneme_notlari(teslim)
+    finally:
+        db.close()
+    assert len(notlar) == 1 and notlar[0] == f"cevap yükleme denemesi #1: 2/2 dosya → {KLASOR}"
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []

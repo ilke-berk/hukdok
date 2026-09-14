@@ -483,6 +483,15 @@ def cevap_yukle(teslim_id: int, *, db: Optional[Session] = None) -> bool:
     üretilir, rapor dizinindeki CSV/TXT'ler tek tek yüklenir; her dosyanın hatası
     WARNING, sonuç `durum_gecmisi` notuna işlenir; hepsi başarılıysa
     `cevap_yuklendi=True`. Teslim durumu HİÇBİR koşulda değişmez.
+
+    G194 — yükleme döngüsü AÇIK transaction dışında koşar: döngüden önce commit
+    (G191 `idle_in_transaction_session_timeout` uzun yüklemede — uploader iç retry'ı
+    dahil — oturumu kesip son commit'i `OperationalError`a düşürmesin). Döngü ORM
+    nesnesine dokunmaz (`expire_on_commit` yeni SELECT = yeni transaction); ihtiyaç
+    duyduğu değerler yerel değişkendedir. Döngü sonrası teslim YENİDEN okunur ve not
+    ona eklenir (bayat `durum_gecmisi` listesi yeniden atanmaz). Bu arada durum
+    `uygulandi` dışına çıktıysa `cevap_yuklendi` yazılmaz (WARNING + False);
+    `cevap_yuklendi` başka yoldan True olduysa yeniden yazılmaz, yalnız not eklenir.
     """
     with tk._oturum(db) as session:
         teslim = tk._teslim_getir(session, teslim_id)
@@ -523,6 +532,9 @@ def cevap_yukle(teslim_id: int, *, db: Optional[Session] = None) -> bool:
             return False
 
         dosyalar = _cevap_dosyalari(rapor, teslim_adi)
+        tid = int(teslim.id)
+        # G194: transaction döngüden ÖNCE kapanır; döngü `teslim`e dokunmaz (docstring).
+        session.commit()
         hatalar: List[str] = []
         for yol, hedef_ad in dosyalar:
             try:
@@ -533,23 +545,34 @@ def cevap_yukle(teslim_id: int, *, db: Optional[Session] = None) -> bool:
                 )
             except Exception as exc:
                 hatalar.append(f"{hedef_ad}: {type(exc).__name__}: {exc}")
-                logger.warning("Teslim #%s cevap dosyası yüklenemedi (%s/%s): %s", teslim.id, klasor, hedef_ad, exc)
+                logger.warning("Teslim #%s cevap dosyası yüklenemedi (%s/%s): %s", tid, klasor, hedef_ad, exc)
 
         basarili = len(dosyalar) - len(hatalar)
         not_ = f"{DENEME_NOTU_ONEKI}{deneme}: {basarili}/{len(dosyalar)} dosya → {klasor}"
         if hatalar:
             not_ += "; hatalar: " + " | ".join(hatalar)
+        # Döngü sonrası taze okuma: döngü sırasında başka yolun yazdığı ezilmez.
+        teslim = tk._teslim_getir(session, tid)
+        guncel_durum = str(teslim.durum)
         _gecmis_notu_ekle(teslim, tk._kirp(not_))
-        if not hatalar:
+        durum_disi = guncel_durum != tk.DURUM_UYGULANDI
+        if not hatalar and not durum_disi and not teslim.cevap_yuklendi:
             teslim.cevap_yuklendi = True
         session.commit()
         if hatalar:
             logger.warning(
                 "Teslim #%s cevap paketi eksik yüklendi (%s/%s dosya, deneme #%s) — ertesi gece turu yeniden dener",
-                teslim.id, basarili, len(dosyalar), deneme,
+                tid, basarili, len(dosyalar), deneme,
             )
             return False
-        logger.info("Teslim #%s cevap paketi yüklendi: %s dosya → %s (deneme #%s)", teslim.id, basarili, klasor, deneme)
+        if durum_disi:
+            logger.warning(
+                "Teslim #%s cevap dosyaları yüklendi (%s/%s dosya, deneme #%s) ama durum yükleme sırasında "
+                "'%s' oldu — cevap_yuklendi yazılmadı",
+                tid, basarili, len(dosyalar), deneme, guncel_durum,
+            )
+            return False
+        logger.info("Teslim #%s cevap paketi yüklendi: %s dosya → %s (deneme #%s)", tid, basarili, klasor, deneme)
         return True
 
 
