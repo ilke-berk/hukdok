@@ -8,15 +8,25 @@ type ThemeProviderProps = {
     storageKey?: string;
 };
 
+// G188 (F7): localStorage erişimi fırlatabilir (Safari private, kurumsal politika,
+// kota dolu). Sağlayıcı açılışta çizildiği için korumasız okuma tüm uygulamayı beyaz
+// ekrana çeviriyordu. Desen: components/system/DashboardViewProvider.tsx::readStored.
+function readStoredTheme(storageKey: string, defaultTheme: Theme): Theme {
+    try {
+        const raw = localStorage.getItem(storageKey);
+        return raw === "dark" || raw === "light" || raw === "system" ? raw : defaultTheme;
+    } catch {
+        return defaultTheme;
+    }
+}
+
 export function ThemeProvider({
     children,
     defaultTheme = "dark",
     storageKey = "hukudok-theme",
     ...props
 }: ThemeProviderProps) {
-    const [theme, setTheme] = useState<Theme>(
-        () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-    );
+    const [theme, setTheme] = useState<Theme>(() => readStoredTheme(storageKey, defaultTheme));
 
     useEffect(() => {
         const root = window.document.documentElement;
@@ -39,7 +49,11 @@ export function ThemeProvider({
     const value = {
         theme,
         setTheme: (theme: Theme) => {
-            localStorage.setItem(storageKey, theme);
+            try {
+                localStorage.setItem(storageKey, theme);
+            } catch {
+                // Depo kapalı/kota dolu: seçim kalıcı olmaz, bu oturumda yine uygulanır.
+            }
             setTheme(theme);
         },
     };

@@ -235,20 +235,22 @@ const App = () => {
 
   return (
     <MsalProvider instance={msalInstance}>
-      <ThemeProvider defaultTheme="dark" storageKey="hukudok-theme">
-        <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            <ConfirmDialogProvider>
-              <Toaster />
-              <Sonner />
-              {/* Faz 4.4: render hatası SPA'yı boş ekrana çevirmesin — fallback + yenile */}
-              <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <ConfirmDialogProvider>
+            <Toaster />
+            <Sonner />
+            {/* Faz 4.4: render hatası SPA'yı boş ekrana çevirmesin — fallback + yenile */}
+            <ErrorBoundary>
+              {/* G188 (F7): tema sağlayıcısı boundary İÇİNDE — depo hatası beyaz ekran üretmez.
+                  Toaster'lar ve ConfirmDialog useTheme kullanmaz (sonner next-themes'e bakar). */}
+              <ThemeProvider defaultTheme="dark" storageKey="hukudok-theme">
                 <AppContent />
-              </ErrorBoundary>
-            </ConfirmDialogProvider>
-          </TooltipProvider>
-        </QueryClientProvider>
-      </ThemeProvider>
+              </ThemeProvider>
+            </ErrorBoundary>
+          </ConfirmDialogProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
     </MsalProvider>
   );
 };
