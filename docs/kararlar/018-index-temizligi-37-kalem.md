@@ -113,6 +113,38 @@ bilinen ve talep edilmiş bir ihtiyaçtır.
   isim kalıbıyla değil `indkey` karşılaştırmasıyla eledi ve 52 aday yerine yalnız
   **37** düşürdü.
 
+## Ek — 2026-09-14: legacy kolon index'leri boş kolondaydı, `case_foys`'a taşındı (G189)
+
+14.09 performans denetimi (D2) şunu gösterdi: `cases.tku_no` / `cases.sistem_no` 14.578
+kartta **0 dolu**, çünkü aktarım bu kimlikleri G123'ten beri föy tablosuna (`case_foys`)
+yazıyor. Bu yüzden `idx_cases_tku_no_trgm`, `idx_cases_sistem_no_trgm` ve btree
+`idx_cases_tku_no` boş kolonu tutuyordu. Aramanın (`_term_case_id_selects`) gerçekten
+kullandığı üç `case_foys` kolu ise index'sizdi: her arama 3 seq scan × 4.635 sayfa.
+
+- **Eklendi** (`_TRGM_INDEXES`, G043 deseni): `idx_case_foys_tku_no_trgm`,
+  `idx_case_foys_sistem_no_trgm`, `idx_case_foys_onceki_tracking_no_trgm`
+  (lokal boyut 336 / 344 / 96 kB).
+- **Düşürüldü** (`_DUSURULECEK_INDEXLER["cases"]`, G042 deseni): yukarıdaki üç legacy
+  index. İkisi sözlükten, btree'nin kaynağı madde 22'nin post-SQL'inden çıkarıldı.
+  `uq_cases_sistem_no` tekillik kısıtıdır ve **dokunulmadı**.
+- **Ölçüm** (lokal restore kopyası, `TKU-788`, sıcak önbellek):
+
+  | Kol | Önce | Sonra |
+  | --- | --- | --- |
+  | `case_foys.tku_no` | Seq Scan, 4.668 buffer, 2,81 ms | Bitmap Index Scan, 60 buffer, 0,35 ms |
+  | `case_foys.sistem_no` | Seq Scan, 4.635 buffer, 3,26 ms | Bitmap Index Scan, 11 buffer, 0,05 ms |
+  | `case_foys.onceki_tracking_no` | Seq Scan, 4.635 buffer, 1,72 ms | Bitmap Index Scan, 11 buffer, 0,04 ms |
+  | Tek terim UNION'ın tamamı | 26.917 buffer, 51,8 ms | 15.911 buffer, 47,8 ms |
+
+  UNION süresinin kalanı `cases` üzerindeki index'siz kollardan geliyor.
+- **Bilinen bedel:** `services/case_relations_auto.py`'deki `Case.tku_no IN (...)`
+  sorgusu btree'yi kaybetti; lokalde 0,1 ms → 3,8 ms (1.440 sayfalık seq scan, kart
+  ilişkileri görünümü başına bir kez). Kolon boş olduğu için sonuç değişmez.
+  Sıfırdan kurulumda `models.py`'deki `index=True` ayrıca `ix_cases_tku_no`'yu yaratır.
+  `models.py` bu görevin kapsamı dışında kaldı.
+- **`cases` üzerindeki altı trgm index'i hâlâ geri eklenmedi.** Geri ekleme kararı
+  G190'ın EXPLAIN kanıtına bağlı.
+
 - **Test:** `backend/tests/test_index_envanteri.py` — envanter script'inin
   unique/primary'yi dışladığı ve `ix_cases_tracking_no`'nun listeye girmediği ayrı
   assertion'larla kilitli.

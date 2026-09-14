@@ -276,3 +276,160 @@ def test_dusurulen_ikizlerin_kapsamasi_semada_duruyor(admin_engine):  # noqa: F8
                 "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname LIKE '%_trgm'"
             )).scalar()
         assert trgm == len(database._TRGM_INDEXES), "trigram index sayısı sözlükle uyuşmuyor"
+
+
+# ─── G189: trigram index'leri boş legacy kolonlardan `case_foys`a ─────────────
+#
+# 14.09 performans denetimi D2: `cases.tku_no`/`sistem_no` 14.578 kartta 0 dolu,
+# arama bu kimlikleri `case_foys` üzerinden buluyor (G123) ve oradaki üç kol
+# index'sizdi. Yeni index'ler `_TRGM_INDEXES`e (G043 deseni), eskiler
+# `_DUSURULECEK_INDEXLER`e (G042 deseni) girer.
+
+G189_FOY_TRGM = {
+    "idx_case_foys_tku_no_trgm": ("case_foys", "tku_no"),
+    "idx_case_foys_sistem_no_trgm": ("case_foys", "sistem_no"),
+    "idx_case_foys_onceki_tracking_no_trgm": ("case_foys", "onceki_tracking_no"),
+}
+G189_LEGACY_TRGM = ["idx_cases_tku_no_trgm", "idx_cases_sistem_no_trgm"]
+G189_LEGACY_BTREE = "idx_cases_tku_no"
+
+
+def _migrasyonun_yarattigi_index_sqlleri():
+    """Tüm op türlerindeki CREATE INDEX ifadeleri (table gövdesi + columns post-SQL + index)."""
+    sqller = []
+    for op in database._MIGRATIONS:
+        if op[0] == "table":
+            sqller.extend(op[3])
+        elif op[0] == "index":
+            sqller.extend(op[2])
+        elif op[0] == "columns":
+            for spec in op[2].values():
+                if not isinstance(spec, str):
+                    sqller.extend(spec[1])
+    return [s for s in sqller if s.strip().upper().startswith("CREATE")]
+
+
+def test_g189_foy_trigram_indexleri_sozlukte_dogru_tablo_ve_kolonla():
+    for ad, beklenen in G189_FOY_TRGM.items():
+        assert database._TRGM_INDEXES.get(ad) == beklenen, f"{ad} sözlükte yok ya da yanlış hedefte"
+
+
+def test_g189_legacy_cases_indexleri_dusuruluyor_ve_sozlukte_yok():
+    """Sözlükte kalsalardı pg_trgm bloğu her açılışta yeniden yaratırdı (G042 dersi)."""
+    dusen_cases = database._DUSURULECEK_INDEXLER["cases"]
+    for ad in G189_LEGACY_TRGM + [G189_LEGACY_BTREE]:
+        assert ad in dusen_cases, f"{ad} düşürme listesinde yok"
+        assert ad not in database._TRGM_INDEXES, f"{ad} hem düşürülüyor hem yeniden yaratılıyor"
+    # Tekillik kısıtı ve föy tarafının btree'si bu görevin konusu değil
+    assert "uq_cases_sistem_no" not in _tum_dusurulecekler()
+    assert "idx_case_foys_tku" not in _tum_dusurulecekler()
+
+
+def test_g189_idx_cases_tku_no_kaynagi_migrasyondan_kaldirildi():
+    """Madde 22'nin post-SQL'i kalsaydı kolonsuz eski kurulum btree'yi geri getirirdi."""
+    yaratan = [s for s in _migrasyonun_yarattigi_index_sqlleri() if f" {G189_LEGACY_BTREE} " in f" {s} "]
+    assert yaratan == [], f"{G189_LEGACY_BTREE} hâlâ yaratılıyor: {yaratan}"
+    # uq_cases_sistem_no'nun kaynağı yerinde
+    assert any(" uq_cases_sistem_no " in f" {s} " for s in _migrasyonun_yarattigi_index_sqlleri())
+
+
+def test_g189_sozlukten_gin_trgm_ddl_uretimi():
+    for ad in G189_FOY_TRGM:
+        tablo, kolon = database._TRGM_INDEXES[ad]
+        assert database._trgm_index_ddl(ad, tablo, kolon) == (
+            f"CREATE INDEX IF NOT EXISTS {ad} ON case_foys USING gin ({kolon} gin_trgm_ops)"
+        )
+
+
+def test_g189_foy_trigram_indexleri_index_opuna_yazilmadi():
+    """("index", ...) op'ları pg_trgm extension'ından ÖNCE koşar — sıfırdan kurulum ölürdü."""
+    for ad in G189_FOY_TRGM:
+        assert all(ad not in sql for sql in _migrasyonun_yarattigi_index_sqlleri())
+
+
+@pytest.mark.dbtest
+def test_g189_init_db_foy_trigramlarini_yaratir_legacy_indexleri_dusurur(request):
+    """Sıfırdan kurulum + eski kurulum taklidi; ikinci init_db aynı index kümesini verir."""
+    from sqlalchemy import text
+
+    admin = request.getfixturevalue("admin_engine")
+    with _scratch_database(admin, "g189") as engine:
+        _run_init_db(engine)
+        ilk = _live_indexes(engine)
+        for ad, (tablo, kolon) in G189_FOY_TRGM.items():
+            assert ad in ilk, f"{ad} sıfırdan kurulumda oluşmadı"
+            assert f"ON public.{tablo} USING gin ({kolon} gin_trgm_ops)" in ilk[ad]
+        for ad in G189_LEGACY_TRGM + [G189_LEGACY_BTREE]:
+            assert ad not in ilk, f"{ad} sıfırdan kurulumda duruyor"
+        assert "uq_cases_sistem_no" in ilk or "ix_cases_sistem_no" in ilk, (
+            "cases.sistem_no tekillik index'i şemada yok — dokunulmaması gerekiyordu"
+        )
+
+        # Eski kurulum taklidi: G189 öncesi şemanın üç index'i elle geri kurulur
+        with engine.begin() as conn:
+            conn.execute(text(f"CREATE INDEX {G189_LEGACY_BTREE} ON cases (tku_no)"))
+            for ad, kolon in zip(G189_LEGACY_TRGM, ["tku_no", "sistem_no"], strict=True):
+                conn.execute(text(f"CREATE INDEX {ad} ON cases USING gin ({kolon} gin_trgm_ops)"))
+
+        _run_init_db(engine)
+        ikinci = _live_indexes(engine)
+        kalan = sorted(ad for ad in G189_LEGACY_TRGM + [G189_LEGACY_BTREE] if ad in ikinci)
+        assert kalan == [], "eski kurulumdaki legacy index'ler düşmedi: " + ", ".join(kalan)
+        assert ikinci == ilk, "ikinci init_db index kümesini değiştirdi (idempotent değil)"
+
+        _run_init_db(engine)
+        assert _live_indexes(engine) == ilk
+
+
+@pytest.mark.dbtest
+def test_g189_arama_foy_kollari_trigram_indexini_kullanabiliyor(request):
+    """Uygulanabilirlik sınavı: `_term_case_id_selects`in üç föy kolu yeni index'e düşebiliyor.
+
+    Ölçülen HIZ değil ifade eşleşmesi. Kolun WHERE ifadesi (`stmt.whereclause`,
+    arama kodunun ürettiğinin AYNISI) `case_foys` üzerinde tek başına EXPLAIN edilir:
+    scratch hacminde JOIN sırası planlayıcıya `idx_case_foys_case` üzerinden filtre
+    seçeneği verir ve sınav index'i değil JOIN maliyetini ölçmüş olurdu. Tek tablolu,
+    sıralamasız sorguda seq scan kapalıyken geriye yalnız trigram bitmap'i kalır —
+    ifade index'le eşleşmiyorsa plan seq scan'e düşer ve test kırmızı olur.
+    Gerçek hacimli önce/sonra (JOIN'li kol) ölçümü görev raporunda.
+    """
+    from sqlalchemy import select, text
+
+    import models
+    from managers.case_manager import _term_case_id_selects
+
+    admin = request.getfixturevalue("admin_engine")
+    with _scratch_database(admin, "g189plan") as engine:
+        _run_init_db(engine)
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO cases (tracking_no, status, active, tenant_id)
+                SELECT 'HA.G189.' || lpad(i::text, 5, '0') || '.X', 'DERDEST', true, NULL
+                FROM generate_series(1, 4000) AS i
+            """))
+            conn.execute(text("""
+                INSERT INTO case_foys (sistem_no, case_id, tku_no, onceki_tracking_no)
+                SELECT 'SSTMN-' || i, c.id, 'TKU-' || lpad((i % 1500)::text, 4, '0'),
+                       CASE WHEN i % 40 = 0 THEN 'HA.ESKI.' || i || '.X' END
+                FROM generate_series(1, 12000) AS i
+                JOIN cases c ON c.tracking_no = 'HA.G189.' || lpad((1 + i % 4000)::text, 5, '0') || '.X'
+            """))
+            conn.execute(text("ANALYZE cases"))
+            conn.execute(text("ANALYZE case_foys"))
+
+        def derle(stmt):
+            return str(stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+
+        kollar = {}
+        for stmt in _term_case_id_selects("TKU-0042", False):
+            kosul = derle(stmt.whereclause)
+            for ad, (_tablo, kolon) in G189_FOY_TRGM.items():
+                if kosul.startswith(f"case_foys.{kolon} ILIKE"):
+                    kollar[ad] = derle(select(models.CaseFoy.id).where(stmt.whereclause))
+        assert set(kollar) == set(G189_FOY_TRGM), f"föy kolları bulunamadı: {sorted(kollar)}"
+
+        with engine.connect() as conn:
+            conn.execute(text("SET enable_seqscan = off"))
+            for ad, sql in kollar.items():
+                plan = "\n".join(r[0] for r in conn.execute(text(f"EXPLAIN {sql}")).all())
+                assert f"Bitmap Index Scan on {ad}" in plan, f"{ad} kullanılamadı:\n{plan}"

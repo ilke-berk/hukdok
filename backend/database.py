@@ -445,8 +445,12 @@ _MIGRATIONS = [
     # 22. TKU NO + SISTEM NO — Full_Rapor_TKU aktarım hazırlığı (2026-08-05):
     # tku_no olay grup anahtarı (unique değil), sistem_no eski sistem kaydı (unique).
     # Yalnız DB + arama; UI gösterimi yok. PG'de unique index çoklu NULL'a izin verir.
+    # G189: `tku_no`nun btree index'i (idx_cases_tku_no) buradan ÇIKARILDI — kolon
+    # legacy'dir ve boş kaldı (aktarım TKU'yu `case_foys`a yazar, G123); index madde
+    # 29'da düşürülür. Burada kalsaydı eski kolonsuz bir kurulum onu yeniden yaratırdı.
+    # `uq_cases_sistem_no` tekillik kısıtıdır, DOKUNULMADI (kullanıcı kararı).
     ("columns", "cases", {
-        "tku_no":    ("VARCHAR(100)", ["CREATE INDEX IF NOT EXISTS idx_cases_tku_no ON cases(tku_no)"]),
+        "tku_no":    "VARCHAR(100)",
         "sistem_no": ("VARCHAR(100)", ["CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_sistem_no ON cases(sistem_no)"]),
     }),
 
@@ -808,8 +812,11 @@ _MIGRATIONS = [
     #                              tekil değil ve tablo sıfırdan doğuyor,
     #                              maliyet aktarım öncesi sıfır.
     #
-    # Başka index YOK: `sistem_no`yu unique zaten karşılar, kalan kolonlar
-    # (hasar_no, source) bugün hiçbir sorgunun filtresi değil.
+    # Başka btree index YOK: `sistem_no`yu unique zaten karşılar, kalan kolonlar
+    # (hasar_no, source) bugün hiçbir sorgunun filtresi değil. Arama kolları
+    # (`tku_no`/`sistem_no`/`onceki_tracking_no` ILIKE) için GIN trigram
+    # index'leri G189'da eklendi — pg_trgm gerektirdiği için burada DEĞİL,
+    # `_TRGM_INDEXES` sözlüğünde.
     ("index", "case_foys", [
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_foys_sistem_no "
         "ON case_foys (sistem_no)",
@@ -1210,6 +1217,14 @@ _DUSURULECEK_INDEXLER = {
         "idx_cases_klasor_no_2_trgm",   # 3.528 kB
         "idx_cases_esas_no_trgm",       # 3.328 kB
         "idx_cases_resp_lawyer_trgm",   # 3.032 kB
+        # G189 (14.09 performans denetimi D2): legacy `cases.tku_no`/`sistem_no`
+        # kolonları 14.578 kartta 0 dolu — index'leri boş kolonu tutuyordu. Arama
+        # bu kimlikleri `case_foys` üzerinden bulur; trigram index'leri oraya
+        # taşındı (`_TRGM_INDEXES`). Trigram adları sözlükten de çıkarıldı, btree
+        # `idx_cases_tku_no`nun kaynağı (madde 22 post-SQL'i) kaldırıldı.
+        "idx_cases_tku_no",
+        "idx_cases_tku_no_trgm",
+        "idx_cases_sistem_no_trgm",
     ],
 }
 
@@ -1264,8 +1279,14 @@ def sql_folded_expr(column_sql: str) -> str:
 _TRGM_INDEXES = {
     # cases — kimlik ve metin alanları
     "idx_cases_uyap_lawyer_trgm": ("cases", "uyap_lawyer_name"),
-    "idx_cases_tku_no_trgm":      ("cases", "tku_no"),
-    "idx_cases_sistem_no_trgm":   ("cases", "sistem_no"),
+    # föy kimlikleri (G189) — `managers/case_manager._term_case_id_selects`in üç
+    # `case_foys` kolu `<kolon> ILIKE '%terim%'` arar (G123). Önceden index'ler boş
+    # legacy `cases.tku_no`/`sistem_no`daydı ve bu üç kol her aramada 4.635 sayfalık
+    # seq scan'di (lokal: 8.140 / 8.395 / 223 dolu satır). Düz kolon → ILIKE ifadesi
+    # index'le birebir eşleşir.
+    "idx_case_foys_tku_no_trgm":             ("case_foys", "tku_no"),
+    "idx_case_foys_sistem_no_trgm":          ("case_foys", "sistem_no"),
+    "idx_case_foys_onceki_tracking_no_trgm": ("case_foys", "onceki_tracking_no"),
     # ilişkili tablolar — taraf / avukat adları
     "idx_case_parties_name_trgm": ("case_parties", "name"),
     "idx_case_lawyers_name_trgm": ("case_lawyers", "name"),
@@ -1278,6 +1299,14 @@ _TRGM_INDEXES = {
         "cases", f"({sql_folded_expr('responsible_lawyer_name')})",
     ),
 }
+
+
+def _trgm_index_ddl(idx_name: str, table: str, column: str) -> str:
+    """`_TRGM_INDEXES` girişinin DDL'i — idempotent (IF NOT EXISTS), GIN + gin_trgm_ops."""
+    return (
+        f"CREATE INDEX IF NOT EXISTS {idx_name} "
+        f"ON {table} USING gin ({column} gin_trgm_ops)"
+    )
 
 
 # ─── UNIQUE index savunması ──────────────────────────────────────────────────
@@ -1457,10 +1486,7 @@ def check_and_migrate_tables():
                 if tbl not in tables:
                     continue
                 try:
-                    conn.execute(text(
-                        f"CREATE INDEX IF NOT EXISTS {idx_name} "
-                        f"ON {tbl} USING gin ({col} gin_trgm_ops)"
-                    ))
+                    conn.execute(text(_trgm_index_ddl(idx_name, tbl, col)))
                     conn.commit()
                 except Exception as e:
                     conn.rollback()
