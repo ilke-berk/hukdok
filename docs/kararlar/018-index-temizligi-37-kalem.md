@@ -202,6 +202,26 @@ Altı aday index geçici kuruldu, kol kol ölçüldü, reddedilenler düşürül
   ayrıklığı, reddedilenlerin yokluğu ve `dbtest`'te ikinci `init_db`de index oid'inin
   değişmediği + arama kolunun index'e düşebildiği.
 
+## Ek — 2026-09-14: prod doğrulaması (Deploy #29, 906cda2)
+
+G189 + G190 prod'da ölçüldü (`scripts/perf_olcum.py --term`, tek UNION `EXPLAIN (ANALYZE, BUFFERS)`, sıcak).
+Önce c184c9a (13:25 TR), sonra 906cda2 deploy'u; ardından `VACUUM (FULL, ANALYZE) case_history, cases, case_foys`
+(D3, kullanıcı kararı). Koşu kaydı ve komutlar: `docs/plan/prod-deploy-29-performans-turu-2026-09-14.md`.
+
+| Terim | Önce (17 kol) | Sonra — kod (15 kol) | Sonra — VACUUM FULL |
+| --- | --- | --- | --- |
+| `Turgal` | 194,4 ms · 24.698 buffer · 12 seq | 47,9 ms · 9.097 · 5 seq | 46,4 ms · 3.238 · 6 seq |
+| `2024/12` | 131,4 ms · 23.350 · 12 seq | 40,8 ms · 7.776 · 5 seq | 35,6 ms · 2.509 · 5 seq |
+| `Sulh` | 127,6 ms · 23.322 · 12 seq | 46,7 ms · 7.886 · 5 seq | 32,6 ms · 2.540 · 5 seq |
+
+- Prod işlemcisi lokalden ~3-4× yavaş (aynı kolda `cases` seq scan prod 12-18 ms / lokal 4-5 ms); kazanç
+  milisaniye olarak prod'da büyüdü. Eski kod UNION'ı istek başına iki kez koşuyordu (G190 D4).
+- Dört `cases` trigram'ı + üç `case_foys` trigram'ı kuruldu, düşürülecekler yok — açılış logu temiz, ERROR 0.
+- Şişme (heap / satır verisi) VACUUM FULL ile case_history 15,67 → 1,09, cases 2,67 → 1,06, case_foys 2,08 → 1,11.
+- VACUUM sonrası planlayıcı Turgal'da `case_lawyers.name`'i Merge Join (50,4 ms) yerine seq scan'le (9,7 ms) koştu.
+  Kalan seq scan kolları `responsible_lawyer_name`, `case_lawyers.name`, `klasor_no_2`, `notes`, `old_value`,
+  `case_esas_numbers`; `idx_cases_resp_lawyer_fold_trgm` (4.6 MB) `idx_scan = 0` — ifade eşleşmesi ayrı görev adayı.
+
 ## Nihai index durumu — 2026-09-14 (14.09 denetimi · G189 · G190 · G192)
 
 14.09 performans denetiminin (`docs/arsiv/performans-denetimi-2026-09-14.md` D1, D2, D7,

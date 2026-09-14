@@ -5,6 +5,28 @@
 **ölçerek** göstermek. Deploy'dan hemen sonra şişik üç tabloya `VACUUM FULL` uygulanır (kullanıcı kararı 14.09).
 Bu doküman **koşu günü işaretlenerek** ilerletilir; bitince `docs/arsiv/`e taşınır.
 
+> **KOŞU KAYDI — 14.09.2026 (pazartesi, MESAİ İÇİ — kullanıcı açık isteğiyle), §1–§7 TAMAMLANDI.** Prod = main
+> **906cda2** (Deploy #29); rollback `./rollback.sh c184c9a`; DB dump
+> `~/backups/predeploy_906cda2_20260914-111620.dump` (damga UTC = 14:16 TR). §1 CI `success`, aktivite 0,
+> 64 commit. §2 test kapısı 3562 passed / 8 skipped (1010 sn), postgres recreate, üç konteyner healthy.
+> §3 healthz `906cda2`, ERROR 0, trgm + pg_stat_statements logu, SHOW 384MB / 1.1 / pg_stat_statements / on,
+> `ck_cases_status_uclu` `f`, 7 yeni trgm index var, düşmesi gerekenler yok. §8'in host nginx kısmı da koşuldu:
+> `https://hukukoid.com/` `no-cache`, `/assets/index-*.js` `public, max-age=31536000, immutable`, eksik parça 404
+> (host nginx başlıkları EZMİYOR — G182/F14 kapandı). §5 `VACUUM (FULL, ANALYZE)` ssh dahil 3,3 sn, ERROR 0.
+>
+> | Ölçüm (tek UNION çalışma süresi, sıcak) | Turgal | 2024/12 | Sulh | TKU-788 | Bora | Seq Scan kol | Buffer (Turgal) |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | A · önce (c184c9a, 13:25) | 194,4 ms | 131,4 | 127,6 | 126,4 | 135,7 | 12/17 | 24.698 |
+> | B · sonra-kod (906cda2) | 47,9 | 40,8 | 46,7 | 40,5 | 38,7 | 5/15 | 9.097 |
+> | C · sonra-vacuum | **46,4** | **35,6** | **32,6** | **36,9** | **32,3** | 5-6/15 | 3.238 |
+>
+> Eski kod UNION'ı istek başına iki kez koşuyordu (G190 D4) → istek başına DB süresi yaklaşık Turgal ~389 → 46 ms.
+> Şişme (heap / satır verisi): case_history 15,67 → **1,09** (heap 19 MB → 1,3 MB; toplam 25 MB → 1,8 MB), cases
+> 2,67 → **1,06** (toplam 28 → 11 MB), case_foys 2,08 → **1,11** (28 → 14 MB). C'de Turgal'ın kalan seq scan kolları:
+> `case_lawyers.name` 9,7 ms (önce Merge Join 50,4), `responsible_lawyer_name` 9,2, `notes` 4,0, `old_value` 1,6
+> (önce 4,3), `case_esas_numbers` 0,8, `klasor_no_2`. Raporlar `C:\hukdok-veri\perf\2026-09-14-{once-c184c9a,
+> sonra-kod-906cda2,sonra-vacuum-906cda2}`. **Açık:** §8 tarayıcı dumanı (insan), §9 ertesi gün.
+
 > Kod blokları bilerek `text` etiketli: komutlar **sunucuda** (`ssh hukukoid`, `~/hukdok`) koşar; "lokal" yazanlar
 > hariç. Deploy ve `VACUUM FULL` yalnız kullanıcı kararıyla, **mesai dışı**.
 
