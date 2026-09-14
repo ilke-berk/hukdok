@@ -687,6 +687,10 @@ _MIGRATIONS = [
     #                          aynı borcu geri getirirdi. B-tree tam/önek
     #                          eşleşmesini karşılar — eski esasla arama tam
     #                          numarayla yapılır ("2021/588").
+    #                          G190: `cases.esas_no` trigram'ı EXPLAIN kanıtıyla
+    #                          geri geldi (`_TRGM_INDEXES`); bu tablonun trigram'ı
+    #                          ÖLÇÜLDÜ ve yine eklenmedi — 1.280 satırlık seq scan
+    #                          19 buffer / 0,3 ms, kazanç yok (karar 018, G190 eki).
     ("index", "case_esas_numbers", [
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_esas "
         "ON case_esas_numbers (case_id, esas_no, stage)",
@@ -1208,14 +1212,14 @@ _DUSURULECEK_INDEXLER = {
     "case_history":           ["ix_case_history_id", "ix_case_history_case_id"],
     "case_lawyers":           ["ix_case_lawyers_id", "ix_case_lawyers_case_id"],
     "case_parties":           ["ix_case_parties_id", "ix_case_parties_case_id"],
-    # (A) PK ikizi + (B) prod'da hiç taranmamış altı GIN trigram index'i
+    # (A) PK ikizi + (B) prod'da hiç taranmamış altı GIN trigram index'i.
+    # G190: altıdan dördü (subject/tracking_no/court/esas_no) UNION yeniden
+    # yazımının EXPLAIN kanıtıyla `_TRGM_INDEXES`e geri döndü ve BU LİSTEDEN
+    # ÇIKARILDI — ikisinde birden kalsaydı her açılışta düşürülüp yeniden
+    # kurulurdu (G042 dersi). Kalan ikisi için ölçüm istenmedi, düşmüş kalır.
     "cases": [
         "ix_cases_id",
-        "idx_cases_subject_trgm",       # 6.112 kB (prod)
-        "idx_cases_tracking_no_trgm",   # 5.472 kB
-        "idx_cases_court_trgm",         # 5.424 kB
-        "idx_cases_klasor_no_2_trgm",   # 3.528 kB
-        "idx_cases_esas_no_trgm",       # 3.328 kB
+        "idx_cases_klasor_no_2_trgm",   # 3.528 kB (prod)
         "idx_cases_resp_lawyer_trgm",   # 3.032 kB
         # G189 (14.09 performans denetimi D2): legacy `cases.tku_no`/`sistem_no`
         # kolonları 14.578 kartta 0 dolu — index'leri boş kolonu tutuyordu. Arama
@@ -1279,6 +1283,15 @@ def sql_folded_expr(column_sql: str) -> str:
 _TRGM_INDEXES = {
     # cases — kimlik ve metin alanları
     "idx_cases_uyap_lawyer_trgm": ("cases", "uyap_lawyer_name"),
+    # G190 — karar 018'in "EXPLAIN isterse, yalnız onu" şartıyla geri gelen dört
+    # kol. `_term_case_id_selects`in bu kolları her aramada 1.440 sayfalık seq
+    # scan'di; index'le 5-91 buffer (lokal, üç terim: avukat soyadı / esas parçası
+    # / mahkeme parçası). Ölçüm tablosu `docs/kararlar/018-...` G190 ekinde.
+    # 2 harfli terimde planlayıcı yine seq scan seçer (plan birebir aynı, gerileme yok).
+    "idx_cases_court_trgm":       ("cases", "court"),
+    "idx_cases_subject_trgm":     ("cases", "subject"),
+    "idx_cases_esas_no_trgm":     ("cases", "esas_no"),
+    "idx_cases_tracking_no_trgm": ("cases", "tracking_no"),
     # föy kimlikleri (G189) — `managers/case_manager._term_case_id_selects`in üç
     # `case_foys` kolu `<kolon> ILIKE '%terim%'` arar (G123). Önceden index'ler boş
     # legacy `cases.tku_no`/`sistem_no`daydı ve bu üç kol her aramada 4.635 sayfalık

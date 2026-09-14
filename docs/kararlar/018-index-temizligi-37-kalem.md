@@ -145,6 +145,61 @@ kullandığı üç `case_foys` kolu ise index'sizdi: her arama 3 seq scan × 4.6
 - **`cases` üzerindeki altı trgm index'i hâlâ geri eklenmedi.** Geri ekleme kararı
   G190'ın EXPLAIN kanıtına bağlı.
 
+## Ek — 2026-09-14: altı trigram'dan dördü EXPLAIN kanıtıyla geri geldi (G190)
+
+Bu kararın "Küme 2" bahsi E8'e bağlanmıştı: UNION yeniden yazımı index'i
+*kullanılabilir* kıldıysa, EXPLAIN'in istediği — yalnız o — geri eklenecekti. G190 aynı
+turda iki şeyi daha yaptı: boş legacy kolları (`cases.tku_no`/`sistem_no`) aramadan
+çıkardı (17 → 15 kol) ve `with_total=True` aramada COUNT + sayfa sorgusunun iki kez
+koştuğu UNION ağacını tek koşuya indirdi (D4).
+
+**Yöntem:** lokal restore kopyası (14.578 kart), `scripts/perf_olcum --term` ile sıcak
+önbellekte `EXPLAIN (ANALYZE, BUFFERS)`. Üç terim: `Turgal` (avukat soyadı), `2024/12`
+(esas parçası), `Sulh` (mahkeme parçası); ek olarak `20` (2 harfli, gerileme sınaması).
+Altı aday index geçici kuruldu, kol kol ölçüldü, reddedilenler düşürüldü.
+
+**Tek terim UNION'ın tamamı** (çalışma · buffer · seq scan'li kol):
+
+| Terim | G189 hâli (17 kol) | Kollar çıktı (15 kol) | + dört trigram |
+| --- | --- | --- | --- |
+| `Turgal` | 48,5 ms · 19.329 · 12/17 | 43,8 ms · 16.449 · 10/15 | 26,9 ms · 8.759 · 6/15 |
+| `2024/12` | 39,5 ms · 15.867 · 11/17 | 32,5 ms · 12.987 · 9/15 | 16,2 ms · 7.295 · 5/15 |
+| `Sulh` | 35,8 ms · 15.832 · 11/17 | 30,3 ms · 12.952 · 9/15 | 16,6 ms · 7.298 · 5/15 |
+| `20` | — | 82,7 ms · 33.559 · 14/15 | 78,9 ms · 33.559 · 14/15 (plan birebir aynı) |
+
+- **Eklendi** (`_TRGM_INDEXES`, G043 deseni) ve **`_DUSURULECEK_INDEXLER["cases"]`dan
+  çıkarıldı** (ikisinde birden kalsa her açılışta düşürülüp yeniden kurulurdu):
+
+  | Index | Kol önce (üç terim) | Kol sonra | Lokal boyut · kurulum |
+  | --- | --- | --- | --- |
+  | `idx_cases_court_trgm` | Seq Scan, 1.440 buffer, 5,3-5,9 ms | Bitmap Index Scan, 9-91 buffer, 0,0-0,5 ms | 1.048 kB · 106 ms |
+  | `idx_cases_subject_trgm` | Seq Scan, 1.440 buffer, 4,0-5,2 ms | Bitmap Index Scan, 5-11 buffer, 0,0 ms | 616 kB · 71 ms |
+  | `idx_cases_esas_no_trgm` | Seq Scan, 1.440 buffer, 4,0-4,4 ms | Bitmap Index Scan, 5-33 buffer, 0,0-0,3 ms | 464 kB · 24 ms |
+  | `idx_cases_tracking_no_trgm` | Seq Scan, 1.440 buffer, 4,7-5,6 ms | Bitmap Index Scan, 5-12 buffer, 0,0-0,1 ms | 1.144 kB · 57 ms |
+
+- **Ölçüldü, EKLENMEDİ:**
+  - `case_esas_numbers.esas_no` trigram — seq scan zaten 19 buffer / 0,3 ms (1.280
+    satır); index'le 5-11 buffer / 0,0 ms. Kazanç ≤ 0,3 ms, bu kararın "peşin index"
+    ölçütüne takılır. Btree `idx_case_esas_numbers_esas_no` yerinde.
+  - `case_history.old_value` trigram — seq scan 2.750 buffer / 1,3-1,5 ms; index'le
+    5-13 buffer / 0,0-0,1 ms (152 kB). Kazanç ~1,4 ms. Kolonun (ve `cases.notes`un)
+    normal modda aramadan ÇIKARILMASI ayrı bir seçenek ve davranış değişikliği →
+    **kullanıcı kararı açık**. Karar "çıkar" olursa index ölü doğardı; "kalsın" olursa
+    bu ölçümle eklenir.
+- **İstenmedi, düşmüş kalır:** `idx_cases_klasor_no_2_trgm`, `idx_cases_resp_lawyer_trgm`.
+  Not: `cases.klasor_no_2` artık kalan en pahalı `cases` kolu (1.440 buffer, 5,6-6,8 ms)
+  ve ham `responsible_lawyer_name` kolu da seq scan (katlanmış ifade index'i
+  `idx_cases_resp_lawyer_fold_trgm` ham `ILIKE`'la eşleşmez) — ayrı ölçüm konusu.
+- **2 harfli terim:** trigram index'i 2 karakterlik deseni daraltamaz; planlayıcı dört
+  index varken de seq scan seçti (plan ve buffer birebir aynı). Tuş vuruşu yolunda gerileme yok.
+- **Bilinen bedel:** `cases` üzerinde dört GIN daha — aktarımın toplu UPDATE'inde yazma
+  amplifikasyonu. Lokal tam kurulum süreleri 24-106 ms; aktarım süresi (2026-08-20
+  ölçümü: 8.409 satır / 93 sn) sonraki koşuda izlenecek. Prod boyutları bu kararın
+  2026-08-13 tablosundaki gibi lokalin ~5 katı olabilir (şişme, D3).
+- **Test:** `backend/tests/test_g190_arama_tek_kosu.py` — sözlük/düşürme listesi
+  ayrıklığı, reddedilenlerin yokluğu ve `dbtest`'te ikinci `init_db`de index oid'inin
+  değişmediği + arama kolunun index'e düşebildiği.
+
 - **Test:** `backend/tests/test_index_envanteri.py` — envanter script'inin
   unique/primary'yi dışladığı ve `ix_cases_tracking_no`'nun listeye girmediği ayrı
   assertion'larla kilitli.

@@ -745,7 +745,13 @@ def _term_case_id_selects(term: str, exact: bool) -> list:
     her birini kendi başına optimize edip çağıran tarafta UNION'lar — index
     geri gelmese bile ölçülen kazanç büyük (bkz. G055 raporu).
     Exact modda `notes` ve `case_history.old_value` YOK — eski OR ağacındaki
-    davranışın aynısı, normal moddaki 14 koldan ikisi eksik kalır.
+    davranışın aynısı, normal moddaki 15 koldan ikisi eksik kalır.
+
+    `cases.tku_no` / `cases.sistem_no` kolları G190'da ÇIKARILDI: iki kolonun
+    kodda yazıcısı yok (aktarım G123'ten beri föy tablosuna yazar; yazmama
+    `test_g063_case_foys`/`test_g064_aktarim_cekirdek` ile kilitli), lokal restore
+    kopyasında 14.578 kartta 0 dolu. Her aramada iki boş seq scan'di (1.440 sayfa
+    ×2); TKU/SistemNo aramasını aşağıdaki `case_foys` kolları karşılar.
     """
     pattern = term if exact else f"%{term}%"
     contains = f"%{term}%"
@@ -758,11 +764,8 @@ def _term_case_id_selects(term: str, exact: bool) -> list:
         .where(models.CaseEsasNumber.esas_no.ilike(pattern)),
         select(models.Case.id).where(models.Case.tracking_no.ilike(pattern)),
         select(models.Case.id).where(models.Case.klasor_no_2.ilike(pattern)),  # Eski sistem no
-        select(models.Case.id).where(models.Case.tku_no.ilike(pattern)),  # Eski sistem olay no (TKU-784)
-        select(models.Case.id).where(models.Case.sistem_no.ilike(pattern)),  # Eski sistem kayıt no (SSTMN-9425)
-        # Föy kimlikleri (G123): aktarım TKU/SistemNo'yu `case_foys`a yazar,
-        # `cases.tku_no`/`sistem_no` legacy kolonları boş kaldı (lokal: 0 kart);
-        # TKU ile arama bu iki kol olmadan hiçbir şey bulmuyordu.
+        # Föy kimlikleri (G123): aktarım TKU/SistemNo'yu `case_foys`a yazar
+        # (TKU-784, SSTMN-9425); `cases` üzerindeki legacy ikizleri boştur (G190).
         select(models.Case.id)
         .join(models.CaseFoy, models.CaseFoy.case_id == models.Case.id)
         .where(models.CaseFoy.tku_no.ilike(pattern)),
@@ -808,6 +811,25 @@ def _search_term_ids(term: str, exact: bool):
     return select(term_subq.c.id)
 
 
+def _load_cases_in_order(db, ids: list) -> list:
+    """Verilen id'lerin dava satırlarını AYNI sırayla yükler (D4, G190).
+
+    Sıralama ve süzme id listesini üreten sorguda yapıldı; burada yalnız en çok
+    `limit` kadar birincil anahtar okunur (parties/lawyers selectinload ile).
+    İki sorgu arasında silinen satır sessizce atlanır — liste tekrar üretmez.
+    """
+    if not ids:
+        return []
+    rows = (
+        db.query(models.Case)
+        .options(selectinload(models.Case.parties), selectinload(models.Case.lawyers))
+        .filter(models.Case.id.in_(ids))
+        .all()
+    )
+    by_id = {row.id: row for row in rows}
+    return [by_id[case_id] for case_id in ids if case_id in by_id]
+
+
 def get_cases(
     limit: int = 50,
     offset: int = 0,
@@ -849,10 +871,9 @@ def get_cases(
     """
     try:
         db = SessionLocal()
-        query = db.query(models.Case).options(
-            selectinload(models.Case.parties),
-            selectinload(models.Case.lawyers)
-        ).filter(models.Case.active.is_(True))
+        # İlişki yükleyicileri (selectinload) YALNIZ satır yüklenirken eklenir:
+        # D4 yolundaki `with_entities(Case.id)` id sorgusu Case varlığı taşımaz.
+        query = db.query(models.Case).filter(models.Case.active.is_(True))
         query = _apply_tenant_filter(query, tenant_id)
 
         if status and status != "ALL":
@@ -895,6 +916,7 @@ def get_cases(
             query = query.filter(models.Case.id.in_(matched_ids if matched_ids else [-1]))
 
         min_len = 1 if exact else 2
+        search_filtered = False
         if q and len(q) >= min_len:
             terms = q.strip().split()
             term_id_queries = []
@@ -911,14 +933,12 @@ def get_cases(
                     else intersect(*term_id_queries)
                 )
                 query = query.filter(models.Case.id.in_(combined_ids))
+                search_filtered = True
 
-        # Toplam sayı — sayfalama (offset/limit) uygulanmadan önce.
-        # UNION'lı id kümesi zaten DISTINCT'tir, satır çoğalması yok.
-        # İstenmezse COUNT hiç koşmaz: aramada bu, her tuş vuruşunda ikinci bir
-        # tam taramayı ortadan kaldırır (E3).
-        total = query.count() if with_total else -1
-
-        # Relevance sıralaması: sorgu varsa exact > prefix > partial > diğer
+        # Relevance sıralaması: sorgu varsa exact > prefix > partial > diğer.
+        # id tiebreaker: updated_at unique değil — eşitlikte sayfalar arası
+        # satır tekrarı/atlamasını önler.
+        order_by: tuple = (models.Case.updated_at.desc(), models.Case.id.desc())
         if q and len(q.strip()) >= min_len:
             from sqlalchemy import case as sa_case
             raw = q.strip()
@@ -926,20 +946,32 @@ def get_cases(
                 (models.Case.esas_no.ilike(raw), 1),
                 (models.Case.tracking_no.ilike(raw), 1),
                 (models.Case.klasor_no_2.ilike(raw), 1),
-                (models.Case.tku_no.ilike(raw), 1),
-                (models.Case.sistem_no.ilike(raw), 1),
                 (models.Case.esas_no.ilike(f"{raw}%"), 2),
                 (models.Case.tracking_no.ilike(f"{raw}%"), 2),
                 (models.Case.klasor_no_2.ilike(f"{raw}%"), 2),
-                (models.Case.tku_no.ilike(f"{raw}%"), 2),
-                (models.Case.sistem_no.ilike(f"{raw}%"), 2),
                 else_=3,
             )
-            # id tiebreaker: updated_at unique değil — eşitlikte sayfalar arası
-            # satır tekrarı/atlamasını önler
-            items = query.order_by(relevance, models.Case.updated_at.desc(), models.Case.id.desc()).offset(offset).limit(limit).all()
+            order_by = (relevance, *order_by)
+
+        if search_filtered and with_total:
+            # D4 (G190): arama + toplam. Eskiden `count()` ve sayfa sorgusu aynı
+            # UNION/INTERSECT ağacını İKİ kez koşuyordu. Artık süzülmüş ve
+            # SIRALANMIŞ id listesi TEK sorguda gelir (arama sonucu en çok ~14 k
+            # int): toplam = listenin uzunluğu, sayfa = listenin dilimi. Aynı
+            # listeden dilimlendiği için sayfalar arası tekrar/atlama olamaz.
+            ordered_ids = [row[0] for row in query.with_entities(models.Case.id).order_by(*order_by).all()]
+            total = len(ordered_ids)
+            items = _load_cases_in_order(db, ordered_ids[offset:offset + limit])
         else:
-            items = query.order_by(models.Case.updated_at.desc(), models.Case.id.desc()).offset(offset).limit(limit).all()
+            # Toplam sayı — sayfalama (offset/limit) uygulanmadan önce.
+            # İstenmezse COUNT hiç koşmaz: aramada bu, her tuş vuruşunda ikinci
+            # bir tam taramayı ortadan kaldırır (E3) ve UNION ağacı yalnız sayfa
+            # sorgusunda, bir kez koşar. Aramasız liste yolunda UNION yoktur.
+            total = query.count() if with_total else -1
+            items = (
+                query.options(selectinload(models.Case.parties), selectinload(models.Case.lawyers))
+                .order_by(*order_by).offset(offset).limit(limit).all()
+            )
 
         cases_list = []
         for item in items:

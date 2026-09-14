@@ -106,13 +106,16 @@ karar 020): `cases.status` yalnız DERDEST | DANIŞ | MAHZEN; temyiz/istinaf/kar
 değil AŞAMADIR (`cases.case_stage`). Yazma yolları `normalize_case_status`'tan geçer, belge işleme
 belge türünden aşamaya yazar (`DOCTYPE_TO_STAGE_MAP`), migrasyon 50 eski değerleri üçlüye çekti.
 
-**Dava arama (E8, G055):** `case_manager.get_cases` 13-14 kolon/ilişkiyi tek bir
-OR/EXISTS ağacında DEĞİL, her terim için bağımsız `UNION`'lanan `SELECT`'lerle arar;
-çok terimli sorguda AND semantiği `UNION`'ların `INTERSECT`'iyle kurulur
-(`_search_term_ids`, `_term_case_id_selects`). `cases` üzerindeki altı GIN trigram
-index'i (subject/tracking_no/court/klasor_no_2/esas_no/responsible_lawyer_name)
-G042'de düşürüldü ve **geri eklenmedi** — UNION yeniden yazımı index'siz de ölçülebilir
-kazanç veriyor (bkz. `docs/kararlar/018-index-temizligi-37-kalem.md`, `gorevler/gorev/G055.md`).
+**Dava arama (E8, G055, G190):** `case_manager.get_cases` 15 kolon/ilişkiyi (exact modda
+13: `notes`/`case_history.old_value` yok) tek bir OR/EXISTS ağacında DEĞİL, her terim için
+bağımsız `UNION`'lanan `SELECT`'lerle arar; çok terimli sorguda AND semantiği `UNION`'ların
+`INTERSECT`'iyle kurulur (`_search_term_ids`, `_term_case_id_selects`). Boş legacy
+`cases.tku_no`/`sistem_no` kolları G190'da çıktı (TKU/SistemNo `case_foys` kollarından).
+`with_total=True` aramada UNION ağacı TEK koşar: süzülmüş+sıralı id listesi → toplam =
+uzunluk, sayfa = dilim (`_load_cases_in_order`); COUNT yok. G042'nin düşürdüğü altı GIN
+trigram'dan dördü (subject/tracking_no/court/esas_no) G190'da EXPLAIN kanıtıyla
+`_TRGM_INDEXES`e döndü; klasor_no_2 ve ham responsible_lawyer_name düşmüş kalır
+(bkz. `docs/kararlar/018-index-temizligi-37-kalem.md` G190 eki, `gorevler/gorev/G190.md`).
 
 **Raporlama (G130-G177 + 12.09 özet modu):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
 `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
