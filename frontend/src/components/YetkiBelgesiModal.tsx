@@ -24,7 +24,18 @@ interface AvukatDetay {
     address: string;
 }
 
-const CACHE_KEY = "yetki_belgesi_avukat_cache";
+// G188 (F6) — KVKK: `lib/formDraft.ts:10-11` kuralı — TC içeren veri kalıcı
+// localStorage'a YAZILMAZ. Bu yüzden avukat önbelleği TC TAŞIMAZ (TC yalnız
+// config'den gelir ya da elle girilir); yalnız ad + sicil no, sekme kapanınca
+// ölen sessionStorage'da sürümlü anahtarla tutulur. Sürümsüz eski kalıcı anahtar
+// (TC içeriyordu) modal açılınca silinir.
+const LEGACY_CACHE_KEY = "yetki_belgesi_avukat_cache";
+const CACHE_KEY = "yetki_belgesi_avukat_cache:v1";
+
+interface AvukatOnbellekKaydi {
+    ad: string;
+    sicil: string;
+}
 
 const STEP_DEFS = [
     { n: 1, label: "Avukatlar" },
@@ -35,13 +46,38 @@ const STEP_DEFS = [
 const inputCls = "bg-[var(--bg)] border-[var(--border)] rounded-[3px] h-10 text-sm";
 const monoCls = `${inputCls} font-mono tracking-[0.02em]`;
 
-function loadCache(): Record<string, { tc: string; sicil: string }> {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}"); }
-    catch { return {}; }
+function loadCache(): Record<string, AvukatOnbellekKaydi> {
+    try {
+        const raw: unknown = JSON.parse(sessionStorage.getItem(CACHE_KEY) || "{}");
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+        const cache: Record<string, AvukatOnbellekKaydi> = {};
+        // Yalnız ad + sicil alınır; kayıtta başka alan (ör. tc) olsa bile okunmaz.
+        for (const [anahtar, kayit] of Object.entries(raw as Record<string, unknown>)) {
+            if (!kayit || typeof kayit !== "object") continue;
+            const { ad, sicil } = kayit as Partial<AvukatOnbellekKaydi>;
+            cache[anahtar] = { ad: typeof ad === "string" ? ad : "", sicil: typeof sicil === "string" ? sicil : "" };
+        }
+        return cache;
+    } catch {
+        return {};
+    }
 }
 
-function saveCache(cache: Record<string, { tc: string; sicil: string }>) {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+function saveCache(cache: Record<string, AvukatOnbellekKaydi>) {
+    try {
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    } catch {
+        // Depo kapalı/kota dolu: önbellek yalnız kolaylıktır, akış (3. adım) sürer.
+    }
+}
+
+/** TC içeren sürümsüz eski kalıcı önbelleği siler (temizlik migrasyonu). */
+function removeLegacyCache() {
+    try {
+        localStorage.removeItem(LEGACY_CACHE_KEY);
+    } catch {
+        // Depo erişilemiyorsa silinecek bir şey de okunamaz; sessizce geç.
+    }
 }
 
 function normalizeName(name: string): string {
@@ -147,21 +183,24 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     const printRef = useRef<HTMLDivElement>(null);
 
+    // G188 (F6): eski kalıcı TC önbelleği modal ilk açıldığında temizlenir.
+    useEffect(() => {
+        if (open) removeLegacyCache();
+    }, [open]);
+
     // useConfig'in `lawyers` dizisi react-query cache'inden gelir (kimliği
     // veri değişmedikçe sabit), bu yüzden bağımlılık olarak güvenli.
     const lookupAvukat = useCallback((ad: string): { tc: string; sicil: string; address: string } => {
         const cache = loadCache();
         const normalAd = normalizeName(ad);
-        const cached = cache[normalAd] || { tc: "", sicil: "" };
+        const cached = cache[normalAd];
         const match = lawyers.find(l => normalizeName(l.name) === normalAd);
-        if (match) {
-            return {
-                tc: match.tc_no || cached.tc || "",
-                sicil: match.sicil_no || cached.sicil || "",
-                address: match.address || "",
-            };
-        }
-        return { tc: cached.tc || "", sicil: cached.sicil || "", address: "" };
+        // TC önbellekten GELMEZ (KVKK): yalnız config; yoksa kullanıcı girer.
+        return {
+            tc: match?.tc_no || "",
+            sicil: match?.sicil_no || cached?.sicil || "",
+            address: match?.address || "",
+        };
     }, [lawyers]);
 
     useEffect(() => {
@@ -199,8 +238,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
 
     function goToStep3() {
         const cache = loadCache();
-        cache[normalizeName(verenDetay.ad)] = { tc: verenDetay.tc, sicil: verenDetay.sicil };
-        yetkiliDetaylar.forEach(d => { cache[normalizeName(d.ad)] = { tc: d.tc, sicil: d.sicil }; });
+        cache[normalizeName(verenDetay.ad)] = { ad: verenDetay.ad, sicil: verenDetay.sicil };
+        yetkiliDetaylar.forEach(d => { cache[normalizeName(d.ad)] = { ad: d.ad, sicil: d.sicil }; });
         saveCache(cache);
         setStep(3);
     }
