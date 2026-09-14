@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { MsalProvider, useMsal } from "@azure/msal-react";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
@@ -14,24 +16,45 @@ import { ErrorBoundary } from "@/components/system/ErrorBoundary";
 import { useIdleTimeout } from "@/hooks/useIdleTimeout";
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { apiClient } from "@/lib/api";
-import Index from "./pages/Index";
-import AvukatDashboard from "./pages/dashboards/AvukatDashboard";
-import IdariDashboard from "./pages/dashboards/IdariDashboard";
+import { importWithReload } from "@/lib/chunkReload";
 import { useDashboardView } from "@/hooks/useDashboardView";
 import Login from "./pages/Login";
-import AdminPage from "./pages/AdminPage";
-import NewCase from "./pages/NewCase";
-import CaseIntakeWizard from "./pages/CaseIntakeWizard";
-import CaseList from "./pages/CaseList";
-import NewClient from "./pages/NewClient";
-import ClientList from "./pages/ClientList";
 import NotFound from "./pages/NotFound";
-import CaseDetails from "./pages/CaseDetails";
-import ActivityHistory from "./pages/ActivityHistory";
-import ReportsPage from "./pages/ReportsPage";
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
+
+// G182: sayfalar route başına ayrı parça (tek 1,5 MB paket yerine). Login ve NotFound
+// statik kalır: oturumsuz ilk açılış ve 404 ek ağ turu beklemeden çizilsin.
+// /reports + /admin parçaları (rapor katmanı, @dnd-kit) admin olmayan kullanıcıya
+// hiç inmez. importWithReload: deploy sonrası bayat parça → sayfa BİR kez yenilenir
+// (src/lib/chunkReload.ts).
+const Index = lazy(() => importWithReload(() => import("./pages/Index")));
+const AvukatDashboard = lazy(() => importWithReload(() => import("./pages/dashboards/AvukatDashboard")));
+const IdariDashboard = lazy(() => importWithReload(() => import("./pages/dashboards/IdariDashboard")));
+const AdminPage = lazy(() => importWithReload(() => import("./pages/AdminPage")));
+const NewCase = lazy(() => importWithReload(() => import("./pages/NewCase")));
+const CaseIntakeWizard = lazy(() => importWithReload(() => import("./pages/CaseIntakeWizard")));
+const CaseList = lazy(() => importWithReload(() => import("./pages/CaseList")));
+const NewClient = lazy(() => importWithReload(() => import("./pages/NewClient")));
+const ClientList = lazy(() => importWithReload(() => import("./pages/ClientList")));
+const CaseDetails = lazy(() => importWithReload(() => import("./pages/CaseDetails")));
+const ActivityHistory = lazy(() => importWithReload(() => import("./pages/ActivityHistory")));
+const ReportsPage = lazy(() => importWithReload(() => import("./pages/ReportsPage")));
 
 const queryClient = new QueryClient();
+
+// Parça inerken gösterilen küçük gösterge. BrowserRouter gezinmeleri startTransition
+// içinde yaptığı için sayfalar arası geçişte eski sayfa yerinde kalır; bu gösterge
+// pratikte yalnız ilk açılışta (henüz çizilmiş içerik yokken) görünür.
+const PageLoading = () => (
+  <div
+    role="status"
+    aria-live="polite"
+    className="min-h-screen flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
+  >
+    <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+    <span>Yükleniyor...</span>
+  </div>
+);
 
 // Dashboard router — Sidebar'daki view toggle'a göre Avukat veya İdari render eder.
 const DashboardRouter = () => {
@@ -75,6 +98,7 @@ const AppContent = () => {
         />
       )}
     <BrowserRouter>
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         {/* Public Route */}
         <Route path="/login" element={<Login />} />
@@ -118,6 +142,7 @@ const AppContent = () => {
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   </>
   );
@@ -179,11 +204,10 @@ const App = () => {
         }
 
         // Show user-friendly error message
-        import("sonner").then(({ toast }) => {
-          toast.error("Oturum Açma Hatası", {
-            description: "Giriş işlemi tamamlanamadı. Lütfen yetkili bir hesapla tekrar deneyin.",
-            duration: 5000
-          });
+        // G182: sonner zaten statik yüklü (ui/sonner + 24 dosya) — dinamik import bölme yapmıyordu.
+        toast.error("Oturum Açma Hatası", {
+          description: "Giriş işlemi tamamlanamadı. Lütfen yetkili bir hesapla tekrar deneyin.",
+          duration: 5000
         });
       } finally {
         setIsReady(true);
