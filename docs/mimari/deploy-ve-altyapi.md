@@ -358,3 +358,45 @@ docker run --rm --network hukudok-automator-main_hukudok-network \
   -v "//c/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:alpine nginx -t
 ```
+
+## 12. Performans ölçümü (G183)
+
+`backend/scripts/perf_olcum.py` veritabanı performans kararlarından (VACUUM FULL / pg_repack,
+index düşürme, `cases.status` CHECK kısıtı, bağlantı ve sunucu ayarları) ÖNCE koşulan salt
+okunur ölçüm raporudur. Hiçbir şeyi değiştirmez, çıktısı Markdown'dır:
+
+```
+docker compose exec -T backend python -m scripts.perf_olcum                  # EXPLAIN'siz
+docker compose exec -T backend python -m scripts.perf_olcum --term <soyad>   # + arama planı
+docker compose exec -T backend python -m scripts.perf_olcum --term <soyad> --out /tmp/perf_olcum.md
+docker compose cp backend:/tmp/perf_olcum.md ./perf_olcum.md
+```
+
+Rapor stdout'a basılır; `--out` ayrıca konteyner içindeki dosyaya UTF-8 yazar. Bir bölüm
+ölçülemezse (yetki, zaman aşımı) rapor durmaz: bölüme "Ölçülemedi" satırı düşer ve WARNING
+loglanır. Log handler'ı stdout'a yazdığı için bu durumda stdout yönlendirmesine log satırı
+karışabilir; temiz dosya için `--out` kullanın.
+
+Başlıkta sürüm (`APP_VERSION`, `/healthz` "version" alanıyla aynı kaynak) ve TR saatiyle
+zaman damgası vardır. Bölümler:
+
+| # | Bölüm | Kaynak |
+| --- | --- | --- |
+| 1 | Şişme: en büyük 12 tablo için heap / Σ `pg_column_size` oranı, `n_dead_tup`, son (auto)vacuum | `pg_stat_user_tables` + tablo başına tam tarama |
+| 2 | Sunucu ayarları: `shared_buffers`, `effective_cache_size`, `work_mem`, `random_page_cost`, `max_connections`, `idle_in_transaction_session_timeout`, `lock_timeout`, `shared_preload_libraries` | `SHOW` + `pg_settings.source` |
+| 3 | Bağlantılar: durum dağılımı, "idle in transaction" sayısı ve en uzun süre | `pg_stat_activity` (ölçümün kendi bağlantısı hariç) |
+| 4 | Index kullanımı: `idx_scan = 0` listesi, boyut, envanter kararı, sayaç sıfırlama tarihi | `scripts/index_envanteri.collect_indexes` + `pg_stat_get_db_stat_reset_time` |
+| 5 | Veri dağılımı: `cases.status` (üçlü dışı bayraklı), `cases`/`case_foys` kimlik kolonlarının doluluğu | `cases`, `case_foys` |
+| 6 | Arama planı (yalnız `--term` ile): `case_manager._search_term_ids(term, exact=False)` için `EXPLAIN (ANALYZE, BUFFERS)`, UNION kolu başına düğüm türü, satır, buffer, süre | uygulamanın gerçek arama sorgusu |
+
+**Salt okunur güvencesi:** script'in koştuğu her SQL `salt_okunur_dogrula` süzgecinden geçer
+(yalnız `SELECT`/`SHOW`/`EXPLAIN`, yazma sözcüğü yok); CLI bağlantısı ayrıca
+`default_transaction_read_only=on` ile açılır. Ölçüm bağlantısının `statement_timeout`'u
+120 sn'dir (uygulamanınki 30 sn). `EXPLAIN ANALYZE` sorguyu gerçekten çalıştırır, ama sorgu
+yalnız bir `SELECT` UNION'udur.
+
+**Şerh — lokal süreler prod'u TEMSİL ETMEZ.** Lokal veritabanı bir restore kopyasıdır
+(yazma trafiği yok): index sayaçları restore'da sıfırlanır, tablo istatistikleri ve önbellek
+durumu prod'dan farklıdır. Bölüm 1, 4 ve 6'daki sayılarla karar ancak prod çıktısı alınınca
+verilir. `idx_scan = 0` bir index'i düşürmek için tek başına yetmez: unique/primary index'ler
+tekillik kontrolünde bu sayacı artırmaz (bkz. `scripts/index_envanteri.py` docstring'i).
