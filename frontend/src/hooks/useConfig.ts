@@ -96,23 +96,86 @@ const CONFIG_KEYS = {
     revisionDecisions: ["config", "revision_decisions"],
 } as const;
 
+/** G184: tek listeye abone olmak için anahtar (`useConfigList`). */
+export type ConfigListKey = keyof typeof CONFIG_KEYS;
+
+type AuthRequest = (url: string, method: string, body?: unknown) => Promise<Response | null>;
+
+const CONFIG_STALE_TIME = 5 * 60 * 1000;
+
+/**
+ * G019: Hata YUTMAZ. Eski sessiz `[]` fallback'i 13 config listesinin
+ * hepsini kesintide "boş liste" gibi gösteriyor, zorunlu alan ve dropdown
+ * kapılarını sessizce açıyordu. Aynı dosyadaki mutasyon yolu (`request`)
+ * zaten fırlatıyordu — tutarsızlık burada kapandı.
+ */
+const fetchConfigList = async (authRequest: AuthRequest, url: string): Promise<ConfigItem[]> => {
+    const res = await authRequest(url, "GET");
+    if (!res?.ok) throw new Error(CONFIG_LIST_ERROR);
+    return res.json();
+};
+
+/**
+ * G184: `useConfig()` ve `useConfigList()` liste sorgusunu TEK yerden kurar — aynı
+ * queryKey, aynı staleTime/retry/enabled → önbellek paylaşılır, çift istek olmaz.
+ * Uç yolu anahtarın ikinci parçasıdır (`["config","email_recipients"]` →
+ * `/api/config/email_recipients`).
+ *
+ * apiClient GET'i zaten 3 denemeye kadar tekrarlıyor (Faz 4.1); react-query'nin
+ * ek 3 denemesi hata şeridini saniyelerce geciktirirdi — tekrar kullanıcıya
+ * bırakıldı (useClients ile aynı karar).
+ */
+const configListQueryOptions = (key: ConfigListKey, authRequest: AuthRequest, enabled: boolean) => ({
+    queryKey: CONFIG_KEYS[key],
+    queryFn: () => fetchConfigList(authRequest, `/api/config/${CONFIG_KEYS[key][1]}`),
+    enabled,
+    staleTime: CONFIG_STALE_TIME,
+    retry: false,
+});
+
+/** Mahkeme türleri üst dava türüne (`parent_code`) göre gruplu. */
+export const groupCourtTypesByParent = (items: ConfigItem[]): Record<string, ConfigItem[]> =>
+    items.reduce<Record<string, ConfigItem[]>>((acc, item) => {
+        const parent = item.parent_code ?? "";
+        if (!acc[parent]) acc[parent] = [];
+        acc[parent].push(item);
+        return acc;
+    }, {});
+
+/** Taraf rolleri türüne göre ayrık: asıl taraf (MAIN) / üçüncü kişi (THIRD). */
+export const splitPartyRoles = (items: ConfigItem[]): { main: ConfigItem[]; third: ConfigItem[] } => ({
+    main: items.filter(r => r.role_type === "MAIN"),
+    third: items.filter(r => r.role_type === "THIRD"),
+});
+
+/**
+ * G184: TEK listeye abone olur (tek `useQuery`). `useConfig()` 32 sorguya birden
+ * abone eder; 1-2 liste kullanan tüketici bununla yalnız ihtiyacı olan listeyi
+ * izler. Önbellek `useConfig()` ile ortaktır (`configListQueryOptions`).
+ *
+ * `error`, `useConfig().configError` ile aynı sözleşmededir (G019: hata ≠ boş liste):
+ * hata varsa kullanıcıya gösterilecek mesaj, yoksa `undefined`.
+ */
+export const useConfigList = (key: ConfigListKey) => {
+    const { accounts } = useMsal();
+    const { authRequest } = useAuthRequest();
+    const q = useQuery(configListQueryOptions(key, authRequest, accounts.length > 0));
+
+    return {
+        data: q.data ?? EMPTY,
+        isLoading: q.isLoading,
+        isError: q.isError,
+        error: q.isError ? CONFIG_LIST_ERROR : undefined,
+        isFetching: q.isFetching,
+        refetch: async (): Promise<void> => { await q.refetch(); },
+    };
+};
+
 export const useConfig = () => {
     const { accounts } = useMsal();
     const { authRequest } = useAuthRequest();
     const queryClient = useQueryClient();
     const enabled = accounts.length > 0;
-
-    /**
-     * G019: Hata YUTMAZ. Eski sessiz `[]` fallback'i 13 config listesinin
-     * hepsini kesintide "boş liste" gibi gösteriyor, zorunlu alan ve dropdown
-     * kapılarını sessizce açıyordu. Aynı dosyadaki mutasyon yolu (`request`)
-     * zaten fırlatıyordu — tutarsızlık burada kapandı.
-     */
-    const fetchJson = async (url: string): Promise<ConfigItem[]> => {
-        const res = await authRequest(url, "GET");
-        if (!res?.ok) throw new Error(CONFIG_LIST_ERROR);
-        return res.json();
-    };
 
     // Backend'in mesajını (örn. 409 "… zaten listede mevcut") çağırana taşıyarak yanıtı döner
     const request = async <T,>(url: string, method: string, body?: unknown, fallback = "İşlem başarısız"): Promise<T> => {
@@ -136,45 +199,43 @@ export const useConfig = () => {
     const invalidate = (...keys: (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS][]) =>
         Promise.all(keys.map((k) => queryClient.invalidateQueries({ queryKey: k })));
 
-    const STALE_TIME = 5 * 60 * 1000;
-
-    // apiClient GET'i zaten 3 denemeye kadar tekrarlıyor (Faz 4.1); react-query'nin
-    // ek 3 denemesi hata şeridini saniyelerce geciktirirdi — tekrar kullanıcıya
-    // bırakıldı (useClients ile aynı karar).
-    const queryOpts = { enabled, staleTime: STALE_TIME, retry: false } as const;
+    // Zorunlu alan ucu liste sorgularıyla aynı seçenekleri taşır (bkz. configListQueryOptions).
+    const queryOpts = { enabled, staleTime: CONFIG_STALE_TIME, retry: false } as const;
+    // G184: liste sorguları useConfigList ile TEK kurucudan — önbellek ortak.
+    const listOpts = (key: ConfigListKey) => configListQueryOptions(key, authRequest, enabled);
 
     // --- QUERIES ---
-    const lawyersQ = useQuery({ queryKey: CONFIG_KEYS.lawyers, queryFn: () => fetchJson("/api/config/lawyers"), ...queryOpts });
-    const statusesQ = useQuery({ queryKey: CONFIG_KEYS.statuses, queryFn: () => fetchJson("/api/config/statuses"), ...queryOpts });
-    const doctypesQ = useQuery({ queryKey: CONFIG_KEYS.doctypes, queryFn: () => fetchJson("/api/config/doctypes"), ...queryOpts });
-    const emailRecipientsQ = useQuery({ queryKey: CONFIG_KEYS.emailRecipients, queryFn: () => fetchJson("/api/config/email_recipients"), ...queryOpts });
-    const caseSubjectsQ = useQuery({ queryKey: CONFIG_KEYS.caseSubjects, queryFn: () => fetchJson("/api/config/case_subjects"), ...queryOpts });
-    const fileTypesQ = useQuery({ queryKey: CONFIG_KEYS.fileTypes, queryFn: () => fetchJson("/api/config/file_types"), ...queryOpts });
-    const courtTypesQ = useQuery({ queryKey: CONFIG_KEYS.courtTypes, queryFn: () => fetchJson("/api/config/court_types"), ...queryOpts });
-    const partyRolesQ = useQuery({ queryKey: CONFIG_KEYS.partyRoles, queryFn: () => fetchJson("/api/config/party_roles"), ...queryOpts });
-    const bureauTypesQ = useQuery({ queryKey: CONFIG_KEYS.bureauTypes, queryFn: () => fetchJson("/api/config/bureau_types"), ...queryOpts });
-    const citiesQ = useQuery({ queryKey: CONFIG_KEYS.cities, queryFn: () => fetchJson("/api/config/cities"), ...queryOpts });
-    const specialtiesQ = useQuery({ queryKey: CONFIG_KEYS.specialties, queryFn: () => fetchJson("/api/config/specialties"), ...queryOpts });
-    const clientCategoriesQ = useQuery({ queryKey: CONFIG_KEYS.clientCategories, queryFn: () => fetchJson("/api/config/client_categories"), ...queryOpts });
-    const fileStatusesQ = useQuery({ queryKey: CONFIG_KEYS.fileStatuses, queryFn: () => fetchJson("/api/config/file_statuses"), ...queryOpts });
-    const allegedFaultsQ = useQuery({ queryKey: CONFIG_KEYS.allegedFaults, queryFn: () => fetchJson("/api/config/alleged_faults"), ...queryOpts });
-    const appealingPartiesQ = useQuery({ queryKey: CONFIG_KEYS.appealingParties, queryFn: () => fetchJson("/api/config/appealing_parties"), ...queryOpts });
-    const eventTypesQ = useQuery({ queryKey: CONFIG_KEYS.eventTypes, queryFn: () => fetchJson("/api/config/event_types"), ...queryOpts });
-    const judgmentRolesQ = useQuery({ queryKey: CONFIG_KEYS.judgmentRoles, queryFn: () => fetchJson("/api/config/judgment_roles"), ...queryOpts });
-    const clientTypesQ = useQuery({ queryKey: CONFIG_KEYS.clientTypes, queryFn: () => fetchJson("/api/config/client_types"), ...queryOpts });
-    const serviceTypesQ = useQuery({ queryKey: CONFIG_KEYS.serviceTypes, queryFn: () => fetchJson("/api/config/service_types"), ...queryOpts });
-    const currenciesQ = useQuery({ queryKey: CONFIG_KEYS.currencies, queryFn: () => fetchJson("/api/config/currencies"), ...queryOpts });
-    const medicalProcessesQ = useQuery({ queryKey: CONFIG_KEYS.medicalProcesses, queryFn: () => fetchJson("/api/config/medical_processes"), ...queryOpts });
-    const medicalEventsQ = useQuery({ queryKey: CONFIG_KEYS.medicalEvents, queryFn: () => fetchJson("/api/config/medical_events"), ...queryOpts });
-    const patientHarmsQ = useQuery({ queryKey: CONFIG_KEYS.patientHarms, queryFn: () => fetchJson("/api/config/patient_harms"), ...queryOpts });
-    const appliedMethodsQ = useQuery({ queryKey: CONFIG_KEYS.appliedMethods, queryFn: () => fetchJson("/api/config/applied_methods"), ...queryOpts });
-    const cassationCourtsQ = useQuery({ queryKey: CONFIG_KEYS.cassationCourts, queryFn: () => fetchJson("/api/config/cassation_courts"), ...queryOpts });
-    const appealCourtsQ = useQuery({ queryKey: CONFIG_KEYS.appealCourts, queryFn: () => fetchJson("/api/config/appeal_courts"), ...queryOpts });
-    const defendantAdministrationsQ = useQuery({ queryKey: CONFIG_KEYS.defendantAdministrations, queryFn: () => fetchJson("/api/config/defendant_administrations"), ...queryOpts });
-    const localDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.localDecisions, queryFn: () => fetchJson("/api/config/local_decisions"), ...queryOpts });
-    const appealDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.appealDecisions, queryFn: () => fetchJson("/api/config/appeal_decisions"), ...queryOpts });
-    const cassationDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.cassationDecisions, queryFn: () => fetchJson("/api/config/cassation_decisions"), ...queryOpts });
-    const revisionDecisionsQ = useQuery({ queryKey: CONFIG_KEYS.revisionDecisions, queryFn: () => fetchJson("/api/config/revision_decisions"), ...queryOpts });
+    const lawyersQ = useQuery(listOpts("lawyers"));
+    const statusesQ = useQuery(listOpts("statuses"));
+    const doctypesQ = useQuery(listOpts("doctypes"));
+    const emailRecipientsQ = useQuery(listOpts("emailRecipients"));
+    const caseSubjectsQ = useQuery(listOpts("caseSubjects"));
+    const fileTypesQ = useQuery(listOpts("fileTypes"));
+    const courtTypesQ = useQuery(listOpts("courtTypes"));
+    const partyRolesQ = useQuery(listOpts("partyRoles"));
+    const bureauTypesQ = useQuery(listOpts("bureauTypes"));
+    const citiesQ = useQuery(listOpts("cities"));
+    const specialtiesQ = useQuery(listOpts("specialties"));
+    const clientCategoriesQ = useQuery(listOpts("clientCategories"));
+    const fileStatusesQ = useQuery(listOpts("fileStatuses"));
+    const allegedFaultsQ = useQuery(listOpts("allegedFaults"));
+    const appealingPartiesQ = useQuery(listOpts("appealingParties"));
+    const eventTypesQ = useQuery(listOpts("eventTypes"));
+    const judgmentRolesQ = useQuery(listOpts("judgmentRoles"));
+    const clientTypesQ = useQuery(listOpts("clientTypes"));
+    const serviceTypesQ = useQuery(listOpts("serviceTypes"));
+    const currenciesQ = useQuery(listOpts("currencies"));
+    const medicalProcessesQ = useQuery(listOpts("medicalProcesses"));
+    const medicalEventsQ = useQuery(listOpts("medicalEvents"));
+    const patientHarmsQ = useQuery(listOpts("patientHarms"));
+    const appliedMethodsQ = useQuery(listOpts("appliedMethods"));
+    const cassationCourtsQ = useQuery(listOpts("cassationCourts"));
+    const appealCourtsQ = useQuery(listOpts("appealCourts"));
+    const defendantAdministrationsQ = useQuery(listOpts("defendantAdministrations"));
+    const localDecisionsQ = useQuery(listOpts("localDecisions"));
+    const appealDecisionsQ = useQuery(listOpts("appealDecisions"));
+    const cassationDecisionsQ = useQuery(listOpts("cassationDecisions"));
+    const revisionDecisionsQ = useQuery(listOpts("revisionDecisions"));
     const requiredCaseFieldsQ = useQuery({
         queryKey: ["config", "required_case_fields"],
         queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
@@ -291,17 +352,10 @@ export const useConfig = () => {
         onSuccess: (_data, { type }) => invalidateType(type),
     });
 
-    // Derived: court types grouped by parent
-    const courtTypesByParent = (courtTypesQ.data ?? EMPTY).reduce<Record<string, ConfigItem[]>>((acc, item) => {
-        const parent = item.parent_code ?? "";
-        if (!acc[parent]) acc[parent] = [];
-        acc[parent].push(item);
-        return acc;
-    }, {});
-
-    // Derived: party roles split by type
-    const mainPartyRoles = (partyRolesQ.data ?? EMPTY).filter(r => r.role_type === "MAIN");
-    const thirdPartyRoles = (partyRolesQ.data ?? EMPTY).filter(r => r.role_type === "THIRD");
+    // Derived: court types grouped by parent + party roles split by type
+    // (G184: useConfigList tüketicisi aynı fonksiyonlarla türetir).
+    const courtTypesByParent = groupCourtTypesByParent(courtTypesQ.data ?? EMPTY);
+    const { main: mainPartyRoles, third: thirdPartyRoles } = splitPartyRoles(partyRolesQ.data ?? EMPTY);
 
     return {
         lawyers: lawyersQ.data ?? EMPTY,
