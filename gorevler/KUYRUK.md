@@ -14,7 +14,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G184→G188 (App.tsx provider sırası); backend seri G183→G189→{G190,G191}→G192 (database.py ortak); docs G193 en son.
      Paralel çiftler: G182‖G183, G184‖G189, G185/G187‖G190/G191, G186/G188‖G192. Tahmin: 3 gece. -->
 
-- [ ] G182 | bant:frontend | bagimli:- | Route düzeyinde kod bölme (React.lazy + Suspense, bayat parça tek reload) + sonner statik import + nginx `/assets/` immutable önbellek / index.html no-cache — giriş parçası gzip ≤ 300 kB, rapor/admin/dnd-kit giriş parçasında yok (F1, F2, F12, F14)
+- [x] G182 | bant:frontend | bagimli:- | Route düzeyinde kod bölme (React.lazy + Suspense, bayat parça tek reload) + sonner statik import + nginx `/assets/` immutable önbellek / index.html no-cache — giriş parçası gzip ≤ 300 kB, rapor/admin/dnd-kit giriş parçasında yok (F1, F2, F12, F14)
 - [x] G183 | bant:backend | bagimli:- | `scripts/perf_olcum.py`: salt okunur ölçüm raporu (şişme oranı, SHOW ayarları, idle-in-transaction, idx_scan=0 envanteri, status/legacy kolon dağılımı, `--term` ile arama EXPLAIN ANALYZE BUFFERS) — prod doğrulama aracı, hiçbir şeyi değiştirmez (D3, D5-D7, D9 kanıtı)
 - [ ] G184 | bant:frontend | bagimli:G182 | `useConfigList(key)` liste başına hook (önbellek `useConfig` ile ortak, dönüş sözleşmesi değişmez) + QueryClient `refetchOnWindowFocus:false`; odakta 32 istek testi (F3 hook katmanı)
 - [ ] G189 | bant:backend | bagimli:G183 | Trigram index'ler gerçek kolonlara: `_TRGM_INDEXES` += `case_foys.tku_no/sistem_no/onceki_tracking_no`; boş legacy `idx_cases_tku_no_trgm`/`idx_cases_sistem_no_trgm` (+ btree) sözlükten çıkar + `_DUSURULECEK_INDEXLER`; `uq_cases_sistem_no` dokunulmaz; karar 018 eki (D2)
