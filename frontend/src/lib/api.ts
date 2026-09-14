@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { msalInstance, loginRequest } from "@/config/msalConfig";
 
 // Base API URL helper
@@ -131,23 +132,22 @@ function handleSessionExpired(): void {
     w._isLoggingOut = true;
 
     // Alert the user and logout
-    import("sonner").then(({ toast }) => {
-        toast.error("Oturum süresi doldu", {
-            description: "Güvenlik nedeniyle tekrar giriş yapmanız gerekiyor.",
-            duration: 3000
-        });
-
-        // Small delay to allow toast to be seen (optional)
-        setTimeout(() => {
-            // BrowserRouter'dayız (App.tsx) — hash fragment'li eski hedef HashRouter artığıydı (G095).
-            msalInstance.logoutRedirect({
-                postLogoutRedirectUri: window.location.origin + '/login',
-            }).catch(err => {
-                console.error("Logout failed:", err);
-                w._isLoggingOut = false;
-            });
-        }, 500);
+    // G182: sonner statik import — 24 dosyada zaten statik, dinamik import bölme yapmıyordu.
+    toast.error("Oturum süresi doldu", {
+        description: "Güvenlik nedeniyle tekrar giriş yapmanız gerekiyor.",
+        duration: 3000
     });
+
+    // Small delay to allow toast to be seen (optional)
+    setTimeout(() => {
+        // BrowserRouter'dayız (App.tsx) — hash fragment'li eski hedef HashRouter artığıydı (G095).
+        msalInstance.logoutRedirect({
+            postLogoutRedirectUri: window.location.origin + '/login',
+        }).catch(err => {
+            console.error("Logout failed:", err);
+            w._isLoggingOut = false;
+        });
+    }, 500);
 }
 
 /**
