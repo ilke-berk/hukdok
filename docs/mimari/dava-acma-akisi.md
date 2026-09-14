@@ -336,7 +336,11 @@ kardeşlerinin aynısıdır.
   UNION'a katar (`_term_case_id_selects`) — legacy `cases.tku_no` boş olduğu için TKU
   araması o güne dek boş dönüyordu. G190 (14.09.2026): yazıcısı olmayan legacy
   `cases.tku_no`/`sistem_no` kolları aramadan ve relevance sıralamasından çıkarıldı;
-  TKU/SistemNo araması yalnız föy kollarından yürür.
+  TKU/SistemNo araması yalnız föy kollarından yürür. Üç föy kolunun (`tku_no`, `sistem_no`,
+  `onceki_tracking_no`) trigram index'leri G189'da `backend/database.py::_TRGM_INDEXES`e
+  girdi (`idx_case_foys_*_trgm`); boş legacy `cases` index'leri düşürüldü. Aramanın tamamı
+  (tek koşu, index'li/index'siz kollar) `CLAUDE.md` "Dava arama" paragrafında, nihai index
+  tablosu [karar 018](../kararlar/018-index-temizligi-37-kalem.md) "Nihai index durumu"nda.
 
 Yazma ucu yoktur (tek yazıcı aktarım); testler `backend/tests/test_g063_case_foys.py`
 (şema kilitleri + sqlite davranışı + gerçek Postgres'te UNIQUE/RESTRICT) ve

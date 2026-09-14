@@ -1,5 +1,45 @@
 # Performans denetimi — 2026-09-14
 
+> **Şerh — uygulamada değişti (2026-09-14, G193).** Aşağıdaki gövde denetim gününün
+> fotoğrafıdır ve DEĞİŞTİRİLMEDİ; satır numaraları o günün kodudur. Bulguların sonraki
+> durumu main `e3ba26d` koduna göre aşağıdadır. Bu şerh kodun prod'a çıkıp çıkmadığını
+> söylemez. Güncel anlatım: `CLAUDE.md` ("İki katmanlı nginx", "Dava arama"),
+> `docs/mimari/genel-bakis.md` §2 ve §7, `docs/mimari/deploy-ve-altyapi.md` §11-§13,
+> `docs/kararlar/018-index-temizligi-37-kalem.md` "Nihai index durumu".
+>
+> | Bulgu | Durum | Görev | Kodda (main `e3ba26d`) |
+> | --- | --- | --- | --- |
+> | F1, F2 | kapandı | G182 | `frontend/src/App.tsx:30-41` 12 sayfa `lazy`, Login/NotFound statik; `:105-149` tek `Suspense` |
+> | F3 | kapandı (ağır sayfalar) | G184, G185 | `hooks/useConfig.ts:159` `useConfigList`; `App.tsx:47` `refetchOnWindowFocus:false`; 32 sorguluk `useConfig()` bilinçli kalanlar: AdminPage, NewCase, IntakeReviewStep, AnalysisResults, BulkUploadWorkbench, CaseTrackingPanel, YetkiBelgesiModal |
+> | F4 | kapandı | G187 | `pages/AdminPage.tsx:366` yalnız sürükleme geçici sırası state'te (`pendingOrders`) |
+> | F5 | kapandı | G186 | `pages/CaseDetails.tsx:195` modül düzeyi `DocCard` |
+> | F6 | kapandı (KVKK maddesi) | G188 | `components/YetkiBelgesiModal.tsx:32-33` TC önbelleklenmez, `sessionStorage` `:v1`, eski kalıcı anahtar modal açılınca silinir |
+> | F7 | kapandı | G188 | `components/theme-provider.tsx:14` try/catch'li okuma; `App.tsx:244-250` sağlayıcı `ErrorBoundary` içinde |
+> | F8, F9 | kapandı | G186 | `pages/Index.tsx:120` tek okumalı lazy initializer (sayaç = liste uzunluğu); bildirim effect'i `:747` primitif `noticeBelgeTuruKodu`'na bağlı |
+> | F10 | kapandı | G186 | `pages/NewCase.tsx:1728` `key`'li `NewCaseForm` + lazy initializer'lar |
+> | F11 | **AÇIK** (görev açılmadı) | — | `pages/CaseList.tsx:169,222` elle `fetchCases` + `useEffect` |
+> | F12 | kapandı | G182 | `src/` kodunda `import("sonner")` yok |
+> | F13 | **bilinçli açık** | — | `frontend/index.html:55` Google Fonts stylesheet |
+> | F14 | konteyner katmanında kapandı; **host nginx prod'da doğrulanacak** | G182 | `nginx.conf:77-99` |
+> | D1 | kısmen kapandı | G190 | dört `cases` trigram'ı `database.py:1395-1398`; `klasor_no_2`, ham `responsible_lawyer_name`, `notes`, `case_history.old_value` index'siz; `notes`/`old_value` çıkarma **kullanıcı kararı açık** |
+> | D2 | kapandı | G189 | `database.py:1404-1406` (eklenen) + `:1333-1335` (düşen); `uq_cases_sistem_no` dokunulmadı |
+> | D3 | **bilinçli açık — prod ölçümüne bağlı** | ölçüm aracı G183 | `scripts/perf_olcum.py` bölüm 1 (şişme); VACUUM FULL / pg_repack kararı prod çıktısıyla |
+> | D4 | kapandı | G190 | `managers/case_manager.py:956-964` tek id listesi, COUNT yok |
+> | D5 | kapandı | G191 (önkoşul G194) | `database.py:65-96` idle/lock timeout; `migrate.py:25-30` muafiyet |
+> | D6 | kapandı | G191 | `docker-compose.yml:22` `postgres.command:`; `database.py:1620` `_ensure_pg_stat_statements` |
+> | D7 | **bilinçli açık — prod sayacına bağlı** | ölçüm aracı G183 | `scripts/perf_olcum.py` bölüm 4; düşürme kodu yok |
+> | D8 | kapandı (tavan; keyset kapsam dışı) | G192 | `routes/cases.py:92` `offset le=10000` |
+> | D9 | kısmen: CHECK `NOT VALID` eklendi, **VALIDATE açık** | G195 | `database.py:1229` madde 52; VALIDATE prod `perf_olcum` durum bölümünde üçlü dışı = 0 olunca |
+> | D10 | kapandı (DROP yarısı; `models.py` değişmedi) | G192 | `database.py:1295-1314` |
+> | D11 | kapandı | G192 | `routes/cases.py:413`, `routes/clients.py:164` tek `in_()` |
+> | D12 | **bilinçli açık** (aciliyet yok) | — | `models.py` `Column(JSON)` kolonları aynı |
+> | D13 | **bilinçli açık** (gece, tek transaction) | — | değişiklik yok |
+> | D14 | **bilinçli açık** (tek konteyner) | — | `backend/` kodunda `skip_locked` yok |
+> | D15 | kapandı | G192 | `services/upload_queue.py:506-507` vade koşulu SQL'de |
+>
+> §4'teki prod doğrulama listesi hâlâ geçerlidir (hiçbiri prod'da koşulmadı); sırası
+> `docs/mimari/deploy-ve-altyapi.md` §12 "Deploy sonrası prod doğrulama sırası"nda.
+
 > Tarihli fotoğraf (bkz. `docs/arsiv/README.md`). Kod ve veritabanı DEĞİŞTİRİLMEDİ; yalnız
 > ölçüm + salt okunur sorgu. Kural setleri: Vercel `react-best-practices` (Vite SPA'ya
 > uygulanabilir olanlar; Next.js kuralları atlandı) ve Supabase `postgres-best-practices`

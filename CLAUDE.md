@@ -22,9 +22,18 @@ host 8080 → konteyner 80). Backend portu bilinçli localhost'a sabit: API-key'
 `/preview-email-body`, `/preview-client-email-body`, `/refresh`, `/healthz` →
 `backend:8001` proxy.
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer
-kayıt kaynağıydı). Konteynerler düz HTTP konuşur; TLS prod'daki **host** nginx'inde
-sonlanır (konfigi repo DIŞINDA, sunucuda; iki katmanın timeout'ları eşit tutulmalı —
-bkz. `nginx.conf:10-14`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:75`).
+kayıt kaynağıydı). **Önbellek (G182, `nginx.conf:77-99`):** hash'li Vite parçaları
+`location ~* ^/assets/` → `Cache-Control: public, max-age=31536000, immutable`; eksik parça
+`=404` döner, index.html'e DÜŞMEZ (açık eski sekmede `frontend/src/lib/chunkReload.ts` sayfayı
+bir kez yeniler). `location /` (index.html + SPA fallback) → `no-cache`. `add_header` kalıtım
+tuzağı: location'da tek `add_header` bile server düzeyindekileri düşürür → beş güvenlik başlığı
+iki location'da AYNEN tekrar yazılıdır, birini değiştiren üç yeri değiştirir (`nginx.conf:48-51`).
+Konteynerler düz HTTP konuşur; TLS prod'daki **host** nginx'inde sonlanır (konfigin repodaki
+kopyası `infra/nginx/sites-available/default`, sunucuya `infra/install.sh` kurar; iki katmanın
+timeout'ları eşit tutulmalı — bkz. `nginx.conf:10-14`). Repodaki host konfiginde `add_header`
+/ `proxy_hide_header` yok; sunucudaki konfigin bununla aynı olduğu ve `Cache-Control`'un
+tarayıcıya ulaştığı **prod'da doğrulanacak** (`curl -sI https://<alan>/assets/<parça>.js`,
+`curl -sI https://<alan>/`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:114`).
 
 **Backend açılışı** (`backend/docker-entrypoint.sh`): önce `migrate.py` tek süreçte
 koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn
@@ -106,16 +115,26 @@ karar 020): `cases.status` yalnız DERDEST | DANIŞ | MAHZEN; temyiz/istinaf/kar
 değil AŞAMADIR (`cases.case_stage`). Yazma yolları `normalize_case_status`'tan geçer, belge işleme
 belge türünden aşamaya yazar (`DOCTYPE_TO_STAGE_MAP`), migrasyon 50 eski değerleri üçlüye çekti.
 
-**Dava arama (E8, G055, G190):** `case_manager.get_cases` 15 kolon/ilişkiyi (exact modda
+**Dava arama (E8, G055, G189, G190):** `case_manager.get_cases` 15 kolon/ilişkiyi (exact modda
 13: `notes`/`case_history.old_value` yok) tek bir OR/EXISTS ağacında DEĞİL, her terim için
 bağımsız `UNION`'lanan `SELECT`'lerle arar; çok terimli sorguda AND semantiği `UNION`'ların
 `INTERSECT`'iyle kurulur (`_search_term_ids`, `_term_case_id_selects`). Boş legacy
 `cases.tku_no`/`sistem_no` kolları G190'da çıktı (TKU/SistemNo `case_foys` kollarından).
-`with_total=True` aramada UNION ağacı TEK koşar: süzülmüş+sıralı id listesi → toplam =
-uzunluk, sayfa = dilim (`_load_cases_in_order`); COUNT yok. G042'nin düşürdüğü altı GIN
-trigram'dan dördü (subject/tracking_no/court/esas_no) G190'da EXPLAIN kanıtıyla
-`_TRGM_INDEXES`e döndü; klasor_no_2 ve ham responsible_lawyer_name düşmüş kalır
-(bkz. `docs/kararlar/018-index-temizligi-37-kalem.md` G190 eki, `gorevler/gorev/G190.md`).
+**Tek koşu (D4):** `with_total=True` aramada süzülmüş+sıralı id listesi TEK sorguda gelir →
+toplam = uzunluk, sayfa = dilim (`_load_cases_in_order`); COUNT yok. `with_total=False`
+(`search_cases`, tuş vuruşu yolu) COUNT'suz tek koşudur; aramasız liste COUNT + sayfa koşar.
+Liste ucunda `offset ≤ 10000` (`routes/cases.py:92`, aşım 422). **Trigram index'leri**
+`database.py::_TRGM_INDEXES` sözlüğündedir — `("index", ...)` op'unda DEĞİL, `pg_trgm`
+uzantısından sonra koşan hata-toleranslı blokta (G043 notu); düşürmeler `_DUSURULECEK_INDEXLER`
+(`("index", ...)` DROP op'ları). Sözlükteki arama kolları: `case_foys.tku_no/sistem_no/
+onceki_tracking_no` (G189), `cases.court/subject/esas_no/tracking_no` (G190 — G042'nin
+düşürdüğü altıdan EXPLAIN kanıtıyla dönen dördü), `cases.uyap_lawyer_name`, `case_parties.name`,
+`case_lawyers.name`; avukat filtresinin katlanmış ifade index'i ayrıca. Düşmüş kalanlar:
+`idx_cases_klasor_no_2_trgm`, ham `idx_cases_resp_lawyer_trgm`, boş legacy
+`idx_cases_tku_no`/`idx_cases_tku_no_trgm`/`idx_cases_sistem_no_trgm` (G189). Trigram index'i
+olmayan kollar: `klasor_no_2`, ham `responsible_lawyer_name`, `notes`, `case_history.old_value`,
+`case_esas_numbers.esas_no` (btree var, küçük tablo); `notes`/`old_value`'yu aramadan çıkarma
+kullanıcı kararı AÇIK. Nihai tablo: `docs/kararlar/018-index-temizligi-37-kalem.md` "Nihai index durumu".
 
 **Raporlama (G130-G177 + 12.09 özet modu):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
 `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·

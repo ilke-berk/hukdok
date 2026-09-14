@@ -1,6 +1,10 @@
 # Genel bakış — bileşen haritası ve istek yaşam döngüsü
 
 > **Son doğrulama: 2026-08-11 · 2eade56**
+> §1 compose satır atıfları + Postgres parametreleri, §2 (önbellek başlıkları ve `nginx.conf`
+> satırları), §3'teki `migrate.py` cümlesi ve §7 alt başlıkları: **2026-09-14 · G193**
+> (G182-G191 sonrası, main `e3ba26d` koduna karşı yeniden okundu). §3'ün diğer
+> `database.py`/`api.py` satır atıfları bu turda yeniden doğrulanmadı.
 > Bu dosyadaki her iddia koddan okunarak doğrulanmıştır. Kod ile çelişirse kod haklıdır —
 > bu dosyayı düzelt. Ayrıntı için bkz. [`docs/mimari/README.md`](README.md).
 
@@ -13,47 +17,66 @@ onaylar, belge SharePoint arşivine + veritabanına yazılır ve hukukbot'a akta
 
 | Servis | İmaj / kaynak | Yayınlanan port | Bellek | Sağlık kontrolü |
 | --- | --- | --- | --- | --- |
-| `postgres` | `postgres:15-alpine` (`docker-compose.yml:4`) | `127.0.0.1:5432` (`:15`) | 512m, `memswap=mem` (`:21-22`) | `pg_isready`, 10s (`:28-32`) |
-| `backend` (`hukdok_backend`) | `./backend/Dockerfile` (`:37-39`) | `127.0.0.1:8001` (`:54`) | 2g, `memswap=mem` (`:92-93`) | `/healthz`, 30s, start_period 60s (`:99-110`) |
-| `frontend` | `./frontend/Dockerfile` (`:119-121`) | `8080:80` (`:126`) | 128m, `memswap=mem` (`:128-129`) | yok; `depends_on: backend healthy` (`:135-137`) |
+| `postgres` | `postgres:15-alpine` (`docker-compose.yml:4`) | `127.0.0.1:5432` (`:26`) | 512m, `memswap=mem` (`:32-33`) | `pg_isready`, 10s (`:39-43`) |
+| `backend` (`hukdok_backend`) | `./backend/Dockerfile` (`:48-50`) | `127.0.0.1:8001` (`:65`) | 2g, `memswap=mem` (`:103-104`) | `/healthz`, 30s, start_period 60s (`:110-121`) |
+| `frontend` | `./frontend/Dockerfile` (`:130-132`) | `8080:80` (`:137`) | 128m, `memswap=mem` (`:139-140`) | yok; `depends_on: backend healthy` (`:146-148`) |
 
 Üç kural bu tabloda gizli, üçü de bilinçli:
 
 - **`memswap_limit == mem_limit` — swap yasak.** Gerekçe konfigde yazılı: "swap'a taşma,
-  2026-07-29 kesintilerindeki I/O fırtınasının mekanizmasıydı" (`docker-compose.yml:19-20`).
+  2026-07-29 kesintilerindeki I/O fırtınasının mekanizmasıydı" (`docker-compose.yml:30-31`).
 - **Backend portu localhost'a sabit.** API-key'li `/export` route'ları public porttan
-  erişilememeli (`docker-compose.yml:51-53`). Hukukbot public port yerine ortak
-  `hukuk_shared` Docker ağından `http://hukdok_backend:8001` ile konuşur (`:43-44`);
-  bu ağ **external**'dır ve önceden `docker network create hukuk_shared` ile kurulur (`:149-155`).
-- **Backend'de kaynak kodu bind-mount'u YOK** (`docker-compose.yml:58-60`) — konteyner
+  erişilememeli (`docker-compose.yml:62-64`). Hukukbot public port yerine ortak
+  `hukuk_shared` Docker ağından `http://hukdok_backend:8001` ile konuşur (`:54-55`);
+  bu ağ **external**'dır ve önceden `docker network create hukuk_shared` ile kurulur (`:163-166`).
+- **Backend'de kaynak kodu bind-mount'u YOK** (`docker-compose.yml:69-71`) — konteyner
   imajdaki kodu çalıştırır. Kod değişikliği ancak rebuild ile görünür. Lokal hot-reload
   isteniyorsa `docker-compose.override.yml.example` kopyalanır (gitignore'da).
 
 Bellek ayarına eşlik eden `MALLOC_ARENA_MAX=2` de aynı OOM incelemesinden gelir: glibc
 thread başına arena açıyor, PDF/görüntü dönüşümünün geçici tahsisleri arena'larda kalıp
-RSS'i kalıcı yükseltiyordu (`docker-compose.yml:74-77`).
+RSS'i kalıcı yükseltiyordu (`docker-compose.yml:85-88`).
+
+Postgres sunucu parametreleri compose'daki `command:` satırındadır (`docker-compose.yml:22`,
+G191): `effective_cache_size=384MB`, `random_page_cost=1.1`,
+`shared_preload_libraries=pg_stat_statements`, `track_io_timing=on`. Gerekçeler ve
+"`restart` ile gelmez, `up -d` recreate şart" kuralı
+[`deploy-ve-altyapi.md` §13](deploy-ve-altyapi.md).
 
 ## 2. İki katmanlı nginx
 
 Repodaki `nginx.conf` **konteyner** nginx'idir (`listen 80`, `nginx.conf:8`; compose bunu
 8080'de yayınlar). SPA'yı `/usr/share/nginx/html` kökünden servis eder ve `try_files` ile
-`/index.html`'e düşer (`nginx.conf:56-60`).
+`/index.html`'e düşer (`nginx.conf:88-91`).
+
+**Önbellek başlıkları (G182, `nginx.conf:38-51` gerekçe yorumu):**
+
+| Location | `Cache-Control` | Eksik dosyada |
+| --- | --- | --- |
+| `~* ^/assets/` (`nginx.conf:77-86`) | `public, max-age=31536000, immutable` — Vite parça adları içerik hash'lidir | `=404`; index.html'e DÜŞMEZ (aksi hâlde HTML, JS adresi altında 1 yıl önbelleğe girerdi). Başlık bilerek `always` değil: 404'e immutable yazılmaz |
+| `/` (`nginx.conf:88-99`) | `no-cache` — index.html ve SPA fallback her açılışta ETag ile yeniden doğrulanır, deploy sonrası yeni parça adları hemen gelir | SPA fallback (index.html) |
+
+`add_header` kalıtım kuralı: bir location içinde tek `add_header` bile varsa server düzeyindeki
+`add_header`'lar o blokta düşer. Bu yüzden beş güvenlik başlığı (`nginx.conf:53-56`, CSP `:70`)
+iki location'da AYNEN tekrar yazılıdır; birini değiştiren üç yeri değiştirir (`nginx.conf:48-51`).
+Eski sekmede bayat parçanın 404'ü frontend'in tek yenileme dalını tetikler (§7). Host nginx'in
+bu başlıkları geçirdiği prod'da doğrulanacak ([`deploy-ve-altyapi.md` §11](deploy-ve-altyapi.md)).
 
 Backend'e proxy'lenen location'ların listesi:
 
 | Location | Not |
 | --- | --- |
-| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:62-72`) |
-| `/api` | genel API (`nginx.conf:77`) |
-| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:85-92`) |
-| `/confirm` | onay + arşivleme (`nginx.conf:94`) |
-| `/preview-email-body` | (`nginx.conf:102`) |
-| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:110-120`) |
-| `/refresh` | liste tazeleme (`nginx.conf:122`) |
+| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:101-111`) |
+| `/api` | genel API (`nginx.conf:116`) |
+| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:124-131`) |
+| `/confirm` | onay + arşivleme (`nginx.conf:133`) |
+| `/preview-email-body` | (`nginx.conf:141`) |
+| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:149-159`) |
+| `/refresh` | liste tazeleme (`nginx.conf:161`) |
 
 **`/export` bu listede YOKTUR ve asla eklenmez** — konfigin kendi uyarısı: "DIKKAT: /export
 buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir, public'e proxy'lenmez"
-(`nginx.conf:75-76`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
+(`nginx.conf:114-115`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama
@@ -73,8 +96,11 @@ timeout'ları bu katmanla eşit olmalıdır (`nginx.conf:12`). Bkz.
    kodu 1 ise entrypoint `set -e` ile durur, "sessiz şema sapması yerine fail-fast"
    (`backend/migrate.py:1-10`). Migrasyonlar `backend/database.py:142` `_MIGRATIONS`
    listesinden idempotent uygulanır (`database.py:939` `check_and_migrate_tables`).
-   `migrate.py` ayrı süreç olduğu için `DB_STATEMENT_TIMEOUT_MS=0` atar — uygulama
-   engine'inin 30 sn'lik sınırı backfill UPDATE'lerini kesmesin (`backend/migrate.py:20-26`).
+   `migrate.py` ayrı süreç olduğu için `DB_STATEMENT_TIMEOUT_MS`, `DB_IDLE_TX_TIMEOUT_MS`
+   ve `DB_LOCK_TIMEOUT_MS`'i `0`'lar — uygulama engine'inin sınırları (30 sn sorgu, 60 sn
+   boşta transaction, 5 sn kilit bekleme; `backend/database.py:65-67`) backfill
+   UPDATE'lerini kesmesin (`backend/migrate.py:19-30`; ayrıntı
+   [`deploy-ve-altyapi.md` §13](deploy-ve-altyapi.md)).
 2. `uvicorn api:app --workers ${UVICORN_WORKERS:-2}`.
 
 ### Migrasyon op türleri ve `create_all` tuzağı
@@ -205,6 +231,77 @@ iki zaman aşımı kademesi vardır — etkileşimli çağrılar için kısa, uz
 (`/process`, `/confirm`, `/api/case-intake/*`, indirme) için nginx'in 300s penceresiyle
 hizalı uzun kademe. GET'ler 502/503/504'te sınırlı sayıda yeniden denenir; POST'lar
 **hiçbir zaman** otomatik tekrarlanmaz (idempotency kuralı).
+
+### Route düzeyinde kod bölme (G182)
+
+`frontend/src/App.tsx:25-41`: `Login` ve `NotFound` statik import edilir (oturumsuz ilk
+açılış ve 404 ek ağ turu beklemesin); diğer 12 sayfa
+`lazy(() => importWithReload(() => import("./pages/X")))` ile route başına ayrı parçadır.
+`<Routes>` tek bir `<Suspense fallback={<PageLoading />}>` ile sarılıdır (`App.tsx:105-149`).
+Parça ancak route'un elemanı çizilince iner: `/reports` ve `/admin` `ProtectedAdminRoute`
+altındadır (`App.tsx:128-143`) ve bu bekçi admin olmayana çocuğu hiç çizmeden `/`'e
+yönlendirir (`components/ProtectedAdminRoute.tsx`) — rapor katmanı ve `@dnd-kit` o
+kullanıcıya inmez. Kodun yorumuna göre BrowserRouter gezinmeleri `startTransition` içinde
+yaptığından sayfalar arası geçişte eski sayfa yerinde kalır; gösterge pratikte yalnız ilk
+açılışta görünür (`App.tsx:49-51`). Yeni sayfa eklenirse aynı desenle eklenir;
+`frontend/src/App.lazy.test.tsx`'teki kaynak bekçisi `pages/` dizininden türeyerek bunu
+denetler.
+
+### Bayat parça: tek yenileme (G182)
+
+Her deploy yeni hash'li parça adları üretir, eskileri yeni imajda yoktur. Açık kalmış
+sekme eski `index.html`'in adıyla bir sayfaya geçerse konteyner nginx `/assets/` altında
+`404` döner (§2) ve dinamik import düşer. `frontend/src/lib/chunkReload.ts`:
+
+- `isChunkLoadError` yalnız ağdan yüklenememe hatalarını tanır (Chromium/Firefox/Safari
+  dinamik import mesajları, Vite "Unable to preload CSS", `ChunkLoadError` adı); modül
+  içi çalışma hatası yenileme tetiklemez.
+- `importWithReload` ilk parça hatasında `sessionStorage` bayrağı `hukudok:chunk-reload`
+  yazar ve `location.reload()`'u **bir kez** çağırır; dönen söz hiç çözülmez, ekran
+  Suspense göstergesinde kalır (hata ekranı yanıp sönmez).
+- Bayrak zaten varsa ya da storage okunamıyor/yazılamıyorsa yenilemez, hata
+  `ErrorBoundary`'ye düşer (döngü engellenemiyorsa yenileme yok).
+- Başarılı parça yüklemesi bayrağı siler; sonraki deploy yine bir kez yenileyebilir.
+
+### Config listeleri: `useConfigList` (G184, G185)
+
+`frontend/src/hooks/useConfig.ts`'te `useConfig()` 32 `useQuery`'ye birden abone olur.
+`useConfigList(key)` (`useConfig.ts:159-172`) yalnız tek listeye abone olur. İkisi sorguyu
+aynı kurucudan alır (`configListQueryOptions`, `:128-134`: aynı `queryKey`,
+`staleTime` 5 dk, `retry: false`, `enabled`); önbellek ortaktır, iki hook aynı listeyi çift
+çekmez. `useConfigList().error` bir mesaj dizgesidir (`useConfig().configError` ile aynı
+G019 sözleşmesi: hata ≠ boş liste). Türetilmiş yardımcılar saf fonksiyon olarak dışa
+verilir: `groupCourtTypesByParent`, `splitPartyRoles`.
+
+| Hook | Tüketiciler |
+| --- | --- |
+| `useConfigList` | `pages/Index`, `pages/CaseList`, `pages/CaseDetails`, `pages/NewClient`, `components/email/EmailModal`, `components/QuickCaseModal` (zorunlu alan sorgusunu `useConfig()`'teki ile aynı anahtarla kendisi kurar, `QuickCaseModal.tsx:85`) |
+| `useConfig()` | `pages/AdminPage` (13 liste + ekleme/sıralama/güncelleme/silme mutasyonları, `AdminPage.tsx:331-340`), `pages/NewCase` ve `components/intake/IntakeReviewStep` (7 liste + `required_case_fields`; `NewCase.tsx:89-94`, `IntakeReviewStep.tsx:131`), `components/AnalysisResults`, `components/BulkUploadWorkbench`, `components/CaseTrackingPanel`, `components/YetkiBelgesiModal` |
+
+Kural: yeni bir tüketici yalnız okuduğu listelere `useConfigList` ile abone olur; 32
+sorguluk `useConfig()` birçok listeyi ve zorunlu alan ucunu birlikte kullanan yere kalır.
+
+### Odakta yeniden çekme kapalı (G184)
+
+`App.tsx:43-47`: `new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } })`.
+Gerekçe: açıkken 5 dk `staleTime` dolunca her pencere odağı `useConfig`'in 32 sorgusunu
+topluca yeniden çekiyordu. Karar global olduğu için config dışındaki sorgular da odakta
+tazelenmez: `hooks/useClients.ts:47`, `pages/ClientList.tsx:132` (poliçeler),
+`hooks/usePartyCheck.ts:112`; bunlar mount, mutasyon sonrası invalidate ve `staleTime`
+ile tazelenir. Tek bir sorgu odakta tazelenmeliyse kendi seçeneğinde
+`refetchOnWindowFocus: true` verilir. `frontend/src` altında `refetchInterval` kullanımı yoktur.
+Bildirim sayacı react-query değildir: `hooks/useNotifications.ts` kendi `setInterval`'ı
+(`NOTIFICATION_POLL_MS = 60_000`, `:36`) ve `visibilitychange` dinleyicisiyle (`:155-187`)
+çalışır, bu karardan etkilenmez.
+
+### Tema sağlayıcısı ve tarayıcı deposu (G188)
+
+`ThemeProvider` `ErrorBoundary`'nin İÇİNDEdir (`App.tsx:244-250`) ve kayıtlı temayı
+try/catch'li okur (`components/theme-provider.tsx:14` `readStoredTheme`): depo kapalıyken
+(özel pencere, kurumsal politika) uygulama beyaz ekran yerine varsayılan temayla açılır.
+Yetki belgesi önbelleği TC taşımaz; ad + sicil `sessionStorage`'da `yetki_belgesi_avukat_cache:v1`
+anahtarındadır, eski kalıcı anahtar modal açılınca silinir
+(`components/YetkiBelgesiModal.tsx:32-33`; kural kaynağı `lib/formDraft.ts`).
 
 ## 8. Nereye bakmalı
 

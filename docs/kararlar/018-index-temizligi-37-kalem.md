@@ -1,6 +1,8 @@
 # 018 — 37 index düşürülüyor: yapısal ikizler koşulsuz, altı trigram bilinçli bir bahisle
 
 > Son doğrulama: 2026-08-13 · prod'da salt-okunur sorgulandı (`d0d806b`)
+> "Nihai index durumu" tablosu: 2026-09-14 · G193 — `backend/database.py` (main `e3ba26d`) + lokal
+> restore kopyasında `pg_indexes` sorgusu; prod'da doğrulanmadı.
 
 - **Durum:** kabul
 - **Bağlam:** FAZ D 6.2 (G042) `cases` ve 23 başka tabloda 37 index düşürüyor. Karar
@@ -199,6 +201,41 @@ Altı aday index geçici kuruldu, kol kol ölçüldü, reddedilenler düşürül
 - **Test:** `backend/tests/test_g190_arama_tek_kosu.py` — sözlük/düşürme listesi
   ayrıklığı, reddedilenlerin yokluğu ve `dbtest`'te ikinci `init_db`de index oid'inin
   değişmediği + arama kolunun index'e düşebildiği.
+
+## Nihai index durumu — 2026-09-14 (14.09 denetimi · G189 · G190 · G192)
+
+14.09 performans denetiminin (`docs/arsiv/performans-denetimi-2026-09-14.md` D1, D2, D7,
+D10) ve G189/G190/G192'nin ortak sonucu tek tabloda. "Kod" sütunu `backend/database.py`
+satırıdır (main `e3ba26d`); "Lokal" sütunu lokal restore kopyasında `pg_indexes` sorgusudur
+(2026-09-14, backend imajı bu kodla kurulu) — **prod'da DOĞRULANMADI**, prod'a ilk açılışta
+aynı op'lar koşar. Yukarıdaki G189/G190 eklerindeki ölçüm sayıları lokaldir.
+
+| Index | Kolon | Durum | Görev · kanıt | Kod | Lokal |
+| --- | --- | --- | --- | --- | --- |
+| `idx_case_foys_tku_no_trgm` | `case_foys.tku_no` | **EKLENDİ** | G189 · D2 (arama kolu seq scan'di) | `_TRGM_INDEXES` `:1404` | var |
+| `idx_case_foys_sistem_no_trgm` | `case_foys.sistem_no` | **EKLENDİ** | G189 · D2 | `:1405` | var |
+| `idx_case_foys_onceki_tracking_no_trgm` | `case_foys.onceki_tracking_no` | **EKLENDİ** | G189 · D2 | `:1406` | var |
+| `idx_cases_court_trgm` | `cases.court` | **GERİ EKLENDİ** (G042'de düşmüştü) | G190 · D1, EXPLAIN eki yukarıda | `:1395` | var |
+| `idx_cases_subject_trgm` | `cases.subject` | **GERİ EKLENDİ** | G190 · D1 | `:1396` | var |
+| `idx_cases_esas_no_trgm` | `cases.esas_no` | **GERİ EKLENDİ** | G190 · D1 | `:1397` | var |
+| `idx_cases_tracking_no_trgm` | `cases.tracking_no` | **GERİ EKLENDİ** | G190 · D1 | `:1398` | var |
+| `idx_cases_tku_no` (btree) | `cases.tku_no` (yazıcısız, boş) | **DÜŞÜRÜLDÜ** | G189 · D2; kaynağı madde 22 post-SQL'i kaldırıldı | `_DUSURULECEK_INDEXLER["cases"]` `:1333` | yok |
+| `idx_cases_tku_no_trgm` | `cases.tku_no` | **DÜŞÜRÜLDÜ** | G189 · D2 | `:1334` | yok |
+| `idx_cases_sistem_no_trgm` | `cases.sistem_no` | **DÜŞÜRÜLDÜ** | G189 · D2 | `:1335` | yok |
+| 20 × `ix_<tablo>_id` (`alleged_faults` … `service_types`) | PK ikizi | **DÜŞÜRÜLDÜ** | G192 · D10 seçenek B: `models.py` değişmez, `create_all` yaratır, op her `init_db`'de siler; kapsam bekçisi `tests/test_g192_dusuk_etkili.py::test_model_pk_ikizlerinin_tamami_dusurme_listesinde_dogru_tabloda` | `:1295-1314` | yok (adı `ix_*_id` olan kalan 7 index'in hiçbiri PK değil) |
+| `idx_cases_klasor_no_2_trgm` | `cases.klasor_no_2` | **DÜŞMÜŞ KALIR** | G042; G190'da aday değildi | `:1326` | yok |
+| `idx_cases_resp_lawyer_trgm` | ham `cases.responsible_lawyer_name` | **DÜŞMÜŞ KALIR** | G042; avukat filtresi katlanmış `idx_cases_resp_lawyer_fold_trgm` (G043, `:1415`) kullanır — ham `ILIKE` kolu onu kullanamaz | `:1327` | yok |
+| `case_esas_numbers.esas_no` trigram | `case_esas_numbers.esas_no` | **ÖLÇÜLDÜ, EKLENMEDİ** | G190: kazanç ≤ 0,3 ms (peşin index ölçütü); btree `idx_case_esas_numbers_esas_no` yerinde | — | btree var |
+| `case_history.old_value` trigram | `case_history.old_value` | **ÖLÇÜLDÜ, EKLENMEDİ — kullanıcı kararı AÇIK** | G190: A (normal modda `notes`+`old_value` aramadan çıkar) / B (index ekle) / C (bugünkü gibi) | — | — |
+| `ix_cases_esas_no`, `idx_cases_tenant`, `idx_cases_tracking_name_block`, `ix_case_lawyers_name`, `idx_case_lawyers_lawyer`, `idx_case_parties_tc_no`, `ix_clients_name` | çeşitli | **BEKLİYOR — prod sayacına bağlı** | D7: yalnız lokal `idx_scan = 0` (restore'da sayaç anlamsız); karar prod `pg_stat_user_indexes` ~30 gün (`scripts/perf_olcum.py` bölüm 4), düşürme G042 deseniyle | düşürme kodu yok | 7/7 var |
+| `uq_cases_sistem_no` | `cases.sistem_no` | **DOKUNULMAZ** | tekillik kısıtı, kullanıcı kararı (G189) | — | var |
+| `idx_case_docs_conversion_pending` | `case_documents (id) WHERE pending` | **DOKUNULMAZ** | G192: parçalı, PK ikizi DEĞİL; müşterisi `services/conversion_retry.py` gece taraması | — | var |
+| `idx_upload_outbox_pending` | `upload_outbox (next_attempt_at) WHERE pending` | **DOKUNULMAZ** | G192 · D15: tarama vade koşulunu artık SQL'de taşır (`services/upload_queue.py:506-507`) | — | var |
+| `ix_cases_tku_no`, `ix_cases_sistem_no` | legacy `cases` kolonları | **YALNIZ SIFIRDAN KURULUMDA** | `models.py:61-62` `index=True`; büyümüş kurulumda yok; `models.py` değişikliği ayrı karar (G189 NOT) | — | yok |
+
+Aynı turda şemaya giren tek kısıt index değildir: `ck_cases_status_uclu` (G195, D9) madde 52
+(`database.py:1229`) ile `NOT VALID` eklendi, lokal `convalidated = false`; `VALIDATE` prod
+ölçümüne bağlı — ayrıntı [`docs/mimari/dava-acma-akisi.md` §4](../mimari/dava-acma-akisi.md).
 
 - **Test:** `backend/tests/test_index_envanteri.py` — envanter script'inin
   unique/primary'yi dışladığı ve `ix_cases_tracking_no`'nun listeye girmediği ayrı
