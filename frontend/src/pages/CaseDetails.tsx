@@ -183,6 +183,150 @@ const TransferFieldsCard = ({
     );
 };
 
+type CaseDocument = NonNullable<CaseDetailsData["documents"]>[number];
+type CaseParty = NonNullable<CaseDetailsData["parties"]>[number];
+
+/**
+ * Evrak listesindeki tek belge kartı. G186 (F5): eskiden CaseDetails render'ı
+ * içindeki IIFE'de tanımlıydı — her render yeni bir bileşen türü doğurup tüm
+ * kartları (ve müvekkil Select'lerini) unmount/mount ediyordu (ör. silme gerekçesi
+ * yazarken her tuşta). Modül düzeyinde durur; sayfa verisini prop olarak alır.
+ */
+const DocCard = ({
+    doc, clientParties, onAssignParty, onResend, onDelete,
+}: {
+    doc: CaseDocument;
+    clientParties: CaseParty[];
+    onAssignParty: (docId: number, partyId: number | null) => void;
+    onResend: (doc: CaseDocument) => void;
+    onDelete: (doc: CaseDocument) => void;
+}) => (
+    <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5 text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <h4 className="font-semibold text-sm truncate" title={doc.stored_filename || doc.original_filename}>
+                    {doc.stored_filename || doc.original_filename}
+                </h4>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {doc.belge_turu_adi && (
+                        <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
+                            {doc.belge_turu_adi}
+                        </Badge>
+                    )}
+                    {doc.uploaded_at && (
+                        <div className="flex items-center text-xs text-muted-foreground gap-1">
+                            <Clock className="w-3 h-3" />
+                            {new Date(doc.uploaded_at).toLocaleString("sv-SE")}
+                        </div>
+                    )}
+                </div>
+                {/* Müvekkil atama seçici — sadece CLIENT taraf varsa göster */}
+                {clientParties.length > 0 && (
+                    <div className="mt-2">
+                        <Select
+                            value={doc.case_party_id != null ? String(doc.case_party_id) : "all"}
+                            onValueChange={(v) => onAssignParty(doc.id, v === "all" ? null : Number(v))}
+                        >
+                            <SelectTrigger className="h-7 text-[11px] w-44 border-dashed">
+                                <Users className="w-3 h-3 mr-1 shrink-0" />
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tüm Dava</SelectItem>
+                                {clientParties.map(p => (
+                                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+            </div>
+        </div>
+        <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
+            {/* Email durum ikonu */}
+            {doc.email_sent === true && (
+                <span title="E-posta gönderildi" className="text-[#2f8a5d] flex items-center gap-1 text-xs whitespace-nowrap">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">Gönderildi</span>
+                </span>
+            )}
+            {doc.email_sent === false && (
+                <span title={doc.email_error || "E-posta gönderilemedi"} className="text-[#a8323b] flex items-center gap-1 text-xs whitespace-nowrap">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">Başarısız</span>
+                </span>
+            )}
+            {doc.email_sent == null && (
+                <span title="E-posta gönderilmedi / atlandı" className="text-[var(--fg-subtle)] flex items-center">
+                    <MinusCircle className="w-4 h-4" />
+                </span>
+            )}
+            {/* Gönder / Tekrar Gönder butonu */}
+            {(doc.email_sent === false || doc.email_sent === null) && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className={doc.email_sent === false
+                        ? "w-full sm:w-auto text-xs border-[#a8323b]/40 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                        : "w-full sm:w-auto text-xs border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
+                    }
+                    onClick={() => onResend(doc)}
+                >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    {doc.email_sent === false ? "Tekrar Gönder" : "E-posta Gönder"}
+                </Button>
+            )}
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={async () => {
+                    if (!doc.sharepoint_url) {
+                        toast.info("Belge Hazırlanıyor", { description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir.` });
+                        return;
+                    }
+                    // Diske indirmek yerine okuma için yeni sekmede aç (mükerrer dosya oluşmasın).
+                    // NOT: `noopener` KULLANMA — blob: URL'i opener bağlamında üretilir,
+                    // noopener'lı sekme ayrı bağlama düştüğü için blob'u çözemez ve beyaz ekran gelir.
+                    const tab = window.open("", "_blank");
+                    toast.info("Açılıyor...", { description: "Belge güvenli arşivden getiriliyor." });
+                    try {
+                        const res = await apiClient.fetch(`/api/documents/${doc.id}/download?inline=true`);
+                        if (!res.ok) throw new Error("Sunucu hatası");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        if (tab) {
+                            tab.location.href = url;
+                        } else {
+                            // Pop-up engellendiyse aynı sekmede aç.
+                            window.open(url, "_blank");
+                        }
+                        // Sekme blob'u okuyabilsin diye URL'i biraz sonra serbest bırak.
+                        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    } catch {
+                        tab?.close();
+                        toast.error("Açma Hatası", { description: "Belge görüntülenemedi. Lütfen tekrar deneyin." });
+                    }
+                }}
+            >
+                Detay / Görüntüle
+            </Button>
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                title="Belgeyi sil"
+                onClick={() => onDelete(doc)}
+            >
+                <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+        </div>
+    </div>
+);
+
 const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
@@ -884,133 +1028,6 @@ const CaseDetails = () => {
 
                                     const clientParties = (caseData.parties || []).filter(p => p.party_type === "CLIENT");
 
-                                    const DocCard = ({ doc }: { doc: NonNullable<typeof caseData.documents>[number] }) => (
-                                        <div key={doc.id} className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
-                                            <div className="flex items-start gap-4 flex-1 min-w-0">
-                                                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                                    <FileText className="w-5 h-5 text-primary" />
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <h4 className="font-semibold text-sm truncate" title={doc.stored_filename || doc.original_filename}>
-                                                        {doc.stored_filename || doc.original_filename}
-                                                    </h4>
-                                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                        {doc.belge_turu_adi && (
-                                                            <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
-                                                                {doc.belge_turu_adi}
-                                                            </Badge>
-                                                        )}
-                                                        {doc.uploaded_at && (
-                                                            <div className="flex items-center text-xs text-muted-foreground gap-1">
-                                                                <Clock className="w-3 h-3" />
-                                                                {new Date(doc.uploaded_at).toLocaleString("sv-SE")}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {/* Müvekkil atama seçici — sadece CLIENT taraf varsa göster */}
-                                                    {clientParties.length > 0 && (
-                                                        <div className="mt-2">
-                                                            <Select
-                                                                value={doc.case_party_id != null ? String(doc.case_party_id) : "all"}
-                                                                onValueChange={(v) => handleAssignParty(doc.id, v === "all" ? null : Number(v))}
-                                                            >
-                                                                <SelectTrigger className="h-7 text-[11px] w-44 border-dashed">
-                                                                    <Users className="w-3 h-3 mr-1 shrink-0" />
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="all">Tüm Dava</SelectItem>
-                                                                    {clientParties.map(p => (
-                                                                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
-                                                {/* Email durum ikonu */}
-                                                {doc.email_sent === true && (
-                                                    <span title="E-posta gönderildi" className="text-[#2f8a5d] flex items-center gap-1 text-xs whitespace-nowrap">
-                                                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                                                        <span className="hidden sm:inline">Gönderildi</span>
-                                                    </span>
-                                                )}
-                                                {doc.email_sent === false && (
-                                                    <span title={doc.email_error || "E-posta gönderilemedi"} className="text-[#a8323b] flex items-center gap-1 text-xs whitespace-nowrap">
-                                                        <XCircle className="w-4 h-4 shrink-0" />
-                                                        <span className="hidden sm:inline">Başarısız</span>
-                                                    </span>
-                                                )}
-                                                {doc.email_sent == null && (
-                                                    <span title="E-posta gönderilmedi / atlandı" className="text-[var(--fg-subtle)] flex items-center">
-                                                        <MinusCircle className="w-4 h-4" />
-                                                    </span>
-                                                )}
-                                                {/* Gönder / Tekrar Gönder butonu */}
-                                                {(doc.email_sent === false || doc.email_sent === null) && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className={doc.email_sent === false
-                                                            ? "w-full sm:w-auto text-xs border-[#a8323b]/40 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
-                                                            : "w-full sm:w-auto text-xs border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
-                                                        }
-                                                        onClick={() => setResendDoc(doc)}
-                                                    >
-                                                        <RotateCcw className="w-3 h-3 mr-1" />
-                                                        {doc.email_sent === false ? "Tekrar Gönder" : "E-posta Gönder"}
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="w-full sm:w-auto"
-                                                    onClick={async () => {
-                                                        if (!doc.sharepoint_url) {
-                                                            toast.info("Belge Hazırlanıyor", { description: `"${doc.original_filename}" henüz SharePoint'e yüklenmemiş veya arka planda işleniyor olabilir.` });
-                                                            return;
-                                                        }
-                                                        // Diske indirmek yerine okuma için yeni sekmede aç (mükerrer dosya oluşmasın).
-                                                        // NOT: `noopener` KULLANMA — blob: URL'i opener bağlamında üretilir,
-                                                        // noopener'lı sekme ayrı bağlama düştüğü için blob'u çözemez ve beyaz ekran gelir.
-                                                        const tab = window.open("", "_blank");
-                                                        toast.info("Açılıyor...", { description: "Belge güvenli arşivden getiriliyor." });
-                                                        try {
-                                                            const res = await apiClient.fetch(`/api/documents/${doc.id}/download?inline=true`);
-                                                            if (!res.ok) throw new Error("Sunucu hatası");
-                                                            const blob = await res.blob();
-                                                            const url = URL.createObjectURL(blob);
-                                                            if (tab) {
-                                                                tab.location.href = url;
-                                                            } else {
-                                                                // Pop-up engellendiyse aynı sekmede aç.
-                                                                window.open(url, "_blank");
-                                                            }
-                                                            // Sekme blob'u okuyabilsin diye URL'i biraz sonra serbest bırak.
-                                                            setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                                                        } catch {
-                                                            tab?.close();
-                                                            toast.error("Açma Hatası", { description: "Belge görüntülenemedi. Lütfen tekrar deneyin." });
-                                                        }
-                                                    }}
-                                                >
-                                                    Detay / Görüntüle
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="w-full sm:w-auto border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
-                                                    title="Belgeyi sil"
-                                                    onClick={() => setDeleteDoc(doc)}
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    );
-
                                     return (
                                         <div className="space-y-6">
                                             {/* Grup 1: Tüm davayı ilgilendiren belgeler */}
@@ -1022,7 +1039,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto">{caseWide.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} />)}
+                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} />)}
                                                     </div>
                                                 </div>
                                             )}
@@ -1036,7 +1053,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto shrink-0">{group.docs!.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} />)}
+                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} />)}
                                                     </div>
                                                 </div>
                                             ))}

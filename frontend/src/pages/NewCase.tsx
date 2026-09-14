@@ -77,10 +77,9 @@ const toTitleCase = (str: string): string => {
         .join("");
 };
 
-const NewCase = () => {
+const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     useSetPageTitle("Yeni Dava", ["Avukat Paneli", "Davalar", "Yeni"]);
     const navigate = useNavigate();
-    const location = useLocation();
 
     const queryClient = useQueryClient();
 
@@ -110,17 +109,17 @@ const NewCase = () => {
         { label: "Yazışma", index: 4 }
     ];
 
-    // Check if we are in edit mode
-    const editModeCase = location.state?.case as EditModeCaseData | undefined;
+    // Düzenleme modu: `editModeCase` sarmalayıcıdan (NewCase) gelir; aşağıdaki
+    // state'ler onu yalnız mount'ta lazy initializer ile BİR kez okur (G186 F10).
     const isEditMode = !!editModeCase;
 
     // Generate case tracking ID using central utility
-    const [caseId, setCaseId] = useState(editModeCase?.tracking_no || generateTrackingNumber());
+    const [caseId, setCaseId] = useState(() => editModeCase?.tracking_no || generateTrackingNumber());
     // G002: ofis no sırası alınamadıysa dolu (yanlış) numarayla kayıt yapılmasın
     const [sequenceError, setSequenceError] = useState<string | null>(null);
     const [isLoading, _setIsLoading] = useState(false);
-    const [caseStatus, setCaseStatus] = useState(editModeCase?.status || "DERDEST");
-    const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(editModeCase?.history || []);
+    const [caseStatus, setCaseStatus] = useState(() => editModeCase?.status || "DERDEST");
+    const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(() => editModeCase?.history || []);
 
     // Config
 
@@ -138,26 +137,26 @@ const NewCase = () => {
     const duplicateAcknowledged = useRef(false);
     const [clientSearchValues, setClientSearchValues] = useState<{ [key: number]: string }>({});
 
-    const [formData, setFormData] = useState<NewCaseFormValues>(editModeFormValues(editModeCase));
+    const [formData, setFormData] = useState<NewCaseFormValues>(() => editModeFormValues(editModeCase));
 
-    const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(
+    const [selectedLawyers, setSelectedLawyers] = useState<Array<{ name: string; lawyer_id?: number | null }>>(() =>
         editModeCase?.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []
     );
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
-    const [clients, setClients] = useState<Array<{ name: string; role: string; category?: string; birth_year?: number; gender?: string }>>(
+    const [clients, setClients] = useState<Array<{ name: string; role: string; category?: string; birth_year?: number; gender?: string }>>(() =>
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) ||
         [{ name: "", role: "Davacı" }]
     );
 
     // Multiple Counter-Parties (Karşı Taraf)
-    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(
+    const [counterParties, setCounterParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(() =>
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) ||
         [{ name: "", role: "Davalı" }]
     );
 
     // Third Parties (Tanık, Bilirkişi, etc.)
-    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(
+    const [thirdParties, setThirdParties] = useState<Array<{ name: string; role: string; tc_no?: string }>>(() =>
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) ||
         []
     );
@@ -341,19 +340,9 @@ const NewCase = () => {
         });
     };
 
-    // Effect to handle incoming case state (for editing)
-    useEffect(() => {
-        if (editModeCase) {
-            setCaseId(editModeCase.tracking_no);
-            setCaseStatus(editModeCase.status);
-            setCaseHistory(editModeCase.history || []);
-            setFormData(editModeFormValues(editModeCase));
-            setSelectedLawyers(editModeCase.lawyers?.map(l => ({ name: l.name, lawyer_id: l.lawyer_id })) || []);
-            setClients(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) || [{ name: "", role: "Davacı" }]);
-            setCounterParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "COUNTER").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) || [{ name: "", role: "Davalı" }]);
-            setThirdParties(editModeCase.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) || []);
-        }
-    }, [editModeCase]);
+    // G186 (F10): düzenlenen kaydı state'lere kopyalayan effect KALDIRILDI — değerler
+    // yukarıdaki lazy initializer'larla ilk render'da kurulur; başka bir kayda geçişte
+    // sıfırlama NewCase sarmalayıcısındaki `key` ile remount üzerinden olur.
 
     // Zorunlu alan denetimi — liste backend'den gelir (tek kaynak: required_fields.py).
     const getMissingRequired = (): { field: string; label: string }[] => {
@@ -1722,6 +1711,21 @@ const NewCase = () => {
             </main>
         </div >
     );
+};
+
+/**
+ * Route bileşeni: düzenlenecek kaydı `location.state`'ten okur ve formu kayda göre
+ * anahtarlar. G186 (F10) kararı — `key` ile remount (lazy initializer'larla birlikte):
+ * kaldırılan effect, aynı route monteliyken kayıt değişince formu yeniden kuruyordu;
+ * yalnız lazy initializer bu sıfırlamayı kaybettirirdi. `key` farklı kayda (ya da
+ * düzenleme ↔ yeni geçişine) remount'la aynı sıfırlamayı verir, ilk render'ı ise
+ * boş → dolu çift kurulum olmadan tek seferde dolu basar.
+ */
+const NewCase = () => {
+    const location = useLocation();
+    const editModeCase = location.state?.case as EditModeCaseData | undefined;
+    const formKey = editModeCase ? `duzenle-${editModeCase.id ?? editModeCase.tracking_no}` : "yeni";
+    return <NewCaseForm key={formKey} editModeCase={editModeCase} />;
 };
 
 export default NewCase;
