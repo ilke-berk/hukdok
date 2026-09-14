@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from "react";
 import { useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfig, ConfigItem, ListUsage, DeleteMode } from "@/hooks/useConfig";
@@ -170,6 +170,146 @@ const SortableRow = ({ id, children, className }: { id: string, children: React.
     );
 };
 
+// --- Liste satırları (G187) ---
+// Listeler sunucu verisinden render sırasında türetilir; satırlar memo'lu `ListRows`
+// içinde çizilir. Satır içeriği (hücreler, arama eşleşmesi, kimlik) modül düzeyinde
+// sabit fonksiyonlardır → react-query aynı içerikli yeniden çekmede dizi kimliğini
+// koruduğunda (structural sharing) satırlar yeniden render edilmez.
+
+// Avukatlar görev sırasıyla gösterilir; tanımsız görev en sona düşer.
+const GOREV_ORDER: Record<string, number> = { 'AVUKAT': 0, 'DIŞ AVUKAT': 1, 'DİĞER': 2 };
+const sortLawyersByGorev = (items: ConfigItem[]): ConfigItem[] =>
+    [...items].sort((a, b) => (GOREV_ORDER[a.gorev ?? ''] ?? 3) - (GOREV_ORDER[b.gorev ?? ''] ?? 3));
+
+// Sürükle-bırakın geçici sırası (liste tipi başına): `source` sıranın alındığı andaki
+// sunucu listesidir; sunucu listesi değişince (yeniden çekme yeni veri getirdi) geçici
+// sıra bayatlar. `dragging`: henüz bırakılmamış bir sürüklemenin açtığı kayıt.
+interface PendingOrder {
+    source: ConfigItem[];
+    items: ConfigItem[];
+    dragging: boolean;
+}
+
+interface RowActions {
+    onEdit: (item: ConfigItem) => void;
+    onDelete: (item: ConfigItem) => void;
+}
+
+const RowActionButtons = ({ item, actions }: { item: ConfigItem; actions: RowActions }) => (
+    <>
+        <Button variant="ghost" size="icon" onClick={() => actions.onEdit(item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => actions.onDelete(item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+    </>
+);
+
+type RowCells = (item: ConfigItem, actions: RowActions) => React.ReactNode;
+
+interface ListRowsProps {
+    items: ConfigItem[];
+    search: string;
+    matches: (item: ConfigItem, search: string) => boolean;
+    rowId: (item: ConfigItem) => string;
+    cells: RowCells;
+    actions: RowActions;
+    sortable?: boolean;
+}
+
+const ListRows = memo(function ListRows({ items, search, matches, rowId, cells, actions, sortable = true }: ListRowsProps) {
+    const visible = items.filter(item => matches(item, search));
+    if (!sortable) {
+        return <>{visible.map(item => <TableRow key={item.code}>{cells(item, actions)}</TableRow>)}</>;
+    }
+    return (
+        <SortableContext items={items.map(rowId)} strategy={verticalListSortingStrategy}>
+            {visible.map(item => (
+                <SortableRow key={rowId(item)} id={rowId(item)}>{cells(item, actions)}</SortableRow>
+            ))}
+        </SortableContext>
+    );
+});
+
+const matchName = (i: ConfigItem, q: string) => trMatch(i.name, q);
+const matchNameOrCode = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.code, q);
+const matchLawyer = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.code, q) || trMatch(i.city, q);
+const matchEmail = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.email, q) || trMatch(i.description, q);
+const matchCourt = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.parent_code, q);
+
+const idByCode = (i: ConfigItem) => i.code ?? "";
+const idByCodeOrName = (i: ConfigItem) => i.code ?? i.name;
+const idByEmail = (i: ConfigItem) => i.email ?? "";
+
+const EMPTY_CELL = <span className="opacity-30">—</span>;
+
+const lawyerCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
+        <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
+        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.gorev || EMPTY_CELL}</TableCell>
+        <TableCell className="text-xs whitespace-nowrap">{item.city || EMPTY_CELL}</TableCell>
+        <TableCell className="font-mono text-xs">{item.tc_no || EMPTY_CELL}</TableCell>
+        <TableCell className="font-mono text-xs">{item.sicil_no || EMPTY_CELL}</TableCell>
+        <TableCell className="text-xs">{item.email || EMPTY_CELL}</TableCell>
+        <TableCell className="text-xs whitespace-nowrap">{item.phone || EMPTY_CELL}</TableCell>
+        <TableCell className={STICKY_ACTIONS}><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+const statusCells: RowCells = (item, actions) => (
+    <>
+        <TableCell>{item.code}</TableCell>
+        <TableCell>{item.name}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+const docTypeCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="font-medium">{item.code}</TableCell>
+        <TableCell>{item.name}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+const emailCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="font-medium">{item.name}</TableCell>
+        <TableCell>{item.email}</TableCell>
+        <TableCell>{item.description || "-"}</TableCell>
+        <TableCell className="text-xs">{item.notify_copy ? <span className="text-[var(--brand)] font-semibold">Kopya alır</span> : EMPTY_CELL}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+const courtTypeCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="text-muted-foreground text-sm">{item.parent_code}</TableCell>
+        <TableCell className="font-medium">{item.name}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+const partyRoleCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="font-medium">{item.name}</TableCell>
+        <TableCell className="text-xs text-muted-foreground">{item.role_type === "THIRD" ? "Üçüncü Taraf" : "Ana Taraf"}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+// Yalnız ad sütunu olan listeler (dava konusu, dava türü, büro türü, kategori, dosya durumu, uzmanlık, şehir)
+const nameCells: RowCells = (item, actions) => (
+    <>
+        <TableCell className="font-medium">{item.name}</TableCell>
+        <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
+    </>
+);
+
+// Satır işlem düğmelerinin çağırdığı liste tipleri (openEdit/openDelete `type` argümanı)
+const ROW_ACTION_TYPES = [
+    "lawyers", "statuses", "doctypes", "case_subjects", "emails", "file_types", "court_types",
+    "party_roles", "bureau_types", "client_categories", "file_statuses", "specialties", "cities",
+] as const;
+
 // Yönetim sekmeleri — `TabsTrigger value` listesiyle birebir. URL'deki `?tab=`
 // yalnız bu kümedeyse başlangıç sekmesi olur (G117: bildirimden sekmeye gitme).
 const ADMIN_TABS = [
@@ -201,45 +341,50 @@ const AdminPage = () => {
 
     const [activeTab, setActiveTab] = useState(initialTab);
 
-    // Local State for Optimistic Sorting
-    const [localLawyers, setLocalLawyers] = useState<ConfigItem[]>([]);
-    const [localStatuses, setLocalStatuses] = useState<ConfigItem[]>([]);
-    const [localDocTypes, setLocalDocTypes] = useState<ConfigItem[]>([]);
-    const [localEmails, setLocalEmails] = useState<ConfigItem[]>([]);
-    const [localCaseSubjects, setLocalCaseSubjects] = useState<ConfigItem[]>([]);
-    const [localFileTypes, setLocalFileTypes] = useState<ConfigItem[]>([]);
-    const [localPartyRoles, setLocalPartyRoles] = useState<ConfigItem[]>([]);
-    const [localBureauTypes, setLocalBureauTypes] = useState<ConfigItem[]>([]);
-    const [localCities, setLocalCities] = useState<ConfigItem[]>([]);
-    const [localSpecialties, setLocalSpecialties] = useState<ConfigItem[]>([]);
-    const [localClientCategories, setLocalClientCategories] = useState<ConfigItem[]>([]);
-    const [localFileStatuses, setLocalFileStatuses] = useState<ConfigItem[]>([]);
+    // Listeler render sırasında türetilir (G187): sunucu verisi state'e KOPYALANMAZ.
+    // useMemo yalnız dizi kimliğini korumak için — memo'lu satırlar kimliğe bakar.
+    const sortedLawyers = useMemo(() => sortLawyersByGorev(lawyers), [lawyers]);
 
     // Court types: filtered by selected parent
     const [courtParentFilter, setCourtParentFilter] = useState<string>("");
-    const [localCourtTypes, setLocalCourtTypes] = useState<ConfigItem[]>([]);
+    const filteredCourtTypes = useMemo(
+        () => (courtParentFilter ? courtTypes.filter(c => c.parent_code === courtParentFilter) : courtTypes),
+        [courtTypes, courtParentFilter],
+    );
 
-    useEffect(() => {
-        const gorevOrder: Record<string, number> = { 'AVUKAT': 0, 'DIŞ AVUKAT': 1, 'DİĞER': 2 };
-        setLocalLawyers([...lawyers].sort((a, b) => (gorevOrder[a.gorev ?? ''] ?? 3) - (gorevOrder[b.gorev ?? ''] ?? 3)));
-    }, [lawyers]);
-    useEffect(() => { setLocalStatuses(statuses); }, [statuses]);
-    useEffect(() => { setLocalDocTypes(doctypes); }, [doctypes]);
-    useEffect(() => { setLocalEmails(emailRecipients); }, [emailRecipients]);
-    useEffect(() => { setLocalCaseSubjects(caseSubjects); }, [caseSubjects]);
-    useEffect(() => { setLocalFileTypes(fileTypes); }, [fileTypes]);
-    useEffect(() => { setLocalPartyRoles(partyRoles); }, [partyRoles]);
-    useEffect(() => { setLocalBureauTypes(bureauTypes); }, [bureauTypes]);
-    useEffect(() => { setLocalCities(cities); }, [cities]);
-    useEffect(() => { setLocalSpecialties(specialties); }, [specialties]);
-    useEffect(() => { setLocalClientCategories(clientCategories); }, [clientCategories]);
-    useEffect(() => { setLocalFileStatuses(fileStatuses); }, [fileStatuses]);
-    useEffect(() => {
-        const filtered = courtParentFilter
-            ? courtTypes.filter(c => c.parent_code === courtParentFilter)
-            : courtTypes;
-        setLocalCourtTypes(filtered);
-    }, [courtTypes, courtParentFilter]);
+    // Sürüklenebilir listelerin sunucu hâli — anahtar backend liste tipidir (reorderList `type`).
+    const serverLists: Record<string, ConfigItem[]> = {
+        lawyers: sortedLawyers, statuses, doctypes, emails: emailRecipients, case_subjects: caseSubjects,
+        file_types: fileTypes, party_roles: partyRoles, bureau_types: bureauTypes, cities, specialties,
+        client_categories: clientCategories, file_statuses: fileStatuses,
+    };
+
+    // State'te kalan TEK liste hâli kullanıcının geçici sürükle-bırak sırasıdır: sürükleme
+    // başlayınca dolar; vazgeçilince, yerinden oynamayınca ya da kayıt hata verince silinir.
+    // Kayıt başarılıysa mutasyon listeyi yeniden çeker → yeni sunucu listesi geçici sırayı
+    // bayatlatır ve aşağıda bırakılır.
+    const [pendingOrders, setPendingOrders] = useState<Record<string, PendingOrder>>({});
+    // Bayat geçici sıraları render sırasında bırak ("prop değişince state ayarla" deseni:
+    // effect ve ikinci commit yok; koşul bir sonraki render'da yanlışlanır, döngü olmaz).
+    if (Object.entries(pendingOrders).some(([type, o]) => o.source !== serverLists[type])) {
+        setPendingOrders(prev => {
+            const fresh = Object.entries(prev).filter(([type, o]) => o.source === serverLists[type]);
+            return fresh.length === Object.keys(prev).length ? prev : Object.fromEntries(fresh);
+        });
+    }
+    const shownList = (type: string): ConfigItem[] => {
+        const pending = pendingOrders[type];
+        return pending && pending.source === serverLists[type] ? pending.items : serverLists[type];
+    };
+    // Bir tipin geçici sırasını, koşul tutuyorsa siler.
+    const dropPending = (type: string, when: (o: PendingOrder) => boolean) =>
+        setPendingOrders(prev => {
+            const o = prev[type];
+            if (!o || !when(o)) return prev;
+            const rest = { ...prev };
+            delete rest[type];
+            return rest;
+        });
 
     // Sensors
     const sensors = useSensors(
@@ -249,60 +394,51 @@ const AdminPage = () => {
         })
     );
 
-    const handleDragEnd = async (event: DragEndEvent) => {
-        const { active, over } = event;
+    // Açık sekmenin sürüklenebilir liste tipi; sürüklenemeyen sekmede (mahkemeler, özellikler…) yok.
+    const draggableType = (): string | undefined => {
+        const type = TAB_TO_LIST[activeTab];
+        return type && type in serverLists ? type : undefined;
+    };
 
-        if (active.id !== over?.id) {
-            let oldIndex = -1;
-            let newIndex = -1;
-            let currentList: ConfigItem[] = [];
-            let setList: React.Dispatch<React.SetStateAction<ConfigItem[]>> | null = null;
-            let type = "";
+    const handleDragStart = () => {
+        const type = draggableType();
+        if (!type) return;
+        const source = serverLists[type];
+        // Kaydı süren ya da kaydedilmiş bir sıra zaten gösteriliyorsa ona dokunulmaz.
+        setPendingOrders(prev => (prev[type] ? prev : { ...prev, [type]: { source, items: source, dragging: true } }));
+    };
 
-            if (activeTab === "lawyers") {
-                currentList = localLawyers; setList = setLocalLawyers; type = "lawyers";
-            } else if (activeTab === "statuses") {
-                currentList = localStatuses; setList = setLocalStatuses; type = "statuses";
-            } else if (activeTab === "doctypes") {
-                currentList = localDocTypes; setList = setLocalDocTypes; type = "doctypes";
-            } else if (activeTab === "emails") {
-                currentList = localEmails; setList = setLocalEmails; type = "emails";
-            } else if (activeTab === "case_subjects") {
-                currentList = localCaseSubjects; setList = setLocalCaseSubjects; type = "case_subjects";
-            } else if (activeTab === "case_types") {
-                currentList = localFileTypes; setList = setLocalFileTypes; type = "file_types";
-            } else if (activeTab === "party_roles") {
-                currentList = localPartyRoles; setList = setLocalPartyRoles; type = "party_roles";
-            } else if (activeTab === "bureau_types") {
-                currentList = localBureauTypes; setList = setLocalBureauTypes; type = "bureau_types";
-            } else if (activeTab === "cities") {
-                currentList = localCities; setList = setLocalCities; type = "cities";
-            } else if (activeTab === "specialties") {
-                currentList = localSpecialties; setList = setLocalSpecialties; type = "specialties";
-            } else if (activeTab === "client_categories") {
-                currentList = localClientCategories; setList = setLocalClientCategories; type = "client_categories";
-            } else if (activeTab === "file_statuses") {
-                currentList = localFileStatuses; setList = setLocalFileStatuses; type = "file_statuses";
-            }
+    // Vazgeçme / yerinden oynamayan bırakma: yalnız bu sürüklemenin açtığı geçici sıra silinir.
+    const discardDrag = () => {
+        const type = draggableType();
+        if (type) dropPending(type, o => o.dragging);
+    };
 
-            oldIndex = currentList.findIndex(item => (item.code || item.email) === active.id);
-            newIndex = currentList.findIndex(item => (item.code || item.email) === over?.id);
+    const handleDragEnd = async ({ active, over }: DragEndEvent) => {
+        const type = draggableType();
+        if (!type) return;
+        const current = shownList(type);
+        const idOf = (item: ConfigItem) => item.code || item.email;
+        const oldIndex = current.findIndex(item => idOf(item) === active.id);
+        const newIndex = over ? current.findIndex(item => idOf(item) === over.id) : -1;
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+            discardDrag();
+            return;
+        }
 
-            if (oldIndex !== -1 && newIndex !== -1 && setList) {
-                // Optimistic Update
-                const newOrder = arrayMove(currentList, oldIndex, newIndex);
-                setList(newOrder);
+        // Optimistic Update — yeni sıra kayıt sonuçlanana dek gösterilir
+        const next: PendingOrder = { source: serverLists[type], items: arrayMove(current, oldIndex, newIndex), dragging: false };
+        setPendingOrders(prev => ({ ...prev, [type]: next }));
 
-                // API Call
-                // Use code/email as ID for persistence
-                const orderedIds = newOrder.map(item => item.code || item.email || "");
-                try {
-                    await reorderList(type, orderedIds);
-                } catch {
-                    toast.error("Sıralama kaydedilemedi.");
-                    // Revert? For now, assume success or refresh.
-                }
-            }
+        // Use code/email as ID for persistence
+        const orderedIds = next.items.map(item => idOf(item) || "");
+        try {
+            // Başarıda mutasyon listeyi yeniden çekmeyi bekler; gelen sunucu listesi geçici sırayı bayatlatır.
+            await reorderList(type, orderedIds);
+        } catch {
+            toast.error("Sıralama kaydedilemedi.");
+            // Sunucu sırasına dön (bu arada yeni bir sıra yazıldıysa ona dokunma)
+            dropPending(type, o => o === next);
         }
     };
 
@@ -496,6 +632,21 @@ const AdminPage = () => {
             setUsageLoading(false);
         }
     };
+
+    // Satır düğmeleri memo'lu `ListRows`'a SABİT kimlikli işleyicilerle verilir; her render
+    // yeniden kurulan openEdit/openDelete (useConfig fonksiyonları kimlik korumaz) ref'ten okunur.
+    const rowHandlersRef = useRef({ openEdit, openDelete });
+    // Ref commit'ten sonra güncellenir (render sırasında ref yazılmaz); tıklama commit'ten sonra geldiği için güncel işleyiciyi görür.
+    useLayoutEffect(() => {
+        rowHandlersRef.current = { openEdit, openDelete };
+    });
+    const rowActions = useMemo(
+        () => Object.fromEntries(ROW_ACTION_TYPES.map(type => [type, {
+            onEdit: (item: ConfigItem) => rowHandlersRef.current.openEdit(type, item),
+            onDelete: (item: ConfigItem) => { void rowHandlersRef.current.openDelete(type, item); },
+        }])) as Record<(typeof ROW_ACTION_TYPES)[number], RowActions>,
+        [],
+    );
 
     const handleConfirmDelete = async () => {
         if (!deleting || !usage) return;
@@ -789,7 +940,7 @@ const AdminPage = () => {
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="deleted">Silinenler</TabsTrigger>
                     </TabsList>
 
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={discardDrag}>
 
                         {/* LAWYERS TAB */}
                         <TabsContent value="lawyers">
@@ -838,24 +989,7 @@ const AdminPage = () => {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localLawyers.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localLawyers.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch) || trMatch(i.city, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? ""}>
-                                                        <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
-                                                        <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
-                                                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.gorev || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="text-xs whitespace-nowrap">{item.city || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="font-mono text-xs">{item.tc_no || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="font-mono text-xs">{item.sicil_no || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="text-xs">{item.email || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="text-xs whitespace-nowrap">{item.phone || <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className={STICKY_ACTIONS}>
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("lawyers", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
-                                                            <Button variant="ghost" size="icon" onClick={() => openDelete("lawyers", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("lawyers")} search={listSearch} matches={matchLawyer} rowId={idByCode} cells={lawyerCells} actions={rowActions.lawyers} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -886,17 +1020,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localStatuses.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localStatuses.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? ""}>
-                                                        <TableCell>{item.code}</TableCell>
-                                                        <TableCell>{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("statuses", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("statuses", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("statuses")} search={listSearch} matches={matchNameOrCode} rowId={idByCode} cells={statusCells} actions={rowActions.statuses} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -927,17 +1051,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Kod</TableHead><TableHead>Açıklama</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localDocTypes.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localDocTypes.filter(i => trMatch(i.name, listSearch) || trMatch(i.code, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? ""}>
-                                                        <TableCell className="font-medium">{item.code}</TableCell>
-                                                        <TableCell>{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("doctypes", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("doctypes", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("doctypes")} search={listSearch} matches={matchNameOrCode} rowId={idByCode} cells={docTypeCells} actions={rowActions.doctypes} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -967,16 +1081,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Dava Konusu</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localCaseSubjects.map(i => i.code ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localCaseSubjects.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? ""}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("case_subjects", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("case_subjects", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("case_subjects")} search={listSearch} matches={matchName} rowId={idByCode} cells={nameCells} actions={rowActions.case_subjects} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1008,20 +1113,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead title="Sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır">Bildirim</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localEmails.map(i => i.email ?? "")} strategy={verticalListSortingStrategy}>
-                                                {localEmails.filter(i => trMatch(i.name, listSearch) || trMatch(i.email, listSearch) || trMatch(i.description, listSearch)).map((item) => (
-                                                    <SortableRow key={item.email} id={item.email ?? ""}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell>{item.email}</TableCell>
-                                                        <TableCell>{item.description || "-"}</TableCell>
-                                                        <TableCell className="text-xs">{item.notify_copy ? <span className="text-[var(--brand)] font-semibold">Kopya alır</span> : <span className="opacity-30">—</span>}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("emails", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
-                                                            <Button variant="ghost" size="icon" onClick={() => openDelete("emails", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("emails")} search={listSearch} matches={matchEmail} rowId={idByEmail} cells={emailCells} actions={rowActions.emails} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1051,16 +1143,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localFileTypes.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localFileTypes.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("file_types", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("file_types", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("file_types")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.file_types} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1103,15 +1186,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Dava Türü</TableHead><TableHead>Mahkeme Adı</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localCourtTypes.filter(i => trMatch(i.name, listSearch) || trMatch(i.parent_code, listSearch)).map((item) => (
-                                                <TableRow key={item.code}>
-                                                    <TableCell className="text-muted-foreground text-sm">{item.parent_code}</TableCell>
-                                                    <TableCell className="font-medium">{item.name}</TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit("court_types", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("court_types", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
+                                            <ListRows items={filteredCourtTypes} search={listSearch} matches={matchCourt} rowId={idByCode} cells={courtTypeCells} actions={rowActions.court_types} sortable={false} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1148,17 +1223,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead>Tür</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localPartyRoles.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localPartyRoles.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-xs text-muted-foreground">{item.role_type === "THIRD" ? "Üçüncü Taraf" : "Ana Taraf"}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("party_roles", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("party_roles", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("party_roles")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={partyRoleCells} actions={rowActions.party_roles} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1188,16 +1253,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localBureauTypes.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localBureauTypes.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("bureau_types", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("bureau_types", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("bureau_types")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.bureau_types} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1227,16 +1283,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localClientCategories.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localClientCategories.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("client_categories", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("client_categories", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("client_categories")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.client_categories} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1266,16 +1313,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            <SortableContext items={localFileStatuses.map(i => i.code ?? i.name)} strategy={verticalListSortingStrategy}>
-                                                {localFileStatuses.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                    <SortableRow key={item.code} id={item.code ?? item.name}>
-                                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                                        <TableCell className="text-right">
-                                                            <Button variant="ghost" size="icon" onClick={() => openEdit("file_statuses", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("file_statuses", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                        </TableCell>
-                                                    </SortableRow>
-                                                ))}
-                                            </SortableContext>
+                                            <ListRows items={shownList("file_statuses")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.file_statuses} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1305,14 +1343,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Uzmanlık Adı</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localSpecialties.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                <TableRow key={item.code}>
-                                                    <TableCell className="font-medium">{item.name}</TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit("specialties", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("specialties", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
+                                            <ListRows items={shownList("specialties")} search={listSearch} matches={matchName} rowId={idByCode} cells={nameCells} actions={rowActions.specialties} sortable={false} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1342,14 +1373,7 @@ const AdminPage = () => {
                                     <Table>
                                         <TableHeader><TableRow><TableHead>Şehir</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
-                                            {localCities.filter(i => trMatch(i.name, listSearch)).map((item) => (
-                                                <TableRow key={item.code}>
-                                                    <TableCell className="font-medium">{item.name}</TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit("cities", item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button><Button variant="ghost" size="icon" onClick={() => openDelete("cities", item)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))}
+                                            <ListRows items={shownList("cities")} search={listSearch} matches={matchName} rowId={idByCode} cells={nameCells} actions={rowActions.cities} sortable={false} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>
@@ -1712,6 +1736,7 @@ function DeletedRecordsPanel() {
     const [restoringKey, setRestoringKey] = useState<string | null>(null);
     const [reloadKey, setReloadKey] = useState(0);
 
+    // Dış sistem senkronu (react-query dışı uç): panel açılışında ve geri almadan sonra silinen kayıtları çeker.
     useEffect(() => {
         let cancelled = false;
         (async () => {
