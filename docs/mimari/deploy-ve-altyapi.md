@@ -455,9 +455,9 @@ kendisi bu dokümanın ilgili bölümündedir, burada yalnız sıra ve neye bak�
    `idx_scan = 0` → D7 index kararı, sayaç sıfırlama tarihinden bu yana ~30 gün birikince;
    bölüm 5 `cases.status` üçlü dışı = 0 ise `ALTER TABLE cases VALIDATE CONSTRAINT ck_cases_status_uclu`
    ayrı görevle (D9, [`dava-acma-akisi.md` §4](dava-acma-akisi.md)); bölüm 6 arama kollarının
-   index'e düştüğü. Not: script metni (`scripts/perf_olcum.py:413`) hâlâ "CHECK kısıtı (D9)
-   ancak 0 iken eklenebilir" der; kısıt G195'te `NOT VALID` ile eklendi, doğru okuma
-   "`VALIDATE` ancak 0 iken".
+   index'e düştüğü. Script'in bölüm 5 metni (`scripts/perf_olcum.py:413`) de bunu söyler:
+   "`VALIDATE CONSTRAINT ck_cases_status_uclu` (D9) ancak 0 iken koşulabilir" (kısıt G195'te
+   `NOT VALID` ile eklendi; G197 metni düzeltti).
 5. **İlk gece turları:** `lock_timeout` 5 sn yeni bir hata modudur (§13); 04:00 TR veri teslim
    turundan sonra `docker compose logs --since 12h backend | grep -i "lock timeout"`.
 6. **`pg_stat_statements`:** trafik birikince §13'teki en pahalı 10 sorgu.

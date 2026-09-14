@@ -4,7 +4,7 @@
 `docs/arsiv/performans-denetimi-2026-09-14.md` bulgularını (D3 şişme, D5/D6 sunucu ve
 bağlantı ayarları, D7 index sayaçları, D9 durum üçlüsü, D1/D2 arama planı) lokal restore
 kopyasında ölçtü; lokal süreler ve sayaçlar prod'u TEMSİL ETMEZ. VACUUM FULL, index
-düşürme, CHECK kısıtı gibi kararlar ancak bu script prod'da koşunca verilir.
+düşürme, `ck_cases_status_uclu` VALIDATE'i gibi kararlar ancak bu script prod'da koşunca verilir.
 
     docker compose exec -T backend python -m scripts.perf_olcum
     docker compose exec -T backend python -m scripts.perf_olcum --term Bora
@@ -410,7 +410,7 @@ def bolum_veri(conn) -> str:
     )
     return "\n\n".join([
         f"Durum üçlüsü (`constants.CASE_STATUSES`: {', '.join(CASE_STATUSES)}) dışındaki satır: "
-        f"**{tr_sayi(ihlal)}** — CHECK kısıtı (D9) ancak 0 iken eklenebilir.",
+        f"**{tr_sayi(ihlal)}** — `VALIDATE CONSTRAINT ck_cases_status_uclu` (D9) ancak 0 iken koşulabilir.",
         durum_tablosu,
         "Kimlik kolonları (D2: `cases` legacy kolonları boşsa oradaki index'ler boşa taşınıyor; "
         "asıl aranan `case_foys` kolonları). \"Dolu\" = NULL ve boşluk değil.",
@@ -600,7 +600,7 @@ def _baslik(conn, term: Optional[str], simdi: dt.datetime, surum: str) -> str:
             ("Arama terimi", term),
         ]),
         "> Üretici: `scripts/perf_olcum.py` (G183). Lokal restore kopyasında alınan süre ve "
-        "sayaçlar prod'u TEMSİL ETMEZ; kararlar (VACUUM FULL, index düşürme, CHECK) prod "
+        "sayaçlar prod'u TEMSİL ETMEZ; kararlar (VACUUM FULL, index düşürme, CHECK VALIDATE) prod "
         "çıktısıyla verilir.",
     ])
 
