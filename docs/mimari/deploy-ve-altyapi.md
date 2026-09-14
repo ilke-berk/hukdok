@@ -3,6 +3,9 @@
 > **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır);
 > §1 `.env` anahtar listesi 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı.
 > §13 2026-09-14 · G191: lokal stack recreate sonrası `SHOW` çıktıları ve pg_stat_statements sorgusu koşularak doğrulandı.
+> 2026-09-14 · G193: §3/§4/§8/§11 `docker-compose.yml` ve `nginx.conf` satır atıfları G182/G191 sonrası koda göre
+> yeniden okundu; §11 önbellek başlıkları ve §12 D9/doğrulama sırası koddan; §13 `SHOW` ve en pahalı 10 sorgu
+> komutları lokal `hukudok-postgres`'te yeniden koşuldu.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -159,23 +162,23 @@ Aynı uç dört yerden yoklanır ve dördü de farklı şey yapar:
 | Yoklayan | Aralık | Başarısızlıkta |
 | --- | --- | --- |
 | `deploy.sh` kapısı | 3 sn, 120 sn tavan | deploy `exit 1` + rollback komutu |
-| Docker healthcheck (`docker-compose.yml:99-110`) | 30 sn, 3 retry, 60 sn start_period | konteyner "unhealthy" **işaretlenir**; Docker restart ETMEZ (`:104-105`) |
-| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:62-72`) |
+| Docker healthcheck (`docker-compose.yml:110-121`) | 30 sn, 3 retry, 60 sn start_period | konteyner "unhealthy" **işaretlenir**; Docker restart ETMEZ (`:115-116`) |
+| Konteyner nginx `location = /healthz` | — | exact match şart; backend down → 502, DB down → 503 (`nginx.conf:101-111`) |
 | GCP uptime check | — | alarm |
 
 Healthcheck komutu `curl` değil stdlib `urllib` kullanır — `python:slim` imajında `curl`
-yoktur (`docker-compose.yml:100-101`).
+yoktur (`docker-compose.yml:111-112`).
 
 ## 4. Sürüm izi
 
 ```
 deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:317)
-  → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:40-42, :121-123)
+  → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:51-53, :133-135)
     → backend Dockerfile ARG/ENV  → /healthz "version"
     → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti
 ```
 
-Elle build'de `dev` düşer (`docker-compose.yml:41`).
+Elle build'de `dev` düşer (`docker-compose.yml:52`).
 
 ## 5. `infra/` envanteri
 
@@ -246,7 +249,7 @@ görülür), `file` = sayfa önbelleği (baskı altında kendiliğinden bırakı
 
 `infra/gcp/ops-agent-config.yaml` üç kaynağı Cloud Logging'e taşır: Docker json-file
 logları (iki katmanlı JSON parse + `severity` yükseltme), `net-watchdog.log`, `mem-watch.log`.
-Backend'in `LOG_FORMAT=json` ayarı (`docker-compose.yml:81`) tam da bu zincir içindir.
+Backend'in `LOG_FORMAT=json` ayarı (`docker-compose.yml:92`) tam da bu zincir içindir.
 
 `infra/gcp/apply_monitoring.sh` **lokal makineden** koşar (gcloud auth'lu) ve idempotenttir:
 log tabanlı metrik + `infra/gcp/policy-*.json`'daki üç alarm politikasını uygular:
@@ -306,11 +309,13 @@ deploy/rollback scriptleri, `docker compose down -v`, `git reset --hard`.
 
 ## 11. Konteyner nginx güvenlik başlıkları (G091)
 
-Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:38-54`): `X-Frame-Options`,
+Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:53-56`): `X-Frame-Options`,
 `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ve **zorlayıcı
-`Content-Security-Policy`** (`nginx.conf:54`, G101). Beşi de `always` ile biter, yani hata
+`Content-Security-Policy`** (`nginx.conf:70`, G101). Beşi de `always` ile biter, yani hata
 yanıtlarında (413/429/5xx) da gider. `Content-Security-Policy-Report-Only` başlığı artık
-yoktur.
+yoktur. G182'den beri beşi `/assets/` ve `/` location'larında AYNEN tekrar yazılıdır
+(`nginx.conf:81-85`, `:94-98`): `add_header` kalıtım kuralı gereği `Cache-Control` ekleyen
+location server düzeyindeki başlıkları devralmaz (`nginx.conf:48-51`).
 
 **Tarihçe — neden önce Report-Only kondu (G091):** bilinen bir XSS yolu yok (React
 varsayılan kaçışı var, `dangerouslySetInnerHTML` hiç kullanılmıyor), yani bu bir açık
@@ -336,9 +341,9 @@ başlık adı değişti.
 
 **Deploy sonrası insan turu (zorunlu):** login → pano → Takvim "Yazdır" → Yetki Belgesi
 "Yazdır" (G100) → dava kartından PDF açma → belge yükleme. Tarayıcı konsolunda "Refused to"
-satırı **olmamalı**. İhlal görülürse geri dönüş: `nginx.conf:54`'teki başlık adına
-`-Report-Only` ekini geri koymak — tek satır, ama başlık imajdan geldiği için frontend imajı
-rebuild ister (`docker compose build frontend && docker compose up -d frontend`; prod'da
+satırı **olmamalı**. İhlal görülürse geri dönüş: CSP başlık adına `-Report-Only` ekini geri
+koymak — G182'den beri ÜÇ satırda birlikte (`nginx.conf:70`, `:85`, `:98`), ama başlık
+imajdan geldiği için frontend imajı rebuild ister (`docker compose build frontend && docker compose up -d frontend`; prod'da
 `deploy.sh`). Lokal `.env`'de `VITE_API_URL` doluysa `connect-src` ihlali görülür — lokal
 artefakttır, prod'u temsil etmez.
 
@@ -360,11 +365,40 @@ docker run --rm --network hukudok-automator-main_hukudok-network \
   nginx:alpine nginx -t
 ```
 
+### Önbellek başlıkları (G182)
+
+Kural ve gerekçe [`genel-bakis.md` §2](genel-bakis.md): `/assets/` (hash'li parçalar)
+`Cache-Control: public, max-age=31536000, immutable`, eksik parça `404` (index.html'e
+düşmez); `/` ve SPA fallback `no-cache` (`nginx.conf:77-99`). Kontrol:
+
+```
+curl -sI http://localhost:8080/ | grep -i cache-control                          # no-cache
+curl -s  http://localhost:8080/ | grep -o 'assets/index-[^"]*\.js'               # giriş parçası adı
+curl -sI http://localhost:8080/assets/<parça>.js | grep -i cache-control         # public, max-age=31536000, immutable
+curl -sI http://localhost:8080/assets/YOK.js | head -1                           # 404
+```
+
+- **Başlık imajdan gelir:** `nginx.conf` frontend imajına kopyalanır; değişiklik
+  `docker compose build frontend && docker compose up -d frontend` (prod'da `deploy.sh`)
+  ister. 2026-09-14'te lokal 8080'de `Cache-Control` YOKTU ve `/assets/YOK.js` 200 döndü:
+  çalışan frontend imajı bu `nginx.conf`'u taşımıyordu (G182 sonrası rebuild edilmemiş).
+  Beklenen çıktılar G182'nin tek kullanımlık `nginx:alpine` ölçümündedir
+  (`gorevler/gorev/G182.md`).
+- **Host nginx — PROD'DA DOĞRULANACAK:** repodaki kopyası (`infra/nginx/sites-available/default`)
+  `add_header`/`proxy_hide_header` içermez ve her şeyi `proxy_pass http://localhost:8080`
+  ile konteynere geçirir. Sunucudaki konfigin bununla aynı olduğu ve başlığın tarayıcıya
+  ulaştığı yukarıdaki komutların `https://hukukoid.com` karşılığıyla deploy sonrası kontrol
+  edilir (§12 doğrulama sırası).
+- **Bayat parça davranışı:** açık eski sekme bir sayfaya geçince tek yenileme olmalı
+  (`frontend/src/lib/chunkReload.ts`, [`genel-bakis.md` §7](genel-bakis.md)); admin olmayan
+  kullanıcıda ağ sekmesinde `AdminPage-*`/`ReportsPage-*` parçası inmemeli. Bu tarayıcı
+  dumanı MSAL'lı gerçek oturum ister; `gorevler/gorev/G182.md` raporunda yapılmadığı yazılıdır.
+
 ## 12. Performans ölçümü (G183)
 
 `backend/scripts/perf_olcum.py` veritabanı performans kararlarından (VACUUM FULL / pg_repack,
-index düşürme, `cases.status` CHECK kısıtı, bağlantı ve sunucu ayarları) ÖNCE koşulan salt
-okunur ölçüm raporudur. Hiçbir şeyi değiştirmez, çıktısı Markdown'dır:
+index düşürme, `ck_cases_status_uclu` kısıtının `VALIDATE`'i — kısıt G195'te `NOT VALID` ile
+eklendi —, bağlantı ve sunucu ayarları) ÖNCE koşulan salt okunur ölçüm raporudur. Hiçbir şeyi değiştirmez, çıktısı Markdown'dır:
 
 ```
 docker compose exec -T backend python -m scripts.perf_olcum                  # EXPLAIN'siz
@@ -401,6 +435,32 @@ yalnız bir `SELECT` UNION'udur.
 durumu prod'dan farklıdır. Bölüm 1, 4 ve 6'daki sayılarla karar ancak prod çıktısı alınınca
 verilir. `idx_scan = 0` bir index'i düşürmek için tek başına yetmez: unique/primary index'ler
 tekillik kontrolünde bu sayacı artırmaz (bkz. `scripts/index_envanteri.py` docstring'i).
+
+### Deploy sonrası prod doğrulama sırası (14.09 performans turu)
+
+14.09 performans turu (G182-G195) lokal restore kopyasında ölçüldü; aşağıdakiler prod'da
+deploy'dan SONRA insan tarafından koşulur (otomasyon `ssh`/deploy yapmaz). Komutların
+kendisi bu dokümanın ilgili bölümündedir, burada yalnız sıra ve neye bakılacağı var:
+
+1. **Açılış logu:** `docker compose logs --since 10m backend | grep -i "trgm\|pg_stat_statements"`
+   → "Trigram (pg_trgm) arama index'leri hazır" ve "pg_stat_statements hazır"
+   (`backend/database.py:1611`, `:1643`). İlk açılış `cases` üzerinde dört, `case_foys`
+   üzerinde üç GIN index kurar ve 23 index düşürür (karar 018 "Nihai index durumu"); kurulum
+   `CONCURRENTLY` değildir, mesai dışı deploy kuralı bunu karşılar.
+2. **Postgres parametreleri:** §13 `SHOW` komutu → `384MB` / `pg_stat_statements`. Görünmüyorsa
+   postgres recreate olmamıştır (`up -d` şart, §13).
+3. **Önbellek başlıkları:** §11 `curl -sI` komutlarının `https://hukukoid.com` karşılığı (host nginx).
+4. **`perf_olcum`:** `--term <avukat soyadı> --out` ile tam rapor. Bölüm 1 şişme → VACUUM FULL /
+   pg_repack kararı (D3); bölüm 3 "idle in transaction" mesai içinde birkaç kez; bölüm 4
+   `idx_scan = 0` → D7 index kararı, sayaç sıfırlama tarihinden bu yana ~30 gün birikince;
+   bölüm 5 `cases.status` üçlü dışı = 0 ise `ALTER TABLE cases VALIDATE CONSTRAINT ck_cases_status_uclu`
+   ayrı görevle (D9, [`dava-acma-akisi.md` §4](dava-acma-akisi.md)); bölüm 6 arama kollarının
+   index'e düştüğü. Not: script metni (`scripts/perf_olcum.py:413`) hâlâ "CHECK kısıtı (D9)
+   ancak 0 iken eklenebilir" der; kısıt G195'te `NOT VALID` ile eklendi, doğru okuma
+   "`VALIDATE` ancak 0 iken".
+5. **İlk gece turları:** `lock_timeout` 5 sn yeni bir hata modudur (§13); 04:00 TR veri teslim
+   turundan sonra `docker compose logs --since 12h backend | grep -i "lock timeout"`.
+6. **`pg_stat_statements`:** trafik birikince §13'teki en pahalı 10 sorgu.
 
 ## 13. Bağlantı sınırları ve Postgres sunucu ayarları (G191)
 
