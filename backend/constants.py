@@ -66,3 +66,32 @@ def normalize_case_status(value: Optional[str]) -> "tuple[Optional[str], Optiona
     if key in LEGACY_CASE_STATUS:
         return LEGACY_CASE_STATUS[key]
     return ham, None
+
+
+class InvalidCaseStatusError(ValueError):
+    """Dava durumu üçlü (`CASE_STATUSES`) dışında — istemci hatası (G196).
+
+    `ValueError` ALT SINIFI (`stage_decisions.InvalidDecisionStatusError` deseni):
+    ayrı tip olmasının tek nedeni HTTP eşlemesi — `api.py` bunu 400'e çevirir;
+    yazma yollarının genel `except Exception` dalı hatayı ERROR + 500/404'e
+    yutmaz (log sözleşmesi: istemci hatası nihai sistem başarısızlığı değil).
+    """
+
+
+def validated_case_status(value: Optional[str]) -> "tuple[Optional[str], Optional[str]]":
+    """Yazma yollarının üçlü kapısı (G196): `normalize_case_status` + kapalı liste.
+
+    Dönüş `normalize_case_status` ile aynıdır — boş → (None, None), eski değer
+    (TEMYIZ, KAPALI, ...) → (üçlü, korunacak aşama). Normalize sonrası değer
+    `CASE_STATUSES` dışındaysa `InvalidCaseStatusError` yükselir; çağıran bunu
+    veritabanına dokunmadan ÖNCE çağırır ki G195 CHECK kısıtına (`ck_cases_status_uclu`)
+    hiç ulaşılmasın. `normalize_case_status`'ın "tanınmayanı olduğu gibi döndür"
+    sözleşmesi bilinçli korunur (okuma/rapor tarafı kullanır).
+    """
+    status, stage = normalize_case_status(value)
+    if status is not None and status not in CASE_STATUSES:
+        raise InvalidCaseStatusError(
+            f"Geçersiz dava durumu: {status!r} — durum yalnız {', '.join(CASE_STATUSES)} "
+            f"olabilir (temyiz, istinaf, karar gibi yargı aşamaları durum değil aşamadır)"
+        )
+    return status, stage

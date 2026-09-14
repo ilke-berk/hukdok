@@ -62,6 +62,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 
+from constants import InvalidCaseStatusError
+
 try:
     write_startup_log("Attempting to import modules...")
     from config.settings import settings
@@ -404,6 +406,14 @@ from managers.stage_decisions import InvalidDecisionStatusError  # noqa: E402
 
 @app.exception_handler(InvalidDecisionStatusError)
 async def invalid_decision_status_handler(request, exc: InvalidDecisionStatusError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+# Üçlü dışı dava durumu (G196): aynı gerekçe — gövde şeması geçerli, değer
+# kapalı listede (constants.CASE_STATUSES) yok → 400. Kapı veritabanından ÖNCE
+# koşar; G195 CHECK kısıtına ulaşıp 500/404 + ERROR logu üretmez.
+@app.exception_handler(InvalidCaseStatusError)
+async def invalid_case_status_handler(request, exc: InvalidCaseStatusError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 

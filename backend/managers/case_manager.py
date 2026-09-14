@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import is_unique_violation
 import models
-from constants import normalize_case_status
+from constants import InvalidCaseStatusError, validated_case_status
 from party_check import normalize_party_key, normalize_tc
 from required_fields import (
     AKTARIM_SOURCE_PREFIX,
@@ -1115,9 +1115,11 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
 
         # Üçlü kural (12.09.2026): status yalnız DERDEST | DANIŞ | MAHZEN; eski
         # değer (TEMYIZ, KAPALI, ...) üçlüye çevrilir, aşama boşsa oraya taşınır.
+        # Üçlü dışı değer (G196) HİÇBİR alan yazılmadan InvalidCaseStatusError →
+        # route 400 (G195 CHECK kısıtına ulaşıp 500 + ERROR üretmez).
         if data.get("status") is not None:
             data = dict(data)
-            normalized, stage = normalize_case_status(data["status"])
+            normalized, stage = validated_case_status(data["status"])
             data["status"] = normalized
             if stage and not case.case_stage:
                 case.case_stage = stage
@@ -1236,6 +1238,12 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
         case.updated_at = datetime.now()
         db.commit()
         return True
+    except InvalidCaseStatusError:
+        # İstemci hatası (G196) — nihai başarısızlık DEĞİL: ERROR basılmaz, False'a
+        # yutulmaz; api.py 400'e çevirir. Kapı ilk yazımdan önce koştuğu için
+        # rollback yalnız oturumu temiz kapatır.
+        db.rollback()
+        raise
     except Exception as e:
         logger.error(f"Update Case Error: {e}")
         db.rollback()
@@ -1477,6 +1485,13 @@ def add_case(data: dict, tenant_id: str = None):
     # Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı 2026-07-31 rev.2):
     # dosya DERDEST olarak açılır, eksikler get_case/get_cases'teki
     # missing_required_fields ile panelde uyarı olarak görünür ve filtrelenir.
+    #
+    # Üçlü kapısı (G196) oturum açılmadan ÖNCE: eski değer (TEMYIZ, KAPALI, ...)
+    # üçlüye çevrilir ve aşama taşınır (karar 020 — update_case ile aynı kural);
+    # üçlü dışı değer InvalidCaseStatusError → route 400, kart açılmaz, ERROR yok.
+    # Boş/None → DERDEST (varsayılan).
+    status, legacy_stage = validated_case_status(data.get("status"))
+    status = status or "DERDEST"
     try:
         db = SessionLocal()
 
@@ -1509,7 +1524,9 @@ def add_case(data: dict, tenant_id: str = None):
         # yalnız sync_current_esas yazar (flush'tan sonra, G045).
         new_case = models.Case(
             tracking_no=data.get("tracking_no"),
-            status=data.get("status", "DERDEST"),
+            status=status,
+            # Eski değerin aşaması yalnız istek aşama vermediyse (update_case_tracking eşi)
+            case_stage=data.get("case_stage") or legacy_stage,
             service_type=data.get("service_type"),
             file_type=data.get("file_type"),
             sub_type=data.get("sub_type"),
@@ -1552,7 +1569,7 @@ def add_case(data: dict, tenant_id: str = None):
         # Danışma (DANIŞ): ortada henüz dava yok; listede olmayan müvekkil için
         # KALICI yeni müvekkil kaydı OLUŞTURMA. Tam eşleşme varsa mevcut müvekkile
         # bağla, yoksa adı yalnızca CaseParty üzerinde sakla (client_id=None).
-        is_consult = (data.get("status") == "DANIŞ")
+        is_consult = (status == "DANIŞ")
         parties = data.get("parties", [])
         for p in parties:
             client_id = p.get("client_id")
@@ -1980,12 +1997,19 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
             (field, _validated_tracking_value(db, field, value))
             for field, value in tracking_changes(data)
         ]
+        # Üçlü kural (12.09.2026): takip paneli de üçlü dışına yazamaz. Kapı (G196)
+        # da yazımdan ÖNCE toptan: üçlü dışı değer InvalidCaseStatusError → hiçbir
+        # alan (listede status'tan önce gelen case_stage dahil) yazılmaz.
+        status_stage = None
+        kapili = []
         for field, value in degisiklikler:
             if field == "status":
-                # Üçlü kural (12.09.2026): takip paneli de üçlü dışına yazamaz.
-                value, stage = normalize_case_status(value)
-                if stage and not case.case_stage and not data.get("case_stage"):
-                    case.case_stage = stage
+                value, status_stage = validated_case_status(value)
+            kapili.append((field, value))
+        for field, value in kapili:
+            if field == "status":
+                if status_stage and not case.case_stage and not data.get("case_stage"):
+                    case.case_stage = status_stage
             if field == "status" and value != case.status:
                 db.add(models.CaseHistory(
                     case_id=case_id, field_name="status",
@@ -2007,7 +2031,7 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
 
         db.commit()
         return True
-    except stage_decisions.InvalidDecisionStatusError:
+    except (stage_decisions.InvalidDecisionStatusError, InvalidCaseStatusError):
         # İstemci hatası — nihai başarısızlık DEĞİL: ERROR basılmaz (log
         # sözleşmesi) ve False'a yutulmaz; route katmanına 400 olarak çıkar.
         db.rollback()
