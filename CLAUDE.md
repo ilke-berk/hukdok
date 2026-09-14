@@ -256,5 +256,8 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
   line-length 120), mypy kademeli — yalnız `managers/ routes/ config/ services/` taranır.
 - Bir iş = TEK commit: kod + test + doküman birlikte; `git add -A` yerine dosya listesi.
   Push/deploy daima insan kararı — otomasyon oturumları push/ssh/deploy YAPMAZ.
+- **CI protokolü** (`.claude/skills/ci-kontrol`, `/ci-kontrol`): push ÖNCESİ `ci.yml` adımlarının lokal
+  eşdeğeri, push SONRASI `gh run watch`; **kırmızıdayken yeni iş push'lanmaz** (sıradaki push düzeltmedir);
+  deploy edilecek SHA'nın CI'ı `success` değilse deploy YOK (`deploy-prosedur` §1).
 - Hata işlemede stream sözleşmesine ve log sözleşmesine uy (yukarıda).
 - Arşivden kod/iddia kopyalama; tarihli anlatı yazacaksan `docs/arsiv/`e yaz.

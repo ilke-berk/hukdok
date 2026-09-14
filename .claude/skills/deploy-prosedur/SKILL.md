@@ -20,6 +20,16 @@ ssh hukukoid "docker logs hukdok_backend --since 3m 2>&1 | grep -cE 'POST /(proc
   → `0` beklenir; değilse pencereyi bekle.
 - **Kod:** deploy sunucuda `git pull --ff-only` yapar → main önce push'lanmış olmalı
   (push kararı kullanıcıda).
+- **CI kapısı:** deploy edilecek SHA'nın (`origin/main` HEAD) GitHub CI koşusu `completed/success`
+  olmalı — değilse deploy YOK:
+
+```bash
+gh run list --commit "$(git rev-parse origin/main)" --json status,conclusion,workflowName
+```
+
+  → `in_progress` ise bitmesini bekle; `failure` ise kırmızıyı `ci-kontrol` skill §3 ile sınıflandır
+  ve düzelt. Ders (Deploy #27, 2026-09-12): `749e373` CI'da TypeScript kontrolü kırmızıyken
+  prod'a çıktı (`vite build` tip denetlemez) → hotfix #28 gerekti.
 - **SSH:** birincil `ssh hukukoid` (docker sudo'suz + şifresiz sudo), yedek `ssh hukukoid-cc`.
 
 ## 2. Koşu — nohup + AYRI ssh ile poll (Deploy #3+#4 ile kanıtlı desen)
