@@ -40,7 +40,11 @@ const CaseDetails = lazy(() => importWithReload(() => import("./pages/CaseDetail
 const ActivityHistory = lazy(() => importWithReload(() => import("./pages/ActivityHistory")));
 const ReportsPage = lazy(() => importWithReload(() => import("./pages/ReportsPage")));
 
-const queryClient = new QueryClient();
+// G184: pencere/sekme odağında yeniden çekme KAPALI. Açıkken 5 dk staleTime dolunca her
+// odak useConfig'in 32 listesini (32 liste × odak = 32 istek) topluca yeniden çekiyordu.
+// Tazelik mutasyon sonrası invalidate + staleTime/yeniden bağlanmayla gelir; bildirim
+// sayacı react-query değil kendi setInterval + visibilitychange döngüsüdür (etkilenmez).
+const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
 // Parça inerken gösterilen küçük gösterge. BrowserRouter gezinmeleri startTransition
 // içinde yaptığı için sayfalar arası geçişte eski sayfa yerinde kalır; bu gösterge
