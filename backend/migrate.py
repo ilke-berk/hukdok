@@ -23,6 +23,11 @@ configure_logging()
 # buradaki atama uygulamanın kendi engine ayarını etkilemez. (logging_setup
 # database'i import etmez — sıra güvenli.)
 os.environ["DB_STATEMENT_TIMEOUT_MS"] = "0"
+# G191: aynı muafiyet idle-in-transaction ve kilit bekleme sınırları için —
+# backfill UPDATE'ler uygulama trafiğinin tuttuğu satır kilidini meşru
+# bekleyebilir; migrasyon lock_timeout'la yarıda kesilirse konteyner kalkmaz.
+os.environ["DB_IDLE_TX_TIMEOUT_MS"] = "0"
+os.environ["DB_LOCK_TIMEOUT_MS"] = "0"
 
 
 def main() -> int:

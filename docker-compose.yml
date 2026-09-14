@@ -9,6 +9,17 @@ services:
       POSTGRES_DB: hukudok
       POSTGRES_USER: hukudok_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Sunucu parametreleri (G191, performans denetimi D6). Değişiklik `restart`
+    # ile GELMEZ — `docker compose up -d` (recreate) şart.
+    # - effective_cache_size: YALNIZ planlayıcı ipucu, bellek AYIRMAZ (RSS'i
+    #   artırmaz); varsayılan 4GB, 512m limitli konteynerle tutarsızdı.
+    # - random_page_cost=1.1: SSD sınıfı disk değeri (varsayılan 4 döner disk).
+    # - pg_stat_statements: en pahalı sorguların ölçümü; uzantıyı database.py
+    #   init_db hata-toleranslı kurar (preload yoksa WARNING, uygulama ayakta).
+    # - track_io_timing: EXPLAIN (BUFFERS) ve pg_stat_statements I/O süreleri.
+    # shared_buffers / work_mem / max_connections BİLİNÇLİ varsayılanda
+    # (havuz 2 worker × 30 = 60 < 100 max_connections).
+    command: postgres -c effective_cache_size=384MB -c random_page_cost=1.1 -c shared_preload_libraries=pg_stat_statements -c track_io_timing=on
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:

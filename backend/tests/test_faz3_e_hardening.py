@@ -126,7 +126,7 @@ def test_engine_created_with_timeouts():
     """Bekçi: create_engine çağrısı sabitleri ve connect_args'ı kullanmalı."""
     src = (BACKEND_DIR / "database.py").read_text(encoding="utf-8")
     assert "pool_timeout=DB_POOL_TIMEOUT_SECONDS" in src
-    assert "connect_args=_build_connect_args(DB_STATEMENT_TIMEOUT_MS)" in src
+    assert "connect_args=_build_connect_args(DB_STATEMENT_TIMEOUT_MS, idle_ms=DB_IDLE_TX_TIMEOUT_MS, lock_ms=DB_LOCK_TIMEOUT_MS)" in src
 
 
 def test_migrate_sets_statement_timeout_exemption():

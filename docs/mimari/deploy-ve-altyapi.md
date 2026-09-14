@@ -2,6 +2,7 @@
 
 > **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır);
 > §1 `.env` anahtar listesi 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı.
+> §13 2026-09-14 · G191: lokal stack recreate sonrası `SHOW` çıktıları ve pg_stat_statements sorgusu koşularak doğrulandı.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -400,3 +401,88 @@ yalnız bir `SELECT` UNION'udur.
 durumu prod'dan farklıdır. Bölüm 1, 4 ve 6'daki sayılarla karar ancak prod çıktısı alınınca
 verilir. `idx_scan = 0` bir index'i düşürmek için tek başına yetmez: unique/primary index'ler
 tekillik kontrolünde bu sayacı artırmaz (bkz. `scripts/index_envanteri.py` docstring'i).
+
+## 13. Bağlantı sınırları ve Postgres sunucu ayarları (G191)
+
+Kaynak: performans denetimi D5 (bağlantı sınırları) ve D6 (sunucu parametreleri).
+
+### Uygulama bağlantısı sınırları (`backend/database.py`)
+
+Motorun her bağlantısına libpq `options` ile gider (`_build_connect_args`). Değer
+milisaniyedir; `0` = kapalı, seçenek bağlantıya hiç gönderilmez.
+
+| Env | Varsayılan | Etki |
+| --- | --- | --- |
+| `DB_STATEMENT_TIMEOUT_MS` | 30000 | Tek sorgu bu süreyi aşarsa sunucu iptal eder (Faz 3-E) |
+| `DB_IDLE_TX_TIMEOUT_MS` | 60000 | `idle_in_transaction_session_timeout`: transaction açıkken ifade koşmadan bu süre geçerse sunucu oturumu keser |
+| `DB_LOCK_TIMEOUT_MS` | 5000 | `lock_timeout`: kilit bekleyen ifade bu sürede `LockNotAvailable` (SQLSTATE 55P03) alır |
+
+- **`migrate.py` muafiyeti:** import'tan önce üç env'i de `0`'lar. Şema migrasyonu ve backfill
+  UPDATE'leri sınırsız koşar, uygulama trafiğinin tuttuğu kilidi bekleyebilir.
+- **Uzun süren TEK ifade idle sayılmaz.** Aktarım gibi uzun ama sürekli ifade koşturan iş bu
+  sınırdan etkilenmez. Etkilenen, transaction açıkken DB dışı iş yapan yoldur: 60 sn aşılırsa
+  sonraki ifade/commit `OperationalError` alır. Bu yüzden teslim cevap yüklemesi yüklemeden
+  önce transaction'ı kapatır (G194). Kanıt dbtest'leri: `tests/test_g191_baglanti_ayarlari.py`
+  (1 sn'lik `pg_sleep` 300 ms sınırda kesilmez, 1,5 sn boşta bekleme kesilir; `lock_timeout=200`
+  ile kilitli satıra `UPDATE` 1 sn içinde düşer ve tek yuvalı havuz rehin kalmaz).
+- **Elle koşulan script'ler** (`docker compose exec backend python -m scripts.…`) `database`
+  modülünü import ettiği için aynı sınırlarla bağlanır. Bilinçli uzun kilit beklemesi gereken
+  tek seferlik bir iş için env o komutta verilir:
+  `docker compose exec -e DB_LOCK_TIMEOUT_MS=0 -T backend python -m scripts.<ad>`.
+
+### Postgres sunucu parametreleri (`docker-compose.yml` → `postgres.command:`)
+
+```
+postgres -c effective_cache_size=384MB -c random_page_cost=1.1 -c shared_preload_libraries=pg_stat_statements -c track_io_timing=on
+```
+
+| Parametre | Değer (önceki) | Gerekçe |
+| --- | --- | --- |
+| `effective_cache_size` | 384MB (4GB) | Planlayıcı ipucu; 512m limitli konteynerle tutarlı hâle geldi |
+| `random_page_cost` | 1.1 (4) | SSD sınıfı disk değeri; varsayılan döner disk içindir |
+| `shared_preload_libraries` | `pg_stat_statements` (boş) | Sorgu istatistikleri (aşağıda) |
+| `track_io_timing` | on (off) | `EXPLAIN (ANALYZE, BUFFERS)` ve `pg_stat_statements` I/O süreleri |
+
+`shared_buffers` (128MB), `work_mem` ve `max_connections` (100) bilinçli olarak varsayılanda kalır:
+havuz worker başına `pool_size=10 + max_overflow=20` = 30, iki worker ile 60 < 100.
+
+**Bellek ve 512m limit (2026-07-29 OOM dersleri).** `effective_cache_size` hiçbir bellek
+**ayırmaz**: yalnız planlayıcıya "işletim sistemi önbelleği + shared_buffers ne kadar veri
+tutabilir" tahminini verir ve index taraması ile sıralı tarama arasındaki maliyet seçimini
+etkiler. RSS'i artırmaz. Önceki 4GB, 512m'lik konteynerde (`mem_limit: 512m`, `memswap=mem`,
+swap yok) gerçekte olmayan bir önbellek varsayıyordu. 384MB ≈ limitin %75'i. Konteynerin gerçek
+bellek tavanını `shared_buffers`, bağlantı sayısı ve `work_mem` belirler; üçü de değişmedi.
+Lokal ölçüm (2026-09-14, recreate sonrası): `hukudok-postgres` 53 MiB / 512 MiB.
+`pg_stat_statements` sabit boyutlu bir paylaşımlı hash tablosu kullanır
+(`pg_stat_statements.max` = 5000 kayıt, varsayılan).
+
+**Uzantı kurulumu:** `database.py::_ensure_pg_stat_statements`, migrasyonun sonunda `pg_trgm`
+adımının hemen ardından `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` koşar ve görünümü
+bir kez okuyarak yoklar. Uzantı preload olmadan da yaratılabildiği için yoklama şarttır.
+Preload yoksa (recreate edilmemiş sunucu, CI'ın çıplak Postgres'i) TEK WARNING loglanır,
+uygulama ayakta kalır.
+
+### Prod'a geçiş: `up -d` recreate şart
+
+`postgres.command:` ve `.env` değişikliği `restart` ile **gelmez**: komut ve env yalnız
+konteyner create'te okunur. `deploy.sh` zaten `up -d` koşar (§1) ve değişen postgres
+tanımını recreate eder. Elle geçişte stack'in tamamı `docker compose up -d` edilir; yalnız
+backend recreate'inin frontend nginx'ini bayat upstream'de bırakma tuzağı §1'de. Postgres
+recreate'i birkaç saniyelik DB kesintisidir; backend havuzu `pool_pre_ping` ile yeniden bağlanır.
+Uzantı, recreate'ten SONRAKİ ilk migrasyonda (backend açılışı) kurulur. Kontrol:
+
+```
+docker compose exec -T postgres psql -U hukudok_user -d hukudok -c "SHOW effective_cache_size; SHOW shared_preload_libraries;"
+```
+
+### `pg_stat_statements`: en pahalı 10 sorgu
+
+```
+docker compose exec -T postgres psql -U hukudok_user -d hukudok -c "SELECT round(total_exec_time) AS toplam_ms, calls, round(mean_exec_time::numeric, 1) AS ort_ms, rows, left(query, 120) AS sorgu FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;"
+```
+
+`total_exec_time` sıralaması en çok toplam süre yiyen sorguları getirir: sık çağrılan ucuz
+sorgu, seyrek çağrılan pahalı sorgunun önüne geçebilir. Tek tek yavaş olanlar için
+`ORDER BY mean_exec_time DESC` kullanılır. Sayaçlar `SELECT pg_stat_statements_reset();` ile
+sıfırlanır; bir değişikliğin etkisini ölçmeden önce sıfırla, trafik birikince yeniden oku.
+Lokal sayılar prod'u temsil etmez (§12 şerhi).

@@ -46,16 +46,39 @@ logger.info("🐘 Using PostgreSQL database")
 #   * gece pg_dump kendi bağlantısını kurar → kapsanmaz (etkilenmez),
 #   * migrate.py import'tan ÖNCE DB_STATEMENT_TIMEOUT_MS=0 set eder →
 #     create_all + backfill UPDATE'ler sınırsız koşar (30 sn'yi meşru aşabilir).
+# idle_in_transaction_session_timeout (G191, D5): transaction AÇIK ama ifade
+#   koşmuyorken (Python tarafı iş, unutulmuş commit) 60 sn dolarsa sunucu
+#   oturumu keser — "idle in transaction" bağlantı satır kilidini ve havuz
+#   yuvasını sonsuza dek tutamaz. Uzun süren TEK ifade (aktarımın ~93 sn'lik
+#   işi gibi) aktif sayılır, bu sınır ona uygulanmaz (dbtest kanıtı:
+#   tests/test_g191_baglanti_ayarlari.py).
+# lock_timeout (G191, D5): kilit bekleyen ifade 5 sn'de LockNotAvailable alır —
+#   kilitli satırın arkasına dizilen istekler statement_timeout'un 30 sn'sini
+#   yemeden düşer. migrate.py iki env'i de 0'lar (backfill UPDATE'ler kilit
+#   bekleyebilir). 0 = kapalı (seçenek bağlantıya hiç gönderilmez).
 DB_POOL_TIMEOUT_SECONDS = 10
 DB_CONNECT_TIMEOUT_SECONDS = 5
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
+DB_IDLE_TX_TIMEOUT_MS = int(os.getenv("DB_IDLE_TX_TIMEOUT_MS", "60000"))
+DB_LOCK_TIMEOUT_MS = int(os.getenv("DB_LOCK_TIMEOUT_MS", "5000"))
 
 
-def _build_connect_args(statement_timeout_ms: int) -> Dict[str, Any]:
-    """psycopg2 connect kwargs'ları; 0/negatif timeout = statement_timeout yok."""
+def _build_connect_args(statement_timeout_ms: int, idle_ms: int = 0, lock_ms: int = 0) -> Dict[str, Any]:
+    """psycopg2 connect kwargs'ları; 0/negatif değer = o seçenek HİÇ gönderilmez.
+
+    Sıra sabittir: statement_timeout, idle_in_transaction_session_timeout,
+    lock_timeout. Hepsi 0 ise "options" anahtarı yoktur (migrate muafiyeti).
+    """
     args: Dict[str, Any] = {"connect_timeout": DB_CONNECT_TIMEOUT_SECONDS}
+    options = []
     if statement_timeout_ms > 0:
-        args["options"] = f"-c statement_timeout={statement_timeout_ms}"
+        options.append(f"-c statement_timeout={statement_timeout_ms}")
+    if idle_ms > 0:
+        options.append(f"-c idle_in_transaction_session_timeout={idle_ms}")
+    if lock_ms > 0:
+        options.append(f"-c lock_timeout={lock_ms}")
+    if options:
+        args["options"] = " ".join(options)
     return args
 
 
@@ -66,7 +89,7 @@ engine = create_engine(
     max_overflow=20,         # Max overflow connections
     pool_recycle=3600,       # Recycle connections after 1 hour
     pool_timeout=DB_POOL_TIMEOUT_SECONDS,
-    connect_args=_build_connect_args(DB_STATEMENT_TIMEOUT_MS),
+    connect_args=_build_connect_args(DB_STATEMENT_TIMEOUT_MS, idle_ms=DB_IDLE_TX_TIMEOUT_MS, lock_ms=DB_LOCK_TIMEOUT_MS),
     echo=False               # Set to True for SQL query logging
 )
 
@@ -1508,6 +1531,36 @@ def check_and_migrate_tables():
         except Exception as e:
             conn.rollback()
             logger.error(f"pg_trgm extension/index migration error: {e}")
+
+        # pg_stat_statements (G191, D6) — yalnız gözlem; pg_trgm gibi hatası fatal değil
+        _ensure_pg_stat_statements(conn)
+
+
+def _ensure_pg_stat_statements(conn) -> bool:
+    """`pg_stat_statements` uzantısını kurar ve okunabilirliğini yoklar.
+
+    Uzantı `shared_preload_libraries` olmadan da YARATILABİLİR; görünüm ancak
+    kütüphane sunucu açılışında yüklendiyse okunur (compose `postgres.command:`).
+    Bu yüzden CREATE'ten sonra görünüm ayrıca sorgulanır. Herhangi bir adım
+    patlarsa (preload yok, yetki yok, contrib yok) transaction geri alınır,
+    TEK WARNING loglanır ve False döner — uygulama/migrasyon ayakta kalır
+    (CI'ın çıplak Postgres'i ve recreate edilmemiş sunucu bu yola düşer).
+    """
+    from sqlalchemy import text
+
+    try:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_stat_statements"))
+        conn.commit()
+        conn.execute(text("SELECT 1 FROM pg_stat_statements LIMIT 1"))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.warning(
+            f"pg_stat_statements kullanılamıyor (shared_preload_libraries yüklü mü?): {e}"
+        )
+        return False
+    logger.info("pg_stat_statements hazır")
+    return True
 
 # --- CLIENT DATA HELPERS ---
 
