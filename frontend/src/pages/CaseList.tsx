@@ -14,7 +14,7 @@ import {
 import { useNavigate, useLocation } from "react-router";
 import { useCases, CASE_LIST_ERROR } from "../hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
-import { useConfig } from "../hooks/useConfig";
+import { useConfigList } from "../hooks/useConfig";
 import { apiClient } from "@/lib/api";
 import { useDebounce } from "../hooks/useDebounce";
 import { formatAgo } from "@/lib/relativeTime";
@@ -125,7 +125,10 @@ const CaseList = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { getCases, getCaseStats } = useCases();
-  const { lawyers, eventTypes, serviceTypes } = useConfig();
+  // G185: yalnız filtrelerin okuduğu üç listeye abone olunur (useConfig 32 sorgu kuruyordu).
+  const { data: lawyers } = useConfigList("lawyers");
+  const { data: eventTypes } = useConfigList("eventTypes");
+  const { data: serviceTypes } = useConfigList("serviceTypes");
 
   // Core data state
   const [cases, setCases] = useState<Case[]>([]);

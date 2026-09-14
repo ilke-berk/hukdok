@@ -22,7 +22,7 @@ import {
   uploadFlowDraftStore,
   type UploadFlowDraftData,
 } from "@/lib/uploadFlowDraft";
-import { useConfig } from "@/hooks/useConfig";
+import { useConfigList } from "@/hooks/useConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { QuickCaseModal } from "@/components/QuickCaseModal";
@@ -73,7 +73,8 @@ declare global {
 const Index = () => {
   useSetPageTitle("Belge Yükleme", ["Avukat Paneli", "Belge"]);
   const { getCases, searchCases } = useCases();
-  const { doctypes } = useConfig();
+  // G185: yalnız okunan listeye abone olunur (useConfig 32 sorguya birden bağlanıyordu).
+  const { data: doctypes } = useConfigList("doctypes");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);

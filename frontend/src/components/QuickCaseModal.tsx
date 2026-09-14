@@ -6,6 +6,8 @@
  * Kaydettikten sonra yeni dava otomatik olarak belgeye bağlanır.
  */
 import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMsal } from "@azure/msal-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +18,10 @@ import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
 import { CaseData, DuplicateCaseMatch, useCases, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "@/hooks/useCases";
-import { useConfig } from "@/hooks/useConfig";
+import {
+    useConfigList, groupCourtTypesByParent, REQUIRED_FIELDS_ERROR, type RequiredCaseField,
+} from "@/hooks/useConfig";
+import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { ClientData, useClients } from "@/hooks/useClients";
 import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
@@ -25,6 +30,16 @@ import { closestName } from "@/lib/nameSimilarity";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 
 const upperTR = (s: string) => s.trim().toLocaleUpperCase("tr-TR");
+
+/**
+ * G185: zorunlu alan sorgusu `useConfig()`'teki ile AYNI anahtar ve seçeneklerle
+ * (staleTime 5 dk, retry:false, oturum yoksa kapalı) kurulur → önbellek ortaktır.
+ * `useConfigList` bu ucu sunmuyor; `useConfig.ts` bu görevin dokunma listesinde
+ * olduğu için 32 listelik `useConfig()`'e abone olmak yerine burada kurulur.
+ * Anahtar ortaklığı QuickCaseModal.config.test.tsx'te bekçilidir.
+ */
+const REQUIRED_FIELDS_STALE_TIME = 5 * 60 * 1000;
+const EMPTY_REQUIRED: RequiredCaseField[] = [];
 
 const toTitleCase = (str: string): string => {
     if (!str) return "";
@@ -58,10 +73,36 @@ interface QuickCaseModalProps {
 export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickCaseModalProps) => {
     const { saveCaseAndReturn, getClientCaseSequence, checkDuplicateCase, isLoading: isCaseLoading } = useCases();
     const { clients, isLoading: isClientLoading } = useClients();
-    const {
-        lawyers, requiredCaseFields, fileTypes, courtTypesByParent,
-        configError, requiredFieldsError, refetchConfig, isRefetchingConfig,
-    } = useConfig();
+    // G185: yalnız okunan üç liste + zorunlu alan ucu (useConfig 32 sorgu kuruyordu).
+    const lawyersQ = useConfigList("lawyers");
+    const fileTypesQ = useConfigList("fileTypes");
+    const courtTypesQ = useConfigList("courtTypes");
+    const lawyers = lawyersQ.data;
+    const fileTypes = fileTypesQ.data;
+    const courtTypesByParent = groupCourtTypesByParent(courtTypesQ.data);
+    const { accounts } = useMsal();
+    const { authRequest } = useAuthRequest();
+    const requiredFieldsQ = useQuery({
+        queryKey: ["config", "required_case_fields"],
+        queryFn: async (): Promise<{ fields: RequiredCaseField[]; party_rule: RequiredCaseField | null }> => {
+            const res = await authRequest("/api/config/required_case_fields", "GET");
+            // G019: kesintide boş liste "hiçbir alan zorunlu değil" demek olurdu — hata state'i.
+            if (!res?.ok) throw new Error(REQUIRED_FIELDS_ERROR);
+            return res.json();
+        },
+        enabled: accounts.length > 0,
+        staleTime: REQUIRED_FIELDS_STALE_TIME,
+        retry: false,
+    });
+    const requiredCaseFields = requiredFieldsQ.data?.fields ?? EMPTY_REQUIRED;
+    const requiredFieldsError = requiredFieldsQ.isError ? REQUIRED_FIELDS_ERROR : undefined;
+    // G019 şeridi: hata mesajı useConfig().configError ile aynı sözleşmede (hata ≠ boş liste).
+    const listQueries = [lawyersQ, fileTypesQ, courtTypesQ];
+    const configError = listQueries.find(q => q.error)?.error;
+    const isRefetchingConfig = listQueries.some(q => q.isFetching) || requiredFieldsQ.isFetching;
+    const refetchConfig = async (): Promise<void> => {
+        await Promise.all([...listQueries.map(q => q.refetch()), requiredFieldsQ.refetch()]);
+    };
 
     // Yargı türü/alt tür listeleri DB'den (NewCase ile aynı kaynak) — önceden
     // buradaki sabit kopya referans listesinden geri kalıyordu.

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
-import { useConfig } from "../../hooks/useConfig";
+import { useConfigList } from "../../hooks/useConfig";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -71,7 +71,8 @@ export function EmailModal({
     clientWarning = null,
 }: EmailModalProps) {
 
-    const { emailRecipients } = useConfig();
+    // G185: yalnız alıcı listesine abone olunur (useConfig 32 sorgu kuruyordu).
+    const { data: emailRecipients } = useConfigList("emailRecipients");
 
     // Step: "setup" | "preview"
     const [step, setStep] = useState<"setup" | "preview">("setup");
