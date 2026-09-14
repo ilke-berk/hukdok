@@ -154,20 +154,25 @@ def api_list_client_policies(
         )
         # Kaynak belge linki: source_document yalnız dosya adı tutar; arşivdeki
         # SharePoint URL'si case_documents'tan ada göre bulunur (en yeni kayıt).
+        # G192 (D11): poliçe başına sorgu yerine tüm adlar tek `IN` sorgusunda;
+        # `id desc` sırasında ilk görülen URL adın en yeni canlı kaydıdır.
+        adlar = {r.source_document for r in rows if r.source_document}
+        url_by_ad: dict = {}
+        if adlar:
+            belge_satirlari = (
+                db.query(models.CaseDocument.original_filename, models.CaseDocument.sharepoint_url)
+                .filter(models.CaseDocument.original_filename.in_(adlar),
+                        models.CaseDocument.sharepoint_url.isnot(None),
+                        models.CaseDocument.deleted_at.is_(None))
+                .order_by(models.CaseDocument.id.desc())
+                .all()
+            )
+            for ad, url in belge_satirlari:
+                url_by_ad.setdefault(ad, url)
         policies_out = []
         for r in rows:
             item = ClientPolicyRead.model_validate(r).model_dump()
-            item["document_url"] = None
-            if r.source_document:
-                doc = (
-                    db.query(models.CaseDocument.sharepoint_url)
-                    .filter(models.CaseDocument.original_filename == r.source_document,
-                            models.CaseDocument.sharepoint_url.isnot(None),
-                            models.CaseDocument.deleted_at.is_(None))
-                    .order_by(models.CaseDocument.id.desc())
-                    .first()
-                )
-                item["document_url"] = doc[0] if doc else None
+            item["document_url"] = url_by_ad.get(r.source_document) if r.source_document else None
             policies_out.append(item)
         return {
             "policies": policies_out,

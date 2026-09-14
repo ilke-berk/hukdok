@@ -1231,6 +1231,30 @@ _DUSURULECEK_INDEXLER = {
     "upload_outbox":          ["ix_upload_outbox_id"],
     "clients":                ["ix_clients_id"],
     "case_documents":         ["ix_case_documents_id"],
+    # G192 (14.09 performans denetimi D10, kullanıcı kararı seçenek B): G042'den
+    # sonra eklenen tabloların PK ikizleri. models.py yine DEĞİŞMEZ — create_all
+    # yaratır, bu op'lar her init_db'de idempotent düşürür. Kapsam bekçisi
+    # `Base.metadata` taramasıdır (tests/test_g192_dusuk_etkili.py), elle liste değil.
+    "alleged_faults":            ["ix_alleged_faults_id"],
+    "app_settings":              ["ix_app_settings_id"],
+    "appeal_courts":             ["ix_appeal_courts_id"],
+    "appeal_decisions":          ["ix_appeal_decisions_id"],
+    "appealing_parties":         ["ix_appealing_parties_id"],
+    "applied_methods":           ["ix_applied_methods_id"],
+    "cassation_courts":          ["ix_cassation_courts_id"],
+    "cassation_decisions":       ["ix_cassation_decisions_id"],
+    "client_policies":           ["ix_client_policies_id"],
+    "client_types":              ["ix_client_types_id"],
+    "currencies":                ["ix_currencies_id"],
+    "defendant_administrations": ["ix_defendant_administrations_id"],
+    "event_types":               ["ix_event_types_id"],
+    "judgment_roles":            ["ix_judgment_roles_id"],
+    "local_decisions":           ["ix_local_decisions_id"],
+    "medical_events":            ["ix_medical_events_id"],
+    "medical_processes":         ["ix_medical_processes_id"],
+    "patient_harms":             ["ix_patient_harms_id"],
+    "revision_decisions":        ["ix_revision_decisions_id"],
+    "service_types":             ["ix_service_types_id"],
     # (A) PK ikizi + kolon ikizi aynı tabloda
     "case_history":           ["ix_case_history_id", "ix_case_history_case_id"],
     "case_lawyers":           ["ix_case_lawyers_id", "ix_case_lawyers_case_id"],

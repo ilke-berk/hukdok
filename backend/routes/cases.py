@@ -87,7 +87,9 @@ def api_get_case_stats(tenant_id: str = Depends(get_current_tenant)):
 def get_cases_api(
     response: Response,
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    # G192 (D8): tavansız offset derin sayfada DB'ye OFFSET N taraması yaptırır.
+    # Keyset sayfalama kapsam dışı — arama modu relevance sıralaması offset ister.
+    offset: int = Query(0, ge=0, le=10000),
     status: Optional[str] = None,
     lawyer: Optional[str] = None,
     q: Optional[str] = None,
@@ -390,20 +392,32 @@ def get_case_relations(
 
         manual_list = []
         elle_baglanan_idler = set()
+        listelenecekler: list = []
         for row in manual_rows:
             other_id = row.target_case_id if row.source_case_id == case_id else row.source_case_id
             elle_baglanan_idler.add(other_id)
             if row.relation_type == case_relations_auto.ONERI_RED:
                 continue                    # G128: reddedilen öneri — listelenmez, yalnız hariç tutar
-            other = (
-                db.query(models.Case)
-                .options(selectinload(models.Case.parties))
-                .filter(
-                    models.Case.id == other_id,
-                    models.Case.deleted_at.is_(None),  # silinmiş dava ilişki listesinde görünmesin
+            listelenecekler.append((row, other_id))
+
+        # G192 (D11): ilişki başına bir SELECT (+ parties) yerine karşı kartlar tek
+        # `IN` sorgusuyla çekilir; liste sırası `manual_rows` sırasıdır.
+        karsi_kartlar: dict = {}
+        if listelenecekler:
+            karsi_kartlar = {
+                kart.id: kart
+                for kart in (
+                    db.query(models.Case)
+                    .options(selectinload(models.Case.parties))
+                    .filter(
+                        models.Case.id.in_({other_id for _, other_id in listelenecekler}),
+                        models.Case.deleted_at.is_(None),  # silinmiş dava ilişki listesinde görünmesin
+                    )
+                    .all()
                 )
-                .first()
-            )
+            }
+        for row, other_id in listelenecekler:
+            other = karsi_kartlar.get(other_id)
             if other:
                 manual_list.append(_case_to_summary(
                     case=other,

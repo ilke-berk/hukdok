@@ -46,6 +46,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, cast
 
+from sqlalchemy import or_
+
 from database import SessionLocal
 from file_utils import safe_remove
 import models
@@ -487,6 +489,10 @@ def _scan_once() -> int:
 
     Worker başlarken ilk çağrı startup reconcile'dır: önceki süreçten kalan
     satırlar (next_attempt_at NULL ya da geçmiş) burada toparlanır.
+
+    G192 (D15): vade filtresi SQL'dedir — backoff'taki satırlar DB'den hiç
+    çekilmez, sorgu parçalı `idx_upload_outbox_pending` index'ine düşer.
+    `_is_due` defansif ikinci kontroldür (testlerdeki fake filter no-op'tur).
     """
     now = datetime.now(timezone.utc)
     db = SessionLocal()
@@ -494,7 +500,13 @@ def _scan_once() -> int:
         _purge_terminal_spools(db, now)
         pending = (
             db.query(models.UploadOutbox)
-            .filter(models.UploadOutbox.status == "pending")
+            .filter(
+                models.UploadOutbox.status == "pending",
+                or_(
+                    models.UploadOutbox.next_attempt_at.is_(None),
+                    models.UploadOutbox.next_attempt_at <= now,
+                ),
+            )
             .order_by(models.UploadOutbox.id)
             .all()
         )
