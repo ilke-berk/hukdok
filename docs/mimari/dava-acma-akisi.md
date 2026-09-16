@@ -532,7 +532,7 @@ itibarıyla **hepsi seed'lidir** — sayılar `managers/seed_data.py` sabitlerin
 | `alleged_faults` | `ALLEGED_FAULTS` | 9 | `cases.iddia_edilen_kusur` (aktarım METİN yazar; liste kart seçimi + `DEGER_HAVUZLARI` farkı) | DB-2026-001 (04.09), `9608031` — **G044'ten 04.09'a kadar bilinçli boştu**, "seed'lenmez" ifadesi tarihseldir |
 | `appealing_parties` | `APPEALING_PARTIES` | 3 | aşama `basvuran_taraf` (`İstinaf Mahkemesi Başvuran Taraf`) | G044 |
 | `local_decisions` | `LOCAL_DECISIONS` | 27 | `case_stage_decisions.karar_durumu` (YEREL) | G060, 10.08 `DEGER_HAVUZLARI`; G151 (08.09): `Kapalı`/`Derdest` çıktı, `Red/Usulden` girdi |
-| `appeal_decisions` | `APPEAL_DECISIONS` | 8 | aynı (ISTINAF) | G060; G151: HMK 353/1-b-2 düzelterek karar ailesi + `Kısmen Kabul` + `Davacı İstinaf Talebinin Kabulü` (`Karar` bilerek yok) |
+| `appeal_decisions` | `APPEAL_DECISIONS` | 9 | aynı (ISTINAF) | G060; G151: HMK 353/1-b-2 düzelterek karar ailesi + `Kısmen Kabul` + `Davacı İstinaf Talebinin Kabulü` (`Karar` bilerek yok); 16.09: `Geri Çevirme` (15.09 paketinde 2 föy) |
 | `cassation_decisions` | `CASSATION_DECISIONS` | 4 | aynı (TEMYIZ) | G060; G151: `Kısmen Onama/Kısmen Bozma` |
 | `revision_decisions` | `REVISION_DECISIONS` | 2 | aynı (KARAR_DUZELTME) | G060 |
 | `event_types` | `EVENT_TYPES` | 3 | `cases.olay_turu` | G103 (§11) |

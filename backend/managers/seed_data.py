@@ -462,6 +462,10 @@ _ISTINAF_KARAR_ADLARI = [
     "Düzeltilerek Reddine",
     "Kısmen Kabul",
     "Davacı İstinaf Talebinin Kabulü",
+    # Veri ekibinin 11.09 bildirimi: dosya istinaf incelemesi sırasında eksik belge için
+    # ilk derece mahkemesine geri çevrildi. Listenin SONUNA eklenir — araya eklemek
+    # mevcut satırların sequence'ini tazelemediği için sıralamayı bozar.
+    "Geri Çevirme",
 ]
 _TEMYIZ_KARAR_ADLARI = ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
 _KARAR_DUZELTME_ADLARI = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]

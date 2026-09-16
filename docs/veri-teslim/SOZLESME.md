@@ -190,7 +190,7 @@ Kusur havuzları bilgilendirme belgesi §3.8'dedir, karar durumu havuzlarının 
 | Aşama | Değer sayısı | Değerler (bizim yazımımız, birebir) |
 | --- | --- | --- |
 | Yerel | 27 | Açılmamış Sayılması (HMK 150. Md) · Adli Para Cezası · Anlaşma · Anlaşmama · Beraat · Birleştirme · Düşme Kararı · Hapis Cezası · Hapis Cezasının Paraya Çevrilmesi · Hükmün Açıklanmasının Geri Bırakılması (HAGB) · İflas · Kabul · Kabul/Kısmen · Karar Verilmesine Yer Olmadığına (HMK 331 Md.) · Kovuşturmaya Yer Olmadığına (KYOK) · Red/Arabuluculuk Ön Şart · Red/Dilekçenin Reddi · Red/Esastan · Red/Feragat · Red/Görev · Red/Husumet · Red/İdari Merciye Tevdi · Red/MSK Kararı Gereği · **Red/Usulden** (yeni) · Red/Yargı Yolu · Red/Yetkisizlik · Red/Zamanaşımı |
-| İstinaf | 8 | Kaldırma · Kaldırma/Yeniden Hüküm · Başvuru Ret · **Düzeltilerek Karar Verildi** · **Düzeltilerek Kabul Edildi** · **Düzeltilerek Reddine** · **Kısmen Kabul** · **Davacı İstinaf Talebinin Kabulü** (beşi yeni, HMK 353/1-b-2) |
+| İstinaf | 9 | Kaldırma · Kaldırma/Yeniden Hüküm · Başvuru Ret · **Düzeltilerek Karar Verildi** · **Düzeltilerek Kabul Edildi** · **Düzeltilerek Reddine** · **Kısmen Kabul** · **Davacı İstinaf Talebinin Kabulü** (beşi HMK 353/1-b-2) · **Geri Çevirme** (veri ekibi 11.09 bildirimi: dosya istinaf incelemesi sırasında eksik belge için ilk derece mahkemesine geri çevrildi) |
 | Temyiz | 4 | Bozma · Onama · Düzelterek Onama · **Kısmen Onama/Kısmen Bozma** (yeni) |
 | Karar Düzeltme | 2 | Karar Düzeltme Kabul · Karar Düzeltme Ret |
 

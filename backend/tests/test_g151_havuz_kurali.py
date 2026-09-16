@@ -63,9 +63,10 @@ YENI_ISTINAF = [
 # 1. Seed sabitleri
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_seed_sayilari_27_8_4():
+def test_seed_sayilari_27_9_4():
     assert len(seed_data.LOCAL_DECISIONS) == 27
-    assert len(seed_data.APPEAL_DECISIONS) == 8
+    # 9 = G151'in 8'i + "Geri Çevirme" (veri ekibi 11.09 bildirimi, 15.09 paketi)
+    assert len(seed_data.APPEAL_DECISIONS) == 9
     assert len(seed_data.CASSATION_DECISIONS) == 4
     assert len(seed_data.REVISION_DECISIONS) == 2           # dokunulmadı
 
