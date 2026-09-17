@@ -1674,6 +1674,9 @@ def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
             if aday not in adaylar:
                 adaylar.append(aday)
     if len(adaylar) == 1:
+        tek = db.get(models.Case, adaylar[0])
+        if tek is not None and _tek_aday_kunye_celiskisi(tek, satir) is not None:
+            return None           # satır düşecek (Ek-5 › 10) — uzlaşıya katılmasın
         return adaylar[0]
     return _ikinci_anahtarla_coz(db, satir, adaylar) if adaylar else None
 
@@ -1757,6 +1760,36 @@ def _esas_uyuyor(case: models.Case, esas: Optional[str]) -> bool:
         return False
     anahtar = _baslik_anahtari(esas)
     return any(_baslik_anahtari(p) == anahtar for p in _AYRAC.split(case.esas_no))
+
+
+def _tek_aday_kunye_celiskisi(case: models.Case, satir: HamSatir) -> Optional[str]:
+    """Köprünün TEK adayı föyün künyesiyle çelişiyor mu? Çelişki metni ya da None.
+
+    **Neden (Ek-5 › 10, 16.09 prod):** ekip kendi listesinde Corpus föylerine
+    Quick dizisinden numara uydurdu (`2.554.00`); aynı numara uygulamada 24.07'de
+    açılmış GERÇEK bir kartta (Kayseri 3. Tüketici 2026/371, 51 belge) yazılıydı.
+    Köprü tek aday bulunca körlemesine bağladı ve H-5441'in künyesi (İstanbul
+    Anadolu 6. Tüketici 2015/1367) kartın üzerine yazıldı. Çok adaylı yol esas ve
+    türe bakıyordu (`_ikinci_anahtarla_coz`), tek adaylı yol hiçbir şeye bakmıyordu.
+
+    Kural DAR tutulur: esas VE mahkeme ikisi de iki tarafta dolu ve ikisi de
+    farklıysa çelişkidir. Yalnız esas farkı (bozma sonrası yeni esas, aynı
+    mahkeme) ya da yalnız mahkeme yazımı farkı bağlamayı engellemez; boş alan
+    hiçbir şey söylemez. Föy kaydıyla (`case_foys`) ya da açık haritayla
+    (`--kart-esleme`) bağlanan satıra UYGULANMAZ — çağıran yalnız köprü yolunda sorar.
+    """
+    esas = _metin(satir.degerler.get("esas"))
+    mahkeme = _metin(satir.degerler.get("yerel_mahkeme"))
+    if not (esas and mahkeme and case.esas_no and case.court):
+        return None
+    if _esas_uyuyor(case, esas):
+        return None
+    if _baslik_anahtari(case.court) == _baslik_anahtari(mahkeme):
+        return None
+    return (
+        f"Künye çelişkisi: Dosya No tek karta ({case.id}) düşüyor ama kart "
+        f"{case.court} {case.esas_no}, föy {mahkeme} {esas} — bağlanmadı"
+    )
 
 
 def _satir_muvekkil_anahtarlari(satir: HamSatir) -> Set[str]:
@@ -1990,6 +2023,10 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                 )
         else:
             case_id = adaylar[0]
+            tek = db.get(models.Case, case_id)
+            celiski = _tek_aday_kunye_celiskisi(tek, satir) if tek is not None else None
+            if celiski is not None:
+                raise SatirHatasi(celiski)
 
     case = db.get(models.Case, case_id)
     if case is None or case.deleted_at is not None:

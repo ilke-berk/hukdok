@@ -544,6 +544,75 @@ def test_ikinci_anahtar_esas_ve_tur_ile_belirsizligi_cozer(db_env, tmp_path):
     assert len(sonuc.hatalar) == 1 and "esas/tür/ilk parça de ayırmadı" in sonuc.hatalar[0].sebep   # G178
 
 
+def test_tek_aday_kunye_celisirse_baglamaz(db_env, tmp_path):
+    """Ek-5 › 10 (kart 14393): ekibin uydurduğu Dosya No uygulamada açılmış
+    gerçek bir kartın klasör numarasına uydu; tek aday körlemesine bağlanıp
+    künyesi ezildi. Esas VE mahkeme ikisi de farklıysa satır bağlanmaz.
+    Yalnız esas farkı (aynı mahkemede yeni esas) ya da boş künye engellemez."""
+    db = db_env()
+    try:
+        _kart(db, "HA.EK5.KAYSERI", "2.554.00",
+              court="Kayseri 3. Tüketici Mahkemesi", esas_no="2026/371")
+        _kart(db, "HA.EK5.YENIESAS", "9.1281.00",
+              court="Osmaniye 1. Asliye Hukuk Mahkemesi", esas_no="2025/112")
+        _kart(db, "HA.EK5.BOS", "9.2000.00")
+        db.commit()
+    finally:
+        db.close()
+    basliklar = BASLIKLAR + ["Yerel Mahkeme", "Esas"]
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("H-5441", "2.554.00", **{"Yerel Mahkeme": "İstanbul Anadolu 6. Tüketici Mahkemesi",
+                                        "Esas": "2015/1367"}),
+        _satir("H-3961", "9.1281.00", **{"Yerel Mahkeme": "Osmaniye 1. Asliye Hukuk Mahkemesi",
+                                         "Esas": "2019/463"}),
+        _satir("H-1", "9.2000.00", **{"Yerel Mahkeme": "Bursa 2. İdare Mahkemesi", "Esas": "2025/1"}),
+    ], basliklar=basliklar)
+
+    sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    db = db_env()
+    try:
+        kartlar = {c.tracking_no: c for c in db.query(models.Case).all()}
+        assert foy_map.get_foy(db, "H-5441") is None                        # bağlanmadı
+        assert kartlar["HA.EK5.KAYSERI"].court == "Kayseri 3. Tüketici Mahkemesi"
+        assert kartlar["HA.EK5.KAYSERI"].esas_no == "2026/371"                # künye ezilmedi
+        assert foy_map.get_foy(db, "H-3961").case_id == kartlar["HA.EK5.YENIESAS"].id
+        assert foy_map.get_foy(db, "H-1").case_id == kartlar["HA.EK5.BOS"].id
+    finally:
+        db.close()
+    assert [h.sebep.split(":")[0] for h in sonuc.hatalar] == ["Künye çelişkisi"]
+
+
+def test_tek_aday_kunye_kurali_foy_kaydiyla_baglanan_satira_uygulanmaz(db_env, tmp_path):
+    """Föy kartına zaten bağlıysa (föy haritası köprüden önce gelir) künye farkı
+    bir DEĞİŞİKLİKTİR, bağlama sorusu değil — kural yalnız köprü yolundadır."""
+    db = db_env()
+    try:
+        kart = _kart(db, "HA.EK5.FOYLU", "3.100.00", court="Ankara 1. Tüketici Mahkemesi", esas_no="2020/1")
+        foy_map.upsert_foy(db, kart, sistem_no="H-77")
+        db.commit()
+    finally:
+        db.close()
+    paket = _paket_yaz(tmp_path / "teslim.xlsx", [
+        _satir("H-77", "3.100.00", **{"Yerel Mahkeme": "İzmir 2. Tüketici Mahkemesi", "Esas": "2024/9"}),
+    ], basliklar=BASLIKLAR + ["Yerel Mahkeme", "Esas"])
+
+    sonuc = aktarimi_kos(db_env, girdi=paket, rapor_dizini=tmp_path / "rapor")
+
+    assert not [h for h in sonuc.hatalar if "Künye çelişkisi" in h.sebep]
+
+
+def test_kok_27_quick_muvekkili_celiski_sayilmaz():
+    """Ek-5 › 10: ekip Corpus'un beş föyünü MİCRO numarasına (27.00x.00) geri aldı,
+    müvekkil kodu Quick kaldı. Kök 27 `DOSYANO_KOK_MUVEKKILI`'de yok → kök/müvekkil
+    kuralı hiç bakmaz; bekçi test (kök 27 haritaya eklenirse bu kilit düşünülsün)."""
+    from scripts.hukdok_aktarim import HamSatir
+
+    assert "27" not in hukdok_aktarim.DOSYANO_KOK_MUVEKKILI
+    satir = HamSatir(satir_no=2, degerler={"dosya_no": "27.001.00", "muvekkil": "Quick Sigorta A.Ş."})
+    assert hukdok_aktarim._kok_muvekkil_celiskisi(satir) is None
+
+
 def test_dry_run_hicbir_tabloya_yazmaz(uc_kart, tmp_path):
     """Kabul kriteri: `--dry-run` hiçbir tabloya yazmaz — öncesi/sonrası TÜM
     sayımlar ve kart alanları eşit; ürünü rapordur."""

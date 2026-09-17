@@ -469,6 +469,19 @@ kapandı; 8 → Ergo Sigorta = HDI devri): `_kokun_markasi_mi` ile hem `_kok_muv
 (çelişki DEĞİL, satır yazılır) hem `_kokun_karti_mi` (kök adımında kökün kartı sayılır) bunu
 tanır; başka kökte aynı ad çelişki kalır. Test `tests/test_g178_dosyano_sifir_eki.py`.
 
+**Tek aday künye kontrolü (Ek-5 › 10, 17.09).** Köprü TEK aday kart döndürdüğünde de künyeye bakılır
+(`_tek_aday_kunye_celiskisi`): kartın esası VE mahkemesi föyünkiyle ikisi de dolu ve ikisi de farklıysa
+satır bağlanmaz, `Künye çelişkisi: …` sebebiyle HATA'ya düşer (ön geçiş `_kart_id_tahmini` de satırı
+uzlaşıya sokmaz); ekip doğru kartı `--kart-esleme` ile verir. Yalnız esas farkı (aynı mahkemede yeni
+tur), yalnız mahkeme yazımı farkı ya da boş künye engellemez. Föy kaydıyla (`case_foys`) veya açık
+haritayla bağlanan satıra uygulanmaz — orada künye farkı değişikliktir, bağlama sorusu değil. Sebep:
+ekibin Corpus föylerine verdiği `2.554.00` uygulamada 24.07'de açılmış gerçek bir kartın numarasıydı;
+15.09 paketi (16.09 prod) H-5441'i o karta bağlayıp künyesini ezdi (kart 14393). Kök 27 (Corpus'un
+MİCRO dizisi, `27.00x.00`) `DOSYANO_KOK_MUVEKKILI`'de yok → Quick müvekkil koduyla gelen satır
+kök/müvekkil kuralına hiç girmez (bekçi test). Ölçüm (17.09 lokal = 16.09 prod kopyası): mevcut
+8.416 föyün 33'ü bu kurala takılırdı — hepsi föy kaydıyla bağlı (etkilenmez); çoğu dava kartındaki
+arabuluculuk föyü ya da yeni turda mahkemesi değişmiş dosya. Test `tests/test_g064_aktarim_cekirdek.py`.
+
 **`Başvuru Tarihi` (G155, plan A6).** `case_stage_decisions.basvuru_tarihi`
 (`models.py:297`; migrasyon madde 47, `database.py:1063`, koşullu `columns` op'u — kısıt yok).
 Okuyucu `ASAMA_SUTUNLARI["basvuru_tarihi"] = ("Başvuru Tarihi",)` (`:2093`), imza alanı;
