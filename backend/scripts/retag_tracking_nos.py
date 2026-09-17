@@ -45,7 +45,7 @@ INSURANCE_CODES = {
 
 PROCESS_MAP = {
     "Hukuk":        "HUKUK",
-    "İdari Yargı":  "IDARI",
+    "İdari Yargı":  "IDARE",    # 17.09: tarihsel ad → İdare bloğu (mevcut IDARI numaralar değişmez)
     "İdare":        "IDARE",
     "Ceza":         "CEZAA",
     "İcra":         "ICRAA",

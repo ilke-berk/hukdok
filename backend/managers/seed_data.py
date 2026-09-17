@@ -42,7 +42,9 @@ COURT_TYPES_SEED: "dict[str, list[str]]" = {
         "YARGITAY HUKUK DAİRESİ",
     ],
     "İcra": ["İCRA DAİRESİ"],
-    "İdari Yargı": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
+    # 2026-09-17: "İdari Yargı" üst türü çıktı — idari yargının tek dava türü "İdare"
+    # (seed her açılışta eksik satırı eklediği için burada kalsaydı silinen satır geri gelirdi;
+    # prod verisi scripts/idari_yargi_birlestir.py).
     "İdare": ["BÖLGE İDARE MAHKEMESİ", "İDARE MAHKEMESİ", "VERGİ MAHKEMESİ"],
     "Arabuluculuk": ["ARABULUCULUK DAİRE BAŞKANLIĞI", "ARABULUCULUK MERKEZİ", "ARABULUCULUK BÜROSU"],
     "Savcılık": ["CUMHURİYET BAŞSAVCILIĞI"],
@@ -134,8 +136,7 @@ def _seed_file_types():
             ("Ceza",        "Ceza"),
             ("Hukuk",       "Hukuk"),
             ("İcra",        "İcra"),
-            ("İdare",       "İdare"),
-            ("İdari Yargı", "İdari Yargı"),
+            ("İdare",       "İdare"),   # "İdari Yargı" 17.09'da buna birleşti (idari_yargi_birlestir.py)
             ("Arabuluculuk","Arabuluculuk"),
             ("Savcılık",    "Savcılık"),
             ("Tahkim",      "Tahkim"),

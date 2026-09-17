@@ -147,6 +147,16 @@ idi)" (`caseNumberUtils.ts:197`).
 > Bu öncelik kullanıcı tarafından bilinçle onaylanmıştır — **değiştirme**. Karar kaydı:
 > [`002-ofis-no-isim-blogu-onceligi.md`](../kararlar/002-ofis-no-isim-blogu-onceligi.md).
 
+### Tür bloğu — dava türü → beş harf
+
+Dördüncü blok `PROCESS_MAP`'tir (`caseNumberUtils.ts`; sihirbazın tür seçicisi de bu
+anahtarlardır). İdari yargının **tek** dava türü `İdare` → `IDARE` (17.09.2026, veri ekibine
+söz): sihirbaz Gemini'nin "İdari" etiketini eskiden ayrı bir "İdari Yargı" türüne (`IDARI`)
+çeviriyordu; `normalizeFileType` artık "İdare" döndürür, seed "İdari Yargı"yı kurmaz, mevcut
+kartlar `scripts/idari_yargi_birlestir.py` ile birleşti. Numara açılışta bir kez üretilir, sonra
+yeniden hesaplanmaz → o güne dek açılmış 14 `…IDARI…` numarası **olduğu gibi kalır** (arşiv
+klasör/dosya adlarında yaşar).
+
 ### Sıra bloğu
 
 `GET /api/cases/client-sequence` (`backend/routes/cases.py:123`) müvekkile/isim bloğuna ait

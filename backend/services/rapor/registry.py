@@ -498,7 +498,7 @@ KARAR_TURLERI = ("KABUL", "RED", "KISMI_KABUL", "FERAGAT", "UZLASMA", "DUSME")  
 KARAR_LEHINE = ("LEHINE", "ALEYHINE", "KISMI")
 # file_types seed'i fonksiyon-yerel (seed_data._seed_file_types); çekirdek burada,
 # tablo + DISTINCT katmanı panelden eklenenleri getirir.
-DAVA_TURLERI = ("Ceza", "Hukuk", "İcra", "İdare", "İdari Yargı", "Arabuluculuk", "Savcılık", "Tahkim", "Vergi",
+DAVA_TURLERI = ("Ceza", "Hukuk", "İcra", "İdare", "Arabuluculuk", "Savcılık", "Tahkim", "Vergi",
                 "Danışmanlık")
 BELGE_LINK_MODLARI = ("LINKED", "TEST", "UNLINKED")
 BELGE_UPLOAD_DURUMLARI = ("pending", "uploaded", "failed")

@@ -55,11 +55,12 @@ PATTERNS: "list[tuple[str, str, str]]" = [
     # BAM/istinaf daireleri — ASLIYE eşleşmez ("ADLIYE" farklı kelime), yine de İCRA'dan sonra
     (r"(BOLGE ADLIYE|ISTINAF|BAM\b).*(CEZA)|CEZA DAIRESI",   "BÖLGE ADLİYE MAH. CEZA DAİRESİ",  "Ceza"),
     (r"(BOLGE ADLIYE|ISTINAF|BAM\b).*(HUKUK)|HUKUK DAIRESI", "BÖLGE ADLİYE MAH. HUKUK DAİRESİ", "Hukuk"),
+    # Üst tür "İdare" (17.09: eski "İdari Yargı" üst türü birleşti — seed_data ile aynı).
     # "İdari Dava Dairesi" = BİM dairesi; "İdare Mahkeme" hem MAHKEMESİ hem MAHKEMELERİ (çoğul) yakalar
-    (r"\bBOLGE IDARE\b|IDAR[EI] DAVA DAIRESI", "BÖLGE İDARE MAHKEMESİ",           "İdari Yargı"),
-    (r"\bIDARE MAHKEME",                  "İDARE MAHKEMESİ",                      "İdari Yargı"),
-    (r"\bVERGI\b",                        "VERGİ MAHKEMESİ",                      "İdari Yargı"),
-    (r"\bDANISTAY\b",                     "DANIŞTAY",                             "İdari Yargı"),
+    (r"\bBOLGE IDARE\b|IDAR[EI] DAVA DAIRESI", "BÖLGE İDARE MAHKEMESİ",           "İdare"),
+    (r"\bIDARE MAHKEME",                  "İDARE MAHKEMESİ",                      "İdare"),
+    (r"\bVERGI\b",                        "VERGİ MAHKEMESİ",                      "İdare"),
+    (r"\bDANISTAY\b",                     "DANIŞTAY",                             "İdare"),
     (r"ARABULUCU",                        "ARABULUCULUK BÜROSU",                  "Arabuluculuk"),
     (r"NOTERLIG|NOTERLIK",                "NOTERLİK",                             "Hukuk"),
     (r"SAVCILI[GK]",                      "CUMHURİYET BAŞSAVCILIĞI",              "Savcılık"),

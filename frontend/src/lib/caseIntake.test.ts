@@ -23,6 +23,7 @@ import {
   toCommitPolicy,
 } from "./caseIntake";
 import { buildFieldStates, fieldApprovalProgress } from "./caseIntakeFields";
+import { PROCESS_MAP } from "./caseNumberUtils";
 
 const makePolicy = (over: Partial<MergePolicy> = {}): MergePolicy => ({
   police_no: "P-123",
@@ -97,8 +98,13 @@ describe("policyKey", () => {
 
 describe("normalizeFileType", () => {
   it("çıkarım değerlerini PROCESS_MAP sözlüğüne çevirir", () => {
-    expect(normalizeFileType("İdari")).toBe("İdari Yargı");
-    expect(normalizeFileType("İdari Yargı")).toBe("İdari Yargı");
+    // İdari yargının tek türü İdare (17.09) — eski "İdari Yargı" de İdare'ye düşer
+    expect(normalizeFileType("İdari")).toBe("İdare");
+    expect(normalizeFileType("İdari Yargı")).toBe("İdare");
+    expect(normalizeFileType("idare")).toBe("İdare");
+    expect(normalizeFileType("IDARE")).toBe("İdare");
+    expect(PROCESS_MAP["İdare"]).toBe("IDARE");
+    expect(Object.keys(PROCESS_MAP)).not.toContain("İdari Yargı");
     expect(normalizeFileType("HUKUK")).toBe("Hukuk");
     expect(normalizeFileType("icra")).toBe("İcra");
     expect(normalizeFileType("Savcılık")).toBe("Savcılık");
@@ -149,7 +155,7 @@ describe("buildFieldStates", () => {
       value: "2026/123", aiValue: "2026/123", approved: false, touched: false,
     });
     // file_type sözlüğe normalize edilir
-    expect(states.file_type.value).toBe("İdari Yargı");
+    expect(states.file_type.value).toBe("İdare");
     // Boş AI alanı da tiksiz gelir — kullanıcı doldurunca otomatik tiklenir
     expect(states.manevi_tazminat.approved).toBe(false);
     // draftKey'siz alanlar (avukat, notlar) boş başlar — ön-dolgu yok, tiksiz

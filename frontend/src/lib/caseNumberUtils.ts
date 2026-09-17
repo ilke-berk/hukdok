@@ -12,8 +12,9 @@ export const CATEGORY_MAP: Record<string, string> = {
 // Kanonik kaynak: backend/scripts/retag_tracking_nos.py PROCESS_MAP — birebir eşleşmeli.
 // 2026-08-05: İdare/Tahkim/Vergi/Danışmanlık eklendi (eksikken bu türler
 // sessizce HUKUK bloğu üretiyordu — büro cevabındaki bug tespiti).
+// 2026-09-17: "İdari Yargı" (IDARI) çıktı — idari yargının tek türü "İdare" (IDARE).
+// Anahtarlar sihirbazın tür seçicisidir; mevcut IDARI numaralı kartlar değişmez.
 export const PROCESS_MAP: Record<string, string> = {
-    "İdari Yargı": "IDARI",
     "Hukuk": "HUKUK",
     "Ceza": "CEZAA",
     "İcra": "ICRAA",

@@ -648,14 +648,16 @@ export function policyKey(p: MergePolicy): string {
 
 /**
  * Çıkarımdaki yargı türünü NewCase'in file_type sözlüğüne (PROCESS_MAP
- * anahtarları) normalize eder. Backend "İdari" döndürebilir, form "İdari Yargı"
- * bekler; bilinmeyen değer olduğu gibi geçer (kullanıcı düzeltir).
+ * anahtarları) normalize eder. Backend "İdari" döndürebilir; idari yargının TEK dava
+ * türü "İdare"dir (ofis no bloğu IDARE — ekibe söz 17.09; eski "İdari Yargı" türü
+ * `scripts/idari_yargi_birlestir.py` ile birleşti, mevcut IDARI numaraları değişmedi).
+ * Bilinmeyen değer olduğu gibi geçer (kullanıcı düzeltir).
  */
 export function normalizeFileType(value: string | null | undefined): string | null {
   if (!value) return null;
   const v = value.trim();
   const upper = v.toLocaleUpperCase("tr-TR");
-  if (upper.startsWith("İDARİ") || upper.startsWith("IDARI")) return "İdari Yargı";
+  if (upper.startsWith("İDAR") || upper.startsWith("IDAR")) return "İdare";
   const known = ["Hukuk", "Ceza", "İcra", "Arabuluculuk", "Savcılık"];
   const hit = known.find(k => k.toLocaleUpperCase("tr-TR") === upper);
   return hit || v;

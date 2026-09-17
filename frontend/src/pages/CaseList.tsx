@@ -404,7 +404,7 @@ const CaseList = () => {
                 <SelectItem value="Hukuk">Hukuk</SelectItem>
                 <SelectItem value="Ceza">Ceza</SelectItem>
                 <SelectItem value="İcra">İcra</SelectItem>
-                <SelectItem value="İdari">İdari</SelectItem>
+                <SelectItem value="İdare">İdare</SelectItem>
               </SelectContent>
             </Select>
           </div>
