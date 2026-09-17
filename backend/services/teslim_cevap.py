@@ -1,21 +1,22 @@
-"""Veri teslim cevap paketi — eşleşme CSV'si + raporların SharePoint'e geri yüklenmesi (G110).
+"""Veri teslim cevap dosyaları — eşleşme CSV'si + değer havuzu farkı (G110, G112).
 
 Plan `docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md` §2.4: veri ekibine FAZ F §3
 ve teslim paketinin `HUKDOK_TALEPLERI` #9'unda borçlu olduğumuz çıktı ("hangi SistemNo
-hangi `cases.id`/`tracking_no` ile eşleşti, hangileri eşleşmedi") her `uygulandi` teslim
-için kendiliğinden `<SHAREPOINT_FOLDER_TESLIM_NAME>/cevap/<teslim>/` altına gider.
-Durum makinesi `teslim_kutusu`'ndadır; burası yalnız onun `uygulandi` satırı üzerinde
-çalışır ve HİÇBİR durum geçişi yapmaz.
+hangi `cases.id`/`tracking_no` ile eşleşti, hangileri eşleşmedi") her `uygulandi` teslimin
+rapor dizinine yazılır; admin panelinin rapor indirme ucundan alınıp ekibe iletilir.
+**SharePoint `cevap/` klasörüne yükleme 17.09.2026'da kaldırıldı** (teslim klasörü yolu
+kapandı — `teslim_kutusu` modül şerhi). Durum makinesi `teslim_kutusu`'ndadır; burası
+HİÇBİR durum geçişi yapmaz.
 
-Cevap klasörünün içeriği:
+Rapor dizinindeki cevap dosyaları:
 
 * `eslesme_<teslim>.csv` — teslimin `Sheet` sayfasındaki her satır için `case_foys`
   üzerinden `cases.id` / `tracking_no` / `klasor_no_2` / `tku_no` / `case_party_id`;
   eşleşmeyenlerde `case_id` boş, `sebep` satır raporundaki ATLANDI/HATA sebebi
-  (`ESLESME_BASLIKLARI`). Dosya rapor dizinine yazılır (spool'da kalıcı, admin rapor
-  uçları da listeler) ve oradan yüklenir.
-* `ozet_<teslim>.txt` — `teslim_kutusu`'nun rapor dizinine bıraktığı `ozet.txt`
-  (`ozet_metni(sonuc)` + kapı kararı satırı) yüklenirken bu adı alır.
+  (`ESLESME_BASLIKLARI`). Uygulama başarı yolunda `teslim_kutusu._eslesme_dene` üretir;
+  dosya rapor dizinine yazılır (spool'da kalıcı, admin rapor uçları listeler).
+* `ozet.txt` — `teslim_kutusu`'nun rapor dizinine bıraktığı koşu özeti
+  (`ozet_metni(sonuc)` + kapı kararı satırı).
 * `deger-havuzu-farki_<teslim>.csv` — teslimin `DEGER_HAVUZLARI` sayfasındaki kapalı liste
   değerleri ile bizim referans listelerimizin farkı, İKİ yönlü (`teslimde var / bizde yok`
   + `bizde var / teslimde yok`; `HAVUZ_FARKI_BASLIKLARI`). Fark YOKSA dosya üretilmez (varsa
@@ -28,33 +29,6 @@ Cevap klasörünün içeriği:
 
 Tasarım kararları
 -----------------
-* **Yükleme SharePoint alışverişinin ikinci yönüdür; iki kapısı vardır.** (1) Otomasyon
-  anahtarı (`veri_teslim_otomasyonu`) kapalıysa SharePoint'e ne bakılır (G109 gözcüsü)
-  ne yazılır — elle "Uygula" yine çalışır, yalnız cevap dosyaları spool'da kalır ve
-  anahtar açılınca ertesi gece turu yükler. (2) Yazma hedefinin kökü
-  `SHAREPOINT_FOLDER_TESLIM_NAME` env'inden AÇIKÇA gelir; okuma tarafındaki
-  `03_VERI_TESLIM` varsayılanı yazma için türetilmez (env yoksa INFO + atlanır, defter
-  değişmez). Gerekçe: cevap dosyaları ortak arşive YAZILIR; kurulumu yapılmamış bir hedefe
-  varsayılanla yazmak istemiyoruz. Aynı iki kapı, gerçek Graph kimlik bilgisi taşıyan
-  konteynerde koşan mevcut G107/G108/G109 testlerinin (upload'ı sahtelemeden `uygulandi`ya
-  ulaşırlar) prod SharePoint'e dosya bırakmasını da engeller — bu görevin test dosyası
-  env'i açıkça kurar ve `upload_file_to_sharepoint`'i sahteler.
-* **Kısmi başarısızlık teslimi `basarisiz` YAPMAZ** (plan §2.4): yazım zaten commit'li.
-  Dosya başına WARNING, tur sonunda TEK özet WARNING; `cevap_yuklendi=False` kalır, her
-  deneme `durum_gecmisi`ne (durum değişmeden) "cevap yükleme denemesi #N" notu düşer;
-  ertesi gece turu (`teslim_kutusu.gece_turu`) yeniden dener. ERROR yazılmaz.
-* **Klasör yaratma çağrısı yoktur**: `upload_file_to_sharepoint` küçük dosyada
-  `PUT /drives/{drive}/root:/{klasör}/{ad}:/content` atar (`_upload_with_token`);
-  `cevap/<teslim>/` ara klasörlerinin açılması Graph'ın yol-adresli PUT davranışına
-  dayanır (Graph belgesi: eksik üst klasörler oluşturulur). Kod tabanında bu davranışa
-  yaslanan başka bir çağrı YOK (mevcut yüklemeler düz klasöre gider;
-  `use_date_subfolder` yolu hiçbir çağıranda açık değil) — gerçek SharePoint'te ilk
-  cevap yüklemesi insan gözüyle doğrulanmalı (görev raporu "İzlenecekler").
-* **Yükleme teslim site'ına gider** (G147): `upload_file_to_sharepoint(...,
-  config_type=tk.TESLIM_SP_CONFIG)` — gözcüyle AYNI config (`"teslim"`); `TESLIM_SHAREPOINT_*`
-  tanımlıysa Hanyaloğlu tenant'ındaki site + o tenant'ın token'ı, değilse arşiv
-  kimliği/site'ı (düşüş `auth_graph`/`sharepoint_uploader_graph`'ta, tek INFO). Klasör
-  yolu (`<SHAREPOINT_FOLDER_TESLIM_NAME>/cevap/<teslim>/`) site'tan bağımsızdır.
 * **CSV biçimi `hukdok_aktarim._csv_yaz` ile aynı** (UTF-8 BOM + `;`): fonksiyon private
   olduğu için deseni kopyalandı (`_csv_yaz`), byte eşitliği testle kilitli.
 * **Sebep satır numarasıyla eşlenir** (`satir_no`), SistemNo ile değil: aynı SistemNo
@@ -65,7 +39,6 @@ from __future__ import annotations
 
 import csv
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -75,14 +48,10 @@ from sqlalchemy.orm import Session
 from managers import reference_lists
 import models
 from scripts import hukdok_aktarim
-from services import app_settings
 from services import teslim_kutusu as tk
-from sharepoint import sharepoint_uploader_graph as _spu
 
 logger = logging.getLogger(__name__)
 
-#: `<SHAREPOINT_FOLDER_TESLIM_NAME>/cevap/<teslim>` — cevap alt klasörü.
-CEVAP_ALT_KLASORU = "cevap"
 #: Eşleşme dosyasının sütunları (görev sözleşmesi, sıra sabit).
 ESLESME_BASLIKLARI: Tuple[str, ...] = (
     "sistem_no", "dosya_no", "case_id", "tracking_no", "klasor_no_2",
@@ -90,10 +59,6 @@ ESLESME_BASLIKLARI: Tuple[str, ...] = (
 )
 DURUM_ESLESTI = "ESLESTI"
 DURUM_ESLESMEDI = "ESLESMEDI"
-#: Yüklenen dosya türleri → Graph content-type.
-CEVAP_TURLERI: Dict[str, str] = {".csv": "text/csv", ".txt": "text/plain"}
-#: `durum_gecmisi` notunun öneki — deneme sayısı buradan sayılır.
-DENEME_NOTU_ONEKI = "cevap yükleme denemesi #"
 _SATIR_RAPORU_KALIBI = "satir-raporu_*.csv"
 _IN_PARCASI = 500
 
@@ -153,16 +118,8 @@ _HAVUZ_AYRAC = re.compile(r"[;\r\n|]+")
 # ═══════════════════════════════════════════════════════════════════════════
 
 def teslim_adi_uzantisiz(dosya_adi: str) -> str:
-    """`HUKDOK_TESLIM_X.xlsx` → `HUKDOK_TESLIM_X` (cevap klasörü ve dosya adlarının gövdesi)."""
+    """`HUKDOK_TESLIM_X.xlsx` → `HUKDOK_TESLIM_X` (cevap dosya adlarının gövdesi)."""
     return Path(str(dosya_adi or "")).stem or "teslim"
-
-
-def cevap_klasoru(dosya_adi: str) -> Optional[str]:
-    """`<SHAREPOINT_FOLDER_TESLIM_NAME>/cevap/<teslim>`; env tanımsızsa None (modül şerhi)."""
-    kok = os.getenv("SHAREPOINT_FOLDER_TESLIM_NAME", "").strip().strip("/")
-    if not kok:
-        return None
-    return f"{kok}/{CEVAP_ALT_KLASORU}/{teslim_adi_uzantisiz(dosya_adi)}"
 
 
 def _metin(deger: Any) -> Optional[str]:
@@ -227,18 +184,6 @@ def _foy_kayitlari(db: Session, sistem_nolar: Sequence[str]) -> Dict[str, Tuple[
         for sistem_no, *kalan in satirlar:
             sonuc[str(sistem_no)] = tuple(kalan)
     return sonuc
-
-
-def _deneme_sayisi(teslim: models.AktarimTeslimi) -> int:
-    gecmis: List[Any] = list(teslim.durum_gecmisi or [])
-    return sum(1 for g in gecmis if str((g or {}).get("not") or "").startswith(DENEME_NOTU_ONEKI))
-
-
-def _gecmis_notu_ekle(teslim: models.AktarimTeslimi, not_: str) -> None:
-    """Durum DEĞİŞMEDEN `durum_gecmisi`ne not düşer (liste yeniden atanır — JSON kolonu)."""
-    gecmis = list(teslim.durum_gecmisi or [])
-    gecmis.append({"durum": teslim.durum, "at": tk._simdi().isoformat(), "not": not_})
-    teslim.durum_gecmisi = gecmis
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -455,146 +400,5 @@ def havuz_farki_ozeti(farklar: Sequence[Tuple[str, str, str, str]]) -> str:
     havuzlar = sorted({f[0] for f in farklar})
     return (
         f"{len(farklar)} fark — {YON_TESLIMDE_VAR}: {len(teslimde)}, {YON_BIZDE_VAR}: {len(bizde)} "
-        f"(havuz: {', '.join(havuzlar)}). Listeye yazılmadı; rapor cevap paketinde."
+        f"(havuz: {', '.join(havuzlar)}). Listeye yazılmadı; rapor cevap dosyalarında."
     )
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Geri yükleme
-# ═══════════════════════════════════════════════════════════════════════════
-
-def _cevap_dosyalari(rapor_dizini: Path, teslim_adi: str) -> List[Tuple[Path, str]]:
-    """(yerel dosya, SharePoint'teki ad) listesi — CSV/TXT, ad sırasıyla; `ozet.txt` → `ozet_<teslim>.txt`."""
-    dosyalar: List[Tuple[Path, str]] = []
-    for yol in sorted(rapor_dizini.iterdir(), key=lambda p: p.name):
-        if not yol.is_file() or yol.suffix.lower() not in CEVAP_TURLERI:
-            continue
-        hedef_ad = f"ozet_{teslim_adi}.txt" if yol.name == tk.OZET_DOSYASI else yol.name
-        dosyalar.append((yol, hedef_ad))
-    return dosyalar
-
-
-def cevap_yukle(teslim_id: int, *, db: Optional[Session] = None) -> bool:
-    """`uygulandi` teslimin cevap paketini SharePoint'e yükler; hepsi gittiyse True.
-
-    Yalnız `uygulandi` durumundan çağrılır (aksi ValueError). Zaten yüklenmişse
-    True döner, yeniden yüklemez. Anahtar kapalı ya da cevap klasörü env'de tanımsızsa
-    INFO + False, deftere dokunulmaz (deneme sayılmaz). Aksi hâlde eşleşme dosyası
-    üretilir, rapor dizinindeki CSV/TXT'ler tek tek yüklenir; her dosyanın hatası
-    WARNING, sonuç `durum_gecmisi` notuna işlenir; hepsi başarılıysa
-    `cevap_yuklendi=True`. Teslim durumu HİÇBİR koşulda değişmez.
-
-    G194 — yükleme döngüsü AÇIK transaction dışında koşar: döngüden önce commit
-    (G191 `idle_in_transaction_session_timeout` uzun yüklemede — uploader iç retry'ı
-    dahil — oturumu kesip son commit'i `OperationalError`a düşürmesin). Döngü ORM
-    nesnesine dokunmaz (`expire_on_commit` yeni SELECT = yeni transaction); ihtiyaç
-    duyduğu değerler yerel değişkendedir. Döngü sonrası teslim YENİDEN okunur ve not
-    ona eklenir (bayat `durum_gecmisi` listesi yeniden atanmaz). Bu arada durum
-    `uygulandi` dışına çıktıysa `cevap_yuklendi` yazılmaz (WARNING + False);
-    `cevap_yuklendi` başka yoldan True olduysa yeniden yazılmaz, yalnız not eklenir.
-    """
-    with tk._oturum(db) as session:
-        teslim = tk._teslim_getir(session, teslim_id)
-        tk._durum_kontrol(teslim, frozenset({tk.DURUM_UYGULANDI}), "cevap yükleme")
-        if teslim.cevap_yuklendi:
-            logger.info("Teslim #%s cevap paketi zaten yüklü — atlandı", teslim.id)
-            return True
-        if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
-            logger.info("Teslim #%s cevap yüklemesi atlandı: veri_teslim_otomasyonu kapalı", teslim.id)
-            return False
-        klasor = cevap_klasoru(str(teslim.dosya_adi))
-        if klasor is None:
-            logger.info(
-                "Teslim #%s cevap yüklemesi atlandı: SHAREPOINT_FOLDER_TESLIM_NAME tanımsız "
-                "(cevap klasörü kurulmadan yazılmaz)", teslim.id,
-            )
-            return False
-        rapor = Path(str(teslim.rapor_dizini)) if teslim.rapor_dizini else None
-        deneme = _deneme_sayisi(teslim) + 1
-        if rapor is None or not rapor.is_dir():
-            _gecmis_notu_ekle(teslim, f"{DENEME_NOTU_ONEKI}{deneme}: rapor dizini yok ({teslim.rapor_dizini or '-'})")
-            session.commit()
-            logger.warning("Teslim #%s cevap yüklenemedi: rapor dizini yok (%s)", teslim.id, teslim.rapor_dizini)
-            return False
-        teslim_adi = teslim_adi_uzantisiz(str(teslim.dosya_adi))
-
-        try:
-            eslesme_csv_uret(int(teslim.id), rapor / f"eslesme_{teslim_adi}.csv", db=session)
-        except Exception as exc:
-            _gecmis_notu_ekle(
-                teslim, f"{DENEME_NOTU_ONEKI}{deneme}: eşleşme dosyası üretilemedi — {type(exc).__name__}: {exc}",
-            )
-            session.commit()
-            logger.warning(
-                "Teslim #%s cevap yüklenemedi: eşleşme dosyası üretilemedi (%s): %s",
-                teslim.id, type(exc).__name__, exc,
-            )
-            return False
-
-        dosyalar = _cevap_dosyalari(rapor, teslim_adi)
-        tid = int(teslim.id)
-        # G194: transaction döngüden ÖNCE kapanır; döngü `teslim`e dokunmaz (docstring).
-        session.commit()
-        hatalar: List[str] = []
-        for yol, hedef_ad in dosyalar:
-            try:
-                _spu.upload_file_to_sharepoint(
-                    str(yol), hedef_ad, target_folder_name=klasor,
-                    content_type=CEVAP_TURLERI[yol.suffix.lower()],
-                    config_type=tk.TESLIM_SP_CONFIG,
-                )
-            except Exception as exc:
-                hatalar.append(f"{hedef_ad}: {type(exc).__name__}: {exc}")
-                logger.warning("Teslim #%s cevap dosyası yüklenemedi (%s/%s): %s", tid, klasor, hedef_ad, exc)
-
-        basarili = len(dosyalar) - len(hatalar)
-        not_ = f"{DENEME_NOTU_ONEKI}{deneme}: {basarili}/{len(dosyalar)} dosya → {klasor}"
-        if hatalar:
-            not_ += "; hatalar: " + " | ".join(hatalar)
-        # Döngü sonrası taze okuma: döngü sırasında başka yolun yazdığı ezilmez.
-        teslim = tk._teslim_getir(session, tid)
-        guncel_durum = str(teslim.durum)
-        _gecmis_notu_ekle(teslim, tk._kirp(not_))
-        durum_disi = guncel_durum != tk.DURUM_UYGULANDI
-        if not hatalar and not durum_disi and not teslim.cevap_yuklendi:
-            teslim.cevap_yuklendi = True
-        session.commit()
-        if hatalar:
-            logger.warning(
-                "Teslim #%s cevap paketi eksik yüklendi (%s/%s dosya, deneme #%s) — ertesi gece turu yeniden dener",
-                tid, basarili, len(dosyalar), deneme,
-            )
-            return False
-        if durum_disi:
-            logger.warning(
-                "Teslim #%s cevap dosyaları yüklendi (%s/%s dosya, deneme #%s) ama durum yükleme sırasında "
-                "'%s' oldu — cevap_yuklendi yazılmadı",
-                tid, basarili, len(dosyalar), deneme, guncel_durum,
-            )
-            return False
-        logger.info("Teslim #%s cevap paketi yüklendi: %s dosya → %s (deneme #%s)", tid, basarili, klasor, deneme)
-        return True
-
-
-def cevap_bekleyen_idler(db: Session, *, haric: Optional[int] = None) -> List[int]:
-    """`uygulandi` + `cevap_yuklendi=False` teslimler (id sırası); `haric` bu turda zaten denenen."""
-    sorgu = db.query(models.AktarimTeslimi.id).filter(
-        models.AktarimTeslimi.durum == tk.DURUM_UYGULANDI,
-        models.AktarimTeslimi.cevap_yuklendi.is_(False),
-    )
-    if haric is not None:
-        sorgu = sorgu.filter(models.AktarimTeslimi.id != haric)
-    return [int(tid) for (tid,) in sorgu.order_by(models.AktarimTeslimi.id).all()]
-
-
-def bekleyen_cevaplari_yukle(db: Session, *, haric: Optional[int] = None) -> Dict[int, bool]:
-    """Bekleyen her teslim için `cevap_yukle`; {id: sonuç}. Satır istisnası WARNING, tur sürer."""
-    sonuc: Dict[int, bool] = {}
-    for teslim_id in cevap_bekleyen_idler(db, haric=haric):
-        try:
-            sonuc[teslim_id] = cevap_yukle(teslim_id, db=db)
-        except Exception as exc:
-            db.rollback()
-            logger.warning("Teslim #%s cevap yüklemesi turda yapılamadı (%s): %s", teslim_id, type(exc).__name__, exc)
-            sonuc[teslim_id] = False
-    return sonuc

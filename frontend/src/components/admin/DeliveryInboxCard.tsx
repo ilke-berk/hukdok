@@ -1,11 +1,11 @@
 // Yönetim paneli "Veri Teslimleri" sekmesi — veri ekibinin teslim defteri.
-// Yönetici teslimleri listeler, xlsx yükler, SharePoint taraması tetikler,
-// kuru koşu başlatıp raporlarını indirir ve `inceleme_bekliyor`/`kuru_kosuldu`
+// Yönetici teslimleri listeler, xlsx yükler (tek giriş yolu — SharePoint teslim
+// klasörü taraması 17.09.2026'da kalktı), kuru koşu başlatıp raporlarını indirir ve `inceleme_bekliyor`/`kuru_kosuldu`
 // teslimi bilinçli onayla uygular. API sözleşmesi G108'de donduruldu
 // (gorevler/gorev/G111.md "SÖZLEŞME"); bu kart yalnız o uçlara bağlanır.
 // `apiClient.fetch` istisna fırlatmaz — her yanıtta `Response.ok` denetlenir.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, Upload } from "lucide-react";
+import { Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -203,11 +203,9 @@ function DurumRozeti({ durum }: { durum: TeslimDurum }) {
 export function DeliveryInboxCard() {
     const [teslimler, setTeslimler] = useState<Teslim[]>([]);
     const [esikler, setEsikler] = useState<Esikler | null>(null);
-    const [etkin, setEtkin] = useState<boolean>(true);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
-    const [isScanning, setIsScanning] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -229,7 +227,6 @@ export function DeliveryInboxCard() {
             const data = await res.json();
             setTeslimler(data.teslimler ?? []);
             setEsikler(data.esikler ?? null);
-            setEtkin(data.etkin !== false);
         } catch (e) {
             setLoadError(e instanceof Error ? e.message : "Teslim listesi alınamadı");
         } finally {
@@ -238,22 +235,6 @@ export function DeliveryInboxCard() {
     }, []);
 
     useEffect(() => { void load(); }, [load]);
-
-    const handleTara = async () => {
-        setIsScanning(true);
-        try {
-            const res = await apiClient.fetch(`${BASE}/tara`, { method: "POST" });
-            if (!res.ok) throw new Error(await hataMetni(res, "Tarama başlatılamadı"));
-            const data = await res.json();
-            const ozet = `${data.yeni ?? 0} yeni, ${data.yinelenen ?? 0} yinelenen`;
-            toast.success(data.not ? `${ozet} — ${data.not}` : ozet);
-            void load();
-        } catch (e) {
-            toast.error(e instanceof Error ? e.message : "Tarama başlatılamadı");
-        } finally {
-            setIsScanning(false);
-        }
-    };
 
     const handleUpload = async (file: File) => {
         setIsUploading(true);
@@ -375,7 +356,7 @@ export function DeliveryInboxCard() {
                     <div className="min-w-0">
                         <CardTitle>Veri Teslimleri</CardTitle>
                         <CardDescription>
-                            Veri ekibinin teslim defteri: yükle, tara, kuru koş, raporları indir, onayla uygula.
+                            Veri ekibinin teslim defteri: yükle, kuru koş, raporları indir, onayla uygula.
                             {esikler && (
                                 <span className="block mt-1 text-[11px] font-mono text-[var(--fg-muted)]">
                                     Eşikler · hata oranı {esikler.hata_orani} · eşleşmeyen oranı {esikler.eslesmeyen_orani} · alan değişikliği {esikler.alan_degisikligi}
@@ -384,17 +365,6 @@ export function DeliveryInboxCard() {
                         </CardDescription>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="rounded-none"
-                            disabled={isScanning}
-                            onClick={() => void handleTara()}
-                        >
-                            {isScanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                            Şimdi tara
-                        </Button>
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -418,14 +388,6 @@ export function DeliveryInboxCard() {
                         </Button>
                     </div>
                 </div>
-                {!isLoading && !loadError && !etkin && (
-                    <p
-                        role="status"
-                        className="mt-3 border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2 text-[12px]"
-                    >
-                        Otomasyon kapalı — Özellikler sekmesinden açın.
-                    </p>
-                )}
             </CardHeader>
             <CardContent>
                 {isLoading ? (

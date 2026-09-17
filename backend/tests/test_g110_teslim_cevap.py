@@ -1,16 +1,14 @@
-"""G110 — Cevap paketi: `services/teslim_cevap.py` (eşleşme CSV + SharePoint'e geri
-yükleme) ve `teslim_kutusu`'ndaki bağlantı noktaları (`ozet.txt`, `teslim_uygula`
-tek deneme, `gece_turu` yeniden deneme).
+"""G110 — Cevap dosyaları: `services/teslim_cevap.py` (eşleşme CSV) ve `teslim_kutusu`'ndaki
+bağlantı noktaları (`ozet.txt`, uygulama sonrası eşleşme dosyası). SharePoint `cevap/`
+yüklemesi, gece turu yeniden denemesi ve G194 yükleme döngüsü 17.09.2026'da teslim klasörü
+yoluyla birlikte kalktı (`test_teslim_klasoru_kaldirildi.py`).
 
 Plan: docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md §2.4.
 
 **TEST VERİSİ KURALI (A.2 dersi):** paketler openpyxl ile SENTETİK üretilir
-(test_g107 üreticisi). `upload_file_to_sharepoint` HER testte sahtelenir; cevap
-klasörü env'i (`SHAREPOINT_FOLDER_TESLIM_NAME`) ve otomasyon anahtarı fixture'da
-AÇIKÇA kurulur — ikisi de yükleme kapısıdır (teslim_cevap modül şerhi).
+(test_g107 üreticisi). `upload_file_to_sharepoint` sahtelenir — çağrılmadığı kanıtlanır.
 """
 import csv
-import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,16 +21,13 @@ import models
 import sharepoint.sharepoint_uploader_graph as spu
 from database import Base
 from scripts import hukdok_aktarim
-from services import app_settings
 from services import teslim_cevap as tc
 from services import teslim_kutusu as tk
 from test_g107_teslim_kutusu import _defter, _iki_satir, _index_ops, _kart, _paket, _satir
 
 ADMIN = "yonetici@hanyaloglu-acar.av.tr"
-KEY = app_settings.VERI_TESLIM_OTOMASYONU_KEY
 ONCEKI = "HUKDOK_TESLIM_ONCEKI.xlsx"
 TESLIM = "HUKDOK_TESLIM_X.xlsx"
-KLASOR = "03_VERI_TESLIM/cevap/HUKDOK_TESLIM_X"
 
 
 def _dort_satir():
@@ -52,10 +47,9 @@ def _dort_satir():
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     """sqlite (FK + SAVEPOINT + defter/föy/bildirim index'leri) + spool + üç kart;
-    `teslim_kutusu`/`app_settings.SessionLocal` bu fabrikaya; cevap klasörü env'i kurulu."""
+    `teslim_kutusu.SessionLocal` bu fabrikaya."""
     monkeypatch.setenv("TESLIM_SPOOL_DIR", str(tmp_path / "teslim_spool"))
     monkeypatch.setenv("ADMIN_EMAILS", ADMIN)
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "03_VERI_TESLIM")
     for ad in ("TESLIM_KAPI_HATA_ORANI", "TESLIM_KAPI_ESLESMEYEN_ORANI", "TESLIM_KAPI_ALAN_DEGISIKLIGI"):
         monkeypatch.delenv(ad, raising=False)
 
@@ -81,9 +75,6 @@ def env(tmp_path, monkeypatch):
                 conn.execute(text(sql))
     maker = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     monkeypatch.setattr(tk, "SessionLocal", maker)
-    monkeypatch.setattr(app_settings, "SessionLocal", maker)
-    # Gece turunun gözcüsü: boş klasör (bu dosya yüklemeyi test eder, indirmeyi değil)
-    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name, **kw: [])
 
     db = maker()
     try:
@@ -111,14 +102,6 @@ def sahte_upload(monkeypatch):
 
     monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
     return sp
-
-
-def _anahtar(env, deger: bool) -> None:
-    db = env.db()
-    try:
-        app_settings.set_setting_bool(KEY, deger, updated_by="test", db=db)
-    finally:
-        db.close()
 
 
 def _teslim(env, tid):
@@ -160,30 +143,9 @@ def _csv_satirlari(yol: Path):
         return [satir for satir in csv.reader(dosya, delimiter=";") if satir]
 
 
-def _cevap_uyarilari(caplog):
-    """Yalnız teslim katmanının (kutusu + cevap) WARNING+ kayıtları — aktarımın satır
-    düzeyi WARNING'leri (ATLANDI/HATA) bu testlerin konusu değil."""
-    return [r for r in caplog.records
-            if r.levelno >= logging.WARNING and r.name.startswith("services.teslim_")]
-
-
-def _deneme_notlari(teslim):
-    return [g["not"] for g in teslim.durum_gecmisi if str(g.get("not") or "").startswith(tc.DENEME_NOTU_ONEKI)]
-
-
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. Birim — klasör adı, CSV biçimi
+# 1. Birim — CSV biçimi
 # ═══════════════════════════════════════════════════════════════════════════
-
-def test_cevap_klasoru_env_zorunlu(monkeypatch):
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "/03_VERI_TESLIM/")
-    assert tc.cevap_klasoru("HUKDOK_TESLIM_X.xlsx") == KLASOR
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "  ")
-    assert tc.cevap_klasoru("HUKDOK_TESLIM_X.xlsx") is None
-    monkeypatch.delenv("SHAREPOINT_FOLDER_TESLIM_NAME", raising=False)
-    assert tc.cevap_klasoru("HUKDOK_TESLIM_X.xlsx") is None
-    assert tc.teslim_adi_uzantisiz("HUKDOK_TESLIM_2026-09-10.XLSX") == "HUKDOK_TESLIM_2026-09-10"
-
 
 def test_csv_bicimi_hukdok_aktarim_csv_yaz_ile_bayt_bayt_ayni(tmp_path):
     """`_csv_yaz` deseni kopyalandı (private) — çıktı hukdok_aktarim'inkiyle bayt düzeyinde eş."""
@@ -209,7 +171,6 @@ def test_eslesme_basliklari_sozlesme():
 def test_eslesme_csv_uctan_uca_3_eslesen_1_eslesmeyen(env, sahte_upload):
     """Kabul: 3 eşleşen + 1 eşleşmeyen paket uygulandıktan sonra dosyada 4 satır;
     eşleşmeyenin `case_id` boş, `sebep` dolu; BOM + `;` byte düzeyinde."""
-    _anahtar(env, True)
     tid = _uygulanmis_teslim(env)
     teslim = _teslim(env, tid)
     yol = Path(teslim.rapor_dizini) / "eslesme_HUKDOK_TESLIM_X.csv"
@@ -252,7 +213,7 @@ def test_eslesme_csv_ayni_sistem_no_iki_satir_ve_hata_sebebi(env):
         _satir("SSTMN-1", "D-1"),
         _satir("SSTMN-7", ""),                                        # Dosya No boş → satır HATA, föy yok
     ]
-    tid = _uygulanmis_teslim(env, satirlar)          # anahtar kapalı: yükleme yok, CSV elle
+    tid = _uygulanmis_teslim(env, satirlar)
     teslim = _teslim(env, tid)
     hedef = tc.eslesme_csv_uret(tid, Path(teslim.rapor_dizini) / "eslesme_test.csv")
     veri = _csv_satirlari(hedef)[1:]
@@ -319,469 +280,13 @@ def test_ozet_txt_otomatik_kapi_gerekcesiz(env):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. cevap_yukle — yükleme, kısmi başarısızlık, yeniden deneme
+# 4. Uygulama yan ürünü — eşleşme dosyası kendiliğinden, SharePoint'e yükleme YOK
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_cevap_yukle_her_dosya_bir_kez_hedef_klasor_cevap_yuklendi_true(env, sahte_upload):
-    """Kabul: sahte upload her dosya için bir kez, hedef klasör
-    `03_VERI_TESLIM/cevap/HUKDOK_TESLIM_X`; `ozet.txt` → `ozet_<teslim>.txt`."""
-    _anahtar(env, True)
+def test_uygulama_eslesme_dosyasini_uretir_sharepointe_yuklemez(env, sahte_upload):
+    """17.09: cevap klasörü yolu kalktı — uygulama eşleşme CSV'sini rapor dizinine yazar,
+    `upload_file_to_sharepoint` HİÇ çağrılmaz, `cevap_yuklendi` yazılmaz."""
     tid = _uygulanmis_teslim(env)
     teslim = _teslim(env, tid)
-    assert teslim.durum == "uygulandi" and teslim.cevap_yuklendi is True
-
-    rapor = Path(teslim.rapor_dizini)
-    yerel = sorted(p.name for p in rapor.iterdir() if p.suffix in (".csv", ".txt"))
-    assert "eslesme_HUKDOK_TESLIM_X.csv" in yerel and tk.OZET_DOSYASI in yerel
-    assert any(ad.startswith("satir-raporu_") for ad in yerel)
-
-    hedef_adlar = [c[1] for c in sahte_upload.cagrilar]
-    assert len(hedef_adlar) == len(set(hedef_adlar)) == len(yerel)     # her dosya tam bir kez
-    beklenen = {("ozet_HUKDOK_TESLIM_X.txt" if ad == tk.OZET_DOSYASI else ad) for ad in yerel}
-    assert set(hedef_adlar) == beklenen
-    assert {c[2] for c in sahte_upload.cagrilar} == {KLASOR}
-    assert {c[3] for c in sahte_upload.cagrilar if c[1].endswith(".csv")} == {"text/csv"}
-    assert {c[3] for c in sahte_upload.cagrilar if c[1].endswith(".txt")} == {"text/plain"}
-    assert [c[0] for c in sahte_upload.cagrilar if c[1] == "ozet_HUKDOK_TESLIM_X.txt"] == [tk.OZET_DOSYASI]
-
-    notlar = _deneme_notlari(teslim)
-    assert len(notlar) == 1 and notlar[0].startswith("cevap yükleme denemesi #1: ") and "hatalar" not in notlar[0]
-    assert f"{len(yerel)}/{len(yerel)} dosya → {KLASOR}" in notlar[0]
-    assert teslim.durum_gecmisi[-1]["durum"] == "uygulandi"            # durum değişmedi
-
-
-def test_cevap_yukle_bir_dosya_patlarsa_false_uygulandi_kalir_warning_ertesi_gece_true(env, sahte_upload, caplog):
-    """Kabul: bir dosya patlarsa `cevap_yuklendi=False`, durum `uygulandi`, WARNING (ERROR yok);
-    ertesi `gece_turu` yeniden dener ve başarıda True olur."""
-    _anahtar(env, True)
-    sahte_upload.patlayan = {"eslesme_HUKDOK_TESLIM_X.csv"}
-    with caplog.at_level(logging.INFO):
-        tid = _uygulanmis_teslim(env)
-    teslim = _teslim(env, tid)
-    assert teslim.durum == "uygulandi" and teslim.cevap_yuklendi is False and teslim.done_at is not None
-    notlar = _deneme_notlari(teslim)
-    assert len(notlar) == 1 and notlar[0].startswith("cevap yükleme denemesi #1: ")
-    assert "hatalar: eslesme_HUKDOK_TESLIM_X.csv: RuntimeError: Graph 503" in notlar[0]
-    uyarilar = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert any("cevap dosyası yüklenemedi" in m and "eslesme_HUKDOK_TESLIM_X.csv" in m for m in uyarilar)
-    assert any("eksik yüklendi" in m for m in uyarilar)
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-    ilk_tur = len(sahte_upload.cagrilar)
-
-    # Ertesi gece: engel kalktı → yeniden dener, hepsi gider
-    sahte_upload.patlayan = set()
-    ozet = tk.gece_turu()
-    assert ozet["uygulanan"] is None and ozet["durumlar"] == {}
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is True and teslim.durum == "uygulandi"
-    notlar = _deneme_notlari(teslim)
-    assert len(notlar) == 2 and notlar[1].startswith("cevap yükleme denemesi #2: ") and "hatalar" not in notlar[1]
-    assert len(sahte_upload.cagrilar) == 2 * ilk_tur                     # ikinci turda tüm dosyalar yeniden
-
-    # Üçüncü gece: yüklü teslime dokunulmaz
-    tk.gece_turu()
-    assert len(sahte_upload.cagrilar) == 2 * ilk_tur
-    assert len(_deneme_notlari(_teslim(env, tid))) == 2
-
-
-def test_cevap_yukle_zaten_yuklu_true_yeniden_yuklemez(env, sahte_upload):
-    _anahtar(env, True)
-    tid = _uygulanmis_teslim(env)
-    sayi = len(sahte_upload.cagrilar)
-    assert tc.cevap_yukle(tid) is True
-    assert len(sahte_upload.cagrilar) == sayi
-
-
-def test_cevap_yukle_yalniz_uygulandi_durumundan(env, sahte_upload):
-    _onceki_uygulandi(env)
-    db = env.db()
-    try:
-        tid = tk.teslim_kaydet(icerik=_paket(_dort_satir()), dosya_adi=TESLIM, kaynak="yukleme", db=db)
-        tk.teslimi_isle(tid, otomatik_uygula=False, db=db)
-    finally:
-        db.close()
-    with pytest.raises(ValueError, match="cevap yükleme"):
-        tc.cevap_yukle(tid)
-    with pytest.raises(ValueError, match="Teslim yok"):
-        tc.cevap_yukle(9999)
-    assert sahte_upload.cagrilar == []
-
-
-def test_cevap_yukle_anahtar_kapaliyken_atlanir_defter_degismez(env, sahte_upload, caplog):
-    """Anahtar kapalı: elle uygulama çalışır, cevap SPOOL'da kalır, yükleme denenmez, not düşmez."""
-    with caplog.at_level(logging.INFO):
-        tid = _uygulanmis_teslim(env)
-    teslim = _teslim(env, tid)
-    assert teslim.durum == "uygulandi" and teslim.cevap_yuklendi is False
-    assert sahte_upload.cagrilar == [] and _deneme_notlari(teslim) == []
-    assert (Path(teslim.rapor_dizini) / tk.OZET_DOSYASI).is_file()
-    assert any("veri_teslim_otomasyonu kapalı" in r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
-    assert _cevap_uyarilari(caplog) == []                              # aktarımın satır WARNING'i ayrı
-
-    # Anahtar açılınca ertesi gece turu yükler
-    _anahtar(env, True)
-    tk.gece_turu()
-    assert _teslim(env, tid).cevap_yuklendi is True and len(sahte_upload.cagrilar) > 0
-
-
-def test_cevap_yukle_klasor_envi_yoksa_atlanir(env, sahte_upload, monkeypatch, caplog):
-    """Yazma hedefi env'den AÇIKÇA gelir: tanımsızsa INFO + False, deneme sayılmaz."""
-    _anahtar(env, True)
-    monkeypatch.delenv("SHAREPOINT_FOLDER_TESLIM_NAME")
-    with caplog.at_level(logging.INFO):
-        tid = _uygulanmis_teslim(env)
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is False and sahte_upload.cagrilar == [] and _deneme_notlari(teslim) == []
-    assert any("SHAREPOINT_FOLDER_TESLIM_NAME tanımsız" in r.getMessage() for r in caplog.records)
-    assert _cevap_uyarilari(caplog) == []                              # aktarımın satır WARNING'i ayrı
-    assert tc.cevap_yukle(tid) is False
-
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "03_VERI_TESLIM")
-    assert tc.cevap_yukle(tid) is True
-    assert {c[2] for c in sahte_upload.cagrilar} == {KLASOR}
-
-
-def test_cevap_yukle_eslesme_uretilemezse_false_warning_deneme_sayilir(env, sahte_upload, caplog):
-    tid = _uygulanmis_teslim(env)                    # anahtar kapalı: henüz deneme yok
-    _anahtar(env, True)
-    Path(_teslim(env, tid).spool_path).unlink()      # spool dosyası gitti → xlsx okunamaz
-    with caplog.at_level(logging.INFO):
-        assert tc.cevap_yukle(tid) is False
-    teslim = _teslim(env, tid)
-    assert teslim.durum == "uygulandi" and teslim.cevap_yuklendi is False
-    notlar = _deneme_notlari(teslim)
-    assert len(notlar) == 1 and "eşleşme dosyası üretilemedi" in notlar[0]
-    assert sahte_upload.cagrilar == []
-    assert any("eşleşme dosyası üretilemedi" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-
-
-def test_cevap_yukle_rapor_dizini_yoksa_false_warning(env, sahte_upload, caplog):
-    _anahtar(env, True)
-    db = env.db()
-    try:
-        tid = _defter(db, dosya_adi=TESLIM, sha256="e" * 64, durum=tk.DURUM_UYGULANDI, rapor_dizini=None)
-    finally:
-        db.close()
-    with caplog.at_level(logging.INFO):
-        assert tc.cevap_yukle(tid) is False
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is False and "rapor dizini yok" in _deneme_notlari(teslim)[0]
-    assert any("rapor dizini yok" in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
-
-
-def test_cevap_dene_istisnayi_warning_ile_yutar_durum_uygulandi(env, monkeypatch, caplog):
-    """`teslim_uygula` başarı yolunda cevap katmanının beklenmedik istisnası uygulamayı bozmaz."""
-    _anahtar(env, True)
-
-    def _patla(teslim_id, *, db=None):
-        raise RuntimeError("cevap katmanı çöktü")
-
-    monkeypatch.setattr(tc, "cevap_yukle", _patla)
-    with caplog.at_level(logging.INFO):
-        tid = _uygulanmis_teslim(env)
-    teslim = _teslim(env, tid)
-    assert teslim.durum == "uygulandi" and teslim.cevap_yuklendi is False
-    assert any("cevap yüklemesi yapılamadı" in r.getMessage() and "cevap katmanı çöktü" in r.getMessage()
-               for r in caplog.records if r.levelno == logging.WARNING)
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 5. Gece turu bağlantısı
-# ═══════════════════════════════════════════════════════════════════════════
-
-def test_gece_turu_uygulanan_teslim_ayni_gece_ikinci_kez_denenmez(env, sahte_upload, monkeypatch):
-    """Turda uygulanan teslim `teslim_uygula` içinde bir kez denendi; tur sonu yeniden
-    denemez (retry ertesi geceye kalır). Ertesi gece 2. deneme."""
-    _anahtar(env, True)
-    _onceki_uygulandi(env)
-    db = env.db()
-    try:
-        tid = tk.teslim_kaydet(icerik=_paket(_iki_satir("a"), ozet=f"{ONCEKI} · 2 satır"),
-                               dosya_adi=TESLIM, kaynak="yukleme", db=db)
-    finally:
-        db.close()
-    sahte_upload.patlayan = {"ozet_HUKDOK_TESLIM_X.txt"}
-
-    ozet = tk.gece_turu()
-    assert ozet["uygulanan"] == tid and ozet["durumlar"] == {tid: "uygulandi"}
-    teslim = _teslim(env, tid)
-    assert teslim.uygulayan == "gece-job" and teslim.cevap_yuklendi is False
-    assert len(_deneme_notlari(teslim)) == 1
-    ilk = len(sahte_upload.cagrilar)
-
-    sahte_upload.patlayan = set()
-    tk.gece_turu()
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is True and len(_deneme_notlari(teslim)) == 2
-    assert len(sahte_upload.cagrilar) == 2 * ilk
-
-
-def test_gece_turu_bekleyen_cevaplar_id_sirasiyla_tek_hata_turu_durdurmaz(env, sahte_upload, monkeypatch):
-    """Birden çok bekleyen: hepsi denenir, birinin istisnası diğerini engellemez; `ozet` şekli değişmez."""
-    _anahtar(env, True)
-    t1 = _uygulanmis_teslim(env, dosya_adi="HUKDOK_TESLIM_1.xlsx")   # anahtar açık ama...
-    # ...ilk denemeyi başarısız kılmak için sonradan cevap_yuklendi'yi düşür
-    db = env.db()
-    try:
-        for tid in (t1,):
-            db.get(models.AktarimTeslimi, tid).cevap_yuklendi = False
-        t2 = _defter(db, dosya_adi="HUKDOK_TESLIM_2.xlsx", sha256="f" * 64, durum=tk.DURUM_UYGULANDI,
-                     rapor_dizini=None)
-        db.commit()
-    finally:
-        db.close()
-    sahte_upload.cagrilar.clear()
-
-    orijinal = tc.cevap_yukle
-    sira = []
-
-    def _izle(teslim_id, *, db=None):
-        sira.append(teslim_id)
-        if teslim_id == t2:
-            raise RuntimeError("beklenmedik")
-        return orijinal(teslim_id, db=db)
-
-    monkeypatch.setattr(tc, "cevap_yukle", _izle)
-    ozet = tk.gece_turu()
-    assert set(ozet) == {"etkin", "toparlanan", "tara", "durumlar", "uygulanan"}
-    assert sira == [t1, t2]
-    assert _teslim(env, t1).cevap_yuklendi is True and _teslim(env, t2).cevap_yuklendi is False
-    assert {c[2] for c in sahte_upload.cagrilar} == {"03_VERI_TESLIM/cevap/HUKDOK_TESLIM_1"}
-
-
-def test_cevap_bekleyen_idler_haric(env):
-    db = env.db()
-    try:
-        a = _defter(db, dosya_adi="A.xlsx", sha256="1" * 64, durum=tk.DURUM_UYGULANDI)
-        b = _defter(db, dosya_adi="B.xlsx", sha256="2" * 64, durum=tk.DURUM_UYGULANDI, cevap_yuklendi=True)
-        c = _defter(db, dosya_adi="C.xlsx", sha256="3" * 64, durum=tk.DURUM_UYGULANDI)
-        _defter(db, dosya_adi="D.xlsx", sha256="4" * 64, durum=tk.DURUM_INCELEME)
-        assert tc.cevap_bekleyen_idler(db) == [a, c]
-        assert tc.cevap_bekleyen_idler(db, haric=a) == [c]
-        assert b not in tc.cevap_bekleyen_idler(db)
-    finally:
-        db.close()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 6. G194 — yükleme döngüsü AÇIK transaction dışında
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# G191 `idle_in_transaction_session_timeout` açınca, SharePoint yüklemesi (uploader iç
-# retry'ı dahil) açık transaction içinde sürerse sunucu oturumu keser ve son commit
-# `OperationalError` verir. Döngü başlamadan transaction kapanır; döngü sonrası teslim
-# YENİDEN okunur (bayat nesneye yazılmaz).
-
-@pytest.mark.parametrize("db_verilir", [True, False], ids=["db-verilen", "SessionLocal"])
-def test_g194_yukleme_sirasinda_oturumda_acik_transaction_yok(env, monkeypatch, db_verilir):
-    """Kabul: sahte upload her dosyada `session.in_transaction()` kaydeder → hepsi False;
-    `db` verilen yol (gece turu/teslim_uygula) ve `SessionLocal` yolu ayrı ayrı."""
-    tid = _uygulanmis_teslim(env)                    # anahtar kapalı: henüz deneme yok
-    _anahtar(env, True)
-
-    acilan = []
-
-    def _fabrika():
-        oturum = env.db()
-        acilan.append(oturum)
-        return oturum
-
-    monkeypatch.setattr(tk, "SessionLocal", _fabrika)
-    kayit = []
-
-    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
-        kayit.append((target_filename, [o.in_transaction() for o in acilan]))
-        return {"id": f"item-{len(kayit)}", "name": target_filename}
-
-    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
-
-    if db_verilir:
-        db = _fabrika()
-        try:
-            assert tc.cevap_yukle(tid, db=db) is True
-        finally:
-            db.close()
-    else:
-        assert tc.cevap_yukle(tid) is True
-
-    assert len(acilan) == 1                          # tek oturum: eşleşme üretimi de onu kullandı
-    assert len(kayit) >= 3                           # eşleşme CSV + ozet + satır raporu (+ diğerleri)
-    assert [durum for _, durum in kayit] == [[False]] * len(kayit)
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is True and teslim.durum == "uygulandi"
-    notlar = _deneme_notlari(teslim)
-    assert len(notlar) == 1 and f"{len(kayit)}/{len(kayit)} dosya → {KLASOR}" in notlar[0]
-
-
-def _baska_oturumda_degistir(env, tid, **alanlar):
-    """Döngü sırasında başka bir yolun (ikinci worker, elle müdahale) teslime yazması."""
-    db = env.db()
-    try:
-        teslim = db.get(models.AktarimTeslimi, tid)
-        not_ = alanlar.pop("not_")
-        for ad, deger in alanlar.items():
-            setattr(teslim, ad, deger)
-        teslim.durum_gecmisi = list(teslim.durum_gecmisi or []) + [
-            {"durum": teslim.durum, "at": tk._simdi().isoformat(), "not": not_},
-        ]
-        db.commit()
-    finally:
-        db.close()
-
-
-def test_g194_baska_yol_yukleyip_not_dustuyse_uzerine_yazilmaz_yalniz_not_eklenir(env, monkeypatch, caplog):
-    """Kabul: döngü sırasında `cevap_yuklendi` başka yoldan True olup `durum_gecmisi`ne not
-    düştüyse döngü sonrası yazım o notu SİLMEZ (bayat liste yeniden atanmaz), yalnız
-    deneme notu eklenir; dönüş True (bayrak DB'de True)."""
-    tid = _uygulanmis_teslim(env)
-    _anahtar(env, True)
-    cagri = []
-
-    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
-        cagri.append(target_filename)
-        if len(cagri) == 1:
-            _baska_oturumda_degistir(env, tid, cevap_yuklendi=True, not_="başka yol yükledi")
-        return {"id": f"item-{len(cagri)}", "name": target_filename}
-
-    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
-    with caplog.at_level(logging.INFO):
-        assert tc.cevap_yukle(tid) is True
-
-    teslim = _teslim(env, tid)
-    assert teslim.cevap_yuklendi is True and teslim.durum == "uygulandi"
-    son_iki = [g["not"] for g in teslim.durum_gecmisi[-2:]]
-    assert son_iki[0] == "başka yol yükledi"
-    assert son_iki[1].startswith("cevap yükleme denemesi #1: ") and f"{len(cagri)}/{len(cagri)} dosya" in son_iki[1]
-    assert "hatalar" not in son_iki[1]
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-
-
-def test_g194_dongu_sirasinda_durum_uygulandi_disina_ciktiysa_bayrak_yazilmaz(env, monkeypatch, caplog):
-    """Kabul: döngü sırasında durum `uygulandi` dışına çıktıysa (başka yol) `cevap_yuklendi`
-    YAZILMAZ ve durum ezilmez; deneme notu yeni durumla eklenir, önceki not korunur;
-    dönüş False (bayrak DB'de False), tek WARNING, ERROR yok."""
-    tid = _uygulanmis_teslim(env)
-    _anahtar(env, True)
-    cagri = []
-
-    def _upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
-        cagri.append(target_filename)
-        if len(cagri) == 1:
-            _baska_oturumda_degistir(env, tid, durum=tk.DURUM_BASARISIZ, not_="elle başarısız")
-        return {"id": f"item-{len(cagri)}", "name": target_filename}
-
-    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _upload)
-    with caplog.at_level(logging.INFO):
-        assert tc.cevap_yukle(tid) is False
-
-    teslim = _teslim(env, tid)
-    assert teslim.durum == tk.DURUM_BASARISIZ and teslim.cevap_yuklendi is False
-    son_iki = teslim.durum_gecmisi[-2:]
-    assert son_iki[0]["not"] == "elle başarısız"
-    assert son_iki[1]["durum"] == tk.DURUM_BASARISIZ
-    assert son_iki[1]["not"].startswith("cevap yükleme denemesi #1: ") and f"{len(cagri)}/{len(cagri)} dosya" in son_iki[1]["not"]
-    uyarilar = [r.getMessage() for r in _cevap_uyarilari(caplog)]
-    assert len(uyarilar) == 1 and "durum" in uyarilar[0] and tk.DURUM_BASARISIZ in uyarilar[0]
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
-
-
-@pytest.fixture()
-def pg_fabrika():
-    """Gerçek Postgres scratch DB (init_db koşmuş) + her bağlantıda
-    `SET idle_in_transaction_session_timeout = '1s'` kuran oturum fabrikası.
-
-    Scratch altyapısı `test_migration_path`'ten (gerçek veritabanına yazılmaz); DB
-    yoksa/ulaşılamıyorsa SKIP (3-ortam kuralı, test_g107 `fresh_db` ikizi)."""
-    import os
-
-    from sqlalchemy.pool import NullPool
-    from test_migration_path import _run_init_db, _scratch_database
-
-    url = os.getenv("MIGRATION_TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or ""
-    if not url.startswith("postgresql"):
-        pytest.skip("MIGRATION_TEST_DATABASE_URL/DATABASE_URL postgresql:// değil")
-    admin = create_engine(
-        url, isolation_level="AUTOCOMMIT", poolclass=NullPool, connect_args={"connect_timeout": 3},
-    )
-    try:
-        with admin.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception as exc:
-        admin.dispose()
-        pytest.skip(f"Gerçek Postgres'e ulaşılamadı ({type(exc).__name__}) — G194 dbtest atlandı")
-    try:
-        with _scratch_database(admin, "g194") as scratch:
-            _run_init_db(scratch)
-            engine = create_engine(scratch.url, connect_args={"connect_timeout": 5})
-
-            @event.listens_for(engine, "connect")
-            def _idle_tx_1sn(dbapi_connection, _record):
-                onceki = dbapi_connection.autocommit
-                dbapi_connection.autocommit = True        # SET kendisi transaction açmasın
-                cursor = dbapi_connection.cursor()
-                cursor.execute("SET idle_in_transaction_session_timeout = '1s'")
-                cursor.close()
-                dbapi_connection.autocommit = onceki
-
-            try:
-                yield sessionmaker(bind=engine, autocommit=False, autoflush=False)
-            finally:
-                engine.dispose()
-    finally:
-        admin.dispose()
-
-
-@pytest.mark.dbtest
-def test_g194_pg_idle_in_transaction_1sn_yavas_yukleme_cevap_yuklendi(pg_fabrika, tmp_path, monkeypatch, caplog):
-    """Kabul: gerçek Postgres, `idle_in_transaction_session_timeout=1s`, sahte yükleme dosya
-    başına 1,5 sn uyur → `cevap_yukle` True, `cevap_yuklendi=True` ve deneme notu DB'de.
-    Eski kodda (yükleme açık transaction içinde) sunucu oturumu keser, son commit
-    `OperationalError` verir."""
-    import time
-
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "03_VERI_TESLIM")
-    spool = tmp_path / "teslim_spool"
-    monkeypatch.setenv("TESLIM_SPOOL_DIR", str(spool))
-    rapor = spool / "1_raporlar"
-    rapor.mkdir(parents=True)
-    paket = spool / TESLIM
-    paket.write_bytes(_paket(_dort_satir()))
-    (rapor / tk.OZET_DOSYASI).write_text("özet\n", encoding="utf-8")
-
-    db = pg_fabrika()
-    try:
-        assert db.execute(text("SHOW idle_in_transaction_session_timeout")).scalar() == "1s"
-        db.rollback()
-        app_settings.set_setting_bool(KEY, True, updated_by="test", db=db)
-        tid = _defter(db, dosya_adi=TESLIM, sha256="9" * 64, durum=tk.DURUM_UYGULANDI,
-                      spool_path=str(paket), rapor_dizini=str(rapor), cevap_yuklendi=False)
-    finally:
-        db.close()
-
-    cagri = []
-
-    def _yavas_upload(filepath, target_filename, target_folder_name, content_type="application/pdf", **kw):
-        time.sleep(1.5)
-        cagri.append(target_filename)
-        return {"id": f"item-{len(cagri)}", "name": target_filename}
-
-    monkeypatch.setattr(spu, "upload_file_to_sharepoint", _yavas_upload)
-    db = pg_fabrika()
-    try:
-        with caplog.at_level(logging.INFO):
-            assert tc.cevap_yukle(tid, db=db) is True
-    finally:
-        db.close()
-
-    assert sorted(cagri) == ["eslesme_HUKDOK_TESLIM_X.csv", "ozet_HUKDOK_TESLIM_X.txt"]
-    db = pg_fabrika()
-    try:
-        teslim = db.get(models.AktarimTeslimi, tid)
-        assert teslim.cevap_yuklendi is True and teslim.durum == tk.DURUM_UYGULANDI
-        notlar = _deneme_notlari(teslim)
-    finally:
-        db.close()
-    assert len(notlar) == 1 and notlar[0] == f"cevap yükleme denemesi #1: 2/2 dosya → {KLASOR}"
-    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert (Path(teslim.rapor_dizini) / "eslesme_HUKDOK_TESLIM_X.csv").is_file()
+    assert sahte_upload.cagrilar == [] and teslim.cevap_yuklendi is False

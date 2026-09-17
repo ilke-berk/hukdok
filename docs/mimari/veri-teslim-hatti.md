@@ -1,91 +1,57 @@
-# Veri teslim hattı — SharePoint gelen kutusu → defter → 04:00 kapısı → cevap paketi
+# Veri teslim hattı — panelden yükleme → defter → kapı → elle uygulama
 
-> **Son doğrulama: 2026-09-04 · 88409da** — §1 "Site/kimlik" satırı, §2 madde 2/5 ve §9 prod kurulumu
-> 2026-09-08 · G147 ile yeniden doğrulandı; §3 doğrulama/özet satırları, §4 kapı, §7 `Düzeltme_Logu`
+> **17.09.2026 — SharePoint teslim klasörü yolu KALDIRILDI** (kullanıcı kararı; klasör bağlantısı
+> veri ekibine hiç gitmemişti, defter boştu): G109 gözcüsü (`sharepoint_tara`,
+> `list_folder_children`), 04:00 gece turu + boot telafisi, G110 `cevap/` yüklemesi, G147 ikinci
+> SharePoint kimliği (`TESLIM_SHAREPOINT_*`), `POST /api/admin/aktarim/tara` ve
+> `veri_teslim_otomasyonu` anahtarı koddan çıktı. §1, §2, §5, §6, §9 ve §10 bu koda göre yeniden
+> yazıldı (satır numaraları 17.09 çalışma ağacına aittir); §3/§4/§7 eski doğrulama notlarını taşır.
+>
+> Önceki doğrulama: 2026-09-04 · 88409da; §3 doğrulama/özet satırları, §4 kapı, §7 `Düzeltme_Logu`
 > ve kapsam referansları ile **§7.1 (aktarımın yazma kuralları, G150–G159)** 2026-09-10 · G161 ile
-> `39fd10c` koduna göre yeniden doğrulandı (o bölümlerin satır numaraları bu commit'e aittir; diğer
-> bölümler 88409da/G147 satırlarını taşır). Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
-> Veri ekibine verilen dış sözleşme ayrı dosyadadır:
+> `39fd10c` koduna göre yeniden doğrulandı. Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod
+> haklıdır — bu dosyayı düzelt. Veri ekibine verilen dış sözleşme ayrı dosyadadır:
 > [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) (kod yolu içermez).
 
 Veri ekibi (büro tarafı, MicroKolayOfis master'ını temizleyen ekip) teslim paketini
-(`HUKDOK_TESLIM_*.xlsx`) bir SharePoint klasörüne bırakır; hat dosyayı deftere alır, yapısını
-doğrular, **kuru koşturur**, kapı eşiklerine vurur ve eşik içindeyse gece 04:00'te kendisi
-uygular; her uygulanan teslim için SharePoint'e bir cevap paketi geri yükler. İnsan yalnız
-eşik dışı durumlarda ("inceleme bekliyor") devreye girer. Gerçek yazma yolu
-`scripts/hukdok_aktarim.aktarimi_kos`'tur — hat onu yalnız import eder, değiştirmez
-(`backend/services/teslim_kutusu.py:15-17`).
+(`HUKDOK_TESLIM_*.xlsx`) bize iletir; yönetici paketi admin panelinden yükler. Hat dosyayı
+deftere alır, yapısını doğrular, **kuru koşturur** ve kapı eşiklerine vurur; **uygulamayı daima
+yönetici "Uygula" ile başlatır** (otomatik/gece uygulaması yok). Paketi panelsiz, doğrudan
+uygulamanın yolu CLI'dır (`scripts/hukdok_aktarim.py`, kuru koşu → `--apply`; 15.09 ve Ek-4/Ek-5
+turları bu yoldan uygulandı). Gerçek yazma yolu `scripts/hukdok_aktarim.aktarimi_kos`'tur — hat
+onu yalnız import eder, değiştirmez (`backend/services/teslim_kutusu.py:12-20`).
 
 ```
-veri ekibi ──xlsx──▶ SharePoint <SHAREPOINT_FOLDER_TESLIM_NAME>/gelen/
-                            │  gece 04:00 TR (lider worker) · boot telafisi · admin "Dosya yükle"
-                            ▼
-                 sharepoint_tara  (list_folder_children → id@eTag eleme → indir → sha256)
-                            │
-                            ▼
+veri ekibi ──xlsx──▶ yönetici ──▶ admin paneli "Dosya yükle"  (POST /api/admin/aktarim/teslimler)
+                                          │
+                                          ▼
               aktarim_teslimleri defteri  +  spool  <TESLIM_SPOOL_DIR>/<id>_<dosya>
-                            │
-   alindi → dogrulandi → kuru_kosuldu → [kapı] → uygulaniyor → uygulandi ──▶ cevap/<teslim>/
-                │              │                      │                        (eşleşme CSV,
-            reddedildi   inceleme_bekliyor        basarisiz                     özet, raporlar)
-                          (admin "Uygula")
+                                          │
+   alindi → dogrulandi → kuru_kosuldu → [kapı] → (admin "Uygula") → uygulaniyor → uygulandi
+                │              │                                        │              │
+            reddedildi   inceleme_bekliyor                          basarisiz   rapor dizini: eşleşme CSV,
+                                                                                özet, raporlar (panelden indirilir)
 ```
 
-## 1. İniş alanı — klasör, ad kalıbı, anahtar
+## 1. Giriş — yükleme, spool, kimlik
 
 | Ne | Değer | Kod |
 | --- | --- | --- |
-| Klasör kökü | env `SHAREPOINT_FOLDER_TESLIM_NAME`; tanımsızsa `03_VERI_TESLIM` | `services/teslim_kutusu.py:154`, `:1010-1013`; `.env.example:27-29` |
-| Gelen alt klasörü | `<kök>/gelen` | `services/teslim_kutusu.py:155` |
-| Cevap alt klasörü | `<kök>/cevap/<teslim adı uzantısız>` — **yalnız env tanımlıysa**, varsayılan türetilmez | `services/teslim_cevap.py:79`, `:154-159` |
-| Dosya adı kalıbı | `^HUKDOK_TESLIM_.*\.xlsx$`, harf duyarsız; dışındakiler `atlanan` sayılır | `services/teslim_kutusu.py:157`, `:1051-1054` |
-| Açma/kapama anahtarı | admin paneli `veri_teslim_otomasyonu`, **varsayılan KAPALI**; env'de değil | `services/app_settings.py:50-58`, `:155-157` |
-| Spool dizini | env `TESLIM_SPOOL_DIR`; tanımsızsa `<backend>/data/teslim_spool` (konteynerde `/app/data` volume'u → recreate'i atlatır) | `services/teslim_kutusu.py:213-225`; `.env.example:44-46` |
-| **Site/kimlik** (G147) | Teslim hattının üç Graph çağrısı (gözcü listeleme + indirme, cevap yükleme) `config_type="teslim"` ile gider — tek sabit `TESLIM_SP_CONFIG`. Kimlik: `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET` (secret önce vault, sonra env); **üçünden biri bile boşsa arşiv kimliğine (`SHAREPOINT_*`) düşer, süreç başına TEK INFO**, istisna yok. Site: `TESLIM_SHAREPOINT_SITE_URL` (boşsa `SHAREPOINT_SITE_URL`); drive adı `TESLIM_SP_DRIVE_NAME` > `SP_DRIVE_NAME` > `Belgeler`. Site+drive çözümü `(token, config_type)` anahtarlı `lru_cache(maxsize=4)` — iki config art arda koşunca ikinci turda Graph'a gidilmez; 401'de çağrının KENDİ config'i yenilenir. Arşiv, ofis-no sayacı, `log` listesi, outbox, e-posta ve hukukbot export'u `default` (LexisBio) ile aynen kalır; klasör adları site'tan bağımsızdır | `services/teslim_kutusu.py:171-178`, `:1274`, `:1287`; `services/teslim_cevap.py:532`; `sharepoint/auth_graph.py:19-31`, `:101-115` (`_read_credentials`), `:118-160` (`_get_msal_app` düşüş + INFO `:135-143`); `sharepoint/sharepoint_uploader_graph.py:17-40` (`_site_url_for`/`_drive_name_for`), `:125-142` (`_with_fresh_token_on_401`), `:145-209` (`_get_site_and_drive_id`); `.env.example:31-48` |
+| Giriş yolu | yalnız admin paneli multipart yükleme (`kaynak="yukleme"`); SharePoint klasörü YOK | `backend/routes/admin.py:156-185` |
+| Dosya | yalnız `.xlsx` (aksi 400), 50 MB üstü 413 | `routes/admin.py:40`, `:156-185` |
+| Spool dizini | env `TESLIM_SPOOL_DIR`; tanımsızsa `<backend>/data/teslim_spool` (konteynerde `/app/data` volume'u → recreate'i atlatır) | `services/teslim_kutusu.py:228`; `.env.example` "Veri teslim hattı" bloğu |
+| Açma/kapama anahtarı | **yok** (17.09'da `veri_teslim_otomasyonu` kalktı — açıp kapadığı gözcü ve gece uygulaması yok); DB'de kalan eski satır zararsız, ayar listesi yalnız registry'yi dolaşır | `services/app_settings.py` `SETTINGS_REGISTRY` |
+| SharePoint | hat SharePoint'e **hiç** gitmez; tek SharePoint kimliği arşivindir (`config_type="default"`) | `sharepoint/auth_graph.py:19-24` |
 
-Anahtar kapalıyken: SharePoint'e ne bakılır ne yazılır (gözcü ve cevap yüklemesi INFO ile
-atlanır), gece turu hiçbir durum değiştirmez; **elle yükleme ve elle "Uygula" çalışmaya devam
-eder** (`services/app_settings.py:35-39`, `teslim_kutusu.py:1043-1045`, `:1145-1147`,
-`teslim_cevap.py:487-489`).
+`teslim_kaydet(kaynak=…, sharepoint_item_id=…)` imzası ve `KAYNAKLAR = ("sharepoint", "yukleme")`
+tarihsel satırlar için kalır (`teslim_kutusu.py:137`, `:1008`); yeni satır yalnız `yukleme` ile açılır.
 
-Cevap tarafında ikinci bir kapı daha var: yazma hedefinin kökü env'den **açıkça** gelmek
-zorundadır; okuma tarafındaki `03_VERI_TESLIM` varsayılanı yazma için türetilmez (env yoksa
-INFO + atlanır, defter değişmez). Gerekçe modül şerhinde: cevap dosyaları ortak arşive
-yazılır, kurulumu yapılmamış hedefe varsayılanla yazılmaz; aynı kapı gerçek Graph kimliği
-taşıyan lokal konteynerde koşan testlerin prod SharePoint'e dosya bırakmasını da önler
-(`services/teslim_cevap.py:30-40`, `:490-496`).
+## 2. Yükleme ucu
 
-## 2. Gözcü — `sharepoint_tara`
-
-`services/teslim_kutusu.py:1259-1305`. Sıra:
-
-1. Anahtar kapalıysa listelemeden `{"yeni":0,"yinelenen":0,"atlanan":0}` döner (`:1270-1272`).
-2. `sharepoint_uploader_graph.list_folder_children(<kök>/gelen, config_type=TESLIM_SP_CONFIG)`
-   (`:1274`) — G109'da eklenen tek yeni Graph çağrısı: `GET /drives/{drive}/root:/{folder}:/children`,
-   `$select=id,name,size,eTag,file,lastModifiedDateTime`, `$top=200`, `@odata.nextLink` sonuna
-   kadar izlenir, yalnız `file` anahtarlı öğeler döner. **Klasör yoksa (404) boş liste + WARNING** —
-   "klasör henüz açılmadı" bir kurulum eksiğidir, arıza değil; diğer HTTP hataları yükselir
-   (`backend/sharepoint/sharepoint_uploader_graph.py:483-518`). **Config notu (G147):** çağrı
-   `"teslim"` config'iyle gider — `TESLIM_SHAREPOINT_*` tanımlıysa Hanyaloğlu tenant'ındaki site ve
-   o tenant'ın token'ı, tanımsızsa arşiv kimliği/site'ı (§1 "Site/kimlik"); klasör yolu değişmez.
-3. Ad kalıbına uymayan dosya `atlanan` (`teslim_kutusu.py:1051-1054`).
-4. **Ucuz eleme:** `sharepoint_item_id` kolonuna driveItem id'si ile eTag birlikte
-   (`<id>@<eTag>`, tırnaksız) yazılır; aynı anahtar defterdeyse dosya **indirilmez** ve
-   `yinelenen` sayılır (`teslim_kutusu.py:1016-1020`, `:1055-1058`). eTag değiştiyse (dosya
-   yerinde güncellendi) indirilir; içerik aynıysa `teslim_kaydet` sha256 ile zaten `yinelenen`
-   satırı açar. Ayrı eTag kolonu yok — G109'da model kapsam dışıydı (`:56-63`).
-5. `download_file_from_sharepoint(..., config_type=TESLIM_SP_CONFIG)`
-   (`sharepoint_uploader_graph.py:453-474`; çağrı `teslim_kutusu.py:1287`) →
-   `teslim_kaydet(kaynak="sharepoint")` (`teslim_kutusu.py:1288-1291`).
-
-Tek dosyanın indirme/kayıt hatası **WARNING**, tur sürer; **listeleme** hatası yükselir ve
-tur düzeyindeki kararı çağıran verir — gece turu TEK ERROR basar ve bekleyenleri yine işler,
-boot telafisi tek WARNING ile yutar (`teslim_kutusu.py:1064-1068`, `:1150-1155`, `:1200-1202`).
-
-Yedek giriş yolu: admin panelden multipart yükleme `POST /api/admin/aktarim/teslimler` —
-yalnız `.xlsx` (aksi 400), 50 MB üstü 413, `teslim_kaydet(kaynak="yukleme")` +
-`teslimi_isle(otomatik_uygula=False)` → 201 `{id, durum}`; bozuk/`Sheet`'siz dosya HTTP
-hatası değil `201 + durum="reddedildi"`dir (`backend/routes/admin.py:39`, `:156-185`).
+`POST /api/admin/aktarim/teslimler` → `teslim_kaydet(kaynak="yukleme")` +
+`teslimi_isle(otomatik_uygula=False)` → 201 `{id, durum}`; bozuk/`Sheet`'siz dosya HTTP hatası
+değil `201 + durum="reddedildi"`dir (`backend/routes/admin.py:156-185`). Aynı içerik ikinci kez
+yüklenirse `yinelenen` satırı açılır (§3).
 
 ## 3. Defter — `aktarim_teslimleri`
 
@@ -94,16 +60,16 @@ Model `backend/models.py:1080` (`AktarimTeslimi`), `UploadOutbox` deseninin kard
 
 | Kolon | Anlamı |
 | --- | --- |
-| `dosya_adi`, `sha256`, `kaynak` (`sharepoint` \| `yukleme`) | kimlik; `sha256` içeriğin kimliğidir |
-| `sharepoint_item_id` | `<driveItem id>@<eTag>` ucuz-eleme anahtarı; yükleme yolunda NULL |
+| `dosya_adi`, `sha256`, `kaynak` (`sharepoint` \| `yukleme`) | kimlik; `sha256` içeriğin kimliğidir; 17.09'dan beri yeni satır yalnız `yukleme` |
+| `sharepoint_item_id` | tarihsel (G109 gözcüsünün `<driveItem id>@<eTag>` anahtarı); yükleme yolunda NULL |
 | `spool_path` | `<spool>/<id>_<dosya_adi>` |
 | `durum`, `durum_gecmisi` (JSON `[{"durum","at","not"}, …]`) | durum makinesi + her geçişin zaman damgalı izi (`teslim_kutusu.py:307-319`) |
 | `onceki_teslim_adi`, `zincir_tamam` | `DEGISIKLIK_OZETI` "Önceki teslim" + o teslim defterde `uygulandi` mı (NULL = özet sayfası yok) |
 | `okunan`, `islenen`, `atlanan`, `hata_sayisi`, `alan_degisikligi`, `kart_degisen`, `envanter_denk` | `AktarimSonucu` sayaçları — kuru koşu yazar, gerçek uygulama üzerine yazar (`:349-356`) |
 | `kapi_karari` (`otomatik` \| `inceleme`), `kapi_gerekcesi` | kapı sonucu; gerekçe `;` ayraçlı ihlal listesi |
 | `rapor_dizini` | `<spool>/<id>_raporlar` (`:329-334`) |
-| `cevap_yuklendi` | cevap paketi SharePoint'e tam gitti mi (NOT NULL, default false) |
-| `uygulayan` | admin e-postası ya da `gece-job` (`:176`) |
+| `cevap_yuklendi` | tarihsel (G110 SharePoint cevap yüklemesi); 17.09'dan beri yazılmaz, default false |
+| `uygulayan` | admin e-postası (`gece-job` imzası `GECE_UYGULAYAN`, `:151`, üretimde çağıran yok) |
 | `hata_mesaji` | `basarisiz`/`reddedildi` sebebi, ≤ 2000 karakter (`:199`) |
 | `created_at`, `updated_at`, `done_at` | `done_at` nihai duruma geçiş anı (`:318-319`) |
 
@@ -115,7 +81,7 @@ Model `backend/models.py:1080` (`AktarimTeslimi`), `UploadOutbox` deseninin kard
   açılır (notunda ilk id), spool'a yazılmaz; yarışta IntegrityError yakalanıp ikinci kayıt
   `yinelenen`e düşer (`teslim_kutusu.py:703-741`, `:754-767`).
 - `idx_aktarim_teslimleri_bekleyen` — `created_at` üzerinde, dört bekleyen durumla partial;
-  gece turunun ve boot telafisinin tek tarama deseni.
+  17.09'a dek gece turunun tarama deseniydi; index yerinde kalır (DROP gerekmez).
 
 ### Durum makinesi
 
@@ -128,16 +94,18 @@ Model `backend/models.py:1080` (`AktarimTeslimi`), `UploadOutbox` deseninin kard
 | `reddedildi` | yapı doğrulaması geçemedi — nihai, **WARNING** + bildirim | `teslim_dogrula` (`:770-797`) |
 | `dogrulandi` | `Sheet` var, zorunlu başlıklar var, zincir bakıldı | `teslim_dogrula` |
 | `kuru_kosuldu` | `aktarimi_kos(dry_run=True)` koştu; sayaçlar deftere, raporlar spool'a | `teslim_kuru_kos` (`:800-827`) |
-| `inceleme_bekliyor` | kapı eşik dışı — insan kararı; bildirim | `kapi_degerlendir` (`:865-885`), `acilis_toparla`, `_tek_uygulama_incelemeye` |
+| `inceleme_bekliyor` | kapı eşik dışı — insan kararı; bildirim | `kapi_degerlendir`, `acilis_toparla` (`:1305`) |
 | `uygulaniyor` | gerçek yazım sürüyor — **çökme izi**, commit'li (`:910-911`) | `_teslim_uygula` (`:899-941`) |
-| `uygulandi` | commit oldu; nihai, bildirim, cevap paketi denenir | `_teslim_uygula` |
+| `uygulandi` | commit oldu; nihai, bildirim, eşleşme + havuz farkı dosyaları rapor dizinine | `_teslim_uygula` (`:1227`) |
 | `basarisiz` | uygulama istisnası ya da envanter kapısı geri aldı — nihai, **TEK ERROR** + bildirim | `_basarisiz` (`:415-423`) |
 
 Geçişler tek yönlüdür; kapı `otomatik` derse durum **değişmez** (`kuru_kosuldu` kalır,
 uygulama ayrı adımdır), `inceleme_bekliyor`dan yeniden değerlendirme geriye gitmez — yalnız
-karar/gerekçe tazelenir (`:865-871`). `teslimi_isle` (`:944-972`) doğrula → kuru koş → kapı →
+karar/gerekçe tazelenir. `teslimi_isle` (`:1274`) doğrula → kuru koş → kapı →
 (`otomatik_uygula` ve kapı `otomatik` ise) uygula zincirini tek çağrıda yürütür; nihai ya da
-`uygulaniyor` satıra **dokunmaz**, mevcut durumu döner.
+`uygulaniyor` satıra **dokunmaz**, mevcut durumu döner. 17.09'dan beri üretimde bütün çağıranlar
+(admin yükleme ve kuru-koş uçları) `otomatik_uygula=False` verir — `True` dalını yalnız durum
+makinesi testleri koşar.
 
 Yapı doğrulaması (`_yapi_dogrula`, `services/teslim_kutusu.py:1006`): dosya açılmalı, `Sheet`
 sayfası olmalı, başlık satırında `sistem_no` **ve** `dosya_no` bulunmalı (`ZORUNLU_BASLIKLAR`,
@@ -185,7 +153,8 @@ defter oturumu aktarım süresince kapalı transaction'dadır (önce commit)
 
 `kapi_ihlalleri` (`services/teslim_kutusu.py:1207-1235`) kuralların **hepsini** değerlendirir ve
 gerekçeyi `;` ile birleştirir — admin "neden inceleme" sorusuna tek bakışta cevap alsın, ilk
-ihlalde durup diğerleri gizlenmesin. Boş liste = `otomatik`.
+ihlalde durup diğerleri gizlenmesin. Boş liste = `otomatik` (= "eşik içi"; uygulamayı yine
+yönetici başlatır — otomatik uygulama 17.09'da kalktı).
 
 | Kural etiketi (`KAPI_KURALLARI`, `:193-196`) | Koşul | Eşik / kaynak |
 | --- | --- | --- |
@@ -216,91 +185,54 @@ gerekçeye girmez ama `fark_kalemleri` (`:817`) değişmediği için bildirim g�
 `ozet.txt` "yapı farkı" satırında bilgi olarak listelenir.
 
 Eşikler env'den **çağrı anında** okunur (`kapi_esikleri`, `teslim_kutusu.py:305`;
-`.env.example:32-43` üçünü yorumlu, varsayılanlarıyla taşır). Recreate'siz `.env` değişikliği
+`.env.example` "Veri teslim hattı" bloğu üçünü yorumlu, varsayılanlarıyla taşır). Recreate'siz `.env` değişikliği
 yine gelmez ama admin paneli `esikler` alanında anlık değeri görür (`routes/admin.py:101-121`).
 Sayı olmayan değer WARNING + varsayılan (`teslim_kutusu.py:228-236`).
 
 `KAPI_KURALLARI` dışında iki gerekçe etiketi daha `kapi_gerekcesi`ne yazılır:
-`uygulama_kesildi` (açılışta `uygulaniyor` bulunan satır, `teslim_kutusu.py:975-1003`) ve
-`tek_uygulama` (`:159`, aşağıda §5).
+`uygulama_kesildi` (açılışta `uygulaniyor` bulunan satır, `acilis_toparla`, `teslim_kutusu.py:1305`)
+ve tarihsel `tek_uygulama` (17.09'a dek gece turunun ikinci uygulanabilir teslimi; artık üretilmez).
 
-## 5. Zamanlama — gece turu, boot telafisi, gündüz
+## 5. Zamanlama — açılış toparlaması ve admin paneli
 
-**Gece turu `gece_turu`** (`services/teslim_kutusu.py:1136-1161`) APScheduler'a `id="veri_teslim"`,
-`CronTrigger(hour=4, minute=0, Europe/Istanbul)`, `misfire_grace_time=3600` ile kayıtlıdır ve
-**yalnız lider worker'da** koşar (`backend/api.py:232-239`; lider bloğu `:185`). 04:00'ün
-gerekçesi kodda: host `pg_dump`'ı (03:30 TR) bitmiş olur = doğal geri dönüş noktası; 00:00
-rapor ve 02:30 dönüşüm retry'ı ile çakışmaz; 06:00 süre taramasından önce biter; envanter
-kapısı eşzamanlı yüklemeye karşı muhafazakâr olduğundan mesai dışı şarttır (`api.py:227-231`).
-Tur sırası:
+**Zamanlayıcı job'ı YOK** (17.09: `id="veri_teslim"` 04:00 TR gece turu kalktı). Lider worker'ın
+lifespan bloğu yalnız `boot_toparla`yı daemon thread'de bir kez başlatır (`backend/api.py:246-251`;
+`services/teslim_kutusu.py:1337`): `acilis_toparla` (`:1305`) `uygulaniyor`da kalmış satırları
+`inceleme_bekliyor`a düşürür (gerekçe `uygulama_kesildi`) — aktarım TEK transaction'dır, kesilen
+uygulama ya tamamen yazdı ya hiç; hangisi olduğunu insan raporlardan görür ve yeniden "Uygula"
+der. İstisna tek WARNING ile yutulur; bekleyen satırlar işlenmez, uygulama yapılmaz.
 
-1. anahtar kapalıysa çık (hiçbir durum değişmez, `teslim_kutusu.py:1145-1147`);
-2. `acilis_toparla` — `uygulaniyor`da kalmış satırları `inceleme_bekliyor`a düşürür (`:975-1003`);
-3. `sharepoint_tara` — hata **tur başına TEK ERROR**, bekleyenlerin işlenmesini engellemez
-   (dün indirilen paket bugün yine uygulanabilir, `:1150-1155`);
-4. `alindi` / `dogrulandi` / `kuru_kosuldu` satırlar `created_at` sırasıyla
-   `teslimi_isle(otomatik_uygula=True)` ile — `inceleme_bekliyor` satırlarına **dokunulmaz**
-   (insan bekliyor; her gece 90 sn'lik kuru koşuyu tekrarlamak boşuna, `:146-148`);
-5. **aynı turda en fazla BİR teslim uygulanır**: ilki uygulandıysa sonrakiler
-   `otomatik_uygula=False` ile koşar ve kapı "otomatik" dese bile `tek_uygulama` gerekçesiyle
-   `inceleme_bekliyor`a alınır + bildirim (`:1091-1133`);
-6. `uygulandi` + `cevap_yuklendi=false` kalan teslimlerin cevap paketi yeniden denenir — bu
-   turda uygulanan hariç, az önce denendi (`:1159`, `:1164-1179`).
-
-Otomatik uygulama `uygulayan="gece-job"` imzasıyla yapılır (`teslim_kutusu.py:176`, `:967-968`).
-
-**Boot telafisi `boot_catch_up`** (`teslim_kutusu.py:1182-1202`): lider açılışında daemon
-thread'de bir kez (`api.py:257-262`; `deadline_scanner.boot_catch_up_scan` deseni,
-`services/deadline_scanner.py:469`). `acilis_toparla` anahtardan **bağımsız** koşar (kesilmiş
-elle uygulama da toparlanmalı); anahtar açıksa tarama + yalnız `alindi`/`dogrulandi`
-satırlara `teslimi_isle(otomatik_uygula=False)`. **Uygulama yalnız cron'dadır**;
-`kuru_kosuldu` satırlar her restart'ta yeniden kuru koşturulmaz (`teslim_kutusu.py:149-151`).
-Her istisna tek WARNING ile yutulur — thread'den taşan istisna kimseye ulaşmaz, 04:00 turu
-asıl iştir.
-
-**Gündüz (admin paneli, "Veri Teslimleri" sekmesi, `frontend/src/components/admin/DeliveryInboxCard.tsx`):**
+**Admin paneli, "Veri Teslimleri" sekmesi** (`frontend/src/components/admin/DeliveryInboxCard.tsx`):
 
 | Uç | Ne yapar | Kod |
 | --- | --- | --- |
-| `GET /api/admin/aktarim/teslimler` | liste (en yeni önce, `limit` 1–500) + `esikler` + `etkin` | `routes/admin.py:101-121` |
-| `GET …/teslimler/{id}` | tek teslim, `durum_gecmisi` + `spool_path` dahil | `:124-129` |
+| `GET /api/admin/aktarim/teslimler` | liste (en yeni önce, `limit` 1–500) + `esikler` | `routes/admin.py:102-121` |
+| `GET …/teslimler/{id}` | tek teslim, `durum_gecmisi` + `spool_path` dahil | `:124` |
 | `POST …/teslimler` | multipart yükleme (§2) | `:156-185` |
-| `POST …/teslimler/{id}/kuru-kos` | `teslimi_isle(otomatik_uygula=False)`; yalnız `ISLENEBILIR_DURUMLAR`, aksi 409 | `:188-222` |
-| `POST …/teslimler/{id}/uygula` | `teslim_uygula(uygulayan=<admin e-postası>)`; `onay` şart; yalnız `kuru_kosuldu`/`inceleme_bekliyor`, aksi 409 | `:225-261` |
-| `GET …/teslimler/{id}/raporlar`, `…/raporlar/{ad}` | rapor dizinindeki `.csv`/`.txt` listesi ve indirme (yol bileşeni 400) | `:264-308` |
-| `POST /api/admin/aktarim/tara` | **yer tutucu** — G109 gözcüsünü ÇAĞIRMAZ, sıfır + `not` döner (açık kalem, §9) | `:311-325` |
+| `POST …/teslimler/{id}/kuru-kos` | `teslimi_isle(otomatik_uygula=False)`; yalnız `ISLENEBILIR_DURUMLAR`, aksi 409 | `:188` |
+| `POST …/teslimler/{id}/uygula` | `teslim_uygula(uygulayan=<admin e-postası>)`; `onay` şart; yalnız `kuru_kosuldu`/`inceleme_bekliyor`, aksi 409 | `:225` |
+| `GET …/teslimler/{id}/raporlar`, `…/raporlar/{ad}` | rapor dizinindeki `.csv`/`.txt` listesi ve indirme (yol bileşeni 400) | `:264`, `:276` |
 
-Panel "Uygula"da mesai saatinde (09:00–18:00 TR) uyarı metni gösterir, karar kullanıcıda
-(`DeliveryInboxCard.tsx:136`, `:492-497`). Elle "Uygula" anahtardan bağımsızdır.
+Panel "Uygula"da mesai saatinde (09:00–18:00 TR) uyarı metni gösterir, karar kullanıcıda —
+envanter kapısı eşzamanlı yüklemeye karşı muhafazakâr olduğundan uygulama mesai dışında önerilir.
 
-## 6. Cevap paketi — `services/teslim_cevap.py`
+## 6. Cevap dosyaları — `services/teslim_cevap.py`
 
-Her `uygulandi` teslim için `<kök>/cevap/<teslim adı uzantısız>/` altına (`:78-79`,
-`:149-159`) rapor dizinindeki **bütün** `.csv`/`.txt` dosyaları yüklenir (`:460-468`,
-`:519-526`):
+SharePoint `cevap/` klasörüne yükleme 17.09'da kalktı. Dosyalar teslimin **rapor dizininde**
+(`<spool>/<id>_raporlar`) üretilir; yönetici panelin rapor uçlarından indirip veri ekibine iletir.
 
 | Dosya | İçerik | Üreten |
 | --- | --- | --- |
-| `eslesme_<teslim>.csv` | `Sheet`'teki her satır için `sistem_no, dosya_no, case_id, tracking_no, klasor_no_2, tku_no, case_party_id, durum (ESLESTI/ESLESMEDI), sebep` — Talep #9 (`ESLESME_BASLIKLARI`, `:81-86`) | `eslesme_csv_uret` (`:242-290`), yükleme anında |
-| `ozet_<teslim>.txt` | `ozet_metni(sonuc)` + son satırda kapı kararı (+ gerekçe); rapor dizinindeki `ozet.txt`in yüklenirken aldığı ad | `teslim_kutusu.py:204`, `:375-400`; ad `teslim_cevap.py:466` |
-| `deger-havuzu-farki_<teslim>.csv` | `DEGER_HAVUZLARI` ↔ referans listeleri iki yönlü fark (`havuz, liste, yon, deger`); **fark yoksa dosya yok**, bayat kopya silinir | `havuz_farki_csv_yaz` (`:426-437`); çağrı `teslim_kutusu.py:506-531` |
-| `satir-raporu_<damga>.csv`, `kardes-foy-celiskileri_<damga>.csv` | aktarım scriptinin kendi raporları — yalnız sorunlu satır/çelişki varsa doğar | `scripts/hukdok_aktarim.py:2290-2318` |
-| `kuru-kosu-ozeti.txt`, `uygulama-ozeti.txt` | iki koşunun `ozet_metni` çıktısı | `teslim_kutusu.py:821`, `:921` |
+| `eslesme_<teslim>.csv` | `Sheet`'teki her satır için `sistem_no, dosya_no, case_id, tracking_no, klasor_no_2, tku_no, case_party_id, durum (ESLESTI/ESLESMEDI), sebep` — Talep #9 (`ESLESME_BASLIKLARI`, `teslim_cevap.py:56`) | `eslesme_csv_uret` (`:193`); uygulama başarı yolunda `teslim_kutusu._eslesme_dene` (`:533`, çağrı `:1261`) |
+| `ozet.txt` | `ozet_metni(sonuc)` + son satırda kapı kararı (+ gerekçe) | `teslim_kutusu._ozet_dosyasi_yaz` |
+| `deger-havuzu-farki_<teslim>.csv` | `DEGER_HAVUZLARI` ↔ referans listeleri iki yönlü fark (`havuz, liste, yon, deger`); **fark yoksa dosya yok**, bayat kopya silinir | `havuz_farki_csv_yaz` (`teslim_cevap.py:377`); çağrı `teslim_kutusu._havuz_farki_dene` (`:553`) |
+| `satir-raporu_<damga>.csv`, `kardes-foy-celiskileri_<damga>.csv` | aktarım scriptinin kendi raporları — yalnız sorunlu satır/çelişki varsa doğar | `scripts/hukdok_aktarim.py` |
+| `kuru-kosu-ozeti.txt`, `uygulama-ozeti.txt` | iki koşunun `ozet_metni` çıktısı | `teslim_kutusu.py` |
 
 Eşleşme dosyasında `sebep` **satır numarasıyla** eşlenir (aynı SistemNo dosyada iki kez
-geçebilir) ve rapor dizinindeki **en yeni** `satir-raporu_*.csv`'den okunur (`:54-56`,
-`:179-203`). CSV biçimi scriptle aynı: UTF-8 BOM + `;` (`:170-176`).
-
-Yükleme sırası: `teslim_uygula` başarı yolunda **bir** deneme (admin "Uygula" da buradan
-geçer, `teslim_kutusu.py:888-896`, `:403-412`); kalanı gece turu. Kısmi başarısızlık teslimi
-`basarisiz` **yapmaz** — yazım zaten commit'li; dosya başına WARNING, `cevap_yuklendi=false`
-kalır, her deneme `durum_gecmisi`ne durum değişmeden "cevap yükleme denemesi #N" notu düşer
-(`teslim_cevap.py:41-44`, `:90`, `:527-546`). Anahtar kapalı / env tanımsız atlamaları deneme
-**sayılmaz** (`:484-496`).
-
-Bilinen sınır (modül şerhi `:45-51`): `cevap/<teslim>/` ara klasörleri Graph'ın yol-adresli
-PUT davranışıyla açılır; kod tabanında bu davranışa yaslanan başka çağrı yok — ilk gerçek
-cevap yüklemesi gözle doğrulanmalı.
+geçebilir) ve rapor dizinindeki **en yeni** `satir-raporu_*.csv`'den okunur (`_sebepleri_oku`,
+`teslim_cevap.py:147`). CSV biçimi scriptle aynı: UTF-8 BOM + `;` (`_csv_yaz`, `:133`).
+Eşleşme/havuz dosyası üretim hatası WARNING'dir, teslim durumunu değiştirmez.
 
 ## 7. İkinci faz sayfaları — `Düzeltme_Logu`, `DEGER_HAVUZLARI`, kapsam sayfaları
 
@@ -618,11 +550,11 @@ G179'da 14333'e birleşmişti); `--apply` 13.09 gece uygulandı (canlı kart 14.
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin
-  düzelteceği şeydir, nöbetçi alarmı değil), tek dosya indirme hatası, cevap yükleme hatası.
+  düzelteceği şeydir, nöbetçi alarmı değil), eşleşme/havuz dosyası üretim hatası.
 - Nihai `basarisiz` teslim başına **TEK ERROR**. Envanter kapısı kırmızı çıktığında o ERROR'u
   `aktarimi_kos` zaten basar ("Aktarım GERİ ALINDI", `scripts/hukdok_aktarim.py:2267-2272`);
   servis ikinci ERROR yazmaz, yalnız defteri işler (`teslim_kutusu.py:38-42`, `:933-940`).
-- Gece turunda tarama hatası tur başına tek ERROR (`:1154-1155`); boot telafisinde WARNING.
+- Açılış toparlaması (`boot_toparla`) istisnası tek WARNING.
 - Bildirim (`bildir`, `:534-581`): `inceleme_bekliyor` / `reddedildi` / `basarisiz` / `uygulandi`
   geçişlerinde `ADMIN_EMAILS` kümesine uygulama içi bildirim, `type="veri_teslim"`,
   `dedupe_key = teslim:<id>:<durum>:<alıcı>` (alıcı sonda — G082 dersi, `:439-443`).
@@ -634,39 +566,21 @@ G179'da 14333'e birleşmişti); `--apply` 13.09 gece uygulandı (canlı kart 14.
 - **Kart yaratılmaz.** Eşleşmeyen satır raporda kalır; kart açmak ofis dosya numarasını
   SharePoint sayacından atomik tahsis ister, çevrimdışı hattın işi değildir
   (`scripts/hukdok_aktarim.py:44-47`). Eşleşme köprüsü DosyaNo ↔ `klasor_no_2`.
-- **İlk teslim daima inceleme** (`ilk_teslim` kuralı) — defter boşken otomatik uygulama yok;
-  ilk teslimi insan "Uygula" der. Zincir o teslimden başlar: "Önceki teslim: —" yalnız defter
+- **İlk teslim daima inceleme** (`ilk_teslim` kuralı); her teslimi zaten insan "Uygula" der. Zincir o teslimden başlar: "Önceki teslim: —" yalnız defter
   boşken başlangıçtır (G156, §3); prod'da başlangıç paketi 04.09'dur ve teslim hattından
   (defter üzerinden) uygulanmalıdır — süreç adımı, kod değil (plan 08.09 K3).
-- **Aynı gecede tek uygulama** (§5).
 - **`DEGISIKLIK_OZETI` yokken zincir denetlenmez ve kapı durmaz:** `zincir_tamam=NULL`
   (`services/teslim_kutusu.py:1141`), `kapi_ihlalleri` yalnız `is False`'u `zincir_eksik`
-  sayar (`:1215`, §4 tablosu) — sayfasız paket öteki eşiklerin içindeyse otomatik uygulanır.
+  sayar (§4 tablosu) — sayfasız paket öteki eşiklerin içindeyse kapı `otomatik` der.
   Sözleşme bunu açıkça söyler ("her teslime ekleyin"); NULL'ı da inceleme saydırmak
   plan §8'de açık kalem.
-- **`POST /api/admin/aktarim/tara` yer tutucudur**: panelin "Şimdi tara" düğmesi
-  (`DeliveryInboxCard.tsx:238`) gözcüyü çağırmaz, sıfır + `not` döner
-  (`routes/admin.py:311-325`). Sebep G109 raporunda: G108 testi yanıtı birebir kilitliyor,
-  uç + test tek küçük görev.
 - **Frontend'de kapsam dışı föy rozeti yok**: `get_case` çıktısındaki `foyler[]`
   (`kapsam_durumu` dahil) hazır, kart panelinde gösterim sonraki tur.
-- **Cevap klasörü ara klasör davranışı** koddan kanıtlanmadı (§6); ilk gerçek yükleme gözle
-  doğrulanır.
-- **Prod kurulumu insan adımıdır (G147 sonrası, ikinci site):** veri ekibi Hanyaloğlu
-  tenant'ındadır, arşiv site'ı LexisBio'da; tenant'lar arası paylaşım misafir davetine düşüp
-  ulaşmadığı için teslim hattı Hanyaloğlu tenant'ındaki `hukdok_arsiv` site'ına taşınır (arşiv
-  taşınmaz). Sıra: (1) o site'ın `Belgeler` drive'ında `03_VERI_TESLIM/gelen` (veri ekibine
-  düzenleme) ve `03_VERI_TESLIM/cevap` (görüntüleme) klasörleri açılıp paylaşılır — aynı tenant,
-  davet gerekmez; (2) Hanyaloğlu tenant'ındaki uygulama kaydının app-only `Sites.ReadWrite.All`
-  (ya da `Sites.Selected` + site izni) iznine sahip olduğu Entra'da teyit edilir, secret bitiş
-  tarihi `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`'a yazılır (lifespan ikinci çağrı,
-  `backend/api.py:133`); (3) prod `.env`'e `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` /
-  `CLIENT_SECRET` / `SITE_URL` + `SHAREPOINT_FOLDER_TESLIM_NAME` (cevap yüklemesi onsuz HİÇ
-  çalışmaz) ve isteniyorsa eşikler → `docker compose up -d` (recreate; `restart` env'i almaz,
-  bayat upstream için frontend de recreate edilir); (4) admin panelden anahtar — ilk teslim daima
-  `inceleme_bekliyor`; (5) LexisBio site'ındaki eski `03_VERI_TESLIM` (03.09 lokal testinin izi)
-  kullanıcı kararıyla silinir ya da bırakılır. Dörtlü tanımsız kaldığı sürece hat arşiv
-  kimliği/site'ıyla çalışmaya devam eder (§1 "Site/kimlik").
+- **SharePoint teslim klasörü yolu kapalıdır (17.09.2026, kullanıcı kararı):** veri ekibine
+  klasör bağlantısı verilmez; paket bize iletilir, yönetici yükler (ya da CLI). Hanyaloğlu
+  tenant'ındaki `hukdok_arsiv` site'ında ve LexisBio site'ındaki `03_VERI_TESLIM` klasörleri
+  (03.09/08.09 hazırlığı) ile prod `.env`'de kalmış olabilecek `TESLIM_SHAREPOINT_*` /
+  `SHAREPOINT_FOLDER_TESLIM_NAME` satırları kod tarafından okunmaz — temizliği insan adımıdır.
 - Ters yön (bizim veriyi sigorta şirketi Excel'ine işlemek), WhatsApp/e-posta ekini otomatik
   okuma, mükerrer kart birleştirme (D6) — bilinçli kapsam dışı (plan §5).
 
@@ -674,16 +588,14 @@ G179'da 14333'e birleşmişti); `--apply` 13.09 gece uygulandı (canlı kart 14.
 
 | Konu | Dosya |
 | --- | --- |
-| Durum makinesi, gözcü, gece turu, kapı, bildirim | `backend/services/teslim_kutusu.py` |
-| Eşleşme CSV, cevap yükleme, `DEGER_HAVUZLARI` farkı | `backend/services/teslim_cevap.py` |
+| Durum makinesi, kapı, bildirim, açılış toparlaması | `backend/services/teslim_kutusu.py` |
+| Eşleşme CSV, `DEGER_HAVUZLARI` farkı | `backend/services/teslim_cevap.py` |
 | Gerçek yazma yolu, envanter kapısı, `Düzeltme_Logu`, kapsam sayfaları | `backend/scripts/hukdok_aktarim.py` (`backend/scripts/README.md`) |
 | Admin uçları | `backend/routes/admin.py` |
 | Defter modeli + migrasyon madde 39/40 | `backend/models.py:1080`, `backend/database.py:913-919` |
-| Zamanlayıcı kaydı + boot telafisi | `backend/api.py:227-262` |
-| Graph klasör listeleme | `backend/sharepoint/sharepoint_uploader_graph.py:483-518` — bkz. [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
-| İkinci kimlik/site (`teslim` config'i, düşüş kuralı) | `backend/sharepoint/auth_graph.py:19-31`, `:118-160`; `backend/sharepoint/sharepoint_uploader_graph.py:17-40`, `:145-209` |
+| Açılış toparlama thread'i | `backend/api.py:246-251` |
 | Veri ekibine verilen sözleşme | [`docs/veri-teslim/SOZLESME.md`](../veri-teslim/SOZLESME.md) |
 | Plan ve açık kalanlar | [`docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`](../plan/veri-teslim-otomasyonu-plani-2026-09-03.md) |
 | Veri ekibine verilen bilgilendirme (sütun/sayfa/değer ayrıntısı, makine-okur özet) | [`docs/veri-teslim/BILGILENDIRME_2026-09-03.md`](../veri-teslim/BILGILENDIRME_2026-09-03.md) (sürüm 1.1; dosya adı sabit — yol veri ekibinde) |
 | Aşama katmanı, havuz, status koruması, kök→müvekkil, başvuru tarihi, yazım (§7.1) | `backend/scripts/hukdok_aktarim.py`, `backend/managers/stage_decisions.py`, `backend/managers/case_manager.py:1041-1082`, `backend/managers/reference_lists.py` (`tr_title`), `backend/managers/seed_data.py:427-467` |
-| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g109_teslim_gozcusu.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_g147_teslim_sharepoint_kimligi.py`; §7.1 kuralları: `test_g150_asama_kurali.py`, `test_g151_havuz_kurali.py`, `test_g152_status_koruma.py`, `test_g153_dosyano_koku.py`, `test_g155_basvuru_tarihi.py`, `test_g156_delta_ve_zincir.py`, `test_g159_tr_title.py` |
+| Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_teslim_klasoru_kaldirildi.py` (kaldırılanın bekçisi); §7.1 kuralları: `test_g150_asama_kurali.py`, `test_g151_havuz_kurali.py`, `test_g152_status_koruma.py`, `test_g153_dosyano_koku.py`, `test_g155_basvuru_tarihi.py`, `test_g156_delta_ve_zincir.py`, `test_g159_tr_title.py` |

@@ -761,7 +761,7 @@ tr-TR, `null` "—"; sayı/para sağa yaslı).
 
 `SETTINGS_REGISTRY["rapor_asistani"]` (`services/app_settings.py:66-75`): label "Rapor asistanı (AI)",
 **varsayılan KAPALI** (`default: False`, `:67` — Gemini maliyetli özellikler repo kültüründe kapalı doğar;
-`client_notice_enabled`, `veri_teslim_otomasyonu` gibi). Okuma `rapor_asistani_etkin()` (`:178`);
+`client_notice_enabled` gibi). Okuma `rapor_asistani_etkin()` (`:178`);
 `GET/PUT /api/admin/settings` (`routes/admin.py:50`, `:56`) ile panelden açılır — Yönetim →
 Özellikler kartı registry'den otomatik listeler. Kapalıyken `/chat` 409 (`routes/reports.py:412-413`).
 

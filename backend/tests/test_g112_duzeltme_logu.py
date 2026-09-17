@@ -654,7 +654,6 @@ def teslim_env(tmp_path, monkeypatch):
     """G110 `env` ikizi: sqlite + defter/föy/bildirim index'leri + spool + iki kart + admin."""
     monkeypatch.setenv("TESLIM_SPOOL_DIR", str(tmp_path / "teslim_spool"))
     monkeypatch.setenv("ADMIN_EMAILS", ADMIN)
-    monkeypatch.setenv("SHAREPOINT_FOLDER_TESLIM_NAME", "03_VERI_TESLIM")
     for ad in ("TESLIM_KAPI_HATA_ORANI", "TESLIM_KAPI_ESLESMEYEN_ORANI", "TESLIM_KAPI_ALAN_DEGISIKLIGI"):
         monkeypatch.delenv(ad, raising=False)
     engine = _engine()
@@ -665,7 +664,6 @@ def teslim_env(tmp_path, monkeypatch):
     maker = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     monkeypatch.setattr(tk, "SessionLocal", maker)
     monkeypatch.setattr(app_settings, "SessionLocal", maker)
-    monkeypatch.setattr(spu, "list_folder_children", lambda folder_name, **kw: [])
     monkeypatch.setattr(spu, "upload_file_to_sharepoint",
                         lambda *a, **kw: (_ for _ in ()).throw(AssertionError("upload beklenmiyor")))
     db = maker()
@@ -723,8 +721,8 @@ def test_teslim_havuz_farki_csv_cevap_paketinde_bildirim_dedupe_liste_sabit(tesl
             f"İstinaf Karar Durumu;appeal_decisions;{tc.YON_TESLIMDE_VAR};Kaldırma/Yeniden Hüküm",
             f"İstinaf Karar Durumu;appeal_decisions;{tc.YON_BIZDE_VAR};Başvuru Ret",
         ]
-        # cevap paketi dosyayı kendi adıyla alır
-        assert dosya.name in {ad for _yol, ad in tc._cevap_dosyalari(rapor, "HUKDOK_TESLIM_H")}
+        # admin rapor ucu dosyayı kendi adıyla listeler (SharePoint cevap yüklemesi 17.09 kalktı)
+        assert dosya.parent == rapor and dosya.suffix == ".csv"
 
         bildirimler = _bildirimler(teslim_env)
         assert len(bildirimler) == 1

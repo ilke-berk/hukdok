@@ -10,9 +10,12 @@ spool'a girer; buradaki fonksiyonlar durum makinesini yürütür:
     yinelenen (aynı sha256 daha önce alınmış; nihai, işlenmez)
 
 Bu modül **hiçbir uç ve zamanlayıcı açmaz**: admin uçları G108'in, cevap
-paketi G110'un işidir; SharePoint gözcüsü (`sharepoint_tara`), gece turu
-(`gece_turu`) ve boot telafisi (`boot_catch_up`) G109 ile buraya geldi ama
-zamanlayıcı KAYDI `api.py` lifespan'indedir (lider worker, 04:00 TR). Gerçek
+paketi dosyaları G110'un işidir. **Teslim kanalı yalnız admin panelinden yükleme**
+(`kaynak="yukleme"`) ve CLI'dır (`scripts/hukdok_aktarim.py`): SharePoint teslim klasörü
+yolu — G109 gözcüsü (`gelen/`), 04:00 gece turu + boot telafisi, G110 `cevap/` yüklemesi,
+G147 ayrı teslim kimliği — 17.09.2026'da kullanıcı kararıyla KALDIRILDI (klasör bağlantısı
+ekibe hiç gitmedi, defter boştu). Otomatik uygulama yolu yok: uygulama admin "Uygula"sıdır.
+Açılışta yalnız `boot_toparla` koşar (kesilmiş elle uygulama). Gerçek
 yazma yolu `scripts/hukdok_aktarim.aktarimi_kos` (G064) — burada YALNIZ
 import edilir, değiştirilmez.
 
@@ -53,46 +56,12 @@ Tasarım kararları
   dersi: anahtar global tekil, alıcı sonda) — aynı geçiş ikinci kez satır
   ikilemez. Bildirim yan üründür: her türlü hatası WARNING ile yutulur, durum
   makinesi bozulmaz. `yinelenen` bildirim üretmez (bilgi defterde, alarm değil).
-* **SharePoint gözcüsü** (G109, `sharepoint_tara`): `<SHAREPOINT_FOLDER_TESLIM_NAME>/gelen`
-  klasörü `list_folder_children` ile listelenir; ad kalıbı `HUKDOK_TESLIM_*.xlsx`
-  (harf duyarsız) dışındakiler `atlanan`. Ucuz eleme: `sharepoint_item_id`
-  kolonuna driveItem id'si ile eTag BİRLİKTE (`<id>@<eTag>`) yazılır — aynı
-  anahtar defterdeyse dosya indirilmez (`yinelenen` sayılır); eTag değiştiyse
-  (dosya yerinde güncellendi) indirilir ve sha256 eşleşirse `teslim_kaydet`
-  zaten `yinelenen` satırı açar. Ayrı eTag kolonu için model/migrasyon
-  değişikliği görev kapsamı dışıydı; kolon ID+sürüm anahtarıdır, panel bu
-  alanı göstermez. Tek dosyanın hatası WARNING, tur devam eder; LİSTELEME
-  hatası yükselir — tur düzeyinde tek ERROR'a (gece) ya da WARNING'e (boot)
-  çağıran karar verir. Anahtar (`veri_teslim_otomasyonu`) kapalıysa hiç listelenmez.
-  **SharePoint config'i `TESLIM_SP_CONFIG` (= `"teslim"`, G147):** gözcünün iki Graph
-  çağrısı (listeleme + indirme) ve cevap paketi yüklemesi (`teslim_cevap`) bu config'le
-  gider — veri ekibi Hanyaloğlu tenant'ındadır, arşiv site'ı LexisBio'da; tenant'lar
-  arası paylaşım misafir davetine düşüp ulaşmadı. `TESLIM_SHAREPOINT_*` env dörtlüsü
-  tanımsızsa `sharepoint_uploader_graph`/`auth_graph` kendiliğinden arşiv kimliği ve
-  site'ına düşer (tek INFO) — klasör adları (`SHAREPOINT_FOLDER_TESLIM_NAME`, `gelen`,
-  `cevap`) site'tan bağımsızdır, yol aynı kalır. Arşiv, sayaç, `log`, export DEĞİŞMEZ.
-* **Gece turu** (`gece_turu`, 04:00 TR): `acilis_toparla` → `sharepoint_tara` →
-  bekleyen (`alindi`/`dogrulandi`/`kuru_kosuldu`, `created_at` sırası) her
-  satıra `teslimi_isle(otomatik_uygula=…)`. **Aynı turda en fazla BİR teslim
-  uygulanır**: ilki uygulandıysa sonrakiler `otomatik_uygula=False` ile koşar
-  ve kapı "otomatik" dese bile `inceleme_bekliyor`a alınır (gerekçe
-  `tek_uygulama`) — ikinci paket aynı gece geldiyse insan baksın. Anahtar
-  kapalıysa tur hiçbir durum değiştirmez. `inceleme_bekliyor` satırlarına
-  dokunulmaz (insan bekliyor; her gece yeniden kuru koşturmak boşuna).
-* **Boot telafisi** (`boot_catch_up`): lider açılışında daemon thread'de bir
-  kez; `acilis_toparla` (anahtardan bağımsız — kesilmiş elle uygulama da
-  toparlanmalı) + `sharepoint_tara` + yalnız `alindi`/`dogrulandi` satırlara
-  `teslimi_isle(otomatik_uygula=False)`. **Uygulama yalnız cron'da** (plan
-  §2.3); `kuru_kosuldu` satırlar her restart'ta yeniden kuru koşturulmaz.
-  Her istisna tek WARNING ile yutulur (`deadline_scanner.boot_catch_up_scan`).
-* **Cevap paketi** (G110, `services/teslim_cevap.py`): rapor dizinine her kuru koşu ve
+* **Cevap dosyaları** (G110, `services/teslim_cevap.py`): rapor dizinine her kuru koşu ve
   uygulamada `ozet.txt` (`ozet_metni` + "kapı kararı" satırı; kapı değerlendirilince
-  satır tazelenir) yazılır. `teslim_uygula` başarı yolunda cevap yüklemesini BİR kez
-  dener (admin "Uygula" da buradan geçer); `gece_turu` sonunda `uygulandi` +
-  `cevap_yuklendi=False` kalan teslimler (bu turda uygulanan HARİÇ — az önce denendi)
-  yeniden denenir, retry böylece ertesi geceye kalır. Yükleme hatası teslim durumunu
-  DEĞİŞTİRMEZ (WARNING). `teslim_cevap` bu modülü import eder; buradaki çağrılar döngü
-  olmasın diye fonksiyon içinde import edilir.
+  satır tazelenir) yazılır; eşleşme ve havuz farkı CSV'leri de rapor dizinindedir ve admin
+  panelinin rapor indirme ucundan alınır (SharePoint'e yükleme 17.09'da kalktı;
+  `cevap_yuklendi` kolonu tarihsel, yazılmaz). `teslim_cevap` bu modülü import eder;
+  buradaki çağrılar döngü olmasın diye fonksiyon içinde import edilir.
 * **Değer havuzu farkı** (G112, `_havuz_farki_dene`): kuru koşu ve uygulama başarı
   yolunda, defter commit'inden SONRA `teslim_cevap.havuz_farki_csv_uret` çağrılır —
   `DEGER_HAVUZLARI` sayfası ile referans listelerinin iki yönlü farkı rapor dizinine
@@ -134,8 +103,7 @@ from managers.reference_lists import tr_upper
 import models
 from required_fields import AKTARIM_SOURCE_PREFIX
 from scripts import hukdok_aktarim
-from services import app_settings, belge_envanteri
-from sharepoint import sharepoint_uploader_graph as _spu
+from services import belge_envanteri
 
 logger = logging.getLogger(__name__)
 
@@ -159,27 +127,8 @@ DURUMLAR: Tuple[str, ...] = (
 NIHAI_DURUMLAR = frozenset({DURUM_YINELENEN, DURUM_REDDEDILDI, DURUM_UYGULANDI, DURUM_BASARISIZ})
 #: `teslimi_isle`'nin baştan (doğrulamadan) ele alabildiği durumlar.
 ISLENEBILIR_DURUMLAR = frozenset({DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME})
-#: Gece turunun / boot telafisinin taradığı "bekleyen" kümesi (partial index ile aynı liste).
+#: "Bekleyen" küme (partial index ile aynı liste).
 BEKLEYEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME)
-#: Gece turunun baştan (doğrula → kuru koş → kapı → uygula) ele aldığı durumlar —
-#: `inceleme_bekliyor` DIŞARIDA (insan kararı bekliyor, her gece yeniden koşturulmaz).
-GECE_ISLENEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI, DURUM_KURU_KOSULDU)
-#: Boot telafisinin ele aldığı durumlar — yalnız henüz kuru koşulmamış olanlar
-#: (`kuru_kosuldu` gece uygulanmayı bekliyor; her restart'ta yeniden koşturmak boşuna).
-BOOT_ISLENEN_DURUMLAR = (DURUM_ALINDI, DURUM_DOGRULANDI)
-
-#: SharePoint teslim klasörü (env `SHAREPOINT_FOLDER_TESLIM_NAME` yoksa) ve gelen alt klasörü.
-TESLIM_KLASORU_VARSAYILAN = "03_VERI_TESLIM"
-TESLIM_GELEN_ALT_KLASORU = "gelen"
-#: Teslim hattının SharePoint config'i (G147): gözcü listeleme/indirme ve cevap paketi
-#: yüklemesi (`teslim_cevap`) bu config'le gider — `TESLIM_SHAREPOINT_*` tanımlıysa
-#: Hanyaloğlu tenant'ındaki site, değilse arşiv kimliği/site'ı (düşüş, tek INFO).
-#: Tek sabit: iki modül aynı değeri kullanır, config adı bir yerde değişir.
-TESLIM_SP_CONFIG = _spu.CONFIG_TESLIM
-#: Gözcünün aldığı dosya adı kalıbı (harf duyarsız); dışındakiler `atlanan`.
-TESLIM_AD_KALIBI = re.compile(r"^HUKDOK_TESLIM_.*\.xlsx$", re.IGNORECASE)
-#: Gece turunda ikinci uygulanabilir teslimi incelemeye alan kural etiketi.
-KAPI_TEK_UYGULAMA = "tek_uygulama"
 
 _KURU_KOS_DURUMLARI = frozenset({DURUM_DOGRULANDI, DURUM_KURU_KOSULDU, DURUM_INCELEME})
 _KAPI_DURUMLARI = frozenset({DURUM_KURU_KOSULDU, DURUM_INCELEME})
@@ -197,7 +146,8 @@ KAPI_KURALLARI: Tuple[str, ...] = (
 #: G115: önceki uygulanmış teslime göre başlık/sayfa değişikliği kuralı.
 KAPI_YAPI_DEGISTI = "yapi_degisti"
 
-#: Gece turu otomatik uygularken `uygulayan` kolonuna yazılan değer.
+#: `teslimi_isle(otomatik_uygula=True)` uygularken `uygulayan` kolonuna yazılan değer
+#: (17.09'dan beri üretimde çağıran yok — gece turu kalktı; durum makinesi testleri korur).
 GECE_UYGULAYAN = "gece-job"
 
 #: Bildirim tür etiketi (frontend filtresi / G111 paneli bunu tüketir).
@@ -235,8 +185,7 @@ TESLIM_TURLERI: Tuple[str, ...] = (TESLIM_TURU_TAM, TESLIM_TURU_DELTA)
 HATA_MESAJI_SINIRI = 2000
 _GUVENSIZ_AD = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
-#: Rapor dizinindeki koşu özeti (`ozet_metni` + kapı kararı satırı) — cevap paketinde
-#: `ozet_<teslim>.txt` adıyla yüklenir (G110).
+#: Rapor dizinindeki koşu özeti (`ozet_metni` + kapı kararı satırı; G110 cevap dosyası).
 OZET_DOSYASI = "ozet.txt"
 _KAPI_SATIRI_ONEKI = "  kapı kararı       : "
 _KAPI_HENUZ_YOK = "henüz değerlendirilmedi"
@@ -479,18 +428,6 @@ def _ozet_kapi_guncelle(rapor_dizini: Optional[str], karar: Optional[str], gerek
         logger.warning("Teslim özetinde kapı satırı güncellenemedi (%s): %s", yol, exc)
 
 
-def _cevap_dene(teslim_id: int, *, db: Session) -> bool:
-    """`teslim_cevap.cevap_yukle` — her istisna WARNING ile yutulur (cevap yan üründür, durum değişmez)."""
-    from services import teslim_cevap
-
-    try:
-        return teslim_cevap.cevap_yukle(teslim_id, db=db)
-    except Exception as exc:
-        db.rollback()
-        logger.warning("Teslim #%s cevap yüklemesi yapılamadı (%s): %s", teslim_id, type(exc).__name__, exc)
-        return False
-
-
 def _basarisiz(db: Session, teslim: models.AktarimTeslimi, mesaj: str, *, error_log: bool = True) -> str:
     """Nihai başarısızlık: durum + hata_mesaji + (varsayılan) TEK ERROR."""
     kirpik = _kirp(mesaj)
@@ -591,6 +528,26 @@ def havuz_bildir(teslim_id: int, govde: str, *, db: Optional[Session] = None) ->
     except Exception as exc:
         logger.warning("Teslim #%s havuz farkı bildirimi atlandı: %s", teslim_id, exc)
         return []
+
+
+def _eslesme_dene(db: Session, teslim_id: int, *, rapor: Path, dosya_adi: str) -> Optional[Path]:
+    """G110: `eslesme_<teslim>.csv` rapor dizinine (`teslim_cevap.eslesme_csv_uret`) — yan ürün.
+
+    17.09'a dek SharePoint cevap yüklemesinin içinde üretiliyordu; yükleme kalkınca
+    uygulama başarı yoluna geldi (admin rapor ucu indirir). Defter commit'inden SONRA;
+    her istisna WARNING ile yutulur, durum DEĞİŞMEZ; dönüşte okuma transaction'ı kapanır.
+    """
+    from services import teslim_cevap
+
+    hedef = rapor / f"eslesme_{teslim_cevap.teslim_adi_uzantisiz(dosya_adi)}.csv"
+    try:
+        yol = teslim_cevap.eslesme_csv_uret(teslim_id, hedef, db=db)
+        db.commit()
+        return yol
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Teslim #%s eşleşme dosyası üretilemedi (%s): %s", teslim_id, type(exc).__name__, exc)
+        return None
 
 
 def _havuz_farki_dene(db: Session, teslim_id: int, *, rapor: Path, dosya_adi: str) -> Optional[Path]:
@@ -1264,8 +1221,6 @@ def teslim_uygula(teslim_id: int, *, uygulayan: str, db: Optional[Session] = Non
     with _oturum(db) as session:
         durum = _teslim_uygula(session, teslim_id, uygulayan=uygulayan)
         bildir(teslim_id, durum, db=session)
-        if durum == DURUM_UYGULANDI:
-            _cevap_dene(teslim_id, db=session)       # G110: bir deneme; kalanı gece turu
         return durum
 
 
@@ -1303,6 +1258,7 @@ def _teslim_uygula(session: Session, teslim_id: int, *, uygulayan: str) -> str:
         session.commit()
         logger.info("Teslim #%s uygulandı (%s): %s", teslim.id, uygulayan, _sayac_notu(sonuc))
         _havuz_farki_dene(session, teslim_id, rapor=rapor, dosya_adi=dosya_adi)      # G112
+        _eslesme_dene(session, teslim_id, rapor=rapor, dosya_adi=dosya_adi)          # G110 Talep #9
         return DURUM_UYGULANDI
     if sonuc.envanter_farki:
         # ERROR'u aktarimi_kos zaten bastı ("Aktarım GERİ ALINDI") — ikincisi yazılmaz.
@@ -1377,200 +1333,19 @@ def acilis_toparla(*, db: Optional[Session] = None) -> int:
         return len(kalanlar)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SharePoint gözcüsü + gece turu + boot telafisi (G109)
-# ═══════════════════════════════════════════════════════════════════════════
 
-def teslim_gelen_klasoru() -> str:
-    """`<SHAREPOINT_FOLDER_TESLIM_NAME | 03_VERI_TESLIM>/gelen` — env çağrı anında okunur."""
-    kok = os.getenv("SHAREPOINT_FOLDER_TESLIM_NAME", "").strip().strip("/") or TESLIM_KLASORU_VARSAYILAN
-    return f"{kok}/{TESLIM_GELEN_ALT_KLASORU}"
+def boot_toparla() -> Optional[int]:
+    """Lider açılışında bir kez (`api.py` daemon thread): `acilis_toparla` — UYGULAMA YOK.
 
-
-def sharepoint_item_anahtari(item: dict) -> str:
-    """`sharepoint_item_id` kolonuna yazılan ucuz-eleme anahtarı: `<driveItem id>@<eTag>`
-    (eTag'in tırnakları atılır; modül şerhi: SharePoint gözcüsü)."""
-    etag = str(item.get("eTag") or "").strip().strip('"')
-    return f"{str(item.get('id') or '').strip()}@{etag}"
-
-
-def _bilinen_sp_anahtarlari(db: Session) -> set:
-    satirlar = (
-        db.query(models.AktarimTeslimi.sharepoint_item_id)
-        .filter(models.AktarimTeslimi.sharepoint_item_id.isnot(None))
-        .all()
-    )
-    return {str(anahtar) for (anahtar,) in satirlar}
-
-
-def sharepoint_tara(*, db: Optional[Session] = None) -> dict:
-    """Gelen klasörünü listeler, yeni teslim dosyalarını indirip deftere yazar.
-
-    Döner: `{"yeni", "yinelenen", "atlanan"}` — `yinelenen` hem ucuz elemeyi
-    (aynı id+eTag defterde) hem indirme sonrası sha256 yinelenenini sayar;
-    `atlanan` ad kalıbına uymayanlardır. Anahtar kapalıysa listelemez, sıfır
-    döner. Tek dosyanın indirme/kayıt hatası WARNING'dir, tur sürer; LİSTELEME
-    hatası yükselir (tur düzeyinde ele alınır — modül şerhi).
+    17.09'a dek G109 boot telafisinin ilk adımıydı; SharePoint taraması ve bekleyen
+    işleme kalkınca yalnız bu kaldı. Her istisna TEK WARNING ile yutulur (thread'den
+    taşan istisna kimseye ulaşmaz).
     """
-    sayac = {"yeni": 0, "yinelenen": 0, "atlanan": 0}
-    with _oturum(db) as session:
-        if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
-            logger.info("SharePoint teslim taraması atlandı: veri_teslim_otomasyonu kapalı")
-            return sayac
-        klasor = teslim_gelen_klasoru()
-        dosyalar = _spu.list_folder_children(klasor, config_type=TESLIM_SP_CONFIG)
-        bilinen = _bilinen_sp_anahtarlari(session)
-        for item in dosyalar:
-            ad = str(item.get("name") or "").strip()
-            if not TESLIM_AD_KALIBI.match(ad):
-                sayac["atlanan"] += 1
-                logger.info("SharePoint teslim klasöründe kalıp dışı dosya atlandı: %s", ad)
-                continue
-            anahtar = sharepoint_item_anahtari(item)
-            if anahtar in bilinen:
-                sayac["yinelenen"] += 1
-                continue
-            try:
-                icerik, _ctype = _spu.download_file_from_sharepoint(klasor, ad, config_type=TESLIM_SP_CONFIG)
-                teslim_id = teslim_kaydet(
-                    icerik=icerik, dosya_adi=ad, kaynak="sharepoint",
-                    sharepoint_item_id=anahtar, db=session,
-                )
-            except Exception as exc:
-                session.rollback()
-                logger.warning("SharePoint teslim dosyası alınamadı (%s/%s): %s", klasor, ad, exc)
-                continue
-            bilinen.add(anahtar)
-            if _teslim_getir(session, teslim_id).durum == DURUM_YINELENEN:
-                sayac["yinelenen"] += 1
-            else:
-                sayac["yeni"] += 1
-        logger.info(
-            "SharePoint teslim taraması (%s): %s dosya — yeni %s, yinelenen %s, atlanan %s",
-            klasor, len(dosyalar), sayac["yeni"], sayac["yinelenen"], sayac["atlanan"],
-        )
-        return sayac
-
-
-def _bekleyen_idler(db: Session, durumlar: Tuple[str, ...]) -> List[int]:
-    satirlar = (
-        db.query(models.AktarimTeslimi.id)
-        .filter(models.AktarimTeslimi.durum.in_(durumlar))
-        .order_by(models.AktarimTeslimi.created_at, models.AktarimTeslimi.id)
-        .all()
-    )
-    return [int(tid) for (tid,) in satirlar]
-
-
-def _tek_uygulama_incelemeye(session: Session, teslim_id: int, uygulanan_id: int) -> str:
-    """Aynı turda ikinci uygulanabilir teslim: kapı "otomatik" dese de insana bırakılır."""
-    teslim = _teslim_getir(session, teslim_id)
-    parcalar: List[str] = [str(teslim.kapi_gerekcesi)] if teslim.kapi_gerekcesi else []
-    parcalar.append(
-        f"{KAPI_TEK_UYGULAMA} (aynı gece turunda teslim #{uygulanan_id} uygulandı — "
-        "ikincisi insan kararına bırakıldı)"
-    )
-    teslim.kapi_karari = KAPI_INCELEME
-    teslim.kapi_gerekcesi = "; ".join(parcalar)
-    _durum_gecir(teslim, DURUM_INCELEME, not_=parcalar[-1])
-    session.commit()
-    logger.info("Teslim #%s gece turunda incelemeye alındı: %s", teslim.id, parcalar[-1])
-    bildir(teslim_id, DURUM_INCELEME, db=session)
-    return DURUM_INCELEME
-
-
-def _bekleyenleri_isle(session: Session, durumlar: Tuple[str, ...], *,
-                       otomatik_uygula: bool) -> Tuple[dict, Optional[int]]:
-    """Bekleyenleri `created_at` sırasıyla işler; (id → son durum, uygulanan id) döner.
-
-    `otomatik_uygula=True` iken bile en fazla BİR teslim uygulanır; sonrakiler
-    kuru koşuda kalırsa `tek_uygulama` gerekçesiyle incelemeye alınır. Satır
-    düzeyi beklenmedik istisna WARNING'dir (nihai `basarisiz` ERROR'unu
-    `teslimi_isle` zaten basar), tur sürer.
-    """
-    sonuc: dict = {}
-    uygulanan_id: Optional[int] = None
-    for teslim_id in _bekleyen_idler(session, durumlar):
-        try:
-            durum = teslimi_isle(
-                teslim_id, otomatik_uygula=otomatik_uygula and uygulanan_id is None, db=session,
-            )
-            if durum == DURUM_UYGULANDI:
-                uygulanan_id = teslim_id
-            elif otomatik_uygula and uygulanan_id is not None and durum == DURUM_KURU_KOSULDU:
-                durum = _tek_uygulama_incelemeye(session, teslim_id, uygulanan_id)
-        except Exception as exc:
-            session.rollback()
-            logger.warning("Teslim #%s turda işlenemedi (%s): %s", teslim_id, type(exc).__name__, exc)
-            durum = "hata"
-        sonuc[teslim_id] = durum
-    return sonuc, uygulanan_id
-
-
-def gece_turu() -> dict:
-    """04:00 TR gece turu (lider worker, APScheduler `veri_teslim` job'ı) — modül şerhi.
-
-    Döner: `{"etkin", "toparlanan", "tara", "durumlar", "uygulanan"}`. Tarama
-    başarısızlığı tur başına TEK ERROR'dur ve bekleyenlerin işlenmesini
-    engellemez (dün indirilen paket bugün yine uygulanabilir).
-    """
-    ozet: dict = {"etkin": False, "toparlanan": 0, "tara": None, "durumlar": {}, "uygulanan": None}
-    with _oturum(None) as session:
-        if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
-            logger.info("Gece veri teslim turu atlandı: veri_teslim_otomasyonu kapalı")
-            return ozet
-        ozet["etkin"] = True
-        ozet["toparlanan"] = acilis_toparla(db=session)
-        try:
-            ozet["tara"] = sharepoint_tara(db=session)
-        except Exception as exc:
-            session.rollback()
-            logger.error("Gece veri teslim turu: SharePoint taraması başarısız — %s: %s",
-                         type(exc).__name__, exc)
-        ozet["durumlar"], ozet["uygulanan"] = _bekleyenleri_isle(
-            session, GECE_ISLENEN_DURUMLAR, otomatik_uygula=True,
-        )
-        _bekleyen_cevaplari_yukle(session, haric=ozet["uygulanan"])
-    logger.info("Gece veri teslim turu bitti: %s", ozet)
-    return ozet
-
-
-def _bekleyen_cevaplari_yukle(session: Session, *, haric: Optional[int]) -> dict:
-    """G110: `uygulandi` + `cevap_yuklendi=False` teslimlerin cevap paketini yeniden dener.
-
-    `haric` bu turda uygulanan teslimdir — `teslim_uygula` az önce denedi, aynı gece
-    ikinci deneme boşuna; retry ertesi geceye kalır. Sonuç `ozet`e EKLENMEZ (dönüş
-    şekli G109 sözleşmesi), INFO satırıyla loglanır.
-    """
-    from services import teslim_cevap
-
-    sonuc = teslim_cevap.bekleyen_cevaplari_yukle(session, haric=haric)
-    if sonuc:
-        logger.info(
-            "Gece veri teslim turu: cevap paketi %s teslimde denendi — yüklenen %s: %s",
-            len(sonuc), sum(1 for v in sonuc.values() if v), sonuc,
-        )
-    return sonuc
-
-
-def boot_catch_up() -> Optional[dict]:
-    """Lider boot'unda bir kerelik telafi (modül şerhi: Boot telafisi) — UYGULAMA YOK.
-
-    `api.py` daemon thread'de çağırır; her istisna burada yutulur, TEK WARNING
-    loglanır (thread'den taşan istisna kimseye ulaşmaz; 04:00 cron'u asıl iştir).
-    """
-    ozet: dict = {"etkin": False, "toparlanan": 0, "tara": None, "durumlar": {}}
     try:
-        with _oturum(None) as session:
-            ozet["toparlanan"] = acilis_toparla(db=session)
-            if not app_settings.veri_teslim_otomasyonu_etkin(db=session):
-                logger.info("Veri teslim boot telafisi: anahtar kapalı — yalnız açılış toparlaması yapıldı")
-                return ozet
-            ozet["etkin"] = True
-            ozet["tara"] = sharepoint_tara(db=session)
-            ozet["durumlar"], _ = _bekleyenleri_isle(session, BOOT_ISLENEN_DURUMLAR, otomatik_uygula=False)
-        logger.info("Veri teslim boot telafisi bitti: %s", ozet)
-        return ozet
+        toparlanan = acilis_toparla()
+        if toparlanan:
+            logger.info("Veri teslim açılış toparlaması: %s teslim inceleme_bekliyor'a alındı", toparlanan)
+        return toparlanan
     except Exception as exc:
-        logger.warning("Veri teslim boot telafisi yapılamadı (04:00 turu yeniden dener): %s", exc)
+        logger.warning("Veri teslim açılış toparlaması yapılamadı: %s", exc)
         return None

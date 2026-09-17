@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// DeliveryInboxCard — yönetici teslim defteri: liste/rozet/sayaç, tara, yükle,
+// DeliveryInboxCard — yönetici teslim defteri: liste/rozet/sayaç, yükle,
 // kuru koş, raporlar (blob indirme) ve onaylı uygula. Backend sözleşmesi G108'de
 // donduruldu (gorevler/gorev/G111.md); burada yalnız kartın o uçlara nasıl
 // bağlandığı ve hata yollarının toast'a düştüğü sınanır.
@@ -64,7 +64,7 @@ const ESIKLER = { hata_orani: 0.05, eslesmeyen_orani: 0.1, alan_degisikligi: 500
 const okJson = (payload: unknown, status = 200) => ({ ok: true, status, json: async () => payload });
 const failJson = (status: number, payload: unknown = {}) => ({ ok: false, status, json: async () => payload });
 
-const listeYaniti = (teslimler: Teslim[], etkin = true) => okJson({ teslimler, esikler: ESIKLER, etkin });
+const listeYaniti = (teslimler: Teslim[]) => okJson({ teslimler, esikler: ESIKLER });
 
 const isTeslimList = (url: string, o?: RequestInit) =>
     url.startsWith("/api/admin/aktarim/teslimler?") && (!o?.method || o.method === "GET");
@@ -111,16 +111,9 @@ describe("DeliveryInboxCard", () => {
 
         expect(fetchMock).toHaveBeenCalledWith("/api/admin/aktarim/teslimler?limit=50");
         expect(container.textContent).toContain("Henüz teslim yok");
-        expect(container.textContent).not.toContain("Otomasyon kapalı");
-    });
-
-    it("etkin=false ise sarı uyarı satırını gösterir", async () => {
-        fetchMock.mockResolvedValue(listeYaniti([], false));
-
-        await render();
-
-        const uyari = container.querySelector("[role='status']");
-        expect(uyari?.textContent).toContain("Otomasyon kapalı — Özellikler sekmesinden açın");
+        // SharePoint taraması 17.09'da kalktı: düğme ve anahtar uyarısı yok
+        expect(buton("Şimdi tara")).toBeNull();
+        expect(container.querySelector("[role='status']")).toBeNull();
     });
 
     it("liste alınamazsa hata metni basar", async () => {
@@ -226,37 +219,6 @@ describe("DeliveryInboxCard", () => {
 
         expect(toastMocks.error).toHaveBeenCalledWith("Bu durumda uygulanamaz");
         expect(toastMocks.success).not.toHaveBeenCalled();
-    });
-
-    it("'Şimdi tara' sonucunu toast'a yazar; `not` varsa metne ekler", async () => {
-        fetchMock.mockImplementation(async (url: string, o?: RequestInit) => {
-            if (url === "/api/admin/aktarim/tara") return okJson({ yeni: 2, yinelenen: 1, not: "1 dosya uzantı dışı" });
-            if (isTeslimList(url, o)) return listeYaniti([]);
-            return failJson(404);
-        });
-
-        await render();
-        await tikla(buton("Şimdi tara")!);
-
-        const taraCall = fetchMock.mock.calls.find(([u]) => u === "/api/admin/aktarim/tara");
-        expect((taraCall![1] as RequestInit).method).toBe("POST");
-        expect(toastMocks.success).toHaveBeenCalledTimes(1);
-        const mesaj = toastMocks.success.mock.calls[0][0] as string;
-        expect(mesaj).toContain("2 yeni, 1 yinelenen");
-        expect(mesaj).toContain("1 dosya uzantı dışı");
-    });
-
-    it("'Şimdi tara' başarısızsa hata toast'ı basar", async () => {
-        fetchMock.mockImplementation(async (url: string, o?: RequestInit) => {
-            if (url === "/api/admin/aktarim/tara") return failJson(500, { detail: "SharePoint erişilemedi" });
-            if (isTeslimList(url, o)) return listeYaniti([]);
-            return failJson(404);
-        });
-
-        await render();
-        await tikla(buton("Şimdi tara")!);
-
-        expect(toastMocks.error).toHaveBeenCalledWith("SharePoint erişilemedi");
     });
 
     const dosyaSec = async (file: File) => {
@@ -384,7 +346,7 @@ describe("DeliveryInboxCard — mesai saati uyarısı", () => {
         container = document.createElement("div");
         document.body.appendChild(container);
         fetchMock.mockResolvedValue(
-            okJson({ teslimler: [teslim({ id: 2, durum: "inceleme_bekliyor" })], esikler: ESIKLER, etkin: true }),
+            okJson({ teslimler: [teslim({ id: 2, durum: "inceleme_bekliyor" })], esikler: ESIKLER }),
         );
     });
 

@@ -9,7 +9,8 @@ aç/kapa anahtarları — yönetim paneli "Özellikler" sekmesi buradan okur/yaz
 
 Veri teslim defteri (`/api/admin/aktarim/*`, G108): veri ekibinin teslim
 paketleri için "yedek giriş yolu" + gündüz işlemleri — defteri oku, xlsx yükle,
-kuru koş, raporları indir, bilinçli onayla uygula, taramayı tetikle. Durum
+kuru koş, raporları indir, bilinçli onayla uygula (SharePoint taraması 17.09'da kalktı —
+panelden yükleme tek giriş yoludur). Durum
 makinesi `services/teslim_kutusu.py`'de; buradaki uçlar yalnız çağırır. İstek
 başına TEK oturum açılır ve servis fonksiyonlarına `db=` ile verilir (test
 yalnız bu modülün `SessionLocal`'ını değiştirir). Sözleşme gorevler/gorev/G108.md
@@ -103,7 +104,7 @@ def api_teslimler(
     limit: int = Query(50, ge=1, le=500),
     user: dict = Depends(require_admin),
 ):
-    """Defter (en yeni önce) + kapı eşikleri + otomasyon anahtarı."""
+    """Defter (en yeni önce) + kapı eşikleri."""
     db = SessionLocal()
     try:
         satirlar = (
@@ -115,7 +116,6 @@ def api_teslimler(
         return {
             "teslimler": [AktarimTeslimiOzetOut.model_validate(t) for t in satirlar],
             "esikler": tk.kapi_esikleri(),
-            "etkin": app_settings.veri_teslim_otomasyonu_etkin(db=db),
         }
     finally:
         db.close()
@@ -306,65 +306,6 @@ def api_teslim_rapor_indir(teslim_id: int, ad: str, user: dict = Depends(require
     ):
         raise HTTPException(status_code=404, detail="Rapor bulunamadı")
     return FileResponse(path=str(dosya), media_type=_RAPOR_TURLERI[dosya.suffix.lower()], filename=ad)
-
-
-@router.post("/api/admin/aktarim/tara")
-def api_teslim_tara(user: dict = Depends(require_admin)):
-    """SharePoint teslim klasörünü tara + yeni alınanları kuru koşuya sok (G116).
-
-    Anahtar kapalıyken hiçbir şey yapmaz ve bunu `not` ile söyler
-    (`sharepoint_tara` ÇAĞRILMAZ). Açıkken `teslim_kutusu.sharepoint_tara()`
-    sayaçlarını (`yeni`/`yinelenen`/`atlanan`, `not` YOK) döner; ardından bu
-    çağrıda `alindi`ya düşen her teslim `created_at` sırasıyla
-    `teslimi_isle(otomatik_uygula=False)` ile kuru koşuya girer (gündüz kuralı:
-    uygulama yalnız gece turunda ya da admin "Uygula" ile) ve sonuç `islenen`
-    listesine `{"id", "durum"}` olarak eklenir. Uç senkrondur (kuru koşu tam
-    pakette ~45 sn; konteyner nginx 300 sn).
-
-    Hata: `sharepoint_tara` istisnası (Graph/klasör) → 502 + `detail`, log
-    WARNING (deneme düzeyi — ERROR yok). Tek teslimin işleme istisnası tarama
-    sonucunu düşürmez: `islenen`e `{"id", "durum": "hata", "mesaj"}` girer, WARNING.
-    """
-    db = SessionLocal()
-    try:
-        if not app_settings.veri_teslim_otomasyonu_etkin(db=db):
-            return {"yeni": 0, "yinelenen": 0, "not": "Veri teslim otomasyonu kapalı — tarama yapılmadı"}
-        # Bu çağrıda alınanları ayırt etmek için tarama öncesi en büyük defter id'si
-        son = db.query(models.AktarimTeslimi.id).order_by(models.AktarimTeslimi.id.desc()).first()
-        onceki_son_id = int(son[0]) if son else 0
-        try:
-            sayac = tk.sharepoint_tara(db=db)
-        except Exception as exc:
-            db.rollback()
-            logger.warning("SharePoint teslim taraması başarısız (%s): %s", type(exc).__name__, exc)
-            raise HTTPException(
-                status_code=502, detail=f"SharePoint taraması başarısız: {str(exc)[:200]}",
-            ) from exc
-        yeni_idler = [
-            int(tid)
-            for (tid,) in (
-                db.query(models.AktarimTeslimi.id)
-                .filter(models.AktarimTeslimi.id > onceki_son_id)
-                .filter(models.AktarimTeslimi.durum == tk.DURUM_ALINDI)
-                .order_by(models.AktarimTeslimi.created_at, models.AktarimTeslimi.id)
-                .all()
-            )
-        ]
-        islenen = []
-        for teslim_id in yeni_idler:
-            try:
-                durum = tk.teslimi_isle(teslim_id, otomatik_uygula=False, db=db)
-                islenen.append({"id": teslim_id, "durum": durum})
-            except Exception as exc:
-                db.rollback()
-                logger.warning("Teslim #%s tarama sonrası işlenemedi (%s): %s", teslim_id, type(exc).__name__, exc)
-                islenen.append({"id": teslim_id, "durum": "hata", "mesaj": str(exc)[:200]})
-        return {
-            "yeni": sayac["yeni"], "yinelenen": sayac["yinelenen"], "atlanan": sayac["atlanan"],
-            "islenen": islenen,
-        }
-    finally:
-        db.close()
 
 
 @router.get("/api/admin/deleted-records")

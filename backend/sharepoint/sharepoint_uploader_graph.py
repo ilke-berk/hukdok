@@ -10,33 +10,24 @@ from functools import lru_cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from sharepoint.auth_graph import CONFIG_DEFAULT, CONFIG_TESLIM, get_graph_token
+from sharepoint.auth_graph import CONFIG_DEFAULT, get_graph_token
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 logger = logging.getLogger("SharePointUploader")
 
-# ── G147: config'e göre site/drive ───────────────────────────────────────────
-# `default` = arşiv site'ı (`SHAREPOINT_SITE_URL`, LexisBio) — outbox upload,
-# belge indirme, sayaç, log listesi, e-posta ekleri buradan; `teslim` = veri
-# teslim hattının site'ı (`TESLIM_SHAREPOINT_SITE_URL`, Hanyaloğlu tenant'ı;
-# boşsa arşiv site'ına düşer). Drive adı önceliği: `TESLIM_SP_DRIVE_NAME` >
-# `SP_DRIVE_NAME` > "Belgeler" (hukdok_arsiv site'ının drive'ı `Belgeler`).
+# ── Site/drive ───────────────────────────────────────────────────────────────
+# Tek site: arşiv (`SHAREPOINT_SITE_URL`, LexisBio) — outbox upload, belge indirme,
+# sayaç, log listesi, e-posta ekleri. G147'nin `teslim` site'ı (`TESLIM_SHAREPOINT_SITE_URL`)
+# 17.09.2026'da teslim klasörü yoluyla kalktı. Drive adı: `SP_DRIVE_NAME` > "Belgeler"
+# (hukdok_arsiv site'ının drive'ı `Belgeler`).
 _DEFAULT_DRIVE_NAME = "Belgeler"
 
 
 def _site_url_for(config_type: str) -> str | None:
-    if config_type == CONFIG_TESLIM:
-        teslim = (os.getenv("TESLIM_SHAREPOINT_SITE_URL") or "").strip()
-        if teslim:
-            return teslim
     return (os.getenv("SHAREPOINT_SITE_URL") or "").strip() or None
 
 
 def _drive_name_for(config_type: str) -> str:
-    if config_type == CONFIG_TESLIM:
-        teslim = (os.getenv("TESLIM_SP_DRIVE_NAME") or "").strip()
-        if teslim:
-            return teslim
     return (os.getenv("SP_DRIVE_NAME") or "").strip() or _DEFAULT_DRIVE_NAME
 
 # ── Faz 3-B: paylaşılan Session + transport-katmanı retry ────────────────────
@@ -127,8 +118,7 @@ def _with_fresh_token_on_401(fn, config_type: str = CONFIG_DEFAULT):
     daha dener. 401 transport retry'ına bırakılamaz: aynı Authorization
     başlığıyla tekrar denemek sonucu değiştirmez — MSAL cache'indeki token
     süresi dolmadan sunucuda geçersizleşmiş olabilir (secret rotasyonu, revoke).
-    Token verilen `config_type` ile alınır ve AYNI config'le yenilenir (G147):
-    teslim hattının 401'i arşiv kimliğini değil, kendi kimliğini tazeler.
+    Token verilen `config_type` ile alınır ve AYNI config'le yenilenir.
     """
     token = get_graph_token(config_type=config_type)
     try:
@@ -151,9 +141,7 @@ def _get_site_and_drive_id(token: str, config_type: str = CONFIG_DEFAULT) -> tup
     ~saatte bir döndüğünde kayıt kendiliğinden tazelenir (bedava TTL) ve 401
     sonrası zorla yenilenen token yeni cache anahtarı üretip ID'leri yeni
     token'la yeniden çözer. Ayrı bir TTL cache aynı davranışa fazladan kod olurdu.
-    Anahtar `(token, config_type)`; `maxsize=4` (G147): iki config'in token'ı
-    farklıdır, `maxsize=1` her config geçişinde site+drive'ı yeniden çözerdi
-    (2 Graph GET — outbox upload ile gece gözcüsü art arda koşar).
+    Anahtar `(token, config_type)`; `maxsize=4` G147'den kaldı (zararsız pay).
     """
     _load_env()
     session = _get_shared_session()
@@ -163,8 +151,7 @@ def _get_site_and_drive_id(token: str, config_type: str = CONFIG_DEFAULT) -> tup
 
     if not site_url:
         raise RuntimeError(
-            f"Missing env: {'TESLIM_SHAREPOINT_SITE_URL / ' if config_type == CONFIG_TESLIM else ''}"
-            f"SHAREPOINT_SITE_URL (config: {config_type})"
+            f"Missing env: SHAREPOINT_SITE_URL (config: {config_type})"
         )
 
     u = urlparse(site_url)
@@ -411,8 +398,7 @@ def upload_file_to_sharepoint(
         target_folder_name: Hedef klasör adı (örn: "01_HAM_ARSIV")
         content_type: MIME type
         use_date_subfolder: True ise YYYY-MM-DD formatında alt klasör oluşturur
-        config_type: `"default"` arşiv site'ı/kimliği (outbox, e-posta, sayaç —
-            değişmedi); `"teslim"` veri teslim hattı (G147, `teslim_cevap`)
+        config_type: `"default"` arşiv site'ı/kimliği (tek değer)
 
     Returns:
         SharePoint API response
@@ -457,7 +443,6 @@ def download_file_from_sharepoint(
     SharePoint'ten dosya içeriğini ve MIME tipini döndürür.
     Kimlik doğrulama backend service account üzerinden yapılır;
     son kullanıcının Microsoft tenant üyesi olması gerekmez.
-    `config_type="teslim"` (G147) teslim site'ından/kimliğiyle indirir (gözcü).
     """
     _load_env()
     session = _get_shared_session()
@@ -472,50 +457,6 @@ def download_file_from_sharepoint(
         return r.content, content_type
 
     return _with_fresh_token_on_401(_download, config_type)
-
-
-#: Klasör listelemede sayfa boyu (`$top`); Graph tavanı 200'dür.
-_LIST_PAGE_SIZE = 200
-#: Listelemede istenen alanlar — gözcü (G109) yalnız bunlara bakar.
-_LIST_SELECT = "id,name,size,eTag,file,lastModifiedDateTime"
-
-
-def list_folder_children(folder_name: str, *, config_type: str = CONFIG_DEFAULT) -> list[dict]:
-    """Klasördeki DOSYALARI listeler (G109 SharePoint teslim gözcüsü).
-
-    `GET /drives/{drive}/root:/{folder}:/children?$select=…&$top=200`;
-    `@odata.nextLink` sonuna kadar izlenir, sayfalar tek listede birleşir.
-    Yalnız `file` anahtarı taşıyan öğeler döner (alt klasörler elenir).
-    `config_type="teslim"` (G147): teslim site'ı + o tenant'ın token'ı.
-
-    Klasör yoksa (404) **boş liste + WARNING**: gece job'ı "klasör henüz
-    açılmadı" diye ERROR basmasın — o bir kurulum eksiği, arıza değil. Diğer
-    HTTP hataları yükselir (transport retry ortak session'da; ilk 401'de token
-    zorla yenilenip bir kez daha denenir — `_with_fresh_token_on_401`).
-    Deneme düzeyi log WARNING'dir; nihai ERROR çağıranın işidir (log sözleşmesi).
-    """
-    _load_env()
-    session = _get_shared_session()
-    safe_path = quote(folder_name)
-
-    def _list(token: str) -> list[dict]:
-        _site_id, drive_id = _get_site_and_drive_id(token, config_type=config_type)
-        url: str | None = f"{GRAPH}/drives/{drive_id}/root:/{safe_path}:/children"
-        params: dict | None = {"$select": _LIST_SELECT, "$top": _LIST_PAGE_SIZE}
-        items: list[dict] = []
-        while url:
-            r = session.get(url, headers=_headers(token), params=params, timeout=(10, 60))
-            if r.status_code == 404:
-                logger.warning(f"SharePoint klasörü bulunamadı, boş liste dönüyor: {folder_name}")
-                return []
-            r.raise_for_status()
-            data = r.json()
-            items.extend(item for item in data.get("value", []) if "file" in item)
-            url = data.get("@odata.nextLink")
-            params = None  # nextLink sorgu parametrelerini kendi taşır
-        return items
-
-    return _with_fresh_token_on_401(_list, config_type)
 
 
 def _update_list_item_fields(session, token, drive_id, item_id, fields):

@@ -132,7 +132,6 @@ async def lifespan(app: FastAPI):
     warn_if_dev_mode_outside_development()
     from sharepoint.auth_graph import check_client_secret_expiry
     check_client_secret_expiry()
-    check_client_secret_expiry(env_name="TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT")  # G147 teslim kimliği
 
     # Faz 3-E: lifespan'deki yedek init_db KALDIRILDI — migrasyonun tek sahibi
     # entrypoint'teki migrate.py (3-A'daki "import models" düzeltmesinden beri
@@ -227,24 +226,11 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
                 misfire_grace_time=3600,
             )
-            # G109: veri teslim gece turu — AYNI scheduler, yalnız lider worker'da
-            # (iki worker aynı paketi iki kez uygulamaya kalkardı). 04:00 TR: host
-            # pg_dump'ı (03:30) bitmiş olur = doğal geri dönüş noktası; 06:00 süre
-            # taramasından önce biter (plan §2.3). Anahtar kapalıysa tur hiçbir
-            # şey yapmaz (teslim_kutusu.gece_turu).
-            from services.teslim_kutusu import gece_turu
-            scheduler.add_job(
-                gece_turu,
-                CronTrigger(hour=4, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
-                id="veri_teslim",
-                replace_existing=True,
-                misfire_grace_time=3600,
-            )
             scheduler.start()
             app.state.scheduler = scheduler
             logging.info(
                 "Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR; dönüşüm retry 02:30 TR; "
-                "04:00 TR veri teslim turu; süre/duruşma taraması 06:00 TR)."
+                "süre/duruşma taraması 06:00 TR)."
             )
 
             # Backend kapalıyken kaçırılan günleri arka planda tamamla
@@ -257,12 +243,12 @@ async def lifespan(app: FastAPI):
             from services.deadline_scanner import boot_catch_up_scan
             threading.Thread(target=boot_catch_up_scan, daemon=True).start()
             logging.info("Süre tarayıcısı boot telafi thread'i başlatıldı.")
-            # G109: veri teslim boot telafisi — aynı desen; açılışta kesilmiş
-            # uygulamayı toparlar, gelen klasörünü tarar, yeni paketi kuru
-            # koşturur. UYGULAMA YALNIZ 04:00 cron'unda (plan §2.3).
-            from services.teslim_kutusu import boot_catch_up as teslim_boot_catch_up
-            threading.Thread(target=teslim_boot_catch_up, daemon=True).start()
-            logging.info("Veri teslim boot telafi thread'i başlatıldı.")
+            # Veri teslim açılış toparlaması: kesilmiş elle uygulamayı (`uygulaniyor`)
+            # incelemeye düşürür. 17.09: SharePoint gözcüsü + 04:00 gece turu kalktı,
+            # yalnız bu kaldı (teslim_kutusu.boot_toparla).
+            from services.teslim_kutusu import boot_toparla as teslim_boot_toparla
+            threading.Thread(target=teslim_boot_toparla, daemon=True).start()
+            logging.info("Veri teslim açılış toparlama thread'i başlatıldı.")
         except ImportError:
             logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
 

@@ -3,6 +3,11 @@
 **Tarih:** 03.09.2026 (ilk sürüm) · **Gönderen:** HukuDok ekibi (Hanyaloğlu Acar + LexisBio) ·
 **Muhatap:** MicroKolayOfis master'ını hazırlayan veri ekibi · **Sürüm:** 1.3 (10.09.2026)
 
+> **17.09.2026 şerhi — teslim yolu değişti:** bu belgedeki SharePoint `03_VERI_TESLIM/gelen/`
+> klasörü, 04:00 gece taraması/otomatik uygulaması ve `cevap/` klasörü anlatımı **artık geçerli
+> değildir**. Paket HukuDok tarafına iletilir, yönetici yükler ve uygular; cevap dosyaları size
+> iletilir. Güncel kurallar [`SOZLESME.md`](SOZLESME.md). Sütun/sayfa/değer kuralları aynen geçerli.
+>
 > Bu belge yapılandırılmış yazıldı: tablolar, birebir yazımlar ve sondaki makine-okur özet
 > (§9), kendi yapay zekâ asistanınıza "teslim öncesi kontrol" ve "cevap paketi yorumlama"
 > görevi olarak doğrudan verilebilir. Buradaki her kural çalışan sistemden okunarak yazıldı;

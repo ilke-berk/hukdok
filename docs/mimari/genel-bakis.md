@@ -142,17 +142,17 @@ TEK `CRITICAL` log satırı atılır (`singleton_lock.py:139`), log tabanlı ala
 
 | İş | Kapsam | Kod |
 | --- | --- | --- |
-| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)`, `id="daily_activity_report"` | yalnız lider | `api.py:193-199` |
-| APScheduler: dönüşüm retry (`conversion_retry.retry_pending_conversions`), `CronTrigger(hour=2, minute=30, Europe/Istanbul)`, `id="conversion_retry"` | yalnız lider | `api.py:206-212` |
-| APScheduler: veri teslim gece turu (`teslim_kutusu.gece_turu`), `CronTrigger(hour=4, minute=0, Europe/Istanbul)`, `id="veri_teslim"` | yalnız lider | `api.py:233-239` |
-| APScheduler: süre/duruşma taraması (`deadline_scanner.scan_deadlines`), `CronTrigger(hour=6, minute=0, Europe/Istanbul)`, `id="deadline_scan"` | yalnız lider | `api.py:220-226` |
-| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:248` |
-| Süre taraması boot telafisi (`deadline_scanner.boot_catch_up_scan`) | yalnız lider | `api.py:254-255` |
-| Veri teslim boot telafisi (`teslim_kutusu.boot_catch_up`; tarama + kuru koşu, **uygulama yalnız cron'da**) | yalnız lider | `api.py:260-261` |
-| SharePoint upload outbox worker'ı | yalnız lider | `api.py:271-274` |
+| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)`, `id="daily_activity_report"` | yalnız lider | `api.py:195-201` |
+| APScheduler: dönüşüm retry (`conversion_retry.retry_pending_conversions`), `CronTrigger(hour=2, minute=30, Europe/Istanbul)`, `id="conversion_retry"` | yalnız lider | `api.py:208-214` |
+| APScheduler: süre/duruşma taraması (`deadline_scanner.scan_deadlines`), `CronTrigger(hour=6, minute=0, Europe/Istanbul)`, `id="deadline_scan"` | yalnız lider | `api.py:222-228` |
+| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:237` |
+| Süre taraması boot telafisi (`deadline_scanner.boot_catch_up_scan`) | yalnız lider | `api.py:243-244` |
+| Veri teslim açılış toparlaması (`teslim_kutusu.boot_toparla`; yalnız kesilmiş elle uygulama → `inceleme_bekliyor`, uygulama/tarama YOK) | yalnız lider | `api.py:249-250` |
+| SharePoint upload outbox worker'ı | yalnız lider | `api.py:262-263` |
 | Liste tazeleme (refresh) thread'i | **worker başına — bilinçli** | `api.py:171-181` |
 
-Dört cron job'ı da tek `BackgroundScheduler` üzerindedir (`api.py:192`) — yeni thread/scheduler
+Üç cron job'ı da tek `BackgroundScheduler` üzerindedir (`api.py:194`; 04:00 veri teslim turu
+17.09.2026'da SharePoint teslim klasörü yoluyla kalktı) — yeni thread/scheduler
 açılmaz (3-E devri); `misfire_grace_time=3600` ile lider bir saat içinde ayağa kalkarsa
 kaçan tetik yine koşar.
 
@@ -163,9 +163,7 @@ worker'ı tazeler, diğeri kendi refresh'ine kadar bayat kalır — "liste deği
 kabul edilen takas" (`api.py:176-178`).
 
 Saatlerin seçimi tesadüf değil, gerekçeler kodda: 02:30 dönüşüm retry'ı gece yarısı raporu
-(00:00) ve host pg_dump'ı (03:30) ile çakışmasın diye (`api.py:203-204`); 04:00 veri teslim
-turu pg_dump bitmiş olsun (doğal geri dönüş noktası) ve 06:00 taramasından önce bitsin diye
-(`api.py:227-231`; ayrıntı [`veri-teslim-hatti.md`](veri-teslim-hatti.md)); 06:00 süre
+(00:00) ve host pg_dump'ı (03:30) ile çakışmasın diye; 06:00 süre
 taraması gece işleri bitmiş ve uyarı mesai başlangıcında hazır olsun diye (`api.py:216-218`).
 
 ## 4. Kimlik ve tenant
@@ -309,7 +307,7 @@ anahtarındadır, eski kalıcı anahtar modal açılınca silinir
 | --- | --- |
 | `/process` → `/confirm` zinciri, olay sözleşmesi, zaman bütçeleri | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) |
 | Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
-| Veri teslim hattı: SharePoint gelen kutusu, defter, 04:00 kapısı, cevap paketi | [`veri-teslim-hatti.md`](veri-teslim-hatti.md) |
+| Veri teslim hattı: panelden yükleme, defter, kapı, elle uygulama, cevap dosyaları | [`veri-teslim-hatti.md`](veri-teslim-hatti.md) |
 | Raporlama: kayıt defteri (serbest SQL yok), önizleme, Excel/CSV export + koşu logu, şablonlar, AI asistan + `rapor_asistani` anahtarı | [`raporlama.md`](raporlama.md) |
 | Gemini, Graph/SharePoint, e-posta, ayar tablosu | [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
 | Kullanıcı oturumu, token doğrulama zinciri, süreler, Graph app-only kimlik | [`kimlik-ve-token.md`](kimlik-ve-token.md) |

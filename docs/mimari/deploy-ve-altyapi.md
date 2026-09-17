@@ -1,7 +1,8 @@
 # Deploy ve altyapı — deploy.sh, rollback, systemd birimleri, izleme
 
 > **Son doğrulama: 2026-08-12 · G050** (§1 test kapısı artık kendi Postgres'ini kaldırır);
-> §1 `.env` anahtar listesi 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı.
+> §1 `.env` anahtar listesi 2026-09-08 · G148 ile G147 sonrası koda göre yeniden doğrulandı;
+> 17.09.2026'da `TESLIM_SHAREPOINT_*` maddesi kaldırıldı (teslim klasörü yolu kod dışı).
 > §13 2026-09-14 · G191: lokal stack recreate sonrası `SHOW` çıktıları ve pg_stat_statements sorgusu koşularak doğrulandı.
 > 2026-09-14 · G193: §3/§4/§8/§11 `docker-compose.yml` ve `nginx.conf` satır atıfları G182/G191 sonrası koda göre
 > yeniden okundu; §11 önbellek başlıkları ve §12 D9/doğrulama sırası koddan; §13 `SHOW` ve en pahalı 10 sorgu
@@ -35,15 +36,10 @@ Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
   `DATABASE_URL`, `GEMINI_API_KEY`, `AZURE_CLIENT_ID`, `ALLOWED_TENANTS`,
   `SHAREPOINT_TENANT_ID`, `SHAREPOINT_CLIENT_ID`, `SHAREPOINT_CLIENT_SECRET` — biri boşsa
   deploy iptal (`REQUIRED_KEYS`, `:260-262`).
-- **İsteğe bağlı: veri teslim SharePoint'i (`TESLIM_SHAREPOINT_*`, G147).**
-  `TESLIM_SHAREPOINT_TENANT_ID` / `CLIENT_ID` / `CLIENT_SECRET` / `SITE_URL`
-  (+ `TESLIM_SHAREPOINT_CLIENT_SECRET_EXPIRES_AT`, `TESLIM_SP_DRIVE_NAME`) zorunlu listede
-  **YOKTUR** ve deploy'u durdurmaz: boş bırakılırsa teslim hattı arşiv kimliği/site'ıyla
-  çalışır, davranış G147 öncesiyle aynı kalır (düşüş kuralı, `.env.example:31-48`;
-  [`dis-bagimliliklar.md` §2](dis-bagimliliklar.md)). Dolduğunda yalnız teslim hattı
-  (gözcü + cevap paketi) Hanyaloğlu tenant'ındaki site'a gider; arşiv env'leri değişmez.
-  Mevcut kural aynen geçerli: **`.env` değişikliği `restart` ile GELMEZ** — env yalnız
-  konteyner create'te okunur, `docker compose up -d` (recreate) gerekir; yalnız backend'i
+- **`TESLIM_SHAREPOINT_*` / `SHAREPOINT_FOLDER_TESLIM_NAME` artık okunmaz** (17.09.2026: veri
+  teslim klasörü yolu ve G147 ikinci kimliği koddan çıktı). Prod `.env`'de kalmışlarsa zararsızdır;
+  silmek insan adımıdır. Mevcut kural aynen geçerli: **`.env` değişikliği `restart` ile GELMEZ** —
+  env yalnız konteyner create'te okunur, `docker compose up -d` (recreate) gerekir; yalnız backend'i
   recreate etmek frontend nginx'i bayat upstream IP'de bırakabildiği için stack'in tamamı
   `up -d` edilir (kurulum sırası [`veri-teslim-hatti.md` §9](veri-teslim-hatti.md)).
 - **`hukuk_shared` ağı** yoksa oluşturulur (`:269-272`).
@@ -458,8 +454,8 @@ kendisi bu dokümanın ilgili bölümündedir, burada yalnız sıra ve neye bak�
    index'e düştüğü. Script'in bölüm 5 metni (`scripts/perf_olcum.py:413`) de bunu söyler:
    "`VALIDATE CONSTRAINT ck_cases_status_uclu` (D9) ancak 0 iken koşulabilir" (kısıt G195'te
    `NOT VALID` ile eklendi; G197 metni düzeltti).
-5. **İlk gece turları:** `lock_timeout` 5 sn yeni bir hata modudur (§13); 04:00 TR veri teslim
-   turundan sonra `docker compose logs --since 12h backend | grep -i "lock timeout"`.
+5. **İlk gece turları:** `lock_timeout` 5 sn yeni bir hata modudur (§13); gece job'larından
+   (00:00 rapor, 02:30 dönüşüm retry) sonra `docker compose logs --since 12h backend | grep -i "lock timeout"`.
 6. **`pg_stat_statements`:** trafik birikince §13'teki en pahalı 10 sorgu.
 
 ## 13. Bağlantı sınırları ve Postgres sunucu ayarları (G191)

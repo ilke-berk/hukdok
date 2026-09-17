@@ -40,17 +40,19 @@ koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn
 `--workers ${UVICORN_WORKERS:-2}`. **2 worker + lider kilidi:** süreç-tekil arkaplan
 işleri kilit dosyası üzerinden (flock/msvcrt, `services/singleton_lock.py`) yalnız
 lider worker'da başlar (`api.py` lifespan): APScheduler (günlük aktivite raporu 00:00 TR,
-dönüşüm retry 02:30 TR, veri teslim turu 04:00 TR, süre/duruşma taraması 06:00 TR) +
-SharePoint upload outbox worker'ı (`services/upload_queue.py`).
+dönüşüm retry 02:30 TR, süre/duruşma taraması 06:00 TR) + SharePoint upload outbox worker'ı
+(`services/upload_queue.py`) + veri teslim açılış toparlaması (`teslim_kutusu.boot_toparla`).
 Refresh thread'i ise BİLEREK worker-başınadır (süreç-içi singleton cache'ler).
 
-**Veri teslim hattı:** veri ekibi `HUKDOK_TESLIM_*.xlsx` paketini SharePoint
-`<SHAREPOINT_FOLDER_TESLIM_NAME>/gelen/` klasörüne bırakır → gözcü (`services/teslim_kutusu.py`,
-`list_folder_children` + sha256) dosyayı `aktarim_teslimleri` defterine ve spool'a alır →
+**Veri teslim hattı:** veri ekibi `HUKDOK_TESLIM_*.xlsx` paketini bize iletir; yönetici admin
+panelinden yükler (`services/teslim_kutusu.py`, sha256) → `aktarim_teslimleri` defteri + spool →
 doğrula → kuru koş (`scripts/hukdok_aktarim.aktarimi_kos`, yalnız import edilir) → kapı
 (env eşikleri `TESLIM_KAPI_*`; ilk teslim ve envanter farkı daima `inceleme_bekliyor`) →
-04:00 TR gece turu lider worker'da uygular (turda en fazla BİR teslim; boot telafisi
-yalnız tarar + kuru koşar) → cevap paketi `cevap/<teslim>/` (`services/teslim_cevap.py`).
+**uygulamayı daima yönetici "Uygula" başlatır** → eşleşme/havuz farkı CSV'leri rapor dizinine
+(`services/teslim_cevap.py`, panelden indirilir). Panelsiz yol CLI: `hukdok_aktarim.py` kuru koşu →
+`--apply`. **SharePoint teslim klasörü yolu 17.09.2026'da KALDIRILDI** (gözcü, 04:00 gece turu,
+`cevap/` yüklemesi, `TESLIM_SHAREPOINT_*` ikinci kimliği, `/aktarim/tara`,
+`veri_teslim_otomasyonu` anahtarı — bekçi `tests/test_teslim_klasoru_kaldirildi.py`).
 `DEGISIKLIK_OZETI` üç satır taşır: "Önceki teslim" (zincir; `—` yalnız defter boşken
 başlangıçtır), "Teslim türü: tam | delta" (delta'da kaybolan sütun ihlal değil bilgi; eksik
 sütun/föy = dokunma) ve "Veri kesim tarihi" (yoksa paket adındaki tarih). Kapı eşiği
@@ -58,10 +60,7 @@ sütun/föy = dokunma) ve "Veri kesim tarihi" (yoksa paket adındaki tarih). Kap
 "Paket kazanır" kuralının tek istisnası `status`: kesim gününden itibaren kullanıcı imzalı
 (`source` NULL ya da `HUKDOK_TESLIM` dışı) `case_history` kaydı varsa paket yazmaz, satır
 raporuna `KORUNDU` düşer (hata değil, `scripts/hukdok_aktarim.py::kesim_sonrasi_kullanici_kaydi`).
-Anahtar admin panelinde `veri_teslim_otomasyonu`, varsayılan KAPALI. Teslim klasörü arşivden
-AYRI bir SharePoint kimliği/site'ındadır (Hanyaloğlu tenant'ı, `TESLIM_SHAREPOINT_*`; boşsa
-arşiv kimliğine düşer — `services/teslim_kutusu.py::TESLIM_SP_CONFIG`, `sharepoint/auth_graph.py`),
-arşiv/sayaç/export LexisBio'da kalır. Ayrıntı
+Tek SharePoint kimliği arşivindir (LexisBio: arşiv/sayaç/export). Ayrıntı
 `docs/mimari/veri-teslim-hatti.md`; veri ekibine verilen sözleşme `docs/veri-teslim/SOZLESME.md`.
 
 **Belge akışı:** `/process` → `analyzer.analyze_file_generator` NDJSON stream'i →
@@ -176,7 +175,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-09-14: 3567 passed, 3 skipped
+docker compose exec -T backend python -m pytest            # 2026-09-17: 3527 passed, 3 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -186,7 +185,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-09-14: 1005 passed (88 dosya)
+npm --prefix frontend test                                 # 2026-09-17: 1002 passed (88 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
