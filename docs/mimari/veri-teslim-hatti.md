@@ -482,6 +482,15 @@ kök/müvekkil kuralına hiç girmez (bekçi test). Ölçüm (17.09 lokal = 16.0
 8.416 föyün 33'ü bu kurala takılırdı — hepsi föy kaydıyla bağlı (etkilenmez); çoğu dava kartındaki
 arabuluculuk föyü ya da yeni turda mahkemesi değişmiş dosya. Test `tests/test_g064_aktarim_cekirdek.py`.
 
+**Ekip cevaplarının kart düzeltmeleri prod id'siyle koşar (Ek-5, 17.09).** 13.09 düzenlemeleri
+(`ekip_cevabi_1209.py` G179, `birlesik_kart_ayir.py` G180) yalnız lokal DB'de koşmuş, lokal 16.09'da prod
+dump'ıyla yenilenince kaybolmuştu; G179'un sabit tabloları lokal id taşıdığından (14362-14364 SMOKE kartları
+prod'da gerçek dosya) o script prod'da YENİDEN KOŞULMAZ. Aynı kararları Ek-5'in prod id'leriyle
+`scripts/ekip_cevabi_1609.py` uygular (kart 14393 onarımı, `2.55x` klasör temizliği, 13.09 föy dönüşü,
+mükerrer/yeni kart birleştirme, kapatma, ayırma, karar künyesi, son durum, ilişki); föyün kartı DB'den okunur.
+`mukerrer_kart_birlestir.birlestir` bu iş için `esas_kontrolu=False` seçeneği aldı — yalnız adıyla verilen
+çiftte (`CIFT_ISTISNALARI`). Kural: ekibe giden liste de, ekipten gelen düzeltmenin uygulanması da prod'dan.
+
 **`Başvuru Tarihi` (G155, plan A6).** `case_stage_decisions.basvuru_tarihi`
 (`models.py:297`; migrasyon madde 47, `database.py:1063`, koşullu `columns` op'u — kısıt yok).
 Okuyucu `ASAMA_SUTUNLARI["basvuru_tarihi"] = ("Başvuru Tarihi",)` (`:2093`), imza alanı;

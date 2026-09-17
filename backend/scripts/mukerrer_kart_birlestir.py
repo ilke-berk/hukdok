@@ -70,7 +70,8 @@ def _muvekkil_kumesi(case: models.Case) -> set:
 
 
 def on_kosul(kalan: models.Case, mukerrer: models.Case, *,
-             muvekkil_ayrimi: bool = False, mahkeme_kontrolu: bool = True) -> Optional[str]:
+             muvekkil_ayrimi: bool = False, mahkeme_kontrolu: bool = True,
+             esas_kontrolu: bool = True) -> Optional[str]:
     """Çift gerçekten mükerrer mi? Değilse sebep döner (birleştirme YAPILMAZ).
 
     `muvekkil_ayrimi=True` (TKU kart birleştirmesi, 11.09.2026): aynı davanın
@@ -81,12 +82,15 @@ def on_kosul(kalan: models.Case, mukerrer: models.Case, *,
     zaten doğruladı (court_name.parse_court_name — "Mahkemesi/Mahkemeleri",
     "(tüketici sıfatıyla)" eki, eksik "1." yazım farkı sayılır); buradaki düz
     metin karşılaştırması atlanır.
+    `esas_kontrolu=False` (Ek-5, 17.09): kartlardan biri yeni turun esasını da
+    taşıyor (`2026/646;2019/83` ↔ `2019/83`) ve aynı dava olduğu ekiple teyitli —
+    çağıran çifti tek tek adıyla verir; genel kullanımda KAPATILMAZ.
     """
     if kalan.id == mukerrer.id:
         return "aynı kart"
     if kalan.deleted_at is not None or mukerrer.deleted_at is not None:
         return "kartlardan biri zaten silinmiş"
-    if (kalan.esas_no or "") != (mukerrer.esas_no or ""):
+    if esas_kontrolu and (kalan.esas_no or "") != (mukerrer.esas_no or ""):
         return f"esas no farklı ({kalan.esas_no!r} ≠ {mukerrer.esas_no!r})"
     # Mahkeme: ikisi de doluysa aynı olmalı; biri boşsa (eski aktarım mahkemesiz
     # kart açmış — #14315 örneği) esas + müvekkil eşleşmesi yeter.
@@ -109,6 +113,7 @@ def _klasor_birlesimi(kalan: Optional[str], mukerrer: Optional[str]) -> Optional
 
 def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
               muvekkil_ayrimi: bool = False, mahkeme_kontrolu: bool = True,
+              esas_kontrolu: bool = True,
               tarihce_alani: str = "mukerrer_birlestirme",
               sebep_etiketi: str = "Mükerrer kart") -> BirlestirmeSonucu:
     """Tek çifti birleştirir (flush eder, COMMIT ETMEZ — çağıranın işi).
@@ -121,7 +126,7 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
     sonuc = BirlestirmeSonucu(kalan.id, mukerrer.id, kalan_tracking_no=kalan.tracking_no,
                               mukerrer_tracking_no=mukerrer.tracking_no)
     sonuc.ret = on_kosul(kalan, mukerrer, muvekkil_ayrimi=muvekkil_ayrimi,
-                         mahkeme_kontrolu=mahkeme_kontrolu)
+                         mahkeme_kontrolu=mahkeme_kontrolu, esas_kontrolu=esas_kontrolu)
     if sonuc.ret:
         return sonuc
     t = sonuc.tasinan
