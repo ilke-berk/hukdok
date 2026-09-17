@@ -1675,7 +1675,7 @@ def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
                 adaylar.append(aday)
     if len(adaylar) == 1:
         tek = db.get(models.Case, adaylar[0])
-        if tek is not None and _tek_aday_kunye_celiskisi(tek, satir) is not None:
+        if tek is not None and _tek_aday_kunye_celiskisi(db, tek, satir) is not None:
             return None           # satır düşecek (Ek-5 › 10) — uzlaşıya katılmasın
         return adaylar[0]
     return _ikinci_anahtarla_coz(db, satir, adaylar) if adaylar else None
@@ -1762,7 +1762,7 @@ def _esas_uyuyor(case: models.Case, esas: Optional[str]) -> bool:
     return any(_baslik_anahtari(p) == anahtar for p in _AYRAC.split(case.esas_no))
 
 
-def _tek_aday_kunye_celiskisi(case: models.Case, satir: HamSatir) -> Optional[str]:
+def _tek_aday_kunye_celiskisi(db, case: models.Case, satir: HamSatir) -> Optional[str]:
     """Köprünün TEK adayı föyün künyesiyle çelişiyor mu? Çelişki metni ya da None.
 
     **Neden (Ek-5 › 10, 16.09 prod):** ekip kendi listesinde Corpus föylerine
@@ -1775,7 +1775,12 @@ def _tek_aday_kunye_celiskisi(case: models.Case, satir: HamSatir) -> Optional[st
     Kural DAR tutulur: esas VE mahkeme ikisi de iki tarafta dolu ve ikisi de
     farklıysa çelişkidir. Yalnız esas farkı (bozma sonrası yeni esas, aynı
     mahkeme) ya da yalnız mahkeme yazımı farkı bağlamayı engellemez; boş alan
-    hiçbir şey söylemez. Föy kaydıyla (`case_foys`) ya da açık haritayla
+    hiçbir şey söylemez. Föyün esası kartın GEÇMİŞİNDE geçiyorsa (esas tarihçesi
+    `case_esas_numbers` ya da `case_history` esas_no satırı) çelişki değildir: avukat
+    kartı yeni tura taşımış, paket eski turu taşıyor — G152 koruma senaryosu (kart
+    1511/1883). Aynı sebeple kartın esası/mahkemesi için KULLANICI imzalı tarihçe satırı
+    varsa da çelişki sayılmaz; alan koruması `_kart_alanlarini_yaz`'da işler. 14393'te
+    künye kart açılışında yazılmıştı, tarihçesi yoktu. Föy kaydıyla (`case_foys`) ya da açık haritayla
     (`--kart-esleme`) bağlanan satıra UYGULANMAZ — çağıran yalnız köprü yolunda sorar.
     """
     esas = _metin(satir.degerler.get("esas"))
@@ -1785,6 +1790,23 @@ def _tek_aday_kunye_celiskisi(case: models.Case, satir: HamSatir) -> Optional[st
     if _esas_uyuyor(case, esas):
         return None
     if _baslik_anahtari(case.court) == _baslik_anahtari(mahkeme):
+        return None
+    kullanici_tasidi = db.query(models.CaseHistory.id).filter(
+        models.CaseHistory.case_id == case.id,
+        models.CaseHistory.field_name.in_(("esas_no", "court")),
+        or_(models.CaseHistory.source.is_(None),
+            ~models.CaseHistory.source.startswith(AKTARIM_SOURCE_PREFIX, autoescape=True)),
+    ).first()
+    if kullanici_tasidi is not None:
+        return None               # künyeyi kullanıcı değiştirmiş (G152) — koruma alan düzeyinde işler
+    anahtar = _baslik_anahtari(esas)
+    gecmis = [e for (e,) in db.query(models.CaseEsasNumber.esas_no)
+              .filter(models.CaseEsasNumber.case_id == case.id)]
+    for eski, yeni in (db.query(models.CaseHistory.old_value, models.CaseHistory.new_value)
+                       .filter(models.CaseHistory.case_id == case.id,
+                               models.CaseHistory.field_name == "esas_no")):
+        gecmis.extend(v for v in (eski, yeni) if v)
+    if any(_baslik_anahtari(p) == anahtar for deger in gecmis for p in _AYRAC.split(deger)):
         return None
     return (
         f"Künye çelişkisi: Dosya No tek karta ({case.id}) düşüyor ama kart "
@@ -2024,7 +2046,7 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
         else:
             case_id = adaylar[0]
             tek = db.get(models.Case, case_id)
-            celiski = _tek_aday_kunye_celiskisi(tek, satir) if tek is not None else None
+            celiski = _tek_aday_kunye_celiskisi(db, tek, satir) if tek is not None else None
             if celiski is not None:
                 raise SatirHatasi(celiski)
 
