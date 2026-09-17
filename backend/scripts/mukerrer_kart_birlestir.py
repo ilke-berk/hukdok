@@ -242,6 +242,9 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
     # Türetilmiş eksik-alan kovası tek yazma yolundan tazelenir (D8): kalan kart
     # yeni taraf/föy aldı, zorunlu alan durumu değişmiş olabilir.
     case_manager.refresh_missing_required(db, kalan)
+    # Mükerrerin bayrağı da tazelenir: tarafları/avukatları gitti, eski kova kalırsa
+    # bayatlama nöbeti (`audit_missing_required_flags`) sapma sayar (Ek-5 lokal koşusu, 17.09).
+    case_manager.refresh_missing_required(db, mukerrer)
     return sonuc
 
 

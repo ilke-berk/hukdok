@@ -134,6 +134,13 @@ def test_birlestirme_belgeyi_tarafiyla_tasir_tekillestirir_soft_siler(cift):
         assert muk.deleted_at is not None and muk.active is False and f"#{kalan_id}" in muk.delete_reason
         assert muk.deleted_by == "test"
         assert muk.tracking_no == "S1.AK.........0376.HUKUK.00000"            # ofis no mükerrerde kalır
+        # bayrak iki kartta da güncel kuralla aynı (mükerrer tarafsız kaldı → bayat kalmamalı)
+        for kart in (kalan, muk):
+            beklenen = case_manager.compute_missing_bucket(case_manager.compute_missing_fields(
+                case_manager._case_snapshot(kart),
+                db.query(models.CaseParty.party_type, models.CaseParty.tc_no).filter_by(case_id=kart.id).all(),
+                db.query(models.CaseLawyer.id).filter_by(case_id=kart.id).all()), False)
+            assert kart.missing_required_bucket == beklenen
         belge = db.query(models.CaseDocument).one()
         assert belge.case_id == kalan_id
         assert belge.case_party_id == next(p.id for p in kalan.parties if p.party_type == "CLIENT")  # SET NULL değil
