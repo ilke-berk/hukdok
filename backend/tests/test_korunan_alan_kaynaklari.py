@@ -32,6 +32,7 @@ def _ek6_yaz(yol, satirlar):
     ("auto-enrich", "BELGEDEN_TURETME", ""),
     ("auto-stage: KARAR", "BELGEDEN_TURETME", ""),
     ("update_case", "PANELDEN_ELLE", ""),
+    ("panel", "PANELDEN_ELLE", ""),          # case_manager.PANEL_SOURCE (08.09'dan beri)
     ("HUKDOK_TESLIM_paket.xlsx", "PAKET", ""),
     (None, "KAYNAK_YOK", ""),
     ("", "KAYNAK_YOK", ""),

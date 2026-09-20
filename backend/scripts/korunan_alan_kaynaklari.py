@@ -14,10 +14,13 @@ satırlarını okur, `source` imzasını sınıflar ve CSV üretir. Sınıflar:
                        Belge adı `case_documents`te bulunursa SharePoint bağlantısı da yazılır.
 * `BELGEDEN_TURETME` — `auto-enrich` / `auto-stage` / `auto-teblig`: belge işlemenin
                        türettiği alan (belge adı imzada yok, aynı kartın belgeleri listelenir).
-* `PANELDEN_ELLE`    — `update_case` / takip paneli: kullanıcı elle yazdı.
+* `PANELDEN_ELLE`    — `panel` (`case_manager.PANEL_SOURCE`) / `update_case` / takip paneli:
+                       kullanıcı kart ekranından elle yazdı.
 * `PAKET`            — `HUKDOK_TESLIM_*`: paketin kendi yazdığı değer (korunan alanda
                        beklenmez; çıkarsa korumanın yanlış tetiklendiğini gösterir).
-* `KAYNAK_YOK`       — `source` NULL (eski elle düzenlemeler, `models.py` şerhi).
+* `KAYNAK_YOK`       — `source` NULL. Panel imzası (`PANEL_SOURCE`) 08.09.2026'da eklendi
+                       (73838c3, G152); o tarihten ESKİ panel düzenlemeleri imzasızdır —
+                       yani "imza yok" = "belge yolu değil, elle girilmiş, kaydı tutulmamış".
 * `TARIHCE_YOK`      — o alan için hiç `case_history` satırı yok.
 
 `esas_no` için `case_esas_numbers` satırının kendi `source`/`stage` bilgisi de yazılır
@@ -40,6 +43,7 @@ from typing import List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models
+from managers.case_manager import PANEL_SOURCE
 from scripts.ekip_cevabi_1209 import _kolon, _sayfa, _tam_sayi
 
 logger = logging.getLogger("KorunanAlanKaynaklari")
@@ -116,7 +120,7 @@ def _sinifla(source: Optional[str]) -> Tuple[str, str]:
         return "PAKET", ""
     if imza.split(":")[0].strip() in ("auto-enrich", "auto-stage", "auto-teblig"):
         return "BELGEDEN_TURETME", ""
-    if imza.startswith("update_case") or imza.startswith("tracking"):
+    if imza == PANEL_SOURCE or imza.startswith("update_case") or imza.startswith("tracking"):
         return "PANELDEN_ELLE", ""
     return "DIGER", ""
 
@@ -206,6 +210,9 @@ def ozet_metni(kalemler: Sequence[Kalem]) -> str:
     satirlar = ["=" * 78, f"Korunan alanların kaynağı — {len(kalemler)} alan (Ek-6 › 03)", "=" * 78]
     for sinif, adet in sorted(sayim.items(), key=lambda x: (-x[1], x[0])):
         satirlar.append(f"  {sinif:20} {adet:3}")
+    if sayim.get("KAYNAK_YOK"):
+        satirlar.append("  (KAYNAK_YOK: panel imzası 08.09.2026'da eklendi — daha eski panel "
+                        "düzenlemeleri imzasızdır; belge yolu olsaydı imza bırakırdı.)")
     satirlar.append("  " + "-" * 74)
     for kalem in kalemler:
         satirlar.append(f"  #{kalem.kart:<6} {kalem.foy:12} {kalem.alan:14} {kalem.kaynak_sinifi:18} "
