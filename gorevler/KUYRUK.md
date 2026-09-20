@@ -220,7 +220,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      geri alınabilir); köprü kararı gündüz işi.
      KUYRUĞA GİRMEYENLER (insan adımı): cevabın veri ekibine gönderilmesi; SharePoint
      03_VERI_TESLIM/gelen klasörü + yazma izni teyidi; veri_teslim_otomasyonu anahtarı;
-     ilk paketin elle "Uygula"sı; Müvekkil Tipi ↔ client.category köprüsü kararı. -->
+     ilk paketin elle "Uygula"sı; Müvekkil Tipi ↔ client.category köprüsü kararı.
+     İPTAL (17.09.2026, a2cc6a0): SharePoint teslim klasörü yolu KALDIRILDI — gözcü, gece
+     turu, cevap yüklemesi, ikinci kimlik ve `veri_teslim_otomasyonu` anahtarı koddan çıktı.
+     Yukarıdaki SharePoint klasörü/izin/anahtar adımları geçersizdir; paket bize iletilir,
+     yönetici panelden yükler (docs/mimari/veri-teslim-hatti.md §1). -->
 
 - [x] G119 | bant:backend | bagimli:- | Müvekkil Tipi + Hizmet Türü: cases'e iki kolon + client_types(5)/service_types(9) seed'li listeler + config uçları + kart yolu + hizmet_turu filtresi
 - [x] G120 | bant:backend | bagimli:G119 | Aktarım eşlemesi: Müvekkil Tipi + Hizmet Türü sütunları teslimden kartlara (G104 deseni, AlanHatasi)
@@ -243,7 +247,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      klasörlerini açmak ve veri ekibine paylaşım vermek; .env'e SHAREPOINT_FOLDER_TESLIM_NAME
      + TESLIM_KAPI_* yazmak (up -d recreate); özellik anahtarını panelden açmak; ilk
      teslimi elle "Uygula"; SOZLESME.md'yi veri ekibine iletmek; frontend'de kapsam dışı
-     föy rozeti (G113 yalnız backend, UI sonraki tur). -->
+     föy rozeti (G113 yalnız backend, UI sonraki tur).
+     İPTAL (17.09.2026, a2cc6a0): SharePoint klasörü/paylaşım, SHAREPOINT_FOLDER_TESLIM_NAME
+     ve `veri_teslim_otomasyonu` anahtarı adımları geçersiz — klasör yolu koddan kaldırıldı,
+     tek giriş admin panelinden yüklemedir. GEÇERLİ kalanlar: TESLIM_KAPI_* env'leri, ilk
+     teslimin elle "Uygula"sı, SOZLESME.md'nin ekibe iletilmesi, kapsam dışı föy rozeti. -->
 
 - [x] G107 | bant:backend | bagimli:- | Teslim defteri (aktarim_teslimleri) + services/teslim_kutusu.py çekirdeği: kaydet/doğrula/kuru koş/kapı/uygula
 - [x] G108 | bant:backend | bagimli:G107 | Teslim admin uçları (/api/admin/aktarim/*) + admin bildirimi + veri_teslim_otomasyonu anahtarı
