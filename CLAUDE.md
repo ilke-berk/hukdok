@@ -71,7 +71,12 @@ filtrelerden geçen belge `export_outbox`'a "pending" düşer + hukukbot'a webho
 (ulaşamazsa sorun değil — hukukbot'un periyodik reconcile'ı toparlar; doğruluk garantisi
 outbox + reconcile'dadır, webhook yalnız gecikmeyi sıfırlar). Ofis dosya no `/process`
 sırasında SharePoint sayacından ATOMİK tahsis edilir (ETag/If-Match; timeout'ta numara
-atlanır — mükerrere tercih edilir).
+atlanır — mükerrere tercih edilir). **Toplu yüklemede ek bağlama (20.09):** tezgâhta bir satır
+başka satırın e-posta EKİ olabilir (tebligat dilekçesi + mazbata): ek satır kendi başına
+arşivlenir (`send_email=false`), dosyası ana satırın `/confirm`'üne `extra_attachment_files` ile
+biner; toplu akışta e-postası açık tebligat ya da ekli satırda EmailModal ZORLA açılır
+(`lib/tebligatDoctype.ts`); dosya başına meta `File` anahtarlıdır (`Index.tsx` `BatchFileMeta`).
+Ayrıntı `docs/mimari/belge-isleme-hatti.md` §3.
 
 **Uygulama içi bildirim** (`docs/mimari/bildirimler.md`): kanal yalnız zil, e-posta
 değil. Üreticiler `belge_islendi` (URL commit sonrası; gündüz `upload_queue` ve gece

@@ -35,6 +35,7 @@ import { useMsal } from "@azure/msal-react";
 import { EmailModal } from "@/components/email/EmailModal";
 import { BulkUploadWorkbench, type BulkUploadStartConfig } from "@/components/BulkUploadWorkbench";
 import { analyzeDocument, type AnalysisData, type SuggestedCase } from "@/lib/analyzeDocument";
+import { isTebligatDoctype } from "@/lib/tebligatDoctype";
 
 interface IndexCaseData {
   id: number;
@@ -57,6 +58,15 @@ interface PreloadEntry {
 
 // Aynı anda buffer'da tutulacak en fazla pre-load sayısı (dosya başına).
 const MAX_PRELOAD_DEPTH = 2;
+
+// Toplu akışta dosya başına ayarlar (hazırlık tezgâhından gelir). Dizin hizalı diziler
+// yerine File referansı anahtarlı — kuyruktan çıkarma (handleRemoveFromQueue) hizayı
+// bozmaz (eski docTypes[]/emailFlags[] çıkarma sonrası bir kayıyordu).
+interface BatchFileMeta {
+  docType: string;           // "" = otomatik
+  email: boolean;            // bu dosya için e-posta gönderilsin mi (ek satırlarda false)
+  extraAttachments: File[];  // tezgâhta bu dosyaya bağlanan ek satırlar — aynı e-postaya ek
+}
 
 // Global declaration for TypeScript to recognize showDirectoryPicker
 declare global {
@@ -121,14 +131,13 @@ const Index = () => {
   const todayCount = todayItems.length;
   const { accounts } = useMsal();
 
-  // Faz 3.1: Batch e-posta ayarları paylaşımı. Toggle açıkken sıradaki dosyalarda
-  // EmailModal açılmaz; bu config doğrudan handleFinalProcess'e geçilir.
+  // Faz 3.1: Batch e-posta ayarları paylaşımı. "Her dosyada ayrıca onayla" KAPALIYKEN
+  // dolar; doluyken sıradaki dosyalarda EmailModal açılmaz (tebligat/ekli satır
+  // istisnaları için bkz. handleConfirmClick), config doğrudan handleFinalProcess'e geçer.
   const [batchEmailConfig, setBatchEmailConfig] = useState<{
     to: string[];
     cc: string[];
-    perFileSend: boolean[];   // dosya bazında e-posta gönderilsin mi (fileQueue sırasıyla hizalı)
     tebligTarihi?: string;
-    extraAttachments?: File[];
   } | null>(null);
 
   // Faz 6: Toplu yükleme hazırlık ekranı state'i. fileQueue.length > 1 olduğunda
@@ -136,16 +145,16 @@ const Index = () => {
   const [showBatchPrep, setShowBatchPrep] = useState(false);
   const [pendingBatchFiles, setPendingBatchFiles] = useState<File[]>([]);
   const [batchPrep, setBatchPrep] = useState<{
-    docTypes: string[];
-    emailFlags: boolean[];      // dosya bazında e-posta toggle (fileQueue sırasıyla hizalı)
+    meta: Map<File, BatchFileMeta>;   // bir kez kurulur, mutasyona uğramaz
     emailPrefill: {
       sendEmail: boolean;
       to: { name: string; email: string }[];
       cc: { name: string; email: string }[];
       tebligTarihi: string;
-      confirmPerFile: boolean;
     };
   } | null>(null);
+  const batchMetaFor = (file: File | null | undefined): BatchFileMeta | undefined =>
+    file ? batchPrep?.meta.get(file) : undefined;
 
   // Faz 3.3: Batch sonu toplu özet için sonuç biriktirme. State yerine ref kullanıyoruz —
   // ardışık handleFinalProcess çağrılarında React state güncelleme gecikmesi olmadan
@@ -345,32 +354,29 @@ const Index = () => {
     if (results.length === 0) return;
 
     const files = results.map((r) => r.file);
-    const docTypes = results.map((r) => r.docType);
-    const emailFlags = results.map((r) => r.email);
+    const meta = new Map<File, BatchFileMeta>(
+      results.map((r) => [r.file, { docType: r.docType, email: r.email, extraAttachments: r.attachments ?? [] }]),
+    );
 
     setBatchPrep({
-      docTypes,
-      emailFlags,
+      meta,
       emailPrefill: {
-        sendEmail: emailFlags.some(Boolean),
+        sendEmail: results.some((r) => r.email),
         to: emailConfig.to,
         cc: emailConfig.cc,
         tebligTarihi: emailConfig.tebligTarihi,
-        confirmPerFile: emailConfig.confirmPerFile,
       },
     });
 
-    // confirmPerFile kapalı → EmailModal hiç açılmasın; batchEmailConfig şimdiden hazır.
-    // Gönderim kararı dosya bazında (perFileSend) verilir.
+    // confirmPerFile kapalı → EmailModal (istisnalar dışında) açılmasın; batchEmailConfig
+    // şimdiden hazır. Gönderim kararı ve ekler dosya bazında meta'dan okunur.
     if (!emailConfig.confirmPerFile) {
       const toList = emailConfig.to.map((r) => `${r.name} <${r.email}>`);
       const ccList = emailConfig.cc.map((r) => `${r.name} <${r.email}>`);
       setBatchEmailConfig({
         to: toList,
         cc: ccList,
-        perFileSend: emailFlags,
         tebligTarihi: emailConfig.tebligTarihi || undefined,
-        extraAttachments: undefined,
       });
     } else {
       setBatchEmailConfig(null);
@@ -381,7 +387,7 @@ const Index = () => {
     setProcessedCount(0);
     setProcessedBatch([]);
     setSelectedFile(files[0]);
-    setSelectedDocType(docTypes[0] || "");
+    setSelectedDocType(meta.get(files[0])?.docType || "");
 
     // Hazırlık ekranında analiz yapılmaz. Analiz burada (handoff sonrası) başlar:
     // 0. dosya otomatik analiz edilir, 1..N-1 preload effect'i ile arka planda hazırlanır.
@@ -585,7 +591,7 @@ const Index = () => {
 
     // Faz 6: hazırlık ekranından gelen belge türü öncelikli; yoksa kullanıcının
     // mevcut akıştaki seçimini kullan.
-    const effectiveDocType = batchPrep?.docTypes[currentFileIndex] ?? selectedDocType;
+    const effectiveDocType = batchMetaFor(selectedFile)?.docType ?? selectedDocType;
 
     try {
       const { analysisData: result, processId: pid } = await analyzeDocument(
@@ -681,7 +687,7 @@ const Index = () => {
     if (preloadBuffer.some(e => e.file === nextFile)) return;
 
     // Faz 6: hazırlık ekranında o dosya için belirlenmiş belge türünü pre-load'a geç.
-    const nextDocType = batchPrep?.docTypes[nextIndex] || undefined;
+    const nextDocType = batchMetaFor(nextFile)?.docType || undefined;
     preloadNextFile(nextFile, nextDocType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileQueue, currentFileIndex, preloadBuffer]);
@@ -751,23 +757,32 @@ const Index = () => {
 
   // Step 1: User clicks "Confirm"
   const handleConfirmClick = () => {
-    if (!finalData && !analysisData) return;
+    const dataToUse = finalData || analysisData;
+    if (!dataToUse) return;
 
-    // Faz 3.1: Batch modda config varsa modal atlanır; yoksa açılır.
-    // Ekler kullanıcının seçtiği şekilde tekrar gönderilir (paylaşım kararı).
-    // Per-recipient mesajlar dosyaya özgü kalır — backend default şablon kullanır.
+    // Faz 3.1: Batch modda config varsa modal atlanır — İKİ istisna dışında. E-postası
+    // açık satır tebligat türündeyse ya da tezgâhta ona bağlanmış eki varsa pencere
+    // yine açılır: avukat mesaj metnini ve ek listesini görsün (kullanıcı kararı,
+    // 20.09.2026). Sessiz yolda per-recipient mesaj yok (backend varsayılan şablon),
+    // ekler dosya bazında meta'dan gelir ve yalnız e-posta gidecekse gönderilir.
     if (batchEmailConfig) {
-      // Gönderim kararı dosya bazında (tezgâhtaki per-row toggle).
-      const shouldSend = batchEmailConfig.perFileSend[currentFileIndex] ?? false;
-      handleFinalProcess(
-        batchEmailConfig.to,
-        batchEmailConfig.cc,
-        shouldSend,
-        batchEmailConfig.tebligTarihi,
-        undefined,
-        batchEmailConfig.extraAttachments,
-      );
-      return;
+      const meta = batchMetaFor(selectedFile);
+      const shouldSend = meta?.email ?? false;
+      const extras = meta?.extraAttachments ?? [];
+      // "" (otomatik) satırda tezgâh türü boştur; onaylanan analiz sonucu doldurur.
+      const effectiveDoctype = dataToUse.belge_turu_kodu || meta?.docType || selectedDocType;
+      const forceModal = shouldSend && (isTebligatDoctype(effectiveDoctype) || extras.length > 0);
+      if (!forceModal) {
+        handleFinalProcess(
+          batchEmailConfig.to,
+          batchEmailConfig.cc,
+          shouldSend,
+          batchEmailConfig.tebligTarihi,
+          undefined,
+          shouldSend && extras.length > 0 ? extras : undefined,
+        );
+        return;
+      }
     }
 
     setIsEmailModalOpen(true);
@@ -890,6 +905,13 @@ const Index = () => {
       // tekrar koşmadı). Mükerrer "arşivlendi" başarısı yerine bilgi verilir.
       if (confirmFlags.idempotentReplay) {
         toast.info("ℹ️ Bu belge zaten kaydedilmişti — önceki sonuç gösterildi, işlem tekrarlanmadı.", { duration: 6000 });
+      }
+
+      // Doğrulamadan geçemeyen ekler (uzantı/boyut/magic-byte) e-postaya girmedi —
+      // toplu ek bağlamada mazbata eksik gitmişse kullanıcı bilsin; batch'te de görünür.
+      const extrasWarning = result.results?.extra_attachments_warning;
+      if (typeof extrasWarning === "string" && extrasWarning) {
+        toast.warning(extrasWarning, { duration: 8000 });
       }
 
       // 3-F: PDF dönüşümü başarısız — belge orijinal uzantısıyla arşivlendi,
@@ -1033,7 +1055,7 @@ const Index = () => {
         setIsValidated(false);
         setFinalData(null);
         // Faz 6: hazırlık ekranında belirlenmiş belge türü varsa otomatik doldur.
-        setSelectedDocType(batchPrep?.docTypes[nextIndex] ?? "");
+        setSelectedDocType(batchMetaFor(fileQueue[nextIndex])?.docType ?? "");
 
         // Dosya bazında reset — önceki dosyanın dava bağlantısı sıradakine sızmamalı.
         // isTestMode korunur (kullanıcı batch boyunca açık tutmak isteyebilir).
@@ -1634,8 +1656,10 @@ const Index = () => {
         // Faz 6: confirmPerFile açıkken hazırlık ekranındaki ayarlar prefill olur.
         defaultTo={batchPrep?.emailPrefill.to ?? []}
         defaultCc={batchPrep?.emailPrefill.cc ?? []}
-        defaultSendEmail={batchPrep?.emailFlags[currentFileIndex] ?? batchPrep?.emailPrefill.sendEmail}
+        defaultSendEmail={batchMetaFor(selectedFile)?.email ?? batchPrep?.emailPrefill.sendEmail}
         defaultTebligTarihi={batchPrep?.emailPrefill.tebligTarihi}
+        // Toplu ek bağlama: tezgâhta bu dosyaya bağlanan ekler listeye önceden basılır.
+        defaultExtraAttachments={batchMetaFor(selectedFile)?.extraAttachments}
         batchCount={fileQueue.length > 1 ? processedBatch.length + 1 : 0}
         totalFiles={fileQueue.length}
         analysisContext={{

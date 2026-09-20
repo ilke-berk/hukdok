@@ -792,6 +792,9 @@ async def send_notification_email(
         results["email_warning"] = pre_check_error
         results["email_success"] = False
         TechnicalLogger.log("WARNING", f"E-posta ön-kontrol başarısız: {pre_check_error} — {new_filename}")
+        # E-posta hiç denenmedi; ek temp dosyalarını send_email_sync temizleyemez, burada temizle.
+        for ep in extra_temp_paths or []:
+            safe_remove(ep.get("path"))
     else:
         t_email = perf_time.perf_counter()
         email_result = await asyncio.get_running_loop().run_in_executor(

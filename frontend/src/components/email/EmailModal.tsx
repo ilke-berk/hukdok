@@ -29,6 +29,9 @@ interface EmailModalProps {
     defaultCc?: { name: string; email: string }[];
     defaultSendEmail?: boolean;
     defaultTebligTarihi?: string;
+    // Toplu yüklemede tezgâhta bu dosyaya bağlanan ek satırlar (ör. dilekçenin
+    // mazbatası): açılışta ek listesine basılır, kullanıcı çıkarabilir.
+    defaultExtraAttachments?: File[];
     isLoading?: boolean;
     batchCount?: number;
     totalFiles?: number;
@@ -61,6 +64,7 @@ export function EmailModal({
     defaultCc = [],
     defaultSendEmail,
     defaultTebligTarihi,
+    defaultExtraAttachments,
     isLoading = false,
     batchCount = 0,
     totalFiles = 0,
@@ -118,7 +122,8 @@ export function EmailModal({
             setSendEmail(defaultSendEmail ?? true);
             setTebligTarihi(defaultTebligTarihi ?? "");
             setPerRecipientMessages({});
-            setExtraAttachments([]);
+            // Her açılışta prop'tan tazelenir: önceki dosyanın elle eklenen ekleri kalmaz.
+            setExtraAttachments([...(defaultExtraAttachments ?? [])]);
             setShowNoEmailConfirm(false);
             // Müvekkil bilgilendirme: sorumlu avukat e-postası varsa varsayılan açık.
             setNotifyClient(clientNotifyEligible && !!clientNoticeLawyer?.email);
@@ -532,10 +537,13 @@ export function EmailModal({
                                         {extraAttachments.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-2">
                                                 {extraAttachments.map((file, i) => (
-                                                    <Badge key={i} variant="secondary" className="px-2 py-1 flex items-center gap-1 text-xs">
+                                                    <Badge key={i} variant="secondary" className="px-2 py-1 flex items-center gap-1 text-xs" data-testid="extra-attachment">
                                                         {getFileIcon(file)}
                                                         <span className="max-w-[120px] truncate">{file.name}</span>
-                                                        <X className="w-3 h-3 cursor-pointer ml-0.5 opacity-60 hover:opacity-100" onClick={() => removeExtraAttachment(i)} />
+                                                        {defaultExtraAttachments?.includes(file) && (
+                                                            <span className="font-mono text-[9px] uppercase opacity-60" title="Toplu yükleme tezgâhında bağlandı">toplu</span>
+                                                        )}
+                                                        <X className="w-3 h-3 cursor-pointer ml-0.5 opacity-60 hover:opacity-100" aria-label={`Eki çıkar: ${file.name}`} onClick={() => removeExtraAttachment(i)} />
                                                     </Badge>
                                                 ))}
                                             </div>

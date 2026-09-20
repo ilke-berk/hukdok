@@ -349,6 +349,55 @@ def test_confirm_db_arizasinda_korumasiz_calisir(confirm_env, monkeypatch):
     assert len(confirm_env.calls["convert"]) == 2
 
 
+# ── Toplu yüklemede ek bağlama: ekler yalnız e-posta gidecekse diske alınır ──
+
+
+def test_confirm_send_email_false_ekleri_diske_almaz(confirm_env, monkeypatch):
+    """send_email=false ile gelen ek (toplu akışta ek olarak bağlanmış mazbata
+    satırı) diske yazılmaz: temp sızıntısı yok, e-posta hattı hiç çağrılmaz."""
+    from services import document_pipeline
+
+    saved_calls = []
+
+    async def fake_save(files):
+        saved_calls.append(files)
+        return [], []
+
+    monkeypatch.setattr(document_pipeline, "save_extra_attachments", fake_save)
+    confirm_env.put_cache("pid-ek1")
+    r = confirm_env.client.post(
+        "/confirm",
+        data=_confirm_form("pid-ek1"),
+        files=[("extra_attachment_files", ("mazbata.pdf", b"%PDF-1.4 mazbata", "application/pdf"))],
+    )
+    assert r.status_code == 200
+    assert saved_calls == []
+    assert confirm_env.calls["email"] == []
+    assert "extra_attachments_warning" not in r.json()["results"]
+
+
+def test_confirm_send_email_true_ekler_email_hattina_gecer(confirm_env):
+    """Ana satırın /confirm'ü: ek dosya doğrulanıp temp'e alınır ve bildirim
+    e-postasına extra_temp_paths olarak geçer (mazbata dilekçenin mailine biner)."""
+    from file_utils import safe_remove
+
+    confirm_env.put_cache("pid-ek2")
+    r = confirm_env.client.post(
+        "/confirm",
+        data=_confirm_form("pid-ek2", send_email="true", custom_to_json='["Av. Ali <ali@example.com>"]'),
+        files=[("extra_attachment_files", ("mazbata.pdf", b"%PDF-1.4 mazbata", "application/pdf"))],
+    )
+    try:
+        assert r.status_code == 200
+        assert len(confirm_env.calls["email"]) == 1
+        extras = confirm_env.calls["email"][0]["extra_temp_paths"]
+        assert [e["name"] for e in extras] == ["mazbata.pdf"]
+        assert os.path.exists(extras[0]["path"])
+    finally:
+        for e in confirm_env.calls["email"][0]["extra_temp_paths"] if confirm_env.calls["email"] else []:
+            safe_remove(e["path"])
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 3) find_idempotent_commit_match — birim testleri (sqlite)
 # ═════════════════════════════════════════════════════════════════════════════

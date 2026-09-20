@@ -875,8 +875,14 @@ async def confirm_process(
 
         timings["5_logging"] = 0.00
 
-        # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir
-        extra_temp_paths, skipped_extras = await document_pipeline.save_extra_attachments(extra_attachment_files)
+        # Extra ekleri doğrulayıp temp dosyaya kaydet; elenenler kullanıcıya bildirilir.
+        # Ekler YALNIZ e-posta gidecekse diske alınır: send_email=False ile gelen ek (toplu
+        # akışta ek olarak bağlanmış mazbata satırı) temp dosya sızdırmasın — temizlik
+        # yalnız send_email_sync finally'sindedir.
+        extra_temp_paths: list = []
+        skipped_extras: list = []
+        if send_email:
+            extra_temp_paths, skipped_extras = await document_pipeline.save_extra_attachments(extra_attachment_files)
         if skipped_extras:
             results["extra_attachments_skipped"] = skipped_extras
             results["extra_attachments_warning"] = (

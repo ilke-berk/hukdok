@@ -256,6 +256,25 @@ def test_save_extra_attachments_enforces_size_limit(monkeypatch):
     assert skipped == ["buyuk.pdf"]
 
 
+def test_send_notification_email_on_kontrol_hatasinda_ekleri_temizler(monkeypatch, tmp_path):
+    """E-posta ön-kontrolü düşünce send_email_sync hiç koşmaz; ek temp dosyaları
+    orada değil, ön-kontrol dalında temizlenir (toplu ek bağlama sızıntı kapısı)."""
+    from services import document_pipeline
+
+    ek = tmp_path / "ek.pdf"
+    ek.write_bytes(b"%PDF-1.4 ek")
+    monkeypatch.setattr(document_pipeline, "email_pre_check", lambda *_a, **_k: "Alıcı listesi boş")
+    results: dict = {}
+    asyncio.run(document_pipeline.send_notification_email(
+        email_file_path=str(ek), new_filename="x.pdf", avukat_kodu=None, email_metadata={},
+        custom_to=[], custom_cc=[], custom_email_message=None, custom_messages=None,
+        extra_temp_paths=[{"path": str(ek), "name": "ek.pdf"}],
+        current_user_name="t", doc_id=None, results=results, timings={},
+    ))
+    assert results["email_success"] is False
+    assert not ek.exists()
+
+
 # ── 0.7: MAX_PDF_PAGES ölü kod düzeltmesi ────────────────────────────────────
 
 

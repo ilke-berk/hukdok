@@ -106,13 +106,55 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    varsayılan KAPALI, yönetim paneli > Özellikler'den açılır). Asıl kapı sunucudadır:
    arayüz kutuyu göstermese de bayat/elle `send_client_notice=true` isteği anahtarı
    aşamaz; kapalıyken sonuç `client_notice: "Atlandı (özellik yönetici panelinden
-   kapalı)"` olur (`routes/processing.py` confirm bloğu).
+   kapalı)"` olur (`routes/processing.py` confirm bloğu). Ek dosyalar
+   (`extra_attachment_files`) YALNIZ `send_email` doğruyken doğrulanıp temp'e alınır
+   (`document_pipeline.save_extra_attachments`); e-posta ön-kontrolü düşerse orada
+   temizlenir — temizlik eskiden yalnız `send_email_sync` finally'sindeydi, `send_email=false`
+   ile gelen ek temp dosyası sızdırıyordu (20.09.2026).
 6. **Dava zenginleştirme**: belge bir davaya bağlıysa `_auto_update_case_status`
    (`processing.py:160`) ve `_auto_enrich_case_data` (`processing.py:213`) çalışır;
    duruşma tarihi varsa kaydedilir.
 7. **İdempotency kaydının kapatılması**: `confirm_idempotency.complete(process_id, payload)`.
    Pipeline istisna atarsa ve belge **yaratılmamışsa** kayıt `release` edilir → tekrar
    denemek serbest kalır.
+
+### Toplu yüklemede ek bağlama (tebligat dilekçesi + mazbata, 20.09.2026)
+
+Tebligat pratikte iki dosya gelir: karşı tarafın dilekçesi + tebliğ mazbatası. Avukat
+dilekçeyi sorumlu avukata mail atarken mazbatanın AYNI mailin eki olmasını ister (süre
+hesabı mazbatadaki tebliğ tarihine dayanır). Kullanıcı kararı: ek satır hem kendi belgesi
+olarak arşivlenir hem ana satırın mailine ek olur; toplu akışta e-postası açık tebligat
+satırında ve bağlı eki olan satırda e-posta penceresi otomatik açılır.
+
+- **Tezgâh** (`frontend/src/components/BulkUploadWorkbench.tsx`, "Eki olduğu belge"
+  sütunu): satır `attachTo` ile başka satırın eki olur. Kurallar: kendisi ve e-postası
+  kapalı satırlar aday değil; ek olan satır ana olamaz, ek taşıyan satır ek olamaz (zincir
+  yok); bağlanınca satırın e-posta anahtarı kapanır ve kilitlenir; ana satırın e-postası
+  kapanınca ya da satır silinince bağ çözülür; toplu e-posta anahtarı kapatılınca tüm
+  bağlar çözülür. "Onaya Geç" payload'ında (`BulkPrepResult.attachments`) ana satır bağlı
+  satırların `File`'larını taşır, ek satır `email:false` + boş `attachments` ile gider.
+- **Kuyruk** (`frontend/src/pages/Index.tsx`): dosya başına meta `Map<File, BatchFileMeta>`
+  (`docType`, `email`, `extraAttachments`) — **File referansı anahtarlı**; eski dizin hizalı
+  `docTypes[]`/`emailFlags[]` kuyruktan çıkarma (`handleRemoveFromQueue`) sonrası bir
+  kayıyordu, bu tasarımla kapandı. `handleConfirmClick`: "her dosyada ayrıca onayla" KAPALI
+  (`batchEmailConfig` dolu) iken modal atlanır, İKİ istisna dışında — `email` açık ve
+  (`lib/tebligatDoctype.isTebligatDoctype(onaylanan belge_turu_kodu || tezgâh türü)` ya da
+  bağlı ek var) → `EmailModal` `defaultExtraAttachments` ile önceden dolu açılır. Sessiz
+  yolda ekler yalnız `send_email` doğruyken `handleFinalProcess`'e geçer.
+- **Backend sözleşmesi değişmedi:** ana satırın `/confirm`'ü ekleri `extra_attachment_files`
+  ile taşır (tek ana bildirim mailine `extra_temp_paths`), ek satırın `/confirm`'ü
+  `send_email=false` ile ayrı `process_id`'yle gider (arşiv + SharePoint, mail yok);
+  idempotency çakışması yok. Ek satır ana satırdan önce ya da sonra işlense de `File`
+  bellekte olduğundan sıra önemsizdir.
+- **Sınırlar:** ekler PDF/A'ya çevrilmez, yüklendiği gibi gider; e-posta boyut sınırı
+  `EMAIL_MAX_SINGLE_MB`/`EMAIL_MAX_TOTAL_MB` (varsayılan 3 MB, `email_sender.py`) —
+  sığmayan ek gövde notuyla SESSİZ atlanır; `extra_attachments_warning` yalnız doğrulama
+  retleri (uzantı/boyut/magic-byte) içindir ve artık arayüzde toast olarak görünür. Ek
+  satır kuyruktan çıkarılırsa yine mail eki olur ama arşivlenmez.
+- Bekçiler: `BulkUploadWorkbench.test.tsx`, `Index.batch.test.tsx`,
+  `EmailModal.defaultAttachments.test.tsx`, `lib/tebligatDoctype.test.ts`;
+  backend `test_faz3_confirm_idempotency.py` (ek + `send_email` iki yön),
+  `test_faz0_hardening.py` (ön-kontrol temizliği).
 
 ### Arşiv adı tekliği (2026-09-01 arızası)
 
