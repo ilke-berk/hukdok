@@ -18,6 +18,14 @@ Kural:
   `Esas`; `case_relations_auto.esas_anahtari`). `ham_veri`siz föy gruplanamaz → kart RET.
 * Kartın kendi grubu: (kart.file_type, esas_anahtari(kart.esas_no)) ile birebir; yoksa
   kartın türündeki en büyük grup; o da yoksa en büyük grup. Tek grup → ATLANDI.
+* `--muvekkil-ayrimi` (Ek-6 › 01, 17.09.2026 — kart 14334): grup anahtarına ÜÇÜNCÜ boyut
+  olarak föyün müvekkili eklenir, böylece aynı tür + aynı esastaki iki müvekkil de ayrılır
+  (ekibin sorusu: "dört föy dört ayrı kartta olmalı — müvekkil başına bir arabuluculuk, bir
+  dava kartı"). Aynı (tür, esas) birden çok gruba bölününce kartta KALAN grup, kartın ofis
+  numarasındaki isim bloğuyla seçilir (`kartsiz_foy_kart_ac.isim_blogu`) — kartın künyesi
+  kendi müvekkilinde kalsın diye. Bu modda yeni kartın klasör numarası GRUBUN kendi
+  DosyaNo'sudur (müvekkil başına ayrı klasör); kapalıyken kartın numarası paylaşılır.
+  Bayrak yalnız adıyla verilen kartta açılır — genel kullanımda KAPALIDIR.
 * Yeni kart `kartsiz_foy_kart_ac.kart_adaylari` + `ofis_numarasi` ile (künye grubun asıl
   föyünden, ofis numarası mevcut kural), klasör no = kartın DosyaNo'su (paylaşılır — sonraki
   aktarım köprüde iki kart görür, esas + tür ikinci anahtarı ayırır: tasarlanmış ikiz yolu).
@@ -33,6 +41,7 @@ Kural:
         --ek3 /app/calibration-data/_g179/HUKDOK_CEVAP_EKI_3_2026-09-12.xlsx        # kuru koşu
     docker compose exec -T backend python scripts/birlesik_kart_ayir.py --ek3 … --apply --kim ilke
     docker compose exec -T backend python scripts/birlesik_kart_ayir.py --kart 2468 --kart 4177   # liste elle
+    docker compose exec -T backend python scripts/birlesik_kart_ayir.py --kart 14334 --muvekkil-ayrimi
 """
 from __future__ import annotations
 
@@ -49,6 +58,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models
 from managers import case_manager
+from party_check import normalize_party_key
 from scripts import hukdok_aktarim as ha
 from scripts import kartsiz_foy_kart_ac as kfa
 from scripts.ekip_cevabi_1209 import _kolon, _sayfa, _tam_sayi
@@ -61,7 +71,9 @@ ILISKI_TURU = "AYRISTIRILAN"
 EK3_BIRLESTIRME_SAYFASI = "03_BIRLESTIRME_KARTLARI"
 EK3_TASIMA_SAYFASI = "02_BASKA_ASAMA_KARTI"
 
-GrupAnahtari = Tuple[str, str]      # (file_type, esas anahtarı)
+# (file_type, esas anahtarı) — müvekkil ayrımı açıkken üçüncü boyut müvekkil anahtarı.
+# Arite tek koşu içinde sabittir (bayrak koşu başına seçilir), karşılaştırmalar güvenli.
+GrupAnahtari = Tuple[str, ...]
 
 
 @dataclass
@@ -130,12 +142,23 @@ def foy_satiri(foy: models.CaseFoy) -> Optional[ha.HamSatir]:
     return ha.HamSatir(satir_no=0, degerler=degerler, ham=dict(ham))
 
 
-def grup_anahtari(satir: ha.HamSatir) -> GrupAnahtari:
+def grup_anahtari(satir: ha.HamSatir, *, muvekkil_ayrimi: bool = False) -> GrupAnahtari:
     tur = ha._esleme(ha.ANA_TUR_ESLEMESI)(satir.degerler.get("ana_tur"), "file_type") or ""
-    return (str(tur), esas_anahtari(ha._metin(satir.degerler.get("esas"))))
+    anahtar = (str(tur), esas_anahtari(ha._metin(satir.degerler.get("esas"))))
+    if not muvekkil_ayrimi:
+        return anahtar
+    return anahtar + (normalize_party_key(kfa._ilk(satir.degerler.get("muvekkil")) or ""),)
 
 
-def gruplari_bul(kart: models.Case, foyler: Sequence[models.CaseFoy]
+def _grup_isim_blogu(grup: Sequence[Tuple[models.CaseFoy, ha.HamSatir]]) -> Optional[str]:
+    """Grubun ofis numarası isim bloğu (tek DosyaNo'ya düşmüyorsa None)."""
+    adaylar = kfa.kart_adaylari([s for _, s in grup])
+    if len(adaylar) != 1 or not adaylar[0].muvekkil:
+        return None
+    return kfa.isim_blogu(adaylar[0])
+
+
+def gruplari_bul(kart: models.Case, foyler: Sequence[models.CaseFoy], *, muvekkil_ayrimi: bool = False
                  ) -> Tuple[Optional[GrupAnahtari], Dict[GrupAnahtari, List[Tuple[models.CaseFoy, ha.HamSatir]]], List[str]]:
     """(kartın kendi grubu, {anahtar: [(föy, satır)]}, ham_veri'siz föyler)."""
     gruplar: Dict[GrupAnahtari, List[Tuple[models.CaseFoy, ha.HamSatir]]] = {}
@@ -145,15 +168,24 @@ def gruplari_bul(kart: models.Case, foyler: Sequence[models.CaseFoy]
         if satir is None:
             hamsiz.append(foy.sistem_no)
             continue
-        gruplar.setdefault(grup_anahtari(satir), []).append((foy, satir))
+        gruplar.setdefault(grup_anahtari(satir, muvekkil_ayrimi=muvekkil_ayrimi), []).append((foy, satir))
     if not gruplar:
         return None, gruplar, hamsiz
-    kendi: GrupAnahtari = (kart.file_type or "", esas_anahtari(kart.esas_no))
-    if kendi in gruplar:
-        return kendi, gruplar, hamsiz
-    ayni_tur = [k for k in gruplar if k[0] == kendi[0]]
-    aday = ayni_tur or list(gruplar)
-    return max(aday, key=lambda k: (len(gruplar[k]), k)), gruplar, hamsiz
+    def en_buyuk(adaylar: Sequence[GrupAnahtari]) -> GrupAnahtari:
+        return max(adaylar, key=lambda k: (len(gruplar[k]), k))
+
+    kendi_temel = (kart.file_type or "", esas_anahtari(kart.esas_no))
+    tam = [k for k in gruplar if tuple(k[:2]) == kendi_temel]
+    if len(tam) == 1:
+        return tam[0], gruplar, hamsiz
+    if tam:
+        # Müvekkil ayrımı: kartın künyesi kendi müvekkilinde kalsın — kartta kalacak
+        # grup, ofis numarasının isim bloğuyla seçilir (tek eşleşme yoksa en büyük grup).
+        blok = (kart.tracking_no or "").split(".")[1] if "." in (kart.tracking_no or "") else None
+        eslesen = [k for k in tam if blok and _grup_isim_blogu(gruplar[k]) == blok]
+        return (eslesen[0] if len(eslesen) == 1 else en_buyuk(tam)), gruplar, hamsiz
+    ayni_tur = [k for k in gruplar if k[0] == kendi_temel[0]]
+    return en_buyuk(ayni_tur or list(gruplar)), gruplar, hamsiz
 
 
 # ─── Yeni kart ───────────────────────────────────────────────────────────────
@@ -174,7 +206,8 @@ def _iliski_var(db, a: int, b: int) -> bool:
 
 
 def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha.HamSatir]],
-                 kullanilan: Dict[str, int], *, kim: str) -> Tuple[Optional[models.Case], str]:
+                 kullanilan: Dict[str, int], *, kim: str,
+                 muvekkil_ayrimi: bool = False) -> Tuple[Optional[models.Case], str]:
     """Grubun föyleri için kart açar, föyleri taşır; (kart, hata_metni)."""
     satirlar = [s for _, s in grup]
     adaylar = kfa.kart_adaylari(satirlar)
@@ -187,10 +220,14 @@ def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha
     source = f"{DEGISTIREN} ({kim})"
     # `kart_adaylari` tarihi ISO metin verir; Date kolonu date ister (sqlite katı, Postgres toleranslı)
     opening_date = date.fromisoformat(aday.opening_date) if aday.opening_date else None
+    # Klasör no: aynı dosyanın iki aşaması ayrılırken kartın numarası paylaşılır
+    # (tasarlanmış ikiz yolu); müvekkil ayrımında her müvekkilin kendi DosyaNo'su
+    # vardır ve kartın numarası yeni karta TAŞINMAZ (ekibin Ek-6 › 01 ricası).
+    klasor_no_2 = (aday.dosya_no or kalan.klasor_no_2) if muvekkil_ayrimi else (kalan.klasor_no_2 or aday.dosya_no)
     yeni = models.Case(
         tracking_no=aday.tracking_no, status=aday.status, file_type=aday.file_type,
         subject=aday.subject, court=aday.court, opening_date=opening_date,
-        klasor_no_2=kalan.klasor_no_2 or aday.dosya_no, tenant_id=kalan.tenant_id,
+        klasor_no_2=klasor_no_2, tenant_id=kalan.tenant_id,
         responsible_lawyer_name=kalan.responsible_lawyer_name,
         notes=f"#{kalan.id} {kalan.tracking_no} kartından ayrıldı ({KAYNAK}): {', '.join(aday.sistem_nolar)}",
     )
@@ -210,7 +247,8 @@ def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha
     return yeni, ""
 
 
-def karti_ayir(db, kart_id: int, kullanilan: Dict[str, int], *, kim: str) -> AyirmaKalemi:
+def karti_ayir(db, kart_id: int, kullanilan: Dict[str, int], *, kim: str,
+               muvekkil_ayrimi: bool = False) -> AyirmaKalemi:
     kart = db.get(models.Case, kart_id)
     if kart is None or kart.deleted_at is not None:
         return AyirmaKalemi(kart_id, "RET", "kart yok ya da silinmiş")
@@ -218,7 +256,7 @@ def karti_ayir(db, kart_id: int, kullanilan: Dict[str, int], *, kim: str) -> Ayi
               .order_by(models.CaseFoy.sistem_no).all())
     if len(foyler) < 2:
         return AyirmaKalemi(kart_id, "ATLANDI", f"{len(foyler)} föy — ayrılacak grup yok")
-    kendi, gruplar, hamsiz = gruplari_bul(kart, foyler)
+    kendi, gruplar, hamsiz = gruplari_bul(kart, foyler, muvekkil_ayrimi=muvekkil_ayrimi)
     if hamsiz:
         return AyirmaKalemi(kart_id, "RET", f"ham satırı olmayan föy: {', '.join(hamsiz)} — gruplanamaz")
     if len(gruplar) < 2:
@@ -231,14 +269,15 @@ def karti_ayir(db, kart_id: int, kullanilan: Dict[str, int], *, kim: str) -> Ayi
         if anahtar == kendi:
             continue
         with db.begin_nested():
-            yeni, hata = yeni_kart_ac(db, kart, grup, kullanilan, kim=kim)
+            yeni, hata = yeni_kart_ac(db, kart, grup, kullanilan, kim=kim, muvekkil_ayrimi=muvekkil_ayrimi)
             if yeni is None:
                 kalem.sonuc, kalem.aciklama = "RET", f"grup {anahtar}: {hata}"
                 return kalem
             if not _iliski_var(db, kart.id, yeni.id):
                 db.add(models.CaseRelation(source_case_id=kart.id, target_case_id=yeni.id,
                                            relation_type=ILISKI_TURU, created_by=kim,
-                                           note=f"{KAYNAK}: {anahtar[0]} {anahtar[1] or '(esassız)'} ayrı kart"))
+                                           note=f"{KAYNAK}: {anahtar[0]} {anahtar[1] or '(esassız)'}"
+                                                f"{' · ' + anahtar[2] if len(anahtar) > 2 else ''} ayrı kart"))
             sistem_nolar = [f.sistem_no for f, _ in grup]
             _tarihce(db, kart.id, "kart_ayirma", ", ".join(sistem_nolar), f"→ #{yeni.id} {yeni.tracking_no}", kim,
                      f"grup {anahtar}")
@@ -250,13 +289,14 @@ def karti_ayir(db, kart_id: int, kullanilan: Dict[str, int], *, kim: str) -> Ayi
     return kalem
 
 
-def kos(session_factory, *, kart_idler: Sequence[int], apply: bool = False, kim: str = DEGISTIREN) -> Sonuc:
+def kos(session_factory, *, kart_idler: Sequence[int], apply: bool = False, kim: str = DEGISTIREN,
+        muvekkil_ayrimi: bool = False) -> Sonuc:
     sonuc = Sonuc()
     kullanilan: Dict[str, int] = {}
     db = session_factory()
     try:
         for kart_id in kart_idler:
-            sonuc.ekle(karti_ayir(db, kart_id, kullanilan, kim=kim))
+            sonuc.ekle(karti_ayir(db, kart_id, kullanilan, kim=kim, muvekkil_ayrimi=muvekkil_ayrimi))
         if apply:
             db.commit()
         else:
@@ -283,6 +323,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--kart", type=int, action="append", default=[], help="kart id (tekrarlanabilir)")
     parser.add_argument("--apply", action="store_true", help="yaz (varsayılan kuru koşu)")
     parser.add_argument("--kim", default=DEGISTIREN, help="tarihçe imzası")
+    parser.add_argument("--muvekkil-ayrimi", action="store_true",
+                        help="aynı tür + esastaki farklı müvekkilleri de ayır (yalnız adıyla verilen kartta)")
     args = parser.parse_args(argv)
     from logging_setup import configure_logging    # log sözleşmesi: yapılandırma tek yerde
     configure_logging()
@@ -292,7 +334,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not idler:
         parser.error("--ek3 ya da --kart gerekli")
     from database import SessionLocal
-    sonuc = kos(SessionLocal, kart_idler=idler, apply=args.apply, kim=args.kim)
+    sonuc = kos(SessionLocal, kart_idler=idler, apply=args.apply, kim=args.kim,
+                muvekkil_ayrimi=args.muvekkil_ayrimi)
     print(ozet_metni(sonuc, apply=args.apply))
     return 0
 

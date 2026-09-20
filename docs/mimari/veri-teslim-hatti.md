@@ -396,6 +396,18 @@ lokal ölçümü: `X` ve `X.00` farklı kartlarda 79 çift — birleştirme AYRI
 aynı olan kart — ekibin kuralı, 18 satırın 8 belirsizini tek başına çözdü (H-11235 → 794); sıra
 esas/tür → kök → müvekkil adı → ilk parça, log `kriter=…+ilk parça`, satır raporu sebep metni
 "… /ilk parça de ayırmadı" (her satırda denenir), gösterim ekibin gördüğü HAM DosyaNo.
+
+**Noktasız ikincil anahtar (ekibin 17.09 cevabı, Ek-6 › 02 sınıf A).** Aynı numaranın iki
+yazımı (`1976.001` ↔ `1.976.001`, `2.433.01` ↔ `2433.01`) köprüde FARKLI anahtar sayıldığı için
+paket kartı bulamadı ve dört davada ikinci kart açıldı. Kural: birincil anahtar HİÇ tutmazsa
+noktasız biçimle ikinci tur (`_noktasiz_anahtar`, index `DosyaNoKoprusu.ikincil()` — `dict`
+türevi olduğundan eski `harita.get(parça)` kullanımı aynen çalışır, index ilk istendiğinde bir
+kez kurulur); **yalnız TEK aday varsa** eşleşir, iki kart aynı noktasız biçime düşüyorsa
+(temizlik öncesi hâl) eşleşme yapılmaz ve satır bugünkü gibi rapora düşer. Üç okuma yolu da
+aynı yardımcıdan geçer (`_dosya_no_adaylari`): `_kart_coz`, `_kart_id_tahmini` ve
+`kartsiz_foy_kart_ac.kartsiz_foyler` — sonuncusu sayesinde köprünün bulduğu karta ikinci kart
+AÇILMAZ. `.00`/`.01` ayrımı korunur (ikincil tur da normalize parça alır).
+Test `tests/test_ek6_noktasiz_anahtar.py`.
 `DOSYANO_KOK_ESKI_UNVANLARI` (2 → Corpus Sigorta = Quick'in eski unvanı, kök 27 20.07.2026'da
 kapandı; 8 → Ergo Sigorta = HDI devri): `_kokun_markasi_mi` ile hem `_kok_muvekkil_celiskisi`
 (çelişki DEĞİL, satır yazılır) hem `_kokun_karti_mi` (kök adımında kökün kartı sayılır) bunu
@@ -546,6 +558,91 @@ kart — elle), grup birden çok DosyaNo'ya bölünüyor, müvekkil boş. Tek tr
 gruplu kart ATLANDI → ikinci koşu 0. Lokal kuru koşu 13.09 (G179 uygulanmış DB): 30 kart → 23 ayrıldı / 23 yeni kart ·
 6 atlandı (G179'un föy taşımaları sonrası tek föy/tek grup: 4370, 13897, 14287, 14328, 14334, 15276) · 1 ret (15291
 G179'da 14333'e birleşmişti); `--apply` 13.09 gece uygulandı (canlı kart 14.315 → 14.338, 23 ilişki). Test `tests/test_g180_birlesik_kart_ayir.py`.
+
+### 7.5 Ekip cevabı düzeltmeleri — `scripts/ekip_cevabi_1709.py` (Ek-6, 17.09.2026)
+
+Ekibin 17.09 cevabı (`HUKDOK_CEVAP_EKI_6_2026-09-17.xlsx`, kesim 17.09, dört sayfa; ek repoya
+GİRMEZ) tek koşuda uygulanır. Kart numaraları ekte bizim 17.09 canlı listemizden alınmıştır,
+yani PROD id'leridir — script lokalde koşup "oldu" sayılmaz (yukarıdaki kural, §7.4 şerhi).
+Sabit tablolar dosyadadır; `--ek6` verilirse **doğrulama kapısı** çalışır (her kart ekte var mı,
+birleştirmede kalan kart föylü / sönen föysüz mü) ve uyuşmazlıkta hiçbir şey yazılmadan çıkılır.
+
+Altı adım, tek transaction (`kos`, `--apply` yoksa geri alınır): (1) **kapatma** — 5546, ekip
+"karşılığı yok, kapatılmasını onaylıyoruz" dedi; föyü/belgesi olan kart RET (insan kararı);
+(2) **alan** — 5567 `subject` "Alacak" → "Rücuen Alacak" (Ek-4 › 02'deki düzeltme birleştirmede
+kapanan 5295'te kalmıştı; değer `case_subjects` havuzunda yoksa RET, havuz farkı doğurmasın) ve
+2553 `karar_turu` "RED" → BOŞ (dosya istinaf kaldırma kararıyla yeniden görülüyor; `karar_turu`
+`stage_decisions._PHOTO_COLUMNS` DIŞINDA olduğu için `_resync_stage_photo` geri yazmaz);
+(3) **mükerrer** — 15 çift, kalan DAİMA föylü kart: A(4) nokta yazımı ikizleri, B(3) föysüz
+ikinci kart, C(6) klasörsüz kart (üçünde belge var: 14357·13, 14341·4, 3694·1 — kapatmak yerine
+birleştirme, belgeler `mukerrer_kart_birlestir.birlestir` ile taşınır), D(2) Başsavcılık
+11163→14591 ve Bursa 14375→14538 (aynı müvekkil, sıfatlar farklı yazılmış — kararı ekip bize
+bıraktı, müvekkil başına kart desenimiz gereği tek kart). Kapı: mahkeme anahtarı + esas AYNEN
+kontrol edilir (ekteki yazım farklarını `_baslik_anahtari` eritiyor — ölçüldü), müvekkil kümesi
+eşitliği ARANMAZ (`muvekkil_ayrimi=True`): çiftler tek tek adıyla verilmiştir ve ekibin bütün
+sınıflarında kartların müvekkil kapsamı bilerek farklıdır; (4) **klasör** — A sınıfında birleşme
+iki yazımı ";" ile birleştirdiği için numara föylü karttaki TEK yazıma çekilir (yalnız aynı
+numaranın varyantı düşer, başka numara korunur), ayrıca 11163'ten gelen `212.001.00` düşürülür
+(ekipte hiç geçmiyor; C-111'in numarası `221.002.00`, eski değer tarihçede kalır);
+(5) **ayırma** — 14334'ün dört föyü dört karta (`birlesik_kart_ayir --muvekkil-ayrimi`);
+(6) **ilişki** — 14571 ↔ 14730 `ILGILI` bağı (aynı davanın iki müvekkil kartı, ayrı kalır).
+
+DOKUNULMAYANLAR (ekibin ricası): 4370/ARB-16909 — ekip düzeltilmiş künyeyi ayrıca bildirecek,
+ayırma o zaman ve "2.011.00 yeni karta taşınmadan"; 4953 — föy henüz MİCRO numarası almadı;
+Kocaeli 13397 ↔ 14408 — işlem gerekmiyor. Tarihçe imzası `changed_by=ekip_cevabi_1709`,
+`source="ekip cevabı 17.09.2026 (Ek-6) (kim): kanıt"` — `HUKDOK_TESLIM` ön eki KULLANILMAZ,
+kesim-sonrası koruma (G152) bunu kullanıcı kaydı sayar. Test `tests/test_ekip_cevabi_1709.py`.
+
+**Müvekkil ayrımıyla ayırma (`birlesik_kart_ayir --muvekkil-ayrimi`).** Grup anahtarına üçüncü
+boyut olarak föyün müvekkili eklenir; aynı tür + aynı esastaki iki müvekkil de ayrılır (14334:
+ARB-16767 + H-16856 → Deniz Esinler Dr., ARB-16779 + H-16857 → Aylin Ayrım Dr). Aynı (tür, esas)
+birden çok gruba bölününce kartta KALAN grup, kartın ofis numarasındaki isim bloğuyla seçilir
+(`kartsiz_foy_kart_ac.isim_blogu`) — kartın künyesi kendi müvekkilinde kalsın diye. Bu modda yeni
+kartın `klasor_no_2`'si GRUBUN kendi DosyaNo'sudur (müvekkil başına ayrı klasör; kartın numarası
+yeni karta TAŞINMAZ — ekibin ricası), bayrak kapalıyken eski davranış (numara paylaşılır) aynen
+kalır. Bayrak yalnız adıyla verilen kartta açılır.
+
+**Korunan alanların kaynağı — `scripts/korunan_alan_kaynaklari.py` (SALT OKUNUR).** Ekip Ek-6 › 03
+ile "bu 23 alanı ne ile güncellediniz" diye sordu. Script hiçbir şey yazmaz: ekteki (kart, alan)
+çiftleri için `case_history` satırlarını okur — korunan değeri YAZAN satır (yoksa alanın en yeni
+satırı) — ve `source` imzasını sınıflar: `BELGE` (`belge:<ad>`, `intake-enrich: <ad>` → belge adı
+`case_documents`te aranır, `sharepoint_url` yazılır), `BELGEDEN_TURETME` (`auto-enrich`/
+`auto-stage`/`auto-teblig`), `PANELDEN_ELLE` (`update_case`), `PAKET` (`HUKDOK_TESLIM_*` — korunan
+alanda beklenmez), `KAYNAK_YOK` (imza NULL, eski elle düzenlemeler), `TARIHCE_YOK`. `esas_no`
+satırlarında `case_esas_numbers` zincirinin kendi `source`/`stage` bilgisi de yazılır. Çıktı
+`;` ayraçlı UTF-8-BOM CSV (`--rapor`). Test `tests/test_korunan_alan_kaynaklari.py`.
+
+### 7.6 KolayOfis son durum tazeleme — `scripts/kolayofis_son_durum.py` (20.09.2026)
+
+Teslim paketi dışında, ekibin kendi sisteminden alınan `<tarih>_KolayOfis_DosyalarRaporu.xlsx`
+ile `cases.dosya_son_durumu` tazelenir (rapor repoya GİRMEZ, yolu `--rapor`). Rapor FÖY
+düzeyindedir (SistemNo tekil) ve yalnız "Aktif" dosyaları taşır: kapalı/arşiv kartlara
+DOKUNMAZ. Bir sonraki teslim paketi "paket kazanır" kuralıyla alanı yeniden yazar — bu koşu
+o pakete kadar geçerli bir tazelemedir, kalıcı çözüm paketin güncel gelmesidir.
+
+Üç adım, tek transaction (`kos`, `--apply` yoksa geri alınır, rapor yine basılır):
+(1) **panel listesi** (`file_statuses`) ekibin başlıklarına hizalanır — `İstinafta` → `İstinafda`
+(kartlar ekibin yazımını kullanıyor, liste yazımı hiçbir kartta geçmiyordu), eksik `Kapalı` ve
+`Soruşturma` eklenir; (2) **kart yazım birliği** — `Bekletici Mesele/ceza-hukuk Dosyası` listedeki
+tek yazıma çekilir; (3) **tazeleme** — rapor satırı `case_foys.sistem_no` ile canlı karta çözülür,
+değer farklıysa tarihçeli yazılır.
+
+Son durum sütunu 17.09 çıktısında BAŞLIKSIZ gelir: başlık adıyla bulunamazsa "Buro Özel Türü" ile
+"Yerel Mahkeme Karar Durumu" arasındaki tek sütuna düşülür (WARNING). Rapordaki yazım kusurları
+normalize edilir (`Delliller Toplanıyor` → `Deliller Toplanıyor` — ekibin başlık listesinde de aynı
+hata var; `Islah ` boşluğu); `Lütfen Seçiniz` ve boş hücre YAZILMAZ — dolu kutuyu boşaltmak veri
+kaybıdır. Bir kartın föyleri farklı değer söylüyorsa karta DOKUNULMAZ (`CELISKI`): föyler ayrı
+aşamalarda olabilir ya da kart yanlış bağlanmıştır, ikisi de insan kararıdır.
+
+Tarihçe imzası `changed_by=kolayofis_son_durum`, `source="KolayOfis Dosyalar Raporu (kim): föyler"`
+— `HUKDOK_TESLIM` ön eki KULLANILMAZ (kesim-sonrası koruma G152 bunu kullanıcı kaydı sayar).
+İkinci koşu 0 değişiklik üretir. Test `tests/test_kolayofis_son_durum.py`.
+
+17.09 raporunun lokal koşusu (20.09): 2.919/2.957 satır eşleşti → 2.424 kart; 810 tazelendi
+(709 değişim + 101 boş doldu), 1.471 zaten doğru, 8 föy bizde yok, 48 kart çelişkili. Çelişkiler
+ekibe gönderildi (9'unda föyler farklı esas taşıyor — yanlış bağlama şüphesi). Ekibin başlık
+listesinde olmayan değer taşıyan 1.251 kart (İnfaz 1.007, Derdest 236) bu raporla düzelmez;
+kapalı/arşiv dosyalarını içeren çıktı istendi.
 
 ## 8. Log sözleşmesi ve bildirim
 

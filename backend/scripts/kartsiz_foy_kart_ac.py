@@ -99,8 +99,8 @@ def kartsiz_foyler(db, satirlar: Sequence[ha.HamSatir]) -> List[ha.HamSatir]:
         parcalar = ha._dosya_no_parcalari(satir.degerler.get("dosya_no"))
         if not parcalar:
             continue                      # Dosya No boş: köprü yok, kart da açılmaz (rapor)
-        if any(p in dosya_haritasi for p in parcalar):    # parçalar zaten normalize anahtar
-            continue                      # kart var (tek ya da belirsiz) — aktarımın işi
+        if ha._dosya_no_adaylari(dosya_haritasi, parcalar):   # parçalar zaten normalize anahtar
+            continue                      # kart var (tek, belirsiz ya da noktasız ikincil) — aktarımın işi
         sonuc.append(satir)
     return sonuc
 
@@ -162,13 +162,25 @@ def kart_adaylari(foyler: Sequence[ha.HamSatir]) -> List[KartAdayi]:
     return adaylar
 
 
+def isim_blogu(aday: KartAdayi) -> str:
+    """Ofis numarasının isim bloğu (`S4.QUICK......0453.HUKUK.00000` → `QUICK.....`).
+
+    Sıra numarasından bağımsız tek parça: `scripts/birlesik_kart_ayir.py` müvekkil
+    ayrımında "hangi grup kartta kalır" sorusunu kartın numarasındaki blokla
+    karşılaştırarak yanıtlar.
+    """
+    kategori = MUVEKKIL_TIPI_KATEGORI.get(ha._baslik_anahtari(aday.muvekkil_tipi), "")
+    ad = rt._client_key(aday.muvekkil) if aday.muvekkil else ""
+    kod = rt._get_category_code(kategori, ad)
+    return rt.generate_tracking_number(ad, kod, 0, aday.file_type, "00000", kategori).split(".")[1]
+
+
 def ofis_numarasi(db, aday: KartAdayi, kullanilan: Dict[str, int]) -> str:
     """Kategori kodu + isim bloğu + (DB'deki max + bu koşuda verilenler) + tür."""
     kategori = MUVEKKIL_TIPI_KATEGORI.get(ha._baslik_anahtari(aday.muvekkil_tipi), "")
     ad = rt._client_key(aday.muvekkil) if aday.muvekkil else ""
     kod = rt._get_category_code(kategori, ad)
-    ornek = rt.generate_tracking_number(ad, kod, 0, aday.file_type, "00000", kategori)
-    blok = ornek.split(".")[1]
+    blok = isim_blogu(aday)
     if blok not in kullanilan:
         satirlar = (db.query(models.Case.tracking_no)
                     .filter(models.Case.tracking_no.like(f"%.{blok}.%")).all())

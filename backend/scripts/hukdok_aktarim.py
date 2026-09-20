@@ -1055,7 +1055,7 @@ def _dosya_no_haritasi(db) -> Dict[str, List[int]]:
     14.204 distinct → 112 grup); liste hâlinde tutulur, çok eşleşen satır
     "belirsiz eşleşme" ile rapora düşer — yanlış karta yazmaktansa.
     """
-    harita: Dict[str, List[int]] = {}
+    harita: Dict[str, List[int]] = DosyaNoKoprusu()
     sorgu = (
         db.query(models.Case.id, models.Case.klasor_no_2)
         .filter(models.Case.klasor_no_2.isnot(None), models.Case.deleted_at.is_(None))
@@ -1101,6 +1101,56 @@ def _eslesme_anahtari(deger: Any) -> str:
     if anahtar.endswith(_DOSYANO_SIFIR_EKI) and "." in govde:
         return govde
     return anahtar
+
+
+# Ekip (Ek-6 › 02 sınıf A, 17.09.2026): aynı numaranın iki yazımı ("1976.001" ↔
+# "1.976.001") köprüde FARKLI anahtar sayıldı, paket kartı bulamadı ve ikinci kart
+# açıldı (4 dava). Birincil anahtar HİÇ tutmazsa noktasız biçimle ikinci tur denenir;
+# yalnız TEK aday varsa eşleşir — iki kart aynı noktasız biçime düşüyorsa (temizlik
+# öncesi hâl, tam da bu 4 dava) belirsizlik korunur ve satır rapora düşer.
+def _noktasiz_anahtar(anahtar: str) -> str:
+    return anahtar.replace(".", "")
+
+
+class DosyaNoKoprusu(Dict[str, List[int]]):
+    """`klasor_no_2` köprüsü: birincil anahtar sözlüğü + noktasız ikincil index.
+
+    `dict` türevidir — eski kullanım (`harita.get(parca)`, `parca in harita`)
+    aynen çalışır; ikincil index ilk istendiğinde bir kez kurulur.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._ikincil: Optional[Dict[str, List[int]]] = None
+
+    def ikincil(self) -> Dict[str, List[int]]:
+        if self._ikincil is None:
+            harita: Dict[str, List[int]] = {}
+            for parca, idler in self.items():
+                kova = harita.setdefault(_noktasiz_anahtar(parca), [])
+                for case_id in idler:
+                    if case_id not in kova:
+                        kova.append(case_id)
+            self._ikincil = harita
+        return self._ikincil
+
+
+def _dosya_no_adaylari(dosya_haritasi: Dict[str, List[int]], parcalar: Sequence[str]) -> List[int]:
+    """Dosya No parçalarının kart adayları (birincil anahtar → noktasız ikincil tur)."""
+    adaylar: List[int] = []
+    for parca in parcalar:
+        for aday in dosya_haritasi.get(parca) or []:
+            if aday not in adaylar:
+                adaylar.append(aday)
+    if adaylar:
+        return adaylar
+    koprusu = (dosya_haritasi if isinstance(dosya_haritasi, DosyaNoKoprusu)
+               else DosyaNoKoprusu(dosya_haritasi))
+    for parca in parcalar:
+        for aday in koprusu.ikincil().get(_noktasiz_anahtar(parca)) or []:
+            if aday not in adaylar:
+                adaylar.append(aday)
+    return adaylar if len(adaylar) == 1 else []      # çoklu aday: belirsizlik korunur
 
 
 # ─── Dosya No kökü → müvekkil kimliği (G153) ─────────────────────────────────
@@ -1668,11 +1718,7 @@ def _kart_id_tahmini(db, satir: HamSatir, foy_haritasi: Dict[str, int],
     case_id = foy_haritasi.get(sistem_no)
     if case_id is not None:
         return case_id
-    adaylar: List[int] = []
-    for parca in _dosya_no_parcalari(satir.degerler.get("dosya_no")):
-        for aday in dosya_haritasi.get(parca) or []:
-            if aday not in adaylar:
-                adaylar.append(aday)
+    adaylar = _dosya_no_adaylari(dosya_haritasi, _dosya_no_parcalari(satir.degerler.get("dosya_no")))
     if len(adaylar) == 1:
         tek = db.get(models.Case, adaylar[0])
         if tek is not None and _tek_aday_kunye_celiskisi(db, tek, satir) is not None:
@@ -2018,11 +2064,7 @@ def _kart_coz(db, satir: HamSatir, foy_haritasi: Dict[str, int],
         if not parcalar:
             raise SatirHatasi("Dosya No boş ve föy kaydı yok — kart eşleştirilemedi")
         gosterim = str(_metin(satir.degerler.get("dosya_no")))   # ekibin gördüğü ham değer
-        adaylar: List[int] = []
-        for parca in parcalar:
-            for aday in dosya_haritasi.get(parca) or []:
-                if aday not in adaylar:
-                    adaylar.append(aday)
+        adaylar = _dosya_no_adaylari(dosya_haritasi, parcalar)
         if not adaylar:
             raise SatirAtlandi(
                 f"Kart bulunamadı (Dosya No {gosterim!r} klasor_no_2 ile eşleşmiyor)"

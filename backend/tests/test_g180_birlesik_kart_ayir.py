@@ -226,3 +226,67 @@ def test_ek3_kartlari_iki_sayfadan(tmp_path):
     yol = tmp_path / "ek3.xlsx"
     wb.save(yol)
     assert bka.ek3_kartlari(yol) == [2468, 4177, 4957]
+
+
+# ─── Müvekkil ayrımı (Ek-6 › 01, kart 14334) ─────────────────────────────────
+
+def _iki_muvekkilli_kart(db_env):
+    """14334 deseni: aynı arabuluculuk + aynı dava esası, İKİ müvekkil, dört föy."""
+    db = db_env()
+    try:
+        k = _kart(db, "D1.D_ESINLER..0002.ARABU.00000", "1110.003;1993.001", file_type="Arabuluculuk",
+                  esas_no="2026/720", court="Ankara Arabuluculuk Bürosu")
+        for sistem_no, dosya_no, tur, esas, mahkeme, muvekkil in (
+                ("ARB-16767", "1110.003", "ARABULUCULUK", "2026/720", "Ankara Arabuluculuk Bürosu", "Deniz Esinler Dr."),
+                ("ARB-16779", "1993.001", "ARABULUCULUK", "2026/720", "Ankara Arabuluculuk Bürosu", "Aylin Ayrim Dr"),
+                ("H-16856", "1110.003", "HUKUK", "2026/91", "Ankara 11. Tüketici Mahkemesi", "Deniz Esinler Dr."),
+                ("H-16857", "1993.001", "HUKUK", "2026/91", "Ankara 11. Tüketici Mahkemesi", "Aylin Ayrim Dr")):
+            _foy(db, k, sistem_no, _ham(sistem_no, dosya_no, tur, esas, mahkeme,
+                                        muvekkil=muvekkil, tip="Doktor"))
+        db.commit()
+        return k.id
+    finally:
+        db.close()
+
+
+def test_muvekkil_ayrimi_dort_foyu_dort_karta_boler(db_env):
+    kart_id = _iki_muvekkilli_kart(db_env)
+    sonuc = bka.kos(db_env, kart_idler=[kart_id], apply=True, kim="test", muvekkil_ayrimi=True)
+    assert sonuc.sayim("YAPILDI") == 1 and sonuc.yeni_kart_sayisi == 3
+
+    db = db_env()
+    try:
+        # Kartın künyesi kendi müvekkilinde kaldı: isim bloğu D_ESINLER olan ARB grubu
+        kalan_foyler = {f.sistem_no for f in db.query(models.CaseFoy).filter_by(case_id=kart_id)}
+        assert kalan_foyler == {"ARB-16767"}
+        kartlar = {}
+        for yeni_id, tracking, sistem_nolar in sonuc.kalemler[0].yeni_kartlar:
+            assert len(sistem_nolar) == 1
+            kartlar[sistem_nolar[0]] = db.get(models.Case, yeni_id)
+            assert tracking.split(".")[1] in ("A_AYRIM", "D_ESINLER")
+        assert set(kartlar) == {"ARB-16779", "H-16856", "H-16857"}
+        # Klasör no müvekkil başına: kartın iki numaralı listesi yeni karta TAŞINMAZ
+        assert kartlar["ARB-16779"].klasor_no_2 == "1993.001"
+        assert kartlar["H-16856"].klasor_no_2 == "1110.003"
+        assert kartlar["H-16857"].esas_no == "2026/91" and kartlar["H-16857"].file_type == "Hukuk"
+        assert db.query(models.CaseRelation).filter_by(source_case_id=kart_id,
+                                                       relation_type="AYRISTIRILAN").count() == 3
+    finally:
+        db.close()
+
+    tekrar = bka.kos(db_env, kart_idler=[kart_id], apply=True, kim="test", muvekkil_ayrimi=True)
+    assert tekrar.sayim("ATLANDI") == 1 and tekrar.yeni_kart_sayisi == 0
+
+
+def test_muvekkil_ayrimi_kapaliyken_davranis_degismez(db_env):
+    """Bayraksız: aynı esastaki iki müvekkil TEK grup — dava grubu iki DosyaNo'ya
+    bölündüğü için kart RET (bayrağın neden gerektiğinin ölçüsü)."""
+    kart_id = _iki_muvekkilli_kart(db_env)
+    sonuc = bka.kos(db_env, kart_idler=[kart_id], apply=True, kim="test")
+    assert sonuc.sayim("RET") == 1 and "DosyaNo'ya bölünüyor" in sonuc.kalemler[0].aciklama
+    db = db_env()
+    try:
+        assert db.query(models.Case).count() == 1
+        assert db.query(models.CaseFoy).filter_by(case_id=kart_id).count() == 4
+    finally:
+        db.close()

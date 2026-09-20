@@ -51,7 +51,7 @@ alınacağını** anlatır.
 | `DEGISIKLIK_OZETI` | İsteğe bağlı — **her teslime ekleyin** | Üç etiketli satır: **"Önceki teslim"**, **"Teslim türü"**, **"Veri kesim tarihi"** (§3). Sayfa yoksa dosya reddedilmez; ama zincir kontrolü **yapılamaz** ("zincir bilinmiyor" notu düşer, paket öteki eşiklerin içindeyse kapıdan geçmiş görünür), teslim türü **tam** sayılır ve kesim tarihi paket adından alınır. Atlanan teslimin yakalanmasını istiyorsanız bu sayfayı hiç eksik bırakmayın. |
 | `Karar_Asamalari` | İsteğe bağlı | Föy başına yargı aşamaları (Yerel → İstinaf → Temyiz → Karar Düzeltme). Yoksa aşama bilgisi yazılmaz, hata değildir. 06.09'da eklediğiniz **`Başvuru Tarihi`** sütunu okunur (kanun yoluna başvuru tarihi; İstinaf satırında boşsa ana sayfadaki "İstinaf Mahkeme Başvuru Tar." yedek kaynaktır). `Aşama = Önceki` satırları eski esas numarası olarak işlenir. Karar durumu hücresine büro dosya durumu (`Kapalı`, `Derdest`) **yazmayın** — §6. |
 | `Düzeltme_Logu` | İsteğe bağlı | Hücre düzeltme günlüğü: `SistemNo`, `Sütun`, `Eski Değer`, `Yeni Değer`, `Gerekçe`, `Tarih`. Gerekçe bizde o alanın değişiklik tarihçesine işlenir. Değişen sütunun adı ya ayrı bir `Sütun` başlığında (06.09'da önerdiğiniz biçim — kabul) ya da gerekçenin başında köşeli parantezle (`[Hükmedilen Manevi] Outlook otomasyonu parti-2`) verilir; ikisi de yoksa satır işlenmez. |
-| `DEGER_HAVUZLARI` | İsteğe bağlı | Kapalı liste değerleri: "Havuz / Sütun" ve "Değer" sütunları (bugünkü paketteki düzen). Bizim listelerimizle karşılaştırılır; fark varsa cevap klasörüne rapor düşer (§6). |
+| `DEGER_HAVUZLARI` | İsteğe bağlı | Kapalı liste değerleri: "Havuz / Sütun" ve "Değer" sütunları (bugünkü paketteki düzen). Bizim listelerimizle karşılaştırılır; fark varsa cevap dosyalarıyla birlikte size iletilir (§6, §8). |
 | `Silinen_Föyler`, `Kapsam_Dışı` | İsteğe bağlı | Kapsamdan çıkardığınız föyler: `SistemNo` + gerekçe (`Silinme Gerekçesi` / `Kapsam Dışı Gerekçesi`) + `Tarih`. Bkz. §5. |
 | `SUTUN_SOZLUGU`, `SINIFLANDIRMA_MODELI`, `HUKDOK_TALEPLERI`, `Kaldirilan_Sutunlar`, `S37_Kanonik`, `Yazim_Standardi` | İsteğe bağlı | Okunmaz; paketle gelmesi sorun değildir. (`Yazim_Standardi`'nı artık **istiyoruz** — §11; okunmaması "gelmesin" demek değildir, insan okur.) |
 
@@ -177,8 +177,8 @@ Kusur havuzları bilgilendirme belgesi §3.8'dedir, karar durumu havuzlarının 
   Liste dışı yazım karta girer ama ekranda liste dışı görünür — yazımı listeye uydurun.
 - `DEGER_HAVUZLARI` sayfası paketle geliyorsa altı havuz için (İddia Edilen Kusur, üç
   karar durumu, Olay Türü, Hükümdeki Rol) iki yönlü fark çıkarılır: sizde olup bizde
-  olmayanlar ve bizde olup sizde olmayanlar. Fark varsa cevap klasörüne
-  `deger-havuzu-farki_<teslim>.csv` düşer; fark yoksa dosya üretilmez. Müvekkil Tipi ve
+  olmayanlar ve bizde olup sizde olmayanlar. Fark varsa öteki cevap dosyalarıyla birlikte
+  `deger-havuzu-farki_<teslim>.csv` size iletilir (§8); fark yoksa dosya üretilmez. Müvekkil Tipi ve
   Hizmet Türü havuzları karşılaştırılmaz; bu ikisinde tanınmayan değer yalnız satır
   raporunda görünür.
 - Yeni bir değer eklenmesi gerekiyorsa bunu yazılı bildirin; listeye ekleme insan kararıyla
