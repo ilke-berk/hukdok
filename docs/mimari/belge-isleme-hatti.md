@@ -127,7 +127,10 @@ olarak arşivlenir hem ana satırın mailine ek olur; toplu akışta e-postası 
 satırında ve bağlı eki olan satırda e-posta penceresi otomatik açılır.
 
 - **Tezgâh** (`frontend/src/components/BulkUploadWorkbench.tsx`, "Eki olduğu belge"
-  sütunu): satır `attachTo` ile başka satırın eki olur. Kurallar: kendisi ve e-postası
+  sütunu): satır `attachTo` ile başka satırın eki olur. Görsel düzen ağaç gibidir: ek satır
+  ana belgenin hemen altında girintili ("↳", `data-attach-to`), numara yalnız ana belgelerde,
+  ek satırda seçici yerine "Ayır" düğmesi (kullanıcı kararı 20.09: "ek dosyanın altında ek
+  gibi görünsün"). Kurallar: kendisi ve e-postası
   kapalı satırlar aday değil; ek olan satır ana olamaz, ek taşıyan satır ek olamaz (zincir
   yok); bağlanınca satırın e-posta anahtarı kapanır ve kilitlenir; ana satırın e-postası
   kapanınca ya da satır silinince bağ çözülür; toplu e-posta anahtarı kapatılınca tüm

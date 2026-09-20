@@ -212,6 +212,16 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
   const primaryCandidates = (row: FileRow) => rows.filter((p) => p.id !== row.id && p.email && !p.attachTo);
   const anyAttached = rows.some((r) => r.attachTo);
 
+  // Görsel sıra: ana belge, hemen altında girintili ekleri. Numara yalnız ana
+  // belgelerde (01, 02, …); ek satır "↳ ek" ile ana belgenin altında durur.
+  const topLevel = rows.filter((r) => !r.attachTo);
+  const topNumber = new Map(topLevel.map((r, i) => [r.id, i]));
+  const displayRows: { row: FileRow; attached: boolean }[] = topLevel.flatMap((p) => [
+    { row: p, attached: false },
+    ...attachmentsOf(p.id).map((a) => ({ row: a, attached: true })),
+  ]);
+  const labelOf = (p: FileRow) => rowLabel(topNumber.get(p.id) ?? 0, p.name);
+
   // --- E-posta alıcı kontrolleri ---
   const selectRecipient = (type: "to" | "cc", r: { name: string; email: string }) => {
     const setter = type === "to" ? setToRecipients : setCcRecipients;
@@ -314,13 +324,31 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
             <span></span>
           </div>
           <div className="divide-y divide-[var(--border)]">
-            {rows.map((r, i) => (
-              <div key={r.id} data-testid="bulk-row" data-file={r.name} className="grid grid-cols-[36px_1fr_280px_200px_64px_40px] gap-3 px-4 py-3 items-center">
-                <span className="font-mono text-[11px] text-[var(--fg-subtle)] tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+            {displayRows.map(({ row: r, attached }) => (
+              <div
+                key={r.id}
+                data-testid="bulk-row"
+                data-file={r.name}
+                data-attach-to={r.attachTo ?? ""}
+                className={cn(
+                  "grid grid-cols-[36px_1fr_280px_200px_64px_40px] gap-3 px-4 items-center",
+                  attached ? "py-2 bg-[var(--bg-sunken)]/60" : "py-3",
+                )}
+              >
+                {attached ? (
+                  <span className="font-mono text-[11px] text-[var(--brand)] text-right pr-1" title="Ek">↳</span>
+                ) : (
+                  <span className="font-mono text-[11px] text-[var(--fg-subtle)] tabular-nums">{String((topNumber.get(r.id) ?? 0) + 1).padStart(2, "0")}</span>
+                )}
 
-                <div className="min-w-0">
-                  <div className="text-[13px] text-[var(--fg)] truncate" title={r.name}>{r.name}</div>
-                  <div className="font-mono text-[10px] text-[var(--fg-subtle)]">{formatSize(r.size)}</div>
+                <div className={cn("min-w-0 flex items-center gap-2", attached && "pl-5")}>
+                  {attached && <Paperclip className="w-3.5 h-3.5 text-[var(--brand)] shrink-0" />}
+                  <div className="min-w-0">
+                    <div className={cn("truncate", attached ? "text-[12.5px] text-[var(--fg-muted)]" : "text-[13px] text-[var(--fg)]")} title={r.name}>{r.name}</div>
+                    <div className="font-mono text-[10px] text-[var(--fg-subtle)]">
+                      {formatSize(r.size)}{attached && " · ek — arşivlenir, kendi e-postası gitmez"}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 min-w-0">
@@ -342,39 +370,42 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                   )}
                 </div>
 
-                {/* Ek bağlama: bu satır hangi satırın e-postasına ek olsun? Ek taşıyan satır
-                    kendisi ek olamaz (zincir yok). */}
+                {/* Ek bağlama: ana satırda "hangi belgenin eki olsun" seçicisi (ek taşıyan
+                    satır kendisi ek olamaz — zincir yok); ek satırda yalnız "Ayır" düğmesi. */}
                 <div className="flex items-center gap-2 min-w-0">
-                  {r.attachTo && <Paperclip className="w-3.5 h-3.5 text-[var(--brand)] shrink-0" />}
-                  <Select
-                    value={r.attachTo ?? NONE_VALUE}
-                    onValueChange={(v) => setRowAttachTo(r.id, v)}
-                    disabled={isPrimary(r.id)}
-                  >
-                    <SelectTrigger
-                      aria-label={`Ek bağla: ${r.name}`}
-                      title={isPrimary(r.id) ? "Ek taşıyan satır kendisi ek olamaz" : undefined}
-                      className="h-8 flex-1 text-xs bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0"
+                  {attached ? (
+                    <button
+                      type="button"
+                      onClick={() => setRowAttachTo(r.id, NONE_VALUE)}
+                      aria-label={`Eki ayır: ${r.name}`}
+                      className="h-8 px-3 text-xs text-[var(--fg-muted)] hover:text-[var(--brand)] bg-[var(--bg)] rounded-[3px] transition-colors inline-flex items-center gap-1.5"
                     >
-                      <SelectValue>
-                        {(() => {
-                          const p = r.attachTo ? rows.find((x) => x.id === r.attachTo) : undefined;
-                          if (!p) return <span className="text-[var(--fg-subtle)]">—</span>;
-                          return rowLabel(rows.indexOf(p), p.name);
-                        })()}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE_VALUE}>— Ek değil —</SelectItem>
-                      {primaryCandidates(r).map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{rowLabel(rows.indexOf(p), p.name)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {isPrimary(r.id) && (
-                    <span className="font-mono text-[10px] text-[var(--brand)] shrink-0 whitespace-nowrap" title="Bu belgenin e-postasına binen ek sayısı">
-                      +{attachmentsOf(r.id).length} ek
-                    </span>
+                      <X className="w-3 h-3" /> Ayır
+                    </button>
+                  ) : (
+                    <>
+                      <Select
+                        value={NONE_VALUE}
+                        onValueChange={(v) => setRowAttachTo(r.id, v)}
+                        disabled={isPrimary(r.id)}
+                      >
+                        <SelectTrigger
+                          aria-label={`Ek bağla: ${r.name}`}
+                          title={isPrimary(r.id) ? "Ek taşıyan belge kendisi ek olamaz" : "Bu dosyayı başka bir belgenin e-posta eki yap"}
+                          className="h-8 flex-1 text-xs bg-[var(--bg)] border-[var(--border)] rounded-[3px] border-0"
+                        >
+                          <SelectValue>
+                            <span className="text-[var(--fg-subtle)]">{isPrimary(r.id) ? `+${attachmentsOf(r.id).length} ek` : "—"}</span>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_VALUE}>— Ek değil —</SelectItem>
+                          {primaryCandidates(r).map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{labelOf(p)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
                   )}
                 </div>
 
@@ -382,10 +413,10 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                   <Switch
                     aria-label={`E-posta: ${r.name}`}
                     checked={r.email}
-                    disabled={!!r.attachTo}
-                    title={r.attachTo ? "Bu dosya ek olarak gönderilecek" : undefined}
+                    disabled={attached}
+                    title={attached ? "Ek: ana belgenin e-postasıyla gider" : undefined}
                     onCheckedChange={(v) => setRowEmail(r.id, v)}
-                    className="data-[state=checked]:bg-[var(--brand)]"
+                    className={cn("data-[state=checked]:bg-[var(--brand)]", attached && "opacity-30")}
                   />
                 </div>
 
@@ -414,9 +445,9 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
           )}
           {anyAttached && (
             <div className="px-4 py-2 border-t border-[var(--border)] flex items-center gap-2">
-              <Paperclip className="w-3 h-3 text-[var(--brand)]" />
+              <span className="font-mono text-[11px] text-[var(--brand)]">↳</span>
               <span className="font-mono text-[10px] text-[var(--fg-subtle)]">
-                Ek olarak bağlanan dosya arşivlenir ama kendi e-postası gitmez; ana belgenin e-postasına eklenir.
+                = ek: dosya arşivlenir ama kendi e-postası gitmez; üstündeki belgenin e-postasına eklenir.
               </span>
             </div>
           )}

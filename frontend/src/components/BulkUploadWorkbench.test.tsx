@@ -110,7 +110,9 @@ describe("BulkUploadWorkbench — ek bağlama", () => {
   const attachTrigger = (name: string) => byLabel<HTMLButtonElement>(`Ek bağla: ${name}`);
   const attachOptions = (name: string) =>
     Array.from(attachTrigger(name).closest("[data-select]")!.querySelectorAll("[data-option]")).map(o => o.textContent);
-  const attachValue = (name: string) => attachTrigger(name).closest("[data-select]")!.getAttribute("data-value");
+  const rowOf = (name: string) => container.querySelector(`[data-testid='bulk-row'][data-file='${name}']`)!;
+  const attachValue = (name: string) => rowOf(name).getAttribute("data-attach-to");
+  const rowOrder = () => Array.from(container.querySelectorAll("[data-testid='bulk-row']")).map(r => r.getAttribute("data-file"));
   const emailSwitch = (name: string) => byLabel<HTMLInputElement>(`E-posta: ${name}`);
   const click = (el: Element) => act(() => { el.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
   const toggle = (input: HTMLInputElement) => act(() => { input.click(); });
@@ -129,14 +131,35 @@ describe("BulkUploadWorkbench — ek bağlama", () => {
     expect(attachOptions("mazbata.pdf")).toEqual(["— Ek değil —", "01 · dilekce.pdf"]);
   });
 
-  it("bağlanınca satırın e-postası kapanır ve anahtar kilitlenir; ana satır +1 ek rozeti alır", () => {
+  it("bağlanınca ek satır ana belgenin hemen altına girer, e-postası kapanır ve kilitlenir; ana satır +1 ek gösterir", () => {
+    expect(rowOrder()).toEqual(["dilekce.pdf", "mazbata.pdf", "karar.pdf"]);
     attachMazbataToDilekce();
 
     expect(attachValue("mazbata.pdf")).toMatch(/^0-dilekce\.pdf/);
+    expect(rowOrder()).toEqual(["dilekce.pdf", "mazbata.pdf", "karar.pdf"]);
+    expect(rowOf("mazbata.pdf").textContent).toContain("↳");
+    expect(rowOf("mazbata.pdf").textContent).toContain("kendi e-postası gitmez");
+    expect(attachTrigger("mazbata.pdf")).toBeNull();               // ek satırda seçici yok, "Ayır" var
+    expect(byLabel("Eki ayır: mazbata.pdf")).not.toBeNull();
     expect(emailSwitch("mazbata.pdf").checked).toBe(false);
     expect(emailSwitch("mazbata.pdf").disabled).toBe(true);
-    expect(container.textContent).toContain("+1 ek");
-    expect(container.textContent).toContain("Ek olarak bağlanan dosya arşivlenir");
+    expect(rowOf("dilekce.pdf").textContent).toContain("+1 ek");
+    // Numara yalnız ana belgelerde: karar artık 02.
+    expect(rowOf("karar.pdf").textContent).toContain("02");
+  });
+
+  it("ek satır görsel sırada ana belgeyi izler (karar → dilekçe eki olunca dilekçenin altına taşınır)", () => {
+    const option = attachTrigger("karar.pdf").closest("[data-select]")!
+      .querySelector("[data-option][data-value^='0-dilekce.pdf']")!;
+    click(option);
+
+    expect(rowOrder()).toEqual(["dilekce.pdf", "karar.pdf", "mazbata.pdf"]);
+
+    click(byLabel("Eki ayır: karar.pdf"));
+    expect(rowOrder()).toEqual(["dilekce.pdf", "mazbata.pdf", "karar.pdf"]);
+    expect(attachValue("karar.pdf")).toBe("");
+    expect(emailSwitch("karar.pdf").disabled).toBe(false);
+    expect(emailSwitch("karar.pdf").checked).toBe(false);          // ayrılınca kapalı kalır
   });
 
   it("zincir yasak: ek olan satır aday değildir, ek taşıyan satırın seçicisi kilitlenir", () => {
@@ -151,7 +174,8 @@ describe("BulkUploadWorkbench — ek bağlama", () => {
     attachMazbataToDilekce();
     toggle(emailSwitch("dilekce.pdf"));
 
-    expect(attachValue("mazbata.pdf")).toBe("__none__");
+    expect(attachValue("mazbata.pdf")).toBe("");
+    expect(attachTrigger("mazbata.pdf")).not.toBeNull();
     expect(emailSwitch("mazbata.pdf").disabled).toBe(false);
     expect(emailSwitch("mazbata.pdf").checked).toBe(false);
     expect(toastMock.info).toHaveBeenCalledWith("1 ek bağlantısı çözüldü.");
@@ -161,8 +185,8 @@ describe("BulkUploadWorkbench — ek bağlama", () => {
     attachMazbataToDilekce();
     click(byLabel("Kuyruktan çıkar: dilekce.pdf"));
 
-    expect(container.querySelectorAll("[data-testid='bulk-row']")).toHaveLength(2);
-    expect(attachValue("mazbata.pdf")).toBe("__none__");
+    expect(rowOrder()).toEqual(["mazbata.pdf", "karar.pdf"]);
+    expect(attachValue("mazbata.pdf")).toBe("");
     expect(emailSwitch("mazbata.pdf").disabled).toBe(false);
   });
 
@@ -170,7 +194,7 @@ describe("BulkUploadWorkbench — ek bağlama", () => {
     attachMazbataToDilekce();
     toggle(byLabel<HTMLInputElement>("Tüm dosyalarda e-posta"));
 
-    expect(attachValue("mazbata.pdf")).toBe("__none__");
+    expect(attachValue("mazbata.pdf")).toBe("");
     for (const name of ["dilekce.pdf", "mazbata.pdf", "karar.pdf"]) {
       expect(emailSwitch(name).checked).toBe(false);
       expect(emailSwitch(name).disabled).toBe(false);
