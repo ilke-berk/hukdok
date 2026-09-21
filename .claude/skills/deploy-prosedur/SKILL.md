@@ -58,7 +58,8 @@ kapısı 120 sn + sürüm teyidi (`version` ≠ yeni SHA ⇒ bayat imaj uyarıs�
 ## 4. Deploy sonrası doğrulama
 
 - `ssh hukukoid "curl -fsS http://localhost:8001/healthz"` → `"version"` alanı yeni
-  SHA olmalı (login rozeti de aynı SHA'yı gösterir).
+  SHA olmalı (login rozetinin tooltip'i "Build: <SHA>" aynı değeri gösterir; görünür
+  metin `v3.2.0` gibi package.json sürümüdür, SHA değil).
 - Script'in son satırındaki üçlüyü kullanıcıya raporla:
   `✅ Deploy tamam: <SHA> · rollback: ./rollback.sh <eski SHA> · DB dump: <yol>`.
 - Şüphede: `ssh hukukoid "docker logs hukdok_backend --since 5m"` (yine `--since` ile).

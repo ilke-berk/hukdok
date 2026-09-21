@@ -165,7 +165,10 @@ dilimi `schemas_rapor.SAAT_DILIMI` (Europe/Istanbul) — DB UTC; zaman damgalı 
 Excel hücresi TR saati (openpyxl tz'li datetime'ı reddeder).
 
 **Sürüm izi:** deploy git SHA'sını `APP_VERSION` build arg'ı ile imaja gömer →
-`/healthz` "version" alanı + login rozeti. `/healthz` derindir (DB `SELECT 1`;
+`/healthz` "version" alanı + login rozetinin tooltip'i ("Build: <SHA>"). Rozetin görünür
+metni okunur sürümdür (`v3.2.0`): tek kaynak `frontend/package.json` "version"
+(`vite.config.ts` `define` → `VITE_APP_RELEASE`); sürüm atlatmak = o alanı + `package-lock.json`
+kökünü değiştirmek. `/healthz` derindir (DB `SELECT 1`;
 başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 
 **Yedekleme:** prod'da systemd timer (`infra/systemd/db-backup.timer`, 00:30 UTC =

@@ -1,10 +1,19 @@
 import path from "path";
+import { readFileSync } from "fs";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { componentTagger } from "lovable-tagger";
 
+// Login rozetindeki okunur sürüm ("v3.2.0"): TEK kaynak package.json "version".
+// Git SHA'sı ayrı kanaldır (VITE_APP_VERSION, frontend/Dockerfile ARG APP_VERSION);
+// deploy.sh sağlık kapısı SHA'yı /healthz ile karşılaştırır, bu numarayı değil.
+const pkg = JSON.parse(readFileSync(path.join(__dirname, "package.json"), "utf8")) as { version: string };
+
 export default defineConfig(({ mode }) => ({
   envDir: "..",
+  define: {
+    "import.meta.env.VITE_APP_RELEASE": JSON.stringify(pkg.version),
+  },
   server: {
     // BILEREK localhost - GERI ALMA. Tum-arayuz bindi (wildcard adres)
     // dev sunucusunu aga acar; ayni Wi-Fi'daki herkes erisebilir (LAN vektoru).

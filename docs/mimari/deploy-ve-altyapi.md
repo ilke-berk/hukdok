@@ -171,10 +171,17 @@ yoktur (`docker-compose.yml:111-112`).
 deploy.sh: export APP_VERSION="$NEW_SHA"   (deploy.sh:317)
   → docker-compose.yml build args: APP_VERSION: ${APP_VERSION:-dev}   (:51-53, :133-135)
     → backend Dockerfile ARG/ENV  → /healthz "version"
-    → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti
+    → frontend Dockerfile ARG     → VITE_APP_VERSION → login rozeti tooltip'i ("Build: <SHA>")
+
+frontend/package.json "version" (3.2.0)
+  → vite.config.ts define → VITE_APP_RELEASE → login rozeti görünür metni ("v3.2.0")
 ```
 
-Elle build'de `dev` düşer (`docker-compose.yml:52`).
+Elle build'de SHA yerine `dev` düşer (`docker-compose.yml:52`); okunur sürüm build'den bağımsız,
+her zaman package.json'dan gelir. İki kanal bilinçli ayrıdır: deploy kapısı SHA'yı karşılaştırır
+(`deploy.sh:350-354`), kullanıcı ise okunur numarayı görür. Sürüm atlatma = `package.json` +
+`package-lock.json` kökündeki iki `version` alanı (`npm ci` tutarlılık ister); bekçi
+`frontend/src/pages/Login.badge.test.tsx`.
 
 ## 5. `infra/` envanteri
 

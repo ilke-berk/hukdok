@@ -98,9 +98,14 @@ const Login = () => {
               Sistem Aktif
             </span>
             <span className="w-px h-2.5 bg-[var(--border-strong)] mx-0.5" />
-            <span className="font-mono text-[10px] tracking-[0.1em] text-[var(--fg-subtle)]">
-              {/* Gerçek sürüm: deploy'da build'e gömülen git SHA (bkz. frontend/Dockerfile APP_VERSION) */}
-              {import.meta.env.VITE_APP_VERSION || "dev"}
+            <span
+              className="font-mono text-[10px] tracking-[0.1em] text-[var(--fg-subtle)]"
+              // Deploy'da build'e gömülen git SHA (frontend/Dockerfile APP_VERSION, /healthz "version"
+              // ile aynı) görünür metinden tooltip'e indi: deploy teyidi için hâlâ burada.
+              title={`Build: ${import.meta.env.VITE_APP_VERSION || "dev"}`}
+            >
+              {/* Okunur sürüm: frontend/package.json "version" (vite.config.ts define) */}
+              {`v${import.meta.env.VITE_APP_RELEASE}`}
             </span>
           </div>
           <button

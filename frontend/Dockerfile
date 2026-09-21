@@ -16,7 +16,8 @@ COPY frontend/ .
 COPY .env /.env
 
 # Çalışan sürüm — deploy.sh git SHA'sını geçer, lokal build'de "dev" kalır.
-# Login rozeti bunu gösterir. Bilinçli olarak COPY'lerden SONRA: sürüm değişimi
+# Login rozeti tooltip'i ("Build: <SHA>") bunu gösterir; görünür "v3.2.0" package.json
+# "version"dan gelir (vite.config.ts define). Bilinçli olarak COPY'lerden SONRA: sürüm değişimi
 # yalnız build katmanını yeniler, npm install cache'i korunur.
 ARG APP_VERSION=dev
 ENV VITE_APP_VERSION=$APP_VERSION

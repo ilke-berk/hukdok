@@ -131,7 +131,8 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        # Login rozetindeki sürüm (VITE_APP_VERSION olarak bundle'a gömülür)
+        # Login rozeti tooltip'indeki build SHA'sı (VITE_APP_VERSION olarak bundle'a gömülür);
+        # görünür sürüm numarası package.json'dan gelir (vite.config.ts define)
         APP_VERSION: ${APP_VERSION:-dev}
     ports:
       - "8080:80"
