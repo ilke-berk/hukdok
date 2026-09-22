@@ -74,6 +74,7 @@ def test_sutun_bulunamazsa_hata(tmp_path):
     ("Islah ", "Islah"),                                  # sondaki boşluk
     ("  Bilirkişide  ", "Bilirkişide"),
     ("Lütfen Seçiniz", None),                             # yer tutucu → yazılmaz
+    ("Kapalı", None),                                     # 22.09: karar durumu havuzundan sızma → yazılmaz
     ("", None),
     (None, None),
 ])
@@ -151,7 +152,8 @@ def test_celiskili_kart_atlanir(db_env, rapor):  # noqa: F811
     kart_id = kart.id
     db.close()
 
-    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Kesin Lehe")]), apply=True)
+    # İki dava-seviyesi değer: seviye kuralı da çözemez (22.09) — gerçek çelişki.
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Bilirkişide")]), apply=True)
     assert sonuc.sayim("son_durum", "CELISKI") == 1
     assert sonuc.sayim("son_durum", "YAPILDI") == 0
     kalem = next(k for k in sonuc.kalemler if k.sonuc == "CELISKI")
@@ -205,17 +207,30 @@ def test_silinmis_kartin_foyu_ret(db_env, rapor):  # noqa: F811
 
 def test_liste_duzeltmesi(db_env, rapor):  # noqa: F811
     db = db_env()
-    _liste(db, "Bilirkişide", "İstinafta")
+    _liste(db, "Bilirkişide", "İstinafda")          # 20.09 koşusunun bıraktığı (yanlış) yazım
     db.commit()
     db.close()
 
     ko.kos(db_env, rapor=rapor([]), apply=True)
     db = db_env()
     adlar = {s.name for s in db.query(models.FileStatus).all()}
-    assert "İstinafda" in adlar and "İstinafta" not in adlar
-    assert {"Kapalı", "Soruşturma"} <= adlar
+    assert "İstinafta" in adlar and "İstinafda" not in adlar
+    assert {"Soruşturma", "Derdest", "İnfaz"} <= adlar
+    assert "Kapalı" not in adlar                    # 22.09: sızma değeri artık listeye EKLENMEZ
     kodlar = [s.code for s in db.query(models.FileStatus).all()]
     assert len(kodlar) == len(set(kodlar))          # kod tekilliği korunur
+    db.close()
+
+
+def test_listedeki_kapali_silinmez(db_env, rapor):  # noqa: F811
+    """Paket kaynaklı 5.854 kart `Kapalı` taşıyor: liste satırı varsa DOKUNULMAZ."""
+    db = db_env()
+    _liste(db, "Kapalı")
+    db.commit()
+    db.close()
+    ko.kos(db_env, rapor=rapor([]), apply=True)
+    db = db_env()
+    assert "Kapalı" in {s.name for s in db.query(models.FileStatus).all()}
     db.close()
 
 
@@ -245,6 +260,98 @@ def test_kart_yazim_birligi(db_env, rapor):  # noqa: F811
     assert db.get(models.Case, kart_id).dosya_son_durumu == "Bekletici Mesele/Ceza-Hukuk Dosyası"
     assert db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").count() == 1
     db.close()
+
+
+def test_istinafda_kartlari_istinafta_olur(db_env, rapor):  # noqa: F811
+    """22.09: ekip 'İstinafda' yazımını geri aldı — 20.09'un 114 + paketin 382 kartı tarihçeli döner."""
+    db = db_env()
+    _liste(db, "İstinafda")
+    kart = _kart(db, "T1", "1.1", dosya_son_durumu="İstinafda")
+    db.commit()
+    kart_id = kart.id
+    db.close()
+
+    sonuc = ko.kos(db_env, rapor=rapor([]), apply=True, kim="test")
+    assert sonuc.sayim("kart_yazim", "YAPILDI") == 1
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "İstinafta"
+    tarihce = db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").one()
+    assert (tarihce.old_value, tarihce.new_value) == ("İstinafda", "İstinafta")
+    assert {s.name for s in db.query(models.FileStatus).all()} >= {"İstinafta"}
+    db.close()
+
+
+# ─── Föy seviyesi kuralı (22.09) ─────────────────────────────────────────────
+
+def _celiskili_kart(db_env, *foyler, son_durum="Lexis Rapor Gönderildi"):  # noqa: F811
+    db = db_env()
+    _liste(db, "Bilirkişide", "Temyizde", "Kesin Lehe", "Lexis Rapor Gönderildi")
+    kart = _kart(db, "T1", "1.1", dosya_son_durumu=son_durum)
+    for sistem_no in foyler:
+        _foy(db, kart, sistem_no)
+    db.commit()
+    kart_id = kart.id
+    db.close()
+    return kart_id
+
+
+def test_tek_dava_seviyesi_deger_karti_alir(db_env, rapor):  # noqa: F811
+    kart_id = _celiskili_kart(db_env, "H-1", "H-2", "H-3")
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Lexis Rapor Gönderildi"), ("H-2", "Bilirkişide"),
+                                         ("H-3", "Kesin Lehe")]), apply=True, kim="test")
+    assert sonuc.sayim("son_durum", "YAPILDI") == 1 and sonuc.sayim("son_durum", "CELISKI") == 0
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Bilirkişide"
+    tarihce = db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").one()
+    assert "seviye kuralı" in tarihce.source and "H-2" in tarihce.source
+    db.close()
+
+
+@pytest.mark.parametrize("satirlar, gerekce", [
+    ([("H-1", "Bilirkişide"), ("H-2", "Temyizde")], "birden çok dava-seviyesi"),          # gerçek çelişki
+    ([("H-1", "Lexis Rapor Gönderildi"), ("H-2", "Kesin Lehe")], "dava-seviyesi değer yok"),  # yalnız föy seviyesi
+    ([("H-1", "Bilirkişide"), ("H-2", "Sulh İle Kapatma")], "sınıflanmamış değer"),        # ekibe soruldu
+])
+def test_cozulemeyen_karisimlar_celiski(db_env, rapor, satirlar, gerekce):  # noqa: F811
+    kart_id = _celiskili_kart(db_env, "H-1", "H-2", son_durum="Ön İnceleme")
+    sonuc = ko.kos(db_env, rapor=rapor(satirlar), apply=True)
+    assert sonuc.sayim("son_durum", "CELISKI") == 1 and sonuc.sayim("son_durum", "YAPILDI") == 0
+    kalem = next(k for k in sonuc.kalemler if k.sonuc == "CELISKI")
+    assert gerekce in kalem.aciklama and "H-1" in kalem.aciklama
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Ön İnceleme"
+    db.close()
+
+
+def test_kapali_foy_degeri_yazilmaz_ama_kalani_engellemez(db_env, rapor):  # noqa: F811
+    kart_id = _celiskili_kart(db_env, "H-1", "H-2", son_durum="Kapalı")
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Kapalı"), ("H-2", "Kesin Lehe")]), apply=True)
+    assert sonuc.sayim("son_durum", "YAPILDI") == 1
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Kesin Lehe"
+    db.close()
+
+
+def test_inceleme_kuyrugundaki_kart_bekler(db_env, rapor, monkeypatch):  # noqa: F811
+    kart_id = _celiskili_kart(db_env, "H-1", "H-2", son_durum="Ön İnceleme")
+    monkeypatch.setattr(ko, "INCELEME_KUYRUGU_FOYLERI", frozenset({"H-2"}))
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Temyizde")]), apply=True)
+    assert sonuc.sayim("son_durum", "BEKLIYOR") == 1 and sonuc.sayim("son_durum", "YAPILDI") == 0
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Ön İnceleme"     # tekil değerde bile yazılmaz
+    db.close()
+    assert "bekliyor" in ko.ozet_metni(sonuc, apply=True) and "BEKLIYOR" in ko.ozet_metni(sonuc, apply=True)
+
+
+@pytest.mark.parametrize("degerler, beklenen", [
+    ({"Temyizde": ["H-1"]}, "Temyizde"),
+    ({"Temyizde": ["H-1"], "Lexis Rapor Gönderildi": ["H-2"], "Kesin Aleyhe": ["H-3"]}, "Temyizde"),
+    ({"Temyizde": ["H-1"], "İstinafta": ["H-2"]}, None),
+    ({"Kesin Lehe": ["H-1"], "Kesin Aleyhe": ["H-2"]}, None),
+    ({"Temyizde": ["H-1"], "İade": ["H-2"]}, None),
+])
+def test_kart_degeri_kurali(degerler, beklenen):
+    assert ko.kart_degeri(degerler)[0] == beklenen
 
 
 # ─── Kuru koşu ve idempotentlik ──────────────────────────────────────────────
@@ -297,6 +404,6 @@ def test_ozet_metni_celiskiyi_gosterir(db_env, rapor):  # noqa: F811
     db.commit()
     db.close()
 
-    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Kesin Lehe")]), apply=False)
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Bilirkişide")]), apply=False)
     metin = ko.ozet_metni(sonuc, apply=False)
     assert "KURU KOŞU" in metin and "CELISKI" in metin

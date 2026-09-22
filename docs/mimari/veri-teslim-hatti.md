@@ -612,27 +612,42 @@ alanda beklenmez), `KAYNAK_YOK` (imza NULL, eski elle düzenlemeler), `TARIHCE_Y
 satırlarında `case_esas_numbers` zincirinin kendi `source`/`stage` bilgisi de yazılır. Çıktı
 `;` ayraçlı UTF-8-BOM CSV (`--rapor`). Test `tests/test_korunan_alan_kaynaklari.py`.
 
-### 7.6 KolayOfis son durum tazeleme — `scripts/kolayofis_son_durum.py` (20.09.2026)
+### 7.6 KolayOfis son durum tazeleme — `scripts/kolayofis_son_durum.py` (20.09 · 22.09.2026)
 
-Teslim paketi dışında, ekibin kendi sisteminden alınan `<tarih>_KolayOfis_DosyalarRaporu.xlsx`
-ile `cases.dosya_son_durumu` tazelenir (rapor repoya GİRMEZ, yolu `--rapor`). Rapor FÖY
-düzeyindedir (SistemNo tekil) ve yalnız "Aktif" dosyaları taşır: kapalı/arşiv kartlara
-DOKUNMAZ. Bir sonraki teslim paketi "paket kazanır" kuralıyla alanı yeniden yazar — bu koşu
-o pakete kadar geçerli bir tazelemedir, kalıcı çözüm paketin güncel gelmesidir.
+Teslim paketi dışında, ekibin kendi sisteminden alınan föy düzeyi çıktı (SistemNo tekil) ile
+`cases.dosya_son_durumu` tazelenir (rapor repoya GİRMEZ, yolu `--rapor`): 17.09
+`<tarih>_KolayOfis_DosyalarRaporu.xlsx` (yalnız Aktif, 2.957 föy, son durum sütunu başlıksız) ve
+20.09'dan itibaren `MASTER_DOSYA_DURUM_RAPORU_<tarih>.xlsx` (Aktif 3.197 + Arşiv 5.215 = 8.412 föy,
+aynı 18 sütun, başlık yazılı). Bir sonraki teslim paketi "paket kazanır" kuralıyla alanı yeniden
+yazar — bu koşu o pakete kadar geçerli bir tazelemedir, kalıcı çözüm paketin güncel gelmesidir.
+Föysüz 7.880 kart (paket kaynaklı) bu çıktının dışındadır.
 
 Üç adım, tek transaction (`kos`, `--apply` yoksa geri alınır, rapor yine basılır):
-(1) **panel listesi** (`file_statuses`) ekibin başlıklarına hizalanır — `İstinafta` → `İstinafda`
-(kartlar ekibin yazımını kullanıyor, liste yazımı hiçbir kartta geçmiyordu), eksik `Kapalı` ve
-`Soruşturma` eklenir; (2) **kart yazım birliği** — `Bekletici Mesele/ceza-hukuk Dosyası` listedeki
-tek yazıma çekilir; (3) **tazeleme** — rapor satırı `case_foys.sistem_no` ile canlı karta çözülür,
-değer farklıysa tarihçeli yazılır.
+(1) **panel listesi** (`file_statuses`) ekibin 22.09'daki 41 değerlik listesine hizalanır —
+`İstinafda` → `İstinafta` (20.09 koşusu ters yönde düzeltmişti; ekip 22.09'da "İstinafda" yazımının
+kendi hatası olduğunu bildirdi — ünsüz sertleşmesi — ve 547 föyünü düzeltti), eksik `Soruşturma`,
+`Derdest` (icra: dosya sürüyor) ve `İnfaz` (icra: infaz edilmiş) eklenir; `Kapalı` listeden
+ÇIKARILMAZ (paket kaynaklı 5.854 kart taşıyor) ama artık eklenmez de; (2) **kart yazım birliği** —
+`Bekletici Mesele/ceza-hukuk Dosyası` listedeki tek yazıma, `İstinafda` taşıyan 496 kart
+`İstinafta`ya tarihçeli çekilir; (3) **tazeleme** — rapor satırı `case_foys.sistem_no` ile canlı
+karta çözülür, değer farklıysa tarihçeli yazılır.
 
 Son durum sütunu 17.09 çıktısında BAŞLIKSIZ gelir: başlık adıyla bulunamazsa "Buro Özel Türü" ile
 "Yerel Mahkeme Karar Durumu" arasındaki tek sütuna düşülür (WARNING). Rapordaki yazım kusurları
-normalize edilir (`Delliller Toplanıyor` → `Deliller Toplanıyor` — ekibin başlık listesinde de aynı
-hata var; `Islah ` boşluğu); `Lütfen Seçiniz` ve boş hücre YAZILMAZ — dolu kutuyu boşaltmak veri
-kaybıdır. Bir kartın föyleri farklı değer söylüyorsa karta DOKUNULMAZ (`CELISKI`): föyler ayrı
-aşamalarda olabilir ya da kart yanlış bağlanmıştır, ikisi de insan kararıdır.
+normalize edilir (`Delliller Toplanıyor` → `Deliller Toplanıyor`; `Islah ` boşluğu); `Lütfen Seçiniz`,
+boş hücre ve `Kapalı` YAZILMAZ — dolu kutuyu boşaltmak veri kaybıdır; `Kapalı` ekibe göre "Yerel
+Mahkeme Karar Durumu" havuzundan son durum hanesine sızmış değerdir (219 föy), temizlik kuyruklarında.
+
+**Föy seviyesi kuralı (ekip, 22.09):** `Son Durum` föyün kendi iş akışıdır. Yargı aşaması değerleri
+(`SEVIYE_DAVA`: İstinafta, Temyizde, Bilirkişide, Bozma Sonrası Yargılama, Deliller Toplanıyor, …) DAVA
+seviyesidir; hizmet aşaması (Lexis Rapor Gönderildi/Hazırlanıyor, Dava Açılması Bekleniyor) ve taraf
+sonucu (Kesin Lehe/Aleyhe, Kapalı, İstifa) FÖY seviyesidir (`SEVIYE_FOY`) — sigorta föyü rapor
+gönderilince durur, hekim föyü davayı izler. Föyler farklı değer söylüyorsa: tam bir dava-seviyesi
+değer + kalanlar föy-seviyesi → kart o değeri alır (`kart_degeri`, tarihçe kanıtında "seviye kuralı");
+birden çok dava-seviyesi değer, hiç dava-seviyesi değer yok ya da sınıflanmamış değer → `CELISKI`,
+karta DOKUNULMAZ. Sınıflama Ek-1'deki 18 değer + mailin üç grubudur; 41 değerin kalanının seviyesi
+ekibe soruldu. Ekibin okuma kuyruğundaki 17 kart (`INCELEME_KUYRUGU_FOYLERI`, föy anahtarlı — kart
+id'si prod ile lokalde farklı olabilir) `BEKLIYOR` ile atlanır; ekip bildirince küme boşaltılır.
 
 Tarihçe imzası `changed_by=kolayofis_son_durum`, `source="KolayOfis Dosyalar Raporu (kim): föyler"`
 — `HUKDOK_TESLIM` ön eki KULLANILMAZ (kesim-sonrası koruma G152 bunu kullanıcı kaydı sayar).
@@ -640,9 +655,20 @@ Tarihçe imzası `changed_by=kolayofis_son_durum`, `source="KolayOfis Dosyalar R
 
 17.09 raporunun lokal koşusu (20.09): 2.919/2.957 satır eşleşti → 2.424 kart; 810 tazelendi
 (709 değişim + 101 boş doldu), 1.471 zaten doğru, 8 föy bizde yok, 48 kart çelişkili. Çelişkiler
-ekibe gönderildi (9'unda föyler farklı esas taşıyor — yanlış bağlama şüphesi). Ekibin başlık
-listesinde olmayan değer taşıyan 1.251 kart (İnfaz 1.007, Derdest 236) bu raporla düzelmez;
-kapalı/arşiv dosyalarını içeren çıktı istendi.
+ekibe gönderildi; ekibin 22.09 cevabı (`HUKDOK_CELISKI_CEVABI_2026-09-20.xlsx`, 120 föy satırı —
+bizim kart/föy/ofis no ile birebir) 48'i sınıfladı: T1 19 çelişki değil (seviye farkı), T2 6 ekipte
+düzeltildi, T3 17 okuma kuyruğunda, A1 4 tur değişimi (bölünmez), A2 2 ayrı dava (bölünür —
+`scripts/ekip_cevabi_2209.py`: föy çiftiyle tanınan kart `birlesik_kart_ayir.karti_ayir` ile
+ayrılır, kalan kartta taşınan föye özgü taraflar belge/föy bağı yoksa silinir; test
+`tests/test_ekip_cevabi_2209.py`). Ekibin iki sorumuza cevabı: "İnfaz Haricen/İcradan" ekipte hiç
+kullanılmamış (bizde 112 kart paket kaynaklı), düz "İnfaz" kullanılacak; "Derdest" karar durumu
+hanesinde "ayakta yerel karar yok" demektir, son durum hanesinde yalnız icra dosyalarında geçerlidir
+(42 föy, bizdeki 236 Derdest kartın 192'si föysüz paket kaynaklı).
+
+Ek-2 masterın lokal koşusu (22.09): sayılar `docs/arsiv/` yerine bu bölümün altındaki koşu notunda
+tutulur (bkz. commit mesajı); ölçüm öncesi kuru koşu mevcut kuralla 711 yapıldı / 437 çelişki idi,
+seviye kuralı 143'ünü çözer, 294 kalır (198 hizmet + taraf sonucu, 46 yalnız taraf sonucu, 29 gerçek,
+19 sınıflanmamış değer, 2 yalnız hizmet) — kalanlar için ekibe kural soruldu.
 
 ## 8. Log sözleşmesi ve bildirim
 
