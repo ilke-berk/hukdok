@@ -57,9 +57,11 @@ doğrula → kuru koş (`scripts/hukdok_aktarim.aktarimi_kos`, yalnız import ed
 başlangıçtır), "Teslim türü: tam | delta" (delta'da kaybolan sütun ihlal değil bilgi; eksik
 sütun/föy = dokunma) ve "Veri kesim tarihi" (yoksa paket adındaki tarih). Kapı eşiği
 `alan_degisikligi` KART HÜCRESİ sayar (tarih/tutar biçimi üretmez, ad yazımı üretir).
-"Paket kazanır" kuralının tek istisnası `status`: kesim gününden itibaren kullanıcı imzalı
-(`source` NULL ya da `HUKDOK_TESLIM` dışı) `case_history` kaydı varsa paket yazmaz, satır
-raporuna `KORUNDU` düşer (hata değil, `scripts/hukdok_aktarim.py::kesim_sonrasi_kullanici_kaydi`).
+"Paket kazanır" kuralının tek istisnası kesim-sonrası kullanıcı korumasıdır (G152; 12.09'da
+`status`'tan HER kart alanına genellendi): bizde DOLU bir alan için kesim gününden itibaren o alanda
+kullanıcı imzalı (`source` NULL ya da `HUKDOK_TESLIM` dışı) `case_history` kaydı varsa paket o alanı
+yazmaz/boşaltmaz, satır raporuna `KORUNDU` düşer (hata değil; bizde BOŞ alanı paket doldurur —
+`scripts/hukdok_aktarim.py::_kart_alanlarini_yaz` + `kesim_sonrasi_kullanici_kaydi`).
 Tek SharePoint kimliği arşivindir (LexisBio: arşiv/sayaç/export). Ayrıntı
 `docs/mimari/veri-teslim-hatti.md`; veri ekibine verilen sözleşme `docs/veri-teslim/SOZLESME.md`.
 

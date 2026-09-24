@@ -174,7 +174,8 @@ geçer (`teslim_kutusu.py:420`). Tarih/tutar tip düzeyinde normalize edildiğin
 değişiklik üretmez (`_tarih` `:503`, `_sayi` `:562-575`); metin alanları ham `==` ile
 karşılaştırılır (`:2004`) — ad yazımı farkı değişiklik sayılır ve paket yazar. Tek istisna
 `ICERIK_KARSILASTIRMALI_ALANLAR = {"court"}` (`:921`): yalnız yazım farkında bizimki kalır
-(`:2006-2008`). `status` istisnası (§7.1) kapı kuralı DEĞİLDİR: korunan alan `KORUNDU`
+(`:2006-2008`). Kesim-sonrası kullanıcı koruması (G152, §7.1; 12.09'dan beri yalnız `status`
+değil HER kart alanı) kapı kuralı DEĞİLDİR: korunan alan `KORUNDU`
 türüyle raporlanır, `hata_sayisi`'na ve eşiklere girmez.
 
 **Zincir başlangıcı ve delta (G156):** `zincir_eksik` yalnız `zincir_tamam is False` iken
