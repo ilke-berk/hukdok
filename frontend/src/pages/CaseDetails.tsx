@@ -36,13 +36,13 @@ import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 // Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
 // Temyiz/istinaf durum değil aşamadır — CaseTrackingPanel gösterir.
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
-    DANIŞ:   { bg: "bg-[#3b6fa0]/15",      text: "text-[#3b6fa0]",       dot: "bg-[#3b6fa0]" },
+    DERDEST: { bg: "bg-tone-ok/15",      text: "text-tone-ok",       dot: "bg-tone-ok" },
+    DANIŞ:   { bg: "bg-tone-info/15",      text: "text-tone-info",       dot: "bg-tone-info" },
     MAHZEN:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 
 const getStatusStyle = (status: string) =>
-    statusColors[status?.toLocaleUpperCase('tr-TR')] || { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
+    statusColors[status?.toLocaleUpperCase('tr-TR')] || { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-brand-solid" };
 
 interface CaseDetailsData {
     // cases.id — backend her yanıtta döner (case_manager.get_case), sayısaldır.
@@ -204,7 +204,7 @@ const DocCard = ({
     <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
         <div className="flex items-start gap-4 flex-1 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-primary" />
+                <FileText className="w-5 h-5 text-brand" />
             </div>
             <div className="min-w-0 flex-1">
                 <h4 className="font-semibold text-sm truncate" title={doc.stored_filename || doc.original_filename}>
@@ -248,13 +248,13 @@ const DocCard = ({
         <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
             {/* Email durum ikonu */}
             {doc.email_sent === true && (
-                <span title="E-posta gönderildi" className="text-[#2f8a5d] flex items-center gap-1 text-xs whitespace-nowrap">
+                <span title="E-posta gönderildi" className="text-tone-ok flex items-center gap-1 text-xs whitespace-nowrap">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span className="hidden sm:inline">Gönderildi</span>
                 </span>
             )}
             {doc.email_sent === false && (
-                <span title={doc.email_error || "E-posta gönderilemedi"} className="text-[#a8323b] flex items-center gap-1 text-xs whitespace-nowrap">
+                <span title={doc.email_error || "E-posta gönderilemedi"} className="text-tone-danger flex items-center gap-1 text-xs whitespace-nowrap">
                     <XCircle className="w-4 h-4 shrink-0" />
                     <span className="hidden sm:inline">Başarısız</span>
                 </span>
@@ -270,7 +270,7 @@ const DocCard = ({
                     variant="outline"
                     size="sm"
                     className={doc.email_sent === false
-                        ? "w-full sm:w-auto text-xs border-[#a8323b]/40 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                        ? "w-full sm:w-auto text-xs border-tone-danger/40 text-tone-danger hover:bg-tone-danger/10 hover:text-tone-danger"
                         : "w-full sm:w-auto text-xs border-[var(--border)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                     }
                     onClick={() => onResend(doc)}
@@ -317,7 +317,7 @@ const DocCard = ({
             <Button
                 variant="outline"
                 size="sm"
-                className="w-full sm:w-auto border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 hover:text-[#a8323b]"
+                className="w-full sm:w-auto border-tone-danger/30 text-tone-danger hover:bg-tone-danger/10 hover:text-tone-danger"
                 title="Belgeyi sil"
                 onClick={() => onDelete(doc)}
             >
@@ -540,7 +540,7 @@ const CaseDetails = () => {
                 {/* Eksik zorunlu alan bandı — anket kararı: eksikler unutulmasın, tamamlanınca DERDEST'e geçirilsin */}
                 {(caseData.missing_required_fields?.length ?? 0) > 0 && (
                     <div className="flex items-start gap-3 border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                         <div className="text-sm leading-relaxed">
                             <span className="font-semibold text-amber-700 dark:text-amber-500">
                                 Eksik zorunlu alanlar ({caseData.missing_required_fields!.length}):
@@ -573,7 +573,7 @@ const CaseDetails = () => {
                             <div className="space-y-4 flex-1">
                                 <div className="flex flex-wrap items-center gap-3">
                                     <div className="flex items-center gap-2">
-                                        <Gavel className="w-6 h-6 text-primary shrink-0" />
+                                        <Gavel className="w-6 h-6 text-brand shrink-0" />
                                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
                                             {caseData.esas_no || caseData.tracking_no}
                                         </h1>
@@ -712,7 +712,7 @@ const CaseDetails = () => {
                             <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-lg flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-primary" />
+                                        <FileText className="w-4 h-4 text-brand" />
                                         Dosya Bilgileri
                                     </CardTitle>
                                     <CardDescription>Hasar, hukuk numaraları ve ek bilgiler</CardDescription>
@@ -796,7 +796,7 @@ const CaseDetails = () => {
                         <TransferFieldsCard
                             title="Tıbbi Bilgiler"
                             description="Tıbbi süreç, olay ve iddia edilen kusur"
-                            icon={<Activity className="w-4 h-4 text-primary" />}
+                            icon={<Activity className="w-4 h-4 text-brand" />}
                             fields={MEDICAL_CARD_FIELDS}
                             data={caseData}
                             closedLists={closedLists}
@@ -808,7 +808,7 @@ const CaseDetails = () => {
                         <TransferFieldsCard
                             title="Kanun Yolu Bilgileri"
                             description="İstinaf başvurusunu yapan taraf"
-                            icon={<Scale className="w-4 h-4 text-primary" />}
+                            icon={<Scale className="w-4 h-4 text-brand" />}
                             fields={PROCESS_CARD_FIELDS}
                             data={caseData}
                             closedLists={closedLists}
@@ -817,7 +817,7 @@ const CaseDetails = () => {
                         <TransferFieldsCard
                             title="Büro Bilgileri"
                             description="İş kabulü, büro özel türü, müvekkil tipi ve hizmet türü"
-                            icon={<Briefcase className="w-4 h-4 text-primary" />}
+                            icon={<Briefcase className="w-4 h-4 text-brand" />}
                             fields={OFFICE_CARD_FIELDS}
                             data={caseData}
                             closedLists={closedLists}
@@ -904,7 +904,7 @@ const CaseDetails = () => {
                                                         <div className="text-muted-foreground text-xs flex items-center gap-2">
                                                             <span className="line-through opacity-70">{h.old || "-"}</span>
                                                             <ArrowLeft className="w-3 h-3 rotate-180" />
-                                                            <span className="font-medium text-primary">{h.new}</span>
+                                                            <span className="font-medium text-brand">{h.new}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -946,11 +946,11 @@ const CaseDetails = () => {
                                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                         {caseData.parties.map((party: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }, idx: number) => {
                                             const roleColors: Record<string, string> = {
-                                                "CLIENT": "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30",
-                                                "COUNTER": "bg-transparent text-[#a8323b] border-[#a8323b]/40",
+                                                "CLIENT": "bg-[var(--brand-soft)] text-[var(--brand)] border-brand/30",
+                                                "COUNTER": "bg-transparent text-tone-danger border-tone-danger/40",
                                                 "THIRD": "bg-[var(--bg-sunken)] text-[var(--fg-subtle)] border-[var(--border)]",
                                             };
-                                            const colorClass = roleColors[party.party_type] || "bg-[var(--brand-soft)] text-[var(--brand)] border-[var(--brand)]/30";
+                                            const colorClass = roleColors[party.party_type] || "bg-[var(--brand-soft)] text-[var(--brand)] border-brand/30";
 
                                             // Make party_type more readable
                                             const typeLabel = party.party_type === "CLIENT" ? "Müvekkil" : party.party_type === "COUNTER" ? "Karşı Taraf" : "Üçüncü Şahıs";
@@ -972,7 +972,7 @@ const CaseDetails = () => {
                                                     }}
                                                 >
                                                     <div className="flex justify-between items-start gap-2">
-                                                        <div className="font-semibold group-hover:text-primary transition-colors flex items-center gap-2">
+                                                        <div className="font-semibold group-hover:text-brand transition-colors flex items-center gap-2">
                                                             {party.name}
                                                         </div>
                                                         {party.client_id && (
@@ -1093,7 +1093,7 @@ const CaseDetails = () => {
             <AlertDialog open={deleteDoc != null} onOpenChange={(open) => { if (!open) { setDeleteDoc(null); setDeleteDocReason(""); } }}>
                 <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                     <AlertDialogHeader>
-                        <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                        <AlertDialogTitle className="font-display font-medium text-[18px] text-tone-danger flex items-center gap-2">
                             <Trash2 className="w-4 h-4" />
                             Belgeyi silmek istediğinize emin misiniz?
                         </AlertDialogTitle>
@@ -1109,14 +1109,14 @@ const CaseDetails = () => {
                         value={deleteDocReason}
                         onChange={e => setDeleteDocReason(e.target.value)}
                         placeholder="Silme gerekçesi (zorunlu)…"
-                        className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                        className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-tone-danger/60"
                     />
                     <AlertDialogFooter>
                         <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
                         <AlertDialogAction
                             onClick={handleDeleteDoc}
                             disabled={deleteDocReason.trim().length < 3}
-                            className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                            className="bg-tone-danger hover:bg-tone-danger/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
                         >Sil</AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

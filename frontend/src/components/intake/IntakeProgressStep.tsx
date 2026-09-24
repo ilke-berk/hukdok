@@ -56,7 +56,7 @@ export function IntakeProgressStep({
             <li key={f.id} className="px-5 py-3 flex items-start gap-3">
               <span className="mt-0.5 shrink-0">
                 {f.status === "analyzing" && <Loader2 className="w-4 h-4 text-[var(--brand)] animate-spin" />}
-                {f.status === "done" && <CheckCircle2 className="w-4 h-4 text-emerald-600" strokeWidth={1.8} />}
+                {f.status === "done" && <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" strokeWidth={1.8} />}
                 {f.status === "error" && <AlertCircle className="w-4 h-4 text-[var(--brand)]" strokeWidth={1.8} />}
                 {f.status === "waiting" && <FileText className="w-4 h-4 text-[var(--fg-subtle)]" strokeWidth={1.5} />}
               </span>

@@ -461,7 +461,7 @@ export const AnalysisResults = ({
           </h2>
         </div>
         {allFieldsApproved ? (
-          <span className="inline-flex items-center gap-1 px-2 py-1 font-mono text-[10px] tracking-[0.14em] uppercase border border-[#2f8a5d]/40 bg-[#2f8a5d]/15 text-[#2f8a5d]">
+          <span className="inline-flex items-center gap-1 px-2 py-1 font-mono text-[10px] tracking-[0.14em] uppercase border border-tone-ok/40 bg-tone-ok/15 text-tone-ok">
             <Check className="w-3 h-3" strokeWidth={2.2} />
             Onaylandı
           </span>
@@ -509,7 +509,7 @@ export const AnalysisResults = ({
               <Checkbox
                 checked={approvedFields.tarih}
                 onCheckedChange={(c) => handleFieldApproval("tarih", !!c)}
-                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
               />
             </div>
           </div>
@@ -567,7 +567,7 @@ export const AnalysisResults = ({
               <Checkbox
                 checked={approvedFields.muvekkil_kodu}
                 onCheckedChange={(c) => handleFieldApproval("muvekkil_kodu", !!c)}
-                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
               />
             </div>
           </div>
@@ -591,7 +591,7 @@ export const AnalysisResults = ({
               <Checkbox
                 checked={approvedFields.karsi_taraf}
                 onCheckedChange={(c) => handleFieldApproval("karsi_taraf", !!c)}
-                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
               />
             </div>
           </div>
@@ -641,7 +641,7 @@ export const AnalysisResults = ({
               <Checkbox
                 checked={approvedFields.belge_turu_kodu}
                 onCheckedChange={(c) => handleFieldApproval("belge_turu_kodu", !!c)}
-                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
               />
             </div>
           </div>
@@ -665,15 +665,15 @@ export const AnalysisResults = ({
               <Checkbox
                 checked={approvedFields.esas_no}
                 onCheckedChange={(c) => handleFieldApproval("esas_no", !!c)}
-                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                className="w-5 h-5 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
               />
             </div>
           </div>
 
           {/* Duruşma — sadece duruşma zaptlarında */}
           {isDurusmaZapt && (
-            <div className="col-span-2 bg-[#c47a1e]/10 border border-[#c47a1e]/40 p-4 grid gap-2">
-              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[#c47a1e]">
+            <div className="col-span-2 bg-tone-caution/10 border border-tone-caution/40 p-4 grid gap-2">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-tone-caution">
                 <Calendar className="w-3.5 h-3.5" />
                 Sonraki Duruşma — Ajandaya Eklenecek
               </div>
@@ -696,11 +696,11 @@ export const AnalysisResults = ({
                 <Checkbox
                   checked={approvedFields.sonraki_durusma_tarihi}
                   onCheckedChange={(c) => handleFieldApproval("sonraki_durusma_tarihi", !!c)}
-                  className="w-5 h-5 self-center rounded-[2px] data-[state=checked]:bg-[#c47a1e] data-[state=checked]:border-[#c47a1e]"
+                  className="w-5 h-5 self-center rounded-[2px] data-[state=checked]:bg-tone-caution data-[state=checked]:border-tone-caution"
                 />
               </div>
               {!editedData.sonraki_durusma_tarihi && (
-                <p className="inline-flex items-center gap-1.5 text-[11px] text-[#c47a1e]/80">
+                <p className="inline-flex items-center gap-1.5 text-[11px] text-tone-caution/80">
                   <AlertCircle className="w-3 h-3" />
                   Tarih belgeden çıkarılamadı. Manuel girin veya boş bırakıp onaylayın.
                 </p>

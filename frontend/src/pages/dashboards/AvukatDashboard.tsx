@@ -72,8 +72,8 @@ function daysFromToday(date: string): number {
 // Temyiz/istinaf durum değil aşamadır (cases.case_stage); eski değerler
 // migrasyon 50 ile üçlüye çekildi. Tanınmayan değer arşiv tonuyla gösterilir.
 const STATUS_TONE: Record<string, string> = {
-  DERDEST: "text-[#2f8a5d] border-[#2f8a5d]/30 bg-[#2f8a5d]/10",
-  DANIŞ: "text-[#3b6fa0] border-[#3b6fa0]/30 bg-[#3b6fa0]/10",
+  DERDEST: "text-tone-ok border-tone-ok/30 bg-tone-ok/10",
+  DANIŞ: "text-tone-info border-tone-info/30 bg-tone-info/10",
   MAHZEN: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
 };
 
@@ -197,7 +197,7 @@ export default function AvukatDashboard() {
               onClick={() => navigate("/cases", { state: { statusFilter: key } })}
               className="group relative text-left bg-[var(--bg-elevated)] border border-[var(--border)] p-5 grid gap-2 transition-colors hover:border-[var(--border-strong)] overflow-hidden"
             >
-              <span className="absolute top-0 right-0 w-0.5 h-6 bg-[var(--brand)] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="absolute top-0 right-0 w-0.5 h-6 bg-brand-solid opacity-0 group-hover:opacity-100 transition-opacity" />
               <div className="flex items-center gap-2">
                 <span className="w-[26px] h-[26px] grid place-items-center border border-[var(--border-strong)] bg-[var(--bg)] text-[var(--brand)] rounded-[3px]">
                   <Icon className="w-3.5 h-3.5" strokeWidth={1.6} />

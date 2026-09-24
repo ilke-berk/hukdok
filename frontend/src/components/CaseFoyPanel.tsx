@@ -52,7 +52,7 @@ export default function CaseFoyPanel({ foyler }: Props) {
         <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none" data-testid="case-foy-panel">
             <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-primary" />
+                    <Layers className="w-4 h-4 text-brand" />
                     Föyler
                     <span className="text-xs font-normal text-muted-foreground">({foyler.length})</span>
                 </CardTitle>

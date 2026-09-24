@@ -23,13 +23,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
           ].join(" "),
           title: "!font-display !font-medium !text-[14px] !tracking-[-0.005em] !text-[var(--fg)]",
           description: "!text-[12px] !text-[var(--fg-muted)] !leading-relaxed",
-          actionButton: "!bg-[var(--brand)] !text-[var(--brand-fg)] !rounded-[3px] !font-sans !font-medium !text-[12px] !tracking-[0.03em] !px-3 !py-1.5",
+          actionButton: "!bg-brand-solid !text-[var(--brand-fg)] !rounded-[3px] !font-sans !font-medium !text-[12px] !tracking-[0.03em] !px-3 !py-1.5",
           cancelButton: "!bg-transparent !border !border-[var(--border-strong)] !text-[var(--fg-muted)] !rounded-[3px] !font-sans !text-[12px]",
           icon: "!text-[var(--brand)]",
-          success: "!border-l-[3px] !border-l-[#2f8a5d] [&_[data-icon]]:!text-[#2f8a5d]",
+          success: "!border-l-[3px] !border-l-tone-ok [&_[data-icon]]:!text-tone-ok",
           info: "!border-l-[3px] !border-l-[var(--brand)] [&_[data-icon]]:!text-[var(--brand)]",
-          warning: "!border-l-[3px] !border-l-[#c47a1e] [&_[data-icon]]:!text-[#c47a1e]",
-          error: "!border-l-[3px] !border-l-[#a8323b] [&_[data-icon]]:!text-[#a8323b]",
+          warning: "!border-l-[3px] !border-l-tone-caution [&_[data-icon]]:!text-tone-caution",
+          error: "!border-l-[3px] !border-l-tone-danger [&_[data-icon]]:!text-tone-danger",
         },
       }}
       {...props}

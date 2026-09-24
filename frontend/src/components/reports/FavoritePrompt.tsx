@@ -42,7 +42,7 @@ export function FavoritePrompt({ onerilenAd, onEkle, onSimdiDegil, onKapat, kayd
     return (
         <form
             data-testid="favori-onerisi"
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-2.5 border-b border-[var(--brand)]/30 bg-[var(--brand-soft)] text-[12.5px] text-[var(--fg)]"
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-2.5 border-b border-brand/30 bg-[var(--brand-soft)] text-[12.5px] text-[var(--fg)]"
             onSubmit={e => { e.preventDefault(); ekle(); }}
         >
             <Star className="w-4 h-4 shrink-0 text-[var(--brand)]" aria-hidden="true" />

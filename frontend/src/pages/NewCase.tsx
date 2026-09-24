@@ -550,7 +550,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                 {/* G004: Yarım kalan taslak şeridi — geri yükleme SESSİZ değil,
                     kullanıcı görür ve karar verir. */}
                 {draft.pending && (
-                    <div className="mb-8 flex flex-wrap items-center gap-3 border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
+                    <div className="mb-8 flex flex-wrap items-center gap-3 border border-brand/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
                         <RefreshCw className="w-4 h-4 text-[var(--brand)] shrink-0" />
                         <div className="text-[13px] leading-relaxed">
                             <span className="font-semibold text-[var(--fg)]">Yarım kalan dava kartı bulundu</span>
@@ -604,7 +604,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => setClients([...clients, { name: "", role: "Müdahil" }])}
-                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
+                                                className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
                                             >
                                                 <Plus className="w-3 h-3" /> Ekle
                                             </Button>
@@ -649,7 +649,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                             <p className="text-sm text-muted-foreground mb-3">Müvekkil bulunamadı. <br /><strong>"{clientSearchValues[index]}"</strong> ismini kullanmak ister misiniz?</p>
                                                                             <Button
                                                                                 size="sm"
-                                                                                className="w-full bg-primary/20 text-primary hover:bg-primary/30 mt-2 border-primary/30"
+                                                                                className="w-full bg-primary/20 text-brand hover:bg-primary/30 mt-2 border-primary/30"
                                                                                 type="button"
                                                                                 onClick={() => {
                                                                                     const val = clientSearchValues[index] || "";
@@ -696,7 +696,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                                     <div className="flex items-center gap-2">
                                                                                         <span>{toTitleCase(dbClient.name)}</span>
                                                                                         {dbClient.cari_kod && (
-                                                                                            <span className="text-[9px] bg-primary/10 text-primary px-1 rounded font-bold">
+                                                                                            <span className="text-[9px] bg-primary/10 text-brand px-1 rounded font-bold">
                                                                                                 {dbClient.cari_kod}
                                                                                             </span>
                                                                                         )}
@@ -712,7 +712,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                         {partyMatchFlags[`client-${index}`]?.hasMatch && (
                                                             <div className={cn(
                                                                 "mt-1 text-[10px]",
-                                                                partyMatchFlags[`client-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                                partyMatchFlags[`client-${index}`]?.conflict ? "text-red-600 dark:text-red-400 font-semibold" : "text-muted-foreground"
                                                             )}>
                                                                 {rowMatchSummary(`client-${index}`, undefined, false)}
                                                             </div>
@@ -775,7 +775,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => setCounterParties([...counterParties, { name: "", role: "Davalı" }])}
-                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
+                                                className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
                                             >
                                                 <Plus className="w-3 h-3" /> Ekle
                                             </Button>
@@ -820,7 +820,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                 />
                                                                 <span className={cn(
                                                                     "text-[10px]",
-                                                                    partyMatchFlags[`counter-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                                    partyMatchFlags[`counter-${index}`]?.conflict ? "text-red-600 dark:text-red-400 font-semibold" : "text-muted-foreground"
                                                                 )}>
                                                                     {rowMatchSummary(`counter-${index}`, party.tc_no)}
                                                                 </span>
@@ -885,7 +885,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-7 text-xs gap-1 text-primary hover:text-primary hover:bg-primary/5"
+                                                className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
                                                 onClick={() => setThirdParties([...thirdParties, { name: "", role: "Tanık" }])}
                                             >
                                                 <Plus className="w-3 h-3" /> Ekle
@@ -936,7 +936,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                     />
                                                                     <span className={cn(
                                                                         "text-[10px]",
-                                                                        partyMatchFlags[`third-${index}`]?.conflict ? "text-red-600 font-semibold" : "text-muted-foreground"
+                                                                        partyMatchFlags[`third-${index}`]?.conflict ? "text-red-600 dark:text-red-400 font-semibold" : "text-muted-foreground"
                                                                     )}>
                                                                         {rowMatchSummary(`third-${index}`, party.tc_no)}
                                                                     </span>
@@ -1351,19 +1351,19 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                         'border-muted/40 bg-muted/5 border-l-muted-foreground'}`}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className={`text-[10px] font-bold uppercase tracking-widest 
-                                        ${caseStatus === 'DERDEST' ? 'text-primary' :
-                                            caseStatus === 'DANIŞ' ? 'text-blue-500' :
+                                        ${caseStatus === 'DERDEST' ? 'text-brand' :
+                                            caseStatus === 'DANIŞ' ? 'text-blue-500 dark:text-blue-400' :
                                                 'text-muted-foreground'}`}>Ofis No</span>
                                     <Select value={caseStatus} onValueChange={setCaseStatus}>
                                         <SelectTrigger className={`w-fit h-6 text-[10px] font-bold border-0 px-2 gap-1 rounded-md transition-colors focus:ring-0 focus:ring-offset-0 
-                                            ${caseStatus === 'DERDEST' ? 'bg-primary/20 text-primary hover:bg-primary/30' :
-                                                caseStatus === 'DANIŞ' ? 'bg-blue-500/20 text-blue-500 hover:bg-blue-500/30' :
+                                            ${caseStatus === 'DERDEST' ? 'bg-primary/20 text-brand hover:bg-primary/30' :
+                                                caseStatus === 'DANIŞ' ? 'bg-blue-500/20 text-blue-500 dark:text-blue-400 hover:bg-blue-500/30' :
                                                     'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="DANIŞ" className="text-blue-500 font-medium">DANIŞ</SelectItem>
-                                            <SelectItem value="DERDEST" className="text-primary font-medium">DERDEST</SelectItem>
+                                            <SelectItem value="DANIŞ" className="text-blue-500 dark:text-blue-400 font-medium">DANIŞ</SelectItem>
+                                            <SelectItem value="DERDEST" className="text-brand font-medium">DERDEST</SelectItem>
                                             <SelectItem value="MAHZEN" className="text-muted-foreground font-medium">MAHZEN</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -1403,7 +1403,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                         {selectedLawyers.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mb-2">
                                                 {selectedLawyers.map((sl, idx) => (
-                                                    <div key={idx} className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-1 rounded text-[11px] font-medium border border-primary/20 shadow-sm">
+                                                    <div key={idx} className="flex items-center gap-1 bg-primary/10 text-brand px-2 py-1 rounded text-[11px] font-medium border border-primary/20 shadow-sm">
                                                         {sl.name}
                                                         <button
                                                             type="button"
@@ -1524,7 +1524,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                 <div className="p-5 grid gap-2.5">
                                     <Button
                                         type="submit"
-                                        className="w-full h-11 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
+                                        className="w-full h-11 bg-brand-solid hover:bg-brand-solid-hover text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
                                         disabled={isLoading || isSaving}
                                     >
                                         {isSaving || isLoading ? (
@@ -1554,7 +1554,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                             <AlertDialogTrigger asChild>
                                                 <Button
                                                     type="button"
-                                                    className="w-full h-10 mt-2 bg-transparent border border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 rounded-[3px] font-medium gap-2"
+                                                    className="w-full h-10 mt-2 bg-transparent border border-tone-danger/30 text-tone-danger hover:bg-tone-danger/10 rounded-[3px] font-medium gap-2"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                     Davayı Sil
@@ -1562,7 +1562,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                             </AlertDialogTrigger>
                                             <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                                 <AlertDialogHeader>
-                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-tone-danger flex items-center gap-2">
                                                         <Trash2 className="w-4 h-4" />
                                                         Davayı silmek istediğinize emin misiniz?
                                                     </AlertDialogTitle>
@@ -1575,14 +1575,14 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                     value={deleteReason}
                                                     onChange={e => setDeleteReason(e.target.value)}
                                                     placeholder="Silme gerekçesi (zorunlu)…"
-                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-tone-danger/60"
                                                 />
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
                                                     <AlertDialogAction
                                                         onClick={handleDelete}
                                                         disabled={deleteReason.trim().length < 3}
-                                                        className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                                                        className="bg-tone-danger hover:bg-tone-danger/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
                                                     >Sil</AlertDialogAction>
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>
@@ -1604,7 +1604,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                             {caseHistory.map((h, i) => (
                                                 <div key={i} className="text-xs border-l-2 border-primary/20 pl-3 py-1">
                                                     <div className="flex justify-between items-center mb-1">
-                                                        <span className="font-bold text-primary">
+                                                        <span className="font-bold text-brand">
                                                             {tarihceEtiketi(h.field)}
                                                         </span>
                                                         <span className="text-[10px] text-muted-foreground">
@@ -1685,7 +1685,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                             <li key={d.id} className="border border-[var(--border)] p-2 text-sm">
                                                 <span className="font-mono font-semibold">{d.esas_no}</span>
                                                 {" · "}{d.court || "Mahkeme belirtilmemiş"}
-                                                {d.court_match && <span className="ml-1 text-red-500 font-semibold">(aynı mahkeme!)</span>}
+                                                {d.court_match && <span className="ml-1 text-red-500 dark:text-red-400 font-semibold">(aynı mahkeme!)</span>}
                                                 <span className="block text-muted-foreground font-mono text-xs mt-0.5">
                                                     {d.tracking_no} · {d.status}
                                                 </span>

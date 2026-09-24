@@ -1161,7 +1161,7 @@ const Index = () => {
         title={outputDirHandle ? "Çıktı klasörünü değiştir" : "Çıktıların kaydedileceği klasörü seç"}
         className="inline-flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] bg-[var(--bg)] rounded-[3px] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)] transition-colors"
       >
-        <span className={`w-1.5 h-1.5 rounded-full ${outputDirHandle ? "bg-[#2f8a5d]" : "bg-[var(--fg-subtle)]"}`} />
+        <span className={`w-1.5 h-1.5 rounded-full ${outputDirHandle ? "bg-tone-ok" : "bg-[var(--fg-subtle)]"}`} />
         <span className="text-[9px] tracking-[0.2em] uppercase text-[var(--fg-subtle)] font-semibold">Hedef</span>
         <span className="truncate max-w-[160px] normal-case text-[11px]">{outputDirHandle ? outputDirHandle.name : "Klasör seç"}</span>
       </button>
@@ -1183,7 +1183,7 @@ const Index = () => {
         {/* G004: Yarım kalan yükleme şeridi. Yalnız boş ekranda gösterilir —
             zaten bir belge seçiliyse kullanıcı akışın içindedir. */}
         {uploadDraft.pending && !selectedFile && (
-          <div className="mb-7 flex flex-wrap items-center gap-3 border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
+          <div className="mb-7 flex flex-wrap items-center gap-3 border border-brand/40 bg-[var(--brand-soft)] px-4 py-3 rounded-[3px]">
             <AlertCircle className="w-4 h-4 text-[var(--brand)] shrink-0" />
             <div className="text-[13px] leading-relaxed max-w-[80ch]">
               <span className="font-semibold text-[var(--fg)]">Yarım kalan yükleme bulundu</span>
@@ -1251,7 +1251,7 @@ const Index = () => {
                     <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
                       <ExternalLink className="w-[18px] h-[18px]" strokeWidth={1.6} />
                     </span>
-                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#c47a1e]/40 text-[#c47a1e] rounded-[2px]">
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-tone-caution/40 text-tone-caution rounded-[2px]">
                       Yakında
                     </span>
                   </div>
@@ -1275,7 +1275,7 @@ const Index = () => {
                     <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
                       <Mail className="w-[18px] h-[18px]" strokeWidth={1.6} />
                     </span>
-                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#c47a1e]/40 text-[#c47a1e] rounded-[2px]">
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-tone-caution/40 text-tone-caution rounded-[2px]">
                       Yakında
                     </span>
                   </div>
@@ -1299,7 +1299,7 @@ const Index = () => {
                     <span className="w-8 h-8 grid place-items-center text-[var(--brand)]">
                       <Layers className="w-[18px] h-[18px]" strokeWidth={1.6} />
                     </span>
-                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-[#2f8a5d]/40 text-[#2f8a5d] rounded-[2px]">
+                    <span className="font-mono text-[9px] tracking-[0.18em] uppercase font-semibold px-1.5 py-1 border border-tone-ok/40 text-tone-ok rounded-[2px]">
                       Aktif
                     </span>
                   </div>
@@ -1404,24 +1404,24 @@ const Index = () => {
               </div>
 
               {isTestMode ? (
-                <div className="flex items-center gap-2 p-3 rounded-[3px] bg-[#c47a1e]/10 border border-[#c47a1e]/30 text-xs text-[#c47a1e]">
+                <div className="flex items-center gap-2 p-3 rounded-[3px] bg-tone-caution/10 border border-tone-caution/30 text-xs text-tone-caution">
                   <TestTube2 className="w-4 h-4 shrink-0" />
                   <span>Test modunda belge yüklenecek — dava seçimi atlanıyor. Belge <strong>TEST</strong> olarak kaydedilir.</span>
                 </div>
               ) : linkedCase ? (
                 <>
-                <div className="flex items-start gap-3 p-3 rounded-[3px] bg-[#2f8a5d]/10 border border-[#2f8a5d]/30">
-                  <CheckCircle2 className="w-5 h-5 text-[#2f8a5d] shrink-0 mt-0.5" />
+                <div className="flex items-start gap-3 p-3 rounded-[3px] bg-tone-ok/10 border border-tone-ok/30">
+                  <CheckCircle2 className="w-5 h-5 text-tone-ok shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-[#2f8a5d] truncate max-w-[200px]" title={linkedCase.esas_no || linkedCase.tracking_no}>
+                      <p className="text-sm font-semibold text-tone-ok truncate max-w-[200px]" title={linkedCase.esas_no || linkedCase.tracking_no}>
                         {linkedCase.esas_no || linkedCase.tracking_no}
                       </p>
                       {/* AI eşleşme göstergesi */}
                       {analysisData?.suggested_case?.case_id === linkedCase.id && (
                         <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${analysisData.suggested_case.confidence === "HIGH"
-                          ? "bg-[#2f8a5d]/20 text-[#2f8a5d]"
-                          : "bg-[#c47a1e]/20 text-[#c47a1e]"
+                          ? "bg-tone-ok/20 text-tone-ok"
+                          : "bg-tone-caution/20 text-tone-caution"
                           }`}>
                           🎯 AI {analysisData.suggested_case.confidence === "HIGH" ? "Eşleşti" : "Önerdi"} · {analysisData.suggested_case.score}p
                         </span>
@@ -1437,7 +1437,7 @@ const Index = () => {
                       )}
                     </div>
                   </div>
-                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); setSelectedPartyId(null); }} className="text-[var(--fg-muted)] hover:text-[#a8323b] transition-colors" title="Davayı değiştir">
+                  <button type="button" onClick={() => { setLinkedCase(null); setCaseSearch(""); setSelectedPartyId(null); }} className="text-[var(--fg-muted)] hover:text-tone-danger transition-colors" title="Davayı değiştir">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -1478,7 +1478,7 @@ const Index = () => {
                   {/* G004: Son dava listesi alınamadıysa "sonuç yok" değil HATA
                       gösterilir; arama ayrı uçtan gittiği için kullanılabilir kalır. */}
                   {casesError && (
-                    <p className="flex items-start gap-1.5 text-xs text-[#a8323b] leading-relaxed">
+                    <p className="flex items-start gap-1.5 text-xs text-tone-danger leading-relaxed">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>{casesError} Son davalar listelenemiyor — esas no ile arayabilirsiniz.</span>
                     </p>
@@ -1514,7 +1514,7 @@ const Index = () => {
                           ...(analysisData.belgede_gecen_isimler || []),
                         ].filter(Boolean)));
                         return (
-                          <div className="p-3 rounded-[3px] border border-[var(--brand)]/40 bg-[var(--brand-soft)] space-y-3">
+                          <div className="p-3 rounded-[3px] border border-brand/40 bg-[var(--brand-soft)] space-y-3">
                             <div className="flex items-center gap-2">
                               <Wand2 className="w-5 h-5 text-[var(--brand)]" />
                               <p className="text-sm font-semibold text-[var(--brand)]">Yapay Zeka — Olası Davalar</p>
@@ -1523,8 +1523,8 @@ const Index = () => {
 
                             {/* İSİM EŞLEŞME GÖRSELLEŞTİRMESİ — belgedeki isimlerin eşleşme durumu */}
                             {docNames.length > 0 && (
-                              <div className="bg-[var(--bg-sunken)] rounded-[3px] p-2.5 border border-[var(--brand)]/20 space-y-2">
-                                <label className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--brand)]/70 block">
+                              <div className="bg-[var(--bg-sunken)] rounded-[3px] p-2.5 border border-brand/20 space-y-2">
+                                <label className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-brand/70 block">
                                   BELGEDEKİ İSİMLER VE EŞLEŞME DURUMU
                                 </label>
                                 <div className="flex flex-wrap gap-1.5">
@@ -1534,7 +1534,7 @@ const Index = () => {
                                       <Badge
                                         key={idx}
                                         variant={isMatched ? "default" : "outline"}
-                                        className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-[#2f8a5d]/20 text-[#2f8a5d] border-[#2f8a5d]/30' : 'opacity-50'}`}
+                                        className={`text-[10px] py-0.5 px-2 gap-1 transition-all duration-300 ${isMatched ? 'bg-tone-ok/20 text-tone-ok border-tone-ok/30' : 'opacity-50'}`}
                                       >
                                         {isMatched ? <CheckCircle2 className="w-3 h-3" /> : null}
                                         {name}
@@ -1561,7 +1561,7 @@ const Index = () => {
                                     <span className="text-sm font-medium truncate">{cand.esas_no || cand.tracking_no}</span>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                       {i === 0 && (
-                                        <Badge className="text-[9px] px-1.5 border-0 bg-[var(--brand)]/15 text-[var(--brand)]">En yüksek</Badge>
+                                        <Badge className="text-[9px] px-1.5 border-0 bg-brand/15 text-[var(--brand)]">En yüksek</Badge>
                                       )}
                                       <Badge variant="outline" className="text-[10px] tabular-nums">{cand.score}p</Badge>
                                     </div>
@@ -1590,7 +1590,7 @@ const Index = () => {
                 <QueueStatus totalFiles={fileQueue.length} currentIndex={currentFileIndex} processedCount={processedCount} onRemoveFile={handleRemoveFromQueue} />
 
                 <Button data-analyze-btn onClick={handleAnalyze} disabled={isAnalyzing || isProcessing || (!analysisData && !selectedDocType)}
-                  className="w-full h-14 text-lg font-semibold rounded-[3px] bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
+                  className="w-full h-14 text-lg font-semibold rounded-[3px] bg-brand-solid hover:bg-brand-solid-hover text-[var(--brand-fg)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed" size="lg">
                   {isAnalyzing ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Analiz Ediliyor...</>) : (<><Wand2 className="w-5 h-5 mr-2" />Analizi Başlat</>)}
                 </Button>
                 {analysisData?.ozet && (
@@ -1619,7 +1619,7 @@ const Index = () => {
                   }}
                   disabled={isProcessing || !isValidated || !outputDirHandle}
                   className={`w-full h-16 text-xl font-bold rounded-[3px] transition-all duration-200 ${(isValidated && outputDirHandle)
-                    ? "bg-[#2f8a5d] hover:bg-[#2f8a5d]/90 text-white"
+                    ? "bg-tone-ok hover:bg-tone-ok/90 text-white"
                     : "bg-[var(--bg-sunken)] text-[var(--fg-subtle)] cursor-not-allowed opacity-70"
                     }`}
                 >

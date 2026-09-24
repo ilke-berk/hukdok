@@ -309,7 +309,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
           </div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] tracking-[0.1em] uppercase text-[var(--fg-subtle)]">E-posta</span>
-            <Switch aria-label="Tüm dosyalarda e-posta" checked={anyEmailOn} onCheckedChange={applyMasterEmail} className="data-[state=checked]:bg-[var(--brand)]" />
+            <Switch aria-label="Tüm dosyalarda e-posta" checked={anyEmailOn} onCheckedChange={applyMasterEmail} className="data-[state=checked]:bg-brand-solid" />
           </div>
         </div>
 
@@ -416,7 +416,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                     disabled={attached}
                     title={attached ? "Ek: ana belgenin e-postasıyla gider" : undefined}
                     onCheckedChange={(v) => setRowEmail(r.id, v)}
-                    className={cn("data-[state=checked]:bg-[var(--brand)]", attached && "opacity-30")}
+                    className={cn("data-[state=checked]:bg-brand-solid", attached && "opacity-30")}
                   />
                 </div>
 
@@ -426,7 +426,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                     onClick={() => removeRow(r.id)}
                     title="Kuyruktan çıkar"
                     aria-label={`Kuyruktan çıkar: ${r.name}`}
-                    className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-[#b3284c] hover:bg-[#b3284c]/10 rounded-[3px] transition-colors"
+                    className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-tone-urgent hover:bg-tone-urgent/10 rounded-[3px] transition-colors"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -469,7 +469,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                 {toRecipients.map((r) => (
                   <span key={r.email} className="inline-flex items-center gap-1 px-2.5 py-1 bg-[var(--bg-sunken)] border border-[var(--border)] text-[12px] rounded-[3px]">
                     <User className="w-3 h-3 opacity-50" />{r.name}
-                    <X className="w-3 h-3 cursor-pointer ml-1 hover:text-[#b3284c]" onClick={() => removeRecipient("to", r.email)} />
+                    <X className="w-3 h-3 cursor-pointer ml-1 hover:text-tone-urgent" onClick={() => removeRecipient("to", r.email)} />
                   </span>
                 ))}
               </div>
@@ -513,7 +513,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                   {ccRecipients.map((r) => (
                     <span key={r.email} className="inline-flex items-center gap-1 px-2.5 py-1 bg-[var(--bg-sunken)] border border-[var(--border)] text-[12px] rounded-[3px]">
                       <User className="w-3 h-3 opacity-50" />{r.name}
-                      <X className="w-3 h-3 cursor-pointer ml-1 hover:text-[#b3284c]" onClick={() => removeRecipient("cc", r.email)} />
+                      <X className="w-3 h-3 cursor-pointer ml-1 hover:text-tone-urgent" onClick={() => removeRecipient("cc", r.email)} />
                     </span>
                   ))}
                 </div>
@@ -555,7 +555,7 @@ export function BulkUploadWorkbench({ files, onCancel, onStart }: BulkUploadWork
                 <Label htmlFor="wb-confirm-per-file" className="font-display text-[13px] font-medium text-[var(--fg)]">Her dosyada e-posta ayarlarını ayrıca onayla</Label>
                 <p className="text-[11.5px] text-[var(--fg-muted)] leading-relaxed mt-0.5">Kapalıyken e-posta penceresi açılmaz — yukarıdaki ayarlar tüm batch için kullanılır.</p>
               </div>
-              <Switch id="wb-confirm-per-file" checked={confirmPerFile} onCheckedChange={setConfirmPerFile} className="data-[state=checked]:bg-[var(--brand)]" />
+              <Switch id="wb-confirm-per-file" checked={confirmPerFile} onCheckedChange={setConfirmPerFile} className="data-[state=checked]:bg-brand-solid" />
             </div>
           </div>
         </div>

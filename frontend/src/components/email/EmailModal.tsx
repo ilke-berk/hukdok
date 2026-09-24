@@ -289,7 +289,7 @@ export function EmailModal({
                             <div className="flex items-baseline justify-between gap-3 flex-wrap">
                                 <Eyebrow tone="brand">{step === "setup" ? "Bildirim · Ayarlar" : "Bildirim · Önizleme"}</Eyebrow>
                                 {isBatchMode && batchCount > 0 && (
-                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase border border-[var(--brand)]/30 bg-[var(--brand-soft)] text-[var(--brand)]">
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase border border-brand/30 bg-[var(--brand-soft)] text-[var(--brand)]">
                                         <Layers className="w-3 h-3" />
                                         Dosya {batchCount}/{totalFiles}
                                     </span>
@@ -330,7 +330,7 @@ export function EmailModal({
                                     id="email-mode"
                                     checked={sendEmail}
                                     onCheckedChange={setSendEmail}
-                                    className="data-[state=checked]:bg-[var(--brand)] shrink-0"
+                                    className="data-[state=checked]:bg-brand-solid shrink-0"
                                 />
                             </div>
 
@@ -360,7 +360,7 @@ export function EmailModal({
                                         <div className="flex flex-col gap-2">
                                             <div className="flex flex-wrap gap-2 mb-2">
                                                 {selectedRecipients.map(r => (
-                                                    <Badge key={r.email} variant="secondary" className="px-3 py-1 flex items-center gap-1 hover:bg-[#a8323b]/15 hover:text-[#a8323b] transition-colors text-sm">
+                                                    <Badge key={r.email} variant="secondary" className="px-3 py-1 flex items-center gap-1 hover:bg-tone-danger/15 hover:text-tone-danger transition-colors text-sm">
                                                         <User className="w-3 h-3 mr-1 opacity-50" />
                                                         {r.name}
                                                         <X className="w-3 h-3 cursor-pointer ml-1" onClick={() => removeRecipient('to', r.email)} />
@@ -415,7 +415,7 @@ export function EmailModal({
                                             <div className="flex flex-col gap-2">
                                                 <div className="flex flex-wrap gap-2 mb-2">
                                                     {ccRecipients.map(r => (
-                                                        <Badge key={r.email} variant="secondary" className="px-3 py-1 flex items-center gap-1 hover:bg-[#a8323b]/15 hover:text-[#a8323b] transition-colors text-sm">
+                                                        <Badge key={r.email} variant="secondary" className="px-3 py-1 flex items-center gap-1 hover:bg-tone-danger/15 hover:text-tone-danger transition-colors text-sm">
                                                             <User className="w-3 h-3 mr-1 opacity-50" />
                                                             {r.name}
                                                             <X className="w-3 h-3 cursor-pointer ml-1" onClick={() => removeRecipient('cc', r.email)} />
@@ -465,7 +465,7 @@ export function EmailModal({
                                         </Label>
 
                                         {clientWarning ? (
-                                            <div className="flex items-start gap-2 p-3 bg-[#c47a1e]/10 border border-[#c47a1e]/40 text-[#c47a1e]">
+                                            <div className="flex items-start gap-2 p-3 bg-tone-caution/10 border border-tone-caution/40 text-tone-caution">
                                                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" strokeWidth={1.8} />
                                                 <p className="text-[12px] leading-relaxed">{clientWarning}</p>
                                             </div>
@@ -490,7 +490,7 @@ export function EmailModal({
                                                     <Switch
                                                         checked={notifyClient}
                                                         onCheckedChange={setNotifyClient}
-                                                        className="data-[state=checked]:bg-[var(--brand)] shrink-0"
+                                                        className="data-[state=checked]:bg-brand-solid shrink-0"
                                                     />
                                                 </div>
                                                 {notifyClient && (
@@ -516,7 +516,7 @@ export function EmailModal({
                                             Ek Belgeler
                                         </Label>
                                         <div
-                                            className="border border-dashed border-[var(--border-strong)] p-4 text-center cursor-pointer hover:border-[var(--brand)] hover:bg-[var(--brand-soft)]/40 transition-colors"
+                                            className="border border-dashed border-[var(--border-strong)] p-4 text-center cursor-pointer hover:border-[var(--brand)] hover:bg-brand-soft/40 transition-colors"
                                             onClick={() => fileInputRef.current?.click()}
                                             onDragOver={(e) => e.preventDefault()}
                                             onDrop={(e) => {
@@ -576,12 +576,12 @@ export function EmailModal({
                                                     value={item.id}
                                                     className={cn(
                                                         "flex flex-col items-start px-3 py-1.5 hover:bg-[var(--bg-elevated)] data-[state=active]:bg-[var(--bg-elevated)] data-[state=active]:border-l-2 rounded-none border-l-2 border-transparent transition-colors text-left max-w-[220px] shrink-0",
-                                                        item.kind === "client" ? "data-[state=active]:border-l-[#2f8a5d]" : "data-[state=active]:border-l-[var(--brand)]"
+                                                        item.kind === "client" ? "data-[state=active]:border-l-tone-ok" : "data-[state=active]:border-l-[var(--brand)]"
                                                     )}
                                                 >
                                                     <span className="font-display font-medium text-[13px] truncate w-full text-[var(--fg)] flex items-center gap-1">
                                                         {item.kind === "client" && (
-                                                            <span className="inline-flex items-center px-1 py-px font-mono text-[8px] tracking-[0.1em] uppercase border border-[#2f8a5d]/40 text-[#2f8a5d] shrink-0">Müvekkil</span>
+                                                            <span className="inline-flex items-center px-1 py-px font-mono text-[8px] tracking-[0.1em] uppercase border border-tone-ok/40 text-tone-ok shrink-0">Müvekkil</span>
                                                         )}
                                                         <span className="truncate">{item.title}</span>
                                                     </span>
@@ -598,7 +598,7 @@ export function EmailModal({
                                                 <div className="flex items-center gap-3 px-5 py-4 bg-[var(--bg-elevated)] border-b border-[var(--border)] shrink-0">
                                                     <div className={cn(
                                                         "w-10 h-10 grid place-items-center text-[var(--brand-fg)] shrink-0",
-                                                        item.kind === "client" ? "bg-[#2f8a5d]" : "bg-[var(--brand)]"
+                                                        item.kind === "client" ? "bg-tone-ok" : "bg-brand-solid"
                                                     )}>
                                                         <User className="w-4 h-4" strokeWidth={1.8} />
                                                     </div>
@@ -608,14 +608,14 @@ export function EmailModal({
                                                     </div>
                                                     <span className={cn(
                                                         "inline-flex items-center px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase border bg-[var(--bg)] shrink-0",
-                                                        item.kind === "client" ? "border-[#2f8a5d]/40 text-[#2f8a5d]" : "border-[var(--border)] text-[var(--fg-subtle)]"
+                                                        item.kind === "client" ? "border-tone-ok/40 text-tone-ok" : "border-[var(--border)] text-[var(--fg-subtle)]"
                                                     )}>
                                                         {item.kind === "client" ? "Müvekkil Bilgilendirme" : `Alıcı ${index + 1}`}
                                                     </span>
                                                 </div>
                                                 {/* Client notice için açıklama satırı */}
                                                 {item.kind === "client" && (
-                                                    <div className="px-5 py-2 bg-[#2f8a5d]/8 border-b border-[#2f8a5d]/20 text-[11px] text-[#2f8a5d] leading-relaxed">
+                                                    <div className="px-5 py-2 bg-tone-ok/8 border-b border-tone-ok/20 text-[11px] text-tone-ok leading-relaxed">
                                                         Bu metin “[Müvekkil Bilgilendirme]” konusuyla sorumlu avukata gönderilecek; müvekkile iletilmek üzere hazırlanmıştır.
                                                     </div>
                                                 )}
@@ -655,7 +655,7 @@ export function EmailModal({
                                     <ArrowRight className="w-3.5 h-3.5" />
                                 </FlowButton>
                             ) : (
-                                <FlowButton variant="secondary" onClick={() => setShowNoEmailConfirm(true)} disabled={isLoading} className="min-w-[180px] border-[#c47a1e]/50 text-[#c47a1e]">
+                                <FlowButton variant="secondary" onClick={() => setShowNoEmailConfirm(true)} disabled={isLoading} className="min-w-[180px] border-tone-caution/50 text-tone-caution">
                                     <ZapOff className="w-3.5 h-3.5" />
                                     E-Postasız Kaydet
                                 </FlowButton>
@@ -689,7 +689,7 @@ export function EmailModal({
         <AlertDialog open={showNoEmailConfirm} onOpenChange={setShowNoEmailConfirm}>
             <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                 <AlertDialogHeader>
-                    <AlertDialogTitle className="flex items-center gap-2 font-display font-medium text-[18px] text-[#c47a1e]">
+                    <AlertDialogTitle className="flex items-center gap-2 font-display font-medium text-[18px] text-tone-caution">
                         <AlertTriangle className="w-5 h-5" strokeWidth={1.8} />
                         E-posta gönderilmeyecek
                     </AlertDialogTitle>
@@ -704,7 +704,7 @@ export function EmailModal({
                         Geri Dön
                     </AlertDialogCancel>
                     <AlertDialogAction
-                        className="bg-[#c47a1e] hover:bg-[#c47a1e]/90 text-white rounded-[3px]"
+                        className="bg-tone-caution hover:bg-tone-caution/90 text-white rounded-[3px]"
                         onClick={() => onConfirm([], [], false, tebligTarihi, undefined, extraAttachments.length > 0 ? extraAttachments : undefined, false, undefined)}
                     >
                         Evet, E-Postasız Kaydet

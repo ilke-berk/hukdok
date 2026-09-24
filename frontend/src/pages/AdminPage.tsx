@@ -161,7 +161,7 @@ const SortableRow = ({ id, children, className }: { id: string, children: React.
     return (
         <TableRow ref={setNodeRef} style={style} className={className}>
             <TableCell>
-                <div {...attributes} {...listeners} className="cursor-grab hover:text-primary">
+                <div {...attributes} {...listeners} className="cursor-grab hover:text-brand">
                     <GripVertical className="h-4 w-4 text-muted-foreground" />
                 </div>
             </TableCell>
@@ -865,7 +865,7 @@ const AdminPage = () => {
                                     {usage.items.map(u => (
                                         <li key={u.label} className="flex justify-between px-3 py-2">
                                             <span className="text-muted-foreground">{u.label}</span>
-                                            <span className="font-mono">{u.count}{!u.clearable && <span className="ml-2 text-xs text-amber-600">zorunlu alan</span>}</span>
+                                            <span className="font-mono">{u.count}{!u.clearable && <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">zorunlu alan</span>}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -1609,7 +1609,7 @@ function ActivityTestPanel() {
                                         → E-postası boş (eski belgeler): {diagnosis.docs_without_email}
                                     </p>
                                     {diagnosis.docs_without_email > 0 && !forceEmail && (
-                                        <p className="text-red-500 font-medium mt-1">
+                                        <p className="text-red-500 dark:text-red-400 font-medium mt-1">
                                             ⚠ Eski belgeler için yukarıdaki "Kullanıcı e-postası" alanını doldurup tekrar deneyin.
                                         </p>
                                     )}
@@ -1650,16 +1650,16 @@ function ActivityTestPanel() {
                                             <TableCell className="text-sm max-w-48 truncate">
                                                 {r.display || r.user_email}
                                                 {r.is_legacy && (
-                                                    <span className="ml-1 text-xs text-amber-500">(eski kayıt)</span>
+                                                    <span className="ml-1 text-xs text-amber-500 dark:text-amber-400">(eski kayıt)</span>
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-center">{r.total}</TableCell>
-                                            <TableCell className="text-center text-green-600">{r.mailed}</TableCell>
-                                            <TableCell className="text-center text-amber-600">{r.unmailed}</TableCell>
+                                            <TableCell className="text-center text-green-600 dark:text-green-400">{r.mailed}</TableCell>
+                                            <TableCell className="text-center text-amber-600 dark:text-amber-400">{r.unmailed}</TableCell>
                                             <TableCell className="text-center">
                                                 {r.acknowledged
-                                                    ? <span className="text-green-600 text-xs">✓ Evet</span>
-                                                    : <span className="text-amber-600 text-xs">⏳ Bekliyor</span>
+                                                    ? <span className="text-green-600 dark:text-green-400 text-xs">✓ Evet</span>
+                                                    : <span className="text-amber-600 dark:text-amber-400 text-xs">⏳ Bekliyor</span>
                                                 }
                                             </TableCell>
                                             <TableCell className="text-right space-x-1">

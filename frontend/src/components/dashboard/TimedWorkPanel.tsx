@@ -162,7 +162,7 @@ function UnresolvedStrip({
     return (
       <p
         data-testid="unresolved-error"
-        className="flex items-start gap-2 px-4 py-2.5 border-b border-[var(--border)] text-[11px] leading-relaxed text-[#c47a1e]"
+        className="flex items-start gap-2 px-4 py-2.5 border-b border-[var(--border)] text-[11px] leading-relaxed text-tone-caution"
       >
         <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-[1px]" strokeWidth={1.8} />
         <span>{error}</span>
@@ -213,7 +213,7 @@ function toneClass(row: TimedWorkRow): string {
   // Renk tek başına anlam taşımaz: etiketin kendisi "3 gün geçti" yazar.
   return row.daysLeft <= 3
     ? "text-[var(--danger,#b3261e)] border-[var(--danger,#b3261e)]/40 bg-[var(--danger,#b3261e)]/10"
-    : "text-[#c47a1e] border-[#c47a1e]/40 bg-[#c47a1e]/10";
+    : "text-tone-caution border-tone-caution/40 bg-tone-caution/10";
 }
 
 function TimedWorkRowView({

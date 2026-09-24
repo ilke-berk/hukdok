@@ -465,7 +465,7 @@ export function AssistantBar({
                                 className={[
                                     "text-left text-[12px] px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50",
                                     girdi === o
-                                        ? "border-[var(--brand)] bg-[var(--brand)] text-white"
+                                        ? "border-brand-solid bg-brand-solid text-white"
                                         : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)]",
                                 ].join(" ")}
                             >

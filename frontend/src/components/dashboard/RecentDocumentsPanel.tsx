@@ -41,7 +41,7 @@ const MAIL_META: Record<MailState, { label: string; className: string }> = {
   // Üç durum renk + metin + nokta dolgusuyla ayrışır; yalnız renge yaslanmaz.
   sent: {
     label: "mail gönderildi",
-    className: "text-[#2f8a5d] border-[#2f8a5d]/40 bg-[#2f8a5d]/10",
+    className: "text-tone-ok border-tone-ok/40 bg-tone-ok/10",
   },
   failed: {
     label: "mail hatası",

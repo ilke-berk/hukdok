@@ -16,9 +16,9 @@ interface IntakeResultStepProps {
 }
 
 const STATUS_META = {
-  queued: { icon: CheckCircle2, cls: "text-emerald-600", label: "Arşive kuyruklandı" },
+  queued: { icon: CheckCircle2, cls: "text-emerald-600 dark:text-emerald-400", label: "Arşive kuyruklandı" },
   failed: { icon: AlertCircle, cls: "text-[var(--brand)]", label: "Başarısız" },
-  expired: { icon: Clock, cls: "text-amber-600", label: "Süresi dolmuş" },
+  expired: { icon: Clock, cls: "text-amber-600 dark:text-amber-400", label: "Süresi dolmuş" },
 } as const;
 
 /**
@@ -34,7 +34,7 @@ export function IntakeResultStep({ result, filenames, onRestart, enrich }: Intak
     <div className="grid gap-5 max-w-[720px]">
       <FlowCard className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-11 h-11 grid place-items-center shrink-0 bg-emerald-500/10 text-emerald-600">
+          <div className="w-11 h-11 grid place-items-center shrink-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="w-5 h-5" strokeWidth={1.8} />
           </div>
           <div className="min-w-0">
@@ -91,7 +91,7 @@ export function IntakeResultStep({ result, filenames, onRestart, enrich }: Intak
       {missing.length > 0 && (
         <FlowCard className="border-amber-500/40 bg-amber-500/5">
           <p className="text-[13px] text-[var(--fg)] leading-relaxed">
-            <span className="font-semibold text-amber-600">Zorunlu alanlar eksik:</span>
+            <span className="font-semibold text-amber-600 dark:text-amber-400">Zorunlu alanlar eksik:</span>
             {" "}<span className="font-medium">{missing.map(m => m.label).join(", ")}</span>.
             {" "}Dosya dava panelinde "eksik alan" uyarısıyla görünecek — dava kartından tamamlayabilirsiniz.
           </p>

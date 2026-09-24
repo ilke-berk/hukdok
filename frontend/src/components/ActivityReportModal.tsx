@@ -236,7 +236,7 @@ export function ActivityReportModal({ report, onClose, readOnly = false }: Props
     <Dialog open onOpenChange={(open) => { if (!open) { if (readOnly) onClose(); else handleAcknowledge(); } }}>
       <DialogContent className="theme-classic max-w-lg max-h-[88vh] overflow-y-auto bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0">
         {/* Üst brand accent şeridi */}
-        <div className="h-[3px] bg-[var(--brand)]" aria-hidden="true" />
+        <div className="h-[3px] bg-brand-solid" aria-hidden="true" />
 
         <DialogHeader className="px-6 pt-5 pb-4 border-b border-[var(--border)] space-y-0 text-left">
           <div className="flex items-start gap-3">

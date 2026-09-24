@@ -302,7 +302,7 @@ const ClientList = () => {
                 <Checkbox
                   checked={selectedTypes.includes("Client")}
                   onCheckedChange={() => toggleType("Client")}
-                  className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                  className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
                 />
                 <span className="text-[13px] text-[var(--fg)]">Müvekkiller</span>
               </label>
@@ -310,7 +310,7 @@ const ClientList = () => {
                 <Checkbox
                   checked={selectedTypes.includes("Other")}
                   onCheckedChange={() => toggleType("Other")}
-                  className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                  className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
                 />
                 <span className="text-[13px] text-[var(--fg)]">Diğer Kişiler</span>
               </label>
@@ -325,7 +325,7 @@ const ClientList = () => {
                   <Checkbox
                     checked={selectedCategories.includes(cat)}
                     onCheckedChange={() => toggleCategory(cat)}
-                    className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-[var(--brand)] data-[state=checked]:border-[var(--brand)]"
+                    className="w-4 h-4 rounded-[2px] data-[state=checked]:bg-brand-solid data-[state=checked]:border-brand-solid"
                   />
                   <span className="text-[13px] text-[var(--fg)]">{cat}</span>
                 </label>
@@ -429,7 +429,7 @@ const ClientList = () => {
                           {toTitleCase(c.name)}
                         </span>
                         {c.contact_type === "Other" && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 font-mono text-[9px] tracking-[0.14em] uppercase border border-[#c47a1e]/30 bg-[#c47a1e]/10 text-[#c47a1e]">
+                          <span className="inline-flex items-center px-1.5 py-0.5 font-mono text-[9px] tracking-[0.14em] uppercase border border-tone-caution/30 bg-tone-caution/10 text-tone-caution">
                             Diğer
                           </span>
                         )}
@@ -593,7 +593,7 @@ const ClientList = () => {
                         <div className="text-[var(--fg-muted)] mb-1.5">Vekil Avukatlar</div>
                         <div className="flex flex-col gap-1">
                           {selectedClient.vekil_avukatlar.split(";").map((av, idx) => (
-                            <span key={idx} className="text-[12px] text-[var(--fg)] pl-2 border-l-2 border-[var(--brand)]/40">
+                            <span key={idx} className="text-[12px] text-[var(--fg)] pl-2 border-l-2 border-brand/40">
                               {toTitleCase(av.trim())}
                             </span>
                           ))}
@@ -615,7 +615,7 @@ const ClientList = () => {
                   {policiesQ.data.warnings.map((w, idx) => (
                     <div
                       key={idx}
-                      className="flex items-start gap-2 mb-3 px-2.5 py-2 border border-[#c47a1e]/30 bg-[#c47a1e]/10 text-[#c47a1e] text-[11px] leading-snug"
+                      className="flex items-start gap-2 mb-3 px-2.5 py-2 border border-tone-caution/30 bg-tone-caution/10 text-tone-caution text-[11px] leading-snug"
                     >
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                       <span>{w.message}</span>
@@ -624,7 +624,7 @@ const ClientList = () => {
 
                   <div className="grid gap-3">
                     {policiesQ.data.policies.map(p => (
-                      <div key={p.id} className="border-l-2 border-[var(--brand)]/40 pl-2.5 grid gap-1 text-[12px]">
+                      <div key={p.id} className="border-l-2 border-brand/40 pl-2.5 grid gap-1 text-[12px]">
                         <div className="flex items-center justify-between gap-2">
                           {p.document_url ? (
                             <a

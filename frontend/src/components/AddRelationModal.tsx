@@ -24,18 +24,18 @@ const RELATION_TYPES = [
 // ---- Dosya türü ikonları ----
 const FILE_TYPE_ICONS: Record<string, React.ReactNode> = {
     Hukuk:   <Scale className="w-3.5 h-3.5 text-[var(--brand)]" />,
-    İcra:    <Building2 className="w-3.5 h-3.5 text-[#c47a1e]" />,
-    Ceza:    <Gavel className="w-3.5 h-3.5 text-[#a8323b]" />,
-    İdare:   <FileText className="w-3.5 h-3.5 text-[#7a3f8a]" />,
-    Ticaret: <FileText className="w-3.5 h-3.5 text-[#2f8a5d]" />,
+    İcra:    <Building2 className="w-3.5 h-3.5 text-tone-caution" />,
+    Ceza:    <Gavel className="w-3.5 h-3.5 text-tone-danger" />,
+    İdare:   <FileText className="w-3.5 h-3.5 text-tone-violet" />,
+    Ticaret: <FileText className="w-3.5 h-3.5 text-tone-ok" />,
 };
 const getFileTypeIcon = (type?: string | null) =>
     FILE_TYPE_ICONS[type ?? ""] ?? <FileText className="w-3.5 h-3.5 text-[var(--fg-muted)]" />;
 
 const STATUS_COLORS: Record<string, string> = {
-    DERDEST: "bg-[#2f8a5d]/15 text-[#2f8a5d]",
-    ISTINAF: "bg-[#c47a1e]/15 text-[#c47a1e]",
-    TEMYIZ:  "bg-[#7a3f8a]/15 text-[#7a3f8a]",
+    DERDEST: "bg-tone-ok/15 text-tone-ok",
+    ISTINAF: "bg-tone-caution/15 text-tone-caution",
+    TEMYIZ:  "bg-tone-violet/15 text-tone-violet",
     KARAR:   "bg-[var(--brand-soft)] text-[var(--brand)]",
     KAPALI:  "bg-[var(--bg-sunken)] text-[var(--fg-subtle)]",
 };
@@ -149,7 +149,7 @@ const AddRelationModal = ({ open, currentCaseId, onClose, onSave }: AddRelationM
                                             {selectedCase.esas_no || selectedCase.tracking_no}
                                         </span>
                                         <Badge
-                                            className={`text-[10px] border-0 ${STATUS_COLORS[selectedCase.status?.toUpperCase()] ?? "bg-primary/15 text-primary"}`}
+                                            className={`text-[10px] border-0 ${STATUS_COLORS[selectedCase.status?.toUpperCase()] ?? "bg-primary/15 text-brand"}`}
                                         >
                                             {selectedCase.status}
                                         </Badge>
@@ -204,7 +204,7 @@ const AddRelationModal = ({ open, currentCaseId, onClose, onSave }: AddRelationM
                                                                 {c.esas_no || c.tracking_no}
                                                             </span>
                                                             <Badge
-                                                                className={`text-[10px] border-0 px-1.5 ${STATUS_COLORS[c.status?.toUpperCase()] ?? "bg-primary/15 text-primary"}`}
+                                                                className={`text-[10px] border-0 px-1.5 ${STATUS_COLORS[c.status?.toUpperCase()] ?? "bg-primary/15 text-brand"}`}
                                                             >
                                                                 {c.status}
                                                             </Badge>

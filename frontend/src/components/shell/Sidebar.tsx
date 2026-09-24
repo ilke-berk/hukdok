@@ -182,7 +182,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   ].join(" ")}
                 >
                   {active && (
-                    <span className="absolute -left-4 top-2 bottom-2 w-[2px] bg-[var(--brand)]" />
+                    <span className="absolute -left-4 top-2 bottom-2 w-[2px] bg-brand-solid" />
                   )}
                   <Icon className="w-4 h-4 opacity-90 shrink-0" />
                   <span className="whitespace-nowrap">{item.label}</span>
@@ -195,7 +195,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {/* Footer: user + view switcher + theme/logout */}
         <div className="border-t border-[var(--border)] pt-3.5 grid grid-cols-[minmax(0,1fr)] gap-2.5 min-w-0">
           <div className="flex items-center gap-2.5 px-1.5 py-2 min-w-0">
-            <div className="w-[34px] h-[34px] rounded-full bg-[var(--brand)] text-[var(--brand-fg)] grid place-items-center font-display font-medium text-[13px] tracking-[0.02em] shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
+            <div className="w-[34px] h-[34px] rounded-full bg-brand-solid text-[var(--brand-fg)] grid place-items-center font-display font-medium text-[13px] tracking-[0.02em] shrink-0 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
               {initials}
             </div>
             <div className="min-w-0">
@@ -225,7 +225,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     className={[
                       "px-2 py-1.5 font-sans text-[11px] font-medium tracking-[0.04em] transition-colors",
                       active
-                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                        ? "bg-brand-solid text-[var(--brand-fg)]"
                         : "bg-[var(--bg-elevated)] text-[var(--fg-muted)] hover:text-[var(--fg)]",
                     ].join(" ")}
                   >

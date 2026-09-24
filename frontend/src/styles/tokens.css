@@ -21,6 +21,56 @@
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+/* ===== Marka + durum tonları — html düzeyinde (açık = :root, koyu = .dark) =====
+   Tema sarmalayıcısında DEĞİL, kökte: Radix portalları theme-classic dışında çizilse de bu
+   renkleri görür. Kanal üçlüleri (`r g b`) Tailwind'in `<alpha-value>`'su içindir
+   (tailwind.config.ts `brand`/`tone`): `bg-brand/30` çalışır, `bg-[var(--brand)]/30` Tailwind
+   3'te HİÇ CSS üretmez.
+   İki bordo rolü: `--brand` METİN/ikon/kenarlık (zemine ≥4.5:1), `--brand-solid` DOLGU (üstünde
+   `--brand-fg` krem yazı ≥4.5:1). Açık modda ikisi aynı renktir; koyu zeminde tek bir bordo iki
+   şartı birden sağlayamaz. Oranlar tokens.contrast.test.ts'te bekçili. */
+:root {
+  --brand-rgb: 109 36 52;               /* burgundy-700 */
+  --brand-hover-rgb: 87 28 42;          /* burgundy-800 */
+  --brand-solid-rgb: 109 36 52;
+  --brand-solid-hover-rgb: 87 28 42;
+  --brand-soft-rgb: 243 228 230;        /* burgundy-100 */
+  --brand-fg-rgb: 253 250 244;
+
+  /* Durum tonları — açık moddaki değerler kodda sabit yazılı hex'lerin birebir aynısı */
+  --tone-ok-rgb: 47 138 93;             /* #2f8a5d */
+  --tone-caution-rgb: 196 122 30;       /* #c47a1e */
+  --tone-danger-rgb: 168 50 59;         /* #a8323b */
+  --tone-urgent-rgb: 179 40 76;         /* #b3284c */
+  --tone-info-rgb: 59 111 160;          /* #3b6fa0 */
+  --tone-violet-rgb: 122 63 138;        /* #7a3f8a */
+
+  --brand: rgb(var(--brand-rgb));
+  --brand-hover: rgb(var(--brand-hover-rgb));
+  --brand-solid: rgb(var(--brand-solid-rgb));
+  --brand-solid-hover: rgb(var(--brand-solid-hover-rgb));
+  --brand-soft: rgb(var(--brand-soft-rgb));
+  --brand-fg: rgb(var(--brand-fg-rgb));
+}
+.dark {
+  /* Metin bordosu: aynı hue'nun açık tonu (tonal palet; açıkta L≈28% ↔ koyuda L≈67%).
+     Eski #b8404c zemine 3.37:1'di — "koyu mod okunmuyor" şikâyetinin kaynağı. */
+  --brand-rgb: 213 129 138;             /* #d5818a */
+  --brand-hover-rgb: 229 164 170;       /* #e5a4aa */
+  /* Dolgu bordosu: burgundy-500 — buton açık moddaki gibi koyu şarap kırmızısı + krem yazı */
+  --brand-solid-rgb: 156 72 85;         /* #9c4855 */
+  --brand-solid-hover-rgb: 143 61 73;   /* #8f3d49 */
+  --brand-soft-rgb: 53 34 37;           /* #352225 */
+  --brand-fg-rgb: 253 250 244;
+
+  --tone-ok-rgb: 103 193 148;           /* #67c194 */
+  --tone-caution-rgb: 222 162 84;       /* #dea254 */
+  --tone-danger-rgb: 236 128 118;       /* #ec8076 */
+  --tone-urgent-rgb: 226 131 158;       /* #e2839e */
+  --tone-info-rgb: 136 178 221;         /* #88b2dd */
+  --tone-violet-rgb: 197 161 206;       /* #c5a1ce */
+}
+
 /* ===== Klasik — warm cream neutrals ===== */
 .theme-classic {
   --bg: #f6f1ea;
@@ -31,28 +81,21 @@
   --fg-subtle: #9a8b80;
   --border: #d9cbb8;
   --border-strong: #b8a78f;
-  --brand: var(--burgundy-700);
-  --brand-hover: var(--burgundy-800);
-  --brand-soft: var(--burgundy-100);
-  --brand-fg: #fdfaf4;
   --ring: rgba(109, 36, 52, 0.25);
 }
 .theme-classic.dark,
 .dark .theme-classic {
-  --bg: #1a1410;
-  --bg-elevated: #221a14;
-  --bg-sunken: #120d09;
-  --fg: #f4ead8;
-  --fg-muted: #c4b39a;
-  --fg-subtle: #8c7d6a;
-  --border: #3a2c22;
-  --border-strong: #5a4636;
-  /* Brand: real burgundy DNA, brighter for dark surfaces — clear wine red, not pink */
-  --brand: #b8404c;
-  --brand-hover: #c95361;
-  --brand-soft: #2c151b;
-  --brand-fg: #fdfaf4;
-  --ring: rgba(184, 64, 76, 0.32);
+  /* "Sıcak kömür": açık moddaki kağıdın hue ailesi (~30) korunur, doygunluk %6'ya iner —
+     koyu tonda %24 doygunluk kahverengi okunuyordu. Katmanlar parlaklıkla ayrılır. */
+  --bg: #181716;
+  --bg-elevated: #22201e;
+  --bg-sunken: #100f0e;
+  --fg: #ede7de;
+  --fg-muted: #bcb4a9;
+  --fg-subtle: #8e857b;
+  --border: #393632;
+  --border-strong: #544f4a;
+  --ring: rgba(213, 129, 138, 0.35);
 }
 
 /* ===== Modern — cool slate neutrals ===== */

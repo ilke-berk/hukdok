@@ -90,7 +90,7 @@ const Login = () => {
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] rounded-full bg-[var(--bg-elevated)]">
             <span
-              className="inline-block w-1.5 h-1.5 rounded-full bg-[#2f8a5d]"
+              className="inline-block w-1.5 h-1.5 rounded-full bg-tone-ok"
               style={{ boxShadow: "0 0 0 3px rgba(47,138,93,0.18)" }}
               aria-hidden="true"
             />
@@ -147,7 +147,7 @@ const Login = () => {
           Hukuki Belge Otomasyon Sistemi
         </p>
 
-        <div className="w-7 h-px bg-[var(--brand)] my-5" />
+        <div className="w-7 h-px bg-brand-solid my-5" />
 
         <p
           className="text-[13px] leading-[1.7] text-[var(--fg-muted)] text-center max-w-[460px] mb-7"
@@ -164,7 +164,7 @@ const Login = () => {
           onClick={handleMicrosoftLogin}
           disabled={isLoggingIn}
           aria-busy={isLoggingIn}
-          className="inline-flex items-center justify-center gap-3.5 px-8 py-4 border-none bg-[var(--brand)] text-[var(--brand-fg)] font-sans text-[14px] font-medium tracking-[0.04em] cursor-pointer transition-colors hover:bg-[var(--brand-hover)] active:translate-y-[1px] disabled:opacity-85 disabled:cursor-progress min-w-[340px]"
+          className="inline-flex items-center justify-center gap-3.5 px-8 py-4 border-none bg-brand-solid text-[var(--brand-fg)] font-sans text-[14px] font-medium tracking-[0.04em] cursor-pointer transition-colors hover:bg-brand-solid-hover active:translate-y-[1px] disabled:opacity-85 disabled:cursor-progress min-w-[340px]"
           style={{ boxShadow: "0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -12px rgba(109,36,52,0.4)" }}
         >
           {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin" /> : <MsLogo size={18} />}

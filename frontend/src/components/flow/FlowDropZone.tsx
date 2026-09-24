@@ -187,7 +187,7 @@ export function FlowDropZone({
         <div
           className={[
             "w-16 h-16 rounded-full grid place-items-center transition-colors",
-            isDragover ? "bg-[var(--brand)] text-[var(--brand-fg)]" : "bg-[var(--brand-soft)] text-[var(--brand)]",
+            isDragover ? "bg-brand-solid text-[var(--brand-fg)]" : "bg-[var(--brand-soft)] text-[var(--brand)]",
           ].join(" ")}
         >
           <Upload className="w-7 h-7" strokeWidth={1.6} />
@@ -203,7 +203,7 @@ export function FlowDropZone({
         </div>
 
         {isDragover && dragCount > 0 && (
-          <div className="inline-flex items-baseline gap-2 px-3 py-1.5 bg-[var(--brand)] text-[var(--brand-fg)]">
+          <div className="inline-flex items-baseline gap-2 px-3 py-1.5 bg-brand-solid text-[var(--brand-fg)]">
             <span className="font-display text-[18px] font-medium tabular-nums">{dragCount}</span>
             <span className="font-mono text-[10px] tracking-[0.18em] uppercase">dosya</span>
           </div>

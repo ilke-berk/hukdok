@@ -10,30 +10,31 @@
 
 @layer base {
   :root {
-    --background: 24 24% 8%;
-    /* theme-classic warm bg (#1a1410) */
-    --foreground: 39 56% 90%;
+    --background: 30 6% 9%;
+    /* theme-classic sıcak kömür bg (#181716) */
+    --foreground: 36 27% 90%;
 
-    --card: 26 26% 11%;
-    /* theme-classic warm elevated (#221a14) */
-    --card-foreground: 39 56% 90%;
+    --card: 30 6% 12.5%;
+    /* theme-classic sıcak kömür elevated (#22201e) */
+    --card-foreground: 36 27% 90%;
 
-    --popover: 26 26% 11%;
-    --popover-foreground: 39 56% 90%;
+    --popover: 30 6% 12.5%;
+    --popover-foreground: 36 27% 90%;
 
-    /* Brand burgundy — dark variant (#b8404c) */
-    --primary: 354 49% 49%;
+    /* Brand burgundy — dark DOLGU (#9c4855 = --brand-solid) + krem yazı. shadcn `primary`
+       dolgudur (button/badge/switch); metin bordosu `text-brand` (--brand, #d5818a) — tokens.css. */
+    --primary: 351 37% 45%;
     --primary-foreground: 40 53% 97%;
 
-    --secondary: 25 22% 14%;
-    --secondary-foreground: 39 56% 90%;
+    --secondary: 30 6% 15%;
+    --secondary-foreground: 36 27% 90%;
 
-    --muted: 25 22% 13%;
-    --muted-foreground: 36 26% 69%;
+    --muted: 30 6% 14%;
+    --muted-foreground: 35 11% 70%;
 
-    /* Accent = brand-soft dark (#2c151b) */
-    --accent: 344 35% 13%;
-    --accent-foreground: 354 49% 65%;
+    /* Accent = brand-soft dark (#352225) */
+    --accent: 353 22% 17%;
+    --accent-foreground: 354 50% 67%;
 
     --success: 142 76% 45%;
     --success-foreground: 0 0% 100%;
@@ -44,17 +45,17 @@
     --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 25 26% 18%;
-    --input: 25 26% 18%;
-    --ring: 354 49% 49%;
+    --border: 33 6% 21%;
+    --input: 33 6% 21%;
+    --ring: 354 50% 67%;
 
     --radius: 0rem;
 
     /* Legal Document System Colors - Dark Theme (burgundy) */
-    --legal-burgundy: 354 49% 49%;
-    --legal-burgundy-dark: 351 39% 37%;
-    --legal-burgundy-light: 351 50% 55%;
-    --legal-cream: 40 20% 15%;
+    --legal-burgundy: 354 50% 67%;
+    --legal-burgundy-dark: 354 40% 52%;
+    --legal-burgundy-light: 355 56% 77%;
+    --legal-cream: 30 6% 15%;
     --legal-gray: 220 10% 50%;
 
   }
@@ -122,8 +123,8 @@
   /* Dark mode gradient */
   html:not(.light) body {
     background-image:
-      radial-gradient(ellipse at 20% 20%, hsl(345 50% 15% / 0.2) 0%, transparent 50%),
-      radial-gradient(ellipse at 80% 80%, hsl(25 45% 14% / 0.15) 0%, transparent 50%);
+      radial-gradient(ellipse at 20% 20%, hsl(345 30% 15% / 0.12) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, hsl(30 10% 14% / 0.1) 0%, transparent 50%);
     background-attachment: fixed;
   }
 

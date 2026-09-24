@@ -113,7 +113,7 @@ export function NotificationsPanel({
                     aria-hidden="true"
                     className={
                       "mt-[6px] w-1.5 h-1.5 rounded-full shrink-0 " +
-                      (item.is_read ? "bg-transparent" : "bg-[var(--brand)]")
+                      (item.is_read ? "bg-transparent" : "bg-brand-solid")
                     }
                   />
                   <span className="min-w-0 flex-1">

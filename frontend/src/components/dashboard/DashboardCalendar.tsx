@@ -429,9 +429,9 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
           const marked = c.hearing || c.event;
           const isSelected = isoDate === selectedDay;
           const cellTone = c.today
-            ? "bg-[var(--brand)] text-[var(--brand-fg)] border-[var(--brand)] font-semibold"
+            ? "bg-brand-solid text-[var(--brand-fg)] border-brand-solid font-semibold"
             : marked
-              ? "bg-[var(--brand-soft)] text-[var(--fg)] border-[var(--brand)]/45 font-semibold hover:border-[var(--brand)]"
+              ? "bg-[var(--brand-soft)] text-[var(--fg)] border-brand/45 font-semibold hover:border-[var(--brand)]"
               : "text-[var(--fg)] border-transparent hover:border-[var(--border-strong)] hover:bg-[var(--bg)]";
           const selectedRing = isSelected && !c.today ? " ring-2 ring-[var(--brand)] ring-offset-1 ring-offset-[var(--bg-elevated)]" : "";
           return (
@@ -495,7 +495,7 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
                 {it.kind === "hearing" ? (
                   <Gavel className="w-4 h-4 text-[var(--brand)]" />
                 ) : (
-                  <Clock className="w-4 h-4 text-[#c47a1e]" />
+                  <Clock className="w-4 h-4 text-tone-caution" />
                 )}
               </div>
               <button
@@ -527,7 +527,7 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
                   type="button"
                   onClick={() => handleDeleteEvent(it.id)}
                   title="İşareti kaldır"
-                  className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-[#c0392b] transition-colors shrink-0"
+                  className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-tone-danger transition-colors shrink-0"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

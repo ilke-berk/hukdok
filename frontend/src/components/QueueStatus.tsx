@@ -38,12 +38,12 @@ export const QueueStatus = ({ totalFiles, currentIndex, processedCount, onRemove
           </div>
           <div className="relative h-1.5 bg-[var(--bg-sunken)] overflow-hidden">
             <span
-              className="absolute inset-y-0 left-0 bg-[var(--brand)] transition-all duration-500"
+              className="absolute inset-y-0 left-0 bg-brand-solid transition-all duration-500"
               style={{ width: `${progressPct}%` }}
             />
             {progressPct < 100 && (
               <span
-                className="absolute inset-y-0 bg-[var(--brand)]/30"
+                className="absolute inset-y-0 bg-brand/30"
                 style={{
                   left: `${progressPct}%`,
                   width: "12%",
@@ -54,7 +54,7 @@ export const QueueStatus = ({ totalFiles, currentIndex, processedCount, onRemove
           </div>
           <div className="flex items-center gap-4 font-mono text-[10px] tracking-[0.04em] text-[var(--fg-muted)]">
             <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3 h-3 text-[#2f8a5d]" />
+              <CheckCircle2 className="w-3 h-3 text-tone-ok" />
               {processedCount} tamam
             </span>
             <span className="inline-flex items-center gap-1.5">
@@ -77,9 +77,9 @@ export const QueueStatus = ({ totalFiles, currentIndex, processedCount, onRemove
             const removable = isFuture && !!onRemoveFile;
 
             const dotClass = isDone
-              ? "bg-[#2f8a5d]"
+              ? "bg-tone-ok"
               : isCurrent
-                ? "bg-[var(--brand)]"
+                ? "bg-brand-solid"
                 : "bg-[var(--bg-sunken)] border border-[var(--border-strong)]";
 
             return (
@@ -98,7 +98,7 @@ export const QueueStatus = ({ totalFiles, currentIndex, processedCount, onRemove
                     onClick={() => onRemoveFile?.(i)}
                     title="Sıradan çıkar"
                     aria-label={`${i + 1}. dosyayı sıradan çıkar`}
-                    className="absolute -top-2 -right-2 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 bg-[var(--brand)] text-[var(--brand-fg)] rounded-full"
+                    className="absolute -top-2 -right-2 hidden group-hover:flex items-center justify-center w-3.5 h-3.5 bg-brand-solid text-[var(--brand-fg)] rounded-full"
                   >
                     <X className="w-2 h-2" strokeWidth={2.5} />
                   </button>

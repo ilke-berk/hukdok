@@ -97,7 +97,7 @@ export function NotificationBell() {
         <span
           data-testid="notification-badge"
           aria-label={`${unreadCount} okunmamış bildirim`}
-          className="absolute -top-1.5 -right-1.5 z-10 min-w-[17px] h-[17px] px-1 grid place-items-center bg-[var(--brand)] text-[var(--brand-fg)] rounded-full font-mono text-[9.5px] font-semibold leading-none pointer-events-none select-none"
+          className="absolute -top-1.5 -right-1.5 z-10 min-w-[17px] h-[17px] px-1 grid place-items-center bg-brand-solid text-[var(--brand-fg)] rounded-full font-mono text-[9.5px] font-semibold leading-none pointer-events-none select-none"
         >
           {formatBadge(unreadCount)}
         </span>

@@ -250,7 +250,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                             {names.map(o => <option key={o} value={o} />)}
                         </datalist>
                         {offList && (
-                            <p className="text-[10px] text-amber-600 mt-0.5">liste dışı yazım</p>
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">liste dışı yazım</p>
                         )}
                     </>
                 );
@@ -404,7 +404,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
             {dirty && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5">
                     <div className="flex items-center gap-2 min-w-0">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                         <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 shrink-0">
                             Kaydedilmemiş
                         </Badge>
@@ -423,10 +423,10 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
             <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="pt-3 pb-4 px-5">
                     <div className="flex items-center gap-2 mb-3">
-                        <Info className="w-4 h-4 text-primary shrink-0" />
+                        <Info className="w-4 h-4 text-brand shrink-0" />
                         <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Davanın Son Durumu</span>
                         {currentStage ? (
-                            <Badge className="ml-auto bg-primary/15 text-primary border-primary/30 text-xs font-bold px-2">
+                            <Badge className="ml-auto bg-primary/15 text-brand border-primary/30 text-xs font-bold px-2">
                                 {STAGES.find(s => s.key === currentStage)?.label ?? currentStage}
                             </Badge>
                         ) : (
@@ -455,7 +455,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         geçişi yolundan (CaseStageLog kaydı üreterek) giriyor. */}
                     {stageBilinmiyor && onerilenAsama && (
                         <div className="mt-3 flex items-center gap-2 flex-wrap rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
-                            <Info className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <Info className="w-3.5 h-3.5 text-brand shrink-0" />
                             <span className="text-xs text-muted-foreground">
                                 Karar kayıtlarına göre bu dosya en az{" "}
                                 <span className="font-semibold text-foreground">
@@ -587,7 +587,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                         )}
                                         {kararSayisi > 0 && (
                                             <span
-                                                className="absolute -top-1 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary/15 text-primary border border-primary/30 text-[9px] font-bold flex items-center justify-center"
+                                                className="absolute -top-1 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary/15 text-brand border border-primary/30 text-[9px] font-bold flex items-center justify-center"
                                                 title={`${kararSayisi} kayıtlı karar`}
                                             >
                                                 {kararSayisi}
@@ -605,7 +605,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                         </div>
                                         <span className={`
                                             text-[10px] font-semibold text-center whitespace-nowrap transition-colors
-                                            ${selected              ? "text-primary"          : ""}
+                                            ${selected              ? "text-brand"          : ""}
                                             ${!selected && (done || active) ? "text-foreground" : ""}
                                             ${!selected && future   ? "text-muted-foreground" : ""}
                                         `}>
@@ -635,7 +635,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                                 {STAGES[selectedIdx]?.label}
                             </span>
                             {currentStage === selectedKey && (
-                                <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30 px-1.5 py-0">
+                                <Badge variant="outline" className="text-[10px] bg-primary/10 text-brand border-primary/30 px-1.5 py-0">
                                     Mevcut
                                 </Badge>
                             )}
@@ -661,7 +661,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         <p className="text-sm text-muted-foreground py-1">
                             Bu aşamaya henüz gelinmedi.
                             {" "}
-                            <button className="text-primary underline underline-offset-2"
+                            <button className="text-brand underline underline-offset-2"
                                 onClick={() => openStageDialog(STAGES[selectedIdx])}>
                                 Geçmek için tıkla
                             </button>
@@ -690,7 +690,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                         (yerel → istinaf, istinaf → temyiz) gösterilir. */}
                     {tebligEksik && (
                         <div className="mt-4 flex items-center gap-2 flex-wrap rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                             <span className="text-xs text-muted-foreground">
                                 Bu aşamanın son kararında <span className="font-semibold text-foreground">tebliğ tarihi</span> yok:
                                 kanuni süre uyarısı üretilemez. Kararı işlerken tebliğ tarihini girin ya da yukarıdaki alandan ekleyin.
@@ -765,7 +765,7 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
                             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                             <div className="text-center">
                                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Yeni</p>
-                                <p className="text-sm font-bold text-primary">{stageDialog?.label}</p>
+                                <p className="text-sm font-bold text-brand">{stageDialog?.label}</p>
                             </div>
                         </div>
                         {dirty && (

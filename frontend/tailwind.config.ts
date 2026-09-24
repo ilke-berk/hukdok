@@ -33,6 +33,24 @@ export default {
           900: "#3f1520",
           950: "#260d14",
         },
+        // Tema duyarlı marka + durum tonları (styles/tokens.css kanal üçlüleri). Opaklık ister
+        // `bg-brand/30`, `text-tone-ok` — `bg-[var(--brand)]/30` Tailwind 3'te CSS üretmez.
+        brand: {
+          DEFAULT: "rgb(var(--brand-rgb) / <alpha-value>)",
+          hover: "rgb(var(--brand-hover-rgb) / <alpha-value>)",
+          solid: "rgb(var(--brand-solid-rgb) / <alpha-value>)",
+          "solid-hover": "rgb(var(--brand-solid-hover-rgb) / <alpha-value>)",
+          soft: "rgb(var(--brand-soft-rgb) / <alpha-value>)",
+          fg: "rgb(var(--brand-fg-rgb) / <alpha-value>)",
+        },
+        tone: {
+          ok: "rgb(var(--tone-ok-rgb) / <alpha-value>)",
+          caution: "rgb(var(--tone-caution-rgb) / <alpha-value>)",
+          danger: "rgb(var(--tone-danger-rgb) / <alpha-value>)",
+          urgent: "rgb(var(--tone-urgent-rgb) / <alpha-value>)",
+          info: "rgb(var(--tone-info-rgb) / <alpha-value>)",
+          violet: "rgb(var(--tone-violet-rgb) / <alpha-value>)",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

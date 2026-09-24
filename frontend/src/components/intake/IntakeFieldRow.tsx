@@ -209,7 +209,7 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
                   onApprove(true);
                   setEmptyConfirmOpen(false);
                 }}
-                className="px-3 py-1.5 text-[12px] font-medium bg-[var(--brand)] text-[var(--brand-fg)] hover:opacity-90 transition-opacity"
+                className="px-3 py-1.5 text-[12px] font-medium bg-brand-solid text-[var(--brand-fg)] hover:opacity-90 transition-opacity"
               >
                 Onaylıyorum
               </button>
@@ -229,20 +229,20 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
           </label>
           <div className="flex items-center gap-1.5">
             {enrichMode && enrich?.status === "fill" && (
-              <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600">
+              <span className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                 Doldur
               </span>
             )}
             {enrichMode && enrich?.status === "conflict" && (
               <span
                 title={`Kayıtlı değerden farklı: ${enrichCurrent}`}
-                className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-amber-600/40 bg-amber-500/10 text-amber-600"
+                className="font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-amber-600/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
               >
                 Çelişki
               </span>
             )}
             {field?.verified === true && (
-              <span title="Değer belgede kanıtla doğrulandı" className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.1em] uppercase text-emerald-600">
+              <span title="Değer belgede kanıtla doğrulandı" className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.1em] uppercase text-emerald-600 dark:text-emerald-400">
                 <ShieldCheck className="w-3 h-3" /> Kanıtlı
               </span>
             )}
@@ -270,7 +270,7 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
             <button
               type="button"
               onClick={() => onChange(enrichCurrent)}
-              className="font-mono text-[10px] tracking-[0.04em] text-amber-600 hover:underline"
+              className="font-mono text-[10px] tracking-[0.04em] text-amber-600 dark:text-amber-400 hover:underline"
               title="Kayıtlı dava değerine geri dön (alan davada değişmez)"
             >
               Kayıtlı: {enrichCurrent}

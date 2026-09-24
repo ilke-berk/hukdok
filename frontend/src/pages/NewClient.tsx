@@ -323,7 +323,7 @@ const NewClient = () => {
                         <div className="bg-primary/5 border border-primary/20 rounded-none p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className="bg-primary/20 p-2 rounded">
-                                    <FileText className="w-5 h-5 text-primary" />
+                                    <FileText className="w-5 h-5 text-brand" />
                                 </div>
                                 <div className="overflow-hidden">
                                     <h4 className="font-semibold text-sm">Yüklenen Belge</h4>
@@ -376,7 +376,7 @@ const NewClient = () => {
                                                         value="Individual"
                                                         checked={formData.client_type === "Individual"}
                                                         onChange={(e) => setFormData({ ...formData, client_type: e.target.value })}
-                                                        className="w-4 h-4 text-primary"
+                                                        className="w-4 h-4 text-brand"
                                                     />
                                                     <span className="text-sm">Şahıs</span>
                                                 </label>
@@ -387,7 +387,7 @@ const NewClient = () => {
                                                         value="Corporate"
                                                         checked={formData.client_type === "Corporate"}
                                                         onChange={(e) => setFormData({ ...formData, client_type: e.target.value })}
-                                                        className="w-4 h-4 text-primary"
+                                                        className="w-4 h-4 text-brand"
                                                     />
                                                     <span className="text-sm">Kurum</span>
                                                 </label>
@@ -416,7 +416,7 @@ const NewClient = () => {
                                                 className={`bg-[var(--bg)] border-[var(--border-strong)] rounded-[3px] ${tcError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                                             />
                                             {tcError ? (
-                                                <p className="text-[10px] font-medium text-red-500 animate-in fade-in slide-in-from-top-1">
+                                                <p className="text-[10px] font-medium text-red-500 dark:text-red-400 animate-in fade-in slide-in-from-top-1">
                                                     {tcError}
                                                 </p>
                                             ) : (
@@ -733,7 +733,7 @@ const NewClient = () => {
                                 <div className="p-5 grid gap-2.5">
                                     <Button
                                         type="submit"
-                                        className="w-full h-11 bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
+                                        className="w-full h-11 bg-brand-solid hover:bg-brand-solid-hover text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
                                         disabled={isLoading}
                                     >
                                         {isLoading ? (
@@ -766,7 +766,7 @@ const NewClient = () => {
                                             <AlertDialogTrigger asChild>
                                                 <Button
                                                     type="button"
-                                                    className="w-full h-10 mt-2 bg-transparent border border-[#a8323b]/30 text-[#a8323b] hover:bg-[#a8323b]/10 rounded-[3px] font-medium gap-2"
+                                                    className="w-full h-10 mt-2 bg-transparent border border-tone-danger/30 text-tone-danger hover:bg-tone-danger/10 rounded-[3px] font-medium gap-2"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                     Kaydı Sil
@@ -774,14 +774,14 @@ const NewClient = () => {
                                             </AlertDialogTrigger>
                                             <AlertDialogContent className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                                 <AlertDialogHeader>
-                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-[#a8323b] flex items-center gap-2">
+                                                    <AlertDialogTitle className="font-display font-medium text-[18px] text-tone-danger flex items-center gap-2">
                                                         <Trash2 className="w-4 h-4" />
                                                         Emin misiniz?
                                                     </AlertDialogTitle>
                                                     <AlertDialogDescription className="text-[13px] text-[var(--fg-muted)] leading-relaxed">
                                                         Bu {typeLabel.toLowerCase()} listelerden kaldırılır ve arşive taşınır; <strong className="text-[var(--fg)]">yönetici panelinden geri alınabilir.</strong> Gerekçe zorunludur ve kayıt altına alınır.
                                                         {caseSummary !== null && caseSummary.active_cases > 0 && (
-                                                            <span className="block mt-2 text-[#a8323b] font-medium">
+                                                            <span className="block mt-2 text-tone-danger font-medium">
                                                                 Dikkat: bu {typeLabel.toLowerCase()} kaydının {caseSummary.active_cases} açık davası var. Silinse de davalardaki taraf kayıtları korunur.
                                                             </span>
                                                         )}
@@ -792,14 +792,14 @@ const NewClient = () => {
                                                     value={deleteReason}
                                                     onChange={e => setDeleteReason(e.target.value)}
                                                     placeholder="Silme gerekçesi (zorunlu)…"
-                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-[#a8323b]/60"
+                                                    className="w-full text-[13px] p-2 bg-[var(--bg)] border border-[var(--border-strong)] rounded-[3px] text-[var(--fg)] placeholder:text-[var(--fg-muted)] resize-none focus:outline-none focus:border-tone-danger/60"
                                                 />
                                                 <AlertDialogFooter>
                                                     <AlertDialogCancel className="bg-transparent border-[var(--border-strong)] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)] rounded-[3px]">İptal</AlertDialogCancel>
                                                     <AlertDialogAction
                                                         onClick={handleDelete}
                                                         disabled={deleteReason.trim().length < 3}
-                                                        className="bg-[#a8323b] hover:bg-[#a8323b]/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
+                                                        className="bg-tone-danger hover:bg-tone-danger/90 text-white rounded-[3px] disabled:opacity-40 disabled:pointer-events-none"
                                                     >Sil</AlertDialogAction>
                                                 </AlertDialogFooter>
                                             </AlertDialogContent>

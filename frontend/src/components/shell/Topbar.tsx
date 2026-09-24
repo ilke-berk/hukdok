@@ -127,7 +127,7 @@ export function Topbar({ onOpenSidebar }: TopbarProps) {
         <button
           type="button"
           onClick={() => navigate("/upload")}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--brand)] text-[var(--brand-fg)] border-0 rounded-[4px] font-sans text-[13px] font-medium tracking-[0.03em] cursor-pointer transition-colors hover:bg-[var(--brand-hover)]"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-solid text-[var(--brand-fg)] border-0 rounded-[4px] font-sans text-[13px] font-medium tracking-[0.03em] cursor-pointer transition-colors hover:bg-brand-solid-hover"
           style={{ boxShadow: "0 1px 0 rgba(0,0,0,0.04), 0 6px 18px -10px rgba(109,36,52,0.35)" }}
         >
           <Plus className="w-3.5 h-3.5" />

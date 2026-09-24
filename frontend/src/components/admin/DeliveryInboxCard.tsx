@@ -453,7 +453,7 @@ export function DeliveryInboxCard() {
                                 okunan {sayi(onayTeslim.okunan)} · işlenen {sayi(onayTeslim.islenen)} · atlanan {sayi(onayTeslim.atlanan)} · hata {sayi(onayTeslim.hata_sayisi)} · alan değişikliği {sayi(onayTeslim.alan_degisikligi)} · kart {sayi(onayTeslim.kart_degisen)}
                             </p>
                             {onayTeslim.envanter_denk === false && (
-                                <p className="text-[12px] text-red-700">Belge envanteri denk değil.</p>
+                                <p className="text-[12px] text-red-700 dark:text-red-400">Belge envanteri denk değil.</p>
                             )}
                             <p className="text-[12px]">
                                 <span className="text-[var(--fg-muted)]">Kapı: </span>
@@ -518,11 +518,11 @@ function TeslimSatiri({ t, mesgul, raporAcik, raporlar, indirilen, onKuruKos, on
                     {t.onceki_teslim_adi && (
                         <p className="text-[11px] text-[var(--fg-muted)] mt-0.5 break-all">
                             Önceki: {t.onceki_teslim_adi}
-                            {t.zincir_tamam === false && <span className="text-red-700"> · zincir kopuk</span>}
+                            {t.zincir_tamam === false && <span className="text-red-700 dark:text-red-400"> · zincir kopuk</span>}
                         </p>
                     )}
                     {t.hata_mesaji && (
-                        <p className="text-[11px] text-red-700 mt-0.5 break-words">{t.hata_mesaji}</p>
+                        <p className="text-[11px] text-red-700 dark:text-red-400 mt-0.5 break-words">{t.hata_mesaji}</p>
                     )}
                 </TableCell>
                 <TableCell className="align-top whitespace-nowrap">{KAYNAK_ETIKET[t.kaynak] ?? t.kaynak}</TableCell>
@@ -530,7 +530,7 @@ function TeslimSatiri({ t, mesgul, raporAcik, raporlar, indirilen, onKuruKos, on
                 <TableCell className="align-top font-mono text-[12px] whitespace-nowrap" data-testid="sayaclar">
                     {sayi(t.okunan)} / {sayi(t.islenen)} / {sayi(t.atlanan)} / {sayi(t.hata_sayisi)}
                     {t.envanter_denk === false && (
-                        <span className="block text-red-700 font-sans text-[11px]">envanter denk değil</span>
+                        <span className="block text-red-700 dark:text-red-400 font-sans text-[11px]">envanter denk değil</span>
                     )}
                 </TableCell>
                 <TableCell className="align-top font-mono text-[12px]" data-testid="alan-degisikligi">

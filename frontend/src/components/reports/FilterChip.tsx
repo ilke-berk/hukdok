@@ -104,7 +104,7 @@ export function FilterChip({ oge, kolon, onDegistir, onKaldir, onAc, acik }: Fil
             className={[
                 "relative inline-flex items-center gap-1 pl-2 pr-0.5 py-0.5 text-[11.5px] border rounded-[3px] max-w-full",
                 gelismis
-                    ? "border-[var(--brand)]/50 bg-[var(--brand-soft)] text-[var(--fg)]"
+                    ? "border-brand/50 bg-[var(--brand-soft)] text-[var(--fg)]"
                     : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg)]",
             ].join(" ")}
         >

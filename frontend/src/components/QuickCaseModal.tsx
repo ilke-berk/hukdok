@@ -420,7 +420,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             <DialogContent className="max-w-lg sm:max-w-xl theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0">
                 <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--border)]">
                     <div className="flex items-start gap-3">
-                        <div className="w-11 h-11 grid place-items-center bg-[#c47a1e]/15 text-[#c47a1e] shrink-0">
+                        <div className="w-11 h-11 grid place-items-center bg-tone-caution/15 text-tone-caution shrink-0">
                             <AlertTriangle className="w-5 h-5" strokeWidth={1.8} />
                         </div>
                         <div className="grid gap-1 min-w-0">
@@ -458,7 +458,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                 type="button"
                                 onClick={() => setStatus("DERDEST")}
                                 className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${status === "DERDEST"
-                                    ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                    ? "bg-brand-solid text-[var(--brand-fg)]"
                                     : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                     }`}
                             >Derdest</button>
@@ -517,7 +517,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     type="button"
                                     onClick={() => setClientRole("Davacı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davacı"
-                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        ? "bg-brand-solid text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davacı</button>
@@ -525,7 +525,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     type="button"
                                     onClick={() => setClientRole("Davalı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${clientRole === "Davalı"
-                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        ? "bg-brand-solid text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davalı</button>
@@ -556,7 +556,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     type="button"
                                     onClick={() => setCounterRole("Davacı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davacı"
-                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        ? "bg-brand-solid text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davacı</button>
@@ -564,7 +564,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     type="button"
                                     onClick={() => setCounterRole("Davalı")}
                                     className={`px-2 py-1 text-[10px] font-semibold transition-colors ${counterRole === "Davalı"
-                                        ? "bg-[var(--brand)] text-[var(--brand-fg)]"
+                                        ? "bg-brand-solid text-[var(--brand-fg)]"
                                         : "bg-[var(--bg)] text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)]"
                                         }`}
                                 >Davalı</button>
@@ -701,7 +701,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                         <li key={d.id} className="text-[12px] text-[var(--fg)]">
                                             <span className="font-mono font-semibold">{d.esas_no}</span>
                                             {" · "}{d.court || "Mahkeme belirtilmemiş"}
-                                            {d.court_match && <strong className="ml-1 text-red-500">(aynı mahkeme!)</strong>}
+                                            {d.court_match && <strong className="ml-1 text-red-500 dark:text-red-400">(aynı mahkeme!)</strong>}
                                             <span className="text-[var(--fg-subtle)] font-mono ml-1">· {d.tracking_no}</span>
                                         </li>
                                     ))}
@@ -753,9 +753,9 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                         </div>
                     </div>
                 ) : showNewClientConfirm ? (
-                    <div className="bg-[var(--brand-soft)] border-y border-[var(--brand)]/30 px-6 py-4 flex flex-col gap-3">
+                    <div className="bg-[var(--brand-soft)] border-y border-brand/30 px-6 py-4 flex flex-col gap-3">
                         <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 grid place-items-center bg-[var(--brand)] text-[var(--brand-fg)] shrink-0">
+                            <div className="w-8 h-8 grid place-items-center bg-brand-solid text-[var(--brand-fg)] shrink-0">
                                 <User className="w-4 h-4" strokeWidth={1.8} />
                             </div>
                             <div className="min-w-0">
@@ -798,7 +798,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                                     {consultTypoHints.map((h, i) => (
                                         <li key={i} className="text-[12px] text-[var(--fg)]">
                                             <span className="line-through opacity-60">{h.typed}</span>
-                                            <span className="mx-1.5 text-blue-500">→</span>
+                                            <span className="mx-1.5 text-blue-500 dark:text-blue-400">→</span>
                                             <strong className="font-semibold">{h.suggestion}</strong>
                                         </li>
                                     ))}
@@ -819,7 +819,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                     </div>
                 ) : (
                     <>
-                        <div className={`border-y px-6 py-3 text-[12px] flex items-start gap-2 ${isConsult ? "bg-blue-500/10 border-blue-500/25 text-blue-600" : "bg-[#c47a1e]/10 border-[#c47a1e]/25 text-[#c47a1e]"}`}>
+                        <div className={`border-y px-6 py-3 text-[12px] flex items-start gap-2 ${isConsult ? "bg-blue-500/10 border-blue-500/25 text-blue-600 dark:text-blue-400" : "bg-tone-caution/10 border-tone-caution/25 text-tone-caution"}`}>
                             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" strokeWidth={1.8} />
                             <span className="leading-relaxed">
                                 {isConsult

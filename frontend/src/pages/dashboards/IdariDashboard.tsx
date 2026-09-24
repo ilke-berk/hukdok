@@ -181,7 +181,7 @@ export default function IdariDashboard() {
                   "group relative flex min-h-[132px] flex-col justify-between gap-[18px] px-6 py-[22px] text-left",
                   "border transition-[border-color,transform] duration-150 active:translate-y-px",
                   a.primary
-                    ? "border-[var(--brand)] text-[#fdf2f4] [background:linear-gradient(140deg,var(--brand)_0%,var(--burgundy-800,var(--brand-hover))_100%)]"
+                    ? "border-brand-solid text-[#fdf2f4] [background:linear-gradient(140deg,var(--brand-solid)_0%,var(--burgundy-800)_100%)]"
                     : "border-[var(--border)] bg-[var(--bg-elevated)] hover:border-[var(--border-strong)]",
                 ].join(" ")}
               >

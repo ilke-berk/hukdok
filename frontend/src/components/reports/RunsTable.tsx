@@ -35,7 +35,7 @@ function KaynakRozeti({ kaynak }: { kaynak: RaporKosusu["kaynak"] }) {
     return (
         <span
             data-testid="kaynak-rozeti"
-            className={`${ROZET_CLS} ${asistan ? "border-[var(--brand)]/40 text-[var(--brand)] bg-[var(--brand-soft)]" : "border-[var(--border)] text-[var(--fg-muted)] bg-[var(--bg)]"}`}
+            className={`${ROZET_CLS} ${asistan ? "border-brand/40 text-[var(--brand)] bg-[var(--brand-soft)]" : "border-[var(--border)] text-[var(--fg-muted)] bg-[var(--bg)]"}`}
         >
             {KAYNAK_ETIKETLERI[kaynak] ?? kaynak}
         </span>

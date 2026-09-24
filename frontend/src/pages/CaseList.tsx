@@ -66,8 +66,8 @@ const URGENT_WINDOW_DAYS = 7;
 const STATUS_ORDER = ["DANIŞ", "DERDEST", "MAHZEN"];
 
 const STATUS_TONE: Record<string, string> = {
-  DANIŞ: "text-[#3b6fa0] border-[#3b6fa0]/30 bg-[#3b6fa0]/10",
-  DERDEST: "text-[#2f8a5d] border-[#2f8a5d]/30 bg-[#2f8a5d]/10",
+  DANIŞ: "text-tone-info border-tone-info/30 bg-tone-info/10",
+  DERDEST: "text-tone-ok border-tone-ok/30 bg-tone-ok/10",
   MAHZEN: "text-[var(--fg-subtle)] border-[var(--border)] bg-[var(--bg-sunken)]",
 };
 
@@ -468,11 +468,11 @@ const CaseList = () => {
               className={[
                 "mt-2 w-full text-left border p-3 transition-colors",
                 onlyUrgent
-                  ? "border-[#b3284c]/50 bg-[#b3284c]/5"
+                  ? "border-tone-urgent/50 bg-tone-urgent/5"
                   : "border-[var(--border)] bg-[var(--bg)] hover:border-[var(--border-strong)]",
               ].join(" ")}
             >
-              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] uppercase text-[#b3284c]">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] uppercase text-tone-urgent">
                 <AlertTriangle className="w-3 h-3" />
                 Süre Yaklaşan
               </div>
@@ -481,7 +481,7 @@ const CaseList = () => {
               </div>
               <div className="mt-1.5 text-[11px] text-[var(--fg-subtle)] leading-snug">
                 Önümüzdeki {URGENT_WINDOW_DAYS} gün içinde duruşması olan
-                {onlyUrgent && <span className="text-[#b3284c]"> · filtre açık</span>}
+                {onlyUrgent && <span className="text-tone-urgent"> · filtre açık</span>}
               </div>
               {upcomingMarks.length > 0 && (
                 <div className="mt-2 pt-2 border-t border-[var(--border)] inline-flex items-center gap-1.5 text-[11px] text-[var(--fg-muted)]">
@@ -505,13 +505,13 @@ const CaseList = () => {
                   : "border-[var(--border)] bg-[var(--bg)] hover:border-[var(--border-strong)]",
               ].join(" ")}
             >
-              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] uppercase text-amber-600">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.12em] uppercase text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="w-3 h-3" />
                 Eksik Alanlı Dosyalar
               </div>
               <div className="mt-1.5 text-[11px] text-[var(--fg-subtle)] leading-snug">
                 Zorunlu alanları tamamlanmamış dosyaları göster
-                {onlyMissing && <span className="text-amber-600"> · filtre açık</span>}
+                {onlyMissing && <span className="text-amber-600 dark:text-amber-400"> · filtre açık</span>}
               </div>
             </button>
           </div>
@@ -627,7 +627,7 @@ const CaseList = () => {
                           )}
                           {(c.missing_required_fields?.length ?? 0) > 0 && (
                             <div
-                              className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-amber-500/[0.14] text-amber-600 font-mono text-[9.5px] tracking-[0.12em] uppercase font-semibold"
+                              className="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-amber-500/[0.14] text-amber-600 dark:text-amber-400 font-mono text-[9.5px] tracking-[0.12em] uppercase font-semibold"
                               title={`Eksik zorunlu alanlar: ${c.missing_required_fields!.map(m => m.label).join(", ")}`}
                             >
                               <AlertTriangle className="w-2.5 h-2.5" />
@@ -667,7 +667,7 @@ const CaseList = () => {
                             </div>
                           </div>
                           {isUrgent && (
-                            <div className="mt-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-[#b3284c]/[0.12] text-[#b3284c] font-mono text-[9.5px] tracking-[0.12em] uppercase font-semibold">
+                            <div className="mt-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-tone-urgent/[0.12] text-tone-urgent font-mono text-[9.5px] tracking-[0.12em] uppercase font-semibold">
                               <AlertTriangle className="w-2.5 h-2.5" />
                               {urgentDays === 0 ? "Bugün" : `Süre ${urgentDays} gün`}
                             </div>
@@ -734,7 +734,7 @@ function ChipButton({ active, label, count, onClick }: { active: boolean; label:
       className={[
         "inline-flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] tracking-[0.1em] uppercase border transition-colors",
         active
-          ? "bg-[var(--brand)] text-[var(--brand-fg)] border-[var(--brand)]"
+          ? "bg-brand-solid text-[var(--brand-fg)] border-brand-solid"
           : "bg-transparent text-[var(--fg-muted)] border-[var(--border)] hover:border-[var(--border-strong)] hover:text-[var(--fg)]",
       ].join(" ")}
     >

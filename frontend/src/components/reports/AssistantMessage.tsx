@@ -45,7 +45,7 @@ export function AssistantMessage({
     if (kayit.rol === "user") {
         return (
             <div className="flex justify-end" data-testid="sohbet-kullanici">
-                <div className="max-w-[88%] px-3 py-2 rounded-[6px] rounded-br-[2px] bg-[var(--brand)] text-white text-[13px] whitespace-pre-wrap break-words">
+                <div className="max-w-[88%] px-3 py-2 rounded-[6px] rounded-br-[2px] bg-brand-solid text-white text-[13px] whitespace-pre-wrap break-words">
                     {kayit.icerik}
                 </div>
             </div>
@@ -60,7 +60,7 @@ export function AssistantMessage({
                     className="max-w-[92%] px-3 py-2 rounded-[6px] rounded-bl-[2px] border border-red-300 bg-red-50 text-[13px] text-red-950"
                 >
                     <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-700" />
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-700 dark:text-red-400" />
                         <div className="min-w-0">
                             <p className="font-medium">{kayit.hata.ozet}</p>
                             <p className="mt-1 text-[12px] text-red-900/80">{errorKodIpucu(kayit.hata.kod)}</p>

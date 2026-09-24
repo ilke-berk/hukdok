@@ -68,7 +68,7 @@ export const AnalysisPending = ({ isAnalyzing = false }: AnalysisPendingProps) =
               <div key={s.id} className="flex flex-col items-center gap-1.5">
                 <div className="relative w-full h-1 bg-[var(--bg-sunken)] overflow-hidden">
                   <span
-                    className="absolute inset-y-0 left-0 bg-[var(--brand)]"
+                    className="absolute inset-y-0 left-0 bg-brand-solid"
                     style={{
                       animation: `hk-stage 4.8s linear infinite`,
                       animationDelay: `${i * 1.2}s`,

@@ -655,7 +655,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
           Bant bir sonraki Kaydet denemesine kadar durur (hook temizler). */}
       {conflictNotice && (
         <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="text-[13px] text-[var(--fg)]">
             <span className="font-semibold">Değişiklikler henüz kaydedilmedi.</span>{" "}
             Dava bu ekran açıkken güncellendiği için öneriler güncel değerlerle
@@ -666,7 +666,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
 
       {/* Enrich modu başlığı: hedef dava */}
       {enrichMode && enrichCase && (
-        <div className="border border-[var(--brand)]/40 bg-[var(--brand-soft)] px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="border border-brand/40 bg-[var(--brand-soft)] px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <span className="text-[13px] text-[var(--fg)]">
             <span className="font-semibold">Mevcut dava zenginleştiriliyor:</span>{" "}
             <Link
@@ -688,7 +688,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       {/* Uyarı bantları */}
       {draft.duplicate_case && (
         <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3 flex-wrap">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="text-[13px] text-[var(--fg)] min-w-0 flex-1">
             Bu dava zaten kayıtlı olabilir:{" "}
             <Link
@@ -714,7 +714,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       )}
       {draft.warnings.map((w, i) => (
         <div key={i} className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
           <span className="text-[13px] text-[var(--fg)]">{w.message}</span>
         </div>
       ))}
@@ -743,7 +743,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               {confirmedLabels.map(label => (
                 <span
                   key={label}
-                  className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600"
+                  className="inline-flex items-center gap-1 font-mono text-[10px] px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                 >
                   ✓ {label}
                 </span>
@@ -803,7 +803,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               {selectedLawyers.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {selectedLawyers.map((sl, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1 bg-[var(--brand-soft)] text-[var(--brand)] px-2 py-1 text-[11px] font-medium border border-[var(--brand)]/20">
+                    <span key={idx} className="inline-flex items-center gap-1 bg-[var(--brand-soft)] text-[var(--brand)] px-2 py-1 text-[11px] font-medium border border-brand/20">
                       {sl.name}
                       <button
                         type="button"
@@ -987,7 +987,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                       </button>
                     </div>
                     {p.matchName && p.client_id != null && (
-                      <p className="font-mono text-[10px] tracking-[0.04em] text-emerald-600">
+                      <p className="font-mono text-[10px] tracking-[0.04em] text-emerald-600 dark:text-emerald-400">
                         Kayıtlı cari: {p.matchName} (#{p.client_id})
                       </p>
                     )}
@@ -1037,7 +1037,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                             </span>
                           )}
                           {p.relevant && (
-                            <span className="font-mono text-[10px] px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600">
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 border border-emerald-600/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                               İlgili dönem
                             </span>
                           )}
@@ -1053,7 +1053,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                           {p.sigortali && ` · ${p.sigortali}`}
                         </p>
                         {p.client_id == null && !p.saved && (
-                          <p className="font-mono text-[10px] text-amber-600 mt-1">
+                          <p className="font-mono text-[10px] text-amber-600 dark:text-amber-400 mt-1">
                             Müvekkil eşleşmesi yok — kaydedilemez (poliçe bilgisi notlara yazılabilir)
                           </p>
                         )}
@@ -1082,7 +1082,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                       {d.filename}
                     </span>
                     {d.expired && (
-                      <span className="font-mono text-[10px] px-1.5 py-0.5 border border-[var(--brand)]/40 bg-[var(--brand-soft)] text-[var(--brand)] shrink-0">
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 border border-brand/40 bg-[var(--brand-soft)] text-[var(--brand)] shrink-0">
                         Süresi doldu — arşivlenmeyecek
                       </span>
                     )}

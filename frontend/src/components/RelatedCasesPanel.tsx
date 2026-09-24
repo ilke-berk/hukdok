@@ -70,25 +70,25 @@ const AYNI_DAVA = "AYNI_DAVA";
 
 // ---- Dosya türü meta ----
 const fileTypeMeta: Record<string, { color: string; bg: string; border: string; icon: React.ReactNode }> = {
-    Hukuk:   { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", icon: <Scale className="w-3.5 h-3.5" /> },
-    İcra:    { color: "text-[#c47a1e]",     bg: "bg-[#c47a1e]/10",     border: "border-[#c47a1e]/30",     icon: <Building2 className="w-3.5 h-3.5" /> },
-    Ceza:    { color: "text-[#a8323b]",     bg: "bg-[#a8323b]/10",     border: "border-[#a8323b]/30",     icon: <Gavel className="w-3.5 h-3.5" /> },
-    İdare:   { color: "text-[#7a3f8a]",     bg: "bg-[#7a3f8a]/10",     border: "border-[#7a3f8a]/30",     icon: <FileText className="w-3.5 h-3.5" /> },
-    Ticaret: { color: "text-[#2f8a5d]",     bg: "bg-[#2f8a5d]/10",     border: "border-[#2f8a5d]/30",     icon: <BarChart3 className="w-3.5 h-3.5" /> },
+    Hukuk:   { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-brand/30", icon: <Scale className="w-3.5 h-3.5" /> },
+    İcra:    { color: "text-tone-caution",     bg: "bg-tone-caution/10",     border: "border-tone-caution/30",     icon: <Building2 className="w-3.5 h-3.5" /> },
+    Ceza:    { color: "text-tone-danger",     bg: "bg-tone-danger/10",     border: "border-tone-danger/30",     icon: <Gavel className="w-3.5 h-3.5" /> },
+    İdare:   { color: "text-tone-violet",     bg: "bg-tone-violet/10",     border: "border-tone-violet/30",     icon: <FileText className="w-3.5 h-3.5" /> },
+    Ticaret: { color: "text-tone-ok",     bg: "bg-tone-ok/10",     border: "border-tone-ok/30",     icon: <BarChart3 className="w-3.5 h-3.5" /> },
 };
 const getFileTypeMeta = (type?: string | null) =>
-    fileTypeMeta[type ?? ""] ?? { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-[var(--brand)]/30", icon: <FileText className="w-3.5 h-3.5" /> };
+    fileTypeMeta[type ?? ""] ?? { color: "text-[var(--brand)]", bg: "bg-[var(--brand-soft)]", border: "border-brand/30", icon: <FileText className="w-3.5 h-3.5" /> };
 
 // ---- Statü renkleri ----
 const statusColors: Record<string, { bg: string; text: string; dot: string }> = {
-    DERDEST: { bg: "bg-[#2f8a5d]/15",      text: "text-[#2f8a5d]",       dot: "bg-[#2f8a5d]" },
-    ISTINAF: { bg: "bg-[#c47a1e]/15",      text: "text-[#c47a1e]",       dot: "bg-[#c47a1e]" },
-    TEMYIZ:  { bg: "bg-[#7a3f8a]/15",      text: "text-[#7a3f8a]",       dot: "bg-[#7a3f8a]" },
-    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-[var(--brand)]" },
+    DERDEST: { bg: "bg-tone-ok/15",      text: "text-tone-ok",       dot: "bg-tone-ok" },
+    ISTINAF: { bg: "bg-tone-caution/15",      text: "text-tone-caution",       dot: "bg-tone-caution" },
+    TEMYIZ:  { bg: "bg-tone-violet/15",      text: "text-tone-violet",       dot: "bg-tone-violet" },
+    KARAR:   { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]",  dot: "bg-brand-solid" },
     KAPALI:  { bg: "bg-[var(--bg-sunken)]",  text: "text-[var(--fg-subtle)]", dot: "bg-[var(--fg-subtle)]" },
 };
 const getStatusStyle = (status: string) =>
-    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-[var(--brand)]" };
+    statusColors[status?.toLocaleUpperCase("tr-TR")] ?? { bg: "bg-[var(--brand-soft)]", text: "text-[var(--brand)]", dot: "bg-brand-solid" };
 
 // =================================================================
 // Ana panel bileşeni
@@ -291,7 +291,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
             {suggestedList.length > 0 && (
                 <div className={manualList.length + autoList.length > 0 ? "mt-6" : ""} data-testid="related-suggested">
                     <div className="flex items-center gap-2 mb-3">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                             Öneri: aynı hasta ve doktor
                         </h4>
@@ -352,7 +352,7 @@ const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, o
     return (
         <div className={`group rounded-none border bg-card/60 transition-all overflow-hidden ${
             isAyniDava
-                ? "border-[#c47a1e]/50 hover:border-[#c47a1e]"
+                ? "border-tone-caution/50 hover:border-tone-caution"
                 : "border-border/60 hover:border-border"
         }`}>
             <div className="p-4 flex flex-col sm:flex-row sm:items-start gap-4">
@@ -368,10 +368,10 @@ const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, o
                         )}
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
                             isAyniDava
-                                ? "bg-[#c47a1e]/10 text-[#c47a1e] border-[#c47a1e]/30"
+                                ? "bg-tone-caution/10 text-tone-caution border-tone-caution/30"
                                 : "bg-secondary/40 text-muted-foreground border-border/50"
                         }`}>
-                            <Link2 className={`w-3 h-3 ${isAyniDava ? "text-[#c47a1e]" : "text-primary"}`} />
+                            <Link2 className={`w-3 h-3 ${isAyniDava ? "text-tone-caution" : "text-brand"}`} />
                             {relationLabel}
                         </span>
                         <Badge className={`text-[10px] px-2 py-0.5 border-0 ${st.bg} ${st.text}`}>

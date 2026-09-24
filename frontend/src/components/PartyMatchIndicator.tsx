@@ -41,15 +41,15 @@ const MatchLine = ({ m }: { m: PartyMatch }) => (
                 className={cn(
                     "text-[9px] font-mono font-bold uppercase tracking-wider px-1 py-0.5",
                     m.source === "client"
-                        ? "bg-red-500/10 text-red-600"
-                        : "bg-amber-500/10 text-amber-600"
+                        ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                        : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                 )}
             >
                 {sourceLabel(m)}
             </span>
             <span className="text-[12px] font-semibold text-[var(--fg)]">{m.name}</span>
             {m.cari_kod && (
-                <span className="text-[9px] bg-primary/10 text-primary px-1 font-bold">{m.cari_kod}</span>
+                <span className="text-[9px] bg-primary/10 text-brand px-1 font-bold">{m.cari_kod}</span>
             )}
             {m.tc_no && (
                 <span className="text-[10px] font-mono text-[var(--fg-muted)]">TC {m.tc_no}</span>
@@ -167,7 +167,7 @@ export const PartyMatchIndicator = ({
                 <div
                     className={cn(
                         "text-[11px] font-mono font-bold uppercase tracking-[0.14em]",
-                        conflict ? "text-red-600" : "text-amber-600"
+                        conflict ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"
                     )}
                 >
                     {conflict ? "Çıkar Çatışması Riski" : "Tanıdık Kayıt Bulundu"}

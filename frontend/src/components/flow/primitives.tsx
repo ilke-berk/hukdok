@@ -78,7 +78,7 @@ type FlowButtonProps = {
 };
 
 const variantStyles = {
-  primary: "bg-[var(--brand)] text-[var(--brand-fg)] hover:bg-[var(--brand-hover)] border-transparent",
+  primary: "bg-brand-solid text-[var(--brand-fg)] hover:bg-brand-solid-hover border-transparent",
   secondary: "bg-transparent text-[var(--fg-muted)] border-[var(--border-strong)] hover:text-[var(--fg)] hover:border-[var(--fg-muted)]",
   ghost: "bg-transparent text-[var(--fg-muted)] border-transparent hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]",
 };
@@ -160,7 +160,7 @@ export function AiPill({ label = "AI", confidence, className = "" }: AiPillProps
           : "subtle";
 
   const toneStyles = {
-    brand: "text-[var(--brand)] border-[var(--brand)]/40 bg-[var(--brand-soft)]",
+    brand: "text-[var(--brand)] border-brand/40 bg-[var(--brand-soft)]",
     muted: "text-[var(--fg-muted)] border-[var(--border-strong)] bg-[var(--bg-sunken)]",
     subtle: "text-[var(--fg-subtle)] border-[var(--border)] bg-transparent",
   } as const;
@@ -222,7 +222,7 @@ export function FlowField({
         </label>
         {ai && (typeof ai === "object" ? <AiPill {...ai} /> : <AiPill />)}
       </div>
-      <div className={missing ? "ring-1 ring-[var(--brand)]/30" : ""}>
+      <div className={missing ? "ring-1 ring-brand/30" : ""}>
         {children}
       </div>
       {hint && (

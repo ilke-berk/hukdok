@@ -188,23 +188,23 @@ const ActivityHistory = () => {
                     <td className="px-5 py-3.5 text-right font-mono text-[14px] tabular-nums font-medium text-[var(--fg)]">
                       {r.total_documents}
                     </td>
-                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#2f8a5d]">
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-tone-ok">
                       {r.mailed_documents}
                     </td>
-                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#c47a1e]">
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-tone-caution">
                       {r.unmailed_documents}
                     </td>
-                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-[#a8323b]">
+                    <td className="px-5 py-3.5 text-right font-mono text-[13px] tabular-nums text-tone-danger">
                       {r.error_documents}
                     </td>
                     <td className="px-5 py-3.5 align-middle">
                       {r.is_acknowledged ? (
-                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[#2f8a5d]">
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-tone-ok">
                           <CheckCircle2 className="w-3 h-3" />
                           Onaylandı
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-[#c47a1e]">
+                        <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.12em] uppercase text-tone-caution">
                           <AlertTriangle className="w-3 h-3" />
                           Bekliyor
                         </span>

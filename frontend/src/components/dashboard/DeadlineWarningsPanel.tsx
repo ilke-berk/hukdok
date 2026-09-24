@@ -39,7 +39,7 @@ function toneClass(daysLeft: number): string {
   // Geri sayım DAİMA taze `due_date`ten; `severity` yazım anında donmuş olabilir.
   return daysLeft <= 3
     ? "text-[var(--danger,#b3261e)] border-[var(--danger,#b3261e)]/40 bg-[var(--danger,#b3261e)]/10"
-    : "text-[#c47a1e] border-[#c47a1e]/40 bg-[#c47a1e]/10";
+    : "text-tone-caution border-tone-caution/40 bg-tone-caution/10";
 }
 
 function DeadlineRowView({ row, onOpen }: { row: DeadlineRow; onOpen: (caseId: number) => void }) {
@@ -73,7 +73,7 @@ function DeadlineRowView({ row, onOpen }: { row: DeadlineRow; onOpen: (caseId: n
       {parsed.calendarWarning && (
         <p
           data-testid="calendar-warning"
-          className="mt-2 flex items-start gap-1.5 border border-[#c47a1e]/40 bg-[#c47a1e]/10 px-2 py-1.5 text-[11px] leading-relaxed text-[#c47a1e]"
+          className="mt-2 flex items-start gap-1.5 border border-tone-caution/40 bg-tone-caution/10 px-2 py-1.5 text-[11px] leading-relaxed text-tone-caution"
         >
           <Info className="w-3.5 h-3.5 shrink-0 mt-[1px]" strokeWidth={1.8} />
           <span>{parsed.calendarWarning}</span>

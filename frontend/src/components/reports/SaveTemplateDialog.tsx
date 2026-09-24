@@ -108,7 +108,7 @@ export function SaveTemplateDialog({ open, onOpenChange, mod, baslangic, onSubmi
                             id="sablon-paylasimli"
                             checked={paylasimli}
                             onCheckedChange={setPaylasimli}
-                            className="data-[state=checked]:bg-[var(--brand)]"
+                            className="data-[state=checked]:bg-brand-solid"
                         />
                     </div>
 

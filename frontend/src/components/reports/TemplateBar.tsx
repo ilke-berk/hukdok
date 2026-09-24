@@ -21,7 +21,7 @@ function PaylasimRozeti({ sablon, sahip }: { sablon: RaporSablonu; sahip: boolea
         <span
             data-testid="paylasimli-rozeti"
             title={sahip ? "Paylaşımlı — sizin şablonunuz" : `Paylaşımlı — sahibi: ${sablon.olusturan}`}
-            className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-[var(--brand)]/40 text-[var(--brand)] bg-[var(--brand-soft)]"
+            className="inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.12em] uppercase px-1.5 py-0.5 border border-brand/40 text-[var(--brand)] bg-[var(--brand-soft)]"
         >
             <Users className="w-3 h-3" />
             {sahip ? "Paylaşımlı" : sablon.olusturan}

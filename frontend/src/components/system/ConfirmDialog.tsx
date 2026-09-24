@@ -20,9 +20,9 @@ const toneConfig: Record<ConfirmTone, { color: string; bg: string; soft: string;
     confirmLabel: "Sil",
   },
   warning: {
-    color: "#c47a1e",
-    bg: "#c47a1e",
-    soft: "rgba(196, 122, 30, 0.12)",
+    color: "rgb(var(--tone-caution-rgb))",
+    bg: "rgb(var(--tone-caution-rgb))",
+    soft: "rgb(var(--tone-caution-rgb) / 0.12)",
     icon: AlertTriangle,
     eyebrow: "Dikkat",
     confirmLabel: "Devam et",
@@ -186,7 +186,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
                 size="sm"
                 disabled={!checkPassed}
                 onClick={() => handleClose(true)}
-                className={tone === "destructive" ? "!bg-[var(--brand)]" : tone === "warning" ? "!bg-[#c47a1e]" : ""}
+                className={tone === "destructive" ? "!bg-brand-solid" : tone === "warning" ? "!bg-tone-caution" : ""}
               >
                 {options?.confirmLabel || config.confirmLabel}
               </FlowButton>

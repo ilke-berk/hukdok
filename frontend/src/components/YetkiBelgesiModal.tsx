@@ -376,7 +376,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                 <DialogTitle className="font-display text-[20px] font-medium tracking-[-0.005em] text-[var(--fg)] leading-tight">
                                     Yetki Belgesi Oluştur
                                 </DialogTitle>
-                                <span className="font-mono text-[9px] tracking-[0.16em] uppercase font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-[var(--brand)]/30 px-1.5 py-0.5">
+                                <span className="font-mono text-[9px] tracking-[0.16em] uppercase font-semibold text-[var(--brand)] bg-[var(--brand-soft)] border border-brand/30 px-1.5 py-0.5">
                                     3 Adım
                                 </span>
                             </div>
@@ -393,8 +393,8 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                         <Fragment key={s.n}>
                             <div className="flex items-center gap-2.5">
                                 <div className={`w-7 h-7 rounded-full grid place-items-center font-mono text-[11px] font-semibold border transition-all
-                                    ${step > s.n ? "bg-[var(--brand)] border-[var(--brand)] text-[var(--brand-fg)]"
-                                        : step === s.n ? "bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand)]"
+                                    ${step > s.n ? "bg-brand-solid border-brand-solid text-[var(--brand-fg)]"
+                                        : step === s.n ? "bg-[var(--brand-soft)] border-brand-solid text-[var(--brand)]"
                                             : "bg-[var(--bg)] border-[var(--border-strong)] text-[var(--fg-subtle)]"}`}>
                                     {step > s.n ? <Check className="w-3.5 h-3.5" strokeWidth={2.6} /> : s.n}
                                 </div>
@@ -404,7 +404,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                 </span>
                             </div>
                             {i < STEP_DEFS.length - 1 && (
-                                <div className={`flex-1 h-px transition-colors ${step > s.n ? "bg-[var(--brand)]" : "bg-[var(--border)]"}`} />
+                                <div className={`flex-1 h-px transition-colors ${step > s.n ? "bg-brand-solid" : "bg-[var(--border)]"}`} />
                             )}
                         </Fragment>
                     ))}
@@ -478,7 +478,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {yetkiliAdlar.map(ad => (
-                                        <span key={ad} className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[var(--brand-soft)] text-[var(--brand)] border border-[var(--brand)]/30 rounded-[3px] pl-2.5 pr-1.5 py-1.5">
+                                        <span key={ad} className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-[var(--brand-soft)] text-[var(--brand)] border border-brand/30 rounded-[3px] pl-2.5 pr-1.5 py-1.5">
                                             {toUpper(ad)}
                                             <button
                                                 type="button"
@@ -496,7 +496,7 @@ export function YetkiBelgesiModal({ open, onClose, client }: Props) {
                                             <button
                                                 type="button"
                                                 disabled={!verenAd}
-                                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--fg-muted)] border border-dashed border-[var(--border-strong)] rounded-[3px] px-2.5 py-1.5 hover:text-[var(--brand)] hover:border-[var(--brand)]/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--fg-muted)] border border-dashed border-[var(--border-strong)] rounded-[3px] px-2.5 py-1.5 hover:text-[var(--brand)] hover:border-brand/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 <Plus className="w-3.5 h-3.5" /> Avukat Ekle
                                             </button>
