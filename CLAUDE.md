@@ -268,5 +268,9 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 - **CI protokolü** (`.claude/skills/ci-kontrol`, `/ci-kontrol`): push ÖNCESİ `ci.yml` adımlarının lokal
   eşdeğeri, push SONRASI `gh run watch`; **kırmızıdayken yeni iş push'lanmaz** (sıradaki push düzeltmedir);
   deploy edilecek SHA'nın CI'ı `success` değilse deploy YOK (`deploy-prosedur` §1).
+- **Bağımlılık denetimi** (`.claude/skills/bagimlilik-denetle`, `/bagimlilik-denetle`; her ayın 1'i zamanlanmış
+  yerel görev): yeni sürümleri sürüm notu + kod etkisiyle sınıflar, yalnız aynı-major güncellemeleri
+  `bagimlilik/YYYY-MM` dalında uygulayıp CI kapılarından geçirir; major/altyapı atlamaları rapor
+  (`docs/arsiv/bagimlilik-raporu-YYYY-MM.md`) önerisidir. Push/deploy YAPMAZ.
 - Hata işlemede stream sözleşmesine ve log sözleşmesine uy (yukarıda).
 - Arşivden kod/iddia kopyalama; tarihli anlatı yazacaksan `docs/arsiv/`e yaz.
