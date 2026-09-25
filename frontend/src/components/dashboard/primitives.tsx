@@ -7,7 +7,9 @@ type EyebrowProps = {
 };
 
 export function Eyebrow({ children, className = "", tone = "subtle" }: EyebrowProps) {
-  const color = tone === "brand" ? "text-[var(--brand)]" : "text-[var(--fg-subtle)]";
+  // Bölüm etiketi ("01 · DOSYA DURUMU") kurumsal bordoyu birebir taşır (#6d2434, iki temada da) —
+  // kullanıcı kararı 25.09: koyu zeminde kontrast 1.66:1 kabul edildi, etiket kimlik öğesi sayılır.
+  const color = tone === "brand" ? "text-brand-solid" : "text-[var(--fg-subtle)]";
   return (
     <span className={`font-mono text-[10px] tracking-[0.22em] uppercase font-semibold ${color} ${className}`}>
       {children}
