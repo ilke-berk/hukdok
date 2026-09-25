@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => ({
     // Uzaktan erisim gerekiyorsa bu satiri degil, tek seferlik
     // `npm run dev -- --host` bayragini kullan.
     host: "127.0.0.1",
-    port: 8000,
+    port: 5173,
     strictPort: true,
     proxy: {
       '/api': {

@@ -190,7 +190,7 @@ dosyaya dokunmaz; nginx yalnız config değiştiyse ve `nginx -t` geçerse reloa
 
 | Yol | Hedef | İş |
 | --- | --- | --- |
-| `infra/nginx/sites-available/default` | host nginx | hukukoid.com HTTPS (Let's Encrypt) → frontend :8080; **timeout'ları konteyner nginx ile eşit tutulmalı** |
+| `infra/nginx/sites-available/default` | host nginx | hukukoid.com HTTPS (Let's Encrypt) → frontend `127.0.0.1:8080` (konteyner yalnız loopback'te dinler; `localhost` yazma — ::1 denemesi hata loglar); **timeout'ları konteyner nginx ile eşit tutulmalı** |
 | `infra/nginx/sites-available/hukbot` | host nginx | hukbot.tragic.tr → :3000 (hukukbot-ui stack'i) |
 | `infra/systemd/db-backup.{service,timer}` | systemd | gecelik pg_dump — `OnCalendar=*-*-* 00:30:00` (UTC) = 03:30 TR, `Persistent=true` |
 | `infra/systemd/net-watchdog.{service,timer}` | systemd | ağ nöbetçisi — `OnBootSec=2min`, `OnUnitActiveSec=1min` |
@@ -388,7 +388,7 @@ curl -sI http://localhost:8080/assets/YOK.js | head -1                          
   Beklenen çıktılar G182'nin tek kullanımlık `nginx:alpine` ölçümündedir
   (`gorevler/gorev/G182.md`).
 - **Host nginx — PROD'DA DOĞRULANACAK:** repodaki kopyası (`infra/nginx/sites-available/default`)
-  `add_header`/`proxy_hide_header` içermez ve her şeyi `proxy_pass http://localhost:8080`
+  `add_header`/`proxy_hide_header` içermez ve her şeyi `proxy_pass http://127.0.0.1:8080`
   ile konteynere geçirir. Sunucudaki konfigin bununla aynı olduğu ve başlığın tarayıcıya
   ulaştığı yukarıdaki komutların `https://hukukoid.com` karşılığıyla deploy sonrası kontrol
   edilir (§12 doğrulama sırası).

@@ -24,7 +24,7 @@ describe("vite dev sunucusu bağlanma adresi", () => {
   });
 
   it("port ve strictPort ayarları korunur", () => {
-    expect(source).toMatch(/port:\s*8000/);
+    expect(source).toMatch(/port:\s*5173/);
     expect(source).toMatch(/strictPort:\s*true/);
   });
 

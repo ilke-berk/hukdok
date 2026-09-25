@@ -13,12 +13,14 @@ PostgreSQL; kimlik Azure AD (MSAL). Bu dosya sıfır-context bir oturumun giriş
 
 **Servisler** (`docker-compose.yml`): `postgres` (postgres:15-alpine, 127.0.0.1:5432),
 `backend` (`hukdok_backend`, python:3.12-slim, 127.0.0.1:8001), `frontend` (nginx,
-host 8080 → konteyner 80). Backend portu bilinçli localhost'a sabit: API-key'li
+127.0.0.1:8080 → konteyner 80). **Üç port da loopback'e sabit** — dışarıya açık tek kapı
+host nginx'tir (prod 443); bekçi `backend/tests/test_port_baglama.py`. API-key'li
 `/export` route'ları public'e açılmaz; hukukbot ortak `hukuk_shared` Docker ağından
-`http://hukdok_backend:8001` ile konuşur.
+`http://hukdok_backend:8001` ile konuşur. Vite dev sunucusu 127.0.0.1:5173 (strictPort).
+Port haritası: `docs/mimari/genel-bakis.md` §1.
 
 **İki katmanlı nginx:** Repodaki `nginx.conf` **konteyner** nginx'idir: `listen 80`
-(compose 8080:80 yayınlar), SPA'yı servis eder; `/api`, `/process`, `/confirm`,
+(compose 127.0.0.1:8080:80 yayınlar), SPA'yı servis eder; `/api`, `/process`, `/confirm`,
 `/preview-email-body`, `/preview-client-email-body`, `/refresh`, `/healthz` →
 `backend:8001` proxy.
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer

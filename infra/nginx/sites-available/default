@@ -26,7 +26,9 @@ server {
 
     # Tüm trafik frontend container üzerinden
     location / {
-        proxy_pass http://localhost:8080;
+        # 127.0.0.1 açık yazılır: frontend konteyneri yalnız IPv4 loopback'te dinler,
+        # "localhost" ::1'e de çözülür ve nginx her seferinde önce onu deneyip hata loglar.
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

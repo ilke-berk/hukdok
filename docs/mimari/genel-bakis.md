@@ -19,7 +19,7 @@ onaylar, belge SharePoint arşivine + veritabanına yazılır ve hukukbot'a akta
 | --- | --- | --- | --- | --- |
 | `postgres` | `postgres:15-alpine` (`docker-compose.yml:4`) | `127.0.0.1:5432` (`:26`) | 512m, `memswap=mem` (`:32-33`) | `pg_isready`, 10s (`:39-43`) |
 | `backend` (`hukdok_backend`) | `./backend/Dockerfile` (`:48-50`) | `127.0.0.1:8001` (`:65`) | 2g, `memswap=mem` (`:103-104`) | `/healthz`, 30s, start_period 60s (`:110-121`) |
-| `frontend` | `./frontend/Dockerfile` (`:130-132`) | `8080:80` (`:137`) | 128m, `memswap=mem` (`:139-140`) | yok; `depends_on: backend healthy` (`:146-148`) |
+| `frontend` | `./frontend/Dockerfile` (`:130-132`) | `127.0.0.1:8080` (`:141`) | 128m, `memswap=mem` (`:143-144`) | yok; `depends_on: backend healthy` (`:150-152`) |
 
 Üç kural bu tabloda gizli, üçü de bilinçli:
 
@@ -32,6 +32,25 @@ onaylar, belge SharePoint arşivine + veritabanına yazılır ve hukukbot'a akta
 - **Backend'de kaynak kodu bind-mount'u YOK** (`docker-compose.yml:69-71`) — konteyner
   imajdaki kodu çalıştırır. Kod değişikliği ancak rebuild ile görünür. Lokal hot-reload
   isteniyorsa `docker-compose.override.yml.example` kopyalanır (gitignore'da).
+
+### Port haritası
+
+Dışarıya açık **tek kapı** host nginx'tir (prod 443, TLS; `infra/nginx/sites-available/default`
+→ `proxy_pass http://127.0.0.1:8080`). Compose'un yayınladığı her port loopback'e bağlıdır;
+bekçi `backend/tests/test_port_baglama.py` (CI'da koşar, konteynerde repo kökü görünmediği için atlanır).
+
+| Port | Servis | Bağlama | Kim erişir |
+| --- | --- | --- | --- |
+| 443 | host nginx (yalnız prod) | genel | kullanıcılar |
+| 8080 | frontend konteyneri (nginx) | 127.0.0.1 | host nginx (prod), geliştirici tarayıcısı (lokal) |
+| 8001 | backend | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx, hukukbot, `deploy.sh` sağlık kapısı |
+| 5432 | postgres | 127.0.0.1 | backend, yönetim araçları |
+| 5173 | Vite dev sunucusu (yalnız lokal; `frontend/vite.config.ts`, strictPort) | 127.0.0.1 | geliştirici tarayıcısı |
+
+Vite dev adresi Azure AD uygulama kaydında Redirect URI olarak kayıtlı olmalıdır (MSAL
+`window.location.origin`'e döner, `frontend/src/config/msalConfig.ts`). CORS varsayılanı
+8080 + 5173'tür (`backend/api.py` `_DEFAULT_ORIGINS`). Geliştirme makinesindeki komşu projelerin
+portları (çakıştırma): hukukbot_api 8010, hukukbot_db 5440, emlaksiker-postgres 5434.
 
 Bellek ayarına eşlik eden `MALLOC_ARENA_MAX=2` de aynı OOM incelemesinden gelir: glibc
 thread başına arena açıyor, PDF/görüntü dönüşümünün geçici tahsisleri arena'larda kalıp

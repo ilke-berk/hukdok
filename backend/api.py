@@ -332,7 +332,7 @@ app = FastAPI(lifespan=lifespan)
 # prod'da DEV_MODE false/tanımsız olmak zorundadır (bkz. G5/G10 guard'ları).
 _DEFAULT_ORIGINS = (
     "https://hukukoid.com,https://www.hukukoid.com,"
-    "http://localhost:8080,http://localhost:8000,http://localhost:5173"
+    "http://localhost:8080,http://localhost:5173"
 )
 if os.getenv("DEV_MODE", "").strip().lower() == "true":
     app.add_middleware(

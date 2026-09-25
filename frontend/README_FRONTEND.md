@@ -90,7 +90,8 @@ npm install --legacy-peer-deps
 
 # 3. Dev sunucusunu başlat
 npm run dev
-# → http://localhost:8000 (8000 portu strictPort, başka port'a fallback yok)
+# → http://localhost:5173 (strictPort, başka port'a fallback yok; Azure AD'de bu adres
+#   Redirect URI olarak kayıtlı olmalı — MSAL window.location.origin'e döner)
 
 # 4. Production build
 npm run build

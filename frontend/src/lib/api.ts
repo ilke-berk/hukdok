@@ -7,7 +7,7 @@ export const getApiUrl = async (): Promise<string> => {
     const apiUrl = import.meta.env.VITE_API_URL;
 
     if (!apiUrl) {
-        return ""; // Tarayıcı mevcut origin (örn: http://localhost:8000) üzerinden /api/... çağırır
+        return ""; // Tarayıcı mevcut origin (örn: http://localhost:8080) üzerinden /api/... çağırır
     }
 
     return apiUrl;

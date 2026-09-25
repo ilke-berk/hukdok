@@ -135,7 +135,10 @@ services:
         # görünür sürüm numarası package.json'dan gelir (vite.config.ts define)
         APP_VERSION: ${APP_VERSION:-dev}
     ports:
-      - "8080:80"
+      # localhost'a sabitli: dışarıya açık TEK kapı host nginx'tir (prod 443, TLS);
+      # o buraya 127.0.0.1:8080'den proxy'ler. Lokalde tarayıcı localhost:8080.
+      # Bekçi: backend/tests/test_port_baglama.py (her ports girdisi 127.0.0.1).
+      - "127.0.0.1:8080:80"
     restart: unless-stopped
     mem_limit: 128m
     memswap_limit: 128m
