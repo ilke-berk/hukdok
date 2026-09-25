@@ -125,7 +125,8 @@ const Login = () => {
         {/* Monogram + yatay hairline'lar */}
         <div className="relative grid place-items-center mb-5">
           <span className="absolute h-px w-[100px] bg-[var(--border-strong)] top-1/2 right-[calc(50%+60px)]" aria-hidden="true" />
-          <Scale className="w-14 h-14 text-[var(--brand)]" strokeWidth={1.25} />
+          {/* Logo işareti: kurumsal bordo (#6d2434) her iki temada birebir — logolar kontrast kuralından muaf. */}
+          <Scale className="w-14 h-14 text-brand-solid" strokeWidth={1.25} />
           <span className="absolute h-px w-[100px] bg-[var(--border-strong)] top-1/2 left-[calc(50%+60px)]" aria-hidden="true" />
         </div>
 

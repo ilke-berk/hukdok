@@ -140,7 +140,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             className="flex items-center gap-3 cursor-pointer outline-none"
             tabIndex={open ? 0 : -1}
           >
-            <Scale className="w-7 h-7 text-[var(--brand)] stroke-[1.25]" />
+            <Scale className="w-7 h-7 text-brand-solid stroke-[1.25]" />
             <span className="font-display text-[18px] font-medium tracking-[0.16em] text-[var(--fg)] whitespace-nowrap">
               HUKDOK
             </span>
