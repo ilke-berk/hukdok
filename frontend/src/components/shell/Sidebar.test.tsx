@@ -16,7 +16,20 @@ vi.mock("@azure/msal-react", () => ({
 }));
 vi.mock("@/hooks/useDashboardView", () => ({ useDashboardView: () => ({ view: "avukat", setView: () => undefined }) }));
 
-import { Sidebar, HUKUKBOT_URL } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
+import { HUKUKBOT_URL, HUKUKBOT_VARSAYILAN_URL, hukukbotAdresi } from "@/lib/hukukbot";
+
+describe("hukukbotAdresi", () => {
+    it("tanımsız ya da boşsa prod adresine düşer", () => {
+        expect(hukukbotAdresi(undefined)).toBe(HUKUKBOT_VARSAYILAN_URL);
+        expect(hukukbotAdresi("  ")).toBe(HUKUKBOT_VARSAYILAN_URL);
+        expect(HUKUKBOT_VARSAYILAN_URL.startsWith("https://")).toBe(true);
+    });
+
+    it("VITE_HUKUKBOT_URL verilince onu kullanır", () => {
+        expect(hukukbotAdresi(" http://localhost:3010 ")).toBe("http://localhost:3010");
+    });
+});
 
 describe("Sidebar Hukukbot bağlantısı", () => {
     let container: HTMLDivElement;
@@ -49,7 +62,6 @@ describe("Sidebar Hukukbot bağlantısı", () => {
         const link = hukukbotLinki();
         expect(link).toBeDefined();
         expect(link!.getAttribute("href")).toBe(HUKUKBOT_URL);
-        expect(HUKUKBOT_URL.startsWith("https://")).toBe(true);
     });
 
     it("yeni sekmede açılır, opener sızdırmaz", async () => {

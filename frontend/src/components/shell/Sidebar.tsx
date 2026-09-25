@@ -21,6 +21,7 @@ import { clearAppStorage } from "@/lib/appStorage";
 import { resumeAllDrafts, suppressAllDrafts } from "@/lib/formDraft";
 import { useDashboardView } from "@/hooks/useDashboardView";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { HUKUKBOT_URL } from "@/lib/hukukbot";
 
 type NavItemDef = {
   id: string;
@@ -37,10 +38,6 @@ const NAV: NavItemDef[] = [
   { id: "clients", label: "Müvekkiller", path: "/clients", Icon: Users, matches: p => p.startsWith("/clients") || p.startsWith("/new-client") },
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
 ];
-
-// Hukukbot ayrı uygulamadır (kendi alanı + kendi girişi); menüden yeni sekmede açılır.
-// noopener: açılan sekme window.opener ile HukuDok sekmesine erişemez.
-export const HUKUKBOT_URL = "https://hukbot.tragic.tr";
 
 type SidebarProps = {
   open: boolean;
@@ -200,6 +197,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <div className="font-mono text-[9px] tracking-[0.22em] uppercase text-[var(--fg-subtle)] pt-5 pb-2 px-2">
             Araçlar
           </div>
+          {/* noopener: açılan sekme window.opener ile HukuDok sekmesine erişemez */}
           <a
             href={HUKUKBOT_URL}
             target="_blank"
