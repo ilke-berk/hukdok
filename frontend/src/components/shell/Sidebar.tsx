@@ -13,6 +13,8 @@ import {
   Sun,
   LogOut,
   Scale,
+  Bot,
+  ExternalLink,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { clearAppStorage } from "@/lib/appStorage";
@@ -35,6 +37,10 @@ const NAV: NavItemDef[] = [
   { id: "clients", label: "Müvekkiller", path: "/clients", Icon: Users, matches: p => p.startsWith("/clients") || p.startsWith("/new-client") },
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
 ];
+
+// Hukukbot ayrı uygulamadır (kendi alanı + kendi girişi); menüden yeni sekmede açılır.
+// noopener: açılan sekme window.opener ile HukuDok sekmesine erişemez.
+export const HUKUKBOT_URL = "https://hukbot.tragic.tr";
 
 type SidebarProps = {
   open: boolean;
@@ -190,6 +196,23 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               );
             })}
           </nav>
+
+          <div className="font-mono text-[9px] tracking-[0.22em] uppercase text-[var(--fg-subtle)] pt-5 pb-2 px-2">
+            Araçlar
+          </div>
+          <a
+            href={HUKUKBOT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            tabIndex={open ? 0 : -1}
+            title="Hukukbot yeni sekmede açılır"
+            className="flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] font-sans text-[13px] font-medium tracking-[0.005em] transition-colors text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]"
+          >
+            <Bot className="w-4 h-4 opacity-90 shrink-0" />
+            <span className="whitespace-nowrap">Hukukbot</span>
+            <ExternalLink className="w-3 h-3 ml-auto opacity-60 shrink-0" aria-hidden="true" />
+          </a>
         </div>
 
         {/* Footer: user + view switcher + theme/logout */}
