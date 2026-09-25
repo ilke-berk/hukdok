@@ -53,14 +53,11 @@
   --brand-fg: rgb(var(--brand-fg-rgb));
 }
 .dark {
-  /* Metin bordosu: kurumsal bordonun hue ailesinde, okunurluk sınırındaki EN KOYU ton.
-     #6d2434 koyu zeminde metin olarak 1.66:1'dir (okunmaz); doygunluk artırılıp açıklık
-     okunurluk eşiğinde tutuldu ki pembe/pastel değil şarap kırmızısı okunsun.
-     Eski #b8404c 3.37:1'di — "koyu mod okunmuyor" şikâyetinin kaynağı. */
-  --brand-rgb: 211 105 119;             /* #d36977 */
-  --brand-hover-rgb: 224 138 149;       /* #e08a95 */
-  /* Dolgu bordosu: BİREBİR kurumsal bordo (#6d2434) + krem yazı (10.3:1) — butonlar ve
-     dolu kartlar açık moddakiyle aynı renk. Koyuda hover bir kademe AÇILIR. */
+  /* Kullanıcı kararı 25.09: koyu temada TÜM bordolar kurumsal #6d2434 — açık tonlar (pembe algısı)
+     marka dilini bozuyordu. Bilinen bedel: bordo metin koyu zeminde 1.66:1 (WCAG AA altı);
+     kontrast bekçisi bordo metin çiftlerini koyu temada bu karar gereği denetlemez. */
+  --brand-rgb: 109 36 52;               /* #6d2434 */
+  --brand-hover-rgb: 122 42 59;         /* #7a2a3b — koyuda hover bir kademe açılır */
   --brand-solid-rgb: 109 36 52;         /* #6d2434 */
   --brand-solid-hover-rgb: 122 42 59;   /* #7a2a3b */
   --brand-soft-rgb: 46 28 32;           /* #2e1c20 */
@@ -69,7 +66,7 @@
   --tone-ok-rgb: 103 193 148;           /* #67c194 */
   --tone-caution-rgb: 222 162 84;       /* #dea254 */
   --tone-danger-rgb: 236 128 118;       /* #ec8076 */
-  --tone-urgent-rgb: 226 131 158;       /* #e2839e */
+  --tone-urgent-rgb: 240 116 104;       /* #f07468 — pembe değil kırmızı (25.09) */
   --tone-info-rgb: 136 178 221;         /* #88b2dd */
   --tone-violet-rgb: 197 161 206;       /* #c5a1ce */
 }
@@ -98,7 +95,7 @@
   --fg-subtle: #8e857b;
   --border: #393632;
   --border-strong: #544f4a;
-  --ring: rgba(211, 105, 119, 0.35);
+  --ring: rgba(109, 36, 52, 0.55);
 }
 
 /* ===== Modern — cool slate neutrals ===== */

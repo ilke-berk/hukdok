@@ -51,9 +51,8 @@ describe("koyu tema kontrastı (WCAG AA)", () => {
     ["fg-muted", "bg", 4.5],
     ["fg-muted", "bg-elevated", 4.5],
     ["fg-subtle", "bg", 3],
-    ["brand", "bg", 4.5],
-    ["brand", "bg-elevated", 4.5],
-    ["brand", "brand-soft", 4.5],
+    // Bordo METİN çiftleri koyu temada denetlenmez: kullanıcı kararı 25.09 — tüm bordolar kurumsal
+    // #6d2434 (1.66:1). Karar aşağıdaki "kurumsal bordo" testinde kilitli.
     ["brand-fg", "brand-solid", 4.5],
     ["brand-fg", "brand-solid-hover", 4.5],
     ...TONLAR.flatMap((t): Array<[string, string, number]> => [
@@ -70,6 +69,12 @@ describe("koyu tema kontrastı (WCAG AA)", () => {
   it.each(TONLAR)("%s rozeti (%%15 kendi tonu üstünde) ≥ 4.5:1", (t) => {
     const zemin = karistir(koyu[t], koyu["bg-elevated"], 0.15);
     expect(oran(koyu[t], zemin)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("kurumsal bordo (kullanıcı kararı 25.09)", () => {
+  it.each(["brand", "brand-solid"])("koyu temada --%s birebir #6d2434", (t) => {
+    expect(koyu[t]).toEqual([109, 36, 52]);
   });
 });
 

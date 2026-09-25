@@ -22,8 +22,8 @@
     --popover-foreground: 36 27% 90%;
 
     /* Brand burgundy — dark DOLGU = kurumsal bordo (#6d2434 = --brand-solid) + krem yazı.
-       shadcn `primary` dolgudur (button/badge/switch); metin bordosu `text-brand` (--brand,
-       #d36977) — tokens.css. */
+       shadcn `primary` dolgudur (button/badge/switch); metin bordosu da aynı renk (kullanıcı
+       kararı 25.09, tokens.css `.dark`). */
     --primary: 347 50% 28%;
     --primary-foreground: 40 53% 97%;
 
@@ -35,7 +35,7 @@
 
     /* Accent = brand-soft dark (#2e1c20) */
     --accent: 347 24% 15%;
-    --accent-foreground: 352 55% 62%;
+    --accent-foreground: 347 50% 28%;
 
     --success: 142 76% 45%;
     --success-foreground: 0 0% 100%;
@@ -48,12 +48,12 @@
 
     --border: 33 6% 21%;
     --input: 33 6% 21%;
-    --ring: 352 55% 62%;
+    --ring: 347 50% 28%;
 
     --radius: 0rem;
 
     /* Legal Document System Colors - Dark Theme (burgundy) */
-    --legal-burgundy: 352 55% 62%;
+    --legal-burgundy: 347 50% 28%;
     --legal-burgundy-dark: 354 40% 52%;
     --legal-burgundy-light: 355 56% 77%;
     --legal-cream: 30 6% 15%;
