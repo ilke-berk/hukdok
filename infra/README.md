@@ -46,13 +46,20 @@ klonu + `.env`, google-cloud-ops-agent (kurulum:
 VM service account'unda `logging.write` + `monitoring.write` scope'ları olmalı —
 mevcut VM'de var).
 
-## Bilinen sunucu sapmaları (2026-08-08 envanteri)
+## Bilinen sunucu sapmaları (2026-09-25 port envanteri, `ss -ltnp` + `docker ps -a`)
 
-- `sites-available/hukukoid.com`: ESKİ mimarinin kalıntısı (enable değil,
-  /api → :8000 süren sürüm). install.sh dokunmaz; 1-C provasında elle silinebilir.
-- `~/hukdok/docker-compose.override.yml`: bellek limitleri artık repo
-  docker-compose.yml'inde (Faz 1-A) — Deploy #2 sonrası override gereksiz,
-  kaldırılması 1-C provasında.
+2026-08-08 envanterindeki iki kalıntı (`sites-available/hukukoid.com` eski :8000 konfigi ve
+`~/hukdok/docker-compose.override.yml`) sunucuda artık YOK; `sites-available` yalnız `default` +
+`hukbot`.
+
+- Dış erişimi GCP güvenlik duvarı keser: internete açık yalnız 22, 80, 443 (+ icmp,
+  `default-allow-rdp` 3389 — Linux VM'de gereksiz, silinmesi önerildi). 0.0.0.0'da dinleyen
+  aşağıdaki portlara dışarıdan bağlantı 25.09'da denendi, erişilemedi.
+- `hukdok-frontend-1` `0.0.0.0:8080` — repo'da 9605108 ile `127.0.0.1:8080`'e çekildi; ilk
+  deploy'la kapanır (önce host nginx `proxy_pass http://127.0.0.1:8080` uygulanır).
+- `hukukbot_db` `0.0.0.0:5440` — hukukbot stack'inin (`~/hukukbot-ui`) compose'u; o repo'da
+  `127.0.0.1:5440` ya da port yayınsız yapılmalı. Bizim repo'nun işi değil.
+- `fluent-bit` 20202 / `otelopscol` 20201 — Ops Agent'ın kendi metrik uçları, varsayılan.
 - Dump kişisel veri içerir; SharePoint klasörü app-only erişimlidir, dump'ı
   başka yere kopyalamayın.
 
