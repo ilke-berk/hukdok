@@ -57,7 +57,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G214 | bant:backend | bagimli:G211 | `case_notes` tablosu + migrasyon (index ayrı op) + GET/POST/DELETE `/api/cases/{id}/notes` (yazan ya da admin siler, soft-delete); testler
 - [x] G215 | bant:frontend | bagimli:- | Dava kartında tarihli not paneli (liste, yazan+tarih, ekle/sil) — sözleşme G214'te sabit; `cases.notes` "Genel not" olarak kalır; testler
 - [ ] G216 | bant:backend | bagimli:G214 | `POST /api/transcribe`: ses → Gemini Türkçe metin (≤2 MB, webm/ogg/mp4, ses saklanmaz/loglanmaz); testler (Gemini mock)
-- [ ] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler
+- [ ] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler | BLOKE(entegrasyon testi kirmizi - merge geri alindi, worktree korundu)
 - [x] G218 | bant:docs | bagimli:- | `docs/veri-teslim/ofis-no-formati.md`: B1.B2.B3.B4.B5 açıklaması + örnekler (koddan okunarak), veri sağlayıcıya iletilecek
 - [ ] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
 - [ ] G220 | bant:backend | bagimli:G219 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu) + kartta düzenlenebilir dropdown + aktarım/SOZLESME | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
