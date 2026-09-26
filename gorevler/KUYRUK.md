@@ -32,7 +32,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      hukbot frontend konteyneri kalkar → G209. Tahmin: HukuDok kısmı 1 gece; hukbot kısmı 1 gündüz oturumu. -->
 
 - [x] G203 | bant:backend | bagimli:- | Hukukbot proxy altyapısı: konteyner nginx `/hukukbot-api/` allowlist (ask/sessions/download, gecikmeli DNS, stream) + frontend `hukuk_shared` ağına + react-markdown/remark-gfm + bekçi testleri
-- [ ] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
+- [x] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
 - [ ] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler
 - [ ] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler
 - [ ] G207 | bant:docs | bagimli:G202,G203,G206 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
