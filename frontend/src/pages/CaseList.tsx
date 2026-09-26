@@ -64,12 +64,16 @@ const URGENT_WINDOW_DAYS = 7;
 // Temyiz/istinaf durum değil aşamadır (case_stage); eski değerler migrasyon 50
 // ile üçlüye çekildi. Çip sırası: bilinmeyenler ortada, MAHZEN sonda.
 const STATUS_ORDER = ["DANIŞ", "DERDEST", "MAHZEN"];
-// Sanal durum çipleri (26.09.2026): DURUM değil, derdest dosyanın ulaştığı en ileri
+// Sanal durum satırları (26.09.2026): DURUM değil, derdest dosyanın ulaştığı en ileri
 // kanun yolu — avukat paneli kutularıyla aynı tanım; backend `status` filtresi tanır.
-const DERDEST_ASAMA_CIPLERI = [
-  { key: "ISTINAF", label: "İstinafta" },
-  { key: "YARGITAY", label: "Yargıtayda" },
-] as const;
+// Ağaç: Derdest → İstinafta / Yargıtayda → Temyiz / K. Düzeltme (Yargıtayda = ikisinin toplamı).
+type DerdestAsamaKey = "ISTINAF" | "YARGITAY" | "TEMYIZ" | "KARAR_DUZELTME";
+const DERDEST_ASAMA_AGACI: { key: DerdestAsamaKey; label: string; depth: 1 | 2 }[] = [
+  { key: "ISTINAF", label: "İstinafta", depth: 1 },
+  { key: "YARGITAY", label: "Yargıtayda", depth: 1 },
+  { key: "TEMYIZ", label: "Temyiz", depth: 2 },
+  { key: "KARAR_DUZELTME", label: "K. Düzeltme", depth: 2 },
+];
 
 const STATUS_TONE: Record<string, string> = {
   DANIŞ: "text-tone-info border-tone-info/30 bg-tone-info/10",
@@ -143,7 +147,7 @@ const CaseList = () => {
     total: number; active: number; closed: number; danis_active: number;
     statuses: Record<string, number>;
     // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
-    derdest_stages?: { ISTINAF?: number; YARGITAY?: number };
+    derdest_stages?: Partial<Record<DerdestAsamaKey, number>>;
   }>({ total: 0, active: 0, closed: 0, danis_active: 0, statuses: {} });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -382,8 +386,8 @@ const CaseList = () => {
 
           <div>
             <Eyebrow>Durum</Eyebrow>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <ChipButton
+            <div className="mt-2 flex flex-col gap-px" role="list" aria-label="Durum filtresi">
+              <StatusRow
                 active={selectedStatus === "ALL"}
                 label="Tümü"
                 count={stats.total}
@@ -391,15 +395,16 @@ const CaseList = () => {
               />
               {statusChips.map(s => (
                 <Fragment key={s}>
-                  <ChipButton
+                  <StatusRow
                     active={selectedStatus === s}
                     label={s}
                     count={stats.statuses[s]}
                     onClick={() => setSelectedStatus(s)}
                   />
-                  {s === "DERDEST" && DERDEST_ASAMA_CIPLERI.map(a => (
-                    <ChipButton
+                  {s === "DERDEST" && DERDEST_ASAMA_AGACI.map(a => (
+                    <StatusRow
                       key={a.key}
+                      depth={a.depth}
                       active={selectedStatus === a.key}
                       label={a.label}
                       count={stats.derdest_stages?.[a.key] ?? 0}
@@ -743,26 +748,35 @@ const CaseList = () => {
   );
 };
 
-// Sayım rozetli durum çipi
-function ChipButton({ active, label, count, onClick }: { active: boolean; label: string; count?: number; onClick: () => void }) {
+// Durum filtresinin satırı: etiket solda, sayı sağda hizalı. `depth` alt kırılımı
+// (derdest aşamaları) sol çizgili girintiyle gösterir; kök satırlar büyük harf.
+const STATUS_ROW_INDENT = { 0: "", 1: "ml-3", 2: "ml-6" } as const;
+
+function StatusRow({ active, label, count, onClick, depth = 0 }: {
+  active: boolean; label: string; count?: number; onClick: () => void; depth?: 0 | 1 | 2;
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "inline-flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] tracking-[0.1em] uppercase border transition-colors",
-        active
-          ? "bg-brand-solid text-[var(--brand-fg)] border-brand-solid"
-          : "bg-transparent text-[var(--fg-muted)] border-[var(--border)] hover:border-[var(--border-strong)] hover:text-[var(--fg)]",
-      ].join(" ")}
-    >
-      {label}
-      {count !== undefined && (
-        <span className={`tabular-nums ${active ? "opacity-80" : "text-[var(--fg-subtle)]"}`}>
-          {count.toLocaleString("tr-TR")}
-        </span>
-      )}
-    </button>
+    <div role="listitem" className={depth ? `${STATUS_ROW_INDENT[depth]} border-l border-[var(--border)] pl-2` : ""}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={[
+          "w-full flex items-center justify-between gap-3 px-2.5 font-mono tracking-[0.1em] border-l-2 transition-colors",
+          depth === 0 ? "py-1.5 text-[11px] uppercase" : "py-1 text-[10.5px]",
+          active
+            ? "bg-brand-solid text-[var(--brand-fg)] border-brand-solid"
+            : "border-transparent text-[var(--fg-muted)] hover:bg-[var(--bg-sunken)] hover:text-[var(--fg)]",
+        ].join(" ")}
+      >
+        <span className="truncate">{label}</span>
+        {count !== undefined && (
+          <span className={`tabular-nums shrink-0 ${active ? "opacity-80" : "text-[var(--fg-subtle)]"}`}>
+            {count.toLocaleString("tr-TR")}
+          </span>
+        )}
+      </button>
+    </div>
   );
 }
 

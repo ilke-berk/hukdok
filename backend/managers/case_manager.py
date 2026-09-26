@@ -529,7 +529,8 @@ _YARGITAY_ASAMALARI = ("TEMYIZ", "KARAR_DUZELTME")
 _ISTINAF_ASAMALARI = ("ISTINAF",)
 #: Liste durum filtresinin sanal değerleri (26.09.2026): DURUM değil, derdest
 #: dosyanın ulaştığı EN İLERİ kanun yolu — avukat paneli sayacıyla aynı tanım.
-DERDEST_ASAMA_FILTRELERI = ("ISTINAF", "YARGITAY")
+#: YARGITAY = TEMYIZ ∪ KARAR_DUZELTME (ayrık alt kırılım; karar düzeltme temyizi ezer).
+DERDEST_ASAMA_FILTRELERI = ("ISTINAF", "YARGITAY", "TEMYIZ", "KARAR_DUZELTME")
 
 
 def _asamada(asamalar):
@@ -545,11 +546,17 @@ def _asamada(asamalar):
 
 
 def derdest_asama_kosullari(asama: str) -> tuple:
-    """Derdest + en ileri kanun yolu `asama` (ISTINAF | YARGITAY) koşulları.
-    Bir dosya yalnız bir kutuya düşer: Yargıtay (temyiz/karar düzeltme) istinafı ezer."""
+    """Derdest + en ileri kanun yolu `asama` (ISTINAF | YARGITAY | TEMYIZ |
+    KARAR_DUZELTME) koşulları. Bir dosya yalnız bir kutuya düşer: Yargıtay
+    (temyiz/karar düzeltme) istinafı, karar düzeltme temyizi ezer."""
     yargitay = _asamada(_YARGITAY_ASAMALARI)
     if asama == "YARGITAY":
         return (models.Case.status == "DERDEST", yargitay)
+    karar_duzeltme = _asamada(("KARAR_DUZELTME",))
+    if asama == "KARAR_DUZELTME":
+        return (models.Case.status == "DERDEST", karar_duzeltme)
+    if asama == "TEMYIZ":
+        return (models.Case.status == "DERDEST", ~karar_duzeltme, _asamada(("TEMYIZ",)))
     if asama == "ISTINAF":
         return (models.Case.status == "DERDEST", ~yargitay, _asamada(_ISTINAF_ASAMALARI))
     raise ValueError(f"tanınmayan aşama filtresi: {asama!r}")
@@ -557,7 +564,8 @@ def derdest_asama_kosullari(asama: str) -> tuple:
 
 def _derdest_en_ileri_asama(db, tenant_id) -> dict:
     """Derdest (aktif) dosyaları en ileri kanun yoluna göre sayar:
-    {"ISTINAF": n, "YARGITAY": m}. Bir dosya yalnız bir kutuya düşer."""
+    {"ISTINAF": n, "YARGITAY": m, "TEMYIZ": t, "KARAR_DUZELTME": k}; m = t + k.
+    Bir dosya aynı düzeyde yalnız bir kutuya düşer."""
     from sqlalchemy import func
 
     def _say(asama):
@@ -610,7 +618,7 @@ def get_case_stats(tenant_id: str = None):
     except Exception as e:
         logger.error(f"Get Case Stats Error: {e}")
         return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {},
-                "derdest_stages": {"ISTINAF": 0, "YARGITAY": 0}}
+                "derdest_stages": dict.fromkeys(DERDEST_ASAMA_FILTRELERI, 0)}
     finally:
         db.close()
 
