@@ -54,7 +54,26 @@ describe("getApiUrl", () => {
     });
 });
 
+// handleSessionExpired logout'u 500 ms'lik setTimeout'la erteler (api.ts).
+const LOGOUT_DELAY_MS = 500;
+
 describe("apiClient.fetch", () => {
+    // Gerçek zamanlayıcıyla test bitince o 500 ms'lik logout zamanlayıcısı İPTAL
+    // OLMAZ: bir testin logout'u sonraki testin içinde ateşlenir. Beklemesiz
+    // "token alınamazsa" testleri zamanlayıcı bırakıp çıkıyordu; tam pakette yük
+    // altında bunlardan biri "eşzamanlı ... tek logout" testine sızıp sayımı 2'ye
+    // çıkarıyordu (26.09: 3 koşuda 1 kırmızı). Sahte zamanlayıcı + test sonunda
+    // clearAllTimers → her testin logout'u yalnız kendi içinde, açıkça
+    // ilerletilince koşar; sızıntı yok.
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+    });
+
     it("access token'ı Authorization header'ına ekler (G8: idToken değil)", async () => {
         const fetchMock = stubFetch();
         await apiClient.fetch("/api/cases");
@@ -102,10 +121,10 @@ describe("apiClient.fetch", () => {
         await apiClient.fetch("/api/cases");
 
         expect(flushListener).toHaveBeenCalledTimes(1);
-        await vi.waitFor(() => expect(toastError).toHaveBeenCalled(), { timeout: 2000 });
-        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
-            timeout: 2000,
-        });
+        expect(toastError).toHaveBeenCalledTimes(1);
+        // Logout toast görülsün diye ertelenir — gecikme dolmadan gitmez
+        expect(msalMocks.logoutRedirect).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(LOGOUT_DELAY_MS);
         expect(msalMocks.logoutRedirect).toHaveBeenCalledWith({
             postLogoutRedirectUri: window.location.origin + "/login",
         });
@@ -121,9 +140,10 @@ describe("apiClient.fetch", () => {
 
         expect(fetchMock).not.toHaveBeenCalled();
         expect(responses.map((r) => r.status)).toEqual([401, 401]);
-        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
-            timeout: 2000,
-        });
+        // Bekleyen TÜM zamanlayıcılar boşaltılır: ikinci bir logout zamanlayıcısı
+        // kurulmuş olsaydı o da burada koşar ve sayım 2 olurdu.
+        await vi.runAllTimersAsync();
+        expect(toastError).toHaveBeenCalledTimes(1);
         expect(msalMocks.logoutRedirect).toHaveBeenCalledTimes(1);
     });
 
@@ -183,9 +203,8 @@ describe("apiClient.fetch", () => {
 
         expect(fetchMock).toHaveBeenCalledTimes(2); // orijinal + tek tekrar
         expect(flushListener).toHaveBeenCalledTimes(1);
-        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
-            timeout: 2000,
-        });
+        await vi.advanceTimersByTimeAsync(LOGOUT_DELAY_MS);
+        expect(msalMocks.logoutRedirect).toHaveBeenCalledTimes(1);
         window.removeEventListener(SESSION_EXPIRED_EVENT, flushListener);
     });
 
@@ -193,11 +212,9 @@ describe("apiClient.fetch", () => {
         stubFetch(401);
         await apiClient.fetch("/api/cases");
 
-        // Dinamik import("sonner") + 500ms gecikme → toast ve logout'u bekle
-        await vi.waitFor(() => expect(toastError).toHaveBeenCalled(), { timeout: 2000 });
-        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
-            timeout: 2000,
-        });
+        // Toast anında (G182: sonner statik import), logout 500 ms gecikmeli
+        expect(toastError).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(LOGOUT_DELAY_MS);
         // G095: BrowserRouter rotası — HashRouter artığı hash fragment'i DEĞİL
         expect(msalMocks.logoutRedirect).toHaveBeenCalledWith({
             postLogoutRedirectUri: window.location.origin + "/login",
@@ -208,9 +225,8 @@ describe("apiClient.fetch", () => {
         stubFetch(401);
         await Promise.all([apiClient.fetch("/api/a"), apiClient.fetch("/api/b")]);
 
-        await vi.waitFor(() => expect(msalMocks.logoutRedirect).toHaveBeenCalled(), {
-            timeout: 2000,
-        });
+        await vi.runAllTimersAsync();
+        expect(toastError).toHaveBeenCalledTimes(1);
         expect(msalMocks.logoutRedirect).toHaveBeenCalledTimes(1);
     });
 });
