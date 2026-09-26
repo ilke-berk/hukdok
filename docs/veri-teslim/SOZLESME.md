@@ -265,6 +265,8 @@ Her **uygulanan** teslim için şu dosyalar üretilir ve HukuDok tarafından siz
 
 CSV dosyaları Türkçe Excel'de doğrudan açılır (noktalı virgül ayraçlı, UTF-8).
 
+`tracking_no` (ofis dosya no) biçiminin blok blok açıklaması: `ofis-no-formati.md` (26.09.2026).
+
 "İnceleme bekliyor"da kalan ya da reddedilen teslimin sonucu da size HukuDok tarafından
 iletilir.
 
