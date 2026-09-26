@@ -192,13 +192,12 @@ def test_get_case_stats_appeal_asamadan_kapali_mahzen(fabrika):
     assert stats["statuses"] == {"DERDEST": 3, "MAHZEN": 1, "DANIŞ": 1}
 
 
-def test_get_case_stats_derdest_en_ileri_asama(fabrika):
-    """Avukat paneli kutuları: derdest dosyanın en ileri kanun yolu. Kaynak aşama
-    kararları (+ dolu ise case_stage); Yargıtay istinafı ezer; mahzen sayılmaz."""
+def _asama_zemini(fabrika):
+    """Derdest/mahzen kartlar + aşama kararları; (istinaf id'leri, yargıtay id'leri)."""
     d_istinaf = _dava(fabrika, tracking_no="HA.A.1")
     d_yargitay = _dava(fabrika, tracking_no="HA.A.2")                       # istinaf + temyiz
     d_kd = _dava(fabrika, tracking_no="HA.A.3")                             # karar düzeltme
-    _dava(fabrika, tracking_no="HA.A.4", case_stage="ISTINAF")              # yalnız kolon
+    _istinaf_kolon = _dava(fabrika, tracking_no="HA.A.4", case_stage="ISTINAF")  # yalnız kolon
     _dava(fabrika, tracking_no="HA.A.5")                                    # aşama yok
     m_istinaf = _dava(fabrika, tracking_no="HA.A.6", status="MAHZEN")       # arşiv sayılmaz
     d_yerel = _dava(fabrika, tracking_no="HA.A.7")
@@ -211,6 +210,13 @@ def test_get_case_stats_derdest_en_ileri_asama(fabrika):
         db.commit()
     finally:
         db.close()
+    return {d_istinaf, _istinaf_kolon}, {d_yargitay, d_kd}
+
+
+def test_get_case_stats_derdest_en_ileri_asama(fabrika):
+    """Avukat paneli kutuları: derdest dosyanın en ileri kanun yolu. Kaynak aşama
+    kararları (+ dolu ise case_stage); Yargıtay istinafı ezer; mahzen sayılmaz."""
+    _asama_zemini(fabrika)
     assert case_manager.get_case_stats()["derdest_stages"] == {"ISTINAF": 2, "YARGITAY": 2}
 
 
@@ -236,3 +242,13 @@ def test_migrasyon_50_uc_sql_idempotent_kosulsuz():
         assert "WHERE status IN ('KARAR', 'ISTINAF', 'TEMYIZ', 'KARAR_DUZELTME', 'KESINLESME', 'INFAZ', 'KAPALI')" in s
         assert "CASE WHEN status = 'KAPALI' THEN 'MAHZEN' ELSE 'DERDEST' END" in s or "case_stage" in s
     assert all(d in sqller[0] for d in LEGACY_CASE_STATUS)
+
+
+@pytest.mark.parametrize("asama", ["ISTINAF", "YARGITAY"])
+def test_liste_sanal_durum_filtresi_sayacla_ayni(fabrika, asama):
+    """Dava listesi durum çipleri (26.09): `status=ISTINAF|YARGITAY` sayaçla AYNI kümeyi döndürür."""
+    istinaf, yargitay = _asama_zemini(fabrika)
+    kartlar, toplam = case_manager.get_cases(status=asama, limit=50)
+    beklenen = istinaf if asama == "ISTINAF" else yargitay
+    assert {k["id"] for k in kartlar} == beklenen
+    assert toplam == case_manager.get_case_stats()["derdest_stages"][asama]

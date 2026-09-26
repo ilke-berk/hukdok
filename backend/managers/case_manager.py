@@ -527,32 +527,46 @@ def get_case(case_id: int, tenant_id: str = None):
 
 _YARGITAY_ASAMALARI = ("TEMYIZ", "KARAR_DUZELTME")
 _ISTINAF_ASAMALARI = ("ISTINAF",)
+#: Liste durum filtresinin sanal değerleri (26.09.2026): DURUM değil, derdest
+#: dosyanın ulaştığı EN İLERİ kanun yolu — avukat paneli sayacıyla aynı tanım.
+DERDEST_ASAMA_FILTRELERI = ("ISTINAF", "YARGITAY")
+
+
+def _asamada(asamalar):
+    """Kart bu aşamalardan birine ulaşmış mı: aşama kararı tarihçesi ya da `case_stage`."""
+    from sqlalchemy import exists, func, or_
+
+    karar_var = exists().where(
+        models.CaseStageDecision.case_id == models.Case.id,
+        models.CaseStageDecision.stage.in_(asamalar),
+    )
+    # coalesce: NULL aşamada `NOT (... OR NULL)` NULL olur, kart düşerdi
+    return or_(karar_var, func.coalesce(models.Case.case_stage, "").in_(asamalar))
+
+
+def derdest_asama_kosullari(asama: str) -> tuple:
+    """Derdest + en ileri kanun yolu `asama` (ISTINAF | YARGITAY) koşulları.
+    Bir dosya yalnız bir kutuya düşer: Yargıtay (temyiz/karar düzeltme) istinafı ezer."""
+    yargitay = _asamada(_YARGITAY_ASAMALARI)
+    if asama == "YARGITAY":
+        return (models.Case.status == "DERDEST", yargitay)
+    if asama == "ISTINAF":
+        return (models.Case.status == "DERDEST", ~yargitay, _asamada(_ISTINAF_ASAMALARI))
+    raise ValueError(f"tanınmayan aşama filtresi: {asama!r}")
 
 
 def _derdest_en_ileri_asama(db, tenant_id) -> dict:
     """Derdest (aktif) dosyaları en ileri kanun yoluna göre sayar:
     {"ISTINAF": n, "YARGITAY": m}. Bir dosya yalnız bir kutuya düşer."""
-    from sqlalchemy import exists, func, or_
+    from sqlalchemy import func
 
-    def _asamada(asamalar):
-        karar_var = exists().where(
-            models.CaseStageDecision.case_id == models.Case.id,
-            models.CaseStageDecision.stage.in_(asamalar),
-        )
-        # coalesce: NULL aşamada `NOT (... OR NULL)` NULL olur, kart düşerdi
-        return or_(karar_var, func.coalesce(models.Case.case_stage, "").in_(asamalar))
-
-    def _say(*kosullar):
+    def _say(asama):
         q = db.query(func.count(models.Case.id)).filter(
-            models.Case.active.is_(True), models.Case.status == "DERDEST", *kosullar,
+            models.Case.active.is_(True), *derdest_asama_kosullari(asama),
         )
         return _apply_tenant_filter(q, tenant_id).scalar() or 0
 
-    yargitay = _asamada(_YARGITAY_ASAMALARI)
-    return {
-        "YARGITAY": _say(yargitay),
-        "ISTINAF": _say(~yargitay, _asamada(_ISTINAF_ASAMALARI)),
-    }
+    return {asama: _say(asama) for asama in DERDEST_ASAMA_FILTRELERI}
 
 
 def get_case_stats(tenant_id: str = None):
@@ -913,7 +927,10 @@ def get_cases(
         query = db.query(models.Case).filter(models.Case.active.is_(True))
         query = _apply_tenant_filter(query, tenant_id)
 
-        if status and status != "ALL":
+        if status in DERDEST_ASAMA_FILTRELERI:
+            # Sanal durum (26.09): derdest + en ileri kanun yolu (avukat paneli sayacıyla aynı)
+            query = query.filter(*derdest_asama_kosullari(status))
+        elif status and status != "ALL":
             query = query.filter(models.Case.status == status)
 
         if file_type and file_type != "ALL":

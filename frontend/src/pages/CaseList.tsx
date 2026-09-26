@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/hooks/usePageSearch";
 import {
@@ -64,6 +64,12 @@ const URGENT_WINDOW_DAYS = 7;
 // Temyiz/istinaf durum değil aşamadır (case_stage); eski değerler migrasyon 50
 // ile üçlüye çekildi. Çip sırası: bilinmeyenler ortada, MAHZEN sonda.
 const STATUS_ORDER = ["DANIŞ", "DERDEST", "MAHZEN"];
+// Sanal durum çipleri (26.09.2026): DURUM değil, derdest dosyanın ulaştığı en ileri
+// kanun yolu — avukat paneli kutularıyla aynı tanım; backend `status` filtresi tanır.
+const DERDEST_ASAMA_CIPLERI = [
+  { key: "ISTINAF", label: "İstinafta" },
+  { key: "YARGITAY", label: "Yargıtayda" },
+] as const;
 
 const STATUS_TONE: Record<string, string> = {
   DANIŞ: "text-tone-info border-tone-info/30 bg-tone-info/10",
@@ -136,6 +142,8 @@ const CaseList = () => {
   const [stats, setStats] = useState<{
     total: number; active: number; closed: number; danis_active: number;
     statuses: Record<string, number>;
+    // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
+    derdest_stages?: { ISTINAF?: number; YARGITAY?: number };
   }>({ total: 0, active: 0, closed: 0, danis_active: 0, statuses: {} });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -382,13 +390,23 @@ const CaseList = () => {
                 onClick={() => setSelectedStatus("ALL")}
               />
               {statusChips.map(s => (
-                <ChipButton
-                  key={s}
-                  active={selectedStatus === s}
-                  label={s}
-                  count={stats.statuses[s]}
-                  onClick={() => setSelectedStatus(s)}
-                />
+                <Fragment key={s}>
+                  <ChipButton
+                    active={selectedStatus === s}
+                    label={s}
+                    count={stats.statuses[s]}
+                    onClick={() => setSelectedStatus(s)}
+                  />
+                  {s === "DERDEST" && DERDEST_ASAMA_CIPLERI.map(a => (
+                    <ChipButton
+                      key={a.key}
+                      active={selectedStatus === a.key}
+                      label={a.label}
+                      count={stats.derdest_stages?.[a.key] ?? 0}
+                      onClick={() => setSelectedStatus(a.key)}
+                    />
+                  ))}
+                </Fragment>
               ))}
             </div>
           </div>
