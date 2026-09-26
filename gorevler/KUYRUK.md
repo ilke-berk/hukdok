@@ -12,7 +12,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Her görev ayrı commit → deploy'da sorunlu yama tek başına geri alınabilir. Tahmin: 1 gece. -->
 
 - [x] G198 | bant:backend | bagimli:- | Zamanlayıcı pytz'den kurtulur: `zoneinfo.ZoneInfo` + APScheduler 3.11.3 + zamanlayıcı ImportError'u sessiz WARNING yerine tek ERROR; bekçi testi
-- [ ] G199 | bant:backend | bagimli:G198 | requests 2.34.2 + `activity_manager.py` Graph payload tipi (`dict[str, Any]`), davranış değişmez
+- [x] G199 | bant:backend | bagimli:G198 | requests 2.34.2 + `activity_manager.py` Graph payload tipi (`dict[str, Any]`), davranış değişmez
 - [ ] G200 | bant:backend | bagimli:G199 | PyJWT 2.15.0 — auth_verifier testleri gövdesi değişmeden yeşil; lokal gerçek giriş dumanı İNSAN ADIMI
 - [ ] G201 | bant:backend | bagimli:G200 | SQLAlchemy 2.0.54 — arama EXPLAIN önce/sonra (perf_olcum --term), arama bekçileri değişmeden yeşil
 - [ ] G202 | bant:backend | bagimli:G201 | Dev araçları: pytest 9.1.1 (PYSEC-2026-1845 ignore'u silinir) + ruff 0.16.8 + mypy 2.3.1 + ci-kontrol pip-audit komutu `$1` düzeltmesi
