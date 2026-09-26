@@ -13,7 +13,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G198 | bant:backend | bagimli:- | Zamanlayıcı pytz'den kurtulur: `zoneinfo.ZoneInfo` + APScheduler 3.11.3 + zamanlayıcı ImportError'u sessiz WARNING yerine tek ERROR; bekçi testi
 - [x] G199 | bant:backend | bagimli:G198 | requests 2.34.2 + `activity_manager.py` Graph payload tipi (`dict[str, Any]`), davranış değişmez
-- [ ] G200 | bant:backend | bagimli:G199 | PyJWT 2.15.0 — auth_verifier testleri gövdesi değişmeden yeşil; lokal gerçek giriş dumanı İNSAN ADIMI | BLOKE(KAPI: kirmizi-yesil kanitlanamadi (eklenen test eski kodda da geciyor))
+- [x] G200 | bant:backend | bagimli:G199 | PyJWT 2.15.0 — auth_verifier testleri gövdesi değişmeden yeşil; lokal gerçek giriş dumanı İNSAN ADIMI (d7d57b3; 26.09 kullanıcı kararı: bump görevinde kırmızı-yeşil UYGULANAMAZ, G199 gibi)
 - [ ] G201 | bant:backend | bagimli:G200 | SQLAlchemy 2.0.54 — arama EXPLAIN önce/sonra (perf_olcum --term), arama bekçileri değişmeden yeşil
 - [ ] G202 | bant:backend | bagimli:G201 | Dev araçları: pytest 9.1.1 (PYSEC-2026-1845 ignore'u silinir) + ruff 0.16.8 + mypy 2.3.1 + ci-kontrol pip-audit komutu `$1` düzeltmesi
 
@@ -33,9 +33,9 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G203 | bant:backend | bagimli:- | Hukukbot proxy altyapısı: konteyner nginx `/hukukbot-api/` allowlist (ask/sessions/download, gecikmeli DNS, stream) + frontend `hukuk_shared` ağına + react-markdown/remark-gfm + bekçi testleri
 - [x] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
-- [ ] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler | BLOKE(kapsam disi dosya gerekti - gorev dosyasindaki DURUM satirina bak)
-- [ ] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler
-- [ ] G207 | bant:docs | bagimli:G202,G203,G206 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
+- [ ] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası + rota + menü (G206 BİRLEŞTİ, 26.09 kullanıcı kararı) HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler
+- [x] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler — İPTAL: G205'e birleşti (ara durumda App.lazy bekçisi kırmızı kalıyordu; plan hatası)
+- [ ] G207 | bant:docs | bagimli:G202,G203,G205 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
 - [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HukuDok token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
 - [ ] G209 | bant:docs | bagimli:G208 | [DIŞ REPO ../hukukbot-ui] Eski arayüz silinir (React/Vite/MSAL dosyaları, Dockerfile.frontend, deploy/frontend-nginx.conf) + rapor/08 güncellenir | BLOKE(dış repo — canlı geçişten SONRA gündüz, runner koşamaz)
 
