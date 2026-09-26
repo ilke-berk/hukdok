@@ -152,6 +152,10 @@ services:
         condition: service_healthy
     networks:
       - hukudok-network
+      # Hukukbot API'sine /hukukbot-api/ proxy'si icin (nginx.conf, karar 021).
+      # Hukukbot'a depends_on YOK: nginx upstream'i gecikmeli cozer, Hukukbot
+      # kapaliyken HukuDok acilir, yalniz o istekler 502 olur.
+      - hukuk_shared
 
 # Named volumes for persistence
 volumes:
