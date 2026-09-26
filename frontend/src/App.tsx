@@ -39,6 +39,7 @@ const ClientList = lazy(() => importWithReload(() => import("./pages/ClientList"
 const CaseDetails = lazy(() => importWithReload(() => import("./pages/CaseDetails")));
 const ActivityHistory = lazy(() => importWithReload(() => import("./pages/ActivityHistory")));
 const ReportsPage = lazy(() => importWithReload(() => import("./pages/ReportsPage")));
+const HukukbotPage = lazy(() => importWithReload(() => import("./pages/HukukbotPage")));
 
 // G184: pencere/sekme odağında yeniden çekme KAPALI. Açıkken 5 dk staleTime dolunca her
 // odak useConfig'in 32 listesini (32 liste × odak = 32 istek) topluca yeniden çekiyordu.
@@ -125,6 +126,8 @@ const AppContent = () => {
           <Route path="/clients" element={<ClientList />} />
           <Route path="/cases/:id" element={<CaseDetails />} />
           <Route path="/activity-history" element={<ActivityHistory />} />
+          {/* Hukukbot (karar 021): her giriş yapmış kullanıcı; Hukukbot token'ı kendisi doğrular */}
+          <Route path="/hukukbot" element={<HukukbotPage />} />
           <Route
             path="/reports"
             element={

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-// Sidebar "Araçlar" bölümü — Hukukbot ayrı uygulamadır (kendi alanı + girişi): bağlantı her kullanıcıda
-// görünür, YENİ sekmede açılır ve açılan sekme HukuDok'a window.opener ile erişemez (noopener).
+// Sidebar "Araçlar" bölümü — Hukukbot HukuDok'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok,
+// menü öğesi her kullanıcıda görünür, `/hukukbot`'a gider, dış adres/yeni sekme YOK.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 
 const adminMock = vi.hoisted(() => ({ value: false as boolean | null }));
 vi.mock("@/hooks/useIsAdmin", () => ({ useIsAdmin: () => adminMock.value }));
@@ -17,21 +17,12 @@ vi.mock("@azure/msal-react", () => ({
 vi.mock("@/hooks/useDashboardView", () => ({ useDashboardView: () => ({ view: "avukat", setView: () => undefined }) }));
 
 import { Sidebar } from "./Sidebar";
-import { HUKUKBOT_URL, HUKUKBOT_VARSAYILAN_URL, hukukbotAdresi } from "@/lib/hukukbot";
 
-describe("hukukbotAdresi", () => {
-    it("tanımsız ya da boşsa prod adresine düşer", () => {
-        expect(hukukbotAdresi(undefined)).toBe(HUKUKBOT_VARSAYILAN_URL);
-        expect(hukukbotAdresi("  ")).toBe(HUKUKBOT_VARSAYILAN_URL);
-        expect(HUKUKBOT_VARSAYILAN_URL.startsWith("https://")).toBe(true);
-    });
+function Konum() {
+    return <span data-testid="konum">{useLocation().pathname}</span>;
+}
 
-    it("VITE_HUKUKBOT_URL verilince onu kullanır", () => {
-        expect(hukukbotAdresi(" http://localhost:3010 ")).toBe("http://localhost:3010");
-    });
-});
-
-describe("Sidebar Hukukbot bağlantısı", () => {
+describe("Sidebar Hukukbot öğesi", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
 
@@ -46,29 +37,40 @@ describe("Sidebar Hukukbot bağlantısı", () => {
         container.remove();
     });
 
-    async function render(admin: boolean) {
+    async function render(admin: boolean, yol = "/") {
         adminMock.value = admin;
         root = createRoot(container);
         await act(async () => {
-            root!.render(<MemoryRouter><Sidebar open onClose={() => undefined} /></MemoryRouter>);
+            root!.render(
+                <MemoryRouter initialEntries={[yol]}>
+                    <Sidebar open onClose={() => undefined} />
+                    <Routes><Route path="*" element={<Konum />} /></Routes>
+                </MemoryRouter>,
+            );
         });
     }
 
-    const hukukbotLinki = () =>
-        Array.from(container.querySelectorAll("a")).find(a => a.textContent?.includes("Hukukbot"));
+    const hukukbotOgesi = () =>
+        Array.from(container.querySelectorAll("button")).find(b => b.textContent?.trim() === "Hukukbot");
 
-    it("yönetici olmayan kullanıcıda da görünür ve hukukbot adresine gider", async () => {
+    it("yönetici olmayan kullanıcıda da görünür ve /hukukbot'a gider", async () => {
         await render(false);
-        const link = hukukbotLinki();
-        expect(link).toBeDefined();
-        expect(link!.getAttribute("href")).toBe(HUKUKBOT_URL);
+        const oge = hukukbotOgesi();
+        expect(oge).toBeDefined();
+        await act(async () => oge!.click());
+        expect(container.querySelector('[data-testid="konum"]')!.textContent).toBe("/hukukbot");
     });
 
-    it("yeni sekmede açılır, opener sızdırmaz", async () => {
+    it("dış bağlantı yok: hukbot.tragic.tr'ye ya da yeni sekmeye giden <a> kalmadı", async () => {
         await render(true);
-        const link = hukukbotLinki()!;
-        expect(link.getAttribute("target")).toBe("_blank");
-        expect(link.getAttribute("rel")).toContain("noopener");
-        expect(link.getAttribute("rel")).toContain("noreferrer");
+        const linkler = Array.from(container.querySelectorAll("a"));
+        expect(linkler.some(a => a.textContent?.includes("Hukukbot"))).toBe(false);
+        expect(container.innerHTML).not.toContain("hukbot.tragic.tr");
+        expect(linkler.some(a => a.getAttribute("target") === "_blank")).toBe(false);
+    });
+
+    it("/hukukbot'tayken öğe aktif vurgulanır", async () => {
+        await render(false, "/hukukbot");
+        expect(hukukbotOgesi()!.className).toContain("bg-[var(--brand-soft)]");
     });
 });
