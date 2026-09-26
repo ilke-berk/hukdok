@@ -53,15 +53,17 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
 - [ ] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
 - [x] G212 | bant:frontend | bagimli:- | "Şablonu kaydet" modalı yeni modal tasarımına (theme-classic, başlık/gövde/alt bölüm, input ölçüleri); testler korunur
-- [ ] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler | BLOKE(denetim RET: "NewCase, IntakeReviewStep ve QuickCaseModal'daki avukat Select'leri bu bileşene geçer" kabul kriteri karşılanmadı. QuickCaseModal'daki Avukat Select'i ve IntakeReviewStep:781'deki Sorumlu Avukat/UYAP Avukatı seçimleri hâlâ düz Select; işçi de Raporunda "KISMEN TAMAM" diyerek bunu kabul ediyor.)
+- [x] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler (KISMEN: NewCase + IntakeReviewStep/IntakeFieldRow; merge b77a31a 26.09 gündüz, vitest 1148 yeşil; QuickCaseModal kalanı → G222)
 - [ ] G214 | bant:backend | bagimli:G211 | `case_notes` tablosu + migrasyon (index ayrı op) + GET/POST/DELETE `/api/cases/{id}/notes` (yazan ya da admin siler, soft-delete); testler
 - [x] G215 | bant:frontend | bagimli:- | Dava kartında tarihli not paneli (liste, yazan+tarih, ekle/sil) — sözleşme G214'te sabit; `cases.notes` "Genel not" olarak kalır; testler
 - [ ] G216 | bant:backend | bagimli:G214 | `POST /api/transcribe`: ses → Gemini Türkçe metin (≤2 MB, webm/ogg/mp4, ses saklanmaz/loglanmaz); testler (Gemini mock)
-- [ ] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler | BLOKE(entegrasyon testi kirmizi - merge geri alindi, worktree korundu)
+- [ ] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler | BLOKE(entegrasyon testi kirmizi - merge geri alindi, worktree korundu; 26.09 teşhis: G217 kodu değil, KARARSIZ `api.test.ts` "eşzamanlı iki token'sız istek tek logout" — düzeltme 6b1dff4 main'de değil. 6b1dff4 main'e alınınca bu ek silinir, worktree C:/dev/hukudok-wt/G217 elle merge edilir)
 - [x] G218 | bant:docs | bagimli:- | `docs/veri-teslim/ofis-no-formati.md`: B1.B2.B3.B4.B5 açıklaması + örnekler (koddan okunarak), veri sağlayıcıya iletilecek
 - [ ] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
 - [ ] G220 | bant:backend | bagimli:G219 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu) + kartta düzenlenebilir dropdown + aktarım/SOZLESME | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
 - [ ] G221 | bant:backend | bagimli:G213,G220 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
+- [ ] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
+- [ ] G223 | bant:frontend | bagimli:- | Ofis no B1: NewCase/Intake kategori KODU geçince `X1`'e düşüyor + sigorta kodu tr-TR büyük harf yüzünden `S0` (G218 bulgusu); mevcut numaralar değişmez
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
