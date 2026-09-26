@@ -28,6 +28,7 @@ import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils
 import { parseCourt } from "@/lib/courtParse";
 import { closestName } from "@/lib/nameSimilarity";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
+import { LawyerCombobox, type LawyerOption } from "@/components/LawyerCombobox";
 
 const upperTR = (s: string) => s.trim().toLocaleUpperCase("tr-TR");
 
@@ -78,6 +79,10 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const fileTypesQ = useConfigList("fileTypes");
     const courtTypesQ = useConfigList("courtTypes");
     const lawyers = lawyersQ.data;
+    // G222: combobox seçenekleri — değer eski Select'teki gibi `name || code` (sıra backend'inki).
+    const lawyerOptions: LawyerOption[] = lawyers
+        .map(l => ({ name: l.name || l.code || "", gorev: l.gorev }))
+        .filter(l => l.name);
     const fileTypes = fileTypesQ.data;
     const courtTypesByParent = groupCourtTypesByParent(courtTypesQ.data);
     const { accounts } = useMsal();
@@ -655,18 +660,17 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
                                 <Scale className="w-3 h-3" /> Avukat
                             </Label>
-                            <Select value={lawyer} onValueChange={setLawyer}>
-                                <SelectTrigger className="h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px] text-sm">
-                                    <SelectValue placeholder="Seçiniz" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {lawyers.map(l => (
-                                        <SelectItem key={l.code} value={l.name || l.code || ""}>
-                                            {l.name || l.code}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {/* G222: yazarak aranan avukat seçimi (G213 LawyerCombobox, tekli). Değer
+                                sözleşmesi aynı: avukat ADI string'i → responsible_lawyer_name. */}
+                            <LawyerCombobox
+                                mode="single"
+                                lawyers={lawyerOptions}
+                                value={lawyer}
+                                onChange={setLawyer}
+                                placeholder="Seçiniz"
+                                aria-label="Avukat"
+                                className="h-9 bg-[var(--bg)] border-[var(--border)] text-sm"
+                            />
                         </div>
 
                         <div className="space-y-1.5">
