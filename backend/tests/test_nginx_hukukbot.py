@@ -103,6 +103,21 @@ def test_export_konteyner_nginxinde_yok():
     assert not any("export" in k for k in bloklar), "/export konteyner nginx'ine ASLA eklenmez"
 
 
+VITE_CONFIG = REPO_ROOT / "frontend" / "vite.config.ts"
+
+
+@pytest.mark.skipif(not VITE_CONFIG.exists(), reason="frontend/vite.config.ts görünmüyor")
+def test_vite_dev_proxy_ayni_allowlist():
+    """`npm run dev` (5173) nginx'i atlar: aynı allowlist Vite proxy'sinde de olmalı. Eksikken
+    /hukukbot sayfası dev'de GET'lerde SPA HTML'i, POST'larda 404 alıyordu (26.09)."""
+    metin = VITE_CONFIG.read_text(encoding="utf-8")
+    assert "'^/hukukbot-api/(ask|sessions|download)(/|$)'" in metin, "Vite allowlist anahtarı nginx ile aynı olmalı"
+    assert "'^/hukukbot-api(/|$)'" in metin and re.search(r"bypass:\s*\(\)\s*=>\s*false", metin), (
+        "allowlist dışı /hukukbot-api Vite'ta da 404 olmalı"
+    )
+    assert "removeHeader('x-user-oid')" in metin, "Vite proxy'si de X-User-OID'yi silmeli"
+
+
 def test_frontend_hukuk_shared_aginda():
     metin = COMPOSE.read_text(encoding="utf-8")
     frontend = re.search(r"\n  frontend:\n(.*?)(?=\n\S|\n  \w[\w-]*:\n)", metin, re.S)

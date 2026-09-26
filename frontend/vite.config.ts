@@ -58,7 +58,23 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8001',
         changeOrigin: true,
         secure: false,
-      }
+      },
+      // Hukukbot (karar 021): nginx.conf'taki /hukukbot-api/ allowlist'inin dev karsiligi —
+      // yalniz ask/sessions/download, onek atilir, X-User-OID silinir. Hukukbot API'si
+      // lokalde 127.0.0.1:8010 (kendi compose'u). Eksikken `npm run dev` altinda GET'ler
+      // SPA HTML'i, POST'lar 404 aliyordu. Allowlist disi /hukukbot-api/* asagida 404.
+      '^/hukukbot-api/(ask|sessions|download)(/|$)': {
+        target: 'http://127.0.0.1:8010',
+        changeOrigin: true,
+        rewrite: (p: string) => p.replace(/^\/hukukbot-api/, ''),
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('x-user-oid'));
+        },
+      },
+      '^/hukukbot-api(/|$)': {
+        target: 'http://127.0.0.1:8010',
+        bypass: () => false, // Vite: false → 404, istek Hukukbot'a hic gitmez
+      },
     }
   },
   plugins: [
