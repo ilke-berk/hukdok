@@ -345,3 +345,27 @@ def test_kullanici_hicbiri_yoksa_Unknown(anahtar):
 def test_kullanici_gecersiz_tokende_None(baska_anahtar):
     """Doğrulama başarısızsa kullanıcı adı DÖNMEZ — 'Unknown' bile değil."""
     assert AuthVerifier.get_user_from_token(_token(baska_anahtar)) is None
+
+
+# ── G200: PyJWT 2.15 zaman claim'i kilidi ───────────────────────────────────
+# PyJWT 2.15 sayısal OLMAYAN `exp`/`nbf`/`iat`'i hata sayar (DecodeError /
+# InvalidIssuedAtError — ikisi de InvalidTokenError). Kapı fail-closed kalmalı:
+# bozuk zaman claim'li token imzası geçerli olsa bile reddedilir. Azure AD'nin
+# gerçek biçimi (tamsayı exp/nbf/iat) ise kabul edilmeye devam eder.
+
+@pytest.mark.parametrize("claim", ["exp", "nbf", "iat"])
+def test_sayisal_olmayan_zaman_claimi_reddediliyor(anahtar, caplog, claim):
+    with caplog.at_level(logging.ERROR, logger="AuthVerifier"):
+        assert AuthVerifier.verify_token(_token(anahtar, **{claim: "sayi-degil"})) is None
+    assert any("invalid token" in r.getMessage().lower() for r in caplog.records)
+    assert any(f"({claim})" in r.getMessage() for r in caplog.records)
+
+
+def test_azure_bicimi_tamsayi_zaman_claimleri_kabul(anahtar):
+    simdi = int(datetime.now(timezone.utc).timestamp())
+    token = _token(anahtar, iat=simdi, nbf=simdi - 5, exp=simdi + 3600,
+                   upn="upn@ornek.gecersiz", preferred_username=None)
+    claims = AuthVerifier.verify_token(token)
+    assert claims is not None
+    assert (claims["iat"], claims["nbf"], claims["exp"]) == (simdi, simdi - 5, simdi + 3600)
+    assert AuthVerifier.get_user_from_token(token) == "upn@ornek.gecersiz"
