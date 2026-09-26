@@ -51,6 +51,16 @@ def _fmt_date(d: date) -> str:
     return d.strftime("%d.%m.%Y")
 
 
+def _hearing_title(hearing, case) -> str:
+    """Duruşma satırının Açıklama'sı (G210, 26.09 toplantısı: "açıklamada son durum
+    olsun"): davanın `dosya_son_durumu` doluysa o; boşsa eski davranış
+    (`note`, o da yoksa "Duruşma")."""
+    son_durum = ((case.dosya_son_durumu if case else None) or "").strip()
+    if son_durum:
+        return son_durum
+    return hearing.note or "Duruşma"
+
+
 def build_report_rows(db, tenant_id: str, start: date, end: date):
     """Tarih aralığındaki tüm işaretleri (duruşma + elle) toplar, davaya bağlı
     olanları detaylandırır. Tarihe (ve saate) göre sıralı liste döndürür."""
@@ -82,7 +92,7 @@ def build_report_rows(db, tenant_id: str, start: date, end: date):
             "date_str": _fmt_date(h.hearing_date),
             "time": h.hearing_time or "",
             "type": "Duruşma",
-            "title": h.note or "Duruşma",
+            "title": _hearing_title(h, case),
             "esas_no": (case.esas_no if case else "") or "",
             "court": (case.court if case else "") or "",
             "client": ", ".join(clients),
