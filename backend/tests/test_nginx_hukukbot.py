@@ -46,14 +46,28 @@ def _hukukbot_bloklari() -> list[tuple[str, str]]:
     return [(k, v) for k, v in bloklar.items() if "hukukbot-api" in k]
 
 
+# Tam metin: alternatif eklemek, (/|$) çapasını silmek ya da ~ → ~* (büyük/küçük harf
+# duyarsız) yapmak allowlist'i genişletir; parça kontrolü bunları kaçırıyordu (G203 denetimi).
+ALLOWLIST_ESLESMESI = "~ ^/hukukbot-api/(ask|sessions|download)(/|$)"
+
+
 def test_hukukbot_allowlist_yalniz_kullanici_uclari():
     bloklar = _hukukbot_bloklari()
     proxy = [(k, v) for k, v in bloklar if "proxy_pass" in v]
     assert len(proxy) == 1, f"tek bir proxy'leyen /hukukbot-api location'ı olmalı: {[k for k, _ in proxy]}"
     eslesme = proxy[0][0]
-    assert "(ask|sessions|download)" in eslesme, eslesme
-    for yasak in ("ingest", "health", "export"):
-        assert yasak not in eslesme, f"/hukukbot-api allowlist'inde '{yasak}' olmamalı"
+    assert eslesme == ALLOWLIST_ESLESMESI, (
+        f"allowlist location'ı değişti: {eslesme!r}. Yeni uç açmak bilinçli karar olmalı; "
+        "Hukukbot'un /ingest'i ve /health'i tarayıcıya ASLA açılmaz."
+    )
+
+
+def test_hukukbot_onek_atilir():
+    _, govde = next((k, v) for k, v in _hukukbot_bloklari() if "proxy_pass" in v)
+    assert re.search(r"rewrite\s+\^/hukukbot-api/\(\.\*\)\$\s+/\$1\s+break;", govde), (
+        "önek rewrite...break ile atılmalı (değişkenli proxy_pass URI eklemez; "
+        "yoksa Hukukbot /hukukbot-api/... alır ve her istek 404 olur)"
+    )
 
 
 def test_hukukbot_geri_kalani_404():
