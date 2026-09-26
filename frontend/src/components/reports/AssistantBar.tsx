@@ -8,6 +8,8 @@ import {
     sonucSatiri, tanimAyni, type DegerSorunu, type SohbetKaydi,
 } from "@/lib/reportsChat";
 import { FlowButton } from "@/components/flow/primitives";
+import { MicButton, MicDurumSatiri } from "@/components/MicButton";
+import { metneEkle, useVoiceInput } from "@/hooks/useVoiceInput";
 import { AssistantThread } from "./AssistantThread";
 import type { IndirmeFormati } from "./AssistantMessage";
 
@@ -88,6 +90,14 @@ export function AssistantBar({
     const [sonucBeklenen, setSonucBeklenen] = useState<RaporTanimi | null>(null);
     const girdiRef = useRef<HTMLInputElement>(null);
     const iptalRef = useRef<AbortController | null>(null);
+
+    // G217: mikrofon — yazıya çevrilen metin girdinin SONUNA eklenir, odak girdiye döner; GÖNDERİLMEZ.
+    // Anahtar kapalı/409 iken sayfa bu bileşeni hiç çizmez (bilgi kartı) → düğme de yoktur.
+    const sesMetni = useCallback((gelen: string) => {
+        setGirdi(prev => metneEkle(prev, gelen));
+        girdiRef.current?.focus();
+    }, []);
+    const ses = useVoiceInput({ onMetin: sesMetni });
 
     // Bileşen kalkarken (anahtar 409 / sayfa değişimi) süren isteği bırak.
     useEffect(() => () => {
@@ -440,6 +450,7 @@ export function AssistantBar({
                         autoComplete="off"
                         className="flex-1 min-w-0 h-10 px-3 text-[14px] rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:outline-none focus:border-[var(--brand)] disabled:opacity-60"
                     />
+                    <MicButton ses={ses} disabled={gonderiliyor} className="h-10" />
                     <FlowButton
                         variant="primary"
                         size="md"
@@ -452,6 +463,7 @@ export function AssistantBar({
                         Gönder
                     </FlowButton>
                 </div>
+                <MicDurumSatiri ses={ses} className="-mt-1" />
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pl-8">
                     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                         {ornekler.map(o => (
