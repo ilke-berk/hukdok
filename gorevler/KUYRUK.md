@@ -33,7 +33,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [x] G203 | bant:backend | bagimli:- | Hukukbot proxy altyapısı: konteyner nginx `/hukukbot-api/` allowlist (ask/sessions/download, gecikmeli DNS, stream) + frontend `hukuk_shared` ağına + react-markdown/remark-gfm + bekçi testleri
 - [x] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
-- [ ] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası + rota + menü (G206 BİRLEŞTİ, 26.09 kullanıcı kararı) HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler
+- [x] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası + rota + menü (G206 BİRLEŞTİ, 26.09 kullanıcı kararı) HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler (af79699, merge 1d9d908, 26.09 gündüz)
 - [x] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler — İPTAL: G205'e birleşti (ara durumda App.lazy bekçisi kırmızı kalıyordu; plan hatası)
 - [ ] G207 | bant:docs | bagimli:G202,G203,G205 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
 - [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HukuDok token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
