@@ -44,11 +44,13 @@ docker compose exec -T backend pip install -q -r requirements-dev.txt
 
 1. **pip-audit** (`ci.yml:78-83`; ignore listesi `backend/audit-ignore.txt`, satır tarihleri CI'da `ci.yml:58-76`
    kapısıyla ayrıca denetlenir). Konsol betiği konteyner PATH'inde YOK → `python -m pip_audit`
-   (2026-09-26 doğrulandı: `No known vulnerabilities found, 2 ignored`). `awk ... $1` KULLANMA: skill
+   (2026-09-26 G202 doğrulandı, liste boş: `No known vulnerabilities found`). `awk ... $1` KULLANMA: skill
    yüklenirken `\$1` kaçışı düşüyor, `sh -c` `$1`'i boşa açıyor → `--ignore-vuln: expected one argument`.
-   `cut` + `sed` eşdeğeri `$` alan referansı taşımaz (satırlar "ID  # gerekçe", sekme yok):
+   `cut` + `sed` eşdeğeri `$` alan referansı taşımaz (satırlar "ID  # gerekçe", sekme yok); baştaki
+   `tr -d "\r"` OneDrive/Windows checkout'unda CRLF'e dönmüş satırda ID'ye `\r` yapışmasını önler.
+   Liste boşken `$(...)` boş açılır → argümansız `--strict` koşu (doğru davranış):
    ```bash
-   docker compose exec -T backend sh -c 'python -m pip_audit --strict $(grep -v "^\s*#" audit-ignore.txt | grep -v "^\s*$" | cut -d" " -f1 | sed "s/^/--ignore-vuln /")'
+   docker compose exec -T backend sh -c 'python -m pip_audit --strict $(tr -d "\r" < audit-ignore.txt | grep -v "^\s*#" | grep -v "^\s*$" | cut -d" " -f1 | sed "s/^/--ignore-vuln /")'
    ```
 2. **ruff** — lokalde git dışı `calibration-data/` bind-mount'u var, CI'nın temiz checkout'unda yok:
    ```bash
