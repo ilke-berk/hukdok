@@ -51,7 +51,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Tahmin: 2 gece. -->
 
 - [x] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
-- [ ] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
+- [x] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
 - [x] G212 | bant:frontend | bagimli:- | "Şablonu kaydet" modalı yeni modal tasarımına (theme-classic, başlık/gövde/alt bölüm, input ölçüleri); testler korunur
 - [x] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler (KISMEN: NewCase + IntakeReviewStep/IntakeFieldRow; merge b77a31a 26.09 gündüz, vitest 1148 yeşil; QuickCaseModal kalanı → G222)
 - [ ] G214 | bant:backend | bagimli:G211 | `case_notes` tablosu + migrasyon (index ayrı op) + GET/POST/DELETE `/api/cases/{id}/notes` (yazan ya da admin siler, soft-delete); testler
