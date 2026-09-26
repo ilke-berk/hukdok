@@ -14,14 +14,12 @@ import {
   LogOut,
   Scale,
   Bot,
-  ExternalLink,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { clearAppStorage } from "@/lib/appStorage";
 import { resumeAllDrafts, suppressAllDrafts } from "@/lib/formDraft";
 import { useDashboardView } from "@/hooks/useDashboardView";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { HUKUKBOT_URL } from "@/lib/hukukbot";
 
 type NavItemDef = {
   id: string;
@@ -37,6 +35,11 @@ const NAV: NavItemDef[] = [
   { id: "cases", label: "Dava Dosyaları", path: "/cases", Icon: FolderOpen, matches: p => p.startsWith("/cases") || p.startsWith("/new-case") },
   { id: "clients", label: "Müvekkiller", path: "/clients", Icon: Users, matches: p => p.startsWith("/clients") || p.startsWith("/new-client") },
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
+];
+
+// Hukukbot HukuDok'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok, her kullanıcı görür.
+const ARACLAR: NavItemDef[] = [
+  { id: "hukukbot", label: "Hukukbot", path: "/hukukbot", Icon: Bot },
 ];
 
 type SidebarProps = {
@@ -75,6 +78,33 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const isActive = (item: NavItemDef) => {
     if (item.matches) return item.matches(location.pathname);
     return location.pathname === item.path;
+  };
+
+  const navButton = (item: NavItemDef) => {
+    const active = isActive(item);
+    const { Icon } = item;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => { navigate(item.path); onClose(); }}
+        tabIndex={open ? 0 : -1}
+        className={[
+          "flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] text-left relative",
+          "font-sans text-[13px] font-medium tracking-[0.005em]",
+          "transition-colors",
+          active
+            ? "text-[var(--brand)] bg-[var(--brand-soft)] font-semibold"
+            : "text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]",
+        ].join(" ")}
+      >
+        {active && (
+          <span className="absolute -left-4 top-2 bottom-2 w-[2px] bg-brand-solid" />
+        )}
+        <Icon className="w-4 h-4 opacity-90 shrink-0" />
+        <span className="whitespace-nowrap">{item.label}</span>
+      </button>
+    );
   };
 
   // G004: eskiden hata yolunda `sessionStorage.clear()` + `localStorage.clear()`
@@ -166,51 +196,13 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             Çalışma
           </div>
           <nav className="flex flex-col gap-0.5">
-            {navItems.map(item => {
-              const active = isActive(item);
-              const { Icon } = item;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => { navigate(item.path); onClose(); }}
-                  tabIndex={open ? 0 : -1}
-                  className={[
-                    "flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] text-left relative",
-                    "font-sans text-[13px] font-medium tracking-[0.005em]",
-                    "transition-colors",
-                    active
-                      ? "text-[var(--brand)] bg-[var(--brand-soft)] font-semibold"
-                      : "text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]",
-                  ].join(" ")}
-                >
-                  {active && (
-                    <span className="absolute -left-4 top-2 bottom-2 w-[2px] bg-brand-solid" />
-                  )}
-                  <Icon className="w-4 h-4 opacity-90 shrink-0" />
-                  <span className="whitespace-nowrap">{item.label}</span>
-                </button>
-              );
-            })}
+            {navItems.map(navButton)}
           </nav>
 
           <div className="font-mono text-[9px] tracking-[0.22em] uppercase text-[var(--fg-subtle)] pt-5 pb-2 px-2">
             Araçlar
           </div>
-          {/* noopener: açılan sekme window.opener ile HukuDok sekmesine erişemez */}
-          <a
-            href={HUKUKBOT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            tabIndex={open ? 0 : -1}
-            title="Hukukbot yeni sekmede açılır"
-            className="flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] font-sans text-[13px] font-medium tracking-[0.005em] transition-colors text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)]"
-          >
-            <Bot className="w-4 h-4 opacity-90 shrink-0" />
-            <span className="whitespace-nowrap">Hukukbot</span>
-            <ExternalLink className="w-3 h-3 ml-auto opacity-60 shrink-0" aria-hidden="true" />
-          </a>
+          <nav className="flex flex-col gap-0.5">{ARACLAR.map(navButton)}</nav>
         </div>
 
         {/* Footer: user + view switcher + theme/logout */}
