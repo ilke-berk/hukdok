@@ -3,6 +3,42 @@
 Format: `- [ ] Gxxx | bant:backend|frontend|docs | bagimli:-|Gyyy,Gzzz | Kısa başlık`
 Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id>.md`.
 
+## ÖNCELİK 1 — Bağımlılık yol haritası Faz 1: düşük riskli yamalar (2026-09-26 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/arsiv/bagimlilik-raporu-2026-09.md §5.1, 5.2, 5.5, 5.8, 5.10. Faz 0 (24 paket) Deploy #35 ile
+     prod'da (d2b1609). Hepsi backend bandı ve requirements*.txt ortak → tam zincir, paralellik yok.
+     G198 ÖNCE: pytz dolaylı bağımlılığı düşerse gece işleri sessiz kapanır. G202 en son: önceki üçü
+     bilinen-iyi pytest 8 ile doğrulansın. G200 sonrası İNSAN ADIMI: lokalde gerçek Azure girişi dumanı.
+     Her görev ayrı commit → deploy'da sorunlu yama tek başına geri alınabilir. Tahmin: 1 gece. -->
+
+- [ ] G198 | bant:backend | bagimli:- | Zamanlayıcı pytz'den kurtulur: `zoneinfo.ZoneInfo` + APScheduler 3.11.3 + zamanlayıcı ImportError'u sessiz WARNING yerine tek ERROR; bekçi testi
+- [ ] G199 | bant:backend | bagimli:G198 | requests 2.34.2 + `activity_manager.py` Graph payload tipi (`dict[str, Any]`), davranış değişmez
+- [ ] G200 | bant:backend | bagimli:G199 | PyJWT 2.15.0 — auth_verifier testleri gövdesi değişmeden yeşil; lokal gerçek giriş dumanı İNSAN ADIMI
+- [ ] G201 | bant:backend | bagimli:G200 | SQLAlchemy 2.0.54 — arama EXPLAIN önce/sonra (perf_olcum --term), arama bekçileri değişmeden yeşil
+- [ ] G202 | bant:backend | bagimli:G201 | Dev araçları: pytest 9.1.1 (PYSEC-2026-1845 ignore'u silinir) + ruff 0.16.8 + mypy 2.3.1 + ci-kontrol pip-audit komutu `$1` düzeltmesi
+
+## ÖNCELİK 2 — Hukukbot HukuDok'a bağlanır: tek giriş, iç sayfa, hukbot.tragic.tr kapanır (2026-09-26 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 26.09 sohbeti. Hanyaloğlu hesabı hukbot'a giremiyordu (hukbot Azure kaydı yalnız LexisBio kiracısı).
+     KARAR: Hukbot'un kendi girişi ve arayüzü KALKAR; HukuDok'un token'ı (api://<HukuDok client>/access_as_user,
+     ALLOWED_TENANTS) hukbot backend'inde aynı kuralla doğrulanır; arayüz HukuDok'ta /hukukbot sayfası; API'ye
+     yalnız HukuDok konteyner nginx'i /hukukbot-api/ allowlist'iyle ulaşır (/ingest ASLA); hukbot.tragic.tr kapanır.
+     Sohbet geçmişi oid ile anahtarlı → LexisBio kullanıcılarının eski geçmişi korunur.
+     G208/G209 DIŞ REPO (../hukukbot-ui): gece koşucusu bu repoda çalışır, onları koşamaz → BLOKE ekli; gündüz
+     o dizinde açılan oturumda `gorevler/gorev/G208.md`/`G209.md` okunarak yapılır. Hukbot'ta commit'lenmemiş
+     değişiklikler var (app/config.py, prompt.py, rag_core.py) — G208'den önce kullanıcı karar verir.
+     Paralel: G203 (backend) ∥ G204 (frontend). G207, G202 ile CLAUDE.md paylaşır → zincirli.
+     Deploy sırası (insan): hukbot G208 → HukuDok (G203-G207) → canlı duman → host nginx'ten hukbot sitesi +
+     hukbot frontend konteyneri kalkar → G209. Tahmin: HukuDok kısmı 1 gece; hukbot kısmı 1 gündüz oturumu. -->
+
+- [ ] G203 | bant:backend | bagimli:- | Hukukbot proxy altyapısı: konteyner nginx `/hukukbot-api/` allowlist (ask/sessions/download, gecikmeli DNS, stream) + frontend `hukuk_shared` ağına + react-markdown/remark-gfm + bekçi testleri
+- [ ] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
+- [ ] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler
+- [ ] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler
+- [ ] G207 | bant:docs | bagimli:G202,G203,G206 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
+- [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HukuDok token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
+- [ ] G209 | bant:docs | bagimli:G208 | [DIŞ REPO ../hukukbot-ui] Eski arayüz silinir (React/Vite/MSAL dosyaları, Dockerfile.frontend, deploy/frontend-nginx.conf) + rapor/08 güncellenir | BLOKE(dış repo — canlı geçişten SONRA gündüz, runner koşamaz)
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
