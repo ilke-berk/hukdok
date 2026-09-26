@@ -13,6 +13,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { IntakeFieldRow } from "@/components/intake/IntakeFieldRow";
+import { LawyerCombobox } from "@/components/LawyerCombobox";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { useCases, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
@@ -800,39 +801,20 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-1.5">
                 Dava Avukatları (Sorumluya Ek)
               </span>
-              {selectedLawyers.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {selectedLawyers.map((sl, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1 bg-[var(--brand-soft)] text-[var(--brand)] px-2 py-1 text-[11px] font-medium border border-brand/20">
-                      {sl.name}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLawyers(prev => prev.filter((_, i) => i !== idx))}
-                        className="hover:opacity-70 transition-opacity"
-                        aria-label={`${sl.name} avukatını çıkar`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <Select
-                value=""
-                onValueChange={v => {
-                  if (v && !selectedLawyers.find(l => l.name === v)) {
-                    const obj = lawyers.find(l => l.name === v);
-                    setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: obj?.id ?? null }]);
-                  }
-                }}
-              >
-                <SelectTrigger className="h-9 text-[13px] border-[var(--border-strong)] bg-transparent">
-                  <SelectValue placeholder="Avukat Ekle..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {lawyerNames.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              {/* G213: yazarak aranan çoklu seçim; değer = avukat adları (payload şekli aynı) */}
+              <LawyerCombobox
+                mode="multi"
+                lawyers={lawyers}
+                value={selectedLawyers.map(sl => sl.name)}
+                onChange={names => setSelectedLawyers(prev => names.map(n => {
+                  const existing = prev.find(p => p.name === n);
+                  if (existing) return existing;
+                  const obj = lawyers.find(l => l.name === n);
+                  return { name: n, lawyer_id: obj?.id ?? null };
+                }))}
+                placeholder="Avukat Ekle..."
+                aria-label="Dava avukatı ekle"
+              />
             </div>
 
             {/* Hizmet Türü — seçimler ofis numarasının son bloğunu şekillendirir */}
