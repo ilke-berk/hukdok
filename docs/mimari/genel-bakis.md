@@ -161,16 +161,16 @@ TEK `CRITICAL` log satırı atılır (`singleton_lock.py:139`), log tabanlı ala
 
 | İş | Kapsam | Kod |
 | --- | --- | --- |
-| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)`, `id="daily_activity_report"` | yalnız lider | `api.py:195-201` |
-| APScheduler: dönüşüm retry (`conversion_retry.retry_pending_conversions`), `CronTrigger(hour=2, minute=30, Europe/Istanbul)`, `id="conversion_retry"` | yalnız lider | `api.py:208-214` |
-| APScheduler: süre/duruşma taraması (`deadline_scanner.scan_deadlines`), `CronTrigger(hour=6, minute=0, Europe/Istanbul)`, `id="deadline_scan"` | yalnız lider | `api.py:222-228` |
-| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:237` |
-| Süre taraması boot telafisi (`deadline_scanner.boot_catch_up_scan`) | yalnız lider | `api.py:243-244` |
-| Veri teslim açılış toparlaması (`teslim_kutusu.boot_toparla`; yalnız kesilmiş elle uygulama → `inceleme_bekliyor`, uygulama/tarama YOK) | yalnız lider | `api.py:249-250` |
-| SharePoint upload outbox worker'ı | yalnız lider | `api.py:262-263` |
+| APScheduler: günlük aktivite raporu, `CronTrigger(hour=0, minute=0, Europe/Istanbul)`, `id="daily_activity_report"` | yalnız lider | `api.py:203-209` |
+| APScheduler: dönüşüm retry (`conversion_retry.retry_pending_conversions`), `CronTrigger(hour=2, minute=30, Europe/Istanbul)`, `id="conversion_retry"` | yalnız lider | `api.py:216-222` |
+| APScheduler: süre/duruşma taraması (`deadline_scanner.scan_deadlines`), `CronTrigger(hour=6, minute=0, Europe/Istanbul)`, `id="deadline_scan"` | yalnız lider | `api.py:230-236` |
+| Kaçırılan gün raporlarını tamamlama (catch-up thread) | yalnız lider | `api.py:247` |
+| Süre taraması boot telafisi (`deadline_scanner.boot_catch_up_scan`) | yalnız lider | `api.py:253-254` |
+| Veri teslim açılış toparlaması (`teslim_kutusu.boot_toparla`; yalnız kesilmiş elle uygulama → `inceleme_bekliyor`, uygulama/tarama YOK) | yalnız lider | `api.py:259-260` |
+| SharePoint upload outbox worker'ı | yalnız lider | `api.py:280-281` |
 | Liste tazeleme (refresh) thread'i | **worker başına — bilinçli** | `api.py:171-181` |
 
-Üç cron job'ı da tek `BackgroundScheduler` üzerindedir (`api.py:194`; 04:00 veri teslim turu
+Üç cron job'ı da tek `BackgroundScheduler` üzerindedir (`api.py:202`; saat dilimi stdlib `zoneinfo` — G198; 04:00 veri teslim turu
 17.09.2026'da SharePoint teslim klasörü yoluyla kalktı) — yeni thread/scheduler
 açılmaz (3-E devri); `misfire_grace_time=3600` ile lider bir saat içinde ayağa kalkarsa
 kaçan tetik yine koşar.
@@ -183,7 +183,7 @@ kabul edilen takas" (`api.py:176-178`).
 
 Saatlerin seçimi tesadüf değil, gerekçeler kodda: 02:30 dönüşüm retry'ı gece yarısı raporu
 (00:00) ve host pg_dump'ı (03:30) ile çakışmasın diye; 06:00 süre
-taraması gece işleri bitmiş ve uyarı mesai başlangıcında hazır olsun diye (`api.py:216-218`).
+taraması gece işleri bitmiş ve uyarı mesai başlangıcında hazır olsun diye (`api.py:213-214`, `api.py:226-228`). Zamanlayıcı kurulumunda `ImportError` sessiz WARNING DEĞİL: TEK `logging.error` + istisna mesajı, uygulama açılmaya devam eder, telafi thread'leri başlamaz (`api.py:262-272`, G198; bekçi `tests/test_g198_zamanlayici_zoneinfo.py`).
 
 ## 4. Kimlik ve tenant
 

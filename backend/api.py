@@ -184,17 +184,25 @@ async def lifespan(app: FastAPI):
 
     # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle).
     # Faz 3-E: yalnız lider worker'da — N worker'da N kopya rapor/e-posta üretirdi.
+    # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle).
+    # Faz 3-E: yalnız lider worker'da — N worker'da N kopya rapor/e-posta üretirdi.
+    # G198: saat dilimi stdlib `zoneinfo`; eski üçüncü parti tz paketi KULLANILMAZ —
+    # requirements'ta hiç yoktu, APScheduler 3.10 üzerinden dolaylı geliyordu, 3.11 onu bıraktı. Sistem tz verisi
+    # python:3.12-slim imajında `/usr/share/zoneinfo`'da var (tzdata pin'i gereksiz).
+    # `ZoneInfo("Europe/Istanbul")` her tetikte AÇIK yazılır: G085 AST bekçisi tetiğin
+    # timezone'unu literal çağrı olarak okur.
     if is_leader:
         try:
+            from zoneinfo import ZoneInfo
+
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.cron import CronTrigger
             from managers.activity_manager import generate_daily_reports, catch_up_missed_reports
-            import pytz
 
-            scheduler = BackgroundScheduler(timezone=pytz.timezone("Europe/Istanbul"))
+            scheduler = BackgroundScheduler(timezone=ZoneInfo("Europe/Istanbul"))
             scheduler.add_job(
                 generate_daily_reports,
-                CronTrigger(hour=0, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
+                CronTrigger(hour=0, minute=0, timezone=ZoneInfo("Europe/Istanbul")),
                 id="daily_activity_report",
                 replace_existing=True,
                 misfire_grace_time=3600,
@@ -207,7 +215,7 @@ async def lifespan(app: FastAPI):
             from services.conversion_retry import retry_pending_conversions
             scheduler.add_job(
                 retry_pending_conversions,
-                CronTrigger(hour=2, minute=30, timezone=pytz.timezone("Europe/Istanbul")),
+                CronTrigger(hour=2, minute=30, timezone=ZoneInfo("Europe/Istanbul")),
                 id="conversion_retry",
                 replace_existing=True,
                 misfire_grace_time=3600,
@@ -221,7 +229,7 @@ async def lifespan(app: FastAPI):
             from services.deadline_scanner import scan_deadlines
             scheduler.add_job(
                 scan_deadlines,
-                CronTrigger(hour=6, minute=0, timezone=pytz.timezone("Europe/Istanbul")),
+                CronTrigger(hour=6, minute=0, timezone=ZoneInfo("Europe/Istanbul")),
                 id="deadline_scan",
                 replace_existing=True,
                 misfire_grace_time=3600,
@@ -232,6 +240,8 @@ async def lifespan(app: FastAPI):
                 "Günlük rapor zamanlayıcısı başlatıldı (her gece 00:00 TR; dönüşüm retry 02:30 TR; "
                 "süre/duruşma taraması 06:00 TR)."
             )
+            for job in scheduler.get_jobs():
+                logging.info("Zamanlayıcı işi %s — sonraki koşu %s", job.id, job.next_run_time)
 
             # Backend kapalıyken kaçırılan günleri arka planda tamamla
             threading.Thread(target=catch_up_missed_reports, daemon=True).start()
@@ -249,8 +259,16 @@ async def lifespan(app: FastAPI):
             from services.teslim_kutusu import boot_toparla as teslim_boot_toparla
             threading.Thread(target=teslim_boot_toparla, daemon=True).start()
             logging.info("Veri teslim açılış toparlama thread'i başlatıldı.")
-        except ImportError:
-            logging.warning("apscheduler yüklü değil — günlük rapor zamanlayıcısı devre dışı.")
+        except ImportError as e:
+            # G198: eskiden "apscheduler yüklü değil" WARNING'iyle YUTULUYORDU → 00:00 rapor,
+            # 02:30 dönüşüm retry ve 06:00 süre taraması SESSİZCE kapanırdı. Artık TEK ERROR
+            # (log sözleşmesi: nihai başarısızlık tek ERROR) + istisna mesajı; uygulama yine
+            # açılır — zamanlayıcı yokluğu belge akışını durdurmaz (bekçi: test_g198_*).
+            logging.error(
+                "Zamanlayıcı başlatılamadı (import hatası: %s) — 00:00 günlük rapor, 02:30 dönüşüm "
+                "retry ve 06:00 süre/duruşma taraması DEVRE DIŞI.",
+                e,
+            )
 
     # SharePoint yükleme outbox worker'ı (Faz 3-A): ilk taraması startup
     # reconcile'dır — önceki süreçten kalan pending yüklemeleri toparlar.
