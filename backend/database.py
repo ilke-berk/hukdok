@@ -1227,6 +1227,30 @@ _MIGRATIONS = [
     # NULL CHECK'ten geçer (status nullable, models.py) — NOT NULL ayrı karar.
     # Koşulsuz ("index", ...) op'u (G041 kuralı), pg_constraint yoklamasıyla idempotent.
     ("index", "cases", [case_status_check_ddl()]),
+
+    # ─── 53. DAVA NOTLARI — TARİHLİ, YAZANI BELLİ (G214, 26.09.2026) ──────────
+    # `case_notes` (models.CaseNote): davaya zaman çizelgesi notu; `cases.notes`
+    # ("Genel not") AYRI kalır, veri taşınmaz. Tablo modelde tanımlı → sıfırdan
+    # kurulumda ve mevcut kurulumda create_all yaratır, bu ("table", ...) op'u
+    # atlanır; yalnız create_all'ın koşmadığı bir yolda (elle şema) tabloyu
+    # kurar. Gövdesine index GÖMÜLMEZ (CLAUDE.md "koşullu op" tuzağı): tek index
+    # `(case_id, created_at)` hemen alttaki KOŞULSUZ ("index", ...) op'unda,
+    # IF NOT EXISTS ile idempotent. İki iş görür: liste ucu `case_id = ? ORDER
+    # BY created_at DESC` ve FK index'i (G043 bekçisi: index'siz FK yok).
+    ("table", "case_notes", """
+        CREATE TABLE case_notes (
+            id SERIAL PRIMARY KEY,
+            case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+            body TEXT NOT NULL,
+            author_email VARCHAR(320) NOT NULL,
+            author_name VARCHAR(200),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            deleted_at TIMESTAMPTZ
+        )
+    """, []),
+    ("index", "case_notes", [
+        "CREATE INDEX IF NOT EXISTS idx_case_notes_case_created ON case_notes (case_id, created_at)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

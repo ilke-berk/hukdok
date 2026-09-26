@@ -1,7 +1,7 @@
 from enum import Enum
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ContactType(str, Enum):
@@ -678,3 +678,34 @@ class RelatedCasesResponse(BaseModel):
 class CaseRelationReject(BaseModel):
     """Öneriyi reddet (G128): `case_relations`a ONERI_RED satırı düşer, bir daha önerilmez."""
     target_case_id: int
+
+
+# ─── DAVA NOTLARI (G214) ──────────────────────────────────────────────────────
+# Sözleşme SABİT (G215 frontend paneli buna göre yazılır): routes/case_notes.py.
+
+CASE_NOTE_MAX_LEN = 5000
+
+
+class CaseNoteCreate(BaseModel):
+    """`POST /api/cases/{id}/notes` gövdesi — trim SONRASI 1..5000 karakter, aksi 422."""
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def _body_trim_ve_uzunluk(cls, value: str) -> str:
+        temiz = value.strip()
+        if not temiz:
+            raise ValueError("Not boş olamaz.")
+        if len(temiz) > CASE_NOTE_MAX_LEN:
+            raise ValueError(f"Not en fazla {CASE_NOTE_MAX_LEN} karakter olabilir.")
+        return temiz
+
+
+class CaseNoteRead(BaseModel):
+    """Tek not. `created_at` UTC ve ofsetli ISO8601 (`...+00:00`)."""
+    id: int
+    body: str
+    author_name: Optional[str] = None
+    author_email: str
+    created_at: str
+    can_delete: bool

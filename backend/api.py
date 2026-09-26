@@ -499,7 +499,7 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 # --- ROUTES ---
-from routes import admin, config, clients, cases, debug, documents, processing, activity, export, parties, case_intake, client_errors, notifications, reports
+from routes import admin, config, clients, cases, case_notes, debug, documents, processing, activity, export, parties, case_intake, client_errors, notifications, reports
 
 app.include_router(config.router)
 # Frontend hata beacon'ı — bilinçli auth'suz (auth kırıkken de rapor gelsin);
@@ -511,6 +511,8 @@ app.include_router(admin.router)
 app.include_router(debug.router)
 app.include_router(clients.router)
 app.include_router(cases.router)
+# Davaya tarihli notlar (G214) — `/api/cases/{id}/notes*`, oturumlu, tenant filtreli
+app.include_router(case_notes.router)
 app.include_router(parties.router)
 app.include_router(documents.router)
 app.include_router(processing.router)

@@ -5,7 +5,7 @@ Not (G028, 2026-08-12): `sync_logs` ve `analysis_cache` modelleri (`SyncLog`,
 kaldırıldı. **Tablolar DB'de duruyor** — bilinçli olarak DROP edilmedi (veri kaybı
 riski + migrate.py fail-fast). Artıkları görürsen: model yok, kullanan kod yok.
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -1447,3 +1447,30 @@ class ReportRun(Base):
     hata = Column(String(500), nullable=True)                # üretim hatası özeti (satır silinmez)
 
     sablon = relationship("ReportTemplate")
+
+
+class CaseNote(Base):
+    """
+    Davaya tarihli, yazanı belli not (G214, 26.09 toplantısı "not alma").
+
+    `cases.notes` (tek serbest metin, "Genel not") AYRI kalır — veri TAŞINMAZ;
+    bu tablo zaman çizelgesidir: her not bir satır, yazanın kimliği token'dan
+    (`author_email` küçük harf, `author_name` = `name` claim'i). Düzenleme yok;
+    silme SOFT (`deleted_at`) ve yalnız yazan ya da yönetici yapar
+    (routes/case_notes.py).
+
+    `case_id` `ondelete="CASCADE"`: dava satırı gerçekten silinirse notlar da
+    gider (dava soft-delete'inde satır durur, uçlar 404 döner). Index
+    `(case_id, created_at)` modelde DEĞİL migrasyonda — koşulsuz ("index",
+    "case_notes", ...) op'u (G041 kuralı, database.py madde 53); FK kolonu
+    index'in ilk kolonu olduğu için G043 bekçisi de karşılanır.
+    """
+    __tablename__ = "case_notes"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    body = Column(Text, nullable=False)
+    author_email = Column(String(320), nullable=False)       # DAİMA küçük harf
+    author_name = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)

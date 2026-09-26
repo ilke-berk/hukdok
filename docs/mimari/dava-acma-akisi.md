@@ -561,3 +561,37 @@ envanterin yalnız altısını karşılaştırır (`services/teslim_cevap.py::HA
 tablosu: karar durumu havuzları için `docs/veri-teslim/SOZLESME.md` §6 (10.09, G151 sonrası
 27/8/4/2), öteki altı liste için `docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.8 (04.09
 fotoğrafı; oradaki 28/3/3 sayıları tarihseldir).
+
+## 14. Tarihli dava notları — `case_notes` (G214)
+
+26.09 toplantısı "not alma" kararı: davaya **tarihli, yazanı belli** notlar (zaman çizelgesi).
+Tek serbest metin `cases.notes` ("Genel not") AYRI kalır ve dokunulmaz — veri taşınmadı.
+Frontend paneli G215.
+
+**Tablo** (`models.CaseNote`, `database.py` madde 53):
+
+| Kolon | Tür | Not |
+| --- | --- | --- |
+| `id` | SERIAL PK | |
+| `case_id` | INTEGER NOT NULL | FK `cases.id` **ON DELETE CASCADE** (dava soft-delete'inde satır durur, uçlar 404) |
+| `body` | TEXT NOT NULL | trim'lenmiş, 1..5000 karakter (`schemas.CaseNoteCreate`) |
+| `author_email` | VARCHAR(320) NOT NULL | token'dan üçlü claim fallback'i (`preferred_username \| upn \| email`), küçük harf |
+| `author_name` | VARCHAR(200) | token'ın `name` claim'i; yoksa NULL |
+| `created_at` | TIMESTAMPTZ NOT NULL | server default `now()` |
+| `deleted_at` | TIMESTAMPTZ | soft-delete damgası |
+
+Migrasyon `("table", "case_notes", ...)` op'u + index `idx_case_notes_case_created
+(case_id, created_at)` AYRI, koşulsuz `("index", ...)` op'unda (create_all tabloyu önce
+yarattığında table op'u atlanır; "koşullu op" tuzağı). Index hem listeyi hem FK'yi karşılar.
+
+**Uçlar** (`routes/case_notes.py`, hepsi oturumlu — oturumsuz 401):
+
+| Uç | Sonuç |
+| --- | --- |
+| `GET /api/cases/{case_id}/notes` | `200 [{id, body, author_name, author_email, created_at, can_delete}]`, en yeni üstte, silinmişler hariç; `created_at` UTC ofsetli ISO8601 |
+| `POST /api/cases/{case_id}/notes` `{"body": str}` | `201` + tek not; trim sonrası boş ya da 5000'den uzun → `422` |
+| `DELETE /api/cases/{case_id}/notes/{note_id}` | `204` (soft-delete); yazan değil ve yönetici değil → `403`; not bu davada yok / silinmiş → `404` |
+
+Dava `auth_helpers.get_tenant_owned_case`'ten geçmezse (tenant dışı ya da soft-silinmiş) TÜM uçlar
+`404`. `can_delete` = istek sahibi yazan ya da yönetici; yönetici kuralı `routes/config.require_admin`'e
+sorulur (ADMIN_EMAILS, kopyası tutulmaz). Düzenleme ucu yok. Bekçi: `backend/tests/test_case_notes.py`.
