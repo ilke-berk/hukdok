@@ -83,6 +83,7 @@ bırakır (`analyzer.py:93-95`).
 | --- | --- | --- |
 | Ana belge analizi | `GEMINI_MODEL_NAME` | `analyzer.py` |
 | Otonom dava açma (intake) | `GEMINI_INTAKE_MODEL` | `case_intake_analyzer.py`; `_gemini_call_with_retry(model=...)` ile geçirilir (`analyzer.py:101`) |
+| Sesli giriş transkripsiyonu (G216) | `GEMINI_MODEL_NAME` (ana analiz modeliyle aynı) | `POST /api/transcribe` (`routes/transcribe.py`) → `gemini_client.transcribe_audio`: ses inline (`Part.from_bytes`, Files API/disk yok), ≤ 2 MB; en çok 2 retry + 20 sn bütçe, aynı `classify_transient` + model-başına devre kesici; nihai hata → 503 + tek ERROR (ses/metin loglanmaz) |
 
 ## 2. Microsoft Graph / SharePoint
 

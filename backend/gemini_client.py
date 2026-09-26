@@ -174,3 +174,90 @@ def circuit_record_success(model: str) -> None:
 def reset_circuits_for_tests() -> None:
     with _circuit_lock:
         _circuit_state.clear()
+
+
+# ============================================================================
+# Sesli giriş transkripsiyonu (G216) — POST /api/transcribe'ın Gemini ayağı
+# ============================================================================
+# Kullanıcı kaydı bitirip bekler: analiz hattının 170 sn bütçesi burada anlamsız.
+# Az deneme + kısa bütçe; bütçe "yeni bekleme/deneme BAŞLATMA" kapısıdır (3-C deseni),
+# son deneme HTTP timeout'una (GEMINI_HTTP_TIMEOUT_MS) kadar sürebilir.
+TRANSCRIBE_MAX_RETRIES = 2
+TRANSCRIBE_RETRY_DEADLINE_SECONDS = 20.0
+
+TRANSCRIBE_PROMPT = (
+    "Türkçe konuşmayı birebir yazıya dök; hukuki terim, kurum ve kişi adlarını olduğu "
+    "gibi yaz; noktalama ekle; yorum, özet, açıklama ekleme; yalnız metni döndür. "
+    "Kayıtta konuşma yoksa boş yanıt döndür."
+)
+
+
+class GeminiUnavailableError(Exception):
+    """Gemini istemcisi kurulamadı (anahtar yok) — çağrı yapılamaz."""
+
+
+async def _transcribe_sleep(seconds: float) -> None:
+    """asyncio.sleep dolaylaması — testler beklemeyi buradan sıfırlar."""
+    import asyncio
+
+    await asyncio.sleep(seconds)
+
+
+async def transcribe_audio(audio: bytes, mime_type: str, model: str) -> str:
+    """Ses baytlarını Gemini ile Türkçe metne döker; strip'li metni döndürür.
+
+    Politika ortak katmanla aynıdır: `classify_transient` ile geçici hatalar
+    jitter'lı backoff'la yeniden denenir (her deneme WARNING — İÇERİK loglanmaz),
+    429/503 model-başına devre kesiciyi besler, kesici açıksa çağrı hiç yapılmadan
+    `GeminiCircuitOpenError`. Nihai hata ÇAĞIRANA fırlatılır; tek ERROR'u ve
+    health kaydını çağıran üretir (log sözleşmesi).
+
+    Ses yalnız bellekte tutulur: `Part.from_bytes` inline veri gönderir (Files API'ye
+    yükleme yok, diske yazma yok).
+    """
+    import random
+
+    remaining_open = circuit_open_remaining(model)
+    if remaining_open > 0:
+        raise GeminiCircuitOpenError(model, remaining_open)
+
+    client = get_client()
+    if client is None:
+        raise GeminiUnavailableError("GEMINI_API_KEY bulunamadı")
+
+    log = logging.getLogger(__name__)
+    contents = [
+        TRANSCRIBE_PROMPT,
+        genai_types.Part.from_bytes(data=audio, mime_type=mime_type),
+    ]
+    config = genai_types.GenerateContentConfig(temperature=0.0)
+    deadline = _monotonic() + TRANSCRIBE_RETRY_DEADLINE_SECONDS
+    attempt = 0
+    while True:
+        try:
+            response = await client.aio.models.generate_content(
+                model=model, contents=contents, config=config
+            )
+        except Exception as e:
+            kind = classify_transient(e)
+            if kind is None:
+                raise
+            api_code = e.code if isinstance(e, genai_errors.APIError) else None
+            if api_code in SATURATION_API_CODES:
+                circuit_record_failure(model)
+            if attempt >= TRANSCRIBE_MAX_RETRIES:
+                raise
+            base = 5.0 if kind == "429" else 1.0
+            wait_sec = min(base * (2 ** attempt) + random.uniform(0, base), 10.0)
+            if _monotonic() + wait_sec > deadline:
+                raise
+            label = str(api_code) if api_code is not None else f"ağ/{e.__class__.__name__}"
+            log.warning(
+                f"⏳ Transkripsiyon: Gemini geçici hata ({label}) — {wait_sec:.1f}s sonra "
+                f"tekrar denenecek (Deneme {attempt + 1}/{TRANSCRIBE_MAX_RETRIES})"
+            )
+            attempt += 1
+            await _transcribe_sleep(wait_sec)
+            continue
+        circuit_record_success(model)
+        return (response.text or "").strip()

@@ -499,7 +499,7 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 # --- ROUTES ---
-from routes import admin, config, clients, cases, case_notes, debug, documents, processing, activity, export, parties, case_intake, client_errors, notifications, reports
+from routes import admin, config, clients, cases, case_notes, debug, documents, processing, activity, export, parties, case_intake, client_errors, notifications, reports, transcribe
 
 app.include_router(config.router)
 # Frontend hata beacon'ı — bilinçli auth'suz (auth kırıkken de rapor gelsin);
@@ -524,6 +524,9 @@ app.include_router(notifications.router)
 # Raporlama (G130): kayıt defteri + önizleme; yalnız yönetici (require_admin), `/api`
 # altında. Serbest SQL yok — istemci registry anahtarları gönderir (plan K1).
 app.include_router(reports.router)
+# Sesli giriş (G216): `POST /api/transcribe` — ses bellekte Gemini'ye, metin döner;
+# oturumlu, `/api` altında (nginx istisnası gerekmez). Ses Hukukbot'a GİTMEZ.
+app.include_router(transcribe.router)
 # Hukukbot export API'si: Azure AD auth'un DIŞINDA, X-API-Key ile korunur.
 # Host nginx'e bağlanmaz — yalnızca iç Docker network'ünden erişilir (BULGULAR #5).
 app.include_router(export.router)
