@@ -236,6 +236,27 @@ export async function indir(filename: string): Promise<void> {
   }
 }
 
+/**
+ * HukuDok'tan aktarılmış kaynağı HukuDok'un KENDİ ucundan açar: `GET /api/documents/{id}/download?inline=true`
+ * (SharePoint arşivinden HukuDok'un uygulama yetkisiyle; kullanıcının SharePoint üyeliği gerekmez — iki büro
+ * için de çalışır). Hukukbot'a DEĞİL HukuDok backend'ine gider (önek yok).
+ *
+ * `sekme`: tıklama anında (ilk `await`'ten ÖNCE) `window.open("", "_blank")` ile açılmış boş sekme — sonradan
+ * açılan sekmeyi pop-up engelleyicisi keser. `noopener` KULLANILMAZ: blob URL'i opener bağlamında üretilir
+ * (CaseDetails "Görüntüle" ile aynı desen). Sekme yoksa (engellendiyse) yeni pencere denenir.
+ */
+export async function hukudokBelgesiniAc(belgeId: number, sekme: Window | null): Promise<void> {
+  const res = await apiClient.fetch(`/api/documents/${encodeURIComponent(String(belgeId))}/download?inline=true`);
+  if (!res.ok) {
+    throw new HukukbotApiError(res.status, await detayOku(res, `Belge HukuDok arşivinden açılamadı (HTTP ${res.status}).`));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  if (sekme) sekme.location.href = url;
+  else window.open(url, "_blank");
+  // Sekme blob'u okuyabilsin diye URL biraz sonra bırakılır.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /** Sayfanın tek giriş noktası (G205): `hukukbotApi.ask(...)` vb. */
 export const hukukbotApi = {
   oturumlariListele,
@@ -245,4 +266,5 @@ export const hukukbotApi = {
   oturumSil,
   ask,
   indir,
+  hukudokBelgesiniAc,
 };

@@ -36,6 +36,7 @@ const apiMock = vi.hoisted(() => ({
   oturumSil: vi.fn(),
   ask: vi.fn(),
   indir: vi.fn(),
+  hukudokBelgesiniAc: vi.fn(),
 }));
 vi.mock("@/lib/hukukbotApi", async (importOriginal) => {
   const gercek = await importOriginal<typeof import("@/lib/hukukbotApi")>();
@@ -43,7 +44,7 @@ vi.mock("@/lib/hukukbotApi", async (importOriginal) => {
 });
 
 import HukukbotPage from "./HukukbotPage";
-import { HUKUKBOT_HIZ_MESAJI, HukukbotHizSiniriError } from "@/lib/hukukbotApi";
+import { HUKUKBOT_HIZ_MESAJI, HukukbotApiError, HukukbotHizSiniriError } from "@/lib/hukukbotApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -442,5 +443,52 @@ describe("HukukbotPage — soru gönderme ve akış", () => {
     await tikla(dugme("PDF'i aç: Karar"));
     expect(apiMock.indir).toHaveBeenCalledWith("karar.pdf");
     expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining(HUKUKBOT_HIZ_MESAJI));
+  });
+
+  const hukudokKaynakliOturum = (kaynak: Record<string, unknown>) =>
+    ({
+      id: "o-hd",
+      title: "Tebligat",
+      created_at: "2026-09-26T10:00:00Z",
+      is_pinned: false,
+      messages: [
+        { role: "user", content: "s" },
+        { role: "model", content: "c", sources: [{ file_display_name: "Tebligat", filename: "t.pdf", text_preview: "", ...kaynak }] },
+      ],
+    }) as HukukbotOturum;
+
+  it("HukuDok'tan aktarılmış kaynak HukuDok arşivinden açılır: sekme tıklamada açılır, Hukukbot /download'a gidilmez", async () => {
+    const sekme = { close: vi.fn(), location: { href: "" } } as unknown as Window;
+    const ac = vi.spyOn(window, "open").mockReturnValue(sekme);
+    apiMock.hukudokBelgesiniAc.mockResolvedValueOnce(undefined);
+    apiMock.oturumGetir.mockResolvedValue(hukudokKaynakliOturum({ hukdok_id: 14743 }));
+    await ciz("/hukukbot?s=o-hd");
+    await tikla(dugme("PDF'i aç: Tebligat"));
+    expect(ac).toHaveBeenCalledWith("", "_blank");
+    expect(apiMock.hukudokBelgesiniAc).toHaveBeenCalledWith(14743, sekme);
+    expect(apiMock.indir).not.toHaveBeenCalled();
+    ac.mockRestore();
+  });
+
+  it("alan eklenmeden önceki mesaj: metadata.hukdok_id'den açılır", async () => {
+    const ac = vi.spyOn(window, "open").mockReturnValue(null);
+    apiMock.hukudokBelgesiniAc.mockResolvedValueOnce(undefined);
+    apiMock.oturumGetir.mockResolvedValue(hukudokKaynakliOturum({ metadata: { hukdok_id: "501" } }));
+    await ciz("/hukukbot?s=o-hd");
+    await tikla(dugme("PDF'i aç: Tebligat"));
+    expect(apiMock.hukudokBelgesiniAc).toHaveBeenCalledWith(501, null);
+    ac.mockRestore();
+  });
+
+  it("HukuDok açma hatasında boş sekme kapanır, Türkçe toast", async () => {
+    const sekme = { close: vi.fn(), location: { href: "" } } as unknown as Window;
+    const ac = vi.spyOn(window, "open").mockReturnValue(sekme);
+    apiMock.hukudokBelgesiniAc.mockRejectedValueOnce(new HukukbotApiError(404, "Belge bulunamadı"));
+    apiMock.oturumGetir.mockResolvedValue(hukudokKaynakliOturum({ hukdok_id: 9 }));
+    await ciz("/hukukbot?s=o-hd");
+    await tikla(dugme("PDF'i aç: Tebligat"));
+    expect(sekme.close).toHaveBeenCalled();
+    expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining("HukuDok arşivinden açılamadı"));
+    ac.mockRestore();
   });
 });

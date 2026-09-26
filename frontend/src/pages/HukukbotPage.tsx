@@ -11,6 +11,7 @@ import { MesajBalonu } from "@/components/hukukbot/MesajBalonu";
 import { SoruKutusu } from "@/components/hukukbot/SoruKutusu";
 import {
   AKIS_HATA_MESAJI,
+  HUKUDOK_BELGE_ACILAMADI,
   OTURUM_BULUNAMADI,
   YENI_SOHBET_BASLIGI,
   baslikUret,
@@ -18,6 +19,7 @@ import {
   gecmisUret,
   hataMetni,
   iptalMi,
+  kaynakHukdokId,
   mesajAnahtari,
   oturumlariSirala,
   type EkranMesaji,
@@ -267,6 +269,24 @@ export default function HukukbotPage() {
   };
 
   const indir = async (kaynak: HukukbotKaynak) => {
+    // HukuDok'tan aktarılmış belge → HukuDok'un kendi ucundan (SharePoint arşivi), yeni sekmede okunur.
+    // Sekme ilk await'ten ÖNCE açılır; sonradan açılanı pop-up engelleyicisi keser.
+    const belgeId = kaynakHukdokId(kaynak);
+    if (belgeId !== null) {
+      const sekme = window.open("", "_blank");
+      setInen(kaynak.filename);
+      try {
+        await hukukbotApi.hukudokBelgesiniAc(belgeId, sekme);
+      } catch (e) {
+        sekme?.close();
+        const ek = e instanceof HukukbotApiError && e.status === 404 ? " Belge silinmiş ya da erişiminiz yok." : "";
+        toast.error(`${HUKUDOK_BELGE_ACILAMADI}${ek}`);
+      } finally {
+        setInen(null);
+      }
+      return;
+    }
+    // İlk kurulumdan kalan belge (HukuDok kaydı yok) → Hukukbot'un yerel PDF klasörü.
     setInen(kaynak.filename);
     try {
       await hukukbotApi.indir(kaynak.filename);

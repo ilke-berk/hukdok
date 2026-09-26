@@ -84,6 +84,22 @@ export function iptalMi(hata: unknown): boolean {
   );
 }
 
+/**
+ * Kaynağın HukuDok belge numarası: önce hukbot'un `hukdok_id` alanı, yoksa `metadata.hukdok_id` (alan eklenmeden
+ * ÖNCE kaydedilmiş mesajlar için — ingest metadata'sında zaten vardı). Store sayıyı dize/float döndürebilir.
+ * Geçerli pozitif tamsayı değilse null → sayfa eski `/download/{filename}` yolunu kullanır.
+ */
+export function kaynakHukdokId(kaynak: HukukbotKaynak): number | null {
+  for (const aday of [kaynak.hukdok_id, kaynak.metadata?.hukdok_id]) {
+    if (aday === null || aday === undefined || typeof aday === "boolean" || aday === "") continue;
+    const sayi = Number(aday);
+    if (Number.isFinite(sayi) && sayi > 0) return Math.trunc(sayi);
+  }
+  return null;
+}
+
+export const HUKUDOK_BELGE_ACILAMADI = "Belge HukuDok arşivinden açılamadı.";
+
 /** Her istek hatası için kullanıcıya gösterilecek Türkçe metin (429 daima sabit Türkçe metin). */
 export function hataMetni(hata: unknown): string {
   if (hata instanceof HukukbotHizSiniriError) return HUKUKBOT_HIZ_MESAJI;

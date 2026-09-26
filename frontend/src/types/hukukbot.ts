@@ -16,6 +16,12 @@ export interface HukukbotKaynak {
   text_preview: string;
   metadata?: Record<string, unknown> | null;
   download_url?: string;
+  /**
+   * HukuDok belge numarası — belge HukuDok'tan aktarıldıysa dolu (hukbot `rag_core._hukdok_id`).
+   * Doluysa PDF HukuDok'un `/api/documents/{id}/download` ucundan (SharePoint arşivi) açılır;
+   * yoksa eski `/download/{filename}`. Alan eklenmeden önce kaydedilmiş mesajlarda yoktur.
+   */
+  hukdok_id?: number | null;
 }
 
 /** `schemas.MessageBase` — sunucudaki `sources` serbest sözlük listesidir; pratikte `HukukbotKaynak`. */

@@ -25,6 +25,7 @@ import {
   HukukbotHizSiniriError,
   HukukbotYetkiError,
   ask,
+  hukudokBelgesiniAc,
   hukukbotApi,
   indir,
   oturumGetir,
@@ -390,10 +391,68 @@ describe("indir — yetkili PDF indirme", () => {
   });
 });
 
+describe("hukudokBelgesiniAc — HukuDok'tan aktarılmış kaynak", () => {
+  const createUrl = vi.fn(() => "blob:hukudok-belge");
+  const revokeUrl = vi.fn();
+
+  beforeEach(() => {
+    createUrl.mockClear();
+    revokeUrl.mockClear();
+    (URL as unknown as { createObjectURL: unknown }).createObjectURL = createUrl;
+    (URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = revokeUrl;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("HukuDok'un KENDİ ucuna gider (Hukukbot öneki YOK), Bearer'lı; blob önceden açılan sekmeye yazılır", async () => {
+    const blob = new Blob(["%PDF"], { type: "application/pdf" });
+    const fetchMock = stubFetch({ ok: true, status: 200, blob: async () => blob } as unknown as Response);
+    const sekme = { location: { href: "" } } as unknown as Window;
+
+    await hukudokBelgesiniAc(14743, sekme);
+
+    const { url, headers } = cagri(fetchMock);
+    expect(url).toBe("/api/documents/14743/download?inline=true");
+    expect(url.startsWith(HUKUKBOT_API_ONEKI)).toBe(false);
+    expect(headers.get("Authorization")).toBe("Bearer test-token");
+    expect(createUrl).toHaveBeenCalledWith(blob);
+    expect(sekme.location.href).toBe("blob:hukudok-belge");
+    expect(revokeUrl).not.toHaveBeenCalled(); // sekme okuyabilsin diye hemen bırakılmaz
+    vi.advanceTimersByTime(60_000);
+    expect(revokeUrl).toHaveBeenCalledWith("blob:hukudok-belge");
+  });
+
+  it("sekme engellendiyse (null) yeni pencere denenir", async () => {
+    stubFetch({ ok: true, status: 200, blob: async () => new Blob(["x"]) } as unknown as Response);
+    const ac = vi.spyOn(window, "open").mockReturnValue(null);
+    await hukudokBelgesiniAc(5, null);
+    expect(ac).toHaveBeenCalledWith("blob:hukudok-belge", "_blank");
+    ac.mockRestore();
+  });
+
+  it("404'te blob oluşmaz, status'lu hata fırlar", async () => {
+    stubFetch(jsonResponse(404, { detail: "Belge bulunamadı" }));
+    await expect(hukudokBelgesiniAc(9, null)).rejects.toMatchObject({ status: 404 });
+    expect(createUrl).not.toHaveBeenCalled();
+  });
+});
+
 describe("hukukbotApi nesnesi", () => {
   it("sayfanın kullandığı tüm uçları tek nesnede toplar", () => {
     expect(Object.keys(hukukbotApi).sort()).toEqual(
-      ["ask", "indir", "oturumGetir", "oturumGuncelle", "oturumOlustur", "oturumSil", "oturumlariListele"].sort(),
+      [
+        "ask",
+        "hukudokBelgesiniAc",
+        "indir",
+        "oturumGetir",
+        "oturumGuncelle",
+        "oturumOlustur",
+        "oturumSil",
+        "oturumlariListele",
+      ].sort(),
     );
   });
 });

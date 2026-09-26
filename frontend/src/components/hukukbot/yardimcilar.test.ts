@@ -23,9 +23,30 @@ import {
   gecmisUret,
   hataMetni,
   iptalMi,
+  kaynakHukdokId,
   oturumlariSirala,
   type EkranMesaji,
 } from "./yardimcilar";
+
+describe("kaynakHukdokId", () => {
+  const k = (hukdok_id?: unknown, metadata?: Record<string, unknown> | null) =>
+    ({ file_display_name: "x", filename: "x.pdf", text_preview: "", hukdok_id, metadata }) as never;
+  it("hukbot alanı öncelikli; eski mesajda metadata.hukdok_id'ye düşer; store dize/float verebilir", () => {
+    expect(kaynakHukdokId(k(14743))).toBe(14743);
+    expect(kaynakHukdokId(k(null, { hukdok_id: "501" }))).toBe(501);
+    expect(kaynakHukdokId(k(undefined, { hukdok_id: 7.0 }))).toBe(7);
+    expect(kaynakHukdokId(k(3, { hukdok_id: 9 }))).toBe(3);
+  });
+  it("geçersizse null → eski /download yolu", () => {
+    expect(kaynakHukdokId(k())).toBeNull();
+    expect(kaynakHukdokId(k(null, null))).toBeNull();
+    expect(kaynakHukdokId(k(0))).toBeNull();
+    expect(kaynakHukdokId(k(-2))).toBeNull();
+    expect(kaynakHukdokId(k("abc"))).toBeNull();
+    expect(kaynakHukdokId(k(""))).toBeNull();
+    expect(kaynakHukdokId(k(true))).toBeNull();
+  });
+});
 
 const oturum = (id: string, created_at: string, is_pinned = false): HukukbotOturumOzeti => ({
   id,
