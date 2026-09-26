@@ -62,7 +62,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
 - [ ] G220 | bant:backend | bagimli:G219 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu) + kartta düzenlenebilir dropdown + aktarım/SOZLESME | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
 - [ ] G221 | bant:backend | bagimli:G213,G220 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
-- [ ] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
+- [x] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
 - [ ] G223 | bant:frontend | bagimli:- | Ofis no B1: NewCase/Intake kategori KODU geçince `X1`'e düşüyor + sigorta kodu tr-TR büyük harf yüzünden `S0` (G218 bulgusu); mevcut numaralar değişmez
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
