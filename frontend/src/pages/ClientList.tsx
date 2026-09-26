@@ -542,7 +542,7 @@ const ClientList = () => {
                 {selectedClient.email && <DetailRow label="E-posta" value={selectedClient.email} icon={Mail} />}
                 {selectedClient.address && <DetailRow label="Adres" value={toTitleCase(selectedClient.address)} icon={MapPin} />}
                 {selectedClient.il && !selectedClient.address && <DetailRow label="İl" value={toTitleCase(selectedClient.il)} icon={MapPin} />}
-                {selectedClient.sektor && <DetailRow label="Sektör" value={selectedClient.sektor} icon={Building2} />}
+                {selectedClient.sektor && <DetailRow label="Çalıştığı Kurum" value={selectedClient.sektor} icon={Building2} />}
               </div>
 
               {/* Vekalet bilgileri */}

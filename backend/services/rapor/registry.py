@@ -911,7 +911,8 @@ _MUVEKKIL_KOLONLARI: list[Kolon] = [
         _kolon(_M, "category", "Kategori", secenek_tablosu=models.ClientCategory, liste=MUVEKKIL_KATEGORILERI),
         _kolon(_M, "specialty", "Uzmanlık", veriden_liste=True),
         # Sektör 597 farklı yazım (07.09 ölçümü) — gerçek serbest metin, yalnız öneri (G137)
-        _kolon(_M, "sektor", "Sektör", onerili=True),
+        # G211: ekrandaki ad "Çalıştığı Kurum"; anahtar `sektor` KALIR (şablonlar anahtarla tutulur)
+        _kolon(_M, "sektor", "Çalıştığı Kurum", onerili=True),
     ),
     *_grup(
         "Sistem",

@@ -623,7 +623,7 @@ const NewClient = () => {
                                     <div className="space-y-2">
                                         <Label className="flex items-center gap-2">
                                             <Tag className="w-4 h-4 text-muted-foreground" />
-                                            Sektör / Kurum
+                                            Çalıştığı Kurum
                                         </Label>
                                         <Input
                                             placeholder="Ör: Mersin Özel Ortadoğu Hastanesi"
