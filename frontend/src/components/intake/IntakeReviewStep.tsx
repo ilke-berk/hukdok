@@ -619,7 +619,6 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
     return sections;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const lawyerNames = lawyers.map(l => l.name);
 
   // Priors: ilk cari-eşleşmeli müvekkilin geçmiş dava alışkanlıkları — düşük
   // güvenli ön-dolgu ÖNERİSİ olarak rozet gösterilir, otomatik uygulanmaz.
@@ -778,8 +777,22 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                               : def.key === "sub_type" || def.key === "sub_type_extra" ? specialtyOptions
                                 : def.key === "subject" ? subjectOptions
                                   : def.key === "bureau_type" ? bureauTypeOptions
-                                    : def.key === "responsible_lawyer_name" || def.key === "uyap_lawyer_name" ? lawyerNames
-                                      : undefined
+                                    : undefined
+                        }
+                        renderEditor={
+                          // G213: avukat alanları yazarak aranan tekli combobox (değer = avukat adı)
+                          def.key === "responsible_lawyer_name" || def.key === "uyap_lawyer_name"
+                            ? inputId => (
+                              <LawyerCombobox
+                                mode="single"
+                                id={inputId}
+                                lawyers={lawyers}
+                                value={fieldStates[def.key]?.value ?? ""}
+                                onChange={value => setFieldValue(def.key, value)}
+                                placeholder="Seçiniz..."
+                              />
+                            )
+                            : undefined
                         }
                         prior={def.priorsKey ? clientPriors?.[def.priorsKey] : undefined}
                         onChange={value => setFieldValue(def.key, value)}
