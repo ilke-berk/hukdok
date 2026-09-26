@@ -525,12 +525,15 @@ def get_case(case_id: int, tenant_id: str = None):
         db.close()
 
 
-_YARGITAY_ASAMALARI = ("TEMYIZ", "KARAR_DUZELTME")
+_TEMYIZ_ASAMALARI = ("TEMYIZ", "KARAR_DUZELTME")
 _ISTINAF_ASAMALARI = ("ISTINAF",)
+#: Temyiz mercii dosya türünden: İdare → Danıştay, kalanı (Hukuk/Ceza/boş) → Yargıtay.
+#: Karar satırındaki `mahkeme` adı ~%20 boş; dosya türü her kartta dolu.
+_DANISTAY_DOSYA_TURU = "İdare"
 #: Liste durum filtresinin sanal değerleri (26.09.2026): DURUM değil, derdest
 #: dosyanın ulaştığı EN İLERİ kanun yolu — avukat paneli sayacıyla aynı tanım.
-#: YARGITAY = TEMYIZ ∪ KARAR_DUZELTME (ayrık alt kırılım; karar düzeltme temyizi ezer).
-DERDEST_ASAMA_FILTRELERI = ("ISTINAF", "YARGITAY", "TEMYIZ", "KARAR_DUZELTME")
+#: TEMYIZ = temyiz ∪ karar düzeltme; TEMYIZ_YARGITAY + TEMYIZ_DANISTAY = TEMYIZ.
+DERDEST_ASAMA_FILTRELERI = ("ISTINAF", "TEMYIZ", "TEMYIZ_YARGITAY", "TEMYIZ_DANISTAY")
 
 
 def _asamada(asamalar):
@@ -546,25 +549,28 @@ def _asamada(asamalar):
 
 
 def derdest_asama_kosullari(asama: str) -> tuple:
-    """Derdest + en ileri kanun yolu `asama` (ISTINAF | YARGITAY | TEMYIZ |
-    KARAR_DUZELTME) koşulları. Bir dosya yalnız bir kutuya düşer: Yargıtay
-    (temyiz/karar düzeltme) istinafı, karar düzeltme temyizi ezer."""
-    yargitay = _asamada(_YARGITAY_ASAMALARI)
-    if asama == "YARGITAY":
-        return (models.Case.status == "DERDEST", yargitay)
-    karar_duzeltme = _asamada(("KARAR_DUZELTME",))
-    if asama == "KARAR_DUZELTME":
-        return (models.Case.status == "DERDEST", karar_duzeltme)
+    """Derdest + en ileri kanun yolu `asama` (DERDEST_ASAMA_FILTRELERI) koşulları.
+    Bir dosya yalnız bir kutuya düşer: temyiz (karar düzeltme dahil) istinafı ezer;
+    temyiz, dosya türüne göre Yargıtay / Danıştay diye ayrık bölünür."""
+    from sqlalchemy import func
+
+    derdest = models.Case.status == "DERDEST"
+    temyiz = _asamada(_TEMYIZ_ASAMALARI)
+    danistay = func.coalesce(models.Case.file_type, "") == _DANISTAY_DOSYA_TURU
     if asama == "TEMYIZ":
-        return (models.Case.status == "DERDEST", ~karar_duzeltme, _asamada(("TEMYIZ",)))
+        return (derdest, temyiz)
+    if asama == "TEMYIZ_YARGITAY":
+        return (derdest, temyiz, ~danistay)
+    if asama == "TEMYIZ_DANISTAY":
+        return (derdest, temyiz, danistay)
     if asama == "ISTINAF":
-        return (models.Case.status == "DERDEST", ~yargitay, _asamada(_ISTINAF_ASAMALARI))
+        return (derdest, ~temyiz, _asamada(_ISTINAF_ASAMALARI))
     raise ValueError(f"tanınmayan aşama filtresi: {asama!r}")
 
 
 def _derdest_en_ileri_asama(db, tenant_id) -> dict:
     """Derdest (aktif) dosyaları en ileri kanun yoluna göre sayar:
-    {"ISTINAF": n, "YARGITAY": m, "TEMYIZ": t, "KARAR_DUZELTME": k}; m = t + k.
+    {"ISTINAF": n, "TEMYIZ": t, "TEMYIZ_YARGITAY": y, "TEMYIZ_DANISTAY": d}; t = y + d.
     Bir dosya aynı düzeyde yalnız bir kutuya düşer."""
     from sqlalchemy import func
 
@@ -611,7 +617,7 @@ def get_case_stats(tenant_id: str = None):
         # Avukat paneli kutuları (26.09.2026 kullanıcı kararı): derdest dosyaların
         # ulaştığı EN İLERİ kanun yolu. `case_stage` kolonu çoğu kartta boş —
         # kaynak aşama kararları tarihçesi (`case_stage_decisions`); kolon da dolu
-        # ise ona da bakılır. Yargıtay (temyiz/karar düzeltme) istinafı ezer.
+        # ise ona da bakılır. Temyiz (karar düzeltme dahil) istinafı ezer.
         stats["derdest_stages"] = _derdest_en_ileri_asama(db, tenant_id)
 
         return stats

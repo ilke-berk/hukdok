@@ -51,7 +51,7 @@ interface CaseStats {
   danis_active?: number;
   statuses?: Record<string, number>;
   // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
-  derdest_stages?: { ISTINAF?: number; YARGITAY?: number };
+  derdest_stages?: { ISTINAF?: number; TEMYIZ?: number };
 }
 
 function formatFull(d: Date): string {
@@ -149,7 +149,7 @@ export default function AvukatDashboard() {
   });
 
   // --- Dosya durumu metrikleri (kullanıcı kararı 26.09.2026) ---
-  // Derdest · İstinafta · Yargıtayda · Arşiv. İstinaf/Yargıtay DURUM değil
+  // Derdest · İstinafta · Temyizde · Arşiv. İstinaf/Temyiz DURUM değil
   // derdest dosyaların ulaştığı en ileri aşamadır (alt küme; arşiv sayılmaz).
   // Danış kutusu kalktı (durum üçlüde duruyor, liste çipinden erişilir).
   const statusCards = useMemo(() => {
@@ -158,7 +158,7 @@ export default function AvukatDashboard() {
     return [
       { key: "DERDEST", label: "Derdest", value: s.DERDEST ?? stats.active, hint: "Aktif dava dosyası", Icon: Gavel },
       { key: "ISTINAF", label: "İstinafta", value: a.ISTINAF ?? 0, hint: "Derdest · istinaf aşamasına ulaşmış", Icon: Scale },
-      { key: "YARGITAY", label: "Yargıtayda", value: a.YARGITAY ?? 0, hint: "Derdest · temyiz / karar düzeltme", Icon: Landmark },
+      { key: "TEMYIZ", label: "Temyizde", value: a.TEMYIZ ?? 0, hint: "Derdest · temyiz / karar düzeltme", Icon: Landmark },
       { key: "MAHZEN", label: "Arşiv", value: s.MAHZEN ?? stats.closed, hint: "Arşivlenen dosya", Icon: Archive },
     ];
   }, [stats]);

@@ -195,14 +195,15 @@ def test_get_case_stats_appeal_asamadan_kapali_mahzen(fabrika):
 def _asama_zemini(fabrika):
     """Derdest/mahzen kartlar + aşama kararları; filtre anahtarı → beklenen id kümesi."""
     d_istinaf = _dava(fabrika, tracking_no="HA.A.1")
-    d_yargitay = _dava(fabrika, tracking_no="HA.A.2")                       # istinaf + temyiz
-    d_kd = _dava(fabrika, tracking_no="HA.A.3")                             # karar düzeltme
+    d_yargitay = _dava(fabrika, tracking_no="HA.A.2", file_type="Hukuk")    # istinaf + temyiz
+    d_kd = _dava(fabrika, tracking_no="HA.A.3", file_type="İdare")          # karar düzeltme → Danıştay
     _istinaf_kolon = _dava(fabrika, tracking_no="HA.A.4", case_stage="ISTINAF")  # yalnız kolon
     _dava(fabrika, tracking_no="HA.A.5")                                    # aşama yok
     m_istinaf = _dava(fabrika, tracking_no="HA.A.6", status="MAHZEN")       # arşiv sayılmaz
     d_yerel = _dava(fabrika, tracking_no="HA.A.7")
-    d_temyiz_kd = _dava(fabrika, tracking_no="HA.A.8")                      # temyiz + karar düzeltme
-    d_temyiz_kolon = _dava(fabrika, tracking_no="HA.A.9", case_stage="TEMYIZ")  # yalnız kolon
+    d_temyiz_kd = _dava(fabrika, tracking_no="HA.A.8")                      # temyiz + KD, tür boş → Yargıtay
+    d_temyiz_kolon = _dava(fabrika, tracking_no="HA.A.9", case_stage="TEMYIZ",
+                           file_type="İdare")                          # yalnız kolon → Danıştay
     db = fabrika()
     try:
         for cid, stage in [(d_istinaf, "YEREL"), (d_istinaf, "ISTINAF"), (d_yargitay, "ISTINAF"),
@@ -213,19 +214,19 @@ def _asama_zemini(fabrika):
         db.commit()
     finally:
         db.close()
-    temyiz = {d_yargitay, d_temyiz_kolon}
-    karar_duzeltme = {d_kd, d_temyiz_kd}
-    return {"ISTINAF": {d_istinaf, _istinaf_kolon}, "YARGITAY": temyiz | karar_duzeltme,
-            "TEMYIZ": temyiz, "KARAR_DUZELTME": karar_duzeltme}
+    yargitay = {d_yargitay, d_temyiz_kd}
+    danistay = {d_kd, d_temyiz_kolon}
+    return {"ISTINAF": {d_istinaf, _istinaf_kolon}, "TEMYIZ": yargitay | danistay,
+            "TEMYIZ_YARGITAY": yargitay, "TEMYIZ_DANISTAY": danistay}
 
 
 def test_get_case_stats_derdest_en_ileri_asama(fabrika):
     """Avukat paneli kutuları: derdest dosyanın en ileri kanun yolu. Kaynak aşama
-    kararları (+ dolu ise case_stage); Yargıtay istinafı, karar düzeltme temyizi
-    ezer; mahzen sayılmaz; Yargıtay = temyiz + karar düzeltme."""
+    kararları (+ dolu ise case_stage); temyiz (karar düzeltme dahil) istinafı ezer;
+    mahzen sayılmaz; temyiz = Yargıtay (dosya türü İdare dışı) + Danıştay (İdare)."""
     _asama_zemini(fabrika)
     assert case_manager.get_case_stats()["derdest_stages"] == {
-        "ISTINAF": 2, "YARGITAY": 4, "TEMYIZ": 2, "KARAR_DUZELTME": 2}
+        "ISTINAF": 2, "TEMYIZ": 4, "TEMYIZ_YARGITAY": 2, "TEMYIZ_DANISTAY": 2}
 
 
 def test_rapor_katalogu_uclu():
@@ -252,10 +253,10 @@ def test_migrasyon_50_uc_sql_idempotent_kosulsuz():
     assert all(d in sqller[0] for d in LEGACY_CASE_STATUS)
 
 
-@pytest.mark.parametrize("asama", ["ISTINAF", "YARGITAY", "TEMYIZ", "KARAR_DUZELTME"])
+@pytest.mark.parametrize("asama", ["ISTINAF", "TEMYIZ", "TEMYIZ_YARGITAY", "TEMYIZ_DANISTAY"])
 def test_liste_sanal_durum_filtresi_sayacla_ayni(fabrika, asama):
-    """Dava listesi durum çipleri (26.09): `status=ISTINAF|YARGITAY|TEMYIZ|KARAR_DUZELTME`
-    sayaçla AYNI kümeyi döndürür."""
+    """Dava listesi durum satırları (26.09): her sanal aşama filtresi sayaçla AYNI
+    kümeyi döndürür."""
     beklenen = _asama_zemini(fabrika)[asama]
     kartlar, toplam = case_manager.get_cases(status=asama, limit=50)
     assert {k["id"] for k in kartlar} == beklenen

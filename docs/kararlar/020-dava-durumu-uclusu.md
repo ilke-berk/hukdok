@@ -34,10 +34,13 @@ bozuyor (derdest 3.067 görünürken 29 derdest dava başka kutuda) hem de tesli
   eski değer oraya taşınır. `get_case_stats.appeal` aşamadan (ISTINAF/TEMYIZ) sayılır.
 - `services/rapor/registry.DAVA_DURUMLARI` üçlü. Frontend: CaseList `STATUS_ORDER`, CaseDetails
   renkleri. Avukat Paneli 26.09.2026'dan beri dört kart (kullanıcı kararı): **Derdest ·
-  İstinafta · Yargıtayda · Arşiv** (Arşiv = MAHZEN; Danış kartı kalktı, durum duruyor).
-  İstinafta/Yargıtayda DURUM değil, derdest dosyanın ulaştığı EN İLERİ aşamadır:
+  İstinafta · Temyizde · Arşiv** (Arşiv = MAHZEN; Danış kartı kalktı, durum duruyor).
+  İstinafta/Temyizde DURUM değil, derdest dosyanın ulaştığı EN İLERİ aşamadır:
   `get_case_stats.derdest_stages` — kaynak `case_stage_decisions` (+ dolu ise `case_stage`,
-  çünkü o kolon kartların çoğunda boş); Yargıtay = TEMYIZ | KARAR_DUZELTME ve istinafı ezer.
+  çünkü o kolon kartların çoğunda boş); Temyiz = TEMYIZ | KARAR_DUZELTME ve istinafı ezer.
+  Temyiz mercii dosya türünden ayrılır (26.09 kullanıcı kararı; "Yargıtayda" etiketi idare
+  davalarını da sayıyordu): İdare → Danıştay, kalanı → Yargıtay. Dava listesi durum filtresi
+  ağaçtır: Derdest → İstinafta / Temyizde → Yargıtay / Danıştay (`DERDEST_ASAMA_FILTRELERI`).
   Bozma sonrası yerele dönüş ayrılmaz (ilk sürüm kararı).
 - **Migrasyon 50** (`database.py`, koşulsuz "index" op'u, idempotent): eski değerli kartlara
   sistem imzalı tarihçe satırı (`migrasyon_50_durum_uclusu`), aşama boşsa eski değer oraya,

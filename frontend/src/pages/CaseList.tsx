@@ -66,13 +66,14 @@ const URGENT_WINDOW_DAYS = 7;
 const STATUS_ORDER = ["DANIŞ", "DERDEST", "MAHZEN"];
 // Sanal durum satırları (26.09.2026): DURUM değil, derdest dosyanın ulaştığı en ileri
 // kanun yolu — avukat paneli kutularıyla aynı tanım; backend `status` filtresi tanır.
-// Ağaç: Derdest → İstinafta / Yargıtayda → Temyiz / K. Düzeltme (Yargıtayda = ikisinin toplamı).
-type DerdestAsamaKey = "ISTINAF" | "YARGITAY" | "TEMYIZ" | "KARAR_DUZELTME";
+// Ağaç: Derdest → İstinafta / Temyizde → Yargıtay / Danıştay (Temyizde = ikisinin toplamı;
+// karar düzeltme temyize dahil, mercii dosya türünden: İdare → Danıştay).
+type DerdestAsamaKey = "ISTINAF" | "TEMYIZ" | "TEMYIZ_YARGITAY" | "TEMYIZ_DANISTAY";
 const DERDEST_ASAMA_AGACI: { key: DerdestAsamaKey; label: string; depth: 1 | 2 }[] = [
   { key: "ISTINAF", label: "İstinafta", depth: 1 },
-  { key: "YARGITAY", label: "Yargıtayda", depth: 1 },
-  { key: "TEMYIZ", label: "Temyiz", depth: 2 },
-  { key: "KARAR_DUZELTME", label: "K. Düzeltme", depth: 2 },
+  { key: "TEMYIZ", label: "Temyizde", depth: 1 },
+  { key: "TEMYIZ_YARGITAY", label: "Yargıtay", depth: 2 },
+  { key: "TEMYIZ_DANISTAY", label: "Danıştay", depth: 2 },
 ];
 
 const STATUS_TONE: Record<string, string> = {

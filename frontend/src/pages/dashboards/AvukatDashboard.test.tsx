@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Avukat paneli dosya durumu kutuları (kullanıcı kararı 26.09.2026):
-// Derdest · İstinafta · Yargıtayda · Arşiv. İstinaf/Yargıtay backend'in
+// Derdest · İstinafta · Temyizde · Arşiv. İstinaf/Temyiz backend'in
 // `derdest_stages` sayacından (derdest dosyanın en ileri aşaması); Danış kutusu yok.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -13,7 +13,7 @@ const casesApi = vi.hoisted(() => ({
   getCaseStats: async () => ({
     total: 14383, active: 3050, closed: 11333, appeal: 26, danis_active: 0,
     statuses: { DERDEST: 3050, MAHZEN: 11333 },
-    derdest_stages: { ISTINAF: 475, YARGITAY: 261 },
+    derdest_stages: { ISTINAF: 475, TEMYIZ: 261 },
   }),
 }));
 vi.mock("@/hooks/useCases", () => ({
@@ -46,7 +46,7 @@ describe("AvukatDashboard — dosya durumu kutuları", () => {
     container.remove();
   });
 
-  it("Derdest · İstinafta · Yargıtayda · Arşiv sırasıyla sayıları basar", async () => {
+  it("Derdest · İstinafta · Temyizde · Arşiv sırasıyla sayıları basar", async () => {
     root = createRoot(container);
     act(() => root!.render(<MemoryRouter><AvukatDashboard /></MemoryRouter>));
     for (let i = 0; i < 50 && !container.textContent?.includes("3050"); i++) {
@@ -59,7 +59,7 @@ describe("AvukatDashboard — dosya durumu kutuları", () => {
     expect(kutular[0]).toContain("3050");
     expect(kutular[1]).toContain("İstinafta");
     expect(kutular[1]).toContain("475");
-    expect(kutular[2]).toContain("Yargıtayda");
+    expect(kutular[2]).toContain("Temyizde");
     expect(kutular[2]).toContain("261");
     expect(kutular[3]).toContain("Arşiv");
     expect(kutular[3]).toContain("11333");
