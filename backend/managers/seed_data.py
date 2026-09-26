@@ -468,7 +468,12 @@ _ISTINAF_KARAR_ADLARI = [
     # mevcut satırların sequence'ini tazelemediği için sıralamayı bozar.
     "Geri Çevirme",
 ]
-_TEMYIZ_KARAR_ADLARI = ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
+_TEMYIZ_KARAR_ADLARI = [
+    "Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma",
+    # Veri ekibinin 23.09 ricası: Danıştay'ın kesin karara karşı ya da usulden kabul
+    # edilemeyen temyizi esasa girmeden reddi (onama DEĞİL). Listenin SONUNA eklenir.
+    "İncelenmeksizin Ret",
+]
 _KARAR_DUZELTME_ADLARI = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
 
 LOCAL_DECISIONS = [(_karar_kodu(ad), ad) for ad in _YEREL_KARAR_ADLARI]

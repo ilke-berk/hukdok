@@ -222,16 +222,19 @@ def test_liste_duzeltmesi(db_env, rapor):  # noqa: F811
     db.close()
 
 
-def test_listedeki_kapali_silinmez(db_env, rapor):  # noqa: F811
-    """Paket kaynaklı 5.854 kart `Kapalı` taşıyor: liste satırı varsa DOKUNULMAZ."""
+def test_listedeki_kapali_silinmez_pasife_cekilir(db_env, rapor):  # noqa: F811
+    """23.09: `Kapalı` son durum değil — satır SİLİNMEZ (eski tarihçe okunur), seçilemez olur."""
     db = db_env()
     _liste(db, "Kapalı")
     db.commit()
     db.close()
     ko.kos(db_env, rapor=rapor([]), apply=True)
     db = db_env()
-    assert "Kapalı" in {s.name for s in db.query(models.FileStatus).all()}
+    satir = db.query(models.FileStatus).filter_by(name="Kapalı").one()
+    assert satir.active is False
     db.close()
+    ikinci = ko.kos(db_env, rapor=rapor([]), apply=True)
+    assert ikinci.sayim("liste", "YAPILDI") == 0
 
 
 def test_liste_dogru_yazim_varsa_eski_satir_silinmez(db_env, rapor):  # noqa: F811
@@ -303,14 +306,14 @@ def test_tek_dava_seviyesi_deger_karti_alir(db_env, rapor):  # noqa: F811
     db = db_env()
     assert db.get(models.Case, kart_id).dosya_son_durumu == "Bilirkişide"
     tarihce = db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").one()
-    assert "seviye kuralı" in tarihce.source and "H-2" in tarihce.source
+    assert "kademe kuralı" in tarihce.source and "H-2" in tarihce.source
     db.close()
 
 
 @pytest.mark.parametrize("satirlar, gerekce", [
-    ([("H-1", "Bilirkişide"), ("H-2", "Temyizde")], "birden çok dava-seviyesi"),          # gerçek çelişki
-    ([("H-1", "Lexis Rapor Gönderildi"), ("H-2", "Kesin Lehe")], "dava-seviyesi değer yok"),  # yalnız föy seviyesi
-    ([("H-1", "Bilirkişide"), ("H-2", "Sulh İle Kapatma")], "sınıflanmamış değer"),        # ekibe soruldu
+    ([("H-1", "Bilirkişide"), ("H-2", "Temyizde")], "aynı kademede"),                     # gerçek çelişki
+    ([("H-1", "Lexis Rapor Gönderildi"), ("H-2", "Dava Açılması Bekleniyor")], "aynı kademede"),  # iki hizmet aşaması
+    ([("H-1", "Bilirkişide"), ("H-2", "Uydurma Değer")], "sınıflanmamış değer"),
 ])
 def test_cozulemeyen_karisimlar_celiski(db_env, rapor, satirlar, gerekce):  # noqa: F811
     kart_id = _celiskili_kart(db_env, "H-1", "H-2", son_durum="Ön İnceleme")
@@ -347,8 +350,16 @@ def test_inceleme_kuyrugundaki_kart_bekler(db_env, rapor, monkeypatch):  # noqa:
     ({"Temyizde": ["H-1"]}, "Temyizde"),
     ({"Temyizde": ["H-1"], "Lexis Rapor Gönderildi": ["H-2"], "Kesin Aleyhe": ["H-3"]}, "Temyizde"),
     ({"Temyizde": ["H-1"], "İstinafta": ["H-2"]}, None),
-    ({"Kesin Lehe": ["H-1"], "Kesin Aleyhe": ["H-2"]}, None),
-    ({"Temyizde": ["H-1"], "İade": ["H-2"]}, None),
+    ({"Temyizde": ["H-1"], "İade": ["H-2"]}, "Temyizde"),                       # 23.09: İade föy seviyesi
+    ({"Lexis Rapor Gönderildi": ["H-1"], "Kesin Lehe": ["H-2"]}, "Kesin Lehe"),  # sonuç hizmete baskın
+    ({"Lexis Rapor Gönderildi": ["H-1"], "İstifa": ["H-2"]}, "İstifa"),          # büro sonu hizmete baskın
+    ({"İstifa": ["H-1"], "Kesin Aleyhe": ["H-2"]}, "Kesin Aleyhe"),              # sonuç büro sonuna baskın
+    ({"Kesin Lehe": ["H-1"], "Kesin Aleyhe": ["H-2"]}, "Kesin Aleyhe"),          # karışık sonuç: en ağırı
+    ({"Kesin Lehe": ["H-1"], "Sulh İle Kapatma": ["H-2"]}, "Sulh İle Kapatma"),
+    ({"Kesin Aleyhe": ["H-1"], "Sulh İle Kapatma": ["H-2"], "Kesin Lehe": ["H-3"]}, "Kesin Aleyhe"),
+    ({"İnfaz": ["H-1"], "Kesin Lehe": ["H-2"]}, None),                            # ağırlık listesi dışı
+    ({"İstifa": ["H-1"], "İade": ["H-2"]}, None),                                 # iki büro sonu
+    ({"Davaya Dönüştü": ["H-1"], "Dava Açılması Bekleniyor": ["H-2"]}, "Davaya Dönüştü"),
 ])
 def test_kart_degeri_kurali(degerler, beklenen):
     assert ko.kart_degeri(degerler)[0] == beklenen
@@ -407,3 +418,106 @@ def test_ozet_metni_celiskiyi_gosterir(db_env, rapor):  # noqa: F811
     sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Temyizde"), ("H-2", "Bilirkişide")]), apply=False)
     metin = ko.ozet_metni(sonuc, apply=False)
     assert "KURU KOŞU" in metin and "CELISKI" in metin
+
+
+def test_oncelik_sozlugu_ekibin_41_degeri():
+    assert len(ko.ONCELIK) == 41 and set(ko.ONCELIK.values()) == {1, 2, 3, 4}
+    assert "Kapalı" not in ko.ONCELIK and set(ko.AGIRLIK) <= set(ko.ONCELIK)
+
+
+# ─── Ekip cevabı 23.09: ek katmanı, Kapalı boşaltma, İnfaz İcradan ────────────
+
+def _ek_yaz(yol, foyler, t3=()):
+    """foyler: (SistemNo, bugünkü değer); t3: (föy listesi, değer, durum)."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "FOYLER"
+    ws.append(["Kart ID", "SistemNo", "Ek-2 Son Durum", "Bugünkü Son Durum", "Değişti", "Seviye", "Durum"])
+    for sistem_no, deger in foyler:
+        ws.append([1, sistem_no, None, deger, None, None, "Aktif"])
+    ws3 = wb.create_sheet("T3_GUNCEL")
+    ws3.append(["Kart ID", "Föyler", "Bugünkü değer", "Durum"])
+    for satir in t3:
+        ws3.append(["1", *satir])
+    wb.save(yol)
+    return yol
+
+
+def test_ek_oku_foyler_ve_kapanan_t3(tmp_path):
+    yol = _ek_yaz(tmp_path / "ek.xlsx", [("H-1", "Kesin Lehe"), ("H-2", "Kapalı")],
+                  t3=[("H-5, H-6", "İstinafta", "KAPANDI — bütün föyler aynı değerde"),
+                      ("H-7, H-8", "Bilirkişide ↔ Temyizde", "AÇIK — hâlâ okumada")])
+    assert ko.ek_oku(yol) == {"H-1": "Kesin Lehe", "H-2": None, "H-5": "İstinafta", "H-6": "İstinafta"}
+
+
+def test_ek_eksik_sayfa_hata(tmp_path):
+    wb = openpyxl.Workbook()
+    wb.active.title = "KARTLAR"
+    wb.save(tmp_path / "ek.xlsx")
+    with pytest.raises(ValueError, match="T3_GUNCEL"):
+        ko.ek_oku(tmp_path / "ek.xlsx")
+
+
+def test_satirlari_birlestir_ek_kazanir_bos_dusurur():
+    birlesik = dict(ko.satirlari_birlestir([("H-1", "Bilirkişide"), ("H-2", "İstinafta"), ("H-3", "Temyizde")],
+                                           {"H-1": "Tanık", "H-2": None, "H-9": "Kesin Lehe"}))
+    assert birlesik["H-1"] == "Tanık" and "H-2" not in birlesik
+    assert birlesik["H-3"] == "Temyizde" and birlesik["H-9"] == "Kesin Lehe"
+
+
+def test_mail_degerleri_yalniz_ek_ile_girer(db_env, rapor, tmp_path):  # noqa: F811
+    db = db_env()
+    kart = _kart(db, "T1", "1.1", dosya_son_durumu="Bilirkişide")
+    _foy(db, kart, "H-16736")
+    db.commit()
+    kart_id = kart.id
+    db.close()
+    assert ko.kos(db_env, rapor=rapor([]), apply=True).sayim("son_durum", "YAPILDI") == 0
+    ko.kos(db_env, rapor=rapor([]), ek=_ek_yaz(tmp_path / "ek.xlsx", []), apply=True)
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Bilirkişi Tazminat Raporu Alındı"     # mail §1 (#5009)
+    db.close()
+
+
+def test_ek_katmani_master_degerini_ezer(db_env, rapor, tmp_path):  # noqa: F811
+    kart_id = _celiskili_kart(db_env, "H-1", "H-2", son_durum="Ön İnceleme")
+    ek = _ek_yaz(tmp_path / "ek.xlsx", [("H-2", "Bilirkişide")])
+    sonuc = ko.kos(db_env, rapor=rapor([("H-1", "Bilirkişide"), ("H-2", "Temyizde")]), ek=ek, apply=True)
+    assert sonuc.sayim("son_durum", "CELISKI") == 0
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "Bilirkişide"
+    tarihce = db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").one()
+    assert "ekip cevabı 23.09" in tarihce.source
+    db.close()
+
+
+def test_kapali_kartlar_bosaltilir(db_env, rapor):  # noqa: F811
+    db = db_env()
+    _liste(db, "Kapalı")
+    foysuz = _kart(db, "T1", "1.1", dosya_son_durumu="Kapalı")
+    diger = _kart(db, "T2", "1.2", dosya_son_durumu="Kesin Lehe")
+    db.commit()
+    foysuz_id, diger_id = foysuz.id, diger.id
+    db.close()
+
+    sonuc = ko.kos(db_env, rapor=rapor([]), apply=True, kim="test")
+    assert sonuc.sayim("kart_bosalt", "YAPILDI") == 1
+    db = db_env()
+    assert db.get(models.Case, foysuz_id).dosya_son_durumu is None
+    assert db.get(models.Case, diger_id).dosya_son_durumu == "Kesin Lehe"
+    tarihce = db.query(models.CaseHistory).filter_by(field_name="dosya_son_durumu").one()
+    assert (tarihce.old_value, tarihce.new_value) == ("Kapalı", None) and "§5" in tarihce.source
+    db.close()
+    assert ko.kos(db_env, rapor=rapor([]), apply=True).sayim("kart_bosalt", "YAPILDI") == 0
+
+
+def test_infaz_icradan_duz_infaz_olur(db_env, rapor):  # noqa: F811
+    db = db_env()
+    kart = _kart(db, "T1", "1.1", dosya_son_durumu="İnfaz İcradan")
+    db.commit()
+    kart_id = kart.id
+    db.close()
+    ko.kos(db_env, rapor=rapor([]), apply=True)
+    db = db_env()
+    assert db.get(models.Case, kart_id).dosya_son_durumu == "İnfaz"
+    db.close()

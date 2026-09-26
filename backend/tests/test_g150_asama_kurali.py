@@ -464,3 +464,29 @@ def test_silme_yolu_eklenmedi():
     govde = aktarim.read_text(encoding="utf-8")
     assert "delete_stage_decision" not in govde
     assert not re.search(r"CaseStageDecision\)[^\n]*\.delete\(", govde)
+
+
+def test_eski_tur_ust_merci_hanesi_bos_gelirse_dokunulmaz(zemin, tmp_path):
+    """Ekip 23.09 Ek-2 (eski tur haneleri): dosya satırının istinaf/temyiz alanları artık
+    yalnız GÜNCEL turu taşır — önceki turun kararı sonraki pakette gelmez. Gelmeyen aşama
+    silme/boşaltma DEĞİLDİR: mevcut ISTINAF satırı ve kart fotoğrafı yerinde kalır, rapora
+    "geri dönüş" diye düşmez (fotoğrafın yalnız güncel turu göstermesi ayrı tasarım işi)."""
+    ilk = _asama_paketi_yaz(
+        tmp_path / "ilk.xlsx", [_satir("H-1", "D-1")],
+        [_yerel("H-1"),
+         {"SistemNo": "H-1", "AsamaNo": 2, "Aşama": "İstinaf", "Mahkeme": "İstanbul BAM 3. HD",
+          "Esas No": "2021/900", "Karar No": "2022/50", "Karar Tarihi": "10.03.2022",
+          "Karar Durumu": "Kaldırma", "Güven": "KESİN"}],
+    )
+    aktarimi_kos(zemin, girdi=ilk, rapor_dizini=tmp_path / "r1")
+    assert _kart(zemin).istinaf_esas_no == "2021/900"
+
+    sonraki = _asama_paketi_yaz(tmp_path / "sonraki.xlsx", [_satir("H-1", "D-1")], [_yerel("H-1")])
+    sonuc = aktarimi_kos(zemin, girdi=sonraki, rapor_dizini=tmp_path / "r2")
+
+    assert sonuc.cikis_kodu == CIKIS_TAMAM
+    assert [c for c in sonuc.celiskiler if c.alan.startswith("asama:")] == []
+    satirlar = _satirlar(zemin)
+    assert satirlar[("ISTINAF", 1)].esas_no == "2021/900"
+    kart = _kart(zemin)
+    assert (kart.istinaf_esas_no, kart.istinaf_karar_no) == ("2021/900", "2022/50")

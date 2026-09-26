@@ -18,11 +18,13 @@ Adımlar (hepsi tek transaction; `--apply` yoksa sonunda geri alınır, rapor yi
    41 değerlik başlık listesiyle hizalanır — `İstinafda` → `İstinafta` (20.09'daki ters
    yönlü düzeltme GERİ ALINIR: ekip "İstinafda" yazımının kendi hatası olduğunu 22.09'da
    bildirdi, Türkçe ünsüz sertleşmesi; bizde 547 föy düzeltildi), eksik `Soruşturma`,
-   `Derdest` ve `İnfaz` eklenir (icra/savcılık sözlüğü). `Kapalı` listeden ÇIKARILMAZ
-   (paket kaynaklı 5.854 kart taşıyor) ama artık EKLENMEZ de — bkz. yer tutucu.
+   `Derdest` ve `İnfaz` eklenir (icra/savcılık sözlüğü). `Kapalı` listeden SİLİNMEZ,
+   23.09'dan itibaren PASİFE çekilir (seçilemez; eski kayıt bozulmaz).
 2. **Kart yazım birliği:** `Bekletici Mesele/ceza-hukuk Dosyası` → listedeki tek yazım;
-   `İstinafda` → `İstinafta` (20.09 koşusunun 114 kartı + paketin 382 kartı, tarihçeli).
-3. **Son durum tazeleme:** rapordaki föy satırı kartına çözülür, değer normalize edilir
+   `İstinafda` → `İstinafta` (20.09 koşusunun 114 kartı + paketin 382 kartı, tarihçeli);
+   `İnfaz İcradan` → `İnfaz` (23.09, 112 föysüz kart).
+3. **Kapalı boşaltma:** kartlardaki `Kapalı` → boş (tarihçeli) — aşağıda.
+4. **Son durum tazeleme:** rapordaki föy satırı kartına çözülür, değer normalize edilir
    ve kartın alanı farklıysa tarihçeli yazılır.
 
 Rapordaki yazım kusurları (17.09.2026 çıktısında ölçüldü, 20.09 çıktısında sıfırlandı):
@@ -34,29 +36,40 @@ Rapordaki yazım kusurları (17.09.2026 çıktısında ölçüldü, 20.09 çıkt
   havuzundan son durum hanesine SIZMIŞ bir değerdir, temizlik kuyruklarında; biz de
   yazmayız (yer tutucu sayılır). Kartta zaten duran `Kapalı` boşaltılmaz.
 
-**Föy seviyesi kuralı (ekip, 22.09.2026):** `Son Durum` föyün kendi iş akışını gösterir.
-Yargı aşaması değerleri (İstinafta, Temyizde, Bilirkişide, Bozma Sonrası Yargılama, …)
-DAVA seviyesidir ve aynı davanın föylerinde aynı olmalıdır; hizmet aşaması (Lexis Rapor
-Gönderildi/Hazırlanıyor, Dava Açılması Bekleniyor) ve taraf sonucu (Kesin Lehe/Aleyhe,
-Kapalı, İstifa) FÖY seviyesidir — sigorta föyü rapor gönderilince durur, hekim föyü
-davayı izlemeye devam eder. Kartın son durumu = dava seviyesindeki föyün değeri.
-Bir kartın föyleri farklı değer söylüyorsa (`SEVIYE_DAVA`/`SEVIYE_FOY`):
+**Kart değeri kuralı (ekip, 22.09 + 23.09):** `Son Durum` föyün kendi iş akışını
+gösterir; bir kartın föyleri farklı değer söylüyorsa kartın değeri öncelik sırasıyla
+seçilir (`ONCELIK`, ekibin 23.09 Ek-1 › SEVIYE_SOZLUGU'ndaki 41 değer birebir):
 
-* tam BİR dava-seviyesi değer var ve kalanların hepsi föy-seviyesi → kart o değeri alır;
-* birden çok dava-seviyesi değer, hiç dava-seviyesi değer yok (yalnız hizmet/taraf
-  sonucu) ya da sınıflanmamış bir değer var → `CELISKI`, karta DOKUNULMAZ. Sınıflama
-  ekibin 22.09 cevabı Ek-1'deki 18 değer + mailde sayılan üç gruptur; 41 değerin
-  kalanının seviyesi ekibe soruldu, gelince sözlük genişler.
+1. **yargı aşaması** (dava seviyesi: İstinafta, Bilirkişide, Bozma Sonrası Yargılama, …);
+2. **dava sonucu** (taraf yönünden: Kesin Lehe/Aleyhe, Sulh İle Kapatma, İnfaz, …);
+3. **büro ilişkisinin sonu** (İstifa, Azil, Müvekkil Vefatı, Kapama Müvekkil Talimatıyla, İade);
+4. **hizmet aşaması** (Lexis Rapor Gönderildi/Hazırlanıyor, Dava Açılması Bekleniyor).
 
-Ekibin "okuma kuyruğunda" dediği kartlar (`INCELEME_KUYRUGU_FOYLERI`, Ek-1 T3 — 17 kart,
-41 föy; "kartı şimdilik değiştirmeyin, düzeltince bildireceğiz") föy anahtarıyla tanınır
-(kart id'si prod ile lokalde farklı olabilir) ve `BEKLIYOR` ile atlanır; ekip
-bildirince küme boşaltılır.
+En güçlü kademede tek değer varsa kart onu alır. 2. kademede birden çok sonuç "karışık
+sonuç"tur (müvekkil başına farklı): hepsi `AGIRLIK` içindeyse EN AĞIRI alınır (Kesin Aleyhe
+> Sulh İle Kapatma > Kesin Lehe — aleyhe kesinleşmiş dava listede gözden kaçmasın), föyler
+kendi değerini korur. Aynı kademede başka her çoklu değer (iki yargı aşaması = gerçek
+çelişki; iki büro sonu/hizmet aşaması; ağırlık listesi dışı sonuç) ve sözlükte olmayan
+değer `CELISKI` döner, karta DOKUNULMAZ.
+
+**Ek katmanı (`--ek`, 23.09):** ekibin çelişki cevabı (Ek-1) master raporundan YENİDİR:
+FOYLER › "Bugünkü Son Durum" ve T3_GUNCEL'in "KAPANDI" satırları (föy listesi → değer)
+master'ın üzerine yazar; ekte boş/yer tutucu gelen föy master değerini de düşürür. Mailde
+yazılı olup ekte olmayan föy değerleri `MAIL_FOY_DEGERLERI`'ndedir.
+
+**`Kapalı` (23.09):** ekip "son durum olarak kullanılmaz, boş sayın" dedi; kartlardaki
+`Kapalı` (27.04 ilk içe aktarımından, tarihçesiz ~5.800 kart) tarihçeli BOŞALTILIR ve
+panel listesinde pasife çekilir (`LISTE_PASIF`). `İnfaz İcradan` → `İnfaz` (ekip izni).
+
+Ekibin "okuma kuyruğunda" dediği kartlar (`INCELEME_KUYRUGU_FOYLERI`; 23.09'da 16 kartın
+15'i kapandı, açık tek kart H-7059/H-7060) föy anahtarıyla tanınır (kart id'si prod ile
+lokalde farklı olabilir) ve `BEKLIYOR` ile atlanır; ekip bildirince küme boşaltılır.
 
     docker compose exec -T backend python scripts/kolayofis_son_durum.py \\
-        --rapor /tmp/ek/MASTER_DOSYA_DURUM_RAPORU_2026-09-20.xlsx            # kuru koşu
+        --rapor /tmp/ek/MASTER_DOSYA_DURUM_RAPORU_2026-09-20.xlsx \\
+        --ek /tmp/ek/HUKDOK_CELISKI_CEVABI_2026-09-23.xlsx                   # kuru koşu
     docker compose exec -T backend python scripts/kolayofis_son_durum.py \\
-        --rapor … --apply --kim ilke                                        # yazar
+        --rapor … --ek … --apply --kim ilke                                 # yazar
 
 İkinci koşu 0 değişiklik: eşit alan `ATLANDI` döner, liste düzeltmesi idempotenttir.
 """
@@ -68,7 +81,7 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -102,41 +115,62 @@ YER_TUTUCU_SON_DURUM = frozenset({"lütfen seçiniz", "lutfen seciniz", "seçini
 # Adım 1 — panel listesi (`file_statuses`) düzeltmeleri (ekibin 22.09 listesi, 41 değer).
 LISTE_YAZIM: Tuple[Tuple[str, str], ...] = (("İstinafda", "İstinafta"),)
 LISTE_EKLE: Tuple[str, ...] = ("Soruşturma", "Derdest", "İnfaz")
+# 23.09: son durum değil (ekip §5) — satır silinmez (eski tarihçe okunur kalır), seçilemez.
+LISTE_PASIF: Tuple[str, ...] = ("Kapalı",)
 
 # Adım 2 — kartlardaki tek seferlik yazım birliği (eski aktarımların bıraktığı hâl).
 KART_YAZIM: Tuple[Tuple[str, str], ...] = (
     ("Bekletici Mesele/ceza-hukuk Dosyası", "Bekletici Mesele/Ceza-Hukuk Dosyası"),
     ("İstinafda", "İstinafta"),
+    ("İnfaz İcradan", "İnfaz"),                     # ekip 23.09 §4: düz İnfaz'a çevrilebilir
 )
 
-# Föy seviyesi kuralı (ekip 22.09, Ek-1 "Alanın seviyesi" sütunu + mail): dava seviyesi
-# (yargı aşaması) ↔ föy seviyesi (hizmet aşaması + taraf sonucu). Listede olmayan değer
-# SINIFLANMAMIŞTIR — ekibe soruldu; sınıflanmamış değerle karışan kart çelişkide kalır.
-SEVIYE_DAVA = frozenset({
-    "Bekletici Mesele/Ceza-Hukuk Dosyası", "Bilirkişi Kusur Raporu Alındı",
-    "Bilirkişi Maluliyet Raporu Alındı", "Bilirkişi Tazminat Raporu Alındı", "Bilirkişide",
-    "Bozma Sonrası Yargılama", "Deliller Toplanıyor", "Karar Düzeltmede",
-    "Karar Kesinleşmesi Bekleniyor", "Tanık", "Temyizde", "Ön İnceleme", "İstinafta",
-})
-SEVIYE_FOY = frozenset({
-    "Lexis Rapor Gönderildi", "Lexis Rapor Hazırlanıyor", "Dava Açılması Bekleniyor",   # hizmet aşaması
-    "Kesin Lehe", "Kesin Aleyhe", "Kapalı", "İstifa",                                   # taraf sonucu
-})
+# Adım 3 — kartta boşaltılan değerler (ekip 23.09 §5: "Kapalı'yı son durum olarak boş sayın").
+KART_BOSALT: Tuple[str, ...] = ("Kapalı",)
 
-# Ekibin okuma kuyruğu (22.09 Ek-1 T3, 17 kart): "kartı şimdilik değiştirmeyin".
-# Föy anahtarı (kart id'si ortamlar arasında farklı olabilir); ekip bildirince boşaltılır.
-INCELEME_KUYRUGU_FOYLERI = frozenset({
-    "H-11856", "H-11857", "H-12082", "H-12083", "H-13855", "H-15932", "H-15966", "H-16140",
-    "H-16161", "H-16316", "H-16340", "H-2556", "H-2557", "H-2758", "H-2759", "H-2760",
-    "H-3995", "H-3996", "H-3997", "H-5841", "H-7059", "H-7060", "H-8727", "H-8728",
-    "H-9635", "H-9644", "id-12560", "id-12561", "id-14082", "id-14083", "id-14084",
-    "id-14085", "id-15665", "id-15666", "id-6932", "id-6933", "id-753", "id-754",
-    "id-755", "id-756", "id-758",
-})
+# Kart değeri kademesi (ekip 23.09 Ek-1 › SEVIYE_SOZLUGU, 41 değer): 1 yargı aşaması (dava
+# seviyesi) · 2 dava sonucu (taraf yönünden) · 3 büro ilişkisinin sonu · 4 hizmet aşaması.
+# Sözlükte olmayan değer SINIFLANMAMIŞTIR; karışan kart çelişkide kalır.
+ONCELIK: Dict[str, int] = {
+    **dict.fromkeys((
+        "Ön İnceleme", "Deliller Toplanıyor", "Tanık", "Bilirkişide", "Bilirkişi Kusur Raporu Alındı",
+        "Bilirkişi Maluliyet Raporu Alındı", "Bilirkişi Tazminat Raporu Alındı", "Islah",
+        "Sözlü Yargılama", "Karar Yazımı Bekleniyor", "Karar Tebliği Bekleniyor",
+        "Karar Kesinleşmesi Bekleniyor", "İstinafta", "Temyizde", "Karar Düzeltmede",
+        "Kanun Yararına Bozmada", "Tehiri İcra", "Bozma Sonrası Yargılama",
+        "Bekletici Mesele/Ceza-Hukuk Dosyası", "Bekletici Mesele/MSK", "Uyuşmazlık Mahkemesinde",
+        "İncelemede", "Birleşme", "Soruşturma", "Davaya Dönüştü", "Derdest",
+    ), 1),
+    **dict.fromkeys((
+        "Kesin Aleyhe", "Sulh İle Kapatma", "Kesin Lehe", "İnfaz", "İnfaz İcradan", "İnfaz Haricen",
+        "Aciz Vesikası",
+    ), 2),
+    **dict.fromkeys(("İstifa", "Azil", "Müvekkil Vefatı", "Kapama Müvekkil Talimatıyla", "İade"), 3),
+    **dict.fromkeys(("Lexis Rapor Hazırlanıyor", "Lexis Rapor Gönderildi", "Dava Açılması Bekleniyor"), 4),
+}
+KADEME_ADLARI = {1: "yargı aşaması", 2: "dava sonucu", 3: "büro ilişkisinin sonu", 4: "hizmet aşaması"}
+# Karışık sonuçta kartın göstereceği sıra (en ağır önce) — ekip 23.09 §2.
+AGIRLIK: Tuple[str, ...] = ("Kesin Aleyhe", "Sulh İle Kapatma", "Kesin Lehe")
+
+# Ekibin okuma kuyruğu: "kartı şimdilik değiştirmeyin". 23.09 T3_GUNCEL'de 16 kartın 15'i
+# kapandı, açık kalan #14186. Föy anahtarı (kart id'si ortamlar arasında farklı olabilir).
+INCELEME_KUYRUGU_FOYLERI = frozenset({"H-7059", "H-7060"})
+
+# Mailde yazılı, ekte olmayan föy değerleri (ek katmanıyla aynı öncelikte, master'ı ezer).
+MAIL_FOY_DEGERLERI: Dict[str, str] = {
+    # 23.09 §1 #5009: iki föyün hanesi bizde boştu; aynı davanın ileri adımı alındı.
+    "H-16736": "Bilirkişi Tazminat Raporu Alındı",
+    "H-16969": "Bilirkişi Tazminat Raporu Alındı",
+}
+
+# Ek-1 sayfa/başlık adları (ekip 23.09 çelişki cevabı).
+EK_FOYLER = ("FOYLER", ("SistemNo",), ("Bugünkü Son Durum",))
+EK_T3 = ("T3_GUNCEL", ("Föyler",), ("Bugünkü değer",), ("Durum",))
 
 ADIM_ADLARI = {
     "liste": "Panel listesi",
     "kart_yazim": "Kart yazım birliği",
+    "kart_bosalt": "Kapalı boşaltma",
     "son_durum": "Son durum tazeleme",
 }
 
@@ -201,6 +235,58 @@ def raporu_oku(yol: Path, sheet: str = "Sheet") -> List[Tuple[str, str]]:
         wb.close()
 
 
+def _sayfa_satirlari(wb, sayfa: str, *baslik_adaylari: Sequence[str]):
+    """Sayfanın satırlarını istenen sütunların değerleri olarak verir (başlık toleranslı)."""
+    if sayfa not in wb.sheetnames:
+        raise ValueError(f"Ekte {sayfa!r} sayfası yok — sayfalar: {wb.sheetnames}")
+    it = wb[sayfa].iter_rows(values_only=True)
+    basliklar = [str(h) if h is not None else "" for h in next(it)]
+    indeksler = []
+    for adaylar in baslik_adaylari:
+        i = _sutun_indeksi(basliklar, adaylar)
+        if i is None:
+            raise ValueError(f"{sayfa}: {adaylar[0]!r} sütunu yok — başlıklar: {basliklar}")
+        indeksler.append(i)
+    for row in it:
+        yield [row[i] if i < len(row) else None for i in indeksler]
+
+
+def ek_oku(yol: Path) -> Dict[str, Optional[str]]:
+    """Ekip çelişki cevabından (Ek-1) föy → bugünkü değer; None = "boş say" (master'ı da düşürür).
+
+    FOYLER › "Bugünkü Son Durum" her satırı; T3_GUNCEL yalnız "KAPANDI" satırları (hücredeki
+    föy listesinin hepsi aynı değeri alır). İkisi çelişirse FOYLER kazanır (satır düzeyi).
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(yol, read_only=True, data_only=True)
+    try:
+        degerler: Dict[str, Optional[str]] = {}
+        sayfa, *basliklar = EK_T3
+        for foyler, deger, durum in _sayfa_satirlari(wb, sayfa, *basliklar):
+            if not str(durum or "").strip().upper().startswith("KAPANDI"):
+                continue
+            for sistem_no in str(foyler or "").split(","):
+                if sistem_no.strip():
+                    degerler[sistem_no.strip()] = _degeri_normalize(deger)
+        sayfa, *basliklar = EK_FOYLER
+        for sistem_no, deger in _sayfa_satirlari(wb, sayfa, *basliklar):
+            sistem_no = _metin(sistem_no)
+            if sistem_no:
+                degerler[sistem_no] = _degeri_normalize(deger)
+        return degerler
+    finally:
+        wb.close()
+
+
+def satirlari_birlestir(master: Sequence[Tuple[str, str]], ek: Dict[str, Optional[str]]
+                        ) -> List[Tuple[str, str]]:
+    """Master satırları + ek katmanı (ek kazanır; None düşürür)."""
+    birlesik: Dict[str, Optional[str]] = dict(master)
+    birlesik.update(ek)
+    return [(s, d) for s, d in birlesik.items() if d]
+
+
 # ─── Ortak yardımcılar ───────────────────────────────────────────────────────
 
 def _tarihce(db, case_id: int, alan: str, eski, yeni, kim: str, kanit: str) -> None:
@@ -253,6 +339,14 @@ def listeyi_duzelt(db, *, kim: str, sonuc: Sonuc) -> None:
         kullanim = db.query(models.Case).filter(
             models.Case.deleted_at.is_(None), models.Case.dosya_son_durumu == ad).count()
         sonuc.ekle("liste", ad, "YAPILDI", f"listeye eklendi ({kullanim} kartta kullanılıyor)")
+
+    for ad in LISTE_PASIF:
+        satir = adlar.get(ad)
+        if satir is None or not satir.active:
+            sonuc.ekle("liste", f"{ad} (pasif)", "ATLANDI", "listede yok ya da zaten pasif")
+            continue
+        satir.active = False
+        sonuc.ekle("liste", f"{ad} (pasif)", "YAPILDI", "son durum değil (ekip 23.09) — seçilemez")
     db.flush()
 
 
@@ -273,7 +367,24 @@ def kart_yazimini_birle(db, *, kim: str, sonuc: Sonuc) -> None:
     db.flush()
 
 
-# ─── Adım 3: son durum tazeleme ──────────────────────────────────────────────
+# ─── Adım 3: Kapalı boşaltma ─────────────────────────────────────────────────
+
+def kartlari_bosalt(db, *, kim: str, sonuc: Sonuc) -> None:
+    for deger in KART_BOSALT:
+        kartlar = db.query(models.Case).filter(
+            models.Case.deleted_at.is_(None), models.Case.dosya_son_durumu == deger).all()
+        if not kartlar:
+            sonuc.ekle("kart_bosalt", deger, "ATLANDI", "bu değerde kart yok")
+            continue
+        for kart in kartlar:
+            _tarihce(db, kart.id, "dosya_son_durumu", kart.dosya_son_durumu, None, kim,
+                     f"ekip 23.09 §5: {deger!r} son durum değil, boş sayılır")
+            kart.dosya_son_durumu = None
+        sonuc.ekle("kart_bosalt", deger, "YAPILDI", f"{len(kartlar)} kart boşaltıldı")
+    db.flush()
+
+
+# ─── Adım 4: son durum tazeleme ──────────────────────────────────────────────
 
 def _foy_kartlari(db, sistem_nolar: Sequence[str]) -> Dict[str, int]:
     """SistemNo → canlı kart id (föyü olmayan ya da kartı silinmiş satır listeye girmez)."""
@@ -291,26 +402,30 @@ def _foy_kartlari(db, sistem_nolar: Sequence[str]) -> Dict[str, int]:
 
 
 def kart_degeri(degerler: Dict[str, List[str]]) -> Tuple[Optional[str], str]:
-    """Föy değerlerinden kartın değeri: (değer | None, gerekçe).
+    """Föy değerlerinden kartın değeri: (değer | None, gerekçe) — ekibin 23.09 kademe kuralı.
 
-    Tek değer → o. Birden çok: tam bir dava-seviyesi değer ve kalanların hepsi
-    föy-seviyesi ise dava-seviyesi değer (ekibin 22.09 kuralı); aksi hâlde None (çelişki).
+    Tek değer → o. Birden çok: en güçlü kademede (`ONCELIK`) tek değer varsa o; 2. kademede
+    hepsi `AGIRLIK` içindeyse en ağırı (karışık sonuç); aksi hâlde None (çelişki).
     """
     if len(degerler) == 1:
         return next(iter(degerler)), ""
-    dava = sorted(d for d in degerler if d in SEVIYE_DAVA)
-    foy = sorted(d for d in degerler if d in SEVIYE_FOY)
-    sinifsiz = sorted(d for d in degerler if d not in SEVIYE_DAVA and d not in SEVIYE_FOY)
-    if len(dava) == 1 and not sinifsiz:
-        return dava[0], f"seviye kuralı: dava {dava[0]!r}, föy {foy}"
+    sinifsiz = sorted(d for d in degerler if d not in ONCELIK)
     if sinifsiz:
         return None, f"sınıflanmamış değer: {sinifsiz}"
-    if len(dava) > 1:
-        return None, f"birden çok dava-seviyesi değer: {dava}"
-    return None, f"dava-seviyesi değer yok: {foy}"
+    kademe = min(ONCELIK[d] for d in degerler)
+    adaylar = sorted(d for d in degerler if ONCELIK[d] == kademe)
+    digerleri = sorted(d for d in degerler if ONCELIK[d] != kademe)
+    ad = KADEME_ADLARI[kademe]
+    if len(adaylar) == 1:
+        return adaylar[0], f"kademe kuralı: {ad} {adaylar[0]!r} baskın, föy {digerleri}"
+    if kademe == 2 and all(d in AGIRLIK for d in adaylar):
+        agir = min(adaylar, key=AGIRLIK.index)
+        return agir, f"kademe kuralı: karışık sonuç {adaylar} → en ağırı {agir!r}"
+    return None, f"aynı kademede birden çok değer ({ad}): {adaylar}"
 
 
-def son_durumlari_tazele(db, satirlar: Sequence[Tuple[str, str]], *, kim: str, sonuc: Sonuc) -> None:
+def son_durumlari_tazele(db, satirlar: Sequence[Tuple[str, str]], *, kim: str, sonuc: Sonuc,
+                         ek_foyleri: FrozenSet[str] = frozenset()) -> None:
     eslesme = _foy_kartlari(db, [s for s, _ in satirlar])
     kart_degerleri: Dict[int, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
     for sistem_no, deger in satirlar:
@@ -328,7 +443,7 @@ def son_durumlari_tazele(db, satirlar: Sequence[Tuple[str, str]], *, kim: str, s
             continue
         foyler = sorted(f for fs in degerler.values() for f in fs)
         if INCELEME_KUYRUGU_FOYLERI.intersection(foyler):
-            sonuc.ekle("son_durum", hedef, "BEKLIYOR", f"ekibin okuma kuyruğunda (22.09): {', '.join(foyler)}")
+            sonuc.ekle("son_durum", hedef, "BEKLIYOR", f"ekibin okuma kuyruğunda (23.09): {', '.join(foyler)}")
             continue
         yeni, gerekce = kart_degeri(degerler)
         if yeni is None:
@@ -339,7 +454,8 @@ def son_durumlari_tazele(db, satirlar: Sequence[Tuple[str, str]], *, kim: str, s
             sonuc.ekle("son_durum", hedef, "ATLANDI", f"zaten {yeni!r}")
             continue
         eski = kart.dosya_son_durumu
-        kanit = f"KolayOfis raporu ({', '.join(sorted(degerler[yeni]))})" + (f"; {gerekce}" if gerekce else "")
+        kaynak = "ekip cevabı 23.09" if ek_foyleri.intersection(foyler) else "KolayOfis raporu"
+        kanit = f"{kaynak} ({', '.join(sorted(degerler[yeni]))})" + (f"; {gerekce}" if gerekce else "")
         _tarihce(db, case_id, "dosya_son_durumu", eski, yeni, kim, kanit)
         kart.dosya_son_durumu = yeni
         sonuc.ekle("son_durum", hedef, "YAPILDI", f"{eski or '(boş)'} → {yeni}" + (f" ({gerekce})" if gerekce else ""))
@@ -348,14 +464,19 @@ def son_durumlari_tazele(db, satirlar: Sequence[Tuple[str, str]], *, kim: str, s
 
 # ─── Koşu ────────────────────────────────────────────────────────────────────
 
-def kos(session_factory, *, rapor: Path, apply: bool = False, kim: str = DEGISTIREN) -> Sonuc:
-    satirlar = raporu_oku(rapor)
+def kos(session_factory, *, rapor: Path, ek: Optional[Path] = None, apply: bool = False,
+        kim: str = DEGISTIREN) -> Sonuc:
+    # Mail değerleri o cevabın parçasıdır: yalnız ek verildiğinde katmana girer.
+    ek_degerleri: Dict[str, Optional[str]] = {**ek_oku(ek), **MAIL_FOY_DEGERLERI} if ek is not None else {}
+    satirlar = satirlari_birlestir(raporu_oku(rapor), ek_degerleri)
+    ek_foyleri = frozenset(ek_degerleri)
     sonuc = Sonuc()
     db = session_factory()
     try:
         listeyi_duzelt(db, kim=kim, sonuc=sonuc)
         kart_yazimini_birle(db, kim=kim, sonuc=sonuc)
-        son_durumlari_tazele(db, satirlar, kim=kim, sonuc=sonuc)
+        kartlari_bosalt(db, kim=kim, sonuc=sonuc)
+        son_durumlari_tazele(db, satirlar, kim=kim, sonuc=sonuc, ek_foyleri=ek_foyleri)
         if apply:
             db.commit()
         else:
@@ -387,6 +508,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ayristirici = argparse.ArgumentParser(description="KolayOfis raporundan dosya son durumu tazeleme")
     ayristirici.add_argument("--rapor", required=True, type=Path,
                              help="<tarih>_KolayOfis_DosyalarRaporu.xlsx")
+    ayristirici.add_argument("--ek", type=Path, default=None,
+                             help="ekip çelişki cevabı (HUKDOK_CELISKI_CEVABI_<tarih>.xlsx) — master'ı ezer")
     ayristirici.add_argument("--apply", action="store_true", help="yazar (yoksa kuru koşu)")
     ayristirici.add_argument("--kim", default=DEGISTIREN, help="tarihçe imzası")
     ayristirici.add_argument("--ayrinti", action="store_true", help="bütün kalemleri bas (yalnız çelişki değil)")
@@ -396,7 +519,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     from logging_setup import configure_logging
     configure_logging()
 
-    sonuc = kos(SessionLocal, rapor=args.rapor, apply=args.apply, kim=args.kim)
+    sonuc = kos(SessionLocal, rapor=args.rapor, ek=args.ek, apply=args.apply, kim=args.kim)
     print(ozet_metni(sonuc, apply=args.apply, ayrinti=args.ayrinti))
     return 0
 

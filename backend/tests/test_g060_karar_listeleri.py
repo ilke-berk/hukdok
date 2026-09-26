@@ -37,7 +37,7 @@ YENI_LISTELER = [
     ("appeal_decisions", models.AppealDecision, "istinaf_karar_durumu",
      "İstinaf Karar Durumları", seed_data.APPEAL_DECISIONS, 9),
     ("cassation_decisions", models.CassationDecision, "temyiz_karar_durumu",
-     "Temyiz Onama Durumları", seed_data.CASSATION_DECISIONS, 4),
+     "Temyiz Onama Durumları", seed_data.CASSATION_DECISIONS, 5),
     ("revision_decisions", models.RevisionDecision, "karar_duzeltme_durumu",
      "Karar Düzeltme Durumları", seed_data.REVISION_DECISIONS, 2),
 ]
@@ -61,7 +61,8 @@ RESMI_ISTINAF = [
     "Kısmen Kabul", "Davacı İstinaf Talebinin Kabulü",
     "Geri Çevirme",                       # veri ekibi 11.09 bildirimi, 15.09 paketinde 2 föy
 ]
-RESMI_TEMYIZ =["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
+RESMI_TEMYIZ =["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma",
+               "İncelenmeksizin Ret"]   # 23.09 ekip ricası
 RESMI_KARAR_DUZELTME = ["Karar Düzeltme Kabul", "Karar Düzeltme Ret"]
 
 

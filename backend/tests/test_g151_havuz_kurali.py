@@ -67,7 +67,8 @@ def test_seed_sayilari_27_9_4():
     assert len(seed_data.LOCAL_DECISIONS) == 27
     # 9 = G151'in 8'i + "Geri Çevirme" (veri ekibi 11.09 bildirimi, 15.09 paketi)
     assert len(seed_data.APPEAL_DECISIONS) == 9
-    assert len(seed_data.CASSATION_DECISIONS) == 4
+    # 5 = G151'in 4'ü + "İncelenmeksizin Ret" (veri ekibi 23.09 ricası)
+    assert len(seed_data.CASSATION_DECISIONS) == 5
     assert len(seed_data.REVISION_DECISIONS) == 2           # dokunulmadı
 
 
@@ -87,7 +88,7 @@ def test_istinaf_ve_temyiz_genislemesi_birebir_yazim():
         assert ad in istinaf, ad
     assert istinaf[:3] == ["Kaldırma", "Kaldırma/Yeniden Hüküm", "Başvuru Ret"]   # eski sıra korunur
     temyiz = [ad for _, ad in seed_data.CASSATION_DECISIONS]
-    assert temyiz == ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]
+    assert temyiz[:4] == ["Bozma", "Onama", "Düzelterek Onama", "Kısmen Onama/Kısmen Bozma"]   # eski sıra korunur
 
 
 def test_karar_degeri_hicbir_havuzda_yok():
