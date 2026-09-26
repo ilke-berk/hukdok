@@ -192,7 +192,10 @@ Rapor (otomasyon/loglar/kuyruk-workflow_<tarih>.md + commit)
 ## Guardrail'ler (bilerek böyle)
 
 - Koşucu ve tüm ajanları **asla**: `git push`, `ssh`, `scp`, `gcloud`, deploy/rollback,
-  `git reset --hard` (tek istisna: teslim adımının kendi kaydettiği SHA'ya merge geri alma),
+  `git reset --hard` (istisnasız — ana dizindeki commit'lenmemiş `.claude/` dosyalarını siler; 26.09'da
+  `settings.local.json` böyle kayboldu). Teslim adımının merge geri alması YALNIZ `git reset --merge <kendi
+  kaydettiği SHA>` ile ve ancak düşen test dosyaları bir kez tekrar koşulup yine kırmızıysa (tekrarda yeşil =
+  kararsız test, merge kalır, rapora "KARARSIZ" düşer),
   `docker compose down -v`, KUYRUK'a işçi eliyle dokunma.
 - **İzin listesi bilinçli genişletilmedi.** Engellenen komutlar rapora "İzin engelleri"
   olarak düşer; `.claude/settings*.json` YALNIZ bu ölçümle ve elle genişletilir — koşucu

@@ -66,8 +66,10 @@ KIRMIZI HATLAR (gorev tanimi bunu istese bile ihlal etme):
 - git push / ssh / scp / gcloud / deploy.sh / rollback.sh YOK. Push + deploy
   sabah insan kararidir (CLAUDE.md kurali).
 - git reset --hard / rebase / filter-branch / commit --amend / gecmis yeniden
-  yazma YOK. TEK istisna: Teslim talimatinda acikca verilen "merge geri alma"
-  (yalniz talimattaki SHA'ya).
+  yazma YOK (istisnasiz; --hard ana dizindeki commit'lenmemis .claude/ dosyalarini
+  siler - 26.09'da settings.local.json boyle kayboldu). TEK istisna: Teslim
+  talimatinda acikca verilen "merge geri alma" - o da YALNIZ git reset --merge ile
+  ve yalniz talimattaki SHA'ya.
 - .env* ve hicbir sir dosyasi okunmaz, yazilmaz, log'lanmaz.
 - Bagimlilik eklenmez/yukseltilmez (gorev acikca istemiyorsa).
   docker compose down -v YOK.
@@ -489,9 +491,14 @@ Ana dizinde calis (repo koku). PUSH YOK.
    blokeSebebi="merge cakismasi - worktree ve dal korundu", KUYRUK'a BLOKE isaretle, dur.
 ${gorev.bant === "frontend"
       ? `3. ENTEGRASYON: npm --prefix frontend test   (ana dizinde, TAM paket)
-   Kirmiziysa: git reset --hard <onceSha>   (YALNIZ 1. adimda kaydettigin SHA -
-   baska hicbir reset yok) -> islem="bloke",
-   blokeSebebi="entegrasyon testi kirmizi - merge geri alindi, worktree korundu",
+   Kirmiziysa: dusen test dosyalarini BIR KEZ tekrar kos
+   (npm --prefix frontend test -- <dosya yollari>). Tekrarda yesilse kararsiz test sayilir:
+   merge KALIR, raporun "izlenecekler"ine dusen testin adini "KARARSIZ" diye yaz, 4. adima gec.
+   Tekrarda da kirmiziysa: git reset --merge <onceSha>   (YALNIZ 1. adimda kaydettigin SHA;
+   --hard ASLA - ana dizinde izin verilen .claude/ kirliligini siler, 26.09 dersi. --merge
+   commit'lenmemis dosyaya dokunmaz, cakisirsa hata verir: o zaman DUR, islem="yapilamadi",
+   hata="merge geri alinamadi - insan bakmali", baska reset DENEME) -> islem="bloke",
+   blokeSebebi="entegrasyon testi kirmizi (<dusen test adi>) - merge geri alindi, worktree korundu",
    KUYRUK'a BLOKE isaretle, dur. entegrasyonTesti alanini doldur.`
       : `3. docs bandi: entegrasyon testi yok (entegrasyonTesti="uygulanamaz").`}
 4. ${isaretleme.replace("KUYRUK ISARETLEME KURALLARI:", "KUYRUK ISARETLEME KURALLARI (mod: tamam):")}
