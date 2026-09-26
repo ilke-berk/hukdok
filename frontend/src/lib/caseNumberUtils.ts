@@ -107,27 +107,40 @@ interface TrackingParams {
     serviceType?: string;
 }
 
-export const generateTrackingNumber = (params?: TrackingParams): string => {
-    // 1. Blok: Kategori kodu
-    const normalizedCategory = (params?.category || "").toLocaleUpperCase('tr-TR');
-    let block1 = "X1";
+/**
+ * Tek müvekkilin B1 kodu (kategori ADI + müvekkil adından). Kategori ve ad
+ * ASCII'ye indirgenerek karşılaştırılır — `toLocaleUpperCase('tr-TR')` küçük
+ * harfli "Quick"/"Nippon"u "QUİCK"/"NİPPON" yapıp sigorta kodunu kaçırıyordu
+ * (G223). Kanonik kopya backend/scripts/retag_tracking_nos.py de ASCII arar.
+ */
+const categoryCodeFor = (name: string, cat: string): string => {
+    const nc = normalizeAscii(cat).toUpperCase();
+    const nn = normalizeAscii(name).toUpperCase();
+    let code = "X1";
     for (const [key, val] of Object.entries(CATEGORY_MAP)) {
-        if (normalizedCategory.includes(key.toLocaleUpperCase('tr-TR'))) {
-            block1 = val;
-            break;
+        if (nc.includes(normalizeAscii(key).toUpperCase())) { code = val; break; }
+    }
+    if (nn.includes("SIGORTA") || nc.includes("SIGORTA")) {
+        if (code === "X1") code = "S0";
+        for (const [key, ins] of Object.entries(INSURANCE_CODES)) {
+            if (nn.includes(key)) { code = `S${ins}`; break; }
         }
     }
-    const upperName = (params?.clientName || "").toLocaleUpperCase('tr-TR');
-    const isSigorta = normalizedCategory.includes("SIGORTA") ||
-                      normalizedCategory.includes("SİGORTA") ||
-                      upperName.includes("SIGORTA") ||
-                      upperName.includes("SİGORTA");
-    if (isSigorta && params?.clientName) {
-        if (block1 === "X1") block1 = "S0";
-        for (const [key, code] of Object.entries(INSURANCE_CODES)) {
-            if (upperName.includes(key)) { block1 = `S${code}`; break; }
-        }
-    }
+    return code;
+};
+
+// Geçerli B1 kodları: kategori haritasının değerleri + sigorta S0-S9.
+const B1_CODES: Set<string> = new Set(Object.values(CATEGORY_MAP));
+const isB1Code = (value: string): boolean => B1_CODES.has(value) || /^S[0-9]$/.test(value);
+
+export const generateTrackingNumber = (params?: TrackingParams): string => {
+    // 1. Blok: Kategori kodu. `category` ya kategori ADIDIR ("Doktor") ya da
+    // hazır B1 KODUDUR ("D1" — NewCase/Intake `bestCategoryCode` çıktısını geçer).
+    // Kod verilirse aynen kullanılır; önceden kod ad gibi aranıp X1'e düşüyordu (G223).
+    const rawCategory = (params?.category || "").trim();
+    const block1 = isB1Code(rawCategory)
+        ? rawCategory
+        : categoryCodeFor(params?.clientName || "", rawCategory);
 
     // 2. Blok: İsim — clientCategory'e göre kişi/kurum formatı seç
     const block2 = generateNameBlock(params?.clientName, params?.clientCategory);
@@ -176,23 +189,7 @@ export const bestCategoryCode = (
 ): string => {
     if (clients.length === 0) return "X1";
 
-    const getCode = (name: string, cat: string): string => {
-        const nc = normalizeAscii(cat).toUpperCase();
-        const nn = normalizeAscii(name).toUpperCase();
-        let code = "X1";
-        for (const [key, val] of Object.entries(CATEGORY_MAP)) {
-            if (nc.includes(normalizeAscii(key).toUpperCase())) { code = val; break; }
-        }
-        if (nn.includes("SIGORTA") || nc.includes("SIGORTA")) {
-            if (code === "X1") code = "S0";
-            for (const [key, ins] of Object.entries(INSURANCE_CODES)) {
-                if (nn.includes(key)) { code = `S${ins}`; break; }
-            }
-        }
-        return code;
-    };
-
-    const codes = clients.map(c => getCode(c.name, c.category || ""));
+    const codes = clients.map(c => categoryCodeFor(c.name, c.category || ""));
     for (const c of codes) if (c.startsWith("S") && c !== "S0") return c;
     for (const c of codes) if (c === "S0") return c;
     // Docstring'deki açık öncelik: D1 > D2 > H2 > H1 (önceden "ilk X1 olmayan" idi)

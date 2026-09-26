@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+    CATEGORY_MAP,
+    INSURANCE_CODES,
     bestCategoryCode,
     generateNameBlock,
     generateTrackingNumber,
@@ -211,5 +213,84 @@ describe("validateCaseNumber", () => {
         expect(validateCaseNumber("d1.i_kutluk...0007.cezaa.00000")).toBe(false); // küçük harf
         expect(validateCaseNumber("D1.KISA.0007.CEZAA.00000")).toBe(false);       // blok2 ≠ 10
         expect(validateCaseNumber("D1.I_KUTLUK...07.CEZAA.00000")).toBe(false);   // blok3 ≠ 4
+    });
+});
+
+// G223: NewCase/Intake `category` olarak `bestCategoryCode` çıktısını (B1 KODU) geçer;
+// fonksiyon önceden yalnız kategori ADI bekleyip kodu X1'e düşürüyordu.
+describe("generateTrackingNumber — B1 kodu ile çağrı (G223)", () => {
+    const b1 = (no: string) => no.split(".")[0];
+
+    it("geçerli B1 kodu verilirse aynen kullanılır", () => {
+        expect(b1(generateTrackingNumber({
+            category: "D1", clientName: "Ayşe Gül Öztürk", clientCategory: "Doktor",
+        }))).toBe("D1");
+        expect(generateTrackingNumber({ category: "D1" }).startsWith("D1.")).toBe(true);
+        expect(b1(generateTrackingNumber({ category: "H2", clientName: "X Hastanesi", clientCategory: "Özel Hastane" }))).toBe("H2");
+        expect(b1(generateTrackingNumber({ category: "S4", clientName: "Quick Sigorta A.Ş.", clientCategory: "Sigorta" }))).toBe("S4");
+    });
+
+    it("kategori adıyla çağrı eski davranışı korur", () => {
+        expect(b1(generateTrackingNumber({ category: "Doktor", clientName: "Mehmet Öz", clientCategory: "Doktor" }))).toBe("D1");
+        expect(b1(generateTrackingNumber({ category: "Özel Hastane", clientName: "Acıbadem", clientCategory: "Özel Hastane" }))).toBe("H2");
+    });
+
+    // NewCase.tsx / IntakeReviewStep.tsx'in gerçek çağrı biçimi
+    const cagriBicimi = (clients: Array<{ name: string; category?: string }>) => {
+        const named = pickNameClient(clients);
+        return generateTrackingNumber({
+            category: bestCategoryCode(clients),
+            clientName: named.name,
+            clientCategory: named.category,
+            sequence: 1,
+            processType: "Hukuk",
+        });
+    };
+
+    it("NewCase/Intake çağrı biçiminde Doktor müvekkil D1 alır (X1 değil)", () => {
+        const no = cagriBicimi([{ name: "Ayşe Gül Öztürk", category: "Doktor" }]);
+        // Blok 2 = "A_OZTURK.." (10 karakter) + ayraç nokta
+        expect(no).toBe("D1.A_OZTURK...0001.HUKUK.00000");
+    });
+
+    it("NewCase/Intake çağrı biçiminde Hasta müvekkil haritadaki kodu alır", () => {
+        const no = cagriBicimi([{ name: "Mehmet Yılmaz", category: "Hasta" }]);
+        expect(b1(no)).toBe(CATEGORY_MAP["Hasta"]);
+    });
+
+    it("NewCase/Intake çağrı biçiminde Sağlık Çalışanı ve Özel Hastane doğru kod alır", () => {
+        expect(b1(cagriBicimi([{ name: "Hemşire Ayşe", category: "Sağlık Çalışanı" }]))).toBe(CATEGORY_MAP["Sağlık Çalışanı"]);
+        expect(b1(cagriBicimi([{ name: "Acıbadem Hastanesi", category: "Özel Hastane" }]))).toBe(CATEGORY_MAP["Özel Hastane"]);
+    });
+});
+
+describe("sigorta kodu ASCII normalize adla aranır (G223)", () => {
+    const b1 = (no: string) => no.split(".")[0];
+
+    it("küçük harfli Quick → INSURANCE_CODES['QUICK']", () => {
+        const no = generateTrackingNumber({
+            category: "Sigorta", clientName: "Quick Sigorta A.Ş.", clientCategory: "Sigorta",
+        });
+        expect(b1(no)).toBe(`S${INSURANCE_CODES["QUICK"]}`);
+        expect(b1(no)).toBe("S4");
+    });
+
+    it("küçük harfli Nippon → INSURANCE_CODES['NIPPON']", () => {
+        const no = generateTrackingNumber({
+            category: "Sigorta", clientName: "Nippon Sigorta", clientCategory: "Sigorta",
+        });
+        expect(b1(no)).toBe(`S${INSURANCE_CODES["NIPPON"]}`);
+        expect(b1(no)).toBe("S6");
+    });
+
+    it("kategorisiz çağrıda da adda 'Sigorta' + marka yakalanır", () => {
+        expect(b1(generateTrackingNumber({ clientName: "Nippon Sigorta" }))).toBe("S6");
+    });
+
+    it("bestCategoryCode ile aynı sonucu verir", () => {
+        for (const name of ["Quick Sigorta A.Ş.", "Nippon Sigorta", "Axa Sigorta", "Bilinmedik Sigorta"]) {
+            expect(b1(generateTrackingNumber({ category: "Sigorta", clientName: name, clientCategory: "Sigorta" })))
+                .toBe(bestCategoryCode([{ name, category: "Sigorta" }]));
+        }
     });
 });

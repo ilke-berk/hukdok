@@ -82,10 +82,12 @@ Bilmeniz gereken iki davranış:
 
 - Arama "içeriyor mu" diye yapılır, kelime bazında değil. Adında "AK" harf dizisi geçen her
   sigorta şirketi `S1` alır (ör. "Başak ... Sigorta" → `S1`).
-- Yeni kart ekranındaki kod, adı Türkçe büyük harfe çevirerek arar; küçük harfle yazılmış
-  "Quick" ve "Nippon" orada "QUİCK"/"NİPPON" olur ve tanınmaz, `S0` kalır. Kanonik kopya
-  (`retag_tracking_nos.py`) adı önce Türkçe karakterlerden arındırdığı için aynı adlara `S4`/`S6`
-  verir. Yani bu iki şirketin kartlarında `S0` da görebilirsiniz.
+- Adlar aranmadan önce Türkçe karakterlerden arındırılır (ı→i, İ→I, ş→s ...), bu yüzden
+  küçük harfle yazılmış "Quick Sigorta" `S4`, "Nippon Sigorta" `S6` alır; yeni kart ekranları ile
+  kanonik kopya (`retag_tracking_nos.py`) aynı sonucu verir. **Eski numaralarda istisna:** bu
+  düzeltme (G223) yayına alınmadan önce yeni kart ekranı adı Türkçe büyük harfe çeviriyordu
+  ("QUİCK"/"NİPPON" tanınmıyordu); o dönemde açılmış Quick/Nippon kartlarında `S0` görebilirsiniz.
+  Mevcut numaralar geriye dönük değiştirilmez.
 
 ### 2.3 Birden çok müvekkil
 
@@ -96,8 +98,11 @@ tanınan sigorta şirketi (`S1`-`S7`) > `S0` > `D1` > `D2` > `H2` > `H1` > `X1`.
 
 B1 numara açılırken bir kez yazılır ve sonradan müvekkilin kategorisi değişse de güncellenmez.
 Ayrıca yeni kart ekranlarında (dava açma sihirbazı ve belge ile kart açma) sigorta dışı
-müvekkillerde B1'in `X1` yazıldığı görülmüştür (kod incelemesinde tespit edildi, düzeltme
-bizde). Müvekkil kategorisinin doğru kaynağı müvekkil kaydıdır, numaranın ilk iki harfi değil.
+müvekkillerde B1'in `X1` yazıldığı bir hata vardı; düzeltildi (G223) — düzeltme yayına
+alındıktan sonra açılan numaralarda B1 yukarıdaki tabloya uyar. **Eski numaralarda** (düzeltme
+öncesi açılmış kartlarda) kategorisi Doktor/Hasta vb. olan müvekkillerde `X1` görülebilir; mevcut
+numaralar geriye dönük değiştirilmez. Müvekkil kategorisinin doğru kaynağı müvekkil kaydıdır,
+numaranın ilk iki harfi değil.
 
 ---
 
