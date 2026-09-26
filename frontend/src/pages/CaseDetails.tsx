@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
 import CaseFoyPanel, { type CaseFoyEntry } from "@/components/CaseFoyPanel";
+import CaseNotesPanel from "@/components/CaseNotesPanel";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
@@ -779,13 +780,17 @@ const CaseDetails = () => {
                                     </div>
                                     {caseData.notes && (
                                         <div className="mt-3 p-3 rounded-lg border bg-background/50">
-                                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Notlar</span>
+                                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Genel not</span>
                                             <p className="text-sm whitespace-pre-wrap">{caseData.notes as string}</p>
                                         </div>
                                     )}
                                 </CardContent>
                             </Card>
                         )}
+
+                        {/* G215: tarihli notlar (kim/ne zaman/ne yazdı) — yukarıdaki "Genel not"
+                            (cases.notes) tek serbest metin olarak ayrıca yerinde kalır. */}
+                        <CaseNotesPanel caseId={parseInt(id!)} />
 
                         {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
                             hizmet türü, durum (kart tek slotunda çelişince burada durur). */}
