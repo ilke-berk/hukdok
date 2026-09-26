@@ -3,7 +3,7 @@ uvicorn==0.38.0
 python-dotenv==1.2.3
 google-genai==2.25.0
 pymupdf==1.28.2
-requests==2.33.0
+requests==2.34.2
 msal==1.39.0
 keyring==25.7.0
 pydantic==2.12.5

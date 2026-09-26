@@ -12,6 +12,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone, time as dt_time
 from collections import defaultdict
+from typing import Any
 
 logger = logging.getLogger("ActivityManager")
 
@@ -242,7 +243,7 @@ def send_unmailed_summary(doc_ids: list[int], report_date: date, user_email: str
         from sharepoint.auth_graph import get_graph_token
 
         token = get_graph_token()
-        payload = {
+        payload: dict[str, Any] = {
             "message": {
                 "subject": f"[HukDok] Mailsiz Arşiv Özeti — {date_str}",
                 "body": {"contentType": "Text", "content": body},
