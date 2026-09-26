@@ -7,6 +7,9 @@
 // kurulur; buradaki "önbellek ortak" testleri iki kopyanın ayrışmasının bekçisidir.
 // Gerçek useConfig modülü + gerçek QueryClient; ağ (authRequest), MSAL, dava/müvekkil
 // hook'ları taklit edilir. Dialog ve Select düz DOM'a indirilir.
+// G222: "Avukat" alanı artık LawyerCombobox (ui/popover + ui/command). Gerçek bileşen
+// kullanılır; popover/command düz DOM'a indirilir ve CommandItem aynı `[data-option]`
+// düğümünü basar — avukat beklentileri (ad + sıra + tamamı) aynen okunur.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -50,6 +53,19 @@ vi.mock("@/components/ui/select", () => ({
   SelectValue: () => null,
   SelectContent: ({ children }: Kids) => <div>{children}</div>,
   SelectItem: ({ value, children }: Kids & { value: string }) => <div data-option={value}>{children}</div>,
+}));
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: Kids) => <div>{children}</div>,
+  PopoverTrigger: ({ children }: Kids) => <div>{children}</div>,
+  PopoverContent: ({ children }: Kids) => <div>{children}</div>,
+}));
+vi.mock("@/components/ui/command", () => ({
+  Command: ({ children }: Kids) => <div>{children}</div>,
+  CommandInput: () => null,
+  CommandList: ({ children }: Kids) => <div>{children}</div>,
+  CommandEmpty: () => null,
+  CommandGroup: ({ children }: Kids) => <div>{children}</div>,
+  CommandItem: ({ value, children }: Kids & { value: string }) => <div data-option={value}>{children}</div>,
 }));
 
 import { QuickCaseModal } from "./QuickCaseModal";
