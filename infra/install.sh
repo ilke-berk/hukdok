@@ -70,10 +70,11 @@ else
 fi
 
 echo "== nginx site'ları =="
+# Tek site: default. Hukukbot'un ayri sitesi karar 021 ile kalkti (Hukukbot'a yalniz HukuDok'un
+# /hukukbot-api/ allowlist'inden ulasilir); sunucuda kalmis eski site dosyasini bu script SILMEZ —
+# kaldirma insan adimidir (infra/README.md "Hukukbot sitesinin kaldirilmasi").
 inst nginx/sites-available/default /etc/nginx/sites-available/default 0644
-inst nginx/sites-available/hukbot  /etc/nginx/sites-available/hukbot  0644
 ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-ln -sf /etc/nginx/sites-available/hukbot  /etc/nginx/sites-enabled/hukbot
 if [ "$changed_nginx" -eq 1 ]; then
     # -t başarısızsa set -e burada durdurur; çalışan nginx eski config'le kalır
     nginx -t
