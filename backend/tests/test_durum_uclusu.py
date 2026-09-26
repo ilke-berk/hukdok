@@ -192,6 +192,28 @@ def test_get_case_stats_appeal_asamadan_kapali_mahzen(fabrika):
     assert stats["statuses"] == {"DERDEST": 3, "MAHZEN": 1, "DANIŞ": 1}
 
 
+def test_get_case_stats_derdest_en_ileri_asama(fabrika):
+    """Avukat paneli kutuları: derdest dosyanın en ileri kanun yolu. Kaynak aşama
+    kararları (+ dolu ise case_stage); Yargıtay istinafı ezer; mahzen sayılmaz."""
+    d_istinaf = _dava(fabrika, tracking_no="HA.A.1")
+    d_yargitay = _dava(fabrika, tracking_no="HA.A.2")                       # istinaf + temyiz
+    d_kd = _dava(fabrika, tracking_no="HA.A.3")                             # karar düzeltme
+    _dava(fabrika, tracking_no="HA.A.4", case_stage="ISTINAF")              # yalnız kolon
+    _dava(fabrika, tracking_no="HA.A.5")                                    # aşama yok
+    m_istinaf = _dava(fabrika, tracking_no="HA.A.6", status="MAHZEN")       # arşiv sayılmaz
+    d_yerel = _dava(fabrika, tracking_no="HA.A.7")
+    db = fabrika()
+    try:
+        for cid, stage in [(d_istinaf, "YEREL"), (d_istinaf, "ISTINAF"), (d_yargitay, "ISTINAF"),
+                           (d_yargitay, "TEMYIZ"), (d_kd, "KARAR_DUZELTME"),
+                           (m_istinaf, "ISTINAF"), (d_yerel, "YEREL")]:
+            db.add(models.CaseStageDecision(case_id=cid, stage=stage, sira_no=1))
+        db.commit()
+    finally:
+        db.close()
+    assert case_manager.get_case_stats()["derdest_stages"] == {"ISTINAF": 2, "YARGITAY": 2}
+
+
 def test_rapor_katalogu_uclu():
     from services.rapor.registry import DAVA_DURUMLARI
 

@@ -32,8 +32,13 @@ bozuyor (derdest 3.067 görünürken 29 derdest dava başka kutuda) hem de tesli
   (`case_history.field_name = "case_stage"`, `source = "auto-stage"`); status'a dokunmaz.
 - `case_manager.update_case` / `update_case_tracking`: gelen status üçlüye çevrilir, aşama boşsa
   eski değer oraya taşınır. `get_case_stats.appeal` aşamadan (ISTINAF/TEMYIZ) sayılır.
-- `services/rapor/registry.DAVA_DURUMLARI` üçlü. Frontend: Avukat Paneli üç kart
-  (Derdest / Danış / Mahzen), CaseList `STATUS_ORDER`, CaseDetails renkleri.
+- `services/rapor/registry.DAVA_DURUMLARI` üçlü. Frontend: CaseList `STATUS_ORDER`, CaseDetails
+  renkleri. Avukat Paneli 26.09.2026'dan beri dört kart (kullanıcı kararı): **Derdest ·
+  İstinafta · Yargıtayda · Arşiv** (Arşiv = MAHZEN; Danış kartı kalktı, durum duruyor).
+  İstinafta/Yargıtayda DURUM değil, derdest dosyanın ulaştığı EN İLERİ aşamadır:
+  `get_case_stats.derdest_stages` — kaynak `case_stage_decisions` (+ dolu ise `case_stage`,
+  çünkü o kolon kartların çoğunda boş); Yargıtay = TEMYIZ | KARAR_DUZELTME ve istinafı ezer.
+  Bozma sonrası yerele dönüş ayrılmaz (ilk sürüm kararı).
 - **Migrasyon 50** (`database.py`, koşulsuz "index" op'u, idempotent): eski değerli kartlara
   sistem imzalı tarihçe satırı (`migrasyon_50_durum_uclusu`), aşama boşsa eski değer oraya,
   status KAPALI → MAHZEN, kalanlar → DERDEST. Soft-silinmiş kart dahil.

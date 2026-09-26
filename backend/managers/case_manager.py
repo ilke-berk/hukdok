@@ -525,6 +525,36 @@ def get_case(case_id: int, tenant_id: str = None):
         db.close()
 
 
+_YARGITAY_ASAMALARI = ("TEMYIZ", "KARAR_DUZELTME")
+_ISTINAF_ASAMALARI = ("ISTINAF",)
+
+
+def _derdest_en_ileri_asama(db, tenant_id) -> dict:
+    """Derdest (aktif) dosyaları en ileri kanun yoluna göre sayar:
+    {"ISTINAF": n, "YARGITAY": m}. Bir dosya yalnız bir kutuya düşer."""
+    from sqlalchemy import exists, func, or_
+
+    def _asamada(asamalar):
+        karar_var = exists().where(
+            models.CaseStageDecision.case_id == models.Case.id,
+            models.CaseStageDecision.stage.in_(asamalar),
+        )
+        # coalesce: NULL aşamada `NOT (... OR NULL)` NULL olur, kart düşerdi
+        return or_(karar_var, func.coalesce(models.Case.case_stage, "").in_(asamalar))
+
+    def _say(*kosullar):
+        q = db.query(func.count(models.Case.id)).filter(
+            models.Case.active.is_(True), models.Case.status == "DERDEST", *kosullar,
+        )
+        return _apply_tenant_filter(q, tenant_id).scalar() or 0
+
+    yargitay = _asamada(_YARGITAY_ASAMALARI)
+    return {
+        "YARGITAY": _say(yargitay),
+        "ISTINAF": _say(~yargitay, _asamada(_ISTINAF_ASAMALARI)),
+    }
+
+
 def get_case_stats(tenant_id: str = None):
     from sqlalchemy import func
     try:
@@ -556,10 +586,17 @@ def get_case_stats(tenant_id: str = None):
         )
         stats["appeal"] = _apply_tenant_filter(appeal_query, tenant_id).scalar() or 0
 
+        # Avukat paneli kutuları (26.09.2026 kullanıcı kararı): derdest dosyaların
+        # ulaştığı EN İLERİ kanun yolu. `case_stage` kolonu çoğu kartta boş —
+        # kaynak aşama kararları tarihçesi (`case_stage_decisions`); kolon da dolu
+        # ise ona da bakılır. Yargıtay (temyiz/karar düzeltme) istinafı ezer.
+        stats["derdest_stages"] = _derdest_en_ileri_asama(db, tenant_id)
+
         return stats
     except Exception as e:
         logger.error(f"Get Case Stats Error: {e}")
-        return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {}}
+        return {"total": 0, "active": 0, "closed": 0, "appeal": 0, "danis_active": 0, "statuses": {},
+                "derdest_stages": {"ISTINAF": 0, "YARGITAY": 0}}
     finally:
         db.close()
 

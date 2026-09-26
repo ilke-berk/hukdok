@@ -9,7 +9,7 @@ import {
   Clock,
   User,
   Archive,
-  MessageSquare,
+  Landmark,
 } from "lucide-react";
 import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
@@ -50,6 +50,8 @@ interface CaseStats {
   appeal: number;
   danis_active?: number;
   statuses?: Record<string, number>;
+  // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
+  derdest_stages?: { ISTINAF?: number; YARGITAY?: number };
 }
 
 function formatFull(d: Date): string {
@@ -116,6 +118,7 @@ export default function AvukatDashboard() {
             appeal: statsData.appeal || 0,
             danis_active: statsData.danis_active || 0,
             statuses: statsData.statuses || {},
+            derdest_stages: statsData.derdest_stages || {},
           });
         }
         setRecentCases(casesData?.cases ?? []);
@@ -145,13 +148,18 @@ export default function AvukatDashboard() {
     year: "numeric",
   });
 
-  // --- Dosya durumu metrikleri (gerçek statuses verisinden) ---
+  // --- Dosya durumu metrikleri (kullanıcı kararı 26.09.2026) ---
+  // Derdest · İstinafta · Yargıtayda · Arşiv. İstinaf/Yargıtay DURUM değil
+  // derdest dosyaların ulaştığı en ileri aşamadır (alt küme; arşiv sayılmaz).
+  // Danış kutusu kalktı (durum üçlüde duruyor, liste çipinden erişilir).
   const statusCards = useMemo(() => {
     const s = stats.statuses || {};
+    const a = stats.derdest_stages || {};
     return [
       { key: "DERDEST", label: "Derdest", value: s.DERDEST ?? stats.active, hint: "Aktif dava dosyası", Icon: Gavel },
-      { key: "DANIŞ", label: "Danış", value: s["DANIŞ"] ?? stats.danis_active ?? 0, hint: "Danışma dosyası", Icon: MessageSquare },
-      { key: "MAHZEN", label: "Mahzen", value: s.MAHZEN ?? stats.closed, hint: "Arşivlenen dosya", Icon: Archive },
+      { key: "ISTINAF", label: "İstinafta", value: a.ISTINAF ?? 0, hint: "Derdest · istinaf aşamasına ulaşmış", Icon: Scale },
+      { key: "YARGITAY", label: "Yargıtayda", value: a.YARGITAY ?? 0, hint: "Derdest · temyiz / karar düzeltme", Icon: Landmark },
+      { key: "MAHZEN", label: "Arşiv", value: s.MAHZEN ?? stats.closed, hint: "Arşivlenen dosya", Icon: Archive },
     ];
   }, [stats]);
 
@@ -189,7 +197,7 @@ export default function AvukatDashboard() {
       {/* Dosya Durumu */}
       <section>
         <SectionHeader eyebrow="01 · Dosya Durumu" title="Genel durum" italic="— statü dağılımı" />
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statusCards.map(({ key, label, value, hint, Icon }) => (
             <button
               key={key}
