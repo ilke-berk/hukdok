@@ -39,6 +39,30 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HukuDok token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
 - [ ] G209 | bant:docs | bagimli:G208 | [DIŞ REPO ../hukukbot-ui] Eski arayüz silinir (React/Vite/MSAL dosyaları, Dockerfile.frontend, deploy/frontend-nginx.conf) + rapor/08 güncellenir | BLOKE(dış repo — canlı geçişten SONRA gündüz, runner koşamaz)
 
+## ÖNCELİK 3 — Toplantı notları 26.09: takvim son durum, avukat arama, tarihli notlar, sesli giriş (2026-09-26 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 26.09 toplantı notları + sohbet. Kararlar: dış avukat = avukat seçimi aranabilir kutu (iç+dış); not alma =
+     davaya tarihli notlar; kulak = Hukukbot + Rapor asistanına sesli giriş, HukuDok backend'i Gemini ile yazıya döker,
+     otomatik gönderme yok; Sektör = yalnız etiket; ofis no = veri sağlayıcıya açıklama metni.
+     Word çalışma sistemi TANIMSIZ → kuyrukta yok. G220/G221 veri sağlayıcıyı bekler → BLOKE ile girer; veri gelince ek elle silinir.
+     Sözleşmeler görev dosyalarında SABİT → G214∥G215 ve G216∥G217 paralel koşabilir.
+     Backend seri: G210 → G211 → G214 → G216 (G214/G216 api.py router kaydı ortak → zincir).
+     Frontend: G212 ∥ G213 ∥ G215 ∥ G217 (G205 sonrası, SoruKutusu). Docs: G218 bağımsız; G219 en son (CLAUDE.md, G207 sonrası).
+     Tahmin: 2 gece. -->
+
+- [ ] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
+- [ ] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
+- [ ] G212 | bant:frontend | bagimli:- | "Şablonu kaydet" modalı yeni modal tasarımına (theme-classic, başlık/gövde/alt bölüm, input ölçüleri); testler korunur
+- [ ] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler
+- [ ] G214 | bant:backend | bagimli:G211 | `case_notes` tablosu + migrasyon (index ayrı op) + GET/POST/DELETE `/api/cases/{id}/notes` (yazan ya da admin siler, soft-delete); testler
+- [ ] G215 | bant:frontend | bagimli:- | Dava kartında tarihli not paneli (liste, yazan+tarih, ekle/sil) — sözleşme G214'te sabit; `cases.notes` "Genel not" olarak kalır; testler
+- [ ] G216 | bant:backend | bagimli:G214 | `POST /api/transcribe`: ses → Gemini Türkçe metin (≤2 MB, webm/ogg/mp4, ses saklanmaz/loglanmaz); testler (Gemini mock)
+- [ ] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler
+- [ ] G218 | bant:docs | bagimli:- | `docs/veri-teslim/ofis-no-formati.md`: B1.B2.B3.B4.B5 açıklaması + örnekler (koddan okunarak), veri sağlayıcıya iletilecek
+- [ ] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
+- [ ] G220 | bant:backend | bagimli:G219 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu) + kartta düzenlenebilir dropdown + aktarım/SOZLESME | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
+- [ ] G221 | bant:backend | bagimli:G213,G220 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
