@@ -51,7 +51,10 @@ ssh hukukoid "tail -30 /tmp/deploy.log"
 Önkoşullar (.env zorunlu anahtarları, `hukuk_shared` ağı) → `git pull --ff-only`
 (başarısızsa DURUR) → pre-deploy `pg_dump -Fc` (alt sınır `MIN_DUMP_BYTES` = 1 MB;
 ~1.7 MB dump NORMALDİR) → build ESKİ stack çalışırken (kesinti yalnız up'taki değişim) →
-imajlara git-SHA etiketi (`APP_VERSION` gömülür) → `up -d --remove-orphans` → `/healthz`
+imajlara git-SHA etiketi (`APP_VERSION` gömülür) → şema kapısı (geçici Postgres'te
+`migrate.py`, ~15 sn; tam test paketi YALNIZ `./deploy.sh --with-tests` ile — testler CI'da
+koşuyor, bu yüzden §1'deki CI `success` kapısı ŞART; deploy artık ~3-4 dk) →
+`up -d --remove-orphans` → `/healthz`
 kapısı 120 sn + sürüm teyidi (`version` ≠ yeni SHA ⇒ bayat imaj uyarısı) → frontend
 30 sn poll → `db-backup.timer` aktiflik kontrolü → etiket bakımı (son 3 SHA kalır).
 

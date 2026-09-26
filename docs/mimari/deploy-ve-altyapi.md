@@ -7,6 +7,8 @@
 > 2026-09-14 · G193: §3/§4/§8/§11 `docker-compose.yml` ve `nginx.conf` satır atıfları G182/G191 sonrası koda göre
 > yeniden okundu; §11 önbellek başlıkları ve §12 D9/doğrulama sırası koddan; §13 `SHOW` ve en pahalı 10 sorgu
 > komutları lokal `hukudok-postgres`'te yeniden koşuldu.
+> 2026-09-26: §1 test kapısı varsayılanda ŞEMA KAPISI'na indi (kullanıcı kararı; tam paket `--with-tests`) —
+> lokal `--gate-only` provası (şema yolu) 8 sn ölçüldü.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 > **Push ve deploy daima insan kararıdır.** Otomasyon oturumları `git push`, `ssh`,
@@ -16,8 +18,19 @@
 
 Kullanım: sunucuda, mesai dışı — `cd ~/hukdok && ./deploy.sh`. Akış dosyanın başındaki
 yorumda yazılıdır (`deploy.sh:7-10`): önkoşullar → `git pull --ff-only` → pre-deploy
-`pg_dump` → build (eski stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → **test kapısı** →
-`up -d` → `/healthz` kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
+`pg_dump` → build (eski stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → **şema kapısı**
+(`--with-tests` ile tam test kapısı) → `up -d` → `/healthz` kapısı (120 sn) → etiket bakımı
+(son 3) + dangling temizliği.
+
+**Varsayılan kapı = şema kapısı (26.09.2026 kullanıcı kararı).** Tam test paketi sunucuda
+(2 çekirdek / 3 GB) ~3.600 testte ~13 dk sürüyordu; aynı paket her push'ta GitHub CI'da koşar
+ve CI `success` olmadan deploy yapılmaz (`deploy-prosedur` §1) — sunucuda tekrarı yalnız süre
+ekliyordu. Kalan, sunucuya özgü ucuz kısım: yeni imajdan tek seferlik konteyner, kapının
+geçici Postgres'inde `python migrate.py` (lokal prova 8 sn). Bozuk migrasyon prod'da
+entrypoint'te konteyneri kaldırmaz; bunu `up`'tan önce yakalamak kesintiyi önler. Tam kapı için
+`./deploy.sh --with-tests` (ya da `FULL_TESTS=1`); `--gate-only` daima tam paketi koşar.
+Bedel: imaja/sunucuya özgü bir test kırılması (ör. CI ile imaj arasında paket farkı) artık
+deploy'da yakalanmaz.
 
 Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
 
@@ -27,7 +40,7 @@ Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
 | `git pull --ff-only` başarısızsa **DURUR** | eskiden hata yutulup ESKİ kodla sessizce devam ediliyordu |
 | Sağlık kapısı gerçek | `/healthz` 120 sn poll, başarısızsa `exit 1` + rollback komutu basılır (eskiden `sleep 5` + `docker ps`) |
 | İmajlar SHA ile etiketlenir | `docker image prune -f` artık rollback hedeflerini silemez (etiketli imaj dangling olmaz) |
-| Test kapısı (G038) | build'den SONRA, `up`'tan ÖNCE koşar — testler kalırsa deploy DURUR, çalışan stack'e hiç dokunulmaz (kırık kod prod'a çıkamaz) |
+| Test kapısı (G038) | build'den SONRA, `up`'tan ÖNCE koşar — kalırsa deploy DURUR, çalışan stack'e hiç dokunulmaz. 26.09.2026'dan beri varsayılanda yalnız şema (`migrate.py`), tam paket `--with-tests` |
 | Kapının kendi Postgres'i (G050) | temiz ortamın bedeli DB testlerinin SKIP olmasıydı; kapı artık kendi tek kullanımlık Postgres'ini kaldırır — prod DB'ye yine hiç dokunmaz |
 
 ### Güvenlik kapıları
@@ -58,7 +71,7 @@ Altı tasarım tercihi, gerekçeleriyle (`deploy.sh:12-35`):
   1-2 sn yarış var; tek atımlık `curl` buna yakalanmıştı → 30 sn poll.
 
 Ortam düğmeleri (`deploy.sh:37-40`): `MIN_DUMP_BYTES` (lokal prova: 1), `PRUNE` (lokal
-prova: 0), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:53`).
+prova: 0), `FULL_TESTS` (1 = `--with-tests`), `SKIP_TESTS` (aşağıda). Saklanan etiket sayısı `KEEP_TAGS=3` (`:53`).
 
 ### Test kapısı (G038 · G050)
 
@@ -125,7 +138,7 @@ Beş çıkış yolu:
 | Geçici Postgres kalkmadı | `❌ Test kapısı KURULAMADI` + `exit 1` — sessizce DB'siz koşmak G050'nin kapattığı deliği geri açardı |
 | Dev bağımlılıkları kurulamadı (pip ağ erişimi yok) | Konteyner **91** döner → **gürültülü uyarı** basılır ama deploy **DURMAZ** (sessiz atlama yasak) |
 
-`SKIP_TESTS=1 ./deploy.sh` kaçış kapısıdır: kapıyı atlar ve çerçeveli bir uyarı basar
+`SKIP_TESTS=1 ./deploy.sh` kaçış kapısıdır: şema kapısı dahil kapıyı atlar ve çerçeveli bir uyarı basar
 ("Prod'a TEST EDİLMEMİŞ kod çıkıyor").
 
 **`./deploy.sh --gate-only`** (`:241-252`): yalnız test kapısını koşar ve çıkar. Dal

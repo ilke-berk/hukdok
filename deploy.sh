@@ -2,12 +2,21 @@
 # HukuDok prod deploy (Faz 1-C).
 #
 # Kullanım (sunucuda, mesai dışı):   cd ~/hukdok && ./deploy.sh
+#   Tam test paketiyle deploy (~13 dk ek):             ./deploy.sh --with-tests
 #   Yalnız test kapısını koş (pull/dump/build/up YOK):  ./deploy.sh --gate-only
 #
 # Akış: önkoşullar → git pull --ff-only → pre-deploy pg_dump → build (eski
-# stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → TEST KAPISI (yeni imajdan
-# tek seferlik konteyner) → up -d (frontend, backend healthy olana dek bekler)
+# stack ÇALIŞIRKEN) → imajlara git-SHA etiketi → ŞEMA KAPISI (yeni imajdan
+# tek seferlik konteyner, geçici Postgres'te migrate.py; --with-tests ile tam
+# test paketi) → up -d (frontend, backend healthy olana dek bekler)
 # → /healthz kapısı (120 sn) → etiket bakımı (son 3) + dangling temizliği.
+#
+# 26.09.2026 kullanıcı kararı: tam test paketi VARSAYILAN olarak sunucuda
+# KOŞMAZ. Sunucu 2 çekirdek/3 GB — ~3.600 test ~13 dk sürüyordu; aynı paket
+# her push'ta CI'da koşar ve CI `success` olmadan deploy yapılmaz
+# (deploy-prosedur §1). Sunucuya özgü, ucuz kısım kalır: yeni imajın migrate.py'ı
+# boş DB'de (~15 sn) — bozuk migrasyon prod'da konteyneri kaldırmaz ve bunu
+# up'tan ÖNCE yakalamak kesintiyi önler.
 #
 # Eski deploy.sh'tan bilinçli farklar (guvenilirlik-sertlestirme-plani Faz 1.4):
 #  - 'down' YOK: build çalışan stack'i etkilemez, kesinti yalnız up'taki
@@ -38,7 +47,8 @@
 # Ortam düğmeleri (varsayılanlar prod içindir):
 #   MIN_DUMP_BYTES=1048576   pre-deploy dump alt sınırı (lokal prova: 1)
 #   PRUNE=1                  dangling imaj temizliği (lokal prova: 0)
-#   SKIP_TESTS=0             1 → test kapısı atlanır (gürültülü uyarı basar)
+#   FULL_TESTS=0             1 → tam test paketi koşar (= --with-tests)
+#   SKIP_TESTS=0             1 → şema kapısı dahil her şey atlanır (gürültülü uyarı basar)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -182,10 +192,12 @@ gate_db_up() {
 }
 
 GATE_ONLY=0
+FULL_TESTS="${FULL_TESTS:-0}"
 for arg in "$@"; do
     case "$arg" in
-        --gate-only) GATE_ONLY=1 ;;
-        *) fail "bilinmeyen argüman: ${arg} (kullanım: ./deploy.sh [--gate-only])" ;;
+        --gate-only) GATE_ONLY=1; FULL_TESTS=1 ;;
+        --with-tests) FULL_TESTS=1 ;;
+        *) fail "bilinmeyen argüman: ${arg} (kullanım: ./deploy.sh [--with-tests | --gate-only])" ;;
     esac
 done
 
@@ -201,6 +213,15 @@ test_gate() {
         say "  Prod'a TEST EDİLMEMİŞ kod çıkıyor."
         say "════════════════════════════════════════════════════════════"
         return 0
+    fi
+    if [ "$FULL_TESTS" != "1" ]; then
+        say "🧪 Şema kapısı: ${img} — geçici Postgres'te migrate.py (tam testler CI'da; --with-tests ile burada)..."
+        gate_db_up || { gate_db_down; fail "❌ Şema kapısı KURULAMADI: geçici Postgres kalkmadı — deploy DURDU. Bilinçli atlamak için: SKIP_TESTS=1 ./deploy.sh"; }
+        docker run --rm --name "$GATE_RUN_NAME" --entrypoint bash             --network "$GATE_NET_NAME"             -e PYTHONDONTWRITEBYTECODE=1 -e HOME=/tmp             -e DATABASE_URL="postgresql://${GATE_DB_USER}:${GATE_DB_PASS}@${GATE_PG_NAME}:5432/${GATE_DB_NAME}"             "$img" -c "python migrate.py || exit ${GATE_MIGRATE_EXIT}" || rc=$?
+        gate_db_down
+        dt=$((SECONDS - t0))
+        [ "$rc" -eq 0 ] && { ok "✅ Şema kapısı GEÇTİ (${dt} sn)"; return 0; }
+        fail "❌ Şema kapısı KALDI (çıkış ${rc}, ${dt} sn): migrate.py boş veritabanında koşmadı — prod'da entrypoint'te de düşerdi. Deploy DURDU, çalışan stack'e dokunulmadı."
     fi
     say "🧪 Test kapısı: ${img} (tek seferlik konteyner; çalışan stack'e dokunulmaz)..."
     # Kapının kendi DB'si kalkmazsa DURUR: sessizce DB'siz koşmak, tam da bu

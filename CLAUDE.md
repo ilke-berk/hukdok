@@ -204,7 +204,10 @@ npm --prefix frontend run build
 
 **Deploy (yalnız kullanıcı kararıyla, sunucuda, mesai dışı):** `cd ~/hukdok && ./deploy.sh`
 — akış ve güvenlik kapıları dosya başındaki yorumda (ff-only pull → pre-deploy pg_dump →
-çalışan stack'i bozmadan build → SHA etiketi → `up -d` → 120 sn `/healthz` kapısı).
+çalışan stack'i bozmadan build → SHA etiketi → şema kapısı (geçici Postgres'te `migrate.py`) →
+`up -d` → 120 sn `/healthz` kapısı). Tam test paketi sunucuda VARSAYILAN koşmaz (26.09 kararı:
+CI'da koşuyor, sunucuda ~13 dk ekliyordu; CI `success` kapısı bu yüzden şart) — gerekirse
+`./deploy.sh --with-tests`.
 Geri dönüş: `./rollback.sh <SHA>` (imajı döndürür, DB'yi DÖNDÜRMEZ — DB için pre-deploy
 dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'te okunur →
 `docker compose up -d` (recreate) gerekir.
