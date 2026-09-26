@@ -50,7 +50,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Frontend: G212 ∥ G213 ∥ G215 ∥ G217 (G205 sonrası, SoruKutusu). Docs: G218 bağımsız; G219 en son (CLAUDE.md, G207 sonrası).
      Tahmin: 2 gece. -->
 
-- [ ] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
+- [x] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
 - [ ] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
 - [x] G212 | bant:frontend | bagimli:- | "Şablonu kaydet" modalı yeni modal tasarımına (theme-classic, başlık/gövde/alt bölüm, input ölçüleri); testler korunur
 - [ ] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler
