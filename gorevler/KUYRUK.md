@@ -53,7 +53,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G210 | bant:backend | bagimli:- | Takvim raporu: duruşma satırında Açıklama = davanın `dosya_son_durumu` (boşsa eski davranış); Excel/PDF/JSON ortak; testler
 - [ ] G211 | bant:backend | bagimli:G210 | Müvekkil "Sektör" etiketi → "Çalıştığı Kurum" (NewClient, ClientList, rapor kataloğu); kolon adı `sektor` kalır
 - [x] G212 | bant:frontend | bagimli:- | "Şablonu kaydet" modalı yeni modal tasarımına (theme-classic, başlık/gövde/alt bölüm, input ölçüleri); testler korunur
-- [ ] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler
+- [ ] G213 | bant:frontend | bagimli:- | `LawyerCombobox`: yazarak aranan avukat seçimi (İç/Dış rozetli, tekli/çoklu) → NewCase, IntakeReviewStep, QuickCaseModal; testler | BLOKE(denetim RET: "NewCase, IntakeReviewStep ve QuickCaseModal'daki avukat Select'leri bu bileşene geçer" kabul kriteri karşılanmadı. QuickCaseModal'daki Avukat Select'i ve IntakeReviewStep:781'deki Sorumlu Avukat/UYAP Avukatı seçimleri hâlâ düz Select; işçi de Raporunda "KISMEN TAMAM" diyerek bunu kabul ediyor.)
 - [ ] G214 | bant:backend | bagimli:G211 | `case_notes` tablosu + migrasyon (index ayrı op) + GET/POST/DELETE `/api/cases/{id}/notes` (yazan ya da admin siler, soft-delete); testler
 - [ ] G215 | bant:frontend | bagimli:- | Dava kartında tarihli not paneli (liste, yazan+tarih, ekle/sil) — sözleşme G214'te sabit; `cases.notes` "Genel not" olarak kalır; testler
 - [ ] G216 | bant:backend | bagimli:G214 | `POST /api/transcribe`: ses → Gemini Türkçe metin (≤2 MB, webm/ogg/mp4, ses saklanmaz/loglanmaz); testler (Gemini mock)
