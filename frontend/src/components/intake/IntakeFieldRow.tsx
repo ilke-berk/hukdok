@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronsUpDown, Scale, ShieldCheck } from "lucide-react";
 
 import { AiPill } from "@/components/flow/primitives";
@@ -33,6 +33,9 @@ interface IntakeFieldRowProps {
   /** Enrich modu (Faz 7): tik "onay" değil "uygula" anlamındadır; satırda
       doldur/çelişki rozeti + kayıtlı değer gösterilir. */
   enrichMode?: boolean;
+  /** Özel değer editörü (G213): verilirse `def.widget` editörünün YERİNE çizilir;
+      `inputId` etiketin `htmlFor`'udur. Avukat alanları `LawyerCombobox`'ı böyle alır. */
+  renderEditor?: (inputId: string) => ReactNode;
 }
 
 /**
@@ -43,7 +46,7 @@ interface IntakeFieldRowProps {
  * "bu bilgi şu anda elimde yok" onay diyaloğundan geçer; zorunlu olmayan
  * boş alanın tiki pasiftir.
  */
-export function IntakeFieldRow({ def, state, field, options, prior, onChange, onApprove, enrichMode }: IntakeFieldRowProps) {
+export function IntakeFieldRow({ def, state, field, options, prior, onChange, onApprove, enrichMode, renderEditor }: IntakeFieldRowProps) {
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
   const isEmpty = state.value === "";
@@ -60,7 +63,7 @@ export function IntakeFieldRow({ def, state, field, options, prior, onChange, on
 
   const inputId = `intake-field-${def.key}`;
 
-  const editor = (() => {
+  const editor = renderEditor ? renderEditor(inputId) : (() => {
     switch (def.widget) {
       case "textarea":
         return (

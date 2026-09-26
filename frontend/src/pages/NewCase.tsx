@@ -22,6 +22,7 @@ import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategory
 import { cn } from "@/lib/utils";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
+import { LawyerCombobox } from "@/components/LawyerCombobox";
 import { useFormDraft } from "@/hooks/useFormDraft";
 import { describeDraftAge } from "@/lib/formDraft";
 import {
@@ -1400,47 +1401,33 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                     <div className="space-y-1.5">
                                         <Label className="text-[10px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em]">Sorumlu Avukat(lar)</Label>
 
-                                        {selectedLawyers.length > 0 && (
-                                            <div className="flex flex-wrap gap-2 mb-2">
-                                                {selectedLawyers.map((sl, idx) => (
-                                                    <div key={idx} className="flex items-center gap-1 bg-primary/10 text-brand px-2 py-1 rounded text-[11px] font-medium border border-primary/20 shadow-sm">
-                                                        {sl.name}
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => { e.preventDefault(); setSelectedLawyers(prev => prev.filter((_, i) => i !== idx)); }}
-                                                            className="hover:bg-primary/20 rounded-full p-0.5 transition-colors"
-                                                        >
-                                                            <X className="w-3 h-3" />
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        <Select onValueChange={(v) => {
-                                            if (v && !selectedLawyers.find(l => l.name === v)) {
-                                                const lawyerObj = lawyers.find(l => l.name === v);
-                                                setSelectedLawyers(prev => [...prev, { name: v, lawyer_id: lawyerObj ? lawyerObj.id : null }]);
-                                            }
-                                        }}>
-                                            <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
-                                                <SelectValue placeholder="Avukat Ekle..." />
-                                            </SelectTrigger>
-                                            <SelectContent className="max-h-64">
-                                                {lawyers.map(t => <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>)}
-                                            </SelectContent>
-                                        </Select>
+                                        {/* G213: yazarak aranan çoklu seçim; değer = avukat adları (payload şekli aynı) */}
+                                        <LawyerCombobox
+                                            mode="multi"
+                                            lawyers={lawyers}
+                                            value={selectedLawyers.map(sl => sl.name)}
+                                            onChange={names => setSelectedLawyers(prev => names.map(n => {
+                                                const existing = prev.find(p => p.name === n);
+                                                if (existing) return existing;
+                                                const lawyerObj = lawyers.find(l => l.name === n);
+                                                return { name: n, lawyer_id: lawyerObj ? lawyerObj.id : null };
+                                            }))}
+                                            placeholder="Avukat Ekle..."
+                                            aria-label="Sorumlu avukat ekle"
+                                            className="h-8 text-xs bg-[var(--bg)]"
+                                        />
                                     </div>
                                     <div className="space-y-1.5">
                                         <Label className="text-[10px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em]">UYAP Avukat</Label>
-                                        <Select value={formData.uyapLawyer} onValueChange={(v) => setFormData({ ...formData, uyapLawyer: v })}>
-                                            <SelectTrigger className="h-8 text-xs bg-[var(--bg)] border-[var(--border-strong)]">
-                                                <SelectValue placeholder="Seçiniz..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {lawyers.map(t => <SelectItem key={t.code} value={t.name}>{t.name}</SelectItem>)}
-                                            </SelectContent>
-                                        </Select>
+                                        <LawyerCombobox
+                                            mode="single"
+                                            lawyers={lawyers}
+                                            value={formData.uyapLawyer}
+                                            onChange={(v) => setFormData({ ...formData, uyapLawyer: v })}
+                                            placeholder="Seçiniz..."
+                                            aria-label="UYAP avukatı"
+                                            className="h-8 text-xs bg-[var(--bg)]"
+                                        />
                                     </div>
                                 </div>
                             </Card>
