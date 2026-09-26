@@ -11,7 +11,6 @@ Amaç: VM kaybolsa bile bilinen-iyi host konfigürasyonu `git clone` +
 | Repo | Sunucu hedefi | Ne işe yarar |
 |---|---|---|
 | `nginx/sites-available/default` | `/etc/nginx/sites-available/default` + `sites-enabled` symlink | hukukoid.com TLS ucu (Let's Encrypt), 50M upload limiti, **300 sn proxy timeout** (uzun /confirm–Ghostscript akışı; container nginx'teki eşi f72f13e); tüm trafik → frontend konteyneri :8080 |
-| `nginx/sites-available/hukbot` | `/etc/nginx/sites-available/hukbot` + symlink | hukbot.tragic.tr → :3000. Sahibi hukukbot-ui stack'i; VM yeniden kurulumunda eksik kalmasın diye kopyası burada tutulur |
 | `systemd/net-watchdog.{service,timer}` | `/etc/systemd/system/` | Ağ nöbetçisi, dakikada bir (2026-07-29 ens4/DHCP arızası sonrası); yerel ağ bozuksa kademeli müdahale, log `/var/log/net-watchdog.log` |
 | `systemd/mem-watch.{service,timer}` | `/etc/systemd/system/` | 5 dk'da bir sistem+konteyner bellek kaydı; backend anon ≥1500 MB'de KRITIK satırı (OOM eğilim verisi), log `/var/log/mem-watch.log` |
 | `systemd/db-backup.{service,timer}` | `/etc/systemd/system/` | Gecelik Postgres yedeği 00:30 UTC = 03:30 TR, `Persistent=true` (sunucuda cron YOK, tek desen systemd timer) |
@@ -38,9 +37,10 @@ docker daemon'ı yeniden BAŞLATMAZ (daemon.json değiştiyse mesai dışı elle
 agent kurulu değilse bölümü atlar).
 
 Yeni VM önkoşulları (install.sh bunları kurmaz): `luciferandlucius` kullanıcısı,
-docker + compose eklentisi, nginx + certbot (sertifikalar
-`/etc/letsencrypt/live/hukukoid.com/` ve `.../hukbot.tragic.tr/` — certbot ile
-yeniden üretilir), `docker network create hukuk_shared`, `~/hukdok` repo
+docker + compose eklentisi, nginx + certbot (tek sertifika
+`/etc/letsencrypt/live/hukukoid.com/` — certbot ile yeniden üretilir; Hukukbot'un ayrı
+sitesi ve sertifikası karar 021 ile kalktı), `docker network create hukuk_shared` (HukuDok
+backend + frontend ve Hukukbot `api` bu ağda buluşur), `~/hukdok` repo
 klonu + `.env`, google-cloud-ops-agent (kurulum:
 `curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install`;
 VM service account'unda `logging.write` + `monitoring.write` scope'ları olmalı —
@@ -50,7 +50,8 @@ mevcut VM'de var).
 
 2026-08-08 envanterindeki iki kalıntı (`sites-available/hukukoid.com` eski :8000 konfigi ve
 `~/hukdok/docker-compose.override.yml`) sunucuda artık YOK; `sites-available` yalnız `default` +
-`hukbot`.
+`hukbot` (25.09 fotoğrafı — `hukbot` repodan 26.09'da kalktı, sunucudan kaldırılması aşağıdaki
+insan adımıdır; o adım yapılana kadar bu da bir sapmadır).
 
 - Dış erişimi GCP güvenlik duvarı keser: internete açık yalnız 22, 80, 443 (+ icmp,
   `default-allow-rdp` 3389 — Linux VM'de gereksiz, silinmesi önerildi). 0.0.0.0'da dinleyen
@@ -62,6 +63,29 @@ mevcut VM'de var).
 - `fluent-bit` 20202 / `otelopscol` 20201 — Ops Agent'ın kendi metrik uçları, varsayılan.
 - Dump kişisel veri içerir; SharePoint klasörü app-only erişimlidir, dump'ı
   başka yere kopyalamayın.
+
+## Hukukbot sitesinin kaldırılması (İNSAN ADIMI — karar 021)
+
+Hukukbot'a kullanıcı erişimi artık yalnız HukuDok'un `/hukukbot` sayfası ve konteyner
+nginx'inin `/hukukbot-api/` allowlist'i üzerindendir (`nginx.conf`, G203); Hukukbot'un
+ayrı alan adlı host nginx sitesi ve `:3000` frontend konteyneri kalkar. Repo kopyası
+(`nginx/sites-available/hukbot`) G207'de silindi ve `install.sh` artık onu kurmaz — ama
+**sunucudaki dosyaya dokunmaz**. Otomasyon ssh yapmaz; aşağıdakiler canlı geçişten SONRA
+(Hukukbot G208 + HukuDok G203-G207 deploy'u ve `/hukukbot` dumanı iki kiracıyla geçtikten
+sonra), mesai dışı, elle yapılır:
+
+```bash
+ssh hukukoid
+sudo rm /etc/nginx/sites-enabled/hukbot /etc/nginx/sites-available/hukbot
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot certificates                       # eski Hukukbot sertifikasının adını gör
+sudo certbot delete --cert-name <eski-hukbot-alani>
+```
+
+Ardından Hukukbot tarafı (`~/hukukbot-ui`): eski `hukukbot_frontend` konteyneri/imajı
+(`docker compose up -d --remove-orphans` G208 compose'uyla kaldırır), DNS kaydı (Namecheap)
+ve Hukukbot'un eski Azure uygulama kaydı — ayrıntı `gorevler/gorev/G209.md`. Doğrulama:
+`ls /etc/nginx/sites-enabled` yalnız `default`; `ss -ltnp | grep 3000` boş.
 
 ## Yedekten geri dönüş (backup_db.sh çıktısı)
 

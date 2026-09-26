@@ -204,7 +204,7 @@ dosyaya dokunmaz; nginx yalnız config değiştiyse ve `nginx -t` geçerse reloa
 | Yol | Hedef | İş |
 | --- | --- | --- |
 | `infra/nginx/sites-available/default` | host nginx | hukukoid.com HTTPS (Let's Encrypt) → frontend `127.0.0.1:8080` (konteyner yalnız loopback'te dinler; `localhost` yazma — ::1 denemesi hata loglar); **timeout'ları konteyner nginx ile eşit tutulmalı** |
-| `infra/nginx/sites-available/hukbot` | host nginx | hukbot.tragic.tr → :3000 (hukukbot-ui stack'i) |
+| ~~`infra/nginx/sites-available/hukbot`~~ | — | 26.09'da KALDIRILDI (karar 021): Hukukbot'un ayrı sitesi yok, erişim konteyner nginx'inin `/hukukbot-api/` allowlist'inden; sunucudaki kopyanın silinmesi insan adımı (`infra/README.md`) |
 | `infra/systemd/db-backup.{service,timer}` | systemd | gecelik pg_dump — `OnCalendar=*-*-* 00:30:00` (UTC) = 03:30 TR, `Persistent=true` |
 | `infra/systemd/net-watchdog.{service,timer}` | systemd | ağ nöbetçisi — `OnBootSec=2min`, `OnUnitActiveSec=1min` |
 | `infra/systemd/mem-watch.{service,timer}` | systemd | bellek kaydı — `OnBootSec=3min`, `OnUnitActiveSec=5min` |

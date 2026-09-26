@@ -16,7 +16,11 @@ PostgreSQL; kimlik Azure AD (MSAL). Bu dosya sıfır-context bir oturumun giriş
 127.0.0.1:8080 → konteyner 80). **Üç port da loopback'e sabit** — dışarıya açık tek kapı
 host nginx'tir (prod 443); bekçi `backend/tests/test_port_baglama.py`. API-key'li
 `/export` route'ları public'e açılmaz; hukukbot ortak `hukuk_shared` Docker ağından
-`http://hukdok_backend:8001` ile konuşur. Vite dev sunucusu 127.0.0.1:5173 (strictPort).
+`http://hukdok_backend:8001` ile konuşur. **Hukukbot'a kullanıcı erişimi yalnız HukuDok'tan**
+(karar 021): kendi sitesi/girişi/arayüzü yok; `/hukukbot` sayfası (`pages/HukukbotPage.tsx`) HukuDok'un access
+token'ıyla aynı origin'den `/hukukbot-api/` önekine konuşur (`lib/hukukbotApi.ts`), Hukukbot token'ı
+HukuDok kuralıyla (`ALLOWED_TENANTS`, `aud=api://<client>`, `scp=access_as_user`) kendisi doğrular; frontend
+konteyneri bu yüzden `hukuk_shared` ağındadır. Vite dev sunucusu 127.0.0.1:5173 (strictPort).
 Port haritası: `docs/mimari/genel-bakis.md` §1.
 
 **İki katmanlı nginx:** Repodaki `nginx.conf` **konteyner** nginx'idir: `listen 80`
@@ -36,6 +40,12 @@ timeout'ları eşit tutulmalı — bkz. `nginx.conf:10-14`). Repodaki host konfi
 / `proxy_hide_header` yok; sunucudaki konfigin bununla aynı olduğu ve `Cache-Control`'un
 tarayıcıya ulaştığı **prod'da doğrulanacak** (`curl -sI https://<alan>/assets/<parça>.js`,
 `curl -sI https://<alan>/`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:114`).
+**Hukukbot proxy'si (karar 021, G203, `nginx.conf:169-204`):** `location ~ ^/hukukbot-api/(ask|sessions|download)(/|$)`
+önek atılarak (`rewrite ... break`) `hukuk_shared` üzerinden `hukukbot_api:8010`'a gider; allowlist dışı her
+`/hukukbot-api` yolu (`/ingest`, `/health` dahil) `return 404`. **Gecikmeli DNS:** upstream değişkenle
+(`set $hukukbot_upstream`) + `resolver 127.0.0.11 valid=30s` — düz `proxy_pass` Hukukbot kapalıyken HukuDok
+nginx'ini AÇILMAZ yapardı; böyle yalnız o istekler 502. `X-User-OID` silinir, `proxy_buffering off` (NDJSON
+akışı), location'da `add_header` yok. Bekçi `backend/tests/test_nginx_hukukbot.py`.
 
 **Backend açılışı** (`backend/docker-entrypoint.sh`): önce `migrate.py` tek süreçte
 koşar (hata = konteyner durur, bozuk şemayla kalkılmaz), sonra uvicorn

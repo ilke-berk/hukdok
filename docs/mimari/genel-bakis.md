@@ -5,6 +5,8 @@
 > satırları), §3'teki `migrate.py` cümlesi ve §7 alt başlıkları: **2026-09-14 · G193**
 > (G182-G191 sonrası, main `e3ba26d` koduna karşı yeniden okundu). §3'ün diğer
 > `database.py`/`api.py` satır atıfları bu turda yeniden doğrulanmadı.
+> §1 port haritasının Hukukbot satırı ve §2'nin `/hukukbot-api` bölümü: **2026-09-26 · G207**
+> (G203 `nginx.conf` + `docker-compose.yml` ve Hukukbot compose'una karşı okundu; karar 021).
 > Bu dosyadaki her iddia koddan okunarak doğrulanmıştır. Kod ile çelişirse kod haklıdır —
 > bu dosyayı düzelt. Ayrıntı için bkz. [`docs/mimari/README.md`](README.md).
 
@@ -46,11 +48,17 @@ bekçi `backend/tests/test_port_baglama.py` (CI'da koşar, konteynerde repo kök
 | 8001 | backend | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx, hukukbot, `deploy.sh` sağlık kapısı |
 | 5432 | postgres | 127.0.0.1 | backend, yönetim araçları |
 | 5173 | Vite dev sunucusu (yalnız lokal; `frontend/vite.config.ts`, strictPort) | 127.0.0.1 | geliştirici tarayıcısı |
+| 8010 | `hukukbot_api` (ayrı compose projesi `../hukukbot-ui`) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/hukukbot-api/` allowlist'i, §2), HukuDok backend'inin `HUKUKBOT_WEBHOOK_URL` webhook'u (`services/export_publisher.py`) |
+
+Hukukbot'un **kendi sitesi ve frontend portu yoktur** (karar
+[021](../kararlar/021-hukukbot-hukudok-girisi.md)): eski ayrı alan adı ve `:3000` frontend konteyneri
+kalktı, host nginx'te yalnız `default` sitesi vardır. Tarayıcı Hukukbot'a yalnız HukuDok origin'inden,
+`/hukukbot` sayfası üzerinden ulaşır.
 
 Vite dev adresi Azure AD uygulama kaydında Redirect URI olarak kayıtlı olmalıdır (MSAL
 `window.location.origin`'e döner, `frontend/src/config/msalConfig.ts`). CORS varsayılanı
 8080 + 5173'tür (`backend/api.py` `_DEFAULT_ORIGINS`). Geliştirme makinesindeki komşu projelerin
-portları (çakıştırma): hukukbot_api 8010, hukukbot_db 5440, emlaksiker-postgres 5434.
+portları (çakıştırma): hukukbot_db 5440 (Hukukbot'un kendi Postgres'i, 127.0.0.1), emlaksiker-postgres 5434.
 
 Bellek ayarına eşlik eden `MALLOC_ARENA_MAX=2` de aynı OOM incelemesinden gelir: glibc
 thread başına arena açıyor, PDF/görüntü dönüşümünün geçici tahsisleri arena'larda kalıp
@@ -96,6 +104,21 @@ Backend'e proxy'lenen location'ların listesi:
 **`/export` bu listede YOKTUR ve asla eklenmez** — konfigin kendi uyarısı: "DIKKAT: /export
 buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir, public'e proxy'lenmez"
 (`nginx.conf:114-115`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
+
+**Hukukbot'a giden tek location** (backend'e değil; karar
+[021](../kararlar/021-hukukbot-hukudok-girisi.md), G203, `nginx.conf:169-204`):
+
+| Location | Not |
+| --- | --- |
+| `~ ^/hukukbot-api/(ask\|sessions\|download)(/\|$)` | Allowlist: `/hukukbot` sayfasının kullanıcı uçları. Önek `rewrite ^/hukukbot-api/(.*)$ /$1 break` ile atılır, `hukukbot_api:8010`'a `hukuk_shared` ağından gider. `X-User-OID ""` (Hukukbot'un dev bypass başlığı dışarıdan sızmaz), `proxy_buffering off` (`/ask` NDJSON akışı), `client_max_body_size 2M`, location'da `add_header` yok (güvenlik başlıkları kalıtılır) (`nginx.conf:183-200`) |
+| `~ ^/hukukbot-api(/\|$)` | Allowlist dışı her şey — `/ingest` (API-key'li webhook), `/health` dahil — `return 404`; SPA'ya da düşmez (`nginx.conf:202-204`) |
+
+**Gecikmeli DNS:** upstream değişkenle verilir (`set $hukukbot_upstream http://hukukbot_api:8010`) ve
+Docker'ın iç DNS'iyle (`resolver 127.0.0.11 valid=30s ipv6=off`) istek anında çözülür. Düz
+`proxy_pass http://hukukbot_api:8010` nginx açılışta adı çözmeye çalıştığı için Hukukbot stack'i kapalıyken
+HukuDok'un frontend konteynerini hiç kaldırmazdı; böyle yalnız bu istekler 502 olur (`nginx.conf:176-179`).
+Bu yüzden `docker-compose.yml`'da frontend `hukuk_shared` ağındadır ama Hukukbot'a `depends_on` bilerek YOKTUR.
+Bekçi: `backend/tests/test_nginx_hukukbot.py`.
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama

@@ -5,7 +5,8 @@ Azure AD (Entra ID) ile oturum açıp backend'e Bearer token taşıması ve **ba
 kendi başına (kullanıcıdan bağımsız) Microsoft Graph'a client-credentials ile gitmesi.
 Her iddia koddan okunmuştur; dosya:satır atıfları bu commit'teki ağaca göredir (§4 app-only
 akış 2026-09-08 · G148 ile G147 sonrası koda göre; 17.09.2026'da ikinci kimliğin (`teslim`)
-kaldırılmasıyla yeniden doğrulandı — tek kimlik).
+kaldırılmasıyla yeniden doğrulandı — tek kimlik; §2.4 Hukukbot 2026-09-26 · G207 ile G203-G208 koduna
+göre).
 Entra tarafında belirlenen süreler ise **koddan okunamaz** — o kalemler ayrı ve açıkça
 "teyit edilmedi" diye işaretlidir (bkz. §3).
 
@@ -130,6 +131,34 @@ uygulamayı düşürmez**:
 `GET /api/config/is_admin` (`:63-66`) aynı kümeye bakar; frontend `ProtectedAdminRoute`
 bunu kullanır. Yetki modeli bundan ibarettir: **tenant üyeliği = tam kullanıcı erişimi,
 ADMIN_EMAILS = yönetim uçları**; rol/grup claim'i okunmaz (§6).
+
+### 2.4 Aynı access token'ın ikinci doğrulayıcısı: Hukukbot (karar 021, G203-G208)
+
+Hukukbot'un kendi girişi ve Azure uygulama kaydı yoktur
+([karar 021](../kararlar/021-hukukbot-hukudok-girisi.md)). `/hukukbot` sayfası
+(`frontend/src/pages/HukukbotPage.tsx`) istekleri `lib/hukukbotApi.ts` üzerinden **`apiClient.fetch`** ile
+atar → §1.3'teki token zinciri aynen geçerlidir: aynı `loginRequest` scope'uyla alınan **access token**
+(idToken değil), 401'de bir forceRefresh + bir tekrar, kurtarılamayan 401'de oturum-bitti akışı. Yol aynı
+origin'deki `/hukukbot-api/...` önekidir; konteyner nginx'i `Authorization`'ı olduğu gibi Hukukbot'a geçirir,
+`X-User-OID`'i siler ([`genel-bakis.md` §2](genel-bakis.md)).
+
+Hukukbot backend'i (`../hukukbot-ui/app/auth.py`, ayrı repo) token'ı §2'deki zincirin eşiyle kendisi
+doğrular: `tid ∈ ALLOWED_TENANTS` → kiracının `discovery/v2.0/keys` JWKS'i → RS256 + `aud` **yalnız**
+`api://<HUKDOK_CLIENT_ID>` + `iss` v2.0 ya da v1 (`sts.windows.net/{tid}/`) + `exp` zorunlu + `scp`'de
+`access_as_user`. Env'i `ALLOWED_TENANTS` (HukuDok'la aynı liste) ve `HUKDOK_CLIENT_ID` (HukuDok
+`AZURE_CLIENT_ID` ile aynı değer).
+
+**Scope / aud notu:** token tek bir kaynak (HukuDok API kaydı) için verilir; Hukukbot aynı kaynağın ikinci
+tüketicisidir, kendi `aud`'u yoktur. Bu yüzden:
+
+- `loginRequest.scopes` (`api://<client_id>/access_as_user`) ya da HukuDok uygulama kaydı değişirse iki
+  backend birlikte etkilenir.
+- Çıplak `<client_id>` audience'ı iki tarafta da reddedilir (O4 — ID token access token yerine geçmesin).
+- Kimlik anahtarı farklıdır: HukuDok `preferred_username | upn | email` okur (§2), Hukukbot **`oid`** (yoksa
+  401; `sub`'a düşmez) — sohbet geçmişi `oid`'e bağlı olduğundan eski girişle oluşmuş LexisBio geçmişi korunur.
+  E-posta Hukukbot'ta yalnız kullanıcı satırına aynı üçlü fallback'le yazılır.
+- Hukukbot'un kurtarılamayan 401'i `apiClient`'ın oturum-bitti akışını tetikler — Hukukbot'ta `aud`/kiracı
+  yanlış yapılandırılırsa kullanıcı HukuDok'tan da çıkarılır (bilinçli; `hukukbotApi.ts` baş yorumu).
 
 ## 3. Süre tablosu
 
