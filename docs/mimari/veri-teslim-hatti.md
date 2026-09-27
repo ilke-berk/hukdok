@@ -462,13 +462,29 @@ Tek seferlik DB dönüşümü `scripts/yazim_birligi.py` (G160; dry-run varsayı
 tarihçeli; Sigortalı/Davalı İdare/istinaf-temyiz mahkemesi/avukat adlarına DOKUNMAZ — sözleşme
 §11 DB-008 genişletme ricasının sebebi). Avukat adları ayrı betikte: `scripts/avukat_yazim.py`
 (27.09 kullanıcı kararı; dry-run varsayılan, `--apply --kim`, tarihçe `source="avukat_yazim"`):
-`lawyers` listesindeki 7 aksansız BÜYÜK yazım normal yazıma ("TUGCE UNGOR" → "Tuğçe Ungör Yanık" —
-"Ungör", Ü değil; kartlardaki "Üngör" de buna iner;
-`code` sabit), 3 dış avukat eklenir, kart yazımları tek biçime iner ve `case_lawyers.lawyer_id`
-bağı kurulur. Paket avukatı yalnız AD olarak getirir (kimlik yok); aktarımın bağ kuralı
-`upper(lawyers.name) == tr_upper(ad)` (`_avukatlari_yaz`) liste yazımı doğru olunca tutar.
-İdari personel (Murat Arslan, Çiğdem Tel, Nurten Meral) pakette 12 kişilik föy listesinde
-geldiği için kartlarda kalır, listeye EKLENMEZ (bağsız).
+`lawyers` listesinin TAMAMI kullanıcı onaylı normal yazıma iner (`LISTE_YENIDEN_ADLANDIR`;
+"TUGCE UNGOR" → "Tuğçe Ungör Yanık" — "Ungör", Ü değil; "DUGCEM AYDIYE BALIKCI" teyit bekliyor;
+`code` sabit), 3 dış avukat eklenir; kart (sorumlu/UYAP/`case_lawyers`), duruşma
+(`hearing_dates.lawyer_name`, tarihçe kartta `durusma_avukati`) ve müvekkil vekil listesi
+(`clients.vekil_avukatlar`; listede olmayan vekil aynen) tek biçime iner, `case_lawyers.lawyer_id`
+bağı kurulur; koşu sonunda BEKÇİ sayacı "bilinen kişinin farklı yazımı" beş alanda 0 olmalı.
+Paket avukatı yalnız AD olarak getirir (kimlik yok); `avukat_haritasi_kur` artık LİSTE yazımını
+kart yazımından önde tutar (liste düzeltilmemiş, tamamı BÜYÜK kayıtta eski davranış), aktarımın bağ
+kuralı `upper(lawyers.name) == tr_upper(ad)` (`_avukatlari_yaz`) böylece tutar. İdari personel
+(Murat Arslan, Çiğdem Tel, Nurten Meral) pakette 12 kişilik föy listesinde geldiği için kartlarda
+kalır, listeye EKLENMEZ (bağsız).
+
+**Avukat yazım koruması (27.09, kullanıcı kararı).** Avukat adı yazan her yol
+`managers/lawyer_resolver.kanonik_avukat_metni`'nden geçer (bilinen kişi → listedeki yazım; çoklu
+değer parça parça; ayraçlı liste kaydı "Hanyaloğlu & Acar" bölünmez): `case_manager` sorumlu (mevcut
+`canonicalize_lawyers`) + UYAP avukatı + zenginleştirme, duruşma ekleme (`routes/cases.py`) ve
+belgeden duruşma (`document_pipeline`), müvekkil güncelleme (`routes/clients.py` vekil listesi),
+aktarım (liste önceliği). Kullanıcı yazma yolu (`add_case`/`update_case`, duruşma ekleme) listede
+karşılığı olmayan YENİ adı `AvukatListedeYok` → 422 ile reddeder (`case_manager.avukat_adlarini_dogrula`;
+liste yazımın yapıldığı OTURUMDAN okunur; değişmeden gelen eski değer ve boş liste engellenmez).
+Yönetim listesi aynı kişiyi farklı yazımla ikinci kez almaz (`reference_lists.ad_kimligi`: Türkçe
+harf katlanır, "Av." atılır). Ajanda `?lawyer=` filtresi seçimi listedeki yazıma çözer. Testler
+`tests/test_avukat_yazim.py`, `tests/test_avukat_yazim_korumasi.py`.
 
 **Çoklu avukatlı kart (G158, plan M5).** `required_fields.COKLU_AVUKAT_ESIGI = 2` (`:49`),
 `responsible_lawyer_name` tanımında `skip_when_lawyers_at_least` (`:73`): `case_lawyers` ≥ 2

@@ -27,8 +27,9 @@ from required_fields import (
 )
 from managers.lawyer_resolver import (
     _norm_name, _split_persons, _resolve_lawyer_aliases, _value_matches,
-    canonicalize_lawyers,
+    AvukatListedeYok, canonicalize_lawyers, kanonik_avukat_metni, listede_olmayan_yeni_adlar,
 )
+
 # G066: karar durumu kapalı havuz kapısı tarihçe modülünde yaşar (ikinci
 # uygulama çıkarılmadı). Import yönü tek yönlüdür — `stage_decisions` yalnız
 # `models`/`db_errors` import eder, `case_manager`ı ÇAĞIRMAZ: döngü yok,
@@ -1155,6 +1156,25 @@ def _resolve_party_client_id(db, p: dict):
 PANEL_SOURCE = "panel"
 
 
+
+def avukat_adlarini_dogrula(yeni: dict, onceki: Optional[dict] = None, db=None) -> None:
+    """27.09 yazım koruması (kullanıcı kararı): kullanıcı yazma yoluna listede karşılığı olmayan
+    YENİ avukat adı gelirse `AvukatListedeYok` (api.py → 422). Kartta zaten duran, değişmeden
+    geri gelen eski değer ("Arşiv Dosya Yöneticisi", idari personel) engellenmez."""
+    onceki = onceki or {}
+    # Liste, yazımın yapıldığı AYNI oturumdan okunur (config önbelleği başka DB'yi gösterebilir).
+    liste = ([{"code": av.code, "name": av.name} for av in db.query(models.Lawyer).all()]
+             if db is not None else None)
+    eksik: list = []
+    for alan in ("responsible_lawyer_name", "uyap_lawyer_name"):
+        eksik += listede_olmayan_yeni_adlar(yeni.get(alan), onceki.get(alan), liste)
+    onceki_liste = ";".join([*(onceki.get("lawyers") or []), onceki.get("responsible_lawyer_name") or ""])
+    for lw in yeni.get("lawyers") or []:
+        eksik += listede_olmayan_yeni_adlar((lw or {}).get("name"), onceki_liste, liste)
+    if eksik:
+        raise AvukatListedeYok(dict.fromkeys(eksik))
+
+
 def update_case(case_id: int, data: dict, tenant_id: str = None, *,
                 changed_by: Optional[str] = None):
     """Dava alanlarını günceller.
@@ -1177,6 +1197,13 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
         case = query.first()
         if not case:
             return None
+
+        # 27.09 yazım koruması — HİÇBİR alan yazılmadan (listede olmayan YENİ avukat adı → 422)
+        avukat_adlarini_dogrula(data, {
+            "responsible_lawyer_name": case.responsible_lawyer_name,
+            "uyap_lawyer_name": case.uyap_lawyer_name,
+            "lawyers": [lw.name for lw in case.lawyers],
+        }, db=db)
 
         # Fields to track for history
         tracked_fields = ["esas_no", "court", "status"]
@@ -1226,7 +1253,9 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
         case.service_type = data.get("service_type", case.service_type)
         case.subject = data.get("subject", case.subject)
         case.responsible_lawyer_name = data.get("responsible_lawyer_name", case.responsible_lawyer_name)
-        case.uyap_lawyer_name = data.get("uyap_lawyer_name", case.uyap_lawyer_name)
+        # 27.09 yazım koruması: UYAP avukatı da listedeki yazıma iner (sorumlu avukat aşağıda
+        # canonicalize_lawyers'tan geçer).
+        case.uyap_lawyer_name = kanonik_avukat_metni(data.get("uyap_lawyer_name", case.uyap_lawyer_name))
         case.maddi_tazminat = data.get("maddi_tazminat", case.maddi_tazminat)
         case.manevi_tazminat = data.get("manevi_tazminat", case.manevi_tazminat)
         case.bureau_type = data.get("bureau_type", case.bureau_type)
@@ -1306,10 +1335,10 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
         case.updated_at = datetime.now()
         db.commit()
         return True
-    except InvalidCaseStatusError:
-        # İstemci hatası (G196) — nihai başarısızlık DEĞİL: ERROR basılmaz, False'a
-        # yutulmaz; api.py 400'e çevirir. Kapı ilk yazımdan önce koştuğu için
-        # rollback yalnız oturumu temiz kapatır.
+    except (InvalidCaseStatusError, AvukatListedeYok):
+        # İstemci hatası (G196; 27.09 avukat yazım koruması) — nihai başarısızlık DEĞİL:
+        # ERROR basılmaz, False'a yutulmaz; api.py 400/422'ye çevirir. Kapılar ilk
+        # yazımdan önce koştuğu için rollback yalnız oturumu temiz kapatır.
         db.rollback()
         raise
     except Exception as e:
@@ -1416,6 +1445,13 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
 
         if is_stale_case(case.updated_at, expected_updated_at):
             return {"error": "stale_case"}
+
+        # 27.09 yazım koruması: avukat alanları listedeki yazıma iner (aynı kişinin
+        # farklı yazımı "değişiklik" sayılmaz, tarihçe gürültüsü üretmez).
+        fields = dict(fields)
+        for alan in ("responsible_lawyer_name", "uyap_lawyer_name"):
+            if fields.get(alan):
+                fields[alan] = kanonik_avukat_metni(fields[alan])
 
         current = {f: getattr(case, f) for f in ENRICH_FIELDS}
         updated = []
@@ -1562,6 +1598,8 @@ def add_case(data: dict, tenant_id: str = None):
     status = status or "DERDEST"
     try:
         db = SessionLocal()
+        # 27.09 yazım koruması: listede olmayan avukat adıyla kart açılmaz (AvukatListedeYok → 422).
+        avukat_adlarini_dogrula(data, db=db)
 
         # Handle opening date — çoklu format desteği
         opening_date = None
@@ -1602,7 +1640,7 @@ def add_case(data: dict, tenant_id: str = None):
             court=data.get("court"),
             opening_date=opening_date,
             responsible_lawyer_name=data.get("responsible_lawyer_name"),
-            uyap_lawyer_name=data.get("uyap_lawyer_name"),
+            uyap_lawyer_name=kanonik_avukat_metni(data.get("uyap_lawyer_name")),
             maddi_tazminat=data.get("maddi_tazminat", 0),
             manevi_tazminat=data.get("manevi_tazminat", 0),
             bureau_type=data.get("bureau_type"),
@@ -1721,6 +1759,10 @@ def add_case(data: dict, tenant_id: str = None):
             return {"error": "duplicate_tracking_no"}
         logger.error(f"Add Case Error: {e}")
         return None
+    except AvukatListedeYok:
+        # İstemci hatası (27.09 yazım koruması): ERROR yok, yutulmaz — api.py 422.
+        db.rollback()
+        raise
     except Exception as e:
         logger.error(f"Add Case Error: {e}")
         db.rollback()

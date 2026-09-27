@@ -31,6 +31,9 @@ from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
     update_case_tracking, get_case_stage_log, find_duplicate_cases,
 )
+from managers.lawyer_resolver import (
+    AvukatListedeYok, kanonik_avukat_adi, kanonik_avukat_metni, listede_olmayan_yeni_adlar,
+)
 from managers.stage_decisions import get_stage_decisions
 from services import case_relations_auto
 import models
@@ -298,6 +301,7 @@ def get_case_client_notice_target(
 
 @router.put("/api/cases/{case_id}")
 def api_update_case(case_id: int, case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
+    # Listede olmayan YENİ avukat adı → update_case AvukatListedeYok → api.py 422 (27.09).
     result = update_case(case_id, case_data.model_dump(), tenant_id=tenant_id)
     # Faz 5-B (plan 5.3): "dava yok" (None) artık 500 değil 404 — silinmiş/başka
     # tenant'a ait kartı güncellemeye çalışan arayüz sunucu arızası görüyordu.
@@ -665,12 +669,15 @@ def add_hearing_date(
         case = get_tenant_owned_case(db, case_id, tenant_id)
         if not case:
             raise HTTPException(status_code=404, detail="Dava bulunamadı")
+        eksik = listede_olmayan_yeni_adlar(data.lawyer_name, case.responsible_lawyer_name)
+        if eksik:
+            raise HTTPException(status_code=422, detail=str(AvukatListedeYok(eksik)))
 
         hearing = models.HearingDate(
             case_id=case_id,
             hearing_date=data.hearing_date,
             hearing_time=data.hearing_time,
-            lawyer_name=data.lawyer_name or case.responsible_lawyer_name,
+            lawyer_name=kanonik_avukat_metni(data.lawyer_name or case.responsible_lawyer_name),
             extracted_from_doc=data.extracted_from_doc,
             note=data.note,
             created_by=user.get("name") or user.get("preferred_username"),
@@ -700,7 +707,8 @@ def get_hearing_dates(
         from sqlalchemy import or_
         q = db.query(models.HearingDate)
         if lawyer:
-            q = q.filter(models.HearingDate.lawyer_name == lawyer)
+            # 27.09: seçilen ad/kod listedeki yazıma çözülür (kayıtlar da o yazımla durur).
+            q = q.filter(models.HearingDate.lawyer_name == (kanonik_avukat_adi(lawyer) or lawyer))
         rows = (
             q.outerjoin(models.Case, models.HearingDate.case_id == models.Case.id)
             .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))

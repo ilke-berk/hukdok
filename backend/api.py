@@ -63,6 +63,7 @@ from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response
 
 from constants import InvalidCaseStatusError
+from managers.lawyer_resolver import AvukatListedeYok
 
 try:
     write_startup_log("Attempting to import modules...")
@@ -419,6 +420,12 @@ async def invalid_decision_status_handler(request, exc: InvalidDecisionStatusErr
 @app.exception_handler(InvalidCaseStatusError)
 async def invalid_case_status_handler(request, exc: InvalidCaseStatusError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(AvukatListedeYok)
+async def avukat_listede_yok_handler(request, exc: AvukatListedeYok):
+    # 27.09 yazım koruması: listede karşılığı olmayan YENİ avukat adı (istemci hatası, ERROR yok).
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 # ─── 503 "sistem meşgul" ağı (Faz 5-B, plan 5.3) ──────────────────────────────

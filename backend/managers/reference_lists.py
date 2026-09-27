@@ -140,6 +140,20 @@ def tr_title(s: str) -> str:
     return " ".join(sonuc)
 
 
+_ASCII_KATLA = str.maketrans("ÇĞİIÖŞÜÂÎÛ", "CGIIOSUAIU")
+
+
+def ad_kimligi(list_key: str, name: str) -> str:
+    """Mükerrer ad karşılaştırmasının anahtarı. Varsayılan `tr_upper`; avukat listesinde
+    (27.09 yazım koruması) Türkçe harf ASCII'ye katlanır ve "Av."/"Avukat" öneki atılır —
+    "TUGCE UNGOR YANIK" ile "Av. Tuğçe Ungör Yanık" AYNI kişidir, ikinci kez eklenemez."""
+    ust = tr_upper(name or "")
+    if list_key != "lawyers":
+        return ust
+    ust = re.sub(r"^(AV\.?|AVUKAT)\s+", "", ust.translate(_ASCII_KATLA))
+    return " ".join(re.sub(r"[^A-Z0-9 ]", " ", ust).split())
+
+
 def normalize_list_name(name: str) -> str:
     """Tüm referans listelerinin ad saklama formatı = `tr_title` (DB-008):
     "Doktor", "Özel Müvekkil", "Kadın Hastalıkları ve Doğum", "Ak Sigorta A.Ş.".
@@ -398,15 +412,20 @@ def add_item(list_type: str, **fields):
         # aynı ada farklı üst tür altında, taraf rolleri aynı ada farklı türde
         # (Ana/Üçüncü) izin verdiği için ilgili kolona göre daraltılır)
         if fields.get("name"):
-            target = tr_upper(fields["name"])
+            liste_anahtari = _ALIASES.get(list_type, list_type)
+            target = ad_kimligi(liste_anahtari, fields["name"])
             q = db.query(spec.model)
             if "parent_code" in fields:
                 q = q.filter(spec.model.parent_code == fields["parent_code"])
             if "role_type" in fields:
                 q = q.filter(spec.model.role_type == fields["role_type"])
             for row in q.all():
-                if tr_upper(getattr(row, "name", None) or "") == target:
-                    raise DuplicateItemError(f"\"{fields['name']}\" zaten listede mevcut")
+                mevcut_ad = getattr(row, "name", None) or ""
+                if ad_kimligi(liste_anahtari, mevcut_ad) == target:
+                    raise DuplicateItemError(
+                        f"\"{fields['name']}\" zaten listede mevcut"
+                        + (f" (\"{mevcut_ad}\" olarak)" if mevcut_ad != fields["name"] else "")
+                    )
 
         # Mükerrer kod kontrolü
         identifier = fields.get(spec.key)
@@ -619,7 +638,7 @@ def update_item(list_type: str, identifier: str, fields: dict):
             and new_role_type != getattr(item, "role_type", None)
         )
         name_changed = new_name and (not old_name or tr_upper(new_name) != tr_upper(old_name))
-        target_name = tr_upper(new_name or old_name or "")
+        target_name = ad_kimligi(key, new_name or old_name or "")
         if target_name and (name_changed or role_type_changed):
             q = db.query(spec.model).filter(key_col != identifier)
             if key == "court_types":
@@ -627,7 +646,7 @@ def update_item(list_type: str, identifier: str, fields: dict):
             if key == "party_roles":
                 q = q.filter(spec.model.role_type == (new_role_type or item.role_type))
             for row in q.all():
-                if tr_upper(getattr(row, "name", None) or "") == target_name:
+                if ad_kimligi(key, getattr(row, "name", None) or "") == target_name:
                     raise DuplicateItemError(f"\"{new_name or old_name}\" zaten listede mevcut")
 
         # Kimlik kolonu düzenlenebiliyorsa (e-posta alıcıları) mükerrer kontrolü

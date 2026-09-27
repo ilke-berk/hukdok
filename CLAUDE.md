@@ -262,6 +262,9 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
   daha eklersen özet satırı ("N passed") hiç basılmaz.
 - **Log sözleşmesi:** deneme-düzeyi hatalar WARNING, nihai başarısızlık TEK ERROR
   (`analyzer.py::_failed_event` docstring'i). Retry yollarına yeni ERROR ekleme.
+- **Avukat adı serbest yazılmaz (27.09):** avukat adı yazan YENİ kod `lawyer_resolver.kanonik_avukat_metni`'nden
+  geçer (listedeki yazım; doğru yazım "Tuğçe Ungör Yanık", Ü değil); kullanıcı yolları listede olmayan
+  yeni adı `AvukatListedeYok` → 422 ile reddeder. Ayrıntı `docs/mimari/veri-teslim-hatti.md` "Avukat yazım koruması".
 - **Rapor asistanı tanımı doğrulanmadan kullanılmaz:** Gemini'nin döndürdüğü tanım
   `services/rapor/asistan.tanimi_dogrula` → `RaporTanimi` + `motor.tanimi_dogrula` yolundan
   geçmeden istemciye `tanim` olarak GİTMEZ (geçmezse `warning` + `tanim=null`); Gemini

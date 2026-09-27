@@ -20,6 +20,7 @@ from schemas import (
 )
 from database import SessionLocal
 from managers.client_manager import add_client, save_client_policies
+from managers.lawyer_resolver import kanonik_avukat_metni
 import models
 
 router = APIRouter()
@@ -102,6 +103,10 @@ def api_update_client(
             raise HTTPException(status_code=404, detail="Client not found")
 
         update_data = client_data.model_dump(exclude_unset=True)
+        if update_data.get("vekil_avukatlar"):
+            # 27.09 yazım koruması: listedeki avukatlar listedeki yazımla; vekaletnamedeki
+            # listede olmayan avukatlar olduğu gibi kalır (reddedilmez).
+            update_data["vekil_avukatlar"] = kanonik_avukat_metni(update_data["vekil_avukatlar"])
         for key, value in update_data.items():
             setattr(client, key, value)
 

@@ -20,6 +20,7 @@ from fastapi import HTTPException, BackgroundTasks, UploadFile
 from config.settings import settings
 from database import SessionLocal
 from managers.config_manager import DynamicConfig
+from managers.lawyer_resolver import kanonik_avukat_metni
 from managers.log_manager import TechnicalLogger
 from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 from pdf.format_converter import ConversionBusyError
@@ -938,7 +939,9 @@ def save_hearing_date(
                 case_id=linked_case_id,
                 hearing_date=parsed_hearing,
                 hearing_time=sonraki_durusma_saati or None,
-                lawyer_name=avukat_adi or (case_h.responsible_lawyer_name if case_h else None),
+                # 27.09 yazım koruması: duruşmanın avukatı listedeki yazımla
+                lawyer_name=kanonik_avukat_metni(
+                    avukat_adi or (case_h.responsible_lawyer_name if case_h else None)),
                 extracted_from_doc=new_filename,
                 created_by=current_user_name,
             )

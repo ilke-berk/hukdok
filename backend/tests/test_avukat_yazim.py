@@ -1,6 +1,7 @@
 """`scripts/avukat_yazim.py` — avukat adlarının yazım birliği + kart–avukat bağı (27.09 kararı):
-liste 7 avukatı normal yazıma geçirir, 3 dış avukat eklenir, idari personel listeye girmez;
-kart yazımı tarihçeli tek biçime iner, aynı kartta ikizlenen satır birleşir, bağ kurulur;
+liste normal yazıma geçer (tabloda olmayan ad dokunulmaz), 3 dış avukat eklenir, idari personel
+listeye girmez; kart / duruşma / müvekkil vekil listesi tek biçime iner (kart ve duruşma tarihçeli),
+aynı kartta ikizlenen satır birleşir, bağ kurulur; BEKÇİ sayacı koşu sonrası 0;
 "A;B" birleşik değer parça parça düzelir, silinmiş kart dokunulmaz; kuru koşu yazmaz; ikinci koşu 0.
 """
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ def _kur(fabrika):
     try:
         tugce = models.Lawyer(code="TUGCEUNG", name="TUGCE UNGOR", gorev="AVUKAT", sequence=1)
         berna = models.Lawyer(code="BERNABUR", name="BERNA BURCU BASYURT", gorev="AVUKAT", sequence=2)
-        diger = models.Lawyer(code="ZEYNEPAY", name="ZEYNEP AYAN", gorev="DIŞ AVUKAT", sequence=3)
+        diger = models.Lawyer(code="DUGCEMAY", name="DUGCEM AYDIYE BALIKCI", gorev="DIŞ AVUKAT", sequence=3)
         db.add_all([tugce, berna, diger])
         db.flush()
         k1 = _kart(db, "D1.K1........0001.HUKUK.00000", "", responsible_lawyer_name="TUGCE UNGOR",
@@ -35,8 +36,15 @@ def _kur(fabrika):
             models.CaseLawyer(case_id=k2.id, name="Berna Burcu Başyurt"),  # liste adı düzelince bağlanır
             models.CaseLawyer(case_id=silinmis.id, name="TUGCE UNGOR"),
         ])
+        durusma = models.HearingDate(case_id=k1.id, hearing_date=datetime(2026, 10, 1).date(), lawyer_name="TUGCE UNGOR")
+        silinmis_durusma = models.HearingDate(case_id=silinmis.id, hearing_date=datetime(2026, 10, 2).date(),
+                                              lawyer_name="TUGCE UNGOR")
+        muvekkil = models.Client(name="Müvekkil A",
+                                 vekil_avukatlar="TUĞÇE ÜNGÖR;HAYRETTİN ÇİL;SERAP TURGAL; TUGCE UNGOR YANIK")
+        db.add_all([durusma, silinmis_durusma, muvekkil])
         db.commit()
-        return {"k1": k1.id, "k2": k2.id, "silinmis": silinmis.id, "tugce": tugce.id, "berna": berna.id}
+        return {"k1": k1.id, "k2": k2.id, "silinmis": silinmis.id, "tugce": tugce.id, "berna": berna.id,
+                "durusma": durusma.id, "silinmis_durusma": silinmis_durusma.id, "muvekkil": muvekkil.id}
     finally:
         db.close()
 
@@ -53,7 +61,7 @@ def test_kuru_kosu_yazmaz(db_env):
     assert sonuc.sayim("liste", "YAPILDI") == 2 and sonuc.sayim("ekle", "YAPILDI") == 3
     db = db_env()
     try:
-        assert {av.name for av in db.query(models.Lawyer)} == {"TUGCE UNGOR", "BERNA BURCU BASYURT", "ZEYNEP AYAN"}
+        assert {av.name for av in db.query(models.Lawyer)} == {"TUGCE UNGOR", "BERNA BURCU BASYURT", "DUGCEM AYDIYE BALIKCI"}
         assert db.query(models.CaseHistory).count() == 0
         assert db.query(models.CaseLawyer).count() == 6
     finally:
@@ -63,14 +71,16 @@ def test_kuru_kosu_yazmaz(db_env):
 def test_apply_yazim_bag_birlesme_ve_ikinci_kosu_sifir(db_env):
     ids = _kur(db_env)
     sonuc, sayac, kalan = ay.kos(db_env, apply=True, kim="ilke")
-    assert sayac == {"birlesik_duzelen": 1, "birlesen_satir": 1}
+    assert sayac["birlesik_duzelen"] == 1 and sayac["birlesen_satir"] == 1
+    assert sayac["farkli_yazim"] == {"responsible_lawyer_name": 0, "uyap_lawyer_name": 0, "case_lawyers": 0,
+                                     "hearing_dates": 0, "vekil_avukatlar": 0}
 
     db = db_env()
     try:
         liste = {av.code: (av.name, av.gorev) for av in db.query(models.Lawyer)}
         assert liste["TUGCEUNG"] == ("Tuğçe Ungör Yanık", "AVUKAT")
         assert liste["BERNABUR"] == ("Berna Burcu Başyurt", "AVUKAT")
-        assert liste["ZEYNEPAY"] == ("ZEYNEP AYAN", "DIŞ AVUKAT")          # tabloda olmayan dokunulmaz
+        assert liste["DUGCEMAY"] == ("DUGCEM AYDIYE BALIKCI", "DIŞ AVUKAT")   # tabloda yok → dokunulmaz
         for ad, kod in ay.YENI_DIS_AVUKATLAR:
             assert liste[kod] == (ad, "DIŞ AVUKAT")
         assert not any(ay.anahtar(ad) == ay.anahtar(p) for ad, _ in liste.values() for p in ay.IDARI_PERSONEL)
@@ -97,6 +107,14 @@ def test_apply_yazim_bag_birlesme_ve_ikinci_kosu_sifir(db_env):
         assert (ids["k1"], "uyap_lawyer_name", "Av. Tuğçe Ungor Yanık", "Tuğçe Ungör Yanık", "ilke", "avukat_yazim") in tarihce
         assert (ids["k1"], "avukat", "Cigdem Tel", "Çiğdem Tel", "ilke", "avukat_yazim") in tarihce
         assert not any(h[0] == ids["silinmis"] for h in tarihce)
+
+        # duruşma (aktif kart) düzelir + tarihçe; silinmiş kartın duruşması dokunulmaz
+        assert db.get(models.HearingDate, ids["durusma"]).lawyer_name == "Tuğçe Ungör Yanık"
+        assert db.get(models.HearingDate, ids["silinmis_durusma"]).lawyer_name == "TUGCE UNGOR"
+        assert (ids["k1"], "durusma_avukati", "2026-10-01 TUGCE UNGOR", "2026-10-01 Tuğçe Ungör Yanık",
+                "ilke", "avukat_yazim") in tarihce
+        # müvekkil vekil listesi: bilinenler doğru yazım, aynı kişi tek, diğer vekil aynen
+        assert db.get(models.Client, ids["muvekkil"]).vekil_avukatlar == "Tuğçe Ungör Yanık;HAYRETTİN ÇİL;Serap Turgal"
     finally:
         db.close()
 

@@ -660,12 +660,15 @@ _AVUKAT_HARITASI: Dict[str, str] = {}
 
 
 def avukat_haritasi_kur(db) -> Dict[str, str]:
-    """{normalize ad: gösterilecek yazım} — koşu başında BİR kez okunur."""
+    """{normalize ad: gösterilecek yazım} — koşu başında BİR kez okunur.
+
+    27.09 yazım koruması (kullanıcı kararı): `lawyers` listesi DOĞRU yazımın tek kaynağıdır
+    (`scripts/avukat_yazim.py` ile normal yazıma indi, yeni kayıt yolları listeye çözer) →
+    liste yazımı kart yazımını EZER. Kartlar yalnız listede olmayan adlar (idari personel)
+    için yedektir. Listede hâlâ TAMAMI BÜYÜK bir ad varsa (liste henüz düzeltilmemiş ortam)
+    eski davranış: kart yazımı öncelikli, yoksa `tr_title`.
+    """
     _AVUKAT_HARITASI.clear()
-    for (ad,) in db.query(models.Lawyer.name).filter(models.Lawyer.name.isnot(None)):
-        if ad and ad.strip():
-            _AVUKAT_HARITASI.setdefault(_baslik_anahtari(ad), tr_title(ad))
-    # Kart yazımları resmî listeyi EZER: orada aksanlar korunmuş.
     sorgu = db.query(models.Case.responsible_lawyer_name).filter(
         models.Case.responsible_lawyer_name.isnot(None),
         models.Case.responsible_lawyer_name != "",
@@ -673,6 +676,14 @@ def avukat_haritasi_kur(db) -> Dict[str, str]:
     for (ad,) in sorgu:
         temiz = (ad or "").strip()
         if temiz and ";" not in temiz:      # "A;B" birleşik kayıtlar ad değildir
+            _AVUKAT_HARITASI[_baslik_anahtari(temiz)] = temiz
+    for (ad,) in db.query(models.Lawyer.name).filter(models.Lawyer.name.isnot(None)):
+        temiz = " ".join((ad or "").split())
+        if not temiz:
+            continue
+        if temiz.isupper():
+            _AVUKAT_HARITASI.setdefault(_baslik_anahtari(temiz), tr_title(temiz))
+        else:
             _AVUKAT_HARITASI[_baslik_anahtari(temiz)] = temiz
     return _AVUKAT_HARITASI
 

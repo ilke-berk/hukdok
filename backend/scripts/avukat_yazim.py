@@ -25,7 +25,12 @@ Adımlar (tek transaction):
      tek ada indirmek kullanıcı kararıdır). Silinmiş kartlar kapsam dışı.
      Yeniden adlandırma sonrası aynı kartta aynı adlı ikinci `case_lawyers` satırı birleşir
      (bağlı olan / küçük id kalır).
-  4. Bağ: `case_lawyers.lawyer_id` boş ve adı listedeki bir avukatla aynı → bağlanır.
+  4. Duruşma: `hearing_dates.lawyer_name` (aktif kart; tarihçe kartta `durusma_avukati`).
+  5. Müvekkil: `clients.vekil_avukatlar` parçaları (listedeki/idari kişiler; diğer vekiller aynen).
+  6. Bağ: `case_lawyers.lawyer_id` boş ve adı listedeki bir avukatla aynı → bağlanır.
+  BEKÇİ: koşu sonunda "bilinen kişinin farklı yazımı" beş alanda sayılır — hepsi 0 olmalı.
+  Kalıcı koruma (aynı gün): yeni kayıt yolları `lawyer_resolver.kanonik_avukat_metni`'nden geçer,
+  kullanıcı uçları listede olmayan YENİ adı 422 ile reddeder, liste aynı kişiyi ikinci kez almaz.
 
 Tarihçe `changed_by=--kim`, `source="avukat_yazim"`. Not: kesim-sonrası kullanıcı koruması
 (`hukdok_aktarim.kesim_sonrasi_kullanici_kaydi`) bu kaynağı kullanıcı imzası sayar — yalnız
@@ -55,7 +60,11 @@ from scripts.ekip_cevabi_1209 import Sonuc
 logger = logging.getLogger("AvukatYazim")
 SOURCE = "avukat_yazim"
 
-#: (listede beklenen eski adın anahtarı, yeni ad) — `code` değişmez.
+#: (listedeki eski ad, yeni ad) — eşleşme `anahtar(eski)` ile; `code` değişmez.
+#: 27.09 kullanıcı onayı: listenin TAMAMI normal yazım. Türkçe karaktersiz girilmiş adlar
+#: (Karagül, Postalcıoğlu, Ertürk, Saygıner, Dilek Yıldırım, Başyurt, Fevzi, Kerim, Keziban,
+#: Sakın, Oğuz … Çağlar, Özlem Deniz Türel, Hüseyin) kullanıcıya tek tek onaylatıldı.
+#: "DUGCEM AYDIYE BALIKCI" BİLEREK YOK — doğru yazımı kullanıcı teyit edecek.
 LISTE_YENIDEN_ADLANDIR: Tuple[Tuple[str, str], ...] = (
     ("TUGCE UNGOR", "Tuğçe Ungör Yanık"),
     ("BERNA BURCU BASYURT", "Berna Burcu Başyurt"),
@@ -64,6 +73,74 @@ LISTE_YENIDEN_ADLANDIR: Tuple[Tuple[str, str], ...] = (
     ("BARIS YUCEL", "Barış Yücel"),
     ("AYSE GUL HANYALOGLU", "Ayşe Gül Hanyaloğlu"),
     ("AYSE ACAR YUCEL", "Ayşe Acar Yücel"),
+    ("ABDULLAH BİRKAN ÖLMEZ", "Abdullah Birkan Ölmez"),
+    ("AHMET ALPEREN KARAGUL", "Ahmet Alperen Karagül"),
+    ("ASENA YILMAZ", "Asena Yılmaz"),
+    ("AYSEL DİDEM KIVANÇ", "Aysel Didem Kıvanç"),
+    ("AYSENUR POSTALCIOGLU", "Ayşenur Postalcıoğlu"),
+    ("AYŞE AYAN", "Ayşe Ayan"),
+    ("AYŞE NUR BAKİ", "Ayşe Nur Baki"),
+    ("BATUHAN ŞAHİN", "Batuhan Şahin"),
+    ("BURAK KAAN KOÇAK", "Burak Kaan Koçak"),
+    ("BURCU ERTURK", "Burcu Ertürk"),
+    ("BURCU SAYGINER SOYLU", "Burcu Saygıner Soylu"),
+    ("BUSENUR TİRYAKİ", "Busenur Tiryaki"),
+    ("BÜŞRA ATA", "Büşra Ata"),
+    ("BÜŞRA KÜLLÜ", "Büşra Küllü"),
+    ("CANAN FINDIK", "Canan Fındık"),
+    ("CAVİDE IŞIL BOZDAĞ", "Cavide Işıl Bozdağ"),
+    ("CEREN ÇAKIR ÇELİK", "Ceren Çakır Çelik"),
+    ("ÇAĞRI ÜNAL", "Çağrı Ünal"),
+    ("DILEK YILDIRIM", "Dilek Yıldırım"),
+    ("EBRU ÇELİKKALELİ", "Ebru Çelikkaleli"),
+    ("EGE CANSU BASYURT", "Ege Cansu Başyurt"),
+    ("ELMAS SÜLEV", "Elmas Sülev"),
+    ("EMİNE GÜZEL", "Emine Güzel"),
+    ("EMİNE KESGİN", "Emine Kesgin"),
+    ("EMRE ARSLAN", "Emre Arslan"),
+    ("ENES KAYA", "Enes Kaya"),
+    ("ERSİN KAZANCIGİL", "Ersin Kazancıgil"),
+    ("FERHAT KÜÇÜK", "Ferhat Küçük"),
+    ("FEVZI RANDA", "Fevzi Randa"),
+    ("FEVZİ HERDEM", "Fevzi Herdem"),
+    ("HANİFE GAMZE BİRGEÇ", "Hanife Gamze Birgeç"),
+    ("HASAN KOÇAK", "Hasan Koçak"),
+    ("İBRAHİM BAHADIR DOĞRU", "İbrahim Bahadır Doğru"),
+    ("İLKEM ÖYKÜ KARADUT", "İlkem Öykü Karadut"),
+    ("JİYAN ÖZKAPLAN", "Jiyan Özkaplan"),
+    ("KERIM UYSAL", "Kerim Uysal"),
+    ("KEZIBAN DOĞAN", "Keziban Doğan"),
+    ("MEHTAP SAKIN", "Mehtap Sakın"),
+    ("MELDA KÖYMEN", "Melda Köymen"),
+    ("MENEKŞE KAÇAR", "Menekşe Kaçar"),
+    ("MERVE NUR YILMAZ", "Merve Nur Yılmaz"),
+    ("METEHAN TEMİZ", "Metehan Temiz"),
+    ("MUHAMMED BULUTGÖÇER", "Muhammed Bulutgöçer"),
+    ("MUHAMMED BURAK HAYRAN", "Muhammed Burak Hayran"),
+    ("MUHAMMET BATUHAN YILMAZ", "Muhammet Batuhan Yılmaz"),
+    ("MUHAMMET KAÇAR", "Muhammet Kaçar"),
+    ("MUSTAFA ERKAL", "Mustafa Erkal"),
+    ("NURSEDA SEZGİN", "Nurseda Sezgin"),
+    ("OGUZ ALPEREN CAGLAR", "Oğuz Alperen Çağlar"),
+    ("OĞUZHAN ERGÜL", "Oğuzhan Ergül"),
+    ("OZLEM DENIZ TUREL", "Özlem Deniz Türel"),
+    ("ÖMER BURUKAN", "Ömer Burukan"),
+    ("ÖMER SELÇUK", "Ömer Selçuk"),
+    ("ÖZDE SEYMEN SUNAR", "Özde Seymen Sunar"),
+    ("RABİA DURGUT", "Rabia Durgut"),
+    ("RAFET YAVAŞ", "Rafet Yavaş"),
+    ("RIZA ALBAY", "Rıza Albay"),
+    ("SACİDE ÖZATLI KÖPRÜLÜ", "Sacide Özatlı Köprülü"),
+    ("SALİHA DİLER", "Saliha Diler"),
+    ("SELMAN AYGÜN", "Selman Aygün"),
+    ("SEZGİN KARMA", "Sezgin Karma"),
+    ("TAHA HUSEYIN SOYLU", "Taha Hüseyin Soylu"),
+    ("TAHİR KÜRŞAT ARPACIOĞLU", "Tahir Kürşat Arpacıoğlu"),
+    ("UĞURAY SARIOĞLU", "Uğuray Sarıoğlu"),
+    ("YAĞMUR GÜÇLÜ", "Yağmur Güçlü"),
+    ("YUNUS EMRE BULUTGÖÇER", "Yunus Emre Bulutgöçer"),
+    ("ZAFER KURTER", "Zafer Kurter"),
+    ("ZEYNEP AYAN", "Zeynep Ayan"),
 )
 
 #: (ad, kod) — görev DIŞ AVUKAT.
@@ -85,7 +162,9 @@ ADIM_ADLARI = {
     "liste": "1. Liste yazımı",
     "ekle": "2. Yeni dış avukat",
     "kart": "3. Kart yazımı",
-    "bag": "4. Kart–avukat bağı",
+    "durusma": "4. Duruşma avukatı",
+    "vekil": "5. Müvekkil vekil listesi",
+    "bag": "6. Kart–avukat bağı",
 }
 
 
@@ -98,9 +177,15 @@ def anahtar(ad: Optional[str]) -> str:
     return " ".join(s.split())
 
 
-def dogru_yazim_haritasi() -> Dict[str, str]:
-    """{anahtar: doğru yazım} — listedeki yeni adlar, yeni dış avukatlar, idari personel, ek anahtarlar."""
-    harita = {anahtar(yeni): yeni for _, yeni in LISTE_YENIDEN_ADLANDIR}
+def dogru_yazim_haritasi(db=None) -> Dict[str, str]:
+    """{anahtar: doğru yazım}. Taban: listedeki (düzeltme SONRASI) adlar — tabloda olmayan liste
+    kaydı da kendi yazımına iner; üstüne tablo, yeni dış avukatlar, idari personel, ek anahtarlar."""
+    harita: Dict[str, str] = {}
+    if db is not None:
+        for av in db.query(models.Lawyer).all():
+            if av.name and av.name.strip():
+                harita.setdefault(anahtar(av.name), av.name)
+    harita.update({anahtar(yeni): yeni for _, yeni in LISTE_YENIDEN_ADLANDIR})
     harita.update({anahtar(ad): ad for ad, _ in YENI_DIS_AVUKATLAR})
     harita.update({anahtar(ad): ad for ad in IDARI_PERSONEL})
     harita.update(EK_ANAHTARLAR)
@@ -116,13 +201,17 @@ def _tarihce(db, case_id: int, alan: str, eski, yeni, kim: str) -> None:
 
 def listeyi_duzelt(db, *, sonuc: Sonuc) -> None:
     avukatlar = db.query(models.Lawyer).all()
-    for eski_anahtar, yeni in LISTE_YENIDEN_ADLANDIR:
+    for eski_ad, yeni in LISTE_YENIDEN_ADLANDIR:
+        eski_anahtar = anahtar(eski_ad)
         hedef = f"liste {yeni!r}"
         if any(av.name == yeni for av in avukatlar):
             sonuc.ekle("liste", hedef, "ATLANDI", "zaten düzeltilmiş")
             continue
         adaylar = [av for av in avukatlar if anahtar(av.name) in (eski_anahtar, anahtar(yeni))]
-        if len(adaylar) != 1:
+        if not adaylar:
+            sonuc.ekle("liste", hedef, "ATLANDI", "bu ortamın listesinde yok")
+            continue
+        if len(adaylar) > 1:
             sonuc.ekle("liste", hedef, "RET", f"{len(adaylar)} aday satır — elle bakılmalı")
             continue
         eski = adaylar[0].name
@@ -208,6 +297,94 @@ def kartlari_duzelt(db, harita: Dict[str, str], *, kim: str, sonuc: Sonuc) -> Di
     return sayac
 
 
+def _parca_parca(deger: str, harita: Dict[str, str]) -> str:
+    """"A;B" değerini parça parça doğru yazıma indirir; aynı kişi iki kez yazılmışsa bir kez kalır."""
+    parcalar, gorulen = [], set()
+    for parca in deger.split(";"):
+        temiz = " ".join(parca.split())
+        if not temiz:
+            continue
+        ad = harita.get(anahtar(temiz), temiz)
+        if anahtar(ad) in gorulen:
+            continue
+        gorulen.add(anahtar(ad))
+        parcalar.append(ad)
+    return ";".join(parcalar)
+
+
+def durusmalari_duzelt(db, harita: Dict[str, str], *, kim: str, sonuc: Sonuc) -> None:
+    """`hearing_dates.lawyer_name` (aktif kartların duruşmaları) — tarihçe kartın kaydına
+    `durusma_avukati` alanıyla düşer (duruşmanın kendi tarihçe tablosu yok)."""
+    satirlar = (db.query(models.HearingDate)
+                .join(models.Case, models.Case.id == models.HearingDate.case_id)
+                .filter(models.Case.deleted_at.is_(None),
+                        models.HearingDate.lawyer_name.isnot(None), models.HearingDate.lawyer_name != ""))
+    degisen: Dict[Tuple[str, str], int] = {}
+    for h in satirlar:
+        yeni = _parca_parca(h.lawyer_name, harita)
+        if yeni == h.lawyer_name:
+            continue
+        _tarihce(db, h.case_id, "durusma_avukati", f"{h.hearing_date} {h.lawyer_name}", f"{h.hearing_date} {yeni}", kim)
+        degisen[(h.lawyer_name, yeni)] = degisen.get((h.lawyer_name, yeni), 0) + 1
+        h.lawyer_name = yeni
+    for (eski, yeni), n in sorted(degisen.items()):
+        sonuc.ekle("durusma", "hearing_dates.lawyer_name", "YAPILDI", f"{eski!r} → {yeni!r}: {n} duruşma")
+    db.flush()
+
+
+def vekilleri_duzelt(db, harita: Dict[str, str], *, sonuc: Sonuc) -> None:
+    """`clients.vekil_avukatlar` ("AD;AD"): listedeki/idari kişiler doğru yazıma iner, vekaletnamedeki
+    diğer avukatlar olduğu gibi (yalnız boşluk sadeleşir) kalır. Müvekkil tarihçe tablosu yok →
+    değişiklik yalnız bu raporda (koşu öncesi yedek şart)."""
+    degisen_kayit, parca_sayim = 0, {}
+    for mv in db.query(models.Client).filter(models.Client.deleted_at.is_(None),
+                                             models.Client.vekil_avukatlar.isnot(None),
+                                             models.Client.vekil_avukatlar != ""):
+        yeni = _parca_parca(mv.vekil_avukatlar, harita)
+        if yeni == mv.vekil_avukatlar:
+            continue
+        for parca in mv.vekil_avukatlar.split(";"):
+            temiz = " ".join(parca.split())
+            dogru = harita.get(anahtar(temiz))
+            if dogru and dogru != temiz:
+                parca_sayim[(temiz, dogru)] = parca_sayim.get((temiz, dogru), 0) + 1
+        mv.vekil_avukatlar = yeni
+        degisen_kayit += 1
+    for (eski, yeni), n in sorted(parca_sayim.items()):
+        sonuc.ekle("vekil", "clients.vekil_avukatlar", "YAPILDI", f"{eski!r} → {yeni!r}: {n} müvekkil")
+    if degisen_kayit:
+        sonuc.ekle("vekil", "clients.vekil_avukatlar", "YAPILDI", f"toplam {degisen_kayit} müvekkil kaydı güncellendi")
+    db.flush()
+
+
+def farkli_yazim(db, harita: Dict[str, str]) -> Dict[str, int]:
+    """BEKÇİ ölçümü: bilinen bir kişinin doğru yazımından FARKLI yazıldığı parça sayısı (alan başına).
+    Koşu sonrası hepsi 0 olmalı; yeni kayıt yolları `lawyer_resolver.kanonik_avukat_metni`'nden geçer."""
+    def say(degerler) -> int:
+        n = 0
+        for deger in degerler:
+            for parca in (deger or "").split(";"):
+                temiz = " ".join(parca.split())
+                dogru = harita.get(anahtar(temiz)) if temiz else None
+                if dogru and dogru != temiz:
+                    n += 1
+        return n
+
+    aktif = db.query(models.Case).filter(models.Case.deleted_at.is_(None))
+    return {
+        "responsible_lawyer_name": say(c.responsible_lawyer_name for c in aktif),
+        "uyap_lawyer_name": say(c.uyap_lawyer_name for c in aktif),
+        "case_lawyers": say(r.name for r in db.query(models.CaseLawyer)
+                            .join(models.Case, models.Case.id == models.CaseLawyer.case_id)
+                            .filter(models.Case.deleted_at.is_(None))),
+        "hearing_dates": say(h.lawyer_name for h in db.query(models.HearingDate)
+                             .join(models.Case, models.Case.id == models.HearingDate.case_id)
+                             .filter(models.Case.deleted_at.is_(None))),
+        "vekil_avukatlar": say(m.vekil_avukatlar for m in db.query(models.Client)
+                               .filter(models.Client.deleted_at.is_(None))),
+    }
+
+
 def baglari_kur(db, *, sonuc: Sonuc) -> None:
     ad_id = {av.name: av.id for av in db.query(models.Lawyer).all()}
     sayim: Dict[str, int] = {}
@@ -236,9 +413,13 @@ def kos(session_factory, *, apply: bool = False, kim: str = SOURCE):
     try:
         listeyi_duzelt(db, sonuc=sonuc)
         dis_avukatlari_ekle(db, sonuc=sonuc)
-        sayac = kartlari_duzelt(db, dogru_yazim_haritasi(), kim=kim, sonuc=sonuc)
+        harita = dogru_yazim_haritasi(db)
+        sayac = kartlari_duzelt(db, harita, kim=kim, sonuc=sonuc)
+        durusmalari_duzelt(db, harita, kim=kim, sonuc=sonuc)
+        vekilleri_duzelt(db, harita, sonuc=sonuc)
         baglari_kur(db, sonuc=sonuc)
         kalan = bagsiz_kalan(db)
+        sayac["farkli_yazim"] = farkli_yazim(db, harita)
         if apply:
             db.commit()
         else:
@@ -260,6 +441,8 @@ def ozet_metni(sonuc: Sonuc, sayac: Dict[str, int], kalan: Dict[str, int], *, ap
     satirlar.extend(f"  {k.sonuc:7} [{k.adim}] {k.hedef}: {k.aciklama}" for k in sonuc.kalemler)
     satirlar.append("  " + "-" * 74)
     satirlar.append(f"  'A;B' birleşik değerde parça düzelen kart alanı: {sayac['birlesik_duzelen']}")
+    satirlar.append("  BEKÇİ — bilinen kişinin farklı yazımı (koşu sonrası, hepsi 0 olmalı): "
+                    + " · ".join(f"{k} {v}" for k, v in sayac["farkli_yazim"].items()))
     satirlar.append("  Bağsız kalan case_lawyers adları (sonrası):")
     satirlar.extend(f"    {n:6}  {ad}" for ad, n in sorted(kalan.items(), key=lambda x: -x[1]))
     satirlar.append("=" * 78)

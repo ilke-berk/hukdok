@@ -109,17 +109,19 @@ def _value_matches(value, core_tokens, code_norm, surname, surname_unique) -> bo
 # avukata çözer. Yeni veri buradan geçince responsible_lawyer_name canonical olur ve
 # case_lawyers.lawyer_id (yapısal bağ) dolar. Bulamazsa None → çağıran ham değeri korur.
 
-def resolve_lawyer(raw_value: str):
-    """Tek kişilik ham avukat metnini config avukatına çözer. Dönen: lawyer dict | None."""
+def resolve_lawyer(raw_value: str, lawyers=None):
+    """Tek kişilik ham avukat metnini config avukatına çözer. Dönen: lawyer dict | None.
+    `lawyers` verilirse (ör. yazımın yapıldığı DB oturumundaki liste) config yerine o kullanılır."""
     if not raw_value or not str(raw_value).strip():
         return None
-    try:
-        lawyers = DynamicConfig.get_instance().get_lawyers() or []
-    except Exception:
-        lawyers = []
-    if not lawyers:
-        # Cache boş (ör. standalone script) → DB'den oku
-        lawyers = get_lawyers() or []
+    if lawyers is None:
+        try:
+            lawyers = DynamicConfig.get_instance().get_lawyers() or []
+        except Exception:
+            lawyers = []
+        if not lawyers:
+            # Cache boş (ör. standalone script) → DB'den oku
+            lawyers = get_lawyers() or []
     if not lawyers:
         return None
     ptoks = _name_tokens(raw_value)
@@ -160,6 +162,96 @@ def resolve_lawyers_field(raw_value: str):
     return out
 
 
+# --- Yazım koruması (kullanıcı kararı 27.09): avukat adı sistemde TEK yazımla durur ---
+#
+# Avukat adı yazan her yol (kart sorumlu/UYAP avukatı, duruşma, müvekkil vekil listesi,
+# aktarım) değeri buradan geçirir: listedeki kişiye çözülen parça listedeki YAZIMA iner.
+# Kullanıcı uçları ayrıca `listede_olmayan_yeni_adlar` ile listede karşılığı olmayan YENİ
+# adı reddeder (değişmeden geri gelen eski değer engellenmez — eski kartlar kilitlenmesin).
+
+class AvukatListedeYok(ValueError):
+    """Kullanıcı ucuna listede karşılığı olmayan yeni avukat adı geldi (→ 422)."""
+
+    def __init__(self, adlar):
+        self.adlar = list(adlar)
+        super().__init__(
+            "Avukat listede yok: " + ", ".join(self.adlar)
+            + " — önce Yönetim › Avukatlar'a ekleyin ya da listeden seçin."
+        )
+
+
+def _liste():
+    try:
+        lawyers = DynamicConfig.get_instance().get_lawyers() or []
+    except Exception:
+        lawyers = []
+    return lawyers or (get_lawyers() or [])
+
+
+def _tam_liste_adi(raw_value, lawyers=None):
+    """Değerin TAMAMI listedeki bir adla (katlanmış) aynıysa o ad — "Hanyaloğlu & Acar"
+    gibi ayraç içeren liste kayıtları bölünmeden tanınsın."""
+    anahtar = _norm_name(raw_value or "")
+    if not anahtar:
+        return None
+    for lw in (_liste() if lawyers is None else lawyers):
+        if _norm_name(lw.get("name") or "") == anahtar:
+            return lw.get("name")
+    return None
+
+
+def kanonik_avukat_adi(raw_value):
+    """Tek kişilik adı listedeki yazıma çevirir; çözülemezse None."""
+    tam = _tam_liste_adi(raw_value)
+    if tam:
+        return tam
+    matched = resolve_lawyer(raw_value)
+    return (matched.get("name") or None) if matched else None
+
+
+def kanonik_avukat_metni(raw_value, ayirici: str = ";"):
+    """Tek ya da çoklu avukat metnini parça parça listedeki yazıma indirir (toleranslı).
+
+    Çözülen parça listedeki ad olur, çözülemeyen parça boşlukları sadeleşmiş hâliyle kalır;
+    aynı kişi iki kez yazılmışsa bir kez kalır; sıra korunur. Boş girdi olduğu gibi döner.
+    """
+    if raw_value is None or not str(raw_value).strip():
+        return raw_value
+    tam = _tam_liste_adi(str(raw_value))
+    if tam:
+        return tam
+    parcalar, gorulen = [], set()
+    for parca in _split_persons(str(raw_value)):
+        temiz = " ".join(parca.split())
+        ad = kanonik_avukat_adi(temiz) or temiz
+        anahtar = _norm_name(ad)
+        if anahtar in gorulen:
+            continue
+        gorulen.add(anahtar)
+        parcalar.append(ad)
+    return ayirici.join(parcalar)
+
+
+def listede_olmayan_yeni_adlar(yeni_deger, onceki_deger=None, lawyers=None):
+    """`yeni_deger`deki, listede karşılığı OLMAYAN ve `onceki_deger`de de bulunmayan parçalar.
+
+    Avukat listesi TAMAMEN boşsa (yeni kurulum / liste yüklenmemiş ortam) doğrulanacak referans
+    yoktur → boş döner (kayıt engellenmez; kanonik yazım yine uygulanır)."""
+    if yeni_deger is None or not str(yeni_deger).strip():
+        return []
+    if lawyers is None:
+        lawyers = _liste()
+    if not lawyers:
+        return []
+    if _tam_liste_adi(str(yeni_deger), lawyers) or _norm_name(str(yeni_deger)) == _norm_name(str(onceki_deger or "")):
+        return []
+    onceki = {_norm_name(p) for p in _split_persons(str(onceki_deger or ""))}
+    return [
+        " ".join(p.split()) for p in _split_persons(str(yeni_deger))
+        if resolve_lawyer(p, lawyers) is None and _norm_name(p) not in onceki
+    ]
+
+
 def canonicalize_lawyers(db, lawyers_input, responsible_text):
     """Yazma yolları için: gelen avukat girdisini canonical hale getirir.
     Girdi öncelik sırası: yapısal `lawyers` listesi → yoksa serbest `responsible_text`.
@@ -174,11 +266,13 @@ def canonicalize_lawyers(db, lawyers_input, responsible_text):
             if nm:
                 raws.append(nm)
     elif responsible_text:
-        raws = [p for (_, p) in [(None, x) for x in _split_persons(responsible_text)]]
+        tam = _tam_liste_adi(responsible_text)
+        raws = [tam] if tam else list(_split_persons(responsible_text))
 
     rows, names, unresolved = [], [], []
     for raw in raws:
-        matched = resolve_lawyer(raw)
+        tam = _tam_liste_adi(raw)
+        matched = next((lw for lw in _liste() if lw.get("name") == tam), None) if tam else resolve_lawyer(raw)
         if matched:
             lid = None
             lrow = db.query(models.Lawyer).filter(models.Lawyer.code == matched.get("code")).first()
