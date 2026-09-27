@@ -51,7 +51,7 @@ from managers.reference_lists import (
     get_appeal_courts, add_appeal_court, delete_appeal_court,
     get_defendant_administrations, add_defendant_administration, delete_defendant_administration,
     reorder_list, rename_item, update_item, delete_item, get_usage,
-    resolve_list_type, LIST_REGISTRY,
+    resolve_list_type, LIST_REGISTRY, LawyerDeleteRejected,
 )
 
 router = APIRouter()
@@ -119,10 +119,11 @@ def api_update_lawyer(code: str, item: LawyerUpdateItem, user: dict = Depends(re
 
 @router.delete("/api/config/lawyers/{code}")
 def api_delete_lawyer(code: str, user: dict = Depends(require_admin)):
+    """G225: avukat SİLİNMEZ — kayıt pasife alınır (kartlar, bağlar ve kimlik aynen kalır)."""
     success = delete_lawyer(code)
     if not success:
-        raise HTTPException(status_code=404, detail="Lawyer not found or failed to delete")
-    return {"status": "success", "message": "Lawyer deleted"}
+        raise HTTPException(status_code=404, detail="Lawyer not found or failed to deactivate")
+    return {"status": "success", "message": "Lawyer deactivated"}
 
 
 # ─── STATUSES ─────────────────────────────────────────────────────────────────
@@ -301,6 +302,9 @@ def api_delete_item(request: ListDeleteRequest, user: dict = Depends(require_adm
 
     Kullanımdaki öğede mode="block" 409 döner (gövdede usage ile birlikte);
     arayüz bunu "boşalt / başka değere taşı" seçimine çevirir.
+
+    Avukat (G225): kayıt SİLİNMEZ, pasife alınır; "block" kullanımda da pasife alır,
+    "reassign" kartları taşır + kaynağı pasife alır, "clear"/"keep" 422.
     """
     if not resolve_list_type(request.type):
         raise HTTPException(status_code=404, detail="Bilinmeyen liste")
@@ -308,7 +312,10 @@ def api_delete_item(request: ListDeleteRequest, user: dict = Depends(require_adm
         raise HTTPException(status_code=400, detail="Geçersiz silme modu")
     if request.mode == "reassign" and not request.target_code:
         raise HTTPException(status_code=400, detail="Taşıma için hedef kayıt seçin")
-    result = delete_item(request.type, request.code, mode=request.mode, target=request.target_code)
+    try:
+        result = delete_item(request.type, request.code, mode=request.mode, target=request.target_code)
+    except LawyerDeleteRejected as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if not result:
         raise HTTPException(status_code=404, detail="Kayıt bulunamadı veya silinemedi")
     return {"status": "success", "affected": result["affected"]}

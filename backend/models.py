@@ -5,8 +5,11 @@ Not (G028, 2026-08-12): `sync_logs` ve `analysis_cache` modelleri (`SyncLog`,
 kaldırıldı. **Tablolar DB'de duruyor** — bilinçli olarak DROP edilmedi (veri kaybı
 riski + migrate.py fail-fast). Artıkları görürsen: model yok, kullanan kod yok.
 """
+import re
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Numeric, ForeignKey, JSON, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import event, inspect
+from sqlalchemy.orm import Session, relationship
 from sqlalchemy.sql import func
 from database import Base
 
@@ -464,8 +467,11 @@ class CaseLawyer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
-    lawyer_id = Column(Integer, ForeignKey("lawyers.id", ondelete="SET NULL"), nullable=True) # Linked if registered
-    
+    # G225 (27.09): RESTRICT — avukat kaydı ASLA silinmez (silme = pasif). Eski SET NULL,
+    # ham SQL silmede kart–avukat bağını sessizce koparan dava kaybı yoluydu. Mevcut
+    # Postgres kurulumunda kısıt migrasyon madde 54 ile DROP/ADD edilir (database.py).
+    lawyer_id = Column(Integer, ForeignKey("lawyers.id", ondelete="RESTRICT"), nullable=True) # Linked if registered
+
     name = Column(String, nullable=False) # Actual name representation
     
     case = relationship("Case", back_populates="lawyers")
@@ -475,6 +481,13 @@ class Lawyer(Base):
     __tablename__ = "lawyers"
 
     id = Column(Integer, primary_key=True, index=True)
+    # G225 (kullanıcı kararı 27.09): KURUMSAL kimlik `AVK-00001`. Sistem üretir
+    # (`sonraki_avukat_kimligi`), bir kez verilir, değişmez, yeniden kullanılmaz;
+    # sistemler arası kimlik budur, `id` yalnız içeride FK'dır. Unique index adı
+    # migrasyon madde 54'teki `ix_lawyers_kimlik` ile AYNI (create_all'ın kurduğu
+    # index'i migrasyon IF NOT EXISTS ile tanır). Postgres'te NOT NULL + biçim CHECK
+    # migrasyonla gelir; modelde nullable (SQLite test şeması CHECK'i taşıyamaz).
+    kimlik = Column(String(9), unique=True, index=True, nullable=True)
     code = Column(String, unique=True, index=True, nullable=False) # e.g. "AGH"
     name = Column(String, nullable=False) # e.g. "Ayşe..."
     active = Column(Boolean, default=True)
@@ -487,6 +500,60 @@ class Lawyer(Base):
     address = Column(String, nullable=True)
     city = Column(String, nullable=True)     # Şehir listesinden seçilir (Client.il ile aynı sözlük)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+# ─── Kurumsal avukat kimliği (G225) ──────────────────────────────────────────
+AVUKAT_KIMLIK_ONEKI = "AVK-"
+#: Postgres CHECK'i (`ck_lawyers_kimlik_bicim`) ile aynı biçim: önek + 5 hane.
+AVUKAT_KIMLIK_REGEX = r"^AVK-[0-9]{5}$"
+_AVUKAT_KIMLIK_EN_BUYUK = 99999
+
+
+def avukat_kimligi(numara: int) -> str:
+    """`7` → `AVK-00007`. Beş haneyi aşan numara verilmez (VARCHAR(9) + CHECK)."""
+    if not 1 <= numara <= _AVUKAT_KIMLIK_EN_BUYUK:
+        raise ValueError(f"avukat kimlik numarası aralık dışı: {numara}")
+    return f"{AVUKAT_KIMLIK_ONEKI}{numara:05d}"
+
+
+def avukat_kimlik_numarasi(kimlik) -> int:
+    """`AVK-00007` → 7; biçim dışı / boş değer 0 (sayıma katılmaz)."""
+    if not kimlik or not re.match(AVUKAT_KIMLIK_REGEX, str(kimlik)):
+        return 0
+    return int(str(kimlik)[len(AVUKAT_KIMLIK_ONEKI):])
+
+
+def sonraki_avukat_kimligi(db) -> str:
+    """Bir sonraki kurumsal kimlik: tablodaki EN BÜYÜK numara + 1.
+
+    Pasif (ya da bir gün elle silinmiş) avukatın numarası tekrar verilmez: sayım en
+    büyük üzerinden yapılır, boşluk doldurulmaz. Oturumda henüz flush edilmemiş yeni
+    avukatlar da sayılır — aynı transaction'da birden çok avukat ekleyen betikler
+    (avukat_yazim, import_lawyers_excel) aynı numarayı iki kez almaz. İki süreç aynı
+    anda aynı numarayı hesaplarsa unique index ikincisini reddeder; çağıran yeniden
+    dener (`reference_lists.add_item`).
+    """
+    en_buyuk = 0
+    for (kimlik,) in db.query(Lawyer.kimlik).filter(Lawyer.kimlik.isnot(None)).all():
+        en_buyuk = max(en_buyuk, avukat_kimlik_numarasi(kimlik))
+    for nesne in db.new:
+        if isinstance(nesne, Lawyer):
+            en_buyuk = max(en_buyuk, avukat_kimlik_numarasi(nesne.kimlik))
+    return avukat_kimligi(en_buyuk + 1)
+
+
+@event.listens_for(Session, "before_flush")
+def _avukat_kimligi_degismez(session, _flush_context, _instances):
+    """Verilmiş kimlik HİÇBİR yolda değişmez/boşalmaz (G225): liste uçları `kimlik`i
+    zaten düzenlenebilir saymaz; bu bekçi betik ve ORM yollarını da kapatır."""
+    for nesne in session.dirty:
+        if not isinstance(nesne, Lawyer):
+            continue
+        gecmis = inspect(nesne).attrs.kimlik.history
+        eski = [deger for deger in gecmis.deleted if deger]
+        if eski and list(gecmis.added) != eski:
+            raise ValueError(f"avukat kimliği değiştirilemez: {eski[0]} (kod {nesne.code})")
+
 
 class Client(Base):
     __tablename__ = "clients" # Muvekkiller

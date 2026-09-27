@@ -1251,6 +1251,53 @@ _MIGRATIONS = [
     ("index", "case_notes", [
         "CREATE INDEX IF NOT EXISTS idx_case_notes_case_created ON case_notes (case_id, created_at)",
     ]),
+
+    # ─── 54. KURUMSAL AVUKAT KİMLİĞİ + SİLİNMEZLİK (G225, kullanıcı kararı 27.09) ─
+    # `lawyers.kimlik` = `AVK-00001`: sistem üretir, bir kez verilir, değişmez, yeniden
+    # kullanılmaz (models.sonraki_avukat_kimligi). Kolon op'u KOŞULLUDUR (create_all
+    # modelden kurduysa atlanır); doldurma + kısıtlar bu yüzden hemen alttaki KOŞULSUZ
+    # ("index", ...) op'unda (CLAUDE.md "koşullu op" tuzağı, G041):
+    #   * doldurma yalnız BOŞ satırlara, deterministik sırayla (`sequence`, sonra `id`),
+    #     mevcut en büyük numaranın ÜSTÜNDEN — ikinci koşuda 0 satır eşler (idempotent);
+    #   * `ix_lawyers_kimlik` UNIQUE (modeldeki `unique=True, index=True` ile AYNI ad →
+    #     create_all'lı kurulumda IF NOT EXISTS no-op, eski kurulumda yaratır);
+    #   * NOT NULL (tekrar koşması no-op) + biçim CHECK (pg_constraint yoklamalı).
+    # FK: `case_lawyers.lawyer_id` ON DELETE SET NULL → RESTRICT. Eski kısıt adı ne
+    # olursa olsun `confdeltype <> 'r'` olan lawyer_id FK'ları düşer, RESTRICT'li yoksa
+    # eklenir → idempotent; sıfırdan kurulumda model zaten RESTRICT kurar (no-op).
+    ("columns", "lawyers", {"kimlik": "VARCHAR(9)"}),
+    ("index", "lawyers", [
+        "UPDATE lawyers l SET kimlik = 'AVK-' || lpad((m.en_buyuk + s.sira)::text, 5, '0') "
+        "FROM (SELECT id, row_number() OVER (ORDER BY sequence, id) AS sira "
+        "      FROM lawyers WHERE kimlik IS NULL) s, "
+        "     (SELECT coalesce(max(substring(kimlik from 5)::int), 0) AS en_buyuk "
+        "      FROM lawyers WHERE kimlik ~ '^AVK-[0-9]{5}$') m "
+        "WHERE l.id = s.id",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_lawyers_kimlik ON lawyers (kimlik)",
+        "ALTER TABLE lawyers ALTER COLUMN kimlik SET NOT NULL",
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_lawyers_kimlik_bicim' AND conrelid = to_regclass('lawyers')) THEN "
+        "ALTER TABLE lawyers ADD CONSTRAINT ck_lawyers_kimlik_bicim "
+        "CHECK (kimlik ~ '^AVK-[0-9]{5}$'); "
+        "END IF; END $$",
+    ]),
+    ("index", "case_lawyers", [
+        "DO $$ DECLARE r record; BEGIN "
+        "FOR r IN SELECT c.conname FROM pg_constraint c "
+        "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) "
+        "WHERE c.conrelid = to_regclass('case_lawyers') AND c.contype = 'f' "
+        "AND a.attname = 'lawyer_id' AND c.confdeltype <> 'r' LOOP "
+        "EXECUTE format('ALTER TABLE case_lawyers DROP CONSTRAINT %I', r.conname); "
+        "END LOOP; "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint c "
+        "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) "
+        "WHERE c.conrelid = to_regclass('case_lawyers') AND c.contype = 'f' "
+        "AND a.attname = 'lawyer_id' AND c.confdeltype = 'r') THEN "
+        "ALTER TABLE case_lawyers ADD CONSTRAINT case_lawyers_lawyer_id_fkey "
+        "FOREIGN KEY (lawyer_id) REFERENCES lawyers (id) ON DELETE RESTRICT; "
+        "END IF; END $$",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

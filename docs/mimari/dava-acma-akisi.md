@@ -626,3 +626,42 @@ docker compose exec -T backend python scripts/avukat_envanteri.py --karsilastir 
 
 Dosya yolları KONTEYNER yoludur (`/tmp` recreate'te silinir; adım aynı konteyner ömründe biter). Bekçi:
 `backend/tests/test_avukat_envanteri.py`.
+
+## 16. Avukat kaydı — kurumsal kimlik `AVK-00001` + silinmezlik (G225)
+
+Kullanıcı kararı 27.09. **Kimlik:** `lawyers.kimlik` = `AVK-` + 5 hane (`VARCHAR(9)`). Sistem üretir,
+kullanıcıya gösterilmez, bir kez verilir, değişmez, yeniden kullanılmaz; sistemler arası kimlik budur,
+`lawyers.id` yalnız tablolar arası FK olarak içeride kalır (API'ye taşınması G227/G228).
+
+- **Doldurma (migrasyon madde 54):** kolon op'u koşullu, doldurma + kısıtlar KOŞULSUZ `("index", ...)`
+  op'unda: yalnız boş satırlar, `sequence` sonra `id` sırasıyla, mevcut en büyük numaranın üstünden
+  (idempotent); `ix_lawyers_kimlik` UNIQUE (modeldeki index ile aynı ad), Postgres'te NOT NULL +
+  `ck_lawyers_kimlik_bicim` CHECK `kimlik ~ '^AVK-[0-9]{5}$'`. Numara listenin o ortamdaki sırasından
+  doğar — prod ile lokal listesi farklıysa numaralar da farklı olur; prod'da uygulamadan önce iki
+  ortamın listesi karşılaştırılır (G231 "Prod sırası").
+- **Üretim:** `models.sonraki_avukat_kimligi` = en büyük + 1 (oturumdaki flush edilmemiş yeni kayıtlar
+  dahil); pasif kişinin numarası boşluk olarak kalır, doldurulmaz. `reference_lists._avukat_ekle`
+  istemciden gelen `kimlik`i yok sayar, eşzamanlı eklemede `ix_lawyers_kimlik` ihlalini yeniden dener
+  (yalnız kimlik çakışması; kod çakışması 409). Betikler (`avukat_yazim`, `import_lawyers_excel`) aynı
+  fonksiyonu çağırır.
+- **Değişmezlik:** `kimlik` hiçbir listenin `editable` alanında değil — PUT `/api/config/lawyers/{code}`
+  ve `/api/config/update` gövdesinde gelse **yok sayılır** (422 değil; eski istemciler kırılmasın).
+  ORM bekçisi (`models._avukat_kimligi_degismez`, `before_flush`): verilmiş kimliği değiştiren/boşaltan
+  flush `ValueError` ile durur.
+- **Silinmezlik:** avukat kaydı ASLA silinmez. `DELETE /api/config/lawyers/{code}` ve
+  `POST /api/config/delete` (`type=lawyers`) kaydı `active=false` yapar:
+  `block` (varsayılan) kullanımda da pasife alır — kart adı, `case_lawyers` bağı ve kimlik aynen kalır;
+  `reassign` kart alanlarını ve kaynağa BAĞLI `case_lawyers` satırlarını (ad + `lawyer_id`) hedefe taşır,
+  kaynak yine pasif olur (hedef pasif/aynı ise 422); `clear` ve `keep` **422** (Türkçe mesaj,
+  `LawyerDeleteRejected`). Diğer referans listelerinin silme davranışı DEĞİŞMEDİ.
+- **Pasif avukat yeniden eklenirse** (aynı ad anahtarı, `ad_kimligi`) ikinci kayıt doğmaz: pasif kayıt
+  kimliği ve koduyla geri açılır. Etkin kişi için mükerrer koruması (409) aynen.
+- **Pasif avukat ve filtre (mevcut davranış korunur):** menüler/config listesi (`get_lawyers`) yalnız
+  aktifleri verir → pasif avukat listeden SEÇİLEMEZ; adıyla gelen filtre toleranslı ad eşlemesine düşer
+  ve eski kartlarını yine bulur.
+- **FK:** `case_lawyers.lawyer_id` → `lawyers.id` **ON DELETE RESTRICT** (eski SET NULL bağı sessizce
+  koparıyordu). Mevcut kurulumda madde 54 `confdeltype <> 'r'` olan kısıtı düşürüp RESTRICT'li
+  `case_lawyers_lawyer_id_fkey`'i ekler (idempotent); ham SQL `DELETE FROM lawyers` bağlı kayıtta
+  `ForeignKeyViolation` verir.
+
+Bekçi: `backend/tests/test_g225_avukat_kimligi.py` (SQLite + scratch Postgres `dbtest`).

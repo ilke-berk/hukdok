@@ -25,6 +25,11 @@ class DuplicateItemError(Exception):
     """Aynı isim/kod listede zaten varken ekleme girişimi (route katmanında 409'a çevrilir)."""
 
 
+class LawyerDeleteRejected(Exception):
+    """Avukat için izin verilmeyen silme modu (G225: "clear"/"keep") ya da geçersiz
+    taşıma hedefi — route katmanında 422'ye çevrilir. Avukat kaydı ASLA silinmez."""
+
+
 class ItemInUseError(Exception):
     """Silinmek istenen öğe bağlı kayıtlarda kullanılıyor (route katmanında 409'a çevrilir).
 
@@ -398,6 +403,41 @@ def get_items(list_type: str, extra_filter=None):
             db.close()
 
 
+#: Kimlik yarışında (iki süreç aynı "en büyük + 1"i hesapladı) kaç kez yeniden denenir.
+_KIMLIK_DENEME = 5
+
+
+def _kimlik_cakismasi(exc: IntegrityError) -> bool:
+    """Unique ihlali `lawyers.kimlik` üzerinde mi? `code` çakışması yeniden DENENMEZ.
+
+    Postgres: SQLSTATE 23505 + kısıt adı `ix_lawyers_kimlik` (db_errors kuralı). SQLite
+    (test şeması) SQLSTATE taşımaz; kısıt kolonu yalnız mesajdadır."""
+    if is_unique_violation(exc, "ix_lawyers_kimlik"):
+        return True
+    return "UNIQUE constraint failed: lawyers.kimlik" in str(getattr(exc, "orig", exc))
+
+
+def _avukat_ekle(db, fields: dict) -> None:
+    """Yeni avukatı sunucunun verdiği kurumsal kimlikle ekler (G225).
+
+    Kimlik istemciden ALINMAZ (gelse de ezilir). Numara `models.sonraki_avukat_kimligi`
+    (en büyük + 1); eşzamanlı eklemede unique index ikinciyi reddeder → yeniden okunup
+    tekrar denenir. Deneme hatası WARNING; tükenirse IntegrityError çağırana gider.
+    """
+    fields = {k: v for k, v in fields.items() if k != "kimlik"}
+    for deneme in range(1, _KIMLIK_DENEME + 1):
+        kimlik = models.sonraki_avukat_kimligi(db)
+        db.add(models.Lawyer(active=True, kimlik=kimlik, **fields))
+        try:
+            db.commit()
+            return
+        except IntegrityError as e:
+            db.rollback()
+            if not _kimlik_cakismasi(e) or deneme == _KIMLIK_DENEME:
+                raise
+            logger.warning(f"Avukat kimliği {kimlik} çakıştı (deneme {deneme}); yeniden deneniyor")
+
+
 def add_item(list_type: str, **fields):
     spec = _spec(list_type)
     if not spec:
@@ -422,6 +462,15 @@ def add_item(list_type: str, **fields):
             for row in q.all():
                 mevcut_ad = getattr(row, "name", None) or ""
                 if ad_kimligi(liste_anahtari, mevcut_ad) == target:
+                    if liste_anahtari == "lawyers" and not row.active:
+                        # G225: avukat silinmez, pasife alınır. Aynı kişi yeniden
+                        # eklenince ikinci kayıt DOĞMAZ — pasif kayıt kimliği ve
+                        # koduyla geri açılır (kimlik bir kez verilir).
+                        row.active = True
+                        db.commit()
+                        refresh_cache(list_type)
+                        logger.info(f"Add lawyers: pasif kayıt yeniden etkin {row.kimlik} ({row.code})")
+                        return True
                     raise DuplicateItemError(
                         f"\"{fields['name']}\" zaten listede mevcut"
                         + (f" (\"{mevcut_ad}\" olarak)" if mevcut_ad != fields["name"] else "")
@@ -432,8 +481,11 @@ def add_item(list_type: str, **fields):
         if identifier and db.query(spec.model).filter(getattr(spec.model, spec.key) == identifier).first():
             raise DuplicateItemError(f"\"{identifier}\" kodu zaten listede mevcut")
 
-        db.add(spec.model(active=True, **fields))
-        db.commit()
+        if _ALIASES.get(list_type, list_type) == "lawyers":
+            _avukat_ekle(db, fields)
+        else:
+            db.add(spec.model(active=True, **fields))
+            db.commit()
         refresh_cache(list_type)
         return True
     except DuplicateItemError:
@@ -519,6 +571,68 @@ def _apply_to_dependents(db, key: str, old_name: str, new_name, new_code=None) -
     return affected
 
 
+#: Avukat "silme"sinde kabul edilen modlar. "clear" kartlardaki avukat alanını
+#: boşaltırdı, "keep" adı listeden kopuk bırakırdı — ikisi de dava kaybı yolu.
+AVUKAT_SILME_MODLARI = ("block", "reassign")
+
+
+def _avukati_pasife_al(identifier: str, mode: str, target: Optional[str]):
+    """Avukatı SİLMEDEN pasife alır (G225).
+
+      "block"    — bağlı kartlara dokunulmaz; kayıt pasif olur, kartlardaki ad ve
+                   `case_lawyers` bağı aynen kalır (kullanımda olsa da reddedilmez:
+                   pasife almak veri kaybettirmez)
+      "reassign" — bağlı kart alanları hedef avukatın adına taşınır; kaynak kayıt
+                   YİNE silinmez, pasif olur
+      "clear"/"keep" — reddedilir (LawyerDeleteRejected)
+
+    Dönüş: {"affected": n} | False (avukat yok / hata).
+    """
+    if mode not in AVUKAT_SILME_MODLARI:
+        raise LawyerDeleteRejected(
+            "Avukat kaydı silinmez, yalnız pasife alınır; kartlardaki avukat alanı "
+            "boşaltılamaz ya da kopuk bırakılamaz. Pasife almak ya da başka avukata "
+            "taşımak için 'block' veya 'reassign' kullanın."
+        )
+    db = None
+    try:
+        db = SessionLocal()
+        item = db.query(models.Lawyer).filter(models.Lawyer.code == identifier).first()
+        if not item:
+            return False
+        affected = 0
+        if mode == "reassign":
+            if not target or target == identifier:
+                raise LawyerDeleteRejected("Taşıma için kaynak avukattan farklı bir hedef avukat seçin")
+            hedef = db.query(models.Lawyer).filter(models.Lawyer.code == target).first()
+            if not hedef:
+                return False
+            if not hedef.active:
+                raise LawyerDeleteRejected(f"Hedef avukat \"{hedef.name}\" pasif; etkin bir avukat seçin")
+            affected = _apply_to_dependents(db, "lawyers", str(item.name), str(hedef.name))
+            # Ad yayılımı yazım varyantıyla eşler; kaynağa BAĞLI satırın bağı da
+            # hedefe geçer (yoksa ad hedefin, bağ kaynağın olurdu).
+            bag_tasinan = (
+                db.query(models.CaseLawyer)
+                .filter(models.CaseLawyer.lawyer_id == item.id)
+                .update({"lawyer_id": hedef.id, "name": hedef.name}, synchronize_session=False)
+            )
+            logger.info(f"Reassign lawyers: {bag_tasinan} case_lawyers bağı {item.code!r} → {hedef.code!r}")
+        item.active = False
+        db.commit()
+        refresh_cache("lawyers")
+        logger.info(f"Pasife alındı lawyers: {item.kimlik} {item.code!r} (mode={mode}, {affected} kayıt etkilendi)")
+        return {"affected": affected}
+    except LawyerDeleteRejected:
+        raise
+    except Exception as e:
+        logger.error(f"Pasife alma lawyers Error: {e}")
+        return False
+    finally:
+        if db is not None:
+            db.close()
+
+
 def delete_item(list_type: str, identifier: str, mode: str = "block", target: str = None):
     """Liste öğesini siler. Bağlı kayıtlara ne olacağı mode ile belirlenir:
 
@@ -527,12 +641,18 @@ def delete_item(list_type: str, identifier: str, mode: str = "block", target: st
       "reassign" — bağlı kayıtlar target koduyla verilen öğeye taşınır
       "keep"     — bağlı kayıtlara dokunulmaz (eski davranış; ad kayıtta asılı kalır)
 
+    AVUKAT İSTİSNASI (G225, kullanıcı kararı 27.09): avukat kaydı ASLA silinmez —
+    `_avukati_pasife_al`a gider (active=false). "clear"/"keep" reddedilir
+    (LawyerDeleteRejected → 422).
+
     Dönüş: {"affected": n} | False (öğe yok / hata).
     """
     spec = _spec(list_type)
     if not spec:
         return False
     key = _ALIASES.get(list_type, list_type)
+    if key == "lawyers":
+        return _avukati_pasife_al(identifier, mode, target)
     db = None
     try:
         db = SessionLocal()

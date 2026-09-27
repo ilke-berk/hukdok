@@ -126,6 +126,8 @@ def run():
                 existing_codes.add(code)
 
                 lawyer = models.Lawyer(
+                    # G225: kurumsal kimlik (en büyük + 1; oturumdaki yeni kayıtlar sayılır)
+                    kimlik=models.sonraki_avukat_kimligi(db),
                     code=code, name=name, active=True,
                     tc_no=tc_no, sicil_no=sicil_no,
                     gorev=gorev, email=email, phone=phone, address=address,

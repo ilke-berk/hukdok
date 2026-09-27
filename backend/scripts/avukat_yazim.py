@@ -234,7 +234,9 @@ def dis_avukatlari_ekle(db, *, sonuc: Sonuc) -> None:
             sonuc.ekle("ekle", hedef, "RET", f"kod {kod} başka avukatta — elle bakılmalı")
             continue
         sira += 1
-        db.add(models.Lawyer(code=kod, name=ad, gorev="DIŞ AVUKAT", active=True, sequence=sira))
+        # G225: kurumsal kimlik sunucudan (en büyük + 1; oturumdaki yeni kayıtlar sayılır)
+        db.add(models.Lawyer(kimlik=models.sonraki_avukat_kimligi(db), code=kod, name=ad,
+                             gorev="DIŞ AVUKAT", active=True, sequence=sira))
         mevcut_anahtarlar.add(anahtar(ad))
         mevcut_kodlar.add(kod)
         sonuc.ekle("ekle", hedef, "YAPILDI", f"kod {kod} · DIŞ AVUKAT")
