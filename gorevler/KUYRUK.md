@@ -65,6 +65,31 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
 - [x] G223 | bant:frontend | bagimli:- | Ofis no B1: NewCase/Intake kategori KODU geçince `X1`'e düşüyor + sigorta kodu tr-TR büyük harf yüzünden `S0` (G218 bulgusu); mevcut numaralar değişmez
 
+## ÖNCELİK 4 — Kurumsal avukat kimliği `AVK-00001`: kodlar kalkar, avukat silinmez, dava kaybı ölçülür (2026-09-27 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 27.09 sohbeti + iki keşif (HukuDok belge hattı, hukukbot-ui). Kararlar: HukuDok + Hukukbot ORTAK, kullanıcıya
+     GÖSTERİLMEYEN kurumsal kimlik `lawyers.kimlik` = AVK-00001 (sistem üretir, değişmez, yeniden kullanılmaz; iç FK
+     lawyers.id dışarı verilmez). Güvenceler (kullanıcı onaylı, "davalar kaybolmasın"): (1) avukat SİLİNMEZ, pasife alınır;
+     "clear" modu kalkar; bağlar ON DELETE RESTRICT (bugün hard delete + clear + SET NULL = kayıp yolu) (2) G224 envanter
+     aracı: her veri adımında önce fotoğraf → adım → karşılaştır, İHLAL = geri al (3) filtre asla yalnız kimliğe bakmaz,
+     toleranslı ad eşlemesi kalır (4) her prod veri adımı öncesi yedek + kuru koşu + kullanıcı onayı (G231 "Prod sırası").
+     Bulgular: kod belgeden OKUNMUYOR (davanın sorumlu adından türüyor, document_pipeline:140-167); Hukukbot kodu yalnız
+     pasif etiket tutuyor, kendi 9'lu 3-harf setine uymayan HukuDok kodlarını NULL yapıyor; kartlarda kod biçimli değer 0;
+     belgelerde sahipsiz eski kod TUY 5 · BYU 5 · AGH 1.
+     SIRA: G224 ölç → G225 kimlik + koru → G226 belge hattı → G227 export → G228 liste/filtre (∥ G229 arayüz, sözleşme sabit)
+     → G230 Hukukbot (DIŞ REPO, gündüz) → prod sırası → G231 kalıntı kaldırma (BLOKE) · G232 karar 022.
+     Backend seri G224→G225→G226→G227→G228. Tahmin: 2 gece + 1 gündüz (G230). -->
+
+- [ ] G224 | bant:backend | bagimli:- | Avukat envanteri (salt okunur): her avukatın filtre dava / kart / case_lawyers / bağ / belge sayısı fotoğrafı + `--karsilastir` (düşüş = İHLAL, çıkış ≠ 0); geçişin kabul kapısı
+- [ ] G225 | bant:backend | bagimli:G224 | Kurumsal kimlik `lawyers.kimlik` AVK-00001 (doldurma + unique/biçim kısıtı, otomatik üretim, değişmez) + avukat silme kapanır (yalnız pasif, clear/keep reddedilir) + `case_lawyers` FK RESTRICT; envanter İHLAL 0
+- [ ] G226 | bant:backend | bagimli:G225 | Belge hattı avukatı `lawyer_id` (FK RESTRICT) ile taşır, toleranslı çözüm, ölü `avukat_kodu` artıkları kalkar, `scripts/belge_avukat_bagi.py` doldurma (TUY/BYU/AGH eşlemesi, envanter kapılı); testler
+- [ ] G227 | bant:backend | bagimli:G226 | Hukukbot export'u `avukat_kimlik` + `avukat_adi` taşır (`avukat_kodu` geçişte durur; DB id dışarı verilmez) + API-key'li `GET /export/lawyers` (kimlik, ad, aktif — hassas alan yok)
+- [ ] G228 | bant:backend | bagimli:G227 | Avukat listesi `kimlik` ile yönetilir (CRUD + genel config uçları), kod sunucuda gizli; filtre `lawyer=<kimlik>` ama AD EŞLEMESİ KORUNUR (envanter eşitliği), resolver/bildirim kod eşlemesi kalkar, rapor kolonu ad
+- [ ] G229 | bant:frontend | bagimli:- | Arayüzden avukat kodu kalkar: admin tablosu/formu kodsuz, satır kimliği `kimlik`, "Sil" → "Pasife al", dava listesi filtresi `kimlik`, QuickCaseModal ölü prefill kalkar (G228 sözleşmesi sabit)
+- [ ] G230 | bant:backend | bagimli:G227 | [DIŞ REPO ../hukukbot-ui] Hukukbot `avukat_kimlik`/`avukat_adi` alır, 3-harf kod seti + prompt satırı kalkar, CLI ad→kimlik `/export/lawyers` ile | BLOKE(dış repo — gündüz ../hukukbot-ui oturumunda, runner koşamaz)
+- [ ] G231 | bant:backend | bagimli:G224,G225,G226,G227,G228,G229,G230 | Geçiş sonu: `case_documents.avukat_kodu` DROP, export'tan `avukat_kodu`, filtre geriye uyum dalı kalkar; `lawyers.code` akıbeti ölçülür | BLOKE(G224-G229 prod'da + G231.md "Prod sırası" tamam + G230 canlıda — insan açar)
+- [ ] G232 | bant:docs | bagimli:G224,G225,G226,G227,G228,G229 | Karar 022: kurumsal avukat kimliği AVK-00001, avukat silinmez, envanter kapısı (reddedilenler: kodu yaşatmak, UUID, DB id'yi dışarı vermek, adla bağ) + CLAUDE.md maddesi
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
