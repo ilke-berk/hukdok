@@ -101,6 +101,15 @@ allowlist `NOTIFICATION_DOMAINS`. Süre uyarısının TEK kaynağı `case_stage_
 `/confirm`'de karar belgesiyle girilen tebliğ tarihi oraya yazılır
 (`processing.KARAR_DOCTYPE_TO_DECISION_STAGE`, boş alan dolar dolu alan ezilmez).
 
+**Dava notu, sesli giriş, takvim (26.09 toplantısı, G210-G222):** tarihli, yazanı belli notlar `case_notes`'ta
+(`routes/case_notes.py`: `GET|POST /api/cases/{id}/notes`, `DELETE .../notes/{note_id}` soft-delete, yazan ya da
+admin; panel `CaseNotesPanel.tsx`); `cases.notes` kartta "Genel not" olarak AYRI kalır (`docs/mimari/dava-acma-akisi.md` §14).
+Sesli giriş `POST /api/transcribe` (≤2 MB, webm/ogg/mp4/mpeg/wav) → Gemini Türkçe metin, ses diske/loga düşmez;
+`MicButton` (≤60 sn) yalnız iki sohbette (Hukukbot `SoruKutusu`, rapor `AssistantBar`), metin kutuya düşer, gönderim
+otomatik DEĞİL. Takvim raporunda duruşma Açıklama'sı = davanın `dosya_son_durumu` (boşsa not / "Duruşma";
+`report_builder._hearing_title`). Avukat seçimi `LawyerCombobox` (NewCase, intake, QuickCaseModal); `CaseList`
+filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G213).
+
 **Stream sözleşmesi** (`analyzer.py::_failed_event`, frontend ile ORTAK referans):
 olaylar `{"status": "info"/"warning"/"error"/"complete"/"failed", ...}`.
 Nihai başarısızlık: `{"status":"failed", "error_ozet", "error_kod"}`; `error_kod`
@@ -197,7 +206,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-09-26 (pytest 9.1.1): 3648 passed, 12 skipped
+docker compose exec -T backend python -m pytest            # 2026-09-27 (pytest 9.1.1): 3701 passed, 12 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -207,7 +216,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-09-17: 1002 passed (88 dosya)
+npm --prefix frontend test                                 # 2026-09-27: 1206 passed (111 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```

@@ -348,10 +348,10 @@ anahtarındadır, eski kalıcı anahtar modal açılınca silinir
 | Konu | Dosya |
 | --- | --- |
 | `/process` → `/confirm` zinciri, olay sözleşmesi, zaman bütçeleri | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) |
-| Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
+| Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı, tarihli dava notları (`case_notes`) | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
 | Veri teslim hattı: panelden yükleme, defter, kapı, elle uygulama, cevap dosyaları | [`veri-teslim-hatti.md`](veri-teslim-hatti.md) |
 | Raporlama: kayıt defteri (serbest SQL yok), önizleme, Excel/CSV export + koşu logu, şablonlar, AI asistan + `rapor_asistani` anahtarı | [`raporlama.md`](raporlama.md) |
-| Gemini, Graph/SharePoint, e-posta, ayar tablosu | [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
+| Gemini (sesli giriş `/api/transcribe` dahil), Graph/SharePoint, e-posta, ayar tablosu | [`dis-bagimliliklar.md`](dis-bagimliliklar.md) |
 | Kullanıcı oturumu, token doğrulama zinciri, süreler, Graph app-only kimlik | [`kimlik-ve-token.md`](kimlik-ve-token.md) |
 | deploy/rollback, systemd birimleri, izleme, yedekleme | [`deploy-ve-altyapi.md`](deploy-ve-altyapi.md) |
 | Kalıcı mimari kararlar ve gerekçeleri | [`docs/kararlar/`](../kararlar/) |
