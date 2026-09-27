@@ -112,6 +112,25 @@ def _doc_passes_filters(doc, allowlist: set[str], types_filter: set[str]) -> boo
     return True
 
 
+def _lawyer_fields(lawyer) -> dict:
+    """Belge kaydının kurumsal avukat alanları (G227).
+
+    `avukat_kimlik` = `lawyers.kimlik` (`AVK-00001`, G225) — sistemler arası kimlik;
+    `lawyers.id` DIŞARI VERİLMEZ. Bağsız belgede (`lawyer_id` NULL) ikisi de null.
+    """
+    if lawyer is None:
+        return {"avukat_kimlik": None, "avukat_adi": None}
+    return {"avukat_kimlik": lawyer.kimlik, "avukat_adi": lawyer.name}
+
+
+def _lawyers_by_id(db, lawyer_ids) -> dict:
+    """`lawyer_id` kümesini tek sorguda `{id: Lawyer}` sözlüğüne çevirir (N+1 yok)."""
+    ids = {i for i in lawyer_ids if i is not None}
+    if not ids:
+        return {}
+    return {lw.id: lw for lw in db.query(models.Lawyer).filter(models.Lawyer.id.in_(ids)).all()}
+
+
 def _summary(outbox_row, doc) -> dict:
     return {
         "outbox_id": outbox_row.id,
@@ -158,6 +177,7 @@ def list_export_documents(
             q = q.filter(models.ExportOutbox.id > after_id)
 
         items = []
+        lawyer_ids = []
         # Tür karşılaştırması SQL'e inemediği için limit Python tarafında
         # uygulanır; satırlar id sırasıyla parça parça çekilir.
         for row in q.yield_per(200):
@@ -165,8 +185,14 @@ def list_export_documents(
             if not _doc_passes_filters(doc, allowlist, types_filter):
                 continue
             items.append(_summary(row, doc))
+            lawyer_ids.append(doc.lawyer_id)
             if len(items) >= limit:
                 break
+
+        # G227: kurumsal avukat alanları sayfa başına TEK sorguyla eklenir.
+        lawyers = _lawyers_by_id(db, lawyer_ids)
+        for item, lawyer_id in zip(items, lawyer_ids, strict=True):
+            item.update(_lawyer_fields(lawyers.get(lawyer_id)))
 
         return {"items": items, "count": len(items)}
     finally:
@@ -194,6 +220,7 @@ def get_export_document(document_id: int):
             .first()
         )
         case = doc.case
+        lawyer = _lawyers_by_id(db, [doc.lawyer_id]).get(doc.lawyer_id)
         return {
             "document_id": doc.id,
             "outbox_id": outbox.id if outbox else None,
@@ -203,7 +230,9 @@ def get_export_document(document_id: int):
             "ai_summary": doc.ai_summary,
             "esas_no": doc.esas_no or (case.esas_no if case else None),
             "muvekkil_adi": doc.muvekkil_adi or (doc.case_party.name if doc.case_party else None),
+            # GEÇİŞ: `avukat_kodu` DEPRECATED — ham değer aynen verilir, G231 kaldırır.
             "avukat_kodu": doc.avukat_kodu,
+            **_lawyer_fields(lawyer),
             "link_mode": doc.link_mode,
             "tracking_no": case.tracking_no if case else None,
             "case": {
@@ -262,6 +291,32 @@ def download_export_document(document_id: int):
         )
         headers = {"Content-Disposition": f'attachment; filename="{safe_name}"'}
         return Response(content=content, media_type=content_type or "application/octet-stream", headers=headers)
+    finally:
+        db.close()
+
+
+@router.get("/lawyers")
+def list_export_lawyers():
+    """Kurumsal avukat kimliği ↔ ad eşlemesi (G227) — Hukukbot kendi tablosunu buradan tazeler.
+
+    Yanıt `[{"kimlik", "ad", "aktif"}]`, kimlik sırasıyla. Pasif avukat da listededir
+    (`aktif: false`) — eski belgeler hâlâ onun kimliğini taşır (G225: silme = pasif).
+    ALLOWLIST'tir: `id`, e-posta, telefon, adres, T.C./sicil no, görev DIŞARI VERİLMEZ.
+    Kimliği boş satır (yalnız migrasyonsuz test şemasında olabilir; Postgres'te NOT NULL)
+    sözleşmeye uymadığından listelenmez.
+    """
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.Lawyer.kimlik, models.Lawyer.name, models.Lawyer.active)
+            .filter(models.Lawyer.kimlik.isnot(None))
+            .order_by(models.Lawyer.kimlik.asc())
+            .all()
+        )
+        return [
+            {"kimlik": kimlik, "ad": name, "aktif": bool(active)}
+            for kimlik, name, active in rows
+        ]
     finally:
         db.close()
 

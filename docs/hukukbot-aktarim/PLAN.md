@@ -65,10 +65,26 @@ Mevcut modüler yapıya yeni router:
 - `GET /export/documents?status=&after_id=&types=` — **outbox üzerinden** liste.
   Normal reconcile `status=pending` ile sorgular (cursor YOK — gerekçe: BULGULAR #9,
   cursor ya sessiz kayıp ya kuyruk kilidi üretir); `after_id` yalnızca backfill
-  modu içindir. Dönen her kayıt: `{outbox_id, document_id, status}` + özet metadata.
+  modu içindir. Dönen her kayıt: `{outbox_id, document_id, status}` + özet metadata
+  + `avukat_kimlik` / `avukat_adi` (G227, aşağıda).
 - `GET /export/documents/{id}` — metadata JSON (`belge_turu_kodu/adi`, `ai_summary`,
-  `esas_no`, `muvekkil_adi`, `avukat_kodu`, dava bilgileri, `tracking_no`,
-  `sharepoint_url`, `stored_filename`, `uploaded_at`).
+  `esas_no`, `muvekkil_adi`, `avukat_kodu` (DEPRECATED), `avukat_kimlik`, `avukat_adi`,
+  dava bilgileri, `tracking_no`, `sharepoint_url`, `stored_filename`, `uploaded_at`).
+- **Avukat alanları (G227, 27.09):** `avukat_kimlik` = kurumsal avukat kimliği
+  (`AVK-00001` biçimi, `case_documents.lawyer_id` → `lawyers.kimlik`, G225 — bir kez verilir,
+  değişmez, yeniden kullanılmaz), `avukat_adi` = `lawyers.name`. Belge bir avukata bağlı
+  değilse (`lawyer_id` NULL) ikisi de `null`. Avukat pasife alınmış olsa da kimliği/adı
+  gelir. Veritabanının iç `id`'si DIŞARI VERİLMEZ. Hukukbot avukatı bundan böyle
+  `avukat_kimlik` ile tanır.
+- **`avukat_kodu` DEPRECATED — G231'de kalkar.** Geçiş süresince ham değeriyle
+  (yeniden hesaplanmadan) aynen verilir; yeni belgelerde yazılmadığı için boştur (G226).
+  Hukukbot'un 3-harf setine karşı temizlediği bu alana yeni kod bağlanmamalıdır.
+- `GET /export/lawyers` (G227) — kimlik ↔ ad eşlemesi, aynı `X-API-Key` bağımlılığı
+  (anahtarsız/yanlış anahtar = diğer export uçlarıyla aynı 401; env yoksa 503).
+  Yanıt kimlik sırasıyla düz liste: `[{"kimlik": "AVK-00001", "ad": "…", "aktif": true}]`.
+  Pasif avukat `aktif: false` ile listede kalır (eski belgeler onun kimliğini taşır).
+  Alan listesi ALLOWLIST'tir: iç `id`, e-posta, telefon, adres, T.C. no, sicil no,
+  görev VERİLMEZ (bekçi `backend/tests/test_g227_export_avukat_kimligi.py`).
 - `GET /export/documents/{id}/file` — SharePoint'ten PDF'i indirip döner.
   **Yeni Graph kodu gerekmez**: `sharepoint/sharepoint_uploader_graph.py:421-439`'daki
   `download_file_from_sharepoint(folder, stored_filename)` ve
