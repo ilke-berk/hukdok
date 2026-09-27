@@ -89,6 +89,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G230 | bant:backend | bagimli:G227 | [DIŞ REPO ../hukukbot-ui] Hukukbot `avukat_kimlik`/`avukat_adi` alır, 3-harf kod seti + prompt satırı kalkar, CLI ad→kimlik `/export/lawyers` ile | BLOKE(dış repo — gündüz ../hukukbot-ui oturumunda, runner koşamaz)
 - [ ] G231 | bant:backend | bagimli:G224,G225,G226,G227,G228,G229,G230 | Geçiş sonu: `case_documents.avukat_kodu` DROP, export'tan `avukat_kodu`, filtre geriye uyum dalı kalkar; `lawyers.code` akıbeti ölçülür | BLOKE(G224-G229 prod'da + G231.md "Prod sırası" tamam + G230 canlıda — insan açar)
 - [ ] G232 | bant:docs | bagimli:G224,G225,G226,G227,G228,G229 | Karar 022: kurumsal avukat kimliği AVK-00001, avukat silinmez, envanter kapısı (reddedilenler: kodu yaşatmak, UUID, DB id'yi dışarı vermek, adla bağ) + CLAUDE.md maddesi
+- [ ] G233 | bant:backend | bagimli:G228 | Duruşma listesi `GET /api/hearing-dates?lawyer=` kimliği tanır (dava filtresiyle aynı seçim yolu; ad + eski kod 1 sürüm geriye uyumlu) — G228 denetim bulgusu
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
