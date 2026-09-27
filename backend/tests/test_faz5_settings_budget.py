@@ -312,7 +312,7 @@ def _pipeline_kwargs(src, results, timings, bg):
         ai_ozet=None,
         linked_case_id=None,
         case_party_id=None,
-        avukat_kodu=None,
+        lawyer_id=None,
         esas_no=None,
         is_test_mode=False,
         user={},
@@ -486,7 +486,7 @@ def intake_busy_env(monkeypatch, tmp_path):
     monkeypatch.setattr(case_manager, "add_case", fake_add_case)
     monkeypatch.setattr(
         document_pipeline, "validate_tenant_and_resolve_lawyer",
-        lambda case_id, user, avukat_kodu: "AVK1",
+        lambda case_id, user: 7,
     )
 
     def busy_convert(**kwargs):

@@ -142,7 +142,8 @@ def get_case_documents(
                 "muvekkil_adi": d.muvekkil_adi,
                 "case_party_id": d.case_party_id,
                 "case_party_name": _party_name(d),
-                "avukat_kodu": d.avukat_kodu,
+                "avukat_kodu": d.avukat_kodu,   # G226: salt okunur geçiş alanı (G231 kaldırır)
+                "lawyer_id": d.lawyer_id,
                 "esas_no": d.esas_no,
                 "link_mode": d.link_mode,
                 "uploaded_by": d.uploaded_by,
@@ -435,7 +436,6 @@ def resend_document_email(
 
         from email_sender import send_document_notification
         result = send_document_notification(
-            avukat_kodu=doc.avukat_kodu,
             filename=doc.original_filename or doc.stored_filename,
             pdf_path=tmp_path,
             metadata=metadata,

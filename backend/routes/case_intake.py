@@ -870,7 +870,7 @@ async def merge_case_intake(
 async def _archive_intake_documents(
     documents: List[CommitDocumentIn],
     case_id: int,
-    avukat_kodu: Optional[str],
+    lawyer_id: Optional[int],
     background_tasks: BackgroundTasks,
     user: dict,
     current_user_name: str,
@@ -889,7 +889,7 @@ async def _archive_intake_documents(
     ham_folder = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
     islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
     date_str = datetime.now().strftime("%Y-%m-%d")
-    avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu) if options.send_email else ""
+    avukat_adi = document_pipeline.resolve_lawyer_name(lawyer_id) if options.send_email else ""
 
     doc_results: List[Dict[str, Any]] = []
     for doc in documents:
@@ -943,7 +943,7 @@ async def _archive_intake_documents(
                     ai_ozet=doc.ai_ozet,
                     linked_case_id=case_id,
                     case_party_id=None,
-                    avukat_kodu=avukat_kodu,
+                    lawyer_id=lawyer_id,
                     esas_no=doc.esas_no,
                     is_test_mode=False,
                     user=user,
@@ -974,7 +974,7 @@ async def _archive_intake_documents(
                     # 2026-09-01: ad çakışmasında pipeline benzersiz ad üretir —
                     # e-posta eki arşivdeki gerçek adı taşımalı.
                     new_filename=step_results.get("stored_filename") or new_filename,
-                    avukat_kodu=avukat_kodu,
+                    lawyer_id=lawyer_id,
                     email_metadata=email_metadata,
                     custom_to=options.email_to,
                     custom_cc=[],
@@ -1130,13 +1130,13 @@ async def commit_case_intake(
         raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
     case_id = case_result["id"]
 
-    # Avukat kodu davanın sorumlusundan BİR KEZ çözülür (dava az önce bizim
-    # oluşturduğumuz — belge başına tenant sorgusu israf). Hata belge akışını
-    # durdurmaz: kod boş kalır, arşivleme devam eder.
-    avukat_kodu: Optional[str] = None
+    # Belgelerin avukatı (`lawyers.id`, G226) davanın sorumlusundan BİR KEZ çözülür
+    # (dava az önce bizim oluşturduğumuz — belge başına tenant sorgusu israf). Hata
+    # belge akışını durdurmaz: avukat boş kalır, arşivleme devam eder.
+    lawyer_id: Optional[int] = None
     try:
-        avukat_kodu = await loop.run_in_executor(
-            None, document_pipeline.validate_tenant_and_resolve_lawyer, case_id, user, None
+        lawyer_id = await loop.run_in_executor(
+            None, document_pipeline.validate_tenant_and_resolve_lawyer, case_id, user
         )
     except Exception as e:
         TechnicalLogger.log(
@@ -1175,7 +1175,7 @@ async def commit_case_intake(
                 docs_to_archive.append(d)
 
     doc_results = await _archive_intake_documents(
-        docs_to_archive, case_id, avukat_kodu, background_tasks,
+        docs_to_archive, case_id, lawyer_id, background_tasks,
         user, current_user_name, req.options,
     )
     if reused_doc_entries:
@@ -1279,11 +1279,11 @@ async def apply_case_intake(
     if result.get("error"):
         raise HTTPException(status_code=500, detail="Dava güncellenemedi.")
 
-    # 2. Avukat kodu (commit ile aynı: hata belge akışını durdurmaz).
-    avukat_kodu: Optional[str] = None
+    # 2. Belgelerin avukatı `lawyers.id` (G226; commit ile aynı: hata belge akışını durdurmaz).
+    lawyer_id: Optional[int] = None
     try:
-        avukat_kodu = await loop.run_in_executor(
-            None, document_pipeline.validate_tenant_and_resolve_lawyer, req.case_id, user, None
+        lawyer_id = await loop.run_in_executor(
+            None, document_pipeline.validate_tenant_and_resolve_lawyer, req.case_id, user
         )
     except Exception as e:
         TechnicalLogger.log(
@@ -1292,7 +1292,7 @@ async def apply_case_intake(
 
     # 3+4. Belge arşivleme + poliçe beslemesi — commit ile ortak yardımcılar.
     doc_results = await _archive_intake_documents(
-        req.documents, req.case_id, avukat_kodu, background_tasks,
+        req.documents, req.case_id, lawyer_id, background_tasks,
         user, current_user_name, req.options,
     )
     policy_result = await _feed_intake_policies(req.policies, req.case_id, current_user_name)

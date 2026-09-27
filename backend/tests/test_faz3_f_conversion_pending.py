@@ -236,7 +236,7 @@ def _run_convert_with_failure(monkeypatch, tmp_path, conv_exc=None, new_filename
         ai_ozet=None,
         linked_case_id=None,
         case_party_id=None,
-        avukat_kodu=None,
+        lawyer_id=None,
         esas_no=None,
         is_test_mode=False,
         user={},
@@ -301,7 +301,7 @@ def test_pending_layer_missing_output_also_covered(monkeypatch, tmp_path):
         ham_filename="h.udf", ham_folder="H", islenmis_folder="I",
         new_filename="yeni.pdf", original_filename="kaynak.udf",
         belge_turu_kodu=None, muvekkiller=[], muvekkil_adi=None, ai_ozet=None,
-        linked_case_id=None, case_party_id=None, avukat_kodu=None, esas_no=None,
+        linked_case_id=None, case_party_id=None, lawyer_id=None, esas_no=None,
         is_test_mode=False, user={}, current_user_name="t",
         results=results, timings=timings, ham_source_path=None,
     )
@@ -340,7 +340,7 @@ def test_pending_layer_doc_save_failure_falls_back_to_500_and_cleans_spool(monke
             source_path=str(src), ham_filename="h.udf", ham_folder="H",
             islenmis_folder="I", new_filename="yeni.pdf", original_filename="orijinal.udf",
             belge_turu_kodu=None, muvekkiller=[], muvekkil_adi=None, ai_ozet=None,
-            linked_case_id=None, case_party_id=None, avukat_kodu=None, esas_no=None,
+            linked_case_id=None, case_party_id=None, lawyer_id=None, esas_no=None,
             is_test_mode=False, user={}, current_user_name="t",
             results={}, timings={}, ham_source_path=str(orijinal),
         )
@@ -370,7 +370,7 @@ def test_pending_filename_keeps_pdf_when_original_is_pdf(monkeypatch, tmp_path):
         source_path=str(src), ham_filename="h.pdf", ham_folder="H",
         islenmis_folder="I", new_filename="yeni.pdf", original_filename="kaynak.pdf",
         belge_turu_kodu=None, muvekkiller=[], muvekkil_adi=None, ai_ozet=None,
-        linked_case_id=None, case_party_id=None, avukat_kodu=None, esas_no=None,
+        linked_case_id=None, case_party_id=None, lawyer_id=None, esas_no=None,
         is_test_mode=False, user={}, current_user_name="t",
         results=results, timings={}, ham_source_path=None,
     )

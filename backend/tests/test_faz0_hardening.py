@@ -116,7 +116,7 @@ def test_auto_enrich_case_data_closes_session_on_error(monkeypatch):
     factory, made = _probe_factory("query")
     monkeypatch.setattr(processing, "SessionLocal", factory)
 
-    assert processing._auto_enrich_case_data(1, "AVK1", "Karşı Taraf", "test") == {}
+    assert processing._auto_enrich_case_data(1, "Karşı Taraf", "test") == {}
     assert made and all(s.closed for s in made)
 
 
@@ -266,7 +266,7 @@ def test_send_notification_email_on_kontrol_hatasinda_ekleri_temizler(monkeypatc
     monkeypatch.setattr(document_pipeline, "email_pre_check", lambda *_a, **_k: "Alıcı listesi boş")
     results: dict = {}
     asyncio.run(document_pipeline.send_notification_email(
-        email_file_path=str(ek), new_filename="x.pdf", avukat_kodu=None, email_metadata={},
+        email_file_path=str(ek), new_filename="x.pdf", lawyer_id=None, email_metadata={},
         custom_to=[], custom_cc=[], custom_email_message=None, custom_messages=None,
         extra_temp_paths=[{"path": str(ek), "name": "ek.pdf"}],
         current_user_name="t", doc_id=None, results=results, timings={},

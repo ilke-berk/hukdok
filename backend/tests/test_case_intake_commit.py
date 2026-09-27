@@ -42,9 +42,9 @@ def env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(case_manager, "add_case", fake_add_case)
 
-    def fake_resolve(case_id, user, avukat_kodu):
+    def fake_resolve(case_id, user):
         calls["resolve"].append(case_id)
-        return "AVK1"
+        return 7  # G226: davanın sorumlu avukatı `lawyers.id`
 
     monkeypatch.setattr(document_pipeline, "validate_tenant_and_resolve_lawyer", fake_resolve)
 
@@ -189,7 +189,7 @@ def test_commit_happy_path_all_documents_queued(env):
     # pipeline confirm imzasıyla çağrıldı: yeni davaya bağlı, test modu kapalı
     kw = env.calls["convert"][0]
     assert kw["linked_case_id"] == 123
-    assert kw["avukat_kodu"] == "AVK1"
+    assert kw["lawyer_id"] == 7
     assert kw["is_test_mode"] is False
     assert kw["belge_turu_kodu"] == "TENSIP-ZPT____"
     # sanitize_filename padding alt çizgilerini teke indirir (confirm ile aynı)
@@ -357,7 +357,7 @@ def test_commit_email_sent_when_toggled_on(env):
     ))
     assert r.status_code == 200
     assert len(env.calls["email"]) == 1
-    assert env.calls["email"][0]["avukat_kodu"] == "AVK1"
+    assert env.calls["email"][0]["lawyer_id"] == 7
     assert r.json()["documents"][0]["email"] == "Gönderildi"
 
 
@@ -376,7 +376,7 @@ def test_commit_email_recipients_passed_through(env):
 def test_commit_lawyer_resolution_failure_is_non_fatal(env, monkeypatch):
     from services import document_pipeline
 
-    def resolve_boom(case_id, user, avukat_kodu):
+    def resolve_boom(case_id, user):
         raise Exception("tenant lookup failed")
 
     monkeypatch.setattr(document_pipeline, "validate_tenant_and_resolve_lawyer", resolve_boom)
@@ -386,4 +386,4 @@ def test_commit_lawyer_resolution_failure_is_non_fatal(env, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json()["documents"][0]["status"] == "queued"
-    assert env.calls["convert"][0]["avukat_kodu"] is None
+    assert env.calls["convert"][0]["lawyer_id"] is None

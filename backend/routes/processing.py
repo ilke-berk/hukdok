@@ -296,7 +296,13 @@ def _auto_update_case_status(case_id: int, belge_turu_kodu: str, uploaded_by: st
             db.close()
 
 
-def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: str = None, uploaded_by: str = None):
+def _auto_enrich_case_data(case_id: int, karsi_taraf: str = None, uploaded_by: str = None):
+    """Belgeden davaya sessiz zenginleştirme: yalnız karşı taraf (davada yoksa).
+
+    G226: avukat dalı KALKTI — belgenin avukatı zaten davanın sorumlu avukatından
+    çözülüyordu (ad → kod → aynı ad), yani dal sorumlusu boş davada hiç tetiklenemeyen
+    bir no-op'tu. Sorumlu avukat kartta kullanıcı yollarıyla atanır.
+    """
     if not case_id:
         return {}
 
@@ -310,33 +316,6 @@ def _auto_enrich_case_data(case_id: int, avukat_kodu: str = None, karsi_taraf: s
         ).first()
         if not case:
             return {}
-
-        if avukat_kodu and (
-            not case.responsible_lawyer_name
-            or case.responsible_lawyer_name == "Atanmadı"
-            or case.responsible_lawyer_name.strip() == ""
-        ):
-            try:
-                lawyers = DynamicConfig.get_instance().get_lawyers()
-                for lawyer in lawyers:
-                    if lawyer.get("code") == avukat_kodu:
-                        avukat_adi = lawyer.get("name")
-                        old_avukat = case.responsible_lawyer_name
-                        case.responsible_lawyer_name = avukat_adi
-                        history = models.CaseHistory(
-                            case_id=case_id,
-                            field_name="responsible_lawyer_name",
-                            old_value=old_avukat or "Yok",
-                            new_value=avukat_adi,
-                            # Faz 7 kararı 3: sessiz zenginleştirme imzalanır
-                            changed_by=uploaded_by,
-                            source="auto-enrich",
-                        )
-                        db.add(history)
-                        updated_fields["lawyer"] = avukat_adi
-                        break
-            except Exception as e:
-                logging.warning(f"Avukat lookup error (Enrichment): {e}")
 
         if karsi_taraf:
             has_counter = any(p.party_type == "COUNTER" for p in case.parties)
@@ -711,7 +690,6 @@ async def confirm_process(
     process_id: Optional[str] = Form(None),
     muvekkil_adi: str = Form(None),
     karsi_taraf: str = Form(None),
-    avukat_kodu: str = Form(None),
     belge_turu_kodu: str = Form(None),
     tarih: str = Form(None),
     esas_no: str = Form(None),
@@ -780,8 +758,11 @@ async def confirm_process(
     try:
         # IDOR-6: linked_case_id verildiyse önce tenant ownership doğrula.
         # Belge SharePoint'e gitmeden ve save_case_document çağrılmadan önce reddetmeliyiz.
+        # G226: belgenin avukatı davanın sorumlu avukatından `lawyers.id` olarak çözülür
+        # (toleranslı); davasız belge avukatsızdır (istemci avukat alanı göndermez).
+        lawyer_id: Optional[int] = None
         if linked_case_id:
-            avukat_kodu = document_pipeline.validate_tenant_and_resolve_lawyer(linked_case_id, user, avukat_kodu)
+            lawyer_id = document_pipeline.validate_tenant_and_resolve_lawyer(linked_case_id, user)
 
         # Faz 3: Use PROCESS_CACHE if process_id provided; fall back to file upload.
         # ham_source_path: HAM arşive gidecek orijinal dosya (dönüştürülmüş
@@ -834,7 +815,7 @@ async def confirm_process(
                     ai_ozet=ai_ozet,
                     linked_case_id=linked_case_id,
                     case_party_id=case_party_id,
-                    avukat_kodu=avukat_kodu,
+                    lawyer_id=lawyer_id,
                     esas_no=esas_no,
                     is_test_mode=is_test_mode,
                     user=user,
@@ -890,7 +871,7 @@ async def confirm_process(
                 + ", ".join(skipped_extras)
             )
 
-        avukat_adi = document_pipeline.resolve_lawyer_name(avukat_kodu)
+        avukat_adi = document_pipeline.resolve_lawyer_name(lawyer_id)
 
         email_metadata = document_pipeline.build_email_metadata(
             muvekkiller, muvekkil_adi, muvekkil_kodu, belge_turu_kodu, tarih, avukat_adi, teblig_tarihi
@@ -902,7 +883,7 @@ async def confirm_process(
             await document_pipeline.send_notification_email(
                 email_file_path=email_file_path,
                 new_filename=effective_filename,
-                avukat_kodu=avukat_kodu,
+                lawyer_id=lawyer_id,
                 email_metadata=email_metadata,
                 custom_to=custom_to,
                 custom_cc=custom_cc,
@@ -937,7 +918,7 @@ async def confirm_process(
             await document_pipeline.send_client_notice_email(
                 email_file_path=email_file_path,
                 new_filename=effective_filename,
-                avukat_kodu=avukat_kodu,
+                lawyer_id=lawyer_id,
                 avukat_adi=avukat_adi,
                 email_metadata=email_metadata,
                 client_notice_message=client_notice_message,
@@ -983,7 +964,7 @@ async def confirm_process(
             )
 
             results["auto_enrichment"] = _auto_enrich_case_data(
-                linked_case_id, avukat_kodu, karsi_taraf, current_user_name
+                linked_case_id, karsi_taraf, current_user_name
             )
 
             # Duruşma/tensip zaptından gelen sonraki duruşma tarihini ajandaya kaydet

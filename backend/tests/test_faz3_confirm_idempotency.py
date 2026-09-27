@@ -551,7 +551,7 @@ def commit_env(monkeypatch, tmp_path):
     monkeypatch.setattr(case_manager, "add_case", fake_add_case_duplicate)
     monkeypatch.setattr(
         document_pipeline, "validate_tenant_and_resolve_lawyer",
-        lambda case_id, user, avukat_kodu: "AVK1",
+        lambda case_id, user: 7,
     )
 
     doc_ids = iter(range(41, 99))

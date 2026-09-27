@@ -428,9 +428,9 @@ def apply_env(monkeypatch, tmp_path):
 
     monkeypatch.setattr(case_manager, "enrich_case", fake_enrich_case)
 
-    def fake_resolve(case_id, user, avukat_kodu):
+    def fake_resolve(case_id, user):
         calls["resolve"].append(case_id)
-        return "AVK1"
+        return 7  # G226: davanın sorumlu avukatı `lawyers.id`
 
     monkeypatch.setattr(document_pipeline, "validate_tenant_and_resolve_lawyer", fake_resolve)
 

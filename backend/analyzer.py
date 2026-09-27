@@ -347,7 +347,6 @@ def get_default_json() -> Dict[str, Any]:
         "belgede_gecen_isimler": [],
         "belge_turu_kodu": "",
         "belge_kaynagi": "XXXX",
-        "avukat_kodu": None,
         "esas_no": "",
         "court": None,
         "durum": "G",
@@ -1155,7 +1154,6 @@ def _resolve_muvekkil_fields(
     try:
         hook_muvekkil = data.get("muvekkil_adi")
         diger_isimler = data.get("belgede_gecen_isimler", [])
-        avukat_var = data.get("avukat_kodu") is not None
 
         # 🛡️ AVUKAT FİLTRESİ: Sadece TAM isim eşleşmesi (kelime parçaları değil)
         import re as _re
@@ -1193,7 +1191,9 @@ def _resolve_muvekkil_fields(
         sonuc, kaynak, skor = matcher.filtrele(
             hook_tespit=hook_muvekkil,
             diger_isimler=filtered_isimler,
-            avukat_var=avukat_var
+            # G226: model avukat kodu üretmez (prompt istemez) → eski `avukat_kodu`
+            # okuması hep False'tu; `filtrele` bu bayrağı zaten kullanmıyor.
+            avukat_var=False,
         )
 
         # Sonucu güncelle

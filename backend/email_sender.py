@@ -549,7 +549,6 @@ Saygılarımızla,
 
 
 def send_document_notification(
-    avukat_kodu: str,
     filename: str,
     pdf_path: str,
     metadata: dict = None,

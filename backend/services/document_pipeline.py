@@ -19,7 +19,6 @@ from fastapi import HTTPException, BackgroundTasks, UploadFile
 
 from config.settings import settings
 from database import SessionLocal
-from managers.config_manager import DynamicConfig
 from managers.lawyer_resolver import kanonik_avukat_metni
 from managers.log_manager import TechnicalLogger
 from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
@@ -47,7 +46,7 @@ def save_case_document(
     ai_summary: str = None,
     muvekkil_adi: str = None,
     case_party_id: int = None,
-    avukat_kodu: str = None,
+    lawyer_id: int = None,
     esas_no: str = None,
     is_test_mode: bool = False,
     uploaded_by: str = None,
@@ -97,7 +96,8 @@ def save_case_document(
             ai_summary=ai_summary,
             muvekkil_adi=muvekkil_adi,
             case_party_id=resolved_party_id,
-            avukat_kodu=avukat_kodu,
+            # G226: avukat `lawyers.id` ile bağlanır; `avukat_kodu` geçiş kolonu yazılmaz.
+            lawyer_id=lawyer_id,
             esas_no=esas_no,
             link_mode=link_mode,
             uploaded_by=uploaded_by,
@@ -138,34 +138,90 @@ def save_case_document(
             db.close()
 
 
-def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict, avukat_kodu: Optional[str]) -> Optional[str]:
+def lawyer_id_for_text(db, raw_value: Optional[str]) -> Optional[int]:
+    """Ham avukat metnini (`cases.responsible_lawyer_name`) `lawyers.id`'ye çözer (G226).
+
+    TEK çözüm yolu — belge hattının avukatı buradan gelir. Eşleme TOLERANSLIDIR
+    (`managers.lawyer_resolver`): "TUGCE UNGOR" ↔ "Tuğçe Ungör Yanık", "Av." öneki, Türkçe
+    harf katlama, kod metni. Eski yol config'teki ada BİREBİR eşliyordu ve farklı yazımda
+    belgeyi avukatsız bırakıyordu. Liste DB'den okunur (id taşısın diye; önbellek id
+    taşımaz), pasif avukat da çözülür — pasife alınan avukatın davasının belgesi yine onundur;
+    aynı adlı iki kayıtta aktif olan önce gelir. Çoklu değerde ("A;B") ilk çözülen parça
+    sorumlu sayılır; ayraç içeren liste kaydı ("Hanyaloğlu & Acar") önce bütün olarak aranır.
+    Çözülemezse None (belge avukatsız kaydedilir, akış durmaz).
+    """
+    from managers.lawyer_resolver import _split_persons, _tam_liste_adi, resolve_lawyer
+
+    if raw_value is None or not str(raw_value).strip():
+        return None
+    satirlar = sorted(
+        db.query(models.Lawyer).all(),
+        key=lambda lw: (not bool(lw.active), lw.sequence or 0, lw.id),
+    )
+    liste = [{"id": lw.id, "code": lw.code, "name": lw.name} for lw in satirlar]
+    if not liste:
+        return None
+    tam = _tam_liste_adi(str(raw_value), liste)
+    if tam:
+        return next(lw["id"] for lw in liste if lw["name"] == tam)
+    for parca in _split_persons(str(raw_value)):
+        eslesen = resolve_lawyer(parca, liste)
+        if eslesen:
+            return eslesen["id"]
+    return None
+
+
+def resolve_case_lawyer_id(db, case) -> Optional[int]:
+    """Davanın sorumlu avukatının `lawyers.id`'si (toleranslı, bkz. `lawyer_id_for_text`)."""
+    return lawyer_id_for_text(db, getattr(case, "responsible_lawyer_name", None))
+
+
+def validate_tenant_and_resolve_lawyer(linked_case_id: int, user: dict) -> Optional[int]:
     """IDOR-6: linked_case_id verildiyse tenant ownership doğrular.
 
     Belge SharePoint'e gitmeden ve save_case_document çağrılmadan önce reddetmeliyiz.
-    Avukat kodu verilmemişse davanın sorumlu avukatından çözer ve döndürür.
+    Davanın sorumlu avukatını `lawyers.id` olarak döndürür (G226; çözülemezse None).
+    Çözüm hatası belgeyi durdurmaz (WARNING, None) — tenant reddi ise durdurur.
     """
     from auth_helpers import get_tenant_owned_case
     user_tenant = user.get("tid")
     if not user_tenant:
         raise HTTPException(status_code=403, detail="Token'da tenant bilgisi bulunamadı")
     db_fetch = SessionLocal()
+    lawyer_id: Optional[int] = None
     try:
         case_fetch = get_tenant_owned_case(db_fetch, linked_case_id, user_tenant)
         if not case_fetch:
             raise HTTPException(status_code=404, detail="Belirtilen dava bulunamadı")
-        # Auto-lookup lawyer code from case if not provided
-        if not avukat_kodu and case_fetch.responsible_lawyer_name:
-            try:
-                lawyers = DynamicConfig.get_instance().get_lawyers()
-                for lw in lawyers:
-                    if lw.get("name") == case_fetch.responsible_lawyer_name:
-                        avukat_kodu = lw.get("code")
-                        break
-            except Exception as e:
-                logging.warning(f"Avukat lookup error (Confirm): {e}")
+        try:
+            lawyer_id = resolve_case_lawyer_id(db_fetch, case_fetch)
+        except Exception as e:
+            logging.warning(f"Avukat çözümü hatası (case={linked_case_id}): {e}")
     finally:
         db_fetch.close()
-    return avukat_kodu
+    return lawyer_id
+
+
+def lawyer_contact(lawyer_id: Optional[int]) -> dict:
+    """`lawyers` satırından ad + e-posta (G226: e-posta/bildirim avukatı buradan okur).
+
+    Bulunamaz ya da DB hatası olursa boş sözlük — e-posta akışı best-effort'tur.
+    """
+    if not lawyer_id:
+        return {}
+    db = None
+    try:
+        db = SessionLocal()
+        row = db.query(models.Lawyer).filter(models.Lawyer.id == lawyer_id).first()
+        if row is None:
+            return {}
+        return {"name": row.name or "", "email": (row.email or "").strip()}
+    except Exception as e:
+        TechnicalLogger.log("WARNING", f"Avukat kaydı okunamadı (lawyer_id={lawyer_id}): {e}")
+        return {}
+    finally:
+        if db is not None:
+            db.close()
 
 
 async def accept_incoming_file(
@@ -347,7 +403,7 @@ def _register_pending_conversion(
     ai_ozet: Optional[str],
     linked_case_id: Optional[int],
     case_party_id: Optional[int],
-    avukat_kodu: Optional[str],
+    lawyer_id: Optional[int],
     esas_no: Optional[str],
     is_test_mode: bool,
     user: dict,
@@ -398,7 +454,7 @@ def _register_pending_conversion(
         ai_summary=ai_ozet,
         muvekkil_adi=clean_muvekkil,
         case_party_id=case_party_id,
-        avukat_kodu=avukat_kodu,
+        lawyer_id=lawyer_id,
         esas_no=esas_no,
         is_test_mode=is_test_mode,
         uploaded_by=current_user_name,
@@ -462,7 +518,7 @@ def convert_pdfa_and_queue_uploads(
     ai_ozet: Optional[str],
     linked_case_id: Optional[int],
     case_party_id: Optional[int],
-    avukat_kodu: Optional[str],
+    lawyer_id: Optional[int],
     esas_no: Optional[str],
     is_test_mode: bool,
     user: dict,
@@ -545,7 +601,7 @@ def convert_pdfa_and_queue_uploads(
                 ai_ozet=ai_ozet,
                 linked_case_id=linked_case_id,
                 case_party_id=case_party_id,
-                avukat_kodu=avukat_kodu,
+                lawyer_id=lawyer_id,
                 esas_no=esas_no,
                 is_test_mode=is_test_mode,
                 user=user,
@@ -570,7 +626,7 @@ def convert_pdfa_and_queue_uploads(
             ai_summary=ai_ozet,
             muvekkil_adi=clean_muvekkil,
             case_party_id=case_party_id,
-            avukat_kodu=avukat_kodu,
+            lawyer_id=lawyer_id,
             esas_no=esas_no,
             is_test_mode=is_test_mode,
             uploaded_by=current_user_name,
@@ -674,7 +730,9 @@ async def save_extra_attachments(extra_attachment_files: list) -> tuple[list, li
     return extra_temp_paths, skipped
 
 
-def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None, subject_prefix="[HukDok]"):
+def send_email_sync(pdf_path, filename, lawyer_id, email_metadata, to_list, cc_list, msg=None, messages=None, extra_paths=None, sender_name=None, doc_id=None, subject_prefix="[HukDok]"):
+    """E-postayı gönderir ve belgenin e-posta durumunu yazar. `lawyer_id` (G226) yalnız
+    iz içindir (log satırı) — gönderimin alıcıları çağıranın verdiği listelerdir."""
     def _update_email_status(success: bool, error_msg: str = None):
         if not doc_id:
             return
@@ -699,7 +757,6 @@ def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc
     try:
         from email_sender import send_document_notification
         result = send_document_notification(
-            avukat_kodu=avukat_kodu,
             filename=filename,
             pdf_path=pdf_path,
             metadata=email_metadata,
@@ -712,7 +769,8 @@ def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc
             subject_prefix=subject_prefix,
         )
         if result["success"]:
-            TechnicalLogger.log("INFO", f"E-posta gönderildi: {filename} → {len(to_list)} alıcı")
+            avukat_izi = f" (avukat #{lawyer_id})" if lawyer_id else ""
+            TechnicalLogger.log("INFO", f"E-posta gönderildi: {filename} → {len(to_list)} alıcı{avukat_izi}")
             _update_email_status(True)
         else:
             TechnicalLogger.log("WARNING", f"E-posta gönderilemedi: {filename} — {result['message']}")
@@ -729,18 +787,9 @@ def send_email_sync(pdf_path, filename, avukat_kodu, email_metadata, to_list, cc
                 safe_remove(ep.get("path"))
 
 
-def resolve_lawyer_name(avukat_kodu: Optional[str]) -> str:
-    avukat_adi = ""
-    if avukat_kodu:
-        try:
-            lawyers = DynamicConfig.get_instance().get_lawyers()
-            for lawyer in lawyers:
-                if lawyer.get("code") == avukat_kodu:
-                    avukat_adi = lawyer.get("name", "")
-                    break
-        except Exception as e:
-            TechnicalLogger.log("WARNING", f"Avukat name lookup error: {e}")
-    return avukat_adi
+def resolve_lawyer_name(lawyer_id: Optional[int]) -> str:
+    """Avukatın adı `lawyers` satırından (G226; bulunamazsa boş metin)."""
+    return lawyer_contact(lawyer_id).get("name", "")
 
 
 def build_email_metadata(muvekkiller, muvekkil_adi, muvekkil_kodu, belge_turu_kodu, tarih, avukat_adi, teblig_tarihi) -> dict:
@@ -774,7 +823,7 @@ def email_pre_check(email_file_path, custom_to) -> str | None:
 async def send_notification_email(
     email_file_path,
     new_filename: str,
-    avukat_kodu: Optional[str],
+    lawyer_id: Optional[int],
     email_metadata: dict,
     custom_to: list,
     custom_cc: list,
@@ -801,7 +850,7 @@ async def send_notification_email(
         email_result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: send_email_sync(
-                email_file_path, new_filename, avukat_kodu, email_metadata,
+                email_file_path, new_filename, lawyer_id, email_metadata,
                 custom_to, custom_cc, custom_email_message or None,
                 custom_messages or None, extra_temp_paths or None,
                 current_user_name, doc_id
@@ -821,7 +870,7 @@ async def send_notification_email(
 async def send_client_notice_email(
     email_file_path,
     new_filename: str,
-    avukat_kodu: Optional[str],
+    lawyer_id: Optional[int],
     avukat_adi: str,
     email_metadata: dict,
     client_notice_message: Optional[str],
@@ -830,18 +879,10 @@ async def send_client_notice_email(
     timings: dict,
 ):
     """Müvekkil bilgilendirme metnini davanın sorumlu avukatına ayrı e-posta olarak gönderir."""
-    # Sorumlu avukatın e-postasını çöz (avukat_kodu → lawyers config).
-    lawyer_email = ""
-    lawyer_name = avukat_adi or "İlgili Avukat"
-    if avukat_kodu:
-        try:
-            for lw in DynamicConfig.get_instance().get_lawyers():
-                if lw.get("code") == avukat_kodu:
-                    lawyer_email = (lw.get("email") or "").strip()
-                    lawyer_name = lw.get("name") or lawyer_name
-                    break
-        except Exception as e:
-            TechnicalLogger.log("WARNING", f"Müvekkil bildirimi avukat email lookup hatası: {e}")
+    # Sorumlu avukatın e-postası `lawyers` satırından (G226: lawyer_id → lawyers).
+    kayit = lawyer_contact(lawyer_id)
+    lawyer_email = kayit.get("email") or ""
+    lawyer_name = kayit.get("name") or avukat_adi or "İlgili Avukat"
 
     if not lawyer_email:
         results["client_notice"] = "Gönderilemedi: Sorumlu avukatın e-postası yok"
@@ -856,7 +897,7 @@ async def send_client_notice_email(
         notice_result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: send_email_sync(
-                email_file_path, new_filename, avukat_kodu, email_metadata,
+                email_file_path, new_filename, lawyer_id, email_metadata,
                 [notice_recipient], [], client_notice_message or None,
                 None, None,
                 current_user_name, None, "[Müvekkil Bilgilendirme]"

@@ -83,7 +83,6 @@ class ProcessAnalysisOutput(BaseModel):
     durum: Optional[str] = None
     ozet: Optional[str] = None
     karsi_taraf: Optional[str] = None
-    avukat_kodu: Optional[str] = None
     belge_kaynagi: Optional[str] = None
     belge_turu_kodu: Optional[str] = None
     sonraki_durusma_tarihi: Optional[str] = None
@@ -91,7 +90,7 @@ class ProcessAnalysisOutput(BaseModel):
 
     @field_validator(
         "tarih", "muvekkil_adi", "esas_no", "court", "durum", "ozet",
-        "karsi_taraf", "avukat_kodu", "belge_kaynagi", "belge_turu_kodu",
+        "karsi_taraf", "belge_kaynagi", "belge_turu_kodu",
         "sonraki_durusma_tarihi", "sonraki_durusma_saati",
         mode="before",
     )

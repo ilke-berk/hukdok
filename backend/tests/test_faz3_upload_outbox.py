@@ -267,7 +267,7 @@ def _run_convert(monkeypatch, tmp_path, enqueue_returns):
         ai_ozet=None,
         linked_case_id=None,
         case_party_id=None,
-        avukat_kodu=None,
+        lawyer_id=None,
         esas_no=None,
         is_test_mode=False,
         user={},

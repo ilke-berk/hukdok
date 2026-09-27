@@ -1298,6 +1298,21 @@ _MIGRATIONS = [
         "FOREIGN KEY (lawyer_id) REFERENCES lawyers (id) ON DELETE RESTRICT; "
         "END IF; END $$",
     ]),
+
+    # ─── 55. BELGENİN SORUMLU AVUKATI `lawyer_id` (G226, kullanıcı kararı 27.09) ──
+    # Belge hattı avukatı kodla değil `lawyers.id` ile taşır; `avukat_kodu` salt okunur
+    # geçiş kolonu olarak YERİNDE kalır (G231 kaldırır). FK RESTRICT (G225 güvencesi: avukat
+    # silinmez, pasife alınır). Kolon op'u KOŞULLUDUR — FK DDL'in içinde (kolon yalnız bu
+    # op'la ya da modeldeki FK'lı create_all ile doğar, iki yol da aynı kısıtı kurar); index
+    # ise hemen alttaki KOŞULSUZ op'ta (CLAUDE.md "koşullu op" tuzağı, G043 index'siz FK
+    # bekçisi). Mevcut belgeler `scripts/belge_avukat_bagi.py` ile doldurulur (dry-run
+    # varsayılan, envanter kapılı) — migrasyon VERİ YAZMAZ.
+    ("columns", "case_documents", {
+        "lawyer_id": "INTEGER REFERENCES lawyers(id) ON DELETE RESTRICT",
+    }),
+    ("index", "case_documents", [
+        "CREATE INDEX IF NOT EXISTS idx_case_documents_lawyer_id ON case_documents (lawyer_id)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

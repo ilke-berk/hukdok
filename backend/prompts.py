@@ -17,7 +17,7 @@ def get_system_instruction(
     
     Args:
         missing_fields: List of fields that regex couldn't find. 
-                       Options: ["tarih", "esas_no", "avukat_kodu", "muvekkil"]
+                       Options: ["tarih", "esas_no", "muvekkil", "court"]
                        If None or empty, LLM will only generate summary.
         pre_extracted: Dict of values already found by regex (for context)
     """
@@ -29,13 +29,12 @@ def get_system_instruction(
     # 1. Common Parts
     today_str = datetime.now().strftime("%d.%m.%Y")
     
-    lawyer_list_str = ""
+    # G226: avukat listesi yalnız "avukatları isim listesine yazma" ayıklaması içindir;
+    # modelden avukat kodu istenmez (eski kod listesi prompt'a hiç girmiyordu).
     lawyer_names_for_exclusion = []
     if dynamic_lawyers:
         for lawyer in dynamic_lawyers:
-            code = lawyer.get("code", "UNK")
             name = lawyer.get("name", "")
-            lawyer_list_str += f'- "{code}" : {name}\n'
             if name:
                 lawyer_names_for_exclusion.append(name.upper())
             
@@ -59,8 +58,6 @@ def get_system_instruction(
             found_items.append(f"Tarih: {pre_extracted['tarih']}")
         if pre_extracted.get("esas_no"):
             found_items.append(f"Esas No: {pre_extracted['esas_no']}")
-        if pre_extracted.get("avukat_kodu"):
-            found_items.append(f"Avukat: {pre_extracted['avukat_kodu']}")
         if pre_extracted.get("muvekkil_candidates"):
             found_items.append(f"Müvekkil Adayları: {', '.join(pre_extracted['muvekkil_candidates'])}")
         # 🏛️ MAHKEME (G068): ön çıkarım YALNIZ kilitliyken (regex tam güvenle

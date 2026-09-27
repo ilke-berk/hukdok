@@ -92,7 +92,26 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    olarak kayıtlıdır. Kayıt DB'de yaşar (`models.ConfirmReceipt`) — süreç içi sözlük
    restart'ta ve iki worker'da kaçırırdı.
 2. **Tenant + avukat doğrulaması** (`services/document_pipeline`): `linked_case_id`'nin
-   sahibi doğrulanır.
+   sahibi doğrulanır ve belgenin avukatı davanın sorumlu avukatından **`lawyers.id`** olarak
+   çözülür (G226, 27.09): `validate_tenant_and_resolve_lawyer(linked_case_id, user)` →
+   `resolve_case_lawyer_id` → `lawyer_id_for_text` (`document_pipeline.py:141-202`).
+   Eşleme `managers/lawyer_resolver` ile TOLERANSLIDIR ("TUGCE UNGOR" ↔ "Tuğçe Ungör Yanık",
+   ünvan, Türkçe harf katlama, kod metni; çoklu değerde ilk çözülen parça; pasif avukat da
+   çözülür); eski yol config'teki ada birebir eşleyip farklı yazımda belgeyi avukatsız
+   bırakıyordu. Çözülemezse `lawyer_id=NULL`, akış sürer. Davasız belge avukatsızdır —
+   `/confirm`'ün `avukat_kodu` Form alanı kalktı (hiçbir istemci göndermiyordu). Belge kaydı
+   `case_documents.lawyer_id`'yi yazar (FK `lawyers.id` **ON DELETE RESTRICT**, migrasyon
+   madde 55 + koşulsuz `idx_case_documents_lawyer_id`); `avukat_kodu` salt okunur geçiş
+   kolonudur, yeni kayıtta yazılmaz, G231 kaldırır. Aynı `lawyer_id` dönüşüm kuyruğuna
+   (`convert_pdfa_and_queue_uploads` / conversion_pending kaydı), avukat e-postasına ve
+   intake arşivine (`case_intake._archive_intake_documents`, commit + apply) taşınır;
+   e-postadaki avukat adı ve müvekkil bilgilendirmesinin alıcı adresi `lawyers` satırından
+   okunur (`document_pipeline.lawyer_contact`). Eski belgeler
+   `scripts/belge_avukat_bagi.py` ile bağlanır: kuru koşu varsayılan, `--apply`; yalnız
+   `lawyer_id` boş + `avukat_kodu` dolu satırlar, kod `lawyers.code`'a birebir, listeden
+   çıkmış eski kodlar sabit haritayla (`TUY→TUGCEUNG`, `BYU→BBA`, `AGH→AYSEGULH`);
+   eşleşmeyen raporlanır, `avukat_kodu`'ya dokunulmaz, idempotent; aynı transaction'da avukat
+   envanteri (G224) önce/sonra ölçülür, İHLAL varsa commit edilmez.
 3. **Dosya kabulü**: PROCESS_CACHE'ten (analiz PDF'i + orijinal ham dosya) ya da yeniden
    yüklenen dosyadan.
 4. **PDF/A dönüşümü + arşiv upload kuyruğu** — executor'da, bütçeli (§5). Semafor dolarsa
@@ -112,7 +131,9 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    temizlenir — temizlik eskiden yalnız `send_email_sync` finally'sindeydi, `send_email=false`
    ile gelen ek temp dosyası sızdırıyordu (20.09.2026).
 6. **Dava zenginleştirme**: belge bir davaya bağlıysa `_auto_update_case_status`
-   (`processing.py:160`) ve `_auto_enrich_case_data` (`processing.py:213`) çalışır;
+   (`processing.py:246`) ve `_auto_enrich_case_data(case_id, karsi_taraf, uploaded_by)`
+   (`processing.py:299`; yalnız karşı taraf — avukat dalı G226'da kalktı, belgenin avukatı
+   zaten davanın sorumlusundan çözüldüğü için hiç tetiklenemeyen bir no-op'tu) çalışır;
    duruşma tarihi varsa kaydedilir.
 7. **İdempotency kaydının kapatılması**: `confirm_idempotency.complete(process_id, payload)`.
    Pipeline istisna atarsa ve belge **yaratılmamışsa** kayıt `release` edilir → tekrar

@@ -1129,7 +1129,14 @@ class CaseDocument(Base):
     ai_summary = Column(String, nullable=True)                # Gemini'nin kısa özeti
     muvekkil_adi = Column(String, nullable=True)              # İlgili müvekkil (deprecated: case_party_id kullan)
     case_party_id = Column(Integer, ForeignKey("case_parties.id", ondelete="SET NULL"), nullable=True)  # NULL → tüm dava, dolu → o tarafa ait
-    avukat_kodu = Column(String, nullable=True)               # Sorumlu avukat kodu
+    # G226 (27.09): SALT OKUNUR geçiş kolonu — yeni kayıtta YAZILMAZ; eski belgeler
+    # `scripts/belge_avukat_bagi.py` ile `lawyer_id`'ye bağlanır, G231 kolonu kaldırır.
+    avukat_kodu = Column(String, nullable=True)
+    # G226: sorumlu avukatın iç bağı (`lawyers.id`). RESTRICT — avukat kaydı ASLA silinmez
+    # (G225, silme = pasif). Belge hattı davanın sorumlu avukatını toleranslı çözerek yazar
+    # (`document_pipeline.resolve_case_lawyer_id`). FK index'i modelde DEĞİL, migrasyon madde
+    # 55'in koşulsuz ("index", ...) op'unda (`idx_case_documents_lawyer_id`, G043 kuralı).
+    lawyer_id = Column(Integer, ForeignKey("lawyers.id", ondelete="RESTRICT"), nullable=True)
     esas_no = Column(String, nullable=True)                   # Belgede geçen esas no
 
     # Bağlantı modu
