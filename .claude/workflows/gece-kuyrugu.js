@@ -56,6 +56,10 @@ const WT_KOK = args?.worktreeKok ?? "C:/dev/hukudok-wt";
 const TUR_TAVANI = args?.turTavani ?? 8;
 const TESHIS_HAKKI = args?.teshisHakki ?? 1;
 const BUTCE_TABANI = args?.butceTabani ?? 60_000;
+// Insan onayli test tasima izni: { G228: ["backend/tests/x.py", ...] }. Varsayilan bos =
+// TEST_KURALI mutlak. Izin YALNIZ listelenen dosyalar icin, YALNIZ gorev tanimi davranisi
+// degistirdigi icin beklentiyi yeni davranisa tasimaya yarar (27.09 G228/G229 dersi).
+const TEST_TASIMA_IZNI = args?.testTasimaIzni ?? {};
 
 const KUYRUK_DOSYA = "gorevler/KUYRUK.md";
 const GOREV_DIZIN = "gorevler/gorev";
@@ -95,6 +99,23 @@ TEST BUTUNLUGU (mutlak - yesilin DOGRU sebeple gelmesi amac):
 - YENI test eklemek serbest ve beklenir; davranis degistiyse eski kodda
   BASARISIZ olacak test ekle (Kapi asamasi bunu mekanik dogrular).
 `.trim();
+
+/** Gorevin test kurali: izin yoksa TEST_KURALI aynen; varsa dar istisna eklenir. */
+function testKurali(gorevId) {
+  const izinli = TEST_TASIMA_IZNI[gorevId] ?? [];
+  if (!izinli.length) return TEST_KURALI;
+  return `${TEST_KURALI}
+
+INSAN ONAYLI TEST TASIMA ISTISNASI (yalniz ${gorevId}):
+- Asagidaki MEVCUT test dosyalarinda, gorev tanimi davranisi degistirdigi icin eskiyi
+  sabitleyen beklentileri YENI davranisa tasiyabilirsin:
+${izinli.map((d) => `    - ${d}`).join("\n")}
+- Tasima = beklentiyi yeni davranisa CEVIRMEK (or. "kod eslesir" -> "kod artik eslesmez,
+  sonuc None/422"). Test SILINMEZ, assert SAYISI AZALMAZ, beklenti GEVSETILMEZ,
+  skip/xfail/only/todo EKLENMEZ. Listede OLMAYAN dosyada kural mutlak kalir.
+- Her tasinan testi uygula raporunda "tasinanTestler" olarak ad + eski->yeni beklenti
+  seklinde bir satirla bildir (denetci ve sabah incelemesi buna bakar).`;
+}
 
 /* --------------------------- SEMALAR ------------------------------------ */
 
@@ -564,7 +585,7 @@ DONGU MUHENDISLIGI - dogrulama komutlari icin:
   Sert tavan: ${TUR_TAVANI} tur. 2 ayni imzada dur. denenenYaklasimlar[]'a her denemeyi
   bir satirla yaz.
 
-${TEST_KURALI}
+${testKurali(gorev.id)}
 
 ${KIRMIZI_HATLAR}
 
@@ -627,6 +648,11 @@ ${gorev.bant === "frontend"
 - backend/pyproject.toml [tool.pytest.ini_options] degisikligi (testpaths/addopts/markers)
 - conftest.py'de yeni collect_ignore / toplama daraltmasi
 - Kaynakta yeni "# noqa" / "# type: ignore"`}
+${(TEST_TASIMA_IZNI[gorev.id] ?? []).length
+      ? `INSAN ONAYLI ISTISNA: su dosyalardaki beklenti DEGISIKLIGI ihlal degildir (yeni davranisa
+tasima): ${TEST_TASIMA_IZNI[gorev.id].join(", ")}. Bu dosyalarda da silme / net azalma /
+gevsetme / skip YINE ihlaldir; listede olmayan dosyada her degisiklik ihlaldir.`
+      : ""}
 Bir tanesi bile varsa testButunlugu="ihlal", gecti=false.
 (docs bandinda bu bolum genelde bos diff'tir - testButunlugu="temiz".)
 
@@ -804,7 +830,7 @@ ${bantDogrulama(gorev)}
 Commit: 'fix: denetim bulgulari giderildi (${gorev.id})' + Co-Authored-By satiri;
 yalniz dokundugun dosyalar. commitHash'i doldur.
 
-${TEST_KURALI}
+${testKurali(gorev.id)}
 
 ${KIRMIZI_HATLAR}`,
       { label: `onar:${gorev.id}`, phase: "Onar", schema: ONAR_SEMA },
