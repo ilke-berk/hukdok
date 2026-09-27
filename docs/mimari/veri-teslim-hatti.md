@@ -460,7 +460,14 @@ artık yazım farkında da yazılır (lokal ölçüm 4.521 → 196 YALNIZ_HARF �
 G067-G070). Boşaltma yasağı `sub_type` için sürer (`BOSALTMA_YASAK_KART_ALANLARI`, `:926`).
 Tek seferlik DB dönüşümü `scripts/yazim_birligi.py` (G160; dry-run varsayılan, `--apply`,
 tarihçeli; Sigortalı/Davalı İdare/istinaf-temyiz mahkemesi/avukat adlarına DOKUNMAZ — sözleşme
-§11 DB-008 genişletme ricasının sebebi).
+§11 DB-008 genişletme ricasının sebebi). Avukat adları ayrı betikte: `scripts/avukat_yazim.py`
+(27.09 kullanıcı kararı; dry-run varsayılan, `--apply --kim`, tarihçe `source="avukat_yazim"`):
+`lawyers` listesindeki 7 aksansız BÜYÜK yazım normal yazıma ("TUGCE UNGOR" → "Tuğçe Üngör Yanık";
+`code` sabit), 3 dış avukat eklenir, kart yazımları tek biçime iner ve `case_lawyers.lawyer_id`
+bağı kurulur. Paket avukatı yalnız AD olarak getirir (kimlik yok); aktarımın bağ kuralı
+`upper(lawyers.name) == tr_upper(ad)` (`_avukatlari_yaz`) liste yazımı doğru olunca tutar.
+İdari personel (Murat Arslan, Çiğdem Tel, Nurten Meral) pakette 12 kişilik föy listesinde
+geldiği için kartlarda kalır, listeye EKLENMEZ (bağsız).
 
 **Çoklu avukatlı kart (G158, plan M5).** `required_fields.COKLU_AVUKAT_ESIGI = 2` (`:49`),
 `responsible_lawyer_name` tanımında `skip_when_lawyers_at_least` (`:73`): `case_lawyers` ≥ 2
