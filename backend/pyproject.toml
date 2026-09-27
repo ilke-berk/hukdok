@@ -1,6 +1,10 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+# calibration-data: lokal override'ın bind-mount ettiği repo DIŞI veri dizini
+# (C:/hukdok-veri/calibration -> /app/calibration-data); git'te yok, CI'da yok.
+# Repodaki backend/calibration/ taranmaya DEVAM eder.
+extend-exclude = ["calibration-data"]
 
 [tool.ruff.lint]
 # E: pycodestyle hataları (E722 bare-except dahil), F: pyflakes, B: bugbear
