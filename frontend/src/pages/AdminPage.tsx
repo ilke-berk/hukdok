@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Edit2, Loader2, GripVertical, Eye, Download } from "lucide-react";
+import { Plus, Trash2, Edit2, Loader2, GripVertical, Eye, Download, UserX } from "lucide-react";
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { FeatureSettingsCard } from "@/components/admin/FeatureSettingsCard";
 import { DeliveryInboxCard } from "@/components/admin/DeliveryInboxCard";
@@ -202,6 +202,14 @@ const RowActionButtons = ({ item, actions }: { item: ConfigItem; actions: RowAct
     </>
 );
 
+// Avukat SİLİNMEZ, pasife alınır (G225/G229): silme düğmesi yerine "Pasife al".
+const LawyerActionButtons = ({ item, actions }: { item: ConfigItem; actions: RowActions }) => (
+    <>
+        <Button variant="ghost" size="icon" onClick={() => actions.onEdit(item)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
+        <Button variant="ghost" size="icon" title="Pasife al" aria-label="Pasife al" onClick={() => actions.onDelete(item)}><UserX className="h-4 w-4 text-destructive" /></Button>
+    </>
+);
+
 type RowCells = (item: ConfigItem, actions: RowActions) => React.ReactNode;
 
 interface ListRowsProps {
@@ -230,10 +238,13 @@ const ListRows = memo(function ListRows({ items, search, matches, rowId, cells, 
 
 const matchName = (i: ConfigItem, q: string) => trMatch(i.name, q);
 const matchNameOrCode = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.code, q);
-const matchLawyer = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.code, q) || trMatch(i.city, q);
+// G229: avukat kodu/kimliği aranmaz — kullanıcı onları hiç görmez.
+const matchLawyer = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.city, q);
 const matchEmail = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.email, q) || trMatch(i.description, q);
 const matchCourt = (i: ConfigItem, q: string) => trMatch(i.name, q) || trMatch(i.parent_code, q);
 
+// Avukat satırının tanımlayıcısı kurumsal kimliktir (G228/G229); ekrana basılmaz.
+const idByKimlik = (i: ConfigItem) => i.kimlik ?? "";
 const idByCode = (i: ConfigItem) => i.code ?? "";
 const idByCodeOrName = (i: ConfigItem) => i.code ?? i.name;
 const idByEmail = (i: ConfigItem) => i.email ?? "";
@@ -242,7 +253,6 @@ const EMPTY_CELL = <span className="opacity-30">—</span>;
 
 const lawyerCells: RowCells = (item, actions) => (
     <>
-        <TableCell className="font-mono text-xs text-muted-foreground">{item.code}</TableCell>
         <TableCell className="font-medium whitespace-nowrap">{item.name}</TableCell>
         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.gorev || EMPTY_CELL}</TableCell>
         <TableCell className="text-xs whitespace-nowrap">{item.city || EMPTY_CELL}</TableCell>
@@ -250,7 +260,7 @@ const lawyerCells: RowCells = (item, actions) => (
         <TableCell className="font-mono text-xs">{item.sicil_no || EMPTY_CELL}</TableCell>
         <TableCell className="text-xs">{item.email || EMPTY_CELL}</TableCell>
         <TableCell className="text-xs whitespace-nowrap">{item.phone || EMPTY_CELL}</TableCell>
-        <TableCell className={STICKY_ACTIONS}><RowActionButtons item={item} actions={actions} /></TableCell>
+        <TableCell className={STICKY_ACTIONS}><LawyerActionButtons item={item} actions={actions} /></TableCell>
     </>
 );
 
@@ -336,7 +346,7 @@ const AdminPage = () => {
         addLawyer, addStatus, addDoctype, addEmail, addCaseSubject,
         addFileType, addCourtType, addPartyRole, addBureauType,
         addCity, addSpecialty, addClientCategory, addFileStatus,
-        reorderList, updateItem, deleteItem, fetchUsage
+        reorderList, updateItem, deleteItem, fetchUsage, deactivateLawyer
     } = useConfig();
 
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -418,7 +428,7 @@ const AdminPage = () => {
         const type = draggableType();
         if (!type) return;
         const current = shownList(type);
-        const idOf = (item: ConfigItem) => item.code || item.email;
+        const idOf = (item: ConfigItem) => (type === "lawyers" ? item.kimlik : item.code || item.email);
         const oldIndex = current.findIndex(item => idOf(item) === active.id);
         const newIndex = over ? current.findIndex(item => idOf(item) === over.id) : -1;
         if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
@@ -430,7 +440,7 @@ const AdminPage = () => {
         const next: PendingOrder = { source: serverLists[type], items: arrayMove(current, oldIndex, newIndex), dragging: false };
         setPendingOrders(prev => ({ ...prev, [type]: next }));
 
-        // Use code/email as ID for persistence
+        // Kalıcı sıra tanımlayıcısı: avukatta kurumsal kimlik, alıcıda e-posta, diğerlerinde kod
         const orderedIds = next.items.map(item => idOf(item) || "");
         try {
             // Başarıda mutasyon listeyi yeniden çekmeyi bekler; gelen sunucu listesi geçici sırayı bayatlatır.
@@ -458,7 +468,7 @@ const AdminPage = () => {
     const [isFileStatusAddOpen, setIsFileStatusAddOpen] = useState(false);
 
     // Form States
-    const [lawyerForm, setLawyerForm] = useState({ code: "", name: "", tc_no: "", sicil_no: "", city: "" });
+    const [lawyerForm, setLawyerForm] = useState({ name: "", tc_no: "", sicil_no: "", city: "" });
     const [statusForm, setStatusForm] = useState({ code: "", name: "" });
     const [docTypeForm, setDocTypeForm] = useState({ code: "", name: "" });
     const [emailForm, setEmailForm] = useState({ email: "", name: "", description: "" });
@@ -533,8 +543,10 @@ const AdminPage = () => {
         }
     };
 
-    // Listenin kimlik alanı: e-posta alıcıları e-posta ile, diğerleri kod ile tanımlanır
-    const identifierOf = (type: string, item: ConfigItem) => (type === "emails" ? item.email : item.code) ?? "";
+    // Listenin kimlik alanı: avukatlar kurumsal kimlikle (G228/G229), e-posta alıcıları
+    // e-posta ile, diğerleri kod ile tanımlanır
+    const identifierOf = (type: string, item: ConfigItem) =>
+        (type === "lawyers" ? item.kimlik : type === "emails" ? item.email : item.code) ?? "";
 
     // "Başka değere taşı" seçeneğinin adaylarını üretmek için tip → liste eşlemesi
     const itemsOfType: Record<string, ConfigItem[]> = {
@@ -550,6 +562,8 @@ const AdminPage = () => {
     const [usageLoading, setUsageLoading] = useState(false);
     const [deleteMode, setDeleteMode] = useState<"clear" | "reassign">("clear");
     const [reassignTarget, setReassignTarget] = useState("");
+    // Avukat satırında "silme" pasife almadır (G225/G229): boşalt/taşı seçenekleri gösterilmez.
+    const isLawyerDeactivation = deleting?.type === "lawyers";
 
     // Açık sekmedeki listeyi Excel olarak indirir (dosya adını backend belirler:
     // hukdok-<liste>-<tarih>.xlsx)
@@ -650,6 +664,20 @@ const AdminPage = () => {
 
     const handleConfirmDelete = async () => {
         if (!deleting || !usage) return;
+        // Avukat SİLİNMEZ (G225): kayıt pasife alınır, kartları/bağları aynen kalır — boşalt/taşı sorulmaz.
+        if (deleting.type === "lawyers") {
+            setIsSubmitting(true);
+            try {
+                await deactivateLawyer(deleting.id);
+                toast.success("Pasife alındı — geçmiş davaları korunur");
+                setDeleting(null);
+            } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Pasife alınamadı");
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
+        }
         // Kullanımda değilse mod sorusu anlamsız; doğrudan sil
         const mode: DeleteMode = usage.total === 0 ? "keep" : deleteMode;
         if (mode === "reassign" && !reassignTarget) { toast.warning("Taşınacak kaydı seçin"); return; }
@@ -668,10 +696,11 @@ const AdminPage = () => {
     };
 
     const handleSaveLawyer = () => {
-        if (!lawyerForm.code || !lawyerForm.name) { toast.warning("Zorunlu alanlar eksik"); return; }
-        runAdd(() => addLawyer(lawyerForm.code, lawyerForm.name, lawyerForm.tc_no || undefined, lawyerForm.sicil_no || undefined,
+        // G229: kod girilmez — iç kodu ve kurumsal kimliği sunucu üretir (G228).
+        if (!lawyerForm.name.trim()) { toast.warning("Zorunlu alanlar eksik"); return; }
+        runAdd(() => addLawyer(lawyerForm.name, lawyerForm.tc_no || undefined, lawyerForm.sicil_no || undefined,
             undefined, undefined, undefined, undefined, lawyerForm.city || undefined),
-            () => { setIsLawyerAddOpen(false); setLawyerForm({ code: "", name: "", tc_no: "", sicil_no: "", city: "" }); });
+            () => { setIsLawyerAddOpen(false); setLawyerForm({ name: "", tc_no: "", sicil_no: "", city: "" }); });
     };
 
     const handleSaveStatus = () => {
@@ -803,7 +832,10 @@ const AdminPage = () => {
                         <DialogHeader>
                             <DialogTitle>Düzenle</DialogTitle>
                             <DialogDescription>
-                                <span className="font-mono text-xs">{editing?.id}</span>
+                                {/* G229: avukatın kimliği ekrana basılmaz — yerine adı */}
+                                {editing?.type === "lawyers"
+                                    ? <span className="text-xs">{editing.title}</span>
+                                    : <span className="font-mono text-xs">{editing?.id}</span>}
                                 {" — "}Ad değişirse eski adı kullanan dava / müvekkil / belge kayıtları da yeni ada güncellenir.
                             </DialogDescription>
                         </DialogHeader>
@@ -845,10 +877,12 @@ const AdminPage = () => {
                 <Dialog open={!!deleting} onOpenChange={open => !open && setDeleting(null)}>
                     <DialogContent className="max-w-lg">
                         <DialogHeader>
-                            <DialogTitle>Sil: {deleting?.label}</DialogTitle>
+                            <DialogTitle>{isLawyerDeactivation ? "Pasife al" : "Sil"}: {deleting?.label}</DialogTitle>
                             <DialogDescription>
                                 {usageLoading
                                     ? "Bağlı kayıtlar taranıyor…"
+                                    : isLawyerDeactivation
+                                        ? "Avukat silinmez, pasife alınacak, geçmiş davaları korunur. Yeni davalarda seçilemez."
                                     : usage?.total
                                         ? "Bu değer başka kayıtlarda kullanılıyor. Silmeden önce onlara ne olacağını seçin."
                                         : "Bu değer hiçbir kayıtta kullanılmıyor, güvenle silinebilir."}
@@ -870,7 +904,7 @@ const AdminPage = () => {
                                     ))}
                                 </ul>
 
-                                <div className="space-y-2">
+                                {!isLawyerDeactivation && <div className="space-y-2">
                                     <label className={`flex gap-2 items-start text-sm ${usage.clearable ? "" : "opacity-50"}`}>
                                         <input type="radio" className="mt-1" checked={deleteMode === "clear"} disabled={!usage.clearable}
                                             onChange={() => setDeleteMode("clear")} />
@@ -908,13 +942,13 @@ const AdminPage = () => {
                                             </select>
                                         </span>
                                     </label>
-                                </div>
+                                </div>}
                             </div>
                         )}
 
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setDeleting(null)}>Vazgeç</Button>
-                            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isSubmitting || usageLoading || !usage}>Sil</Button>
+                            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isSubmitting || usageLoading || !usage}>{isLawyerDeactivation ? "Pasife al" : "Sil"}</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -955,7 +989,6 @@ const AdminPage = () => {
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Avukat Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
-                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={lawyerForm.code} onChange={e => setLawyerForm({ ...lawyerForm, code: e.target.value })} className="col-span-3" placeholder="AGB" /></div>
                                                 <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">İsim</Label><Input value={lawyerForm.name} onChange={e => setLawyerForm({ ...lawyerForm, name: trTitle(e.target.value) })} className="col-span-3" placeholder="Av. Ahmet Güzel" /></div>
                                                 <div className="grid grid-cols-4 items-center gap-4">
                                                     <Label className="text-right">Şehir</Label>
@@ -976,7 +1009,6 @@ const AdminPage = () => {
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="w-[50px]"></TableHead>
-                                                <TableHead>Kod</TableHead>
                                                 <TableHead>Ad Soyad</TableHead>
                                                 <TableHead>Görev</TableHead>
                                                 <TableHead>Şehir</TableHead>
@@ -989,7 +1021,7 @@ const AdminPage = () => {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            <ListRows items={shownList("lawyers")} search={listSearch} matches={matchLawyer} rowId={idByCode} cells={lawyerCells} actions={rowActions.lawyers} />
+                                            <ListRows items={shownList("lawyers")} search={listSearch} matches={matchLawyer} rowId={idByKimlik} cells={lawyerCells} actions={rowActions.lawyers} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>

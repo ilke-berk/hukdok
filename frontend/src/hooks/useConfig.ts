@@ -4,7 +4,10 @@ import { useAuthRequest } from "@/hooks/useAuthRequest";
 
 export interface ConfigItem {
     id?: number;
+    /** İç kod — avukatta arayüz KULLANMAZ ve GÖSTERMEZ (G229); diğer listelerde tanımlayıcı. */
     code?: string;
+    /** Avukatın kurumsal kimliği (`AVK-00001`, G228) — avukat satırının tanımlayıcısı; ekrana basılmaz. */
+    kimlik?: string;
     name: string;
     email?: string;
     description?: string;
@@ -307,7 +310,14 @@ export const useConfig = () => {
     };
 
     // --- MUTATIONS ---
-    const addLawyerM = useMutation({ mutationFn: ({ code, name, tc_no, sicil_no, gorev, email, phone, address, city }: { code: string; name: string; tc_no?: string; sicil_no?: string; gorev?: string; email?: string; phone?: string; address?: string; city?: string }) => mutate("/api/config/lawyers", "POST", { code, name, tc_no, sicil_no, gorev, email, phone, address, city }), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
+    // G229: avukat kodu gönderilmez — iç kodu ve kurumsal kimliği sunucu üretir (G228).
+    const addLawyerM = useMutation({ mutationFn: ({ name, tc_no, sicil_no, gorev, email, phone, address, city }: { name: string; tc_no?: string; sicil_no?: string; gorev?: string; email?: string; phone?: string; address?: string; city?: string }) => mutate("/api/config/lawyers", "POST", { name, tc_no, sicil_no, gorev, email, phone, address, city }), onSuccess: () => invalidate(CONFIG_KEYS.lawyers) });
+    // G229: avukat SİLİNMEZ, pasife alınır (G225) — tanımlayıcı kurumsal kimlik (G228).
+    const deactivateLawyerM = useMutation({
+        mutationFn: (kimlik: string) =>
+            request(`/api/config/lawyers/${encodeURIComponent(kimlik)}`, "DELETE", undefined, "Pasife alınamadı").then(() => true),
+        onSuccess: () => invalidate(CONFIG_KEYS.lawyers),
+    });
     const addStatusM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/statuses", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.statuses) });
     const addDoctypeM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/doctypes", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.doctypes) });
     const addEmailM = useMutation({ mutationFn: ({ name, email, description }: { name: string; email: string; description: string }) => mutate("/api/config/email_recipients", "POST", { name, email, description }), onSuccess: () => invalidate(CONFIG_KEYS.emailRecipients) });
@@ -405,7 +415,9 @@ export const useConfig = () => {
         refetchConfig,
         isRefetchingConfig,
 
-        addLawyer: (code: string, name: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string, city?: string) => addLawyerM.mutateAsync({ code, name, tc_no, sicil_no, gorev, email, phone, address, city }),
+        addLawyer: (name: string, tc_no?: string, sicil_no?: string, gorev?: string, email?: string, phone?: string, address?: string, city?: string) => addLawyerM.mutateAsync({ name, tc_no, sicil_no, gorev, email, phone, address, city }),
+        /** Avukatı pasife alır (kayıt, kartları ve kimliği korunur); `kimlik` = kurumsal kimlik. */
+        deactivateLawyer: (kimlik: string) => deactivateLawyerM.mutateAsync(kimlik),
         addStatus: (code: string, name: string) => addStatusM.mutateAsync({ code, name }),
         addDoctype: (code: string, name: string) => addDoctypeM.mutateAsync({ code, name }),
         addEmail: (name: string, email: string, description: string) => addEmailM.mutateAsync({ name, email, description }),
