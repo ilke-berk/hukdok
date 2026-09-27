@@ -1,9 +1,16 @@
 """Avukat adı normalize / çözümleme motoru.
 
 Davalardaki responsible_lawyer_name değerleri tutarsız formatlarda saklanmış:
-  "Av. Serap Turgal" / "Serap Turgal" / "TUGCE UNGOR" / "Tuğçe Üngör Yanık" / "AGH" (kod)
+  "Av. Serap Turgal" / "Serap Turgal" / "TUGCE UNGOR" / "Tuğçe Üngör Yanık"
 Düz LIKE '%tam ad%' bu varyantları yakalayamıyordu. Burada her iki taraf da
 ASCII'ye katlanıp ünvanlar atılarak token bazlı eşleştirilir.
+
+G228 (27.09): avukat KODU artık ad metninde eşleşme token'ı DEĞİLDİR — kod gizli ve
+sunucu üretimidir, kimlik `lawyers.kimlik` (`AVK-00001`). Ölçüm (lokal, 27.09): kart
+sorumlu/UYAP avukatı, `case_lawyers.name` ve duruşma avukatı alanlarında kod biçimli
+değer 0; üstelik "ABDULLAH" gibi kodlar sıradan ad token'ıydı (yanlış pozitif kaynağı).
+Seçim (filtre girdisi) düzeyinde kimlik, ad ve — 1 sürüm geriye uyum için — eski kod
+avukatı bulur; eşleşmenin kendisi daima AD üzerinden yürür.
 """
 import logging
 import re
@@ -53,28 +60,49 @@ def _split_persons(s: str):
     return [p for p in _PERSON_SPLIT.split(s) if p and p.strip()]
 
 
+def _secimdeki_avukat(selected: str, lawyers):
+    """Filtre seçimini (kimlik · ad · eski kod) listedeki avukat kaydına çevirir; yoksa None.
+
+    Öncelik kimlik (`AVK-00001`, harf duyarsız) → normalize ad → eski kod. Eski kod YALNIZ
+    seçim düzeyinde tanınır (1 sürüm geriye uyum: eski yer imleri/URL'ler; G231'de kalkar) —
+    kart metninde kod token'ı ARANMAZ.
+    """
+    secim = (selected or "").strip()
+    if not secim:
+        return None
+    kimlik = secim.upper()
+    for lw in lawyers:
+        if lw.get("kimlik") and str(lw.get("kimlik")).upper() == kimlik:
+            return lw
+    sel_norm = _norm_name(secim)
+    if not sel_norm:
+        return None
+    for lw in lawyers:
+        if _norm_name(lw.get("name") or "") == sel_norm:
+            return lw
+    # GERİYE UYUM (G228 → G231'de kalkar): eski `?lawyer=<kod>` değeri.
+    for lw in lawyers:
+        if _norm_name(lw.get("code") or "") == sel_norm:
+            return lw
+    return None
+
+
 def _resolve_lawyer_aliases(selected: str):
-    """selected (kod veya ad) → config'teki avukatı çözer ve eşleştirme bilgisini döndürür.
-    Dönen: (core_tokens, code_norm, surname, surname_unique) | None (çözülemezse)."""
+    """selected (kimlik, ad ya da eski kod) → config'teki avukatı çözer ve AD eşleştirme bilgisini döndürür.
+    Dönen: (core_tokens, code_norm, surname, surname_unique) | None (çözülemezse).
+
+    G228: `code_norm` daima "" — kod artık eşleşme token'ı değildir. Demet biçimi çağıranlar
+    (`case_manager._lawyer_filter_case_ids`, ön-eleme) için korunur; G231 alanı kaldırır."""
     try:
         lawyers = DynamicConfig.get_instance().get_lawyers() or []
     except Exception:
         lawyers = []
     if not lawyers:
         return None
-    sel_norm = _norm_name(selected)
-    sel_code = _norm_name(selected)  # kodlar da normalize edilerek karşılaştırılır
-    target = None
-    for lw in lawyers:
-        code_norm = _norm_name(lw.get("code") or "")
-        name_norm = _norm_name(lw.get("name") or "")
-        if (code_norm and code_norm == sel_code) or (name_norm and name_norm == sel_norm):
-            target = lw
-            break
+    target = _secimdeki_avukat(selected, lawyers)
     if target is None:
         return None
     core_tokens = _name_tokens(target.get("name") or "")
-    code_norm = _norm_name(target.get("code") or "")
     name_toks = _norm_name(target.get("name") or "").split()
     surname = name_toks[-1] if name_toks else ""
     # Soyad config genelinde benzersiz mi? (tek-token kayıtları güvenle eşlemek için)
@@ -82,22 +110,23 @@ def _resolve_lawyer_aliases(selected: str):
         1 for lw in lawyers
         if (_norm_name(lw.get("name") or "").split() or [""])[-1] == surname
     )
-    return core_tokens, code_norm, surname, (surname_count == 1)
+    return core_tokens, "", surname, (surname_count == 1)
 
 
 def _value_matches(value, core_tokens, code_norm, surname, surname_unique) -> bool:
-    """Bir ad alanının (tekil veya çoklu) seçilen avukatla eşleşip eşleşmediği."""
+    """Bir ad alanının (tekil veya çoklu) seçilen avukatla eşleşip eşleşmediği.
+
+    Kurallar yalnız ADA bakar. `code_norm` parametresi imza uyumu için durur ve YOK
+    SAYILIR (G228: kod token eşlemesi kaldırıldı; G231 parametreyi siler)."""
+    del code_norm
     for part in _split_persons(value):
         ptoks = _name_tokens(part)
         if not ptoks:
             continue
-        # 1) Kod birebir (ör. "AGH")
-        if code_norm and code_norm in ptoks:
-            return True
-        # 2) En az 2 ortak token (ad+soyad veya ad+ikinci ad)
+        # 1) En az 2 ortak token (ad+soyad veya ad+ikinci ad)
         if len(ptoks & core_tokens) >= 2:
             return True
-        # 3) Tek-token kayıt yalnızca benzersiz soyadla eşleşir (ör. "Hanyaloğlu")
+        # 2) Tek-token kayıt yalnızca benzersiz soyadla eşleşir (ör. "Hanyaloğlu")
         if surname and surname_unique and ptoks == {surname}:
             return True
     return False
@@ -105,9 +134,10 @@ def _value_matches(value, core_tokens, code_norm, surname, surname_unique) -> bo
 
 # --- Track B: Merkezi Avukat Çözümleyici (tüm yazma yollarının tek kapısı) ---
 #
-# Ham bir avukat metnini ("TUGCE UNGOR", "Serap Turgal", "AGH"…) config'teki tek bir
-# avukata çözer. Yeni veri buradan geçince responsible_lawyer_name canonical olur ve
+# Ham bir avukat metnini ("TUGCE UNGOR", "Serap Turgal"…) config'teki tek bir avukata
+# çözer. Yeni veri buradan geçince responsible_lawyer_name canonical olur ve
 # case_lawyers.lawyer_id (yapısal bağ) dolar. Bulamazsa None → çağıran ham değeri korur.
+# G228: avukat kodu ("AGH") artık çözülmez — yalnız ad kuralları.
 
 def resolve_lawyer(raw_value: str, lawyers=None):
     """Tek kişilik ham avukat metnini config avukatına çözer. Dönen: lawyer dict | None.
@@ -135,16 +165,18 @@ def resolve_lawyer(raw_value: str, lawyers=None):
             surname_count[tk[-1]] = surname_count.get(tk[-1], 0) + 1
     for lw in lawyers:
         core = _name_tokens(lw.get("name") or "")
-        code = _norm_name(lw.get("code") or "")
         tk = _norm_name(lw.get("name") or "").split()
         sur = tk[-1] if tk else ""
-        if code and code in ptoks:
-            return lw
         if len(ptoks & core) >= 2:
             return lw
         if sur and surname_count.get(sur) == 1 and ptoks == {sur}:
             return lw
     return None
+
+
+def _avukat_anahtari(lw) -> str:
+    """Tekilleştirme anahtarı: kurumsal kimlik; kimliksiz kayıtta (test/eski önbellek) normalize ad."""
+    return str(lw.get("kimlik") or "") or "ad:" + _norm_name(lw.get("name") or "")
 
 
 def resolve_lawyers_field(raw_value: str):
@@ -154,7 +186,7 @@ def resolve_lawyers_field(raw_value: str):
     seen = set()
     for part in _split_persons(raw_value):
         matched = resolve_lawyer(part)
-        key = (matched.get("code") if matched else None) or _norm_name(part)
+        key = _avukat_anahtari(matched) if matched else _norm_name(part)
         if key in seen:
             continue
         seen.add(key)
@@ -252,6 +284,16 @@ def listede_olmayan_yeni_adlar(yeni_deger, onceki_deger=None, lawyers=None):
     ]
 
 
+def _avukat_id(db, lw):
+    """Çözülen avukatın `lawyers.id`'si — bağ KİMLİKLE kurulur (G228; kod araması kalktı).
+    Kimliksiz kayıtta (eski önbellek / test sözlüğü) None — bağ kurulmaz, ad yine yazılır."""
+    kimlik = lw.get("kimlik")
+    if not kimlik:
+        return None
+    lrow = db.query(models.Lawyer).filter(models.Lawyer.kimlik == kimlik).first()
+    return lrow.id if lrow else None
+
+
 def canonicalize_lawyers(db, lawyers_input, responsible_text):
     """Yazma yolları için: gelen avukat girdisini canonical hale getirir.
     Girdi öncelik sırası: yapısal `lawyers` listesi → yoksa serbest `responsible_text`.
@@ -274,10 +316,7 @@ def canonicalize_lawyers(db, lawyers_input, responsible_text):
         tam = _tam_liste_adi(raw)
         matched = next((lw for lw in _liste() if lw.get("name") == tam), None) if tam else resolve_lawyer(raw)
         if matched:
-            lid = None
-            lrow = db.query(models.Lawyer).filter(models.Lawyer.code == matched.get("code")).first()
-            if lrow:
-                lid = lrow.id
+            lid = _avukat_id(db, matched)
             cname = matched.get("name") or raw
             if cname not in names:
                 rows.append({"name": cname, "lawyer_id": lid})

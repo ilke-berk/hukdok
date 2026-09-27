@@ -644,11 +644,11 @@ kullanıcıya gösterilmez, bir kez verilir, değişmez, yeniden kullanılmaz; s
   istemciden gelen `kimlik`i yok sayar, eşzamanlı eklemede `ix_lawyers_kimlik` ihlalini yeniden dener
   (yalnız kimlik çakışması; kod çakışması 409). Betikler (`avukat_yazim`, `import_lawyers_excel`) aynı
   fonksiyonu çağırır.
-- **Değişmezlik:** `kimlik` hiçbir listenin `editable` alanında değil — PUT `/api/config/lawyers/{code}`
+- **Değişmezlik:** `kimlik` hiçbir listenin `editable` alanında değil — PUT `/api/config/lawyers/{kimlik}`
   ve `/api/config/update` gövdesinde gelse **yok sayılır** (422 değil; eski istemciler kırılmasın).
   ORM bekçisi (`models._avukat_kimligi_degismez`, `before_flush`): verilmiş kimliği değiştiren/boşaltan
   flush `ValueError` ile durur.
-- **Silinmezlik:** avukat kaydı ASLA silinmez. `DELETE /api/config/lawyers/{code}` ve
+- **Silinmezlik:** avukat kaydı ASLA silinmez. `DELETE /api/config/lawyers/{kimlik}` (G228; eski kod geriye uyumlu) ve
   `POST /api/config/delete` (`type=lawyers`) kaydı `active=false` yapar:
   `block` (varsayılan) kullanımda da pasife alır — kart adı, `case_lawyers` bağı ve kimlik aynen kalır;
   `reassign` kart alanlarını ve kaynağa BAĞLI `case_lawyers` satırlarını (ad + `lawyer_id`) hedefe taşır,
@@ -665,3 +665,25 @@ kullanıcıya gösterilmez, bir kez verilir, değişmez, yeniden kullanılmaz; s
   `ForeignKeyViolation` verir.
 
 Bekçi: `backend/tests/test_g225_avukat_kimligi.py` (SQLite + scratch Postgres `dbtest`).
+
+## 17. Avukat listesi kimlikle yönetilir; kod gizli (G228)
+
+- **Tanımlayıcı:** `reference_lists.LIST_REGISTRY["lawyers"].key = "kimlik"`; kayıtlar (`GET /api/config/lawyers`,
+  `DynamicConfig`) `kimlik` alanını taşır. `PUT|DELETE /api/config/lawyers/{kimlik}` ve genel uçlar (`/api/config/update`,
+  `delete` + `target_code`, `reorder` `ordered_ids`, `usage` `code`, `rename`) `type=lawyers` için kimlik alır (harf
+  duyarsız). Eski `code` değeri 1 sürüm GERİYE UYUMLU (`reference_lists._kayit_bul`; G231'de kalkar). Diğer listeler kod
+  anahtarlı, DEĞİŞMEDİ.
+- **POST:** gövde `schemas.LawyerConfigItem` — `code` opsiyonel ve YOK SAYILIR; iç kod (`lawyers.code`, NOT NULL UNIQUE)
+  sunucuda = kimlik üretilir; yanıt `{"lawyer": {...}}` yeni (ya da yeniden açılan pasif) kaydı döner.
+- **Kod eşleşme token'ı değil:** `lawyer_resolver.resolve_lawyer`, `_value_matches` (parametre imza uyumu için durur,
+  yok sayılır) ve `notification_targeting._match_person` kodla eşlemez. Ölçüm (lokal, 27.09): kart sorumlu/UYAP
+  avukatı, `case_lawyers.name`, `hearing_dates.lawyer_name` alanlarında kod biçimli değer 0.
+- **Filtre:** `GET /api/cases?lawyer=<kimlik>` → `case_manager._lawyer_filter_case_ids`: kimlik yalnız avukat KAYDINI bulur
+  (önbellekte yoksa — pasif — DB'den adına iner, `_kimligi_ada_cevir`), eşleşme toleranslı AD kurallarıyla koşar;
+  yalnız adla yazılmış kartlar sonuçta kalır. Ölçüm (lokal, 27.09): 81/81 avukatta kimlikle filtre = G224 tarzı kodla
+  filtre fotoğrafı.
+- **Bağ:** `canonicalize_lawyers` `case_lawyers.lawyer_id`'yi kimlik → `lawyers.id` ile kurar (kod araması kalktı).
+- **Rapor:** `belgeler.avukat_kodu` katalogdan çıktı; yerine türetilmiş `avukat_adi` ("Avukat", `lawyer_id` → `lawyers.name`,
+  filtrelenebilir). Lokal `report_templates`: 1 şablon, 0'ı `avukat_kodu` kullanıyor.
+
+Bekçi: `backend/tests/test_g228_avukat_kimlikle_yonetim.py`.

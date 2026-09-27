@@ -1,8 +1,9 @@
 """Bildirim hedefleme: dava → sorumlu avukatın ofis e-postası (G080).
 
 Bildirimler "davanın sorumlu avukatına" gidecek, ama `cases.responsible_lawyer_name`
-serbest metindir: aynı kişi "Av. Serap Turgal", "SERAP TURGAL", "Serap Turgal;Tuğçe
-Üngör Yanık" ya da avukat kodu ("AGH") olarak yazılmış olabilir. Bu modül o metni
+serbest metindir: aynı kişi "Av. Serap Turgal", "SERAP TURGAL" ya da "Serap Turgal;Tuğçe
+Üngör Yanık" olarak yazılmış olabilir. Avukat KODU ("AGH") G228'den beri eşleşme yolu
+DEĞİLDİR (kod gizli, sunucu üretimi; lokal ölçüm 27.09: metinlerde kod biçimli değer 0). Bu modül o metni
 **HukuDok'a giriş yapabilen kişinin ofis e-postasına** çeviren tek çözümleyicidir.
 
 Neden yeni kolon yok
@@ -93,21 +94,18 @@ class _Aday:
     """Eşleştirme havuzundaki tek hedef (avukat ya da e-posta alıcısı)."""
     email: str
     tokens: frozenset
-    code: str          # normalize edilmiş avukat kodu ("agh"), yoksa ""
     surname: str       # normalize edilmiş soyad (tek-token eşleşme için)
     source: str
 
 
-def _aday(name: Optional[str], email: str, code: Optional[str], source: str) -> Optional[_Aday]:
+def _aday(name: Optional[str], email: str, source: str) -> Optional[_Aday]:
     tokens = _name_tokens(name or "")
-    code_norm = _norm_name(code or "")
-    if not tokens and not code_norm:
+    if not tokens:
         return None
     ad_tokens = _norm_name(name or "").split()
     return _Aday(
         email=email,
         tokens=frozenset(tokens),
-        code=code_norm,
         surname=ad_tokens[-1] if ad_tokens else "",
         source=source,
     )
@@ -138,7 +136,7 @@ def _build_pool(db: Session, domains: tuple[str, ...]) -> tuple[list[_Aday], dic
         email = normalize_email(cast(Optional[str], lw.email))
         if not email or not is_allowed_email(email, domains):
             continue
-        aday = _aday(cast(Optional[str], lw.name), email, cast(Optional[str], lw.code), KAYNAK_AVUKAT)
+        aday = _aday(cast(Optional[str], lw.name), email, KAYNAK_AVUKAT)
         if aday:
             adaylar.append(aday)
 
@@ -152,7 +150,7 @@ def _build_pool(db: Session, domains: tuple[str, ...]) -> tuple[list[_Aday], dic
         email = normalize_email(cast(Optional[str], rec.email))
         if not email or not is_allowed_email(email, domains):
             continue
-        aday = _aday(cast(Optional[str], rec.name), email, None, KAYNAK_ALICI)
+        aday = _aday(cast(Optional[str], rec.name), email, KAYNAK_ALICI)
         if aday:
             adaylar.append(aday)
 
@@ -166,19 +164,16 @@ def _build_pool(db: Session, domains: tuple[str, ...]) -> tuple[list[_Aday], dic
 def _match_person(part: str, adaylar: list[_Aday], surname_counts: dict[str, int]) -> Optional[_Aday]:
     """Tek kişilik ham metni havuzdaki bir adaya çözer (yoksa None).
 
-    Üç geçiş, güçlüden zayıfa — havuz sırası (avukatlar önce) her geçişte korunur:
-      1. avukat kodu birebir ("AGH")
-      2. en az iki ortak ad token'ı ("Tuğçe Üngör Yanık" ↔ "TUGCE UNGOR")
-      3. yalnız soyad yazılmışsa ve o soyad havuzda benzersizse
+    İki geçiş, güçlüden zayıfa — havuz sırası (avukatlar önce) her geçişte korunur:
+      1. en az iki ortak ad token'ı ("Tuğçe Üngör Yanık" ↔ "TUGCE UNGOR")
+      2. yalnız soyad yazılmışsa ve o soyad havuzda benzersizse
     Geçişleri ayırmak, zayıf bir eşleşmenin (soyad) listede önce duruyor diye
-    güçlü bir eşleşmeyi (kod/iki token) gölgelemesini engeller.
+    güçlü bir eşleşmeyi (iki token) gölgelemesini engeller. Avukat kodu geçişi
+    G228'de kaldırıldı.
     """
     ptoks = _name_tokens(part)
     if not ptoks:
         return None
-    for aday in adaylar:
-        if aday.code and aday.code in ptoks:
-            return aday
     for aday in adaylar:
         if len(ptoks & aday.tokens) >= 2:
             return aday

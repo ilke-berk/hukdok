@@ -120,7 +120,10 @@ def test_is_allowed_email_bozuk_bicimi_reddeder():
     "ST",
 ])
 def test_isim_varyantlari_ayni_hedefe_cozulur(db, yazim):
-    assert nt.resolve_case_recipients(db, _case(yazim)) == [f"serap.turgal@{OFIS}"]
+    # G228 (taşındı, insan onayı 27.09): "ST" Serap'ın avukat KODU — eskiden onun adresine
+    # çözülüyordu; kod artık eşleşme yolu değil → hedef yok. Ad varyantları aynen çözülür.
+    beklenen = [] if yazim == "ST" else [f"serap.turgal@{OFIS}"]
+    assert nt.resolve_case_recipients(db, _case(yazim)) == beklenen
 
 
 def test_tr_karakter_katlamasi(db):
@@ -129,7 +132,9 @@ def test_tr_karakter_katlamasi(db):
 
 
 def test_avukat_kodu_ile_cozulur(db):
-    assert nt.resolve_case_recipients(db, _case("AGH")) == [f"aysegul@{OFIS}"]
+    # G228 (taşındı, insan onayı 27.09): avukat kodu artık eşleşme yolu değil — eskiden
+    # "AGH" → aysegul@…; şimdi hedef yok (kod gizli/sunucu üretimi, metinlerde kod değeri 0).
+    assert nt.resolve_case_recipients(db, _case("AGH")) == []
 
 
 def test_tek_token_benzersiz_soyad(db):

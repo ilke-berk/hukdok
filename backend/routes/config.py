@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from dependencies import get_current_user
 from schemas import (
     ConfigItem, EmailItem, DeleteRequest, ReorderRequest, RenameRequest,
-    CourtTypeItem, PartyRoleItem, LawyerUpdateItem, ListUpdateRequest, ListDeleteRequest,
+    CourtTypeItem, PartyRoleItem, LawyerConfigItem, LawyerUpdateItem, ListUpdateRequest, ListDeleteRequest,
 )
 from managers.config_manager import DynamicConfig
 from managers.seed_data import seed_all_lists
@@ -51,7 +51,7 @@ from managers.reference_lists import (
     get_appeal_courts, add_appeal_court, delete_appeal_court,
     get_defendant_administrations, add_defendant_administration, delete_defendant_administration,
     reorder_list, rename_item, update_item, delete_item, get_usage,
-    resolve_list_type, LIST_REGISTRY, LawyerDeleteRejected,
+    resolve_list_type, LIST_REGISTRY, LawyerDeleteRejected, avukat_kaydi_ada_gore,
 )
 
 router = APIRouter()
@@ -99,28 +99,32 @@ def get_lawyers_endpoint(user: dict = Depends(get_current_user)):
 
 
 @router.post("/api/config/lawyers")
-def api_add_lawyer(item: ConfigItem, user: dict = Depends(require_admin)):
-    success = add_lawyer(item.code, item.name, tc_no=item.tc_no, sicil_no=item.sicil_no,
+def api_add_lawyer(item: LawyerConfigItem, user: dict = Depends(require_admin)):
+    """G228: gövdedeki `code` YOK SAYILIR — iç kod ve kurumsal kimlik (`AVK-…`) sunucuda
+    üretilir. Yanıt yeni (ya da yeniden açılan pasif) kaydı `lawyer` altında döner."""
+    success = add_lawyer(None, item.name, tc_no=item.tc_no, sicil_no=item.sicil_no,
                          gorev=item.gorev, email=item.email, phone=item.phone,
                          address=item.address, city=item.city)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add lawyer")
-    return {"status": "success", "message": "Lawyer added"}
+    return {"status": "success", "message": "Lawyer added", "lawyer": avukat_kaydi_ada_gore(item.name)}
 
 
-@router.put("/api/config/lawyers/{code}")
-def api_update_lawyer(code: str, item: LawyerUpdateItem, user: dict = Depends(require_admin)):
-    success = update_lawyer(code, tc_no=item.tc_no, sicil_no=item.sicil_no,
+@router.put("/api/config/lawyers/{kimlik}")
+def api_update_lawyer(kimlik: str, item: LawyerUpdateItem, user: dict = Depends(require_admin)):
+    """Tanımlayıcı kurumsal kimlik (G228); eski kod 1 sürüm geriye uyumlu (G231'de kalkar)."""
+    success = update_lawyer(kimlik, tc_no=item.tc_no, sicil_no=item.sicil_no,
                             gorev=item.gorev, email=item.email, phone=item.phone, address=item.address)
     if not success:
         raise HTTPException(status_code=404, detail="Lawyer not found or failed to update")
     return {"status": "success", "message": "Lawyer updated"}
 
 
-@router.delete("/api/config/lawyers/{code}")
-def api_delete_lawyer(code: str, user: dict = Depends(require_admin)):
-    """G225: avukat SİLİNMEZ — kayıt pasife alınır (kartlar, bağlar ve kimlik aynen kalır)."""
-    success = delete_lawyer(code)
+@router.delete("/api/config/lawyers/{kimlik}")
+def api_delete_lawyer(kimlik: str, user: dict = Depends(require_admin)):
+    """G225: avukat SİLİNMEZ — kayıt pasife alınır (kartlar, bağlar ve kimlik aynen kalır).
+    Tanımlayıcı kurumsal kimlik (G228); eski kod 1 sürüm geriye uyumlu."""
+    success = delete_lawyer(kimlik)
     if not success:
         raise HTTPException(status_code=404, detail="Lawyer not found or failed to deactivate")
     return {"status": "success", "message": "Lawyer deactivated"}
@@ -237,6 +241,10 @@ def api_delete_email(request: DeleteRequest, user: dict = Depends(require_admin)
 
 
 # ─── RENAME / UPDATE / DELETE (tüm listeler için generic) ────────────────────
+#
+# Tanımlayıcı (`code`, `target_code`, `ordered_ids`, usage `code`) listenin
+# `LIST_REGISTRY[..].key` kolonudur: avukatta kurumsal kimlik (G228), e-posta
+# alıcısında e-posta, diğerlerinde kod. Alan adları geriye uyum için değişmedi.
 
 @router.post("/api/config/rename")
 def api_rename_item(request: RenameRequest, user: dict = Depends(require_admin)):

@@ -967,6 +967,18 @@ def _belge_kisitlari(tenant_id: str) -> list[ColumnElement]:
 
 
 _D = models.CaseDocument
+
+
+def _belge_avukat_adi():
+    """Belgenin avukat ADI — `case_documents.lawyer_id` → `lawyers.name` (G228).
+
+    Eski `avukat_kodu` kolonu katalogdan çıktı: kod gizli/sunucu üretimi, rapor anahtarı
+    ADdır. Pasif avukatın adı da gelir (bağ kaydı silinmez, G225). Bağsız belge → NULL."""
+    L = models.Lawyer
+    return select(L.name).where(L.id == _D.lawyer_id).correlate(_D).scalar_subquery()
+
+
+_BELGE_AVUKAT_ADI = _belge_avukat_adi()
 _BELGE_GRUPLARI = (ARAMA_GRUBU, "Belge", "Dava", "Yükleme", "Sistem")
 _BELGE_KOLONLARI: list[Kolon] = [
     # Plan §5.2: dosya adı · dava ofis no · özet
@@ -979,7 +991,10 @@ _BELGE_KOLONLARI: list[Kolon] = [
         _kolon(_D, "belge_turu_kodu", "Belge Türü Kodu"),
         _kolon(_D, "belge_turu_adi", "Belge Türü", veriden_liste=True),
         _kolon(_D, "muvekkil_adi", "Müvekkil"),
-        _kolon(_D, "avukat_kodu", "Avukat Kodu"),
+        # G228: `avukat_kodu` yerine avukat ADI (lawyer_id üzerinden; eski anahtar şablonlarda
+        # yoktu — lokal ölçüm 27.09: 1 şablon, 0'ı `avukat_kodu` kullanıyor).
+        _turetilmis("avukat_adi", "Avukat", "metin", _BELGE_AVUKAT_ADI, filtrelenebilir=True,
+                    filtre_ifadesi=_skaler_filtre(_BELGE_AVUKAT_ADI)),
         _kolon(_D, "esas_no", "Esas No"),
         _kolon(_D, "ai_summary", "Özet"),
         _kolon(_D, "sharepoint_url", "SharePoint Bağlantısı"),

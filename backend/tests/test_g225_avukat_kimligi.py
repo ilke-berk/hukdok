@@ -422,9 +422,11 @@ def test_route_put_ve_update_kimligi_yok_sayar(istemci, fabrika, veri):
 
 
 def test_route_post_yeni_avukata_kimlik_verir(istemci, fabrika, veri):
+    # G228 (taşındı, insan onayı 27.09): POST'taki `code` YOK SAYILIR — iç kodu da sunucu
+    # üretir (= kimlik). Eskiden kayıt "YENI" koduyla aranıyordu; şimdi sunucunun koduyla.
     yanit = istemci.post("/api/config/lawyers", json={"code": "YENI", "name": "Yeni Avukat"})
     assert yanit.status_code == 200
-    assert _avukat(fabrika, "YENI")["kimlik"] == "AVK-00003"
+    assert _avukat(fabrika, "AVK-00003")["kimlik"] == "AVK-00003"
 
 
 # ── betik yolu ───────────────────────────────────────────────────────────────

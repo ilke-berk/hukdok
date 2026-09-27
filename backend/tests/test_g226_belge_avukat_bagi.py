@@ -116,7 +116,6 @@ def test_restrict_avukat_silinemez_belge_bagliyken(fabrika, avukatlar):
     ("SERAP TURGAL", "SERAPTUR"),
     ("Tuğçe Ungör Yanık;Serap Turgal", "TUGCEUNG"),    # çoklu: ilk çözülen parça sorumlu
     ("Hanyaloğlu", "AYSEGULH"),                        # benzersiz soyad
-    ("BBA", "BBA"),                                    # kod metni
     ("Eski Avukat", "ESKIAVUK"),                       # pasif avukat da çözülür
 ])
 def test_toleransli_cozum(fabrika, avukatlar, ham, kod):
@@ -125,6 +124,19 @@ def test_toleransli_cozum(fabrika, avukatlar, ham, kod):
     db = fabrika()
     try:
         assert document_pipeline.lawyer_id_for_text(db, ham) == avukatlar[kod]
+    finally:
+        db.close()
+
+
+def test_kod_metni_artik_cozulmez(fabrika, avukatlar):
+    """G228 (27.09, test taşıma izni): kod token eşlemesi kalktı — kart metnindeki çıplak kod
+    ("BBA") avukata ÇÖZÜLMEZ. Eskiden `[BBA-BBA]` parametresi çözülmesini sabitliyordu.
+    Eski belgelerin kodları `scripts/belge_avukat_bagi.py` ile `lawyers.code`'a birebir bağlanır."""
+    from services import document_pipeline
+
+    db = fabrika()
+    try:
+        assert document_pipeline.lawyer_id_for_text(db, "BBA") is None
     finally:
         db.close()
 

@@ -298,10 +298,10 @@ def _sql_folded(column):
 def _lawyer_prefilter(column, tokens):
     """Ad kolonu için SUPERSET ön-eleme koşulu: token'lardan en az biri geçiyor mu?
 
-    `_value_matches`in ÜÇ kuralı da (kod birebir / ≥2 ortak token / benzersiz
-    soyad) eşleşebilmek için değerin normalize halinde `tokens` kümesinden en az
-    bir öğe bulunmasını GEREKTİRİR — kural 2 en az bir çekirdek token, kural 3
-    soyadın kendisi, kural 1 kodun kendisi. Dolayısıyla bu koşul Python
+    `_value_matches`in iki kuralı da (≥2 ortak token / benzersiz soyad; G228'de
+    kod kuralı kalktı) eşleşebilmek için değerin normalize halinde `tokens`
+    kümesinden en az bir öğe bulunmasını GEREKTİRİR — biri en az bir çekirdek
+    token, diğeri soyadın kendisi. Dolayısıyla bu koşul Python
     doğrulamasının sonucunu asla eleyemez; yalnız aday sayısını kırpar. Kesin
     kararı yine `_value_matches` verir, sonuç kümesi bit-bit aynı kalır.
 
@@ -314,6 +314,23 @@ def _lawyer_prefilter(column, tokens):
     return or_(*[folded.like(f"%{t}%") for t in sorted(tokens)])
 
 
+_KIMLIK_BICIMI = re.compile(models.AVUKAT_KIMLIK_REGEX, re.IGNORECASE)
+
+
+def _kimligi_ada_cevir(db, selected: str) -> str:
+    """Kimlik biçimli seçim önbellekte (aktif avukatlar) yoksa DB'deki kaydın ADINI döner.
+
+    Aktif avukat kimliği `_resolve_lawyer_aliases` içinde önbellekten çözülür — DB'ye
+    gidilmez. Pasif avukat menüde yoktur; kimliği yine de adına iner ki kartları ad
+    eşlemesiyle bulunsun (G225 "pasif avukatın kartları filtrede kalır" davranışı).
+    Kimlik biçimi dışındaki seçim ve bilinmeyen kimlik AYNEN döner."""
+    secim = (selected or "").strip()
+    if not _KIMLIK_BICIMI.match(secim) or _resolve_lawyer_aliases(secim) is not None:
+        return selected
+    kayit = db.query(models.Lawyer.name).filter(models.Lawyer.kimlik == secim.upper()).first()
+    return kayit[0] if kayit and kayit[0] else selected
+
+
 def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
     """Seçilen avukatla eşleşen dava ID kümesini döndürür (toleranslı).
     responsible_lawyer_name + case_lawyers ilişkisinin ikisini de tarar.
@@ -323,7 +340,14 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
     eskiden her filtrede `cases` tablosunun tamamı (14.345 satır) Python'a
     çekiliyordu. Ölçüm: 159 avukat seçimi, ortalama 47,4 ms → 3,0 ms (~16×);
     159/159'unda eski ve yeni id kümeleri birebir aynı.
+
+    G228 — filtre girdisi `?lawyer=<kimlik>` (`AVK-00001`); eski kod/ad değeri 1 sürüm
+    GERİYE UYUMLU (G231'de kalkar). GÜVENCE: filtre ASLA yalnız kimliğe bakmaz — kimlik
+    yalnız avukat KAYDINI bulur, eşleşme aşağıdaki toleranslı AD kurallarıyla koşar;
+    yalnız adla yazılmış kartlar (sorumlu avukat metni) sonuçta kalır. Menüde olmayan
+    (pasif) avukatın kimliği DB'den adına çevrilir ve ad yoluna düşer.
     """
+    selected = _kimligi_ada_cevir(db, selected)
     aliases = _resolve_lawyer_aliases(selected)
     matched: set = set()
 
@@ -340,10 +364,9 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
         def _lawyer_matches(value):
             return sel_norm in _norm_name(value)
     else:
+        # code_norm G228'den beri daima "" (kod eşleşme token'ı değil) — ön-elemeye girmez.
         core_tokens, code_norm, surname, surname_unique = aliases
         tokens = {t for t in core_tokens if t}
-        if code_norm:
-            tokens.add(code_norm)
 
         def _case_matches(value):
             return _value_matches(value, core_tokens, code_norm, surname, surname_unique)
@@ -351,7 +374,7 @@ def _lawyer_filter_case_ids(db, selected: str, tenant_id: Optional[str]):
         _lawyer_matches = _case_matches
 
     if not tokens:
-        # Çekirdek token da kod da yok → üç kuralın hiçbiri eşleşemez.
+        # Çekirdek token yok → ad kurallarının hiçbiri eşleşemez.
         return matched
 
     q = db.query(models.Case.id, models.Case.responsible_lawyer_name).filter(models.Case.active.is_(True))

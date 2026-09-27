@@ -85,13 +85,15 @@ class TestSplitPersons:
 # ── resolve_lawyer ───────────────────────────────────────────────────────────
 
 class TestResolveLawyer:
+    # G228 (taşındı, insan onayı 27.09): kod artık ad metninde eşleşme token'ı değil —
+    # eskiden "AGH" → AGH avukatı; şimdi çözülmez.
     def test_code_match(self, with_lawyers):
         with_lawyers()
-        assert resolve_lawyer("AGH")["code"] == "AGH"
+        assert resolve_lawyer("AGH") is None
 
     def test_code_match_lowercase(self, with_lawyers):
         with_lawyers()
-        assert resolve_lawyer("agh")["code"] == "AGH"
+        assert resolve_lawyer("agh") is None
 
     def test_two_tokens_ascii_uppercase(self, with_lawyers):
         # Tutarsız kayıt formatı: ASCII'ye katlanmış büyük harf
@@ -143,20 +145,24 @@ class TestResolveLawyersField:
         assert out[2][1] == "John Doe"
 
     def test_duplicates_deduped(self, with_lawyers):
-        # Kod ve tam ad aynı avukata çözülür → tek kayıt
+        # G228 (taşındı): eskiden kod ve tam ad aynı avukata çözülüp tek kayda iniyordu;
+        # kod artık çözülmez → kod parçası çözülemeyen ham parça olarak AYRI kalır.
         with_lawyers()
         out = resolve_lawyers_field("AGH ve Ayşe Gül Hanyaloğlu")
-        assert len(out) == 1
-        assert out[0][0]["code"] == "AGH"
+        assert len(out) == 2
+        assert out[0][0] is None and out[0][1] == "AGH"
+        assert out[1][0]["code"] == "AGH"
 
 
 # ── _resolve_lawyer_aliases + _value_matches ─────────────────────────────────
 
 class TestAliasesAndValueMatches:
     def test_resolve_by_code(self, with_lawyers):
+        # G228 (taşındı): eski kod SEÇİM olarak 1 sürüm geriye uyumlu (avukatı bulur) ama
+        # eşleşme token'ı DEĞİL → code_norm eskiden "agh", şimdi "".
         with_lawyers()
         core, code, surname, unique = _resolve_lawyer_aliases("AGH")
-        assert code == "agh"
+        assert code == ""
         assert surname == "hanyaloglu"
         assert unique is True
         assert core == {"ayse", "gul", "hanyaloglu"}
@@ -175,7 +181,7 @@ class TestAliasesAndValueMatches:
         "value,expected",
         [
             ("Ayşe Hanyaloğlu", True),       # 2 ortak token
-            ("AGH", True),                    # kod
+            ("AGH", False),                   # kod — G228 (taşındı): eskiden True, kod token'ı kalktı
             ("Hanyaloğlu", True),             # benzersiz soyad
             ("Mehmet Öz", False),
             ("Ayşe Demir, Veli Can", False),  # tek ortak token yetmez
@@ -220,16 +226,19 @@ class TestCanonicalizeLawyers:
         rows, canonical, unresolved = canonicalize_lawyers(
             _FakeDb(), None, "Av. Serap Turgal ve AGH"
         )
-        assert [r["name"] for r in rows] == ["Serap Turgal", "Ayşe Gül Hanyaloğlu"]
-        assert unresolved == []
+        # G228 (taşındı): "AGH" eskiden Ayşe Gül Hanyaloğlu'na çözülüyordu; kod artık
+        # çözülmez → ham parça korunur ve çözülemeyen olarak işaretlenir.
+        assert [r["name"] for r in rows] == ["Serap Turgal", "AGH"]
+        assert unresolved == ["AGH"]
 
     def test_duplicate_canonical_names_collapse(self, with_lawyers):
+        # G228 (taşındı): kod parçası artık tam adla AYNI kişiye inmez → iki satır kalır.
         with_lawyers()
         rows, canonical, _ = canonicalize_lawyers(
             _FakeDb(), [{"name": "AGH"}, {"name": "Ayşe Gül Hanyaloğlu"}], None
         )
-        assert len(rows) == 1
-        assert canonical == "Ayşe Gül Hanyaloğlu"
+        assert len(rows) == 2
+        assert canonical == "AGH, Ayşe Gül Hanyaloğlu"
 
     def test_empty_input(self, with_lawyers):
         with_lawyers()

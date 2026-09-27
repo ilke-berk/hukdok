@@ -21,6 +21,21 @@ class ConfigItem(BaseModel):
     city: Optional[str] = None
 
 
+class LawyerConfigItem(BaseModel):
+    """POST /api/config/lawyers gövdesi (G228): `ConfigItem`'ın avukat ikizi; `code`
+    OPSİYONEL ve YOK SAYILIR — iç kodu ve kurumsal kimliği sunucu üretir. Diğer listeler
+    `ConfigItem` ile `code` zorunlu kalır."""
+    code: Optional[str] = None
+    name: str
+    tc_no: Optional[str] = None
+    sicil_no: Optional[str] = None
+    gorev: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+
+
 class EmailItem(BaseModel):
     name: str
     email: str

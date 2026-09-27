@@ -177,7 +177,12 @@ class ListSpec:
 
 
 LIST_REGISTRY = {
-    "lawyers":           ListSpec(models.Lawyer, ("code", "name", "tc_no", "sicil_no", "gorev", "email", "phone", "address", "city"), "set_lawyers",
+    # G228: avukat listesinin tanımlayıcısı kurumsal KİMLİK (`AVK-00001`) — ekle/güncelle/
+    # pasife al/sırala/kullanım uçları `kimlik` alır. `code` kayıtta ve yanıtta durur ama
+    # sunucu üretir ve kimse onu tanımlayıcı olarak kullanmaz (akıbeti G231). Eski kod
+    # değeri 1 sürüm geriye uyumlu olarak kaydı yine bulur (`_kayit_bul`).
+    "lawyers":           ListSpec(models.Lawyer, ("kimlik", "code", "name", "tc_no", "sicil_no", "gorev", "email", "phone", "address", "city"), "set_lawyers",
+                                  key="kimlik",
                                   editable=("name", "tc_no", "sicil_no", "gorev", "email", "phone", "address", "city")),
     "statuses":          ListSpec(models.Status, ("code", "name"), "set_statuses"),
     "doctypes":          ListSpec(models.DocType, ("code", "name"), "set_doctypes"),
@@ -355,7 +360,7 @@ LIST_TITLES = {
 }
 
 COLUMN_TITLES = {
-    "code": "Kod", "name": "Ad", "tc_no": "T.C. No", "sicil_no": "Baro Sicil No",
+    "kimlik": "Kimlik", "code": "Kod", "name": "Ad", "tc_no": "T.C. No", "sicil_no": "Baro Sicil No",
     "gorev": "Görev", "email": "E-posta", "phone": "Telefon", "address": "Adres",
     "city": "Şehir", "description": "Rol", "parent_code": "Dava Türü",
     "role_type": "Tür",
@@ -381,6 +386,25 @@ def _duplicate_message(spec, fields: dict) -> str:
 
 
 # ─── GENERIC CRUD ────────────────────────────────────────────────────────────
+
+def _kayit_bul(db, key: str, spec, identifier):
+    """Listenin tanımlayıcısıyla (spec.key) kaydı bulur; yoksa None.
+
+    Avukat (G228): tanımlayıcı kurumsal kimlik (`AVK-00001`, harf duyarsız). GERİYE UYUM
+    (1 sürüm, G231'de kalkar): kimlikle bulunamayan değer eski `code` olarak denenir —
+    henüz kimliğe geçmemiş istemci/betik kırılmasın. Diğer listelerde davranış aynen."""
+    if identifier is None:
+        return None
+    if key != "lawyers":
+        return db.query(spec.model).filter(getattr(spec.model, spec.key) == identifier).first()
+    deger = str(identifier).strip()
+    if not deger:
+        return None
+    item = db.query(models.Lawyer).filter(models.Lawyer.kimlik == deger.upper()).first()
+    if item is None:
+        item = db.query(models.Lawyer).filter(models.Lawyer.code == deger).first()
+    return item
+
 
 def get_items(list_type: str, extra_filter=None):
     """Aktif kayıtları sıra numarasına göre listeler ve dict'e serialize eder."""
@@ -417,25 +441,42 @@ def _kimlik_cakismasi(exc: IntegrityError) -> bool:
     return "UNIQUE constraint failed: lawyers.kimlik" in str(getattr(exc, "orig", exc))
 
 
-def _avukat_ekle(db, fields: dict) -> None:
-    """Yeni avukatı sunucunun verdiği kurumsal kimlikle ekler (G225).
+def _oto_kod_cakismasi(exc: IntegrityError) -> bool:
+    """Unique ihlali `lawyers.code` üzerinde mi? Yalnız sunucunun ÜRETTİĞİ kodda yeniden
+    denenir (kod = kimlik; iki süreç aynı kimliği hesapladıysa kod da çakışır)."""
+    if is_unique_violation(exc, "ix_lawyers_code"):
+        return True
+    return "UNIQUE constraint failed: lawyers.code" in str(getattr(exc, "orig", exc))
+
+
+def _avukat_ekle(db, fields: dict) -> str:
+    """Yeni avukatı sunucunun verdiği kurumsal kimlikle ekler (G225); kimliği döner.
 
     Kimlik istemciden ALINMAZ (gelse de ezilir). Numara `models.sonraki_avukat_kimligi`
     (en büyük + 1); eşzamanlı eklemede unique index ikinciyi reddeder → yeniden okunup
     tekrar denenir. Deneme hatası WARNING; tükenirse IntegrityError çağırana gider.
+
+    G228: iç kod (`lawyers.code`, NOT NULL UNIQUE) verilmezse sunucu üretir = kimlik.
+    Kod hiçbir yanıtta/ekranda tanımlayıcı değildir; yalnız şemanın zorunlu kolonu
+    doldurulur (akıbeti G231). Kod verilirse (betik/iç çağrı) aynen yazılır.
     """
     fields = {k: v for k, v in fields.items() if k != "kimlik"}
+    oto_kod = not (fields.get("code") or "").strip()
     for deneme in range(1, _KIMLIK_DENEME + 1):
         kimlik = models.sonraki_avukat_kimligi(db)
+        if oto_kod:
+            fields["code"] = kimlik
         db.add(models.Lawyer(active=True, kimlik=kimlik, **fields))
         try:
             db.commit()
-            return
+            return kimlik
         except IntegrityError as e:
             db.rollback()
-            if not _kimlik_cakismasi(e) or deneme == _KIMLIK_DENEME:
+            yeniden = _kimlik_cakismasi(e) or (oto_kod and _oto_kod_cakismasi(e))
+            if not yeniden or deneme == _KIMLIK_DENEME:
                 raise
             logger.warning(f"Avukat kimliği {kimlik} çakıştı (deneme {deneme}); yeniden deneniyor")
+    raise RuntimeError("erişilemez")      # döngü ya döner ya yükseltir (mypy için)
 
 
 def add_item(list_type: str, **fields):
@@ -522,7 +563,7 @@ def get_usage(list_type: str, identifier: str):
     db = None
     try:
         db = SessionLocal()
-        item = db.query(spec.model).filter(getattr(spec.model, spec.key) == identifier).first()
+        item = _kayit_bul(db, key, spec, identifier)
         if not item:
             return None
         name = getattr(item, "name", None)
@@ -597,16 +638,19 @@ def _avukati_pasife_al(identifier: str, mode: str, target: Optional[str]):
     db = None
     try:
         db = SessionLocal()
-        item = db.query(models.Lawyer).filter(models.Lawyer.code == identifier).first()
+        spec = LIST_REGISTRY["lawyers"]
+        item = _kayit_bul(db, "lawyers", spec, identifier)
         if not item:
             return False
         affected = 0
         if mode == "reassign":
             if not target or target == identifier:
                 raise LawyerDeleteRejected("Taşıma için kaynak avukattan farklı bir hedef avukat seçin")
-            hedef = db.query(models.Lawyer).filter(models.Lawyer.code == target).first()
+            hedef = _kayit_bul(db, "lawyers", spec, target)
             if not hedef:
                 return False
+            if hedef.id == item.id:
+                raise LawyerDeleteRejected("Taşıma için kaynak avukattan farklı bir hedef avukat seçin")
             if not hedef.active:
                 raise LawyerDeleteRejected(f"Hedef avukat \"{hedef.name}\" pasif; etkin bir avukat seçin")
             affected = _apply_to_dependents(db, "lawyers", str(item.name), str(hedef.name))
@@ -617,7 +661,7 @@ def _avukati_pasife_al(identifier: str, mode: str, target: Optional[str]):
                 .filter(models.CaseLawyer.lawyer_id == item.id)
                 .update({"lawyer_id": hedef.id, "name": hedef.name}, synchronize_session=False)
             )
-            logger.info(f"Reassign lawyers: {bag_tasinan} case_lawyers bağı {item.code!r} → {hedef.code!r}")
+            logger.info(f"Reassign lawyers: {bag_tasinan} case_lawyers bağı {item.kimlik} → {hedef.kimlik}")
         item.active = False
         db.commit()
         refresh_cache("lawyers")
@@ -741,7 +785,7 @@ def update_item(list_type: str, identifier: str, fields: dict):
     try:
         db = SessionLocal()
         key_col = getattr(spec.model, spec.key)
-        item = db.query(spec.model).filter(key_col == identifier).first()
+        item = _kayit_bul(db, key, spec, identifier)
         if not item:
             return None
         old_name = getattr(item, "name", None)
@@ -760,7 +804,8 @@ def update_item(list_type: str, identifier: str, fields: dict):
         name_changed = new_name and (not old_name or tr_upper(new_name) != tr_upper(old_name))
         target_name = ad_kimligi(key, new_name or old_name or "")
         if target_name and (name_changed or role_type_changed):
-            q = db.query(spec.model).filter(key_col != identifier)
+            # Kendisi hariç — birincil anahtarla (avukatta tanımlayıcı kimlik YA DA eski kod olabilir)
+            q = db.query(spec.model).filter(spec.model.id != item.id)
             if key == "court_types":
                 q = q.filter(spec.model.parent_code == fields.get("parent_code", item.parent_code))
             if key == "party_roles":
@@ -820,9 +865,9 @@ def reorder_list(list_type: str, ordered_ids: list):
     db = None
     try:
         db = SessionLocal()
-        key_col = getattr(spec.model, spec.key)
+        key = _ALIASES.get(list_type, list_type)
         for idx, identifier in enumerate(ordered_ids):
-            item = db.query(spec.model).filter(key_col == identifier).first()
+            item = _kayit_bul(db, key, spec, identifier)
             if item:
                 item.sequence = idx
         db.commit()
@@ -885,19 +930,41 @@ def get_court_types(parent_code: str = None):
     return get_items("court_types", extra_filter=extra)
 
 
-def add_lawyer(code: str, name: str, tc_no: str = None, sicil_no: str = None,
+def add_lawyer(code: Optional[str], name: str, tc_no: str = None, sicil_no: str = None,
                gorev: str = None, email: str = None, phone: str = None,
                address: str = None, city: str = None):
-    return add_item("lawyers", code=code, name=name,
+    """Avukat ekler. `code` None/boşsa sunucu üretir (G228 — route daima None geçer);
+    kimlik HER durumda sunucunundur (G225)."""
+    return add_item("lawyers", code=(code or "").strip() or None, name=name,
                     tc_no=tc_no or None, sicil_no=sicil_no or None,
                     gorev=gorev or None, email=email or None,
                     phone=phone or None, address=address or None,
                     city=city or None)
 
 
+def avukat_kaydi_ada_gore(name: str) -> Optional[dict]:
+    """Adı (mükerrer anahtarı `ad_kimligi` ile) verilen avukatın liste kaydı; yoksa None.
+
+    POST sonrası "yeni kaydı dön" için: ad anahtarı listede tekildir (add_item bekçisi),
+    pasif kaydın yeniden açılması da aynı kaydı döndürür."""
+    spec = LIST_REGISTRY["lawyers"]
+    hedef = ad_kimligi("lawyers", normalize_list_name(name or ""))
+    if not hedef:
+        return None
+    db = SessionLocal()
+    try:
+        for row in db.query(models.Lawyer).order_by(models.Lawyer.id.asc()).all():
+            if ad_kimligi("lawyers", str(row.name or "")) == hedef:
+                return {f: getattr(row, f) for f in spec.fields}
+        return None
+    finally:
+        db.close()
+
+
 def update_lawyer(code: str, tc_no: str = None, sicil_no: str = None,
                   gorev: str = None, email: str = None, phone: str = None, address: str = None):
-    """Avukat alanlarını günceller (eski PUT /api/config/lawyers/{code} yolu)."""
+    """Avukat alanlarını günceller (PUT /api/config/lawyers/{kimlik}; `code` parametresi
+    G228'den beri kimliktir — eski kod 1 sürüm geriye uyumlu, bkz. `_kayit_bul`)."""
     result = update_item("lawyers", code, {
         "tc_no": tc_no, "sicil_no": sicil_no, "gorev": gorev,
         "email": email, "phone": phone, "address": address,
