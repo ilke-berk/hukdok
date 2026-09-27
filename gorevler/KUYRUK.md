@@ -81,7 +81,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Backend seri G224→G225→G226→G227→G228. Tahmin: 2 gece + 1 gündüz (G230). -->
 
 - [x] G224 | bant:backend | bagimli:- | Avukat envanteri (salt okunur): her avukatın filtre dava / kart / case_lawyers / bağ / belge sayısı fotoğrafı + `--karsilastir` (düşüş = İHLAL, çıkış ≠ 0); geçişin kabul kapısı
-- [ ] G225 | bant:backend | bagimli:G224 | Kurumsal kimlik `lawyers.kimlik` AVK-00001 (doldurma + unique/biçim kısıtı, otomatik üretim, değişmez) + avukat silme kapanır (yalnız pasif, clear/keep reddedilir) + `case_lawyers` FK RESTRICT; envanter İHLAL 0
+- [x] G225 | bant:backend | bagimli:G224 | Kurumsal kimlik `lawyers.kimlik` AVK-00001 (doldurma + unique/biçim kısıtı, otomatik üretim, değişmez) + avukat silme kapanır (yalnız pasif, clear/keep reddedilir) + `case_lawyers` FK RESTRICT; envanter İHLAL 0
 - [ ] G226 | bant:backend | bagimli:G225 | Belge hattı avukatı `lawyer_id` (FK RESTRICT) ile taşır, toleranslı çözüm, ölü `avukat_kodu` artıkları kalkar, `scripts/belge_avukat_bagi.py` doldurma (TUY/BYU/AGH eşlemesi, envanter kapılı); testler
 - [ ] G227 | bant:backend | bagimli:G226 | Hukukbot export'u `avukat_kimlik` + `avukat_adi` taşır (`avukat_kodu` geçişte durur; DB id dışarı verilmez) + API-key'li `GET /export/lawyers` (kimlik, ad, aktif — hassas alan yok)
 - [ ] G228 | bant:backend | bagimli:G227 | Avukat listesi `kimlik` ile yönetilir (CRUD + genel config uçları), kod sunucuda gizli; filtre `lawyer=<kimlik>` ama AD EŞLEMESİ KORUNUR (envanter eşitliği), resolver/bildirim kod eşlemesi kalkar, rapor kolonu ad
