@@ -37,6 +37,21 @@ vi.mock("@/components/ui/select", () => ({
   SelectContent: ({ children }: Kids) => <div>{children}</div>,
   SelectItem: ({ value, children }: Kids & { value: string }) => <div data-option={value}>{children}</div>,
 }));
+// 27.09: "Sorumlu Avukat" filtresi artık LawyerCombobox (ui/popover + ui/command). Gerçek bileşen
+// kullanılır; popover/command düz DOM'a indirilir ve CommandItem aynı `[data-option]` düğümünü
+// basar — avukat beklentileri (metin + kod değeri + sıra) aynen okunur (G222 deseni).
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: Kids) => <div>{children}</div>,
+  PopoverTrigger: ({ children }: Kids) => <div>{children}</div>,
+  PopoverContent: ({ children }: Kids) => <div>{children}</div>,
+}));
+vi.mock("@/components/ui/command", () => ({
+  Command: ({ children }: Kids) => <div>{children}</div>,
+  CommandInput: () => null,
+  CommandList: ({ children }: Kids) => <div>{children}</div>,
+  CommandGroup: ({ children }: Kids) => <div>{children}</div>,
+  CommandItem: ({ value, children }: Kids & { value: string }) => <div data-option={value}>{children}</div>,
+}));
 
 import CaseList from "./CaseList";
 

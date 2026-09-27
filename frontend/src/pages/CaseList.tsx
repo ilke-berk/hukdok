@@ -15,6 +15,7 @@ import { useNavigate, useLocation } from "react-router";
 import { useCases, CASE_LIST_ERROR } from "../hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useConfigList } from "../hooks/useConfig";
+import { LawyerCombobox } from "@/components/LawyerCombobox";
 import { apiClient } from "@/lib/api";
 import { useDebounce } from "../hooks/useDebounce";
 import { formatAgo } from "@/lib/relativeTime";
@@ -470,17 +471,22 @@ const CaseList = () => {
 
           <div>
             <Eyebrow>Sorumlu Avukat</Eyebrow>
-            <Select value={selectedLawyer} onValueChange={setSelectedLawyer}>
-              <SelectTrigger className="mt-2 h-10 bg-[var(--bg)] border-[var(--border)] text-[13px] rounded-[3px]">
-                <SelectValue placeholder="Avukat seçin" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tüm Avukatlar</SelectItem>
-                {lawyers.map(l => (
-                  <SelectItem key={l.code || l.name} value={l.code || l.name}>{l.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* 27.09: yazarak aranan seçim + dış avukatlar ayrı sekmede (LawyerCombobox).
+                Filtre değeri eskisi gibi avukat KODU (yoksa ad); "ALL" = filtre yok. */}
+            <div className="mt-2">
+              <LawyerCombobox
+                mode="single"
+                lawyers={lawyers
+                  .filter(l => l.code || l.name)
+                  .map(l => ({ name: l.name || l.code || "", gorev: l.gorev, value: l.code || l.name }))}
+                value={selectedLawyer}
+                onChange={setSelectedLawyer}
+                allOption={{ label: "Tüm Avukatlar", value: "ALL" }}
+                placeholder="Avukat seçin"
+                aria-label="Sorumlu Avukat"
+                className="h-10 bg-[var(--bg)] border-[var(--border)]"
+              />
+            </div>
           </div>
 
           {/* Acil filtre */}

@@ -138,13 +138,17 @@ describe("QuickCaseModal — avukat LawyerCombobox (G222)", () => {
     expect(trigger()!.textContent).toBe("Seçiniz");
 
     openCombobox();
-    await waitFor(() => item("Av. Ali Ak") !== null, "liste açıldı");
-    const names = Array.from(document.body.querySelectorAll<HTMLElement>("[cmdk-item]"))
+    // 27.09: DIŞ AVUKAT ayrı sekmede — ofis sekmesi varsayılan.
+    await waitFor(() => item("Av. Zeynep Zor") !== null, "liste açıldı");
+    const names = () => Array.from(document.body.querySelectorAll<HTMLElement>("[cmdk-item]"))
       .map(el => el.getAttribute("data-lawyer"));
-    expect(names).toEqual(["Av. Zeynep Zor", "Av. Ali Ak"]);
-    const rozetler = Array.from(document.body.querySelectorAll("[data-testid=lawyer-gorev-rozeti]"))
+    const rozetler = () => Array.from(document.body.querySelectorAll("[data-testid=lawyer-gorev-rozeti]"))
       .map(r => r.textContent);
-    expect(rozetler).toEqual(["İç", "Dış"]);
+    expect(names()).toEqual(["Av. Zeynep Zor"]);
+    expect(rozetler()).toEqual(["İç"]);
+    act(() => document.body.querySelector<HTMLButtonElement>("[data-testid=lawyer-sekme-dis]")!.click());
+    expect(names()).toEqual(["Av. Ali Ak"]);
+    expect(rozetler()).toEqual(["Dış"]);
   });
 
   it("prefill avukat_kodu config'teki tam ada eşlenir ve tetikleyicide görünür", async () => {

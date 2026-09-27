@@ -67,6 +67,15 @@ describe("LawyerCombobox", () => {
     });
   }
 
+  /** 27.09: dış avukatlar ayrı sekmede ("ofis" | "dis"). */
+  function sekme(s: "ofis" | "dis") {
+    const btn = document.body.querySelector<HTMLButtonElement>(`[data-testid=lawyer-sekme-${s}]`);
+    expect(btn).not.toBeNull();
+    act(() => btn!.click());
+  }
+  const sekmeMetni = (s: "ofis" | "dis") =>
+    document.body.querySelector(`[data-testid=lawyer-sekme-${s}]`)?.textContent ?? null;
+
   function key(k: string) {
     act(() => {
       searchInput()!.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
@@ -87,23 +96,56 @@ describe("LawyerCombobox", () => {
     act(() => root.render(<Single />));
     expect(trigger().textContent).toContain("Seçiniz...");
     open();
-    expect(visibleNames()).toEqual(LAWYERS.map(l => l.name));
+    // Ofis sekmesi varsayılan: AVUKAT + DİĞER + boş; DIŞ AVUKAT ayrı sekmede.
+    expect(visibleNames()).toEqual(["Av. Ayşe Gül Hanyaloğlu", "Av. Ömer Çağlar", "Av. Zeynep Irmak"]);
     const rozet = (name: string) => item(name)!.querySelector("[data-testid=lawyer-gorev-rozeti]")?.textContent ?? null;
     expect(rozet("Av. Ayşe Gül Hanyaloğlu")).toBe("İç");
-    expect(rozet("Av. İsmail Şahin")).toBe("Dış");
     expect(rozet("Av. Ömer Çağlar")).toBeNull();
     expect(rozet("Av. Zeynep Irmak")).toBeNull();
+    sekme("dis");
+    expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
+    expect(rozet("Av. İsmail Şahin")).toBe("Dış");
+  });
+
+  it("sekmeler: başlıkta eşleşme sayısı; aktif sekmede sonuç yoksa diğer sekmeye yönlendirir", () => {
+    act(() => root.render(<Single />));
+    open();
+    expect(sekmeMetni("ofis")).toBe("Ofis Avukatları (3)");
+    expect(sekmeMetni("dis")).toBe("Dış Avukatlar (1)");
+    type("sahin");
+    expect(sekmeMetni("ofis")).toBe("Ofis Avukatları (0)");
+    expect(sekmeMetni("dis")).toBe("Dış Avukatlar (1)");
+    expect(visibleNames()).toEqual([]);
+    expect(document.body.textContent).toContain("Bu sekmede yok — Dış Avukatlar sekmesinde 1 sonuç");
+    sekme("dis");
+    expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
+  });
+
+  it("sekmeler yalnız iki grup da varsa görünür", () => {
+    const yalnizOfis: LawyerOption[] = [{ name: "Av. A", gorev: "AVUKAT" }, { name: "Av. B", gorev: null }];
+    act(() => root.render(<LawyerCombobox mode="single" lawyers={yalnizOfis} value="" onChange={() => undefined} />));
+    open();
+    expect(document.body.querySelector("[role=tablist]")).toBeNull();
+    expect(visibleNames()).toEqual(["Av. A", "Av. B"]);
+  });
+
+  it("açılışta seçili avukatın sekmesi gelir", () => {
+    act(() => root.render(<Single initial="Av. İsmail Şahin" />));
+    open();
+    expect(document.body.querySelector("[data-testid=lawyer-sekme-dis]")!.getAttribute("aria-selected")).toBe("true");
+    expect(item("Av. İsmail Şahin")!.getAttribute("data-checked")).toBe("true");
   });
 
   it("arama Türkçe katlamalı: 'sahin' → Şahin, 'OMER' → Ömer, 'ırmak' → Irmak", () => {
     act(() => root.render(<Single />));
     open();
-    type("sahin");
-    expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
     type("OMER");
     expect(visibleNames()).toEqual(["Av. Ömer Çağlar"]);
     type("ırmak");
     expect(visibleNames()).toEqual(["Av. Zeynep Irmak"]);
+    sekme("dis");
+    type("sahin");
+    expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
   });
 
   it("arama: ğ/ş/ü/ç/İ katlaması, çok kelimeli alt-dize, boşluk-yalnız sorgu hepsini gösterir", () => {
@@ -113,14 +155,15 @@ describe("LawyerCombobox", () => {
     expect(visibleNames()).toEqual(["Av. Ayşe Gül Hanyaloğlu"]);
     type("AYSE GUL");
     expect(visibleNames()).toEqual(["Av. Ayşe Gül Hanyaloğlu"]);
+    type("cag");
+    expect(visibleNames()).toEqual(["Av. Ömer Çağlar"]);
+    type("   ");
+    expect(visibleNames()).toEqual(["Av. Ayşe Gül Hanyaloğlu", "Av. Ömer Çağlar", "Av. Zeynep Irmak"]);
+    sekme("dis");
     type("ismail sahin");
     expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
     type("İSMAİL");
     expect(visibleNames()).toEqual(["Av. İsmail Şahin"]);
-    type("cag");
-    expect(visibleNames()).toEqual(["Av. Ömer Çağlar"]);
-    type("   ");
-    expect(visibleNames()).toEqual(LAWYERS.map(l => l.name));
   });
 
   it("rozet gorev yazımına dayanıklı: küçük harf / çift boşluk 'dış  avukat' → Dış, 'avukat' → İç", () => {
@@ -133,8 +176,9 @@ describe("LawyerCombobox", () => {
     open();
     const rozet = (name: string) => item(name)!.querySelector("[data-testid=lawyer-gorev-rozeti]")?.textContent ?? null;
     expect(rozet("Av. A")).toBe("İç");
-    expect(rozet("Av. B")).toBe("Dış");
     expect(rozet("Av. C")).toBeNull();
+    sekme("dis");
+    expect(rozet("Av. B")).toBe("Dış");
   });
 
   it("sonuç yoksa 'Avukat bulunamadı' görünür", () => {
@@ -149,6 +193,7 @@ describe("LawyerCombobox", () => {
     const got: string[] = [];
     act(() => root.render(<Single onValue={v => got.push(v)} />));
     open();
+    sekme("dis");
     act(() => item("Av. İsmail Şahin")!.click());
     expect(got).toEqual(["Av. İsmail Şahin"]);
     expect(trigger().textContent).toContain("Av. İsmail Şahin");
@@ -156,6 +201,7 @@ describe("LawyerCombobox", () => {
 
     open();
     expect(item("Av. İsmail Şahin")!.getAttribute("data-checked")).toBe("true");
+    sekme("ofis");
     expect(item("Av. Ömer Çağlar")!.getAttribute("data-checked")).toBe("false");
   });
 
@@ -166,7 +212,8 @@ describe("LawyerCombobox", () => {
     type("av.");
     key("ArrowDown");
     key("Enter");
-    expect(got).toEqual(["Av. İsmail Şahin"]);
+    // Ofis sekmesi: [Ayşe Gül Hanyaloğlu, Ömer Çağlar, Zeynep Irmak] → ↓ ikinciye.
+    expect(got).toEqual(["Av. Ömer Çağlar"]);
     expect(searchInput()).toBeNull();
 
     open();
@@ -186,10 +233,12 @@ describe("LawyerCombobox", () => {
     act(() => root.render(<Multi onValue={v => got.push(v)} />));
     open();
     act(() => item("Av. Ayşe Gül Hanyaloğlu")!.click());
+    sekme("dis");
     act(() => item("Av. İsmail Şahin")!.click());
     expect(got[got.length - 1]).toEqual(["Av. Ayşe Gül Hanyaloğlu", "Av. İsmail Şahin"]);
     expect(chips()).toEqual(["Av. Ayşe Gül Hanyaloğlu", "Av. İsmail Şahin"]);
     expect(searchInput()).not.toBeNull();
+    sekme("ofis");
     expect(item("Av. Ayşe Gül Hanyaloğlu")!.getAttribute("data-checked")).toBe("true");
     expect(item("Av. Ömer Çağlar")!.getAttribute("data-checked")).toBe("false");
 
@@ -206,6 +255,37 @@ describe("LawyerCombobox", () => {
     act(() => x.click());
     expect(got).toEqual([["Av. Zeynep Irmak"]]);
     expect(chips()).toEqual(["Av. Zeynep Irmak"]);
+  });
+
+  it("filtre kullanımı: 'Tüm Avukatlar' satırı + ad yerine kod yayılır, tetikleyici adı gösterir", () => {
+    const kodlu: LawyerOption[] = [
+      { name: "Av. Ayşe Gül Hanyaloğlu", gorev: "AVUKAT", value: "AGH" },
+      { name: "Av. İsmail Şahin", gorev: "DIŞ AVUKAT", value: "IS" },
+    ];
+    const got: string[] = [];
+    function Filtre() {
+      const [v, setV] = useState("ALL");
+      return (
+        <LawyerCombobox
+          mode="single" lawyers={kodlu} value={v} placeholder="Avukat seçin"
+          allOption={{ label: "Tüm Avukatlar", value: "ALL" }}
+          onChange={n => { setV(n); got.push(n); }}
+        />
+      );
+    }
+    act(() => root.render(<Filtre />));
+    expect(trigger().textContent).toContain("Tüm Avukatlar");
+    open();
+    expect(visibleNames()).toEqual(["Tüm Avukatlar", "Av. Ayşe Gül Hanyaloğlu"]);
+    expect(item("Tüm Avukatlar")!.getAttribute("data-checked")).toBe("true");
+    sekme("dis");
+    act(() => item("Av. İsmail Şahin")!.click());
+    expect(got).toEqual(["IS"]);
+    expect(trigger().textContent).toContain("Av. İsmail Şahin");
+    open();
+    act(() => item("Tüm Avukatlar")!.click());
+    expect(got).toEqual(["IS", "ALL"]);
+    expect(trigger().textContent).toContain("Tüm Avukatlar");
   });
 
   it("disabled iken açılmaz", () => {

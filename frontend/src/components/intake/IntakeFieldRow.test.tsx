@@ -91,6 +91,8 @@ describe("IntakeFieldRow — renderEditor (G213)", () => {
     });
     const input = document.body.querySelector<HTMLInputElement>("[cmdk-input]")!;
     expect(input).not.toBeNull();
+    // 27.09: DIŞ AVUKAT ayrı sekmede.
+    act(() => document.body.querySelector<HTMLButtonElement>("[data-testid=lawyer-sekme-dis]")!.click());
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     act(() => {
       setter.call(input, "sahin");
