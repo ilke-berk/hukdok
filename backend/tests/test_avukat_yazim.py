@@ -1,7 +1,7 @@
 """`scripts/avukat_yazim.py` — avukat adlarının yazım birliği + kart–avukat bağı (27.09 kararı):
 liste 7 avukatı normal yazıma geçirir, 3 dış avukat eklenir, idari personel listeye girmez;
 kart yazımı tarihçeli tek biçime iner, aynı kartta ikizlenen satır birleşir, bağ kurulur;
-"A;B" birleşik değer ve silinmiş kart dokunulmaz; kuru koşu yazmaz; ikinci koşu 0.
+"A;B" birleşik değer parça parça düzelir, silinmiş kart dokunulmaz; kuru koşu yazmaz; ikinci koşu 0.
 """
 from datetime import datetime, timezone
 
@@ -23,7 +23,7 @@ def _kur(fabrika):
         db.flush()
         k1 = _kart(db, "D1.K1........0001.HUKUK.00000", "", responsible_lawyer_name="TUGCE UNGOR",
                    uyap_lawyer_name="Av. Tuğçe Ungor Yanık")
-        k2 = _kart(db, "D1.K2........0002.HUKUK.00000", "", responsible_lawyer_name="Tuğçe Üngör Yanık;Serap Turgal")
+        k2 = _kart(db, "D1.K2........0002.HUKUK.00000", "", responsible_lawyer_name="Tuğçe Üngör Yanık;SERAP TURGAL")
         silinmis = _kart(db, "D1.K3........0003.HUKUK.00000", "", responsible_lawyer_name="TUGCE UNGOR",
                          deleted_at=datetime.now(timezone.utc))
         db.add_all([
@@ -63,12 +63,12 @@ def test_kuru_kosu_yazmaz(db_env):
 def test_apply_yazim_bag_birlesme_ve_ikinci_kosu_sifir(db_env):
     ids = _kur(db_env)
     sonuc, sayac, kalan = ay.kos(db_env, apply=True, kim="ilke")
-    assert sayac == {"birlesik_atlandi": 1, "birlesen_satir": 1}
+    assert sayac == {"birlesik_duzelen": 1, "birlesen_satir": 1}
 
     db = db_env()
     try:
         liste = {av.code: (av.name, av.gorev) for av in db.query(models.Lawyer)}
-        assert liste["TUGCEUNG"] == ("Tuğçe Üngör Yanık", "AVUKAT")
+        assert liste["TUGCEUNG"] == ("Tuğçe Ungör Yanık", "AVUKAT")
         assert liste["BERNABUR"] == ("Berna Burcu Başyurt", "AVUKAT")
         assert liste["ZEYNEPAY"] == ("ZEYNEP AYAN", "DIŞ AVUKAT")          # tabloda olmayan dokunulmaz
         for ad, kod in ay.YENI_DIS_AVUKATLAR:
@@ -76,14 +76,14 @@ def test_apply_yazim_bag_birlesme_ve_ikinci_kosu_sifir(db_env):
         assert not any(ay.anahtar(ad) == ay.anahtar(p) for ad, _ in liste.values() for p in ay.IDARI_PERSONEL)
 
         k1 = db.get(models.Case, ids["k1"])
-        assert (k1.responsible_lawyer_name, k1.uyap_lawyer_name) == ("Tuğçe Üngör Yanık", "Tuğçe Üngör Yanık")
-        assert db.get(models.Case, ids["k2"]).responsible_lawyer_name == "Tuğçe Üngör Yanık;Serap Turgal"
+        assert (k1.responsible_lawyer_name, k1.uyap_lawyer_name) == ("Tuğçe Ungör Yanık", "Tuğçe Ungör Yanık")
+        assert db.get(models.Case, ids["k2"]).responsible_lawyer_name == "Tuğçe Ungör Yanık;Serap Turgal"  # parça parça
         assert db.get(models.Case, ids["silinmis"]).responsible_lawyer_name == "TUGCE UNGOR"
 
         satirlar = {(s.case_id, s.name): s.lawyer_id for s in db.query(models.CaseLawyer)}
         selda = db.query(models.Lawyer).filter_by(code="SELDASEN").one().id
         assert satirlar == {
-            (ids["k1"], "Tuğçe Üngör Yanık"): ids["tugce"],   # ikiz birleşti, bağlı olan kaldı
+            (ids["k1"], "Tuğçe Ungör Yanık"): ids["tugce"],   # ikiz birleşti, bağlı olan kaldı
             (ids["k1"], "Çiğdem Tel"): None,                  # idari personel: bağ yok
             (ids["k1"], "Selda Şener"): selda,
             (ids["k2"], "Berna Burcu Başyurt"): ids["berna"],
@@ -93,8 +93,8 @@ def test_apply_yazim_bag_birlesme_ve_ikinci_kosu_sifir(db_env):
 
         tarihce = {(h.case_id, h.field_name, h.old_value, h.new_value, h.changed_by, h.source)
                    for h in db.query(models.CaseHistory)}
-        assert (ids["k1"], "responsible_lawyer_name", "TUGCE UNGOR", "Tuğçe Üngör Yanık", "ilke", "avukat_yazim") in tarihce
-        assert (ids["k1"], "uyap_lawyer_name", "Av. Tuğçe Ungor Yanık", "Tuğçe Üngör Yanık", "ilke", "avukat_yazim") in tarihce
+        assert (ids["k1"], "responsible_lawyer_name", "TUGCE UNGOR", "Tuğçe Ungör Yanık", "ilke", "avukat_yazim") in tarihce
+        assert (ids["k1"], "uyap_lawyer_name", "Av. Tuğçe Ungor Yanık", "Tuğçe Ungör Yanık", "ilke", "avukat_yazim") in tarihce
         assert (ids["k1"], "avukat", "Cigdem Tel", "Çiğdem Tel", "ilke", "avukat_yazim") in tarihce
         assert not any(h[0] == ids["silinmis"] for h in tarihce)
     finally:

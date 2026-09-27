@@ -462,7 +462,8 @@ Tek seferlik DB dönüşümü `scripts/yazim_birligi.py` (G160; dry-run varsayı
 tarihçeli; Sigortalı/Davalı İdare/istinaf-temyiz mahkemesi/avukat adlarına DOKUNMAZ — sözleşme
 §11 DB-008 genişletme ricasının sebebi). Avukat adları ayrı betikte: `scripts/avukat_yazim.py`
 (27.09 kullanıcı kararı; dry-run varsayılan, `--apply --kim`, tarihçe `source="avukat_yazim"`):
-`lawyers` listesindeki 7 aksansız BÜYÜK yazım normal yazıma ("TUGCE UNGOR" → "Tuğçe Üngör Yanık";
+`lawyers` listesindeki 7 aksansız BÜYÜK yazım normal yazıma ("TUGCE UNGOR" → "Tuğçe Ungör Yanık" —
+"Ungör", Ü değil; kartlardaki "Üngör" de buna iner;
 `code` sabit), 3 dış avukat eklenir, kart yazımları tek biçime iner ve `case_lawyers.lawyer_id`
 bağı kurulur. Paket avukatı yalnız AD olarak getirir (kimlik yok); aktarımın bağ kuralı
 `upper(lawyers.name) == tr_upper(ad)` (`_avukatlari_yaz`) liste yazımı doğru olunca tutar.

@@ -10,7 +10,8 @@ listenin aksansız yazımı yüzünden ~15 bin satır bağsız. Dava listesi fil
 eşleme) bundan ETKİLENMEZ (ölçüldü: 7 avukatta kaçan kart 0) — bu iş yazım + bağdır.
 
 Kararlar (kullanıcı, 27.09):
-* Listedeki 7 avukat NORMAL yazıma geçer ("Tuğçe Üngör Yanık"); `code` değişmez.
+* Listedeki 7 avukat NORMAL yazıma geçer ("Tuğçe Ungör Yanık" — "Ungör", Ü DEĞİL: kullanıcı
+  düzeltmesi 27.09; kartlardaki "Üngör" yazımı da buna iner); `code` değişmez.
 * Selda Şener, Reyhan Duygun, Asu Barış Karamık = DIŞ AVUKAT → listeye eklenir.
 * Murat Arslan, Çiğdem Tel, Nurten Meral = idari personel (ofis) → listeye EKLENMEZ, kart
   satırları KALIR (paketteki 12 kişilik 1.031 föy listesinden geliyor); yalnız yazım düzelir.
@@ -19,8 +20,9 @@ Adımlar (tek transaction):
   1. `lawyers.name` yeniden adlandırma (eşleme: katlanmış ad anahtarı; beklenen eski ad yoksa ATLANDI).
   2. Yeni dış avukatlar (anahtarı listede varsa ATLANDI).
   3. Kart yazımı: `cases.responsible_lawyer_name` / `uyap_lawyer_name` (tarihçeli) ve
-     `case_lawyers.name` (tarihçe alanı "avukat"); yalnız anahtarı tabloda olan TEK ad —
-     "A;B" birleşik değerlere dokunulmaz (raporlanır). Silinmiş kartlar kapsam dışı.
+     `case_lawyers.name` (tarihçe alanı "avukat"); yalnız anahtarı tabloda olan adlar.
+     "A;B" birleşik değerde her parça ayrı düzelir, `;` yapısı ve sıra korunur (kart kutusunu
+     tek ada indirmek kullanıcı kararıdır). Silinmiş kartlar kapsam dışı.
      Yeniden adlandırma sonrası aynı kartta aynı adlı ikinci `case_lawyers` satırı birleşir
      (bağlı olan / küçük id kalır).
   4. Bağ: `case_lawyers.lawyer_id` boş ve adı listedeki bir avukatla aynı → bağlanır.
@@ -55,7 +57,7 @@ SOURCE = "avukat_yazim"
 
 #: (listede beklenen eski adın anahtarı, yeni ad) — `code` değişmez.
 LISTE_YENIDEN_ADLANDIR: Tuple[Tuple[str, str], ...] = (
-    ("TUGCE UNGOR", "Tuğçe Üngör Yanık"),
+    ("TUGCE UNGOR", "Tuğçe Ungör Yanık"),
     ("BERNA BURCU BASYURT", "Berna Burcu Başyurt"),
     ("SERAP TURGAL", "Serap Turgal"),
     ("RANA BETUL GUMUS", "Rana Betül Gümüş"),
@@ -75,7 +77,7 @@ YENI_DIS_AVUKATLAR: Tuple[Tuple[str, str], ...] = (
 IDARI_PERSONEL: Tuple[str, ...] = ("Murat Arslan", "Çiğdem Tel", "Nurten Meral")
 
 #: Aynı kişinin kısa/eski ad anahtarı → doğru yazım (soyadı eksik liste kaydı).
-EK_ANAHTARLAR: Dict[str, str] = {"TUGCE UNGOR": "Tuğçe Üngör Yanık"}
+EK_ANAHTARLAR: Dict[str, str] = {"TUGCE UNGOR": "Tuğçe Ungör Yanık"}
 
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜâîûÂÎÛ", "cgiosuCGIOSUaiuAIU")
 
@@ -151,8 +153,8 @@ def dis_avukatlari_ekle(db, *, sonuc: Sonuc) -> None:
 
 
 def kartlari_duzelt(db, harita: Dict[str, str], *, kim: str, sonuc: Sonuc) -> Dict[str, int]:
-    """Kart yazımını tek biçime indirir; {'birlesik_atlandi': n, 'birlesen_satir': n} döner."""
-    sayac = {"birlesik_atlandi": 0, "birlesen_satir": 0}
+    """Kart yazımını tek biçime indirir; {'birlesik_duzelen': n, 'birlesen_satir': n} döner."""
+    sayac = {"birlesik_duzelen": 0, "birlesen_satir": 0}
     aktif = db.query(models.Case).filter(models.Case.deleted_at.is_(None))
     for alan in ("responsible_lawyer_name", "uyap_lawyer_name"):
         kolon = getattr(models.Case, alan)
@@ -160,10 +162,13 @@ def kartlari_duzelt(db, harita: Dict[str, str], *, kim: str, sonuc: Sonuc) -> Di
         for kart in aktif.filter(kolon.isnot(None), kolon != ""):
             deger = getattr(kart, alan)
             if ";" in deger:
-                if any(anahtar(p) in harita for p in deger.split(";")):
-                    sayac["birlesik_atlandi"] += 1
-                continue
-            yeni = harita.get(anahtar(deger))
+                # "A;B": her parça ayrı düzelir, yapı ve sıra korunur.
+                parcalar = [p.strip() for p in deger.split(";")]
+                yeni = ";".join(harita.get(anahtar(p), p) for p in parcalar)
+                if yeni != deger:
+                    sayac["birlesik_duzelen"] += 1
+            else:
+                yeni = harita.get(anahtar(deger))
             if yeni is None or yeni == deger:
                 continue
             setattr(kart, alan, yeni)
@@ -254,7 +259,7 @@ def ozet_metni(sonuc: Sonuc, sayac: Dict[str, int], kalan: Dict[str, int], *, ap
     satirlar.append("  " + "-" * 74)
     satirlar.extend(f"  {k.sonuc:7} [{k.adim}] {k.hedef}: {k.aciklama}" for k in sonuc.kalemler)
     satirlar.append("  " + "-" * 74)
-    satirlar.append(f"  'A;B' birleşik değer (dokunulmadı): {sayac['birlesik_atlandi']}")
+    satirlar.append(f"  'A;B' birleşik değerde parça düzelen kart alanı: {sayac['birlesik_duzelen']}")
     satirlar.append("  Bağsız kalan case_lawyers adları (sonrası):")
     satirlar.extend(f"    {n:6}  {ad}" for ad, n in sorted(kalan.items(), key=lambda x: -x[1]))
     satirlar.append("=" * 78)
