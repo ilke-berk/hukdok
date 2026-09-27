@@ -595,3 +595,34 @@ yarattığında table op'u atlanır; "koşullu op" tuzağı). Index hem listeyi 
 Dava `auth_helpers.get_tenant_owned_case`'ten geçmezse (tenant dışı ya da soft-silinmiş) TÜM uçlar
 `404`. `can_delete` = istek sahibi yazan ya da yönetici; yönetici kuralı `routes/config.require_admin`'e
 sorulur (ADMIN_EMAILS, kopyası tutulmaz). Düzenleme ucu yok. Bekçi: `backend/tests/test_case_notes.py`.
+
+## 15. Avukat envanteri — kimlik geçişinin kabul kapısı (G224)
+
+Kullanıcı şartı (27.09): avukat kimliği geçişinde (kodlar kalkar → kurumsal kimlik, G225-G231) **hiçbir
+dava kaybolmamalı**. Ölçüm `backend/services/avukat_envanteri.py` (salt okunur, `belge_envanteri` deseni),
+betik `backend/scripts/avukat_envanteri.py`.
+
+- `olc(db)`: avukat listesindeki HER kayıt (pasifler dahil; anahtar `kimlik`, yoksa `code`, kayıt ikisini de
+  taşır) için `filtre_dava` (dava listesi filtresinin — `case_manager._lawyer_filter_case_ids`, seçim
+  frontend gibi `code || name` — bulduğu AKTİF dava), `sorumlu_kart`, `case_lawyers` (bağlı + adı eşleşen
+  bağsız), `case_lawyers_bagli`, `belge` (silinmemiş; `avukat_kodu`, G226 sonrası bağlıysa `lawyer_id`);
+  toplamlar + bağsız `case_lawyers` adları.
+- **Önbellek tuzağı:** filtre avukatı süreç-içi `DynamicConfig`'ten çözer; betik sürecinde önbellek BOŞTUR ve
+  filtre ~0 sayar ("0 → 0 denk" sahte yeşili). `olc` önbelleği ölçtüğü oturumdan uygulamanın biçimiyle
+  (aktifler, sıra no) doldurur, bitince eskisine döndürür.
+- `karsilastir(once, sonra)`: avukat eşleşmesi kimlik → kod → normalize ad. Avukat başına herhangi bir
+  sayımın düşmesi, avukatın bulunamaması ya da korunan bir toplamın (aktif dava, sorumlusu dolu dava,
+  `case_lawyers` satırı/bağlı satırı, avukatlı belge) düşmesi **İHLAL**; artışlar, ad/kimlik değişikliği,
+  yeni avukat ve bağsız satırların azalması **BİLGİ**.
+
+**Kural — geçişin her veri adımı:** önce fotoğraf → adım → karşılaştır; **İHLAL = adım geri alınır**
+(pre-adım dump'ı ya da adımın kendi geri alması), sebep bulunmadan tekrar koşulmaz.
+
+```bash
+docker compose exec -T backend python scripts/avukat_envanteri.py --kaydet /tmp/avukat_once.json
+# ... veri adımı ...
+docker compose exec -T backend python scripts/avukat_envanteri.py --karsilastir /tmp/avukat_once.json  # İHLAL → çıkış 1
+```
+
+Dosya yolları KONTEYNER yoludur (`/tmp` recreate'te silinir; adım aynı konteyner ömründe biter). Bekçi:
+`backend/tests/test_avukat_envanteri.py`.
