@@ -28,7 +28,7 @@ Port haritası: `docs/mimari/genel-bakis.md` §1.
 `/preview-email-body`, `/preview-client-email-body`, `/refresh`, `/healthz` →
 `backend:8001` proxy.
 `proxy_read_timeout 300s` (GhostScript PDF/A dönüşümü 60s'yi aşabilir; 504 = mükerrer
-kayıt kaynağıydı). **Önbellek (G182, `nginx.conf:77-99`):** hash'li Vite parçaları
+kayıt kaynağıydı). **Önbellek (G182, `nginx.conf:80-102`):** hash'li Vite parçaları
 `location ~* ^/assets/` → `Cache-Control: public, max-age=31536000, immutable`; eksik parça
 `=404` döner, index.html'e DÜŞMEZ (açık eski sekmede `frontend/src/lib/chunkReload.ts` sayfayı
 bir kez yeniler). `location /` (index.html + SPA fallback) → `no-cache`. `add_header` kalıtım
@@ -39,8 +39,8 @@ kopyası `infra/nginx/sites-available/default`, sunucuya `infra/install.sh` kura
 timeout'ları eşit tutulmalı — bkz. `nginx.conf:10-14`). Repodaki host konfiginde `add_header`
 / `proxy_hide_header` yok; sunucudaki konfigin bununla aynı olduğu ve `Cache-Control`'un
 tarayıcıya ulaştığı **prod'da doğrulanacak** (`curl -sI https://<alan>/assets/<parça>.js`,
-`curl -sI https://<alan>/`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:114`).
-**Hukukbot proxy'si (karar 021, G203, `nginx.conf:169-204`):** `location ~ ^/hukukbot-api/(ask|sessions|download)(/|$)`
+`curl -sI https://<alan>/`). `/export` konteyner nginx'ine ASLA eklenmez (`nginx.conf:117`).
+**Hukukbot proxy'si (karar 021, G203, `nginx.conf:172-207`):** `location ~ ^/hukukbot-api/(ask|sessions|download)(/|$)`
 önek atılarak (`rewrite ... break`) `hukuk_shared` üzerinden `hukukbot_api:8010`'a gider; allowlist dışı her
 `/hukukbot-api` yolu (`/ingest`, `/health` dahil) `return 404`. **Gecikmeli DNS:** upstream değişkenle
 (`set $hukukbot_upstream`) + `resolver 127.0.0.11 valid=30s` — düz `proxy_pass` Hukukbot kapalıyken HukuDok
@@ -285,7 +285,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | `docs/plan/` | Yürüyen planlar; sertleştirme uygulama takibi tek doğruluk kaynağı | Güncel |
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
-| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:114-115`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
+| `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:117-118`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
 | `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları | Süreç dosyaları |
 | `otomasyon/` | Gece koşucuları — güncel: Workflow v3 (`.claude/workflows/gece-kuyrugu.js`, başlatıcı `/gece-kuyrugu`); CLI koşucuları `gece-kosusu.ps1`/`kuyruk-kosusu.ps1` (org ayarı CLI'yi kapattı, 2026-08-18) + loglar | Süreç dosyaları |
 | `infra/` | Sunucu birimleri: systemd timer'lar, watchdog scriptleri (`infra/README.md`) | Güncel |

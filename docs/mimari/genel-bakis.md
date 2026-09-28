@@ -74,17 +74,17 @@ G191): `effective_cache_size=384MB`, `random_page_cost=1.1`,
 
 Repodaki `nginx.conf` **konteyner** nginx'idir (`listen 80`, `nginx.conf:8`; compose bunu
 8080'de yayınlar). SPA'yı `/usr/share/nginx/html` kökünden servis eder ve `try_files` ile
-`/index.html`'e düşer (`nginx.conf:88-91`).
+`/index.html`'e düşer (`nginx.conf:91-94`).
 
 **Önbellek başlıkları (G182, `nginx.conf:38-51` gerekçe yorumu):**
 
 | Location | `Cache-Control` | Eksik dosyada |
 | --- | --- | --- |
-| `~* ^/assets/` (`nginx.conf:77-86`) | `public, max-age=31536000, immutable` — Vite parça adları içerik hash'lidir | `=404`; index.html'e DÜŞMEZ (aksi hâlde HTML, JS adresi altında 1 yıl önbelleğe girerdi). Başlık bilerek `always` değil: 404'e immutable yazılmaz |
-| `/` (`nginx.conf:88-99`) | `no-cache` — index.html ve SPA fallback her açılışta ETag ile yeniden doğrulanır, deploy sonrası yeni parça adları hemen gelir | SPA fallback (index.html) |
+| `~* ^/assets/` (`nginx.conf:80-89`) | `public, max-age=31536000, immutable` — Vite parça adları içerik hash'lidir | `=404`; index.html'e DÜŞMEZ (aksi hâlde HTML, JS adresi altında 1 yıl önbelleğe girerdi). Başlık bilerek `always` değil: 404'e immutable yazılmaz |
+| `/` (`nginx.conf:91-102`) | `no-cache` — index.html ve SPA fallback her açılışta ETag ile yeniden doğrulanır, deploy sonrası yeni parça adları hemen gelir | SPA fallback (index.html) |
 
 `add_header` kalıtım kuralı: bir location içinde tek `add_header` bile varsa server düzeyindeki
-`add_header`'lar o blokta düşer. Bu yüzden beş güvenlik başlığı (`nginx.conf:53-56`, CSP `:70`)
+`add_header`'lar o blokta düşer. Bu yüzden beş güvenlik başlığı (`nginx.conf:56-59`, CSP `:73`)
 iki location'da AYNEN tekrar yazılıdır; birini değiştiren üç yeri değiştirir (`nginx.conf:48-51`).
 Eski sekmede bayat parçanın 404'ü frontend'in tek yenileme dalını tetikler (§7). Host nginx'in
 bu başlıkları geçirdiği prod'da doğrulanacak ([`deploy-ve-altyapi.md` §11](deploy-ve-altyapi.md)).
@@ -93,30 +93,30 @@ Backend'e proxy'lenen location'ların listesi:
 
 | Location | Not |
 | --- | --- |
-| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:101-111`) |
-| `/api` | genel API (`nginx.conf:116`) |
-| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:124-131`) |
-| `/confirm` | onay + arşivleme (`nginx.conf:133`) |
-| `/preview-email-body` | (`nginx.conf:141`) |
-| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:149-159`) |
-| `/refresh` | liste tazeleme (`nginx.conf:161`) |
+| `= /healthz` | **Exact match şart** — `location /` (SPA try_files) yutarsa backend ölüyken bile 200 index.html döner ve izleme kör kalır (`nginx.conf:104-114`) |
+| `/api` | genel API (`nginx.conf:119`) |
+| `/process` | belge analizi; `client_max_body_size 50M` (`nginx.conf:127-134`) |
+| `/confirm` | onay + arşivleme (`nginx.conf:136`) |
+| `/preview-email-body` | (`nginx.conf:144`) |
+| `/preview-client-email-body` | müşteri/müvekkil bilgilendirme gövdesi (`routes/processing.py:347`); prefix eşleşmesi olduğu için üstteki `/preview-email-body` bunu YAKALAMAZ (`nginx.conf:152-162`) |
+| `/refresh` | liste tazeleme (`nginx.conf:164`) |
 
 **`/export` bu listede YOKTUR ve asla eklenmez** — konfigin kendi uyarısı: "DIKKAT: /export
 buraya ASLA eklenmez — yalnizca ic Docker network'unden erisilir, public'e proxy'lenmez"
-(`nginx.conf:114-115`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
+(`nginx.conf:117-118`). Karar kaydı: [`docs/kararlar/010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md).
 
 **Hukukbot'a giden tek location** (backend'e değil; karar
-[021](../kararlar/021-hukukbot-hukudok-girisi.md), G203, `nginx.conf:169-204`):
+[021](../kararlar/021-hukukbot-hukudok-girisi.md), G203, `nginx.conf:172-207`):
 
 | Location | Not |
 | --- | --- |
-| `~ ^/hukukbot-api/(ask\|sessions\|download)(/\|$)` | Allowlist: `/hukukbot` sayfasının kullanıcı uçları. Önek `rewrite ^/hukukbot-api/(.*)$ /$1 break` ile atılır, `hukukbot_api:8010`'a `hukuk_shared` ağından gider. `X-User-OID ""` (Hukukbot'un dev bypass başlığı dışarıdan sızmaz), `proxy_buffering off` (`/ask` NDJSON akışı), `client_max_body_size 2M`, location'da `add_header` yok (güvenlik başlıkları kalıtılır) (`nginx.conf:183-200`) |
-| `~ ^/hukukbot-api(/\|$)` | Allowlist dışı her şey — `/ingest` (API-key'li webhook), `/health` dahil — `return 404`; SPA'ya da düşmez (`nginx.conf:202-204`) |
+| `~ ^/hukukbot-api/(ask\|sessions\|download)(/\|$)` | Allowlist: `/hukukbot` sayfasının kullanıcı uçları. Önek `rewrite ^/hukukbot-api/(.*)$ /$1 break` ile atılır, `hukukbot_api:8010`'a `hukuk_shared` ağından gider. `X-User-OID ""` (Hukukbot'un dev bypass başlığı dışarıdan sızmaz), `proxy_buffering off` (`/ask` NDJSON akışı), `client_max_body_size 2M`, location'da `add_header` yok (güvenlik başlıkları kalıtılır) (`nginx.conf:186-203`) |
+| `~ ^/hukukbot-api(/\|$)` | Allowlist dışı her şey — `/ingest` (API-key'li webhook), `/health` dahil — `return 404`; SPA'ya da düşmez (`nginx.conf:205-207`) |
 
 **Gecikmeli DNS:** upstream değişkenle verilir (`set $hukukbot_upstream http://hukukbot_api:8010`) ve
 Docker'ın iç DNS'iyle (`resolver 127.0.0.11 valid=30s ipv6=off`) istek anında çözülür. Düz
 `proxy_pass http://hukukbot_api:8010` nginx açılışta adı çözmeye çalıştığı için Hukukbot stack'i kapalıyken
-HukuDok'un frontend konteynerini hiç kaldırmazdı; böyle yalnız bu istekler 502 olur (`nginx.conf:176-179`).
+HukuDok'un frontend konteynerini hiç kaldırmazdı; böyle yalnız bu istekler 502 olur (`nginx.conf:179-182`).
 Bu yüzden `docker-compose.yml`'da frontend `hukuk_shared` ağındadır ama Hukukbot'a `depends_on` bilerek YOKTUR.
 Bekçi: `backend/tests/test_nginx_hukukbot.py`.
 

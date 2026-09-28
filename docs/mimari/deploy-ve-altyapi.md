@@ -329,10 +329,10 @@ Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:56-59`): `X-Fr
 `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` (kamera/konum kapalı, **mikrofon yalnız kendi
 origin'imize açık** `microphone=(self)` — sesli giriş G217; `microphone=()` tarayıcıya sormadan reddettiriyordu,
 28.09; bekçi `backend/tests/test_nginx_permissions_policy.py`) ve **zorlayıcı
-`Content-Security-Policy`** (`nginx.conf:70`, G101). Beşi de `always` ile biter, yani hata
+`Content-Security-Policy`** (`nginx.conf:73`, G101). Beşi de `always` ile biter, yani hata
 yanıtlarında (413/429/5xx) da gider. `Content-Security-Policy-Report-Only` başlığı artık
 yoktur. G182'den beri beşi `/assets/` ve `/` location'larında AYNEN tekrar yazılıdır
-(`nginx.conf:81-85`, `:94-98`): `add_header` kalıtım kuralı gereği `Cache-Control` ekleyen
+(`nginx.conf:84-88`, `:97-101`): `add_header` kalıtım kuralı gereği `Cache-Control` ekleyen
 location server düzeyindeki başlıkları devralmaz (`nginx.conf:48-51`).
 
 **Tarihçe — neden önce Report-Only kondu (G091):** bilinen bir XSS yolu yok (React
@@ -360,7 +360,7 @@ başlık adı değişti.
 **Deploy sonrası insan turu (zorunlu):** login → pano → Takvim "Yazdır" → Yetki Belgesi
 "Yazdır" (G100) → dava kartından PDF açma → belge yükleme. Tarayıcı konsolunda "Refused to"
 satırı **olmamalı**. İhlal görülürse geri dönüş: CSP başlık adına `-Report-Only` ekini geri
-koymak — G182'den beri ÜÇ satırda birlikte (`nginx.conf:70`, `:85`, `:98`), ama başlık
+koymak — G182'den beri ÜÇ satırda birlikte (`nginx.conf:73`, `:88`, `:101`), ama başlık
 imajdan geldiği için frontend imajı rebuild ister (`docker compose build frontend && docker compose up -d frontend`; prod'da
 `deploy.sh`). Lokal `.env`'de `VITE_API_URL` doluysa `connect-src` ihlali görülür — lokal
 artefakttır, prod'u temsil etmez.
@@ -387,7 +387,7 @@ docker run --rm --network hukudok-automator-main_hukudok-network \
 
 Kural ve gerekçe [`genel-bakis.md` §2](genel-bakis.md): `/assets/` (hash'li parçalar)
 `Cache-Control: public, max-age=31536000, immutable`, eksik parça `404` (index.html'e
-düşmez); `/` ve SPA fallback `no-cache` (`nginx.conf:77-99`). Kontrol:
+düşmez); `/` ve SPA fallback `no-cache` (`nginx.conf:80-102`). Kontrol:
 
 ```
 curl -sI http://localhost:8080/ | grep -i cache-control                          # no-cache
