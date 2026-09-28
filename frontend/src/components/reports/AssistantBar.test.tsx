@@ -151,7 +151,7 @@ describe("AssistantBar (G143/G167/G174)", () => {
         if (!el) throw new Error("bulunamadı: " + sel);
         return el;
     };
-    const girdi = () => $<HTMLInputElement>("[aria-label='Asistana mesaj']");
+    const girdi = () => $<HTMLTextAreaElement>("[aria-label='Asistana mesaj']");
     const cipler = () => Array.from(container.querySelectorAll<HTMLButtonElement>("[data-testid='ornek-istem']"));
     const balonlar = () => Array.from(container.querySelectorAll("[data-testid='sohbet-asistan']"));
     const dugmeler = (kok: Element) => Array.from(kok.querySelectorAll("button")).map(x => x.textContent?.trim());
@@ -160,8 +160,8 @@ describe("AssistantBar (G143/G167/G174)", () => {
         if (!b) throw new Error("düğme bulunamadı: " + metin);
         return b;
     };
-    function yaz(el: HTMLInputElement, value: string) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    function yaz(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")!.set!;
         act(() => {
             setter.call(el, value);
             el.dispatchEvent(new Event("input", { bubbles: true }));

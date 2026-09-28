@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Loader2, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AsistanEylemi, Katalog, KatalogKolon, RaporTanimi } from "@/lib/reports";
 import { secenekEtiketi } from "@/lib/reports";
 import {
@@ -7,8 +6,7 @@ import {
     chatReport, degerEsle, filtreDegeriDegistir, kaydetNiyeti, listeNiyeti, onayNiyeti, ornekIstemler, sohbetGecmisi,
     sonucSatiri, tanimAyni, type DegerSorunu, type SohbetKaydi,
 } from "@/lib/reportsChat";
-import { FlowButton } from "@/components/flow/primitives";
-import { MicButton, MicDurumSatiri } from "@/components/MicButton";
+import { SohbetGirdisi } from "@/components/SohbetGirdisi";
 import { metneEkle, useVoiceInput } from "@/hooks/useVoiceInput";
 import { AssistantThread } from "./AssistantThread";
 import type { IndirmeFormati } from "./AssistantMessage";
@@ -52,11 +50,13 @@ const yeniKayitId = () => ++kayitSayaci;
 export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asistan raporu hazırlasın…";
 
 /**
- * Rapor asistanı üst satırı (G143, plan §6.1): Rapor sekmesinin İLK öğesi — tam genişlik, marka
- * kenarlı kart; tek satır girdi (Enter gönderir), gönder düğmesi, seçili kaynağa göre örnek çipleri
- * (ilk tık girdiye yazar, aynı çipe ikinci tık gönderir), "veya aşağıdan seçin ↓" notu. Gönderince
- * konuşma alanı (`AssistantThread`) satırın altında açılır; "Kapat" alanı kapatır, geçmiş kalır (K6,
- * sayfa ömrü). Sohbet geçmişi yalnız bu bileşenin state'inde (K6): sunucu saklamaz, sayfa yenilenince sıfırlanır.
+ * Rapor asistanı üst satırı (G143, plan §6.1): Rapor sekmesinin İLK öğesi — tam genişlik kart; ortak
+ * `SohbetGirdisi` (kendiliğinden büyüyen kutu; Enter gönderir, Shift+Enter yeni satır), seçili kaynağa göre
+ * örnek çipleri (ilk tık girdiye yazar, aynı çipe ikinci tık gönderir), "veya aşağıdan seçin ↓" notu. Sohbet
+ * düzeni: konuşma alanı (`AssistantThread`) yazı kutusunun ÜSTÜNDE açılır, en yeni mesaj kutuya en yakın durur
+ * (28.09; önceden altta açılıyordu, göz yazıp aşağı bakıp geri dönüyordu). Alan kısa tutulur ve dibe kaydırılır —
+ * son tur görünür, geçmiş yukarı kaydırılarak okunur, tablo aşağı itilmez. "Kapat" alanı kapatır, geçmiş kalır
+ * (K6, sayfa ömrü). Sohbet geçmişi yalnız bu bileşenin state'inde (K6): sunucu saklamaz, sayfa yenilenince sıfırlanır.
  *
  * G174 — OTOMATİK UYGULAMA (G167 teyit döngüsünün geri alınması; 11.09 sadeleşme kararı): `complete` + `tanim`
  * → değerler kataloğa uyuyorsa (`degerEsle.temiz`) tanım DÜĞME BEKLEMEDEN `onTanimUygula(tanim, eylem ?? "onizle")`
@@ -88,7 +88,7 @@ export function AssistantBar({
     const [bekleyenTanim, setBekleyenTanim] = useState<RaporTanimi | null>(null);
     // G168: uygulandı, önizleme sonucu bekleniyor — sonuç gelince "N kayıt bulundu" / boş-sonuç satırı düşer.
     const [sonucBeklenen, setSonucBeklenen] = useState<RaporTanimi | null>(null);
-    const girdiRef = useRef<HTMLInputElement>(null);
+    const girdiRef = useRef<HTMLTextAreaElement | null>(null);
     const iptalRef = useRef<AbortController | null>(null);
 
     // G217: mikrofon — yazıya çevrilen metin girdinin SONUNA eklenir, odak girdiye döner; GÖNDERİLMEZ.
@@ -393,13 +393,6 @@ export function AssistantBar({
         setSonUygulananId(null);
     };
 
-    const onTus = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            void gonder();
-        }
-    };
-
     /** Çip: ilk tık girdiye yazar (odak girdiye), aynı çipe ikinci tık gönderir. */
     const ornekSec = (metin: string) => {
         if (girdi === metin) {
@@ -429,68 +422,12 @@ export function AssistantBar({
     }
 
     const ornekler = ornekIstemler(veriKaynagi);
-    const gonderilebilir = girdi.trim().length > 0 && !gonderiliyor;
 
     return (
         <div
             data-testid="asistan-satiri"
-            className="min-w-0 border border-[var(--brand)] bg-[var(--bg-elevated)] rounded-none shadow-[0_8px_24px_-18px_rgba(109,36,52,0.45)]"
+            className="min-w-0 border border-[var(--border)] bg-[var(--bg-elevated)]"
         >
-            <div className="px-5 py-4 grid gap-3 bg-[var(--brand-soft)]">
-                <div className="flex items-center gap-3">
-                    <input
-                        ref={girdiRef}
-                        type="text"
-                        value={girdi}
-                        onChange={e => setGirdi(e.target.value)}
-                        onKeyDown={onTus}
-                        disabled={gonderiliyor}
-                        aria-label="Asistana mesaj"
-                        placeholder={bekleyenTanim ? "Düzeltme yazın ya da karttan onaylayın…" : ASISTAN_GIRDI_YER_TUTUCU}
-                        autoComplete="off"
-                        className="flex-1 min-w-0 h-10 px-3 text-[14px] rounded-[4px] border border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:outline-none focus:border-[var(--brand)] disabled:opacity-60"
-                    />
-                    <MicButton ses={ses} disabled={gonderiliyor} className="h-10" />
-                    <FlowButton
-                        variant="primary"
-                        size="md"
-                        onClick={() => void gonder()}
-                        disabled={!gonderilebilir}
-                        title={gonderiliyor ? "Asistan çalışıyor…" : "Gönder (Enter)"}
-                        className="shrink-0"
-                    >
-                        {gonderiliyor ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        Gönder
-                    </FlowButton>
-                </div>
-                <MicDurumSatiri ses={ses} className="-mt-1" />
-                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pl-8">
-                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                        {ornekler.map(o => (
-                            <button
-                                key={o}
-                                type="button"
-                                onClick={() => ornekSec(o)}
-                                disabled={gonderiliyor}
-                                data-testid="ornek-istem"
-                                title={girdi === o ? "Tekrar tıklayın: gönderir" : "Girdiye yaz"}
-                                className={[
-                                    "text-left text-[12px] px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50",
-                                    girdi === o
-                                        ? "border-brand-solid bg-brand-solid text-white"
-                                        : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)]",
-                                ].join(" ")}
-                            >
-                                {o}
-                            </button>
-                        ))}
-                    </div>
-                    <span className="text-[11px] text-[var(--fg-subtle)] shrink-0 ml-auto" data-testid="asistan-notu">
-                        veya aşağıdan seçin ↓
-                    </span>
-                </div>
-            </div>
-
             {acik && (
                 <AssistantThread
                     kayitlar={kayitlar}
@@ -509,6 +446,41 @@ export function AssistantBar({
                     onKolonSec={onKolonSec}
                 />
             )}
+
+            <div className="px-4 md:px-5 pt-4 pb-3 grid gap-2.5">
+                <SohbetGirdisi
+                    value={girdi}
+                    onChange={setGirdi}
+                    onGonder={() => void gonder()}
+                    gonderiliyor={gonderiliyor}
+                    ses={ses}
+                    ariaLabel="Asistana mesaj"
+                    textareaRef={girdiRef}
+                    azamiSatir={4}
+                    placeholder={bekleyenTanim ? "Düzeltme yazın ya da karttan onaylayın…" : ASISTAN_GIRDI_YER_TUTUCU}
+                    not={<span data-testid="asistan-notu">Enter gönderir · veya aşağıdan seçin ↓</span>}
+                />
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                    {ornekler.map(o => (
+                        <button
+                            key={o}
+                            type="button"
+                            onClick={() => ornekSec(o)}
+                            disabled={gonderiliyor}
+                            data-testid="ornek-istem"
+                            title={girdi === o ? "Tekrar tıklayın: gönderir" : "Girdiye yaz"}
+                            className={[
+                                "text-left text-[12px] px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50",
+                                girdi === o
+                                    ? "border-brand-solid bg-brand-solid text-white"
+                                    : "border-[var(--border-strong)] bg-[var(--bg-elevated)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)]",
+                            ].join(" ")}
+                        >
+                            {o}
+                        </button>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }

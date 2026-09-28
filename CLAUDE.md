@@ -105,7 +105,8 @@ allowlist `NOTIFICATION_DOMAINS`. Süre uyarısının TEK kaynağı `case_stage_
 (`routes/case_notes.py`: `GET|POST /api/cases/{id}/notes`, `DELETE .../notes/{note_id}` soft-delete, yazan ya da
 admin; panel `CaseNotesPanel.tsx`); `cases.notes` kartta "Genel not" olarak AYRI kalır (`docs/mimari/dava-acma-akisi.md` §14).
 Sesli giriş `POST /api/transcribe` (≤2 MB, webm/ogg/mp4/mpeg/wav) → Gemini Türkçe metin, ses diske/loga düşmez;
-`MicButton` (≤60 sn) yalnız iki sohbette (Hukukbot `SoruKutusu`, rapor `AssistantBar`), metin kutuya düşer, gönderim
+`MicButton` (≤60 sn) yalnız iki sohbette (Hukukbot `SoruKutusu`, rapor `AssistantBar` — ikisi de ortak yazı kutusu
+`components/SohbetGirdisi.tsx`; geçmiş kutunun ÜSTÜNDE, 28.09), metin kutuya düşer, gönderim
 otomatik DEĞİL. Takvim raporunda duruşma Açıklama'sı = davanın `dosya_son_durumu` (boşsa not / "Duruşma";
 `report_builder._hearing_title`). Avukat seçimi `LawyerCombobox` (NewCase, intake, QuickCaseModal); `CaseList`
 filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G213).

@@ -11,14 +11,15 @@ type MesajBalonuProps = {
 };
 
 /**
- * Tek mesaj (G205): kullanıcı sağda düz metin (markdown DEĞİL — yazdığı gibi); model solda
- * markdown + kaynaklar. Akış sürerken parça parça büyür; ilk parça gelene dek "yazıyor" göstergesi.
+ * Tek mesaj (G205): kullanıcı sağda açık zeminli balonda düz metin (markdown DEĞİL — yazdığı gibi); model
+ * balonsuz, okuma sütununda düz metin gibi akar (markdown + kaynaklar). Akış sürerken parça parça büyür; ilk
+ * parça gelene dek "yazıyor" göstergesi.
  */
 export function MesajBalonu({ mesaj, onIndir, inen }: MesajBalonuProps) {
   if (mesaj.role === "user") {
     return (
       <div className="flex justify-end" data-testid="hukukbot-mesaj-kullanici">
-        <div className="max-w-[88%] md:max-w-[75%] px-3.5 py-2.5 rounded-[6px] rounded-br-[2px] bg-brand-solid text-white text-[13.5px] leading-[1.55] whitespace-pre-wrap break-words">
+        <div className="max-w-[85%] px-4 py-2.5 rounded-[16px] rounded-br-[4px] bg-[var(--brand-soft)] border border-[var(--border)] text-[var(--fg)] text-[14px] leading-[1.55] whitespace-pre-wrap break-words">
           {mesaj.content}
         </div>
       </div>
@@ -28,7 +29,7 @@ export function MesajBalonu({ mesaj, onIndir, inen }: MesajBalonuProps) {
   const bos = mesaj.content === "";
   return (
     <div className="flex justify-start" data-testid="hukukbot-mesaj-model">
-      <div className="w-full md:max-w-[88%] min-w-0 px-4 py-3 rounded-[6px] rounded-bl-[2px] bg-[var(--bg-elevated)] border border-[var(--border)]">
+      <div className="w-full min-w-0 py-1">
         {bos && mesaj.akiyor && (
           <div role="status" className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
             <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />

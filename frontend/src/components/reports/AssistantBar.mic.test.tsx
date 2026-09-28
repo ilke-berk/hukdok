@@ -85,7 +85,7 @@ async function ciz(yukleniyor = false) {
     });
     await bosalt();
 }
-const girdi = () => kap.querySelector<HTMLInputElement>("[aria-label='Asistana mesaj']")!;
+const girdi = () => kap.querySelector<HTMLTextAreaElement>("[aria-label='Asistana mesaj']")!;
 const mic = () => kap.querySelector<HTMLButtonElement>("[data-testid='mic-button']");
 async function tikla(el: Element) {
     await act(async () => {
@@ -93,8 +93,8 @@ async function tikla(el: Element) {
     });
     await bosalt();
 }
-function yaz(el: HTMLInputElement, value: string) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+function yaz(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")!.set!;
     act(() => {
         setter.call(el, value);
         el.dispatchEvent(new Event("input", { bubbles: true }));

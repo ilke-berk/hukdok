@@ -32,10 +32,16 @@ import {
  * - Sol: sohbet listesi (sabitlenenler üstte; yeni / başlık düzenle / sabitle / ONAYLI sil). 768 px altında
  *   liste çekmeceye döner (375 px'te yatay kaydırma yok).
  * - Orta: mesajlar; yanıt `/ask` NDJSON akışından parça parça yazılır, "Durdur" AbortSignal ile keser.
+ *   Mesajlar ve yazı kutusu ortalanmış tek okuma sütununda (`OKUMA_SUTUNU`). Boş sohbette kutu karşılamanın
+ *   hemen altında, ilk sorudan sonra dipte. Akış yalnız kullanıcı zaten dipteyse aşağı kaydırır — yukarı
+ *   kaydırıp okurken sayfa onu dibe çekmez (`dipteRef`); kendi sorusunu gönderince dibe yapışır.
  * - Seçili sohbet URL'de: `/hukukbot?s=<id>` → yenilemede aynı sohbet açılır. Yeni sohbette ilk soru
  *   gönderilmeden önce oturum `POST /sessions` ile açılır (akış oturum kimliği döndürmez) ve URL'ye yazılır.
  * - Default export: rota `React.lazy` ile bağlanır (G206).
  */
+/** Mesajlar ve yazı kutusunun ortak okuma sütunu — geniş ekranda satırlar uzamasın. */
+const OKUMA_SUTUNU = "mx-auto w-full max-w-3xl";
+
 export default function HukukbotPage() {
   useSetPageTitle("Hukukbot", ["Araçlar", "Hukukbot"]);
   const confirm = useConfirm();
@@ -56,7 +62,9 @@ export default function HukukbotPage() {
   const akisRef = useRef<AbortController | null>(null);
   /** Ekrandaki mesajların ait olduğu oturum — kendi açtığımız oturum URL'ye yazılınca yeniden çekilmez. */
   const yuklenenIdRef = useRef<string | null>(null);
-  const sonRef = useRef<HTMLDivElement | null>(null);
+  const kaydirmaRef = useRef<HTMLDivElement | null>(null);
+  /** Kullanıcı mesaj listesinin dibinde mi (son ~80 px) — otomatik kaydırma yalnız bu true iken. */
+  const dipteRef = useRef(true);
 
   // Sohbet listesi — açılışta bir kez.
   useEffect(() => {
@@ -88,6 +96,7 @@ export default function HukukbotPage() {
       return;
     }
     if (yuklenenIdRef.current === seciliId) return;
+    dipteRef.current = true;
     const ac = new AbortController();
     setOturumYukleniyor(true);
     setOturumHatasi(null);
@@ -116,10 +125,16 @@ export default function HukukbotPage() {
     };
   }, []);
 
-  // Yeni parça / mesaj → en alta kaydır.
+  // Yeni parça / mesaj → kullanıcı dipteyse en alta kaydır.
   useEffect(() => {
-    sonRef.current?.scrollIntoView?.({ block: "end" });
+    const el = kaydirmaRef.current;
+    if (el && dipteRef.current) el.scrollTop = el.scrollHeight;
   }, [mesajlar]);
+
+  const kaydirildi = () => {
+    const el = kaydirmaRef.current;
+    if (el) dipteRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
 
   // Çekmece açıkken Esc kapatır.
   useEffect(() => {
@@ -157,6 +172,7 @@ export default function HukukbotPage() {
     if (!metin || gonderiliyor) return;
 
     const gecmis = gecmisUret(mesajlar);
+    dipteRef.current = true;
     const yanitAnahtari = mesajAnahtari("model");
     setMesajlar((onceki) => [
       ...onceki,
@@ -297,6 +313,8 @@ export default function HukukbotPage() {
     }
   };
 
+  const bosSohbet = !oturumYukleniyor && !oturumHatasi && mesajlar.length === 0;
+
   const aktifBaslik = seciliId
     ? (oturumlar.find((o) => o.id === seciliId)?.title ?? "Sohbet")
     : YENI_SOHBET_BASLIGI;
@@ -377,42 +395,56 @@ export default function HukukbotPage() {
           </h2>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 md:px-6 py-4">
-          {oturumYukleniyor && (
-            <div role="status" className="flex items-center gap-2 text-[13px] text-[var(--fg-muted)]">
-              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-              Sohbet yükleniyor...
-            </div>
-          )}
-          {!oturumYukleniyor && oturumHatasi && (
-            <p role="alert" data-testid="hukukbot-oturum-hatasi" className="text-[13px] text-tone-danger">
-              {oturumHatasi}
-            </p>
-          )}
-          {!oturumYukleniyor && !oturumHatasi && mesajlar.length === 0 && (
-            <div className="h-full grid place-items-center text-center px-4">
-              <div className="grid justify-items-center gap-3 max-w-md">
-                <div className="w-12 h-12 grid place-items-center bg-[var(--brand-soft)] text-[var(--brand)]">
-                  <Scale className="w-5 h-5" strokeWidth={1.8} aria-hidden="true" />
-                </div>
-                <h3 className="font-display text-[22px] font-medium text-[var(--fg)]">Hukukbot'a sorun</h3>
-                <p className="text-[13px] leading-[1.6] text-[var(--fg-muted)]">
-                  Mevzuat ve içtihat sorularınızı yazın; yanıtın dayandığı kaynaklar cevabın altında listelenir.
-                </p>
+        <div
+          ref={kaydirmaRef}
+          onScroll={kaydirildi}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 md:px-6"
+        >
+          <div className={`${OKUMA_SUTUNU} pt-5 pb-8 min-h-full flex flex-col`}>
+            {oturumYukleniyor && (
+              <div role="status" className="flex items-center gap-2 text-[13px] text-[var(--fg-muted)]">
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                Sohbet yükleniyor...
               </div>
-            </div>
-          )}
-          {mesajlar.length > 0 && (
-            <div className="grid gap-4" data-testid="hukukbot-mesajlar">
-              {mesajlar.map((m) => (
-                <MesajBalonu key={m.anahtar} mesaj={m} onIndir={indir} inen={inen} />
-              ))}
-            </div>
-          )}
-          <div ref={sonRef} />
+            )}
+            {!oturumYukleniyor && oturumHatasi && (
+              <p role="alert" data-testid="hukukbot-oturum-hatasi" className="text-[13px] text-tone-danger">
+                {oturumHatasi}
+              </p>
+            )}
+            {bosSohbet && (
+              <div className="flex-1 grid place-items-center pb-[8vh]">
+                <div className="w-full grid justify-items-center gap-3 text-center">
+                  <div className="w-12 h-12 grid place-items-center rounded-full bg-[var(--brand-soft)] text-[var(--brand)]">
+                    <Scale className="w-5 h-5" strokeWidth={1.8} aria-hidden="true" />
+                  </div>
+                  <h3 className="font-display text-[24px] font-medium text-[var(--fg)]">Hukukbot'a sorun</h3>
+                  <p className="max-w-md text-[13px] leading-[1.6] text-[var(--fg-muted)]">
+                    Mevzuat ve içtihat sorularınızı yazın; yanıtın dayandığı kaynaklar cevabın altında listelenir.
+                  </p>
+                  <div className="w-full mt-4 text-left">
+                    <SoruKutusu gonderiliyor={gonderiliyor} onGonder={gonder} onDurdur={akisiKes} autoFocus />
+                  </div>
+                </div>
+              </div>
+            )}
+            {mesajlar.length > 0 && (
+              <div className="grid gap-6" data-testid="hukukbot-mesajlar">
+                {mesajlar.map((m) => (
+                  <MesajBalonu key={m.anahtar} mesaj={m} onIndir={indir} inen={inen} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <SoruKutusu gonderiliyor={gonderiliyor} onGonder={gonder} onDurdur={akisiKes} />
+        {!bosSohbet && (
+          <div className="shrink-0 px-3 md:px-6 pb-3 pt-2 bg-gradient-to-t from-[var(--bg-elevated)] from-60% to-transparent -mt-6 relative">
+            <div className={OKUMA_SUTUNU}>
+              <SoruKutusu gonderiliyor={gonderiliyor} onGonder={gonder} onDurdur={akisiKes} />
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

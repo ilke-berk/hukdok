@@ -29,7 +29,8 @@ type AssistantThreadProps = {
 };
 
 /**
- * Inline konuşma alanı (G143): AssistantBar'ın altında açılır — eski yan panelin (`AssistantPanel`,
+ * Inline konuşma alanı (G143): AssistantBar kartında yazı kutusunun ÜSTÜNDE açılır (28.09 sohbet düzeni; en yeni
+ * mesaj kutuya en yakın), yüksekliği kısa tutulur ve dibe kaydırılır — tablo aşağı itilmez — eski yan panelin (`AssistantPanel`,
  * G135) mesaj listesi/akış durumu buraya taşındı; mantık `reportsChat.ts` ve AssistantBar'da.
  * Kullanıcı/asistan balonları `AssistantMessage`; `warning` sarı şerit, `failed` kırmızı kutu +
  * `error_kod` ipucu balonun içinde. Modal değildir: kullanıcı kartları/şeridi/önizlemeyi görmeye
@@ -52,9 +53,9 @@ export function AssistantThread({
             role="region"
             aria-label="Rapor asistanı konuşması"
             data-testid="asistan-konusmasi"
-            className="border-t border-[var(--border)] bg-[var(--bg-elevated)]"
+            className="border-b border-[var(--border)] bg-[var(--bg)]"
         >
-            <div className="flex items-center justify-between gap-2 px-4 py-2">
+            <div className="flex items-center justify-between gap-2 px-4 md:px-5 py-1.5 border-b border-[var(--border)]">
                 <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">Konuşma</span>
                 <div className="flex items-center gap-1">
                     <button
@@ -81,12 +82,12 @@ export function AssistantThread({
 
             <div
                 ref={listeRef}
-                className="max-h-[420px] overflow-y-auto px-4 pb-4 grid content-start gap-3"
+                className="max-h-[min(340px,45vh)] overflow-y-auto px-4 md:px-5 py-4 grid content-start gap-3"
                 aria-live="polite"
             >
                 {kayitlar.length === 0 && !gonderiliyor && (
                     <p data-testid="asistan-bos" className="text-[13px] text-[var(--fg-muted)]">
-                        Henüz mesaj yok. Yukarıya isteğinizi yazın; asistan tanımı hazırlayıp uygular, yanlışsa yazarak düzeltir ya da geri alırsınız.
+                        Henüz mesaj yok. Aşağıya isteğinizi yazın; asistan tanımı hazırlayıp uygular, yanlışsa yazarak düzeltir ya da geri alırsınız.
                     </p>
                 )}
 

@@ -5,6 +5,8 @@ type MicButtonProps = {
     ses: VoiceInput;
     /** Kayıt BAŞLATMAYI engeller (ör. yanıt akarken); süren kayıt yine durdurulabilir. */
     disabled?: boolean;
+    /** Sohbet kutusunun İÇİNDE (`SohbetGirdisi`): kenarlıksız yuvarlak simge düğmesi. */
+    gomulu?: boolean;
     className?: string;
 };
 
@@ -13,7 +15,7 @@ type MicButtonProps = {
  * hiç çizilmez. Boşta mikrofon ikonu ("Sesle yaz"); kayıtta kırmızı + `0:12` sayacı + `aria-pressed`
  * ("Kaydı durdur"); izin beklenirken ve yazıya çevrilirken dönen gösterge ve pasif.
  */
-export function MicButton({ ses, disabled = false, className = "" }: MicButtonProps) {
+export function MicButton({ ses, disabled = false, gomulu = false, className = "" }: MicButtonProps) {
     if (!ses.destekleniyor) return null;
     const { durum } = ses;
     const kayitta = durum === "kayitta";
@@ -44,10 +46,13 @@ export function MicButton({ ses, disabled = false, className = "" }: MicButtonPr
             data-testid="mic-button"
             data-durum={durum}
             className={[
-                "shrink-0 inline-flex items-center justify-center gap-1.5 rounded-[3px] border text-[12px] font-medium tabular-nums transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                "shrink-0 inline-flex items-center justify-center gap-1.5 border text-[12px] font-medium tabular-nums transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                gomulu ? "h-9 rounded-full" : "rounded-[3px]",
                 kayitta
                     ? "px-2.5 border-tone-danger bg-tone-danger text-white"
-                    : "w-10 border-[var(--border-strong)] bg-[var(--bg)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)]",
+                    : gomulu
+                        ? "w-9 border-transparent bg-transparent text-[var(--fg-muted)] hover:bg-[var(--bg)] hover:text-[var(--fg)]"
+                        : "w-10 border-[var(--border-strong)] bg-[var(--bg)] text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--fg)]",
                 className,
             ].join(" ")}
         >

@@ -281,8 +281,8 @@ describe("ReportsPage favori önerisi (G144)", () => {
             sel.dispatchEvent(new Event("change", { bubbles: true }));
         });
     }
-    function yaz(el: HTMLInputElement, value: string) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    function yaz(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")!.set!;
         act(() => {
             setter.call(el, value);
             el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -311,7 +311,7 @@ describe("ReportsPage favori önerisi (G144)", () => {
     }
     /** Asistan satırından mesaj gönderir (Enter). */
     async function gonder(metin: string) {
-        const g = byLabel<HTMLInputElement>("Asistana mesaj");
+        const g = byLabel<HTMLTextAreaElement>("Asistana mesaj");
         yaz(g, metin);
         await tus(g, "Enter");
         await bekle(8);

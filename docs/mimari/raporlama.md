@@ -38,6 +38,8 @@ cümleleri değişti (`prompts.py`, G176); kontrol↔op çevirisi, `builderState
 ```
 Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:740-852 — G175 yerleşimi: sohbet → şerit → tablo)
    AssistantBar.tsx (tam genişlik, örnek istemler, inline konuşma; :742-755)
+     kart içi sıra (28.09): AssistantThread (açıksa; ≤ min(340px, 45vh), dibe kayar) → ortak `components/SohbetGirdisi.tsx`
+     (Hukukbot'la aynı kutu: 1→4 satır büyür, Enter gönderir, Shift+Enter yeni satır) → örnek çipleri
      ‖ anahtar kapalı / 409 → yerinde bilgi kartı `asistan-kapali-karti` (:756-770), şerit + tablo çalışır
    → TanimSeridi.tsx (:773-782): Davalar ▾ · kolon çipleri · + Kolon · filtre çipleri · + Filtre · ↑/↓ sıralama · Temizle
    → sayaç satırı `sayac-satiri` (:785-821): "N kayıt" · TemplateBar (kompakt, "…" menüsü) · ExportButtons (Excel/CSV)

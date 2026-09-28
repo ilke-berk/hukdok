@@ -297,7 +297,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
     const satir = () => $("[data-testid='asistan-satiri']");
     const konusma = () => $("[data-testid='asistan-konusmasi']");
     const konusmaVar = () => container.querySelector("[data-testid='asistan-konusmasi']") !== null;
-    const girdi = () => byLabel<HTMLInputElement>("Asistana mesaj");
+    const girdi = () => byLabel<HTMLTextAreaElement>("Asistana mesaj");
     const cipMetinleri = () => Array.from(container.querySelectorAll("[data-testid='ornek-istem']")).map(c => c.textContent?.trim());
     const cipler = () => Array.from(container.querySelectorAll("[data-testid='filtre-cipi']")).map(c => c.textContent?.trim());
     const onizlemeler = () => cagrilar("/api/reports/preview", "POST");
@@ -335,8 +335,8 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         await tikla($(`[role='menu'] [data-kaynak='${anahtar}']`, document.body));
     }
 
-    function yaz(el: HTMLInputElement, value: string) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    function yaz(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")!.set!;
         act(() => {
             setter.call(el, value);
             el.dispatchEvent(new Event("input", { bubbles: true }));
