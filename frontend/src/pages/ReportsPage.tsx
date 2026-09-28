@@ -145,6 +145,10 @@ const ReportsPage = () => {
     // Şeritteki tarih kısayolları için bugün (sayfa ömrü boyunca sabit; gece yarısı geçişi yeniden açılışta düzelir).
     const [bugun] = useState(() => yerelGun(new Date()));
 
+    // 28.09: ilk açılışta kaynağın varsayılan tanımı ÖNİZLENMEZ (istek yok, tablo yerinde yönlendirme);
+    // taslağa ilk dokunuşta (`durumDegisti` — şerit, asistan, şablon) kalkar. Geri yüklenen çalışma önizlenir.
+    const [acilisBekliyor, setAcilisBekliyor] = useState(() => !kayitliCalisma?.tanim);
+
     const [cevap, setCevap] = useState<OnizlemeCevabi | null>(null);
     const [onizlemeHatasi, setOnizlemeHatasi] = useState<string | null>(null);
     const [onizleniyor, setOnizleniyor] = useState(false);
@@ -374,7 +378,7 @@ const ReportsPage = () => {
     // ---- Otomatik önizleme (§4.1 madde 5) ----
     useEffect(() => {
         zamanlayiciyiDurdur();
-        if (!kaynak || !tanimGecerli) return;
+        if (acilisBekliyor || !kaynak || !tanimGecerli) return;
         if (sonIstenenRef.current && ayniTanim(sonIstenenRef.current, tanim)) return;
         const gecikmeli = gecikmeliRef.current;
         gecikmeliRef.current = false;
@@ -389,7 +393,7 @@ const ReportsPage = () => {
         }
         zamanlayiciRef.current = setTimeout(iste, ONIZLEME_GECIKME_MS);
         return zamanlayiciyiDurdur;
-    }, [tanim, tanimGecerli, kaynak, onizlemeAl, zamanlayiciyiDurdur]);
+    }, [acilisBekliyor, tanim, tanimGecerli, kaynak, onizlemeAl, zamanlayiciyiDurdur]);
 
     /** Odak çıkışı: bekleyen gecikmeli istek varsa hemen at. */
     const hemenOnizle = useCallback(() => {
@@ -407,6 +411,7 @@ const ReportsPage = () => {
      */
     const durumDegisti = (next: OlusturucuDurumu, gecikmeli = false) => {
         gecikmeliRef.current = gecikmeli;
+        setAcilisBekliyor(false);
         // Her taslak yazımı asistanın "Geri al" adımını düşürür (asistan uygulaması ardından yeniden koyar).
         setOncekiTaslak(null);
         if (next.veri_kaynagi !== durum.veri_kaynagi) {
@@ -882,6 +887,7 @@ const ReportsPage = () => {
                     sayfaBoyu={sayfaBoyu}
                     onSayfaBoyu={setOrnekBoyu}
                     gecersiz={!tanimGecerli}
+                    bekliyor={acilisBekliyor}
                     siralama={durum.siralama}
                     siralanabilirMi={siralanabilirMi}
                     onSirala={onSirala}
