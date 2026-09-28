@@ -1,7 +1,7 @@
 import { useMemo, type ComponentProps } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ATIF_HREF_ONEKI } from "./atiflar";
+import { ALINTI_HREF_ONEKI, ATIF_HREF_ONEKI } from "./atiflar";
 
 /**
  * Model yanıtı için markdown (G205) — `react-markdown` + `remark-gfm` (tablo, üstü çizili, görev listesi).
@@ -12,6 +12,9 @@ import { ATIF_HREF_ONEKI } from "./atiflar";
  * Tipografi eklentisi yapılandırılı değil → öğe biçimleri tema token'larıyla burada verilir.
  * Atıf rozeti (28.09): `atiflariNumarala`'nın ürettiği `[n](#atif-n)` bağlantısı link değil küçük numaralı
  * düğme olarak çizilir; tıklama `onAtif(n)` (kaynak kartına kaydırır), üzerine gelince belge adı.
+ * Alıntı (28.09): `[metin](#alinti-i)` belgeden birebir alınan cümledir — tırnaklı, italik, açık zeminli; hukbot
+ * belgede bulamadıysa (`alintiDurumu(i) === false`) turuncu dalgalı alt çizgi + ipucu.
+ * Okunurluk (28.09): gövde 15 px / 1.7 satır aralığı, paragraf ve madde arası açıldı.
  */
 
 type HastDugumu = { type: string; value?: string; children?: HastDugumu[] };
@@ -42,12 +45,12 @@ function DisBaglanti(p: ComponentProps<"a">) {
 }
 
 const BILESENLER: Components = {
-  p: ({ node: _node, ...p }) => <p className="my-2 first:mt-0 last:mb-0 leading-[1.65]" {...p} />,
-  ul: ({ node: _node, ...p }) => <ul className="my-2 pl-5 list-disc space-y-1" {...p} />,
-  ol: ({ node: _node, ...p }) => <ol className="my-2 pl-5 list-decimal space-y-1" {...p} />,
-  h1: ({ node: _node, ...p }) => <h3 className="mt-4 mb-2 font-display text-[18px] font-medium" {...p} />,
-  h2: ({ node: _node, ...p }) => <h4 className="mt-4 mb-2 font-display text-[16px] font-medium" {...p} />,
-  h3: ({ node: _node, ...p }) => <h5 className="mt-3 mb-1.5 text-[14px] font-semibold" {...p} />,
+  p: ({ node: _node, ...p }) => <p className="my-3 first:mt-0 last:mb-0" {...p} />,
+  ul: ({ node: _node, ...p }) => <ul className="my-3 pl-5 list-disc space-y-2.5 marker:text-[var(--fg-subtle)]" {...p} />,
+  ol: ({ node: _node, ...p }) => <ol className="my-3 pl-5 list-decimal space-y-2.5 marker:text-[var(--fg-subtle)]" {...p} />,
+  h1: ({ node: _node, ...p }) => <h3 className="mt-5 mb-2 font-display text-[20px] font-medium" {...p} />,
+  h2: ({ node: _node, ...p }) => <h4 className="mt-5 mb-2 font-display text-[17px] font-medium" {...p} />,
+  h3: ({ node: _node, ...p }) => <h5 className="mt-4 mb-1.5 text-[15px] font-semibold" {...p} />,
   blockquote: ({ node: _node, ...p }) => (
     <blockquote className="my-2 border-l-2 border-[var(--brand)] pl-3 text-[var(--fg-muted)]" {...p} />
   ),
@@ -88,9 +91,11 @@ type HukukbotMarkdownProps = {
   onAtif?: (n: number) => void;
   /** Rozetin ipucu metni (belge adı). */
   atifEtiketi?: (n: number) => string | undefined;
+  /** i. alıntının doğrulama sonucu (true/false; bilinmiyorsa null). */
+  alintiDurumu?: (i: number) => boolean | null;
 };
 
-export function HukukbotMarkdown({ metin, onAtif, atifEtiketi }: HukukbotMarkdownProps) {
+export function HukukbotMarkdown({ metin, onAtif, atifEtiketi, alintiDurumu }: HukukbotMarkdownProps) {
   const bilesenler = useMemo<Components>(() => ({
     ...BILESENLER,
     a: ({ node: _node, href, ...p }) => {
@@ -111,12 +116,33 @@ export function HukukbotMarkdown({ metin, onAtif, atifEtiketi }: HukukbotMarkdow
           </button>
         );
       }
+      if (href?.startsWith(ALINTI_HREF_ONEKI)) {
+        const durum = alintiDurumu?.(Number(href.slice(ALINTI_HREF_ONEKI.length))) ?? null;
+        return (
+          <q
+            data-testid="alinti-metin"
+            data-dogrulandi={durum === null ? undefined : String(durum)}
+            title={
+              durum === false
+                ? "Bu alıntı belge metninde birebir bulunamadı; belgeyi açıp kontrol edin."
+                : durum === true
+                  ? "Alıntı belge metninde birebir bulundu."
+                  : undefined
+            }
+            className={`italic px-1 rounded-[3px] bg-[var(--bg-sunken)] text-[var(--fg)] ${
+              durum === false ? "underline decoration-wavy decoration-tone-caution underline-offset-4" : ""
+            }`}
+          >
+            {p.children}
+          </q>
+        );
+      }
       return <DisBaglanti href={href} {...p} />;
     },
-  }), [onAtif, atifEtiketi]);
+  }), [onAtif, atifEtiketi, alintiDurumu]);
 
   return (
-    <div className="hukukbot-markdown text-[13.5px] text-[var(--fg)] break-words min-w-0">
+    <div className="hukukbot-markdown text-[15px] leading-[1.7] text-[var(--fg)] break-words min-w-0">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[hamHtmlMetne]} components={bilesenler}>
         {metin}
       </ReactMarkdown>

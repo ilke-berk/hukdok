@@ -3,7 +3,7 @@
 // görünen adla ya da uzantısız anılışla eşleşir; atıf olmayan parantez metne dokunulmaz.
 import { describe, expect, it } from "vitest";
 import type { HukukbotKaynak } from "@/types/hukukbot";
-import { atifAdlari, atiflariNumarala, kaynakNumarasi } from "./atiflar";
+import { alintiDogrulandi, atifAdlari, atiflariNumarala, kaynakNumarasi } from "./atiflar";
 
 const kaynak = (filename: string, file_display_name = filename): HukukbotKaynak => ({
   filename,
@@ -39,7 +39,27 @@ describe("atiflariNumarala", () => {
   it("atıf olmayan parantez ve kapanmamış (akış sürerken) atıf aynen kalır", () => {
     expect(atiflariNumarala("Madde 24 (3. fıkra) uyarınca").metin).toBe("Madde 24 (3. fıkra) uyarınca");
     const yarim = "Sorumluluk (Kaynak: 2026-07-29_BILIR";
-    expect(atiflariNumarala(yarim)).toEqual({ metin: yarim, adlar: [] });
+    expect(atiflariNumarala(yarim)).toEqual({ metin: yarim, adlar: [], alintilar: [] });
+  });
+
+  it("alıntı `[metin](#alinti-i)` olur (köşeli parantezli/siz, tipografik tırnak); içindeki köşeli parantez kaçırılır", () => {
+    const { metin, alintilar } = atiflariNumarala(
+      '[Alıntı: "davanın reddine"] (Kaynak: A.pdf) ve Alıntı: “sevk [ek] gerekir” sonra',
+    );
+    expect(alintilar).toEqual(["davanın reddine", "sevk [ek] gerekir"]);
+    expect(metin).toBe("[davanın reddine](#alinti-0)[1](#atif-1) ve [sevk \\[ek\\] gerekir](#alinti-1) sonra");
+  });
+});
+
+describe("alintiDogrulandi", () => {
+  it("kaynak kartlarındaki alıntı sonucunu döndürür; bulunamazsa null", () => {
+    const kaynaklar: HukukbotKaynak[] = [
+      { ...kaynak("A.pdf"), alintilar: [{ metin: "davanın reddine", dogrulandi: true }] },
+      { ...kaynak("B.pdf"), alintilar: [{ metin: "uydurma cümle", dogrulandi: false }] },
+    ];
+    expect(alintiDogrulandi("davanın reddine", kaynaklar)).toBe(true);
+    expect(alintiDogrulandi(" uydurma cümle ", kaynaklar)).toBe(false);
+    expect(alintiDogrulandi("başka", kaynaklar)).toBeNull();
   });
 });
 

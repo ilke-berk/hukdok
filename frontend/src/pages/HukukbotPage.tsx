@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { Loader2, Menu, MessageSquare, Scale, X } from "lucide-react";
+import { BookOpen, Loader2, Menu, MessageSquare, Scale, X } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfirm } from "@/hooks/useConfirm";
 import { HukukbotApiError, hukukbotApi } from "@/lib/hukukbotApi";
@@ -9,6 +9,7 @@ import type { HukukbotKaynak, HukukbotOturumOzeti } from "@/types/hukukbot";
 import { OturumListesi } from "@/components/hukukbot/OturumListesi";
 import { MesajBalonu } from "@/components/hukukbot/MesajBalonu";
 import { SoruKutusu } from "@/components/hukukbot/SoruKutusu";
+import { KaynakPaneli, type KaynakVurgusu } from "@/components/hukukbot/KaynakPaneli";
 import {
   AKIS_HATA_MESAJI,
   HUKUDOK_BELGE_ACILAMADI,
@@ -32,6 +33,10 @@ import {
  * - Sol: sohbet listesi (sabitlenenler üstte; yeni / başlık düzenle / sabitle / ONAYLI sil). 768 px altında
  *   liste çekmeceye döner (375 px'te yatay kaydırma yok).
  * - Orta: mesajlar; yanıt `/ask` NDJSON akışından parça parça yazılır, "Durdur" AbortSignal ile keser.
+ * - Sağ (28.09): kaynak paneli (`KaynakPaneli`) — kaynak kartları metnin altında değil burada. xl (1280 px) ve
+ *   üstünde sohbetin yanında sabit sütun ve açık başlar; altında sağdan çekmece, kapalı başlar. Başlıktaki
+ *   "Kaynaklar" düğmesi açar/kapatır. Panel son kaynaklı cevabı gösterir; bir cevabın atıf rozeti ya da
+ *   "Kaynaklar · N" düğmesi paneli o cevaba çevirir (rozet o kartı vurgular). Yeni soru/sohbet seçimi sıfırlar.
  *   Mesajlar ve yazı kutusu ortalanmış tek okuma sütununda (`OKUMA_SUTUNU`). Boş sohbette kutu karşılamanın
  *   hemen altında, ilk sorudan sonra dipte. Akış yalnız kullanıcı zaten dipteyse aşağı kaydırır — yukarı
  *   kaydırıp okurken sayfa onu dibe çekmez (`dipteRef`); kendi sorusunu gönderince dibe yapışır.
@@ -39,6 +44,10 @@ import {
  *   gönderilmeden önce oturum `POST /sessions` ile açılır (akış oturum kimliği döndürmez) ve URL'ye yazılır.
  * - Default export: rota `React.lazy` ile bağlanır (G206).
  */
+/** Kaynak paneli bu genişlikten itibaren sohbetin yanında sabit sütundur (Tailwind `xl`); altında çekmece. */
+const GENIS_EKRAN = "(min-width: 1280px)";
+const genisEkran = () => typeof window.matchMedia !== "function" || window.matchMedia(GENIS_EKRAN).matches;
+
 /** Mesajlar ve yazı kutusunun ortak okuma sütunu — geniş ekranda satırlar uzamasın. */
 const OKUMA_SUTUNU = "mx-auto w-full max-w-3xl";
 
@@ -57,6 +66,10 @@ export default function HukukbotPage() {
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [inen, setInen] = useState<string | null>(null);
   const [cekmece, setCekmece] = useState(false);
+  // Sağdaki kaynak paneli (28.09): geniş ekranda açık başlar; hangi mesajın kaynakları (null = son kaynaklı cevap).
+  const [kaynakPaneliAcik, setKaynakPaneliAcik] = useState(genisEkran);
+  const [kaynakMesajId, setKaynakMesajId] = useState<string | null>(null);
+  const [kaynakVurgu, setKaynakVurgu] = useState<KaynakVurgusu | null>(null);
 
   /** Süren `/ask` akışının iptali ("Durdur", sohbet değişimi, sayfadan çıkış). */
   const akisRef = useRef<AbortController | null>(null);
@@ -151,8 +164,21 @@ export default function HukukbotPage() {
     akisRef.current = null;
   };
 
+  const kaynakSeciminiSifirla = () => {
+    setKaynakMesajId(null);
+    setKaynakVurgu(null);
+  };
+
+  /** Rozet ya da "Kaynaklar · N": paneli o mesajın kaynaklarıyla aç; `n` verilirse o kart vurgulanır. */
+  const kaynakAc = (anahtar: string, n: number | null) => {
+    setKaynakMesajId(anahtar);
+    setKaynakPaneliAcik(true);
+    setKaynakVurgu(n === null ? null : { n, tik: Date.now() });
+  };
+
   const sec = (id: string) => {
     setCekmece(false);
+    kaynakSeciminiSifirla();
     if (id === seciliId) return;
     akisiKes();
     setParams({ s: id });
@@ -160,6 +186,7 @@ export default function HukukbotPage() {
 
   const yeniSohbet = () => {
     setCekmece(false);
+    kaynakSeciminiSifirla();
     akisiKes();
     yuklenenIdRef.current = null;
     setMesajlar([]);
@@ -172,6 +199,7 @@ export default function HukukbotPage() {
     if (!metin || gonderiliyor) return;
 
     const gecmis = gecmisUret(mesajlar);
+    kaynakSeciminiSifirla();   // panel yeni cevabın kaynaklarına geçsin
     dipteRef.current = true;
     const yanitAnahtari = mesajAnahtari("model");
     setMesajlar((onceki) => [
@@ -316,6 +344,13 @@ export default function HukukbotPage() {
     }
   };
 
+  // Panelde gösterilen cevap: seçilen mesaj (hâlâ ekrandaysa ve kaynaklıysa), yoksa en son kaynaklı cevap.
+  const kaynakliMi = (m: EkranMesaji) => m.role === "model" && (m.sources?.length ?? 0) > 0;
+  const paneldeki =
+    mesajlar.find((m) => m.anahtar === kaynakMesajId && kaynakliMi(m)) ??
+    [...mesajlar].reverse().find(kaynakliMi) ??
+    null;
+
   const bosSohbet = !oturumYukleniyor && !oturumHatasi && mesajlar.length === 0;
 
   const aktifBaslik = seciliId
@@ -396,6 +431,23 @@ export default function HukukbotPage() {
           <h2 className="truncate text-[14px] font-medium text-[var(--fg)]" data-testid="hukukbot-aktif-baslik">
             {aktifBaslik}
           </h2>
+          {paneldeki && (
+            <button
+              type="button"
+              onClick={() => setKaynakPaneliAcik((a) => !a)}
+              aria-pressed={kaynakPaneliAcik}
+              aria-label={kaynakPaneliAcik ? "Kaynak panelini gizle" : "Kaynak panelini göster"}
+              title={kaynakPaneliAcik ? "Kaynak panelini gizle" : "Kaynak panelini göster"}
+              className={`ml-auto shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[3px] border text-[12px] transition-colors ${
+                kaynakPaneliAcik
+                  ? "border-[var(--brand)] text-[var(--brand)] bg-[var(--brand-soft)]"
+                  : "border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--brand)] hover:border-[var(--brand)]"
+              }`}
+            >
+              <BookOpen className="w-4 h-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Kaynaklar</span>
+            </button>
+          )}
         </header>
 
         <div
@@ -434,7 +486,12 @@ export default function HukukbotPage() {
             {mesajlar.length > 0 && (
               <div className="grid gap-6" data-testid="hukukbot-mesajlar">
                 {mesajlar.map((m) => (
-                  <MesajBalonu key={m.anahtar} mesaj={m} onIndir={indir} inen={inen} />
+                  <MesajBalonu
+                    key={m.anahtar}
+                    mesaj={m}
+                    onKaynakAc={kaynakAc}
+                    kaynakPanelinde={kaynakPaneliAcik && paneldeki?.anahtar === m.anahtar}
+                  />
                 ))}
               </div>
             )}
@@ -449,6 +506,31 @@ export default function HukukbotPage() {
           </div>
         )}
       </section>
+
+      {kaynakPaneliAcik && paneldeki && (
+        <>
+          <button
+            type="button"
+            aria-label="Kapat"
+            tabIndex={-1}
+            className="xl:hidden fixed inset-0 z-30 bg-black/40"
+            onClick={() => setKaynakPaneliAcik(false)}
+          />
+          <aside
+            aria-label="Kaynak paneli"
+            className="fixed inset-y-0 right-0 z-40 w-[88vw] max-w-sm shadow-xl xl:static xl:z-auto xl:w-80 2xl:w-96 xl:max-w-none xl:shadow-none shrink-0 border-l border-[var(--border)] bg-[var(--bg)]"
+          >
+            <KaynakPaneli
+              key={paneldeki.anahtar}
+              mesaj={paneldeki}
+              vurgu={kaynakVurgu}
+              onKapat={() => setKaynakPaneliAcik(false)}
+              onIndir={indir}
+              inen={inen}
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }

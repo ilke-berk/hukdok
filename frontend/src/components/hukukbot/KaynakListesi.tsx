@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react";
 import type { HukukbotAlinti, HukukbotKaynak } from "@/types/hukukbot";
-import { kaynakNumarasi } from "./atiflar";
+import { kaynakNumarasi, supheliKaynakSayisi } from "./atiflar";
 
 type KaynakListesiProps = {
   kaynaklar: HukukbotKaynak[];
@@ -97,21 +97,16 @@ function Alinti({ alinti }: { alinti: HukukbotAlinti }) {
  */
 export function KaynakListesi({ kaynaklar, onIndir, inen, atifAdlari = [], idOneki, vurgulu = null }: KaynakListesiProps) {
   if (kaynaklar.length === 0) return null;
+  const supheli = supheliKaynakSayisi(kaynaklar);
   const sirali = kaynaklar
     .map((k, i) => ({ k, i, no: kaynakNumarasi(k, atifAdlari) }))
     .sort((a, b) => (a.no ?? Infinity) - (b.no ?? Infinity) || a.i - b.i);
-  const supheli = kaynaklar.filter(
-    (k) => k.aramada_getirildi === false || (k.alintilar ?? []).some((a) => a.dogrulandi === false),
-  ).length;
   return (
     <section
       aria-label="Kaynaklar"
       data-testid="hukukbot-kaynaklar"
-      className="mt-3 border-t border-[var(--border)] pt-3 grid gap-2"
+      className="grid gap-2"
     >
-      <h4 className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
-        Kaynaklar · {kaynaklar.length}
-      </h4>
       {supheli > 0 && (
         <p
           role="note"
