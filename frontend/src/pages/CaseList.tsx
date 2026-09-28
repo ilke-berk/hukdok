@@ -472,13 +472,15 @@ const CaseList = () => {
           <div>
             <Eyebrow>Sorumlu Avukat</Eyebrow>
             {/* 27.09: yazarak aranan seçim + dış avukatlar ayrı sekmede (LawyerCombobox).
-                Filtre değeri eskisi gibi avukat KODU (yoksa ad); "ALL" = filtre yok. */}
+                G229: filtre değeri avukatın kurumsal KİMLİĞİ (`lawyer=<kimlik>`, G228); kimliği
+                olmayan eski yanıtta backend'in 1 sürüm geriye uyumlu kabul ettiği kod/ad (G231'de
+                kalkar). Değer ekrana basılmaz — görünen yalnız ad. "ALL" = filtre yok. */}
             <div className="mt-2">
               <LawyerCombobox
                 mode="single"
                 lawyers={lawyers
-                  .filter(l => l.code || l.name)
-                  .map(l => ({ name: l.name || l.code || "", gorev: l.gorev, value: l.code || l.name }))}
+                  .filter(l => l.name)
+                  .map(l => ({ name: l.name, gorev: l.gorev, value: l.kimlik || l.code || l.name }))}
                 value={selectedLawyer}
                 onChange={setSelectedLawyer}
                 allOption={{ label: "Tüm Avukatlar", value: "ALL" }}

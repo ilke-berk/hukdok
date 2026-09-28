@@ -68,12 +68,17 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
     // Sıralama isteğinin yanıtı; verilmezse sunucu sırayı uygular ve başarı döner.
     let reorderReply: (() => Promise<Reply>) | null;
 
+    // G229: sunucu avukata kurumsal kimlik de verir (G228); kodun ilk harfinden türetilir
+    // (AAA → AVK-00001, BBB → AVK-00002, …). Satır tanımlayıcısı kimliktir, kod ekranda yok.
+    const kimlikOf = (code: string) => `AVK-${String(code.charCodeAt(0) - 64).padStart(5, "0")}`;
     const lawyer = (code: string, name: string, extra: Partial<ConfigItem> = {}): ConfigItem =>
-        ({ code, name, gorev: "AVUKAT", ...extra });
+        ({ code, kimlik: kimlikOf(code), name, gorev: "AVUKAT", ...extra });
+    const [K_A, K_B, K_C] = ["AAA", "BBB", "CCC"].map(kimlikOf);
+    const [N_A, N_B, N_C] = ["Av. Ayşe Ak", "Av. Burak Bal", "Av. Cem Can"];
 
     const applyReorder = (body: { type: string; ordered_ids: string[] }) => {
         const list = body.type === "emails" ? server.emails : server.lawyers;
-        const idOf = (i: ConfigItem) => (body.type === "emails" ? i.email : i.code) ?? "";
+        const idOf = (i: ConfigItem) => (body.type === "emails" ? i.email : i.kimlik) ?? "";
         const sorted = body.ordered_ids.map(id => list.find(i => idOf(i) === id)!).filter(Boolean);
         if (body.type === "emails") server.emails = sorted; else server.lawyers = sorted;
     };
@@ -175,7 +180,8 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         server.lawyers = [lawyer("AAA", "Av. Ayşe Akın"), ...server.lawyers.slice(1)];
         await refetch("lawyers");
         expect(callsTo("/api/config/lawyers")).toBe(3);
-        expect(column(2)).toEqual(["Av. Ayşe Akın", "Av. Burak Bal", "Av. Cem Can"]);
+        // G229: kod sütunu kalktı → ad artık 1. sütun (0 = sürükleme tutamacı).
+        expect(column(1)).toEqual(["Av. Ayşe Akın", "Av. Burak Bal", "Av. Cem Can"]);
     });
 
     it("görev sırası render'da uygulanır (AVUKAT → DIŞ AVUKAT → görevsiz)", async () => {
@@ -187,7 +193,7 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         render();
         await waitFor(() => column(1).length === 3, "avukat satırları");
 
-        expect(column(1)).toEqual(["AAA", "DDD", "ZZZ"]);
+        expect(column(1)).toEqual(["Av. İç", "Av. Dış", "Av. Görevsiz"]);
     });
 
     it("kaydedilmemiş düzenleme, aynı liste arka planda yeniden çekilince KAYBOLMAZ", async () => {
@@ -210,7 +216,7 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         server.lawyers = [...server.lawyers, lawyer("EEE", "Av. Yeni Gelen")];
         await refetch("lawyers");
 
-        expect(column(1)).toContain("EEE");
+        expect(column(1)).toContain("Av. Yeni Gelen");
         expect(nameInput()?.value).toBe("Av. Taslak Ad");
     });
 
@@ -222,27 +228,28 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         render();
         await waitFor(() => column(1).length === 3, "avukat satırları");
 
-        await drag(p => p.onDragStart?.(start("AAA")));
-        expect(column(1)).toEqual(["AAA", "BBB", "CCC"]);
+        // G229: sürükleme/sıralama tanımlayıcısı kurumsal kimlik; ekranda ad okunur.
+        await drag(p => p.onDragStart?.(start(K_A)));
+        expect(column(1)).toEqual([N_A, N_B, N_C]);
 
         // Bırakma: sonuç beklenmeden yeni sıra ekranda, istek yeni sırayla gider.
         let ended!: Promise<unknown>;
-        await act(async () => { ended = Promise.resolve(dnd.props!.onDragEnd?.(end("AAA", "CCC"))); });
-        expect(column(1)).toEqual(["BBB", "CCC", "AAA"]);
+        await act(async () => { ended = Promise.resolve(dnd.props!.onDragEnd?.(end(K_A, K_C))); });
+        expect(column(1)).toEqual([N_B, N_C, N_A]);
         const reorderCall = authRequestMock.mock.calls.find(([u]) => u === "/api/config/reorder");
-        expect(reorderCall?.[2]).toEqual({ type: "lawyers", ordered_ids: ["BBB", "CCC", "AAA"] });
+        expect(reorderCall?.[2]).toEqual({ type: "lawyers", ordered_ids: [K_B, K_C, K_A] });
 
         // Sunucu uygular, mutasyon listeyi yeniden çeker; ekran sunucu sırasını gösterir.
         server.lawyers = [server.lawyers[1], server.lawyers[2], server.lawyers[0]];
         await act(async () => { release(); await ended; });
         await flush();
         expect(callsTo("/api/config/lawyers")).toBe(2);
-        expect(column(1)).toEqual(["BBB", "CCC", "AAA"]);
+        expect(column(1)).toEqual([N_B, N_C, N_A]);
 
         // Geçici sıra temizlendi: sonraki sunucu değişikliği doğrudan görünür.
         server.lawyers = [server.lawyers[2], server.lawyers[0], server.lawyers[1]];
         await refetch("lawyers");
-        expect(column(1)).toEqual(["AAA", "BBB", "CCC"]);
+        expect(column(1)).toEqual([N_A, N_B, N_C]);
     });
 
     it("sıralama kaydedilemezse hata bildirilir ve sunucu sırasına dönülür", async () => {
@@ -250,32 +257,32 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         render();
         await waitFor(() => column(1).length === 3, "avukat satırları");
 
-        await drag(p => p.onDragStart?.(start("AAA")));
-        await drag(p => p.onDragEnd?.(end("AAA", "CCC")));
+        await drag(p => p.onDragStart?.(start(K_A)));
+        await drag(p => p.onDragEnd?.(end(K_A, K_C)));
         await flush();
 
         expect(toastMock.error).toHaveBeenCalledWith("Sıralama kaydedilemedi.");
-        expect(column(1)).toEqual(["AAA", "BBB", "CCC"]);
+        expect(column(1)).toEqual([N_A, N_B, N_C]);
     });
 
     it("yerinden oynamayan bırakma ve vazgeçme istek atmaz, sıra ve sunucu güncellemesi korunur", async () => {
         render();
         await waitFor(() => column(1).length === 3, "avukat satırları");
 
-        await drag(p => p.onDragStart?.(start("BBB")));
-        await drag(p => p.onDragEnd?.(end("BBB", null)));
-        await drag(p => p.onDragStart?.(start("BBB")));
-        await drag(p => p.onDragEnd?.(end("BBB", "BBB")));
-        await drag(p => p.onDragStart?.(start("CCC")));
-        await drag(p => p.onDragCancel?.({ active: { id: "CCC" }, over: null } as unknown as DragCancelEvent));
+        await drag(p => p.onDragStart?.(start(K_B)));
+        await drag(p => p.onDragEnd?.(end(K_B, null)));
+        await drag(p => p.onDragStart?.(start(K_B)));
+        await drag(p => p.onDragEnd?.(end(K_B, K_B)));
+        await drag(p => p.onDragStart?.(start(K_C)));
+        await drag(p => p.onDragCancel?.({ active: { id: K_C }, over: null } as unknown as DragCancelEvent));
         await flush();
 
         expect(callsTo("/api/config/reorder", "POST")).toBe(0);
-        expect(column(1)).toEqual(["AAA", "BBB", "CCC"]);
+        expect(column(1)).toEqual([N_A, N_B, N_C]);
 
         server.lawyers = [...server.lawyers].reverse();
         await refetch("lawyers");
-        expect(column(1)).toEqual(["CCC", "BBB", "AAA"]);
+        expect(column(1)).toEqual([N_C, N_B, N_A]);
     });
 
     it("e-posta alıcıları: kayıt önbelleği yenilemese de kaydedilen sıra ekranda kalır", async () => {

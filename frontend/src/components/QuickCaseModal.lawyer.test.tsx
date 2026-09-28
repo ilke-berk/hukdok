@@ -2,7 +2,7 @@
 // G222: QuickCaseModal "Avukat" alanı düz Select değil LawyerCombobox (tekli). Gerçek
 // Radix Popover + cmdk (düzleştirilmez) — yazarak arama, seçim ve değer sözleşmesi:
 // seçilen avukat ADI string'i `responsible_lawyer_name` olarak aynen gönderilir;
-// prefill avukat_kodu → config'teki tam ad eşlemesi korunur.
+// prefill'de avukat kodu yok sayılır (G229: avukat kodu arayüzden kalktı).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -151,9 +151,12 @@ describe("QuickCaseModal — avukat LawyerCombobox (G222)", () => {
     expect(rozetler()).toEqual(["Dış"]);
   });
 
-  it("prefill avukat_kodu config'teki tam ada eşlenir ve tetikleyicide görünür", async () => {
+  // G229 (27.09 test taşıma izni): eski "avukat_kodu → tam ad" ön-doldurması kalktı; kod gelse
+  // bile avukat seçilmez, alan "Seçiniz" kalır (avukat kodu arayüzden tümüyle çıktı).
+  it("prefill'deki eski avukat_kodu yok sayılır; avukat alanı boş kalır", async () => {
     render({ avukat_kodu: "AA" });
-    await waitFor(() => trigger()?.textContent === "Av. Ali Ak", "prefill avukat adı");
+    await waitFor(lawyersLoaded, "avukat listesi geldi");
+    expect(trigger()!.textContent).toBe("Seçiniz");
   });
 
   it("seçilen avukat ADI responsible_lawyer_name olarak gönderilir (payload sözleşmesi aynı)", async () => {

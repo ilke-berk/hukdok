@@ -63,7 +63,6 @@ interface QuickCaseModalProps {
         muvekkiller?: string[];
         muvekkil_adi?: string;
         karsi_taraf?: string;
-        avukat_kodu?: string;
         court?: string;
         tarih?: string;
     };
@@ -140,7 +139,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const [courtDaireNo, setCourtDaireNo] = useState(""); // Daire/sıra no (1-20)
     const [fileType, setFileType] = useState("Hukuk");
     const [subType, setSubType] = useState("");
-    const [lawyer, setLawyer] = useState(prefill?.avukat_kodu || "");
+    const [lawyer, setLawyer] = useState("");
     const [openingDate, setOpeningDate] = useState("");;
 
     // Müvekkil isimlerini akıllı birleştirme: hem muvekkil_adi hem de muvekkiller listesini kullan
@@ -199,16 +198,8 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             setConsultTypoHints([]);
             setTcByName({});
 
-            // avukat_kodu (örn. "AGH") → lawyers listesinden tam adı bul (örn. "Av. Ayşe Gül Hanyaloğlu")
-            if (prefill?.avukat_kodu && lawyers.length > 0) {
-                const matched = lawyers.find(l =>
-                    l.code === prefill.avukat_kodu ||
-                    l.name === prefill.avukat_kodu
-                );
-                setLawyer(matched ? matched.name : prefill.avukat_kodu);
-            } else {
-                setLawyer("");
-            }
+            // G229: avukat kodla ön-doldurulmaz (tüketicisiz ölü prefill kalktı) — kullanıcı seçer.
+            setLawyer("");
 
             // Db'deki mevcut müvekkil isimlerini cache'den al
             setExistingClientsData(clients);
