@@ -33,6 +33,7 @@ import CaseNotesPanel from "@/components/CaseNotesPanel";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
+import { FILTRE_TUMU, evrakFiltreCipleri, evrakFiltreUygula } from "@/lib/evrakFiltresi";
 
 // Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
 // Temyiz/istinaf durum değil aşamadır — CaseTrackingPanel gösterir.
@@ -373,6 +374,8 @@ const CaseDetails = () => {
     // Belge soft-delete diyaloğu — gerekçe zorunlu (min 3), dava silme kalıbıyla birebir
     const [deleteDoc, setDeleteDoc] = useState<NonNullable<CaseDetailsData["documents"]>[number] | null>(null);
     const [deleteDocReason, setDeleteDocReason] = useState("");
+    // Evrak Listesi belge türü süzgeci (FILTRE_TUMU | FILTRE_KARARLAR | tür anahtarı)
+    const [evrakFiltre, setEvrakFiltre] = useState(FILTRE_TUMU);
 
     const handleResendConfirm = async (
         to: string[],
@@ -1021,9 +1024,13 @@ const CaseDetails = () => {
                             </CardHeader>
                             <CardContent>
                                 {caseData.documents && caseData.documents.length > 0 ? (() => {
+                                    // Tür süzgeci: çipler davadaki türlerden; seçili tür artık yoksa (silme) Tümü'ne düşer
+                                    const cipler = evrakFiltreCipleri(caseData.documents!);
+                                    const aktifFiltre = cipler.some(c => c.anahtar === evrakFiltre) ? evrakFiltre : FILTRE_TUMU;
+                                    const gorunen = evrakFiltreUygula(caseData.documents!, aktifFiltre);
                                     // Belgeleri grupla: null → dava geneli, dolu → müvekkile ait
-                                    const caseWide = caseData.documents!.filter(d => d.case_party_id == null);
-                                    const byParty = caseData.documents!.reduce<Record<string, { name: string; docs: typeof caseData.documents }>>((acc, d) => {
+                                    const caseWide = gorunen.filter(d => d.case_party_id == null);
+                                    const byParty = gorunen.reduce<Record<string, { name: string; docs: typeof caseData.documents }>>((acc, d) => {
                                         if (d.case_party_id == null) return acc;
                                         const key = String(d.case_party_id);
                                         if (!acc[key]) acc[key] = { name: d.case_party_name || `Taraf #${key}`, docs: [] };
@@ -1035,6 +1042,28 @@ const CaseDetails = () => {
 
                                     return (
                                         <div className="space-y-6">
+                                            {cipler.length > 2 && (
+                                                <div role="group" aria-label="Belge türüne göre süz" className="flex flex-wrap gap-2">
+                                                    {cipler.map(c => {
+                                                        const secili = c.anahtar === aktifFiltre;
+                                                        return (
+                                                            <button
+                                                                key={c.anahtar}
+                                                                type="button"
+                                                                aria-pressed={secili}
+                                                                onClick={() => setEvrakFiltre(c.anahtar)}
+                                                                className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs transition-colors ${secili
+                                                                    ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                                                                    : "border-[var(--border)] text-muted-foreground hover:text-foreground hover:border-[var(--fg-subtle)]"}`}
+                                                            >
+                                                                {c.etiket}
+                                                                <span className="tabular-nums opacity-70">{c.sayi}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
                                             {/* Grup 1: Tüm davayı ilgilendiren belgeler */}
                                             {caseWide.length > 0 && (
                                                 <div className="space-y-2">
