@@ -16,6 +16,8 @@ katman: tip tablosu (`TIP_OPLARI`) + kolonun alt kümesi (`Kolon.oplar`).
 G141: `in` listesindeki `null` öğesi "(boş)" demektir → `IN (...) OR IS NULL`
 (yalnız `[null]` = `IS NULL`); `secilebilir=False` kolon (sanal `arama`)
 kolon listesine ve sıralamaya giremez (422), yalnız filtre.
+28.09: çok değerli kolonda (`Kolon.coklu_deger`, " ; " ayraçlı) `eq`/`ne`/`in` TAM ÖĞE eşler
+(`_coklu_kosulu`: `' ; ' || hücre || ' ; '` ILIKE `'% ; öğe ; %'`, kaçışlı); diğer op'lar düz atomdur.
 
 Serileştirme (plan §2.4): tarih/zaman ISO 8601 string, Decimal → float (JSON
 number), bool olduğu gibi, NULL → null.
@@ -27,7 +29,7 @@ import os
 from decimal import Decimal
 from typing import Any, Iterator, Optional
 
-from sqlalchemy import Date, Select, String, and_, cast, func, or_, select
+from sqlalchemy import Date, Select, String, and_, cast, func, literal, or_, select
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.functions import FunctionElement
@@ -331,15 +333,41 @@ def _ifade_kosulu(ifade: Any, op: str, deger: Any, metin: bool = False):
     raise ValueError(f"tanınmayan operatör: {op}")     # pragma: no cover — TIP_OPLARI eler
 
 
+def _oge_kosulu(ifade: Any, oge: str):
+    """Çok değerli hücrede `oge` TAM öğe olarak geçiyor mu: `' ; ' || hücre || ' ; '` ILIKE `'% ; oge ; %'`
+    (ayraç `registry.AYRAC` = `multi_value.SEPARATOR`; büyük/küçük harf duyarsız, `%`/`_` kaçışlı)."""
+    ayrac = registry.AYRAC
+    return (literal(ayrac) + ifade + literal(ayrac)).ilike(
+        f"%{ayrac}{_ilike_kacis(oge)}{ayrac}%", escape=_ILIKE_KACIS,
+    )
+
+
+def _coklu_kosulu(ifade: Any, op: str, deger: Any, metin: bool = True):
+    """Çok değerli kolonun atom koşulu (28.09): `eq`/`ne`/`in` tam öğe; `in`'deki `null` "(boş)";
+    `ne` boş hücreyi de alır (`_ifade_kosulu` ile aynı anlam). Diğer op'lar (`contains`, boşluk) düz atom."""
+    if op == "eq":
+        return _oge_kosulu(ifade, deger)
+    if op == "ne":
+        return or_(~_oge_kosulu(ifade, deger), _bos(ifade, True))
+    if op == "in":
+        dolu = [d for d in deger if d is not None]
+        kosul = or_(*(_oge_kosulu(ifade, d) for d in dolu)) if dolu else None
+        if len(dolu) == len(deger):
+            return kosul
+        return _bos(ifade, True) if kosul is None else or_(kosul, _bos(ifade, True))
+    return _ifade_kosulu(ifade, op, deger, metin)
+
+
 def _kosul(kolon: Kolon, filtre: Filtre, deger: Any):
     op = filtre.op
+    atom = _coklu_kosulu if kolon.coklu_deger else _ifade_kosulu
     if kolon.filtre_ifadesi is not None:
         # Türetilmiş + filtrelenebilir (plan §4.2): registry EXISTS'i kurar, atom koşulu buradan alır
-        return kolon.filtre_ifadesi(op, deger, _ifade_kosulu)
+        return kolon.filtre_ifadesi(op, deger, atom)
     if kolon.tip == "tarih" and op not in DEGERSIZ_OPLAR:
         return _tarih_kosulu(kolon, op, deger)
     # Metin/liste kolonda "boş" = NULL ya da boş string (katalog `bos_sayisi` ile aynı anlam)
-    return _ifade_kosulu(kolon.ifade, op, deger, metin=kolon.tip in ("metin", "liste"))
+    return atom(kolon.ifade, op, deger, metin=kolon.tip in ("metin", "liste"))
 
 
 def sorgu_kur(tanim: RaporTanimi, tenant_id: str) -> Select:

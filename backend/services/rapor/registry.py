@@ -202,6 +202,10 @@ class Kolon:
     aciklama: Optional[str] = None
     # G166: bağlı kaynak kolonu — ilişki anahtarı (`muvekkil.phone` → "muvekkil"); düz kolonda None.
     bag: Optional[str] = None
+    # 28.09: çok değerli metin (G124, `services/multi_value.py`, " ; " ayraçlı). Katalogda seçenekler = havuz
+    # tablosu (`secenek_tablosu`, aktif) ∪ verideki ÖĞELER (kart sayılı); motorda `eq`/`ne`/`in` TAM ÖĞE
+    # eşler ("Cerrahi" "Cerrahi Uygulama"yı getirmez), `contains` hücre içinde parça arar.
+    coklu_deger: bool = False
 
     @property
     def oplar(self) -> tuple[str, ...]:
@@ -297,6 +301,11 @@ def _kolon(model, anahtar: str, etiket: str, *, liste: tuple[str, ...] | None = 
                      secenek_tablosu=secenek_tablosu, secenek_etiketleri=secenek_etiketleri)
     return Kolon(anahtar, etiket, tip or bulunan, col, zaman_damgali=zaman, onerili=onerili or veriden_liste,
                  veriden_liste=veriden_liste, secenek_etiketleri=secenek_etiketleri)
+
+
+def _coklu(model, anahtar: str, etiket: str, havuz: Any) -> Kolon:
+    """Çok değerli metin kolonu (28.09): seçenekler havuz tablosu + verideki öğeler, filtre tam öğe."""
+    return replace(_kolon(model, anahtar, etiket), coklu_deger=True, secenek_tablosu=havuz)
 
 
 def _turetilmis(anahtar: str, etiket: str, tip: str, ifade, *, filtrelenebilir: bool = False,
@@ -468,8 +477,8 @@ def _bagli_kolon(iliski: Iliski, k: Kolon) -> Kolon:
         turetilmis=True, secenekler=k.secenekler, secenek_tablosu=k.secenek_tablosu,
         secenek_ifadesi=k.ifade if k.tip == "liste" else None, zaman_damgali=k.zaman_damgali,
         onerili=onerili, filtre_ifadesi=_bagli_filtre(iliski, k),
-        oneri_sorgusu=_hedef_onerileri(iliski, k) if onerili else None,
-        secenek_etiketleri=k.secenek_etiketleri, bag=iliski.anahtar,
+        oneri_sorgusu=_hedef_onerileri(iliski, k) if onerili or k.coklu_deger else None,
+        secenek_etiketleri=k.secenek_etiketleri, bag=iliski.anahtar, coklu_deger=k.coklu_deger,
     )
 
 
@@ -781,12 +790,13 @@ _DAVA_KOLONLARI: list[Kolon] = [
     ),
     *_grup(
         "Tıbbi",
-        # Tıbbi beşli: ÇOK DEĞERLİ metin (" ; " ayraçlı, G124) → liste DEĞİL, `contains` ile aranır.
-        _kolon(_C, "tibbi_surec", "Tıbbi Süreç"),
-        _kolon(_C, "tibbi_olay", "Tıbbi Olay"),
-        _kolon(_C, "iddia_edilen_kusur", "İddia Edilen Kusur"),
-        _kolon(_C, "hastada_olusan_zarar", "Hastada Oluşan Zarar"),
-        _kolon(_C, "uygulanan_yontem", "Uygulanan Yöntem"),
+        # Tıbbi beşli: ÇOK DEĞERLİ metin (" ; " ayraçlı, G124) → 28.09'dan beri seçenekli (`_coklu`):
+        # havuz tablosu + verideki öğeler; eq/in tam öğe, contains parça.
+        _coklu(_C, "tibbi_surec", "Tıbbi Süreç", models.MedicalProcess),
+        _coklu(_C, "tibbi_olay", "Tıbbi Olay", models.MedicalEvent),
+        _coklu(_C, "iddia_edilen_kusur", "İddia Edilen Kusur", models.AllegedFault),
+        _coklu(_C, "hastada_olusan_zarar", "Hastada Oluşan Zarar", models.PatientHarm),
+        _coklu(_C, "uygulanan_yontem", "Uygulanan Yöntem", models.AppliedMethod),
     ),
     *_grup(
         "Aktarım",
@@ -1226,6 +1236,14 @@ def _kolonu_denetle(kaynak: VeriKaynagi, kolon: Kolon) -> None:
         # Eşik üstü yedeği G137 önerileri: `onerili` şart; türetilmişte GROUP BY ifadesi tanımsız
         if kolon.tip != "metin" or kolon.turetilmis or not kolon.onerili:
             raise ValueError(f"{ad}: veriden liste yalnız düz, önerili metin kolonda")
+    if kolon.coklu_deger:
+        # Seçenek kaynağı: düz/tekil bağda havuz tablosu (+ veri), çoklu bağda hedefin DISTINCT sorgusu
+        if kolon.tip != "metin" or not kolon.filtrelenebilir or kolon.veriden_liste:
+            raise ValueError(f"{ad}: çok değerli yalnız filtrelenebilir, veriden listesiz metin kolonda")
+        if kolon.turetilmis and kolon.oneri_sorgusu is None:
+            raise ValueError(f"{ad}: çok değerli türetilmiş kolonun oneri_sorgusu yok")
+        if not kolon.turetilmis and kolon.secenek_tablosu is None:
+            raise ValueError(f"{ad}: çok değerli düz kolonun havuz tablosu yok")
     if kolon.secenek_etiketleri is not None and kolon.tip != "liste" and not kolon.veriden_liste:
         raise ValueError(f"{ad}: seçenek etiketleri yalnız seçenekli kolonda")
     if not kolon.secilebilir:
@@ -1504,6 +1522,46 @@ def veriden_secenekleri_getir(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Se
     return [deger for deger, _sayi in ciftler]
 
 
+def coklu_deger_secenekleri(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session],
+                            tenant_id: str) -> Optional[list[tuple[str, Optional[int]]]]:
+    """Çok değerli kolonun (28.09) seçenekleri `[(öğe, kart sayısı)]`: havuz tablosunun aktif adları ∪
+    verideki hücrelerin öğeleri (`multi_value.split_values`; bir hücrede aynı öğe bir kez). Düz/tekil bağlı
+    kolonda sayı kaynağın tenant + soft-delete kuralıyla hücre `GROUP BY`ından (tek sorgu, ham hücre sayısı
+    küçüktür); çoklu bağda hedef kaynağın DISTINCT hücrelerinden, sayı `None` (G145 türetilmiş liste gibi).
+    Büyük/küçük harf farkı tek öğe sayılır (filtre ILIKE eşler), havuz yazımı kazanır. Sıra: sayı azalan,
+    eşitlikte Türk alfabesi. İşaretsiz kolonda ya da `db` yoksa `None`."""
+    if not kolon.coklu_deger or db is None:
+        return None
+    from services.multi_value import split_values
+
+    yazim: dict[str, str] = {}          # casefold → gösterilen yazım
+    sayilar: dict[str, int] = {}
+    if kolon.secenek_tablosu is not None:
+        T = kolon.secenek_tablosu
+        for ad in db.execute(select(T.name).where(T.active.is_(True)).order_by(T.sequence, T.id)).scalars():
+            if ad and str(ad).strip():
+                yazim.setdefault(str(ad).strip().casefold(), str(ad).strip())
+    sayili = kolon.oneri_sorgusu is None
+    satirlar: list[tuple[Any, int]]
+    if sayili:
+        ifade = kolon.ifade
+        satirlar = [(h, int(n)) for h, n in db.execute(
+            select(ifade, func.count()).select_from(kaynak.from_clause)
+            .where(and_(*kaynak.kisitlar(tenant_id), ifade.isnot(None), ifade != "")).group_by(ifade)
+        ).all()]
+    else:
+        assert kolon.oneri_sorgusu is not None
+        satirlar = [(h, 0) for h in db.execute(kolon.oneri_sorgusu(tenant_id)).scalars()]
+    for hucre, sayi in satirlar:
+        for oge in split_values(hucre):
+            anahtar = oge.casefold()
+            yazim.setdefault(anahtar, oge)
+            sayilar[anahtar] = sayilar.get(anahtar, 0) + int(sayi)
+    ciftler = [(ad, sayilar.get(anahtar, 0)) for anahtar, ad in yazim.items()]
+    ciftler.sort(key=lambda c: (-c[1], tr_sira_anahtari(c[0])))
+    return [(ad, sayi if sayili else None) for ad, sayi in ciftler]
+
+
 def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], tenant_id: str,
                     bos_sayilari_kaynak: Optional[Mapping[str, int]] = None,
                     liste_sayilari_kaynak: Optional[Mapping[str, Mapping[str, int]]] = None) -> dict[str, Any]:
@@ -1520,6 +1578,13 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         veri_sayilari = liste_sayilari_kaynak.get(kolon.anahtar, {}) if liste_sayilari_kaynak is not None else None
         secenekler, secenek_sayilari = secenekleri_sayili_getir(kaynak, kolon, db, tenant_id, veri_sayilari)
         secenek_kaynagi = "sabit"
+    elif kolon.coklu_deger:
+        coklu = coklu_deger_secenekleri(kaynak, kolon, db, tenant_id)
+        if coklu:                                  # hiç öğe yoksa (boş havuz + boş veri) metin kutusu kalır
+            secenekler = [d for d, _n in coklu]
+            if kolon.oneri_sorgusu is None:        # çoklu bağda (hedef DISTINCT'i) sayı yok → None
+                secenek_sayilari = {d: int(n or 0) for d, n in coklu}
+            secenek_kaynagi, kontrol = "veri", KONTROLLER["liste"]
     else:
         ciftler = veriden_secenekleri_getir(kaynak, kolon, db, tenant_id, sayili=True)
         if ciftler is not None:
@@ -1547,6 +1612,8 @@ def _kolon_katalogu(kaynak: VeriKaynagi, kolon: Kolon, db: Optional[Session], te
         "aciklama": kolon.aciklama,
         # G166: bağlı kaynak kolonu (ilişki anahtarı); düz kolonda null
         "bag": kolon.bag,
+        # 28.09: çok değerli (" ; " ayraçlı) — eq/in tam öğe, contains parça; asistan prompt'u sık öğelerle sınırlar
+        "coklu_deger": kolon.coklu_deger,
         # Kolon başına izinli op'lar (taraf kolonlarında tip tablosunun alt kümesi, ör. `eq` yok):
         # frontend combobox seçiminde `eq` mi `contains` mi göndereceğini buradan bilir (plan §4.3).
         "oplar": list(kolon.oplar) if kolon.filtrelenebilir else [],
