@@ -241,6 +241,25 @@ def kanonik_avukat_adi(raw_value):
     return (matched.get("name") or None) if matched else None
 
 
+def secimi_liste_adina_cevir(selected, lawyers=None):
+    """Filtre SEÇİMİNİ (kimlik · ad · eski kod) listedeki avukat adına çevirir; çözülemezse None.
+
+    Dava listesi filtresiyle (`_resolve_lawyer_aliases`) AYNI seçim sözleşmesi: önce
+    `_secimdeki_avukat` (kimlik harf duyarsız → normalize ad → eski kod), sonra toleranslı
+    ad çözümü (`kanonik_avukat_adi`, örn. "TUGCE UNGOR"). Eski kod YALNIZ seçim düzeyinde
+    1 sürüm geriye uyumludur (G231'de `_secimdeki_avukat`tan kalkınca burada da kalkar).
+    Pasif avukatın kimliği aktif listede yoktur → çağıran önce DB'den ada çevirir
+    (`case_manager._kimligi_ada_cevir`, G233)."""
+    secim = (selected or "").strip()
+    if not secim:
+        return None
+    liste = _liste() if lawyers is None else lawyers
+    hedef = _secimdeki_avukat(secim, liste)
+    if hedef is not None and hedef.get("name"):
+        return hedef.get("name")
+    return kanonik_avukat_adi(secim)
+
+
 def kanonik_avukat_metni(raw_value, ayirici: str = ";"):
     """Tek ya da çoklu avukat metnini parça parça listedeki yazıma indirir (toleranslı).
 

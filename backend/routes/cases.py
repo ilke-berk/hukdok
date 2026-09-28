@@ -29,10 +29,10 @@ from schemas import (
 from database import SessionLocal
 from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
-    update_case_tracking, get_case_stage_log, find_duplicate_cases,
+    update_case_tracking, get_case_stage_log, find_duplicate_cases, _kimligi_ada_cevir,
 )
 from managers.lawyer_resolver import (
-    AvukatListedeYok, kanonik_avukat_adi, kanonik_avukat_metni, listede_olmayan_yeni_adlar,
+    AvukatListedeYok, kanonik_avukat_metni, listede_olmayan_yeni_adlar, secimi_liste_adina_cevir,
 )
 from managers.stage_decisions import get_stage_decisions
 from services import case_relations_auto
@@ -707,8 +707,12 @@ def get_hearing_dates(
         from sqlalchemy import or_
         q = db.query(models.HearingDate)
         if lawyer:
-            # 27.09: seçilen ad/kod listedeki yazıma çözülür (kayıtlar da o yazımla durur).
-            q = q.filter(models.HearingDate.lawyer_name == (kanonik_avukat_adi(lawyer) or lawyer))
+            # G233: seçim (kimlik · ad · eski kod — G231'de kalkar) dava listesi filtresiyle
+            # AYNI yoldan listedeki yazıma çözülür (kayıtlar da o yazımla durur); pasif
+            # avukatın kimliği önce DB'den adına iner (G225). Bilinmeyen değer aynen
+            # karşılaştırılır → boş liste.
+            secim = _kimligi_ada_cevir(db, lawyer)
+            q = q.filter(models.HearingDate.lawyer_name == (secimi_liste_adina_cevir(secim) or secim))
         rows = (
             q.outerjoin(models.Case, models.HearingDate.case_id == models.Case.id)
             .filter(or_(models.Case.tenant_id == tenant_id, models.Case.tenant_id.is_(None)))
