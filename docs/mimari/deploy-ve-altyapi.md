@@ -325,8 +325,10 @@ deploy/rollback scriptleri, `docker compose down -v`, `git reset --hard`.
 
 ## 11. Konteyner nginx güvenlik başlıkları (G091)
 
-Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:53-56`): `X-Frame-Options`,
-`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ve **zorlayıcı
+Konteyner nginx beş güvenlik başlığı gönderir (`nginx.conf:56-59`): `X-Frame-Options`,
+`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` (kamera/konum kapalı, **mikrofon yalnız kendi
+origin'imize açık** `microphone=(self)` — sesli giriş G217; `microphone=()` tarayıcıya sormadan reddettiriyordu,
+28.09; bekçi `backend/tests/test_nginx_permissions_policy.py`) ve **zorlayıcı
 `Content-Security-Policy`** (`nginx.conf:70`, G101). Beşi de `always` ile biter, yani hata
 yanıtlarında (413/429/5xx) da gider. `Content-Security-Policy-Report-Only` başlığı artık
 yoktur. G182'den beri beşi `/assets/` ve `/` location'larında AYNEN tekrar yazılıdır
