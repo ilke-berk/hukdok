@@ -44,6 +44,7 @@ vi.mock("@/lib/hukukbotApi", async (importOriginal) => {
 });
 
 import HukukbotPage from "./HukukbotPage";
+import { OdakModuContext } from "@/hooks/useOdakModu";
 import { HUKUKBOT_HIZ_MESAJI, HukukbotApiError, HukukbotHizSiniriError } from "@/lib/hukukbotApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,6 +102,13 @@ async function tikla(el: HTMLElement) {
     el.click();
   });
   await bekle();
+}
+
+/** Satır eylemleri "⋯" menüsündedir (28.09): önce o satırın menüsü açılır, sonra eylem tıklanır. */
+async function eylem(etiket: string) {
+  const baslik = etiket.slice(etiket.indexOf(": ") + 2);
+  await tikla(dugme(`Sohbet eylemleri: ${baslik}`));
+  await tikla(dugme(etiket));
 }
 
 const soruKutusu = () => kap.querySelector<HTMLTextAreaElement>("[data-testid='hukukbot-soru']")!;
@@ -161,6 +169,7 @@ function kontrolluAkis() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   confirmMock.fn.mockImplementation(async () => true);
   apiMock.oturumlariListele.mockResolvedValue(LISTE.map((o) => ({ ...o })));
   apiMock.oturumGuncelle.mockImplementation(async (id: string, d: Partial<HukukbotOturum>) => ({
@@ -191,12 +200,12 @@ describe("HukukbotPage — sohbet listesi", () => {
     await ciz();
     expect(basliklar()).toEqual(["Tazminat hesabı", "Kira tespit", "İş davası"]);
 
-    await tikla(dugme("Sabitle: İş davası"));
+    await eylem("Sabitle: İş davası");
     expect(apiMock.oturumGuncelle).toHaveBeenCalledWith("o-eski", { is_pinned: true });
     // İki sabit: en yeni (09-01) önce, sonra 08-01; ardından sabitsiz.
     expect(basliklar()).toEqual(["İş davası", "Tazminat hesabı", "Kira tespit"]);
 
-    await tikla(dugme("Sabitlemeyi kaldır: Tazminat hesabı"));
+    await eylem("Sabitlemeyi kaldır: Tazminat hesabı");
     expect(apiMock.oturumGuncelle).toHaveBeenCalledWith("o-sabit", { is_pinned: false });
     expect(basliklar()).toEqual(["İş davası", "Kira tespit", "Tazminat hesabı"]);
   });
@@ -204,7 +213,7 @@ describe("HukukbotPage — sohbet listesi", () => {
   it("sabitleme kaydedilemezse sıra geri döner ve hata bildirilir", async () => {
     apiMock.oturumGuncelle.mockRejectedValueOnce(new Error("ağ"));
     await ciz();
-    await tikla(dugme("Sabitle: Kira tespit"));
+    await eylem("Sabitle: Kira tespit");
     expect(basliklar()).toEqual(["Tazminat hesabı", "Kira tespit", "İş davası"]);
     expect(toastMocks.error).toHaveBeenCalled();
   });
@@ -212,13 +221,13 @@ describe("HukukbotPage — sohbet listesi", () => {
   it("silme ONAY ister: vazgeçilirse silinmez; onaylanırsa silinir", async () => {
     await ciz();
     confirmMock.fn.mockImplementationOnce(async () => false);
-    await tikla(dugme("Sil: Kira tespit"));
+    await eylem("Sil: Kira tespit");
     expect(confirmMock.fn).toHaveBeenCalledTimes(1);
     expect(confirmMock.fn.mock.calls[0][0]).toMatchObject({ tone: "destructive", irreversible: true });
     expect(apiMock.oturumSil).not.toHaveBeenCalled();
     expect(basliklar()).toContain("Kira tespit");
 
-    await tikla(dugme("Sil: Kira tespit"));
+    await eylem("Sil: Kira tespit");
     expect(apiMock.oturumSil).toHaveBeenCalledWith("o-yeni");
     expect(basliklar()).toEqual(["Tazminat hesabı", "İş davası"]);
     expect(toastMocks.success).toHaveBeenCalled();
@@ -226,7 +235,7 @@ describe("HukukbotPage — sohbet listesi", () => {
 
   it("başlık satır içinde düzenlenir, Enter kaydeder", async () => {
     await ciz();
-    await tikla(dugme("Başlığı düzenle: İş davası"));
+    await eylem("Başlığı düzenle: İş davası");
     const girdi = kap.querySelector<HTMLInputElement>("input[aria-label='Sohbet başlığı']")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => {
@@ -239,6 +248,75 @@ describe("HukukbotPage — sohbet listesi", () => {
     await bekle();
     expect(apiMock.oturumGuncelle).toHaveBeenCalledWith("o-eski", { title: "İşe iade davası" });
     expect(basliklar()).toContain("İşe iade davası");
+  });
+});
+
+describe("HukukbotPage — yeniden tasarım (28.09)", () => {
+  it("kabuğu odak moduna alır; ☰ HukuDok menüsünü açar; ayrılınca odak biter", async () => {
+    const setOdak = vi.fn();
+    const menuyuAc = vi.fn();
+    await act(async () => {
+      kok.render(
+        <OdakModuContext.Provider value={{ odak: true, setOdak, menuyuAc }}>
+          <MemoryRouter initialEntries={["/hukukbot"]}>
+            <HukukbotPage />
+          </MemoryRouter>
+        </OdakModuContext.Provider>,
+      );
+    });
+    await bekle();
+    expect(setOdak).toHaveBeenLastCalledWith(true);
+    const menuDugmeleri = Array.from(kap.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (b) => b.getAttribute("aria-label") === "HukuDok menüsünü aç",
+    );
+    expect(menuDugmeleri.length).toBeGreaterThan(0);
+    await tikla(menuDugmeleri[0]);
+    expect(menuyuAc).toHaveBeenCalledTimes(1);
+    act(() => kok.unmount());
+    expect(setOdak).toHaveBeenLastCalledWith(false);
+    kok = createRoot(kap);
+  });
+
+  it("geçmiş raya daralır, tercih saklanır ve yeniden açılışta korunur", async () => {
+    await ciz();
+    await tikla(dugme("Sohbet geçmişini daralt"));
+    expect(kap.querySelector("aside[aria-label='Sohbet listesi']")?.getAttribute("data-daraltilmis")).toBe("1");
+    expect(basliklar()).toEqual([]);
+    expect(window.localStorage.getItem("hukdok.hukukbot.gecmisDaraltilmis")).toBe("1");
+
+    act(() => kok.unmount());
+    kok = createRoot(kap);
+    await ciz();
+    expect(kap.querySelector("[data-testid='hukukbot-ray']")).not.toBeNull();
+    await tikla(dugme("Sohbet geçmişini aç"));
+    expect(basliklar()).toEqual(["Tazminat hesabı", "Kira tespit", "İş davası"]);
+    expect(window.localStorage.getItem("hukdok.hukukbot.gecmisDaraltilmis")).toBe("0");
+  });
+
+  it("liste araması başlıkta Türkçe harf duyarsız süzer; eşleşme yoksa bilgi verir", async () => {
+    await ciz();
+    const arama = kap.querySelector<HTMLInputElement>("[data-testid='hukukbot-oturum-arama']")!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    const ara = async (t: string) => {
+      await act(async () => {
+        setter.call(arama, t);
+        arama.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await ara("IS DAV");
+    expect(basliklar()).toEqual(["İş davası"]);
+    await ara("yok-böyle-bir-şey");
+    expect(basliklar()).toEqual([]);
+    expect(kap.querySelector("[data-testid='hukukbot-arama-bos']")).not.toBeNull();
+  });
+
+  it("örnek soru kutuyu doldurur ama GÖNDERMEZ", async () => {
+    await ciz();
+    const ornek = kap.querySelector<HTMLButtonElement>("[data-testid='hukukbot-ornekler'] button")!;
+    await tikla(ornek);
+    expect(soruKutusu().value).toBe(ornek.textContent);
+    expect(apiMock.oturumOlustur).not.toHaveBeenCalled();
+    expect(apiMock.ask).not.toHaveBeenCalled();
   });
 });
 

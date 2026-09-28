@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { BookOpen, Loader2, Menu, MessageSquare, Scale, X } from "lucide-react";
+import { BookOpen, History, Loader2, Menu, Scale } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useOdakModu } from "@/hooks/useOdakModu";
 import { HukukbotApiError, hukukbotApi } from "@/lib/hukukbotApi";
 import type { HukukbotKaynak, HukukbotOturumOzeti } from "@/types/hukukbot";
 import { OturumListesi } from "@/components/hukukbot/OturumListesi";
@@ -30,15 +31,18 @@ import {
  * `/hukukbot` (G205, karar 021) — Hukukbot sohbeti HukuDok kabuğu içinde. Eski hukbot arayüzü yalnız
  * İŞLEV referansıdır; giriş/MSAL/profil kabuktan gelir, Hukukbot'a tek yol `lib/hukukbotApi.ts` (G204).
  *
- * - Sol: sohbet listesi (sabitlenenler üstte; yeni / başlık düzenle / sabitle / ONAYLI sil). 768 px altında
- *   liste çekmeceye döner (375 px'te yatay kaydırma yok).
+ * - Odak modu (28.09 yeniden tasarım, `useOdakModu`): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir. HukuDok
+ *   menüsü geçmiş panelinin üst satırındaki ☰ ile açılır ve panelin ÜSTÜNE biner (kenar hover'ı bu sayfada kapalı).
+ * - Sol: sohbet listesi (`OturumListesi`: arama, sabitlenenler + tarih grupları, "⋯" menüsünde başlık düzenle /
+ *   sabitle / ONAYLI sil). Masaüstünde 48 px raya daraltılabilir (tercih `localStorage`). 768 px altında
+ *   liste çekmeceye döner (375 px'te yatay kaydırma yok); ☰ ve liste düğmesi sohbet başlığındadır.
  * - Orta: mesajlar; yanıt `/ask` NDJSON akışından parça parça yazılır, "Durdur" AbortSignal ile keser.
  * - Sağ (28.09): kaynak paneli (`KaynakPaneli`) — kaynak kartları metnin altında değil burada. xl (1280 px) ve
  *   üstünde sohbetin yanında sabit sütun ve açık başlar; altında sağdan çekmece, kapalı başlar. Başlıktaki
  *   "Kaynaklar" düğmesi açar/kapatır. Panel son kaynaklı cevabı gösterir; bir cevabın atıf rozeti ya da
  *   "Kaynaklar · N" düğmesi paneli o cevaba çevirir (rozet o kartı vurgular). Yeni soru/sohbet seçimi sıfırlar.
  *   Mesajlar ve yazı kutusu ortalanmış tek okuma sütununda (`OKUMA_SUTUNU`). Boş sohbette kutu karşılamanın
- *   hemen altında, ilk sorudan sonra dipte. Akış yalnız kullanıcı zaten dipteyse aşağı kaydırır — yukarı
+ *   hemen altında (altında örnek soru çipleri — kutuyu doldurur, GÖNDERMEZ), ilk sorudan sonra dipte. Akış yalnız kullanıcı zaten dipteyse aşağı kaydırır — yukarı
  *   kaydırıp okurken sayfa onu dibe çekmez (`dipteRef`); kendi sorusunu gönderince dibe yapışır.
  * - Seçili sohbet URL'de: `/hukukbot?s=<id>` → yenilemede aynı sohbet açılır. Yeni sohbette ilk soru
  *   gönderilmeden önce oturum `POST /sessions` ile açılır (akış oturum kimliği döndürmez) ve URL'ye yazılır.
@@ -51,9 +55,28 @@ const genisEkran = () => typeof window.matchMedia !== "function" || window.match
 /** Mesajlar ve yazı kutusunun ortak okuma sütunu — geniş ekranda satırlar uzamasın. */
 const OKUMA_SUTUNU = "mx-auto w-full max-w-3xl";
 
+/** Boş sohbet örnekleri — tıklayınca kutuya düşer, gönderilmez. */
+const ORNEK_SORULAR = [
+  "Tıbbi malpraktis davalarında zamanaşımı süresi nedir?",
+  "Hekimin aydınlatma yükümlülüğüne ilişkin Yargıtay kararlarını özetle",
+  "İstinaf başvuru süresi nasıl hesaplanır?",
+  "Manevi tazminat miktarı belirlenirken hangi ölçütlere bakılır?",
+];
+
+/** Geçmiş panelinin daraltılmış olması — kişisel tercih, yalnız bu tarayıcıda. */
+const GECMIS_DARALT_ANAHTARI = "hukdok.hukukbot.gecmisDaraltilmis";
+const gecmisDaraltilmisOku = () => {
+  try {
+    return window.localStorage.getItem(GECMIS_DARALT_ANAHTARI) === "1";
+  } catch {
+    return false;
+  }
+};
+
 export default function HukukbotPage() {
   useSetPageTitle("Hukukbot", ["Araçlar", "Hukukbot"]);
   const confirm = useConfirm();
+  const menuyuAc = useOdakModu();
   const [params, setParams] = useSearchParams();
   const seciliId = params.get("s") || null;
 
@@ -66,6 +89,8 @@ export default function HukukbotPage() {
   const [gonderiliyor, setGonderiliyor] = useState(false);
   const [inen, setInen] = useState<string | null>(null);
   const [cekmece, setCekmece] = useState(false);
+  const [gecmisDaraltilmis, setGecmisDaraltilmis] = useState(gecmisDaraltilmisOku);
+  const [ornekSoru, setOrnekSoru] = useState<{ metin: string; tik: number } | null>(null);
   // Sağdaki kaynak paneli (28.09): geniş ekranda açık başlar; hangi mesajın kaynakları (null = son kaynaklı cevap).
   const [kaynakPaneliAcik, setKaynakPaneliAcik] = useState(genisEkran);
   const [kaynakMesajId, setKaynakMesajId] = useState<string | null>(null);
@@ -158,6 +183,24 @@ export default function HukukbotPage() {
     document.addEventListener("keydown", tus);
     return () => document.removeEventListener("keydown", tus);
   }, [cekmece]);
+
+  const gecmisiDaraltAc = () => {
+    setGecmisDaraltilmis((onceki) => {
+      const yeni = !onceki;
+      try {
+        window.localStorage.setItem(GECMIS_DARALT_ANAHTARI, yeni ? "1" : "0");
+      } catch {
+        // depo engelli (gizli mod) — tercih yalnız bu oturumda kalır
+      }
+      return yeni;
+    });
+  };
+
+  /** Mobil çekmeceden menü: önce çekmece kapanır — menü ile liste aynı anda açık kalmaz. */
+  const menuyuAcCekmecedenCik = () => {
+    setCekmece(false);
+    menuyuAc();
+  };
 
   const akisiKes = () => {
     akisRef.current?.abort();
@@ -357,8 +400,9 @@ export default function HukukbotPage() {
     ? (oturumlar.find((o) => o.id === seciliId)?.title ?? "Sohbet")
     : YENI_SOHBET_BASLIGI;
 
-  const liste = (
+  const liste = (ek: Pick<Parameters<typeof OturumListesi>[0], "onMenu" | "onDaraltAc" | "onKapat" | "daraltilmis">) => (
     <OturumListesi
+      {...ek}
       oturumlar={oturumlar}
       seciliId={seciliId}
       yukleniyor={listeYukleniyor}
@@ -374,13 +418,14 @@ export default function HukukbotPage() {
   return (
     <div
       data-testid="hukukbot-sayfasi"
-      className="flex w-full min-w-0 h-[calc(100dvh-7.25rem)] min-h-[420px] border border-[var(--border)] bg-[var(--bg-elevated)] rounded-[3px] overflow-hidden"
+      className="flex w-full min-w-0 h-full min-h-0 bg-[var(--bg-elevated)] overflow-hidden"
     >
       <aside
         aria-label="Sohbet listesi"
-        className="hidden md:flex w-72 lg:w-80 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg)]"
+        data-daraltilmis={gecmisDaraltilmis ? "1" : "0"}
+        className={`hidden md:flex ${gecmisDaraltilmis ? "w-12" : "w-60"} shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg)]`}
       >
-        {liste}
+        {liste({ onMenu: menuyuAc, onDaraltAc: gecmisiDaraltAc, daraltilmis: gecmisDaraltilmis })}
       </aside>
 
       {cekmece && (
@@ -392,20 +437,7 @@ export default function HukukbotPage() {
           data-testid="hukukbot-cekmece"
         >
           <div className="w-[85vw] max-w-xs h-full flex flex-col bg-[var(--bg)] border-r border-[var(--border)] shadow-xl">
-            <div className="h-12 shrink-0 flex items-center justify-between px-3 border-b border-[var(--border)]">
-              <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
-                Sohbetler
-              </span>
-              <button
-                type="button"
-                aria-label="Sohbet listesini kapat"
-                onClick={() => setCekmece(false)}
-                className="w-8 h-8 grid place-items-center text-[var(--fg-subtle)] hover:text-[var(--brand)]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="flex-1 min-h-0">{liste}</div>
+            {liste({ onMenu: menuyuAcCekmecedenCik, onKapat: () => setCekmece(false) })}
           </div>
           <button
             type="button"
@@ -421,13 +453,20 @@ export default function HukukbotPage() {
         <header className="h-12 shrink-0 flex items-center gap-2 px-3 md:px-5 border-b border-[var(--border)]">
           <button
             type="button"
-            onClick={() => setCekmece(true)}
-            aria-label="Sohbet listesini aç"
+            onClick={menuyuAc}
+            aria-label="HukuDok menüsünü aç"
             className="md:hidden w-8 h-8 grid place-items-center rounded-[3px] border border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--brand)] hover:border-[var(--brand)] shrink-0"
           >
             <Menu className="w-4 h-4" />
           </button>
-          <MessageSquare className="hidden md:block w-4 h-4 text-[var(--brand)] shrink-0" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() => setCekmece(true)}
+            aria-label="Sohbet listesini aç"
+            className="md:hidden w-8 h-8 grid place-items-center rounded-[3px] border border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--brand)] hover:border-[var(--brand)] shrink-0"
+          >
+            <History className="w-4 h-4" />
+          </button>
           <h2 className="truncate text-[14px] font-medium text-[var(--fg)]" data-testid="hukukbot-aktif-baslik">
             {aktifBaslik}
           </h2>
@@ -475,10 +514,28 @@ export default function HukukbotPage() {
                   </div>
                   <h3 className="font-display text-[24px] font-medium text-[var(--fg)]">Hukukbot'a sorun</h3>
                   <p className="max-w-md text-[13px] leading-[1.6] text-[var(--fg-muted)]">
-                    Mevzuat ve içtihat sorularınızı yazın; yanıtın dayandığı kaynaklar cevabın altında listelenir.
+                    Mevzuat ve içtihat sorularınızı yazın; yanıtın dayandığı kaynaklar sağdaki panelde listelenir.
                   </p>
                   <div className="w-full mt-4 text-left">
-                    <SoruKutusu gonderiliyor={gonderiliyor} onGonder={gonder} onDurdur={akisiKes} autoFocus />
+                    <SoruKutusu
+                      gonderiliyor={gonderiliyor}
+                      onGonder={gonder}
+                      onDurdur={akisiKes}
+                      disMetin={ornekSoru}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="w-full grid sm:grid-cols-2 gap-2 mt-1" data-testid="hukukbot-ornekler">
+                    {ORNEK_SORULAR.map((ornek) => (
+                      <button
+                        key={ornek}
+                        type="button"
+                        onClick={() => setOrnekSoru({ metin: ornek, tik: Date.now() })}
+                        className="text-left px-3 py-2.5 rounded-[4px] border border-[var(--border)] bg-[var(--bg)] text-[12.5px] leading-[1.45] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:border-[var(--brand)] transition-colors"
+                      >
+                        {ornek}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>

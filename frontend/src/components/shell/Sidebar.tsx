@@ -45,9 +45,11 @@ const ARACLAR: NavItemDef[] = [
 type SidebarProps = {
   open: boolean;
   onClose: () => void;
+  /** Fare menüden çıkınca kapanır (varsayılan). Odak modunda false: menü dışarı tık / Esc ile kapanır. */
+  hoverIleKapan?: boolean;
 };
 
-export function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ open, onClose, hoverIleKapan = true }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { instance, accounts } = useMsal();
@@ -145,9 +147,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <aside
       aria-hidden={!open}
-      onMouseLeave={onClose}
+      onMouseLeave={hoverIleKapan ? onClose : undefined}
       className={[
-        "fixed left-0 top-0 h-full z-40 grid overflow-hidden",
+        // z-50: sayfa çekmecelerinin (z-40) ve odak modu perdesinin (z-[45]) üstünde.
+        "fixed left-0 top-0 h-full z-50 grid overflow-hidden",
         "w-[248px] pt-[22px] px-4 pb-4",
         "bg-[var(--bg-sunken)] border-r border-[var(--border)]",
         open ? "shadow-[0_12px_40px_-12px_rgba(0,0,0,0.35)]" : "",

@@ -18,6 +18,9 @@ import {
   BASLIK_UZUNLUGU,
   KAYIT_BULUNAMADI,
   YENI_SOHBET_BASLIGI,
+  oturumlariSuz,
+  tarihGrubu,
+  tariheGoreGrupla,
   baslikUret,
   ekranMesajlari,
   gecmisUret,
@@ -121,5 +124,45 @@ describe("hataMetni / iptalMi", () => {
     expect(iptalMi(new DOMException("x", "AbortError"))).toBe(true);
     expect(iptalMi(new Error("x"))).toBe(false);
     expect(iptalMi(null)).toBe(false);
+  });
+});
+
+describe("tarih grupları ve liste araması (28.09)", () => {
+  // Yerel saatle kurulur: gruplar saat farkına değil TAKVİM gününe bakar.
+  const simdi = new Date(2026, 8, 28, 9, 0);
+  const yerel = (g: number, s = 12) => new Date(2026, 8, g, s, 0).toISOString();
+  const oz = (id: string, created_at: string, extra: Partial<HukukbotOturumOzeti> = {}): HukukbotOturumOzeti => ({
+    id,
+    title: id,
+    created_at,
+    is_pinned: false,
+    preview: null,
+    ...extra,
+  });
+
+  it("takvim gününe göre gruplar; bozuk tarih en eskiye düşer", () => {
+    expect(tarihGrubu(yerel(28, 0), simdi)).toBe("Bugün");
+    expect(tarihGrubu(yerel(27, 23), simdi)).toBe("Dün");
+    expect(tarihGrubu(yerel(22), simdi)).toBe("Son 7 gün");
+    expect(tarihGrubu(yerel(1), simdi)).toBe("Son 30 gün");
+    expect(tarihGrubu(new Date(2026, 5, 1).toISOString(), simdi)).toBe("Daha eski");
+    expect(tarihGrubu("bozuk", simdi)).toBe("Daha eski");
+  });
+
+  it("gruplar sabit sırada, boş grup yok, grup içi sıra korunur", () => {
+    const g = tariheGoreGrupla([oz("a", yerel(28)), oz("b", yerel(20)), oz("c", yerel(28, 1)), oz("d", "bozuk")], simdi);
+    expect(g.map((x) => x.grup)).toEqual(["Bugün", "Son 30 gün", "Daha eski"]);
+    expect(g[0].oturumlar.map((o) => o.id)).toEqual(["a", "c"]);
+  });
+
+  it("arama başlık + önizlemede, Türkçe harf/aksan duyarsız; boş terim hepsini döndürür", () => {
+    const liste = [
+      oz("1", yerel(28), { title: "İşe iade" }),
+      oz("2", yerel(28), { title: "Kira", preview: "Kıdem tazminatı hesabı" }),
+      oz("3", yerel(28), { title: "Tebligat" }),
+    ];
+    expect(oturumlariSuz(liste, "ise").map((o) => o.id)).toEqual(["1"]);
+    expect(oturumlariSuz(liste, "KIDEM").map((o) => o.id)).toEqual(["2"]);
+    expect(oturumlariSuz(liste, "  ")).toHaveLength(3);
   });
 });

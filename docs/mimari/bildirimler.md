@@ -14,7 +14,7 @@ sistemin parçası değildir (kullanıcı kararı 20.08.2026). Tarihli ölçüml
 | Alıcı çözümü | `services/notification_targeting.py` | Serbest metin sorumlu avukat → ofis e-postası; kopya alıcılar; nihai küme |
 | Gece tarayıcısı | `services/deadline_scanner.scan_deadlines` | 06:00 TR, yalnız lider worker; boot telafisi `boot_catch_up_scan` |
 | Okuma uçları | `routes/notifications.py` | `/api/notifications`, `/count`, `/read-all`, `/{id}/read`; idari `/overview`, `/unresolved-targets` |
-| Arayüz | `hooks/useNotifications.ts`, `components/notifications/*`, `shell/Topbar.tsx` | 60 sn'de bir yenileme (`NOTIFICATION_POLL_MS`), sekme gizliyken durur |
+| Arayüz | `hooks/useNotifications.ts`, `components/notifications/*`, `shell/Topbar.tsx` | 60 sn'de bir yenileme (`NOTIFICATION_POLL_MS`), sekme gizliyken durur. Odak modundaki sayfada (`/hukukbot`, `hooks/useOdakModu.ts`) Topbar ve zil çizilmez |
 
 ## 2. Üreticiler
 

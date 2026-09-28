@@ -76,6 +76,50 @@ export function oturumlariSirala(oturumlar: HukukbotOturumOzeti[]): HukukbotOtur
   });
 }
 
+export type TarihGrubu = "Bugün" | "Dün" | "Son 7 gün" | "Son 30 gün" | "Daha eski";
+const TARIH_GRUPLARI: TarihGrubu[] = ["Bugün", "Dün", "Son 7 gün", "Son 30 gün", "Daha eski"];
+
+/** Yerel takvim gününe göre grup (saat farkı değil gün farkı: dün 23:59 "Dün"dür). Tarihi bozuk → "Daha eski". */
+export function tarihGrubu(iso: string, simdi: Date = new Date()): TarihGrubu {
+  const t = zaman(iso);
+  if (!t) return "Daha eski";
+  const gunBasi = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const fark = Math.round((gunBasi(simdi) - gunBasi(new Date(t))) / 86_400_000);
+  if (fark <= 0) return "Bugün";
+  if (fark === 1) return "Dün";
+  if (fark < 7) return "Son 7 gün";
+  if (fark < 30) return "Son 30 gün";
+  return "Daha eski";
+}
+
+/**
+ * Sabitlenmemiş sohbetleri tarih gruplarına böler (sıra korunur; boş grup dönmez).
+ * Girdi `oturumlariSirala` sırasındadır — gruplar da böylece yeniden eskiye akar.
+ */
+export function tariheGoreGrupla(
+  oturumlar: HukukbotOturumOzeti[],
+  simdi: Date = new Date(),
+): { grup: TarihGrubu; oturumlar: HukukbotOturumOzeti[] }[] {
+  const kovalar = new Map<TarihGrubu, HukukbotOturumOzeti[]>();
+  for (const o of oturumlar) {
+    const g = tarihGrubu(o.created_at, simdi);
+    kovalar.set(g, [...(kovalar.get(g) ?? []), o]);
+  }
+  return TARIH_GRUPLARI.filter((g) => kovalar.has(g)).map((g) => ({ grup: g, oturumlar: kovalar.get(g)! }));
+}
+
+/** Türkçe büyük/küçük harf ve aksandan bağımsız karşılaştırma anahtarı ("İŞ" ~ "iş" ~ "is"). */
+function aramaAnahtari(metin: string): string {
+  return metin.toLocaleLowerCase("tr-TR").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i");
+}
+
+/** Sohbet listesi araması: başlık ya da son soru önizlemesi terimi içeriyorsa kalır (boş terim = hepsi). */
+export function oturumlariSuz(oturumlar: HukukbotOturumOzeti[], terim: string): HukukbotOturumOzeti[] {
+  const t = aramaAnahtari(terim.trim());
+  if (!t) return oturumlar;
+  return oturumlar.filter((o) => aramaAnahtari(`${o.title} ${o.preview ?? ""}`).includes(t));
+}
+
 /** Kullanıcının "Durdur"u / sayfa değişimi kaynaklı iptal mi? */
 export function iptalMi(hata: unknown): boolean {
   return (
