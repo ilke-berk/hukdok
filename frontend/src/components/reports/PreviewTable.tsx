@@ -17,6 +17,8 @@ type PreviewTableProps = {
     onSayfaBoyu?: (sayfaBoyu: number) => void;
     /** Taslak geçersiz (kolon yok / eksik gelişmiş filtre) — istek gitmez, boş durumda ipucu. */
     gecersiz: boolean;
+    /** İlk açılış (28.09): varsayılan tanım önizlenmez — boş durumda istek yazma yönlendirmesi. */
+    bekliyor?: boolean;
     /** Etkin sıralama (en fazla 3, sıralı); başlık oku ve sıra numarası buradan. */
     siralama: Siralama[];
     /** Kolon başlığa tıkla sıralanabilir mi (`siralanabilir`)? */
@@ -42,8 +44,8 @@ const SAGA_YASLI = new Set(["sayi", "para"]);
  * YOK (12.09: aynı sayı iki kez basılıyordu); boş sonuçta filtre gevşetme ipucu + Temizle kısayolu.
  */
 export function PreviewTable({
-    cevap, yukleniyor, hata, onRetry, onSayfa, sayfaBoyu, onSayfaBoyu, gecersiz, siralama, siralanabilirMi, onSirala,
-    onFiltreleriTemizle, filtreVar = false,
+    cevap, yukleniyor, hata, onRetry, onSayfa, sayfaBoyu, onSayfaBoyu, gecersiz, bekliyor = false, siralama, siralanabilirMi,
+    onSirala, onFiltreleriTemizle, filtreVar = false,
 }: PreviewTableProps) {
     const toplamSayfa = cevap ? Math.ceil(cevap.toplam / cevap.sayfa_boyu) || 1 : 1;
     const siraOf = (anahtar: string) => siralama.findIndex(s => s.alan === anahtar);
@@ -54,7 +56,7 @@ export function PreviewTable({
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border)]">
                 <div className="flex items-center gap-3 min-w-0">
                     {/* Minimal (07.09): "Örnek" etiketi ve "ilk N satır" notu kalktı; kayıt sayısı sayaç satırında. */}
-                    {gecersiz && !yukleniyor && (
+                    {gecersiz && !bekliyor && !yukleniyor && (
                         <span
                             data-testid="taslak-eksik"
                             role="status"
@@ -82,14 +84,19 @@ export function PreviewTable({
                     <DataErrorBanner description={hata} onRetry={onRetry} isRetrying={yukleniyor} />
                 </div>
             ) : !cevap ? (
-                <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
+                <div
+                    data-testid={bekliyor && !yukleniyor ? "acilis-bekliyor" : undefined}
+                    className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]"
+                >
                     <Table2 className="w-9 h-9 opacity-30" />
                     <p className="text-[13px]">
                         {yukleniyor
                             ? "Önizleme alınıyor…"
-                            : gecersiz
-                                ? "Önizleme için en az bir kolon seçin ve filtreleri tamamlayın."
-                                : "Önizleme hazırlanıyor…"}
+                            : bekliyor
+                                ? "Raporunuzu yukarıya yazın ya da şeritten kaynak, kolon ve filtre seçin."
+                                : gecersiz
+                                    ? "Önizleme için en az bir kolon seçin ve filtreleri tamamlayın."
+                                    : "Önizleme hazırlanıyor…"}
                     </p>
                 </div>
             ) : cevap.satirlar.length === 0 ? (

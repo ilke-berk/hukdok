@@ -44,6 +44,7 @@ import ReportsPage, { ONIZLEME_GECIKME_MS } from "./ReportsPage";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
+import { raporSayfaCalismasi } from "@/lib/raporCalismasi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -159,6 +160,22 @@ const sonPreviewGovdesi = () => {
     return JSON.parse(opts!.body as string);
 };
 
+
+/**
+ * 28.09: ilk açılışta varsayılan tanım önizlenmez. Bu dosyanın senaryoları açılış önizlemesinden
+ * sonrasını sınar → sekme oturumuna varsayılan tanımlı çalışma konur (geri yüklenen çalışma önizlenir).
+ * Oturuma kendi çalışmasını koyan test dokunulmaz; boş açılışı sınayan test `bosAcilis=true` verir.
+ */
+function acilisCalismasiKoy() {
+    if (!raporSayfaCalismasi.load()) {
+        raporSayfaCalismasi.save({
+            tanim: { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] },
+            seciliSablonId: null,
+            ornekBoyu: 10,
+        });
+    }
+}
+
 describe("ReportsPage (G133/G138/G175)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
@@ -203,7 +220,8 @@ describe("ReportsPage (G133/G138/G175)", () => {
         }
     }
 
-    async function render(element: React.ReactNode = <ReportsPage />, url = "/reports") {
+    async function render(element: React.ReactNode = <ReportsPage />, url = "/reports", bosAcilis = false) {
+        if (!bosAcilis) acilisCalismasiKoy();
         root = createRoot(container);
         await act(async () => {
             root!.render(<MemoryRouter initialEntries={[url]}>{element}</MemoryRouter>);
@@ -372,6 +390,25 @@ describe("ReportsPage (G133/G138/G175)", () => {
         // Sadeleştirme: kaynak açıklaması yalnız rozet menüsünde (kapalı), tip rozeti yok
         expect(container.textContent).not.toContain("Dava kartları");
         expect(container.textContent).not.toContain("abc");
+    });
+
+    it("28.09 ilk açılış: varsayılan tanım ÖNİZLENMEZ (istek yok, tabloda yönlendirme); şeride ilk dokunuş önizler", async () => {
+        sunucuKur();
+        await render(<ReportsPage />, "/reports", true);
+
+        expect(seciliKaynak()).toBe("davalar");
+        expect(kolonCipleri()).toEqual(["tracking_no", "subject"]);
+        expect(previewCagrilari()).toHaveLength(0);
+        expect(container.querySelector("tbody tr")).toBeNull();
+        expect($("[data-testid='acilis-bekliyor']").textContent).toContain("Raporunuzu yukarıya yazın");
+        expect(container.querySelector("[data-testid='taslak-eksik']")).toBeNull();
+        expect($("[data-testid='kayit-sayaci']").textContent).toBe("— kayıt");
+
+        await kolonEkle("status");
+        expect(previewCagrilari()).toHaveLength(1);
+        expect(sonPreviewGovdesi().tanim.kolonlar).toEqual(["tracking_no", "subject", "status"]);
+        expect(container.querySelector("[data-testid='acilis-bekliyor']")).toBeNull();
+        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
     });
 
     it("kaynak rozeti menüsü kaynağı değiştirir; aynı kaynağa yeniden basmak yeni istek üretmez", async () => {

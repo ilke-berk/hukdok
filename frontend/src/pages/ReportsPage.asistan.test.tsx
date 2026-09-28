@@ -46,6 +46,7 @@ vi.mock("@azure/msal-react", () => msalMock);
 import ReportsPage from "./ReportsPage";
 import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
 import { ornekIstemler } from "@/lib/reportsChat";
+import { raporSayfaCalismasi } from "@/lib/raporCalismasi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -185,6 +186,22 @@ const cagrilar = (url: string, method?: string) =>
     (fetchMock.mock.calls as Cagri[]).filter(([u, o]) => u === url && (!method || (o?.method ?? "GET") === method));
 const govde = (c: Cagri) => JSON.parse(c[1]!.body as string);
 
+
+/**
+ * 28.09: ilk açılışta varsayılan tanım önizlenmez. Bu dosyanın senaryoları açılış önizlemesinden
+ * sonrasını sınar → sekme oturumuna varsayılan tanımlı çalışma konur (geri yüklenen çalışma önizlenir).
+ * Oturuma kendi çalışmasını koyan test dokunulmaz; boş açılışı sınayan test `bosAcilis=true` verir.
+ */
+function acilisCalismasiKoy() {
+    if (!raporSayfaCalismasi.load()) {
+        raporSayfaCalismasi.save({
+            tanim: { veri_kaynagi: "davalar", kolonlar: ["tracking_no", "subject"], filtreler: [], siralama: [] },
+            seciliSablonId: null,
+            ornekBoyu: 10,
+        });
+    }
+}
+
 describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
     let container: HTMLDivElement;
     let root: Root | null = null;
@@ -266,7 +283,8 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         }
     }
 
-    async function render(url = "/reports") {
+    async function render(url = "/reports", bosAcilis = false) {
+        if (!bosAcilis) acilisCalismasiKoy();
         root = createRoot(container);
         await act(async () => {
             root!.render(

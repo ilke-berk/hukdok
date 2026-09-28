@@ -599,8 +599,11 @@ Rapor sekmesi üç bloktur (`section[data-testid=rapor-sekmesi]`, `grid gap-5`, 
 
 Kaynak değişince `durumDegisti` (`:376-384`): `reqIdRef` artar (süren istek yok sayılır), zamanlayıcı durur,
 `cevap/hata/sonTanim` ANINDA `null` → ekranda hiçbir zaman başka kaynağın satırı kalmaz; efekt yeni kaynağın
-varsayılan tanımını hemen ister. **Dolu açılış:** katalog gelince ilk kaynak (Davalar) + varsayılan kolonlar
-(`katalogYukle :190-208`, `:196-200`) → otomatik önizleme efekti ilk isteği kendiliğinden atar (§8.4).
+varsayılan tanımını hemen ister. **Açılış (28.09):** katalog gelince şerit ilk kaynak (Davalar) + varsayılan
+kolonlarla kurulur ama bu varsayılan tanım ÖNİZLENMEZ — `acilisBekliyor` bayrağı otomatik önizleme efektini
+tutar, tablo yerinde yönlendirme (`PreviewTable` `bekliyor`, `data-testid="acilis-bekliyor"`) durur; bayrak
+taslağa ilk dokunuşta (`durumDegisti`: şerit, asistan, şablon/koşu yükleme) kalkar. Sekme oturumundan geri
+yüklenen çalışma (`lib/raporCalismasi.ts`) bayrağı hiç kurmaz, eskisi gibi hemen önizlenir.
 `HairlineCard` yalnız "katalog yükleniyor" (`:736-738`) ve Şablonlar/İndirme geçmişi sekmelerinde kaldı.
 Sayfa başlığı ipucu (`h1 title`, `:862`): "Ne istediğinizi asistana yazın ya da tanım şeridinden düzenleyin…".
 
