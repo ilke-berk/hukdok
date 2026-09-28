@@ -25,6 +25,8 @@ export interface EkranMesaji {
   sources?: HukukbotKaynak[] | null;
   /** Model yanıtı şu an akıyor. */
   akiyor?: boolean;
+  /** Akıştaki son `status` olayı — metin gelene dek "yazıyor" yerine gösterilir (kaydedilmez). */
+  durum?: string | null;
   /** Kullanıcı "Durdur"a bastı — yanıt yarım kaldı. */
   durduruldu?: boolean;
   /** Türkçe hata metni (akış/istek hatası). */

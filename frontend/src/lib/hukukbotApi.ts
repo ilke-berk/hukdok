@@ -140,6 +140,8 @@ function olayCoz(satir: string): HukukbotAkisOlayi | null {
       return { type: "content", data: typeof olay.data === "string" ? olay.data : "" };
     case "sources":
       return { type: "sources", data: Array.isArray(olay.data) ? olay.data : [] };
+    case "status":
+      return typeof olay.data === "string" && olay.data.trim() ? { type: "status", data: olay.data } : null;
     case "error":
       return { type: "error", data: typeof olay.data === "string" ? olay.data : HUKUKBOT_GENEL_HATA };
     default:

@@ -331,6 +331,34 @@ describe("HukukbotPage — soru gönderme ve akış", () => {
     expect(apiMock.indir).toHaveBeenCalledWith("tbk_344.pdf");
   });
 
+  it("arama sürerken status olayları 'yazıyor' yerine gösterilir; ilk metinle kaybolur, hata sayılmaz", async () => {
+    const akis = kontrolluAkis();
+    apiMock.ask.mockImplementation(akis.uret);
+    apiMock.oturumOlustur.mockResolvedValue({
+      id: "o-durum",
+      title: "Menenjit",
+      created_at: "2026-09-28T10:00:00Z",
+      is_pinned: false,
+      messages: [],
+    } satisfies HukukbotOturum);
+    await ciz();
+    await yaz("Menenjit davası var mı?");
+    await enter();
+
+    const durum = () => kap.querySelector("[data-testid='hukukbot-durum']")?.textContent;
+    expect(durum()).toBe("Hukukbot yazıyor...");
+    await akis.ver({ type: "status", data: "Arşiv taranıyor: menenjit geç tanı" });
+    expect(durum()).toBe("Arşiv taranıyor: menenjit geç tanı");
+    await akis.ver({ type: "status", data: "4 belgeden 9 bölüm bulundu, cevap yazılıyor…" });
+    expect(durum()).toBe("4 belgeden 9 bölüm bulundu, cevap yazılıyor…");
+
+    await akis.ver({ type: "content", data: "Karar bulundu." });
+    expect(durum()).toBeUndefined();
+    expect(kap.querySelector("[data-testid='hukukbot-yanit']")?.textContent).toContain("Karar bulundu.");
+    await akis.bitir();
+    expect(kap.querySelector("[data-testid='hukukbot-hata']")).toBeNull();
+  });
+
   it("mevcut sohbette ikinci soru geçmişle ve oturum kimliğiyle gider; yeni oturum açılmaz", async () => {
     apiMock.oturumGetir.mockResolvedValue({
       id: "o-yeni",

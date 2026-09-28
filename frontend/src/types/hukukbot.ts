@@ -83,9 +83,12 @@ export interface HukukbotSoru {
  * `/ask` NDJSON akış olayı — `api.py::response_generator`:
  * - `content`: cevap metninin sıradaki parçası (birleştirilerek gösterilir),
  * - `sources`: kaynak listesi (akışın sonunda, bir kez; boş liste olabilir),
+ * - `status`: arama sürerken ara durum metni (ilk `content`'ten önce, sıfır ya da daha çok kez),
  * - `error`: akış sırasında sunucu istisnası (`data` = hata metni); sonrasında olay gelmez.
  */
 export type HukukbotAkisOlayi =
   | { type: "content"; data: string }
   | { type: "sources"; data: HukukbotKaynak[] }
+  /** Arama sürerken ara durum ("Arşiv taranıyor: …") — hukbot 28.09; kaydedilmez, ilk metin parçasına dek gösterilir. */
+  | { type: "status"; data: string }
   | { type: "error"; data: string };

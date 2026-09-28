@@ -213,6 +213,9 @@ export default function HukukbotPage() {
         } else if (olay.type === "sources") {
           const kaynaklar = olay.data;
           yanitiGuncelle((m) => ({ ...m, sources: kaynaklar }));
+        } else if (olay.type === "status") {
+          const durum = olay.data;
+          yanitiGuncelle((m) => ({ ...m, durum }));
         } else {
           console.warn("Hukukbot akışı hata olayıyla bitti", olay.data);
           yanitiGuncelle((m) => ({ ...m, hata: AKIS_HATA_MESAJI }));

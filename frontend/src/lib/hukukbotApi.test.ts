@@ -255,6 +255,23 @@ describe("ask — /ask NDJSON akışı", () => {
     ]);
   });
 
+  it("status olayı ara durum olarak verilir; boş/metin olmayan status atlanır", async () => {
+    const { res } = streamResponse([
+      satir({ type: "status", data: "Arşiv taranıyor: menenjit geç tanı" }),
+      satir({ type: "status", data: "   " }),
+      satir({ type: "status", data: 3 }),
+      satir({ type: "content", data: "Cevap" }),
+    ]);
+    stubFetch(res);
+
+    const olaylar = await hepsi(ask({ question: "q" }));
+
+    expect(olaylar).toEqual([
+      { type: "status", data: "Arşiv taranıyor: menenjit geç tanı" },
+      { type: "content", data: "Cevap" },
+    ]);
+  });
+
   it("akış SIRASINDA AbortSignal: okuyucu kapatılır, AbortError fırlar", async () => {
     const encoder = new TextEncoder();
     let bekleyen: ((v: { value: undefined; done: true }) => void) | null = null;

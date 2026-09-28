@@ -62,9 +62,13 @@ function ModelMesaji({ mesaj, onIndir, inen }: MesajBalonuProps) {
     <div className="flex justify-start" data-testid="hukukbot-mesaj-model">
       <div className="w-full min-w-0 py-1">
         {bos && mesaj.akiyor && (
-          <div role="status" className="flex items-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            Hukukbot yazıyor...
+          <div
+            role="status"
+            data-testid="hukukbot-durum"
+            className="flex items-start gap-2 text-[12.5px] text-[var(--fg-muted)] min-w-0"
+          >
+            <Loader2 className="w-4 h-4 mt-0.5 shrink-0 animate-spin" aria-hidden="true" />
+            <span className="break-words min-w-0">{mesaj.durum || "Hukukbot yazıyor..."}</span>
           </div>
         )}
         {!bos && (
