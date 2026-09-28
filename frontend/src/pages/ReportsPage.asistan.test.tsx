@@ -191,6 +191,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
     let indirmeler: string[];
 
     beforeEach(() => {
+        sessionStorage.clear();   // 28.09 rapor çalışması sekme oturumunda — testler birbirine sızmasın
         fetchMock.mockReset();
         toastMocks.success.mockReset();
         toastMocks.error.mockReset();
@@ -1004,6 +1005,72 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         expect(container.querySelector("[data-testid='asistan-satiri']")).not.toBeNull();
         expect(girdi().disabled).toBe(false);
         expect(toastMocks.error).not.toHaveBeenCalled();
+    });
+
+    // ---------------------------------------------------------------- 28.09 çalışma korunur
+
+    /** Sayfadan çıkış (rota değişimi = bileşen sökülür) ve geri dönüş. */
+    async function cikVeDon() {
+        act(() => root!.unmount());
+        root = null;
+        container.innerHTML = "";
+        await render();
+    }
+
+    it("28.09: sayfadan çıkıp dönünce sohbet, uygulanan tanım ve yarım girdi geri gelir; önizleme taze çekilir; Sohbeti temizle sohbeti bitirir", async () => {
+        sunucuKur({ chat: () => akis([{ status: "complete", cevap: "Derdest davaları hazırladım.", tanim: ASISTAN_TANIMI, eylem: null }]) });
+        await render();
+        await gonder("Derdest davaları listele");
+        expect(sonOnizleme().tanim).toEqual(ASISTAN_TANIMI);
+        yaz(girdi(), "bir de mahkemeyi ekle");
+
+        const onceki = onizlemeler().length;
+        await cikVeDon();
+
+        expect(konusma().querySelector("[data-testid='sohbet-kullanici']")?.textContent).toBe("Derdest davaları listele");
+        const asistan = konusma().querySelector("[data-testid='sohbet-asistan']")!;
+        expect(asistan.textContent).toContain("Derdest davaları hazırladım.");
+        expect(asistan.querySelector("[data-testid='tanim-uygulandi']")).not.toBeNull();
+        expect(girdi().value).toBe("bir de mahkemeyi ekle");
+        // Şerit kayıtlı tanımdan kuruldu, önizleme (satırlar saklanmaz) yeniden istendi
+        expect(onizlemeler().length).toBe(onceki + 1);
+        expect(sonOnizleme().tanim).toEqual(ASISTAN_TANIMI);
+        expect(seciliKaynak()).toBe("davalar");
+
+        // Sonraki mesaj önceki sohbetle birlikte gider (geçmiş kopmadı)
+        await gonder("bir de mahkemeyi ekle");
+        const g = govde(cagrilar("/api/reports/chat", "POST").at(-1)!);
+        expect(g.mesajlar[0]).toEqual({ rol: "user", icerik: "Derdest davaları listele" });
+        expect(g.mesajlar.at(-1)).toEqual({ rol: "user", icerik: "bir de mahkemeyi ekle" });
+        expect(g.mesajlar.length).toBeGreaterThanOrEqual(3);
+
+        await tikla(byLabel("Sohbeti temizle"));
+        await cikVeDon();
+        expect(konusmaVar()).toBe(false);
+        expect(sonOnizleme().tanim).toEqual(ASISTAN_TANIMI);   // tanım sohbetten bağımsız korunur
+    });
+
+    it("28.09: yanıt beklerken sayfadan çıkılırsa istek iptal edilir, dönüşte sohbette not; oturum temizlenince (çıkış) sayfa varsayılanla açılır", async () => {
+        const bekleyen = bekleyenAkis([{ status: "complete", cevap: "geç", tanim: ASISTAN_TANIMI, eylem: null }]);
+        sunucuKur({ chat: () => bekleyen.res });
+        await render();
+        const varsayilan = sonOnizleme().tanim;
+        await gonder("Derdest davaları listele");
+        expect(konusma().querySelector("[data-testid='akis-durumu']")).not.toBeNull();
+
+        await cikVeDon();
+        const hata = konusma().querySelector("[data-testid='sohbet-hata']");
+        expect(hata?.textContent).toContain("Sayfadan ayrıldığınız için");
+        expect(girdi().disabled).toBe(false);
+
+        // Çıkış: sayfa kalkar, `clearAppStorage` hukdok.* anahtarlarını siler, yeni oturum açılır
+        act(() => root!.unmount());
+        root = null;
+        container.innerHTML = "";
+        sessionStorage.clear();
+        await render();
+        expect(konusmaVar()).toBe(false);
+        expect(sonOnizleme().tanim).toEqual(varsayilan);
     });
 
     // ---------------------------------------------------------------- girdi davranışı

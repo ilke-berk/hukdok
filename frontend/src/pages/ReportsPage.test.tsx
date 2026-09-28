@@ -164,6 +164,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
     let root: Root | null = null;
 
     beforeEach(() => {
+        sessionStorage.clear();   // 28.09 rapor çalışması sekme oturumunda — testler birbirine sızmasın
         fetchMock.mockReset();
         toastMocks.error.mockReset();
         toastMocks.success.mockReset();

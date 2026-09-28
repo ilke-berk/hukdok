@@ -475,8 +475,8 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   karakteri — değer yok; G167 dersi).
 - **Sohbet geçmişi sunucuda saklanmaz** (K6): istemci `mesajlar`ı taşır; `icerikleri_kur` (`:234`) son 20
   mesajı `user`/`model` rolüne eşler, baştaki asistan mesajlarını atar (Gemini dizisi kullanıcıyla
-  başlar). Frontend geçmişi `AssistantBar` state'inde tutar (`kayitlar`, `AssistantBar.tsx:74`), sayfa
-  yenilenince sıfırlanır (`lib/reportsChat.ts:87` `gecmisiKirp` en yeni 20; `sohbetGecmisi :275-280` hata ve
+  başlar). Frontend geçmişi `AssistantBar` state'inde tutar (`kayitlar`), 28.09'dan beri sekme
+  oturumunda da (`lib/raporCalismasi.ts`, sessionStorage — aşağıda "Çalışma korunur") (`lib/reportsChat.ts:87` `gecmisiKirp` en yeni 20; `sohbetGecmisi :275-280` hata ve
   boş kayıtları düşürür, yerel satırlar geçmişe GİRER).
 - **Asistan DB'ye dokunmaz:** `asistan.py` oturum fabrikası import etmez, satır görmez; `tenant_id`
   yalnız ERROR log bağlamıdır — tanım tenant filtresini `/preview`/`/export`'ta alır (`:279-280`).
@@ -887,8 +887,15 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 - **Gemini / anahtar kapalıyken sohbet yok — şeritle çalışılır:** `rapor_asistani` kapalı, `/chat` 409 ya da Gemini
   `failed` (devre kesici/429) durumunda rapor yine şeritten kurulur (§9); sohbet balonu hata kaydını gösterir,
   şerit etkilenmez. Sohbet birincil yol olduğundan Gemini kesintisi kullanıcı deneyimini düşürür, veri kaybettirmez.
-- **Sohbet geçmişi sayfa yenilemede sıfırlanır (değişmedi):** `AssistantBar` state'i (`kayitlar`), sunucu saklamaz
-  (K6); "Kapat" alanı kapatır ama geçmiş kalır (`AssistantThread` "Kapat (geçmiş kalır)"), "Temizle" siler.
+- **Çalışma korunur (28.09, kullanıcı isteği: "sayfa değişiminde yanlışlıkla bütün çalışma gidiyor"):** sunucu yine
+  saklamaz (K6); istemci `lib/raporCalismasi.ts` ile iki `formDraft` deposu tutar (sessionStorage, 10 saat bayatlık):
+  `hukdok.rapor-calismasi.sayfa.v1` = son GEÇERLİ tanım + seçili şablon + örnek boyu (şerit dönüşte katalog gelince
+  `tanimdanDurum` ile kurulur, önizleme taze çekilir — satırlar SAKLANMAZ); `hukdok.rapor-calismasi.sohbet.v1` =
+  kayıtlar + yazılmakta olan girdi + konuşma açıklığı + bekleyen tanım. Rota değişimi, sekme (Şablonlar/Geçmiş) geçişi
+  ve yenilemede geri gelir; sekme kapanınca, çıkışta (`clearAppStorage`, `hukdok.` öneki) ya da "Sohbeti temizle"
+  ile gider. Sayfadan çıkarken süren `/chat` isteği iptal edilir, dönüşte sohbette `YARIM_ISTEK_NOTU` hata kaydı
+  (`kod: iptal`, geçmişe girmez). "Geri al" adımı saklanmaz (tek adım, sayfa ömrü). "Kapat" alanı kapatır ama geçmiş
+  kalır. Bekçi: `ReportsPage.asistan.test.tsx` "28.09" testleri.
 - **Önbellek 60 sn / worker başına:** referans listesi ya da yeni taraf adı ekledikten sonra şeritteki
   seçenek/öneri en geç 60 sn sonra görünür; iki worker aynı anda farklı fotoğraf verebilir (F15).
 - **`RAPOR_MAX_SATIR` iki okuyucu:** export tavanı `settings.rapor_max_satir` (boot'ta donar),

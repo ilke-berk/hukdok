@@ -63,6 +63,7 @@ const ERROR_KOD_IPUCU: Record<string, string> = {
     // İstemci tarafı etiketleri (sunucu sözleşmesinde yok; 409/403 için panel kaydı).
     asistan_kapali: "Yönetici panelinde 'Rapor asistanı' anahtarı açılınca panel yeniden kullanılabilir.",
     yetki_yok: "Bu sayfa ve asistan yalnız yönetici hesaplarına açık.",
+    iptal: "İsteği aynen yeniden gönderebilirsiniz; sohbetin geri kalanı yerinde.",
 };
 
 export function errorKodIpucu(kod: string | undefined | null): string {

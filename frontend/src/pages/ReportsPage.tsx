@@ -30,6 +30,8 @@ import {
     type RaporKosusu, type RaporSablonu, type RaporTanimi,
 } from "@/lib/reports";
 import { ASISTAN_KAPALI_MESAJI, raporAsistaniAcikMi, tanimAyni } from "@/lib/reportsChat";
+import { debounce } from "@/lib/formDraft";
+import { raporSayfaCalismasi, type RaporSayfaCalismasi } from "@/lib/raporCalismasi";
 
 // Önizleme bir ÖRNEKTİR (kullanıcı kararı 07.09: "5-10 satırlık örnek + toplam kaç satır olduğu yeter");
 // tam liste Excel/CSV'de. Kullanıcı 10/25/50 arasında değiştirebilir (PreviewTable alt çubuğu).
@@ -106,6 +108,10 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
  * tanımda istek gitmez; yarış koruması `reqIdRef`. Kaynak değişince eski cevap ANINDA düşer —
  * ekranda başka kaynağın satırı kalmaz. "Bayat" rozeti/Önizle düğmesi yok.
  * Sözleşme: docs/plan/raporlama-plani-2026-09-06.md §2 + §4 (lib/reports.ts, lib/reportsChat.ts).
+ *
+ * 28.09 — ÇALIŞMA KORUNUR: son geçerli tanım, seçili şablon ve örnek boyu sekme oturumunda
+ * (`lib/raporCalismasi.ts`, sessionStorage) tutulur; başka sayfaya geçip dönünce (ya da yenilemede) şerit
+ * katalog gelince bu tanımdan kurulur ve önizleme taze çekilir. Sohbet aynı yolla `AssistantBar`'da korunur.
  */
 const ReportsPage = () => {
     useSetPageTitle("Raporlar", ["Raporlar"]);
@@ -114,6 +120,10 @@ const ReportsPage = () => {
     // Sahiplik: sunucu `olusturan`ı küçük harfli e-posta yazar; MSAL username aynı kimlik.
     const { instance, accounts } = useMsal();
     const kullanici = (instance.getActiveAccount() || accounts[0])?.username;
+
+    // 28.09: sekme oturumunda kalan çalışma — ilk render'da bir kez okunur; tanım katalog gelince uygulanır.
+    const [kayitliCalisma] = useState<RaporSayfaCalismasi | null>(() => raporSayfaCalismasi.load()?.data ?? null);
+    const geriYuklenecekRef = useRef<RaporTanimi | null>(kayitliCalisma?.tanim ?? null);
 
     const [searchParams, setSearchParams] = useSearchParams();
     const [tab, setTab] = useState<RaporTab>(() => resolveTab(searchParams.get("tab")));
@@ -156,7 +166,7 @@ const ReportsPage = () => {
     const [sablonlar, setSablonlar] = useState<RaporSablonu[]>([]);
     const [sablonHatasi, setSablonHatasi] = useState<string | null>(null);
     const [sablonYukleniyor, setSablonYukleniyor] = useState(true);
-    const [seciliSablonId, setSeciliSablonId] = useState<number | null>(null);
+    const [seciliSablonId, setSeciliSablonId] = useState<number | null>(() => kayitliCalisma?.seciliSablonId ?? null);
     const [sablonIsleniyor, setSablonIsleniyor] = useState(false);
     const [diyalog, setDiyalog] = useState<{ mod: SablonDiyalogModu; hedef: RaporSablonu | null } | null>(null);
 
@@ -195,8 +205,12 @@ const ReportsPage = () => {
             const k = await getCatalog();
             setKatalog(k);
             setKatalogHatasi(null);
+            const geriYuklenecek = geriYuklenecekRef.current;
+            geriYuklenecekRef.current = null;
             setDurum(prev => {
                 if (prev.veri_kaynagi && k.veri_kaynaklari.some(v => v.anahtar === prev.veri_kaynagi)) return prev;
+                const kayitliKaynak = geriYuklenecek && k.veri_kaynaklari.find(v => v.anahtar === geriYuklenecek.veri_kaynagi);
+                if (geriYuklenecek && kayitliKaynak) return tanimdanDurum(geriYuklenecek, kayitliKaynak);
                 const ilk = k.veri_kaynaklari[0];
                 return ilk ? kaynakIcinBaslangic(ilk) : BOS_DURUM;
             });
@@ -282,7 +296,19 @@ const ReportsPage = () => {
         [tanim, tanimGecerli, kaynak],
     );
 
-    const [ornekBoyu, setOrnekBoyu] = useState<number>(VARSAYILAN_SAYFA_BOYU);
+    const [ornekBoyu, setOrnekBoyu] = useState<number>(() => kayitliCalisma?.ornekBoyu ?? VARSAYILAN_SAYFA_BOYU);
+
+    // 28.09: çalışmayı sekme oturumuna yaz — yalnız geçerli tanım (katalog gelmeden boş durum yazılmaz);
+    // debounce'lu, sayfadan çıkarken hemen.
+    const calismaRef = useRef<RaporSayfaCalismasi | null>(null);
+    calismaRef.current = tanimGecerli ? { tanim, seciliSablonId, ornekBoyu } : null;
+    const [calismayiYaz] = useState(() => debounce(() => {
+        if (calismaRef.current) raporSayfaCalismasi.save(calismaRef.current);
+    }, 300));
+    useEffect(() => {
+        calismayiYaz();
+    }, [tanim, tanimGecerli, seciliSablonId, ornekBoyu, calismayiYaz]);
+    useEffect(() => () => calismayiYaz.flush(), [calismayiYaz]);
     const sayfaBoyu = Math.min(ornekBoyu, katalog?.limitler.onizleme_sayfa_boyu_max ?? ornekBoyu);
 
     const seciliSablon = useMemo(() => sablonlar.find(s => s.id === seciliSablonId) ?? null, [sablonlar, seciliSablonId]);

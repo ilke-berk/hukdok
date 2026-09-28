@@ -171,6 +171,7 @@ describe("ReportsPage favori önerisi (G144)", () => {
     let indirmeler: string[];
 
     beforeEach(() => {
+        sessionStorage.clear();   // 28.09 rapor çalışması sekme oturumunda — testler birbirine sızmasın
         fetchMock.mockReset();
         toastMocks.success.mockReset();
         toastMocks.error.mockReset();

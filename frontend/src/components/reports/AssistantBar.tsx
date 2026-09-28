@@ -8,6 +8,8 @@ import {
 } from "@/lib/reportsChat";
 import { SohbetGirdisi } from "@/components/SohbetGirdisi";
 import { metneEkle, useVoiceInput } from "@/hooks/useVoiceInput";
+import { debounce } from "@/lib/formDraft";
+import { YARIM_ISTEK_NOTU, raporSohbetCalismasi, type RaporSohbetCalismasi } from "@/lib/raporCalismasi";
 import { AssistantThread } from "./AssistantThread";
 import type { IndirmeFormati } from "./AssistantMessage";
 
@@ -56,7 +58,10 @@ export const ASISTAN_GIRDI_YER_TUTUCU = "Ne listelemek istiyorsunuz? Yazın, asi
  * düzeni: konuşma alanı (`AssistantThread`) yazı kutusunun ÜSTÜNDE açılır, en yeni mesaj kutuya en yakın durur
  * (28.09; önceden altta açılıyordu, göz yazıp aşağı bakıp geri dönüyordu). Alan kısa tutulur ve dibe kaydırılır —
  * son tur görünür, geçmiş yukarı kaydırılarak okunur, tablo aşağı itilmez. "Kapat" alanı kapatır, geçmiş kalır
- * (K6, sayfa ömrü). Sohbet geçmişi yalnız bu bileşenin state'inde (K6): sunucu saklamaz, sayfa yenilenince sıfırlanır.
+ * (K6). Sohbet geçmişi sunucuda SAKLANMAZ (K6); 28.09'dan beri sekme oturumu boyunca `lib/raporCalismasi.ts`
+ * (sessionStorage) tutar: başka sayfaya geçip dönünce ya da yenilemede sohbet, girdi ve bekleyen tanım geri gelir;
+ * sekme kapanınca, çıkışta ya da "Sohbeti temizle" ile gider. Sayfadan çıkarken süren istek iptal edilir, sohbete
+ * `YARIM_ISTEK_NOTU` düşer.
  *
  * G174 — OTOMATİK UYGULAMA (G167 teyit döngüsünün geri alınması; 11.09 sadeleşme kararı): `complete` + `tanim`
  * → değerler kataloğa uyuyorsa (`degerEsle.temiz`) tanım DÜĞME BEKLEMEDEN `onTanimUygula(tanim, eylem ?? "onizle")`
@@ -77,15 +82,22 @@ export function AssistantBar({
     yukleniyor = false, katalog, veriKaynagi, mevcutTanim, mevcutVarsayilan = false, onKapali, onTanimUygula, geriAlinabilir,
     onGeriAl, onizlemeSonucu = null, onSablonKaydet, onFiltreEkle,
 }: AssistantBarProps) {
-    const [kayitlar, setKayitlar] = useState<SohbetKaydi[]>([]);
-    const [girdi, setGirdi] = useState("");
+    // 28.09: sekme oturumunda kalan sohbet (sayfa değişimi / yenileme) — ilk render'da bir kez okunur.
+    const [kayitli] = useState<RaporSohbetCalismasi | null>(() => {
+        const veri = raporSohbetCalismasi.load()?.data ?? null;
+        // Kayıt kimlikleri modül sayacından: geri gelen kayıtlarla çakışmasın.
+        if (veri) kayitSayaci = Math.max(kayitSayaci, ...veri.kayitlar.map(k => k.id));
+        return veri;
+    });
+    const [kayitlar, setKayitlar] = useState<SohbetKaydi[]>(() => kayitli?.kayitlar ?? []);
+    const [girdi, setGirdi] = useState(() => kayitli?.girdi ?? "");
     const [gonderiliyor, setGonderiliyor] = useState(false);
     const [akisDurumu, setAkisDurumu] = useState<string | null>(null);
-    const [acik, setAcik] = useState(false);
+    const [acik, setAcik] = useState(() => kayitli?.acik ?? false);
     // Son uygulanan asistan kaydı — "Geri al" yalnız bunda (tek adım).
-    const [sonUygulananId, setSonUygulananId] = useState<number | null>(null);
+    const [sonUygulananId, setSonUygulananId] = useState<number | null>(() => kayitli?.sonUygulananId ?? null);
     // G167: teyit bekleyen (henüz uygulanmamış) son asistan tanımı — düzeltmeler bunun üzerinde çalışır.
-    const [bekleyenTanim, setBekleyenTanim] = useState<RaporTanimi | null>(null);
+    const [bekleyenTanim, setBekleyenTanim] = useState<RaporTanimi | null>(() => kayitli?.bekleyenTanim ?? null);
     // G168: uygulandı, önizleme sonucu bekleniyor — sonuç gelince "N kayıt bulundu" / boş-sonuç satırı düşer.
     const [sonucBeklenen, setSonucBeklenen] = useState<RaporTanimi | null>(null);
     const girdiRef = useRef<HTMLTextAreaElement | null>(null);
@@ -99,11 +111,33 @@ export function AssistantBar({
     }, []);
     const ses = useVoiceInput({ onMetin: sesMetni });
 
-    // Bileşen kalkarken (anahtar 409 / sayfa değişimi) süren isteği bırak.
+    // 28.09: çalışmayı sekme oturumuna yaz (debounce'lu; bileşen kalkarken hemen). Boş sohbet = kayıt silinir.
+    const anlikRef = useRef<RaporSohbetCalismasi>({ kayitlar, girdi, acik, sonUygulananId, bekleyenTanim });
+    anlikRef.current = { kayitlar, girdi, acik, sonUygulananId, bekleyenTanim };
+    const [kaydet] = useState(() => debounce(() => {
+        const a = anlikRef.current;
+        if (a.kayitlar.length === 0 && a.girdi.trim() === "" && a.bekleyenTanim === null) raporSohbetCalismasi.clear();
+        else raporSohbetCalismasi.save(a);
+    }, 300));
+    useEffect(() => {
+        kaydet();
+    }, [kayitlar, girdi, acik, sonUygulananId, bekleyenTanim, kaydet]);
+
+    // Bileşen kalkarken (anahtar 409 / sayfa ya da sekme değişimi) süren isteği bırak; yanıtı gelmeyecek isteğe not
+    // düşülür (hata kaydı — sunucu geçmişine girmez), çalışma hemen yazılır.
     useEffect(() => () => {
-        iptalRef.current?.abort();
-        iptalRef.current = null;
-    }, []);
+        if (iptalRef.current) {
+            iptalRef.current.abort();
+            iptalRef.current = null;
+            anlikRef.current = {
+                ...anlikRef.current,
+                kayitlar: [...anlikRef.current.kayitlar, {
+                    id: yeniKayitId(), rol: "assistant", icerik: "", hata: { ozet: YARIM_ISTEK_NOTU, kod: "iptal" },
+                }],
+            };
+        }
+        kaydet.flush();
+    }, [kaydet]);
 
     const kayitEkle = useCallback((k: SohbetKaydi) => {
         setKayitlar(prev => [...prev, k]);

@@ -102,6 +102,7 @@ function yaz(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
 }
 
 beforeEach(() => {
+    sessionStorage.clear();   // 28.09 rapor çalışması sekme oturumunda — testler birbirine sızmasın
     fetchMock.mockReset();
     onTanimUygula = vi.fn(async (_t: RaporTanimi, _e: AsistanEylemi | null) => true);
     kap = document.createElement("div");

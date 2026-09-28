@@ -103,6 +103,7 @@ describe("AssistantBar (G143/G167/G174)", () => {
     let onGeriAl: Mock<() => void>;
 
     beforeEach(() => {
+        sessionStorage.clear();   // 28.09 rapor çalışması sekme oturumunda — testler birbirine sızmasın
         fetchMock.mockReset();
         onTanimUygula = vi.fn(async (_t: RaporTanimi, _e: AsistanEylemi | null) => true);
         onKapali = vi.fn<() => void>();
