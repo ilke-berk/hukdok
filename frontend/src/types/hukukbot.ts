@@ -22,6 +22,24 @@ export interface HukukbotKaynak {
    * yoksa eski `/download/{filename}`. Alan eklenmeden önce kaydedilmiş mesajlarda yoktur.
    */
   hukdok_id?: number | null;
+  /**
+   * Atıf doğrulaması (hukbot `app/citation_check.py`, 28.09). Alan eklenmeden önceki mesajlarda yoktur.
+   * `aramada_getirildi`: belge bu cevap için aramada gerçekten getirildi mi — `false` = yalnız modelin
+   * metninde anıldı (uydurma şüphesi); `null` = model arama izi döndürmedi, hüküm yok.
+   */
+  aramada_getirildi?: boolean | null;
+  /** Cevapta "(Kaynak: ...)" ile anıldı mı — `false` = aramada geldi ama cevapta kullanılmadı. */
+  metinde_atif?: boolean;
+  /** Bu belgeye atfedilen `[Alıntı: "..."]`'ler ve belge metninde birebir bulunup bulunmadıkları. */
+  alintilar?: HukukbotAlinti[];
+}
+
+export interface HukukbotAlinti {
+  metin: string;
+  /** `true` belge metninde bulundu · `false` bulunamadı · `null` denetlenemedi (çok kısa / arama izi yok). */
+  dogrulandi: boolean | null;
+  /** Yalnız bulunamayanlarda: alıntının belgede birebir geçen oranı (0-1). */
+  benzerlik?: number;
 }
 
 /** `schemas.MessageBase` — sunucudaki `sources` serbest sözlük listesidir; pratikte `HukukbotKaynak`. */
