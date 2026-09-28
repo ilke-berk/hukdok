@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, FileText, Loader2 } from "lucide-react";
 import type { HukukbotAlinti, HukukbotKaynak } from "@/types/hukukbot";
+import { kaynakNumarasi } from "./atiflar";
 
 type KaynakListesiProps = {
   kaynaklar: HukukbotKaynak[];
@@ -7,6 +8,12 @@ type KaynakListesiProps = {
   onIndir: (kaynak: HukukbotKaynak) => void;
   /** Şu an inmekte olan dosya adı (düğme kilitlenir). */
   inen?: string | null;
+  /** Metindeki atıf adları, numara sırasıyla (`atiflariNumarala`) — kart numarası ve sıralama bundan. */
+  atifAdlari?: string[];
+  /** Kart DOM kimliği öneki: `${idOneki}-kaynak-${n}` (rozet tıklaması buraya kaydırır). */
+  idOneki?: string;
+  /** Rozeti tıklanan kartın numarası — kısa süre vurgulanır. */
+  vurgulu?: number | null;
 };
 
 /** Kaynak kartının doğrulama rozeti — alanlar yoksa (eski mesaj) rozet de yok. */
@@ -84,9 +91,15 @@ function Alinti({ alinti }: { alinti: HukukbotAlinti }) {
  * Atıf doğrulaması (hukbot `citation_check`, 28.09): kart rozeti belgenin aramada gerçekten getirilip
  * getirilmediğini, alıntı listesi her `[Alıntı: "..."]`'nin belge metninde birebir bulunup
  * bulunmadığını gösterir. Cevapta kullanılmayan kaynaklar sunucuda sona sıralanır ve soluk görünür.
+ *
+ * Numara (28.09): metinde atıfla anılan kaynak kartı, metindeki rozetle aynı numarayı taşır ve numara sırasıyla
+ * öne gelir; anılmayanlar numarasız, sunucu sırasıyla arkada.
  */
-export function KaynakListesi({ kaynaklar, onIndir, inen }: KaynakListesiProps) {
+export function KaynakListesi({ kaynaklar, onIndir, inen, atifAdlari = [], idOneki, vurgulu = null }: KaynakListesiProps) {
   if (kaynaklar.length === 0) return null;
+  const sirali = kaynaklar
+    .map((k, i) => ({ k, i, no: kaynakNumarasi(k, atifAdlari) }))
+    .sort((a, b) => (a.no ?? Infinity) - (b.no ?? Infinity) || a.i - b.i);
   const supheli = kaynaklar.filter(
     (k) => k.aramada_getirildi === false || (k.alintilar ?? []).some((a) => a.dogrulandi === false),
   ).length;
@@ -113,7 +126,7 @@ export function KaynakListesi({ kaynaklar, onIndir, inen }: KaynakListesiProps) 
         </p>
       )}
       <ul className="grid gap-2">
-        {kaynaklar.map((k, i) => {
+        {sirali.map(({ k, i, no }) => {
           const ad = k.file_display_name || k.filename;
           const iniyor = inen === k.filename;
           const pdf = /\.pdf$/i.test(k.filename);
@@ -122,11 +135,23 @@ export function KaynakListesi({ kaynaklar, onIndir, inen }: KaynakListesiProps) 
           return (
             <li
               key={`${k.filename}-${i}`}
-              className={`flex items-start gap-2.5 p-2.5 bg-[var(--bg)] border border-[var(--border)] rounded-[3px] min-w-0 ${
-                kullanilmadi ? "opacity-70" : ""
-              }`}
+              id={no !== null && idOneki ? `${idOneki}-kaynak-${no}` : undefined}
+              data-testid="kaynak-karti"
+              data-atif={no ?? undefined}
+              className={`flex items-start gap-2.5 p-2.5 bg-[var(--bg)] border rounded-[3px] min-w-0 scroll-mt-4 transition-colors ${
+                no !== null && no === vurgulu ? "border-[var(--brand)] bg-[var(--brand-soft)]" : "border-[var(--border)]"
+              } ${kullanilmadi ? "opacity-70" : ""}`}
             >
-              <FileText className="w-4 h-4 mt-0.5 shrink-0 text-[var(--brand)]" aria-hidden="true" />
+              {no !== null ? (
+                <span
+                  aria-label={`Kaynak ${no}`}
+                  className="mt-px shrink-0 grid place-items-center min-w-[20px] h-5 px-1 rounded-full bg-[var(--brand-soft)] border border-[var(--border)] text-[11px] font-semibold tabular-nums text-[var(--brand)]"
+                >
+                  {no}
+                </span>
+              ) : (
+                <FileText className="w-4 h-4 mt-0.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
+              )}
               <div className="flex-1 min-w-0 grid gap-1">
                 <span className="text-[12.5px] font-medium text-[var(--fg)] break-words">{ad}</span>
                 <DogrulamaRozeti kaynak={k} />
