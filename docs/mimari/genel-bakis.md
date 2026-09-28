@@ -223,6 +223,12 @@ vardır ama yeni kayıtlar bilinçli `NULL` yazılır, çünkü Hanyaloğlu Acar
 (`backend/auth_helpers.py:14-16`). Karar kaydı:
 [`docs/kararlar/001-tenant-ortak-havuz.md`](../kararlar/001-tenant-ortak-havuz.md).
 
+Avukatın sistemler arası kimliği kurumsal `lawyers.kimlik`'tir (`AVK-00001`; sistem üretir, değişmez,
+kullanıcıya gösterilmez); iç `lawyers.id` yalnız FK'dır, dışarı verilmez. Avukat kaydı silinmez, pasife
+alınır; Hukukbot kimlik ↔ adı `GET /export/lawyers`'tan öğrenir. Karar kaydı:
+[`docs/kararlar/022-kurumsal-avukat-kimligi.md`](../kararlar/022-kurumsal-avukat-kimligi.md); ayrıntı
+[`dava-acma-akisi.md`](dava-acma-akisi.md) §15-17.
+
 ## 5. Bir `/process` isteğinin yaşam döngüsü
 
 ```
