@@ -265,6 +265,10 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 - **Avukat adı serbest yazılmaz (27.09):** avukat adı yazan YENİ kod `lawyer_resolver.kanonik_avukat_metni`'nden
   geçer (listedeki yazım; doğru yazım "Tuğçe Ungör Yanık", Ü değil); kullanıcı yolları listede olmayan
   yeni adı `AvukatListedeYok` → 422 ile reddeder. Ayrıntı `docs/mimari/veri-teslim-hatti.md` "Avukat yazım koruması".
+- **Avukat kimliği kod değil `lawyers.kimlik` (karar 022, G224-G229):** `AVK-00001`, sistem üretir
+  (`models.sonraki_avukat_kimligi`), değişmez, ekrana basılmaz; `lawyers.id` dışarı verilmez. Avukat SİLİNMEZ
+  (DELETE = `active=false`, `clear`/`keep` 422), bağlar `ON DELETE RESTRICT`. Avukat verisine dokunan her adım
+  önce/sonra `scripts/avukat_envanteri.py --kaydet` / `--karsilastir` (İHLAL = geri al).
 - **Rapor asistanı tanımı doğrulanmadan kullanılmaz:** Gemini'nin döndürdüğü tanım
   `services/rapor/asistan.tanimi_dogrula` → `RaporTanimi` + `motor.tanimi_dogrula` yolundan
   geçmeden istemciye `tanim` olarak GİTMEZ (geçmezse `warning` + `tanim=null`); Gemini
