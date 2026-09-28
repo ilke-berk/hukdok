@@ -184,7 +184,7 @@ Ayrıntı `docs/mimari/raporlama.md` §2.4. **Özet modu (12.09):** tanım `olcu
 alanlarına göre `GROUP BY` (≤3; tarihte `kirilim` gün/ay/yıl, Türkiye günü) + ölçümler (≤5; `sayi|toplam|ortalama|
 min|max`, anahtar `toplam:maddi_tazminat`); `kolonlar` özet modunda kullanılmaz ama zorunlu kalır; boş
 `gruplama`/`olcumler` JSON'a girmez (eski sözleşme birebir). Türetilmiş/çoklu bağ kolonu GRUPLANAMAZ. Şeritte
-"Σ Özet" satırı; asistan prompt'u "ÖZET RAPOR". Ayrıntı §3.1. **Saat dilimi (12.09):** rapor sözleşmesinin
+"Σ Özet" satırı; asistan prompt'u "ÖZET RAPOR". Ayrıntı §3.1. **Tıbbi beşli çok değerli (28.09):** `Kolon.coklu_deger` — seçenek havuz ∪ verideki öğeler (sayılı), `eq`/`in` TAM ÖĞE eşler (`motor._coklu_kosulu`), `contains` parça; asistana en sık 40 öğe. Ayrıntı §2. **Saat dilimi (12.09):** rapor sözleşmesinin
 dilimi `schemas_rapor.SAAT_DILIMI` (Europe/Istanbul) — DB UTC; zaman damgalı filtre bind'ı, serileştirme ve
 Excel hücresi TR saati (openpyxl tz'li datetime'ı reddeder).
 

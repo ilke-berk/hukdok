@@ -646,6 +646,19 @@ describe("G174 — degerAnahtari / degerEsle / degerAdaylari / filtreDegeriDegis
         const y3 = filtreDegeriDegistir(tanim, 1, "Ankara 1. Asliye Hukuk Mahkemesi", undefined);
         expect(y3.filtreler[1]).toEqual({ alan: "court", op: "contains", deger: "Ankara 1. Asliye Hukuk Mahkemesi" });
     });
+
+    it("28.09 çok değerli tıbbi kolon: öğe listesi `secenekler`de → yaklaşık eq aday çipi alır, tam öğe temiz, contains alt dize temiz", () => {
+        const tibbi = K({
+            anahtar: "tibbi_olay", etiket: "Tıbbi Olay", tip: "metin", oplar: ["eq", "ne", "contains", "in", "is_null", "not_null"],
+            secenek_kaynagi: "veri", coklu_deger: true, secenekler: ["Down Sendromu", "Omuz Distosisi", "Asfiksik Doğum"],
+        });
+        const katalog = { ...KATALOG_G174, veri_kaynaklari: [{ ...DAVALAR, kolonlar: [...DAVALAR.kolonlar, tibbi] }] } as Katalog;
+        expect(degerEsle(tanimla([{ alan: "tibbi_olay", op: "eq", deger: "down sendromu" }]), katalog).temiz).toBe(true);
+        expect(degerEsle(tanimla([{ alan: "tibbi_olay", op: "contains", deger: "sendrom" }]), katalog).temiz).toBe(true);
+        const s = degerEsle(tanimla([{ alan: "tibbi_olay", op: "eq", deger: "Down Sendrom" }]), katalog);
+        expect(s.temiz).toBe(false);
+        expect(s.sorunlar[0].adaylar[0]).toBe("Down Sendromu");
+    });
 });
 
 describe("G174 — listeNiyeti ('hangi X'ler var')", () => {

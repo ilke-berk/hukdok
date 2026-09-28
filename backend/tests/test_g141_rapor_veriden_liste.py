@@ -582,6 +582,8 @@ def test_onizleme_govdesi_degismedi_ve_onbellek_grup_sorgularini_kapsar(env, mon
     env.route.katalog_onbellegini_sifirla()
     client.get(CATALOG)
     ilk = sayac["n"]
-    assert ilk == sum(1 for k in registry.KAYNAKLAR.values() for c in k.kolonlar.values() if c.tip != "liste")
+    # 28.09: çok değerli kolon kendi öğe listesini kurar (`coklu_deger_secenekleri`), G141 yolunu koşmaz
+    assert ilk == sum(1 for k in registry.KAYNAKLAR.values() for c in k.kolonlar.values()
+                      if c.tip != "liste" and not c.coklu_deger)
     client.get(CATALOG)
     assert sayac["n"] == ilk                                     # 60 sn önbellek: GROUP BY sorguları tekrar koşmaz

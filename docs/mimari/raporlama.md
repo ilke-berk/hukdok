@@ -119,9 +119,27 @@ Kurallar (kayıt defteri import anında kendini denetler, `_kolonu_denetle` + `_
   (`:342-343`), Müvekkiller `Kimlik · İletişim · Vekalet · Sınıflandırma · Sistem` (`:543`), Belgeler
   `Belge · Dava · Yükleme · Sistem` (`:626`), Föyler `Kimlik · Sınıflandırma · Kapsam · Sistem` (`:694`).
   `gruplar` katalog gövdesine AYRICA yazılmaz — grup sırası kolon sırasından okunur (G137 kararı).
-- **Tıbbi beşli** (`tibbi_surec`, `tibbi_olay`, `iddia_edilen_kusur`, `hastada_olusan_zarar`,
-  `uygulanan_yontem`) `" ; "` ayraçlı ÇOK DEĞERLİ metindir → `liste` DEĞİL, `contains` ile
-  aranır (`:461-469`).
+- **Tıbbi beşli — çok değerli kolon (28.09):** `tibbi_surec`, `tibbi_olay`, `iddia_edilen_kusur`,
+  `hastada_olusan_zarar`, `uygulanan_yontem` hücrede `" ; "` ayraçlı birden çok öğe taşır (G124,
+  `services/multi_value.py`). Tip `metin` kalır, `Kolon.coklu_deger=True` + havuz tablosu (`_coklu`,
+  `registry.py:306`; MedicalProcess/MedicalEvent/AllegedFault/PatientHarm/AppliedMethod).
+  - **Katalog:** `coklu_deger_secenekleri` (`:1525`) = havuzun aktif adları ∪ verideki öğeler
+    (`split_values`), `secenek_sayilari` = öğeyi taşıyan kayıt (tenant + soft-delete; hücre `GROUP BY`'ı tek
+    sorgu, ayrıştırma Python'da); büyük/küçük harf farkı tek öğe, havuz yazımı kazanır; sıra sayı azalan →
+    Türk alfabesi. Öğe varsa `kontrol=coklu_secim`, `secenek_kaynagi="veri"`, `oneriler=null`; hiç öğe yoksa
+    `metin_icerir` kalır. Katalogda `coklu_deger: true`. Bağlı kopyalar: tekil bağ (`foyler`/`belgeler` →
+    `dava.*`) düz kolon gibi sayılı; çoklu bağ (`muvekkiller` → `dava.*`) hedefin DISTINCT hücrelerinden,
+    sayı `null`.
+  - **Filtre:** `motor._coklu_kosulu` (`motor.py:345`) — `eq`/`ne`/`in` TAM ÖĞE:
+    `' ; ' || hücre || ' ; '` ILIKE `'% ; öğe ; %'` (`_oge_kosulu`, kaçışlı, harf duyarsız); `in`'deki `null`
+    "(boş)", `ne` boş hücreyi de alır; `contains`/`is_null`/`not_null` düz atom. Çoklu bağ EXISTS'i aynı atomu
+    alır (`_kosul` atomu `coklu_deger`e göre seçer). Lokal ölçüm: Tıbbi Süreç "Cerrahi" tam öğe 141 kart,
+    `contains` 782 — parça arama "Cerrahi Uygulama", "Revizyon Cerrahisi"ni de getiriyordu.
+  - **Asistan:** prompt satırı "ÇOK DEĞERLİ" şerhi + en sık `COKLU_PROMPT_OGE_MAX` (40) öğe
+    (`asistan.py:97`; Tıbbi Olay lokal 813 öğe — tamamı prompt'u ~15k token şişirirdi); listede olmayan öğe
+    için `contains`. Tam liste frontend'de: şerit `CokluSecim` (arama kutulu) ve `degerEsle` aday çipleri.
+  - Veri notu (28.09 lokal): havuzda ve veride `[YENİ] …` / `(değişiklik önerilmiyor)` gibi öneri
+    kalıntıları var (Tıbbi Olay 19 havuz değeri / 17 kart) — rapor olduğu gibi gösterir, temizlik veri işidir.
 - INNER JOIN sonucu: davasız (`case_id IS NULL`, TEST/UNLINKED) belge rapora GİRMEZ — tenant'a
   bağlanamadığı için bilinçli (`:10-16`).
 

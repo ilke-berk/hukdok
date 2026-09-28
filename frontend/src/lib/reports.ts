@@ -134,6 +134,11 @@ export interface KatalogKolon {
     bag?: string | null;
     /** Özet modu (12.09): GROUP BY yapılabilir (`secilebilir && siralanabilir`); eski katalog vermez → `kolonGruplanabilirMi` türetir. */
     gruplanabilir?: boolean;
+    /**
+     * 28.09 çok değerli kolon (tıbbi beşli, " ; " ayraçlı): `secenekler` havuz + verideki öğeler; sunucu `eq`/`in`'i
+     * TAM ÖĞE eşler, `contains` hücrede parça arar. Eski katalog vermez → false gibi.
+     */
+    coklu_deger?: boolean;
 }
 
 /** Hızlı filtre yuvasının sunumu (§5.2): kontrol seçimi `kontrol` + `sunum` ikilisinden (§5.3). */

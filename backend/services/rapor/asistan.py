@@ -92,17 +92,24 @@ def _analyzer() -> ModuleType:
 # (kaynak anahtarı, kolon anahtarı) → veriden gelen seçenekler (katalog `secenek_kaynagi == "veri"`)
 VeriSecenekleri = Mapping[tuple[str, str], Sequence[str]]
 
+# 28.09: çok değerli kolonların (tıbbi beşli) öğe listesi yüzlerce değer (lokal: Tıbbi Olay 790) — prompt'a
+# yalnız en sık bu kadarı girer (katalog sayı azalan sıralı); tam liste şeritte ve `degerEsle` aday çiplerinde.
+COKLU_PROMPT_OGE_MAX = 40
+
 
 def veri_secenekleri_katalogdan(katalog: Mapping[str, Any]) -> dict[tuple[str, str], list[str]]:
     """Rotanın önbellekli katalog gövdesinden (`registry.katalog`) veriden gelen seçenek listelerini
     çıkarır: yalnız `secenek_kaynagi == "veri"` ve bağlı olmayan (`bag is None`) kolonlar — bağlı kolonlar
-    prompt'a ilişki satırıyla girer, kendi satırı yok. Saf; DB'ye dokunmaz."""
+    prompt'a ilişki satırıyla girer, kendi satırı yok. Çok değerli kolonda (`coklu_deger`) en sık
+    `COKLU_PROMPT_OGE_MAX` öğe. Saf; DB'ye dokunmaz."""
     sonuc: dict[tuple[str, str], list[str]] = {}
     for kaynak in katalog.get("veri_kaynaklari", []):
         for kolon in kaynak.get("kolonlar", []):
             if kolon.get("secenek_kaynagi") != "veri" or kolon.get("bag") is not None:
                 continue
             secenekler = [str(x) for x in (kolon.get("secenekler") or []) if x is not None and str(x) != ""]
+            if kolon.get("coklu_deger"):
+                secenekler = secenekler[:COKLU_PROMPT_OGE_MAX]
             if secenekler:
                 sonuc[(kaynak["anahtar"], kolon["anahtar"])] = secenekler
     return sonuc
@@ -114,6 +121,13 @@ def _kolon_satiri(kolon: Kolon, veriden: Optional[Sequence[str]] = None) -> str:
         secenekler = registry.secenekleri_getir(kolon, None)
         if secenekler:
             parcalar.append("|".join(secenekler))
+    elif kolon.coklu_deger:
+        # 28.09: çok değerli — liste KAPALI değil ve kısaltılmış; tam öğe eq/in, listede olmayan öğe contains
+        parcalar.append(
+            "ÇOK DEĞERLİ (hücrede ' ; ' ayraçlı öğeler; eq/in bir öğeyi TAM eşler, contains hücrede parça arar)"
+        )
+        if veriden:
+            parcalar.append(f"en sık {len(veriden)} öğe (tam liste değil; burada yoksa contains): " + "|".join(veriden))
     elif veriden:
         # Veriden gelen kapalı liste (G141): model tam değeri görsün, yaklaşık ifadeyi en yakınına çevirsin
         parcalar.append("seçenekler: " + "|".join(veriden))
