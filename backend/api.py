@@ -183,6 +183,14 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=refresh_lists_background, daemon=True).start()
     logging.info("Background refresh thread started.")
 
+    # 28.09: rapor kataloğu önbelleği worker-BAŞINADIR (süreç içi) → her worker kendi ısıtır;
+    # ilk /reports açılışı "Rapor kataloğu yükleniyor…"da beklemesin. Açılışı bekletmez (thread).
+    katalog_tenantlari = [t.strip() for t in os.getenv("ALLOWED_TENANTS", "").split(",") if t.strip()]
+    if katalog_tenantlari:
+        from routes.reports import katalog_onbellegini_isit
+        threading.Thread(target=katalog_onbellegini_isit, args=(katalog_tenantlari,), daemon=True,
+                         name="rapor-katalog-isit").start()
+
     # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle).
     # Faz 3-E: yalnız lider worker'da — N worker'da N kopya rapor/e-posta üretirdi.
     # Günlük aktivite raporu zamanlayıcısı (her gece 00:00 Türkiye saatiyle).

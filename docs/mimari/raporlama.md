@@ -45,7 +45,7 @@ Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:740-852 — G175 yerleşimi: s
    → sayaç satırı `sayac-satiri` (:785-821): "N kayıt" · TemplateBar (kompakt, "…" menüsü) · ExportButtons (Excel/CSV)
    → [FavoritePrompt (koşullu, :824-832)] → PreviewTable.tsx (:835-851; başlıktan sıralama; "güncelleniyor…")
    │ GET /api/reports/catalog ──▶ registry.katalog()  (kaynaklar · kolonlar · gruplar · kontroller · seçenek/öneri ·
-   │                               hızlı filtreler · kolon setleri · ilişkiler · limitler) — tenant anahtarlı 60 sn önbellek
+   │                               hızlı filtreler · kolon setleri · ilişkiler · limitler) — tenant anahtarlı önbellek (bayatken arkaplanda yenilenir, §2.3)
    │ POST /api/reports/preview ─▶ motor.onizle()      (sayfalı, LOGLANMAZ; ekran her geçerli taslak değişiminde ister)
    │ POST /api/reports/export ──▶ COUNT → 413? → report_runs satırı → dosya <RAPOR_CIKTI_DIZINI>/<run_id>-<slug>.<ext>
    │                               → sha256/boyut → tembel temizlik → aynı dosya FileResponse (X-Rapor-Kosu-Id)
@@ -106,7 +106,7 @@ Kurallar (kayıt defteri import anında kendini denetler, `_kolonu_denetle` + `_
   referans tablosunun aktif adları (`secenek_tablosu`) + kolondaki DISTINCT değerler (türetilmiş
   liste kolonda `secenek_ifadesi` — `muvekkil_kategorisi` → `clients.category`);
   `secenekleri_getir(kolon, db)` birleştirir, `db=None` ise yalnız çekirdek (asistan prompt'u)
-  (`:822-850`). Katalog DB'den okur → seçenek listesi statik değildir, büyür (60 sn önbellek, §2.3).
+  (`:822-850`). Katalog DB'den okur → seçenek listesi statik değildir, büyür (önbellekli, §2.3).
 - **Türetilmiş kolon kuralı G137'de gevşedi:** `filtrelenebilir` artık KOLON BAZINDA. Filtrelenebilir
   türetilmiş kolon `filtre_ifadesi` (EXISTS ya da skaler karşılaştırma üreten fonksiyon) taşımak
   ZORUNDA (`:771-772`) ve `izinli_oplar` ile tip tablosunun alt kümesine daralabilir (`:775-777`);
@@ -180,13 +180,32 @@ Asistanın sistem talimatına gömülen katalog metni bu alanları BİLEREK içe
   COUNT alt sorgusu doğrudan karşılaştırılır, op tablosu `sayi` ile aynı; COUNT NULL olmadığından
   `is_null` boş küme döner ama 422 yemez (şeritteki "boş olanlar" anahtarı için).
 
-### 2.3 Katalog önbelleği (`routes/reports.py:81-109`)
+### 2.3 Katalog önbelleği (`routes/reports.py:83-164`, 28.09'da yeniden)
 
-`_katalogu_getir(tenant_id)`: anahtar `(SessionLocal, tenant_id)`, `KATALOG_ONBELLEK_SN = 60.0`,
-saat `_saat = time.monotonic` (testler monkeypatch'ler), `threading.Lock` (sync route threadpool'da
-koşar), `katalog_onbellegini_sifirla()` test/yönetim için. Önbellek **worker başına** (2 uvicorn
-worker → 60 sn içinde iki worker farklı fotoğraf verebilir; kabul edilebilir, §12). Oturum fabrikası
-anahtarda: testlerde monkeypatch'lenen farklı fabrika = farklı DB, bayat gövde sızmaz.
+**Neden değişti (28.09):** eski düz 60 sn TTL worker başınaydı (2 worker) ve sayfa dakikada bir açılmadığı
+için açılışların çoğu soğuktu — "Rapor kataloğu yükleniyor…" ekranı hesabı bekliyordu (lokal ölçüm:
+0,6-0,9 sn, 164 sorgu; prod'da arama ölçümlerindeki ×3-4 oranı geçerliyse birkaç saniye).
+
+`_katalogu_getir(tenant_id)` (`:135`): anahtar `(SessionLocal, tenant_id)`, saat `_saat = time.monotonic`
+(testler monkeypatch'ler), `threading.Lock` (sync route threadpool'da koşar).
+- Yaş `< KATALOG_TAZE_SN` (120 sn, `:91`) → gövde aynen döner.
+- Daha yaşlı → **bayat gövde hemen döner**, `_arkaplanda` (`:102`, daemon thread; testler eşzamanlıya çevirir)
+  `_katalogu_yenile`'yi başlatır; anahtar başına tek uçuş (`_katalog_yenilenenler`). Yenileme hatası WARNING,
+  bayat gövde yerinde kalır, sonraki istek yeniden dener.
+- Kayıt yok (soğuk) → istek hesabı bekler; aynı anahtarın eşzamanlı soğuk istekleri anahtar başına kilitle
+  tek hesabı paylaşır (`_katalog_hesap_kilitleri`).
+- **Isıtma:** her worker lifespan'de `ALLOWED_TENANTS` için `katalog_onbellegini_isit` (`:156`) arkaplan
+  thread'i koşturur (`api.py:185-192`) — açılışı bekletmez; ilk /reports açılışı da sıcak gelir.
+- `katalog_onbellegini_sifirla()` test/yönetim için.
+
+Önbellek **worker başına**: iki worker farklı fotoğraf verebilir; bayat gövde "son hesaptaki" hâldir, en
+kötü bir açılış gecikir (§12). Oturum fabrikası anahtarda: testlerde monkeypatch'lenen farklı fabrika =
+farklı DB, bayat gövde sızmaz.
+
+**Tekrarsız okuma (28.09):** `registry.katalog` hesap boyunca oturumu `_TekrarsizOkuma`
+(`registry.py:1571`) ile sarar — aynı SELECT (derlenmiş SQL + bind değerleri) bir kez koşar, sonuç
+`Result.freeze()` ile paylaşılır. Bağlı kaynak kolonları (G166) aynı referans tablosu/DISTINCT'i her kaynakta
+yeniden istiyordu: lokal ölçüm 164 → 86 sorgu (tekrarlar ucuz sorgulardı; asıl kazanç önbellektedir).
 
 ### 2.4 Bağlı kaynak kolonları — kaynaklar arası birleştirme (G166, 2026-09-10)
 
@@ -331,7 +350,7 @@ Hepsi `require_admin` + `get_current_tenant`; yönetici değilse 403 `"Yönetici
 
 | Uç | Kod | Davranış |
 | --- | --- | --- |
-| `GET /api/reports/catalog` | `:112-119` | §2.1 gövdesi + `{"limitler":{"onizleme_sayfa_boyu_max":200, "export_max_satir":<RAPOR_MAX_SATIR>}}` (`registry.katalog`, `motor.limitler` `motor.py:40-47`); tenant anahtarlı 60 sn önbellek (§2.3) |
+| `GET /api/reports/catalog` | `:112-119` | §2.1 gövdesi + `{"limitler":{"onizleme_sayfa_boyu_max":200, "export_max_satir":<RAPOR_MAX_SATIR>}}` (`registry.katalog`, `motor.limitler` `motor.py:40-47`); tenant anahtarlı önbellek (bayatken arkaplanda yenilenir, §2.3) (§2.3) |
 | `POST /api/reports/preview` | `:122-139` | `{"tanim", "sayfa"≥1, "sayfa_boyu"≤200}` → `{"kolonlar":[{anahtar,etiket,tip}], "satirlar", "toplam", "sayfa", "sayfa_boyu"}`; **loglanmaz** (K4) |
 | `GET /api/reports/templates` | `:174-192` | kendi (`olusturan` = kullanıcı e-postası, küçük harf) + `paylasimli=true`; silinmişler hariç; ad sırası |
 | `POST /api/reports/templates` | `:195-214` | `{"ad"≤120, "aciklama"≤500, "tanim", "paylasimli"}` → 201 `RaporSablonu`; tanım kayıt anında motor doğrulamasından geçer (422, `_tanimi_dogrula_422` `:167-171`) |
@@ -427,7 +446,7 @@ hata (Kod: ...)"}` verir ve sözleşme dışıdır (`routes/reports.py:420-426`,
   `_iliski_satiri :126`: `## kaynak — etiket: açıklama`, varsayılan kolonlar, `anahtar · etiket · tip[ ·
   seçenek|seçenek][ · türetilmiş (filtre yalnız: contains|is_null|not_null; sıralama yok)]`;
   sabit seçenekler çekirdekten, DB'siz), elle kolon listesi YOK. **Veriden gelen seçenek listeleri (2026-09-12):**
-  rota `/chat` 60 sn önbellekli tenant kataloğunu `run_in_threadpool` ile alır, `asistan.veri_secenekleri_katalogdan`
+  rota `/chat` önbellekli tenant kataloğunu `run_in_threadpool` ile alır, `asistan.veri_secenekleri_katalogdan`
   yalnız `secenek_kaynagi == "veri"` + bağsız kolonları `(kaynak, kolon) → seçenekler` olarak çıkarır,
   `katalog_metni(veri_secenekleri)` kolon satırına `· seçenekler: a|b|c` ekler (8 bağsız kolon; katalog metni 11,3k → 15,8k karakter, lokal ölçüm 12.09;
   argümansız çağrı eski metinle birebir). Sebep: "konusu kadın doğum" isteği `subject contains "kadın doğum"`
@@ -808,7 +827,7 @@ yeter. G137-G139 yeni env EKLEMEDİ (`KATALOG_ONBELLEK_SN` sabit, env değil). `
 | Path traversal (indirme) | `yol_guvenli_mi`: `resolve()` sonrası çıktı dizini altında VE `.xlsx/.csv`; aksi 404 | `kosu_logu.py:54-66`, `routes/reports.py:391-392` |
 | Dosya adı enjeksiyonu | `cikti_yolu` slug'ı yalnız `[A-Za-z0-9-_]`, `Path.name` | `kosu_logu.py:45-51` |
 | CSV formül enjeksiyonu | `= + - @` öneki `'` (metin hücre) | `cikti.py:88-93` |
-| Kaynak tüketimi | kolon ≤60 / filtre ≤20 / `in` ≤200 / sayfa ≤200 / export tavanı 413 / `yield_per` + write-only; sohbet ≤20×4000; öneri ≤300 değer/kolon; katalog DISTINCT sorguları 60 sn önbellekli | `schemas_rapor.py:19-23`, `:206-207`; `routes/reports.py:81-109`, `:290-292`; `registry.py:63`, `:874` |
+| Kaynak tüketimi | kolon ≤60 / filtre ≤20 / `in` ≤200 / sayfa ≤200 / export tavanı 413 / `yield_per` + write-only; sohbet ≤20×4000; öneri ≤300 değer/kolon; katalog DISTINCT sorguları önbellekli (bayatken arkaplanda yenilenir) | `schemas_rapor.py:19-23`, `:206-207`; `routes/reports.py:83-164`, `:290-292`; `registry.py:63`, `:874` |
 | Yetki | tüm uçlar `require_admin` (`ADMIN_EMAILS`); şablon yazma yalnız sahibi (403) | `routes/config.py:66`, `routes/reports.py:162-164` |
 
 ## 12. Plan ile kod arasındaki farklar (uygulamada değişti)
@@ -838,7 +857,7 @@ kararları ve plandaki "ölçüm/etiket" ifadelerinin somutlaşmasıdır. (F16/F
 | F12 | §4.2 taraf tablosu 4 kolon; hızlı filtre listesinde `dava_sayisi` | `dava_sayisi` de filtrelenebilir türetilmiş (`_skaler_filtre`, `registry.py:586-587`); `is_null` boş küme (COUNT NULL olmaz) | denetim "hızlı filtre filtrelenebilir olmalı" zorladı; `foy_sayisi`/`belge_sayisi` filtrelenemez kaldı |
 | F13 | §4.2 öneriler "alfabetik" | **KAPANDI 12.09:** DB `ORDER BY` yalnız LIMIT kesmesi için; dönen liste `registry.tr_sira_anahtari` ile Türk alfabesine göre yeniden sıralanır (öneriler, veriden seçenekler sıklık eşitliğinde, `liste` DISTINCT katmanı) — collation bağımlılığı yok, sqlite = Postgres | `tests/test_rapor_dogruluk_duzeltmeleri.py` |
 | F14 | §4.2 `muvekkil_kategorisi` seçim ifadesi | `aggregate_strings` DISTINCT DEĞİL (sqlite `group_concat(DISTINCT x, ayraç)` yok): iki Doktor müvekkil "Doktor ; Doktor" (`registry.py:293-303`) | yalnız görünüm; filtre EXISTS olduğundan doğruluk etkilenmez |
-| F15 | §4.2 "katalog cevabı süreç içi 60 sn önbelleklenir" | worker başına (`UVICORN_WORKERS=2`), `(SessionLocal, tenant_id)` anahtarlı, `time.monotonic` (`routes/reports.py:81-109`) | 60 sn içinde iki worker farklı fotoğraf verebilir; `gruplar` kaynağa ayrıca yazılmadı |
+| F15 | §4.2 "katalog cevabı süreç içi 60 sn önbelleklenir" | worker başına (`UVICORN_WORKERS=2`), `(SessionLocal, tenant_id)` anahtarlı, `time.monotonic` (`routes/reports.py:83-164`); 28.09'dan beri 120 sn tazelik + bayatken arkaplanda yenileme + açılışta ısıtma (§2.3) | iki worker farklı fotoğraf verebilir; `gruplar` kaynağa ayrıca yazılmadı |
 | F16 | §4.1 madde 2 "Temizle hepsini siler" | etiket "Filtreleri temizle" (`QuickFilters.tsx:103`); kolon panelindeki "Temizle" ayrı (`ColumnPicker.tsx:208`) | çakışma önlendi |
 | F17 | §4.1 madde 5 "600 ms gecikme ya da odak çıkışı" (G138 görevi: `useDebounce` ile) | `useDebounce` KULLANILMADI; efekt + `gecikmeliRef`/`zamanlayiciRef` (`ReportsPage.tsx:271-298`) — aynı sözleşme (600 ms, tek istek), yapısal/yazım ayrımı böyle kurulabildi | davranış plana uygun, mekanizma farklı |
 | F18 | §4.3 "şablon/asistan tanımı yüklenince filtreler aynı kontrollere geri çözülür" | + tek değerli `in` → `eq` normalizasyonu; dolu filtreler şeridin BAŞINA (tanım sırası korunur); gelişmiş çip yuvayı ezmez (`builderState.ts:71-100`) | şablon eşitliği/yeniden isteme kapıları için şart |
@@ -899,8 +918,9 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
   ile gider. Sayfadan çıkarken süren `/chat` isteği iptal edilir, dönüşte sohbette `YARIM_ISTEK_NOTU` hata kaydı
   (`kod: iptal`, geçmişe girmez). "Geri al" adımı saklanmaz (tek adım, sayfa ömrü). "Kapat" alanı kapatır ama geçmiş
   kalır. Bekçi: `ReportsPage.asistan.test.tsx` "28.09" testleri.
-- **Önbellek 60 sn / worker başına:** referans listesi ya da yeni taraf adı ekledikten sonra şeritteki
-  seçenek/öneri en geç 60 sn sonra görünür; iki worker aynı anda farklı fotoğraf verebilir (F15).
+- **Önbellek bayatken arkaplanda yenilenir / worker başına (28.09):** referans listesi ya da yeni taraf adı
+  ekledikten sonra şeritteki seçenek/öneri, 120 sn'lik tazelik dolduktan sonraki İKİNCİ açılışta görünür
+  (ilki bayat gövdeyi alıp yenilemeyi başlatır); iki worker aynı anda farklı fotoğraf verebilir (F15).
 - **`RAPOR_MAX_SATIR` iki okuyucu:** export tavanı `settings.rapor_max_satir` (boot'ta donar),
   katalogdaki `export_max_satir` `motor.limitler()` `os.getenv` (önbellek süresi içinde bir kez).
   Prod'da aynı env'i okurlar, fark yalnız test zamanı; `motor.limitler()`ın `settings`'ten okuması
@@ -969,7 +989,7 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 | `backend/tests/test_g130_rapor_temeli.py` | katalog şekli (G137'de yeni alanlar eklendi), yasak kolonlar, 403 (gerçek `require_admin`), 422 yolları, op×tip kombinasyonları, `contains` kaçışı, bağlı parametre, tenant + soft-delete dört kaynakta, filtre ifadesiz türetilmiş filtrelenemez/sıralanamaz (`foy_sayisi`), sayfalama |
 | `backend/tests/test_g131_rapor_export_ve_log.py` | şablon CRUD + sahiplik 403 + paylaşım, xlsx geri okuma + koşu satırı + sha256 = indirilen = saklanan, csv BOM/`;`/önek, 413, download traversal reddi, temizlik + 410, hata yolu, migrasyon kuralı bekçisi, akış (liste değil) |
 | `backend/tests/test_g132_rapor_asistani.py` | anahtar varsayılan/409, 403, gövde sınırları, geçerli/geçersiz tanım akışı (taraf kolonunda `eq` → 422 → `warning`), 5 Gemini hatası → `error_kod` + TEK ERROR, yanıt hataları, prompt içeriği, kod incelemesi bekçileri (SessionLocal/`client.aio` yok), Developer API uyumlu şema, `tanim=null` + eylem → eylem düşer |
-| `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek 60 sn (monotonic monkeypatch + sorgu sayacı); asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |
+| `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek (28.09: tazelik süresi, bayatken hemen dönüş + tek arkaplan yenilemesi, yenileme hatası, soğuk tek hesap, ısıtma; monotonic monkeypatch + sorgu sayacı) + tekrarsız okuma; asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |
 | `backend/tests/test_g166_rapor_bagli_kaynaklar.py` | bağlı kolon türetimi (her ilişki × hedef kolon birebir, hariç/türetilmiş atlama, ikinci derece bağ yok), öz-denetim 4 ret, katalog `iliskiler`/`bag`/kontrol/öneri (hedef tenant kuralı), kullanıcı örneği (Nisan sonrası + müvekkil telefonu; tekil + sıralı birleşim, silinmiş kart/tenant/silinmiş dava dışarıda, tarafsız dava boş hücre), ad anahtarıyla bağ, TKU tekilleşme, tarih/mantık cast, EXISTS filtre anlamı 16 varyant (is_null/not_null/in+null/tarih between+eq/mantık/iki bağ AND), müvekkilden dava + belgeden tekil dava (sıralama), 422 kuralları, asistan katalog metni ilişki satırları + prompt kuralı + aynı doğrulama, index DDL = `_ad_anahtari` derlemesi, tarih koşulu tek kaynak |
 | `backend/tests/test_g132_rapor_asistani.py` (G176 eki, 2 test; dosyada 30 test fonksiyonu — `grep -c "def test_"`, c839fdb) | `test_prompt_g176_uygulama_kurali_teyit_dongusu_yok` ("TEYİT DÖNGÜSÜ"/"hemen uygulanmaz"/"yine onay iste" YOK; "hemen uygulanır", "düzenlenebilir bir şeritte", "onay SORMA", belirsizlik, sözlü onay, "SIFIRDAN ÜRETME", düzeltme cümlesi VAR), `test_prompt_g176_yaklasik_ad_contains_ve_liste_sorusu` (`contains` + liste sorusu cümleleri; "aynen kopyala" korunmuş; yerleşim kurallar < KATALOG < MEVCUT TANIM) — eski prompt'ta kırmızı (G176 raporu, stash ile doğrulandı) |
 | `frontend/src/lib/reportsChat.test.ts` (**42**: G167 + G174 bölümleri), `components/reports/AssistantBar.test.tsx` (**16**), `pages/ReportsPage.asistan.test.tsx` (**23**), `ReportsPage.favori.test.tsx` (**12**) | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`, `onayNiyeti`, `kaydetNiyeti`; **G174:** `degerEsle` (alt dize temiz, birebir `eq`, tutmayan → adaylar kelime kesişimine göre sıralı ≤5, öneri listesiz kolon temiz, `in`/`between`/tarih/sayı/mantık atlanır, İ/ı ve U+0307 normalize), `listeNiyeti` (olumlu kalıplar + eylem fiilli olumsuzlar, etiket/hızlı filtre/eşanlamlı çözümü, belirsizde adaylar); otomatik uygulama (temiz tanım düğmesiz uygulanır, `uygulandi` + Geri al; sorunlu değer kartı + aday tık → uygula; "Yine de uygula"; liste balonu + liste tık → `onFiltreEkle`; "Hangisi?"); düzeltme `mevcut_tanim` = bekleyen; sözle onay hemen; sayfa reddederse kart bekler; tanımsız eylem; `indir_*` ile gelen temiz tanım doğrudan indirilir, 413 yolu; Geri al → yeniden bekleyen; sayfa düzeyinde liste balonu → `eq` → `in` birleşmesi → × ile düşme + toast; favori kartı indirme sonrası |

@@ -6,8 +6,9 @@ Test aşamasında yalnız yöneticiler (`require_admin`, `routes/config.py`) +
 
 Uçlar:
 - `GET /catalog`, `POST /preview` (G130) — önizleme LOGLANMAZ (K4). Katalog
-  G137'den beri tenant'a özel (öneriler tenant kurallı) ve süreç içi 60 sn
-  önbelleklidir (`_katalogu_getir`; DISTINCT öneri sorguları her açılışta koşmasın).
+  G137'den beri tenant'a özel (öneriler tenant kurallı) ve süreç içi önbelleklidir
+  (`_katalogu_getir`, 28.09: `KATALOG_TAZE_SN` sonrası bayat gövde döner + arkaplanda yenilenir,
+  worker açılışında ısıtılır — DISTINCT öneri sorguları açılışı bekletmesin).
 - `GET/POST /templates`, `PUT/DELETE /templates/{id}` (G131, K5): sahip yalnız
   `olusturan` düzenler/siler (403); GET kendi + `paylasimli=true`; soft delete.
 - `POST /export` (G131, K3/K4): COUNT → tavan (413) → koşu satırı (`kosu_baslat`)
@@ -79,13 +80,28 @@ def _dogrula(model, govde: dict[str, Any]):
 
 # ─── G130: katalog + önizleme ────────────────────────────────────────────────
 
-KATALOG_ONBELLEK_SN = 60.0
+# 28.09 — bayatken arkaplanda yenilenen önbellek. Eskiden 60 sn'lik düz TTL'di: worker başına tutulduğu
+# (2 worker) ve sayfa dakikada bir açılmadığı için açılışların çoğu soğuktu ("Rapor kataloğu
+# yükleniyor…", lokal 0,6-0,9 sn / 164 sorgu, prod'da birkaç katı). Artık:
+#   - `KATALOG_TAZE_SN` içinde gövde aynen döner;
+#   - daha yaşlıysa BAYAT gövde hemen döner ve arkaplanda yenisi hesaplanır (anahtar başına tek uçuş);
+#   - hiç kayıt yoksa (soğuk) istek hesabı bekler, aynı anahtarın eşzamanlı soğuk istekleri tek hesabı paylaşır;
+#   - worker açılışında `ALLOWED_TENANTS` için önceden doldurulur (`katalog_onbellegini_isit`, api.py lifespan).
+# Bedeli: katalogdaki öneri/sayı listeleri en kötü "son açılıştaki" hâldir; bir sonraki açılış tazedir.
+KATALOG_TAZE_SN = 120.0
 # Anahtar (oturum fabrikası, tenant): öneriler tenant kurallı; fabrika prod'da tektir,
 # testlerde monkeypatch'lenir — farklı fabrika = farklı veritabanı, bayat gövde sızmaz.
 # Süreç içi (worker başına) ve kilitli: sync route threadpool'da koşar.
 _katalog_onbellek: dict[tuple[Any, str], tuple[float, dict[str, Any]]] = {}
 _katalog_kilidi = threading.Lock()
-_saat = time.monotonic          # testler monkeypatch'ler (60 sn sınırı)
+_katalog_yenilenenler: set[tuple[Any, str]] = set()                 # arkaplan yenilemesi süren anahtarlar
+_katalog_hesap_kilitleri: dict[tuple[Any, str], threading.Lock] = {}  # soğuk hesap tek uçuş
+_saat = time.monotonic          # testler monkeypatch'ler (tazelik sınırı)
+
+
+def _arkaplanda(is_: Any, *args: Any) -> None:
+    """Arkaplan yenilemesini başlatır; testler eşzamanlı koşturmak için monkeypatch'ler."""
+    threading.Thread(target=is_, args=args, daemon=True, name="rapor-katalog-yenile").start()
 
 
 def katalog_onbellegini_sifirla() -> None:
@@ -93,13 +109,8 @@ def katalog_onbellegini_sifirla() -> None:
         _katalog_onbellek.clear()
 
 
-def _katalogu_getir(tenant_id: str) -> dict[str, Any]:
-    anahtar = (SessionLocal, tenant_id)
+def _katalogu_hesapla(anahtar: tuple[Any, str], tenant_id: str) -> dict[str, Any]:
     simdi = _saat()
-    with _katalog_kilidi:
-        kayit = _katalog_onbellek.get(anahtar)
-        if kayit is not None and simdi - kayit[0] < KATALOG_ONBELLEK_SN:
-            return kayit[1]
     db = SessionLocal()
     try:
         govde = registry.katalog(db, motor.limitler(), tenant_id)
@@ -108,6 +119,48 @@ def _katalogu_getir(tenant_id: str) -> dict[str, Any]:
     with _katalog_kilidi:
         _katalog_onbellek[anahtar] = (simdi, govde)
     return govde
+
+
+def _katalogu_yenile(anahtar: tuple[Any, str], tenant_id: str) -> None:
+    try:
+        _katalogu_hesapla(anahtar, tenant_id)
+    except Exception:
+        # Bayat gövde yerinde kalır; bir sonraki istek yeniden dener (deneme düzeyi → WARNING)
+        logger.warning("Rapor kataloğu arkaplanda yenilenemedi (tenant=%s)", tenant_id, exc_info=True)
+    finally:
+        with _katalog_kilidi:
+            _katalog_yenilenenler.discard(anahtar)
+
+
+def _katalogu_getir(tenant_id: str) -> dict[str, Any]:
+    anahtar = (SessionLocal, tenant_id)
+    with _katalog_kilidi:
+        kayit = _katalog_onbellek.get(anahtar)
+        yenile = (kayit is not None and _saat() - kayit[0] >= KATALOG_TAZE_SN
+                  and anahtar not in _katalog_yenilenenler)
+        if yenile:
+            _katalog_yenilenenler.add(anahtar)
+        hesap_kilidi = _katalog_hesap_kilitleri.setdefault(anahtar, threading.Lock())
+    if kayit is not None:
+        if yenile:
+            _arkaplanda(_katalogu_yenile, anahtar, tenant_id)
+        return kayit[1]
+    with hesap_kilidi:
+        with _katalog_kilidi:
+            kayit = _katalog_onbellek.get(anahtar)
+        if kayit is not None:          # beklerken başka istek hesapladı
+            return kayit[1]
+        return _katalogu_hesapla(anahtar, tenant_id)
+
+
+def katalog_onbellegini_isit(tenant_idleri: list[str]) -> None:
+    """Worker açılışında (api.py lifespan, arkaplan thread'i) kataloğu önceden hesaplar — ilk açılış
+    da sıcak gelsin. Hata açılışı bozmaz; ilk istek soğuk hesaplar."""
+    for tenant_id in tenant_idleri:
+        try:
+            _katalogu_getir(tenant_id)
+        except Exception:
+            logger.warning("Rapor kataloğu açılışta ısıtılamadı (tenant=%s)", tenant_id, exc_info=True)
 
 
 @router.get("/catalog")

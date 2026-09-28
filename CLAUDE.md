@@ -166,7 +166,7 @@ kullanıcı kararı AÇIK. Nihai tablo: `docs/kararlar/018-index-temizligi-37-ka
 
 **Raporlama (G130-G177 + 12.09 özet modu):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
 `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
-sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda, 60 sn önbellekli) → tablo; manuel kurucu
+sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda; katalog önbellekli — bayatken arkaplanda yenilenir, worker açılışında ısıtılır) → tablo; manuel kurucu
 (kaynak kartı/filtre şeridi/kolon paneli) KALKTI, şerit yedek kurucudur →
 `GET /api/reports/catalog` · `POST /preview` (loglanmaz) · `POST /export` (xlsx/csv; `report_runs`
 satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
