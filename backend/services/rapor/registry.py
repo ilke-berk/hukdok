@@ -90,6 +90,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Literal, Mapping, Optional, overload
+import typing
 
 import datetime as dt
 import unicodedata
@@ -1567,10 +1568,33 @@ def _kaynak_katalogu(kaynak: VeriKaynagi, db: Optional[Session], tenant_id: str)
     return [_kolon_katalogu(kaynak, kolon, db, tenant_id, bos, liste) for kolon in kaynak.kolonlar.values()]
 
 
+class _TekrarsizOkuma:
+    """Tek katalog hesabı süresince aynı SELECT'i (derlenmiş SQL + bind değerleri) BİR kez koşturan
+    ince oturum sarmalı (28.09 ölçümü, lokal: 164 sorgunun 78'i tekrardı — bağlı kaynak kolonları
+    (G166) aynı referans tablosunu/DISTINCT'i her kaynakta yeniden okuyordu). Sonuç `freeze()` ile
+    saklanır, her çağrı taze bir `Result` alır. Katalog yolu oturumdan yalnız `execute` kullanır."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+        self._sonuclar: dict[tuple[str, str], Any] = {}
+
+    def execute(self, sorgu: Any) -> Any:
+        derlenmis = sorgu.compile(dialect=self._db.get_bind().dialect)
+        anahtar = (str(derlenmis), repr(sorted(derlenmis.params.items())))
+        donmus = self._sonuclar.get(anahtar)
+        if donmus is None:
+            donmus = self._db.execute(sorgu).freeze()
+            self._sonuclar[anahtar] = donmus
+        return donmus()
+
+
 def katalog(db: Optional[Session], limitler: dict[str, int], tenant_id: str) -> dict[str, Any]:
     """`GET /api/reports/catalog` gövdesi (plan §2.4 + §4.2 + §5.2 + §7.2). Öneriler, veriden
     seçenekler, seçenek/boş sayıları tenant kurallı olduğundan gövde tenant'a özeldir — route
-    süreç içi 60 sn önbellekler (GROUP BY ve SUM(CASE) sorguları da önbelleğin içinde)."""
+    süreç içi önbellekler (`routes/reports._katalogu_getir`; bayatken arkaplanda yenilenir).
+    Hesap boyunca tekrar eden SELECT'ler `_TekrarsizOkuma` ile bir kez koşar."""
+    if db is not None:
+        db = typing.cast(Session, _TekrarsizOkuma(db))
     return {
         "veri_kaynaklari": [
             {

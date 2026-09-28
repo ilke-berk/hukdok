@@ -600,14 +600,10 @@ def test_registry_denetimi_hatali_tanimi_reddeder():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 5. Önbellek — 60 sn, tenant anahtarlı
+# 5. Önbellek — tenant anahtarlı; 28.09'dan beri bayatken arkaplanda yenilenir
 # ═══════════════════════════════════════════════════════════════════════════
 
-def test_katalog_onbellegi_60_sn(env, monkeypatch):
-    """Kabul: 60 sn içinde ikinci çağrı `registry.katalog`ı (DISTINCT sorgularını) koşturmaz; 60 sn
-    sonra yeniler; tenant anahtarlı."""
-    saat = [1000.0]
-    monkeypatch.setattr(env.route, "_saat", lambda: saat[0])
+def _sayan_katalog(env, monkeypatch):
     sayac = {"n": 0}
     gercek = registry.katalog
 
@@ -616,26 +612,38 @@ def test_katalog_onbellegi_60_sn(env, monkeypatch):
         return gercek(db, limitler, tenant_id)
 
     monkeypatch.setattr(env.route.registry, "katalog", sayan)
+    return sayac
+
+
+def test_katalog_onbellegi_taze_sure_ve_tenant_anahtari(env, monkeypatch):
+    """Kabul: `KATALOG_TAZE_SN` içinde ikinci çağrı `registry.katalog`ı (DISTINCT sorgularını) koşturmaz
+    ve arkaplan yenilemesi başlatmaz; tenant anahtarlı; sıfırlama sonrası yeniden hesaplar."""
+    saat = [1000.0]
+    monkeypatch.setattr(env.route, "_saat", lambda: saat[0])
+    baslatilan: list = []
+    monkeypatch.setattr(env.route, "_arkaplanda", lambda is_, *a: baslatilan.append(a))
+    sayac = _sayan_katalog(env, monkeypatch)
     client = env.client()
     ilk = client.get(CATALOG).json()
     assert sayac["n"] == 1
-    saat[0] += 59.9
-    assert client.get(CATALOG).json() == ilk and sayac["n"] == 1
+    saat[0] += env.route.KATALOG_TAZE_SN - 0.1
+    assert client.get(CATALOG).json() == ilk and sayac["n"] == 1 and baslatilan == []
     # başka tenant ayrı anahtar
     env.client(tid=T2).get(CATALOG)
     assert sayac["n"] == 2
-    saat[0] += 0.2                     # ilk kayıt 60.1 sn yaşında
-    client.get(CATALOG)
-    assert sayac["n"] == 3
     env.route.katalog_onbellegini_sifirla()
     client.get(CATALOG)
-    assert sayac["n"] == 4
+    assert sayac["n"] == 3
 
 
-def test_katalog_onbellegi_veri_degisimini_60_sn_gizler(env, monkeypatch):
-    """Önbellek davranışının gözlemlenebilir sonucu: yeni DISTINCT değeri süre dolana dek görünmez."""
+def test_katalog_bayatken_hemen_doner_arkaplanda_tek_yenileme(env, monkeypatch):
+    """Kabul (28.09): süre dolunca istek BEKLEMEZ — bayat gövde döner, arkaplan yenilemesi anahtar başına
+    bir kez başlar (süren yenileme varken ikinci istek yenisini başlatmaz); yenileme bitince yeni veri görünür."""
     saat = [5000.0]
     monkeypatch.setattr(env.route, "_saat", lambda: saat[0])
+    bekleyen: list = []
+    monkeypatch.setattr(env.route, "_arkaplanda", lambda is_, *a: bekleyen.append((is_, a)))
+    sayac = _sayan_katalog(env, monkeypatch)
     client = env.client()
     assert _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"] == ["Av. Ali", "Av. Veli"]
     db = env.db()
@@ -644,9 +652,123 @@ def test_katalog_onbellegi_veri_degisimini_60_sn_gizler(env, monkeypatch):
         db.commit()
     finally:
         db.close()
+    saat[0] += env.route.KATALOG_TAZE_SN
+    # bayat gövde hemen; hesap istek içinde KOŞMADI, tek yenileme sırada
     assert "Av. Yeni" not in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"]
-    saat[0] += 60.0
+    assert "Av. Yeni" not in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"]
+    assert sayac["n"] == 1 and len(bekleyen) == 1
+    is_, args = bekleyen.pop()
+    is_(*args)                                            # arkaplan işi koşar
+    assert sayac["n"] == 2
     assert "Av. Yeni" in _kolonlar(_katalog(client)["davalar"])["responsible_lawyer_name"]["secenekler"]
+    assert bekleyen == []                                 # yeni gövde taze — yenileme yok
+    # yenileme bitti → bir sonraki bayatlıkta yeniden başlayabilir
+    saat[0] += env.route.KATALOG_TAZE_SN
+    client.get(CATALOG)
+    assert len(bekleyen) == 1
+
+
+def test_katalog_arkaplan_yenilemesi_hata_verirse_bayat_govde_kalir(env, monkeypatch, caplog):
+    """Yenileme hatası isteği bozmaz: WARNING (deneme düzeyi, log sözleşmesi), bayat gövde yerinde,
+    süren-yenileme işareti temizlenir → sonraki istek yeniden dener."""
+    saat = [100.0]
+    monkeypatch.setattr(env.route, "_saat", lambda: saat[0])
+    bekleyen: list = []
+    monkeypatch.setattr(env.route, "_arkaplanda", lambda is_, *a: bekleyen.append((is_, a)))
+    client = env.client()
+    ilk = client.get(CATALOG).json()
+
+    def patlayan(db, limitler, tenant_id):
+        raise RuntimeError("db yok")
+
+    monkeypatch.setattr(env.route.registry, "katalog", patlayan)
+    saat[0] += env.route.KATALOG_TAZE_SN
+    assert client.get(CATALOG).json() == ilk
+    is_, args = bekleyen.pop()
+    with caplog.at_level("WARNING"):
+        is_(*args)
+    assert any("arkaplanda yenilenemedi" in r.getMessage() and r.levelname == "WARNING" for r in caplog.records)
+    assert client.get(CATALOG).json() == ilk and len(bekleyen) == 1
+
+
+def test_katalog_soguk_eszamanli_istekler_tek_hesap(env, monkeypatch):
+    """Soğuk (kayıtsız) anahtarda eşzamanlı istekler hesabı paylaşır: `registry.katalog` bir kez koşar."""
+    import threading
+
+    sayac = {"n": 0}
+    gercek = registry.katalog
+    giris = threading.Event()
+    birak = threading.Event()
+
+    def yavas(db, limitler, tenant_id):
+        sayac["n"] += 1
+        giris.set()
+        birak.wait(5)
+        return gercek(db, limitler, tenant_id)
+
+    monkeypatch.setattr(env.route.registry, "katalog", yavas)
+    sonuclar: list = []
+    t1 = threading.Thread(target=lambda: sonuclar.append(env.route._katalogu_getir(T1)))
+    t1.start()
+    assert giris.wait(5)
+    t2 = threading.Thread(target=lambda: sonuclar.append(env.route._katalogu_getir(T1)))
+    t2.start()
+    birak.set()
+    t1.join(5)
+    t2.join(5)
+    assert sayac["n"] == 1 and len(sonuclar) == 2 and sonuclar[0] is sonuclar[1]
+
+
+def test_katalog_onbellegi_isitma(env, monkeypatch, caplog):
+    """`katalog_onbellegini_isit` (api.py lifespan) her tenant için gövdeyi önceden hesaplar; ilk istek
+    hesap koşturmaz. Hata açılışı bozmaz (WARNING)."""
+    sayac = _sayan_katalog(env, monkeypatch)
+    env.route.katalog_onbellegini_isit([T1, T2])
+    assert sayac["n"] == 2
+    env.client().get(CATALOG)
+    assert sayac["n"] == 2
+
+    def patlayan(db, limitler, tenant_id):
+        raise RuntimeError("db yok")
+
+    env.route.katalog_onbellegini_sifirla()
+    monkeypatch.setattr(env.route.registry, "katalog", patlayan)
+    with caplog.at_level("WARNING"):
+        env.route.katalog_onbellegini_isit([T1])
+    assert any("ısıtılamadı" in r.getMessage() for r in caplog.records)
+
+
+def test_katalog_tekrar_eden_sorguyu_bir_kez_kosar(env):
+    """28.09: bağlı kaynak kolonları aynı referans tablosu/DISTINCT sorgusunu her kaynakta yeniden istiyordu;
+    katalog hesabı içinde aynı SELECT (SQL + bind) bir kez koşar — gövde sarmalsız hesapla birebir aynı."""
+    from sqlalchemy import event
+
+    db = env.db()
+    try:
+        engine = db.get_bind()
+        sorgular: list = []
+
+        def dinle(conn, cursor, statement, parameters, context, executemany):
+            sorgular.append((statement, repr(parameters)))
+
+        event.listen(engine, "before_cursor_execute", dinle)
+        try:
+            govde = registry.katalog(db, motor.limitler(), T1)
+        finally:
+            event.remove(engine, "before_cursor_execute", dinle)
+        assert sorgular and len(sorgular) == len(set(sorgular))
+
+        # Sarmalsız referans: her kolon kendi sorgusunu koşar — gövde aynı olmalı
+        referans = {
+            "veri_kaynaklari": [
+                {**k, "kolonlar": registry._kaynak_katalogu(registry.KAYNAKLAR[k["anahtar"]], db, T1)}
+                for k in govde["veri_kaynaklari"]
+            ],
+            "limitler": govde["limitler"],
+        }
+        assert govde == referans
+    finally:
+        db.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
