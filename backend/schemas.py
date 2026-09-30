@@ -1,6 +1,7 @@
 from enum import Enum
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -318,7 +319,12 @@ class CaseLawyerCreate(BaseModel):
 
 
 class CaseCreate(BaseModel):
-    tracking_no: str
+    # G236: numarayı SUNUCU verir (`services/ofis_no`). Alan eski istemciler için şemada
+    # kalır ama yeni kayıtta yok sayılır, düzenlemede (PUT) yazılmaz.
+    tracking_no: Optional[str] = None
+    # Kayıt isteğinin kimliği (G236): aynı kimlikle tekrar gelen istek ikinci kart açmaz,
+    # ilk kart `reused: true` ile döner. Opsiyonel (eski istemci/sekme); biçim UUID.
+    istek_kimligi: Optional[UUID] = None
     esas_no: Optional[str] = None
     status: str = "DERDEST"
     service_type: Optional[str] = None

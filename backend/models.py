@@ -23,6 +23,10 @@ class Case(Base):
     # verilmedi (göç G238 doldurur, canlı tahsis G236). `tracking_no` kimlik olarak kalır.
     ofis_no_kodu = Column(String(120), nullable=True)
     ofis_no_sira = Column(Integer, nullable=True)
+    # Kayıt isteğinin kimliği (G236, UUID metni): aynı kimlik ikinci kez gelirse yeni kart
+    # açılmaz. Tekillik kısmi UNIQUE index'te (`uq_cases_istek_kimligi`, migrasyon 57);
+    # NULL = kimliksiz istek (eski istemci, aktarım, script).
+    istek_kimligi = Column(String(36), nullable=True)
     esas_no = Column(String, index=True)
     status = Column(String, default="DERDEST") # "DERDEST", "DANIŞ", "MAHZEN"
     file_type = Column(String) # DOSYA_TURLERI

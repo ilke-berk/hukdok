@@ -143,6 +143,10 @@ def test_commit_case_only_creates_case_and_forces_derdest(env):
     assert len(env.calls["add_case"]) == 1
     assert env.calls["add_case"][0]["status"] == "DERDEST"
     assert env.calls["add_case"][0]["parties"][0]["client_id"] == 12
+    # G236: commit yolu numarayı sunucuya verdirir (bayrak), kimliksiz istek kimliksiz gider
+    assert env.calls["add_case"][0]["ofis_no_sunucudan"] is True
+    assert env.calls["add_case"][0]["istek_kimligi"] is None
+    assert body["case"]["reused"] is False
 
 
 def test_commit_complete_case_has_no_missing_fields(env):
@@ -203,20 +207,22 @@ def test_commit_happy_path_all_documents_queued(env):
 def test_commit_duplicate_tracking_no_409_consumes_no_document(env, monkeypatch):
     from managers import case_manager
 
+    # G236 (eski → yeni): numarayı sunucu verdiği için "numara dolu" 409'u kalktı; kalan
+    # 409 istek kimliği çakışmasıdır (kimlik kayıtlı ama kart döndürülemiyor). Test adı
+    # tarihsel; ölçtüğü garanti aynı: 409'da hiçbir belge tüketilmez.
     monkeypatch.setattr(
-        case_manager, "add_case", lambda data: {"error": "duplicate_tracking_no"}
+        case_manager, "add_case", lambda data: {"error": "duplicate_istek_kimligi"}
     )
-    # Faz 3-D: 409'dan önce idempotent çözümleme denenir; bu test GERÇEK
-    # çakışma yolunu sınar → eşleşme yok (testte DB'ye çıkılmaz).
+    # Ön bakış ve çakışma sonrası bakış eşleşme bulmuyor (testte DB'ye çıkılmaz).
     monkeypatch.setattr(
-        case_manager, "find_idempotent_commit_match", lambda data, tenant_id=None: None
+        case_manager, "istek_kimligi_karti", lambda kimlik, tenant_id=None: None
     )
     env.put_cache("pid-dup")
-    r = env.client.post(
-        "/api/case-intake/commit", json=_payload(documents=[_doc("pid-dup")])
-    )
+    payload = _payload(documents=[_doc("pid-dup")])
+    payload["case"]["istek_kimligi"] = "7b0e6c1e-6a0e-4c58-9d5c-2f1f6f0a0001"
+    r = env.client.post("/api/case-intake/commit", json=payload)
     assert r.status_code == 409
-    assert "2026/0456" in r.json()["detail"]
+    assert "kayıt isteği" in r.json()["detail"]
     # add_case adım 1'de patladı: belge tüketilmedi, retry güvenli
     assert env.cache.touch("pid-dup") is True
     assert env.calls["convert"] == []

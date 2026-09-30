@@ -5,7 +5,7 @@ referans listeleri managers/reference_lists.py'dedir.
 """
 import logging
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, intersect, select, union
@@ -35,6 +35,7 @@ from managers.lawyer_resolver import (
 # `models`/`db_errors` import eder, `case_manager`ı ÇAĞIRMAZ: döngü yok,
 # "sonra import" hilesine gerek kalmadı.
 from managers import stage_decisions
+from services import ofis_no
 
 logger = logging.getLogger("AdminManager")
 
@@ -46,6 +47,20 @@ logger = logging.getLogger("AdminManager")
 # çakışmasına "ofis numarası zaten kayıtlı" demek kullanıcıyı boşuna sıra
 # numarası artırmaya iterdi.
 TRACKING_NO_UNIQUE_INDEX = "ix_cases_tracking_no"
+
+# G236: kayıt isteği kimliğinin kısmi UNIQUE index'i (migrasyon 57) — eşzamanlı iki
+# aynı-kimlikli istekte kaybedeni bu yakalar.
+ISTEK_KIMLIGI_UNIQUE_INDEX = "uq_cases_istek_kimligi"
+
+# G236: `add_case` veri sözlüğündeki bayrak — doluysa numarayı SUNUCU verir
+# (`services/ofis_no`, karar 023) ve istemcinin `tracking_no`'su yok sayılır. Bayrağı
+# yalnız kullanıcı route'ları (POST /api/cases, intake commit) koyar; `add_case`'i
+# doğrudan çağıran aktarım/script yolları (kendi numarasını getirir) eski yolda kalır.
+SUNUCU_NUMARASI_BAYRAGI = "ofis_no_sunucudan"
+
+
+class OfisNoVerilemez(ValueError):
+    """Kart için ofis numarası üretilemiyor (müvekkil yok / adı boş) — istemci hatası (→ 422)."""
 
 
 def _parse_date_field(value, field_name: str):
@@ -1608,6 +1623,75 @@ def search_cases(query: str, exact: bool = False, active_only: bool = False, ten
     return items
 
 
+def _mevcut_muvekkili_bul(db, name: Optional[str], tc_no: Optional[str] = None):
+    """Taraf adına/TC'sine karşılık gelen (silinmemiş) müvekkil kaydı — yoksa None.
+
+    TC verilmişse önce TC ile eşlenir (aynı isimli iki cari belirsizliğini çözer).
+    `add_case`'in otomatik müvekkil bağlama kuralı; ofis no üretimi de kategoriyi
+    buradan okur (ikisi aynı kaydı görsün diye tek yardımcı).
+    """
+    tc = (tc_no or "").strip()
+    if tc:
+        bulunan = db.query(models.Client).filter(
+            models.Client.tc_no == tc,
+            models.Client.deleted_at.is_(None),  # silinmiş cariye oto-bağlanma
+        ).first()
+        if bulunan:
+            return bulunan
+    if not (name or "").strip():
+        return None
+    return db.query(models.Client).filter(
+        models.Client.name.ilike((name or "").strip()),
+        models.Client.deleted_at.is_(None),
+    ).first()
+
+
+def ofis_no_muvekkilleri(db, parties) -> List[Dict[str, Any]]:
+    """İstekteki CLIENT taraflardan ofis no üreticisinin müvekkil listesi (`name`, `category`).
+
+    Kategori müvekkil kaydından gelir: `client_id` verilmişse o kayıt, yoksa `add_case`'in
+    bağlayacağı mevcut kayıt (`_mevcut_muvekkili_bul`); kayıt yoksa (yeni müvekkil / danışma)
+    kategori boş kalır → üretici addan KR/BR ayırır (karar 023 §2).
+    """
+    muvekkiller: List[Dict[str, Any]] = []
+    for p in parties or []:
+        if p.get("party_type") != "CLIENT":
+            continue
+        client = None
+        if p.get("client_id"):
+            client = db.get(models.Client, p.get("client_id"))
+        ad = (p.get("name") or "").strip()
+        if client is None and ad:
+            client = _mevcut_muvekkili_bul(db, ad, p.get("tc_no"))
+        ad = ad or str(getattr(client, "name", None) or "").strip()
+        if ad:
+            muvekkiller.append({"name": ad, "category": getattr(client, "category", None)})
+    return muvekkiller
+
+
+def _ofis_no_parcalari(db, data: dict) -> Tuple[str, Optional[str], str]:
+    """(müvekkil kodu, sigortalı bloğu | None, tür kodu) — sırasız; sayacı ÇAĞIRAN tahsis eder.
+
+    Müvekkil yoksa ya da adından blok üretilemiyorsa `OfisNoVerilemez` (→ 422): yer tutucu
+    numara üretilmez (karar 023).
+    """
+    parties = data.get("parties") or []
+    muvekkiller = ofis_no_muvekkilleri(db, parties)
+    if not muvekkiller:
+        raise OfisNoVerilemez("Müvekkil olmadan ofis numarası verilemez — en az bir müvekkil ekleyin.")
+    try:
+        kl = ofis_no.kod_listelerini_yukle(db)
+        kod, secilen = ofis_no.musteri_kodu(muvekkiller, kl)
+        sigortali = None
+        if ofis_no.sigortaci_mi(secilen.get("name"), secilen.get("category")):
+            sigortali = ofis_no.sigortali_sec(
+                None, foys=[], parties=parties, muvekkiller=muvekkiller, kod_listeleri=kl
+            )
+        return kod, sigortali, ofis_no.tur_kodu(data.get("file_type"))
+    except ValueError as e:
+        raise OfisNoVerilemez(f"Ofis numarası verilemedi: {e}") from e
+
+
 def add_case(data: dict, tenant_id: str = None):
     # Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı 2026-07-31 rev.2):
     # dosya DERDEST olarak açılır, eksikler get_case/get_cases'teki
@@ -1619,6 +1703,8 @@ def add_case(data: dict, tenant_id: str = None):
     # Boş/None → DERDEST (varsayılan).
     status, legacy_stage = validated_case_status(data.get("status"))
     status = status or "DERDEST"
+    sunucu_numarasi = bool(data.get(SUNUCU_NUMARASI_BAYRAGI))
+    istek_kimligi = str(data["istek_kimligi"]) if data.get("istek_kimligi") else None
     try:
         db = SessionLocal()
         # 27.09 yazım koruması: listede olmayan avukat adıyla kart açılmaz (AvukatListedeYok → 422).
@@ -1648,11 +1734,25 @@ def add_case(data: dict, tenant_id: str = None):
             if not opening_date:
                 logger.warning(f"Tarih parse edilemedi, atlanıyor: '{date_str}'")
 
+        # 0. Ofis numarası (G236): bayraklı istekte numarayı sunucu kurar ve sırayı BU
+        # transaction'da tahsis eder (rollback = sıra da geri döner; mükerrer yok, boşluk
+        # kabul). İstemcinin `tracking_no`'su okunmaz. Avukat/durum doğrulamalarından SONRA
+        # koşar — müvekkilsiz istek onların 422/400'ünü gölgelemez.
+        tracking_no = data.get("tracking_no")
+        ofis_no_kodu = ofis_no_sira = None
+        if sunucu_numarasi:
+            ofis_no_kodu, sigortali, tur = _ofis_no_parcalari(db, data)
+            ofis_no_sira = ofis_no.sira_tahsis_et(db, ofis_no_kodu)
+            tracking_no = ofis_no.numara_kur(ofis_no_kodu, ofis_no_sira, sigortali, tur)
+
         # 1. Create Case
         # esas_no BİLİNÇLİ olarak burada verilmez — türetilmiş değerdir ve
         # yalnız sync_current_esas yazar (flush'tan sonra, G045).
         new_case = models.Case(
-            tracking_no=data.get("tracking_no"),
+            tracking_no=tracking_no,
+            ofis_no_kodu=ofis_no_kodu,
+            ofis_no_sira=ofis_no_sira,
+            istek_kimligi=istek_kimligi,
             status=status,
             # Eski değerin aşaması yalnız istek aşama vermediyse (update_case_tracking eşi)
             case_stage=data.get("case_stage") or legacy_stage,
@@ -1707,19 +1807,7 @@ def add_case(data: dict, tenant_id: str = None):
 
             # Otomatik Müşteri Oluşturma Yükseltmesi
             if party_type == "CLIENT" and name and not client_id:
-                existing_client = None
-                # TC verilmişse önce TC ile eşle — aynı isimli iki cari belirsizliğini çözer
-                tc = (p.get("tc_no") or "").strip()
-                if tc:
-                    existing_client = db.query(models.Client).filter(
-                        models.Client.tc_no == tc,
-                        models.Client.deleted_at.is_(None),  # silinmiş cariye oto-bağlanma
-                    ).first()
-                if not existing_client:
-                    existing_client = db.query(models.Client).filter(
-                        models.Client.name.ilike(name.strip()),
-                        models.Client.deleted_at.is_(None),
-                    ).first()
+                existing_client = _mevcut_muvekkili_bul(db, name, p.get("tc_no"))
                 if existing_client:
                     client_id = existing_client.id
                 elif not is_consult:
@@ -1772,18 +1860,23 @@ def add_case(data: dict, tenant_id: str = None):
         }
     except IntegrityError as e:
         db.rollback()
-        if is_unique_violation(e, TRACKING_NO_UNIQUE_INDEX):
-            # Faz 3-D: çakışma burada NİHAİ değildir — /commit route'u önce
-            # idempotent çözümleme dener (kaybolan yanıt sonrası retry kendi
-            # davasına çarpmış olabilir). Log sözleşmesi gereği burada WARNING;
-            # [TRACKING_NO_COLLISION] ERROR telemetrisini gerçek 409'u döndüren
-            # route'lar üretir (case_intake.py commit + cases.py api_add_case).
+        if is_unique_violation(e, ISTEK_KIMLIGI_UNIQUE_INDEX):
+            # G236: aynı kimlikli istek bu kartı ZATEN açtı (eşzamanlı çift istek ya da
+            # görünmeyen/silinmiş kart). Nihai değil — route kazananın kartını döndürür;
+            # sıra tahsisi rollback'le geri döndü. Log sözleşmesi: WARNING.
+            logger.warning(f"Add Case: istek kimliği zaten kayıtlı — {istek_kimligi}")
+            return {"error": "duplicate_istek_kimligi"}
+        if is_unique_violation(e, TRACKING_NO_UNIQUE_INDEX) and not sunucu_numarasi:
+            # Yalnız numarasını KENDİ getiren doğrudan çağrılar (aktarım/script): çakışmayı
+            # çağıran yorumlar. Sunucunun verdiği numarada çakışma sayaç tutarsızlığıdır —
+            # aşağıdaki nihai ERROR'a düşer (route 500), sessizce 409'a çevrilmez.
             logger.warning(f"Add Case: tracking_no çakışması — {data.get('tracking_no')}")
             return {"error": "duplicate_tracking_no"}
         logger.error(f"Add Case Error: {e}")
         return None
-    except AvukatListedeYok:
-        # İstemci hatası (27.09 yazım koruması): ERROR yok, yutulmaz — api.py 422.
+    except (AvukatListedeYok, OfisNoVerilemez):
+        # İstemci hatası (27.09 yazım koruması / G236 müvekkilsiz kayıt): ERROR yok,
+        # yutulmaz — 422 (AvukatListedeYok api.py'de, OfisNoVerilemez route'ta).
         db.rollback()
         raise
     except Exception as e:
@@ -1794,57 +1887,32 @@ def add_case(data: dict, tenant_id: str = None):
         db.close()
 
 
-# find_idempotent_commit_match: "kaybolan yanıt" retry penceresi. Otomatik
-# retry saniyeler, elle tekrar tıklama dakikalar, taslaktan devam ertesi gün
-# olabilir — 24 saat hepsini kapsar; daha eski bir dava aynı numarayı gerçek
-# çakışmayla (sayaç önerisi bug'ı, 2026-07-16) tutuyordur.
-IDEMPOTENT_MATCH_WINDOW_HOURS = 24
+def istek_kimligi_karti(istek_kimligi, tenant_id: Optional[str] = None) -> Optional[dict]:
+    """Bu kayıt isteği kimliğiyle DAHA ÖNCE açılmış kart (G236) — yoksa None.
 
+    Tekrar eden istek koruması (`/confirm`'deki `process_id` deseni): yanıtı kaybolan
+    kayıt, çift tıklama ya da taslaktan devam aynı kimlikle gelir → yeni kart açılmaz,
+    sayaç artmaz, ilk kart `add_case` dönüş şekli + `"reused": True` ile döner.
 
-def _norm_plain(value) -> str:
-    """esas_no/mahkeme karşılaştırma anahtarı: boşluk sadeleştir + casefold.
-    Aynı taslaktan gelen retry'da değerler bayt-bayt aynıdır; bu normalize
-    yalnız zararsız boşluk/büyüklük farklarını tolere eder. (Parametre
-    bilinçli tipsiz: eski stil Column[] modellerinde mypy arg-type üretiyor.)"""
-    return " ".join(str(value or "").split()).casefold()
+    Eşleşme anahtarı YALNIZ kimliktir. Numara artık sunucudan geldiği için Faz 3-D'nin
+    `find_idempotent_commit_match` ölçütleri (numara + esas/mahkeme + taraf kümesi + 24
+    saat penceresi) kalktı: kimlik isteğe özgü UUID'dir, tahmin ölçütüne ve zaman
+    penceresine ihtiyaç yok.
 
-
-def find_idempotent_commit_match(data: dict, tenant_id: Optional[str] = None) -> Optional[dict]:
-    """duplicate_tracking_no anında: mevcut dava BU isteğin daha önce başarıyla
-    kaydolmuş hâli mi? (yanıtı kaybolan commit / çift tıklama — Faz 3-D, 3.5)
-
-    MUHAFAZAKÂR eşleşme: yanlış pozitif (farklı davayı "aynı" sanmak) yeni
-    davayı sessizce yutar ve belgeleri yanlış karta arşivler; şüphede None
-    dönülür → çağıran 409'a düşer (bugünkü davranış, kullanıcı karar verir).
-    Kriterlerin HEPSİ:
-      1. tracking_no birebir + dava soft-delete edilmemiş (silinmiş kayıtla
-         çakışma sayaç bug'ının bilinen hali → gerçek 409)
-      2. tenant görünürlüğü: dava başka tenant'a damgalıysa eşleşme yok
-      3. created_at son IDEMPOTENT_MATCH_WINDOW_HOURS içinde
-      4. esas_no ve court normalize eşit (ikisi de boş dahil — aynı taslaktan
-         gelen retry'da birebir aynıdırlar)
-      5. taraf kümesi eşit ve BOŞ DEĞİL: {(party_type, normalize_party_key(ad))}
-    Eşleşmede add_case dönüş şekli + "reused": True döner.
+    Kart DÖNDÜRÜLMEZ (None): kimlik boş, kart soft-delete edilmiş ya da başka tenant'a
+    damgalı. O durumda kimlik yine de doludur → `add_case` unique index'e çarpar
+    (`duplicate_istek_kimligi`) ve route 409 verir: başkasının kartı sızmaz, ikinci kart
+    da açılmaz. Sorgu hatası YUTULMAZ (çağıran 500 görür) — "bakılamadı"yı "yok" saymak
+    ön bakışı sessizce devre dışı bırakırdı.
     """
-    tracking_no = data.get("tracking_no")
-    if not tracking_no:
+    if not istek_kimligi:
         return None
-    req_parties = {
-        ((p.get("party_type") or "").strip().upper(), normalize_party_key(p.get("name") or ""))
-        for p in (data.get("parties") or [])
-        if (p.get("name") or "").strip()
-    }
-    if not req_parties:
-        # Tarafsız istek için elimizde güçlü kimlik yok — 409 sürsün.
-        return None
-
     db = SessionLocal()
     try:
         case = (
             db.query(models.Case)
-            .options(selectinload(models.Case.parties))
             .filter(
-                models.Case.tracking_no == tracking_no,
+                models.Case.istek_kimligi == str(istek_kimligi),
                 models.Case.deleted_at.is_(None),
             )
             .first()
@@ -1852,28 +1920,6 @@ def find_idempotent_commit_match(data: dict, tenant_id: Optional[str] = None) ->
         if case is None:
             return None
         if tenant_id and case.tenant_id and case.tenant_id != tenant_id:
-            return None
-
-        created_at = case.created_at
-        if created_at is None:
-            return None
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        age = datetime.now(timezone.utc) - created_at
-        if age > timedelta(hours=IDEMPOTENT_MATCH_WINDOW_HOURS):
-            return None
-
-        if _norm_plain(data.get("esas_no")) != _norm_plain(case.esas_no):
-            return None
-        if _norm_plain(data.get("court")) != _norm_plain(case.court):
-            return None
-
-        case_parties = {
-            ((p.party_type or "").strip().upper(), normalize_party_key(p.name or ""))
-            for p in case.parties
-            if (p.name or "").strip()
-        }
-        if req_parties != case_parties:
             return None
 
         return {
@@ -1885,10 +1931,6 @@ def find_idempotent_commit_match(data: dict, tenant_id: Optional[str] = None) ->
             "responsible_lawyer_name": case.responsible_lawyer_name or "",
             "reused": True,
         }
-    except Exception as e:
-        # Çözümleme başarısızlığı 409'u engellememeli (bugünkü davranışa düş).
-        logger.warning(f"Idempotent commit eşleşmesi bakılamadı: {e}")
-        return None
     finally:
         db.close()
 

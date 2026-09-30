@@ -30,12 +30,13 @@ from database import SessionLocal
 from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
     update_case_tracking, get_case_stage_log, find_duplicate_cases, _kimligi_ada_cevir,
+    istek_kimligi_karti, ofis_no_muvekkilleri, OfisNoVerilemez, SUNUCU_NUMARASI_BAYRAGI,
 )
 from managers.lawyer_resolver import (
     AvukatListedeYok, kanonik_avukat_metni, listede_olmayan_yeni_adlar, secimi_liste_adina_cevir,
 )
 from managers.stage_decisions import get_stage_decisions
-from services import case_relations_auto
+from services import case_relations_auto, ofis_no
 import models
 
 
@@ -60,23 +61,36 @@ logger = logging.getLogger(__name__)
 def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_tenant)):
     # Hanyaloğlu Acar + LexisBio ortak çalıştığı için yeni davalar paylaşımlı (tenant_id=NULL).
     # tenant_id Depends'i token doğrulaması için kalıyor ama damgalamada kullanılmıyor.
-    result = add_case(case_data.model_dump())
-    if result and result.get("error") == "duplicate_tracking_no":
-        # Faz 3-D: [TRACKING_NO_COLLISION] telemetrisi add_case'ten nihai
-        # noktaya taşındı (intake commit'te çakışma artık idempotent
-        # çözülebiliyor; buradaki elle kayıt yolunda 409 nihaidir).
-        from managers.log_manager import TechnicalLogger
-        TechnicalLogger.log(
-            "ERROR",
-            "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
-            details={"tracking_no": case_data.tracking_no},
-        )
+    #
+    # G236: numarayı SUNUCU verir (karar 023) — istemcinin `tracking_no`'su yok sayılır,
+    # sıra kayıtla aynı transaction'da tahsis edilir (eski "numara dolu → 409" sınıfı kapandı).
+    # Tekrar eden istek `istek_kimligi` ile tanınır: aynı kimlik ikinci kez gelirse yeni kart
+    # açılmaz, ilk kart `reused: true` ile döner.
+    data = case_data.model_dump()
+    kimlik = str(data["istek_kimligi"]) if data.get("istek_kimligi") else None
+    data["istek_kimligi"] = kimlik
+    data[SUNUCU_NUMARASI_BAYRAGI] = True
+
+    mevcut = istek_kimligi_karti(kimlik, tenant_id) if kimlik else None
+    if mevcut:
+        return {"status": "success", "message": "Case already saved", **mevcut}
+
+    try:
+        result = add_case(data)
+    except OfisNoVerilemez as e:
+        # Müvekkilsiz kayıt: numara üretilemez (yer tutucu numara YOK) — istemci hatası.
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if result and result.get("error") == "duplicate_istek_kimligi":
+        # Eşzamanlı aynı-kimlikli istek: kazananın kartı döner. Kart görünmüyorsa
+        # (silinmiş / başka tenant) ne döndürülür ne ikinci kart açılır.
+        mevcut = istek_kimligi_karti(kimlik, tenant_id)
+        if mevcut:
+            return {"status": "success", "message": "Case already saved", **mevcut}
         raise HTTPException(
             status_code=409,
-            detail=f"Bu ofis numarası zaten kayıtlı: {case_data.tracking_no}. "
-                   "Sıra numarasını artırıp tekrar deneyin.",
+            detail="Bu kayıt isteği daha önce kullanılmış. Formu yenileyip tekrar deneyin.",
         )
-    if not result:
+    if not result or result.get("error"):
         raise HTTPException(status_code=500, detail="Failed to save case")
     return {"status": "success", "message": "Case saved", **result}
 
@@ -190,6 +204,65 @@ def get_client_case_sequence(
             status_code=503,
             detail="Ofis numarası sırası şu anda hesaplanamıyor. Lütfen tekrar deneyin.",
         ) from e
+    finally:
+        db.close()
+
+
+@router.get("/api/cases/ofis-no-onizleme")
+def get_ofis_no_onizleme(
+    muvekkiller: List[str] = Query(default=[]),
+    file_type: Optional[str] = None,
+    sigortali: List[str] = Query(default=[]),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Kaydedince verilecek ofis numarasının ÖNİZLEMESİ (G236) — sayacı ARTIRMAZ.
+
+    `muvekkiller` tekrarlanabilir: her değer müvekkil kaydının id'si (yalnız rakam) ya da
+    serbest ad (kayıtsız müvekkil / danışma). `sigortali` (opsiyonel, tekrarlanabilir):
+    formdaki "Sigortalı" rolündeki taraf adları — sigortacı müvekkilde numaranın üçüncü
+    bloğu buradan çıkar. Numara KAYIT anında verilir: araya başka kayıt girerse sıra
+    farklı olabilir; `onizleme` yalnız gösterim içindir, isteğe geri gönderilmez.
+    """
+    db = SessionLocal()
+    try:
+        parties = []
+        for deger in muvekkiller:
+            temiz = (deger or "").strip()
+            if not temiz:
+                continue
+            if temiz.isdigit():
+                client = (
+                    db.query(models.Client)
+                    .filter(models.Client.id == int(temiz), models.Client.deleted_at.is_(None))
+                    .filter(tenant_filter_clause(models.Client, tenant_id))
+                    .first()
+                )
+                if client is None:
+                    raise HTTPException(status_code=422, detail=f"Müvekkil bulunamadı: {temiz}")
+                parties.append({"party_type": "CLIENT", "client_id": client.id, "name": client.name})
+            else:
+                parties.append({"party_type": "CLIENT", "name": temiz})
+        liste = ofis_no_muvekkilleri(db, parties)
+        if not liste:
+            raise HTTPException(
+                status_code=422, detail="Müvekkil olmadan ofis numarası verilemez — en az bir müvekkil ekleyin."
+            )
+        parties += [
+            {"party_type": "COUNTER", "role": "Sigortalı", "name": ad.strip()}
+            for ad in sigortali if (ad or "").strip()
+        ]
+        try:
+            sonuc = ofis_no.onizle(db, liste, file_type, foys=[], parties=parties)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"Ofis numarası verilemedi: {e}") from e
+        _kod, secilen = ofis_no.musteri_kodu(liste, ofis_no.kod_listelerini_yukle(db))
+        sigortaci = ofis_no.sigortaci_mi(secilen.get("name"), secilen.get("category"))
+        return {
+            "onizleme": sonuc["numara"],
+            "kod": sonuc["kod"],
+            "sigortali_eksik": bool(sigortaci and not sonuc["sigortali"]),
+            "aciklama": f"Kaydedince verilecek: {sonuc['numara']}",
+        }
     finally:
         db.close()
 

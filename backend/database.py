@@ -1357,6 +1357,21 @@ _MIGRATIONS = [
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_ofis_no_kod_sira "
         "ON cases (ofis_no_kodu, ofis_no_sira) WHERE ofis_no_kodu IS NOT NULL",
     ]),
+
+    # ─── 57. KAYIT İSTEĞİ KİMLİĞİ — tekrar eden istek koruması (G236) ─────────────
+    # Numarayı artık sunucu verdiği için "aynı numara = aynı istek" eşleşmesi kalmadı;
+    # istemci kayıt isteğine UUID koyar (`/confirm`'deki `process_id` deseni). Aynı kimlik
+    # ikinci kez gelirse yeni kart açılmaz: ardışık istekte ön bakış, eşzamanlı istekte bu
+    # UNIQUE index yakalar (kaybeden transaction geri alınır → sayaç da geri döner).
+    # Kolon op'u KOŞULLU (create_all yaratır) → kısıt alttaki KOŞULSUZ ("index", ...) op'unda.
+    # Kısmi: kimliksiz kayıtlar (NULL — eski istemci, aktarım, script) kapsam dışı.
+    ("columns", "cases", {
+        "istek_kimligi": "VARCHAR(36)",
+    }),
+    ("index", "cases", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_istek_kimligi "
+        "ON cases (istek_kimligi) WHERE istek_kimligi IS NOT NULL",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

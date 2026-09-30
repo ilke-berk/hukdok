@@ -399,8 +399,16 @@ def test_confirm_send_email_true_ekler_email_hattina_gecer(confirm_env):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 3) find_idempotent_commit_match — birim testleri (sqlite)
+# 3) istek_kimligi_karti — birim testleri (sqlite)
+#
+# G236 (insan kararı 30.09, test taşıma izni): numarayı sunucu verdiği için eski
+# `find_idempotent_commit_match` (numara + esas/mahkeme + taraf kümesi + 24 saat)
+# kalktı; tekrar eden istek `istek_kimligi` ile tanınır. Aşağıdaki testler aynı
+# senaryoları YENİ anahtara taşır: eşleşmeyi artık yalnız kimlik belirler.
 # ═════════════════════════════════════════════════════════════════════════════
+
+KIMLIK = "7b0e6c1e-6a0e-4c58-9d5c-2f1f6f0a0001"
+BASKA_KIMLIK = "7b0e6c1e-6a0e-4c58-9d5c-2f1f6f0a0002"
 
 
 @pytest.fixture()
@@ -412,14 +420,15 @@ def match_db(sqlite_sessions, monkeypatch):
 
 
 def _seed_case(sessions, tracking_no="2026/0456", esas_no="2024/1",
-               court="ANKARA 3. ASLİYE HUKUK MAHKEMESİ", parties=None, **extra):
+               court="ANKARA 3. ASLİYE HUKUK MAHKEMESİ", parties=None,
+               istek_kimligi=KIMLIK, **extra):
     import models
 
     db = sessions()
     try:
         case = models.Case(
             tracking_no=tracking_no, esas_no=esas_no, court=court,
-            status="DERDEST", **extra,
+            status="DERDEST", istek_kimligi=istek_kimligi, **extra,
         )
         db.add(case)
         db.flush()
@@ -433,20 +442,9 @@ def _seed_case(sessions, tracking_no="2026/0456", esas_no="2024/1",
         db.close()
 
 
-def _req_data(**overrides):
-    data = {
-        "tracking_no": "2026/0456",
-        "esas_no": "2024/1",
-        "court": "ANKARA 3. ASLİYE HUKUK MAHKEMESİ",
-        "parties": [{"name": "Ahmet YILMAZ", "party_type": "CLIENT", "role": "DAVACI"}],
-    }
-    data.update(overrides)
-    return data
-
-
 def test_match_ayni_taslak_yeni_dava_eslesir(match_db):
     case_id = _seed_case(match_db.sessions)
-    m = match_db.cm.find_idempotent_commit_match(_req_data())
+    m = match_db.cm.istek_kimligi_karti(KIMLIK)
     assert m is not None
     assert m["id"] == case_id
     assert m["reused"] is True
@@ -455,54 +453,68 @@ def test_match_ayni_taslak_yeni_dava_eslesir(match_db):
 
 
 def test_match_taraf_adi_normalize_ile_eslesir(match_db):
-    # Büyük/küçük ve boşluk farkları tolere edilir (normalize_party_key)
-    _seed_case(match_db.sessions, parties=[("AHMET  YILMAZ", "CLIENT")])
-    m = match_db.cm.find_idempotent_commit_match(_req_data())
+    # G236: taraf yazımı eşleşmeye GİRMEZ (anahtar kimlik) — kimlik büyük harfle ya da
+    # UUID nesnesi olarak gelse de aynı kartı bulur (route `str(UUID)` ile normalize eder).
+    import uuid
+
+    case_id = _seed_case(match_db.sessions, parties=[("AHMET  YILMAZ", "CLIENT")])
+    m = match_db.cm.istek_kimligi_karti(uuid.UUID(KIMLIK.upper()))
     assert m is not None
+    assert m["id"] == case_id
 
 
 def test_match_eski_dava_eslesmez_gercek_cakisma(match_db):
+    # G236 (eski → yeni): 24 saat penceresi KALKTI. Eski beklenti "pencere dışındaki dava
+    # eşleşmez"di; kimlik isteğe özgü olduğu için günler sonra taslaktan devam eden istek
+    # de kendi kartını bulur — ikinci kart açılmaz.
     import models
 
-    _seed_case(match_db.sessions)
-    old = datetime.now(timezone.utc) - timedelta(
-        hours=match_db.cm.IDEMPOTENT_MATCH_WINDOW_HOURS + 1
-    )
+    case_id = _seed_case(match_db.sessions)
+    old = datetime.now(timezone.utc) - timedelta(days=30)
     db = match_db.sessions()
     db.query(models.Case).update({"created_at": old}, synchronize_session=False)
     db.commit()
     db.close()
-    assert match_db.cm.find_idempotent_commit_match(_req_data()) is None
+    m = match_db.cm.istek_kimligi_karti(KIMLIK)
+    assert m is not None and m["id"] == case_id
+    assert not hasattr(match_db.cm, "IDEMPOTENT_MATCH_WINDOW_HOURS")
 
 
 def test_match_farkli_taraf_kumesi_eslesmez(match_db):
-    _seed_case(match_db.sessions, parties=[("Mehmet KAYA", "CLIENT")])
-    assert match_db.cm.find_idempotent_commit_match(_req_data()) is None
+    # G236 (eski → yeni): taraf kümesi ölçüt değil. Aynı kimlik = aynı istek (kart farklı
+    # tarafla açılmış olsa da döner); FARKLI kimlik aynı taraflı karta eşleşmez.
+    case_id = _seed_case(match_db.sessions, parties=[("Mehmet KAYA", "CLIENT")])
+    assert match_db.cm.istek_kimligi_karti(KIMLIK)["id"] == case_id
+    assert match_db.cm.istek_kimligi_karti(BASKA_KIMLIK) is None
 
 
 def test_match_farkli_esas_no_eslesmez(match_db):
-    _seed_case(match_db.sessions, esas_no="2024/99")
-    assert match_db.cm.find_idempotent_commit_match(_req_data()) is None
+    # G236 (eski → yeni): esas no ölçüt değil; kimliği farklı istek eşleşmez.
+    case_id = _seed_case(match_db.sessions, esas_no="2024/99")
+    assert match_db.cm.istek_kimligi_karti(KIMLIK)["id"] == case_id
+    assert match_db.cm.istek_kimligi_karti(BASKA_KIMLIK) is None
 
 
 def test_match_soft_delete_edilmis_dava_eslesmez(match_db):
     _seed_case(match_db.sessions, deleted_at=datetime.now(timezone.utc))
-    assert match_db.cm.find_idempotent_commit_match(_req_data()) is None
+    assert match_db.cm.istek_kimligi_karti(KIMLIK) is None
 
 
 def test_match_tarafsiz_istek_eslesmez(match_db):
+    # G236 (eski → yeni): "güçlü kimliği olmayan istek eşleşmez" kuralının yeni hali —
+    # KİMLİKSİZ istek hiçbir karta eşleşmez (kimliksiz kart da kimliksiz isteğe eşleşmez).
     _seed_case(match_db.sessions)
-    assert match_db.cm.find_idempotent_commit_match(_req_data(parties=[])) is None
+    _seed_case(match_db.sessions, tracking_no="2026/0458", istek_kimligi=None)
+    assert match_db.cm.istek_kimligi_karti(None) is None
+    assert match_db.cm.istek_kimligi_karti("") is None
 
 
 def test_match_baska_tenant_damgali_dava_eslesmez(match_db):
     _seed_case(match_db.sessions, tenant_id="tenant-baska")
-    assert match_db.cm.find_idempotent_commit_match(_req_data(), tenant_id="tenant-1") is None
+    assert match_db.cm.istek_kimligi_karti(KIMLIK, tenant_id="tenant-1") is None
     # Damgasız (ortak havuz NULL) dava aynı tenant sorusuna eşleşir
-    _seed_case(match_db.sessions, tracking_no="2026/0457")
-    m = match_db.cm.find_idempotent_commit_match(
-        _req_data(tracking_no="2026/0457"), tenant_id="tenant-1"
-    )
+    _seed_case(match_db.sessions, tracking_no="2026/0457", istek_kimligi=BASKA_KIMLIK)
+    m = match_db.cm.istek_kimligi_karti(BASKA_KIMLIK, tenant_id="tenant-1")
     assert m is not None
 
 
@@ -545,8 +557,10 @@ def commit_env(monkeypatch, tmp_path):
     calls = {"add_case": [], "convert": [], "match": [], "doc_lookup": []}
 
     def fake_add_case_duplicate(data):
+        # G236: çakışma artık numarada değil istek kimliğinde (eşzamanlı aynı-kimlikli
+        # commit'te unique index kaybedeni geri alır).
         calls["add_case"].append(data)
-        return {"error": "duplicate_tracking_no"}
+        return {"error": "duplicate_istek_kimligi"}
 
     monkeypatch.setattr(case_manager, "add_case", fake_add_case_duplicate)
     monkeypatch.setattr(
@@ -590,6 +604,7 @@ def _commit_payload(**overrides):
     payload = {
         "case": {
             "tracking_no": "2026/0456",
+            "istek_kimligi": KIMLIK,
             "esas_no": "2024/1",
             "status": "KARAR",
             "court": "ANKARA 3. ASLİYE HUKUK MAHKEMESİ",
@@ -613,16 +628,18 @@ def _commit_doc(pid, filename="2024-01-15_AHMET-YILMAZ_TENSIP-ZPT____.pdf"):
 
 
 def test_commit_409_eslesme_varsa_mevcut_dava_idempotent_doner(commit_env, monkeypatch):
-    def fake_match(data, tenant_id=None):
-        commit_env.calls["match"].append((data.get("tracking_no"), tenant_id))
+    # G236 (eski → yeni): eşleşme artık `duplicate_tracking_no` SONRASI numara+taraf
+    # tahminiyle değil, add_case'ten ÖNCE istek kimliğiyle bulunur — kart açma hiç koşmaz.
+    def fake_match(kimlik, tenant_id=None):
+        commit_env.calls["match"].append((kimlik, tenant_id))
         return {
-            "id": 777, "tracking_no": data.get("tracking_no"),
-            "esas_no": data.get("esas_no"), "court": data.get("court") or "",
+            "id": 777, "tracking_no": "AXA-0007-HUK",
+            "esas_no": "2024/1", "court": "",
             "status": "DERDEST", "responsible_lawyer_name": "Av. Deniz",
             "reused": True,
         }
 
-    monkeypatch.setattr(commit_env.cm, "find_idempotent_commit_match", fake_match)
+    monkeypatch.setattr(commit_env.cm, "istek_kimligi_karti", fake_match)
     monkeypatch.setattr(commit_env.cm, "get_case_document_filenames", lambda cid: {})
 
     r = commit_env.client.post("/api/case-intake/commit", json=_commit_payload())
@@ -630,21 +647,34 @@ def test_commit_409_eslesme_varsa_mevcut_dava_idempotent_doner(commit_env, monke
     body = r.json()
     assert body["case"]["id"] == 777
     assert body["case"]["idempotent_reuse"] is True
-    assert body["case"]["tracking_no"] == "2026/0456"
-    assert commit_env.calls["match"] == [("2026/0456", "tenant-1")]
+    assert body["case"]["reused"] is True
+    # Yanıttaki numara mevcut kartın (sunucunun verdiği) numarasıdır, istemcininki değil
+    assert body["case"]["tracking_no"] == "AXA-0007-HUK"
+    assert commit_env.calls["match"] == [(KIMLIK, "tenant-1")]
+    assert commit_env.calls["add_case"] == []
 
 
 def test_commit_409_eslesme_yoksa_ayni_409_devam_eder(commit_env, monkeypatch):
-    monkeypatch.setattr(
-        commit_env.cm, "find_idempotent_commit_match", lambda data, tenant_id=None: None
-    )
+    # G236 (eski → yeni): kimlik kayıtlı ama kart döndürülemiyor (silinmiş / başka tenant)
+    # → 409 sürer; detay artık numarayı değil istek kimliğini anlatır.
+    bakislar = []
+
+    def fake_match(kimlik, tenant_id=None):
+        bakislar.append((kimlik, tenant_id))
+        return None
+
+    monkeypatch.setattr(commit_env.cm, "istek_kimligi_karti", fake_match)
     commit_env.put_cache("pid-dup2")
     r = commit_env.client.post(
         "/api/case-intake/commit",
         json=_commit_payload(documents=[_commit_doc("pid-dup2")]),
     )
     assert r.status_code == 409
-    assert "2026/0456" in r.json()["detail"]
+    assert "kayıt isteği" in r.json()["detail"]
+    assert "2026/0456" not in r.json()["detail"]
+    # Ön bakış + çakışma sonrası bakış; add_case bir kez denendi
+    assert bakislar == [(KIMLIK, "tenant-1")] * 2
+    assert len(commit_env.calls["add_case"]) == 1
     # 409'da hiçbir belge tüketilmedi (mevcut garanti korunuyor)
     assert commit_env.cache.touch("pid-dup2") is True
     assert commit_env.calls["convert"] == []
@@ -652,8 +682,8 @@ def test_commit_409_eslesme_yoksa_ayni_409_devam_eder(commit_env, monkeypatch):
 
 def test_commit_409_reuse_arsivli_belge_tekrar_arsivlenmez(commit_env, monkeypatch):
     monkeypatch.setattr(
-        commit_env.cm, "find_idempotent_commit_match",
-        lambda data, tenant_id=None: {
+        commit_env.cm, "istek_kimligi_karti",
+        lambda kimlik, tenant_id=None: {
             "id": 777, "tracking_no": "2026/0456", "esas_no": "2024/1",
             "court": "", "status": "DERDEST", "responsible_lawyer_name": "",
             "reused": True,
@@ -697,8 +727,10 @@ def test_commit_normal_kayitta_reuse_bayragi_false(commit_env, monkeypatch):
                 "status": "DERDEST", "responsible_lawyer_name": ""}
 
     monkeypatch.setattr(commit_env.cm, "add_case", fake_add_case_ok)
+    monkeypatch.setattr(commit_env.cm, "istek_kimligi_karti", lambda kimlik, tenant_id=None: None)
     r = commit_env.client.post("/api/case-intake/commit", json=_commit_payload())
     assert r.status_code == 200
     body = r.json()
     assert body["case"]["idempotent_reuse"] is False
+    assert body["case"]["reused"] is False
     assert body["case"]["status"] == "DERDEST"

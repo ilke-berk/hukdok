@@ -1076,8 +1076,8 @@ async def commit_case_intake(
 
     Karar 4: dava oluşturma transactional; belge arşivleme belge-başı
     best-effort — başarısız/TTL-dolmuş belge akışı öldürmez, yanıtta
-    failed/expired döner. 409'da (duplicate tracking_no) HİÇBİR belge
-    tüketilmemiştir — frontend'in tek otomatik retry'ı güvenlidir.
+    failed/expired döner. Dava adımı 422/409/500 ile düşerse HİÇBİR belge
+    tüketilmemiştir — aynı `istek_kimligi` ile tekrar güvenlidir (G236).
     """
     from managers import case_manager
     from services import document_pipeline
@@ -1093,39 +1093,48 @@ async def commit_case_intake(
     case_dict = req.case.model_dump()
     missing_fields = compute_missing_fields(case_dict, case_dict.get("parties"))
     case_dict["status"] = "DERDEST"
-    case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
+    # G236: numarayı SUNUCU verir (karar 023) — istemcinin `tracking_no`'su yok sayılır,
+    # "numara dolu → 409" sınıfı kapandı. Tekrar eden commit (yanıtı kaybolan istek, çift
+    # tıklama, taslaktan devam) `istek_kimligi` ile tanınır — `/confirm`'deki `process_id`
+    # deseni; Faz 3-D'nin numara + taraf kümesi tahmini (`find_idempotent_commit_match`) kalktı.
+    kimlik = str(req.case.istek_kimligi) if req.case.istek_kimligi else None
+    case_dict["istek_kimligi"] = kimlik
+    case_dict[case_manager.SUNUCU_NUMARASI_BAYRAGI] = True
+
     idempotent_reuse = False
-    if case_result and case_result.get("error") == "duplicate_tracking_no":
-        # Faz 3-D (plan 3.5): 409 artık nihai değil — yanıtı kaybolan önceki
-        # commit'in KENDİ davasına çarpmış olabiliriz (çift tıklama / timeout
-        # sonrası tekrar). Muhafazakâr eşleşme tutarsa mevcut dava idempotent
-        # sonuç olarak döner; eski "sıra numarasını artırıp tekrar deneyin"
-        # yolu bu senaryoda aynı davayı İKİNCİ kez açtırıyordu.
-        match = await loop.run_in_executor(
-            None, partial(case_manager.find_idempotent_commit_match, case_dict, tenant_id)
+    case_result = None
+    if kimlik:
+        # Ön bakış: aynı kimlikle açılmış kart varsa add_case HİÇ koşmaz (sayaç artmaz).
+        case_result = await loop.run_in_executor(
+            None, partial(case_manager.istek_kimligi_karti, kimlik, tenant_id)
         )
-        if match:
+        idempotent_reuse = case_result is not None
+    if not idempotent_reuse:
+        try:
+            case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
+        except case_manager.OfisNoVerilemez as e:
+            # Müvekkilsiz kayıt: numara üretilemez (yer tutucu numara YOK). Hiçbir belge
+            # tüketilmedi — kullanıcı müvekkili ekleyip aynı belgelerle tekrar dener.
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        if case_result and case_result.get("error") == "duplicate_istek_kimligi":
+            # Eşzamanlı aynı-kimlikli commit: unique index kaybedeni geri aldı, kazananın
+            # kartı döner. Kart görünmüyorsa (silinmiş / başka tenant) ne döndürülür ne
+            # ikinci kart açılır — 409; hiçbir belge tüketilmedi.
+            case_result = await loop.run_in_executor(
+                None, partial(case_manager.istek_kimligi_karti, kimlik, tenant_id)
+            )
+            if not case_result:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Bu kayıt isteği daha önce kullanılmış. Sihirbazı yeniden başlatıp tekrar deneyin.",
+                )
             idempotent_reuse = True
-            case_result = match
-            TechnicalLogger.log(
-                "INFO",
-                "[INTAKE-COMMIT] 409 idempotent çözüldü — mevcut dava döndürülüyor",
-                {"case_id": match["id"], "tracking_no": match.get("tracking_no")},
-            )
-        else:
-            # Gerçek çakışma (nihai): [TRACKING_NO_COLLISION] ERROR telemetrisi
-            # Faz 3-D'de add_case'ten buraya taşındı (orada WARNING) — sayaç
-            # önerisi hâlâ dolu numara üretiyorsa buradan görülür (2026-07-16).
-            TechnicalLogger.log(
-                "ERROR",
-                "[TRACKING_NO_COLLISION] Önerilen ofis numarası zaten kayıtlı",
-                details={"tracking_no": req.case.tracking_no},
-            )
-            raise HTTPException(
-                status_code=409,
-                detail=f"Bu ofis numarası zaten kayıtlı: {req.case.tracking_no}. "
-                       "Sıra numarasını artırıp tekrar deneyin.",
-            )
+    if idempotent_reuse and case_result:
+        TechnicalLogger.log(
+            "INFO",
+            "[INTAKE-COMMIT] Tekrar eden istek — mevcut dava döndürülüyor",
+            {"case_id": case_result["id"], "tracking_no": case_result.get("tracking_no")},
+        )
     if not case_result or case_result.get("error"):
         raise HTTPException(status_code=500, detail="Dava kaydedilemedi.")
     case_id = case_result["id"]
@@ -1212,6 +1221,8 @@ async def commit_case_intake(
             # Faz 3-D: retry'ın mevcut davaya çözüldüğünün işareti (frontend
             # bilmeyen alanı yok sayar; teşhis ve gelecek UI mesajı için).
             "idempotent_reuse": idempotent_reuse,
+            # G236: POST /api/cases ile aynı ad — istemci tek alana bakar.
+            "reused": idempotent_reuse,
         },
         "documents": doc_results,
         "policies": policy_result,

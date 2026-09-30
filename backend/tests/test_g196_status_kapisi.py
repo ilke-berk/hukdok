@@ -264,13 +264,23 @@ def pg(pg_engine, monkeypatch):
         event.remove(pg_engine, "handle_error", _kaydet)
 
 
-def _pg_satir(pg, tracking_no):
+def _pg_satir(pg, anahtar):
+    """Kart satırı: `anahtar` int ise kayıt yanıtındaki `id`, str ise `tracking_no`.
+
+    G236: numarayı sunucu verir — açılan kart isteğin `tracking_no`'suyla DEĞİL dönen
+    `id` ile aranır. str yolu yalnız "bu numarayla kart YOK" iddiası için kalır.
+    """
+    kolon = "id" if isinstance(anahtar, int) else "tracking_no"
     with pg.engine.connect() as conn:
         satir = conn.execute(text(
             "SELECT id, status, case_stage, court, subject, esas_no, karar_no, updated_at "
-            "FROM cases WHERE tracking_no = :t"
-        ), {"t": tracking_no}).mappings().first()
+            f"FROM cases WHERE {kolon} = :t"
+        ), {"t": anahtar}).mappings().first()
     return dict(satir) if satir is not None else None
+
+
+# G236: müvekkilsiz kayıt 422 — durum kapısını ölçen isteklere bir CLIENT taraf eklenir.
+_MUVEKKIL = [{"name": "G196 Müvekkil", "role": "Davacı", "party_type": "CLIENT"}]
 
 
 def _pg_yan_kayitlar(pg, cid) -> tuple:
@@ -285,6 +295,7 @@ def _pg_yan_kayitlar(pg, cid) -> tuple:
 def _pg_dava_ac(pg, tracking_no) -> int:
     r = pg.client.post("/api/cases", json={
         "tracking_no": tracking_no, "court": "X Mahkemesi", "subject": "Eski konu", "esas_no": "2026/1",
+        "parties": _MUVEKKIL,
     })
     assert r.status_code == 200, r.text
     return r.json()["id"]
@@ -320,14 +331,14 @@ def test_pg_post_uclu_disi_400_kart_yok_check_yok_error_yok(pg, caplog):
 
 @pytest.mark.dbtest
 def test_pg_post_eski_deger_derdest_asama_ve_varsayilan(pg):
-    r = pg.client.post("/api/cases", json={"tracking_no": "G196/TEMYIZ", "status": "TEMYIZ"})
+    r = pg.client.post("/api/cases", json={"tracking_no": "G196/TEMYIZ", "status": "TEMYIZ", "parties": _MUVEKKIL})
     assert r.status_code == 200, r.text
-    satir = _pg_satir(pg, "G196/TEMYIZ")
+    satir = _pg_satir(pg, r.json()["id"])
     assert (satir["status"], satir["case_stage"]) == ("DERDEST", "TEMYIZ")
 
-    r = pg.client.post("/api/cases", json={"tracking_no": "G196/VARSAYILAN"})
+    r = pg.client.post("/api/cases", json={"tracking_no": "G196/VARSAYILAN", "parties": _MUVEKKIL})
     assert r.status_code == 200, r.text
-    satir = _pg_satir(pg, "G196/VARSAYILAN")
+    satir = _pg_satir(pg, r.json()["id"])
     assert (satir["status"], satir["case_stage"]) == ("DERDEST", None)
     assert pg.hatalar == []
 
@@ -335,7 +346,7 @@ def test_pg_post_eski_deger_derdest_asama_ve_varsayilan(pg):
 @pytest.mark.dbtest
 def test_pg_put_uclu_disi_400_hicbir_alan_degismez(pg, caplog):
     cid = _pg_dava_ac(pg, "G196/PUT")
-    once = _pg_satir(pg, "G196/PUT")
+    once = _pg_satir(pg, cid)
     yan_once = _pg_yan_kayitlar(pg, cid)
 
     with caplog.at_level(logging.WARNING):
@@ -345,7 +356,7 @@ def test_pg_put_uclu_disi_400_hicbir_alan_degismez(pg, caplog):
         })
     assert r.status_code == 400, r.text
     assert SERBEST in r.json()["detail"]
-    assert _pg_satir(pg, "G196/PUT") == once
+    assert _pg_satir(pg, cid) == once
     assert _pg_yan_kayitlar(pg, cid) == yan_once
     assert pg.hatalar == []
     assert _errorlar(caplog) == []
@@ -356,7 +367,7 @@ def test_pg_put_uclu_disi_400_hicbir_alan_degismez(pg, caplog):
         "court": "X Mahkemesi", "subject": "Eski konu", "esas_no": "2026/1",
     })
     assert r.status_code == 200, r.text
-    satir = _pg_satir(pg, "G196/PUT")
+    satir = _pg_satir(pg, cid)
     assert (satir["status"], satir["case_stage"]) == ("DERDEST", "TEMYIZ")
     assert pg.hatalar == []
 
@@ -374,7 +385,7 @@ def test_pg_takip_yolu_uclu_disi_kapida_durur_check_yok_error_yok(pg, caplog):
     from constants import InvalidCaseStatusError
 
     cid = _pg_dava_ac(pg, "G196/TAKIP")
-    once = _pg_satir(pg, "G196/TAKIP")
+    once = _pg_satir(pg, cid)
     yan_once = _pg_yan_kayitlar(pg, cid)
 
     with caplog.at_level(logging.WARNING):
@@ -382,13 +393,13 @@ def test_pg_takip_yolu_uclu_disi_kapida_durur_check_yok_error_yok(pg, caplog):
             case_manager.update_case_tracking(
                 cid, {"case_stage": "KARAR", "karar_no": "2026/7", "status": SERBEST}, changed_by="avukat",
             )
-    assert _pg_satir(pg, "G196/TAKIP") == once
+    assert _pg_satir(pg, cid) == once
     assert _pg_yan_kayitlar(pg, cid) == yan_once
     assert pg.hatalar == []
     assert _errorlar(caplog) == []
 
     # Eski değer: mevcut davranış (üçlü + boş aşamaya taşınır), tarihçe satırı düşer
     assert case_manager.update_case_tracking(cid, {"status": "KAPALI"}, changed_by="avukat") is True
-    satir = _pg_satir(pg, "G196/TAKIP")
+    satir = _pg_satir(pg, cid)
     assert (satir["status"], satir["case_stage"]) == ("MAHZEN", "KAPALI")
     assert pg.hatalar == []
