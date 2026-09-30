@@ -31,7 +31,6 @@ export interface AnalysisData {
   belgede_gecen_isimler: string[];
   esas_no: string;
   durum: string;
-  ofis_dosya_no: string;
   yedek1: string;
   yedek2: string;
   ozet: string;
@@ -108,7 +107,6 @@ function mapAnalysisData(resultData: Record<string, unknown>, docTypeCode?: stri
     belgede_gecen_isimler: (r.belgede_gecen_isimler as string[]) || [],
     esas_no: (r.esas_no as string) || "",
     durum: (r.durum as string) || "G",
-    ofis_dosya_no: (r.ofis_dosya_no as string) || "000000000",
     yedek1: "X",
     yedek2: "XX",
     ozet: (r.ozet as string) || "",

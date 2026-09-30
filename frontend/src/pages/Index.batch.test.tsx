@@ -129,7 +129,6 @@ const ANALYSIS: AnalysisData = {
   belgede_gecen_isimler: [],
   esas_no: "2026/55",
   durum: "",
-  ofis_dosya_no: "",
   yedek1: "",
   yedek2: "",
   ozet: "özet",

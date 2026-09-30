@@ -5,8 +5,8 @@ Kilitlenen davranışlar:
      veriyle `complete` DEĞİL, `_failed_event` sözleşmesiyle `failed` döner.
   2. `error_kod` etiketleri hata tipine doğru eşlenir.
   3. Log sözleşmesi: `failed` üretimi YENİ ERROR satırı eklemez.
-  4. /process passthrough'u `failed`'i değiştirmeden iletir; counter_task
-     iptal edilir, PROCESS_CACHE yazılmaz, temp dosya silinir.
+  4. /process passthrough'u `failed`'i değiştirmeden iletir; PROCESS_CACHE
+     yazılmaz, temp dosya silinir.
   5. Geçiş şimi: dönüşüm adımları intake (case_intake_analyzer) için ESKİ
      default-data'lı `complete` olayını üretmeyi sürdürür.
 
@@ -17,7 +17,6 @@ import asyncio
 import io
 import json
 import os
-import threading
 from typing import Any, Dict, List
 
 import pytest
@@ -359,53 +358,25 @@ def test_conversion_steps_keep_legacy_complete_for_intake(monkeypatch, tmp_path)
 
 @pytest.fixture()
 def process_app(monkeypatch):
-    """/process route'u: analyzer + counter + case_matcher fake'lenir."""
+    """/process route'u: analyzer + case_matcher fake'lenir.
+
+    G242: SharePoint belge sayacı kalktı — sayaç sahtesi ve iptal casusu da
+    buradan çıktı (yeni bekçi: test_g242_sayac_kalkti.py).
+    """
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
     import case_matcher
-    from managers import counter_manager
     from dependencies import get_current_user
     from routes import processing
 
     monkeypatch.setattr(case_matcher, "find_matching_case", lambda *a, **kw: None)
-
-    counter_released = threading.Event()
-
-    class _FakeCounter:
-        def __init__(self, value):
-            self.value = value
-            self.calls = 0
-
-        def reserve_next_counter(self):
-            self.calls += 1
-            if self.value is None:
-                # Analiz "complete"e ulaşmazsa iptal edilecek: iş parçacığı
-                # testin sonuna kadar bloklu kalır (gerçek SharePoint gecikmesi)
-                counter_released.wait(timeout=5)
-                return "GEC______"
-            return self.value
-
-    state = {"counter": _FakeCounter("OFS-1")}
-    monkeypatch.setattr(counter_manager, "get_counter_manager", lambda: state["counter"])
 
     # PROCESS_CACHE.set çağrıldı mı? (failed yolunda çağrılmamalı)
     cache_sets: List[tuple] = []
     monkeypatch.setattr(
         processing.PROCESS_CACHE, "set", lambda key, payload: cache_sets.append((key, payload))
     )
-
-    # counter_task gerçekten iptal ediliyor mu?
-    created: List[asyncio.Task] = []
-    real_create_task = asyncio.create_task
-
-    def _spy_create_task(coro, **kwargs):
-        task = real_create_task(coro, **kwargs)
-        if getattr(coro, "__name__", "") == "fetch_counter":
-            created.append(task)
-        return task
-
-    monkeypatch.setattr(asyncio, "create_task", _spy_create_task)
 
     app = FastAPI()
     app.include_router(processing.router)
@@ -414,11 +385,7 @@ def process_app(monkeypatch):
     class _Harness:
         def __init__(self):
             self.client = TestClient(app)
-            self.counter_tasks = created
             self.cache_sets = cache_sets
-
-        def use_counter(self, value):
-            state["counter"] = _FakeCounter(value)
 
         def post(self):
             return self.client.post(
@@ -426,10 +393,7 @@ def process_app(monkeypatch):
                 files={"file": ("belge.pdf", io.BytesIO(b"%PDF-1.4\ntest\n"), "application/pdf")},
             )
 
-    try:
-        yield _Harness()
-    finally:
-        counter_released.set()
+    yield _Harness()
 
 
 def _events(resp) -> List[Dict[str, Any]]:
@@ -445,7 +409,6 @@ def test_process_passes_failed_through_unchanged(monkeypatch, process_app):
         yield analyzer._failed_event("Servis doygun. (Kod: ab12cd34)", "gemini_saturated")
 
     monkeypatch.setattr(analyzer, "analyze_file_generator", fake_generator)
-    process_app.use_counter(None)   # complete gelmeyecek → counter await edilmemeli
 
     resp = process_app.post()
     assert resp.status_code == 200
@@ -461,9 +424,6 @@ def test_process_passes_failed_through_unchanged(monkeypatch, process_app):
     # PROCESS_CACHE yazılmadı, temp dosya silindi
     assert process_app.cache_sets == []
     assert not os.path.exists(seen["temp_path"])
-    # counter_task finally'de iptal edildi (sarkan task yok)
-    assert len(process_app.counter_tasks) == 1
-    assert process_app.counter_tasks[0].cancelled()
 
 
 def test_process_complete_path_still_carries_process_id(monkeypatch, process_app):
@@ -476,5 +436,4 @@ def test_process_complete_path_still_carries_process_id(monkeypatch, process_app
     final = _events(resp)[-1]
     assert final["status"] == "complete"
     assert final["process_id"]
-    assert final["data"]["ofis_dosya_no"] == "OFS-1"
     assert len(process_app.cache_sets) == 1

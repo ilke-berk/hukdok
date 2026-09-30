@@ -148,8 +148,8 @@ def begin(process_id: str, owner: Optional[str]) -> Tuple[str, Optional[dict]]:
             return ("in_progress", None)
 
         # Bayat kilit devralma — optimistic guard: iki eşzamanlı devralma
-        # denemesinden yalnız biri satırı güncelleyebilir (counter_manager'ın
-        # ETag deseniyle aynı ruh).
+        # denemesinden yalnız biri satırı güncelleyebilir (ETag/If-Match
+        # deseniyle aynı ruh).
         seen_updated = row.updated_at
         claimed = db.query(models.ConfirmReceipt).filter(
             models.ConfirmReceipt.process_id == process_id,

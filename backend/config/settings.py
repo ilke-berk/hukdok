@@ -82,9 +82,6 @@ class Settings(BaseSettings):
     email_max_single_mb: int = 3
     email_max_total_mb: int = 3
 
-    # ── SharePoint sayaç tahsisi (/process fetch_counter) ────────────────
-    counter_fetch_timeout_seconds: float = 10.0
-
     # ── Cache TTL'leri (routes/processing DiskTTLCache) ──────────────────
     process_cache_ttl_seconds: int = 1800
     download_cache_ttl_seconds: int = 3600

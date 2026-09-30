@@ -81,7 +81,6 @@ def test_settings_defaults_frozen_to_premigration_values():
     assert s.libreoffice_timeout_seconds == 120       # format_converter sabiti
     assert s.email_max_single_mb == 3                 # email_sender (0-C)
     assert s.email_max_total_mb == 3
-    assert s.counter_fetch_timeout_seconds == 10.0    # processing fetch_counter
     assert s.process_cache_ttl_seconds == 1800
     assert s.download_cache_ttl_seconds == 3600
     assert s.rate_limit_default == "100/minute"
@@ -133,11 +132,11 @@ def test_tolerant_parsing_garbage_and_empty_fall_back_to_defaults(monkeypatch):
     # bozuk env HİÇBİR alan için uygulamayı düşürmez.
     monkeypatch.setenv("MAX_UPLOAD_MB", "elli")
     monkeypatch.setenv("GS_TIMEOUT_SECONDS", "hizli")
-    monkeypatch.setenv("COUNTER_FETCH_TIMEOUT_SECONDS", "")
+    monkeypatch.setenv("PDF_PARSE_TIMEOUT_SECONDS", "")
     s = Settings()
     assert s.max_upload_mb == 50
     assert s.gs_timeout_seconds == 240
-    assert s.counter_fetch_timeout_seconds == 10.0
+    assert s.pdf_parse_timeout_seconds == 60.0
 
 
 # ═════════════════════════════════════════════════════════════════════════════

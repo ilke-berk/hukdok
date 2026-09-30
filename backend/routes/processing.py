@@ -469,7 +469,6 @@ async def analyze_file_endpoint(
 ):
     """Step 1: Analyze File (Stream)"""
     from analyzer import analyze_file_generator
-    from managers.counter_manager import get_counter_manager
 
     api_start = time.perf_counter()
     api_timings = {}
@@ -508,37 +507,9 @@ async def analyze_file_endpoint(
 
     async def event_stream():
         cached_full_pdf_path = None
-        counter_task = None
         try:
-            async def fetch_counter():
-                # Faz 3-D (plan 3.4): numara tahsisi ATOMİK — oku+artır+döndür
-                # tek işlemde, ETag/If-Match ile. Eski akış burada salt okuyup
-                # artırmayı /confirm'e bırakıyordu; iki eşzamanlı kullanıcı aynı
-                # numarayı alabiliyordu. Timeout'ta thread arkada tahsisi
-                # bitirebilir → numara atlanır (boşluk); mükerrere tercih edilir.
-                try:
-                    loop = asyncio.get_running_loop()
-                    counter = get_counter_manager()
-                    # Tavanın evi config/settings.py (env:
-                    # COUNTER_FETCH_TIMEOUT_SECONDS, Faz 5-A); varsayılan 10 sn.
-                    ofis_dosya_no = await asyncio.wait_for(
-                        loop.run_in_executor(None, counter.reserve_next_counter),
-                        timeout=settings.counter_fetch_timeout_seconds,
-                    )
-                    return ofis_dosya_no
-                except asyncio.TimeoutError:
-                    TechnicalLogger.log(
-                        "ERROR",
-                        f"SharePoint counter timeout ({settings.counter_fetch_timeout_seconds:.0f}s)",
-                    )
-                    return "TIMEOUT___"
-                except Exception as e:
-                    TechnicalLogger.log("ERROR", f"SharePoint counter error: {e}")
-                    return "XXXXXXXXX"
-
-            t2 = time.perf_counter()
-            counter_task = asyncio.create_task(fetch_counter())
-
+            # G242: /process analiz sırasında SharePoint'e (Graph) HİÇ çıkmaz —
+            # eskiden burada tahsis edilen belge numarası hiçbir yerde kullanılmıyordu.
             t1 = time.perf_counter()
             generator = analyze_file_generator(temp_path, file_hash=file_hash, process_id=process_id, preset_belge_turu_kodu=belge_turu_kodu or None)
             final_data = None
@@ -571,17 +542,6 @@ async def analyze_file_endpoint(
                             },
                         )
                         TechnicalLogger.log("INFO", f"PROCESS_CACHE stored: {process_id} → {full_pdf_path} (original: {original_path})")
-
-                    if final_data and "ofis_dosya_no" not in final_data:
-                        ofis_dosya_no = await counter_task
-                        final_data["ofis_dosya_no"] = ofis_dosya_no
-                    else:
-                        try:
-                            _ = await counter_task
-                        except Exception:
-                            pass
-
-                    api_timings["counter_fetch"] = round((time.perf_counter() - t2) * 1000, 2)
 
                     try:
                         t_match = time.perf_counter()
@@ -618,13 +578,6 @@ async def analyze_file_endpoint(
             TechnicalLogger.log("ERROR", f"Streaming Error [ID: {error_id}]: {e}")
             yield json.dumps({"status": "error", "message": f"Beklenmedik hata: {str(e)}"}) + "\n"
         finally:
-            # Analiz "complete"e ulaşamazsa counter_task hiç await edilmiyordu → sarkan task
-            if counter_task is not None and not counter_task.done():
-                counter_task.cancel()
-                try:
-                    await counter_task
-                except (asyncio.CancelledError, Exception):
-                    pass
             # Faz 3: if temp_path was cached (analiz PDF'i veya dönüştürülmüş
             # formatın orijinali olarak), don't delete it — PROCESS_CACHE TTL handles cleanup.
             if cached_full_pdf_path:
@@ -716,7 +669,7 @@ async def confirm_process(
     import time as perf_time
 
     confirm_start = perf_time.perf_counter()
-    timings = {}
+    timings: dict[str, float] = {}
 
     current_user_name = user.get("name") or user.get("preferred_username") or "Bilinmeyen"
 
@@ -779,11 +732,6 @@ async def confirm_process(
         except HTTPException as e:
             TechnicalLogger.log("WARNING", f"Filename sanitization failed: {e.detail}")
             raise e
-
-        # Faz 3-D: sayaç artırma buradan KALKTI — numara /process'te atomik tahsis
-        # ediliyor (counter_manager.reserve_next_counter); burada artırmak çift
-        # sayıma yol açardı. timings anahtarı frontend benchmark sözleşmesi için duruyor.
-        timings["1_counter"] = 0.00
 
         HAM_FOLDER = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
         ISLENMIS_FOLDER = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")

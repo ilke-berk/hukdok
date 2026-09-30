@@ -74,7 +74,7 @@ sütun/föy = dokunma) ve "Veri kesim tarihi" (yoksa paket adındaki tarih). Kap
 kullanıcı imzalı (`source` NULL ya da `HUKDOK_TESLIM` dışı) `case_history` kaydı varsa paket o alanı
 yazmaz/boşaltmaz, satır raporuna `KORUNDU` düşer (hata değil; bizde BOŞ alanı paket doldurur —
 `scripts/hukdok_aktarim.py::_kart_alanlarini_yaz` + `kesim_sonrasi_kullanici_kaydi`).
-Tek SharePoint kimliği arşivindir (LexisBio: arşiv/sayaç/export). Ayrıntı
+Tek SharePoint kimliği arşivindir (LexisBio: arşiv/export). Ayrıntı
 `docs/mimari/veri-teslim-hatti.md`; veri ekibine verilen sözleşme `docs/veri-teslim/SOZLESME.md`.
 
 **Belge akışı:** `/process` → `analyzer.analyze_file_generator` NDJSON stream'i →
@@ -83,9 +83,9 @@ kaydı, `services/confirm_idempotency.py`) → belge kaydı + SharePoint upload 
 upload başarılı olup `sharepoint_url` yazılınca `services/export_publisher.notify_hukukbot`:
 filtrelerden geçen belge `export_outbox`'a "pending" düşer + hukukbot'a webhook atılır
 (ulaşamazsa sorun değil — hukukbot'un periyodik reconcile'ı toparlar; doğruluk garantisi
-outbox + reconcile'dadır, webhook yalnız gecikmeyi sıfırlar). Ofis dosya no `/process`
-sırasında SharePoint sayacından ATOMİK tahsis edilir (ETag/If-Match; timeout'ta numara
-atlanır — mükerrere tercih edilir). **Toplu yüklemede ek bağlama (20.09):** tezgâhta bir satır
+outbox + reconcile'dadır, webhook yalnız gecikmeyi sıfırlar). `/process` analiz sırasında
+SharePoint'e çıkmaz: eski belge sayacı kaldırıldı (G242; dava kartının ofis numarası
+`cases.tracking_no` ayrı konudur, DB'de üretilir). **Toplu yüklemede ek bağlama (20.09):** tezgâhta bir satır
 başka satırın e-posta EKİ olabilir (tebligat dilekçesi + mazbata): ek satır kendi başına
 arşivlenir (`send_email=false`), dosyası ana satırın `/confirm`'üne `extra_attachment_files` ile
 biner; toplu akışta e-postası açık tebligat ya da ekli satırda EmailModal ZORLA açılır

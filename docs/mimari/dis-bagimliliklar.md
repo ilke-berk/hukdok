@@ -115,8 +115,7 @@ bir kez daha dener (`:116`).
 
 Arşiv site'ını kullananlar: outbox upload (`services/upload_queue.py`), belge indirme
 (`routes/documents.py`, `routes/export.py`), dönüşüm retry, pipeline ham/işlenmiş upload,
-DB yedeği, e-posta (`/sendMail`) ve günlük aktivite raporu, ofis-no sayacı
-(`managers/counter_manager.py`), onarım scripti (`scripts/repair_overwritten_documents.py`).
+DB yedeği, e-posta (`/sendMail`) ve günlük aktivite raporu, onarım scripti (`scripts/repair_overwritten_documents.py`).
 
 ### İki katmanlı retry
 
@@ -159,8 +158,8 @@ Arşiv klasör adları env'den gelir: ham belgeler `SHAREPOINT_FOLDER_HAM_NAME`
 (`01_HAM_ARSIV`), işlenmiş kopyalar ve teknik/veritabanı yedekleri
 `SHAREPOINT_FOLDER_ISLENMIS_NAME` (`02_YEDEK_ARSIV`). Veri teslim klasörü
 (`SHAREPOINT_FOLDER_TESLIM_NAME`, `03_VERI_TESLIM`) 17.09.2026'dan beri kod tarafından okunmaz.
-Ofis numarası sayacı arşiv site'ındaki bir SharePoint liste öğesinde tutulur ve
-`managers/counter_manager.py` üzerinden ETag'li güncellenir.
+Arşiv site'ındaki belge sayacı listesi de kod tarafından okunmaz/yazılmaz (G242: `/process`'in
+tahsis ettiği numara hiçbir yerde kullanılmıyordu, sayaç kaldırıldı).
 
 ## 3. E-posta
 

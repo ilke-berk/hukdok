@@ -32,7 +32,6 @@ interface AnalysisData {
   belgede_gecen_isimler: string[];
   esas_no: string;
   durum: string;
-  ofis_dosya_no: string;
   yedek1: string;
   yedek2: string;
   ozet: string;

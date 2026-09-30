@@ -9,12 +9,12 @@
 `belge_turu_kodu` alır, `application/x-ndjson` **stream** döndürür. Analiz
 `analyzer.analyze_file_generator` içinde yürür; her adım bir JSON satırı yayınlar.
 
-İstek başına yapılan iki yan iş:
+İstek başına yapılan tek yan iş:
 
 - Her `/process` çağrısında bayat PROCESS_CACHE girdileri süpürülür — disk taraması +
-  payload silme olduğu için executor'a atılır (`processing.py:440-441`).
-- Ofis dosya numarası **paralel bir task** olarak SharePoint sayacından tahsis edilir
-  (aşağıda §6).
+  payload silme olduğu için executor'a atılır (`processing.py::analyze_file_endpoint`).
+
+`/process` analiz sırasında SharePoint'e (Graph) **çıkmaz** (aşağıda §6).
 
 ### Olay sözleşmesi (frontend ile ORTAK referans)
 
@@ -74,7 +74,7 @@ hâlâ biliyor" tipi bayatlama sorunları doğururdu. `pop()` süreçler arası 
 dosyası önce rastgele adlı bir claim dosyasına `os.replace` ile taşınır, yarışan iki
 pop'tan yalnız biri kazanır (`managers/ttl_cache.py:106-109`).
 
-TTL 1800 sn'dir (`config/settings.py:89`). Boot'ta bir süpürme koşar: bayat girdiler ve
+TTL 1800 sn'dir (`config/settings.py:86`). Boot'ta bir süpürme koşar: bayat girdiler ve
 payload dosyaları temizlenir, taze girdiler restart'ı **atlatır** — özelliğin amacı budur
 (`api.py:210-218`).
 
@@ -261,12 +261,11 @@ patlamamalı", `settings.py:17-20`).
 | `conversion_acquire_timeout_seconds` | 30.0 | `CONVERSION_ACQUIRE_TIMEOUT_SECONDS` | `:78` |
 | `email_max_single_mb` | 3 | `EMAIL_MAX_SINGLE_MB` | `:82` |
 | `email_max_total_mb` | 3 | `EMAIL_MAX_TOTAL_MB` | `:83` |
-| `counter_fetch_timeout_seconds` | 10.0 | `COUNTER_FETCH_TIMEOUT_SECONDS` | `:86` |
-| `process_cache_ttl_seconds` | 1800 | `PROCESS_CACHE_TTL_SECONDS` | `:89` |
-| `download_cache_ttl_seconds` | 3600 | `DOWNLOAD_CACHE_TTL_SECONDS` | `:90` |
-| `rate_limit_default` | `"100/minute"` | `RATE_LIMIT_DEFAULT` | `:93` |
-| `gemini_retry_deadline_seconds` | 170.0 | `GEMINI_RETRY_DEADLINE_SECONDS` | `:97` |
-| `gemini_http_timeout_ms` | 120000 | `GEMINI_HTTP_TIMEOUT_MS` | `:98` |
+| `process_cache_ttl_seconds` | 1800 | `PROCESS_CACHE_TTL_SECONDS` | `:86` |
+| `download_cache_ttl_seconds` | 3600 | `DOWNLOAD_CACHE_TTL_SECONDS` | `:87` |
+| `rate_limit_default` | `"100/minute"` | `RATE_LIMIT_DEFAULT` | `:90` |
+| `gemini_retry_deadline_seconds` | 170.0 | `GEMINI_RETRY_DEADLINE_SECONDS` | `:94` |
+| `gemini_http_timeout_ms` | 120000 | `GEMINI_HTTP_TIMEOUT_MS` | `:95` |
 
 ### 300 saniye hizası
 
@@ -278,7 +277,7 @@ pencereye sığmak zorundadır ve ikisi de kodda yorumla kilitlenmiştir:
   alır, kalan ~30 sn DB/kuyruk/e-posta/yanıta bırakılır. Bekçi testi: `bütçe + 30 ≤
   request_time_budget` (`settings.py:72-75`).
 - Gemini retry penceresi **170** sn; tek deneme HTTP tavanı 120 sn → 170 + 120 = 290 < 300
-  (`settings.py:96-97`).
+  (`settings.py:93-94`).
 
 `settings.py`'ye bilinçli **taşınmayanlar** da docstring'de listelidir: görüntü boyut
 korumaları (`MAX_IMAGE_*`, 2026-07-29 OOM kararı), dönüşüm semafor sayıları, retry/backoff
@@ -286,22 +285,16 @@ sabitleri, DB timeout env'leri, cache dizin env'leri, confirm idempotency eşikl
 upload_queue backoff merdiveni — bunlar "limit değil, başka paketlerin politika sabitleri"
 (`settings.py:25-32`).
 
-## 6. Ofis dosya numarası — atomik tahsis
+## 6. Belge sayacı — kaldırıldı (G242)
 
-Numara `/process` sırasında `managers/counter_manager.py::reserve_next_counter` ile
-SharePoint sayacından **atomik** tahsis edilir: oku + artır + döndür tek işlemde,
-ETag/`If-Match` ile optimistic concurrency. 412 (başka kullanıcı önce davrandı) alınırsa
-yeni değer okunup jitter'lı backoff ile tekrar denenir. "Dönen numara BU çağrıya aittir —
-eşzamanlı iki çağrı asla aynı numarayı alamaz" (`counter_manager.py:216-231`).
+`/process` eskiden her analizde SharePoint'teki bir liste öğesinden 9 haneli bir belge
+numarası tahsis ediyordu. Numara dosya adında, veritabanında, `/confirm` isteğinde ve
+ekranda kullanılmadığı için sayaç bütünüyle kaldırıldı: `/process` analiz sırasında Graph'a
+çıkmaz, `complete` olayı bu alanı taşımaz, benchmark sözlüklerinde sayaç anahtarı yoktur
+(bekçi `backend/tests/test_g242_sayac_kalkti.py`). Stream sözleşmesi değişmedi.
 
-Sabitler: `RESERVE_MAX_ATTEMPTS = 4`, backoff tabanı 0.3 sn, tavan 2.0 sn, jitter 0.2 sn
-(`counter_manager.py:46-49`). Tüm denemeler 412 ile tükenirse **tek** ERROR loglanır — ara
-çakışmalar WARNING'dir (log sözleşmesi, `counter_manager.py:304-312`).
-
-İstek yolunda tahsis `counter_fetch_timeout_seconds` (10 sn) ile sınırlıdır. Timeout'ta
-`"TIMEOUT___"` sentinel'i döner; arkadaki thread tahsisi bitirebileceği için **numara
-atlanır**. Bu bilinçli bir takastır: "mükerrere tercih edilir"
-(`processing.py:441-469`).
+Dava kartının ofis numarası (`cases.tracking_no`) bununla **ilgisizdir**: o numara
+veritabanında üretilir — [`dava-acma-akisi.md`](dava-acma-akisi.md).
 
 ## 7. SharePoint upload outbox
 
