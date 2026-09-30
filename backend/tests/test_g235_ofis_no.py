@@ -214,6 +214,17 @@ def test_kategorisiz_muvekkil_tam_blok():
     assert ofis_no.musteri_kodu([_m("Hekimler Derneği", "Dernek")])[0] == "KR.HEKIMLER"
 
 
+def test_acik_kategori_addaki_sigortadan_ustun():
+    """Karar 023 §2 uçtan uca: adında "sigorta" geçen Acente sigortacı değil kurumdur."""
+    assert ofis_no.musteri_kodu([_m("KAYNAK SİGORTA", "Acente")])[0] == "KR.KAYNAK"
+    assert ofis_no.musteri_kodu([_m("YKM SİGORTA", "Acente")])[0] == "KR.YKM"
+    assert not ofis_no.sigortaci_mi("Kaynak Sigorta", "Acente")
+    # Kategori boşken ya da "Diğer"ken ad taraması sürer; sigorta kategorisi her zaman sigortacıdır.
+    assert ofis_no.musteri_kodu([_m("Koru Sigorta A.Ş.")])[0] == "KORU"
+    assert ofis_no.musteri_kodu([_m("Bilinmeyen Sigorta A.Ş.", "Diğer")])[0] == "SG"
+    assert ofis_no.musteri_kodu([_m("Axa", "Sigorta Şirketi")])[0] == "AXA"
+
+
 # ─── çok müvekkil ────────────────────────────────────────────────────────────
 
 def test_cok_muvekkilde_ad_onceligi():

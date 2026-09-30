@@ -364,8 +364,18 @@ def kurum_blogu(kod: str, ad: Optional[str]) -> str:
 # ─── Sigortacı ───────────────────────────────────────────────────────────────
 
 def sigortaci_mi(ad: Optional[str], kategori_adi: Optional[str] = None) -> bool:
-    """Müvekkil sigorta şirketi mi? Kategori adında ya da kendi adında "sigorta" geçer."""
-    return "SIGORTA" in ascii_buyuk(kategori_adi) or "SIGORTA" in ascii_buyuk(ad)
+    """Müvekkil sigorta şirketi mi?
+
+    Açık kategori ada ÜSTÜNDÜR (karar 023 §2): kategorisi "Acente" olan "Kaynak Sigorta"
+    sigortacı değil kurumdur (`KR.KAYNAK`). Ad taraması yalnız kategori boşken ya da
+    "Diğer" gibi bir şey söylemeyen kategoride devreye girer.
+    """
+    kategori = ascii_buyuk(kategori_adi)
+    if "SIGORTA" in kategori:
+        return True
+    if any(parca in kategori for parca, anahtar in _KATEGORI_AD_PARCALARI if anahtar != "DIGER"):
+        return False
+    return "SIGORTA" in ascii_buyuk(ad)
 
 
 def sigorta_kodu(ad: Optional[str], kod_listeleri: Optional[KodListeleri] = None) -> Optional[str]:
