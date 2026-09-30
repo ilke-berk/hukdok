@@ -2,11 +2,12 @@
 
 > **Son doğrulama: 2026-09-04 · 88409da** (§1-§10 önceki doğrulama 2026-08-11 · 2eade56;
 > §11-§13 bu tarihte koddan sayıldı)
+> §3 uç tablosu, §4 ve §5: **2026-09-30 · c40e10c** (G240 — karar 023 ofis no düzeni, G235-G242 koduna karşı).
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 Dava iki yoldan açılır: elle doldurulan form (`/new-case/form`) ve belgeden türeten otonom
-sihirbaz (`/new-case/auto`). İkisi de aynı `cases` kaydına iner, aynı ofis numarası
-kurallarını kullanır.
+sihirbaz (`/new-case/auto`). İkisi de aynı `cases` kaydına iner; ofis numarasını ikisinde de
+**sunucu** verir (§5).
 
 ## 1. Zorunlu alanlar — kaydı ENGELLEMEZ
 
@@ -62,9 +63,9 @@ Backend uçları `backend/routes/case_intake.py`'dedir:
 | `POST /api/case-intake/expand-eml` | `:209` | `.eml` dosyasını gövde + eklere açar (gövde PDF'e çevrilir) |
 | `POST /api/case-intake/analyze` | `:330` | Tek belgeyi analiz eder, NDJSON stream döner, tam PDF'i PROCESS_CACHE'e koyar |
 | `POST /api/case-intake/merge` | `:651` | N belgenin çıkarımlarını tek taslakta birleştirir |
-| `POST /api/case-intake/commit` | `:1066` | Yeni dava kaydı + belge arşivleme + poliçe beslemesi |
-| `POST /api/case-intake/apply` | `:1224` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme |
-| `POST /api/case-intake/keepalive` | `:1322` | Review adımında PROCESS_CACHE TTL'sini tazeler |
+| `POST /api/case-intake/commit` | `:1068` | Yeni dava kaydı + belge arşivleme + poliçe beslemesi |
+| `POST /api/case-intake/apply` | `:1237` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme |
+| `POST /api/case-intake/keepalive` | `:1335` | Review adımında PROCESS_CACHE TTL'sini tazeler |
 
 Sihirbaz akışı: yükle → analiz → (birden çok belge varsa) birleştir → kullanıcı incelemesi
 → commit (ya da mevcut davaya apply).
@@ -73,9 +74,9 @@ Sihirbaz akışı: yükle → analiz → (birden çok belge varsa) birleştir �
 (`config/settings.py:89`) ve kullanıcı inceleme adımında bundan uzun kalabilir; sihirbaz
 periyodik olarak TTL'yi tazeler.
 
-## 4. `/commit` ve 409'un idempotent çözümlenmesi
+## 4. `/commit` ve tekrar eden isteğin tanınması (`istek_kimligi`)
 
-Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`).
+Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1095`).
 
 > **`cases.status` veritabanı kısıtı (G195, 14.09.2026):** durum yalnız
 > `constants.CASE_STATUSES` üçlüsüdür (DERDEST | DANIŞ | MAHZEN; karar 020 — temyiz/istinaf
@@ -84,7 +85,7 @@ Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`).
 > değer listesi `CASE_STATUSES`'ten üretilir, op koşulsuzdur ve `pg_constraint` yoklamasıyla
 > idempotenttir, madde 50'nin veri düzeltmesinden SONRA koşar. Uygulama/script/elle SQL
 > üçlü dışı bir değer yazarsa Postgres `CheckViolation` (23514) döner — `add_case` bunu
-> tracking_no çakışması SAYMAZ, ERROR loglayıp `None` döner (route 500).
+> unique çakışması SAYMAZ, ERROR loglayıp `None` döner (route 500).
 >
 > - **`NOT VALID` uyarısı:** kısıt eklenirken mevcut satırlar TARANMAZ (prod'da eski bozuk
 >   değer migrasyonu durdurmaz), ama o andan sonra her yeni satır sürümü denetlenir: üçlü
@@ -97,70 +98,175 @@ Commit dava kaydını `DERDEST` durumuyla açar (`case_intake.py:1093`).
 >   bölümü üçlü dışı satır = 0 gösterdiğinde ayrı görevle koşulur (kısıt o zaman
 >   `convalidated = true` olur). Testler `backend/tests/test_g195_status_check.py`.
 
-`add_case`
-`duplicate_tracking_no` dönerse akış **nihai 409 vermez**; önce muhafazakâr bir eşleşme
-denenir (`case_manager.find_idempotent_commit_match`).
+Numarayı sunucu verdiği için (§5) "numara dolu → 409" sınıfı kapandı; eski "aynı numara +
+taraf kümesi = aynı istek" tahmini de (Faz 3-D) koddan çıktı. Tekrar eden commit — yanıtı
+kaybolan istek, çift tıklama, taslaktan devam — artık **istek kimliğiyle** tanınır
+(`/confirm`'deki `process_id` deseni; `case_intake.py:1096-1131`):
 
-Gerekçe kodda yazılı (`case_intake.py:1097-1101`):
+- İstemci kayıt isteğine bir UUID koyar: `case.istek_kimligi` (`schemas.CaseCreate`; bozuk
+  biçim 422). Kolon `cases.istek_kimligi`, tekillik kısmi UNIQUE `uq_cases_istek_kimligi`
+  (migrasyon madde 57 — `backend/database.py`, koşulsuz `("index", ...)` op'u).
+- **Ön bakış:** route `add_case`'ten ÖNCE `case_manager.istek_kimligi_karti(kimlik, tenant_id)`
+  çağırır; kart varsa `add_case` hiç koşmaz, sayaç artmaz, mevcut kart `idempotent_reuse`
+  (= yanıttaki `case.reused`) `true` ile döner. Zaman penceresi yoktur — günler sonra
+  taslaktan devam eden istek de kendi kartını bulur.
+- **Eşzamanlı çift istek:** kaybeden transaction unique index'e çarpar, `add_case`
+  `{"error": "duplicate_istek_kimligi"}` döner (WARNING; sıra tahsisi rollback'le geri gelir),
+  route kazananın kartını döndürür.
+- Kimlik dolu ama kart görünmüyorsa (soft-delete edilmiş ya da başka tenant'a damgalı) kart
+  döndürülmez ve ikinci kart da açılmaz: **409** "Bu kayıt isteği daha önce kullanılmış".
+- Müvekkilsiz commit numara üretemez → `OfisNoVerilemez` → **422**; hiçbir belge tüketilmez.
 
-> Faz 3-D (plan 3.5): 409 artık nihai değil — yanıtı kaybolan önceki commit'in KENDİ
-> davasına çarpmış olabiliriz (çift tıklama / timeout sonrası tekrar). Muhafazakâr eşleşme
-> tutarsa mevcut dava idempotent sonuç olarak döner; eski "sıra numarasını artırıp tekrar
-> deneyin" yolu bu senaryoda aynı davayı İKİNCİ kez açtırıyordu.
+Aynı koruma `POST /api/cases`'te de vardır (`backend/routes/cases.py::api_add_case`).
+Kimliksiz istek (eski istemci) korumasız ama geçerlidir. Testler
+`backend/tests/test_g236_ofis_no_kayit.py`, `backend/tests/test_faz3_confirm_idempotency.py`.
 
-Eşleşme tutarsa `idempotent_reuse = True` ile mevcut dava döner. Tutmazsa gerçek çakışmadır:
-`[TRACKING_NO_COLLISION]` ERROR telemetrisi yazılır ve 409 atılır. Bu telemetrinin
-`add_case`'ten buraya taşınması bilinçlidir — sayaç önerisi hâlâ dolu numara üretiyorsa
-buradan görülür (`case_intake.py:1114-1120`).
+## 5. Ofis dosya numarası (`tracking_no`) — karar 023
 
-## 5. Ofis dosya numarası (`tracking_no`)
+Şartname: [`023-ofis-no-formati.md`](../kararlar/023-ofis-no-formati.md). Üreticinin **tek
+kanonik kaynağı** `backend/services/ofis_no.py`'dir; istemci numara ÜRETMEZ, yalnız önizler.
 
-Numara beş bloktan oluşur ve doğrulaması `frontend/src/lib/caseNumberUtils.ts:205-208`'deki
-regex'tir: `AA.BBBBBBBBBB.CCCC.DDDD.EEEEE`.
+```
+<MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR>
 
-### Sayaç bloğu — atomik tahsis
+DR.M.OZTURK-0003-HUK          kişi müvekkil
+KR.ENTHONE-0015-CEZ           kurum müvekkil
+AXA-3297-DR.E.ALTUNC-HUK      sigortacı müvekkil + sigortalı hekim
+SG-0001-HUK                   listede olmayan sigortacı, sigortalı yok
+```
 
-Sayaç `/process` sırasında SharePoint'ten ETag/`If-Match` ile atomik tahsis edilir; ayrıntı
-ve timeout davranışı [`belge-isleme-hatti.md` §6](belge-isleme-hatti.md#6-ofis-dosya-numarası--atomik-tahsis)'da.
+Bloklar arası ayraç `-`, blok içinde `.`; yalnız ASCII büyük harf (`ofis_no.ascii_buyuk`);
+dolgu karakteri ve ad kesme YOK; hizmet bloğu YOK. Boş/çözülemeyen ad `ValueError`dır —
+yer tutucu numara üretilmez.
 
-### İsim bloğu — kategori önceliği
+### Müvekkil kodu (ilk blok)
 
-Birden çok müvekkil varsa isim bloğuna girecek olan **ilk müvekkil değil**, kategori
-önceliği en yüksek olandır (`caseNumberUtils.ts:150-167`). `pickNameClient`'in öncelik
-fonksiyonu birebir:
+`ofis_no.musteri_kodu(muvekkiller, kod_listeleri)`:
 
-| Kategori | Öncelik (küçük = güçlü) |
+- **Sigortacı varsa kod sigortacınındır** (`sigortaci_mi`: kategori ya da ad "sigorta"
+  içeriyor; açık kategori ada üstündür — kategorisi "Acente" olan "… Sigorta" kurumdur).
+  Şirket kodu `sigorta_kodu` ile müvekkil adında KELİME eşleşmesiyle bulunur; aktif listede
+  eşleşme yoksa sabit `SG` (`SG_KODU` — tabloda satırı yoktur, listeye yazılamaz).
+- **Sigortacı yoksa** kategori kodu + ad: kişi kategorilerinde (`KISI_KATEGORILERI`: Doktor,
+  Sağlık Çalışanı, Hasta, Bireysel) `kisi_blogu` → `<KOD>.<ilk adın baş harfi>.<SOYAD>`
+  (unvanlar atılır, tek kelimelik ad baş harfsiz); ötekilerde `kurum_blogu` → jenerik
+  kelimeler (`CORP_STOP`) atılıp ilk anlamlı kelime.
+- Kategorisiz (ya da tanınmayan kategorili) müvekkil: adında şirket işareti varsa `KR`,
+  yoksa `BR` (`sirket_isareti_var`).
+
+| Kategori (`client_categories.code`) | Varsayılan kod |
 | --- | --- |
-| `Doktor` | 0 |
-| `Sağlık Çalışanı` | 1 |
-| `Hasta` | 2 |
-| `Bireysel` | 3 |
-| kategori yok | 4 |
-| diğer (kurum vb.) | 6 |
-| adında/kategorisinde "sigorta" geçen | 10 |
+| `DOKTOR` | `DR` |
+| `SAGLIK-CALISANI` | `SC` |
+| `HASTA` | `HS` |
+| `OZEL-HASTANE` (Klinik dahil) | `OH` |
+| `KURUM` (Acente, Dernek dahil) | `KR` |
+| `BIREYSEL` | `BR` |
+| `DIGER` | `DG` |
 
-Kategori **kodu** ayrı bir fonksiyondur (`bestCategoryCode`, `:173-203`) ve sırası:
-özgül sigorta (S1–S7) > S0 > D1 > D2 > H2 > H1 > X1. Kodda bu sıranın bir düzeltme olduğu
-not düşülmüş: "Docstring'deki açık öncelik: D1 > D2 > H2 > H1 (önceden 'ilk X1 olmayan'
-idi)" (`caseNumberUtils.ts:197`).
+Birden çok müvekkilde adı veren **ilk müvekkil değil**, önceliği en yüksek olandır
+(`ofis_no._ONCELIK`, küçük = güçlü):
+
+| Kategori | Öncelik |
+| --- | --- |
+| Doktor | 0 |
+| Sağlık Çalışanı | 1 |
+| Hasta | 2 |
+| Bireysel | 3 |
+| Diğer / kategori yok | 4 |
+| Özel Hastane | 5 |
+| Kurum | 6 |
 
 > Bu öncelik kullanıcı tarafından bilinçle onaylanmıştır — **değiştirme**. Karar kaydı:
-> [`002-ofis-no-isim-blogu-onceligi.md`](../kararlar/002-ofis-no-isim-blogu-onceligi.md).
+> [`002-ofis-no-isim-blogu-onceligi.md`](../kararlar/002-ofis-no-isim-blogu-onceligi.md)
+> (karar 023 §5 sırayı korur; eski iki haneli kod önceliği kalktı).
 
-### Tür bloğu — dava türü → beş harf
+### Sigortalı bloğu
 
-Dördüncü blok `PROCESS_MAP`'tir (`caseNumberUtils.ts`; sihirbazın tür seçicisi de bu
-anahtarlardır). İdari yargının **tek** dava türü `İdare` → `IDARE` (17.09.2026, veri ekibine
-söz): sihirbaz Gemini'nin "İdari" etiketini eskiden ayrı bir "İdari Yargı" türüne (`IDARI`)
-çeviriyordu; `normalizeFileType` artık "İdare" döndürür, seed "İdari Yargı"yı kurmaz, mevcut
-kartlar `scripts/idari_yargi_birlestir.py` ile birleşti. Numara açılışta bir kez üretilir, sonra
-yeniden hesaplanmaz → o güne dek açılmış 14 `…IDARI…` numarası **olduğu gibi kalır** (arşiv
-klasör/dosya adlarında yaşar).
+Yalnız sigortacı müvekkilli kartta, TEK kişi, kişinin kendi kategori koduyla
+(`ofis_no.sigortali_sec`). Kaynak sırası: föy `ham_veri["Sigortalı"]` (kapsam dışı föy
+atlanır; `;` ile çok adlı değerde adlar kaynaştırılmaz — `_tek_sigortali`) → rolü
+"Sigortalı" olan taraf → sigortacıyla birlikte müvekkil olan kişi/kurum → "Diğer Davalı"
+içindeki ilk hekim. Bulunamazsa blok yazılmaz (`AXA-3297-HUK`).
 
-### Sıra bloğu
+### Tür bloğu
 
-`GET /api/cases/client-sequence` (`backend/routes/cases.py:123`) müvekkile/isim bloğuna ait
-bir sonraki sırayı önerir.
+`ofis_no.tur_kodu(cases.file_type)`: Hukuk `HUK` · Ceza `CEZ` · İcra `ICR` · Arabuluculuk
+`ARB` · Savcılık `SAV` · İdare / İdari Yargı `IDR` · Tahkim `THK` · Vergi `VRG` ·
+Danışmanlık `DAN`; boş ya da haritada olmayan → `HUK`. İdari yargının **tek** dava türü
+`İdare`'dir (17.09.2026): `normalizeFileType` (`frontend/src/lib/caseIntake.ts`) Gemini'nin
+"İdari" etiketini "İdare"ye çevirir, seed "İdari Yargı"yı kurmaz. Sihirbazın tür seçicisi
+`YARGI_TURLERI` AD listesidir (`frontend/src/lib/caseNumberUtils.ts`) — kod haritası değil.
+
+### Sıra — DB sayacı, kayıtla aynı transaction
+
+Sıra **müvekkil kodu başına** sayılır (`DR.M.OZTURK`'un üçüncü dosyası, AXA'nın 3297.
+dosyası); 4 haneye sıfırla doldurulur, 9999'dan sonra doğal uzar (`numara_kur`). Sayaç
+`ofis_no_sayaclari` tablosudur (`kod` PK, `son_sira`; migrasyon madde 56); **tek yazma yolu**
+`ofis_no.sira_tahsis_et` — tek ifade `INSERT … ON CONFLICT (kod) DO UPDATE … RETURNING`,
+commit ETMEZ: tahsis kartın kaydıyla aynı transaction'da yaşar, kayıt geri alınırsa sıra da
+geri döner. Verilen numaranın parçaları kartta da durur: `cases.ofis_no_kodu`,
+`cases.ofis_no_sira` (kısmi UNIQUE `uq_cases_ofis_no_kod_sira`; NULL = yeni formatla
+numaralanmamış kart).
+
+Kayıt yolu (`case_manager.add_case`): kullanıcı route'ları (`POST /api/cases`, intake commit)
+veri sözlüğüne `SUNUCU_NUMARASI_BAYRAGI` (`ofis_no_sunucudan`) koyar → istemcinin
+`tracking_no`'su okunmaz, `_ofis_no_parcalari` + `sira_tahsis_et` + `numara_kur` numarayı
+kurar. Kontrol, avukat adı 422'sinden ve üçlü dışı durum 400'ünden SONRA koşar. Müvekkil
+yoksa `OfisNoVerilemez` → 422. Sunucunun verdiği numara `ix_cases_tracking_no`'ya çarparsa
+bu sayaç tutarsızlığıdır: nihai ERROR + route 500 (409'a çevrilmez). Bayraksız doğrudan
+çağrılar (aktarım/script) kendi numarasını getirir ve eski `duplicate_tracking_no` dönüşünü
+görür.
+
+**Numara verildikten sonra DEĞİŞMEZ** — müvekkil / tür / sigortalı sonradan düzeltilse de:
+`update_case` `tracking_no`'yu yazmaz, PUT'ta gelen değer sessizce yok sayılır.
+
+### Önizleme
+
+`GET /api/cases/ofis-no-onizleme` (`backend/routes/cases.py::get_ofis_no_onizleme`):
+`muvekkiller` (tekrarlanabilir; yalnız rakam = müvekkil id'si, aksi serbest ad), `file_type`,
+opsiyonel `sigortali` (tekrarlanabilir ad) → `{onizleme, kod, sigortali_eksik, aciklama}`.
+Sayacı ARTIRMAZ (`ofis_no.onizle` → `siradaki`); araya başka kayıt girerse gerçek sıra farklı
+olabilir, önizleme isteğe geri gönderilmez. Müvekkilsiz / bilinmeyen id 422. Eski sıra
+önerisi ucu kalktı: yerinde şemaya girmeyen bir mezar taşı route 404 döner
+(`routes/cases.py::client_sequence_kaldirildi`).
+
+Frontend: üç ekran (`pages/NewCase.tsx`, `components/QuickCaseModal.tsx`,
+`components/intake/IntakeReviewStep.tsx`) numarayı salt-okunur gösterir; ortak kanca
+`useOfisNoOnizleme` (`hooks/useCases.ts`, debounce'lu), sorgu dizgisi
+`caseNumberUtils.ofisNoOnizlemeSorgusu`, kimlik `yeniIstekKimligi`. Önizleme alınamasa da
+kayıt yapılır; hata uydurma numaraya çevrilmez.
+
+### Kod listeleri — admin paneli
+
+Kategori → kod `client_categories.ofis_no_kodu`, sigorta şirketi → kod + eşleşme kelimeleri
+`sigorta_kisa_kodlari` (satır silinmez, `aktif=false`). Üretici listeleri
+`ofis_no.kod_listelerini_yukle` ile DB'den okur (pasif satır eşleşmede kullanılmaz; pasife
+alınan şirket `SG`'ye düşer). Uçlar `require_admin` arkasında (`backend/routes/admin.py`):
+`GET|POST /api/admin/sigorta-kodlari`, `PATCH /api/admin/sigorta-kodlari/{kod_id}`,
+`GET /api/admin/kategori-kodlari`, `PATCH /api/admin/kategori-kodlari/{code}`. Kod 2-10 büyük
+ASCII harf; kategori kodu ile sigorta kodu çakışamaz, `SG` yazılamaz (409). Panel:
+Yönetim → "Ofis No Kodları" sekmesi (`components/admin/OfisNoKodlariPanel.tsx`). Tohum:
+`managers/seed_data.py` (kategori kodu yalnız BOŞ alana, sigorta listesi yalnız tablo boşken).
+**Kod değişikliği yalnız YENİ numaraları etkiler.**
+
+### Göç ve eski numaralar
+
+Eski numaralar (nokta ayraçlı, beş bloklu düzen) `scripts/ofis_no_gocu.py` ile yeni formata
+çevrilir: varsayılan kuru koşu DB'ye hiçbir şey yazmaz, rapor dizinine
+`ofis_no_esleme_<tarih>.csv` (`case_id, eski, yeni, silinmis, kategori_kaynagi,
+sigortali_kaynagi`), `ofis_no_sigortali_eksik_<tarih>.csv` ve `ofis_no_ozet_<tarih>.txt`
+düşer. `--apply` tek transaction'dır: müvekkilsiz kart varken DURUR; her karta `case_history`
+(`tracking_no`, eski → yeni, `source='OFIS_NO_GOCU'`), `case_foys.onceki_tracking_no` aynı
+eşlemeyle çevrilir, sayaçlar kod başına en yüksek sıraya çekilir; envanter kapısı tutmazsa
+ROLLBACK. Eski numarayla arama `case_history.old_value` kolundan çalışmaya devam eder (exact
+modda bu kol yoktur — `case_manager._term_case_id_selects`). **30.09.2026 itibarıyla `--apply` hiçbir DB'de
+koşulmadı** (G238 raporu): mevcut kartlar eski numarasını taşır, yalnız yeni açılan kartlar
+yeni formattadır; lokal ve prod göçü kullanıcı kararıdır. Eski formatın üreticileri
+(`scripts/retag_tracking_nos.py`, `scripts/import_excel_cases.py`) EMEKLİdir — çalıştırılınca
+hata ile çıkar. **Eski formatı ayrıştıran kod yazılmaz:** müvekkil kodu gerekiyorsa
+`cases.ofis_no_kodu` okunur, kolon boşsa (göç öncesi kart) kartın müvekkilinden üreticiyle
+hesaplanır (`scripts/kartsiz_foy_kart_ac.kart_kodu`).
 
 ## 6. Taslak kalıcılığı ve logout susturması
 
@@ -394,9 +500,11 @@ hatalısını geçirelim, lokal migrasyon bitince hepsini elden geçiririz." 04.
 değişmedi; `scripts/kartsiz_foy_kart_ac.py --input <paket> [--apply]` ayrı bir adımdır.
 Ne SistemNo'su ne DosyaNo parçası bir karta düşen föyleri DosyaNo'ya göre gruplar
 (aynı DosyaNo'daki ARB + HUKUK föyleri tek kart; künye asıl davanın föyünden) ve
-`case_manager.add_case` ile MİNİMAL kart açar: ofis no `retag_tracking_nos` kuralıyla
-(kategori kodu Müvekkil Tipi'nden, 10 karakter isim bloğu, blok başına DB max+1 sıra,
-tür, `00000`), klasör no = DosyaNo, durum, tür, konu, mahkeme, esas, dava tarihi.
+`case_manager.add_case` ile MİNİMAL kart açar: ofis no karar 023 üreticisiyle
+(`ofis_numarasi`: `ofis_no.musteri_kodu` — kategori föyün Müvekkil Tipi'nden — + föyün ham
+`Sigortalı` sütunundan `sigortali_sec` + sayaçtan `sira_tahsis_et` + `numara_kur`; G239'a dek
+emekli `retag_tracking_nos` kuralıyla üretiliyordu), klasör no = DosyaNo, durum, tür, konu,
+mahkeme, esas, dava tarihi. Kuru koşu sayaç yakmaz.
 Taraf/avukat YAZMAZ (aktarımın işi; add_case'in otomatik cari kart davranışı böylece
 tetiklenmez). Sonraki aktarım koşusu föyleri DosyaNo köprüsüyle bağlar. Lokal 05.09:
 217 föy → 210 kart, ardından aktarım 217 yeni föy / 632 taraf / 244 avukat, kartsız 0.

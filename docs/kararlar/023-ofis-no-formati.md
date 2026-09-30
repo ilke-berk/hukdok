@@ -3,6 +3,14 @@
 > Son doğrulama: 2026-09-30 · 9b07017 (G234). Bu doküman yazıldığında **kod henüz değişmedi**:
 > aşağıdaki "bugünkü durum" atıfları eski formatın kodunu gösterir; yeni formatı uygulayacak
 > dosyalar G235-G240 ile gelir ve metinde **(planlanan)** diye işaretlidir.
+>
+> **UYGULANDI (30.09.2026 · c40e10c, G235-G242):** üretici + sayaç + kod listeleri
+> (`backend/services/ofis_no.py`, migrasyon madde 56), sunucu tahsisi + istek kimliği (G236,
+> madde 57), frontend önizleme (G237), admin "Ofis No Kodları" paneli (G241), göç script'i
+> (`backend/scripts/ofis_no_gocu.py`, G238), eski formatı ayrıştıran kodun uyarlanması (G239)
+> main'de. Aşağıdaki **(planlanan)** işaretleri ve "bugünkü durum" satır atıfları karar
+> anının fotoğrafıdır — güncel anlatım `docs/mimari/dava-acma-akisi.md` §4-§5. **Göç
+> (`--apply`) hiçbir DB'de koşulmadı**; lokal ve prod göçü kullanıcı kararıdır.
 
 - **Durum:** kabul — kullanıcı kararı (28.09.2026). [016](016-ofis-no-kategori-rejimi.md)'nın
   "geçmiş dokunulmaz / geriye dönük retag yapılmaz" parçasını ve iki haneli kod rejimini

@@ -7,6 +7,9 @@
 > `veri_teslim_otomasyonu` anahtarı koddan çıktı. §1, §2, §5, §6, §9 ve §10 bu koda göre yeniden
 > yazıldı (satır numaraları 17.09 çalışma ağacına aittir); §3/§4/§7 eski doğrulama notlarını taşır.
 >
+> **30.09.2026 · c40e10c (G240):** §7.1'deki "G154 döngüsünde eski/yeni ofis no" paragrafı, §7.5'teki
+> müvekkil ayrımı cümlesi ve §9 "Kart yaratılmaz" karar 023 koduna (G235-G242) göre yazıldı.
+>
 > Önceki doğrulama: 2026-09-04 · 88409da; §3 doğrulama/özet satırları, §4 kapı, §7 `Düzeltme_Logu`
 > ve kapsam referansları ile **§7.1 (aktarımın yazma kuralları, G150–G159)** 2026-09-10 · G161 ile
 > `39fd10c` koduna göre yeniden doğrulandı. Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod
@@ -384,6 +387,25 @@ kolonu (`services/teslim_cevap.py:221`, `:286`) `case_foys.case_party_id`'den ok
 bu görevden itibaren dolu gelir. G154 cevaplı xlsx'i `--kart-esleme` haritasına çevirir
 (`scripts/cevapli_kart_eslemesi.py`).
 
+**G154 döngüsünde eski/yeni ofis no (karar 023, G239).** Ekibin cevap hücresinde kart numarası
+İKİ biçimde tanınır: `TRACKING_NO_DESENI` = `ESKI_NO_DESENI` | `YENI_NO_DESENI`
+(`scripts/cevapli_kart_eslemesi.py:77-88`; yeni desen `AXA-3297-DR.E.ALTUNC-HUK`,
+`DR.M.OZTURK-0003-HUK`, gövdesi göçün `ofis_no_gocu.YENI_DESEN`iyle aynı). Ekibin elindeki eski
+listelerden gelen ESKİ numara, göç eşlemesiyle kartın BUGÜNKÜ numarasına çevrilir — cevap, öneri
+sütunu ve KART satırları birlikte: `--goc-db` (kartların `case_history` kaydı: `tracking_no`,
+`source='OFIS_NO_GOCU'`) ya da `--goc-esleme <ofis_no_esleme_*.csv>` (göç raporunun `eski`,
+`yeni` kolonları). Eşleme verilmezse (göç öncesi) eski numara olduğu gibi CSV'ye yazılır;
+eşlemede bulunamayan eski numara da tahmin edilmez, olduğu gibi kalır + WARNING, aktarım DB'de
+bulamazsa satır raporuna düşer. Göçten SONRA eski numaralı bir cevap bayraksız koşulursa aktarım
+kartı bulamaz — `--goc-db` şarttır. **Eşleme CSV'si** `scripts/ofis_no_gocu.py` kuru koşusunun
+(ve `--apply`'ın) rapor dizinine yazdığı `ofis_no_esleme_<tarih>.csv`'dir (`case_id, eski, yeni,
+silinmis, kategori_kaynagi, sigortali_kaynagi`; varsayılan dizin geçici dizin altında
+`ofis-no-gocu` — kardeş dosyalar müvekkil adı taşır, repoya girmez); veri ekibine verilecek
+dosya budur (not taslağı `docs/veri-teslim/ofis-no-degisikligi-notu.md`). Cevap CSV'lerindeki
+`tracking_no` kolonu (`services/teslim_cevap.py`) kartın o günkü numarasını taşır: göçten önce
+eski, sonra yeni. Testler `backend/tests/test_g239_eski_format_uyarlama.py`,
+`backend/tests/test_g154_cevapli_esleme.py`.
+
 **DosyaNo `.00` eki, klasör listesinin ilk parçası, eski unvan istisnası (G178, ekibin 12.09 cevabı
 §1/§3/§8).** MİCRO DosyaNo'su sondaki `.00` ekiyle gelir (`2.500.00`), 30.07 dışa aktarımındaki
 kartların `klasor_no_2`'si eksiz (`2.500`); eşleşme anahtarı `_eslesme_anahtari` artık sondaki
@@ -621,8 +643,9 @@ kesim-sonrası koruma (G152) bunu kullanıcı kaydı sayar. Test `tests/test_eki
 **Müvekkil ayrımıyla ayırma (`birlesik_kart_ayir --muvekkil-ayrimi`).** Grup anahtarına üçüncü
 boyut olarak föyün müvekkili eklenir; aynı tür + aynı esastaki iki müvekkil de ayrılır (14334:
 ARB-16767 + H-16856 → Deniz Esinler Dr., ARB-16779 + H-16857 → Aylin Ayrım Dr). Aynı (tür, esas)
-birden çok gruba bölününce kartta KALAN grup, kartın ofis numarasındaki isim bloğuyla seçilir
-(`kartsiz_foy_kart_ac.isim_blogu`) — kartın künyesi kendi müvekkilinde kalsın diye. Bu modda yeni
+birden çok gruba bölününce kartta KALAN grup, kartın müvekkil koduyla seçilir (`cases.ofis_no_kodu`
+↔ `kartsiz_foy_kart_ac.musteri_kodu`; numara AYRIŞTIRILMAZ — G239; kolon boşsa, yani göç öncesi
+kartta, kartın müvekkil tarafının adıyla) — kartın künyesi kendi müvekkilinde kalsın diye. Bu modda yeni
 kartın `klasor_no_2`'si GRUBUN kendi DosyaNo'sudur (müvekkil başına ayrı klasör; kartın numarası
 yeni karta TAŞINMAZ — ekibin ricası), bayrak kapalıyken eski davranış (numara paylaşılır) aynen
 kalır. Bayrak yalnız adıyla verilen kartta açılır.
@@ -733,9 +756,12 @@ dokunmaz, `KORUNDU`; lokalde 17 kart). Test `tests/test_ekip_cevabi_2309.py`.
 
 ## 9. Bilinen sınırlar ve açık kalemler
 
-- **Kart yaratılmaz.** Eşleşmeyen satır raporda kalır; kart açmak ofis dosya numarasını
-  SharePoint sayacından atomik tahsis ister, çevrimdışı hattın işi değildir
-  (`scripts/hukdok_aktarim.py:44-47`). Eşleşme köprüsü DosyaNo ↔ `klasor_no_2`.
+- **Kart yaratılmaz.** Eşleşmeyen satır raporda kalır; kart açmak aktarımın işi değildir
+  (`scripts/hukdok_aktarim.py:44-47` — oradaki gerekçe yorumu eski belge sayacını anar; o sayaç
+  G242'de kaldırıldı, ofis numarası bugün DB'deki `ofis_no_sayaclari`ndan verilir, karar 023).
+  Kartsız föye kart açmak ayrı adımdır (`scripts/kartsiz_foy_kart_ac.py` — `dava-acma-akisi.md`
+  §11 "Kartsız föyler için kart açma"). Eşleşme köprüsü
+  DosyaNo ↔ `klasor_no_2`.
 - **İlk teslim daima inceleme** (`ilk_teslim` kuralı); her teslimi zaten insan "Uygula" der. Zincir o teslimden başlar: "Önceki teslim: —" yalnız defter
   boşken başlangıçtır (G156, §3); prod'da başlangıç paketi 04.09'dur ve teslim hattından
   (defter üzerinden) uygulanmalıdır — süreç adımı, kod değil (plan 08.09 K3).
