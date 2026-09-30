@@ -240,13 +240,15 @@ tarayıcı (MSAL access token)
           → routes/processing.py  /process
             → Azure AD token doğrulama (auth_verifier)
             → dosya kabul + PROCESS_CACHE bakımı
-            → paralel: SharePoint sayacından ofis no ATOMİK tahsis
             → analyzer.analyze_file_generator → Gemini
             ← NDJSON stream: info… → complete | failed
 ```
 
 Yanıt `application/x-ndjson` akışıdır; olay sözleşmesi frontend ile ortak referanstır ve
-[`belge-isleme-hatti.md`](belge-isleme-hatti.md)'de birebir yazılıdır.
+[`belge-isleme-hatti.md`](belge-isleme-hatti.md)'de birebir yazılıdır. `/process` analiz
+sırasında Graph'a çıkmaz: eski belge sayacı kaldırıldı (G242, `belge-isleme-hatti.md` §6).
+Dava kartının ofis numarası ayrı konudur — kayıt anında DB sayacından verilir
+([`dava-acma-akisi.md`](dava-acma-akisi.md) §5, karar 023).
 
 ## 6. `/healthz` — derin sağlık ucu
 

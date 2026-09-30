@@ -85,7 +85,7 @@ filtrelerden geçen belge `export_outbox`'a "pending" düşer + hukukbot'a webho
 (ulaşamazsa sorun değil — hukukbot'un periyodik reconcile'ı toparlar; doğruluk garantisi
 outbox + reconcile'dadır, webhook yalnız gecikmeyi sıfırlar). `/process` analiz sırasında
 SharePoint'e çıkmaz: eski belge sayacı kaldırıldı (G242; dava kartının ofis numarası
-`cases.tracking_no` ayrı konudur, DB'de üretilir). **Toplu yüklemede ek bağlama (20.09):** tezgâhta bir satır
+`cases.tracking_no` ayrı konudur, DB'de üretilir — aşağıdaki "Ofis no" maddesi). **Toplu yüklemede ek bağlama (20.09):** tezgâhta bir satır
 başka satırın e-posta EKİ olabilir (tebligat dilekçesi + mazbata): ek satır kendi başına
 arşivlenir (`send_email=false`), dosyası ana satırın `/confirm`'üne `extra_attachment_files` ile
 biner; toplu akışta e-postası açık tebligat ya da ekli satırda EmailModal ZORLA açılır
@@ -100,6 +100,21 @@ kopya alıcıları − belgeyi yükleyen (`notification_targeting.resolve_notifi
 allowlist `NOTIFICATION_DOMAINS`. Süre uyarısının TEK kaynağı `case_stage_decisions.teblig_tarihi`;
 `/confirm`'de karar belgesiyle girilen tebliğ tarihi oraya yazılır
 (`processing.KARAR_DOCTYPE_TO_DECISION_STAGE`, boş alan dolar dolu alan ezilmez).
+
+**Ofis no (karar 023, G235-G242):** `<MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR>` — `DR.M.OZTURK-0003-HUK`,
+`KR.ENTHONE-0015-CEZ`, `AXA-3297-DR.E.ALTUNC-HUK`, `SG-0001-HUK` (listede olmayan sigortacı). Tek kanonik
+üretici `backend/services/ofis_no.py`; **numarayı SUNUCU verir**: kullanıcı route'ları (`POST /api/cases`,
+intake commit) `add_case`'e `ofis_no_sunucudan` bayrağını koyar, istemcinin `tracking_no`'su okunmaz, sıra
+müvekkil kodu başına `ofis_no_sayaclari`ndan kayıtla AYNI transaction'da tahsis edilir
+(`sira_tahsis_et`, tek yazma yolu); müvekkilsiz kayıt 422. Frontend yalnız önizler
+(`GET /api/cases/ofis-no-onizleme`, sayacı artırmaz). Tekrar eden istek `cases.istek_kimligi` (UUID, kısmi
+UNIQUE) ile tanınır → yeni kart açılmaz, yanıt `reused: true`. **Numara verildikten sonra DEĞİŞMEZ**
+(PUT'ta `tracking_no` yok sayılır). Kategori kodları (`client_categories.ofis_no_kodu`: DR/SC/HS/OH/KR/BR/DG)
+ve sigorta şirketi kodları (`sigorta_kisa_kodlari`) admin panelinde ("Ofis No Kodları" sekmesi,
+`/api/admin/sigorta-kodlari`, `/api/admin/kategori-kodlari`); kod değişikliği yalnız YENİ numarayı etkiler.
+Eski numaraların göçü `scripts/ofis_no_gocu.py` (varsayılan kuru koşu; `--apply` **yalnız kullanıcı
+kararıyla** — 30.09 itibarıyla hiçbir DB'de koşulmadı, mevcut kartlar eski numarasını taşır); eski numarayla
+arama `case_history.old_value` kolundan sürer. Ayrıntı `docs/mimari/dava-acma-akisi.md` §4-§5.
 
 **Dava notu, sesli giriş, takvim (26.09 toplantısı, G210-G222):** tarihli, yazanı belli notlar `case_notes`'ta
 (`routes/case_notes.py`: `GET|POST /api/cases/{id}/notes`, `DELETE .../notes/{note_id}` soft-delete, yazan ya da
@@ -266,6 +281,10 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 - **Avukat adı serbest yazılmaz (27.09):** avukat adı yazan YENİ kod `lawyer_resolver.kanonik_avukat_metni`'nden
   geçer (listedeki yazım; doğru yazım "Tuğçe Ungör Yanık", Ü değil); kullanıcı yolları listede olmayan
   yeni adı `AvukatListedeYok` → 422 ile reddeder. Ayrıntı `docs/mimari/veri-teslim-hatti.md` "Avukat yazım koruması".
+- **Ofis no ayrıştırılmaz, elle kurulmaz (karar 023):** numara üreten/okuyan YENİ kod `services/ofis_no`'yu
+  çağırır; müvekkil kodu gerekiyorsa `cases.ofis_no_kodu` okunur (boşsa `kartsiz_foy_kart_ac.kart_kodu`) —
+  `split`/`substr` ile blok çıkarma ve eski formatı (nokta ayraçlı beş blok) ayrıştıran kod YAZILMAZ; sayaç
+  tablosu doğrudan yazılmaz. `retag_tracking_nos.py`/`import_excel_cases.py` EMEKLİ (çalıştırılınca hata verir).
 - **Avukat kimliği kod değil `lawyers.kimlik` (karar 022, G224-G229):** `AVK-00001`, sistem üretir
   (`models.sonraki_avukat_kimligi`), değişmez, ekrana basılmaz; `lawyers.id` dışarı verilmez. Avukat SİLİNMEZ
   (DELETE = `active=false`, `clear`/`keep` 422), bağlar `ON DELETE RESTRICT`. Avukat verisine dokunan her adım
