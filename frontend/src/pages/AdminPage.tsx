@@ -12,6 +12,7 @@ import { Plus, Trash2, Edit2, Loader2, GripVertical, Eye, Download, UserX } from
 import { ActivityReportModal, ActivityReport } from "@/components/ActivityReportModal";
 import { FeatureSettingsCard } from "@/components/admin/FeatureSettingsCard";
 import { DeliveryInboxCard } from "@/components/admin/DeliveryInboxCard";
+import { OfisNoKodlariPanel } from "@/components/admin/OfisNoKodlariPanel";
 import { toast } from "sonner";
 import {
     Table,
@@ -325,7 +326,7 @@ const ROW_ACTION_TYPES = [
 const ADMIN_TABS = [
     "lawyers", "statuses", "doctypes", "case_subjects", "emails", "case_types", "court_types",
     "party_roles", "bureau_types", "client_categories", "file_statuses", "specialties", "cities",
-    "features", "deliveries", "activity_test", "deleted",
+    "features", "ofis_no_kodlari", "deliveries", "activity_test", "deleted",
 ] as const;
 const DEFAULT_ADMIN_TAB = "lawyers";
 
@@ -969,6 +970,7 @@ const AdminPage = () => {
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="cities">Şehirler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="features">Özellikler</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="ofis_no_kodlari">Ofis No Kodları</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="deliveries">Veri Teslimleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="activity_test">Aktivite Raporu Testi</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="deleted">Silinenler</TabsTrigger>
@@ -1417,6 +1419,11 @@ const AdminPage = () => {
                     {/* Özellik anahtarları (uygulama düzeyi aç/kapa) — DnD dışında */}
                     <TabsContent value="features">
                         <FeatureSettingsCard />
+                    </TabsContent>
+
+                    {/* Ofis no kod listeleri (karar 023, G241) — DnD dışında */}
+                    <TabsContent value="ofis_no_kodlari">
+                        <OfisNoKodlariPanel />
                     </TabsContent>
 
                     {/* Veri teslimleri (G108 sözleşmesi) — DnD dışında */}
