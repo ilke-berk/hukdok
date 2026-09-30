@@ -488,7 +488,8 @@ def test_kapi_desen_disi_numarayi_ve_envanter_farkini_raporlar(pg, pg_engine):
 
 
 @pg_test
-def test_muvekkilsiz_kart_varken_apply_durur(pg, pg_engine):
+def test_muvekkilsiz_kart_atlanir_eski_numarasiyla_kalir(pg, pg_engine):
+    """Kullanıcı kararı 30.09: müvekkilsiz kart göçü DURDURMAZ, eski numarasıyla kalır."""
     _ornek_veri(pg)
     _kart_ekle(pg, "S1.AK.........0007.HUKUK.00000", [])
     once = _numaralar(pg_engine)
@@ -496,11 +497,33 @@ def test_muvekkilsiz_kart_varken_apply_durur(pg, pg_engine):
     kuru = goc.kos(pg)
     assert len(kuru.durumdakiler("MUVEKKILSIZ")) == 1 and kuru.degisen == 6
     assert "S1.AK.........0007.HUKUK.00000" in goc.ozet_metni(kuru)
-
-    with pytest.raises(goc.GocDurdu, match="müvekkilsiz"):
-        goc.kos(pg, apply=True)
     assert _numaralar(pg_engine) == once
-    assert _satirlar(pg_engine, "SELECT count(*) AS n FROM case_history")[0]["n"] == 0
+
+    sonuc = goc.kos(pg, apply=True)
+    sonra = _numaralar(pg_engine)
+    assert len(sonuc.durumdakiler("MUVEKKILSIZ")) == 1 and sonuc.degisen == 6
+    kalan = [n for n in sonra.values() if not goc.yeni_formatta(n)]
+    assert kalan == ["S1.AK.........0007.HUKUK.00000"]
+    assert _satirlar(
+        pg_engine, "SELECT count(*) AS n FROM case_history WHERE old_value = 'S1.AK.........0007.HUKUK.00000'"
+    )[0]["n"] == 0
+    # İkinci koşu da durmaz, atlanan kart yine atlanır.
+    ikinci = goc.kos(pg, apply=True)
+    assert ikinci.degisen == 0 and _numaralar(pg_engine) == sonra
+
+
+@pg_test
+def test_kapi_muaf_olmayan_desen_disi_numarayi_yakalar(pg):
+    _ornek_veri(pg)
+    db = pg()
+    try:
+        tum = goc.envanter(db)
+        hatalar = goc.kapi_kontrolu(db, tum, frozenset())
+        muaf = frozenset(str(n) for (n,) in db.execute(text("SELECT tracking_no FROM cases")))
+        assert hatalar and "desen dışı" in hatalar[-1]
+        assert goc.kapi_kontrolu(db, tum, muaf) == []
+    finally:
+        db.close()
 
 
 @pg_test

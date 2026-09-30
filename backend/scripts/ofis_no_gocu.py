@@ -27,8 +27,9 @@ dizinine üç dosya düşer:
 sonra `id`. Zaten yeni formatta olan kart (G236'nın verdiği numara ya da önceki göç) ATLANIR —
 numara verildikten sonra değişmez; göçün sırası o kodun en yüksek sırasından devam eder.
 
-**`--apply`:** tek transaction. Müvekkilsiz kart varken DURUR (hiçbir şey yazılmaz — kullanıcı
-kararı gerekir). Unique çakışmasın diye iki aşama (`__GOC__<id>` → yeni numara);
+**`--apply`:** tek transaction. Müvekkilsiz kart ATLANIR: eski numarasıyla kalır, özet raporda
+listelenir (kullanıcı kararı 30.09: lokalde 265 kartın 264'ü birleştirmede sönmüş silinmiş kart,
+içleri boş; eski noktalı format yeni tireli formatla çakışamaz). Unique çakışmasın diye iki aşama (`__GOC__<id>` → yeni numara);
 `ofis_no_kodu`/`ofis_no_sira` yazılır; her karta `case_history` (`tracking_no`, eski → yeni,
 `source='OFIS_NO_GOCU'`); `case_foys.onceki_tracking_no` aynı eşlemeyle çevrilir (eşlemede
 olmayan değer kalır, sayısı raporlanır) ve föyün BUGÜNKÜ kartına eski değeri taşıyan bir
@@ -401,8 +402,8 @@ _SAYAC_SQL = text(
 )
 
 
-def kapi_kontrolu(db, onceki: tuple[int, int, int]) -> list[str]:
-    """Envanter kapısı — boş liste = geçti."""
+def kapi_kontrolu(db, onceki: tuple[int, int, int], muaf: frozenset[str] = frozenset()) -> list[str]:
+    """Envanter kapısı — boş liste = geçti. `muaf`: eski numarasıyla bırakılan (müvekkilsiz) kartlar."""
     hatalar: list[str] = []
     sonraki = envanter(db)
     if sonraki != onceki:
@@ -410,7 +411,7 @@ def kapi_kontrolu(db, onceki: tuple[int, int, int]) -> list[str]:
     numaralar = [str(n) for (n,) in db.execute(text("SELECT tracking_no FROM cases"))]
     if len(set(numaralar)) != len(numaralar):
         hatalar.append(f"mükerrer numara: {len(numaralar) - len(set(numaralar))}")
-    disi = [n for n in numaralar if not yeni_formatta(n)]
+    disi = [n for n in numaralar if n not in muaf and not yeni_formatta(n)]
     if disi:
         hatalar.append(f"desen dışı {len(disi)} numara (ilk: {disi[0]!r})")
     return hatalar
@@ -418,9 +419,8 @@ def kapi_kontrolu(db, onceki: tuple[int, int, int]) -> list[str]:
 
 def uygula(db, sonuc: GocSonucu, *, kim: str) -> None:
     """Planı AÇIK transaction'a yazar (commit ÇAĞIRANDA). Kapı tutmazsa `GocDurdu`."""
-    muvekkilsiz = sonuc.durumdakiler("MUVEKKILSIZ")
-    if muvekkilsiz:
-        raise GocDurdu(f"{len(muvekkilsiz)} müvekkilsiz kart var — numara verilemez, kullanıcı kararı gerekir")
+    # Müvekkilsiz kartlar atlanır, eski numarasıyla kalır (kullanıcı kararı 30.09).
+    muaf = frozenset(p.eski for p in sonuc.durumdakiler("MUVEKKILSIZ"))
     if sonuc.plan_hatalari:
         raise GocDurdu(f"plan kapısı: {sonuc.plan_hatalari[0]} (+{len(sonuc.plan_hatalari) - 1})")
     degisen = sonuc.durumdakiler("GOC")
@@ -467,7 +467,7 @@ def uygula(db, sonuc: GocSonucu, *, kim: str) -> None:
     db.execute(insert(models.CaseHistory.__table__), tarihce)
     db.execute(_SAYAC_SQL, [{"kod": kod, "sira": sira} for kod, sira in sorted(sonuc.sayaclar.items())])
 
-    hatalar = kapi_kontrolu(db, onceki)
+    hatalar = kapi_kontrolu(db, onceki, muaf)
     if hatalar:
         raise GocDurdu("envanter kapısı: " + "; ".join(hatalar))
 
