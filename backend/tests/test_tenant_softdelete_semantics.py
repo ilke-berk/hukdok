@@ -119,10 +119,11 @@ KNOWN_UNPAIRED_SITES = {
     # (case_manager.py:51). Fonksiyon düzeyindeki eşleşme
     # test_soft_delete.py::test_central_filters_contain_deleted_at ile kilitli.
     ("managers/case_manager.py", "_apply_tenant_filter"),
-    # BİLİNÇLİ AÇIK (routes/cases.py:132-135): silinen davaların ofis numarası
-    # aralığı sayılmaya devam eder ki aynı numara yeniden önerilip UNIQUE
-    # kısıtına çarpmasın. test_soft_delete.py bunu kaynak düzeyinde de kilitler.
-    ("routes/cases.py", "get_client_case_sequence"),
+    # G239'da LİSTEDEN ÇIKTI (insan onaylı test taşıma): `routes/cases.py`
+    # `get_client_case_sequence` — silinen davaların ofis numarası aralığını bilinçli
+    # sayan uç KALKTI (karar 023: sıra `ofis_no_sayaclari` sayacından; kart tablosu
+    # taranmaz, süzülecek tenant kolu da kalmadı). Kural sayaçta yaşıyor:
+    # test_client_sequence_counts_deleted_but_still_isolates_tenant + test_soft_delete.py.
     # G034 BULGUSU (düzeltilmedi — karakterize edildi, C.2 girdisi):
     # bu iki nokta `deleted_at` yerine YALNIZ `active.is_(True)` filtresine
     # dayanıyor. Silme yolu `active=False` da yazdığı için (routes/cases.py:319)
@@ -524,16 +525,38 @@ def test_tenant_none_disables_case_manager_tenant_filter(db_env):
 # ─── Bilinçli sapma: ofis no sırası silinenleri SAYAR ────────────────────────
 
 def test_client_sequence_counts_deleted_but_still_isolates_tenant(db_env):
-    """Tek çağrıda iki kural: soft-delete bilinçli KAPALI, tenant filtresi AÇIK.
+    """İNSAN ONAYLI TEST TAŞIMA (G239, karar 023) — test adı tarihsel.
 
-    T1+ortak havuzun en yükseği silinmiş `ortak-silinmis` (0009) → 10 beklenir.
-    Soft-delete filtresi eklenmiş olsaydı 6 (0005+1), tenant filtresi düşmüş
-    olsaydı 100 (T2'nin 0099'u) dönerdi.
+    Eski beklenti: `get_client_case_sequence` kart numaralarını tarar, silinmiş
+    `ortak-silinmis` (0009) sayıldığı için 10 döner, T2'nin 0099'u süzülür.
+    Yeni davranış: o uç KALKTI (404) ve sıra kart tablosundan okunmaz — müvekkil
+    KODU başına `ofis_no_sayaclari` sayacından tahsis edilir. "Silinen sayılır"
+    kuralı sayaçta yaşar: dokuzuncu sırayı alan kart silinse de sıradaki 10'dur.
+    Matristeki eski formatlı numaralar (T2'nin 0099'u dahil) sayaca hiç girmez;
+    kod paylaşımlı havuzdadır, tenant'a göre ayrı sayaç yoktur.
     """
-    got = db_env.cases_route.get_client_case_sequence(
-        client_name="", name_block=NAME_BLOCK, tenant_id=T1
-    )
-    assert got == {"sequence": 10}
+    from fastapi import HTTPException
+
+    from services import ofis_no
+
+    with pytest.raises(HTTPException) as hata:
+        db_env.cases_route.client_sequence_kaldirildi()
+    assert hata.value.status_code == 404
+    assert not hasattr(db_env.cases_route, "get_client_case_sequence")
+
+    kod = "DR.A.SIRA"
+    db = db_env.sessions()
+    try:
+        for _ in range(9):
+            sira = ofis_no.sira_tahsis_et(db, kod)
+        db.add(db_env.models.Case(
+            tracking_no=f"{kod}-{sira:04d}-HUK", ofis_no_kodu=kod, ofis_no_sira=sira,
+            status="DERDEST", tenant_id=None, active=True, deleted_at=DELETED_AT,
+        ))
+        db.commit()
+        assert ofis_no.siradaki(db, kod) == 10
+    finally:
+        db.close()
 
 
 # ─── G034 bulgusu: `deleted_at` yerine `active`'e dayanan yol ────────────────

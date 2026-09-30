@@ -13,10 +13,16 @@ xlsx → CSV (`sistem_no,tracking_no,kaynak_not`), aktarım o CSV'yi
 
 Tanınan cevap desenleri (06.09 cevabındaki üç biçim):
 
-* **Kart no** (`S3.AXA........2915.IDARE.00000`, `…HUKUK.00000-2`): ofis dosya
-  numarası biçimi (`retag_tracking_nos.generate_tracking_number`: kategori +
-  10 karakterlik isim bloğu + 4 haneli sıra + tür + hizmet + isteğe bağlı
-  `-N` eki). Hücrede not da olabilir; ilk kart no alınır.
+* **Kart no** — İKİ biçim de tanınır (G239): karar 023 numarası
+  (`AXA-3297-DR.E.ALTUNC-HUK`, `DR.M.OZTURK-0003-HUK`) ve ekibin elindeki eski
+  listelerden gelebilecek ESKİ biçim (`S3.AXA........2915.IDARE.00000`,
+  `…HUKUK.00000-2`). Hücrede not da olabilir; ilk kart no alınır. Eski numara
+  göç eşlemesiyle kartın BUGÜNKÜ numarasına çevrilir: `--goc-db` (kartların
+  `case_history` kaydı: `tracking_no`, `source='OFIS_NO_GOCU'`) ya da
+  `--goc-esleme <ofis_no_esleme_*.csv>` (göç raporu: `eski`, `yeni`). Eşleme
+  verilmezse (göç öncesi) eski numara olduğu gibi yazılır; eşlemede
+  bulunamayan eski numara da olduğu gibi kalır + uyarı (aktarım DB'de
+  bulamazsa satır raporuna düşer).
 * **`MÜVEKKİL: <ad>`** (öneri yoktu, ekip müvekkili söyledi): grubun KART
   satırları arasında CLIENT anahtarı ada uyan TEK kart varsa onun numarası.
   Sigorta adı marka sözcükleriyle karşılaştırılır (G153: "Quıck Sigorta A.ş"
@@ -40,7 +46,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -66,9 +72,22 @@ ZORUNLU_SUTUNLAR = ("satir_turu", "kimlik", "cevap")
 FOY_TURU_ONEKI = "FOY"          # "FÖY (paket)" → anahtar "FOYPAKET"
 KART_TURU_ONEKI = "KART"        # "KART (HukuDok)"
 
-# Ofis dosya numarası: `S3.AXA........2915.IDARE.00000`, `D1.A_VARAN....0002.IDARE.00000`,
+# ESKİ ofis dosya numarası: `S3.AXA........2915.IDARE.00000`, `D1.A_VARAN....0002.IDARE.00000`,
 # `X1.A_HEM......0001.HUKUK.00000`, `S3.AXA........2754.HUKUK.00000-2`.
-TRACKING_NO_DESENI = re.compile(r"[A-Z]{1,2}\d\.[A-Z0-9_]+\.+\d{4}\.[A-Z]+\.\d{5}(?:-\d+)?")
+ESKI_NO_DESENI = re.compile(r"[A-Z]{1,2}\d\.[A-Z0-9_]+\.+\d{4}\.[A-Z]+\.\d{5}(?:-\d+)?")
+# Karar 023 numarası: `<KOD>-<SIRA>[-<SİGORTALI>]-<TÜR>` — `DR.M.OZTURK-0003-HUK`,
+# `KR.ENTHONE-0015-CEZ`, `AXA-3297-DR.E.ALTUNC-HUK`, `SG-0001-HUK`. Gövde göçün
+# `ofis_no_gocu.YENI_DESEN`iyle aynıdır; burada serbest metin İÇİNDE arandığı için
+# iki uçta sınır var (bir kelimenin ortasından numara kesilmesin).
+YENI_NO_DESENI = re.compile(
+    r"(?<![A-Z0-9.\-])"
+    r"[A-Z]{2,10}(?:\.[A-Z]+){0,2}-\d{4,}(?:-[A-Z]{2,10}(?:\.[A-Z]+){1,2})?-[A-Z]{3}"
+    r"(?![A-Z0-9])"
+)
+# Cevap hücresinde aranan desen: iki biçimden hangisi önce geçiyorsa o.
+TRACKING_NO_DESENI = re.compile(f"(?:{ESKI_NO_DESENI.pattern})|(?:{YENI_NO_DESENI.pattern})")
+GOC_KAYNAGI = "OFIS_NO_GOCU"          # `scripts/ofis_no_gocu.KAYNAK` — case_history.source
+GocEslemesi = Mapping[str, str]       # eski numara → kartın bugünkü numarası
 BAGLAMAYIN_ANAHTARI = "BAGLAMAYIN"
 MUVEKKIL_ANAHTARI = "MUVEKKIL"
 
@@ -124,8 +143,74 @@ def _hucre(satir: Sequence[Any], indeksler: Dict[str, int], alan: str) -> Option
     return ha._metin(satir[indeks])
 
 
-def cevaplari_oku(yol: Path, *, sheet: str = SAYFA) -> List[EslemeSatiri]:
-    """xlsx'i okur, her FÖY satırı için bir `EslemeSatiri` üretir (grup sırası)."""
+def eski_formatta(numara: Optional[str]) -> bool:
+    """Numara ESKİ ofis no biçiminde mi (göç eşlemesi gerektirir)?"""
+    return bool(numara) and ESKI_NO_DESENI.fullmatch(str(numara)) is not None
+
+
+def guncel_numara(numara: str, goc_eslemesi: Optional[GocEslemesi]) -> str:
+    """Eski numarayı göç eşlemesiyle kartın bugünkü numarasına çevirir.
+
+    Eşleme yoksa, numara zaten yeni formattaysa ya da eşlemede bulunmuyorsa numara
+    olduğu gibi döner — tahmin YOK (numara ayrıştırılıp yenisi üretilmez).
+    """
+    if not goc_eslemesi or not eski_formatta(numara):
+        return numara
+    return goc_eslemesi.get(numara, numara)
+
+
+def goc_eslemesini_oku(yol: Path) -> Dict[str, str]:
+    """Göç raporu `ofis_no_esleme_<tarih>.csv` (`eski`, `yeni` sütunları) → {eski: yeni}."""
+    yol = Path(yol)
+    if not yol.exists():
+        raise ha.AktarimHatasi(f"--goc-esleme dosyası yok: {yol}")
+    esleme: Dict[str, str] = {}
+    with open(yol, newline="", encoding="utf-8-sig") as dosya:
+        okuyucu = csv.DictReader(dosya)
+        basliklar = [(b or "").strip() for b in (okuyucu.fieldnames or [])]
+        eksik = [b for b in ("eski", "yeni") if b not in basliklar]
+        if eksik:
+            raise ha.AktarimHatasi(f"--goc-esleme başlıkları eksik: {', '.join(eksik)} (beklenen: eski, yeni)")
+        for kayit in okuyucu:
+            eski, yeni = ha._metin(kayit.get("eski")), ha._metin(kayit.get("yeni"))
+            if eski and yeni:
+                esleme[eski] = yeni
+    return esleme
+
+
+def goc_eslemesi_db(session_factory) -> Dict[str, str]:
+    """DB'deki göç izinden {eski numara: kartın BUGÜNKÜ numarası} (salt okunur).
+
+    Kaynak göçün her karta yazdığı `case_history` satırıdır (`field_name='tracking_no'`,
+    `source='OFIS_NO_GOCU'`, `old_value` = eski numara). Hedef `new_value` değil kartın
+    güncel `tracking_no`sudur — göçten sonra numarası yeniden değişmiş kart da doğru çözülür.
+    Silinmiş kartın numarası da eşlemeye girer (aktarım silinmiş kartı kendisi reddeder).
+    """
+    import models
+
+    db = session_factory()
+    try:
+        satirlar = (
+            db.query(models.CaseHistory.old_value, models.Case.tracking_no)
+            .join(models.Case, models.Case.id == models.CaseHistory.case_id)
+            .filter(models.CaseHistory.field_name == "tracking_no",
+                    models.CaseHistory.source == GOC_KAYNAGI,
+                    models.CaseHistory.old_value.isnot(None))
+            .order_by(models.CaseHistory.id)
+            .all()
+        )
+        return {str(eski): str(guncel) for eski, guncel in satirlar if eski and guncel}
+    finally:
+        db.close()
+
+
+def cevaplari_oku(yol: Path, *, sheet: str = SAYFA,
+                  goc_eslemesi: Optional[GocEslemesi] = None) -> List[EslemeSatiri]:
+    """xlsx'i okur, her FÖY satırı için bir `EslemeSatiri` üretir (grup sırası).
+
+    `goc_eslemesi` (G239): eski biçimli kart numaraları — cevap hücresinde, öneri
+    sütununda ya da KART satırlarında — kartın bugünkü numarasına çevrilir.
+    """
     from openpyxl import load_workbook
 
     yol = Path(yol)
@@ -176,7 +261,7 @@ def cevaplari_oku(yol: Path, *, sheet: str = SAYFA) -> List[EslemeSatiri]:
     for ham in ham_cevaplar:
         foyler.append(cevabi_coz(
             ham["sistem_no"], ham["cevap"], oneri=ham["oneri"],
-            kartlar=ham["kartlar"], grup=ham["grup"],
+            kartlar=ham["kartlar"], grup=ham["grup"], goc_eslemesi=goc_eslemesi,
         ))
     return foyler
 
@@ -224,9 +309,18 @@ def muvekkille_kart_sec(ad: str, kartlar: Sequence[KartSatiri]) -> List[str]:
 
 
 def cevabi_coz(sistem_no: str, cevap: Optional[str], *, oneri: Optional[str] = None,
-               kartlar: Sequence[KartSatiri] = (), grup: str = "") -> EslemeSatiri:
-    """TEK föyün cevabını çözer (saf; xlsx'ten bağımsız — testler doğrudan çağırır)."""
+               kartlar: Sequence[KartSatiri] = (), grup: str = "",
+               goc_eslemesi: Optional[GocEslemesi] = None) -> EslemeSatiri:
+    """TEK föyün cevabını çözer (saf; xlsx'ten bağımsız — testler doğrudan çağırır).
+
+    `goc_eslemesi` verilirse eski biçimli numaralar (cevap, öneri, aday kartlar) önce
+    kartın bugünkü numarasına çevrilir; karşılaştırmalar ve çıktı bugünkü numarayladır.
+    """
     metin = ha._metin(cevap)
+    if goc_eslemesi:
+        kartlar = [KartSatiri(guncel_numara(k.tracking_no, goc_eslemesi), k.muvekkil_anahtarlari)
+                   for k in kartlar]
+        oneri = guncel_numara(oneri, goc_eslemesi) if oneri else oneri
     adaylar = {k.tracking_no for k in kartlar}
     if not metin:
         return EslemeSatiri(sistem_no, "", "cevap yok", DURUM_COZULEMEDI, grup)
@@ -237,8 +331,17 @@ def cevabi_coz(sistem_no: str, cevap: Optional[str], *, oneri: Optional[str] = N
 
     kart = TRACKING_NO_DESENI.search(metin)
     if kart is not None:
-        tracking_no = kart.group(0)
+        yazilan = kart.group(0)
+        tracking_no = guncel_numara(yazilan, goc_eslemesi)
         notlar = ["cevap: kart no"]
+        if tracking_no != yazilan:
+            notlar.append(f"eski numara {yazilan} → göç eşlemesiyle {tracking_no}")
+        elif goc_eslemesi is not None and eski_formatta(yazilan):
+            notlar.append("eski numara göç eşlemesinde yok")
+            logger.warning(
+                f"{sistem_no}: cevap eski biçimli {yazilan!r} ama göç eşlemesinde yok — "
+                f"numara olduğu gibi yazıldı, DB doğrulaması aktarımda"
+            )
         if oneri and oneri == tracking_no:
             notlar.append("öneriyle aynı")
         elif oneri:
@@ -315,6 +418,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--input", required=True, help="CEVAPLI xlsx")
     parser.add_argument("--output", required=True, help="üretilecek CSV (sistem_no,tracking_no,kaynak_not)")
     parser.add_argument("--sheet", default=SAYFA, help=f"sayfa adı (varsayılan: {SAYFA})")
+    goc = parser.add_mutually_exclusive_group()
+    goc.add_argument("--goc-esleme", default=None,
+                     help="göç raporu ofis_no_esleme_<tarih>.csv — eski numaralar yeniye çevrilir")
+    goc.add_argument("--goc-db", action="store_true",
+                     help="eski numaraları DB'deki göç iziyle (case_history) çevir — salt okunur")
     args = parser.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -324,7 +432,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     configure_logging()
 
     try:
-        satirlar = cevaplari_oku(Path(args.input), sheet=args.sheet)
+        goc_eslemesi: Optional[Dict[str, str]] = None
+        if args.goc_esleme:
+            goc_eslemesi = goc_eslemesini_oku(Path(args.goc_esleme))
+        elif args.goc_db:
+            import database
+
+            goc_eslemesi = goc_eslemesi_db(database.SessionLocal)
+        if goc_eslemesi is not None:
+            logger.info(f"Göç eşlemesi: {len(goc_eslemesi)} eski numara")
+        satirlar = cevaplari_oku(Path(args.input), sheet=args.sheet, goc_eslemesi=goc_eslemesi)
     except ha.AktarimHatasi as exc:
         logger.error(f"Cevap dosyası okunamadı: {exc}")
         return ha.CIKIS_GIRDI

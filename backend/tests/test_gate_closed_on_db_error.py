@@ -179,12 +179,15 @@ def test_duplicate_gate_error_is_distinguishable_from_empty(cases_app, monkeypat
 
 # ── FAZ 0.4 — ofis no sıra tahsisi ───────────────────────────────────────────
 
-def test_sequence_success_returns_max_plus_one(cases_app, monkeypatch):
-    """FAZ 0.4 başarı yolu (isim bloğu): öneri mevcut EN YÜKSEK sıra + 1'dir.
+# İNSAN ONAYLI TEST TAŞIMA (G239, karar 023): `/api/cases/client-sequence` ucu KALKTI.
+# Sıra artık istemciye ÖNERİLMEZ; kayıt anında sunucuda `ofis_no_sayaclari` sayacından
+# tahsis edilir (`services/ofis_no.sira_tahsis_et` — test_g235/g236). FAZ 0.4'ün dört
+# testi eski başarı/hata çiftini değil yeni davranışı kilitler: DB sağlıklı da olsa çökük
+# de olsa uç 404 döner, gövdede sıra YOKTUR ve DB oturumu hiç açılmaz. "Hata ≠ boş sonuç"
+# iddiası bu uçta güçlenerek sürer — uydurulacak bir sıra kalmadı.
 
-    Değerin 1 OLMAMASI kritik: hata yolundaki eski sabit "1" fallback'i ile
-    başarı yolunu ayırt eden şey budur.
-    """
+def test_sequence_success_returns_max_plus_one(cases_app, monkeypatch):
+    """Eski başarı yolu (isim bloğu, max+1) kalktı: DB'de numara olsa da sıra önerilmez."""
     from routes import cases as cases_routes
 
     session = _FakeSession([("34.AHMETYILMA.0003.HA",), ("34.AHMETYILMA.0007.HA",)])
@@ -195,13 +198,13 @@ def test_sequence_success_returns_max_plus_one(cases_app, monkeypatch):
         params={"client_name": "AHMET YILMAZ", "name_block": "AHMETYILMA"},  # 10 karakter
     )
 
-    assert r.status_code == 200
-    assert r.json() == {"sequence": 8}
-    assert session.closed is True
+    assert r.status_code == 404
+    assert "sequence" not in r.json(), "kalkan uç numaraları ayrıştırıp sıra öneriyor"
+    assert session.closed is False, "kalkan uç DB oturumu açmamalı"
 
 
 def test_sequence_success_client_name_fallback_path(cases_app, monkeypatch):
-    """FAZ 0.4 başarı yolu (fallback): name_block yokken de max+1 — COUNT değil."""
+    """Eski fallback yolu (müvekkil adıyla max+1) da kalktı: 404, sıra yok."""
     from routes import cases as cases_routes
 
     session = _FakeSession([("34.AHMETYILMA.0012.HA",), ("34.AHMETYILMA.0004.HA",)])
@@ -209,15 +212,16 @@ def test_sequence_success_client_name_fallback_path(cases_app, monkeypatch):
 
     r = cases_app.get("/api/cases/client-sequence", params={"client_name": "Ahmet Yılmaz Dr."})
 
-    assert r.status_code == 200
-    assert r.json() == {"sequence": 13}, "iki kayıt var diye 3 dönerse COUNT'a geri dönülmüş"
+    assert r.status_code == 404
+    assert "sequence" not in r.json(), "kalkan uç hâlâ sıra öneriyor"
 
 
 def test_sequence_db_error_does_not_silently_return_one(cases_app, monkeypatch):
-    """FAZ 0.4 hata yolu: DB hatasında sessizce {"sequence": 1} DÖNMEZ.
+    """DB çökükken sessizce {"sequence": 1} DÖNMEZ — uç kalktığı için 404.
 
     Eski hâl gerçek sıradan bağımsız "1" önerip dolu bir ofis numarası üretiyor,
-    kayıt 409'a düşüyordu (2026-07-16 çakışma kaydı).
+    kayıt 409'a düşüyordu (2026-07-16 çakışma kaydı). O sınıf artık yapısal olarak
+    kapalı: öneri yok, sıra kayıtla aynı transaction'da tahsis ediliyor.
     """
     from routes import cases as cases_routes
 
@@ -226,19 +230,15 @@ def test_sequence_db_error_does_not_silently_return_one(cases_app, monkeypatch):
 
     r = cases_app.get("/api/cases/client-sequence", params={"client_name": "AHMET YILMAZ"})
 
-    assert r.status_code == 503
+    assert r.status_code == 404
     assert "sequence" not in r.json(), "hata yanıtı hâlâ bir sıra numarası öneriyor"
     assert r.json().get("detail")
-    assert session.closed is True, "db.close() finally'si kaybolmuş"
+    assert session.closed is False, "kalkan uç DB oturumu açmamalı"
 
 
 def test_sequence_empty_client_name_early_exit_is_not_an_error(cases_app, monkeypatch):
-    """FAZ 0.4 sınır: boş isimdeki erken çıkış (routes/cases.py:145) hata DEĞİL.
-
-    Sorguya hiç inilmediği için 200 + {"sequence": 1} meşrudur; _BoomSession
-    sorguya inilseydi patlardı — erken çıkışın kanıtı budur. Bu davranış
-    bilinçlidir, 503'e çevirme.
-    """
+    """Eski boş-isim erken çıkışı (200 + {"sequence": 1}) da kalktı: 404, sıra yok
+    (test adı tarihsel; beklenti G239'da taşındı)."""
     from routes import cases as cases_routes
 
     session = _BoomSession()
@@ -246,9 +246,9 @@ def test_sequence_empty_client_name_early_exit_is_not_an_error(cases_app, monkey
 
     r = cases_app.get("/api/cases/client-sequence", params={"client_name": ""})
 
-    assert r.status_code == 200
-    assert r.json() == {"sequence": 1}
-    assert session.closed is True
+    assert r.status_code == 404
+    assert "sequence" not in r.json()
+    assert session.closed is False
 
 
 # ── FAZ 0.3 — zorunlu alan kapısını besleyen konfig ucu ──────────────────────

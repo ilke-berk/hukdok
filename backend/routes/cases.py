@@ -6,7 +6,6 @@ ve `/api/incomplete-tasks` route'larını taşır; `api.py` include_router ile b
 geçer (paylaşımlı havuz: `tenant_id == X OR IS NULL`). Silme SOFT'tur (`deleted_at`).
 """
 import logging
-import re
 from datetime import date
 from typing import List, Optional
 
@@ -130,82 +129,17 @@ def get_cases_api(
     return items
 
 
-def max_tracking_sequence(tracking_nos) -> int:
-    """tracking_no listesinden en yüksek sıra numarasını çıkarır (saf).
+@router.get("/api/cases/client-sequence", include_in_schema=False)
+def client_sequence_kaldirildi():
+    """Eski sıra önerisi ucu KALKTI (G239, karar 023) — sırayı sunucu kayıt anında tahsis eder.
 
-    Numara deseni "XX.<10 karakter isim bloğu>.<4 hane sıra>.": desene uymayan
-    (eski/serbest formatlı) numaralar yok sayılır. COUNT tabanlı öneri, silinen
-    veya isim eşleşmeyen kayıtlarda dolu numarayı yeniden önerip 409/500
-    üretiyordu (2026-07-16 kaydı) — max+1 bu sınıfı kapatır.
+    Mezar taşı bilinçli: route silinip bırakılsa yol `/api/cases/{case_id}` kalıbına düşer ve
+    eski istemci 422 ("case_id tam sayı değil") görürdü. Önizleme `/api/cases/ofis-no-onizleme`.
     """
-    max_seq = 0
-    for tno in tracking_nos:
-        m = re.match(r"^[A-Z0-9]{2}\.(.{10})\.(\d{4})\.", tno or "")
-        if m:
-            max_seq = max(max_seq, int(m.group(2)))
-    return max_seq
-
-
-@router.get("/api/cases/client-sequence")
-def get_client_case_sequence(
-    client_name: str,
-    name_block: Optional[str] = None,
-    tenant_id: str = Depends(get_current_tenant),
-):
-    db = SessionLocal()
-    try:
-        # Tercih edilen yol: tracking_no'nun 10 karakterlik isim bloğu (blok2)
-        # üzerinden mevcut EN YÜKSEK sıra numarası + 1.
-        # BİLİNÇLİ: soft-delete filtresi YOK — silinen davaların tracking_no
-        # aralığı sayılmaya devam eder ki aynı numara yeniden önerilmesin
-        # (unique kısıt silinenleri de kapsar; öneri 409'a çarpmasın).
-        if name_block and len(name_block) == 10:
-            rows = (
-                db.query(models.Case.tracking_no)
-                .filter(func.substr(models.Case.tracking_no, 4, 10) == name_block)
-                .filter(tenant_filter_clause(models.Case, tenant_id))
-                .all()
-            )
-            return {"sequence": max_tracking_sequence(t for (t,) in rows) + 1}
-
-        if not client_name:
-            return {"sequence": 1}
-
-        clean_name = client_name.strip().upper()
-        for suffix in [" DR.", " DR"]:
-            if clean_name.endswith(suffix):
-                clean_name = clean_name[: -len(suffix)].strip()
-                break
-
-        # Fallback (name_block yok): müvekkilin davalarının tracking_no'larından
-        # max+1 — Faz 6.3'te COUNT yerine geçti (silinen kayıt aralığı çakışma
-        # üretmesin). İsim eşleşmeyen kayıt sınırlaması bu yolda doğal olarak kalır.
-        query_pattern = f"{clean_name}%"
-        rows = (
-            db.query(models.Case.tracking_no)
-            .join(models.CaseParty, models.CaseParty.case_id == models.Case.id)
-            .filter(models.CaseParty.party_type == "CLIENT")
-            .filter(models.CaseParty.name.ilike(query_pattern))
-            .filter(tenant_filter_clause(models.Case, tenant_id))
-            .distinct()
-            .all()
-        )
-        return {"sequence": max_tracking_sequence(t for (t,) in rows) + 1}
-    except Exception as e:
-        # G014: sabit {"sequence": 1} fallback'i KALKTI. Hata anında gerçek
-        # sıradan bağımsız "1" önerisi dolu bir ofis numarası üretiyor, kayıt
-        # 409'a düşüyordu (frontend zaten G002 ile hatayı fırlatıyor ama 200
-        # gövdesi ona hiç ulaşmıyordu). 503: geçici bağımlılık arızası, kod
-        # hatasının 500'ünden ayırt edilebilir; gövde {"detail": ...} — Faz 5-B
-        # doygunluk sözleşmesiyle aynı biçim.
-        # NOT: :146'daki boş `client_name` erken çıkışı hata değil, aynen durur.
-        logger.error(f"Ofis no sıra tahsisi başarısız: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=503,
-            detail="Ofis numarası sırası şu anda hesaplanamıyor. Lütfen tekrar deneyin.",
-        ) from e
-    finally:
-        db.close()
+    raise HTTPException(
+        status_code=404,
+        detail="Bu uç kaldırıldı. Ofis numarası kayıt anında sunucuda verilir.",
+    )
 
 
 @router.get("/api/cases/ofis-no-onizleme")

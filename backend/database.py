@@ -681,15 +681,12 @@ _MIGRATIONS = [
         "ON cases (status) WHERE status <> 'MAHZEN'",
     ]),
 
-    # (c) substr(tracking_no, 4, 10) FONKSİYONEL index'i. routes/cases.py:139
-    #     her dava açma formunda bu ifadeyle sıra numarası tahsis ediyor; düz
-    #     kolon index'i ifadeye uygulanmaz, tek çare fonksiyonel index.
-    #     Ölçüm (14.345 satır, lokal prod kopyası): seq scan 6,1 ms / 1.358 buffer
-    #     → bitmap index scan 0,2 ms / 20 buffer (~30×).
-    ("index", "cases", [
-        "CREATE INDEX IF NOT EXISTS idx_cases_tracking_name_block "
-        "ON cases (substr(tracking_no, 4, 10))",
-    ]),
+    # (c) KALDIRILDI (G239, karar 023): ofis numarasının eski 10 karakterlik isim
+    #     bloğu üzerindeki fonksiyonel index `idx_cases_tracking_name_block`. Tek
+    #     müşterisi eski sıra önerisi ucuydu (`/api/cases/client-sequence`); sıra
+    #     artık `ofis_no_sayaclari`ndan tahsis edilir ve yeni formatta ad bloğu
+    #     sabit konumda değildir. CREATE buradan çıktı, DROP `_DUSURULECEK_INDEXLER`de
+    #     (ikisinde birden dursaydı her açılışta düşürülüp yeniden kurulurdu — G042 dersi).
 
     # ─── 31. FAZ F ŞEMASI: 10 YENİ CASES KOLONU (G044) ───────────────────────
     #
@@ -1478,6 +1475,9 @@ _DUSURULECEK_INDEXLER = {
         "idx_cases_tku_no",
         "idx_cases_tku_no_trgm",
         "idx_cases_sistem_no_trgm",
+        # G239 (karar 023): eski ofis no isim bloğu fonksiyonel index'i — tek
+        # müşterisi (client-sequence ucu) kalktı, yeni formatta ifade anlamsız.
+        "idx_cases_tracking_name_block",
     ],
 }
 

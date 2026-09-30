@@ -3,7 +3,7 @@
 Script SALT OKUNURDUR: hiçbir tabloya yazmaz, hiçbir kartı birleştirmez. Testler
 raporun karar verdirici üç kolonunu kilitler:
 
-* `isim_blogu` — ofis numarasından müvekkil bloğu çıkarımı
+* `musteri_kodu` — "aynı müvekkil" ölçüsü: `cases.ofis_no_kodu` (G239; numara ayrıştırılmaz)
 * `hukum` — bu iki kart gerçekten mükerrer mi, yoksa AYRI durmaları mı doğru
   (hasar dosya numarası → sigortalı hekim → karşı taraf sırasıyla)
 * geçişli gruplama — A-B ve B-C aynı davaysa grup {A, B, C} olmalı
@@ -33,16 +33,27 @@ def _kart(tracking_no, *taraflar):
 
 # ── isim bloğu ────────────────────────────────────────────────────────────────
 
+# İNSAN ONAYLI TEST TAŞIMA (G239, karar 023): "aynı müvekkil" ölçüsü numaranın
+# 4-13. karakterleri (`_isim_blogu`) değil `cases.ofis_no_kodu` kolonu (`_musteri_kodu`).
+# Numara artık AYRIŞTIRILMAZ: eski beklenti "numaradan blok çıkar"dı, yenisi "kod kolondan
+# gelir; kolon boşsa müvekkilden hesaplanır; numaranın kendisi hiçbir şey söylemez".
+
 def test_isim_blogu_ofis_numarasindan_cikiyor():
-    assert rapor._isim_blogu("D1.B_GURER....0001.IDARE.00000") == "B_GURER..."
-    assert rapor._isim_blogu("S3.AXA........2967.IDARE.00000") == "AXA......."
+    """Test adı tarihsel: kod numaradan DEĞİL kolondan okunur."""
+    gurer = SimpleNamespace(tracking_no="DR.B.GURER-0001-IDR", ofis_no_kodu="DR.B.GURER", parties=[])
+    axa = SimpleNamespace(tracking_no="AXA-2967-DR.E.ALTUNC-IDR", ofis_no_kodu="AXA", parties=[])
+    assert rapor._musteri_kodu(gurer) == "DR.B.GURER"
+    assert rapor._musteri_kodu(axa) == "AXA"            # sigortalı bloğu koda katılmaz
+    # Eski formatlı numara ayrıştırılmaz: kolon boş + müvekkil yok → kod yok.
+    eski = SimpleNamespace(tracking_no="D1.B_GURER....0001.IDARE.00000", ofis_no_kodu=None, parties=[])
+    assert rapor._musteri_kodu(eski) == ""
 
 
 @pytest.mark.parametrize("bozuk", ["", "D1.KISA", None])
 def test_kisa_veya_bos_ofis_numarasi_bos_blok_verir(bozuk):
-    """Boş blok eşleşme üretmemeli: aksi hâlde bütün bozuk numaralı kartlar
-    birbirinin mükerreri sayılırdı (rapor bu yüzden boş bloğu atlıyor)."""
-    assert rapor._isim_blogu(bozuk) == ""
+    """Boş kod eşleşme üretmemeli: aksi hâlde bütün kodsuz + müvekkilsiz kartlar
+    birbirinin mükerreri sayılırdı (rapor bu yüzden boş kodu atlıyor)."""
+    assert rapor._musteri_kodu(_kart(bozuk)) == ""
 
 
 # ── hüküm: mükerrer mi, ayrı durması mı doğru ─────────────────────────────────

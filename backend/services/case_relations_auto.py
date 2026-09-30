@@ -44,8 +44,8 @@ altında iki karttan birden çok kişi — hasta + yakını). Taban 50, tavan 75
 puana göre sıralanır, gerekçe metnine "+ aynı tıbbi olay (…)" / "+ ortak aile soyadı
 (…)" eklenir.
 
-Kartlar BİRLEŞTİRİLMEZ. `tracking_no` müvekkil isim bloğu taşıyan ofis dosya
-numarasıdır; tek davada birden çok müvekkil varsa her müvekkilin ayrı ofis dosyası
+Kartlar BİRLEŞTİRİLMEZ. `tracking_no` müvekkil kodu taşıyan ofis dosya
+numarasıdır (karar 023: kod `cases.ofis_no_kodu` kolonunda, numara ayrıştırılmaz); tek davada birden çok müvekkil varsa her müvekkilin ayrı ofis dosyası
 olması doğrudur — aynı ölçümde AYNI_DAVA çiftlerinin 149'undan 121'i farklı isim
 bloğu taşıyor. Bu modül kartları bağlar, birleştirmez.
 

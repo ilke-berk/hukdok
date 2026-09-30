@@ -41,9 +41,14 @@ YENI_INDEXLER = [
     "idx_case_lawyers_lawyer",
     "ix_case_parties_client_id",   # mevcut kurulumlarda VARDI, sıfırdan kurulumda yoktu
     "idx_cases_status_sicak",
-    "idx_cases_tracking_name_block",
 ]
 YENI_TRGM_INDEX = "idx_cases_resp_lawyer_fold_trgm"
+# İNSAN ONAYLI TEST TAŞIMA (G239, insan kararı 30.09): G043'ün beşinci index'i
+# `idx_cases_tracking_name_block` (eski ofis no isim bloğu, `substr(tracking_no, 4, 10)`)
+# karar 023 ile KALKTI — tek müşterisi olan sıra önerisi ucu da kalktı. Aşağıdaki
+# "var olmalı / sorguda kullanılıyor / düşürülecekler listesinde değil" beklentileri
+# "düşürülecekler listesinde, sıfırdan kurulumda şemada YOK, route substr kullanmıyor"a çevrildi.
+KALKAN_INDEX = "idx_cases_tracking_name_block"
 
 
 def _index_op_sqlleri():
@@ -219,6 +224,11 @@ def test_yeni_indexler_index_opunda_ve_if_not_exists():
         assert len(eslesen) == 1, f"{ad}: ('index', ...) op'unda tam 1 kez olmalı"
         assert "IF NOT EXISTS" in eslesen[0], f"{ad}: IF NOT EXISTS yok → ikinci açılışta patlar"
 
+    # G239: kalkan index'in migrasyondaki TEK ifadesi idempotent DROP'tur (CREATE yok).
+    kalkan = [s for s in sqller if f" {KALKAN_INDEX} " in f" {s} "]
+    assert len(kalkan) == 1, f"{KALKAN_INDEX}: ('index', ...) op'unda tam 1 ifade (DROP) olmalı"
+    assert kalkan[0] == f"DROP INDEX IF EXISTS {KALKAN_INDEX}", "kalkan index yeniden yaratılıyor ya da DROP idempotent değil"
+
 
 def test_kismi_index_yalniz_sicak_statuleri_kapsar():
     """cases.status index'i arşiv (MAHZEN) satırlarını DIŞARIDA bırakmalı."""
@@ -227,9 +237,14 @@ def test_kismi_index_yalniz_sicak_statuleri_kapsar():
 
 
 def test_tracking_no_index_i_route_ile_ayni_ifadeyi_kullanir():
-    """routes/cases.py:139 `substr(tracking_no, 4, 10)` kullanıyor — index de öyle."""
-    ddl = next(s for s in _index_op_sqlleri() if "idx_cases_tracking_name_block" in s)
-    assert "substr(tracking_no, 4, 10)" in ddl
+    """G239 taşıması (test adı tarihsel): route artık `substr(tracking_no, 4, 10)`
+    KULLANMIYOR — index de migrasyonda o ifadeyle yaratılmıyor (ikisi birlikte kalktı)."""
+    import inspect
+
+    from routes import cases as cases_route
+
+    assert "substr" not in inspect.getsource(cases_route), "route numarayı yine konumla ayrıştırıyor"
+    assert all("substr(tracking_no" not in s for s in _index_op_sqlleri())
 
 
 def test_yeni_trgm_index_i_index_opuna_yazilmadi():
@@ -246,6 +261,8 @@ def test_yeni_indexler_dusurulecekler_listesiyle_catismiyor():
     """Madde 29 düşürüp madde 30 aynı adı ekleyemez (sonsuz git-gel olurdu)."""
     dusurulen = {ad for adlar in database._DUSURULECEK_INDEXLER.values() for ad in adlar}
     assert dusurulen.isdisjoint(set(YENI_INDEXLER) | {YENI_TRGM_INDEX})
+    # G239: kalkan index düşürülecekler listesinde (ve yukarıdaki yaratılanlarda DEĞİL).
+    assert KALKAN_INDEX in database._DUSURULECEK_INDEXLER["cases"]
 
 
 # ─── dbtest: gerçek şema ─────────────────────────────────────────────────────
@@ -283,8 +300,9 @@ def test_yeni_indexler_sifirdan_kurulumda_semada_var(g043_db):
         assert ad in indexler, f"{ad} sıfırdan kurulumda oluşmadı"
 
     assert "WHERE ((status)::text <> 'MAHZEN'::text)" in indexler["idx_cases_status_sicak"]
-    assert '"substr"(' in indexler["idx_cases_tracking_name_block"] or "substr(" in \
-        indexler["idx_cases_tracking_name_block"]
+    # G239: eski isim bloğu index'i sıfırdan kurulumda şemada YOK; numarayı konumla kesen index yok.
+    assert KALKAN_INDEX not in indexler, f"{KALKAN_INDEX} sıfırdan kurulumda hâlâ oluşuyor"
+    assert not [ad for ad, tanim in indexler.items() if "substr" in tanim and "tracking_no" in tanim]
     assert "gin" in indexler[YENI_TRGM_INDEX] and "translate" in indexler[YENI_TRGM_INDEX]
 
 
@@ -314,13 +332,14 @@ def test_index_siz_fk_kolonu_kalmadi(g043_db):
 
 @pytest.mark.dbtest
 def test_fonksiyonel_index_tracking_no_sorgusunda_kullaniliyor(g043_db):
-    """routes/cases.py:139'un birebir sorgusu index taramasına düşmeli."""
+    """G239 taşıması (test adı tarihsel): eski sıra sorgusunun ifadesi artık hiçbir
+    index'e düşmez — fonksiyonel index kalktı (sorgunun kendisi de route'tan kalktı)."""
     with g043_db.connect() as conn:
         plan = "\n".join(r[0] for r in conn.execute(text(
             "EXPLAIN SELECT tracking_no FROM cases "
             "WHERE substr(tracking_no, 4, 10) = 'HANYALOGLU' AND tenant_id IS NULL"
         )).all())
-    assert "idx_cases_tracking_name_block" in plan, f"index kullanılmadı:\n{plan}"
+    assert KALKAN_INDEX not in plan, f"kalkan index hâlâ kullanılıyor:\n{plan}"
 
 
 @pytest.mark.dbtest

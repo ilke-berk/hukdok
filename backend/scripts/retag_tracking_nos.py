@@ -1,16 +1,26 @@
 """
-Mevcut tüm davaların tracking_no alanını geriye dönük düzeltir.
+EMEKLİ — ÇALIŞTIRMA (G239, karar 023).
 
-- Kategori: müvekkilin clients.category alanından okunur (yoksa isimden tahmin edilir)
-- Sıra no: her müvekkil için davalar opening_date ASC sıralanır (null → sona)
-- Kuru çalıştırma: python scripts/retag_tracking_nos.py --dry-run
+Bu script ESKİ ofis no formatının (`D1.B_GURER....0001.HUKUK.00000`) üreticisiydi ve
+tüm davaları o formata yeniden numaralardı. Format 28.09.2026'da değişti: numaranın tek
+kanonik üreticisi `services/ofis_no.py`, toplu numaralama `scripts/ofis_no_gocu.py`'dir.
+Çalıştırılırsa hiçbir şeye dokunmadan hata ile çıkar; `run()` da çağrılamaz. Dosya yalnız
+tarihsel referans (eski numaraların nasıl üretildiği) için duruyor — hiçbir kod import etmez.
 
-Kullanım:
-  python scripts/retag_tracking_nos.py            # Gerçek güncelleme
-  python scripts/retag_tracking_nos.py --dry-run  # Sadece önizleme, DB'ye yazmaz
+Eski açıklama: mevcut tüm davaların tracking_no alanını geriye dönük düzeltirdi
+(kategori `clients.category`'den, sıra müvekkil başına `opening_date` artan).
 """
 
 import sys
+
+EMEKLI_MESAJI = (
+    "retag_tracking_nos.py EMEKLİ (G239, karar 023): eski ofis no formatını üretir, çalıştırılmaz. "
+    "Numaralama için scripts/ofis_no_gocu.py, üretici services/ofis_no.py."
+)
+
+if __name__ == "__main__":
+    sys.exit(EMEKLI_MESAJI)
+
 import os
 import argparse
 import re
@@ -173,6 +183,7 @@ def _name_priority(cat_norm: str) -> int:
 
 
 def run(dry_run: bool = True):
+    raise RuntimeError(EMEKLI_MESAJI)
     db = SessionLocal()
     try:
         # 1. Tüm davalar

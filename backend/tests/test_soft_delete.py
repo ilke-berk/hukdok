@@ -133,12 +133,21 @@ def test_case_detail_documents_exclude_deleted():
 
 
 def test_client_sequence_deliberately_ignores_soft_delete():
-    """client-sequence silinen davaların numara aralığını SAYMAYA devam etmeli
-    (aynı numara yeniden önerilmesin — unique kısıt silinenleri de kapsıyor)."""
+    """Silinen davanın numarası yeniden VERİLMEMELİ (unique kısıt silinenleri de kapsıyor).
+
+    İNSAN ONAYLI TEST TAŞIMA (G239, karar 023): kural aynı, taşıyıcısı değişti.
+    `get_client_case_sequence` (numara aralığını tarayan uç) kalktı; sıra artık
+    `ofis_no_sayaclari` sayacından tahsis edilir ve sayaç kart tablosuna HİÇ bakmaz —
+    silinen kart sırayı geri vermez. Sıra kaynağına `deleted_at` süzgeci girerse
+    (kartlardan sayan bir yola dönülmüş demektir) bu test kırılır.
+    """
     from routes import cases as cases_route
-    src = inspect.getsource(cases_route.get_client_case_sequence)
-    assert "deleted_at.is_(None)" not in src, (
-        "client-sequence'e deleted_at filtresi eklenmiş — bilinçli açık olmalıydı"
+    from services import ofis_no
+
+    assert not hasattr(cases_route, "get_client_case_sequence"), "kalkan sıra ucu geri gelmiş"
+    src = inspect.getsource(ofis_no.sira_tahsis_et) + str(ofis_no._SIRA_TAHSIS_SQL)
+    assert "deleted_at" not in src, (
+        "sıra tahsisine deleted_at filtresi eklenmiş — sayaç silinen kartı da saymalı"
     )
 
 

@@ -1,9 +1,15 @@
 """G126 — Kartsız föyler için kart açma (05.09.2026 kullanıcı kararı).
 
 Aktarım kart açmaz; 04.09 paketinde 217 föy / 210 DosyaNo kartsızdı. Script
-DosyaNo başına MİNİMAL kart açar (ofis no mevcut kuralla: kategori + isim
-bloğu + blok başına max+1 + tür), taraf/avukat yazmaz (aktarımın işi), ikinci
+DosyaNo başına MİNİMAL kart açar, taraf/avukat yazmaz (aktarımın işi), ikinci
 koşuda 0 kart (DosyaNo artık kartlı). Sentetik paket (A.2).
+
+İNSAN ONAYLI TEST TAŞIMA (G239, karar 023): ofis no artık eski kuralla (kategori +
+10 karakter isim bloğu + blok başına max+1 + tür) DEĞİL `services/ofis_no`
+üreticisiyle ve `ofis_no_sayaclari` sayacından verilir. Beklenen numaralar yeni
+formata çevrildi (`D1.H_ARTUC....0004.HUKUK.00000` → `DR.H.ARTUC-0004-HUK`,
+`S4.QUICK......0001.IDARE.00000` → `QUICK-0001-IDR`); "sıra 4" artık DB'deki
+numaraların ayrıştırılmasından değil sayaçtan (son sıra 3) gelir.
 """
 from pathlib import Path
 
@@ -17,6 +23,7 @@ from database import _MIGRATIONS, Base
 from managers import case_manager
 from scripts import hukdok_aktarim
 from scripts import kartsiz_foy_kart_ac as kk
+from services import ofis_no
 
 BASLIKLAR = ["SistemNo", "Dosya No", "Klasör No", "Müvekkil", "Müvekkil Tipi", "Ana Tür",
              "Durum", "Dava Konusu", "Yerel Mahkeme", "Esas", "Dava Tarihi"]
@@ -74,7 +81,7 @@ SATIRLAR = [
     {"SistemNo": "H-3", "Dosya No": "2005.001", "Müvekkil": "Hülya Artuç Dr", "Müvekkil Tipi": "Doktor",
      "Ana Tür": "HUKUK", "Durum": "Aktif", "Yerel Mahkeme": "Bursa 3. Asliye Hukuk", "Esas": "2026/12",
      "Dava Tarihi": "2026-02-01"},
-    # sigorta müvekkili → S4.QUICK
+    # sigorta müvekkili → QUICK (şirket kodu `sigorta_kisa_kodlari` listesinden)
     {"SistemNo": "H-4", "Dosya No": "4.100.00", "Müvekkil": "Quick Sigorta A.Ş.", "Müvekkil Tipi": "Sigorta",
      "Ana Tür": "İDARE", "Durum": "Aktif"},
     # Dosya No boş → köprü yok, kart açılmaz
@@ -88,8 +95,14 @@ def ortam(db_env, monkeypatch):
     db = db_env()
     try:
         db.add(models.Case(tracking_no="D1.A_VAR......0001.HUKUK.00000", status="DERDEST", klasor_no_2="D-1"))
-        # aynı isim bloğunda mevcut bir kart: sıra max+1 = 0004 olmalı
-        db.add(models.Case(tracking_no="D1.H_ARTUC....0003.IDARE.00000", status="MAHZEN", klasor_no_2="Z-9"))
+        # aynı müvekkil kodunda mevcut bir kart: sayaç 3'te → yeni kartın sırası 0004 olmalı
+        for _ in range(3):
+            sira = ofis_no.sira_tahsis_et(db, "DR.H.ARTUC")
+        db.add(models.Case(tracking_no="DR.H.ARTUC-0003-IDR", ofis_no_kodu="DR.H.ARTUC", ofis_no_sira=sira,
+                           status="MAHZEN", klasor_no_2="Z-9"))
+        # sigorta şirketi kod listesi (prod'da seed; boş listede sigortacı `SG`ye düşer)
+        for kod, ad, anahtarlar in ofis_no.VARSAYILAN_SIGORTA_KODLARI:
+            db.add(models.SigortaKisaKodu(kod=kod, ad=ad, eslesme_anahtarlari=list(anahtarlar), aktif=True))
         db.commit()
     finally:
         db.close()
@@ -105,12 +118,14 @@ def test_kuru_kosu_aday_uretir_kart_acmaz(ortam, tmp_path):
     by = {a.dosya_no: a for a in adaylar}
     assert set(by) == {"2005.001", "4.100.00"}                       # D-1 kartlı, H-5 dosya no boş
     assert by["2005.001"].sistem_nolar == ["ARB-2", "H-3"]
-    assert by["2005.001"].tracking_no == "D1.H_ARTUC....0004.HUKUK.00000"   # blok max 3 → 4, tür HUKUK
+    assert by["2005.001"].tracking_no == "DR.H.ARTUC-0004-HUK"       # sayaç 3 → 4, tür HUKUK
     assert by["2005.001"].status == "DERDEST" and by["2005.001"].esas_no == "2026/12"
-    assert by["4.100.00"].tracking_no == "S4.QUICK......0001.IDARE.00000"
+    assert by["4.100.00"].tracking_no == "QUICK-0001-IDR"
     db = ortam()
     try:
         assert db.query(models.Case).count() == 2                    # kuru koşu: açılmadı
+        # kuru koşu sayaç YAKMAZ: tahsis geri alındı
+        assert ofis_no.siradaki(db, "DR.H.ARTUC") == 4 and ofis_no.siradaki(db, "QUICK") == 1
     finally:
         db.close()
     assert list((tmp_path / "r").glob("acilan-kartlar_*.csv"))
@@ -125,7 +140,9 @@ def test_apply_kart_acar_aktarim_baglar_ikinci_kosu_sifir(ortam, tmp_path):
     db = ortam()
     try:
         yeni = db.query(models.Case).filter_by(klasor_no_2="2005.001").one()
-        assert yeni.tracking_no == "D1.H_ARTUC....0004.HUKUK.00000"
+        assert yeni.tracking_no == "DR.H.ARTUC-0004-HUK"
+        assert (yeni.ofis_no_kodu, yeni.ofis_no_sira) == ("DR.H.ARTUC", 4)   # kolonlar dolu: numara ayrıştırılmaz
+        assert ofis_no.siradaki(db, "DR.H.ARTUC") == 5 and ofis_no.siradaki(db, "QUICK") == 2
         assert yeni.esas_no == "2026/12" and yeni.court == "Bursa 3. Asliye Hukuk"
         assert yeni.parties == [] and yeni.lawyers == []             # taraf/avukat aktarımın işi
         assert "ARB-2" in (yeni.notes or "")

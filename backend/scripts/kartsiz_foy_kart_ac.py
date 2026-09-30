@@ -10,10 +10,13 @@ sonraki koşuda föyleri DosyaNo köprüsüyle bu kartlara bağlar ve tüm alanl
 
 Kural: kart MİNİMAL açılır (ofis no, klasör no, durum, tür, konu, mahkeme,
 esas, dava tarihi); taraf/avukat YAZILMAZ — aktarımın işi (add_case'in
-"otomatik cari kart" davranışı da böylece tetiklenmez). Ofis numarası mevcut
-kuralla üretilir (`scripts/retag_tracking_nos.py`: kategori kodu + 10
-karakter isim bloğu + isim bloğu başına max+1 sıra + tür + "00000"). Aynı
-DosyaNo'daki föyler TEK karta gider (kart bölünmez, G063).
+"otomatik cari kart" davranışı da böylece tetiklenmez). Ofis numarası karar 023
+formatındadır (G239): her parçası `services/ofis_no` üreticisinden, sıra
+`ofis_no_sayaclari` sayacından (`sira_tahsis_et`) — numara AYRIŞTIRILMAZ, eski
+"isim bloğu başına max+1" taraması kalktı. Kategori föyün `Müvekkil Tipi`nden,
+sigortalı bloğu föyün ham `Sigortalı` sütunundan gelir. Kuru koşuda sayaç
+ilerlemez (tahsis geri alınır). Aynı DosyaNo'daki föyler TEK karta gider
+(kart bölünmez, G063).
 
     docker compose exec -T backend python scripts/kartsiz_foy_kart_ac.py \\
         --input /tmp/paket.xlsx [--rapor-dizini /tmp/kart]      # kuru koşu
@@ -39,29 +42,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models
 from managers import case_manager, foy_map
-from routes.cases import max_tracking_sequence
 from scripts import hukdok_aktarim as ha
+from services import ofis_no
 
 logger = logging.getLogger("KartsizFoy")
-
-# retag_tracking_nos import'ta cwd değiştirir + .env yükler (script alışkanlığı);
-# saf yardımcılarını kullanmak için cwd geri alınır.
-_cwd = os.getcwd()
-try:
-    from scripts import retag_tracking_nos as rt
-finally:
-    os.chdir(_cwd)
-
-# Müvekkil Tipi (DB-2026-002 kapalı listesi) → retag kategori adı. "Kurum" ve
-# tanınmayan tip X1 + kurum slug'ı (retag: kategori boş → kişi slug'ı, bu yüzden
-# kurumlar için açıkça "KURUM" verilir).
-MUVEKKIL_TIPI_KATEGORI = {
-    "DOKTOR": "Doktor",
-    "HASTA": "Hasta",
-    "DIGERSAGLIKCALISANI": "Sağlık Çalışanı",
-    "SIGORTA": "Sigorta",
-    "KURUM": "KURUM",
-}
 
 # Aynı DosyaNo'da farklı tür (ARB + HUKUK): kartın türü davanın "asıl" türü.
 TUR_ONCELIGI = ("HUKUK", "IDARE", "CEZA", "ICRA", "SAVCILIK", "TAHKIM", "DANISMANLIK", "ARABULUCULUK")
@@ -80,6 +64,11 @@ class KartAdayi:
     esas_no: Optional[str]
     opening_date: Optional[str]
     tracking_no: str = ""
+    # Karar 023 parçaları (G239): `ofis_numarasi` doldurur, kart kolonlarına yazılır.
+    ofis_no_kodu: Optional[str] = None
+    ofis_no_sira: Optional[int] = None
+    # Föylerin ham satırları (orijinal başlıklar) — sigortalı bloğunun kaynağı.
+    ham_satirlar: List[Dict[str, Any]] = field(default_factory=list)
     case_id: Optional[int] = None
     hata: Optional[str] = None
     notlar: List[str] = field(default_factory=list)
@@ -158,35 +147,73 @@ def kart_adaylari(foyler: Sequence[ha.HamSatir]) -> List[KartAdayi]:
             court=_ilk_dolu(sirali, "yerel_mahkeme"),
             esas_no=_ilk_dolu(sirali, "esas"),
             opening_date=_ilk_dolu(sirali, "dava_tarihi", _tarih_iso),
+            ham_satirlar=[dict(s.ham) for s in sirali if s.ham],
         ))
     return adaylar
 
 
-def isim_blogu(aday: KartAdayi) -> str:
-    """Ofis numarasının isim bloğu (`S4.QUICK......0453.HUKUK.00000` → `QUICK.....`).
+def _muvekkiller(aday: KartAdayi) -> List[Dict[str, Any]]:
+    """Üreticinin müvekkil listesi: ad + kategori (föyün `Müvekkil Tipi`, DB-2026-002).
 
-    Sıra numarasından bağımsız tek parça: `scripts/birlesik_kart_ayir.py` müvekkil
-    ayrımında "hangi grup kartta kalır" sorusunu kartın numarasındaki blokla
-    karşılaştırarak yanıtlar.
+    Tip üreticiye HAM verilir — `ofis_no` kategori adını kendisi çözer ("Diğer Sağlık
+    Çalışanı" → SC, "Sigorta" → şirket kodu, "Kurum" → KR); boş/tanınmayan tipte ad
+    kuralı (şirket işareti → KR, yoksa BR) geçerlidir. Göç (G238) de föy tipini böyle okur.
     """
-    kategori = MUVEKKIL_TIPI_KATEGORI.get(ha._baslik_anahtari(aday.muvekkil_tipi), "")
-    ad = rt._client_key(aday.muvekkil) if aday.muvekkil else ""
-    kod = rt._get_category_code(kategori, ad)
-    return rt.generate_tracking_number(ad, kod, 0, aday.file_type, "00000", kategori).split(".")[1]
+    return [{"name": aday.muvekkil, "category": aday.muvekkil_tipi or None}]
+
+
+def musteri_kodu(aday: KartAdayi, kod_listeleri: Optional[ofis_no.KodListeleri] = None) -> str:
+    """Adayın müvekkil kodu — numaranın ilk bloğu (`DR.H.ARTUC`, `QUICK`), `cases.ofis_no_kodu`.
+
+    Sıradan bağımsızdır: `scripts/birlesik_kart_ayir.py` müvekkil ayrımında "hangi grup
+    kartta kalır" sorusunu kartın `ofis_no_kodu` kolonuyla karşılaştırarak yanıtlar.
+    Ad boşsa/çözülemiyorsa `ValueError` (yer tutucu kod üretilmez).
+    """
+    return ofis_no.musteri_kodu(_muvekkiller(aday), kod_listeleri)[0]
+
+
+def kart_kodu(kart: Any, kod_listeleri: Optional[ofis_no.KodListeleri] = None) -> str:
+    """Kartın müvekkil kodu — `cases.ofis_no_kodu` kolonu; numara AYRIŞTIRILMAZ.
+
+    Kolon boşsa (göç öncesi kart: numarası eski formatta) kod, kartın CLIENT taraflarından
+    üreticinin kendisiyle hesaplanır (kategori bağlı müvekkil kaydından) — eski ve yeni
+    numaralı kartlar aynı ölçüyle kıyaslanır. Müvekkilsiz kartta boş metin döner (boş kod
+    hiçbir kartla eşleşmez).
+    """
+    kod = str(getattr(kart, "ofis_no_kodu", None) or "").strip()
+    if kod:
+        return kod
+    muvekkiller = [
+        {"name": p.name, "category": getattr(getattr(p, "client", None), "category", None)}
+        for p in (getattr(kart, "parties", None) or [])
+        if (getattr(p, "party_type", None) or "") == "CLIENT" and (p.name or "").strip()
+    ]
+    try:
+        return ofis_no.musteri_kodu(muvekkiller, kod_listeleri)[0]
+    except ValueError:
+        return ""
 
 
 def ofis_numarasi(db, aday: KartAdayi, kullanilan: Dict[str, int]) -> str:
-    """Kategori kodu + isim bloğu + (DB'deki max + bu koşuda verilenler) + tür."""
-    kategori = MUVEKKIL_TIPI_KATEGORI.get(ha._baslik_anahtari(aday.muvekkil_tipi), "")
-    ad = rt._client_key(aday.muvekkil) if aday.muvekkil else ""
-    kod = rt._get_category_code(kategori, ad)
-    blok = isim_blogu(aday)
-    if blok not in kullanilan:
-        satirlar = (db.query(models.Case.tracking_no)
-                    .filter(models.Case.tracking_no.like(f"%.{blok}.%")).all())
-        kullanilan[blok] = max_tracking_sequence(t for (t,) in satirlar)
-    kullanilan[blok] += 1
-    return rt.generate_tracking_number(ad, kod, kullanilan[blok], aday.file_type, "00000", kategori)
+    """Karar 023 numarası: `services/ofis_no` üreticisi + sayaçtan sıra (`sira_tahsis_et`).
+
+    Sıra çağıranın transaction'ında tahsis edilir — commit edilmezse geri döner (kuru koşu
+    sayaç yakmaz). `aday.ofis_no_kodu`/`ofis_no_sira` doldurulur, `kullanilan` bu koşuda kod
+    başına verilen son sırayı taşır (rapor). Müvekkil adı çözülemezse `ValueError`.
+    """
+    kl = ofis_no.kod_listelerini_yukle(db)
+    muvekkiller = _muvekkiller(aday)
+    kod, secilen = ofis_no.musteri_kodu(muvekkiller, kl)
+    sigortali = None
+    if ofis_no.sigortaci_mi(secilen.get("name"), secilen.get("category")):
+        sigortali = ofis_no.sigortali_sec(
+            foys=[{"ham_veri": ham} for ham in aday.ham_satirlar], parties=[],
+            muvekkiller=muvekkiller, kod_listeleri=kl,
+        )
+    sira = ofis_no.sira_tahsis_et(db, kod)
+    aday.ofis_no_kodu, aday.ofis_no_sira = kod, sira
+    kullanilan[kod] = sira
+    return ofis_no.numara_kur(kod, sira, sigortali, ofis_no.tur_kodu(aday.file_type))
 
 
 def kartlari_ac(session_factory, *, girdi: Path, sheet: str = "Sheet",
@@ -200,7 +227,16 @@ def kartlari_ac(session_factory, *, girdi: Path, sheet: str = "Sheet",
             if not aday.muvekkil:
                 aday.hata = "Müvekkil boş — ofis numarası üretilemez"
                 continue
-            aday.tracking_no = ofis_numarasi(db, aday, kullanilan)
+            try:
+                aday.tracking_no = ofis_numarasi(db, aday, kullanilan)
+            except ValueError as exc:
+                aday.hata = f"Ofis numarası üretilemedi: {exc}"
+        # Sıra tahsisi bu oturumun transaction'ında: --apply'da kalıcılaşır (kart
+        # açılamazsa numara atlanır — mükerrere tercih edilir), kuru koşuda geri alınır.
+        if apply:
+            db.commit()
+        else:
+            db.rollback()
     finally:
         db.close()
 
@@ -220,6 +256,7 @@ def kartlari_ac(session_factory, *, girdi: Path, sheet: str = "Sheet",
                 logger.warning(f"{aday.dosya_no} kart açılamadı: {aday.hata}")
             else:
                 aday.case_id = sonuc.get("id")
+                _ofis_no_kolonlarini_yaz(session_factory, aday)
     if rapor_dizini is not None:
         rapor_dizini.mkdir(parents=True, exist_ok=True)
         yol = rapor_dizini / f"acilan-kartlar_{datetime.now():%Y%m%d-%H%M%S}.csv"
@@ -232,6 +269,24 @@ def kartlari_ac(session_factory, *, girdi: Path, sheet: str = "Sheet",
                             a.muvekkil, a.muvekkil_tipi, a.file_type, a.status, a.esas_no or "",
                             a.court or "", a.hata or ""])
     return adaylar
+
+
+def _ofis_no_kolonlarini_yaz(session_factory, aday: KartAdayi) -> None:
+    """Açılan karta `ofis_no_kodu`/`ofis_no_sira` yazar.
+
+    `add_case` kendi numarasıyla gelen (bayraksız) çağrıda bu iki kolonu boş bırakır;
+    numarayı ayrıştırmadan okuyan her yol (mükerrer raporu, kart ayırma, göçün "zaten
+    yeni formatta" sırası) kolonlara bakar — boş kalmamalı.
+    """
+    db = session_factory()
+    try:
+        db.query(models.Case).filter(models.Case.id == aday.case_id).update(
+            {"ofis_no_kodu": aday.ofis_no_kodu, "ofis_no_sira": aday.ofis_no_sira},
+            synchronize_session=False,
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def ozet_metni(adaylar: Sequence[KartAdayi], *, apply: bool) -> str:

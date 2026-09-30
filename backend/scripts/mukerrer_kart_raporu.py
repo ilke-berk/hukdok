@@ -9,7 +9,8 @@ insan verir.
 
 Neden birleştirme YOK
 ---------------------
-`tracking_no` müvekkil isim bloğu taşıyan ofis dosya numarasıdır. Tek davada
+`tracking_no` müvekkil kodu taşıyan ofis dosya numarasıdır (karar 023; kod
+`cases.ofis_no_kodu` kolonundan okunur, numara ayrıştırılmaz). Tek davada
 birden çok müvekkil varsa (tıbbi malpraktiste kural: aynı davada birkaç hekim)
 her müvekkilin ayrı ofis dosyası olması DOĞRUDUR. Bunları birleştirmek ofis
 numaralarını yok eder ve `case_documents` bağlarını riske atar.
@@ -23,7 +24,7 @@ karşılaştırılamadı · **13 gerçek mükerrer adayı**.
 
 İki dosya
 ---------
-1. `mukerrer-kart-suphesi_<damga>.csv` — aynı dava, AYNI isim bloğu; `hukum`
+1. `mukerrer-kart-suphesi_<damga>.csv` — aynı dava, AYNI müvekkil kodu; `hukum`
    kolonu yukarıdaki sınıfı taşır ve gerçek adaylar başa sıralanır. Belge ve föy
    sayıları da yazılır ki hangi kartın yaşayacağına bakarak karar verilebilsin.
 2. `ayni-dava-gruplari_<damga>.csv` — aynı davayı gösteren TÜM kart grupları
@@ -55,10 +56,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger = logging.getLogger("MukerrerKartRaporu")
 
 
-def _isim_blogu(tracking_no: str) -> str:
-    """Ofis numarasının 10 karakterlik müvekkil bloğu ('D1.B_GURER....0001…')."""
-    metin = tracking_no or ""
-    return metin[3:13] if len(metin) >= 13 else ""
+def _musteri_kodu(kart, kod_listeleri=None) -> str:
+    """Kartın müvekkil kodu ('DR.B.GURER', 'AXA') — "aynı müvekkil" ölçüsü.
+
+    Kaynak `cases.ofis_no_kodu` kolonudur; numara AYRIŞTIRILMAZ (G239, karar 023 — eski
+    rapor numaranın 4-13. karakterlerini okurdu, yeni formatta ad bloğu sabit konumda
+    değil). Kolon boşsa (göç öncesi kart) kod kartın CLIENT taraflarından üreticiyle
+    hesaplanır (`kartsiz_foy_kart_ac.kart_kodu`) — göç öncesi ve sonrası aynı grupları
+    verir. Müvekkilsiz kartta boş metin: boş kod eşleşme üretmez.
+
+    Sigortalı bloğu koda BİLEREK katılmaz: eski isim bloğu da sigortalıyı taşımıyordu
+    (`S3.AXA…` bütün AXA kartlarında aynıydı); sigortalı ayrımını `_hukum` yapar
+    (`FARKLI_SIGORTALI`). Katılsaydı farklı sigortalılı çiftler listeden düşer, hüküm
+    kolonunun referans satırları kaybolurdu.
+    """
+    from scripts.kartsiz_foy_kart_ac import kart_kodu
+
+    return kart_kodu(kart, kod_listeleri)
 
 
 def _tku_ciftleri(db) -> Dict[Tuple[int, int], Set[str]]:
@@ -310,18 +324,27 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
     from sqlalchemy.orm import selectinload
 
     import models
+    from services import ofis_no
     from services.case_relations_auto import AYNI_DAVA, kart_ozeti, siniflandir
 
     db = SessionFactory()
     try:
         kart_listesi = (
             db.query(models.Case)
-            .options(selectinload(models.Case.parties))
+            # Müvekkil kaydı da önden yüklenir: kodu boş (göç öncesi) kartta kategori oradan okunur.
+            .options(selectinload(models.Case.parties).selectinload(models.CaseParty.client))
             .filter(models.Case.deleted_at.is_(None))
             .all()
         )
         kartlar = {kart.id: kart for kart in kart_listesi}
         logger.info(f"{len(kartlar)} aktif kart okundu")
+        kod_listeleri = ofis_no.kod_listelerini_yukle(db)
+        kodlar: Dict[int, str] = {}
+
+        def kod(kart_id: int) -> str:
+            if kart_id not in kodlar:
+                kodlar[kart_id] = _musteri_kodu(kartlar[kart_id], kod_listeleri)
+            return kodlar[kart_id]
 
         tku_ciftleri = {
             cift: tkular for cift, tkular in _tku_ciftleri(db).items()
@@ -347,11 +370,11 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
         rapor_dizini.mkdir(parents=True, exist_ok=True)
         damga = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        # ── 1. Mükerrer kart şüphesi: aynı dava + AYNI müvekkil isim bloğu ──
+        # ── 1. Mükerrer kart şüphesi: aynı dava + AYNI müvekkil kodu ──
         supheli: List[Sequence[object]] = []
         for sol_id, sag_id, kanit in ayni_dava_ciftleri:
             sol, sag = kartlar[sol_id], kartlar[sag_id]
-            blok_sol, blok_sag = _isim_blogu(sol.tracking_no), _isim_blogu(sag.tracking_no)
+            blok_sol, blok_sag = kod(sol_id), kod(sag_id)
             if not blok_sol or blok_sol != blok_sag:
                 continue
             sol_hasar = hasar_numaralari.get(sol_id, set())
@@ -373,7 +396,7 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
         supheli.sort(key=lambda satir: _HUKUM_SIRASI.get(str(satir[0]), 3))
         supheli_yol = _csv_yaz(
             rapor_dizini / f"mukerrer-kart-suphesi_{damga}.csv",
-            ("hukum", "kanit", "tur", "mahkeme", "esas_no", "isim_blogu",
+            ("hukum", "kanit", "tur", "mahkeme", "esas_no", "musteri_kodu",
              "kart_a", "ofis_no_a", "muvekkil_a", "karsi_taraf_a", "sigortali_a",
              "hasar_no_a", "belge_a", "foy_a",
              "kart_b", "ofis_no_b", "muvekkil_b", "karsi_taraf_b", "sigortali_b",
@@ -386,14 +409,14 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
 
         envanter: List[Sequence[object]] = []
         for grup_id, uyeler in sorted(gruplar.items()):
-            bloklar = {_isim_blogu(kartlar[kid].tracking_no) for kid in uyeler}
+            bloklar = {kod(kid) for kid in uyeler}
             tek_muvekkil = "EVET" if len(bloklar) == 1 else "HAYIR"
             kanit = ", ".join(sorted(kanitlar[grup_id]))
             for kid in sorted(uyeler):
                 kart = kartlar[kid]
                 envanter.append((
                     grup_id, kanit, len(uyeler), tek_muvekkil,
-                    kid, kart.tracking_no, _isim_blogu(kart.tracking_no),
+                    kid, kart.tracking_no, kod(kid),
                     kart.file_type, kart.court, kart.esas_no,
                     _muvekkil(kart), _karsi_taraf(kart),
                     belge_sayisi.get(kid, 0), foy_sayisi.get(kid, 0),
@@ -401,7 +424,7 @@ def raporu_uret(SessionFactory, rapor_dizini: Path) -> Dict[str, object]:
         envanter_yol = _csv_yaz(
             rapor_dizini / f"ayni-dava-gruplari_{damga}.csv",
             ("grup", "kanit", "grup_kart_sayisi", "tek_muvekkil",
-             "kart_id", "ofis_no", "isim_blogu", "tur", "mahkeme", "esas_no",
+             "kart_id", "ofis_no", "musteri_kodu", "tur", "mahkeme", "esas_no",
              "muvekkil", "karsi_taraf", "belge_sayisi", "foy_sayisi"),
             envanter,
         )

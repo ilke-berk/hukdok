@@ -463,12 +463,15 @@ def test_dogrudan_add_case_cagrisi_kendi_numarasini_kullanir(pg):
 
 
 def test_client_sequence_ucu_hala_calisir(pg):
+    """İNSAN ONAYLI TEST TAŞIMA (G239, insan kararı 30.09): uç KALKTI → 404 (test adı
+    tarihsel). G236'da istemcisi kalmadığı hâlde çalışır bırakılmıştı; G237 sonrası
+    çağıranı yok, sıra kayıt anında sayaçtan tahsis ediliyor — gövdede sıra dönmez."""
     r = pg.client.get("/api/cases/client-sequence", params={"client_name": "Hiç Olmayan Müvekkil"})
-    assert r.status_code == 200, r.text
-    assert r.json() == {"sequence": 1}
+    assert r.status_code == 404, r.text
+    assert "sequence" not in r.json()
     r = pg.client.get("/api/cases/client-sequence", params={"client_name": "x", "name_block": "ABCDEFGHIJ"})
-    assert r.status_code == 200, r.text
-    assert r.json() == {"sequence": 1}
+    assert r.status_code == 404, r.text
+    assert "sequence" not in r.json()
 
 
 # ─── migrasyon 57 ────────────────────────────────────────────────────────────

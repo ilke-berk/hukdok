@@ -17,13 +17,13 @@ docker compose exec backend python scripts/<script>.py [--dry-run|--apply ...]
 
 | Script | Amaç |
 |---|---|
-| `import_excel_cases.py` | Dava Açılış Excel'inden toplu dava import'u |
+| `import_excel_cases.py` | **EMEKLİ (G239) — çalıştırılınca hata ile çıkar.** 27.04.2026 ilk yüklemesinin scripti; eski ofis no formatıyla kart açardı. Halefi `hukdok_aktarim.py` + `kartsiz_foy_kart_ac.py` |
 | `import_clients.py` | cari_mikro Excel'inden müvekkil import'u |
 | `import_lawyers_excel.py` | vekalet_listesi.xlsx'ten avukat import/güncelleme |
 | `migrate_from_staging.py` | Staging DB'den prod'a veri taşıma |
 | `preview_migration.py` | Staging taşıma önizlemesi |
 | `backfill_belge_turu_adi.py` | case_documents.belge_turu_adi backfill (dry-run varsayılan) |
-| `retag_tracking_nos.py` | Takip numaralarını yeniden etiketleme |
+| `retag_tracking_nos.py` | **EMEKLİ (G239) — çalıştırılınca hata ile çıkar.** ESKİ ofis no formatının üreticisiydi; numaranın tek üreticisi `services/ofis_no.py`, toplu numaralama `ofis_no_gocu.py` (karar 023) |
 | `normalize_lawyers.py` | responsible_lawyer_name'i canonical hale getirme (Track B) |
 | `normalize_list_names.py` | Referans listesi adlarını başlık formatına çevirme (dry-run varsayılan) |
 | `add_single_case.py` | Tek dava ekleme (psycopg2, elle) |

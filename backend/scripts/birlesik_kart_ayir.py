@@ -21,13 +21,13 @@ Kural:
 * `--muvekkil-ayrimi` (Ek-6 › 01, 17.09.2026 — kart 14334): grup anahtarına ÜÇÜNCÜ boyut
   olarak föyün müvekkili eklenir, böylece aynı tür + aynı esastaki iki müvekkil de ayrılır
   (ekibin sorusu: "dört föy dört ayrı kartta olmalı — müvekkil başına bir arabuluculuk, bir
-  dava kartı"). Aynı (tür, esas) birden çok gruba bölününce kartta KALAN grup, kartın ofis
-  numarasındaki isim bloğuyla seçilir (`kartsiz_foy_kart_ac.isim_blogu`) — kartın künyesi
-  kendi müvekkilinde kalsın diye. Bu modda yeni kartın klasör numarası GRUBUN kendi
+  dava kartı"). Aynı (tür, esas) birden çok gruba bölününce kartta KALAN grup, kartın
+  müvekkil koduyla seçilir (`cases.ofis_no_kodu` ↔ `kartsiz_foy_kart_ac.musteri_kodu`; numara
+  ayrıştırılmaz — G239) — kartın künyesi kendi müvekkilinde kalsın diye. Bu modda yeni kartın klasör numarası GRUBUN kendi
   DosyaNo'sudur (müvekkil başına ayrı klasör); kapalıyken kartın numarası paylaşılır.
   Bayrak yalnız adıyla verilen kartta açılır — genel kullanımda KAPALIDIR.
 * Yeni kart `kartsiz_foy_kart_ac.kart_adaylari` + `ofis_numarasi` ile (künye grubun asıl
-  föyünden, ofis numarası mevcut kural), klasör no = kartın DosyaNo'su (paylaşılır — sonraki
+  föyünden, ofis numarası karar 023 üreticisi + sayaç), klasör no = kartın DosyaNo'su (paylaşılır — sonraki
   aktarım köprüde iki kart görür, esas + tür ikinci anahtarı ayırır: tasarlanmış ikiz yolu).
   Taraflar föyün ham satırından `hukdok_aktarim._taraflari_yaz`, föy ↔ müvekkil bağı
   `_foy_muvekkilini_bagla`; esas `case_manager.sync_current_esas` (tek yazma yolu).
@@ -150,12 +150,15 @@ def grup_anahtari(satir: ha.HamSatir, *, muvekkil_ayrimi: bool = False) -> GrupA
     return anahtar + (normalize_party_key(kfa._ilk(satir.degerler.get("muvekkil")) or ""),)
 
 
-def _grup_isim_blogu(grup: Sequence[Tuple[models.CaseFoy, ha.HamSatir]]) -> Optional[str]:
-    """Grubun ofis numarası isim bloğu (tek DosyaNo'ya düşmüyorsa None)."""
+def _grup_musteri_kodu(grup: Sequence[Tuple[models.CaseFoy, ha.HamSatir]]) -> Optional[str]:
+    """Grubun müvekkil kodu (`DR.D.ESINLER`) — tek DosyaNo'ya düşmüyorsa ya da ad çözülemiyorsa None."""
     adaylar = kfa.kart_adaylari([s for _, s in grup])
     if len(adaylar) != 1 or not adaylar[0].muvekkil:
         return None
-    return kfa.isim_blogu(adaylar[0])
+    try:
+        return kfa.musteri_kodu(adaylar[0])
+    except ValueError:
+        return None
 
 
 def gruplari_bul(kart: models.Case, foyler: Sequence[models.CaseFoy], *, muvekkil_ayrimi: bool = False
@@ -179,10 +182,17 @@ def gruplari_bul(kart: models.Case, foyler: Sequence[models.CaseFoy], *, muvekki
     if len(tam) == 1:
         return tam[0], gruplar, hamsiz
     if tam:
-        # Müvekkil ayrımı: kartın künyesi kendi müvekkilinde kalsın — kartta kalacak
-        # grup, ofis numarasının isim bloğuyla seçilir (tek eşleşme yoksa en büyük grup).
-        blok = (kart.tracking_no or "").split(".")[1] if "." in (kart.tracking_no or "") else None
-        eslesen = [k for k in tam if blok and _grup_isim_blogu(gruplar[k]) == blok]
+        # Müvekkil ayrımı: kartın künyesi kendi müvekkilinde kalsın — kartta kalacak grup,
+        # kartın müvekkil koduyla (`cases.ofis_no_kodu`) seçilir; numara ayrıştırılmaz
+        # (G239). Kolon boşsa (göç öncesi kart) ölçü kartın müvekkil TARAFININ adıdır —
+        # grup anahtarının üçüncü boyutu zaten müvekkil anahtarı. Tek eşleşme yoksa en büyük grup.
+        kod = str(kart.ofis_no_kodu or "").strip()
+        if kod:
+            eslesen = [k for k in tam if _grup_musteri_kodu(gruplar[k]) == kod]
+        else:
+            adlar = {normalize_party_key(p.name) for p in (kart.parties or [])
+                     if p.party_type == "CLIENT" and (p.name or "").strip()}
+            eslesen = [k for k in tam if len(k) > 2 and k[2] in adlar]
         return (eslesen[0] if len(eslesen) == 1 else en_buyuk(tam)), gruplar, hamsiz
     ayni_tur = [k for k in gruplar if k[0] == kendi_temel[0]]
     return en_buyuk(ayni_tur or list(gruplar)), gruplar, hamsiz
@@ -216,7 +226,10 @@ def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha
     aday = adaylar[0]
     if not aday.muvekkil:
         return None, "Müvekkil boş — ofis numarası üretilemez"
-    aday.tracking_no = kfa.ofis_numarasi(db, aday, kullanilan)
+    try:
+        aday.tracking_no = kfa.ofis_numarasi(db, aday, kullanilan)
+    except ValueError as exc:
+        return None, f"Ofis numarası üretilemedi: {exc}"
     source = f"{DEGISTIREN} ({kim})"
     # `kart_adaylari` tarihi ISO metin verir; Date kolonu date ister (sqlite katı, Postgres toleranslı)
     opening_date = date.fromisoformat(aday.opening_date) if aday.opening_date else None
@@ -225,7 +238,8 @@ def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha
     # vardır ve kartın numarası yeni karta TAŞINMAZ (ekibin Ek-6 › 01 ricası).
     klasor_no_2 = (aday.dosya_no or kalan.klasor_no_2) if muvekkil_ayrimi else (kalan.klasor_no_2 or aday.dosya_no)
     yeni = models.Case(
-        tracking_no=aday.tracking_no, status=aday.status, file_type=aday.file_type,
+        tracking_no=aday.tracking_no, ofis_no_kodu=aday.ofis_no_kodu, ofis_no_sira=aday.ofis_no_sira,
+        status=aday.status, file_type=aday.file_type,
         subject=aday.subject, court=aday.court, opening_date=opening_date,
         klasor_no_2=klasor_no_2, tenant_id=kalan.tenant_id,
         responsible_lawyer_name=kalan.responsible_lawyer_name,

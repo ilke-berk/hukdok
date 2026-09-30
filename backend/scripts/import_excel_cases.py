@@ -1,12 +1,23 @@
 """
-BIRLESIK_SONUC_v5_temiz.xlsx → cases DB import scripti
-Kullanım:
-  python scripts/import_excel_cases.py              # Tam import
-  python scripts/import_excel_cases.py --dry-run    # DB'ye yazmadan logla
-  python scripts/import_excel_cases.py --limit 100  # İlk 100 satır
+EMEKLİ — ÇALIŞTIRMA (G239, karar 023).
+
+27.04.2026 ilk yüklemesinin scriptiydi (BIRLESIK_SONUC_v5_temiz.xlsx → cases) ve kartlara
+ESKİ ofis no formatında numara verirdi; idempotent de değildir. Halefi
+`scripts/hukdok_aktarim.py` (kart açmaz) + `scripts/kartsiz_foy_kart_ac.py` (kart açar,
+numara `services/ofis_no.py` üreticisinden). Çalıştırılırsa hiçbir şeye dokunmadan hata ile
+çıkar; `run()` da çağrılamaz. Dosya yalnız tarihsel referans için duruyor.
 """
 
 import sys
+
+EMEKLI_MESAJI = (
+    "import_excel_cases.py EMEKLİ (G239, karar 023): eski ofis no formatıyla kart açar, çalıştırılmaz. "
+    "Halefi scripts/hukdok_aktarim.py + scripts/kartsiz_foy_kart_ac.py."
+)
+
+if __name__ == "__main__":
+    sys.exit(EMEKLI_MESAJI)
+
 import os
 import argparse
 import re
@@ -169,6 +180,7 @@ def split_names(val) -> list[str]:
 # ─── MAIN IMPORT ─────────────────────────────────────────────────────────────
 
 def run(dry_run: bool = False, limit: int = None):
+    raise RuntimeError(EMEKLI_MESAJI)
     print(f"{'[DRY-RUN] ' if dry_run else ''}Excel okunuyor: {EXCEL_PATH}")
     wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
     ws = wb[SHEET_NAME]

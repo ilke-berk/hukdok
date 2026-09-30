@@ -9,7 +9,8 @@ bir cevap üretiyordu:
   2. `/api/cases/client-sequence` istisnada sabit `{"sequence": 1}` döndürüyordu
      → gerçek sıradan bağımsız numara önerisi, 409 çakışması.
 
-Her ikisi de artık 503 ({"detail": ...}) veriyor. Testler DB'siz: SessionLocal
+Birincisi 503 ({"detail": ...}) veriyor; ikincisi (client-sequence) G239'da tümüyle
+KALKTI — sıra kayıt anında sayaçtan tahsis edilir, uç 404 döner. Testler DB'siz: SessionLocal
 sahte bir oturumla değiştirilip sorgu anında patlatılıyor (conftest dummy URL).
 """
 import pytest
@@ -94,8 +95,14 @@ def test_check_duplicate_logs_single_error(cases_app, monkeypatch, caplog):
 
 # ── 2. Ofis no sıra tahsisi ──────────────────────────────────────────────────
 
+# İNSAN ONAYLI TEST TAŞIMA (G239, karar 023): `/api/cases/client-sequence` ucu KALKTI —
+# sıra artık kayıt anında sunucuda, sayaçtan tahsis edilir. Aşağıdaki üç test eski
+# sözleşmeyi (503 / erken çıkış 200) değil yeni davranışı kilitler: uç 404 döner, hiçbir
+# koşulda sıra ÖNERMEZ ve DB'ye hiç inmez (oturum açılmaz). "Hata ≠ boş veri" iddiası
+# güçlenerek sürer: önerilecek bir sıra artık yoktur.
+
 def test_client_sequence_does_not_fall_back_to_one_on_db_error(cases_app, monkeypatch):
-    """DB hatasında sabit 1 DÖNMEZ — dolu numara önerip 409 üretiyordu."""
+    """Uç kalktı: DB çökükken de sabit 1 DÖNMEZ — 404, sıra önerisi yok."""
     from routes import cases as cases_routes
 
     session = _BoomSession()
@@ -103,14 +110,14 @@ def test_client_sequence_does_not_fall_back_to_one_on_db_error(cases_app, monkey
 
     r = cases_app.get("/api/cases/client-sequence", params={"client_name": "AHMET YILMAZ"})
 
-    assert r.status_code == 503
-    assert "sequence" not in r.json(), "hata yanıtı hâlâ bir sıra numarası öneriyor"
+    assert r.status_code == 404
+    assert "sequence" not in r.json(), "kalkan uç hâlâ bir sıra numarası öneriyor"
     assert r.json().get("detail")
-    assert session.closed is True, "db.close() finally'si kaybolmuş"
+    assert session.closed is False, "kalkan uç DB oturumu açmamalı"
 
 
 def test_client_sequence_name_block_path_also_fails_loud(cases_app, monkeypatch):
-    """name_block (tercih edilen) yolu da aynı sözleşmeye tabi."""
+    """name_block (eski tercih edilen) yolu da kalktı: 404, sıra yok."""
     from routes import cases as cases_routes
 
     monkeypatch.setattr(cases_routes, "SessionLocal", lambda: _BoomSession())
@@ -118,20 +125,20 @@ def test_client_sequence_name_block_path_also_fails_loud(cases_app, monkeypatch)
         "/api/cases/client-sequence",
         params={"client_name": "AHMET YILMAZ", "name_block": "AHMETYILMA"},  # 10 karakter
     )
-    assert r.status_code == 503
+    assert r.status_code == 404
     assert "sequence" not in r.json()
 
 
 def test_empty_client_name_still_returns_sequence_one(cases_app, monkeypatch):
-    """Bilinçli erken çıkış (routes/cases.py:146) hata DEĞİL — davranışı korunur:
-    isim yokken sorgu hiç çalışmaz, öneri 1'dir."""
+    """Eski erken çıkış (boş isim → 200 + sıra 1) da kalktı: boş isimde de 404,
+    `{"sequence": 1}` DÖNMEZ (test adı tarihsel; beklenti G239'da taşındı)."""
     from routes import cases as cases_routes
 
-    session = _BoomSession()  # sorguya inilirse patlar → erken çıkış kanıtı
+    session = _BoomSession()  # sorguya inilirse patlar
     monkeypatch.setattr(cases_routes, "SessionLocal", lambda: session)
 
     r = cases_app.get("/api/cases/client-sequence", params={"client_name": ""})
 
-    assert r.status_code == 200
-    assert r.json() == {"sequence": 1}
-    assert session.closed is True
+    assert r.status_code == 404
+    assert "sequence" not in r.json()
+    assert session.closed is False

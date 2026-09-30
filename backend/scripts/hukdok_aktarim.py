@@ -819,8 +819,9 @@ def _hukumdeki_rol(deger: Any, alan: str) -> Optional[str]:
 # değer `AlanHatasi` ile satır raporuna düşer. İki alan da föy düzeyinde TEK
 # değerdir: büro bir föyde tek müvekkil tipini temsil eder, tek hizmet verir —
 # ` ; ` ile çok değer TANIMSIZ (hukumdeki_rol kuralı), KARMA benzeri
-# normalizasyon YOK. `cases.service_type` (ofis dosya numarasının hizmet bloğu)
-# AYRI bir alandır ve burada yazılmaya devam ETMEZ.
+# normalizasyon YOK. `cases.service_type` (ESKİ ofis dosya numarasının hizmet
+# bloğuydu; karar 023 numarasında hizmet bloğu yoktur — G239) AYRI bir alandır ve
+# burada yazılmaya devam ETMEZ.
 MUVEKKIL_TIPI_ESLEMESI: Dict[str, str] = {
     _baslik_anahtari(ad): ad for _kod, ad in seed_data.CLIENT_TYPES
 }

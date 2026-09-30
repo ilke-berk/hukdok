@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 import models
 from database import _MIGRATIONS, Base
 from scripts import birlesik_kart_ayir as bka
+from services import ofis_no
 from tests.test_g064_aktarim_cekirdek import _kart
 
 
@@ -39,7 +40,17 @@ def db_env():
             if op[0] == "index" and op[1] in ("case_foys", "case_esas_numbers"):
                 for sql in op[2]:
                     conn.execute(text(sql))
-    yield sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    fabrika = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    # G239: yeni kartın numarası `services/ofis_no` üreticisinden — sigorta şirketi kod
+    # listesi prod'da seed'dir (boş listede sigortacı `SG`ye düşer).
+    db = fabrika()
+    try:
+        for kod, ad, anahtarlar in ofis_no.VARSAYILAN_SIGORTA_KODLARI:
+            db.add(models.SigortaKisaKodu(kod=kod, ad=ad, eslesme_anahtarlari=list(anahtarlar), aktif=True))
+        db.commit()
+    finally:
+        db.close()
+    yield fabrika
     engine.dispose()
 
 
@@ -113,7 +124,9 @@ def test_arabuluculuk_foyu_yeni_karta_iliski_ve_tarihce(db_env):
         yeni = db.get(models.Case, yeni_id)
         assert sistem_nolar == ["ARB-16361"]
         assert yeni.file_type == "Arabuluculuk" and yeni.esas_no == "2025/48948"
-        assert yeni.klasor_no_2 == "2.455.00" and ".ARABU." in tracking and yeni.deleted_at is None
+        # G239 taşıması: yeni kartın numarası karar 023 formatında, sıra sayaçtan (eski: ".ARABU." bloğu)
+        assert yeni.klasor_no_2 == "2.455.00" and tracking == "QUICK-0001-ARB" and yeni.deleted_at is None
+        assert (yeni.tracking_no, yeni.ofis_no_kodu, yeni.ofis_no_sira) == (tracking, "QUICK", 1)
         assert yeni.notes.startswith(f"#{kart_id} ")
         # föy taşındı, müvekkil bağı yeni karttaki CLIENT'a
         foy = db.query(models.CaseFoy).filter_by(sistem_no="ARB-16361").one()
@@ -201,6 +214,7 @@ def test_kuru_kosu_yazmaz(db_env):
     try:
         assert db.query(models.Case).count() == 1 and db.query(models.CaseRelation).count() == 0
         assert db.query(models.CaseFoy).filter_by(sistem_no="ARB-16361").one().case_id == kart_id
+        assert ofis_no.siradaki(db, "QUICK") == 1                    # G239: kuru koşu sayaç yakmaz
     finally:
         db.close()
     print(bka.ozet_metni(sonuc, apply=False))
@@ -230,12 +244,20 @@ def test_ek3_kartlari_iki_sayfadan(tmp_path):
 
 # ─── Müvekkil ayrımı (Ek-6 › 01, kart 14334) ─────────────────────────────────
 
-def _iki_muvekkilli_kart(db_env):
-    """14334 deseni: aynı arabuluculuk + aynı dava esası, İKİ müvekkil, dört föy."""
+def _iki_muvekkilli_kart(db_env, *, tracking="DR.D.ESINLER-0002-ARB", kod="DR.D.ESINLER", muvekkil=None):
+    """14334 deseni: aynı arabuluculuk + aynı dava esası, İKİ müvekkil, dört föy.
+
+    G239 taşıması: kartın "kendi müvekkili" numaranın isim bloğundan
+    (`D1.D_ESINLER..0002.ARABU.00000`) değil `ofis_no_kodu` kolonundan okunur. `kod=None`
+    + `muvekkil` göç öncesi kartı kurar (eski numara, kolon boş, müvekkil tarafı var).
+    """
     db = db_env()
     try:
-        k = _kart(db, "D1.D_ESINLER..0002.ARABU.00000", "1110.003;1993.001", file_type="Arabuluculuk",
-                  esas_no="2026/720", court="Ankara Arabuluculuk Bürosu")
+        k = _kart(db, tracking, "1110.003;1993.001", file_type="Arabuluculuk",
+                  esas_no="2026/720", court="Ankara Arabuluculuk Bürosu",
+                  ofis_no_kodu=kod, ofis_no_sira=2 if kod else None)
+        if muvekkil:
+            db.add(models.CaseParty(case_id=k.id, name=muvekkil, role="Müvekkil", party_type="CLIENT"))
         for sistem_no, dosya_no, tur, esas, mahkeme, muvekkil in (
                 ("ARB-16767", "1110.003", "ARABULUCULUK", "2026/720", "Ankara Arabuluculuk Bürosu", "Deniz Esinler Dr."),
                 ("ARB-16779", "1993.001", "ARABULUCULUK", "2026/720", "Ankara Arabuluculuk Bürosu", "Aylin Ayrim Dr"),
@@ -256,14 +278,16 @@ def test_muvekkil_ayrimi_dort_foyu_dort_karta_boler(db_env):
 
     db = db_env()
     try:
-        # Kartın künyesi kendi müvekkilinde kaldı: isim bloğu D_ESINLER olan ARB grubu
+        # Kartın künyesi kendi müvekkilinde kaldı: müvekkil kodu DR.D.ESINLER olan ARB grubu
         kalan_foyler = {f.sistem_no for f in db.query(models.CaseFoy).filter_by(case_id=kart_id)}
         assert kalan_foyler == {"ARB-16767"}
         kartlar = {}
         for yeni_id, tracking, sistem_nolar in sonuc.kalemler[0].yeni_kartlar:
             assert len(sistem_nolar) == 1
             kartlar[sistem_nolar[0]] = db.get(models.Case, yeni_id)
-            assert tracking.split(".")[1] in ("A_AYRIM", "D_ESINLER")
+            # G239 taşıması: numaranın ilk bloğu müvekkil kodu (eski: `split(".")[1]` isim bloğu)
+            assert tracking.split("-")[0] in ("DR.A.AYRIM", "DR.D.ESINLER")
+            assert kartlar[sistem_nolar[0]].ofis_no_kodu == tracking.split("-")[0]
         assert set(kartlar) == {"ARB-16779", "H-16856", "H-16857"}
         # Klasör no müvekkil başına: kartın iki numaralı listesi yeni karta TAŞINMAZ
         assert kartlar["ARB-16779"].klasor_no_2 == "1993.001"
