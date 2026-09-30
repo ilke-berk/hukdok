@@ -18,6 +18,11 @@ class Case(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tracking_no = Column(String, unique=True, index=True, nullable=False) # e.g. "2024/1234"
+    # Ofis no parçaları (karar 023, G235): müvekkil kodu (numaranın ilk bloğu —
+    # "DR.M.OZTURK", "AXA") + o kod içindeki sıra. NULL = numara yeni formatla
+    # verilmedi (göç G238 doldurur, canlı tahsis G236). `tracking_no` kimlik olarak kalır.
+    ofis_no_kodu = Column(String(120), nullable=True)
+    ofis_no_sira = Column(Integer, nullable=True)
     esas_no = Column(String, index=True)
     status = Column(String, default="DERDEST") # "DERDEST", "DANIŞ", "MAHZEN"
     file_type = Column(String) # DOSYA_TURLERI
@@ -747,9 +752,50 @@ class ClientCategory(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)  # e.g. "DOKTOR"
     name = Column(String, nullable=False)                           # e.g. "Doktor"
+    # Ofis no kategori kodu (karar 023, G235): DR/SC/HS/OH/KR/BR/DG. NULL = kod yok
+    # (Sigorta Şirketi satırı: sigortacının kodu `sigorta_kisa_kodlari`'ndan gelir).
+    ofis_no_kodu = Column(String(10), nullable=True)
     active = Column(Boolean, default=True)
     sequence = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class OfisNoSayaci(Base):
+    """Ofis no sıra sayacı — müvekkil kodu başına son verilen sıra (karar 023 §8, G235).
+
+    `kod` numaranın İLK bloğudur ("DR.M.OZTURK", "KR.ENTHONE", "AXA", "SG"). Tek yazma
+    yolu `services/ofis_no.sira_tahsis_et` (`INSERT … ON CONFLICT DO UPDATE … RETURNING`,
+    atomik); tablo doğrudan yazılmaz. Satır silinmez — sıra geri gitmez.
+    """
+    __tablename__ = "ofis_no_sayaclari"
+
+    kod = Column(String(120), primary_key=True)
+    son_sira = Column(Integer, nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
+
+class SigortaKisaKodu(Base):
+    """Sigorta şirketi → ofis no kodu (karar 023 §3-§4, G235).
+
+    Müvekkil sigortacıysa numara şirket koduyla başlar ("AXA-3297-…"). Eşleşme
+    `eslesme_anahtarlari`ndaki kelimelerin müvekkil adında KELİME olarak geçmesiyle
+    kurulur (ASCII büyük harf). Listede (aktif) eşleşmeyen sigortacı sabit `SG` kodunu
+    alır — `SG` bu tabloda satır DEĞİLDİR. Satır silinmez, `aktif=false` yapılır; kod
+    değişikliği verilmiş numaraları değiştirmez.
+
+    `kod` tekilliği modelde DEĞİL migrasyonda (`uq_sigorta_kisa_kodlari_kod`, koşulsuz
+    ("index", ...) op'u — G041 kuralı, database.py madde 56); kategori kodlarıyla
+    çakışmama kuralı uygulama katmanında (`services/ofis_no.sigorta_kodu_kullanilabilir`).
+    """
+    __tablename__ = "sigorta_kisa_kodlari"
+
+    id = Column(Integer, primary_key=True)
+    kod = Column(String(10), nullable=False)                 # "AXA"
+    ad = Column(String(200), nullable=False)                 # "AXA Sigorta"
+    eslesme_anahtarlari = Column(JSON, nullable=False, default=list)   # ["AXA"]
+    aktif = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
+
 
 class FileStatus(Base):
     __tablename__ = "file_statuses"

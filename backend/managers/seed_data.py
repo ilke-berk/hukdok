@@ -103,6 +103,8 @@ def seed_all_lists():
     _seed_cities()
     _seed_specialties()
     _seed_client_categories()
+    # Ofis no sigorta şirketi kodları (karar 023, G235).
+    _seed_sigorta_kisa_kodlari()
     _seed_file_statuses()
     _seed_appealing_parties()
     # `alleged_faults` 04.09.2026'ya kadar BİLİNÇLİ boştu; dokuz değer veri
@@ -306,6 +308,13 @@ def _seed_client_categories():
     # Öğe-bazlı "ensure": count()>0 kısa devresi yeni kategori eklemelerini
     # (Sağlık Çalışanı 2026-07-31, seed'de eksik kalmış Hasta) mevcut DB'lere
     # taşıyamıyordu — kod yoksa eklenir, varsa dokunulmaz.
+    #
+    # Ofis no kategori kodu (karar 023, G235): tek kaynak
+    # `services/ofis_no.VARSAYILAN_KATEGORI_KODLARI`. Yeni satır koduyla doğar; mevcut
+    # satırda yalnız BOŞ `ofis_no_kodu` doldurulur — yönetimin panelden değiştirdiği kod
+    # EZİLMEZ. "Sigorta Şirketi" satırının kodu yoktur (şirket kodu `sigorta_kisa_kodlari`).
+    from services.ofis_no import VARSAYILAN_KATEGORI_KODLARI
+
     db = SessionLocal()
     try:
         items = [
@@ -318,19 +327,56 @@ def _seed_client_categories():
             ("SIGORTA", "Sigorta Şirketi"),
             ("DIGER", "Diğer"),
         ]
-        existing = {c.code for c in db.query(models.ClientCategory.code).all()}
-        next_seq = db.query(models.ClientCategory).count()
+        mevcut = {str(c.code): c for c in db.query(models.ClientCategory).all()}
+        next_seq = len(mevcut)
         added = 0
+        kodlanan = 0
         for code, name in items:
-            if code in existing:
+            ofis_kodu = VARSAYILAN_KATEGORI_KODLARI.get(code)
+            satir = mevcut.get(code)
+            if satir is not None:
+                if ofis_kodu and not satir.ofis_no_kodu:
+                    satir.ofis_no_kodu = ofis_kodu
+                    kodlanan += 1
                 continue
-            if _ekle_yarissiz(db, models.ClientCategory(code=code, name=name, active=True, sequence=next_seq + added)):
+            if _ekle_yarissiz(db, models.ClientCategory(
+                code=code, name=name, ofis_no_kodu=ofis_kodu, active=True, sequence=next_seq + added,
+            )):
+                added += 1
+        if added or kodlanan:
+            db.commit()
+            logger.info(f"Seeded {added} client_categories ({kodlanan} ofis no kodu dolduruldu)")
+    except Exception as e:
+        logger.error(f"Seed ClientCategories Error: {e}")
+    finally:
+        db.close()
+
+
+def _seed_sigorta_kisa_kodlari():
+    """Sigorta şirketi kodları (karar 023 §3, G235) — yalnız tablo BOŞKEN tohumlanır.
+
+    Kaynak `services/ofis_no.VARSAYILAN_SIGORTA_KODLARI`. Tabloda tek satır bile varsa
+    DOKUNULMAZ: liste yönetimin malıdır — kodu değiştirilen (AXA → başka kod) ya da
+    pasife alınan şirket bir sonraki açılışta eski haliyle geri gelmez. `kod` UNIQUE
+    olduğu için iki worker'ın boş tablo yarışı `_ekle_yarissiz` ile iyi huylu.
+    """
+    from services.ofis_no import VARSAYILAN_SIGORTA_KODLARI
+
+    db = SessionLocal()
+    try:
+        if db.query(models.SigortaKisaKodu.id).first() is not None:
+            return
+        added = 0
+        for kod, ad, anahtarlar in VARSAYILAN_SIGORTA_KODLARI:
+            if _ekle_yarissiz(db, models.SigortaKisaKodu(
+                kod=kod, ad=ad, eslesme_anahtarlari=list(anahtarlar), aktif=True,
+            )):
                 added += 1
         if added:
             db.commit()
-            logger.info(f"Seeded {added} client_categories")
+            logger.info(f"Seeded {added} sigorta_kisa_kodlari")
     except Exception as e:
-        logger.error(f"Seed ClientCategories Error: {e}")
+        logger.error(f"Seed SigortaKisaKodlari Error: {e}")
     finally:
         db.close()
 

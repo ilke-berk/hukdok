@@ -1313,6 +1313,50 @@ _MIGRATIONS = [
     ("index", "case_documents", [
         "CREATE INDEX IF NOT EXISTS idx_case_documents_lawyer_id ON case_documents (lawyer_id)",
     ]),
+
+    # ─── 56. OFİS NO YENİ FORMATI — sayaç + kod listeleri (karar 023, G235) ───────
+    # `ofis_no_sayaclari`: müvekkil kodu (numaranın ilk bloğu) başına son sıra; tek yazma
+    # yolu `services/ofis_no.sira_tahsis_et` (ON CONFLICT (kod) — PK'ya dayanır).
+    # `sigorta_kisa_kodlari`: sigorta şirketi → kod + müvekkil adında aranan kelimeler
+    # (JSON); satır silinmez (`aktif`). `client_categories.ofis_no_kodu`: kategori → kod.
+    # `cases.ofis_no_kodu/ofis_no_sira`: verilmiş numaranın parçaları (NULL = yeni formatla
+    # numaralanmadı; göç G238, canlı tahsis G236).
+    # Tablo/kolon op'ları KOŞULLUDUR (create_all zaten yaratır) → kalıcı kısıtlar alttaki
+    # KOŞULSUZ ("index", ...) op'larında: kod tekilliği ve (kod, sıra) tekilliği. İkincisi
+    # kısmi — yeni formatla numaralanmamış kartlar (NULL) kapsam dışı.
+    # Migrasyon VERİ YAZMAZ: kodlar açılışta `managers/seed_data.py`'den tohumlanır
+    # (kategori kodu yalnız BOŞ alana, sigorta listesi yalnız tablo BOŞKEN).
+    ("table", "ofis_no_sayaclari", """
+        CREATE TABLE ofis_no_sayaclari (
+            kod VARCHAR(120) PRIMARY KEY,
+            son_sira INTEGER NOT NULL,
+            updated_at TIMESTAMPTZ
+        )
+    """, []),
+    ("table", "sigorta_kisa_kodlari", """
+        CREATE TABLE sigorta_kisa_kodlari (
+            id SERIAL PRIMARY KEY,
+            kod VARCHAR(10) NOT NULL,
+            ad VARCHAR(200) NOT NULL,
+            eslesme_anahtarlari JSON NOT NULL,
+            aktif BOOLEAN NOT NULL,
+            updated_at TIMESTAMPTZ
+        )
+    """, []),
+    ("index", "sigorta_kisa_kodlari", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_sigorta_kisa_kodlari_kod ON sigorta_kisa_kodlari (kod)",
+    ]),
+    ("columns", "client_categories", {
+        "ofis_no_kodu": "VARCHAR(10)",
+    }),
+    ("columns", "cases", {
+        "ofis_no_kodu": "VARCHAR(120)",
+        "ofis_no_sira": "INTEGER",
+    }),
+    ("index", "cases", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_ofis_no_kod_sira "
+        "ON cases (ofis_no_kodu, ofis_no_sira) WHERE ofis_no_kodu IS NOT NULL",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

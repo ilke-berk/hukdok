@@ -15,6 +15,10 @@ makinesi `services/teslim_kutusu.py`'de; buradaki uçlar yalnız çağırır. İ
 başına TEK oturum açılır ve servis fonksiyonlarına `db=` ile verilir (test
 yalnız bu modülün `SessionLocal`'ını değiştirir). Sözleşme gorevler/gorev/G108.md
 "SÖZLEŞME" tablosunda dondurulmuştur (G111 paneli buna göre yazıldı).
+
+Ofis no kod listeleri (`/api/admin/sigorta-kodlari`, `/api/admin/kategori-kodlari`, G235):
+karar 023'ün düzenlenebilir sigorta şirketi ve kategori kodları. Kurallar
+`services/ofis_no.py`'de; kod değişikliği verilmiş numaraları değiştirmez.
 """
 import logging
 from pathlib import Path
@@ -22,7 +26,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from auth_helpers import tenant_filter_clause
 from database import SessionLocal
@@ -30,6 +36,7 @@ from dependencies import get_current_tenant
 from routes.config import require_admin
 from schemas import AktarimTeslimiOut, AktarimTeslimiOzetOut, AppSettingUpdate, TeslimUygulaRequest
 from services import app_settings
+from services import ofis_no
 from services import teslim_kutusu as tk
 import models
 
@@ -306,6 +313,170 @@ def api_teslim_rapor_indir(teslim_id: int, ad: str, user: dict = Depends(require
     ):
         raise HTTPException(status_code=404, detail="Rapor bulunamadı")
     return FileResponse(path=str(dosya), media_type=_RAPOR_TURLERI[dosya.suffix.lower()], filename=ad)
+
+
+# ─── OFİS NO KOD LİSTELERİ (karar 023, G235) ─────────────────────────────────
+#
+# Sigorta şirketi kodları + kategori kodları. Kod değişikliği yalnız YENİ
+# numaraları etkiler — bu uçlar `cases.tracking_no`'ya HİÇ dokunmaz. Silme yok:
+# sigorta satırı `aktif=false` yapılır (pasif kod eşleşmede kullanılmaz).
+# Kurallar `services/ofis_no`'da; buradaki uçlar yalnız çağırır.
+
+class SigortaKoduYeni(BaseModel):
+    kod: str = Field(pattern=r"^[A-Z]{2,10}$")
+    ad: str = Field(min_length=1, max_length=200)
+    eslesme_anahtarlari: list[str] = Field(default_factory=list, max_length=20)
+    aktif: bool = True
+
+
+class SigortaKoduGuncelle(BaseModel):
+    kod: Optional[str] = Field(default=None, pattern=r"^[A-Z]{2,10}$")
+    ad: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    eslesme_anahtarlari: Optional[list[str]] = Field(default=None, max_length=20)
+    aktif: Optional[bool] = None
+
+
+class KategoriKoduGuncelle(BaseModel):
+    ofis_no_kodu: str = Field(pattern=r"^[A-Z]{2,10}$")
+
+
+def _sigorta_kodu_cikti(satir: models.SigortaKisaKodu) -> dict:
+    return {
+        "id": satir.id,
+        "kod": satir.kod,
+        "ad": satir.ad,
+        "eslesme_anahtarlari": list(satir.eslesme_anahtarlari or []),
+        "aktif": bool(satir.aktif),
+    }
+
+
+def _anahtarlar(anahtarlar: list[str], kod: str) -> list[str]:
+    """Eşleşme kelimeleri ASCII büyük harfe indirilir; boş liste → kodun kendisi."""
+    return ofis_no.anahtarlari_temizle(anahtarlar) or [kod]
+
+
+@router.get("/api/admin/sigorta-kodlari")
+def api_sigorta_kodlari(user: dict = Depends(require_admin)):
+    """Sigorta şirketi kodları (aktif + pasif, kayıt sırasıyla) + sabit `SG` geri dönüş kodu."""
+    db = SessionLocal()
+    try:
+        satirlar = db.query(models.SigortaKisaKodu).order_by(models.SigortaKisaKodu.id).all()
+        return {"kodlar": [_sigorta_kodu_cikti(s) for s in satirlar], "varsayilan_kod": ofis_no.SG_KODU}
+    finally:
+        db.close()
+
+
+@router.post("/api/admin/sigorta-kodlari", status_code=201)
+def api_sigorta_kodu_ekle(payload: SigortaKoduYeni, user: dict = Depends(require_admin)):
+    """Yeni sigorta şirketi kodu. Kategori koduyla / mevcut kodla / `SG` ile çakışma 409."""
+    db = SessionLocal()
+    try:
+        try:
+            kod = ofis_no.sigorta_kodu_kullanilabilir(db, payload.kod)
+        except ofis_no.KodCakismasi as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        satir = models.SigortaKisaKodu(
+            kod=kod,
+            ad=payload.ad.strip(),
+            eslesme_anahtarlari=_anahtarlar(payload.eslesme_anahtarlari, kod),
+            aktif=payload.aktif,
+        )
+        db.add(satir)
+        try:
+            db.commit()
+        except IntegrityError as e:                    # yarış: aynı kod bu arada eklendi
+            db.rollback()
+            raise HTTPException(status_code=409, detail=f"'{kod}' kodu zaten kayıtlı") from e
+        logger.info(f"[ADMIN-OFIS-NO] sigorta kodu eklendi: {kod} (by={_admin_email(user)})")
+        return _sigorta_kodu_cikti(satir)
+    finally:
+        db.close()
+
+
+@router.patch("/api/admin/sigorta-kodlari/{kod_id}")
+def api_sigorta_kodu_guncelle(
+    kod_id: int,
+    payload: SigortaKoduGuncelle,
+    user: dict = Depends(require_admin),
+):
+    """Kod / ad / eşleşme kelimeleri / aktiflik — yalnız gönderilen alanlar değişir.
+
+    Verilmiş numaralar DEĞİŞMEZ (kod yalnız yeni kartta kullanılır). Silme yoktur:
+    `aktif=false` şirketi eşleşmeden çıkarır (o şirketin yeni kartı `SG` alır).
+    """
+    db = SessionLocal()
+    try:
+        satir = db.get(models.SigortaKisaKodu, kod_id)
+        if satir is None:
+            raise HTTPException(status_code=404, detail="Sigorta kodu bulunamadı")
+        alanlar = payload.model_dump(exclude_unset=True)
+        if alanlar.get("kod") is not None and alanlar["kod"] != satir.kod:
+            try:
+                satir.kod = ofis_no.sigorta_kodu_kullanilabilir(db, alanlar["kod"], haric_id=kod_id)
+            except ofis_no.KodCakismasi as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
+        if alanlar.get("ad") is not None:
+            satir.ad = alanlar["ad"].strip()
+        if alanlar.get("eslesme_anahtarlari") is not None:
+            satir.eslesme_anahtarlari = _anahtarlar(alanlar["eslesme_anahtarlari"], str(satir.kod))
+        if alanlar.get("aktif") is not None:
+            satir.aktif = alanlar["aktif"]
+        try:
+            db.commit()
+        except IntegrityError as e:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Kod zaten kayıtlı") from e
+        logger.info(f"[ADMIN-OFIS-NO] sigorta kodu #{kod_id} güncellendi: {sorted(alanlar)} (by={_admin_email(user)})")
+        return _sigorta_kodu_cikti(satir)
+    finally:
+        db.close()
+
+
+@router.get("/api/admin/kategori-kodlari")
+def api_kategori_kodlari(user: dict = Depends(require_admin)):
+    """Müvekkil kategorileri + ofis no kodları (`ofis_no_kodu` boşsa None)."""
+    db = SessionLocal()
+    try:
+        satirlar = (
+            db.query(models.ClientCategory)
+            .order_by(models.ClientCategory.sequence, models.ClientCategory.id)
+            .all()
+        )
+        return {"kategoriler": [
+            {"code": s.code, "name": s.name, "ofis_no_kodu": s.ofis_no_kodu, "active": bool(s.active)}
+            for s in satirlar
+        ]}
+    finally:
+        db.close()
+
+
+@router.patch("/api/admin/kategori-kodlari/{code}")
+def api_kategori_kodu_guncelle(
+    code: str,
+    payload: KategoriKoduGuncelle,
+    user: dict = Depends(require_admin),
+):
+    """Kategorinin ofis no kodunu değiştirir. Sigorta koduyla / `SG` ile çakışma 409.
+
+    Ayrı uç bilinçli: genel referans liste uçları (`/api/config/client_categories`)
+    yalnız kod+ad taşır ve silme sunar; ofis no kodu onlardan bağımsız yönetilir.
+    Verilmiş numaralar DEĞİŞMEZ.
+    """
+    db = SessionLocal()
+    try:
+        satir = db.query(models.ClientCategory).filter(models.ClientCategory.code == code).first()
+        if satir is None:
+            raise HTTPException(status_code=404, detail="Kategori bulunamadı")
+        try:
+            satir.ofis_no_kodu = ofis_no.kategori_kodu_kullanilabilir(db, payload.ofis_no_kodu)
+        except ofis_no.KodCakismasi as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        db.commit()
+        logger.info(f"[ADMIN-OFIS-NO] kategori {code} kodu → {satir.ofis_no_kodu} (by={_admin_email(user)})")
+        return {"code": satir.code, "name": satir.name, "ofis_no_kodu": satir.ofis_no_kodu,
+                "active": bool(satir.active)}
+    finally:
+        db.close()
 
 
 @router.get("/api/admin/deleted-records")
