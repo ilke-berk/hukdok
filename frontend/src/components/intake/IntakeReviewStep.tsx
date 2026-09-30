@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ExternalLink, FileText, Mail, Plus, RefreshCw, Save, Trash2, X,
+  AlertTriangle, ExternalLink, FileText, Mail, Plus, Save, Trash2, X,
 } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -15,11 +15,10 @@ import {
 import { IntakeFieldRow } from "@/components/intake/IntakeFieldRow";
 import { LawyerCombobox } from "@/components/LawyerCombobox";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
-import { useCases, CASE_SEQUENCE_ERROR } from "@/hooks/useCases";
+import { useCases, useOfisNoOnizleme, CASE_ALREADY_SAVED_MESSAGE } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
 import {
   ApplyConflictError,
-  CommitConflictError,
   policyKey,
   selectCommitPolicies,
   type CaseIntakeApplyRequest,
@@ -44,11 +43,10 @@ import {
 import { SESSION_EXPIRED_EVENT } from "@/lib/api";
 import { debounce, saveIntakeDraft, type ReviewSnapshot } from "@/lib/intakeDraft";
 import {
-  bestCategoryCode,
-  generateNameBlock,
-  generateTrackingNumber,
-  pickNameClient,
-  PROCESS_MAP,
+  istekKimligiGecerli,
+  ofisNoOnizlemeSorgusu,
+  yeniIstekKimligi,
+  YARGI_TURLERI,
 } from "@/lib/caseNumberUtils";
 import { predictDocTypeFromName } from "@/lib/predictDocType";
 
@@ -76,7 +74,7 @@ interface ReviewParty {
   tc_no: string;
   client_id: number | null;
   matchName: string | null;      // kayıtlı carideki kanonik ad
-  matchCategory: string | null;  // ofis no isim bloğu kişi/kurum kararı için
+  matchCategory: string | null;  // kayıtlı carinin kategorisi (gösterim/taslak)
   approved: boolean;
   fromDraft: boolean;
   // Enrich modu: davada zaten kayıtlı tarafın id'si — satır salt-okunur
@@ -118,7 +116,7 @@ const PARTY_TYPE_LABEL: Record<ReviewParty["party_type"], string> = {
 };
 
 // Hizmet türü bitmask etiketleri (NewCase HIZMET_TURLERI ile aynı sıra —
-// index = maskedeki hane; ofis no son bloğu bu maskeden üretilir)
+// index = maskedeki hane; `service_type` olarak kaydedilir)
 const SERVICE_TYPES = [
   { label: "Rapor", index: 0 },
   { label: "Danışmanlık", index: 1 },
@@ -128,7 +126,7 @@ const SERVICE_TYPES = [
 ];
 
 export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnrichExisting, initialReview, conflictNotice }: IntakeReviewStepProps) {
-  const { getClientCaseSequence } = useCases();
+  const { getOfisNoOnizleme } = useCases();
   const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
 
   // Faz 7 — enrich modu: mevcut davayı belgeden doldur/teyit. Yalnız fark
@@ -210,7 +208,6 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   const partiesApproved = parties.every(p => p.approved || !p.name.trim());
 
   // --- Hizmet Türü (bitmask, NewCase deseni) ---------------------------
-  // Seçilen her hizmet ofis numarasının son bloğuna (11000 gibi) yansır.
   const [serviceMask, setServiceMask] = useState(initialReview?.serviceMask ?? "00000");
   const toggleService = (index: number, checked: boolean) => {
     setServiceMask(prev => {
@@ -225,65 +222,30 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
     initialReview?.selectedLawyers ?? [],
   );
 
-  // --- Ofis No ---------------------------------------------------------
-  const [trackingNo, setTrackingNo] = useState(initialReview?.trackingNo ?? "");
-  const [isGeneratingNo, setIsGeneratingNo] = useState(false);
-  // G002: ofis no sırası alınamadıysa kayıt bloke (null = hata yok)
-  const [sequenceError, setSequenceError] = useState<string | null>(null);
-
-  const regenerateTracking = useCallback(async () => {
-    if (approvedClients.length === 0) {
-      setTrackingNo("");
-      return;
-    }
-    setIsGeneratingNo(true);
-    try {
-      const source = approvedClients.map(p => ({
-        name: p.name,
-        category: p.matchCategory || "",
-      }));
-      const named = pickNameClient(source);
-      const catCode = bestCategoryCode(source);
-      const seq = named.name
-        ? await getClientCaseSequence(named.name, generateNameBlock(named.name, named.category))
-        : 1;
-      setTrackingNo(generateTrackingNumber({
-        category: catCode,
-        clientName: named.name,
-        clientCategory: named.category,
-        sequence: seq,
-        processType: fieldStates.file_type?.value || "Hukuk",
-        serviceType: serviceMask,
-      }));
-      setSequenceError(null);
-    } finally {
-      setIsGeneratingNo(false);
-    }
-  }, [approvedClients, fieldStates.file_type?.value, serviceMask, getClientCaseSequence]);
-
-  /**
-   * G002: effect'ten çağrılan sarmalayıcı — sıra numarası hatası artık
-   * yutulmuyor; yakalanmazsa unhandled rejection olurdu. Hata bayrağı
-   * kaydetmeyi bloke eder (uydurma ofis numarasıyla kayıt YOK).
-   */
-  const regenerateTrackingSafely = useCallback(async () => {
-    try {
-      await regenerateTracking();
-    } catch (error) {
-      console.error(error);
-      setSequenceError(error instanceof Error ? error.message : CASE_SEQUENCE_ERROR);
-    }
-  }, [regenerateTracking]);
-
-  // İlk müvekkil onaylanınca (ve müvekkil seti / yargı türü / hizmet maskesi değiştikçe) üretilir.
-  // Enrich modunda dava zaten numaralı — üretim tamamen atlanır.
-  const approvedClientsKey = approvedClients.map(p => p.name).join("|");
+  // --- Ofis No (G237: önizleme — numarayı SUNUCU verir, karar 023) ------
+  // Sihirbaz numara ÜRETMEZ ve göndermez. Onaylı müvekkil seti / yargı türü /
+  // "Sigortalı" tarafı değiştikçe önizleme debounce'lu yenilenir; alınamaması
+  // kaydı ENGELLEMEZ. Enrich modunda dava zaten numaralı — önizleme kapalı.
   const fileTypeValue = fieldStates.file_type?.value;
-  useEffect(() => {
-    if (enrichMode) return;
-    regenerateTrackingSafely();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [approvedClientsKey, fileTypeValue, serviceMask]);
+  const onizlemeSorgusu = useMemo(
+    () => enrichMode ? null : ofisNoOnizlemeSorgusu({
+      clients: approvedClients.map(p => ({ name: p.name, client_id: p.client_id })),
+      fileType: fileTypeValue,
+      otherParties: parties
+        .filter(p => p.party_type !== "CLIENT" && p.approved)
+        .map(p => ({ name: p.name, role: p.role })),
+    }),
+    [enrichMode, approvedClients, fileTypeValue, parties],
+  );
+  const onizleme = useOfisNoOnizleme(onizlemeSorgusu, getOfisNoOnizleme);
+
+  // Kayıt isteğinin kimliği: review AÇILDIĞINDA bir kez belirlenir — taslaktan
+  // devamda taslağın kimliği (yanıtı kaybolmuş commit'in tekrarı ikinci kartı
+  // açmasın), yoksa yenisi. Aynı formun tekrar gönderiminde değişmez; başarılı
+  // commit'te sihirbaz sonuç adımına geçer, yeni sihirbaz yeni kimlik üretir.
+  const [istekKimligi] = useState(() =>
+    istekKimligiGecerli(initialReview?.istekKimligi) ? initialReview.istekKimligi : yeniIstekKimligi(),
+  );
 
   // --- Poliçeler -------------------------------------------------------
   // Varsayılan seçim: kayıtlı olmayan + müvekkil eşleşmeli poliçeler
@@ -346,7 +308,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
     parties: parties.map(({ id: _id, ...rest }) => rest),
     serviceMask,
     selectedLawyers,
-    trackingNo,
+    istekKimligi,
     selectedPolicies,
     documents,
     sendEmail,
@@ -363,7 +325,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   }
   useEffect(() => {
     saveDraftRef.current!();
-  }, [fieldStates, parties, serviceMask, selectedLawyers, trackingNo,
+  }, [fieldStates, parties, serviceMask, selectedLawyers,
       selectedPolicies, documents, sendEmail, emailTo]);
   useEffect(() => {
     const save = saveDraftRef.current!;
@@ -403,12 +365,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
     : progress.complete &&
       partiesApproved &&
       approvedClients.length > 0 &&
-      trackingNo !== "" &&
       (!sendEmail || emailTo.length > 0) &&
-      !isCommitting &&
-      !isGeneratingNo &&
-      // G002: sıra numarası doğrulanamadıysa kaydet düğmesi de kapalı kalır
-      !sequenceError;
+      // G237: ofis numarası kapısı YOK — önizleme alınamasa da kayıt yapılır
+      !isCommitting;
 
   const gateHint = enrichMode
     ? sendEmail && emailTo.length === 0
@@ -420,16 +379,12 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         ? "En az 1 müvekkil onaylanmalı"
         : !partiesApproved
           ? "Tüm taraf satırları onaylanmalı (ya da boş bırakılmalı)"
-          : sequenceError
-            ? "Ofis numarası doğrulanamadı — bağlantıyı kontrol edip yenileyin"
-            : trackingNo === ""
-            ? "Ofis numarası üretilemedi"
-            : sendEmail && emailTo.length === 0
-              ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
-              : null;
+          : sendEmail && emailTo.length === 0
+            ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
+            : null;
 
   // --- Commit ----------------------------------------------------------
-  const buildRequest = (tracking: string): CaseIntakeCommitRequest => {
+  const buildRequest = (): CaseIntakeCommitRequest => {
     const v = (key: string) => fieldStates[key]?.value?.trim() || "";
     const num = (key: string) => {
       const raw = v(key);
@@ -452,7 +407,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
 
     return {
       case: {
-        tracking_no: tracking,
+        // G237: `tracking_no` GÖNDERİLMEZ (numarayı sunucu verir); tekrar eden
+        // commit `istek_kimligi` ile tanınır.
+        istek_kimligi: istekKimligi,
         esas_no: v("esas_no") || null,
         status: "DERDEST", // sunucu zaten zorlar (karar 1)
         service_type: serviceMask,
@@ -548,52 +505,22 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
       }
       return;
     }
-    // G002: ofis numarası sunucudan doğrulanamadıysa kayıt BLOKE — sessiz `1`
-    // sırasıyla üretilmiş numara dolu çıkıp commit'i 409'a düşürüyordu.
-    if (sequenceError) {
-      toast.error("Kaydedilemez: ofis numarası doğrulanamadı", {
-        description: `${sequenceError} Bağlantı düzelince "Ofis No" alanını yenileyin.`,
-      });
-      return;
-    }
+    // G237: numara yeniden üretme / 409'da otomatik tekrar döngüsü KALKTI — numarayı
+    // kayıtla aynı transaction'da sunucu verir, "numara dolu" sınıfı yok. Hata sonrası
+    // elle yeniden deneme AYNI istek kimliğiyle gider (ikinci kart açılmaz).
     try {
-      await onCommit(buildRequest(trackingNo));
-    } catch (e) {
-      if (e instanceof CommitConflictError) {
-        // 409: hiçbir belge tüketilmedi (Faz 4 garantisi) — sequence yenile,
-        // ofis numarasını yeniden üret, BİR kez otomatik tekrar dene (karar 3).
-        try {
-          await regenerateTracking();
-          const source = approvedClients.map(p => ({ name: p.name, category: p.matchCategory || "" }));
-          const named = pickNameClient(source);
-          const seq = named.name
-            ? await getClientCaseSequence(named.name, generateNameBlock(named.name, named.category))
-            : 1;
-          const fresh = generateTrackingNumber({
-            category: bestCategoryCode(source),
-            clientName: named.name,
-            clientCategory: named.category,
-            sequence: seq,
-            processType: fieldStates.file_type?.value || "Hukuk",
-            serviceType: serviceMask,
-          });
-          setTrackingNo(fresh);
-          await onCommit(buildRequest(fresh));
-        } catch (retryErr) {
-          // G002: tekrar sırasında sıra numarası da alınamadıysa (sunucu hâlâ
-          // erişilemez) bayrağı kaldır — sonraki kaydet denemesi de bloke olsun.
-          if (retryErr instanceof Error && retryErr.message === CASE_SEQUENCE_ERROR) {
-            setSequenceError(retryErr.message);
-          }
-          toast.error("Kayıt başarısız", {
-            description: retryErr instanceof Error ? retryErr.message : "Ofis numarası çakışması çözülemedi.",
-          });
-        }
-      } else {
-        toast.error("Kayıt başarısız", {
-          description: e instanceof Error ? e.message : "Sunucu hatası oluştu.",
+      const result = await onCommit(buildRequest());
+      const kart = (result as { case?: { reused?: boolean; tracking_no?: string } } | null | undefined)?.case;
+      if (kart?.reused) {
+        // Aynı istek daha önce kaydedilmiş: sonuç adımı MEVCUT kartı gösterir.
+        toast.info(CASE_ALREADY_SAVED_MESSAGE, {
+          description: kart.tracking_no ? `Ofis No: ${kart.tracking_no} — mevcut kart açıldı.` : "Mevcut kart açıldı.",
         });
       }
+    } catch (e) {
+      toast.error("Kayıt başarısız", {
+        description: e instanceof Error ? e.message : "Sunucu hatası oluştu.",
+      });
     }
   };
 
@@ -772,7 +699,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                         state={fieldStates[def.key]}
                         field={def.draftKey ? draft.fields[def.draftKey] : undefined}
                         options={
-                          def.key === "file_type" ? Object.keys(PROCESS_MAP)
+                          def.key === "file_type" ? [...YARGI_TURLERI]
                             : def.key === "judicial_unit" ? judicialUnitOptions
                               : def.key === "sub_type" || def.key === "sub_type_extra" ? specialtyOptions
                                 : def.key === "subject" ? subjectOptions
@@ -830,7 +757,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
               />
             </div>
 
-            {/* Hizmet Türü — seçimler ofis numarasının son bloğunu şekillendirir */}
+            {/* Hizmet Türü */}
             <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-[var(--border)]">
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-2">
                 Hizmet Türü (Çoklu Seçim)
@@ -846,9 +773,6 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                   </label>
                 ))}
               </div>
-              <p className="font-mono text-[10px] text-[var(--fg-subtle)] mt-2">
-                Seçimler ofis numarasının son bloğuna (11000) yansır.
-              </p>
             </div>
           </div>
           )}
@@ -858,28 +782,30 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
           <div className="px-5 py-4 border-t border-[var(--border)]">
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
-                Ofis No (Takip Numarası)
+                Ofis No (Kaydedince Verilecek)
               </span>
-              <button
-                type="button"
-                onClick={regenerateTrackingSafely}
-                disabled={isGeneratingNo || approvedClients.length === 0}
-                title="Sıra numarasını yeniden sorgula"
-                className="w-7 h-7 grid place-items-center text-[var(--fg-subtle)] hover:text-[var(--brand)] hover:bg-[var(--brand-soft)] transition-colors disabled:opacity-30"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isGeneratingNo ? "animate-spin" : ""}`} />
-              </button>
             </div>
+            {/* G237: salt-okunur ÖNİZLEME — numarayı kayıt anında sunucu verir */}
             <Input
-              value={trackingNo}
+              value={onizleme.onizleme ?? ""}
               readOnly
-              placeholder="İlk müvekkil onaylanınca üretilir"
+              aria-label="Ofis no önizlemesi"
+              data-testid="ofis-no-onizleme"
+              placeholder={
+                approvedClients.length === 0
+                  ? "İlk müvekkil onaylanınca gösterilir"
+                  : onizleme.isLoading ? "Önizleme alınıyor…" : "Numarayı kaydederken sunucu verir"
+              }
               className="h-9 font-mono text-[13px] border-[var(--border-strong)] bg-[var(--bg-sunken)]"
             />
-            {/* G002: sıra numarası alınamadı — gösterilen numara güvenilmez, kayıt bloke */}
-            {sequenceError && (
-              <p role="alert" className="mt-1.5 text-[12px] text-[var(--danger,#b3261e)]">
-                {sequenceError} Numara doğrulanana kadar kayıt yapılamaz.
+            <p className="mt-1.5 text-[12px] text-[var(--fg-muted)]">
+              Önizlemedir; kesin numarayı kayıt anında sunucu verir.
+              {onizleme.sigortaliEksik && " Sigortacı müvekkilde isim bloğu \"Sigortalı\" tarafından gelir — taraflara ekleyin."}
+            </p>
+            {/* Önizleme alınamadı: yalnız bilgi — kayıt ENGELLENMEZ */}
+            {onizleme.error && (
+              <p role="status" data-testid="ofis-no-onizleme-hatasi" className="mt-1.5 text-[12px] text-[var(--fg-muted)]">
+                {onizleme.error}
               </p>
             )}
           </div>

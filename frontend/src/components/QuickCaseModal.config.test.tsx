@@ -24,13 +24,15 @@ vi.mock("@azure/msal-react", () => ({ useMsal: () => msal }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 const casesApi = vi.hoisted(() => ({
   saveCaseAndReturn: async () => null,
-  getClientCaseSequence: async () => 1,
+  // G237 (test taşıma): `getClientCaseSequence` / `CASE_SEQUENCE_ERROR` kalktı —
+  // modal numara üretmez, önizleme ucunu kullanır.
+  getOfisNoOnizleme: async () => ({ onizleme: "ONIZLEME-0001" }),
   checkDuplicateCase: async () => [],
   isLoading: false,
 }));
-vi.mock("@/hooks/useCases", () => ({
+vi.mock("@/hooks/useCases", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useCases")>()),
   useCases: () => casesApi,
-  CASE_SEQUENCE_ERROR: "Sıra numarası alınamadı.",
   CASE_DUPLICATE_CHECK_ERROR: "Mükerrer kontrolü yapılamadı.",
 }));
 // `clients` açılış effect'inin bağımlılığında — kimlik sabit.

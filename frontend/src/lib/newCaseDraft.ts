@@ -1,3 +1,4 @@
+import { istekKimligiGecerli, yeniIstekKimligi } from "@/lib/caseNumberUtils";
 import { createDraftStore } from "@/lib/formDraft";
 
 // =====================================================================
@@ -6,11 +7,14 @@ import { createDraftStore } from "@/lib/formDraft";
 // NewCase.tsx'te doldurulan uzun form sekme yenilenmesinde/kaza
 // navigasyonunda kaybolmasın diye sessionStorage'a alınır.
 //
-// DİKKAT — ofis numarası (tracking_no) taslakta TAŞINMAZ. Numara sunucudan
-// alınan müvekkil sıra numarasına bağlıdır (G002: alınamazsa kayıt bloke);
-// saklanan bayat bir numara dolu bir ofis numarasını önerip 409'a düşürürdü.
-// Geri yüklemede numara sunucudan YENİDEN üretilir — "taslak veri taşır,
-// süreç yeniden koşar" kuralı.
+// DİKKAT — ofis numarası (tracking_no) taslakta TAŞINMAZ. Numarayı kayıt
+// anında SUNUCU verir (G236/G237, karar 023); form yalnız önizleme gösterir
+// ve geri yüklemede önizleme yeniden istenir.
+//
+// İstek kimliği (`istekKimligi`) ise TAŞINIR: taslak, gönderilmiş ama yanıtı
+// kaybolmuş bir kaydın devamı olabilir — aynı kimlikle tekrar gönderim ikinci
+// kartı açmaz (sunucu ilk kartı `reused: true` ile döndürür). Eski taslakta
+// alan yoktur; geri yüklemede yeni kimlik üretilir.
 // =====================================================================
 
 export const NEW_CASE_DRAFT_KEY = "hukdok.newcase-draft.v1";
@@ -62,6 +66,19 @@ export interface NewCaseDraftData {
   clients: NewCaseDraftParty[];
   counterParties: NewCaseDraftParty[];
   thirdParties: NewCaseDraftParty[];
+  /** Kayıt isteğinin kimliği (UUID) — kirlilik SAYILMAZ; eski taslakta yoktur. */
+  istekKimligi?: string;
+}
+
+/**
+ * Geri yüklenen taslağın istek kimliği: taslakta geçerli bir UUID varsa O
+ * kullanılır (yarım kalan gönderimin devamı), yoksa/bozuksa `uret()` ile yenisi.
+ */
+export function taslakIstekKimligi(
+  data: Pick<NewCaseDraftData, "istekKimligi"> | null | undefined,
+  uret: () => string = yeniIstekKimligi,
+): string {
+  return istekKimligiGecerli(data?.istekKimligi) ? data.istekKimligi : uret();
 }
 
 /** Boş formun referans değerleri — kirlilik denetimi buna göre yapılır. */

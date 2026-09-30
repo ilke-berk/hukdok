@@ -37,7 +37,9 @@ const casesApi = vi.hoisted(() => ({
   deleteCase: async () => true,
   getCase: async () => null,
   checkDuplicateCase: async () => [],
-  getClientCaseSequence: async () => 1,
+  // G237 (test taşıma): `getClientCaseSequence` kalktı; form önizleme ucunu kullanır
+  // (düzenleme modunda hiç çağrılmaz — aşağıdaki test bekçisi).
+  getOfisNoOnizleme: vi.fn(async () => ({ onizleme: "ONIZLEME-0001" })),
   isLoading: false,
 }));
 vi.mock("@/hooks/useCases", async (importOriginal) => ({
@@ -133,7 +135,9 @@ describe("NewCase — düzenleme modu tek kurulum (G186 F10)", () => {
   it("ilk commit'te form alanları dolu gelir; hiçbir commit'te boş ara değer görünmez", () => {
     const esasValues: Array<{ phase: string; value: string | undefined }> = [];
     renderEdit(phase => {
-      esasValues.push({ phase, value: inputByPlaceholder("2024/123")?.value });
+      // G237 (test taşıma): esas no yer tutucusu "2024/123" → "Örn. 2026/123"
+      // (kaynakta `2024/` kalıbı kalmasın); seçici yeni yer tutucuya çevrildi.
+      esasValues.push({ phase, value: inputByPlaceholder("Örn. 2026/123")?.value });
     });
 
     expect(esasValues.length).toBeGreaterThan(0);
@@ -147,8 +151,19 @@ describe("NewCase — düzenleme modu tek kurulum (G186 F10)", () => {
   it("düzenleme formu değerleri yalnız BİR kez hesaplanır (effect kopyası ve render başına yeniden hesap yok)", () => {
     renderEdit();
 
-    expect(inputByPlaceholder("2024/123")?.value).toBe("2026/55");
+    expect(inputByPlaceholder("Örn. 2026/123")?.value).toBe("2026/55");
     expect(vi.mocked(editModeFormValues)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(editModeFormValues)).toHaveBeenCalledWith(EDIT_CASE);
+  });
+
+  // G237: düzenlemede kartın MEVCUT numarası gösterilir; önizleme istenmez.
+  it("düzenleme modunda mevcut ofis numarası gösterilir, önizleme ucu çağrılmaz", async () => {
+    renderEdit();
+    await act(async () => { await new Promise(r => setTimeout(r, 450)); });
+
+    const ofisNo = container.querySelector("[data-testid=ofis-no]");
+    expect(ofisNo?.textContent).toBe("2026.00042.HUK.01.00100");
+    expect(ofisNo?.getAttribute("data-durum")).toBe("kayitli");
+    expect(casesApi.getOfisNoOnizleme).not.toHaveBeenCalled();
   });
 });

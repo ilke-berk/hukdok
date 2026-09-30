@@ -19,7 +19,9 @@ const form = (over: Partial<NewCaseFormValues> = {}): NewCaseFormValues => ({
 });
 
 const input = (over: Partial<CasePayloadInput> = {}): CasePayloadInput => ({
-  trackingNo: "2026.00001.HUK.01.00100",
+  // G237 (test taşıma): girdide ofis numarası (eski `trackingNo`) YOK — numarayı
+  // sunucu verir; yeni kayıt girdisi yerine istek kimliği taşır.
+  istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a",
   status: "DERDEST",
   formData: form(),
   clients: [{ name: "", role: "Davacı" }],
@@ -86,8 +88,11 @@ describe("buildCasePayload — gövdenin geri kalanı (refactor regresyonu)", ()
       }),
     }));
 
+    // G237 (test taşıma): eski beklenti `tracking_no: "2026.00001.HUK.01.00100"` idi —
+    // numara artık gövdeye GİRMEZ; yerine istek kimliği gider.
+    expect(payload).not.toHaveProperty("tracking_no");
     expect(payload).toMatchObject({
-      tracking_no: "2026.00001.HUK.01.00100",
+      istek_kimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a",
       status: "DANIŞ",
       esas_no: "2026/123",
       file_type: "Hukuk",
@@ -129,5 +134,34 @@ describe("buildCasePayload — gövdenin geri kalanı (refactor regresyonu)", ()
     const payload = buildCasePayload(input());
 
     expect(payload.parties).toEqual([]);
+  });
+});
+
+// G237: numarayı sunucu verir (karar 023) — istek gövdesi numara taşımaz, kimlik taşır.
+describe("buildCasePayload — ofis numarası yok, istek kimliği var (G237)", () => {
+  it("hiçbir girdide gövdeye tracking_no girmez", () => {
+    const payloads = [
+      buildCasePayload(input()),
+      buildCasePayload(input({ status: "DANIŞ", clients: [{ name: "Ahmet Yılmaz", role: "Davacı" }] })),
+      buildCasePayload(input({ istekKimligi: undefined })),
+    ];
+    for (const payload of payloads) {
+      expect(Object.keys(payload)).not.toContain("tracking_no");
+      expect(JSON.stringify(payload)).not.toContain("tracking_no");
+    }
+  });
+
+  it("yeni kayıtta istek kimliği gövdeye aynen girer; aynı form aynı kimliği üretir", () => {
+    const ilk = buildCasePayload(input());
+    const tekrar = buildCasePayload(input());
+
+    expect(ilk.istek_kimligi).toBe("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a");
+    expect(tekrar.istek_kimligi).toBe(ilk.istek_kimligi);
+  });
+
+  it("düzenlemede (kimlik verilmez) alan gövdeye hiç girmez", () => {
+    const payload = buildCasePayload(input({ istekKimligi: undefined }));
+
+    expect(payload).not.toHaveProperty("istek_kimligi");
   });
 });

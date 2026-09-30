@@ -1,3 +1,4 @@
+import { istekKimligiGecerli } from "@/lib/caseNumberUtils";
 import { areDraftsSuppressed } from "@/lib/formDraft";
 import type { MergeDraft } from "@/lib/caseIntake";
 import type { IntakeFieldState } from "@/lib/caseIntakeFields";
@@ -46,7 +47,11 @@ export interface ReviewSnapshot {
   parties: DraftParty[];
   serviceMask: string;
   selectedLawyers: Array<{ name: string; lawyer_id?: number | null }>;
-  trackingNo: string;
+  // G237: ofis numarası taslakta TAŞINMAZ — numarayı kayıt anında sunucu verir.
+  // Eski taslaktaki `trackingNo` alanı yüklemede atılır (loadIntakeDraft).
+  /** Kayıt isteğinin kimliği (UUID): taslaktan devamda AYNI kimlikle gönderilir —
+   *  yanıtı kaybolmuş bir commit'in tekrarı ikinci kartı açmaz. Eski taslakta yoktur. */
+  istekKimligi?: string;
   selectedPolicies: Record<string, boolean>;
   documents: DraftDocument[];
   sendEmail: boolean;
@@ -106,6 +111,11 @@ export function loadIntakeDraft(): IntakeDraftSnapshot | null {
       storage.removeItem(INTAKE_DRAFT_KEY); // şema uyuşmazlığı → bayat taslak atılır
       return null;
     }
+    // G237: eski sürümün sakladığı ofis numarası yok sayılır (numarayı sunucu verir);
+    // bozuk/eksik istek kimliği de taşınmaz — review yenisini üretir.
+    const { trackingNo: _eskiNumara, istekKimligi, ...review } =
+      parsed.review as ReviewSnapshot & { trackingNo?: unknown };
+    parsed.review = istekKimligiGecerli(istekKimligi) ? { ...review, istekKimligi } : review;
     return parsed;
   } catch {
     storage.removeItem(INTAKE_DRAFT_KEY);

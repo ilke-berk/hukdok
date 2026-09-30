@@ -8,6 +8,7 @@ import {
   NEW_CASE_DRAFT_KEY,
   NEW_CASE_DRAFT_MAX_AGE_MS,
   newCaseDraftStore,
+  taslakIstekKimligi,
   type NewCaseDraftData,
 } from "./newCaseDraft";
 
@@ -109,6 +110,33 @@ describe("newCaseDraftStore", () => {
     data.counterParties[0] = { name: "Karşı Taraf A.Ş.", role: "Davalı", tc_no: "" };
     newCaseDraftStore.save(data);
     expect(newCaseDraftStore.load()?.data).toEqual(data);
+  });
+
+  // --- G237: istek kimliği taslakla taşınır ---
+  it("istek kimliği taslakta taşınır ve geri okunur", () => {
+    const data = { ...pristine(), istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a" };
+    data.clients[0].name = "Ahmet Yılmaz";
+    newCaseDraftStore.save(data);
+    expect(newCaseDraftStore.load()?.data.istekKimligi).toBe("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a");
+  });
+
+  it("yalnız istek kimliği taşıyan boş form kirli sayılmaz", () => {
+    expect(isNewCaseDraftDirty({ ...pristine(), istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a" })).toBe(false);
+  });
+
+  it("taslakIstekKimligi: taslakta geçerli kimlik varsa O kullanılır", () => {
+    const uret = () => "yeni-kimlik";
+    expect(taslakIstekKimligi({ istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a" }, uret))
+      .toBe("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a");
+  });
+
+  it("taslakIstekKimligi: eski taslakta (alan yok / bozuk) yeni kimlik üretilir", () => {
+    const uret = () => "yeni-kimlik";
+    expect(taslakIstekKimligi(pristine(), uret)).toBe("yeni-kimlik");
+    expect(taslakIstekKimligi({ istekKimligi: "2026.00001.HUK" }, uret)).toBe("yeni-kimlik");
+    expect(taslakIstekKimligi(null, uret)).toBe("yeni-kimlik");
+    // Varsayılan üretici gerçek bir UUID verir
+    expect(taslakIstekKimligi(pristine())).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 
   it("bayat taslak (sınırın ötesi) okunmaz", () => {

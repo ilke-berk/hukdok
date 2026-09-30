@@ -3,7 +3,10 @@ import { useNavigate, useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useClients } from "@/hooks/useClients";
 import { useConfig } from "@/hooks/useConfig";
-import { useCases, DuplicateCaseMatch, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "@/hooks/useCases";
+import {
+    useCases, useOfisNoOnizleme, DuplicateCaseMatch,
+    CASE_ALREADY_SAVED_MESSAGE, CASE_DUPLICATE_CHECK_ERROR,
+} from "@/hooks/useCases";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Gavel, User, FileText, Scale, Save, Briefcase, Building, RefreshCw, Sparkles, Loader2, Check, ChevronsUpDown, Plus, X, Calendar, Banknote, Coins, Heart, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { generateTrackingNumber, generateNameBlock, pickNameClient, bestCategoryCode } from "@/lib/caseNumberUtils";
+import { ofisNoOnizlemeSorgusu, yeniIstekKimligi } from "@/lib/caseNumberUtils";
 import { cn } from "@/lib/utils";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
@@ -29,6 +32,7 @@ import {
     EMPTY_NEW_CASE_FORM,
     isNewCaseDraftDirty,
     newCaseDraftStore,
+    taslakIstekKimligi,
     type NewCaseDraftData,
     type NewCaseFormValues,
 } from "@/lib/newCaseDraft";
@@ -85,7 +89,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     const queryClient = useQueryClient();
 
     // API Hooks
-    const { saveCase, updateCase, deleteCase, getCase, checkDuplicateCase, isLoading: isSaving } = useCases();
+    const { saveCase, updateCase, deleteCase, getCase, checkDuplicateCase, getOfisNoOnizleme, isLoading: isSaving } = useCases();
     const { clients: dbClients } = useClients();
     const {
         caseSubjects, lawyers,
@@ -114,10 +118,16 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     // state'ler onu yalnız mount'ta lazy initializer ile BİR kez okur (G186 F10).
     const isEditMode = !!editModeCase;
 
-    // Generate case tracking ID using central utility
-    const [caseId, setCaseId] = useState(() => editModeCase?.tracking_no || generateTrackingNumber());
-    // G002: ofis no sırası alınamadıysa dolu (yanlış) numarayla kayıt yapılmasın
-    const [sequenceError, setSequenceError] = useState<string | null>(null);
+    // G237: ofis numarasını SUNUCU verir (karar 023). Form numara ÜRETMEZ: yeni kayıtta
+    // yalnız önizleme gösterir, kayıttan sonra yanıttaki gerçek numarayı. `savedCase`
+    // kaydın yapıldığı önizleme sorgusunu da tutar — müvekkil/tür sonradan değişirse
+    // (yeni bir kart hazırlanıyor) ekran yeniden önizlemeye döner.
+    const [savedCase, setSavedCase] = useState<{ trackingNo: string; sorgu: string | null } | null>(null);
+    // Kayıt isteğinin kimliği: form açılınca BİR kez üretilir, aynı formun tekrar
+    // gönderiminde aynı kalır; başarılı kayıt / "Formu temizle" sonrası yenilenir.
+    // Ref: kimliğin yenilenmesi taslak yazımını tetiklemesin (clear() kilidi açılırdı).
+    const istekKimligiRef = useRef("");
+    if (!istekKimligiRef.current) istekKimligiRef.current = yeniIstekKimligi();
     const [isLoading, _setIsLoading] = useState(false);
     const [caseStatus, setCaseStatus] = useState(() => editModeCase?.status || "DERDEST");
     const [caseHistory, setCaseHistory] = useState<CaseHistoryEntry[]>(() => editModeCase?.history || []);
@@ -216,7 +226,27 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
         clients,
         counterParties,
         thirdParties,
+        // Kimlik ref'ten okunur: taslak her yazıldığında güncel kimliği taşır,
+        // ama kimliğin yenilenmesi tek başına yazım tetiklemez.
+        istekKimligi: istekKimligiRef.current,
     }), [caseStatus, formData, selectedLawyers, clients, counterParties, thirdParties]);
+
+    // --- G237: ofis numarası önizlemesi ---------------------------------
+    // Müvekkil / yargı türü / "Sigortalı" tarafı değiştikçe debounce'lu yenilenir.
+    // Düzenlemede kapalı (numara sabit). Önizleme alınamaması kaydı ENGELLEMEZ.
+    const onizlemeSorgusu = useMemo(
+        () => isEditMode ? null : ofisNoOnizlemeSorgusu({
+            clients,
+            dbClients,
+            fileType: formData.fileType,
+            otherParties: [...counterParties, ...thirdParties],
+        }),
+        [isEditMode, clients, dbClients, formData.fileType, counterParties, thirdParties],
+    );
+    const onizleme = useOfisNoOnizleme(onizlemeSorgusu, getOfisNoOnizleme);
+    // Kayıt sonrası sunucunun verdiği numara — form aynı kaldığı sürece gösterilir.
+    const kaydedilenNo = savedCase && savedCase.sorgu === onizlemeSorgusu ? savedCase.trackingNo : null;
+    const gosterilenNo = isEditMode ? (editModeCase?.tracking_no ?? "") : (kaydedilenNo ?? onizleme.onizleme ?? "");
 
     const draftDirty = !isEditMode && isNewCaseDraftDirty(draftData);
     const draft = useFormDraft(newCaseDraftStore, {
@@ -263,59 +293,12 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     };
 
 
-    const { getClientCaseSequence } = useCases();
-
     // Yardımcı: Hizmet bitmask'ini güncelle (11000 formatı)
     const handleServiceToggle = (index: number, checked: boolean) => {
         const currentMask = formData.serviceType.split("");
         currentMask[index] = checked ? "1" : "0";
         const newMask = currentMask.join("");
         setFormData({ ...formData, serviceType: newMask });
-        updateTrackingNumber(undefined, newMask);
-    };
-
-    // Yardımcı: Takip Numarasını Güncelle
-    // clientsOverride: setClients henüz commit olmadan önce güncel listeyi iletmek için
-    const updateTrackingNumber = async (
-        fType?: string,
-        sType?: string,
-        clientsOverride?: Array<{ name: string; category?: string }>
-    ) => {
-        if (isEditMode) return;
-
-        const source = (clientsOverride || clients).filter(c => c.name);
-        const named = pickNameClient(source);
-        const catCode = bestCategoryCode(source);
-        const cName = named.name || "";
-
-        let seq = 1;
-        if (cName) {
-            // İsim bloğu (blok2) ile sorgula: backend mevcut en yüksek sıra numarasından
-            // devam eder, dolu ofis numarası önerilmez.
-            try {
-                seq = await getClientCaseSequence(cName, generateNameBlock(cName, named.category));
-            } catch (error) {
-                // G002: sıra numarası alınamadıysa uydurma numara ÜRETİLMEZ —
-                // handleSubmit bu bayrağı görüp kaydı bloke eder.
-                console.error(error);
-                setSequenceError(error instanceof Error ? error.message : CASE_SEQUENCE_ERROR);
-                toast.error("Ofis numarası üretilemedi", {
-                    description: error instanceof Error ? error.message : CASE_SEQUENCE_ERROR,
-                });
-                return;
-            }
-        }
-        setSequenceError(null);
-
-        const tracking = generateTrackingNumber({
-            category: catCode,
-            clientName: cName,
-            clientCategory: named.category,
-            sequence: seq,
-            processType: fType || formData.fileType,
-            serviceType: sType || formData.serviceType
-        });
-        setCaseId(tracking);
     };
 
     // Taslak şeridindeki "geri yükle". Sessiz sihir YOK: kullanıcı açıkça basar.
@@ -331,13 +314,15 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
         setCounterParties(data.counterParties.length > 0 ? data.counterParties : [{ name: "", role: "Davalı" }]);
         setThirdParties(data.thirdParties);
 
-        // Ofis numarası taslakta TAŞINMAZ (bkz. newCaseDraft.ts): sunucudan
-        // yeniden üretilir. Sıra alınamazsa updateTrackingNumber sequenceError
-        // kurar ve G002 kuralı kaydı bloke eder.
-        updateTrackingNumber(data.formData.fileType, data.formData.serviceType, data.clients);
+        // Ofis numarası taslakta TAŞINMAZ (bkz. newCaseDraft.ts): önizleme geri
+        // yüklenen müvekkil/türle kendiliğinden yenilenir, numarayı kayıtta sunucu verir.
+        // İstek kimliği ise taslağınkidir — taslak, yanıtı kaybolmuş bir gönderimin
+        // devamıysa aynı kimlik ikinci kartı açtırmaz (eski taslakta yoksa yenisi).
+        istekKimligiRef.current = taslakIstekKimligi(data);
+        setSavedCase(null);
 
         toast.success("Taslak geri yüklendi", {
-            description: "Ofis numarası sunucudan yeniden alınıyor.",
+            description: "Ofis numarası kaydederken sunucu tarafından verilir.",
         });
     };
 
@@ -374,15 +359,8 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     const handleSubmit = async (e?: React.FormEvent, forceSave = false) => {
         if (e) e.preventDefault();
 
-        // G002: ofis numarası sunucudan alınamadıysa kayıt BLOKE — aksi halde
-        // dolu bir numarayla kaydedip 409'a düşülüyor ya da yanlış numara açılıyordu.
-        // (Düzenlemede numara sabittir, kontrol yalnız yeni kayıtta.)
-        if (!isEditMode && sequenceError) {
-            toast.error("Kaydedilemez: ofis numarası doğrulanamadı", {
-                description: `${sequenceError} Bağlantı düzelince müvekkil alanını yeniden seçin.`,
-            });
-            return;
-        }
+        // G237: ofis numarası kapısı YOK — önizleme alınamasa da kayıt yapılır,
+        // numarayı kayıtla aynı transaction'da sunucu verir (karar 023).
 
         // G019: zorunlu alan listesi sunucudan alınamadıysa uyarı kapısı SESSİZCE
         // açılıyordu (boş liste = "hiçbir alan zorunlu değil"). Kayıt BLOKE.
@@ -442,7 +420,9 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
 
         // Prepare data for backend
         const caseData = buildCasePayload({
-            trackingNo: caseId,
+            // Yalnız yeni kayıtta: tekrar eden gönderim (çift tık, hata sonrası
+            // yeniden deneme) aynı kimlikle gider, sunucu ikinci kartı açmaz.
+            istekKimligi: isEditMode ? undefined : istekKimligiRef.current,
             status: caseStatus,
             formData,
             clients,
@@ -454,6 +434,10 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
 
         let success: boolean;
         let errorMessage: string | undefined;
+        // Numara sunucunun yanıtından okunur (düzenlemede kartın mevcut numarası).
+        let savedNo = editModeCase?.tracking_no ?? "";
+        let savedId: number | undefined;
+        let reused = false;
         if (isEditMode && editModeCase?.id) {
             const result = await updateCase(editModeCase.id, caseData);
             success = result.ok;
@@ -462,6 +446,9 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
             const result = await saveCase(caseData);
             success = result.ok;
             errorMessage = result.error;
+            savedNo = result.tracking_no ?? "";
+            savedId = result.id;
+            reused = result.reused === true;
         }
 
         if (success) {
@@ -469,8 +456,24 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
             // kalan form" diye geri teklif edilirdi).
             draft.clear();
             queryClient.invalidateQueries({ queryKey: ["clients"] });
+            if (!isEditMode) {
+                // İstek tamamlandı: sıradaki kayıt yeni kimlikle gider.
+                istekKimligiRef.current = yeniIstekKimligi();
+                setSavedCase(savedNo ? { trackingNo: savedNo, sorgu: onizlemeSorgusu } : null);
+            }
+            if (reused) {
+                // Aynı istek daha önce kaydedilmiş (yanıtı kaybolan gönderim / çift tık):
+                // ikinci "kaydedildi" akışı yerine mevcut kart açılır.
+                toast.info(CASE_ALREADY_SAVED_MESSAGE, {
+                    description: savedNo ? `Ofis No: ${savedNo} — mevcut kart açılıyor.` : "Mevcut kart açılıyor.",
+                });
+                if (savedId != null) navigate(`/cases/${savedId}`);
+                return;
+            }
             toast.success(isEditMode ? "Dava kartı güncellendi!" : "Dava kartı veritabanına kaydedildi!", {
-                description: `Ofis No: ${caseId} bilgileri başarıyla işlendi.`
+                description: savedNo
+                    ? `Ofis No: ${savedNo} bilgileri başarıyla işlendi.`
+                    : "Bilgiler başarıyla işlendi."
             });
 
             if (isEditMode && editModeCase?.id) {
@@ -516,8 +519,10 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
 
         setCaseStatus("DERDEST");
 
-        // Generate new random ID
-        setCaseId(`2024/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`);
+        // G237: numara üretilmez (sunucu verir). Temizlenen form yeni bir kayıttır —
+        // istek kimliği yenilenir, kaydedilmiş numara gösterimi düşer.
+        istekKimligiRef.current = yeniIstekKimligi();
+        setSavedCase(null);
 
         // Kullanıcı formu bilinçli temizledi — taslak da gitsin.
         draft.clear();
@@ -556,7 +561,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                         <div className="text-[13px] leading-relaxed">
                             <span className="font-semibold text-[var(--fg)]">Yarım kalan dava kartı bulundu</span>
                             <span className="text-[var(--fg-muted)]">
-                                {" "}— {describeDraftAge(draft.pending.ageMs)} kaydedildi. Geri yüklerseniz ofis numarası sunucudan yeniden alınır.
+                                {" "}— {describeDraftAge(draft.pending.ageMs)} kaydedildi. Ofis numarasını kaydederken sunucu verir.
                             </span>
                         </div>
                         <div className="ml-auto flex items-center gap-2">
@@ -662,7 +667,6 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                                         updated.splice(index + 1, 0, ...names.slice(1).map(n => ({ name: toTitleCase(n), role: updated[index].role })));
                                                                                     }
                                                                                     setClients(updated);
-                                                                                    updateTrackingNumber(undefined, undefined, updated);
 
                                                                                     const newOpen = [...clientComboboxesOpen];
                                                                                     newOpen[index] = false;
@@ -683,7 +687,6 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                                     updated[index].name = toTitleCase(dbClient.name);
                                                                                     updated[index].category = dbClient.category;
                                                                                     setClients(updated);
-                                                                                    updateTrackingNumber(undefined, undefined, updated);
 
                                                                                     const newOpen = [...clientComboboxesOpen];
                                                                                     newOpen[index] = false;
@@ -1024,7 +1027,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                 <FileText className="w-3 h-3" /> Esas No
                                             </Label>
                                             <Input
-                                                placeholder="2024/123"
+                                                placeholder="Örn. 2026/123"
                                                 value={formData.esasNo}
                                                 onChange={(e) => setFormData({ ...formData, esasNo: e.target.value })}
                                                 className="font-mono bg-[var(--bg)] border-[var(--border-strong)]"
@@ -1097,7 +1100,6 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                     value={formData.fileType}
                                                     onValueChange={(v) => {
                                                         setFormData({ ...formData, fileType: v, subType: "", judicialUnit: "" });
-                                                        updateTrackingNumber(v);
                                                         triggerShake();
                                                     }}
                                                 >
@@ -1369,21 +1371,37 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div className="text-lg sm:text-xl md:text-2xl font-mono font-bold break-words leading-tight">
-                                    {caseId.split('.').map((part, i, arr) => (
-                                        <span key={i} className="whitespace-nowrap">
-                                            {part}
-                                            {i < arr.length - 1 && '.\u200B'}
+                                {/* G237: salt-okunur. Yeni kayıtta önizleme, kayıttan sonra sunucunun
+                                    verdiği numara; yeni format düz metin basılır. */}
+                                <div
+                                    data-testid="ofis-no"
+                                    data-durum={isEditMode ? "kayitli" : kaydedilenNo ? "kaydedildi" : "onizleme"}
+                                    className="text-lg sm:text-xl md:text-2xl font-mono font-bold break-words leading-tight"
+                                >
+                                    {gosterilenNo || (
+                                        <span className="text-sm font-sans font-normal text-muted-foreground">
+                                            {onizleme.isLoading ? "Önizleme alınıyor…" : "Müvekkil seçilince gösterilir"}
                                         </span>
-                                    ))}
+                                    )}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-2 italic">
-                                    Sistem tarafından otomatik atanan takip numarasıdır.
+                                    {isEditMode
+                                        ? "Sistem tarafından otomatik atanan takip numarasıdır."
+                                        : kaydedilenNo
+                                            ? "Kaydedildi — sunucunun verdiği takip numarasıdır."
+                                            : gosterilenNo
+                                                ? "Kaydedince verilecek numaranın önizlemesidir; kesin numarayı kayıt anında sunucu verir."
+                                                : "Numarayı kaydederken sunucu verir."}
                                 </p>
-                                {/* G002: sıra numarası alınamadı — gösterilen numara GÜNCEL DEĞİL, kayıt bloke */}
-                                {sequenceError && !isEditMode && (
-                                    <p role="alert" className="text-xs text-destructive mt-2">
-                                        {sequenceError} Numara doğrulanana kadar kayıt yapılamaz.
+                                {/* Önizleme alınamadı: yalnız BİLGİ — kayıt engellenmez (numarayı sunucu verir). */}
+                                {!isEditMode && !kaydedilenNo && onizleme.sigortaliEksik && (
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                        Sigortacı müvekkilde numaranın isim bloğu "Sigortalı" tarafından gelir — taraflara ekleyin.
+                                    </p>
+                                )}
+                                {!isEditMode && !kaydedilenNo && onizleme.error && (
+                                    <p role="status" data-testid="ofis-no-onizleme-hatasi" className="text-xs text-muted-foreground mt-2">
+                                        {onizleme.error}
                                     </p>
                                 )}
                             </Card>

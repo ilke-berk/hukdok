@@ -1,206 +1,98 @@
-// DİKKAT: eşleşme includes ile yapılır ve sıra önemlidir — "Özel Hastane",
-// "Hasta"dan ÖNCE gelmeli (aksi halde substring olarak H1'e düşer).
-export const CATEGORY_MAP: Record<string, string> = {
-    "Doktor": "D1",
-    "Sağlık Çalışanı": "D2",
-    "Özel Hastane": "H2",
-    "Sigorta": "S0",
-    "Hasta": "H1",
-    "Diğer": "X1"
-};
+// =====================================================================
+// Ofis numarası — istemci tarafı (G237, karar 023).
+//
+// Numarayı SUNUCU verir: kanonik kaynak `backend/services/ofis_no.py`. Bu dosyada
+// eskiden duran istemci üreticisi (kategori/sigorta/yargı kod haritaları, isim
+// bloğu, sıra numarasıyla numara kurma, biçim doğrulama) KALDIRILDI — iki kopya
+// ayrışıyor, istemcinin kurduğu numara dolu çıkıp kaydı 409'a düşürüyordu.
+//
+// Burada yalnız şunlar kalır:
+//   - YARGI_TURLERI: sihirbazın yargı türü seçicisi (yalnız AD listesi, kod yok),
+//   - ofisNoOnizlemeSorgusu: `GET /api/cases/ofis-no-onizleme` sorgu dizgisi,
+//   - yeniIstekKimligi: kayıt isteğinin tekrar korumalı kimliği (UUID).
+// =====================================================================
 
-// Kanonik kaynak: backend/scripts/retag_tracking_nos.py PROCESS_MAP — birebir eşleşmeli.
-// 2026-08-05: İdare/Tahkim/Vergi/Danışmanlık eklendi (eksikken bu türler
-// sessizce HUKUK bloğu üretiyordu — büro cevabındaki bug tespiti).
-// 2026-09-17: "İdari Yargı" (IDARI) çıktı — idari yargının tek türü "İdare" (IDARE).
-// Anahtarlar sihirbazın tür seçicisidir; mevcut IDARI numaralı kartlar değişmez.
-export const PROCESS_MAP: Record<string, string> = {
-    "Hukuk": "HUKUK",
-    "Ceza": "CEZAA",
-    "İcra": "ICRAA",
-    "Arabuluculuk": "ARABU",
-    "Savcılık": "SAVCI",
-    "İdare": "IDARE",
-    "Tahkim": "TAHKM",
-    "Vergi": "VERGI",
-    "Danışmanlık": "DANIS"
-};
+// Sihirbazın yargı türü seçicisi. İdari yargının tek türü "İdare"dir (17.09);
+// eski "İdari Yargı" seçeneği yoktur.
+export const YARGI_TURLERI: readonly string[] = [
+    "Hukuk",
+    "Ceza",
+    "İcra",
+    "Arabuluculuk",
+    "Savcılık",
+    "İdare",
+    "Tahkim",
+    "Vergi",
+    "Danışmanlık",
+];
 
-export const INSURANCE_CODES: Record<string, string> = {
-    "AK": "1",
-    "ANADOLU": "2",
-    "AXA": "3",
-    "CORPUS": "4",
-    "QUICK": "4",
-    "EUREKO": "5",
-    "NIPPON": "6",
-    "SOMPO": "7"
-};
+/** Sigortacı müvekkilde numaranın üçüncü bloğunu veren taraf rolü (backend ile aynı ad). */
+export const SIGORTALI_ROLU = "Sigortalı";
 
-// Kurum adlarında anlamsız jenerik kelimeler
-const CORP_STOP: Set<string> = new Set([
-    "SIGORTA", "HAYAT", "ANONIM", "TURK", "SIRKETI", "KOOPERATIFI",
-    "TIC", "TICARETI", "SAN", "SANAYI", "SANAYII",
-    "INS", "INSAAT", "TAAHHUT",
-    "LTD", "STI", "AS",
-    "HASTANE", "HASTANESI", "SAGLIK", "HIZ", "HIZMETLERI", "HIZM",
-    "OZEL", "TIBBI", "MALZ",
-    "SITE", "SITESI", "YONETICILIGI", "YONETIM", "KURULU", "MERKEZ",
-    "VE", "VEYA",
-    "PAZ", "PAZARLAMA", "DAG", "DAGITIM",
-    "ORG", "ORGANIZASYON", "YAPIM", "TANITIM",
-    "URETIM", "ISLETMECILIGI", "DANISMANLIK",
-    "GLOBAL", "SISTEMLERI", "HIZMETLER",
-]);
+const upperTR = (s: string): string => s.toLocaleUpperCase("tr-TR").trim();
 
-// Kişi kategorileri — bu kategorilerde slugifyName kullanılır
-const PERSON_CATEGORIES = new Set(["Doktor", "Sağlık Çalışanı", "Hasta", "Bireysel"]);
+// "Ad1;Ad2" biçiminde tek satıra yazılan çoklu isimler ayrı kişilerdir.
+const splitNames = (value: string): string[] =>
+    value.split(";").map(s => s.trim()).filter(Boolean);
 
-const normalizeAscii = (s: string): string =>
-    s.replace(/ı/g, 'i').replace(/ğ/g, 'g').replace(/ü/g, 'u')
-     .replace(/ş/g, 's').replace(/ö/g, 'o').replace(/ç/g, 'c')
-     .replace(/İ/g, 'I').replace(/Ğ/g, 'G').replace(/Ü/g, 'U')
-     .replace(/Ş/g, 'S').replace(/Ö/g, 'O').replace(/Ç/g, 'C');
-
-/** Kişi adları: ilk isim baş harfi + soyisim  →  I_KUTLUK.. */
-const slugifyName = (name: string): string => {
-    if (!name) return "XXXXXXXXXX";
-    const clean = normalizeAscii(name.trim())
-        .toUpperCase()
-        .replace(/[^A-Z\s]/g, '');
-    const parts = clean.split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return "XXXXXXXXXX";
-    if (parts.length === 1) return parts[0].padEnd(10, '.').slice(0, 10);
-    const surname = parts[parts.length - 1];
-    return `${parts[0].charAt(0)}_${surname}`.padEnd(10, '.').slice(0, 10);
-};
-
-/** Kurum adları: jenerik kelimeler atılır, ilk anlamlı kelime alınır  →  ANADOLU.. */
-const slugifyCorp = (name: string): string => {
-    if (!name) return "XXXXXXXXXX";
-    const clean = normalizeAscii(name.trim())
-        .toUpperCase()
-        .replace(/[^A-Z\s]/g, '');
-    const parts = clean.split(/\s+/).filter(p => !CORP_STOP.has(p) && p.length > 1);
-    const word = parts.length > 0
-        ? parts[0]
-        : clean.split(/\s+/).filter(Boolean)[0] || "KURUM";
-    return word.slice(0, 10).padEnd(10, '.');
-};
-
-/**
- * Takip numarasının 10 karakterlik isim bloğunu (blok2) üretir.
- * Backend client-sequence bu blokla mevcut en yüksek sıra numarasını bulur.
- */
-export const generateNameBlock = (clientName?: string, clientCategory?: string): string => {
-    const cat = clientCategory || "";
-    const isPerson = PERSON_CATEGORIES.has(cat) || cat === "";
-    return isPerson ? slugifyName(clientName || "") : slugifyCorp(clientName || "");
-};
-
-interface TrackingParams {
-    category?: string;       // block1 (kategori kodu) için — tüm müvekkillerin en iyi kodu
-    clientName?: string;     // isim bloğu için seçilen müvekkil
-    clientCategory?: string; // seçilen müvekkilin kategorisi (kişi mi kurum mu kararı)
-    sequence?: number;
-    processType?: string;
-    serviceType?: string;
+export interface OfisNoOnizlemeGirdisi {
+    /** Formdaki müvekkil satırları; `client_id` biliniyorsa doğrudan kullanılır. */
+    clients: Array<{ name: string; client_id?: number | null }>;
+    /** Kayıtlı müvekkiller — adı eşleşen satır sunucuya kaydın id'siyle gider. */
+    dbClients?: Array<{ id?: number; name: string }>;
+    fileType?: string | null;
+    /** Müvekkil dışı taraflar; yalnız "Sigortalı" rolündekiler sunucuya iletilir. */
+    otherParties?: Array<{ name: string; role?: string }>;
 }
 
 /**
- * Tek müvekkilin B1 kodu (kategori ADI + müvekkil adından). Kategori ve ad
- * ASCII'ye indirgenerek karşılaştırılır — `toLocaleUpperCase('tr-TR')` küçük
- * harfli "Quick"/"Nippon"u "QUİCK"/"NİPPON" yapıp sigorta kodunu kaçırıyordu
- * (G223). Kanonik kopya backend/scripts/retag_tracking_nos.py de ASCII arar.
+ * Önizleme ucunun sorgu dizgisi. Müvekkil yoksa `null` döner — sunucu müvekkilsiz
+ * numara vermez (422), istek hiç atılmaz.
+ *
+ * İstemci HİÇBİR kod türetmez: ad / kayıt id'si / yargı türü ham hâliyle gider,
+ * numarayı `services/ofis_no` kurar.
  */
-const categoryCodeFor = (name: string, cat: string): string => {
-    const nc = normalizeAscii(cat).toUpperCase();
-    const nn = normalizeAscii(name).toUpperCase();
-    let code = "X1";
-    for (const [key, val] of Object.entries(CATEGORY_MAP)) {
-        if (nc.includes(normalizeAscii(key).toUpperCase())) { code = val; break; }
-    }
-    if (nn.includes("SIGORTA") || nc.includes("SIGORTA")) {
-        if (code === "X1") code = "S0";
-        for (const [key, ins] of Object.entries(INSURANCE_CODES)) {
-            if (nn.includes(key)) { code = `S${ins}`; break; }
+export function ofisNoOnizlemeSorgusu(girdi: OfisNoOnizlemeGirdisi): string | null {
+    const params = new URLSearchParams();
+    for (const client of girdi.clients) {
+        for (const name of splitNames(client.name || "")) {
+            const kayitli = client.client_id
+                ?? girdi.dbClients?.find(db => upperTR(db.name) === upperTR(name))?.id;
+            params.append("muvekkiller", kayitli != null ? String(kayitli) : name);
         }
     }
-    return code;
-};
+    if (!params.has("muvekkiller")) return null;
 
-// Geçerli B1 kodları: kategori haritasının değerleri + sigorta S0-S9.
-const B1_CODES: Set<string> = new Set(Object.values(CATEGORY_MAP));
-const isB1Code = (value: string): boolean => B1_CODES.has(value) || /^S[0-9]$/.test(value);
+    const fileType = (girdi.fileType || "").trim();
+    if (fileType) params.append("file_type", fileType);
 
-export const generateTrackingNumber = (params?: TrackingParams): string => {
-    // 1. Blok: Kategori kodu. `category` ya kategori ADIDIR ("Doktor") ya da
-    // hazır B1 KODUDUR ("D1" — NewCase/Intake `bestCategoryCode` çıktısını geçer).
-    // Kod verilirse aynen kullanılır; önceden kod ad gibi aranıp X1'e düşüyordu (G223).
-    const rawCategory = (params?.category || "").trim();
-    const block1 = isB1Code(rawCategory)
-        ? rawCategory
-        : categoryCodeFor(params?.clientName || "", rawCategory);
-
-    // 2. Blok: İsim — clientCategory'e göre kişi/kurum formatı seç
-    const block2 = generateNameBlock(params?.clientName, params?.clientCategory);
-
-    // 3. Blok: Sıra no
-    const block3 = (params?.sequence?.toString() || "0001").padStart(4, '0');
-
-    // 4. Blok: Yargı süreci
-    const block4 = PROCESS_MAP[params?.processType || ""] || "HUKUK";
-
-    // 5. Blok: Hizmet türü
-    const block5 = (params?.serviceType || "00000").padStart(5, '0');
-
-    return `${block1}.${block2}.${block3}.${block4}.${block5}`;
-};
-
-/**
- * Birden fazla müvekkil arasından isim bloğu için en uygun olanı seç.
- * Kişi (Doktor/Sağlık Çalışanı/Hasta/Bireysel) > Kurum > Sigorta Şirketi
- */
-export const pickNameClient = (
-    clients: Array<{ name: string; category?: string }>
-): { name: string; category: string } => {
-    if (clients.length === 0) return { name: "", category: "" };
-
-    const priority = (cat?: string): number => {
-        if (!cat) return 4;
-        if (cat === "Doktor")          return 0;
-        if (cat === "Sağlık Çalışanı") return 1;
-        if (cat === "Hasta")           return 2;
-        if (cat === "Bireysel")        return 3;
-        if (cat.toLowerCase().includes("sigorta")) return 10;
-        return 6;
-    };
-
-    const sorted = [...clients].sort((a, b) => priority(a.category) - priority(b.category));
-    return { name: sorted[0].name, category: sorted[0].category || "" };
-};
-
-/**
- * Tüm müvekkillerden en iyi kategori kodunu döner.
- * Özgül sigorta (S1-S7) > S0 > D1 > D2 > H2 > H1 > X1
- */
-export const bestCategoryCode = (
-    clients: Array<{ name: string; category?: string }>
-): string => {
-    if (clients.length === 0) return "X1";
-
-    const codes = clients.map(c => categoryCodeFor(c.name, c.category || ""));
-    for (const c of codes) if (c.startsWith("S") && c !== "S0") return c;
-    for (const c of codes) if (c === "S0") return c;
-    // Docstring'deki açık öncelik: D1 > D2 > H2 > H1 (önceden "ilk X1 olmayan" idi)
-    for (const wanted of ["D1", "D2", "H2", "H1"]) {
-        if (codes.includes(wanted)) return wanted;
+    for (const party of girdi.otherParties ?? []) {
+        if ((party.role || "").trim() !== SIGORTALI_ROLU) continue;
+        for (const name of splitNames(party.name || "")) params.append("sigortali", name);
     }
-    for (const c of codes) if (c !== "X1") return c;
-    return codes[0];
-};
+    return params.toString();
+}
 
-export const validateCaseNumber = (caseNumber: string): boolean => {
-    if (!caseNumber) return false;
-    return /^[A-Z0-9]{2}\.[A-Z0-9_.]{10}\.[A-Z0-9]{4}\.[A-Z0-9]{5}\.[A-Z0-9]{5}$/.test(caseNumber);
-};
+const UUID_BICIMI = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Saklanan (taslak) kimlik kullanılabilir mi? Backend `istek_kimligi` alanı UUID ister. */
+export const istekKimligiGecerli = (value: unknown): value is string =>
+    typeof value === "string" && UUID_BICIMI.test(value);
+
+/**
+ * Kayıt isteğinin kimliği (G236 sözleşmesi). Form/modal/sihirbaz AÇILDIĞINDA bir kez
+ * üretilir; aynı formun tekrar gönderiminde AYNI kalır, sunucu ikinci kartı açmaz
+ * (`reused: true`). Başarılı kayıttan ya da form temizlenince yenilenir.
+ */
+export function yeniIstekKimligi(): string {
+    const c = globalThis.crypto;
+    if (c && typeof c.randomUUID === "function") return c.randomUUID();
+    // Güvenli bağlam dışı (randomUUID yok): v4 biçimi elle kurulur.
+    const bytes = new Uint8Array(16);
+    if (c && typeof c.getRandomValues === "function") c.getRandomValues(bytes);
+    else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
