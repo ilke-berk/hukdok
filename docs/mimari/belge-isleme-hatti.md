@@ -16,6 +16,17 @@
 - Ofis dosya numarası **paralel bir task** olarak SharePoint sayacından tahsis edilir
   (aşağıda §6).
 
+### Dizin kaydı eksik UDF (30.09.2026 olayı)
+
+UYAP bazen ZIP dizin kaydı (central directory) yazılmamış `.udf` verir: `content.xml` ve
+`sign.sgn` tamdır, dosya son girişin bitiminde biter. `zipfile` dizini sondan okuduğu için
+`BadZipFile` verir; eskiden bu dosya `/process`'te 400 ile reddediliyordu. Yedek yol
+`backend/udf_zip.py::read_entry_sequential` yerel giriş başlıklarını baştan sırayla okur ve
+girişi CRC'siyle doğrular; yalnız `zipfile` başarısız olunca ve yalnız `.udf` için çağrılır
+(`file_utils._validate_zip_marker` → kabul + WARNING; `udf_converter._parse_xml` → PDF dönüşümü).
+Dosya **onarılmaz**: ham `.udf` arşive UYAP'tan geldiği baytlarla gider. Akışı yarıda kesilmiş
+ya da CRC'si tutmayan dosya yine 400 alır. Bekçi `backend/tests/test_udf_zip.py`.
+
 ### Olay sözleşmesi (frontend ile ORTAK referans)
 
 Olaylar `{"status": ...}` taşır: `info`, `warning`, `error`, `complete`, `failed`.

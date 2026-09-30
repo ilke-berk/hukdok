@@ -25,6 +25,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from PIL import Image as PILImage
 
+from udf_zip import read_entry_sequential
+
 # Logger Import
 try:
     from managers.log_manager import TechnicalLogger
@@ -509,10 +511,17 @@ class UDFConverter:
                 magic = f.read(4)
                 f.seek(0)
                 if magic[:2] == b'PK': # ZIP
-                    with zipfile.ZipFile(f, 'r') as z:
-                        with z.open('content.xml') as content_file:
-                            tree = ET.parse(content_file, parser=ET.XMLParser(encoding='utf-8'))
-                            self.root = tree.getroot()
+                    try:
+                        with zipfile.ZipFile(f, 'r') as z:
+                            with z.open('content.xml') as content_file:
+                                tree = ET.parse(content_file, parser=ET.XMLParser(encoding='utf-8'))
+                                self.root = tree.getroot()
+                    except zipfile.BadZipFile:
+                        # Dizin kaydı eksik UYAP arşivi: girişler sırayla okunur (udf_zip).
+                        content = read_entry_sequential(self.udf_path)
+                        if content is None:
+                            raise
+                        self.root = ET.fromstring(content)
                 else: # XML
                     tree = ET.parse(f, parser=ET.XMLParser(encoding='utf-8'))
                     self.root = tree.getroot()
