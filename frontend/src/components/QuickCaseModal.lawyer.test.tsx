@@ -28,13 +28,15 @@ vi.mock("@azure/msal-react", () => ({ useMsal: () => msal }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 const casesApi = vi.hoisted(() => ({
   saveCaseAndReturn: vi.fn(async () => ({ id: 7, tracking_no: "T-7" })),
-  getClientCaseSequence: vi.fn(async () => 1),
+  // G237 (test taşıma): `getClientCaseSequence` / `CASE_SEQUENCE_ERROR` kalktı —
+  // modal numara üretmez, önizleme ucunu kullanır.
+  getOfisNoOnizleme: vi.fn(async () => ({ onizleme: "ONIZLEME-0001" })),
   checkDuplicateCase: vi.fn(async () => []),
   isLoading: false,
 }));
-vi.mock("@/hooks/useCases", () => ({
+vi.mock("@/hooks/useCases", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useCases")>()),
   useCases: () => casesApi,
-  CASE_SEQUENCE_ERROR: "Sıra numarası alınamadı.",
   CASE_DUPLICATE_CHECK_ERROR: "Mükerrer kontrolü yapılamadı.",
 }));
 const clientsApi = vi.hoisted(() => ({ clients: [] as { name: string }[], isLoading: false }));
@@ -178,5 +180,8 @@ describe("QuickCaseModal — avukat LawyerCombobox (G222)", () => {
     const payload = (casesApi.saveCaseAndReturn.mock.calls[0] as unknown as [Record<string, unknown>])[0];
     expect(payload.responsible_lawyer_name).toBe("Av. Zeynep Zor");
     expect(onCaseCreated).toHaveBeenCalledWith(expect.objectContaining({ responsible_lawyer_name: "Av. Zeynep Zor" }));
+    // G237: numara gövdede yok; belgeye bağlanan kart sunucunun verdiği numarayı taşır.
+    expect(payload).not.toHaveProperty("tracking_no");
+    expect(onCaseCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 7, tracking_no: "T-7" }));
   });
 });

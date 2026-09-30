@@ -5,7 +5,7 @@
  * Analiz verisiyle otomatik doldurulur (esas_no, müvekkil, avukat).
  * Kaydettikten sonra yeni dava otomatik olarak belgeye bağlanır.
  */
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useMsal } from "@azure/msal-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -17,14 +17,17 @@ import { Gavel, AlertTriangle, Loader2, User, FileText, Scale, Building } from "
 import { Eyebrow } from "@/components/dashboard/primitives";
 import { FlowButton } from "@/components/flow/primitives";
 import { toast } from "sonner";
-import { CaseData, DuplicateCaseMatch, useCases, CASE_SEQUENCE_ERROR, CASE_DUPLICATE_CHECK_ERROR } from "@/hooks/useCases";
+import {
+    CaseData, DuplicateCaseMatch, useCases, useOfisNoOnizleme,
+    CASE_ALREADY_SAVED_MESSAGE, CASE_DUPLICATE_CHECK_ERROR,
+} from "@/hooks/useCases";
 import {
     useConfigList, groupCourtTypesByParent, REQUIRED_FIELDS_ERROR, type RequiredCaseField,
 } from "@/hooks/useConfig";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { ClientData, useClients } from "@/hooks/useClients";
-import { generateTrackingNumber, generateNameBlock } from "@/lib/caseNumberUtils";
+import { ofisNoOnizlemeSorgusu, yeniIstekKimligi } from "@/lib/caseNumberUtils";
 import { parseCourt } from "@/lib/courtParse";
 import { closestName } from "@/lib/nameSimilarity";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
@@ -71,7 +74,7 @@ interface QuickCaseModalProps {
 }
 
 export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickCaseModalProps) => {
-    const { saveCaseAndReturn, getClientCaseSequence, checkDuplicateCase, isLoading: isCaseLoading } = useCases();
+    const { saveCaseAndReturn, getOfisNoOnizleme, checkDuplicateCase, isLoading: isCaseLoading } = useCases();
     const { clients, isLoading: isClientLoading } = useClients();
     // G185: yalnız okunan üç liste + zorunlu alan ucu (useConfig 32 sorgu kuruyordu).
     const lawyersQ = useConfigList("lawyers");
@@ -173,6 +176,26 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     // Taraf rolleri: "Davacı" veya "Davalı"
     const [clientRole, setClientRole] = useState<"Davacı" | "Davalı">("Davalı");
     const [counterRole, setCounterRole] = useState<"Davacı" | "Davalı">("Davacı");
+
+    // G237: kayıt isteğinin kimliği — modal AÇILDIĞINDA bir kez üretilir (aşağıdaki
+    // açılış effect'i), aynı formun tekrar gönderiminde (çift tık, hata sonrası
+    // yeniden deneme) aynı kalır; başarılı kayıttan sonra yenilenir.
+    const istekKimligiRef = useRef("");
+    const acikKimlikRef = useRef(false);
+    if (open && !acikKimlikRef.current) istekKimligiRef.current = yeniIstekKimligi();
+    acikKimlikRef.current = open;
+
+    // G237: ofis numarası ÜRETİLMEZ — müvekkil/tür değiştikçe sunucudan önizlenir
+    // (debounce'lu). Önizleme alınamaması kaydı engellemez; numarayı kayıtta sunucu verir.
+    const onizlemeSorgusu = useMemo(
+        () => open ? ofisNoOnizlemeSorgusu({
+            clients: clientName.split(",").map(name => ({ name })),
+            dbClients: existingClientsData.map(c => ({ id: c.id, name: String(c.name) })),
+            fileType: status === "DANIŞ" ? null : fileType,
+        }) : null,
+        [open, clientName, existingClientsData, fileType, status],
+    );
+    const onizleme = useOfisNoOnizleme(onizlemeSorgusu, getOfisNoOnizleme);
 
     // Modal her açıldığında en güncel prefill verisiyle senkronize et ve müvekkilleri yükle
     useEffect(() => {
@@ -315,55 +338,11 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
         const clientNames = clientName.split(',').map(n => n.trim()).filter(n => n);
         const counterNames = counterPartyName.split(',').map(n => n.trim()).filter(n => n);
 
-        const firstClientName = clientNames[0] || "";
-        const matchedClient = existingClientsData.find(c =>
-            c.name.toLocaleUpperCase('tr-TR').trim() === firstClientName.toLocaleUpperCase('tr-TR').trim()
-        );
-        const category = (matchedClient?.category as string) || "";
-        // Eğer kategori yoksa veya müşteri yeni eklenecekse ama adı biliniyorsa QuickCase üzerinden de sigorta olup olmadığını belirleyebiliriz:
-        // Eğer adında CORPUS, QUICK vs geçiyorsa category = "Sigorta" yapabiliriz. Fakat NewCase.tsx de aynısını bekliyor.
-        // `generateTrackingNumber` içine category="Sigorta" geçersek sigorta mantığını çalıştırır, 
-        // Aksi takdirde X1 veya diğerlerini kullanır. Ancak, eğer sigorta şirketi adı varsa otomatik Sigorta atamalıyız:
-        let autoCategory = category;
-        // "SİGORTA" kelimesi veya marka adı AYRI KELİME olarak geçmeli.
-        // Substring kontrolü ("AK" gibi) "Burak Akman" tipi kişi isimlerini
-        // yanlışlıkla Sigorta kategorisine (S1 koduna) düşürüyordu.
-        // Aksigorta zaten "SİGORTA" içerdiği için markalar listesinde "AK" yok.
-        const sigortaMarkalari = ["ANADOLU", "AXA", "CORPUS", "QUICK", "EUREKO", "NIPPON", "SOMPO"];
-        const upperFirst = firstClientName.toLocaleUpperCase('tr-TR');
-        const nameTokens = upperFirst.split(/\s+/);
-        if (!autoCategory && (upperFirst.includes("SİGORTA") || upperFirst.includes("SIGORTA") || nameTokens.some(t => sigortaMarkalari.includes(t)))) {
-            autoCategory = "Sigorta";
-        }
-
-        // Kategori isim bloğuna da geçmeli: kategorisiz çağrıda sigorta şirketi
-        // kişi formatına ("A_SIGORTA.") düşüyordu; NewCase ile tutarlı olsun.
-        // G002: sıra numarası alınamazsa fırlar — sessiz `1` ile dolu bir ofis
-        // numarası üretip kaydı 409'a düşürmektense kaydetmeyi BLOKE ediyoruz.
-        let seq = 1;
-        if (firstClientName) {
-            try {
-                seq = await getClientCaseSequence(firstClientName, generateNameBlock(firstClientName, autoCategory));
-            } catch (error) {
-                console.error(error);
-                toast.error("Dava açılamadı: ofis numarası alınamadı", {
-                    description: error instanceof Error ? error.message : CASE_SEQUENCE_ERROR,
-                });
-                return;
-            }
-        }
-
-        const trackingNo = generateTrackingNumber({
-            category: autoCategory,
-            clientName: firstClientName,
-            clientCategory: autoCategory,
-            processType: fileType,
-            serviceType: "00000", // QuickCase varsayılan
-            sequence: seq
-        });
-
-        const caseData = {
-            tracking_no: trackingNo,
+        // G237: `tracking_no` GÖNDERİLMEZ — numarayı kayıtla aynı transaction'da sunucu
+        // verir (karar 023); kategori/sigorta kodu da orada çözülür. İstek kimliği aynı
+        // formun tekrar gönderiminde aynıdır → sunucu ikinci kartı açmaz.
+        const caseData: CaseData = {
+            istek_kimligi: istekKimligiRef.current,
             esas_no: esasNo.trim() || undefined,
             status,
             file_type: fileType,
@@ -388,16 +367,29 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             ],
         };
 
-        const result = await saveCaseAndReturn(caseData as unknown as CaseData);
+        const result = await saveCaseAndReturn(caseData);
         if (result && result.id) {
-            toast.success(
-                isConsult
-                    ? "✅ Danışma kaydı açıldı ve belgeye bağlandı!"
-                    : `✅ Dava açıldı ve belgeye bağlandı! (${esasNo})`
-            );
+            // İstek tamamlandı — modal yeniden kullanılırsa yeni kimlikle gider.
+            istekKimligiRef.current = yeniIstekKimligi();
+            // Gösterilen numara sunucunun yanıtındaki GERÇEK numaradır (önizleme değil).
+            const ofisNo: string = result.tracking_no || "";
+            if (result.reused) {
+                // Aynı istek daha önce kaydedilmiş: ikinci "açıldı" mesajı yerine
+                // mevcut kart belgeye bağlanır.
+                toast.info(CASE_ALREADY_SAVED_MESSAGE, {
+                    description: ofisNo ? `Ofis No: ${ofisNo} — mevcut kart belgeye bağlandı.` : "Mevcut kart belgeye bağlandı.",
+                });
+            } else {
+                toast.success(
+                    isConsult
+                        ? "✅ Danışma kaydı açıldı ve belgeye bağlandı!"
+                        : `✅ Dava açıldı ve belgeye bağlandı! (${esasNo})`,
+                    ofisNo ? { description: `Ofis No: ${ofisNo}` } : undefined,
+                );
+            }
             onCaseCreated({
                 id: result.id,
-                tracking_no: result.tracking_no || trackingNo,
+                tracking_no: ofisNo,
                 esas_no: esasNo.trim(),
                 court: courtDaireNo
                     ? `${courtBase.trim()} ${courtDaireNo}. Daire`.trim()
@@ -485,7 +477,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                         <Input
                             value={esasNo}
                             onChange={e => setEsasNo(e.target.value)}
-                            placeholder={isConsult ? "Varsa esas no (opsiyonel)" : "2024/1234"}
+                            placeholder={isConsult ? "Varsa esas no (opsiyonel)" : "Örn. 2026/1234"}
                             className="col-span-3 font-mono h-9 bg-[var(--bg)] border-[var(--border)] rounded-[3px]"
                         />
                     </div>
@@ -528,6 +520,26 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             </div>
                         </div>
                     </div>
+
+                    {/* G237: ofis numarası önizlemesi — salt-okunur, kaydı engellemez */}
+                    {clientName.trim() && (
+                        <div className="grid grid-cols-4 items-center gap-3">
+                            <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1">
+                                Ofis No
+                            </Label>
+                            <p data-testid="ofis-no-onizleme" className="col-span-3 text-[12px] text-[var(--fg-muted)] leading-relaxed">
+                                {onizleme.onizleme ? (
+                                    <>Kaydedince verilecek: <span className="font-mono font-semibold text-[var(--fg)]">{onizleme.onizleme}</span></>
+                                ) : onizleme.error ? (
+                                    onizleme.error
+                                ) : onizleme.isLoading ? (
+                                    "Önizleme alınıyor…"
+                                ) : (
+                                    "Numarayı kaydederken sunucu verir."
+                                )}
+                            </p>
+                        </div>
+                    )}
 
                     {/* Karşı Taraf */}
                     <div className="grid grid-cols-4 items-center gap-3">

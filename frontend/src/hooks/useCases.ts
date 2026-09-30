@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 
 export interface CasePartyData {
@@ -24,7 +24,10 @@ export interface CaseLawyerData {
  * `service_type`'ın hiç gönderilmediğini örtüyordu (canlı DB: 14.345 kayıtta 0 dolu).
  */
 export interface CaseData {
-    tracking_no: string;
+    // G237: `tracking_no` yükte YOK — numarayı sunucu verir (karar 023), düzenlemede
+    // (PUT) de yazılmaz. Alanı buraya geri eklemek istemci üreticisini diriltir.
+    /** Kayıt isteğinin kimliği (UUID): aynı kimlikle tekrar gelen istek ikinci kart açmaz. */
+    istek_kimligi?: string;
     esas_no?: string;
     status: string;
     service_type?: string;
@@ -49,6 +52,25 @@ export interface CaseData {
     notes?: string;
     parties: CasePartyData[];
     lawyers?: CaseLawyerData[];
+}
+
+/** `GET /api/cases/ofis-no-onizleme` yanıtı — yalnız gösterim içindir, isteğe geri gönderilmez. */
+export interface OfisNoOnizleme {
+    onizleme: string;
+    kod?: string;
+    /** Sigortacı müvekkilde "Sigortalı" tarafı henüz girilmedi — üçüncü blok eksik. */
+    sigortali_eksik?: boolean;
+    aciklama?: string;
+}
+
+/** POST /api/cases sonucu: numarayı ve kart kimliğini sunucu verir. */
+export interface SaveCaseResult {
+    ok: boolean;
+    error?: string;
+    id?: number;
+    tracking_no?: string;
+    /** Aynı `istek_kimligi` daha önce kaydedilmiş — dönen kart İLK karttır. */
+    reused?: boolean;
 }
 
 /** check-duplicate yanıt satırı */
@@ -174,8 +196,14 @@ export interface CaseStageLogEntry {
  * kullanıcıya banner/toast olarak aynen gösterilir.
  */
 export const CASE_LIST_ERROR = "Dava listesi alınamadı — sunucuya ulaşılamadı.";
-export const CASE_SEQUENCE_ERROR =
-    "Ofis numarası alınamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
+/**
+ * G237: önizleme alınamadı. Kaydı ENGELLEMEZ — numarayı kayıt anında sunucu verir;
+ * bu yalnız "kaydedince verilecek numara şu an gösterilemiyor" bilgisidir.
+ */
+export const OFIS_NO_ONIZLEME_ERROR =
+    "Ofis numarası önizlemesi alınamadı. Kayıt yapılabilir — numarayı kaydederken sunucu verir.";
+/** Tekrar eden kayıt isteği (`reused: true`) — ikinci "kaydedildi" akışı yerine gösterilir. */
+export const CASE_ALREADY_SAVED_MESSAGE = "Bu dava zaten kaydedilmiş";
 /** G019: mükerrer kontrolü yapılamadı — "mükerrer yok" DEĞİL, "bilinmiyor". */
 export const CASE_DUPLICATE_CHECK_ERROR =
     "Mükerrer dava kontrolü yapılamadı — sunucuya ulaşılamadı. Kaydetmeden önce tekrar deneyin.";
@@ -200,11 +228,25 @@ export const useCases = () => {
         }
     };
 
-    const saveCase = useCallback(async (data: CaseData): Promise<{ ok: boolean; error?: string }> => {
+    const saveCase = useCallback(async (data: CaseData): Promise<SaveCaseResult> => {
         setIsLoading(true);
         const response = await authenticatedRequest("/api/cases", "POST", data);
         setIsLoading(false);
-        if (response && response.ok) return { ok: true };
+        if (response && response.ok) {
+            // G237: numara sunucunun yanıtındadır; gövde okunamazsa kayıt yine başarılıdır.
+            let body: { id?: unknown; tracking_no?: unknown; reused?: unknown } | null = null;
+            try {
+                body = await response.json();
+            } catch {
+                body = null;
+            }
+            return {
+                ok: true,
+                id: typeof body?.id === "number" ? body.id : undefined,
+                tracking_no: typeof body?.tracking_no === "string" ? body.tracking_no : undefined,
+                reused: body?.reused === true,
+            };
+        }
         return { ok: false, error: await readErrorDetail(response) };
     }, [authenticatedRequest]);
 
@@ -317,24 +359,27 @@ export const useCases = () => {
     }, [authenticatedRequest]);
 
     /**
-     * G002: Hata YUTMAZ. Eski sessiz `1` fallback'i kesintide sıfırdan sıra
-     * numarası üretiyor, dolu bir ofis numarası öneriyor ve kaydı 409'a
-     * düşürüyordu. Artık fırlatır — çağıran kaydetmeyi bloke eder.
+     * Kaydedince verilecek ofis numarasının önizlemesi (G237). Sayacı ARTIRMAZ.
+     * `sorgu`: `ofisNoOnizlemeSorgusu` çıktısı. Hata YUTMAZ (G002 disiplini) —
+     * uydurma numara gösterilmez; çağıran hatayı bilgi olarak gösterir, kaydı
+     * bloke ETMEZ (numarayı kayıt anında sunucu verir).
      */
-    const getClientCaseSequence = useCallback(async (clientName: string, nameBlock?: string): Promise<number> => {
-        const params = new URLSearchParams({ client_name: clientName });
-        if (nameBlock) params.append("name_block", nameBlock);
-        const response = await authenticatedRequest(`/api/cases/client-sequence?${params.toString()}`, "GET");
-        if (!response || !response.ok) throw new Error(CASE_SEQUENCE_ERROR);
-        let sequence: unknown;
+    const getOfisNoOnizleme = useCallback(async (sorgu: string): Promise<OfisNoOnizleme> => {
+        const response = await authenticatedRequest(`/api/cases/ofis-no-onizleme?${sorgu}`, "GET");
+        if (!response || !response.ok) throw new Error(OFIS_NO_ONIZLEME_ERROR);
+        let body: Partial<OfisNoOnizleme> | null;
         try {
-            sequence = (await response.json())?.sequence;
+            body = await response.json();
         } catch {
-            throw new Error(CASE_SEQUENCE_ERROR);
+            throw new Error(OFIS_NO_ONIZLEME_ERROR);
         }
-        const parsed = Number(sequence);
-        if (!Number.isFinite(parsed) || parsed < 1) throw new Error(CASE_SEQUENCE_ERROR);
-        return parsed;
+        if (typeof body?.onizleme !== "string" || !body.onizleme) throw new Error(OFIS_NO_ONIZLEME_ERROR);
+        return {
+            onizleme: body.onizleme,
+            kod: body.kod,
+            sigortali_eksik: body.sigortali_eksik === true,
+            aciklama: body.aciklama,
+        };
     }, [authenticatedRequest]);
 
     const saveCaseAndReturn = useCallback(async (data: CaseData) => {
@@ -437,7 +482,7 @@ export const useCases = () => {
         getCaseStats,
         getCase,
         searchCases,
-        getClientCaseSequence,
+        getOfisNoOnizleme,
         // İlişkili davalar
         getRelatedCases,
         addCaseRelation,
@@ -450,3 +495,75 @@ export const useCases = () => {
         isLoading
     };
 };
+
+/** Önizleme isteği, son değişiklikten bu kadar sonra atılır (tuş vuruşu başına istek yok). */
+export const OFIS_NO_ONIZLEME_DEBOUNCE_MS = 400;
+
+export interface OfisNoOnizlemeDurumu {
+    /** Kaydedince verilecek numara; müvekkil yokken ya da alınamadığında `null`. */
+    onizleme: string | null;
+    sigortaliEksik: boolean;
+    isLoading: boolean;
+    /** Bilgi amaçlı — kaydı ENGELLEMEZ. */
+    error: string | null;
+}
+
+const BOS_ONIZLEME: OfisNoOnizlemeDurumu = {
+    onizleme: null, sigortaliEksik: false, isLoading: false, error: null,
+};
+
+/**
+ * Debounce'lu ofis numarası önizlemesi (G237) — üç dava açma yolunun ortak kancası.
+ *
+ * `sorgu` (`ofisNoOnizlemeSorgusu` çıktısı) değiştikçe önizleme yenilenir; `null`
+ * (müvekkil yok / düzenleme modu) isteği kapatır. Bayat yanıt (arada sorgu değişti)
+ * yok sayılır. Hata uydurma numaraya çevrilmez.
+ */
+export function useOfisNoOnizleme(
+    sorgu: string | null,
+    getOfisNoOnizleme: (sorgu: string) => Promise<OfisNoOnizleme>,
+    debounceMs: number = OFIS_NO_ONIZLEME_DEBOUNCE_MS,
+): OfisNoOnizlemeDurumu {
+    const [durum, setDurum] = useState<OfisNoOnizlemeDurumu>(BOS_ONIZLEME);
+    // İstek fonksiyonunun kimliği render'dan render'a değişebilir (taklit/sarmalayıcı);
+    // effect yalnız SORGU değişince koşsun diye ref'ten okunur.
+    const istekRef = useRef(getOfisNoOnizleme);
+    istekRef.current = getOfisNoOnizleme;
+
+    useEffect(() => {
+        if (!sorgu) {
+            setDurum(BOS_ONIZLEME);
+            return;
+        }
+        let iptal = false;
+        setDurum(prev => ({ ...prev, isLoading: true, error: null }));
+        const zamanlayici = setTimeout(() => {
+            istekRef.current(sorgu).then(
+                sonuc => {
+                    if (iptal) return;
+                    setDurum({
+                        onizleme: sonuc.onizleme,
+                        sigortaliEksik: sonuc.sigortali_eksik === true,
+                        isLoading: false,
+                        error: null,
+                    });
+                },
+                (hata: unknown) => {
+                    if (iptal) return;
+                    setDurum({
+                        onizleme: null,
+                        sigortaliEksik: false,
+                        isLoading: false,
+                        error: hata instanceof Error ? hata.message : OFIS_NO_ONIZLEME_ERROR,
+                    });
+                },
+            );
+        }, debounceMs);
+        return () => {
+            iptal = true;
+            clearTimeout(zamanlayici);
+        };
+    }, [sorgu, debounceMs]);
+
+    return durum;
+}

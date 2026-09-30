@@ -85,7 +85,11 @@ export function editModeFormValues(source?: EditModeCaseData): NewCaseFormValues
 }
 
 export interface CasePayloadInput {
-    trackingNo: string;
+    /**
+     * Kayıt isteğinin kimliği (G237) — yalnız YENİ kayıtta verilir; düzenlemede
+     * (PUT) gövdeye girmez. Ofis numarası girdide YOK: numarayı sunucu verir.
+     */
+    istekKimligi?: string;
     status: string;
     formData: NewCaseFormValues;
     clients: Array<{ name: string; role: string }>;
@@ -104,7 +108,8 @@ export interface CasePayloadInput {
 export function buildCasePayload(input: CasePayloadInput): CaseData {
     const { formData } = input;
     return {
-        tracking_no: input.trackingNo,
+        // G237: `tracking_no` gövdeye GİRMEZ (numarayı sunucu verir, karar 023).
+        ...(input.istekKimligi ? { istek_kimligi: input.istekKimligi } : {}),
         esas_no: formData.esasNo,
         status: input.status,
         service_type: formData.serviceType,

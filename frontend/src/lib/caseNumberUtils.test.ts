@@ -1,296 +1,253 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as caseNumberUtils from "./caseNumberUtils";
 import {
-    CATEGORY_MAP,
-    INSURANCE_CODES,
-    bestCategoryCode,
-    generateNameBlock,
-    generateTrackingNumber,
-    pickNameClient,
-    validateCaseNumber,
+    YARGI_TURLERI,
+    istekKimligiGecerli,
+    ofisNoOnizlemeSorgusu,
+    yeniIstekKimligi,
 } from "./caseNumberUtils";
 
-describe("generateTrackingNumber", () => {
-    it("parametresiz çağrı güvenli varsayılanları üretir", () => {
-        expect(generateTrackingNumber()).toBe("X1.XXXXXXXXXX.0001.HUKUK.00000");
+// =====================================================================
+// G237 (insan onaylı test taşıma): bu dosya eskiden İSTEMCİ numara üreticisini
+// (generateTrackingNumber / generateNameBlock / pickNameClient / bestCategoryCode /
+// validateCaseNumber + kod haritaları) sabitliyordu. Üretici kalktı — numarayı
+// sunucu verir (`backend/services/ofis_no.py`, karar 023). Her test yeni davranışa
+// çevrildi: istemci HAM girdiyi (ad / kayıt id'si / yargı türü) önizleme ucuna
+// iletir, kod TÜRETMEZ; kayıt isteği kimlik (UUID) taşır.
+// =====================================================================
+
+const sorgu = (girdi: Parameters<typeof ofisNoOnizlemeSorgusu>[0]) => ofisNoOnizlemeSorgusu(girdi);
+const paramlar = (girdi: Parameters<typeof ofisNoOnizlemeSorgusu>[0]) =>
+    new URLSearchParams(sorgu(girdi) ?? "");
+const disaVerilenler = caseNumberUtils as Record<string, unknown>;
+
+describe("ofisNoOnizlemeSorgusu — istemci numara ÜRETMEZ (eski: generateTrackingNumber)", () => {
+    it("müvekkilsiz çağrıda yer tutucu numara yok: sorgu null (istek atılmaz)", () => {
+        expect(sorgu({ clients: [] })).toBeNull();
     });
 
-    it("kişi müvekkilde ad bloğu 'başharf_soyad' formatındadır", () => {
-        const no = generateTrackingNumber({
-            category: "Doktor",
-            clientName: "İlke Berk Kutluk",
-            clientCategory: "Doktor",
+    it("kişi müvekkilin adı ham gider; isim bloğu istemcide kurulmaz", () => {
+        const s = sorgu({ clients: [{ name: "İlke Berk Kutluk" }] });
+        expect(new URLSearchParams(s ?? "").getAll("muvekkiller")).toEqual(["İlke Berk Kutluk"]);
+        // Eski çıktı ".I_KUTLUK.." bloğunu taşırdı
+        expect(decodeURIComponent(s ?? "")).not.toContain("I_KUTLUK");
+    });
+
+    it("kurum müvekkilde jenerik kelimeler ATILMAZ — ad olduğu gibi iletilir", () => {
+        // Eski: "Sigorta"/"A.Ş." atılıp "S2.ANADOLU..." kurulurdu
+        expect(paramlar({ clients: [{ name: "Anadolu Sigorta A.Ş." }] }).getAll("muvekkiller"))
+            .toEqual(["Anadolu Sigorta A.Ş."]);
+    });
+
+    it("bilinen sigorta şirketinin özgül kodu istemcide türetilmez", () => {
+        // Eski: AXA → "S3". Kod artık yalnız sunucunun yanıtındadır.
+        expect([...paramlar({ clients: [{ name: "AXA Sigorta" }] }).keys()]).toEqual(["muvekkiller"]);
+    });
+
+    it("bilinmeyen sigorta için de kod (S0) üretilmez", () => {
+        expect(sorgu({ clients: [{ name: "Bilinmedik Sigorta" }] })).toBe("muvekkiller=Bilinmedik+Sigorta");
+    });
+
+    it("kayıtlı müvekkil adıyla değil kayıt id'siyle gider (kategori kodu D2 türetilmez)", () => {
+        const p = paramlar({
+            clients: [{ name: "Ayşe Yılmaz" }],
+            dbClients: [{ id: 41, name: "AYŞE YILMAZ" }],
         });
-        expect(no.split(".")[0]).toBe("D1");
-        // Blok 2, 10 karaktere nokta ile doldurulur → "I_KUTLUK.."
-        expect(no).toContain(".I_KUTLUK..");
+        expect(p.getAll("muvekkiller")).toEqual(["41"]);
+        expect(p.toString()).not.toContain("A_YILMAZ");
     });
 
-    it("kurum müvekkilde jenerik kelimeler atılır", () => {
-        const no = generateTrackingNumber({
-            category: "Sigorta",
-            clientName: "Anadolu Sigorta A.Ş.",
-            clientCategory: "Sigorta",
-        });
-        // "Sigorta"/"A.Ş." jenerik → ilk anlamlı kelime ANADOLU; Anadolu → S2
-        expect(no.startsWith("S2.ANADOLU...")).toBe(true);
+    it("yargı türü ham gider; sıra numarası istemciden gönderilmez", () => {
+        const p = paramlar({ clients: [{ name: "Ali Veli" }], fileType: "İcra" });
+        // Eski: blok4 "ICRAA", blok3 ".0012." istemcide kurulurdu
+        expect(p.get("file_type")).toBe("İcra");
+        expect([...p.keys()].sort()).toEqual(["file_type", "muvekkiller"]);
     });
 
-    it("bilinen sigorta şirketi özgül kod alır", () => {
-        const no = generateTrackingNumber({
-            category: "Sigorta",
-            clientName: "AXA Sigorta",
-            clientCategory: "Sigorta",
-        });
-        expect(no.split(".")[0]).toBe("S3");
-    });
-
-    it("bilinmeyen sigorta S0 alır", () => {
-        const no = generateTrackingNumber({
-            category: "Sigorta",
-            clientName: "Bilinmedik Sigorta",
-            clientCategory: "Sigorta",
-        });
-        expect(no.split(".")[0]).toBe("S0");
-    });
-
-    it("sağlık çalışanı D2 kodu ve kişi formatı alır", () => {
-        const no = generateTrackingNumber({
-            category: "Sağlık Çalışanı",
-            clientName: "Ayşe Yılmaz",
-            clientCategory: "Sağlık Çalışanı",
-        });
-        expect(no.split(".")[0]).toBe("D2");
-        expect(no).toContain(".A_YILMAZ..");
-    });
-
-    it("süreç tipi ve sıra numarası bloklara yansır", () => {
-        const no = generateTrackingNumber({ processType: "İcra", sequence: 12 });
-        const parts = no.split(".");
-        expect(parts[parts.length - 2]).toBe("ICRAA");
-        expect(no).toContain(".0012.");
-    });
-
-    // 2026-08-05: bu 4 tür haritada eksikti ve sessizce HUKUK üretiyordu
+    // Eski: bu 4 tür blok4 kodu (IDARE/TAHKM/VERGI/DANIS) üretirdi
     it.each([
         ["İdare", "IDARE"],
         ["Tahkim", "TAHKM"],
         ["Vergi", "VERGI"],
         ["Danışmanlık", "DANIS"],
-    ])("%s türü blok4'te %s üretir (HUKUK'a düşmez)", (processType, expected) => {
-        const no = generateTrackingNumber({ processType });
-        const parts = no.split(".");
-        expect(parts[parts.length - 2]).toBe(expected);
-        expect(validateCaseNumber(no)).toBe(true);
+    ])("%s türü AD olarak iletilir, %s kodu istemcide üretilmez", (processType, eskiKod) => {
+        const p = paramlar({ clients: [{ name: "Ali Veli" }], fileType: processType });
+        expect(p.get("file_type")).toBe(processType);
+        expect(p.toString()).not.toContain(eskiKod);
     });
 
-    it("üretilen numara validateCaseNumber'dan geçer", () => {
+    it("hiçbir girdide eski beş bloklu numara biçimi çıkmaz", () => {
+        const ESKI_BICIM = /[A-Z0-9]{2}\.[A-Z0-9_.]{10}\.[A-Z0-9]{4}\.[A-Z0-9]{5}\.[A-Z0-9]{5}/;
         const cases = [
-            generateTrackingNumber(),
-            generateTrackingNumber({
-                category: "Doktor",
-                clientName: "İlke Berk Kutluk",
-                clientCategory: "Doktor",
-                sequence: 7,
-                processType: "Ceza",
-            }),
-            generateTrackingNumber({
-                category: "Sigorta",
-                clientName: "AXA Sigorta",
-                clientCategory: "Sigorta",
-            }),
+            sorgu({ clients: [] }),
+            sorgu({ clients: [{ name: "İlke Berk Kutluk" }], fileType: "Ceza" }),
+            sorgu({ clients: [{ name: "AXA Sigorta" }] }),
         ];
-        for (const c of cases) expect(validateCaseNumber(c)).toBe(true);
+        for (const c of cases) expect(ESKI_BICIM.test(decodeURIComponent(c ?? ""))).toBe(false);
     });
 });
 
-describe("generateNameBlock", () => {
-    it("üretilen blok her zaman 10 karakterdir", () => {
-        expect(generateNameBlock("İlke Berk Kutluk", "Doktor")).toHaveLength(10);
-        expect(generateNameBlock("Anadolu Sigorta A.Ş.", "Sigorta")).toHaveLength(10);
-        expect(generateNameBlock("", "")).toHaveLength(10);
+describe("ofisNoOnizlemeSorgusu — müvekkil listesi (eski: generateNameBlock)", () => {
+    it("boş / boşluktan ibaret müvekkil satırı sorguya girmez", () => {
+        expect(sorgu({ clients: [{ name: "" }] })).toBeNull();
+        expect(sorgu({ clients: [{ name: "   " }] })).toBeNull();
+        expect(paramlar({ clients: [{ name: "" }, { name: " Ali Veli " }] }).getAll("muvekkiller"))
+            .toEqual(["Ali Veli"]);
     });
 
-    it("generateTrackingNumber'ın 2. bloğuyla birebir aynıdır", () => {
-        const samples: Array<{ name: string; cat: string }> = [
-            { name: "İlke Berk Kutluk", cat: "Doktor" },
-            { name: "Anadolu Sigorta A.Ş.", cat: "Sigorta" },
-            { name: "Mehmet Öz", cat: "" },
+    it("';' ile yazılan çoklu isim ayrı müvekkiller olarak gider", () => {
+        const samples: Array<{ yazilan: string; beklenen: string[] }> = [
+            { yazilan: "İlke Berk Kutluk; Mehmet Öz", beklenen: ["İlke Berk Kutluk", "Mehmet Öz"] },
+            { yazilan: "Anadolu Sigorta A.Ş.;", beklenen: ["Anadolu Sigorta A.Ş."] },
+            { yazilan: " Mehmet Öz ;  ; Ayşe Gül ", beklenen: ["Mehmet Öz", "Ayşe Gül"] },
         ];
         for (const s of samples) {
-            const tracking = generateTrackingNumber({
-                clientName: s.name,
-                clientCategory: s.cat,
-            });
-            // Blok2 = 4..13 arası sabit genişlikli alan (blok2 nokta içerebildiği
-            // için split(".") kullanılamaz)
-            expect(tracking.slice(3, 13)).toBe(generateNameBlock(s.name, s.cat));
+            expect(paramlar({ clients: [{ name: s.yazilan }] }).getAll("muvekkiller")).toEqual(s.beklenen);
         }
     });
 
-    it("kategori boşsa kişi formatı kullanılır", () => {
-        expect(generateNameBlock("İlke Berk Kutluk")).toBe("I_KUTLUK..");
+    it("satırın kendi client_id'si varsa ad eşleşmesi aranmadan o id gider", () => {
+        expect(paramlar({
+            clients: [{ name: "İlke Berk Kutluk", client_id: 7 }],
+            dbClients: [{ id: 99, name: "İlke Berk Kutluk" }],
+        }).getAll("muvekkiller")).toEqual(["7"]);
     });
 });
 
-describe("pickNameClient", () => {
-    it("kişi kategorileri sigortaya tercih edilir", () => {
-        const picked = pickNameClient([
-            { name: "AXA Sigorta", category: "Sigorta Şirketi" },
-            { name: "Mehmet Öz", category: "Doktor" },
-        ]);
-        expect(picked.name).toBe("Mehmet Öz");
+describe("müvekkil seçimi sunucudadır (eski: pickNameClient)", () => {
+    it("istemci kişi/sigorta önceliği uygulamaz: form sırası korunur", () => {
+        // Eski: Doktor, sigortanın önüne alınırdı
+        expect(paramlar({ clients: [{ name: "AXA Sigorta" }, { name: "Mehmet Öz" }] }).getAll("muvekkiller"))
+            .toEqual(["AXA Sigorta", "Mehmet Öz"]);
     });
 
-    it("öncelik sırası Doktor > Sağlık Çalışanı > Hasta > Bireysel", () => {
-        const picked = pickNameClient([
-            { name: "B", category: "Bireysel" },
-            { name: "H", category: "Hasta" },
-            { name: "S", category: "Sağlık Çalışanı" },
-            { name: "D", category: "Doktor" },
-        ]);
-        expect(picked.name).toBe("D");
+    it("kategori sırası (Doktor > Sağlık Çalışanı > Hasta > Bireysel) istemcide kurulmaz", () => {
+        const dortlu = [{ name: "B" }, { name: "H" }, { name: "S" }, { name: "D" }];
+        expect(paramlar({ clients: dortlu }).getAll("muvekkiller")).toEqual(["B", "H", "S", "D"]);
 
-        const withoutDoctor = pickNameClient([
-            { name: "B", category: "Bireysel" },
-            { name: "H", category: "Hasta" },
-            { name: "S", category: "Sağlık Çalışanı" },
-        ]);
-        expect(withoutDoctor.name).toBe("S");
+        expect(paramlar({ clients: dortlu.slice(0, 3) }).getAll("muvekkiller")).toEqual(["B", "H", "S"]);
     });
 
-    it("boş liste boş sonuç döner", () => {
-        expect(pickNameClient([])).toEqual({ name: "", category: "" });
+    it("boş liste: seçilecek müvekkil yok, sorgu yok", () => {
+        expect(sorgu({ clients: [], fileType: "Hukuk" })).toBeNull();
     });
 });
 
-describe("bestCategoryCode", () => {
-    it("özgül sigorta kodu her şeyi yener", () => {
-        const code = bestCategoryCode([
-            { name: "Mehmet Öz", category: "Doktor" },
-            { name: "AXA Sigorta", category: "Sigorta" },
-        ]);
-        expect(code).toBe("S3");
-    });
-
-    it("özgül sigorta yoksa S0 öne geçer", () => {
-        const code = bestCategoryCode([
-            { name: "Hasta Kişi", category: "Hasta" },
-            { name: "Bilinmedik Sigorta", category: "Sigorta" },
-        ]);
-        expect(code).toBe("S0");
-    });
-
-    it("sigorta yoksa ilk anlamlı kod", () => {
-        expect(bestCategoryCode([{ name: "Mehmet", category: "Hasta" }])).toBe("H1");
-    });
-
-    it("sigorta yoksa açık öncelik: D1 > D2 > H2 > H1 (liste sırasından bağımsız)", () => {
-        expect(bestCategoryCode([
-            { name: "Hasta Kişi", category: "Hasta" },
-            { name: "Hemşire Ayşe", category: "Sağlık Çalışanı" },
-            { name: "Mehmet Öz", category: "Doktor" },
-        ])).toBe("D1");
-
-        expect(bestCategoryCode([
-            { name: "Hasta Kişi", category: "Hasta" },
-            { name: "Özel Hastane A.Ş.", category: "Özel Hastane" },
-            { name: "Hemşire Ayşe", category: "Sağlık Çalışanı" },
-        ])).toBe("D2");
-    });
-
-    it("boş liste X1", () => {
-        expect(bestCategoryCode([])).toBe("X1");
-    });
-});
-
-describe("validateCaseNumber", () => {
-    it("geçerli format kabul edilir", () => {
-        expect(validateCaseNumber("D1.I_KUTLUK...0007.CEZAA.00000")).toBe(true);
-    });
-
-    it("bozuk formatlar reddedilir", () => {
-        expect(validateCaseNumber("")).toBe(false);
-        expect(validateCaseNumber("d1.i_kutluk...0007.cezaa.00000")).toBe(false); // küçük harf
-        expect(validateCaseNumber("D1.KISA.0007.CEZAA.00000")).toBe(false);       // blok2 ≠ 10
-        expect(validateCaseNumber("D1.I_KUTLUK...07.CEZAA.00000")).toBe(false);   // blok3 ≠ 4
-    });
-});
-
-// G223: NewCase/Intake `category` olarak `bestCategoryCode` çıktısını (B1 KODU) geçer;
-// fonksiyon önceden yalnız kategori ADI bekleyip kodu X1'e düşürüyordu.
-describe("generateTrackingNumber — B1 kodu ile çağrı (G223)", () => {
-    const b1 = (no: string) => no.split(".")[0];
-
-    it("geçerli B1 kodu verilirse aynen kullanılır", () => {
-        expect(b1(generateTrackingNumber({
-            category: "D1", clientName: "Ayşe Gül Öztürk", clientCategory: "Doktor",
-        }))).toBe("D1");
-        expect(generateTrackingNumber({ category: "D1" }).startsWith("D1.")).toBe(true);
-        expect(b1(generateTrackingNumber({ category: "H2", clientName: "X Hastanesi", clientCategory: "Özel Hastane" }))).toBe("H2");
-        expect(b1(generateTrackingNumber({ category: "S4", clientName: "Quick Sigorta A.Ş.", clientCategory: "Sigorta" }))).toBe("S4");
-    });
-
-    it("kategori adıyla çağrı eski davranışı korur", () => {
-        expect(b1(generateTrackingNumber({ category: "Doktor", clientName: "Mehmet Öz", clientCategory: "Doktor" }))).toBe("D1");
-        expect(b1(generateTrackingNumber({ category: "Özel Hastane", clientName: "Acıbadem", clientCategory: "Özel Hastane" }))).toBe("H2");
-    });
-
-    // NewCase.tsx / IntakeReviewStep.tsx'in gerçek çağrı biçimi
-    const cagriBicimi = (clients: Array<{ name: string; category?: string }>) => {
-        const named = pickNameClient(clients);
-        return generateTrackingNumber({
-            category: bestCategoryCode(clients),
-            clientName: named.name,
-            clientCategory: named.category,
-            sequence: 1,
-            processType: "Hukuk",
+describe("'Sigortalı' tarafı sunucuya iletilir (eski: bestCategoryCode)", () => {
+    it("Sigortalı rolündeki taraf `sigortali` olarak gider", () => {
+        const p = paramlar({
+            clients: [{ name: "AXA Sigorta" }],
+            otherParties: [{ name: "Emre Altunç", role: "Sigortalı" }],
         });
+        expect(p.getAll("sigortali")).toEqual(["Emre Altunç"]);
+    });
+
+    it("başka roldeki taraflar gönderilmez", () => {
+        const p = paramlar({
+            clients: [{ name: "AXA Sigorta" }],
+            otherParties: [{ name: "Hasta Kişi", role: "Davacı" }, { name: "Tanık Bir", role: "Tanık" }],
+        });
+        expect(p.has("sigortali")).toBe(false);
+    });
+
+    it("';' ile yazılan çoklu sigortalı ayrı ayrı gider", () => {
+        expect(paramlar({
+            clients: [{ name: "AXA Sigorta" }],
+            otherParties: [{ name: "Emre Altunç; Ayşe Gül", role: "Sigortalı" }],
+        }).getAll("sigortali")).toEqual(["Emre Altunç", "Ayşe Gül"]);
+    });
+
+    it("rol boşluklu yazılsa da tanınır; müvekkil yoksa sigortalı tek başına sorgu kurmaz", () => {
+        expect(paramlar({
+            clients: [{ name: "AXA Sigorta" }],
+            otherParties: [{ name: "Emre Altunç", role: " Sigortalı " }],
+        }).getAll("sigortali")).toEqual(["Emre Altunç"]);
+
+        expect(sorgu({
+            clients: [],
+            otherParties: [{ name: "Emre Altunç", role: "Sigortalı" }],
+        })).toBeNull();
+    });
+
+    it("taraf listesi boşsa `sigortali` parametresi hiç yok", () => {
+        expect(paramlar({ clients: [{ name: "AXA Sigorta" }], otherParties: [] }).has("sigortali")).toBe(false);
+    });
+});
+
+describe("istekKimligiGecerli (eski: validateCaseNumber)", () => {
+    it("UUID biçimi kabul edilir", () => {
+        expect(istekKimligiGecerli("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a")).toBe(true);
+    });
+
+    it("UUID olmayan değerler reddedilir (eski ofis numarası dahil)", () => {
+        expect(istekKimligiGecerli("")).toBe(false);
+        expect(istekKimligiGecerli("D1.I_KUTLUK...0007.CEZAA.00000")).toBe(false); // eski numara kimlik değildir
+        expect(istekKimligiGecerli(undefined)).toBe(false);
+        expect(istekKimligiGecerli("3f2b8c1e-9d4a-4f6b-8a2c")).toBe(false);         // eksik blok
+    });
+});
+
+describe("yeniIstekKimligi — kayıt isteğinin kimliği (eski: B1 kodu ile çağrı, G223)", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+    it("geçerli bir UUID v4 üretir, her çağrıda farklı", () => {
+        const a = yeniIstekKimligi();
+        expect(istekKimligiGecerli(a)).toBe(true);
+        expect(a).toMatch(V4);
+        expect(a).toHaveLength(36);
+        expect(yeniIstekKimligi()).not.toBe(a);
+    });
+
+    it("randomUUID yoksa (güvenli bağlam dışı) getRandomValues ile v4 kurar", () => {
+        vi.stubGlobal("crypto", {
+            getRandomValues: (dizi: Uint8Array) => { dizi.fill(0xab); return dizi; },
+        });
+        expect(yeniIstekKimligi()).toBe("abababab-abab-4bab-abab-abababababab");
+        expect(yeniIstekKimligi()).toMatch(V4);
+    });
+
+    // Eski `cagriBicimi` yardımcısının yerine: crypto'suz ortamda üretim
+    const cryptosuzUret = () => {
+        vi.stubGlobal("crypto", undefined);
+        return yeniIstekKimligi();
     };
 
-    it("NewCase/Intake çağrı biçiminde Doktor müvekkil D1 alır (X1 değil)", () => {
-        const no = cagriBicimi([{ name: "Ayşe Gül Öztürk", category: "Doktor" }]);
-        // Blok 2 = "A_OZTURK.." (10 karakter) + ayraç nokta
-        expect(no).toBe("D1.A_OZTURK...0001.HUKUK.00000");
+    it("crypto hiç yoksa da biçimi geçerli bir kimlik döner", () => {
+        expect(cryptosuzUret()).toMatch(V4);
     });
 
-    it("NewCase/Intake çağrı biçiminde Hasta müvekkil haritadaki kodu alır", () => {
-        const no = cagriBicimi([{ name: "Mehmet Yılmaz", category: "Hasta" }]);
-        expect(b1(no)).toBe(CATEGORY_MAP["Hasta"]);
+    it("yargı türü listesi AD listesidir: İdare var, eski 'İdari Yargı' yok", () => {
+        expect(YARGI_TURLERI.filter(t => t === "İdare" || t === "İdari Yargı")).toEqual(["İdare"]);
     });
 
-    it("NewCase/Intake çağrı biçiminde Sağlık Çalışanı ve Özel Hastane doğru kod alır", () => {
-        expect(b1(cagriBicimi([{ name: "Hemşire Ayşe", category: "Sağlık Çalışanı" }]))).toBe(CATEGORY_MAP["Sağlık Çalışanı"]);
-        expect(b1(cagriBicimi([{ name: "Acıbadem Hastanesi", category: "Özel Hastane" }]))).toBe(CATEGORY_MAP["Özel Hastane"]);
+    it("yargı türü listesi tekildir ve sihirbazın dokuz türünü taşır", () => {
+        expect(new Set(YARGI_TURLERI).size).toBe(YARGI_TURLERI.length);
+        expect([...YARGI_TURLERI]).toEqual([
+            "Hukuk", "Ceza", "İcra", "Arabuluculuk", "Savcılık", "İdare", "Tahkim", "Vergi", "Danışmanlık",
+        ]);
     });
 });
 
-describe("sigorta kodu ASCII normalize adla aranır (G223)", () => {
-    const b1 = (no: string) => no.split(".")[0];
-
-    it("küçük harfli Quick → INSURANCE_CODES['QUICK']", () => {
-        const no = generateTrackingNumber({
-            category: "Sigorta", clientName: "Quick Sigorta A.Ş.", clientCategory: "Sigorta",
-        });
-        expect(b1(no)).toBe(`S${INSURANCE_CODES["QUICK"]}`);
-        expect(b1(no)).toBe("S4");
+describe("kaldırılan üretici modülden dışa verilmez (eski: sigorta kodu ASCII, G223)", () => {
+    it("numara ve isim bloğu üreticileri yok", () => {
+        expect("generateTrackingNumber" in disaVerilenler).toBe(false);
+        expect("generateNameBlock" in disaVerilenler).toBe(false);
     });
 
-    it("küçük harfli Nippon → INSURANCE_CODES['NIPPON']", () => {
-        const no = generateTrackingNumber({
-            category: "Sigorta", clientName: "Nippon Sigorta", clientCategory: "Sigorta",
-        });
-        expect(b1(no)).toBe(`S${INSURANCE_CODES["NIPPON"]}`);
-        expect(b1(no)).toBe("S6");
+    it("müvekkil seçici ve kategori kodu çözücü yok", () => {
+        expect("pickNameClient" in disaVerilenler).toBe(false);
+        expect("bestCategoryCode" in disaVerilenler).toBe(false);
     });
 
-    it("kategorisiz çağrıda da adda 'Sigorta' + marka yakalanır", () => {
-        expect(b1(generateTrackingNumber({ clientName: "Nippon Sigorta" }))).toBe("S6");
+    it("istemci biçim doğrulayıcısı yok (biçimi sunucu bilir)", () => {
+        expect("validateCaseNumber" in disaVerilenler).toBe(false);
     });
 
-    it("bestCategoryCode ile aynı sonucu verir", () => {
-        for (const name of ["Quick Sigorta A.Ş.", "Nippon Sigorta", "Axa Sigorta", "Bilinmedik Sigorta"]) {
-            expect(b1(generateTrackingNumber({ category: "Sigorta", clientName: name, clientCategory: "Sigorta" })))
-                .toBe(bestCategoryCode([{ name, category: "Sigorta" }]));
+    it("kod haritaları yok — kanonik kaynak backend/services/ofis_no.py", () => {
+        for (const harita of ["CATEGORY_MAP", "INSURANCE_CODES", "PROCESS_MAP", "B1_CODES"]) {
+            expect(harita in disaVerilenler).toBe(false);
         }
     });
 });

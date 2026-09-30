@@ -23,7 +23,7 @@ import {
   toCommitPolicy,
 } from "./caseIntake";
 import { buildFieldStates, fieldApprovalProgress } from "./caseIntakeFields";
-import { PROCESS_MAP } from "./caseNumberUtils";
+import { YARGI_TURLERI } from "./caseNumberUtils";
 
 const makePolicy = (over: Partial<MergePolicy> = {}): MergePolicy => ({
   police_no: "P-123",
@@ -97,14 +97,16 @@ describe("policyKey", () => {
 });
 
 describe("normalizeFileType", () => {
-  it("çıkarım değerlerini PROCESS_MAP sözlüğüne çevirir", () => {
+  // G237 (test taşıma): PROCESS_MAP kod haritası kalktı (numarayı sunucu verir);
+  // sözlük artık yalnız AD listesi YARGI_TURLERI — kod ("IDARE") beklentisi listeye çevrildi.
+  it("çıkarım değerlerini yargı türü sözlüğüne (YARGI_TURLERI) çevirir", () => {
     // İdari yargının tek türü İdare (17.09) — eski "İdari Yargı" de İdare'ye düşer
     expect(normalizeFileType("İdari")).toBe("İdare");
     expect(normalizeFileType("İdari Yargı")).toBe("İdare");
     expect(normalizeFileType("idare")).toBe("İdare");
     expect(normalizeFileType("IDARE")).toBe("İdare");
-    expect(PROCESS_MAP["İdare"]).toBe("IDARE");
-    expect(Object.keys(PROCESS_MAP)).not.toContain("İdari Yargı");
+    expect(YARGI_TURLERI).toContain("İdare");
+    expect(YARGI_TURLERI).not.toContain("İdari Yargı");
     expect(normalizeFileType("HUKUK")).toBe("Hukuk");
     expect(normalizeFileType("icra")).toBe("İcra");
     expect(normalizeFileType("Savcılık")).toBe("Savcılık");

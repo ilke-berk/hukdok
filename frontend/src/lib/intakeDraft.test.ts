@@ -34,7 +34,9 @@ const review: ReviewSnapshot = {
   }],
   serviceMask: "00100",
   selectedLawyers: [{ name: "Av. X", lawyer_id: 3 }],
-  trackingNo: "HD-2026-1",
+  // G237 (test taşıma): taslak artık ofis numarası (eski `trackingNo: "HD-2026-1"`)
+  // TAŞIMAZ; yerine kayıt isteğinin kimliğini taşır.
+  istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a",
   selectedPolicies: { "k1": true },
   documents: [{ process_id: "p1", filename: "a.pdf", newName: "a.pdf", code: "ARA-KRR", ozet: "", expired: false }],
   sendEmail: false,
@@ -88,6 +90,49 @@ describe("saveIntakeDraft / loadIntakeDraft", () => {
     }
     saveIntakeDraft(draft, review);
     expect(loadIntakeDraft()?.review).toEqual(review);
+  });
+});
+
+// G237: numarayı sunucu verir — taslak numara taşımaz, istek kimliği taşır.
+describe("taslakta ofis numarası yok, istek kimliği var (G237)", () => {
+  const eskiTaslakYaz = (reviewEk: Record<string, unknown>) => {
+    const { istekKimligi: _kimlik, ...kimliksiz } = review;
+    sessionStorage.setItem(INTAKE_DRAFT_KEY, JSON.stringify({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      draft,
+      review: { ...kimliksiz, ...reviewEk },
+    }));
+  };
+
+  it("kaydedilen taslakta numara alanı bulunmaz, kimlik aynen geri okunur", () => {
+    saveIntakeDraft(draft, review);
+    const raw = sessionStorage.getItem(INTAKE_DRAFT_KEY) ?? "";
+    expect(raw).not.toContain("trackingNo");
+    expect(loadIntakeDraft()?.review.istekKimligi).toBe("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a");
+  });
+
+  it("eski sürümün numara taşıyan taslağı yüklenir ama numara ATILIR", () => {
+    eskiTaslakYaz({ trackingNo: "D1.I_KUTLUK...0007.HUKUK.00100" });
+    const loaded = loadIntakeDraft();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.review).not.toHaveProperty("trackingNo");
+    expect(JSON.stringify(loaded)).not.toContain("I_KUTLUK");
+    // Taslağın geri kalanı korunur
+    expect(loaded!.review.parties).toEqual(review.parties);
+    expect(loaded!.review.serviceMask).toBe("00100");
+  });
+
+  it("eski taslakta istek kimliği yoktur — alan boş döner (review yenisini üretir)", () => {
+    eskiTaslakYaz({ trackingNo: "X" });
+    expect(loadIntakeDraft()?.review.istekKimligi).toBeUndefined();
+  });
+
+  it("UUID olmayan (bozuk) kimlik taşınmaz", () => {
+    eskiTaslakYaz({ istekKimligi: "D1.I_KUTLUK...0007.HUKUK.00100" });
+    const loaded = loadIntakeDraft();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.review).not.toHaveProperty("istekKimligi");
   });
 });
 

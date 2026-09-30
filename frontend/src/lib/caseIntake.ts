@@ -465,8 +465,10 @@ export interface CommitCasePartyIn {
 }
 
 // schemas.CaseCreate ile aynı anahtarlar (parties/lawyers dahil)
+// G237: `tracking_no` YOK — numarayı sunucu verir (karar 023).
 export interface CommitCaseIn {
-  tracking_no: string;
+  /** Kayıt isteğinin kimliği (UUID): aynı kimlikle tekrar gelen commit ikinci kart açmaz. */
+  istek_kimligi?: string;
   esas_no?: string | null;
   status?: string;
   service_type?: string | null;
@@ -514,12 +516,18 @@ export interface CommitResult {
     /** Sunucu kararı: zorunlu alanlar tamsa DERDEST, eksikse DANIŞ */
     status?: string;
     missing_required_fields?: { field: string; label: string }[];
+    /** G236: aynı `istek_kimligi` daha önce kaydedilmiş — dönen kart İLK karttır. */
+    reused?: boolean;
   };
   documents: CommitDocumentResult[];
   policies: { saved: number; skipped: number; error?: string };
 }
 
-/** 409 duplicate_tracking_no — sihirbaz sequence yenileyip 1 kez otomatik dener. */
+/**
+ * 409 — kayıt isteği kimliği kullanılmış ama kart görünmüyor (silinmiş / başka tenant).
+ * G237: ofis numarası çakışması sınıfı kalktı (numarayı sunucu verir); otomatik
+ * yeniden deneme YOK — kullanıcı sihirbazı yeniden başlatır.
+ */
 export class CommitConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -647,9 +655,9 @@ export function policyKey(p: MergePolicy): string {
 }
 
 /**
- * Çıkarımdaki yargı türünü NewCase'in file_type sözlüğüne (PROCESS_MAP
- * anahtarları) normalize eder. Backend "İdari" döndürebilir; idari yargının TEK dava
- * türü "İdare"dir (ofis no bloğu IDARE — ekibe söz 17.09; eski "İdari Yargı" türü
+ * Çıkarımdaki yargı türünü NewCase'in file_type sözlüğüne (`YARGI_TURLERI`)
+ * normalize eder. Backend "İdari" döndürebilir; idari yargının TEK dava
+ * türü "İdare"dir (ekibe söz 17.09; eski "İdari Yargı" türü
  * `scripts/idari_yargi_birlestir.py` ile birleşti, mevcut IDARI numaraları değişmedi).
  * Bilinmeyen değer olduğu gibi geçer (kullanıcı düzeltir).
  */
