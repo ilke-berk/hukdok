@@ -106,7 +106,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      PROD GÖÇÜ bu kuyrukta YOK: G238 yalnız lokal kuru koşu; lokal/prod --apply + veri ekibine not gönderimi kullanıcı kararı.
      Tahmin: 2 gece. -->
 
-- [ ] G234 | bant:docs | bagimli:- | Karar 023: ofis no formatı (format tablosu, müvekkil/sigortalı/sıra/tür kuralları, sigorta kodları, göç kuralları, bağımlılık haritası, reddedilenler)
+- [x] G234 | bant:docs | bagimli:- | Karar 023: ofis no formatı (format tablosu, müvekkil/sigortalı/sıra/tür kuralları, sigorta kodları, göç kuralları, bağımlılık haritası, reddedilenler)
 - [ ] G235 | bant:backend | bagimli:G234 | `services/ofis_no.py` üretici + `ofis_no_sayaclari` atomik sayaç + kategori kodları (`client_categories.ofis_no_kodu`) + `sigorta_kisa_kodlari` listesi + admin uçları (migrasyon 56); mevcut akış değişmez
 - [ ] G236 | bant:backend | bagimli:G235 | Yeni kartta numarayı sunucu verir (istemci değeri yok sayılır, müvekkilsiz 422, paralel kayıtta 409 yok) + `GET /api/cases/ofis-no-onizleme`; düzenlemede numara değişmez
 - [ ] G237 | bant:frontend | bagimli:G236 | NewCase/QuickCase/Intake numarayı önizler, üretmez; `caseNumberUtils` üreticisi + `2024/` ve `XXXXXXXXXX` yer tutucuları kalkar
