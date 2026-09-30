@@ -29,6 +29,7 @@ tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 | [020](020-dava-durumu-uclusu.md) | Dava durumu üçlüsü DERDEST / DANIŞ / MAHZEN; temyiz/istinaf aşamadır, durum değil (migrasyon 50) |
 | [021](021-hukukbot-hukudok-girisi.md) | Hukukbot'a tek giriş HukuDok: aynı access token iki backend'de, iç `/hukukbot` sayfası, `/hukukbot-api/` allowlist'i; ayrı site kalkar |
 | [022](022-kurumsal-avukat-kimligi.md) | Kurumsal avukat kimliği `AVK-00001` (HukuDok + Hukukbot ortak, gizli); avukat kodları kalkar, avukat kaydı silinmez (pasif), bağlar `ON DELETE RESTRICT` |
+| [023](023-ofis-no-formati.md) | Ofis no yeni formatı `<MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR>` (`AXA-3297-DR.E.ALTUNC-HUK`): okunur kodlar, sigortalı bloğu, sunucu sayacı; tüm kartlar izli göçle yeniden numaralanır (016'yı değiştirir) |
 
 ## Dosya biçimi
 
