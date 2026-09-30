@@ -24,8 +24,7 @@ import { Suspense, lazy, useEffect, useState } from "react";
 
 // G182: sayfalar route başına ayrı parça (tek 1,5 MB paket yerine). Login ve NotFound
 // statik kalır: oturumsuz ilk açılış ve 404 ek ağ turu beklemeden çizilsin.
-// /reports + /admin parçaları (rapor katmanı, @dnd-kit) admin olmayan kullanıcıya
-// hiç inmez. importWithReload: deploy sonrası bayat parça → sayfa BİR kez yenilenir
+// /admin parçası admin olmayan kullanıcıya hiç inmez. importWithReload: deploy sonrası bayat parça → sayfa BİR kez yenilenir
 // (src/lib/chunkReload.ts).
 const Index = lazy(() => importWithReload(() => import("./pages/Index")));
 const AvukatDashboard = lazy(() => importWithReload(() => import("./pages/dashboards/AvukatDashboard")));
@@ -128,14 +127,8 @@ const AppContent = () => {
           <Route path="/activity-history" element={<ActivityHistory />} />
           {/* Hukukbot (karar 021): her giriş yapmış kullanıcı; Hukukbot token'ı kendisi doğrular */}
           <Route path="/hukukbot" element={<HukukbotPage />} />
-          <Route
-            path="/reports"
-            element={
-              <ProtectedAdminRoute>
-                <ReportsPage />
-              </ProtectedAdminRoute>
-            }
-          />
+          {/* Raporlar: her giriş yapmış kullanıcı (30.09; uçlar da get_current_user) */}
+          <Route path="/reports" element={<ReportsPage />} />
           <Route
             path="/admin"
             element={

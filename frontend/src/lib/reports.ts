@@ -1198,7 +1198,7 @@ export async function exportReport(
     return { blob, dosyaAdi, kosuId };
 }
 
-/** `GET /api/reports/runs?limit=&offset=` — tüm yöneticilerin koşuları, yeni→eski. */
+/** `GET /api/reports/runs?limit=&offset=` — yöneticiye herkesin, diğer kullanıcıya kendi koşuları; yeni→eski. */
 export async function listRuns(limit: number, offset: number): Promise<RaporKosuListesi> {
     const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     const res = await apiClient.fetch(`/api/reports/runs?${q.toString()}`);

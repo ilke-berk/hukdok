@@ -76,8 +76,9 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
 }
 
 /**
- * /reports — yöneticiye özel (ProtectedAdminRoute, App.tsx). Sekmeler: "Rapor", "Şablonlar" (liste
- * tablosu), "İndirme geçmişi" (sunucu sayfalı koşular).
+ * /reports — giriş yapmış her kullanıcıya açık (30.09; önceden yöneticiye özeldi). Sekmeler: "Rapor",
+ * "Şablonlar" (liste tablosu), "İndirme geçmişi" (sunucu sayfalı koşular — yönetici herkesinkini,
+ * diğer kullanıcı yalnız kendininkini görür; süzme sunucuda).
  *
  * G144 — favori önerisi (plan §6.2): başarılı export (manuel `ExportButtons` ya da asistan `indir_*`)
  * sonrasında taslak hiçbir kayıtlı şablonla birebir aynı değilse (`ayniTanim`) ve "Şimdi değil" denmemişse
@@ -114,7 +115,7 @@ async function yedekOnay(opts: ConfirmOptions): Promise<boolean> {
  * katalog gelince bu tanımdan kurulur ve önizleme taze çekilir. Sohbet aynı yolla `AssistantBar`'da korunur.
  */
 const ReportsPage = () => {
-    useSetPageTitle("Raporlar", ["Raporlar"]);
+    useSetPageTitle("Raporlar", ["Araçlar", "Raporlar"]);
     const confirm = useContext(ConfirmContext)?.confirm ?? yedekOnay;
 
     // Sahiplik: sunucu `olusturan`ı küçük harfli e-posta yazar; MSAL username aynı kimlik.
@@ -595,7 +596,7 @@ const ReportsPage = () => {
         const ok = await confirm({
             tone: "destructive",
             title: "Şablonu sil",
-            body: `"${sablon.ad}" silinecek. ${sablon.paylasimli ? "Paylaşımlı olduğu için diğer yöneticilerin listesinden de kalkar." : ""}`.trim(),
+            body: `"${sablon.ad}" silinecek. ${sablon.paylasimli ? "Paylaşımlı olduğu için diğer kullanıcıların listesinden de kalkar." : ""}`.trim(),
             irreversible: true,
         });
         if (!ok) return;
@@ -808,7 +809,7 @@ const ReportsPage = () => {
                     <MessageSquareOff className="w-3.5 h-3.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
                     <span className="font-medium text-[var(--fg)]">Rapor asistanı kapalı</span>
                     <span className="min-w-0">
-                        — yönetici panelinden <code className="font-mono text-[11px]">rapor_asistani</code> anahtarını açın.
+                        — yönetici, Yönetim panelinden <code className="font-mono text-[11px]">rapor_asistani</code> anahtarını açabilir.
                         Tanım şeridi ve tablo çalışmaya devam eder.
                     </span>
                 </div>
@@ -905,7 +906,7 @@ const ReportsPage = () => {
                 <Eyebrow>01 · Raporlar</Eyebrow>
                 <h1
                     className="mt-1 font-display text-[26px] tracking-[-0.01em] text-[var(--fg)] font-medium"
-                    title="Ne istediğinizi asistana yazın ya da tanım şeridinden düzenleyin; önizleme kendiliğinden yenilenir. Test aşaması — yalnız yöneticiler."
+                    title="Ne istediğinizi asistana yazın ya da tanım şeridinden düzenleyin; önizleme kendiliğinden yenilenir."
                 >
                     Raporlar
                 </h1>

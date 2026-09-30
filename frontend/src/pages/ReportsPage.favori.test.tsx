@@ -142,7 +142,7 @@ const okBlob = (headers: Record<string, string>) => ({
     headers: { get: (k: string) => headers[k] ?? null },
     blob: async () => new Blob(["x"]),
 });
-const ayarlar = (acik: boolean) => okJson({ settings: [{ key: "rapor_asistani", value: acik, default: false, label: "Rapor asistanı", description: "", updated_by: null, updated_at: null }] });
+const ayarlar = (acik: boolean) => okJson({ etkin: acik });
 
 /** NDJSON satırlarını tek tek chunk olarak veren sahte akış yanıtı. */
 function akis(olaylar: unknown[]) {
@@ -239,7 +239,7 @@ describe("ReportsPage favori önerisi (G144)", () => {
                 sablonlar.unshift(yeni);
                 return okJson(yeni, 201);
             }
-            if (url === "/api/admin/settings") return ayarlar(ayar.anahtar ?? false);
+            if (url === "/api/reports/assistant") return ayarlar(ayar.anahtar ?? false);
             if (url === "/api/reports/chat" && method === "POST") {
                 return ayar.chat ? ayar.chat() : akis([{ status: "complete", cevap: "Hazır.", tanim: null, eylem: null }]);
             }

@@ -7,13 +7,13 @@
 // başlık-sıralaması plan §2.1 gövdesiyle /api/reports/preview'a gider, yazarken 600 ms tek istek, geçersiz
 // tanımda istek yok, kaynak rozeti menüsü kaynağı değiştirir ve eski satırlar ANINDA kaybolur, boş sonuçta
 // filtre kısayolu, 422 okunur mesaja döner, ağ hatası boş listeye DÖNMEZ (DataErrorBanner), sayfa değişimi son
-// önizlenen tanımla `sayfa` gönderir; /reports yalnız yöneticiye açılır, Sidebar "Raporlar" yalnız yöneticide.
+// önizlenen tanımla `sayfa` gönderir; Sidebar "Raporlar" her kullanıcıda, Araçlar bölümünde (30.09).
 // Seçili kolonların kanıtı: şeritteki kolon çipleri (`serit-kolon-<anahtar>`) + /preview gövdesindeki `kolonlar`.
 // Şerit açılırları (kaynak menüsü, "+ Kolon", filtre düzenleyici) Radix portal'ında açılır — `document.body`den okunur.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter } from "react-router";
 
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 
@@ -23,7 +23,7 @@ vi.mock("sonner", () => ({ toast: toastMocks }));
 const fetchMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: fetchMock } }));
 
-// Yönetici bayrağı: ProtectedAdminRoute + Sidebar aynı hook'u okur; test başına ayarlanır.
+// Yönetici bayrağı: Sidebar bu hook'u okur; test başına ayarlanır.
 const adminMock = vi.hoisted(() => ({ value: true as boolean | null }));
 vi.mock("@/hooks/useIsAdmin", () => ({ useIsAdmin: () => adminMock.value }));
 
@@ -41,7 +41,6 @@ vi.mock("@azure/msal-react", () => msalMock);
 vi.mock("@/hooks/useDashboardView", () => ({ useDashboardView: () => ({ view: "avukat", setView: () => undefined }) }));
 
 import ReportsPage, { ONIZLEME_GECIKME_MS } from "./ReportsPage";
-import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { OP_BY_TIP, type FiltreKontrolu, type KatalogKolon, type KolonTipi } from "@/lib/reports";
 import { raporSayfaCalismasi } from "@/lib/raporCalismasi";
@@ -204,7 +203,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
         fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
             if (url === "/api/reports/catalog") return okJson(KATALOG);
             if (url === "/api/reports/templates") return okJson([]);
-            if (url === "/api/admin/settings") return okJson({ settings: [] });
+            if (url === "/api/reports/assistant") return okJson({ etkin: false });
             if (url === "/api/reports/preview") {
                 const govde = JSON.parse(opts!.body as string);
                 const cevap = govde.tanim.veri_kaynagi === "muvekkiller" ? MUVEKKIL_ONIZLEME : onizleme;
@@ -473,7 +472,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
         fetchMock.mockImplementation(async (url: string, opts?: RequestInit) => {
             if (url === "/api/reports/catalog") return okJson(KATALOG);
             if (url === "/api/reports/templates") return okJson([]);
-            if (url === "/api/admin/settings") return okJson({ settings: [] });
+            if (url === "/api/reports/assistant") return okJson({ etkin: false });
             if (url === "/api/reports/preview") {
                 const govde = JSON.parse(opts!.body as string);
                 const cevap = govde.tanim.filtreler.length > 0 ? bosCevap : ONIZLEME;
@@ -811,7 +810,7 @@ describe("ReportsPage (G133/G138/G175)", () => {
     });
 
     it("anahtar kapalı: asistan satırının yerinde bilgi kartı (sekmenin ilk öğesi); şerit ve tablo çalışır, şablon çubuğu ve indirme yerinde", async () => {
-        sunucuKur();   // `/api/admin/settings` boş → anahtar kapalı
+        sunucuKur();   // `/api/reports/assistant` → anahtar kapalı
         await render();
         const kart = $("[data-testid='asistan-kapali-karti']");
         expect(kart.textContent).toContain("Rapor asistanı kapalı");
@@ -870,43 +869,23 @@ describe("ReportsPage (G133/G138/G175)", () => {
         expect(tablo.parentElement?.className).toContain("overflow-x-auto");
     });
 
-    it("/reports yöneticiye açılır; yönetici değilse ana sayfaya yönlendirilir", async () => {
-        sunucuKur();
-        const agac = (
-            <Routes>
-                <Route path="/" element={<div data-testid="anasayfa" />} />
-                <Route path="/reports" element={<ProtectedAdminRoute><ReportsPage /></ProtectedAdminRoute>} />
-            </Routes>
-        );
-        await render(agac, "/reports");
-        expect(container.querySelector("[data-testid='tanim-seridi']")).not.toBeNull();
-        expect(container.querySelector("[data-testid='anasayfa']")).toBeNull();
-
-        act(() => root!.unmount());
-        root = null;
-        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-        adminMock.value = false;
-        await render(agac, "/reports");
-        expect(container.querySelector("[data-testid='anasayfa']")).not.toBeNull();
-        expect(container.querySelector("[data-testid='tanim-seridi']")).toBeNull();
-        warn.mockRestore();
-    });
-
-    it("Sidebar'da Raporlar yalnız yöneticide görünür ve Yönetim'den önce gelir", async () => {
-        const etiketler = () =>
-            Array.from(container.querySelectorAll("nav button")).map(b => b.textContent?.trim());
+    it("Sidebar'da Raporlar her kullanıcıda, Araçlar bölümünde (Hukukbot'un altında) görünür", async () => {
+        // İki <nav>: [0] Çalışma, [1] Araçlar
+        const bolumler = () =>
+            Array.from(container.querySelectorAll("nav")).map(n =>
+                Array.from(n.querySelectorAll("button")).map(b => b.textContent?.trim()));
 
         adminMock.value = true;
         await render(<Sidebar open onClose={() => undefined} />, "/");
-        const admin = etiketler();
-        expect(admin).toContain("Raporlar");
-        expect(admin.indexOf("Raporlar")).toBe(admin.indexOf("Yönetim") - 1);
+        expect(bolumler()[1]).toEqual(["Hukukbot", "Raporlar"]);
+        expect(bolumler()[0]).toContain("Yönetim");
+        expect(bolumler()[0]).not.toContain("Raporlar");
 
         act(() => root!.unmount());
         root = null;
         adminMock.value = false;
         await render(<Sidebar open onClose={() => undefined} />, "/");
-        expect(etiketler()).not.toContain("Raporlar");
-        expect(etiketler()).not.toContain("Yönetim");
+        expect(bolumler()[1]).toEqual(["Hukukbot", "Raporlar"]);
+        expect(bolumler()[0]).not.toContain("Yönetim");
     });
 });

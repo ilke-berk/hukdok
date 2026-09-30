@@ -164,7 +164,9 @@ olmayan kollar: `klasor_no_2`, ham `responsible_lawyer_name`, `notes`, `case_his
 `case_esas_numbers.esas_no` (btree var, küçük tablo); `notes`/`old_value`'yu aramadan çıkarma
 kullanıcı kararı AÇIK. Nihai tablo: `docs/kararlar/018-index-temizligi-37-kalem.md` "Nihai index durumu".
 
-**Raporlama (G130-G177 + 12.09 özet modu):** yönetici `/reports`'ta isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
+**Raporlama (G130-G177 + 12.09 özet modu):** `/reports` giriş yapmış HER kullanıcıya açık (30.09; uçlar
+`get_current_user`, menüde Araçlar; koşu geçmişinde yönetici herkesi, diğeri yalnız kendini görür —
+`routes/reports.py::_kosu_sorgusu`). Kullanıcı isteğini sohbete yazar — sohbet öncelikli ekran (G173-G176):
 `AssistantBar` → `TanimSeridi` (uygulanan tanımın düzenlenebilir çip şeridi: kaynak · kolonlar · filtreler ·
 sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda; katalog önbellekli — bayatken arkaplanda yenilenir, worker açılışında ısıtılır) → tablo; manuel kurucu
 (kaynak kartı/filtre şeridi/kolon paneli) KALKTI, şerit yedek kurucudur →
@@ -172,7 +174,7 @@ sıralama; operatör seçici yok, kontrol türü/grup/öneri katalogda; katalog 
 satırı + dosya `RAPOR_CIKTI_DIZINI`'de saklanır, sha256 = indirilen) · `/templates` · `/runs`. Serbest
 SQL YOK (K1: istemci yalnız `services/rapor/registry.py` anahtarlarını gönderir, sorgu Core ile kurulur,
 tenant+soft-delete `kisitlar`dan). AI asistan `POST /chat` (NDJSON) admin anahtarı `rapor_asistani`
-(varsayılan KAPALI; kapalıyken sayfa boş kalmaz — bilgi kartı + şerit) ister; tanımı şeritle AYNI doğrulamadan
+(durumu sayfa `GET /api/reports/assistant`'tan okur; varsayılan KAPALI; kapalıyken sayfa boş kalmaz — bilgi kartı + şerit) ister; tanımı şeritle AYNI doğrulamadan
 geçer (K6) ve DÜĞME BEKLEMEDEN uygulanır (G174; kart yalnız metin filtre değeri katalog önerilerine uymayınca
 bekler — `degerEsle`, aday çipleri; "hangi X'ler var" listesi Gemini'siz katalogdan, `listeNiyeti`); prompt
 G176: onay sorma, yaklaşık ad → `contains`, liste sorusunda ekrana yönlendir. **Kaynaklar arası birleştirme
@@ -207,7 +209,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 docker compose up -d
 
 # Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
-docker compose exec -T backend python -m pytest            # 2026-09-27 (pytest 9.1.1): 3701 passed, 12 skipped
+docker compose exec -T backend python -m pytest            # 2026-09-30 (pytest 9.1.1): 4082 passed, 15 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 
 # Dev araçları (pytest/httpx/ruff/mypy) prod imajına GİRMEZ (requirements-dev.txt).
@@ -217,7 +219,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-09-27: 1206 passed (111 dosya)
+npm --prefix frontend test                                 # 2026-09-30: 1320 passed (123 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```

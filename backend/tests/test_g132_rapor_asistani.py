@@ -37,6 +37,7 @@ ADMIN = "yonetici@hanyaloglu-acar.av.tr"
 USER = "avukat@hanyaloglu-acar.av.tr"
 T1 = "tenant-hanyaloglu"
 CHAT = "/api/reports/chat"
+ASSISTANT = "/api/reports/assistant"
 SETTINGS_URL = "/api/admin/settings"
 KEY = "rapor_asistani"
 
@@ -152,11 +153,22 @@ def test_anahtar_acilinca_calisir_ve_panelden_kapatilinca_yine_409(env):
     assert client.post(CHAT, json={"mesajlar": _mesajlar("derdest davalar")}).status_code == 409
 
 
-def test_yonetici_degil_403(env):
+def test_yonetici_olmayan_da_kullanir(env):
+    """30.09: asistan giriş yapmış her kullanıcıya açık; tek kapı `rapor_asistani` anahtarı."""
+    avukat = env.client(email=USER)
+    assert avukat.post(CHAT, json={"mesajlar": _mesajlar("derdest davalar")}).status_code == 409
     env.ac()
-    r = env.client(email=USER).post(CHAT, json={"mesajlar": _mesajlar("derdest davalar")})
-    assert r.status_code == 403
-    assert env.gemini.cagrilar == []
+    olaylar = _olaylar(avukat.post(CHAT, json={"mesajlar": _mesajlar("derdest davalar")}))
+    assert olaylar[-1]["status"] == "complete"
+
+
+def test_asistan_durumu_yonetici_olmayana_da_okunur(env):
+    """`GET /assistant`: sayfa anahtarı buradan okur (`/api/admin/settings` yönetici ucudur)."""
+    avukat = env.client(email=USER)
+    assert avukat.get(SETTINGS_URL).status_code == 403
+    assert avukat.get(ASSISTANT).json() == {"etkin": False}
+    env.ac()
+    assert avukat.get(ASSISTANT).json() == {"etkin": True}
 
 
 @pytest.mark.parametrize("govde, alan", [
