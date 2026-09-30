@@ -118,6 +118,12 @@ Kaynak önceliği:
    `backend/scripts/hukdok_aktarim.py:2269`)
 3. "Diğer Davalı" içindeki ilk hekim.
 
+Föy "Sigortalı" alanı `;` ile (ya da unvanla başlayan yeni satırla) birden çok
+kişi/kurum taşıyabilir (lokal veride 4.300 dolu föyün 107'si `;`'li). Adlar
+kaynaştırılmaz; tek ad seçilir: ilk `Dr` unvanlı ad, yoksa kurum olmayan ilk ad,
+o da yoksa ilk ad (`backend/services/ofis_no.py::_tek_sigortali`). Sondaki
+"ve Diğerleri" atılır.
+
 Bulunamazsa blok yazılmaz, kart **"sigortalı eksik"** listesine düşer.
 
 ### 8. Sıra

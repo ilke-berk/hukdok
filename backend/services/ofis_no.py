@@ -438,6 +438,55 @@ def _sigortali_blogu_addan(ad: Optional[str], kl: KodListeleri) -> str:
     return kisi_blogu(kl.kategori.get("DOKTOR") or "DR", ad)
 
 
+#: Çok adlı "Sigortalı" değerinin ayracı: `;` ya da unvanla başlayan yeni satır
+#: ("Dr.A\nDr.B"). Unvansız satır sonu ayraç DEĞİL — sarılmış tek addır ("Ferda Korkmaz \nÖzkanoğlu").
+_SIGORTALI_AYRACI = re.compile(r";|\n(?=\s*(?:DR|PROF|DOC|UZM|OPR|OP)\b)")
+_VE_DIGERLERI = re.compile(r"\s+VE\s+DIG(?:ERLERI|ERLER|\.)?\s*$", re.IGNORECASE)
+_KURUM_KELIMELERI = frozenset({"HASTANE", "HASTANESI", "KLINIK", "KLINIGI", "POLIKLINIK", "POLIKLINIGI"})
+
+
+def _sigortali_adlari(ad: Optional[str]) -> list[str]:
+    """Ham "Sigortalı" değerini tek tek adlara böler (boş parçalar atılır)."""
+    ham = str(ad or "")
+    # Ayraç ASCII büyük kopyada aranır (uzunluk korunur: Türkçe harfler tek karaktere iner),
+    # parçalar ham metinden kesilir.
+    norm = ham.translate(_TR_ASCII).upper()
+    if len(norm) != len(ham):
+        norm = ham
+    parcalar: list[str] = []
+    bas = 0
+    for m in _SIGORTALI_AYRACI.finditer(norm):
+        parcalar.append(ham[bas:m.start()])
+        bas = m.end()
+    parcalar.append(ham[bas:])
+    temiz: list[str] = []
+    for parca in parcalar:
+        p = parca.strip()
+        kesim = _VE_DIGERLERI.search(p.translate(_TR_ASCII))
+        if kesim:
+            p = p[:kesim.start()].strip()
+        if p:
+            temiz.append(p)
+    return temiz
+
+
+def _kurum_adi_mi(ad: Optional[str]) -> bool:
+    return not _hekim_mi(ad) and bool(set(_kelimeler(ad)) & _KURUM_KELIMELERI or sirket_isareti_var(ad))
+
+
+def _tek_sigortali(ad: Optional[str]) -> Optional[str]:
+    """Çok adlı değerden TEK sigortalıyı seçer (karar 023 §7): ilk `Dr` unvanlı ad,
+    yoksa kurum olmayan ilk ad, o da yoksa ilk ad. Adlar ASLA kaynaştırılmaz."""
+    adlar = _sigortali_adlari(ad)
+    if not adlar:
+        return None
+    for olcut in (_hekim_mi, lambda a: not _kurum_adi_mi(a)):
+        for aday in adlar:
+            if olcut(aday):
+                return aday
+    return adlar[0]
+
+
 def sigortali_sec(
     case: Any = None,
     foys: Optional[Iterable[Any]] = None,
@@ -449,7 +498,8 @@ def sigortali_sec(
 
     Yalnız sigortacı müvekkilli kartta çağrılır. Kaynak önceliği (karar 023 §7 + §5):
 
-    1. föy `ham_veri["Sigortalı"]` (kapsam dışı işaretli föy atlanır)
+    1. föy `ham_veri["Sigortalı"]` (kapsam dışı işaretli föy atlanır; `;` ayraçlı çok
+       adlı değerde adlar kaynaştırılmaz — `_tek_sigortali`: ilk hekim, yoksa ilk kişi)
     2. `case_parties.role == "Sigortalı"`
     3. sigortacıyla BİRLİKTE müvekkil olan kişi/kurum (§5 — öncelik `musteri_kodu` sırası)
     4. "Diğer Davalı" içindeki ilk hekim (adında `Dr` unvanı)
@@ -462,8 +512,10 @@ def sigortali_sec(
     taraflar = list(parties if parties is not None else (getattr(case, "parties", None) or []))
 
     def _dene(ad: Any) -> Optional[str]:
+        # Alan `;` ile birden çok kişi/kurum taşıyabilir — blok TEK addan üretilir.
+        tek = _tek_sigortali(str(ad)) if ad else None
         try:
-            return _sigortali_blogu_addan(str(ad), kl) if ad and str(ad).strip() else None
+            return _sigortali_blogu_addan(tek, kl) if tek else None
         except ValueError:
             return None
 

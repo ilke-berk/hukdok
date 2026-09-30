@@ -280,6 +280,28 @@ def test_sigortali_kendi_kategori_koduyla():
     assert ofis_no.sigortali_sec(None, [_foy("Esra Altunç")], []) == "DR.E.ALTUNC"   # unvansız → hekim
 
 
+@pytest.mark.parametrize("ham, beklenen", [
+    # Gerçek veriden: `;` ayraçlı çok adlı "Sigortalı" — adlar kaynaştırılmaz, TEK kişi (karar 023 §7).
+    ("Ufuk Tekbaş Dr.; Tam-Med Özel Hastane Teşhis ve Tedavi Hizmetleri A.Ş", "DR.U.TEKBAS"),
+    ("Gökhan Pekcan Dr.; İstanbul Özel Kartal Hastanesi", "DR.G.PEKCAN"),
+    ("Halil Kahveci Dr.; Ramazan Danışman Dr.; Servet Yavuz Dr.; İsmail Yıldız Dr", "DR.H.KAHVECI"),
+    ("Özel Kartal Hastanesi; Gökhan Pekcan Dr", "DR.G.PEKCAN"),          # kurum önde: hekim seçilir
+    ("Dilşat Çamlı Dr.; Özel Kent Sağlık Hiz. ve Mal. San. ve Tic. .AŞ", "DR.D.CAMLI"),
+    ("Clinimed Medikal Estetik Hizmetleri ve Ticaret; Zübeyde Kuru Dr", "DR.Z.KURU"),
+    ("Özel Safa Hastanesi; Esra Altunç", "DR.E.ALTUNC"),                 # unvansız kişi kurumdan önce
+    ("Özel Safa Hastanesi; Medikal Ltd. Şti.", "OH.SAFA"),               # yalnız kurumlar: ilki
+    ("Özel Safa Hastanesi; Aysel Koca Hem.", "SC.A.KOCA"),
+    (" ; Dr. Şenol Özay ; ", "DR.S.OZAY"),                               # boş parçalar atılır
+    ("Dr.Faysal Dane\nDr.Davut Şahin", "DR.F.DANE"),                     # unvanla başlayan satır = yeni ad
+    ("Ferda Korkmaz \nÖzkanoğlu", "DR.F.OZKANOGLU"),                     # sarılmış TEK ad bölünmez
+    ("Ömer Lütfi Aksoy ve Diğerleri", "DR.O.AKSOY"),
+])
+def test_sigortali_cok_adli_degerde_tek_kisi(ham, beklenen):
+    assert ofis_no.sigortali_sec(None, [_foy(ham)], []) == beklenen
+    taraf = {"name": ham, "role": "Sigortalı", "party_type": "THIRD"}
+    assert ofis_no.sigortali_sec(None, [], [taraf]) == beklenen
+
+
 def test_sigortali_kapsam_disi_foy_atlanir_bos_deger_gecilir():
     foys = [
         {"ham_veri": {"Sigortalı": "Dr. Eski Kayıt"}, "kapsam_durumu": "SILINDI"},
