@@ -123,7 +123,18 @@ def _validate_zip_marker(file_path: str, ext: str) -> bool:
                 TechnicalLogger.log("INFO", f"Valid ZIP-based {ext} file: {file_path}")
                 return True
     except zipfile.BadZipFile:
-        pass
+        # UYAP bazen dizin kaydı (central directory) yazılmamış UDF verir: girişler
+        # tamdır ama zipfile açamaz. Sıralı okuma content.xml'i CRC'siyle doğrularsa
+        # dosya kabul edilir (udf_converter aynı yedek yolu kullanır).
+        if ext == ".udf":
+            from udf_zip import read_entry_sequential
+
+            if read_entry_sequential(file_path, marker) is not None:
+                TechnicalLogger.log(
+                    "WARNING",
+                    f"UDF arşivinde dizin kaydı yok; sıralı okumayla kabul edildi: {file_path}",
+                )
+                return True
     TechnicalLogger.log("ERROR", f"PK header but not a valid {ext} archive: {file_path}")
     raise HTTPException(
         status_code=400,
