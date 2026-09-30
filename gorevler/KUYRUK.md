@@ -113,7 +113,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G238 | bant:backend | bagimli:G236 | `scripts/ofis_no_gocu.py`: kuru koşu (eşleme/sigortalı eksik/özet raporları) + `--apply` (iki aşamalı, tarihçe satırı, onceki_tracking_no remap, envanter kapısı); işçi yalnız lokal kuru koşu yapar
 - [x] G241 | bant:frontend | bagimli:G235,G237 | Admin panelinde ofis no kod listeleri: kategori kodları (DR/SC/HS/OH/KR/BR/DG) + sigorta şirketi kodları (ekle/düzenle/pasife al; mevcut numaraları değiştirmez uyarısı) (4952be3+c12d8ba, merge 06cac12; denetim GEÇTİ, merge ana dizin kirli diye ertelenmişti — elle birleştirildi, vitest 1321 yeşil)
 - [x] G239 | bant:backend | bagimli:G237,G238 | Eski formatı ayrıştıran kod uyarlanır (mükerrer rapor, kart ayırma, cevaplı eşleme iki format, kartsız föy); `client-sequence` + `idx_cases_tracking_name_block` kalkar; eski üreticiler emekli
-- [ ] G240 | bant:docs | bagimli:G239,G241,G242 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti güncellenir; veri ekibine not taslağı (gönderilmez)
+- [x] G240 | bant:docs | bagimli:G239,G241,G242 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti güncellenir; veri ekibine not taslağı (gönderilmez)
 - [x] G242 | bant:backend | bagimli:- | Kullanılmayan SharePoint belge sayacı (`ofis_dosya_no`, `counter_manager.py`) kalkar: /process'te Graph çağrısı yok, stream sözleşmesi aynı; prod `.env` satırı + SharePoint "Counter" listesi deploy sonrası İNSAN ADIMI (bd8f4a0; test bütünlüğü kapısı silinen sayaç testlerine takıldı — 30.09 kullanıcı kararıyla tamam sayıldı)
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
