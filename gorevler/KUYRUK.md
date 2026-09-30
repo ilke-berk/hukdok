@@ -91,6 +91,31 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G232 | bant:docs | bagimli:G224,G225,G226,G227,G228,G229 | Karar 022: kurumsal avukat kimliği AVK-00001, avukat silinmez, envanter kapısı (reddedilenler: kodu yaşatmak, UUID, DB id'yi dışarı vermek, adla bağ) + CLAUDE.md maddesi
 - [x] G233 | bant:backend | bagimli:G228 | Duruşma listesi `GET /api/hearing-dates?lawyer=` kimliği tanır (dava filtresiyle aynı seçim yolu; ad + eski kod 1 sürüm geriye uyumlu) — G228 denetim bulgusu
 
+## ÖNCELİK 5 — Ofis no yeniden tasarımı: okunur format, sunucu tahsisi, tüm kartlar yeniden numaralanır (2026-09-28 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 28.09 sohbeti. Kararlar: format <MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR> (AXA-3297-DR.E.ALTUNC-HUK,
+     DR.M.OZTURK-0003-HUK); doldurma + hizmet bloğu kalkar; sıra müvekkil kodu başına; çok hekimde yalnız ilk hekim;
+     sigortalısız kart numarasını sigortalısız alır (liste çıkar); eski D1/S3 kodları kalkar → kategori kodları DR SC HS OH
+     KR BR DG (Klinik→OH, Acente/Dernek→KR, kategorisiz: şirketse KR kişiyse BR) + sigorta şirketi kodları AK ANADOLU AXA
+     CORPUS QUICK EUREKO NIPPON SOMPO KORU HDI ZIRAAT, bilinmeyen sigortacı SG. Numara kayıt anında sunucuda
+     atomik sayaçtan, sonradan değişmez. Ölçüm (lokal): 14.660 kart, sigorta kartlarının %92'si (10.311) numarada
+     yalnız sigortacı adı taşıyor; föy paketinde "Sigortalı" 4.299/5.833 dolu; 259 kart format dışı; validateCaseNumber ölü.
+     Bağımlılık taraması: SharePoint bağımsız; veri ekibi G154 döngüsü numarayı taşır (eşleme CSV'si + regex iki format).
+     SIRA: G234 karar → G235 üretici+sayaç → G236 sunucu tahsisi → (G237 frontend ∥ G238 göç script'i) → G241 admin →
+     G239 eski ayrıştırıcılar → G240 doküman. G237∥G238 ve G241∥G238/G239 paralel (frontend×backend).
+     PROD GÖÇÜ bu kuyrukta YOK: G238 yalnız lokal kuru koşu; lokal/prod --apply + veri ekibine not gönderimi kullanıcı kararı.
+     Tahmin: 2 gece. -->
+
+- [ ] G234 | bant:docs | bagimli:- | Karar 023: ofis no formatı (format tablosu, müvekkil/sigortalı/sıra/tür kuralları, sigorta kodları, göç kuralları, bağımlılık haritası, reddedilenler)
+- [ ] G235 | bant:backend | bagimli:G234 | `services/ofis_no.py` üretici + `ofis_no_sayaclari` atomik sayaç + kategori kodları (`client_categories.ofis_no_kodu`) + `sigorta_kisa_kodlari` listesi + admin uçları (migrasyon 56); mevcut akış değişmez
+- [ ] G236 | bant:backend | bagimli:G235 | Yeni kartta numarayı sunucu verir (istemci değeri yok sayılır, müvekkilsiz 422, paralel kayıtta 409 yok) + `GET /api/cases/ofis-no-onizleme`; düzenlemede numara değişmez
+- [ ] G237 | bant:frontend | bagimli:G236 | NewCase/QuickCase/Intake numarayı önizler, üretmez; `caseNumberUtils` üreticisi + `2024/` ve `XXXXXXXXXX` yer tutucuları kalkar
+- [ ] G238 | bant:backend | bagimli:G236 | `scripts/ofis_no_gocu.py`: kuru koşu (eşleme/sigortalı eksik/özet raporları) + `--apply` (iki aşamalı, tarihçe satırı, onceki_tracking_no remap, envanter kapısı); işçi yalnız lokal kuru koşu yapar
+- [ ] G241 | bant:frontend | bagimli:G235,G237 | Admin panelinde ofis no kod listeleri: kategori kodları (DR/SC/HS/OH/KR/BR/DG) + sigorta şirketi kodları (ekle/düzenle/pasife al; mevcut numaraları değiştirmez uyarısı)
+- [ ] G239 | bant:backend | bagimli:G237,G238 | Eski formatı ayrıştıran kod uyarlanır (mükerrer rapor, kart ayırma, cevaplı eşleme iki format, kartsız föy); `client-sequence` + `idx_cases_tracking_name_block` kalkar; eski üreticiler emekli
+- [ ] G240 | bant:docs | bagimli:G239,G241,G242 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti güncellenir; veri ekibine not taslağı (gönderilmez)
+- [ ] G242 | bant:backend | bagimli:- | Kullanılmayan SharePoint belge sayacı (`ofis_dosya_no`, `counter_manager.py`) kalkar: /process'te Graph çağrısı yok, stream sözleşmesi aynı; prod `.env` satırı + SharePoint "Counter" listesi deploy sonrası İNSAN ADIMI
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
