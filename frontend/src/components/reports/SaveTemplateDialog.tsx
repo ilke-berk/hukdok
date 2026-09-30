@@ -123,7 +123,7 @@ export function SaveTemplateDialog({ open, onOpenChange, mod, baslangic, onSubmi
                         <div className="flex items-center justify-between gap-3 border border-[var(--border)] bg-[var(--bg-sunken)] px-4 py-3">
                             <div className="flex flex-col gap-1 min-w-0">
                                 <label htmlFor="sablon-paylasimli" className="text-[13px] font-medium text-[var(--fg)] cursor-pointer">Paylaşımlı</label>
-                                <span className="text-[12px] leading-relaxed text-[var(--fg-muted)]">Diğer yöneticiler de listede görür ve yükler; yalnız siz güncelleyip silersiniz.</span>
+                                <span className="text-[12px] leading-relaxed text-[var(--fg-muted)]">Diğer kullanıcılar da listede görür ve yükler; yalnız siz güncelleyip silersiniz.</span>
                             </div>
                             <Switch
                                 id="sablon-paylasimli"

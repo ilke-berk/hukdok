@@ -139,7 +139,7 @@ const okBlob = (headers: Record<string, string>) => ({
     headers: { get: (k: string) => headers[k] ?? null },
     blob: async () => new Blob(["x"]),
 });
-const ayarlar = (acik: boolean) => okJson({ settings: [{ key: "rapor_asistani", value: acik, default: false, label: "Rapor asistanı", description: "", updated_by: null, updated_at: null }] });
+const ayarlar = (acik: boolean) => okJson({ etkin: acik });
 
 /** NDJSON satırlarını tek tek chunk olarak veren sahte akış yanıtı. */
 function akis(olaylar: unknown[]) {
@@ -235,7 +235,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
 
     type SunucuAyari = {
         anahtar?: boolean;
-        /** `/api/admin/settings` ucu tümden patlasın (ağ hatası). */
+        /** `/api/reports/assistant` ucu tümden patlasın (ağ hatası). */
         ayarHatasi?: boolean;
         /** Anahtar cevabı elle çözülür (iskelet testi). */
         ayarBekle?: Promise<unknown>;
@@ -259,7 +259,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
                 const g = JSON.parse(opts!.body as string);
                 return okJson({ ...g, id: 99, olusturan: "admin@lexis.com.tr", created_at: "2026-09-10T20:00:00Z", updated_at: "2026-09-10T20:00:00Z" }, 201);
             }
-            if (url === "/api/admin/settings") {
+            if (url === "/api/reports/assistant") {
                 if (ayar.ayarHatasi) throw new Error("ağ yok");
                 if (ayar.ayarBekle) return ayar.ayarBekle;
                 return ayarlar(ayar.anahtar ?? true);
@@ -388,7 +388,7 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         sunucuKur({ anahtar: false });
         await render();
 
-        expect(cagrilar("/api/admin/settings")).toHaveLength(1);
+        expect(cagrilar("/api/reports/assistant")).toHaveLength(1);
         // Sıra: katalog ilk istek (G133 sözleşmesi), anahtar sonra
         expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/catalog");
         expect(butonVar("Asistan")).toBe(false);
@@ -1013,13 +1013,13 @@ describe("ReportsPage asistan satırı (G135/G138/G143/G167)", () => {
         expect(onizlemeler()).toHaveLength(2);
     });
 
-    it("403: yönetici uyarısı konuşmada; satır kalır (403 anahtar değil, yetki)", async () => {
+    it("403: yetki uyarısı konuşmada; satır kalır (403 anahtar değil, yetki)", async () => {
         sunucuKur({ chat: () => failJson(403, { detail: "admin gerekli" }) });
         await render();
         await gonder("merhaba");
 
         const hata = konusma().querySelector("[data-testid='sohbet-hata']")!;
-        expect(hata.textContent).toContain("yalnız yöneticilere");
+        expect(hata.textContent).toContain("erişim yetkiniz yok");
         expect(container.querySelector("[data-testid='asistan-satiri']")).not.toBeNull();
         expect(girdi().disabled).toBe(false);
         expect(toastMocks.error).not.toHaveBeenCalled();

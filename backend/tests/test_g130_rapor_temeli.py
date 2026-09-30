@@ -241,17 +241,17 @@ def test_katalog_export_limiti_envden(env, monkeypatch):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 2. Kapı: gerçek require_admin
+# 2. Kapı: giriş yapmış her kullanıcı (30.09 — yönetici şartı kalktı) + tenant
 # ═══════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.parametrize("metot,yol,kwargs", [
     ("get", CATALOG, {}),
     ("post", PREVIEW, {"json": {"tanim": _tanim()}}),
 ])
-def test_admin_olmayan_403(env, metot, yol, kwargs):
+def test_yonetici_olmayan_da_kullanir(env, metot, yol, kwargs):
     r = getattr(env.client(email=USER), metot)(yol, **kwargs)
-    assert r.status_code == 403
-    assert r.json()["detail"] == "Yönetici yetkisi gerekli"
+    assert r.status_code == 200, r.text
+    assert r.json() == getattr(env.client(), metot)(yol, **kwargs).json()      # yöneticiyle aynı veri
 
 
 def test_tenantsiz_token_403(env):

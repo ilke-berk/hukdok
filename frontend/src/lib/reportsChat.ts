@@ -14,14 +14,14 @@ import {
 /** K6: sunucuya giden geçmiş en fazla bu kadar mesaj (en yeni 20). */
 export const ASISTAN_MESAJ_MAX = 20;
 
-/** Admin anahtarı (K8, `SETTINGS_REGISTRY`); varsayılan KAPALI. */
-export const RAPOR_ASISTANI_ANAHTARI = "rapor_asistani";
+/** Admin anahtarının (`rapor_asistani`, K8, `SETTINGS_REGISTRY`; varsayılan KAPALI) durum ucu. */
+export const ASISTAN_DURUM_UCU = "/api/reports/assistant";
 
 export const ASISTAN_HATASI = "Asistan yanıt veremedi.";
 export const ASISTAN_AKIS_EKSIK = "Asistan akışı tamamlanmadı (yanıt eksik).";
 export const ASISTAN_KAPALI_MESAJI =
     "Rapor asistanı yönetici panelinden kapalı. Manuel rapor oluşturucu çalışmaya devam eder.";
-export const ASISTAN_YETKI_MESAJI = "Rapor asistanı yalnız yöneticilere açık.";
+export const ASISTAN_YETKI_MESAJI = "Rapor asistanına erişim yetkiniz yok.";
 
 /** 409 — anahtar kapalı (K8). Çağıran paneli pasifleştirir. */
 export class AsistanKapaliError extends Error {
@@ -32,7 +32,7 @@ export class AsistanKapaliError extends Error {
     }
 }
 
-/** 403 — yönetici değil. */
+/** 403 — yetki yok (30.09'dan beri yönetici şartı yok; pratikte tenant'sız token). */
 export class AsistanYetkiError extends Error {
     constructor() {
         super(ASISTAN_YETKI_MESAJI);
@@ -62,7 +62,7 @@ const ERROR_KOD_IPUCU: Record<string, string> = {
     analysis_error: "Beklenmeyen bir hata oldu — tekrar deneyin; sürerse yöneticiye bildirin.",
     // İstemci tarafı etiketleri (sunucu sözleşmesinde yok; 409/403 için panel kaydı).
     asistan_kapali: "Yönetici panelinde 'Rapor asistanı' anahtarı açılınca panel yeniden kullanılabilir.",
-    yetki_yok: "Bu sayfa ve asistan yalnız yönetici hesaplarına açık.",
+    yetki_yok: "Hesabınız bu büronun kullanıcısı olarak tanınmadı — yeniden giriş yapın; sürerse yöneticiye bildirin.",
     iptal: "İsteği aynen yeniden gönderebilirsiniz; sohbetin geri kalanı yerinde.",
 };
 
@@ -192,17 +192,17 @@ export async function chatReport(
 }
 
 /**
- * Anahtar kapısı (K8): `GET /api/admin/settings` → `rapor_asistani` değeri. Okunamazsa
- * (ağ, 403, kayıt yok) **false** — panel gizli kalır, manuel akış etkilenmez; toast/log yok
- * (sayfanın katalog toast'ını gölgelemesin). Asıl kapı sunucuda: `/chat` 409 döner.
+ * Anahtar kapısı (K8): `GET /api/reports/assistant` → `{etkin}` (`rapor_asistani` anahtarı; yönetici
+ * olmayan da okur — `/api/admin/settings` yönetici ucudur). Okunamazsa (ağ, hata) **false** — panel
+ * gizli kalır, manuel akış etkilenmez; toast/log yok (sayfanın katalog toast'ını gölgelemesin).
+ * Asıl kapı sunucuda: `/chat` 409 döner.
  */
 export async function raporAsistaniAcikMi(): Promise<boolean> {
     try {
-        const res = await apiClient.fetch("/api/admin/settings");
+        const res = await apiClient.fetch(ASISTAN_DURUM_UCU);
         if (!res.ok) return false;
-        const data = (await res.json()) as { settings?: { key?: string; value?: unknown }[] } | null;
-        const kayit = data?.settings?.find(s => s.key === RAPOR_ASISTANI_ANAHTARI);
-        return kayit?.value === true;
+        const data = (await res.json()) as { etkin?: unknown } | null;
+        return data?.etkin === true;
     } catch {
         return false;
     }

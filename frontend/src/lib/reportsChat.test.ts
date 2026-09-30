@@ -385,23 +385,20 @@ describe("raporAsistaniAcikMi — anahtar kapısı (K8)", () => {
 
     const ayarlar = (value: boolean) => ({
         ok: true, status: 200,
-        json: async () => ({ settings: [
-            { key: "client_notice_enabled", value: true },
-            { key: "rapor_asistani", value },
-        ] }),
+        json: async () => ({ etkin: value }),
     });
 
-    it("GET /api/admin/settings → rapor_asistani değeri", async () => {
+    it("GET /api/reports/assistant → etkin (yönetici ucu /api/admin/settings DEĞİL: herkes okur)", async () => {
         fetchMock.mockResolvedValueOnce(ayarlar(true));
         expect(await raporAsistaniAcikMi()).toBe(true);
-        expect(fetchMock.mock.calls[0][0]).toBe("/api/admin/settings");
+        expect(fetchMock.mock.calls[0][0]).toBe("/api/reports/assistant");
 
         fetchMock.mockResolvedValueOnce(ayarlar(false));
         expect(await raporAsistaniAcikMi()).toBe(false);
     });
 
-    it("kayıt yoksa, HTTP hatasında ya da ağ hatasında false (panel gizli, toast yok)", async () => {
-        fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ settings: [{ key: "baska", value: true }] }) });
+    it("alan yoksa, HTTP hatasında ya da ağ hatasında false (panel gizli, toast yok)", async () => {
+        fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ baska: true }) });
         expect(await raporAsistaniAcikMi()).toBe(false);
 
         fetchMock.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ detail: "admin" }) });

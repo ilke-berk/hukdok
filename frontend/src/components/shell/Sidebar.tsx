@@ -38,8 +38,10 @@ const NAV: NavItemDef[] = [
 ];
 
 // Hukukbot HukuDok'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok, her kullanıcı görür.
+// Raporlar 30.09'dan beri her kullanıcıya açık (önceden yalnız yöneticide, "Çalışma" altındaydı).
 const ARACLAR: NavItemDef[] = [
   { id: "hukukbot", label: "Hukukbot", path: "/hukukbot", Icon: Bot },
+  { id: "reports", label: "Raporlar", path: "/reports", Icon: Table2 },
 ];
 
 type SidebarProps = {
@@ -69,12 +71,7 @@ export function Sidebar({ open, onClose, hoverIleKapan = true }: SidebarProps) {
     .toUpperCase() || "—";
 
   const navItems: NavItemDef[] = isAdminUser
-    ? [
-        ...NAV,
-        // G133: Raporlar yalnız yöneticide (test aşaması, require_admin) — Yönetim'den önce.
-        { id: "reports", label: "Raporlar", path: "/reports", Icon: Table2 },
-        { id: "admin", label: "Yönetim", path: "/admin", Icon: ShieldCheck },
-      ]
+    ? [...NAV, { id: "admin", label: "Yönetim", path: "/admin", Icon: ShieldCheck }]
     : NAV;
 
   const isActive = (item: NavItemDef) => {

@@ -196,14 +196,31 @@ def test_sablon_tenant_sizintisi_yok(env):
     assert [s["ad"] for s in env.client(ADMIN, tid=T1).get(TEMPLATES).json()] == ["Havuz"]
 
 
-@pytest.mark.parametrize("metot,yol", [
-    ("get", TEMPLATES), ("post", TEMPLATES), ("put", f"{TEMPLATES}/1"), ("delete", f"{TEMPLATES}/1"),
-    ("post", EXPORT), ("get", RUNS), ("get", f"{RUNS}/1/download"),
-])
-def test_yonetici_olmayan_403(env, metot, yol):
+def test_yonetici_olmayan_sablon_ve_export_kullanir(env):
+    """30.09: rapor uçları giriş yapmış her kullanıcıya açık; sahiplik kuralı aynen geçerli."""
     c = env.client(USER)
-    r = getattr(c, metot)(yol, json={}) if metot in ("post", "put") else getattr(c, metot)(yol)
-    assert r.status_code == 403 and r.json()["detail"] == "Yönetici yetkisi gerekli"
+    sablon = c.post(TEMPLATES, json=_sablon_govdesi(ad="Avukatın")).json()
+    assert sablon["olusturan"] == USER
+    assert [s["ad"] for s in c.get(TEMPLATES).json()] == ["Avukatın"]
+    assert env.client(ADMIN).put(f"{TEMPLATES}/{sablon['id']}", json=_sablon_govdesi()).status_code == 403
+    assert c.delete(f"{TEMPLATES}/{sablon['id']}").status_code == 204
+    r = _export(c, "csv")
+    assert r.status_code == 200 and _runs(env)[0].kullanici == USER
+
+
+def test_yonetici_olmayan_yalniz_kendi_kosularini_gorur(env):
+    """Koşu geçmişi: yönetici herkesinkini, diğer kullanıcı yalnız kendininkini görür ve indirir."""
+    avukat, yonetici = env.client(USER), env.client(ADMIN)
+    kendi = int(_export(avukat, "csv").headers["x-rapor-kosu-id"])
+    yoneticinin = int(_export(yonetici, "csv").headers["x-rapor-kosu-id"])
+
+    govde = avukat.get(RUNS).json()
+    assert govde["toplam"] == 1 and [k["id"] for k in govde["kosular"]] == [kendi]
+    assert avukat.get(f"{RUNS}/{kendi}/download").status_code == 200
+    assert avukat.get(f"{RUNS}/{yoneticinin}/download").status_code == 404
+
+    assert yonetici.get(RUNS).json()["toplam"] == 2
+    assert yonetici.get(f"{RUNS}/{kendi}/download").status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════════════════════

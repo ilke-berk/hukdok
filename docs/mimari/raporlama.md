@@ -10,12 +10,14 @@
 > planla kod arasındaki farklar §12'de (ilk tur §2 farkları F1-F10, ikinci tur §4 farkları F11-F22,
 > sohbet öncelikli tur F23-F28) ve planın kendisinde "uygulamada değişti" şerhiyle.
 
-Yönetici, DB'den kolon/filtre/sıralama seçerek liste üretir, önizler, Excel ya da CSV indirir;
+Kullanıcı, DB'den kolon/filtre/sıralama seçerek liste üretir, önizler, Excel ya da CSV indirir;
 her indirme "kim, ne zaman, hangi tanım, kaç satır, hangi dosya" olarak loglanır ve çıktının
 kendisi diskte saklanır. Aynı ekranda AI asistan doğal dil isteğini rapor tanımına çevirir —
-veriyi görmez, sorgu çalıştırmaz. **Test aşamasında yalnız yöneticiler** kullanır: bütün uçlar
-`Depends(require_admin)` (`backend/routes/config.py:66`, `ADMIN_EMAILS`) +
-`Depends(get_current_tenant)` (`backend/dependencies.py:71`) ile korunur.
+veriyi görmez, sorgu çalıştırmaz. **Giriş yapmış her kullanıcıya açıktır** (30.09 kullanıcı kararı;
+önceden test aşamasında yalnız yöneticiydi): bütün uçlar `Depends(get_current_user)` +
+`Depends(get_current_tenant)` (`backend/dependencies.py:55`, `:71`) ile korunur. Yönetici ayrımı
+(`ADMIN_EMAILS`) yalnız koşu geçmişinde kalır: yönetici herkesin koşularını, diğer kullanıcı yalnız
+kendininkileri görür/indirir (`routes/reports.py::_kosu_sorgusu`). Menüde "Raporlar" Araçlar bölümündedir.
 
 İkinci tur (G137-G139, plan §4): v1'in "sorgu kurucu" ekranı (alan → operatör → değer, düz
 `<select>`, sol sütunda kolon listesi) **"süz ve gör"** ekranına çevrildi — kaynak kartları →
@@ -49,7 +51,7 @@ Rapor sekmesi (frontend/src/pages/ReportsPage.tsx:740-852 — G175 yerleşimi: s
    │ POST /api/reports/preview ─▶ motor.onizle()      (sayfalı, LOGLANMAZ; ekran her geçerli taslak değişiminde ister)
    │ POST /api/reports/export ──▶ COUNT → 413? → report_runs satırı → dosya <RAPOR_CIKTI_DIZINI>/<run_id>-<slug>.<ext>
    │                               → sha256/boyut → tembel temizlik → aynı dosya FileResponse (X-Rapor-Kosu-Id)
-   │ GET  /api/reports/runs ────▶ tüm yöneticilerin koşuları;  /runs/{id}/download → saklanan dosya (410 = temizlendi)
+   │ GET  /api/reports/runs ────▶ koşular (yönetici: herkes, diğer: kendi);  /runs/{id}/download → saklanan dosya (410 = temizlendi)
    │ /api/reports/templates ────▶ favori şablonlar (kendi + paylaşımlı; soft delete)
    │
 Asistan satırı (AssistantBar.tsx, G143 → G174) — admin anahtarı `rapor_asistani` AÇIKKEN; ekranın BİRİNCİL yolu
@@ -77,7 +79,7 @@ Asistan satırı (AssistantBar.tsx, G143 → G174) — admin anahtarı `rapor_as
 | Tablolar | `backend/models.py:1350-1432`, `backend/database.py:1050-1064` | `ReportTemplate`, `ReportRun`, migrasyon madde 46 — G137 migrasyon EKLEMEDİ (hepsi sorgu katmanı) |
 | Anahtar / env | `backend/services/app_settings.py:66-79`, `backend/config/settings.py:103-112` | `rapor_asistani` anahtarı; dört env |
 | Frontend — saf katman | `frontend/src/lib/reports.ts`, `frontend/src/components/reports/builderState.ts`, `frontend/src/lib/reportsChat.ts` | Katalog tipleri (`KatalogKolon :72`, `KatalogIliski :134`, `KatalogVeriKaynagi :141`, `Katalog :159`), tip↔op ikizi `OP_BY_TIP` (`:255-261`), kontrol↔op çevirisi (`kontroldenFiltre :489-534`, `filtredenKontrol :544`, `gelismisOplar :615-619`), `tanimGecerliMi` (`:397-414`), tarih kısayolları (`:777-811`), HTTP; şerit durumu ↔ `RaporTanimi` (`builderState.ts`; G173 ek yardımcıları `kolonEkle`/`kolonKaldir`/`filtreEkle`/`seritteBosOge` `:176-209`); asistan istemci mantığı (`reportsChat.ts`: NDJSON okuyucu, `onayNiyeti`, `kaydetNiyeti`, G174 `degerEsle`/`degerAdaylari`/`filtreDegeriDegistir`/`listeNiyeti` `:455-670`) |
-| Frontend — ekran | `frontend/src/pages/ReportsPage.tsx`, `frontend/src/components/reports/{AssistantBar,AssistantThread,AssistantMessage,DegerListesi,TanimSeridi,FilterControl,FilterChip,FieldPicker,SearchBox,ChipSelect,ToggleFilter,PreviewTable,TemplateBar,ExportButtons,FavoritePrompt,SaveTemplateDialog,RunsTable}.tsx`, `ui.ts` (`ls frontend/src/components/reports`, c839fdb) | Route `/reports` (`App.tsx:101`, `ProtectedAdminRoute`), Sidebar "Raporlar" (`components/shell/Sidebar.tsx:67`, yalnız yönetici), `/api/reports/` uzun zaman aşımı listesinde (`lib/api.ts:74`, 300 sn `:58`). **KALDIRILDI (G175):** `SourceCards.tsx` (+test), `QuickFilters.tsx` (+test), `ColumnSheet.tsx` (+test), `ColumnPicker.tsx`, `components/ui/sheet.tsx` (başka kullanıcısı yoktu, G175 raporu `grep` kanıtı). Daha önce: `ReportBuilder.tsx`/`FilterRow.tsx` (G138/G139), `AssistantPanel.tsx` → `AssistantBar` (G143) |
+| Frontend — ekran | `frontend/src/pages/ReportsPage.tsx`, `frontend/src/components/reports/{AssistantBar,AssistantThread,AssistantMessage,DegerListesi,TanimSeridi,FilterControl,FilterChip,FieldPicker,SearchBox,ChipSelect,ToggleFilter,PreviewTable,TemplateBar,ExportButtons,FavoritePrompt,SaveTemplateDialog,RunsTable}.tsx`, `ui.ts` (`ls frontend/src/components/reports`, c839fdb) | Route `/reports` (`App.tsx:131`, her giriş yapmış kullanıcı), Sidebar "Raporlar" (`components/shell/Sidebar.tsx:44`, Araçlar bölümü, herkes), `/api/reports/` uzun zaman aşımı listesinde (`lib/api.ts:74`, 300 sn `:58`). **KALDIRILDI (G175):** `SourceCards.tsx` (+test), `QuickFilters.tsx` (+test), `ColumnSheet.tsx` (+test), `ColumnPicker.tsx`, `components/ui/sheet.tsx` (başka kullanıcısı yoktu, G175 raporu `grep` kanıtı). Daha önce: `ReportBuilder.tsx`/`FilterRow.tsx` (G138/G139), `AssistantPanel.tsx` → `AssistantBar` (G143) |
 
 ## 2. Kayıt defteri (registry) — beyaz liste
 
@@ -364,7 +366,8 @@ sorgu Core `GROUP BY`):
 
 ## 4. HTTP uçları — `backend/routes/reports.py`
 
-Hepsi `require_admin` + `get_current_tenant`; yönetici değilse 403 `"Yönetici yetkisi gerekli"`.
+Hepsi `get_current_user` + `get_current_tenant` (30.09: yönetici şartı kalktı); tenant'sız token 403.
+Ek uç `GET /api/reports/assistant` → `{"etkin": bool}` (`rapor_asistani` anahtarı; yalnız `get_current_user`).
 
 | Uç | Kod | Davranış |
 | --- | --- | --- |
@@ -375,8 +378,8 @@ Hepsi `require_admin` + `get_current_tenant`; yönetici değilse 403 `"Yönetici
 | `PUT /api/reports/templates/{id}` | `:217-240` | tam gövde (kısmi değil); sahibi değilse 403 (`_sahibi_dogrula`, `:162-164`); yoksa 404 (`:155-159`) |
 | `DELETE /api/reports/templates/{id}` | `:243-260` | 204, soft delete (`deleted_at` + `deleted_by`); sahibi değilse 403 |
 | `POST /api/reports/export` | `:270-328` | `{"tanim", "format":"xlsx"∣"csv", "sablon_id"∣null, "kaynak":"manuel"∣"asistan"}` → dosya; §5 |
-| `GET /api/reports/runs?limit=50&offset=0` | `:351-369` | `limit` 1-200 (`RUNS_LIMIT_MAX`, `:64`, `:353`); `{"toplam", "kosular":[RaporKosusu]}`, tüm yöneticilerin koşuları, `baslangic desc, id desc`, tenant filtreli (`_kosu_sorgusu`, `:347-348`) |
-| `GET /api/reports/runs/{id}/download` | `:372-399` | saklanan dosya; yol NULL ya da dosya yok → **410**; yol dizin dışında / izinsiz uzantı → **404** (`:391-392`); başka tenant → 404 |
+| `GET /api/reports/runs?limit=50&offset=0` | `:351-369` | `limit` 1-200 (`RUNS_LIMIT_MAX`, `:64`, `:353`); `{"toplam", "kosular":[RaporKosusu]}`, yöneticiye tüm koşular / diğer kullanıcıya yalnız kendi koşuları, `baslangic desc, id desc`, tenant filtreli (`_kosu_sorgusu`, `:347-348`) |
+| `GET /api/reports/runs/{id}/download` | `:372-399` | saklanan dosya; yol NULL ya da dosya yok → **410**; yol dizin dışında / izinsiz uzantı → **404** (`:391-392`); başka tenant ya da (yönetici değilse) başkasının koşusu → 404 |
 | `POST /api/reports/chat` | `:404-428` | NDJSON (§7); anahtar kapalıysa gövde ayrıştırılmadan **409** `{"detail":"rapor_asistani kapalı"}` (`:412-413`) |
 
 Kullanıcı kimliği `preferred_username | upn | email` üçlüsü, küçük harf (`_kullanici_epostasi`,
@@ -429,14 +432,14 @@ tablo ölçülmeden index almaz). **Tek istisna** `idx_report_runs_sablon ON rep
 **G137-G139 şema değiştirmedi** (taraf filtreleri, öneriler, katalog alanları sorgu katmanında).
 
 Neden DB'de, localStorage değil (model docstring'i, `models.py:1355-1358`): paylaşımlı şablonu
-diğer yöneticiler görür; çıkıştaki `clearAppStorage()` tarayıcı deposunu siler; `report_runs.sablon_id`
+diğer kullanıcılar görür; çıkıştaki `clearAppStorage()` tarayıcı deposunu siler; `report_runs.sablon_id`
 denetim izi. `tanim` JSON şablon sonradan değişse/silinse de "o gün ne indirildi"yi cevaplar.
 
 ## 7. Asistan — `POST /api/reports/chat`
 
 Gövde `SohbetIstegi` (`schemas_rapor.py:226`): `mesajlar[{rol:"user"|"assistant", icerik}]`
 1-20 adet, içerik 1-4000 karakter, **son mesaj `user`** olmalı; `mevcut_tanim: RaporTanimi|null`.
-Kapı sırası: 403 (yönetici) → 409 (anahtar, gövde ayrıştırılmadan, `routes/reports.py:412-413`) → 422 (gövde).
+Kapı sırası: 409 (anahtar, gövde ayrıştırılmadan, `routes/reports.py:412-413`) → 422 (gövde).
 
 Akış (`services/rapor/asistan.py:274-334` `sohbet`):
 
@@ -808,10 +811,10 @@ tr-TR, `null` "—"; sayı/para sağa yaslı).
 Özellikler kartı registry'den otomatik listeler. Kapalıyken `/chat` 409 (`routes/reports.py:412-413`).
 
 **Sohbet artık ekranın BİRİNCİL yoludur (G175) — kapalıyken sayfa boş KALMAZ:** frontend
-`raporAsistaniAcikMi()` `GET /api/admin/settings`'i okur (hata/kayıt yok → false, sessiz;
+`raporAsistaniAcikMi()` `GET /api/reports/assistant`'ı okur (yönetici olmayan da okur; hata → false, sessiz;
 `lib/reportsChat.ts:197-207`); anahtar `false` ya da `/chat` 409 (`asistan409`, `ReportsPage.tsx:184`,
 `:724-728`) → `AssistantBar` yerine tek satırlık bilgi kartı `asistan-kapali-karti` (`:730-731`, `:756-770`:
-"Rapor asistanı kapalı — yönetici panelinden `rapor_asistani` anahtarını açın. Tanım şeridi ve tablo çalışmaya
+"Rapor asistanı kapalı — yönetici, Yönetim panelinden `rapor_asistani` anahtarını açabilir. Tanım şeridi ve tablo çalışmaya
 devam eder."); **tanım şeridi tam bir yedek kurucudur** — kaynak, kolon, filtre (300 önerili combobox dahil),
 sıralama şeritten düzenlenir; önizleme, export, şablonlar, indirme geçmişi anahtardan bağımsız çalışır (test:
 `ReportsPage.test.tsx` "anahtar kapalı: bilgi kartı + şerit/tablo/şablon/indirme çalışır"). Kullanıcı bunu bilerek
@@ -846,7 +849,7 @@ yeter. G137-G139 yeni env EKLEMEDİ (`KATALOG_ONBELLEK_SN` sabit, env değil). `
 | Dosya adı enjeksiyonu | `cikti_yolu` slug'ı yalnız `[A-Za-z0-9-_]`, `Path.name` | `kosu_logu.py:45-51` |
 | CSV formül enjeksiyonu | `= + - @` öneki `'` (metin hücre) | `cikti.py:88-93` |
 | Kaynak tüketimi | kolon ≤60 / filtre ≤20 / `in` ≤200 / sayfa ≤200 / export tavanı 413 / `yield_per` + write-only; sohbet ≤20×4000; öneri ≤300 değer/kolon; katalog DISTINCT sorguları önbellekli (bayatken arkaplanda yenilenir) | `schemas_rapor.py:19-23`, `:206-207`; `routes/reports.py:83-164`, `:290-292`; `registry.py:63`, `:874` |
-| Yetki | tüm uçlar `require_admin` (`ADMIN_EMAILS`); şablon yazma yalnız sahibi (403) | `routes/config.py:66`, `routes/reports.py:162-164` |
+| Yetki | tüm uçlar `get_current_user` + tenant (her kullanıcı); şablon yazma yalnız sahibi (403); koşu geçmişi yönetici değilse yalnız kendi koşuları | `routes/reports.py::_sahibi_dogrula`, `::_kosu_sorgusu` |
 
 ## 12. Plan ile kod arasındaki farklar (uygulamada değişti)
 
@@ -1004,7 +1007,7 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 
 | Dosya | Kapsam |
 | --- | --- |
-| `backend/tests/test_g130_rapor_temeli.py` | katalog şekli (G137'de yeni alanlar eklendi), yasak kolonlar, 403 (gerçek `require_admin`), 422 yolları, op×tip kombinasyonları, `contains` kaçışı, bağlı parametre, tenant + soft-delete dört kaynakta, filtre ifadesiz türetilmiş filtrelenemez/sıralanamaz (`foy_sayisi`), sayfalama |
+| `backend/tests/test_g130_rapor_temeli.py` | katalog şekli (G137'de yeni alanlar eklendi), yasak kolonlar, yönetici olmayan kullanıcı da 200, tenant'sız 403, 422 yolları, op×tip kombinasyonları, `contains` kaçışı, bağlı parametre, tenant + soft-delete dört kaynakta, filtre ifadesiz türetilmiş filtrelenemez/sıralanamaz (`foy_sayisi`), sayfalama |
 | `backend/tests/test_g131_rapor_export_ve_log.py` | şablon CRUD + sahiplik 403 + paylaşım, xlsx geri okuma + koşu satırı + sha256 = indirilen = saklanan, csv BOM/`;`/önek, 413, download traversal reddi, temizlik + 410, hata yolu, migrasyon kuralı bekçisi, akış (liste değil) |
 | `backend/tests/test_g132_rapor_asistani.py` | anahtar varsayılan/409, 403, gövde sınırları, geçerli/geçersiz tanım akışı (taraf kolonunda `eq` → 422 → `warning`), 5 Gemini hatası → `error_kod` + TEK ERROR, yanıt hataları, prompt içeriği, kod incelemesi bekçileri (SessionLocal/`client.aio` yok), Developer API uyumlu şema, `tanim=null` + eylem → eylem düşer |
 | `backend/tests/test_g137_rapor_katalog_genisleme.py` | katalog yeni alanların şekli; her kolonun `grup`u dolu ve kapalı kümede; `kontrol` tip eşlemesi; `hizli_filtreler`/`kolon_setleri` plan listeleriyle birebir; öneriler (DISTINCT, boş hariç, tenant/soft-delete, 300 kesme + `oneri_kesik`, `db=None`); taraf filtreleri (aynı adlı karşı taraf bulunmaz, `is_null`/`not_null`, rol bazlı sigortalı, silinmiş müvekkil kartı sayılmaz, ILIKE kaçışı + zehir string bağlı parametrede); `dava_sayisi` karşılaştırma; izinsiz op 7 varyant 422; türetilmişte sıralama 422; registry öz-denetimi 5 ret; önbellek (28.09: tazelik süresi, bayatken hemen dönüş + tek arkaplan yenilemesi, yenileme hatası, soğuk tek hesap, ısıtma; monotonic monkeypatch + sorgu sayacı) + tekrarsız okuma; asistan katalog metni öneri/hızlı filtre içermez ve 300+ değerle uzunluk sabit |

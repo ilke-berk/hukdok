@@ -1,7 +1,8 @@
 """Raporlama uçları (G130 + G131): `/api/reports/*`.
 
-Test aşamasında yalnız yöneticiler (`require_admin`, `routes/config.py`) +
-`get_current_tenant`; tenant ve soft-delete kuralı motorda (K2). Sözleşme
+Giriş yapmış HER kullanıcıya açık (30.09 kullanıcı kararı; önceden test aşamasında yalnız
+yöneticiydi): `get_current_user` + `get_current_tenant`; tenant ve soft-delete kuralı motorda (K2).
+Yönetici ayrımı yalnız koşu geçmişinde kalır (`_kosu_sorgusu`). Sözleşme
 `docs/plan/raporlama-plani-2026-09-06.md` §2.4 — G133/G134 frontend'i buna göre yazılır.
 
 Uçlar:
@@ -15,7 +16,8 @@ Uçlar:
   → dosya `RAPOR_CIKTI_DIZINI/<run_id>-<slug>.<ext>` (`cikti.ciktiyi_yaz`) →
   `kosu_bitir` (sha256/boyut) → best-effort temizlik → aynı dosya `FileResponse`
   (`X-Rapor-Kosu-Id` başlığı). Hata yolunda koşu satırı `hata` ile KALIR.
-- `GET /runs`, `GET /runs/{id}/download` (G131): tüm yöneticilerin koşuları;
+- `GET /runs`, `GET /runs/{id}/download` (G131): yönetici herkesin koşularını, diğer
+  kullanıcı yalnız KENDİ koşularını görür/indirir (başkasınınki 404);
   temizlenmiş dosya 410; yol `routes/admin.py::api_teslim_rapor_indir` deseniyle
   denetlenir (dizin altı + izinli uzantı, aksi 404).
 
@@ -26,9 +28,11 @@ Gövde doğrulama BİLİNÇLİ elle: FastAPI'nin varsayılan 422 gövdesi `[{loc
 listesidir; sözleşme tek `{"alan","sebep"}` ister (`schemas_rapor.pydantic_hatasini_cevir`).
 
 - `POST /chat` (G132, K6-K8): rapor asistanı NDJSON akışı (plan §2.6,
-  `services/rapor/asistan.sohbet`). Sıra: yönetici (403) → `rapor_asistani`
+  `services/rapor/asistan.sohbet`). Sıra: `rapor_asistani`
   anahtarı (kapalıysa akış açılmadan 409) → gövde (422). Asistan DB'ye
   dokunmaz; indirme yine `/export` ile (`kaynak: "asistan"`, K7).
+- `GET /assistant`: anahtarın durumu `{"etkin": bool}` — sayfa asistan satırını buna göre çizer
+  (`/api/admin/settings` yönetici ucudur, yönetici olmayan okuyamaz).
 """
 import datetime as dt
 import json
@@ -50,8 +54,8 @@ import models
 from auth_helpers import tenant_filter_clause
 from config.settings import settings
 from database import SessionLocal
-from dependencies import get_current_tenant
-from routes.config import require_admin
+from dependencies import get_current_tenant, get_current_user
+from routes.config import _admin_emails
 from schemas_rapor import (
     ExportIstegi, KosuListesi, OnizlemeCevabi, OnizlemeIstegi, RaporDogrulamaHatasi, RaporKosusu, RaporSablonu,
     SablonIstegi, SohbetIstegi, pydantic_hatasini_cevir,
@@ -69,6 +73,10 @@ RUNS_LIMIT_MAX = 200
 def _kullanici_epostasi(user: dict) -> str:
     """`routes/activity._get_user_email` üçlüsü; küçük harf (require_admin ile aynı)."""
     return str(user.get("preferred_username") or user.get("upn") or user.get("email") or "").lower()
+
+
+def _yonetici_mi(user: dict) -> bool:
+    return _kullanici_epostasi(user) in _admin_emails()
 
 
 def _dogrula(model, govde: dict[str, Any]):
@@ -165,7 +173,7 @@ def katalog_onbellegini_isit(tenant_idleri: list[str]) -> None:
 
 @router.get("/catalog")
 def api_catalog(
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Kayıt defteri: veri kaynakları, kolonlar (tip/grup/kontrol/filtre/sıralama/seçenek/öneri),
@@ -176,7 +184,7 @@ def api_catalog(
 @router.post("/preview", response_model=OnizlemeCevabi)
 def api_preview(
     govde: dict[str, Any] = Body(...),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Tanımı doğrular, sayfalı önizleme döner. Önizleme LOGLANMAZ (K4)."""
@@ -227,7 +235,7 @@ def _tanimi_dogrula_422(istek_tanim) -> None:
 
 @router.get("/templates", response_model=list[RaporSablonu])
 def api_templates_list(
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Kendi şablonları + paylaşımlılar (silinmişler hariç), ad sırasıyla."""
@@ -249,7 +257,7 @@ def api_templates_list(
 @router.post("/templates", response_model=RaporSablonu, status_code=201)
 def api_templates_create(
     govde: dict[str, Any] = Body(...),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     istek = _dogrula(SablonIstegi, govde)
@@ -272,7 +280,7 @@ def api_templates_create(
 def api_templates_update(
     sablon_id: int,
     govde: dict[str, Any] = Body(...),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Tam gövde (kısmi değil); başkasının şablonu 403."""
@@ -297,7 +305,7 @@ def api_templates_update(
 @router.delete("/templates/{sablon_id}", status_code=204, response_class=Response)
 def api_templates_delete(
     sablon_id: int,
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Soft delete (`deleted_at` + `deleted_by`); başkasının şablonu 403."""
@@ -324,7 +332,7 @@ def _indirme_adi(kaynak: str, format: str, anlik: dt.datetime) -> str:
 @router.post("/export")
 def api_export(
     govde: dict[str, Any] = Body(...),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Excel/CSV indirme — TEK log yolu (K7): koşu satırı + saklanan dosya + aynı dosya cevap."""
@@ -398,21 +406,25 @@ def _kosu_cevabi(run: models.ReportRun) -> RaporKosusu:
     return RaporKosusu.model_validate(veri)
 
 
-def _kosu_sorgusu(db: Session, tenant_id: str):
-    return db.query(models.ReportRun).filter(tenant_filter_clause(models.ReportRun, tenant_id))
+def _kosu_sorgusu(db: Session, tenant_id: str, user: dict):
+    """Yönetici tenant'ın bütün koşularını, diğer kullanıcı yalnız kendininkileri görür."""
+    sorgu = db.query(models.ReportRun).filter(tenant_filter_clause(models.ReportRun, tenant_id))
+    if not _yonetici_mi(user):
+        sorgu = sorgu.filter(func.lower(models.ReportRun.kullanici) == _kullanici_epostasi(user))
+    return sorgu
 
 
 @router.get("/runs", response_model=KosuListesi)
 def api_runs(
     limit: int = Query(50, ge=1, le=RUNS_LIMIT_MAX),
     offset: int = Query(0, ge=0),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Tüm yöneticilerin koşuları, yeni → eski."""
+    """Koşular, yeni → eski: yöneticiye herkesinki, diğer kullanıcıya kendininkiler."""
     db = SessionLocal()
     try:
-        sorgu = _kosu_sorgusu(db, tenant_id)
+        sorgu = _kosu_sorgusu(db, tenant_id, user)
         toplam = sorgu.count()
         kosular = (
             sorgu.order_by(models.ReportRun.baslangic.desc(), models.ReportRun.id.desc())
@@ -426,14 +438,14 @@ def api_runs(
 @router.get("/runs/{run_id}/download")
 def api_run_download(
     run_id: int,
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
-    """Saklanan çıktıyı verir. Temizlenmiş (yol NULL / dosya yok) → 410; yol dizin
+    """Saklanan çıktıyı verir (yönetici olmayan yalnız kendi koşusunu). Temizlenmiş (yol NULL / dosya yok) → 410; yol dizin
     dışında ya da izinsiz uzantıda → 404 (traversal savunması, admin.py deseni)."""
     db = SessionLocal()
     try:
-        run = _kosu_sorgusu(db, tenant_id).filter(models.ReportRun.id == run_id).first()
+        run = _kosu_sorgusu(db, tenant_id, user).filter(models.ReportRun.id == run_id).first()
         if run is None:
             raise HTTPException(status_code=404, detail="Koşu bulunamadı")
         yol: Optional[str] = run.dosya_yolu
@@ -455,10 +467,16 @@ def api_run_download(
 
 # ─── G132: rapor asistanı ────────────────────────────────────────────────────
 
+@router.get("/assistant")
+def api_assistant_status(user: dict = Depends(get_current_user)):
+    """`rapor_asistani` anahtarının durumu — yönetici olmayan kullanıcı da okur."""
+    return {"etkin": app_settings.rapor_asistani_etkin()}
+
+
 @router.post("/chat")
 async def api_chat(
     govde: dict[str, Any] = Body(...),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(get_current_user),
     tenant_id: str = Depends(get_current_tenant),
 ):
     """Rapor asistanı — NDJSON akışı (plan §2.6). Anahtar kapalıysa 409 (K8);
