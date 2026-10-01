@@ -80,12 +80,24 @@ Eylül raporundaki (`bagimlilik-raporu-2026-09.md` §5) açık kalemler hâlâ g
 
 | Kalem | Gerekçe | Önerilen yol |
 | --- | --- | --- |
-| Office365-REST-Python-Client 2.6.2 → 3.2.0 | Major (arşiv kütüphanesi kuralı). Backend'de `office365`/`ClientContext` importu yok (SharePoint msal + Graph) | Güncelleme yerine requirements'tan ÇIKARMA; pytz artık doğrudan bağımlılık değilse (zoneinfo geçişi tamam) engel kalmadı — ayrı küçük iş |
+| ~~Office365-REST-Python-Client 2.6.2 → 3.2.0~~ | **KARAR VERİLDİ (2026-10-01, kullanıcı): paket kaldırıldı** — ayrı commit, bkz. §6.1 | — |
 | reportlab 5.0.1 | Major; 5.0 uzak görsel `trustedHosts` varsayılanı, `_renderPM`/pyRXP kaldırıldı | Önce §5.6 (son 4.x), sonra ayrı karar |
 | postgres:15-alpine → 17/18 (Docker Hub: 18.6 güncel) | Major; dump/restore ister | Planlı bakım penceresi + pre-deploy dump; ayrı plan |
 | python:3.12-slim → 3.13/3.14 | İmaj major; reportlab `ast.NameConstant` 3.14'te kalkıyor | reportlab ve bağımlılık güncellemelerinden sonra |
 | node:24 → 26 | Docker Hub'da `26` (26.10) yayında; Node 26 Ekim 2026 sonunda LTS olur | LTS'e geçtikten sonra ayrı iş; vite/vitest majorlarıyla birlikte düşünülmeli |
 | nginx:alpine | Kayan etiket; yama rebuild'de gelir | Değişiklik yok |
+
+### 6.1 Office365-REST-Python-Client kaldırıldı (aynı gün, kullanıcı kararı)
+
+- Backend'de hiçbir import yoktu; SharePoint erişimi msal + Microsoft Graph (`sharepoint/auth_graph.py`,
+  `services/upload_queue.py`). Word Online'da açma Graph `webUrl` ile zaten mümkün; sunucuda Word üretimi
+  gerekirse doğru araç `python-docx`'tir — bu paket ikisini de yapmaz.
+- Paketle birlikte imajdan düşen dolaylı bağımlılık: `pytz` (kodda kullanım yok — G198 `zoneinfo`'ya geçti;
+  bekçi `tests/test_g198_zamanlayici_zoneinfo.py`). msal/requests/typing-extensions doğrudan ya da başka yoldan kalır.
+- Doğrulama: `--progress=plain` rebuild (Successfully installed listesinde office365/pytz YOK), konteynerde
+  `find_spec('pytz')` ve `find_spec('office365')` → None, `ZoneInfo('Europe/Istanbul')` çalışıyor;
+  pip-audit temiz · ruff · mypy (65 dosya) · pytest `4082 passed, 15 skipped`.
+- Kalan majorların uygulama planı: `docs/plan/bagimlilik-majorlar-plani-2026-10-01.md`.
 
 **Geçilmez:** apscheduler 4.x (API baştan değişti) — 3.11.3'te kalınır.
 

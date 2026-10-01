@@ -12,7 +12,6 @@ python-multipart==0.0.32
 slowapi==0.1.10
 defusedxml==0.7.1
 Pillow==12.3.0
-Office365-REST-Python-Client==2.6.2
 flashtext==2.7
 keyrings.alt==5.0.2
 sqlalchemy==2.0.54
