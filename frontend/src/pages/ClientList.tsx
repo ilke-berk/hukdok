@@ -318,7 +318,7 @@ const ClientList = () => {
           </div>
 
           <div>
-            <Eyebrow>Kategori</Eyebrow>
+            <Eyebrow>Müvekkil Tipi</Eyebrow>
             <div className="mt-2 flex flex-col gap-2">
               {CATEGORIES.map(cat => (
                 <label key={cat} className="flex items-center gap-2.5 cursor-pointer">
@@ -505,7 +505,7 @@ const ClientList = () => {
               <div>
                 <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
                   <CategoryIcon category={selectedClient.category} className="w-3.5 h-3.5" />
-                  {selectedClient.category || "Kategori belirtilmemiş"}
+                  {selectedClient.category || "Müvekkil tipi belirtilmemiş"}
                   {selectedClient.specialty && <span>· {selectedClient.specialty}</span>}
                 </div>
                 <h2 className="mt-1.5 font-display text-[20px] tracking-[-0.005em] text-[var(--fg)] font-medium leading-tight">
