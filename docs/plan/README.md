@@ -5,6 +5,7 @@ Burada **hâlâ yürüyen** planlar ve uygulama takibi durur. Bir plan bittiğin
 
 | Dosya | Ne işe yarar |
 | --- | --- |
+| [`bagimlilik-majorlar-plani-2026-10-01.md`](bagimlilik-majorlar-plani-2026-10-01.md) | **Gece kuyruğunda (G243-G247).** reportlab 4.5.1 → 5, python 3.13, postgres 17 provası + insan adımı geçiş runbook'u, node 26 (LTS sonrası) |
 | [`prod-deploy-29-performans-turu-2026-09-14.md`](prod-deploy-29-performans-turu-2026-09-14.md) | **Koşu bekliyor (mesai dışı, kullanıcı kararı).** Deploy #29: c184c9a → main (13.09 bildirim + G182–G197 performans turu + CI protokolü); CI kapısı, doğrulama, `VACUUM FULL` (case_history 15,7× şişik), önce/sonra `perf_olcum` ölçümü, geri dönüş |
 | [`veri-teslim-otomasyonu-plani-2026-09-03.md`](veri-teslim-otomasyonu-plani-2026-09-03.md) | **Kod tamam (G107–G114 main'de), kapanış prod kurulumunu bekliyor.** Veri ekibinin teslim paketleri SharePoint klasöründen kendiliğinden alınır, kuru koşu + kapı + 04:00 gece uygulaması, cevap paketi geri yüklenir; ikinci faz sayfaları (Düzeltme_Logu, Silinen_Föyler/Kapsam_Dışı, DEGER_HAVUZLARI) okunuyor. Açık kalanlar §8 (tara ucu, kapsam rozeti, insan adımları). Yaşayan doküman: [`docs/mimari/veri-teslim-hatti.md`](../mimari/veri-teslim-hatti.md) |
 | [`temizlik-ve-yapisal-saglik-plani-2026-08-11.md`](temizlik-ve-yapisal-saglik-plani-2026-08-11.md) | **Onay bekliyor.** Temizlik/DB/sorgu/ölçek planı — 25 ajanlı keşif + denetim panelinin ürünü. Kapsam dışı bırakılanlar §9'da, taslakta düzeltilen 10 hata §10'da |

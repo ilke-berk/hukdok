@@ -116,6 +116,21 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G240 | bant:docs | bagimli:G239,G241,G242 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti güncellenir; veri ekibine not taslağı (gönderilmez)
 - [x] G242 | bant:backend | bagimli:- | Kullanılmayan SharePoint belge sayacı (`ofis_dosya_no`, `counter_manager.py`) kalkar: /process'te Graph çağrısı yok, stream sözleşmesi aynı; prod `.env` satırı + SharePoint "Counter" listesi deploy sonrası İNSAN ADIMI (bd8f4a0; test bütünlüğü kapısı silinen sayaç testlerine takıldı — 30.09 kullanıcı kararıyla tamam sayıldı)
 
+## ÖNCELİK 6 — Bağımlılık majorları: reportlab 5, Python 3.13, Postgres 17 provası, Node 26 (2026-10-01 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/arsiv/bagimlilik-raporu-2026-10.md §6 + plan docs/plan/bagimlilik-majorlar-plani-2026-10-01.md.
+     Ön koşul: bagimlilik/2026-10 dalı (8 paket + Office365 kaldırma) main'e birleşmiş olmalı — görevler o pinlerin üstüne kurulur.
+     Hepsi bant:backend (docker şart) → seri. G244 ve G245 ikisi de yalnız G243'e bağlı: reportlab 5 kırmızı kalırsa
+     Python 3.13 4.5.1 ile yürür. G246 bağımsız (yalnız prova + runbook; compose/CI/deploy.sh postgres imajı DEĞİŞMEZ,
+     gerçek geçiş İNSAN ADIMI). G247 Node 26 LTS'e (≈2026-10-28) dek BLOKE — insan eki siler.
+     Müvekkil verisi (dump, kalibrasyon PDF'leri) yalnız C:\hukdok-veri\ altına. Tahmin: G243-G246 1 gece; G247 Kasım. -->
+
+- [ ] G243 | bant:backend | bagimli:- | reportlab 4.2.5 → 4.5.1 (son 4.x) + 11 kalibrasyon UDF'i ve rapor PDF'i önce/sonra (sayfa, metin hash, görsel) karşılaştırması
+- [ ] G244 | bant:backend | bagimli:G243 | reportlab 4.5.1 → 5.0.x: kaldırılan API taraması (renderPM, pyRXP, trustedHosts) + aynı PDF karşılaştırması; fark varsa geri al, BLOKE
+- [ ] G245 | bant:backend | bagimli:G243 | Python 3.12 → 3.13: backend Dockerfile + ci.yml + ruff/mypy hedefi + dokümanlar tek hizada; tüm pinler wheel'den, lider worker açılışı kanıtlı
+- [ ] G246 | bant:backend | bagimli:- | Postgres 17 geçiş PROVASI: lokal dump → geçici PG17 konteyneri → restore + migrate + tam pytest + arama EXPLAIN karşılaştırması → runbook; kod/konfig değişmez, geçici konteyner silinir
+- [ ] G247 | bant:backend | bagimli:- | Node 24 → 26: frontend Dockerfile + ci.yml; paket sürümleri değişmez (vite/vitest majorları ayrı plan) | BLOKE(Node 26 Active LTS'e geçene dek, ≈2026-10-28 — insan eki siler)
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
