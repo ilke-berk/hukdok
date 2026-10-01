@@ -197,7 +197,7 @@ async def lifespan(app: FastAPI):
     # Faz 3-E: yalnız lider worker'da — N worker'da N kopya rapor/e-posta üretirdi.
     # G198: saat dilimi stdlib `zoneinfo`; eski üçüncü parti tz paketi KULLANILMAZ —
     # requirements'ta hiç yoktu, APScheduler 3.10 üzerinden dolaylı geliyordu, 3.11 onu bıraktı. Sistem tz verisi
-    # python:3.12-slim imajında `/usr/share/zoneinfo`'da var (tzdata pin'i gereksiz).
+    # python:3.13-slim imajında `/usr/share/zoneinfo`'da var (tzdata pin'i gereksiz).
     # `ZoneInfo("Europe/Istanbul")` her tetikte AÇIK yazılır: G085 AST bekçisi tetiğin
     # timezone'unu literal çağrı olarak okur.
     if is_leader:

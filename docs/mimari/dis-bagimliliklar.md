@@ -12,7 +12,7 @@ başarısızlık sözleşmesi vardır — hiçbiri sonsuza dek asılmaz.
 
 ## 1. Gemini
 
-**SDK:** `google-genai==2.11.0` (`backend/requirements.txt:4`). Ortak istemci
+**SDK:** `google-genai==2.26.0` (`backend/requirements.txt:4`). Ortak istemci
 `backend/gemini_client.py`'dedir; eski SDK'daki `genai.configure(...)` global durumunun
 yerini alır ve tüm modüller (analyzer, email_sender, date_extractor) Client'ı buradan alır
 (`gemini_client.py:1-8`).
@@ -193,18 +193,19 @@ Tümü **tam sürüme sabitlenmiştir** (`backend/requirements.txt`). Ana kaleml
 
 | Paket | Sürüm | Rol |
 | --- | --- | --- |
-| `fastapi` / `uvicorn` | 0.141.1 / 0.38.0 | web çerçevesi + ASGI sunucu |
-| `google-genai` | 2.11.0 | Gemini |
-| `msal` | 1.37.0 | Graph app-only kimlik |
-| `sqlalchemy` / `psycopg2-binary` | 2.0.25 / 2.9.9 | ORM + PostgreSQL sürücüsü |
+| `fastapi` / `uvicorn` | 0.142.2 / 0.38.0 | web çerçevesi + ASGI sunucu |
+| `google-genai` | 2.26.0 | Gemini |
+| `msal` | 1.39.0 | Graph app-only kimlik |
+| `sqlalchemy` / `psycopg2-binary` | 2.0.54 / 2.9.13 | ORM + PostgreSQL sürücüsü |
 | `pydantic` / `pydantic-settings` | 2.12.5 / 2.11.0 | şema + ayar yükleme |
-| `pymupdf` | 1.26.7 | PDF metin çıkarma |
+| `pymupdf` | 1.28.2 | PDF metin çıkarma |
 | `Pillow` | 12.3.0 | görüntü işleme |
-| `slowapi` | 0.1.9 | hız sınırı |
-| `apscheduler` | 3.10.4 | zamanlanmış işler |
-| `PyJWT` / `cryptography` | 2.13.0 / 50.0.0 | Azure AD token doğrulama |
-| `keyring` / `keyrings.alt` | 25.7.0 / 5.0.0 | vault (Windows Credential Manager) |
+| `slowapi` | 0.1.10 | hız sınırı |
+| `apscheduler` | 3.11.3 | zamanlanmış işler |
+| `PyJWT` / `cryptography` | 2.15.1 / 50.0.2 | Azure AD token doğrulama |
+| `keyring` / `keyrings.alt` | 25.7.0 / 5.0.2 | vault (Windows Credential Manager) |
 | `defusedxml` | 0.7.1 | güvenli XML ayrıştırma |
+| `python-dotenv` / `requests` / `python-multipart` | 1.2.4 / 2.34.2 / 0.0.32 | `.env` okuma (1.2.x: `KEY= # yorum` satırında değer boş okunur), HTTP istemci, form/dosya yükleme |
 | `reportlab` / `openpyxl` / `flashtext` | 5.0.1 / 3.1.5 / 2.7 | PDF üretimi, Excel, hızlı anahtar kelime araması (reportlab 5: uzak URL görseli `trustedHosts` olmadan reddedilir — bizde görsel yalnız BytesIO/yerel dosya, G244) |
 
 Geliştirme araçları (`pytest`, `httpx`, `ruff`, `mypy`) `backend/requirements-dev.txt`'tedir
