@@ -172,7 +172,7 @@ gerekçesi ayar dosyasında yazılı: Graph `/sendMail` gövdesinin ~4 MB tavan�
 
 ## 4. Sistem araçları (konteyner içi)
 
-`backend/Dockerfile` (`python:3.12-slim` üzerine, `:11-17`):
+`backend/Dockerfile` (`python:3.13-slim` üzerine, `:11-17`):
 
 | Paket | Ne için |
 | --- | --- |

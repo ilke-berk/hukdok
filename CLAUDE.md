@@ -12,7 +12,7 @@ PostgreSQL; kimlik Azure AD (MSAL). Bu dosya sıfır-context bir oturumun giriş
 ## Mimari özet
 
 **Servisler** (`docker-compose.yml`): `postgres` (postgres:15-alpine, 127.0.0.1:5432),
-`backend` (`hukdok_backend`, python:3.12-slim, 127.0.0.1:8001), `frontend` (nginx,
+`backend` (`hukdok_backend`, python:3.13-slim, 127.0.0.1:8001), `frontend` (nginx,
 127.0.0.1:8080 → konteyner 80). **Üç port da loopback'e sabit** — dışarıya açık tek kapı
 host nginx'tir (prod 443); bekçi `backend/tests/test_port_baglama.py`. API-key'li
 `/export` route'ları public'e açılmaz; hukukbot ortak `hukuk_shared` Docker ağından
@@ -223,7 +223,7 @@ başarısızsa 503) — izleme ve deploy kapısı buradan bakar.
 # Lokal stack (kod İMAJDAN çalışır — bkz. tuzaklar)
 docker compose up -d
 
-# Backend testleri KONTEYNERDE koşar (imaj python:3.12-slim)
+# Backend testleri KONTEYNERDE koşar (imaj python:3.13-slim)
 docker compose exec -T backend python -m pytest            # 2026-09-30 (pytest 9.1.1): 4082 passed, 15 skipped
 # DİKKAT: komuta ekstra -q EKLEME — pyproject addopts zaten -q; -qq özet satırını yutar.
 

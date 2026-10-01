@@ -1,5 +1,5 @@
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 120
 # calibration-data: lokal override'ın bind-mount ettiği repo DIŞI veri dizini
 # (C:/hukdok-veri/calibration -> /app/calibration-data); git'te yok, CI'da yok.
@@ -39,7 +39,7 @@ extend-immutable-calls = [
 # DİKKAT: kökü birden taramak (`mypy .`) bugün modül-yolu çakışmasında patlar
 # (schemas_intake.py duplicate module name); ayrı bir iş.
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 files = ["managers", "routes", "config", "services"]
 ignore_missing_imports = true
 check_untyped_defs = true
