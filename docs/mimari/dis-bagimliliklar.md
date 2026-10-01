@@ -205,7 +205,7 @@ Tümü **tam sürüme sabitlenmiştir** (`backend/requirements.txt`). Ana kaleml
 | `PyJWT` / `cryptography` | 2.13.0 / 50.0.0 | Azure AD token doğrulama |
 | `keyring` / `keyrings.alt` | 25.7.0 / 5.0.0 | vault (Windows Credential Manager) |
 | `defusedxml` | 0.7.1 | güvenli XML ayrıştırma |
-| `reportlab` / `openpyxl` / `flashtext` | 4.2.5 / 3.1.5 / 2.7 | PDF üretimi, Excel, hızlı anahtar kelime araması |
+| `reportlab` / `openpyxl` / `flashtext` | 5.0.1 / 3.1.5 / 2.7 | PDF üretimi, Excel, hızlı anahtar kelime araması (reportlab 5: uzak URL görseli `trustedHosts` olmadan reddedilir — bizde görsel yalnız BytesIO/yerel dosya, G244) |
 
 Geliştirme araçları (`pytest`, `httpx`, `ruff`, `mypy`) `backend/requirements-dev.txt`'tedir
 ve **prod imajına girmez**.
