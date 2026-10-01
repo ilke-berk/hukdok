@@ -632,12 +632,15 @@ ANA_TUR_ESLEMESI = {
 # Durum → cases.status. Bizim havuz iki değerli (DERDEST/MAHZEN), teslimin de.
 DURUM_ESLEMESI = {"AKTIF": "DERDEST", "ARSIV": "MAHZEN"}
 
-# İstinaf başvuran taraf → G044'ün kapalı listesi (Davacı/Davalı/Her İki Taraf).
-# Birleşik yazımların hepsi "Her İki Taraf"tır; listede olmayan 8 satır
-# (DİĞER DAVALI, SANIK MÜDAFİ, FERİ MÜDAHİL, bir hastane adı) YAZILMAZ.
+# İstinaf başvuran taraf → G044'ün kapalı listesi (Davacı/Davalı/Her İki Taraf/
+# Feri Müdahil). Birleşik yazımların hepsi "Her İki Taraf"tır; listede olmayan
+# satırlar (DİĞER DAVALI, SANIK MÜDAFİ, bir hastane adı) YAZILMAZ. "Feri Müdahil"
+# veri ekibinin 26.09.2026 ricasıyla (14. madde) listeye girdi: fer'i müdahilin
+# kanun yoluna KENDİSİNİN başvurduğu kararlar (anahtar aksansız: FERIMUDAHIL).
 ISTINAF_BASVURAN_ESLEMESI = {
     "DAVACI": "Davacı", "DAVALI": "Davalı",
     "DAVALIDAVACI": "Her İki Taraf", "DAVACIDAVALI": "Her İki Taraf",
+    "FERIMUDAHIL": "Feri Müdahil",
 }
 
 

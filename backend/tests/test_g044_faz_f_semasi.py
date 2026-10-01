@@ -249,12 +249,13 @@ def test_her_listenin_dynamicconfig_setteri_var():
     assert eksik == [], "DynamicConfig setter'ı olmayan listeler: " + ", ".join(eksik)
 
 
-def test_istinaf_basvuran_taraf_uc_degerle_seedleniyor():
-    """Şartname §1.1 (S5): Davacı / Davalı / Her İki Taraf — kapalı küme."""
+def test_istinaf_basvuran_taraf_dort_degerle_seedleniyor():
+    """Şartname §1.1 (S5): Davacı / Davalı / Her İki Taraf — kapalı küme;
+    "Feri Müdahil" veri ekibinin 26.09.2026 ricasıyla (14. madde) eklendi."""
     from managers.seed_data import APPEALING_PARTIES, seed_all_lists
 
-    assert [name for _, name in APPEALING_PARTIES] == ["Davacı", "Davalı", "Her İki Taraf"]
-    assert len({code for code, _ in APPEALING_PARTIES}) == 3
+    assert [name for _, name in APPEALING_PARTIES] == ["Davacı", "Davalı", "Her İki Taraf", "Feri Müdahil"]
+    assert len({code for code, _ in APPEALING_PARTIES}) == 4
     assert "_seed_appealing_parties" in seed_all_lists.__code__.co_names
 
 
@@ -317,3 +318,15 @@ def test_uzmanlik_alani_kullanim_etiketi_guncel():
 
     labels = [d.label for d in DEPENDENCIES["specialties"] if d.column == "sub_type"]
     assert labels == ["dava (uzmanlık alanı)"]
+
+
+def test_feri_mudahil_basvuran_taraf_eslemesinden_gecer():
+    """Veri ekibi 26.09.2026 (14. madde): aşama kayıtlarındaki "Feri Müdahil"
+    başvuran tarafı artık YAZILIR; kapalı liste dışı yazım hâlâ boş kalır."""
+    from scripts.hukdok_aktarim import ISTINAF_BASVURAN_ESLEMESI, _esleme
+
+    donustur = _esleme(ISTINAF_BASVURAN_ESLEMESI)
+    assert donustur("Feri Müdahil", "basvuran_taraf") == "Feri Müdahil"
+    assert donustur("FERİ MÜDAHİL", "basvuran_taraf") == "Feri Müdahil"
+    assert donustur("Fer'i Müdahil", "basvuran_taraf") == "Feri Müdahil"
+    assert donustur("Sanık Müdafi", "basvuran_taraf") is None

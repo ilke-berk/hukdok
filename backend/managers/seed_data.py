@@ -424,6 +424,9 @@ APPEALING_PARTIES = [
     ("DAVACI", "Davacı"),
     ("DAVALI", "Davalı"),
     ("HER-IKI-TARAF", "Her İki Taraf"),
+    # Veri ekibinin 26.09.2026 ricası (14. madde): fer'i müdahilin kanun yoluna
+    # KENDİSİNİN başvurduğu kararlar — aşama kayıtlarında 4 satırla başladı.
+    ("FERI-MUDAHIL", "Feri Müdahil"),
 ]
 
 

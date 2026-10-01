@@ -134,7 +134,7 @@ class Case(Base):
     # durumdur. Yazma yolu FAZ F'nin işi; burada şema + okuma yolu var.
     islah_tutari = Column(Numeric(precision=20, scale=2), nullable=True)  # ıslahla EKLENEN miktar (güncel talep = dava değeri)
     arsiv_tarihi = Column(Date, nullable=True)                  # dosya kapanış süresi + ön muhasebe analizinin dayanağı
-    istinaf_basvuran_taraf = Column(String(50), nullable=True)  # KAPALI liste (appealing_parties): Davacı | Davalı | Her İki Taraf
+    istinaf_basvuran_taraf = Column(String(50), nullable=True)  # KAPALI liste (appealing_parties): Davacı | Davalı | Her İki Taraf | Feri Müdahil
     # DÜZELTME (G076, teslim paketi ölçüldü): "435 föyde esas no yerine geçiyor"
     # iddiası YANLIŞTI. 435 rakamı `Ana Tür = ARABULUCULUK` föy sayısıdır;
     # "Arabuluculuk Numarası" sütunu 8.409 satırın YALNIZ 1'inde dolu. Alan
