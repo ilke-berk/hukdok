@@ -126,7 +126,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Müvekkil verisi (dump, kalibrasyon PDF'leri) yalnız C:\hukdok-veri\ altına. Tahmin: G243-G246 1 gece; G247 Kasım. -->
 
 - [ ] G243 | bant:backend | bagimli:- | reportlab 4.2.5 → 4.5.1 (son 4.x) + 11 kalibrasyon UDF'i ve rapor PDF'i önce/sonra (sayfa, metin hash, görsel) karşılaştırması
-- [ ] G244 | bant:backend | bagimli:G243 | reportlab 4.5.1 → 5.0.x: kaldırılan API taraması (renderPM, pyRXP, trustedHosts) + aynı PDF karşılaştırması; fark varsa geri al, BLOKE
+- [ ] G244 | bant:backend | bagimli:G243 | reportlab 4.5.1 → 5.0.x: kaldırılan API taraması (renderPM, pyRXP, trustedHosts) + aynı PDF karşılaştırması; fark varsa 4.5.1'e geri dön ve durdur (görev dosyası §kabul)
 - [ ] G245 | bant:backend | bagimli:G243 | Python 3.12 → 3.13: backend Dockerfile + ci.yml + ruff/mypy hedefi + dokümanlar tek hizada; tüm pinler wheel'den, lider worker açılışı kanıtlı
 - [ ] G246 | bant:backend | bagimli:- | Postgres 17 geçiş PROVASI: lokal dump → geçici PG17 konteyneri → restore + migrate + tam pytest + arama EXPLAIN karşılaştırması → runbook; kod/konfig değişmez, geçici konteyner silinir
 - [ ] G247 | bant:backend | bagimli:- | Node 24 → 26: frontend Dockerfile + ci.yml; paket sürümleri değişmez (vite/vitest majorları ayrı plan) | BLOKE(Node 26 Active LTS'e geçene dek, ≈2026-10-28 — insan eki siler)
