@@ -269,7 +269,7 @@ def test_bos_sayilari_ve_liste_sayilari_kaynak_basina_tek_sorgu(env):
     # artık onlarındır; davalar'ın kendi çoklu bağ kolonları türetilmiş olduğundan 18 değişmez
     en_buyuk = max(len(registry._duz_liste_kolonlari(k)) for k in registry.KAYNAKLAR.values())
     assert max(s.count("GROUP BY") for s in birlesik) == en_buyuk
-    assert len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 18
+    assert len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 19     # 02.10: + kanun_yolu
     env.sorgular.clear()
     client.get(CATALOG)
     assert env.sorgular == []

@@ -607,6 +607,28 @@ def derdest_asama_kosullari(asama: str) -> tuple:
     raise ValueError(f"tanınmayan aşama filtresi: {asama!r}")
 
 
+#: Rapor kolonu `davalar.kanun_yolu` değerleri — panel kutularıyla aynı tanım (`kanun_yolu_ifadesi`).
+KANUN_YOLU_YEREL = "Yerel"
+KANUN_YOLU_ISTINAF = "İstinaf"
+KANUN_YOLU_YARGITAY = "Temyiz – Yargıtay"
+KANUN_YOLU_DANISTAY = "Temyiz – Danıştay"
+KANUN_YOLLARI = (KANUN_YOLU_YEREL, KANUN_YOLU_ISTINAF, KANUN_YOLU_YARGITAY, KANUN_YOLU_DANISTAY)
+
+
+def kanun_yolu_ifadesi():
+    """Kartın ulaştığı EN İLERİ kanun yolu (SQL CASE) — `derdest_asama_kosullari` ile aynı kural, durumdan
+    bağımsız: temyiz (karar düzeltme dahil) istinafı ezer, temyiz dosya türüne göre Yargıtay/Danıştay;
+    aşama kararı da `case_stage` de yoksa "Yerel". Rapor `Durum = DERDEST` ile panel sayısını verir."""
+    from sqlalchemy import case, func
+
+    danistay = func.coalesce(models.Case.file_type, "") == _DANISTAY_DOSYA_TURU
+    return case(
+        (_asamada(_TEMYIZ_ASAMALARI), case((danistay, KANUN_YOLU_DANISTAY), else_=KANUN_YOLU_YARGITAY)),
+        (_asamada(_ISTINAF_ASAMALARI), KANUN_YOLU_ISTINAF),
+        else_=KANUN_YOLU_YEREL,
+    )
+
+
 def _derdest_en_ileri_asama(db, tenant_id) -> dict:
     """Derdest (aktif) dosyaları en ileri kanun yoluna göre sayar:
     {"ISTINAF": n, "TEMYIZ": t, "TEMYIZ_YARGITAY": y, "TEMYIZ_DANISTAY": d}; t = y + d.

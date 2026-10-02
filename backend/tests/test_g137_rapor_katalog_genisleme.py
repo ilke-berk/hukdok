@@ -47,7 +47,7 @@ VERIDEN = {
     "foyler": set(),
 }
 ONERILI = {
-    "davalar": {"muvekkil_adlari", "karsi_taraf_adlari", "sigortali_adlari"},
+    "davalar": {"muvekkil_adlari", "karsi_taraf_adlari", "sigortali_adlari", "diger_taraf_adlari"},
     "muvekkiller": {"sektor", "noterlik"},
     "belgeler": set(),
     "foyler": set(),
@@ -283,7 +283,7 @@ def test_katalog_kolon_setleri_plan_listesi(env):
             assert set(liste) <= set(kolonlar), (kaynak["anahtar"], ad)
     dava_setleri = {ks["ad"]: ks["kolonlar"] for ks in kaynaklar["davalar"]["kolon_setleri"]}
     assert list(dava_setleri) == ["Temel", "Karar takibi", "Tazminat", "Taraflar"]
-    assert dava_setleri["Karar takibi"] == ["tracking_no", "esas_no", "court", "status", "case_stage", "karar_tarihi",
+    assert dava_setleri["Karar takibi"] == ["tracking_no", "esas_no", "court", "status", "kanun_yolu", "karar_tarihi",
                                             "karar_turu", "karar_lehine", "kesinlesme_tarihi"]
     assert dava_setleri["Tazminat"] == ["tracking_no", "muvekkil_adlari", "court", "maddi_tazminat", "manevi_tazminat",
                                         "hukmedilen_toplam", "dava_degeri", "para_birimi"]

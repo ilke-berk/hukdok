@@ -187,7 +187,21 @@ Asistanın sistem talimatına gömülen katalog metni bu alanları BİLEREK içe
 | `karsi_taraf_adlari` | Karşı Taraflar | metin | `party_type='COUNTER'` | aynı | aynı |
 | `sigortali_adlari` (YENİ) | Sigortalılar | metin | `role='Sigortalı'`, her party_type (`SIGORTALI_ROLU`, `:230`) | aynı | aynı |
 | `muvekkil_kategorisi` (YENİ) | Müvekkil Kategorisi | liste | CLIENT tarafların **canlı** (`clients.deleted_at IS NULL`) kart kategorileri birleşik (`_muvekkil_kategorileri`, `:293-303`); seçenek = seed çekirdeği (`MUVEKKIL_KATEGORILERI`, `:224-225`) ∪ `client_categories` tablosu ∪ `clients.category` DISTINCT | `_muvekkil_kategorisi_filtresi` (`:306-318`): `case_parties JOIN clients`, `party_type='CLIENT'`, `clients.deleted_at IS NULL` | `eq, in, is_null` (`TARAF_KATEGORI_OPLARI`, `:234`) |
+| `taraf_sifati` (02.10) | Taraf Sıfatı | liste | TÜM tarafların "Ad (Sıfat)" yazımı birleşik (`_taraf_sifatli_adlar`); seçenek = `party_roles` tablosu ∪ `case_parties.role` DISTINCT | `_taraf_sifati_filtresi`: EXISTS `case_parties.role` — "Müdahil" = o sıfatta EN AZ BİR tarafı olan dava; `is_null` = sıfatı dolu taraf yok | `eq, in, is_null` |
 
+| `diger_taraf_adlari` (02.10) | Diğer Taraflar | metin | `party_type='THIRD'` ve rol ≠ Sigortalı (Diğer Davalı, İhbar Olunan…) | `_taraf_filtresi` | `TARAF_METIN_OPLARI` |
+| `avukatlar` (02.10, grup Kimlik) | Avukatlar (tümü) | liste | önce sorumlu avukat, sonra `case_lawyers`'taki DİĞER avukatlar (tekrarsız) | `_dava_avukati_filtresi`: `responsible_lawyer_name` VEYA EXISTS `case_lawyers` — dava listesi avukat filtresiyle aynı kapsam | `eq, in, is_null` |
+| `kanun_yolu` (02.10, grup Karar ve aşama, DÜZ kolon) | Ulaştığı Kanun Yolu | liste | `case_manager.kanun_yolu_ifadesi()` CASE: Yerel / İstinaf / Temyiz – Yargıtay / Temyiz – Danıştay | ifadenin kendisi (sıralanır, gruplanır, sayılı) | liste opları |
+
+- **Kapsam eşitliği (02.10 incelemesi):** rapor üç yerde panelden/dava listesinden az buluyordu. (1) `case_stage`
+  kartların ~%98'inde boş (aşama `case_stage_decisions`'ta) → "Aşama = İstinaf" 0; `kanun_yolu` panel kutularının
+  tanımını (`derdest_asama_kosullari`) tek kaynaktan kullanır — `Durum = DERDEST` + kanun yolu = panel sayısı
+  (lokal 475/114/168 birebir). Eski kolon "Aşama (kart alanı)" adıyla durur; "Karar takibi" seti `kanun_yolu`
+  taşır. (2) "Sorumlu Avukat" tek alan; ek atamalar (`case_lawyers`) yalnız `avukatlar`da (ör. lokal: sorumlu 0
+  → tümü 897). (3) Arama kutusu THIRD tarafları da arar. Bekçi `tests/test_rapor_kapsam_esitligi.py`.
+- **Taraf Sıfatı (02.10 kullanıcı bulgusu):** kolon eklenmeden önce "müdahil olanlar" isteğinin tek adayı
+  `istinaf_basvuran_taraf` ("Feri Müdahil" değerli, ayrı alan, veride hiç dolu değil) → 0 satır. Sıfat,
+  föyün "Taraf Sıfatı" sütunundan `case_parties.role`'e yazılır (aktarım); bekçi `tests/test_rapor_taraf_sifati.py`.
 - **Semantik:** `contains` = "koşula uyan HERHANGİ bir tarafın adı içerir" (EXISTS; birleşik metin
   üzerinde değil), `is_null` = böyle taraf yok, `not_null` = var (`:266-268`, `:272-276`).
   `muvekkil_kategorisi is_null` = kategorili canlı müvekkil kartı olan CLIENT taraf yok (`:308`, `:316-317`).

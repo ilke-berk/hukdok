@@ -369,7 +369,7 @@ def test_asistan_katalog_metni_iliski_satirlari():
             "(ör. muvekkil.name) · hariç: dava_sayisi · çoklu:") in metin
     assert "dava.<kolon> · Dava · BAĞLI: 'davalar' kaynağının kolonları 'dava.' önekiyle (ör. dava.tracking_no) · " \
            "tekil: filtre/sıralama düz kolon gibi" in metin
-    assert "hariç: muvekkil_adlari, karsi_taraf_adlari, sigortali_adlari, muvekkil_kategorisi, foy_sayisi, belge_sayisi" in metin
+    assert "hariç: avukatlar, muvekkil_adlari, karsi_taraf_adlari, sigortali_adlari, diger_taraf_adlari, muvekkil_kategorisi, taraf_sifati, foy_sayisi, belge_sayisi" in metin
     davalar_blogu = metin.split("## muvekkiller")[0]
     assert davalar_blogu.count("BAĞLI:") == 3
     talimat = get_rapor_asistani_instruction(metin, "2026-09-10")

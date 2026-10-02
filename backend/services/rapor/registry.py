@@ -96,7 +96,7 @@ import datetime as dt
 import unicodedata
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Integer, Numeric, Select, String, and_, cast, func, literal, null, or_, select,
+    Boolean, Date, DateTime, Integer, Numeric, Select, String, and_, case, cast, func, literal, null, or_, select,
     union_all,
 )
 from sqlalchemy.orm import Session
@@ -105,6 +105,7 @@ from sqlalchemy.sql import ColumnElement
 import models
 from auth_helpers import tenant_filter_clause
 from config.settings import settings
+from managers.case_manager import KANUN_YOLLARI, kanun_yolu_ifadesi
 from managers.seed_data import (
     APPEAL_DECISIONS, APPEALING_PARTIES, CASSATION_DECISIONS, CLIENT_TYPES, CURRENCIES, EVENT_TYPES,
     JUDGMENT_ROLES, LOCAL_DECISIONS, REVISION_DECISIONS, SERVICE_TYPES,
@@ -644,6 +645,79 @@ def _muvekkil_kategorisi_filtresi(op: str, deger: Any, atom: AtomKosul):
     return varlik.where(atom(M.category, op, deger)).exists()
 
 
+def _taraf_sifatli_adlar():
+    """Seçim ifadesi: tüm tarafların "Ad (Sıfat)" yazımı birleşik; sıfatsız taraf yalnız adıyla."""
+    P = models.CaseParty
+    yazim = case(
+        (and_(P.role.isnot(None), P.role != ""), func.coalesce(P.name, "") + " (" + P.role + ")"),
+        else_=P.name,
+    )
+    return (
+        select(func.aggregate_strings(yazim, AYRAC))
+        .where(P.case_id == models.Case.id)
+        .correlate(models.Case)
+        .scalar_subquery()
+    )
+
+
+def _taraf_sifati_filtresi(op: str, deger: Any, atom: AtomKosul):
+    """EXISTS `case_parties`: `eq`/`in` = o sıfatta EN AZ BİR taraf var ("Müdahil" seçimi müdahili
+    olan davaları getirir); `is_null` = sıfatı dolu hiç taraf yok. `in` listesindeki `null` ("(boş)")
+    aynı anlamdadır — `_muvekkil_kategorisi_filtresi` ile aynı sözleşme."""
+    P = models.CaseParty
+    varlik = select(P.id).where(P.case_id == models.Case.id).correlate(models.Case)
+    sifatsiz = ~varlik.where(and_(P.role.isnot(None), P.role != "")).exists()
+    if op == "is_null":
+        return sifatsiz
+    if op == "in" and any(d is None for d in deger):
+        dolu = [d for d in deger if d is not None]
+        if not dolu:
+            return sifatsiz
+        return or_(sifatsiz, varlik.where(atom(P.role, op, dolu)).exists())
+    return varlik.where(atom(P.role, op, deger)).exists()
+
+
+def _diger_taraf(P):
+    """"Diğer Taraflar": THIRD taraflar (Diğer Davalı, İhbar Olunan…) — Sigortalı kendi kolonunda."""
+    return and_(P.party_type == "THIRD", func.coalesce(P.role, "") != SIGORTALI_ROLU)
+
+
+def _dava_avukatlari():
+    """Seçim ifadesi: önce sorumlu avukat, sonra karta atanmış DİĞER avukatlar (`case_lawyers`, sorumluyla
+    aynı ad tekrar yazılmaz) — `AYRAC` ile birleşik."""
+    L = models.CaseLawyer
+    sorumlu = func.coalesce(models.Case.responsible_lawyer_name, "")
+    digerleri = (
+        select(func.aggregate_strings(L.name, AYRAC))
+        .where(and_(L.case_id == models.Case.id, L.name != sorumlu))
+        .correlate(models.Case)
+        .scalar_subquery()
+    )
+    return case(
+        (sorumlu == "", digerleri),
+        (digerleri.is_(None), sorumlu),
+        else_=sorumlu + AYRAC + digerleri,
+    )
+
+
+def _dava_avukati_filtresi(op: str, deger: Any, atom: AtomKosul):
+    """Dava listesi avukat filtresiyle aynı kapsam (`case_manager._lawyer_case_ids`): sorumlu avukat
+    alanı VEYA `case_lawyers` ataması. Rapor seçimi listedeki kanonik ada eşittir (avukat yazım birliği,
+    27.09) → tam eşleşme. `is_null` = ikisi de boş; `in` + `null` = "avukatsız" ∪ in(dolu)."""
+    L = models.CaseLawyer
+    atama = select(L.id).where(L.case_id == models.Case.id).correlate(models.Case)
+    avukatsiz = and_(func.coalesce(models.Case.responsible_lawyer_name, "") == "", ~atama.exists())
+    if op == "is_null":
+        return avukatsiz
+    dolu = deger
+    if op == "in" and any(d is None for d in deger):
+        dolu = [d for d in deger if d is not None]
+        if not dolu:
+            return avukatsiz
+    kosul = or_(atom(models.Case.responsible_lawyer_name, op, dolu), atama.where(atom(L.name, op, dolu)).exists())
+    return or_(avukatsiz, kosul) if dolu is not deger else kosul
+
+
 def _foy_sayisi():
     F = models.CaseFoy
     return select(func.count(F.id)).where(F.case_id == models.Case.id).correlate(models.Case).scalar_subquery()
@@ -671,7 +745,9 @@ _DAVA_KOLONLARI: list[Kolon] = [
     # Plan §5.2: tek arama kutusu — ofis no / esas no / konu / mahkeme + müvekkil ve karşı taraf adları (EXISTS)
     _arama(_C.tracking_no, _C.esas_no, _C.subject, _C.court,
            aciklama="Ofis dosya no, esas no, konu, mahkeme veya taraf adı…",
-           ek_filtreler=(_taraf_filtresi(_party_type("CLIENT")), _taraf_filtresi(_party_type("COUNTER")))),
+           # 02.10: THIRD taraflar (Diğer Davalı, İhbar Olunan, Sigortalı) da — dava listesi araması gibi
+           ek_filtreler=(_taraf_filtresi(_party_type("CLIENT")), _taraf_filtresi(_party_type("COUNTER")),
+                         _taraf_filtresi(_party_type("THIRD")))),
     *_grup(
         "Kimlik",
         _kolon(_C, "tracking_no", "Ofis Dosya No"),
@@ -690,6 +766,12 @@ _DAVA_KOLONLARI: list[Kolon] = [
         _kolon(_C, "muvekkil_tipi", "Müvekkil Tipi", liste=_adlar(CLIENT_TYPES), secenek_tablosu=models.ClientType),
         _kolon(_C, "hizmet_turu", "Hizmet Türü", liste=_adlar(SERVICE_TYPES), secenek_tablosu=models.ServiceType),
         _kolon(_C, "responsible_lawyer_name", "Sorumlu Avukat", veriden_liste=True),
+        # 02.10: "Sorumlu Avukat" tek alan; karta atanmış diğer avukatlar (`case_lawyers`) yalnız burada.
+        _turetilmis("avukatlar", "Avukatlar (tümü)", "liste", _dava_avukatlari(),
+                    filtrelenebilir=True, filtre_ifadesi=_dava_avukati_filtresi,
+                    izinli_oplar=TARAF_KATEGORI_OPLARI, secenek_tablosu=models.Lawyer,
+                    # seçenek = avukat listesi (aktif) ∪ sorumlu avukat DISTINCT (pasif avukatın adı da gelir)
+                    secenek_ifadesi=models.Case.responsible_lawyer_name),
         _kolon(_C, "uyap_lawyer_name", "UYAP Avukatı", veriden_liste=True),
     ),
     *_grup(
@@ -707,10 +789,20 @@ _DAVA_KOLONLARI: list[Kolon] = [
                     filtrelenebilir=True, filtre_ifadesi=_taraf_filtresi(_role(SIGORTALI_ROLU)),
                     izinli_oplar=TARAF_METIN_OPLARI, onerili=True,
                     oneri_sorgusu=_taraf_adi_onerileri(_role(SIGORTALI_ROLU))),
+        _turetilmis("diger_taraf_adlari", "Diğer Taraflar", "metin", _taraf_adlari(_diger_taraf),
+                    filtrelenebilir=True, filtre_ifadesi=_taraf_filtresi(_diger_taraf),
+                    izinli_oplar=TARAF_METIN_OPLARI, onerili=True,
+                    oneri_sorgusu=_taraf_adi_onerileri(_diger_taraf)),
         _turetilmis("muvekkil_kategorisi", "Müvekkil Kategorisi", "liste", _muvekkil_kategorileri(),
                     filtrelenebilir=True, filtre_ifadesi=_muvekkil_kategorisi_filtresi,
                     izinli_oplar=TARAF_KATEGORI_OPLARI, liste=MUVEKKIL_KATEGORILERI,
                     secenek_tablosu=models.ClientCategory, secenek_ifadesi=models.Client.category),
+        # 02.10 kullanıcı bulgusu: "Müdahil" seçip o sıfattaki tarafları arayacak kolon yoktu (tek aday
+        # "İstinaf Başvuran Taraf" ayrı alan → 0 sonuç). Filtre `case_parties.role`, gösterim "Ad (Sıfat)".
+        _turetilmis("taraf_sifati", "Taraf Sıfatı", "liste", _taraf_sifatli_adlar(),
+                    filtrelenebilir=True, filtre_ifadesi=_taraf_sifati_filtresi,
+                    izinli_oplar=TARAF_KATEGORI_OPLARI, secenek_tablosu=models.PartyRole,
+                    secenek_ifadesi=models.CaseParty.role),
     ),
     *_grup(
         "Mahkeme ve konu",
@@ -740,7 +832,10 @@ _DAVA_KOLONLARI: list[Kolon] = [
     ),
     *_grup(
         "Karar ve aşama",
-        _kolon(_C, "case_stage", "Aşama", liste=DAVA_ASAMALARI),
+        # 02.10: `case_stage` kartların çoğunda boş (aşama `case_stage_decisions`'ta) → "Aşama = İstinaf"
+        # 0 dönüyordu. Panel kutularının tanımı (`case_manager.kanun_yolu_ifadesi`) burada kolon.
+        Kolon("kanun_yolu", "Ulaştığı Kanun Yolu", "liste", kanun_yolu_ifadesi(), secenekler=KANUN_YOLLARI),
+        _kolon(_C, "case_stage", "Aşama (kart alanı)", liste=DAVA_ASAMALARI),
         _kolon(_C, "dosya_son_durumu", "Dosya Son Durumu", secenek_tablosu=models.FileStatus,
                liste=DOSYA_SON_DURUMLARI),
         # Yerel karar
@@ -845,7 +940,7 @@ DAVALAR = VeriKaynagi(
     ),
     kolon_setleri=(
         KolonSeti("Temel", _DAVA_VARSAYILAN),
-        KolonSeti("Karar takibi", ("tracking_no", "esas_no", "court", "status", "case_stage", "karar_tarihi",
+        KolonSeti("Karar takibi", ("tracking_no", "esas_no", "court", "status", "kanun_yolu", "karar_tarihi",
                                    "karar_turu", "karar_lehine", "kesinlesme_tarihi")),
         KolonSeti("Tazminat", ("tracking_no", "muvekkil_adlari", "court", "maddi_tazminat", "manevi_tazminat",
                                "hukmedilen_toplam", "dava_degeri", "para_birimi")),
