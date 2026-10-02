@@ -151,7 +151,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      G255 aynı gece koşarsa G257'den SONRA (hukdok_aktarim.py). -->
 
 - [x] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + müvekkil başına küme yazımı (PUT) + taraf silme + liste rename kuralı
-- [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır
+- [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
 - [ ] G257 | bant:backend | bagimli:G249 | Hizmet listesi veri ekibinin paketinden: `deger_havuzu_seed` HAVUZLAR'a "Hizmet Türü" + aktarım eşlemesi kod sabitinden değil DB `service_types` listesinden (koşu başında) + sentetik paketle uçtan uca test; `--apply` insan adımı
 - [ ] G250 | bant:backend | bagimli:G257 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
 - [ ] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
