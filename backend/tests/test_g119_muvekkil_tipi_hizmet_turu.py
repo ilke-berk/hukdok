@@ -13,6 +13,13 @@ yazma yolu takip paneli, kapısı G066 davranış eşidir (case_manager'da
 kalıbıdır. Tasarım kararı: mevcut `client_categories`/`bureau_types`
 KULLANILMAZ ve DEĞİŞMEZ — bu dosya o kilidi de taşır.
 
+G250 (02.10.2026, kullanıcı izniyle taşındı): `hizmet_turu` artık kartın kendi alanı
+değil `case_hizmetleri` satırlarından TÜRETİLEN özettir. Bu yüzden (1) takip ucu
+`hizmet_turu` YAZMAZ — gönderilen değer yok sayılır (`TAKIPTEN_YAZILMAYAN`), kapalı
+liste kapısı yalnız hizmet SATIRININ adını doğrular; (2) liste filtresi eşitlik değil
+`EXISTS case_hizmetleri`'dir — çok hizmetli kart her hizmetinin filtresinde bulunur;
+(3) model bildirimi `Text` (özet 100 karakteri aşar). `muvekkil_tipi` davranışı aynen.
+
 Katmanlar (test_g103 düzeni):
 1. DB'siz — model/migrasyon/şema/registry/whitelist kilitleri.
 2. Sabit kilitleri — sözleşme değerleri (5+9, yazımlar birebir, kodlar ASCII).
@@ -25,13 +32,13 @@ import logging
 import re
 
 import pytest
-from sqlalchemy import create_engine, func, text
+from sqlalchemy import Text, create_engine, func, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
 
 import models
 from database import _MIGRATIONS
-from managers import case_manager, seed_data
+from managers import case_hizmetleri, case_manager, seed_data
 from managers.stage_decisions import InvalidDecisionStatusError
 from schemas import CaseRead, CaseTrackingUpdate
 
@@ -63,6 +70,10 @@ IKI_ALAN = [
     ("hizmet_turu", "Lexis Rapor", "Serbest Hizmet"),
 ]
 
+# G250: takip ucunun (PATCH /tracking) artık YAZMADIĞI alanlar — türetilmiş özet.
+# Gönderilen değer (geçerli, liste dışı ya da null) yok sayılır; hata dönmez.
+TAKIPTEN_YAZILMAYAN = {"hizmet_turu"}
+
 
 def _route_dump(payload: dict) -> dict:
     """Route'un yaptığı dönüşümün birebir kopyası (G065/G066 deseni)."""
@@ -88,7 +99,14 @@ def test_iki_kolon_modelde_null_ve_defaultsuz():
         col = getattr(models.Case, kolon).property.columns[0]
         assert col.nullable, f"{kolon}: NULL kabul etmeli"
         assert col.default is None, f"{kolon}: DEFAULT 'bilinmiyor' ayrımını karartır"
-        assert col.type.length == 100, kolon
+    # Müvekkil tipi tek değerli kapalı liste adı: VARCHAR(100).
+    assert models.Case.muvekkil_tipi.property.columns[0].type.length == 100
+    # G250 (G248 SAPMA 2 kapanışı): hizmet_turu çok değerli TÜRETİLMİŞ özettir (9 adın
+    # " ; " birleşimi 100'ü aşar) → bildirim `Text`; yalnız create_all koşan kurulumda da
+    # kolon TEXT doğar.
+    hizmet_tipi = models.Case.hizmet_turu.property.columns[0].type
+    assert isinstance(hizmet_tipi, Text), "hizmet_turu: bildirim Text olmalı"
+    assert getattr(hizmet_tipi, "length", None) is None, "hizmet_turu: uzunluk sınırı olmamalı"
 
 
 def test_kolonlar_migrasyona_kayitli():
@@ -154,17 +172,25 @@ def test_endpointler_kayitli():
 
 
 def test_schemalarda_iki_alan():
-    for sema in (CaseRead, CaseTrackingUpdate):
-        for alan in ("muvekkil_tipi", "hizmet_turu"):
-            assert alan in sema.model_fields, f"{sema.__name__}.{alan}"
-            assert sema.model_fields[alan].default is None
+    """Okuma şeması iki alanı da taşır. Takip (yazma) şemasında G250'den beri yalnız
+    `muvekkil_tipi` var: `hizmet_turu` türetilmiş özettir, takip ucundan yazılmaz."""
+    for alan in ("muvekkil_tipi", "hizmet_turu"):
+        assert alan in CaseRead.model_fields, f"CaseRead.{alan}"
+        assert CaseRead.model_fields[alan].default is None
+    assert "muvekkil_tipi" in CaseTrackingUpdate.model_fields
+    assert CaseTrackingUpdate.model_fields["muvekkil_tipi"].default is None
+    assert "hizmet_turu" not in CaseTrackingUpdate.model_fields, "takip şeması hizmet_turu TAŞIMAMALI (G250)"
+    # Eski istemci alanı gönderirse şema atar (422 değil) — öteki alanlar geçer
+    assert _route_dump({"hizmet_turu": "Lexis Rapor", "muvekkil_tipi": "Doktor"}) == {"muvekkil_tipi": "Doktor"}
 
 
 def test_takip_whitelistinde():
     """Yazma yolu takip paneli (kırmızı-yeşil kanıtı: eski TRACKING_FIELDS
-    alanları içermiyordu, gönderilen değer sessizce süzülüyordu)."""
-    for alan in ("muvekkil_tipi", "hizmet_turu"):
-        assert alan in case_manager.TRACKING_FIELDS, alan
+    alanları içermiyordu, gönderilen değer sessizce süzülüyordu). G250: `hizmet_turu`
+    whitelist'ten ÇIKTI — türetilmiş özetin tek yazıcısı `case_hizmetleri.ozeti_yenile`."""
+    assert "muvekkil_tipi" in case_manager.TRACKING_FIELDS
+    for alan in TAKIPTEN_YAZILMAYAN:
+        assert alan not in case_manager.TRACKING_FIELDS, alan
 
 
 def test_kapali_liste_kapisina_bagli():
@@ -174,15 +200,17 @@ def test_kapali_liste_kapisina_bagli():
 
 
 def test_alanlar_hicbir_baglamda_zorunlu_degil():
-    """Kabul kriteri: required_fields DEĞİŞMEDİ — iki alan ne zorunlu listede
-    ne eksik-bayrak girdisinde. `service_type` (ofis no hizmet bloğu) ise
-    eskiden beri orada — yeni `hizmet_turu` onunla KARIŞTIRILMAZ."""
+    """İki alan ne zorunlu listede ne eksik-bayrak girdisinde. G250: eski `service_type`
+    (5'li hizmet maskesi) maddesi de listeden KALKTI — maske artık hiçbir şeyi beslemiyor;
+    "müvekkilin hizmeti yok" kuralı zorunlu alan değil, kart AÇMA kapısıdır."""
     from required_fields import MISSING_FLAG_INPUT_FIELDS, REQUIRED_CASE_FIELDS
 
     zorunlu = {f["field"] for f in REQUIRED_CASE_FIELDS}
     for alan in ("muvekkil_tipi", "hizmet_turu"):
         assert alan not in zorunlu, f"{alan} zorunlu YAPILMAMALIYDI"
         assert alan not in MISSING_FLAG_INPUT_FIELDS, alan
+    assert "service_type" not in zorunlu, "service_type maddesi G250'de kalktı"
+    assert "service_type" not in MISSING_FLAG_INPUT_FIELDS
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -280,6 +308,27 @@ def _oku(Fabrika, case_id: int, alan: str):
         db.close()
 
 
+def _hizmetli_dava_ekle(Fabrika, tracking_no, *hizmetler, **alanlar) -> int:
+    """Kart + bir müvekkil + o müvekkile `hizmetler` (G250: hizmetin gerçek kaynağı
+    `case_hizmetleri` satırlarıdır — liste filtresi oraya bakar; `cases.hizmet_turu`
+    özetini tek yazma yolu `elle_kumesini_yaz` → `ozeti_yenile` kurar)."""
+    db = Fabrika()
+    try:
+        case = models.Case(tracking_no=tracking_no, status="DERDEST",
+                           maddi_tazminat=0, manevi_tazminat=0, **alanlar)
+        db.add(case)
+        db.flush()
+        taraf = models.CaseParty(case_id=case.id, name=f"Müvekkil {tracking_no}",
+                                 role="Davalı", party_type="CLIENT")
+        db.add(taraf)
+        db.flush()
+        case_hizmetleri.elle_kumesini_yaz(db, case, taraf.id, hizmetler)
+        db.commit()
+        return case.id
+    finally:
+        db.close()
+
+
 def test_seed_iki_tabloyu_sozlesme_adetleriyle_dolduruyor(seedli_fabrika):
     """Kabul kriteri: temiz DB'de 5+9 satır bildirimdeki sırayla."""
     for key, model, _, _, sabit, adet in YENI_LISTELER:
@@ -364,71 +413,115 @@ def test_yeniden_adlandirma_karta_yayiliyor(seedli_fabrika):
 
 @pytest.mark.parametrize("alan,gecerli,liste_disi", IKI_ALAN)
 def test_listedeki_deger_yazilabiliyor(seedli_fabrika, alan, gecerli, liste_disi):
+    """`muvekkil_tipi` takip ucundan yazılır. G250: `hizmet_turu` gönderilse de YAZILMAZ
+    (yok sayılır) — özet yalnız hizmet satırlarından türer."""
     cid = _dava_ekle(seedli_fabrika)
     assert case_manager.update_case_tracking(
         cid, _route_dump({alan: gecerli}), changed_by="g119-test"
     ) is True
-    assert _oku(seedli_fabrika, cid, alan) == gecerli
+    beklenen = None if alan in TAKIPTEN_YAZILMAYAN else gecerli
+    assert _oku(seedli_fabrika, cid, alan) == beklenen
 
 
 @pytest.mark.parametrize("alan,gecerli,liste_disi", IKI_ALAN)
 def test_liste_disi_deger_reddediliyor(seedli_fabrika, alan, gecerli, liste_disi):
     """Kırmızı-yeşil kanıtı: eski kodda alan whitelist'te olmadığından sessizce
-    süzülürdü; kapı olmadan eklenseydi serbest metin yazılırdı."""
+    süzülürdü; kapı olmadan eklenseydi serbest metin yazılırdı. G250: `hizmet_turu`
+    takip ucunda kapıya HİÇ girmez — liste dışı değer reddedilmez, yok sayılır."""
     cid = _dava_ekle(seedli_fabrika)
-    with pytest.raises(InvalidDecisionStatusError):
-        case_manager.update_case_tracking(
+    if alan in TAKIPTEN_YAZILMAYAN:
+        assert case_manager.update_case_tracking(
             cid, _route_dump({alan: liste_disi}), changed_by="g119-test"
-        )
+        ) is True
+    else:
+        with pytest.raises(InvalidDecisionStatusError):
+            case_manager.update_case_tracking(
+                cid, _route_dump({alan: liste_disi}), changed_by="g119-test"
+            )
     assert _oku(seedli_fabrika, cid, alan) is None
 
 
 @pytest.mark.parametrize("alan,gecerli,liste_disi", IKI_ALAN)
 def test_null_gonderimi_alani_temizliyor(seedli_fabrika, alan, gecerli, liste_disi):
-    """G065 sözleşmesi korunur: None GÖNDERİLEN alan silinir (exclude_unset)."""
+    """G065 sözleşmesi korunur: None GÖNDERİLEN alan silinir (exclude_unset). G250:
+    `hizmet_turu` takip ucundan SİLİNEMEZ de — null yok sayılır, özet yerinde kalır."""
     cid = _dava_ekle(seedli_fabrika, **{alan: gecerli})
     assert case_manager.update_case_tracking(
         cid, _route_dump({alan: None}), changed_by="g119-test"
     ) is True
-    assert _oku(seedli_fabrika, cid, alan) is None
+    beklenen = gecerli if alan in TAKIPTEN_YAZILMAYAN else None
+    assert _oku(seedli_fabrika, cid, alan) == beklenen
 
 
 def test_bosluk_normalize_ediliyor(seedli_fabrika):
     """Normalizasyon G066 ile AYNI: baştaki/sondaki ve İÇTEKİ fazla boşluklar
-    sadeleşir, sonra ada göre eşleşir."""
+    sadeleşir, sonra ada göre eşleşir. G250: takip ucunda bu `muvekkil_tipi` için
+    geçerli; hizmet adı aynı normalizasyonla hizmet SATIRI kapısında doğrulanır
+    (`case_hizmetleri.dogrulanmis_hizmet_adi`), takip ucundan karta yazılmaz."""
     cid = _dava_ekle(seedli_fabrika)
     assert case_manager.update_case_tracking(
-        cid, _route_dump({"hizmet_turu": "  Takip   (doktor  müvekkil) "}), changed_by="g119-test"
+        cid,
+        _route_dump({"muvekkil_tipi": "  Diğer   Sağlık  Çalışanı ",
+                     "hizmet_turu": "  Takip   (doktor  müvekkil) "}),
+        changed_by="g119-test",
     ) is True
-    assert _oku(seedli_fabrika, cid, "hizmet_turu") == "Takip (doktor müvekkil)"
+    assert _oku(seedli_fabrika, cid, "muvekkil_tipi") == "Diğer Sağlık Çalışanı"
+    assert _oku(seedli_fabrika, cid, "hizmet_turu") is None
+
+    db = seedli_fabrika()
+    try:
+        assert case_hizmetleri.dogrulanmis_hizmet_adi(
+            db, "  Takip   (doktor  müvekkil) "
+        ) == "Takip (doktor müvekkil)"
+    finally:
+        db.close()
 
 
 @pytest.mark.parametrize("alan,gecerli,liste_disi", IKI_ALAN)
 def test_bos_listede_warningle_geciyor(oturum_fabrikasi, caplog, alan, gecerli, liste_disi):
     """Kabul kriteri: liste boşaltılınca yazım WARNING'le geçer (G066 karar
-    noktası 3 eşliği — seed'i koşmamış kurulumda veri girişi kilitlenmez)."""
+    noktası 3 eşliği — seed'i koşmamış kurulumda veri girişi kilitlenmez). G250:
+    `hizmet_turu` takip ucunda kapıya girmediği için ne yazılır ne WARNING üretir."""
     liste_adi = case_manager._EVENT_LIST_COLUMNS[alan][1]
     cid = _dava_ekle(oturum_fabrikasi)
     with caplog.at_level("WARNING"):
         assert case_manager.update_case_tracking(
             cid, _route_dump({alan: gecerli}), changed_by="g119-test"
         ) is True
-    assert _oku(oturum_fabrikasi, cid, alan) == gecerli
-    assert any(liste_adi in r.message and "BOŞ" in r.message
-               for r in caplog.records)
+    bos_liste_uyarisi = any(liste_adi in r.message and "BOŞ" in r.message
+                            for r in caplog.records)
+    if alan in TAKIPTEN_YAZILMAYAN:
+        assert _oku(oturum_fabrikasi, cid, alan) is None
+        assert not bos_liste_uyarisi
+    else:
+        assert _oku(oturum_fabrikasi, cid, alan) == gecerli
+        assert bos_liste_uyarisi
 
 
 def test_ret_kismi_yazim_birakmiyor(seedli_fabrika):
     """Doğrulama YAZIMDAN ÖNCE toptan koşar: geçerli müvekkil tipi + liste dışı
-    hizmet türü aynı gövdedeyse HİÇBİRİ yazılmaz (G066 sözleşmesi bozulmadı)."""
+    olay türü aynı gövdedeyse HİÇBİRİ yazılmaz (G066 sözleşmesi bozulmadı). G250:
+    liste dışı `hizmet_turu` artık reddin sebebi OLAMAZ (takip ucunda yok sayılır) —
+    kısmi yazım kilidi iki kapalı-liste alanıyla (müvekkil tipi + olay türü) sınanır."""
     cid = _dava_ekle(seedli_fabrika)
     with pytest.raises(InvalidDecisionStatusError):
         case_manager.update_case_tracking(
             cid,
-            _route_dump({"muvekkil_tipi": "Sigorta", "hizmet_turu": "Bilinmeyen Hizmet"}),
+            _route_dump({"muvekkil_tipi": "Sigorta", "olay_turu": "Serbest Metin Olay",
+                         "hizmet_turu": "Bilinmeyen Hizmet"}),
             changed_by="g119-test",
         )
     assert _oku(seedli_fabrika, cid, "muvekkil_tipi") is None
+    assert _oku(seedli_fabrika, cid, "olay_turu") is None
+    assert _oku(seedli_fabrika, cid, "hizmet_turu") is None
+
+    # Liste dışı hizmet_turu tek başına reddettirmez: geçerli müvekkil tipi yazılır
+    assert case_manager.update_case_tracking(
+        cid,
+        _route_dump({"muvekkil_tipi": "Sigorta", "hizmet_turu": "Bilinmeyen Hizmet"}),
+        changed_by="g119-test",
+    ) is True
+    assert _oku(seedli_fabrika, cid, "muvekkil_tipi") == "Sigorta"
     assert _oku(seedli_fabrika, cid, "hizmet_turu") is None
 
 
@@ -458,14 +551,17 @@ def test_get_case_ciktisinda_iki_alan(seedli_fabrika):
 
 
 def test_get_cases_hizmet_turu_filtresi_tenantla_birlikte(seedli_fabrika):
-    """Kabul kriteri: `get_cases(hizmet_turu="Lexis Rapor")` yalnız o değerli
+    """Kabul kriteri: `get_cases(hizmet_turu="Lexis Rapor")` yalnız o hizmeti TAŞIYAN
     kartları döndürür; tenant deseni ("X OR NULL") bozulmaz; verilmeyince/"ALL"
-    iken filtre yok; total (X-Total-Count'un kaynağı) sayfalamadan önce sayılır."""
-    c1 = _dava_ekle(seedli_fabrika, tracking_no="HA.X.9201.2026", hizmet_turu="Lexis Rapor")
-    c2 = _dava_ekle(seedli_fabrika, tracking_no="HA.X.9202.2026", hizmet_turu="Vekaletli Takip")
+    iken filtre yok; total (X-Total-Count'un kaynağı) sayfalamadan önce sayılır.
+
+    G250: filtre eşitlik değil `EXISTS case_hizmetleri` — kartlar hizmet SATIRIYLA
+    kurulur; çok hizmetli kart (özeti "Lexis Rapor ; Vekaletli Takip") her hizmetinin
+    filtresinde bulunur, eski eşitlik onu hiçbirinde bulamıyordu."""
+    c1 = _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9201.2026", "Lexis Rapor")
+    c2 = _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9202.2026", "Vekaletli Takip")
     c3 = _dava_ekle(seedli_fabrika, tracking_no="HA.X.9203.2026")            # NULL = bilinmiyor
-    _dava_ekle(seedli_fabrika, tracking_no="HA.X.9204.2026",
-               hizmet_turu="Lexis Rapor", tenant_id="baska-tenant")
+    _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9204.2026", "Lexis Rapor", tenant_id="baska-tenant")
 
     items, total = case_manager.get_cases(hizmet_turu="Lexis Rapor", tenant_id="tenant-1")
     assert [c["id"] for c in items] == [c1]
@@ -478,16 +574,21 @@ def test_get_cases_hizmet_turu_filtresi_tenantla_birlikte(seedli_fabrika):
     items, total = case_manager.get_cases(hizmet_turu="ALL", tenant_id="tenant-1")
     assert total == 3
 
+    # Çok hizmetli kart her iki filtrede de bulunur
+    c5 = _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9205.2026", "Lexis Rapor", "Vekaletli Takip")
+    assert _oku(seedli_fabrika, c5, "hizmet_turu") == "Lexis Rapor ; Vekaletli Takip"
+    items, total = case_manager.get_cases(hizmet_turu="Lexis Rapor", tenant_id="tenant-1")
+    assert {c["id"] for c in items} == {c1, c5} and total == 2
+    items, total = case_manager.get_cases(hizmet_turu="Vekaletli Takip", tenant_id="tenant-1")
+    assert {c["id"] for c in items} == {c2, c5} and total == 2
+
 
 def test_get_cases_iki_filtre_birlikte(seedli_fabrika):
     """olay_turu + hizmet_turu filtreleri AND ile birleşir (bağımsız kalıplar
     birbirini ezmez)."""
-    c1 = _dava_ekle(seedli_fabrika, tracking_no="HA.X.9211.2026",
-                    hizmet_turu="Lexis Rapor", olay_turu="Tıbbi Olay")
-    _dava_ekle(seedli_fabrika, tracking_no="HA.X.9212.2026",
-               hizmet_turu="Lexis Rapor", olay_turu="Belgeleme Olayı")
-    _dava_ekle(seedli_fabrika, tracking_no="HA.X.9213.2026",
-               hizmet_turu="Vekaletli Takip", olay_turu="Tıbbi Olay")
+    c1 = _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9211.2026", "Lexis Rapor", olay_turu="Tıbbi Olay")
+    _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9212.2026", "Lexis Rapor", olay_turu="Belgeleme Olayı")
+    _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9213.2026", "Vekaletli Takip", olay_turu="Tıbbi Olay")
 
     items, total = case_manager.get_cases(hizmet_turu="Lexis Rapor", olay_turu="Tıbbi Olay")
     assert [c["id"] for c in items] == [c1]
@@ -586,23 +687,25 @@ def test_route_liste_disi_deger_400_donuyor(client, seedli_fabrika):
 
 
 def test_route_gecerli_deger_200_donuyor(client, seedli_fabrika):
+    """G250: gövdedeki `hizmet_turu` yok sayılır (200, yazılmaz) — `muvekkil_tipi` yazılır."""
     cid = _dava_ekle(seedli_fabrika)
     resp = client.patch(f"/api/cases/{cid}/tracking",
                         json={"muvekkil_tipi": "Hasta", "hizmet_turu": "Takip (hasta vekilliği)"})
     assert resp.status_code == 200
     assert _oku(seedli_fabrika, cid, "muvekkil_tipi") == "Hasta"
-    assert _oku(seedli_fabrika, cid, "hizmet_turu") == "Takip (hasta vekilliği)"
+    assert _oku(seedli_fabrika, cid, "hizmet_turu") is None
 
     resp = client.get(f"/api/cases/{cid}")
     assert resp.status_code == 200
     assert resp.json()["muvekkil_tipi"] == "Hasta"
-    assert resp.json()["hizmet_turu"] == "Takip (hasta vekilliği)"
+    assert resp.json()["hizmet_turu"] is None
 
 
 def test_route_liste_ucu_hizmet_turu_filtresi(client, seedli_fabrika):
-    """Query param liste isteğine bağlanıyor; X-Total-Count davranışı bozulmadı."""
-    c1 = _dava_ekle(seedli_fabrika, tracking_no="HA.X.9301.2026", hizmet_turu="Lexis Rapor")
-    _dava_ekle(seedli_fabrika, tracking_no="HA.X.9302.2026", hizmet_turu="Vekaletli Takip")
+    """Query param liste isteğine bağlanıyor; X-Total-Count davranışı bozulmadı.
+    G250: kartlar hizmet satırıyla kurulur (filtre `EXISTS case_hizmetleri`)."""
+    c1 = _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9301.2026", "Lexis Rapor")
+    _hizmetli_dava_ekle(seedli_fabrika, "HA.X.9302.2026", "Vekaletli Takip")
     _dava_ekle(seedli_fabrika, tracking_no="HA.X.9303.2026")
 
     resp = client.get("/api/cases", params={"hizmet_turu": "Lexis Rapor"})

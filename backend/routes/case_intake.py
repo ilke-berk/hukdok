@@ -1100,6 +1100,9 @@ async def commit_case_intake(
     kimlik = str(req.case.istek_kimligi) if req.case.istek_kimligi else None
     case_dict["istek_kimligi"] = kimlik
     case_dict[case_manager.SUNUCU_NUMARASI_BAYRAGI] = True
+    # G250: her müvekkil kendi `hizmet_turleri` ile gelir (`case.parties[i]`); satırları
+    # `add_case` kartla aynı transaction'da yazar. Hizmet tarihçesinin imzası bu kullanıcı.
+    case_dict[case_manager.KAYDEDEN_ANAHTARI] = current_user_name
 
     idempotent_reuse = False
     case_result = None
@@ -1113,8 +1116,10 @@ async def commit_case_intake(
         try:
             case_result = await loop.run_in_executor(None, case_manager.add_case, case_dict)
         except case_manager.OfisNoVerilemez as e:
-            # Müvekkilsiz kayıt: numara üretilemez (yer tutucu numara YOK). Hiçbir belge
-            # tüketilmedi — kullanıcı müvekkili ekleyip aynı belgelerle tekrar dener.
+            # Müvekkilsiz kayıt: numara üretilemez (yer tutucu numara YOK). Hizmeti
+            # seçilmemiş müvekkil / listede olmayan hizmet de aynı kapıdan gelir (G250 —
+            # `HizmetKaydiGecersiz` bir `OfisNoVerilemez`'dir; mesaj müvekkili adıyla sayar).
+            # Hiçbir belge tüketilmedi — kullanıcı eksiği tamamlayıp aynı belgelerle tekrar dener.
             raise HTTPException(status_code=422, detail=str(e)) from e
         if case_result and case_result.get("error") == "duplicate_istek_kimligi":
             # Eşzamanlı aynı-kimlikli commit: unique index kaybedeni geri aldı, kazananın

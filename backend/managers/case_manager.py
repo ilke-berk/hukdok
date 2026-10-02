@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import func, intersect, literal, select, union
+from sqlalchemy import exists, func, intersect, literal, select, union
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -60,8 +60,23 @@ ISTEK_KIMLIGI_UNIQUE_INDEX = "uq_cases_istek_kimligi"
 SUNUCU_NUMARASI_BAYRAGI = "ofis_no_sunucudan"
 
 
+# G250: `add_case` veri sözlüğünde kaydı açan kullanıcının adı (opsiyonel) — hizmet
+# satırlarının tarihçe imzası. Route koymazsa imza `PANEL_SOURCE` olur.
+KAYDEDEN_ANAHTARI = "kaydeden"
+
+
 class OfisNoVerilemez(ValueError):
     """Kart için ofis numarası üretilemiyor (müvekkil yok / adı boş) — istemci hatası (→ 422)."""
+
+
+class HizmetKaydiGecersiz(OfisNoVerilemez):
+    """Kart açılamıyor: müvekkilin hizmeti yok ya da hizmet adı kapalı listede değil (G250 → 422).
+
+    `OfisNoVerilemez`'den BİLEREK türer: kart açan iki kullanıcı route'u (POST /api/cases,
+    intake commit) o tipi zaten `422 + detail=str(e)`'ye çeviriyor — "kart açılamaz, isteği
+    düzelt" sınıfı tek kapıdan geçer, route'lara ikinci bir `except` gerekmez. Ayırt etmek
+    isteyen çağıran bu alt tipi yakalar.
+    """
 
 
 def _parse_date_field(value, field_name: str):
@@ -983,6 +998,29 @@ def _coklu_oge_kosulu(kolon, oge: str):
     )
 
 
+def _hizmet_kosulu(hizmet_turu: str):
+    """Kartın bu adla KAPSAMDAKİ bir hizmet satırı var mı (`EXISTS case_hizmetleri`, G250).
+
+    Eski filtre `cases.hizmet_turu == X` eşitliğiydi; kolon artık çok değerli TÜRETİLMİŞ
+    özet ("A ; B") olduğu için çok hizmetli kartı hiçbir filtrede bulamıyordu. Kaynak
+    satırlara bakılır: çok hizmetli kart HER hizmetinin filtresinde çıkar.
+
+    Kapsam: föy kaynaklı satırın föyü kapsam dışıysa (`kapsam_durumu` dolu) satır
+    sayılmaz. Aktarım o satırı zaten siler (`case_hizmetleri.foydan_yaz`); koşul, işaret
+    ile silme arasında kalmış bir satırın listeyi kirletmesine karşı ikinci kilittir.
+    Elle satırın (`foy_id` NULL) föyü yoktur — her zaman kapsamdadır.
+    """
+    kapsam_disi_foy = exists().where(
+        models.CaseFoy.id == models.CaseHizmeti.foy_id,
+        func.coalesce(models.CaseFoy.kapsam_durumu, "") != "",
+    )
+    return exists().where(
+        models.CaseHizmeti.case_id == models.Case.id,
+        models.CaseHizmeti.hizmet_turu == hizmet_turu,
+        ~kapsam_disi_foy,
+    )
+
+
 # Tıbbi Olay seçeneklerini daraltan üst alanlar (02.10). Ekip "Süreç Grubu" sütununu
 # gönderince buraya eklenir; uç ve ekran değişmeden o alana göre daraltır.
 _OLAY_DARALTAN_ALANLAR = {"tibbi_surec": models.Case.tibbi_surec}
@@ -1063,9 +1101,10 @@ def get_cases(
     `olay_turu` (G103): belgeleme olayı filtresi — `file_type` kalıbıyla
     eşitlik (değer listenin ADIDIR, ör. "Belgeleme Olayı"; "ALL" = filtre yok).
 
-    `hizmet_turu` (G119): hizmet türü filtresi — aynı kalıp (değer listenin
-    ADIDIR, ör. "Lexis Rapor"). Müvekkil Tipi için filtre BİLİNÇLİ yok
-    (sözleşme).
+    `hizmet_turu` (G119, G250): hizmet türü filtresi — değer listenin ADIDIR
+    (ör. "Lexis Rapor"). Eşitlik DEĞİL: kartın o adla kapsamdaki bir hizmet satırı
+    (`case_hizmetleri`) varsa eşleşir (`_hizmet_kosulu`); `cases.hizmet_turu` özeti
+    okunmaz. Müvekkil Tipi için filtre BİLİNÇLİ yok (sözleşme).
 
     `tibbi_surec` / `tibbi_olay` (02.10): klinik tasnif filtreleri — kolonlar ÇOK
     DEĞERLİDİR (`multi_value.SEPARATOR`), değer havuz öğesinin ADIDIR ve hücrede TAM
@@ -1091,9 +1130,10 @@ def get_cases(
         if olay_turu and olay_turu != "ALL":
             query = query.filter(models.Case.olay_turu == olay_turu)
 
-        # Hizmet türü filtresi (G119) — aynı kalıp
+        # Hizmet türü filtresi (G119; G250'den beri eşitlik DEĞİL): kartın o adla kapsamdaki
+        # bir hizmet satırı var mı — çok hizmetli kart her hizmetinin filtresinde bulunur.
         if hizmet_turu and hizmet_turu != "ALL":
-            query = query.filter(models.Case.hizmet_turu == hizmet_turu)
+            query = query.filter(_hizmet_kosulu(hizmet_turu))
 
         # Klinik tasnif filtreleri (02.10) — çok değerli hücrede tam öğe eşleşmesi
         if tibbi_surec and tibbi_surec != "ALL":
@@ -1392,6 +1432,10 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
         case.sub_type = data.get("sub_type", case.sub_type)
         # Faz 6.4 kararı (2026-08-01): service_type kalıcı VE düzenlenebilir —
         # NewCase edit formu zaten gönderiyordu, burada yok sayılıyordu.
+        # G250: ESKİ 5'li maske — yalnız geriye uyum için okunup saklanır; hiçbir şeyi
+        # beslemez (ofis no, zorunlu alan, hizmet kaydı) ve sunucu yeni kod üretmez.
+        # Taraflardaki `hizmet_turleri` burada YOK SAYILIR: mevcut kartın hizmetleri
+        # `PUT /api/cases/{id}/hizmetler/{case_party_id}` ucundan yazılır.
         case.service_type = data.get("service_type", case.service_type)
         case.subject = data.get("subject", case.subject)
         case.responsible_lawyer_name = data.get("responsible_lawyer_name", case.responsible_lawyer_name)
@@ -1805,10 +1849,70 @@ def _ofis_no_parcalari(db, data: dict) -> Tuple[str, Optional[str], str]:
         raise OfisNoVerilemez(f"Ofis numarası verilemedi: {e}") from e
 
 
+def _taraf_hizmetlerini_dogrula(db, parties, *, zorunlu: bool) -> Dict[int, List[str]]:
+    """Kart açılırken tarafların `hizmet_turleri`'ni doğrular (G250) — HİÇBİR şey yazmadan.
+
+    Dönüş `{parties içindeki sıra: [kanonik hizmet adı, ...]}` (yalnız hizmeti olan
+    müvekkiller). Kurallar:
+
+    * Her ad `service_types` kapalı listesine karşı doğrulanır (kapı
+      `case_hizmetleri.dogrulanmis_hizmet_adi` — hizmet satırıyla ORTAK); listede olmayan
+      ad `HizmetKaydiGecersiz`.
+    * Hizmet yalnız MÜVEKKİL tarafına yazılır; başka tarafta gelirse `HizmetKaydiGecersiz`
+      (kullanıcı yolunda şema bunu zaten 422'ler — burası doğrudan çağıranın kilidi).
+    * `zorunlu` (kullanıcı yolları — `SUNUCU_NUMARASI_BAYRAGI`): hizmeti olmayan her
+      müvekkil adıyla sayılır → `HizmetKaydiGecersiz`. Script/aktarım yolunda zorunlu değil.
+    * `service_types` listesi BOŞSA zorunluluk atlanır (WARNING): seçilecek hizmet yoktur,
+      kuralı dayatmak seed'i koşmamış kurulumda kart açmayı kilitlerdi — avukat yazım
+      koruması ve `validated_event_list_value` ile aynı "boş listede kapı açık" kuralı.
+    """
+    sonuc: Dict[int, List[str]] = {}
+    hizmetsiz: List[str] = []
+    for sira, p in enumerate(parties or []):
+        ad = " ".join(str(p.get("name") or "").split()) or "(adsız taraf)"
+        hamlar = p.get("hizmet_turleri") or []
+        if p.get("party_type") != case_hizmetleri.MUVEKKIL_TARAF_TURU:
+            if hamlar:
+                raise HizmetKaydiGecersiz(
+                    f'Hizmet türü yalnız müvekkil tarafına yazılır: "{ad}" müvekkil değil.'
+                )
+            continue
+        adlar: List[str] = []
+        for ham in hamlar:
+            try:
+                kanonik = case_hizmetleri.dogrulanmis_hizmet_adi(db, ham)
+            except case_hizmetleri.GecersizHizmetTuru as exc:
+                raise HizmetKaydiGecersiz(f'Müvekkil "{ad}": {exc}') from exc
+            if kanonik not in adlar:
+                adlar.append(kanonik)
+        if adlar:
+            sonuc[sira] = adlar
+        else:
+            hizmetsiz.append(ad)
+
+    if zorunlu and hizmetsiz:
+        if db.query(models.ServiceType.id).first() is None:
+            logger.warning(
+                "service_types listesi BOŞ — müvekkil başına hizmet zorunluluğu atlandı "
+                "(seed koşmamış olabilir)"
+            )
+        else:
+            sayilan = ", ".join(f'"{a}"' for a in hizmetsiz)
+            raise HizmetKaydiGecersiz(
+                f"Hizmet türü seçilmemiş müvekkil var: {sayilan}. "
+                "Her müvekkil için en az bir hizmet türü seçin."
+            )
+    return sonuc
+
+
 def add_case(data: dict, tenant_id: str = None):
     # Zorunlu alan eksikliği kaydı ENGELLEMEZ (kullanıcı kararı 2026-07-31 rev.2):
     # dosya DERDEST olarak açılır, eksikler get_case/get_cases'teki
     # missing_required_fields ile panelde uyarı olarak görünür ve filtrelenir.
+    # TEK istisna hizmet kaydıdır (G250, 01.10.2026 kararı): kullanıcı yolunda hizmeti
+    # olmayan müvekkille kart AÇILMAZ (`_taraf_hizmetlerini_dogrula` → 422). Bu bir
+    # "eksik alan" değil oluşturma kapısıdır — `required_fields`'e girmez, mevcut
+    # kartları eksik saymaz.
     #
     # Üçlü kapısı (G196) oturum açılmadan ÖNCE: eski değer (TEMYIZ, KAPALI, ...)
     # üçlüye çevrilir ve aşama taşınır (karar 020 — update_case ile aynı kural);
@@ -1822,6 +1926,14 @@ def add_case(data: dict, tenant_id: str = None):
         db = SessionLocal()
         # 27.09 yazım koruması: listede olmayan avukat adıyla kart açılmaz (AvukatListedeYok → 422).
         avukat_adlarini_dogrula(data, db=db)
+
+        # G250 hizmet kapısı — İLK yazımdan (ve sıra tahsisinden) ÖNCE: kullanıcı yolunda
+        # (bayraklı istek) her müvekkilin en az bir hizmeti olmalı, adlar kapalı listeden
+        # (HizmetKaydiGecersiz → 422). Script/aktarım yolunda zorunlu değil; verilen adlar
+        # yine doğrulanır. Müvekkilsiz istek buradan geçer, aşağıda OfisNoVerilemez alır.
+        taraf_hizmetleri = _taraf_hizmetlerini_dogrula(
+            db, data.get("parties"), zorunlu=sunucu_numarasi
+        )
 
         # Handle opening date — çoklu format desteği
         opening_date = None
@@ -1913,7 +2025,8 @@ def add_case(data: dict, tenant_id: str = None):
         # bağla, yoksa adı yalnızca CaseParty üzerinde sakla (client_id=None).
         is_consult = (status == "DANIŞ")
         parties = data.get("parties", [])
-        for p in parties:
+        hizmetli_taraflar: List[Tuple[Any, List[str]]] = []
+        for sira, p in enumerate(parties):
             client_id = p.get("client_id")
             party_type = p.get("party_type")
             name = p.get("name")
@@ -1945,6 +2058,21 @@ def add_case(data: dict, tenant_id: str = None):
                 tc_no=(p.get("tc_no") or "").strip() or None
             )
             db.add(party)
+            if sira in taraf_hizmetleri:
+                hizmetli_taraflar.append((party, taraf_hizmetleri[sira]))
+
+        # 2b. Hizmet kayıtları (G250): müvekkil başına hizmet kümesi, kartla AYNI
+        # transaction'da ve hizmetin TEK yazma yolundan (`case_hizmetleri`, G248) — her
+        # müvekkil kendi kümesini taşır (muhasebe ayrımı), kart özeti (`cases.hizmet_turu`)
+        # orada yenilenir. Taraf id'leri için önce flush.
+        if hizmetli_taraflar:
+            db.flush()
+            kaydeden = data.get(KAYDEDEN_ANAHTARI) or PANEL_SOURCE
+            for party, adlar in hizmetli_taraflar:
+                case_hizmetleri.elle_kumesini_yaz(
+                    db, new_case, party.id, adlar,
+                    changed_by=kaydeden, source=PANEL_SOURCE,
+                )
 
         # 3. Add Lawyers — Track B: canonical ad + lawyer_id FK üret
         rows, canonical, unresolved = canonicalize_lawyers(
@@ -1988,10 +2116,16 @@ def add_case(data: dict, tenant_id: str = None):
         logger.error(f"Add Case Error: {e}")
         return None
     except (AvukatListedeYok, OfisNoVerilemez):
-        # İstemci hatası (27.09 yazım koruması / G236 müvekkilsiz kayıt): ERROR yok,
-        # yutulmaz — 422 (AvukatListedeYok api.py'de, OfisNoVerilemez route'ta).
+        # İstemci hatası (27.09 yazım koruması / G236 müvekkilsiz kayıt / G250 hizmet
+        # kapısı — HizmetKaydiGecersiz bir OfisNoVerilemez'dir): ERROR yok, yutulmaz —
+        # 422 (AvukatListedeYok api.py'de, OfisNoVerilemez route'ta).
         db.rollback()
         raise
+    except case_hizmetleri.HizmetHatasi as e:
+        # Hizmet yazımının kendi istemci hatası (ön doğrulamadan geçip buraya düşmesi
+        # beklenmez) — aşağıdaki genel `except`'e yutulup 500'e dönmesin: aynı 422 sınıfı.
+        db.rollback()
+        raise HizmetKaydiGecersiz(str(e)) from e
     except Exception as e:
         logger.error(f"Add Case Error: {e}")
         db.rollback()
@@ -2121,9 +2255,12 @@ TRACKING_FIELDS = [
     # (G066 davranış eşi). Hükümdeki rol karar bağlamlı olduğu için yazma yolu
     # takip paneli seçildi; hiçbir bağlamda zorunlu değiller.
     "olay_turu", "hukumdeki_rol",
-    # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
-    # service_types), aynı kapıdan geçerler; hiçbir bağlamda zorunlu değiller.
-    "muvekkil_tipi", "hizmet_turu",
+    # Müvekkil Tipi (G119) — kapalı liste (client_types), aynı kapıdan geçer; hiçbir
+    # bağlamda zorunlu değil. `hizmet_turu` G250'de bu listeden ÇIKTI: kart alanı
+    # `case_hizmetleri`'nden TÜRETİLEN özettir (tek yazıcı `case_hizmetleri.ozeti_yenile`),
+    # takip ucundan yazılamaz — gönderilirse YOK SAYILIR (şemada da yok; hata dönmez ki
+    # formun tamamını geri gönderen eski istemcinin öteki alanları kaydolsun).
+    "muvekkil_tipi",
     # G124 — dava değeri + para birimi (currencies kapısı) ve tıbbi beşli
     # (çok değerli; parça parça kendi listelerine karşı, `_MULTI_LIST_COLUMNS`).
     # Tıbbi beşlinin öteki yazıcısı aktarımdır (metin, doğrulamasız); panel
@@ -2153,6 +2290,9 @@ _EVENT_LIST_COLUMNS: Dict[str, Tuple[Any, str]] = {   # değer: (liste modeli, l
     "olay_turu": (models.EventType, "event_types"),
     "hukumdeki_rol": (models.JudgmentRole, "judgment_roles"),
     # Müvekkil Tipi / Hizmet Türü (G119, DB-2026-002) — aynı kapı, aynı davranış.
+    # `hizmet_turu` G250'den beri takip ucundan YAZILMAZ (TRACKING_FIELDS'te yok); satır
+    # burada kalır çünkü hizmet SATIRININ adı aynı kapıdan doğrulanır
+    # (`case_hizmetleri.dogrulanmis_hizmet_adi` → `validated_event_list_value`).
     "muvekkil_tipi": (models.ClientType, "client_types"),
     "hizmet_turu": (models.ServiceType, "service_types"),
     # Para birimi (G124) — aynı kapı (tek değer, kapalı liste currencies).

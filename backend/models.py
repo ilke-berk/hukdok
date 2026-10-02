@@ -179,12 +179,10 @@ class Case(Base):
     # " ; " ile birleşik. Tek yazıcı `managers/case_hizmetleri.ozeti_yenile`. Hizmet
     # satırı hiç yazılmamış kartta (geriye dönük doldurma G249) aktarımın yazdığı eski
     # tek değer durur.
-    # DİKKAT — veritabanındaki kolon TEXT'tir, 100 DEĞİL: 9 adın birleşimi 100'ü aşar,
-    # migrasyon madde 59 her kurulumda (create_all'ın yarattığı VARCHAR(100) dahil)
-    # kolonu TEXT'e genişletir. Buradaki `String(100)` bildirimi G119 kilidiyle
-    # (tests/test_g119_*) duruyor; SQLAlchemy uzunluğu Python tarafında zorlamaz —
-    # bu kolondan sınır OKUYAN kod yazma.
-    hizmet_turu = Column(String(100), nullable=True)    # TÜRETİLMİŞ özet (case_hizmetleri); DB'de TEXT
+    # Kolon TEXT'tir (9 adın birleşimi 100'ü aşar): bildirim G250'de `Text`'e çekildi —
+    # yalnız `create_all` koşan (migrasyonsuz) kurulumda da TEXT doğar. Mevcut
+    # kurulumlardaki eski VARCHAR(100) kolonu migrasyon madde 59 genişletir.
+    hizmet_turu = Column(Text, nullable=True)           # TÜRETİLMİŞ özet (case_hizmetleri)
     # Dava değeri + para birimi (G123, 05.09.2026): teslimin "Dava Değeri TL"
     # HAM değeri ve "Para Birimi TL" sütunu. `maddi_tazminat` bundan TÜRETİLİR
     # (D4: dava değeri − manevi); ham değer saklanmayınca türetme geri

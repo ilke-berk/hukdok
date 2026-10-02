@@ -72,7 +72,11 @@ REQUIRED_CASE_FIELDS = [
     {"field": "responsible_lawyer_name", "label": "Sorumlu Avukat",
      "skip_when_lawyers_at_least": COKLU_AVUKAT_ESIGI},
     {"field": "uyap_lawyer_name", "label": "UYAP Avukatı"},
-    {"field": "service_type", "label": "Hizmet Türü"},
+    # `service_type` (eski 5'li hizmet maskesi) G250'de listeden ÇIKTI: maske artık hiçbir
+    # şeyi beslemiyor (ofis no kullanmıyor), hizmetin gerçek kaynağı `case_hizmetleri`.
+    # Yerine "müvekkilin hizmeti yok" kuralı BU LİSTEYE GİRMEZ — o yalnız kart AÇMA
+    # kapısıdır (`case_manager.add_case`, kullanıcı yollarında 422); mevcut kartlar
+    # hizmetsiz diye "eksik" sayılmaz.
     {"field": "acceptance_date", "label": "Kabul Tarihi"},
     {"field": "bureau_type", "label": "Büro Özel Türü"},
     {"field": "atama_tarihi", "label": "Atama Tarihi"},

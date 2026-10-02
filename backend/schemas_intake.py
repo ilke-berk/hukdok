@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from schemas import CaseCreate, CasePartyCreate, ClientPolicyCreate
+from schemas import CaseCreate, CasePartyBase, ClientPolicyCreate
 
 
 class IntakeParty(BaseModel):
@@ -196,7 +196,11 @@ class CaseIntakeApplyRequest(BaseModel):
     # apply 409 döner (bayat ekranla yazma imkânsız). None → kontrol atlanır.
     expected_updated_at: Optional[str] = None
     fields: EnrichFieldsIn = Field(default_factory=EnrichFieldsIn)
-    parties: list[CasePartyCreate] = Field(default_factory=list, max_length=30)
+    # Yalnız EKLENECEK taraflar. Hizmet alanı taşımaz (G250): zenginleştirme mevcut karta
+    # hizmet YAZMAZ — yeni müvekkilin hizmeti kart ekranındaki hizmet panelinden
+    # (`PUT /api/cases/{id}/hizmetler/{case_party_id}`) girilir. Commit (yeni kart) ise
+    # `case.parties[i].hizmet_turleri` taşır (`CaseCreate` → `CasePartyCreate`).
+    parties: list[CasePartyBase] = Field(default_factory=list, max_length=30)
     documents: list[CommitDocumentIn] = Field(default_factory=list, max_length=15)
     policies: list[CommitPolicyIn] = Field(default_factory=list, max_length=30)
     options: CommitOptions = Field(default_factory=CommitOptions)

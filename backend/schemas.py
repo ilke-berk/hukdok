@@ -258,7 +258,9 @@ class ClientUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CasePartyCreate(BaseModel):
+class CasePartyBase(BaseModel):
+    """Taraf satırının ortak alanları — okuma yanıtları (liste/kart) ve yalnız-taraf
+    ekleyen zenginleştirme isteği bu şekli taşır (hizmet alanı YOK)."""
     client_id: Optional[int] = None
     name: str
     role: str
@@ -266,6 +268,25 @@ class CasePartyCreate(BaseModel):
     birth_year: Optional[int] = None
     gender: Optional[str] = None
     tc_no: Optional[str] = None
+
+
+class CasePartyCreate(CasePartyBase):
+    """Kart açma/düzenleme isteğindeki taraf (G250: müvekkil kendi hizmetleriyle gelir)."""
+    # Bu müvekkile bu kartta verilen hizmet türleri — `service_types` ADLARI (G250).
+    # Yalnız kart AÇILIRKEN okunur: `add_case` satırları `case_hizmetleri.elle_kumesini_yaz`
+    # ile aynı transaction'da yazar; kullanıcı yollarında (POST /api/cases, intake commit)
+    # hizmetsiz müvekkil 422'dir. Düzenlemede (PUT /api/cases/{id}) YOK SAYILIR — mevcut
+    # kartın hizmetleri `PUT /api/cases/{id}/hizmetler/{case_party_id}` ucundan yazılır.
+    hizmet_turleri: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _hizmet_yalniz_muvekkilde(self):
+        # Hizmet kart × MÜVEKKİL çiftinin özelliğidir (G248) — karşı taraf/üçüncü kişide 422.
+        if self.hizmet_turleri and self.party_type != "CLIENT":
+            raise ValueError(
+                f'Hizmet türü yalnız müvekkil tarafına yazılır: "{self.name}" müvekkil değil.'
+            )
+        return self
 
 
 # ─── Tanıdık Sorgu / Çıkar Çatışması Kontrolü ────────────────────────────────
@@ -327,6 +348,10 @@ class CaseCreate(BaseModel):
     istek_kimligi: Optional[UUID] = None
     esas_no: Optional[str] = None
     status: str = "DERDEST"
+    # ESKİ 5'li hizmet maskesi (G250): geriye uyum için okunur ve olduğu gibi saklanır
+    # (`cases.service_type`), ama hiçbir şeyi BESLEMEZ — ofis no kullanmıyor, zorunlu alan
+    # değil, sunucu yeni kod üretmiyor. Hizmetin gerçek kaynağı taraf başına
+    # `parties[i].hizmet_turleri` → `case_hizmetleri`.
     service_type: Optional[str] = None
     file_type: Optional[str] = None
     sub_type: Optional[str] = None
@@ -383,7 +408,7 @@ class CaseListRead(BaseModel):
     missing_required_fields: List[dict] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
-    parties: List[CasePartyCreate] = []
+    parties: List[CasePartyBase] = []
     lawyers: List[CaseLawyerCreate] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -488,7 +513,7 @@ class CaseRead(BaseModel):
     dava_degeri: Optional[float] = None
     para_birimi: Optional[str] = None
     created_at: datetime
-    parties: List[CasePartyCreate] = []
+    parties: List[CasePartyBase] = []
     lawyers: List[CaseLawyerCreate] = []
     history: List[Dict[str, Any]] = []
     documents: List[Dict[str, Any]] = []
@@ -564,11 +589,12 @@ class CaseTrackingUpdate(BaseModel):
     # kapısında (G066 davranış eşi, case_manager._EVENT_LIST_COLUMNS)
     olay_turu: Optional[str] = None
     hukumdeki_rol: Optional[str] = None
-    # Müvekkil Tipi / Hizmet Türü (G119) — kapalı listeler (client_types /
-    # service_types); yazma yolu takip paneli, doğrulama aynı kapıda
-    # (case_manager._EVENT_LIST_COLUMNS, G066 davranış eşi)
+    # Müvekkil Tipi (G119) — kapalı liste (client_types); yazma yolu takip paneli,
+    # doğrulama aynı kapıda (case_manager._EVENT_LIST_COLUMNS, G066 davranış eşi).
+    # `hizmet_turu` BURADA YOK (G250): kart alanı `case_hizmetleri`'nden TÜRETİLEN
+    # özettir, takip ucundan yazılmaz — eski istemci gönderirse yok sayılır (Pydantic
+    # tanımadığı alanı atar); hizmet `/api/cases/{id}/hizmetler` uçlarından yazılır.
     muvekkil_tipi: Optional[str] = None
-    hizmet_turu: Optional[str] = None
     # G124 — dava değeri + para birimi (kapalı liste currencies) ve tıbbi
     # beşli (ÇOK DEĞERLİ, " ; " ayraçlı; her parça kendi listesine karşı
     # doğrulanır: case_manager._MULTI_LIST_COLUMNS). None = alan temizlenir.
