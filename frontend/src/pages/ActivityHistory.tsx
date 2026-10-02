@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InlineSkeleton, TableSkeleton } from "@/components/skeletons/Skeletons";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Loader2, Eye, FileText, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -140,17 +141,14 @@ const ActivityHistory = () => {
             italic="— son 30 gün"
             meta={
               <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-                {loading ? "Yükleniyor…" : `${rows.length} gün`}
+                {loading ? <InlineSkeleton /> : `${rows.length} gün`}
               </span>
             }
           />
         </div>
 
         {loading ? (
-          <div className="grid place-items-center gap-3 py-20 text-[var(--fg-subtle)]">
-            <Loader2 className="w-7 h-7 animate-spin" />
-            <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
-          </div>
+          <TableSkeleton rows={8} columns={8} label="Raporlar yükleniyor…" />
         ) : rows.length === 0 ? (
           <div className="grid place-items-center gap-3 py-20 text-center text-[var(--fg-subtle)]">
             <FileText className="w-9 h-9 opacity-30" />

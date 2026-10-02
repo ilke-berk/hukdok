@@ -12,6 +12,7 @@
  *   `whitespace-pre-wrap` ile korunur.
  */
 import { useCallback, useEffect, useState } from "react";
+import { LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { MessageSquareText, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -141,7 +142,7 @@ export default function CaseNotesPanel({ caseId }: Props) {
                 </div>
 
                 {yukleniyor ? (
-                    <p className="text-sm text-[var(--fg-muted)]">Notlar yükleniyor…</p>
+                    <LineListSkeleton count={2} label="Notlar yükleniyor…" />
                 ) : yuklemeHatasi ? (
                     <p className="text-sm text-tone-danger" data-testid="case-notes-error">{yuklemeHatasi}</p>
                 ) : notlar.length === 0 ? (

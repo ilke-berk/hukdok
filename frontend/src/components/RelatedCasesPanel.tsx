@@ -3,12 +3,14 @@ import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonRegion } from "@/components/skeletons/Skeletons";
 import { toast } from "sonner";
 import {
     Link2, Trash2, Plus, ExternalLink, Pin, Sparkles,
     User, Scale, Gavel, FileText, Building2, BarChart3,
 } from "lucide-react";
 import { useCases } from "@/hooks/useCases";
+import { useCasePrefetch, type PrefetchHandlers } from "@/hooks/useCaseQueries";
 import AddRelationModal from "./AddRelationModal";
 
 // ---- Tipler ----
@@ -101,6 +103,7 @@ interface RelatedCasesPanelProps {
 const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) => {
     const navigate = useNavigate();
     const { getRelatedCases, removeCaseRelation, addCaseRelation, rejectCaseRelation } = useCases();
+    const onYukle = useCasePrefetch();
 
     const [manualList, setManualList] = useState<RelatedCase[]>([]);
     const [autoList, setAutoList] = useState<RelatedCase[]>([]);
@@ -185,13 +188,13 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
     // ---- Loading ----
     if (loading) {
         return (
-            <div className="space-y-3">
+            <SkeletonRegion label="İlişkili dosyalar yükleniyor…" className="space-y-3">
                 <div className="flex justify-between items-center">
                     <Skeleton className="h-5 w-40" />
                     <Skeleton className="h-8 w-24" />
                 </div>
-                {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-none" />)}
-            </div>
+                {[1, 2].map(i => <Skeleton key={i} className="h-24 w-full" />)}
+            </SkeletonRegion>
         );
     }
 
@@ -255,6 +258,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                             rc={rc}
                             isDeleting={deletingId === rc.relation_id}
                             onNavigate={() => navigate(`/cases/${rc.id}`)}
+                            onYukle={onYukle(rc.id)}
                             onDelete={() => rc.relation_id && handleDelete(rc.relation_id)}
                         />
                     ))}
@@ -281,6 +285,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                                 rc={rc}
                                 isPinning={pinningId === rc.id}
                                 onNavigate={() => navigate(`/cases/${rc.id}`)}
+                            onYukle={onYukle(rc.id)}
                                 onPin={() => handlePin(rc)}
                             />
                         ))}
@@ -310,6 +315,7 @@ const RelatedCasesPanel = ({ caseId, onCountChange }: RelatedCasesPanelProps) =>
                                 isPinning={pinningId === rc.id}
                                 isRejecting={rejectingId === rc.id}
                                 onNavigate={() => navigate(`/cases/${rc.id}`)}
+                            onYukle={onYukle(rc.id)}
                                 onPin={() => handlePin(rc)}
                                 onReject={() => handleReject(rc)}
                             />
@@ -337,13 +343,15 @@ interface CardProps {
     isPinning?: boolean;
     isRejecting?: boolean;
     onNavigate: () => void;
+    /** Faz 4: "Git" düğmesinde önden yükleme olayları. */
+    onYukle?: PrefetchHandlers;
     onDelete?: () => void;
     onPin?: () => void;
     /** G128: yalnız öneri satırlarında — reddet, bir daha önerme. */
     onReject?: () => void;
 }
 
-const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, onDelete, onPin, onReject }: CardProps) => {
+const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, onYukle, onDelete, onPin, onReject }: CardProps) => {
     const ftMeta = getFileTypeMeta(rc.file_type);
     const st = getStatusStyle(rc.status);
     const relationLabel = RELATION_TYPE_LABELS[rc.relation_type] ?? rc.relation_type;
@@ -433,6 +441,7 @@ const RelatedCaseCard = ({ rc, isDeleting, isPinning, isRejecting, onNavigate, o
                         variant="outline"
                         className="gap-1.5 h-8 text-xs"
                         onClick={onNavigate}
+                        {...onYukle}
                     >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Git

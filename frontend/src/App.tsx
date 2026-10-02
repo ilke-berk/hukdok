@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { MsalProvider, useMsal } from "@azure/msal-react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { AppShellSkeleton } from "@/components/skeletons/Skeletons";
 import { msalInstance } from "@/config/msalConfig";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ProtectedAdminRoute } from "@/components/ProtectedAdminRoute";
@@ -46,19 +46,10 @@ const HukukbotPage = lazy(() => importWithReload(() => import("./pages/HukukbotP
 // sayacı react-query değil kendi setInterval + visibilitychange döngüsüdür (etkilenmez).
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
-// Parça inerken gösterilen küçük gösterge. BrowserRouter gezinmeleri startTransition
-// içinde yaptığı için sayfalar arası geçişte eski sayfa yerinde kalır; bu gösterge
-// pratikte yalnız ilk açılışta (henüz çizilmiş içerik yokken) görünür.
-const PageLoading = () => (
-  <div
-    role="status"
-    aria-live="polite"
-    className="min-h-screen flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
-  >
-    <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-    <span>Yükleniyor...</span>
-  </div>
-);
+// Kabuk DIŞI parça göstergesi (yedek). Kabuk içindeki sayfaların parçası `ShellLayout`'un kendi
+// Suspense'inde iner (menü/üst bar yerinde, içerikte PageSkeleton); bu yalnız kabuk dışında bir
+// lazy parça askıda kalırsa görünür — spinner yerine kabuk silueti.
+const PageLoading = () => <AppShellSkeleton label="Yükleniyor..." />;
 
 // Dashboard router — Sidebar'daki view toggle'a göre Avukat veya İdari render eder.
 const DashboardRouter = () => {
@@ -218,15 +209,8 @@ const App = () => {
   }, []);
 
   if (!isReady) {
-    // Show loading while initializing MSAL
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Yükleniyor...</p>
-        </div>
-      </div>
-    );
+    // MSAL açılışı: duran halka yerine gelecek ekranın silueti
+    return <AppShellSkeleton label="Yükleniyor..." />;
   }
 
   return (

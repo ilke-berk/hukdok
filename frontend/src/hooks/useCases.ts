@@ -262,6 +262,9 @@ export const useCases = () => {
         olayTuru?: string;
         /** G121 Hizmet Türü filtresi — değer listenin ADIdır (ör. "Lexis Rapor"). */
         hizmetTuru?: string;
+        /** Klinik tasnif filtreleri (02.10) — havuz öğesinin ADI; çok değerli hücrede tam öğe. */
+        tibbiSurec?: string;
+        tibbiOlay?: string;
         urgentDays?: number;
         missingRequired?: boolean;
     } = {}): Promise<{ cases: T[]; total: number }> => {
@@ -277,6 +280,8 @@ export const useCases = () => {
         // "Tümü" (ALL) seçiliyken param GÖNDERİLMEZ — status/lawyer ile aynı desen.
         if (options.olayTuru && options.olayTuru !== "ALL") params.append("olay_turu", options.olayTuru);
         if (options.hizmetTuru && options.hizmetTuru !== "ALL") params.append("hizmet_turu", options.hizmetTuru);
+        if (options.tibbiSurec && options.tibbiSurec !== "ALL") params.append("tibbi_surec", options.tibbiSurec);
+        if (options.tibbiOlay && options.tibbiOlay !== "ALL") params.append("tibbi_olay", options.tibbiOlay);
         if (options.urgentDays !== undefined) params.append("urgent_days", String(options.urgentDays));
         if (options.missingRequired) params.append("missing_required", "true");
 

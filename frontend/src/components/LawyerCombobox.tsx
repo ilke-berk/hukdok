@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { foldTr } from "@/lib/aramaKatlama";
 
 /** Seçenek: config `lawyers` satırının bileşenin okuduğu alt kümesi (`ConfigItem` uyumlu). */
 export interface LawyerOption {
@@ -41,25 +42,6 @@ interface MultiProps extends CommonProps {
 }
 
 export type LawyerComboboxProps = SingleProps | MultiProps;
-
-/**
- * Türkçe katlama: tr-TR küçük harf + ç/ğ/ı/ş/ö/ü → c/g/i/s/o/u + birleşik
- * işaretlerin atılması ("İ".toLowerCase() kalıntısı dahil). "ŞAHİN" ≡ "sahin".
- * (Repodaki `predictDocType.foldTr` modül-içi ve alfanümerik dışını da sildiği
- * için arama alt-dizesine uygun değil — burada boşluk/nokta korunur.)
- */
-function foldTr(s: string): string {
-  return s
-    .toLocaleLowerCase("tr-TR")
-    .replace(/ç/g, "c")
-    .replace(/ğ/g, "g")
-    .replace(/ı/g, "i")
-    .replace(/ş/g, "s")
-    .replace(/ö/g, "o")
-    .replace(/ü/g, "u")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
-}
 
 /** Katlanmış alt-dize eşleşmesi (bulanık skor değil). */
 function eslesir(name: string, search: string): boolean {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet } from "react-router";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -6,6 +6,8 @@ import { PageTitleProvider } from "@/components/system/PageTitleProvider";
 import { DashboardViewProvider } from "@/components/system/DashboardViewProvider";
 import { PageSearchProvider } from "@/components/system/PageSearch";
 import { OdakModuContext } from "@/hooks/useOdakModu";
+import { PageSkeleton } from "@/components/skeletons/Skeletons";
+import { ArkaplanCizgisi } from "./ArkaplanCizgisi";
 
 export function ShellLayout() {
   const [open, setOpen] = useState(false);
@@ -48,10 +50,16 @@ export function ShellLayout() {
                 />
               )}
               <Sidebar open={open} onClose={() => setOpen(false)} hoverIleKapan={!odak} />
-              <div className="flex-1 flex flex-col min-w-0">
+              <div className="relative flex-1 flex flex-col min-w-0">
+                {/* Faz 5: ekrandaki veri arkada tazelenirken üstte ince çizgi (içeriği bloklamaz) */}
+                <ArkaplanCizgisi />
                 {!odak && <Topbar onOpenSidebar={() => setOpen(true)} />}
                 <main className={odak ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-7 pt-6 pb-7"}>
-                  <Outlet />
+                  {/* Sayfa parçası (lazy route) burada iner: menü/üst bar yerinde kalır, içerikte iskelet.
+                      App.tsx'teki dış Suspense yalnız kabuk dışı yedektir. */}
+                  <Suspense fallback={<PageSkeleton />}>
+                    <Outlet />
+                  </Suspense>
                 </main>
               </div>
             </div>

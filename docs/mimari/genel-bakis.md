@@ -285,7 +285,10 @@ hizalı uzun kademe. GET'ler 502/503/504'te sınırlı sayıda yeniden denenir; 
 `frontend/src/App.tsx:25-41`: `Login` ve `NotFound` statik import edilir (oturumsuz ilk
 açılış ve 404 ek ağ turu beklemesin); diğer 12 sayfa
 `lazy(() => importWithReload(() => import("./pages/X")))` ile route başına ayrı parçadır.
-`<Routes>` tek bir `<Suspense fallback={<PageLoading />}>` ile sarılıdır (`App.tsx:105-149`).
+`<Routes>` tek bir `<Suspense fallback={<PageLoading />}>` ile sarılıdır (`App.tsx`); bu dış sınır
+kabuk dışı yedektir. Kabuk içindeki sayfaların parçası `components/shell/Shell.tsx`'teki ikinci
+`<Suspense fallback={<PageSkeleton />}>` içinde (`<Outlet />` etrafı) iner: menü/üst bar yerinde
+kalır, yalnız içerik alanı iskelet gösterir (yükleme deseni aşağıda).
 Parça ancak route'un elemanı çizilince iner: `/reports` ve `/admin` `ProtectedAdminRoute`
 altındadır (`App.tsx:128-143`) ve bu bekçi admin olmayana çocuğu hiç çizmeden `/`'e
 yönlendirir (`components/ProtectedAdminRoute.tsx`) — rapor katmanı ve `@dnd-kit` o
@@ -294,6 +297,67 @@ yaptığından sayfalar arası geçişte eski sayfa yerinde kalır; gösterge pr
 açılışta görünür (`App.tsx:49-51`). Yeni sayfa eklenirse aynı desenle eklenir;
 `frontend/src/App.lazy.test.tsx`'teki kaynak bekçisi `pages/` dizininden türeyerek bunu
 denetler.
+
+### Yükleme deseni: skeleton, spinner değil (02.10)
+
+Yavaş yanıtı gizleyemeyiz, hissettirmemeye çalışırız. Kural: **içerik** yüklenirken (sayfa, liste,
+kart, panel) spinner gösterilmez; içeriğin şekli `frontend/src/components/skeletons/Skeletons.tsx`
+kalıplarıyla çizilir — `TableSkeleton` (liste sayfaları, rapor geçmişi), `CardListSkeleton`
+(dashboard panelleri), `LineListSkeleton` (bildirim, not, sohbet listesi), `DetailSkeleton`
+(dava kartı), `PageSkeleton` (kabuk içi parça/admin), `AppShellSkeleton` (MSAL açılışı, kabuk dışı
+yedek), `InlineSkeleton` (başlıktaki "N kayıt" sayacı). Spinner yalnız **kullanıcının başlattığı
+eylemde** kalır (Kaydet/Analiz/İndir/Senkron düğmesi, analiz/kuyruk ilerlemesi).
+
+- Her kalıp tek `role="status"` + sr-only etiket taşır (varsayılan "Yükleniyor…"); bloklar
+  `aria-hidden`. Ekran okuyucu ve "Yükleniyor" metnine bakan testler eski spinner'la eşdeğer görür.
+- Blok rengi `index.css` `.skeleton-block`: `color-mix(var(--fg) %9)` — `--bg-sunken` değil
+  (koyu temalarda zeminden koyu, editorial-koyuda neredeyse saydam).
+- Bölge `.skeleton-region` ile 150 ms gecikmeli belirir: hızlı yanıtta iskelet hiç görünmez,
+  JS zamanlayıcısı yoktur.
+- `prefers-reduced-motion: reduce` → nabız ve belirme animasyonu durur, `animate-spin` yavaşlar.
+- Bekçi: `components/skeletons/Skeletons.test.tsx` (kalıp sözleşmesi + CSS + kabuk Suspense'i).
+
+**Önbellekten anında çizim (Faz 3).** İskeletin en iyisi hiç görünmeyenidir: dava okumaları
+`frontend/src/hooks/useCaseQueries.ts` ile react-query'dedir — `useCaseListQuery` (Dava Listesi,
+panellerin "son dosyalar"ı; ortak anahtar `SON_DOSYALAR_FILTRESI`), `useCaseStatsQuery` (liste +
+Avukat paneli sayaçları), `useCaseDetailQuery` (dava kartı). Sözleşme:
+
+- `staleTime: 0` + `gcTime` 10 dk: her mount'ta yeniden çekilir; önbellek yalnız "beklerken ne
+  gösterelim"in cevabıdır. Sayfaya geri dönüşte eldeki veri anında çizilir, tazesi arkada gelir.
+  Yazma yollarında invalidate doğruluk için şart değildir — eski veri en fazla bir istek süresi görünür.
+- İskelet yalnız elde HİÇ veri yokken. Liste filtre/sayfa değişiminde `keepPreviousData`: eski satırlar
+  soluk kalır (`isPlaceholderData`); önbellekten açılıştaki arkaplan tazelemesi soluklaştırmaz (sessiz).
+- Detayda `getCase` null → sorgu hatası: ilk yüklemede "Dava Bulunamadı", yenileme başarısızsa
+  eski kart ekranda kalır. Karttaki mutasyonlar sonrası `refetch()`.
+- `retry: false` (G002 hata şeridi gecikmesiz); odakta yeniden çekme global kapalı (G184) — açık
+  sayfa kendiliğinden yenilenmez, takip panelindeki yarım düzenleme ezilmez.
+- Ayrı modül: testler `@/hooks/useCases`'i modül olarak taklit eder, sorgular onun üstüne kurulur.
+- Bekçiler: `hooks/useCaseQueries.test.tsx`, `pages/CaseList.onbellek.test.tsx`,
+  `pages/dashboards/AvukatDashboard.test.tsx` (geri dönüşte sayılar anında).
+
+**Önden yükleme (Faz 4).** Kullanıcı tıklamadan önce veri ve parça hazırlanır:
+
+- `useCasePrefetch()` (`hooks/useCaseQueries.ts`): dava kartına giden satır/düğmeye
+  `{...onYukle(id)}` yayılır. Fare 100 ms (`NIYET_GECIKMESI_MS`) durursa ya da klavye odağı gelirse
+  kart detay sorgusunun AYNI anahtar/queryFn'iyle (`caseDetailQueryOptions`) arkada çekilir +
+  CaseDetails parçası iner; dokunmatikte gecikmesiz. 30 sn içinde çekilmiş kart yeniden istenmez;
+  çekim sürerken sayfa açılırsa react-query aynı isteği paylaşır. Sağlayıcı yoksa no-op (izole
+  bileşen testleri bozulmaz). Bağlı yerler: Dava Listesi satırları, iki panelin son dosyaları,
+  Avukat paneli duruşmaları, süre uyarıları, süreli işler, son belgeler, ilişkili dosyalar "Git".
+- `useDavaListesiIsitma()`: panel açılınca tarayıcı boşa çıkınca (`requestIdleCallback`, yoksa
+  1,5 sn) Dava Listesi'nin varsayılan ilk sayfası + sayaçlar çekilir (60 sn tazelik). Anahtarın
+  birebir tutması için liste filtresi tek kurucudan: `davaListesiFiltresi()`.
+- `lib/sayfaOnYukleme.ts`: menü öğesine fare/odak gelince route parçası `import()` edilir; tıklayınca
+  `lazy` aynı modülü önbellekten alır. Hata yutulur (bayat parçayı gerçek gezinmede `importWithReload`
+  yönetir). Bekçi `lib/sayfaOnYukleme.test.ts`: harita App.tsx lazy modülleri ve menü yollarıyla hizalı.
+
+**Arkaplan tazeleme çizgisi (Faz 5).** `components/shell/ArkaplanCizgisi.tsx`, kabuğun içerik
+sütununun tepesinde 2 px marka renginde kayan çizgi; içeriği bloklamaz, ekran okuyucudan gizlidir.
+Yalnız *ekrandaki veri arkada tazelenirken* görünür: `useIsFetching` yüklemeyi
+`ekrandakiVeriTazeleniyor` ile süzer — gözlemcisi olan VE elinde verisi olan sorgu. Önden yükleme/ısıtma
+(gözlemcisiz) ve ilk yükleme (iskelet zaten var) sayılmaz. `hooks/useDelayedFlag.ts`: 250 ms'den
+kısa tazelemede hiç görünmez, göründüyse en az 400 ms kalır. "Hareketi azalt"ta kayan parça yerine
+sabit soluk çizgi. Bekçi `components/shell/ArkaplanCizgisi.test.tsx`.
 
 ### Bayat parça: tek yenileme (G182)
 

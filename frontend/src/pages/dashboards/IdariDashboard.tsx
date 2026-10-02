@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import {
   Upload,
@@ -11,7 +12,8 @@ import {
   ChevronRight,
   Users,
 } from "lucide-react";
-import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
+import { CASE_LIST_ERROR } from "@/hooks/useCases";
+import { SON_DOSYALAR_FILTRESI, useCaseListQuery, useCasePrefetch, useDavaListesiIsitma } from "@/hooks/useCaseQueries";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
@@ -78,35 +80,24 @@ const QUICK_ACTIONS: QuickAction[] = [
 const SEQUENCE_TIMEOUT_MS = 1000;
 const shortcutLabel = (key: string) => `G ${key}`;
 
+// Veri yokken sabit boş dizi (her render yeni `[]` üretmesin).
+const BOS_DOSYALAR: never[] = [];
+
 export default function IdariDashboard() {
   useSetPageTitle("Anasayfa", ["İdari Panel"]);
   const navigate = useNavigate();
-  const { getCases } = useCases();
-  const [recentCases, setRecentCases] = useState<DashboardCase[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Faz 3: son dosyalar react-query önbelleğinden; anahtar Avukat paneliyle ORTAK
+  // (`hooks/useCaseQueries.ts`) — panel geçişinde liste iskeletsiz açılır.
+  const recentQuery = useCaseListQuery<DashboardCase>(SON_DOSYALAR_FILTRESI);
+  // Faz 4: dava satırında önden yükleme + boşta Dava Listesi ilk sayfasını ısıtma
+  const onYukle = useCasePrefetch();
+  useDavaListesiIsitma();
+  const recentCases = recentQuery.data?.cases ?? BOS_DOSYALAR;
+  const loading = recentQuery.isPending;
   // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const casesData = await getCases<DashboardCase>({ limit: 8, offset: 0 });
-        if (cancelled) return;
-        setRecentCases(casesData?.cases ?? []);
-        setLoadError(null);
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-        setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [getCases, reloadKey]);
+  const loadError = recentQuery.isError
+    ? (recentQuery.error instanceof Error ? recentQuery.error.message : CASE_LIST_ERROR)
+    : null;
 
   // "G" sonra U/N/M sıralı kısayolu → ilgili sayfaya git. Bir input/textarea içinde
   // yazarken veya bir modifier (Ctrl/Alt/Cmd) basılıyken devre dışı kalır.
@@ -258,17 +249,13 @@ export default function IdariDashboard() {
           />
           <HairlineCard className="mt-3" padded={false}>
             {loading ? (
-              <div className="p-4 grid gap-2">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="h-16 bg-[var(--bg-sunken)] animate-pulse" />
-                ))}
-              </div>
+              <CardListSkeleton count={4} itemClassName="h-16" className="p-4" label="Dosyalar yükleniyor…" />
             ) : loadError ? (
               // G002: hatada "Dava bulunamadı." yazmak veri kaybı izlenimi veriyordu.
               <DataErrorBanner
                 description={loadError}
-                onRetry={() => setReloadKey(k => k + 1)}
-                isRetrying={loading}
+                onRetry={() => { recentQuery.refetch(); }}
+                isRetrying={recentQuery.isFetching}
                 className="border-0"
               />
             ) : recentCases.length === 0 ? (
@@ -283,6 +270,7 @@ export default function IdariDashboard() {
                     key={c.id}
                     type="button"
                     onClick={() => navigate(`/cases/${c.id}`)}
+                    {...onYukle(c.id)}
                     className={`grid grid-cols-[auto_1fr_auto] gap-4 items-start px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg)] ${idx > 0 ? "border-t border-[var(--border)]" : ""}`}
                   >
                     <Gavel className="w-4 h-4 text-[var(--brand)] mt-0.5 shrink-0" />

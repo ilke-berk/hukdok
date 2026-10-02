@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { InlineSkeleton, TableSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import { CalendarPlus, ChevronLeft, ChevronRight, Gavel, Trash2, Clock, User, Printer, FileBarChart, FileText, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
@@ -677,12 +678,12 @@ export function DashboardCalendar({ eyebrow = "Takvim", layout = "compact" }: Pr
               <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
                 <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">Önizleme</span>
                 <span className="font-mono text-[10px] tracking-[0.12em] uppercase text-[var(--fg-muted)]">
-                  {previewLoading ? "Yükleniyor…" : `${previewRows?.length ?? 0} kayıt`}
+                  {previewLoading ? <InlineSkeleton /> : `${previewRows?.length ?? 0} kayıt`}
                 </span>
               </div>
               <div className="max-h-[320px] overflow-auto">
                 {previewLoading ? (
-                  <div className="p-8 text-center text-[13px] text-[var(--fg-subtle)]">Önizleme hazırlanıyor…</div>
+                  <TableSkeleton rows={5} columns={4} label="Önizleme hazırlanıyor…" />
                 ) : (previewRows && previewRows.length > 0) ? (
                   <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-[var(--bg-elevated)]">

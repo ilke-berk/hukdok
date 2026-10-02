@@ -1,21 +1,24 @@
-import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
+import { TableSkeleton } from "@/components/skeletons/Skeletons";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/hooks/usePageSearch";
 import {
   Search, FolderOpen, Scale, FileText,
   Plus, ChevronRight, ChevronLeft, ChevronDown,
   Briefcase, Copy, Check, HelpCircle,
-  TrendingUp, Loader2, RefreshCw, AlertTriangle,
+  TrendingUp, RefreshCw, AlertTriangle,
   SlidersHorizontal, CalendarClock, Sparkles,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNavigate, useLocation } from "react-router";
-import { useCases, CASE_LIST_ERROR } from "../hooks/useCases";
+import { CASE_LIST_ERROR } from "../hooks/useCases";
+import { DAVA_LISTESI_SAYFA_BOYU, davaListesiFiltresi, useCaseListQuery, useCasePrefetch, useCaseStatsQuery } from "../hooks/useCaseQueries";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useConfigList } from "../hooks/useConfig";
 import { LawyerCombobox } from "@/components/LawyerCombobox";
+import { ListeFiltreCombobox, type ListeFiltreSecenegi } from "@/components/ListeFiltreCombobox";
 import { apiClient } from "@/lib/api";
 import { useDebounce } from "../hooks/useDebounce";
 import { formatAgo } from "@/lib/relativeTime";
@@ -56,7 +59,7 @@ interface CalEvent {
   event_date: string;
 }
 
-const ITEMS_PER_PAGE = 15;
+const ITEMS_PER_PAGE = DAVA_LISTESI_SAYFA_BOYU;
 
 // Yaklaşan uyarısı için pencere (gün)
 const URGENT_WINDOW_DAYS = 7;
@@ -76,6 +79,16 @@ const DERDEST_ASAMA_AGACI: { key: DerdestAsamaKey; label: string; depth: 1 | 2 }
   { key: "TEMYIZ_YARGITAY", label: "Yargıtay", depth: 2 },
   { key: "TEMYIZ_DANISTAY", label: "Danıştay", depth: 2 },
 ];
+
+type CaseListStats = {
+  total: number; active: number; closed: number; danis_active: number;
+  statuses: Record<string, number>;
+  // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
+  derdest_stages?: Partial<Record<DerdestAsamaKey, number>>;
+};
+const BOS_SAYACLAR: CaseListStats = { total: 0, active: 0, closed: 0, danis_active: 0, statuses: {} };
+// Veri yokken sabit boş dizi: her render'da yeni `[]` üretip türetilmiş memo'ları bozmasın.
+const BOS_LISTE: never[] = [];
 
 const STATUS_TONE: Record<string, string> = {
   DANIŞ: "text-tone-info border-tone-info/30 bg-tone-info/10",
@@ -136,22 +149,11 @@ const CaseList = () => {
   useSetPageTitle("Dava Dosyaları", ["Avukat Paneli", "Davalar"]);
   const navigate = useNavigate();
   const location = useLocation();
-  const { getCases, getCaseStats } = useCases();
   // G185: yalnız filtrelerin okuduğu üç listeye abone olunur (useConfig 32 sorgu kuruyordu).
   const { data: lawyers } = useConfigList("lawyers");
-  const { data: eventTypes } = useConfigList("eventTypes");
+  const { data: medicalProcesses } = useConfigList("medicalProcesses");
   const { data: serviceTypes } = useConfigList("serviceTypes");
 
-  // Core data state
-  const [cases, setCases] = useState<Case[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [stats, setStats] = useState<{
-    total: number; active: number; closed: number; danis_active: number;
-    statuses: Record<string, number>;
-    // Derdest dosyaların en ileri kanun yolu (backend `derdest_stages`)
-    derdest_stages?: Partial<Record<DerdestAsamaKey, number>>;
-  }>({ total: 0, active: 0, closed: 0, danis_active: 0, statuses: {} });
-  const [isLoading, setIsLoading] = useState(true);
 
   // Takvim verisi — yaklaşan uyarıları için
   const [hearings, setHearings] = useState<Hearing[]>([]);
@@ -166,61 +168,62 @@ const CaseList = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [selectedLawyer, setSelectedLawyer] = useState<string>("ALL");
   const [selectedFileType, setSelectedFileType] = useState<string>("ALL");
-  // G105: Olay Türü filtresi — değer listenin ADIdır (sözleşme: olay_turu param'ı)
-  const [selectedOlayTuru, setSelectedOlayTuru] = useState<string>("ALL");
+  // 02.10: Olay Türü filtresi KALKTI (alan hiçbir kartta dolu değil; kart/rapor alanı yerinde).
+  // Yerine klinik tasnif filtreleri — değer havuz öğesinin ADIdır (tibbi_surec / tibbi_olay param'ı).
+  const [selectedTibbiSurec, setSelectedTibbiSurec] = useState<string>("ALL");
+  const [selectedTibbiOlay, setSelectedTibbiOlay] = useState<string>("ALL");
+  // Tıbbi Olay seçenekleri havuzdan DEĞİL veriden gelir (sayılı) ve seçili sürece göre daralır
+  // (`/api/cases/tibbi-olay-secenekleri`) — seçenek sıfır sonuç vermez.
+  const [olaySecenekleri, setOlaySecenekleri] = useState<ListeFiltreSecenegi[]>([]);
+  const tibbiSurecSec = (surec: string) => {
+    setSelectedTibbiSurec(surec);
+    setSelectedTibbiOlay("ALL");   // önceki olay yeni süreçte geçmeyebilir
+  };
   // G121: Hizmet Türü filtresi — değer listenin ADIdır (sözleşme: hizmet_turu param'ı);
   // "Lexis Rapor" föyleri dava takibi değil, liste bu ayrımı görebilmeli.
   const [selectedHizmetTuru, setSelectedHizmetTuru] = useState<string>("ALL");
   const [onlyUrgent, setOnlyUrgent] = useState(false);
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // Faz 3 (algılanan hız): liste ve sayaçlar react-query önbelleğinden. Sayfaya geri dönüşte eldeki
+  // satırlar ANINDA çizilir, tazesi arkada gelir (`hooks/useCaseQueries.ts`). Yarış koruması
+  // (geç dönen eski yanıt yenisini ezmesin) sorgu anahtarıyla gelir — eski elle reqId sayacı kalktı.
+  // Filtre `davaListesiFiltresi`'nden: panelin boşta ısıttığı ilk sayfa ile anahtar birebir aynı (Faz 4).
+  const casesQuery = useCaseListQuery<Case>(davaListesiFiltresi({
+    sayfa: currentPage,
+    status: selectedStatus,
+    lawyer: selectedLawyer,
+    q: debouncedSearch,
+    fileType: selectedFileType,
+    hizmetTuru: selectedHizmetTuru,
+    tibbiSurec: selectedTibbiSurec,
+    tibbiOlay: selectedTibbiOlay,
+    urgentDays: onlyUrgent ? URGENT_WINDOW_DAYS : undefined,
+    missingRequired: onlyMissing,
+  }), { keepPrevious: true });
+  const onYukle = useCasePrefetch();
+  const cases = casesQuery.data?.cases ?? BOS_LISTE;
+  const totalCount = casesQuery.data?.total ?? 0;
+  // İskelet yalnız elde HİÇ veri yokken (ilk açılış, önbellek boş). Filtre değişiminde eski satırlar
+  // soluk kalır (`isPlaceholderData`), yenisi gelince yer değiştirir — sayfa boyu zıplamaz (02.10).
+  // Önbellekten açılıştaki arkaplan tazelemesi listeyi SOLUKLAŞTIRMAZ (sessiz).
+  // (Elde veri yok + çekim sürüyor: ilk açılış ya da önceki hatalı denemenin tekrarı.)
+  const ilkYukleme = casesQuery.data === undefined && casesQuery.fetchStatus !== "idle";
+  const listeSoluk = casesQuery.isPlaceholderData;
+  const yenileniyor = casesQuery.isFetching;
+  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok) — kaybolan toast yerine kalıcı
+  // şerit, kullanıcı kesintiyi veri kaybıyla karıştırmasın.
+  const loadError = casesQuery.isError
+    ? (casesQuery.error instanceof Error ? casesQuery.error.message : CASE_LIST_ERROR)
+    : null;
 
-  // Yarış durumu koruması: geç dönen eski isteklerin yenisini ezmesini engeller
-  const reqIdRef = useRef(0);
-
-  const fetchCases = useCallback(async () => {
-    const reqId = ++reqIdRef.current;
-    try {
-      setIsLoading(true);
-      const offset = (currentPage - 1) * ITEMS_PER_PAGE;
-      const data = await getCases<Case>({
-        limit: ITEMS_PER_PAGE,
-        offset,
-        status: selectedStatus,
-        lawyer: selectedLawyer,
-        q: debouncedSearch || undefined,
-        fileType: selectedFileType,
-        olayTuru: selectedOlayTuru,
-        hizmetTuru: selectedHizmetTuru,
-        urgentDays: onlyUrgent ? URGENT_WINDOW_DAYS : undefined,
-        missingRequired: onlyMissing || undefined,
-      });
-      // Bu yanıt en güncel istek değilse (kullanıcı yazmaya devam etti) yok say
-      if (reqId !== reqIdRef.current) return;
-      setCases(data.cases);
-      setTotalCount(data.total);
-      setLoadError(null);
-    } catch (error) {
-      if (reqId !== reqIdRef.current) return;
-      console.error(error);
-      // G002: kaybolan toast yerine kalıcı şerit — "kayıt yok" görünümünün
-      // yerine geçer, kullanıcı kesintiyi veri kaybıyla karıştırmasın.
-      setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
-    } finally {
-      if (reqId === reqIdRef.current) setIsLoading(false);
-    }
-  }, [getCases, currentPage, selectedStatus, selectedLawyer, selectedFileType, selectedOlayTuru, selectedHizmetTuru, debouncedSearch, onlyUrgent, onlyMissing]);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const statsData = await getCaseStats();
-      if (statsData) setStats({ statuses: {}, ...statsData });
-    } catch (error) {
-      console.error("İstatistikler yüklenemedi", error);
-    }
-  }, [getCaseStats]);
+  const statsQuery = useCaseStatsQuery<Partial<CaseListStats>>();
+  const stats: CaseListStats = useMemo(
+    () => ({ ...BOS_SAYACLAR, ...(statsQuery.data ?? {}), statuses: statsQuery.data?.statuses ?? {} }),
+    [statsQuery.data],
+  );
+  const { refetch: listeyiYenile } = casesQuery;
+  const { refetch: sayaclariYenile } = statsQuery;
 
   const fetchCalendar = useCallback(() => {
     apiClient.fetch("/api/hearing-dates")
@@ -233,10 +236,17 @@ const CaseList = () => {
       .catch(() => setCalEvents([]));
   }, []);
 
-  useEffect(() => { fetchCases(); }, [fetchCases]);
-  useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
-  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, selectedOlayTuru, selectedHizmetTuru, onlyUrgent, onlyMissing]);
+  useEffect(() => {
+    let iptal = false;
+    const qs = selectedTibbiSurec !== "ALL" ? `?tibbi_surec=${encodeURIComponent(selectedTibbiSurec)}` : "";
+    apiClient.fetch(`/api/cases/tibbi-olay-secenekleri${qs}`)
+      .then(r => r.ok ? r.json() : Promise.resolve([]))
+      .then((d: unknown) => { if (!iptal) setOlaySecenekleri(Array.isArray(d) ? (d as ListeFiltreSecenegi[]) : []); })
+      .catch(() => { if (!iptal) setOlaySecenekleri([]); });
+    return () => { iptal = true; };
+  }, [selectedTibbiSurec]);
+  useEffect(() => { setCurrentPage(1); }, [debouncedSearch, selectedStatus, selectedLawyer, selectedFileType, selectedHizmetTuru, selectedTibbiSurec, selectedTibbiOlay, onlyUrgent, onlyMissing]);
 
   // case_id → en yakın yaklaşan duruşmaya kalan gün (0..URGENT_WINDOW_DAYS)
   const urgentByCase = useMemo(() => {
@@ -265,7 +275,8 @@ const CaseList = () => {
     setSelectedStatus("ALL");
     setSelectedLawyer("ALL");
     setSelectedFileType("ALL");
-    setSelectedOlayTuru("ALL");
+    setSelectedTibbiSurec("ALL");
+    setSelectedTibbiOlay("ALL");
     setSelectedHizmetTuru("ALL");
     setOnlyUrgent(false);
     setOnlyMissing(false);
@@ -287,8 +298,9 @@ const CaseList = () => {
     selectedStatus !== "ALL" && "status",
     selectedLawyer !== "ALL" && "lawyer",
     selectedFileType !== "ALL" && "filetype",
-    selectedOlayTuru !== "ALL" && "olayturu",
     selectedHizmetTuru !== "ALL" && "hizmetturu",
+    selectedTibbiSurec !== "ALL" && "tibbisurec",
+    selectedTibbiOlay !== "ALL" && "tibbiolay",
     onlyUrgent && "urgent",
     onlyMissing && "missing",
   ].filter(Boolean).length;
@@ -434,26 +446,9 @@ const CaseList = () => {
             </Select>
           </div>
 
-          {/* G105: Olay Türü — event_types kapalı listesinden beslenir;
-              seçim liste isteğine olay_turu param'ı olarak gider (değer = ad) */}
-          <div>
-            <Eyebrow>Olay Türü</Eyebrow>
-            <Select value={selectedOlayTuru} onValueChange={setSelectedOlayTuru}>
-              <SelectTrigger className="mt-2 h-10 bg-[var(--bg)] border-[var(--border)] text-[13px] rounded-[3px]">
-                <SelectValue placeholder="Olay türü seçin" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tümü</SelectItem>
-                {eventTypes.map(t => (
-                  <SelectItem key={t.code || t.name} value={t.name}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* G121: Hizmet Türü — service_types kapalı listesinden beslenir;
-              seçim liste isteğine hizmet_turu param'ı olarak gider (değer = ad).
-              Olay Türü ile aynı desen; "Tümü" seçiliyken param gönderilmez. */}
+              seçim liste isteğine hizmet_turu param'ı olarak gider (değer = ad);
+              "Tümü" seçiliyken param gönderilmez. */}
           <div>
             <Eyebrow>Hizmet Türü</Eyebrow>
             <Select value={selectedHizmetTuru} onValueChange={setSelectedHizmetTuru}>
@@ -467,6 +462,37 @@ const CaseList = () => {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* 02.10: klinik tasnif — yazarak aranır. Tıbbi Süreç `medical_processes` havuzundan;
+              Tıbbi Olay veriden, sayılı ve seçili sürece göre daralır. Kolonlar çok değerli;
+              backend tam öğe eşler. */}
+          <div>
+            <Eyebrow>Tıbbi Süreç</Eyebrow>
+            <div className="mt-2">
+              <ListeFiltreCombobox
+                options={medicalProcesses.filter(t => t.name).map(t => ({ name: t.name }))}
+                value={selectedTibbiSurec}
+                onChange={tibbiSurecSec}
+                noun="Tıbbi süreç"
+                aria-label="Tıbbi Süreç"
+                className="h-10 bg-[var(--bg)] border-[var(--border)]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Eyebrow>Tıbbi Olay</Eyebrow>
+            <div className="mt-2">
+              <ListeFiltreCombobox
+                options={olaySecenekleri}
+                value={selectedTibbiOlay}
+                onChange={setSelectedTibbiOlay}
+                noun="Tıbbi olay"
+                aria-label="Tıbbi Olay"
+                className="h-10 bg-[var(--bg)] border-[var(--border)]"
+              />
+            </div>
           </div>
 
           <div>
@@ -564,10 +590,10 @@ const CaseList = () => {
             <FlowButton
               variant="ghost"
               size="sm"
-              onClick={() => { fetchCases(); fetchStats(); fetchCalendar(); }}
-              disabled={isLoading}
+              onClick={() => { listeyiYenile(); sayaclariYenile(); fetchCalendar(); }}
+              disabled={yenileniyor}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${yenileniyor ? "animate-spin" : ""}`} />
               Yenile
             </FlowButton>
           </div>
@@ -575,17 +601,18 @@ const CaseList = () => {
           {loadError && (
             <DataErrorBanner
               description={loadError}
-              onRetry={() => { fetchCases(); fetchStats(); }}
-              isRetrying={isLoading}
+              onRetry={() => { listeyiYenile(); sayaclariYenile(); }}
+              isRetrying={yenileniyor}
               className="mx-5 mb-4"
             />
           )}
 
-          {isLoading ? (
-            <div className="grid place-items-center gap-3 py-20 text-[var(--fg-subtle)]">
-              <Loader2 className="w-7 h-7 animate-spin" />
-              <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
-            </div>
+          <div
+            aria-busy={yenileniyor}
+            className={`transition-opacity duration-150 ${listeSoluk ? "opacity-50 pointer-events-none" : ""}`}
+          >
+          {ilkYukleme ? (
+            <TableSkeleton rows={10} columns={5} label="Dosyalar yükleniyor…" />
           ) : cases.length === 0 ? (
             // G002: hatada "bulunamadı" görünümü ASLA çıkmaz — yerini şerit alır.
             loadError ? null : (
@@ -626,6 +653,7 @@ const CaseList = () => {
                       <tr
                         key={c.id}
                         onClick={() => navigate(`/cases/${c.id}`)}
+                        {...onYukle(c.id)}
                         className={[
                           "border-b border-[var(--border)] last:border-b-0 cursor-pointer transition-colors",
                           isUrgent
@@ -720,6 +748,7 @@ const CaseList = () => {
               </table>
             </div>
           )}
+          </div>
 
           {totalCount > 0 && (
             <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--border)] bg-[var(--bg)]">

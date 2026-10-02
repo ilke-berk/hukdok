@@ -12,18 +12,18 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useCases } from "@/hooks/useCases";
+import { useCaseDetailQuery } from "@/hooks/useCaseQueries";
 import { useConfigList } from "@/hooks/useConfig";
 import {
     MEDICAL_CARD_FIELDS, OFFICE_CARD_FIELDS, PROCESS_CARD_FIELDS,
     filledFields, formatCardValue, closedListState, isDocumentationEventCandidate,
     type CardFieldDef, type ClosedListKey,
 } from "@/lib/caseCardFields";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
+import { DetailSkeleton } from "@/components/skeletons/Skeletons";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import RelatedCasesPanel from "@/components/RelatedCasesPanel";
@@ -333,7 +333,6 @@ const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
-    const { getCase } = useCases();
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
     // G185: yalnız kartın okuduğu altı kapalı listeye abone olunur (useConfig 32 sorgu kuruyordu).
     const { data: allegedFaults } = useConfigList("allegedFaults");
@@ -352,8 +351,15 @@ const CaseDetails = () => {
         client_types: clientTypes,
         service_types: serviceTypes,
     };
-    const [caseData, setCaseData] = useState<CaseDetailsData | null>(null);
-    const [loadingLocal, setLoadingLocal] = useState(true);
+    // Faz 3: kart react-query önbelleğinden (`hooks/useCaseQueries.ts`) — listeden/ilişkili karttan geri
+    // dönüşte kart ANINDA çizilir, tazesi arkada gelir. Yenileme başarısızsa eski kart ekranda kalır.
+    const caseId = id ? parseInt(id, 10) : undefined;
+    const caseQuery = useCaseDetailQuery<CaseDetailsData>(caseId);
+    const caseData = caseQuery.data ?? null;
+    // Elde kart yok + çekim sürüyor (ilk açılış ya da hatalı önden yüklemenin tekrarı) → iskelet;
+    // "bulunamadı" ancak çekim BİTİP veri yoksa.
+    const loadingLocal = caseQuery.data === undefined && caseQuery.fetchStatus !== "idle";
+    const { refetch: kartiYenile } = caseQuery;
     const [activeTab, setActiveTab] = useState("overview");
     // Takip panelinde kaydedilmemiş değişiklik varsa sekme değişiminde onay iste
     // (sekme içeriği unmount olur, taslak kaybolur — Faz 1 ayrılma koruması)
@@ -397,8 +403,7 @@ const CaseDetails = () => {
                 throw new Error(err.detail || "Hata");
             }
             toast.success("E-posta yeniden gönderildi");
-            const data = await getCase(parseInt(id!));
-            if (data) setCaseData(data);
+            await kartiYenile();
         } catch (e: unknown) {
             toast.error("E-posta gönderilemedi", { description: e instanceof Error ? e.message : String(e) });
         } finally {
@@ -420,8 +425,7 @@ const CaseDetails = () => {
             }
             toast.success(partyId ? "Belge müvekkile atandı" : "Belge dava geneline alındı");
             // Refresh case data to reflect new grouping
-            const data = await getCase(parseInt(id!));
-            if (data) setCaseData(data);
+            await kartiYenile();
         } catch (e: unknown) {
             toast.error("Müvekkil ataması başarısız", { description: e instanceof Error ? e.message : String(e) });
         }
@@ -439,8 +443,7 @@ const CaseDetails = () => {
                 throw new Error(err.detail || "Silme başarısız");
             }
             toast.success("Belge arşive taşındı", { description: "Listeden kaldırıldı; yönetici panelinden geri alınabilir." });
-            const data = await getCase(parseInt(id!));
-            if (data) setCaseData(data);
+            await kartiYenile();
         } catch (e: unknown) {
             toast.error("Belge silinemedi", { description: e instanceof Error ? e.message : String(e) });
         } finally {
@@ -448,18 +451,6 @@ const CaseDetails = () => {
             setDeleteDocReason("");
         }
     };
-
-    useEffect(() => {
-        const fetchCaseData = async () => {
-            if (!id) return;
-            setLoadingLocal(true);
-            const data = await getCase(parseInt(id));
-            if (data) setCaseData(data);
-            setLoadingLocal(false);
-        };
-        fetchCaseData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]);
 
     if (loadingLocal) {
         return (
@@ -469,9 +460,7 @@ const CaseDetails = () => {
                         <ArrowLeft className="w-4 h-4" />
                         Listeye Dön
                     </Button>
-                    <Skeleton className="h-24 w-full rounded-none" />
-                    <Skeleton className="h-10 w-full rounded-none" />
-                    <Skeleton className="h-[400px] w-full rounded-none" />
+                    <DetailSkeleton label="Dava kartı yükleniyor…" />
                 </main>
             </div>
         );
@@ -935,8 +924,7 @@ const CaseDetails = () => {
                             caseId={parseInt(id!)}
                             caseData={caseData as Record<string, unknown>}
                             onRefresh={async () => {
-                                const data = await getCase(parseInt(id!));
-                                if (data) setCaseData(data);
+                                await kartiYenile();
                             }}
                             onDirtyChange={setTrackingDirty}
                         />

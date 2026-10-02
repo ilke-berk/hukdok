@@ -1,4 +1,5 @@
-import { AlertTriangle, BellOff, CheckCheck, Loader2 } from "lucide-react";
+import { AlertTriangle, BellOff, CheckCheck } from "lucide-react";
+import { LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { formatAgo } from "@/lib/relativeTime";
 import type { NotificationItem, NotificationMarkError } from "@/hooks/useNotifications";
 
@@ -91,10 +92,7 @@ export function NotificationsPanel({
             </button>
           </div>
         ) : isLoading && items.length === 0 ? (
-          <div className="px-3.5 py-6 flex items-center justify-center gap-2 text-[12.5px] text-[var(--fg-muted)]">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Yükleniyor…
-          </div>
+          <LineListSkeleton count={3} className="px-3.5 py-4" label="Yükleniyor…" />
         ) : items.length === 0 ? (
           <div className="px-3.5 py-6 flex flex-col items-center gap-2 text-center">
             <BellOff className="w-4 h-4 text-[var(--fg-subtle)]" />

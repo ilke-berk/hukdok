@@ -6,11 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 const casesApi = vi.hoisted(() => ({
-  getCases: async () => ({ cases: [], total: 0 }),
-  getCaseStats: async () => ({
+  getCases: async (): Promise<{ cases: unknown[]; total: number }> => ({ cases: [], total: 0 }),
+  getCaseStats: async (): Promise<unknown> => ({
     total: 14383, active: 3050, closed: 11333, appeal: 26, danis_active: 0,
     statuses: { DERDEST: 3050, MAHZEN: 11333 },
     derdest_stages: { ISTINAF: 475, TEMYIZ: 261 },
@@ -32,8 +33,16 @@ import AvukatDashboard from "./AvukatDashboard";
 describe("AvukatDashboard — dosya durumu kutuları", () => {
   let container: HTMLDivElement;
   let root: Root | null = null;
+  let queryClient: QueryClient;
+  const ciz = () =>
+    act(() => root!.render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><AvukatDashboard /></MemoryRouter>
+      </QueryClientProvider>,
+    ));
 
   beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -48,7 +57,7 @@ describe("AvukatDashboard — dosya durumu kutuları", () => {
 
   it("Derdest · İstinafta · Temyizde · Arşiv sırasıyla sayıları basar", async () => {
     root = createRoot(container);
-    act(() => root!.render(<MemoryRouter><AvukatDashboard /></MemoryRouter>));
+    ciz();
     for (let i = 0; i < 50 && !container.textContent?.includes("3050"); i++) {
       await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     }
@@ -64,5 +73,34 @@ describe("AvukatDashboard — dosya durumu kutuları", () => {
     expect(kutular[3]).toContain("Arşiv");
     expect(kutular[3]).toContain("11333");
     expect(section.textContent).not.toContain("Danış");
+  });
+
+  it("Faz 3: panele geri dönüşte önbellekteki sayılar ANINDA çizilir — tazeleme sürerken iskelet/— yok", async () => {
+    root = createRoot(container);
+    ciz();
+    for (let i = 0; i < 50 && !container.textContent?.includes("3050"); i++) {
+      await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    }
+    act(() => root!.unmount());
+
+    // İkinci ziyaret: sunucu hiç yanıt vermiyor (yavaş ağ) — yine de eldeki veri görünmeli.
+    const orijinalStats = casesApi.getCaseStats;
+    const orijinalCases = casesApi.getCases;
+    casesApi.getCaseStats = () => new Promise(() => {});
+    casesApi.getCases = () => new Promise(() => {});
+    try {
+      root = createRoot(container);
+      ciz();
+      const section = container.querySelector("section")!;
+      const kutular = Array.from(section.querySelectorAll("button")).map(b => b.textContent ?? "");
+      expect(kutular[0]).toContain("3050");
+      expect(kutular[3]).toContain("11333");
+      // Yükleme yer tutucusu ("—") hiçbir kutuda yok
+      kutular.forEach(k => expect(k).not.toContain("—"));
+      expect(container.querySelector("[role='status']")).toBeNull();
+    } finally {
+      casesApi.getCaseStats = orijinalStats;
+      casesApi.getCases = orijinalCases;
+    }
   });
 });

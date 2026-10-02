@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
+import { InlineSkeleton, TableSkeleton } from "@/components/skeletons/Skeletons";
 import { useQuery } from "@tanstack/react-query";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { usePageSearch } from "@/hooks/usePageSearch";
 import {
-  Phone, Mail, MapPin, Loader2,
+  Phone, Mail, MapPin,
   Users, Gavel, Stethoscope, Building2, User2, UserPlus,
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
   ShieldCheck, AlertTriangle, ExternalLink,
@@ -375,17 +376,14 @@ const ClientList = () => {
               className="flex-1"
               meta={
                 <span className="font-mono text-[10px] tracking-[0.14em] uppercase text-[var(--fg-subtle)]">
-                  {isLoading ? "Yükleniyor…" : clientsError ? "—" : `${filteredClients.length} kayıt`}
+                  {isLoading ? <InlineSkeleton /> : clientsError ? "—" : `${filteredClients.length} kayıt`}
                 </span>
               }
             />
           </div>
 
           {isLoading ? (
-            <div className="grid place-items-center gap-3 py-20 text-[var(--fg-subtle)]">
-              <Loader2 className="w-7 h-7 animate-spin" />
-              <span className="font-mono text-[10px] tracking-[0.18em] uppercase">Yükleniyor</span>
-            </div>
+            <TableSkeleton rows={8} columns={3} header={false} label="Müvekkiller yükleniyor…" />
           ) : clientsError ? (
             // G002: hatada "müvekkil bulunamadı" yazmak veri kaybı izlenimi veriyordu.
             <DataErrorBanner

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
-import { BookOpen, History, Loader2, Menu, Scale } from "lucide-react";
+import { BookOpen, History, Menu, Scale } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useOdakModu } from "@/hooks/useOdakModu";
@@ -496,10 +497,7 @@ export default function HukukbotPage() {
         >
           <div className={`${OKUMA_SUTUNU} pt-5 pb-8 min-h-full flex flex-col`}>
             {oturumYukleniyor && (
-              <div role="status" className="flex items-center gap-2 text-[13px] text-[var(--fg-muted)]">
-                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                Sohbet yükleniyor...
-              </div>
+              <LineListSkeleton count={3} className="space-y-6" label="Sohbet yükleniyor..." />
             )}
             {!oturumYukleniyor && oturumHatasi && (
               <p role="alert" data-testid="hukukbot-oturum-hatasi" className="text-[13px] text-tone-danger">

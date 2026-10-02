@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCasePrefetch, type PrefetchHandlers } from "@/hooks/useCaseQueries";
+import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import { AlertTriangle, CalendarClock, Info, MailCheck, MailQuestion, UserX } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -47,6 +49,7 @@ export function TimedWorkPanel() {
 
   const retry = useCallback(() => setReloadKey((k) => k + 1), []);
   const openCase = useCallback((caseId: number) => navigate(`/cases/${caseId}`), [navigate]);
+  const onYukle = useCasePrefetch();
 
   useEffect(() => {
     let cancelled = false;
@@ -101,11 +104,7 @@ export function TimedWorkPanel() {
       <UnresolvedStrip env={unresolved} error={unresolvedError} loading={loading} />
 
       {loading ? (
-        <div className="p-4 grid gap-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-14 bg-[var(--bg-sunken)] animate-pulse" />
-          ))}
-        </div>
+        <CardListSkeleton count={3} itemClassName="h-14" className="p-4" label="Süreli işler yükleniyor…" />
       ) : overviewError ? (
         <DataErrorBanner description={overviewError} onRetry={retry} className="border-0" />
       ) : !overview || rows.length === 0 ? (
@@ -137,7 +136,7 @@ export function TimedWorkPanel() {
           </div>
           <div className="flex flex-col">
             {rows.map((row) => (
-              <TimedWorkRowView key={row.item.id} row={row} onOpen={openCase} />
+              <TimedWorkRowView key={row.item.id} row={row} onOpen={openCase} onYukle={onYukle} />
             ))}
           </div>
         </>
@@ -219,9 +218,11 @@ function toneClass(row: TimedWorkRow): string {
 function TimedWorkRowView({
   row,
   onOpen,
+  onYukle,
 }: {
   row: TimedWorkRow;
   onOpen: (caseId: number) => void;
+  onYukle?: (caseId: number) => PrefetchHandlers;
 }) {
   const { item } = row;
   const caseId = item.case_id;
@@ -272,6 +273,7 @@ function TimedWorkRowView({
         <button
           type="button"
           onClick={() => onOpen(caseId)}
+          {...onYukle?.(caseId)}
           className="min-w-0 text-left transition-colors hover:text-[var(--brand)]"
         >
           {govde}

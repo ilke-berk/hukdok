@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, memo } from "react";
+import { LineListSkeleton, PageSkeleton } from "@/components/skeletons/Skeletons";
 import { useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useConfig, ConfigItem, ListUsage, DeleteMode } from "@/hooks/useConfig";
@@ -798,8 +799,8 @@ const AdminPage = () => {
     if (isLoading) {
         return (
             <div>
-                <div className="max-w-[1600px] mx-auto flex justify-center py-10">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <div className="max-w-[1600px] mx-auto">
+                    <PageSkeleton label="Yönetim paneli yükleniyor…" />
                 </div>
             </div>
         );
@@ -1825,9 +1826,7 @@ function DeletedRecordsPanel() {
                 </CardHeader>
                 <CardContent>
                     {loading && (
-                        <p className="text-xs text-muted-foreground text-center py-4 flex items-center justify-center gap-2">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Yükleniyor…
-                        </p>
+                        <LineListSkeleton count={3} className="py-2" label="Silinmiş kayıtlar yükleniyor…" />
                     )}
                     {!loading && total === 0 && (
                         <p className="text-xs text-muted-foreground text-center py-4">Silinmiş kayıt yok.</p>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import {
   Scale,
@@ -11,7 +12,8 @@ import {
   Archive,
   Landmark,
 } from "lucide-react";
-import { useCases, CASE_LIST_ERROR } from "@/hooks/useCases";
+import { CASE_LIST_ERROR } from "@/hooks/useCases";
+import { SON_DOSYALAR_FILTRESI, useCaseListQuery, useCasePrefetch, useCaseStatsQuery, useDavaListesiIsitma } from "@/hooks/useCaseQueries";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { apiClient } from "@/lib/api";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
@@ -88,51 +90,42 @@ function statusChip(status: string) {
   );
 }
 
+// Veri yokken sabit boş dizi (her render yeni `[]` üretmesin).
+const BOS_DOSYALAR: never[] = [];
+
 export default function AvukatDashboard() {
   useSetPageTitle("Anasayfa", ["Avukat Paneli"]);
   const navigate = useNavigate();
-  const { getCases, getCaseStats } = useCases();
-  const [stats, setStats] = useState<CaseStats>({ total: 0, active: 0, closed: 0, appeal: 0, statuses: {} });
-  const [recentCases, setRecentCases] = useState<DashboardCase[]>([]);
   const [hearings, setHearings] = useState<HearingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const [statsData, casesData] = await Promise.all([
-          getCaseStats(),
-          getCases<DashboardCase>({ limit: 8, offset: 0 }),
-        ]);
-        if (cancelled) return;
-        if (statsData) {
-          setStats({
-            total: statsData.total || 0,
-            active: statsData.active || 0,
-            closed: statsData.closed || 0,
-            appeal: statsData.appeal || 0,
-            danis_active: statsData.danis_active || 0,
-            statuses: statsData.statuses || {},
-            derdest_stages: statsData.derdest_stages || {},
-          });
-        }
-        setRecentCases(casesData?.cases ?? []);
-        setLoadError(null);
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-        setLoadError(error instanceof Error ? error.message : CASE_LIST_ERROR);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [getCases, getCaseStats, reloadKey]);
+  // Faz 3: sayaçlar + son dosyalar react-query önbelleğinden (`hooks/useCaseQueries.ts`) — panele
+  // dönüşte eldeki veri anında çizilir, tazesi arkada gelir. Anahtarlar Dava Listesi ve İdari
+  // panelle ORTAK: birinde çekilen sayaç/ilk sayfa diğerinde iskeletsiz açılır.
+  const statsQuery = useCaseStatsQuery<Partial<CaseStats>>();
+  // Faz 4: dava satırında önden yükleme + boşta Dava Listesi ilk sayfasını ısıtma
+  const onYukle = useCasePrefetch();
+  useDavaListesiIsitma();
+  const recentQuery = useCaseListQuery<DashboardCase>(SON_DOSYALAR_FILTRESI);
+  const stats: CaseStats = useMemo(() => {
+    const d = statsQuery.data;
+    return {
+      total: d?.total || 0,
+      active: d?.active || 0,
+      closed: d?.closed || 0,
+      appeal: d?.appeal || 0,
+      danis_active: d?.danis_active || 0,
+      statuses: d?.statuses || {},
+      derdest_stages: d?.derdest_stages || {},
+    };
+  }, [statsQuery.data]);
+  const recentCases = recentQuery.data?.cases ?? BOS_DOSYALAR;
+  // İskelet/"—" yalnız elde veri yokken; önbellekten açılışta arkaplan tazelemesi sessizdir.
+  const loading = recentQuery.isPending || statsQuery.isPending;
+  // G002: liste hatası boş listeden ayrı tutulur (null = hata yok)
+  const loadError = recentQuery.isError
+    ? (recentQuery.error instanceof Error ? recentQuery.error.message : CASE_LIST_ERROR)
+    : null;
+  const yeniden = () => { recentQuery.refetch(); statsQuery.refetch(); };
 
   useEffect(() => {
     apiClient.fetch("/api/hearing-dates")
@@ -272,6 +265,7 @@ export default function AvukatDashboard() {
                         key={h.id ?? `${h.case_id}-${idx}`}
                         type="button"
                         onClick={() => navigate(`/cases/${h.case_id}`)}
+                        {...onYukle(h.case_id)}
                         className="w-full grid grid-cols-[72px_1fr_auto] gap-4 items-center py-3 text-left border-t border-[var(--border)] transition-colors hover:bg-[var(--bg)]"
                       >
                         <div>
@@ -348,17 +342,13 @@ export default function AvukatDashboard() {
           />
           <HairlineCard className="mt-3" padded={false}>
             {loading ? (
-              <div className="p-4 grid gap-2">
-                {[1, 2, 3, 4].map(i => (
-                  <div key={i} className="h-16 bg-[var(--bg-sunken)] animate-pulse" />
-                ))}
-              </div>
+              <CardListSkeleton count={4} itemClassName="h-16" className="p-4" label="Dosyalar yükleniyor…" />
             ) : loadError ? (
               // G002: hatada "Dava bulunamadı." yazmak veri kaybı izlenimi veriyordu.
               <DataErrorBanner
                 description={loadError}
-                onRetry={() => setReloadKey(k => k + 1)}
-                isRetrying={loading}
+                onRetry={yeniden}
+                isRetrying={recentQuery.isFetching}
                 className="border-0"
               />
             ) : recentCases.length === 0 ? (
@@ -373,6 +363,7 @@ export default function AvukatDashboard() {
                     key={c.id}
                     type="button"
                     onClick={() => navigate(`/cases/${c.id}`)}
+                    {...onYukle(c.id)}
                     className={`grid grid-cols-[auto_1fr_auto] gap-4 items-start px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg)] ${idx > 0 ? "border-t border-[var(--border)]" : ""}`}
                   >
                     <Gavel className="w-4 h-4 text-[var(--brand)] mt-0.5 shrink-0" />

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { LineListSkeleton } from "@/components/skeletons/Skeletons";
 import {
   Check,
-  Loader2,
   Menu,
   MessageSquare,
   MoreHorizontal,
@@ -341,10 +341,7 @@ export function OturumListesi({
       </div>
       <nav aria-label="Sohbetler" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 [scrollbar-width:thin]">
         {yukleniyor && (
-          <div role="status" className="flex items-center gap-2 px-2 py-3 text-[12.5px] text-[var(--fg-muted)]">
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-            Sohbetler yükleniyor...
-          </div>
+          <LineListSkeleton count={6} className="px-2 py-3" label="Sohbetler yükleniyor..." />
         )}
         {!yukleniyor && hata && (
           <p role="alert" className="px-2 py-3 text-[12.5px] text-tone-danger">

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-// G185: CaseList yalnız filtre rayının okuduğu üç listeye (lawyers, event_types,
-// service_types) abone olur — useConfig() 32 `/api/config/*` ucu çağırıyordu.
+// G185: CaseList yalnız filtre rayının okuduğu listelere abone olur — useConfig() 32
+// `/api/config/*` ucu çağırıyordu. 02.10: event_types (Olay Türü filtresi KALKTI) yerine
+// medical_processes (Tıbbi Süreç) → lawyers + service_types ile üç uç. Tıbbi Olay seçenekleri config
+// listesinden DEĞİL `/api/cases/tibbi-olay-secenekleri`nden (veriden, sayılı, sürece göre daralan).
 // Gerçek useConfig modülü + gerçek QueryClient; ağ (authRequest), MSAL, dava hook'u
 // taklit edilir. Radix Select içeriği jsdom'da kapalıyken basılmadığı için Select
 // düz DOM'a indirilir: seçenek SIRASI ve değeri doğrudan okunur.
@@ -27,7 +29,19 @@ vi.mock("@/hooks/useCases", () => ({
   useCases: () => casesApi,
   CASE_LIST_ERROR: "Dava listesi alınamadı — sunucuya ulaşılamadı.",
 }));
-vi.mock("@/lib/api", () => ({ apiClient: { fetch: async () => ({ ok: true, json: async () => [] }) } }));
+const olayIstekleri = vi.hoisted(() => [] as string[]);
+vi.mock("@/lib/api", () => ({
+  apiClient: {
+    fetch: async (url: string) => {
+      if (!url.startsWith("/api/cases/tibbi-olay-secenekleri")) return { ok: true, json: async () => [] };
+      olayIstekleri.push(url);
+      const body = url.includes("tibbi_surec=")
+        ? [{ name: "Omuz Distosisi", count: 97 }]
+        : [{ name: "Omuz Distosisi", count: 97 }, { name: "Asfiksik Doğum", count: 90 }];
+      return { ok: true, json: async () => body };
+    },
+  },
+}));
 
 type Kids = { children?: ReactNode };
 vi.mock("@/components/ui/select", () => ({
@@ -50,7 +64,9 @@ vi.mock("@/components/ui/command", () => ({
   CommandInput: () => null,
   CommandList: ({ children }: Kids) => <div>{children}</div>,
   CommandGroup: ({ children }: Kids) => <div>{children}</div>,
-  CommandItem: ({ value, children }: Kids & { value: string }) => <div data-option={value}>{children}</div>,
+  CommandItem: ({ value, children, onSelect }: Kids & { value: string; onSelect?: () => void }) => (
+    <div data-option={value} onClick={onSelect}>{children}</div>
+  ),
 }));
 
 import CaseList from "./CaseList";
@@ -59,7 +75,7 @@ import CaseList from "./CaseList";
 
 // Bilinçli alfabetik DEĞİL: liste backend sırasıyla (sequence) basılmalı.
 const LAWYERS = [{ code: "ZZ", name: "Av. Zeynep Zor" }, { code: "AA", name: "Av. Ali Ak" }];
-const EVENT_TYPES = [{ code: "TO", name: "Tıbbi Olay" }, { code: "BO", name: "Belgeleme Olayı" }];
+const MEDICAL_PROCESSES = [{ code: "DY", name: "Doğum Yönetimi" }, { code: "CE", name: "Cerrahi" }];
 const SERVICE_TYPES = [{ code: "LR", name: "Lexis Rapor" }, { code: "DT", name: "Dava Takibi" }];
 
 const configUrls = (): string[] =>
@@ -75,9 +91,10 @@ describe("CaseList — config aboneliği (G185)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    olayIstekleri.length = 0;
     const bodies: Record<string, unknown> = {
       "/api/config/lawyers": LAWYERS,
-      "/api/config/event_types": EVENT_TYPES,
+      "/api/config/medical_processes": MEDICAL_PROCESSES,
       "/api/config/service_types": SERVICE_TYPES,
     };
     authRequestMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => bodies[url] ?? [] }));
@@ -144,18 +161,18 @@ describe("CaseList — config aboneliği (G185)", () => {
   const texts = (els: HTMLElement[]) => els.map(e => e.textContent);
   const values = (els: HTMLElement[]) => els.map(e => e.getAttribute("data-option"));
 
-  it("monte edilince yalnız üç liste ucu çağrılır (≤ 3; useConfig 32 uç çağırıyordu)", async () => {
+  it("monte edilince yalnız üç liste ucu çağrılır (useConfig 32 uç çağırıyordu)", async () => {
     render();
     await waitFor(
-      () => ["lawyers", "event_types", "service_types"]
+      () => ["lawyers", "medical_processes", "service_types"]
         .every(k => queryClient.getQueryState(["config", k])?.status === "success"),
       "üç liste yüklendi",
     );
     await flush();
 
     expect(configUrls()).toEqual([
-      "/api/config/event_types",
       "/api/config/lawyers",
+      "/api/config/medical_processes",
       "/api/config/service_types",
     ]);
   });
@@ -163,19 +180,40 @@ describe("CaseList — config aboneliği (G185)", () => {
   it("filtre seçicileri listeleri backend sırasıyla ve aynı değerlerle basar", async () => {
     render();
     await waitFor(() => optionsUnder("Sorumlu Avukat").length === 3, "avukat seçenekleri doldu");
-    await waitFor(() => optionsUnder("Olay Türü").length === 3, "olay türü seçenekleri doldu");
+    await waitFor(() => optionsUnder("Tıbbi Süreç").length === 3, "tıbbi süreç seçenekleri doldu");
+    await waitFor(() => optionsUnder("Tıbbi Olay").length === 3, "tıbbi olay seçenekleri doldu");
     await waitFor(() => optionsUnder("Hizmet Türü").length === 3, "hizmet türü seçenekleri doldu");
 
     const lawyers = optionsUnder("Sorumlu Avukat");
     expect(texts(lawyers)).toEqual(["Tüm Avukatlar", "Av. Zeynep Zor", "Av. Ali Ak"]);
     expect(values(lawyers)).toEqual(["ALL", "ZZ", "AA"]);
 
-    const events = optionsUnder("Olay Türü");
-    expect(texts(events)).toEqual(["Tümü", "Tıbbi Olay", "Belgeleme Olayı"]);
-    expect(values(events)).toEqual(["ALL", "Tıbbi Olay", "Belgeleme Olayı"]);
+    expect(optionsUnder("Olay Türü")).toEqual([]);   // 02.10: filtre kalktı
+
+    const surecler = optionsUnder("Tıbbi Süreç");
+    expect(texts(surecler)).toEqual(["Tümü", "Doğum Yönetimi", "Cerrahi"]);
+    expect(values(surecler)).toEqual(["ALL", "Doğum Yönetimi", "Cerrahi"]);
+
+    const olaylar = optionsUnder("Tıbbi Olay");
+    expect(texts(olaylar)).toEqual(["Tümü", "Omuz Distosisi97", "Asfiksik Doğum90"]);   // ad + sayı
+    expect(values(olaylar)).toEqual(["ALL", "Omuz Distosisi", "Asfiksik Doğum"]);
+    expect(olayIstekleri).toEqual(["/api/cases/tibbi-olay-secenekleri"]);   // süreç seçili değil
 
     const services = optionsUnder("Hizmet Türü");
     expect(texts(services)).toEqual(["Tümü", "Lexis Rapor", "Dava Takibi"]);
     expect(values(services)).toEqual(["ALL", "Lexis Rapor", "Dava Takibi"]);
+  });
+
+  it("Tıbbi Süreç seçilince olay seçenekleri o sürece göre yeniden istenir", async () => {
+    render();
+    await waitFor(() => optionsUnder("Tıbbi Süreç").length === 3, "tıbbi süreç seçenekleri doldu");
+    await waitFor(() => optionsUnder("Tıbbi Olay").length === 3, "tıbbi olay seçenekleri doldu");
+
+    const dogum = optionsUnder("Tıbbi Süreç").find(o => o.getAttribute("data-option") === "Doğum Yönetimi")!;
+    act(() => dogum.click());
+
+    await waitFor(() => optionsUnder("Tıbbi Olay").length === 2, "olay seçenekleri daraldı");
+    expect(olayIstekleri.at(-1)).toBe(`/api/cases/tibbi-olay-secenekleri?tibbi_surec=${encodeURIComponent("Doğum Yönetimi")}`);
+    expect(values(optionsUnder("Tıbbi Olay"))).toEqual(["ALL", "Omuz Distosisi"]);
   });
 });

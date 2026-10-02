@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { useCasePrefetch } from "@/hooks/useCaseQueries";
+import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import { FileText, ArrowRight, User } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -102,6 +104,7 @@ interface RecentDocumentsPanelProps {
 }
 
 export function RecentDocumentsPanel({ sinceHours = 24, limit = 8, onUpload }: RecentDocumentsPanelProps) {
+  const onYukle = useCasePrefetch();
   const navigate = useNavigate();
   const [docs, setDocs] = useState<RecentDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,11 +141,7 @@ export function RecentDocumentsPanel({ sinceHours = 24, limit = 8, onUpload }: R
   if (loading) {
     return (
       <HairlineCard className="mt-3" padded={false}>
-        <div className="p-4 grid gap-2">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-14 bg-[var(--bg-sunken)] animate-pulse" />
-          ))}
-        </div>
+        <CardListSkeleton count={3} itemClassName="h-14" className="p-4" label="Son belgeler yükleniyor…" />
       </HairlineCard>
     );
   }
@@ -194,6 +193,7 @@ export function RecentDocumentsPanel({ sinceHours = 24, limit = 8, onUpload }: R
               type="button"
               data-testid="recent-doc-row"
               onClick={() => navigate(`/cases/${doc.case_id}`)}
+              {...onYukle(doc.case_id)}
               className={`grid grid-cols-[auto_1fr] gap-3 items-start px-4 py-3 text-left transition-colors hover:bg-[var(--bg)] ${idx > 0 ? "border-t border-[var(--border)]" : ""}`}
             >
               <FileText className="w-4 h-4 text-[var(--brand)] mt-0.5 shrink-0" />

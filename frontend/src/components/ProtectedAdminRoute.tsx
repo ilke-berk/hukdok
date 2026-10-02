@@ -1,6 +1,6 @@
 import { Navigate } from "react-router";
 import { useMsal } from "@azure/msal-react";
-import { Loader2 } from "lucide-react";
+import { PageSkeleton } from "@/components/skeletons/Skeletons";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 interface ProtectedAdminRouteProps {
@@ -15,9 +15,7 @@ export const ProtectedAdminRoute = ({ children }: ProtectedAdminRouteProps) => {
 
     if (inProgress !== "none" && accounts.length === 0) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <Loader2 className="h-8 w-8 animate-spin text-brand" />
-            </div>
+            <PageSkeleton />
         );
     }
 
@@ -27,9 +25,7 @@ export const ProtectedAdminRoute = ({ children }: ProtectedAdminRouteProps) => {
 
     if (isAdmin === null) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <Loader2 className="h-8 w-8 animate-spin text-brand" />
-            </div>
+            <PageSkeleton />
         );
     }
 

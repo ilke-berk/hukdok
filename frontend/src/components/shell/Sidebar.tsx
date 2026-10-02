@@ -1,4 +1,5 @@
 import { useMsal } from "@azure/msal-react";
+import { sayfaParcasiniOnYukle } from "@/lib/sayfaOnYukleme";
 import { useNavigate, useLocation } from "react-router";
 import {
   Home,
@@ -87,6 +88,9 @@ export function Sidebar({ open, onClose, hoverIleKapan = true }: SidebarProps) {
         key={item.id}
         type="button"
         onClick={() => { navigate(item.path); onClose(); }}
+        // Faz 4: fare/odak gelince sayfa parçası arkada iner — tıklayınca iskelet çoğu kez görünmez
+        onMouseEnter={() => sayfaParcasiniOnYukle(item.path)}
+        onFocus={() => sayfaParcasiniOnYukle(item.path)}
         tabIndex={open ? 0 : -1}
         className={[
           "flex items-center gap-3 px-2.5 py-2.5 rounded-[4px] text-left relative",

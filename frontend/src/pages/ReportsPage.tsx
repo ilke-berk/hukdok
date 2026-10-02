@@ -1,4 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { SkeletonRegion } from "@/components/skeletons/Skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useSearchParams } from "react-router";
 import { useMsal } from "@azure/msal-react";
 import { toast } from "sonner";
@@ -778,9 +780,12 @@ const ReportsPage = () => {
     const raporSekmesi = katalogHatasi ? (
         <DataErrorBanner description={katalogHatasi} onRetry={katalogYukle} isRetrying={katalogYukleniyor} />
     ) : !katalog ? (
-        <HairlineCard>
-            <p className="text-[13px] text-[var(--fg-subtle)]">Rapor kataloğu yükleniyor…</p>
-        </HairlineCard>
+        // Sekmenin gerçek düzeni: asistan satırı + tanım şeridi + tablo
+        <SkeletonRegion label="Rapor kataloğu yükleniyor…" className="grid gap-5 min-w-0">
+            <Skeleton className="h-[104px] w-full" />
+            <Skeleton className="h-9 w-2/3" />
+            <Skeleton className="h-[240px] w-full" />
+        </SkeletonRegion>
     ) : (
         <section data-testid="rapor-sekmesi" className="grid gap-5 min-w-0">
             {/* 0. Asistan satırı (G143/G174) — sekmenin ilk öğesi; anahtar kapalı/409 → tek satırlık bilgi kartı (G175) */}

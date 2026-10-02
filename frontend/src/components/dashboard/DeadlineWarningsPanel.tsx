@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCasePrefetch, type PrefetchHandlers } from "@/hooks/useCaseQueries";
+import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { useNavigate } from "react-router";
 import { AlertTriangle, CalendarClock, Info } from "lucide-react";
 import { apiClient } from "@/lib/api";
@@ -42,7 +44,11 @@ function toneClass(daysLeft: number): string {
     : "text-tone-caution border-tone-caution/40 bg-tone-caution/10";
 }
 
-function DeadlineRowView({ row, onOpen }: { row: DeadlineRow; onOpen: (caseId: number) => void }) {
+function DeadlineRowView({ row, onOpen, onYukle }: {
+  row: DeadlineRow;
+  onOpen: (caseId: number) => void;
+  onYukle?: (caseId: number) => PrefetchHandlers;
+}) {
   const { item, parsed, daysLeft, headline } = row;
   const caseId = item.case_id;
   const Etiket = item.type === DURUSMA_TYPE ? CalendarClock : AlertTriangle;
@@ -97,6 +103,7 @@ function DeadlineRowView({ row, onOpen }: { row: DeadlineRow; onOpen: (caseId: n
         <button
           type="button"
           onClick={() => onOpen(caseId)}
+          {...onYukle?.(caseId)}
           className="min-w-0 text-left transition-colors hover:text-[var(--brand)]"
         >
           {govde}
@@ -119,6 +126,7 @@ export function DeadlineWarningsPanel() {
 
   const retry = useCallback(() => setReloadKey((k) => k + 1), []);
   const openCase = useCallback((caseId: number) => navigate(`/cases/${caseId}`), [navigate]);
+  const onYukle = useCasePrefetch();
 
   useEffect(() => {
     let cancelled = false;
@@ -160,11 +168,7 @@ export function DeadlineWarningsPanel() {
       </p>
 
       {loading ? (
-        <div className="p-4 grid gap-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-[var(--bg-sunken)] animate-pulse" />
-          ))}
-        </div>
+        <CardListSkeleton count={3} itemClassName="h-16" className="p-4" label="Süre uyarıları yükleniyor…" />
       ) : error ? (
         <DataErrorBanner description={error} onRetry={retry} className="border-0" />
       ) : rows.length === 0 ? (
@@ -181,7 +185,7 @@ export function DeadlineWarningsPanel() {
       ) : (
         <div className="flex flex-col">
           {rows.map((row) => (
-            <DeadlineRowView key={row.item.id} row={row} onOpen={openCase} />
+            <DeadlineRowView key={row.item.id} row={row} onOpen={openCase} onYukle={onYukle} />
           ))}
         </div>
       )}

@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Download, History, Loader2, RefreshCw, Upload } from "lucide-react";
+import { TableSkeleton } from "@/components/skeletons/Skeletons";
 import type { RaporKosuListesi, RaporKosusu } from "@/lib/reports";
 import { FORMAT_ETIKETLERI, KAYNAK_ETIKETLERI, boyutBicimle, tarihSaatBicimle } from "@/lib/reports";
 import { Eyebrow } from "@/components/dashboard/primitives";
@@ -82,7 +83,7 @@ export function RunsTable({ liste, yukleniyor, hata, onRetry, limit, offset, onS
                     <DataErrorBanner description={hata} onRetry={onRetry} isRetrying={yukleniyor} />
                 </div>
             ) : !liste ? (
-                <p className="px-4 py-12 text-center text-[13px] text-[var(--fg-subtle)]">Geçmiş yükleniyor…</p>
+                <TableSkeleton rows={4} columns={5} label="Geçmiş yükleniyor…" />
             ) : liste.kosular.length === 0 ? (
                 <p className="px-4 py-12 text-center text-[13px] text-[var(--fg-subtle)]">Henüz indirme yok.</p>
             ) : (
