@@ -32,6 +32,9 @@ Kural:
   Taraflar föyün ham satırından `hukdok_aktarim._taraflari_yaz`, föy ↔ müvekkil bağı
   `_foy_muvekkilini_bagla`; esas `case_manager.sync_current_esas` (tek yazma yolu).
   Föyün `onceki_tracking_no`su varsa (sönen kart) elle karar — RET (veride 0).
+* Föyün hizmet satırı (`case_hizmetleri`, G249) föyle birlikte yeni karta geçer
+  (`case_hizmetleri.foydan_yaz`); elle girilmiş hizmet satırları KALAN kartta kalır
+  (o kart için girilmişlerdir). İki kartın `hizmet_turu` özeti satırlardan yenilenir.
 * Belgeler KALAN kartta kalır (hangi föyün belgesi olduğu bilinmiyor — belge koruma şartı).
 * İlişki: `source=kalan`, `target=yeni`, `relation_type=AYRISTIRILAN`; aynı çift için ikinci
   satır açılmaz. İki kartta `case_history` `kart_ayirma`; `refresh_missing_required`.
@@ -57,7 +60,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models
-from managers import case_manager
+from managers import case_hizmetleri, case_manager
 from party_check import normalize_party_key
 from scripts import hukdok_aktarim as ha
 from scripts import kartsiz_foy_kart_ac as kfa
@@ -257,6 +260,12 @@ def yeni_kart_ac(db, kalan: models.Case, grup: Sequence[Tuple[models.CaseFoy, ha
         foy.case_party_id = None
         db.flush()
         ha._foy_muvekkilini_bagla(db, yeni, satir, sistem_no=foy.sistem_no, source=source)
+        # G249 — föyün hizmet satırı föyle birlikte taşınır (tek yazma yolu
+        # `case_hizmetleri.foydan_yaz`: satır yeni kartın müvekkil tarafına YERİNDE
+        # geçer, iki kartın tarihçesine düşer, iki kartın özeti yenilenir). Föy yeni
+        # kartta müvekkile bağlanamadıysa eski kartta kalan satır silinir — başka
+        # kartın föyüne ait hizmet satırı kalan kartta durmaz.
+        case_hizmetleri.foydan_yaz(db, foy, source=source)
     db.flush()
     return yeni, ""
 

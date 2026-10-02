@@ -16,6 +16,10 @@ Kurallar (belge koruma şartı, G063/G045/G062 tek yazıcı desenleri):
   tarafa yeniden bağlanır (yoksa taraf taşınır) — SET NULL tuzağına düşmez.
 * Taraflar/avukatlar AD bazlı tekilleştirilerek taşınır (kalan kartta zaten
   varsa mükerrerdeki satır silinir — belge bağı önce yeniden yazılır).
+* Hizmet satırları (`case_hizmetleri`, G249) tarafla birlikte taşınır — tek yazma
+  yolu `case_hizmetleri.tarafi_tasi`: föy satırı hep taşınır, kalan kartta aynı
+  (müvekkil, hizmet) ELLE satırı varsa taşınan elle satır birleşir; iki kartın
+  `hizmet_turu` özeti satırlardan yenilenir (düz alan gibi kopyalanmaz).
 * Föyler, aşama satırları, esas tarihçesi, ilişkiler, duruşmalar, bildirimler,
   aşama günlükleri kalan karta yeniden işaretlenir; tarihçe (`case_history`)
   mükerrerde KALIR (o kartın geçmişidir), kalan karta tek birleştirme notu düşer.
@@ -42,7 +46,7 @@ from sqlalchemy import func
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import models
-from managers import case_manager
+from managers import case_hizmetleri, case_manager
 from managers.reference_lists import tr_upper
 from party_check import normalize_party_key
 from scripts.hukdok_aktarim import _baslik_anahtari
@@ -138,17 +142,32 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
     kalan_taraf = {_taraf_anahtari(p): p for p in kalan.parties}
     taraf_esleme: Dict[int, int] = {}
     silinecek_taraflar: List[models.CaseParty] = []
+    hizmet_tasima: List[Tuple[int, int]] = []      # (mükerrerdeki taraf id, kalandaki taraf id)
     for p in list(mukerrer.parties):
         hedef = kalan_taraf.get(_taraf_anahtari(p))
         if hedef is None:
             mukerrer.parties.remove(p)
             kalan.parties.append(p)               # kalanda yok → taşı
             kalan_taraf[_taraf_anahtari(p)] = p
+            hizmet_tasima.append((p.id, p.id))     # taraf satırı taşındı: yalnız kart değişir
             t["taraf_tasinan"] = t.get("taraf_tasinan", 0) + 1
         else:
             taraf_esleme[p.id] = hedef.id          # kalanda var → belge bağı yeniden yazılır, satır silinir
+            hizmet_tasima.append((p.id, hedef.id))
             silinecek_taraflar.append(p)
     db.flush()
+
+    # 1b) Hizmet satırları (G249): taraf nereye gittiyse o tarafın hizmet satırları da
+    # oraya gider — tek yazma yolundan (`case_hizmetleri.tarafi_tasi`; iki kartın özeti
+    # orada yenilenir). Föy satırı her zaman taşınır; kalan kartta aynı (müvekkil,
+    # hizmet) ELLE satırı zaten varsa taşınan elle satır birleşir (kısmi UNIQUE).
+    # Taraf satırı silinmeden ÖNCE: `case_hizmetleri.case_party_id` RESTRICT.
+    for eski_taraf_id, yeni_taraf_id in hizmet_tasima:
+        hizmet = case_hizmetleri.tarafi_tasi(
+            db, eski_party_id=eski_taraf_id, yeni_party_id=yeni_taraf_id, yeni_case_id=kalan.id)
+        for ad, sayi in (("hizmet", hizmet["tasinan"]), ("hizmet_birlesen", hizmet["birlesen"])):
+            if sayi:
+                t[ad] = t.get(ad, 0) + sayi
 
     # 2) Belgeler: kart + taraf bağı (SET NULL tuzağı: taraf silinmeden ÖNCE yeniden bağla)
     for d in list(mukerrer.documents):
@@ -219,10 +238,19 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
     # 7) Kart alanları: klasör no birleşimi, boş alanları mükerrerden tamamla, notlar
     kalan.klasor_no_2 = _klasor_birlesimi(kalan.klasor_no_2, mukerrer.klasor_no_2)
     for alan in ("subject", "court", "opening_date", "acceptance_date", "hasar_dosya_no", "hukuk_no",
-                 "sub_type", "bureau_type", "muvekkil_tipi", "hizmet_turu"):
+                 "sub_type", "bureau_type", "muvekkil_tipi"):
         if getattr(kalan, alan) in (None, "") and getattr(mukerrer, alan) not in (None, ""):
             setattr(kalan, alan, getattr(mukerrer, alan))
             t["alan_tamamlanan"] = t.get("alan_tamamlanan", 0) + 1
+    # `hizmet_turu` düz alan DEĞİL, hizmet satırlarından TÜRETİLEN özet (G248): satırlar
+    # 1b'de taşındı, özet `tarafi_tasi`da yenilendi. Tek istisna hizmet satırı HİÇ
+    # yazılmamış kart (geriye dönük doldurma öncesi; kolonda aktarımın eski tek değeri
+    # durur, `ozeti_yenile` o karta dokunmaz): kalanda satır yoksa ve kolon boşsa
+    # mükerrerin eski değeri kaybolmasın diye tamamlanır.
+    if (kalan.hizmet_turu in (None, "") and mukerrer.hizmet_turu not in (None, "")
+            and not case_hizmetleri.kart_satirlari(db, kalan.id)):
+        kalan.hizmet_turu = mukerrer.hizmet_turu
+        t["alan_tamamlanan"] = t.get("alan_tamamlanan", 0) + 1
     if kalan.status != "DERDEST" and mukerrer.status == "DERDEST":
         kalan.status = "DERDEST"                   # aktif dava mahzene düşmesin
     if mukerrer.notes:

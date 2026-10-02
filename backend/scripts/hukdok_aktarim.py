@@ -51,7 +51,7 @@ Pazarlıksız kurallar
   30 sn ile bağlanır, toplu yazma bunu meşru aşar.
 
 YAZILAN kart alanları (tam eşleme turu 2026-08-19; G104 eki 2026-09-02;
-G120 eki 2026-09-04; G123 eki 2026-09-05)
+G120 eki 2026-09-04; G123 eki 2026-09-05; G249 hizmet kaydı 2026-10-02)
 -----------------------------------------------------------------------
 `KART_ALANLARI` + `KART_TURETILEN` sözlükleri tek doğruluk kaynağıdır; hepsi
 `kart_degerleri()`ndan geçer. Kabaca: sınıflandırma (`file_type`, `status`,
@@ -62,10 +62,13 @@ para (`islah_tutari`, `manevi_tazminat`, D4 ile türetilen `maddi_tazminat`, ü�
 (`dosya_son_durumu`, `bureau_type`, `arabuluculuk_no`), G044'ün tıbbi beşlisi,
 belgeleme olayı alanları (`olay_turu`, `hukumdeki_rol` — G103 kapalı
 listelerine AD bazlı eşleme; tanınmayan değer YAZILMAZ, satır raporuna düşer;
-G104) ve DB-2026-002'nin föy düzeyi iki sütunu (`muvekkil_tipi`, `hizmet_turu`
-— G119 kapalı listelerine aynı desenle AD bazlı eşleme; ` ; ` ile çok değer
-TANIMSIZ, yazılmaz + rapor; G120). `hizmet_turu` ile `service_type` AYRI
-alanlardır (aşağıda). G123 (05.09.2026, "54 sütunun tamamı"): `dava_degeri`
+G104) ve DB-2026-002'nin föy düzeyi `muvekkil_tipi` sütunu (G119 kapalı
+listesine aynı desenle AD bazlı eşleme; ` ; ` ile çok değer TANIMSIZ, yazılmaz
++ rapor; G120). Aynı bildirimin `hizmet_turu` sütunu G249'dan beri KART ALANI
+DEĞİLDİR: föye (`case_foys.hizmet_turu`) ve oradan föy kaynaklı hizmet satırına
+(`case_hizmetleri`) gider; `cases.hizmet_turu` o satırlardan TÜRETİLEN özettir,
+paket doğrudan yazmaz (aşağıda "Hizmet kaydı"). `hizmet_turu` ile
+`service_type` AYRI alanlardır (aşağıda). G123 (05.09.2026, "54 sütunun tamamı"): `dava_degeri`
 (ham "Dava Değeri TL"; `maddi_tazminat` türetmesi sürer), `para_birimi`,
 `istinaf_basvuru_tarihi` (Sheet'ten karta — G155'ten beri YALNIZ paketin
 Karar_Asamalari İstinaf satırı "Başvuru Tarihi" taşımıyorsa; aşama sayfası
@@ -73,7 +76,8 @@ Karar_Asamalari İstinaf satırı "Başvuru Tarihi" taşımıyorsa; aşama sayfa
 ve "Eski Dosya No" → esas tarihçesine ONCEKI (`add_historical_esas`).
 Föy düzeyi (`case_foys`, `foy_degerleri`): `mko_id` (Dosya - Föy Bilgileri),
 `muvekkil_no` (MüvekkilNo), `muvekkil_tipi`, `hizmet_turu`, `durum` — kart
-tek slotunda kardeş föy çelişkisiyle kaybolan bilgi föyde kayıpsız durur.
+tek slotunda kardeş föy çelişkisiyle kaybolan bilgi föyde kayıpsız durur
+(`hizmet_turu` için kart tek slotu G249'da kalktı: föy başına hizmet satırı).
 
 Avukatlar AYRI yoldan gider: "Sorumlu Avukatlar" bir listedir, `case_lawyers`
 satırlarına YALNIZ-EKLEME ile açılır; kartın tek kutusu (`responsible_lawyer_name`)
@@ -98,6 +102,34 @@ uygulanmaz, satır raporuna düşer. Boşaltma `BOSALTMA_YASAK_KART_ALANLARI`
 (`court`/`sub_type`) için de geçersizdir (rapora düşer).
 `cases.sistem_no`/`cases.tku_no` da yazılmaz (nihai tekilleştirme tam eşleme
 turunun işi).
+
+Hizmet kaydı (G249, 2026-10-02)
+-------------------------------
+Kullanıcı kararı 01.10.2026 (G248): hizmet türü kartın değil KART × MÜVEKKİL
+çiftinin özelliğidir. Paketten gelen her föy (kapsamda + müvekkil bağı dolu +
+hizmeti dolu) kartında BİR föy kaynaklı hizmet satırı taşır; yazıcı
+`managers/case_hizmetleri.foydan_yaz`dır (upsert, anahtar `foy_id`) ve buradan
+`hizmet_satirlarini_yaz` çağırır — kapsam işaretlerinden SONRA, ayrı geçişte
+(yeni işaretlenen föyün satırı aynı koşuda silinsin, işareti kalkanınki geri
+gelsin). Föyün müvekkili ya da hizmeti değişince satır YERİNDE güncellenir
+(tarihçeli); föy kapsam dışına çıkınca satır silinir (tarihçeli). Föyün
+müvekkil bağı yoksa ya da hizmet adı `service_types` listesinde yoksa satır
+YAZILMAZ ve satır raporuna `UYARI` düşer (HATA değil: çıkış kodu ve teslim
+kapısının hata oranı etkilenmez; her koşuda yeniden sayılır). "Listede yok"
+sayısı koşu özetinde AYRI kalemdir (admin panelinden yeniden adlandırılan
+hizmet, paket eski adı taşıdıkça bu yola düşer). Hizmeti boş föy sessizce
+geçilir (paket o sütunu taşımıyor olabilir — None sözleşmesi).
+
+Kardeş föylerin farklı hizmet türü ÇELİŞKİ DEĞİLDİR: `hizmet_turu`
+`KART_ALANLARI`nda yoktur, kardeş-föy uzlaşısına (`kart_alan_celiskileri`)
+girmez, `Düzeltme_Logu` boşaltma talimatı ve kesim-sonrası koruma da ona
+uygulanmaz (kullanıcının elle girdiği hizmet satırına aktarım zaten dokunmaz).
+Kart özeti (`cases.hizmet_turu`) yalnız `case_hizmetleri.ozeti_yenile` ile
+yazılır — satırların DISTINCT birleşimi. Hizmet satırı değişiklikleri
+`alan_degisikligi` sayacına GİRMEZ (kapı eşiği kart hücresi sayar), kendi
+sayaçlarında (`hizmet_eklenen` / `hizmet_guncellenen` / `hizmet_silinen`)
+tutulur. Bugünkü föylerin bir kerelik geriye dönük doldurması
+`scripts/hizmet_kayitlari_doldur.py`.
 
 Kapsam sayfaları (G113, 2026-09-03)
 -----------------------------------
@@ -176,7 +208,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # E402 (import'tan önce sys.path kurulumu) scripts/* için pyproject'te bilinçli
 # olarak kapalıdır — script tek başına da koşabilmeli.
 import models
-from managers import case_manager, foy_map, seed_data, stage_decisions
+from managers import case_hizmetleri, case_manager, foy_map, seed_data, stage_decisions
 from managers.reference_lists import tr_title, tr_upper
 from party_check import normalize_party_key
 from required_fields import AKTARIM_SOURCE_PREFIX
@@ -208,6 +240,12 @@ TR_SAAT_DILIMI = timezone(timedelta(hours=3))
 # (belge bağı `SET NULL` tuzağı) — satır raporunda bu etiketle "elle düzeltme
 # listesi"ne düşer. HATA değil: çıkış kodunu etkilemez.
 MUVEKKIL_DEGISTI_TURU = "MUVEKKIL_DEGISTI"
+
+# G249 — föyün hizmet satırı YAZILAMADI (müvekkil bağı yok / hizmet adı
+# `service_types` listesinde yok): satır raporunda bu etiketle görünür. HATA
+# değil: çıkış kodunu ve teslim kapısının hata oranını etkilemez; her koşuda
+# yeniden sayılır (sessizce yutulmaz).
+HIZMET_UYARI_TURU = "UYARI"
 
 # G154 — açık kart haritası: {SistemNo: tracking_no}. CSV sözleşmesi
 # (`scripts/cevapli_kart_eslemesi.py` üretir): başlıklar `sistem_no,
@@ -387,7 +425,7 @@ class RaporSatiri:
     satir_no: int
     sistem_no: str
     dosya_no: str
-    tur: str                           # HATA | ATLANDI | KORUNDU (G152)
+    tur: str                           # HATA | ATLANDI | KORUNDU (G152) | MUVEKKIL_DEGISTI (G153) | UYARI (G249)
     sebep: str
 
 
@@ -443,6 +481,18 @@ class AktarimSonucu:
     kapsam_isaretlenen: int = 0
     kapsam_geri_alinan: int = 0
     kapsam_atlanan: int = 0
+    # G249 — föy kaynaklı hizmet satırları (`case_hizmetleri`): bu koşuda
+    # eklenen / yerinde güncellenen (föyün müvekkili ya da hizmeti değişti) /
+    # silinen (föy kapsam dışına çıktı) satır. Aynı girdiyle ikinci koşuda üçü
+    # de 0'dır; `alan_degisikligi`ne GİRMEZLER. İki UYARI sayacı her koşuda
+    # yeniden sayılır: hizmet adı `service_types` listesinde olmayan föy (ayrı
+    # kalem — listede yeniden adlandırma sonrası paket eski adı taşıyor) ve
+    # hizmeti olduğu hâlde müvekkil tarafına bağlanamayan föy.
+    hizmet_eklenen: int = 0
+    hizmet_guncellenen: int = 0
+    hizmet_silinen: int = 0
+    hizmet_listede_yok: int = 0
+    hizmet_muvekkilsiz: int = 0
     dry_run: bool = False
     yazildi: bool = False              # commit edildi mi?
     kaynak_imzasi: str = ""
@@ -828,6 +878,12 @@ def _hukumdeki_rol(deger: Any, alan: str) -> Optional[str]:
 # normalizasyon YOK. `cases.service_type` (ESKİ ofis dosya numarasının hizmet
 # bloğuydu; karar 023 numarasında hizmet bloğu yoktur — G239) AYRI bir alandır ve
 # burada yazılmaya devam ETMEZ.
+#
+# G249: Hizmet Türü artık KART ALANI değil — dönüştürücüsü (`_hizmet_turu`)
+# yalnız FÖY değerini kanonik ada çevirir (`foy_degerleri`; tanınmayan/çok
+# değerli hücre föyde ham kalır). Karta giden yol föy kaynaklı hizmet satırıdır
+# (`hizmet_satirlarini_yaz` → `case_hizmetleri.foydan_yaz`); listede olmayan ad
+# orada `UYARI`ya düşer, `AlanHatasi`/HATA üretmez.
 MUVEKKIL_TIPI_ESLEMESI: Dict[str, str] = {
     _baslik_anahtari(ad): ad for _kod, ad in seed_data.CLIENT_TYPES
 }
@@ -856,7 +912,10 @@ def _muvekkil_tipi(deger: Any, alan: str) -> Optional[str]:
 
 
 def _hizmet_turu(deger: Any, alan: str) -> Optional[str]:
-    """`cases.hizmet_turu` — takip mi rapor mu ("Lexis Rapor" dava takibi değildir)."""
+    """`case_foys.hizmet_turu` — takip mi rapor mu ("Lexis Rapor" dava takibi değildir).
+
+    G249'dan beri kart alanı dönüştürücüsü DEĞİL: yalnız föy değerini kanonik
+    ada çevirir; kart özeti föy kaynaklı hizmet satırlarından türetilir."""
     return _tekil_kapali_liste(deger, alan, HIZMET_TURU_ESLEMESI)
 
 
@@ -907,10 +966,15 @@ KART_ALANLARI: Dict[str, Tuple[str, Callable[[Any, str], Any]]] = {
     # yalnız-yazım farkı bu alanlarda oluşamaz.
     "olay_turu":            ("olay_turu", _olay_turu),
     "hukumdeki_rol":        ("hukumdeki_rol", _hukumdeki_rol),
-    # --- Müvekkil Tipi + Hizmet Türü (G120, DB-2026-002): G119 kapalı liste
-    # ADLARI; aynı sınıf (varsayılan üzerine yazma, İÇERİK modu gereksiz).
+    # --- Müvekkil Tipi (G120, DB-2026-002): G119 kapalı liste ADI; aynı sınıf
+    # (varsayılan üzerine yazma, İÇERİK modu gereksiz).
+    # `hizmet_turu` BURADA YOK (G249): kartın değil kart × müvekkil çiftinin
+    # özelliği — föy başına hizmet satırı (`hizmet_satirlarini_yaz`), kart
+    # kolonu o satırlardan TÜRETİLEN özet (tek yazıcı
+    # `case_hizmetleri.ozeti_yenile`). Kart alanı olsaydı kardeş föylerin farklı
+    # hizmeti "çelişki" sayılır (04.09 paketi: 973 kart) ve paket özetin üzerine
+    # ikinci yazıcı olarak yazardı.
     "muvekkil_tipi":        ("muvekkil_tipi", _muvekkil_tipi),
-    "hizmet_turu":          ("hizmet_turu", _hizmet_turu),
     # --- G123: dava değeri HAM hâli (maddi türetmesi aynen sürer, aşağıda),
     # para birimi ve istinaf başvuru tarihi. Üçü de varsayılan sınıf (dolu
     # hücre üzerine yazar, tarihçeli). `istinaf_basvuru_tarihi` G155'ten beri
@@ -3540,6 +3604,126 @@ def kapsam_isaretlerini_yaz(db, kayitlar: Dict[str, KapsamKaydi], *,
     db.flush()
 
 
+# ─── Hizmet kaydı (G249) — föy başına hizmet satırı ─────────────────────────
+# `foydan_yaz`ın "satır yazılmadı" sebeplerinden rapora UYARI düşenler. Kapsam
+# dışı föy (satırı silinir/yazılmaz — bilinçli) ve hizmeti boş föy (paket o
+# sütunu taşımıyor olabilir) UYARI DEĞİLDİR.
+_HIZMET_UYARI_SEBEPLERI: Dict[str, str] = {
+    case_hizmetleri.SEBEP_TARAF_YOK: "föyün müvekkil bağı yok",
+    case_hizmetleri.SEBEP_MUVEKKIL_DEGIL: "föyün bağlı tarafı müvekkil değil",
+    case_hizmetleri.SEBEP_LISTEDE_YOK: "hizmet türü listede yok",
+}
+_HIZMET_PARCA = 500                      # föy yükleme sorgusunun IN parça boyu
+
+
+def _hizmet_uyari_metni(sebep: str, hizmet: str) -> str:
+    """Satır raporu `sebep` hücresi: neden + föyün taşıdığı hizmet değeri."""
+    metin = f"hizmet satırı yazılmadı: {_HIZMET_UYARI_SEBEPLERI[sebep]} — {hizmet!r}"
+    if sebep == case_hizmetleri.SEBEP_LISTEDE_YOK and len(
+            [p for p in _AYRAC.split(hizmet) if p.strip()]) > 1:
+        metin += " (çok değerli hücre tanımsız)"
+    return metin
+
+
+def hizmet_satirlarini_yaz(db, sistem_nolar: Iterable[str], *, source: str,
+                           sonuc: AktarimSonucu,
+                           satir_bilgisi: Optional[Dict[str, Tuple[int, str]]] = None) -> None:
+    """Föylerin hizmet satırlarını (`case_hizmetleri`) yazar — İDEMPOTENT (G249).
+
+    Yazıcı `case_hizmetleri.foydan_yaz`dır (upsert, anahtar `foy_id`); burası
+    yalnız çağırır, sayar ve raporlar. `sistem_nolar`: bu koşuda ana sayfadan
+    başarıyla işlenen föyler + paketin kapsam sayfalarındaki föyler (kapsam
+    dışına çıkan föyün satırı silinir, işareti kalkanınki geri gelir) — bu
+    yüzden `kapsam_isaretlerini_yaz`dan SONRA çağrılır.
+
+    * Yeni satır / yerinde güncelleme / silme sayılır; kart `degisen_kartlar`a
+      girer (satır başka karttan geldiyse eski kart da). Aynı girdiyle ikinci
+      koşu hiçbirini üretmez (`foydan_yaz` → `DEGISMEDI`), tarihçe şişmez.
+    * Satır YAZILAMADIYSA ve föy bir hizmet taşıyorsa satır raporuna `UYARI`
+      düşer (`_HIZMET_UYARI_SEBEPLERI`); "listede yok" ayrı sayılır
+      (`hizmet_listede_yok`), müvekkil bağı eksikliği `hizmet_muvekkilsiz`.
+      HATA değildir — çıkış kodu etkilenmez. Mevcut satır yerinde kalır
+      (yeniden adlandırılmış hizmet: satır listedeki yeni adıyla durur).
+    * Föy başına SAVEPOINT: beklenmeyen DB hatası koşuyu düşürmez, satır
+      raporuna HATA olarak yazılır (ana döngüyle aynı izolasyon).
+
+    `satir_bilgisi`: {SistemNo: (xlsx satır no, Dosya No)} — rapor satırının
+    kimlik hücreleri; kapsam sayfasından gelen föyde bilinmez (0, "").
+    """
+    bilgi = satir_bilgisi or {}
+    db.flush()
+    anahtarlar = sorted({s for s in sistem_nolar if s})
+    for i in range(0, len(anahtarlar), _HIZMET_PARCA):
+        foyler = (
+            db.query(models.CaseFoy)
+            .filter(models.CaseFoy.sistem_no.in_(anahtarlar[i:i + _HIZMET_PARCA]))
+            .order_by(models.CaseFoy.sistem_no)
+            .all()
+        )
+        if not foyler:
+            continue
+        # Satırın koşu ÖNCESİ kartı: föy başka karta taşındıysa (ya da satırı
+        # silindiyse) değişen kart föyün bugünkü kartı değil, satırın eski kartıdır.
+        onceki_kart: Dict[int, int] = {
+            satir_foy_id: satir_kart_id for satir_foy_id, satir_kart_id in
+            db.query(models.CaseHizmeti.foy_id, models.CaseHizmeti.case_id)
+            .filter(models.CaseHizmeti.foy_id.in_([f.id for f in foyler]))
+        }
+        for foy in foyler:
+            foy_id = cast(int, foy.id)
+            sistem_no = cast(str, foy.sistem_no)
+            case_id = cast(int, foy.case_id)
+            hizmet = _metin(foy.hizmet_turu)
+            satir_no, dosya_no = bilgi.get(sistem_no, (0, ""))
+            try:
+                with db.begin_nested():
+                    yazim = case_hizmetleri.foydan_yaz(db, foy, source=source)
+            except SQLAlchemyError as exc:
+                db.expire_all()           # savepoint geri alındı; bellekteki hâl bayat
+                sonuc.rapor_satirlari.append(RaporSatiri(
+                    satir_no=satir_no, sistem_no=sistem_no, dosya_no=dosya_no,
+                    tur="HATA", sebep=f"hizmet satırı yazılamadı: {type(exc).__name__}: {exc}",
+                ))
+                logger.warning(f"Föy {sistem_no} hizmet satırı DB hatası: {exc}")
+                continue
+
+            if yazim.durum == case_hizmetleri.FOY_EKLENDI:
+                sonuc.hizmet_eklenen += 1
+                sonuc.degisen_kartlar.add(case_id)
+            elif yazim.durum == case_hizmetleri.FOY_GUNCELLENDI:
+                sonuc.hizmet_guncellenen += 1
+                sonuc.degisen_kartlar.update({case_id, onceki_kart.get(foy_id, case_id)})
+            elif yazim.durum == case_hizmetleri.FOY_SILINDI:
+                sonuc.hizmet_silinen += 1
+                sonuc.degisen_kartlar.add(onceki_kart.get(foy_id, case_id))
+            if yazim.durum in (case_hizmetleri.FOY_EKLENDI, case_hizmetleri.FOY_GUNCELLENDI,
+                               case_hizmetleri.FOY_SILINDI):
+                logger.info(
+                    f"Föy {sistem_no} hizmet satırı {yazim.durum} "
+                    f"(kart {case_id}{f', sebep {yazim.sebep}' if yazim.sebep else ''})"
+                )
+
+            if hizmet is None or yazim.sebep not in _HIZMET_UYARI_SEBEPLERI:
+                continue                  # hizmeti boş / kapsam dışı föy: uyarı değil
+            if yazim.sebep == case_hizmetleri.SEBEP_LISTEDE_YOK:
+                sonuc.hizmet_listede_yok += 1
+            else:
+                sonuc.hizmet_muvekkilsiz += 1
+            sebep = _hizmet_uyari_metni(cast(str, yazim.sebep), hizmet)
+            sonuc.rapor_satirlari.append(RaporSatiri(
+                satir_no=satir_no, sistem_no=sistem_no, dosya_no=dosya_no,
+                tur=HIZMET_UYARI_TURU, sebep=sebep,
+            ))
+            logger.info(f"Föy {sistem_no} (kart {case_id}) UYARI: {sebep}")
+    if sonuc.hizmet_listede_yok:
+        logger.warning(
+            f"{sonuc.hizmet_listede_yok} föyün hizmet türü service_types listesinde yok — "
+            f"hizmet satırı yazılmadı (satır raporu UYARI; liste yeniden adlandırıldıysa "
+            f"paket eski adı taşıyor olabilir)"
+        )
+    db.flush()
+
+
 def _statement_timeout_yukselt(db, ms: int) -> bool:
     """Koşu süresince statement_timeout'u yükseltir (yalnız Postgres).
 
@@ -3706,6 +3890,18 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
             source=kaynak_imzasi, sonuc=sonuc,
         )
 
+        # Hizmet satırları (G249) kapsam işaretlerinden SONRA: yeni işaretlenen
+        # föyün satırı bu koşuda silinsin, işareti kalkan föyünki geri gelsin.
+        # Kapsam sayfasındaki föy ana sayfada olmasa da (bizde varsa) dolaşılır.
+        hizmet_satirlarini_yaz(
+            db, islenen_sistem_nolar | kapsam_disi, source=foy_source, sonuc=sonuc,
+            satir_bilgisi={
+                (_metin(s.degerler.get("sistem_no")) or ""):
+                    (s.satir_no, _metin(s.degerler.get("dosya_no")) or "")
+                for s in satirlar
+            },
+        )
+
         # Aşama katmanı ana döngüden SONRA: föy→kart haritası ancak burada tam
         # (bir föy kartına ilk kez bu koşuda bağlanmış olabilir).
         asamalari_yaz(
@@ -3801,6 +3997,10 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"  föy↔müvekkil bağı : {sonuc.foy_muvekkil_bagli} bağlandı, "
         f"{sonuc.foy_muvekkil_degisen} müvekkil değişti (rapor), "
         f"{sonuc.kok_muvekkil_celiskisi} kök/müvekkil çelişkisi (yazılmadı)",
+        f"  hizmet satırı     : {sonuc.hizmet_eklenen} eklendi, {sonuc.hizmet_guncellenen} güncellendi, "
+        f"{sonuc.hizmet_silinen} silindi (föy başına; kart özeti satırlardan)",
+        f"  hizmet uyarısı    : {sonuc.hizmet_listede_yok} listede yok, "
+        f"{sonuc.hizmet_muvekkilsiz} müvekkil bağı yok (satır yazılmadı, rapor UYARI)",
         f"  aşama satırı      : {sonuc.asama_eklenen} eklendi, {sonuc.asama_guncellenen} güncellendi, "
         f"{sonuc.asama_ikinci_tur} ikinci tur, {sonuc.asama_sira_duzeltilen} sıra düzeltildi, "
         f"{sonuc.asama_belgeli_korunan} belgeli korundu "

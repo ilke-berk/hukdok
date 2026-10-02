@@ -245,22 +245,28 @@ def test_ikinci_kosu_sifir_degisiklik(kart, tmp_path):
 
 
 def test_kardes_foy_celiskisinde_foy_degeri_kaybolmaz(kart, tmp_path):
-    """Kartın iki föyü farklı hizmet türü söylüyor: kart alanı YAZILMAZ (D9),
-    ama her föy kendi değerini taşır — 973 kartın kaybı bu satırla kapanır."""
+    """Kartın iki föyü farklı durum söylüyor: kart alanı YAZILMAZ (D9), ama her
+    föy kendi değerini taşır — 973 kartın kaybı bu satırla kapanır.
+
+    G249 taşıması (02.10.2026, insan onaylı): kardeş föylerin farklı HİZMET
+    türü artık çelişki DEĞİL — her föy kendi hizmet satırını yazar, kart özeti
+    iki hizmetin birleşimidir. `status` çelişkisi (tek slot) aynen sürer."""
     paket = _paket_yaz(tmp_path / "t.xlsx", [
         _satir("H-1", "D-1", **{"Hizmet Türü": "Lexis Rapor", "Durum": "Aktif",
-                                "Müvekkil Tipi": "Doktor"}),
+                                "Müvekkil Tipi": "Doktor", "Müvekkil": "Dr. Ali Veli"}),
         _satir("H-2", "D-1", **{"Hizmet Türü": "Vekaletli Takip", "Durum": "Arşiv",
-                                "Müvekkil Tipi": "Doktor"}),
-    ])
+                                "Müvekkil Tipi": "Doktor", "Müvekkil": "Dr. Ali Veli"}),
+    ], basliklar=BASLIKLAR + ["Müvekkil"])
 
     sonuc = aktarimi_kos(kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
-    assert {c.alan for c in sonuc.celiskiler} >= {"hizmet_turu", "status"}
+    celisen = {c.alan for c in sonuc.celiskiler}
+    assert "status" in celisen and "hizmet_turu" not in celisen
     db = kart()
     try:
         c = db.query(models.Case).one()
-        assert c.hizmet_turu is None and c.status == "DERDEST"   # kart: çelişki, yazılmadı
+        # durum: çelişki, yazılmadı; hizmet: çelişki değil, özet birleşim
+        assert c.hizmet_turu == "Lexis Rapor ; Vekaletli Takip" and c.status == "DERDEST"
         assert c.muvekkil_tipi == "Doktor"                        # uzlaşan alan yazıldı
         foyler = {f.sistem_no: (f.hizmet_turu, f.durum) for f in db.query(models.CaseFoy)}
         assert foyler == {"H-1": ("Lexis Rapor", "DERDEST"),

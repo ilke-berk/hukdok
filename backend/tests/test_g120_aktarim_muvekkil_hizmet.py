@@ -13,6 +13,14 @@ aktarım yazma yoluna G104 deseninin birebir kopyasıyla bağlanır. Sözleşme
 * ` ; ` ayraçlı çok değer İKİ alanda da TANIMSIZ → yazılmaz + rapor (hukumdeki_rol
   kuralı); KARMA benzeri normalizasyon YOK.
 
+**G249 taşıması (02.10.2026, insan onaylı):** `hizmet_turu` artık KART ALANI
+değildir — föy başına hizmet satırı (`case_hizmetleri`, yazıcı `foydan_yaz`), kart
+kolonu o satırlardan türetilen özet. Bu dosyadaki hizmet beklentileri buna
+çevrildi: kart alanı kaydı/tarihçesi/`alan_degisikligi` payı yok, çok değerli ya
+da listede olmayan hizmet HATA değil `UYARI`, föyler müvekkilli gelir (satır
+müvekkil tarafına yazılır). Müvekkil tipi beklentileri AYNEN durur. Yeni
+davranışın kendi testleri `test_g249_hizmet_aktarim.py`dedir.
+
 **TEST VERİSİ KURALI (A.2 dersi):** gerçek teslim paketi REPOYA GİRMEZ; bütün
 testler openpyxl ile SENTETİK mini paket üretir (test_g104 düzeni).
 """
@@ -31,6 +39,7 @@ from scripts.hukdok_aktarim import (
     CIKIS_SATIR_HATASI,
     CIKIS_TAMAM,
     AlanHatasi,
+    HamSatir,
     aktarimi_kos,
     xlsx_oku,
 )
@@ -152,22 +161,30 @@ def test_sozlesme_kapali_liste_adlari_seed_sabitlerinden():
 
 
 def test_kayit_kilitleri_sutun_adaylari_kart_alanlari_ve_docstring():
-    """Eşleme kayıtları + sınıf kararı + kabul 6 (KART_ALANLARI + docstring)."""
+    """Eşleme kayıtları + sınıf kararı + kabul 6 (KART_ALANLARI + docstring).
+
+    G249 taşıması: `hizmet_turu` artık KART ALANI DEĞİL (kart × müvekkil
+    hizmet satırı; kart kolonu türetilmiş özet) — sütun adayı ve föy
+    dönüştürücüsü yerinde, `KART_ALANLARI` kaydı kalktı."""
     assert hukdok_aktarim.SUTUN_ADAYLARI["muvekkil_tipi"] == ("Müvekkil Tipi",)
     assert hukdok_aktarim.SUTUN_ADAYLARI["hizmet_turu"] == ("Hizmet Türü",)
     assert hukdok_aktarim.KART_ALANLARI["muvekkil_tipi"] == (
         "muvekkil_tipi", hukdok_aktarim._muvekkil_tipi)
-    assert hukdok_aktarim.KART_ALANLARI["hizmet_turu"] == (
-        "hizmet_turu", hukdok_aktarim._hizmet_turu)
+    assert "hizmet_turu" not in hukdok_aktarim.KART_ALANLARI
+    # Föy düzeyi yazım aynen sürer: dönüştürücü föy değerini kanonik ada çevirir.
+    assert hukdok_aktarim.foy_degerleri(
+        HamSatir(satir_no=2, degerler={"hizmet_turu": "LEXIS RAPOR"}))["hizmet_turu"] == "Lexis Rapor"
     # Dolu hücre kuralı: METİN alanlarının varsayılan (üzerine yazma) sınıfı —
     # İÇERİK moduna GİRMEZLER (dönüşüm çıktısı zaten kanonik ad).
     assert not {"muvekkil_tipi", "hizmet_turu"} & hukdok_aktarim.ICERIK_KARSILASTIRMALI_ALANLAR
     # `service_type` (ofis dosya no hizmet bloğu) yazılmaya BAŞLANMADI — ayrı alan.
     assert "service_type" not in hukdok_aktarim.KART_ALANLARI
-    # Kabul 6: modül docstring'inin "YAZILAN kart alanları" bölümü iki alanı sayar.
+    # Kabul 6: modül docstring'inin "YAZILAN kart alanları" bölümü iki alanı sayar
+    # (G249: hizmet türünün yolu orada `case_hizmetleri` olarak anlatılır).
     doc = hukdok_aktarim.__doc__ or ""
     yazilan = doc.split("YAZILAN kart alanları", 1)[1].split("Bilinçli YAZILMAYANLAR", 1)[0]
     assert "muvekkil_tipi" in yazilan and "hizmet_turu" in yazilan
+    assert "case_hizmetleri" in yazilan
 
 
 def test_baslik_toleransi_aksansiz_yazim_da_okunur(tmp_path):
@@ -261,6 +278,32 @@ def _kartlar(fabrika):
         db.close()
 
 
+def _hizmet_listesini_kur(fabrika):
+    """`service_types` kapalı listesi (G119 seed sabitleri) — G249: hizmet satırı
+    bu listeye karşı doğrulanır (liste BOŞSA doğrulama atlanır, G248 sözleşmesi)."""
+    db = fabrika()
+    try:
+        for sira, (kod, ad) in enumerate(seed_data.SERVICE_TYPES):
+            db.add(models.ServiceType(code=kod, name=ad, active=True, sequence=sira))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _hizmet_satirlari(fabrika):
+    """{SistemNo: (hizmet adı, satır kaynağı)} — föy kaynaklı hizmet satırları (G249)."""
+    db = fabrika()
+    try:
+        return {
+            sistem_no: (ad, kaynak) for sistem_no, ad, kaynak in
+            db.query(models.CaseFoy.sistem_no, models.CaseHizmeti.hizmet_turu,
+                     models.CaseHizmeti.source)
+            .join(models.CaseHizmeti, models.CaseHizmeti.foy_id == models.CaseFoy.id)
+        }
+    finally:
+        db.close()
+
+
 def test_basliksiz_paket_iki_alani_ellemiyor(db_env, tmp_path):
     """Kabul 1: başlık teslimde yoksa alan atlanır — DOLU değer boşalmaz,
     tarihçeye satır düşmez, koşu yeşil (eski paketle davranış birebir eski)."""
@@ -291,9 +334,15 @@ def test_basliksiz_paket_iki_alani_ellemiyor(db_env, tmp_path):
 
 def test_dry_run_iki_alan_farkta_gorunur_dbye_yazilmaz(iki_kart, tmp_path):
     """Kabul 2: kuru koşu iki alanı fark sayımında gösterir, hiçbir tabloya
-    yazmaz (kart alanları + tarihçe + föy sıfır kalır)."""
+    yazmaz (kart alanları + tarihçe + föy sıfır kalır).
+
+    G249 taşıması: hizmet türü kart ALANI değil föy başına hizmet SATIRIdır —
+    farkta `alan_degisikligi`nde değil kendi sayacında (`hizmet_eklenen`)
+    görünür; kuru koşu hizmet satırını da yazmaz."""
+    _hizmet_listesini_kur(iki_kart)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("H-11636", "D-1", **{"Müvekkil Tipi": "Sigorta",
+        _satir("H-11636", "D-1", **{"Müvekkil": "Ak Sigorta A.Ş.",
+                                    "Müvekkil Tipi": "Sigorta",
                                     "Hizmet Türü": "Lexis Rapor"}),
     ], basliklar=G120_BASLIKLAR)
 
@@ -301,13 +350,15 @@ def test_dry_run_iki_alan_farkta_gorunur_dbye_yazilmaz(iki_kart, tmp_path):
                          rapor_dizini=tmp_path / "rapor")
 
     assert sonuc.dry_run and not sonuc.yazildi
-    assert sonuc.alan_degisikligi == 2 and sonuc.kart_degisen == 1
+    assert sonuc.alan_degisikligi == 1 and sonuc.kart_degisen == 1   # yalnız muvekkil_tipi
+    assert sonuc.hizmet_eklenen == 1                                  # hizmet satırı farkta ayrı kalem
     db = iki_kart()
     try:
         kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
         assert (kart.muvekkil_tipi, kart.hizmet_turu) == (None, None)
         assert db.query(models.CaseHistory).count() == 0
         assert db.query(models.CaseFoy).count() == 0
+        assert db.query(models.CaseHizmeti).count() == 0
     finally:
         db.close()
 
@@ -315,11 +366,18 @@ def test_dry_run_iki_alan_farkta_gorunur_dbye_yazilmaz(iki_kart, tmp_path):
 def test_gecerli_deger_yazilir_taninmayan_rapora_duser(iki_kart, tmp_path):
     """Kabul 3: "Sigorta" / "Lexis Rapor" KANONİK yazımla yazılır; "Sigorta
     Şirketi" gibi listede olmayan değer yazılmaz, satır raporuna gerekçesiyle
-    düşer — föyün DİĞER alanları normal işlenir (satır düşmez)."""
+    düşer — föyün DİĞER alanları normal işlenir (satır düşmez).
+
+    G249 taşıması: kart `hizmet_turu` paketten doğrudan yazılmaz — föyün
+    müvekkiline yazılan hizmet satırından TÜRETİLEN özettir (`ozeti_yenile`);
+    föyler bu yüzden müvekkilli gelir, satırlar aktarım imzasını taşır."""
+    _hizmet_listesini_kur(iki_kart)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("H-11636", "D-1", **{"Müvekkil Tipi": "SİGORTA",
+        _satir("H-11636", "D-1", **{"Müvekkil": "Ak Sigorta A.Ş.",
+                                    "Müvekkil Tipi": "SİGORTA",
                                     "Hizmet Türü": "Lexis Rapor"}),
-        _satir("S-2", "D-2", **{"Müvekkil Tipi": "Sigorta Şirketi",
+        _satir("S-2", "D-2", **{"Müvekkil": "Ayşe Yılmaz",
+                                "Müvekkil Tipi": "Sigorta Şirketi",
                                 "Hizmet Türü": "Vekaletli Takip",
                                 "Tıbbi Olay": "Enfeksiyon"}),
     ], basliklar=G120_BASLIKLAR)
@@ -338,58 +396,82 @@ def test_gecerli_deger_yazilir_taninmayan_rapora_duser(iki_kart, tmp_path):
         kartlar = {c.klasor_no_2: c for c in db.query(models.Case).all()}
         # tolere yazım kanonik ada çözüldü (bizim yazımımız)
         assert kartlar["D-1"].muvekkil_tipi == "Sigorta"
-        assert kartlar["D-1"].hizmet_turu == "Lexis Rapor"
+        assert kartlar["D-1"].hizmet_turu == "Lexis Rapor"      # özet: hizmet satırından
         # tanınmayan değer yazılmadı; satırın DİĞER alanları ve föyü İŞLENDİ
         assert kartlar["D-2"].muvekkil_tipi is None
-        assert kartlar["D-2"].hizmet_turu == "Vekaletli Takip"
+        assert kartlar["D-2"].hizmet_turu == "Vekaletli Takip"  # özet: hizmet satırından
         assert kartlar["D-2"].tibbi_olay == "Enfeksiyon"
         assert foy_map.get_foy(db, "S-2") is not None
     finally:
         db.close()
+    # Özetin kaynağı föy başına hizmet satırı; satır `source`u aktarım imzası.
+    assert _hizmet_satirlari(iki_kart) == {
+        "H-11636": ("Lexis Rapor", sonuc.kaynak_imzasi),
+        "S-2": ("Vekaletli Takip", sonuc.kaynak_imzasi),
+    }
 
     rapor = [y for y in sonuc.raporlar if "satir-raporu" in y.name]
     assert rapor and "Sigorta Şirketi" in rapor[0].read_text(encoding="utf-8-sig")
 
 
 def test_cok_deger_yazilmaz_rapora_duser(iki_kart, tmp_path):
-    """Kabul 4: ` ; ` ile çok değer iki alanda da yazılmaz + rapora düşer."""
+    """Kabul 4: ` ; ` ile çok değer iki alanda da yazılmaz + rapora düşer.
+
+    G249 taşıması: müvekkil tipi kart alanı olarak HATA'da kalır; çok değerli
+    HİZMET hücresi artık HATA değil `UYARI`dır — hizmet satırı yazılmaz (ad
+    `service_types` listesinde yok), kart özeti boş kalır, "listede yok"
+    ayrı sayılır."""
+    _hizmet_listesini_kur(iki_kart)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
         _satir("S-1", "D-1", **{"Müvekkil Tipi": "Sigorta ; Doktor"}),
-        _satir("S-2", "D-2", **{"Hizmet Türü": "Lexis Rapor ; Vekaletli Takip"}),
+        _satir("S-2", "D-2", **{"Müvekkil": "Ayşe Yılmaz",
+                                "Hizmet Türü": "Lexis Rapor ; Vekaletli Takip"}),
     ], basliklar=G120_BASLIKLAR)
 
     sonuc = aktarimi_kos(iki_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
-    assert sonuc.cikis_kodu == CIKIS_SATIR_HATASI
+    assert sonuc.cikis_kodu == CIKIS_SATIR_HATASI     # S-1'in müvekkil tipi (kart alanı) HATA
     assert _kartlar(iki_kart) == {"D-1": (None, None), "D-2": (None, None)}
     sebepler = {h.sistem_no: h.sebep for h in sonuc.hatalar}
-    assert set(sebepler) == {"S-1", "S-2"}
+    assert set(sebepler) == {"S-1"}                   # hizmet artık HATA üretmez
     assert "muvekkil_tipi yazılmadı" in sebepler["S-1"] and "çok değerli" in sebepler["S-1"]
-    assert "hizmet_turu yazılmadı" in sebepler["S-2"] and "çok değerli" in sebepler["S-2"]
+    uyarilar = {r.sistem_no: r.sebep for r in sonuc.rapor_satirlari if r.tur == "UYARI"}
+    assert set(uyarilar) == {"S-2"}
+    assert "hizmet satırı yazılmadı" in uyarilar["S-2"] and "çok değerli" in uyarilar["S-2"]
+    assert sonuc.hizmet_listede_yok == 1 and _hizmet_satirlari(iki_kart) == {}
 
 
 def test_ikinci_kosu_sifir_degisiklik_iki_alan_dahil(iki_kart, tmp_path):
     """Kabul 5: idempotency iki yeni alanı da kapsar — aynı girdiyle ikinci
-    koşu 0 değişiklik, `case_history` şişmez."""
+    koşu 0 değişiklik, `case_history` şişmez.
+
+    G249 taşıması: hizmet türü `alan_degisikligi`nde sayılmaz (3 → 2), kendi
+    sayacındadır (`hizmet_eklenen`); föy satırının İLK yazımı tarihçesizdir
+    (`hizmet_turu` / `hizmet` alan adıyla kayıt düşmez); ikinci koşu hizmet
+    satırı da eklemez/değiştirmez."""
+    _hizmet_listesini_kur(iki_kart)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("H-11636", "D-1", **{"Müvekkil Tipi": "Sigorta",
+        _satir("H-11636", "D-1", **{"Müvekkil": "Ak Sigorta A.Ş.",
+                                    "Müvekkil Tipi": "Sigorta",
                                     "Hizmet Türü": "Lexis Rapor"}),
         _satir("S-2", "D-2", **{"Müvekkil Tipi": "doktor"}),
     ], basliklar=G120_BASLIKLAR)
 
     ilk = aktarimi_kos(iki_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
     assert ilk.cikis_kodu == CIKIS_TAMAM
-    assert ilk.alan_degisikligi == 3 and ilk.kart_degisen == 2
+    assert ilk.alan_degisikligi == 2 and ilk.kart_degisen == 2
+    assert ilk.hizmet_eklenen == 1
 
     db = iki_kart()
     try:
         tarihce = db.query(models.CaseHistory).count()
         yazilan = {(h.field_name, h.old_value, h.new_value)
                    for h in db.query(models.CaseHistory)
-                   if h.field_name in ("muvekkil_tipi", "hizmet_turu")}
+                   if h.field_name in ("muvekkil_tipi", "hizmet_turu", "hizmet")}
         assert ("muvekkil_tipi", None, "Sigorta") in yazilan
-        assert ("hizmet_turu", None, "Lexis Rapor") in yazilan
+        assert ("hizmet_turu", None, "Lexis Rapor") not in yazilan   # kart alanı değil
         assert ("muvekkil_tipi", None, "Doktor") in yazilan
+        assert len(yazilan) == 2                                     # ilk hizmet satırı tarihçesiz
     finally:
         db.close()
 
@@ -397,9 +479,11 @@ def test_ikinci_kosu_sifir_degisiklik_iki_alan_dahil(iki_kart, tmp_path):
 
     assert ikinci.cikis_kodu == CIKIS_TAMAM
     assert ikinci.alan_degisikligi == 0 and ikinci.kart_degisen == 0
+    assert (ikinci.hizmet_eklenen, ikinci.hizmet_guncellenen, ikinci.hizmet_silinen) == (0, 0, 0)
     db = iki_kart()
     try:
         assert db.query(models.CaseHistory).count() == tarihce
+        assert db.query(models.CaseHizmeti).count() == 1
     finally:
         db.close()
     assert _kartlar(iki_kart) == {"D-1": ("Sigorta", "Lexis Rapor"),
@@ -409,10 +493,16 @@ def test_ikinci_kosu_sifir_degisiklik_iki_alan_dahil(iki_kart, tmp_path):
 def test_kardes_foyler_farkli_muvekkil_tipi_celiski_raporuna_duser(iki_kart, tmp_path):
     """Kardeş föy çelişkisi BEKLENEN durumdur (bildirim: "föy başına değişir"):
     aynı kartın iki föyü farklı müvekkil tipi anlatıyorsa mevcut ön-geçiş
-    mekanizması alanı yazmaz, çelişki raporuna düşürür — özel istisna YOK."""
+    mekanizması alanı yazmaz, çelişki raporuna düşürür — özel istisna YOK.
+
+    G249 taşıması: hizmet türü uzlaşıya hiç girmez; karttaki değer iki föyün
+    (iki müvekkilin) hizmet satırlarından türetilen özettir (DISTINCT)."""
+    _hizmet_listesini_kur(iki_kart)
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("S-1", "D-1", **{"Müvekkil Tipi": "Sigorta", "Hizmet Türü": "Lexis Rapor"}),
-        _satir("S-2", "D-1", **{"Müvekkil Tipi": "Doktor", "Hizmet Türü": "Lexis Rapor"}),
+        _satir("S-1", "D-1", **{"Müvekkil": "Ak Sigorta A.Ş.",
+                                "Müvekkil Tipi": "Sigorta", "Hizmet Türü": "Lexis Rapor"}),
+        _satir("S-2", "D-1", **{"Müvekkil": "Dr. Ali Veli",
+                                "Müvekkil Tipi": "Doktor", "Hizmet Türü": "Lexis Rapor"}),
     ], basliklar=G120_BASLIKLAR)
 
     sonuc = aktarimi_kos(iki_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
@@ -420,13 +510,21 @@ def test_kardes_foyler_farkli_muvekkil_tipi_celiski_raporuna_duser(iki_kart, tmp
     celiski = [c for c in sonuc.celiskiler if c.alan == "muvekkil_tipi"]
     assert len(celiski) == 1 and celiski[0].kume == "KART"
     assert "S-1=Sigorta" in celiski[0].degerler and "S-2=Doktor" in celiski[0].degerler
-    assert not [c for c in sonuc.celiskiler if c.alan == "hizmet_turu"]   # uzlaşan alan çelişki değil
-    assert _kartlar(iki_kart)["D-1"] == (None, "Lexis Rapor")   # çelişen yazılmadı, uzlaşan yazıldı
+    assert not [c for c in sonuc.celiskiler if c.alan == "hizmet_turu"]   # hizmet uzlaşıya girmez
+    assert _kartlar(iki_kart)["D-1"] == (None, "Lexis Rapor")   # çelişen yazılmadı; özet satırlardan
+    assert set(_hizmet_satirlari(iki_kart)) == {"S-1", "S-2"}   # föy başına bir satır
 
 
 def test_dolu_hucre_metin_sinifiyla_uzerine_yazilir(iki_kart, tmp_path):
     """Sınıf kararı kilidi: iki alan METİN alanlarının VARSAYILAN sınıfında —
-    içerik farkında teslim kazanır, tarihçeye eski→yeni düşer."""
+    içerik farkında teslim kazanır, tarihçeye eski→yeni düşer.
+
+    G249 taşıması: `hizmet_turu` kart alanı sınıfından ÇIKTI. Kolon türetilmiş
+    özettir: paket onu kart alanı olarak yazmaz (`alan_degisikligi` 0,
+    `hizmet_turu` tarihçe kaydı yok); föyün hizmet satırı yazılınca özet
+    satırlardan kurulur ve hizmet satırı hiç olmayan karttaki eski tek değerin
+    yerini alır (tek yazıcı `ozeti_yenile`)."""
+    _hizmet_listesini_kur(iki_kart)
     db = iki_kart()
     try:
         kart = db.query(models.Case).filter_by(klasor_no_2="D-1").one()
@@ -435,17 +533,18 @@ def test_dolu_hucre_metin_sinifiyla_uzerine_yazilir(iki_kart, tmp_path):
     finally:
         db.close()
     paket = _paket_yaz(tmp_path / "teslim.xlsx", [
-        _satir("S-1", "D-1", **{"Hizmet Türü": "Lexis Rapor"}),
+        _satir("S-1", "D-1", **{"Müvekkil": "Ak Sigorta A.Ş.", "Hizmet Türü": "Lexis Rapor"}),
     ], basliklar=G120_BASLIKLAR)
 
     sonuc = aktarimi_kos(iki_kart, girdi=paket, rapor_dizini=tmp_path / "rapor")
 
-    assert sonuc.alan_degisikligi == 1
+    assert sonuc.alan_degisikligi == 0 and sonuc.hizmet_eklenen == 1
     db = iki_kart()
     try:
         assert db.query(models.Case).filter_by(
             klasor_no_2="D-1").one().hizmet_turu == "Lexis Rapor"
-        kayit = db.query(models.CaseHistory).filter_by(field_name="hizmet_turu").one()
-        assert (kayit.old_value, kayit.new_value) == ("Vekaletli Takip", "Lexis Rapor")
+        assert db.query(models.CaseHistory).filter_by(field_name="hizmet_turu").count() == 0
+        satir = db.query(models.CaseHizmeti).one()
+        assert (satir.hizmet_turu, satir.foy_id is not None) == ("Lexis Rapor", True)
     finally:
         db.close()
