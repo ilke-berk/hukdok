@@ -115,8 +115,22 @@ const TAB_TO_LIST: Record<string, string> = {
     case_subjects: "case_subjects", emails: "emails", case_types: "file_types",
     court_types: "court_types", party_roles: "party_roles",
     bureau_types: "bureau_types", client_categories: "client_categories",
-    file_statuses: "file_statuses", specialties: "specialties", cities: "cities",
+    file_statuses: "file_statuses", service_types: "service_types",
+    specialties: "specialties", cities: "cities",
 };
+
+// Hizmet türü kodu addan üretilir (G256) — seed kodlarıyla aynı biçim
+// ("Takip (doktor müvekkil)" → TAKIP-DOKTOR-MUVEKKIL): ASCII büyük harf, harf/rakam
+// dışı her koşu tek "-". Kod kimliktir, sonradan değişmez; ad panelden düzeltilir.
+const serviceTypeCodeOf = (name: string) =>
+    name.toUpperCase()
+        .replace(/İ/g, "I").replace(/Ş/g, "S").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ö/g, "O").replace(/Ç/g, "C")
+        .replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// Hizmet türü yeniden adlandırılırken düzenleme diyaloğunda gösterilen uyarı (G256):
+// liste değerlerinin asıl kaynağı veri ekibinin paketidir, aktarım hizmeti ADIYLA tanır.
+const SERVICE_TYPE_RENAME_WARNING =
+    "Veri ekibinin paketindeki ad değişmedikçe aktarım bu hizmeti tanımaz; ad değişikliğini veri ekibine bildirin.";
 
 // Düzenlenebilir alan adları ConfigItem'ın metin taşıyan alanlarıdır; `id` sayısal
 // kimliktir, formda görünmez. Anahtarı bu tiple bağlamak `openEdit`'teki değer
@@ -326,14 +340,14 @@ const nameCells: RowCells = (item, actions) => (
 // Satır işlem düğmelerinin çağırdığı liste tipleri (openEdit/openDelete `type` argümanı)
 const ROW_ACTION_TYPES = [
     "lawyers", "statuses", "doctypes", "case_subjects", "emails", "file_types", "court_types",
-    "party_roles", "bureau_types", "client_categories", "file_statuses", "specialties", "cities",
+    "party_roles", "bureau_types", "client_categories", "file_statuses", "service_types", "specialties", "cities",
 ] as const;
 
 // Yönetim sekmeleri — `TabsTrigger value` listesiyle birebir. URL'deki `?tab=`
 // yalnız bu kümedeyse başlangıç sekmesi olur (G117: bildirimden sekmeye gitme).
 const ADMIN_TABS = [
     "lawyers", "statuses", "doctypes", "case_subjects", "emails", "case_types", "court_types",
-    "party_roles", "bureau_types", "client_categories", "file_statuses", "specialties", "cities",
+    "party_roles", "bureau_types", "client_categories", "file_statuses", "service_types", "specialties", "cities",
     "features", "ofis_no_kodlari", "deliveries", "activity_test", "deleted",
 ] as const;
 const DEFAULT_ADMIN_TAB = "lawyers";
@@ -350,11 +364,11 @@ const AdminPage = () => {
     const {
         lawyers, statuses, doctypes, emailRecipients, caseSubjects,
         fileTypes, courtTypes, partyRoles, bureauTypes, cities, specialties, clientCategories,
-        fileStatuses,
+        fileStatuses, serviceTypes,
         isLoading,
         addLawyer, addStatus, addDoctype, addEmail, addCaseSubject,
         addFileType, addCourtType, addPartyRole, addBureauType,
-        addCity, addSpecialty, addClientCategory, addFileStatus,
+        addCity, addSpecialty, addClientCategory, addFileStatus, addServiceType,
         reorderList, updateItem, deleteItem, fetchUsage, deactivateLawyer
     } = useConfig();
 
@@ -375,7 +389,7 @@ const AdminPage = () => {
     const serverLists: Record<string, ConfigItem[]> = {
         lawyers: sortedLawyers, statuses, doctypes, emails: emailRecipients, case_subjects: caseSubjects,
         file_types: fileTypes, party_roles: partyRoles, bureau_types: bureauTypes, cities, specialties,
-        client_categories: clientCategories, file_statuses: fileStatuses,
+        client_categories: clientCategories, file_statuses: fileStatuses, service_types: serviceTypes,
     };
 
     // State'te kalan TEK liste hâli kullanıcının geçici sürükle-bırak sırasıdır: sürükleme
@@ -475,6 +489,7 @@ const AdminPage = () => {
     const [isSpecialtyAddOpen, setIsSpecialtyAddOpen] = useState(false);
     const [isClientCategoryAddOpen, setIsClientCategoryAddOpen] = useState(false);
     const [isFileStatusAddOpen, setIsFileStatusAddOpen] = useState(false);
+    const [isServiceTypeAddOpen, setIsServiceTypeAddOpen] = useState(false);
 
     // Form States
     const [lawyerForm, setLawyerForm] = useState({ name: "", tc_no: "", sicil_no: "", city: "" });
@@ -490,6 +505,7 @@ const AdminPage = () => {
     const [specialtyForm, setSpecialtyForm] = useState({ code: "", name: "" });
     const [clientCategoryForm, setClientCategoryForm] = useState({ code: "", name: "" });
     const [fileStatusForm, setFileStatusForm] = useState({ name: "" });
+    const [serviceTypeForm, setServiceTypeForm] = useState({ name: "" });
     // Aktif sekmedeki listeyi kelimeyle filtreler; sekme değişince sıfırlanır
     const [listSearch, setListSearch] = useState("");
 
@@ -566,7 +582,7 @@ const AdminPage = () => {
         lawyers, statuses, doctypes, case_subjects: caseSubjects, emails: emailRecipients,
         file_types: fileTypes, court_types: courtTypes, party_roles: partyRoles,
         bureau_types: bureauTypes, cities, specialties, client_categories: clientCategories,
-        file_statuses: fileStatuses,
+        file_statuses: fileStatuses, service_types: serviceTypes,
     };
 
     const [editing, setEditing] = useState<EditState | null>(null);
@@ -807,6 +823,16 @@ const AdminPage = () => {
             () => { setIsFileStatusAddOpen(false); setFileStatusForm({ name: "" }); });
     };
 
+    // G256: hizmet türü — yalnız ad girilir, kod addan üretilir (handleSaveFileStatus deseni).
+    const handleSaveServiceType = () => {
+        const name = serviceTypeForm.name.trim();
+        const code = serviceTypeCodeOf(name);
+        if (!name || !code) { toast.warning("İsim zorunlu"); return; }
+        if (!confirmSimilar(name, serviceTypes)) return;
+        runAdd(() => addServiceType(code, name),
+            () => { setIsServiceTypeAddOpen(false); setServiceTypeForm({ name: "" }); });
+    };
+
     if (isLoading) {
         return (
             <div>
@@ -878,6 +904,12 @@ const AdminPage = () => {
                                     )}
                                 </div>
                             ))}
+                            {/* G256: hizmet türünün adı veri ekibinin paketiyle eşleşmek zorunda */}
+                            {editing?.type === "service_types" && (
+                                <p role="note" className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
+                                    {SERVICE_TYPE_RENAME_WARNING}
+                                </p>
+                            )}
                         </div>
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setEditing(null)}>İptal</Button>
@@ -979,6 +1011,7 @@ const AdminPage = () => {
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="bureau_types">Büro Türleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="client_categories">Kategoriler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="file_statuses">Dosya Durumları</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="service_types">Hizmet Türleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="specialties">Uzmanlıklar</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="cities">Şehirler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="features">Özellikler</TabsTrigger>
@@ -1360,6 +1393,38 @@ const AdminPage = () => {
                                         <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <ListRows items={shownList("file_statuses")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.file_statuses} />
+                                        </TableBody>
+                                    </Table>
+                                </CardContent>
+                            </Card>
+                        </TabsContent>
+
+                        {/* HİZMET TÜRLERİ TAB (G256) — karttaki hizmet açılır listesinin seçenekleri.
+                            Değerlerin asıl kaynağı veri ekibinin paketidir; bu sekme yazım düzeltme,
+                            sıralama, paket dışı ek ve kullanılmayan değeri kaldırma içindir. */}
+                        <TabsContent value="service_types">
+                            <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
+                                <CardHeader className="flex flex-row items-center justify-between">
+                                    <div>
+                                        <CardTitle>Hizmet Türleri</CardTitle>
+                                        <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
+                                    </div>
+                                    <Dialog open={isServiceTypeAddOpen} onOpenChange={setIsServiceTypeAddOpen}>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Hizmet Türü</Button></DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader><DialogTitle>Yeni Hizmet Türü Ekle</DialogTitle></DialogHeader>
+                                            <div className="grid gap-4 py-4">
+                                                <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={serviceTypeForm.name} onChange={e => setServiceTypeForm({ name: trTitle(e.target.value) })} className="col-span-3" placeholder="Danışmanlık" /></div>
+                                            </div>
+                                            <DialogFooter><Button onClick={handleSaveServiceType} disabled={isSubmitting}>Kaydet</Button></DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </CardHeader>
+                                <CardContent>
+                                    <Table>
+                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableBody>
+                                            <ListRows items={shownList("service_types")} search={listSearch} matches={matchName} rowId={idByCodeOrName} cells={nameCells} actions={rowActions.service_types} />
                                         </TableBody>
                                     </Table>
                                 </CardContent>

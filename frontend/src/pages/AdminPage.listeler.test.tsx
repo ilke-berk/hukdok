@@ -299,3 +299,277 @@ describe("AdminPage config listeleri render'da türetilir (G187)", () => {
         expect(column(1)).toEqual(["Banu Bora", "Ali Alan"]);
     });
 });
+
+// G256 — "Hizmet Türleri" sekmesi: karttaki hizmet açılır listesinin seçenekleri panelden
+// yönetilir (ekle, yeniden adlandır, kullanımdaysa taşıyarak sil, sürükle-sırala). Gerçek
+// `useConfig` kullanılır: mutasyon sonrası `["config","service_types"]` sorgusunun yeniden
+// çekildiği (önbellek tazeleme) ancak böyle sınanır.
+describe("AdminPage Hizmet Türleri sekmesi (G256)", () => {
+    interface Usage {
+        name: string;
+        total: number;
+        items: { label: string; count: number; clearable: boolean }[];
+        clearable: boolean;
+    }
+
+    const SERVICE_URL = "/api/config/service_types";
+    const RENAME_WARNING =
+        "Veri ekibinin paketindeki ad değişmedikçe aktarım bu hizmeti tanımaz; ad değişikliğini veri ekibine bildirin.";
+
+    let container: HTMLDivElement;
+    let root: Root | null = null;
+    let queryClient: QueryClient;
+    // Sahte sunucu: liste her GET'te yeni JSON kopyası olarak döner.
+    let services: ConfigItem[];
+    let fileStatuses: ConfigItem[];
+    let usage: Usage;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        dnd.props = null;
+        services = [
+            { code: "TAKIP-DOKTOR-MUVEKKIL", name: "Takip (doktor müvekkil)" },
+            { code: "LEXIS-RAPOR", name: "Lexis Rapor" },
+            { code: "DANISMANLIK", name: "Danışmanlık" },
+        ];
+        fileStatuses = [{ code: "BILIRKISIDE", name: "Bilirkişide" }];
+        usage = { name: "Lexis Rapor", total: 0, items: [], clearable: true };
+        authRequestMock.mockImplementation(async (url: string, method: string, body?: unknown) => {
+            if (url === SERVICE_URL && method === "GET") return reply(services);
+            if (url === SERVICE_URL && method === "POST") {
+                services = [...services, body as ConfigItem];
+                return reply({ status: "success" });
+            }
+            if (url === "/api/config/file_statuses") return reply(fileStatuses);
+            if (url === "/api/config/required_case_fields") return reply({ fields: [], party_rule: null });
+            if (url === "/api/config/update") {
+                const { code, fields } = body as { code: string; fields: { name: string } };
+                services = services.map(s => (s.code === code ? { ...s, name: fields.name } : s));
+                return reply({ status: "success", updated: 4 });
+            }
+            if (url === "/api/config/reorder") {
+                const { ordered_ids } = body as { ordered_ids: string[] };
+                services = ordered_ids.map(id => services.find(s => s.code === id)!).filter(Boolean);
+                return reply({ status: "success" });
+            }
+            if (url.startsWith("/api/config/usage")) return reply(usage);
+            if (url === "/api/config/delete") {
+                const { code } = body as { code: string };
+                services = services.filter(s => s.code !== code);
+                return reply({ status: "success", affected: usage.total });
+            }
+            return reply([]);
+        });
+        queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        container = document.createElement("div");
+        document.body.appendChild(container);
+    });
+
+    afterEach(() => {
+        if (root) {
+            act(() => root!.unmount());
+            root = null;
+        }
+        container.remove();
+        queryClient.clear();
+        vi.restoreAllMocks();
+    });
+
+    function render(url = "/admin?tab=service_types") {
+        root = createRoot(container);
+        act(() => {
+            root!.render(
+                <QueryClientProvider client={queryClient}>
+                    <MemoryRouter initialEntries={[url]}>
+                        <AdminPage />
+                    </MemoryRouter>
+                </QueryClientProvider>,
+            );
+        });
+    }
+
+    async function waitFor(condition: () => boolean, label: string): Promise<void> {
+        for (let i = 0; i < 200; i++) {
+            if (condition()) return;
+            await act(async () => { await new Promise(r => setTimeout(r, 5)); });
+        }
+        throw new Error(`Koşul sağlanmadı: ${label}`);
+    }
+
+    const callsTo = (url: string, method: string) =>
+        authRequestMock.mock.calls.filter(([u, m]) => u === url && m === method);
+    const bodyOf = (url: string) => callsTo(url, "POST").map(c => c[2]);
+
+    /** Açık sekmedeki tablonun ad sütunu (0 = sürükleme tutamacı). */
+    const names = () =>
+        Array.from(container.querySelectorAll("tbody tr")).map(tr => tr.querySelectorAll("td")[1]?.textContent ?? "");
+    const rowOf = (name: string) =>
+        Array.from(container.querySelectorAll("tbody tr")).find(tr => tr.querySelectorAll("td")[1]?.textContent === name)!;
+    /** Satırın işlem düğmeleri: [düzenle, sil]. */
+    const rowButtons = (name: string) =>
+        Array.from(rowOf(name).querySelectorAll("td:last-child button")) as HTMLButtonElement[];
+
+    const dialog = () => document.body.querySelector("[role='dialog']") as HTMLElement | null;
+    const dialogButton = (text: string) =>
+        Array.from(dialog()!.querySelectorAll("button")).find(b => b.textContent?.trim() === text) as HTMLButtonElement;
+    const click = (el: HTMLElement) => act(async () => { el.click(); });
+
+    function typeInto(input: HTMLInputElement, value: string) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+        act(() => {
+            setter.call(input, value);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+    }
+
+    async function openTab(): Promise<void> {
+        render();
+        await waitFor(() => names().length === 3, "hizmet türü satırları");
+    }
+
+    it("?tab=service_types sekmeyi açar; liste sunucu sırasıyla basılır, arama süzer, Excel aktarımı görünür", async () => {
+        await openTab();
+
+        expect(container.querySelector("[role='tab'][data-state='active']")?.textContent).toBe("Hizmet Türleri");
+        expect(names()).toEqual(["Takip (doktor müvekkil)", "Lexis Rapor", "Danışmanlık"]);
+        // Excel dışa aktarımı TAB_TO_LIST'ten çözülür — sekmede düğme görünür.
+        expect(Array.from(container.querySelectorAll("button")).some(b => b.textContent?.includes("Excel'e Aktar"))).toBe(true);
+
+        typeInto(container.querySelector("input[placeholder='Ara...']") as HTMLInputElement, "lexis");
+        expect(names()).toEqual(["Lexis Rapor"]);
+    });
+
+    it("ekleme: yalnız ad girilir, kod addan üretilir; POST gövdesi {code, name} ve liste yeniden çekilir", async () => {
+        await openTab();
+
+        await click(Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("Yeni Hizmet Türü"))!);
+        const inputs = dialog()!.querySelectorAll("input");
+        expect(inputs.length).toBe(1);   // yalnız ad — kod alanı yok
+        typeInto(inputs[0], "sulh görüşmesi (şirket)");
+        await click(dialogButton("Kaydet"));
+        await waitFor(() => names().length === 4, "eklenen satır");
+
+        // Ad yazarken başlık biçimine çevrilir; kod seed biçiminde (ASCII, "-" ayraçlı).
+        expect(callsTo(SERVICE_URL, "POST").map(c => c[2]))
+            .toEqual([{ code: "SULH-GORUSMESI-SIRKET", name: "Sulh Görüşmesi (şirket)" }]);
+        expect(callsTo(SERVICE_URL, "GET").length).toBe(2);
+        expect(toastMock.success).toHaveBeenCalledWith("Eklendi");
+        expect(names()).toContain("Sulh Görüşmesi (şirket)");
+    });
+
+    it("ekleme: boş ad istek atmaz; benzer ad onaylanmazsa istek atmaz", async () => {
+        const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+        await openTab();
+
+        await click(Array.from(container.querySelectorAll("button")).find(b => b.textContent?.includes("Yeni Hizmet Türü"))!);
+        await click(dialogButton("Kaydet"));
+        expect(toastMock.warning).toHaveBeenCalledWith("İsim zorunlu");
+
+        typeInto(dialog()!.querySelector("input") as HTMLInputElement, "Lexis Raporu");
+        await click(dialogButton("Kaydet"));
+
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(String(confirmSpy.mock.calls[0][0])).toContain("Lexis Rapor");
+        expect(callsTo(SERVICE_URL, "POST").length).toBe(0);
+    });
+
+    it("yeniden adlandırma: diyalogda veri ekibi uyarısı; kayıt sonrası yansıyan kayıt sayısı ve tazelenen liste", async () => {
+        await openTab();
+
+        await click(rowButtons("Lexis Rapor")[0]);
+        expect(dialog()!.textContent).toContain(RENAME_WARNING);
+        const input = dialog()!.querySelector("input") as HTMLInputElement;
+        expect(input.value).toBe("Lexis Rapor");
+        typeInto(input, "Lexis Raporu");
+        await click(dialogButton("Kaydet"));
+        await waitFor(() => names().includes("Lexis Raporu"), "yeni ad ekranda");
+
+        expect(bodyOf("/api/config/update"))
+            .toEqual([{ type: "service_types", code: "LEXIS-RAPOR", fields: { name: "Lexis Raporu" } }]);
+        expect(toastMock.success).toHaveBeenCalledWith("Güncellendi — eski adı taşıyan 4 kayıt da yansıtıldı");
+        // Önbellek tazelendi: service_types sorgusu yeniden çekildi.
+        expect(callsTo(SERVICE_URL, "GET").length).toBe(2);
+        expect(names()).toEqual(["Takip (doktor müvekkil)", "Lexis Raporu", "Danışmanlık"]);
+    });
+
+    it("veri ekibi uyarısı yalnız hizmet türlerinde çıkar (dosya durumu düzenlemesinde yok)", async () => {
+        render("/admin?tab=file_statuses");
+        await waitFor(() => names().length === 1, "dosya durumu satırı");
+
+        await click(rowButtons("Bilirkişide")[0]);
+
+        expect((dialog()!.querySelector("input") as HTMLInputElement).value).toBe("Bilirkişide");
+        expect(dialog()!.textContent).not.toContain(RENAME_WARNING);
+    });
+
+    it("sürükle-bırak: yeni sıra /api/config/reorder'a kodlarla gider ve liste yeniden çekilir", async () => {
+        await openTab();
+
+        await act(async () => { await dnd.props!.onDragStart?.({ active: { id: "TAKIP-DOKTOR-MUVEKKIL" } } as unknown as DragStartEvent); });
+        await act(async () => {
+            await dnd.props!.onDragEnd?.({ active: { id: "TAKIP-DOKTOR-MUVEKKIL" }, over: { id: "DANISMANLIK" } } as unknown as DragEndEvent);
+        });
+        await waitFor(() => callsTo(SERVICE_URL, "GET").length === 2, "sıralama sonrası yeniden çekme");
+
+        expect(bodyOf("/api/config/reorder"))
+            .toEqual([{ type: "service_types", ordered_ids: ["LEXIS-RAPOR", "DANISMANLIK", "TAKIP-DOKTOR-MUVEKKIL"] }]);
+        expect(toastMock.error).not.toHaveBeenCalled();
+        expect(names()).toEqual(["Lexis Rapor", "Danışmanlık", "Takip (doktor müvekkil)"]);
+    });
+
+    it("silme: kullanımdaki değerde sayı gösterilir, 'boşalt' devre dışı, yalnız başka değere taşınır", async () => {
+        usage = {
+            name: "Lexis Rapor", total: 7, clearable: false,
+            items: [{ label: "dava hizmeti", count: 7, clearable: false }],
+        };
+        await openTab();
+
+        await click(rowButtons("Lexis Rapor")[1]);
+        await waitFor(() => dialog()?.querySelectorAll("input[type='radio']").length === 2, "silme seçenekleri");
+
+        expect(callsTo("/api/config/usage?type=service_types&code=LEXIS-RAPOR", "GET").length).toBe(1);
+        expect(dialog()!.textContent).toContain("dava hizmeti");
+        expect(dialog()!.querySelector("li")?.textContent).toContain("7");
+        const [clearRadio, reassignRadio] = Array.from(dialog()!.querySelectorAll("input[type='radio']")) as HTMLInputElement[];
+        expect(clearRadio.disabled).toBe(true);
+        expect(clearRadio.checked).toBe(false);
+        expect(reassignRadio.disabled).toBe(false);
+        expect(reassignRadio.checked).toBe(true);
+
+        // Hedef seçilmeden silinmez.
+        await click(dialogButton("Sil"));
+        expect(toastMock.warning).toHaveBeenCalledWith("Taşınacak kaydı seçin");
+        expect(callsTo("/api/config/delete", "POST").length).toBe(0);
+
+        // Hedef adayları: silinen değerin kendisi dışındaki hizmet türleri.
+        const select = dialog()!.querySelector("select") as HTMLSelectElement;
+        expect(Array.from(select.options).map(o => o.value)).toEqual(["", "TAKIP-DOKTOR-MUVEKKIL", "DANISMANLIK"]);
+        act(() => {
+            select.value = "DANISMANLIK";
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await click(dialogButton("Sil"));
+        await waitFor(() => names().length === 2, "silinen satır listeden çıktı");
+
+        expect(bodyOf("/api/config/delete"))
+            .toEqual([{ type: "service_types", code: "LEXIS-RAPOR", mode: "reassign", target_code: "DANISMANLIK" }]);
+        expect(toastMock.success).toHaveBeenCalledWith("Silindi — 7 kayıt taşındı");
+        expect(callsTo(SERVICE_URL, "GET").length).toBe(2);
+        expect(names()).toEqual(["Takip (doktor müvekkil)", "Danışmanlık"]);
+    });
+
+    it("silme: kullanılmayan değer seçenek sorulmadan doğrudan silinir", async () => {
+        await openTab();
+
+        await click(rowButtons("Lexis Rapor")[1]);
+        await waitFor(() => dialog()?.textContent?.includes("güvenle silinebilir") ?? false, "kullanım yok bilgisi");
+        expect(dialog()!.querySelectorAll("input[type='radio']").length).toBe(0);
+        await click(dialogButton("Sil"));
+        await waitFor(() => names().length === 2, "silinen satır listeden çıktı");
+
+        expect(bodyOf("/api/config/delete"))
+            .toEqual([{ type: "service_types", code: "LEXIS-RAPOR", mode: "keep", target_code: undefined }]);
+        expect(toastMock.success).toHaveBeenCalledWith("Silindi");
+        expect(callsTo(SERVICE_URL, "GET").length).toBe(2);
+    });
+});

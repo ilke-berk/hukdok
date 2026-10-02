@@ -302,6 +302,9 @@ export const useConfig = () => {
         specialties: CONFIG_KEYS.specialties,
         client_categories: CONFIG_KEYS.clientCategories,
         file_statuses: CONFIG_KEYS.fileStatuses,
+        // G256: yönetim panelinin "Hizmet Türleri" sekmesi — güncelle/sil/sırala sonrası
+        // karttaki ve yeni dava ekranındaki hizmet seçicisi yeni listeyi görsün.
+        service_types: CONFIG_KEYS.serviceTypes,
     };
 
     const invalidateType = (type: string) => {
@@ -340,6 +343,7 @@ export const useConfig = () => {
     const addSpecialtyM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/specialties", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.specialties) });
     const addClientCategoryM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/client_categories", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.clientCategories) });
     const addFileStatusM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/file_statuses", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.fileStatuses) });
+    const addServiceTypeM = useMutation({ mutationFn: ({ code, name }: { code: string; name: string }) => mutate("/api/config/service_types", "POST", { code, name }), onSuccess: () => invalidate(CONFIG_KEYS.serviceTypes) });
 
     // Ortak düzenleme — ad değiştiyse backend eski adı taşıyan dava/müvekkil/belge
     // kayıtlarına yayar; dönen sayı kaç kaydın yansıdığıdır.
@@ -432,6 +436,8 @@ export const useConfig = () => {
         addSpecialty: (code: string, name: string) => addSpecialtyM.mutateAsync({ code, name }),
         addClientCategory: (code: string, name: string) => addClientCategoryM.mutateAsync({ code, name }),
         addFileStatus: (code: string, name: string) => addFileStatusM.mutateAsync({ code, name }),
+        /** Hizmet türü ekler (G256, yönetim paneli); `["config","service_types"]` önbelleğini tazeler. */
+        addServiceType: (code: string, name: string) => addServiceTypeM.mutateAsync({ code, name }),
 
         reorderList: (type: string, orderedIds: string[]) => reorderListM.mutateAsync({ type, orderedIds }),
 
