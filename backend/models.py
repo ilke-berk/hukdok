@@ -173,7 +173,18 @@ class Case(Base):
     # `client_categories`/`bureau_types` de KULLANILMAZ (başka varlık/sütunun
     # listeleri, değer havuzları örtüşmüyor — G119 tasarım kararı).
     muvekkil_tipi = Column(String(100), nullable=True)  # KAPALI liste (client_types)
-    hizmet_turu = Column(String(100), nullable=True)    # KAPALI liste (service_types)
+    # G248 (01.10.2026 kullanıcı kararı): hizmet türü kartın değil KART × MÜVEKKİL
+    # çiftinin özelliğidir — gerçek kaynak `case_hizmetleri` (CaseHizmeti). Bu kolon
+    # ondan TÜRETİLEN özettir: kartın satırlarındaki DISTINCT adlar, alfabetik,
+    # " ; " ile birleşik. Tek yazıcı `managers/case_hizmetleri.ozeti_yenile`. Hizmet
+    # satırı hiç yazılmamış kartta (geriye dönük doldurma G249) aktarımın yazdığı eski
+    # tek değer durur.
+    # DİKKAT — veritabanındaki kolon TEXT'tir, 100 DEĞİL: 9 adın birleşimi 100'ü aşar,
+    # migrasyon madde 59 her kurulumda (create_all'ın yarattığı VARCHAR(100) dahil)
+    # kolonu TEXT'e genişletir. Buradaki `String(100)` bildirimi G119 kilidiyle
+    # (tests/test_g119_*) duruyor; SQLAlchemy uzunluğu Python tarafında zorlamaz —
+    # bu kolondan sınır OKUYAN kod yazma.
+    hizmet_turu = Column(String(100), nullable=True)    # TÜRETİLMİŞ özet (case_hizmetleri); DB'de TEXT
     # Dava değeri + para birimi (G123, 05.09.2026): teslimin "Dava Değeri TL"
     # HAM değeri ve "Para Birimi TL" sütunu. `maddi_tazminat` bundan TÜRETİLİR
     # (D4: dava değeri − manevi); ham değer saklanmayınca türetme geri
@@ -215,6 +226,10 @@ class Case(Base):
     # karar veritabanınındır ve NOT NULL + ondelete'siz FK yazımı reddeder.
     # Kartın normal silmesi zaten SOFT'tur (deleted_at); föy envanteri korunur.
     foys = relationship("CaseFoy", back_populates="case", passive_deletes="all")
+    # Hizmet kayıtları (G248) — föy deseni: cascade'siz + passive_deletes="all".
+    # Yazma yolu ilişki DEĞİL `managers/case_hizmetleri`; ilişki yalnız kart
+    # okumasında (`get_case` joinedload — ek sorgu açmaz, G051 kilidi) kullanılır.
+    hizmetler = relationship("CaseHizmeti", back_populates="case", passive_deletes="all")
 
 
 class CaseEsasNumber(Base):
@@ -406,6 +421,51 @@ class CaseFoy(Base):
 
     case = relationship("Case", back_populates="foys")
     case_party = relationship("CaseParty", foreign_keys=[case_party_id])
+
+
+class CaseHizmeti(Base):
+    """"Bu kartta bu müvekkile bu hizmet verildi" satırı (G248, kullanıcı kararı 01.10.2026).
+
+    Hizmet türü kartın değil **kart × müvekkil tarafı** çiftinin özelliğidir
+    (muhasebe: hangi hizmet hangi müvekkile verildi; aynı müvekkile birden çok
+    hizmet mümkün). Ölçüm (lokal, 01.10): 1.060 kartta çok hizmet, 1.171 kartta
+    çok müvekkil. `cases.hizmet_turu` bu tablodan TÜRETİLEN özettir.
+
+    TEK yazma yolu `managers/case_hizmetleri.py` — satır ekleyen/silen her yol
+    kart özetini (`ozeti_yenile`) de tazeler.
+
+    * `case_party_id` AYNI kartın `party_type='CLIENT'` tarafıdır (manager
+      doğrular); FK `ondelete="RESTRICT"` (föy deseni): taraf silinince hizmet
+      kaydı sessizce kaybolamaz — elle satırlar `update_case`te tarihçeli
+      silinir, föy kaynaklı satırı olan taraf silinemez.
+    * `hizmet_turu` `service_types` listesinin ADIdır (denormalize; yeniden
+      adlandırma yayılımı `reference_lists.SATIR_BAGIMLILIKLARI`).
+    * `foy_id` DOLU = föy kaynaklı satır: yalnız aktarım yazar/değiştirir
+      (`foydan_yaz`), API'den silinemez. NULL = elle satır. `ondelete="RESTRICT"`.
+    * Tekillik iki KISMİ unique index'le (database.py madde 59, koşulsuz
+      ("index", ...) op'u): `(foy_id) WHERE foy_id IS NOT NULL` — föy başına tek
+      satır; `(case_id, case_party_id, hizmet_turu) WHERE foy_id IS NULL` —
+      elle satır tekrarı yok.
+    * `case_id` FK'sında `ondelete` BİLİNÇLİ YOK (CaseFoy ile aynı gerekçe):
+      dava soft-delete kullanır; hard-delete hizmet kaydını sessizce silmemeli.
+
+    Kolonlarda `index=True` BİLİNÇLİ YOK (G042/G192): `id` index'i PK ikizi
+    olurdu; FK index'leri migrasyondadır (G043 bekçisi: index'siz FK yok).
+    """
+    __tablename__ = "case_hizmetleri"
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    case_party_id = Column(
+        Integer, ForeignKey("case_parties.id", ondelete="RESTRICT"), nullable=False
+    )
+    hizmet_turu = Column(String(100), nullable=False)     # service_types ADI
+    foy_id = Column(Integer, ForeignKey("case_foys.id", ondelete="RESTRICT"), nullable=True)
+    source = Column(String(100), nullable=True)           # "panel" | aktarım imzası
+    created_by = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now(), server_default=func.now())
+
+    case = relationship("Case", back_populates="hizmetler")
 
 
 class CaseStageLog(Base):

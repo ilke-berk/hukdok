@@ -1433,6 +1433,57 @@ _MIGRATIONS = [
     ("columns", "notifications", {
         "link": "VARCHAR(300)",
     }),
+
+    # ─── 59. HİZMET KAYDI — kart × müvekkil × hizmet (G248, kullanıcı kararı 01.10) ──
+    # `case_hizmetleri` (models.CaseHizmeti): "bu kartta bu müvekkile bu hizmet verildi".
+    # Tek yazma yolu `managers/case_hizmetleri.py`; `cases.hizmet_turu` bundan TÜRETİLEN
+    # özettir (`ozeti_yenile`). Migrasyon VERİ YAZMAZ — föy kaynaklı satırların geriye
+    # dönük doldurması G249 script'inin işi (kuru koşu varsayılan, insan adımı).
+    # Tablo op'u KOŞULLUDUR (create_all yaratır) → kalıcı index/kısıtlar alttaki KOŞULSUZ
+    # ("index", ...) op'unda (CLAUDE.md "koşullu op" tuzağı):
+    #   * `(case_id)` / `(case_party_id)`: FK index'leri (G043 bekçisi) — kartın satırları
+    #     ve taraf silme denetimi; `foy_id` FK'sını kısmi unique karşılar (NULL aranmaz);
+    #   * `uq_case_hizmetleri_foy`: föy başına TEK satır (`foydan_yaz` upsert anahtarı);
+    #   * `uq_case_hizmetleri_elle`: aynı (kart, müvekkil, hizmet) elle satırı tekrar etmez.
+    #     Föy satırları kapsam dışı — iki föy aynı müvekkile aynı hizmeti taşıyabilir.
+    ("table", "case_hizmetleri", """
+        CREATE TABLE case_hizmetleri (
+            id SERIAL PRIMARY KEY,
+            case_id INTEGER NOT NULL REFERENCES cases(id),
+            case_party_id INTEGER NOT NULL REFERENCES case_parties(id) ON DELETE RESTRICT,
+            hizmet_turu VARCHAR(100) NOT NULL,
+            foy_id INTEGER REFERENCES case_foys(id) ON DELETE RESTRICT,
+            source VARCHAR(100),
+            created_by VARCHAR(200),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """, []),
+    ("index", "case_hizmetleri", [
+        "CREATE INDEX IF NOT EXISTS idx_case_hizmetleri_case ON case_hizmetleri (case_id)",
+        "CREATE INDEX IF NOT EXISTS idx_case_hizmetleri_party ON case_hizmetleri (case_party_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_hizmetleri_foy "
+        "ON case_hizmetleri (foy_id) WHERE foy_id IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_hizmetleri_elle "
+        "ON case_hizmetleri (case_id, case_party_id, hizmet_turu) WHERE foy_id IS NULL",
+    ]),
+    # `cases.hizmet_turu` VARCHAR(100) → TEXT: türetilmiş özet çok değerlidir (9 adın
+    # " ; " birleşimi 100'ü aşar). create_all mevcut kolonun tipini değiştirmez ve yeni
+    # kurulumda kolonu modeldeki bildirimle (VARCHAR(100)) yaratır → genişletme HER
+    # kurulumda bu op'la gelir. ("index", ...) op'u koşulsuz koşar; ALTER tip yoklamalıdır
+    # (madde 54/58'in `DO $$ ... IF ... $$` deseni): kolon zaten TEXT ise HİÇBİR DDL
+    # koşmaz — madde 44'ün çıplak `ALTER ... TYPE` deseni her açılışta `cases` üzerinde
+    # ACCESS EXCLUSIVE kilit alırdı, burada ikinci koşu kilitsiz no-op'tur
+    # (`test_migration_path` ikinci-koşu fotoğrafı değişmez). VARCHAR → TEXT ikili
+    # uyumludur: tablo yeniden yazılmaz, veri kaybı yok. Madde 42'nin "columns" op'u
+    # (VARCHAR(100)) AYNEN kalır — kolonu hiç olmayan eski kurulumda önce o ekler.
+    ("index", "cases", [
+        "DO $$ BEGIN "
+        "IF EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'cases' "
+        "AND column_name = 'hizmet_turu' AND data_type <> 'text') THEN "
+        "ALTER TABLE cases ALTER COLUMN hizmet_turu TYPE TEXT; "
+        "END IF; END $$",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

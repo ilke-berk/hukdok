@@ -34,7 +34,7 @@ from managers.lawyer_resolver import (
 # uygulama çıkarılmadı). Import yönü tek yönlüdür — `stage_decisions` yalnız
 # `models`/`db_errors` import eder, `case_manager`ı ÇAĞIRMAZ: döngü yok,
 # "sonra import" hilesine gerek kalmadı.
-from managers import stage_decisions
+from managers import case_hizmetleri, stage_decisions
 from services import ofis_no
 from services.multi_value import SEPARATOR, split_values
 
@@ -429,11 +429,16 @@ def get_case(case_id: int, tenant_id: str = None):
     # sorgu sayısı 6'da kalır (G051 kilidi). Kart başına föy sayısı küçüktür
     # (ölçüm 10.08: en kalabalık kart 12 föy), satır çoğalması önemsiz; ayrı
     # bir round-trip ise her kart açılışına eklenirdi.
+    #
+    # `hizmetler` (G248) AYNI gerekçeyle joinedload: hizmet satırları da kart
+    # ifadesinde gelir, sorgu sayısı 6'da kalır. Satır başına müvekkil adı ve
+    # föy SistemNo'su ek sorgu açmaz — ikisi de bu kartın zaten yüklenen
+    # `parties` / `foys` koleksiyonlarından okunur.
     try:
         db = SessionLocal()
         query = (
             db.query(models.Case)
-            .options(joinedload(models.Case.foys))
+            .options(joinedload(models.Case.foys), joinedload(models.Case.hizmetler))
             .filter(models.Case.id == case_id)
         )
         query = _apply_tenant_filter(query, tenant_id)
@@ -553,8 +558,17 @@ def get_case(case_id: int, tenant_id: str = None):
             # service_types); NULL = "bilinmiyor". `service_type` (ofis no bloğu,
             # hemen aşağıda) ile İLGİSİZ.
             "muvekkil_tipi": item.muvekkil_tipi,
+            # G248: `hizmet_turu` artık TÜRETİLMİŞ özettir (" ; " birleşik) — kaynağı
+            # hemen aşağıdaki `hizmetler` satırları (`case_hizmetleri`).
             "hizmet_turu": item.hizmet_turu,
         }
+        # Hizmet kayıtları (G248): kart × müvekkil × hizmet. Müvekkil adı ve föy
+        # SistemNo'su yukarıda yüklenen koleksiyonlardan — ek sorgu yok.
+        taraf_adlari = {p.id: p.name for p in item.parties}
+        foy_nolari = {f.id: f.sistem_no for f in item.foys}
+        result["hizmetler"] = case_hizmetleri.satirlari_sirala(
+            case_hizmetleri.satir_dict(h, taraf_adlari, foy_nolari) for h in item.hizmetler
+        )
         result["service_type"] = item.service_type
         result["missing_required_fields"] = compute_missing_fields(result, result["parties"])
         return result
@@ -1441,6 +1455,15 @@ def update_case(case_id: int, data: dict, tenant_id: str = None, *,
                 tc_no=(p.get("tc_no") or "").strip() or None
             ))
         if delete_ids:
+            # G248: karttan düşen müvekkilin ELLE hizmet satırları taraf silinmeden
+            # ÖNCE tarihçeli silinir (case_hizmetleri.case_party_id RESTRICT) ve kart
+            # özeti yenilenir. Föy kaynaklı satırı olan taraf silinemez — aşağıdaki
+            # DELETE `case_foys`/`case_hizmetleri` RESTRICT'ine takılır (davranış
+            # değişmedi: işlem geri alınır, route 500 döner).
+            case_hizmetleri.taraflarin_elle_satirlarini_sil(
+                db, case, delete_ids,
+                changed_by=changed_by or PANEL_SOURCE, source=PANEL_SOURCE,
+            )
             db.query(models.CaseParty).filter(
                 models.CaseParty.id.in_(delete_ids)
             ).delete(synchronize_session=False)

@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from database import SessionLocal
 from db_errors import KayitMesgulError, is_lock_timeout, is_unique_violation
 import models
+from managers import case_hizmetleri
 from managers.config_manager import DynamicConfig
 
 logger = logging.getLogger("AdminManager")
@@ -289,6 +290,10 @@ DEPENDENCIES = {
     "event_types":    [DepSpec(models.Case, "olay_turu", "dava")],
     "judgment_roles": [DepSpec(models.Case, "hukumdeki_rol", "dava")],
     # Müvekkil Tipi / Hizmet Türü (G119): ad, `cases`in ilgili kolonunda denormalize.
+    # G248: `cases.hizmet_turu` artık `case_hizmetleri`nden TÜRETİLEN özettir; bu bağ
+    # hizmet satırı henüz yazılmamış kartlardaki (geriye dönük doldurma öncesi) tek
+    # değerli eski hücreler için kalır. Hizmet SATIRLARININ bağı aşağıda:
+    # `SATIR_BAGIMLILIKLARI["service_types"]` — tüm bağlar için `bagimliliklar(key)`.
     "client_types":   [DepSpec(models.Case, "muvekkil_tipi", "dava")],
     "service_types":  [DepSpec(models.Case, "hizmet_turu", "dava")],
     "doctypes":        [DepSpec(models.CaseDocument, "belge_turu_adi", "belge", code_column="belge_turu_kodu")],
@@ -317,6 +322,26 @@ DEPENDENCIES = {
     # idare adı yeniden adlandırılınca taraf kayıtları elle güncellenir).
     "defendant_administrations": [],
 }
+
+# SATIR düzeyi bağlar (G248): ad bir kart KOLONUNDA değil, kendi tekillik kuralı olan
+# bir alt tablonun satırlarında yaşar. Düz kolon bağından iki farkı var, bu yüzden
+# `DEPENDENCIES`e değil buraya yazılır:
+#   * yayılım düz UPDATE DEĞİLDİR — yeniden adlandırma/taşıma kısmi UNIQUE'e çarpabilir
+#     (aynı kart+müvekkilde hedef adlı elle satır zaten var): çakışan elle satır
+#     birleştirilir, sonra etkilenen kartların türetilmiş özeti yenilenir
+#     (`case_hizmetleri.liste_adi_degisti`, `_apply_to_dependents` çağırır);
+#   * `DEPENDENCIES["service_types"]` içeriği `tests/test_g119_*` ile birebir kilitlidir.
+# Kullanım sayımı ve silme kapısı (`get_usage` → `clearable`) İKİ haritayı birlikte
+# okur: `bagimliliklar(key)`. Listeden "bu ad kullanılıyor mu?" soran yeni kod da onu çağırır.
+SATIR_BAGIMLILIKLARI = {
+    # clearable=False: kolon NOT NULL — hizmet satırı boşaltılamaz, yalnız taşınabilir.
+    "service_types": [DepSpec(models.CaseHizmeti, "hizmet_turu", "dava hizmeti", clearable=False)],
+}
+
+
+def bagimliliklar(key: str) -> list:
+    """Listenin TÜM bağları: kolon bağları (`DEPENDENCIES`) + satır bağları."""
+    return [*DEPENDENCIES.get(key, []), *SATIR_BAGIMLILIKLARI.get(key, [])]
 
 
 _TRUE_WORDS = frozenset({"1", "true", "evet", "yes", "on"})
@@ -570,7 +595,7 @@ def get_usage(list_type: str, identifier: str):
         rows = []
         if name:
             variants = _name_variants(name)
-            for dep in DEPENDENCIES.get(key, []):
+            for dep in bagimliliklar(key):
                 count = (
                     db.query(func.count())
                     .select_from(dep.model)
@@ -609,6 +634,11 @@ def _apply_to_dependents(db, key: str, old_name: str, new_name, new_code=None) -
             .filter(getattr(dep.model, dep.column).in_(variants))
             .update(values, synchronize_session=False)
         )
+    # Satır bağları (G248): hizmet satırları yeni ada çevrilir, kısmi UNIQUE'e çarpan
+    # elle satır birleşir, etkilenen kartların özeti yenilenir. `new_name is None`
+    # (boşaltma) buraya uğramaz — kolon NOT NULL, `get_usage` kapısı zaten reddeder.
+    if new_name and key in SATIR_BAGIMLILIKLARI:
+        affected += case_hizmetleri.liste_adi_degisti(db, variants, new_name)
     return affected
 
 

@@ -1,6 +1,6 @@
 from enum import Enum
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -501,6 +501,10 @@ class CaseRead(BaseModel):
     # kapsamda; SILINDI | KAPSAM_DISI işaretli föy kartın föy panelinde
     # "kapsam dışı" rozetiyle gösterilir (CaseFoyPanel, G123).
     foyler: List[Dict[str, Any]] = []
+    # Kartın hizmet kayıtları (`case_hizmetleri`, G248): {id, case_party_id,
+    # muvekkil_adi, hizmet_turu, kaynak ("foy" | "elle"), foy_id, sistem_no}.
+    # `hizmet_turu` (yukarıda) bu listeden TÜRETİLEN özettir (" ; " birleşik).
+    hizmetler: List[Dict[str, Any]] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -730,6 +734,32 @@ class CaseNoteRead(BaseModel):
     author_email: str
     created_at: str
     can_delete: bool
+
+
+# ─── HİZMET KAYDI (G248) ─────────────────────────────────────────────────────
+# Sözleşme: routes/case_hizmetleri.py — kart × müvekkil × hizmet satırları.
+
+class CaseHizmetRead(BaseModel):
+    """Tek hizmet satırı. `kaynak`: "foy" (aktarım yazdı, salt okunur) | "elle"."""
+    id: int
+    case_party_id: int
+    muvekkil_adi: Optional[str] = None
+    hizmet_turu: str
+    kaynak: Literal["foy", "elle"]
+    foy_id: Optional[int] = None
+    sistem_no: Optional[str] = None     # yalnız föy kaynaklı satırda
+
+
+class CaseHizmetCreate(BaseModel):
+    """`POST /api/cases/{id}/hizmetler` gövdesi — tek elle satır."""
+    case_party_id: int
+    hizmet_turu: str
+
+
+class CaseHizmetKumesi(BaseModel):
+    """`PUT /api/cases/{id}/hizmetler/{case_party_id}` gövdesi — müvekkilin elle
+    hizmet KÜMESİ (çoklu seçim); boş liste = elle satırların tamamı silinir."""
+    hizmet_turleri: List[str]
 
 
 # ─── HATA BİLDİRİMİ (02.10.2026) ──────────────────────────────────────────────
