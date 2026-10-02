@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { IntakeFieldRow } from "@/components/intake/IntakeFieldRow";
 import { LawyerCombobox } from "@/components/LawyerCombobox";
+import { HizmetSecici } from "@/components/HizmetSecici";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { useCases, useOfisNoOnizleme, CASE_ALREADY_SAVED_MESSAGE } from "@/hooks/useCases";
 import { useConfig } from "@/hooks/useConfig";
@@ -49,11 +50,20 @@ import {
   YARGI_TURLERI,
 } from "@/lib/caseNumberUtils";
 import { predictDocTypeFromName } from "@/lib/predictDocType";
+import {
+  etkinHizmetler,
+  hizmetEksikMesaji,
+  hizmetsizMuvekkiller,
+  ilkDoluKume,
+  HIZMET_EKSIK_UYARISI,
+  TUMUNE_UYGULA_ETIKETI,
+} from "@/lib/muvekkilHizmetleri";
 
 // =====================================================================
 // Adım 3 — İnceleme ("Dava Kartı Onayı"): UX'in kalbi.
 // Onay semantiği: boş olmayan her AI değeri kaydetten önce tiklenmeli;
 // Kaydet, tüm alanlar + en az 1 müvekkil (CLIENT) onaylanana dek pasif.
+// G253: onaylı her müvekkilin en az bir hizmeti de olmalı (backend 422 kuralı).
 // =====================================================================
 
 const ROL_DISPLAY: Record<string, string> = {
@@ -80,6 +90,9 @@ interface ReviewParty {
   // Enrich modu: davada zaten kayıtlı tarafın id'si — satır salt-okunur
   // gösterilir, apply'a gönderilmez (yalnız EKLEME)
   existingId?: number | null;
+  // G253: müvekkilin AÇIK hizmet seçimi (`service_types` adları). Alan yok = seçiciye
+  // dokunulmadı → kayıtlı carinin kategorisine göre ön seçim (bkz. `etkinHizmet`).
+  hizmet_turleri?: string[];
 }
 
 interface ReviewDocument {
@@ -115,23 +128,13 @@ const PARTY_TYPE_LABEL: Record<ReviewParty["party_type"], string> = {
   THIRD: "3. Kişi",
 };
 
-// Hizmet türü bitmask etiketleri (NewCase HIZMET_TURLERI ile aynı sıra —
-// index = maskedeki hane; `service_type` olarak kaydedilir)
-const SERVICE_TYPES = [
-  { label: "Rapor", index: 0 },
-  { label: "Danışmanlık", index: 1 },
-  { label: "Dava", index: 2 },
-  { label: "İcra", index: 3 },
-  { label: "Yazışma", index: 4 },
-];
-
 export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnrichExisting, initialReview, conflictNotice }: IntakeReviewStepProps) {
   const { getOfisNoOnizleme } = useCases();
-  const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields } = useConfig();
+  const { lawyers, doctypes, emailRecipients, courtTypesByParent, caseSubjects, specialties, bureauTypes, requiredCaseFields, serviceTypes } = useConfig();
 
   // Faz 7 — enrich modu: mevcut davayı belgeden doldur/teyit. Yalnız fark
   // listesi gösterilir; tik semantiği "onay" değil "UYGULA"dır (tik'lenmeyen
-  // alan davada dokunulmaz), ofis no / hizmet türü / avukat blokları gizlenir.
+  // alan davada dokunulmaz), ofis no / hizmet seçicisi / avukat blokları gizlenir.
   const enrichMode = draft.mode === "enrich" && draft.case != null;
   const enrichCase = draft.case;
 
@@ -207,14 +210,33 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   );
   const partiesApproved = parties.every(p => p.approved || !p.name.trim());
 
-  // --- Hizmet Türü (bitmask, NewCase deseni) ---------------------------
-  const [serviceMask, setServiceMask] = useState(initialReview?.serviceMask ?? "00000");
-  const toggleService = (index: number, checked: boolean) => {
-    setServiceMask(prev => {
-      const mask = prev.split("");
-      mask[index] = checked ? "1" : "0";
-      return mask.join("");
-    });
+  // --- Hizmet (G253: müvekkil başına; eski 5'li maske kalktı) ----------
+  // Liste henüz gelmediyse / sağlanmadıysa boş sayılır: boş listede seçici çizilmez ve
+  // hizmet zorunluluğu aranmaz (backend G250 ile aynı kural). Enrich modunda seçici
+  // GİZLİ: mevcut kartın hizmetleri karttaki "Hizmetler" panelinden yazılır.
+  const hizmetAdlari = useMemo(
+    () => (serviceTypes ?? []).map(s => s.name ?? "").filter(Boolean),
+    [serviceTypes],
+  );
+  const hizmetSecimiAcik = !enrichMode && hizmetAdlari.length > 0;
+  /** Seçicide görünen ve kayda giden küme: açık seçim, yoksa kategoriye göre ön seçim.
+   *  Ad elle değiştirilince cari eşleşmesi düşer (client_id null) — kategori de güvenilmez. */
+  const etkinHizmet = (p: ReviewParty) =>
+    etkinHizmetler(p.hizmet_turleri, p.client_id != null ? p.matchCategory : null, hizmetAdlari);
+  const clientParties = parties.filter(p => p.party_type === "CLIENT");
+  // Kaydet kapısı (backend 422 ile aynı kural): kayda gidecek (onaylı) her müvekkilin hizmeti olmalı.
+  const hizmetsizler = enrichMode ? [] : hizmetsizMuvekkiller(
+    approvedClients.map(p => ({ name: p.name, hizmetler: etkinHizmet(p) })),
+    hizmetAdlari,
+  );
+  // "Aynı hizmetleri tüm müvekkillere uygula": ilk dolu seçicinin kümesi diğer müvekkillere
+  // kopyalanır; kopya her satırın KENDİ açık seçimi olur (sonradan tek tek değiştirilebilir).
+  const ortakHizmetKumesi = hizmetSecimiAcik ? ilkDoluKume(clientParties.map(etkinHizmet)) : null;
+  const hizmetleriTumuneUygula = () => {
+    if (!ortakHizmetKumesi) return;
+    setParties(prev => prev.map(p => (
+      p.party_type === "CLIENT" ? { ...p, hizmet_turleri: [...ortakHizmetKumesi] } : p
+    )));
   };
 
   // --- Dava Avukatları (çoklu, NewCase deseni) -------------------------
@@ -305,8 +327,8 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   const snapshotRef = useRef<() => ReviewSnapshot>(() => ({} as ReviewSnapshot));
   snapshotRef.current = () => ({
     fieldStates,
+    // G253: müvekkilin açık hizmet seçimi (`hizmet_turleri`) satırla birlikte saklanır
     parties: parties.map(({ id: _id, ...rest }) => rest),
-    serviceMask,
     selectedLawyers,
     istekKimligi,
     selectedPolicies,
@@ -325,7 +347,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
   }
   useEffect(() => {
     saveDraftRef.current!();
-  }, [fieldStates, parties, serviceMask, selectedLawyers,
+  }, [fieldStates, parties, selectedLawyers,
       selectedPolicies, documents, sendEmail, emailTo]);
   useEffect(() => {
     const save = saveDraftRef.current!;
@@ -365,6 +387,8 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
     : progress.complete &&
       partiesApproved &&
       approvedClients.length > 0 &&
+      // G253: hizmeti seçilmemiş müvekkille kart açılmaz (backend 422 ile aynı kural)
+      hizmetsizler.length === 0 &&
       (!sendEmail || emailTo.length > 0) &&
       // G237: ofis numarası kapısı YOK — önizleme alınamasa da kayıt yapılır
       !isCommitting;
@@ -379,9 +403,11 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         ? "En az 1 müvekkil onaylanmalı"
         : !partiesApproved
           ? "Tüm taraf satırları onaylanmalı (ya da boş bırakılmalı)"
-          : sendEmail && emailTo.length === 0
-            ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
-            : null;
+          : hizmetsizler.length > 0
+            ? hizmetEksikMesaji(hizmetsizler)
+            : sendEmail && emailTo.length === 0
+              ? "E-posta için en az bir alıcı ekleyin (ya da bildirimi kapatın)"
+              : null;
 
   // --- Commit ----------------------------------------------------------
   const buildRequest = (): CaseIntakeCommitRequest => {
@@ -401,6 +427,9 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         role: p.role || (p.party_type === "CLIENT" ? "Davacı" : "Davalı"),
         party_type: p.party_type,
         tc_no: p.tc_no || undefined,
+        // G253: hizmet yalnız MÜVEKKİL tarafında gider (başka tarafta backend 422);
+        // her müvekkil KENDİ kümesini taşır.
+        ...(p.party_type === "CLIENT" ? { hizmet_turleri: etkinHizmet(p) } : {}),
       }));
 
     const muvekkilAdi = approvedClients[0]?.name || null;
@@ -412,7 +441,7 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
         istek_kimligi: istekKimligi,
         esas_no: v("esas_no") || null,
         status: "DERDEST", // sunucu zaten zorlar (karar 1)
-        service_type: serviceMask,
+        // G253: eski 5'li `service_type` maskesi GÖNDERİLMEZ — hizmet taraf başına gider
         file_type: v("file_type") || null,
         sub_type: v("sub_type") || null,
         sub_type_extra: v("sub_type_extra") || null,
@@ -733,10 +762,11 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
             ))}
           </div>
 
-          {/* Dava Avukatları + Hizmet Türü — yan yana (enrich modunda gizli:
-              sorumlu avukat/hizmet maskesi açılışın işi, kartta düzenlenir) */}
+          {/* Dava Avukatları (enrich modunda gizli: sorumlu avukat açılışın işi, kartta
+              düzenlenir). G253: yanındaki "Hizmet Türü (Çoklu Seçim)" 5'li maskesi kalktı —
+              hizmet Taraflar'da müvekkil satırında seçilir. */}
           {!enrichMode && (
-          <div className="grid sm:grid-cols-2 border-t border-[var(--border)]">
+          <div className="border-t border-[var(--border)]">
             <div className="px-5 py-4">
               <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-1.5">
                 Dava Avukatları (Sorumluya Ek)
@@ -755,24 +785,6 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                 placeholder="Avukat Ekle..."
                 aria-label="Dava avukatı ekle"
               />
-            </div>
-
-            {/* Hizmet Türü */}
-            <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-[var(--border)]">
-              <span className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] block mb-2">
-                Hizmet Türü (Çoklu Seçim)
-              </span>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                {SERVICE_TYPES.map(t => (
-                  <label key={t.index} className="flex items-center gap-2 text-[13px] text-[var(--fg)] cursor-pointer">
-                    <Checkbox
-                      checked={serviceMask[t.index] === "1"}
-                      onCheckedChange={checked => toggleService(t.index, checked === true)}
-                    />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
             </div>
           </div>
           )}
@@ -828,6 +840,21 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                 ))}
               </div>
             </div>
+            {/* G253: 2+ müvekkilde ilk dolu seçicinin kümesini diğer müvekkillere kopyalar */}
+            {hizmetSecimiAcik && clientParties.length > 1 && (
+              <div className="px-5 py-2 border-b border-[var(--border)] flex justify-end">
+                <button
+                  type="button"
+                  data-testid="hizmet-tumune-uygula"
+                  disabled={!ortakHizmetKumesi}
+                  title={ortakHizmetKumesi ? ortakHizmetKumesi.join(", ") : "Önce bir müvekkilin hizmetini seçin"}
+                  onClick={hizmetleriTumuneUygula}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-[12px] font-medium tracking-[0.03em] rounded-[3px] text-[var(--fg-muted)] hover:text-[var(--fg)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {TUMUNE_UYGULA_ETIKETI}
+                </button>
+              </div>
+            )}
             <ul className="divide-y divide-[var(--border)]">
               {parties.map(p => (
                 enrichMode && p.existingId != null ? (
@@ -911,6 +938,23 @@ export function IntakeReviewStep({ draft, isCommitting, onCommit, onApply, onEnr
                       <p className="font-mono text-[10px] tracking-[0.04em] text-emerald-600 dark:text-emerald-400">
                         Kayıtlı cari: {p.matchName} (#{p.client_id})
                       </p>
+                    )}
+                    {/* G253: bu müvekkile verilen hizmet(ler) — müvekkiller AYRI seçilir.
+                        Hizmet seçmek satırı ONAYLAMAZ (tik ayrı karar). */}
+                    {hizmetSecimiAcik && p.party_type === "CLIENT" && (
+                      <div data-testid="muvekkil-hizmet">
+                        <HizmetSecici
+                          value={etkinHizmet(p)}
+                          onChange={v => patchParty(p.id, { hizmet_turleri: v })}
+                          aria-label={`${p.name.trim() || "Müvekkil"} için hizmetler`}
+                          placeholder="Bu müvekkile verilen hizmet(ler)…"
+                        />
+                        {p.approved && p.name.trim() && etkinHizmet(p).length === 0 && (
+                          <p data-testid="hizmet-eksik-uyarisi" className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                            {HIZMET_EKSIK_UYARISI}
+                          </p>
+                        )}
+                      </div>
                     )}
                     {enrichMode && p.fromDraft && (
                       <p className="font-mono text-[10px] tracking-[0.04em] text-[var(--fg-subtle)]">

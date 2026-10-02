@@ -31,8 +31,10 @@ const review: ReviewSnapshot = {
     name: "Ahmet Yılmaz", role: "Davacı", party_type: "CLIENT", tc_no: "",
     client_id: 7, matchName: "AHMET YILMAZ", matchCategory: "Doktor",
     approved: true, fromDraft: true,
+    // G253 (test taşıma): taslak artık 5'li maske (eski `serviceMask: "00100"`) TAŞIMAZ;
+    // hizmet müvekkil satırının kümesidir.
+    hizmet_turleri: ["Takip (doktor müvekkil)", "Danışmanlık"],
   }],
-  serviceMask: "00100",
   selectedLawyers: [{ name: "Av. X", lawyer_id: 3 }],
   // G237 (test taşıma): taslak artık ofis numarası (eski `trackingNo: "HD-2026-1"`)
   // TAŞIMAZ; yerine kayıt isteğinin kimliğini taşır.
@@ -120,7 +122,40 @@ describe("taslakta ofis numarası yok, istek kimliği var (G237)", () => {
     expect(JSON.stringify(loaded)).not.toContain("I_KUTLUK");
     // Taslağın geri kalanı korunur
     expect(loaded!.review.parties).toEqual(review.parties);
-    expect(loaded!.review.serviceMask).toBe("00100");
+    // G253 (test taşıma): eski beklenti `review.serviceMask "00100"` korunur idi — maske
+    // kalktı; korunan şey müvekkilin hizmet kümesidir.
+    expect(loaded!.review.parties[0].hizmet_turleri).toEqual(["Takip (doktor müvekkil)", "Danışmanlık"]);
+  });
+
+  // G253: eski sürümün 5'li hizmet maskesi yüklemede ATILIR (yeni kümeye çevrilemez).
+  it("eski sürümün hizmet maskesi (serviceMask) taşıyan taslağı yüklenir ama maske ATILIR", () => {
+    eskiTaslakYaz({ serviceMask: "00100", istekKimligi: "3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a" });
+    const loaded = loadIntakeDraft();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.review).not.toHaveProperty("serviceMask");
+    expect(JSON.stringify(loaded)).not.toContain("00100");
+    // Taslağın geri kalanı (kimlik, taraflar) korunur
+    expect(loaded!.review.istekKimligi).toBe("3f2b8c1e-9d4a-4f6b-8a2c-1e5d7f9b0c3a");
+    expect(loaded!.review.parties).toEqual(review.parties);
+  });
+
+  it("kaydedilen taslakta maske alanı bulunmaz; iki müvekkilin kümeleri AYRI geri okunur", () => {
+    const ikiMuvekkil: ReviewSnapshot = {
+      ...review,
+      parties: [
+        review.parties[0],
+        { ...review.parties[0], name: "Özel Şifa Hastanesi", client_id: 9, matchCategory: "Özel Hastane", hizmet_turleri: ["Lexis Rapor"] },
+        { ...review.parties[0], name: "Mehmet Kaya", party_type: "COUNTER", client_id: null, hizmet_turleri: undefined },
+      ],
+    };
+    saveIntakeDraft(draft, ikiMuvekkil);
+
+    expect(sessionStorage.getItem(INTAKE_DRAFT_KEY) ?? "").not.toContain("serviceMask");
+    expect(loadIntakeDraft()?.review.parties.map(p => p.hizmet_turleri)).toEqual([
+      ["Takip (doktor müvekkil)", "Danışmanlık"],
+      ["Lexis Rapor"],
+      undefined,
+    ]);
   });
 
   it("eski taslakta istek kimliği yoktur — alan boş döner (review yenisini üretir)", () => {

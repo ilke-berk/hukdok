@@ -462,10 +462,18 @@ export interface CommitCasePartyIn {
   role: string;
   party_type: "CLIENT" | "COUNTER" | "THIRD";
   tc_no?: string | null;
+  /**
+   * Bu müvekkile bu kartta verilen hizmet türleri — `service_types` ADLARI (G250/G253).
+   * Yalnız commit'te ve yalnız MÜVEKKİL tarafında gönderilir (başka tarafta backend 422;
+   * commit'te hizmetsiz müvekkil 422). Zenginleştirme (apply) hizmet YAZMAZ — orada
+   * gönderilmez, hizmetler karttaki panelden girilir.
+   */
+  hizmet_turleri?: string[];
 }
 
 // schemas.CaseCreate ile aynı anahtarlar (parties/lawyers dahil)
 // G237: `tracking_no` YOK — numarayı sunucu verir (karar 023).
+// G253: eski 5'li `service_type` maskesi artık gönderilmez (alan geriye uyum için tipte durur).
 export interface CommitCaseIn {
   /** Kayıt isteğinin kimliği (UUID): aynı kimlikle tekrar gelen commit ikinci kart açmaz. */
   istek_kimligi?: string;

@@ -26,6 +26,15 @@ import { cn } from "@/lib/utils";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { LawyerCombobox } from "@/components/LawyerCombobox";
+import { HizmetSecici } from "@/components/HizmetSecici";
+import {
+    etkinHizmetler,
+    hizmetEksikMesaji,
+    hizmetsizMuvekkiller,
+    ilkDoluKume,
+    HIZMET_EKSIK_UYARISI,
+    TUMUNE_UYGULA_ETIKETI,
+} from "@/lib/muvekkilHizmetleri";
 import { useFormDraft } from "@/hooks/useFormDraft";
 import { describeDraftAge } from "@/lib/formDraft";
 import {
@@ -94,6 +103,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     const {
         caseSubjects, lawyers,
         fileTypes, courtTypesByParent, mainPartyRoles, thirdPartyRoles, bureauTypes, specialties,
+        serviceTypes,
         requiredCaseFields, requiredPartyRule,
         configError, requiredFieldsError, refetchConfig, isRefetchingConfig,
     } = useConfig();
@@ -106,13 +116,13 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     // 3. taraf dropdown'ı THIRD rollerine ek olarak ana taraf rollerini de sunar
     const UCUNCU_TARAF_ROLLERI = [...new Set([...thirdPartyRoles, ...mainPartyRoles].map(r => r.name ?? ""))];
     const BURO_OZEL_TURU = bureauTypes.map(b => b.name ?? "");
-    const HIZMET_TURLERI = [
-        { label: "Rapor", index: 0 },
-        { label: "Danışmanlık", index: 1 },
-        { label: "Dava", index: 2 },
-        { label: "İcra", index: 3 },
-        { label: "Yazışma", index: 4 }
-    ];
+    // G253: hizmet türü listesi (`service_types`) — müvekkil başına seçicinin ön seçimi ve
+    // Kaydet kapısı buna bakar. Liste henüz gelmediyse / sağlanmadıysa boş sayılır: boş
+    // listede seçici çizilmez ve hizmet zorunluluğu aranmaz (backend G250 ile aynı kural).
+    const hizmetAdlari = useMemo(
+        () => (serviceTypes ?? []).map(s => s.name ?? "").filter(Boolean),
+        [serviceTypes],
+    );
 
     // Düzenleme modu: `editModeCase` sarmalayıcıdan (NewCase) gelir; aşağıdaki
     // state'ler onu yalnız mount'ta lazy initializer ile BİR kez okur (G186 F10).
@@ -155,7 +165,9 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     );
 
     // Multiple Clients (Müvekkil, Müdahil, etc.)
-    const [clients, setClients] = useState<Array<{ name: string; role: string; category?: string; birth_year?: number; gender?: string }>>(() =>
+    // G253: `hizmet_turleri` kullanıcının AÇIK hizmet seçimidir (alan yok = seçiciye
+    // dokunulmadı → kategoriye göre ön seçim gösterilir; bkz. `etkinHizmet`).
+    const [clients, setClients] = useState<Array<{ name: string; role: string; category?: string; birth_year?: number; gender?: string; hizmet_turleri?: string[] }>>(() =>
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "CLIENT").map((p: EditModeParty) => ({ name: p.name, role: p.role, birth_year: p.birth_year, gender: p.gender })) ||
         [{ name: "", role: "Davacı" }]
     );
@@ -171,6 +183,32 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
         editModeCase?.parties?.filter((p: EditModeParty) => p.party_type === "THIRD").map((p: EditModeParty) => ({ name: p.name, role: p.role, tc_no: p.tc_no || undefined })) ||
         []
     );
+
+    // --- G253: müvekkil başına hizmet ----------------------------------
+    // Düzenlemede seçici GİZLİ: mevcut kartın hizmetleri karttaki "Hizmetler" panelinden
+    // yazılır (PUT gövdesindeki `hizmet_turleri` backend'de yok sayılır).
+    const hizmetSecimiAcik = !isEditMode && hizmetAdlari.length > 0;
+    // Ön seçimin kategorisi satırdaki bayat kopyadan değil, ADI eşleşen kayıtlı
+    // müvekkilden okunur (taslaktan geri yüklenen ya da elle yazılan satırda da doğru).
+    const muvekkilKategorisi = (name: string) =>
+        dbClients.find(db => toUpperTR(db.name) === toUpperTR(name))?.category;
+    /** Satırın seçicide görünen ve kayda giden kümesi: açık seçim, yoksa ön seçim. */
+    const etkinHizmet = (client: { name: string; hizmet_turleri?: string[] }) =>
+        etkinHizmetler(client.hizmet_turleri, muvekkilKategorisi(client.name), hizmetAdlari);
+    const setClientHizmetleri = (index: number, hizmetler: string[]) =>
+        setClients(prev => prev.map((c, i) => (i === index ? { ...c, hizmet_turleri: hizmetler } : c)));
+    // Kaydet kapısı (backend 422 ile aynı kural): adı yazılı her müvekkilin en az bir hizmeti olmalı.
+    const hizmetsizler = isEditMode ? [] : hizmetsizMuvekkiller(
+        clients.map(c => ({ name: c.name, hizmetler: etkinHizmet(c) })),
+        hizmetAdlari,
+    );
+    // "Aynı hizmetleri tüm müvekkillere uygula": ilk dolu seçicinin kümesi diğerlerine kopyalanır;
+    // kopya her satırın KENDİ açık seçimi olur — kullanıcı sonradan tek tek değiştirebilir.
+    const ortakHizmetKumesi = hizmetSecimiAcik ? ilkDoluKume(clients.map(etkinHizmet)) : null;
+    const handleHizmetleriTumuneUygula = () => {
+        if (!ortakHizmetKumesi) return;
+        setClients(prev => prev.map(c => ({ ...c, hizmet_turleri: [...ortakHizmetKumesi] })));
+    };
 
     // Tanıdık sorgu: satır bazında eşleşme durumu ("counter-0" / "third-1")
     // — eşleşme varsa satırın altında eşleşen isim + TC ve opsiyonel TC alanı belirir
@@ -293,14 +331,6 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
     };
 
 
-    // Yardımcı: Hizmet bitmask'ini güncelle (11000 formatı)
-    const handleServiceToggle = (index: number, checked: boolean) => {
-        const currentMask = formData.serviceType.split("");
-        currentMask[index] = checked ? "1" : "0";
-        const newMask = currentMask.join("");
-        setFormData({ ...formData, serviceType: newMask });
-    };
-
     // Taslak şeridindeki "geri yükle". Sessiz sihir YOK: kullanıcı açıkça basar.
     const handleRestoreDraft = () => {
         const data = draft.restore();
@@ -343,7 +373,6 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
             subject: formData.subject,
             responsible_lawyer_name: formData.lawyer,
             uyap_lawyer_name: formData.uyapLawyer,
-            service_type: formData.serviceType,
             acceptance_date: formData.acceptanceDate,
             bureau_type: formData.bureauType,
             atama_tarihi: formData.atamaTarihi,
@@ -361,6 +390,15 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
 
         // G237: ofis numarası kapısı YOK — önizleme alınamasa da kayıt yapılır,
         // numarayı kayıtla aynı transaction'da sunucu verir (karar 023).
+
+        // G253: hizmeti seçilmemiş müvekkille kart açılmaz (backend 422 ile aynı kural).
+        // Kaydet düğmesi zaten kapalıdır; bu kapı onay modallarından gelen yolu da tutar.
+        if (hizmetsizler.length > 0) {
+            toast.error("Kaydedilemez: hizmet türü seçilmemiş", {
+                description: hizmetEksikMesaji(hizmetsizler),
+            });
+            return;
+        }
 
         // G019: zorunlu alan listesi sunucudan alınamadıysa uyarı kapısı SESSİZCE
         // açılıyordu (boş liste = "hiçbir alan zorunlu değil"). Kayıt BLOKE.
@@ -425,11 +463,15 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
             istekKimligi: isEditMode ? undefined : istekKimligiRef.current,
             status: caseStatus,
             formData,
-            clients,
+            // G253: yeni kayıtta her müvekkil ETKİN hizmet kümesiyle gider (açık seçim ya da
+            // ön seçim). Düzenlemede hizmet gönderilmez — kartta panelden yazılır.
+            clients: isEditMode ? clients : clients.map(c => ({ ...c, hizmet_turleri: etkinHizmet(c) })),
             counterParties,
             thirdParties,
             dbClients,
             lawyers: selectedLawyers,
+            // Eski hizmet maskesi formda yok; düzenlemede kayıttaki değer korunmak üzere geri gider.
+            mevcutServiceType: isEditMode ? editModeCase?.service_type : undefined,
         });
 
         let success: boolean;
@@ -605,15 +647,32 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                 <div className="w-1 h-3 bg-primary" />
                                                 Müvekkil Tarafı
                                             </Label>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => setClients([...clients, { name: "", role: "Müdahil" }])}
-                                                className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
-                                            >
-                                                <Plus className="w-3 h-3" /> Ekle
-                                            </Button>
+                                            <div className="flex items-center gap-1">
+                                                {/* G253: 2+ müvekkilde ilk dolu seçicinin kümesini diğerlerine kopyalar */}
+                                                {hizmetSecimiAcik && clients.length > 1 && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        data-testid="hizmet-tumune-uygula"
+                                                        disabled={!ortakHizmetKumesi}
+                                                        title={ortakHizmetKumesi ? ortakHizmetKumesi.join(", ") : "Önce bir müvekkilin hizmetini seçin"}
+                                                        onClick={handleHizmetleriTumuneUygula}
+                                                        className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
+                                                    >
+                                                        <Briefcase className="w-3 h-3" /> {TUMUNE_UYGULA_ETIKETI}
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setClients([...clients, { name: "", role: "Müdahil" }])}
+                                                    className="h-7 text-xs gap-1 text-brand hover:text-brand hover:bg-primary/5"
+                                                >
+                                                    <Plus className="w-3 h-3" /> Ekle
+                                                </Button>
+                                            </div>
                                         </div>
 
                                         <div className="grid gap-3">
@@ -719,6 +778,24 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                                                 partyMatchFlags[`client-${index}`]?.conflict ? "text-red-600 dark:text-red-400 font-semibold" : "text-muted-foreground"
                                                             )}>
                                                                 {rowMatchSummary(`client-${index}`, undefined, false)}
+                                                            </div>
+                                                        )}
+                                                        {/* G253: bu müvekkile verilen hizmet(ler) — müvekkiller AYRI seçilir
+                                                            (muhasebe ayrımı). Düzenlemede gizli: kartta panelden yazılır. */}
+                                                        {hizmetSecimiAcik && (
+                                                            <div className="mt-2" data-testid="muvekkil-hizmet">
+                                                                <HizmetSecici
+                                                                    value={etkinHizmet(client)}
+                                                                    onChange={(v) => setClientHizmetleri(index, v)}
+                                                                    aria-label={`${client.name.trim() ? toTitleCase(client.name.trim()) : `${index + 1}. müvekkil`} için hizmetler`}
+                                                                    placeholder="Bu müvekkile verilen hizmet(ler)…"
+                                                                    className="bg-[var(--bg)]"
+                                                                />
+                                                                {client.name.trim() && etkinHizmet(client).length === 0 && (
+                                                                    <p data-testid="hizmet-eksik-uyarisi" className="mt-1 text-[11px] text-red-600 dark:text-red-400">
+                                                                        {HIZMET_EKSIK_UYARISI}
+                                                                    </p>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -1227,32 +1304,8 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                         </div>
                                         */}
 
-                                        <div className="space-y-4 md:col-span-2">
-                                            <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
-                                                <Briefcase className="w-3 h-3" /> Hizmet Türü (Çoklu Seçim)
-                                            </Label>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 p-4 bg-muted/5 border border-border/40 rounded-lg">
-                                                {HIZMET_TURLERI.map((t) => (
-                                                    <div key={t.index} className="flex items-center space-x-2">
-                                                        <Checkbox
-                                                            id={`service-${t.index}`}
-                                                            checked={formData.serviceType[t.index] === "1"}
-                                                            onCheckedChange={(checked) => handleServiceToggle(t.index, !!checked)}
-                                                        />
-                                                        <Label
-                                                            htmlFor={`service-${t.index}`}
-                                                            className="text-sm font-medium leading-none cursor-pointer"
-                                                        >
-                                                            {t.label}
-                                                        </Label>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <p className="text-[10px] text-muted-foreground italic">
-                                                Seçilen her hizmet dosya numarasının son bloğuna (11000 gibi) eklenir.
-                                            </p>
-                                        </div>
-
+                                        {/* G253: eski "Hizmet Türü (Çoklu Seçim)" 5'li maskesi kalktı — hizmet
+                                            müvekkil satırında seçilir (1. Taraf Bilgileri). */}
                                         <div className="space-y-2">
                                             <Label className="text-[11px] font-mono font-semibold text-[var(--fg-subtle)] uppercase tracking-[0.16em] flex items-center gap-2">
                                                 <Calendar className="w-3 h-3" /> Dosya Açılış Tarihi
@@ -1530,7 +1583,7 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                     <Button
                                         type="submit"
                                         className="w-full h-11 bg-brand-solid hover:bg-brand-solid-hover text-[var(--brand-fg)] rounded-[3px] font-medium tracking-[0.03em] gap-2"
-                                        disabled={isLoading || isSaving}
+                                        disabled={isLoading || isSaving || hizmetsizler.length > 0}
                                     >
                                         {isSaving || isLoading ? (
                                             <>
@@ -1544,6 +1597,12 @@ const NewCaseForm = ({ editModeCase }: { editModeCase?: EditModeCaseData }) => {
                                             </>
                                         )}
                                     </Button>
+                                    {/* G253: Kaydet neden kapalı — hizmeti seçilmemiş müvekkil(ler) */}
+                                    {hizmetsizler.length > 0 && (
+                                        <p role="status" data-testid="hizmet-eksik-kapisi" className="text-[12px] leading-relaxed text-red-600 dark:text-red-400">
+                                            {hizmetEksikMesaji(hizmetsizler)}
+                                        </p>
+                                    )}
                                     <Button
                                         type="button"
                                         variant="ghost"

@@ -15,6 +15,10 @@ import { createDraftStore } from "@/lib/formDraft";
 // kaybolmuş bir kaydın devamı olabilir — aynı kimlikle tekrar gönderim ikinci
 // kartı açmaz (sunucu ilk kartı `reused: true` ile döndürür). Eski taslakta
 // alan yoktur; geri yüklemede yeni kimlik üretilir.
+//
+// Hizmet (G253): eski 5'li `formData.serviceType` maskesi KALKTI. Hizmet müvekkil
+// satırının alanıdır (`clients[i].hizmet_turleri`) ve taslakla taşınır. Eski
+// taslaktaki `serviceType` anahtarı okunmaz (kirlilik de saymaz).
 // =====================================================================
 
 export const NEW_CASE_DRAFT_KEY = "hukdok.newcase-draft.v1";
@@ -24,7 +28,6 @@ export const NEW_CASE_DRAFT_KEY = "hukdok.newcase-draft.v1";
 export const NEW_CASE_DRAFT_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 saat
 
 export const DEFAULT_CASE_STATUS = "DERDEST";
-export const DEFAULT_SERVICE_TYPE = "00000";
 
 export interface NewCaseDraftParty {
   name: string;
@@ -33,6 +36,12 @@ export interface NewCaseDraftParty {
   birth_year?: number;
   gender?: string;
   tc_no?: string;
+  /**
+   * Yalnız müvekkil satırında (G253): kullanıcının AÇIK hizmet seçimi (`service_types`
+   * adları). Alan yoksa seçiciye dokunulmamıştır — ekran kategoriye göre ön seçim
+   * gösterir (`lib/muvekkilHizmetleri.etkinHizmetler`).
+   */
+  hizmet_turleri?: string[];
 }
 
 export interface NewCaseFormValues {
@@ -45,7 +54,6 @@ export interface NewCaseFormValues {
   uyapLawyer: string;
   esasNo: string;
   fileOpeningDate: string;
-  serviceType: string;
   maddiTazminat: string;
   maneviTazminat: string;
   acceptanceDate: string;
@@ -92,7 +100,6 @@ export const EMPTY_NEW_CASE_FORM: NewCaseFormValues = {
   uyapLawyer: "",
   esasNo: "",
   fileOpeningDate: "",
-  serviceType: DEFAULT_SERVICE_TYPE,
   maddiTazminat: "",
   maneviTazminat: "",
   acceptanceDate: "",
@@ -118,6 +125,9 @@ export function isNewCaseDraftDirty(data: NewCaseDraftData): boolean {
   for (const key of Object.keys(EMPTY_NEW_CASE_FORM) as Array<keyof NewCaseFormValues>) {
     if ((data.formData[key] ?? "") !== EMPTY_NEW_CASE_FORM[key]) return true;
   }
+
+  // G253: müvekkil satırında seçilmiş hizmet de saklamaya değer (ad henüz yazılmamış olsa bile).
+  if (data.clients.some(client => (client.hizmet_turleri ?? []).length > 0)) return true;
 
   return [...data.clients, ...data.counterParties, ...data.thirdParties].some(
     party => (party.name ?? "").trim() !== "" || (party.tc_no ?? "").trim() !== "",

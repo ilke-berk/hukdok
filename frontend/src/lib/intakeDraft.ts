@@ -30,6 +30,9 @@ export interface DraftParty {
   fromDraft: boolean;
   // Faz 7 — enrich modu: davada zaten kayıtlı tarafın id'si (restore'da korunur)
   existingId?: number | null;
+  /** G253: müvekkilin AÇIK hizmet seçimi (`service_types` adları) — taslakla taşınır.
+   *  Alan yoksa (eski taslak / dokunulmamış seçici) review kategoriye göre ön seçim gösterir. */
+  hizmet_turleri?: string[];
 }
 
 export interface DraftDocument {
@@ -45,7 +48,8 @@ export interface DraftDocument {
 export interface ReviewSnapshot {
   fieldStates: Record<string, IntakeFieldState>;
   parties: DraftParty[];
-  serviceMask: string;
+  // G253: eski 5'li hizmet maskesi (`serviceMask`) KALKTI — hizmet müvekkil satırının
+  // alanıdır (`parties[i].hizmet_turleri`). Eski taslaktaki maske yüklemede atılır.
   selectedLawyers: Array<{ name: string; lawyer_id?: number | null }>;
   // G237: ofis numarası taslakta TAŞINMAZ — numarayı kayıt anında sunucu verir.
   // Eski taslaktaki `trackingNo` alanı yüklemede atılır (loadIntakeDraft).
@@ -113,8 +117,10 @@ export function loadIntakeDraft(): IntakeDraftSnapshot | null {
     }
     // G237: eski sürümün sakladığı ofis numarası yok sayılır (numarayı sunucu verir);
     // bozuk/eksik istek kimliği de taşınmaz — review yenisini üretir.
-    const { trackingNo: _eskiNumara, istekKimligi, ...review } =
-      parsed.review as ReviewSnapshot & { trackingNo?: unknown };
+    // G253: eski sürümün 5'li hizmet maskesi (`serviceMask`) de atılır — hizmet artık
+    // müvekkil başınadır, maske yeni kümeye çevrilemez (kullanıcı yeniden seçer).
+    const { trackingNo: _eskiNumara, serviceMask: _eskiMaske, istekKimligi, ...review } =
+      parsed.review as ReviewSnapshot & { trackingNo?: unknown; serviceMask?: unknown };
     parsed.review = istekKimligiGecerli(istekKimligi) ? { ...review, istekKimligi } : review;
     return parsed;
   } catch {

@@ -77,8 +77,10 @@ const review = (over: Record<string, unknown> = {}): ReviewSnapshot => ({
     name: "Ahmet Yılmaz", role: "Davacı", party_type: "CLIENT", tc_no: "",
     client_id: 41, matchName: "AHMET YILMAZ", matchCategory: "Doktor",
     approved: true, fromDraft: true,
+    // G253 (test taşıma): taslak 5'li maske (eski `serviceMask: "00100"`) TAŞIMAZ;
+    // hizmet müvekkil satırının kümesidir.
+    hizmet_turleri: ["Takip (doktor müvekkil)"],
   }],
-  serviceMask: "00100",
   selectedLawyers: [],
   istekKimligi: TASLAK_KIMLIGI,
   selectedPolicies: {},
