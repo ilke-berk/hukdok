@@ -740,6 +740,21 @@ esaslı föyü doğru karta taşır (#14148 → #14147; `klasor_no_2`'de DosyaNo
 Aktif → kart DERDEST, hepsi Arşiv → MAHZEN" kuralını uygular (DANIŞ'a ve elle girilmiş status'a
 dokunmaz, `KORUNDU`; lokalde 17 kart). Test `tests/test_ekip_cevabi_2309.py`.
 
+**01.10 paketi ve kesim tarihi dersi (01.10.2026):** 15.09 paketinin özeti kesim tarihini yanlışlıkla
+30.07.2026 yazıyordu; ekip 01.10 paketinde düzeltti (01.10). Düzeltilmiş kesimle koşulan ilk uygulama
+13 kartta kullanıcının 10.08–14.09 arasında elle girdiği yeni tur künyesini (esas 13, mahkeme 7) eski
+tura geri yazdı — ekip bizim elle düzeltmelerimizi görmez, bu yüzden paketin kesim tarihi koruma için
+yanlış ölçüdür. Yedekten dönüldü, paket `--kesim-tarihi 30.07.2026` ile yeniden uygulandı (lokal ve prod:
+24 alan KORUNDU). Kalıcı kural (kesimden bağımsız kullanıcı koruması) açık iş. Paketin yapmadığı kart
+işleri `scripts/ekip_cevabi_2609.py` (26.09 §12–14 + 01.10 §16–17; föy anahtarıyla, kuru koşu/`--apply`):
+aynı davanın kartını birleştirme (#665 → #13363, `mukerrer_kart_birlestir` müvekkil ayrımlı), föy taşıma +
+föysüz kalan kartı kapatma (id-5126 → #13360, #3146), yabancı künye silme (#29 Yozgat temyiz + karar
+düzeltme satırları; BELGE/UYAP damgalı satır RET), paketin boş gönderdiği mahkeme (#2909 kart + YEREL
+aşama satırı), sigortalı adı (aktarım taraf satırını yalnız ekler — yeniden adlandırma burada), dava konusu
+kısaltması (37 kart; kısa ad listede yoksa RET, kullanıcı imzalı `subject` tarihçesi KORUNDU). Test
+`tests/test_ekip_cevabi_2609.py`. Ek-5 (karar tarihinden sonraki dava tarihi = bilinmiyor) tek SQL ile
+boşaltıldı (lokal + prod 77 kart; `case_history` imzası `HUKDOK_TESLIM_EK5_…`, föy anahtarlı, idempotent).
+
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin
