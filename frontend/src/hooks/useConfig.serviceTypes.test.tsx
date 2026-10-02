@@ -135,3 +135,135 @@ describe("useConfig — G121 client_types / service_types", () => {
     expect(api().serviceTypes).toEqual([]);
   });
 });
+
+/**
+ * G256 — yönetim panelinin "Hizmet Türleri" sekmesi. Genel güncelle/sil/sırala uçları ve
+ * yeni `addServiceType` sonrası `["config","service_types"]` sorgusu geçersizleşir:
+ * karttaki ve yeni dava ekranındaki hizmet seçicisi yeni listeyi görür. G256 öncesi
+ * `typeToKey`'de `service_types` yoktu → bu listede mutasyon sonrası yeniden çekme olmuyordu.
+ */
+describe("useConfig — G256 service_types önbellek tazeleme", () => {
+  const SERVICE_URL = "/api/config/service_types";
+  let container: HTMLDivElement;
+  let root: Root | null = null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authRequestMock.mockImplementation(async (url: string, method: string) => {
+      if (url === SERVICE_URL && method === "GET") return { ok: true, json: async () => SERVICE_TYPES };
+      if (url === "/api/config/required_case_fields") return { ok: true, json: async () => ({ fields: [], party_rule: null }) };
+      if (url === "/api/config/update") return { ok: true, json: async () => ({ status: "success", updated: 3 }) };
+      if (url === "/api/config/delete") return { ok: true, json: async () => ({ status: "success", affected: 2 }) };
+      if (method === "POST") return { ok: true, json: async () => ({ status: "success" }) };
+      return { ok: true, json: async () => [] };
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+  });
+
+  afterEach(() => {
+    if (root) {
+      act(() => root!.unmount());
+      root = null;
+    }
+    container.remove();
+  });
+
+  function mount(): () => ConfigApi {
+    let captured: ConfigApi | null = null;
+    const Harness = () => {
+      captured = useConfig();
+      return null;
+    };
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    root = createRoot(container);
+    act(() => root!.render(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>,
+    ));
+    return () => captured!;
+  }
+
+  async function waitFor(condition: () => boolean, label: string): Promise<void> {
+    for (let i = 0; i < 100; i++) {
+      if (condition()) return;
+      await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    }
+    throw new Error(`Koşul sağlanmadı: ${label}`);
+  }
+
+  const calls = (url: string, method: string) =>
+    authRequestMock.mock.calls.filter(([u, m]) => u === url && m === method);
+  const serviceGets = () => calls(SERVICE_URL, "GET").length;
+
+  async function mountLoaded(): Promise<() => ConfigApi> {
+    const api = mount();
+    await waitFor(() => api().serviceTypes.length === 9, "hizmet türü listesi doldu");
+    expect(serviceGets()).toBe(1);
+    return api;
+  }
+
+  it("yeniden adlandırma (updateItem) sonrası service_types sorgusu yeniden çekilir", async () => {
+    const api = await mountLoaded();
+
+    let updated = -1;
+    await act(async () => {
+      updated = await api().updateItem("service_types", "LEXIS-RAPOR", { name: "Lexis Raporu" });
+    });
+
+    expect(updated).toBe(3);
+    expect(calls("/api/config/update", "POST").map(c => c[2]))
+      .toEqual([{ type: "service_types", code: "LEXIS-RAPOR", fields: { name: "Lexis Raporu" } }]);
+    await waitFor(() => serviceGets() === 2, "service_types yeniden çekildi");
+  });
+
+  it("silme (deleteItem) sonrası service_types sorgusu yeniden çekilir", async () => {
+    const api = await mountLoaded();
+
+    let affected = -1;
+    await act(async () => {
+      affected = await api().deleteItem("service_types", "LEXIS-RAPOR", "reassign", "DANISMANLIK");
+    });
+
+    expect(affected).toBe(2);
+    expect(calls("/api/config/delete", "POST").map(c => c[2]))
+      .toEqual([{ type: "service_types", code: "LEXIS-RAPOR", mode: "reassign", target_code: "DANISMANLIK" }]);
+    await waitFor(() => serviceGets() === 2, "service_types yeniden çekildi");
+  });
+
+  it("sıralama (reorderList) sonrası service_types sorgusu yeniden çekilir", async () => {
+    const api = await mountLoaded();
+
+    await act(async () => {
+      await api().reorderList("service_types", ["DANISMANLIK", "LEXIS-RAPOR"]);
+    });
+
+    expect(calls("/api/config/reorder", "POST").map(c => c[2]))
+      .toEqual([{ type: "service_types", ordered_ids: ["DANISMANLIK", "LEXIS-RAPOR"] }]);
+    await waitFor(() => serviceGets() === 2, "service_types yeniden çekildi");
+  });
+
+  it("addServiceType(code, name) POST /api/config/service_types atar ve aynı anahtarı geçersizler", async () => {
+    const api = await mountLoaded();
+
+    await act(async () => {
+      await api().addServiceType("ARABULUCULUK", "Arabuluculuk");
+    });
+
+    expect(calls(SERVICE_URL, "POST").map(c => c[2])).toEqual([{ code: "ARABULUCULUK", name: "Arabuluculuk" }]);
+    await waitFor(() => serviceGets() === 2, "service_types yeniden çekildi");
+  });
+
+  it("başka listenin mutasyonu service_types sorgusunu yeniden ÇEKMEZ (anahtar yalnız kendi tipine bağlı)", async () => {
+    const api = await mountLoaded();
+
+    await act(async () => {
+      await api().updateItem("file_statuses", "BILIRKISIDE", { name: "Bilirkişide" });
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
+
+    expect(calls("/api/config/file_statuses", "GET").length).toBe(2);
+    expect(serviceGets()).toBe(1);
+  });
+});
