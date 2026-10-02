@@ -9,12 +9,13 @@ import {
   ChevronLeft, ChevronRight, X, FileText, AlignLeft,
   ShieldCheck, AlertTriangle, ExternalLink,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useClients, ClientData } from "../hooks/useClients";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { useDebounce } from "../hooks/useDebounce";
 import { YetkiBelgesiModal } from "@/components/YetkiBelgesiModal";
+import { AcikHataBildirimleri, HataBildirButonu, HataBildirimSaglayici } from "@/components/hata/HataBildirimi";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -84,7 +85,15 @@ function CategoryIcon({ category, className = "w-4 h-4" }: { category?: string; 
   return <User2 className={className} />;
 }
 
-function DetailRow({ label, value, icon: Icon }: { label: string; value: React.ReactNode; icon?: typeof User2 }) {
+function DetailRow({ label, value, icon: Icon, alan, etiket }: {
+  label: string;
+  value: React.ReactNode;
+  icon?: typeof User2;
+  /** Verilirse satırın sonunda hata bildirimi zili çıkar (anahtar = müvekkil alanı). */
+  alan?: string;
+  /** Zilin okunur alan adı; verilmezse kısa satır etiketi kullanılır. */
+  etiket?: string;
+}) {
   return (
     <div className="grid grid-cols-[80px_1fr] gap-3 py-2.5 border-b border-[var(--border)] last:border-b-0">
       <span className="font-mono text-[9.5px] tracking-[0.16em] uppercase text-[var(--fg-subtle)] self-center">
@@ -93,6 +102,9 @@ function DetailRow({ label, value, icon: Icon }: { label: string; value: React.R
       <div className="flex items-center gap-2 text-[13px] text-[var(--fg)] min-w-0">
         {Icon && <Icon className="w-3.5 h-3.5 text-[var(--fg-subtle)] shrink-0" />}
         <span className="truncate">{value}</span>
+        {alan && (
+          <HataBildirButonu alan={alan} etiket={etiket ?? label} deger={typeof value === "string" ? value : undefined} className="shrink-0" />
+        )}
       </div>
     </div>
   );
@@ -127,6 +139,22 @@ const ClientList = () => {
   const [selectedSpecialty, setSelectedSpecialty] = useState("all");
 
   const [yetkiBelgesiOpen, setYetkiBelgesiOpen] = useState(false);
+
+  // Zildeki hata bildiriminden gelindiyse (`?client=<id>&hata=<id>`) o müvekkilin hızlı bakışı
+  // açılır ve bildirim şeritte vurgulanır. Liste yüklenince BİR KEZ uygulanır (aynı parametre
+  // kullanıcının sonraki seçimini ezmesin).
+  const [searchParams] = useSearchParams();
+  const hedefClientId = Number(searchParams.get("client")) || null;
+  const vurgulananHata = Number(searchParams.get("hata")) || null;
+  const [uygulananHedef, setUygulananHedef] = useState<number | null>(null);
+  useEffect(() => {
+    if (hedefClientId == null || hedefClientId === uygulananHedef) return;
+    const hedef = allClients.find(c => c.id === hedefClientId);
+    if (hedef) {
+      setSelectedClient(hedef);
+      setUygulananHedef(hedefClientId);
+    }
+  }, [hedefClientId, uygulananHedef, allClients]);
 
   // Kayıtlı poliçeler (client_policies) — seçili müvekkilin kartında listelenir
   const { authRequest } = useAuthRequest();
@@ -485,6 +513,7 @@ const ClientList = () => {
 
         {/* Quick View paneli */}
         {selectedClient && (
+          <HataBildirimSaglayici hedef={{ clientId: selectedClient.id }}>
           <HairlineCard padded={false} className="sticky top-2 max-h-[calc(100vh-3rem)] overflow-y-auto">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] bg-[var(--bg)]">
               <Eyebrow tone="brand">Hızlı Bakış</Eyebrow>
@@ -508,11 +537,19 @@ const ClientList = () => {
                 </div>
                 <h2 className="mt-1.5 font-display text-[20px] tracking-[-0.005em] text-[var(--fg)] font-medium leading-tight">
                   {toTitleCase(selectedClient.name)}
+                  <HataBildirButonu alan="name" etiket="Ad" deger={selectedClient.name} />
                 </h2>
                 <div className="mt-2 font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)]">
                   ID · #{selectedClient.id}
                 </div>
               </div>
+
+              {/* Açık hata bildirimleri — idari personel buradan düzeltir ve kapatır */}
+              <AcikHataBildirimleri
+                vurgulananId={vurgulananHata}
+                onDuzelt={() => navigate("/new-client", { state: { client: selectedClient } })}
+                onKapandi={() => { refetchClients(); }}
+              />
 
               {/* Eylemler */}
               <div className="grid gap-2">
@@ -529,18 +566,20 @@ const ClientList = () => {
                   <FileText className="w-3.5 h-3.5" />
                   Yetki Belgesi
                 </FlowButton>
+                {/* Alana bağlı olmayan hata (eksik bilgi, mükerrer kayıt…) */}
+                <HataBildirButonu metinli className="rounded-[3px]" />
               </div>
 
               {/* Detaylar */}
               <div className="border-t border-[var(--border)] pt-2">
-                {selectedClient.tc_no && <DetailRow label="TC" value={selectedClient.tc_no} icon={User2} />}
-                {selectedClient.cari_kod && <DetailRow label="Cari" value={selectedClient.cari_kod} icon={FileText} />}
-                {selectedClient.mobile_phone && <DetailRow label="Cep" value={selectedClient.mobile_phone} icon={Phone} />}
-                {selectedClient.phone && !selectedClient.mobile_phone && <DetailRow label="Tel" value={selectedClient.phone} icon={Phone} />}
-                {selectedClient.email && <DetailRow label="E-posta" value={selectedClient.email} icon={Mail} />}
-                {selectedClient.address && <DetailRow label="Adres" value={toTitleCase(selectedClient.address)} icon={MapPin} />}
-                {selectedClient.il && !selectedClient.address && <DetailRow label="İl" value={toTitleCase(selectedClient.il)} icon={MapPin} />}
-                {selectedClient.sektor && <DetailRow label="Çalıştığı Kurum" value={selectedClient.sektor} icon={Building2} />}
+                {selectedClient.tc_no && <DetailRow label="TC" value={selectedClient.tc_no} icon={User2} alan="tc_no" etiket="TC Kimlik No" />}
+                {selectedClient.cari_kod && <DetailRow label="Cari" value={selectedClient.cari_kod} icon={FileText} alan="cari_kod" etiket="Cari Kod" />}
+                {selectedClient.mobile_phone && <DetailRow label="Cep" value={selectedClient.mobile_phone} icon={Phone} alan="mobile_phone" etiket="Cep Telefonu" />}
+                {selectedClient.phone && !selectedClient.mobile_phone && <DetailRow label="Tel" value={selectedClient.phone} icon={Phone} alan="phone" etiket="Telefon" />}
+                {selectedClient.email && <DetailRow label="E-posta" value={selectedClient.email} icon={Mail} alan="email" />}
+                {selectedClient.address && <DetailRow label="Adres" value={toTitleCase(selectedClient.address)} icon={MapPin} alan="address" />}
+                {selectedClient.il && !selectedClient.address && <DetailRow label="İl" value={toTitleCase(selectedClient.il)} icon={MapPin} alan="il" />}
+                {selectedClient.sektor && <DetailRow label="Çalıştığı Kurum" value={selectedClient.sektor} icon={Building2} alan="sektor" />}
               </div>
 
               {/* Vekalet bilgileri */}
@@ -548,6 +587,18 @@ const ClientList = () => {
                 <div className="bg-[var(--bg-sunken)] border border-[var(--border)] p-4">
                   <div className="font-mono text-[9.5px] tracking-[0.18em] uppercase text-[var(--fg-subtle)] mb-2 pb-2 border-b border-[var(--border)]">
                     Vekalet Bilgileri
+                    <HataBildirButonu
+                      alan="vekalet"
+                      etiket="Vekalet Bilgileri"
+                      deger={[
+                        selectedClient.buro_vekalet_no && `Büro vekalet no: ${selectedClient.buro_vekalet_no}`,
+                        selectedClient.yevmiye_no && `Yevmiye no: ${selectedClient.yevmiye_no}`,
+                        selectedClient.noterlik && `Noterlik: ${selectedClient.noterlik}`,
+                        selectedClient.vekaletname_tarihi && `Veriliş: ${selectedClient.vekaletname_tarihi}`,
+                        selectedClient.gecerlilik_tarihi && `Geçerlilik: ${selectedClient.gecerlilik_tarihi}`,
+                        selectedClient.vekalet_no && `Vekalet no: ${selectedClient.vekalet_no}`,
+                      ].filter(Boolean).join(" · ")}
+                    />
                   </div>
                   <div className="grid gap-2 text-[12px]">
                     {selectedClient.buro_vekalet_no && (
@@ -680,6 +731,7 @@ const ClientList = () => {
               )}
             </div>
           </HairlineCard>
+          </HataBildirimSaglayici>
         )}
       </section>
 

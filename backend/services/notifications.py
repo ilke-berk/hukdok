@@ -174,6 +174,7 @@ def create_notification(
     document_id: Optional[int] = None,
     due_date: Optional[dt.date] = None,
     dedupe_key: Optional[str] = None,
+    link: Optional[str] = None,
 ) -> int:
     """Bildirim satırını açar (ya da dedupe ile mevcut olanı bulur) ve id döner.
 
@@ -210,6 +211,7 @@ def create_notification(
         document_id=document_id,
         due_date=due_date,
         dedupe_key=key,
+        link=(link or "").strip() or None,
     )
     try:
         # SAVEPOINT: çakışmada yalnız bu INSERT geri alınır, çağıranın aynı

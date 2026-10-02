@@ -9,7 +9,7 @@ sistemin parçası değildir (kullanıcı kararı 20.08.2026). Tarihli ölçüml
 
 | Parça | Kod | Görev |
 | --- | --- | --- |
-| Tablo | `models.Notification` (`notifications`) | Kişi başına satır; `dedupe_key` global UNIQUE (`uq_notifications_dedupe`, migrasyon 37) |
+| Tablo | `models.Notification` (`notifications`) | Kişi başına satır; `dedupe_key` global UNIQUE (`uq_notifications_dedupe`, migrasyon 37); `link` = tıklanınca gidilecek uygulama içi yol (NULL → `case_id` kuralı) |
 | Tek yazma yolu | `services/notifications.create_notification` | Aynı anahtarla ikinci çağrı satır ikilemez, mevcut satırı GÜNCELLEMEZ (okunmuş uyarı yeniden okunmamışa dönmez) |
 | Alıcı çözümü | `services/notification_targeting.py` | Serbest metin sorumlu avukat → ofis e-postası; kopya alıcılar; nihai küme |
 | Gece tarayıcısı | `services/deadline_scanner.scan_deadlines` | 06:00 TR, yalnız lider worker; boot telafisi `boot_catch_up_scan` |
@@ -24,6 +24,8 @@ sistemin parçası değildir (kullanıcı kararı 20.08.2026). Tarihli ölçüml
 | `sure_yaklasti` | Gece taraması: `case_stage_decisions.teblig_tarihi` → `services/legal_deadlines.deadline_for` (YEREL → istinaf, ISTINAF → temyiz süresi; TEMYİZ/KD kuralsız); eşik T-15/7/3/1, kalan güne uyan EN DAR eşik | `deadline:<stage_decision_id>:<eşik>:<email>` | `deadline_scanner._sure_adaylari` |
 | `durusma_yaklasti` | Gece taraması: `hearing_dates.hearing_date`; eşik T-3/T-1 | `hearing:<hearing_id>:<eşik>:<email>` | `deadline_scanner._durusma_adaylari` |
 | `veri_teslim` | Teslim hattı durum geçişleri | `teslim:<id>:<durum>:<email>` | `services/teslim_kutusu.bildir` (alıcı `ADMIN_EMAILS`) |
+| `hata_bildirimi` | Kullanıcı karttaki zilden hata bildirince (§7) | `hata:<bildirim_id>:<email>` | `routes/hata_bildirimleri._alicilara_bildir` |
+| `hata_sonucu` | Hata bildirimi kapatılınca, bildirene (§7) | `hata-sonuc:<bildirim_id>` | `routes/hata_bildirimleri._kapanisi_bildir` |
 
 Geçmiş tarihli süre/duruşma için bildirim üretilmez ("yaklaşıyor" denemez);
 kaçan T-1 telafi edilmez (bilinçli kabul, `deadline_scanner` modül şerhi).
@@ -84,3 +86,41 @@ tebliğ boş olan yerel/istinaf aşamasında uyarı gösterir.
 - Süre uyarısı yalnız YEREL/ISTINAF tebliğinden üretilir; TEMYİZ/KD için kural yok.
 - Log: gece taraması yalnız `docker logs`'ta (json-file, recreate'te sıfırlanır);
   kalıcı sayaç için `notifications` tablosu ve `/overview` kullanılır.
+
+## 7. Hata bildirimi (02.10.2026)
+
+Avukat dava ya da müvekkil kartında yanlış gördüğü bilgiyi mesajlaşma yerine kartın
+içinden bildirir; idari personel zilden görür, kaydı düzeltir, bildirimi kapatır.
+
+| Parça | Kod | Görev |
+| --- | --- | --- |
+| Tablo | `models.HataBildirimi` (`hata_bildirimleri`, migrasyon 58) | Hedef TEK: `case_id` ya da `client_id` (CHECK). `alan` + `alan_etiketi` + `mevcut_deger` bildirim anının fotoğrafı; `dogru_deger` / `aciklama` bildirenin yazdığı (en az biri zorunlu) |
+| Uçlar | `routes/hata_bildirimleri.py` | `POST /api/hata-bildirimleri` · `GET` (`case_id` \| `client_id` \| hedefsiz = pano; `durum=acik\|hepsi`) · `GET /alicilar` (alıcı adayları) · `GET /dogrudan?case_id=` (doğrudan düzeltilebilir alanlar) · `POST /{id}/kapat` (`COZULDU` \| `REDDEDILDI`; zaten kapalı 409) |
+| Alıcı | `notification_targeting.error_report_candidates` · `GET /api/hata-bildirimleri/alicilar` | **Bildiren pencerede seçer** (en az bir kişi). Aday havuzu üç grup: İdari personel (`email_recipients`, avukat olmayanlar) · Avukatlar (iç avukatlar: `lawyers.gorev='AVUKAT'` + adı bir iç avukatla eşleşen alıcı satırı) · Yönetici (`ADMIN_EMAILS`; allowlist'ten muaf, adı `ADMIN_ADLARI` env'inden). Dış avukat ve allowlist dışı adres listede yok; istek sahibi kendini görmez. Sunucu seçimi havuza karşı doğrular (listede olmayan adres 422) ve seçilenleri satıra yazar (`alicilar`, ad fotoğrafıyla) |
+| Ön-seçim | `lib/hataBildirimleri.onSecim` · `error_report_recipients` | Tarayıcıda hatırlanan son seçim (hâlâ aday olanlar); yoksa `notify_error_reports` işaretliler (Yönetim > E-posta Alıcıları > Düzenle > "Hata bildirimi"), o da yoksa `notify_copy` alıcıları. İstemci alıcı göndermezse (aday listesi alınamadı) bildirim bu varsayılanlara gider |
+| Zil hedefi | `notifications.link` | Sunucunun ürettiği uygulama içi yol (`/cases/<id>?hata=<n>`, `/clients?client=<id>&hata=<n>`); müvekkile bağlı bildirimin `case_id`si yoktur. Frontend yalnız `/` ile başlayan yolu izler (`lib/hataBildirimleri.guvenliIcYol`) |
+| Arayüz | `components/hata/HataBildirimi.tsx` | `HataBildirimSaglayici` (kartı sarar) · `HataBildirButonu` (alan yanındaki kırmızı zil; açık bildirimi olan alanda dolu) · `AcikHataBildirimleri` (kartın üstündeki şerit: "Kaydı düzelt", "Düzeltildi", "Değişiklik gerekmiyor") |
+| Pano | `components/dashboard/HataBildirimleriPanel.tsx` | İdari pano "05 · Düzeltme": kapatılmamış tüm bildirimler — zil okunduktan sonra iş unutulmasın |
+
+- **Doğrudan düzeltme ("Kendim düzelt"):** davanın sorumlu avukatı (`resolve_case_recipients`) ya da
+  yönetici (`ADMIN_EMAILS`) doğrusunu biliyorsa kimseye bildirmeden kaydı kendisi düzeltir:
+  `POST` gövdesinde `dogrudan_duzelt=true`. Yalnız dava kartında ve `DOGRUDAN_DUZELTME_ALANLARI`nda
+  (`esas_no`, `hasar_dosya_no`, `hukuk_no`, `klasor_no_2`, `judicial_unit` — serbest metinli kimlik
+  alanları; liste/tarih/tutar/avukat/durum alanları bilinçli dışarıda, onlar bildirimle gider ve dava
+  formundan düzeltilir). Pencere önce "Emin misiniz?" diye eski → yeni değeri gösterir. Sunucu kapıları
+  hiçbir şey yazmadan koşar: alan listede değil 422 · yetkisiz 403 · ekrandaki değer artık kayıtlı değer
+  değil 409 · değer aynı 422. Yazım `case_manager.enrich_case`ten geçer (tarihçe `source=HATA_DUZELTME`
+  + yapan kişi; esas no `sync_current_esas`); bildirim GİTMEZ, kayıt `COZULDU` olarak denetim izi kalır
+  (`durum=hepsi` listesinde). Düğmenin görünmesi için istemci `GET /dogrudan?case_id=` ile sorar.
+- **Durum tek yönlü:** `ACIK → COZULDU | REDDEDILDI`; satır silinmez, yeniden açılmaz.
+  Kapatma koşullu UPDATE'tir (`durum = 'ACIK'`): iki kişi aynı anda kapatırsa biri 409 alır.
+- **Kapanışta:** bildirene `hata_sonucu` yazılır (kendi bildirimini kapattıysa yazılmaz);
+  diğer alıcıların okunmamış `hata_bildirimi` satırları okundu işaretlenir.
+- **Yetki:** rol yok — giriş yapmış herkes bildirir, listeler, kapatır; kapatan satıra yazılır.
+  Görünürlük hedef kayıttan gelir (paylaşımlı havuz + soft-delete → 404).
+- **Bildirim kaydı düşürmez:** zile yazım başarısız olursa WARNING; kayıt kartta ve panoda görünür.
+- **Zillerin olduğu yerler:** dava kartı (başlık alanları, Dosya Bilgileri, Tıbbi / Kanun Yolu /
+  Büro kartları, tazminat satırları, taraf kartları + alana bağlı olmayan "Hata Bildir" düğmesi),
+  müvekkil hızlı bakış paneli. Takip sekmesinde (aşama kararları, duruşmalar) alan zili YOK —
+  oradan gelen hata genel düğmeyle bildirilir. Yeni bir yere zil eklemek = sağlayıcının içinde
+  `<HataBildirButonu alan etiket deger />`.

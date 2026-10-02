@@ -2,7 +2,7 @@ from enum import Enum
 from datetime import datetime, date
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ContactType(str, Enum):
@@ -730,3 +730,162 @@ class CaseNoteRead(BaseModel):
     author_email: str
     created_at: str
     can_delete: bool
+
+
+# ─── HATA BİLDİRİMİ (02.10.2026) ──────────────────────────────────────────────
+# Sözleşme: routes/hata_bildirimleri.py (frontend `lib/hataBildirimleri.ts` ile ORTAK).
+
+HATA_ALAN_MAX_LEN = 80
+HATA_ETIKET_MAX_LEN = 120
+HATA_DEGER_MAX_LEN = 1000
+HATA_ACIKLAMA_MAX_LEN = 2000
+HATA_ALICI_AZAMI = 30
+# Doğrudan düzeltmede karta yazılacak değerin tavanı (kimlik/numara alanları kısa metindir).
+HATA_DOGRUDAN_DEGER_MAX_LEN = 200
+
+HATA_DURUM_ACIK = "ACIK"
+HATA_KAPANIS_SONUCLARI = ("COZULDU", "REDDEDILDI")
+
+
+def _hata_metni(value: Optional[str], azami: int, ad: str) -> Optional[str]:
+    """Trim + boş → None + uzunluk tavanı (aşım 422)."""
+    temiz = (value or "").strip()
+    if not temiz:
+        return None
+    if len(temiz) > azami:
+        raise ValueError(f"{ad} en fazla {azami} karakter olabilir.")
+    return temiz
+
+
+class HataBildirimiCreate(BaseModel):
+    """`POST /api/hata-bildirimleri` gövdesi.
+
+    Hedef TEK: `case_id` ya da `client_id`. `dogru_deger` ile `aciklama`dan en az
+    biri dolu olmalı — "yanlış" demek yetmez, düzeltecek kişi neyin yanlış olduğunu
+    bilmeli. `mevcut_deger` bildirim anındaki ekran değeridir (istemci gönderir).
+    """
+    case_id: Optional[int] = None
+    client_id: Optional[int] = None
+    alan: str
+    alan_etiketi: str
+    mevcut_deger: Optional[str] = None
+    dogru_deger: Optional[str] = None
+    aciklama: Optional[str] = None
+    # Bildirimin gideceği kişilerin e-postaları — `GET /api/hata-bildirimleri/alicilar`
+    # listesinden seçilir (route listeye karşı doğrular). Boş/yok = varsayılan alıcılar.
+    alicilar: Optional[List[str]] = None
+    # Doğrudan düzeltme: bildiren (davanın sorumlu avukatı / yönetici) `dogru_deger`i
+    # kimseye bildirmeden karta kendisi yazar. Yalnız dava hedefinde ve route'un izin
+    # verdiği alanlarda; `mevcut_deger` ekranda gördüğü değerdir (bayat ekran → 409).
+    dogrudan_duzelt: bool = False
+
+    @field_validator("alicilar")
+    @classmethod
+    def _alicilar(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        if not value:
+            return None
+        temiz: List[str] = []
+        for ham in value:
+            email = (ham or "").strip().lower()
+            if email and email not in temiz:
+                temiz.append(email)
+        if len(temiz) > HATA_ALICI_AZAMI:
+            raise ValueError(f"En fazla {HATA_ALICI_AZAMI} alıcı seçilebilir.")
+        return temiz or None
+
+    @field_validator("alan")
+    @classmethod
+    def _alan(cls, value: str) -> str:
+        temiz = _hata_metni(value, HATA_ALAN_MAX_LEN, "Alan")
+        if not temiz:
+            raise ValueError("Alan boş olamaz.")
+        return temiz
+
+    @field_validator("alan_etiketi")
+    @classmethod
+    def _alan_etiketi(cls, value: str) -> str:
+        temiz = _hata_metni(value, HATA_ETIKET_MAX_LEN, "Alan etiketi")
+        if not temiz:
+            raise ValueError("Alan etiketi boş olamaz.")
+        return temiz
+
+    @field_validator("mevcut_deger", "dogru_deger")
+    @classmethod
+    def _deger(cls, value: Optional[str]) -> Optional[str]:
+        return _hata_metni(value, HATA_DEGER_MAX_LEN, "Değer")
+
+    @field_validator("aciklama")
+    @classmethod
+    def _aciklama(cls, value: Optional[str]) -> Optional[str]:
+        return _hata_metni(value, HATA_ACIKLAMA_MAX_LEN, "Açıklama")
+
+    @model_validator(mode="after")
+    def _tek_hedef_ve_icerik(self):
+        if (self.case_id is None) == (self.client_id is None):
+            raise ValueError("Hedef olarak dava ya da müvekkilden yalnız biri verilmelidir.")
+        if not self.dogru_deger and not self.aciklama:
+            raise ValueError("Doğru değer ya da açıklamadan en az biri yazılmalıdır.")
+        if self.dogrudan_duzelt:
+            if self.case_id is None:
+                raise ValueError("Doğrudan düzeltme yalnız dava kartında yapılabilir.")
+            if not self.dogru_deger:
+                raise ValueError("Doğrudan düzeltme için doğru değer yazılmalıdır.")
+            if len(self.dogru_deger) > HATA_DOGRUDAN_DEGER_MAX_LEN:
+                raise ValueError(f"Doğru değer en fazla {HATA_DOGRUDAN_DEGER_MAX_LEN} karakter olabilir.")
+        return self
+
+
+class HataBildirimiKapat(BaseModel):
+    """`POST /api/hata-bildirimleri/{id}/kapat` gövdesi."""
+    sonuc: str
+    kapatma_notu: Optional[str] = None
+
+    @field_validator("sonuc")
+    @classmethod
+    def _sonuc(cls, value: str) -> str:
+        temiz = (value or "").strip().upper()
+        if temiz not in HATA_KAPANIS_SONUCLARI:
+            raise ValueError("Sonuç COZULDU ya da REDDEDILDI olmalıdır.")
+        return temiz
+
+    @field_validator("kapatma_notu")
+    @classmethod
+    def _not(cls, value: Optional[str]) -> Optional[str]:
+        return _hata_metni(value, HATA_ACIKLAMA_MAX_LEN, "Not")
+
+
+class HataAlicisi(BaseModel):
+    """Bildirimin gönderildiği kişi (gönderim anındaki ad)."""
+    email: str
+    ad: str
+
+
+class HataAliciAdayi(HataAlicisi):
+    """Alıcı seçicisinin satırı (`GET /api/hata-bildirimleri/alicilar`)."""
+    grup: str            # IDARI | AVUKAT | YONETICI
+    varsayilan: bool     # pencerede ön-seçili gelir
+
+
+class HataBildirimiRead(BaseModel):
+    """Tek hata bildirimi. Zaman damgaları UTC ve ofsetli ISO8601."""
+    id: int
+    case_id: Optional[int] = None
+    client_id: Optional[int] = None
+    # Hedefin okunur adı: dava künyesi (ofis no · esas no) ya da müvekkil adı.
+    hedef_etiketi: Optional[str] = None
+    # Uygulama içi yol — bildirim ve pano satırı buraya gider.
+    link: str
+    alan: str
+    alan_etiketi: str
+    mevcut_deger: Optional[str] = None
+    dogru_deger: Optional[str] = None
+    aciklama: Optional[str] = None
+    durum: str
+    alicilar: List[HataAlicisi] = []
+    bildiren_ad: Optional[str] = None
+    bildiren_email: str
+    created_at: str
+    kapatan_ad: Optional[str] = None
+    kapatan_email: Optional[str] = None
+    kapatma_notu: Optional[str] = None
+    kapatildi_at: Optional[str] = None

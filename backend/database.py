@@ -1369,6 +1369,70 @@ _MIGRATIONS = [
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_cases_istek_kimligi "
         "ON cases (istek_kimligi) WHERE istek_kimligi IS NOT NULL",
     ]),
+
+    # ─── 58. HATA BİLDİRİMİ — kart alanından idari personele (02.10.2026) ─────────
+    # `hata_bildirimleri` (models.HataBildirimi): avukat dava/müvekkil kartındaki yanlış
+    # bilgiyi alanın yanındaki zilden bildirir; alıcıyı pencerede seçer (idari personel + iç
+    # avukatlar + yönetici), ön-seçili gelenler `email_recipients.notify_error_reports`
+    # işaretli kişilerdir (yoksa `notify_copy` alıcıları). `notifications.link`: bildirimin
+    # tıklanınca gideceği uygulama içi yol — müvekkile bağlı bildirimin `case_id`si yoktur.
+    # Tablo/kolon op'ları KOŞULLUDUR (create_all yaratır) → index ve CHECK'ler alttaki
+    # KOŞULSUZ ("index", ...) op'unda (CLAUDE.md "koşullu op" tuzağı):
+    #   * `(case_id, durum)` / `(client_id, durum)`: kart açılışındaki "bu kaydın açık
+    #     bildirimleri" sorgusu + FK index'i (G043 bekçisi: index'siz FK yok);
+    #   * kısmi `(created_at) WHERE durum = 'ACIK'`: idari panodaki açık liste — kapanan
+    #     satırlar index'e girmez;
+    #   * CHECK'ler pg_constraint yoklamalı (idempotent): tek hedef + durum üçlüsü.
+    ("table", "hata_bildirimleri", """
+        CREATE TABLE hata_bildirimleri (
+            id SERIAL PRIMARY KEY,
+            tenant_id VARCHAR,
+            case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
+            client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+            alan VARCHAR(80) NOT NULL,
+            alan_etiketi VARCHAR(120) NOT NULL,
+            mevcut_deger TEXT,
+            dogru_deger TEXT,
+            aciklama TEXT,
+            durum VARCHAR(12) NOT NULL DEFAULT 'ACIK',
+            alicilar JSON,
+            bildiren_email VARCHAR(320) NOT NULL,
+            bildiren_ad VARCHAR(200),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            kapatan_email VARCHAR(320),
+            kapatan_ad VARCHAR(200),
+            kapatma_notu TEXT,
+            kapatildi_at TIMESTAMPTZ
+        )
+    """, []),
+    # `alicilar` (seçilen alıcıların fotoğrafı) tablo ilk kurulduktan SONRA eklendi; tablosu
+    # önceki hâliyle kurulmuş DB'ler (geliştirme ortamı) için — yeni kurulumda no-op.
+    ("columns", "hata_bildirimleri", {
+        "alicilar": "JSON",
+    }),
+    ("index", "hata_bildirimleri", [
+        "CREATE INDEX IF NOT EXISTS idx_hata_bildirimleri_case ON hata_bildirimleri (case_id, durum)",
+        "CREATE INDEX IF NOT EXISTS idx_hata_bildirimleri_client ON hata_bildirimleri (client_id, durum)",
+        "CREATE INDEX IF NOT EXISTS idx_hata_bildirimleri_acik ON hata_bildirimleri (created_at) "
+        "WHERE durum = 'ACIK'",
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_hata_bildirimleri_tek_hedef' AND conrelid = to_regclass('hata_bildirimleri')) THEN "
+        "ALTER TABLE hata_bildirimleri ADD CONSTRAINT ck_hata_bildirimleri_tek_hedef "
+        "CHECK ((case_id IS NULL) <> (client_id IS NULL)); "
+        "END IF; "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_hata_bildirimleri_durum' AND conrelid = to_regclass('hata_bildirimleri')) THEN "
+        "ALTER TABLE hata_bildirimleri ADD CONSTRAINT ck_hata_bildirimleri_durum "
+        "CHECK (durum IN ('ACIK', 'COZULDU', 'REDDEDILDI')); "
+        "END IF; END $$",
+    ]),
+    ("columns", "email_recipients", {
+        "notify_error_reports": "BOOLEAN DEFAULT FALSE",
+    }),
+    ("columns", "notifications", {
+        "link": "VARCHAR(300)",
+    }),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

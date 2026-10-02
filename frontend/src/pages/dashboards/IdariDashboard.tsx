@@ -19,6 +19,7 @@ import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { SectionHeader, HairlineCard, Eyebrow } from "@/components/dashboard/primitives";
 import { DashboardCalendar } from "@/components/dashboard/DashboardCalendar";
 import { TimedWorkPanel } from "@/components/dashboard/TimedWorkPanel";
+import { HataBildirimleriPanel } from "@/components/dashboard/HataBildirimleriPanel";
 
 interface DashboardCase {
   id: number;
@@ -334,6 +335,17 @@ export default function IdariDashboard() {
               italic="— avukat bilgilendirmesi"
             />
             <TimedWorkPanel />
+          </div>
+
+          {/* Hata bildirimleri (02.10.2026): avukatların kartlardaki zilden bildirdiği,
+              henüz kapatılmamış hatalar — zil okunduktan sonra iş unutulmasın. */}
+          <div>
+            <SectionHeader
+              eyebrow="05 · Düzeltme"
+              title="Hata Bildirimleri"
+              italic="— avukatlardan gelen"
+            />
+            <HataBildirimleriPanel />
           </div>
         </div>
       </section>

@@ -675,6 +675,11 @@ class EmailRecipient(Base):
     # Alan adı allowlist'i (NOTIFICATION_DOMAINS) burada da geçerlidir; belgeyi
     # yükleyen kişi kendi belgesinin bildirimini almaz (services/notifications.py).
     notify_copy = Column(Boolean, default=False)
+    # Hata bildirimi alıcısı (02.10.2026): kartlardaki "hata bildir" zilinden gelen
+    # bildirimler (models.HataBildirimi) işaretli alıcılara düşer. Hiç işaretli
+    # alıcı yoksa `notify_copy` alıcılarına gider
+    # (services/notification_targeting.error_report_recipients).
+    notify_error_reports = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), default=func.now())
 
@@ -1406,6 +1411,10 @@ class Notification(Base):
     document_id = Column(Integer, ForeignKey("case_documents.id", ondelete="SET NULL"), nullable=True)
     due_date = Column(Date, nullable=True)                 # Bildirimin işaret ettiği tarih (duruşma vb.)
     dedupe_key = Column(String(200), nullable=True)        # UNIQUE (migrasyon) — idempotency anahtarı
+    # Tıklanınca gidilecek uygulama içi yol ("/cases/12?hata=5"). Yalnız SUNUCU üretir;
+    # NULL ise zil eski kurala düşer (case_id → dava kartı). Müvekkile bağlı bildirimin
+    # (hata bildirimi) case_id'si olmadığı için eklendi (02.10.2026).
+    link = Column(String(300), nullable=True)
     read_at = Column(DateTime(timezone=True), nullable=True)
     dismissed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now())
@@ -1598,3 +1607,47 @@ class CaseNote(Base):
     author_name = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class HataBildirimi(Base):
+    """
+    Kart alanı için hata bildirimi (02.10.2026, kullanıcı isteği): avukat dava ya da
+    müvekkil kartında yanlış gördüğü bilgiyi alanın yanındaki zilden bildirir, idari
+    personel uygulama içi bildirimle görür, düzeltir ve bildirimi kapatır.
+
+    Hedef TEK: `case_id` ya da `client_id` (ikisi birden / hiçbiri → CHECK,
+    `ck_hata_bildirimleri_tek_hedef`). `alan` kartın alan anahtarıdır ("esas_no",
+    "taraf:12", "genel"); `alan_etiketi` + `mevcut_deger` bildirim ANINDAKİ ekran
+    fotoğrafıdır — alan sonradan düzeltilse de kayıt neyin bildirildiğini söyler.
+
+    Durum makinesi tek yönlü: ACIK → COZULDU | REDDEDILDI (routes/hata_bildirimleri.py);
+    satır silinmez, yeniden açılmaz (yeni bildirim açılır). Kanal yalnız uygulama içi
+    (zil) — alıcı `services/notification_targeting.error_report_recipients`.
+
+    FK'lar `ondelete="CASCADE"` (dava/müvekkil soft-delete'inde satır durur, uçlar
+    görünmez sayar). Index ve CHECK'ler modelde DEĞİL migrasyonda — koşulsuz
+    ("index", "hata_bildirimleri", ...) op'u (G041 kuralı, database.py madde 58);
+    iki FK kolonu da bir index'in ilk kolonudur (G043 bekçisi).
+    """
+    __tablename__ = "hata_bildirimleri"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=True)                # hedef kayıttan devralınır; NULL = paylaşımlı havuz
+    case_id = Column(Integer, ForeignKey("cases.id", ondelete="CASCADE"), nullable=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True)
+    alan = Column(String(80), nullable=False)
+    alan_etiketi = Column(String(120), nullable=False)
+    mevcut_deger = Column(Text, nullable=True)
+    dogru_deger = Column(Text, nullable=True)                # bildirenin önerdiği doğru değer
+    aciklama = Column(Text, nullable=True)
+    durum = Column(String(12), nullable=False, default="ACIK", server_default="ACIK")
+    # Bildirimin gönderildiği kişiler — bildirenin pencerede seçtiği (ya da varsayılan)
+    # alıcıların gönderim ANINDAKİ fotoğrafı: [{"email": ..., "ad": ...}]. NULL/boş = alıcı yoktu.
+    alicilar = Column(JSON, nullable=True)
+    bildiren_email = Column(String(320), nullable=False)     # DAİMA küçük harf
+    bildiren_ad = Column(String(200), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), server_default=func.now())
+    kapatan_email = Column(String(320), nullable=True)
+    kapatan_ad = Column(String(200), nullable=True)
+    kapatma_notu = Column(Text, nullable=True)
+    kapatildi_at = Column(DateTime(timezone=True), nullable=True)

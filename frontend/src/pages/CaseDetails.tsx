@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
@@ -30,6 +30,7 @@ import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
 import CaseFoyPanel, { type CaseFoyEntry } from "@/components/CaseFoyPanel";
 import CaseNotesPanel from "@/components/CaseNotesPanel";
+import { AcikHataBildirimleri, HataBildirButonu, HataBildirimSaglayici } from "@/components/hata/HataBildirimi";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
@@ -168,7 +169,10 @@ const TransferFieldsCard = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {visible.map(f => (
                         <div key={f.key} className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{f.label}</span>
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                {f.label}
+                                <HataBildirButonu alan={f.key} etiket={f.label} deger={formatCardValue(data[f.key], f.type)} />
+                            </span>
                             {f.type === "closedList" ? (
                                 <ClosedListValue
                                     value={formatCardValue(data[f.key], f.type)}
@@ -333,6 +337,9 @@ const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
+    // Zildeki hata bildiriminden gelindiyse (`?hata=<id>`) o bildirim şeritte vurgulanır.
+    const [searchParams] = useSearchParams();
+    const vurgulananHata = Number(searchParams.get("hata")) || null;
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
     // G185: yalnız kartın okuduğu altı kapalı listeye abone olunur (useConfig 32 sorgu kuruyordu).
     const { data: allegedFaults } = useConfigList("allegedFaults");
@@ -489,6 +496,7 @@ const CaseDetails = () => {
     const style = getStatusStyle(caseData.status);
 
     return (
+        <HataBildirimSaglayici hedef={{ caseId: caseData.id }} onDuzeltildi={() => { void kartiYenile(); }}>
         <div>
 
             <main className="max-w-[1400px] mx-auto space-y-6">
@@ -527,8 +535,17 @@ const CaseDetails = () => {
                             <Sparkles className="w-4 h-4" />
                             Belgeden Doldur / Teyit Et
                         </Button>
+                        {/* Alana bağlı olmayan hata (eksik taraf, yanlış belge…) — alan zilleri kartın içinde */}
+                        <HataBildirButonu metinli />
                     </div>
                 </div>
+
+                {/* Açık hata bildirimleri — idari personel buradan düzeltir ve kapatır */}
+                <AcikHataBildirimleri
+                    vurgulananId={vurgulananHata}
+                    onDuzelt={() => navigate("/new-case/form", { state: { case: caseData } })}
+                    onKapandi={() => { void kartiYenile(); }}
+                />
 
                 {/* Eksik zorunlu alan bandı — anket kararı: eksikler unutulmasın, tamamlanınca DERDEST'e geçirilsin */}
                 {(caseData.missing_required_fields?.length ?? 0) > 0 && (
@@ -570,10 +587,14 @@ const CaseDetails = () => {
                                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
                                             {caseData.esas_no || caseData.tracking_no}
                                         </h1>
+                                        {caseData.esas_no
+                                            ? <HataBildirButonu alan="esas_no" etiket="Esas No" deger={caseData.esas_no} />
+                                            : <HataBildirButonu alan="tracking_no" etiket="Ofis No" deger={caseData.tracking_no} />}
                                     </div>
                                     <Badge className={`text-sm px-3 py-1 font-semibold ${style.bg} ${style.text} hover:${style.bg} border-0`}>
                                         {caseData.status}
                                     </Badge>
+                                    <HataBildirButonu alan="status" etiket="Durum" deger={caseData.status} className="-ml-2" />
                                     {/* G105: maddi red + manevi kabul imzası — bilgilendirme
                                         rozeti (tıklanmaz). NULL ≠ 0: maddi tutar girilmemişse
                                         (null) rozet DOĞMAZ; olay_turu dolunca kaybolur. */}
@@ -594,6 +615,7 @@ const CaseDetails = () => {
                                     <p className="text-lg md:text-xl font-medium text-foreground/80">
                                         {caseData.subject || "Konu belirtilmemiş"}
                                     </p>
+                                    <HataBildirButonu alan="subject" etiket="Dava Konusu" deger={caseData.subject} />
                                 </div>
 
                                 {/* Hasar / Hukuk No pill badges */}
@@ -623,6 +645,7 @@ const CaseDetails = () => {
                                         <Scale className="w-4 h-4 text-muted-foreground shrink-0" />
                                         <span className="text-muted-foreground">Mahkeme:</span>
                                         <span className="font-medium">{caseData.court || "Belirtilmemiş"}</span>
+                                        <HataBildirButonu alan="court" etiket="Mahkeme" deger={caseData.court} />
                                     </div>
                                     <div className="flex items-start gap-2.5">
                                         <User className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -635,12 +658,18 @@ const CaseDetails = () => {
                                             ) : (
                                                 <span>{caseData.responsible_lawyer_name || "Atanmadı"}</span>
                                             )}
+                                            <HataBildirButonu
+                                                alan="responsible_lawyer_name"
+                                                etiket="Sorumlu Avukat"
+                                                deger={caseData.lawyers?.length ? caseData.lawyers.map(l => l.name).join("; ") : caseData.responsible_lawyer_name}
+                                            />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2.5">
                                         <User className="w-4 h-4 text-muted-foreground shrink-0" />
                                         <span className="text-muted-foreground">UYAP Avukatı:</span>
                                         <span className="font-medium">{caseData.uyap_lawyer_name || "Atanmadı"}</span>
+                                        <HataBildirButonu alan="uyap_lawyer_name" etiket="UYAP Avukatı" deger={caseData.uyap_lawyer_name} />
                                     </div>
                                     <div className="flex items-center gap-2.5">
                                         <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -648,6 +677,11 @@ const CaseDetails = () => {
                                         <span className="font-medium">
                                             {caseData.opening_date ? new Date(caseData.opening_date).toLocaleDateString("tr-TR") : "-"}
                                         </span>
+                                        <HataBildirButonu
+                                            alan="opening_date"
+                                            etiket="Açılış Tarihi"
+                                            deger={caseData.opening_date ? new Date(caseData.opening_date).toLocaleDateString("tr-TR") : null}
+                                        />
                                     </div>
                                 </div>
 
@@ -719,19 +753,28 @@ const CaseDetails = () => {
                                         </div>
                                         {caseData.hasar_dosya_no && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Hasar Dosya No</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Hasar Dosya No
+                                                    <HataBildirButonu alan="hasar_dosya_no" etiket="Hasar Dosya No" deger={caseData.hasar_dosya_no} />
+                                                </span>
                                                 <span className="font-mono font-medium">{caseData.hasar_dosya_no as string}</span>
                                             </div>
                                         )}
                                         {caseData.hukuk_no && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Hukuk No</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Hukuk No
+                                                    <HataBildirButonu alan="hukuk_no" etiket="Hukuk No" deger={caseData.hukuk_no} />
+                                                </span>
                                                 <span className="font-mono font-medium">{caseData.hukuk_no as string}</span>
                                             </div>
                                         )}
                                         {caseData.klasor_no_2 && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Klasör No (Eski)</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Klasör No (Eski)
+                                                    <HataBildirButonu alan="klasor_no_2" etiket="Klasör No (Eski)" deger={caseData.klasor_no_2} />
+                                                </span>
                                                 <span className="font-mono font-medium text-sm truncate" title={caseData.klasor_no_2 as string}>{caseData.klasor_no_2 as string}</span>
                                             </div>
                                         )}
@@ -742,7 +785,10 @@ const CaseDetails = () => {
                                             Güncel numara başlıkta; burada yalnız eskiler. */}
                                         {(caseData.esas_numbers ?? []).some(e => !e.is_current) && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Önceki Esas No</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Önceki Esas No
+                                                    <HataBildirButonu alan="onceki_esas_no" etiket="Önceki Esas No" deger={(caseData.esas_numbers ?? []).filter(e => !e.is_current).map(e => e.esas_no).join(" · ")} />
+                                                </span>
                                                 <span className="font-mono font-medium text-sm">
                                                     {(caseData.esas_numbers ?? [])
                                                         .filter(e => !e.is_current)
@@ -753,13 +799,19 @@ const CaseDetails = () => {
                                         )}
                                         {caseData.atama_tarihi && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Atama Tarihi</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Atama Tarihi
+                                                    <HataBildirButonu alan="atama_tarihi" etiket="Atama Tarihi" deger={new Date(caseData.atama_tarihi as string).toLocaleDateString("tr-TR")} />
+                                                </span>
                                                 <span className="font-medium">{new Date(caseData.atama_tarihi as string).toLocaleDateString("tr-TR")}</span>
                                             </div>
                                         )}
                                         {caseData.judicial_unit && (
                                             <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Yargı Birimi</span>
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                    Yargı Birimi
+                                                    <HataBildirButonu alan="judicial_unit" etiket="Yargı Birimi" deger={caseData.judicial_unit} />
+                                                </span>
                                                 <span className="font-medium">{caseData.judicial_unit}</span>
                                             </div>
                                         )}
@@ -823,29 +875,44 @@ const CaseDetails = () => {
                                 </CardHeader>
                                 <CardContent className="space-y-4">
                                     <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                        <span className="text-muted-foreground">Maddi Tazminat</span>
+                                        <span className="text-muted-foreground">
+                                            Maddi Tazminat
+                                            <HataBildirButonu alan="maddi_tazminat" etiket="Maddi Tazminat" deger={formatCurrency(caseData.maddi_tazminat || 0)} />
+                                        </span>
                                         <span className="font-semibold text-lg">{formatCurrency(caseData.maddi_tazminat || 0)}</span>
                                     </div>
                                     <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                        <span className="text-muted-foreground">Manevi Tazminat</span>
+                                        <span className="text-muted-foreground">
+                                            Manevi Tazminat
+                                            <HataBildirButonu alan="manevi_tazminat" etiket="Manevi Tazminat" deger={formatCurrency(caseData.manevi_tazminat || 0)} />
+                                        </span>
                                         <span className="font-semibold text-lg">{formatCurrency(caseData.manevi_tazminat || 0)}</span>
                                     </div>
                                     {/* Hükmedilen tutarlar — null = girilmedi, satır gizli */}
                                     {caseData.hukmedilen_maddi != null && (
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                            <span className="text-muted-foreground">Hükmedilen Maddi</span>
+                                            <span className="text-muted-foreground">
+                                            Hükmedilen Maddi
+                                            <HataBildirButonu alan="hukmedilen_maddi" etiket="Hükmedilen Maddi" deger={formatCurrency(caseData.hukmedilen_maddi as number)} />
+                                        </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_maddi as number)}</span>
                                         </div>
                                     )}
                                     {caseData.hukmedilen_manevi != null && (
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                            <span className="text-muted-foreground">Hükmedilen Manevi</span>
+                                            <span className="text-muted-foreground">
+                                            Hükmedilen Manevi
+                                            <HataBildirButonu alan="hukmedilen_manevi" etiket="Hükmedilen Manevi" deger={formatCurrency(caseData.hukmedilen_manevi as number)} />
+                                        </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_manevi as number)}</span>
                                         </div>
                                     )}
                                     {caseData.hukmedilen_toplam != null && (
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                            <span className="text-muted-foreground">Hükmedilen Toplam</span>
+                                            <span className="text-muted-foreground">
+                                            Hükmedilen Toplam
+                                            <HataBildirButonu alan="hukmedilen_toplam" etiket="Hükmedilen Toplam" deger={formatCurrency(caseData.hukmedilen_toplam as number)} />
+                                        </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.hukmedilen_toplam as number)}</span>
                                         </div>
                                     )}
@@ -856,6 +923,7 @@ const CaseDetails = () => {
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
                                             <span className="text-muted-foreground">
                                                 Dava Değeri ({caseData.para_birimi ?? "TL"})
+                                                <HataBildirButonu alan="dava_degeri" etiket="Dava Değeri" deger={formatCurrency(caseData.dava_degeri as number)} />
                                             </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.dava_degeri as number)}</span>
                                         </div>
@@ -864,7 +932,10 @@ const CaseDetails = () => {
                                         talep dava değeridir. Ayrı satır, aynı gizleme kuralı. */}
                                     {caseData.islah_tutari != null && (
                                         <div className="flex items-center justify-between p-3 rounded-lg border bg-background/50">
-                                            <span className="text-muted-foreground">Islah Tutarı</span>
+                                            <span className="text-muted-foreground">
+                                            Islah Tutarı
+                                            <HataBildirButonu alan="islah_tutari" etiket="Islah Tutarı" deger={formatCurrency(caseData.islah_tutari as number)} />
+                                        </span>
                                             <span className="font-semibold text-lg">{formatCurrency(caseData.islah_tutari as number)}</span>
                                         </div>
                                     )}
@@ -965,6 +1036,11 @@ const CaseDetails = () => {
                                                     <div className="flex justify-between items-start gap-2">
                                                         <div className="font-semibold group-hover:text-brand transition-colors flex items-center gap-2">
                                                             {party.name}
+                                                            <HataBildirButonu
+                                                                alan={`taraf:${party.id}`}
+                                                                etiket={`Taraf: ${party.name}`}
+                                                                deger={`${party.name} — ${typeLabel} · ${party.role}`}
+                                                            />
                                                         </div>
                                                         {party.client_id && (
                                                             <Badge variant="outline" className="text-[10px] shrink-0">Kayıtlı</Badge>
@@ -1139,6 +1215,7 @@ const CaseDetails = () => {
                 </AlertDialogContent>
             </AlertDialog>
         </div>
+        </HataBildirimSaglayici>
     );
 };
 

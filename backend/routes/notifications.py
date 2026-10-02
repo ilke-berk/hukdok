@@ -100,6 +100,8 @@ def _serialize(row) -> dict:
         "read_at": _iso(row.read_at),
         "is_read": row.read_at is not None,
         "created_at": _iso(row.created_at),
+        # Uygulama içi hedef yol (yalnız sunucu üretir); NULL = eski kural (case_id).
+        "link": row.link,
     }
 
 

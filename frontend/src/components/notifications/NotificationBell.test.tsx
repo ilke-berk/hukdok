@@ -210,6 +210,35 @@ describe("NotificationBell", () => {
     expect(panel()).toBeNull(); // gezinmeden önce kapanır
   });
 
+  it("link taşıyan bildirim (hata bildirimi) sunucunun verdiği iç yola gider", async () => {
+    render({ items: [bildirim({ id: 21, type: "hata_bildirimi", case_id: 42, link: "/cases/42?hata=5" })] });
+    await tikla(zil());
+
+    await tikla(Array.from(container.querySelectorAll("li button"))[0]);
+
+    expect(hookMocks.markRead).toHaveBeenCalledWith(21);
+    expect(navigateMock).toHaveBeenCalledWith("/cases/42?hata=5");
+    expect(panel()).toBeNull();
+  });
+
+  it("müvekkile bağlı bildirim davasız olsa da link ile müvekkil kartına gider", async () => {
+    render({ items: [bildirim({ id: 22, type: "hata_bildirimi", case_id: null, link: "/clients?client=7&hata=6" })] });
+    await tikla(zil());
+
+    await tikla(Array.from(container.querySelectorAll("li button"))[0]);
+
+    expect(navigateMock).toHaveBeenCalledWith("/clients?client=7&hata=6");
+  });
+
+  it("uygulama dışı link yok sayılır, case_id kuralına düşülür", async () => {
+    render({ items: [bildirim({ id: 23, case_id: 42, link: "//evil.example/x" })] });
+    await tikla(zil());
+
+    await tikla(Array.from(container.querySelectorAll("li button"))[0]);
+
+    expect(navigateMock).toHaveBeenCalledWith("/cases/42");
+  });
+
   it("'Tümünü okundu işaretle' hook'u çağırır", async () => {
     render({ unreadCount: 2, items: [bildirim({ id: 1 }), bildirim({ id: 2 })] });
     await tikla(zil());

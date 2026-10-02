@@ -287,7 +287,14 @@ const emailCells: RowCells = (item, actions) => (
         <TableCell className="font-medium">{item.name}</TableCell>
         <TableCell>{item.email}</TableCell>
         <TableCell>{item.description || "-"}</TableCell>
-        <TableCell className="text-xs">{item.notify_copy ? <span className="text-[var(--brand)] font-semibold">Kopya alır</span> : EMPTY_CELL}</TableCell>
+        <TableCell className="text-xs">
+            {item.notify_copy || item.notify_error_reports ? (
+                <span className="flex flex-col gap-0.5 font-semibold">
+                    {item.notify_copy && <span className="text-[var(--brand)]">Kopya alır</span>}
+                    {item.notify_error_reports && <span className="text-tone-danger">Hata bildirimi (ön-seçili)</span>}
+                </span>
+            ) : EMPTY_CELL}
+        </TableCell>
         <TableCell className="text-right"><RowActionButtons item={item} actions={actions} /></TableCell>
     </>
 );
@@ -529,6 +536,10 @@ const AdminPage = () => {
                     // bildirim (belge işlendi / süre / duruşma) bu kişiye de düşer;
                     // kendi yüklediği belgenin bildirimi hariç.
                     { key: "notify_copy", label: "Bildirim kopyası", options: [{ value: "true", label: "Evet — bildirimlerin kopyasını alır" }, { value: "false", label: "Hayır" }] },
+                    // Hata bildirimi: bildiren alıcıyı pencerede kendisi seçer; işaretli kişi
+                    // orada ön-seçili gelir (ilk kullanımda). Hiç kimse işaretli değilse
+                    // ön-seçim kopya alıcılarıdır.
+                    { key: "notify_error_reports", label: "Hata bildirimi", options: [{ value: "true", label: "Evet — hata bildirimi penceresinde ön-seçili alıcı" }, { value: "false", label: "Hayır" }] },
                 ];
             case "court_types":
                 return [
@@ -1146,7 +1157,7 @@ const AdminPage = () => {
                                 </CardHeader>
                                 <CardContent>
                                     <Table>
-                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead title="Sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır">Bildirim</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
+                                        <TableHeader><TableRow><TableHead className="w-[50px]"></TableHead><TableHead>Ad Soyad</TableHead><TableHead>E-posta</TableHead><TableHead>Rol</TableHead><TableHead title="Bildirim kopyası: sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır · Hata bildirimi: karttaki hata bildirimi penceresinde ön-seçili alıcı">Bildirim</TableHead><TableHead className="text-right">İşlemler</TableHead></TableRow></TableHeader>
                                         <TableBody>
                                             <ListRows items={shownList("emails")} search={listSearch} matches={matchEmail} rowId={idByEmail} cells={emailCells} actions={rowActions.emails} />
                                         </TableBody>

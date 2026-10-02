@@ -27,6 +27,11 @@ export interface NotificationItem {
     read_at: string | null;
     is_read: boolean;
     created_at: string | null;
+    /**
+     * Uygulama içi hedef yol (yalnız sunucu üretir; ör. hata bildirimi → "/cases/12?hata=5").
+     * Yoksa zil eski kurala düşer (`case_id` → dava kartı). Opsiyonel: eski yanıtlar alanı taşımaz.
+     */
+    link?: string | null;
 }
 
 /** Liste ucundan çekilen satır sayısı — panel sayfalamaz, "son N"i gösterir. */

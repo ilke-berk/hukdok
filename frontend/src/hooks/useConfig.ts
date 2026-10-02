@@ -13,6 +13,8 @@ export interface ConfigItem {
     description?: string;
     /** E-posta alıcısı: sorumlu avukata yazılan uygulama içi bildirimlerin kopyasını alır. */
     notify_copy?: boolean;
+    /** E-posta alıcısı: kartlardaki "hata bildir" zilinden gelen bildirimleri alır. */
+    notify_error_reports?: boolean;
     parent_code?: string;
     role_type?: string;
     tc_no?: string;

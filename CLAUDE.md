@@ -101,6 +101,19 @@ allowlist `NOTIFICATION_DOMAINS`. Süre uyarısının TEK kaynağı `case_stage_
 `/confirm`'de karar belgesiyle girilen tebliğ tarihi oraya yazılır
 (`processing.KARAR_DOCTYPE_TO_DECISION_STAGE`, boş alan dolar dolu alan ezilmez).
 
+**Hata bildirimi (02.10, `docs/mimari/bildirimler.md` §7):** kart alanlarının yanındaki kırmızı zil
+(`components/hata/HataBildirimi.tsx`; dava kartı + müvekkil hızlı bakışı) → `POST /api/hata-bildirimleri`
+(`routes/hata_bildirimleri.py`, tablo `hata_bildirimleri`, hedef dava YA DA müvekkil) → alıcıların ziline
+`hata_bildirimi`. **Alıcıyı bildiren seçer** (`GET /alicilar`: idari personel + iç avukatlar + `ADMIN_EMAILS`
+yöneticisi, adı `ADMIN_ADLARI` env'inden; sunucu seçimi bu havuza karşı doğrular, serbest adres 422); ön-seçim
+son seçim, yoksa `email_recipients.notify_error_reports`, o da yoksa `notify_copy`. Alıcı kartın üstündeki
+şeritten düzeltip kapatır (`/kapat`: COZULDU | REDDEDILDI, tek yönlü) → bildirene `hata_sonucu`. Zil hedefi
+`notifications.link` (sunucu üretir). Açık bildirimler idari panoda da listelenir. Rol yok: herkes bildirir/kapatır.
+**Doğrudan düzeltme:** davanın sorumlu avukatı ya da yönetici, `DOGRUDAN_DUZELTME_ALANLARI`ndaki serbest metinli
+alanı (esas no, hasar/hukuk/klasör no, yargı birimi) "Emin misiniz?" onayıyla kendisi yazar (`dogrudan_duzelt=true`
+→ `enrich_case`, tarihçe `source=HATA_DUZELTME`; bayat ekran 409) — listeye yeni alan eklemeden önce o alanın
+serbest metinle yazılabildiğini doğrula (kapalı liste / tarih / tutar / avukat alanı EKLENMEZ).
+
 **Ofis no (karar 023, G235-G242):** `<MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR>` — `DR.M.OZTURK-0003-HUK`,
 `KR.ENTHONE-0015-CEZ`, `AXA-3297-DR.E.ALTUNC-HUK`, `SG-0001-HUK` (listede olmayan sigortacı). Tek kanonik
 üretici `backend/services/ofis_no.py`; **numarayı SUNUCU verir**: kullanıcı route'ları (`POST /api/cases`,

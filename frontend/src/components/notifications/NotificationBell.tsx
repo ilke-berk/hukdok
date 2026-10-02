@@ -4,6 +4,7 @@ import { Bell } from "lucide-react";
 import { useNotifications, type NotificationItem } from "@/hooks/useNotifications";
 import { NotificationsPanel } from "@/components/notifications/NotificationsPanel";
 import { formatBadge } from "@/components/notifications/badge";
+import { guvenliIcYol } from "@/lib/hataBildirimleri";
 
 /**
  * Üst bardaki zil: okunmamış rozeti + açılır bildirim paneli (G083).
@@ -70,6 +71,14 @@ export function NotificationBell() {
     if (item.type === "veri_teslim") {
       setOpen(false);
       navigate("/admin?tab=deliveries");
+      return;
+    }
+    // Sunucunun verdiği uygulama içi yol (hata bildirimi: dava ya da müvekkil kartı,
+    // ilgili bildirim vurgulu) `case_id` kuralından önce gelir.
+    const icYol = guvenliIcYol(item.link);
+    if (icYol) {
+      setOpen(false);
+      navigate(icYol);
       return;
     }
     // Davası olmayan bildirim (ör. genel duyuru) panelde kalır — gidecek yer yok.

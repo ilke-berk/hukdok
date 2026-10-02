@@ -245,6 +245,150 @@ def copy_recipients(db: Session, domains: Optional[tuple[str, ...]] = None) -> l
     return out
 
 
+def error_report_recipients(db: Session, domains: Optional[tuple[str, ...]] = None) -> list[str]:
+    """Hata bildirimlerinin alıcıları (`email_recipients.notify_error_reports`, 02.10.2026).
+
+    Karttaki "hata bildir" zilinden gelen bildirim (models.HataBildirimi) işaretli
+    idari personele düşer. Hiç işaretli alıcı yoksa `copy_recipients`e düşülür:
+    bayrak açılmadan da bildirim sahipsiz kalmasın (kopya alıcılar zaten belgeyi
+    işleyen ofis personelidir). Allowlist burada da kapıdır. Sıra `sequence`,
+    tekil, küçük harf. DB'ye YAZMAZ.
+    """
+    izinli = domains if domains is not None else notification_domains()
+    rows = (
+        db.query(models.EmailRecipient)
+        .filter(models.EmailRecipient.active.isnot(False))
+        .filter(models.EmailRecipient.notify_error_reports.is_(True))
+        .order_by(models.EmailRecipient.sequence.asc(), models.EmailRecipient.id.asc())
+        .all()
+    )
+    out: list[str] = []
+    for rec in rows:
+        email = normalize_email(cast(Optional[str], rec.email))
+        if email and is_allowed_email(email, izinli) and email not in out:
+            out.append(email)
+    return out or copy_recipients(db, izinli)
+
+
+# Hata bildirimi alıcı adaylarının grupları (frontend pencerede bu sırayla basar).
+ALICI_GRUBU_IDARI = "IDARI"
+ALICI_GRUBU_AVUKAT = "AVUKAT"
+ALICI_GRUBU_YONETICI = "YONETICI"
+
+YONETICI_VARSAYILAN_ADI = "Yönetici"
+
+
+def admin_display_names() -> dict[str, str]:
+    """Yönetici hesaplarının görünen adları: `ADMIN_ADLARI="eposta=Ad;eposta=Ad"`.
+
+    `ADMIN_EMAILS` yalnız adres taşır ve yönetici hesabı (ör. LexisBio tenant'ındaki)
+    hiçbir listede olmayabilir — alıcı seçicisinde adı buradan gelir. İsteğe bağlı;
+    tanımsızsa `error_report_candidates` listelerdeki ada, o da yoksa "Yönetici"ye düşer.
+    Her çağrıda okunur (bkz. `notification_domains`); bozuk parça sessizce atlanır.
+    """
+    raw = os.getenv("ADMIN_ADLARI", "") or ""
+    out: dict[str, str] = {}
+    for parca in raw.replace(",", ";").split(";"):
+        eposta, ayrac, ad = parca.partition("=")
+        email = normalize_email(eposta)
+        if ayrac and email and ad.strip():
+            out[email] = ad.strip()
+    return out
+
+
+def error_report_candidates(db: Session, domains: Optional[tuple[str, ...]] = None) -> list[dict[str, Any]]:
+    """Hata bildiriminin gönderilebileceği kişiler (kullanıcı kararı, 02.10.2026).
+
+    Bildiren, pencerede alıcıyı BU listeden seçer; sunucu da seçimi bu listeye karşı
+    doğrular (serbest adres kabul edilmez). Üç grup, bu sırayla:
+
+    * `IDARI`   — `email_recipients`teki aktif, allowlist'ten geçen, avukat olmayan kişiler;
+    * `AVUKAT`  — iç avukatlar: `lawyers.gorev='AVUKAT'` (e-postası allowlist'te) + adı bir
+      iç avukatla en az iki token'da eşleşen `email_recipients` satırı (avukatın e-postası
+      yalnız o listede duruyorsa idari personel sanılmasın);
+    * `YONETICI` — `ADMIN_EMAILS`teki, yukarıdaki gruplarda olmayan hesaplar. Allowlist'ten
+      MUAF (bilinçli tanımlı hesaplar; `veri_teslim` bildirimleri de onlara gider). Ad:
+      `ADMIN_ADLARI` → listelerde aynı adresli satır → "Yönetici".
+
+    `varsayilan`: `error_report_recipients`teki adresler — pencerede ön-seçili gelir ve
+    istemci alıcı göndermezse bildirim onlara gider. Döner:
+    `[{"email", "ad", "grup", "varsayilan"}]`. DB'ye YAZMAZ.
+    """
+    izinli = domains if domains is not None else notification_domains()
+    varsayilanlar = set(error_report_recipients(db, izinli))
+
+    ic_avukat_tokenlari: list[frozenset] = []
+    avukatlar: list[dict[str, Any]] = []
+    gorulen: set[str] = set()
+    adlar: dict[str, str] = {}          # adres → ad (allowlist'ten bağımsız; yönetici adı için)
+
+    lawyers = (
+        db.query(models.Lawyer)
+        .filter(models.Lawyer.active.isnot(False))
+        .order_by(models.Lawyer.sequence.asc(), models.Lawyer.id.asc())
+        .all()
+    )
+    for lw in lawyers:
+        if (lw.gorev or "").strip().upper() != GOREV_AVUKAT:
+            continue
+        ad = (cast(Optional[str], lw.name) or "").strip()
+        tokens = _name_tokens(ad)
+        if tokens:
+            ic_avukat_tokenlari.append(frozenset(tokens))
+        email = normalize_email(cast(Optional[str], lw.email))
+        if not email:
+            continue
+        adlar.setdefault(email, ad)
+        if ad and is_allowed_email(email, izinli) and email not in gorulen:
+            gorulen.add(email)
+            avukatlar.append({"email": email, "ad": ad, "grup": ALICI_GRUBU_AVUKAT})
+
+    idari: list[dict[str, Any]] = []
+    recipients = (
+        db.query(models.EmailRecipient)
+        .filter(models.EmailRecipient.active.isnot(False))
+        .order_by(models.EmailRecipient.sequence.asc(), models.EmailRecipient.id.asc())
+        .all()
+    )
+    for rec in recipients:
+        email = normalize_email(cast(Optional[str], rec.email))
+        ad = (cast(Optional[str], rec.name) or "").strip()
+        if not email or not ad:
+            continue
+        adlar.setdefault(email, ad)
+        if not is_allowed_email(email, izinli) or email in gorulen:
+            continue
+        gorulen.add(email)
+        tokens = frozenset(_name_tokens(ad))
+        avukat_mi = any(len(tokens & t) >= 2 for t in ic_avukat_tokenlari)
+        if avukat_mi:
+            avukatlar.append({"email": email, "ad": ad, "grup": ALICI_GRUBU_AVUKAT})
+        else:
+            idari.append({"email": email, "ad": ad, "grup": ALICI_GRUBU_IDARI})
+
+    # Lazy import: routes → services yönü tek; ADMIN_EMAILS kuralı tek yerde kalsın
+    # (services/teslim_kutusu.bildir ile aynı desen).
+    from routes.config import _admin_emails
+
+    yonetici_adlari = admin_display_names()
+    yoneticiler: list[dict[str, Any]] = []
+    for ham in sorted(_admin_emails()):
+        email = normalize_email(ham)
+        if not email or email in gorulen:
+            continue
+        gorulen.add(email)
+        yoneticiler.append({
+            "email": email,
+            "ad": yonetici_adlari.get(email) or adlar.get(email) or YONETICI_VARSAYILAN_ADI,
+            "grup": ALICI_GRUBU_YONETICI,
+        })
+
+    adaylar = [*idari, *avukatlar, *yoneticiler]
+    for aday in adaylar:
+        aday["varsayilan"] = aday["email"] in varsayilanlar
+    return adaylar
+
+
 def resolve_notification_recipients(
     db: Session,
     case: Any,
