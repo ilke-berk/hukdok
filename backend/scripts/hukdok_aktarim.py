@@ -417,6 +417,9 @@ class AktarimSonucu:
     asama_guncellenen: int = 0
     asama_belgeli_korunan: int = 0
     asama_ikinci_tur: int = 0
+    # 02.10 — `sira_no`ları paketin kronolojisine çekilen aşama (kart×aşama).
+    # Aynı paketle ikinci koşuda 0.
+    asama_sira_duzeltilen: int = 0
     onceki_esas_eklenen: int = 0
     havuz_disi_durum: int = 0
     # G151 — büro durumu (Kapalı/Derdest) taşıyan aşama satırı: karar durumu
@@ -2286,6 +2289,9 @@ ASAMA_SUTUNLARI: Dict[str, Tuple[str, ...]] = {
     "sistem_no":    ("SistemNo",),
     "asama_no":     ("AsamaNo", "Aşama No"),
     "asama":        ("Aşama",),
+    # 02.10 — "Güncel?" (EVET/HAYIR): aşamanın güncel turu. Okunur, sıralamaya
+    # girer (`_asama_kronolojisi`); yoksa sıra AsamaNo'dur.
+    "guncel":       ("Güncel?", "Güncel"),
     "mahkeme":      ("Mahkeme",),
     "esas_no":      ("Esas No",),
     "karar_no":     ("Karar No",),
@@ -2818,7 +2824,7 @@ def _asama_uzlasisi(foyler: Dict[str, List[HamSatir]]) -> Optional[List[HamSatir
     * Satır numarası (rapor için) ilk föyün satırıdır.
     """
     sirali = {
-        foy: sorted(satirlar, key=_asama_sira) for foy, satirlar in sorted(foyler.items())
+        foy: _asama_kronolojisi(satirlar) for foy, satirlar in sorted(foyler.items())
     }
     uzunluklar = {len(satirlar) for satirlar in sirali.values()}
     if len(uzunluklar) != 1:
@@ -2921,6 +2927,37 @@ def _asama_sira(satir: HamSatir) -> int:
         return 0
 
 
+def _guncel_mi(satir: HamSatir) -> bool:
+    """Teslimin "Güncel?" sütunu EVET mi? (Sütun yoksa/boşsa False.)"""
+    return _baslik_anahtari(_metin(satir.degerler.get("guncel")) or "") == "EVET"
+
+
+def _asama_kronolojisi(satirlar: Sequence[HamSatir]) -> List[HamSatir]:
+    """Bir föyün AYNI aşamadaki satırları — eskiden güncele (02.10 ekip kontrolü).
+
+    `AsamaNo` kronoloji DEĞİLDİR: ekip belge okumasıyla bulduğu eski turları
+    sona ekliyor (H-13205: A3 güncel istinaf 2024/3025, A6 eski istinaf
+    2018/2209). Fotoğraf en yüksek `sira_no`dan alındığı için `AsamaNo`
+    sırası kartta ESKİ turu gösteriyordu (45 kart). Sıra anahtarı:
+
+    1. "Güncel?" = EVET olan satır SONA (ekibin açık beyanı; H-13205 Yerel'de
+       EVET olan 2018 tarihli asıl dava, HAYIR olan 2024 kaldırılan karardan
+       sonra gelir);
+    2. grubun TÜM satırları karar tarihi taşıyorsa karar tarihi (id-8649:
+       iki EVET, AsamaNo 4 olan 2018 tarihli — tarih 2023'ü sona alır);
+       biri bile tarihsizse tarih kullanılmaz (tarihsiz satırı uca itmek
+       tahmin olurdu);
+    3. `AsamaNo`.
+
+    Sütunsuz/tarihsiz eski paketlerde sıra `AsamaNo` ile birebir aynıdır.
+    """
+    tarihler = [_tarih_yumusak(s.degerler.get("karar_tarihi"), "karar_tarihi") for s in satirlar]
+    tarihli = all(tarihler)
+    sira = {id(s): (_guncel_mi(s), t if tarihli else "", _asama_sira(s))
+            for s, t in zip(satirlar, tarihler, strict=True)}
+    return sorted(satirlar, key=lambda s: sira[id(s)])
+
+
 def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
                   foy_haritasi: Dict[str, int], foy_satirlari: Dict[str, HamSatir],
                   source: str, sonuc: AktarimSonucu) -> None:
@@ -2949,6 +2986,11 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
           aynı aşamanın İKİNCİ yargılama turudur (bozma sonrası ikinci
           istinaf, kart 13261: BİM 7 2021/1479 → 2025/1812): mevcut korunur,
           paket satırı `sira_no+1` ile eklenir, fotoğraf en yüksek sira_no;
+        - **sıra (02.10):** paket satırları `_asama_kronolojisi` ile sıralanır
+          ("Güncel?" = EVET sonda, sonra karar tarihi, sonra AsamaNo); önce
+          birebir aynı satırlar tüketilir, sonra konum kuralı; en sonda
+          aşamanın `sira_no`ları bu sıraya çekilir (`_asama_sirasini_duzelt`,
+          belgeli satırlı aşamada değil) → fotoğraf paketin güncel turudur;
         - aksi hâlde satır YERİNDE güncellenir — paket kaynaklı
           (`HUKDOK_TESLIM_*`) ya da elle girilmiş (BELIRSIZ/TURETILDI) fark
           etmez (kullanıcı kararı 06.09 §0: son paket elle düzeltmeden daha
@@ -3013,7 +3055,7 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
             sonuc.celiskiler.append(Celiski(
                 kume="KART", kume_anahtari=str(case_id), alan=f"asama:{stage}",
                 degerler=" | ".join(
-                    f"{foy}={'/'.join(_imza_ozeti(s) for s in sorted(satirlar, key=_asama_sira))}"
+                    f"{foy}={'/'.join(_imza_ozeti(s) for s in _asama_kronolojisi(satirlar))}"
                     for foy, satirlar in sorted(foyler.items())
                 ),
             ))
@@ -3033,6 +3075,7 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
         )
         tuketilen: Set[int] = set()       # bu koşuda eşleşen/ele alınan mevcut satır id'leri
         sira = 0                          # yazılan satırın konumu; atlanan satır sıra TÜKETMEZ
+        hazir: List[Tuple[HamSatir, int, Optional[str], Optional[str], str]] = []
         for satir in kanonik:
             durum = _metin(satir.degerler.get("karar_durumu"))
             aciklama = _metin(satir.degerler.get("aciklama"))
@@ -3057,41 +3100,122 @@ def asamalari_yaz(db, asama_satirlari: Sequence[HamSatir], *,
                 aciklama = " · ".join(x for x in (aciklama, f"{BURO_DURUMU_SERHI}: {durum}") if x)
                 durum = None
             sira += 1
-            # İki deneme: önce kaynağın durumu, reddedilirse durumsuz + şerh.
-            # Bayrak AYRI taşınır: "deneme is None" fallback'i BELİRTMEZ — durum
-            # zaten boşken ilk deneme de None olur ve o okuma açıklamaya Python'ın
-            # `None`'unu basardı ("havuz dışı durum: None"; 2026-08-19 koşusunda
-            # 833 satır, hepsi kullanıcıya bu hâliyle görünüyordu, G076).
-            for havuz_disi in (False, True):
-                deneme = None if havuz_disi else durum
-                try:
-                    _asama_satirini_uygula(
-                        db, case, stage=stage, sira=sira, satir=satir,
-                        mevcutlar=mevcutlar, tuketilen=tuketilen, source=source, sonuc=sonuc,
-                        mahkeme=_metin(satir.degerler.get("mahkeme")),
-                        esas_no=_metin(satir.degerler.get("esas_no")),
-                        karar_no=_metin(satir.degerler.get("karar_no")),
-                        karar_tarihi=_tarih(satir.degerler.get("karar_tarihi"), "karar_tarihi"),
-                        karar_durumu=deneme,
-                        teblig_tarihi=_tarih(satir.degerler.get("teblig_tarihi"), "teblig_tarihi"),
-                        basvuru_tarihi=_basvuru_tarihi_uzlasi(satir, stage, foyler, foy_satirlari),
-                        basvuran_taraf=_basvuran_taraf_uzlasi(satir, stage, foyler, foy_satirlari),
-                        aciklama=" · ".join(x for x in (aciklama, f"havuz dışı durum: {durum}") if x)
-                        if havuz_disi else aciklama,
-                        dogrulama_durumu=damga,
-                    )
-                    break
-                except stage_decisions.InvalidDecisionStatusError:
-                    if havuz_disi:
-                        raise
-                    sonuc.havuz_disi_durum += 1
-                    logger.warning(
-                        f"Aşama karar durumu havuz dışı, durum boş yazıldı: "
-                        f"kart {case_id} {stage} {durum!r}"
-                    )
-                except SatirHatasi as exc:
-                    logger.warning(f"Aşama satırı düştü (kart {case_id} {stage}): {exc}")
-                    break
+            hazir.append((satir, sira, durum, aciklama, damga))
+
+        # Üç geçiş (02.10): önce BİREBİR aynı mevcut satırlar tüketilir, sonra
+        # AYNI esas no'lu mevcut satır hedeflenir, kalanlar konum kuralıyla
+        # yazılır. Tek geçişte paketin eski turu, sırası önce geldiği için güncel
+        # turu taşıyan mevcut satırı yerinde ezebilirdi (#13363: 2025/27 satırı
+        # 2017/2141 ile ezilip 2025/27 yeniden eklenirdi — içerik doğru, tarihçe
+        # yanlış, belgeli satırda yanlış rapor).
+        eslesen: Dict[int, models.CaseStageDecision] = {}   # paket konumu → satır
+        dusen: Set[int] = set()
+        havuz_disi_sayilan: Set[int] = set()
+        for gecis in (GECIS_BIREBIR, GECIS_ESAS, GECIS_KONUM):
+            for satir, sira, durum, aciklama, damga in hazir:
+                if sira in eslesen or sira in dusen:
+                    continue
+                # İki deneme: önce kaynağın durumu, reddedilirse durumsuz + şerh.
+                # Bayrak AYRI taşınır: "deneme is None" fallback'i BELİRTMEZ — durum
+                # zaten boşken ilk deneme de None olur ve o okuma açıklamaya Python'ın
+                # `None`'unu basardı ("havuz dışı durum: None"; 2026-08-19 koşusunda
+                # 833 satır, hepsi kullanıcıya bu hâliyle görünüyordu, G076).
+                # Sayaç/log satır başına BİR kez (ilk geçiş mevcut satır yoksa
+                # doğrulamaya hiç uğramaz; reddi ikinci geçiş görür).
+                for havuz_disi in (False, True):
+                    deneme = None if havuz_disi else durum
+                    try:
+                        yazilan = _asama_satirini_uygula(
+                            db, case, stage=stage, sira=sira, satir=satir,
+                            mevcutlar=mevcutlar, tuketilen=tuketilen, source=source, sonuc=sonuc,
+                            gecis=gecis,
+                            mahkeme=_metin(satir.degerler.get("mahkeme")),
+                            esas_no=_metin(satir.degerler.get("esas_no")),
+                            karar_no=_metin(satir.degerler.get("karar_no")),
+                            karar_tarihi=_tarih(satir.degerler.get("karar_tarihi"), "karar_tarihi"),
+                            karar_durumu=deneme,
+                            teblig_tarihi=_tarih(satir.degerler.get("teblig_tarihi"), "teblig_tarihi"),
+                            basvuru_tarihi=_basvuru_tarihi_uzlasi(satir, stage, foyler, foy_satirlari),
+                            basvuran_taraf=_basvuran_taraf_uzlasi(satir, stage, foyler, foy_satirlari),
+                            aciklama=" · ".join(x for x in (aciklama, f"havuz dışı durum: {durum}") if x)
+                            if havuz_disi else aciklama,
+                            dogrulama_durumu=damga,
+                        )
+                        if yazilan is not None:
+                            eslesen[sira] = yazilan
+                        break
+                    except stage_decisions.InvalidDecisionStatusError:
+                        if havuz_disi:
+                            raise
+                        if sira not in havuz_disi_sayilan:
+                            havuz_disi_sayilan.add(sira)
+                            sonuc.havuz_disi_durum += 1
+                            logger.warning(
+                                f"Aşama karar durumu havuz dışı, durum boş yazıldı: "
+                                f"kart {case_id} {stage} {durum!r}"
+                            )
+                    except SatirHatasi as exc:
+                        logger.warning(f"Aşama satırı düştü (kart {case_id} {stage}): {exc}")
+                        dusen.add(sira)
+                        break
+
+        _asama_sirasini_duzelt(db, case, stage, eslesen, source=source, sonuc=sonuc)
+
+
+def _kunye_ozeti(satir: models.CaseStageDecision) -> str:
+    """Sıra tarihçesindeki kısa künye: esas/karar no (boşsa '-')."""
+    return f"{satir.esas_no or '-'}/{satir.karar_no or '-'}"
+
+
+def _asama_sirasini_duzelt(db, case: models.Case, stage: str,
+                           eslesen: Dict[int, models.CaseStageDecision], *,
+                           source: str, sonuc: AktarimSonucu) -> None:
+    """Aşamanın `sira_no`larını paketin kronolojisine çeker (02.10 ekip kontrolü).
+
+    Fotoğraf en yüksek `sira_no`dan alınır; önceki paketlerin AsamaNo sırası
+    eski turu sona koymuştu (#617 istinaf 2018/2209, #13247 2021/4915, #2152
+    Danıştay 15. D.). Hedef sıra: paketin ANLATMADIĞI mevcut satırlar (elle
+    girilmiş, eski paket kalıntısı — silinmez) mevcut sıralarıyla başta, paket
+    satırlarının karşılıkları `_asama_kronolojisi` sırasıyla sonda → güncel tur
+    fotoğraftadır.
+
+    Aşamada belgeli (BELGE/UYAP) satır varsa sıraya DOKUNULMAZ — belgeli satırın
+    fotoğrafı bilinçli muhafazakârlıkla korunur (G150). Değişim tek tarihçe
+    satırına düşer (`case_stage_decisions.<stage>.sira`); aynı paketle ikinci
+    koşuda sıra zaten hedeftedir, yazım 0.
+    """
+    if not eslesen:
+        return
+    satirlar = (
+        db.query(models.CaseStageDecision)
+        .filter(
+            models.CaseStageDecision.case_id == case.id,
+            models.CaseStageDecision.stage == stage,
+        )
+        .order_by(models.CaseStageDecision.sira_no)
+        .all()
+    )
+    if any(stage_decisions.is_protected(s) for s in satirlar):
+        return
+    paket_idleri = []
+    for konum in sorted(eslesen):
+        satir_id = eslesen[konum].id
+        if satir_id not in paket_idleri:
+            paket_idleri.append(satir_id)
+    hedef = [s.id for s in satirlar if s.id not in paket_idleri] + paket_idleri
+    eski = [_kunye_ozeti(s) for s in satirlar]
+    if not stage_decisions.reorder_stage_decisions(db, case, stage, hedef):
+        return
+    yeni_sira = {s.id: s for s in satirlar}
+    db.add(models.CaseHistory(
+        case_id=case.id, field_name=f"{ASAMA_TARIHCE_ONEKI}.{stage}.sira",
+        old_value=" · ".join(eski),
+        new_value=" · ".join(_kunye_ozeti(yeni_sira[i]) for i in hedef),
+        changed_by=DEGISTIREN, source=source,
+    ))
+    sonuc.asama_sira_duzeltilen += 1
+    logger.info(f"Aşama sırası düzeltildi: kart {case.id} {stage} ({' · '.join(eski)} → "
+                f"{' · '.join(_kunye_ozeti(yeni_sira[i]) for i in hedef)})")
 
 
 def _imza_ozeti(satir: HamSatir) -> str:
@@ -3116,6 +3240,9 @@ def _basvuran_taraf_uzlasi(satir: HamSatir, stage: str, foyler: Dict[str, List[H
     return None
 
 
+GECIS_BIREBIR, GECIS_ESAS, GECIS_KONUM = "birebir", "esas", "konum"
+
+
 def _ikinci_tur_mu(mevcut: models.CaseStageDecision, fark: Dict[str, Tuple[Any, Any]]) -> bool:
     """Aynı aşamanın İKİNCİ yargılama turu mu? (G150 çok tur kuralı)
 
@@ -3136,29 +3263,44 @@ def _ikinci_tur_mu(mevcut: models.CaseStageDecision, fark: Dict[str, Tuple[Any, 
 def _asama_satirini_uygula(db, case: models.Case, *, stage: str, sira: int, satir: HamSatir,
                            mevcutlar: List[models.CaseStageDecision], tuketilen: Set[int],
                            source: str, sonuc: AktarimSonucu, dogrulama_durumu: str,
-                           **icerik: Any) -> None:
+                           gecis: str = "konum",
+                           **icerik: Any) -> Optional[models.CaseStageDecision]:
     """Birleşik paket satırını aşamanın mevcut satırlarına karşı uygular.
 
     Kural sırası `asamalari_yaz` docstring'indedir: birebir aynı → hiç; konum
     boş → ekle; belgeli → koru + rapor; çok tur → `sira_no+1` ekle; aksi →
     yerinde güncelle + tarihçe. Havuz dışı `karar_durumu` buradan
     `InvalidDecisionStatusError` olarak çıkar (çağıran ikinci denemeyi yapar).
+
+    Dönen: paket satırının bizdeki karşılığı (birebir eşleşen, eklenen ya da
+    güncellenen satır; belgeli korunan satır da) — sıra düzeltmesinin girdisi.
+    `gecis` (02.10, üç geçiş): `birebir` yalnız birebir eşleşmeyi arar; `esas`
+    yalnız AYNI esas no'lu tüketilmemiş satırı hedefler; ikisi de bulamazsa
+    None döner, hiçbir şey yazmaz. `konum` eski kuraldır (konumdaki satır).
     """
     for mevcut in mevcutlar:
         if mevcut.id in tuketilen:
             continue
         if not stage_decisions.stage_decision_diff(db, mevcut, **icerik):
             tuketilen.add(mevcut.id)      # içerik birebir aynı — idempotent
-            return
-
-    hedef = next((m for m in mevcutlar if m.sira_no == sira and m.id not in tuketilen), None)
+            return mevcut
+    if gecis == GECIS_BIREBIR:
+        return None
+    if gecis == GECIS_ESAS:
+        esas = icerik.get("esas_no")
+        hedef = next((m for m in mevcutlar if esas and m.esas_no == esas and m.id not in tuketilen),
+                     None)
+        if hedef is None:
+            return None
+    else:
+        hedef = next((m for m in mevcutlar if m.sira_no == sira and m.id not in tuketilen), None)
     if hedef is None:
-        stage_decisions.add_stage_decision(
+        eklenen = stage_decisions.add_stage_decision(
             db, case, stage=stage, sira_no=sira if not mevcutlar else None,
             dogrulama_durumu=dogrulama_durumu, source=source, **icerik,
         )
         sonuc.asama_eklenen += 1
-        return
+        return eklenen
 
     fark = stage_decisions.stage_decision_diff(db, hedef, **icerik)
     tuketilen.add(hedef.id)
@@ -3178,7 +3320,7 @@ def _asama_satirini_uygula(db, case: models.Case, *, stage: str, sira: int, sati
             f"Belgeli aşama satırı korundu: kart {case.id} {stage} #{hedef.sira_no} "
             f"({hedef.dogrulama_durumu}); paket farkı: {ozet}"
         )
-        return
+        return hedef
 
     if _ikinci_tur_mu(hedef, fark):
         yeni = stage_decisions.add_stage_decision(
@@ -3189,7 +3331,7 @@ def _asama_satirini_uygula(db, case: models.Case, *, stage: str, sira: int, sati
             f"Aşama ikinci tur eklendi: kart {case.id} {stage} #{yeni.sira_no} "
             f"(mevcut #{hedef.sira_no} {hedef.esas_no} korundu)"
         )
-        return
+        return yeni
 
     fark = stage_decisions.update_stage_decision(
         db, case, hedef, dogrulama_durumu=dogrulama_durumu, source=source, **icerik,
@@ -3205,6 +3347,7 @@ def _asama_satirini_uygula(db, case: models.Case, *, stage: str, sira: int, sati
         f"Aşama satırı güncellendi: kart {case.id} {stage} #{hedef.sira_no} "
         f"({', '.join(fark)})"
     )
+    return hedef
 
 
 # ─── Kapsam sayfaları (Silinen_Föyler / Kapsam_Dışı) — G113 ─────────────────
@@ -3659,7 +3802,8 @@ def ozet_metni(sonuc: AktarimSonucu) -> str:
         f"{sonuc.foy_muvekkil_degisen} müvekkil değişti (rapor), "
         f"{sonuc.kok_muvekkil_celiskisi} kök/müvekkil çelişkisi (yazılmadı)",
         f"  aşama satırı      : {sonuc.asama_eklenen} eklendi, {sonuc.asama_guncellenen} güncellendi, "
-        f"{sonuc.asama_ikinci_tur} ikinci tur, {sonuc.asama_belgeli_korunan} belgeli korundu "
+        f"{sonuc.asama_ikinci_tur} ikinci tur, {sonuc.asama_sira_duzeltilen} sıra düzeltildi, "
+        f"{sonuc.asama_belgeli_korunan} belgeli korundu "
         f"(önceki esas: {sonuc.onceki_esas_eklenen}"
         f"{f', havuz dışı durum: {sonuc.havuz_disi_durum}' if sonuc.havuz_disi_durum else ''}"
         f"{f', büro durumu atlanan: {sonuc.buro_durumu_atlanan}' if sonuc.buro_durumu_atlanan else ''})",

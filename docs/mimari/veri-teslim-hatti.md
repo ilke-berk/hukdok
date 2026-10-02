@@ -360,6 +360,22 @@ Eski "aşamada satır varsa paket hiçbir şey yazmaz" kuralı kalktı. Kart ba�
   kaynaklı ve elle girilmiş satır aynı yoldan güncellenir (kullanıcı kararı 06.09 §0);
   ayrımı yapan tek şey `dogrulama_durumu`. Silme yolu yok. Lokal kanıt G150 raporu: 04.09
   paketi 310 eklendi / 116 güncellendi, 12 bayat satır 0'a indi, ikinci koşu 0/0/0/0.
+- **Tur sırası ve güncel tur (02.10.2026, ekip kontrolü "1_KARAR_KUNYESI"):** `AsamaNo`
+  kronoloji DEĞİLDİR — ekip belge okumasıyla bulduğu eski turları sona ekliyor (H-13205: A3
+  güncel istinaf 2024/3025, A6 eski istinaf 2018/2209); fotoğraf en yüksek `sira_no`dan
+  geldiği için kartta eski tur görünüyordu (lokalde 22 kart×aşama; #617, #13247, #2152).
+  Kural: föyün aynı aşamadaki satırları `_asama_kronolojisi` ile sıralanır — paketin
+  **"Güncel?"** sütunu EVET olan satır sona, sonra karar tarihi (grubun hepsi tarihliyse),
+  sonra `AsamaNo`; kardeş uzlaşısı (`_asama_uzlasisi`) ve çelişki raporu
+  (`services/asama_celiski_raporu.py`) aynı sırayı kullanır (farklı `AsamaNo` sırası artık
+  sahte kardeş çelişkisi üretmez). Uygulama **üç geçişlidir**: birebir aynı satır → aynı esas
+  no'lu satır → konum (eski turun güncel turu taşıyan satırı yerinde ezmesi biter); sonda
+  `_asama_sirasini_duzelt` aşamanın `sira_no`larını bu sıraya çeker
+  (`stage_decisions.reorder_stage_decisions`; paketin anlatmadığı mevcut satırlar başta kalır,
+  silinmez; belgeli satırlı aşamaya dokunulmaz) + tek tarihçe satırı
+  `case_stage_decisions.<stage>.sira` + `asama_sira_duzeltilen` sayacı. Paketi yeniden
+  koşmadan yalnız aşama katmanını uygulamak için `scripts/asama_sirasi_duzelt.py` (kuru koşu
+  varsayılan, `--apply`; kart alanına yazmaz). Bekçi `tests/test_asama_guncel_tur.py`.
 
 **Karar durumu havuzu ve büro durumu (G151, plan A4+A5).** `seed_data` dört liste 27/8/4/2
 (`managers/seed_data.py:427-467`; `Kapalı`/`Derdest` yerelden çıktı, `Karar` bilerek yok).

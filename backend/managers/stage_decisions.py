@@ -13,6 +13,8 @@ Kurallar:
 * SIRALAMA `sira_no` İLEDİR, tarihle DEĞİL — tasarım paketinin ölçümü: 170
   föyde karar tarihleri güvenilmez. `sira_no` verilmezse aşamanın bir
   sonrakisi atanır (1'den başlar); aktarım/düzeltme yolları açıkça verebilir.
+  Sırayı yeniden kuran tek yol `reorder_stage_decisions`tır (02.10: aktarım
+  paketin "Güncel?" beyanına göre güncel turu sona çeker).
 * Her yazım/silmeden sonra SENKRON: aşamanın EN YÜKSEK sira_no'lu satırı
   `cases`teki o aşamanın tek-slot kolonlarına "son aşama fotoğrafı" olarak
   yazılır (`_PHOTO_COLUMNS`). Satır kalmazsa fotoğraf temizlenir — silinmiş
@@ -49,7 +51,7 @@ Kurallar:
 """
 import logging
 from datetime import date
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, Dict, Optional, Sequence, Tuple, cast
 
 from sqlalchemy import case as sa_case
 from sqlalchemy import func
@@ -612,6 +614,50 @@ def add_stage_decision(
 
     _resync_stage_photo(db, case, stage)
     return row
+
+
+def reorder_stage_decisions(
+    db: Session, case: models.Case, stage: str, ordered_ids: Sequence[int],
+) -> bool:
+    """Aşamanın satırlarını verilen sıraya göre 1..n yeniden numaralar (02.10).
+
+    `ordered_ids` aşamanın TÜM satır id'lerini (eskiden güncele) taşımak
+    zorundadır; eksik/fazla id ValueError. Sıra zaten buysa hiçbir şey yazmaz
+    (numara boşluğu olsa bile), False döner. Değiştiyse fotoğraf tazelenir, True döner.
+
+    `uq_case_stage_decision` (case_id, stage, sira_no) ertelenebilir değil: önce
+    her satır `sira_no + max` değerine kaydırılır (hepsi max'ın üstünde →
+    çakışmaz), sonra 1..n atanır (n ≤ max → yine çakışmaz). Belgeli satır
+    koruması ÇAĞIRANIN kararıdır — burada içerik değişmez, yalnız sıra.
+    """
+    stage = _validated_stage(stage)
+    satirlar = (
+        db.query(models.CaseStageDecision)
+        .filter(
+            models.CaseStageDecision.case_id == case.id,
+            models.CaseStageDecision.stage == stage,
+        )
+        .order_by(models.CaseStageDecision.sira_no)
+        .all()
+    )
+    hedef = list(ordered_ids)
+    if sorted(hedef) != sorted(s.id for s in satirlar):
+        raise ValueError(
+            f"Sıra listesi aşamanın satırlarıyla uyuşmuyor: dava {case.id} {stage} "
+            f"verilen={hedef} mevcut={[s.id for s in satirlar]}"
+        )
+    if hedef == [s.id for s in satirlar]:
+        return False                      # sıra aynı (numara boşlukları kapatılmaz)
+    kayma = max(cast(int, s.sira_no) for s in satirlar)
+    for s in satirlar:
+        s.sira_no = cast(int, s.sira_no) + kayma
+    db.flush()
+    yer = {satir_id: i for i, satir_id in enumerate(hedef, start=1)}
+    for s in satirlar:
+        s.sira_no = yer[cast(int, s.id)]
+    db.flush()
+    _resync_stage_photo(db, case, stage)
+    return True
 
 
 def delete_stage_decision(db: Session, case: models.Case, decision_id: int) -> bool:

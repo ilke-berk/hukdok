@@ -127,7 +127,10 @@ def test_alti_adim_uygulanir_ve_ikinci_kosu_sifir(db_env):  # noqa: F811
     # 4) mahkeme kartta ve aşama satırında
     antalya = db.get(models.Case, ids["antalya"])
     assert antalya.court == "Antalya 2. Tüketici Mahkemesi"
-    assert stage_decisions.latest_stage_decision(db, antalya.id, "YEREL").mahkeme == "Antalya 2. Tüketici Mahkemesi"
+    yerel = stage_decisions.latest_stage_decision(db, antalya.id, "YEREL")
+    assert yerel.mahkeme == "Antalya 2. Tüketici Mahkemesi"
+    # 02.10 kusuru: yalnız mahkeme verilince update içeriğin geri kalanını boşaltıyordu.
+    assert (yerel.esas_no, yerel.karar_no, yerel.dogrulama_durumu) == ("2025/252", "2025/432", "BELIRSIZ")
     # 5) sigortalı
     adlar = {p.name for p in db.query(models.CaseParty).filter_by(case_id=ids["mersin"], role="Sigortalı")}
     assert adlar == {"Yusuf Araz Dr."}

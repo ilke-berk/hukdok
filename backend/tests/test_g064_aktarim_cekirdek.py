@@ -1000,7 +1000,7 @@ def _asama_paketi_yaz(yol, foy_satirlari, asama_satirlari):
     for satir in foy_satirlari:
         ws.append([satir.get(b) for b in BASLIKLAR])
     ah = ["SistemNo", "AsamaNo", "Aşama", "Mahkeme", "Esas No", "Karar No",
-          "Karar Tarihi", "Karar Durumu", "Tebliğ Tarihi", "Güven"]
+          "Karar Tarihi", "Karar Durumu", "Tebliğ Tarihi", "Güven", "Güncel?"]
     wa = wb.create_sheet("Karar_Asamalari")
     wa.append(ah)
     for satir in asama_satirlari:

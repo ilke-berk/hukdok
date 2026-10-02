@@ -247,7 +247,12 @@ def mahkemeleri_doldur(db, kalemler: Sequence[Tuple[str, str, str]], *, kim: str
             sonuc.ekle("mahkeme", hedef, "YAPILDI", f"∅ → {mahkeme!r} — {kanit}")
         yerel = stage_decisions.latest_stage_decision(db, kart.id, "YEREL")
         if yerel is not None and not yerel.mahkeme and not stage_decisions.is_protected(yerel):
-            stage_decisions.update_stage_decision(db, kart, yerel, mahkeme=mahkeme,
+            # update_stage_decision içeriğin TAMAMINI yazar (verilmeyen alan = boş):
+            # mevcut alanlar aynen taşınır, yalnız mahkeme değişir; damga korunur.
+            icerik = {alan: getattr(yerel, alan) for alan in stage_decisions.CONTENT_FIELDS}
+            icerik["mahkeme"] = mahkeme
+            stage_decisions.update_stage_decision(db, kart, yerel, **icerik,
+                                                  dogrulama_durumu=yerel.dogrulama_durumu,
                                                   source=f"{DEGISTIREN} ({kim})")
             _tarihce(db, kart.id, "asama_yerel", f"sira={yerel.sira_no} mahkeme=∅",
                      f"sira={yerel.sira_no} mahkeme={mahkeme}", kim, kanit)

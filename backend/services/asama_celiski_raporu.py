@@ -600,7 +600,7 @@ def gruplari_topla(db: Session, paket: Path, *, yalniz_kartlar: Optional[Set[int
             continue
         case = cases.get(case_id)
         ofis_no = cast(str, case.tracking_no) if case is not None else ""
-        sirali = {sn: sorted(r, key=ha._asama_sira) for sn, r in sorted(foyler.items())}
+        sirali = {sn: ha._asama_kronolojisi(r) for sn, r in sorted(foyler.items())}
         uzunluklar = {len(r) for r in sirali.values()}
         ortak = AsamaGrubu(case_id, ofis_no, stage, [], sheet_kunye_celiskisi=case_id in sheet_celiskili)
         if len(uzunluklar) != 1:
