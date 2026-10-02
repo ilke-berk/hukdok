@@ -60,10 +60,24 @@ describe("isNewCaseDraftDirty", () => {
     expect(isNewCaseDraftDirty(data)).toBe(true);
   });
 
-  it("hizmet maskesi varsayılandan sapınca kirli olur", () => {
+  // G253 (test taşıma): eski beklenti "hizmet maskesi (`formData.serviceType = "00100"`)
+  // varsayılandan sapınca kirli olur" idi — maske kalktı, hizmet müvekkil satırının kümesi.
+  it("müvekkil satırında hizmet seçilince kirli olur", () => {
     const data = pristine();
-    data.formData.serviceType = "00100";
+    data.clients[0].hizmet_turleri = ["Danışmanlık"];
     expect(isNewCaseDraftDirty(data)).toBe(true);
+  });
+
+  it("boş hizmet kümesi (seçim kaldırıldı) tek başına kirlilik üretmez", () => {
+    const data = pristine();
+    data.clients[0].hizmet_turleri = [];
+    expect(isNewCaseDraftDirty(data)).toBe(false);
+  });
+
+  it("eski taslağın maske alanı (formData.serviceType) kirlilik saymaz", () => {
+    const data = pristine();
+    (data.formData as unknown as Record<string, string>).serviceType = "00100";
+    expect(isNewCaseDraftDirty(data)).toBe(false);
   });
 
   it("durum DANIŞ'a çekilince kirli olur", () => {
@@ -110,6 +124,25 @@ describe("newCaseDraftStore", () => {
     data.counterParties[0] = { name: "Karşı Taraf A.Ş.", role: "Davalı", tc_no: "" };
     newCaseDraftStore.save(data);
     expect(newCaseDraftStore.load()?.data).toEqual(data);
+  });
+
+  // --- G253: müvekkil başına hizmet taslakla taşınır ---
+  it("round-trip: her müvekkilin hizmet kümesi AYRI korunur", () => {
+    const data = pristine();
+    data.clients = [
+      { name: "Dr. Ahmet Yılmaz", role: "Davalı", hizmet_turleri: ["Takip (doktor müvekkil)"] },
+      { name: "Özel Şifa Hastanesi", role: "Davalı", hizmet_turleri: ["Danışmanlık", "Lexis Rapor"] },
+      { name: "Ayşe Kaya", role: "Müdahil" }, // seçiciye dokunulmadı — alan yok kalır
+    ];
+    newCaseDraftStore.save(data);
+
+    const loaded = newCaseDraftStore.load()?.data;
+    expect(loaded?.clients.map(c => c.hizmet_turleri)).toEqual([
+      ["Takip (doktor müvekkil)"],
+      ["Danışmanlık", "Lexis Rapor"],
+      undefined,
+    ]);
+    expect(loaded?.formData).not.toHaveProperty("serviceType");
   });
 
   // --- G237: istek kimliği taslakla taşınır ---

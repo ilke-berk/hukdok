@@ -22,7 +22,8 @@ import {
     CASE_ALREADY_SAVED_MESSAGE, CASE_DUPLICATE_CHECK_ERROR,
 } from "@/hooks/useCases";
 import {
-    useConfigList, groupCourtTypesByParent, REQUIRED_FIELDS_ERROR, type RequiredCaseField,
+    useConfigList, groupCourtTypesByParent, CONFIG_LIST_ERROR, REQUIRED_FIELDS_ERROR,
+    type ConfigItem, type RequiredCaseField,
 } from "@/hooks/useConfig";
 import { useAuthRequest } from "@/hooks/useAuthRequest";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
@@ -32,6 +33,15 @@ import { parseCourt } from "@/lib/courtParse";
 import { closestName } from "@/lib/nameSimilarity";
 import { PartyMatchIndicator } from "@/components/PartyMatchIndicator";
 import { LawyerCombobox, type LawyerOption } from "@/components/LawyerCombobox";
+import { HizmetSecici } from "@/components/HizmetSecici";
+import {
+    etkinHizmetler,
+    hizmetEksikMesaji,
+    hizmetsizMuvekkiller,
+    ilkDoluKume,
+    HIZMET_EKSIK_UYARISI,
+    TUMUNE_UYGULA_ETIKETI,
+} from "@/lib/muvekkilHizmetleri";
 
 const upperTR = (s: string) => s.trim().toLocaleUpperCase("tr-TR");
 
@@ -44,6 +54,7 @@ const upperTR = (s: string) => s.trim().toLocaleUpperCase("tr-TR");
  */
 const REQUIRED_FIELDS_STALE_TIME = 5 * 60 * 1000;
 const EMPTY_REQUIRED: RequiredCaseField[] = [];
+const EMPTY_SERVICE_TYPES: ConfigItem[] = [];
 
 const toTitleCase = (str: string): string => {
     if (!str) return "";
@@ -103,12 +114,38 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     });
     const requiredCaseFields = requiredFieldsQ.data?.fields ?? EMPTY_REQUIRED;
     const requiredFieldsError = requiredFieldsQ.isError ? REQUIRED_FIELDS_ERROR : undefined;
+    /**
+     * G253: hizmet türü listesi (`service_types`) — müvekkil başına seçicinin ön seçimi ve
+     * Kaydet kapısı buna bakar. `useConfigList("serviceTypes")` ile AYNI anahtar + seçenekler
+     * (önbellek ortak: açık modaldaki `HizmetSecici` ikinci istek atmaz); tek fark yalnız
+     * modal AÇIKKEN etkin olması — modal Index'te kapalıyken de monte, G185'in "kapalıyken
+     * dört uç" sınırı korunur (`useConfigList` `enabled` almıyor, `useConfig.ts` kapsam dışı).
+     */
+    const serviceTypesQ = useQuery({
+        queryKey: ["config", "service_types"],
+        queryFn: async (): Promise<ConfigItem[]> => {
+            const res = await authRequest("/api/config/service_types", "GET");
+            // G019: hata ≠ boş liste — boş liste "hizmet zorunlu değil" demek olurdu.
+            if (!res?.ok) throw new Error(CONFIG_LIST_ERROR);
+            return res.json();
+        },
+        enabled: open && accounts.length > 0,
+        staleTime: REQUIRED_FIELDS_STALE_TIME,
+        retry: false,
+    });
+    const serviceTypes = serviceTypesQ.data ?? EMPTY_SERVICE_TYPES;
     // G019 şeridi: hata mesajı useConfig().configError ile aynı sözleşmede (hata ≠ boş liste).
     const listQueries = [lawyersQ, fileTypesQ, courtTypesQ];
-    const configError = listQueries.find(q => q.error)?.error;
-    const isRefetchingConfig = listQueries.some(q => q.isFetching) || requiredFieldsQ.isFetching;
+    const configError = listQueries.find(q => q.error)?.error
+        ?? (serviceTypesQ.isError ? CONFIG_LIST_ERROR : undefined);
+    const isRefetchingConfig = listQueries.some(q => q.isFetching) || requiredFieldsQ.isFetching || serviceTypesQ.isFetching;
     const refetchConfig = async (): Promise<void> => {
-        await Promise.all([...listQueries.map(q => q.refetch()), requiredFieldsQ.refetch()]);
+        await Promise.all([
+            ...listQueries.map(q => q.refetch()),
+            requiredFieldsQ.refetch(),
+            // Kapalı modalda (sorgu etkin değilken) liste çekilmez — G185 sınırı.
+            ...(open ? [serviceTypesQ.refetch()] : []),
+        ]);
     };
 
     // Yargı türü/alt tür listeleri DB'den (NewCase ile aynı kaynak) — önceden
@@ -177,6 +214,39 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const [clientRole, setClientRole] = useState<"Davacı" | "Davalı">("Davalı");
     const [counterRole, setCounterRole] = useState<"Davacı" | "Davalı">("Davacı");
 
+    // --- G253: müvekkil başına hizmet ----------------------------------
+    // Müvekkiller tek kutuda virgülle yazılır; her ad için ayrı bir hizmet seçicisi çizilir.
+    // Açık seçimler ADIN SIRASINA göre tutulur (ad yazılırken/düzeltilirken seçim kaybolmasın);
+    // sırada kayıt yoksa seçiciye dokunulmamıştır → kategoriye göre ön seçim gösterilir.
+    const [hizmetSecimleri, setHizmetSecimleri] = useState<Record<number, string[]>>({});
+    const hizmetAdlari = useMemo(
+        () => serviceTypes.map(s => s.name ?? "").filter(Boolean),
+        [serviceTypes],
+    );
+    // Liste boşken (ya da henüz gelmediyse) seçici çizilmez ve hizmet zorunluluğu aranmaz
+    // (backend G250 ile aynı kural).
+    const hizmetSecimiAcik = hizmetAdlari.length > 0;
+    const muvekkilAdlari = clientName.split(",").map(n => n.trim()).filter(n => n);
+    const muvekkilKategorisi = (name: string) =>
+        existingClientsData.find(c => upperTR(String(c.name)) === upperTR(name))?.category;
+    /** Sıradaki müvekkilin seçicide görünen ve kayda giden kümesi: açık seçim, yoksa ön seçim. */
+    const etkinHizmet = (index: number, name: string) =>
+        etkinHizmetler(hizmetSecimleri[index], muvekkilKategorisi(name), hizmetAdlari);
+    // Kaydet kapısı (backend 422 ile aynı kural): her müvekkilin en az bir hizmeti olmalı.
+    const hizmetsizler = hizmetsizMuvekkiller(
+        muvekkilAdlari.map((name, i) => ({ name, hizmetler: etkinHizmet(i, name) })),
+        hizmetAdlari,
+    );
+    // "Aynı hizmetleri tüm müvekkillere uygula": ilk dolu seçicinin kümesi diğerlerine kopyalanır;
+    // kopya her müvekkilin KENDİ açık seçimi olur (sonradan tek tek değiştirilebilir).
+    const ortakHizmetKumesi = hizmetSecimiAcik
+        ? ilkDoluKume(muvekkilAdlari.map((name, i) => etkinHizmet(i, name)))
+        : null;
+    const hizmetleriTumuneUygula = () => {
+        if (!ortakHizmetKumesi) return;
+        setHizmetSecimleri(Object.fromEntries(muvekkilAdlari.map((_, i) => [i, [...ortakHizmetKumesi]])));
+    };
+
     // G237: kayıt isteğinin kimliği — modal AÇILDIĞINDA bir kez üretilir (aşağıdaki
     // açılış effect'i), aynı formun tekrar gönderiminde (çift tık, hata sonrası
     // yeniden deneme) aynı kalır; başarılı kayıttan sonra yenilenir.
@@ -220,6 +290,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             setShowConsultCheck(false);
             setConsultTypoHints([]);
             setTcByName({});
+            setHizmetSecimleri({});
 
             // G229: avukat kodla ön-doldurulmaz (tüketicisiz ölü prefill kalktı) — kullanıcı seçer.
             setLawyer("");
@@ -251,6 +322,15 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
     const handleSave = async (forceSave = false) => {
         if (!clientName.trim()) {
             toast.error("En az bir müvekkil adı girilmeli.");
+            return;
+        }
+
+        // G253: hizmeti seçilmemiş müvekkille kart açılmaz (backend 422 ile aynı kural).
+        // Kaydet düğmesi zaten kapalıdır; bu kapı onay şeritlerinden gelen yolu da tutar.
+        if (hizmetsizler.length > 0) {
+            toast.error("Kaydedilemez: hizmet türü seçilmemiş", {
+                description: hizmetEksikMesaji(hizmetsizler),
+            });
             return;
         }
 
@@ -352,11 +432,13 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
             responsible_lawyer_name: lawyer || undefined,
             notes: notes.trim() || undefined,
             parties: [
-                ...clientNames.map(name => ({
+                ...clientNames.map((name, i) => ({
                     name,
                     role: clientRole,
                     party_type: "CLIENT" as const,
-                    tc_no: tcByName[upperTR(name)] || undefined
+                    tc_no: tcByName[upperTR(name)] || undefined,
+                    // G253: her müvekkil KENDİ hizmet kümesiyle gider (açık seçim ya da ön seçim)
+                    hizmet_turleri: etkinHizmet(i, name),
                 })),
                 ...counterNames.map(name => ({
                     name,
@@ -520,6 +602,48 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             </div>
                         </div>
                     </div>
+
+                    {/* G253: müvekkil başına hizmet — her ad için ayrı seçici (muhasebe ayrımı) */}
+                    {hizmetSecimiAcik && muvekkilAdlari.length > 0 && (
+                        <div className="grid grid-cols-4 items-start gap-3">
+                            <Label className="text-right font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] col-span-1 mt-2.5">
+                                Hizmet *
+                            </Label>
+                            <div className="col-span-3 grid gap-2" data-testid="muvekkil-hizmetleri">
+                                {muvekkilAdlari.map((name, i) => (
+                                    <div key={i} className="grid gap-1 min-w-0" data-testid="muvekkil-hizmet">
+                                        {muvekkilAdlari.length > 1 && (
+                                            <span className="text-[11px] text-[var(--fg-muted)] truncate">{name}</span>
+                                        )}
+                                        <HizmetSecici
+                                            value={etkinHizmet(i, name)}
+                                            onChange={v => setHizmetSecimleri(prev => ({ ...prev, [i]: v }))}
+                                            aria-label={`${name} için hizmetler`}
+                                            placeholder="Bu müvekkile verilen hizmet(ler)…"
+                                            className="bg-[var(--bg)] border-[var(--border)]"
+                                        />
+                                        {etkinHizmet(i, name).length === 0 && (
+                                            <p data-testid="hizmet-eksik-uyarisi" className="text-[11px] text-red-600 dark:text-red-400">
+                                                {HIZMET_EKSIK_UYARISI}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                                {muvekkilAdlari.length > 1 && (
+                                    <button
+                                        type="button"
+                                        data-testid="hizmet-tumune-uygula"
+                                        disabled={!ortakHizmetKumesi}
+                                        title={ortakHizmetKumesi ? ortakHizmetKumesi.join(", ") : "Önce bir müvekkilin hizmetini seçin"}
+                                        onClick={hizmetleriTumuneUygula}
+                                        className="justify-self-start text-[11px] font-semibold text-[var(--brand)] hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+                                    >
+                                        {TUMUNE_UYGULA_ETIKETI}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     {/* G237: ofis numarası önizlemesi — salt-okunur, kaydı engellemez */}
                     {clientName.trim() && (
@@ -842,7 +966,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                             <FlowButton
                                 variant="primary"
                                 onClick={() => handleSave(false)}
-                                disabled={isCaseLoading || isClientLoading || (!isConsult && !esasNo.trim()) || !clientName.trim()}
+                                disabled={isCaseLoading || isClientLoading || (!isConsult && !esasNo.trim()) || !clientName.trim() || hizmetsizler.length > 0}
                             >
                                 {isCaseLoading ? (
                                     <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Kaydediliyor…</>

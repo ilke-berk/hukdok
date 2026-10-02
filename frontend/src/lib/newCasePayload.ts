@@ -1,5 +1,5 @@
 import type { CaseData } from "@/hooks/useCases";
-import { DEFAULT_SERVICE_TYPE, type NewCaseFormValues } from "@/lib/newCaseDraft";
+import type { NewCaseFormValues } from "@/lib/newCaseDraft";
 
 /**
  * NewCase sayfasının saf (React'sız) yardımcıları: düzenleme modunda form
@@ -55,8 +55,10 @@ export const splitPartyNames = (value: string): string[] =>
 
 /**
  * Düzenleme modunda forma yüklenecek değerler — TEK kaynak: hem ilk state hem de
- * `editModeCase` değişince koşan effect bunu çağırır. G020 öncesi iki ayrı kopya
- * vardı ve ilk state `serviceType`'ı kayıttaki değere bakmadan "00000" açıyordu.
+ * `editModeCase` değişince koşan effect bunu çağırır (G020 öncesi iki ayrı kopya vardı).
+ *
+ * G253: eski hizmet maskesi (`service_type`) formda YOK — düzenlenemez. Kayıttaki değer
+ * `buildCasePayload`'a `mevcutServiceType` ile ayrıca taşınır (PUT'ta korunur).
  */
 export function editModeFormValues(source?: EditModeCaseData): NewCaseFormValues {
     return {
@@ -69,7 +71,6 @@ export function editModeFormValues(source?: EditModeCaseData): NewCaseFormValues
         uyapLawyer: source?.uyap_lawyer_name || "",
         esasNo: source?.esas_no || "",
         fileOpeningDate: source?.opening_date || "",
-        serviceType: source?.service_type || DEFAULT_SERVICE_TYPE,
         maddiTazminat: source?.maddi_tazminat?.toString() || "",
         maneviTazminat: source?.manevi_tazminat?.toString() || "",
         acceptanceDate: source?.acceptance_date || "",
@@ -92,18 +93,33 @@ export interface CasePayloadInput {
     istekKimligi?: string;
     status: string;
     formData: NewCaseFormValues;
-    clients: Array<{ name: string; role: string }>;
+    /**
+     * Müvekkil satırları. `hizmet_turleri` (G253) satırın ETKİN hizmet kümesidir ve
+     * yalnız YENİ kayıtta verilir; ";" ile bölünen satırdaki her ad aynı kümeyi alır.
+     * Düzenlemede (PUT) verilmez → gövdeye girmez (hizmetler karttaki panelden yazılır).
+     */
+    clients: Array<{ name: string; role: string; hizmet_turleri?: string[] }>;
     counterParties: Array<{ name: string; role: string; tc_no?: string }>;
     thirdParties: Array<{ name: string; role: string; tc_no?: string }>;
     /** Kayıtlı müvekkiller — isim eşleşen taraf `client_id` ile bağlanır */
     dbClients: Array<{ id?: number; name: string }>;
     lawyers: Array<{ name: string; lawyer_id?: number | null }>;
+    /**
+     * Yalnız DÜZENLEMEDE: karttaki mevcut `service_type` (eski 5'li maske). Backend
+     * `update_case` gövdede alan yoksa kolonu BOŞALTIR (`model_dump()` → None); veri
+     * kaybolmasın diye kayıttaki değer aynen geri gönderilir. Yeni kayıtta verilmez.
+     */
+    mevcutServiceType?: string;
 }
 
 /**
  * POST/PUT gövdesini üretir. Saf fonksiyon (testten doğrudan çağrılır) ve dönüş
- * tipi `CaseData` — yüke girmeyen bir alan artık derleme hatasıdır. G020: eskiden
- * gövde `as CaseData` ile cast'leniyordu ve `service_type` hiç gönderilmiyordu.
+ * tipi `CaseData` — yüke girmeyen bir alan artık derleme hatasıdır.
+ *
+ * G253: hizmet müvekkil başınadır — her CLIENT tarafı kendi `hizmet_turleri` kümesini
+ * taşır (backend G250; kullanıcı yolunda hizmetsiz müvekkil 422). Eski 5'li maske
+ * (`service_type`) yeni kayıtta GÖNDERİLMEZ (hiçbir şeyi beslemiyor); düzenlemede
+ * yalnız kayıttaki değer korunmak üzere geri gider (`mevcutServiceType`).
  */
 export function buildCasePayload(input: CasePayloadInput): CaseData {
     const { formData } = input;
@@ -112,7 +128,7 @@ export function buildCasePayload(input: CasePayloadInput): CaseData {
         ...(input.istekKimligi ? { istek_kimligi: input.istekKimligi } : {}),
         esas_no: formData.esasNo,
         status: input.status,
-        service_type: formData.serviceType,
+        ...(input.mevcutServiceType ? { service_type: input.mevcutServiceType } : {}),
         file_type: formData.fileType,
         sub_type: formData.subType,
         subject: formData.subject,
@@ -137,7 +153,9 @@ export function buildCasePayload(input: CasePayloadInput): CaseData {
                 client_id: input.dbClients.find(db => toUpperTR(db.name) === toUpperTR(name))?.id,
                 name,
                 role: c.role,
-                party_type: "CLIENT" as const
+                party_type: "CLIENT" as const,
+                // Kopya: aynı satırdan bölünen adlar diziyi paylaşmasın.
+                ...(c.hizmet_turleri ? { hizmet_turleri: [...c.hizmet_turleri] } : {}),
             }))),
             ...input.counterParties.filter(c => c.name).flatMap(c => {
                 const names = splitPartyNames(c.name);

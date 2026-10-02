@@ -9,6 +9,12 @@ export interface CasePartyData {
     birth_year?: number;
     gender?: string;
     tc_no?: string;
+    /**
+     * Bu müvekkile bu kartta verilen hizmet türleri — `service_types` ADLARI (G250/G253).
+     * Yalnız MÜVEKKİL tarafında ve yalnız kart AÇILIRKEN (POST) gönderilir: başka tarafta
+     * 422'dir, düzenlemede (PUT) yok sayılır (hizmetler karttaki panelden yazılır).
+     */
+    hizmet_turleri?: string[];
 }
 
 export interface CaseLawyerData {
