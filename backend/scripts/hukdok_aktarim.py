@@ -131,6 +131,15 @@ sayaçlarında (`hizmet_eklenen` / `hizmet_guncellenen` / `hizmet_silinen`)
 tutulur. Bugünkü föylerin bir kerelik geriye dönük doldurması
 `scripts/hizmet_kayitlari_doldur.py`.
 
+Hizmet listesi paketten (G257, 2026-10-02): hizmet adlarının kaynağı kod sabiti
+değil DB `service_types` listesidir. `aktarimi_kos` koşu başında eşlemeyi o
+listeden kurar (`hizmet_eslemesini_yukle`: `_baslik_anahtari(ad) → ad`; tablo
+boşsa `seed_data.SERVICE_TYPES`), föye LİSTENİN yazımı gider. Liste paketin
+"Hizmet Türü" sütunundan `scripts/deger_havuzu_seed.py` ile beslenir — İNSAN
+ADIMI, sıra: ÖNCE `deger_havuzu_seed --apply`, SONRA aktarım. Seed koşulmadan
+gelen yeni ad (panel teslim hattı seed'i KOŞMAZ) föyde ham kalır ve yukarıdaki
+"listede yok" UYARI yoluna düşer; seed'den sonraki koşu satırı yazar.
+
 Kapsam sayfaları (G113, 2026-09-03)
 -----------------------------------
 Veri ekibi kapsamdan çıkardığı föyleri `Silinen_Föyler` (mükerrer/hatalı
@@ -188,6 +197,7 @@ idempotent değil, hata yolunda sessiz veri kaybı, `-2` mükerrer üretimi).
 from __future__ import annotations
 
 import argparse
+import contextvars
 import csv
 import logging
 import os
@@ -884,12 +894,71 @@ def _hukumdeki_rol(deger: Any, alan: str) -> Optional[str]:
 # değerli hücre föyde ham kalır). Karta giden yol föy kaynaklı hizmet satırıdır
 # (`hizmet_satirlarini_yaz` → `case_hizmetleri.foydan_yaz`); listede olmayan ad
 # orada `UYARI`ya düşer, `AlanHatasi`/HATA üretmez.
+#
+# G257: hizmet adlarının kaynağı artık KOD sabiti değil DB `service_types`
+# listesidir (liste veri ekibinin paketinden beslenir — `deger_havuzu_seed`).
+# `HIZMET_TURU_ESLEMESI` (seed sabitleri) VARSAYILAN eşlemedir: koşu dışında ve
+# `service_types` tablosu BOŞKEN geçerlidir. Koşu içinde geçerli eşleme
+# `aktarimi_kos`un koşu başında DB'den kurduğu sözlüktür (`hizmet_eslemesi()`).
 MUVEKKIL_TIPI_ESLEMESI: Dict[str, str] = {
     _baslik_anahtari(ad): ad for _kod, ad in seed_data.CLIENT_TYPES
 }
 HIZMET_TURU_ESLEMESI: Dict[str, str] = {
     _baslik_anahtari(ad): ad for _kod, ad in seed_data.SERVICE_TYPES
 }
+# Koşunun hizmet eşlemesi (G257). Modül sözlüğünü yerinde değiştirmek yerine
+# ContextVar: koşu bitince (hata yolunda da) kendiliğinden varsayılana döner,
+# aynı süreçteki başka koşuya/iş parçacığına (panel "Kuru koş"/"Uygula", 2
+# worker) ve test sırasına SIZMAZ. `_hizmet_turu` imzası bu yüzden değişmedi.
+_KOSU_HIZMET_ESLEMESI: contextvars.ContextVar[Optional[Dict[str, str]]] = contextvars.ContextVar(
+    "hukdok_aktarim_hizmet_eslemesi", default=None,
+)
+
+
+def hizmet_eslemesini_yukle(db) -> Dict[str, str]:
+    """`service_types` satırlarından hizmet eşlemesi: `_baslik_anahtari(ad) → ad` (G257).
+
+    * Değer listedeki yazımdır (panel adı `tr_title`'dan geçirir: "Takip (Doktor
+      Müvekkil)"); anahtar harf/aksan/noktalama duyarsız olduğundan paket "Takip
+      (doktor müvekkil)" gönderse de föye LİSTENİN yazımı gider — hizmet satırı
+      kapısı (`case_hizmetleri.dogrulanmis_hizmet_adi`) adı BİREBİR arar.
+    * `active` filtresi YOK (`validated_event_list_value` ile simetri: dropdown'dan
+      kaldırılmış ad listede durdukça tanınır).
+    * İki ad aynı anahtara düşerse (yalnız yazımı farklı ikiz satır) liste
+      sırasındaki İLK ad kazanır (WARNING) — tahmin değil, belirli kural.
+    * Tablo BOŞSA `seed_data.SERVICE_TYPES` sabitine düşer (seed'i koşmamış
+      kurulum; aynı durumda hizmet satırı kapısı da doğrulamayı atlar).
+
+    Yeniden adlandırma sınırı: yalnız YAZIMI değişen ad eşlenir. Kelimesi
+    değişen ad ("Lexis Rapor" → "Lexis Raporu") paket eski adı taşıdıkça
+    TANINMAZ; föyde ham kalır, satır raporuna UYARI düşer (G249 yolu).
+    """
+    harita: Dict[str, str] = {}
+    sorgu = db.query(models.ServiceType.name).order_by(
+        models.ServiceType.sequence, models.ServiceType.id)
+    for (ad,) in sorgu:
+        anahtar = _baslik_anahtari(ad)
+        if not anahtar:
+            continue
+        onceki = harita.setdefault(anahtar, ad)
+        if onceki != ad:
+            logger.warning(
+                f"service_types: {ad!r} ile {onceki!r} aynı anahtara düşüyor — "
+                f"aktarım {onceki!r} yazımını kullanır"
+            )
+    if not harita:
+        logger.warning(
+            "service_types listesi BOŞ — hizmet eşlemesi seed sabitlerine düştü "
+            "(seed koşmamış olabilir)"
+        )
+        return dict(HIZMET_TURU_ESLEMESI)
+    return harita
+
+
+def hizmet_eslemesi() -> Dict[str, str]:
+    """Geçerli hizmet eşlemesi: koşu içindeyse DB'den kurulan, değilse varsayılan."""
+    kosu = _KOSU_HIZMET_ESLEMESI.get()
+    return HIZMET_TURU_ESLEMESI if kosu is None else kosu
 
 
 def _tekil_kapali_liste(deger: Any, alan: str, harita: Dict[str, str]) -> Optional[str]:
@@ -915,8 +984,10 @@ def _hizmet_turu(deger: Any, alan: str) -> Optional[str]:
     """`case_foys.hizmet_turu` — takip mi rapor mu ("Lexis Rapor" dava takibi değildir).
 
     G249'dan beri kart alanı dönüştürücüsü DEĞİL: yalnız föy değerini kanonik
-    ada çevirir; kart özeti föy kaynaklı hizmet satırlarından türetilir."""
-    return _tekil_kapali_liste(deger, alan, HIZMET_TURU_ESLEMESI)
+    ada çevirir; kart özeti föy kaynaklı hizmet satırlarından türetilir.
+    G257: kanonik ad koşu içinde DB `service_types` listesinin yazımıdır
+    (`hizmet_eslemesi()`); koşu dışında seed sabitleri."""
+    return _tekil_kapali_liste(deger, alan, hizmet_eslemesi())
 
 
 # Kart alanı → (kaynak sütun anahtarı, dönüştürücü)
@@ -3800,6 +3871,7 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
     )
 
     db = session_factory()
+    hizmet_belirteci: Optional[contextvars.Token[Optional[Dict[str, str]]]] = None
     try:
         _statement_timeout_yukselt(db, statement_timeout_ms)
         sonuc.envanter_once = belge_envanteri.snapshot(db)
@@ -3809,6 +3881,13 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
         )
         dosya_haritasi = _dosya_no_haritasi(db)
         avukat_haritasi_kur(db)
+        # G257: hizmet eşlemesi koşu başında DB `service_types` listesinden
+        # (CLI ve panel yolu ikisi de buradan geçer); tablo boşsa seed sabiti.
+        # Liste paketten ÖNCE beslenmiş olmalı (`deger_havuzu_seed --apply`,
+        # insan adımı) — beslenmediyse yeni ad föyde ham kalır, UYARI'ya düşer.
+        kosu_eslemesi = hizmet_eslemesini_yukle(db)
+        hizmet_belirteci = _KOSU_HIZMET_ESLEMESI.set(kosu_eslemesi)
+        logger.info(f"Hizmet eşlemesi: {len(kosu_eslemesi)} ad (service_types)")
 
         # ÖN GEÇİŞ (yazmaz): kardeş föylerin kart alanlarında uzlaşıp
         # uzlaşmadığı ÖNCE bilinmeli — satır satır yazarken öğrenilseydi ilk
@@ -3931,6 +4010,8 @@ def aktarimi_kos(session_factory, *, girdi: Path, sheet: Optional[str] = None,
             db.commit()
             sonuc.yazildi = True
     finally:
+        if hizmet_belirteci is not None:
+            _KOSU_HIZMET_ESLEMESI.reset(hizmet_belirteci)
         db.close()
 
     sonuc.raporlar = _raporlari_yaz(sonuc, girdi=girdi, rapor_dizini=rapor_dizini)

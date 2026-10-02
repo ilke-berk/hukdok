@@ -26,8 +26,8 @@ G151 — iki ek:
   Başka BÜYÜK/BOZUK yazım ("Karar Aaleyhe", "YARGITAY .....HD") yine
   GEÇER — kullanıcı kararı "hatalısını geçirelim" sürüyor, temizlik panelden.
 * **`--kaldir AD` (kuru koşu varsayılan):** mevcut kurulumdaki bir liste
-  satırını kaldırır — yalnız hiçbir kart kolonunda (`reference_lists.DEPENDENCIES`)
-  ve hiçbir aşama satırında (`case_stage_decisions.karar_durumu`) kullanılmıyorsa;
+  satırını kaldırır — yalnız hiçbir kart kolonunda/bağlı satırda
+  (`reference_lists.bagimliliklar`) ve hiçbir aşama satırında (`case_stage_decisions.karar_durumu`) kullanılmıyorsa;
   kullanılıyorsa SİLMEZ, kullanım sayısıyla raporlar. `--apply` olmadan
   hiçbir şey yazılmaz.
 
@@ -35,6 +35,20 @@ G151 — iki ek:
         --liste local_decisions --kaldir "Kapalı" --kaldir "Derdest"   # kuru koşu
     docker compose exec -T backend python scripts/deger_havuzu_seed.py \\
         --liste local_decisions --kaldir "Kapalı" --kaldir "Derdest" --apply
+
+G257 — hizmet listesi de paketten:
+
+* **`service_types` havuzu:** karttaki hizmet açılır listesi paketin "Hizmet
+  Türü" sütunundan beslenir (tek değerli; davranış diğer havuzlarla AYNI).
+  Aktarım hizmet adını bu listeye karşı tanır (`hukdok_aktarim.
+  hizmet_eslemesini_yukle`) → paket yeni bir hizmet adı getirdiyse SIRA:
+  ÖNCE bu script (`--apply`, insan adımı), SONRA aktarım. Panel teslim hattı
+  bu script'i KOŞMAZ; seed'siz uygulanan pakette yeni ad uyarıya düşer.
+* **`--kaldir` satır bağlarını da sayar:** kullanım `reference_lists.
+  bagimliliklar` üzerinden okunur (kolon bağları + satır bağları) —
+  `case_hizmetleri` satırında kullanılan hizmet adı SİLİNMEZ (kart özeti
+  " ; " birleşik olduğundan yalnız kolon eşitliğine bakmak adı "kullanılmıyor"
+  sayardı).
 """
 from __future__ import annotations
 
@@ -51,7 +65,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import func
 
 import models
-from managers.reference_lists import DEPENDENCIES
+from managers.reference_lists import bagimliliklar
 from managers.seed_data import _karar_kodu
 from managers.stage_decisions import STAGE_DECISION_LISTS
 from scripts.hukdok_aktarim import YER_TUTUCULAR, _baslik_anahtari, _buro_durumu_mu, _metin
@@ -81,6 +95,9 @@ HAVUZLAR: Tuple[Havuz, ...] = (
     Havuz("cassation_decisions", models.CassationDecision, ("Yargıtay Onama Durumu",), False),
     Havuz("revision_decisions", models.RevisionDecision, ("Karar Düzeltme Kararı Durumu",), False),
     Havuz("currencies", models.Currency, ("Para Birimi TL", "Para Birimi"), False),
+    # G257: hizmet açılır listesi (föy başına TEK değer — çok değerli hücre
+    # tanımsızdır, bölünmez; aktarımda UYARI'ya düşer).
+    Havuz("service_types", models.ServiceType, ("Hizmet Türü",), False),
 )
 HAVUZ_HARITASI: Dict[str, Havuz] = {h.liste_adi: h for h in HAVUZLAR}
 # Karar listeleri: büro durumu (Kapalı/Derdest) bu dört listeye paketten
@@ -209,7 +226,7 @@ class KaldirmaSonucu:
     liste_adi: str
     ad: str                         # istenen ad (komut satırından)
     bulunan: Optional[str] = None   # listedeki gerçek yazım; None = satır yok
-    kart_kullanimi: int = 0         # DEPENDENCIES kolonlarında bu adı taşıyan kayıt
+    kart_kullanimi: int = 0         # `bagimliliklar` (kolon + satır bağı) bu adı taşıyan kayıt
     asama_kullanimi: int = 0        # case_stage_decisions.karar_durumu (ilgili aşama)
     silindi: bool = False
 
@@ -221,9 +238,14 @@ class KaldirmaSonucu:
 def satir_kullanimi(db, liste_adi: str, ad: str) -> Tuple[int, int]:
     """(kart kolonu kullanımı, aşama satırı kullanımı) — adı BİREBİR taşıyan
     kayıtlar (kapalı havuz doğrulaması adı birebir yazar; soft-delete'li
-    kartlar da sayılır: geri alınabilir kayıt bağ sayılır)."""
+    kartlar da sayılır: geri alınabilir kayıt bağ sayılır).
+
+    "Kart" sayısı listenin TÜM bağlarını toplar (`reference_lists.bagimliliklar`:
+    kolon bağları + satır bağları, G257) — `service_types` için `cases.hizmet_turu`
+    özeti VE `case_hizmetleri` satırları. Özet " ; " birleşik olabildiğinden
+    hizmet adının gerçek kullanımı satır bağından okunur."""
     kart = 0
-    for dep in DEPENDENCIES.get(liste_adi, []):
+    for dep in bagimliliklar(liste_adi):
         kart += db.query(func.count()).select_from(dep.model).filter(
             getattr(dep.model, dep.column) == ad).scalar() or 0
     model = HAVUZ_HARITASI[liste_adi].model
