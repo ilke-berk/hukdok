@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import func, intersect, select, union
+from sqlalchemy import func, intersect, literal, select, union
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -36,6 +36,7 @@ from managers.lawyer_resolver import (
 # "sonra import" hilesine gerek kalmadı.
 from managers import stage_decisions
 from services import ofis_no
+from services.multi_value import SEPARATOR, split_values
 
 logger = logging.getLogger("AdminManager")
 
@@ -956,6 +957,61 @@ def _load_cases_in_order(db, ids: list) -> list:
     return [by_id[case_id] for case_id in ids if case_id in by_id]
 
 
+def _coklu_oge_kosulu(kolon, oge: str):
+    """Çok değerli hücrede `oge` TAM öğe mi: `' ; ' || hücre || ' ; '` ILIKE `'% ; oge ; %'`.
+
+    Rapor motorunun `_oge_kosulu`'yla aynı anlam (büyük/küçük harf duyarsız, `%`/`_`
+    kaçışlı) — "Cerrahi" süzgeci "Cerrahi Uygulama" hücresini YAKALAMAZ.
+    """
+    kacisli = oge.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return (literal(SEPARATOR) + kolon + literal(SEPARATOR)).ilike(
+        f"%{SEPARATOR}{kacisli}{SEPARATOR}%", escape="\\",
+    )
+
+
+# Tıbbi Olay seçeneklerini daraltan üst alanlar (02.10). Ekip "Süreç Grubu" sütununu
+# gönderince buraya eklenir; uç ve ekran değişmeden o alana göre daraltır.
+_OLAY_DARALTAN_ALANLAR = {"tibbi_surec": models.Case.tibbi_surec}
+
+
+def tibbi_olay_secenekleri(tenant_id: str = None, **ust_filtreler) -> List[Dict[str, Any]]:
+    """Dava listesi Tıbbi Olay filtresinin seçenekleri: VERİDE geçen öğeler + dava sayısı.
+
+    Havuz (`medical_events`) değil kartlar okunur — seçenek sıfır sonuç vermez. Üst filtre
+    (`tibbi_surec="Doğum Yönetimi"`) verilirse yalnız o süreçle birlikte kodlanmış olaylar
+    sayılır (`_coklu_oge_kosulu`, liste filtresiyle aynı tam öğe anlamı). Çok değerli hücre
+    öğelere bölünür, dava öğe başına bir kez sayılır; büyük/küçük harf farkı tek seçenektir
+    (filtre ILIKE), görünen yazım en sık olanıdır. Sıra: sayı azalan, sonra ad.
+    """
+    db = SessionLocal()
+    try:
+        query = db.query(models.Case.tibbi_olay).filter(
+            models.Case.active.is_(True),
+            models.Case.tibbi_olay.isnot(None), models.Case.tibbi_olay != "",
+        )
+        query = _apply_tenant_filter(query, tenant_id)
+        for alan, deger in ust_filtreler.items():
+            kolon = _OLAY_DARALTAN_ALANLAR.get(alan)
+            if kolon is not None and deger and deger != "ALL":
+                query = query.filter(_coklu_oge_kosulu(kolon, deger))
+
+        sayilar: Dict[str, int] = {}
+        yazimlar: Dict[str, Dict[str, int]] = {}
+        for (hucre,) in query:
+            for oge in split_values(hucre):
+                anahtar = oge.casefold()
+                sayilar[anahtar] = sayilar.get(anahtar, 0) + 1
+                yazim = yazimlar.setdefault(anahtar, {})
+                yazim[oge] = yazim.get(oge, 0) + 1
+        satirlar = [
+            (max(yazimlar[k].items(), key=lambda kv: kv[1])[0], n) for k, n in sayilar.items()
+        ]
+        satirlar.sort(key=lambda s: (-s[1], s[0].casefold()))
+        return [{"name": ad, "count": n} for ad, n in satirlar]
+    finally:
+        db.close()
+
+
 def get_cases(
     limit: int = 50,
     offset: int = 0,
@@ -970,6 +1026,8 @@ def get_cases(
     missing_bucket: str = None,
     olay_turu: str = None,
     hizmet_turu: str = None,
+    tibbi_surec: str = None,
+    tibbi_olay: str = None,
     with_total: bool = True,
 ) -> "tuple[list[dict], int]":
     """Filtrelenmiş dava listesini ve OFFSET/LIMIT öncesi toplam sayıyı döndürür.
@@ -994,6 +1052,10 @@ def get_cases(
     `hizmet_turu` (G119): hizmet türü filtresi — aynı kalıp (değer listenin
     ADIDIR, ör. "Lexis Rapor"). Müvekkil Tipi için filtre BİLİNÇLİ yok
     (sözleşme).
+
+    `tibbi_surec` / `tibbi_olay` (02.10): klinik tasnif filtreleri — kolonlar ÇOK
+    DEĞERLİDİR (`multi_value.SEPARATOR`), değer havuz öğesinin ADIDIR ve hücrede TAM
+    ÖĞE olarak aranır (`_coklu_oge_kosulu`, rapor motorunun `eq` anlamıyla aynı).
     """
     try:
         db = SessionLocal()
@@ -1018,6 +1080,12 @@ def get_cases(
         # Hizmet türü filtresi (G119) — aynı kalıp
         if hizmet_turu and hizmet_turu != "ALL":
             query = query.filter(models.Case.hizmet_turu == hizmet_turu)
+
+        # Klinik tasnif filtreleri (02.10) — çok değerli hücrede tam öğe eşleşmesi
+        if tibbi_surec and tibbi_surec != "ALL":
+            query = query.filter(_coklu_oge_kosulu(models.Case.tibbi_surec, tibbi_surec))
+        if tibbi_olay and tibbi_olay != "ALL":
+            query = query.filter(_coklu_oge_kosulu(models.Case.tibbi_olay, tibbi_olay))
 
         if missing_required:
             # E6: sıcak yolda tek kolon okunur; kural + hesap yazma yolunda

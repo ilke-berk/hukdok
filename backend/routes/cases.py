@@ -30,6 +30,7 @@ from managers.case_manager import (
     add_case, get_case, get_cases, get_case_stats, update_case, search_cases,
     update_case_tracking, get_case_stage_log, find_duplicate_cases, _kimligi_ada_cevir,
     istek_kimligi_karti, ofis_no_muvekkilleri, OfisNoVerilemez, SUNUCU_NUMARASI_BAYRAGI,
+    tibbi_olay_secenekleri,
 )
 from managers.lawyer_resolver import (
     AvukatListedeYok, kanonik_avukat_metni, listede_olmayan_yeni_adlar, secimi_liste_adina_cevir,
@@ -94,6 +95,16 @@ def api_add_case(case_data: CaseCreate, tenant_id: str = Depends(get_current_ten
     return {"status": "success", "message": "Case saved", **result}
 
 
+@router.get("/api/cases/tibbi-olay-secenekleri")
+def api_tibbi_olay_secenekleri(
+    tibbi_surec: Optional[str] = None,
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Dava listesi Tıbbi Olay filtresinin seçenekleri (02.10): veride geçen olaylar + dava
+    sayısı; `tibbi_surec` verilirse o süreçle birlikte kodlanmış olaylara daralır."""
+    return tibbi_olay_secenekleri(tenant_id=tenant_id, tibbi_surec=tibbi_surec)
+
+
 @router.get("/api/cases/stats")
 def api_get_case_stats(tenant_id: str = Depends(get_current_tenant)):
     return get_case_stats(tenant_id=tenant_id)
@@ -117,12 +128,16 @@ def get_cases_api(
     olay_turu: Optional[str] = None,
     # Hizmet türü filtresi (G119) — değer listenin ADI (ör. "Lexis Rapor")
     hizmet_turu: Optional[str] = None,
+    # Klinik tasnif filtreleri (02.10) — değer havuz öğesinin ADI; çok değerli hücrede tam öğe
+    tibbi_surec: Optional[str] = None,
+    tibbi_olay: Optional[str] = None,
     tenant_id: str = Depends(get_current_tenant),
 ):
     items, total = get_cases(
         limit=limit, offset=offset, status=status, lawyer=lawyer, q=q, exact=exact,
         tenant_id=tenant_id, file_type=file_type, urgent_days=urgent_days,
         missing_required=missing_required, olay_turu=olay_turu, hizmet_turu=hizmet_turu,
+        tibbi_surec=tibbi_surec, tibbi_olay=tibbi_olay,
     )
     # Gövde geriye dönük uyumlu (dizi) kalır; toplam sayı header ile taşınır
     response.headers["X-Total-Count"] = str(total)

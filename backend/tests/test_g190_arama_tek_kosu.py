@@ -266,7 +266,9 @@ def test_get_cases_imzasi_degismedi():
         ("limit", 50), ("offset", 0), ("status", None), ("lawyer", None), ("q", None),
         ("exact", False), ("tenant_id", None), ("file_type", None), ("urgent_days", None),
         ("missing_required", False), ("missing_bucket", None), ("olay_turu", None),
-        ("hizmet_turu", None), ("with_total", True),
+        ("hizmet_turu", None),
+        ("tibbi_surec", None), ("tibbi_olay", None),     # 02.10: klinik tasnif filtreleri
+        ("with_total", True),
     ]
 
 

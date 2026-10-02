@@ -582,7 +582,10 @@ yazılmaz.
   gönderimi alanı temizler, `active` filtresi yok.
 - **Okuma/filtre:** `get_case` çıktısında iki alan; `get_cases(olay_turu=...)` +
   `GET /api/cases?olay_turu=` `file_type` kalıbıyla eşitlik filtresi (değer listenin
-  ADIDIR, "ALL" = filtre yok).
+  ADIDIR, "ALL" = filtre yok). **02.10:** dava listesi ekranındaki Olay Türü
+  seçicisi KALKTI — alan hiçbir kartta dolu değil (veri ekibi sütunu doldurmuyor;
+  niyetleri soruldu). Backend parametresi, kart alanı, takip paneli ve rapor kolonu
+  yerinde; ekip doldurursa seçici geri döner. Yerine klinik tasnif filtreleri (§12 sonu).
 - **Uçlar:** `GET/POST/DELETE /api/config/event_types` ve `/api/config/judgment_roles`
   (`backend/routes/config.py`; POST/DELETE admin — alleged_faults kalıbı).
 
@@ -637,6 +640,20 @@ işidir ve uygulandı (büro kartında `bureau_type` altında iki alan, liste fi
 `hizmet_turu`). G119 testleri `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
 (şema kilitleri + sqlite seed/kapı/filtre davranışı + route 400/403 + gerçek Postgres'te
 migrasyon yolu + `client_categories`/`bureau_types` değişmezlik kilidi).
+
+**Klinik tasnif liste filtreleri (02.10):** `get_cases(tibbi_surec=..., tibbi_olay=...)` +
+`GET /api/cases?tibbi_surec=&tibbi_olay=`. İki kolon ÇOK DEĞERLİDİR (`multi_value.SEPARATOR`
+= `" ; "`); değer havuz öğesinin ADIDIR ve hücrede TAM ÖĞE olarak eşleşir
+(`case_manager._coklu_oge_kosulu`, rapor motorunun `_oge_kosulu`'yla aynı anlam: ILIKE,
+`%`/`_` kaçışlı) — "Cerrahi" süzgeci "Cerrahi Uygulama"yı almaz, "Doğum Yönetimi ; Cerrahi"
+hücresini alır. Ekranda `components/ListeFiltreCombobox.tsx` (yazarak aranan tekli seçim,
+en fazla 100 satır basılır). Tıbbi Süreç seçenekleri `medical_processes` havuzundan; Tıbbi
+Olay seçenekleri havuzdan DEĞİL veriden: `GET /api/cases/tibbi-olay-secenekleri?tibbi_surec=`
+(`case_manager.tibbi_olay_secenekleri`) kartlarda geçen olayları dava sayısıyla döndürür, süreç
+seçiliyse o süreçle birlikte kodlananlara daralır (aynı tam öğe kuralı) — seçenek sıfır sonuç
+vermez; süreç değişince olay seçimi "Tümü"ye döner. Ekibin "Süreç Grubu" sütunu gelince daraltan
+alan `_OLAY_DARALTAN_ALANLAR`'a eklenir.
+Testler `backend/tests/test_klinik_tasnif_filtresi.py`, `frontend/src/hooks/useCases.klinikTasnif.test.tsx`.
 
 ## 13. Kapalı liste envanteri — dava kartının FAZ F listeleri (04.09.2026)
 
