@@ -158,8 +158,17 @@ describe("useDavaListesiIsitma (Faz 4)", () => {
     casesApi.getCases.mockResolvedValue({ cases: [{ id: 1 }], total: 1 });
     casesApi.getCaseStats.mockResolvedValue({ total: 1 });
     function Isit() { useDavaListesiIsitma(); return null; }
-    ciz(<Isit />);
-    await bekle(() => queryClient.getQueryData(caseKeys.list(davaListesiFiltresi())) !== undefined);
+    // jsdom'da requestIdleCallback YOK → kanca 1,5 sn'lik setTimeout yedeğine düşer; `bekle` en az
+    // 500 ms bekler, yani test zamanlayıcı çözünürlüğüne bağlıydı (Windows'ta ~15 ms adımla geçiyor,
+    // CI'da kırmızı). Boşta geri çağrısı sahtelenir: ısıtma tarayıcıdaki gibi "boşa çıkınca" koşar.
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void) => number };
+    w.requestIdleCallback = cb => window.setTimeout(cb, 0);
+    try {
+      ciz(<Isit />);
+      await bekle(() => queryClient.getQueryData(caseKeys.list(davaListesiFiltresi())) !== undefined);
+    } finally {
+      delete w.requestIdleCallback;
+    }
     expect(queryClient.getQueryData(caseKeys.stats)).toEqual({ total: 1 });
     // Dava Listesi filtre durumunun varsayılanı (tüm seçimler "ALL", arama boş) AYNI anahtardır
     expect(caseKeys.list(davaListesiFiltresi({
