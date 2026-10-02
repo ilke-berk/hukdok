@@ -31,7 +31,7 @@ T2 = "tenant-baska"
 
 CATALOG = "/api/reports/catalog"
 PREVIEW = "/api/reports/preview"
-KAYNAKLAR = ("davalar", "muvekkiller", "belgeler", "foyler")
+KAYNAKLAR = ("davalar", "muvekkiller", "belgeler", "foyler", "hizmetler")     # G251: + hizmetler
 SILINDI = dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.timezone.utc)
 
 
@@ -142,7 +142,7 @@ def _degerler(cevap, anahtar):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_katalog_sekli(env):
-    """Kabul: plan §2.4 şekli (+ §4.2 alanları, G137); 4 kaynak sırayla;
+    """Kabul: plan §2.4 şekli (+ §4.2 alanları, G137); 5 kaynak sırayla (G251: + hizmetler);
     `limitler.onizleme_sayfa_boyu_max == 200`; her liste kolonun seçenekleri dolu;
     türetilmiş kolonlar sıralanamaz (filtre G137'den beri kolon bazında — test_g137)."""
     r = env.client().get(CATALOG)

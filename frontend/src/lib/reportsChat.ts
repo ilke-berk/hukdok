@@ -234,6 +234,12 @@ const ORNEK_ISTEMLER_KAYNAGA_GORE: Record<string, readonly string[]> = {
         "Bu yıl kapanan föyleri son durumuna göre sırala",
         "Hangi aşamalar var?",
     ],
+    // G251: satır = bir hizmet kaydı (müvekkil × hizmet × dava) — muhasebe soruları
+    hizmetler: [
+        "Lexis Rapor verilen müvekkilleri dava ofis numarasıyla listele",
+        "Müvekkil başına hizmet sayısını göster",
+        "Hangi hizmet türleri var?",
+    ],
 };
 
 const ORNEK_ISTEMLER_GENEL: readonly string[] = [

@@ -43,6 +43,7 @@ ARAMA_KOLONLARI = {
     "muvekkiller": ("name", "cari_kod", "email", "phone", "mobile_phone"),
     "belgeler": ("original_filename", "dava_tracking_no", "ai_summary"),
     "foyler": ("sistem_no", "tku_no", "hasar_no", "dava_tracking_no"),
+    "hizmetler": ("muvekkil_adi", "hizmet_turu", "dava.tracking_no", "dava.esas_no", "sistem_no"),     # G251
 }
 
 
@@ -221,6 +222,7 @@ def test_veriden_liste_isaretleri_plan_listesi(env):
         "muvekkiller": {"il", "specialty"},
         "belgeler": {"uploaded_by", "belge_turu_adi"},
         "foyler": set(),
+        "hizmetler": set(),                 # G251: kendi kolonlarında veriden liste yok (müvekkil adı önerili)
     }
     for anahtar, kaynak in registry.KAYNAKLAR.items():
         # G166: tekil bağ kopyaları (belgeler/foyler `dava.*`) hedefin işaretini taşır — çekirdek sayılır
@@ -449,7 +451,7 @@ def test_muvekkil_hizli_filtreleri_plan_sirasi_ve_sunum(env):
     muv = kaynaklar["muvekkiller"]["hizli_filtreler"]
     assert [(hf["alan"], hf["sunum"], hf["etiket"]) for hf in muv] == MUVEKKIL_SERIDI
     assert all(hf["alternatifler"] == [] for hf in muv)
-    for anahtar in ("davalar", "belgeler", "foyler"):
+    for anahtar in ("davalar", "belgeler", "foyler", "hizmetler"):          # G251: + hizmetler
         hfs = kaynaklar[anahtar]["hizli_filtreler"]
         assert hfs[0] == {"alan": "arama", "alternatifler": [], "sunum": "arama", "etiket": None}
         assert all(hf["sunum"] == "varsayilan" and hf["etiket"] is None for hf in hfs[1:]), anahtar

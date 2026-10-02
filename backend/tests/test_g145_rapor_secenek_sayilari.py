@@ -255,7 +255,7 @@ def test_bos_sayisi_yalniz_filtrelenebilir_is_null_izinli_duz_kolonlarda(env):
 
 def test_bos_sayilari_ve_liste_sayilari_kaynak_basina_tek_sorgu(env):
     """Kabul: katalog kurulumunda kaynak başına TEK `COUNT(*) FILTER` sorgusu ve TEK `UNION ALL` GROUP BY
-    sorgusu (4 kaynak → 4 + 4); ikinci çağrı önbellekten — hiç sorgu koşmaz."""
+    sorgusu (5 kaynak → 5 + 5, G251: + hizmetler); ikinci çağrı önbellekten — hiç sorgu koşmaz."""
     client = env.client()
     env.sorgular.clear()
     client.get(CATALOG)
@@ -269,7 +269,9 @@ def test_bos_sayilari_ve_liste_sayilari_kaynak_basina_tek_sorgu(env):
     # artık onlarındır; davalar'ın kendi çoklu bağ kolonları türetilmiş olduğundan 18 değişmez
     en_buyuk = max(len(registry._duz_liste_kolonlari(k)) for k in registry.KAYNAKLAR.values())
     assert max(s.count("GROUP BY") for s in birlesik) == en_buyuk
-    assert len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 19     # 02.10: + kanun_yolu
+    # 02.10: + kanun_yolu (19) · G251: − hizmet_turu (kapalı liste → çok değerli metin; sayısı öğe bazında) = 18
+    assert len(registry._duz_liste_kolonlari(registry.DAVALAR)) == 18
+    assert registry.DAVALAR.kolonlar["hizmet_turu"].coklu_deger and registry.DAVALAR.kolonlar["hizmet_turu"].tip == "metin"
     env.sorgular.clear()
     client.get(CATALOG)
     assert env.sorgular == []

@@ -175,6 +175,7 @@ def test_iliskiler_ve_bagli_kolon_turetimi():
         "muvekkiller": [("dava", "davalar", True)],
         "belgeler": [("dava", "davalar", False), ("muvekkil", "muvekkiller", True)],
         "foyler": [("dava", "davalar", False), ("muvekkil", "muvekkiller", True)],
+        "hizmetler": [("dava", "davalar", False), ("muvekkil", "muvekkiller", True)],      # G251
     }
     for anahtar, kaynak in registry.KAYNAKLAR.items():
         assert [(i.anahtar, i.hedef, i.coklu) for i in kaynak.iliskiler] == beklenen[anahtar]

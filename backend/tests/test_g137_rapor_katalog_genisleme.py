@@ -35,8 +35,9 @@ GRUPLAR = {
     "muvekkiller": ("Arama", "Kimlik", "İletişim", "Vekalet", "Sınıflandırma", "Sistem"),
     "belgeler": ("Arama", "Belge", "Dava", "Yükleme", "Sistem"),
     "foyler": ("Arama", "Kimlik", "Sınıflandırma", "Kapsam", "Sistem"),
+    "hizmetler": ("Arama", "Hizmet", "Müvekkil", "Föy", "Sistem"),          # G251
 }
-KONTROL = {"tarih": "tarih_araligi", "liste": "coklu_secim", "metin": "metin_icerir", "sayi": "sayi_araligi",
+KONTROL ={"tarih": "tarih_araligi", "liste": "coklu_secim", "metin": "metin_icerir", "sayi": "sayi_araligi",
            "para": "sayi_araligi", "mantik": "mantik"}
 # G141 (plan §5.2): işaretli metin kolonlar bu küçük veride eşik ALTINDA kalır → `secenekler` (veriden,
 # sıklık sıralı) + `kontrol=coklu_secim`, `oneriler=None`; öneri katmanı yalnız işaretsiz önerili kolonlarda.
@@ -45,12 +46,14 @@ VERIDEN = {
     "muvekkiller": {"il", "specialty"},
     "belgeler": {"uploaded_by", "belge_turu_adi"},
     "foyler": set(),
+    "hizmetler": set(),
 }
 ONERILI = {
     "davalar": {"muvekkil_adlari", "karsi_taraf_adlari", "sigortali_adlari", "diger_taraf_adlari"},
     "muvekkiller": {"sektor", "noterlik"},
     "belgeler": set(),
     "foyler": set(),
+    "hizmetler": {"muvekkil_adi"},                                          # G251: tarafın karttaki adı
 }
 
 
@@ -257,6 +260,7 @@ def test_katalog_hizli_filtreler_plan_listesi(env):
         "muvekkiller": ["arama", "category", "il", "specialty", "dava_sayisi", "email", "mobile_phone"],
         "belgeler": ["arama", "uploaded_at", "belge_turu_adi", "uploaded_by", "link_mode"],
         "foyler": ["arama", "durum", "hizmet_turu", "muvekkil_tipi", "kapsam_durumu"],
+        "hizmetler": ["arama", "hizmet_turu", "muvekkil_adi", "kaynak"],     # G251
     }
     for anahtar, liste in beklenen.items():
         kaynak = kaynaklar[anahtar]

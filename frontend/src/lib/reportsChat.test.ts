@@ -413,8 +413,9 @@ describe("raporAsistaniAcikMi — anahtar kapısı (K8)", () => {
 });
 
 describe("ornekIstemler (G143) — kaynağa göre örnek çipleri", () => {
-    it("dört kaynağın her biri için 3 farklı örnek; davalar Excel + avukat, müvekkiller Ankara/doktor örneğini içerir", () => {
-        for (const k of ["davalar", "muvekkiller", "belgeler", "foyler"]) {
+    it("beş kaynağın her biri için 3 farklı örnek; davalar Excel + avukat, müvekkiller Ankara/doktor örneğini içerir", () => {
+        // G251: + hizmetler (müvekkil × hizmet × dava)
+        for (const k of ["davalar", "muvekkiller", "belgeler", "foyler", "hizmetler"]) {
             const liste = ornekIstemler(k);
             expect(liste).toHaveLength(3);
             expect(new Set(liste).size).toBe(3);
@@ -422,6 +423,15 @@ describe("ornekIstemler (G143) — kaynağa göre örnek çipleri", () => {
         expect(ornekIstemler("davalar")).toContain("2025'te açılan derdest davaları avukat adıyla listele, Excel ver");
         expect(ornekIstemler("muvekkiller")).toContain("Ankara'daki doktor müvekkillerin telefon ve e-postasını göster");
         expect(ornekIstemler("davalar")).not.toEqual(ornekIstemler("muvekkiller"));
+    });
+
+    it("G251: hizmetler örnekleri muhasebe sorusunu (hizmet verilen müvekkil + müvekkil başına sayı) taşır, genel listeye düşmez", () => {
+        const liste = ornekIstemler("hizmetler");
+        expect(liste).not.toBe(ornekIstemler(null));
+        expect(liste).toContain("Lexis Rapor verilen müvekkilleri dava ofis numarasıyla listele");
+        expect(liste).toContain("Müvekkil başına hizmet sayısını göster");
+        expect(liste).toContain("Hangi hizmet türleri var?");
+        expect(liste.every(o => /hizmet|Lexis Rapor/i.test(o))).toBe(true);
     });
 
     it("tanınmayan / boş / null kaynak genel listeye düşer; aynı kaynak aynı referansı döner (render kararlı)", () => {
@@ -434,7 +444,7 @@ describe("ornekIstemler (G143) — kaynağa göre örnek çipleri", () => {
     });
 
     it("G174: her kaynakta bir 'hangi … var' örneği (liste balonunu keşfettirir); üçlü sayı korunur", () => {
-        for (const k of ["davalar", "muvekkiller", "belgeler", "foyler"]) {
+        for (const k of ["davalar", "muvekkiller", "belgeler", "foyler", "hizmetler"]) {
             const liste = ornekIstemler(k);
             expect(liste).toHaveLength(3);
             expect(liste.filter(o => /^hangi .+ var\??$/i.test(o)), k).toHaveLength(1);

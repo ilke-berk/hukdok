@@ -7,12 +7,13 @@ koşulunu) kullanır; istemcinin gönderdiği anahtar bu sözlükte yoksa 422.
 `SETTINGS_REGISTRY` / `LIST_REGISTRY` deseninin (services/app_settings.py,
 managers/reference_lists.py) rapor ikizi.
 
-Dört veri kaynağı (plan §2.3): `davalar` (cases), `muvekkiller` (clients),
-`belgeler` (case_documents JOIN cases), `foyler` (case_foys JOIN cases).
+Beş veri kaynağı (plan §2.3 + G251): `davalar` (cases), `muvekkiller` (clients),
+`belgeler` (case_documents JOIN cases), `foyler` (case_foys JOIN cases),
+`hizmetler` (case_hizmetleri JOIN cases JOIN case_parties LEFT JOIN case_foys).
 Tenant + soft-delete kuralı `VeriKaynagi.kisitlar(tenant_id)` ile TEK yerden
 gelir (K2, `case_manager._apply_tenant_filter` ile aynı kural):
-`tenant_filter_clause` + `deleted_at IS NULL`; `belgeler`/`foyler` bunu `cases`
-JOIN'iyle (INNER — davasız/silinmiş davalı satır rapora girmez), `muvekkiller`
+`tenant_filter_clause` + `deleted_at IS NULL`; `belgeler`/`foyler`/`hizmetler` bunu
+`cases` JOIN'iyle (INNER — davasız/silinmiş davalı satır rapora girmez), `muvekkiller`
 `Client` üzerinden alır.
 
 Kataloga GİRMEYENLER (plan §2.3): `tenant_id`, `deleted_*`, `notes` (serbest
@@ -85,6 +86,16 @@ sıralama yok; **tekil** (`coklu=False`, hedef tablo zaten `from_clause` JOIN'in
 föyler→dava): kolon aynen kopyalanır, filtre/sıralama/boş sayısı/veriden liste düz kolon gibi
 çalışır. Bağlı kolonun `bag` alanı ilişki anahtarını taşır; asistan katalog metni bağlı
 kolonları tek tek değil ilişki başına bir satırla gömer (`asistan.katalog_metni`).
+
+**G251 — `hizmetler` kaynağı (müvekkil × hizmet × dava):** muhasebe sorusu ("X müvekkiline hangi
+davalarda hangi hizmet verildi", "Lexis Rapor verilen müvekkiller") dava satırından cevaplanamıyordu —
+hizmet kartın değil KART × MÜVEKKİL çiftinin özelliği (G248, `case_hizmetleri`). Satır = bir hizmet
+kaydı; kendi kolonları `hizmet_turu` (kapalı liste), `kaynak` (`föy`/`elle` — `foy_id` dolu/boş),
+`muvekkil_adi` (tarafın karttaki adı; düz kolon → sıralanır, GRUPLANIR). `dava.*` tekil bağ (föyler
+deseni; kartın `hizmet_turu` özeti hariç — satırın kendi kolonu var), `muvekkil.*` çoklu bağ ama küme hizmetin KENDİ tarafına dar (`_hizmet_muvekkili_kumesi`,
+`kart_eslesmesi`: `client_id` → kart, bağsız tarafta ad anahtarı). Kısıt: dava tenant + soft-delete
++ föyü kapsam dışı işaretli satır görünmez (`_hizmet_kisitlari`). Aynı görevde `davalar.hizmet_turu`
+çok değerliye (`coklu_deger`) çevrildi: kolon artık satırların " ; " birleşik özeti, `eq`/`in` tam öğe.
 """
 from __future__ import annotations
 
@@ -764,7 +775,10 @@ _DAVA_KOLONLARI: list[Kolon] = [
         _kolon(_C, "olay_turu", "Olay Türü", liste=_adlar(EVENT_TYPES), secenek_tablosu=models.EventType),
         _kolon(_C, "hukumdeki_rol", "Hükümdeki Rol", liste=_adlar(JUDGMENT_ROLES), secenek_tablosu=models.JudgmentRole),
         _kolon(_C, "muvekkil_tipi", "Müvekkil Tipi", liste=_adlar(CLIENT_TYPES), secenek_tablosu=models.ClientType),
-        _kolon(_C, "hizmet_turu", "Hizmet Türü", liste=_adlar(SERVICE_TYPES), secenek_tablosu=models.ServiceType),
+        # G251: `cases.hizmet_turu` artık `case_hizmetleri` satırlarının " ; " birleşik ÖZETİ (G248) →
+        # çok değerli: seçenek = hizmet listesi ∪ verideki öğeler, eq/in TAM ÖĞE eşler ("Lexis Rapor"
+        # filtresi "Dava Takibi ; Lexis Rapor" kartını da getirir). Satır düzeyi için `hizmetler` kaynağı.
+        _coklu(_C, "hizmet_turu", "Hizmet Türü", models.ServiceType),
         _kolon(_C, "responsible_lawyer_name", "Sorumlu Avukat", veriden_liste=True),
         # 02.10: "Sorumlu Avukat" tek alan; karta atanmış diğer avukatlar (`case_lawyers`) yalnız burada.
         _turetilmis("avukatlar", "Avukatlar (tümü)", "liste", _dava_avukatlari(),
@@ -1220,6 +1234,93 @@ FOYLER = VeriKaynagi(
 )
 
 
+# ─── hizmetler (G251) ────────────────────────────────────────────────────────
+# Satır = bir hizmet kaydı (`case_hizmetleri`, G248): "bu kartta bu müvekkile bu hizmet verildi".
+# FROM: hizmet JOIN dava (tenant + soft-delete buradan) JOIN müvekkil tarafı (`case_party_id` NOT NULL)
+# LEFT JOIN föy (föy kaynaklı satırın föyü; elle satırda NULL).
+
+_H = models.CaseHizmeti
+_HP = models.CaseParty                 # hizmetin müvekkil tarafı
+_HF = models.CaseFoy                   # föy kaynaklı satırın föyü
+# "Kaynak" kolonunun değerleri (rapor/Excel hücresi kullanıcıya dönük → Türkçe yazım; API'nin
+# `managers.case_hizmetleri.KAYNAK_FOY = "foy"` kodu DEĞİL).
+HIZMET_KAYNAGI_FOY = "föy"
+HIZMET_KAYNAGI_ELLE = "elle"
+HIZMET_KAYNAKLARI = (HIZMET_KAYNAGI_FOY, HIZMET_KAYNAGI_ELLE)
+
+
+def _hizmet_kisitlari(tenant_id: str) -> list[ColumnElement]:
+    """Dava kaynağının tenant + soft-delete kuralı (`_foy_kisitlari` deseni) + kapsam: föyü kapsam dışı
+    işaretli (`case_foys.kapsam_durumu` dolu) satır görünmez. Aktarım o satırı zaten siler
+    (`case_hizmetleri.foydan_yaz`); işaret konup aktarım henüz koşmadıysa rapor yine göstermez. Elle
+    satırda föy yok (LEFT JOIN → NULL) → koşul geçer."""
+    return [*_dava_kisitlari(tenant_id), func.coalesce(_HF.kapsam_durumu, "") == ""]
+
+
+def _hizmet_kaynagi():
+    """`foy_id` dolu → "föy" (veri paketinden), boş → "elle" (panelden). Düz CASE: filtre, sıralama,
+    gruplama ve seçenek sayısı düz kolon gibi çalışır."""
+    return case((_H.foy_id.isnot(None), HIZMET_KAYNAGI_FOY), else_=HIZMET_KAYNAGI_ELLE)
+
+
+_HIZMET_GRUPLARI = (ARAMA_GRUBU, "Hizmet", "Müvekkil", "Föy", "Sistem")
+_HIZMET_KOLONLARI: list[Kolon] = [
+    _arama(_HP.name, _H.hizmet_turu, models.Case.tracking_no, models.Case.esas_no, _HF.sistem_no,
+           aciklama="Müvekkil adı, hizmet türü, ofis dosya no, esas no veya SistemNo…"),
+    *_grup(
+        "Hizmet",
+        _kolon(_H, "hizmet_turu", "Hizmet Türü", liste=_adlar(SERVICE_TYPES), secenek_tablosu=models.ServiceType),
+        Kolon("kaynak", "Kaynak", "liste", _hizmet_kaynagi(), secenekler=HIZMET_KAYNAKLARI),
+    ),
+    *_grup(
+        "Müvekkil",
+        # Tarafın karttaki adı — müvekkil kartına bağlı olmayan tarafta da dolu (bağsız tarafta ad).
+        # Düz kolon: sıralanır ve GRUPLANIR ("müvekkil başına hizmet sayısı"). Kartın alanları
+        # (telefon, kategori…) `muvekkil.*` bağlı kolonlarından gelir.
+        Kolon("muvekkil_adi", "Müvekkil", "metin", _HP.name, onerili=True),
+    ),
+    *_grup(
+        "Föy",
+        Kolon("sistem_no", "Föy SistemNo", "metin", _HF.sistem_no),
+    ),
+    *_grup(
+        "Sistem",
+        _kolon(_H, "id", "ID"),
+        _kolon(_H, "case_id", "Dava ID"),
+        _kolon(_H, "source", "Kaynak İmzası"),
+        _kolon(_H, "created_by", "Kaydeden"),
+        _kolon(_H, "created_at", "Kayıt Tarihi"),
+    ),
+]
+
+_HIZMET_VARSAYILAN = ("muvekkil_adi", "hizmet_turu", "dava.tracking_no", "dava.esas_no", "dava.court", "kaynak")
+
+HIZMETLER = VeriKaynagi(
+    anahtar="hizmetler",
+    etiket="Hizmetler",
+    aciklama="Hizmet kayıtları: satır = bir davada bir müvekkile verilen bir hizmet (müvekkil × hizmet × dava); "
+             "silinmiş davanın ve kapsam dışı föyün kaydı hariç.",
+    from_clause=(
+        _H.__table__
+        .join(models.Case.__table__, _H.case_id == models.Case.id)
+        .join(_HP.__table__, _H.case_party_id == _HP.id)
+        .outerjoin(_HF.__table__, _H.foy_id == _HF.id)
+    ),
+    kisitlar=_hizmet_kisitlari,
+    kolonlar=_sozluk(_HIZMET_KOLONLARI),
+    varsayilan_kolonlar=_HIZMET_VARSAYILAN,
+    gruplar=_HIZMET_GRUPLARI,
+    hizli_filtreler=(
+        HizliFiltre(ARAMA_KOLONU, sunum="arama"),
+        HizliFiltre("hizmet_turu"),
+        HizliFiltre("muvekkil_adi"),
+        HizliFiltre("kaynak"),
+    ),
+    kolon_setleri=(KolonSeti("Temel", _HIZMET_VARSAYILAN),),
+    birincil_anahtar=models.CaseHizmeti.id,
+)
+
+
 # ─── G166: bağlı kaynaklar ───────────────────────────────────────────────────
 # Kaynaklar arası birleştirme: her kaynak bağlı kaynaklarını bildirir, kolonları `<iliski>.<kolon>`
 # anahtarıyla türetilir. Çekirdek (bağsız) kaynaklar önce yakalanır — bağlı kolonlar HEP çekirdekten
@@ -1262,7 +1363,21 @@ def _muvekkilin_davalari_kumesi() -> Select:
     )
 
 
-_JOIN_KOLONLARI = frozenset({"case_id", "dava_tracking_no", "dava_subject"})     # hedefte zaten dava bağı
+def _hizmet_muvekkili_kumesi() -> Select:
+    """Hizmet satırının MÜVEKKİL TARAFININ (canlı) müvekkil kartı — `kart_eslesmesi`: tarafın
+    `client_id`si doluysa yalnız o kart, boşsa ad anahtarı eşleşen kart(lar). Dava düzeyindeki
+    `_muvekkil_kumesi`nden farkı: kartın TÜM müvekkilleri değil, yalnız bu hizmetin verildiği taraf
+    (G251). `case_parties` hizmetler kaynağının FROM'unda → correlate."""
+    M = models.Client
+    return (
+        select(literal(1))
+        .select_from(M.__table__)
+        .where(and_(kart_eslesmesi(_HP, M), M.deleted_at.is_(None)))
+        .correlate(_HP)
+    )
+
+
+_JOIN_KOLONLARI =frozenset({"case_id", "dava_tracking_no", "dava_subject"})     # hedefte zaten dava bağı
 MUVEKKIL_ILISKISI = Iliski("muvekkil", "Müvekkil kartı", "muvekkiller", coklu=True, kume=_muvekkil_kumesi,
                            hedef_from=models.Client.__table__, hedef_kisitlar=_muvekkil_kisitlari,
                            haric=frozenset({"dava_sayisi"}))
@@ -1273,8 +1388,17 @@ BELGE_ILISKISI = Iliski("belge", "Belge", "belgeler", coklu=True, kume=_belge_ku
 DAVA_ILISKISI_COKLU = Iliski("dava", "Dava", "davalar", coklu=True, kume=_muvekkilin_davalari_kumesi,
                              hedef_from=models.Case.__table__, hedef_kisitlar=_dava_kisitlari)
 DAVA_ILISKISI_TEKIL = Iliski("dava", "Dava", "davalar", coklu=False)     # belgeler/foyler: cases zaten JOIN'de
+# G251: hizmetler → dava (tekil, föyler deseni). Kartın `hizmet_turu` ÖZETİ alınmaz: satırın kendi
+# `hizmet_turu` kolonu varken "kartın tüm hizmetleri" ikinci bir "Hizmet Türü" olurdu (asistan ve
+# "hangi hizmet türleri var" sorusu iki aday görürdü).
+HIZMET_DAVASI_ILISKISI = Iliski("dava", "Dava", "davalar", coklu=False, haric=frozenset({"hizmet_turu"}))
+# G251: hizmetler → müvekkil kartı. Anahtar/etiket diğer kaynaklardaki `muvekkil.*` ile aynı
+# (asistan ve şablonlar tek ad görür); küme hizmetin kendi tarafına daralır.
+HIZMET_MUVEKKILI_ILISKISI = Iliski("muvekkil", "Müvekkil kartı", "muvekkiller", coklu=True,
+                                   kume=_hizmet_muvekkili_kumesi, hedef_from=models.Client.__table__,
+                                   hedef_kisitlar=_muvekkil_kisitlari, haric=frozenset({"dava_sayisi"}))
 
-CEKIRDEK: dict[str, VeriKaynagi] = {k.anahtar: k for k in (DAVALAR, MUVEKKILLER, BELGELER, FOYLER)}
+CEKIRDEK: dict[str, VeriKaynagi] = {k.anahtar: k for k in (DAVALAR, MUVEKKILLER, BELGELER, FOYLER, HIZMETLER)}
 
 
 def _bagla(kaynak: VeriKaynagi, *iliskiler: Iliski) -> VeriKaynagi:
@@ -1289,12 +1413,13 @@ DAVALAR = _bagla(DAVALAR, MUVEKKIL_ILISKISI, FOY_ILISKISI, BELGE_ILISKISI)
 MUVEKKILLER = _bagla(MUVEKKILLER, DAVA_ILISKISI_COKLU)
 BELGELER = _bagla(BELGELER, DAVA_ILISKISI_TEKIL, MUVEKKIL_ILISKISI)
 FOYLER = _bagla(FOYLER, DAVA_ILISKISI_TEKIL, MUVEKKIL_ILISKISI)
+HIZMETLER = _bagla(HIZMETLER, HIZMET_DAVASI_ILISKISI, HIZMET_MUVEKKILI_ILISKISI)
 
 
 # ─── Kayıt defteri ───────────────────────────────────────────────────────────
 
 KAYNAKLAR: dict[str, VeriKaynagi] = {
-    k.anahtar: k for k in (DAVALAR, MUVEKKILLER, BELGELER, FOYLER)
+    k.anahtar: k for k in (DAVALAR, MUVEKKILLER, BELGELER, FOYLER, HIZMETLER)
 }
 
 # Kataloga girmesi YASAK kolon adları — kayıt defteri kendi kendini denetler.

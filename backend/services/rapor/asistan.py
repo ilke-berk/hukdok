@@ -96,6 +96,20 @@ VeriSecenekleri = Mapping[tuple[str, str], Sequence[str]]
 # yalnız en sık bu kadarı girer (katalog sayı azalan sıralı); tam liste şeritte ve `degerEsle` aday çiplerinde.
 COKLU_PROMPT_OGE_MAX = 40
 
+# G251: kaynak seçim ipucu — kaynak başlığının hemen altına tek satır. Prompt kuralları (prompts.py) kaynağı
+# "satırı NEYİN oluşturacağına göre" seçtirir ama müvekkil × hizmet sorusunda model 'muvekkiller'e ya da
+# 'davalar'a kayabilir (ÖZET RAPOR kuralı "müvekkil başına dağılım → muvekkiller" der); hangi sorunun bu
+# kaynaktan cevaplanacağı kaynağın yanında yazar. Yalnız ipucu gereken kaynakta satır var; anahtarlar
+# `registry.KAYNAKLAR` içinde olmalı (test_g251 bekçisi).
+KAYNAK_IPUCLARI: Mapping[str, str] = {
+    "hizmetler": (
+        "ne zaman: 'X müvekkiline hangi davalarda hangi hizmet verildi', 'Lexis Rapor verilen müvekkiller', "
+        "'müvekkil başına / hizmet türüne göre hizmet sayısı' → BU kaynak (satır = bir hizmet kaydı). Müvekkil adı "
+        "muvekkil_adi düz kolondur: contains ile süzülür, sıralanır ve GRUPLANIR; dava bilgisi dava.<kolon>. "
+        "Dava başına TEK satır isteniyorsa 'davalar' kaynağı + hizmet_turu (çok değerli özet)."
+    ),
+}
+
 
 def veri_secenekleri_katalogdan(katalog: Mapping[str, Any]) -> dict[tuple[str, str], list[str]]:
     """Rotanın önbellekli katalog gövdesinden (`registry.katalog`) veriden gelen seçenek listelerini
@@ -144,7 +158,7 @@ def _kolon_satiri(kolon: Kolon, veriden: Optional[Sequence[str]] = None) -> str:
 
 def katalog_metni(veri_secenekleri: Optional[VeriSecenekleri] = None) -> str:
     """Sistem talimatına gömülen kompakt katalog: her kaynak için başlık +
-    varsayılan kolonlar + `anahtar · etiket · tip[ · seçenekler]` satırları.
+    varsayılan kolonlar (+ varsa `KAYNAK_IPUCLARI` satırı, G251) + `anahtar · etiket · tip[ · seçenekler]` satırları.
     G137'nin kullanılabilirlik alanları (`grup`, `kontrol`, `hizli_filtreler`,
     `kolon_setleri`, `oneriler`) BİLEREK gömülmez — prompt gürültüsü (öneriler
     300'e kadar değer); yalnız yeni kolonlar doğal olarak girer (plan §4.2).
@@ -159,6 +173,9 @@ def katalog_metni(veri_secenekleri: Optional[VeriSecenekleri] = None) -> str:
             f"## {kaynak.anahtar} — {kaynak.etiket}: {kaynak.aciklama}",
             f"varsayılan kolonlar: {', '.join(kaynak.varsayilan_kolonlar)}",
         ]
+        ipucu = KAYNAK_IPUCLARI.get(kaynak.anahtar)
+        if ipucu:
+            satirlar.append(ipucu)
         satirlar.extend(
             _kolon_satiri(k, veriden.get((kaynak.anahtar, k.anahtar)))
             for k in kaynak.kolonlar.values() if k.bag is None
