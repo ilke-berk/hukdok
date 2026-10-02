@@ -161,7 +161,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
 - [x] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, müvekkil başına çoklu seçimli açılır liste (`HizmetSecici`, tek PUT) + "tüm müvekkillere uygula"; Büro Bilgileri'ndeki tek değerli satır kalkar
 - [x] G256 | bant:frontend | bagimli:G248 | Admin paneli "Hizmet Türleri" sekmesi: ekle, yeniden adlandır (paket adı uyarısı), kullanımdaysa taşıyarak sil, sürükle-sırala + `useConfig.typeToKey` önbellek tazeleme
-- [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim, "tüm müvekkillere uygula"), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
+- [x] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim, "tüm müvekkillere uygula"), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
 - [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253,G256,G257 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı + liste kaynağı/yönetimi (koddan doğrulanmış)
 
 ## ÖNCELİK 8 — Aktarım kullanıcıyı kilitlemez: kart başına kısa transaction (2026-10-02 gündüz, kullanıcı kararı)
