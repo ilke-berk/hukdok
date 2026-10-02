@@ -148,14 +148,18 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      paketinden çekilir → G257 (backend, G249 sonrası: hukdok_aktarim.py ortak); G220 İPTAL (yukarıda), G221'in G220
      bağı kaldırıldı; (4) migrasyon maddesi 59 (58 hata_bildirimleri'nde), satır referansları tazelendi.
      Backend seri: G248 → G249 → G257 → G250 → G251. Frontend: (G252 ∥ G256) → G253. G254 en son (G256, G257 dahil).
-     G255 aynı gece koşarsa G257'den SONRA (hukdok_aktarim.py). -->
+     G255 aynı gece koşarsa G257'den SONRA (hukdok_aktarim.py).
+     02.10 akşam: ilk koşu G248 + G256'yı bitirdi; G249 ve G252 "testi değiştirmeden geçilemedi" ile durdu (koşuya
+     testTasimaIzni verilmemişti). Kullanıcı kalan görevlerin hepsi için test taşıma izni verdi (dosya listeleri görev
+     dosyalarında "İnsan kararı 02.10"); G252 aynı worktree'de elle tamamlandı (e5eef3a), G249'un BLOKE eki silindi.
+     Yeniden koşuda testTasimaIzni argümanı görev dosyalarındaki listelerle birebir verilir. -->
 
 - [x] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + müvekkil başına küme yazımı (PUT) + taraf silme + liste rename kuralı
-- [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
+- [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır
 - [ ] G257 | bant:backend | bagimli:G249 | Hizmet listesi veri ekibinin paketinden: `deger_havuzu_seed` HAVUZLAR'a "Hizmet Türü" + aktarım eşlemesi kod sabitinden değil DB `service_types` listesinden (koşu başında) + sentetik paketle uçtan uca test; `--apply` insan adımı
 - [ ] G250 | bant:backend | bagimli:G257 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
 - [ ] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
-- [ ] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, müvekkil başına çoklu seçimli açılır liste (`HizmetSecici`, tek PUT) + "tüm müvekkillere uygula"; Büro Bilgileri'ndeki tek değerli satır kalkar | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
+- [x] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, müvekkil başına çoklu seçimli açılır liste (`HizmetSecici`, tek PUT) + "tüm müvekkillere uygula"; Büro Bilgileri'ndeki tek değerli satır kalkar
 - [x] G256 | bant:frontend | bagimli:G248 | Admin paneli "Hizmet Türleri" sekmesi: ekle, yeniden adlandır (paket adı uyarısı), kullanımdaysa taşıyarak sil, sürükle-sırala + `useConfig.typeToKey` önbellek tazeleme
 - [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim, "tüm müvekkillere uygula"), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
 - [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253,G256,G257 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı + liste kaynağı/yönetimi (koddan doğrulanmış)
