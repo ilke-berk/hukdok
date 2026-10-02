@@ -431,7 +431,7 @@ const CaseList = () => {
           </div>
 
           <div>
-            <Eyebrow>Dosya Türü</Eyebrow>
+            <Eyebrow>Yargı Türü</Eyebrow>
             <Select value={selectedFileType} onValueChange={setSelectedFileType}>
               <SelectTrigger className="mt-2 h-10 bg-[var(--bg)] border-[var(--border)] text-[13px] rounded-[3px]">
                 <SelectValue placeholder="Tür seçin" />

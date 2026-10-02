@@ -351,10 +351,10 @@ const ClientList = () => {
 
           {availableSpecialties.length > 0 && (
             <div>
-              <Eyebrow>Tıbbi Branş</Eyebrow>
+              <Eyebrow>Uzmanlık Alanı</Eyebrow>
               <Select value={selectedSpecialty} onValueChange={setSelectedSpecialty}>
                 <SelectTrigger className="mt-2 h-10 bg-[var(--bg)] border-[var(--border)] text-[13px] rounded-[3px]">
-                  <SelectValue placeholder="Branş" />
+                  <SelectValue placeholder="Uzmanlık Alanı" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tümü ({availableSpecialties.length})</SelectItem>

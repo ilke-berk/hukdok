@@ -958,13 +958,13 @@ const AdminPage = () => {
                 <Tabs defaultValue={initialTab} className="w-full" onValueChange={v => { setActiveTab(v); setListSearch(""); }}>
                     <TabsList className="flex flex-wrap h-auto gap-1 justify-start mb-6 p-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="lawyers">Avukatlar</TabsTrigger>
-                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="statuses">Durumlar</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="statuses">Belge Durumları</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="doctypes">Belge Türleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="case_subjects">Dava Konuları</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="emails">E-posta Alıcıları</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="case_types">Dava Türleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="court_types">Mahkemeler</TabsTrigger>
-                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="party_roles">Taraf Rolleri</TabsTrigger>
+                        <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="party_roles">Taraf Sıfatı</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="bureau_types">Büro Türleri</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="client_categories">Kategoriler</TabsTrigger>
                         <TabsTrigger className="rounded-none data-[state=active]:bg-[var(--brand-soft)] data-[state=active]:text-[var(--brand)] data-[state=active]:shadow-none font-mono text-[11px] tracking-[0.06em] uppercase" value="file_statuses">Dosya Durumları</TabsTrigger>
@@ -1036,13 +1036,13 @@ const AdminPage = () => {
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
-                                        <CardTitle>Durum Listesi</CardTitle>
+                                        <CardTitle>Belge Durumu</CardTitle>
                                         <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                     </div>
                                     <Dialog open={isStatusAddOpen} onOpenChange={setIsStatusAddOpen}>
-                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Durum</Button></DialogTrigger>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Belge Durumu</Button></DialogTrigger>
                                         <DialogContent>
-                                            <DialogHeader><DialogTitle>Yeni Durum Ekle</DialogTitle></DialogHeader>
+                                            <DialogHeader><DialogTitle>Yeni Belge Durumu Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
                                                 <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Kod</Label><Input value={statusForm.code} onChange={e => setStatusForm({ ...statusForm, code: trUpper(e.target.value) })} className="col-span-3" /></div>
                                                 <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Açıklama</Label><Input value={statusForm.name} onChange={e => setStatusForm({ ...statusForm, name: trTitle(e.target.value) })} className="col-span-3" /></div>
@@ -1233,13 +1233,13 @@ const AdminPage = () => {
                             <Card className="bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none">
                                 <CardHeader className="flex flex-row items-center justify-between">
                                     <div>
-                                        <CardTitle>Taraf Rolleri</CardTitle>
+                                        <CardTitle>Taraf Sıfatı</CardTitle>
                                         <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                     </div>
                                     <Dialog open={isPartyRoleAddOpen} onOpenChange={setIsPartyRoleAddOpen}>
-                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Rol</Button></DialogTrigger>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Sıfat</Button></DialogTrigger>
                                         <DialogContent>
-                                            <DialogHeader><DialogTitle>Yeni Taraf Rolü Ekle</DialogTitle></DialogHeader>
+                                            <DialogHeader><DialogTitle>Yeni Taraf Sıfatı Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">
                                                 <div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Ad</Label><Input value={partyRoleForm.name} onChange={e => setPartyRoleForm({ ...partyRoleForm, name: trTitle(e.target.value) })} className="col-span-3" placeholder="Davacı" /></div>
                                                 <div className="grid grid-cols-4 items-center gap-4">
@@ -1334,7 +1334,7 @@ const AdminPage = () => {
                                         <div className="mt-2"><Input placeholder="Ara..." value={listSearch} onChange={e => setListSearch(e.target.value)} className="max-w-xs" /></div>
                                     </div>
                                     <Dialog open={isFileStatusAddOpen} onOpenChange={setIsFileStatusAddOpen}>
-                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Durum</Button></DialogTrigger>
+                                        <DialogTrigger asChild><Button size="sm" className="gap-2"><Plus className="h-4 w-4" /> Yeni Dosya Durumu</Button></DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader><DialogTitle>Yeni Dosya Durumu Ekle</DialogTitle></DialogHeader>
                                             <div className="grid gap-4 py-4">

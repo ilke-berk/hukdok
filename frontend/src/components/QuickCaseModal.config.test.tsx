@@ -208,7 +208,7 @@ describe("QuickCaseModal — config aboneliği (G185)", () => {
     await waitFor(ownKeysSettled, "dört uç sonuçlandı");
     await waitFor(() => optionTexts("Avukat").length === 2, "avukat seçenekleri doldu");
 
-    expect(optionTexts("Dosya Türü")).toEqual(["Hukuk", "Ceza"]);
+    expect(optionTexts("Yargı Türü")).toEqual(["Hukuk", "Ceza"]);
     // Varsayılan dosya türü "Hukuk": yalnız parent_code=Hukuk olan mahkeme türleri, sırası korunur.
     expect(optionTexts("Alt Tür")).toEqual(["Tüketici", "Asliye Hukuk"]);
     expect(optionTexts("Avukat")).toEqual(["Av. Zeynep Zor", "Av. Ali Ak"]);

@@ -21,7 +21,7 @@ const ETIKET: Record<string, string> = {
     avukat: "Avukat Eklendi",
     taraf: "Taraf Eklendi",
     // Kart alanları (aktarım/elle güncelleme)
-    file_type: "Dosya Türü",
+    file_type: "Yargı Türü",
     sub_type: "Uzmanlık Alanı",
     sub_type_extra: "Alt Tür Notu",
     subject: "Dava Konusu",

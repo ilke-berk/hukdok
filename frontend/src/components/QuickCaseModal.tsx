@@ -616,7 +616,7 @@ export const QuickCaseModal = ({ open, onClose, prefill, onCaseCreated }: QuickC
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                             <Label className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)] flex items-center gap-1.5">
-                                <Gavel className="w-3 h-3" /> Dosya Türü
+                                <Gavel className="w-3 h-3" /> Yargı Türü
                             </Label>
                             <Select value={fileType} onValueChange={(v) => {
                                 setFileType(v);
