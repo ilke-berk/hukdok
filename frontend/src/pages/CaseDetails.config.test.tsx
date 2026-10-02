@@ -18,14 +18,15 @@ vi.mock("@azure/msal-react", () => ({ useMsal: () => msal }));
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
-// Olay türü değeri bilinçli olarak HİZMET türü listesindeki bir ad: listeler kart
-// anahtarlarına ters bağlansaydı iki rozetin damgası yer değiştirirdi.
+// Olay türü değeri bilinçli olarak MÜVEKKİL TİPİ listesindeki bir ad: listeler kart
+// anahtarlarına ters bağlansaydı iki rozetin damgası yer değiştirirdi. (G252: hizmet
+// türü kart satırı kalktı — çapraz bağ denetimi müvekkil tipi rozetine taşındı.)
 const CASE = vi.hoisted(() => ({
   id: 7,
   status: "DERDEST",
   tracking_no: "T-7",
   olay_turu: "Dava Takibi",
-  hizmet_turu: "Dava Takibi",
+  muvekkil_tipi: "Dava Takibi",
 }));
 vi.mock("@/hooks/useCases", () => ({ useCases: () => ({ getCase: async () => CASE }) }));
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: async () => ({ ok: false, json: async () => ({}) }) } }));
@@ -39,7 +40,7 @@ import CaseDetails from "./CaseDetails";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const EVENT_TYPES = [{ code: "TO", name: "Tıbbi Olay" }];
-const SERVICE_TYPES = [{ code: "DT", name: "Dava Takibi" }];
+const CLIENT_TYPES = [{ code: "DT", name: "Dava Takibi" }];
 const OFF_LIST_TITLE = "Bu değer kapalı listede yok — aktarımdan gelmiş olabilir";
 const CLOSED_LIST_KEYS = [
   "alleged_faults", "appealing_parties", "event_types", "judgment_roles", "client_types", "service_types",
@@ -60,7 +61,7 @@ describe("CaseDetails — config aboneliği (G185)", () => {
     vi.clearAllMocks();
     const bodies: Record<string, unknown> = {
       "/api/config/event_types": EVENT_TYPES,
-      "/api/config/service_types": SERVICE_TYPES,
+      "/api/config/client_types": CLIENT_TYPES,
     };
     authRequestMock.mockImplementation(async (url: string) => ({ ok: true, json: async () => bodies[url] ?? [] }));
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -132,15 +133,17 @@ describe("CaseDetails — config aboneliği (G185)", () => {
   it("kapalı liste rozetleri doğru listeye bağlı: liste dışı değer damgalanır, listedeki değer damgasız", async () => {
     render();
     await waitFor(listsLoaded, "altı liste yüklendi");
-    await waitFor(() => badgeFor("Olay Türü") !== null && badgeFor("Hizmet Türü") !== null, "rozetler basıldı");
+    await waitFor(() => badgeFor("Olay Türü") !== null && badgeFor("Müvekkil Tipi") !== null, "rozetler basıldı");
     await flush();
 
     const olay = badgeFor("Olay Türü")!;
-    const hizmet = badgeFor("Hizmet Türü")!;
+    const muvekkilTipi = badgeFor("Müvekkil Tipi")!;
     expect(olay.textContent).toBe("Dava Takibi");
-    expect(hizmet.textContent).toBe("Dava Takibi");
-    // event_types "Dava Takibi"ni içermez → liste dışı; service_types içerir → damgasız.
+    expect(muvekkilTipi.textContent).toBe("Dava Takibi");
+    // event_types "Dava Takibi"ni içermez → liste dışı; client_types içerir → damgasız.
     expect(olay.getAttribute("title")).toBe(OFF_LIST_TITLE);
-    expect(hizmet.getAttribute("title")).toBeNull();
+    expect(muvekkilTipi.getAttribute("title")).toBeNull();
+    // G252: hizmet türü artık kart satırı değil (Hizmetler panelinde).
+    expect(badgeFor("Hizmet Türü")).toBeNull();
   });
 });

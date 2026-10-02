@@ -26,13 +26,14 @@ const SERVICE_TYPES = [
 ];
 
 describe("G121 — büro kartında iki yeni kapalı liste alanı", () => {
-    it("muvekkil_tipi ve hizmet_turu bureau_type'ın ALTINA girer (büro/hizmet bilgisi tek grupta)", () => {
+    // G252: hizmet_turu büro kartından ÇIKTI (müvekkil başına Hizmetler paneli);
+    // karttaki kapalı liste alanı yalnız muvekkil_tipi.
+    it("muvekkil_tipi bureau_type'ın ALTINA girer; hizmet_turu kartta YOK (Hizmetler panelinde)", () => {
         const keys = OFFICE_CARD_FIELDS.map(f => f.key);
         expect(keys.indexOf("muvekkil_tipi")).toBe(keys.indexOf("bureau_type") + 1);
-        expect(keys.indexOf("hizmet_turu")).toBe(keys.indexOf("bureau_type") + 2);
-        expect(OFFICE_CARD_FIELDS.slice(-2).map(f => [f.key, f.label, f.type, f.list])).toEqual([
+        expect(keys).not.toContain("hizmet_turu");
+        expect(OFFICE_CARD_FIELDS.slice(-1).map(f => [f.key, f.label, f.type, f.list])).toEqual([
             ["muvekkil_tipi", "Müvekkil Tipi", "closedList", "client_types"],
-            ["hizmet_turu", "Hizmet Türü", "closedList", "service_types"],
         ]);
     });
 
@@ -67,13 +68,13 @@ describe("G121 — büro kartında iki yeni kapalı liste alanı", () => {
         expect(hasAnyValue({ muvekkil_tipi: "", hizmet_turu: "  " }, OFFICE_CARD_FIELDS)).toBe(false);
     });
 
-    it("yeni alanlar doluysa kartta büro özel türünün altında sırayla basılır", () => {
+    it("müvekkil tipi doluysa kartta büro özel türünün altında basılır; hizmet özeti kart satırı DEĞİL", () => {
         const data = { bureau_type: "Sigorta", muvekkil_tipi: "Doktor", hizmet_turu: "Lexis Rapor" };
         expect(filledFields(data, OFFICE_CARD_FIELDS).map(f => f.key))
-            .toEqual(["bureau_type", "muvekkil_tipi", "hizmet_turu"]);
-        // Yalnız hizmet türü dolu (aktarım partiyle geldi) → kart yalnız onu basar
+            .toEqual(["bureau_type", "muvekkil_tipi"]);
+        // Yalnız hizmet özeti dolu → büro kartı satır basmaz (G252: hizmet Hizmetler panelinde)
         expect(filledFields({ hizmet_turu: "Danışmanlık" }, OFFICE_CARD_FIELDS).map(f => f.key))
-            .toEqual(["hizmet_turu"]);
+            .toEqual([]);
     });
 
     it("takip paneli taslağıyla kesişmez — bir kavram tek ekranda (G074 kuralı)", () => {

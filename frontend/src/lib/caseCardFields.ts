@@ -84,17 +84,21 @@ export const PROCESS_CARD_FIELDS: CardFieldDef[] = [
  * kart 2026-08-19'da yalnız okuma amaçlı basmıştı — aynı değerin iki ekranda
  * durması bu görevin kapattığı sapmanın ta kendisiydi.
  *
- * G121 (DB-2026-002, 04.09.2026): `muvekkil_tipi` + `hizmet_turu` büro özel
- * türünün ALTINA girdi — büro/hizmet bilgisi tek grupta kalır, tıbbi karta
- * KONMAZ. İkisi de kapalı liste; değerler backend'in client_types /
- * service_types uçlarından gelir (sözleşme G119 ile ortak). "Lexis Rapor"
- * hizmet türü dava takibi değildir; ayrım kartta ve liste filtresinde görünür.
+ * G121 (DB-2026-002, 04.09.2026): `muvekkil_tipi` büro özel türünün ALTINA
+ * girdi — büro bilgisi tek grupta kalır, tıbbi karta KONMAZ. Kapalı liste;
+ * değerler backend'in client_types ucundan gelir (sözleşme G119 ile ortak).
+ *
+ * G252 (02.10.2026): `hizmet_turu` satırı buradan ÇIKTI. Hizmet artık müvekkil
+ * başına kayıttır (`case_hizmetleri`, G248) ve kartta Hizmetler panelinde
+ * (`CaseHizmetPanel`) müvekkile göre gruplu görünür; `cases.hizmet_turu` o
+ * satırlardan türetilen " ; " birleşik özettir — aynı bilgiyi iki yerde
+ * basmak çift gösterim olurdu. Liste filtresi (`hizmet_turu` parametresi) ve
+ * föy panelindeki föy sütunu yerinde.
  */
 export const OFFICE_CARD_FIELDS: CardFieldDef[] = [
     { key: "acceptance_date", label: "İş Kabul Tarihi", type: "date" },
     { key: "bureau_type", label: "Büro Özel Türü", type: "text" },
     { key: "muvekkil_tipi", label: "Müvekkil Tipi", type: "closedList", list: "client_types" },
-    { key: "hizmet_turu", label: "Hizmet Türü", type: "closedList", list: "service_types" },
 ];
 
 /** Boş = null | undefined | yalnız boşluk. 0 ve "0" DOLUDUR. */

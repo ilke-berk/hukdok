@@ -30,6 +30,8 @@ import RelatedCasesPanel from "@/components/RelatedCasesPanel";
 import CaseTrackingPanel from "@/components/CaseTrackingPanel";
 import CaseFoyPanel, { type CaseFoyEntry } from "@/components/CaseFoyPanel";
 import CaseNotesPanel from "@/components/CaseNotesPanel";
+import CaseHizmetPanel from "@/components/CaseHizmetPanel";
+import type { CaseHizmeti } from "@/lib/caseHizmetleri";
 import { AcikHataBildirimleri, HataBildirButonu, HataBildirimSaglayici } from "@/components/hata/HataBildirimi";
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
@@ -89,9 +91,12 @@ interface CaseDetailsData {
     hukumdeki_rol?: string;
     hukmedilen_maddi?: number;
     hukmedilen_manevi?: number;
-    // G121 (DB-2026-002) büro kartı kapalı liste alanları — NULL = bilinmiyor.
+    // G121 (DB-2026-002) büro kartı kapalı liste alanı — NULL = bilinmiyor.
     muvekkil_tipi?: string;
+    // G252: `hizmet_turu` artık `hizmetler` satırlarından TÜRETİLEN özettir (" ; " birleşik,
+    // G248) ve Büro Bilgileri kartında BASILMAZ — müvekkil başına ayrım Hizmetler panelinde.
     hizmet_turu?: string;
+    hizmetler?: CaseHizmeti[];
     // G123: uzmanlık alanı kartta basılır; dava değeri ham hâli + para birimi;
     // esas tarihçesi (güncel önce) ve föyler (case_foys) API'de zaten vardı,
     // kart bugüne dek hiçbirini göstermiyordu.
@@ -830,6 +835,16 @@ const CaseDetails = () => {
                             (cases.notes) tek serbest metin olarak ayrıca yerinde kalır. */}
                         <CaseNotesPanel caseId={parseInt(id!)} />
 
+                        {/* G252: müvekkil başına hizmetler (muhasebe ayrımı). Büro Bilgileri'ndeki tek
+                            değerli "Hizmet Türü" satırının yerini alır; föy kaynaklı satır salt okunur.
+                            Yetki `PUT /api/cases/{id}` ile aynıdır (oturumlu kullanıcı + tenant) — kartı
+                            açabilen düzenleyebilir, "Davayı Güncelle" düğmesiyle aynı kural. */}
+                        <CaseHizmetPanel
+                            caseId={caseData.id}
+                            muvekkiller={(caseData.parties ?? []).filter(p => p.party_type === "CLIENT")}
+                            onDegisti={() => { void kartiYenile(); }}
+                        />
+
                         {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
                             hizmet türü, durum (kart tek slotunda çelişince burada durur). */}
                         <CaseFoyPanel foyler={caseData.foyler} />
@@ -860,7 +875,7 @@ const CaseDetails = () => {
 
                         <TransferFieldsCard
                             title="Büro Bilgileri"
-                            description="İş kabulü, büro özel türü, müvekkil tipi ve hizmet türü"
+                            description="İş kabulü, büro özel türü ve müvekkil tipi"
                             icon={<Briefcase className="w-4 h-4 text-brand" />}
                             fields={OFFICE_CARD_FIELDS}
                             data={caseData}
