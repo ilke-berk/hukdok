@@ -322,13 +322,13 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
         const patch = buildPatch(draft);
         if (Object.keys(patch).length === 0) return;
         setSaving(true);
-        const ok = await updateCaseTracking(caseId, patch as CaseTrackingUpdate);
+        const sonuc = await updateCaseTracking(caseId, patch as CaseTrackingUpdate);
         setSaving(false);
-        if (ok) {
+        if (sonuc === true) {
             setDraft(prev => commitDraft(prev));
             toast.success("Takip bilgileri kaydedildi");
             onRefresh();
-        } else toast.error("Güncelleme başarısız");
+        } else toast.error(sonuc || "Güncelleme başarısız");
     };
 
     // Aşama geçişi — istisna: dialog onaylı, anlık (CaseStageLog olayı)
@@ -341,16 +341,16 @@ const CaseTrackingPanel = ({ caseId, caseData, onRefresh, onDirtyChange }: Props
     const confirmStage = async () => {
         if (!stageDialog) return;
         setSaving(true);
-        const ok = await updateCaseTracking(caseId, {
+        const sonuc = await updateCaseTracking(caseId, {
             case_stage: stageDialog.key,
             note: stageNote || null,
         });
         setSaving(false);
-        if (ok) {
+        if (sonuc === true) {
             toast.success(`"${stageDialog.label}" aşamasına geçildi`);
             setStageDialog(null);
             onRefresh();
-        } else toast.error("Güncelleme başarısız");
+        } else toast.error(sonuc || "Güncelleme başarısız");
     };
 
     // ── Son Durum özet satırları ────────────────────────────────────────────────

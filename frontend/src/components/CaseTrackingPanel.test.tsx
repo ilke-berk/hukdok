@@ -519,6 +519,36 @@ describe("CaseTrackingPanel — aşama bilinmiyorken panel kilitlenmez (G075)", 
         expect(updateCaseTrackingMock).toHaveBeenCalledWith(1, { case_stage: "ISTINAF", note: null });
     });
 
+    it("kayıt reddedilince sunucunun metni gösterilir, dialog açık kalır (02.10 kilit olayı)", async () => {
+        const { toast } = await import("sonner");
+        const mesgul = "Bu kayıt şu an toplu bir veri işleminde kullanılıyor; değişikliğiniz kaydedilmedi. "
+            + "Birkaç dakika sonra tekrar deneyin.";
+        updateCaseTrackingMock.mockResolvedValue(mesgul);
+        stageDecisionsMock.mockResolvedValue({
+            case_id: 1,
+            decisions: [{ ...KARAR_SATIRI, id: 34, stage: "ISTINAF", sira_no: 1 }],
+            onceki_esaslar: [],
+        });
+        await renderPanelAsync({});
+
+        const ayarlaBtn = Array.from(container.querySelectorAll("button"))
+            .find(b => b.textContent?.trim() === "Aşamayı ayarla");
+        act(() => { ayarlaBtn!.click(); });
+        const gecBtn = Array.from(document.querySelectorAll("button"))
+            .find(b => b.textContent?.trim() === "Geç");
+        await act(async () => { gecBtn!.click(); });
+
+        expect(toast.error).toHaveBeenCalledWith(mesgul);
+        expect(toast.success).not.toHaveBeenCalled();
+        // Kullanıcı birkaç dakika sonra aynı dialogdan tekrar deneyebilsin
+        expect(Array.from(document.querySelectorAll("button")).some(b => b.textContent?.trim() === "Geç")).toBe(true);
+
+        // Detay okunamazsa (false) genel metin
+        updateCaseTrackingMock.mockResolvedValue(false);
+        await act(async () => { gecBtn!.click(); });
+        expect(toast.error).toHaveBeenLastCalledWith("Güncelleme başarısız");
+    });
+
     it("aşama boş ve karar da yoksa öneri basılmaz — uydurmuyoruz", async () => {
         await renderPanelAsync({});
         expect(container.textContent).not.toContain("Karar kayıtlarına göre");

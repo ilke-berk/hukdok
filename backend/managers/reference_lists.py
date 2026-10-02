@@ -14,7 +14,7 @@ from sqlalchemy import Boolean, func
 from sqlalchemy.exc import IntegrityError
 
 from database import SessionLocal
-from db_errors import is_unique_violation
+from db_errors import KayitMesgulError, is_lock_timeout, is_unique_violation
 import models
 from managers.config_manager import DynamicConfig
 
@@ -846,6 +846,12 @@ def update_item(list_type: str, identifier: str, fields: dict):
         logger.error(f"Update {list_type} Error: {e}")
         return False
     except Exception as e:
+        if is_lock_timeout(e):
+            # Ad değişikliği bağlı kartlara yayılırken (`_apply_to_dependents`) bir
+            # kart toplu işlemin kilidindeydi — geçici, 409. Transaction'ın TAMAMI
+            # geri alınır (liste öğesi de değişmez), kısmi yayılım olmaz.
+            logger.warning(f"Update {list_type}: bağlı kayıt kilitli (lock_timeout)")
+            raise KayitMesgulError() from e
         logger.error(f"Update {list_type} Error: {e}")
         return False
     finally:

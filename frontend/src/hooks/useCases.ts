@@ -432,9 +432,16 @@ export const useCases = () => {
 
     // --- Dava Takip ---
 
-    const updateCaseTracking = useCallback(async (caseId: number, data: CaseTrackingUpdate) => {
+    /**
+     * `true` = kaydedildi. Başarısızlıkta sunucunun `detail` metni (ör. 409 "kayıt
+     * toplu bir işlemde, birkaç dakika sonra deneyin") ya da okunamazsa `false`
+     * döner — çağıran metni aynen gösterir (02.10.2026 olayı: genel "Güncelleme
+     * başarısız" gerçek nedeni gizliyordu).
+     */
+    const updateCaseTracking = useCallback(async (caseId: number, data: CaseTrackingUpdate): Promise<true | string | false> => {
         const response = await authenticatedRequest(`/api/cases/${caseId}/tracking`, "PATCH", data);
-        return !!(response && response.ok);
+        if (response && response.ok) return true;
+        return (await readErrorDetail(response)) ?? false;
     }, [authenticatedRequest]);
 
     /**

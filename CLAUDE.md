@@ -280,6 +280,13 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
   daha eklersen özet satırı ("N passed") hiç basılmaz.
 - **Log sözleşmesi:** deneme-düzeyi hatalar WARNING, nihai başarısızlık TEK ERROR
   (`analyzer.py::_failed_event` docstring'i). Retry yollarına yeni ERROR ekleme.
+- **Prod'da mesai içinde toplu yazma yok (02.10 kullanıcı kararı):** `hukdok_aktarim` ve tek transaction'lı veri
+  script'leri dokundukları binlerce kartı koşu boyunca (dakikalar) kilitler — **kuru koşu dahil** (yazar, sonda
+  rollback). Panelden o karta yazan kullanıcı 5 sn `lock_timeout` ile düşer (01.10 avukat adı, 02.10 #3469 aşama
+  geçişi). Kural: kuru koşu prod'da DEĞİL, prod dump'ının kopyasında; `--apply`, panel "Uygula"/"Kuru koş" ve veri
+  script'leri prod'da mesai (09:00–18:00 TR) dışında. Kilitli kayda yazma 409 "birkaç dakika sonra tekrar deneyin"
+  döner (`db_errors.KayitMesgulError`). Kalıcı çözüm G255. Ayrıntı `docs/mimari/veri-teslim-hatti.md` §5
+  "Toplu işlem prensibi".
 - **Avukat adı serbest yazılmaz (27.09):** avukat adı yazan YENİ kod `lawyer_resolver.kanonik_avukat_metni`'nden
   geçer (listedeki yazım; doğru yazım "Tuğçe Ungör Yanık", Ü değil); kullanıcı yolları listede olmayan
   yeni adı `AvukatListedeYok` → 422 ile reddeder. Ayrıntı `docs/mimari/veri-teslim-hatti.md` "Avukat yazım koruması".

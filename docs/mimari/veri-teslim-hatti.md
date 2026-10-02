@@ -220,6 +220,30 @@ der. İstisna tek WARNING ile yutulur; bekleyen satırlar işlenmez, uygulama ya
 Panel "Uygula"da mesai saatinde (09:00–18:00 TR) uyarı metni gösterir, karar kullanıcıda —
 envanter kapısı eşzamanlı yüklemeye karşı muhafazakâr olduğundan uygulama mesai dışında önerilir.
 
+### Toplu işlem prensibi — prod'da mesai içinde toplu yazma yok (02.10.2026 kullanıcı kararı)
+
+**Neden:** `aktarimi_kos` TEK transaction'dır (§5 başı) ve kuru koşu da gerçekten yazar, sonda
+`rollback` eder (`scripts/hukdok_aktarim.py:3588-3590`). İki durumda da dokunulan binlerce kart
+satırı koşu boyunca (01.10 paketi: ~7–9 dk) kilitli kalır. Panelden aynı karta yazan kullanıcı
+`lock_timeout` (5 sn, `database.py:59-67`) sonunda düşer. 01.10 17:53'te gerçek uygulama sürerken
+bir avukat adı değişikliği, 02.10 10:19'da CLI kuru koşusu sürerken #3469'un aşama geçişi bu yüzden
+kaydedilemedi. Okuma etkilenmez (MVCC); kullanıcıların birbirini kilitlemesi söz konusu değil, panel
+yazmaları milisaniyeler sürer.
+
+**Kural:**
+1. **Kuru koşu prod'da yapılmaz.** CLI kuru koşusu prod'un taze dump'ından açılan kopya DB'de koşar
+   (01.10 prod provası: `hukudok_prod0110`). Prod'da koşan kuru koşu bilgi üretmez, yalnız kilit tutar.
+2. **Prod'a yazan toplu işler mesai dışında koşar** (09:00–18:00 TR dışı): paketin `--apply`'ı,
+   panelin "Uygula"sı **ve "Kuru koş"u** (panel kuru koşusu da prod DB'de koşar), tek transaction'lı
+   bütün veri script'leri (`ekip_cevabi_*`, `kolayofis_son_durum`, `avukat_yazim`, Ek düzeltmeleri…).
+3. Mesai içinde zorunluysa kullanıcılar önceden uyarılır; yarıda kalan kayıt kullanıcıya
+   409 "kayıt toplu bir işlemde, birkaç dakika sonra tekrar deneyin" olarak döner
+   (`db_errors.KayitMesgulError`; `update_case_tracking`, `reference_lists.update_item`, api.py
+   `OperationalError` ağı) — hiçbir alan yazılmaz, tekrar denemek güvenlidir.
+
+Kalıcı çözüm (aktarım kart başına kısa transaction'lara bölünür, kilitli kartı atlayıp sona bırakır)
+kuyrukta: `gorevler/gorev/G255.md`. O bitene kadar bu kural geçerlidir.
+
 ## 6. Cevap dosyaları — `services/teslim_cevap.py`
 
 SharePoint `cevap/` klasörüne yükleme 17.09'da kalktı. Dosyalar teslimin **rapor dizininde**

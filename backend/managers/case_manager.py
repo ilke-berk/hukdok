@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload, selectinload
 
 from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
-from db_errors import is_unique_violation
+from db_errors import KayitMesgulError, is_lock_timeout, is_unique_violation
 import models
 from constants import InvalidCaseStatusError, validated_case_status
 from party_check import normalize_party_key, normalize_tc
@@ -2149,6 +2149,9 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
     koşar: bir alan reddedilirse HİÇBİRİ yazılmaz, hata
     `InvalidDecisionStatusError` olarak yükselir (api.py 400'e çevirir) — bu
     fonksiyonun `False` dönüşü "dava bulunamadı/yazılamadı" anlamını korur.
+    Kart başka bir transaction'ın kilidindeyse (toplu aktarım, lock_timeout)
+    `KayitMesgulError` yükselir (api.py 409) — 404'e dönüşüp "dava bulunamadı"
+    demesin (02.10.2026 olayı).
 
     `case_history` YALNIZ `status` için yazılır (G152 — kesim-sonrası koruma
     kuralı bu tarihçeyi okur; imza `changed_by` + `source=PANEL_SOURCE`).
@@ -2212,8 +2215,12 @@ def update_case_tracking(case_id: int, data: dict, changed_by: str, source: str 
         db.rollback()
         raise
     except Exception as e:
-        logger.error(f"update_case_tracking error: {e}")
         db.rollback()
+        if is_lock_timeout(e):
+            # Kart toplu bir işlemin kilidinde — geçici, 409 (KayitMesgulError).
+            logger.warning(f"update_case_tracking: dava {case_id} kilitli (lock_timeout)")
+            raise KayitMesgulError() from e
+        logger.error(f"update_case_tracking error: {e}")
         return False
     finally:
         db.close()

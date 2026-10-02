@@ -445,6 +445,7 @@ async def avukat_listede_yok_handler(request, exc: AvukatListedeYok):
 import subprocess  # noqa: E402
 from sqlalchemy.exc import OperationalError  # noqa: E402
 from services import document_pipeline  # noqa: E402
+from db_errors import KAYIT_MESGUL_DETAIL, KayitMesgulError, is_lock_timeout  # noqa: E402
 
 
 @app.exception_handler(subprocess.TimeoutExpired)
@@ -472,8 +473,20 @@ DB_BUSY_DETAIL = (
 )
 
 
+@app.exception_handler(KayitMesgulError)
+async def kayit_mesgul_handler(request, exc: KayitMesgulError):
+    # Yazılacak satır toplu bir işlemin kilidinde (lock_timeout) — geçici, 409.
+    # WARNING manager'da atıldı; burada ERROR üretilmez (log sözleşmesi).
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
 @app.exception_handler(OperationalError)
 async def db_unavailable_handler(request, exc: OperationalError):
+    if is_lock_timeout(exc):
+        # Hatayı yutmayan yollardan gelen kilit beklemesi: "sistem yoğun" (503)
+        # değil, "bu kayıt meşgul" (409) — veritabanı erişilebilir durumda.
+        logging.warning(f"Kayıt kilitli ({request.url.path}) — 409 döndürülüyor")
+        return JSONResponse(status_code=409, content={"detail": KAYIT_MESGUL_DETAIL})
     logging.error(f"Veritabanı erişilemedi ({request.url.path}) — 503 döndürülüyor: {exc}")
     return JSONResponse(status_code=503, content={"detail": DB_BUSY_DETAIL})
 # default_limits yalnızca middleware kayıtlıysa uygulanır — bu satır olmadan
