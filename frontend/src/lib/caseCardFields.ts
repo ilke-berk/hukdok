@@ -38,8 +38,13 @@ export interface CardFieldDef {
  * G105: `olay_turu` + `hukumdeki_rol` beşlinin ALTINA girdi (aynı kural —
  * başka karta dağıtılmaz). İkisi de kapalı liste; değerler backend'in
  * event_types / judgment_roles uçlarından gelir (sözleşme G103 ile ortak).
+ *
+ * 02.10.2026: `sub_type` (Uzmanlık Alanı) Dosya Bilgileri kartından buraya,
+ * grubun BAŞINA taşındı — tıbbi branş tıbbi tablonun başlığıdır. Kartta salt
+ * okunur; düzenleme dava formunda kalır.
  */
 export const MEDICAL_CARD_FIELDS: CardFieldDef[] = [
+    { key: "sub_type", label: "Uzmanlık Alanı", type: "text" },
     { key: "tibbi_surec", label: "Tıbbi Süreç", type: "text" },
     { key: "tibbi_olay", label: "Tıbbi Olay", type: "text" },
     { key: "iddia_edilen_kusur", label: "İddia Edilen Kusur", type: "closedList", list: "alleged_faults" },

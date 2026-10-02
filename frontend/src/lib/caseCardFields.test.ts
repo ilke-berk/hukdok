@@ -6,8 +6,10 @@ import {
 import { TRACKING_DRAFT_KEYS } from "./trackingDraft";
 
 describe("caseCardFields — alan tanımları (G048)", () => {
-    it("tıbbi alanlar TEK grupta toplanır, dağıtılmaz (G105 ile yedi alan)", () => {
+    it("tıbbi alanlar TEK grupta toplanır, dağıtılmaz (uzmanlık alanı başta, sekiz alan)", () => {
         expect(MEDICAL_CARD_FIELDS.map(f => f.key)).toEqual([
+            // 02.10.2026: Uzmanlık Alanı Dosya Bilgileri'nden buraya, grubun başına taşındı.
+            "sub_type",
             "tibbi_surec", "tibbi_olay", "iddia_edilen_kusur",
             "hastada_olusan_zarar", "uygulanan_yontem",
             // G105: iki kapalı liste beşlinin ALTINA girdi — sıra kabul kriteri.

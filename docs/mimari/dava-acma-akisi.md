@@ -477,7 +477,9 @@ hatalısını geçirelim, lokal migrasyon bitince hepsini elden geçiririz." 04.
   (`trackingDraft.MEDICAL_FIELDS`, tip `multiselect`); yazma kapısı her parçayı kendi
   listesine karşı doğrular (`case_manager._MULTI_LIST_COLUMNS` → tanınan parça KANONİK
   yazımla birleşir, tanınmayan 400, liste boşsa atlanır). Kart "Tıbbi Bilgiler" bölümü
-  salt okunur; `closedListState` parça parça bakar.
+  salt okunur; `closedListState` parça parça bakar. Uzmanlık Alanı (`cases.sub_type`) da
+  bu bölümün ilk satırıdır (02.10.2026'da Dosya Bilgileri kartından taşındı,
+  `caseCardFields.MEDICAL_CARD_FIELDS`).
 - **Sekiz yeni kapalı liste** (ClientType deseni, `LIST_REGISTRY` + `DEPENDENCIES` +
   `LIST_TITLES` + DynamicConfig getter/setter + `/api/config/<liste>` üçlüsü — route'lar
   `routes/config._register_simple_list` fabrikasından): `currencies` (seed sabiti TL/USD/EUR,

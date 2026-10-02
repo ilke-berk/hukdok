@@ -22,7 +22,7 @@ const JUDGMENT_ROLES = [
 
 describe("G105 — iki yeni kapalı liste alanı", () => {
     it("olay_turu ve hukumdeki_rol tıbbi karta beşlinin ALTINA girer (G048: tek grup)", () => {
-        expect(MEDICAL_CARD_FIELDS.slice(5).map(f => [f.key, f.label, f.type, f.list])).toEqual([
+        expect(MEDICAL_CARD_FIELDS.slice(-2).map(f => [f.key, f.label, f.type, f.list])).toEqual([
             ["olay_turu", "Olay Türü", "closedList", "event_types"],
             ["hukumdeki_rol", "Hükümdeki Rol", "closedList", "judgment_roles"],
         ]);

@@ -735,14 +735,8 @@ const CaseDetails = () => {
                                                 <span className="font-mono font-medium text-sm truncate" title={caseData.klasor_no_2 as string}>{caseData.klasor_no_2 as string}</span>
                                             </div>
                                         )}
-                                        {/* G123: uzmanlık alanı 6.464 kartta doluydu, yalnız Yeni Dava
-                                            formunda görünüyordu. */}
-                                        {caseData.sub_type && (
-                                            <div className="flex flex-col gap-0.5 p-3 rounded-lg border bg-background/50">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Uzmanlık Alanı</span>
-                                                <span className="font-medium">{caseData.sub_type}</span>
-                                            </div>
-                                        )}
+                                        {/* Uzmanlık alanı (sub_type) 02.10'da Tıbbi Bilgiler kartına taşındı
+                                            (caseCardFields.MEDICAL_CARD_FIELDS). */}
                                         {/* G123: esas tarihçesi — güncel olmayan numaralar (görevsizlik/
                                             yenileme öncesi "Önceki" esas, teslimin "Eski Dosya No"su).
                                             Güncel numara başlıkta; burada yalnız eskiler. */}
@@ -789,10 +783,11 @@ const CaseDetails = () => {
                         <CaseFoyPanel foyler={caseData.foyler} />
 
                         {/* FAZ F aktarım alanları — beş tıbbi alan TEK grupta (G048);
-                            karta dağıtılınca malpraktis dosyasının tıbbi tablosu okunmuyordu. */}
+                            karta dağıtılınca malpraktis dosyasının tıbbi tablosu okunmuyordu.
+                            Uzmanlık alanı da grubun başında (02.10). */}
                         <TransferFieldsCard
                             title="Tıbbi Bilgiler"
-                            description="Tıbbi süreç, olay ve iddia edilen kusur"
+                            description="Uzmanlık alanı, tıbbi süreç, olay ve iddia edilen kusur"
                             icon={<Activity className="w-4 h-4 text-brand" />}
                             fields={MEDICAL_CARD_FIELDS}
                             data={caseData}
