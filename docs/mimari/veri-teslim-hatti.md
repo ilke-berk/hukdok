@@ -10,6 +10,10 @@
 > **30.09.2026 · c40e10c (G240):** §7.1'deki "G154 döngüsünde eski/yeni ofis no" paragrafı, §7.5'teki
 > müvekkil ayrımı cümlesi ve §9 "Kart yaratılmaz" karar 023 koduna (G235-G242) göre yazıldı.
 >
+> **02.10.2026 · a67a0e3 (G254):** §7 "`Sheet` föy düzeyi kapalı listeler" paragrafı ve yeni **§7.7 (hizmet
+> kaydı: föy → hizmet satırı, hizmet listesi paketten, "önce `deger_havuzu_seed` sonra aktarım" sırası,
+> geriye dönük doldurma)** G249/G257 koduna göre yazıldı; §7.7'deki satır numaraları o commit'e aittir.
+>
 > Önceki doğrulama: 2026-09-04 · 88409da; §3 doğrulama/özet satırları, §4 kapı, §7 `Düzeltme_Logu`
 > ve kapsam referansları ile **§7.1 (aktarımın yazma kuralları, G150–G159)** 2026-09-10 · G161 ile
 > `39fd10c` koduna göre yeniden doğrulandı. Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod
@@ -254,7 +258,7 @@ SharePoint `cevap/` klasörüne yükleme 17.09'da kalktı. Dosyalar teslimin **r
 | `eslesme_<teslim>.csv` | `Sheet`'teki her satır için `sistem_no, dosya_no, case_id, tracking_no, klasor_no_2, tku_no, case_party_id, durum (ESLESTI/ESLESMEDI), sebep` — Talep #9 (`ESLESME_BASLIKLARI`, `teslim_cevap.py:56`) | `eslesme_csv_uret` (`:193`); uygulama başarı yolunda `teslim_kutusu._eslesme_dene` (`:533`, çağrı `:1261`) |
 | `ozet.txt` | `ozet_metni(sonuc)` + son satırda kapı kararı (+ gerekçe) | `teslim_kutusu._ozet_dosyasi_yaz` |
 | `deger-havuzu-farki_<teslim>.csv` | `DEGER_HAVUZLARI` ↔ referans listeleri iki yönlü fark (`havuz, liste, yon, deger`); **fark yoksa dosya yok**, bayat kopya silinir | `havuz_farki_csv_yaz` (`teslim_cevap.py:377`); çağrı `teslim_kutusu._havuz_farki_dene` (`:553`) |
-| `satir-raporu_<damga>.csv`, `kardes-foy-celiskileri_<damga>.csv` | aktarım scriptinin kendi raporları — yalnız sorunlu satır/çelişki varsa doğar | `scripts/hukdok_aktarim.py` |
+| `satir-raporu_<damga>.csv`, `kardes-foy-celiskileri_<damga>.csv` | aktarım scriptinin kendi raporları — yalnız sorunlu satır/çelişki varsa doğar. Satır raporu türleri arasında G249'dan beri `UYARI` da var (föyün hizmet satırı yazılamadı — hata değil, §7.7); kardeş çelişkisi raporunda `hizmet_turu` satırı artık çıkmaz | `scripts/hukdok_aktarim.py` |
 | `kuru-kosu-ozeti.txt`, `uygulama-ozeti.txt` | iki koşunun `ozet_metni` çıktısı | `teslim_kutusu.py` |
 
 Eşleşme dosyasında `sebep` **satır numarasıyla** eşlenir (aynı SistemNo dosyada iki kez
@@ -296,14 +300,17 @@ seed'lendi (paketten değil, bildirimden; `9608031`). Aktarım `iddia_edilen_kus
 **metin** olarak yazar (`scripts/hukdok_aktarim.py:761`, `_metin_alan`) — liste doğrulaması
 kart ekranı + bu fark raporu içindir.
 
-**`Sheet` föy düzeyi kapalı listeler (G120, `scripts/hukdok_aktarim.py`).** DB-2026-002'nin
-iki sütunu `Müvekkil Tipi` → `cases.muvekkil_tipi`, `Hizmet Türü` → `cases.hizmet_turu`
-(`SUTUN_ADAYLARI` iki kayıt, `KART_ALANLARI` iki kayıt; başlık anahtarı MUVEKKILTIPI ≠
-MUVEKKIL, taraf sütunuyla çapraz bağlanmaz). Değer eşlemesi AD bazlı, kanonik adların tek
-kaynağı `seed_data.CLIENT_TYPES`/`SERVICE_TYPES` (literal kopya yok); tanınmayan değer ve
-` ; ` ile çok değer `AlanHatasi` → alan yazılmaz, satır raporuna `tur=HATA`, föyün diğer
-alanları işlenir (G104 deseni). Kardeş föy çelişkisi bu iki alanda **beklenen** durumdur
-(bildirim: "föy başına değişir") — mekanizma neyse o, özel istisna yok. Okunan alan sayısı
+**`Sheet` föy düzeyi kapalı listeler (G120; hizmet tarafı G249/G257 ile değişti —
+`scripts/hukdok_aktarim.py`).** DB-2026-002'nin iki sütunu `SUTUN_ADAYLARI`nda iki kayıttır
+(başlık anahtarı MUVEKKILTIPI ≠ MUVEKKIL, taraf sütunuyla çapraz bağlanmaz).
+`Müvekkil Tipi` → `cases.muvekkil_tipi` kart alanıdır (`KART_ALANLARI`, `:994`): değer eşlemesi
+AD bazlı, kanonik adların kaynağı `seed_data.CLIENT_TYPES` (`MUVEKKIL_TIPI_ESLEMESI`, `:903`);
+tanınmayan değer ve ` ; ` ile çok değer `AlanHatasi` → alan yazılmaz, satır raporuna `tur=HATA`,
+föyün diğer alanları işlenir (G104 deseni); kardeş föy çelişkisi bu alanda **beklenen** durumdur
+(bildirim: "föy başına değişir") — mekanizma neyse o. `Hizmet Türü` ise 02.10.2026'dan beri
+**kart alanı DEĞİLDİR** (`KART_ALANLARI`nda yok, `:1042-1047`): föye (`case_foys.hizmet_turu`) ve
+oradan föy kaynaklı hizmet satırına gider; `cases.hizmet_turu` o satırlardan türetilen özettir,
+paket doğrudan yazmaz; adların kaynağı kod sabiti değil DB `service_types` listesidir — §7.7. Okunan alan sayısı
 bu ekle 42 (`SUTUN_ADAYLARI`, 54 başlık yazımı); veri ekibine giden liste
 `docs/veri-teslim/BILGILENDIRME_2026-09-03.md` §3.2 (sürüm 1.1) ile birebir.
 
@@ -795,6 +802,115 @@ kısaltması (37 kart; kısa ad listede yoksa RET, kullanıcı imzalı `subject`
 `tests/test_ekip_cevabi_2609.py`. Ek-5 (karar tarihinden sonraki dava tarihi = bilinmiyor) tek SQL ile
 boşaltıldı (lokal + prod 77 kart; `case_history` imzası `HUKDOK_TESLIM_EK5_…`, föy anahtarlı, idempotent).
 
+### 7.7 Hizmet kaydı — föy başına hizmet satırı, liste paketten (G249, G257; 02.10.2026)
+
+Kullanıcı kararı 01.10.2026 (G248): hizmet türü kartın değil **kart × müvekkil tarafı** çiftinin özelliğidir
+(`case_hizmetleri`; model, uçlar ve arayüz [`dava-acma-akisi.md` §18](dava-acma-akisi.md)). Aktarım tarafında
+üç şey değişti.
+
+**(1) Föy → föy kaynaklı hizmet satırı.** Paketten gelen her föy (kapsamda + `case_party_id` dolu + hizmeti
+dolu) kartında BİR hizmet satırı taşır. Yazıcı `managers/case_hizmetleri.foydan_yaz`'dır (upsert, anahtar
+`foy_id`, `managers/case_hizmetleri.py:490`); aktarım onu `hizmet_satirlarini_yaz` ile çağırır
+(`scripts/hukdok_aktarim.py:3699`; föyler 500'lük parçalarla yüklenir, föy başına SAVEPOINT).
+
+- **Sıra:** `aktarimi_kos` içinde `kapsam_isaretlerini_yaz`dan SONRA, ayrı geçişte (`:3967-3982`), bu koşuda
+  işlenen föyler ∪ kapsam sayfasındaki föyler için — yeni işaretlenen föyün satırı aynı koşuda silinsin,
+  işareti kalkanınki geri gelsin.
+- **Değişim:** föyün kartı, müvekkili ya da hizmeti değiştiyse satır YERİNDE güncellenir (tarihçeli); föy kapsam
+  dışına çıkınca satır silinir (tarihçeli). İlk yazım tarihçesizdir. Aynı girdiyle ikinci koşu 0 değişiklik.
+  Kullanıcının elle girdiği hizmet satırına aktarım dokunmaz.
+- **Satır `source`u** föyün teslim imzasıdır.
+- **Yazılamayan satır = `UYARI`, hata değil.** Föy bir hizmet taşıyor ama müvekkil bağı yok / bağlı taraf
+  müvekkil değil / hizmet adı `service_types` listesinde yok ise satır yazılmaz, satır raporuna
+  `tur=UYARI` (`HIZMET_UYARI_TURU`, `:258`) "hizmet satırı yazılmadı: <neden> — '<föydeki değer>'" düşer
+  (çok parçalı hücrede "(çok değerli hücre tanımsız)" eki). `hatalar`/çıkış kodu/kapının hata oranı
+  etkilenmez; uyarı her koşuda yeniden sayılır. Mevcut satır yerinde kalır. Hizmeti boş föy ve kapsam dışı
+  föy uyarı üretmez. Eşleşme CSV'sinin `sebep` hücresi satır raporunu türden bağımsız okuduğu için
+  (`services/teslim_cevap.py:147-166`) uyarı metni veri ekibine giden dosyada da görünür.
+- **Koşu özeti** (`ozet_metni`, `:4081-4084`; `ozet.txt` aynı metni taşır) iki satır kazandı:
+  `hizmet satırı : N eklendi, N güncellendi, N silindi` ve
+  `hizmet uyarısı : N listede yok, N müvekkil bağı yok`. Sayaçlar `AktarimSonucu.hizmet_eklenen` /
+  `hizmet_guncellenen` / `hizmet_silinen` / `hizmet_listede_yok` / `hizmet_muvekkilsiz` (`:501-505`).
+  "Listede yok" > 0 ise ayrıca TEK WARNING.
+- **Kapı eşiğine girmez:** hizmet satırı değişiklikleri `alan_degisikligi` sayacına yazılmaz (§4 — o sayaç
+  kart hücresi sayar); kendi sayaçlarında durur.
+
+**(2) Kardeş föy çelişkisinden çıkış.** `hizmet_turu` `KART_ALANLARI`ndan çıktı (`:1042-1047`): kardeş-föy
+uzlaşısına (`kart_alan_celiskileri`) girmez, kart yazımı (`_kart_alanlarini_yaz`), kesim-sonrası koruma ve
+`Düzeltme_Logu` boşaltma talimatı ona uygulanmaz. Kardeş föylerin farklı hizmet türü artık çelişki değil,
+bilgidir: her föy kendi müvekkilinin satırını yazar, kart özeti (`cases.hizmet_turu`) satırların DISTINCT
+birleşimidir ve yalnız `case_hizmetleri.ozeti_yenile` ile yazılır (04.09 paketinde bu alanda 973 kart
+"çelişkili" kalıyordu). Föy düzeyi `case_foys.hizmet_turu` yazımı AYNEN sürer (`foy_degerleri`, `:1755`:
+tanınan değer listenin yazımıyla, tanınmayan/çok değerli hücre teslimdeki ham yazımıyla).
+
+**(3) Hizmet listesi paketten — sıra: ÖNCE `deger_havuzu_seed`, SONRA aktarım.** Hizmet adlarının kaynağı kod
+sabiti değil DB `service_types` listesidir:
+
+- `scripts/deger_havuzu_seed.py` `HAVUZLAR`'a `service_types` girdi (`:100`, sütun "Hizmet Türü", tek değerli):
+  paketteki yeni adı listeye ekler, mevcut ada dokunmaz, silmez, yeniden adlandırmaz; kuru koşu varsayılan.
+  `--kaldir` yolu kullanım sayımını `reference_lists.bagimliliklar` üzerinden yapar (`satir_kullanimi`, `:238`)
+  — hizmet satırında kullanılan ad silinmez.
+- `aktarimi_kos` koşu başında eşlemeyi DB'den kurar: `hizmet_eslemesini_yukle` (`:918`;
+  `_baslik_anahtari(ad) → ad`, liste sırasıyla, `active` filtresi yok; tablo BOŞSA `seed_data.SERVICE_TYPES`).
+  Koşunun eşlemesi bir `ContextVar`'da yaşar (`_KOSU_HIZMET_ESLEMESI`, `:913`, set `:3889` / reset `:4014`) —
+  aynı süreçteki başka koşuya sızmaz; modül düzeyi `HIZMET_TURU_ESLEMESI` (`:906`) koşu dışındaki
+  varsayılandır. CLI ve panel yolu aynı fonksiyondan geçer.
+- Föye **listenin yazımı** gider: eşleme anahtarı harf/aksan/noktalama duyarsızdır, bu yüzden panelde yalnız
+  YAZIMI değişen ad ("Takip (Doktor Müvekkil)") için paket eski yazımı gönderse de satır yazılır. **Kelimesi
+  değişen ad eşlenmez:** paket eski adı taşıdıkça föyde ham kalır ve (1)'deki `UYARI` yoluna düşer — admin
+  "Hizmet Türleri" sekmesindeki yeniden adlandırma uyarısının sebebi budur; ad değişikliği veri ekibine
+  bildirilir.
+- **Seed İNSAN ADIMIdır ve panel teslim hattına BAĞLI DEĞİLDİR** (`services/teslim_kutusu.py` seed'i koşmaz —
+  öteki havuzlarla aynı; bekçi `test_g257_hizmet_listesi_paketten.py`). Paket yeni bir hizmet adı getirdiyse
+  ve seed koşulmadan uygulanırsa ad föyde ham kalır, hizmet satırı yazılmaz, özet "listede yok" sayar; seed'den
+  sonraki ilk koşu satırı yazar. Panelden "Uygula" öncesi kuru koşu özetinde "listede yok" > 0 ise önce seed
+  (ya da ad panelden listeye elle eklenir), sonra yeniden kuru koşu.
+
+```bash
+# 1) ÖNCE liste — kuru koşu çıktısını oku ("yeni" sütunu), sonra yaz
+docker compose exec -T backend python scripts/deger_havuzu_seed.py --input /tmp/paket.xlsx
+docker compose exec -T backend python scripts/deger_havuzu_seed.py --input /tmp/paket.xlsx --apply
+# 2) SONRA aktarım (CLI ya da panel) — bkz. §5 toplu işlem prensibi
+```
+
+**Geriye dönük doldurma — `scripts/hizmet_kayitlari_doldur.py` (İNSAN ADIMI).** Migrasyon 59 veri yazmaz;
+bugüne dek aktarılmış föylerin satırlarını bu script bir kerede açar (yazıcı aktarımla AYNI `foydan_yaz`,
+`source` = föyün kendi teslim imzası). Varsayılan KURU KOŞU (yazar, sonda geri alır), `--apply` TEK
+transaction, `--ayrinti` atlanan föyleri tek tek listeler; ikinci koşu 0 değişiklik; beklenmeyen DB hatasında
+koşu tamamen geri alınır, çıkış 1. Script dokunduğu kartları koşu boyunca kilitler — kuru koşu dahil; §5
+toplu işlem prensibi aynen geçerlidir.
+
+1. **Dump** (lokalde de): `--apply`'dan önce yedek.
+2. **Kuru koşu** — lokalde doğrudan; prod için prod dump'ından açılan KOPYA veritabanında (prod'da kuru koşu yok).
+   Çıktıdaki yazılacak satır / atlanan föy (sebep bazında) / özeti değişecek kart sayıları okunur.
+3. **`--apply`** — prod'da mesai (09:00–18:00 TR) dışında.
+4. Aynı turda `scripts/backfill_missing_required.py` kuru koşu → `--apply` (G250 zorunlu alan listesinden
+   `service_type`'ı çıkardı; bayrak türetilmiş değerdir).
+
+```bash
+docker compose exec -T backend python scripts/hizmet_kayitlari_doldur.py            # kuru koşu
+docker compose exec -T backend python scripts/hizmet_kayitlari_doldur.py --ayrinti  # atlanan föyler tek tek
+docker compose exec -T backend python scripts/hizmet_kayitlari_doldur.py --apply    # yazar (insan adımı)
+```
+
+Doldurma aktarımdan önce koşulmazsa ilk aktarım koşusu aynı satırları kendisi ekler (`hizmet_eklenen`; kapı
+eşiğine girmez). **Durum (02.10.2026):** lokal DB'de `case_hizmetleri` 0 satır, `service_types` 9 satır, föy
+8.416 (salt okunur `SELECT count(*)`); `--apply` koşulmadı. G249 raporundaki lokal kuru koşu (02.10, 71 sn):
+8.403 satır yazılacak, 13 föy atlanıyor (8 kapsam dışı, 5 müvekkil bağı yok), satırı değişen kart 6.496, özeti
+değişen kart 1.061, listede olmayan ad 0. G257 raporundaki lokal seed kuru koşusu (01.10 paketi):
+`service_types` mevcut 9, yeni 0.
+
+**Kart birleştirme / ayırma.** `scripts/mukerrer_kart_birlestir.py` taraf satırı silinmeden ÖNCE her taraf
+çifti için `case_hizmetleri.tarafi_tasi` çağırır (`:160-170`): föy satırı hep taşınır, kalan kartta aynı
+(müvekkil, hizmet) elle satırı varsa taşınan birleşir, iki kartın özeti yenilenir; `hizmet_turu` "boş alanı
+mükerrerden tamamla" listesinde değildir — tek istisna kalan kartta hiç hizmet satırı yokken kolonun boş olması
+(`:245-253`, doldurma öncesi kartta eski tek değer kaybolmasın). `scripts/birlesik_kart_ayir.py` föyü yeni karta
+bağladıktan sonra `foydan_yaz` çağırır (`:268`): föyün satırı yeni kartın müvekkil tarafına geçer, elle satırlar
+kalan kartta kalır.
+
+Bekçiler: `backend/tests/test_g249_hizmet_aktarim.py`, `test_g257_hizmet_listesi_paketten.py`,
+`test_g120_aktarim_muvekkil_hizmet.py`, `test_g123_tum_sutunlar.py`.
+
 ## 8. Log sözleşmesi ve bildirim
 
 - Deneme/yapı düzeyi başarısızlık **WARNING** — `reddedildi` dahil (yapı hatası veri ekibinin
@@ -825,6 +941,10 @@ boşaltıldı (lokal + prod 77 kart; `case_history` imzası `HUKDOK_TESLIM_EK5_�
   sayar (§4 tablosu) — sayfasız paket öteki eşiklerin içindeyse kapı `otomatik` der.
   Sözleşme bunu açıkça söyler ("her teslime ekleyin"); NULL'ı da inceleme saydırmak
   plan §8'de açık kalem.
+- **Panel teslim hattı değer havuzu seed'ini koşmaz** (`deger_havuzu_seed` insan adımıdır): paket yeni bir
+  hizmet adı getirir ve seed'siz uygulanırsa o föylerin hizmet satırı yazılmaz, satır raporuna `UYARI` düşer
+  (§7.7). Hizmet kayıtlarının geriye dönük doldurması (`hizmet_kayitlari_doldur.py --apply`) da insan adımıdır;
+  02.10.2026 itibarıyla lokalde koşulmadı.
 - **Frontend'de kapsam dışı föy rozeti yok**: `get_case` çıktısındaki `foyler[]`
   (`kapsam_durumu` dahil) hazır, kart panelinde gösterim sonraki tur.
 - **SharePoint teslim klasörü yolu kapalıdır (17.09.2026, kullanıcı kararı):** veri ekibine
@@ -849,4 +969,5 @@ boşaltıldı (lokal + prod 77 kart; `case_history` imzası `HUKDOK_TESLIM_EK5_�
 | Plan ve açık kalanlar | [`docs/plan/veri-teslim-otomasyonu-plani-2026-09-03.md`](../plan/veri-teslim-otomasyonu-plani-2026-09-03.md) |
 | Veri ekibine verilen bilgilendirme (sütun/sayfa/değer ayrıntısı, makine-okur özet) | [`docs/veri-teslim/BILGILENDIRME_2026-09-03.md`](../veri-teslim/BILGILENDIRME_2026-09-03.md) (sürüm 1.1; dosya adı sabit — yol veri ekibinde) |
 | Aşama katmanı, havuz, status koruması, kök→müvekkil, başvuru tarihi, yazım (§7.1) | `backend/scripts/hukdok_aktarim.py`, `backend/managers/stage_decisions.py`, `backend/managers/case_manager.py:1041-1082`, `backend/managers/reference_lists.py` (`tr_title`), `backend/managers/seed_data.py:427-467` |
+| Hizmet kaydı: föy satırı, liste paketten, doldurma (§7.7) | `backend/managers/case_hizmetleri.py`, `backend/scripts/hukdok_aktarim.py` (`hizmet_satirlarini_yaz`, `hizmet_eslemesini_yukle`), `backend/scripts/deger_havuzu_seed.py`, `backend/scripts/hizmet_kayitlari_doldur.py`; testler `test_g249_hizmet_aktarim.py`, `test_g257_hizmet_listesi_paketten.py` |
 | Testler | `backend/tests/test_g107_teslim_kutusu.py`, `test_g108_teslim_admin_uclari.py`, `test_g110_teslim_cevap.py`, `test_g112_duzeltme_logu.py`, `test_g113_kapsam_disi_foy.py`, `test_g120_aktarim_muvekkil_hizmet.py`, `test_teslim_klasoru_kaldirildi.py` (kaldırılanın bekçisi); §7.1 kuralları: `test_g150_asama_kurali.py`, `test_g151_havuz_kurali.py`, `test_g152_status_koruma.py`, `test_g153_dosyano_koku.py`, `test_g155_basvuru_tarihi.py`, `test_g156_delta_ve_zincir.py`, `test_g159_tr_title.py` |

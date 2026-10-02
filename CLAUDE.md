@@ -172,6 +172,29 @@ karar 020): `cases.status` yalnız DERDEST | DANIŞ | MAHZEN; temyiz/istinaf/kar
 değil AŞAMADIR (`cases.case_stage`). Yazma yolları `normalize_case_status`'tan geçer, belge işleme
 belge türünden aşamaya yazar (`DOCTYPE_TO_STAGE_MAP`), migrasyon 50 eski değerleri üçlüye çekti.
 
+**Hizmet kaydı (G248-G257, 01-02.10 kullanıcı kararı):** hizmet türü kartın değil **kart × müvekkil tarafı**
+çiftinin özelliğidir — `case_hizmetleri` (`models.py:424`, migrasyon 59 `database.py:1437-1486`) her satırda "bu
+kartta bu müvekkile bu hizmet verildi" der. **Tek yazma yolu** `managers/case_hizmetleri.py`; `cases.hizmet_turu`
+TÜRETİLMİŞ özettir (satırların DISTINCT adları, Türkçe alfabetik, `" ; "` birleşik; tek yazıcı `ozeti_yenile`, `:257`)
+— takip ucundan yazılmaz (`TRACKING_FIELDS`'te yok, gönderilirse yok sayılır), aktarımın kart alanı da değildir.
+**Föy kaynaklı satır** (`foy_id` dolu) yalnız aktarımla yazılır (`foydan_yaz`, `:490`), kartta salt okunur ("paket"
+rozeti), API'den silme 409. **Elle satır** müvekkil başına ÇOKLU seçimdir: `PUT /api/cases/{id}/hizmetler/{case_party_id}`
+gövde `{"hizmet_turleri": [...]}` müvekkilin elle kümesini verilen kümeye getirir (`routes/case_hizmetleri.py:97` →
+`elle_kumesini_yaz`, `:395`; föy satırına dokunmaz, listede olmayan ad 422). **Oluşturma kapısı:** kullanıcı yollarında
+(`POST /api/cases`, intake commit — `ofis_no_sunucudan` bayraklı istek) her müvekkil ≥1 hizmet taşır, yoksa 422
+(`case_manager._taraf_hizmetlerini_dogrula`, `:1852`; `service_types` boşsa kapı açık); kural `required_fields.py`'ye
+GİRMEZ (`:75-79`) — mevcut kartlar hizmetsiz diye "eksik" sayılmaz, script/aktarım yolu zorunlu tutulmaz. Dava listesi
+`hizmet_turu` filtresi eşitlik değil `EXISTS case_hizmetleri` (`_hizmet_kosulu`, `:1001`). Eski 5'li maske
+`cases.service_type` kolonu durur ama hiçbir şeyi beslemez (zorunlu alan listesinden çıktı; yeni dava formu ve
+sihirbazdaki 5'li kutular kalktı, yerine müvekkil başına `HizmetSecici`).
+**Listenin kaynağı** (`service_types`) veri ekibinin paketidir: `scripts/deger_havuzu_seed.py` "Hizmet Türü" sütununu
+listeye ekler (`HAVUZLAR`, `:100`) — İNSAN ADIMI, sıra ÖNCE seed `--apply` SONRA aktarım (aktarım eşlemeyi koşu başında
+DB listesinden kurar, `hukdok_aktarim.hizmet_eslemesini_yukle`; listede olmayan ad satır raporunda `UYARI`, hata değil).
+Yazım düzeltme/sıralama/paket dışı ek/silme admin "Hizmet Türleri" sekmesinden (`AdminPage.tsx`, `?tab=service_types`);
+kullanılan ad boşaltılamaz, yalnız taşınır. Geriye dönük doldurma `scripts/hizmet_kayitlari_doldur.py` İNSAN ADIMIdır
+(dump → kopyada kuru koşu → `--apply`, prod'da mesai dışı). Ayrıntı `docs/mimari/dava-acma-akisi.md` §18,
+`docs/mimari/veri-teslim-hatti.md` §7.7.
+
 **Dava arama (E8, G055, G189, G190):** `case_manager.get_cases` 15 kolon/ilişkiyi (exact modda
 13: `notes`/`case_history.old_value` yok) tek bir OR/EXISTS ağacında DEĞİL, her terim için
 bağımsız `UNION`'lanan `SELECT`'lerle arar; çok terimli sorguda AND semantiği `UNION`'ların
@@ -211,7 +234,11 @@ G176: onay sorma, yaklaşık ad → `contains`, liste sorusunda ekrana yönlendi
 (`muvekkil.phone` davalar'da; `dava.tracking_no` müvekkiller'de) — çoklu bağda değerler `" ; "` birleşik +
 EXISTS filtre, sıralama yok; belgeler/föyler → `dava.*` tekil (düz kolon gibi). Elle kolon listesi yazma;
 `kart_eslesmesi` ad anahtarı için ifade index'i migrasyon 48'de (`_ad_anahtari` ile birebir, test bekçili).
-Ayrıntı `docs/mimari/raporlama.md` §2.4. **Özet modu (12.09):** tanım `olcumler` taşıyorsa satırlar `gruplama`
+Ayrıntı `docs/mimari/raporlama.md` §2.4. **"Hizmetler" kaynağı (G251, 02.10):** beşinci kaynak `hizmetler`
+(`registry.py:1298`) — satır = bir `case_hizmetleri` kaydı (müvekkil × hizmet × dava); `hizmet_turu`, `kaynak` (`föy`/`elle`),
+`muvekkil_adi` düz kolon (gruplanır: "müvekkil başına hizmet sayısı"), `dava.*` tekil, `muvekkil.*` çoklu bağ (yalnız
+hizmetin kendi tarafının kartı); föyü kapsam dışı satır görünmez. `davalar.hizmet_turu` aynı görevde ÇOK DEĞERLİ oldu
+(`coklu_deger`, `eq`/`in` tam öğe). Doldurma script'i koşulana dek kaynak boş döner. Ayrıntı §2.5. **Özet modu (12.09):** tanım `olcumler` taşıyorsa satırlar `gruplama`
 alanlarına göre `GROUP BY` (≤3; tarihte `kirilim` gün/ay/yıl, Türkiye günü) + ölçümler (≤5; `sayi|toplam|ortalama|
 min|max`, anahtar `toplam:maddi_tazminat`); `kolonlar` özet modunda kullanılmaz ama zorunlu kalır; boş
 `gruplama`/`olcumler` JSON'a girmez (eski sözleşme birebir). Türetilmiş/çoklu bağ kolonu GRUPLANAMAZ. Şeritte
