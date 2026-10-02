@@ -60,8 +60,8 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler (00e0beb; 26.09 BLOKE sebebi kararsız `api.test.ts` idi, düzeltme e125738 sonrası 27.09 gündüz elle merge, vitest 1206 yeşil)
 - [x] G218 | bant:docs | bagimli:- | `docs/veri-teslim/ofis-no-formati.md`: B1.B2.B3.B4.B5 açıklaması + örnekler (koddan okunarak), veri sağlayıcıya iletilecek
 - [x] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
-- [ ] G220 | bant:backend | bagimli:G219,G251 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu; `case_hizmetleri` + föy + özet) + aktarım/SOZLESME (kart dropdown'ı 01.10'da G248-G253'e taşındı) | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
-- [ ] G221 | bant:backend | bagimli:G213,G220 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
+- [ ] G220 | bant:backend | bagimli:G219,G251 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu; `case_hizmetleri` + föy + özet) + aktarım/SOZLESME (kart dropdown'ı 01.10'da G248-G253'e taşındı) | BLOKE(İPTAL 02.10 — kullanıcı kararı: liste paketten çekilir G257, dropdown G252/G253, liste yönetimi G256; koşulmadı)
+- [ ] G221 | bant:backend | bagimli:G213 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
 - [x] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
 - [x] G223 | bant:frontend | bagimli:- | Ofis no B1: NewCase/Intake kategori KODU geçince `X1`'e düşüyor + sigorta kodu tr-TR büyük harf yüzünden `S0` (G218 bulgusu); mevcut numaralar değişmez
 
@@ -140,15 +140,25 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      → G252 (frontend) G248 bitince backend zinciriyle paralel koşar. Backend seri: G248 → G249 → G250 → G251.
      G253 G250 + G252'ye bağlı (useCases.ts ortak). G254 en son. İlk sürüm kapsam dışı: ücret/fatura, hizmet tarihleri.
      G220 (veri sağlayıcının yeni listesi) artık bu modelin üstüne kurulur → G251'e bağlandı, BLOKE kalır.
-     Geriye dönük doldurma (G249 script'i --apply) ve prod uygulaması İNSAN ADIMI. Tahmin: 2 gece. -->
+     Geriye dönük doldurma (G249 script'i --apply) ve prod uygulaması İNSAN ADIMI. Tahmin: 2 gece.
+     02.10 gündüz güncellemesi (kullanıcı kararı): (1) müvekkil başına ÇOKLU seçim — G248'e küme yazımı
+     (`elle_kumesini_yaz` + PUT .../hizmetler/{case_party_id}), G252 paneli onay kutulu açılır liste + "tüm müvekkillere
+     uygula", `HizmetSecici` G252'de doğar, G253 kullanır; (2) liste yönetimi: admin "Hizmet Türleri" sekmesi → G256
+     (frontend, G248 sonrası; G252 ile paralel — AdminPage/useConfig'e yalnız G256 dokunur); (3) liste veri ekibinin
+     paketinden çekilir → G257 (backend, G249 sonrası: hukdok_aktarim.py ortak); G220 İPTAL (yukarıda), G221'in G220
+     bağı kaldırıldı; (4) migrasyon maddesi 59 (58 hata_bildirimleri'nde), satır referansları tazelendi.
+     Backend seri: G248 → G249 → G257 → G250 → G251. Frontend: (G252 ∥ G256) → G253. G254 en son (G256, G257 dahil).
+     G255 aynı gece koşarsa G257'den SONRA (hukdok_aktarim.py). -->
 
-- [ ] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + taraf silme + liste rename kuralı
+- [ ] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + müvekkil başına küme yazımı (PUT) + taraf silme + liste rename kuralı
 - [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır
-- [ ] G250 | bant:backend | bagimli:G249 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
+- [ ] G257 | bant:backend | bagimli:G249 | Hizmet listesi veri ekibinin paketinden: `deger_havuzu_seed` HAVUZLAR'a "Hizmet Türü" + aktarım eşlemesi kod sabitinden değil DB `service_types` listesinden (koşu başında) + sentetik paketle uçtan uca test; `--apply` insan adımı
+- [ ] G250 | bant:backend | bagimli:G257 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
 - [ ] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
-- [ ] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, elle ekle/sil
-- [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
-- [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı (koddan doğrulanmış)
+- [ ] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, müvekkil başına çoklu seçimli açılır liste (`HizmetSecici`, tek PUT) + "tüm müvekkillere uygula"; Büro Bilgileri'ndeki tek değerli satır kalkar
+- [ ] G256 | bant:frontend | bagimli:G248 | Admin paneli "Hizmet Türleri" sekmesi: ekle, yeniden adlandır (paket adı uyarısı), kullanımdaysa taşıyarak sil, sürükle-sırala + `useConfig.typeToKey` önbellek tazeleme
+- [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim, "tüm müvekkillere uygula"), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
+- [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253,G256,G257 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı + liste kaynağı/yönetimi (koddan doğrulanmış)
 
 ## ÖNCELİK 8 — Aktarım kullanıcıyı kilitlemez: kart başına kısa transaction (2026-10-02 gündüz, kullanıcı kararı)
 
