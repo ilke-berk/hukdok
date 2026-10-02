@@ -3,6 +3,9 @@
 > **Son doğrulama: 2026-09-04 · 88409da** (§1-§10 önceki doğrulama 2026-08-11 · 2eade56;
 > §11-§13 bu tarihte koddan sayıldı)
 > §3 uç tablosu, §4 ve §5: **2026-09-30 · c40e10c** (G240 — karar 023 ofis no düzeni, G235-G242 koduna karşı).
+> §1 zorunlu alan listesi, §12 (Hizmet Türü kısmı), §13 `service_types` satırı ve **§18 (müvekkil bazlı hizmet
+> kaydı)**: **2026-10-02 · a67a0e3** (G254 — G248-G253, G256, G257 koduna karşı; bu bölümlerdeki satır numaraları
+> o commit'e aittir).
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
 Dava iki yoldan açılır: elle doldurulan form (`/new-case/form`) ve belgeden türeten otonom
@@ -18,9 +21,15 @@ listesinde uyarı olarak görünür ve panelden filtrelenebilir (`required_field
 Reddedilen alternatif de orada kayıtlıdır: "DANIŞ'a düşürme denendi, dönüşüm kaybı riski
 nedeniyle vazgeçildi: DANIŞ yolunda müvekkil kaydı oluşturulmuyor" (`required_fields.py:5-6`).
 
-`REQUIRED_CASE_FIELDS` (`required_fields.py:51-79`): `esas_no`, `court`, `file_type`,
+`REQUIRED_CASE_FIELDS` (`required_fields.py:51-83`): `esas_no`, `court`, `file_type`,
 `judicial_unit`, `sub_type`, `opening_date`, `subject`, `responsible_lawyer_name`,
-`uyap_lawyer_name`, `service_type`, `acceptance_date`, `bureau_type`, `atama_tarihi`.
+`uyap_lawyer_name`, `acceptance_date`, `bureau_type`, `atama_tarihi` — 12 alan.
+
+**`service_type` listeden çıktı (G250, 02.10.2026):** eski 5'li hizmet maskesi artık hiçbir şeyi
+beslemiyor (`required_fields.py:75-79`); `MISSING_FLAG_INPUT_FIELDS` ve SQL ikizi listeden türediği
+için kendiliğinden uydu. Yerine gelen "her müvekkilin en az bir hizmeti olmalı" kuralı bu listeye
+GİRMEZ — o bir eksik-alan uyarısı değil, kart AÇMA kapısıdır ve bu bölümün "engellemez" kuralının
+**tek istisnasıdır** (kullanıcı yolunda 422; §18). Mevcut kartlar hizmetsiz diye "eksik" sayılmaz.
 
 **Güncel not (G046, FAZ D — bu satır ADR-014'te de anlatılıyor):** liste artık düz bir
 alan adı listesi DEĞİL, liste-of-dict + isteğe bağlı bir `skip_when` "kapı"sı taşıyor —
@@ -29,8 +38,8 @@ TAHKİM) ise zorunlu SAYILMAZ (D2). İkinci kapı türü `skip_when_lawyers_at_l
 `responsible_lawyer_name` kutusu boş AMA kartın `case_lawyers` satırı ≥ `COKLU_AVUKAT_ESIGI`
 (2) ise alan eksik SAYILMAZ — aktarım çoklu isimli föyde kutuyu bilerek boş bırakır, sorumlu
 "belirsiz"dir, "atanmamış" değil (`required_fields.py:39-49`, `:72-73`; tek satırda kutu boşsa
-eksik kalır). 13 alanın **11'i koşulsuz**, `esas_no` ve `responsible_lawyer_name` bağlamsal.
-Kapı SQL ikizinde de aynı sayımla çevrilir (`_sql_lawyer_count`, `required_fields.py:215-217`);
+eksik kalır). 12 alanın **10'u koşulsuz**, `esas_no` ve `responsible_lawyer_name` bağlamsal.
+Kapı SQL ikizinde de aynı sayımla çevrilir (`_sql_lawyer_count`, `required_fields.py:219-221`);
 kural değiştiğinde bayrak `scripts/backfill_missing_required.py` ile (kuru koşu varsayılan,
 `--apply`) yeniden hesaplanır. Aynı mekanizma (`missing_required_bucket` kolonu,
 `MISSING_BUCKET_MANUAL`/`MISSING_BUCKET_AKTARIM` kovaları) `uyap_lawyer_name`'e henüz
@@ -44,7 +53,7 @@ geri açılınca satır da geri alınacak (`required_fields.py:66-69`).
 Ayrıca `compute_missing_fields` karşı taraf TC'sini denetler ama **yalnız COUNTER**
 taraflar için: müvekkil TC'si `Client` kaydında yaşar, form yalnız karşı taraf TC'si
 girebilir — aksi halde her yeni dosya yanlış "eksik" işaretlenirdi
-(`required_fields.py:81-84`, mantık `:158-163`).
+(`required_fields.py:85-88`, mantık `:162-167`).
 
 Frontend bu listeyi `GET /api/config/required_case_fields` üzerinden okur; **ikinci bir
 liste tutulmaz** (`required_fields.py:8-10`).
@@ -64,8 +73,8 @@ Backend uçları `backend/routes/case_intake.py`'dedir:
 | `POST /api/case-intake/analyze` | `:330` | Tek belgeyi analiz eder, NDJSON stream döner, tam PDF'i PROCESS_CACHE'e koyar |
 | `POST /api/case-intake/merge` | `:651` | N belgenin çıkarımlarını tek taslakta birleştirir |
 | `POST /api/case-intake/commit` | `:1068` | Yeni dava kaydı + belge arşivleme + poliçe beslemesi |
-| `POST /api/case-intake/apply` | `:1237` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme |
-| `POST /api/case-intake/keepalive` | `:1335` | Review adımında PROCESS_CACHE TTL'sini tazeler |
+| `POST /api/case-intake/apply` | `:1242` | **Zenginleştirme modu**: mevcut davaya kısmi güncelleme (hizmet YAZMAZ — §18) |
+| `POST /api/case-intake/keepalive` | `:1340` | Review adımında PROCESS_CACHE TTL'sini tazeler |
 
 Sihirbaz akışı: yükle → analiz → (birden çok belge varsa) birleştir → kullanıcı incelemesi
 → commit (ya da mevcut davaya apply).
@@ -116,6 +125,9 @@ kaybolan istek, çift tıklama, taslaktan devam — artık **istek kimliğiyle**
 - Kimlik dolu ama kart görünmüyorsa (soft-delete edilmiş ya da başka tenant'a damgalı) kart
   döndürülmez ve ikinci kart da açılmaz: **409** "Bu kayıt isteği daha önce kullanılmış".
 - Müvekkilsiz commit numara üretemez → `OfisNoVerilemez` → **422**; hiçbir belge tüketilmez.
+- Hizmeti seçilmemiş müvekkil ya da listede olmayan hizmet adı da aynı kapıdan **422** döner (G250:
+  `HizmetKaydiGecersiz` bir `OfisNoVerilemez`'dir, mesaj müvekkili adıyla sayar — `case_intake.py:1118-1123`,
+  §18); kart açılmaz, sıra yanmaz, belge tüketilmez.
 
 Aynı koruma `POST /api/cases`'te de vardır (`backend/routes/cases.py::api_add_case`).
 Kimliksiz istek (eski istemci) korumasız ama geçerlidir. Testler
@@ -212,8 +224,10 @@ numaralanmamış kart).
 Kayıt yolu (`case_manager.add_case`): kullanıcı route'ları (`POST /api/cases`, intake commit)
 veri sözlüğüne `SUNUCU_NUMARASI_BAYRAGI` (`ofis_no_sunucudan`) koyar → istemcinin
 `tracking_no`'su okunmaz, `_ofis_no_parcalari` + `sira_tahsis_et` + `numara_kur` numarayı
-kurar. Kontrol, avukat adı 422'sinden ve üçlü dışı durum 400'ünden SONRA koşar. Müvekkil
-yoksa `OfisNoVerilemez` → 422. Sunucunun verdiği numara `ix_cases_tracking_no`'ya çarparsa
+kurar. Kontrol, avukat adı 422'sinden ve üçlü dışı durum 400'ünden SONRA koşar. Aynı bayrak
+hizmet kapısını da açar (G250): avukat doğrulamasından sonra, ilk yazımdan ve sıra tahsisinden
+ÖNCE `_taraf_hizmetlerini_dogrula` her müvekkilin en az bir hizmeti olduğunu denetler (§18).
+Müvekkil yoksa `OfisNoVerilemez` → 422. Sunucunun verdiği numara `ix_cases_tracking_no`'ya çarparsa
 bu sayaç tutarsızlığıdır: nihai ERROR + route 500 (409'a çevrilmez). Bayraksız doğrudan
 çağrılar (aktarım/script) kendi numarasını getirir ve eski `duplicate_tracking_no` dönüşünü
 görür.
@@ -439,6 +453,9 @@ kardeşlerinin aynısıdır.
   181 kart — kart alanı D9 gereği yazılmaz, bilgi föyde kayıpsız durur (tanınan değer
   kanonik adla, tanınmayan hücre teslimdeki ham yazımıyla; `hukdok_aktarim.foy_degerleri`).
   Kolonlar migrasyon madde 43'te; `("columns", …)` op'u + create_all aynı şemaya çıkar.
+  **02.10.2026 (G249):** hizmet türü için kart tek slotu KALKTI — `case_foys.hizmet_turu` aynen
+  yazılır, ama karta giden yol föyün müvekkiline bağlı föy kaynaklı hizmet satırıdır
+  (`case_hizmetleri`); kardeş föylerin farklı hizmeti artık çelişki değil, kart özeti birleşimdir (§18).
 - **Ham satır (G125, 05.09.2026 — "kayıpsız" şartı):** `case_foys.ham_veri` JSON, teslimdeki
   satırın tamamı orijinal başlıklarla (tarih ISO, Decimal metin; boş hücre hariç,
   tanınmayan sütun dahil; `HamSatir.ham`, `xlsx_oku`). Kart alanına yazılamayan değer
@@ -524,6 +541,9 @@ Tarihçe mükerrerde kalır, kalana `mukerrer_birlestirme` notu düşer. "Kartla
 bağlanır" (TKU) kuralı ayrı davalar içindir; burada AYNI dava iki kez açılmış. Mükerrer
 olmayan çift ön koşulda REDDEDİLİR. Lokal 05.09: 8 çift birleşti, aktarım 9 föyü bağladı,
 belge envanteri DENK. Testler `backend/tests/test_g127_mukerrer_kart_birlestir.py`.
+G249 (02.10.2026): taraf nereye giderse hizmet satırları da oraya gider (`case_hizmetleri.tarafi_tasi`,
+taraf satırı silinmeden ÖNCE — RESTRICT); `hizmet_turu` özeti düz alan gibi kopyalanmaz, satırlardan
+yenilenir (§18).
 
 **Aynı tıbbi vaka tespiti (G128, 06.09.2026):** ilişki katmanı üç kademe oldu
 (`services/case_relations_auto.py`): (1) **kesin, otomatik** — TKU grubu, esas + mahkeme +
@@ -605,18 +625,24 @@ yönden okunacağını belirler (E-8: karar durumu ve tutarlar müvekkil yönün
 değil rapor işidir; ayrım yapılmazsa dava sonucu istatistikleri yanlış çıkar. Bu turdan
 önce iki sütun sessizce yok sayılıyordu.
 
+> **02.10.2026 — Hizmet Türü artık kart alanı DEĞİL (G248-G253).** Bu bölümün `hizmet_turu` ile
+> ilgili yazma/filtre cümleleri aşağıda güncellendi; model, uçlar, oluşturma kapısı ve arayüz
+> §18'dedir. Müvekkil Tipi (`muvekkil_tipi`) için bölüm aynen geçerlidir.
+
 - **Tasarım kararı (04.09):** mevcut `client_categories` (müvekkil VARLIĞININ kategorisi,
   `Client.category`) ve `bureau_types` ("Büro Özel Türü" — ayrı bir teslim sütunu,
   `cases.bureau_type`) **kullanılmadı ve değişmedi**: ikisi de başka varlık/sütunun
   listesi, değer havuzları örtüşmüyor (Hizmet Türü 9 ≠ bureau_types 8; Müvekkil Tipi föy
   düzeyi, `Client.category` müvekkil düzeyi). İki YENİ liste açıldı; Müvekkil Tipi ↔
-  `Client.category` köprüsü gündüz kararıdır. Mevcut `cases.service_type` (ofis dosya
-  numarasının 5 haneli hizmet bloğu, `required_fields.py`'de "Hizmet Türü" etiketli) de
-  AYRI bir alandır — yeni `hizmet_turu` onunla karıştırılmaz.
-- **İki kolon:** `cases.muvekkil_tipi` ve `cases.hizmet_turu`, VARCHAR(100) NULL +
-  DEFAULT'suz (`backend/database.py` madde 42, madde 38'in kopyası). **NULL =
-  "bilinmiyor"**, backfill YOK (aktarım eşlemesi G120). Hiçbir bağlamda zorunlu değiller
-  (`required_fields.py` DEĞİŞMEDİ; kilit `test_alanlar_hicbir_baglamda_zorunlu_degil`).
+  `Client.category` köprüsü gündüz kararıdır. Mevcut `cases.service_type` (ESKİ ofis dosya
+  numarasının 5 haneli hizmet bloğu; karar 023 numarasında hizmet bloğu yok) de AYRI bir
+  alandır — `hizmet_turu` onunla karıştırılmaz. G250'den beri `service_type` zorunlu alan
+  listesinde de değildir (§1); kolonun akıbeti §18.
+- **İki kolon:** `cases.muvekkil_tipi` VARCHAR(100) NULL + DEFAULT'suz (`backend/database.py`
+  madde 42, madde 38'in kopyası); `cases.hizmet_turu` aynı op'la doğdu, migrasyon 59'da TEXT'e
+  genişledi ve modelde `Text`'tir (`models.py:185`) — artık `case_hizmetleri` satırlarından
+  TÜRETİLEN çok değerli özet (§18). **NULL = "bilinmiyor"**, migrasyon veri yazmaz. Hiçbir
+  bağlamda zorunlu değiller (kilit `test_alanlar_hicbir_baglamda_zorunlu_degil`).
 - **İki KAPALI liste** — `event_types` deseninin kopyası (model + LIST_REGISTRY +
   DEPENDENCIES + seed + config route + DynamicConfig setter'ı):
   `client_types` (Müvekkil Tipleri, seed'li 5 değer: Sigorta · Doktor · Kurum · Hasta ·
@@ -625,21 +651,32 @@ değil rapor işidir; ayrım yapılmazsa dava sonucu istatistikleri yanlış ç�
   Alacağı · Takip (hasta vekilliği) · Takip (kurum vekilliği) · Danışmanlık · Takip
   (sağlık personeli)) — `backend/models.py::ClientType/ServiceType`,
   `seed_data.CLIENT_TYPES/SERVICE_TYPES`, sıra bildirimdeki sıra, kodlar ASCII ve değişmez.
-- **Yazma yolu takip panelidir:** iki alan `TRACKING_FIELDS`te; `update_case_tracking`
-  aynı kapıdan geçirir (`case_manager._EVENT_LIST_COLUMNS`e iki satır eklendi,
-  `validated_event_list_value` değişmedi): liste dışı değer `InvalidDecisionStatusError`
-  (400), liste BOŞSA WARNING'le geç, None gönderimi temizler, `active` filtresi yok.
-- **Okuma/filtre:** `get_case` çıktısında iki alan; `get_cases(hizmet_turu=...)` +
-  `GET /api/cases?hizmet_turu=` `olay_turu` kalıbıyla eşitlik filtresi (değer listenin
-  ADIDIR, "ALL" = filtre yok). Müvekkil Tipi için filtre BİLİNÇLİ yok (sözleşme).
+- **Yazma yolu:** `muvekkil_tipi` takip panelinden yazılır — `TRACKING_FIELDS`te
+  (`case_manager.py:2223`), `update_case_tracking` aynı kapıdan geçirir
+  (`case_manager._EVENT_LIST_COLUMNS`, `validated_event_list_value`): liste dışı değer
+  `InvalidDecisionStatusError` (400), liste BOŞSA WARNING'le geç, None gönderimi temizler,
+  `active` filtresi yok. `hizmet_turu` G250'de `TRACKING_FIELDS`ten ve `CaseTrackingUpdate`
+  şemasından ÇIKTI: takip ucuna gönderilirse YOK SAYILIR (422 değil — formun tamamını geri
+  gönderen istemcinin öteki alanları kaydolsun); `_EVENT_LIST_COLUMNS["hizmet_turu"]` satırı
+  durur çünkü hizmet SATIRININ adı aynı kapıdan doğrulanır (`:2289-2297`). Hizmet yalnız §18'deki
+  uçlardan yazılır.
+- **Okuma/filtre:** `get_case` çıktısında iki alan (+ `hizmetler` listesi, §18);
+  `get_cases(hizmet_turu=...)` + `GET /api/cases?hizmet_turu=` filtresi G250'den beri eşitlik
+  DEĞİL `EXISTS case_hizmetleri` (`case_manager._hizmet_kosulu`, `:1001`): değer listenin ADIDIR
+  ("ALL" = filtre yok), kartın o adla kapsamdaki bir hizmet satırı varsa eşleşir — çok hizmetli
+  kart her hizmetinin filtresinde çıkar; föyü kapsam dışı işaretli föy satırı sayılmaz. Hizmet
+  satırı hiç yazılmamış kart (geriye dönük doldurma koşulmadan önce özet kolonu dolu olsa bile)
+  bu filtrede ÇIKMAZ. Müvekkil Tipi için filtre BİLİNÇLİ yok (sözleşme).
 - **Uçlar:** `GET/POST/DELETE /api/config/client_types` ve `/api/config/service_types`
   (`backend/routes/config.py`; POST/DELETE admin — event_types kalıbı).
 
 Aktarım eşlemesi (`scripts/hukdok_aktarim.py`, iki yeni `Sheet` sütunu) G120'nin işidir
-ve **uygulandı** (`SUTUN_ADAYLARI` + `KART_ALANLARI` iki kayıt; tanınmayan/çok değer
-`AlanHatasi`, `backend/tests/test_g120_aktarim_muvekkil_hizmet.py`); kart UI'ı G121'in
-işidir ve uygulandı (büro kartında `bureau_type` altında iki alan, liste filtresi
-`hizmet_turu`). G119 testleri `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
+ve **uygulandı** (`SUTUN_ADAYLARI` iki kayıt; `KART_ALANLARI`nda G249'dan beri yalnız
+`muvekkil_tipi` — tanınmayan/çok değer `AlanHatasi`; hizmet föy satırına gider, §18;
+`backend/tests/test_g120_aktarim_muvekkil_hizmet.py`); kart UI'ı G121'in işidir ve uygulandı
+(liste filtresi `hizmet_turu`; büro kartında `bureau_type` altında G252'den beri yalnız
+`muvekkil_tipi` — `lib/caseCardFields.ts` `OFFICE_CARD_FIELDS`, hizmet "Hizmetler" panelinde).
+G119 testleri `backend/tests/test_g119_muvekkil_tipi_hizmet_turu.py`
 (şema kilitleri + sqlite seed/kapı/filtre davranışı + route 400/403 + gerçek Postgres'te
 migrasyon yolu + `client_categories`/`bureau_types` değişmezlik kilidi).
 
@@ -675,7 +712,7 @@ itibarıyla **hepsi seed'lidir** — sayılar `managers/seed_data.py` sabitlerin
 | `event_types` | `EVENT_TYPES` | 3 | `cases.olay_turu` | G103 (§11) |
 | `judgment_roles` | `JUDGMENT_ROLES` | 4 | `cases.hukumdeki_rol` | G103 (§11) |
 | `client_types` | `CLIENT_TYPES` | 5 | `cases.muvekkil_tipi` | G119 (§12), DB-2026-002 |
-| `service_types` | `SERVICE_TYPES` | 9 | `cases.hizmet_turu` | G119 (§12), DB-2026-002 |
+| `service_types` | `SERVICE_TYPES` | 9 | `case_hizmetleri.hizmet_turu` (satır) → türetilmiş özet `cases.hizmet_turu`; föy `case_foys.hizmet_turu` | G119 (§12), DB-2026-002; G248-G257 (§18) — seed yalnız boş kurulumun tohumu, liste paketten beslenir |
 
 Kalan 13 liste (`lawyers`, `statuses`, `doctypes`, `case_subjects`, `emails`, `file_types`,
 `court_types`, `party_roles`, `bureau_types`, `cities`, `specialties`, `client_categories`,
@@ -814,3 +851,179 @@ Bekçi: `backend/tests/test_g225_avukat_kimligi.py` (SQLite + scratch Postgres `
   filtrelenebilir). Lokal `report_templates`: 1 şablon, 0'ı `avukat_kodu` kullanıyor.
 
 Bekçi: `backend/tests/test_g228_avukat_kimlikle_yonetim.py`.
+
+## 18. Müvekkil bazlı hizmet kaydı — `case_hizmetleri` (G248-G253, G256, G257; 02.10.2026)
+
+Kullanıcı kararı (01.10.2026): "dava kartında hangi hizmet hangi müvekkile verildi bilinmeli
+(muhasebe); aynı müvekkile birden çok hizmet mümkün." Hizmet türü kartın değil **kart × müvekkil
+tarafı** çiftinin özelliğidir. Desen `case_foys` (§10) ve `case_stage_decisions` (§9) ile aynıdır:
+satırlar + tek yazma yolu + kartta türetilmiş tek kolon.
+
+### 18.1 Tablo ve türetilmiş özet
+
+`models.CaseHizmeti` (`backend/models.py:424`), migrasyon madde 59 (`backend/database.py:1437-1486`):
+
+| Kolon | Tür | Not |
+| --- | --- | --- |
+| `id` | SERIAL PK | |
+| `case_id` | INTEGER NOT NULL | FK `cases.id`, `ondelete` yok (föy deseni; dava silmesi soft) |
+| `case_party_id` | INTEGER NOT NULL | FK `case_parties.id` **ON DELETE RESTRICT**; taraf aynı kartın `party_type='CLIENT'` satırı olmalı |
+| `hizmet_turu` | VARCHAR(100) NOT NULL | `service_types` listesinin ADI (denormalize) |
+| `foy_id` | INTEGER NULL | FK `case_foys.id` **ON DELETE RESTRICT**; dolu = föy kaynaklı satır, NULL = elle satır |
+| `source`, `created_by`, `created_at` | VARCHAR(100), VARCHAR(200), TIMESTAMPTZ | imza |
+
+Tablo op'u koşullu, index'ler AYRI koşulsuz `("index", ...)` op'unda (`database.py:1461-1468`):
+`idx_case_hizmetleri_case (case_id)`, `idx_case_hizmetleri_party (case_party_id)`, kısmi UNIQUE
+`uq_case_hizmetleri_foy (foy_id) WHERE foy_id IS NOT NULL` (föy başına tek satır — aktarımın upsert
+anahtarı) ve `uq_case_hizmetleri_elle (case_id, case_party_id, hizmet_turu) WHERE foy_id IS NULL`
+(elle satır tekrar etmez). Migrasyon VERİ YAZMAZ.
+
+**`cases.hizmet_turu` TÜRETİLMİŞTİR:** kartın satırlarındaki DISTINCT adlar, Türkçe alfabetik,
+`" ; "` birleşik; satır yoksa NULL (`case_hizmetleri.ozet_metni`, `:115`). Tek yazıcı
+`case_hizmetleri.ozeti_yenile` (`:257`); satır ekleyen/silen/taşıyan her fonksiyon çağırır. Kolon
+aynı migrasyonda TEXT'e genişledi (tip yoklamalı `DO $$ … $$` bloğu, `database.py:1479-1486` — kolon
+zaten TEXT ise DDL koşmaz); model bildirimi `Text` (`models.py:185`). Hizmet satırı HİÇ yazılmamış
+kartta özet yenilenmez — aktarımın eski tek değeri durur (geriye dönük doldurma öncesi veri korunur).
+
+### 18.2 Tek yazma yolu — `backend/managers/case_hizmetleri.py`
+
+Fonksiyonlar commit ETMEZ (flush eder); işlem sınırı çağıranındır.
+
+| Fonksiyon | Kim çağırır | Ne yapar |
+| --- | --- | --- |
+| `elle_kumesini_yaz` (`:395`) | `PUT …/hizmetler/{case_party_id}`, `add_case` | Müvekkilin ELLE kümesini verilen kümeye getirir: eksik ad eklenir, kümede olmayan elle satır silinir, föy satırına dokunulmaz; her ad önce doğrulanır (biri geçersizse hiçbir şey yazılmaz); değişiklik `case_history`'ye TEK kayıt; aynı küme ikinci kez → kayıt yok |
+| `elle_ekle` (`:353`) / `elle_sil` (`:375`) | `POST` / `DELETE` uçları | Tekil elle satır; aynı (müvekkil, hizmet) elle ya da föyden zaten varsa yeni satır açılmaz; föy satırını silme `FoyKaynakliSatir` |
+| `foydan_yaz` (`:490`) | aktarım, `hizmet_kayitlari_doldur.py`, `birlesik_kart_ayir.py` | Föyün satırını upsert eder (anahtar `foy_id`); ayrıntı [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md) |
+| `taraflarin_elle_satirlarini_sil` (`:436`) | `update_case` | Karttan düşen müvekkilin elle satırlarını taraf silinmeden ÖNCE tarihçeli siler (`case_manager.py:1501-1510`); föy kaynaklı satırı olan taraf RESTRICT ile silinemez |
+| `tarafi_tasi` (`:565`) | `mukerrer_kart_birlestir.py` | Tarafın tüm satırlarını başka tarafa/karta taşır; hedefte aynı elle satır varsa birleşir |
+| `liste_adi_degisti` (`:616`) | `reference_lists._apply_to_dependents` | `service_types` öğesi yeniden adlandırılınca/taşınınca satırları yeni ada çevirir; kısmi UNIQUE'e çarpan elle satır birleşir; etkilenen kartların özeti toplu yenilenir |
+
+- **Hizmet adı kapalı listedendir:** `dogrulanmis_hizmet_adi` (`:157`) → `case_manager.validated_event_list_value`
+  (boşluk normalize, tam ad, `active` filtresi yok, liste BOŞSA doğrulama atlanır); listede olmayan ad
+  `GecersizHizmetTuru`.
+- **Tarihçe:** `case_history.field_name = 'hizmet'`, değer "Müvekkil — Hizmet [; Hizmet…]". Föy satırının
+  İLK yazımı tarihçesizdir (geriye dönük doldurma binlerce satır; kaynak föyün kendisi); yerinde değişim ve
+  silme tarihçelidir. Liste yayılımı (`liste_adi_degisti`) tarihçe yazmaz.
+- **Liste bağı:** `reference_lists.SATIR_BAGIMLILIKLARI["service_types"]` (`:336-339`, `clearable=False`);
+  bir listenin TÜM bağlarını soran kod `reference_lists.bagimliliklar(key)` çağırır (`:342`) —
+  `DEPENDENCIES["service_types"]` yalnız `cases.hizmet_turu` kolon bağını taşır (`:298`, test kilitli).
+
+### 18.3 Uçlar — `backend/routes/case_hizmetleri.py` (`api.py:545`)
+
+| Uç | Sonuç |
+| --- | --- |
+| `GET /api/cases/{case_id}/hizmetler` (`:60`) | `200 [{id, case_party_id, muvekkil_adi, hizmet_turu, kaynak ("foy"\|"elle"), foy_id, sistem_no}]`; sıra müvekkil adı → hizmet adı |
+| `POST /api/cases/{case_id}/hizmetler` `{case_party_id, hizmet_turu}` (`:71`) | `201` + satır; aynı (müvekkil, hizmet) zaten varsa `200` + mevcut satır |
+| `PUT /api/cases/{case_id}/hizmetler/{case_party_id}` `{"hizmet_turleri": [...]}` (`:97`) | `200` + kartın güncel satır listesi; **müvekkil başına çoklu seçimin yolu** — boş liste = elle satırların tamamı silinir |
+| `DELETE /api/cases/{case_id}/hizmetler/{hizmet_id}` (`:121`) | `204`; föy kaynaklı satır → `409` (yalnız aktarım değiştirir); satır bu kartta yok → `404` |
+
+Görünmeyen dava (başka tenant / soft-silinmiş) → `404`; taraf bu kartın müvekkili değil ya da hizmet adı
+listede yok → `422`, hiçbir satır yazılmaz. Yetki `PUT /api/cases/{id}` ile aynı: oturumlu kullanıcı +
+`auth_helpers.get_tenant_owned_case`. `get_case` yanıtı aynı sözleşmeyle `hizmetler` listesini taşır
+(`case_manager.py:584`, `schemas.CaseRead.hizmetler`). `PUT /api/cases/{id}` gövdesindeki
+`parties[i].hizmet_turleri` YOK SAYILIR — mevcut kartın hizmetleri yalnız yukarıdaki uçlardan yazılır.
+
+### 18.4 Oluşturma yolları ve kapı (G250)
+
+- **Şema:** `schemas.CasePartyCreate.hizmet_turleri: List[str]` (`schemas.py:273-289`; varsayılan boş,
+  müvekkil dışı tarafta dolu gelirse 422). Okuma yanıtları ve zenginleştirme isteği hizmet alanı
+  taşımayan `CasePartyBase`'i kullanır (`:261`; `schemas_intake.py:199-203`).
+- **`add_case`** (`case_manager.py:1908`): `_taraf_hizmetlerini_dogrula` (`:1852`) avukat doğrulamasından
+  sonra, ilk yazımdan ve sıra tahsisinden ÖNCE koşar; taraflar yaratıldıktan sonra her müvekkilin kümesi
+  `elle_kumesini_yaz` ile kartla AYNI transaction'da yazılır (`:2064-2075`), özet oradan yenilenir.
+- **Kapı — her müvekkil ≥1 hizmet:** yalnız KULLANICI yollarında (`SUNUCU_NUMARASI_BAYRAGI` =
+  `ofis_no_sunucudan` bayrağını koyan `POST /api/cases`, `routes/cases.py:72`, ve intake commit,
+  `routes/case_intake.py:1102`). Hizmetsiz müvekkil adıyla sayılır → `HizmetKaydiGecersiz`
+  (`case_manager.py:72`; `OfisNoVerilemez`'den türer, iki route `422 + detail`'e çevirir): *"Hizmet türü
+  seçilmemiş müvekkil var: "A", "B". Her müvekkil için en az bir hizmet türü seçin."* Kart açılmaz, sıra
+  yanmaz, ERROR basılmaz. Bayraksız yol (script/aktarım — `kartsiz_foy_kart_ac`) zorunlu tutulmaz; verilen
+  adlar yine doğrulanır.
+- **Boş listede kapı açık:** `service_types` tablosu BOŞSA zorunluluk WARNING'le atlanır (`:1893-1898`) —
+  seçilecek hizmet yokken kural kart açmayı kilitlerdi (ad doğrulaması ve avukat yazım korumasıyla aynı
+  kural). Uygulama açılışı `seed_all_lists`'i koşturup boş listeyi doldurduğu için (`api.py:168-169`) canlı
+  kurulumda etkisi yoktur.
+- **Mevcut kartlar "eksik" SAYILMAZ:** kural `required_fields.py`'ye girmez (§1); `missing_required_bucket`
+  hizmetten etkilenmez.
+- **Tarihçe imzası:** intake commit kullanıcı adını `KAYDEDEN_ANAHTARI` ile geçirir
+  (`case_intake.py:1105`); `POST /api/cases` geçirmez, imza `PANEL_SOURCE` olur.
+- **Zenginleştirme (`/api/case-intake/apply`) hizmet YAZMAZ;** eklenen müvekkilin hizmeti kart panelinden girilir.
+
+### 18.5 Eski 5'li maskenin akıbeti — `cases.service_type`
+
+Kolon (`models.py:38`) SİLİNMEDİ, veri durur; ama hiçbir şeyi beslemez: ofis numarası kullanmıyor (karar
+023, §5), zorunlu alan değil (§1), sunucu yeni kod üretmiyor. `CaseCreate.service_type` (`schemas.py:355`)
+geriye uyum için okunur ve olduğu gibi saklanır (`add_case`, `update_case` `case_manager.py:1439`).
+
+- **Arayüz:** yeni dava formundaki "Hizmet Türü (Çoklu Seçim)" kutuları ve sihirbazdaki 5'li maske bloğu
+  KALKTI (G253). Yeni kayıtta `service_type` GÖNDERİLMEZ; düzenlemede karttaki değer aynen geri gönderilir
+  (`lib/newCasePayload.ts` `mevcutServiceType`) — `PUT /api/cases/{id}` gövdeyi `model_dump()` ile verdiği
+  (`routes/cases.py:327`) ve `update_case` `data.get("service_type", …)` okuduğu için alanı atlayan istemci
+  kolonu `None`'a çeker.
+- **Kalan okuyucular:** rapor kolonu "Hizmet Tipi" (`services/rapor/registry.py:770`),
+  `scripts/dava_kartlari_listesi.py:83`, `:169`, `get_case`/`get_cases` yanıtındaki `service_type` anahtarı
+  (`case_manager.py:587`, `:1247`), tarihçe etiketi "Hizmet Bloğu" (`frontend/src/lib/tarihceEtiketleri.ts:36`).
+  Kolonu kaldırma kararı AÇIK (ayrı iş).
+- Lokal ölçüm (02.10, salt okunur `SELECT`): `service_type` dolu kart 59.
+
+### 18.6 Arayüz
+
+- **Kart — "Hizmetler" paneli** (`components/CaseHizmetPanel.tsx`; `CaseDetails.tsx`'te `CaseNotesPanel`
+  ile `CaseFoyPanel` arasında): müvekkil başına bir satır — ad · hizmet çipleri · "Hizmet seç". Föy
+  kaynaklı çip "paket · SistemNo" rozetlidir ve kaldırılamaz; elle çip seçiciden kaldırılır; **Uygula** tek
+  `PUT` atar (gövde = elle küme; seçim değişmediyse istek yok). 2+ müvekkilde "Tüm müvekkillere aynı
+  hizmetleri uygula" (müvekkil başına bir `PUT`). Listede olmayan (eski adlı) hizmet amber "liste dışı"
+  damgasıyla görünür. İstemci katmanı `lib/caseHizmetleri.ts`. Büro Bilgileri kartından `hizmet_turu` satırı
+  çıktı (`lib/caseCardFields.ts` `OFFICE_CARD_FIELDS`) — çift gösterim olmasın; `CaseFoyPanel` föy sütunu aynen.
+- **Seçici** `components/HizmetSecici.tsx`: `service_types` listesinden (liste sırasıyla) onay kutulu çoklu
+  seçim; `kilitli` adlar işaretli + değiştirilemez gösterilir ve değere girmez.
+- **Açma ekranları (G253)** — `pages/NewCase.tsx`, `components/intake/IntakeReviewStep.tsx`,
+  `components/QuickCaseModal.tsx`: müvekkil satırı başına bir `HizmetSecici`; yük `parties[i].hizmet_turleri`.
+  Ortak saf kurallar `lib/muvekkilHizmetleri.ts`: ön seçim eşlemesi TEK sabitte
+  (`KATEGORI_ON_SECIM_HIZMETI`, `:21` — doktor → "Takip (doktor müvekkil)", hasta → "Takip (hasta
+  vekilliği)", kurum → "Takip (kurum vekilliği)"; tam ad eşleşmesi, öneri yalnız hizmet listedeyse),
+  `hizmetsizMuvekkiller` (Kaydet kapısı — hizmetsiz müvekkilde Kaydet devre dışı, backend 422'siyle aynı
+  kural), 2+ müvekkilde "Aynı hizmetleri tüm müvekkillere uygula". Liste boşken seçici çizilmez ve Kaydet
+  kilitlenmez (backend'in "boş listede kapı açık" kuralının ikizi). Düzenleme ve zenginleştirme modunda
+  seçici gizlidir — hizmet karttaki panelden yönetilir. Taslak hizmet seçimini müvekkil satırının alanı
+  olarak taşır (`lib/newCaseDraft.ts`, `lib/intakeDraft.ts`).
+- **Dava listesi filtresi** `hizmet_turu` parametresi değişmedi (`hooks/useCases.ts`); anlamı §12'deki
+  EXISTS kuralıdır.
+
+### 18.7 Listenin kaynağı ve yönetimi (G256, G257)
+
+- **Kaynak veri ekibinin paketidir:** `scripts/deger_havuzu_seed.py` `service_types` havuzu paketin
+  "Hizmet Türü" sütunundaki adları listeye YENİ satır olarak ekler (`HAVUZLAR`, `:100`; mevcut ada
+  dokunmaz, silmez, yeniden adlandırmaz; kuru koşu varsayılan). İNSAN ADIMI; sıra **ÖNCE seed `--apply`,
+  SONRA aktarım** — ayrıntı ve gerekçe [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md).
+  `seed_data.SERVICE_TYPES` yalnız boş kurulumun başlangıç tohumudur.
+- **Düzeltme admin panelinden — "Hizmet Türleri" sekmesi** (`pages/AdminPage.tsx`, `?tab=service_types`;
+  `file_statuses` sekmesinin deseni): arama, sürükle-bırak sıralama (`POST /api/config/reorder`), satırda
+  düzenle/sil, "Yeni Hizmet Türü" (yalnız ad; kod addan üretilir — `serviceTypeCodeOf`, `:125`), Excel dışa
+  aktarımı. Uçlar `GET|POST /api/config/service_types`, `DELETE …/{code}` (`routes/config.py:803-820`) +
+  genel `/api/config/update|delete|reorder|usage`. `useConfig.typeToKey.service_types`
+  (`hooks/useConfig.ts:307`) sayesinde her mutasyon `["config","service_types"]` önbelleğini tazeler —
+  kart ve açma ekranındaki seçici yeni listeyi görür.
+- **Yeniden adlandırma** satırlara yayılır (`liste_adi_degisti`) ve diyalogda uyarı verir: "Veri ekibinin
+  paketindeki ad değişmedikçe aktarım bu hizmeti tanımaz; ad değişikliğini veri ekibine bildirin."
+  Yalnız YAZIMI değişen ad (harf/aksan/noktalama) aktarımda yine eşlenir, kelimesi değişen ad eşlenmez
+  (`veri-teslim-hatti.md` §7.7). Panel adı `normalize_list_name` (`tr_title`) biçiminden geçirir.
+- **Silme:** kullanılan ad BOŞALTILAMAZ (`clearable=False` — hizmet satırı NOT NULL), yalnız başka değere
+  taşınır; kullanılmayan değer doğrudan silinir.
+
+### 18.8 Geriye dönük doldurma — İNSAN ADIMI
+
+Migrasyon veri yazmaz; bugüne dek aktarılmış föylerin hizmet satırlarını
+`scripts/hizmet_kayitlari_doldur.py` açar (yazıcı aktarımla aynı `foydan_yaz`; varsayılan kuru koşu,
+`--apply` tek transaction, ikinci koşu 0). Sıra ve komutlar [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md)'de.
+**02.10.2026 itibarıyla lokal DB'de `case_hizmetleri` 0 satır** (salt okunur `SELECT count(*)`; `--apply`
+koşulmadı). Doldurma (ya da ilk aktarım koşusu — o da aynı satırları yazar) koşulana dek dava listesi
+hizmet filtresi (EXISTS), rapor "Hizmetler" kaynağı ve kart paneli yalnız yeni girilen elle satırları görür;
+`cases.hizmet_turu` özet kolonu satır almamış kartta aktarımın eski tek değerini taşımaya devam eder.
+
+Bekçiler: `backend/tests/test_g248_case_hizmetleri.py` (model, manager, uçlar, liste yayılımı),
+`test_g249_hizmet_aktarim.py`, `test_g250_hizmet_olusturma.py` (kapı, filtre, takip ucu),
+`test_g257_hizmet_listesi_paketten.py`; frontend `components/CaseHizmetPanel.test.tsx`,
+`components/HizmetSecici.test.tsx`, `lib/caseHizmetleri.test.ts`, `lib/muvekkilHizmetleri.test.ts`,
+`pages/NewCase.hizmet.test.tsx`, `components/intake/IntakeReviewStep.hizmet.test.tsx`,
+`components/QuickCaseModal.hizmet.test.tsx`, `pages/AdminPage.listeler.test.tsx`,
+`hooks/useConfig.serviceTypes.test.tsx`.

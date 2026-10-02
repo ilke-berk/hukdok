@@ -9,6 +9,9 @@
 > [`docs/plan/raporlama-plani-2026-09-06.md`](../plan/raporlama-plani-2026-09-06.md);
 > planla kod arasındaki farklar §12'de (ilk tur §2 farkları F1-F10, ikinci tur §4 farkları F11-F22,
 > sohbet öncelikli tur F23-F28) ve planın kendisinde "uygulamada değişti" şerhiyle.
+> **G254 eki (2026-10-02 · a67a0e3):** beşinci kaynak `hizmetler` ve `davalar.hizmet_turu`'nun çok değerli olması
+> (G251) §1, §2, §2.1, §2.4, yeni §2.5, §13, §15, §16'ya işlendi; bu ekteki satır numaraları ve kolon sayıları o
+> commit'e aittir (öteki bölümlerin eski satır numaralarına dokunulmadı).
 
 Kullanıcı, DB'den kolon/filtre/sıralama seçerek liste üretir, önizler, Excel ya da CSV indirir;
 her indirme "kim, ne zaman, hangi tanım, kaç satır, hangi dosya" olarak loglanır ve çıktının
@@ -70,7 +73,7 @@ Asistan satırı (AssistantBar.tsx, G143 → G174) — admin anahtarı `rapor_as
 | Katman | Dosya | Rol |
 | --- | --- | --- |
 | Sözleşme | `backend/schemas_rapor.py` | `RaporTanimi`/`Filtre`/`Siralama`, sınırlar (`:19-23`), tip↔op tablosu `TIP_OPLARI` (`:29-36`), istek/cevap şemaları, asistan şema ailesi (`:188-273`) — G137-G139'da DEĞİŞMEDİ |
-| Kayıt defteri | `backend/services/rapor/registry.py` | Dört veri kaynağı, kolon tanımları (SQLAlchemy ifadesi + tip + grup + seçenek/öneri + türetilmişte EXISTS filtre ifadesi + op alt kümesi), kaynak başına hızlı filtreler + kolon setleri, tenant/soft-delete kısıtları, katalog gövdesi, import anı öz-denetim |
+| Kayıt defteri | `backend/services/rapor/registry.py` | Beş veri kaynağı (`davalar`, `muvekkiller`, `belgeler`, `foyler`, `hizmetler` — G251, §2.5), kolon tanımları (SQLAlchemy ifadesi + tip + grup + seçenek/öneri + türetilmişte EXISTS filtre ifadesi + op alt kümesi), kaynak başına hızlı filtreler + kolon setleri, tenant/soft-delete kısıtları, katalog gövdesi, import anı öz-denetim |
 | Motor | `backend/services/rapor/motor.py` | Tanım doğrulama (tip tablosu + kolon alt kümesi), Core `select` kurma (türetilmişte `filtre_ifadesi`), önizleme, `yield_per` satır akışı |
 | Çıktı | `backend/services/rapor/cikti.py` | xlsx (openpyxl write-only) / csv üretimi, sha256 |
 | Koşu logu | `backend/services/rapor/kosu_logu.py` | `report_runs` yazma yolu, saklama dizini, path denetimi, temizlik |
@@ -96,6 +99,11 @@ DateTime/Date→`tarih`, Numeric→`para`, Integer→`sayi`, kalan `metin`); kap
 | `muvekkiller` | `clients`; aynı kural `Client` üzerinden (`:527-528`) | 25 (5 grup) | `dava_sayisi` (case_parties.client_id → silinmemiş cases, DISTINCT; **filtrelenebilir**, `_skaler_filtre`) | `:542-616` |
 | `belgeler` | `case_documents` INNER JOIN `cases`; belge `deleted_at IS NULL` + dava kısıtları (`:621-622`) | 20 (4 grup) | `dava_tracking_no`, `dava_subject` (JOIN kolonu, türetilmiş sayılır; filtrelenemez) | `:625-684` |
 | `foyler` | `case_foys` INNER JOIN `cases`; dava kısıtları (`:689-690`) | 18 (4 grup) | `dava_tracking_no`, `dava_subject`; `ham_veri` katalog DIŞI | `:693-747` |
+| `hizmetler` (G251, 02.10) | `case_hizmetleri` JOIN `cases` JOIN `case_parties` LEFT JOIN `case_foys`; dava kısıtları + föyü kapsam dışı satır hariç (`_hizmet_kisitlari`, `:1252`) | 10 (sanal `arama` dahil; 5 grup) | `kaynak` (düz CASE: `foy_id` dolu → `föy`, boş → `elle`) | `:1237-1321` — ayrıntı §2.5 |
+
+İlk dört satırdaki kolon sayıları ve satır numaraları a36e98f (07.09) fotoğrafıdır. Güncel sayım (a67a0e3,
+02.10; `registry.CEKIRDEK` / `registry.KAYNAKLAR` import edilip sayıldı, sanal `arama` dahil) — çekirdek → bağlı
+kolonlarla: davalar 93 → 148, müvekkiller 26 → 109, belgeler 21 → 137, föyler 19 → 135, hizmetler 10 → 125.
 
 Kurallar (kayıt defteri import anında kendini denetler, `_kolonu_denetle` + `_kendini_denetle`,
 `registry.py:760-815`):
@@ -142,6 +150,13 @@ Kurallar (kayıt defteri import anında kendini denetler, `_kolonu_denetle` + `_
     için `contains`. Tam liste frontend'de: şerit `CokluSecim` (arama kutulu) ve `degerEsle` aday çipleri.
   - Veri notu (28.09 lokal): havuzda ve veride `[YENİ] …` / `(değişiklik önerilmiyor)` gibi öneri
     kalıntıları var (Tıbbi Olay 19 havuz değeri / 17 kart) — rapor olduğu gibi gösterir, temizlik veri işidir.
+  - **Altıncı çok değerli kolon — `davalar.hizmet_turu` (G251, 02.10):** `cases.hizmet_turu` artık
+    `case_hizmetleri` satırlarının `" ; "` birleşik ÖZETİ olduğu için kolon `_coklu(_C, "hizmet_turu", …,
+    models.ServiceType)` ile tanımlıdır (`registry.py:781`): tip `liste` → `metin`, seçenek = hizmet listesinin
+    aktif adları ∪ verideki öğeler (kart sayılı), `eq`/`in`/`ne` TAM ÖĞE (`"Lexis Rapor"` filtresi
+    `"Lexis Rapor ; Vekaletli Takip"` kartını da getirir), `contains` parça. Anahtar değişmediği için kayıtlı
+    şablonlardaki eski eşitlik filtresi geçerli kalır. Föyler kaynağının kendi `hizmet_turu` kolonu tek değerli
+    kapalı liste olarak aynen durur. Satır düzeyi (hangi müvekkile hangi hizmet) için `hizmetler` kaynağı (§2.5).
 - INNER JOIN sonucu: davasız (`case_id IS NULL`, TEST/UNLINKED) belge rapora GİRMEZ — tenant'a
   bağlanamadığı için bilinçli (`:10-16`).
 
@@ -173,8 +188,8 @@ Kolon gövdesi `_kolon_katalogu` (`registry.py:879-896`), kaynak gövdesi `katal
 | `kontrol` | `tarih_araligi` ∣ `coklu_secim` ∣ `metin_icerir` ∣ `sayi_araligi` ∣ `mantik` ∣ `null` | tipten türetilir (`KONTROLLER`, `:66-73`; tarih→tarih_araligi, liste→coklu_secim, metin→metin_icerir, sayi/para→sayi_araligi, mantik→mantik); filtrelenemeyen kolonda `null` (`Kolon.kontrol`, `:112-114`) |
 | `oplar` | kolon başına izinli op listesi; filtrelenemeyen kolonda `[]` | `Kolon.oplar` = `izinli_oplar` ∨ `TIP_OPLARI[tip]` (`:108-110`, `:892`). **Plan §4.2'de yoktu, §4.3'e şerh düşüldü** — frontend combobox seçiminde `eq` mi `contains` mı göndereceğini buradan bilir |
 | `oneriler` / `oneri_kesik` | `onerili` metin kolonda DISTINCT değer listesi (≤300) + kesildi bayrağı; diğer kolonda `null` / `false` | `onerileri_getir` (`:865-876`): kaynağın `kisitlar(tenant_id)` + boş hariç + `ORDER BY` kolon + `LIMIT 301` (`ONERI_MAX=300`, `:63`); türetilmişte `oneri_sorgusu` (`_taraf_adi_onerileri`, `:280-290`: `case_parties JOIN cases`, dava kısıtları). `db=None` → `[]`. İşaretliler: Davalar `sub_type, responsible_lawyer_name, uyap_lawyer_name, court, judicial_unit, muvekkil_adlari, karsi_taraf_adlari, sigortali_adlari`; Müvekkiller `il, noterlik, specialty, sektor`; Belgeler `belge_turu_adi, uploaded_by` — plan listesiyle birebir |
-| `hizli_filtreler` | `[{alan, alternatifler}]`, sıralı | `VeriKaynagi.hizli_filtreler` (`:139`); denetim: alan katalogda ve filtrelenebilir, tekrarsız, `alternatifler` yalnız tarih alanında (`:794-804`). Davalar `opening_date(karar_tarihi, kesinlesme_tarihi, created_at) · status · responsible_lawyer_name · court · muvekkil_adlari · muvekkil_kategorisi · hizmet_turu · maddi_tazminat` (`:503-512`); Müvekkiller `category · il · client_type · dava_sayisi` (`:603-608`); Belgeler `uploaded_at · belge_turu_adi · uploaded_by · link_mode` (`:676-681`); Föyler `durum · hizmet_turu · muvekkil_tipi · kapsam_durumu` (`:739-744`) — plan §4.2 birebir |
-| `kolon_setleri` | `[{ad, kolonlar}]` | `VeriKaynagi.kolon_setleri` (`:140`); denetim: ad boş/tekrar değil, set boş değil, kolonlar katalogda (`:805-812`). Davalar `Temel` (= varsayılan) · `Karar takibi` · `Tazminat` · `Taraflar` (`:513-521`); Müvekkiller `Temel · İletişim · Vekalet` (`:609-614`); Belgeler/Föyler yalnız `Temel` (`:682`, `:745`) — plan §4.2 birebir |
+| `hizli_filtreler` | `[{alan, alternatifler}]`, sıralı | `VeriKaynagi.hizli_filtreler` (`:139`); denetim: alan katalogda ve filtrelenebilir, tekrarsız, `alternatifler` yalnız tarih alanında (`:794-804`). Davalar `opening_date(karar_tarihi, kesinlesme_tarihi, created_at) · status · responsible_lawyer_name · court · muvekkil_adlari · muvekkil_kategorisi · hizmet_turu · maddi_tazminat` (`:503-512`); Müvekkiller `category · il · client_type · dava_sayisi` (`:603-608`); Belgeler `uploaded_at · belge_turu_adi · uploaded_by · link_mode` (`:676-681`); Föyler `durum · hizmet_turu · muvekkil_tipi · kapsam_durumu` (`:739-744`) — plan §4.2 birebir; Hizmetler (G251) `arama · hizmet_turu · muvekkil_adi · kaynak` (`:1313-1318`) |
+| `kolon_setleri` | `[{ad, kolonlar}]` | `VeriKaynagi.kolon_setleri` (`:140`); denetim: ad boş/tekrar değil, set boş değil, kolonlar katalogda (`:805-812`). Davalar `Temel` (= varsayılan) · `Karar takibi` · `Tazminat` · `Taraflar` (`:513-521`); Müvekkiller `Temel · İletişim · Vekalet` (`:609-614`); Belgeler/Föyler yalnız `Temel` (`:682`, `:745`) — plan §4.2 birebir; Hizmetler yalnız `Temel` (`:1319`) |
 
 Katalog gövdesi tenant'a özeldir (öneriler tenant kurallı) → route süreç içi önbellekler (§2.3).
 Asistanın sistem talimatına gömülen katalog metni bu alanları BİLEREK içermez (§7).
@@ -261,9 +276,12 @@ hedef kaynağa eklenen düz kolon bağlı tarafta kendiliğinden görünür. Ba�
 | `muvekkiller` | `dava` · Dava | `davalar` | çoklu — `case_parties JOIN cases` `kart_eslesmesi`, CLIENT, `cases.deleted_at IS NULL` (`_muvekkilin_davalari_kumesi`; `dava_sayisi` ile aynı bağ) | hedefin düz kolonları; türetilmişler (`muvekkil_adlari`… `foy_sayisi`) atlanır |
 | `belgeler`, `foyler` | `dava` · Dava | `davalar` | **tekil** — `cases` zaten `from_clause` INNER JOIN'inde (`DAVA_ILISKISI_TEKIL`) | hedefin TÜM kolonları aynen kopyalanır (türetilmişler dahil: `dava.muvekkil_adlari` EXISTS'i `cases`e correlate olur) |
 | `belgeler`, `foyler` | `muvekkil` · Müvekkil kartı | `muvekkiller` | çoklu — aynı `_muvekkil_kumesi` (`cases` FROM'da olduğu için çalışır) | `dava_sayisi` hariç |
+| `hizmetler` (G251) | `dava` · Dava | `davalar` | **tekil** — `cases` FROM'da (`HIZMET_DAVASI_ILISKISI`, `registry.py:1394`) | hedefin tüm kolonları; kartın `hizmet_turu` özeti HARİÇ (satırın kendi `hizmet_turu` kolonu var) |
+| `hizmetler` (G251) | `muvekkil` · Müvekkil kartı | `muvekkiller` | çoklu — `_hizmet_muvekkili_kumesi` (`:1366`): kartın tüm müvekkilleri değil, YALNIZ hizmetin verildiği tarafın kartı (`kart_eslesmesi`: `client_id` doluysa o kart, boşsa ad anahtarı) | `dava_sayisi` hariç |
 
 Kolon sayıları (koddan, 10.09): davalar 88 → **145** (56 bağlı), müvekkiller 25 → 108, belgeler
-20 → 133, föyler 18 → 131. Eski `dava_tracking_no`/`dava_subject` kolonları şablon uyumu için kaldı.
+20 → 133, föyler 18 → 131 (02.10 güncel sayımı §2 tablosunun altında). Eski `dava_tracking_no`/`dava_subject`
+kolonları şablon uyumu için kaldı.
 
 - **Çoklu bağ kolonu** (`turetilmis=True`, `filtrelenebilir=True`, `siralanabilir=False`, `bag=<iliski>`):
   seçim `_bagli_secim` — bağlı kayıtların değerleri iç alt sorguda `GROUP BY` ile tekilleşir + sıralanır,
@@ -303,6 +321,49 @@ Kolon sayıları (koddan, 10.09): davalar 88 → **145** (56 bağlı), müvekkil
   5.5 s → 12 ms, `muvekkil.phone contains` 387 → 25 ms. DDL `idx_clients_ad_anahtari` /
   `idx_case_parties_ad_anahtari` `((replace(replace(upper(trim(name)), 'İ', 'I'), 'ı', 'I')))` — ifade
   `_ad_anahtari` ile BİREBİR (test bekçisi derleyip karşılaştırır); koşulsuz `("index", ...)` op, IF NOT EXISTS.
+
+### 2.5 `hizmetler` kaynağı — müvekkil × hizmet × dava (G251, 2026-10-02)
+
+**Sorun:** muhasebe sorusu ("X müvekkiline hangi davalarda hangi hizmet verildi", "Lexis Rapor verilen
+müvekkiller") dava satırından cevaplanamıyordu — hizmet kartın değil kart × müvekkil çiftinin özelliğidir
+(`case_hizmetleri`, G248; model [`dava-acma-akisi.md` §18](dava-acma-akisi.md)). **Çözüm:** beşinci
+`VeriKaynagi` (`HIZMETLER`, `registry.py:1298-1321`); satır = bir hizmet kaydı.
+
+| anahtar | etiket | tip | ifade | not |
+| --- | --- | --- | --- | --- |
+| `arama` | (sanal) | — | müvekkil adı · hizmet türü · ofis no · esas no · SistemNo | hızlı filtre, `sunum="arama"` |
+| `hizmet_turu` | Hizmet Türü | liste | `case_hizmetleri.hizmet_turu` | seçenek `SERVICE_TYPES` çekirdeği + `service_types` tablosu; tek değerli |
+| `kaynak` | Kaynak | liste | CASE: `foy_id` dolu → `föy`, boş → `elle` (`_hizmet_kaynagi`, `:1260`) | değerler kullanıcıya dönük yazım (`HIZMET_KAYNAKLARI`, `:1249`) — API'nin `"foy"` kodu değil; düz kolon: süzülür, sıralanır, gruplanır |
+| `muvekkil_adi` | Müvekkil | metin | `case_parties.name` (hizmetin tarafı) | DÜZ kolon, önerili — sıralanır ve **gruplanır** ("müvekkil başına hizmet sayısı"); müvekkil kartına bağlı olmayan tarafta da dolu |
+| `sistem_no` | Föy SistemNo | metin | `case_foys.sistem_no` (LEFT JOIN) | elle satırda boş |
+| `id`, `case_id`, `source`, `created_by`, `created_at` | ID · Dava ID · Kaynak İmzası · Kaydeden · Kayıt Tarihi | — | `case_hizmetleri` | grup Sistem |
+
+- **Gruplar** `Arama · Hizmet · Müvekkil · Föy · Sistem` (`:1266`); **varsayılan kolonlar** `muvekkil_adi,
+  hizmet_turu, dava.tracking_no, dava.esas_no, dava.court, kaynak` (`:1296`); tek kolon seti `Temel`.
+- **Kısıtlar** (`_hizmet_kisitlari`, `:1252`): dava kaynağının tenant + soft-delete kuralı (föyler deseni) +
+  `coalesce(case_foys.kapsam_durumu, '') = ''` — föyü kapsam dışı işaretli satır görünmez (aktarım o satırı
+  zaten siler; koşul işaret ile silme arasındaki pencereyi kapatır). Elle satırda föy NULL → koşul geçer.
+- **Bağlar** (§2.4): `dava.*` tekil — düz kolon gibi süzülür/sıralanır/gruplanır; kartın `hizmet_turu` özeti
+  bilerek alınmaz (ikinci bir "Hizmet Türü" olurdu). `muvekkil.*` çoklu ve hizmetin KENDİ tarafına dardır;
+  çoklu bağ olduğu için müvekkil kartı alanları (`muvekkil.category` vb.) süzülür ama GRUPLANAMAZ (422) —
+  müvekkile göre gruplama `muvekkil_adi` düz kolonuyla yapılır.
+- **Özet modu (§3.1):** `gruplama: [muvekkil_adi]` / `[hizmet_turu]` / `[kaynak]` + `olcumler: [sayi]` çalışır.
+- **Davalar tarafı:** dava başına TEK satır isteniyorsa `davalar` kaynağı + çok değerli `hizmet_turu` (§2).
+  `davalar`a `hizmet.*` çoklu bağı AÇILMADI (G251 kararı: anahtar değişmesin, hizmet satırı hiç yazılmamış
+  kartta bağ boş dönerdi, katalogda ikinci "Hizmet Türü" olmasın).
+- **Asistan:** kaynak başlığının altına tek satır "ne zaman:" ipucu basılır (`asistan.KAYNAK_IPUCLARI`,
+  `asistan.py:104`; şimdilik yalnız `hizmetler`) — `prompts.py`'nin ÖZET RAPOR kuralı "müvekkil başına dağılım →
+  muvekkiller" dediği için müvekkil × hizmet sorusunda kaynağı dengelemek üzere. Tanım yolu değişmedi (K6).
+  Gerçek Gemini ile denenmedi (G251 raporu).
+- **Frontend:** `lib/reportsChat.ts` `hizmetler` için üç örnek istem ("Lexis Rapor verilen müvekkilleri dava
+  ofis numarasıyla listele", "Müvekkil başına hizmet sayısını göster", "Hangi hizmet türleri var?"); ekran
+  bileşenleri değişmedi (kaynak rozet menüsü ve gruplar katalogdan okunur).
+- **Veri durumu (02.10.2026):** lokal DB'de `case_hizmetleri` 0 satır (salt okunur `SELECT count(*)`) — kaynak,
+  geriye dönük doldurma (`scripts/hizmet_kayitlari_doldur.py --apply`, İNSAN ADIMI;
+  [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md)) ya da ilk aktarım koşusu yazana dek yalnız elle girilen
+  satırları gösterir. Gerçek veriyle satır sayısı/süre ölçülmedi.
+
+Bekçi `backend/tests/test_g251_rapor_hizmetler.py`.
 
 ## 3. Rapor tanımı ve doğrulama
 
@@ -997,6 +1058,10 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
   yazar (`cikti._tarihe_cevir` — openpyxl tz'li datetime'ı REDDEDİYORDU: lokal Postgres'te `uploaded_at` kolonlu
   Excel export 500 veriyordu, 12.09 bulgusu). Tarih kısayolları tarayıcının yerel gününü ISO'ya çevirir
   (`isoGun`, `lib/reports.ts`).
+- **`hizmetler` kaynağı doldurma bekliyor (02.10):** lokal DB'de `case_hizmetleri` 0 satır; geriye dönük
+  doldurma insan adımıdır (§2.5). Aynı sebeple `davalar.hizmet_turu` özeti, hizmet satırı almamış kartta
+  aktarımın eski TEK değerini taşır — çok değerli filtre o hücrede de çalışır (tek öğe). Asistanın
+  `hizmetler` ipucu gerçek Gemini ile denenmedi.
 - **CSV ondalık virgül (12.09):** `para` "1234,50" (iki basamak), ondalıklı `sayi` virgüllü, tam sayı aynen
   (`cikti._sayi_metni`) — Türkçe Excel `;` ayraçlı CSV'de `,` ondalık bekler. xlsx ana yol.
 - **Tarayıcıda görsel duman testi yapılmadı (G173-G175 de gece koştu):** yerleşim/responsive kanıtı jsdom'da
@@ -1029,6 +1094,7 @@ gövdeleri tarihsel bırakıldı (planın başında şerh); sunucu sözleşmesi 
 | `backend/tests/test_g132_rapor_asistani.py` (G176 eki, 2 test; dosyada 30 test fonksiyonu — `grep -c "def test_"`, c839fdb) | `test_prompt_g176_uygulama_kurali_teyit_dongusu_yok` ("TEYİT DÖNGÜSÜ"/"hemen uygulanmaz"/"yine onay iste" YOK; "hemen uygulanır", "düzenlenebilir bir şeritte", "onay SORMA", belirsizlik, sözlü onay, "SIFIRDAN ÜRETME", düzeltme cümlesi VAR), `test_prompt_g176_yaklasik_ad_contains_ve_liste_sorusu` (`contains` + liste sorusu cümleleri; "aynen kopyala" korunmuş; yerleşim kurallar < KATALOG < MEVCUT TANIM) — eski prompt'ta kırmızı (G176 raporu, stash ile doğrulandı) |
 | `frontend/src/lib/reportsChat.test.ts` (**42**: G167 + G174 bölümleri), `components/reports/AssistantBar.test.tsx` (**16**), `pages/ReportsPage.asistan.test.tsx` (**23**), `ReportsPage.favori.test.tsx` (**12**) | teyit kartı okunur satırları (7 filtre biçimi, bağlı kolon etiketi, bilinmeyen anahtar), `tanimAyni`, `onayNiyeti`, `kaydetNiyeti`; **G174:** `degerEsle` (alt dize temiz, birebir `eq`, tutmayan → adaylar kelime kesişimine göre sıralı ≤5, öneri listesiz kolon temiz, `in`/`between`/tarih/sayı/mantık atlanır, İ/ı ve U+0307 normalize), `listeNiyeti` (olumlu kalıplar + eylem fiilli olumsuzlar, etiket/hızlı filtre/eşanlamlı çözümü, belirsizde adaylar); otomatik uygulama (temiz tanım düğmesiz uygulanır, `uygulandi` + Geri al; sorunlu değer kartı + aday tık → uygula; "Yine de uygula"; liste balonu + liste tık → `onFiltreEkle`; "Hangisi?"); düzeltme `mevcut_tanim` = bekleyen; sözle onay hemen; sayfa reddederse kart bekler; tanımsız eylem; `indir_*` ile gelen temiz tanım doğrudan indirilir, 413 yolu; Geri al → yeniden bekleyen; sayfa düzeyinde liste balonu → `eq` → `in` birleşmesi → × ile düşme + toast; favori kartı indirme sonrası |
 | `frontend/src/lib/reports.test.ts` (**50**), `reports.export.test.ts` (**14**), `reports.favori.test.ts` (**10**) | tip↔op tablosu, kolon başına `oplar`, kontrol→op (§4.3) + gidiş-dönüş, tarih kısayolları, `tanimGecerliMi` taraf kolonu kapısı, gövde biçimleri, hata çevirisi, `Content-Disposition`, şablon sahipliği, favori ad önerisi |
+| `backend/tests/test_g251_rapor_hizmetler.py` (**18**, G251) | kaynak kayıt defterinde ve katalogda; hızlı filtreler + kolon seti; satır = bir hizmet kaydı (tenant, soft-delete, kapsam dışı föy; işaret kalkınca satır görünür); `kaynak` kolonu föy/elle; müvekkil kartı kolonları ve filtresi hizmetin kendi tarafından; `dava.*` tekil bağ; muhasebe soruları; tüm seçilebilir kolonların sorgulanması; Postgres JOIN + kapsam kısıtı derlemesi; özet (müvekkile ve hizmet türüne göre `sayi`), müvekkil kartı kolonu gruplanamaz; `davalar.hizmet_turu` çok değerli katalog + eski eşitlik filtresi tam öğe; asistan kataloğu kaynağı ve ipucunu taşır, tanım aynı doğrulama yolundan. Aynı görevde beklentisi taşınan dosyalar: `test_g130`, `test_g137`, `test_g141`, `test_g145`, `test_g166` (kaynak listesi 4 → 5), `frontend/src/lib/reportsChat.test.ts` |
 | **12.09 özet modu:** `backend/tests/test_rapor_ozet_modu.py` (**26**: avukat başına sayı, ay/yıl/gün kırılımı — zaman damgalı `tr_gun`, gruplamasız tek satır, filtre WHERE'de, ölçüm anahtarıyla sıralama, özet CSV export, 12 × 422, katalog `gruplanabilir`/limitler, Postgres `AT TIME ZONE` derlemesi, asistan çevirisi, prompt kuralı); `frontend/src/lib/reports.ozet.test.ts` (**5**), `components/reports/builderState.ozet.test.ts` (**5**), `TanimSeridi.ozet.test.tsx` (**5**), `lib/reportsChat.ozet.test.ts` (**3**) | geçerlilik kapısı motor ikizi, etiketler, `tanimNormalize`; özet yardımcıları (aç/kapat, gruplama/ölçüm ekle-kaldır, kırılım, sıralama süzme, `tanimdanDurum`); şerit özet satırı (Σ Özet, çipler, kırılım döngüsü, + Grupla/+ Ölçüm listeleri, Liste görünümü, salt); asistan ayrıntı/özet/eşitlik |
 | **12.09 doğruluk düzeltmeleri:** `backend/tests/test_rapor_dogruluk_duzeltmeleri.py` (**14**) | saat dilimi bind'ı `+03:00`, UTC → TR serileştirme, Excel tz'siz, CSV ondalık virgül, Türkçe sıra (`tr_sira_anahtari`, öneriler, veriden seçenekler, DISTINCT katmanı) |
 | `frontend/src/components/reports/TanimSeridi.test.tsx` (**14**, G173), `builderState.test.ts` (**18**: 12 + G173 `kolonEkle` ×2, `kolonKaldir`, `filtreEkle` ×3), `FilterControl.test.tsx` (**11**), `PreviewTable.test.tsx` (**7**), `TemplateBar.test.tsx` (**4**) | yedi şerit öğesi + sarma + bağlı kolon önek/renk; kontrollü davranış; kaynak menüsü (farklı → `onKaynakSec`, aynı → çağrı yok); kolon × / tek kolon disabled; "+ Kolon" grup başlıkları + arama + seçim, hazır set tekrarsız + 60 tavanı; filtre popover (metin `gecikmeli=true`, liste hemen, odak çıkışı `onHemen`, ×); 300 önerili combobox + kesik başlığı + tarih kısayolu; "+ Filtre" akışı (boş → popover açık, çip yok → doldurunca çip; boş yuva yeniden kullanımı; Escape → durumda kalır; 20 tavanı); sıralama çipi ×; Temizle; "…" gelişmiş/"Basit kontrole dön"/boş kontrol çip vermez; `salt`; yuvalar/eklenen alanlar/temizle/tanımdan çözme; kontrol→op (değişmedi); başlıktan sıralama + "güncelleniyor…" + boş sonuç; kompakt şablon çubuğu |
@@ -1058,4 +1124,5 @@ tests/test_g13*.py tests/test_g166*.py`), frontend host'ta (`npm --prefix fronte
 | Frontend şerit durumu ↔ tanım | `frontend/src/components/reports/builderState.ts` |
 | Frontend sayfa + bileşenler | `frontend/src/pages/ReportsPage.tsx` (yerleşim, `onFiltreEkle`, `asistanTanimiUygula`), `frontend/src/components/reports/` (`TanimSeridi.tsx` şerit; `AssistantBar.tsx` otomatik uygulama + liste balonu; `AssistantMessage.tsx` kart hâlleri; `DegerListesi.tsx`) |
 | Gemini devre kesici / retry / `_failed_event` | [`dis-bagimliliklar.md`](dis-bagimliliklar.md), `backend/analyzer.py:82`, `:368` |
+| `hizmetler` kaynağı (§2.5), `davalar.hizmet_turu` çok değerli | `backend/services/rapor/registry.py:1237-1321`, `:781`; `backend/services/rapor/asistan.py:104` (`KAYNAK_IPUCLARI`); görev raporu `gorevler/gorev/G251.md` |
 | Görev raporları | `gorevler/gorev/G130.md` … `G168.md`, `G173.md` … `G177.md`; iptal edilen üç aşama planı `docs/arsiv/gorevler/G169.md` … `G172.md` (tarihsel) |

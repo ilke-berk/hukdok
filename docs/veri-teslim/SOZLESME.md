@@ -32,6 +32,22 @@ alınacağını** anlatır.
 > dosyaları (§8) size HukuDok tarafından iletilir. Paketin biçimine dair kuralların hiçbiri
 > değişmedi.
 
+> **02.10.2026 değişikliği — `Hizmet Türü` bizde müvekkil bazlı hizmet kaydı oldu.** Sütunun
+> **anlamı ve sizin yazımınız değişmedi**: föy başına tek değer, büronun o föyde verdiği hizmet.
+> Dosyanızda değişiklik gerekmez. Değişen yalnız bizdeki işlenişi:
+>
+> - Değer föyde kayıpsız saklanmaya devam eder; ek olarak föyün `Müvekkil`ine bağlı bir "hizmet
+>   kaydı" yazılır. Dava kartındaki hizmet alanı bu kayıtların birleşimidir — aynı karta bağlı
+>   föylerin farklı hizmet türü artık **çelişki sayılmaz**, hepsi görünür. §10 tablosundaki "kart
+>   alanına kardeş föyler çelişmiyorsa yazılır" cümlesi `Hizmet Türü` için artık geçerli değildir.
+> - Listemizde karşılığı olmayan bir hizmet adı ya da müvekkile bağlanamayan föy, satır raporunda
+>   **uyarı** olarak görünür (hata değildir; föyün diğer alanları işlenir, değer föyde durur) —
+>   yalnız hizmet kaydı yazılmaz. `;` ile birden çok hizmet taşıyan hücre tanımsızdır: föy başına
+>   tek değer yazın.
+> - Hizmet listemiz sizin `Hizmet Türü` değerlerinizden beslenir. Yeni bir ad ekleyecek ya da bir
+>   adı değiştirecekseniz §6 kuralı aynen geçerli: önce yazılı bildirim (ekleme bizde insan
+>   adımıdır). Bildirilmeden gelen yeni/değişmiş ad, listeye eklenene kadar uyarıya düşer.
+
 ## 1. Nereye, hangi adla
 
 - **Teslim yolu (17.09.2026):** SharePoint klasörü **yoktur**; paketi HukuDok tarafına iletin.
