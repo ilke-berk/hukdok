@@ -111,10 +111,11 @@ describe("caseCardFields — bir kavram tek ekranda (G073 → G074)", () => {
     });
 
     it("dosya_son_durumu karttan çıktı — panel onu ZATEN yazıyordu", () => {
-        // G121 ile dört alan: muvekkil_tipi + hizmet_turu bureau_type'ın altına girdi
-        // (planlayıcı istisnası, G105 emsali). dosya_son_durumu hâlâ YOK.
+        // G121 ile muvekkil_tipi + hizmet_turu bureau_type'ın altına girmişti (planlayıcı
+        // istisnası, G105 emsali); G252'de hizmet_turu karttan ÇIKTI — hizmet artık
+        // müvekkil başına Hizmetler panelinde (CaseHizmetPanel). dosya_son_durumu hâlâ YOK.
         expect(OFFICE_CARD_FIELDS.map(f => f.key))
-            .toEqual(["acceptance_date", "bureau_type", "muvekkil_tipi", "hizmet_turu"]);
+            .toEqual(["acceptance_date", "bureau_type", "muvekkil_tipi"]);
     });
 
     it("kart-taslak kesişimi TAM LİSTE kilitli: yalnız kartta salt-okunur belgeleme ikilisi", () => {
