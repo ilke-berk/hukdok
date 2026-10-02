@@ -150,7 +150,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      Backend seri: G248 → G249 → G257 → G250 → G251. Frontend: (G252 ∥ G256) → G253. G254 en son (G256, G257 dahil).
      G255 aynı gece koşarsa G257'den SONRA (hukdok_aktarim.py). -->
 
-- [ ] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + müvekkil başına küme yazımı (PUT) + taraf silme + liste rename kuralı
+- [x] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + müvekkil başına küme yazımı (PUT) + taraf silme + liste rename kuralı
 - [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır
 - [ ] G257 | bant:backend | bagimli:G249 | Hizmet listesi veri ekibinin paketinden: `deger_havuzu_seed` HAVUZLAR'a "Hizmet Türü" + aktarım eşlemesi kod sabitinden değil DB `service_types` listesinden (koşu başında) + sentetik paketle uçtan uca test; `--apply` insan adımı
 - [ ] G250 | bant:backend | bagimli:G257 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
