@@ -156,7 +156,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G250 | bant:backend | bagimli:G257 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
 - [ ] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
 - [ ] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, müvekkil başına çoklu seçimli açılır liste (`HizmetSecici`, tek PUT) + "tüm müvekkillere uygula"; Büro Bilgileri'ndeki tek değerli satır kalkar | BLOKE(testi degistirmeden gecilemedi - gorev tanimi gozden gecirilmeli)
-- [ ] G256 | bant:frontend | bagimli:G248 | Admin paneli "Hizmet Türleri" sekmesi: ekle, yeniden adlandır (paket adı uyarısı), kullanımdaysa taşıyarak sil, sürükle-sırala + `useConfig.typeToKey` önbellek tazeleme
+- [x] G256 | bant:frontend | bagimli:G248 | Admin paneli "Hizmet Türleri" sekmesi: ekle, yeniden adlandır (paket adı uyarısı), kullanımdaysa taşıyarak sil, sürükle-sırala + `useConfig.typeToKey` önbellek tazeleme
 - [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim, "tüm müvekkillere uygula"), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
 - [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253,G256,G257 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı + liste kaynağı/yönetimi (koddan doğrulanmış)
 
