@@ -60,7 +60,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G217 | bant:frontend | bagimli:G205 | `useVoiceInput` + `MicButton` (MediaRecorder, ≤60 sn) → Hukukbot SoruKutusu + Rapor AssistantBar; metin kutuya düşer, otomatik gönderme yok; testler (00e0beb; 26.09 BLOKE sebebi kararsız `api.test.ts` idi, düzeltme e125738 sonrası 27.09 gündüz elle merge, vitest 1206 yeşil)
 - [x] G218 | bant:docs | bagimli:- | `docs/veri-teslim/ofis-no-formati.md`: B1.B2.B3.B4.B5 açıklaması + örnekler (koddan okunarak), veri sağlayıcıya iletilecek
 - [x] G219 | bant:docs | bagimli:G207,G210,G211,G212,G213,G214,G215,G216,G217,G218 | CLAUDE.md + docs/mimari özetleri (tarihli notlar, sesli giriş, takvim açıklaması)
-- [ ] G220 | bant:backend | bagimli:G219 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu) + kartta düzenlenebilir dropdown + aktarım/SOZLESME | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
+- [ ] G220 | bant:backend | bagimli:G219,G251 | Hizmet türü: yeni liste + eski→yeni eşleme script'i (kuru koşu; `case_hizmetleri` + föy + özet) + aktarım/SOZLESME (kart dropdown'ı 01.10'da G248-G253'e taşındı) | BLOKE(veri sağlayıcıdan liste + eşleme bekleniyor)
 - [ ] G221 | bant:backend | bagimli:G213,G220 | UYAP sorumlu avukat referans listesi + UYAP avukatı seçimi bu listeden (LawyerCombobox) | BLOKE(veri sağlayıcıdan UYAP avukat listesi bekleniyor)
 - [x] G222 | bant:frontend | bagimli:G213 | QuickCaseModal avukat seçimi `LawyerCombobox`'a (G213 kalanı); `QuickCaseModal.config.test.tsx` YALNIZ avukat seçeneği beklentileri uyarlanabilir (26.09 kullanıcı kararı)
 - [x] G223 | bant:frontend | bagimli:- | Ofis no B1: NewCase/Intake kategori KODU geçince `X1`'e düşüyor + sigorta kodu tr-TR büyük harf yüzünden `S0` (G218 bulgusu); mevcut numaralar değişmez
@@ -130,6 +130,35 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G245 | bant:backend | bagimli:G243 | Python 3.12 → 3.13: backend Dockerfile + ci.yml + ruff/mypy hedefi + dokümanlar tek hizada; tüm pinler wheel'den, lider worker açılışı kanıtlı
 - [x] G246 | bant:backend | bagimli:- | Postgres 17 geçiş PROVASI: lokal dump → geçici PG17 konteyneri → restore + migrate + tam pytest + arama EXPLAIN karşılaştırması → runbook; kod/konfig değişmez, geçici konteyner silinir
 - [ ] G247 | bant:backend | bagimli:- | Node 24 → 26: frontend Dockerfile + ci.yml; paket sürümleri değişmez (vite/vitest majorları ayrı plan) | BLOKE(Node 26 Active LTS'e geçene dek, ≈2026-10-28 — insan eki siler)
+
+## ÖNCELİK 7 — Müvekkil bazlı hizmet kaydı: kartta hangi hizmet hangi müvekkile verildi (2026-10-01 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 01.10 sohbet — "bir dava kartında birden fazla hizmet verilmiş olabilir", "hangi hizmetin hangi müvekkile
+     verildiği muhasebe için önemli", "aynı kartta aynı müvekkile birden çok hizmet mümkün". Ölçüm (lokal): 1.060 kartta
+     çok hizmet, 1.171 kartta çok müvekkil, aynı çiftte farklı hizmet 14, föyü olmayan kart 7.880.
+     Model: case_hizmetleri (kart × müvekkil tarafı × hizmet, föy bağı); cases.hizmet_turu TÜRETİLMİŞ özet. Sözleşme G248'de SABİT
+     → G252 (frontend) G248 bitince backend zinciriyle paralel koşar. Backend seri: G248 → G249 → G250 → G251.
+     G253 G250 + G252'ye bağlı (useCases.ts ortak). G254 en son. İlk sürüm kapsam dışı: ücret/fatura, hizmet tarihleri.
+     G220 (veri sağlayıcının yeni listesi) artık bu modelin üstüne kurulur → G251'e bağlandı, BLOKE kalır.
+     Geriye dönük doldurma (G249 script'i --apply) ve prod uygulaması İNSAN ADIMI. Tahmin: 2 gece. -->
+
+- [ ] G248 | bant:backend | bagimli:- | Hizmet kaydı temeli: `case_hizmetleri` tablosu (kısmi UNIQUE'ler, RESTRICT FK) + tek yazma yolu + türetilmiş `cases.hizmet_turu` özeti + GET/POST/DELETE `/api/cases/{id}/hizmetler` + taraf silme + liste rename kuralı
+- [ ] G249 | bant:backend | bagimli:G248 | Hizmet kaydı: aktarım föy başına satır (kardeş çelişkisinden çıkar) + geriye dönük doldurma script'i (kuru koşu) + kart birleştir/ayır satırları taşır
+- [ ] G250 | bant:backend | bagimli:G249 | Hizmet kaydı: `CasePartyCreate.hizmet_turleri` + kullanıcı yollarında hizmetsiz müvekkil 422 + `service_type` zorunluluktan çıkar + liste filtresi EXISTS + PATCH'te `hizmet_turu` kapanır
+- [ ] G251 | bant:backend | bagimli:G250 | Raporlama "Hizmetler" kaynağı (müvekkil × hizmet × dava) + davalarda çok değerli hizmet kolonu + asistan kataloğu + örnek istemler
+- [ ] G252 | bant:frontend | bagimli:G248 | Dava kartında "Hizmetler" paneli: müvekkile göre gruplu çipler, föy satırı salt okunur rozetli, elle ekle/sil
+- [ ] G253 | bant:frontend | bagimli:G250,G252 | NewCase + intake + QuickCaseModal: müvekkil başına hizmet seçici (tipe göre ön seçim), hizmetsiz müvekkilde Kaydet kapalı, eski 5'li maske kalkar
+- [ ] G254 | bant:docs | bagimli:G248,G249,G250,G251,G252,G253 | CLAUDE.md + dava-acma-akisi + veri-teslim-hatti + raporlama: müvekkil bazlı hizmet kaydı (koddan doğrulanmış)
+
+## ÖNCELİK 8 — Aktarım kullanıcıyı kilitlemez: kart başına kısa transaction (2026-10-02 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: 02.10 olayı — 01.10 paketinin gerçek uygulaması (17:49-17:56) avukat adı değişikliğini, 02.10 CLI kuru
+     koşusu (10:15-10:24) #3469 aşama geçişini lock_timeout ile düşürdü; aktarım TEK transaction, kuru koşu da yazıp
+     rollback ediyor. Geçici önlem: mesai dışı kuralı + 409 mesajı (veri-teslim-hatti §5 "Toplu işlem prensibi").
+     G255 G249 ile `scripts/hukdok_aktarim.py`'yi paylaşır → aynı gece koşarlarsa G249'dan SONRA. Tek görev; büyükse
+     görev içinde durup bölme önerisi raporlanır (belge koruma şartı pazarlık konusu DEĞİL). Tahmin: 1 gece + ölçüm. -->
+
+- [ ] G255 | bant:backend | bagimli:- | `hukdok_aktarim` parti başına kısa transaction: kilitli kartı atla-sona bırak (`NOWAIT`/`SKIP LOCKED`), parti kapsamlı belge envanteri kapısı + sonda tam kapı, kuru koşu parti başına rollback, idempotent yeniden koşu, açılış toparlaması "kısmen uygulandı"; eşzamanlı yazma dbtest'i
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
