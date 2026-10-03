@@ -331,6 +331,12 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 - **Avukat adı serbest yazılmaz (27.09):** avukat adı yazan YENİ kod `lawyer_resolver.kanonik_avukat_metni`'nden
   geçer (listedeki yazım; doğru yazım "Tuğçe Ungör Yanık", Ü değil); kullanıcı yolları listede olmayan
   yeni adı `AvukatListedeYok` → 422 ile reddeder. Ayrıntı `docs/mimari/veri-teslim-hatti.md` "Avukat yazım koruması".
+- **Bir kartta aynı kişi TEK taraf satırıdır (03.10 kullanıcı kararı):** taraf yazan/taşıyan YENİ kod kişiyi
+  `party_check.normalize_party_key` ile tanır (tür ve rol anahtarda YOK), çok adlı metni `split_party_names` ile
+  böler, aynı kişi iki türde karşılaşırsa `TARAF_TUR_ONCELIGI` (müvekkil > karşı taraf > 3. şahıs) kazanır —
+  `(tür, ad)` anahtarı ve ham `name ==` karşılaştırması YAZILMAZ. Mevcut mükerrerlerin temizliği
+  `scripts/taraf_tekillestir.py` İNSAN ADIMIdır (03.10: LOKALDE uygulandı — 952 kart, 1.216 satır; prod'da KOŞULMADI).
+  Ayrıntı `docs/mimari/dava-acma-akisi.md` §7.1.
 - **Ofis no ayrıştırılmaz, elle kurulmaz (karar 023):** numara üreten/okuyan YENİ kod `services/ofis_no`'yu
   çağırır; müvekkil kodu gerekiyorsa `cases.ofis_no_kodu` okunur (boşsa `kartsiz_foy_kart_ac.kart_kodu`) —
   `split`/`substr` ile blok çıkarma ve eski formatı (nokta ayraçlı beş blok) ayrıştıran kod YAZILMAZ; sayaç

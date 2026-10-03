@@ -30,6 +30,7 @@ from managers.log_manager import TechnicalLogger
 from managers.ttl_cache import DiskTTLCache
 from file_utils import safe_remove, sanitize_filename, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
 from pdf.format_converter import ConversionBusyError
+from party_check import normalize_party_key, split_party_names
 import models
 from services import confirm_idempotency, document_pipeline
 
@@ -320,21 +321,30 @@ def _auto_enrich_case_data(case_id: int, karsi_taraf: str = None, uploaded_by: s
         if karsi_taraf:
             has_counter = any(p.party_type == "COUNTER" for p in case.parties)
             if not has_counter:
-                new_party = models.CaseParty(
-                    case_id=case_id, name=karsi_taraf, role="Karşı Taraf", party_type="COUNTER"
-                )
-                db.add(new_party)
-                history = models.CaseHistory(
-                    case_id=case_id,
-                    field_name="karşı_taraf",
-                    old_value="Yok",
-                    new_value=karsi_taraf,
-                    # Faz 7 kararı 3: sessiz zenginleştirme imzalanır
-                    changed_by=uploaded_by,
-                    source="auto-enrich",
-                )
-                db.add(history)
-                updated_fields["counter_party"] = karsi_taraf
+                # 03.10: belgedeki metin "A; B; C" olabilir — birleşik TEK satır yazılırsa
+                # sonraki aktarım adları ayrıca ekler ve kart mükerrerlenir. Kişi başına
+                # satır; kartta başka türde zaten duran kişi (ör. müvekkil) yeniden yazılmaz.
+                mevcut = {normalize_party_key(p.name or "") for p in case.parties}
+                eklenen = [
+                    ad for ad in split_party_names(karsi_taraf)
+                    if normalize_party_key(ad) not in mevcut
+                ]
+                for ad in eklenen:
+                    db.add(models.CaseParty(
+                        case_id=case_id, name=ad, role="Karşı Taraf", party_type="COUNTER"
+                    ))
+                if eklenen:
+                    history = models.CaseHistory(
+                        case_id=case_id,
+                        field_name="karşı_taraf",
+                        old_value="Yok",
+                        new_value="; ".join(eklenen),
+                        # Faz 7 kararı 3: sessiz zenginleştirme imzalanır
+                        changed_by=uploaded_by,
+                        source="auto-enrich",
+                    )
+                    db.add(history)
+                    updated_fields["counter_party"] = "; ".join(eklenen)
 
         if updated_fields:
             db.commit()

@@ -15,7 +15,9 @@ Kurallar (belge koruma şartı, G063/G045/G062 tek yazıcı desenleri):
 * Belgeler `case_id` ile taşınır; `case_party_id` kalan karttaki aynı adlı
   tarafa yeniden bağlanır (yoksa taraf taşınır) — SET NULL tuzağına düşmez.
 * Taraflar/avukatlar AD bazlı tekilleştirilerek taşınır (kalan kartta zaten
-  varsa mükerrerdeki satır silinir — belge bağı önce yeniden yazılır).
+  varsa mükerrerdeki satır silinir — belge bağı önce yeniden yazılır). Taraf
+  anahtarında TÜR YOK (03.10): aynı kişi bir kartta müvekkil, öbüründe 3. şahıs
+  ise tek satır kalır ve öncelikli tür kazanır (`party_check.TARAF_TUR_ONCELIGI`).
 * Hizmet satırları (`case_hizmetleri`, G249) tarafla birlikte taşınır — tek yazma
   yolu `case_hizmetleri.tarafi_tasi`: föy satırı hep taşınır, kalan kartta aynı
   (müvekkil, hizmet) ELLE satırı varsa taşınan elle satır birleşir; iki kartın
@@ -48,7 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import models
 from managers import case_hizmetleri, case_manager
 from managers.reference_lists import tr_upper
-from party_check import normalize_party_key
+from party_check import normalize_party_key, taraf_tur_sirasi
 from scripts.hukdok_aktarim import _baslik_anahtari
 
 logger = logging.getLogger("MukerrerBirlestir")
@@ -65,8 +67,23 @@ class BirlestirmeSonucu:
     mukerrer_tracking_no: str = ""
 
 
-def _taraf_anahtari(p: models.CaseParty) -> Tuple[str, str]:
-    return (p.party_type or "", normalize_party_key(p.name or ""))
+def _taraf_anahtari(p: models.CaseParty) -> str:
+    """Kart içi KİŞİ anahtarı — taraf türü anahtarda YOK (03.10.2026).
+
+    Eski anahtar `(party_type, ad)` idi: bir kartta müvekkil, öbüründe sigortalı
+    (THIRD) olan aynı hekim birleşen kartta iki satır kalıyordu (952 kartlık
+    mükerrerin birleştirme kaynaklı kısmı). Adı anahtar üretmeyen satır kendi
+    id'siyle tekildir — boş anahtarlar birbirine eşlenmez.
+    """
+    return normalize_party_key(p.name or "") or f"#{p.id}"
+
+
+def _kart_taraf_haritasi(case: models.Case) -> Dict[str, models.CaseParty]:
+    """anahtar → kartın o kişiye ait satırı; birden çoksa öncelikli tür, sonra küçük id."""
+    harita: Dict[str, models.CaseParty] = {}
+    for p in sorted(case.parties, key=lambda x: (taraf_tur_sirasi(x.party_type), x.id or 0)):
+        harita.setdefault(_taraf_anahtari(p), p)
+    return harita
 
 
 def _muvekkil_kumesi(case: models.Case) -> set:
@@ -135,15 +152,15 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
         return sonuc
     t = sonuc.tasinan
 
-    # 1) Taraflar: kalan karttaki (tür, ad) → satır; mükerrerdeki taraf id → kalan taraf id
+    # 1) Taraflar: kalan karttaki KİŞİ (ad anahtarı) → satır; mükerrerdeki taraf id → kalan taraf id
     # Taraf/avukat/belge ilişkileri `cascade="all, delete-orphan"` — taşıma
     # koleksiyon üzerinden yapılır (remove + append); yalnız FK kolonunu yazmak
     # ORM koleksiyonuyla çelişir ve flush'ta geri alınabilirdi.
-    kalan_taraf = {_taraf_anahtari(p): p for p in kalan.parties}
+    kalan_taraf = _kart_taraf_haritasi(kalan)
     taraf_esleme: Dict[int, int] = {}
     silinecek_taraflar: List[models.CaseParty] = []
     hizmet_tasima: List[Tuple[int, int]] = []      # (mükerrerdeki taraf id, kalandaki taraf id)
-    for p in list(mukerrer.parties):
+    for p in sorted(mukerrer.parties, key=lambda x: (taraf_tur_sirasi(x.party_type), x.id or 0)):
         hedef = kalan_taraf.get(_taraf_anahtari(p))
         if hedef is None:
             mukerrer.parties.remove(p)
@@ -152,6 +169,20 @@ def birlestir(db, kalan: models.Case, mukerrer: models.Case, *, kim: str,
             hizmet_tasima.append((p.id, p.id))     # taraf satırı taşındı: yalnız kart değişir
             t["taraf_tasinan"] = t.get("taraf_tasinan", 0) + 1
         else:
+            if taraf_tur_sirasi(p.party_type) < taraf_tur_sirasi(hedef.party_type):
+                # Aynı kişi kalanda daha zayıf türde (ör. 3. şahıs "Sigortalı"), gelende
+                # müvekkil/karşı taraf → kalandaki satır YERİNDE yükseltilir (id sabit,
+                # bağları kopmaz); gelen satırın adı/rolü/türü ona yazılır.
+                db.add(models.CaseHistory(
+                    case_id=kalan.id, field_name="taraf",
+                    old_value=f"{hedef.name} ({hedef.role})", new_value=f"{p.name} ({p.role})",
+                    changed_by=DEGISTIREN, source=f"{tarihce_alani}: aynı kişi, tür önceliği ({kim})",
+                ))
+                hedef.party_type, hedef.role, hedef.name = p.party_type, p.role, p.name
+                t["taraf_yukseltilen"] = t.get("taraf_yukseltilen", 0) + 1
+            for alan in ("client_id", "tc_no", "birth_year", "gender"):
+                if getattr(hedef, alan) in (None, "") and getattr(p, alan) not in (None, ""):
+                    setattr(hedef, alan, getattr(p, alan))
             taraf_esleme[p.id] = hedef.id          # kalanda var → belge bağı yeniden yazılır, satır silinir
             hizmet_tasima.append((p.id, hedef.id))
             silinecek_taraflar.append(p)

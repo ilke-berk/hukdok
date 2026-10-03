@@ -345,14 +345,69 @@ satırı çatışma üretmez; müvekkilin geçmiş dosyalarda karşı taraf olar
 bilgi olarak listelenir. Bu 2026-08-01 kullanıcı kararıdır: "çıkar çatışması yalnız karşı
 tarafa bakılır" (`party_check.py:19-25`).
 
+### 7.1 Taraf tekilliği — bir kartta aynı kişi TEK satır (03.10.2026)
+
+**Kullanıcı kararı (03.10.2026):** "3. şahıs eski TKU mantığından kalan bir kavram; müvekkil ya
+da karşı taraf olan kişi ayrıca 3. şahıs olarak da görünüyorsa 3. şahıs satırı hatalıdır."
+`case_parties`'te ad üzerinde DB kısıtı yoktur; tekillik uygulamadadır ve tek tanım
+`backend/party_check.py`'dedir:
+
+- **Kişi anahtarı** `normalize_party_key` (`:94`): ünvan (Dr/Av/Prof…), şirket eki, harf
+  katlama, kelime sırası ve — 03.10'dan beri — virgül artığı ("Atilla Kurtay Dr.,") ile kurum
+  adındaki "ve" bağlacı ("Eğitim ve Araştırma Hastanesi") anahtara girmez. Taraf türü ve rol
+  anahtarın parçası DEĞİLDİR.
+- **Tür önceliği** `TARAF_TUR_ONCELIGI` (`:128`): CLIENT > COUNTER > THIRD. Aynı kişi iki türde
+  karşılaşırsa öncelikli tür kalır.
+- **Bölücü** `split_party_names` (`:156`): `;` ve satır sonu her zaman ayraç; virgül yalnız
+  `virgul=True` ile (teslim paketi + temizlik) ve parçaların HEPSİ en az iki sözcüklü kişi adıysa
+  — şirket/kurum adı (`kurum_mu`, `:146`) ve "Yılmaz, Ahmet" bölünmez. Kullanıcı yollarında
+  virgül kapalıdır (frontend `splitPartyNames` ile aynı: yalnız `;`).
+
+Yazma yollarının durumu:
+
+| Yol | Davranış |
+| --- | --- |
+| `case_manager.add_case` (`:1931`) | gelen liste `taraf_listesini_tekillestir` (`party_check.py:192`) ile bölünür + tekilleşir; hizmet kapısı ve ofis no temiz listeyi okur |
+| `case_manager.enrich_case` (`:1683`) | gelen liste aynı fonksiyondan geçer, sonra `diff_case_parties` (yalnız ekleme) |
+| `case_manager.update_case` | **dokunulmadı** — kullanıcının açık listesidir; gelen listeyi tekilleştirmek mevcut mükerrer satırı sessizce silerdi (belge bağı SET NULL, föy/hizmet RESTRICT) |
+| `routes/processing._auto_enrich_case_data` (`:300`) | belgedeki karşı taraf metni kişi başına satır; kartta başka türde duran kişi yeniden yazılmaz |
+| `scripts/hukdok_aktarim._taraf_adlari` (`:2476`) | ortak bölücü, virgül açık; `_taraflari_yaz` anahtarı baştan beri türden bağımsız |
+| `scripts/mukerrer_kart_birlestir._taraf_anahtari` (`:70`) | anahtar artık yalnız kişi (eski `(tür, ad)`); kalandaki satır daha zayıf türdeyse YERİNDE yükseltilir (`taraf_yukseltilen`), id ve bağları sabit |
+
+**Temizlik script'i** `backend/scripts/taraf_tekillestir.py` (tek seferlik, İNSAN ADIMI; varsayılan
+kuru koşu, `--apply --kim`, `--kart <id>`, CSV `--cikti-dizini`). Kart içinde sırayla
+(`kart_tekillestir`, `:366`): (1) çok adlı satır kişi başına satıra çevrilir, bağları ilk parçanın
+satırına taşınır; (2) anahtarı eşit satırlar tek satıra iner — kalan = tür önceliği → bağı
+(föy/hizmet/belge) olan → küçük id; gidenin bağları kalana taşınır (hizmet satırları
+`case_hizmetleri.tarafi_tasi`), kalanın boş `client_id/tc_no/birth_year/gender` alanı gidenden
+dolar, kalanın adı ve rolü değişmez; (3) koruma: kartın ofis no girdileri (müvekkil kodu +
+sigortalı bloğu, `_ofis_no_imzasi` `:213`) ya da belge–taraf bağ sayısı değişecekse kart ATLANIR;
+(4) yazımı yakın ama anahtarı farklı çiftler (`_bulanik_ciftler`, `:139`: kişi adında tanıdık
+sorgunun kelime bazlı kuralı, kurum adında dize oranı ≥ 0,90, sözcük alt kümesi) otomatik
+birleşmez, `taraf_inceleme.csv`'ye düşer. Her kart kendi transaction'ında (`kos`, `:378`); her
+işlem `case_history`'de `field_name="taraf"`, `source="TARAF_TEKILLESTIRME"`.
+
+Lokal kuru koşu (03.10, 14.395 kart): 1.343 aday, **952 kart değişir**, 1.216 satır silinir
+(989 müvekkil+3. şahıs, 49 3. şahıs ikizi, 42 müvekkil ikizi, 39 karşı taraf ikizi, 35 çok adlı,
+34 karşı taraf+3. şahıs, 28 müvekkil+karşı taraf), 43 ad temizlenir, 2 eksik parça eklenir;
+8 kart ofis no korumasıyla atlanır; inceleme listesi 448 alt küme + 216 benzer yazım.
+Aynı gün lokalde `--apply` koşuldu: taraf satırı 50.780 → 49.566, föy bağı / hizmet satırı /
+belge–taraf bağı sayıları ve kartların `hizmet_turu` özeti ile ofis numaraları birebir aynı,
+ikinci koşu 0 işlem. **Prod'da koşulmadı.** Prod'da kuru koşu dump kopyasında, `--apply` mesai dışında (veri-teslim-hatti §5 "Toplu işlem
+prensibi"). Test: `backend/tests/test_taraf_tekillestir.py`.
+
+Ekranda (`frontend/src/pages/CaseDetails.tsx`, taraf kartı) rol çipi yalnız tür etiketinden farklı
+bilgi taşıyorsa basılır — "Karşı Taraf · Karşı Taraf" çift çipi veri değil görüntüydü.
+
 ## 8. Belge bağlandığında dava zenginleşmesi
 
 Bir belge `/confirm`'de bir davaya bağlanınca iki yardımcı koşar:
 
 - `_auto_update_case_status(case_id, belge_turu_kodu, uploaded_by)` — `backend/routes/processing.py:160`
-- `_auto_enrich_case_data(case_id, avukat_kodu, karsi_taraf, uploaded_by)` — `:213`
+- `_auto_enrich_case_data(case_id, karsi_taraf, uploaded_by)` — `:300` (yalnız karşı taraf, kartta
+  hiç COUNTER yokken; metin `split_party_names` ile kişi başına satıra bölünür — §7.1)
 
-İkisi de `/confirm` akışından çağrılır (`processing.py:869`, `:875`) ve hata durumunda
+İkisi de `/confirm` akışından çağrılır ve hata durumunda
 akışı devirmez; oturum kapatma/rollback davranışları test altındadır
 (`backend/tests/test_faz0_hardening.py`, `backend/tests/test_faz3_e_hardening.py`).
 

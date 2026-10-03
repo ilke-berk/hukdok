@@ -1081,9 +1081,13 @@ const CaseDetails = () => {
                                                             <Badge className={`text-xs ${colorClass}`} variant="outline">
                                                                 {typeLabel}
                                                             </Badge>
-                                                            <Badge variant="secondary" className="text-xs">
-                                                                {party.role}
-                                                            </Badge>
+                                                            {/* Rol tür etiketiyle aynı metinse ("Karşı Taraf · Karşı Taraf",
+                                                                "Müvekkil · Müvekkil") ikinci çip bilgi taşımaz (03.10). */}
+                                                            {party.role && party.role.trim().toLocaleLowerCase("tr-TR") !== typeLabel.toLocaleLowerCase("tr-TR") && (
+                                                                <Badge variant="secondary" className="text-xs" data-testid="taraf-rolu">
+                                                                    {party.role}
+                                                                </Badge>
+                                                            )}
                                                         </div>
                                                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] text-muted-foreground mr-1">
                                                             <FileStack className="w-3 h-3" />

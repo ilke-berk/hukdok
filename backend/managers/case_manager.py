@@ -16,7 +16,7 @@ from database import SessionLocal, SQL_FOLD_FROM, SQL_FOLD_TO
 from db_errors import KayitMesgulError, is_lock_timeout, is_unique_violation
 import models
 from constants import InvalidCaseStatusError, validated_case_status
-from party_check import normalize_party_key, normalize_tc
+from party_check import normalize_party_key, normalize_tc, taraf_listesini_tekillestir
 from required_fields import (
     AKTARIM_SOURCE_PREFIX,
     MISSING_BUCKETS,
@@ -1679,7 +1679,8 @@ def enrich_case(case_id: int, fields: dict, new_parties: list,
         existing_rows = [
             {"id": p.id, "name": p.name, "tc_no": p.tc_no} for p in case.parties
         ]
-        for p in new_parties:
+        # 03.10: "A; B" adı kişi başına bölünür, gelen listede aynı kişi bir kez sayılır.
+        for p in taraf_listesini_tekillestir(new_parties):
             _, inserts, _ = diff_case_parties(existing_rows, [p])
             if not inserts:
                 continue  # zaten kayıtlı taraf — yalnız-EKLEME idempotent kalır
@@ -1922,6 +1923,12 @@ def add_case(data: dict, tenant_id: str = None):
     status = status or "DERDEST"
     sunucu_numarasi = bool(data.get(SUNUCU_NUMARASI_BAYRAGI))
     istek_kimligi = str(data["istek_kimligi"]) if data.get("istek_kimligi") else None
+    # Taraf tekilliği (03.10): kart AÇILIRKEN aynı kişi tek satırdır. "A; B" adı kişi
+    # başına bölünür, aynı kişi iki türde geldiyse öncelikli tür kalır (müvekkil > karşı
+    # taraf > 3. şahıs). Hizmet kapısı ve ofis no bu temiz listeyi okur — sıra numaraları
+    # (`taraf_hizmetleri`) onunla tutarlıdır. Çağıranın sözlüğü DEĞİŞTİRİLMEZ (kopya).
+    if data.get("parties"):
+        data = {**data, "parties": taraf_listesini_tekillestir(data["parties"])}
     try:
         db = SessionLocal()
         # 27.09 yazım koruması: listede olmayan avukat adıyla kart açılmaz (AvukatListedeYok → 422).

@@ -31,6 +31,8 @@ const CASE = vi.hoisted(() => ({
     { id: 11, party_type: "CLIENT", name: "Dr. Ayşe Kaya", role: "Davalı" },
     { id: 12, party_type: "CLIENT", name: "Özel Şifa Hastanesi", role: "Davalı" },
     { id: 13, party_type: "COUNTER", name: "Mehmet Hasta", role: "Davacı" },
+    // Rolü tür etiketiyle aynı metin (aktarımın varsayılan rolü) — ikinci çip basılmaz (03.10).
+    { id: 14, party_type: "COUNTER", name: "Veli Hasta", role: "Karşı Taraf" },
   ],
   // Kart yanıtındaki hizmet satırları (get_case, G248) — müvekkil kartındaki özet buradan okunur.
   hizmetler: [
@@ -156,6 +158,8 @@ describe("CaseDetails — Hizmetler paneli (G252)", () => {
     const panel = qa("case-hizmet-panel")[0];
     expect(taraflar.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(qa("taraf-hizmetleri").map(e => e.textContent)).toEqual(["Dava Takibi", "Danışmanlık"]);
+    // Rol çipi yalnız tür etiketinden FARKLI bilgi taşıyorsa basılır: "Karşı Taraf · Karşı Taraf" olmaz.
+    expect(qa("taraf-rolu").map(e => e.textContent)).toEqual(["Davalı", "Davalı", "Davacı"]);
   });
 
   it("Büro Bilgileri kartında 'Hizmet Türü' satırı yok (çift gösterim olmaz); açıklama müvekkil tipiyle biter", async () => {

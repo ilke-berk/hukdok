@@ -216,19 +216,11 @@ def _sigortali(kart) -> str:
 # geçer. Bu ayrım burada şart, çünkü hastane ve Sağlık Bakanlığı ONLARCA davanın
 # ortak davalısıdır — sigortalı karşılaştırmasında kurum kesişimi "aynı hekim"
 # sanılırsa iki ayrı hekim dosyası mükerrer ilan edilir.
-_KURUM_TOKENLARI = frozenset({
-    "HASTANE", "HASTANESI", "UNIVERSITE", "UNIVERSITESI", "FAKULTE", "FAKULTESI",
-    "BAKANLIGI", "BAKANLIK", "MUDURLUGU", "BELEDIYE", "BELEDIYESI", "KURUMU",
-    "MERKEZI", "VAKIF", "VAKFI", "DERNEGI", "POLIKLINIK", "POLIKLINIGI",
-    "VALILIGI", "REKTORLUGU", "ARASTIRMA",
-})
-
-
+# Liste ve karar 03.10'da `party_check`'e taşındı (taraf bölücü de aynı ayrımı kullanır).
 def _kurum_mu(ad: str) -> bool:
-    from party_check import _is_corporate, normalize_person_name
+    from party_check import kurum_mu
 
-    norm = normalize_person_name(ad)
-    return _is_corporate(norm) or bool(set(norm.split()) & _KURUM_TOKENLARI)
+    return kurum_mu(ad)
 
 
 def _kisi_adlari(adlar: List[str]) -> List[str]:

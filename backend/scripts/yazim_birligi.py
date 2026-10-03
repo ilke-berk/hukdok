@@ -112,6 +112,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 import models
 from managers import reference_lists
 from managers.reference_lists import normalize_list_name, tr_title
+from party_check import split_party_names
 from scripts.hukdok_aktarim import TARAF_SUTUNLARI, _taraf_adlari
 from services import belge_envanteri
 from text_utils import turkish_upper
@@ -296,7 +297,11 @@ def _teslim_yazimlari(db, basliklar: Sequence[str], parcala: bool) -> Dict[str, 
             deger = ham.get(baslik)
             if deger is None or not str(deger).strip():
                 continue
-            adlar = _taraf_adlari(deger) if parcala else [_duz(str(deger))]
+            # Kartta iki biçim de yaşar: eski aktarım hücreyi yalnız `;`den bölerdi
+            # ("Selcan Ayar, Seçkin Ayar" tek satır), 03.10'dan beri `_taraf_adlari`
+            # kişi adlarını virgülden de böler. Teslim yazımı ikisi için de sayılır.
+            adlar = ({*split_party_names(str(deger)), *_taraf_adlari(deger)}
+                     if parcala else [_duz(str(deger))])
             for ad in adlar:
                 sayac[anahtar(ad)][ad] += 1
     return {k: sorted(c.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] for k, c in sayac.items()}

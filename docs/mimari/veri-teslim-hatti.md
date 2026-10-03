@@ -429,7 +429,10 @@ yalnız ekler) SONRA `Müvekkil` ilk parçasına eşit CLIENT satırı `foy_map.
 ile (`managers/foy_map.py:175`, `_validated_party` `:108`; model `models.py:359`
 `ON DELETE RESTRICT`), boş hücre mevcut bağı korur, ikinci koşu 0; bağ başka tarafa geçerse
 satır raporu `MUVEKKIL_DEGISTI_TURU` (`:206`, `:2450`) + WARNING, eski CLIENT satırı silinmez.
-"Taraf kaydı dondurma" diye bir işlem yoktur (sözleşme §4). Eşleşme CSV'sindeki `case_party_id`
+"Taraf kaydı dondurma" diye bir işlem yoktur (sözleşme §4). Taraf hücreleri ortak bölücüyle
+(`party_check.split_party_names`, virgül açık — "Ahmet Koç Dr.,Fatma Elif Gülek," iki kişidir;
+şirket/kurum adı virgülden bölünmez) adlara ayrılır; kart içi tekillik kuralı ve 03.10.2026
+temizliği `dava-acma-akisi.md` §7.1'dedir. Eşleşme CSV'sindeki `case_party_id`
 kolonu (`services/teslim_cevap.py:221`, `:286`) `case_foys.case_party_id`'den okunduğu için
 bu görevden itibaren dolu gelir. G154 cevaplı xlsx'i `--kart-esleme` haritasına çevirir
 (`scripts/cevapli_kart_eslemesi.py`).
@@ -583,7 +586,11 @@ script dağınık kalan grupları o şekle getirir. **Föyler değişmez, kartla
   eşleşme üretmez. Uyumsuz mahkeme ya da farklı dosya türü kart REDDEDİLİR ve rapora düşer
   (lokal kuru koşu 11.09: 184 birleşecek, 15 ret — 10 tür, 5 mahkeme; hepsi gerçek fark).
 - **Taşıma yolu** G127'nin `mukerrer_kart_birlestir.birlestir`'i ile AYNIDIR (belge koruma,
-  taraf tekilleştirme, aşama/esas tarihçesi, soft delete); yalnız `muvekkil_ayrimi=True` ile
+  taraf tekilleştirme, aşama/esas tarihçesi, soft delete). Taraf anahtarı 03.10.2026'dan beri
+  yalnız KİŞİdir (`_taraf_anahtari`, tür yok): sigorta föyünün kartında "Sigortalı" (3. şahıs),
+  hekim föyünün kartında müvekkil olan aynı hekim birleşen kartta tek satır kalır ve müvekkil
+  olur (`party_check.TARAF_TUR_ONCELIGI`; eski `(tür, ad)` anahtarı iki satır bırakıyordu —
+  `dava-acma-akisi.md` §7.1). Yalnız `muvekkil_ayrimi=True` ile
   "müvekkil kümeleri aynı olmalı" koşulu gevşer, tarihçe alanı `tku_birlestirme`, silme
   gerekçesi "TKU kart birleştirmesi: …".
 - **Kalan kart:** en çok belge → en çok föy → en eski id (`kalan_sec`). Bir kart birden çok

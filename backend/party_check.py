@@ -76,7 +76,9 @@ def normalize_person_name(name: str) -> str:
     cleaned = turkish_upper(cleaned)
     cleaned = _fold_diacritics(cleaned)
     cleaned = _TITLE_PATTERN.sub(" ", cleaned)
-    cleaned = re.sub(r"[;:.]+", " ", cleaned)
+    # Virgül de noktalama sayılır (03.10): vekalet ücreti föylerinden gelen
+    # "Atilla Kurtay Dr.," yazımı anahtarda artık "," token'ı bırakmaz.
+    cleaned = re.sub(r"[;:.,]+", " ", cleaned)
     return " ".join(cleaned.split())
 
 
@@ -108,9 +110,129 @@ def normalize_party_key(name: str) -> str:
             continue
         out.append(_CORP_TOKEN_MAP.get(tokens[i], tokens[i]))
         i += 1
-    if _is_corporate(norm):
+    # Kurum adında "VE" bağlacı anahtara girmez: şirketlerde baştan beri; hastane,
+    # üniversite, bakanlık için 03.10'dan beri ("Eğitim ve Araştırma Hastanesi" ↔
+    # "Eğitim Araştırma Hastanesi" aynı kurumdur).
+    if _is_corporate(norm) or set(tokens) & KURUM_SOZCUKLERI:
         out = [t for t in out if t != "VE"]
     return " ".join(sorted(out))
+
+
+# ─── Taraf tekilliği (03.10.2026 kullanıcı kararı) ───────────────────────────
+#
+# Bir kartta aynı kişi TEK satırdır. "3. şahıs" eski TKU mantığından kalan bir
+# kavram: müvekkil ya da karşı taraf olan kişi ayrıca 3. şahıs olarak da
+# görünüyorsa 3. şahıs satırı hatalıdır → öncelik CLIENT > COUNTER > THIRD.
+# Tek tanım burada; kart birleştirme (`scripts/mukerrer_kart_birlestir`), temizlik
+# (`scripts/taraf_tekillestir`) ve kart açma (`case_manager.add_case`) bunu okur.
+TARAF_TUR_ONCELIGI = {"CLIENT": 0, "COUNTER": 1, "THIRD": 2}
+
+
+def taraf_tur_sirasi(party_type: str | None) -> int:
+    """Küçük = öncelikli. Tanınmayan tür en sona düşer."""
+    return TARAF_TUR_ONCELIGI.get(party_type or "", len(TARAF_TUR_ONCELIGI))
+
+
+# Kurum adlarında geçen sözcükler. `_is_corporate` YETMEZ: o yalnız ticari şirketi
+# tanır (SİGORTA/A.Ş./LTD); hastane, üniversite ve bakanlık ondan geçer.
+KURUM_SOZCUKLERI = frozenset({
+    "HASTANE", "HASTANESI", "UNIVERSITE", "UNIVERSITESI", "FAKULTE", "FAKULTESI",
+    "BAKANLIGI", "BAKANLIK", "MUDURLUGU", "BELEDIYE", "BELEDIYESI", "KURUMU",
+    "MERKEZI", "VAKIF", "VAKFI", "DERNEGI", "POLIKLINIK", "POLIKLINIGI",
+    "VALILIGI", "REKTORLUGU", "ARASTIRMA",
+})
+
+
+def kurum_mu(ad: str) -> bool:
+    """Ad bir şirket/kurum mu (kişi değil)? Normalize ad üzerinden sözcük bazlı."""
+    norm = normalize_person_name(ad or "")
+    return _is_corporate(norm) or bool(set(norm.split()) & KURUM_SOZCUKLERI)
+
+
+_AD_AYRACI = re.compile(r"[;\r\n]+")
+_SONDAKI_AYRAC = re.compile(r"[\s,;]+$")
+
+
+def split_party_names(metin: str | None, *, virgul: bool = False) -> list[str]:
+    """Tek hücreye/alana yazılmış çok adlı taraf metnini adlara böler.
+
+    * `;` ve satır sonu HER ZAMAN ayraçtır (frontend `splitPartyNames` ile aynı).
+    * Sondaki virgül/noktalı virgül atılır ("Atilla Kurtay Dr.," → "Atilla Kurtay Dr.").
+    * `virgul=True` (teslim paketi ve temizlik script'i — kullanıcı yollarında KAPALI):
+      virgül de ayraç sayılır, ama yalnız parçaların HEPSİ en az iki sözcüklü kişi
+      adıysa. Şirket/kurum adı içeren metin bölünmez ("X San., Tic. Ltd. Şti.");
+      tek sözcüklü parça da bölmeyi iptal eder ("Yılmaz, Ahmet").
+    * Aynı kişi (`normalize_party_key` eşit) listede bir kez kalır; sıra korunur.
+    """
+    if not metin:
+        return []
+    adlar: list[str] = []
+    gorulen: set[str] = set()
+
+    def _ekle(ham: str) -> None:
+        ad = _SONDAKI_AYRAC.sub("", " ".join(ham.split())).strip()
+        anahtar = normalize_party_key(ad)
+        if ad and anahtar and anahtar not in gorulen:
+            gorulen.add(anahtar)
+            adlar.append(ad)
+
+    for parca in _AD_AYRACI.split(str(metin)):
+        govde = _SONDAKI_AYRAC.sub("", parca)
+        alt = [a for a in govde.split(",") if a.strip()] if virgul and "," in govde else []
+        if len(alt) > 1 and all(
+            len(normalize_person_name(a).split()) >= 2 and not kurum_mu(a) for a in alt
+        ):
+            for a in alt:
+                _ekle(a)
+        else:
+            _ekle(parca)
+    return adlar
+
+
+def taraf_listesini_tekillestir(parties: list[dict] | None) -> list[dict]:
+    """Kart AÇILIRKEN gelen taraf listesini böler ve tekilleştirir (yeni liste döner).
+
+    * Adı `;`/satır sonuyla çok kişi taşıyan öğe kişi başına bir öğeye bölünür; bölünen
+      öğenin kişiye özgü alanları (`tc_no`, `birth_year`, `gender`, `client_id`) hangi
+      kişiye ait olduğu bilinemediği için BOŞ bırakılır, `hizmet_turleri` her parçaya geçer.
+    * Aynı kişi (`normalize_party_key`) iki kez gelirse TEK öğe kalır: türü öncelikli
+      olan (`TARAF_TUR_ONCELIGI`); kalanın boş kişi alanları ötekinden dolar, iki
+      müvekkil öğesinin `hizmet_turleri` birleşir.
+    * Anahtarı boş (adsız) öğeye dokunulmaz.
+    """
+    kisiye_ozgu = ("tc_no", "birth_year", "gender", "client_id")
+    sonuc: list[dict] = []
+    konum: dict[str, int] = {}
+    for p in parties or []:
+        adlar = split_party_names(p.get("name"))
+        if len(adlar) > 1:
+            parcalar = [{**p, "name": ad, **dict.fromkeys(kisiye_ozgu)} for ad in adlar]
+        elif adlar:
+            parcalar = [{**p, "name": adlar[0]}]
+        else:
+            parcalar = [dict(p)]
+        for oge in parcalar:
+            anahtar = normalize_party_key(oge.get("name") or "")
+            if not anahtar or anahtar not in konum:
+                if anahtar:
+                    konum[anahtar] = len(sonuc)
+                sonuc.append(oge)
+                continue
+            mevcut = sonuc[konum[anahtar]]
+            kalan, giden = mevcut, oge
+            if taraf_tur_sirasi(oge.get("party_type")) < taraf_tur_sirasi(mevcut.get("party_type")):
+                kalan, giden = oge, mevcut
+            birlesik = dict(kalan)
+            for alan in kisiye_ozgu:
+                if birlesik.get(alan) in (None, ""):
+                    birlesik[alan] = giden.get(alan)
+            if kalan.get("party_type") == giden.get("party_type") == "CLIENT":
+                hizmetler = list(kalan.get("hizmet_turleri") or [])
+                hizmetler += [h for h in (giden.get("hizmet_turleri") or []) if h not in hizmetler]
+                if hizmetler:
+                    birlesik["hizmet_turleri"] = hizmetler
+            sonuc[konum[anahtar]] = birlesik
+    return sonuc
 
 
 def normalize_tc(tc: str | None) -> str | None:

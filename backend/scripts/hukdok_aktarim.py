@@ -220,7 +220,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import models
 from managers import case_hizmetleri, case_manager, foy_map, seed_data, stage_decisions
 from managers.reference_lists import tr_title, tr_upper
-from party_check import normalize_party_key
+from party_check import normalize_party_key, split_party_names
 from required_fields import AKTARIM_SOURCE_PREFIX
 from services import belge_envanteri
 
@@ -2474,16 +2474,17 @@ def _buro_durumu_mu(deger: Any) -> bool:
 
 
 def _taraf_adlari(deger: Any) -> List[str]:
-    """`;` ile birleşik taraf listesini adlara böler (3.201 föyde çoklu)."""
+    """`;` ile birleşik taraf listesini adlara böler (3.201 föyde çoklu).
+
+    Bölücü ortak: `party_check.split_party_names` (03.10). Virgül AÇIK — vekalet
+    ücreti föyleri müvekkili "Ahmet Koç Dr.,Fatma Elif Gülek," biçiminde taşıyor;
+    bölünmezse her aktarım aynı birleşik satırı yeniden açardı. Şirket/kurum adı
+    virgülden bölünmez; aynı kişi (anahtar eşit) hücrede bir kez sayılır.
+    """
     ham = _metin(deger)
     if not ham:
         return []
-    adlar: List[str] = []
-    for parca in _AYRAC.split(ham):
-        ad = " ".join(parca.split())
-        if ad and ad not in adlar:
-            adlar.append(ad)
-    return adlar
+    return split_party_names(ham, virgul=True)
 
 
 def _taraflari_yaz(db, case: models.Case, satir: HamSatir, source: str) -> List[str]:

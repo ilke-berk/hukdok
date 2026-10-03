@@ -143,8 +143,9 @@ Karar kaydı: [`003-process-cache-disk.md`](../kararlar/003-process-cache-disk.m
    ile gelen ek temp dosyası sızdırıyordu (20.09.2026).
 6. **Dava zenginleştirme**: belge bir davaya bağlıysa `_auto_update_case_status`
    (`processing.py:246`) ve `_auto_enrich_case_data(case_id, karsi_taraf, uploaded_by)`
-   (`processing.py:299`; yalnız karşı taraf — avukat dalı G226'da kalktı, belgenin avukatı
-   zaten davanın sorumlusundan çözüldüğü için hiç tetiklenemeyen bir no-op'tu) çalışır;
+   (`processing.py:300`; yalnız karşı taraf — avukat dalı G226'da kalktı, belgenin avukatı
+   zaten davanın sorumlusundan çözüldüğü için hiç tetiklenemeyen bir no-op'tu; "A; B" metni
+   kişi başına satıra bölünür, kartta başka türde duran kişi yeniden yazılmaz — 03.10) çalışır;
    duruşma tarihi varsa kaydedilir.
 7. **İdempotency kaydının kapatılması**: `confirm_idempotency.complete(process_id, payload)`.
    Pipeline istisna atarsa ve belge **yaratılmamışsa** kayıt `release` edilir → tekrar
