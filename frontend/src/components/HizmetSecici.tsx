@@ -20,7 +20,7 @@ export interface HizmetSeciciProps {
   /** Erişilebilir etiket (ör. "Ali Veli için hizmetler"). */
   "aria-label"?: string;
   placeholder?: string;
-  /** İlk çizimde liste açık gelsin (kartta "Hizmet seç" tıklanınca). */
+  /** İlk çizimde liste açık gelsin (kartta "Hizmet ekle" tıklanınca). */
   defaultOpen?: boolean;
   /** Tetikleyici düğmenin ek sınıfları. */
   className?: string;
@@ -122,7 +122,7 @@ export function HizmetSecici({
                     key={`k:${ad}`}
                     data-testid="hizmet-secici-cip"
                     data-kilitli="true"
-                    title="Veri paketinden gelir — değiştirilemez"
+                    title="Kayıtlı hizmet — buradan değiştirilemez"
                     className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border border-[var(--border-strong)] text-[var(--fg-muted)] bg-[var(--bg-sunken)]"
                   >
                     <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />
@@ -189,12 +189,8 @@ export function HizmetSecici({
                         {isaretli && <Check className="h-3 w-3" />}
                       </span>
                       <span className="truncate flex-1">{ad}</span>
-                      {kilit && (
-                        <span className="ml-2 shrink-0 inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.1em] uppercase px-1.5 py-0.5 border border-[var(--border-strong)] text-[var(--fg-muted)]">
-                          <Lock className="w-2.5 h-2.5" aria-hidden="true" />
-                          paket
-                        </span>
-                      )}
+                      {/* Yalnız kilit simgesi: "paket" yazısı kullanıcının kafasını karıştırıyordu (03.10). */}
+                      {kilit && <Lock className="ml-2 w-3 h-3 shrink-0 text-[var(--fg-muted)]" aria-hidden="true" data-testid="hizmet-secici-kilit" />}
                     </CommandItem>
                   );
                 })}

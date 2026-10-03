@@ -159,7 +159,9 @@ describe("HizmetSecici", () => {
     expect(kilitli.getAttribute("data-checked")).toBe("true");
     expect(kilitli.getAttribute("data-kilitli")).toBe("true");
     expect(kilitli.getAttribute("aria-disabled")).toBe("true");
-    expect(kilitli.textContent).toContain("paket");
+    // Kilit simgesi var, "paket" yazısı YOK (03.10: kullanıcıya paket bilgisi gösterilmez).
+    expect(kilitli.querySelector("[data-testid=hizmet-secici-kilit]")).not.toBeNull();
+    expect(kilitli.textContent).not.toContain("paket");
     act(() => kilitli.click());
     expect(onValue).not.toHaveBeenCalled();
     // Başka bir hizmet seçilince yayılan değerde kilitli ad YOK.

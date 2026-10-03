@@ -113,6 +113,12 @@ interface CaseDetailsData {
     [key: string]: unknown;
 }
 
+/**
+ * "Dava Geçmişi" kartı şimdilik kullanıcıya gösterilmez (03.10 kullanıcı kararı: ileride
+ * düzenlenecek). Veri ve kart kodu yerinde durur; açmak için bu bayrağı true yap.
+ */
+const DAVA_GECMISI_GORUNUR: boolean = false;
+
 const CopyButton = ({ value }: { value: string }) => {
     const [copied, setCopied] = useState(false);
     return (
@@ -835,10 +841,6 @@ const CaseDetails = () => {
                             (cases.notes) tek serbest metin olarak ayrıca yerinde kalır. */}
                         <CaseNotesPanel caseId={parseInt(id!)} />
 
-                        {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
-                            hizmet türü, durum (kart tek slotunda çelişince burada durur). */}
-                        <CaseFoyPanel foyler={caseData.foyler} />
-
                         {/* FAZ F aktarım alanları — beş tıbbi alan TEK grupta (G048);
                             karta dağıtılınca malpraktis dosyasının tıbbi tablosu okunmuyordu.
                             Uzmanlık alanı da grubun başında (02.10). */}
@@ -947,6 +949,7 @@ const CaseDetails = () => {
                                 </CardContent>
                             </Card>
 
+                            {DAVA_GECMISI_GORUNUR && (
                             <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                                 <CardHeader>
                                     <CardTitle className="text-lg">Dava Geçmişi</CardTitle>
@@ -986,7 +989,13 @@ const CaseDetails = () => {
                                     )}
                                 </CardContent>
                             </Card>
+                            )}
                         </div>
+
+                        {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
+                            hizmet türü, durum (kart tek slotunda çelişince burada durur).
+                            Sekmenin EN ALTINDA ve kapalı gelir (03.10 kullanıcı kararı). */}
+                        <CaseFoyPanel foyler={caseData.foyler} />
                     </TabsContent>
 
                     {/* Tracking Tab */}

@@ -465,7 +465,8 @@ kardeşlerinin aynısıdır.
   "Teslimdeki ham satırlar" açılır bloğu. Migrasyon madde 45.
 - **Okuma ve UI (G123):** `case_manager.get_case` föyleri `foyler` listesinde döner; kart
   ekranındaki `CaseFoyPanel` (frontend/src/components) SistemNo/TKU/hasar no + föy düzeyi
-  üçlü + kapsam rozetini basar. Dava araması `case_foys.tku_no` ve `sistem_no` kollarını da
+  üçlü + kapsam rozetini basar; panel Genel Bilgiler sekmesinin EN ALTINDA, açılır-kapanır ve
+  varsayılan kapalıdır (03.10 kullanıcı kararı: gündelik kullanıcıdan çok veri tarafının işine yarıyor). Dava araması `case_foys.tku_no` ve `sistem_no` kollarını da
   UNION'a katar (`_term_case_id_selects`) — legacy `cases.tku_no` boş olduğu için TKU
   araması o güne dek boş dönüyordu. G190 (14.09.2026): yazıcısı olmayan legacy
   `cases.tku_no`/`sistem_no` kolları aramadan ve relevance sıralamasından çıkarıldı;
@@ -972,8 +973,10 @@ geriye uyum için okunur ve olduğu gibi saklanır (`add_case`, `update_case` `c
   listelenir, panel notların altında bulunamıyordu; kartların ÜSTÜNE konmaz, kart tıklaması o tarafın
   belgelerine götürür ve panel kartları ekran dışına itiyordu. Müvekkil taraf kartı hizmetlerini tekrarsız,
   salt okunur özetler — `caseData.hizmetler`'den): müvekkil başına bir satır — ad · hizmet çipleri ·
-  "Hizmet seç". Föy kaynaklı çip "paket · SistemNo" rozetlidir ve kaldırılamaz; müvekkilin aynı hizmeti
-  taşıyan föyleri TEK çipte toplanır ("paket · 4 föy", numaralar ipucunda); elle çip seçiciden kaldırılır; **Uygula** tek
+  "Hizmet ekle" (müvekkilin elle hizmeti varsa "Hizmetleri düzenle"; 03.10'da "Hizmet seç"ten değişti —
+  ekleme yolu olarak okunmuyordu). Föy kaynaklı çip yalnız kilit simgesi taşır ve kaldırılamaz (03.10: "paket · SistemNo"
+  yazısı kalktı — kullanıcının kafasını karıştırıyordu; seçicideki "paket" rozeti de kilit simgesine indi); müvekkilin aynı hizmeti
+  taşıyan föyleri TEK çipte toplanır (föy numaraları ipucunda); elle çip seçiciden kaldırılır; **Uygula** tek
   `PUT` atar (gövde = elle küme; seçim değişmediyse istek yok). 2+ müvekkilde "Tüm müvekkillere aynı
   hizmetleri uygula" (müvekkil başına bir `PUT`). Listede olmayan (eski adlı) hizmet amber "liste dışı"
   damgasıyla görünür. İstemci katmanı `lib/caseHizmetleri.ts`. Büro Bilgileri kartından `hizmet_turu` satırı

@@ -9,8 +9,13 @@
  *
  * SALT OKUNUR: föy satırlarının tek yazıcısı aktarımdır (scripts/hukdok_aktarim).
  * Föy yoksa panel hiç basılmaz (boş kart gürültüdür — caseCardFields kuralı).
+ *
+ * Açılır-kapanır, varsayılan KAPALI ve Genel Bilgiler sekmesinin EN ALTINDA (03.10 kullanıcı
+ * kararı): kapalıyken yalnız başlık + föy sayısı görünür, tablo ve ham satırlar başlığa
+ * tıklanınca çizilir.
  */
-import { Layers } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Layers } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { foyDurumEtiketi, foyKapsamEtiketi } from "@/lib/foyLabels";
 
@@ -47,20 +52,37 @@ interface Props {
 }
 
 export default function CaseFoyPanel({ foyler }: Props) {
+    // Varsayılan KAPALI (03.10 kullanıcı kararı): föy tablosu gündelik kullanıcıdan çok
+    // veri/geliştirme tarafının işine yarıyor — ilgilenen başlığa tıklayıp açar.
+    const [acik, setAcik] = useState(false);
     if (!foyler || foyler.length === 0) return null;
     return (
         <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none" data-testid="case-foy-panel">
-            <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-brand" />
-                    Föyler
-                    <span className="text-xs font-normal text-muted-foreground">({foyler.length})</span>
+            <CardHeader className={acik ? "pb-2" : undefined}>
+                <CardTitle className="text-lg">
+                    <button
+                        type="button"
+                        onClick={() => setAcik(a => !a)}
+                        aria-expanded={acik}
+                        aria-controls="case-foy-icerik"
+                        className="flex w-full items-center gap-2 text-left"
+                        data-testid="case-foy-ac"
+                    >
+                        <Layers className="w-4 h-4 text-brand" />
+                        Föyler
+                        <span className="text-xs font-normal text-muted-foreground">({foyler.length})</span>
+                        <ChevronDown
+                            className={`ml-auto w-4 h-4 text-muted-foreground transition-transform ${acik ? "rotate-180" : ""}`}
+                            aria-hidden="true"
+                        />
+                    </button>
                 </CardTitle>
                 <CardDescription>
                     Eski sistem föyleri (SistemNo / TKU) ve föy düzeyindeki müvekkil tipi, hizmet türü, durum
                 </CardDescription>
             </CardHeader>
-            <CardContent>
+            {acik && (
+            <CardContent id="case-foy-icerik">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
@@ -138,6 +160,7 @@ export default function CaseFoyPanel({ foyler }: Props) {
                     </details>
                 )}
             </CardContent>
+            )}
         </Card>
     );
 }

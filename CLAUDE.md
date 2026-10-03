@@ -177,8 +177,8 @@ belge türünden aşamaya yazar (`DOCTYPE_TO_STAGE_MAP`), migrasyon 50 eski değ
 kartta bu müvekkile bu hizmet verildi" der. **Tek yazma yolu** `managers/case_hizmetleri.py`; `cases.hizmet_turu`
 TÜRETİLMİŞ özettir (satırların DISTINCT adları, Türkçe alfabetik, `" ; "` birleşik; tek yazıcı `ozeti_yenile`, `:257`)
 — takip ucundan yazılmaz (`TRACKING_FIELDS`'te yok, gönderilirse yok sayılır), aktarımın kart alanı da değildir.
-**Föy kaynaklı satır** (`foy_id` dolu) yalnız aktarımla yazılır (`foydan_yaz`, `:490`), kartta salt okunur ("paket"
-rozeti), API'den silme 409. **Elle satır** müvekkil başına ÇOKLU seçimdir: `PUT /api/cases/{id}/hizmetler/{case_party_id}`
+**Föy kaynaklı satır** (`foy_id` dolu) yalnız aktarımla yazılır (`foydan_yaz`, `:490`), kartta salt okunur (çipte yalnız
+kilit simgesi — 03.10: "paket · föy no" yazısı kullanıcıya gösterilmez), API'den silme 409. **Elle satır** müvekkil başına ÇOKLU seçimdir: `PUT /api/cases/{id}/hizmetler/{case_party_id}`
 gövde `{"hizmet_turleri": [...]}` müvekkilin elle kümesini verilen kümeye getirir (`routes/case_hizmetleri.py:97` →
 `elle_kumesini_yaz`, `:395`; föy satırına dokunmaz, listede olmayan ad 422). **Oluşturma kapısı:** kullanıcı yollarında
 (`POST /api/cases`, intake commit — `ofis_no_sunucudan` bayraklı istek) her müvekkil ≥1 hizmet taşır, yoksa 422

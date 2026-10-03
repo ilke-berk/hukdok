@@ -39,13 +39,37 @@ describe("CaseFoyPanel", () => {
         container.remove();
     });
 
+    /** Paneli çizer ve başlığa tıklayıp açar (panel varsayılan KAPALI gelir). */
+    const ac = (liste: CaseFoyEntry[]) => {
+        act(() => root.render(<CaseFoyPanel foyler={liste} />));
+        act(() => container.querySelector<HTMLButtonElement>("[data-testid='case-foy-ac']")!.click());
+    };
+
     it("föy yoksa hiç basılmaz (boş kart gürültüdür)", () => {
         act(() => root.render(<CaseFoyPanel foyler={[]} />));
         expect(container.querySelector("[data-testid='case-foy-panel']")).toBeNull();
     });
 
-    it("her föyün kimliği ve föy düzeyi alanları satır satır görünür", () => {
+    it("kapalı gelir: yalnız başlık + föy sayısı; başlığa tıklanınca tablo açılır, yeniden tıklanınca kapanır", () => {
         act(() => root.render(<CaseFoyPanel foyler={foyler} />));
+        const dugme = container.querySelector<HTMLButtonElement>("[data-testid='case-foy-ac']")!;
+        expect(container.textContent).toContain("Föyler");
+        expect(container.textContent).toContain("(2)");
+        expect(dugme.getAttribute("aria-expanded")).toBe("false");
+        expect(container.querySelector("table")).toBeNull();
+        expect(container.textContent).not.toContain("H-1547");
+
+        act(() => dugme.click());
+        expect(dugme.getAttribute("aria-expanded")).toBe("true");
+        expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+
+        act(() => dugme.click());
+        expect(dugme.getAttribute("aria-expanded")).toBe("false");
+        expect(container.querySelector("table")).toBeNull();
+    });
+
+    it("her föyün kimliği ve föy düzeyi alanları satır satır görünür", () => {
+        ac(foyler);
         const text = container.textContent ?? "";
         expect(text).toContain("Föyler");
         expect(text).toContain("(2)");
@@ -62,7 +86,7 @@ describe("CaseFoyPanel", () => {
     });
 
     it("kapsam dışı föy silinmiş gibi değil, rozetle görünür", () => {
-        act(() => root.render(<CaseFoyPanel foyler={foyler} />));
+        ac(foyler);
         const rozet = container.querySelector("span[title*='malpraktis dışı']");
         expect(rozet?.textContent).toBe("Kapsam dışı");
     });
@@ -72,7 +96,7 @@ describe("CaseFoyPanel", () => {
             ...foyler[0],
             ham_veri: { "Dava Değeri TL": 250000, "İş Kabul Tarihi": "2020-08-28", "Tanınmayan Sütun": "X" },
         }];
-        act(() => root.render(<CaseFoyPanel foyler={hamli} />));
+        ac(hamli);
         const blok = container.querySelector("[data-testid='foy-ham-veri']");
         expect(blok?.textContent).toContain("Dava Değeri TL");
         expect(blok?.textContent).toContain("250000");
@@ -84,14 +108,14 @@ describe("CaseFoyPanel", () => {
             foyler[0],
             { ...foyler[1], onceki_tracking_no: "D1.H_SIMSEK...0001.HUKUK.00000" },
         ];
-        act(() => root.render(<CaseFoyPanel foyler={tasinmis} />));
+        ac(tasinmis);
         const rozetler = container.querySelectorAll("[data-testid='foy-onceki-ofis-no']");
         expect(rozetler).toHaveLength(1);
         expect(rozetler[0].textContent).toBe("eski ofis no: D1.H_SIMSEK...0001.HUKUK.00000");
     });
 
     it("ham satır yoksa blok hiç basılmaz", () => {
-        act(() => root.render(<CaseFoyPanel foyler={foyler} />));
+        ac(foyler);
         expect(container.querySelector("[data-testid='foy-ham-veri']")).toBeNull();
     });
 

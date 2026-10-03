@@ -145,7 +145,7 @@ describe("CaseDetails — Hizmetler paneli (G252)", () => {
     expect(apiFetchMock.mock.calls.map(([yol]) => yol)).toContain("/api/cases/7/hizmetler");
     expect(qa("case-hizmet-muvekkil-adi").map(e => e.textContent)).toEqual(["Dr. Ayşe Kaya", "Özel Şifa Hastanesi"]);
     expect(qa("case-hizmet-cip-adi").map(e => e.textContent)).toEqual(["Dava Takibi", "Danışmanlık"]);
-    // Kartı açabilen düzenleyebilir: her müvekkilde "Hizmet seç", 2 müvekkilde toplu uygulama.
+    // Kartı açabilen düzenleyebilir: her müvekkilde "Hizmet ekle", 2 müvekkilde toplu uygulama.
     expect(qa("case-hizmet-sec")).toHaveLength(2);
     expect(qa("case-hizmet-toplu-ac")).toHaveLength(1);
 

@@ -4,10 +4,12 @@
  * Kartta HER müvekkil için hangi hizmetlerin verildiği görünür — muhasebe ayrımı müvekkil
  * başınadır, bu yüzden satırlar müvekkile göre grupludur ve her müvekkilin kümesi AYRI yazılır.
  *
- * - Föy (veri paketi) kaynaklı satır salt okunurdur: "paket" rozeti + föy numarası (SistemNo),
- *   kaldırma yok; seçicide kilitli görünür ve `PUT` gövdesine girmez. Müvekkilin aynı hizmeti
- *   taşıyan föyleri TEK çipte toplanır ("paket · 4 föy"; numaralar ipucunda).
- * - "Hizmet seç" o müvekkilin seçicisini açar (çoklu); **Uygula** TEK
+ * - Föy (veri paketi) kaynaklı satır salt okunurdur: çipte yalnız kilit simgesi (03.10: "paket ·
+ *   föy no" yazısı kalktı — kullanıcının kafasını karıştırıyordu), kaldırma yok; seçicide kilitli
+ *   görünür ve `PUT` gövdesine girmez. Müvekkilin aynı hizmeti taşıyan föyleri TEK çipte toplanır
+ *   (föy numaraları ipucunda).
+ * - "Hizmet ekle" (müvekkilin elle hizmeti varsa "Hizmetleri düzenle") o müvekkilin seçicisini
+ *   açar (çoklu); **Uygula** TEK
  *   `PUT /api/cases/{id}/hizmetler/{case_party_id}` atar (gövde = elle küme). Seçim
  *   değişmediyse istek atılmaz.
  * - 2+ müvekkilde "Tüm müvekkillere aynı hizmetleri uygula": bir kez seçilir, her müvekkile
@@ -20,7 +22,7 @@
  * sunucudan yeniden çekilir ve `onDegisti` ile kart sorgusu tazelenir (özet + tarihçe).
  */
 import { useCallback, useEffect, useState } from "react";
-import { Lock, PackageCheck } from "lucide-react";
+import { Lock, PackageCheck, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,7 +75,7 @@ interface Props {
     caseId: number;
     /** Kartın CLIENT tarafları (`cases.parties` içinden) — satır başına bir müvekkil. */
     muvekkiller: HizmetMuvekkili[];
-    /** Kartı düzenleyemeyen kullanıcıda `false`: "Hizmet seç" ve toplu uygulama görünmez. */
+    /** Kartı düzenleyemeyen kullanıcıda `false`: "Hizmet ekle" ve toplu uygulama görünmez. */
     duzenlenebilir?: boolean;
     /** Yazma sonrası çağrılır — kart sorgusu tazelensin (türetilmiş özet + tarihçe). */
     onDegisti?: () => void;
@@ -207,7 +209,7 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                                 <span className="text-xs font-normal text-muted-foreground">({toplam})</span>
                             )}
                         </CardTitle>
-                        <CardDescription>Müvekkil başına verilen hizmetler — paketten gelenler salt okunur</CardDescription>
+                        <CardDescription>Müvekkil başına verilen hizmetler</CardDescription>
                     </div>
                     {topluDugmesi && !topluAcik && (
                         <Button
@@ -232,7 +234,7 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                     <div className="p-3 border border-[var(--border)] bg-[var(--bg)] space-y-2" data-testid="case-hizmet-toplu">
                         <p className="text-xs text-[var(--fg-muted)]">
                             Seçilen hizmetler {muvekkiller.length} müvekkilin her birine ayrı ayrı yazılır; müvekkilin
-                            elle seçilmiş diğer hizmetleri kalkar, paketten gelenler değişmez.
+                            elle seçilmiş diğer hizmetleri kalkar, kilitli hizmetler değişmez.
                         </p>
                         <HizmetSecici
                             value={topluTaslak}
@@ -327,7 +329,7 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                                                                     className={`${cipSinifi} ${listeDisi(cip.hizmet) ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : "border-[var(--border-strong)] text-[var(--fg)]"}`}
                                                                     title={[
                                                                         cip.sistemNolari.length > 0 ? `Föy ${cip.sistemNolari.join(", ")}` : null,
-                                                                        "veri paketinden gelir, panelden değiştirilemez",
+                                                                        "kayıtlı hizmet, buradan değiştirilemez",
                                                                         listeDisi(cip.hizmet) ? LISTE_DISI_IPUCU : null,
                                                                     ].filter(Boolean).join(" — ")}
                                                                     data-testid="case-hizmet-cip"
@@ -341,16 +343,13 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                                                                             liste dışı
                                                                         </span>
                                                                     )}
-                                                                    {/* Tek föyde föy numarası, birden çok föyde adet (numaralar ipucunda). */}
-                                                                    <span
-                                                                        className="inline-flex items-center gap-1 px-1 font-mono text-[9.5px] uppercase tracking-[0.08em] bg-[var(--bg-sunken)] text-[var(--fg-muted)]"
-                                                                        data-testid="case-hizmet-paket-rozeti"
-                                                                    >
-                                                                        <Lock className="w-2.5 h-2.5" aria-hidden="true" />
-                                                                        {cip.adet > 1
-                                                                            ? `paket · ${cip.adet} föy`
-                                                                            : `paket${cip.sistemNolari[0] ? ` · ${cip.sistemNolari[0]}` : ""}`}
-                                                                    </span>
+                                                                    {/* Yalnız kilit simgesi (03.10 kullanıcı kararı): "paket · föy no" yazısı
+                                                                        kullanıcının kafasını karıştırıyordu; föy numaraları ipucunda durur. */}
+                                                                    <Lock
+                                                                        className="w-3 h-3 shrink-0 text-[var(--fg-muted)]"
+                                                                        aria-hidden="true"
+                                                                        data-testid="case-hizmet-kilit"
+                                                                    />
                                                                 </span>
                                                             ))}
                                                             {grup.elle.map(s => (
@@ -379,10 +378,15 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                                                         size="sm"
                                                         disabled={yaziliyor}
                                                         onClick={() => duzenlemeyiAc(grup)}
-                                                        aria-label={`${grup.muvekkilAdi} için hizmet seç`}
+                                                        aria-label={`${grup.muvekkilAdi} için ${grup.elle.length > 0 ? "hizmetleri düzenle" : "hizmet ekle"}`}
                                                         data-testid="case-hizmet-sec"
                                                     >
-                                                        Hizmet seç
+                                                        {/* Etiket işi söyler (03.10): "Hizmet seç" ekleme yolu olarak okunmuyordu. */}
+                                                        {grup.elle.length > 0 ? (
+                                                            <><Pencil className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />Hizmetleri düzenle</>
+                                                        ) : (
+                                                            <><Plus className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />Hizmet ekle</>
+                                                        )}
                                                     </Button>
                                                 )}
                                             </div>

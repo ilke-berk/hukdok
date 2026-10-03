@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // CaseHizmetPanel (G252) — dava kartının müvekkil × hizmet paneli. `apiClient` sahte (yol+yönteme
 // göre yanıt), seçenek listesi sahte; panel lib/caseHizmetleri + gerçek HizmetSecici (Radix Popover
-// + cmdk) ile koşar. Kilitlenenler: müvekkile göre gruplama, föy çipi kilitli ("paket" + SistemNo,
+// + cmdk) ile koşar. Kilitlenenler: müvekkile göre gruplama, föy çipi kilitli (kilit simgesi, föy no ipucunda,
 // kaldırma yok), çoklu seçim → TEK PUT gövdesi (föy adı gövdede yok), değişmeyen seçimde istek yok,
 // seçimi kaldırıp uygulamak boş küme yazar, iki müvekkile FARKLI küme, toplu uygulama (müvekkil
 // başına bir PUT + kısmi hata), 409/422 Türkçe metin, liste dışı damga, yetkisizde düğmeler yok,
@@ -137,7 +137,7 @@ describe("CaseHizmetPanel", () => {
         expect(el).not.toBeNull();
         await act(async () => { (el as HTMLElement).click(); });
     };
-    /** "Hizmet seç" → seçici açık gelir (defaultOpen). */
+    /** "Hizmet ekle" / "Hizmetleri düzenle" → seçici açık gelir (defaultOpen). */
     const duzenle = async (partyId: number) => {
         await tikla(q("case-hizmet-sec", satiri(partyId)));
         expect(q("case-hizmet-duzenle", satiri(partyId))).not.toBeNull();
@@ -147,7 +147,7 @@ describe("CaseHizmetPanel", () => {
         await tikla(q("case-hizmet-uygula", satiri(partyId)));
     };
 
-    it("müvekkile göre gruplar: föy çipi 'paket' rozeti + SistemNo ile, elle çip ayrı; GET yolu doğru", async () => {
+    it("müvekkile göre gruplar: föy çipi kilit simgeli (paket yazısı yok, föy no ipucunda), elle çip ayrı; GET yolu doğru", async () => {
         sunucu = [
             FOY_SATIRI, ELLE_SATIRI,
             { id: 3, case_party_id: 12, muvekkil_adi: "Özel Şifa Hastanesi", hizmet_turu: "Lexis Rapor", kaynak: "elle", foy_id: null, sistem_no: null },
@@ -161,12 +161,15 @@ describe("CaseHizmetPanel", () => {
         expect(cipAdlari(12)).toEqual(["Lexis Rapor"]);
 
         const foyCipi = qa("case-hizmet-cip", satiri(11)).find(c => c.getAttribute("data-kaynak") === "foy")!;
-        expect(q("case-hizmet-paket-rozeti", foyCipi)!.textContent).toBe("paket · S-2024-100");
+        // 03.10: çipte "paket · föy no" yazısı YOK — yalnız kilit simgesi; föy numarası ipucunda.
+        expect(q("case-hizmet-kilit", foyCipi)).not.toBeNull();
+        expect(foyCipi.textContent).toBe("Takip (doktor müvekkil)");
         expect(foyCipi.getAttribute("title")).toContain("Föy S-2024-100");
-        // Föy çipinde kaldırma düğmesi YOK; elle çipte "paket" rozeti yok.
+        // Föy çipinde kaldırma düğmesi YOK; elle çipte kilit yok.
         expect(foyCipi.querySelector("button")).toBeNull();
         const elleCipi = qa("case-hizmet-cip", satiri(11)).find(c => c.getAttribute("data-kaynak") === "elle")!;
-        expect(q("case-hizmet-paket-rozeti", elleCipi)).toBeNull();
+        expect(q("case-hizmet-kilit", elleCipi)).toBeNull();
+        expect(container.textContent).not.toMatch(/paket/i);
     });
 
     it("aynı hizmeti taşıyan föyler TEK çipte toplanır: adet rozette, föy numaraları ipucunda; farklı hizmet ayrı çip", async () => {
@@ -182,9 +185,9 @@ describe("CaseHizmetPanel", () => {
         expect(cipAdlari(11, "foy")).toEqual(["Takip (doktor müvekkil)", "Lexis Rapor"]);
         const [toplu, tekil] = qa("case-hizmet-cip", satiri(11));
         expect(toplu.getAttribute("data-adet")).toBe("3");
-        expect(q("case-hizmet-paket-rozeti", toplu)!.textContent).toBe("paket · 3 föy");
+        expect(toplu.textContent).toBe("Takip (doktor müvekkil)");
         expect(toplu.getAttribute("title")).toContain("Föy S-2024-100, S-2024-101, S-2024-102");
-        expect(q("case-hizmet-paket-rozeti", tekil)!.textContent).toBe("paket · S-2024-103");
+        expect(tekil.getAttribute("title")).toContain("Föy S-2024-103");
         // Başlıktaki sayı ekrandaki çip sayısıdır (satır sayısı 4 değil).
         expect(container.textContent).toContain("(2)");
         expect(container.textContent).not.toContain("(4)");
@@ -194,6 +197,15 @@ describe("CaseHizmetPanel", () => {
         await bas([DOKTOR, HASTANE]);
         expect(q("case-hizmet-bos", satiri(11))).toBeNull();
         expect(q("case-hizmet-bos", satiri(12))!.textContent).toBe("Hizmet girilmemiş");
+    });
+
+    it("düğme etiketi işi söyler: elle hizmeti olmayan müvekkilde 'Hizmet ekle', olanda 'Hizmetleri düzenle'", async () => {
+        // DOKTOR: föy + elle satır; HASTANE: hiç satır yok. Yalnız föy satırı olan da "ekle" görür.
+        await bas([DOKTOR, HASTANE]);
+        expect(q("case-hizmet-sec", satiri(11))!.textContent).toBe("Hizmetleri düzenle");
+        expect(q("case-hizmet-sec", satiri(11))!.getAttribute("aria-label")).toBe("Dr. Ayşe Kaya için hizmetleri düzenle");
+        expect(q("case-hizmet-sec", satiri(12))!.textContent).toBe("Hizmet ekle");
+        expect(q("case-hizmet-sec", satiri(12))!.getAttribute("aria-label")).toBe("Özel Şifa Hastanesi için hizmet ekle");
     });
 
     it("müvekkil tarafı olmayan kartta bilgi metni çıkar; ekleme/toplu düğmesi yok", async () => {
@@ -405,7 +417,7 @@ describe("CaseHizmetPanel", () => {
         expect(qa("case-hizmet-cip").every(c => c.getAttribute("data-liste-disi") === "false")).toBe(true);
     });
 
-    it("yetkisiz kullanıcıda 'Hizmet seç' ve toplu uygulama görünmez; çipler görünür", async () => {
+    it("yetkisiz kullanıcıda 'Hizmet ekle' ve toplu uygulama görünmez; çipler görünür", async () => {
         await bas([DOKTOR, HASTANE], false);
         expect(q("case-hizmet-sec")).toBeNull();
         expect(q("case-hizmet-toplu-ac")).toBeNull();
