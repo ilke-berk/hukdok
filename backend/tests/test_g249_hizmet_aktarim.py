@@ -549,6 +549,26 @@ def test_doldurma_apply_yazar_ikinci_kosu_sifir(doldurma_zemini):
     assert len(_satirlar(doldurma_zemini)) == 3
 
 
+def test_doldurma_tekrar_kosusu_foy_basina_sorgu_kosmaz(doldurma_zemini):
+    """Hiçbir şey değişmeyen koşuda föy başına SAVEPOINT / liste sorgusu YOK: parça
+    ön yüklenir (`case_hizmetleri.foy_hazirligi`), yazma gerektirmeyen föy sorgusuz geçer.
+    Ölçüm (lokal 03.10, 8.416 föy): 50.522 sorgu / 17 sn → 99 sorgu / 0,7 sn — aktarım
+    aynı döngüyü tek transaction'ında (kart kilidi penceresi) koşar."""
+    hkd.doldur(doldurma_zemini, apply=True)
+    ifadeler: list = []
+
+    @event.listens_for(doldurma_zemini.kw["bind"], "before_cursor_execute")
+    def _kaydet(conn, cursor, stmt, params, ctx, many):
+        ifadeler.append(stmt)
+
+    ikinci = hkd.doldur(doldurma_zemini, apply=True)
+
+    assert ikinci.degisiklik == 0 and ikinci.degismeyen == 3 and ikinci.atlanan == 4
+    assert not [s for s in ifadeler if "SAVEPOINT" in s.upper()]
+    assert sum("service_types" in s for s in ifadeler) == 1       # parça başına tek liste sorgusu
+    assert not [s for s in ifadeler if s.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))]
+
+
 def test_doldurmadan_sonra_aktarim_satirlari_degismedi_bulur(doldurma_zemini, tmp_path):
     """Doldurma ile aktarım AYNI yazıcıyı kullanır: doldurulmuş föyleri taşıyan
     paket hiçbir hizmet satırı eklemez/değiştirmez."""

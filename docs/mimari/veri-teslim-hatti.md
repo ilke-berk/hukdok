@@ -817,10 +817,16 @@ Kullanıcı kararı 01.10.2026 (G248): hizmet türü kartın değil **kart × m�
 
 **(1) Föy → föy kaynaklı hizmet satırı.** Paketten gelen her föy (kapsamda + `case_party_id` dolu + hizmeti
 dolu) kartında BİR hizmet satırı taşır. Yazıcı `managers/case_hizmetleri.foydan_yaz`'dır (upsert, anahtar
-`foy_id`, `managers/case_hizmetleri.py:490`); aktarım onu `hizmet_satirlarini_yaz` ile çağırır
-(`scripts/hukdok_aktarim.py:3699`; föyler 500'lük parçalarla yüklenir, föy başına SAVEPOINT).
+`foy_id`, `managers/case_hizmetleri.py:532`); aktarım onu `hizmet_satirlarini_yaz` ile çağırır
+(`scripts/hukdok_aktarim.py:3700`; föyler 500'lük parçalarla yüklenir).
 
-- **Sıra:** `aktarimi_kos` içinde `kapsam_isaretlerini_yaz`dan SONRA, ayrı geçişte (`:3967-3982`), bu koşuda
+- **Toplu ön karar (03.10):** parça başına `foy_hazirligi` (`case_hizmetleri.py:626`) mevcut satırları, tarafları
+  ve hizmet listesini üç sorguyla yükler; `yazmasiz_sonuc` (`:655`) yazma gerektirmeyen föyü (değişmedi / atlandı)
+  sorgusuz ve SAVEPOINT'siz geçirir, `foydan_yaz`a (föy başına SAVEPOINT) yalnız satırı eklenecek / güncellenecek /
+  silinecek föy gider. İki yolun kuralı tek yerdedir (`_foy_karari`, `:498`). Lokal ölçüm, 8.416 föy, hiçbir şey
+  değişmeyen koşu: 50.522 sorgu / 17,0 sn → 99 sorgu / 0,7 sn — bu süre aktarımın tek transaction'ına, yani kart
+  kilidi penceresine (§5 "Toplu işlem prensibi") ekleniyordu. Doldurma script'i aynı yolu kullanır.
+- **Sıra:** `aktarimi_kos` içinde `kapsam_isaretlerini_yaz`dan SONRA, ayrı geçişte (`:3977-3992`), bu koşuda
   işlenen föyler ∪ kapsam sayfasındaki föyler için — yeni işaretlenen föyün satırı aynı koşuda silinsin,
   işareti kalkanınki geri gelsin.
 - **Değişim:** föyün kartı, müvekkili ya da hizmeti değiştiyse satır YERİNDE güncellenir (tarihçeli); föy kapsam

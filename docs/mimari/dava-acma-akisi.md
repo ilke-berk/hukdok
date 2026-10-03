@@ -949,10 +949,11 @@ Fonksiyonlar commit ETMEZ (flush eder); işlem sınırı çağıranındır.
 | --- | --- | --- |
 | `elle_kumesini_yaz` (`:395`) | `PUT …/hizmetler/{case_party_id}`, `add_case` | Müvekkilin ELLE kümesini verilen kümeye getirir: eksik ad eklenir, kümede olmayan elle satır silinir, föy satırına dokunulmaz; her ad önce doğrulanır (biri geçersizse hiçbir şey yazılmaz); değişiklik `case_history`'ye TEK kayıt; aynı küme ikinci kez → kayıt yok |
 | `elle_ekle` (`:353`) / `elle_sil` (`:375`) | `POST` / `DELETE` uçları | Tekil elle satır; aynı (müvekkil, hizmet) elle ya da föyden zaten varsa yeni satır açılmaz; föy satırını silme `FoyKaynakliSatir` |
-| `foydan_yaz` (`:490`) | aktarım, `hizmet_kayitlari_doldur.py`, `birlesik_kart_ayir.py` | Föyün satırını upsert eder (anahtar `foy_id`); ayrıntı [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md) |
+| `foydan_yaz` (`:532`) | aktarım, `hizmet_kayitlari_doldur.py`, `birlesik_kart_ayir.py` | Föyün satırını upsert eder (anahtar `foy_id`); ayrıntı [`veri-teslim-hatti.md` §7.7](veri-teslim-hatti.md) |
+| `foy_hazirligi` (`:626`) + `yazmasiz_sonuc` (`:655`) | aktarım, `hizmet_kayitlari_doldur.py` | Toplu yolun sorgusuz ön kararı: parça ön yüklenir, yazma gerektirmeyen föy `foydan_yaz`a girmez; kural `foydan_yaz` ile ortak (`_foy_karari`, `:498`) |
 | `taraflarin_elle_satirlarini_sil` (`:436`) | `update_case` | Karttan düşen müvekkilin elle satırlarını taraf silinmeden ÖNCE tarihçeli siler (`case_manager.py:1501-1510`); föy kaynaklı satırı olan taraf RESTRICT ile silinemez |
-| `tarafi_tasi` (`:565`) | `mukerrer_kart_birlestir.py` | Tarafın tüm satırlarını başka tarafa/karta taşır; hedefte aynı elle satır varsa birleşir |
-| `liste_adi_degisti` (`:616`) | `reference_lists._apply_to_dependents` | `service_types` öğesi yeniden adlandırılınca/taşınınca satırları yeni ada çevirir; kısmi UNIQUE'e çarpan elle satır birleşir; etkilenen kartların özeti toplu yenilenir |
+| `tarafi_tasi` (`:674`) | `mukerrer_kart_birlestir.py` | Tarafın tüm satırlarını başka tarafa/karta taşır; hedefte aynı elle satır varsa birleşir |
+| `liste_adi_degisti` (`:725`) | `reference_lists._apply_to_dependents` | `service_types` öğesi yeniden adlandırılınca/taşınınca satırları yeni ada çevirir; kısmi UNIQUE'e çarpan elle satır birleşir; etkilenen kartların özeti toplu yenilenir |
 
 - **Hizmet adı kapalı listedendir:** `dogrulanmis_hizmet_adi` (`:157`) → `case_manager.validated_event_list_value`
   (boşluk normalize, tam ad, `active` filtresi yok, liste BOŞSA doğrulama atlanır); listede olmayan ad

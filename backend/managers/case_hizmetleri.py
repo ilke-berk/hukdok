@@ -35,7 +35,7 @@ Sözleşme (G249-G253 buna yazar):
 """
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, cast
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -487,6 +487,48 @@ def _foy_satirini_sil(db: Session, row: Any, *, source: Optional[str]) -> None:
     ozeti_yenile(db, case_id)
 
 
+@dataclass(frozen=True)
+class _FoyKarari:
+    """Föyün hizmet satırına ne yapılacağı — `_foy_karari`nın SAF çıktısı (DB'ye dokunmaz)."""
+    islem: str                      # FOY_EKLENDI | FOY_GUNCELLENDI | FOY_DEGISMEDI | FOY_SILINDI | FOY_ATLANDI
+    sebep: Optional[str] = None
+    ad: Optional[str] = None        # kanonik hizmet adı (ekleme / güncelleme / değişmedi)
+
+
+def _foy_karari(foy: Any, mevcut: Any, party: Any,
+                ad_coz: Callable[[Any], Optional[str]]) -> _FoyKarari:
+    """Föy + mevcut satırı + föyün tarafı → karar. KURALIN TEK YERİ: tekil yol
+    (`foydan_yaz`) ve toplu yolun sorgusuz ön kararı (`yazmasiz_sonuc`) aynı
+    fonksiyondan geçer — iki yol ayrışamaz.
+
+    `party`: föyün `case_party_id`siyle bulunan taraf (yoksa None; kapsam dışı
+    föyde bakılmaz). `ad_coz`: ham hizmet adı → listedeki kanonik ad, listede
+    yoksa None; yalnız gerektiğinde çağrılır.
+    """
+    def _atla(sebep: str) -> _FoyKarari:
+        # Föy başka karta taşınmışsa eski kartta satır bırakılmaz.
+        if mevcut is not None and mevcut.case_id != foy.case_id:
+            return _FoyKarari(FOY_SILINDI, sebep)
+        return _FoyKarari(FOY_ATLANDI, sebep)
+
+    if foy.kapsam_durumu:
+        return _FoyKarari(FOY_SILINDI if mevcut is not None else FOY_ATLANDI, SEBEP_KAPSAM_DISI)
+    if party is None or party.case_id != foy.case_id:
+        return _atla(SEBEP_TARAF_YOK)
+    if party.party_type != MUVEKKIL_TARAF_TURU:
+        return _atla(SEBEP_MUVEKKIL_DEGIL)
+    if not _kirp(foy.hizmet_turu, _AD_SINIRI):
+        return _atla(SEBEP_HIZMET_BOS)
+    ad = ad_coz(foy.hizmet_turu)
+    if ad is None:
+        return _atla(SEBEP_LISTEDE_YOK)
+    if mevcut is None:
+        return _FoyKarari(FOY_EKLENDI, None, ad)
+    if (mevcut.case_id, mevcut.case_party_id, mevcut.hizmet_turu) == (foy.case_id, party.id, ad):
+        return _FoyKarari(FOY_DEGISMEDI, None, ad)
+    return _FoyKarari(FOY_GUNCELLENDI, None, ad)
+
+
 def foydan_yaz(db: Session, foy: Any, *, source: Optional[str] = None) -> FoySonucu:
     """Föyün hizmet satırını yazar — upsert, anahtar `foy_id` (aktarımın yolu, G249).
 
@@ -501,37 +543,35 @@ def foydan_yaz(db: Session, foy: Any, *, source: Optional[str] = None) -> FoySon
       (tarihçeli); hiçbiri değişmediyse `DEGISMEDI`.
 
     `source` verilmezse föyün kendi `source`'u (teslim imzası) yazılır.
+
+    Toplu çağıran (aktarım, doldurma) föy başına buraya girmeden ÖNCE
+    `foy_hazirligi` + `yazmasiz_sonuc` ile sorar: yazma gerektirmeyen föy
+    (değişmedi / atlandı) sorgusuz geçer, buraya yalnız yazılacak föy gelir.
     """
     if foy.id is None:
         db.flush()
     imza = _kirp(source or foy.source, _KAYNAK_SINIRI)
     mevcut = _foy_satiri(db, foy.id)
+    party: Any = None
+    if not foy.kapsam_durumu and foy.case_party_id is not None:
+        party = db.get(models.CaseParty, foy.case_party_id)
 
-    def _atla(sebep: str) -> FoySonucu:
-        if mevcut is not None and mevcut.case_id != foy.case_id:
-            _foy_satirini_sil(db, mevcut, source=imza)
-            return FoySonucu(FOY_SILINDI, sebep)
-        return FoySonucu(FOY_ATLANDI, sebep, mevcut)
+    def _ad_coz(ham: Any) -> Optional[str]:
+        try:
+            return dogrulanmis_hizmet_adi(db, ham)
+        except GecersizHizmetTuru:
+            return None
 
-    if foy.kapsam_durumu:
-        if mevcut is not None:
-            _foy_satirini_sil(db, mevcut, source=imza)
-            return FoySonucu(FOY_SILINDI, SEBEP_KAPSAM_DISI)
-        return FoySonucu(FOY_ATLANDI, SEBEP_KAPSAM_DISI)
+    karar = _foy_karari(foy, mevcut, party, _ad_coz)
 
-    party: Any = db.get(models.CaseParty, foy.case_party_id) if foy.case_party_id is not None else None
-    if party is None or party.case_id != foy.case_id:
-        return _atla(SEBEP_TARAF_YOK)
-    if party.party_type != MUVEKKIL_TARAF_TURU:
-        return _atla(SEBEP_MUVEKKIL_DEGIL)
-    if not _kirp(foy.hizmet_turu, _AD_SINIRI):
-        return _atla(SEBEP_HIZMET_BOS)
-    try:
-        ad = dogrulanmis_hizmet_adi(db, foy.hizmet_turu)
-    except GecersizHizmetTuru:
-        return _atla(SEBEP_LISTEDE_YOK)
+    if karar.islem == FOY_SILINDI:
+        _foy_satirini_sil(db, mevcut, source=imza)
+        return FoySonucu(FOY_SILINDI, karar.sebep)
+    if karar.islem in (FOY_ATLANDI, FOY_DEGISMEDI):
+        return FoySonucu(karar.islem, karar.sebep, mevcut)
 
-    if mevcut is None:
+    ad = cast(str, karar.ad)        # ekleme/güncelleme kararı adı hep taşır
+    if karar.islem == FOY_EKLENDI:
         row = models.CaseHizmeti(
             case_id=foy.case_id, case_party_id=party.id, hizmet_turu=ad,
             foy_id=foy.id, source=imza, created_by=imza,
@@ -539,9 +579,6 @@ def foydan_yaz(db: Session, foy: Any, *, source: Optional[str] = None) -> FoySon
         db.add(row)
         ozeti_yenile(db, foy.case_id)
         return FoySonucu(FOY_EKLENDI, None, row)
-
-    if (mevcut.case_id, mevcut.case_party_id, mevcut.hizmet_turu) == (foy.case_id, party.id, ad):
-        return FoySonucu(FOY_DEGISMEDI, None, mevcut)
 
     eski_kart = mevcut.case_id
     eski = _etiket(_taraf_adi(db, mevcut.case_party_id), [mevcut.hizmet_turu])
@@ -558,6 +595,78 @@ def foydan_yaz(db: Session, foy: Any, *, source: Optional[str] = None) -> FoySon
         _tarihce(db, foy.case_id, eski, yeni, changed_by=imza, source=imza)
     ozeti_yenile(db, foy.case_id)
     return FoySonucu(FOY_GUNCELLENDI, None, mevcut)
+
+
+# ─── toplu çağrı: sorgusuz ön karar (aktarım / doldurma) ─────────────────────
+
+@dataclass
+class FoyHazirligi:
+    """Bir föy parçasının `foydan_yaz` kararına yeten verisi — parça başına ÜÇ sorgu.
+
+    Ölçüm (lokal, 03.10.2026): föy başına `foydan_yaz` 8.416 föyde hiçbir şey
+    değişmediği hâlde 50.522 sorgu / 17 sn tutuyordu (föy başına SAVEPOINT çifti
+    + satır + taraf + iki liste sorgusu) ve bu süre aktarımın tek transaction'ına,
+    yani kart kilidi penceresine ekleniyordu.
+    """
+    satirlar: Dict[int, Any]          # foy_id → mevcut föy kaynaklı hizmet satırı
+    taraflar: Dict[int, Any]          # case_party_id → taraf
+    adlar: Optional[Set[str]]         # `service_types` adları; None = liste BOŞ (doğrulama atlanır)
+
+    def ad_coz(self, ham: Any) -> Optional[str]:
+        """`dogrulanmis_hizmet_adi` ile AYNI kural, sorgusuz: boşluk normalize, tam ad
+        eşleşmesi, liste boşsa doğrulama atlanır, kolon sınırını aşan ad geçersiz."""
+        ad = " ".join(str(ham).split()) if ham is not None else ""
+        if not ad or len(ad) > _AD_SINIRI:
+            return None
+        if self.adlar is not None and ad not in self.adlar:
+            return None
+        return ad
+
+
+def foy_hazirligi(db: Session, foyler: Sequence[Any]) -> FoyHazirligi:
+    """`foyler` parçası için ön yükleme. Bekleyen değişiklikler önce flush edilir
+    (oturumlar autoflush'sız); föylerin `id`si dolu olmalıdır."""
+    db.flush()
+    foy_idleri = [f.id for f in foyler]
+    taraf_idleri = sorted({f.case_party_id for f in foyler if f.case_party_id is not None})
+    satirlar: Dict[int, Any] = {}
+    taraflar: Dict[int, Any] = {}
+    for i in range(0, len(foy_idleri), _CHUNK):
+        for s in (
+            db.query(models.CaseHizmeti)
+            .filter(models.CaseHizmeti.foy_id.in_(foy_idleri[i:i + _CHUNK]))
+        ):
+            satirlar[cast(int, s.foy_id)] = s
+    for i in range(0, len(taraf_idleri), _CHUNK):
+        for t in (
+            db.query(models.CaseParty)
+            .filter(models.CaseParty.id.in_(taraf_idleri[i:i + _CHUNK]))
+        ):
+            taraflar[cast(int, t.id)] = t
+    adlar: Optional[Set[str]] = {ad for (ad,) in db.query(models.ServiceType.name)} or None
+    if adlar is None:
+        logger.warning(
+            "service_types listesi BOŞ — föy hizmet adı kapalı liste doğrulaması "
+            "atlandı (seed koşmamış olabilir)"
+        )
+    return FoyHazirligi(satirlar=satirlar, taraflar=taraflar, adlar=adlar)
+
+
+def yazmasiz_sonuc(foy: Any, hazir: FoyHazirligi) -> Optional[FoySonucu]:
+    """Föy YAZMA GEREKTİRMİYORSA (`DEGISMEDI` / `ATLANDI`) sonucunu sorgusuz döner;
+    satır eklenecek / güncellenecek / silinecekse None — çağıran `foydan_yaz`a gider.
+
+    Dönen sonuç `foydan_yaz`ın aynı föyde döneceği sonuçla birebirdir (karar
+    `_foy_karari`nda ortak). `hazir` aynı oturumda ve bu föyü kapsayan parça için
+    kurulmuş olmalıdır; parçadaki başka föyün yazımı bu föyün satırını değiştirmez
+    (satır anahtarı `foy_id`).
+    """
+    mevcut = hazir.satirlar.get(foy.id)
+    party = hazir.taraflar.get(foy.case_party_id) if foy.case_party_id is not None else None
+    karar = _foy_karari(foy, mevcut, party, hazir.ad_coz)
+    if karar.islem in (FOY_ATLANDI, FOY_DEGISMEDI):
+        return FoySonucu(karar.islem, karar.sebep, mevcut)
+    return None
 
 
 # ─── kart birleştirme / ayırma (script yolları, G249) ────────────────────────

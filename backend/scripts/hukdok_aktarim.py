@@ -3734,12 +3734,17 @@ def hizmet_satirlarini_yaz(db, sistem_nolar: Iterable[str], *, source: str,
         )
         if not foyler:
             continue
+        # Parçanın ön yüklemesi (mevcut satırlar + taraflar + hizmet listesi, üç sorgu):
+        # yazma gerektirmeyen föy (değişmedi / atlandı — tekrar koşuda neredeyse hepsi)
+        # sorgusuz ve SAVEPOINT'siz geçer; `foydan_yaz`a yalnız yazılacak föy gider.
+        # Föy başına altı sorgu, aktarımın tek transaction'ını (kart kilidi penceresi)
+        # hiçbir şey değişmeyen koşuda bile ~17 sn uzatıyordu (lokal ölçüm 03.10).
+        hazir = case_hizmetleri.foy_hazirligi(db, foyler)
         # Satırın koşu ÖNCESİ kartı: föy başka karta taşındıysa (ya da satırı
         # silindiyse) değişen kart föyün bugünkü kartı değil, satırın eski kartıdır.
+        # Yazımdan ÖNCE alınır — satır nesneleri yerinde güncellenir.
         onceki_kart: Dict[int, int] = {
-            satir_foy_id: satir_kart_id for satir_foy_id, satir_kart_id in
-            db.query(models.CaseHizmeti.foy_id, models.CaseHizmeti.case_id)
-            .filter(models.CaseHizmeti.foy_id.in_([f.id for f in foyler]))
+            satir_foy_id: cast(int, satir.case_id) for satir_foy_id, satir in hazir.satirlar.items()
         }
         for foy in foyler:
             foy_id = cast(int, foy.id)
@@ -3747,17 +3752,21 @@ def hizmet_satirlarini_yaz(db, sistem_nolar: Iterable[str], *, source: str,
             case_id = cast(int, foy.case_id)
             hizmet = _metin(foy.hizmet_turu)
             satir_no, dosya_no = bilgi.get(sistem_no, (0, ""))
-            try:
-                with db.begin_nested():
-                    yazim = case_hizmetleri.foydan_yaz(db, foy, source=source)
-            except SQLAlchemyError as exc:
-                db.expire_all()           # savepoint geri alındı; bellekteki hâl bayat
-                sonuc.rapor_satirlari.append(RaporSatiri(
-                    satir_no=satir_no, sistem_no=sistem_no, dosya_no=dosya_no,
-                    tur="HATA", sebep=f"hizmet satırı yazılamadı: {type(exc).__name__}: {exc}",
-                ))
-                logger.warning(f"Föy {sistem_no} hizmet satırı DB hatası: {exc}")
-                continue
+            on_karar = case_hizmetleri.yazmasiz_sonuc(foy, hazir)
+            if on_karar is not None:
+                yazim = on_karar
+            else:
+                try:
+                    with db.begin_nested():
+                        yazim = case_hizmetleri.foydan_yaz(db, foy, source=source)
+                except SQLAlchemyError as exc:
+                    db.expire_all()           # savepoint geri alındı; bellekteki hâl bayat
+                    sonuc.rapor_satirlari.append(RaporSatiri(
+                        satir_no=satir_no, sistem_no=sistem_no, dosya_no=dosya_no,
+                        tur="HATA", sebep=f"hizmet satırı yazılamadı: {type(exc).__name__}: {exc}",
+                    ))
+                    logger.warning(f"Föy {sistem_no} hizmet satırı DB hatası: {exc}")
+                    continue
 
             if yazim.durum == case_hizmetleri.FOY_EKLENDI:
                 sonuc.hizmet_eklenen += 1

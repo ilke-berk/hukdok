@@ -623,6 +623,102 @@ def test_foydan_yaz_foy_baska_karta_tasininca_satir_izler(ortam):
     db.close()
 
 
+# ─── toplu yolun sorgusuz ön kararı (aktarım / doldurma) ─────────────────────
+
+def test_yazmasiz_sonuc_foydan_yaz_ile_ayni_karari_verir_ve_sorgu_kosmaz(ortam):
+    """Toplu çağıran yazma gerektirmeyen föyü `foydan_yaz`a hiç sokmaz. Ön karar tekil
+    yolla BİREBİR olmalı: değişmedi/atlandı → aynı (durum, sebep, satır); eklenecek /
+    güncellenecek / silinecek föy → None (iş `foydan_yaz`a kalır)."""
+    db = ortam.maker()
+    case, baska = _dava(db), _dava(db)
+    ali = _taraf(db, case, "Ali Veli")
+    karsi = _taraf(db, case, "Karşı Taraf", party_type="COUNTER", role="Davacı")
+    ali_baska = _taraf(db, baska, "Ali Veli")
+
+    # Satırı OLAN föyler: önce yazılır, sonra föy değişir (paketin yeni hâli).
+    satirli = [_foy(db, case, ali, f"S-{i}") for i in range(1, 7)]
+    for foy in satirli:
+        assert ch.foydan_yaz(db, foy).durum == ch.FOY_EKLENDI
+    db.commit()
+    ayni, hizmeti_degisen, kapsamdan_cikan, adi_kalkan, tarafsiz_tasinan, tasinan = satirli
+    hizmeti_degisen.hizmet_turu = "Danışmanlık"
+    kapsamdan_cikan.kapsam_durumu = "KAPSAM_DISI"
+    adi_kalkan.hizmet_turu = "Listeden Kalkmış Ad"
+    tarafsiz_tasinan.case_id, tarafsiz_tasinan.case_party_id = baska.id, None
+    tasinan.case_id, tasinan.case_party_id = baska.id, ali_baska.id
+
+    # Satırı OLMAYAN föyler.
+    satirsiz = [
+        _foy(db, case, ali, "S-7"),
+        _foy(db, case, ali, "S-8", hizmet_turu="  Lexis   Rapor "),
+        _foy(db, case, ali, "S-9", kapsam_durumu="KAPSAM_DISI"),
+        _foy(db, case, None, "S-10"),
+        _foy(db, case, karsi, "S-11"),
+        _foy(db, case, ali, "S-12", hizmet_turu=None),
+        _foy(db, case, ali, "S-13", hizmet_turu="Eski Ad"),
+    ]
+    foyler = satirli + satirsiz
+    beklenen = {
+        "S-1": (ch.FOY_DEGISMEDI, None),
+        "S-2": (ch.FOY_GUNCELLENDI, None),
+        "S-3": (ch.FOY_SILINDI, ch.SEBEP_KAPSAM_DISI),
+        "S-4": (ch.FOY_ATLANDI, ch.SEBEP_LISTEDE_YOK),      # mevcut satır yerinde kalır
+        "S-5": (ch.FOY_SILINDI, ch.SEBEP_TARAF_YOK),        # föy başka karta gitti
+        "S-6": (ch.FOY_GUNCELLENDI, None),
+        "S-7": (ch.FOY_EKLENDI, None),
+        "S-8": (ch.FOY_EKLENDI, None),
+        "S-9": (ch.FOY_ATLANDI, ch.SEBEP_KAPSAM_DISI),
+        "S-10": (ch.FOY_ATLANDI, ch.SEBEP_TARAF_YOK),
+        "S-11": (ch.FOY_ATLANDI, ch.SEBEP_MUVEKKIL_DEGIL),
+        "S-12": (ch.FOY_ATLANDI, ch.SEBEP_HIZMET_BOS),
+        "S-13": (ch.FOY_ATLANDI, ch.SEBEP_LISTEDE_YOK),
+    }
+    yazmasiz = (ch.FOY_DEGISMEDI, ch.FOY_ATLANDI)
+
+    hazir = ch.foy_hazirligi(db, foyler)
+    ortam.statements.clear()
+    on_kararlar = {foy.sistem_no: ch.yazmasiz_sonuc(foy, hazir) for foy in foyler}
+    assert ortam.statements == [], "ön karar sorgu koşmamalı"
+
+    for foy in foyler:
+        on = on_kararlar[foy.sistem_no]
+        gercek = ch.foydan_yaz(db, foy)
+        assert (gercek.durum, gercek.sebep) == beklenen[foy.sistem_no], foy.sistem_no
+        if gercek.durum in yazmasiz:
+            assert on is not None, foy.sistem_no
+            assert (on.durum, on.sebep) == (gercek.durum, gercek.sebep), foy.sistem_no
+            assert on.satir is gercek.satir, foy.sistem_no
+        else:
+            assert on is None, foy.sistem_no
+    db.close()
+
+
+def test_hazirlik_ad_cozumu_tekil_dogrulamayla_ayni(ortam):
+    """`FoyHazirligi.ad_coz` = `dogrulanmis_hizmet_adi`nın sorgusuz eşi — liste doluyken
+    de BOŞKEN de (boş listede doğrulama atlanır, kolon sınırı yine geçerli)."""
+    db = ortam.maker()
+    adaylar = ["Lexis Rapor", "  Lexis   Rapor ", "lexis rapor", "Eski Ad", "", "   ", None, "x" * 101]
+
+    def tekil(ham):
+        try:
+            return ch.dogrulanmis_hizmet_adi(db, ham)
+        except ch.GecersizHizmetTuru:
+            return None
+
+    dolu = ch.foy_hazirligi(db, [])
+    assert dolu.adlar == {ad for _, ad in HIZMETLER}
+    assert [dolu.ad_coz(a) for a in adaylar] == [tekil(a) for a in adaylar]
+    assert dolu.ad_coz("  Lexis   Rapor ") == "Lexis Rapor" and dolu.ad_coz("lexis rapor") is None
+
+    db.query(models.ServiceType).delete()
+    db.commit()
+    bos = ch.foy_hazirligi(db, [])
+    assert bos.adlar is None
+    assert [bos.ad_coz(a) for a in adaylar] == [tekil(a) for a in adaylar]
+    assert bos.ad_coz("Eski Ad") == "Eski Ad" and bos.ad_coz("x" * 101) is None
+    db.close()
+
+
 # ─── kart birleştirme taşıması + toplu özet ──────────────────────────────────
 
 def test_tarafi_tasi_elle_cakismasi_birlesir_foy_satiri_tasinir(ortam):

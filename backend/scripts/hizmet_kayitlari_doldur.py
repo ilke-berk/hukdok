@@ -132,22 +132,25 @@ def doldur(session_factory, *, apply: bool = False) -> DoldurmaSonucu:
                 .order_by(models.CaseFoy.id)
                 .all()
             )
-            onceki_kart = {
-                foy_id: case_id for foy_id, case_id in
-                db.query(models.CaseHizmeti.foy_id, models.CaseHizmeti.case_id)
-                .filter(models.CaseHizmeti.foy_id.in_(parca))
-            }
+            # Ön yükleme (parça başına üç sorgu): yazma gerektirmeyen föy sorgusuz ve
+            # SAVEPOINT'siz geçer — tekrar koşu föy başına altı sorgu koşmaz
+            # (`case_hizmetleri.yazmasiz_sonuc`; karar `foydan_yaz` ile ortak).
+            hazir = case_hizmetleri.foy_hazirligi(db, foyler)
+            # Yazımdan ÖNCE alınır — satır nesneleri yerinde güncellenir.
+            onceki_kart = {foy_id: satir.case_id for foy_id, satir in hazir.satirlar.items()}
             for foy in foyler:
                 foy_id, sistem_no, case_id = foy.id, foy.sistem_no, foy.case_id
                 hizmet = foy.hizmet_turu
-                try:
-                    with db.begin_nested():
-                        yazim = case_hizmetleri.foydan_yaz(db, foy, source=foy.source or DEGISTIREN)
-                except SQLAlchemyError as exc:
-                    db.expire_all()
-                    sonuc.hatalar.append((sistem_no, f"{type(exc).__name__}: {exc}"))
-                    logger.warning(f"Föy {sistem_no} hizmet satırı yazılamadı: {exc}")
-                    continue
+                yazim = case_hizmetleri.yazmasiz_sonuc(foy, hazir)
+                if yazim is None:
+                    try:
+                        with db.begin_nested():
+                            yazim = case_hizmetleri.foydan_yaz(db, foy, source=foy.source or DEGISTIREN)
+                    except SQLAlchemyError as exc:
+                        db.expire_all()
+                        sonuc.hatalar.append((sistem_no, f"{type(exc).__name__}: {exc}"))
+                        logger.warning(f"Föy {sistem_no} hizmet satırı yazılamadı: {exc}")
+                        continue
                 if yazim.durum == case_hizmetleri.FOY_EKLENDI:
                     sonuc.eklenen += 1
                     ad = yazim.satir.hizmet_turu
