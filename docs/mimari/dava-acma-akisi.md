@@ -967,9 +967,13 @@ geriye uyum için okunur ve olduğu gibi saklanır (`add_case`, `update_case` `c
 
 ### 18.6 Arayüz
 
-- **Kart — "Hizmetler" paneli** (`components/CaseHizmetPanel.tsx`; `CaseDetails.tsx`'te `CaseNotesPanel`
-  ile `CaseFoyPanel` arasında): müvekkil başına bir satır — ad · hizmet çipleri · "Hizmet seç". Föy
-  kaynaklı çip "paket · SistemNo" rozetlidir ve kaldırılamaz; elle çip seçiciden kaldırılır; **Uygula** tek
+- **Kart — "Hizmetler" paneli** (`components/CaseHizmetPanel.tsx`; `CaseDetails.tsx`'te **Taraflar
+  sekmesinde, taraf kartlarının altında** — 03.10'da Genel Bilgiler'den taşındı: müvekkiller Taraflar'da
+  listelenir, panel notların altında bulunamıyordu; kartların ÜSTÜNE konmaz, kart tıklaması o tarafın
+  belgelerine götürür ve panel kartları ekran dışına itiyordu. Müvekkil taraf kartı hizmetlerini tekrarsız,
+  salt okunur özetler — `caseData.hizmetler`'den): müvekkil başına bir satır — ad · hizmet çipleri ·
+  "Hizmet seç". Föy kaynaklı çip "paket · SistemNo" rozetlidir ve kaldırılamaz; müvekkilin aynı hizmeti
+  taşıyan föyleri TEK çipte toplanır ("paket · 4 föy", numaralar ipucunda); elle çip seçiciden kaldırılır; **Uygula** tek
   `PUT` atar (gövde = elle küme; seçim değişmediyse istek yok). 2+ müvekkilde "Tüm müvekkillere aynı
   hizmetleri uygula" (müvekkil başına bir `PUT`). Listede olmayan (eski adlı) hizmet amber "liste dışı"
   damgasıyla görünür. İstemci katmanı `lib/caseHizmetleri.ts`. Büro Bilgileri kartından `hizmet_turu` satırı

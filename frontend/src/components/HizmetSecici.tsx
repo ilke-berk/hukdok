@@ -140,7 +140,8 @@ export function HizmetSecici({
                       "inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium border",
                       listeDisi(ad)
                         ? "border-amber-500/40 text-amber-700 dark:text-amber-400"
-                        : "bg-[var(--brand-soft)] text-[var(--brand)] border-brand/20",
+                        // Yazı normal metin rengi: koyu temada bordo yazı bordo zeminde okunmuyordu (03.10).
+                        : "bg-[var(--brand-soft)] text-[var(--fg)] border-brand/50",
                     )}
                   >
                     {ad}
@@ -174,7 +175,9 @@ export function HizmetSecici({
                       data-checked={isaretli ? "true" : "false"}
                       data-kilitli={kilit ? "true" : "false"}
                       aria-checked={isaretli}
-                      className="text-[13px]"
+                      // Odaktaki satır: ortak CommandItem yazıyı `accent-foreground` (koyu temada bordo)
+                      // yapıyor, bordo zeminde okunmuyor — burada normal metin rengi kalır (03.10).
+                      className="text-[13px] data-[selected=true]:text-foreground"
                     >
                       <span
                         aria-hidden="true"
@@ -204,7 +207,7 @@ export function HizmetSecici({
                     data-checked="true"
                     data-liste-disi="true"
                     aria-checked={true}
-                    className="text-[13px]"
+                    className="text-[13px] data-[selected=true]:text-foreground"
                   >
                     <span
                       aria-hidden="true"

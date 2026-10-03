@@ -169,6 +169,27 @@ describe("CaseHizmetPanel", () => {
         expect(q("case-hizmet-paket-rozeti", elleCipi)).toBeNull();
     });
 
+    it("aynı hizmeti taşıyan föyler TEK çipte toplanır: adet rozette, föy numaraları ipucunda; farklı hizmet ayrı çip", async () => {
+        sunucu = [
+            FOY_SATIRI,
+            { ...FOY_SATIRI, id: 4, foy_id: 71, sistem_no: "S-2024-101" },
+            { ...FOY_SATIRI, id: 5, foy_id: 72, sistem_no: "S-2024-102" },
+            { ...FOY_SATIRI, id: 6, foy_id: 73, sistem_no: "S-2024-103", hizmet_turu: "Lexis Rapor" },
+        ];
+        await bas([DOKTOR]);
+
+        // Dört föy satırı → iki çip (üç föylük hizmet tek çip + farklı hizmet ayrı çip).
+        expect(cipAdlari(11, "foy")).toEqual(["Takip (doktor müvekkil)", "Lexis Rapor"]);
+        const [toplu, tekil] = qa("case-hizmet-cip", satiri(11));
+        expect(toplu.getAttribute("data-adet")).toBe("3");
+        expect(q("case-hizmet-paket-rozeti", toplu)!.textContent).toBe("paket · 3 föy");
+        expect(toplu.getAttribute("title")).toContain("Föy S-2024-100, S-2024-101, S-2024-102");
+        expect(q("case-hizmet-paket-rozeti", tekil)!.textContent).toBe("paket · S-2024-103");
+        // Başlıktaki sayı ekrandaki çip sayısıdır (satır sayısı 4 değil).
+        expect(container.textContent).toContain("(2)");
+        expect(container.textContent).not.toContain("(4)");
+    });
+
     it("hizmeti olmayan müvekkil 'Hizmet girilmemiş' der", async () => {
         await bas([DOKTOR, HASTANE]);
         expect(q("case-hizmet-bos", satiri(11))).toBeNull();

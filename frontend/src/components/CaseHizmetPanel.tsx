@@ -5,7 +5,8 @@
  * başınadır, bu yüzden satırlar müvekkile göre grupludur ve her müvekkilin kümesi AYRI yazılır.
  *
  * - Föy (veri paketi) kaynaklı satır salt okunurdur: "paket" rozeti + föy numarası (SistemNo),
- *   kaldırma yok; seçicide kilitli görünür ve `PUT` gövdesine girmez.
+ *   kaldırma yok; seçicide kilitli görünür ve `PUT` gövdesine girmez. Müvekkilin aynı hizmeti
+ *   taşıyan föyleri TEK çipte toplanır ("paket · 4 föy"; numaralar ipucunda).
  * - "Hizmet seç" o müvekkilin seçicisini açar (çoklu); **Uygula** TEK
  *   `PUT /api/cases/{id}/hizmetler/{case_party_id}` atar (gövde = elle küme). Seçim
  *   değişmediyse istek atılmaz.
@@ -43,6 +44,30 @@ const hataMesaji = (err: unknown, varsayilan: string): string =>
 
 const LISTE_DISI_IPUCU = "Bu değer kapalı listede yok — aktarımdan gelmiş olabilir";
 const cipSinifi = "inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium border";
+// Elle çip: bordo ÇERÇEVE + yumuşak zemin, yazı normal metin rengi — koyu temada bordo yazı
+// bordo zeminde okunmuyordu (03.10 kullanıcı geri bildirimi; bordo tonu açılmaz, yazı değişir).
+const elleCipSinifi = "bg-[var(--brand-soft)] text-[var(--fg)] border-brand/50";
+
+/** Aynı hizmeti taşıyan föy satırları tek çipte: müvekkilin dört föyü dört çip basmasın. */
+interface FoyCipi {
+    hizmet: string;
+    /** İlk satırın id'si — React anahtarı. */
+    id: number;
+    /** Föy numaraları (SistemNo), görülme sırasıyla; numarasız föy listeye girmez. */
+    sistemNolari: string[];
+    adet: number;
+}
+
+function foyCipleri(foy: CaseHizmeti[]): FoyCipi[] {
+    const cipler = new Map<string, FoyCipi>();
+    for (const s of foy) {
+        const cip = cipler.get(s.hizmet_turu) ?? { hizmet: s.hizmet_turu, id: s.id, sistemNolari: [], adet: 0 };
+        cip.adet += 1;
+        if (s.sistem_no) cip.sistemNolari.push(s.sistem_no);
+        cipler.set(s.hizmet_turu, cip);
+    }
+    return Array.from(cipler.values());
+}
 
 interface Props {
     caseId: number;
@@ -167,7 +192,8 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
     };
 
     const topluDugmesi = duzenlenebilir && muvekkiller.length >= 2 && !yukleniyor && !yuklemeHatasi;
-    const toplam = satirlar.length;
+    // Başlıktaki sayı ekrandaki çip sayısıdır (aynı hizmetin föyleri tek çip).
+    const toplam = gruplar.reduce((n, g) => n + foyCipleri(g.foy).length + g.elle.length, 0);
 
     return (
         <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none" data-testid="case-hizmet-panel">
@@ -295,38 +321,42 @@ export default function CaseHizmetPanel({ caseId, muvekkiller, duzenlenebilir = 
                                                         </p>
                                                     ) : (
                                                         <div className="flex flex-wrap gap-1.5">
-                                                            {grup.foy.map(s => (
+                                                            {foyCipleri(grup.foy).map(cip => (
                                                                 <span
-                                                                    key={s.id}
-                                                                    className={`${cipSinifi} ${listeDisi(s.hizmet_turu) ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : "border-[var(--border-strong)] text-[var(--fg)]"}`}
+                                                                    key={cip.id}
+                                                                    className={`${cipSinifi} ${listeDisi(cip.hizmet) ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : "border-[var(--border-strong)] text-[var(--fg)]"}`}
                                                                     title={[
-                                                                        s.sistem_no ? `Föy ${s.sistem_no}` : null,
+                                                                        cip.sistemNolari.length > 0 ? `Föy ${cip.sistemNolari.join(", ")}` : null,
                                                                         "veri paketinden gelir, panelden değiştirilemez",
-                                                                        listeDisi(s.hizmet_turu) ? LISTE_DISI_IPUCU : null,
+                                                                        listeDisi(cip.hizmet) ? LISTE_DISI_IPUCU : null,
                                                                     ].filter(Boolean).join(" — ")}
                                                                     data-testid="case-hizmet-cip"
                                                                     data-kaynak="foy"
-                                                                    data-liste-disi={listeDisi(s.hizmet_turu) ? "true" : "false"}
+                                                                    data-adet={cip.adet}
+                                                                    data-liste-disi={listeDisi(cip.hizmet) ? "true" : "false"}
                                                                 >
-                                                                    <span data-testid="case-hizmet-cip-adi">{s.hizmet_turu}</span>
-                                                                    {listeDisi(s.hizmet_turu) && (
+                                                                    <span data-testid="case-hizmet-cip-adi">{cip.hizmet}</span>
+                                                                    {listeDisi(cip.hizmet) && (
                                                                         <span className="font-mono text-[9.5px] uppercase tracking-[0.08em]" data-testid="case-hizmet-liste-disi">
                                                                             liste dışı
                                                                         </span>
                                                                     )}
+                                                                    {/* Tek föyde föy numarası, birden çok föyde adet (numaralar ipucunda). */}
                                                                     <span
                                                                         className="inline-flex items-center gap-1 px-1 font-mono text-[9.5px] uppercase tracking-[0.08em] bg-[var(--bg-sunken)] text-[var(--fg-muted)]"
                                                                         data-testid="case-hizmet-paket-rozeti"
                                                                     >
                                                                         <Lock className="w-2.5 h-2.5" aria-hidden="true" />
-                                                                        paket{s.sistem_no ? ` · ${s.sistem_no}` : ""}
+                                                                        {cip.adet > 1
+                                                                            ? `paket · ${cip.adet} föy`
+                                                                            : `paket${cip.sistemNolari[0] ? ` · ${cip.sistemNolari[0]}` : ""}`}
                                                                     </span>
                                                                 </span>
                                                             ))}
                                                             {grup.elle.map(s => (
                                                                 <span
                                                                     key={s.id}
-                                                                    className={`${cipSinifi} ${listeDisi(s.hizmet_turu) ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : "bg-[var(--brand-soft)] text-[var(--brand)] border-brand/20"}`}
+                                                                    className={`${cipSinifi} ${listeDisi(s.hizmet_turu) ? "border-amber-500/40 text-amber-700 dark:text-amber-400" : elleCipSinifi}`}
                                                                     title={listeDisi(s.hizmet_turu) ? LISTE_DISI_IPUCU : undefined}
                                                                     data-testid="case-hizmet-cip"
                                                                     data-kaynak="elle"

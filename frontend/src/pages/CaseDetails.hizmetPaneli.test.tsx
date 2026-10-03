@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // G252: dava kartında Hizmetler paneli Büro Bilgileri'ndeki tek değerli "Hizmet Türü" satırının
 // yerini alır. Gerçek CaseDetails + gerçek CaseHizmetPanel; ağ (`apiClient`, `authRequest`), MSAL,
-// dava hook'u ve ağır çocuk paneller taklit edilir. Kilitlenenler: panel kartın CLIENT taraflarıyla
-// basılır (karşı taraf satır almaz), `GET /api/cases/{id}/hizmetler` çağrılır, Büro Bilgileri
+// dava hook'u ve ağır çocuk paneller taklit edilir. Kilitlenenler: panel TARAFLAR sekmesinde (Genel
+// Bilgiler'de değil — 03.10 kullanıcı geri bildirimi), kartın CLIENT taraflarıyla basılır (karşı
+// taraf satır almaz), `GET /api/cases/{id}/hizmetler` çağrılır, Büro Bilgileri
 // kartında "Hizmet Türü" satırı YOK ve açıklaması "…müvekkil tipi" ile biter.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -30,6 +31,12 @@ const CASE = vi.hoisted(() => ({
     { id: 11, party_type: "CLIENT", name: "Dr. Ayşe Kaya", role: "Davalı" },
     { id: 12, party_type: "CLIENT", name: "Özel Şifa Hastanesi", role: "Davalı" },
     { id: 13, party_type: "COUNTER", name: "Mehmet Hasta", role: "Davacı" },
+  ],
+  // Kart yanıtındaki hizmet satırları (get_case, G248) — müvekkil kartındaki özet buradan okunur.
+  hizmetler: [
+    { id: 1, case_party_id: 11, muvekkil_adi: "Dr. Ayşe Kaya", hizmet_turu: "Dava Takibi", kaynak: "foy", foy_id: 70, sistem_no: "S-100" },
+    { id: 3, case_party_id: 11, muvekkil_adi: "Dr. Ayşe Kaya", hizmet_turu: "Dava Takibi", kaynak: "foy", foy_id: 71, sistem_no: "S-101" },
+    { id: 2, case_party_id: 12, muvekkil_adi: "Özel Şifa Hastanesi", hizmet_turu: "Danışmanlık", kaynak: "elle", foy_id: null, sistem_no: null },
   ],
 }));
 vi.mock("@/hooks/useCases", () => ({ useCases: () => ({ getCase: async () => CASE }) }));
@@ -115,8 +122,24 @@ describe("CaseDetails — Hizmetler paneli (G252)", () => {
     Array.from(container.querySelectorAll("span")).some(el => ownText(el) === label);
   const qa = (testId: string) => Array.from(container.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`));
 
-  it("panel kartın müvekkil (CLIENT) taraflarıyla basılır; karşı taraf satır almaz", async () => {
+  /** Panel Taraflar sekmesindedir (03.10). Radix Tabs sekmeyi sol tuş mousedown'unda etkinleştirir. */
+  async function taraflarSekmesiniAc(): Promise<void> {
+    await waitFor(() => container.textContent?.includes("T-7") === true, "dava kartı basıldı");
+    const tab = Array.from(container.querySelectorAll('[role="tab"]'))
+      .find(el => el.getAttribute("id")?.endsWith("-trigger-parties"));
+    expect(tab).toBeTruthy();
+    act(() => {
+      tab!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    });
+  }
+
+  it("panel Taraflar sekmesinde, kartın müvekkil (CLIENT) taraflarıyla basılır; karşı taraf satır almaz", async () => {
     render();
+    await waitFor(() => etiketVar("Müvekkil Tipi"), "Genel Bilgiler basıldı");
+    // Genel Bilgiler sekmesinde panel YOK — müvekkiller Taraflar'da listelenir, hizmetleri de orada.
+    expect(qa("case-hizmet-panel")).toHaveLength(0);
+
+    await taraflarSekmesiniAc();
     await waitFor(() => qa("case-hizmet-cip").length === 2, "hizmet çipleri basıldı");
 
     expect(apiFetchMock.mock.calls.map(([yol]) => yol)).toContain("/api/cases/7/hizmetler");
@@ -125,18 +148,30 @@ describe("CaseDetails — Hizmetler paneli (G252)", () => {
     // Kartı açabilen düzenleyebilir: her müvekkilde "Hizmet seç", 2 müvekkilde toplu uygulama.
     expect(qa("case-hizmet-sec")).toHaveLength(2);
     expect(qa("case-hizmet-toplu-ac")).toHaveLength(1);
+
+    // Taraf kartları panelin ÜSTÜNDE kalır (karta tıklamak o tarafın belgelerine götürür — panel
+    // kartları ekran dışına itmesin); müvekkil kartı hizmetlerini tekrarsız özetler, karşı taraf özetlemez.
+    const taraflar = Array.from(container.querySelectorAll("h3, div"))
+      .find(el => ownText(el) === "Taraf Bilgileri")!;
+    const panel = qa("case-hizmet-panel")[0];
+    expect(taraflar.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(qa("taraf-hizmetleri").map(e => e.textContent)).toEqual(["Dava Takibi", "Danışmanlık"]);
   });
 
   it("Büro Bilgileri kartında 'Hizmet Türü' satırı yok (çift gösterim olmaz); açıklama müvekkil tipiyle biter", async () => {
     render();
     await waitFor(() => etiketVar("Müvekkil Tipi"), "Büro Bilgileri kartı basıldı");
-    await waitFor(() => qa("case-hizmet-cip").length === 2, "hizmet çipleri basıldı");
 
     expect(etiketVar("Büro Özel Türü")).toBe(true);
     expect(etiketVar("Hizmet Türü")).toBe(false);
     expect(container.textContent).toContain("İş kabulü, büro özel türü ve müvekkil tipi");
     expect(container.textContent).not.toContain("müvekkil tipi ve hizmet türü");
     // Türetilmiş özet metni ("A ; B") kartta ayrıca basılmaz — hizmetler yalnız panelde.
+    expect(container.textContent).not.toContain("Danışmanlık ; Dava Takibi");
+
+    // Taraflar sekmesine geçince de özet metni basılmaz; hizmetler çip olarak panelde.
+    await taraflarSekmesiniAc();
+    await waitFor(() => qa("case-hizmet-cip").length === 2, "hizmet çipleri basıldı");
     expect(container.textContent).not.toContain("Danışmanlık ; Dava Takibi");
   });
 });

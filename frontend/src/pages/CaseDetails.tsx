@@ -835,16 +835,6 @@ const CaseDetails = () => {
                             (cases.notes) tek serbest metin olarak ayrıca yerinde kalır. */}
                         <CaseNotesPanel caseId={parseInt(id!)} />
 
-                        {/* G252: müvekkil başına hizmetler (muhasebe ayrımı). Büro Bilgileri'ndeki tek
-                            değerli "Hizmet Türü" satırının yerini alır; föy kaynaklı satır salt okunur.
-                            Yetki `PUT /api/cases/{id}` ile aynıdır (oturumlu kullanıcı + tenant) — kartı
-                            açabilen düzenleyebilir, "Davayı Güncelle" düğmesiyle aynı kural. */}
-                        <CaseHizmetPanel
-                            caseId={caseData.id}
-                            muvekkiller={(caseData.parties ?? []).filter(p => p.party_type === "CLIENT")}
-                            onDegisti={() => { void kartiYenile(); }}
-                        />
-
                         {/* G123: kartın föyleri — SistemNo/TKU ve föy düzeyi müvekkil tipi,
                             hizmet türü, durum (kart tek slotunda çelişince burada durur). */}
                         <CaseFoyPanel foyler={caseData.foyler} />
@@ -1012,11 +1002,14 @@ const CaseDetails = () => {
                     </TabsContent>
 
                     {/* Parties Tab */}
-                    <TabsContent value="parties">
+                    <TabsContent value="parties" className="space-y-4">
                         <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
                             <CardHeader>
                                 <CardTitle className="text-lg">Taraf Bilgileri</CardTitle>
-                                <CardDescription>Davacı, davalı ve diğer ilgililer</CardDescription>
+                                <CardDescription>
+                                    Davacı, davalı ve diğer ilgililer — karta tıklayınca o tarafa ait belgeler açılır;
+                                    müvekkillere verilen hizmetler aşağıda
+                                </CardDescription>
                             </CardHeader>
                             <CardContent>
                                 {caseData.parties && caseData.parties.length > 0 ? (
@@ -1031,6 +1024,14 @@ const CaseDetails = () => {
 
                                             // Make party_type more readable
                                             const typeLabel = party.party_type === "CLIENT" ? "Müvekkil" : party.party_type === "COUNTER" ? "Karşı Taraf" : "Üçüncü Şahıs";
+                                            // Müvekkil kartında o müvekkile verilen hizmetler (salt okunur özet;
+                                            // seçim aşağıdaki Hizmetler panelinden) — panel kartların altında
+                                            // kaldığı için bilgi sekmenin başında da görünsün (03.10).
+                                            const hizmetAdlari = party.party_type === "CLIENT"
+                                                ? Array.from(new Set((caseData.hizmetler ?? [])
+                                                    .filter(h => h.case_party_id === party.id)
+                                                    .map(h => h.hizmet_turu)))
+                                                : [];
 
                                             return (
                                                 <div 
@@ -1061,6 +1062,11 @@ const CaseDetails = () => {
                                                             <Badge variant="outline" className="text-[10px] shrink-0">Kayıtlı</Badge>
                                                         )}
                                                     </div>
+                                                    {hizmetAdlari.length > 0 && (
+                                                        <p className="text-xs text-[var(--fg-muted)]" data-testid="taraf-hizmetleri">
+                                                            {hizmetAdlari.join(" · ")}
+                                                        </p>
+                                                    )}
                                                     <div className="flex justify-between items-end mt-auto pt-2">
                                                         <div className="flex gap-2">
                                                             <Badge className={`text-xs ${colorClass}`} variant="outline">
@@ -1087,6 +1093,19 @@ const CaseDetails = () => {
                                 )}
                             </CardContent>
                         </Card>
+
+                        {/* G252: müvekkil başına hizmetler (muhasebe ayrımı). Büro Bilgileri'ndeki tek
+                            değerli "Hizmet Türü" satırının yerini alır; föy kaynaklı satır salt okunur.
+                            Yetki `PUT /api/cases/{id}` ile aynıdır (oturumlu kullanıcı + tenant) — kartı
+                            açabilen düzenleyebilir, "Davayı Güncelle" düğmesiyle aynı kural.
+                            Yeri Taraflar sekmesi, taraf kartlarının ALTI (03.10 kullanıcı geri bildirimi):
+                            Genel Bilgiler'de notların altında bulunamıyordu; taraf kartlarının üstüne
+                            konunca da kartları (tarafın belgelerine giden yol) ekranın dışına itiyordu. */}
+                        <CaseHizmetPanel
+                            caseId={caseData.id}
+                            muvekkiller={(caseData.parties ?? []).filter(p => p.party_type === "CLIENT")}
+                            onDegisti={() => { void kartiYenile(); }}
+                        />
                     </TabsContent>
 
                     {/* Documents Tab */}
