@@ -979,9 +979,14 @@ listede yok → `422`, hiçbir satır yazılmaz. Yetki `PUT /api/cases/{id}` ile
 (`case_manager.py:584`, `schemas.CaseRead.hizmetler`). `PUT /api/cases/{id}` gövdesindeki
 `parties[i].hizmet_turleri` YOK SAYILIR — mevcut kartın hizmetleri yalnız yukarıdaki uçlardan yazılır.
 
+**Girdi tavanı (03.10):** hizmet adı en fazla `HIZMET_ADI_MAX_LEN` (200, ham metin) karakter, bir müvekkilin
+tek istekteki kümesi en fazla `HIZMET_KUMESI_AZAMI` (50) addır (`schemas.py:273-281`; `POST`/`PUT` gövdeleri
+ve `CasePartyCreate.hizmet_turleri` aynı tipi kullanır). Aşım şemada `422`'dir, manager'a ulaşmaz — her ad
+kapalı listeye karşı ayrı sorguyla doğrulandığı için sınırsız liste tek istekte yüz binlerce sorgu demekti.
+
 ### 18.4 Oluşturma yolları ve kapı (G250)
 
-- **Şema:** `schemas.CasePartyCreate.hizmet_turleri: List[str]` (`schemas.py:273-289`; varsayılan boş,
+- **Şema:** `schemas.CasePartyCreate.hizmet_turleri: List[HizmetAdi]` (`schemas.py:284-300`; varsayılan boş, tavanlı — §18.3,
   müvekkil dışı tarafta dolu gelirse 422). Okuma yanıtları ve zenginleştirme isteği hizmet alanı
   taşımayan `CasePartyBase`'i kullanır (`:261`; `schemas_intake.py:199-203`).
 - **`add_case`** (`case_manager.py:1908`): `_taraf_hizmetlerini_dogrula` (`:1852`) avukat doğrulamasından

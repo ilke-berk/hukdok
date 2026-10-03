@@ -950,6 +950,33 @@ def test_api_put_422_hicbir_satir_degismez(api):
     db.close()
 
 
+def test_api_girdi_tavani_asiminda_422_sorgu_kosmadan(api):
+    """Sınırsız liste = ad başına doğrulama sorgusu (tek istekte yüz binlerce). Tavan aşımı
+    şemada 422'dir: manager'a ulaşmaz, GEÇERLİ adın tekrarı da tavanı delemez."""
+    from schemas import HIZMET_ADI_MAX_LEN, HIZMET_KUMESI_AZAMI
+
+    k = api.kur()
+    c = api.client()
+    kume_yolu = f"/api/cases/{k.case}/hizmetler/{k.ayse}"
+    uzun_ad = "x" * (HIZMET_ADI_MAX_LEN + 1)
+
+    # Tavanın kendisi geçer (tekrarlar tek ada iner) — sınır bir fazlasında başlar.
+    tam = c.put(kume_yolu, json={"hizmet_turleri": ["Danışmanlık"] * HIZMET_KUMESI_AZAMI})
+    assert tam.status_code == 200, tam.text
+
+    for yontem, yol, govde in (
+        ("put", kume_yolu, {"hizmet_turleri": ["Danışmanlık"] * (HIZMET_KUMESI_AZAMI + 1)}),
+        ("put", kume_yolu, {"hizmet_turleri": [uzun_ad]}),
+        ("post", f"/api/cases/{k.case}/hizmetler", {"case_party_id": k.ayse, "hizmet_turu": uzun_ad}),
+    ):
+        r = getattr(c, yontem)(yol, json=govde)
+        assert r.status_code == 422, (yontem, govde.keys(), r.status_code, r.text[:200])
+
+    db = api.maker()
+    assert _satirlar(db, k.case) == [(k.ali, "Lexis Rapor", True), (k.ayse, "Danışmanlık", False)]
+    db.close()
+
+
 def test_api_gorunmeyen_dava_dort_ucta_404(api):
     """Başka tenant'ın kartı ve soft-silinmiş kart → 404; NULL tenant (paylaşımlı havuz) ve
     kendi tenant'ı görünür."""

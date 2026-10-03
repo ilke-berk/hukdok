@@ -1,6 +1,6 @@
 from enum import Enum
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any, Literal
+from typing import Annotated, Optional, List, Dict, Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -270,6 +270,17 @@ class CasePartyBase(BaseModel):
     tc_no: Optional[str] = None
 
 
+# Hizmet adı girdisinin tavanları (03.10.2026). Her ad kapalı listeye karşı ayrı sorguyla
+# doğrulanır (`case_hizmetleri.dogrulanmis_hizmet_adi`); sınırsız liste tek istekte yüz
+# binlerce sorgu demekti (nginx gövde sınırı 50M). Aşım 422 — manager'a hiç ulaşmaz.
+#   * ad: HAM metin tavanı; boşluk normalize edildikten sonraki kolon sınırı
+#     (`case_hizmetleri.hizmet_turu` String(100)) manager'da ayrıca denetlenir.
+#   * küme: bir müvekkilin tek istekteki hizmet sayısı (liste bugün 9 öğe).
+HIZMET_ADI_MAX_LEN = 200
+HIZMET_KUMESI_AZAMI = 50
+HizmetAdi = Annotated[str, Field(max_length=HIZMET_ADI_MAX_LEN)]
+
+
 class CasePartyCreate(CasePartyBase):
     """Kart açma/düzenleme isteğindeki taraf (G250: müvekkil kendi hizmetleriyle gelir)."""
     # Bu müvekkile bu kartta verilen hizmet türleri — `service_types` ADLARI (G250).
@@ -277,7 +288,7 @@ class CasePartyCreate(CasePartyBase):
     # ile aynı transaction'da yazar; kullanıcı yollarında (POST /api/cases, intake commit)
     # hizmetsiz müvekkil 422'dir. Düzenlemede (PUT /api/cases/{id}) YOK SAYILIR — mevcut
     # kartın hizmetleri `PUT /api/cases/{id}/hizmetler/{case_party_id}` ucundan yazılır.
-    hizmet_turleri: List[str] = Field(default_factory=list)
+    hizmet_turleri: List[HizmetAdi] = Field(default_factory=list, max_length=HIZMET_KUMESI_AZAMI)
 
     @model_validator(mode="after")
     def _hizmet_yalniz_muvekkilde(self):
@@ -779,13 +790,13 @@ class CaseHizmetRead(BaseModel):
 class CaseHizmetCreate(BaseModel):
     """`POST /api/cases/{id}/hizmetler` gövdesi — tek elle satır."""
     case_party_id: int
-    hizmet_turu: str
+    hizmet_turu: HizmetAdi
 
 
 class CaseHizmetKumesi(BaseModel):
     """`PUT /api/cases/{id}/hizmetler/{case_party_id}` gövdesi — müvekkilin elle
     hizmet KÜMESİ (çoklu seçim); boş liste = elle satırların tamamı silinir."""
-    hizmet_turleri: List[str]
+    hizmet_turleri: List[HizmetAdi] = Field(..., max_length=HIZMET_KUMESI_AZAMI)
 
 
 # ─── HATA BİLDİRİMİ (02.10.2026) ──────────────────────────────────────────────

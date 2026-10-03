@@ -85,6 +85,20 @@ def test_parti_semasi_hizmet_turleri_muvekkilde_gecerli_baska_tarafta_422():
         assert CasePartyCreate(name="K", role="Davacı", party_type=tur, hizmet_turleri=[]).hizmet_turleri == []
 
 
+def test_parti_semasi_hizmet_girdisi_tavanli():
+    """Kart açma isteğinde de ad başına doğrulama sorgusu koşar — liste ve ad tavanlıdır."""
+    from schemas import HIZMET_ADI_MAX_LEN, HIZMET_KUMESI_AZAMI
+
+    def parti(adlar):
+        return CasePartyCreate(name="Ali", role="Davalı", party_type="CLIENT", hizmet_turleri=adlar)
+
+    assert len(parti(["Lexis Rapor"] * HIZMET_KUMESI_AZAMI).hizmet_turleri) == HIZMET_KUMESI_AZAMI
+    assert parti(["x" * HIZMET_ADI_MAX_LEN]).hizmet_turleri == ["x" * HIZMET_ADI_MAX_LEN]
+    for asan in (["Lexis Rapor"] * (HIZMET_KUMESI_AZAMI + 1), ["x" * (HIZMET_ADI_MAX_LEN + 1)]):
+        with pytest.raises(ValidationError):
+            parti(asan)
+
+
 def test_hizmet_alani_yalniz_kart_acma_isteginde():
     """Okuma yanıtları ve zenginleştirme (apply) isteği hizmet alanı taşımaz: listede her
     tarafta boş bir `hizmet_turleri` görünmesi "hizmeti yok" diye okunurdu."""
