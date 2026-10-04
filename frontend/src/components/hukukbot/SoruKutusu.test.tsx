@@ -2,7 +2,7 @@
 // SoruKutusu + mikrofon (G217) — `MediaRecorder`, `getUserMedia` ve `apiClient` sahte: destek yokken düğme yok;
 // kayıt → durdur → metin kutudaki metnin SONUNA (boşlukla) eklenir, odak kutuya döner, `onGonder` TETİKLENMEZ;
 // boş metin → "Ses anlaşılamadı"; izin reddi → "Mikrofon izni verilmedi"; 503 → sunucu mesajı; yanıt akarken
-// mikrofon başlatılamaz. Ses Hukukbot'a gitmez: tek istek HukuDok `/api/transcribe`.
+// mikrofon başlatılamaz. Ses Hukukbot'a gitmez: tek istek HUKDOK `/api/transcribe`.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";

@@ -1,4 +1,4 @@
-# IDOR İncelemesi — HukuDok
+# IDOR İncelemesi — HUKDOK
 
 **İnceleme tarihi:** 2026-05-10
 **Kapsam:** Multi-tenant erişim kontrolleri; cross-tenant Insecure Direct Object Reference (IDOR) bulguları

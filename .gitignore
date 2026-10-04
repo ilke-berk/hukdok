@@ -58,7 +58,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project Specific (HukuDok)
+# Project Specific (HUKDOK)
 Raporlar/
 backend/muvekkil_listesi.json
 backend/data/

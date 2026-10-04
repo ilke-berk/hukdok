@@ -3,7 +3,7 @@
 **Sürüm:** 10.09.2026 (1.3 — 06.09 cevabınıza karşılık: eşik sayımı, `DEGISIKLIK_OZETI`'nin
 üç satırı, delta teslim, karar durumu havuzları, sütun sahipliği, yazım standardı; 1.2:
 08.09.2026 §1 klasörün yeri; 1.1: 04.09.2026; ilk sürüm 03.09.2026) ·
-**Muhatap:** MicroKolayOfis master'ını temizleyen veri ekibi · **Karşı taraf:** HukuDok
+**Muhatap:** MicroKolayOfis master'ını temizleyen veri ekibi · **Karşı taraf:** HUKDOK
 (Hanyaloğlu Acar + LexisBio ortak sistemi)
 
 Bu metin kısa sözleşmedir; sütun/sayfa/değer ayrıntıları ve makine-okur özet ayrı
@@ -27,9 +27,9 @@ alınacağını** anlatır.
 
 > **17.09.2026 değişikliği — SharePoint teslim klasörü kapatıldı.** `03_VERI_TESLIM/gelen/`
 > klasörü ve `cevap/` klasörü kullanılmaz; sistem klasörü taramaz, gece otomatik uygulaması
-> yoktur. Paketi (adı ve içeriği aşağıdaki kurallarla aynı) **HukuDok tarafına iletin**; paketi
+> yoktur. Paketi (adı ve içeriği aşağıdaki kurallarla aynı) **HUKDOK tarafına iletin**; paketi
 > yönetici sisteme yükler, önce kuru koşturur ve **her uygulamayı yönetici başlatır**. Cevap
-> dosyaları (§8) size HukuDok tarafından iletilir. Paketin biçimine dair kuralların hiçbiri
+> dosyaları (§8) size HUKDOK tarafından iletilir. Paketin biçimine dair kuralların hiçbiri
 > değişmedi.
 
 > **02.10.2026 değişikliği — `Hizmet Türü` bizde müvekkil bazlı hizmet kaydı oldu.** Sütunun
@@ -50,7 +50,7 @@ alınacağını** anlatır.
 
 ## 1. Nereye, hangi adla
 
-- **Teslim yolu (17.09.2026):** SharePoint klasörü **yoktur**; paketi HukuDok tarafına iletin.
+- **Teslim yolu (17.09.2026):** SharePoint klasörü **yoktur**; paketi HUKDOK tarafına iletin.
 - **Dosya adı:** `HUKDOK_TESLIM_` ile başlayan ve `.xlsx` ile biten bir ad; örneğin
   `HUKDOK_TESLIM_PAKETI_2026-09-15.xlsx`. Büyük/küçük harf fark etmez. Ad içindeki `YYYY-AA-GG` tarihi §3.3'teki
   yedek kuralda kullanılır — teslim gününü yazın.
@@ -234,7 +234,7 @@ Kusur havuzları bilgilendirme belgesi §3.8'dedir, karar durumu havuzlarının 
 - Eşik dışı bir durum varsa (ör. satırların %5'inden fazlası eşleşmiyor, hata oranı %2'yi
   aşıyor, alan değişikliği 10.000 hücreden büyük, önceki teslim zinciri tutmuyor, belge sayımı
   denk çıkmıyor, tam pakette sütun kaybolmuş) paket **uygulanmaz**, "inceleme bekliyor"
-  durumuna alınır ve HukuDok yöneticisi karar verir. Bu bir hata değildir; büyük teslimlerde
+  durumuna alınır ve HUKDOK yöneticisi karar verir. Bu bir hata değildir; büyük teslimlerde
   beklenen yoldur.
 - **Eşik nasıl sayılır (06.09 §K2 sorunuz):** "alan değişikliği" **kart hücresi** bazında
   sayılır — föy satırı değil, bizdeki kartın değeri değişen her alanı bir sayar. Tarih ve tutar
@@ -251,7 +251,7 @@ Kusur havuzları bilgilendirme belgesi §3.8'dedir, karar durumu havuzlarının 
 - **İlk teslim her zaman insan onayıyla uygulanır.**
 - Günde bir paket gönderin; paketler geliş sırasıyla uygulanır.
 - Yapısı bozuk dosya (ana sayfa yok, `SistemNo`/`Dosya No` sütunu yok, dosya açılmıyor)
-  **reddedilir**; HukuDok tarafı size haber verir.
+  **reddedilir**; HUKDOK tarafı size haber verir.
 - Sistemde **yeni kart açılmaz**: bizde karşılığı olmayan (Dosya No ile eşleşmeyen) satırlar
   raporda "eşleşmedi" olarak kalır. Eşleşme köprüsü sizin "Dosya No" sütununuz ile bizim
   klasör numaramızdır; Dosya No birden çok karta düşünce sıra esas → dosya türü → Dosya No
@@ -267,7 +267,7 @@ Kusur havuzları bilgilendirme belgesi §3.8'dedir, karar durumu havuzlarının 
 
 ## 8. Ne geri alırsınız — cevap dosyaları
 
-Her **uygulanan** teslim için şu dosyalar üretilir ve HukuDok tarafından size iletilir
+Her **uygulanan** teslim için şu dosyalar üretilir ve HUKDOK tarafından size iletilir
 (17.09.2026'dan beri SharePoint `cevap/` klasörüne yüklenmez):
 
 | Dosya | İçerik |
@@ -283,12 +283,12 @@ CSV dosyaları Türkçe Excel'de doğrudan açılır (noktalı virgül ayraçlı
 
 `tracking_no` (ofis dosya no) biçiminin blok blok açıklaması: `ofis-no-formati.md` (26.09.2026).
 
-"İnceleme bekliyor"da kalan ya da reddedilen teslimin sonucu da size HukuDok tarafından
+"İnceleme bekliyor"da kalan ya da reddedilen teslimin sonucu da size HUKDOK tarafından
 iletilir.
 
 ## 9. Kısa kontrol listesi
 
-1. Dosya adı `HUKDOK_TESLIM_…YYYY-AA-GG.xlsx`; paket HukuDok tarafına iletilir (SharePoint klasörü yok).
+1. Dosya adı `HUKDOK_TESLIM_…YYYY-AA-GG.xlsx`; paket HUKDOK tarafına iletilir (SharePoint klasörü yok).
 2. `Sheet` sayfası var; `SistemNo` ve `Dosya No` sütunları var; sütun adları önceki teslim ve
    bildirimlerle aynı (sıra serbest).
 3. `DEGISIKLIK_OZETI`'nde üç satır: "Önceki teslim: <bir önceki dosyanın tam adı>" (ilk
@@ -302,7 +302,7 @@ iletilir.
    DB-2026-011).
 7. `Karar_Asamalari`'nda `Aşama = Önceki` satırlarını filtrelemeyin, gönderin (eski esas
    numarası olarak işlenir); `Başvuru Tarihi` sütunu doluysa okunur.
-8. Günde bir paket; cevap dosyaları uygulama sonrası HukuDok tarafından iletilir.
+8. Günde bir paket; cevap dosyaları uygulama sonrası HUKDOK tarafından iletilir.
 
 ## 10. Sütun sahipliği — kim yazar, kim korur
 

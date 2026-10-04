@@ -6,7 +6,7 @@
  * - 413 (> 2 MB) · 415 (desteklenmeyen tür) · 422 (boş dosya) · 503 (Gemini meşgul/başarısız) ayrı
  *   Türkçe mesajla `SesCeviriHatasi` fırlatır; çağıran mesajı kutunun altında gösterir.
  *
- * Ses Hukukbot'a GİTMEZ — yalnız HukuDok. İstek `apiClient` üzerinden gider (Bearer + 401'de sessiz
+ * Ses Hukukbot'a GİTMEZ — yalnız HUKDOK. İstek `apiClient` üzerinden gider (Bearer + 401'de sessiz
  * yenileme + FormData gövdesi → uzun zaman aşımı katmanı). Çağıranın `signal`'i iptalde aynen fırlar
  * (AbortError) — hook bunu hata saymaz.
  */

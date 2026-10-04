@@ -297,7 +297,7 @@ export const ISKELET_BOLUMLERI: Record<YazilabilirIskelet, BolumTanimi[]> = {
 // Arayüz (çekirdekte yok): dosya girdisi
 // ---------------------------------------------------------------------------------------------
 
-/** Dava arama sonucu — entegrasyonda HukuDok kart yanıtından türetilir. */
+/** Dava arama sonucu — entegrasyonda HUKDOK kart yanıtından türetilir. */
 export interface LexisDava {
   case_id: number;
   ofis_no: string;
@@ -495,7 +495,7 @@ export interface TaslakIstegi {
 }
 
 /**
- * `taslakYaz` NDJSON olayları — HukuDok stream sözleşmesinin biçimi (`analyzer.py::_failed_event`):
+ * `taslakYaz` NDJSON olayları — HUKDOK stream sözleşmesinin biçimi (`analyzer.py::_failed_event`):
  * `failed` SON olaydır ve `error_kod` taşır; başarılı akış `complete` ile biter.
  */
 export type LexisAkisOlayi =

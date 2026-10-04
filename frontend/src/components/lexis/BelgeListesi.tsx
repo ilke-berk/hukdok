@@ -15,7 +15,7 @@ type BelgeListesiProps = {
 
 /**
  * Dava kartındaki belgeler; işaretli olanlar taslağa girer. Raporun beklediği türlerden (dilekçe, hekim beyanı,
- * bilirkişi/ATK raporu, poliçe) kartta olmayan uyarıyla gösterilir — belge HukuDok'a yüklenir, araç kendi
+ * bilirkişi/ATK raporu, poliçe) kartta olmayan uyarıyla gösterilir — belge HUKDOK'a yüklenir, araç kendi
  * yükleme yolunu açmaz (`lexis-rapor/PLAN.md` K10).
  */
 export function BelgeListesi({ belgeler, secili, onSec, kilitli = false }: BelgeListesiProps) {
@@ -59,7 +59,7 @@ export function BelgeListesi({ belgeler, secili, onSec, kilitli = false }: Belge
             </span>
           </div>
           <Link to="/upload" className={`inline-block mt-1 ml-[22px] ${BAGLANTI_SINIFI}`}>
-            Belgeyi HukuDok'a yükle
+            Belgeyi HUKDOK'a yükle
           </Link>
         </div>
       )}

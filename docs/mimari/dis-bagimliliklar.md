@@ -5,7 +5,7 @@
 > yeniden doğrulandı; §2 satır numaraları 17.09 ağacına aittir.
 > Her iddia koddan doğrulanmıştır. Kod ile çelişirse kod haklıdır — bu dosyayı düzelt.
 
-HukuDok dört dış sisteme bağlıdır: **Gemini** (analiz), **Microsoft Graph** (SharePoint
+HUKDOK dört dış sisteme bağlıdır: **Gemini** (analiz), **Microsoft Graph** (SharePoint
 arşivi + e-posta), **PostgreSQL** ve konteyner içindeki **GhostScript / LibreOffice**.
 Ortak tasarım kuralı: her dış çağrının bir zaman tavanı, bir retry politikası ve bir
 başarısızlık sözleşmesi vardır — hiçbiri sonsuza dek asılmaz.

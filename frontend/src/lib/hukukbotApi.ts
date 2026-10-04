@@ -2,7 +2,7 @@
 //
 // - Yol: aynı origin `/hukukbot-api/...` (konteyner nginx allowlist'i: ask | sessions | download,
 //   önek atılıp hukbot'a iletilir — `nginx.conf`, G203). Ayrı env değişkeni YOK.
-// - Kimlik: HukuDok'un MSAL access token'ı (`loginRequest` scope'u, idToken DEĞİL — G8). Token
+// - Kimlik: HUKDOK'un MSAL access token'ı (`loginRequest` scope'u, idToken DEĞİL — G8). Token
 //   `apiClient.fetch` (lib/api.ts) içinde alınır; 401'de forceRefresh + BİR kez tekrar ve kurtarılamayan
 //   401'de oturum-bitti akışı da oradan AYNEN gelir (token yardımcısı kopyalanmaz).
 // - Sözleşme: hukbot `app/api.py` + `app/schemas.py`'den okundu → `types/hukukbot.ts`.
@@ -239,9 +239,9 @@ export async function indir(filename: string): Promise<void> {
 }
 
 /**
- * HukuDok'tan aktarılmış kaynağı HukuDok'un KENDİ ucundan açar: `GET /api/documents/{id}/download?inline=true`
- * (SharePoint arşivinden HukuDok'un uygulama yetkisiyle; kullanıcının SharePoint üyeliği gerekmez — iki büro
- * için de çalışır). Hukukbot'a DEĞİL HukuDok backend'ine gider (önek yok).
+ * HUKDOK'tan aktarılmış kaynağı HUKDOK'un KENDİ ucundan açar: `GET /api/documents/{id}/download?inline=true`
+ * (SharePoint arşivinden HUKDOK'un uygulama yetkisiyle; kullanıcının SharePoint üyeliği gerekmez — iki büro
+ * için de çalışır). Hukukbot'a DEĞİL HUKDOK backend'ine gider (önek yok).
  *
  * `sekme`: tıklama anında (ilk `await`'ten ÖNCE) `window.open("", "_blank")` ile açılmış boş sekme — sonradan
  * açılan sekmeyi pop-up engelleyicisi keser. `noopener` KULLANILMAZ: blob URL'i opener bağlamında üretilir
@@ -250,7 +250,7 @@ export async function indir(filename: string): Promise<void> {
 export async function hukudokBelgesiniAc(belgeId: number, sekme: Window | null): Promise<void> {
   const res = await apiClient.fetch(`/api/documents/${encodeURIComponent(String(belgeId))}/download?inline=true`);
   if (!res.ok) {
-    throw new HukukbotApiError(res.status, await detayOku(res, `Belge HukuDok arşivinden açılamadı (HTTP ${res.status}).`));
+    throw new HukukbotApiError(res.status, await detayOku(res, `Belge HUKDOK arşivinden açılamadı (HTTP ${res.status}).`));
   }
   const url = URL.createObjectURL(await res.blob());
   if (sekme) sekme.location.href = url;

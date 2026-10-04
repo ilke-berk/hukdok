@@ -18,7 +18,7 @@ type SoruKutusuProps = {
  * davranışı ortak `SohbetGirdisi`'nde (rapor asistanıyla aynı kutu).
  * G217: mikrofon düğmesi (`MicButton`) — yazıya çevrilen metin kutudaki metnin SONUNA eklenir, odak kutuya
  * döner; soru OTOMATİK GÖNDERİLMEZ (kullanıcı okuyup düzeltir). Örnek soru çipi (`disMetin`) de aynı ilkeyle
- * yalnız kutuyu doldurur. Ses Hukukbot'a değil HukuDok `/api/transcribe`'a gider.
+ * yalnız kutuyu doldurur. Ses Hukukbot'a değil HUKDOK `/api/transcribe`'a gider.
  */
 export function SoruKutusu({ gonderiliyor, onGonder, onDurdur, autoFocus, disMetin }: SoruKutusuProps) {
   const [metin, setMetin] = useState("");

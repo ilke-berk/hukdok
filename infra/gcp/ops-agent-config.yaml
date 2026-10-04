@@ -1,4 +1,4 @@
-# HukuDok — GCP Ops Agent özel konfigürasyonu (Faz 2-C).
+# HUKDOK — GCP Ops Agent özel konfigürasyonu (Faz 2-C).
 # Hedef: /etc/google-cloud-ops-agent/config.yaml (install.sh kopyalar,
 # değişince agent'ı restart eder). Built-in varsayılanla MERGE edilir:
 # default_pipeline (syslog → Cloud Logging) burada yeniden tanımlanmadığı

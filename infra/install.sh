@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HukuDok host-seviyesi konfig kurulumu (Faz 1-B) — infra/ ağacını sunucuya işler.
+# HUKDOK host-seviyesi konfig kurulumu (Faz 1-B) — infra/ ağacını sunucuya işler.
 #
 # Kullanım (sunucuda):  sudo bash infra/install.sh
 #
@@ -70,7 +70,7 @@ else
 fi
 
 echo "== nginx site'ları =="
-# Tek site: default. Hukukbot'un ayri sitesi karar 021 ile kalkti (Hukukbot'a yalniz HukuDok'un
+# Tek site: default. Hukukbot'un ayri sitesi karar 021 ile kalkti (Hukukbot'a yalniz HUKDOK'un
 # /hukukbot-api/ allowlist'inden ulasilir); sunucuda kalmis eski site dosyasini bu script SILMEZ —
 # kaldirma insan adimidir (infra/README.md "Hukukbot sitesinin kaldirilmasi").
 inst nginx/sites-available/default /etc/nginx/sites-available/default 0644

@@ -592,7 +592,7 @@ def _baslik(conn, term: Optional[str], simdi: dt.datetime, surum: str) -> str:
     finally:
         conn.rollback()
     return "\n\n".join([
-        "# HukuDok performans ölçümü (salt okunur)",
+        "# HUKDOK performans ölçümü (salt okunur)",
         md_tablo(("Alan", "Değer"), [
             ("Sürüm (APP_VERSION)", surum),
             ("Zaman (TR)", simdi.astimezone(TR).strftime("%Y-%m-%d %H:%M:%S")),

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting HukuDok Backend..."
+echo "🚀 Starting HUKDOK Backend..."
 
 # Migrasyonlar uvicorn'dan ÖNCE tek süreçte koşar (set -e: hata konteyneri
 # durdurur, uygulama bozuk şemayla ayağa kalkmaz). --workers N'e geçişin

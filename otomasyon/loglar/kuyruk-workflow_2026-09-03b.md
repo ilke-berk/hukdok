@@ -36,7 +36,7 @@ Bloke gorev yok.
 - **G113 / kapsam suzgeci disinda kalan okuyucular:** `mukerrer_kart_raporu.py` ve `teslim_cevap.py` kapsam suzgecsiz okuyor (kapsam disi NOT). Bunlar ayri bir gorev olarak acilsin mi?
 - **G113 / frontend rozeti:** kapsam disi foy rozeti frontend'de yok — sonraki tur icin gorev acilsin mi?
 - **G114 / plan kapatilmadi:** veri-teslim plani §7 kabul kriterleri prod'da gozlenmedi. Acik kalanlar (§8): `POST /api/admin/aktarim/tara` hala yer tutucu (G109 NOT'u, kucuk ayri gorev); prod kurulumu insan adimi (SharePoint klasorleri + `.env SHAREPOINT_FOLDER_TESLIM_NAME` + recreate + admin anahtari); ilk teslim elle uygulanir. Bunlar ne zaman ele alinacak?
-- **G114 / SOZLESME §7:** "HukuDok tarafi size haber verir" cumleleri kod degil ekip taahhudu — veri ekibine iletmeden once insan gozu gerekiyor. Iletilsin mi, degistirilsin mi?
+- **G114 / SOZLESME §7:** "HUKDOK tarafi size haber verir" cumleleri kod degil ekip taahhudu — veri ekibine iletmeden once insan gozu gerekiyor. Iletilsin mi, degistirilsin mi?
 - **G114 / CLAUDE.md dokuman haritasi:** yeni `docs/veri-teslim/` klasoru dokuman haritasi tablosuna eklenmedi (kapsam yalnizca mimari ozet paragrafi). Tabloya satir eklensin mi?
 - **G114 / kaymis referanslar:** genel-bakis/belge-isleme-hatti'nin dokunulmayan bolumlerindeki bazi `api.py` referanslari (PROCESS_CACHE api.py:210-218, healthz api.py:444) G085/G109 sonrasi kaymis olabilir — ayri dokuman turu gorevi acilsin mi?
 

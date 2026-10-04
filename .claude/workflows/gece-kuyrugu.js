@@ -17,10 +17,10 @@ export const meta = {
 };
 
 /* ==========================================================================
-   HUKUDOK GECE KUYRUGU - Workflow kosucusu (v3)
+   HUKDOK GECE KUYRUGU - Workflow kosucusu (v3)
 
    Kaynak desen: design_handoff_kolayilan/.claude/workflows/gece-kuyrugu.js
-   (PR+CI+otomatik-merge modeli). Hukudok uyarlamasindaki BILINCLI farklar:
+   (PR+CI+otomatik-merge modeli). HUKDOK uyarlamasindaki BILINCLI farklar:
 
    1. TESLIM = YEREL. Push/PR/CI yok - bu projede push + deploy DAIMA insan
       karari (CLAUDE.md; Deploy #11'de agent push'u zaten sinifladirici
@@ -366,7 +366,7 @@ kod ile celisen iddia). Operasyonel iddialar KODDAN dogrulanir (CLAUDE.md ALTIN 
 phase("Plan");
 
 const plan = await agent(
-  `HUKUDOK gece kuyrugu on kontrol + plan. HICBIR DOSYAYI DEGISTIRME (salt okuma + git/docker sorgulari).
+  `HUKDOK gece kuyrugu on kontrol + plan. HICBIR DOSYAYI DEGISTIRME (salt okuma + git/docker sorgulari).
 
 1. ${KUYRUK_DOSYA} dosyasini oku. Satir formati:
      - [ ] Gnnn | bant:backend|frontend|docs | bagimli:-|Gxxx,Gyyy | Kisa baslik
@@ -558,7 +558,7 @@ ${gorev.bant === "frontend" ? `- npm --prefix "${wt(gorev.id)}/frontend" ci   (b
 
   return `GOREV ${gorev.id}: ${gorev.baslik}${deneme > 1 ? `\n\n[YENIDEN DENEME ${deneme}]` : ""}
 ${teshis ? `\nONCEKI DENEMENIN KOK NEDENI (taze baglamda teshis edildi):\n${teshis.kokNeden}\n\nBU DEFA FARKLI YAKLASIM:\n${teshis.yeniYaklasim}\n` : ""}
-Hukudok gece kuyrugu iscisisin. Calisma alani: ${alan}
+HUKDOK gece kuyrugu iscisisin. Calisma alani: ${alan}
 
 ${kurulum}
 

@@ -332,7 +332,7 @@ def test_uctan_uca_terimsiz_alti_bolum_ve_out_dosyasi(olcum_db, tmp_path, capsys
     assert capsys.readouterr().out == metin, "stdout ile --out dosyası aynı rapor"
     assert _bolum_basliklari(metin) == list(perf_olcum.BOLUM_BASLIKLARI)
     assert "Ölçülemedi" not in metin, metin
-    assert metin.startswith("# HukuDok performans ölçümü")
+    assert metin.startswith("# HUKDOK performans ölçümü")
     assert "| Sürüm (APP_VERSION) |" in metin and "| Zaman (TR) |" in metin
 
     arama = metin.split("## 6. Arama planı", 1)[1]

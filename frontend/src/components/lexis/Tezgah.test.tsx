@@ -131,7 +131,7 @@ describe("Tezgah — dosya bölgesi", () => {
     expect(test("lexis-taslak-basligi")!.textContent).toBe("ANADOLU-9001-DR.ORNEK1-HUK");
   });
 
-  it("eksik belge uyarılır ve HukuDok yüklemesine bağlanır; emsal çıkarılabilir", async () => {
+  it("eksik belge uyarılır ve HUKDOK yüklemesine bağlanır; emsal çıkarılabilir", async () => {
     await ciz();
     await davaSec("AK-9002");
     const eksik = test("lexis-eksik-belgeler")!;

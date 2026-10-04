@@ -1,11 +1,11 @@
 # HUKDOK Veri Teslim Hattı — Veri Ekibi Bilgilendirmesi
 
-**Tarih:** 03.09.2026 (ilk sürüm) · **Gönderen:** HukuDok ekibi (Hanyaloğlu Acar + LexisBio) ·
+**Tarih:** 03.09.2026 (ilk sürüm) · **Gönderen:** HUKDOK ekibi (Hanyaloğlu Acar + LexisBio) ·
 **Muhatap:** MicroKolayOfis master'ını hazırlayan veri ekibi · **Sürüm:** 1.3 (10.09.2026)
 
 > **17.09.2026 şerhi — teslim yolu değişti:** bu belgedeki SharePoint `03_VERI_TESLIM/gelen/`
 > klasörü, 04:00 gece taraması/otomatik uygulaması ve `cevap/` klasörü anlatımı **artık geçerli
-> değildir**. Paket HukuDok tarafına iletilir, yönetici yükler ve uygular; cevap dosyaları size
+> değildir**. Paket HUKDOK tarafına iletilir, yönetici yükler ve uygular; cevap dosyaları size
 > iletilir. Güncel kurallar [`SOZLESME.md`](SOZLESME.md). Sütun/sayfa/değer kuralları aynen geçerli.
 >
 > Bu belge yapılandırılmış yazıldı: tablolar, birebir yazımlar ve sondaki makine-okur özet
@@ -29,7 +29,7 @@
 1. Teslim paketi artık WhatsApp/e-posta ile değil, size paylaşılan SharePoint klasörüne
    (`03_VERI_TESLIM/gelen`) bırakılır; WhatsApp yalnız "bıraktım" haberi için kalır.
 2. Sistem klasörü her gece 04:00'te tarar, paketi önce hiçbir şey yazmadan prova eder, ölçüm
-   eşiklerin içindeyse aynı gece uygular; değilse HukuDok yöneticisinin onayına düşer.
+   eşiklerin içindeyse aynı gece uygular; değilse HUKDOK yöneticisinin onayına düşer.
 3. Ertesi sabah `03_VERI_TESLIM/cevap/<paket adı>/` klasöründe cevap paketi bulursunuz:
    hangi satır hangi karta eşleşti, hangileri eşleşmedi, hangi değerler tanınmadı.
 4. Gelen dosyanın biçimini bu belge belirler. Sütun adı, sayfa adı, kimlik alanı ya da değer
@@ -50,7 +50,7 @@ siz ──xlsx──▶ 03_VERI_TESLIM/gelen/
             (2) doğrulandı    sayfa/başlık kontrolü + "önceki teslim" zincir kontrolü
             (3) kuru koşu     hiçbir şey yazmadan prova: eşleşme, değişiklik, hata sayımı
             (4) kapı          ölçümler eşik içindeyse → otomatik uygulama
-                              eşik dışıysa → "inceleme bekliyor" (HukuDok yöneticisi karar verir)
+                              eşik dışıysa → "inceleme bekliyor" (HUKDOK yöneticisi karar verir)
             (5) uygulandı     kartlar güncellenir (idempotent: aynı paket ikinci kez sıfır değişiklik)
             (6) cevap         raporlar cevap/<paket adı>/ altına yüklenir
 ```
@@ -68,7 +68,7 @@ siz ──xlsx──▶ 03_VERI_TESLIM/gelen/
 | İlk teslim | daima | insan onayı |
 
 "İnceleme bekliyor" bir hata değildir; büyük ya da olağandışı paketlerde beklenen yoldur.
-Bu durumda cevap klasörü açılmaz, sonucu size HukuDok tarafı iletir.
+Bu durumda cevap klasörü açılmaz, sonucu size HUKDOK tarafı iletir.
 
 **Ne yapmaz:** yeni kart açmaz; bizde olmayan kapalı liste değerini listeye eklemez; boş
 hücreyi "sil" olarak yorumlamaz (§3.4); aynı gece birden çok paketten yalnız ilkini uygular.
@@ -434,7 +434,7 @@ CSV'ler noktalı virgül ayraçlı ve UTF-8'dir; Türkçe Excel'de doğrudan aç
 | `müvekkil değişti: eski → yeni` (MUVEKKIL_DEGISTI) | Föy yeni müvekkile bağlandı, eski taraf satırı yerinde | Bir şey yapmanız gerekmez |
 
 **Cevap klasörü yoksa:** paket ya "inceleme bekliyor"dur ya reddedilmiştir; iki durumda da
-HukuDok tarafı size yazar. İki iş günü haber almazsanız sorun.
+HUKDOK tarafı size yazar. İki iş günü haber almazsanız sorun.
 
 **Ölçek beklentisi:** 18.08 paketi 8.409 satırdı; 8.156 eşleşti, 217 atlandı (bizde kart
 yok), 36 hata (33 belirsiz eşleşme + 3 boş Dosya No). Bu oranlar eşik içindedir; benzer bir
@@ -493,7 +493,7 @@ değişiklik + test + yayına alma gerekir). Bildirilmemiş bir değişiklikle g
 "inceleme bekliyor"da durur ve düzeltilmiş paket istenir.
 
 Kanal: e-posta (tercih) ya da WhatsApp; ekli `.md` ya da `.xlsx` dosyası olabilir. Sistem bu
-bildirimi otomatik okumaz; HukuDok ekibi okuyup uygular ve size "hazır" der.
+bildirimi otomatik okumaz; HUKDOK ekibi okuyup uygular ve size "hazır" der.
 
 Her değişiklik için bir kayıt; alanların tamamı doldurulur. Numara dizisi sizde devam
 eder: `DB-2026-001`…`010` REV-2 (04.09.2026) ile kullanıldı, sonraki bildirim `DB-2026-011`
@@ -548,13 +548,13 @@ yeni biçimi göndermeyin.
 
 | Durum | Ne yapılmalı |
 | --- | --- |
-| Tek bir föyde acil düzeltme | Yalnız o satırı içeren küçük bir paket (`SistemNo` + `Dosya No` + değişen sütunlar) bırakın; gece işlenir. Gerçekten acilse WhatsApp'tan haber verin, HukuDok yöneticisi panelden gündüz uygular |
+| Tek bir föyde acil düzeltme | Yalnız o satırı içeren küçük bir paket (`SistemNo` + `Dosya No` + değişen sütunlar) bırakın; gece işlenir. Gerçekten acilse WhatsApp'tan haber verin, HUKDOK yöneticisi panelden gündüz uygular |
 | Düzeltme listeleri (ıslah hatası, manevi > toplam vb.) | Ayrı dosya değil, normal paket biçiminde; `Düzeltme_Logu` gerekçeyi taşısın |
 | Föy birleştirme / bölme | **Önce bildirin** (§6, tür "kimlik biçimi"). `SistemNo` değişimi kimlik değişimidir |
 | Föyün kapsamdan çıkması | `Silinen_Föyler` ya da `Kapsam_Dışı` sayfası; ana sayfadan da çıkarın |
 | Yeni branş dilimi (göz, ortopedi…) | Partili paket olarak gelir; yeni klinik kodlama değerleri varsa `DEGER_HAVUZLARI`'na koyun, fark raporunu okuyun, yeni değerleri §6 ile bildirin |
 | Paketi yanlışlıkla bıraktınız | Bize hemen yazın. Gece 04:00'ten önce silerseniz işlenmez; sonra silmenin etkisi yoktur (içerik zaten alınmıştır) |
-| Bir gecede iki paket | Yalnız ilki otomatik; ikincisi için HukuDok yöneticisi onay verir. Kaçının |
+| Bir gecede iki paket | Yalnız ilki otomatik; ikincisi için HUKDOK yöneticisi onay verir. Kaçının |
 | Sütun adını yanlışlıkla değiştirdiniz ve paket işlendi | Bize yazın; sütunu eski adıyla içeren küçük bir paket gönderirseniz güncellemeler o gece işlenir (sistem idempotent, ikinci geçiş zarar vermez) |
 
 ---
@@ -608,7 +608,7 @@ hukdok_teslim_spec:
   sheet:
     zorunlu_sutun: ["SistemNo", "Dosya No"]
     kimlik: "SistemNo (değişmez)"
-    eslesme_koprusu: "Dosya No ↔ HukuDok klasör numarası"
+    eslesme_koprusu: "Dosya No ↔ HUKDOK klasör numarası"
     sutun_eslesme: "ada göre; sıra serbest; aksan/boşluk/büyük-küçük yutulur; kelime farkı yutulmaz"
     okunan_alan_sayisi: 47                # 10.09.2026'da çalışan sistemden sayıldı
     okunan_baslik_yazim_sayisi: 66
@@ -810,5 +810,5 @@ hukdok_teslim_spec:
 
 ---
 
-*Sorular için HukuDok ekibine yazın. Bu belgenin güncel sürümü her yapısal değişiklikte
+*Sorular için HUKDOK ekibine yazın. Bu belgenin güncel sürümü her yapısal değişiklikte
 yeniden gönderilir; sürüm numarası başlıktadır.*

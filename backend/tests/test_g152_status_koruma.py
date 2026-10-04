@@ -3,7 +3,7 @@ paket `status`u yazmaz; `DEGISIKLIK_OZETI` "Veri kesim tarihi"; elle yol imzası
 
 Kullanıcı kararı 08.09 (plan §1.5 P2): "paket kazanır"ın TEK istisnası. Ekibin
 veri kesimi 30.07.2026; o tarihten sonra bizde MAHZEN'e alınan kartı paket
-`AKTIF → DERDEST` ile geri açıyordu. Ekip de "Durum'da HukuDok'un güncel
+`AKTIF → DERDEST` ile geri açıyordu. Ekip de "Durum'da HUKDOK'un güncel
 kaydı esas" diyor.
 
 Katmanlar:

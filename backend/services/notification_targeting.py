@@ -4,7 +4,7 @@ Bildirimler "davanın sorumlu avukatına" gidecek, ama `cases.responsible_lawyer
 serbest metindir: aynı kişi "Av. Serap Turgal", "SERAP TURGAL" ya da "Serap Turgal;Tuğçe
 Üngör Yanık" olarak yazılmış olabilir. Avukat KODU ("AGH") G228'den beri eşleşme yolu
 DEĞİLDİR (kod gizli, sunucu üretimi; lokal ölçüm 27.09: metinlerde kod biçimli değer 0). Bu modül o metni
-**HukuDok'a giriş yapabilen kişinin ofis e-postasına** çeviren tek çözümleyicidir.
+**HUKDOK'a giriş yapabilen kişinin ofis e-postasına** çeviren tek çözümleyicidir.
 
 Neden yeni kolon yok
 --------------------
@@ -44,7 +44,7 @@ import models
 # TR karakter katlaması ve ";"/","/"ve" ayracı davranışı iki modülde AYNI kalmalı.
 from managers.lawyer_resolver import _name_tokens, _norm_name, _split_persons
 
-# `lawyers.gorev` değeri — yalnız bu görevdekiler HukuDok'a giriş yapar
+# `lawyers.gorev` değeri — yalnız bu görevdekiler HUKDOK'a giriş yapar
 GOREV_AVUKAT = "AVUKAT"
 
 # Allowlist varsayılanı: ofis alan adı. Env ile genişletilir (bkz. .env.example).

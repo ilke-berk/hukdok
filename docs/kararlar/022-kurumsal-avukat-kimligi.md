@@ -1,12 +1,12 @@
 # 022 — Kurumsal avukat kimliği `AVK-00001`; avukat kodları kalkar, avukat kaydı silinmez
 
-**Tarih:** 27.09.2026 · **Karar veren:** kullanıcı (büro sahibi) · **Durum:** kabul — HukuDok tarafı
+**Tarih:** 27.09.2026 · **Karar veren:** kullanıcı (büro sahibi) · **Durum:** kabul — HUKDOK tarafı
 uygulandı (G224-G229, main'de; prod'a deploy EDİLMEDİ), Hukukbot tarafı (G230) ve geçiş sonu
 temizliği (G231) BLOKE
 
 ## Karar
 
-- HukuDok ve Hukukbot için **ORTAK** avukat kimliği `lawyers.kimlik`'tir: `AVK-00001` biçimi
+- HUKDOK ve Hukukbot için **ORTAK** avukat kimliği `lawyers.kimlik`'tir: `AVK-00001` biçimi
   (önek + 5 hane, `models.AVUKAT_KIMLIK_REGEX`; Postgres'te `ck_lawyers_kimlik_bicim` CHECK +
   `ix_lawyers_kimlik` UNIQUE + NOT NULL — `database.py` madde 54).
   - **Sistem üretir** (`models.sonraki_avukat_kimligi`: tablodaki en büyük numara + 1), istemcinin
@@ -38,7 +38,7 @@ olmadığını gösterdi:
   ada BİREBİR eşleyerek türetiyordu (farklı yazımda boş kalıyordu); `/confirm`'ün `avukat_kodu` Form alanını
   hiçbir istemci göndermiyordu. G226 bunu toleranslı çözümle `lawyer_id`'ye çevirdi
   (`services/document_pipeline.lawyer_id_for_text`).
-- **İki sistemin kod kümeleri farklıydı.** Hukukbot sabit 9'lu 3-harf setinin dışındaki kodu — HukuDok'un
+- **İki sistemin kod kümeleri farklıydı.** Hukukbot sabit 9'lu 3-harf setinin dışındaki kodu — HUKDOK'un
   `TUGCEUNG`'u dahil — sessizce NULL'a çeviriyordu (hukukbot-ui `app/metadata.py` `sanitize_metadata`; keşif
   G227/G230). Bilgi zaten Hukukbot'a ulaşmıyordu.
 - **Sahipsiz eski kodlar vardı:** `TUY`, `BYU`, `AGH` belgelerde duruyor ama listede karşılıkları yoktu
@@ -69,7 +69,7 @@ Kullanıcı şartı: geçişte **hiçbir dava kaybolmamalı**.
 - **Kodları düzeltip yaşatmak:** iki sistemin kümesi zaten farklı, eski kodlar sahipsiz, kod adın
   kısaltması olduğu için ad düzeltmesiyle "yanlış" kalır; `ABDULLAH` gibi kodlar sıradan ad token'ı olup
   eşlemeyi yanıltıyordu (G228).
-- **UUID:** okunmaz (log, rapor, destek konuşmasında kullanışsız); tek üretici HukuDok olduğu için
+- **UUID:** okunmaz (log, rapor, destek konuşmasında kullanışsız); tek üretici HUKDOK olduğu için
   dağıtık üretim ihtiyacı da yok — sıralı numara yeterli.
 - **Veritabanı `id`'sini dışarı vermek:** ortama bağlıdır (prod/lokal/yedek restore farklı `id` verebilir);
   sistemler arası kimlik her ortamda aynı olmalı.

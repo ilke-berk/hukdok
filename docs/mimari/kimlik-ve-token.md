@@ -1,6 +1,6 @@
 # Kimlik ve token — kullanıcı oturumu, backend doğrulama zinciri, Graph app-only akışı
 
-Bu doküman HukuDok'taki iki ayrı kimlik akışını anlatır: **kullanıcının** tarayıcıdan
+Bu doküman HUKDOK'taki iki ayrı kimlik akışını anlatır: **kullanıcının** tarayıcıdan
 Azure AD (Entra ID) ile oturum açıp backend'e Bearer token taşıması ve **backend'in**
 kendi başına (kullanıcıdan bağımsız) Microsoft Graph'a client-credentials ile gitmesi.
 Her iddia koddan okunmuştur; dosya:satır atıfları bu commit'teki ağaca göredir (§4 app-only
@@ -145,20 +145,20 @@ origin'deki `/hukukbot-api/...` önekidir; konteyner nginx'i `Authorization`'ı 
 Hukukbot backend'i (`../hukukbot-ui/app/auth.py`, ayrı repo) token'ı §2'deki zincirin eşiyle kendisi
 doğrular: `tid ∈ ALLOWED_TENANTS` → kiracının `discovery/v2.0/keys` JWKS'i → RS256 + `aud` **yalnız**
 `api://<HUKDOK_CLIENT_ID>` + `iss` v2.0 ya da v1 (`sts.windows.net/{tid}/`) + `exp` zorunlu + `scp`'de
-`access_as_user`. Env'i `ALLOWED_TENANTS` (HukuDok'la aynı liste) ve `HUKDOK_CLIENT_ID` (HukuDok
+`access_as_user`. Env'i `ALLOWED_TENANTS` (HUKDOK'la aynı liste) ve `HUKDOK_CLIENT_ID` (HUKDOK
 `AZURE_CLIENT_ID` ile aynı değer).
 
-**Scope / aud notu:** token tek bir kaynak (HukuDok API kaydı) için verilir; Hukukbot aynı kaynağın ikinci
+**Scope / aud notu:** token tek bir kaynak (HUKDOK API kaydı) için verilir; Hukukbot aynı kaynağın ikinci
 tüketicisidir, kendi `aud`'u yoktur. Bu yüzden:
 
-- `loginRequest.scopes` (`api://<client_id>/access_as_user`) ya da HukuDok uygulama kaydı değişirse iki
+- `loginRequest.scopes` (`api://<client_id>/access_as_user`) ya da HUKDOK uygulama kaydı değişirse iki
   backend birlikte etkilenir.
 - Çıplak `<client_id>` audience'ı iki tarafta da reddedilir (O4 — ID token access token yerine geçmesin).
-- Kimlik anahtarı farklıdır: HukuDok `preferred_username | upn | email` okur (§2), Hukukbot **`oid`** (yoksa
+- Kimlik anahtarı farklıdır: HUKDOK `preferred_username | upn | email` okur (§2), Hukukbot **`oid`** (yoksa
   401; `sub`'a düşmez) — sohbet geçmişi `oid`'e bağlı olduğundan eski girişle oluşmuş LexisBio geçmişi korunur.
   E-posta Hukukbot'ta yalnız kullanıcı satırına aynı üçlü fallback'le yazılır.
 - Hukukbot'un kurtarılamayan 401'i `apiClient`'ın oturum-bitti akışını tetikler — Hukukbot'ta `aud`/kiracı
-  yanlış yapılandırılırsa kullanıcı HukuDok'tan da çıkarılır (bilinçli; `hukukbotApi.ts` baş yorumu).
+  yanlış yapılandırılırsa kullanıcı HUKDOK'tan da çıkarılır (bilinçli; `hukukbotApi.ts` baş yorumu).
 
 ## 3. Süre tablosu
 

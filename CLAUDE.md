@@ -1,4 +1,4 @@
-# CLAUDE.md — HukuDok çalışma rehberi
+# CLAUDE.md — HUKDOK çalışma rehberi
 
 Hukuk bürosu belge otomasyonu: belge yükle → Gemini ile analiz → onayla → SharePoint
 arşivi + veritabanı kaydı → hukukbot'a aktarım. FastAPI backend + React/Vite frontend +
@@ -16,10 +16,10 @@ PostgreSQL; kimlik Azure AD (MSAL). Bu dosya sıfır-context bir oturumun giriş
 127.0.0.1:8080 → konteyner 80). **Üç port da loopback'e sabit** — dışarıya açık tek kapı
 host nginx'tir (prod 443); bekçi `backend/tests/test_port_baglama.py`. API-key'li
 `/export` route'ları public'e açılmaz; hukukbot ortak `hukuk_shared` Docker ağından
-`http://hukdok_backend:8001` ile konuşur. **Hukukbot'a kullanıcı erişimi yalnız HukuDok'tan**
-(karar 021): kendi sitesi/girişi/arayüzü yok; `/hukukbot` sayfası (`pages/HukukbotPage.tsx`) HukuDok'un access
+`http://hukdok_backend:8001` ile konuşur. **Hukukbot'a kullanıcı erişimi yalnız HUKDOK'tan**
+(karar 021): kendi sitesi/girişi/arayüzü yok; `/hukukbot` sayfası (`pages/HukukbotPage.tsx`) HUKDOK'un access
 token'ıyla aynı origin'den `/hukukbot-api/` önekine konuşur (`lib/hukukbotApi.ts`), Hukukbot token'ı
-HukuDok kuralıyla (`ALLOWED_TENANTS`, `aud=api://<client>`, `scp=access_as_user`) kendisi doğrular; frontend
+HUKDOK kuralıyla (`ALLOWED_TENANTS`, `aud=api://<client>`, `scp=access_as_user`) kendisi doğrular; frontend
 konteyneri bu yüzden `hukuk_shared` ağındadır. Vite dev sunucusu 127.0.0.1:5173 (strictPort).
 Port haritası: `docs/mimari/genel-bakis.md` §1.
 
@@ -43,7 +43,7 @@ tarayıcıya ulaştığı **prod'da doğrulanacak** (`curl -sI https://<alan>/as
 **Hukukbot proxy'si (karar 021, G203, `nginx.conf:172-207`):** `location ~ ^/hukukbot-api/(ask|sessions|download)(/|$)`
 önek atılarak (`rewrite ... break`) `hukuk_shared` üzerinden `hukukbot_api:8010`'a gider; allowlist dışı her
 `/hukukbot-api` yolu (`/ingest`, `/health` dahil) `return 404`. **Gecikmeli DNS:** upstream değişkenle
-(`set $hukukbot_upstream`) + `resolver 127.0.0.11 valid=30s` — düz `proxy_pass` Hukukbot kapalıyken HukuDok
+(`set $hukukbot_upstream`) + `resolver 127.0.0.11 valid=30s` — düz `proxy_pass` Hukukbot kapalıyken HUKDOK
 nginx'ini AÇILMAZ yapardı; böyle yalnız o istekler 502. `X-User-OID` silinir, `proxy_buffering off` (NDJSON
 akışı), location'da `add_header` yok. Bekçi `backend/tests/test_nginx_hukukbot.py`.
 
@@ -140,15 +140,15 @@ otomatik DEĞİL. Takvim raporunda duruşma Açıklama'sı = davanın `dosya_son
 filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G213).
 
 **Lexis rapor aracı önizlemesi (04.10):** `/lexis` (`pages/LexisPage.tsx`, Araçlar › Lexis) çekirdeği AYRI depoda
-(`..\lexis-rapor`) gelişen medikolegal rapor aracının arayüzüdür ve bugün **sentetik örnek veriyle** çalışır: HukuDok
+(`..\lexis-rapor`) gelişen medikolegal rapor aracının arayüzüdür ve bugün **sentetik örnek veriyle** çalışır: HUKDOK
 backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
 `lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). **Tek ağ isteği "Word indir"dir**
 (`lib/lexisWord.ts`, dinamik yüklenir): örnek taslak aynı origin'den `/lexis-api/word`'e gider, konteyner nginx'i
 (`nginx.conf:209-234`, Hukukbot proxy'sinin aynı deseni: allowlist yalnız `word`, gecikmeli DNS, gerisi 404; bekçi
 `backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
-(`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HukuDok kuralıyla kendisi doğrular,
+(`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HUKDOK kuralıyla kendisi doğrular,
 yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (şimdilik yalnız Anadolu biçimi;
-şablon repo ve imaj DIŞINDA). Servis kapalıyken HukuDok açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
+şablon repo ve imaj DIŞINDA). Servis kapalıyken HUKDOK açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
 "çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
 durum `useTezgah.ts`: dosya · taslak · denetim), Geçmiş, Kütüphane, Kart bağı, Şirketler. Lexis diyalogları `theme-classic`

@@ -129,7 +129,7 @@ Metin (PyPI'dan birebir): *"pyjwt v2.10.1 was discovered to contain weak encrypt
 NOTE: this is disputed by the Supplier because the key length is chosen by the application
 that uses the library."*
 
-**Neden ignore edilebilir — kodla:** HukuDok `jwt.encode` **hiç çağırmıyor**; PyJWT yalnız
+**Neden ignore edilebilir — kodla:** HUKDOK `jwt.encode` **hiç çağırmıyor**; PyJWT yalnız
 doğrulama tarafında kullanılıyor ve anahtar Azure AD JWKS'inden gelen **asimetrik açık
 anahtar** (`auth_verifier.py:74-83`, `algorithms=["RS256"]`). Uygulamanın seçtiği bir
 simetrik gizli anahtar yok → açığın gerektirdiği ön koşul bu kod tabanında oluşmuyor.

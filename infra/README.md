@@ -39,7 +39,7 @@ agent kurulu değilse bölümü atlar).
 Yeni VM önkoşulları (install.sh bunları kurmaz): `luciferandlucius` kullanıcısı,
 docker + compose eklentisi, nginx + certbot (tek sertifika
 `/etc/letsencrypt/live/hukukoid.com/` — certbot ile yeniden üretilir; Hukukbot'un ayrı
-sitesi ve sertifikası karar 021 ile kalktı), `docker network create hukuk_shared` (HukuDok
+sitesi ve sertifikası karar 021 ile kalktı), `docker network create hukuk_shared` (HUKDOK
 backend + frontend ve Hukukbot `api` bu ağda buluşur), `~/hukdok` repo
 klonu + `.env`, google-cloud-ops-agent (kurulum:
 `curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install`;
@@ -66,12 +66,12 @@ insan adımıdır; o adım yapılana kadar bu da bir sapmadır).
 
 ## Hukukbot sitesinin kaldırılması (İNSAN ADIMI — karar 021)
 
-Hukukbot'a kullanıcı erişimi artık yalnız HukuDok'un `/hukukbot` sayfası ve konteyner
+Hukukbot'a kullanıcı erişimi artık yalnız HUKDOK'un `/hukukbot` sayfası ve konteyner
 nginx'inin `/hukukbot-api/` allowlist'i üzerindendir (`nginx.conf`, G203); Hukukbot'un
 ayrı alan adlı host nginx sitesi ve `:3000` frontend konteyneri kalkar. Repo kopyası
 (`nginx/sites-available/hukbot`) G207'de silindi ve `install.sh` artık onu kurmaz — ama
 **sunucudaki dosyaya dokunmaz**. Otomasyon ssh yapmaz; aşağıdakiler canlı geçişten SONRA
-(Hukukbot G208 + HukuDok G203-G207 deploy'u ve `/hukukbot` dumanı iki kiracıyla geçtikten
+(Hukukbot G208 + HUKDOK G203-G207 deploy'u ve `/hukukbot` dumanı iki kiracıyla geçtikten
 sonra), mesai dışı, elle yapılır:
 
 ```bash

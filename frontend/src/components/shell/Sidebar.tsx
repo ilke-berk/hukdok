@@ -41,7 +41,7 @@ const NAV: NavItemDef[] = [
   { id: "activity", label: "Aktivite Geçmişi", path: "/activity-history", Icon: Clock },
 ];
 
-// Hukukbot HukuDok'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok, her kullanıcı görür.
+// Hukukbot HUKDOK'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok, her kullanıcı görür.
 // Raporlar 30.09'dan beri her kullanıcıya açık (önceden yalnız yöneticide, "Çalışma" altındaydı).
 const ARACLAR: NavItemDef[] = [
   { id: "hukukbot", label: "Hukukbot", path: "/hukukbot", Icon: Bot },

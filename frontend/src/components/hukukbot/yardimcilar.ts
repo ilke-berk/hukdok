@@ -131,7 +131,7 @@ export function iptalMi(hata: unknown): boolean {
 }
 
 /**
- * Kaynağın HukuDok belge numarası: önce hukbot'un `hukdok_id` alanı, yoksa `metadata.hukdok_id` (alan eklenmeden
+ * Kaynağın HUKDOK belge numarası: önce hukbot'un `hukdok_id` alanı, yoksa `metadata.hukdok_id` (alan eklenmeden
  * ÖNCE kaydedilmiş mesajlar için — ingest metadata'sında zaten vardı). Store sayıyı dize/float döndürebilir.
  * Geçerli pozitif tamsayı değilse null → sayfa eski `/download/{filename}` yolunu kullanır.
  */
@@ -144,7 +144,7 @@ export function kaynakHukdokId(kaynak: HukukbotKaynak): number | null {
   return null;
 }
 
-export const HUKUDOK_BELGE_ACILAMADI = "Belge HukuDok arşivinden açılamadı.";
+export const HUKDOK_BELGE_ACILAMADI = "Belge HUKDOK arşivinden açılamadı.";
 
 /** Her istek hatası için kullanıcıya gösterilecek Türkçe metin (429 daima sabit Türkçe metin). */
 export function hataMetni(hata: unknown): string {

@@ -3,7 +3,7 @@
 > Son doğrulama: 2026-08-11 · 2eade56
 
 - **Durum:** kabul
-- **Bağlam:** Hukukbot, HukuDok'tan aktarılacak belgeleri `/export/*` uçlarından okur ve
+- **Bağlam:** Hukukbot, HUKDOK'tan aktarılacak belgeleri `/export/*` uçlarından okur ve
   acknowledge/nack eder. Bu uçlar kullanıcı kimliğiyle değil, servis-servis bir API
   anahtarıyla korunur — public internete açılırsa tek sızan anahtar tüm arşiv metadata'sını
   verir.

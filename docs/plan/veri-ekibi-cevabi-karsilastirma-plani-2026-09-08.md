@@ -1,4 +1,4 @@
-# Veri ekibi yazışmaları ↔ HukuDok karşılaştırması ve düzeltme planı
+# Veri ekibi yazışmaları ↔ HUKDOK karşılaştırması ve düzeltme planı
 
 **Tarih:** 08.09.2026 · **Girdi:** ekibin dört e-postası (04.09 bildirim REV-2, 04.09 takip, 04.09 "paket
 güncellendi", 06.09 cevap + 4 ek) ve bizim iki metnimiz (`HUKDOK_CEVAP_20260904.md`,
@@ -11,7 +11,7 @@ güncellendi", 06.09 cevap + 4 ek) ve bizim iki metnimiz (`HUKDOK_CEVAP_20260904
 > kod karşılığı `docs/mimari/veri-teslim-hatti.md` §7.1'de, ekibe giden metin `docs/veri-teslim/SOZLESME.md`
 > 1.3'te. §0-3'teki "dolu aşama" kuralı G150 ile değişti (yerinde güncelleme, BELGE/UYAP korunur).
 
-> **İlke (kullanıcı, 08.09):** ekip HukuDok'un iç işleyişine hâkim değil. Onlara makul gelen bir istek
+> **İlke (kullanıcı, 08.09):** ekip HUKDOK'un iç işleyişine hâkim değil. Onlara makul gelen bir istek
 > bizde ya zaten karşılanıyor ya gereksiz ya da verimsiz olabilir. Bu yüzden her kalem dört hükümden
 > birini alır: **ZATEN VAR** (iş yok, ekibe anlatılır) · **YAP** (bizde gerçek boşluk) · **GEREKMEZ**
 > (istek bizim modelde anlamsız; gerekçesiyle geri yazılır) · **KARAR** (kullanıcı karar verir).

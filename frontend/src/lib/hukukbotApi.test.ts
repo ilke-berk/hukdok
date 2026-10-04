@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// hukukbotApi (G204) — HukuDok token'ıyla Hukukbot istemcisi. `apiClient` GERÇEK koşar; yalnız MSAL,
+// hukukbotApi (G204) — HUKDOK token'ıyla Hukukbot istemcisi. `apiClient` GERÇEK koşar; yalnız MSAL,
 // sonner ve global `fetch` sahte: Bearer başlığı, `/hukukbot-api` öneki, `session-id` başlığı,
 // bölünmüş/`\n`'siz NDJSON, akış sırasında iptal, 401 yenilemesi, 429 ayrı hata, yetkili indirme.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -408,7 +408,7 @@ describe("indir — yetkili PDF indirme", () => {
   });
 });
 
-describe("hukudokBelgesiniAc — HukuDok'tan aktarılmış kaynak", () => {
+describe("hukudokBelgesiniAc — HUKDOK'tan aktarılmış kaynak", () => {
   const createUrl = vi.fn(() => "blob:hukudok-belge");
   const revokeUrl = vi.fn();
 
@@ -424,7 +424,7 @@ describe("hukudokBelgesiniAc — HukuDok'tan aktarılmış kaynak", () => {
     vi.useRealTimers();
   });
 
-  it("HukuDok'un KENDİ ucuna gider (Hukukbot öneki YOK), Bearer'lı; blob önceden açılan sekmeye yazılır", async () => {
+  it("HUKDOK'un KENDİ ucuna gider (Hukukbot öneki YOK), Bearer'lı; blob önceden açılan sekmeye yazılır", async () => {
     const blob = new Blob(["%PDF"], { type: "application/pdf" });
     const fetchMock = stubFetch({ ok: true, status: 200, blob: async () => blob } as unknown as Response);
     const sekme = { location: { href: "" } } as unknown as Window;

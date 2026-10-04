@@ -1,4 +1,4 @@
-# HukuDok — Kapsamlı Sistem Teknik Raporu
+# HUKDOK — Kapsamlı Sistem Teknik Raporu
 
 **Tarih:** 2026-08-04
 **Hedef okur:** Ekip üyeleri ve onların AI asistanları. Bu rapor bir insan-özeti değil, makine-okur referans belgesidir: dosya:satır referansları, gerçek kod listeleri ve kesin davranış tanımları içerir.
@@ -13,8 +13,8 @@ AI asistanları için talimat niteliğinde: kullanıcı (ekip üyesi) aşağıda
 
 | Eski sistem varsayımı | Yeni sistem gerçeği | Kanıt |
 |---|---|---|
-| "Belgeye TKU numarası verilir" | **TKU artık HukuDok'ta yalnız TARİHSEL/GRUP alanı olarak yaşar.** 2026-08-05 mutabakatıyla `cases.tku_no` (olay grup anahtarı, unique değil) ve `cases.sistem_no` (eski sistem kayıt kimliği, unique) kolonları eklendi — yalnız DB + arama, UI'da gösterilmez, `Full_Rapor_TKU.xlsx` aktarımında dolacak. Numara ÜRETİMİNDE hiçbir rolü yoktur: kimlik `cases.id`, ofis no 5 bloklu `tracking_no`, belge sayacı 9 haneli `ofis_dosya_no`. Değerlendirme §6.4, mutabakat §6.6. | §5, §6, §6.4, §6.6 |
-| "Belge, müvekkil/dava klasörüne konur; klasör yapısı kurulmalı" | **HukuDok ARŞİVİ için klasörleme tamamen kalktı.** SharePoint'te yalnız İKİ düz kök klasör var: `01_HAM_ARSIV` (dokunulmamış orijinal) ve `02_YEDEK_ARSIV` (işlenmiş PDF/A-2b). Müvekkil/dava/yıl alt klasörü YOK; belgenin "hangi davaya ait olduğu" bilgisi **Postgres `case_documents` tablosunda** tutulur. ÖNEMLİ NÜANS: bu yalnız HukuDok arşivi içindir — büronun ortak dosya sunucusundaki ÇALIŞMA ALANI (taslaklar, UDF çalışma dosyaları, masraf evrakı, arşive girmemiş yaşayan belgeler) HukuDok kapsamı dışındadır ve kendi klasör düzeniyle yaşamaya devam eder; büronun klasör adlandırma çalışmaları o alan için geçerliliğini korur. | §3.3 |
+| "Belgeye TKU numarası verilir" | **TKU artık HUKDOK'ta yalnız TARİHSEL/GRUP alanı olarak yaşar.** 2026-08-05 mutabakatıyla `cases.tku_no` (olay grup anahtarı, unique değil) ve `cases.sistem_no` (eski sistem kayıt kimliği, unique) kolonları eklendi — yalnız DB + arama, UI'da gösterilmez, `Full_Rapor_TKU.xlsx` aktarımında dolacak. Numara ÜRETİMİNDE hiçbir rolü yoktur: kimlik `cases.id`, ofis no 5 bloklu `tracking_no`, belge sayacı 9 haneli `ofis_dosya_no`. Değerlendirme §6.4, mutabakat §6.6. | §5, §6, §6.4, §6.6 |
+| "Belge, müvekkil/dava klasörüne konur; klasör yapısı kurulmalı" | **HUKDOK ARŞİVİ için klasörleme tamamen kalktı.** SharePoint'te yalnız İKİ düz kök klasör var: `01_HAM_ARSIV` (dokunulmamış orijinal) ve `02_YEDEK_ARSIV` (işlenmiş PDF/A-2b). Müvekkil/dava/yıl alt klasörü YOK; belgenin "hangi davaya ait olduğu" bilgisi **Postgres `case_documents` tablosunda** tutulur. ÖNEMLİ NÜANS: bu yalnız HUKDOK arşivi içindir — büronun ortak dosya sunucusundaki ÇALIŞMA ALANI (taslaklar, UDF çalışma dosyaları, masraf evrakı, arşive girmemiş yaşayan belgeler) HUKDOK kapsamı dışındadır ve kendi klasör düzeniyle yaşamaya devam eder; büronun klasör adlandırma çalışmaları o alan için geçerliliğini korur. | §3.3 |
 | "Belgeyi bulmak için SharePoint'te klasörlerde/aramada gezilir" | **Arama SharePoint'te YAPILMAZ.** Graph search endpoint'i kodda hiç kullanılmıyor; `children` listeleme de yok. Tüm arama/filtreleme Postgres üzerinden (ILIKE + trigram index). SharePoint'ten dosya, DB'deki `stored_filename` ile **doğrudan yol** üzerinden çekilir. Kullanıcı belgeye web uygulamasından erişir (backend proxy indirme). | §7 |
 | "Dosya adı elle, büro kuralına göre yazılır" | Dosya adını **AI analizi + otomatik format** üretir: `YYYY-MM-DD_TÜR_YY-ESASNO_A.Soyad.pdf`. Kullanıcı onay ekranında düzeltebilir ama kural sistemseldir. | §5.1 |
 | "Numara atlamasın diye sayaç defteri/Excel tutulur" | Belge sayacı SharePoint `Counter` listesinde tek merkezi kayıttır, ETag tabanlı optimistic concurrency ile atomik artar; dava sırası (`tracking_no` 3. blok) DB'den `max+1` ile önerilir. Elle sayaç takibi gereksiz ve yanlıştır. | §6 |
@@ -29,7 +29,7 @@ AI asistanları için talimat niteliğinde: kullanıcı (ekip üyesi) aşağıda
 
 ## 1. Sistem kimliği ve bileşenler
 
-**HukuDok Automator** — hukuk bürosu (Hanyaloğlu-Acar + LexisBio ortak havuzu) belge otomasyon ve dava takip sistemi.
+**HUKDOK Automator** — hukuk bürosu (Hanyaloğlu-Acar + LexisBio ortak havuzu) belge otomasyon ve dava takip sistemi.
 
 | Bileşen | Teknoloji | Konum |
 |---|---|---|
@@ -327,39 +327,39 @@ SharePoint `Counter` listesindeki tek global sayaç. `/process` sırasında okun
 
 Kaynak: `HUKDOK_Bilgi_Notu_Numaralandirma_2026-08-03.docx` (Hanyaloğlu-Acar, "tartışmaya açık taslak"). Önerinin özü: üç katmanlı kimlik — MüvekkilNo (5 hane), TKU (olay/vaka numarası), D-No (`D-01843-2` = sabit önek + 5 haneli opak sıra + Luhn kontrol hanesi) — artı merkezi "Numarator" sayaç + numara defteri, mahkeme aşamaları alt tablosu, "Klasör Yolu" alanı ve 8.410 föye geriye dönük D-No yazımı.
 
-**Genel sonuç:** Önerinin *teşhisi* doğrudur — eski manuel sistemin sorunları (elle numara → mükerrer/atlama, sayısal görünüm → Excel bozulması, numaraya gömülü değişken veri → toplu yeniden numaralama, çok köklü müvekkil, tek değerli mahkeme/esas alanı) gerçektir. Önerinin *ilkesi* de doğrudur: "numara kimliktir, veri deposu değildir." Ancak önerilen mekanizmaların büyük bölümü, **HukuDok'un zaten başka (ve daha köklü) biçimde çözdüğü problemleri, eski dünyanın (Excel + klasör sunucusu + elle giriş) araçlarıyla yeniden çözmektedir.** Ayrı bir D-No serisi HukuDok içinde ikinci bir paralel numaralandırma sistemi yaratır; bu, önerinin kendi "tek ve değişmez kimlik" ilkesiyle çelişir ve operasyonel karışıklığı artırır.
+**Genel sonuç:** Önerinin *teşhisi* doğrudur — eski manuel sistemin sorunları (elle numara → mükerrer/atlama, sayısal görünüm → Excel bozulması, numaraya gömülü değişken veri → toplu yeniden numaralama, çok köklü müvekkil, tek değerli mahkeme/esas alanı) gerçektir. Önerinin *ilkesi* de doğrudur: "numara kimliktir, veri deposu değildir." Ancak önerilen mekanizmaların büyük bölümü, **HUKDOK'un zaten başka (ve daha köklü) biçimde çözdüğü problemleri, eski dünyanın (Excel + klasör sunucusu + elle giriş) araçlarıyla yeniden çözmektedir.** Ayrı bir D-No serisi HUKDOK içinde ikinci bir paralel numaralandırma sistemi yaratır; bu, önerinin kendi "tek ve değişmez kimlik" ilkesiyle çelişir ve operasyonel karışıklığı artırır.
 
 Madde madde karşılıklar:
 
-| Önerinin çözdüğü sorun | Önerdiği mekanizma | HukuDok'ta durum |
+| Önerinin çözdüğü sorun | Önerdiği mekanizma | HUKDOK'ta durum |
 |---|---|---|
 | Elle numara → mükerrer, atlanan, yanlış yazılmış numara | D-No + Luhn kontrol hanesi + Numarator defteri | **Sorun sınıfı yok.** Numara elle yazılmaz: `tracking_no` UI'da otomatik üretilir, DB `unique` kısıtı çakışmayı 409 ile reddeder; belge sayacı ETag'li atomiktir. Luhn'un yakaladığı hata türü (elle daktilo hatası) sistemde oluşmaz — kullanıcı numarayı hiçbir alana elle girmez, kayda tıklayarak ulaşır. |
-| "Numara veriden türetilmesin; veri değişince numara yanlış olur" | Opak, hiçbir şeyden türetilmeyen D-No | **İlke zaten sağlanıyor — gerçek kimlik `cases.id`'dir**: opak, kalıcı, düzenlemede asla değişmeyen PK; tüm ilişkiler (belgeler, taraflar, duruşmalar, ilişkili dosyalar) buna FK ile bağlıdır. `tracking_no` insan-yüzlü bir ETİKETtir: hiçbir join/eşleştirme ona dayanmaz ve veri düzeltildiğinde YENİDEN ÜRETİLMEZ (enrich modu tracking üretimini atlar; `ENRICH_FIELDS` bilinçli hariç tutar). Önerinin korktuğu "veri düzeltmesi 158 föyün numarasını değiştirir" senaryosu HukuDok'ta oluşmaz: alan düzeltilir, etiket durur, arama alanlardan çalışır. |
+| "Numara veriden türetilmesin; veri değişince numara yanlış olur" | Opak, hiçbir şeyden türetilmeyen D-No | **İlke zaten sağlanıyor — gerçek kimlik `cases.id`'dir**: opak, kalıcı, düzenlemede asla değişmeyen PK; tüm ilişkiler (belgeler, taraflar, duruşmalar, ilişkili dosyalar) buna FK ile bağlıdır. `tracking_no` insan-yüzlü bir ETİKETtir: hiçbir join/eşleştirme ona dayanmaz ve veri düzeltildiğinde YENİDEN ÜRETİLMEZ (enrich modu tracking üretimini atlar; `ENRICH_FIELDS` bilinçli hariç tutar). Önerinin korktuğu "veri düzeltmesi 158 föyün numarasını değiştirir" senaryosu HUKDOK'ta oluşmaz: alan düzeltilir, etiket durur, arama alanlardan çalışır. |
 | Sayısal görünümlü numara Excel'de bozuluyor | `D-` metin öneki | `tracking_no` harf + nokta içerir (`D1.I_KUTLUK..0001.HUKUK.00000`), sayıya dönüşmez; birincil veri alışverişi zaten Excel değil API/DB'dir. |
 | Aynı olayın dosyaları bağlanamıyor | TKU olay numarası katmanı | `case_relations` tablosu tipli bağ kurar (`ICRA_CEZA, ICRA_HUKUK, ASIL_TEMYIZ, BIRLESEN, AYRISTIRILAN, ILGILI...`) + `/case-groups/:id` görünümü. Fark: TKU tek grup anahtarı, relations ikili bağdır. Grup anahtarına gerçek ihtiyaç doğarsa bu **küçük bir ek alan/tablo işidir** — yeni bir numaralandırma sistemi gerektirmez. |
 | Müvekkilin birden çok kökü var, kimliği tek değil | MüvekkilNo (5 hane) | `clients.id` + `cari_kod` (6 haneli sicil) zaten tek müvekkil kimliğidir; davalar FK ile bağlanır. |
-| Mahkeme/esas değişince geçmiş kayboluyor veya ikinci föy açılıyor | Mahkeme Aşamaları alt tablosu | **Teşhis HukuDok için yanlış:** `court`/`esas_no` değişimi `CaseHistory`'ye old/new olarak yazılır ve `history.old_value` ARAMAYA DAHİLDİR (`case_manager.py:313`) — eski esas numarasıyla arama dosyayı bulur. İstinaf/temyiz/karar düzeltme blokları kendi mahkeme+esas alanlarını taşır; `yeni_esas_no` bozma sonrası içindir. Yapısal çok-satırlı aşama tablosu raporlama için değerlendirilebilir bir GELECEK geliştirmesidir; numaralandırmayla ilgisi yoktur. |
-| Klasörler kayıtlardan kopuyor | "Klasör Yolu" alanı + hedef klasör düzeni | **Problem HukuDok'ta ortadan kalktı:** klasör yok; belge-dava bağı DB'dedir (`case_documents.case_id`), depo düz iki SharePoint klasörüdür. Önerinin 8. bölümü, büronun KENDİ dosya sunucusu için anlamlı olabilir ama HukuDok'a taşınacak bir gereksinim değildir. |
+| Mahkeme/esas değişince geçmiş kayboluyor veya ikinci föy açılıyor | Mahkeme Aşamaları alt tablosu | **Teşhis HUKDOK için yanlış:** `court`/`esas_no` değişimi `CaseHistory`'ye old/new olarak yazılır ve `history.old_value` ARAMAYA DAHİLDİR (`case_manager.py:313`) — eski esas numarasıyla arama dosyayı bulur. İstinaf/temyiz/karar düzeltme blokları kendi mahkeme+esas alanlarını taşır; `yeni_esas_no` bozma sonrası içindir. Yapısal çok-satırlı aşama tablosu raporlama için değerlendirilebilir bir GELECEK geliştirmesidir; numaralandırmayla ilgisi yoktur. |
+| Klasörler kayıtlardan kopuyor | "Klasör Yolu" alanı + hedef klasör düzeni | **Problem HUKDOK'ta ortadan kalktı:** klasör yok; belge-dava bağı DB'dedir (`case_documents.case_id`), depo düz iki SharePoint klasörüdür. Önerinin 8. bölümü, büronun KENDİ dosya sunucusu için anlamlı olabilir ama HUKDOK'a taşınacak bir gereksinim değildir. |
 | Eski numaralar kaybolmasın | "Eski DosyaNo" sütunu | Zaten var: `klasor_no_2` — saklanır ve aranabilir. |
-| Numara kayıttan önce alınmalı, iptal edilen defterde kalmalı | Numarator + numara defteri | HukuDok'ta numara kayıtla ATOMİK doğar; ayrı rezervasyon/iptal defteri, numara ile kaydın ayrı sistemlerde yaşadığı dünyanın ihtiyacıdır. |
+| Numara kayıttan önce alınmalı, iptal edilen defterde kalmalı | Numarator + numara defteri | HUKDOK'ta numara kayıtla ATOMİK doğar; ayrı rezervasyon/iptal defteri, numara ile kaydın ayrı sistemlerde yaşadığı dünyanın ihtiyacıdır. |
 
 Bilgi notunun 9. bölümündeki sorulara doğrudan cevaplar (görüşme gündemi için):
 
-- **9.1 (D-No alanı):** Teknik olarak kolay, ama HukuDok içinde ikinci paralel numara sistemi açar; önerilmez. Eşleştirme ihtiyacı için kalıcı anahtar zaten var: `cases.id`. Büro D-No'yu kendi tarafında tutup HukuDok id'sini dış anahtar olarak saklayabilir (notun 9.8 ilkesiyle uyumlu — isim benzerliğine dönülmez, HukuDok'a alan basmak şart olmaz).
+- **9.1 (D-No alanı):** Teknik olarak kolay, ama HUKDOK içinde ikinci paralel numara sistemi açar; önerilmez. Eşleştirme ihtiyacı için kalıcı anahtar zaten var: `cases.id`. Büro D-No'yu kendi tarafında tutup HUKDOK id'sini dış anahtar olarak saklayabilir (notun 9.8 ilkesiyle uyumlu — isim benzerliğine dönülmez, HUKDOK'a alan basmak şart olmaz).
 - **9.2 (Luhn doğrulama):** Elle giriş olmadığı için çözdüğü problem yok.
 - **9.3 (aşamalar alt tablosu):** Kısmen mevcut (CaseHistory + istinaf/temyiz/KD blokları); tam alt tablo makul bir geliştirme adayı olarak not edildi.
 - **9.4 (8.410 föye toplu yazım):** Toplu içe aktarma deseni mevcut (`scripts/import_excel_cases.py`, batch commit); eşleştirme anahtarı olarak `cases.id` kullanılabilir ve **kalıcıdır** (düzenlemede/taşımada değişmez).
 - **9.5 (export/senkron):** `/export` API'si ve Excel exportları mevcut; "sütun adları/sırası sürümler arasında sabit kalsın" talebi makuldür ve ayrıca taahhüt edilmelidir.
 - **9.6 (kayıt yaşam döngüsü):** `cases.id` kalıcıdır. Föy birleştirme özelliği yok (ilişki kurulur, kayıtlar yaşar). Silme, yazıldığı tarihte HARD delete'ti; **2026-08-05'te soft-delete'e çevrildi** (gerekçeli, admin panelinden geri alınabilir — §6.6). Büronun "silinen föy gerekçesiyle saklansın" beklentisi artık karşılanıyor.
-- **9.7 (ön muhasebe):** HukuDok'ta yok. Kurulursa/dışarıda tutulursa bağlantı anahtarı D-No değil `cases.id`/`tracking_no` olmalıdır.
+- **9.7 (ön muhasebe):** HUKDOK'ta yok. Kurulursa/dışarıda tutulursa bağlantı anahtarı D-No değil `cases.id`/`tracking_no` olmalıdır.
 
-Dürüst öz-eleştiri: önerinin "numaraya veri gömme" eleştirisi, HukuDok'un `tracking_no`'suna da dokunur — 5 blok gerçekten veri taşır (kategori, isim, yargı türü, hizmet). Fark şudur: `tracking_no` sistemde *kimlik* değil *okunabilir etikettir*; kimlik yükünü `cases.id` taşıdığı için etiketteki bilginin eskimesi hiçbir bağı bozmaz ve yeniden numaralama zorunluluğu doğurmaz. Bu tasarım tercihi bilinçlidir (isim bloğu kategori önceliği dahil, kullanıcı onaylı).
+Dürüst öz-eleştiri: önerinin "numaraya veri gömme" eleştirisi, HUKDOK'un `tracking_no`'suna da dokunur — 5 blok gerçekten veri taşır (kategori, isim, yargı türü, hizmet). Fark şudur: `tracking_no` sistemde *kimlik* değil *okunabilir etikettir*; kimlik yükünü `cases.id` taşıdığı için etiketteki bilginin eskimesi hiçbir bağı bozmaz ve yeniden numaralama zorunluluğu doğurmaz. Bu tasarım tercihi bilinçlidir (isim bloğu kategori önceliği dahil, kullanıcı onaylı).
 
-**Özet tavsiye:** Öneri, HukuDok'suz (klasör + Excel + elle numara) bir dünya için doğru reçetedir; o dünya artık yok. D-No / Luhn / Numarator / Klasör Yolu benimsenmemeli. Öneriden alınmaya değer üç şey vardır ve üçü de numaralandırma değişikliği değil ek özelliktir: (1) ihtiyaç doğrulanırsa vaka/olay grup anahtarı (case_relations'ın üstüne küçük ek), (2) mahkeme aşamaları alt tablosu (raporlama geliştirmesi), (3) soft-delete (gerçek boşluk). Export sütun sabitliği ise entegrasyon taahhüdü olarak ayrıca verilmelidir.
+**Özet tavsiye:** Öneri, HUKDOK'suz (klasör + Excel + elle numara) bir dünya için doğru reçetedir; o dünya artık yok. D-No / Luhn / Numarator / Klasör Yolu benimsenmemeli. Öneriden alınmaya değer üç şey vardır ve üçü de numaralandırma değişikliği değil ek özelliktir: (1) ihtiyaç doğrulanırsa vaka/olay grup anahtarı (case_relations'ın üstüne küçük ek), (2) mahkeme aşamaları alt tablosu (raporlama geliştirmesi), (3) soft-delete (gerçek boşluk). Export sütun sabitliği ise entegrasyon taahhüdü olarak ayrıca verilmelidir.
 
 ### 6.5 Ekip veri güncelleme çalışması — `Full_Rapor_TKU.xlsx` değerlendirmesi (2026-08-04 anlık görüntü, ÇALIŞMA DEVAM EDİYOR)
 
-Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini Excel üzerinde elden geçiriyor; nihai hali HukuDok'a aktarılmak üzere teslim edilecek. Aşağıdaki analiz 2026-08-04 tarihli ara sürüme aittir; sayılar teslimde değişebilir ama yapısal bulgular ve aktarım kuralları geçerli kalır.
+Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini Excel üzerinde elden geçiriyor; nihai hali HUKDOK'a aktarılmak üzere teslim edilecek. Aşağıdaki analiz 2026-08-04 tarihli ara sürüme aittir; sayılar teslimde değişebilir ama yapısal bulgular ve aktarım kuralları geçerli kalır.
 
 **Dosya yapısı:** 4 sayfa —
 - `Sheet` (ana): **8.409 föy × 63 kolon** (bilgi notundaki "8.410 föy" ile tutarlı).
@@ -367,7 +367,7 @@ Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini
 - `Silinen_Föyler` (10) ve `Kapsam_Dışı` (51): ana sayfayla aynı şemada, ayrılmış kayıtlar.
 
 **Güçlü yönler (bunlar örnek nitelikte, aynen sürdürülmeli):**
-1. **Düzeltme log disiplini** — her düzeltme eski değer + yeni değer + gerekçe + tarihle kayıtlı. Bu, HukuDok'un `CaseHistory` felsefesinin birebir Excel karşılığıdır ve aktarımda provenance olarak taşınabilir (aşağıda).
+1. **Düzeltme log disiplini** — her düzeltme eski değer + yeni değer + gerekçe + tarihle kayıtlı. Bu, HUKDOK'un `CaseHistory` felsefesinin birebir Excel karşılığıdır ve aktarımda provenance olarak taşınabilir (aşağıda).
 2. **Silinen föyler yok edilmemiş**, ayrı sayfada gerekçeli duruyor (bilgi notundaki soft-delete beklentisinin pratiği).
 3. **TKU verisi temiz**: 8.151/8.409 dolu (%96,9) ve dolu değerlerin **%100'ü** `TKU-\d+` desenine uyuyor. 5.692 ayrı TKU grubu var; 1.515'i çok üyeli (en büyüğü 16 föy). Not: grupların 4.177'si tek üyeli — TKU'nun gerçek bilgi değeri çok-üyeli ~1.515 grupta (~4.000 föy).
 4. **`SistemNo` %100 dolu ve %100 benzersiz** (8.409/8.409) — Micro Kolay Ofis kayıt kimliği. **Toplu aktarımın eşleştirme anahtarı BU olmalıdır** (aşağıda neden DosyaNo olamayacağı kanıtlı).
@@ -376,14 +376,14 @@ Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini
 1. **`DosyaNo` benzersiz değil** (bu ara sürümde): 142 değer mükerrer (284 satır) — örn. `1541.004`, `329.001`, `9.639.00`. Bilgi notunun kendi teşhisiyle (§2.2 "elle numara → mükerrer riski") tutarlı bir eski-veri gerçeği. Aktarım açısından sonuç: DosyaNo `klasor_no_2`'ye aranabilir etiket olarak yazılabilir; eşleştirme anahtarı olarak SistemNo tercih edilmeli.
 2. **`DosyaNo` formatı en az 10 farklı şekilde**: `9.999.99` (2.597), `9.99999.99` (1.466), `9999.999.99` (1.337), `9.9999.99` (1.216), `999.999.99` (868), hizmet segmentsiz `9999.999` (507), `9.9999` (262)... Eski sistemin doğal mirası; karşılaştırma yapılacaksa önce normalizasyon gerekir.
 3. **`MüvekkilNo` tekilleştirmesi bu ara sürümde henüz tamamlanmamış görünüyor**: 1.515 numaradan 61'i birden fazla isim taşıyor (örn. no 9 → AXA SİGORTA + ANADOLU SİGORTA + MEHMET NALBANT DR.; no 1 → AXA + KEMAL AYENGİN DR.), 9 isim birden fazla numara taşıyor (AXA → 1, 3, 9; QUICK → 2, 1464). Yoğunlaşma sigorta şirketlerinde — eski "çok kök" düzeninin izi; ekibin temizlik sırası gereği bu kolona henüz gelinmemiş olması muhtemel. Aktarım açısından sonuç: müvekkil eşleştirmesi bu kolonla tek başına otomatikleştirilmemeli; nihai teslimde durum yeniden değerlendirilip gerekirse isim-normalizasyonlu + insan onaylı eşleştirme kullanılmalı.
-4. **Yer tutucu / sentinel değerler mevcut**: `Dava Tarihi`nde 217 satır `1900-01-01`, 40 satır metin tipinde, 122 boş; `Son Durum`da 97 satır `"Lütfen Seçiniz"`. Kaynak sistemin zorunlu-alan davranışından gelen bilinen desenler. Aktarım script'i bunları NULL'a çevirmeli ki HukuDok'ta "dolu ama anlamsız" alan oluşmasın ve `missing_required` filtresi doğru çalışsın.
+4. **Yer tutucu / sentinel değerler mevcut**: `Dava Tarihi`nde 217 satır `1900-01-01`, 40 satır metin tipinde, 122 boş; `Son Durum`da 97 satır `"Lütfen Seçiniz"`. Kaynak sistemin zorunlu-alan davranışından gelen bilinen desenler. Aktarım script'i bunları NULL'a çevirmeli ki HUKDOK'ta "dolu ama anlamsız" alan oluşmasın ve `missing_required` filtresi doğru çalışsın.
 5. **Çoklu-değer ve boşluk desenleri**: `Karşı Taraf` 7.398 satırda baş/son boşluklu, 3.198 satırda `;` ayraçlı çoklu taraf (aktarımda split edilip her biri ayrı `CaseParty(COUNTER)` satırına açılmalı). `Sorumlu Avukatlar` 8.398 satırda sonda virgül, 1.085 satırda çoklu avukat (ilki `responsible_lawyer_name`, tamamı `case_lawyers`'a). Kaynak yazılımın export biçiminden gelen desenler; script tarafında trim/split yeterli.
 6. **`Esas` alanında 429 satır `YYYY/` ile bitiyor** (yıl var, sıra yok), 6 satır yalnız yıl. Kaynakta gerçekten eksik mi, export sırasında mı kesildi — ekip en iyisini bilir; aktarımda "eksik esas no" olarak işaretlenmesi yeterli.
 7. **TKU boş 258 satır** (Ceza 153, İdare 70, Savcılık 13, Hukuk 13...): tekil-olay dosyası mı, henüz atanmamış mı — çalışma bittiğinde kendiliğinden netleşecek bir ayrım; şimdilik yalnız not.
 
-**HukuDok alan eşlemesi (aktarım script'i için):** Excel kolonları HukuDok şemasıyla büyük oranda birebir örtüşüyor — bu, verinin zaten HukuDok modeline göre düşünüldüğünü gösteriyor:
+**HUKDOK alan eşlemesi (aktarım script'i için):** Excel kolonları HUKDOK şemasıyla büyük oranda birebir örtüşüyor — bu, verinin zaten HUKDOK modeline göre düşünüldüğünü gösteriyor:
 
-| Excel | HukuDok | Not |
+| Excel | HUKDOK | Not |
 |---|---|---|
 | SistemNo | eşleştirme anahtarı (kalıcı saklama için önerilen yer: `klasor_no_2` içinde `DosyaNo \| SistemNo \| TKU-xxx` birleşik, VEYA küçük migration ile ayrı kolonlar) | %100 unique |
 | DosyaNo | `klasor_no_2` (aranabilir eski no) | unique değil, normalize et |
@@ -392,26 +392,26 @@ Büro ekibi, sistemdeki verilerden "daha doğru" olacak şekilde arşiv verisini
 | Karşı Taraf | `;` split → `CaseParty(COUNTER)` | trim şart |
 | Yerel Mahkeme / Esas | `court` / `esas_no` (+ `judicial_unit` türetimi `derive_judicial_unit` ile) | |
 | Dava Tarihi / İş Kabul Tarihi | `opening_date` / `acceptance_date` | 1900 sentinel → NULL |
-| Ana Tür | `file_type` — değer kümesi HukuDok `file_types` seed'iyle 8/10 birebir (`İDARE`↔`İdare`, `TAHKİM`↔`Tahkim` normalize) | |
+| Ana Tür | `file_type` — değer kümesi HUKDOK `file_types` seed'iyle 8/10 birebir (`İDARE`↔`İdare`, `TAHKİM`↔`Tahkim` normalize) | |
 | Durum (Aktif/Arşiv) | `status` (`DERDEST`/`MAHZEN`) | |
 | Dava Konusu / Alt Kırılım / Ek Alt Kırılım* | `subject` / `sub_type_extra` (kanonik listeye `normalize_known_value` süzgeciyle) | |
 | İstinaf bloğu (6 kolon) / Temyiz bloğu | `istinaf_*` / `temyiz_*` alanları — neredeyse birebir | |
-| Son Durum (35 değer) | `dosya_son_durumu` — HukuDok `file_statuses` (38 kayıt) ile kesişim eşlemesi çıkarılmalı; `"Lütfen Seçiniz"` atılmalı | |
+| Son Durum (35 değer) | `dosya_son_durumu` — HUKDOK `file_statuses` (38 kayıt) ile kesişim eşlemesi çıkarılmalı; `"Lütfen Seçiniz"` atılmalı | |
 | Sorumlu Avukatlar | ilki `responsible_lawyer_name`, hepsi `case_lawyers` (toleranslı `lawyer_resolver` ile) | |
 | Hizmet Türü (9 değer) | `service_type` bitmask'e eşleme tablosu gerekir (örn. `Lexis Rapor→bit0 Rapor`, `Danışmanlık→bit1`, `Takip/Vekaletli→bit2 Dava`...) | ekiple birlikte kararlaştırılmalı |
-| Taraf Sıfatı (11 değer) | `CaseParty.role` — `Aleyhine Başvurulan`, `Alacaklı`, `Katılan` HukuDok `party_roles` seed'inde YOK → listeye eklenmeli veya eşlenmeli | |
+| Taraf Sıfatı (11 değer) | `CaseParty.role` — `Aleyhine Başvurulan`, `Alacaklı`, `Katılan` HUKDOK `party_roles` seed'inde YOK → listeye eklenmeli veya eşlenmeli | |
 | Sigortalı / Hasar No / Hukuk No | `SIGORTALI` taraf veya poliçe `sigortali_kurum` / `hasar_dosya_no` / `hukuk_no` | |
-| Hükmedilen Maddi/Manevi/Toplam | **HukuDok'ta karşılığı YOK** (karar blokları tutar alanı taşımıyor) — ya `karar_aciklama`/notes'a, ya küçük migration ile yeni alanlara | gerçek şema boşluğu |
+| Hükmedilen Maddi/Manevi/Toplam | **HUKDOK'ta karşılığı YOK** (karar blokları tutar alanı taşımıyor) — ya `karar_aciklama`/notes'a, ya küçük migration ile yeni alanlara | gerçek şema boşluğu |
 | Islah Tutarı / Dava Değeri / Manevi Dava Değeri | `maddi_tazminat`/`manevi_tazminat` (ıslah sonrası mı ilk mi — ekip teyidi gerekli) | |
 
-**Süreç notu — çift gerçek kaynak:** HukuDok DB'sinde davalar zaten yaşıyor (daha önceki aktarım; DB ~11 bin dava) ve çalışma süresince iki taraf paralel güncelleniyor. Bu, devam eden bir temizlik çalışmasının doğal ara durumudur — sorun değil; yalnızca teslim anında planlı yönetilmesi gereken bir geçiştir. Önerilen aktarım stratejisi:
-1. **Cutoff tarihi ilan edilmeli**: Excel çalışması teslimle dondurulur; sonrasındaki tüm düzeltmeler yalnız HukuDok'ta yapılır (Excel'e dönüş yok).
-2. **Toptan overwrite DEĞİL, alan bazlı delta**: SistemNo ↔ `cases.id` eşleme tablosu kurulur (ilk eşleştirme DosyaNo+esas_no+müvekkil karması ve insan onayıyla); sonra `enrich_case` deseni uygulanır — yalnız değişen alan yazılır, her değişiklik `CaseHistory`'ye `source="excel-cleanup-2026-08: <gerekçe>"` imzasıyla girer. `Düzeltme_Logu` sayfasındaki gerekçeler bu imzalara taşınarak provenance HukuDok'ta da yaşamaya devam eder.
-3. **Çakışma raporu**: aynı alanda hem Excel'de hem HukuDok'ta (aktarım sonrası tarihli) farklı değer varsa otomatik yazılmaz, insan kararına listelenir.
-4. `Silinen_Föyler` HukuDok'ta karşılığı olan kayıtlarsa: hard-delete YAPILMAMALI (bkz. §6.4 soft-delete boşluğu); çözülene kadar `status=MAHZEN` + notes'a silme gerekçesi önerilir.
+**Süreç notu — çift gerçek kaynak:** HUKDOK DB'sinde davalar zaten yaşıyor (daha önceki aktarım; DB ~11 bin dava) ve çalışma süresince iki taraf paralel güncelleniyor. Bu, devam eden bir temizlik çalışmasının doğal ara durumudur — sorun değil; yalnızca teslim anında planlı yönetilmesi gereken bir geçiştir. Önerilen aktarım stratejisi:
+1. **Cutoff tarihi ilan edilmeli**: Excel çalışması teslimle dondurulur; sonrasındaki tüm düzeltmeler yalnız HUKDOK'ta yapılır (Excel'e dönüş yok).
+2. **Toptan overwrite DEĞİL, alan bazlı delta**: SistemNo ↔ `cases.id` eşleme tablosu kurulur (ilk eşleştirme DosyaNo+esas_no+müvekkil karması ve insan onayıyla); sonra `enrich_case` deseni uygulanır — yalnız değişen alan yazılır, her değişiklik `CaseHistory`'ye `source="excel-cleanup-2026-08: <gerekçe>"` imzasıyla girer. `Düzeltme_Logu` sayfasındaki gerekçeler bu imzalara taşınarak provenance HUKDOK'ta da yaşamaya devam eder.
+3. **Çakışma raporu**: aynı alanda hem Excel'de hem HUKDOK'ta (aktarım sonrası tarihli) farklı değer varsa otomatik yazılmaz, insan kararına listelenir.
+4. `Silinen_Föyler` HUKDOK'ta karşılığı olan kayıtlarsa: hard-delete YAPILMAMALI (bkz. §6.4 soft-delete boşluğu); çözülene kadar `status=MAHZEN` + notes'a silme gerekçesi önerilir.
 5. `Kapsam_Dışı` sayfası aktarım kapsamına hiç girmemeli.
 
-**Genel yorum:** Çalışma ciddi, yöntemli ve doğru yönde — özellikle düzeltme logu disiplini ve silinen föylerin gerekçeli saklanması, HukuDok'un veri felsefesiyle tam uyumlu ve örnek nitelikte. Excel'in kolon seti fiilen "HukuDok şemasının eski sistemden görünüşü" olduğundan aktarım teknik olarak düşük riskli. Yukarıdaki tespitlerin çoğu, çalışma tamamlandığında ekip tarafından zaten kapatılmış olabilir; nihai teslimde bu profilleme yeniden koşulup güncel durum doğrulanmalıdır. Teslim öncesi ekiple konuşulması *yararlı* iki başlık: MüvekkilNo eşleşmelerinin nihai durumu ve `Hükmedilen` tutar alanları için HukuDok tarafında yer açılıp açılmayacağı (şema boşluğu bizim tarafımızda).
+**Genel yorum:** Çalışma ciddi, yöntemli ve doğru yönde — özellikle düzeltme logu disiplini ve silinen föylerin gerekçeli saklanması, HUKDOK'un veri felsefesiyle tam uyumlu ve örnek nitelikte. Excel'in kolon seti fiilen "HUKDOK şemasının eski sistemden görünüşü" olduğundan aktarım teknik olarak düşük riskli. Yukarıdaki tespitlerin çoğu, çalışma tamamlandığında ekip tarafından zaten kapatılmış olabilir; nihai teslimde bu profilleme yeniden koşulup güncel durum doğrulanmalıdır. Teslim öncesi ekiple konuşulması *yararlı* iki başlık: MüvekkilNo eşleşmelerinin nihai durumu ve `Hükmedilen` tutar alanları için HUKDOK tarafında yer açılıp açılmayacağı (şema boşluğu bizim tarafımızda).
 
 **Aktarım günü notu (2026-08-05):** aktarım gününde admin panelinden `party_roles` listesine `Aleyhine Başvurulan / Alacaklı / Katılan` eklenecek; "Kurum" kategorisinin B1 eşlemesi ve Hizmet Türü bitmask tablosu ekiple birlikte kararlaştırılacak (açık karar).
 

@@ -7,7 +7,7 @@ Tarayıcının Hukukbot API'sine tek yolu konteyner nginx'indeki `/hukukbot-api/
    Hukukbot'un API-key'li `/ingest` webhook'u ve `/health` asla açılmaz, geri
    kalan her `/hukukbot-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
-   Hukukbot kapalıyken HukuDok'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
+   Hukukbot kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. `/export` konteyner nginx'ine eklenmez (nginx.conf kuralı) ve frontend
    `hukuk_shared` ağındadır (yoksa proxy hiçbir yere ulaşmaz).
 

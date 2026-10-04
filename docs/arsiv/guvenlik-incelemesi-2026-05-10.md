@@ -1,4 +1,4 @@
-# Güvenlik İncelemesi — HukuDok
+# Güvenlik İncelemesi — HUKDOK
 
 **İnceleme tarihi:** 2026-05-10
 **Kapsam:** Tüm backend (FastAPI), nginx, docker-compose, frontend MSAL ayarları, repo durumu

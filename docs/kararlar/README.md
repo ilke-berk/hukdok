@@ -27,8 +27,8 @@ tutulur: **karar + bağlam + gerekçe + reddedilen alternatifler**.
 | [018](018-index-temizligi-37-kalem.md) | 37 index düşürülüyor: 31 yapısal ikiz koşulsuz, 6 trigram bilinçli bahisle (E8 bağı) |
 | [019](019-surec-ayrimi-kapsam-disi.md) | Süreç/konteyner ayrımı ve mikroservis kapsam dışı: modüler monolit korunur (W0 ölçümü) |
 | [020](020-dava-durumu-uclusu.md) | Dava durumu üçlüsü DERDEST / DANIŞ / MAHZEN; temyiz/istinaf aşamadır, durum değil (migrasyon 50) |
-| [021](021-hukukbot-hukudok-girisi.md) | Hukukbot'a tek giriş HukuDok: aynı access token iki backend'de, iç `/hukukbot` sayfası, `/hukukbot-api/` allowlist'i; ayrı site kalkar |
-| [022](022-kurumsal-avukat-kimligi.md) | Kurumsal avukat kimliği `AVK-00001` (HukuDok + Hukukbot ortak, gizli); avukat kodları kalkar, avukat kaydı silinmez (pasif), bağlar `ON DELETE RESTRICT` |
+| [021](021-hukukbot-hukudok-girisi.md) | Hukukbot'a tek giriş HUKDOK: aynı access token iki backend'de, iç `/hukukbot` sayfası, `/hukukbot-api/` allowlist'i; ayrı site kalkar |
+| [022](022-kurumsal-avukat-kimligi.md) | Kurumsal avukat kimliği `AVK-00001` (HUKDOK + Hukukbot ortak, gizli); avukat kodları kalkar, avukat kaydı silinmez (pasif), bağlar `ON DELETE RESTRICT` |
 | [023](023-ofis-no-formati.md) | Ofis no yeni formatı `<MÜVEKKİL KODU>-<SIRA>[-<SİGORTALI>]-<TÜR>` (`AXA-3297-DR.E.ALTUNC-HUK`): okunur kodlar, sigortalı bloğu, sunucu sayacı; tüm kartlar izli göçle yeniden numaralanır (016'yı değiştirir) |
 
 ## Dosya biçimi

@@ -7,7 +7,7 @@ nginx'indeki `/lexis-api/` önekidir — Hukukbot proxy'sinin aynı deseni
 1. ALLOWLIST: yalnız kullanıcı uçları proxy'lenir (bugün `word`); servisin `/health`'i
    ve geri kalan her `/lexis-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
-   Lexis stack'i kapalıyken HukuDok'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
+   Lexis stack'i kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. Vite dev proxy'si aynı allowlist'i taşır.
 
 Konteynerde repo kökü görünmediği için atlanır; CI'da (repo checkout'u) koşar.

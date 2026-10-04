@@ -6,8 +6,8 @@
 ## Mimari özet
 
 > **Kullanıcı erişimi (2026-09-26, karar [021](../kararlar/021-hukukbot-hukudok-girisi.md)):** bu belge
-> belge AKTARIMINI (HukuDok → Hukukbot, makineden makineye) anlatır ve o yol değişmedi. Kullanıcıların
-> Hukukbot'a erişimi ise artık yalnız HukuDok üzerindendir: `/hukukbot` sayfası HukuDok'un access token'ıyla
+> belge AKTARIMINI (HUKDOK → Hukukbot, makineden makineye) anlatır ve o yol değişmedi. Kullanıcıların
+> Hukukbot'a erişimi ise artık yalnız HUKDOK üzerindendir: `/hukukbot` sayfası HUKDOK'un access token'ıyla
 > konteyner nginx'inin `/hukukbot-api/(ask|sessions|download)` allowlist'ine konuşur; Hukukbot'un ayrı sitesi,
 > girişi ve frontend konteyneri yoktur. `/ingest` o allowlist'te **yoktur** (404) — yalnız `hukuk_shared`
 > iç ağından, API anahtarıyla erişilir (`/export`'un simetriği, aşağıda).

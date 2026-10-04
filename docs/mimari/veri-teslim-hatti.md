@@ -316,7 +316,7 @@ bu ekle 42 (`SUTUN_ADAYLARI`, 54 başlık yazımı); veri ekibine giden liste
 
 **DB-2026 bildirimi ve cevabı — tarihli şerh (04.09.2026).** Veri ekibinin Format
 Değişiklik Bildirimi REV-2 on kalemdi (DB-2026-001…010; ilk geçerli paket
-`HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx`); HukuDok aynı gün "hazır, bırakın" + beş cevap
+`HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx`); HUKDOK aynı gün "hazır, bırakın" + beş cevap
 verdi. Bizde iş çıkaran ikisi: DB-001 (`ALLEGED_FAULTS` 9 değer seed, `9608031`) ve DB-002
 (G119 şema + G120 aktarım + G121 UI). Kod dokunulmadan kapananlar: DB-003 (on dört sütun
 artık gelmiyor — "bu teslimde yok" sözleşmesi, mevcut değer korunur; `Arabuluculuk

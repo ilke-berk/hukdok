@@ -1,4 +1,4 @@
-# HukuDok Automator — Kalite, Performans ve Güvenlik Denetim Raporu
+# HUKDOK Automator — Kalite, Performans ve Güvenlik Denetim Raporu
 
 **Tarih:** 3 Temmuz 2026
 **Kapsam:** Backend (FastAPI, ~14.600 satır), Frontend (React/TypeScript), Docker/nginx deploy

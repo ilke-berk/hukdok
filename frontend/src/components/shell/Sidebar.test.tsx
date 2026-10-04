@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Sidebar "Araçlar" bölümü — Hukukbot HukuDok'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok,
+// Sidebar "Araçlar" bölümü — Hukukbot HUKDOK'un iç sayfasıdır (karar 021): kendi sitesi/girişi yok,
 // menü öğesi her kullanıcıda görünür, `/hukukbot`'a gider, dış adres/yeni sekme YOK.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";

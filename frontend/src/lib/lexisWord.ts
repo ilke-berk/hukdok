@@ -2,10 +2,10 @@
 //
 // - Yol: aynı origin `/lexis-api/word` (konteyner nginx allowlist'i, önek atılıp `lexis_api:8020`'ye iletilir —
 //   `nginx.conf`, Hukukbot deseni). Servis ayrı depodadır (`lexis-rapor/servis`), ayrı stack'tir.
-// - Kimlik: HukuDok'un MSAL access token'ı; `apiClient.fetch` taşır (401 yenilemesi ve oturum-bitti akışı oradan).
-//   Servis token'ı HukuDok kuralıyla kendisi doğrular ve şimdilik yalnız yöneticiyi kabul eder.
+// - Kimlik: HUKDOK'un MSAL access token'ı; `apiClient.fetch` taşır (401 yenilemesi ve oturum-bitti akışı oradan).
+//   Servis token'ı HUKDOK kuralıyla kendisi doğrular ve şimdilik yalnız yöneticiyi kabul eder.
 // - Gövde: ekrandaki taslak olduğu gibi (`LexisTaslak`) + künye. Künye (hasar no, rapor no) taslakta yoktur;
-//   HukuDok adaptörü gelince sunucu karttan kendisi alacak, o zaman buradan kalkar.
+//   HUKDOK adaptörü gelince sunucu karttan kendisi alacak, o zaman buradan kalkar.
 // - Yanıt: dosyanın kendisi. Uyarılar başlıkta gelir: `X-Lexis-Uyari-Sayisi` (tam sayı) + `X-Lexis-Uyarilar`
 //   (yüzde-kodlu JSON dizisi; başlığa sığan ilk kısım).
 //

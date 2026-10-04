@@ -4,7 +4,7 @@ export type OdakModuContextValue = {
   /** Sayfa odak modunda mı — kabuk Topbar'ı çizmez, `main` dolgusuz ve kaydırmasız olur. */
   odak: boolean;
   setOdak: (odak: boolean) => void;
-  /** HukuDok menüsünü (Sidebar) açar — odak modunda Topbar'daki ☰'nin yerini alan düğmeler çağırır. */
+  /** HUKDOK menüsünü (Sidebar) açar — odak modunda Topbar'daki ☰'nin yerini alan düğmeler çağırır. */
   menuyuAc: () => void;
 };
 

@@ -1,6 +1,6 @@
 # Dava takip modülü — araştırma talebi
 
-**Tarih:** 02.10.2026 · **Gönderen:** HukuDok ekibi · **Muhatap:** veri ekibi
+**Tarih:** 02.10.2026 · **Gönderen:** HUKDOK ekibi · **Muhatap:** veri ekibi
 
 **Konu:** Dava takibinin belgelerden otomatik yürütülmesi — hangi belgeden hangi veri çekilebilir?
 
@@ -93,4 +93,4 @@ duruşma zaptı, istinaf ve temyiz başvurusu) başlayıp partiler hâlinde gön
 yeterli. Ne zaman dönebileceğinizi bildirirseniz planımızı ona göre yaparız.
 
 Teşekkürler,
-HukuDok ekibi
+HUKDOK ekibi

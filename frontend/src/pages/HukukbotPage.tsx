@@ -14,7 +14,7 @@ import { SoruKutusu } from "@/components/hukukbot/SoruKutusu";
 import { KaynakPaneli, type KaynakVurgusu } from "@/components/hukukbot/KaynakPaneli";
 import {
   AKIS_HATA_MESAJI,
-  HUKUDOK_BELGE_ACILAMADI,
+  HUKDOK_BELGE_ACILAMADI,
   OTURUM_BULUNAMADI,
   YENI_SOHBET_BASLIGI,
   baslikUret,
@@ -29,10 +29,10 @@ import {
 } from "@/components/hukukbot/yardimcilar";
 
 /**
- * `/hukukbot` (G205, karar 021) — Hukukbot sohbeti HukuDok kabuğu içinde. Eski hukbot arayüzü yalnız
+ * `/hukukbot` (G205, karar 021) — Hukukbot sohbeti HUKDOK kabuğu içinde. Eski hukbot arayüzü yalnız
  * İŞLEV referansıdır; giriş/MSAL/profil kabuktan gelir, Hukukbot'a tek yol `lib/hukukbotApi.ts` (G204).
  *
- * - Odak modu (28.09 yeniden tasarım, `useOdakModu`): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir. HukuDok
+ * - Odak modu (28.09 yeniden tasarım, `useOdakModu`): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir. HUKDOK
  *   menüsü geçmiş panelinin üst satırındaki ☰ ile açılır ve panelin ÜSTÜNE biner (kenar hover'ı bu sayfada kapalı).
  * - Sol: sohbet listesi (`OturumListesi`: arama, sabitlenenler + tarih grupları, "⋯" menüsünde başlık düzenle /
  *   sabitle / ONAYLI sil). Masaüstünde 48 px raya daraltılabilir (tercih `localStorage`). 768 px altında
@@ -360,7 +360,7 @@ export default function HukukbotPage() {
   };
 
   const indir = async (kaynak: HukukbotKaynak) => {
-    // HukuDok'tan aktarılmış belge → HukuDok'un kendi ucundan (SharePoint arşivi), yeni sekmede okunur.
+    // HUKDOK'tan aktarılmış belge → HUKDOK'un kendi ucundan (SharePoint arşivi), yeni sekmede okunur.
     // Sekme ilk await'ten ÖNCE açılır; sonradan açılanı pop-up engelleyicisi keser.
     const belgeId = kaynakHukdokId(kaynak);
     if (belgeId !== null) {
@@ -371,13 +371,13 @@ export default function HukukbotPage() {
       } catch (e) {
         sekme?.close();
         const ek = e instanceof HukukbotApiError && e.status === 404 ? " Belge silinmiş ya da erişiminiz yok." : "";
-        toast.error(`${HUKUDOK_BELGE_ACILAMADI}${ek}`);
+        toast.error(`${HUKDOK_BELGE_ACILAMADI}${ek}`);
       } finally {
         setInen(null);
       }
       return;
     }
-    // İlk kurulumdan kalan belge (HukuDok kaydı yok) → Hukukbot'un yerel PDF klasörü.
+    // İlk kurulumdan kalan belge (HUKDOK kaydı yok) → Hukukbot'un yerel PDF klasörü.
     setInen(kaynak.filename);
     try {
       await hukukbotApi.indir(kaynak.filename);
@@ -455,7 +455,7 @@ export default function HukukbotPage() {
           <button
             type="button"
             onClick={menuyuAc}
-            aria-label="HukuDok menüsünü aç"
+            aria-label="HUKDOK menüsünü aç"
             className="md:hidden w-8 h-8 grid place-items-center rounded-[3px] border border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--brand)] hover:border-[var(--brand)] shrink-0"
           >
             <Menu className="w-4 h-4" />

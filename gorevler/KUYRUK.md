@@ -17,32 +17,32 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G201 | bant:backend | bagimli:G200 | SQLAlchemy 2.0.54 — arama EXPLAIN önce/sonra (perf_olcum --term), arama bekçileri değişmeden yeşil
 - [x] G202 | bant:backend | bagimli:G201 | Dev araçları: pytest 9.1.1 (PYSEC-2026-1845 ignore'u silinir) + ruff 0.16.8 + mypy 2.3.1 + ci-kontrol pip-audit komutu `$1` düzeltmesi
 
-## ÖNCELİK 2 — Hukukbot HukuDok'a bağlanır: tek giriş, iç sayfa, hukbot.tragic.tr kapanır (2026-09-26 gündüz, kullanıcı kararı)
+## ÖNCELİK 2 — Hukukbot HUKDOK'a bağlanır: tek giriş, iç sayfa, hukbot.tragic.tr kapanır (2026-09-26 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: 26.09 sohbeti. Hanyaloğlu hesabı hukbot'a giremiyordu (hukbot Azure kaydı yalnız LexisBio kiracısı).
-     KARAR: Hukbot'un kendi girişi ve arayüzü KALKAR; HukuDok'un token'ı (api://<HukuDok client>/access_as_user,
-     ALLOWED_TENANTS) hukbot backend'inde aynı kuralla doğrulanır; arayüz HukuDok'ta /hukukbot sayfası; API'ye
-     yalnız HukuDok konteyner nginx'i /hukukbot-api/ allowlist'iyle ulaşır (/ingest ASLA); hukbot.tragic.tr kapanır.
+     KARAR: Hukbot'un kendi girişi ve arayüzü KALKAR; HUKDOK'un token'ı (api://<HUKDOK client>/access_as_user,
+     ALLOWED_TENANTS) hukbot backend'inde aynı kuralla doğrulanır; arayüz HUKDOK'ta /hukukbot sayfası; API'ye
+     yalnız HUKDOK konteyner nginx'i /hukukbot-api/ allowlist'iyle ulaşır (/ingest ASLA); hukbot.tragic.tr kapanır.
      Sohbet geçmişi oid ile anahtarlı → LexisBio kullanıcılarının eski geçmişi korunur.
      G208/G209 DIŞ REPO (../hukukbot-ui): gece koşucusu bu repoda çalışır, onları koşamaz → BLOKE ekli; gündüz
      o dizinde açılan oturumda `gorevler/gorev/G208.md`/`G209.md` okunarak yapılır. Hukbot'ta commit'lenmemiş
      değişiklikler var (app/config.py, prompt.py, rag_core.py) — G208'den önce kullanıcı karar verir.
      Paralel: G203 (backend) ∥ G204 (frontend). G207, G202 ile CLAUDE.md paylaşır → zincirli.
-     Deploy sırası (insan): hukbot G208 → HukuDok (G203-G207) → canlı duman → host nginx'ten hukbot sitesi +
-     hukbot frontend konteyneri kalkar → G209. Tahmin: HukuDok kısmı 1 gece; hukbot kısmı 1 gündüz oturumu. -->
+     Deploy sırası (insan): hukbot G208 → HUKDOK (G203-G207) → canlı duman → host nginx'ten hukbot sitesi +
+     hukbot frontend konteyneri kalkar → G209. Tahmin: HUKDOK kısmı 1 gece; hukbot kısmı 1 gündüz oturumu. -->
 
 - [x] G203 | bant:backend | bagimli:- | Hukukbot proxy altyapısı: konteyner nginx `/hukukbot-api/` allowlist (ask/sessions/download, gecikmeli DNS, stream) + frontend `hukuk_shared` ağına + react-markdown/remark-gfm + bekçi testleri
-- [x] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HukuDok token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
-- [x] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası + rota + menü (G206 BİRLEŞTİ, 26.09 kullanıcı kararı) HukuDok tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler (af79699, merge 1d9d908, 26.09 gündüz)
+- [x] G204 | bant:frontend | bagimli:- | `lib/hukukbotApi.ts`: HUKDOK token'ıyla oturum CRUD + `/ask` NDJSON akış okuyucu + yetkili PDF indirme; testler
+- [x] G205 | bant:frontend | bagimli:G203,G204 | `/hukukbot` sayfası + rota + menü (G206 BİRLEŞTİ, 26.09 kullanıcı kararı) HUKDOK tasarımıyla: sohbet listesi (sabitle/adlandır/sil), mesaj akışı (markdown), kaynak paneli + indirme, giriş kutusu; testler (af79699, merge 1d9d908, 26.09 gündüz)
 - [x] G206 | bant:frontend | bagimli:G205 | Rota + menü: App.tsx `/hukukbot`, Sidebar linki iç sayfaya, `lib/hukukbot.ts` + `VITE_HUKUKBOT_URL` kalkar; testler — İPTAL: G205'e birleşti (ara durumda App.lazy bekçisi kırmızı kalıyordu; plan hatası)
 - [x] G207 | bant:docs | bagimli:G202,G203,G205 | Doküman + infra: karar 021, CLAUDE.md/genel-bakış/kimlik-ve-token, `infra/nginx/sites-available/hukbot` + install.sh/README'den hukbot sitesi kalkar
-- [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HukuDok token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
+- [x] G208 | bant:backend | bagimli:- | [DIŞ REPO ../hukukbot-ui] auth.py HUKDOK token'ını doğrular (aud api://, scp, ALLOWED_TENANTS, v1/v2 iss) + CORS/compose frontend servisi kalkar + testler (hukbot 74b11b1, 26.09 gündüz)
 - [ ] G209 | bant:docs | bagimli:G208 | [DIŞ REPO ../hukukbot-ui] Eski arayüz silinir (React/Vite/MSAL dosyaları, Dockerfile.frontend, deploy/frontend-nginx.conf) + rapor/08 güncellenir | BLOKE(dış repo — canlı geçişten SONRA gündüz, runner koşamaz)
 
 ## ÖNCELİK 3 — Toplantı notları 26.09: takvim son durum, avukat arama, tarihli notlar, sesli giriş (2026-09-26 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: 26.09 toplantı notları + sohbet. Kararlar: dış avukat = avukat seçimi aranabilir kutu (iç+dış); not alma =
-     davaya tarihli notlar; kulak = Hukukbot + Rapor asistanına sesli giriş, HukuDok backend'i Gemini ile yazıya döker,
+     davaya tarihli notlar; kulak = Hukukbot + Rapor asistanına sesli giriş, HUKDOK backend'i Gemini ile yazıya döker,
      otomatik gönderme yok; Sektör = yalnız etiket; ofis no = veri sağlayıcıya açıklama metni.
      Word çalışma sistemi TANIMSIZ → kuyrukta yok. G220/G221 veri sağlayıcıyı bekler → BLOKE ile girer; veri gelince ek elle silinir.
      Sözleşmeler görev dosyalarında SABİT → G214∥G215 ve G216∥G217 paralel koşabilir.
@@ -67,14 +67,14 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 ## ÖNCELİK 4 — Kurumsal avukat kimliği `AVK-00001`: kodlar kalkar, avukat silinmez, dava kaybı ölçülür (2026-09-27 gündüz, kullanıcı kararı)
 
-<!-- Kaynak: 27.09 sohbeti + iki keşif (HukuDok belge hattı, hukukbot-ui). Kararlar: HukuDok + Hukukbot ORTAK, kullanıcıya
+<!-- Kaynak: 27.09 sohbeti + iki keşif (HUKDOK belge hattı, hukukbot-ui). Kararlar: HUKDOK + Hukukbot ORTAK, kullanıcıya
      GÖSTERİLMEYEN kurumsal kimlik `lawyers.kimlik` = AVK-00001 (sistem üretir, değişmez, yeniden kullanılmaz; iç FK
      lawyers.id dışarı verilmez). Güvenceler (kullanıcı onaylı, "davalar kaybolmasın"): (1) avukat SİLİNMEZ, pasife alınır;
      "clear" modu kalkar; bağlar ON DELETE RESTRICT (bugün hard delete + clear + SET NULL = kayıp yolu) (2) G224 envanter
      aracı: her veri adımında önce fotoğraf → adım → karşılaştır, İHLAL = geri al (3) filtre asla yalnız kimliğe bakmaz,
      toleranslı ad eşlemesi kalır (4) her prod veri adımı öncesi yedek + kuru koşu + kullanıcı onayı (G231 "Prod sırası").
      Bulgular: kod belgeden OKUNMUYOR (davanın sorumlu adından türüyor, document_pipeline:140-167); Hukukbot kodu yalnız
-     pasif etiket tutuyor, kendi 9'lu 3-harf setine uymayan HukuDok kodlarını NULL yapıyor; kartlarda kod biçimli değer 0;
+     pasif etiket tutuyor, kendi 9'lu 3-harf setine uymayan HUKDOK kodlarını NULL yapıyor; kartlarda kod biçimli değer 0;
      belgelerde sahipsiz eski kod TUY 5 · BYU 5 · AGH 1.
      SIRA: G224 ölç → G225 kimlik + koru → G226 belge hattı → G227 export → G228 liste/filtre (∥ G229 arayüz, sözleşme sabit)
      → G230 Hukukbot (DIŞ REPO, gündüz) → prod sırası → G231 kalıntı kaldırma (BLOKE) · G232 karar 022.
@@ -254,7 +254,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G171 | bant:frontend | bagimli:G170 | Rapor ekranı üç aşama: önizleme başlığında kaynak şeridi + huni rozeti + huniden aşama 2'ye atlama + sayaç/lejant/indirme satırı + şablon çubuğu sekme üstüne + özetler | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
 - [ ] G172 | bant:docs | bagimli:G171 | raporlama.md §8 üçüncü tur yeniden yazımı + §1/§12/§13/§15 + CLAUDE.md paragrafı + plan §4.1 "uygulamada değişti" şerhi (koddan doğrulanmış) | BLOKE(İPTAL 11.09 — kullanıcı kararı: sohbet öncelikli ekran, yerine G173-G177; koşulmadı, dosya G177 ile arşive)
 
-## ÖNCELİK 1 — Veri ekibi cevabı ↔ HukuDok düzeltmeleri (2026-09-08 gündüz, kullanıcı onayı)
+## ÖNCELİK 1 — Veri ekibi cevabı ↔ HUKDOK düzeltmeleri (2026-09-08 gündüz, kullanıcı onayı)
 
 <!-- Kaynak: docs/plan/veri-ekibi-cevabi-karsilastirma-plani-2026-09-08.md (§1 karşılaştırma tablosu, §3 görev
      adayları, §4 kararlar, §5 yazım birliği ölçümü). Ekibin 04.09 ×3 + 06.09 e-postaları ve 4 ek kalem kalem koda
@@ -379,7 +379,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 ## ÖNCELİK 1 — Veri ekibinin DB-2026 format bildirimi (2026-09-04, kullanıcı kararı)
 
 <!-- Kaynak: veri ekibinin 04.09.2026 Format Değişiklik Bildirimi REV-2 (on kalem
-     DB-2026-001…010, ilk geçerli paket HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx) + HukuDok'un
+     DB-2026-001…010, ilk geçerli paket HUKDOK_TESLIM_PAKETI_2026-09-04.xlsx) + HUKDOK'un
      aynı gün cevabı ("hazır, bırakın"; scratchpad HUKDOK_CEVAP_2026-09-04.md). Kod kontrolü:
      DB-007 (Uzmanlık Alanı adı) zaten tanınıyor, DB-008 (İlk Harf Büyük) anahtar harf
      duyarsız, DB-003/004/009/010 iş çıkarmıyor, DB-001 kusur listesi 9 değerle gündüz

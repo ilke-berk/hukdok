@@ -1,5 +1,5 @@
 [Unit]
-Description=HukuDok gecelik Postgres yedegi (pg_dump + SharePoint kopyasi)
+Description=HUKDOK gecelik Postgres yedegi (pg_dump + SharePoint kopyasi)
 After=docker.service
 
 [Service]

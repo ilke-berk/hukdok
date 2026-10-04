@@ -3,7 +3,7 @@ import { Configuration, PublicClientApplication } from "@azure/msal-browser";
 /**
  * MSAL Configuration for Microsoft Authentication
  * 
- * This configures the authentication flow for HukuDok web app.
+ * This configures the authentication flow for HUKDOK web app.
  * Users will sign in with their Microsoft 365 accounts.
  */
 export const msalConfig: Configuration = {

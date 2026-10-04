@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HukuDok prod deploy (Faz 1-C).
+# HUKDOK prod deploy (Faz 1-C).
 #
 # Kullanım (sunucuda, mesai dışı):   cd ~/hukdok && ./deploy.sh
 #   Tam test paketiyle deploy (~13 dk ek):             ./deploy.sh --with-tests

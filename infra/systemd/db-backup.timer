@@ -1,5 +1,5 @@
 [Unit]
-Description=HukuDok gecelik Postgres yedegini 00:30 UTC (03:30 TR) kostur
+Description=HUKDOK gecelik Postgres yedegini 00:30 UTC (03:30 TR) kostur
 
 [Timer]
 OnCalendar=*-*-* 00:30:00

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HukuDok geri dönüş (Faz 1-C) — deploy.sh'ın SHA-etiketli imajlarına döner.
+# HUKDOK geri dönüş (Faz 1-C) — deploy.sh'ın SHA-etiketli imajlarına döner.
 #
 # Kullanım:  ./rollback.sh <git-kısa-sha>
 #            ./rollback.sh            → mevcut geri dönüş etiketlerini listeler

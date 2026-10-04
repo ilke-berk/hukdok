@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // LexisPage — `/lexis` önizleme sayfası: beş sekme, seçili sekme URL'de (`?sekme=`), "Rapor yaz" sekme
-// değişince bağlı kalır (yarım taslak kaybolmaz), örnek veri şeridi görünür, ☰ HukuDok menüsünü açar.
+// değişince bağlı kalır (yarım taslak kaybolmaz), örnek veri şeridi görünür, ☰ HUKDOK menüsünü açar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -97,10 +97,10 @@ describe("LexisPage", () => {
     expect(sekme("Rapor yaz").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("odak moduna girer ve ☰ HukuDok menüsünü açar", async () => {
+  it("odak moduna girer ve ☰ HUKDOK menüsünü açar", async () => {
     await ciz();
     expect(odak.setOdak).toHaveBeenCalledWith(true);
-    await act(async () => kap.querySelector<HTMLButtonElement>('[aria-label="HukuDok menüsünü aç"]')!.click());
+    await act(async () => kap.querySelector<HTMLButtonElement>('[aria-label="HUKDOK menüsünü aç"]')!.click());
     expect(odak.menuyuAc).toHaveBeenCalledTimes(1);
   });
 });

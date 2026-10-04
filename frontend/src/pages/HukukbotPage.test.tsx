@@ -252,7 +252,7 @@ describe("HukukbotPage — sohbet listesi", () => {
 });
 
 describe("HukukbotPage — yeniden tasarım (28.09)", () => {
-  it("kabuğu odak moduna alır; ☰ HukuDok menüsünü açar; ayrılınca odak biter", async () => {
+  it("kabuğu odak moduna alır; ☰ HUKDOK menüsünü açar; ayrılınca odak biter", async () => {
     const setOdak = vi.fn();
     const menuyuAc = vi.fn();
     await act(async () => {
@@ -267,7 +267,7 @@ describe("HukukbotPage — yeniden tasarım (28.09)", () => {
     await bekle();
     expect(setOdak).toHaveBeenLastCalledWith(true);
     const menuDugmeleri = Array.from(kap.querySelectorAll<HTMLButtonElement>("button")).filter(
-      (b) => b.getAttribute("aria-label") === "HukuDok menüsünü aç",
+      (b) => b.getAttribute("aria-label") === "HUKDOK menüsünü aç",
     );
     expect(menuDugmeleri.length).toBeGreaterThan(0);
     await tikla(menuDugmeleri[0]);
@@ -563,7 +563,7 @@ describe("HukukbotPage — soru gönderme ve akış", () => {
       ],
     }) as HukukbotOturum;
 
-  it("HukuDok'tan aktarılmış kaynak HukuDok arşivinden açılır: sekme tıklamada açılır, Hukukbot /download'a gidilmez", async () => {
+  it("HUKDOK'tan aktarılmış kaynak HUKDOK arşivinden açılır: sekme tıklamada açılır, Hukukbot /download'a gidilmez", async () => {
     const sekme = { close: vi.fn(), location: { href: "" } } as unknown as Window;
     const ac = vi.spyOn(window, "open").mockReturnValue(sekme);
     apiMock.hukudokBelgesiniAc.mockResolvedValueOnce(undefined);
@@ -586,7 +586,7 @@ describe("HukukbotPage — soru gönderme ve akış", () => {
     ac.mockRestore();
   });
 
-  it("HukuDok açma hatasında boş sekme kapanır, Türkçe toast", async () => {
+  it("HUKDOK açma hatasında boş sekme kapanır, Türkçe toast", async () => {
     const sekme = { close: vi.fn(), location: { href: "" } } as unknown as Window;
     const ac = vi.spyOn(window, "open").mockReturnValue(sekme);
     apiMock.hukudokBelgesiniAc.mockRejectedValueOnce(new HukukbotApiError(404, "Belge bulunamadı"));
@@ -594,7 +594,7 @@ describe("HukukbotPage — soru gönderme ve akış", () => {
     await ciz("/hukukbot?s=o-hd");
     await tikla(dugme("PDF'i aç: Tebligat"));
     expect(sekme.close).toHaveBeenCalled();
-    expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining("HukuDok arşivinden açılamadı"));
+    expect(toastMocks.error).toHaveBeenCalledWith(expect.stringContaining("HUKDOK arşivinden açılamadı"));
     ac.mockRestore();
   });
 });

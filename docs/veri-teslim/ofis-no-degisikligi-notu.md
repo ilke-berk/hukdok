@@ -11,11 +11,11 @@
 > beş bloklu düzeni anlatır. `SOZLESME.md`'deki `ofis-no-formati.md` atıfı da bu nota
 çevrilmelidir (açık iş — iki dosya G240 kapsamında değildi).
 
-**Tarih:** `[gönderim tarihi]` · **Muhatap:** veri ekibi · **Karşı taraf:** HukuDok
+**Tarih:** `[gönderim tarihi]` · **Muhatap:** veri ekibi · **Karşı taraf:** HUKDOK
 
 Merhaba,
 
-HukuDok'ta dava kartlarına verdiğimiz **ofis dosya numarasının** (cevap dosyalarımızdaki
+HUKDOK'ta dava kartlarına verdiğimiz **ofis dosya numarasının** (cevap dosyalarımızdaki
 `tracking_no` sütunu) biçimini değiştiriyoruz. Numarayı siz üretmiyorsunuz ve teslim paketi
 ona dokunmuyor (sözleşme §10); sizin tarafınızda **paket biçiminde hiçbir değişiklik
 gerekmiyor**. Bu not, cevap dosyalarımızda göreceğiniz yeni numarayı okuyabilmeniz ve
@@ -131,6 +131,6 @@ o satırı size geri sorarız.
 - Eşleşme köprüsü aynı: `SistemNo`, `DosyaNo` ↔ klasör no, `TKU`.
 - Cevap dosyalarımızın sütunları aynı; yalnız `tracking_no` sütunundaki değerin biçimi
   geçişten sonra yenidir.
-- HukuDok'ta eski numarayla arama çalışmaya devam eder.
+- HUKDOK'ta eski numarayla arama çalışmaya devam eder.
 
 Geçiş tarihi: `[tarih]`. Sorularınız için bize yazabilirsiniz.

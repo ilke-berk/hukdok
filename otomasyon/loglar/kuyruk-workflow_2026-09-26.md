@@ -9,12 +9,12 @@
 | görev | bant | commit | kapı | denetim | not |
 | --- | --- | --- | --- | --- | --- |
 | G198 · Zamanlayıcı pytz'den kurtulur (zoneinfo + APScheduler 3.11.3) | backend | 9e0deb9 | geçti (kırmızı-yeşil kanıtlandı) | GEÇTİ (4 düşük önemli bulgu) | 3 tur; 3637 passed / 11 skipped, ruff+mypy yeşil. Liderde işler 00:00/02:30/06:00 TR. "Sabit tek yerde" hedefi literal uygulanmadı (G085 AST bekçisi literal ZoneInfo istiyor, 4 literal çağrı). pytz imaja Office365-REST-Python-Client üzerinden hâlâ giriyor (Faz 3). tzdata pin'lenmedi. Repo kökünde çalışıldı, merge yok. |
-| G204 · lib/hukukbotApi.ts (oturum CRUD + /ask NDJSON + PDF indirme) | frontend | 99960a3 | geçti (kırmızı-yeşil kanıtlandı) | GEÇTİ (4 bulgu) | 1 tur; `apiClient.fetch` üzerinden (reportsChat deseni), api.ts'e dokunulmadı. Başlık `session-id` (tireli). Hukbot'un yenilemeden sonra 401 dönmesi HukuDok logout'unu tetikler — canlı dumanda doğrulanmalı. Worktree merge edildi, entegrasyon yeşil, worktree temizlendi. |
+| G204 · lib/hukukbotApi.ts (oturum CRUD + /ask NDJSON + PDF indirme) | frontend | 99960a3 | geçti (kırmızı-yeşil kanıtlandı) | GEÇTİ (4 bulgu) | 1 tur; `apiClient.fetch` üzerinden (reportsChat deseni), api.ts'e dokunulmadı. Başlık `session-id` (tireli). Hukbot'un yenilemeden sonra 401 dönmesi HUKDOK logout'unu tetikler — canlı dumanda doğrulanmalı. Worktree merge edildi, entegrasyon yeşil, worktree temizlendi. |
 | G199 · requests 2.34.2 + activity_manager Graph payload tipi | backend | 1d62a64 | geçti (kırmızı-yeşil uygulanamaz) | GEÇTİ (2 bulgu) | Yalnız tip açıklaması; kırmızı kanıtı `mypy --shadow-file` ile (açıklamasız kopyada activity_manager.py:257 arg-type). 3637 passed / 11 skipped. Sürüm notu ayrıntısı dışarıdan okunmadı. |
 
 ## Bloke
 
-### G205 · /hukukbot sayfası HukuDok tasarımıyla; testler (frontend)
+### G205 · /hukukbot sayfası HUKDOK tasarımıyla; testler (frontend)
 
 - **Durma sebebi:** `kapsam-disi-gerekti` — kapsam dışı dosya gerekti (commit yok).
 - **Son parmak izi:** `App.lazy.test.tsx > geri kalan her sayfa React.lazy + importWithReload ile yüklenir: AssertionError expected length 12 got 13`

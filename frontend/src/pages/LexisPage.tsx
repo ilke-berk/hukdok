@@ -16,7 +16,7 @@ import { Tezgah } from "@/components/lexis/Tezgah";
  * isteği "Word indir"dir: örnek taslak Lexis servisine gider (`lib/lexisWord.ts`).
  * Entegrasyona dek yalnız yönetici görür (menü + `ProtectedAdminRoute`).
  *
- * - Odak modu (`useOdakModu`, Hukukbot deseni): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir; HukuDok menüsü
+ * - Odak modu (`useOdakModu`, Hukukbot deseni): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir; HUKDOK menüsü
  *   üst çubuktaki ☰ ile açılır. Sayfa `max-w` koymaz.
  * - Sekme URL'de: `/lexis?sekme=<kod>` (varsayılan "Rapor yaz" parametresizdir). "Rapor yaz" gövdesi sekme
  *   değişince de bağlı kalır (gizlenir) — yarım taslak kaybolmaz; diğer sekmeler açılınca bağlanır.
@@ -79,7 +79,7 @@ export default function LexisPage() {
         <button
           type="button"
           onClick={menuyuAc}
-          aria-label="HukuDok menüsünü aç"
+          aria-label="HUKDOK menüsünü aç"
           className="w-8 h-8 grid place-items-center rounded-[3px] border border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--brand)] hover:border-[var(--brand)] shrink-0"
         >
           <Menu className="w-4 h-4" />

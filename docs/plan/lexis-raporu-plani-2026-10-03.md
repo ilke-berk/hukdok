@@ -4,21 +4,21 @@
 **Durum:** **ONAY BEKLİYOR** — kuyruk görevleri (`gorevler/`) henüz yazılmadı; §2'deki kararlar
 verilince §7'deki bölümleme görev dosyalarına dönüşür.
 
-> **Yön değişikliği (03.10, kullanıcı kararı):** araç önce **HukuDok'tan ayrı** geliştirilecek, sonra
-> entegre edilecek. Bu yüzden K1 ("modül HukuDok backend'inde") ve §7'deki görev bölümlemesi (HukuDok
+> **Yön değişikliği (03.10, kullanıcı kararı):** araç önce **HUKDOK'tan ayrı** geliştirilecek, sonra
+> entegre edilecek. Bu yüzden K1 ("modül HUKDOK backend'inde") ve §7'deki görev bölümlemesi (HUKDOK
 > dosyalarına göre yazılmıştı) GEÇERSİZ; §1 ölçümleri, §3 istenecekler, §4 veri modeli, §5 emsal hattı ve
 > §6 üretim akışı geçerliliğini korur. Ayrı aracın yeri ve entegrasyon biçimi kararlaşınca §2 ve §7
 > yeniden yazılır.
 >
 > **Ayrı araç (03.10):** kardeş klasör `..\lexis-rapor` (ayrı depo). Okuyucu, maskeleme ve çıkarım modülü
 > orada; durum ve pilot ölçümü o deponun `README.md`'sinde. **Güncel uygulama planı `..\lexis-rapor\PLAN.md`'dir**
-> (rapor yazıcı + benzer eski rapor bulucu + Word çıktısı + HukuDok entegrasyonu); bu dosyanın §6-§7'si
-> onun yerini tutmaz. Belge uçları HukuDok'ta VAR (04.10 düzeltmesi; önceki "yeni bir uç gerekir" cümlesi
+> (rapor yazıcı + benzer eski rapor bulucu + Word çıktısı + HUKDOK entegrasyonu); bu dosyanın §6-§7'si
+> onun yerini tutmaz. Belge uçları HUKDOK'ta VAR (04.10 düzeltmesi; önceki "yeni bir uç gerekir" cümlesi
 > yanlıştı): `GET /api/cases/{case_id}/documents` (`backend/routes/documents.py:93`) ve
-> `GET /api/documents/{doc_id}/download` (`:286`), ikisi de kullanıcı token'ıyla. HukuDok tarafında açık kalan
+> `GET /api/documents/{doc_id}/download` (`:286`), ikisi de kullanıcı token'ıyla. HUKDOK tarafında açık kalan
 > tek soru kart yanıtının uzmanlığı verip vermediğidir (`lexis-rapor/PLAN.md` S5).
 >
-> **Arayüz önizlemesi (04.10, kullanıcı kararı):** ekran, çekirdeğin API'si beklenmeden HukuDok frontend'inde
+> **Arayüz önizlemesi (04.10, kullanıcı kararı):** ekran, çekirdeğin API'si beklenmeden HUKDOK frontend'inde
 > **sentetik örnek veriyle** kuruldu — **§10**. Backend'e dokunulmadı.
 
 > **Bu dosya sözleşme kaynağıdır.** Görevler aşağıdaki tablo/uç/alan adlarına uyar; bir görev sözleşmeyi
@@ -27,7 +27,7 @@ verilince §7'deki bölümleme görev dosyalarına dönüşür.
 
 ## 0. Amaç ve kapsam
 
-Sigorta şirketlerine yazılan **Lexis medikolegal raporunun taslağını** HukuDok içinde üretmek:
+Sigorta şirketlerine yazılan **Lexis medikolegal raporunun taslağını** HUKDOK içinde üretmek:
 dava kartı + dosyanın belgeleri (dilekçe, hekim beyanı, bilirkişi raporu, uzman görüşü) girer; şirketin
 iskeletine uygun, emsal raporlardan beslenen, **insanın düzeltip imzaladığı** bir Word taslağı çıkar.
 
@@ -88,7 +88,7 @@ boş ve atıf yapılan emsal Excel'i yok; AK/Quick/Nippon kriteri yok; girdi bel
 | Aşama kararı / yerel karar durumu | %41 / %34 | AXA %71, Nippon %12 |
 | Tıbbi süreç-olay-kusur-zarar | %22 | Beşi de dolu 320 kart; hiçbiri yok 2.305 kart |
 | Hükmedilen manevi | %7 | ~200 kart |
-| HukuDok'ta işlenmiş belge | %8 | Girdi belgeleri SharePoint klasöründe |
+| HUKDOK'ta işlenmiş belge | %8 | Girdi belgeleri SharePoint klasöründe |
 | Müvekkil kartı bağı, poliçe kaydı, karşı taraf doğum yılı | %0 | |
 
 **Sonuç:** kimlik/mahkeme/uzmanlık karttan gelir; tıbbi içerik, manevi talep, poliçe, muallak, kusur, risk
@@ -101,7 +101,7 @@ Değer havuzları (lokal DB satır sayısı): `specialties` 45 · `medical_proce
 
 | # | Konu | Öneri | Gerekçe |
 | --- | --- | --- | --- |
-| K1 | Modülün yeri | HukuDok backend'i (`services/lexis/`, `routes/lexis.py`) | Dava verisi, belge ve kimlik burada; karar 019 (monolit) |
+| K1 | Modülün yeri | HUKDOK backend'i (`services/lexis/`, `routes/lexis.py`) | Dava verisi, belge ve kimlik burada; karar 019 (monolit) |
 | K2 | Emsal araması | **Postgres + etiket**; File Search/vektör deposu YOK | Külliyat küçük (~3.200 rapor, ~30 MB metin) ve etiketleri güçlü; uzmanlık %99 dolu. Yeni altyapı, kalıcı dış depo ve karar 017 tartışması gerekmez. Yetmezse ölçümle yeniden açılır (§8) |
 | K3 | Etiket sözlüğü | Mevcut değer havuzları (tıbbi beşli + `specialties`); yeni sözlük açılmaz | Yeni dosyanın kartıyla aynı dil → doğrudan eşleşir; ileride karta geri yazım mümkün kalır |
 | K4 | Çıkarım nerede koşar | Lokalde/ayrı makinede `JSONL` üretir; sunucuya yalnız `JSONL` yüklenir | Uzun Gemini koşusu prod web sürecine ve DB'sine binmez; yükleme yalnız yeni tablolara yazar (kart kilidi yok) |
@@ -294,21 +294,21 @@ modele gönderimi, Anadolu dışındaki biçimlerin Word çıktısı.
 
 ### 10.1 Word çıktısı — ilk gerçek uç (04.10.2026)
 
-**Yerleşim kararı (kullanıcı, 04.10): çekirdek AYRI SERVİS olarak koşar** (Hukukbot deseni), HukuDok backend'ine
+**Yerleşim kararı (kullanıcı, 04.10): çekirdek AYRI SERVİS olarak koşar** (Hukukbot deseni), HUKDOK backend'ine
 taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o deponun `README.md` "Servis" bölümü).
 
 ```
 /lexis "Word indir" → lexisApi.wordIndir → lib/lexisWord.ts
-   POST /lexis-api/word  {taslak: LexisTaslak, kunye: {hasar_no, rapor_no}}      (HukuDok access token'ı)
+   POST /lexis-api/word  {taslak: LexisTaslak, kunye: {hasar_no, rapor_no}}      (HUKDOK access token'ı)
 → konteyner nginx (allowlist: word; önek atılır; gecikmeli DNS)  →  lexis_api:8020  (hukuk_shared ağı)
-→ servis: token doğrulama (HukuDok kuralı) + ADMIN_EMAILS → ekran taslağı → RaporTaslagi → word_yaz(şablon)
+→ servis: token doğrulama (HUKDOK kuralı) + ADMIN_EMAILS → ekran taslağı → RaporTaslagi → word_yaz(şablon)
 ← .docx  +  X-Lexis-Uyari-Sayisi / X-Lexis-Uyarilar başlıkları
 ```
 
-- **HukuDok tarafı:** `nginx.conf:209-234` (bekçi `backend/tests/test_nginx_lexis.py`), `frontend/vite.config.ts`
-  dev proxy'si (aynı allowlist), `lib/lexisWord.ts`. HukuDok backend'ine dokunulmadı.
+- **HUKDOK tarafı:** `nginx.conf:209-234` (bekçi `backend/tests/test_nginx_lexis.py`), `frontend/vite.config.ts`
+  dev proxy'si (aynı allowlist), `lib/lexisWord.ts`. HUKDOK backend'ine dokunulmadı.
 - **Künye istekle gider:** taslakta hasar no / rapor no yoktur; örnek adaptör örnek dosyadan verir (rapor no =
-  dosya no). HukuDok adaptörü (`lexis-rapor/PLAN.md` Aşama 8) gelince sunucu karttan kendisi alır.
+  dosya no). HUKDOK adaptörü (`lexis-rapor/PLAN.md` Aşama 8) gelince sunucu karttan kendisi alır.
 - **Muallak:** kesin tutar, boşsa öneri (alan alan — K11). Dayanak, kaynak ve gerekçe alanları Word'e girmez (K13).
 - **Yalnız Anadolu biçimi:** diğer iskeletlerde servis 422 + açıklama döner (`lexis-rapor/PLAN.md` Aşama 5b).
 - **Hata ayrımı (istemci):** servisin kendi hatası JSON `detail` metniyle gösterilir; nginx'in 404/502/504'ü ve
@@ -316,7 +316,7 @@ taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o
   ulaşılamıyor) 401 değil 503 döner: `apiClient` 401'de kullanıcıyı çıkışa götürür, servis arızası oturumu düşürmemeli.
 - **Şablon:** kişi verisi kalıntısı taşır → repoya ve imaja girmez; servis host dizininden salt okunur bağlar
   (lokalde `C:\hukdok-veri\lexis\sablonlar\ANADOLU.docx`).
-- **Durum:** lokalde kurulu ve denendi (kimliksiz 401, allowlist dışı 404, servis kapalıyken HukuDok açılıyor +
+- **Durum:** lokalde kurulu ve denendi (kimliksiz 401, allowlist dışı 404, servis kapalıyken HUKDOK açılıyor +
   Word 502; gerçek şablonla dosya üretilip geri okundu). **Tarayıcıdan gerçek girişle uçtan uca tıklama ve
   dosyanın Word'de açılışı denenmedi.** Prod'da servis KURULU DEĞİL: orada düğme "servise ulaşılamadı" der.
   Prod kurulumu insan adımıdır (stack + `.env` + şablon dosyası).

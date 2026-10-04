@@ -30,7 +30,7 @@ type OturumListesiProps = {
   onSabitle: (oturum: HukukbotOturumOzeti) => void;
   /** Onay diyaloğu sayfada sorulur (useConfirm) — burası yalnız isteği iletir. */
   onSil: (oturum: HukukbotOturumOzeti) => void;
-  /** HukuDok menüsünü açar (odak modunda Topbar'daki ☰'nin yeri burasıdır). */
+  /** HUKDOK menüsünü açar (odak modunda Topbar'daki ☰'nin yeri burasıdır). */
   onMenu?: () => void;
   /** Masaüstü: listeyi 48 px raya daraltır / geri açar. */
   onDaraltAc?: () => void;
@@ -56,7 +56,7 @@ const MENU_OGE =
   "w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] text-[var(--fg)] hover:bg-[var(--bg-sunken)] transition-colors";
 
 /**
- * Sol sütun (G205; 28.09 yeniden tasarım): üst satırda HukuDok menüsü ☰ + "Hukukbot" + daralt düğmesi,
+ * Sol sütun (G205; 28.09 yeniden tasarım): üst satırda HUKDOK menüsü ☰ + "Hukukbot" + daralt düğmesi,
  * "Yeni sohbet", arama kutusu (başlık/önizleme, Türkçe harf duyarsız), sabitlenenler üstte, geri kalanı
  * tarih gruplarında (Bugün / Dün / Son 7 gün / Son 30 gün / Daha eski). Satır eylemleri (başlık düzenle —
  * satır içi, Enter kaydeder, Esc vazgeçer —, sabitle/çöz, sil) "⋯" menüsündedir. `daraltilmis` iken yalnız
@@ -104,7 +104,7 @@ export function OturumListesi({
     return (
       <div className="flex flex-col items-center gap-2 py-3 h-full" data-testid="hukukbot-ray">
         {onMenu && (
-          <button type="button" onClick={onMenu} aria-label="HukuDok menüsünü aç" title="HukuDok menüsü" className={RAY_DUGME}>
+          <button type="button" onClick={onMenu} aria-label="HUKDOK menüsünü aç" title="HUKDOK menüsü" className={RAY_DUGME}>
             <Menu className="w-4 h-4" />
           </button>
         )}
@@ -288,7 +288,7 @@ export function OturumListesi({
       <div className="p-3 grid gap-2.5 border-b border-[var(--border)]">
         <div className="flex items-center gap-2 min-w-0">
           {onMenu && (
-            <button type="button" onClick={onMenu} aria-label="HukuDok menüsünü aç" title="HukuDok menüsü" className={RAY_DUGME}>
+            <button type="button" onClick={onMenu} aria-label="HUKDOK menüsünü aç" title="HUKDOK menüsü" className={RAY_DUGME}>
               <Menu className="w-4 h-4" />
             </button>
           )}

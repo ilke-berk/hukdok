@@ -17,7 +17,7 @@ type DavaSeciciProps = {
 
 /**
  * Rapor yazılacak davayı arar ve seçer. Seçilen dava çip olarak kalır; "Değiştir" aramaya döner. Boş sorgu
- * son davaları listeler. Arama `lexisApi.davaAra` üzerinden — entegrasyonda HukuDok dava aramasına bağlanır.
+ * son davaları listeler. Arama `lexisApi.davaAra` üzerinden — entegrasyonda HUKDOK dava aramasına bağlanır.
  */
 export function DavaSecici({ secili, onSec, kilitli = false, gecikme = 250 }: DavaSeciciProps) {
   const [sorgu, setSorgu] = useState("");

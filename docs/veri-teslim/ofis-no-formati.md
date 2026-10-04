@@ -1,8 +1,8 @@
 # Ofis dosya numarası (ofis no) formatı — veri ekibi için
 
-**Tarih:** 26.09.2026 · **Muhatap:** veri ekibi · **Karşı taraf:** HukuDok
+**Tarih:** 26.09.2026 · **Muhatap:** veri ekibi · **Karşı taraf:** HUKDOK
 
-Bu belge, HukuDok'ta her dava kartına verilen **ofis dosya numarasının** (içeride `tracking_no`)
+Bu belge, HUKDOK'ta her dava kartına verilen **ofis dosya numarasının** (içeride `tracking_no`)
 nasıl kurulduğunu anlatır. Ofis numarasını **siz üretmezsiniz** ve teslim paketi ona dokunmaz
 (`SOZLESME.md` §10, "Kart / iş akışı" satırı). Numarayı cevap dosyalarında görürsünüz
 (`eslesme_<teslim>.csv` → `tracking_no` sütunu, sözleşme §8); bu belge onu okuyup
