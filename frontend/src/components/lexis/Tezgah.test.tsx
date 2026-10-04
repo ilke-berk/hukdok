@@ -17,8 +17,12 @@ vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => confirmMock.fn }));
 const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
 vi.mock("@/lib/lexisWord", () => wordMock);
 
+// Gerçek dava kipinde dosya bölgesi servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
+const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn() }));
+vi.mock("@/lib/lexisServis", () => servisMock);
+
 import { Tezgah } from "./Tezgah";
-import { LexisApiError, ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
+import { GERCEK_TASLAK_YOK, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -106,6 +110,31 @@ beforeEach(() => {
 afterEach(() => {
   act(() => kok.unmount());
   kap.remove();
+  veriKipiAyarla("ornek");
+});
+
+describe("Tezgah — gerçek dava kipi", () => {
+  it("dava, künye ve emsaller servisten gelir; taslak yazımı ve elle emsal ekleme kapalıdır", async () => {
+    // Servis yanıtları örnek adaptörün ürettiği biçimdedir (sözleşme aynı); kimlikler gerçek karta aittir.
+    const dosya = { ...(await lexisApi.dosyaGetir(9003)), onceki_rapor: null };
+    const emsaller = await lexisApi.emsalOner({ case_id: 9003, sirket: dosya.sirket, rapor_turu: dosya.rapor_turu });
+    const dava = { ...dosya.dava, case_id: 501, ofis_no: "QUICK-0501-DR.GERCEK-HUK" };
+    servisMock.davaAra.mockResolvedValue([dava]);
+    servisMock.dosyaGetir.mockResolvedValue({ ...dosya, dava });
+    servisMock.emsalOner.mockResolvedValue(emsaller);
+
+    veriKipiAyarla("gercek");
+    await ciz();
+    await davaSec("QUICK-0501");
+
+    expect(servisMock.dosyaGetir.mock.calls[0][0]).toBe(501);
+    expect(servisMock.emsalOner.mock.calls[0][0]).toMatchObject({ case_id: 501, sirket: "QUICK" });
+    expect(test("lexis-kunye")!.textContent).toContain("Bursa 1. Tüketici Mahkemesi");
+    expect(test("lexis-emsaller")!.querySelectorAll("li").length).toBe(emsaller.length);
+    expect(test("lexis-taslak-bagli-degil")!.textContent).toBe(GERCEK_TASLAK_YOK);
+    expect(dugme("Taslağı yaz").disabled).toBe(true);
+    expect(kap.querySelector('[aria-label="Kütüphaneden emsal ekle"]')).toBeNull();
+  });
 });
 
 describe("Tezgah — dosya bölgesi", () => {

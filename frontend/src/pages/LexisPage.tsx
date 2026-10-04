@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router";
 import { FlaskConical, Menu } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useOdakModu } from "@/hooks/useOdakModu";
-import { ORNEK_VERI } from "@/lib/lexisApi";
+import { ORNEK_VERI, veriKipiAyarla, type VeriKipi } from "@/lib/lexisApi";
+import { BAGLANTI_SINIFI } from "@/components/lexis/yardimcilar";
 import { GecmisTablosu } from "@/components/lexis/GecmisTablosu";
 import { KartBagiListesi } from "@/components/lexis/KartBagiListesi";
 import { KutuphaneTarayici } from "@/components/lexis/KutuphaneTarayici";
@@ -42,6 +43,21 @@ export default function LexisPage() {
   const menuyuAc = useOdakModu();
   const [params, setParams] = useSearchParams();
   const sekme = sekmeCoz(params.get("sekme"));
+  // Veri kipi URL'dedir (`?veri=gercek`); adaptör modül düzeyinde seçilir, çocuklar çizilmeden ÖNCE ayarlanır.
+  const kip: VeriKipi = params.get("veri") === "gercek" ? "gercek" : "ornek";
+  veriKipiAyarla(kip);
+
+  const kipDegistir = useCallback(() => {
+    setParams(
+      (onceki) => {
+        const sonraki = new URLSearchParams(onceki);
+        if (kip === "gercek") sonraki.delete("veri");
+        else sonraki.set("veri", "gercek");
+        return sonraki;
+      },
+      { replace: true },
+    );
+  }, [kip, setParams]);
 
   const sekmeyeGit = useCallback(
     (hedef: SekmeKodu) => {
@@ -61,7 +77,7 @@ export default function LexisPage() {
   const govde = (kod: SekmeKodu): ReactNode => {
     switch (kod) {
       case "yaz":
-        return <Tezgah />;
+        return <Tezgah key={kip} />;
       case "gecmis":
         return <GecmisTablosu />;
       case "kutuphane":
@@ -116,8 +132,15 @@ export default function LexisPage() {
           className="shrink-0 flex items-center gap-2 px-3 md:px-5 py-1.5 border-b border-dashed border-[var(--border-strong)] text-[12px] text-[var(--fg-muted)]"
         >
           <FlaskConical className="w-3.5 h-3.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
-          <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">Örnek veri</span>
-          <span className="min-w-0 truncate">— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez. Yalnız "Word indir" örnek taslağı Lexis servisine gönderir.</span>
+          <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">{kip === "gercek" ? "Gerçek dava" : "Örnek veri"}</span>
+          <span className="min-w-0 truncate">
+            {kip === "gercek"
+              ? "— dava, künye, belge listesi ve emsal önerisi gerçek veridir (emsal metni maskeli). Taslak yazımı henüz bağlı değil; diğer sekmeler örnek veridir."
+              : "— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez. Yalnız \"Word indir\" örnek taslağı Lexis servisine gönderir."}
+          </span>
+          <button type="button" data-testid="lexis-kip-dugmesi" onClick={kipDegistir} className={`ml-auto shrink-0 whitespace-nowrap ${BAGLANTI_SINIFI}`}>
+            {kip === "gercek" ? "Örnek veriye dön" : "Gerçek davalarla dene"}
+          </button>
         </div>
       )}
 

@@ -42,7 +42,7 @@ import {
   type TaslakKosusu,
 } from "@/types/lexis";
 
-/** Sayfa örnek veriyle mi çalışıyor — entegrasyonda false. */
+/** Örnek adaptör devrede mi — entegrasyon tamamlanınca false. Dava bölgesinin kipi ayrıca `veriKipi()`. */
 export const ORNEK_VERI = true;
 
 export const LEXIS_GENEL_HATA = "Lexis isteği tamamlanamadı.";
@@ -117,6 +117,7 @@ let gecikmeMs = 320;
 /** Test yardımcısı: örnek adaptörün bellek durumunu başa alır. */
 export function ornekDurumuSifirla(): void {
   durum = ilkDurum();
+  kip = "ornek";
 }
 
 /** Akış ve istek gecikmesi (ms) — testler 0 yapar. */
@@ -432,4 +433,59 @@ const ornekLexisApi: LexisApi = {
   },
 };
 
-export const lexisApi: LexisApi = ornekLexisApi;
+// ---------------------------------------------------------------------------------------------
+// Veri kipi: örnek (varsayılan) ya da gerçek dava
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `ornek`: her şey bellekteki sentetik veriden. `gercek`: "Rapor yaz" sekmesinin DOSYA bölgesi (dava arama,
+ * künye, belge listesi, emsal önerisi) Lexis servisinden gelir (`lib/lexisServis.ts`); taslak yazımı henüz bağlı
+ * değildir ve diğer sekmeler örnek veride kalır. Kipi sayfa seçer (`LexisPage`, `?veri=gercek`).
+ */
+export type VeriKipi = "ornek" | "gercek";
+
+let kip: VeriKipi = "ornek";
+
+export function veriKipi(): VeriKipi {
+  return kip;
+}
+
+export function veriKipiAyarla(yeni: VeriKipi): void {
+  kip = yeni;
+}
+
+export const GERCEK_TASLAK_YOK =
+  "Gerçek davada taslak yazımı henüz bağlı değil: belgelerin okunması ve bölümlerin yazımı sıradaki aşamada gelecek.";
+export const GERCEK_EMSAL_EKLE_YOK = "Gerçek davada kütüphaneden elle emsal ekleme henüz bağlı değil.";
+
+// Servis modülü dinamik yüklenir: örnek kip `apiClient`'ı (MSAL) hiç yüklemez.
+const gercekLexisApi: LexisApi = {
+  ...ornekLexisApi,
+  async davaAra(sorgu, signal) {
+    return (await import("@/lib/lexisServis")).davaAra(sorgu, signal);
+  },
+  async dosyaGetir(caseId, signal) {
+    return (await import("@/lib/lexisServis")).dosyaGetir(caseId, signal);
+  },
+  async emsalOner(istek, signal) {
+    return (await import("@/lib/lexisServis")).emsalOner(istek, signal);
+  },
+  async emsalPuanla() {
+    throw new LexisApiError(501, GERCEK_EMSAL_EKLE_YOK);
+  },
+  // Akış sözleşmesi: `failed` SON olaydır; burada tek olaydır.
+  async *taslakYaz() {
+    yield { status: "failed", error_ozet: GERCEK_TASLAK_YOK, error_kod: "analysis_error" };
+  },
+  async denetle() {
+    return [];
+  },
+  async wordIndir() {
+    throw new LexisApiError(501, GERCEK_TASLAK_YOK);
+  },
+};
+
+/** Sayfanın tek kapısı: her çağrı o anki kipin adaptörüne gider. */
+export const lexisApi: LexisApi = new Proxy(ornekLexisApi, {
+  get: (_hedef, ad) => (kip === "gercek" ? gercekLexisApi : ornekLexisApi)[ad as keyof LexisApi],
+});

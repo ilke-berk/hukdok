@@ -10,7 +10,8 @@ type EmsalListesiProps = {
   hata: string | null;
   onOku: (emsal: Emsal) => void;
   onCikar: (sha256: string) => void;
-  onEkle: () => void;
+  /** Verilmezse "kütüphaneden ekle" düğmesi çizilmez (gerçek dava kipinde henüz bağlı değil). */
+  onEkle?: () => void;
   kilitli?: boolean;
 };
 
@@ -23,9 +24,11 @@ export function EmsalListesi({ emsaller, yukleniyor, hata, onOku, onCikar, onEkl
     <section aria-label="Emsal raporlar" data-testid="lexis-emsaller" className="grid gap-2">
       <BolgeBasligi
         sag={
-          <SimgeDugmesi etiket="Kütüphaneden emsal ekle" onClick={onEkle} disabled={kilitli}>
-            <Plus className="w-3.5 h-3.5" />
-          </SimgeDugmesi>
+          onEkle && (
+            <SimgeDugmesi etiket="Kütüphaneden emsal ekle" onClick={onEkle} disabled={kilitli}>
+              <Plus className="w-3.5 h-3.5" />
+            </SimgeDugmesi>
+          )
         }
       >
         Emsal raporlar

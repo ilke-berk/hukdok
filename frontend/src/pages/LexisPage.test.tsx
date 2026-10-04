@@ -10,9 +10,13 @@ vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => async () => true }));
 
+// Gerçek dava kipinde dosya bölgesi servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
+const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn() }));
+vi.mock("@/lib/lexisServis", () => servisMock);
+
 import LexisPage from "./LexisPage";
 import { OdakModuContext } from "@/hooks/useOdakModu";
-import { ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
+import { ornekDurumuSifirla, ornekGecikmeAyarla, veriKipi } from "@/lib/lexisApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -86,6 +90,29 @@ describe("LexisPage", () => {
     await act(async () => sekme("Rapor yaz").click());
     expect(konum).toBe("/lexis");
     expect(kap.querySelector("#lexis-govde-kutuphane")).toBeNull();
+  });
+
+  it("şeritteki düğme veri kipini URL'ye yazar; sekme değişimi kipi korur", async () => {
+    servisMock.davaAra.mockResolvedValue([]);
+    await ciz();
+    const dugme = () => kap.querySelector<HTMLButtonElement>('[data-testid="lexis-kip-dugmesi"]')!;
+    expect(dugme().textContent).toBe("Gerçek davalarla dene");
+    expect(veriKipi()).toBe("ornek");
+
+    await act(async () => dugme().click());
+    expect(konum).toBe("/lexis?veri=gercek");
+    expect(veriKipi()).toBe("gercek");
+    expect(kap.querySelector('[data-testid="lexis-ornek-seridi"]')!.textContent).toContain("Gerçek dava");
+    // dava listesi artık servisten (arama gecikmeli ve modül dinamik yüklenir)
+    await act(async () => {
+      await vi.waitFor(() => expect(servisMock.davaAra).toHaveBeenCalled(), { timeout: 3000 });
+    });
+
+    await act(async () => sekme("Kütüphane").click());
+    expect(konum).toBe("/lexis?veri=gercek&sekme=kutuphane");
+    await act(async () => dugme().click());
+    expect(konum).toBe("/lexis?sekme=kutuphane");
+    expect(veriKipi()).toBe("ornek");
   });
 
   it("URL'deki sekme açılır; tanınmayan değer varsayılana düşer", async () => {

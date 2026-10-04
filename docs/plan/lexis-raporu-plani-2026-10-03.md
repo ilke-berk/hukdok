@@ -323,6 +323,8 @@ taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o
 - **Muallak çekirdekte koddan (04.10, K11):** `lexis-rapor/lexis_rapor/muallak.py` öneriyi kriter tablosu → emsal →
   boş sırasıyla hesaplar; biçimi ekrandaki `MuallakOnerisi` ile aynıdır. Ekran bugün hâlâ örnek öneriyi gösterir;
   servise "muallak öner" ucu eklenince gerçeği gelir (`lexis-rapor/PLAN.md` Aşama 8).
+- **Son madde karttaki tutarla (04.10):** Word ucunda değerlendirmenin son (`KALIP`) maddesi karttaki muallak
+  tutarını söylemiyorsa (insan kesin tutar yazmış) servis cümleyi yeniden kurar ve uyarı döner.
 - **Hata ayrımı (istemci):** servisin kendi hatası JSON `detail` metniyle gösterilir; nginx'in 404/502/504'ü ve
   SPA'ya düşmüş 200 "Lexis servisine ulaşılamadı" olur. Servis doğrulama YAPAMADIĞINDA (ayar eksik, JWKS'e
   ulaşılamıyor) 401 değil 503 döner: `apiClient` 401'de kullanıcıyı çıkışa götürür, servis arızası oturumu düşürmemeli.
@@ -332,3 +334,28 @@ taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o
   Word 502; gerçek şablonla dosya üretilip geri okundu). **Tarayıcıdan gerçek girişle uçtan uca tıklama ve
   dosyanın Word'de açılışı denenmedi.** Prod'da servis KURULU DEĞİL: orada düğme "servise ulaşılamadı" der.
   Prod kurulumu insan adımıdır (stack + `.env` + şablon dosyası).
+
+### 10.2 Gerçek dava kipi — dosya bölgesi servisten (04.10.2026)
+
+`/lexis` şeridindeki "Gerçek davalarla dene" düğmesi kipi URL'ye yazar (`?veri=gercek`); `lexisApi` her çağrıyı o
+anki kipin adaptörüne yollar (`lib/lexisApi.ts::veriKipi`, `Proxy`). Örnek kip varsayılandır ve değişmedi.
+
+```
+/lexis?veri=gercek   →  lexisApi (gerçek adaptör)  →  lib/lexisServis.ts
+   GET  /lexis-api/davalar?q=       dava arama (müvekkili sigorta şirketi olanlar önde)
+   GET  /lexis-api/dosya/{case_id}  kart + belge listesi → DosyaGirdisi
+   POST /lexis-api/emsal-oner       en benzer eski raporlar (maskeli), puan + gerekçe
+→ konteyner nginx (allowlist) → lexis_api:8020 → servis/hukdok.py
+→ HUKDOK'un MEVCUT uçları, kullanıcının token'ıyla:  /api/cases · /api/cases/{id} · /api/cases/{id}/documents
+```
+
+- **HUKDOK backend'ine dokunulmadı.** Değişen: `nginx.conf` allowlist'i (`word|davalar|dosya|emsal-oner`), bekçi
+  `backend/tests/test_nginx_lexis.py`, `frontend/vite.config.ts` dev proxy'si, `lib/lexisServis.ts` (yeni),
+  `lib/lexisApi.ts` (kip + gerçek adaptör), `pages/LexisPage.tsx` (şerit düğmesi), `components/lexis/Tezgah.tsx`.
+- **Bu kipte bağlı OLMAYANLAR:** taslak yazımı (düğme kapalı, nedeni yazılı), denetim, Word, kütüphaneden elle
+  emsal ekleme; Geçmiş / Kütüphane / Kart bağı / Şirketler sekmeleri örnek veride kalır (şerit bunu söyler).
+- **Karttan gelmeyenler boş kalır** (`lexis-rapor` README "HUKDOK adaptörü"): sigortalı hekim çoğu kartta ayırt
+  edilemiyor; poliçe no, teminat limiti ve hastane kartta yok; hekim beyanının HUKDOK'ta belge türü yok (ekran o
+  belgeyi "eksik" sayar). Şirket müvekkil adından bulunur (lokal ölçüm: 7.619 aynı · 228 boş · 0 farklı).
+- **Durum:** servis ve adaptör lokalde kurulu; adaptör gerçek kart yanıtlarıyla (backend serileştiricisinden)
+  denendi. **Tarayıcıdan gerçek girişle uçtan uca tıklama yapılmadı.** Prod'da servis kurulu değil.

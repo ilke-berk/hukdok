@@ -4,8 +4,8 @@ Tarayıcının Lexis rapor servisine (`../lexis-rapor`, ayrı stack) tek yolu ko
 nginx'indeki `/lexis-api/` önekidir — Hukukbot proxy'sinin aynı deseni
 (`test_nginx_hukukbot.py`). Bekçi şunları sessizce bozulmaktan korur:
 
-1. ALLOWLIST: yalnız kullanıcı uçları proxy'lenir (bugün `word`); servisin `/health`'i
-   ve geri kalan her `/lexis-api` yolu 404'tür.
+1. ALLOWLIST: yalnız kullanıcı uçları proxy'lenir (`word`, `davalar`, `dosya`,
+   `emsal-oner`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
    Lexis stack'i kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. Vite dev proxy'si aynı allowlist'i taşır.
@@ -44,7 +44,8 @@ def _proxy_govdesi() -> str:
 
 
 # Tam metin: alternatif eklemek, (/|$) çapasını silmek ya da ~ → ~* yapmak allowlist'i genişletir.
-ALLOWLIST_ESLESMESI = "~ ^/lexis-api/(word)(/|$)"
+ALLOWLIST = "(word|davalar|dosya|emsal-oner)"
+ALLOWLIST_ESLESMESI = f"~ ^/lexis-api/{ALLOWLIST}(/|$)"
 
 
 def test_lexis_allowlist_yalniz_kullanici_uclari():
@@ -69,7 +70,7 @@ def test_lexis_geri_kalani_404():
     )
     # nginx regex location'ları dosya sırasıyla dener: allowlist 404 bloğundan ÖNCE olmalı.
     metin = _yorumsuz(NGINX.read_text(encoding="utf-8"))
-    assert metin.index("^/lexis-api/(word)") < metin.index("location ~ ^/lexis-api(/|$)")
+    assert metin.index(f"^/lexis-api/{ALLOWLIST}") < metin.index("location ~ ^/lexis-api(/|$)")
 
 
 def test_lexis_upstream_gecikmeli_cozulur():
@@ -90,7 +91,7 @@ def test_lexis_proxy_guvenlik_basliklarini_dusurmez():
 def test_vite_dev_proxy_ayni_allowlist():
     """`npm run dev` (5173) nginx'i atlar: aynı allowlist Vite proxy'sinde de olmalı."""
     metin = VITE_CONFIG.read_text(encoding="utf-8")
-    assert "'^/lexis-api/(word)(/|$)'" in metin, "Vite allowlist anahtarı nginx ile aynı olmalı"
+    assert f"'^/lexis-api/{ALLOWLIST}(/|$)'" in metin, "Vite allowlist anahtarı nginx ile aynı olmalı"
     lexis_404 = re.search(r"'\^/lexis-api\(/\|\$\)':\s*\{(.*?)\}", metin, re.S)
     assert lexis_404 and re.search(r"bypass:\s*\(\)\s*=>\s*false", lexis_404.group(1)), (
         "allowlist dışı /lexis-api Vite'ta da 404 olmalı"

@@ -4,7 +4,7 @@ import { FolderOpen, PenLine, ScrollText, ShieldCheck, X } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { useConfirm } from "@/hooks/useConfirm";
-import { ORNEK_VERI, lexisApi } from "@/lib/lexisApi";
+import { GERCEK_TASLAK_YOK, lexisApi, veriKipi } from "@/lib/lexisApi";
 import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
 import { BolumGezgini } from "./BolumGezgini";
@@ -57,6 +57,8 @@ export function Tezgah() {
   );
 
   const { dosya, taslak } = t;
+  // Gerçek dava kipinde dosya bölgesi servisten gelir; taslak yazımı ve elle emsal ekleme henüz bağlı değildir.
+  const gercek = veriKipi() === "gercek";
   const bolumler = useMemo(() => (dosya ? ISKELET_BOLUMLERI[dosya.iskelet] : []), [dosya]);
   const bolumAdlari = useMemo(() => Object.fromEntries(bolumler.map((b) => [b.kod, b.baslik])) as Partial<Record<BolumKodu, string>>, [bolumler]);
   const dayanakBolumleri = useMemo(() => bolumler.filter((b) => b.tur === "OZET").map((b) => ({ kod: b.kod, baslik: b.baslik })), [bolumler]);
@@ -97,7 +99,7 @@ export function Tezgah() {
       body:
         (taslak ? "Mevcut taslak ve düzeltmeleriniz silinir. " : "") +
         "Seçili belgelerin metni ve emsal raporların maskeli metni taslak yazımı için modele gönderilir." +
-        (ORNEK_VERI ? " (Önizleme: hiçbir şey gönderilmez, örnek taslak gösterilir.)" : ""),
+        (gercek ? "" : " (Önizleme: hiçbir şey gönderilmez, örnek taslak gösterilir.)"),
       details: [
         { label: "Belgeler", value: secili.length > 0 ? `${secili.length} belge — ${secili.map((b) => b.ad).join(", ")}` : "Belge seçilmedi" },
         { label: "Emsal raporlar", value: t.emsaller.length > 0 ? `${t.emsaller.length} rapor (maskeli)` : "Emsal yok" },
@@ -193,7 +195,7 @@ export function Tezgah() {
                 hata={t.emsalHatasi}
                 onOku={(e) => setOkunan({ kayit: e.kayit, emsal: e })}
                 onCikar={t.emsalCikar}
-                onEkle={() => setEkleAcik(true)}
+                onEkle={gercek ? undefined : () => setEkleAcik(true)}
                 kilitli={kilitli}
               />
             </>
@@ -201,7 +203,12 @@ export function Tezgah() {
         </div>
         {dosya && (
           <div className="shrink-0 p-3 border-t border-[var(--border)]">
-            <FlowButton variant={taslak ? "secondary" : "primary"} className="w-full" onClick={() => void yaz()} disabled={kilitli || t.emsalYukleniyor}>
+            {gercek && (
+              <p data-testid="lexis-taslak-bagli-degil" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">
+                {GERCEK_TASLAK_YOK}
+              </p>
+            )}
+            <FlowButton variant={taslak ? "secondary" : "primary"} className="w-full" onClick={() => void yaz()} disabled={kilitli || t.emsalYukleniyor || gercek}>
               <PenLine className="w-3.5 h-3.5" aria-hidden="true" />
               {taslak ? "Yeniden yaz" : "Taslağı yaz"}
             </FlowButton>

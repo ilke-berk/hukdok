@@ -76,8 +76,8 @@ export default defineConfig(({ mode }) => ({
         bypass: () => false, // Vite: false → 404, istek Hukukbot'a hic gitmez
       },
       // Lexis rapor servisi (04.10.2026): nginx.conf'taki /lexis-api/ allowlist'inin dev karsiligi —
-      // bugun yalniz word, onek atilir. Servis lokalde 127.0.0.1:8020 (../lexis-rapor compose'u).
-      '^/lexis-api/(word)(/|$)': {
+      // ayni uclar, onek atilir. Servis lokalde 127.0.0.1:8020 (../lexis-rapor compose'u).
+      '^/lexis-api/(word|davalar|dosya|emsal-oner)(/|$)': {
         target: 'http://127.0.0.1:8020',
         changeOrigin: true,
         rewrite: (p: string) => p.replace(/^\/lexis-api/, ''),
