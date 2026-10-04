@@ -279,7 +279,7 @@ export const ISKELET_BOLUMLERI: Record<YazilabilirIskelet, BolumTanimi[]> = {
   ALTILI: [
     bolum("hasar", "Mahkeme ve Tazminat Bilgisi"),
     bolum("iddia", "Davada Yer Alan İddia"),
-    bolum("beyan", "Sigortalı Hekim Beyanı"),
+    bolum("beyan", "Sigortalı Hekim Beyan Özeti"),
     bolum("police", "Poliçe Tespiti"),
     bolum("uzman_gorusu", "Uzman Görüşü"),
     bolum("degerlendirme", "Değerlendirme"),

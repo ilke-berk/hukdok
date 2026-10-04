@@ -310,12 +310,17 @@ taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o
 - **Künye istekle gider:** taslakta hasar no / rapor no yoktur; örnek adaptör örnek dosyadan verir (rapor no =
   dosya no). HUKDOK adaptörü (`lexis-rapor/PLAN.md` Aşama 8) gelince sunucu karttan kendisi alır.
 - **Muallak:** kesin tutar, boşsa öneri (alan alan — K11). Dayanak, kaynak ve gerekçe alanları Word'e girmez (K13).
-- **Yalnız Anadolu biçimi:** diğer iskeletlerde servis 422 + açıklama döner (`lexis-rapor/PLAN.md` Aşama 5b).
+- **Dört biçim (04.10):** `ANADOLU` şablonu yerinde doldurulur; `ALTILI`, `KISA`, `EK` şirket kabuğundan
+  (`<ŞİRKET>_<İSKELET>.docx`: kapak + üst/alt bilgi) kurulur, gövde çekirdekteki iskelet düzeninden gelir
+  (`lexis-rapor` README "Diğer iskeletler"). Kabuğu olmayan şirkette 503 + eksik dosyanın adı; başka iskelette 422.
+  Örnek taslakların (9002 ALTILI, 9003 KISA) etiketli satırları çekirdeğin alan kodlarını kullanır. **`EK`
+  iskeletinde ekranda künye bölümü yok** (Konu, Sigortalı, Poliçe No): örnek ek rapor Word'ünde bu üç satır `[…]`
+  çıkar; entegrasyonda künye karttan gelecek.
 - **Hata ayrımı (istemci):** servisin kendi hatası JSON `detail` metniyle gösterilir; nginx'in 404/502/504'ü ve
   SPA'ya düşmüş 200 "Lexis servisine ulaşılamadı" olur. Servis doğrulama YAPAMADIĞINDA (ayar eksik, JWKS'e
   ulaşılamıyor) 401 değil 503 döner: `apiClient` 401'de kullanıcıyı çıkışa götürür, servis arızası oturumu düşürmemeli.
 - **Şablon:** kişi verisi kalıntısı taşır → repoya ve imaja girmez; servis host dizininden salt okunur bağlar
-  (lokalde `C:\hukdok-veri\lexis\sablonlar\ANADOLU.docx`).
+  (lokalde `C:\hukdok-veri\lexis\sablonlar\`: `ANADOLU.docx` + beş şirket kabuğu).
 - **Durum:** lokalde kurulu ve denendi (kimliksiz 401, allowlist dışı 404, servis kapalıyken HUKDOK açılıyor +
   Word 502; gerçek şablonla dosya üretilip geri okundu). **Tarayıcıdan gerçek girişle uçtan uca tıklama ve
   dosyanın Word'de açılışı denenmedi.** Prod'da servis KURULU DEĞİL: orada düğme "servise ulaşılamadı" der.

@@ -819,11 +819,13 @@ export const ORNEK_TASLAKLAR: Record<number, OrnekTaslakIcerigi> = {
   9002: {
     etiketli: {
       hasar: [
-        satir("mahkeme_bilgileri", "Mahkeme / Esas No", "İzmir 2. Asliye Hukuk Mahkemesi 2024/202 E."),
-        satir("dava_tarihi", "Dava Tarihi", "10.06.2024", false),
-        satir("davaci", "Davacı", "Hasta Örnek İki"),
-        satir("davali", "Davalı", "Dr. Örnek İki"),
-        satir("talep", "Tazminat Talebi", "400.000,00 TL Maddi Tazminat, 250.000,00 TL Manevi Tazminat"),
+        // Alan kodları çekirdeğin ALTILI düzenindeki satırlardır (`lexis-rapor/lexis_rapor/duzen.py`).
+        satir("konu", "Konu", "Dr. Örnek İki hakkında açılan tazminat davasına ilişkin medikolegal değerlendirme"),
+        satir("tibbi_mudahale_tarihi", "Tıbbi Müdahale Tarihi", "22.01.2024", true, "BELGE"),
+        satir("hasta", "Hasta / Mağdur", "Hasta Örnek İki"),
+        satir("mahkeme_bilgileri", "Mahkeme Bilgileri", "İzmir 2. Asliye Hukuk Mahkemesi"),
+        satir("dosya_no", "Dosya No", "2024/202 E.", false),
+        satir("talep", "Talep", "400.000,00 TL Maddi Tazminat, 250.000,00 TL Manevi Tazminat"),
         satir("hasar_no", "Hasar No", "50000002"),
       ],
     },
@@ -898,11 +900,15 @@ export const ORNEK_TASLAKLAR: Record<number, OrnekTaslakIcerigi> = {
   9003: {
     etiketli: {
       hasar: [
+        // Alan kodları çekirdeğin KISA düzenindeki satırlardır (`lexis-rapor/lexis_rapor/duzen.py`).
         satir("sigortali", "Sigortalı", "Dr. Örnek Üç"),
-        satir("hasta", "Hasta", "Hasta Örnek Üç"),
+        satir("uzmanlik", "Uzmanlık Alanı", "Diş Hekimliği"),
+        satir("police", "Poliçe", "70000003 numaralı mesleki sorumluluk poliçesi", true, "BELGE"),
+        satir("tibbi_mudahale_tarihi", "Tıbbi Müdahale Tarihi", "11.10.2024", true, "BELGE"),
+        satir("hasta", "Hasta / Mağdur", "Hasta Örnek Üç"),
         satir("hasar_no", "Hasar No", null),
-        satir("police_no", "Poliçe No", "70000003", true, "BELGE"),
-        satir("mahkeme_bilgileri", "Mahkeme / Esas No", "Bursa 1. Tüketici Mahkemesi 2025/303 E."),
+        satir("mahkeme_bilgileri", "Mahkeme Bilgileri", "Bursa 1. Tüketici Mahkemesi"),
+        satir("dosya_no", "Dosya No", "2025/303 E.", false),
         satir("talep", "Talep", "90.000,00 TL Maddi Tazminat, 100.000,00 TL Manevi Tazminat"),
       ],
     },

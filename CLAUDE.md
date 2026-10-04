@@ -147,8 +147,9 @@ backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`
 (`nginx.conf:209-234`, Hukukbot proxy'sinin aynı deseni: allowlist yalnız `word`, gecikmeli DNS, gerisi 404; bekçi
 `backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
 (`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HUKDOK kuralıyla kendisi doğrular,
-yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (şimdilik yalnız Anadolu biçimi;
-şablon repo ve imaj DIŞINDA). Servis kapalıyken HUKDOK açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
+yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (dört biçim: Anadolu şablonu
+yerinde doldurulur; ALTILI/KISA/EK şirket kabuğundan kurulur, kabuğu olmayan şirkette 503 — 04.10; şablon ve kabuklar
+repo ve imaj DIŞINDA). Servis kapalıyken HUKDOK açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
 "çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
 durum `useTezgah.ts`: dosya · taslak · denetim), Geçmiş, Kütüphane, Kart bağı, Şirketler. Lexis diyalogları `theme-classic`
