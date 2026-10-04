@@ -193,8 +193,9 @@ export interface Madde {
 }
 
 /**
- * Değerlendirme bölümü taslağı. Çekirdekte `muallak_maddi/manevi` de buradadır; K11 kararıyla muallak
- * modelden çıkıp koda geçiyor (`MuallakOnerisi`) — bu yüzden arayüz tutarı buradan OKUMAZ.
+ * Değerlendirme bölümü taslağı. Muallak tutarı burada YOKTUR (K11): model yalnız sınıfları verir, tutarı ve son
+ * maddeyi kod kurar (`muallak.py` → `MuallakOnerisi`). Çekirdekte üç sınıf (kusur, risk, teminat) bu nesnededir;
+ * telde `MuallakOnerisi` ile gelir. `muallak_gerekcesi` sınıfların gerekçesidir.
  */
 export interface DegerlendirmeTaslagi {
   giris: string;
@@ -253,7 +254,7 @@ export interface BolumTanimi {
   tur: BolumTuru;
 }
 
-const ETIKETLI_BOLUMLER: readonly BolumKodu[] = ["hasar", "hastane", "sulh_muallak"];
+const ETIKETLI_BOLUMLER: readonly BolumKodu[] = ["kunye", "hasar", "hastane", "sulh_muallak"];
 
 function bolum(kod: BolumKodu, baslik: string): BolumTanimi {
   const tur: BolumTuru = kod === "degerlendirme" ? "MUHAKEME" : ETIKETLI_BOLUMLER.includes(kod) ? "ETIKETLI" : "OZET";
@@ -290,7 +291,20 @@ export const ISKELET_BOLUMLERI: Record<YazilabilirIskelet, BolumTanimi[]> = {
     bolum("uzman_gorusu", "Uzman Görüşü"),
     bolum("degerlendirme", "Değerlendirme"),
   ],
-  EK: [bolum("ek_inceleme", "Ek İnceleme"), bolum("degerlendirme", "Değerlendirme")],
+  // Ek raporda hasar bölümü yoktur; künye satırları (Konu, Sigortalı, Poliçe No — çekirdekte `duzen.DUZENLER.EK.kunye`)
+  // kendi bölümünde durur, yoksa Word'de `[…]` çıkar.
+  EK: [bolum("kunye", "Künye"), bolum("ek_inceleme", "Ek İnceleme"), bolum("degerlendirme", "Değerlendirme")],
+};
+
+/**
+ * Değerlendirme giriş cümlesinin iskelete göre kalıbı (çekirdekte `yazici.KALIPLAR`): cümlenin katlanmış
+ * (Türkçe küçük harf, yalnız harf/rakam) başlangıcı. Ek rapor "Dosyada … ;" ile başlar.
+ */
+export const GIRIS_KALIPLARI: Record<YazilabilirIskelet, string> = {
+  ANADOLU: "tarafımızailetilen",
+  ALTILI: "tarafımızailetilen",
+  KISA: "tarafımızailetilen",
+  EK: "dosyada",
 };
 
 // ---------------------------------------------------------------------------------------------

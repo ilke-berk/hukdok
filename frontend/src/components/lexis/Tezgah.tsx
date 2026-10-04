@@ -320,6 +320,7 @@ export function Tezgah() {
                           dayanakBolumleri={dayanakBolumleri}
                           onGiris={t.girisDegistir}
                           onSulh={t.sulhDegistir}
+                          sulhSatiri={taslak.iskelet === "ANADOLU"}
                           onMadde={t.maddeDegistir}
                           onMaddeEkle={t.maddeEkle}
                           onMaddeSil={(sira) => {

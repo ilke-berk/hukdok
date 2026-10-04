@@ -314,8 +314,15 @@ taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o
   (`<ŞİRKET>_<İSKELET>.docx`: kapak + üst/alt bilgi) kurulur, gövde çekirdekteki iskelet düzeninden gelir
   (`lexis-rapor` README "Diğer iskeletler"). Kabuğu olmayan şirkette 503 + eksik dosyanın adı; başka iskelette 422.
   Örnek taslakların (9002 ALTILI, 9003 KISA) etiketli satırları çekirdeğin alan kodlarını kullanır. **`EK`
-  iskeletinde ekranda künye bölümü yok** (Konu, Sigortalı, Poliçe No): örnek ek rapor Word'ünde bu üç satır `[…]`
-  çıkar; entegrasyonda künye karttan gelecek.
+  iskeletinde künye ekranda ayrı bölümdür** (`ISKELET_BOLUMLERI.EK`: Künye · Ek İnceleme · Değerlendirme; satırlar
+  Konu, Sigortalı, Poliçe No — 04.10): ek rapor Word'ünde bu satırlar dolu çıkar. Ek rapor kapağında hasar no satırı
+  yoktur (yerine hukuk no); taslaktaki hasar no yazılmaz, uyarı da olmaz.
+- **Kalıplar iskelete göre (04.10):** değerlendirmenin giriş cümlesi ana raporlarda "Tarafımıza iletilen …", ek
+  raporda "Dosyada … ;" ile başlar (`types/lexis.ts::GIRIS_KALIPLARI`, çekirdekte `yazici.KALIPLAR`); örnek
+  adaptörün denetimi iskelete göre bakar.
+- **Muallak çekirdekte koddan (04.10, K11):** `lexis-rapor/lexis_rapor/muallak.py` öneriyi kriter tablosu → emsal →
+  boş sırasıyla hesaplar; biçimi ekrandaki `MuallakOnerisi` ile aynıdır. Ekran bugün hâlâ örnek öneriyi gösterir;
+  servise "muallak öner" ucu eklenince gerçeği gelir (`lexis-rapor/PLAN.md` Aşama 8).
 - **Hata ayrımı (istemci):** servisin kendi hatası JSON `detail` metniyle gösterilir; nginx'in 404/502/504'ü ve
   SPA'ya düşmüş 200 "Lexis servisine ulaşılamadı" olur. Servis doğrulama YAPAMADIĞINDA (ayar eksik, JWKS'e
   ulaşılamıyor) 401 değil 503 döner: `apiClient` 401'de kullanıcıyı çıkışa götürür, servis arızası oturumu düşürmemeli.

@@ -155,6 +155,17 @@ describe("denetim (dayanak kuralı)", () => {
     taslak.muallak_manevi = ORNEK_DOSYALAR[9004].talep_manevi! + 1;
     expect((await lexisApi.denetle(taslak)).map((u) => u.kod)).toEqual(["MUALLAK_TALEBI_ASIYOR"]);
   });
+
+  it("9004: ek raporun künye satırları kendi bölümünde gelir; giriş kalıbı ek raporda \"Dosyada …\"dır", async () => {
+    const istek = await istekKur(9004);
+    const taslak = taslakKur(istek, await akisiTopla(istek));
+    expect(ISKELET_BOLUMLERI.EK.map((b) => b.kod)).toEqual(["kunye", "ek_inceleme", "degerlendirme"]);
+    // Alan kodları çekirdeğin EK düzenindeki künye satırlarıdır: Word'de bu üç satır `[…]` çıkmaz.
+    expect(taslak.etiketli.kunye?.map((s) => s.alan)).toEqual(["konu", "sigortali", "police_no"]);
+
+    taslak.degerlendirme!.giris = "Tarafımıza iletilen belgeler kapsamında yapılan inceleme neticesinde;";
+    expect((await lexisApi.denetle(taslak)).map((u) => u.kod)).toEqual(["GIRIS_KALIBI"]);
+  });
 });
 
 describe("emsaller", () => {

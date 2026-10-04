@@ -966,9 +966,16 @@ export const ORNEK_TASLAKLAR: Record<number, OrnekTaslakIcerigi> = {
     },
   },
 
-  // EK rapor — önceki rapor girdide; yalnız iki bölüm.
+  // EK rapor — önceki rapor girdide; künye + iki bölüm.
   9004: {
-    etiketli: {},
+    etiketli: {
+      kunye: [
+        // Alan kodları çekirdeğin EK düzenindeki künye satırlarıdır (`lexis-rapor/lexis_rapor/duzen.py`).
+        satir("konu", "Konu", "Dr. Örnek Dört hakkında açılan tam yargı davasına ilişkin ek değerlendirme"),
+        satir("sigortali", "Sigortalı", "Dr. Örnek Dört"),
+        satir("police_no", "Poliçe No", "70000004", true, "BELGE"),
+      ],
+    },
     ozet: {
       ek_inceleme: [
         par(
@@ -980,7 +987,7 @@ export const ORNEK_TASLAKLAR: Record<number, OrnekTaslakIcerigi> = {
       ],
     },
     degerlendirme: {
-      giris: "Tarafımıza iletilen bilirkişi ek raporu ve mahkeme ara kararı incelenmiştir.",
+      giris: "Dosyada mevcut bilirkişi ek raporu ve mahkeme ara kararı göz önüne alınarak;",
       maddeler: [
         {
           metin: "Bilirkişi ek raporunda omuz takılması sırasında uygulanan manevraların kayıtlara işlendiği belirtilmiştir.",

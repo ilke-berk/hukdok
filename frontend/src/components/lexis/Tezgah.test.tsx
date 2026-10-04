@@ -181,6 +181,17 @@ describe("Tezgah — taslak yazımı", () => {
     expect(test("lexis-cikti-cubugu")!.textContent).toContain("3 düzeltilmeli");
     // Gezginde değerlendirme bölümünün uyarı sayısı
     expect(test("lexis-bolum-gezgini")!.textContent).toContain("!4");
+    expect(test("lexis-bolum-degerlendirme")!.textContent).toContain("Sulhe Uygunluk Durumu");
+  });
+
+  it("ek raporda künye ayrı bölümdür; sulh satırı yalnız Anadolu biçiminde vardır", async () => {
+    await ciz();
+    await taslakYaz("AXA-9004");
+
+    expect(test("lexis-bolum-gezgini")!.querySelectorAll("button")).toHaveLength(3);
+    expect(test("lexis-bolum-kunye")!.querySelectorAll("input")).toHaveLength(3);        // Konu, Sigortalı, Poliçe No
+    expect(test("lexis-bolum-degerlendirme")!.textContent).not.toContain("Sulhe Uygunluk Durumu");
+    expect(test("lexis-kunye")!.textContent).toContain("Ek rapor (2 bölüm)");           // künye raporun bölümü sayılmaz
   });
 
   it("madde düzenlenince 'denetlenmedi' olur; alandan çıkınca yeniden denetlenir", async () => {

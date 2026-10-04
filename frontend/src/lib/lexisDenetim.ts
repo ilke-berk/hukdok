@@ -5,6 +5,7 @@ import { ALINTI_ALT_SINIRI, BOS, alintiGeciyor, alintiUzunlugu, katla, tutarYaz 
 import {
   BEKLENEN_BELGELER,
   BELGE_TURU_ADLARI,
+  GIRIS_KALIPLARI,
   ISKELET_BOLUMLERI,
   type BolumKodu,
   type DosyaGirdisi,
@@ -23,8 +24,6 @@ export interface DenetimGirdisi {
   kararBankasi: KararKaydi[];
 }
 
-/** `katla` çıktısıyla karşılaştırılır (Türkçe küçük harf, yalnız harf/rakam). */
-const GIRIS_KALIBI = "tarafımızailetilen";
 const MASKE_YER_TUTUCULARI = ["[SİGORTALI]", "[HASTA]", "[KİŞİ]", "[TC]"];
 
 /** "onam formu yer almadığından", "raporu iletilmediği" — belgenin YOKLUĞU iddiası (içeriğin değil). */
@@ -99,7 +98,7 @@ export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi }: Denetim
   if (deg) {
     const hedef = dosyaMetni(taslak, dosya);
     const hedefKatli = katla(hedef);
-    if (!katla(deg.giris).startsWith(GIRIS_KALIBI)) {
+    if (!katla(deg.giris).startsWith(GIRIS_KALIPLARI[taslak.iskelet])) {
       ekle("GIRIS_KALIBI", "UYARI", "Giriş cümlesi kalıba uymuyor", { bolum: "degerlendirme" });
     }
     const son = deg.maddeler.length;

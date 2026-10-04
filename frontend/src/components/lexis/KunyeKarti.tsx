@@ -1,6 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { BOS, tutarYaz } from "@/lib/lexisMetin";
-import { SIRKET_ADLARI, type DosyaGirdisi, type LexisSirket, type RaporTuru, type YazilabilirIskelet } from "@/types/lexis";
+import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type DosyaGirdisi, type LexisSirket, type RaporTuru, type YazilabilirIskelet } from "@/types/lexis";
 import { BolgeBasligi } from "./ortak";
 import { BAGLANTI_SINIFI } from "./yardimcilar";
 
@@ -14,12 +14,12 @@ type KunyeKartiProps = {
   kilitli?: boolean;
 };
 
-const ISKELET_ADLARI: Record<YazilabilirIskelet, string> = {
-  ANADOLU: "Anadolu (8 bölüm)",
-  ALTILI: "Altılı (6 bölüm)",
-  KISA: "Kısa (4 bölüm)",
-  EK: "Ek rapor (2 bölüm)",
-};
+const ISKELET_ADLARI: Record<YazilabilirIskelet, string> = { ANADOLU: "Anadolu", ALTILI: "Altılı", KISA: "Kısa", EK: "Ek rapor" };
+
+/** "Ek rapor (2 bölüm)" — künye raporun bölümü sayılmaz (ek raporda ekranda ayrı durur). */
+function iskeletAdi(iskelet: YazilabilirIskelet): string {
+  return `${ISKELET_ADLARI[iskelet]} (${ISKELET_BOLUMLERI[iskelet].filter((b) => b.kod !== "kunye").length} bölüm)`;
+}
 
 const SECIM_SINIFI =
   "w-full h-8 px-2 border border-[var(--border)] bg-[var(--bg-elevated)] text-[12.5px] text-[var(--fg)] rounded-[3px] focus:border-[var(--brand)] focus:outline-none disabled:opacity-60";
@@ -85,7 +85,7 @@ export function KunyeKarti({ dosya, onDegistir, onOncekiRapor, kilitli = false }
           >
             {(Object.keys(ISKELET_ADLARI) as YazilabilirIskelet[]).map((kod) => (
               <option key={kod} value={kod}>
-                {ISKELET_ADLARI[kod]}
+                {iskeletAdi(kod)}
               </option>
             ))}
           </select>

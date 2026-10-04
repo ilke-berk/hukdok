@@ -22,6 +22,8 @@ type DegerlendirmeBolumuProps = {
   onMaddeSec: (sira: number) => void;
   onBlur?: () => void;
   kilitli?: boolean;
+  /** "Sulhe Uygunluk Durumu" satırı yalnız ANADOLU iskeletinde vardır (çekirdekte `yazici.KALIPLAR`). */
+  sulhSatiri?: boolean;
 };
 
 /**
@@ -45,6 +47,7 @@ export function DegerlendirmeBolumu({
   onMaddeSec,
   onBlur,
   kilitli = false,
+  sulhSatiri = true,
 }: DegerlendirmeBolumuProps) {
   const sayi = degerlendirme.maddeler.length;
   return (
@@ -92,17 +95,19 @@ export function DegerlendirmeBolumu({
         <Plus className="w-3 h-3" aria-hidden="true" />
         Madde ekle
       </button>
-      <label className="grid sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border border-[var(--border)] bg-[var(--bg)] px-3 py-1">
-        <span className="text-[12.5px] text-[var(--fg-muted)]">Sulhe Uygunluk Durumu</span>
-        <input
-          type="text"
-          value={degerlendirme.sulh_uygunluk}
-          disabled={kilitli}
-          onChange={(e) => onSulh(e.target.value)}
-          onBlur={onBlur}
-          className="w-full h-7 px-2 -mx-2 bg-transparent border border-transparent rounded-[3px] text-[13px] text-[var(--fg)] hover:border-[var(--border)] focus:border-[var(--brand)] focus:bg-[var(--bg-elevated)] focus:outline-none"
-        />
-      </label>
+      {sulhSatiri && (
+        <label className="grid sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border border-[var(--border)] bg-[var(--bg)] px-3 py-1">
+          <span className="text-[12.5px] text-[var(--fg-muted)]">Sulhe Uygunluk Durumu</span>
+          <input
+            type="text"
+            value={degerlendirme.sulh_uygunluk}
+            disabled={kilitli}
+            onChange={(e) => onSulh(e.target.value)}
+            onBlur={onBlur}
+            className="w-full h-7 px-2 -mx-2 bg-transparent border border-transparent rounded-[3px] text-[13px] text-[var(--fg)] hover:border-[var(--border)] focus:border-[var(--brand)] focus:bg-[var(--bg-elevated)] focus:outline-none"
+          />
+        </label>
+      )}
     </div>
   );
 }
