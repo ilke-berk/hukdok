@@ -289,8 +289,8 @@ alıntıyı kaynak paragrafta vurgular. Muallakta kesin tutar insanındır; boş
 bilgili gelmesi (`bolum`, `madde`, `alan`); iskelet başına bölüm sırası ve görünen başlık; etiketli satırların
 etiketiyle birlikte gelmesi; özet paragrafının kaynak belgesi; `Emsal.gerekce()` metninin telde gelmesi.
 
-**Önizlemede olmayanlar:** kalıcılık (sayfa yenilenince durum sıfırlanır), gerçek dava araması, belgelerin
-modele gönderimi, Anadolu dışındaki biçimlerin Word çıktısı.
+**Önizlemede (örnek kipte) olmayanlar:** kalıcılık (sayfa yenilenince durum sıfırlanır), gerçek dava araması,
+belgelerin modele gönderimi. Gerçek dava kipi (§10.2) ve saklama (§10.3) sonradan eklendi.
 
 ### 10.1 Word çıktısı — ilk gerçek uç (04.10.2026)
 
@@ -368,11 +368,61 @@ anki kipin adaptörüne yollar (`lib/lexisApi.ts::veriKipi`, `Proxy`). Örnek ki
   bankası), tezgâhtaki "önceki raporu oku" ve muallak dayanağındaki rapor bağlantıları ile kütüphaneden elle emsal
   ekleme servisten gelir (`/lexis-api/{kutuphane,rapor,emsal-puanla}`). Arama metni gövdede gider; liste bölüm
   metni taşımaz, metin rapor açılınca istenir. Eski rapor metni maskelidir.
-- **Bu kipte bağlı OLMAYANLAR:** bölümlerin belgelerden yazımı (sınama dosyası ister), kalıcılık (sayfa yenilenince
-  taslak gider); Geçmiş / Kart bağı / Şirketler sekmeleri örnek veride kalır (şerit bunu söyler) — üçü de bir
-  saklama yeri kararı ister.
+- **Bu kipte bağlı OLMAYAN:** bölümlerin belgelerden yazımı (sınama dosyası ister). Kalıcılık ve Geçmiş / Kart bağı
+  / Şirketler sekmeleri 04.10 gecesi bağlandı (§10.3).
 - **Karttan gelmeyenler boş kalır** (`lexis-rapor` README "HUKDOK adaptörü"): sigortalı hekim çoğu kartta ayırt
   edilemiyor; poliçe no, teminat limiti ve hastane kartta yok; hekim beyanının HUKDOK'ta belge türü yok (ekran o
   belgeyi "eksik" sayar). Şirket müvekkil adından bulunur (lokal ölçüm: 7.619 aynı · 228 boş · 0 farklı).
 - **Durum:** servis ve adaptör lokalde kurulu; adaptör gerçek kart yanıtlarıyla (backend serileştiricisinden)
   denendi. **Tarayıcıdan gerçek girişle uçtan uca tıklama yapılmadı.** Prod'da servis kurulu değil.
+
+### 10.3 Saklama — servisin kendi veritabanı (04.10.2026 gece)
+
+**Kullanıcı kararı (04.10):** saklama yeri **servisin kendi veritabanıdır** (`lexis-rapor` compose'unda `lexis_db`,
+Postgres; beklenen boyut ~20.000 belge / ~600 MB). HUKDOK veritabanına tablo EKLENMEDİ; bu planın §4'teki
+"`lexis_*` tabloları HUKDOK'ta" tasarımı geçersizdir. Servis tarafının anlatımı: `lexis-rapor` README "Servis" ›
+Saklama, kararı `PLAN.md` K16.
+
+```
+/lexis?veri=gercek
+   GET|PUT|DELETE /lexis-api/taslak/{case_id}   çalışma taslağı (sürüm kilitli)
+   GET  /lexis-api/gecmis                        koşu logu
+   GET  /lexis-api/kart-baglari                  tek karta inmeyen eski raporlar
+   POST /lexis-api/kart-sec                      insan seçimi (K8) / geri alma
+   GET  /lexis-api/profiller                     şirket profilleri
+   PUT  /lexis-api/profil/{şirket}               profil + muallak kriter tablosu
+→ konteyner nginx (allowlist) → lexis_api:8020 → servis/depo.py → lexis_db (yalnız Lexis stack'inin iç ağı)
+```
+
+- **HUKDOK tarafında değişen:** `nginx.conf` allowlist'i (+ bekçi testi ve Vite proxy'si), `lib/lexisServis.ts`
+  (yeni uçlar), `lib/lexisApi.ts` (`kalici` bayrağı, `taslakGetir/Kaydet/Sil`; gerçek adaptör Geçmiş, Kart bağı ve
+  Şirketler'i de servise bağlar), `lib/lexisWord.ts` (`kosu_id`), `types/lexis.ts` (`KayitliTaslak`, `TaslakKaydi`),
+  `components/lexis/useTezgah.ts` + `Tezgah.tsx` (otomatik kayıt, geri açma), `SirketProfilleri.tsx`,
+  `pages/LexisPage.tsx`. HUKDOK backend'ine yine dokunulmadı.
+- **Taslak (`useTezgah` "KALICILIK"):** gerçek kipte taslak, bölüm durumları ve belge seçimi son değişiklikten 1,2 sn
+  sonra kaydedilir; dava değişiminde ve sayfadan çıkışta bekleyen kayıt hemen gider. Yazım akışı sürerken ve boş
+  kabukta kaydedilmez. Dava seçilince kayıtlı taslak varsa künyesi (şirket, tür, iskelet), bölüm durumları, belge
+  seçimi ve baktığı emsallerle geri açılır, denetim yeniden koşar; yalnız açmak yeni sürüm yazmaz. Başlıkta
+  "Kaydediliyor… / Kaydedildi · saat" görünür.
+- **Sürüm kilidi:** kayıt okunan sürümle yazılır. Başka oturum araya girmişse servis 409 döner: ekranda uyarı çıkar
+  ve bu oturum o taslağa artık YAZMAZ (davayı yeniden seçince kayıtlı hâl açılır). Kayıtlı taslak okunamadıysa
+  dosya yine açılır; ilk yazma sunucudaki kaydı ezmez (409).
+- **Onay davranışı değişti:** gerçek kipte dava değişimi taslağı silmez, onay istemez (kayıt başarısızsa "Kaydedilmemiş
+  değişiklik var" onayı çıkar). Künye değişimi ve yeniden yazım hâlâ onay ister; künye değişiminde kayıtlı taslak da
+  silinir. Örnek kip aynen eskisi gibidir: hiçbir şey kaydedilmez.
+- **Geçmiş:** koşuyu "Taslağı yaz" (`/iskelet`) açar; uyarı sayısı her taslak kaydında, "indirildi" işareti Word
+  inince güncellenir. Geçmiş satırından taslağa gidiş yok (dava "Rapor yaz"da yeniden seçilir).
+- **Kart bağı:** liste servise `lexis-rapor/araclar/bag_yukle.py` ile yüklenir (lokalde 308 satır: 104 çok aday, 1
+  çelişki, 203 bağ yok). Kişi adı taşımaz: klasörün yalnız numarası görünür (numarası olmayan 118 klasör
+  "numarasız"; hepsi bağ yok), mahkeme + esas no sütunu boştur (envanterde yok). Seçim servise yazılır, geri alınır.
+- **Şirketler:** kaydı olmayan şirket koddaki varsayılanla ve "Henüz kaydedilmedi" notuyla gelir. Kaydedilen
+  **kriter tablosu muallak önerisinin ilk basamağıdır** (emsallerden önce), **ana rapor biçimi** dava seçilince
+  künyenin ön seçimidir; sabit metinler ve kriter metni saklanır ama taslağı henüz etkilemez (ekran bunu söyler).
+  Gerçek kipte ana rapor için `ANADOLU`/`ALTILI`/`KISA`, ek rapor için yalnız `EK` seçilebilir. Profil listesi
+  Word'ü yazılabilen beş şirkettir (Eureko yok).
+- **Veritabanı yokken:** saklama uçları 503 döner (ekranda servisin metni); dava, künye, emsal, iskelet, muallak
+  önerisi ve Word çalışmaya devam eder.
+- **Durum:** lokalde kurulu (`lexis_db` ayakta, liste yüklü); servis testleri SQLite'ta ve gerçek Postgres'te,
+  ekran testleri sahte servisle yeşil; yeni uçlar HUKDOK adresinden kimliksiz 401 dönüyor. **Tarayıcıdan gerçek
+  girişle kayıt, geri açma, kart seçimi ve profil kaydı denenmedi.** Açık kalanlar `lexis-rapor/PLAN.md` Aşama 8
+  "Açık" listesinde (yedek düzeni, taslak okurken kart erişimi doğrulaması, sayfa kapanırken son ~1 sn).

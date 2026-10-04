@@ -27,6 +27,8 @@ export interface WordKunyesi {
   rapor_no: string | null;
   /** ISO `yyyy-mm-dd`; verilmezse sunucu bugünü (Türkiye günü) yazar. */
   rapor_tarihi?: string | null;
+  /** Gerçek davada taslağın koşusu: Word inince sunucu Geçmiş'te "indirildi" işaretler. Künyeyle birlikte gitmez. */
+  kosu_id?: number | null;
 }
 
 export interface WordSonucu {
@@ -81,8 +83,9 @@ function indir(blob: Blob, ad: string): void {
 /** `POST /lexis-api/word` — şirket şablonunda Word üretir ve tarayıcıya indirir. Hata `LexisApiError`. */
 export async function wordIndir(taslak: LexisTaslak, kunye: WordKunyesi, signal?: AbortSignal): Promise<WordSonucu> {
   let res: Response;
+  const { kosu_id, ...kapak } = kunye;
   try {
-    res = await apiClient.fetch(`${LEXIS_API_ONEKI}/word`, { method: "POST", body: JSON.stringify({ taslak, kunye }), signal });
+    res = await apiClient.fetch(`${LEXIS_API_ONEKI}/word`, { method: "POST", body: JSON.stringify({ taslak, kunye: kapak, ...(kosu_id != null ? { kosu_id } : {}) }), signal });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw e;
     throw new LexisApiError(0, LEXIS_SERVIS_YOK);

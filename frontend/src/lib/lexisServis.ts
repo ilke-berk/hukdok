@@ -1,7 +1,8 @@
 // Lexis servisinin dava uçları — "gerçek dava" kipinde `lexisApi`'nin arkası (04.10.2026).
 //
 // - Yol: aynı origin `/lexis-api/{davalar,dosya,emsal-oner,iskelet,muallak-oner,karar-bankasi,kutuphane,rapor,
-//   emsal-puanla}` (konteyner nginx allowlist'i → `lexis_api:8020`).
+//   emsal-puanla,taslak,gecmis,kart-baglari,kart-sec,profiller,profil}` (konteyner nginx allowlist'i →
+//   `lexis_api:8020`). Son altısı servisin KENDİ veritabanına yazar/okur (taslak, koşu logu, kart seçimi, profil).
 // - Kimlik: HUKDOK'un MSAL access token'ı (`apiClient.fetch`). Servis token'ı kendisi doğrular, kartı ve belge
 //   listesini HUKDOK'un mevcut uçlarından AYNI token'la okur (`lexis-rapor/servis/hukdok.py`, K9).
 // - Yanıtlar `types/lexis.ts` tipleriyle aynıdır (`LexisDava`, `DosyaGirdisi`, `Emsal`); emsal metni maskelidir.
@@ -15,12 +16,18 @@ import type {
   DosyaGirdisi,
   Emsal,
   KararKaydi,
+  KayitliTaslak,
   KutuphaneFiltresi,
   KutuphaneKaydi,
   LexisDava,
   LexisTaslak,
   MuallakOnerisi,
+  RaporBagi,
+  SirketProfili,
   TaslakIstegi,
+  TaslakKaydi,
+  TaslakKayitSonucu,
+  TaslakKosusu,
 } from "@/types/lexis";
 
 export const LEXIS_DAVA_SERVISI_YOK = "Lexis servisine ulaşılamadı.";
@@ -63,13 +70,19 @@ export function emsalOner(istek: EmsalIstegi, signal?: AbortSignal): Promise<Ems
   return jsonGetir<Emsal[]>("/emsal-oner", { method: "POST", body: JSON.stringify(istek) }, signal);
 }
 
-/** Taslak iskeleti: etiketli satırlar karttan dolu, özet boş, değerlendirmede giriş + kodun son maddesi. */
-export type TaslakIskeleti = Pick<LexisTaslak, "etiketli" | "ozet"> & { degerlendirme: DegerlendirmeTaslagi; muallak: MuallakOnerisi };
+/**
+ * Taslak iskeleti: etiketli satırlar karttan dolu, özet boş, değerlendirmede giriş + kodun son maddesi.
+ * `kosu_id`: Geçmiş sekmesindeki koşu satırı; servisin veritabanı yoksa `null` (taslak yine gelir).
+ */
+export type TaslakIskeleti = Pick<LexisTaslak, "etiketli" | "ozet"> & { degerlendirme: DegerlendirmeTaslagi; muallak: MuallakOnerisi; kosu_id?: number | null };
 
-/** `POST /lexis-api/iskelet` — modele hiçbir şey gitmez; künye dava kartından doldurulur. */
-export function iskelet(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet">, signal?: AbortSignal): Promise<TaslakIskeleti> {
-  const { case_id, sirket, rapor_turu, iskelet: bicim } = istek;
-  return jsonGetir<TaslakIskeleti>("/iskelet", { method: "POST", body: JSON.stringify({ case_id, sirket, rapor_turu, iskelet: bicim }) }, signal);
+/**
+ * `POST /lexis-api/iskelet` — modele hiçbir şey gitmez; künye dava kartından doldurulur. Emsallerin yalnız SAYISI
+ * gider (koşu logu için); belge ve emsal metni gitmez.
+ */
+export function iskelet(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet" | "emsal_sha">, signal?: AbortSignal): Promise<TaslakIskeleti> {
+  const { case_id, sirket, rapor_turu, iskelet: bicim, emsal_sha } = istek;
+  return jsonGetir<TaslakIskeleti>("/iskelet", { method: "POST", body: JSON.stringify({ case_id, sirket, rapor_turu, iskelet: bicim, emsal_sayisi: emsal_sha.length }) }, signal);
 }
 
 /** `POST /lexis-api/muallak-oner` — seçilen sınıflarla öneri ve dayanağı (tutarı kod hesaplar, K11). */
@@ -96,4 +109,51 @@ export function emsalPuanla(istek: EmsalIstegi & { sha256: string }, signal?: Ab
 /** `GET /lexis-api/karar-bankasi` — kütüphanedeki raporlarda anılan kararlar (atıf doğrulaması). */
 export function kararBankasi(signal?: AbortSignal): Promise<KararKaydi[]> {
   return jsonGetir<KararKaydi[]>("/karar-bankasi", { method: "GET" }, signal);
+}
+
+// --- kalıcılık: servisin kendi veritabanı (`lexis-rapor/servis/depo.py`) ---
+
+/** `GET /lexis-api/taslak/{case_id}` — davanın kayıtlı taslağı; yoksa `null` (hata değil). */
+export function taslakGetir(caseId: number, signal?: AbortSignal): Promise<KayitliTaslak | null> {
+  return jsonGetir<KayitliTaslak | null>(`/taslak/${caseId}`, { method: "GET" }, signal);
+}
+
+/** `PUT /lexis-api/taslak/{case_id}` — okunan sürümle yazar; başka oturum araya girdiyse 409 (`LexisApiError`). */
+export function taslakKaydet(caseId: number, kayit: TaslakKaydi, signal?: AbortSignal): Promise<TaslakKayitSonucu> {
+  return jsonGetir<TaslakKayitSonucu>(`/taslak/${caseId}`, { method: "PUT", body: JSON.stringify(kayit) }, signal);
+}
+
+/** `DELETE /lexis-api/taslak/{case_id}` — künye değişip taslak bilerek silindiğinde. */
+export async function taslakSil(caseId: number, signal?: AbortSignal): Promise<void> {
+  await jsonGetir<{ silindi: boolean }>(`/taslak/${caseId}`, { method: "DELETE" }, signal);
+}
+
+/** `GET /lexis-api/gecmis` — "Taslağı yaz" koşularının logu, en yeni önce. */
+export function gecmis(signal?: AbortSignal): Promise<TaslakKosusu[]> {
+  return jsonGetir<TaslakKosusu[]>("/gecmis", { method: "GET" }, signal);
+}
+
+/** `GET /lexis-api/kart-baglari` — tek karta inmeyen eski raporlar (çok aday, çelişki, bağ yok). */
+export function kartBaglari(signal?: AbortSignal): Promise<RaporBagi[]> {
+  return jsonGetir<RaporBagi[]>("/kart-baglari", { method: "GET" }, signal);
+}
+
+/** `POST /lexis-api/kart-sec` — insan seçimi (K8); `kartId = null` seçimi geri alır. */
+export function kartSec(rapor: string, kartId: number | null, signal?: AbortSignal): Promise<RaporBagi> {
+  return jsonGetir<RaporBagi>("/kart-sec", { method: "POST", body: JSON.stringify({ rapor, kart_id: kartId }) }, signal);
+}
+
+/** `GET /lexis-api/profiller` — şirket profilleri (kaydı olmayan şirket koddaki varsayılanla gelir). */
+export function profiller(signal?: AbortSignal): Promise<SirketProfili[]> {
+  return jsonGetir<SirketProfili[]>("/profiller", { method: "GET" }, signal);
+}
+
+/** `PUT /lexis-api/profil/{şirket}` — şirket kodu, ad ve güncelleme damgası sunucunundur; gövdeye girmez. */
+export function profilKaydet(profil: SirketProfili, signal?: AbortSignal): Promise<SirketProfili> {
+  const { iskelet_ana, iskelet_ek, sabit_metinler, kriter_metni, muallak_tablosu } = profil;
+  return jsonGetir<SirketProfili>(
+    `/profil/${encodeURIComponent(profil.sirket_kodu)}`,
+    { method: "PUT", body: JSON.stringify({ iskelet_ana, iskelet_ek, sabit_metinler, kriter_metni, muallak_tablosu }) },
+    signal,
+  );
 }

@@ -551,8 +551,9 @@ export interface KutuphaneFiltresi {
 
 /** Kart bağı inceleme listesinin satırı: bir eski rapor ve karta bağı. */
 export interface RaporBagi {
-  /** Rapor sha256'sı — insan seçiminin anahtarı (`bag.py` seçim kaydı). */
+  /** İnsan seçiminin anahtarı (`bag.py` seçim kaydı): servis listesinde klasör adının özeti — kişi adı taşımaz. */
   rapor: string;
+  /** Klasörün yalnız numarası; numarası olmayan klasörde "numarasız". */
   klasor: string;
   sirket: LexisSirket | null;
   rapor_turu: RaporTuru;
@@ -582,9 +583,44 @@ export interface SirketProfili {
   sabit_metinler: Record<string, string>;
   kriter_metni: string;
   muallak_tablosu: MuallakKriterSatiri[];
-  /** ISO `yyyy-mm-dd`. */
+  /** ISO tarih ya da zaman damgası; hiç kaydedilmemiş (koddaki varsayılan) profilde `null`. */
+  guncelleme: string | null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arayüz (çekirdekte yok): kayıtlı taslak — servisin kendi veritabanında durur (`lexis-rapor/servis/depo.py`)
+// ---------------------------------------------------------------------------------------------
+
+/** Taslakla birlikte saklanan ekran durumu (sunucu içeriğine bakmaz). */
+export interface TaslakEkranDurumu {
+  /** Bölüm kodu → `bos | yazildi | duzenlendi` (`BolumGezgini`). */
+  bolum_durumlari?: Partial<Record<BolumKodu, string>>;
+  /** Yazımda seçili bırakılan belgeler. */
+  secili_belgeler?: number[];
+}
+
+/** `GET /lexis-api/taslak/{case_id}` — davanın kayıtlı çalışma taslağı. */
+export interface KayitliTaslak {
+  taslak: LexisTaslak;
+  ekran: TaslakEkranDurumu;
+  /** İyimser kilit: kayıt, okunan sürümle yazılır; başka oturum araya girdiyse sunucu 409 döner. */
+  surum: number;
+  kosu_id: number | null;
+  guncelleyen: string;
+  /** ISO zaman damgası (UTC). */
   guncelleme: string;
 }
+
+/** `PUT /lexis-api/taslak/{case_id}` gövdesi. `surum` ilk kayıtta `null`. */
+export interface TaslakKaydi {
+  taslak: LexisTaslak;
+  ekran: TaslakEkranDurumu;
+  surum: number | null;
+  kosu_id: number | null;
+  uyari_sayisi: number;
+}
+
+export type TaslakKayitSonucu = Pick<KayitliTaslak, "surum" | "guncelleme" | "guncelleyen">;
 
 // ---------------------------------------------------------------------------------------------
 // Görünen adlar

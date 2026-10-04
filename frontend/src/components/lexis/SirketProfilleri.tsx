@@ -5,7 +5,7 @@ import { CardListSkeleton } from "@/components/skeletons/Skeletons";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { FlowButton } from "@/components/flow/primitives";
 import { useConfirm } from "@/hooks/useConfirm";
-import { ORNEK_VERI, lexisApi } from "@/lib/lexisApi";
+import { lexisApi } from "@/lib/lexisApi";
 import { tarihYaz } from "@/lib/lexisMetin";
 import { ISKELET_BOLUMLERI, type LexisSirket, type SirketProfili, type YazilabilirIskelet } from "@/types/lexis";
 import { MuallakKriterTablosu } from "./MuallakKriterTablosu";
@@ -21,12 +21,19 @@ const SABIT_METIN_ADLARI: Record<string, string> = {
 };
 
 const ISKELETLER = Object.keys(ISKELET_BOLUMLERI) as YazilabilirIskelet[];
+// Servis ana raporu EK iskeletiyle, ek raporu EK dışındaki bir iskeletle kabul etmez; örnek kip kısıtlamaz.
+const SERVIS_SECENEKLERI: Record<"iskelet_ana" | "iskelet_ek", YazilabilirIskelet[]> = {
+  iskelet_ana: ISKELETLER.filter((kod) => kod !== "EK"),
+  iskelet_ek: ["EK"],
+};
 const ayni = (a: SirketProfili, b: SirketProfili) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * "Şirketler" sekmesi: sigorta şirketi başına rapor profili — ana ve ek raporun iskeleti, rapora aynen giren sabit
  * metinler, kriter metni ve muallak kriter tablosu. Soldan şirket seçilir; kaydedilmemiş değişiklik varken başka
- * şirkete geçiş onay ister. Önizlemede kayıt bellekte kalır (sayfa yenilenince sıfırlanır).
+ * şirkete geçiş onay ister. Örnek kipte kayıt bellekte kalır (sayfa yenilenince sıfırlanır); gerçek dava kipinde
+ * servisin veritabanına yazılır: kriter tablosu muallak önerisinin ilk basamağıdır, ana rapor biçimi dava
+ * seçilince künyenin ön seçimidir. Sabit metinler ve kriter metni saklanır ama henüz yazımı sürmez.
  */
 export function SirketProfilleri() {
   const confirm = useConfirm();
@@ -58,7 +65,7 @@ export function SirketProfilleri() {
       const kayit = await lexisApi.profilKaydet(duzenlenen);
       setVeri((onceki) => onceki?.map((p) => (p.sirket_kodu === kayit.sirket_kodu ? kayit : p)) ?? null);
       setTaslak(null);
-      toast.success("Profil kaydedildi", ORNEK_VERI ? { description: "Önizleme: sayfa yenilenince sıfırlanır." } : undefined);
+      toast.success("Profil kaydedildi", lexisApi.kalici ? undefined : { description: "Önizleme: sayfa yenilenince sıfırlanır." });
     } catch (e) {
       toast.error("Profil kaydedilemedi", { description: hataMetni(e) });
     } finally {
@@ -110,7 +117,9 @@ export function SirketProfilleri() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-display text-[17px] font-medium text-[var(--fg)]">{duzenlenen.ad}</div>
-                  <div className="text-[12px] text-[var(--fg-subtle)]">Son güncelleme {tarihYaz(duzenlenen.guncelleme)}</div>
+                  <div className="text-[12px] text-[var(--fg-subtle)]">
+                    {duzenlenen.guncelleme ? `Son güncelleme ${tarihYaz(duzenlenen.guncelleme)}` : "Henüz kaydedilmedi — koddaki varsayılan"}
+                  </div>
                 </div>
                 <FlowButton type="submit" size="sm" disabled={!degisti || kaydediliyor}>
                   <Save className="w-3.5 h-3.5" aria-hidden="true" />
@@ -130,7 +139,7 @@ export function SirketProfilleri() {
                     <label key={alan} className="grid gap-1">
                       <span className="text-[11px] text-[var(--fg-subtle)]">{ad}</span>
                       <select className={`${SECIM_SINIFI} w-full`} value={duzenlenen[alan]} onChange={(e) => degistir({ [alan]: e.target.value as YazilabilirIskelet })}>
-                        {ISKELETLER.map((kod) => (
+                        {(lexisApi.kalici ? SERVIS_SECENEKLERI[alan] : ISKELETLER).map((kod) => (
                           <option key={kod} value={kod}>
                             {kod} — {ISKELET_BOLUMLERI[kod].length} bölüm
                           </option>
@@ -171,6 +180,12 @@ export function SirketProfilleri() {
                   />
                 </label>
                 <MuallakKriterTablosu satirlar={duzenlenen.muallak_tablosu} onDegistir={(muallak_tablosu) => degistir({ muallak_tablosu })} />
+                {lexisApi.kalici && (
+                  <p data-testid="lexis-profil-etkisi" className="text-[12px] leading-[1.5] text-[var(--fg-muted)]">
+                    Kaydedilen kriter tablosu muallak önerisinde emsallerden ÖNCE kullanılır; ana rapor biçimi dava seçilince künyenin ön seçimidir.
+                    Sabit metinler ve kriter metni saklanır, henüz taslak yazımını etkilemez.
+                  </p>
+                )}
               </section>
             </form>
           )}

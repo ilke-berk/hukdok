@@ -5,6 +5,7 @@ import { FlowButton } from "@/components/flow/primitives";
 import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { useConfirm } from "@/hooks/useConfirm";
 import { GERCEK_ISKELET_NOTU, lexisApi, veriKipi } from "@/lib/lexisApi";
+import { tarihSaatYaz } from "@/lib/lexisMetin";
 import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
 import { BolumGezgini } from "./BolumGezgini";
@@ -22,7 +23,7 @@ import { OzetBolum } from "./OzetBolum";
 import { UretimSeridi } from "./UretimSeridi";
 import { UyariListesi } from "./UyariListesi";
 import { useTezgah } from "./useTezgah";
-import { bolumKimligi, bolumUyariSayilari, hataMetni, uyariHedefi } from "./yardimcilar";
+import { BAGLANTI_SINIFI, bolumKimligi, bolumUyariSayilari, hataMetni, uyariHedefi } from "./yardimcilar";
 
 type Vurgu = { madde: number | null; alan: string | null; bolum: BolumKodu | null };
 
@@ -36,6 +37,9 @@ const CEKMECE_DUGMESI =
  * Dar ekranda sol bölge `lg` (1024 px), sağ bölge `xl` (1280 px) altında çekmeceye döner; orta başlıktaki
  * "Dosya" / "Denetim" düğmeleri açar. Taslağı silen her eylem (dava ya da künye değişimi, yeniden yazım) önce
  * onay ister; yazımdan önce modele ne gideceği gösterilir (K4).
+ *
+ * Gerçek dava kipinde taslak siz yazdıkça servisin veritabanına kaydedilir (`useTezgah` "KALICILIK"): başlıkta
+ * kayıt durumu görünür, dava değişimi taslağı silmez (onay istemez), aynı dava seçilince kayıtlı taslak geri açılır.
  */
 export function Tezgah() {
   const t = useTezgah();
@@ -56,6 +60,11 @@ export function Tezgah() {
     [],
   );
 
+  // Kayıtlı taslak geri açıldığında kimin, ne zaman kaydettiği bir kez söylenir.
+  useEffect(() => {
+    if (t.acilanKayit) toast.info("Kayıtlı taslak açıldı", { description: `Son kayıt: ${t.acilanKayit.guncelleyen} · ${tarihSaatYaz(t.acilanKayit.guncelleme)}` });
+  }, [t.acilanKayit]);
+
   const { dosya, taslak } = t;
   // Gerçek dava kipinde dosya bölgesi servisten gelir, taslak iskelettir (künye karttan), muallak sınıflarını insan
   // seçer; kütüphane taraması ve elle emsal ekleme de servisten gelir.
@@ -65,7 +74,9 @@ export function Tezgah() {
   const dayanakBolumleri = useMemo(() => bolumler.filter((b) => b.tur === "OZET").map((b) => ({ kod: b.kod, baslik: b.baslik })), [bolumler]);
   const uyariSayilari = useMemo(() => bolumUyariSayilari(t.uyarilar), [t.uyarilar]);
   const hataSayisi = t.uyarilar.filter((u) => u.seviye === "HATA").length;
-  const kilitli = t.yaziliyor;
+  const kilitli = t.yaziliyor || t.geriYukleniyor;
+  // Gerçek kipte taslak sunucuda saklanır: dava değişimi taslağı SİLMEZ (onay gerekmez) — kayıt başarısızsa gerekir.
+  const kayitsiz = t.kayit.tur === "hata" || t.kayit.tur === "cakisma";
 
   const taslakSilinsinMi = useCallback(
     async (neden: string) =>
@@ -80,7 +91,18 @@ export function Tezgah() {
   );
 
   const davaSec = async (dava: LexisDava | null) => {
-    if (!(await taslakSilinsinMi(dava ? "Başka bir davaya geçiyorsunuz." : "Davayı değiştiriyorsunuz."))) return;
+    if (!lexisApi.kalici) {
+      if (!(await taslakSilinsinMi(dava ? "Başka bir davaya geçiyorsunuz." : "Davayı değiştiriyorsunuz."))) return;
+    } else if (taslak && kayitsiz) {
+      // Kayıtlı taslak dava değişiminde kaybolmaz (yeniden seçilince geri açılır); yalnız kaydedilemeyen hâl kaybolur.
+      const onay = await confirm({
+        tone: "warning",
+        title: "Kaydedilmemiş değişiklik var",
+        body: "Bu taslağın son hâli kaydedilemedi. Başka davaya geçerseniz kaydedilmemiş değişiklikler kaybolur.",
+        confirmLabel: "Yine de geç",
+      });
+      if (!onay) return;
+    }
     setSeciliMadde(null);
     t.davaSec(dava);
   };
@@ -233,6 +255,11 @@ export function Tezgah() {
           <h2 className="min-w-0 truncate text-[13px] font-medium text-[var(--fg)]" data-testid="lexis-taslak-basligi">
             {dosya ? <span className="font-mono text-[12px]">{dosya.dava.ofis_no}</span> : "Taslak"}
           </h2>
+          {(t.kayit.tur === "kaydediliyor" || t.kayit.tur === "kaydedildi") && (
+            <span role="status" data-testid="lexis-kayit-durumu" className="shrink-0 whitespace-nowrap text-[11.5px] text-[var(--fg-subtle)]">
+              {t.kayit.tur === "kaydediliyor" ? "Kaydediliyor…" : `Kaydedildi · ${t.kayit.zaman}`}
+            </span>
+          )}
           <button type="button" onClick={() => setSagAcik(true)} className={`xl:hidden ml-auto ${CEKMECE_DUGMESI}`}>
             <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
             Denetim
@@ -271,6 +298,17 @@ export function Tezgah() {
               {t.akisHatasi && (
                 <p role="alert" data-testid="lexis-akis-hatasi" className="mt-4 border border-tone-danger/40 bg-tone-danger/10 px-3 py-2 text-[12.5px] text-tone-danger">
                   {t.akisHatasi}
+                </p>
+              )}
+
+              {(t.kayit.tur === "hata" || t.kayit.tur === "cakisma") && (
+                <p role="alert" data-testid="lexis-kayit-hatasi" className="mt-4 border border-tone-danger/40 bg-tone-danger/10 px-3 py-2 text-[12.5px] text-tone-danger">
+                  {t.kayit.tur === "cakisma" ? t.kayit.mesaj : `Taslak kaydedilemedi: ${t.kayit.mesaj}`}
+                  {t.kayit.tur === "hata" && taslak && (
+                    <button type="button" onClick={t.yenidenKaydet} className={`ml-2 ${BAGLANTI_SINIFI}`}>
+                      Yeniden dene
+                    </button>
+                  )}
                 </p>
               )}
 

@@ -1,5 +1,6 @@
-// Gerçek dava kipi — `lexisApi`'nin dosya bölgesi yöntemleri Lexis servisine gider (`lexisServis.ts`), taslak
-// yazımı bağlı değildir, diğer sekmeler örnek veride kalır. `apiClient` sahtedir (ağ ve MSAL yok).
+// Gerçek dava kipi — `lexisApi`'nin bütün yöntemleri Lexis servisine gider (`lexisServis.ts`): dosya bölgesi,
+// taslak iskeleti, kütüphane ve kalıcılık (taslak, geçmiş, kart seçimi, şirket profili). `apiClient` sahtedir
+// (ağ ve MSAL yok).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMock = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -8,7 +9,7 @@ vi.mock("@/lib/api", () => ({ apiClient: apiMock }));
 import { lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipi, veriKipiAyarla } from "./lexisApi";
 import { LEXIS_DAVA_SERVISI_YOK } from "./lexisServis";
 import { LEXIS_YETKI_MESAJI } from "./lexisWord";
-import type { LexisAkisOlayi } from "@/types/lexis";
+import type { LexisAkisOlayi, LexisTaslak } from "@/types/lexis";
 
 function yanit(status: number, govde: unknown, tur = "application/json"): Response {
   return {
@@ -102,7 +103,8 @@ describe("gerçek dava kipi", () => {
 
     const [yol, init] = apiMock.fetch.mock.calls[0] as [string, RequestInit];
     expect(yol).toBe("/lexis-api/iskelet");
-    expect(JSON.parse(init.body as string)).toEqual({ case_id: 501, sirket: "QUICK", rapor_turu: "ANA", iskelet: "KISA" }); // belge/emsal GİTMEZ
+    // Belge ve emsal metni GİTMEZ; emsallerin yalnız sayısı gider (koşu logu).
+    expect(JSON.parse(init.body as string)).toEqual({ case_id: 501, sirket: "QUICK", rapor_turu: "ANA", iskelet: "KISA", emsal_sayisi: 0 });
     expect(olaylar.filter((o) => o.status === "bolum").map((o) => (o.status === "bolum" ? o.bolum : ""))).toEqual(["hasar", "iddia", "uzman_gorusu", "degerlendirme"]);
     expect(olaylar.find((o) => o.status === "bolum" && o.bolum === "hasar")).toMatchObject({ etiketli: ISKELET.etiketli.hasar });
     expect(olaylar.find((o) => o.status === "muallak")).toMatchObject({ oneri: MUALLAK });
@@ -143,18 +145,84 @@ describe("gerçek dava kipi", () => {
     expect(JSON.parse(init.body as string)).toMatchObject({ case_id: 501, sha256: "a" });
   });
 
-  it("muallak önerisi seçilen sınıflarla servisten gelir; Geçmiş, Kart bağı ve Şirketler örnek veride kalır", async () => {
+  it("muallak önerisi seçilen sınıflarla servisten gelir", async () => {
     servisKur();
     const istek = { case_id: 501, sirket: "QUICK" as const, kusur_tespiti: "KOMPLIKASYON" as const, risk_duzeyi: "RISKLI" as const, teminat: "ICINDE" as const };
     expect(await lexisApi.muallakOner(istek)).toMatchObject({ manevi: 40000, dayanak: "EMSAL" });
     const [yol, init] = apiMock.fetch.mock.calls[0] as [string, RequestInit];
     expect(yol).toBe("/lexis-api/muallak-oner");
     expect(JSON.parse(init.body as string)).toEqual(istek);
+  });
 
+  const cagri = (sira: number) => {
+    const [yol, init] = apiMock.fetch.mock.calls[sira] as [string, RequestInit];
+    return { yol, yontem: init.method, govde: init.body ? JSON.parse(init.body as string) : undefined };
+  };
+
+  it("Geçmiş, Kart bağı ve Şirketler servisten gelir; seçim ve profil servise yazılır", async () => {
+    const kosu = { id: "7", case_id: 501, ofis_no: DAVA.ofis_no };
+    const bag = { rapor: "AK:abc", klasor: "03054", bag: { durum: "COK_ADAY", adaylar: [], birincil: 8102, insan_secimi: true, uyarilar: [] } };
+    const profil = { sirket_kodu: "AXA" as const, ad: "AXA SİGORTA A.Ş.", iskelet_ana: "KISA" as const, iskelet_ek: "EK" as const, sabit_metinler: {}, kriter_metni: "", muallak_tablosu: [], guncelleme: null };
+    servisKur({ "/gecmis": yanit(200, [kosu]), "/kart-baglari": yanit(200, [bag]), "/kart-sec": yanit(200, bag), "/profiller": yanit(200, [profil]), "/profil/AXA": yanit(200, { ...profil, guncelleme: "2026-10-04T20:00:00+00:00" }) });
+
+    expect(lexisApi.kalici).toBe(true);
+    expect(await lexisApi.gecmis()).toEqual([kosu]);
+    expect(await lexisApi.kartBaglari()).toEqual([bag]);
+    expect(await lexisApi.kartSec("AK:abc", 8102)).toEqual(bag);
+    expect(cagri(2)).toEqual({ yol: "/lexis-api/kart-sec", yontem: "POST", govde: { rapor: "AK:abc", kart_id: 8102 } });
+    await lexisApi.kartSec("AK:abc", null);
+    expect(cagri(3).govde).toEqual({ rapor: "AK:abc", kart_id: null }); // seçimi geri al
+
+    expect(await lexisApi.profiller()).toEqual([profil]);
+    expect((await lexisApi.profilKaydet({ ...profil, kriter_metni: "yazılı kural" })).guncelleme).toBe("2026-10-04T20:00:00+00:00");
+    // Şirket kodu yolda gider; ad ve güncelleme damgası sunucunundur, gövdeye girmez.
+    expect(cagri(5)).toEqual({ yol: "/lexis-api/profil/AXA", yontem: "PUT", govde: { iskelet_ana: "KISA", iskelet_ek: "EK", sabit_metinler: {}, kriter_metni: "yazılı kural", muallak_tablosu: [] } });
+  });
+
+  it("taslak sürümle kaydedilir, okunur, silinir; koşu kimliği iskeletten öğrenilip kayda eklenir", async () => {
+    const taslak: LexisTaslak = { case_id: 501, sirket: "QUICK", rapor_turu: "ANA", iskelet: "KISA", etiketli: {}, ozet: {}, degerlendirme: null, muallak: null, muallak_maddi: null, muallak_manevi: null, emsaller: [] };
+    const kayitli = { taslak, ekran: {}, surum: 3, kosu_id: 41, guncelleyen: "yonetici@ornek.test", guncelleme: "2026-10-04T20:00:00+00:00" };
+    const sonuc = { surum: 4, guncelleme: "2026-10-04T20:05:00+00:00", guncelleyen: "yonetici@ornek.test" };
+    servisKur({ "/taslak/501": yanit(200, kayitli), "/taslak/502": yanit(200, null), "/iskelet": yanit(200, { ...ISKELET, kosu_id: 77 }) });
+
+    expect(await lexisApi.taslakGetir(502)).toBeNull(); // kayıt yok: hata değil
+    expect(await lexisApi.taslakGetir(501)).toEqual(kayitli);
     apiMock.fetch.mockClear();
-    expect((await lexisApi.profiller()).length).toBeGreaterThan(0);
-    expect((await lexisApi.gecmis()).length).toBeGreaterThan(0);
-    expect((await lexisApi.kartBaglari()).length).toBeGreaterThan(0);
+
+    // Kayıtlı taslağın koşusu (41) kayda eklenir; yeni yazımdan sonra iskeletin açtığı koşu (77) geçer.
+    servisKur({ "/taslak/501": yanit(200, sonuc), "/iskelet": yanit(200, { ...ISKELET, kosu_id: 77 }) });
+    const govde = { taslak: { ...taslak }, ekran: { secili_belgeler: [1] }, surum: 3, uyari_sayisi: 2 };
+    expect(await lexisApi.taslakKaydet(501, govde)).toEqual(sonuc);
+    expect(cagri(0)).toEqual({ yol: "/lexis-api/taslak/501", yontem: "PUT", govde: { ...govde, kosu_id: 41 } });
+
+    const olaylar: LexisAkisOlayi[] = [];
+    for await (const olay of lexisApi.taslakYaz(ISTEK)) olaylar.push(olay);
+    expect(olaylar[olaylar.length - 1]).toMatchObject({ status: "complete", kosu_id: "77" });
+    apiMock.fetch.mockClear();
+    await lexisApi.taslakKaydet(501, govde);
+    expect(cagri(0).govde.kosu_id).toBe(77);
+
+    servisKur({ "/taslak/501": yanit(200, { silindi: true }) });
+    apiMock.fetch.mockClear();
+    await lexisApi.taslakSil(501);
+    expect(cagri(0)).toMatchObject({ yol: "/lexis-api/taslak/501", yontem: "DELETE" });
+  });
+
+  it("başka oturumun yazdığı taslak ezilmez: 409 servisin metniyle gelir; veritabanı yoksa 503", async () => {
+    const taslak = { case_id: 501 } as never;
+    apiMock.fetch.mockResolvedValueOnce(yanit(409, { detail: "Bu davanın taslağı başka bir oturumda değişmiş." }));
+    await expect(lexisApi.taslakKaydet(501, { taslak, ekran: {}, surum: 1, uyari_sayisi: 0 })).rejects.toMatchObject({ status: 409, message: "Bu davanın taslağı başka bir oturumda değişmiş." });
+    apiMock.fetch.mockResolvedValueOnce(yanit(503, { detail: "Lexis veritabanına ulaşılamadı; biraz sonra tekrar deneyin." }));
+    await expect(lexisApi.gecmis()).rejects.toMatchObject({ status: 503, message: "Lexis veritabanına ulaşılamadı; biraz sonra tekrar deneyin." });
+  });
+
+  it("örnek kipte hiçbir şey kaydedilmez", async () => {
+    veriKipiAyarla("ornek");
+    expect(lexisApi.kalici).toBe(false);
+    expect(await lexisApi.taslakGetir(9001)).toBeNull();
+    expect(await lexisApi.taslakKaydet(9001, { taslak: { case_id: 9001 } as never, ekran: {}, surum: null, uyari_sayisi: 0 })).toBeNull();
+    await lexisApi.taslakSil(9001);
+    expect((await lexisApi.profiller()).length).toBeGreaterThan(0); // örnek profiller bellekten
     expect(apiMock.fetch).not.toHaveBeenCalled();
   });
 });

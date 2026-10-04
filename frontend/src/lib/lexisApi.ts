@@ -1,13 +1,15 @@
 // Lexis istemcisi — `/lexis` sayfası araca YALNIZ bununla konuşur (`lib/hukukbotApi.ts` deseni).
 //
-// BUGÜN: çekirdek ayrı depoda (`lexis-rapor`) ve yalnız Word ucu var. `lexisApi` bellekte çalışan ÖRNEK
-// adaptördür (`lib/lexisOrnekVeri.ts`, sentetik veri) — sayfa yenilenince durum sıfırlanır. `ORNEK_VERI` bayrağı
-// sayfadaki "Örnek veri" şeridini sürer. TEK ağ isteği Word'dür: `wordIndir` örnek taslağı gerçek servise
-// (`lib/lexisWord.ts` → `/lexis-api/word`) gönderir, gerçek şirket şablonunda dosya döner.
+// İKİ ADAPTÖR (kipi sayfa seçer, `veriKipi()`):
+// - ÖRNEK (varsayılan): bellekte çalışır (`lib/lexisOrnekVeri.ts`, sentetik veri) — sayfa yenilenince durum
+//   sıfırlanır, hiçbir şey kaydedilmez. TEK ağ isteği Word'dür: `wordIndir` örnek taslağı gerçek servise
+//   (`lib/lexisWord.ts` → `/lexis-api/word`) gönderir, gerçek şirket şablonunda dosya döner.
+// - GERÇEK (`?veri=gercek`): her yöntem Lexis servisine gider (`lib/lexisServis.ts`); taslak, koşu geçmişi, kart
+//   seçimi ve şirket profili servisin kendi veritabanında saklanır (`kalici`). Denetim hâlâ buradaki
+//   `lexisDenetim.ts` ile koşar; taslak belgelerden değil karttan kurulan iskelettir.
 //
-// ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Gerçek adaptör aynı arayüzü `apiClient.fetch` ile uygular
-// (`taslakYaz` NDJSON akışı için `hukukbotApi.ask` okuyucusu), `lexisApi` ona bağlanır, `ORNEK_VERI` false olur;
-// örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
+// ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Belgelerden yazım gelince `taslakYaz` NDJSON akışına bağlanır
+// (`hukukbotApi.ask` okuyucusu), `ORNEK_VERI` false olur; örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
 import { denetle as ornekDenetle } from "@/lib/lexisDenetim";
 import { katla } from "@/lib/lexisMetin";
 import type { WordSonucu } from "@/lib/lexisWord";
@@ -27,6 +29,7 @@ import {
   type DosyaGirdisi,
   type Emsal,
   type KararKaydi,
+  type KayitliTaslak,
   type KutuphaneFiltresi,
   type KutuphaneKaydi,
   type KusurTespiti,
@@ -42,6 +45,8 @@ import {
   type RiskDuzeyi,
   type SirketProfili,
   type TaslakIstegi,
+  type TaslakKaydi,
+  type TaslakKayitSonucu,
   type TaslakKosusu,
   type Teminat,
 } from "@/types/lexis";
@@ -104,6 +109,14 @@ export interface LexisApi {
   kartSec(rapor: string, kartId: number | null, signal?: AbortSignal): Promise<RaporBagi>;
   profiller(signal?: AbortSignal): Promise<SirketProfili[]>;
   profilKaydet(profil: SirketProfili, signal?: AbortSignal): Promise<SirketProfili>;
+  /** Taslak, geçmiş, kart seçimi ve profil sunucuda saklanıyor mu. Örnek kipte `false`: hiçbir şey kaydedilmez. */
+  readonly kalici: boolean;
+  /** Davanın kayıtlı taslağı; yoksa (ve örnek kipte) `null`. */
+  taslakGetir(caseId: number, signal?: AbortSignal): Promise<KayitliTaslak | null>;
+  /** Taslağı okunan sürümle yazar; başka oturum araya girdiyse 409 (`LexisApiError`). Örnek kipte `null`. */
+  taslakKaydet(caseId: number, kayit: Omit<TaslakKaydi, "kosu_id">, signal?: AbortSignal): Promise<TaslakKayitSonucu | null>;
+  /** Kayıtlı taslağı siler (künye değişip taslak bilerek bırakıldığında). */
+  taslakSil(caseId: number, signal?: AbortSignal): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -135,6 +148,7 @@ export function ornekDurumuSifirla(): void {
   kip = "ornek";
   gercekDosyalar.clear();
   gercekEmsalMetinleri.clear();
+  gercekKosular.clear();
   gercekKararBankasi = null;
 }
 
@@ -457,6 +471,16 @@ const ornekLexisApi: LexisApi = {
     else durum.profiller.push(kayit);
     return kopya(kayit);
   },
+
+  // Örnek kipte taslak saklanmaz (sayfa yenilenince gider); tezgâh `kalici`ye bakıp kayıt akışını hiç başlatmaz.
+  kalici: false,
+  async taslakGetir() {
+    return null;
+  },
+  async taslakKaydet() {
+    return null;
+  },
+  async taslakSil() {},
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -464,11 +488,11 @@ const ornekLexisApi: LexisApi = {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * `ornek`: her şey bellekteki sentetik veriden. `gercek`: "Rapor yaz" sekmesinin DOSYA bölgesi (dava arama,
- * künye, belge listesi, emsal önerisi) Lexis servisinden gelir (`lib/lexisServis.ts`). "Taslağı yaz" iskelet
- * üretir (künye karttan, özet boş — modele bir şey gitmez), muallak sınıfları insan seçer, Word gerçek servisten
- * iner; denetim buradaki `lexisDenetim` ile koşar. Diğer sekmeler örnek veride kalır. Kipi sayfa seçer
- * (`LexisPage`, `?veri=gercek`).
+ * `ornek`: her şey bellekteki sentetik veriden; hiçbir şey kaydedilmez. `gercek`: beş sekmenin tamamı Lexis
+ * servisinden gelir (`lib/lexisServis.ts`). "Taslağı yaz" iskelet üretir (künye karttan, özet boş — modele bir şey
+ * gitmez), muallak sınıfları insan seçer, Word gerçek servisten iner; denetim buradaki `lexisDenetim` ile koşar.
+ * Taslak, koşu geçmişi, kart seçimi ve şirket profili servisin KENDİ veritabanında saklanır (`kalici`). Kipi sayfa
+ * seçer (`LexisPage`, `?veri=gercek`).
  */
 export type VeriKipi = "ornek" | "gercek";
 
@@ -489,6 +513,8 @@ export const GERCEK_ISKELET_NOTU =
 // Gerçek kipin oturum belleği: denetim ve Word, seçili davanın kartını ve bakılan emsallerin metnini ister.
 const gercekDosyalar = new Map<number, DosyaGirdisi>();
 const gercekEmsalMetinleri = new Map<string, string>();
+// Dava → taslağının koşusu (Geçmiş satırı): iskelet yanıtından ya da kayıtlı taslaktan öğrenilir; kayıt ve Word taşır.
+const gercekKosular = new Map<number, number>();
 let gercekKararBankasi: KararKaydi[] | null = null;
 
 const servis = () => import("@/lib/lexisServis"); // dinamik: örnek kip `apiClient`'ı (MSAL) hiç yüklemez
@@ -551,6 +577,8 @@ const gercekLexisApi: LexisApi = {
       yield { status: "failed", error_ozet: e instanceof LexisApiError ? e.message : LEXIS_GENEL_HATA, error_kod: "analysis_error" };
       return;
     }
+    if (iskelet.kosu_id != null) gercekKosular.set(istek.case_id, iskelet.kosu_id);
+    else gercekKosular.delete(istek.case_id); // veritabanı yok: koşu loglanmadı, eski koşuya da yazılmasın
     yield { status: "info", asama: "bolumler", mesaj: "Bölümler hazırlanıyor" };
     for (const tanim of ISKELET_BOLUMLERI[istek.iskelet]) {
       if (tanim.tur === "ETIKETLI") yield { status: "bolum", bolum: tanim.kod, etiketli: iskelet.etiketli[tanim.kod] ?? [] };
@@ -573,7 +601,7 @@ const gercekLexisApi: LexisApi = {
       muallak_manevi: null,
       emsaller: istek.emsal_sha,
     };
-    yield { status: "complete", kosu_id: `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
+    yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
   },
   async denetle(taslak, signal) {
     if (signal?.aborted) throw iptalHatasi();
@@ -585,7 +613,38 @@ const gercekLexisApi: LexisApi = {
   async wordIndir(taslak, signal) {
     const dosya = await gercekDosya(taslak.case_id, signal);
     const { wordIndir } = await import("@/lib/lexisWord");
-    return wordIndir(taslak, { hasar_no: dosya.hasar_no, hukuk_no: dosya.hukuk_no, rapor_no: dosya.dava.dosya_no }, signal);
+    const kosu = gercekKosular.get(taslak.case_id);
+    return wordIndir(taslak, { hasar_no: dosya.hasar_no, hukuk_no: dosya.hukuk_no, rapor_no: dosya.dava.dosya_no, ...(kosu != null ? { kosu_id: kosu } : {}) }, signal);
+  },
+
+  // --- kalıcılık: servisin kendi veritabanı ---
+  kalici: true,
+  async taslakGetir(caseId, signal) {
+    const kayit = await (await servis()).taslakGetir(caseId, signal);
+    if (kayit?.kosu_id != null) gercekKosular.set(caseId, kayit.kosu_id);
+    return kayit;
+  },
+  async taslakKaydet(caseId, kayit, signal) {
+    return (await servis()).taslakKaydet(caseId, { ...kayit, kosu_id: gercekKosular.get(caseId) ?? null }, signal);
+  },
+  async taslakSil(caseId, signal) {
+    await (await servis()).taslakSil(caseId, signal);
+    gercekKosular.delete(caseId);
+  },
+  async gecmis(signal) {
+    return (await servis()).gecmis(signal);
+  },
+  async kartBaglari(signal) {
+    return (await servis()).kartBaglari(signal);
+  },
+  async kartSec(rapor, kartId, signal) {
+    return (await servis()).kartSec(rapor, kartId, signal);
+  },
+  async profiller(signal) {
+    return (await servis()).profiller(signal);
+  },
+  async profilKaydet(profil, signal) {
+    return (await servis()).profilKaydet(profil, signal);
   },
 };
 

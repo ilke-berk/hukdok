@@ -12,11 +12,16 @@ vi.mock("sonner", () => ({ toast: toastMocks }));
 const confirmMock = vi.hoisted(() => ({ fn: vi.fn(async (_opts: unknown) => true) }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => confirmMock.fn }));
 
+// Gerçek dava kipinde sekmeler servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
+const servisMock = vi.hoisted(() => ({ gecmis: vi.fn(), kartBaglari: vi.fn(), kartSec: vi.fn(), profiller: vi.fn(), profilKaydet: vi.fn() }));
+vi.mock("@/lib/lexisServis", () => servisMock);
+
 import { GecmisTablosu } from "./GecmisTablosu";
 import { KartBagiListesi } from "./KartBagiListesi";
 import { KutuphaneTarayici } from "./KutuphaneTarayici";
 import { SirketProfilleri } from "./SirketProfilleri";
-import { lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
+import { lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
+import type { RaporBagi, SirketProfili, TaslakKosusu } from "@/types/lexis";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -72,6 +77,7 @@ beforeEach(() => {
   confirmMock.fn.mockReset();
   confirmMock.fn.mockResolvedValue(true);
   Object.values(toastMocks).forEach((m) => m.mockReset());
+  Object.values(servisMock).forEach((m) => m.mockReset());
   kap = document.createElement("div");
   document.body.appendChild(kap);
   kok = createRoot(kap);
@@ -80,6 +86,65 @@ beforeEach(() => {
 afterEach(() => {
   act(() => kok.unmount());
   kap.remove();
+  veriKipiAyarla("ornek");
+});
+
+describe("gerçek dava kipi — sekmeler servisin veritabanından", () => {
+  beforeEach(() => veriKipiAyarla("gercek"));
+
+  it("Geçmiş servisteki koşu logunu gösterir", async () => {
+    const kosu: TaslakKosusu = { id: "7", tarih: "2026-10-04T19:00:00+00:00", kullanici: "yonetici@ornek.test", case_id: 501, ofis_no: "QUICK-0501-DR.GERCEK-HUK", sirket: "QUICK", rapor_turu: "ANA", iskelet: "KISA", emsal_sayisi: 3, uyari_sayisi: 4, indirme_tarihi: null };
+    servisMock.gecmis.mockResolvedValue([kosu]);
+    await ciz(<GecmisTablosu />);
+    const [satir] = satirlar("lexis-kosu");
+    expect(satir.textContent).toContain("QUICK-0501-DR.GERCEK-HUK");
+    expect(satir.textContent).toContain("yonetici@ornek.test");
+    expect(satir.textContent).toContain("taslak");
+  });
+
+  it("Kart bağı listesi servisten gelir; seçim servise yazılır", async () => {
+    const kart = (kart_id: number) => ({ kart_id, hasar_nolari: ["50000001"], dosya_nolari: [], mahkeme: "Örnekköy 1. İdare Mahkemesi", esas_no: "2020/11", durum: "DERDEST", asama: null });
+    const satir: RaporBagi = {
+      rapor: "AK:0a1b2c3d4e5f6071",
+      klasor: "03054",
+      sirket: "AK",
+      rapor_turu: "ANA",
+      rapor_no: "3.54",
+      hasar_no: "50000001",
+      mahkeme: null,
+      esas_no: null,
+      bag: { durum: "COK_ADAY", anahtar: "HASAR_NO", adaylar: [{ kart: kart(8101), hasar: true, dosya: true, esas: false }, { kart: kart(8102), hasar: true, dosya: false, esas: false }], birincil: null, insan_secimi: false, uyarilar: [] },
+    };
+    servisMock.kartBaglari.mockResolvedValue([satir]);
+    servisMock.kartSec.mockResolvedValue({ ...satir, bag: { ...satir.bag, birincil: 8102, insan_secimi: true } });
+    await ciz(<KartBagiListesi />);
+    expect(satirlar("lexis-bag-satiri")[0].textContent).toContain("03054");
+
+    await tikla(dugme("Kart seç", satirlar("lexis-bag-satiri")[0]));
+    const adaylar = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="lexis-aday-kart"]'));
+    await tikla(dugme("Bu kart", adaylar[1]));
+    expect(servisMock.kartSec.mock.calls[0].slice(0, 2)).toEqual(["AK:0a1b2c3d4e5f6071", 8102]);
+    expect(satirlar("lexis-bag-satiri")).toHaveLength(0); // seçim bekleyenlerden düştü
+  });
+
+  it("Şirket profili servise kaydedilir; kaydı olmayan şirket varsayılanla görünür, biçim seçenekleri servisin kabul ettikleridir", async () => {
+    const profil: SirketProfili = { sirket_kodu: "AXA", ad: "AXA SİGORTA A.Ş.", iskelet_ana: "KISA", iskelet_ek: "EK", sabit_metinler: {}, kriter_metni: "", muallak_tablosu: [], guncelleme: null };
+    servisMock.profiller.mockResolvedValue([profil]);
+    servisMock.profilKaydet.mockImplementation(async (p: SirketProfili) => ({ ...p, guncelleme: "2026-10-04T20:00:00+00:00" }));
+    await ciz(<SirketProfilleri />);
+
+    expect(kap.textContent).toContain("Henüz kaydedilmedi — koddaki varsayılan");
+    expect(kap.querySelector('[data-testid="lexis-profil-etkisi"]')!.textContent).toContain("emsallerden ÖNCE");
+    const [ana, ek] = Array.from(kap.querySelectorAll<HTMLSelectElement>("form select")).slice(0, 2);
+    expect(Array.from(ana.options).map((o) => o.value)).toEqual(["ANADOLU", "ALTILI", "KISA"]);
+    expect(Array.from(ek.options).map((o) => o.value)).toEqual(["EK"]);
+
+    await tikla(dugme("Satır ekle"));
+    await tikla(dugme("Kaydet"));
+    expect((servisMock.profilKaydet.mock.calls[0][0] as SirketProfili).muallak_tablosu).toHaveLength(1);
+    expect(toastMocks.success).toHaveBeenCalledWith("Profil kaydedildi", undefined); // önizleme notu yok: gerçekten kaydedildi
+    expect(kap.textContent).toContain("Son güncelleme 04.10.2026");
+  });
 });
 
 describe("GecmisTablosu", () => {

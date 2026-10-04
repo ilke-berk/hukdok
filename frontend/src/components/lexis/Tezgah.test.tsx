@@ -18,11 +18,26 @@ const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
 vi.mock("@/lib/lexisWord", () => wordMock);
 
 // Gerçek dava kipinde dosya bölgesi servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
-const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn(), iskelet: vi.fn(), muallakOner: vi.fn(), kararBankasi: vi.fn(), kutuphaneAra: vi.fn(), raporGetir: vi.fn(), emsalPuanla: vi.fn() }));
+const servisMock = vi.hoisted(() => ({
+  davaAra: vi.fn(),
+  dosyaGetir: vi.fn(),
+  emsalOner: vi.fn(),
+  iskelet: vi.fn(),
+  muallakOner: vi.fn(),
+  kararBankasi: vi.fn(),
+  kutuphaneAra: vi.fn(),
+  raporGetir: vi.fn(),
+  emsalPuanla: vi.fn(),
+  taslakGetir: vi.fn(),
+  taslakKaydet: vi.fn(),
+  taslakSil: vi.fn(),
+}));
 vi.mock("@/lib/lexisServis", () => servisMock);
 
 import { Tezgah } from "./Tezgah";
+import { KAYIT_GECIKMESI, kayitGecikmesiAyarla } from "./useTezgah";
 import { GERCEK_ISKELET_NOTU, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
+import type { DosyaGirdisi, Emsal, KayitliTaslak, LexisTaslak } from "@/types/lexis";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -127,6 +142,7 @@ describe("Tezgah — gerçek dava kipi", () => {
     const yeni = (await lexisApi.kutuphaneAra({})).find((k) => !emsaller.some((e) => e.kayit.okuma.sha256 === k.okuma.sha256))!;
     servisMock.kutuphaneAra.mockResolvedValue([yeni]);
     servisMock.emsalPuanla.mockResolvedValue({ kayit: yeni, puan: 1, bilesenler: [], gerekce: "elle eklendi" });
+    servisMock.taslakGetir.mockResolvedValue(null);
 
     veriKipiAyarla("gercek");
     await ciz();
@@ -174,6 +190,182 @@ describe("Tezgah — gerçek dava kipi", () => {
     wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x.docx", uyari_sayisi: 0, uyarilar: [] });
     await tikla(dugme("Word indir"));
     expect(wordMock.wordIndir.mock.calls[0][1]).toEqual({ hasar_no: ornek.hasar_no, hukuk_no: ornek.hukuk_no, rapor_no: dava.dosya_no });
+  });
+});
+
+describe("Tezgah — kalıcılık (gerçek dava kipi)", () => {
+  const MUALLAK = { maddi: null, manevi: null, dayanak: "YOK" as const, dayanak_satirlari: [], kusur_tespiti: "BELIRSIZ" as const, risk_duzeyi: "BELIRSIZ" as const, teminat: "BELIRSIZ" as const, uyarilar: [] };
+  const GIRIS = "Tarafımıza iletilen belge ve bilgiler ile yapılan inceleme neticesinde;";
+  let dosya: DosyaGirdisi;
+  let emsaller: Emsal[];
+
+  const GECIKME = 40;
+
+  /** Otomatik kaydın gecikmesi kadar bekler. */
+  async function kaydiBekle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, GECIKME + 60));
+    });
+    await bekle();
+  }
+
+  afterEach(() => kayitGecikmesiAyarla(KAYIT_GECIKMESI));
+
+  beforeEach(async () => {
+    kayitGecikmesiAyarla(GECIKME);
+    const ornek = await lexisApi.dosyaGetir(9003);
+    emsaller = await lexisApi.emsalOner({ case_id: 9003, sirket: ornek.sirket, rapor_turu: ornek.rapor_turu });
+    const dava = { ...ornek.dava, case_id: 501, ofis_no: "QUICK-0501-DR.GERCEK-HUK" };
+    dosya = { ...ornek, dava, onceki_rapor: null };
+    servisMock.davaAra.mockResolvedValue([dava, { ...dava, case_id: 502, ofis_no: "QUICK-0502-DR.IKINCI-HUK" }]);
+    servisMock.dosyaGetir.mockImplementation(async (caseId: number) => ({ ...dosya, dava: { ...dava, case_id: caseId } }));
+    servisMock.emsalOner.mockResolvedValue(emsaller);
+    servisMock.kararBankasi.mockResolvedValue([]);
+    servisMock.taslakGetir.mockResolvedValue(null);
+    servisMock.iskelet.mockResolvedValue({
+      etiketli: { hasar: [{ alan: "sigortali", etiket: "Sigortalı", deger: dosya.sigortali, zorunlu: true, kaynak: "KART" }] },
+      ozet: {},
+      degerlendirme: { giris: GIRIS, maddeler: [{ metin: "[…] tazminat tutarında muallak ayrılabileceği", tur: "KALIP", dayanak_bolum: null, dayanak_alinti: null }], sulh_uygunluk: "", muallak_gerekcesi: "" },
+      muallak: MUALLAK,
+      kosu_id: 77,
+    });
+    veriKipiAyarla("gercek");
+  });
+
+  it("taslak yazıldıktan sonra kendiliğinden kaydedilir; sonraki kayıt okunan sürümle gider", async () => {
+    servisMock.taslakKaydet.mockResolvedValueOnce({ surum: 1, guncelleme: "2026-10-04T20:00:00+00:00", guncelleyen: "siz" });
+    await ciz();
+    await taslakYaz("QUICK-0501");
+    await kaydiBekle();
+
+    // Akış boyunca (bölümler tek tek gelirken) yazılmaz: bittikten sonra TEK kayıt.
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(1);
+    const [caseId, ilk] = servisMock.taslakKaydet.mock.calls[0] as [number, { taslak: LexisTaslak; surum: number | null; kosu_id: number | null; uyari_sayisi: number; ekran: { secili_belgeler: number[] } }];
+    expect(caseId).toBe(501);
+    expect(ilk).toMatchObject({ surum: null, kosu_id: 77, taslak: { case_id: 501, iskelet: "KISA" } });
+    expect(ilk.uyari_sayisi).toBeGreaterThan(0);
+    expect(ilk.ekran.secili_belgeler).toEqual(dosya.belgeler.map((b) => b.id));
+    expect(test("lexis-kayit-durumu")!.textContent).toContain("Kaydedildi");
+
+    // Değişiklik yokken yeniden yazılmaz; düzenleme okunan sürümle (1) kaydedilir.
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(1);
+    servisMock.taslakKaydet.mockResolvedValueOnce({ surum: 2, guncelleme: "2026-10-04T20:01:00+00:00", guncelleyen: "siz" });
+    await yaz(alan<HTMLTextAreaElement>("Giriş cümlesi"), "Tarafımıza iletilen belgeler incelendi;");
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(2);
+    expect(servisMock.taslakKaydet.mock.calls[1][1]).toMatchObject({ surum: 1, taslak: { degerlendirme: { giris: "Tarafımıza iletilen belgeler incelendi;" } } });
+  });
+
+  it("dava değişimi taslağı silmez: bekleyen kayıt hemen gider, onay istenmez; künye değişimi kayıtlı taslağı siler", async () => {
+    servisMock.taslakKaydet.mockResolvedValue({ surum: 1, guncelleme: "2026-10-04T20:00:00+00:00", guncelleyen: "siz" });
+    servisMock.taslakSil.mockResolvedValue(undefined);
+    await ciz();
+    await taslakYaz("QUICK-0501");
+    confirmMock.fn.mockClear();
+
+    await tikla(dugme("Davayı değiştir"));
+    expect(confirmMock.fn).not.toHaveBeenCalled();
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(1); // gecikme beklenmedi
+    expect(servisMock.taslakKaydet.mock.calls[0][0]).toBe(501);
+
+    await davaSec("QUICK-0502");
+    await tikla(dugme("Taslağı yaz"));
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet.mock.calls.at(-1)![0]).toBe(502);
+    confirmMock.fn.mockClear();
+    const iskelet = Array.from(test("lexis-kunye")!.querySelectorAll("select"))[2];
+    await yaz(iskelet, "ALTILI");
+    await bekle();
+    expect((confirmMock.fn.mock.calls.at(-1)![0] as { title: string }).title).toBe("Taslak silinecek");
+    expect(servisMock.taslakSil).toHaveBeenCalledTimes(1);
+    expect(servisMock.taslakSil.mock.calls[0][0]).toBe(502);
+    expect(maddeler()).toHaveLength(0);
+  });
+
+  it("kayıtlı taslak dava seçilince künyesi, emsalleri ve bölüm durumlarıyla geri açılır; açmak yeni sürüm yazmaz", async () => {
+    const taslak: LexisTaslak = {
+      case_id: 501,
+      sirket: "QUICK",
+      rapor_turu: "ANA",
+      iskelet: "ALTILI", // kart QUICK → KISA önerir; kayıtlı taslağın seçimi geçerlidir
+      etiketli: { hasar: [{ alan: "sigortali", etiket: "Sigortalı", deger: "Dr. Kayıtlı Hekim", zorunlu: true, kaynak: "ELLE" }] },
+      ozet: { iddia: [{ metin: "Kaydedilmiş iddia özeti.", kaynak_belge_id: null }] },
+      degerlendirme: { giris: GIRIS, maddeler: [{ metin: "[…] tazminat tutarında muallak ayrılabileceği", tur: "KALIP", dayanak_bolum: null, dayanak_alinti: null }], sulh_uygunluk: "", muallak_gerekcesi: "" },
+      muallak: MUALLAK,
+      muallak_maddi: null,
+      muallak_manevi: 55000,
+      emsaller: [emsaller[0].kayit.okuma.sha256],
+    };
+    const kayitli: KayitliTaslak = {
+      taslak,
+      ekran: { bolum_durumlari: { iddia: "duzenlendi" }, secili_belgeler: [dosya.belgeler[0].id] },
+      surum: 4,
+      kosu_id: 41,
+      guncelleyen: "ikinci@ornek.test",
+      guncelleme: "2026-10-04T17:30:00+00:00",
+    };
+    servisMock.taslakGetir.mockResolvedValue(kayitli);
+    servisMock.emsalPuanla.mockResolvedValue(emsaller[0]);
+    servisMock.taslakKaydet.mockResolvedValue({ surum: 5, guncelleme: "2026-10-04T20:00:00+00:00", guncelleyen: "siz" });
+    await ciz();
+    await davaSec("QUICK-0501");
+
+    expect(servisMock.taslakGetir.mock.calls[0][0]).toBe(501);
+    expect(toastMocks.info).toHaveBeenCalledWith("Kayıtlı taslak açıldı", { description: "Son kayıt: ikinci@ornek.test · 04.10.2026 20:30" });
+    expect(test("lexis-bolum-gezgini")!.querySelectorAll("button")).toHaveLength(6); // ALTILI
+    expect(test("lexis-bolum-hasar")!.querySelector("input")!.value).toBe("Dr. Kayıtlı Hekim");
+    expect(test("lexis-bolum-iddia")!.querySelector("textarea")!.value).toBe("Kaydedilmiş iddia özeti.");
+    expect(test("lexis-emsaller")!.querySelectorAll("li")).toHaveLength(1); // öneri değil, taslağın baktığı rapor
+    expect(servisMock.emsalOner).not.toHaveBeenCalled();
+    expect(test("lexis-belgeler")!.textContent).toContain(`1/${dosya.belgeler.length} seçili`);
+    expect(test("lexis-kayit-durumu")!.textContent).toBe("Kaydedildi · 04.10.2026 20:30");
+    expect(dugme("Yeniden yaz")).toBeDefined();
+
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet).not.toHaveBeenCalled(); // yalnız açmak "son güncelleyen"i değiştirmez
+
+    // Düzenleme kayıtlı sürümle (4) ve kayıtlı taslağın koşusuyla (41) yazılır; Word aynı koşuyu işaretler.
+    await yaz(test("lexis-bolum-iddia")!.querySelector("textarea")!, "Düzeltilmiş iddia özeti.");
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet.mock.calls[0][1]).toMatchObject({ surum: 4, kosu_id: 41 });
+    wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x.docx", uyari_sayisi: 0, uyarilar: [] });
+    await tikla(dugme("Word indir"));
+    expect(wordMock.wordIndir.mock.calls[0][1]).toMatchObject({ kosu_id: 41 });
+  });
+
+  it("başka oturum yazmışsa (409) uyarı görünür ve bu oturum o taslağa artık yazmaz; ağ hatasında yeniden denenir", async () => {
+    const cakisma = "Bu davanın taslağı başka bir oturumda değişmiş. Davayı yeniden seçip kayıtlı taslağı açın; buradaki değişiklikler kaydedilmedi.";
+    servisMock.taslakKaydet.mockRejectedValueOnce(new LexisApiError(503, "Lexis veritabanına ulaşılamadı; biraz sonra tekrar deneyin."));
+    await ciz();
+    await taslakYaz("QUICK-0501");
+    await kaydiBekle();
+    expect(test("lexis-kayit-hatasi")!.textContent).toContain("Taslak kaydedilemedi: Lexis veritabanına ulaşılamadı");
+
+    servisMock.taslakKaydet.mockRejectedValueOnce(new LexisApiError(409, cakisma));
+    await tikla(dugme("Yeniden dene"));
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(2);
+    expect(test("lexis-kayit-hatasi")!.textContent).toBe(cakisma);
+
+    await yaz(alan<HTMLTextAreaElement>("Giriş cümlesi"), "Tarafımıza iletilen belgeler incelendi;");
+    await kaydiBekle();
+    expect(servisMock.taslakKaydet).toHaveBeenCalledTimes(2); // kilitli: üzerine yazma denenmez
+
+    // Kaydedilemeyen taslakla başka davaya geçiş onay ister.
+    confirmMock.fn.mockClear();
+    confirmMock.fn.mockResolvedValueOnce(false);
+    await tikla(dugme("Davayı değiştir"));
+    expect((confirmMock.fn.mock.calls[0][0] as { title: string }).title).toBe("Kaydedilmemiş değişiklik var");
+    expect(test("lexis-kayit-hatasi")).not.toBeNull();
+  });
+
+  it("kayıtlı taslak okunamazsa dosya yine açılır, hata görünür", async () => {
+    servisMock.taslakGetir.mockRejectedValue(new LexisApiError(503, "Lexis veritabanına ulaşılamadı; biraz sonra tekrar deneyin."));
+    await ciz();
+    await davaSec("QUICK-0501");
+    expect(test("lexis-kunye")).not.toBeNull();
+    expect(test("lexis-emsaller")!.querySelectorAll("li")).toHaveLength(emsaller.length);
+    expect(test("lexis-kayit-hatasi")!.textContent).toContain("Kayıtlı taslak okunamadı: Lexis veritabanına ulaşılamadı");
   });
 });
 

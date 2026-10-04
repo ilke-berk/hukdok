@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { lexisApi } from "@/lib/lexisApi";
+import { LexisApiError, lexisApi } from "@/lib/lexisApi";
+import { tarihSaatYaz } from "@/lib/lexisMetin";
 import {
   ISKELET_BOLUMLERI,
   type BolumKodu,
   type DosyaGirdisi,
   type Emsal,
+  type KayitliTaslak,
   type KutuphaneKaydi,
   type LexisDava,
   type LexisTaslak,
@@ -13,6 +15,7 @@ import {
   type MuallakOnerisi,
   type OzetParagraf,
   type TaslakIstegi,
+  type TaslakKaydi,
   type UretimAsamasi,
 } from "@/types/lexis";
 import type { BolumDurumu } from "./BolumGezgini";
@@ -22,7 +25,40 @@ import { hataMetni, iptalMi } from "./yardimcilar";
 type BolumDurumlari = Partial<Record<BolumKodu, BolumDurumu>>;
 export type MuallakSiniflari = Partial<Pick<MuallakOnerisi, "kusur_tespiti" | "risk_duzeyi" | "teminat">>;
 
+/** Taslağın sunucudaki kaydının durumu (yalnız `lexisApi.kalici` iken `yok` dışına çıkar). */
+export type KayitDurumu =
+  | { tur: "yok" }
+  | { tur: "kaydediliyor" }
+  | { tur: "kaydedildi"; zaman: string }
+  | { tur: "hata"; mesaj: string }
+  /** Taslak başka oturumda değişmiş: bu oturum artık YAZMAZ (davayı yeniden seçince kayıtlı hâli açılır). */
+  | { tur: "cakisma"; mesaj: string };
+
+/** Son değişiklikten bu kadar sonra kaydedilir (ms); dava değişiminde ve sayfadan çıkışta beklenmez. */
+export const KAYIT_GECIKMESI = 1200;
+let kayitGecikmesi = KAYIT_GECIKMESI;
+
+/** Test yardımcısı: otomatik kaydın gecikmesi (ms). */
+export function kayitGecikmesiAyarla(ms: number): void {
+  kayitGecikmesi = ms;
+}
+
+type KayitGovdesi = Omit<TaslakKaydi, "kosu_id" | "surum">;
+/** Dava başına kayıt bağlamı: okunan sürüm, son kaydedilen gövdenin izi, yazma kilidi (çakışmadan sonra). */
+interface KayitBaglami {
+  surum: number | null;
+  son: string | null;
+  kilitli: boolean;
+}
+
 const saat = () => new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+
+function kayitGovdesi(taslak: LexisTaslak, durumlar: BolumDurumlari, secili: Iterable<number>, uyariSayisi: number): KayitGovdesi {
+  return { taslak, ekran: { bolum_durumlari: durumlar, secili_belgeler: [...secili].sort((a, b) => a - b) }, uyari_sayisi: uyariSayisi };
+}
+
+/** Henüz hiçbir bölümü gelmemiş taslak (yarıda kesilen yazım) kaydedilmez: kayıtlı hâlin üzerine boş kabuk yazılmasın. */
+const bosKabuk = (t: LexisTaslak) => t.degerlendirme === null && Object.keys(t.etiketli).length === 0 && Object.keys(t.ozet).length === 0;
 
 /**
  * "Rapor yaz" tezgâhının durumu ve eylemleri. Sıra: dava seç → dosya (künye + belgeler) ve emsaller gelir →
@@ -32,6 +68,11 @@ const saat = () => new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", min
  *   bir önceki render'ına bakmasınlar diye. Her yazma `koy` üzerinden geçer.
  * - Metin düzenlemesi denetimi BAYATLATIR (madde "denetlenmedi" görünür); alandan çıkınca ya da yapısal
  *   değişiklikte (madde ekle/sil/taşı) yeniden denetlenir. Geç gelen eski denetim cevabı yok sayılır.
+ * - KALICILIK (`lexisApi.kalici`, gerçek dava kipi): dava seçilince kayıtlı taslak varsa künyesi, bölüm durumları,
+ *   belge seçimi ve emsalleriyle geri açılır. Taslak her değişiklikten `KAYIT_GECIKMESI` sonra okunan sürümle
+ *   kaydedilir; dava değişiminde ve sayfadan çıkışta bekleyen kayıt hemen gönderilir. Kayıtlar sıraya girer (aynı
+ *   davanın iki yazması yarışmaz). Sunucu 409 dönerse (başka oturum yazmış) bu oturum o davaya artık yazmaz.
+ *   Örnek kipte hiçbiri çalışmaz.
  */
 export function useTezgah() {
   const [dosya, setDosya] = useState<DosyaGirdisi | null>(null);
@@ -54,6 +95,10 @@ export function useTezgah() {
   const [maddeKimlikleri, setMaddeKimlikleri] = useState<string[]>([]);
   const [degisenMaddeler, setDegisenMaddeler] = useState<ReadonlySet<string>>(new Set());
 
+  const [kayit, setKayit] = useState<KayitDurumu>({ tur: "yok" });
+  const [geriYukleniyor, setGeriYukleniyor] = useState(false);
+  const [acilanKayit, setAcilanKayit] = useState<Pick<KayitliTaslak, "guncelleyen" | "guncelleme"> | null>(null);
+
   const taslakRef = useRef<LexisTaslak | null>(null);
   const kimliklerRef = useRef<string[]>([]);
   const dosyaIstegi = useRef<AbortController | null>(null);
@@ -61,6 +106,55 @@ export function useTezgah() {
   const akisIstegi = useRef<AbortController | null>(null);
   const denetimSayaci = useRef(0);
   const kimlikSayaci = useRef(0);
+
+  const baglamlar = useRef(new Map<number, KayitBaglami>());
+  const etkinDava = useRef<number | null>(null);
+  const bekleyenKayit = useRef<{ caseId: number; govde: KayitGovdesi; iz: string } | null>(null);
+  const sonGovde = useRef<{ caseId: number; govde: KayitGovdesi; iz: string } | null>(null);
+  const kayitZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const kayitKuyrugu = useRef<Promise<void>>(Promise.resolve());
+
+  /** Kaydı sıraya koyar. Geç gelen cevap yalnız ekran hâlâ o davayı gösteriyorsa durumu değiştirir. */
+  const gonder = useCallback((b: { caseId: number; govde: KayitGovdesi; iz: string }) => {
+    sonGovde.current = b;
+    kayitKuyrugu.current = kayitKuyrugu.current.then(async () => {
+      const baglam = baglamlar.current.get(b.caseId);
+      if (!baglam || baglam.kilitli || baglam.son === b.iz) return;
+      const ekranda = () => etkinDava.current === b.caseId;
+      if (ekranda()) setKayit({ tur: "kaydediliyor" });
+      try {
+        const sonuc = await lexisApi.taslakKaydet(b.caseId, { ...b.govde, surum: baglam.surum });
+        if (!sonuc) return;
+        baglam.surum = sonuc.surum;
+        baglam.son = b.iz;
+        if (ekranda()) setKayit({ tur: "kaydedildi", zaman: saat() });
+      } catch (e) {
+        const cakisma = e instanceof LexisApiError && e.status === 409;
+        if (cakisma) baglam.kilitli = true;
+        if (ekranda()) setKayit(cakisma ? { tur: "cakisma", mesaj: hataMetni(e) } : { tur: "hata", mesaj: hataMetni(e, "Taslak kaydedilemedi.") });
+      }
+    });
+  }, []);
+
+  /** Bekleyen (gecikmeli) kaydı hemen gönderir. */
+  const kaydiBosalt = useCallback(() => {
+    if (kayitZamanlayici.current) clearTimeout(kayitZamanlayici.current);
+    kayitZamanlayici.current = null;
+    const bekleyen = bekleyenKayit.current;
+    bekleyenKayit.current = null;
+    if (bekleyen) gonder(bekleyen);
+  }, [gonder]);
+
+  const bekleyeniIptalEt = useCallback(() => {
+    if (kayitZamanlayici.current) clearTimeout(kayitZamanlayici.current);
+    kayitZamanlayici.current = null;
+    bekleyenKayit.current = null;
+  }, []);
+
+  /** Kayıt hatasından sonra son gövdeyi yeniden gönderir. */
+  const yenidenKaydet = useCallback(() => {
+    if (sonGovde.current && etkinDava.current === sonGovde.current.caseId) gonder(sonGovde.current);
+  }, [gonder]);
 
   const yeniKimlik = useCallback(() => {
     kimlikSayaci.current += 1;
@@ -92,15 +186,34 @@ export function useTezgah() {
     setDegisenMaddeler(new Set());
   }, [koy, kimlikleriKoy]);
 
-  // Sayfadan çıkışta süren istekler kesilir.
+  // Sayfadan çıkışta süren istekler kesilir; bekleyen kayıt beklemeden gönderilir.
   useEffect(
     () => () => {
       dosyaIstegi.current?.abort();
       emsalIstegi.current?.abort();
       akisIstegi.current?.abort();
+      kaydiBosalt();
     },
-    [],
+    [kaydiBosalt],
   );
+
+  // Otomatik kayıt: taslak, bölüm durumu, belge seçimi ya da uyarı sayısı değişince, yazım akışı ve geri yükleme
+  // bittikten sonra. Son kaydedilenle aynı gövde yeniden gönderilmez.
+  useEffect(() => {
+    if (!lexisApi.kalici || !taslak || akis !== null || geriYukleniyor || bosKabuk(taslak)) return;
+    const baglam = baglamlar.current.get(taslak.case_id);
+    if (!baglam || baglam.kilitli) return;
+    const govde = kayitGovdesi(taslak, bolumDurumlari, seciliBelgeler, uyarilar.length);
+    const iz = JSON.stringify(govde);
+    if (kayitZamanlayici.current) clearTimeout(kayitZamanlayici.current);
+    kayitZamanlayici.current = null;
+    if (iz === baglam.son) {
+      bekleyenKayit.current = null;
+      return;
+    }
+    bekleyenKayit.current = { caseId: taslak.case_id, govde, iz };
+    kayitZamanlayici.current = setTimeout(kaydiBosalt, kayitGecikmesi);
+  }, [taslak, bolumDurumlari, seciliBelgeler, uyarilar, akis, geriYukleniyor, kaydiBosalt]);
 
   const emsalleriYukle = useCallback((d: DosyaGirdisi) => {
     emsalIstegi.current?.abort();
@@ -119,10 +232,81 @@ export function useTezgah() {
       });
   }, []);
 
+  /** Denetimi koşar; sonucu (geç kalmış ya da başarısızsa `null`) döner. */
+  const denetle = useCallback(async (): Promise<LexisUyari[] | null> => {
+    const hedef = taslakRef.current;
+    if (!hedef) return null;
+    denetimSayaci.current += 1;
+    const sira = denetimSayaci.current;
+    setDenetleniyor(true);
+    try {
+      const sonuc = await lexisApi.denetle(hedef);
+      if (sira !== denetimSayaci.current) return null;
+      setUyarilar(sonuc);
+      setBayat(false);
+      setDegisenMaddeler(new Set());
+      setSonDenetim(saat());
+      return sonuc;
+    } catch (e) {
+      if (sira === denetimSayaci.current && !iptalMi(e)) setAkisHatasi(hataMetni(e, "Denetim yapılamadı."));
+      return null;
+    } finally {
+      if (sira === denetimSayaci.current) setDenetleniyor(false);
+    }
+  }, []);
+
+  /**
+   * Kayıtlı taslağı ekrana geri kurar: künye seçimi (şirket, tür, iskelet) taslaktaki hâliyle, bölüm durumları ve
+   * belge seçimi kayıttan, emsaller taslağın baktığı raporlardan (kütüphaneden yeniden puanlanarak). Denetim
+   * yeniden koşar; geri kurulan hâl "son kaydedilen" sayılır (açmak tek başına yeni sürüm yazmaz).
+   */
+  const geriYukle = useCallback(
+    async (d: DosyaGirdisi, kayitli: KayitliTaslak, signal: AbortSignal) => {
+      const t = kayitli.taslak;
+      const caseId = d.dava.case_id;
+      const mevcut = new Set(d.belgeler.map((b) => b.id));
+      const secili = new Set((kayitli.ekran.secili_belgeler ?? [...mevcut]).filter((id) => mevcut.has(id)));
+      const durumlar = Object.fromEntries(
+        ISKELET_BOLUMLERI[t.iskelet].map((b) => {
+          const kayitliDurum = kayitli.ekran.bolum_durumlari?.[b.kod];
+          return [b.kod, kayitliDurum === "bos" || kayitliDurum === "duzenlendi" ? kayitliDurum : "yazildi"];
+        }),
+      ) as BolumDurumlari;
+
+      setGeriYukleniyor(true);
+      baglamlar.current.set(caseId, { surum: kayitli.surum, son: null, kilitli: false });
+      setDosya({ ...d, sirket: t.sirket, rapor_turu: t.rapor_turu, iskelet: t.iskelet });
+      setSeciliBelgeler(secili);
+      setBolumDurumlari(durumlar);
+      koy(t);
+      kimlikleriKoy((t.degerlendirme?.maddeler ?? []).map(yeniKimlik));
+      setEmsalYukleniyor(true);
+      try {
+        const sonuclar = await Promise.allSettled(t.emsaller.map((sha) => lexisApi.emsalPuanla(caseId, sha, signal)));
+        if (signal.aborted) return;
+        const bulunan = sonuclar.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
+        setEmsaller(bulunan);
+        if (bulunan.length < sonuclar.length) setEmsalHatasi(`Taslağın baktığı ${sonuclar.length - bulunan.length} emsal rapor kütüphaneden alınamadı.`);
+        setEmsalYukleniyor(false);
+        const uyarilar = await denetle();
+        if (signal.aborted) return;
+        const baglam = baglamlar.current.get(caseId);
+        if (baglam) baglam.son = JSON.stringify(kayitGovdesi(t, durumlar, secili, uyarilar?.length ?? 0));
+        setKayit({ tur: "kaydedildi", zaman: tarihSaatYaz(kayitli.guncelleme) });
+        setAcilanKayit({ guncelleyen: kayitli.guncelleyen, guncelleme: kayitli.guncelleme });
+      } finally {
+        if (!signal.aborted) setGeriYukleniyor(false);
+      }
+    },
+    [denetle, koy, kimlikleriKoy, yeniKimlik],
+  );
+
   const davaSec = useCallback(
     (dava: LexisDava | null) => {
       dosyaIstegi.current?.abort();
       emsalIstegi.current?.abort();
+      kaydiBosalt(); // önceki davanın bekleyen kaydı beklemeden gider
+      etkinDava.current = dava?.case_id ?? null;
       taslagiSifirla();
       setDosya(null);
       setDosyaHatasi(null);
@@ -130,6 +314,9 @@ export function useTezgah() {
       setEmsalHatasi(null);
       setEmsalYukleniyor(false);
       setSeciliBelgeler(new Set());
+      setKayit({ tur: "yok" });
+      setAcilanKayit(null);
+      setGeriYukleniyor(false);
       if (!dava) {
         setDosyaYukleniyor(false);
         return;
@@ -139,7 +326,26 @@ export function useTezgah() {
       setDosyaYukleniyor(true);
       lexisApi
         .dosyaGetir(dava.case_id, ac.signal)
-        .then((d) => {
+        .then(async (d) => {
+          let kayitli: KayitliTaslak | null = null;
+          let okumaHatasi: string | null = null;
+          if (lexisApi.kalici) {
+            try {
+              kayitli = await lexisApi.taslakGetir(dava.case_id, ac.signal);
+            } catch (e) {
+              if (iptalMi(e)) throw e;
+              okumaHatasi = hataMetni(e, "Kayıtlı taslak okunamadı.");
+            }
+            if (ac.signal.aborted) return;
+          }
+          if (kayitli) {
+            setDosyaYukleniyor(false);
+            await geriYukle(d, kayitli, ac.signal);
+            return;
+          }
+          // Kayıt yok (ya da okunamadı): sürümsüz bağlam. Sunucuda kayıt varsa ilk yazma 409 alır, üzerine yazılmaz.
+          if (lexisApi.kalici) baglamlar.current.set(dava.case_id, { surum: null, son: null, kilitli: false });
+          if (okumaHatasi) setKayit({ tur: "hata", mesaj: `Kayıtlı taslak okunamadı: ${okumaHatasi}` });
           setDosya(d);
           setSeciliBelgeler(new Set(d.belgeler.map((b) => b.id)));
           emsalleriYukle(d);
@@ -151,7 +357,7 @@ export function useTezgah() {
           if (!ac.signal.aborted) setDosyaYukleniyor(false);
         });
     },
-    [emsalleriYukle, taslagiSifirla],
+    [emsalleriYukle, geriYukle, kaydiBosalt, taslagiSifirla],
   );
 
   /** Şirket / tür / iskelet seçimi. Yazılmış taslağı siler (çağıran önce onay alır); şirket ya da tür değişince emsaller yeniden aranır. */
@@ -162,11 +368,26 @@ export function useTezgah() {
       // Ek rapor yalnız EK iskeletiyle yazılır; ana rapora dönülünce EK iskeleti bırakılır.
       if (secim.rapor_turu === "EK" && !secim.iskelet) yeni.iskelet = "EK";
       if (secim.rapor_turu === "ANA" && !secim.iskelet && dosya.iskelet === "EK") yeni.iskelet = "KISA";
+      // Kayıtlı taslak da silinir (kullanıcı onayladı): yoksa sayfa yenilenince eski künyeyle geri gelirdi.
+      const caseId = dosya.dava.case_id;
+      // Henüz gönderilmemiş kayıt iptal edilir; silme, sıradaki (süren) kaydın ARKASINA girer.
+      if (lexisApi.kalici && (taslakRef.current || baglamlar.current.get(caseId)?.surum != null)) {
+        bekleyeniIptalEt();
+        kayitKuyrugu.current = kayitKuyrugu.current.then(async () => {
+          try {
+            await lexisApi.taslakSil(caseId);
+            baglamlar.current.set(caseId, { surum: null, son: null, kilitli: false });
+            if (etkinDava.current === caseId) setKayit({ tur: "yok" });
+          } catch (e) {
+            if (etkinDava.current === caseId) setKayit({ tur: "hata", mesaj: hataMetni(e, "Kayıtlı taslak silinemedi.") });
+          }
+        });
+      }
       setDosya(yeni);
       taslagiSifirla();
       if (yeni.sirket !== dosya.sirket || yeni.rapor_turu !== dosya.rapor_turu) emsalleriYukle(yeni);
     },
-    [dosya, emsalleriYukle, taslagiSifirla],
+    [bekleyeniIptalEt, dosya, emsalleriYukle, taslagiSifirla],
   );
 
   const belgeSec = useCallback((id: number, secili: boolean) => {
@@ -194,26 +415,6 @@ export function useTezgah() {
     },
     [dosya],
   );
-
-  const denetle = useCallback(async () => {
-    const hedef = taslakRef.current;
-    if (!hedef) return;
-    denetimSayaci.current += 1;
-    const sira = denetimSayaci.current;
-    setDenetleniyor(true);
-    try {
-      const sonuc = await lexisApi.denetle(hedef);
-      if (sira !== denetimSayaci.current) return;
-      setUyarilar(sonuc);
-      setBayat(false);
-      setDegisenMaddeler(new Set());
-      setSonDenetim(saat());
-    } catch (e) {
-      if (sira === denetimSayaci.current && !iptalMi(e)) setAkisHatasi(hataMetni(e, "Denetim yapılamadı."));
-    } finally {
-      if (sira === denetimSayaci.current) setDenetleniyor(false);
-    }
-  }, []);
 
   const yaz = useCallback(async () => {
     if (!dosya) return;
@@ -460,6 +661,10 @@ export function useTezgah() {
     maddeKimlikleri,
     degisenMaddeler,
     yaziliyor: akis !== null,
+    kayit,
+    geriYukleniyor,
+    acilanKayit,
+    yenidenKaydet,
     davaSec,
     kunyeDegistir,
     belgeSec,

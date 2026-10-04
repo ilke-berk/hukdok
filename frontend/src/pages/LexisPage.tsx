@@ -12,9 +12,10 @@ import { SirketProfilleri } from "@/components/lexis/SirketProfilleri";
 import { Tezgah } from "@/components/lexis/Tezgah";
 
 /**
- * `/lexis` — Lexis medikolegal rapor aracının ÖNİZLEMESİ (04.10.2026). Çekirdek ayrı depoda (`lexis-rapor`)
- * ve bugün yalnız Word ucu var; sayfa `lib/lexisApi.ts`'teki örnek adaptörle, sentetik veriyle çalışır. Tek ağ
- * isteği "Word indir"dir: örnek taslak Lexis servisine gider (`lib/lexisWord.ts`).
+ * `/lexis` — Lexis medikolegal rapor aracının ÖNİZLEMESİ (04.10.2026). Çekirdek ayrı depoda (`lexis-rapor`) ayrı
+ * servis olarak koşar. Varsayılan kip örnek veridir (`lib/lexisApi.ts` örnek adaptörü, sentetik; tek ağ isteği
+ * "Word indir"); "gerçek dava" kipinde (`?veri=gercek`) beş sekme de servisten gelir ve taslak, koşu geçmişi, kart
+ * seçimi, şirket profili servisin kendi veritabanında saklanır (`lib/lexisServis.ts`).
  * Entegrasyona dek yalnız yönetici görür (menü + `ProtectedAdminRoute`).
  *
  * - Odak modu (`useOdakModu`, Hukukbot deseni): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir; HUKDOK menüsü
@@ -79,13 +80,13 @@ export default function LexisPage() {
       case "yaz":
         return <Tezgah key={kip} />;
       case "gecmis":
-        return <GecmisTablosu />;
+        return <GecmisTablosu key={kip} />;
       case "kutuphane":
         return <KutuphaneTarayici key={kip} />;
       case "kart-bagi":
-        return <KartBagiListesi />;
+        return <KartBagiListesi key={kip} />;
       case "sirketler":
-        return <SirketProfilleri />;
+        return <SirketProfilleri key={kip} />;
     }
   };
 
@@ -135,7 +136,7 @@ export default function LexisPage() {
           <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">{kip === "gercek" ? "Gerçek dava" : "Örnek veri"}</span>
           <span className="min-w-0 truncate">
             {kip === "gercek"
-              ? "— dava, künye, belge listesi, emsaller ve Kütüphane sekmesi gerçek veridir (eski rapor metni maskeli). Taslak iskelet olarak gelir, modele bir şey gönderilmez; Geçmiş, Kart bağı ve Şirketler örnek veridir."
+              ? "— beş sekme de gerçek veridir (eski rapor metni maskeli). Taslak iskelet olarak gelir, modele bir şey gönderilmez; siz yazdıkça kaydedilir, dava yeniden seçilince geri açılır."
               : "— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez. Yalnız \"Word indir\" örnek taslağı Lexis servisine gönderir."}
           </span>
           <button type="button" data-testid="lexis-kip-dugmesi" onClick={kipDegistir} className={`ml-auto shrink-0 whitespace-nowrap ${BAGLANTI_SINIFI}`}>
