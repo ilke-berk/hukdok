@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { BOS, tutarOku, tutarYaz } from "@/lib/lexisMetin";
+import { BOS, tutarYaz } from "@/lib/lexisMetin";
 import { KUSUR_ADLARI, RISK_ADLARI, TEMINAT_ADLARI, type MuallakDayanakTuru, type MuallakOnerisi } from "@/types/lexis";
-import { BolgeBasligi, BosDurum, Rozet } from "./ortak";
+import { BolgeBasligi, BosDurum, Rozet, TutarGirdisi } from "./ortak";
 import { BAGLANTI_SINIFI, type RozetTonu } from "./yardimcilar";
 
 type MuallakKartiProps = {
@@ -23,46 +22,6 @@ const DAYANAK: Record<MuallakDayanakTuru, { ad: string; ton: RozetTonu; aciklama
   EMSAL: { ad: "Emsal raporlar", ton: "caution", aciklama: "Kriter satırı yok; tutar aynı sınıftaki en yakın yıllı emsal raporlardan alındı." },
   YOK: { ad: "Dayanak yok", ton: "danger", aciklama: "Kriter satırı da tutarlı emsal de yok; tutar önerilmedi." },
 };
-
-const yaz = (n: number | null) => (n === null ? "" : n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-
-/** Tutar girişi: yazarken serbest metin, alandan çıkınca sayıya çevrilir; tanınmayan metin alanı eski değerine döndürür. */
-function TutarGirdisi({
-  etiket,
-  deger,
-  oneri,
-  kilitli,
-  onDegistir,
-}: {
-  etiket: string;
-  deger: number | null;
-  oneri: number | null;
-  kilitli: boolean;
-  onDegistir: (deger: number | null) => void;
-}) {
-  // Değer dışarıdan değişince bileşen `key` ile yeniden bağlanır (çağıran taraf) — effect'le eşitleme yok.
-  const [metin, setMetin] = useState(yaz(deger));
-  return (
-    <label className="grid gap-1 min-w-0">
-      <span className="text-[11px] text-[var(--fg-subtle)]">{etiket}</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={metin}
-        disabled={kilitli}
-        placeholder={oneri === null ? "—" : yaz(oneri)}
-        onChange={(e) => setMetin(e.target.value)}
-        onBlur={() => {
-          const okunan = tutarOku(metin);
-          if (okunan === undefined) setMetin(yaz(deger));
-          else if (okunan !== deger) onDegistir(okunan);
-          else setMetin(yaz(deger));
-        }}
-        className="w-full h-8 px-2 border border-[var(--border)] bg-[var(--bg-elevated)] rounded-[3px] font-mono text-[12.5px] tabular-nums text-right text-[var(--fg)] placeholder:text-[var(--fg-subtle)] focus:border-[var(--brand)] focus:outline-none"
-      />
-    </label>
-  );
-}
 
 /**
  * Muallak (K11): tutarı kod önerir, model seçmez. Kart önerinin DAYANAĞINI gösterir (kriter satırı ya da emsal

@@ -118,7 +118,7 @@ export function MaddeKarti({
               disabled={kilitli}
               onChange={(e) => onDegistir({ dayanak_bolum: (e.target.value || null) as BolumKodu | null })}
               onBlur={onBlur}
-              className="h-6 px-1 bg-transparent border border-[var(--border)] rounded-[3px] text-[11.5px] text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
+              className="h-6 min-w-0 px-1 bg-transparent border border-[var(--border)] rounded-[3px] text-[11.5px] text-[var(--fg-muted)] focus:border-[var(--brand)] focus:outline-none"
             >
               <option value="">bölüm seçilmedi</option>
               {dayanakBolumleri.map((b) => (
@@ -131,7 +131,7 @@ export function MaddeKarti({
               type="button"
               onClick={onSec}
               aria-pressed={secili}
-              className={`ml-auto text-[11.5px] ${BAGLANTI_SINIFI}`}
+              className={`ml-auto shrink-0 whitespace-nowrap text-[11.5px] ${BAGLANTI_SINIFI}`}
             >
               Kaynakta göster
             </button>
@@ -141,7 +141,7 @@ export function MaddeKarti({
             disabled={kilitli}
             aria-label={`Madde ${sira} dayanak alıntısı`}
             placeholder="Dosyadan aynen alınmış kısa alıntı (rapora girmez)…"
-            className="!text-[12.5px] !leading-[1.55] italic text-[var(--fg-muted)]"
+            className="text-[12.5px] leading-[1.55] italic text-[var(--fg-muted)]"
             onChange={(e) => onDegistir({ dayanak_alinti: e.target.value || null })}
             onBlur={onBlur}
           />

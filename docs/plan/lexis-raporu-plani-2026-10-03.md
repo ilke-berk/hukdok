@@ -266,6 +266,23 @@ Kullanıcı kitlesi (`lexis-rapor/PLAN.md` S4) entegrasyonda kararlaştırılır
 | `lib/lexisDenetim.ts` | Örnek adaptörün denetimi (dayanak kuralı K13, muallak sınırları, boş alan/bölüm) — çekirdekteki `yazici.dogrula`'nın ekranı sürecek kadar taklidi; entegrasyonda kalkar |
 | `lib/lexisMetin.ts` | Alıntıyı kaynak metinde bulma (vurgu aralıkları; çekirdeğin toleransıyla), tutar/tarih yazımı — entegrasyonda kalır |
 | `pages/LexisPage.tsx` | Odak modunda sayfa; sekme `?sekme=` ile URL'de; "Rapor yaz" sekme değişince bağlı kalır |
+| `components/lexis/` | Bileşenler (aşağıda) + `useTezgah.ts` (tezgâh durumu) + `useVeri.ts` (sekme verisi) + `yardimcilar.ts` |
+
+**Sekmeler ve bileşenleri:**
+
+| Sekme (`?sekme=`) | Bileşenler |
+| --- | --- |
+| Rapor yaz (varsayılan) | `Tezgah` — **sol** `DavaSecici`, `KunyeKarti`, `BelgeListesi`, `EmsalListesi` (+ `EmsalOkuyucu`, `EmsalEkleDiyalogu`); **orta** `UretimSeridi`, `BolumGezgini`, `EtiketliBolum`, `OzetBolum`, `DegerlendirmeBolumu` → `MaddeKarti`; **sağ** `UyariListesi`, `MuallakKarti`, `DayanakGoruntuleyici`, `CiktiCubugu`. Dar ekranda sol bölge `lg`, sağ bölge `xl` altında çekmece |
+| Geçmiş (`gecmis`) | `GecmisTablosu` — koşu logu |
+| Kütüphane (`kutuphane`) | `KutuphaneTarayici` (filtre + tablo + okuyucu), `KararBankasiTablosu` |
+| Kart bağı (`kart-bagi`) | `KartBagiListesi`, `KartSecimDiyalogu` (K8: kartı insan seçer, geri alınabilir) |
+| Şirketler (`sirketler`) | `SirketProfilleri`, `MuallakKriterTablosu`. Önizlemede Lexis sayfasının sekmesi; entegrasyonda Yönetim paneline taşınabilir (`AdminPage.tsx`'e dokunulmadı — örnek veri gerçek Yönetim sekmeleriyle karışmasın diye) |
+
+**Tezgâh davranışı:** taslağı silen her eylem (dava ya da künye değişimi, yeniden yazım) onay ister; yazımdan
+önce modele gidecek belgeler ve emsal sayısı gösterilir (K4). Metin düzenlemesi denetimi bayatlatır (madde
+"denetlenmedi" görünür), alandan çıkınca ya da yapısal değişiklikte (madde ekle/sil/taşı, tür değişimi, kesin
+muallak tutarı) yeniden denetlenir. Uyarıya tıklanınca ilgili madde / alan / bölüme gidilir; "Kaynakta göster"
+alıntıyı kaynak paragrafta vurgular. Muallakta kesin tutar insanındır; boş bırakılan alanda öneri geçerlidir (K11).
 
 **Entegrasyonun arayüzden beklediği** (çekirdek bugün vermiyor): uyarıların düz metin yerine kodlu ve yer
 bilgili gelmesi (`bolum`, `madde`, `alan`); iskelet başına bölüm sırası ve görünen başlık; etiketli satırların

@@ -4,6 +4,10 @@ import { FlaskConical, Menu } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useOdakModu } from "@/hooks/useOdakModu";
 import { ORNEK_VERI } from "@/lib/lexisApi";
+import { GecmisTablosu } from "@/components/lexis/GecmisTablosu";
+import { KartBagiListesi } from "@/components/lexis/KartBagiListesi";
+import { KutuphaneTarayici } from "@/components/lexis/KutuphaneTarayici";
+import { SirketProfilleri } from "@/components/lexis/SirketProfilleri";
 import { Tezgah } from "@/components/lexis/Tezgah";
 
 /**
@@ -32,14 +36,6 @@ function sekmeCoz(deger: string | null): SekmeKodu {
   return SEKMELER.some((s) => s.kod === deger) ? (deger as SekmeKodu) : VARSAYILAN_SEKME;
 }
 
-function Hazirlaniyor({ ad }: { ad: string }) {
-  return (
-    <div className="h-full grid place-items-center p-6">
-      <p className="text-[13px] text-[var(--fg-muted)]">{ad} ekranı hazırlanıyor.</p>
-    </div>
-  );
-}
-
 export default function LexisPage() {
   useSetPageTitle("Lexis", ["Araçlar", "Lexis"]);
   const menuyuAc = useOdakModu();
@@ -62,8 +58,18 @@ export default function LexisPage() {
   );
 
   const govde = (kod: SekmeKodu): ReactNode => {
-    if (kod === "yaz") return <Tezgah />;
-    return <Hazirlaniyor ad={SEKMELER.find((s) => s.kod === kod)!.ad} />;
+    switch (kod) {
+      case "yaz":
+        return <Tezgah />;
+      case "gecmis":
+        return <GecmisTablosu />;
+      case "kutuphane":
+        return <KutuphaneTarayici />;
+      case "kart-bagi":
+        return <KartBagiListesi />;
+      case "sirketler":
+        return <SirketProfilleri />;
+    }
   };
 
   return (
@@ -78,7 +84,7 @@ export default function LexisPage() {
           <Menu className="w-4 h-4" />
         </button>
         <h1 className="font-display text-[17px] font-medium tracking-[-0.005em] text-[var(--fg)] shrink-0">Lexis</h1>
-        <div role="tablist" aria-label="Lexis sekmeleri" className="flex items-stretch gap-1 h-full min-w-0 overflow-x-auto">
+        <div role="tablist" aria-label="Lexis sekmeleri" className="flex items-stretch gap-1 h-full min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {SEKMELER.map((s) => {
             const secili = s.kod === sekme;
             return (
@@ -109,7 +115,7 @@ export default function LexisPage() {
           className="shrink-0 flex items-center gap-2 px-3 md:px-5 py-1.5 border-b border-dashed border-[var(--border-strong)] text-[12px] text-[var(--fg-muted)]"
         >
           <FlaskConical className="w-3.5 h-3.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
-          <span className="font-medium text-[var(--fg)]">Örnek veri</span>
+          <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">Örnek veri</span>
           <span className="min-w-0 truncate">— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez ya da gönderilmez.</span>
         </div>
       )}

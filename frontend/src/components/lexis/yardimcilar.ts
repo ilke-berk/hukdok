@@ -35,7 +35,13 @@ export function muallakOzeti(okuma: Pick<RaporOkuma, "muallak_maddi" | "muallak_
 export const BAGLANTI_SINIFI =
   "text-[var(--fg)] underline decoration-[var(--brand)] decoration-1 underline-offset-[3px] hover:decoration-2 disabled:opacity-50";
 
-export const iptalMi =(e: unknown): boolean => e instanceof DOMException && e.name === "AbortError";
+/** Sekme tablolarının ortak hücre sınıfları (`components/reports/RunsTable.tsx` görünümü). */
+export const TH_SINIFI = "px-3 py-2 text-left font-mono text-[10px] tracking-[0.14em] uppercase font-semibold text-[var(--fg-subtle)] whitespace-nowrap";
+export const TD_SINIFI = "px-3 py-2 text-[12.5px] text-[var(--fg)] align-top";
+export const SECIM_SINIFI =
+  "h-8 px-2 border border-[var(--border)] bg-[var(--bg-elevated)] text-[12.5px] text-[var(--fg)] rounded-[3px] focus:border-[var(--brand)] focus:outline-none disabled:opacity-60";
+
+export const iptalMi = (e: unknown): boolean => e instanceof DOMException && e.name === "AbortError";
 
 export function hataMetni(e: unknown, yedek = "İstek tamamlanamadı."): string {
   if (e instanceof LexisApiError) return e.message;

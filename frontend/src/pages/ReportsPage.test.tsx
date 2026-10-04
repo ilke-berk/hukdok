@@ -877,7 +877,8 @@ describe("ReportsPage (G133/G138/G175)", () => {
 
         adminMock.value = true;
         await render(<Sidebar open onClose={() => undefined} />, "/");
-        expect(bolumler()[1]).toEqual(["Hukukbot", "Raporlar"]);
+        // Lexis önizlemesi (04.10) yalnız yöneticide, Raporlar'ın altında
+        expect(bolumler()[1]).toEqual(["Hukukbot", "Raporlar", "Lexis"]);
         expect(bolumler()[0]).toContain("Yönetim");
         expect(bolumler()[0]).not.toContain("Raporlar");
 

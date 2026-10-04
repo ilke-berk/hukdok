@@ -27,7 +27,7 @@ const DURUM_ADI: Record<BolumDurumu, string> = {
 /** Taslağın içindekileri: iskeletin bölümleri sırasıyla, her birinde durum noktası ve uyarı sayısı. */
 export function BolumGezgini({ bolumler, durumlar, uyariSayilari, onGit }: BolumGezginiProps) {
   return (
-    <nav aria-label="Taslak bölümleri" data-testid="lexis-bolum-gezgini" className="flex gap-1 overflow-x-auto">
+    <nav aria-label="Taslak bölümleri" data-testid="lexis-bolum-gezgini" className="flex gap-1 overflow-x-auto [scrollbar-width:thin] [scrollbar-color:var(--border-strong)_transparent]">
       {bolumler.map((b, i) => {
         const durum = durumlar[b.kod] ?? "bos";
         const uyari = uyariSayilari[b.kod] ?? 0;

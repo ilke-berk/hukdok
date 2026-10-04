@@ -34,7 +34,7 @@ export function DayanakGoruntuleyici({ taslak, sira, bolumAdlari }: DayanakGorun
           <p className="text-[13px] leading-[1.65] text-[var(--fg)]">
             {vurguParcalari(konum.metin, konum.araliklar).map((p, i) =>
               p.vurgulu ? (
-                <mark key={i} className="bg-[var(--brand-soft)] text-[var(--fg)] px-0.5 [box-decoration-break:clone] border-b border-[var(--brand)]">
+                <mark key={i} className="bg-tone-caution/25 text-[var(--fg)] px-0.5 [box-decoration-break:clone]">
                   {p.metin}
                 </mark>
               ) : (

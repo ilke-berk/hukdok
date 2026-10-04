@@ -144,7 +144,9 @@ filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G
 ucu YOK, sayfa ağ isteği atmaz, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
 `lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
-"çekirdekte yok" notlu arayüz tipleri). Ayrıntı ve entegrasyonun beklediği `docs/plan/lexis-raporu-plani-2026-10-03.md` §10.
+"çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
+durum `useTezgah.ts`: dosya · taslak · denetim), Geçmiş, Kütüphane, Kart bağı, Şirketler. Lexis diyalogları `theme-classic`
+taşır (portal kabuğun dışında). Ayrıntı ve entegrasyonun beklediği `docs/plan/lexis-raporu-plani-2026-10-03.md` §10.
 
 **Stream sözleşmesi** (`analyzer.py::_failed_event`, frontend ile ORTAK referans):
 olaylar `{"status": "info"/"warning"/"error"/"complete"/"failed", ...}`.
@@ -282,7 +284,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-09-30: 1320 passed (123 dosya)
+npm --prefix frontend test                                 # 2026-10-04: 1587 passed (145 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
