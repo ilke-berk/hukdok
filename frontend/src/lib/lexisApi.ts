@@ -29,17 +29,21 @@ import {
   type KararKaydi,
   type KutuphaneFiltresi,
   type KutuphaneKaydi,
+  type KusurTespiti,
   type LexisAkisOlayi,
   type LexisDava,
   type LexisSirket,
   type LexisTaslak,
   type LexisUyari,
+  type MuallakOnerisi,
   type RaporBagi,
   type RaporEtiketleri,
   type RaporTuru,
+  type RiskDuzeyi,
   type SirketProfili,
   type TaslakIstegi,
   type TaslakKosusu,
+  type Teminat,
 } from "@/types/lexis";
 
 /** Örnek adaptör devrede mi — entegrasyon tamamlanınca false. Dava bölgesinin kipi ayrıca `veriKipi()`. */
@@ -64,6 +68,15 @@ export interface EmsalIstegi {
   k?: number;
 }
 
+/** Muallak önerisinin sınıfları — belgelerden yazım gelene kadar insan seçer; talep ve dosya no'yu sunucu karttan okur. */
+export interface MuallakIstegi {
+  case_id: number;
+  sirket: LexisSirket | null;
+  kusur_tespiti: KusurTespiti;
+  risk_duzeyi: RiskDuzeyi;
+  teminat: Teminat;
+}
+
 export interface LexisApi {
   /** Lexis raporu yazılabilecek davalar (müvekkili sigorta şirketi olanlar). Boş sorgu son davaları verir. */
   davaAra(sorgu: string, signal?: AbortSignal): Promise<LexisDava[]>;
@@ -77,6 +90,8 @@ export interface LexisApi {
   taslakYaz(istek: TaslakIstegi, signal?: AbortSignal): AsyncGenerator<LexisAkisOlayi, void, void>;
   /** Düzenlenmiş taslağı yeniden denetler. */
   denetle(taslak: LexisTaslak, signal?: AbortSignal): Promise<LexisUyari[]>;
+  /** Sınıflar değişince muallak önerisini yeniden hesaplatır (tutarı kod belirler, K11). */
+  muallakOner(istek: MuallakIstegi, signal?: AbortSignal): Promise<MuallakOnerisi>;
   /** Şirket şablonunu doldurup Word'ü indirir; şablon yazımının uyarılarıyla döner. */
   wordIndir(taslak: LexisTaslak, signal?: AbortSignal): Promise<WordSonucu>;
   gecmis(signal?: AbortSignal): Promise<TaslakKosusu[]>;
@@ -118,6 +133,9 @@ let gecikmeMs = 320;
 export function ornekDurumuSifirla(): void {
   durum = ilkDurum();
   kip = "ornek";
+  gercekDosyalar.clear();
+  gercekEmsalMetinleri.clear();
+  gercekKararBankasi = null;
 }
 
 /** Akış ve istek gecikmesi (ms) — testler 0 yapar. */
@@ -355,6 +373,14 @@ const ornekLexisApi: LexisApi = {
     return ornekDenetle({ taslak, dosya: dosyaBul(taslak.case_id), emsalMetinleri, kararBankasi: kararBankasiKur() });
   },
 
+  // Örnek kipte tutar yeniden hesaplanmaz: örnek öneri seçilen sınıflarla döner.
+  async muallakOner(istek, signal) {
+    await bekle(signal, 0.5);
+    const oneri = ORNEK_TASLAKLAR[istek.case_id]?.muallak;
+    if (!oneri) throw new LexisApiError(404, "Bu dava için muallak önerisi yok.");
+    return kopya({ ...oneri, kusur_tespiti: istek.kusur_tespiti, risk_duzeyi: istek.risk_duzeyi, teminat: istek.teminat });
+  },
+
   // Word örnek modda da GERÇEK servise gider: örnek taslak + örnek dosyanın künyesi. Modül dinamik yüklenir —
   // adaptörün geri kalanı `apiClient`'ı (MSAL) hiç yüklemez.
   async wordIndir(taslak, signal) {
@@ -439,8 +465,10 @@ const ornekLexisApi: LexisApi = {
 
 /**
  * `ornek`: her şey bellekteki sentetik veriden. `gercek`: "Rapor yaz" sekmesinin DOSYA bölgesi (dava arama,
- * künye, belge listesi, emsal önerisi) Lexis servisinden gelir (`lib/lexisServis.ts`); taslak yazımı henüz bağlı
- * değildir ve diğer sekmeler örnek veride kalır. Kipi sayfa seçer (`LexisPage`, `?veri=gercek`).
+ * künye, belge listesi, emsal önerisi) Lexis servisinden gelir (`lib/lexisServis.ts`). "Taslağı yaz" iskelet
+ * üretir (künye karttan, özet boş — modele bir şey gitmez), muallak sınıfları insan seçer, Word gerçek servisten
+ * iner; denetim buradaki `lexisDenetim` ile koşar. Diğer sekmeler örnek veride kalır. Kipi sayfa seçer
+ * (`LexisPage`, `?veri=gercek`).
  */
 export type VeriKipi = "ornek" | "gercek";
 
@@ -454,34 +482,98 @@ export function veriKipiAyarla(yeni: VeriKipi): void {
   kip = yeni;
 }
 
-export const GERCEK_TASLAK_YOK =
-  "Gerçek davada taslak yazımı henüz bağlı değil: belgelerin okunması ve bölümlerin yazımı sıradaki aşamada gelecek.";
+/** Gerçek davada "Taslağı yaz"ın bugün ne ürettiği — düğmenin üstünde ve onay kutusunda gösterilir. */
+export const GERCEK_ISKELET_NOTU =
+  "Gerçek davada taslak iskelet olarak gelir: künye dava kartından dolar, özet bölümlerini ve maddeleri siz yazarsınız. Modele hiçbir şey gönderilmez.";
 export const GERCEK_EMSAL_EKLE_YOK = "Gerçek davada kütüphaneden elle emsal ekleme henüz bağlı değil.";
 
-// Servis modülü dinamik yüklenir: örnek kip `apiClient`'ı (MSAL) hiç yüklemez.
+// Gerçek kipin oturum belleği: denetim ve Word, seçili davanın kartını ve bakılan emsallerin metnini ister.
+const gercekDosyalar = new Map<number, DosyaGirdisi>();
+const gercekEmsalMetinleri = new Map<string, string>();
+let gercekKararBankasi: KararKaydi[] | null = null;
+
+const servis = () => import("@/lib/lexisServis"); // dinamik: örnek kip `apiClient`'ı (MSAL) hiç yüklemez
+
+async function gercekDosya(caseId: number, signal?: AbortSignal): Promise<DosyaGirdisi> {
+  const bellekte = gercekDosyalar.get(caseId);
+  if (bellekte) return bellekte;
+  const dosya = await (await servis()).dosyaGetir(caseId, signal);
+  gercekDosyalar.set(caseId, dosya);
+  return dosya;
+}
+
+async function gercekDenetle(taslak: LexisTaslak, signal?: AbortSignal): Promise<LexisUyari[]> {
+  const dosya = await gercekDosya(taslak.case_id, signal);
+  // Karar bankası alınamazsa denetim yine koşar: atıflar yalnız dosya metninde aranır.
+  gercekKararBankasi ??= await (await servis()).kararBankasi(signal).catch(() => null);
+  const emsalMetinleri = taslak.emsaller.map((sha) => gercekEmsalMetinleri.get(sha) ?? "");
+  return ornekDenetle({ taslak, dosya, emsalMetinleri, kararBankasi: gercekKararBankasi ?? [] });
+}
+
 const gercekLexisApi: LexisApi = {
   ...ornekLexisApi,
   async davaAra(sorgu, signal) {
-    return (await import("@/lib/lexisServis")).davaAra(sorgu, signal);
+    return (await servis()).davaAra(sorgu, signal);
   },
   async dosyaGetir(caseId, signal) {
-    return (await import("@/lib/lexisServis")).dosyaGetir(caseId, signal);
+    const dosya = await (await servis()).dosyaGetir(caseId, signal);
+    gercekDosyalar.set(caseId, dosya);
+    return dosya;
   },
   async emsalOner(istek, signal) {
-    return (await import("@/lib/lexisServis")).emsalOner(istek, signal);
+    const emsaller = await (await servis()).emsalOner(istek, signal);
+    for (const e of emsaller) gercekEmsalMetinleri.set(e.kayit.okuma.sha256, kayitMetni(e.kayit));
+    return emsaller;
   },
   async emsalPuanla() {
     throw new LexisApiError(501, GERCEK_EMSAL_EKLE_YOK);
   },
-  // Akış sözleşmesi: `failed` SON olaydır; burada tek olaydır.
-  async *taslakYaz() {
-    yield { status: "failed", error_ozet: GERCEK_TASLAK_YOK, error_kod: "analysis_error" };
+  // Belgelerden yazım gelene kadar taslak İSKELETTİR: etiketli satırlar karttan, özet boş, son madde koddan.
+  async *taslakYaz(istek, signal) {
+    yield { status: "info", asama: "olgular", mesaj: "Künye dava kartından dolduruluyor" };
+    let iskelet: Awaited<ReturnType<Awaited<ReturnType<typeof servis>>["iskelet"]>>;
+    try {
+      iskelet = await (await servis()).iskelet(istek, signal);
+    } catch (e) {
+      if ((e as Error)?.name === "AbortError") throw e;
+      yield { status: "failed", error_ozet: e instanceof LexisApiError ? e.message : LEXIS_GENEL_HATA, error_kod: "analysis_error" };
+      return;
+    }
+    yield { status: "info", asama: "bolumler", mesaj: "Bölümler hazırlanıyor" };
+    for (const tanim of ISKELET_BOLUMLERI[istek.iskelet]) {
+      if (tanim.tur === "ETIKETLI") yield { status: "bolum", bolum: tanim.kod, etiketli: iskelet.etiketli[tanim.kod] ?? [] };
+      else if (tanim.tur === "OZET") yield { status: "bolum", bolum: tanim.kod, ozet: iskelet.ozet[tanim.kod] ?? [] };
+      else yield { status: "bolum", bolum: tanim.kod, degerlendirme: iskelet.degerlendirme };
+    }
+    yield { status: "info", asama: "muallak", mesaj: "Muallak önerisi hesaplanıyor" };
+    yield { status: "muallak", oneri: iskelet.muallak };
+    yield { status: "info", asama: "denetim", mesaj: "Taslak denetleniyor" };
+    const taslak: LexisTaslak = {
+      case_id: istek.case_id,
+      sirket: istek.sirket,
+      rapor_turu: istek.rapor_turu,
+      iskelet: istek.iskelet,
+      etiketli: iskelet.etiketli,
+      ozet: iskelet.ozet,
+      degerlendirme: iskelet.degerlendirme,
+      muallak: iskelet.muallak,
+      muallak_maddi: null,
+      muallak_manevi: null,
+      emsaller: istek.emsal_sha,
+    };
+    yield { status: "complete", kosu_id: `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
   },
-  async denetle() {
-    return [];
+  async denetle(taslak, signal) {
+    if (signal?.aborted) throw iptalHatasi();
+    return gercekDenetle(taslak, signal);
   },
-  async wordIndir() {
-    throw new LexisApiError(501, GERCEK_TASLAK_YOK);
+  async muallakOner(istek, signal) {
+    return (await servis()).muallakOner(istek, signal);
+  },
+  async wordIndir(taslak, signal) {
+    const dosya = await gercekDosya(taslak.case_id, signal);
+    const { wordIndir } = await import("@/lib/lexisWord");
+    return wordIndir(taslak, { hasar_no: dosya.hasar_no, hukuk_no: dosya.hukuk_no, rapor_no: dosya.dava.dosya_no }, signal);
   },
 };
 

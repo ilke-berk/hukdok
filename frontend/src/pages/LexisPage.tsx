@@ -135,7 +135,7 @@ export default function LexisPage() {
           <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">{kip === "gercek" ? "Gerçek dava" : "Örnek veri"}</span>
           <span className="min-w-0 truncate">
             {kip === "gercek"
-              ? "— dava, künye, belge listesi ve emsal önerisi gerçek veridir (emsal metni maskeli). Taslak yazımı henüz bağlı değil; diğer sekmeler örnek veridir."
+              ? "— dava, künye, belge listesi ve emsal önerisi gerçek veridir (emsal metni maskeli). Taslak iskelet olarak gelir, modele bir şey gönderilmez; diğer sekmeler örnek veridir."
               : "— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez. Yalnız \"Word indir\" örnek taslağı Lexis servisine gönderir."}
           </span>
           <button type="button" data-testid="lexis-kip-dugmesi" onClick={kipDegistir} className={`ml-auto shrink-0 whitespace-nowrap ${BAGLANTI_SINIFI}`}>

@@ -10,6 +10,7 @@ import {
   type LexisTaslak,
   type LexisUyari,
   type Madde,
+  type MuallakOnerisi,
   type OzetParagraf,
   type TaslakIstegi,
   type UretimAsamasi,
@@ -19,6 +20,7 @@ import type { KunyeSecimi } from "./KunyeKarti";
 import { hataMetni, iptalMi } from "./yardimcilar";
 
 type BolumDurumlari = Partial<Record<BolumKodu, BolumDurumu>>;
+export type MuallakSiniflari = Partial<Pick<MuallakOnerisi, "kusur_tespiti" | "risk_duzeyi" | "teminat">>;
 
 const saat = () => new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
@@ -415,6 +417,25 @@ export function useTezgah() {
     [koy, denetle],
   );
 
+  /** Sınıf değişince öneri yeniden hesaplatılır (tutarı kod belirler, K11); kesin tutarlara dokunulmaz. */
+  const muallakSinifDegistir = useCallback(
+    async (yama: MuallakSiniflari) => {
+      const mevcut = taslakRef.current;
+      if (!mevcut?.muallak) return;
+      const { kusur_tespiti, risk_duzeyi, teminat } = { ...mevcut.muallak, ...yama };
+      try {
+        const oneri = await lexisApi.muallakOner({ case_id: mevcut.case_id, sirket: mevcut.sirket, kusur_tespiti, risk_duzeyi, teminat });
+        const guncel = taslakRef.current;
+        if (!guncel || guncel.case_id !== mevcut.case_id) return;
+        koy({ ...guncel, muallak: oneri });
+        void denetle();
+      } catch (e) {
+        if (!iptalMi(e)) setAkisHatasi(hataMetni(e, "Muallak önerisi alınamadı."));
+      }
+    },
+    [koy, denetle],
+  );
+
   /** Alandan çıkınca: taslak değiştiyse yeniden denetle. */
   const alandanCikildi = useCallback(() => {
     if (bayat) void denetle();
@@ -459,6 +480,7 @@ export function useTezgah() {
     maddeSil,
     maddeTasi,
     muallakDegistir,
+    muallakSinifDegistir,
   };
 }
 

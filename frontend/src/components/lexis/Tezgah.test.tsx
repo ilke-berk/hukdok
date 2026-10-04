@@ -18,11 +18,11 @@ const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
 vi.mock("@/lib/lexisWord", () => wordMock);
 
 // Gerçek dava kipinde dosya bölgesi servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
-const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn() }));
+const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn(), iskelet: vi.fn(), muallakOner: vi.fn(), kararBankasi: vi.fn() }));
 vi.mock("@/lib/lexisServis", () => servisMock);
 
 import { Tezgah } from "./Tezgah";
-import { GERCEK_TASLAK_YOK, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
+import { GERCEK_ISKELET_NOTU, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -102,6 +102,8 @@ beforeEach(() => {
   confirmMock.fn.mockReset();
   confirmMock.fn.mockResolvedValue(true);
   Object.values(toastMocks).forEach((m) => m.mockReset());
+  Object.values(servisMock).forEach((m) => m.mockReset());
+  wordMock.wordIndir.mockReset();
   kap = document.createElement("div");
   document.body.appendChild(kap);
   kok = createRoot(kap);
@@ -114,7 +116,7 @@ afterEach(() => {
 });
 
 describe("Tezgah — gerçek dava kipi", () => {
-  it("dava, künye ve emsaller servisten gelir; taslak yazımı ve elle emsal ekleme kapalıdır", async () => {
+  it("dava, künye ve emsaller servisten gelir; taslak iskelettir, sınıf seçilir, Word iner", async () => {
     // Servis yanıtları örnek adaptörün ürettiği biçimdedir (sözleşme aynı); kimlikler gerçek karta aittir.
     const dosya = { ...(await lexisApi.dosyaGetir(9003)), onceki_rapor: null };
     const emsaller = await lexisApi.emsalOner({ case_id: 9003, sirket: dosya.sirket, rapor_turu: dosya.rapor_turu });
@@ -131,9 +133,38 @@ describe("Tezgah — gerçek dava kipi", () => {
     expect(servisMock.emsalOner.mock.calls[0][0]).toMatchObject({ case_id: 501, sirket: "QUICK" });
     expect(test("lexis-kunye")!.textContent).toContain("Bursa 1. Tüketici Mahkemesi");
     expect(test("lexis-emsaller")!.querySelectorAll("li").length).toBe(emsaller.length);
-    expect(test("lexis-taslak-bagli-degil")!.textContent).toBe(GERCEK_TASLAK_YOK);
-    expect(dugme("Taslağı yaz").disabled).toBe(true);
+    expect(test("lexis-iskelet-notu")!.textContent).toBe(GERCEK_ISKELET_NOTU);
     expect(kap.querySelector('[aria-label="Kütüphaneden emsal ekle"]')).toBeNull();
+
+    // "Taslağı yaz" iskelet üretir: künye karttan dolu, özet boş; onay kutusu modele gönderim listesi taşımaz.
+    const ornek = { ...dosya, dava };
+    const hasar = [{ alan: "sigortali", etiket: "Sigortalı", deger: ornek.sigortali, zorunlu: true, kaynak: "KART" as const }];
+    const muallak = { maddi: null, manevi: null, dayanak: "YOK" as const, dayanak_satirlari: [], kusur_tespiti: "BELIRSIZ" as const, risk_duzeyi: "BELIRSIZ" as const, teminat: "BELIRSIZ" as const, uyarilar: [] };
+    servisMock.iskelet.mockResolvedValue({
+      etiketli: { hasar },
+      ozet: {},
+      degerlendirme: { giris: "Tarafımıza iletilen belge ve bilgiler ile yapılan inceleme neticesinde;", maddeler: [{ metin: "[…] tazminat tutarında muallak ayrılabileceği", tur: "KALIP", dayanak_bolum: null, dayanak_alinti: null }], sulh_uygunluk: "", muallak_gerekcesi: "" },
+      muallak,
+    });
+    servisMock.kararBankasi.mockResolvedValue([]);
+    await tikla(dugme("Taslağı yaz"));
+    const onay = confirmMock.fn.mock.calls[0][0] as { body: string; details: { label: string }[] };
+    expect(onay.body).toContain(GERCEK_ISKELET_NOTU);
+    expect(onay.details.map((d) => d.label)).toEqual(["Rapor"]);
+    expect(servisMock.iskelet.mock.calls[0][0]).toMatchObject({ case_id: 501, iskelet: "KISA" });
+    expect(test("lexis-bolum-hasar")!.querySelectorAll("input")).toHaveLength(1);
+    expect(test("lexis-uyarilar")!.textContent).toContain("Bölüm boş");
+
+    // Sınıf seçilince öneri yeniden hesaplatılır; Word gerçek dosyanın künyesiyle iner.
+    servisMock.muallakOner.mockResolvedValue({ ...muallak, manevi: 40000, dayanak: "EMSAL", kusur_tespiti: "KOMPLIKASYON", risk_duzeyi: "RISKLI", teminat: "ICINDE" });
+    await yaz(alan<HTMLSelectElement>("Risk düzeyi"), "RISKLI");
+    await bekle();
+    expect(servisMock.muallakOner.mock.calls[0][0]).toMatchObject({ case_id: 501, risk_duzeyi: "RISKLI", kusur_tespiti: "BELIRSIZ" });
+    expect(test("lexis-muallak")!.textContent).toContain("40.000,00");
+
+    wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x.docx", uyari_sayisi: 0, uyarilar: [] });
+    await tikla(dugme("Word indir"));
+    expect(wordMock.wordIndir.mock.calls[0][1]).toEqual({ hasar_no: ornek.hasar_no, hukuk_no: ornek.hukuk_no, rapor_no: dava.dosya_no });
   });
 });
 

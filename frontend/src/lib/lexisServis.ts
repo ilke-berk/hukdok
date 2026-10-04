@@ -1,15 +1,16 @@
 // Lexis servisinin dava uçları — "gerçek dava" kipinde `lexisApi`'nin arkası (04.10.2026).
 //
-// - Yol: aynı origin `/lexis-api/{davalar,dosya,emsal-oner}` (konteyner nginx allowlist'i → `lexis_api:8020`).
+// - Yol: aynı origin `/lexis-api/{davalar,dosya,emsal-oner,iskelet,muallak-oner,karar-bankasi}` (konteyner nginx
+//   allowlist'i → `lexis_api:8020`).
 // - Kimlik: HUKDOK'un MSAL access token'ı (`apiClient.fetch`). Servis token'ı kendisi doğrular, kartı ve belge
 //   listesini HUKDOK'un mevcut uçlarından AYNI token'la okur (`lexis-rapor/servis/hukdok.py`, K9).
 // - Yanıtlar `types/lexis.ts` tipleriyle aynıdır (`LexisDava`, `DosyaGirdisi`, `Emsal`); emsal metni maskelidir.
 //
 // Bu modül `lexisApi.ts`'ten DİNAMİK yüklenir: örnek kip `apiClient`'ı (MSAL) hiç yüklemez.
 import { apiClient } from "@/lib/api";
-import { LexisApiError, type EmsalIstegi } from "@/lib/lexisApi";
+import { LexisApiError, type EmsalIstegi, type MuallakIstegi } from "@/lib/lexisApi";
 import { LEXIS_API_ONEKI, LEXIS_YETKI_MESAJI } from "@/lib/lexisWord";
-import type { DosyaGirdisi, Emsal, LexisDava } from "@/types/lexis";
+import type { DegerlendirmeTaslagi, DosyaGirdisi, Emsal, KararKaydi, LexisDava, LexisTaslak, MuallakOnerisi, TaslakIstegi } from "@/types/lexis";
 
 export const LEXIS_DAVA_SERVISI_YOK = "Lexis servisine ulaşılamadı.";
 
@@ -49,4 +50,23 @@ export function dosyaGetir(caseId: number, signal?: AbortSignal): Promise<DosyaG
 /** `POST /lexis-api/emsal-oner` — kütüphanedeki en benzer eski raporlar (maskeli), puan ve gerekçesiyle. */
 export function emsalOner(istek: EmsalIstegi, signal?: AbortSignal): Promise<Emsal[]> {
   return jsonGetir<Emsal[]>("/emsal-oner", { method: "POST", body: JSON.stringify(istek) }, signal);
+}
+
+/** Taslak iskeleti: etiketli satırlar karttan dolu, özet boş, değerlendirmede giriş + kodun son maddesi. */
+export type TaslakIskeleti = Pick<LexisTaslak, "etiketli" | "ozet"> & { degerlendirme: DegerlendirmeTaslagi; muallak: MuallakOnerisi };
+
+/** `POST /lexis-api/iskelet` — modele hiçbir şey gitmez; künye dava kartından doldurulur. */
+export function iskelet(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet">, signal?: AbortSignal): Promise<TaslakIskeleti> {
+  const { case_id, sirket, rapor_turu, iskelet: bicim } = istek;
+  return jsonGetir<TaslakIskeleti>("/iskelet", { method: "POST", body: JSON.stringify({ case_id, sirket, rapor_turu, iskelet: bicim }) }, signal);
+}
+
+/** `POST /lexis-api/muallak-oner` — seçilen sınıflarla öneri ve dayanağı (tutarı kod hesaplar, K11). */
+export function muallakOner(istek: MuallakIstegi, signal?: AbortSignal): Promise<MuallakOnerisi> {
+  return jsonGetir<MuallakOnerisi>("/muallak-oner", { method: "POST", body: JSON.stringify(istek) }, signal);
+}
+
+/** `GET /lexis-api/karar-bankasi` — kütüphanedeki raporlarda anılan kararlar (atıf doğrulaması). */
+export function kararBankasi(signal?: AbortSignal): Promise<KararKaydi[]> {
+  return jsonGetir<KararKaydi[]>("/karar-bankasi", { method: "GET" }, signal);
 }

@@ -344,16 +344,26 @@ anki kipin adaptörüne yollar (`lib/lexisApi.ts::veriKipi`, `Proxy`). Örnek ki
 /lexis?veri=gercek   →  lexisApi (gerçek adaptör)  →  lib/lexisServis.ts
    GET  /lexis-api/davalar?q=       dava arama (müvekkili sigorta şirketi olanlar önde)
    GET  /lexis-api/dosya/{case_id}  kart + belge listesi → DosyaGirdisi
+   POST /lexis-api/iskelet         taslak iskeleti (kunye karttan; modele bir sey gitmez)
+   POST /lexis-api/muallak-oner    secilen siniflarla muallak onerisi
+   GET  /lexis-api/karar-bankasi   atif dogrulamasi icin karar listesi
    POST /lexis-api/emsal-oner       en benzer eski raporlar (maskeli), puan + gerekçe
 → konteyner nginx (allowlist) → lexis_api:8020 → servis/hukdok.py
 → HUKDOK'un MEVCUT uçları, kullanıcının token'ıyla:  /api/cases · /api/cases/{id} · /api/cases/{id}/documents
 ```
 
-- **HUKDOK backend'ine dokunulmadı.** Değişen: `nginx.conf` allowlist'i (`word|davalar|dosya|emsal-oner`), bekçi
+- **HUKDOK backend'ine dokunulmadı.** Değişen: `nginx.conf` allowlist'i (`word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi`), bekçi
   `backend/tests/test_nginx_lexis.py`, `frontend/vite.config.ts` dev proxy'si, `lib/lexisServis.ts` (yeni),
   `lib/lexisApi.ts` (kip + gerçek adaptör), `pages/LexisPage.tsx` (şerit düğmesi), `components/lexis/Tezgah.tsx`.
-- **Bu kipte bağlı OLMAYANLAR:** taslak yazımı (düğme kapalı, nedeni yazılı), denetim, Word, kütüphaneden elle
-  emsal ekleme; Geçmiş / Kütüphane / Kart bağı / Şirketler sekmeleri örnek veride kalır (şerit bunu söyler).
+- **Taslak iskeleti (04.10, ikinci dilim):** gerçek kipte "Taslağı yaz" `POST /lexis-api/iskelet`'i çağırır —
+  etiketli satırlar karttan dolu, özet bölümleri boş, değerlendirmede giriş kalıbı + kodun yazdığı son madde gelir;
+  **modele hiçbir şey gönderilmez** (onay kutusu bunu söyler, gönderim listesi göstermez). Muallak kartında sınıflar
+  (kusur, risk, teminat) seçilebilir; her seçimde `POST /lexis-api/muallak-oner` öneriyi yeniden hesaplar. Denetim
+  ekrandaki `lib/lexisDenetim.ts` ile koşar (dosya ve emsal metinleri oturum belleğinden, karar bankası
+  `GET /lexis-api/karar-bankasi`'ndan); Word gerçek dosyanın künyesiyle (hasar no, hukuk no, dosya no) iner.
+- **Bu kipte bağlı OLMAYANLAR:** bölümlerin belgelerden yazımı (sınama dosyası ister), kalıcılık (sayfa yenilenince
+  taslak gider), kütüphaneden elle emsal ekleme; Geçmiş / Kütüphane / Kart bağı / Şirketler sekmeleri örnek veride
+  kalır (şerit bunu söyler).
 - **Karttan gelmeyenler boş kalır** (`lexis-rapor` README "HUKDOK adaptörü"): sigortalı hekim çoğu kartta ayırt
   edilemiyor; poliçe no, teminat limiti ve hastane kartta yok; hekim beyanının HUKDOK'ta belge türü yok (ekran o
   belgeyi "eksik" sayar). Şirket müvekkil adından bulunur (lokal ölçüm: 7.619 aynı · 228 boş · 0 farklı).

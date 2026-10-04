@@ -21,6 +21,8 @@ const VARSAYILAN_DOSYA_ADI = "Lexis_taslak.docx";
 
 export interface WordKunyesi {
   hasar_no: string | null;
+  /** Ek rapor kapağında hasar no yerine yazılır. */
+  hukuk_no?: string | null;
   /** Rapor no = dosya no (pilot raporların tamamında aynı). */
   rapor_no: string | null;
   /** ISO `yyyy-mm-dd`; verilmezse sunucu bugünü (Türkiye günü) yazar. */

@@ -5,7 +5,7 @@ nginx'indeki `/lexis-api/` önekidir — Hukukbot proxy'sinin aynı deseni
 (`test_nginx_hukukbot.py`). Bekçi şunları sessizce bozulmaktan korur:
 
 1. ALLOWLIST: yalnız kullanıcı uçları proxy'lenir (`word`, `davalar`, `dosya`,
-   `emsal-oner`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
+   `emsal-oner`, `iskelet`, `muallak-oner`, `karar-bankasi`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
    Lexis stack'i kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. Vite dev proxy'si aynı allowlist'i taşır.
@@ -44,7 +44,7 @@ def _proxy_govdesi() -> str:
 
 
 # Tam metin: alternatif eklemek, (/|$) çapasını silmek ya da ~ → ~* yapmak allowlist'i genişletir.
-ALLOWLIST = "(word|davalar|dosya|emsal-oner)"
+ALLOWLIST = "(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi)"
 ALLOWLIST_ESLESMESI = f"~ ^/lexis-api/{ALLOWLIST}(/|$)"
 
 

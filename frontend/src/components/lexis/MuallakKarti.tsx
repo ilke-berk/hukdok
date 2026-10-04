@@ -1,6 +1,7 @@
 import { BOS, tutarYaz } from "@/lib/lexisMetin";
 import { KUSUR_ADLARI, RISK_ADLARI, TEMINAT_ADLARI, type MuallakDayanakTuru, type MuallakOnerisi } from "@/types/lexis";
 import { BolgeBasligi, BosDurum, Rozet, TutarGirdisi } from "./ortak";
+import type { MuallakSiniflari } from "./useTezgah";
 import { BAGLANTI_SINIFI, type RozetTonu } from "./yardimcilar";
 
 type MuallakKartiProps = {
@@ -14,6 +15,8 @@ type MuallakKartiProps = {
   onDegistir: (yama: { maddi?: number | null; manevi?: number | null }) => void;
   /** Dayanak satırındaki emsal raporu okuyucuda açar. */
   onRaporOku: (sha256: string) => void;
+  /** Verilirse sınıflar seçilebilir olur (gerçek dava kipi); verilmezse rozet olarak gösterilir. */
+  onSinif?: (yama: MuallakSiniflari) => void;
   kilitli?: boolean;
 };
 
@@ -27,7 +30,7 @@ const DAYANAK: Record<MuallakDayanakTuru, { ad: string; ton: RozetTonu; aciklama
  * Muallak (K11): tutarı kod önerir, model seçmez. Kart önerinin DAYANAĞINI gösterir (kriter satırı ya da emsal
  * raporların tutarları) ve kesin tutarı insana bıraktırır — boş bırakılan alanda öneri geçerlidir.
  */
-export function MuallakKarti({ oneri, maddi, manevi, talepMaddi, talepManevi, teminatLimiti, onDegistir, onRaporOku, kilitli = false }: MuallakKartiProps) {
+export function MuallakKarti({ oneri, maddi, manevi, talepMaddi, talepManevi, teminatLimiti, onDegistir, onRaporOku, onSinif, kilitli = false }: MuallakKartiProps) {
   if (!oneri) {
     return (
       <section aria-label="Muallak" className="grid gap-2">
@@ -61,11 +64,41 @@ export function MuallakKarti({ oneri, maddi, manevi, talepMaddi, talepManevi, te
 
       <p className="text-[12px] leading-[1.5] text-[var(--fg-muted)]">{dayanak.aciklama}</p>
 
-      <div className="flex flex-wrap gap-1">
-        <Rozet>{KUSUR_ADLARI[oneri.kusur_tespiti]}</Rozet>
-        <Rozet>Risk: {RISK_ADLARI[oneri.risk_duzeyi]}</Rozet>
-        <Rozet>{TEMINAT_ADLARI[oneri.teminat]}</Rozet>
-      </div>
+      {onSinif ? (
+        // Sınıfları insan seçer (belgelerden yazım gelene kadar); her değişimde öneri yeniden hesaplanır.
+        <div className="grid gap-1.5" data-testid="lexis-muallak-siniflar">
+          {(
+            [
+              ["Kusur tespiti", "kusur_tespiti", KUSUR_ADLARI, oneri.kusur_tespiti],
+              ["Risk düzeyi", "risk_duzeyi", RISK_ADLARI, oneri.risk_duzeyi],
+              ["Teminat", "teminat", TEMINAT_ADLARI, oneri.teminat],
+            ] as const
+          ).map(([etiket, alan, adlar, deger]) => (
+            <label key={alan} className="grid grid-cols-[92px_minmax(0,1fr)] items-center gap-2 text-[12px] text-[var(--fg-muted)]">
+              {etiket}
+              <select
+                aria-label={etiket}
+                value={deger}
+                disabled={kilitli}
+                onChange={(e) => onSinif({ [alan]: e.target.value })}
+                className="h-7 min-w-0 px-1.5 rounded-[3px] border border-[var(--border)] bg-[var(--bg-elevated)] text-[12.5px] text-[var(--fg)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-60"
+              >
+                {Object.entries(adlar).map(([kod, ad]) => (
+                  <option key={kod} value={kod}>
+                    {ad}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-1">
+          <Rozet>{KUSUR_ADLARI[oneri.kusur_tespiti]}</Rozet>
+          <Rozet>Risk: {RISK_ADLARI[oneri.risk_duzeyi]}</Rozet>
+          <Rozet>{TEMINAT_ADLARI[oneri.teminat]}</Rozet>
+        </div>
+      )}
 
       {oneri.dayanak_satirlari.length > 0 && (
         <table className="w-full text-[12px]" data-testid="lexis-muallak-dayanak">
