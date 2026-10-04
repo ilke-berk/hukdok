@@ -12,7 +12,8 @@ import { Tezgah } from "@/components/lexis/Tezgah";
 
 /**
  * `/lexis` — Lexis medikolegal rapor aracının ÖNİZLEMESİ (04.10.2026). Çekirdek ayrı depoda (`lexis-rapor`)
- * ve HTTP ucu yok; sayfa `lib/lexisApi.ts`'teki örnek adaptörle, sentetik veriyle çalışır (ağ isteği yok).
+ * ve bugün yalnız Word ucu var; sayfa `lib/lexisApi.ts`'teki örnek adaptörle, sentetik veriyle çalışır. Tek ağ
+ * isteği "Word indir"dir: örnek taslak Lexis servisine gider (`lib/lexisWord.ts`).
  * Entegrasyona dek yalnız yönetici görür (menü + `ProtectedAdminRoute`).
  *
  * - Odak modu (`useOdakModu`, Hukukbot deseni): kabuk Topbar'ı çizmez, sayfa tam yüksekliktir; HukuDok menüsü
@@ -116,7 +117,7 @@ export default function LexisPage() {
         >
           <FlaskConical className="w-3.5 h-3.5 shrink-0 text-[var(--fg-subtle)]" aria-hidden="true" />
           <span className="font-medium text-[var(--fg)] whitespace-nowrap shrink-0">Örnek veri</span>
-          <span className="min-w-0 truncate">— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez ya da gönderilmez.</span>
+          <span className="min-w-0 truncate">— gerçek dosya değil. Ekran tasarımı önizlemesidir; hiçbir şey kaydedilmez. Yalnız "Word indir" örnek taslağı Lexis servisine gönderir.</span>
         </div>
       )}
 

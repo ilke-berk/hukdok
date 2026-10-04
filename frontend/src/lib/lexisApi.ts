@@ -1,14 +1,16 @@
 // Lexis istemcisi — `/lexis` sayfası araca YALNIZ bununla konuşur (`lib/hukukbotApi.ts` deseni).
 //
-// BUGÜN: çekirdek ayrı depoda (`lexis-rapor`) ve HTTP ucu yok. `lexisApi` bellekte çalışan ÖRNEK adaptördür
-// (`lib/lexisOrnekVeri.ts`, sentetik veri) — hiçbir ağ isteği atmaz, sayfa yenilenince durum sıfırlanır.
-// `ORNEK_VERI` bayrağı sayfadaki "Örnek veri" şeridini sürer.
+// BUGÜN: çekirdek ayrı depoda (`lexis-rapor`) ve yalnız Word ucu var. `lexisApi` bellekte çalışan ÖRNEK
+// adaptördür (`lib/lexisOrnekVeri.ts`, sentetik veri) — sayfa yenilenince durum sıfırlanır. `ORNEK_VERI` bayrağı
+// sayfadaki "Örnek veri" şeridini sürer. TEK ağ isteği Word'dür: `wordIndir` örnek taslağı gerçek servise
+// (`lib/lexisWord.ts` → `/lexis-api/word`) gönderir, gerçek şirket şablonunda dosya döner.
 //
 // ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Gerçek adaptör aynı arayüzü `apiClient.fetch` ile uygular
 // (`taslakYaz` NDJSON akışı için `hukukbotApi.ask` okuyucusu), `lexisApi` ona bağlanır, `ORNEK_VERI` false olur;
 // örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
 import { denetle as ornekDenetle } from "@/lib/lexisDenetim";
 import { katla } from "@/lib/lexisMetin";
+import type { WordSonucu } from "@/lib/lexisWord";
 import {
   ORNEK_DAVALAR,
   ORNEK_DOSYALAR,
@@ -43,7 +45,6 @@ import {
 /** Sayfa örnek veriyle mi çalışıyor — entegrasyonda false. */
 export const ORNEK_VERI = true;
 
-export const LEXIS_WORD_ORNEK_MESAJI = "Word çıktısı entegrasyonla gelir; önizlemede dosya üretilmez.";
 export const LEXIS_GENEL_HATA = "Lexis isteği tamamlanamadı.";
 
 export class LexisApiError extends Error {
@@ -52,14 +53,6 @@ export class LexisApiError extends Error {
     super(message);
     this.name = "LexisApiError";
     this.status = status;
-  }
-}
-
-/** Önizlemede olmayan işlev (Word çıktısı) — sayfa bilgi olarak gösterir, hata saymaz. */
-export class LexisOrnekModuError extends LexisApiError {
-  constructor(message: string) {
-    super(501, message);
-    this.name = "LexisOrnekModuError";
   }
 }
 
@@ -84,8 +77,8 @@ export interface LexisApi {
   taslakYaz(istek: TaslakIstegi, signal?: AbortSignal): AsyncGenerator<LexisAkisOlayi, void, void>;
   /** Düzenlenmiş taslağı yeniden denetler. */
   denetle(taslak: LexisTaslak, signal?: AbortSignal): Promise<LexisUyari[]>;
-  /** Şirket şablonunu doldurup Word'ü indirir. Önizlemede `LexisOrnekModuError`. */
-  wordIndir(taslak: LexisTaslak, signal?: AbortSignal): Promise<void>;
+  /** Şirket şablonunu doldurup Word'ü indirir; şablon yazımının uyarılarıyla döner. */
+  wordIndir(taslak: LexisTaslak, signal?: AbortSignal): Promise<WordSonucu>;
   gecmis(signal?: AbortSignal): Promise<TaslakKosusu[]>;
   kutuphaneAra(filtre: KutuphaneFiltresi, signal?: AbortSignal): Promise<KutuphaneKaydi[]>;
   raporGetir(sha256: string, signal?: AbortSignal): Promise<KutuphaneKaydi>;
@@ -361,8 +354,16 @@ const ornekLexisApi: LexisApi = {
     return ornekDenetle({ taslak, dosya: dosyaBul(taslak.case_id), emsalMetinleri, kararBankasi: kararBankasiKur() });
   },
 
-  async wordIndir() {
-    throw new LexisOrnekModuError(LEXIS_WORD_ORNEK_MESAJI);
+  // Word örnek modda da GERÇEK servise gider: örnek taslak + örnek dosyanın künyesi. Modül dinamik yüklenir —
+  // adaptörün geri kalanı `apiClient`'ı (MSAL) hiç yüklemez.
+  async wordIndir(taslak, signal) {
+    const dosya = dosyaBul(taslak.case_id);
+    const { wordIndir } = await import("@/lib/lexisWord");
+    const sonuc = await wordIndir(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, signal);
+    // Geçmiş en yeni koşu başta tutulur: bu davanın son koşusu "Word indirildi" olur.
+    const kosu = durum.gecmis.find((k) => k.case_id === taslak.case_id);
+    if (kosu) kosu.indirme_tarihi = new Date().toISOString();
+    return sonuc;
   },
 
   async gecmis(signal) {

@@ -49,6 +49,7 @@ bekçi `backend/tests/test_port_baglama.py` (CI'da koşar, konteynerde repo kök
 | 5432 | postgres | 127.0.0.1 | backend, yönetim araçları |
 | 5173 | Vite dev sunucusu (yalnız lokal; `frontend/vite.config.ts`, strictPort) | 127.0.0.1 | geliştirici tarayıcısı |
 | 8010 | `hukukbot_api` (ayrı compose projesi `../hukukbot-ui`) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/hukukbot-api/` allowlist'i, §2), HukuDok backend'inin `HUKUKBOT_WEBHOOK_URL` webhook'u (`services/export_publisher.py`) |
+| 8020 | `lexis_api` (ayrı compose projesi `../lexis-rapor`; 04.10.2026 itibarıyla yalnız lokalde kurulu) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/lexis-api/` allowlist'i, §2), Vite dev proxy'si |
 
 Hukukbot'un **kendi sitesi ve frontend portu yoktur** (karar
 [021](../kararlar/021-hukukbot-hukudok-girisi.md)): eski ayrı alan adı ve `:3000` frontend konteyneri
@@ -119,6 +120,19 @@ Docker'ın iç DNS'iyle (`resolver 127.0.0.11 valid=30s ipv6=off`) istek anında
 HukuDok'un frontend konteynerini hiç kaldırmazdı; böyle yalnız bu istekler 502 olur (`nginx.conf:179-182`).
 Bu yüzden `docker-compose.yml`'da frontend `hukuk_shared` ağındadır ama Hukukbot'a `depends_on` bilerek YOKTUR.
 Bekçi: `backend/tests/test_nginx_hukukbot.py`.
+
+**Lexis rapor servisine giden location** (04.10.2026, `nginx.conf:209-234`) aynı desendir: servis ayrı depoda
+ve ayrı stack'tedir (`../lexis-rapor`, `lexis_api:8020`), kimliği kendisi doğrular (HukuDok token kuralı +
+`ADMIN_EMAILS`).
+
+| Location | Not |
+| --- | --- |
+| `~ ^/lexis-api/(word)(/\|$)` | Allowlist: `/lexis` sayfasının Word ucu. Önek `rewrite ... break` ile atılır, gecikmeli DNS (`set $lexis_upstream`), `client_max_body_size 2M`, location'da `add_header` yok (`nginx.conf:217-230`) |
+| `~ ^/lexis-api(/\|$)` | Allowlist dışı her şey — servisin `/health`'i dahil — `return 404` (`nginx.conf:232-234`) |
+
+Servis kapalıyken HukuDok açılır, yalnız bu istekler 502 olur (04.10'da lokalde denendi: servis durdurulup
+frontend yeniden başlatıldı; ana sayfa ve `/healthz` 200, `/lexis-api/word` 502). Bekçi:
+`backend/tests/test_nginx_lexis.py`.
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama

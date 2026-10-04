@@ -253,15 +253,16 @@ Kullanıcı kararları (04.10): sayfa **gerçek kodda, örnek veriyle** kurulur;
 kütüphanesi tarayıcısı, kart bağı inceleme listesi, şirket profilleri + muallak kriterleri).
 
 **Kapı:** menü öğesi yalnız yöneticide (`components/shell/Sidebar.tsx` `yalnizYonetici`), rota
-`ProtectedAdminRoute` ile sarılı (`App.tsx`). Sayfa ağ isteği atmaz; üstte kalıcı "Örnek veri" şeridi durur.
-Kullanıcı kitlesi (`lexis-rapor/PLAN.md` S4) entegrasyonda kararlaştırılır.
+`ProtectedAdminRoute` ile sarılı (`App.tsx`). Sayfanın tek ağ isteği "Word indir"dir (§10.1); üstte kalıcı
+"Örnek veri" şeridi durur. Kullanıcı kitlesi (`lexis-rapor/PLAN.md` S4) entegrasyonda kararlaştırılır.
 
 **Dosyalar** (`frontend/src/`):
 
 | Dosya | Ne |
 | --- | --- |
 | `types/lexis.ts` | Sözleşme. Çekirdek tipleri `lexis_rapor/*.py`'den birebir (alan adları Python adlarıyla aynı); çekirdekte olmayan arayüz tipleri "çekirdekte yok" notuyla: `LexisUyari` (kodlu, yer bilgili uyarı), `MuallakOnerisi`, `ISKELET_BOLUMLERI` (iskelet başına sıralı bölüm + başlık), `DosyaGirdisi`, `LexisTaslak`, akış olayı, `SirketProfili`, `TaslakKosusu`, `RaporBagi` |
-| `lib/lexisApi.ts` | `LexisApi` arayüzü + bellekte çalışan örnek adaptör; `ORNEK_VERI` bayrağı. Entegrasyonda aynı arayüz `apiClient.fetch` ile uygulanır |
+| `lib/lexisApi.ts` | `LexisApi` arayüzü + bellekte çalışan örnek adaptör; `ORNEK_VERI` bayrağı. Entegrasyonda aynı arayüz `apiClient.fetch` ile uygulanır. `wordIndir` örnek modda da gerçek servise devreder |
+| `lib/lexisWord.ts` | Word ucunun istemcisi (`POST /lexis-api/word`): taslak + künye gider, dosya iner, uyarılar yanıt başlığından okunur. `lexisApi`'den dinamik yüklenir (örnek adaptör `apiClient`/MSAL yüklemez) |
 | `lib/lexisOrnekVeri.ts` | Sentetik veri: 4 dava (her yazılabilir iskeletten biri), 8 emsal rapor, kart bağları, şirket profilleri, geçmiş. **Uydurmadır; pilot paketten metin kopyalanmadı** |
 | `lib/lexisDenetim.ts` | Örnek adaptörün denetimi (dayanak kuralı K13, muallak sınırları, boş alan/bölüm) — çekirdekteki `yazici.dogrula`'nın ekranı sürecek kadar taklidi; entegrasyonda kalkar |
 | `lib/lexisMetin.ts` | Alıntıyı kaynak metinde bulma (vurgu aralıkları; çekirdeğin toleransıyla), tutar/tarih yazımı — entegrasyonda kalır |
@@ -288,5 +289,34 @@ alıntıyı kaynak paragrafta vurgular. Muallakta kesin tutar insanındır; boş
 bilgili gelmesi (`bolum`, `madde`, `alan`); iskelet başına bölüm sırası ve görünen başlık; etiketli satırların
 etiketiyle birlikte gelmesi; özet paragrafının kaynak belgesi; `Emsal.gerekce()` metninin telde gelmesi.
 
-**Önizlemede olmayanlar:** Word çıktısı (düğme bilgi verir), kalıcılık (sayfa yenilenince durum sıfırlanır),
-gerçek dava araması, belgelerin modele gönderimi.
+**Önizlemede olmayanlar:** kalıcılık (sayfa yenilenince durum sıfırlanır), gerçek dava araması, belgelerin
+modele gönderimi, Anadolu dışındaki biçimlerin Word çıktısı.
+
+### 10.1 Word çıktısı — ilk gerçek uç (04.10.2026)
+
+**Yerleşim kararı (kullanıcı, 04.10): çekirdek AYRI SERVİS olarak koşar** (Hukukbot deseni), HukuDok backend'ine
+taşınmaz. Servis kodu çekirdek deposunda: `..\lexis-rapor\servis` (anlatım o deponun `README.md` "Servis" bölümü).
+
+```
+/lexis "Word indir" → lexisApi.wordIndir → lib/lexisWord.ts
+   POST /lexis-api/word  {taslak: LexisTaslak, kunye: {hasar_no, rapor_no}}      (HukuDok access token'ı)
+→ konteyner nginx (allowlist: word; önek atılır; gecikmeli DNS)  →  lexis_api:8020  (hukuk_shared ağı)
+→ servis: token doğrulama (HukuDok kuralı) + ADMIN_EMAILS → ekran taslağı → RaporTaslagi → word_yaz(şablon)
+← .docx  +  X-Lexis-Uyari-Sayisi / X-Lexis-Uyarilar başlıkları
+```
+
+- **HukuDok tarafı:** `nginx.conf:209-234` (bekçi `backend/tests/test_nginx_lexis.py`), `frontend/vite.config.ts`
+  dev proxy'si (aynı allowlist), `lib/lexisWord.ts`. HukuDok backend'ine dokunulmadı.
+- **Künye istekle gider:** taslakta hasar no / rapor no yoktur; örnek adaptör örnek dosyadan verir (rapor no =
+  dosya no). HukuDok adaptörü (`lexis-rapor/PLAN.md` Aşama 8) gelince sunucu karttan kendisi alır.
+- **Muallak:** kesin tutar, boşsa öneri (alan alan — K11). Dayanak, kaynak ve gerekçe alanları Word'e girmez (K13).
+- **Yalnız Anadolu biçimi:** diğer iskeletlerde servis 422 + açıklama döner (`lexis-rapor/PLAN.md` Aşama 5b).
+- **Hata ayrımı (istemci):** servisin kendi hatası JSON `detail` metniyle gösterilir; nginx'in 404/502/504'ü ve
+  SPA'ya düşmüş 200 "Lexis servisine ulaşılamadı" olur. Servis doğrulama YAPAMADIĞINDA (ayar eksik, JWKS'e
+  ulaşılamıyor) 401 değil 503 döner: `apiClient` 401'de kullanıcıyı çıkışa götürür, servis arızası oturumu düşürmemeli.
+- **Şablon:** kişi verisi kalıntısı taşır → repoya ve imaja girmez; servis host dizininden salt okunur bağlar
+  (lokalde `C:\hukdok-veri\lexis\sablonlar\ANADOLU.docx`).
+- **Durum:** lokalde kurulu ve denendi (kimliksiz 401, allowlist dışı 404, servis kapalıyken HukuDok açılıyor +
+  Word 502; gerçek şablonla dosya üretilip geri okundu). **Tarayıcıdan gerçek girişle uçtan uca tıklama ve
+  dosyanın Word'de açılışı denenmedi.** Prod'da servis KURULU DEĞİL: orada düğme "servise ulaşılamadı" der.
+  Prod kurulumu insan adımıdır (stack + `.env` + şablon dosyası).

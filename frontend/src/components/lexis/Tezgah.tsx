@@ -4,7 +4,7 @@ import { FolderOpen, PenLine, ScrollText, ShieldCheck, X } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { useConfirm } from "@/hooks/useConfirm";
-import { LexisOrnekModuError, ORNEK_VERI, lexisApi } from "@/lib/lexisApi";
+import { ORNEK_VERI, lexisApi } from "@/lib/lexisApi";
 import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
 import { BolumGezgini } from "./BolumGezgini";
@@ -46,6 +46,7 @@ export function Tezgah() {
   const [vurgu, setVurgu] = useState<Vurgu | null>(null);
   const [okunan, setOkunan] = useState<{ kayit: KutuphaneKaydi; emsal: Emsal | null } | null>(null);
   const [ekleAcik, setEkleAcik] = useState(false);
+  const [wordIniyor, setWordIniyor] = useState(false);
   const vurguZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -124,12 +125,19 @@ export function Tezgah() {
   };
 
   const wordIndir = async () => {
-    if (!taslak) return;
+    if (!taslak || wordIniyor) return;
+    setWordIniyor(true);
     try {
-      await lexisApi.wordIndir(taslak);
+      const sonuc = await lexisApi.wordIndir(taslak);
+      // Şablon yazımının uyarıları (boş kalan alan, yazılamayan bölüm) dosyayla birlikte gelir; ilk üçü gösterilir.
+      const ozet = sonuc.uyarilar.slice(0, 3).join(" · ");
+      toast.success("Word indirildi", {
+        description: sonuc.uyari_sayisi > 0 ? `${sonuc.uyari_sayisi} uyarı${ozet ? `: ${ozet}` : ""}` : sonuc.dosya_adi,
+      });
     } catch (e) {
-      if (e instanceof LexisOrnekModuError) toast.info(e.message);
-      else toast.error("Word indirilemedi", { description: hataMetni(e) });
+      toast.error("Word indirilemedi", { description: hataMetni(e) });
+    } finally {
+      setWordIniyor(false);
     }
   };
 
@@ -372,6 +380,7 @@ export function Tezgah() {
               sonDenetim={t.sonDenetim}
               onDenetle={() => void t.denetle()}
               onWord={() => void wordIndir()}
+              kilitli={wordIniyor}
             />
           </div>
         )}

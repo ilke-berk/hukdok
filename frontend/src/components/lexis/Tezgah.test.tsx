@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Tezgah — "Rapor yaz" akışı örnek adaptörle uçtan uca: dava seç → künye/belge/emsal gelir → onaylı yazım →
 // bölümler ve madde rozetleri (dayanak kuralı) → düzenle → alandan çıkınca yeniden denetim → dayanak vurgusu →
-// muallak sınırı → Word (önizlemede bilgi). Taslağı silen eylemler onay ister.
+// muallak sınırı → Word (gerçek servise devir). Taslağı silen eylemler onay ister.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -13,8 +13,12 @@ vi.mock("sonner", () => ({ toast: toastMocks }));
 const confirmMock = vi.hoisted(() => ({ fn: vi.fn(async (_opts: unknown) => true) }));
 vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => confirmMock.fn }));
 
+// Word çağrısı gerçek servise gider (`lexisWord.ts` → `apiClient`); tezgâh testinde sahtedir.
+const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
+vi.mock("@/lib/lexisWord", () => wordMock);
+
 import { Tezgah } from "./Tezgah";
-import { LEXIS_WORD_ORNEK_MESAJI, ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
+import { LexisApiError, ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -229,13 +233,25 @@ describe("Tezgah — taslak yazımı", () => {
     expect(test("lexis-uyarilar")!.textContent).not.toContain("talebi aşıyor");
   });
 
-  it("Word indir önizlemede bilgi verir, hata saymaz", async () => {
+  it("Word indir taslağı servise gönderir; başarıda uyarı özetini, hatada servisin metnini gösterir", async () => {
     await ciz();
     await taslakYaz("AXA-9004");
     expect(test("lexis-cikti-cubugu")!.textContent).toContain("Denetim temiz");
+
+    wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x_ANA_taslak.docx", uyari_sayisi: 4, uyarilar: ["alan boş: talep_tarihi", "bölüm boş: beyan"] });
     await tikla(dugme("Word indir"));
-    expect(toastMocks.info).toHaveBeenCalledWith(LEXIS_WORD_ORNEK_MESAJI);
+    expect((wordMock.wordIndir.mock.calls[0][0] as { case_id: number }).case_id).toBe(9004);
+    expect(toastMocks.success).toHaveBeenCalledWith("Word indirildi", { description: "4 uyarı: alan boş: talep_tarihi · bölüm boş: beyan" });
     expect(toastMocks.error).not.toHaveBeenCalled();
+
+    wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x_ANA_taslak.docx", uyari_sayisi: 0, uyarilar: [] });
+    await tikla(dugme("Word indir"));
+    expect(toastMocks.success).toHaveBeenLastCalledWith("Word indirildi", { description: "Lexis_x_ANA_taslak.docx" });
+
+    wordMock.wordIndir.mockRejectedValueOnce(new LexisApiError(422, "Word çıktısı şimdilik yalnız Anadolu biçiminde üretiliyor."));
+    await tikla(dugme("Word indir"));
+    expect(toastMocks.error).toHaveBeenCalledWith("Word indirilemedi", { description: "Word çıktısı şimdilik yalnız Anadolu biçiminde üretiliyor." });
+    expect(dugme("Word indir").disabled).toBe(false);
   });
 
   it("taslak varken künye değişimi onay ister; reddedilirse taslak kalır, kabul edilirse silinir", async () => {

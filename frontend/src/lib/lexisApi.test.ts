@@ -1,8 +1,13 @@
 // Lexis örnek adaptörü (`/lexis` önizlemesi) — sözleşmenin davranışı: akış olaylarının sırası ve SON olayı,
-// denetimin dayanak kuralı (K13) uyarıları, emsal sıralaması, kart seçimi (K8) ve önizlemede Word'ün olmaması.
-import { beforeEach, describe, expect, it } from "vitest";
-import { LexisApiError, LexisOrnekModuError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla } from "./lexisApi";
-import { ORNEK_DOSYALAR, ornekSha } from "./lexisOrnekVeri";
+// denetimin dayanak kuralı (K13) uyarıları, emsal sıralaması, kart seçimi (K8) ve Word'ün gerçek servise devri.
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Word çağrısı ağa çıkar (`lexisWord.ts` → `apiClient`); burada yalnız adaptörün devri sınanır.
+const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
+vi.mock("@/lib/lexisWord", () => wordMock);
+
+import { LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla } from "./lexisApi";
+import { ORNEK_DOSYALAR, ORNEK_GECMIS, ornekSha } from "./lexisOrnekVeri";
 import { ISKELET_BOLUMLERI, type LexisAkisOlayi, type LexisTaslak, type TaslakIstegi } from "@/types/lexis";
 
 beforeEach(() => {
@@ -198,10 +203,29 @@ describe("kart bağı seçimi", () => {
 });
 
 describe("önizleme sınırı", () => {
-  it("Word çıktısı üretilmez: LexisOrnekModuError", async () => {
+  it("Word gerçek servise gider: taslak + dosyanın künyesi; inen koşu geçmişte işaretlenir", async () => {
     const istek = await istekKur(9004);
     const taslak = taslakKur(istek, await akisiTopla(istek));
-    await expect(lexisApi.wordIndir(taslak)).rejects.toBeInstanceOf(LexisOrnekModuError);
+    const dosya = ORNEK_DOSYALAR[9004];
+    const sonuc = { dosya_adi: "Lexis_x_ANA_taslak.docx", uyari_sayisi: 1, uyarilar: ["alan boş: talep_tarihi"] };
+    wordMock.wordIndir.mockResolvedValueOnce(sonuc);
+
+    await expect(lexisApi.wordIndir(taslak)).resolves.toEqual(sonuc);
+
+    expect(wordMock.wordIndir).toHaveBeenCalledWith(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, undefined);
+    const [sonKosu, ...eskiler] = await lexisApi.gecmis();
+    expect(sonKosu.case_id).toBe(9004);
+    expect(sonKosu.indirme_tarihi).not.toBeNull();
+    // Aynı davanın eski koşularına dokunulmaz.
+    expect(eskiler.filter((k) => k.case_id === 9004)).toEqual(ORNEK_GECMIS.filter((k) => k.case_id === 9004));
+  });
+
+  it("servis hatasında koşu 'indirildi' sayılmaz", async () => {
+    const istek = await istekKur(9004);
+    const taslak = taslakKur(istek, await akisiTopla(istek));
+    wordMock.wordIndir.mockRejectedValueOnce(new LexisApiError(502, "Lexis servisine ulaşılamadı; Word üretilemedi."));
+    await expect(lexisApi.wordIndir(taslak)).rejects.toBeInstanceOf(LexisApiError);
+    expect((await lexisApi.gecmis())[0].indirme_tarihi).toBeNull();
   });
 
   it("profil kaydı listede görünür", async () => {

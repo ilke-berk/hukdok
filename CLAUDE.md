@@ -140,9 +140,15 @@ otomatik DEĞİL. Takvim raporunda duruşma Açıklama'sı = davanın `dosya_son
 filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G213).
 
 **Lexis rapor aracı önizlemesi (04.10):** `/lexis` (`pages/LexisPage.tsx`, Araçlar › Lexis) çekirdeği AYRI depoda
-(`..\lexis-rapor`) gelişen medikolegal rapor aracının arayüzüdür ve bugün **sentetik örnek veriyle** çalışır: backend
-ucu YOK, sayfa ağ isteği atmaz, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
-`lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). Entegrasyona dek **yalnız yönetici**
+(`..\lexis-rapor`) gelişen medikolegal rapor aracının arayüzüdür ve bugün **sentetik örnek veriyle** çalışır: HukuDok
+backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
+`lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). **Tek ağ isteği "Word indir"dir**
+(`lib/lexisWord.ts`, dinamik yüklenir): örnek taslak aynı origin'den `/lexis-api/word`'e gider, konteyner nginx'i
+(`nginx.conf:209-234`, Hukukbot proxy'sinin aynı deseni: allowlist yalnız `word`, gecikmeli DNS, gerisi 404; bekçi
+`backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
+(`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HukuDok kuralıyla kendisi doğrular,
+yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (şimdilik yalnız Anadolu biçimi;
+şablon repo ve imaj DIŞINDA). Servis kapalıyken HukuDok açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
 "çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
 durum `useTezgah.ts`: dosya · taslak · denetim), Geçmiş, Kütüphane, Kart bağı, Şirketler. Lexis diyalogları `theme-classic`
@@ -284,7 +290,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-10-04: 1587 passed (145 dosya)
+npm --prefix frontend test                                 # 2026-10-04: 1597 passed (146 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
