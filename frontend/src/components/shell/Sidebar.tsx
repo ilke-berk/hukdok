@@ -15,6 +15,7 @@ import {
   LogOut,
   Scale,
   Bot,
+  ScrollText,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { clearAppStorage } from "@/lib/appStorage";
@@ -28,6 +29,8 @@ type NavItemDef = {
   path: string;
   Icon: typeof Home;
   matches?: (pathname: string) => boolean;
+  /** Yalnız yöneticinin menüsünde görünür (rotası da `ProtectedAdminRoute` ile korunur). */
+  yalnizYonetici?: boolean;
 };
 
 const NAV: NavItemDef[] = [
@@ -43,6 +46,8 @@ const NAV: NavItemDef[] = [
 const ARACLAR: NavItemDef[] = [
   { id: "hukukbot", label: "Hukukbot", path: "/hukukbot", Icon: Bot },
   { id: "reports", label: "Raporlar", path: "/reports", Icon: Table2 },
+  // Lexis rapor aracı ÖNİZLEMESİ (04.10): örnek veriyle çalışır, entegrasyona dek yalnız yöneticide.
+  { id: "lexis", label: "Lexis", path: "/lexis", Icon: ScrollText, yalnizYonetici: true },
 ];
 
 type SidebarProps = {
@@ -74,6 +79,7 @@ export function Sidebar({ open, onClose, hoverIleKapan = true }: SidebarProps) {
   const navItems: NavItemDef[] = isAdminUser
     ? [...NAV, { id: "admin", label: "Yönetim", path: "/admin", Icon: ShieldCheck }]
     : NAV;
+  const araclar = ARACLAR.filter(item => !item.yalnizYonetici || isAdminUser);
 
   const isActive = (item: NavItemDef) => {
     if (item.matches) return item.matches(location.pathname);
@@ -206,7 +212,7 @@ export function Sidebar({ open, onClose, hoverIleKapan = true }: SidebarProps) {
           <div className="font-mono text-[9px] tracking-[0.22em] uppercase text-[var(--fg-subtle)] pt-5 pb-2 px-2">
             Araçlar
           </div>
-          <nav className="flex flex-col gap-0.5">{ARACLAR.map(navButton)}</nav>
+          <nav className="flex flex-col gap-0.5">{araclar.map(navButton)}</nav>
         </div>
 
         {/* Footer: user + view switcher + theme/logout */}

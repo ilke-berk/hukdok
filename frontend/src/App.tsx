@@ -39,6 +39,7 @@ const CaseDetails = lazy(() => importWithReload(() => import("./pages/CaseDetail
 const ActivityHistory = lazy(() => importWithReload(() => import("./pages/ActivityHistory")));
 const ReportsPage = lazy(() => importWithReload(() => import("./pages/ReportsPage")));
 const HukukbotPage = lazy(() => importWithReload(() => import("./pages/HukukbotPage")));
+const LexisPage = lazy(() => importWithReload(() => import("./pages/LexisPage")));
 
 // G184: pencere/sekme odağında yeniden çekme KAPALI. Açıkken 5 dk staleTime dolunca her
 // odak useConfig'in 32 listesini (32 liste × odak = 32 istek) topluca yeniden çekiyordu.
@@ -120,6 +121,15 @@ const AppContent = () => {
           <Route path="/hukukbot" element={<HukukbotPage />} />
           {/* Raporlar: her giriş yapmış kullanıcı (30.09; uçlar da get_current_user) */}
           <Route path="/reports" element={<ReportsPage />} />
+          {/* Lexis rapor aracı ÖNİZLEMESİ (04.10): örnek veri; entegrasyona dek yalnız yönetici */}
+          <Route
+            path="/lexis"
+            element={
+              <ProtectedAdminRoute>
+                <LexisPage />
+              </ProtectedAdminRoute>
+            }
+          />
           <Route
             path="/admin"
             element={

@@ -73,4 +73,21 @@ describe("Sidebar Hukukbot öğesi", () => {
         await render(false, "/hukukbot");
         expect(hukukbotOgesi()!.className).toContain("bg-[var(--brand-soft)]");
     });
+
+    // Lexis rapor aracı önizlemesi (04.10): örnek veriyle çalışır, entegrasyona dek yalnız yöneticide.
+    const lexisOgesi = () =>
+        Array.from(container.querySelectorAll("button")).find(b => b.textContent?.trim() === "Lexis");
+
+    it("Lexis öğesi yönetici olmayan kullanıcıda görünmez", async () => {
+        await render(false);
+        expect(lexisOgesi()).toBeUndefined();
+    });
+
+    it("Lexis öğesi yöneticide görünür ve /lexis'e gider", async () => {
+        await render(true);
+        const oge = lexisOgesi();
+        expect(oge).toBeDefined();
+        await act(async () => oge!.click());
+        expect(container.querySelector('[data-testid="konum"]')!.textContent).toBe("/lexis");
+    });
 });

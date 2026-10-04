@@ -139,6 +139,13 @@ otomatik DEĞİL. Takvim raporunda duruşma Açıklama'sı = davanın `dosya_son
 `report_builder._hearing_title`). Avukat seçimi `LawyerCombobox` (NewCase, intake, QuickCaseModal); `CaseList`
 filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G213).
 
+**Lexis rapor aracı önizlemesi (04.10):** `/lexis` (`pages/LexisPage.tsx`, Araçlar › Lexis) çekirdeği AYRI depoda
+(`..\lexis-rapor`) gelişen medikolegal rapor aracının arayüzüdür ve bugün **sentetik örnek veriyle** çalışır: backend
+ucu YOK, sayfa ağ isteği atmaz, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
+`lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). Entegrasyona dek **yalnız yönetici**
+görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
+"çekirdekte yok" notlu arayüz tipleri). Ayrıntı ve entegrasyonun beklediği `docs/plan/lexis-raporu-plani-2026-10-03.md` §10.
+
 **Stream sözleşmesi** (`analyzer.py::_failed_event`, frontend ile ORTAK referans):
 olaylar `{"status": "info"/"warning"/"error"/"complete"/"failed", ...}`.
 Nihai başarısızlık: `{"status":"failed", "error_ozet", "error_kod"}`; `error_kod`

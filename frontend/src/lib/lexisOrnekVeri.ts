@@ -1,0 +1,1270 @@
+// `/lexis` önizlemesinin SENTETİK verisi (04.10.2026). Buradaki her ad, numara, tutar ve metin UYDURMADIR:
+// gerçek dosya, rapor ya da kişi verisi DEĞİLDİR ve pilot paketten hiçbir şey kopyalanmamıştır (repoya kişi
+// verisi girmez). Kişi adları bilerek "Örnek …" biçimindedir. Entegrasyonda bu dosya KALKAR.
+import type {
+  DegerlendirmeTaslagi,
+  DosyaGirdisi,
+  EtiketliSatir,
+  KutuphaneKaydi,
+  LexisBelge,
+  LexisDava,
+  LexisTaslak,
+  MuallakOnerisi,
+  OzetParagraf,
+  RaporBagi,
+  RaporEtiketleri,
+  RaporOkuma,
+  SirketProfili,
+  TaslakKosusu,
+} from "@/types/lexis";
+
+/** Uydurma sha256 (64 onaltılık hane) — yalnız kimlik olarak kullanılır. */
+export function ornekSha(n: number): string {
+  return n.toString(16).padStart(4, "0").repeat(16);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Davalar ve dosya girdileri
+// ---------------------------------------------------------------------------------------------
+
+export const ORNEK_DAVALAR: LexisDava[] = [
+  {
+    case_id: 9001,
+    ofis_no: "ANADOLU-9001-DR.ORNEK1-HUK",
+    sirket: "ANADOLU",
+    mahkeme: "Ankara 5. Tüketici Mahkemesi",
+    esas_no: "2025/101",
+    hasar_no: "50000001",
+    dosya_no: "9.1001",
+    sigortali: "Dr. Örnek Bir",
+    karsi_taraf: "Hasta Örnek Bir",
+    uzmanlik: "Dermatoloji",
+    durum: "DERDEST",
+  },
+  {
+    case_id: 9002,
+    ofis_no: "AK-9002-DR.ORNEK2-HUK",
+    sirket: "AK",
+    mahkeme: "İzmir 2. Asliye Hukuk Mahkemesi",
+    esas_no: "2024/202",
+    hasar_no: "50000002",
+    dosya_no: "9.1002",
+    sigortali: "Dr. Örnek İki",
+    karsi_taraf: "Hasta Örnek İki",
+    uzmanlik: "Ortopedi ve Travmatoloji",
+    durum: "DERDEST",
+  },
+  {
+    case_id: 9003,
+    ofis_no: "QUICK-9003-DR.ORNEK3-HUK",
+    sirket: "QUICK",
+    mahkeme: "Bursa 1. Tüketici Mahkemesi",
+    esas_no: "2025/303",
+    hasar_no: null,
+    dosya_no: "9.1003",
+    sigortali: "Dr. Örnek Üç",
+    karsi_taraf: "Hasta Örnek Üç",
+    uzmanlik: "Diş Hekimliği",
+    durum: "DERDEST",
+  },
+  {
+    case_id: 9004,
+    ofis_no: "AXA-9004-DR.ORNEK4-HUK",
+    sirket: "AXA",
+    mahkeme: "Adana 1. İdare Mahkemesi",
+    esas_no: "2023/404",
+    hasar_no: "50000004",
+    dosya_no: "9.1004",
+    sigortali: "Dr. Örnek Dört",
+    karsi_taraf: "Hasta Örnek Dört",
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    durum: "DERDEST",
+  },
+];
+
+function belge(id: number, ad: string, tur: LexisBelge["tur"], tarih: string, ozet: string, sayfa: number): LexisBelge {
+  return { id, ad, tur, tarih, ozet, sayfa };
+}
+
+const dava = (id: number): LexisDava => ORNEK_DAVALAR.find((d) => d.case_id === id)!;
+
+export const ORNEK_DOSYALAR: Record<number, DosyaGirdisi> = {
+  9001: {
+    dava: dava(9001),
+    sirket: "ANADOLU",
+    rapor_turu: "ANA",
+    iskelet: "ANADOLU",
+    mahkeme: "Ankara 5. Tüketici Mahkemesi",
+    esas_no: "2025/101",
+    hasar_no: "50000001",
+    hukuk_no: "H-2025-0101",
+    police_no: "70000001",
+    teminat_limiti: 1_500_000,
+    talep_maddi: 60_000,
+    talep_manevi: 200_000,
+    uzmanlik: "Dermatoloji",
+    sigortali: "Dr. Örnek Bir",
+    magdur: "Hasta Örnek Bir",
+    hastane: "Örnek Cilt Kliniği / Ankara",
+    belgeler: [
+      belge(101, "Dava dilekçesi", "DILEKCE", "2025-03-14", "Lazer epilasyon sonrası bacaklarda ikinci derece yanık ve kalıcı iz iddiası.", 6),
+      belge(102, "Sigortalı hekim beyanı", "HEKIM_BEYANI", "2025-04-02", "Cihaz ayarlarının cilt tipine göre yapıldığı, yanığın bilinen bir komplikasyon olduğu beyanı.", 2),
+      belge(103, "Bilirkişi raporu", "BILIRKISI", "2025-09-18", "Yanığın komplikasyon olduğu, uygulamada tıbbi hata saptanmadığı görüşü.", 9),
+      belge(104, "Mesleki sorumluluk poliçesi", "POLICE", "2025-04-02", "70000001 numaralı poliçe, 01.01.2024-01.01.2025 vadeli.", 4),
+    ],
+    celiskiler: [{ alan: "talep", etiket: "Manevi tazminat talebi", kart: "150.000,00 TL", belge: "200.000,00 TL", belge_id: 101 }],
+    onceki_rapor: null,
+  },
+  9002: {
+    dava: dava(9002),
+    sirket: "AK",
+    rapor_turu: "ANA",
+    iskelet: "ALTILI",
+    mahkeme: "İzmir 2. Asliye Hukuk Mahkemesi",
+    esas_no: "2024/202",
+    hasar_no: "50000002",
+    hukuk_no: null,
+    police_no: null,
+    teminat_limiti: null,
+    talep_maddi: 400_000,
+    talep_manevi: 250_000,
+    uzmanlik: "Ortopedi ve Travmatoloji",
+    sigortali: "Dr. Örnek İki",
+    magdur: "Hasta Örnek İki",
+    hastane: "Örnek Devlet Hastanesi / İzmir",
+    belgeler: [
+      belge(201, "Dava dilekçesi", "DILEKCE", "2024-06-10", "Diz protezi ameliyatı sonrası gelişen enfeksiyonun geç tanındığı iddiası.", 8),
+      belge(202, "Sigortalı hekim beyanı", "HEKIM_BEYANI", "2024-07-01", "Ameliyat sonrası takiplerin protokole uygun yapıldığı beyanı.", 3),
+      belge(203, "Adli Tıp Kurumu raporu", "BILIRKISI", "2025-02-20", "Enfeksiyonun komplikasyon olduğu, takip sürecinde gecikme bulunduğu görüşü.", 5),
+    ],
+    celiskiler: [],
+    onceki_rapor: null,
+  },
+  9003: {
+    dava: dava(9003),
+    sirket: "QUICK",
+    rapor_turu: "ANA",
+    iskelet: "KISA",
+    mahkeme: "Bursa 1. Tüketici Mahkemesi",
+    esas_no: "2025/303",
+    hasar_no: null,
+    hukuk_no: null,
+    police_no: "70000003",
+    teminat_limiti: 800_000,
+    talep_maddi: 90_000,
+    talep_manevi: 100_000,
+    uzmanlik: "Diş Hekimliği",
+    sigortali: "Dr. Örnek Üç",
+    magdur: "Hasta Örnek Üç",
+    hastane: "Örnek Ağız ve Diş Sağlığı Polikliniği / Bursa",
+    belgeler: [
+      belge(301, "Dava dilekçesi", "DILEKCE", "2025-05-05", "Alt çeneye implant sonrası dudakta uyuşukluk iddiası.", 5),
+      belge(302, "Sigortalı hekim beyanı", "HEKIM_BEYANI", "2025-05-28", "İşlem öncesi tomografi çekildiği ve hastanın bilgilendirildiği beyanı.", 2),
+      belge(303, "Uzman görüşü", "BILIRKISI", "2025-08-11", "Sinir hasarının implant boyunun seçimiyle ilişkili olabileceği görüşü.", 4),
+      belge(304, "Mesleki sorumluluk poliçesi", "POLICE", "2025-05-28", "70000003 numaralı poliçe.", 4),
+    ],
+    celiskiler: [],
+    onceki_rapor: null,
+  },
+  9004: {
+    dava: dava(9004),
+    sirket: "AXA",
+    rapor_turu: "EK",
+    iskelet: "EK",
+    mahkeme: "Adana 1. İdare Mahkemesi",
+    esas_no: "2023/404",
+    hasar_no: "50000004",
+    hukuk_no: null,
+    police_no: "70000004",
+    teminat_limiti: 2_000_000,
+    talep_maddi: 500_000,
+    talep_manevi: 300_000,
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    sigortali: "Dr. Örnek Dört",
+    magdur: "Hasta Örnek Dört",
+    hastane: "Örnek Eğitim ve Araştırma Hastanesi / Adana",
+    belgeler: [
+      belge(401, "Dava dilekçesi", "DILEKCE", "2023-04-12", "Doğum sırasında omuz takılması ve bebekte kol felci iddiası.", 7),
+      belge(402, "Sigortalı hekim beyanı", "HEKIM_BEYANI", "2023-05-03", "Omuz takılmasında uygulanması gereken manevraların yapıldığı beyanı.", 2),
+      belge(403, "Bilirkişi ek raporu", "BILIRKISI", "2025-06-30", "Manevraların kayıtlara işlendiği, eylemin tıp kurallarına uygun olduğu görüşü.", 6),
+      belge(404, "Mesleki sorumluluk poliçesi", "POLICE", "2023-05-03", "70000004 numaralı poliçe.", 4),
+      belge(405, "Mahkeme ara kararı", "KARAR", "2025-07-15", "Ek rapora karşı beyan süresi verilmesi.", 1),
+    ],
+    celiskiler: [],
+    onceki_rapor: ornekSha(7),
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// Emsal kütüphanesi (maskeli eski raporlar)
+// ---------------------------------------------------------------------------------------------
+
+function okuma(p: Partial<RaporOkuma> & Pick<RaporOkuma, "sha256" | "sirket" | "iskelet" | "rapor_no">): RaporOkuma {
+  return {
+    dosya: `${p.rapor_no}_rapor.docx`,
+    bicim: "docx",
+    rapor_turu: "ANA",
+    rapor_tarihi: null,
+    hasar_no: null,
+    hukuk_no: null,
+    sigortali: "[SİGORTALI]",
+    uzmanlik: null,
+    magdur: "[HASTA]",
+    hastane: null,
+    police_no: null,
+    police_baslangic: null,
+    police_bitis: null,
+    teminat_limiti: null,
+    mahkeme: null,
+    esas_no: null,
+    tarihler: {},
+    talep_maddi: null,
+    talep_manevi: null,
+    talep_birlesik: null,
+    muallak_maddi: null,
+    muallak_manevi: null,
+    muallak_cumlesi: null,
+    mesleki_hata: null,
+    mesleki_hata_sonucu: null,
+    sulh_uygunluk: null,
+    kararlar: [],
+    kurullar: [],
+    bolumler: {},
+    uyarilar: [],
+    ...p,
+  };
+}
+
+function etiketler(p: Partial<RaporEtiketleri>): RaporEtiketleri {
+  return {
+    uzmanlik: null,
+    tibbi_islem: null,
+    tibbi_surec: [],
+    tibbi_olay: [],
+    iddia_edilen_kusur: [],
+    hastada_olusan_zarar: [],
+    uygulanan_yontem: [],
+    zarar_kisi: "YETISKIN",
+    yargi_yolu: "DIGER",
+    kurum_turu: "OZEL",
+    kusur_tespiti: "BELIRSIZ",
+    risk_duzeyi: "BELIRSIZ",
+    teminat: "BELIRSIZ",
+    rucu: "DEGINILMEMIS",
+    muallak_dayanagi: "YOK",
+    iddia_ozeti: "",
+    talep_maddi: null,
+    talep_manevi: null,
+    muallak_maddi: null,
+    muallak_manevi: null,
+    havuz_disi: [],
+    ...p,
+  };
+}
+
+export const ORNEK_KUTUPHANE: KutuphaneKaydi[] = [
+  {
+    klasor: "9.2001",
+    dosya_no: "9.2001",
+    okuma: okuma({
+      sha256: ornekSha(1),
+      sirket: "ANADOLU",
+      iskelet: "ANADOLU",
+      rapor_no: "9.2001",
+      rapor_tarihi: "2024-11-05",
+      uzmanlik: "Dermatoloji",
+      mahkeme: "Ankara 3. Tüketici Mahkemesi",
+      esas_no: "2024/510",
+      talep_maddi: 40_000,
+      talep_manevi: 150_000,
+      muallak_manevi: 120_000,
+      muallak_cumlesi: "Dosya riskli olup 120.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      mesleki_hata: "Komplikasyon",
+      sulh_uygunluk: "Sulhe uygun değildir.",
+      bolumler: {
+        iddia: "[HASTA], lazer uygulaması sonrasında yüzünde yanık ve leke oluştuğunu ileri sürmüştür.",
+        uzman_gorusu: "Lazer uygulamalarında yanık bilinen bir komplikasyondur; uygulama dozunun kayıtlara uygun olduğu görülmüştür.",
+        degerlendirme:
+          "Tarafımıza iletilen belgeler incelenmiştir.\nİşlem güzelleştirme amaçlı olduğundan taraflar arasındaki ilişkinin eser sözleşmesi niteliğinde kabul edilmesi ve sonucun taahhüt edildiğinin değerlendirilmesi riski bulunmaktadır.\nDosya riskli olup 120.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Dermatoloji",
+      tibbi_islem: "Lazer uygulaması",
+      tibbi_surec: ["Tedavi"],
+      tibbi_olay: ["Yanık"],
+      iddia_edilen_kusur: ["Uygulama Hatası"],
+      hastada_olusan_zarar: ["Kalıcı İz"],
+      uygulanan_yontem: ["Lazer"],
+      yargi_yolu: "TUKETICI",
+      kusur_tespiti: "KOMPLIKASYON",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "EMSAL",
+      iddia_ozeti: "Yüze lazer uygulaması sonrası yanık ve leke oluştuğu iddiası.",
+      talep_maddi: 40_000,
+      talep_manevi: 150_000,
+      muallak_manevi: 120_000,
+    }),
+  },
+  {
+    klasor: "9.2002",
+    dosya_no: "9.2002",
+    okuma: okuma({
+      sha256: ornekSha(2),
+      sirket: "ANADOLU",
+      iskelet: "ANADOLU",
+      rapor_no: "9.2002",
+      rapor_tarihi: "2025-02-17",
+      uzmanlik: "Plastik, Rekonstrüktif ve Estetik Cerrahi",
+      mahkeme: "İstanbul 8. Tüketici Mahkemesi",
+      esas_no: "2024/745",
+      talep_maddi: 80_000,
+      talep_manevi: 200_000,
+      muallak_manevi: 120_000,
+      muallak_cumlesi: "Dosya riskli olup 120.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      mesleki_hata: "Komplikasyon",
+      kararlar: [{ merci: "Yargıtay 3. Hukuk Dairesi", esas_no: "2021/1500", karar_no: "2021/9000", tarih: "2021-10-12", emsal: true }],
+      bolumler: {
+        iddia: "[HASTA], burun estetiği ameliyatından sonra nefes almada güçlük ve şekil bozukluğu oluştuğunu ileri sürmüştür.",
+        uzman_gorusu: "Ameliyat sonrası gelişen şekil bozukluğu literatürde tanımlı bir komplikasyondur.",
+        degerlendirme:
+          "Tarafımıza iletilen belgeler incelenmiştir.\nYargıtay 3. Hukuk Dairesi'nin 2021/1500 E., 2021/9000 K. sayılı kararında estetik amaçlı işlemler eser sözleşmesi olarak nitelendirilmiştir.\nDosya riskli olup 120.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Plastik, Rekonstrüktif ve Estetik Cerrahi",
+      tibbi_islem: "Burun estetiği",
+      tibbi_surec: ["Ameliyat"],
+      tibbi_olay: ["Şekil Bozukluğu"],
+      iddia_edilen_kusur: ["Uygulama Hatası"],
+      hastada_olusan_zarar: ["Kalıcı İz", "Solunum Güçlüğü"],
+      uygulanan_yontem: ["Rinoplasti"],
+      yargi_yolu: "TUKETICI",
+      kusur_tespiti: "KOMPLIKASYON",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "KARAR",
+      iddia_ozeti: "Burun estetiği sonrası şekil bozukluğu ve nefes darlığı iddiası.",
+      talep_maddi: 80_000,
+      talep_manevi: 200_000,
+      muallak_manevi: 120_000,
+    }),
+  },
+  {
+    klasor: "9.2003",
+    dosya_no: "9.2003",
+    okuma: okuma({
+      sha256: ornekSha(3),
+      sirket: "ANADOLU",
+      iskelet: "ANADOLU",
+      rapor_no: "9.2003",
+      rapor_tarihi: "2023-06-21",
+      uzmanlik: "Kadın Hastalıkları ve Doğum",
+      mahkeme: "Konya 2. İdare Mahkemesi",
+      esas_no: "2022/318",
+      talep_maddi: 300_000,
+      talep_manevi: 250_000,
+      muallak_maddi: 1,
+      muallak_manevi: 1,
+      muallak_cumlesi: "Dosya düşük riskli olup 1,00 TL maddi ve 1,00 TL manevi muallak ayrılması uygun olacaktır.",
+      mesleki_hata: "Yok",
+      kurullar: ["ATK 7. İhtisas Kurulu"],
+      bolumler: {
+        iddia: "Doğum sırasında omuz takılması yaşandığı ve bebekte kol felci geliştiği ileri sürülmüştür.",
+        uzman_gorusu: "ATK 7. İhtisas Kurulu raporunda eylemin tıp kurallarına uygun olduğu belirtilmiştir.",
+        degerlendirme:
+          "Tarafımıza iletilen belgeler incelenmiştir.\nAdli Tıp Kurumu raporunda sigortalıya atfedilebilecek kusur bulunmadığı belirtilmiştir.\nDosya düşük riskli olup 1,00 TL maddi ve 1,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Kadın Hastalıkları ve Doğum",
+      tibbi_islem: "Normal doğum",
+      tibbi_surec: ["Doğum"],
+      tibbi_olay: ["Omuz Distosisi"],
+      iddia_edilen_kusur: ["Müdahale Hatası"],
+      hastada_olusan_zarar: ["Brakiyal Pleksus Hasarı"],
+      zarar_kisi: "BEBEK",
+      yargi_yolu: "IDARE",
+      kurum_turu: "KAMU",
+      kusur_tespiti: "HATA_YOK",
+      risk_duzeyi: "DUSUK",
+      teminat: "ICINDE",
+      muallak_dayanagi: "BILIRKISI",
+      iddia_ozeti: "Doğumda omuz takılması sonrası bebekte kol felci iddiası.",
+      talep_maddi: 300_000,
+      talep_manevi: 250_000,
+      muallak_maddi: 1,
+      muallak_manevi: 1,
+    }),
+  },
+  {
+    klasor: "9.2004",
+    dosya_no: "9.2004",
+    okuma: okuma({
+      sha256: ornekSha(4),
+      sirket: "QUICK",
+      iskelet: "KISA",
+      rapor_no: "9.2004",
+      rapor_tarihi: "2024-09-09",
+      uzmanlik: "Diş Hekimliği",
+      mahkeme: "Antalya 2. Tüketici Mahkemesi",
+      esas_no: "2024/120",
+      talep_maddi: 120_000,
+      talep_manevi: 80_000,
+      muallak_maddi: 85_000,
+      muallak_manevi: 50_000,
+      muallak_cumlesi: "Dosya riskli olup 85.000,00 TL maddi ve 50.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      bolumler: {
+        iddia: "[HASTA], implant uygulaması sonrasında alt dudağında his kaybı oluştuğunu ileri sürmüştür.",
+        uzman_gorusu: "Uzman görüşünde implant boyunun sinir kanalına yakın seçildiği ve planlamanın yetersiz olduğu belirtilmiştir.",
+        degerlendirme:
+          "Uzman görüşü uyarınca planlama aşamasında eksiklik bulunduğu değerlendirilmektedir.\nDosya riskli olup 85.000,00 TL maddi ve 50.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Diş Hekimliği",
+      tibbi_islem: "Diş implantı",
+      tibbi_surec: ["Tedavi"],
+      tibbi_olay: ["Sinir Hasarı"],
+      iddia_edilen_kusur: ["Planlama Hatası"],
+      hastada_olusan_zarar: ["His Kaybı"],
+      uygulanan_yontem: ["İmplant"],
+      yargi_yolu: "TUKETICI",
+      kusur_tespiti: "HATA_VAR",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "UZMAN",
+      iddia_ozeti: "İmplant sonrası alt dudakta his kaybı iddiası.",
+      talep_maddi: 120_000,
+      talep_manevi: 80_000,
+      muallak_maddi: 85_000,
+      muallak_manevi: 50_000,
+    }),
+  },
+  {
+    klasor: "9.2005",
+    dosya_no: "9.2005",
+    okuma: okuma({
+      sha256: ornekSha(5),
+      sirket: "AK",
+      iskelet: "ALTILI",
+      rapor_no: "9.2005",
+      rapor_tarihi: "2024-03-28",
+      uzmanlik: "Ortopedi ve Travmatoloji",
+      mahkeme: "Manisa 1. Asliye Hukuk Mahkemesi",
+      esas_no: "2023/615",
+      talep_maddi: 350_000,
+      talep_manevi: 150_000,
+      muallak_maddi: 200_000,
+      muallak_manevi: 75_000,
+      muallak_cumlesi: "Dosya riskli olup 200.000,00 TL maddi ve 75.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      kurullar: ["ATK 7. İhtisas Kurulu"],
+      bolumler: {
+        iddia: "[HASTA], kalça protezi ameliyatından sonra gelişen enfeksiyonun zamanında tedavi edilmediğini ileri sürmüştür.",
+        beyan: "[SİGORTALI], ameliyat sonrası kontrollerin düzenli yapıldığını beyan etmiştir.",
+        uzman_gorusu: "Enfeksiyon komplikasyon olmakla birlikte tanı ve tedavide gecikme bulunduğu belirtilmiştir.",
+        degerlendirme:
+          "Enfeksiyon bilinen bir komplikasyon olmakla birlikte komplikasyonun yönetiminde gecikme bulunduğu görüşü karşısında sorumluluk riski bulunmaktadır.\nDosya riskli olup 200.000,00 TL maddi ve 75.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Ortopedi ve Travmatoloji",
+      tibbi_islem: "Kalça protezi",
+      tibbi_surec: ["Ameliyat", "Ameliyat Sonrası Takip"],
+      tibbi_olay: ["Enfeksiyon"],
+      iddia_edilen_kusur: ["Tanıda Gecikme"],
+      hastada_olusan_zarar: ["Yeniden Ameliyat"],
+      uygulanan_yontem: ["Protez"],
+      yargi_yolu: "ASLIYE_HUKUK",
+      kurum_turu: "OZEL",
+      kusur_tespiti: "KOMPLIKASYON_YONETIMI",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "BILIRKISI",
+      iddia_ozeti: "Kalça protezi sonrası enfeksiyonun geç tedavi edildiği iddiası.",
+      talep_maddi: 350_000,
+      talep_manevi: 150_000,
+      muallak_maddi: 200_000,
+      muallak_manevi: 75_000,
+    }),
+  },
+  {
+    klasor: "9.2006",
+    dosya_no: "9.2006",
+    okuma: okuma({
+      sha256: ornekSha(6),
+      sirket: "AK",
+      iskelet: "ALTILI",
+      rapor_no: "9.2006",
+      rapor_tarihi: "2025-01-14",
+      uzmanlik: "Diş Hekimliği",
+      mahkeme: "İzmir 4. Tüketici Mahkemesi",
+      esas_no: "2024/88",
+      talep_maddi: 50_000,
+      talep_manevi: 50_000,
+      muallak_maddi: 1,
+      muallak_manevi: 1,
+      muallak_cumlesi: "Dosya düşük riskli olup 1,00 TL maddi ve 1,00 TL manevi muallak ayrılması uygun olacaktır.",
+      bolumler: {
+        iddia: "[HASTA], implantın kemikle kaynaşmadığını ve yeniden işlem gerektiğini ileri sürmüştür.",
+        beyan: "[SİGORTALI], implant kaybının hastanın sigara kullanımıyla ilişkili olduğunu beyan etmiştir.",
+        uzman_gorusu: "İmplantın kemikle kaynaşmaması bilinen bir komplikasyondur; uygulamada eksiklik saptanmamıştır.",
+        degerlendirme:
+          "Uzman görüşünde uygulamada eksiklik saptanmadığı belirtilmiştir.\nDosya düşük riskli olup 1,00 TL maddi ve 1,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Diş Hekimliği",
+      tibbi_islem: "Diş implantı",
+      tibbi_surec: ["Tedavi"],
+      tibbi_olay: ["İmplant Kaybı"],
+      iddia_edilen_kusur: ["Uygulama Hatası"],
+      hastada_olusan_zarar: ["Yeniden İşlem"],
+      uygulanan_yontem: ["İmplant"],
+      yargi_yolu: "TUKETICI",
+      kusur_tespiti: "KOMPLIKASYON",
+      risk_duzeyi: "DUSUK",
+      teminat: "ICINDE",
+      muallak_dayanagi: "UZMAN",
+      iddia_ozeti: "İmplantın tutmadığı ve yeniden işlem gerektiği iddiası.",
+      talep_maddi: 50_000,
+      talep_manevi: 50_000,
+      muallak_maddi: 1,
+      muallak_manevi: 1,
+    }),
+  },
+  {
+    klasor: "9.1004",
+    dosya_no: "9.1004",
+    okuma: okuma({
+      sha256: ornekSha(7),
+      sirket: "AXA",
+      iskelet: "KISA",
+      rapor_no: "9.1004",
+      rapor_tarihi: "2023-09-04",
+      hasar_no: "50000004",
+      uzmanlik: "Kadın Hastalıkları ve Doğum",
+      mahkeme: "Adana 1. İdare Mahkemesi",
+      esas_no: "2023/404",
+      talep_maddi: 500_000,
+      talep_manevi: 300_000,
+      muallak_maddi: 150_000,
+      muallak_manevi: 100_000,
+      muallak_cumlesi: "Bilirkişi raporu beklendiğinden 150.000,00 TL maddi ve 100.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      bolumler: {
+        iddia: "Doğum sırasında omuz takılması yaşandığı, gerekli manevraların yapılmadığı ve bebekte kol felci geliştiği ileri sürülmüştür.",
+        uzman_gorusu: "Dosyada henüz bilirkişi raporu bulunmamaktadır; omuz takılması öngörülemeyen bir durumdur.",
+        degerlendirme:
+          "Dosyada bilirkişi raporu bulunmadığından kusur durumu belirsizdir.\nBilirkişi raporu beklendiğinden 150.000,00 TL maddi ve 100.000,00 TL manevi muallak ayrılması uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Kadın Hastalıkları ve Doğum",
+      tibbi_islem: "Normal doğum",
+      tibbi_surec: ["Doğum"],
+      tibbi_olay: ["Omuz Distosisi"],
+      iddia_edilen_kusur: ["Müdahale Hatası"],
+      hastada_olusan_zarar: ["Brakiyal Pleksus Hasarı"],
+      zarar_kisi: "BEBEK",
+      yargi_yolu: "IDARE",
+      kurum_turu: "KAMU",
+      kusur_tespiti: "BELIRSIZ",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "TALEP",
+      iddia_ozeti: "Doğumda omuz takılması sonrası bebekte kol felci iddiası.",
+      talep_maddi: 500_000,
+      talep_manevi: 300_000,
+      muallak_maddi: 150_000,
+      muallak_manevi: 100_000,
+    }),
+  },
+  {
+    klasor: "9.2008",
+    dosya_no: "9.2008",
+    okuma: okuma({
+      sha256: ornekSha(8),
+      sirket: "AXA",
+      iskelet: "EK",
+      rapor_turu: "EK",
+      rapor_no: "9.2008",
+      rapor_tarihi: "2024-12-02",
+      uzmanlik: "Genel Cerrahi",
+      mahkeme: "Mersin 3. Asliye Hukuk Mahkemesi",
+      esas_no: "2022/930",
+      talep_maddi: 200_000,
+      talep_manevi: 200_000,
+      muallak_maddi: 180_000,
+      muallak_manevi: 120_000,
+      muallak_cumlesi: "Bilirkişi raporu doğrultusunda muallağın 180.000,00 TL maddi ve 120.000,00 TL manevi olarak güncellenmesi uygun olacaktır.",
+      kararlar: [{ merci: "Yargıtay 3. Hukuk Dairesi", esas_no: "2020/4100", karar_no: "2021/2200", tarih: "2021-03-03", emsal: true }],
+      bolumler: {
+        ek_inceleme: "Mahkemece alınan bilirkişi raporunda ameliyat bölgesinde gazlı bez unutulduğu ve bunun tıbbi hata olduğu belirtilmiştir.",
+        degerlendirme:
+          "Bilirkişi raporu uyarınca ameliyat bölgesinde cisim unutulması tıbbi hata niteliğindedir.\nBilirkişi raporu doğrultusunda muallağın 180.000,00 TL maddi ve 120.000,00 TL manevi olarak güncellenmesi uygun olacaktır.",
+      },
+    }),
+    etiketler: etiketler({
+      uzmanlik: "Genel Cerrahi",
+      tibbi_islem: "Karın ameliyatı",
+      tibbi_surec: ["Ameliyat"],
+      tibbi_olay: ["Cisim Unutma"],
+      iddia_edilen_kusur: ["Müdahale Hatası"],
+      hastada_olusan_zarar: ["Yeniden Ameliyat"],
+      yargi_yolu: "ASLIYE_HUKUK",
+      kusur_tespiti: "HATA_VAR",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      muallak_dayanagi: "BILIRKISI",
+      iddia_ozeti: "Ameliyat bölgesinde gazlı bez unutulduğu iddiası.",
+      talep_maddi: 200_000,
+      talep_manevi: 200_000,
+      muallak_maddi: 180_000,
+      muallak_manevi: 120_000,
+    }),
+  },
+];
+
+/** Yeni dosyanın etiketleri — çekirdekte olgu çıkarımından gelir; emsal puanlamasının girdisi. */
+export const ORNEK_HEDEF_ETIKETLER: Record<number, RaporEtiketleri> = {
+  9001: etiketler({
+    uzmanlik: "Dermatoloji",
+    tibbi_islem: "Lazer epilasyon",
+    tibbi_surec: ["Tedavi"],
+    tibbi_olay: ["Yanık"],
+    iddia_edilen_kusur: ["Uygulama Hatası"],
+    hastada_olusan_zarar: ["Kalıcı İz"],
+    uygulanan_yontem: ["Lazer"],
+    yargi_yolu: "TUKETICI",
+    kusur_tespiti: "KOMPLIKASYON",
+    risk_duzeyi: "RISKLI",
+    teminat: "ICINDE",
+  }),
+  9002: etiketler({
+    uzmanlik: "Ortopedi ve Travmatoloji",
+    tibbi_islem: "Diz protezi",
+    tibbi_surec: ["Ameliyat", "Ameliyat Sonrası Takip"],
+    tibbi_olay: ["Enfeksiyon"],
+    iddia_edilen_kusur: ["Tanıda Gecikme"],
+    hastada_olusan_zarar: ["Yeniden Ameliyat"],
+    uygulanan_yontem: ["Protez"],
+    yargi_yolu: "ASLIYE_HUKUK",
+    kusur_tespiti: "KOMPLIKASYON_YONETIMI",
+    risk_duzeyi: "RISKLI",
+    teminat: "BELIRSIZ",
+  }),
+  9003: etiketler({
+    uzmanlik: "Diş Hekimliği",
+    tibbi_islem: "Diş implantı",
+    tibbi_surec: ["Tedavi"],
+    tibbi_olay: ["Sinir Hasarı"],
+    iddia_edilen_kusur: ["Planlama Hatası"],
+    hastada_olusan_zarar: ["His Kaybı"],
+    uygulanan_yontem: ["İmplant"],
+    yargi_yolu: "TUKETICI",
+    kusur_tespiti: "BELIRSIZ",
+    risk_duzeyi: "BELIRSIZ",
+    teminat: "ICINDE",
+  }),
+  9004: etiketler({
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    tibbi_islem: "Normal doğum",
+    tibbi_surec: ["Doğum"],
+    tibbi_olay: ["Omuz Distosisi"],
+    iddia_edilen_kusur: ["Müdahale Hatası"],
+    hastada_olusan_zarar: ["Brakiyal Pleksus Hasarı"],
+    zarar_kisi: "BEBEK",
+    yargi_yolu: "IDARE",
+    kurum_turu: "KAMU",
+    kusur_tespiti: "HATA_YOK",
+    risk_duzeyi: "DUSUK",
+    teminat: "ICINDE",
+  }),
+};
+
+// ---------------------------------------------------------------------------------------------
+// Taslak içerikleri (akışın ürettiği bölümler)
+// ---------------------------------------------------------------------------------------------
+
+function satir(alan: string, etiket: string, deger: string | null, zorunlu = true, kaynak: EtiketliSatir["kaynak"] = "KART"): EtiketliSatir {
+  return { alan, etiket, deger, zorunlu, kaynak: deger === null ? null : kaynak };
+}
+
+const par = (metin: string, kaynak_belge_id: number | null): OzetParagraf => ({ metin, kaynak_belge_id });
+
+export type OrnekTaslakIcerigi = Pick<LexisTaslak, "etiketli" | "ozet"> & {
+  degerlendirme: DegerlendirmeTaslagi;
+  muallak: MuallakOnerisi;
+};
+
+export const ORNEK_TASLAKLAR: Record<number, OrnekTaslakIcerigi> = {
+  // ANADOLU ana rapor — dayanak kuralının her uyarı çeşidini taşır.
+  9001: {
+    etiketli: {
+      hasar: [
+        satir("baglantili_dosyalar", "Dosya No / Bağlantılı Dosyalar", null, false),
+        satir("sigortali", "Sigortalı", "Dr. Örnek Bir"),
+        satir("hasta", "Hasta Bilgisi", "Hasta Örnek Bir"),
+        satir("mesleki_hata", "Mesleki Hata", "Komplikasyon", true, "BELGE"),
+        satir("mesleki_hata_sonucu", "Mesleki Hatanın Sonucu", "Bacaklarda ikinci derece yanık ve kalıcı iz", true, "BELGE"),
+        satir("tibbi_mudahale_tarihi", "Tıbbi Müdahale Tarihi", "12.08.2024", true, "BELGE"),
+        satir("police_mudahale", "Müdahale Tarihindeki Poliçe Bilgileri", "70000001 (01.01.2024-01.01.2025)", true, "BELGE"),
+        satir("teminat_limiti", "Poliçe Teminat Limiti", "1.500.000,00 TL", true, "BELGE"),
+        satir("talep_tarihi", "Talebin İlk İletildiği Tarih", null),
+        satir("talep_sekli", "Talep Şekli", "Dava"),
+        satir("mahkeme_bilgileri", "Mahkeme Bilgileri", "Ankara 5. Tüketici Mahkemesi 2025/101 E."),
+        satir("dava_tarihi", "Dava Tarihi", "14.03.2025", false),
+        satir("talep", "Talep", "60.000,00 TL Maddi Tazminat, 200.000,00 TL Manevi Tazminat", true, "BELGE"),
+      ],
+      hastane: [
+        satir("hastane", "Hastane Adı / Şehir", "Örnek Cilt Kliniği / Ankara"),
+        satir("hastane_police", "Hastanenin Mesleki Sorumluluk Poliçesi", null, false),
+      ],
+      sulh_muallak: [
+        satir("sulh_uygunluk", "Sulhe Uygunluk Durumu", "Sulhe uygun değildir.", true, "BELGE"),
+        satir("sulh_araligi", "Sulh Miktarı Aralığı", null, false),
+      ],
+    },
+    ozet: {
+      iddia: [
+        par(
+          "Davacı, 12.08.2024 tarihinde sigortalı hekimin kliniğinde yapılan lazer epilasyon uygulamasından sonra her iki bacağında ikinci derece yanık oluştuğunu ileri sürmüştür.",
+          101,
+        ),
+        par(
+          "Davacı, yanıkların iyileşmesine rağmen kalıcı iz kaldığını, işlem öncesinde bu risk hakkında bilgilendirilmediğini belirterek 60.000,00 TL maddi ve 200.000,00 TL manevi tazminat talep etmiştir.",
+          101,
+        ),
+      ],
+      yargi_sureci: [
+        par("Mahkemece dosya bilirkişiye tevdi edilmiş, 18.09.2025 tarihli bilirkişi raporu dosyaya sunulmuştur. Duruşma 04.12.2025 tarihine ertelenmiştir.", 103),
+      ],
+      uzman_gorusu: [
+        par(
+          "Bilirkişi raporunda, lazer epilasyon uygulamalarında yanık gelişmesinin her türlü özene rağmen ortaya çıkabilen bir komplikasyon olduğu belirtilmiştir.",
+          103,
+        ),
+        par(
+          "Raporda ayrıca cihaz ayarlarının hastanın cilt tipine uygun seçildiği, uygulamada tıbbi hata saptanmadığı ve yanık sonrası tedavinin zamanında başlatıldığı ifade edilmiştir.",
+          103,
+        ),
+      ],
+      police: [
+        par(
+          "Sigortalı hekim adına düzenlenen 70000001 numaralı poliçe 01.01.2024-01.01.2025 tarihleri arasında yürürlüktedir. Tıbbi müdahale tarihi poliçe vadesi içindedir.",
+          104,
+        ),
+      ],
+    },
+    degerlendirme: {
+      giris: "Tarafımıza iletilen dava dilekçesi, sigortalı hekim beyanı, bilirkişi raporu ve poliçe incelenmiştir.",
+      maddeler: [
+        {
+          metin: "Davacı, lazer epilasyon uygulaması sonrasında bacaklarında ikinci derece yanık ve kalıcı iz oluştuğunu ileri sürmektedir.",
+          tur: "TESPIT",
+          dayanak_bolum: "iddia",
+          dayanak_alinti: "lazer epilasyon uygulamasından sonra her iki bacağında ikinci derece yanık oluştuğunu",
+        },
+        {
+          metin: "Bilirkişi raporunda yanığın komplikasyon olduğu ve uygulamada tıbbi hata saptanmadığı belirtilmiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: "uzman_gorusu",
+          dayanak_alinti: "uygulamada tıbbi hata saptanmadığı",
+        },
+        {
+          metin: "İşlem güzelleştirme amaçlı olduğundan taraflar arasındaki ilişkinin eser sözleşmesi olarak nitelendirilmesi ve sonucun taahhüt edildiğinin kabulü riski bulunmaktadır.",
+          tur: "TESPIT",
+          dayanak_bolum: "iddia",
+          dayanak_alinti: "ilişkinin eser sözleşmesi niteliğinde kabul edilmesi",
+        },
+        {
+          metin: "Dosyada aydınlatılmış onam formu yer almadığından aydınlatma yükümlülüğünün yerine getirilip getirilmediği değerlendirilememiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: null,
+          dayanak_alinti: null,
+        },
+        {
+          metin: "Sigortalı hekim, işlem öncesinde deneme atışı yapıldığını ve hastanın güneşe çıkmaması konusunda uyarıldığını beyan etmiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: "beyan",
+          dayanak_alinti: "deneme atışı yapıldığını ve güneşe çıkmaması konusunda uyarıldığını",
+        },
+        {
+          metin: "Açıklanan nedenlerle dosyanın riskli olduğu değerlendirilmekte olup muallak ayrılması uygun olacaktır.",
+          tur: "KALIP",
+          dayanak_bolum: null,
+          dayanak_alinti: null,
+        },
+      ],
+      sulh_uygunluk: "Sulhe uygun değildir.",
+      muallak_gerekcesi: "Bilirkişi raporu lehe olmakla birlikte işlemin estetik amaçlı olması nedeniyle manevi tazminat riski sürmektedir.",
+    },
+    muallak: {
+      maddi: null,
+      manevi: 120_000,
+      dayanak: "EMSAL",
+      dayanak_satirlari: [
+        { tur: "EMSAL", aciklama: "Anadolu · 2024 · lazer uygulaması (komplikasyon, riskli)", maddi: null, manevi: 120_000, yil: 2024, rapor_sha: ornekSha(1) },
+        { tur: "EMSAL", aciklama: "Anadolu · 2025 · burun estetiği (komplikasyon, riskli)", maddi: null, manevi: 120_000, yil: 2025, rapor_sha: ornekSha(2) },
+      ],
+      kusur_tespiti: "KOMPLIKASYON",
+      risk_duzeyi: "RISKLI",
+      teminat: "ICINDE",
+      uyarilar: ["Şirket kriter tablosunda 2025 yılı için satır yok; öneri emsal raporlara dayanıyor."],
+    },
+  },
+
+  // ALTILI ana rapor — poliçe belgesi eksik (bölüm boş), muallak şirket kriter tablosundan.
+  9002: {
+    etiketli: {
+      hasar: [
+        satir("mahkeme_bilgileri", "Mahkeme / Esas No", "İzmir 2. Asliye Hukuk Mahkemesi 2024/202 E."),
+        satir("dava_tarihi", "Dava Tarihi", "10.06.2024", false),
+        satir("davaci", "Davacı", "Hasta Örnek İki"),
+        satir("davali", "Davalı", "Dr. Örnek İki"),
+        satir("talep", "Tazminat Talebi", "400.000,00 TL Maddi Tazminat, 250.000,00 TL Manevi Tazminat"),
+        satir("hasar_no", "Hasar No", "50000002"),
+      ],
+    },
+    ozet: {
+      iddia: [
+        par(
+          "Davacı, sağ dizine uygulanan protez ameliyatından üç hafta sonra başlayan ağrı ve akıntı şikâyetlerinin dikkate alınmadığını, enfeksiyonun geç tanındığını ileri sürmüştür.",
+          201,
+        ),
+        par("Davacı, enfeksiyon nedeniyle protezin çıkarıldığını ve iki ameliyat daha geçirdiğini belirtmiştir.", 201),
+      ],
+      beyan: [
+        par(
+          "Sigortalı hekim, ameliyat sonrası kontrollerin protokole uygun yapıldığını, akıntının görüldüğü ilk muayenede kültür alındığını ve antibiyotik tedavisine başlandığını beyan etmiştir.",
+          202,
+        ),
+      ],
+      police: [],
+      uzman_gorusu: [
+        par(
+          "Adli Tıp Kurumu raporunda protez enfeksiyonunun komplikasyon olduğu, ancak akıntının başladığı tarih ile kültür alınması arasında on günlük gecikme bulunduğu belirtilmiştir.",
+          203,
+        ),
+      ],
+    },
+    degerlendirme: {
+      giris: "Tarafımıza iletilen dava dilekçesi, sigortalı hekim beyanı ve Adli Tıp Kurumu raporu incelenmiştir.",
+      maddeler: [
+        {
+          metin: "Davacı, diz protezi ameliyatı sonrasında gelişen enfeksiyonun geç tanındığını ileri sürmektedir.",
+          tur: "TESPIT",
+          dayanak_bolum: "iddia",
+          dayanak_alinti: "enfeksiyonun geç tanındığını ileri sürmüştür",
+        },
+        {
+          metin: "Adli Tıp Kurumu raporunda enfeksiyonun komplikasyon olduğu, ancak tanı sürecinde on günlük gecikme bulunduğu belirtilmiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: "uzman_gorusu",
+          dayanak_alinti: "kültür alınması arasında on günlük gecikme bulunduğu",
+        },
+        {
+          metin: "Sigortalı hekim, akıntının görüldüğü ilk muayenede kültür alındığını beyan etmiştir; bu beyan Adli Tıp Kurumu raporundaki tespitle çelişmektedir.",
+          tur: "TESPIT",
+          dayanak_bolum: "beyan",
+          dayanak_alinti: "akıntının görüldüğü ilk muayenede kültür alındığını",
+        },
+        {
+          metin: "Komplikasyonun yönetiminde gecikme bulunduğu görüşü karşısında dosyanın riskli olduğu değerlendirilmekte olup muallak ayrılması uygun olacaktır.",
+          tur: "KALIP",
+          dayanak_bolum: null,
+          dayanak_alinti: null,
+        },
+      ],
+      sulh_uygunluk: "Sulh görüşmesi değerlendirilebilir.",
+      muallak_gerekcesi: "Adli Tıp Kurumu raporu komplikasyon yönetiminde gecikme tespit ettiğinden kriter tablosunun ilgili satırı uygulanmıştır.",
+    },
+    muallak: {
+      maddi: 200_000,
+      manevi: 75_000,
+      dayanak: "KRITER",
+      dayanak_satirlari: [
+        { tur: "KRITER", aciklama: "Ak Sigorta kriter tablosu · 2025 · komplikasyon yönetimi + riskli", maddi: 200_000, manevi: 75_000, yil: 2025, rapor_sha: null },
+      ],
+      kusur_tespiti: "KOMPLIKASYON_YONETIMI",
+      risk_duzeyi: "RISKLI",
+      teminat: "BELIRSIZ",
+      uyarilar: ["Poliçe belgesi olmadığı için teminat limiti denetlenemedi."],
+    },
+  },
+
+  // KISA ana rapor — muallak dayanağı yok (kriter ve tutarlı emsal bulunamadı).
+  9003: {
+    etiketli: {
+      hasar: [
+        satir("sigortali", "Sigortalı", "Dr. Örnek Üç"),
+        satir("hasta", "Hasta", "Hasta Örnek Üç"),
+        satir("hasar_no", "Hasar No", null),
+        satir("police_no", "Poliçe No", "70000003", true, "BELGE"),
+        satir("mahkeme_bilgileri", "Mahkeme / Esas No", "Bursa 1. Tüketici Mahkemesi 2025/303 E."),
+        satir("talep", "Talep", "90.000,00 TL Maddi Tazminat, 100.000,00 TL Manevi Tazminat"),
+      ],
+    },
+    ozet: {
+      iddia: [
+        par(
+          "Davacı, alt çenesine yerleştirilen implanttan sonra alt dudağının sol yarısında uyuşukluk başladığını ve şikâyetinin sekiz aydır sürdüğünü ileri sürmüştür.",
+          301,
+        ),
+      ],
+      uzman_gorusu: [
+        par(
+          "Uzman görüşünde, işlem öncesinde tomografi çekildiği ancak seçilen implant boyunun sinir kanalına olan mesafeye göre uzun olduğu, his kaybının bununla ilişkili olabileceği belirtilmiştir.",
+          303,
+        ),
+      ],
+    },
+    degerlendirme: {
+      giris: "Tarafımıza iletilen dava dilekçesi, sigortalı hekim beyanı, uzman görüşü ve poliçe incelenmiştir.",
+      maddeler: [
+        {
+          metin: "Davacı, implant uygulaması sonrasında alt dudağında uyuşukluk geliştiğini ileri sürmektedir.",
+          tur: "TESPIT",
+          dayanak_bolum: "iddia",
+          dayanak_alinti: "alt dudağının sol yarısında uyuşukluk başladığını",
+        },
+        {
+          metin: "Uzman görüşünde seçilen implant boyunun sinir kanalına olan mesafeye göre uzun olduğu belirtilmiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: "uzman_gorusu",
+          dayanak_alinti: "seçilen implant boyunun sinir kanalına olan mesafeye göre uzun olduğu",
+        },
+        {
+          metin: "Planlama aşamasına ilişkin bu tespit karşısında dosyanın riskli olduğu değerlendirilmekte olup […] TL muallak ayrılması uygun olacaktır.",
+          tur: "KALIP",
+          dayanak_bolum: null,
+          dayanak_alinti: null,
+        },
+      ],
+      sulh_uygunluk: "Sulh görüşmesi değerlendirilebilir.",
+      muallak_gerekcesi: "Kusur sınıfı uzman görüşüne göre belirsiz; şirketin kriter tablosu yok, benzer emsallerin tutarları birbirinden uzak.",
+    },
+    muallak: {
+      maddi: null,
+      manevi: null,
+      dayanak: "YOK",
+      dayanak_satirlari: [
+        { tur: "EMSAL", aciklama: "Quick · 2024 · diş implantı, sinir hasarı (hata var, riskli)", maddi: 85_000, manevi: 50_000, yil: 2024, rapor_sha: ornekSha(4) },
+        { tur: "EMSAL", aciklama: "Ak Sigorta · 2025 · diş implantı (komplikasyon, düşük)", maddi: 1, manevi: 1, yil: 2025, rapor_sha: ornekSha(6) },
+      ],
+      kusur_tespiti: "BELIRSIZ",
+      risk_duzeyi: "BELIRSIZ",
+      teminat: "ICINDE",
+      uyarilar: ["Emsal tutarları dağınık; tutar önerilmedi, liste gösteriliyor."],
+    },
+  },
+
+  // EK rapor — önceki rapor girdide; yalnız iki bölüm.
+  9004: {
+    etiketli: {},
+    ozet: {
+      ek_inceleme: [
+        par(
+          "04.09.2023 tarihli raporumuzdan sonra mahkemece alınan 30.06.2025 tarihli bilirkişi ek raporunda, omuz takılması sırasında uygulanan manevraların doğum kayıtlarına işlendiği belirtilmiştir.",
+          403,
+        ),
+        par("Ek raporda sigortalı hekimin eyleminin tıp kurallarına uygun olduğu ve bebekte gelişen sinir hasarının öngörülemeyen bir komplikasyon olduğu sonucuna varılmıştır.", 403),
+        par("Mahkeme, 15.07.2025 tarihli ara kararıyla taraflara ek rapora karşı beyan süresi vermiştir.", 405),
+      ],
+    },
+    degerlendirme: {
+      giris: "Tarafımıza iletilen bilirkişi ek raporu ve mahkeme ara kararı incelenmiştir.",
+      maddeler: [
+        {
+          metin: "Bilirkişi ek raporunda omuz takılması sırasında uygulanan manevraların kayıtlara işlendiği belirtilmiştir.",
+          tur: "TESPIT",
+          dayanak_bolum: "ek_inceleme",
+          dayanak_alinti: "uygulanan manevraların doğum kayıtlarına işlendiği",
+        },
+        {
+          metin: "Ek raporda sigortalı hekimin eyleminin tıp kurallarına uygun olduğu sonucuna varılmıştır.",
+          tur: "TESPIT",
+          dayanak_bolum: "ek_inceleme",
+          dayanak_alinti: "eyleminin tıp kurallarına uygun olduğu",
+        },
+        {
+          metin: "Lehe gelen ek rapor karşısında dosyanın düşük riskli hâle geldiği değerlendirilmekte olup muallağın güncellenmesi uygun olacaktır.",
+          tur: "KALIP",
+          dayanak_bolum: null,
+          dayanak_alinti: null,
+        },
+      ],
+      sulh_uygunluk: "Sulhe uygun değildir.",
+      muallak_gerekcesi: "Önceki raporda bilirkişi raporu beklenerek ayrılan muallak, lehe ek rapor sonrası benzer emsaller düzeyine indirilmiştir.",
+    },
+    muallak: {
+      maddi: 1,
+      manevi: 1,
+      dayanak: "EMSAL",
+      dayanak_satirlari: [
+        { tur: "EMSAL", aciklama: "Anadolu · 2023 · doğum, omuz distosisi (hata yok, düşük)", maddi: 1, manevi: 1, yil: 2023, rapor_sha: ornekSha(3) },
+        { tur: "EMSAL", aciklama: "AXA · 2023 · bu dosyanın önceki raporu", maddi: 150_000, manevi: 100_000, yil: 2023, rapor_sha: ornekSha(7) },
+      ],
+      kusur_tespiti: "HATA_YOK",
+      risk_duzeyi: "DUSUK",
+      teminat: "ICINDE",
+      uyarilar: ["AXA kriter tablosu boş; öneri başka şirketin emsaline dayanıyor."],
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// Kart bağı inceleme listesi
+// ---------------------------------------------------------------------------------------------
+
+export const ORNEK_KART_BAGLARI: RaporBagi[] = [
+  {
+    rapor: ornekSha(101),
+    klasor: "9.3001",
+    sirket: "QUICK",
+    rapor_turu: "ANA",
+    rapor_no: "9.3001",
+    hasar_no: "50000101",
+    mahkeme: "Bursa 2. Tüketici Mahkemesi",
+    esas_no: "2022/41",
+    bag: {
+      durum: "COK_ADAY",
+      anahtar: "HASAR_NO",
+      adaylar: [
+        {
+          kart: { kart_id: 8101, hasar_nolari: ["50000101"], dosya_nolari: ["9.3001"], mahkeme: "Bursa 2. Tüketici Mahkemesi", esas_no: "2022/41", durum: "DERDEST", asama: "İlk Derece" },
+          hasar: true,
+          dosya: true,
+          esas: true,
+        },
+        {
+          kart: { kart_id: 8102, hasar_nolari: ["50000101"], dosya_nolari: ["9.3050"], mahkeme: "Bursa 4. Asliye Ceza Mahkemesi", esas_no: "2022/377", durum: "DERDEST", asama: "İlk Derece" },
+          hasar: true,
+          dosya: false,
+          esas: false,
+        },
+      ],
+      birincil: null,
+      insan_secimi: false,
+      uyarilar: [],
+    },
+  },
+  {
+    rapor: ornekSha(102),
+    klasor: "9.3002",
+    sirket: "AK",
+    rapor_turu: "ANA",
+    rapor_no: "9.3002",
+    hasar_no: "50000102",
+    mahkeme: null,
+    esas_no: null,
+    bag: {
+      durum: "COK_ADAY",
+      anahtar: "HASAR_NO",
+      adaylar: [
+        {
+          kart: { kart_id: 8201, hasar_nolari: ["50000102"], dosya_nolari: ["9.3060"], mahkeme: "İzmir 1. İdare Mahkemesi", esas_no: "2021/900", durum: "MAHZEN", asama: "Kesinleşti" },
+          hasar: true,
+          dosya: false,
+          esas: false,
+        },
+        {
+          kart: { kart_id: 8202, hasar_nolari: ["50000102"], dosya_nolari: ["9.3061"], mahkeme: "İzmir 3. İdare Mahkemesi", esas_no: "2023/115", durum: "DERDEST", asama: "İstinaf" },
+          hasar: true,
+          dosya: false,
+          esas: false,
+        },
+        {
+          kart: { kart_id: 8203, hasar_nolari: ["50000102"], dosya_nolari: ["9.3062"], mahkeme: "İzmir 9. Asliye Hukuk Mahkemesi", esas_no: "2023/640", durum: "DERDEST", asama: "İlk Derece" },
+          hasar: true,
+          dosya: false,
+          esas: false,
+        },
+      ],
+      birincil: null,
+      insan_secimi: false,
+      uyarilar: [],
+    },
+  },
+  {
+    rapor: ornekSha(103),
+    klasor: "9.3003",
+    sirket: "AXA",
+    rapor_turu: "EK",
+    rapor_no: "9.3003",
+    hasar_no: "50000103",
+    mahkeme: "Mersin 1. Tüketici Mahkemesi",
+    esas_no: "2024/12",
+    bag: {
+      durum: "CELISKI",
+      anahtar: "HASAR_NO",
+      adaylar: [
+        {
+          kart: { kart_id: 8301, hasar_nolari: ["50000103"], dosya_nolari: ["9.3070"], mahkeme: "Mersin 1. Tüketici Mahkemesi", esas_no: "2024/12", durum: "DERDEST", asama: "İlk Derece" },
+          hasar: true,
+          dosya: false,
+          esas: true,
+        },
+        {
+          kart: { kart_id: 8302, hasar_nolari: ["50000199"], dosya_nolari: ["9.3003"], mahkeme: "Mersin 2. Asliye Hukuk Mahkemesi", esas_no: "2020/700", durum: "MAHZEN", asama: "Kesinleşti" },
+          hasar: false,
+          dosya: true,
+          esas: false,
+        },
+      ],
+      birincil: null,
+      insan_secimi: false,
+      uyarilar: ["hasar no ile dosya no farklı kartlara götürüyor"],
+    },
+  },
+  {
+    rapor: ornekSha(104),
+    klasor: "9.3004",
+    sirket: "ANADOLU",
+    rapor_turu: "ANA",
+    rapor_no: null,
+    hasar_no: null,
+    mahkeme: "Kayseri 1. İdare Mahkemesi",
+    esas_no: "2019/55",
+    bag: { durum: "YOK", anahtar: null, adaylar: [], birincil: null, insan_secimi: false, uyarilar: [] },
+  },
+  {
+    rapor: ornekSha(105),
+    klasor: "9.3005",
+    sirket: "NIPPON",
+    rapor_turu: "ANA",
+    rapor_no: "9.3005",
+    hasar_no: "50000105",
+    mahkeme: "Samsun 2. Tüketici Mahkemesi",
+    esas_no: "2023/208",
+    bag: {
+      durum: "COK_ADAY",
+      anahtar: "DOSYA_NO",
+      adaylar: [
+        {
+          kart: { kart_id: 8501, hasar_nolari: [], dosya_nolari: ["9.3005"], mahkeme: "Samsun 2. Tüketici Mahkemesi", esas_no: "2023/208", durum: "DERDEST", asama: "İlk Derece" },
+          hasar: false,
+          dosya: true,
+          esas: true,
+        },
+        {
+          kart: { kart_id: 8502, hasar_nolari: [], dosya_nolari: ["9.3005"], mahkeme: "Samsun Bölge Adliye Mahkemesi 3. Hukuk Dairesi", esas_no: "2024/1410", durum: "DERDEST", asama: "İstinaf" },
+          hasar: false,
+          dosya: true,
+          esas: false,
+        },
+      ],
+      birincil: 8501,
+      insan_secimi: true,
+      uyarilar: ["raporun hasar no'su hiçbir kartta yok"],
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------------------------
+// Şirket profilleri ve muallak kriterleri
+// ---------------------------------------------------------------------------------------------
+
+const SABIT_GIRIS = "Tarafımıza iletilen belgeler incelenmiştir.";
+const SABIT_SAYGI = "Bilgilerinize sunar, saygılarımızla arz ederiz.";
+
+export const ORNEK_PROFILLER: SirketProfili[] = [
+  {
+    sirket_kodu: "ANADOLU",
+    ad: "Anadolu Sigorta",
+    iskelet_ana: "ANADOLU",
+    iskelet_ek: "ANADOLU",
+    sabit_metinler: {
+      giris_cumlesi: SABIT_GIRIS,
+      saygi_cumlesi: SABIT_SAYGI,
+      police_genel_sart: "Poliçe, Tıbbi Kötü Uygulamaya İlişkin Zorunlu Mali Sorumluluk Sigortası Genel Şartları kapsamında değerlendirilmiştir.",
+    },
+    kriter_metni: "Muallak, mesleki hata sınıfı ve risk düzeyine göre tablodan belirlenir. Tablo 2024 yılında bitmektedir (örnek veri).",
+    muallak_tablosu: [
+      { yil: 2023, kusur_tespiti: "HATA_YOK", risk_duzeyi: "DUSUK", maddi: 1, manevi: 1, aciklama: "Lehe rapor" },
+      { yil: 2024, kusur_tespiti: "KOMPLIKASYON", risk_duzeyi: "RISKLI", maddi: null, manevi: 110_000, aciklama: "Estetik amaçlı işlem" },
+      { yil: 2024, kusur_tespiti: "HATA_VAR", risk_duzeyi: "RISKLI", maddi: null, manevi: null, aciklama: "Talep tutarı esas alınır" },
+    ],
+    guncelleme: "2026-09-12",
+  },
+  {
+    sirket_kodu: "AK",
+    ad: "Ak Sigorta",
+    iskelet_ana: "ALTILI",
+    iskelet_ek: "EK",
+    sabit_metinler: { giris_cumlesi: SABIT_GIRIS, saygi_cumlesi: SABIT_SAYGI },
+    kriter_metni: "Komplikasyon yönetiminde gecikme tespit edilen dosyalarda tablo satırı uygulanır (örnek veri).",
+    muallak_tablosu: [
+      { yil: 2025, kusur_tespiti: "KOMPLIKASYON_YONETIMI", risk_duzeyi: "RISKLI", maddi: 200_000, manevi: 75_000, aciklama: "ATK raporunda gecikme tespiti" },
+      { yil: 2025, kusur_tespiti: "KOMPLIKASYON", risk_duzeyi: "DUSUK", maddi: 1, manevi: 1, aciklama: "Lehe uzman görüşü" },
+    ],
+    guncelleme: "2026-08-30",
+  },
+  {
+    sirket_kodu: "AXA",
+    ad: "AXA Sigorta",
+    iskelet_ana: "KISA",
+    iskelet_ek: "EK",
+    sabit_metinler: { giris_cumlesi: SABIT_GIRIS },
+    kriter_metni: "",
+    muallak_tablosu: [],
+    guncelleme: "2026-07-01",
+  },
+  {
+    sirket_kodu: "QUICK",
+    ad: "Quick Sigorta",
+    iskelet_ana: "KISA",
+    iskelet_ek: "EK",
+    sabit_metinler: { giris_cumlesi: SABIT_GIRIS },
+    kriter_metni: "",
+    muallak_tablosu: [],
+    guncelleme: "2026-07-01",
+  },
+];
+
+// ---------------------------------------------------------------------------------------------
+// Taslak geçmişi
+// ---------------------------------------------------------------------------------------------
+
+export const ORNEK_GECMIS: TaslakKosusu[] = [
+  {
+    id: "kosu-0003",
+    tarih: "2026-10-02T11:42:00Z",
+    kullanici: "ornek.kullanici@example.com",
+    case_id: 9002,
+    ofis_no: "AK-9002-DR.ORNEK2-HUK",
+    sirket: "AK",
+    rapor_turu: "ANA",
+    iskelet: "ALTILI",
+    emsal_sayisi: 3,
+    uyari_sayisi: 2,
+    indirme_tarihi: "2026-10-02T12:05:00Z",
+  },
+  {
+    id: "kosu-0002",
+    tarih: "2026-10-01T08:15:00Z",
+    kullanici: "ornek.kullanici@example.com",
+    case_id: 9004,
+    ofis_no: "AXA-9004-DR.ORNEK4-HUK",
+    sirket: "AXA",
+    rapor_turu: "EK",
+    iskelet: "EK",
+    emsal_sayisi: 2,
+    uyari_sayisi: 0,
+    indirme_tarihi: null,
+  },
+  {
+    id: "kosu-0001",
+    tarih: "2026-09-29T13:30:00Z",
+    kullanici: "diger.kullanici@example.com",
+    case_id: 9001,
+    ofis_no: "ANADOLU-9001-DR.ORNEK1-HUK",
+    sirket: "ANADOLU",
+    rapor_turu: "ANA",
+    iskelet: "ANADOLU",
+    emsal_sayisi: 3,
+    uyari_sayisi: 6,
+    indirme_tarihi: null,
+  },
+];
