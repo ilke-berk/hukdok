@@ -58,7 +58,7 @@ export function Tezgah() {
 
   const { dosya, taslak } = t;
   // Gerçek dava kipinde dosya bölgesi servisten gelir, taslak iskelettir (künye karttan), muallak sınıflarını insan
-  // seçer; elle emsal ekleme henüz bağlı değildir.
+  // seçer; kütüphane taraması ve elle emsal ekleme de servisten gelir.
   const gercek = veriKipi() === "gercek";
   const bolumler = useMemo(() => (dosya ? ISKELET_BOLUMLERI[dosya.iskelet] : []), [dosya]);
   const bolumAdlari = useMemo(() => Object.fromEntries(bolumler.map((b) => [b.kod, b.baslik])) as Partial<Record<BolumKodu, string>>, [bolumler]);
@@ -202,7 +202,7 @@ export function Tezgah() {
                 hata={t.emsalHatasi}
                 onOku={(e) => setOkunan({ kayit: e.kayit, emsal: e })}
                 onCikar={t.emsalCikar}
-                onEkle={gercek ? undefined : () => setEkleAcik(true)}
+                onEkle={() => setEkleAcik(true)}
                 kilitli={kilitli}
               />
             </>

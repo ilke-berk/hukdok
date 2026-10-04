@@ -10,7 +10,7 @@ type EmsalListesiProps = {
   hata: string | null;
   onOku: (emsal: Emsal) => void;
   onCikar: (sha256: string) => void;
-  /** Verilmezse "kütüphaneden ekle" düğmesi çizilmez (gerçek dava kipinde henüz bağlı değil). */
+  /** Verilmezse "kütüphaneden ekle" düğmesi çizilmez. */
   onEkle?: () => void;
   kilitli?: boolean;
 };

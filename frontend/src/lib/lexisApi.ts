@@ -485,7 +485,6 @@ export function veriKipiAyarla(yeni: VeriKipi): void {
 /** Gerçek davada "Taslağı yaz"ın bugün ne ürettiği — düğmenin üstünde ve onay kutusunda gösterilir. */
 export const GERCEK_ISKELET_NOTU =
   "Gerçek davada taslak iskelet olarak gelir: künye dava kartından dolar, özet bölümlerini ve maddeleri siz yazarsınız. Modele hiçbir şey gönderilmez.";
-export const GERCEK_EMSAL_EKLE_YOK = "Gerçek davada kütüphaneden elle emsal ekleme henüz bağlı değil.";
 
 // Gerçek kipin oturum belleği: denetim ve Word, seçili davanın kartını ve bakılan emsallerin metnini ister.
 const gercekDosyalar = new Map<number, DosyaGirdisi>();
@@ -525,8 +524,21 @@ const gercekLexisApi: LexisApi = {
     for (const e of emsaller) gercekEmsalMetinleri.set(e.kayit.okuma.sha256, kayitMetni(e.kayit));
     return emsaller;
   },
-  async emsalPuanla() {
-    throw new LexisApiError(501, GERCEK_EMSAL_EKLE_YOK);
+  // Elle eklenen emsal dosyanın kartına göre puanlanır; metni denetim için belleğe alınır.
+  async emsalPuanla(caseId, sha256, signal) {
+    const dosya = await gercekDosya(caseId, signal);
+    const emsal = await (await servis()).emsalPuanla({ case_id: caseId, sha256, sirket: dosya.sirket, rapor_turu: dosya.rapor_turu }, signal);
+    gercekEmsalMetinleri.set(sha256, kayitMetni(emsal.kayit));
+    return emsal;
+  },
+  async kutuphaneAra(filtre, signal) {
+    return (await servis()).kutuphaneAra(filtre, signal);
+  },
+  async raporGetir(sha256, signal) {
+    return (await servis()).raporGetir(sha256, signal);
+  },
+  async kararBankasi(signal) {
+    return (await servis()).kararBankasi(signal);
   },
   // Belgelerden yazım gelene kadar taslak İSKELETTİR: etiketli satırlar karttan, özet boş, son madde koddan.
   async *taslakYaz(istek, signal) {

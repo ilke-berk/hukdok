@@ -18,7 +18,7 @@ const wordMock = vi.hoisted(() => ({ wordIndir: vi.fn() }));
 vi.mock("@/lib/lexisWord", () => wordMock);
 
 // Gerçek dava kipinde dosya bölgesi servise gider (`lexisServis.ts` → `apiClient`); burada sahtedir.
-const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn(), iskelet: vi.fn(), muallakOner: vi.fn(), kararBankasi: vi.fn() }));
+const servisMock = vi.hoisted(() => ({ davaAra: vi.fn(), dosyaGetir: vi.fn(), emsalOner: vi.fn(), iskelet: vi.fn(), muallakOner: vi.fn(), kararBankasi: vi.fn(), kutuphaneAra: vi.fn(), raporGetir: vi.fn(), emsalPuanla: vi.fn() }));
 vi.mock("@/lib/lexisServis", () => servisMock);
 
 import { Tezgah } from "./Tezgah";
@@ -124,6 +124,9 @@ describe("Tezgah — gerçek dava kipi", () => {
     servisMock.davaAra.mockResolvedValue([dava]);
     servisMock.dosyaGetir.mockResolvedValue({ ...dosya, dava });
     servisMock.emsalOner.mockResolvedValue(emsaller);
+    const yeni = (await lexisApi.kutuphaneAra({})).find((k) => !emsaller.some((e) => e.kayit.okuma.sha256 === k.okuma.sha256))!;
+    servisMock.kutuphaneAra.mockResolvedValue([yeni]);
+    servisMock.emsalPuanla.mockResolvedValue({ kayit: yeni, puan: 1, bilesenler: [], gerekce: "elle eklendi" });
 
     veriKipiAyarla("gercek");
     await ciz();
@@ -134,7 +137,13 @@ describe("Tezgah — gerçek dava kipi", () => {
     expect(test("lexis-kunye")!.textContent).toContain("Bursa 1. Tüketici Mahkemesi");
     expect(test("lexis-emsaller")!.querySelectorAll("li").length).toBe(emsaller.length);
     expect(test("lexis-iskelet-notu")!.textContent).toBe(GERCEK_ISKELET_NOTU);
-    expect(kap.querySelector('[aria-label="Kütüphaneden emsal ekle"]')).toBeNull();
+
+    // Kütüphaneden elle emsal: liste ve puan servisten gelir, puanlama dosyanın şirketi ve rapor türüyle istenir.
+    await tikla(dugme("Kütüphaneden emsal ekle"));
+    const diyalog = document.querySelector<HTMLElement>('[data-testid="lexis-emsal-ekle"]')!;
+    await tikla(diyalog.querySelector<HTMLButtonElement>("li button")!);
+    expect(servisMock.emsalPuanla.mock.calls[0][0]).toEqual({ case_id: 501, sha256: yeni.okuma.sha256, sirket: "QUICK", rapor_turu: "ANA" });
+    expect(test("lexis-emsaller")!.querySelectorAll("li").length).toBe(emsaller.length + 1);
 
     // "Taslağı yaz" iskelet üretir: künye karttan dolu, özet boş; onay kutusu modele gönderim listesi taşımaz.
     const ornek = { ...dosya, dava };

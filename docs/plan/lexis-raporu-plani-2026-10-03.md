@@ -347,12 +347,15 @@ anki kipin adaptörüne yollar (`lib/lexisApi.ts::veriKipi`, `Proxy`). Örnek ki
    POST /lexis-api/iskelet         taslak iskeleti (kunye karttan; modele bir sey gitmez)
    POST /lexis-api/muallak-oner    secilen siniflarla muallak onerisi
    GET  /lexis-api/karar-bankasi   atif dogrulamasi icin karar listesi
+   POST /lexis-api/kutuphane       kutuphane taramasi (maskeli, metinsiz liste)
+   GET  /lexis-api/rapor/{sha256}  tek rapor, bolum metinleriyle
+   POST /lexis-api/emsal-puanla    elle secilen raporun dosyaya gore puani
    POST /lexis-api/emsal-oner       en benzer eski raporlar (maskeli), puan + gerekçe
 → konteyner nginx (allowlist) → lexis_api:8020 → servis/hukdok.py
 → HUKDOK'un MEVCUT uçları, kullanıcının token'ıyla:  /api/cases · /api/cases/{id} · /api/cases/{id}/documents
 ```
 
-- **HUKDOK backend'ine dokunulmadı.** Değişen: `nginx.conf` allowlist'i (`word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi`), bekçi
+- **HUKDOK backend'ine dokunulmadı.** Değişen: `nginx.conf` allowlist'i (`word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla`), bekçi
   `backend/tests/test_nginx_lexis.py`, `frontend/vite.config.ts` dev proxy'si, `lib/lexisServis.ts` (yeni),
   `lib/lexisApi.ts` (kip + gerçek adaptör), `pages/LexisPage.tsx` (şerit düğmesi), `components/lexis/Tezgah.tsx`.
 - **Taslak iskeleti (04.10, ikinci dilim):** gerçek kipte "Taslağı yaz" `POST /lexis-api/iskelet`'i çağırır —
@@ -361,9 +364,13 @@ anki kipin adaptörüne yollar (`lib/lexisApi.ts::veriKipi`, `Proxy`). Örnek ki
   (kusur, risk, teminat) seçilebilir; her seçimde `POST /lexis-api/muallak-oner` öneriyi yeniden hesaplar. Denetim
   ekrandaki `lib/lexisDenetim.ts` ile koşar (dosya ve emsal metinleri oturum belleğinden, karar bankası
   `GET /lexis-api/karar-bankasi`'ndan); Word gerçek dosyanın künyesiyle (hasar no, hukuk no, dosya no) iner.
+- **Kütüphane (04.10, üçüncü dilim):** gerçek kipte Kütüphane sekmesi (tarama süzgeçleri, rapor okuyucu, karar
+  bankası), tezgâhtaki "önceki raporu oku" ve muallak dayanağındaki rapor bağlantıları ile kütüphaneden elle emsal
+  ekleme servisten gelir (`/lexis-api/{kutuphane,rapor,emsal-puanla}`). Arama metni gövdede gider; liste bölüm
+  metni taşımaz, metin rapor açılınca istenir. Eski rapor metni maskelidir.
 - **Bu kipte bağlı OLMAYANLAR:** bölümlerin belgelerden yazımı (sınama dosyası ister), kalıcılık (sayfa yenilenince
-  taslak gider), kütüphaneden elle emsal ekleme; Geçmiş / Kütüphane / Kart bağı / Şirketler sekmeleri örnek veride
-  kalır (şerit bunu söyler).
+  taslak gider); Geçmiş / Kart bağı / Şirketler sekmeleri örnek veride kalır (şerit bunu söyler) — üçü de bir
+  saklama yeri kararı ister.
 - **Karttan gelmeyenler boş kalır** (`lexis-rapor` README "HUKDOK adaptörü"): sigortalı hekim çoğu kartta ayırt
   edilemiyor; poliçe no, teminat limiti ve hastane kartta yok; hekim beyanının HUKDOK'ta belge türü yok (ekran o
   belgeyi "eksik" sayar). Şirket müvekkil adından bulunur (lokal ölçüm: 7.619 aynı · 228 boş · 0 farklı).

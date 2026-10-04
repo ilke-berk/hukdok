@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const apiMock = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock("@/lib/api", () => ({ apiClient: apiMock }));
 
-import { GERCEK_EMSAL_EKLE_YOK, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipi, veriKipiAyarla } from "./lexisApi";
+import { lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipi, veriKipiAyarla } from "./lexisApi";
 import { LEXIS_DAVA_SERVISI_YOK } from "./lexisServis";
 import { LEXIS_YETKI_MESAJI } from "./lexisWord";
 import type { LexisAkisOlayi } from "@/types/lexis";
@@ -119,7 +119,31 @@ describe("gerçek dava kipi", () => {
     expect(olaylar[olaylar.length - 1]).toEqual({ status: "failed", error_ozet: "Dava kartı bulunamadı.", error_kod: "analysis_error" });
   });
 
-  it("muallak önerisi seçilen sınıflarla servisten gelir; elle emsal ekleme bağlı değildir; diğer sekmeler örnek", async () => {
+  it("kütüphane taraması, tek rapor, karar bankası ve elle emsal puanlaması servise gider", async () => {
+    const kayit = { okuma: { sha256: "a", bolumler: { iddia: "[HASTA] iddiası." }, kararlar: [] }, etiketler: {}, klasor: "a", dosya_no: "9.2001" };
+    const emsal = { kayit, puan: 5, bilesenler: [], gerekce: "aynı şirket" };
+    servisKur({ "/kutuphane": yanit(200, [kayit]), "/rapor/a": yanit(200, kayit), "/emsal-puanla": yanit(200, emsal) });
+
+    const filtre = { sirket: "AXA" as const, metin: "yanık" };
+    expect(await lexisApi.kutuphaneAra(filtre)).toEqual([kayit]);
+    let [yol, init] = apiMock.fetch.mock.calls[0] as [string, RequestInit];
+    expect(yol).toBe("/lexis-api/kutuphane"); // arama metni URL'de değil gövdededir
+    expect(JSON.parse(init.body as string)).toEqual(filtre);
+
+    expect(await lexisApi.raporGetir("a")).toEqual(kayit);
+    expect(apiMock.fetch.mock.calls[1][0]).toBe("/lexis-api/rapor/a");
+    expect(await lexisApi.kararBankasi()).toEqual([]);
+    expect(apiMock.fetch.mock.calls[2][0]).toBe("/lexis-api/karar-bankasi");
+
+    // Puanlama dosyanın kartındaki şirket ve rapor türüyle istenir (dosya bellekte yoksa önce getirilir).
+    expect(await lexisApi.emsalPuanla(501, "a")).toEqual(emsal);
+    const cagrilar = apiMock.fetch.mock.calls.map((c) => c[0] as string);
+    expect(cagrilar.slice(3)).toEqual(["/lexis-api/dosya/501", "/lexis-api/emsal-puanla"]);
+    [yol, init] = apiMock.fetch.mock.calls[4] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ case_id: 501, sha256: "a" });
+  });
+
+  it("muallak önerisi seçilen sınıflarla servisten gelir; Geçmiş, Kart bağı ve Şirketler örnek veride kalır", async () => {
     servisKur();
     const istek = { case_id: 501, sirket: "QUICK" as const, kusur_tespiti: "KOMPLIKASYON" as const, risk_duzeyi: "RISKLI" as const, teminat: "ICINDE" as const };
     expect(await lexisApi.muallakOner(istek)).toMatchObject({ manevi: 40000, dayanak: "EMSAL" });
@@ -128,8 +152,9 @@ describe("gerçek dava kipi", () => {
     expect(JSON.parse(init.body as string)).toEqual(istek);
 
     apiMock.fetch.mockClear();
-    await expect(lexisApi.emsalPuanla(501, "a")).rejects.toMatchObject({ status: 501, message: GERCEK_EMSAL_EKLE_YOK });
     expect((await lexisApi.profiller()).length).toBeGreaterThan(0);
+    expect((await lexisApi.gecmis()).length).toBeGreaterThan(0);
+    expect((await lexisApi.kartBaglari()).length).toBeGreaterThan(0);
     expect(apiMock.fetch).not.toHaveBeenCalled();
   });
 });

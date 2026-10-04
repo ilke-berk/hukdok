@@ -1,7 +1,7 @@
 // Lexis servisinin dava uçları — "gerçek dava" kipinde `lexisApi`'nin arkası (04.10.2026).
 //
-// - Yol: aynı origin `/lexis-api/{davalar,dosya,emsal-oner,iskelet,muallak-oner,karar-bankasi}` (konteyner nginx
-//   allowlist'i → `lexis_api:8020`).
+// - Yol: aynı origin `/lexis-api/{davalar,dosya,emsal-oner,iskelet,muallak-oner,karar-bankasi,kutuphane,rapor,
+//   emsal-puanla}` (konteyner nginx allowlist'i → `lexis_api:8020`).
 // - Kimlik: HUKDOK'un MSAL access token'ı (`apiClient.fetch`). Servis token'ı kendisi doğrular, kartı ve belge
 //   listesini HUKDOK'un mevcut uçlarından AYNI token'la okur (`lexis-rapor/servis/hukdok.py`, K9).
 // - Yanıtlar `types/lexis.ts` tipleriyle aynıdır (`LexisDava`, `DosyaGirdisi`, `Emsal`); emsal metni maskelidir.
@@ -10,7 +10,18 @@
 import { apiClient } from "@/lib/api";
 import { LexisApiError, type EmsalIstegi, type MuallakIstegi } from "@/lib/lexisApi";
 import { LEXIS_API_ONEKI, LEXIS_YETKI_MESAJI } from "@/lib/lexisWord";
-import type { DegerlendirmeTaslagi, DosyaGirdisi, Emsal, KararKaydi, LexisDava, LexisTaslak, MuallakOnerisi, TaslakIstegi } from "@/types/lexis";
+import type {
+  DegerlendirmeTaslagi,
+  DosyaGirdisi,
+  Emsal,
+  KararKaydi,
+  KutuphaneFiltresi,
+  KutuphaneKaydi,
+  LexisDava,
+  LexisTaslak,
+  MuallakOnerisi,
+  TaslakIstegi,
+} from "@/types/lexis";
 
 export const LEXIS_DAVA_SERVISI_YOK = "Lexis servisine ulaşılamadı.";
 
@@ -64,6 +75,22 @@ export function iskelet(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_
 /** `POST /lexis-api/muallak-oner` — seçilen sınıflarla öneri ve dayanağı (tutarı kod hesaplar, K11). */
 export function muallakOner(istek: MuallakIstegi, signal?: AbortSignal): Promise<MuallakOnerisi> {
   return jsonGetir<MuallakOnerisi>("/muallak-oner", { method: "POST", body: JSON.stringify(istek) }, signal);
+}
+
+/** `POST /lexis-api/kutuphane` — süzgeçlere uyan eski raporlar (maskeli); liste bölüm metni taşımaz. */
+export function kutuphaneAra(filtre: KutuphaneFiltresi, signal?: AbortSignal): Promise<KutuphaneKaydi[]> {
+  return jsonGetir<KutuphaneKaydi[]>("/kutuphane", { method: "POST", body: JSON.stringify(filtre) }, signal);
+}
+
+/** `GET /lexis-api/rapor/{sha256}` — tek rapor, bölüm metinleriyle (maskeli). */
+export function raporGetir(sha256: string, signal?: AbortSignal): Promise<KutuphaneKaydi> {
+  return jsonGetir<KutuphaneKaydi>(`/rapor/${encodeURIComponent(sha256)}`, { method: "GET" }, signal);
+}
+
+/** `POST /lexis-api/emsal-puanla` — kütüphaneden elle seçilen raporun dosyaya göre puanı ve gerekçesi. */
+export function emsalPuanla(istek: EmsalIstegi & { sha256: string }, signal?: AbortSignal): Promise<Emsal> {
+  const { case_id, sha256, sirket, rapor_turu } = istek;
+  return jsonGetir<Emsal>("/emsal-puanla", { method: "POST", body: JSON.stringify({ case_id, sha256, sirket, rapor_turu }) }, signal);
 }
 
 /** `GET /lexis-api/karar-bankasi` — kütüphanedeki raporlarda anılan kararlar (atıf doğrulaması). */
