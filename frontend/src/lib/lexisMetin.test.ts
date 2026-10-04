@@ -1,7 +1,7 @@
 // Lexis metin yardımcıları: dayanak alıntısı kaynak metinde çekirdeğin toleransıyla bulunur (boşluk, tırnak,
 // noktalama, büyük-küçük harf sayılmaz; `…` ile atlanan yerden bölünür) ve aralık ÖZGÜN metnin konumlarıdır.
 import { describe, expect, it } from "vitest";
-import { alintiAraliklari, alintiGeciyor, alintiParcalari, alintiUzunlugu, katla, tarihYaz, tutarYaz } from "./lexisMetin";
+import { alintiAraliklari, alintiGeciyor, alintiParcalari, alintiUzunlugu, katla, tarihYaz, tutarOku, tutarYaz } from "./lexisMetin";
 
 describe("katla", () => {
   it("yalnız harf ve rakamı tutar, Türkçe küçük harfe çevirir", () => {
@@ -42,6 +42,15 @@ describe("yazım", () => {
   it("tutar Türkçe biçimde, boş değer […] olarak yazılır", () => {
     expect(tutarYaz(135418)).toBe("135.418,00 TL");
     expect(tutarYaz(null)).toBe("[…]");
+  });
+
+  it("yazılan tutar sayıya çevrilir; boş null, tanınmayan undefined", () => {
+    expect(tutarOku("135.418,00")).toBe(135418);
+    expect(tutarOku("250.000 TL")).toBe(250000);
+    expect(tutarOku("1500,5")).toBe(1500.5);
+    expect(tutarOku("  ")).toBeNull();
+    expect(tutarOku("yüz bin")).toBeUndefined();
+    expect(tutarOku("1.5.0")).toBeUndefined();
   });
 
   it("ISO tarih gg.aa.yyyy olur", () => {

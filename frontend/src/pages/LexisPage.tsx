@@ -4,6 +4,7 @@ import { FlaskConical, Menu } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { useOdakModu } from "@/hooks/useOdakModu";
 import { ORNEK_VERI } from "@/lib/lexisApi";
+import { Tezgah } from "@/components/lexis/Tezgah";
 
 /**
  * `/lexis` — Lexis medikolegal rapor aracının ÖNİZLEMESİ (04.10.2026). Çekirdek ayrı depoda (`lexis-rapor`)
@@ -60,7 +61,10 @@ export default function LexisPage() {
     [setParams],
   );
 
-  const govde = (kod: SekmeKodu): ReactNode => <Hazirlaniyor ad={SEKMELER.find((s) => s.kod === kod)!.ad} />;
+  const govde = (kod: SekmeKodu): ReactNode => {
+    if (kod === "yaz") return <Tezgah />;
+    return <Hazirlaniyor ad={SEKMELER.find((s) => s.kod === kod)!.ad} />;
+  };
 
   return (
     <div data-testid="lexis-sayfasi" className="flex flex-col w-full min-w-0 h-full min-h-0 bg-[var(--bg-elevated)] overflow-hidden">
@@ -87,7 +91,7 @@ export default function LexisPage() {
                 aria-controls={`lexis-govde-${s.kod}`}
                 onClick={() => sekmeyeGit(s.kod)}
                 className={`relative px-2.5 whitespace-nowrap font-mono text-[11px] tracking-[0.06em] uppercase transition-colors ${
-                  secili ? "text-[var(--brand)] font-semibold" : "text-[var(--fg-muted)] hover:text-[var(--fg)]"
+                  secili ? "text-[var(--fg)] font-semibold" : "text-[var(--fg-muted)] hover:text-[var(--fg)]"
                 }`}
               >
                 {s.ad}

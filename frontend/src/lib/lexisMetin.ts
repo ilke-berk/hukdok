@@ -92,6 +92,17 @@ export function tutarYaz(tutar: number | null | undefined): string {
   return `${tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
 }
 
+/**
+ * Kullanıcının yazdığı tutar → sayı: `135.418,00`, `135418`, `135.418 TL`. Boş metin `null`; tanınmayan
+ * metin `undefined` (alan olduğu gibi bırakılır).
+ */
+export function tutarOku(metin: string): number | null | undefined {
+  const sade = metin.replace(/tl|₺|\s/gi, "");
+  if (sade === "") return null;
+  if (!/^\d{1,3}(\.\d{3})*(,\d{1,2})?$|^\d+(,\d{1,2})?$/.test(sade)) return undefined;
+  return Number(sade.replace(/\./g, "").replace(",", "."));
+}
+
 /** ISO `yyyy-mm-dd` → `dd.mm.yyyy`; boşsa `[…]`, biçim tanınmazsa olduğu gibi. */
 export function tarihYaz(iso: string | null | undefined): string {
   if (!iso) return BOS;

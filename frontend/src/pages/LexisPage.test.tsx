@@ -7,9 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router";
 
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock("@/hooks/useConfirm", () => ({ useConfirm: () => async () => true }));
 
 import LexisPage from "./LexisPage";
 import { OdakModuContext } from "@/hooks/useOdakModu";
+import { ornekDurumuSifirla, ornekGecikmeAyarla } from "@/lib/lexisApi";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -44,6 +47,8 @@ const gorunenGovdeler = () =>
     .map((p) => p.id);
 
 beforeEach(() => {
+  ornekDurumuSifirla();
+  ornekGecikmeAyarla(0);
   kap = document.createElement("div");
   document.body.appendChild(kap);
   kok = createRoot(kap);
