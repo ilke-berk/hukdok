@@ -83,7 +83,11 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
       {children}
       <Dialog open={open} onOpenChange={(v) => !v && handleClose(false)}>
         <DialogContent
-          className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0 sm:max-w-[520px]"
+          // grid-cols-1 (minmax(0,1fr)): örtük `auto` sütun içeriğin min-content'ine
+          // kadar genişler — uzun ayrıntı değeri gövdeyi diyalog kutusunun dışına taşırıyordu.
+          // [&>button:last-child]:hidden: DialogContent'in kendi çarpısı aşağıdaki "Kapat"
+          // düğmesiyle 2 px kaymayla üst üste biniyordu (çift çizilmiş çarpı).
+          className="theme-classic bg-[var(--bg-elevated)] border border-[var(--border)] rounded-none p-0 gap-0 grid-cols-1 sm:max-w-[520px] [&>button:last-child]:hidden"
           aria-label={options?.title}
         >
           {/* Üst brand accent şeridi */}
@@ -100,7 +104,7 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
           </button>
 
           {/* Body */}
-          <div className="px-6 py-6 grid gap-4">
+          <div className="px-6 py-6 grid grid-cols-1 gap-4">
             {options?.context && (
               <div className="font-mono text-[10px] tracking-[0.18em] uppercase font-semibold text-[var(--fg-subtle)]">
                 Bağlam · {options.context}
@@ -134,11 +138,12 @@ export function ConfirmDialogProvider({ children }: { children: ReactNode }) {
             )}
 
             {options?.details && options.details.length > 0 && (
-              <div className="bg-[var(--bg)] border border-[var(--border)] p-4 grid gap-2">
+              <div className="bg-[var(--bg)] border border-[var(--border)] p-4 grid grid-cols-1 gap-2">
                 {options.details.map((d, i) => (
                   <div key={i} className="flex items-baseline justify-between gap-3 font-mono text-[12px]">
-                    <span className="text-[var(--fg-subtle)] tracking-[0.06em]">{d.label}</span>
-                    <span className="text-[var(--fg)] tabular-nums truncate">{d.value}</span>
+                    <span className="shrink-0 text-[var(--fg-subtle)] tracking-[0.06em]">{d.label}</span>
+                    {/* Uzun değer kesilmez, alt satıra iner: onay kutusu neyin onaylandığını tam göstermeli. */}
+                    <span className="min-w-0 text-right break-words text-[var(--fg)] tabular-nums">{d.value}</span>
                   </div>
                 ))}
               </div>
