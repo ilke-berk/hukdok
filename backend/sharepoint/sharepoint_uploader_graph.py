@@ -459,6 +459,34 @@ def download_file_from_sharepoint(
     return _with_fresh_token_on_401(_download, config_type)
 
 
+def get_file_meta_from_sharepoint(
+    folder_name: str, filename: str, *, config_type: str = CONFIG_DEFAULT,
+) -> "dict | None":
+    """Arşivdeki dosyanın kaydı (`id`, `name`, `size`, `webUrl`); dosya yoksa None. Yalnız okur.
+
+    Küçük dosya yüklemesi (`PUT .../content`) aynı addaki dosyayı SORMADAN EZER; toplu
+    yükleme (`scripts/arsiv_karar_ekle.py --yukle`) her dosyadan önce buradan bakar.
+    """
+    _load_env()
+    session = _get_shared_session()
+    safe_path = quote(f"{folder_name}/{filename}")
+
+    def _meta(token: str) -> "dict | None":
+        _site_id, drive_id = _get_site_and_drive_id(token, config_type=config_type)
+        r = session.get(
+            f"{GRAPH}/drives/{drive_id}/root:/{safe_path}",
+            headers=_headers(token),
+            params={"$select": "id,name,size,webUrl"},
+            timeout=(10, 60),
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    return _with_fresh_token_on_401(_meta, config_type)
+
+
 def _update_list_item_fields(session, token, drive_id, item_id, fields):
     """Updates the ListItem fields for a given DriveItem."""
     logger.info(f"📝 Metadata Güncelleniyor: {fields}")

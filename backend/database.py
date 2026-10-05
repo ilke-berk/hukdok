@@ -1484,6 +1484,27 @@ _MIGRATIONS = [
         "ALTER TABLE cases ALTER COLUMN hizmet_turu TYPE TEXT; "
         "END IF; END $$",
     ]),
+
+    # ─── 60. ARŞİV BELGESİ: PARMAK İZİ + AŞAMA BAĞI (05.10.2026, kullanıcı onayı) ────
+    # Büro karar arşivi kartların altına eklenirken (`scripts/arsiv_karar_ekle.py`):
+    #   * `dosya_sha256`: aynı PDF aynı karta iki kez eklenmesin;
+    #   * `asama_karari_id`: belge kartın HANGİ aşama kararının belgesi (bugüne dek belge
+    #     yalnız karta bağlıydı; Hukukbot'a giden künye bu yüzden davanın künyesiydi).
+    # Migrasyon VERİ YAZMAZ; mevcut belgelerde iki kolon NULL kalır. "columns" op'u
+    # KOŞULLUDUR (create_all kolonu yaratmışsa atlanır) → unique kısıt ve FK index'i
+    # alttaki KOŞULSUZ ("index", ...) op'unda. Unique kısmidir: parmak izi olmayan ve
+    # silinmiş kayıtlar dışarıda (silinen belge yeniden eklenebilir).
+    ("columns", "case_documents", {
+        "dosya_sha256": "VARCHAR(64)",
+        "asama_karari_id": "INTEGER REFERENCES case_stage_decisions(id) ON DELETE SET NULL",
+    }),
+    ("index", "case_documents", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_case_docs_kart_sha "
+        "ON case_documents (case_id, dosya_sha256) "
+        "WHERE dosya_sha256 IS NOT NULL AND deleted_at IS NULL",
+        "CREATE INDEX IF NOT EXISTS idx_case_docs_asama_karari "
+        "ON case_documents (asama_karari_id) WHERE asama_karari_id IS NOT NULL",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

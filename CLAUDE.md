@@ -92,6 +92,22 @@ biner; toplu akışta e-postası açık tebligat ya da ekli satırda EmailModal 
 (`lib/tebligatDoctype.ts`); dosya başına meta `File` anahtarlıdır (`Index.tsx` `BatchFileMeta`).
 Ayrıntı `docs/mimari/belge-isleme-hatti.md` §3.
 
+**Arşiv belgesi (05.10, migrasyon 60):** büro karar arşivi kartlara `/process` → `/confirm` hattından GEÇMEDEN,
+`backend/scripts/arsiv_karar_ekle.py` ile eklenir (İNSAN ADIMI; varsayılan kuru koşu, girdi depo dışındaki eşleştirme
+listesi: karar → föy). Kayıt `uploaded_by = ARSIV_AKTARIM:<kim>`, `uploaded_at` = KARAR TARİHİ (yükleme anı değil),
+bildirim ve `notify_hukukbot` yok. İki adım: `--liste` belge kaydını açar (`sharepoint_url` boş: kartta listelenir,
+açılamaz), `--yukle --pdf-dizini` PDF'i arşive yükleyip URL'i yazar — `upload_queue`'dan GEÇMEZ (o yol bildirim +
+Hukukbot aktarımı üretir; `export_outbox`'a satır düşmediği için export'a da girmez). **Arşivde ad çakışması:** küçük
+dosya yüklemesi (`PUT .../content`) aynı addaki dosyayı sormadan EZER → toplu yükleme her dosyadan önce
+`sharepoint_uploader_graph.get_file_meta_from_sharepoint` ile bakar (aynı boyut = önceki koşu, URL alınır; farklı boyut =
+`AD_CAKISMASI`, dokunulmaz).
+İki yeni kolon: `case_documents.dosya_sha256` (kart başına aynı dosya tek kayıt — kısmi unique `uq_case_docs_kart_sha`)
+ve `case_documents.asama_karari_id` (belge → `case_stage_decisions`; künye tek satırla tutmuyorsa BOŞ, tahmin edilmez).
+Belge hattından gelen kayıtlarda iki kolon bugün yazılmaz. **05.10: belge kayıtları yalnız LOKAL veritabanında
+(3.111 belge, 1.924 kart; 355 kopya tarama soft-delete), prod'da KOŞULMADI; PDF'ler ise GERÇEK arşive yüklendi
+(`02_YEDEK_ARSIV`, 3.466 dosya) — prod'da `--liste` sonrası `--yukle` yeniden yüklemez, URL'leri bağlar. Prod girdisi
+depo dışında: `C:\hukdok-veri\lexis\kararlar\rapor\arsiv_karar_liste_prod.csv`.** Ayrıntı `docs/plan/karar-belgeleri-calisma-plani-2026-10-05.md` §5.3-§5.4.
+
 **Uygulama içi bildirim** (`docs/mimari/bildirimler.md`): kanal yalnız zil, e-posta
 değil. Üreticiler `belge_islendi` (URL commit sonrası; gündüz `upload_queue` ve gece
 `conversion_retry`), `sure_yaklasti`/`durusma_yaklasti` (06:00 TR lider taraması,

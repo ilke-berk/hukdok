@@ -1299,6 +1299,14 @@ class CaseDocument(Base):
     deleted_by    = Column(String(200), nullable=True)
     delete_reason = Column(String, nullable=True)
 
+    # Arşiv aktarımı (05.10.2026, migrasyon 60): dosyanın parmak izi ve belgenin ait
+    # olduğu aşama kararı. İkisi de NULL olabilir — belge hattından (/confirm) gelen
+    # kayıtlarda bugün yazılmaz; `scripts/arsiv_karar_ekle.py` büro karar arşivini
+    # eklerken doldurur. Kart başına aynı dosya TEK kayıttır (kısmi unique index
+    # `uq_case_docs_kart_sha`, migrasyon 60'ın koşulsuz op'unda — modelde DEĞİL).
+    dosya_sha256 = Column(String(64), nullable=True)
+    asama_karari_id = Column(Integer, ForeignKey("case_stage_decisions.id", ondelete="SET NULL"), nullable=True)
+
     # İlişkiler
     case = relationship("Case", back_populates="documents")
     case_party = relationship("CaseParty", foreign_keys=[case_party_id])
