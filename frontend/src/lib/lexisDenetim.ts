@@ -1,7 +1,7 @@
 // ÖRNEK ADAPTÖRÜN denetimi — `/lexis` önizlemesinde "düzenle → yeniden denetle" döngüsü çalışsın diye.
 // Gerçek denetim çekirdektedir (`lexis_rapor/yazici.py::dogrula`, `_dayanak_uyarilari`, `word.py`); bu dosya
 // onun kurallarını ekranı sürecek kadar taklit eder ve entegrasyonda KALKAR (uyarılar sunucudan yapılı gelir).
-import { ALINTI_ALT_SINIRI, BOS, alintiGeciyor, alintiUzunlugu, katla, tutarYaz } from "@/lib/lexisMetin";
+import { ALINTI_ALT_SINIRI, BOS, alintiGeciyor, alintiUzunlugu, katla, kaynaktaOlmayanlar, tarihYaz, tutarYaz } from "@/lib/lexisMetin";
 import {
   BEKLENEN_BELGELER,
   BELGE_TURU_ADLARI,
@@ -12,6 +12,7 @@ import {
   type KararKaydi,
   type LexisTaslak,
   type LexisUyari,
+  type RafKarariAyrinti,
   type UyariKodu,
   type UyariSeviyesi,
 } from "@/types/lexis";
@@ -22,6 +23,21 @@ export interface DenetimGirdisi {
   /** Bakılan emsal raporların metinleri (emsalden taşınma denetimi), `taslak.emsaller` sırasıyla. */
   emsalMetinleri: string[];
   kararBankasi: KararKaydi[];
+  /**
+   * Taslağın yazıldığı kararların kaynak metni (karar kimliği → `kararKaynakMetni`; `taslak.kararlar`). Maddelerin dayanak alıntısı
+   * dosya metninin yanında bunlarda da aranır; karardan yazılan özet paragrafı kendi kararına karşı denetlenir.
+   * Metni alınamayan karar haritada yoktur: o kararın paragrafı denetlenmez (yanlış alarm verilmez).
+   */
+  kaynakMetinleri?: Record<number, string>;
+}
+
+/**
+ * Bir kararın denetimde kaynak sayılan metni: künye satırı + karar metni. Künye de kaynaktır — modele giden istemde
+ * kararın başlığı (mahkeme, esas / karar no, tarih) yazar; özet paragrafı numarayı ve tarihi oradan da alabilir.
+ */
+export function kararKaynakMetni(k: Pick<RafKarariAyrinti, "mahkeme" | "esas_no" | "karar_no" | "karar_tarihi" | "metin">): string {
+  const kunye = [k.mahkeme, k.esas_no && `${k.esas_no} E.`, k.karar_no && `${k.karar_no} K.`, k.karar_tarihi && tarihYaz(k.karar_tarihi)].filter(Boolean).join(" · ");
+  return `${kunye}\n${k.metin}`;
 }
 
 const MASKE_YER_TUTUCULARI = ["[SİGORTALI]", "[HASTA]", "[KİŞİ]", "[TC]"];
@@ -47,7 +63,7 @@ export function dosyaMetni(taslak: LexisTaslak, dosya: DosyaGirdisi): string {
   return parcalar.join("\n");
 }
 
-export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi }: DenetimGirdisi): LexisUyari[] {
+export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi, kaynakMetinleri = {} }: DenetimGirdisi): LexisUyari[] {
   const uyarilar: LexisUyari[] = [];
   const ekle = (
     kod: UyariKodu,
@@ -82,7 +98,21 @@ export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi }: Denetim
     } else if (tanim.tur === "OZET") {
       const paragraflar = (taslak.ozet[tanim.kod] ?? []).filter((p) => p.metin.trim());
       if (paragraflar.length === 0) ekle("BOLUM_BOS", "UYARI", `Bölüm boş: ${tanim.baslik}`, { bolum: tanim.kod });
-      for (const p of paragraflar) metinDenetimi(p.metin, tanim.kod, null);
+      paragraflar.forEach((p, i) => {
+        metinDenetimi(p.metin, tanim.kod, null);
+        // Karardan yazılan paragraf: alıntısı ve içindeki tutar / tarih / numara kaynak kararda geçmelidir.
+        const kaynak = p.kaynak_karar_id != null ? kaynakMetinleri[p.kaynak_karar_id] : undefined;
+        if (kaynak === undefined) return;
+        const yer = { bolum: tanim.kod };
+        const no = `${tanim.baslik}, paragraf ${i + 1}`;
+        const alinti = p.dayanak_alinti?.trim() ?? "";
+        if (alinti === "") ekle("DAYANAKSIZ", "UYARI", `${no}: dayanak alıntısı yok`, yer);
+        else if (alintiUzunlugu(alinti) < ALINTI_ALT_SINIRI) ekle("ALINTI_KISA", "UYARI", `${no}: dayanak alıntısı çok kısa`, yer);
+        else if (!alintiGeciyor(kaynak, alinti)) ekle("ALINTI_BULUNAMADI", "HATA", `${no}: dayanak alıntısı kaynak kararda bulunamadı`, yer);
+        for (const olgu of kaynaktaOlmayanlar(p.metin, kaynak)) {
+          ekle("OLGU_KAYNAKTA_YOK", "UYARI", `${no}: kaynak kararda geçmiyor: ${olgu}`, yer);
+        }
+      });
     }
   }
 
@@ -96,7 +126,9 @@ export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi }: Denetim
   // 3. Değerlendirme: giriş kalıbı, dayanak kuralı (K13), atıf doğrulaması
   const deg = taslak.degerlendirme;
   if (deg) {
-    const hedef = dosyaMetni(taslak, dosya);
+    // Dayanak dosyanın metninde ya da taslağın yazıldığı kararlarda aranır (çekirdekte kararlar dosyanın
+    // `yargi_sureci` olgusudur — `servis/yazim.py`).
+    const hedef = [dosyaMetni(taslak, dosya), ...Object.values(kaynakMetinleri)].join("\n");
     const hedefKatli = katla(hedef);
     if (!katla(deg.giris).startsWith(GIRIS_KALIPLARI[taslak.iskelet])) {
       ekle("GIRIS_KALIBI", "UYARI", "Giriş cümlesi kalıba uymuyor", { bolum: "degerlendirme" });

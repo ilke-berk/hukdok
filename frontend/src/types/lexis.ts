@@ -406,6 +406,10 @@ export interface EtiketliSatir {
 export interface OzetParagraf {
   metin: string;
   kaynak_belge_id: number | null;
+  /** Kararlardan yazımda: paragrafın dayandığı karar (karar veritabanı kimliği, `RafKarari.id`). */
+  kaynak_karar_id?: number | null;
+  /** O karardan AYNEN alınmış kısa alıntı; rapora girmez, denetim kaynak kararda arar. */
+  dayanak_alinti?: string | null;
 }
 
 export type UyariSeviyesi = "HATA" | "UYARI" | "BILGI";
@@ -428,7 +432,9 @@ export type UyariKodu =
   | "DOLDURULMAMIS"
   | "MASKE_KALINTISI"
   | "KART_BELGE_CELISKISI"
-  | "EKSIK_BELGE";
+  | "EKSIK_BELGE"
+  /** Özet paragrafındaki tutar, tarih ya da esas / karar numarası kaynak kararda geçmiyor. */
+  | "OLGU_KAYNAKTA_YOK";
 
 export interface LexisUyari {
   id: string;
@@ -482,7 +488,173 @@ export interface LexisTaslak {
   muallak_manevi: number | null;
   /** Bakılan eski raporların sha256'ları (K3: hangi raporlara bakıldığı gösterilir). */
   emsaller: string[];
+  /** Taslağın yazıldığı kararlar (`RafKarari.id`); dayanak alıntıları bunların metninde aranır. Eski kayıtta yok. */
+  kararlar?: number[];
 }
+
+// ---------------------------------------------------------------------------------------------
+// Arayüz (çekirdekte yok): karar rafı — servisin karar veritabanı (`lexis-rapor/servis/karar_raf.py`)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Raftaki bir büro belgesi (metinsiz). SONUÇ İKİ AYRI ALANDIR (kullanıcı kararı K22): `hukum_sinifi` kararın
+ * BÜTÜNÜDÜR (koddan, hükümden okunur), `sonuc_muvekkil` müvekkil yönünden sonuçtur (HUKDOK etiketinden). Hükmedilen
+ * tutar kararın bütününe aittir. Kodun bulamadığı alan boş gelir (uydurulmaz).
+ */
+export interface RafKarari {
+  id: number;
+  /** `karar` | `bilirkisi_raporu` | `atk_raporu` */
+  belge_turu: string;
+  mahkeme: string | null;
+  derece: string | null;
+  esas_no: string | null;
+  karar_no: string | null;
+  /** ISO `yyyy-mm-dd`. */
+  karar_tarihi: string | null;
+  uzmanlik: string | null;
+  /** HUKDOK kart kimliği; karta bağlanamamış belgede `null`. */
+  kart_id: number | null;
+  kart_bagi: string | null;
+  asamaya_bagli: boolean;
+  metin_uzunluk: number;
+  hukum_sinifi: string | null;
+  hukum_yonleri: string[];
+  sonuc_muvekkil: string | null;
+  /** `AYNI` | `KARMA` | `KARMA_TALEP` | `AYRISIK` — iki sonuç alanının ilişkisi. */
+  sonuc_iliskisi: string | null;
+  hukmedilen_maddi: number[];
+  hukmedilen_manevi: number[];
+  hukmedilen_birlesik: number[];
+  talep_maddi: number[];
+  talep_manevi: number[];
+  /** `OLUM` | `YARALANMA` */
+  olay: string | null;
+  maluliyet_orani: string[];
+  kusur_orani: string[];
+  dayanak_kurul: string[];
+  faiz: string[];
+  /** Gerekçe konusu → o konuya değinen paragraf sayısı (`kusur`, `illiyet`, `onam`, `usul`, `tazminat`, `bilirkisi`). */
+  konular: Record<string, number>;
+}
+
+export interface GerekceParagrafi {
+  metin: string;
+  konular: string[];
+}
+
+/** Tek karar: künye + alanlar + sunucuda kesilmiş parçalar + birebir metin. Metin maskesizdir (büronun kendi kararı). */
+export interface RafKarariAyrinti extends RafKarari {
+  /** Künye alanı → kaynağı (`insan` | `hukdok_db` | `dosya_adi` | `paket`). */
+  kunye_kaynak: Record<string, string>;
+  vekalet_ucreti: number[];
+  yargilama_gideri: number[];
+  hukum_kaynagi: string | null;
+  yas: string[];
+  davaci_sayisi: string | null;
+  parcalar: { hukum: string | null; iddia: string[]; savunma: string[]; gerekce: GerekceParagrafi[] };
+  metin: string;
+}
+
+export interface RafSuzgeci {
+  belge_turu?: string | null;
+  derece?: string | null;
+  hukum_sinifi?: string | null;
+  sonuc_muvekkil?: string | null;
+  uzmanlik?: string | null;
+  konu?: string | null;
+  yalniz_kartli?: boolean;
+  metin?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface RafSayfasi {
+  toplam: number;
+  kararlar: RafKarari[];
+}
+
+export type RafSecenekleri = Record<"derece" | "uzmanlik" | "belge_turu" | "hukum_sinifi" | "sonuc_muvekkil", string[]>;
+
+/** Kararlardan yazım bu kurulumda açık mı (`LEXIS_YAZIM`); `neden`: `kapali` | `anahtar_yok` | `paket_yok`. */
+export interface YazimDurumu {
+  acik: boolean;
+  neden: string | null;
+  model: string | null;
+}
+
+/** `GET /lexis-api/kararlar/{case_id}` — dava kartına bağlı büro kararları + yazım durumu. */
+export interface KartKararlari {
+  kararlar: RafKarari[];
+  yazim: YazimDurumu;
+}
+
+/** `POST /lexis-api/yaz` — kararlardan yazılan bölümler. Uyarılar çekirdeğin düz metin uyarılarıdır. */
+export interface YazimSonucu {
+  ozet: Partial<Record<BolumKodu, OzetParagraf[]>>;
+  degerlendirme: DegerlendirmeTaslagi;
+  muallak: MuallakOnerisi;
+  kararlar: number[];
+  uyarilar: string[];
+  model: string;
+  maske: { bilinen: number; kalip: number; ogrenilen: number };
+  gonderilen_karakter: number;
+}
+
+export const HUKUM_SINIFI_ADLARI: Record<string, string> = {
+  RED_ESASTAN: "Ret (esastan)",
+  RED_USULDEN: "Ret (usulden)",
+  KABUL: "Kabul",
+  KISMEN_KABUL: "Kısmen kabul",
+  BASVURU_RET: "Başvuru reddi",
+  KALDIRMA: "Kaldırma",
+  KALDIRMA_YENIDEN_HUKUM: "Kaldırma · yeniden hüküm",
+  ONAMA: "Onama",
+  DUZELTEREK_ONAMA: "Düzelterek onama",
+  BOZMA: "Bozma",
+  KISMEN_ONAMA_BOZMA: "Kısmen onama · bozma",
+  ACILMAMIS: "Açılmamış sayılma",
+  FERAGAT: "Feragat",
+  KARAR_VERILMESINE_YER_OLMADIGINA: "Karar verilmesine yer olmadığına",
+  CEZA: "Ceza kararı",
+  DIGER: "Diğer",
+};
+
+/** Künye iki sözlükle gelir: büyük harfli değer HUKDOK aşama kaydından, küçük harfli değer karar paketinden. */
+export const DERECE_ADLARI: Record<string, string> = {
+  YEREL: "Yerel mahkeme",
+  ISTINAF: "İstinaf",
+  TEMYIZ: "Temyiz",
+  KARAR_DUZELTME: "Karar düzeltme",
+  ilk_derece: "İlk derece (paket)",
+  bam: "BAM (paket)",
+  danistay: "Danıştay (paket)",
+  yargitay: "Yargıtay (paket)",
+  diger: "Diğer (paket)",
+};
+
+export const BELGE_TURU_RAF_ADLARI: Record<string, string> = {
+  karar: "Mahkeme kararı",
+  bilirkisi_raporu: "Bilirkişi raporu",
+  atk_raporu: "ATK raporu",
+};
+
+export const KONU_ADLARI: Record<string, string> = {
+  kusur: "Kusur",
+  illiyet: "İlliyet",
+  onam: "Onam",
+  usul: "Usul",
+  tazminat: "Tazminat",
+  bilirkisi: "Bilirkişi / ATK",
+};
+
+export const SONUC_ILISKISI_ADLARI: Record<string, string> = {
+  AYNI: "aynı yön",
+  KARMA: "karma hüküm (taraflara göre)",
+  KARMA_TALEP: "karma hüküm (taleplere göre) — incele",
+  AYRISIK: "ayrışıyor — incele",
+};
+
+export const rafAdi = (sozluk: Record<string, string>, deger: string | null | undefined): string => (deger ? (sozluk[deger] ?? deger) : "—");
 
 // ---------------------------------------------------------------------------------------------
 // Arayüz (çekirdekte yok): taslak akışı
@@ -506,6 +678,11 @@ export interface TaslakIstegi {
   /** Modele gidecek belgeler — kullanıcı gönderim onayında görür (K4). */
   belge_idleri: number[];
   emsal_sha: string[];
+  /**
+   * Gerçek davada: taslağın yazılacağı kararlar (`RafKarari.id`). Doluysa kararların MASKELİ metni modele gider
+   * (kullanıcı gönderim onayında görür); boşsa taslak iskelettir, hiçbir şey gönderilmez.
+   */
+  karar_idleri?: number[];
 }
 
 /**
@@ -514,6 +691,8 @@ export interface TaslakIstegi {
  */
 export type LexisAkisOlayi =
   | { status: "info"; asama: UretimAsamasi; mesaj: string }
+  /** Akışı KESMEYEN sorun: kararlardan yazım yapılamadı, taslak iskelet olarak sürüyor. */
+  | { status: "warning"; mesaj: string }
   | { status: "bolum"; bolum: BolumKodu; etiketli?: EtiketliSatir[]; ozet?: OzetParagraf[]; degerlendirme?: DegerlendirmeTaslagi }
   | { status: "muallak"; oneri: MuallakOnerisi }
   | { status: "complete"; kosu_id: string; uyarilar: LexisUyari[] }
@@ -597,6 +776,8 @@ export interface TaslakEkranDurumu {
   bolum_durumlari?: Partial<Record<BolumKodu, string>>;
   /** Yazımda seçili bırakılan belgeler. */
   secili_belgeler?: number[];
+  /** Yazımda seçili bırakılan kararlar (`RafKarari.id`). */
+  secili_kararlar?: number[];
 }
 
 /** `GET /lexis-api/taslak/{case_id}` — davanın kayıtlı çalışma taslağı. */

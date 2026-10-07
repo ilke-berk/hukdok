@@ -1,5 +1,5 @@
 // Lexis bileşenlerinin ortak saf yardımcıları (durum türetme, dayanak arama, kimlikler).
-import { alintiAraliklari, tutarYaz, type MetinAraligi } from "@/lib/lexisMetin";
+import { alintiAraliklari, tarihYaz, tutarYaz, type MetinAraligi } from "@/lib/lexisMetin";
 import { LexisApiError } from "@/lib/lexisApi";
 import {
   SIRKET_ADLARI,
@@ -7,6 +7,7 @@ import {
   type LexisTaslak,
   type LexisUyari,
   type Madde,
+  type RafKarari,
   type RaporOkuma,
   type UyariKodu,
   type UyariSeviyesi,
@@ -17,6 +18,29 @@ export function raporKunyesi(okuma: Pick<RaporOkuma, "sirket" | "rapor_turu" | "
   return [okuma.sirket ? SIRKET_ADLARI[okuma.sirket] : null, okuma.rapor_turu === "EK" ? "Ek rapor" : "Ana rapor", okuma.rapor_tarihi?.slice(0, 4)]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Kararın esas / karar numarası: `2019/123 E., 2021/456 K.`; ikisi de boşsa `null`. */
+export function kararNumarasi(k: Pick<RafKarari, "esas_no" | "karar_no">): string | null {
+  return [k.esas_no && `${k.esas_no} E.`, k.karar_no && `${k.karar_no} K.`].filter(Boolean).join(", ") || null;
+}
+
+/** Kararın tek satırlık künyesi: mahkeme · E/K · tarih. */
+export function kararKunyesi(k: Pick<RafKarari, "mahkeme" | "esas_no" | "karar_no" | "karar_tarihi">): string {
+  return [k.mahkeme, kararNumarasi(k), k.karar_tarihi && tarihYaz(k.karar_tarihi)].filter(Boolean).join(" · ") || "Künyesi bilinmeyen karar";
+}
+
+/** Tutar listesi tek satırda (`75.000,00 TL + 20.000,00 TL`); boş listede `null`. */
+export function tutarListesi(tutarlar: number[]): string | null {
+  return tutarlar.length > 0 ? tutarlar.map((t) => tutarYaz(t)).join(" + ") : null;
+}
+
+/** Hüküm sınıfının rozet tonu: ret / başvuru reddi / onama yeşil, kabul / kaldırma / bozma sarı (rapor yazan için risk işareti). */
+export function hukumTonu(sinif: string | null): RozetTonu {
+  if (!sinif) return "muted";
+  if (["RED_ESASTAN", "RED_USULDEN", "BASVURU_RET", "ONAMA", "DUZELTEREK_ONAMA", "ACILMAMIS", "FERAGAT"].includes(sinif)) return "ok";
+  if (["KABUL", "KISMEN_KABUL", "KALDIRMA", "KALDIRMA_YENIDEN_HUKUM", "BOZMA", "KISMEN_ONAMA_BOZMA"].includes(sinif)) return "caution";
+  return "muted";
 }
 
 /** Raporun muallağı tek satırda; ikisi de boşsa `null`. */

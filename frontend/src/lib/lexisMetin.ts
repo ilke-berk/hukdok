@@ -23,12 +23,38 @@ export function alintiUzunlugu(alinti: string): number {
 
 export const ALINTI_ALT_SINIRI = 12;
 
-/** `…` / `...` ile atlanmış alıntının parçaları (boş parçalar atılır). */
+/**
+ * `…` / `...` ile atlanmış alıntının parçaları (boş parçalar atılır). Maske yer tutucusu da bölme yeridir: karardan
+ * yazılan maddenin alıntısı modelin gördüğü MASKELİ metinden gelir, ekrandaki karar metni maskesizdir.
+ */
 export function alintiParcalari(alinti: string): string[] {
   return alinti
-    .split(/…|\.{3}/)
+    .split(/…|\.{3}|\[(?:SİGORTALI|HASTA|KİŞİ|TC)\]/)
     .map((p) => p.trim())
     .filter((p) => katla(p).length > 0);
+}
+
+const TUTAR_KALIBI = /(?<![\d.])\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?(?![\d.])/g;
+const TARIH_KALIBI = /\d{1,2}[./]\d{1,2}[./]\d{4}/g;
+const ESAS_KALIBI = /(?<!\d)(\d{4})\s*\/\s*(\d{1,6})(?!\d)/g;
+const rakamlar = (s: string) => s.replace(/\D/g, "");
+/** Tutarın karşılaştırma anahtarı: yalnız rakamlar, `,00` kuruş hanesi atılmış ("150.000,00" → "150000"). */
+const tutarAnahtari = (s: string) => rakamlar(s.replace(/,0{1,2}$/, ""));
+
+/**
+ * Paragraftaki tutar, tarih ve esas / karar numaralarından kaynak metinde GEÇMEYENLER (yazıldıkları gibi). Çekirdeğin
+ * `karar_yazici._olgu_uyarilari` kuralının aynısı: model özetlerken tutar yuvarlamasın, tarih kaydırmasın.
+ */
+export function kaynaktaOlmayanlar(metin: string, kaynak: string): string[] {
+  const tutarlar = new Set([...(kaynak.match(TUTAR_KALIBI) ?? []).map(tutarAnahtari), ...(kaynak.match(/\d{4,}/g) ?? [])]);
+  const tarihler = new Set((kaynak.match(TARIH_KALIBI) ?? []).map(rakamlar));
+  const esaslar = new Set([...kaynak.matchAll(ESAS_KALIBI)].map((m) => `${m[1]}/${Number(m[2])}`));
+  const eksik = [
+    ...(metin.match(TUTAR_KALIBI) ?? []).filter((t) => !tutarlar.has(tutarAnahtari(t))),
+    ...(metin.match(TARIH_KALIBI) ?? []).filter((t) => !tarihler.has(rakamlar(t))),
+    ...[...metin.matchAll(ESAS_KALIBI)].filter((m) => !esaslar.has(`${m[1]}/${Number(m[2])}`)).map((m) => `${m[1]}/${m[2]}`),
+  ];
+  return [...new Set(eksik)];
 }
 
 export interface MetinAraligi {

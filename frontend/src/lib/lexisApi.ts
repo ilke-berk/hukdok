@@ -6,11 +6,13 @@
 //   (`lib/lexisWord.ts` → `/lexis-api/word`) gönderir, gerçek şirket şablonunda dosya döner.
 // - GERÇEK (`?veri=gercek`): her yöntem Lexis servisine gider (`lib/lexisServis.ts`); taslak, koşu geçmişi, kart
 //   seçimi ve şirket profili servisin kendi veritabanında saklanır (`kalici`). Denetim hâlâ buradaki
-//   `lexisDenetim.ts` ile koşar; taslak belgelerden değil karttan kurulan iskelettir.
+//   `lexisDenetim.ts` ile koşar. Taslak karttan kurulan iskelettir; dava kartına bağlı karar seçilirse (ve servis
+//   yazımı açmışsa) özet + değerlendirme o kararlardan modele yazdırılır (`/lexis-api/yaz`, kararlar maskeli gider).
+//   Karar rafı (Kütüphane › Karar rafı, tezgâhtaki "Kararlar") servisin karar veritabanından gelir.
 //
-// ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Belgelerden yazım gelince `taslakYaz` NDJSON akışına bağlanır
-// (`hukukbotApi.ask` okuyucusu), `ORNEK_VERI` false olur; örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
-import { denetle as ornekDenetle } from "@/lib/lexisDenetim";
+// ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Dilekçe / beyan / poliçeden yazım gelince `taslakYaz` NDJSON akışına
+// bağlanır (`hukukbotApi.ask` okuyucusu), `ORNEK_VERI` false olur; örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
+import { denetle as ornekDenetle, kararKaynakMetni } from "@/lib/lexisDenetim";
 import { katla } from "@/lib/lexisMetin";
 import type { WordSonucu } from "@/lib/lexisWord";
 import {
@@ -18,6 +20,7 @@ import {
   ORNEK_DOSYALAR,
   ORNEK_GECMIS,
   ORNEK_HEDEF_ETIKETLER,
+  ORNEK_KARARLAR,
   ORNEK_KART_BAGLARI,
   ORNEK_KUTUPHANE,
   ORNEK_PROFILLER,
@@ -29,6 +32,7 @@ import {
   type DosyaGirdisi,
   type Emsal,
   type KararKaydi,
+  type KartKararlari,
   type KayitliTaslak,
   type KutuphaneFiltresi,
   type KutuphaneKaydi,
@@ -39,6 +43,11 @@ import {
   type LexisTaslak,
   type LexisUyari,
   type MuallakOnerisi,
+  type RafKarari,
+  type RafKarariAyrinti,
+  type RafSayfasi,
+  type RafSecenekleri,
+  type RafSuzgeci,
   type RaporBagi,
   type RaporEtiketleri,
   type RaporTuru,
@@ -49,6 +58,7 @@ import {
   type TaslakKayitSonucu,
   type TaslakKosusu,
   type Teminat,
+  type YazimSonucu,
 } from "@/types/lexis";
 
 /** Örnek adaptör devrede mi — entegrasyon tamamlanınca false. Dava bölgesinin kipi ayrıca `veriKipi()`. */
@@ -103,6 +113,13 @@ export interface LexisApi {
   kutuphaneAra(filtre: KutuphaneFiltresi, signal?: AbortSignal): Promise<KutuphaneKaydi[]>;
   raporGetir(sha256: string, signal?: AbortSignal): Promise<KutuphaneKaydi>;
   kararBankasi(signal?: AbortSignal): Promise<KararKaydi[]>;
+  /** Karar rafı: süzgeçlere uyan büro kararları (metinsiz), en yeni karar önce. */
+  kararAra(suzgec: RafSuzgeci, signal?: AbortSignal): Promise<RafSayfasi>;
+  rafSecenekleri(signal?: AbortSignal): Promise<RafSecenekleri>;
+  /** Dava kartına bağlı kararlar + kararlardan yazımın açık olup olmadığı. */
+  kartKararlari(caseId: number, signal?: AbortSignal): Promise<KartKararlari>;
+  /** Tek karar: künye, iki sonuç alanı, tutarlar, parçalar ve tam metin. */
+  kararGetir(id: number, signal?: AbortSignal): Promise<RafKarariAyrinti>;
   /** `TEK` dışındaki bağlar (inceleme listesi). */
   kartBaglari(signal?: AbortSignal): Promise<RaporBagi[]>;
   /** İnsan seçimi (K8); `kartId = null` seçimi geri alır. */
@@ -149,6 +166,7 @@ export function ornekDurumuSifirla(): void {
   gercekDosyalar.clear();
   gercekEmsalMetinleri.clear();
   gercekKosular.clear();
+  gercekKararMetinleri.clear();
   gercekKararBankasi = null;
 }
 
@@ -263,6 +281,15 @@ function puanla(hedef: PuanHedefi, kayit: KutuphaneKaydi): Emsal {
 function hedefOlustur(caseId: number, sirket: LexisSirket | null, raporTuru: RaporTuru): PuanHedefi {
   const dosya = dosyaBul(caseId);
   return { sirket, rapor_turu: raporTuru, uzmanlik: dosya.uzmanlik, etiketler: ORNEK_HEDEF_ETIKETLER[caseId] };
+}
+
+/** Raf listesinin satırı: ayrıntıdan metin, parçalar ve yalnız ayrıntıda gelen alanlar atılır. */
+const AYRINTI_ALANLARI = ["metin", "parcalar", "kunye_kaynak", "vekalet_ucreti", "yargilama_gideri", "hukum_kaynagi", "yas", "davaci_sayisi"] as const;
+
+function rafOzeti(karar: RafKarariAyrinti): RafKarari {
+  const ozet: Record<string, unknown> = { ...karar };
+  for (const alan of AYRINTI_ALANLARI) delete ozet[alan];
+  return ozet as unknown as RafKarari;
 }
 
 function kararBankasiKur(): KararKaydi[] {
@@ -441,6 +468,45 @@ const ornekLexisApi: LexisApi = {
     return kararBankasiKur();
   },
 
+  // Örnek raf: uydurma üç karar. Yazım örnek kipte hep kapalıdır (örnek taslak hazır gelir, model çağrılmaz).
+  async kararAra(suzgec, signal) {
+    await bekle(signal, 0.5);
+    const aranan = katla(suzgec.metin ?? "");
+    const uyan = ORNEK_KARARLAR.filter(
+      (k) =>
+        (!suzgec.belge_turu || k.belge_turu === suzgec.belge_turu) &&
+        (!suzgec.derece || k.derece === suzgec.derece) &&
+        (!suzgec.hukum_sinifi || k.hukum_sinifi === suzgec.hukum_sinifi) &&
+        (!suzgec.sonuc_muvekkil || k.sonuc_muvekkil === suzgec.sonuc_muvekkil) &&
+        (!suzgec.uzmanlik || k.uzmanlik === suzgec.uzmanlik) &&
+        (!suzgec.konu || (k.konular[suzgec.konu] ?? 0) > 0) &&
+        (!suzgec.yalniz_kartli || k.kart_id !== null) &&
+        (!aranan || [k.mahkeme, k.esas_no, k.karar_no, k.uzmanlik, k.metin].some((alan) => alan && katla(alan).includes(aranan))),
+    ).sort((a, b) => (b.karar_tarihi ?? "").localeCompare(a.karar_tarihi ?? ""));
+    const bas = suzgec.offset ?? 0;
+    return { toplam: uyan.length, kararlar: kopya(uyan.slice(bas, bas + (suzgec.limit ?? 50)).map(rafOzeti)) };
+  },
+
+  async rafSecenekleri(signal) {
+    await bekle(signal, 0.5);
+    const tekil = (alan: "derece" | "uzmanlik" | "belge_turu" | "hukum_sinifi" | "sonuc_muvekkil") =>
+      [...new Set(ORNEK_KARARLAR.map((k) => k[alan]).filter((d): d is string => !!d))].sort((a, b) => a.localeCompare(b, "tr"));
+    return { derece: tekil("derece"), uzmanlik: tekil("uzmanlik"), belge_turu: tekil("belge_turu"), hukum_sinifi: tekil("hukum_sinifi"), sonuc_muvekkil: tekil("sonuc_muvekkil") };
+  },
+
+  async kartKararlari(caseId, signal) {
+    await bekle(signal, 0.5);
+    const kararlar = ORNEK_KARARLAR.filter((k) => k.kart_id === caseId).sort((a, b) => (b.karar_tarihi ?? "").localeCompare(a.karar_tarihi ?? ""));
+    return { kararlar: kopya(kararlar.map(rafOzeti)), yazim: { acik: false, neden: "ornek", model: null } };
+  },
+
+  async kararGetir(id, signal) {
+    await bekle(signal, 0.5);
+    const karar = ORNEK_KARARLAR.find((k) => k.id === id);
+    if (!karar) throw new LexisApiError(404, "Karar rafta bulunamadı.");
+    return kopya(karar);
+  },
+
   async kartBaglari(signal) {
     await bekle(signal);
     return kopya(durum.baglar);
@@ -506,18 +572,31 @@ export function veriKipiAyarla(yeni: VeriKipi): void {
   kip = yeni;
 }
 
-/** Gerçek davada "Taslağı yaz"ın bugün ne ürettiği — düğmenin üstünde ve onay kutusunda gösterilir. */
+/** Gerçek davada karar seçilmeden (ya da yazım kapalıyken) "Taslağı yaz"ın ne ürettiği — düğmenin üstünde ve onay kutusunda gösterilir. */
 export const GERCEK_ISKELET_NOTU =
   "Gerçek davada taslak iskelet olarak gelir: künye dava kartından dolar, özet bölümlerini ve maddeleri siz yazarsınız. Modele hiçbir şey gönderilmez.";
+
+/** Gerçek davada karar seçiliyken "Taslağı yaz"ın ne yaptığı — gönderim onayında gösterilir (K4). */
+export const GERCEK_YAZIM_NOTU =
+  "Künye dava kartından dolar. Seçili kararların metni kişi adları maskelenerek, emsal raporların maskeli bölümleriyle birlikte modele gönderilir; iddia / yargı süreci özeti ve değerlendirme maddeleri bu kararlardan yazılır. Her madde karardan alıntıyla dayanak gösterir; muallak tutarını kod hesaplar.";
 
 // Gerçek kipin oturum belleği: denetim ve Word, seçili davanın kartını ve bakılan emsallerin metnini ister.
 const gercekDosyalar = new Map<number, DosyaGirdisi>();
 const gercekEmsalMetinleri = new Map<string, string>();
 // Dava → taslağının koşusu (Geçmiş satırı): iskelet yanıtından ya da kayıtlı taslaktan öğrenilir; kayıt ve Word taşır.
 const gercekKosular = new Map<number, number>();
+// Karar kimliği → metin: denetim, dayanak alıntısını taslağın yazıldığı kararlarda arar.
+const gercekKararMetinleri = new Map<number, string>();
 let gercekKararBankasi: KararKaydi[] | null = null;
 
-const servis = () => import("@/lib/lexisServis"); // dinamik: örnek kip `apiClient`'ı (MSAL) hiç yüklemez
+// Dinamik: örnek kip `apiClient`'ı (MSAL) hiç yüklemez. Yükleme TEK kez başlatılır ve paylaşılır: dava seçilince
+// birkaç istek aynı anda yola çıkar (dosya, emsal, kararlar); başarısız yükleme (parça alınamadı) yeniden denenir.
+let servisModulu: Promise<typeof import("@/lib/lexisServis")> | null = null;
+const servis = () =>
+  (servisModulu ??= import("@/lib/lexisServis").catch((e: unknown) => {
+    servisModulu = null;
+    throw e;
+  }));
 
 async function gercekDosya(caseId: number, signal?: AbortSignal): Promise<DosyaGirdisi> {
   const bellekte = gercekDosyalar.get(caseId);
@@ -527,12 +606,37 @@ async function gercekDosya(caseId: number, signal?: AbortSignal): Promise<DosyaG
   return dosya;
 }
 
+/**
+ * Taslağın yazıldığı kararların metni (kimlik → metin), oturum belleğinden ya da servisten. Alınamayan karar haritaya
+ * girmez: denetim o kararın paragrafını atlar (yanlış "alıntı bulunamadı" vermez).
+ */
+async function gercekKaynakMetinleri(taslak: LexisTaslak, signal?: AbortSignal): Promise<Record<number, string>> {
+  const sonuc: Record<number, string> = {};
+  await Promise.all(
+    (taslak.kararlar ?? []).map(async (id) => {
+      let metin = gercekKararMetinleri.get(id);
+      if (metin === undefined) {
+        try {
+          metin = kararKaynakMetni(await (await servis()).kararGetir(id, signal));
+        } catch (e) {
+          if ((e as Error)?.name === "AbortError") throw e;
+          return;
+        }
+        gercekKararMetinleri.set(id, metin);
+      }
+      sonuc[id] = metin;
+    }),
+  );
+  return sonuc;
+}
+
 async function gercekDenetle(taslak: LexisTaslak, signal?: AbortSignal): Promise<LexisUyari[]> {
   const dosya = await gercekDosya(taslak.case_id, signal);
   // Karar bankası alınamazsa denetim yine koşar: atıflar yalnız dosya metninde aranır.
   gercekKararBankasi ??= await (await servis()).kararBankasi(signal).catch(() => null);
   const emsalMetinleri = taslak.emsaller.map((sha) => gercekEmsalMetinleri.get(sha) ?? "");
-  return ornekDenetle({ taslak, dosya, emsalMetinleri, kararBankasi: gercekKararBankasi ?? [] });
+  const kaynakMetinleri = await gercekKaynakMetinleri(taslak, signal);
+  return ornekDenetle({ taslak, dosya, emsalMetinleri, kararBankasi: gercekKararBankasi ?? [], kaynakMetinleri });
 }
 
 const gercekLexisApi: LexisApi = {
@@ -566,7 +670,9 @@ const gercekLexisApi: LexisApi = {
   async kararBankasi(signal) {
     return (await servis()).kararBankasi(signal);
   },
-  // Belgelerden yazım gelene kadar taslak İSKELETTİR: etiketli satırlar karttan, özet boş, son madde koddan.
+  // Önce İSKELET: etiketli satırlar karttan, son madde koddan (modele bir şey gitmez). Karar seçildiyse ARDINDAN
+  // kararlardan yazım: iddia / yargı süreci ve değerlendirme modelden gelir (kararlar maskeli gider; onayı tezgâh
+  // alır). Yazım başarısız olursa iskelet ekranda kalır, hata `warning` olayıyla bildirilir.
   async *taslakYaz(istek, signal) {
     yield { status: "info", asama: "olgular", mesaj: "Künye dava kartından dolduruluyor" };
     let iskelet: Awaited<ReturnType<Awaited<ReturnType<typeof servis>>["iskelet"]>>;
@@ -579,14 +685,33 @@ const gercekLexisApi: LexisApi = {
     }
     if (iskelet.kosu_id != null) gercekKosular.set(istek.case_id, iskelet.kosu_id);
     else gercekKosular.delete(istek.case_id); // veritabanı yok: koşu loglanmadı, eski koşuya da yazılmasın
-    yield { status: "info", asama: "bolumler", mesaj: "Bölümler hazırlanıyor" };
-    for (const tanim of ISKELET_BOLUMLERI[istek.iskelet]) {
+    const bolumler = ISKELET_BOLUMLERI[istek.iskelet];
+    for (const tanim of bolumler) {
       if (tanim.tur === "ETIKETLI") yield { status: "bolum", bolum: tanim.kod, etiketli: iskelet.etiketli[tanim.kod] ?? [] };
-      else if (tanim.tur === "OZET") yield { status: "bolum", bolum: tanim.kod, ozet: iskelet.ozet[tanim.kod] ?? [] };
-      else yield { status: "bolum", bolum: tanim.kod, degerlendirme: iskelet.degerlendirme };
+    }
+
+    const kararIdleri = istek.karar_idleri ?? [];
+    let yazim: YazimSonucu | null = null;
+    if (kararIdleri.length > 0) {
+      yield { status: "info", asama: "bolumler", mesaj: `${kararIdleri.length} karar maskelenip modele gönderiliyor; özet ve değerlendirme yazılıyor` };
+      try {
+        yazim = await (await servis()).yaz({ ...istek, karar_idleri: kararIdleri }, signal);
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") throw e;
+        yield { status: "warning", mesaj: `Kararlardan yazım yapılamadı: ${e instanceof LexisApiError ? e.message : LEXIS_GENEL_HATA} Taslak iskelet olarak bırakıldı.` };
+      }
+    } else {
+      yield { status: "info", asama: "bolumler", mesaj: "Bölümler hazırlanıyor" };
+    }
+    const ozet = { ...iskelet.ozet, ...(yazim?.ozet ?? {}) };
+    const degerlendirme = yazim?.degerlendirme ?? iskelet.degerlendirme;
+    const muallak = yazim?.muallak ?? iskelet.muallak;
+    for (const tanim of bolumler) {
+      if (tanim.tur === "OZET") yield { status: "bolum", bolum: tanim.kod, ozet: ozet[tanim.kod] ?? [] };
+      else if (tanim.tur === "MUHAKEME") yield { status: "bolum", bolum: tanim.kod, degerlendirme };
     }
     yield { status: "info", asama: "muallak", mesaj: "Muallak önerisi hesaplanıyor" };
-    yield { status: "muallak", oneri: iskelet.muallak };
+    yield { status: "muallak", oneri: muallak };
     yield { status: "info", asama: "denetim", mesaj: "Taslak denetleniyor" };
     const taslak: LexisTaslak = {
       case_id: istek.case_id,
@@ -594,14 +719,29 @@ const gercekLexisApi: LexisApi = {
       rapor_turu: istek.rapor_turu,
       iskelet: istek.iskelet,
       etiketli: iskelet.etiketli,
-      ozet: iskelet.ozet,
-      degerlendirme: iskelet.degerlendirme,
-      muallak: iskelet.muallak,
+      ozet,
+      degerlendirme,
+      muallak,
       muallak_maddi: null,
       muallak_manevi: null,
       emsaller: istek.emsal_sha,
+      kararlar: kararIdleri,
     };
     yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
+  },
+  async kararAra(suzgec, signal) {
+    return (await servis()).kararAra(suzgec, signal);
+  },
+  async rafSecenekleri(signal) {
+    return (await servis()).rafSecenekleri(signal);
+  },
+  async kartKararlari(caseId, signal) {
+    return (await servis()).kartKararlari(caseId, signal);
+  },
+  async kararGetir(id, signal) {
+    const karar = await (await servis()).kararGetir(id, signal);
+    gercekKararMetinleri.set(id, kararKaynakMetni(karar));
+    return karar;
   },
   async denetle(taslak, signal) {
     if (signal?.aborted) throw iptalHatasi();

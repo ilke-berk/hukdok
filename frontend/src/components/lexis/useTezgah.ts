@@ -14,9 +14,11 @@ import {
   type Madde,
   type MuallakOnerisi,
   type OzetParagraf,
+  type RafKarari,
   type TaslakIstegi,
   type TaslakKaydi,
   type UretimAsamasi,
+  type YazimDurumu,
 } from "@/types/lexis";
 import type { BolumDurumu } from "./BolumGezgini";
 import type { KunyeSecimi } from "./KunyeKarti";
@@ -53,8 +55,10 @@ interface KayitBaglami {
 
 const saat = () => new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
-function kayitGovdesi(taslak: LexisTaslak, durumlar: BolumDurumlari, secili: Iterable<number>, uyariSayisi: number): KayitGovdesi {
-  return { taslak, ekran: { bolum_durumlari: durumlar, secili_belgeler: [...secili].sort((a, b) => a - b) }, uyari_sayisi: uyariSayisi };
+const sirali = (idler: Iterable<number>) => [...idler].sort((a, b) => a - b);
+
+function kayitGovdesi(taslak: LexisTaslak, durumlar: BolumDurumlari, secili: Iterable<number>, seciliKararlar: Iterable<number>, uyariSayisi: number): KayitGovdesi {
+  return { taslak, ekran: { bolum_durumlari: durumlar, secili_belgeler: sirali(secili), secili_kararlar: sirali(seciliKararlar) }, uyari_sayisi: uyariSayisi };
 }
 
 /** Henüz hiçbir bölümü gelmemiş taslak (yarıda kesilen yazım) kaydedilmez: kayıtlı hâlin üzerine boş kabuk yazılmasın. */
@@ -68,6 +72,9 @@ const bosKabuk = (t: LexisTaslak) => t.degerlendirme === null && Object.keys(t.e
  *   bir önceki render'ına bakmasınlar diye. Her yazma `koy` üzerinden geçer.
  * - Metin düzenlemesi denetimi BAYATLATIR (madde "denetlenmedi" görünür); alandan çıkınca ya da yapısal
  *   değişiklikte (madde ekle/sil/taşı) yeniden denetlenir. Geç gelen eski denetim cevabı yok sayılır.
+ * - KARARLAR: dava seçilince karta bağlı kararlar karar rafından gelir (`lexisApi.kartKararlari`). Servis kararlardan
+ *   yazımı açmışsa seçili kararlar `yaz` isteğiyle gider (özet + değerlendirme modelden); kapalıysa liste yalnız
+ *   okunur, taslak iskelettir. Taslak yazıldığı kararları taşır (`kararlar`): denetim alıntıyı onlarda arar.
  * - KALICILIK (`lexisApi.kalici`, gerçek dava kipi): dava seçilince kayıtlı taslak varsa künyesi, bölüm durumları,
  *   belge seçimi ve emsalleriyle geri açılır. Taslak her değişiklikten `KAYIT_GECIKMESI` sonra okunan sürümle
  *   kaydedilir; dava değişiminde ve sayfadan çıkışta bekleyen kayıt hemen gönderilir. Kayıtlar sıraya girer (aynı
@@ -82,6 +89,12 @@ export function useTezgah() {
   const [emsaller, setEmsaller] = useState<Emsal[]>([]);
   const [emsalYukleniyor, setEmsalYukleniyor] = useState(false);
   const [emsalHatasi, setEmsalHatasi] = useState<string | null>(null);
+  // Dava kartına bağlı kararlar (karar rafından) ve kararlardan yazımın bu kurulumda açık olup olmadığı.
+  const [kararlar, setKararlar] = useState<RafKarari[]>([]);
+  const [kararYukleniyor, setKararYukleniyor] = useState(false);
+  const [kararHatasi, setKararHatasi] = useState<string | null>(null);
+  const [seciliKararlar, setSeciliKararlar] = useState<ReadonlySet<number>>(new Set());
+  const [yazimDurumu, setYazimDurumu] = useState<YazimDurumu | null>(null);
 
   const [taslak, setTaslak] = useState<LexisTaslak | null>(null);
   const [bolumDurumlari, setBolumDurumlari] = useState<BolumDurumlari>({});
@@ -103,6 +116,7 @@ export function useTezgah() {
   const kimliklerRef = useRef<string[]>([]);
   const dosyaIstegi = useRef<AbortController | null>(null);
   const emsalIstegi = useRef<AbortController | null>(null);
+  const kararIstegi = useRef<AbortController | null>(null);
   const akisIstegi = useRef<AbortController | null>(null);
   const denetimSayaci = useRef(0);
   const kimlikSayaci = useRef(0);
@@ -191,6 +205,7 @@ export function useTezgah() {
     () => () => {
       dosyaIstegi.current?.abort();
       emsalIstegi.current?.abort();
+      kararIstegi.current?.abort();
       akisIstegi.current?.abort();
       kaydiBosalt();
     },
@@ -203,7 +218,7 @@ export function useTezgah() {
     if (!lexisApi.kalici || !taslak || akis !== null || geriYukleniyor || bosKabuk(taslak)) return;
     const baglam = baglamlar.current.get(taslak.case_id);
     if (!baglam || baglam.kilitli) return;
-    const govde = kayitGovdesi(taslak, bolumDurumlari, seciliBelgeler, uyarilar.length);
+    const govde = kayitGovdesi(taslak, bolumDurumlari, seciliBelgeler, seciliKararlar, uyarilar.length);
     const iz = JSON.stringify(govde);
     if (kayitZamanlayici.current) clearTimeout(kayitZamanlayici.current);
     kayitZamanlayici.current = null;
@@ -213,7 +228,32 @@ export function useTezgah() {
     }
     bekleyenKayit.current = { caseId: taslak.case_id, govde, iz };
     kayitZamanlayici.current = setTimeout(kaydiBosalt, kayitGecikmesi);
-  }, [taslak, bolumDurumlari, seciliBelgeler, uyarilar, akis, geriYukleniyor, kaydiBosalt]);
+  }, [taslak, bolumDurumlari, seciliBelgeler, seciliKararlar, uyarilar, akis, geriYukleniyor, kaydiBosalt]);
+
+  /**
+   * Davanın kararlarını ve yazım durumunu yükler. `varsayilanSec`: yazım açıksa mahkeme kararlarının hepsi seçili
+   * gelir (kayıtlı taslak açılırken seçim kayıttan gelir, dokunulmaz). Hata dosyayı engellemez: liste boş kalır.
+   */
+  const kararlariYukle = useCallback((caseId: number, varsayilanSec: boolean) => {
+    kararIstegi.current?.abort();
+    const ac = new AbortController();
+    kararIstegi.current = ac;
+    setKararYukleniyor(true);
+    setKararHatasi(null);
+    lexisApi
+      .kartKararlari(caseId, ac.signal)
+      .then((sonuc) => {
+        setKararlar(sonuc.kararlar);
+        setYazimDurumu(sonuc.yazim);
+        if (varsayilanSec) setSeciliKararlar(new Set(sonuc.yazim.acik ? sonuc.kararlar.filter((k) => k.belge_turu === "karar").map((k) => k.id) : []));
+      })
+      .catch((e: unknown) => {
+        if (!iptalMi(e)) setKararHatasi(hataMetni(e, "Kararlar alınamadı."));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setKararYukleniyor(false);
+      });
+  }, []);
 
   const emsalleriYukle = useCallback((d: DosyaGirdisi) => {
     emsalIstegi.current?.abort();
@@ -266,6 +306,8 @@ export function useTezgah() {
       const caseId = d.dava.case_id;
       const mevcut = new Set(d.belgeler.map((b) => b.id));
       const secili = new Set((kayitli.ekran.secili_belgeler ?? [...mevcut]).filter((id) => mevcut.has(id)));
+      // Karar seçimi kayıttan: yazımda seçili bırakılanlar, yoksa taslağın yazıldığı kararlar.
+      const seciliKarar = new Set(kayitli.ekran.secili_kararlar ?? t.kararlar ?? []);
       const durumlar = Object.fromEntries(
         ISKELET_BOLUMLERI[t.iskelet].map((b) => {
           const kayitliDurum = kayitli.ekran.bolum_durumlari?.[b.kod];
@@ -277,6 +319,8 @@ export function useTezgah() {
       baglamlar.current.set(caseId, { surum: kayitli.surum, son: null, kilitli: false });
       setDosya({ ...d, sirket: t.sirket, rapor_turu: t.rapor_turu, iskelet: t.iskelet });
       setSeciliBelgeler(secili);
+      setSeciliKararlar(seciliKarar);
+      kararlariYukle(caseId, false);
       setBolumDurumlari(durumlar);
       koy(t);
       kimlikleriKoy((t.degerlendirme?.maddeler ?? []).map(yeniKimlik));
@@ -291,20 +335,21 @@ export function useTezgah() {
         const uyarilar = await denetle();
         if (signal.aborted) return;
         const baglam = baglamlar.current.get(caseId);
-        if (baglam) baglam.son = JSON.stringify(kayitGovdesi(t, durumlar, secili, uyarilar?.length ?? 0));
+        if (baglam) baglam.son = JSON.stringify(kayitGovdesi(t, durumlar, secili, seciliKarar, uyarilar?.length ?? 0));
         setKayit({ tur: "kaydedildi", zaman: tarihSaatYaz(kayitli.guncelleme) });
         setAcilanKayit({ guncelleyen: kayitli.guncelleyen, guncelleme: kayitli.guncelleme });
       } finally {
         if (!signal.aborted) setGeriYukleniyor(false);
       }
     },
-    [denetle, koy, kimlikleriKoy, yeniKimlik],
+    [denetle, kararlariYukle, koy, kimlikleriKoy, yeniKimlik],
   );
 
   const davaSec = useCallback(
     (dava: LexisDava | null) => {
       dosyaIstegi.current?.abort();
       emsalIstegi.current?.abort();
+      kararIstegi.current?.abort();
       kaydiBosalt(); // önceki davanın bekleyen kaydı beklemeden gider
       etkinDava.current = dava?.case_id ?? null;
       taslagiSifirla();
@@ -314,6 +359,11 @@ export function useTezgah() {
       setEmsalHatasi(null);
       setEmsalYukleniyor(false);
       setSeciliBelgeler(new Set());
+      setKararlar([]);
+      setKararHatasi(null);
+      setKararYukleniyor(false);
+      setSeciliKararlar(new Set());
+      setYazimDurumu(null);
       setKayit({ tur: "yok" });
       setAcilanKayit(null);
       setGeriYukleniyor(false);
@@ -349,6 +399,7 @@ export function useTezgah() {
           setDosya(d);
           setSeciliBelgeler(new Set(d.belgeler.map((b) => b.id)));
           emsalleriYukle(d);
+          kararlariYukle(dava.case_id, true);
         })
         .catch((e: unknown) => {
           if (!iptalMi(e)) setDosyaHatasi(hataMetni(e, "Dosya alınamadı."));
@@ -357,7 +408,7 @@ export function useTezgah() {
           if (!ac.signal.aborted) setDosyaYukleniyor(false);
         });
     },
-    [emsalleriYukle, geriYukle, kaydiBosalt, taslagiSifirla],
+    [emsalleriYukle, geriYukle, kararlariYukle, kaydiBosalt, taslagiSifirla],
   );
 
   /** Şirket / tür / iskelet seçimi. Yazılmış taslağı siler (çağıran önce onay alır); şirket ya da tür değişince emsaller yeniden aranır. */
@@ -399,6 +450,15 @@ export function useTezgah() {
     });
   }, []);
 
+  const kararSec = useCallback((id: number, secili: boolean) => {
+    setSeciliKararlar((onceki) => {
+      const yeni = new Set(onceki);
+      if (secili) yeni.add(id);
+      else yeni.delete(id);
+      return yeni;
+    });
+  }, []);
+
   const emsalCikar = useCallback((sha256: string) => {
     setEmsaller((onceki) => onceki.filter((e) => e.kayit.okuma.sha256 !== sha256));
   }, []);
@@ -426,6 +486,8 @@ export function useTezgah() {
       iskelet: dosya.iskelet,
       belge_idleri: dosya.belgeler.filter((b) => seciliBelgeler.has(b.id)).map((b) => b.id),
       emsal_sha: emsaller.map((e) => e.kayit.okuma.sha256),
+      // Kararlardan yazım yalnız servis açmışsa: kapalıyken seçim gönderilmez, taslak iskelet gelir.
+      karar_idleri: yazimDurumu?.acik ? kararlar.filter((k) => seciliKararlar.has(k.id)).map((k) => k.id) : [],
     };
     // Önce eski akış kesilir ve taslak sıfırlanır; yeni akışın denetçisi SONRA kurulur (sıfırlama onu kesmesin).
     taslagiSifirla();
@@ -443,6 +505,7 @@ export function useTezgah() {
       muallak_maddi: null,
       muallak_manevi: null,
       emsaller: istek.emsal_sha,
+      kararlar: istek.karar_idleri ?? [],
     });
     setBolumDurumlari(Object.fromEntries(bolumler.map((b) => [b.kod, "yaziliyor"])) as BolumDurumlari);
     setAkis({ asama: "olgular", mesaj: null });
@@ -457,6 +520,8 @@ export function useTezgah() {
         if (!mevcut) break;
         if (olay.status === "info") {
           setAkis({ asama: olay.asama, mesaj: olay.mesaj });
+        } else if (olay.status === "warning") {
+          setAkisHatasi(olay.mesaj); // akış sürer: kararlardan yazım yapılamadı, iskelet geliyor
         } else if (olay.status === "bolum") {
           koy({
             ...mevcut,
@@ -485,7 +550,7 @@ export function useTezgah() {
         setAkis(null);
       }
     }
-  }, [dosya, emsaller, seciliBelgeler, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
+  }, [dosya, emsaller, kararlar, seciliBelgeler, seciliKararlar, yazimDurumu, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
 
   const durdur = useCallback(() => akisIstegi.current?.abort(), []);
 
@@ -650,6 +715,11 @@ export function useTezgah() {
     emsaller,
     emsalYukleniyor,
     emsalHatasi,
+    kararlar,
+    kararYukleniyor,
+    kararHatasi,
+    seciliKararlar,
+    yazimDurumu,
     taslak,
     bolumDurumlari,
     akis,
@@ -668,6 +738,7 @@ export function useTezgah() {
     davaSec,
     kunyeDegistir,
     belgeSec,
+    kararSec,
     emsalCikar,
     emsalEkle,
     yaz,

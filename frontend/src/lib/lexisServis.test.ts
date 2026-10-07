@@ -121,6 +121,91 @@ describe("gerçek dava kipi", () => {
     expect(olaylar[olaylar.length - 1]).toEqual({ status: "failed", error_ozet: "Dava kartı bulunamadı.", error_kod: "analysis_error" });
   });
 
+  const KARAR_METNI = "Bilirkişi raporunda hekime atfı kabil kusur bulunmadığı bildirilmiştir. HÜKÜM: Davanın REDDİNE 05.05.2021 tarihinde karar verildi.";
+  const KARAR = { id: 71, belge_turu: "karar", mahkeme: "Örnekköy 2. İdare Mahkemesi", esas_no: "2019/123", karar_no: "2021/456", karar_tarihi: "2021-05-05", kart_id: 501 };
+  const YAZIM = {
+    ozet: {
+      iddia: [{ metin: "Davacı, ameliyat sonrası zarar gördüğünü ileri sürmüştür.", kaynak_belge_id: null, kaynak_karar_id: 71, dayanak_alinti: "hekime atfı kabil kusur bulunmadığı" }],
+      // KISA iskeletinde yargı süreci bölümü yok: servis göndermez; gönderse de akış yalnız iskeletin bölümlerini verir.
+    },
+    degerlendirme: {
+      giris: ISKELET.degerlendirme.giris,
+      maddeler: [
+        { metin: "Bilirkişi raporunda sigortalı hekime atfı kabil kusur bulunmadığının bildirildiği,", tur: "TESPIT", dayanak_bolum: "yargi_sureci", dayanak_alinti: "hekime atfı kabil kusur bulunmadığı bildirilmiştir" },
+        { metin: "[…] muallak", tur: "KALIP", dayanak_bolum: null, dayanak_alinti: null },
+      ],
+      sulh_uygunluk: "",
+      muallak_gerekcesi: "Bilirkişi kusur bulmamış.",
+    },
+    muallak: { ...MUALLAK, kusur_tespiti: "HATA_YOK", risk_duzeyi: "DUSUK" },
+    kararlar: [71],
+    uyarilar: [],
+    model: "sahte-model",
+    maske: { bilinen: 2, kalip: 1, ogrenilen: 0 },
+    gonderilen_karakter: 140,
+  };
+
+  it("karar rafı, kartın kararları ve tek karar servise gider; arama metni gövdededir", async () => {
+    const sayfa = { toplam: 1, kararlar: [KARAR] };
+    const secenekler = { derece: ["YEREL"], uzmanlik: [], belge_turu: ["karar"], hukum_sinifi: ["RED_ESASTAN"], sonuc_muvekkil: [] };
+    const kart = { kararlar: [KARAR], yazim: { acik: false, neden: "kapali", model: null } };
+    apiMock.fetch.mockImplementation(async (yol: string, init: RequestInit) => {
+      const uc = yol.replace("/lexis-api", "");
+      if (uc === "/karar-rafi") return yanit(200, init.method === "GET" ? secenekler : sayfa);
+      return { "/kararlar/501": yanit(200, kart), "/karar/71": yanit(200, { ...KARAR, metin: KARAR_METNI }) }[uc] ?? yanit(404, null, "text/html");
+    });
+
+    const suzgec = { hukum_sinifi: "RED_ESASTAN", metin: "kusur bulunmadığı", limit: 50, offset: 0 };
+    expect(await lexisApi.kararAra(suzgec)).toEqual(sayfa);
+    expect(cagri(0)).toEqual({ yol: "/lexis-api/karar-rafi", yontem: "POST", govde: suzgec });
+    expect(await lexisApi.rafSecenekleri()).toEqual(secenekler);
+    expect(cagri(1)).toMatchObject({ yol: "/lexis-api/karar-rafi", yontem: "GET" });
+    expect(await lexisApi.kartKararlari(501)).toEqual(kart);
+    expect(cagri(2).yol).toBe("/lexis-api/kararlar/501");
+    expect((await lexisApi.kararGetir(71)).metin).toBe(KARAR_METNI);
+    expect(cagri(3).yol).toBe("/lexis-api/karar/71");
+  });
+
+  it("karar seçilince taslak kararlardan yazılır: iskelet + /yaz; denetim alıntıyı kararda arar", async () => {
+    servisKur({ "/yaz": yanit(200, YAZIM), "/karar/71": yanit(200, { ...KARAR, metin: KARAR_METNI }) });
+    const olaylar: LexisAkisOlayi[] = [];
+    for await (const olay of lexisApi.taslakYaz({ ...ISTEK, emsal_sha: ["a"], karar_idleri: [71] })) olaylar.push(olay);
+
+    const yollar = apiMock.fetch.mock.calls.map((c) => (c[0] as string).replace("/lexis-api", ""));
+    expect(yollar.slice(0, 2)).toEqual(["/iskelet", "/yaz"]);
+    // Modele gidecekleri servis kendisi okur: istekte yalnız kimlikler vardır, karar metni tarayıcıdan GİTMEZ.
+    expect(cagri(1).govde).toEqual({ case_id: 501, sirket: "QUICK", rapor_turu: "ANA", iskelet: "KISA", karar_idleri: [71], emsal_sha: ["a"] });
+    expect(olaylar.find((o) => o.status === "bolum" && o.bolum === "iddia")).toMatchObject({ ozet: YAZIM.ozet.iddia });
+    expect(olaylar.find((o) => o.status === "bolum" && o.bolum === "degerlendirme")).toMatchObject({ degerlendirme: YAZIM.degerlendirme });
+    expect(olaylar.find((o) => o.status === "muallak")).toMatchObject({ oneri: { risk_duzeyi: "DUSUK" } });
+    expect(olaylar.some((o) => o.status === "warning")).toBe(false);
+    const son = olaylar[olaylar.length - 1];
+    expect(son.status).toBe("complete");
+    // Denetim kararın metnini servisten alır: maddenin ve paragrafın alıntısı kararda bulunur.
+    expect(yollar).toContain("/karar/71");
+    const kodlar = son.status === "complete" ? son.uyarilar.map((u) => u.kod) : [];
+    expect(kodlar).not.toContain("ALINTI_BULUNAMADI");
+    expect(kodlar).not.toContain("DAYANAKSIZ");
+  });
+
+  it("kararlardan yazım yapılamazsa akış kesilmez: uyarı verilir, taslak iskelet olarak tamamlanır", async () => {
+    servisKur({ "/yaz": yanit(503, { detail: "Kararlardan yazım bu kurulumda kapalı." }), "/karar/71": yanit(200, { ...KARAR, metin: KARAR_METNI }) });
+    const olaylar: LexisAkisOlayi[] = [];
+    for await (const olay of lexisApi.taslakYaz({ ...ISTEK, karar_idleri: [71] })) olaylar.push(olay);
+    expect(olaylar.find((o) => o.status === "warning")).toEqual({
+      status: "warning",
+      mesaj: "Kararlardan yazım yapılamadı: Kararlardan yazım bu kurulumda kapalı. Taslak iskelet olarak bırakıldı.",
+    });
+    expect(olaylar.find((o) => o.status === "bolum" && o.bolum === "degerlendirme")).toMatchObject({ degerlendirme: ISKELET.degerlendirme });
+    expect(olaylar[olaylar.length - 1].status).toBe("complete");
+  });
+
+  it("karar seçilmemişse /yaz çağrılmaz: modele hiçbir şey gitmez", async () => {
+    servisKur();
+    for await (const _olay of lexisApi.taslakYaz({ ...ISTEK, karar_idleri: [] })) void _olay;
+    expect(apiMock.fetch.mock.calls.map((c) => c[0])).not.toContain("/lexis-api/yaz");
+  });
+
   it("kütüphane taraması, tek rapor, karar bankası ve elle emsal puanlaması servise gider", async () => {
     const kayit = { okuma: { sha256: "a", bolumler: { iddia: "[HASTA] iddiası." }, kararlar: [] }, etiketler: {}, klasor: "a", dosya_no: "9.2001" };
     const emsal = { kayit, puan: 5, bilesenler: [], gerekce: "aynı şirket" };

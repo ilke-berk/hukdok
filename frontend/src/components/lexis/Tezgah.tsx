@@ -4,7 +4,7 @@ import { FolderOpen, PenLine, ScrollText, ShieldCheck, X } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeletons";
 import { useConfirm } from "@/hooks/useConfirm";
-import { GERCEK_ISKELET_NOTU, lexisApi, veriKipi } from "@/lib/lexisApi";
+import { GERCEK_ISKELET_NOTU, GERCEK_YAZIM_NOTU, lexisApi, veriKipi } from "@/lib/lexisApi";
 import { tarihSaatYaz } from "@/lib/lexisMetin";
 import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
@@ -17,13 +17,15 @@ import { EmsalEkleDiyalogu } from "./EmsalEkleDiyalogu";
 import { EmsalListesi } from "./EmsalListesi";
 import { EmsalOkuyucu } from "./EmsalOkuyucu";
 import { EtiketliBolum } from "./EtiketliBolum";
+import { KararListesi } from "./KararListesi";
+import { KararOkuyucu } from "./KararOkuyucu";
 import { KunyeKarti, type KunyeSecimi } from "./KunyeKarti";
 import { MuallakKarti } from "./MuallakKarti";
 import { OzetBolum } from "./OzetBolum";
 import { UretimSeridi } from "./UretimSeridi";
 import { UyariListesi } from "./UyariListesi";
 import { useTezgah } from "./useTezgah";
-import { BAGLANTI_SINIFI, bolumKimligi, bolumUyariSayilari, hataMetni, uyariHedefi } from "./yardimcilar";
+import { BAGLANTI_SINIFI, bolumKimligi, bolumUyariSayilari, hataMetni, kararKunyesi, uyariHedefi } from "./yardimcilar";
 
 type Vurgu = { madde: number | null; alan: string | null; bolum: BolumKodu | null };
 
@@ -49,6 +51,7 @@ export function Tezgah() {
   const [seciliMadde, setSeciliMadde] = useState<number | null>(null);
   const [vurgu, setVurgu] = useState<Vurgu | null>(null);
   const [okunan, setOkunan] = useState<{ kayit: KutuphaneKaydi; emsal: Emsal | null } | null>(null);
+  const [okunanKarar, setOkunanKarar] = useState<number | null>(null);
   const [ekleAcik, setEkleAcik] = useState(false);
   const [wordIniyor, setWordIniyor] = useState(false);
   const vurguZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -75,6 +78,9 @@ export function Tezgah() {
   const uyariSayilari = useMemo(() => bolumUyariSayilari(t.uyarilar), [t.uyarilar]);
   const hataSayisi = t.uyarilar.filter((u) => u.seviye === "HATA").length;
   const kilitli = t.yaziliyor || t.geriYukleniyor;
+  // Kararlardan yazım: servis açmışsa ve en az bir karar seçiliyse seçili kararların maskeli metni modele gider.
+  const yazilacakKararlar = useMemo(() => (t.yazimDurumu?.acik ? t.kararlar.filter((k) => t.seciliKararlar.has(k.id)) : []), [t.yazimDurumu, t.kararlar, t.seciliKararlar]);
+  const kararlardanYazim = yazilacakKararlar.length > 0;
   // Gerçek kipte taslak sunucuda saklanır: dava değişimi taslağı SİLMEZ (onay gerekmez) — kayıt başarısızsa gerekir.
   const kayitsiz = t.kayit.tur === "hata" || t.kayit.tur === "cakisma";
 
@@ -116,25 +122,31 @@ export function Tezgah() {
   const yaz = async () => {
     if (!dosya) return;
     const secili = dosya.belgeler.filter((b) => t.seciliBelgeler.has(b.id));
+    const emsalSatiri = { label: "Emsal raporlar", value: t.emsaller.length > 0 ? `${t.emsaller.length} rapor (maskeli)` : "Emsal yok" };
     const onay = await confirm({
       tone: taslak ? "warning" : "info",
       title: taslak ? "Taslak yeniden yazılacak" : "Taslak yazılacak",
       body:
         (taslak ? "Mevcut taslak ve düzeltmeleriniz silinir. " : "") +
-        (gercek
-          ? GERCEK_ISKELET_NOTU
-          : "Seçili belgelerin metni ve emsal raporların maskeli metni taslak yazımı için modele gönderilir. (Önizleme: hiçbir şey gönderilmez, örnek taslak gösterilir.)"),
+        (kararlardanYazim
+          ? GERCEK_YAZIM_NOTU
+          : gercek
+            ? GERCEK_ISKELET_NOTU
+            : "Seçili belgelerin metni ve emsal raporların maskeli metni taslak yazımı için modele gönderilir. (Önizleme: hiçbir şey gönderilmez, örnek taslak gösterilir.)"),
       details: [
-        // Modele gidecekler yalnız örnek kipte listelenir: gerçek kipte iskelet karttan kurulur, gönderim yoktur.
-        ...(gercek
-          ? []
-          : [
-              { label: "Belgeler", value: secili.length > 0 ? `${secili.length} belge — ${secili.map((b) => b.ad).join(", ")}` : "Belge seçilmedi" },
-              { label: "Emsal raporlar", value: t.emsaller.length > 0 ? `${t.emsaller.length} rapor (maskeli)` : "Emsal yok" },
-            ]),
+        // Modele gidecekler listelenir (K4). Gerçek kipte karar seçilmemişse iskelet karttan kurulur, gönderim yoktur.
+        ...(kararlardanYazim
+          ? [
+              { label: "Modele gidecek kararlar", value: `${yazilacakKararlar.length} karar (maskeli) — ${yazilacakKararlar.map((k) => kararKunyesi(k)).join("; ")}` },
+              emsalSatiri,
+              { label: "Model", value: t.yazimDurumu?.model ?? "—" },
+            ]
+          : gercek
+            ? []
+            : [{ label: "Belgeler", value: secili.length > 0 ? `${secili.length} belge — ${secili.map((b) => b.ad).join(", ")}` : "Belge seçilmedi" }, emsalSatiri]),
         { label: "Rapor", value: [dosya.sirket && SIRKET_ADLARI[dosya.sirket], dosya.rapor_turu === "EK" ? "ek rapor" : "ana rapor", `${bolumler.length} bölüm`].filter(Boolean).join(" · ") },
       ],
-      confirmLabel: taslak ? "Yeniden yaz" : "Taslağı yaz",
+      confirmLabel: kararlardanYazim ? "Gönder ve yaz" : taslak ? "Yeniden yaz" : "Taslağı yaz",
     });
     if (!onay) return;
     setSeciliMadde(null);
@@ -218,6 +230,16 @@ export function Tezgah() {
                 kilitli={kilitli}
               />
               <BelgeListesi belgeler={dosya.belgeler} secili={t.seciliBelgeler} onSec={t.belgeSec} kilitli={kilitli} />
+              <KararListesi
+                kararlar={t.kararlar}
+                yukleniyor={t.kararYukleniyor}
+                hata={t.kararHatasi}
+                yazim={t.yazimDurumu}
+                secili={t.seciliKararlar}
+                onSec={t.kararSec}
+                onOku={setOkunanKarar}
+                kilitli={kilitli}
+              />
               <EmsalListesi
                 emsaller={t.emsaller}
                 yukleniyor={t.emsalYukleniyor}
@@ -232,12 +254,17 @@ export function Tezgah() {
         </div>
         {dosya && (
           <div className="shrink-0 p-3 border-t border-[var(--border)]">
-            {gercek && (
-              <p data-testid="lexis-iskelet-notu" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">
-                {GERCEK_ISKELET_NOTU}
-              </p>
-            )}
-            <FlowButton variant={taslak ? "secondary" : "primary"} className="w-full" onClick={() => void yaz()} disabled={kilitli || t.emsalYukleniyor}>
+            {gercek &&
+              (kararlardanYazim ? (
+                <p data-testid="lexis-yazim-notu" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">
+                  Seçili {yazilacakKararlar.length} karar maskelenerek modele gönderilir; özet ve değerlendirme kararlardan yazılır. Gönderimden önce onayınız istenir.
+                </p>
+              ) : (
+                <p data-testid="lexis-iskelet-notu" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">
+                  {GERCEK_ISKELET_NOTU}
+                </p>
+              ))}
+            <FlowButton variant={taslak ? "secondary" : "primary"} className="w-full" onClick={() => void yaz()} disabled={kilitli || t.emsalYukleniyor || t.kararYukleniyor}>
               <PenLine className="w-3.5 h-3.5" aria-hidden="true" />
               {taslak ? "Yeniden yaz" : "Taslağı yaz"}
             </FlowButton>
@@ -354,6 +381,8 @@ export function Tezgah() {
                           baslik={b.baslik}
                           paragraflar={taslak.ozet[b.kod] ?? []}
                           belgeler={dosya.belgeler}
+                          kararlar={t.kararlar}
+                          onKararOku={setOkunanKarar}
                           onDegistir={(sira, metin) => t.paragrafDegistir(b.kod, sira, metin)}
                           onEkle={() => t.paragrafEkle(b.kod)}
                           onSil={(sira) => t.paragrafSil(b.kod, sira)}
@@ -422,7 +451,7 @@ export function Tezgah() {
             onSinif={gercek ? (yama) => void t.muallakSinifDegistir(yama) : undefined}
             kilitli={kilitli}
           />
-          <DayanakGoruntuleyici taslak={taslak} sira={seciliMadde} bolumAdlari={bolumAdlari} />
+          <DayanakGoruntuleyici taslak={taslak} sira={seciliMadde} bolumAdlari={bolumAdlari} kararlar={t.kararlar} onKararOku={setOkunanKarar} />
         </div>
         {taslak && !t.yaziliyor && (
           <div className="shrink-0 p-3 border-t border-[var(--border)]">
@@ -441,6 +470,7 @@ export function Tezgah() {
       </aside>
 
       <EmsalOkuyucu kayit={okunan?.kayit ?? null} emsal={okunan?.emsal} onKapat={() => setOkunan(null)} />
+      <KararOkuyucu kararId={okunanKarar} onKapat={() => setOkunanKarar(null)} />
       <EmsalEkleDiyalogu
         acik={ekleAcik}
         haricSha={t.emsaller.map((e) => e.kayit.okuma.sha256)}

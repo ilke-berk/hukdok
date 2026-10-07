@@ -215,6 +215,83 @@ describe("KutuphaneTarayici", () => {
     await tikla(dugme("rapor 1", banka));
     expect(document.querySelector('[data-testid="lexis-emsal-okuyucu"]')).not.toBeNull();
   });
+
+  /** Raf aramasının gecikmesi (400 ms) kadar bekler. */
+  async function aramayiBekle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 460));
+    });
+    await bekle();
+  }
+
+  it("karar rafı: kararlar iki sonuç alanı, tutarlar ve gerekçe konularıyla listelenir; süzgeç ve metin araması daraltır", async () => {
+    await ciz(<KutuphaneTarayici />);
+    await tikla(dugme("Karar rafı"));
+    const raf = kap.querySelector<HTMLElement>('[data-testid="lexis-karar-rafi"]')!;
+    const satir = () => satirlar("lexis-raf-satiri");
+    expect(satir()).toHaveLength(3);
+    expect(kap.querySelector('[data-testid="lexis-raf-sayfalama"]')!.textContent).toContain("3 karar · sayfa 1/1");
+
+    // En yeni karar önce. Sonuç İKİ alandır (K22): kararın bütünü kısmen kabul, müvekkil yönünden ret — karma hüküm.
+    const ilk = satir()[0];
+    expect(ilk.textContent).toContain("İzmir 2. Asliye Hukuk Mahkemesi");
+    expect(ilk.textContent).toContain("2024/202 E., 2026/77 K.");
+    expect(ilk.textContent).toContain("20.02.2026");
+    const hucreler = Array.from(ilk.querySelectorAll("td")).map((td) => td.textContent ?? "");
+    expect(hucreler[3]).toBe("Kısmen kabul");
+    expect(hucreler[4]).toBe("Ret (esastan)karma hüküm");
+    expect(hucreler[5]).toContain("→ 75.000,00 TL");
+    expect(hucreler[6]).toBe("kusur 2 · bilirkişi / atk 1 · tazminat 1");
+    expect(hucreler[7]).toBe("#9002");
+    expect(ilk.querySelector("a")).toBeNull(); // örnek kipte kart uydurmadır: bağlantı yok
+
+    await yaz(raf.querySelector<HTMLSelectElement>('[aria-label="Kararın bütünü"]')!, "BASVURU_RET");
+    expect(satir()).toHaveLength(1);
+    expect(satir()[0].textContent).toContain("Adana Bölge İdare Mahkemesi");
+    await tikla(dugme("Süzgeçleri temizle"));
+    expect(satir()).toHaveLength(3);
+
+    await yaz(raf.querySelector<HTMLSelectElement>('[aria-label="Gerekçe konusu"]')!, "onam");
+    expect(satir().map((s) => s.querySelector("td")!.textContent)).toEqual(["Adana 1. İdare MahkemesiYerel mahkeme · Kadın Hastalıkları ve Doğum"]);
+    await tikla(dugme("Süzgeçleri temizle"));
+
+    // Metin araması karar metninin içinde de arar.
+    await yaz(raf.querySelector<HTMLInputElement>('input[type="search"]')!, "enfeksiyon kontrol kayıtları");
+    await aramayiBekle();
+    expect(satir()).toHaveLength(1);
+    expect(satir()[0].textContent).toContain("2024/202 E.");
+    await yaz(raf.querySelector<HTMLInputElement>('input[type="search"]')!, "kararlarda hiç geçmeyen sözcük");
+    await aramayiBekle();
+    expect(raf.textContent).toContain("Bu süzgeçlere uyan karar yok.");
+  });
+
+  it("karar rafı: satır kararı okuyucuda açar — hüküm, gerekçe konuları ve tam metin", async () => {
+    await ciz(<KutuphaneTarayici />);
+    await tikla(dugme("Karar rafı"));
+    await tikla(dugme("Adana 1. İdare Mahkemesi", kap.querySelector<HTMLElement>('[data-testid="lexis-karar-rafi"]')!));
+    const okuyucu = document.querySelector<HTMLElement>('[data-testid="lexis-karar-okuyucu"]')!;
+    expect(okuyucu.textContent).toContain("2023/404 E., 2025/118 K.");
+    expect(okuyucu.textContent).toContain("maskesiz metin");
+    const sonuclar = okuyucu.querySelector('[data-testid="lexis-karar-sonuclari"]')!.textContent!;
+    expect(sonuclar).toContain("Kararın bütünü (hükümden)Ret (esastan)");
+    expect(sonuclar).toContain("Müvekkil yönünden (HUKDOK etiketi)Ret (esastan)");
+    expect(okuyucu.textContent).toContain("Talep (manevi)400.000,00 TL");
+    expect(okuyucu.textContent).toContain("Vekâlet ücreti30.000,00 TL");
+    expect(okuyucu.querySelector('[aria-label="Hüküm"]')!.textContent).toContain("DAVANIN REDDİNE");
+    expect(okuyucu.querySelector('[aria-label="İddia"]')!.textContent).toContain("omuz takılması");
+
+    // Konu çipi gerekçeyi süzer; tam metin istenince açılır.
+    const gerekce = okuyucu.querySelector<HTMLElement>('[aria-label="Gerekçe"]')!;
+    expect(gerekce.textContent).toContain("3/3 paragraf");
+    await tikla(dugme("Onam", gerekce));
+    expect(gerekce.textContent).toContain("1/3 paragraf");
+    expect(gerekce.textContent).toContain("aydınlatılmış onam formunun bulunduğu");
+    expect(gerekce.textContent).not.toContain("hizmet kusuru bulunmadığından");
+    const tam = okuyucu.querySelector<HTMLElement>('[aria-label="Tam metin"]')!;
+    expect(tam.querySelector("p")).toBeNull();
+    await tikla(tam.querySelector("button")!);
+    expect(tam.querySelector("p")!.textContent).toContain("HÜKÜM: Açıklanan nedenlerle DAVANIN REDDİNE");
+  });
 });
 
 describe("KartBagiListesi", () => {

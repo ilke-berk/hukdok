@@ -160,7 +160,7 @@ filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G
 backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
 `lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). **Örnek kipte tek ağ isteği "Word indir"dir**
 (`lib/lexisWord.ts`, dinamik yüklenir): örnek taslak aynı origin'den `/lexis-api/word`'e gider, konteyner nginx'i
-(`nginx.conf:209-235`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil`, gecikmeli DNS, gerisi 404; bekçi
+(`nginx.conf:209-237`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz`, gecikmeli DNS, gerisi 404; bekçi
 `backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
 (`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HUKDOK kuralıyla kendisi doğrular,
 yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (dört biçim: Anadolu şablonu
@@ -178,7 +178,19 @@ yazdıkça kaydedilir ve dava yeniden seçilince geri açılır (`/lexis-api/tas
 yazmışsa 409 ve o oturum artık yazmaz; `components/lexis/useTezgah.ts` "KALICILIK"), Geçmiş koşu logunu
 (`/gecmis`), Kart bağı inceleme listesini ve insan seçimini (`/kart-baglari`, `/kart-sec`), Şirketler profilleri
 (`/profiller`, `/profil/{şirket}`; kriter tablosu muallak önerisinin ilk basamağıdır) servisten alır. Örnek kipte
-hiçbir şey kaydedilmez (`lexisApi.kalici`). Belgelerden yazım henüz bağlı DEĞİL.
+hiçbir şey kaydedilmez (`lexisApi.kalici`). **Karar rafı ve kararlardan yazım (05.10 gece, LOKAL — prod'da Lexis servisi
+kurulu değil):** servisin karar veritabanındaki büro kararları iki yerde görünür — Kütüphane › "Karar rafı"
+(`components/lexis/KararRafi.tsx`: süzgeç + karar metninde arama, sayfalı; `/lexis-api/karar-rafi`) ve tezgâhın sol
+bölgesinde davanın kendi kararları (`KararListesi.tsx`, `/lexis-api/kararlar/{case_id}`); tek karar `KararOkuyucu.tsx`
+(`/lexis-api/karar/{id}`). **Sonuç iki ayrı alandır** (kararın bütünü koddan · müvekkil yönünden HUKDOK etiketinden) —
+tek sütuna indirme. Karar seçiliyse VE servis yazımı açmışsa (`yazim.acik`; servis tarafında `LEXIS_YAZIM`,
+**varsayılan KAPALI — açmak kullanıcı kararı**) "Taslağı yaz" iskeletin ardından `/lexis-api/yaz`'ı çağırır: iddia /
+yargı süreci özeti ve değerlendirme kararlardan yazılır (servis kararları maskeleyip modele gönderir; tarayıcıdan
+yalnız karar KİMLİKLERİ gider, onay kutusu kararları künyeleriyle listeler). Yazım yapılamazsa akış kesilmez
+(`warning` olayı, taslak iskelet kalır). Taslak yazıldığı kararları taşır (`LexisTaslak.kararlar`); denetim
+(`lexisDenetim.ts`) dayanak alıntısını o kararların metninde de arar ve karardan yazılan özet paragrafındaki tutar /
+tarih / numarayı kaynak kararla karşılaştırır (`lexisMetin.kaynaktaOlmayanlar` — çekirdekteki kuralla AYNI tutulur).
+Dilekçe / hekim beyanı / poliçeden yazım hâlâ bağlı DEĞİL.
 Servis kapalıyken HUKDOK açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
 "çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
@@ -321,7 +333,7 @@ docker compose exec -T backend python -m ruff check .
 docker compose exec -T backend python -m mypy
 
 # Frontend testleri HOST'ta koşar (vitest)
-npm --prefix frontend test                                 # 2026-10-04: 1620 passed (147 dosya)
+npm --prefix frontend test                                 # 2026-10-06: 1636 passed (148 dosya)
 npm --prefix frontend run lint
 npm --prefix frontend run build
 ```

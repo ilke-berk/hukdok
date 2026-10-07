@@ -1,7 +1,7 @@
 // Lexis metin yardımcıları: dayanak alıntısı kaynak metinde çekirdeğin toleransıyla bulunur (boşluk, tırnak,
 // noktalama, büyük-küçük harf sayılmaz; `…` ile atlanan yerden bölünür) ve aralık ÖZGÜN metnin konumlarıdır.
 import { describe, expect, it } from "vitest";
-import { alintiAraliklari, alintiGeciyor, alintiParcalari, alintiUzunlugu, katla, tarihYaz, tutarOku, tutarYaz } from "./lexisMetin";
+import { alintiAraliklari, alintiGeciyor, alintiParcalari, alintiUzunlugu, katla, kaynaktaOlmayanlar, tarihYaz, tutarOku, tutarYaz } from "./lexisMetin";
 
 describe("katla", () => {
   it("yalnız harf ve rakamı tutar, Türkçe küçük harfe çevirir", () => {
@@ -35,6 +35,27 @@ describe("alintiAraliklari", () => {
   it("alıntı uzunluğu harf + rakam sayısıdır", () => {
     expect(alintiUzunlugu("a b, c!")).toBe(3);
     expect(alintiParcalari("bir ... iki … üç")).toEqual(["bir", "iki", "üç"]);
+  });
+
+  it("maske yer tutucusu bölme yeridir: maskeli metinden alınan alıntı maskesiz kararda bulunur", () => {
+    const karar = "Davalı hekim Dr. Örnek Bir tarafından yapılan ameliyatta kusur bulunmadığı bildirilmiştir.";
+    expect(alintiParcalari("hekim Dr. [SİGORTALI] tarafından yapılan [KİŞİ] [TC]")).toEqual(["hekim Dr.", "tarafından yapılan"]);
+    expect(alintiGeciyor(karar, "Davalı hekim Dr. [SİGORTALI] tarafından yapılan ameliyatta kusur bulunmadığı")).toBe(true);
+    expect(alintiGeciyor(karar, "hekim Dr. [SİGORTALI] tarafından yapılan ameliyatta kusur bulunduğu")).toBe(false);
+  });
+});
+
+describe("kaynaktaOlmayanlar", () => {
+  const karar = "Dava 10.03.2018 tarihinde açılmış, 2019/123 E., 2021/456 K. sayılı kararla 500.000,00 TL manevi tazminat istemi reddedilmiş, 17900 TL vekâlet ücretine hükmedilmiştir.";
+
+  it("kararda geçen tutar, tarih ve numara yazım farkıyla da tanınır", () => {
+    expect(kaynaktaOlmayanlar("10/03/2018 tarihli davada 500.000 TL talep, 17.900,00 TL vekâlet ücreti; 2019/123 E., 2021/0456 K.", karar)).toEqual([]);
+    expect(kaynaktaOlmayanlar("Tutar ve tarih içermeyen paragraf.", karar)).toEqual([]);
+  });
+
+  it("kararda geçmeyen tutar, tarih ve numarayı yazıldığı gibi döner (tekrarsız)", () => {
+    expect(kaynaktaOlmayanlar("11.03.2018 tarihinde 750.000,00 TL; 2020/999 E.; yine 750.000,00 TL", karar)).toEqual(["750.000,00", "11.03.2018", "2020/999"]);
+    expect(kaynaktaOlmayanlar("50.000,00 TL", karar)).toEqual(["50.000,00"]); // 500.000'in parçası sayılmaz
   });
 });
 

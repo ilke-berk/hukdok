@@ -11,6 +11,7 @@ import type {
   LexisTaslak,
   MuallakOnerisi,
   OzetParagraf,
+  RafKarariAyrinti,
   RaporBagi,
   RaporEtiketleri,
   RaporOkuma,
@@ -1280,4 +1281,126 @@ export const ORNEK_GECMIS: TaslakKosusu[] = [
     uyari_sayisi: 6,
     indirme_tarihi: null,
   },
+];
+
+// ---------------------------------------------------------------------------------------------
+// Karar rafı — dava kartına bağlı kararlar (uydurma; gerçek karar metni DEĞİLDİR)
+// ---------------------------------------------------------------------------------------------
+
+const BOS_KARAR: Omit<RafKarariAyrinti, "id" | "mahkeme" | "esas_no" | "karar_no" | "karar_tarihi" | "kart_id" | "metin" | "parcalar"> = {
+  belge_turu: "karar",
+  derece: "YEREL",
+  uzmanlik: null,
+  kart_bagi: "TEK_KART",
+  asamaya_bagli: true,
+  metin_uzunluk: 0,
+  hukum_sinifi: null,
+  hukum_yonleri: [],
+  sonuc_muvekkil: null,
+  sonuc_iliskisi: null,
+  hukmedilen_maddi: [],
+  hukmedilen_manevi: [],
+  hukmedilen_birlesik: [],
+  talep_maddi: [],
+  talep_manevi: [],
+  olay: null,
+  maluliyet_orani: [],
+  kusur_orani: [],
+  dayanak_kurul: [],
+  faiz: [],
+  konular: {},
+  kunye_kaynak: { mahkeme: "hukdok_db", esas_no: "hukdok_db", karar_no: "hukdok_db", karar_tarihi: "hukdok_db" },
+  vekalet_ucreti: [],
+  yargilama_gideri: [],
+  hukum_kaynagi: "paket_sonuc",
+  yas: [],
+  davaci_sayisi: null,
+};
+
+function ornekKarar(
+  p: Pick<RafKarariAyrinti, "id" | "mahkeme" | "esas_no" | "karar_no" | "karar_tarihi" | "kart_id" | "parcalar"> & Partial<RafKarariAyrinti>,
+): RafKarariAyrinti {
+  const metin = [...p.parcalar.iddia, ...p.parcalar.savunma, ...p.parcalar.gerekce.map((g) => g.metin), p.parcalar.hukum ?? ""].join("\n");
+  const konular: Record<string, number> = {};
+  for (const g of p.parcalar.gerekce) for (const k of g.konular) konular[k] = (konular[k] ?? 0) + 1;
+  return { ...BOS_KARAR, konular, metin, metin_uzunluk: metin.length, ...p };
+}
+
+export const ORNEK_KARARLAR: RafKarariAyrinti[] = [
+  ornekKarar({
+    id: 7001,
+    kart_id: 9004,
+    mahkeme: "Adana 1. İdare Mahkemesi",
+    esas_no: "2023/404",
+    karar_no: "2025/118",
+    karar_tarihi: "2025-03-12",
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    hukum_sinifi: "RED_ESASTAN",
+    hukum_yonleri: ["RED"],
+    sonuc_muvekkil: "RED_ESASTAN",
+    sonuc_iliskisi: "AYNI",
+    talep_maddi: [10000],
+    talep_manevi: [400000],
+    olay: "YARALANMA",
+    dayanak_kurul: ["ATK 7. İhtisas Kurulu"],
+    vekalet_ucreti: [30000],
+    parcalar: {
+      iddia: ["Davacı vekili, 14.02.2022 tarihli doğum sırasında gelişen omuz takılması nedeniyle bebekte kol sinir hasarı oluştuğunu, hizmet kusuru bulunduğunu ileri sürerek 10.000,00 TL maddi, 400.000,00 TL manevi tazminat talep etmiştir."],
+      savunma: ["Davalı idare, doğumun tıp kurallarına uygun yönetildiğini, gelişen durumun öngörülemeyen bir komplikasyon olduğunu savunmuştur."],
+      gerekce: [
+        { metin: "Adli Tıp Kurumu 7. İhtisas Kurulu raporunda; omuz takılmasının doğumun öngörülemeyen bir komplikasyonu olduğu, uygulanan manevraların tıp kurallarına uygun olduğu bildirilmiştir.", konular: ["bilirkisi", "kusur"] },
+        { metin: "Dosyada aydınlatılmış onam formunun bulunduğu, davacının doğum yöntemi hakkında bilgilendirildiği anlaşılmıştır.", konular: ["onam"] },
+        { metin: "Bu durumda idareye atfedilebilecek bir hizmet kusuru bulunmadığından tazminat isteminin reddi gerekmiştir.", konular: ["kusur", "tazminat"] },
+      ],
+      hukum: "HÜKÜM: Açıklanan nedenlerle DAVANIN REDDİNE, 30.000,00 TL vekâlet ücretinin davacıdan alınarak davalı idareye verilmesine 12.03.2025 tarihinde karar verildi.",
+    },
+  }),
+  ornekKarar({
+    id: 7002,
+    kart_id: 9004,
+    mahkeme: "Adana Bölge İdare Mahkemesi 2. İdari Dava Dairesi",
+    derece: "ISTINAF",
+    esas_no: "2025/901",
+    karar_no: "2025/1340",
+    karar_tarihi: "2025-09-18",
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    hukum_sinifi: "BASVURU_RET",
+    hukum_yonleri: ["UST_AYAKTA"],
+    sonuc_muvekkil: "BASVURU_RET",
+    sonuc_iliskisi: "AYNI",
+    parcalar: {
+      iddia: [],
+      savunma: [],
+      gerekce: [{ metin: "İstinaf başvurusuna konu Adana 1. İdare Mahkemesi kararının usul ve hukuka uygun olduğu, kaldırılmasını gerektiren bir neden bulunmadığı sonucuna varılmıştır.", konular: ["usul"] }],
+      hukum: "HÜKÜM: İstinaf başvurusunun REDDİNE 18.09.2025 tarihinde kesin olarak karar verildi.",
+    },
+  }),
+  ornekKarar({
+    id: 7003,
+    kart_id: 9002,
+    mahkeme: "İzmir 2. Asliye Hukuk Mahkemesi",
+    esas_no: "2024/202",
+    karar_no: "2026/77",
+    karar_tarihi: "2026-02-20",
+    uzmanlik: "Ortopedi ve Travmatoloji",
+    hukum_sinifi: "KISMEN_KABUL",
+    hukum_yonleri: ["KABUL", "RED"],
+    sonuc_muvekkil: "RED_ESASTAN",
+    sonuc_iliskisi: "KARMA",
+    talep_maddi: [50000],
+    talep_manevi: [300000],
+    hukmedilen_manevi: [75000],
+    olay: "YARALANMA",
+    kusur_orani: ["%25"],
+    faiz: ["olay tarihinden itibaren yasal faiz"],
+    parcalar: {
+      iddia: ["Davacı vekili, diz protezi ameliyatı sonrası gelişen enfeksiyonun geç fark edildiğini ileri sürerek 50.000,00 TL maddi, 300.000,00 TL manevi tazminat talep etmiştir."],
+      savunma: ["Davalı hekim vekili, enfeksiyonun bilinen bir komplikasyon olduğunu ve takibin eksiksiz yapıldığını savunmuştur."],
+      gerekce: [
+        { metin: "Bilirkişi kurulu raporunda; enfeksiyonun komplikasyon olduğu, ancak hastanenin enfeksiyon kontrol kayıtlarının eksik tutulduğu, hastaneye %25 oranında kusur atfedilebileceği bildirilmiştir.", konular: ["bilirkisi", "kusur"] },
+        { metin: "Davalı hekim yönünden kusur tespit edilmediğinden hekim hakkındaki davanın reddine, hastane yönünden 75.000,00 TL manevi tazminata hükmedilmesi gerekmiştir.", konular: ["kusur", "tazminat"] },
+      ],
+      hukum: "HÜKÜM: Davalı hekim yönünden davanın REDDİNE, davalı hastane yönünden davanın KISMEN KABULÜ ile 75.000,00 TL manevi tazminatın olay tarihinden itibaren işleyecek yasal faiziyle birlikte davalı hastaneden alınarak davacıya verilmesine 20.02.2026 tarihinde karar verildi.",
+    },
+  }),
 ];

@@ -17,17 +17,19 @@ import {
 } from "@/types/lexis";
 import { EmsalOkuyucu } from "./EmsalOkuyucu";
 import { KararBankasiTablosu } from "./KararBankasiTablosu";
+import { KararRafi } from "./KararRafi";
 import { useVeri } from "./useVeri";
 import { BAGLANTI_SINIFI, SECIM_SINIFI, TD_SINIFI, TH_SINIFI, hataMetni, muallakOzeti } from "./yardimcilar";
 
-type Gorunum = "raporlar" | "kararlar";
+type Gorunum = "raporlar" | "raf" | "kararlar";
 
 const BOS_FILTRE: KutuphaneFiltresi = { sirket: null, rapor_turu: null, uzmanlik: null, kusur_tespiti: null, risk_duzeyi: null, metin: "" };
 
 /**
  * "Kütüphane" sekmesi: emsal külliyatını rapor yazmadan da taramak için. Filtre şeridi (metin, şirket, tür,
- * uzmanlık, kusur tespiti, risk) + sonuç tablosu; satır maskeli raporu okuyucuda açar. İkinci görünüm karar
- * bankasıdır. Uzmanlık seçenekleri ilk (süzülmemiş) yüklemedeki raporlardan türetilir.
+ * uzmanlık, kusur tespiti, risk) + sonuç tablosu; satır maskeli raporu okuyucuda açar. Diğer görünümler: karar rafı
+ * (büronun kendi kararları, kodun çıkardığı sonuç / tutar / gerekçe alanlarıyla — `KararRafi`) ve karar bankası
+ * (raporlarda ANILAN kararlar). Uzmanlık seçenekleri ilk (süzülmemiş) yüklemedeki raporlardan türetilir.
  */
 export function KutuphaneTarayici() {
   const [gorunum, setGorunum] = useState<Gorunum>("raporlar");
@@ -67,13 +69,14 @@ export function KutuphaneTarayici() {
     <div data-testid="lexis-kutuphane" className="h-full overflow-y-auto px-3 md:px-6 py-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <h2 className="font-display text-[19px] font-medium text-[var(--fg)]">
-          Emsal kütüphanesi
+          {gorunum === "raf" ? "Karar rafı" : "Emsal kütüphanesi"}
           {gorunum === "raporlar" && veri && <span className="ml-2 font-mono text-[11px] text-[var(--fg-subtle)] tabular-nums">{veri.length} rapor</span>}
         </h2>
         <div role="group" aria-label="Görünüm" className="inline-flex border border-[var(--border)]">
           {(
             [
               ["raporlar", "Raporlar"],
+              ["raf", "Karar rafı"],
               ["kararlar", "Karar bankası"],
             ] as const
           ).map(([kod, ad]) => (
@@ -92,7 +95,9 @@ export function KutuphaneTarayici() {
         </div>
       </div>
 
-      {gorunum === "kararlar" ? (
+      {gorunum === "raf" ? (
+        <KararRafi />
+      ) : gorunum === "kararlar" ? (
         <div className="border border-[var(--border)] bg-[var(--bg)]">
           <KararBankasiTablosu onRaporOku={(sha) => void raporOku(sha)} />
         </div>

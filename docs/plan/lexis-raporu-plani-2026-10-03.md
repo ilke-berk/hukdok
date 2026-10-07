@@ -426,3 +426,49 @@ Saklama, kararı `PLAN.md` K16.
   ekran testleri sahte servisle yeşil; yeni uçlar HUKDOK adresinden kimliksiz 401 dönüyor. **Tarayıcıdan gerçek
   girişle kayıt, geri açma, kart seçimi ve profil kaydı denenmedi.** Açık kalanlar `lexis-rapor/PLAN.md` Aşama 8
   "Açık" listesinde (yedek düzeni, taslak okurken kart erişimi doğrulaması, sayfa kapanırken son ~1 sn).
+
+### 10.4 Karar rafı, şirket profilleri ve kararlardan yazım (05.10.2026 gece, lokal)
+
+**Kullanıcı isteği (05.10):** önceki özetin "henüz olmayanlar" listesi — "bunları ekleyelim … prodda değil ama
+lokalde". Üç kalem lokalde eklendi; dördüncüsü (prod'da Lexis servisi) kapsam dışı bırakıldı. Servis tarafının
+anlatımı ve ölçümleri: `lexis-rapor` README "Karar rafı", "Kararlardan yazım", "Şirket profilleri".
+
+```
+/lexis?veri=gercek
+   GET|POST /lexis-api/karar-rafi           raf: süzgeç seçenekleri / süzgeçlere uyan büro kararları (metinsiz)
+   GET      /lexis-api/kararlar/{case_id}   dava kartına bağlı kararlar + kararlardan yazım açık mı
+   GET      /lexis-api/karar/{id}           tek karar: künye, iki sonuç alanı, tutarlar, parçalar, tam metin
+   POST     /lexis-api/yaz                  kararlardan özet + değerlendirme (model; servis kararları maskeler)
+→ konteyner nginx (allowlist) → lexis_api:8020 → karar veritabanı (lexis_db) [/yaz ayrıca → Gemini]
+```
+
+- **Karar rafı.** Kütüphane sekmesinin yeni görünümü (`KararRafi.tsx`): 3.756 büro mahkeme kararı (lokal),
+  süzgeçler (kararın bütünü, müvekkil yönünden, derece, gerekçe konusu, uzmanlık, belge türü, yalnız karta bağlı) ve
+  karar metninde arama; sayfa 50. Satır kararı okuyucuda açar (`KararOkuyucu.tsx`): hüküm, iddia, savunma, konu
+  çipleriyle süzülen gerekçe paragrafları, istenirse tam metin. Tezgâhın sol bölgesinde seçili davanın kendi
+  kararları listelenir (`KararListesi.tsx`). Karar metni maskesizdir (büronun kendi kararı; yalnız yönetici).
+- **Sonuç iki ayrı alan** (`lexis-rapor` K22): "kararın bütünü" kodun hükümden okuduğu sınıf, "müvekkil yönünden"
+  HUKDOK'un etiketi. Karma hükümde bilerek farklıdır (ekranda "karma hüküm" / "incele" notu). Kodun okuyamadığı
+  alan boş gelir.
+- **Kararlardan yazım.** Tezgâhta karar işaretliyse ve servis yazımı açmışsa "Taslağı yaz" önce iskeleti kurar
+  (künye karttan), sonra `/yaz`'ı çağırır: iddia (ANADOLU / ALTILI / KISA), yargı süreci (ANADOLU; ek raporda "Ek
+  İnceleme") ve değerlendirme maddeleri kararlardan yazılır. Onay kutusu modele gidecek kararları künyeleriyle,
+  emsal sayısını ve modeli gösterir (K4). Özet paragrafı kaynak kararını çip olarak taşır; "Kaynakta göster"
+  alıntıyı kararın metninde vurgular. Yazım yapılamazsa taslak iskelet olarak kalır ve neden görünür.
+- **Gönderim varsayılan KAPALI.** Servis `LEXIS_YAZIM` açılmadıkça `/yaz`'ı 503 ile reddeder; ekran o durumda
+  kararları yalnız okutur ve "kararlardan yazım bu kurulumda kapalı" notunu gösterir. 05.10 kullanıcı talimatı
+  ("Gemini'ye şimdilik girme") gereği anahtar AÇILMADI ve **canlı model çağrısı yapılmadı**: yazımın kalitesi
+  ölçülmedi, yalnız akış sahte modelle sınandı.
+- **Şirketler.** Lokal `lexis_db`'ye beş şirket profili yüklendi (ana rapor biçimi; Anadolu ve AXA'da kriter metni).
+  Kriter TABLOSU bilerek boş: belgelerdeki tutarlar (Anadolu tablosu 2021'de bitiyor, AXA "düşük risk 10.000 TL")
+  2024-2026 raporlarındaki tutarlarla tutmuyor ve tablo emsalden önce kullanıldığı için öneriyi bozardı.
+- **HUKDOK tarafında değişen:** `nginx.conf` allowlist'i (+ bekçi testi, Vite proxy'si), `types/lexis.ts` (raf
+  tipleri, `OzetParagraf.kaynak_karar_id` / `dayanak_alinti`, `LexisTaslak.kararlar`, `warning` akış olayı),
+  `lib/lexisServis.ts`, `lib/lexisApi.ts` (raf yöntemleri, kararlardan yazım akışı, modül yüklemesi paylaşımlı),
+  `lib/lexisDenetim.ts` + `lib/lexisMetin.ts` (alıntı kararda aranır; tutar / tarih / numara denetimi),
+  `lib/lexisOrnekVeri.ts` (üç uydurma karar), `components/lexis/` (`KararRafi`, `KararOkuyucu`, `KararListesi` yeni;
+  `Tezgah`, `useTezgah`, `OzetBolum`, `DayanakGoruntuleyici`, `KutuphaneTarayici`), `pages/LexisPage.tsx`. HUKDOK
+  backend'ine yine dokunulmadı.
+- **Durum:** lokalde kurulu (iki konteyner yenilendi). Servis 351, frontend 1636 test yeşil; raf uçları gerçek
+  lokal veriyle HTTP düzeyinde, ekran sentetik örnekle tarayıcıda denendi. **Denenmeyenler:** gerçek girişle
+  tarayıcıdan tıklama; canlı model çağrısı; prod kurulumu. Açık kalanlar `lexis-rapor/PLAN.md` Aşama 4b notunda.

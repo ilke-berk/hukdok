@@ -31,13 +31,19 @@ const servisMock = vi.hoisted(() => ({
   taslakGetir: vi.fn(),
   taslakKaydet: vi.fn(),
   taslakSil: vi.fn(),
+  kartKararlari: vi.fn(),
+  kararGetir: vi.fn(),
+  yaz: vi.fn(),
 }));
 vi.mock("@/lib/lexisServis", () => servisMock);
 
+/** Kararsız dava, yazım kapalı — servisin varsayılan yanıtı. */
+const KARARSIZ = { kararlar: [], yazim: { acik: false, neden: "kapali", model: null } };
+
 import { Tezgah } from "./Tezgah";
 import { KAYIT_GECIKMESI, kayitGecikmesiAyarla } from "./useTezgah";
-import { GERCEK_ISKELET_NOTU, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
-import type { DosyaGirdisi, Emsal, KayitliTaslak, LexisTaslak } from "@/types/lexis";
+import { GERCEK_ISKELET_NOTU, GERCEK_YAZIM_NOTU, LexisApiError, lexisApi, ornekDurumuSifirla, ornekGecikmeAyarla, veriKipiAyarla } from "@/lib/lexisApi";
+import type { DosyaGirdisi, Emsal, KayitliTaslak, LexisTaslak, RafKarari } from "@/types/lexis";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -118,6 +124,7 @@ beforeEach(() => {
   confirmMock.fn.mockResolvedValue(true);
   Object.values(toastMocks).forEach((m) => m.mockReset());
   Object.values(servisMock).forEach((m) => m.mockReset());
+  servisMock.kartKararlari.mockResolvedValue(KARARSIZ);
   wordMock.wordIndir.mockReset();
   kap = document.createElement("div");
   document.body.appendChild(kap);
@@ -367,9 +374,136 @@ describe("Tezgah — kalıcılık (gerçek dava kipi)", () => {
     expect(test("lexis-emsaller")!.querySelectorAll("li")).toHaveLength(emsaller.length);
     expect(test("lexis-kayit-hatasi")!.textContent).toContain("Kayıtlı taslak okunamadı: Lexis veritabanına ulaşılamadı");
   });
+
+  // --- kararlardan yazım ---
+  const KARAR_METNI = "Bilirkişi raporunda hekime atfı kabil kusur bulunmadığı bildirilmiştir. HÜKÜM: Davanın REDDİNE 05.05.2021 tarihinde karar verildi.";
+  const karar = (id: number, p: Partial<RafKarari> = {}): RafKarari => ({
+    id, belge_turu: "karar", mahkeme: "Örnekköy 2. İdare Mahkemesi", derece: "YEREL", esas_no: "2019/123", karar_no: "2021/456", karar_tarihi: "2021-05-05",
+    uzmanlik: null, kart_id: 501, kart_bagi: "TEK_KART", asamaya_bagli: true, metin_uzunluk: KARAR_METNI.length, hukum_sinifi: "RED_ESASTAN", hukum_yonleri: ["RED"],
+    sonuc_muvekkil: "RED_ESASTAN", sonuc_iliskisi: "AYNI", hukmedilen_maddi: [], hukmedilen_manevi: [], hukmedilen_birlesik: [], talep_maddi: [], talep_manevi: [],
+    olay: null, maluliyet_orani: [], kusur_orani: [], dayanak_kurul: [], faiz: [], konular: {}, ...p,
+  });
+  const KARARLAR = [karar(72, { mahkeme: "Örnek BAM 3. İdari Dava Dairesi", derece: "ISTINAF", esas_no: "2021/900", karar_no: "2022/15", karar_tarihi: "2022-02-01", hukum_sinifi: "BASVURU_RET", sonuc_muvekkil: "BASVURU_RET" }), karar(71)];
+  const ayrinti = (k: RafKarari) => ({ ...k, kunye_kaynak: {}, vekalet_ucreti: [], yargilama_gideri: [], hukum_kaynagi: null, yas: [], davaci_sayisi: null, parcalar: { hukum: null, iddia: [], savunma: [], gerekce: [] }, metin: KARAR_METNI });
+  const YAZIM = {
+    ozet: { iddia: [{ metin: "Davacı, ameliyat sonrası zarar gördüğünü ileri sürmüştür.", kaynak_belge_id: null, kaynak_karar_id: 71, dayanak_alinti: "hekime atfı kabil kusur bulunmadığı bildirilmiştir" }] },
+    degerlendirme: {
+      giris: GIRIS,
+      maddeler: [
+        { metin: "Bilirkişi raporunda sigortalı hekime atfı kabil kusur bulunmadığının bildirildiği,", tur: "TESPIT" as const, dayanak_bolum: "yargi_sureci" as const, dayanak_alinti: "hekime atfı kabil kusur bulunmadığı bildirilmiştir" },
+        { metin: "[…] tazminat tutarında muallak ayrılabileceği", tur: "KALIP" as const, dayanak_bolum: null, dayanak_alinti: null },
+      ],
+      sulh_uygunluk: "",
+      muallak_gerekcesi: "",
+    },
+    muallak: { ...MUALLAK, kusur_tespiti: "HATA_YOK" as const, risk_duzeyi: "DUSUK" as const },
+    kararlar: [71],
+    uyarilar: [],
+    model: "gemini-test",
+    maske: { bilinen: 2, kalip: 1, ogrenilen: 0 },
+    gonderilen_karakter: 140,
+  };
+
+  it("yazım açıkken seçili kararlar onayda gösterilir ve taslak kararlardan yazılır; paragraf ve madde kaynak kararını taşır", async () => {
+    servisMock.kartKararlari.mockResolvedValue({ kararlar: KARARLAR, yazim: { acik: true, neden: null, model: "gemini-test" } });
+    servisMock.kararGetir.mockImplementation(async (id: number) => ayrinti(KARARLAR.find((k) => k.id === id)!));
+    servisMock.yaz.mockResolvedValue(YAZIM);
+    servisMock.taslakKaydet.mockResolvedValue({ surum: 1, guncelleme: "2026-10-05T20:00:00+00:00", guncelleyen: "siz" });
+    await ciz();
+    await davaSec("QUICK-0501");
+
+    // Kararlar karar rafından gelir; yazım açık olduğu için mahkeme kararlarının hepsi seçili gelir.
+    const liste = test("lexis-kararlar")!;
+    expect(servisMock.kartKararlari.mock.calls[0][0]).toBe(501);
+    expect(liste.querySelectorAll("li")).toHaveLength(2);
+    expect(liste.textContent).toContain("2/2 seçili");
+    expect(liste.textContent).toContain("Başvuru reddi");
+    expect(test("lexis-yazim-notu")!.textContent).toContain("Seçili 2 karar maskelenerek modele gönderilir");
+    expect(test("lexis-iskelet-notu")).toBeNull();
+    await tikla(liste.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[0]); // istinaf kararı yazım dışı
+    expect(liste.textContent).toContain("1/2 seçili");
+
+    // Gönderim onayı modele ne gideceğini söyler (K4): kararlar künyeleriyle, emsaller, model.
+    await tikla(dugme("Taslağı yaz"));
+    const onay = confirmMock.fn.mock.calls[0][0] as { body: string; confirmLabel: string; details: { label: string; value: string }[] };
+    expect(onay.body).toContain(GERCEK_YAZIM_NOTU);
+    expect(onay.confirmLabel).toBe("Gönder ve yaz");
+    expect(onay.details.map((d) => d.label)).toEqual(["Modele gidecek kararlar", "Emsal raporlar", "Model", "Rapor"]);
+    expect(onay.details[0].value).toBe("1 karar (maskeli) — Örnekköy 2. İdare Mahkemesi · 2019/123 E., 2021/456 K. · 05.05.2021");
+    expect(onay.details[2].value).toBe("gemini-test");
+
+    // Servise yalnız kimlikler gider; metni servis kendi veritabanından okuyup maskeler.
+    expect(servisMock.yaz.mock.calls[0][0]).toMatchObject({ case_id: 501, iskelet: "KISA", karar_idleri: [71], emsal_sha: emsaller.map((e) => e.kayit.okuma.sha256) });
+    const iddia = test("lexis-bolum-iddia")!;
+    expect(iddia.querySelector("textarea")!.value).toBe("Davacı, ameliyat sonrası zarar gördüğünü ileri sürmüştür.");
+    expect(iddia.textContent).toContain("Kaynak karar: Örnekköy 2. İdare Mahkemesi · 2019/123 E., 2021/456 K. · 05.05.2021");
+    // Denetim alıntıyı kararın metninde bulur: madde "Doğrulandı", paragrafta uyarı yok.
+    expect(maddeler()).toHaveLength(2);
+    expect(rozetler(maddeler()[0])).toEqual(["Doğrulandı"]);
+    expect(servisMock.kararGetir.mock.calls.map((c) => c[0])).toEqual([71]); // yalnız yazılan kararın metni istenir
+    expect(test("lexis-uyarilar")!.textContent).not.toContain("dayanak alıntısı");
+    expect(test("lexis-akis-hatasi")).toBeNull();
+
+    // "Kaynakta göster" alıntıyı kararın metninde vurgular; künye kararı okuyucuda açar.
+    await tikla(dugme("Kaynakta göster", maddeler()[0]));
+    const dayanak = test("lexis-dayanak-karar")!;
+    expect(dayanak.querySelector("mark")!.textContent).toBe("hekime atfı kabil kusur bulunmadığı bildirilmiştir");
+    expect(dayanak.textContent).toContain("Karar: Örnekköy 2. İdare Mahkemesi · 2019/123 E., 2021/456 K. · 05.05.2021");
+    await tikla(dayanak.querySelector("button")!);
+    expect(document.querySelector('[data-testid="lexis-karar-okuyucu"]')!.textContent).toContain("2019/123 E., 2021/456 K.");
+
+    // Taslak yazıldığı kararları ve karar seçimini taşır: yeniden açılınca denetim aynı kararlarda arar.
+    await kaydiBekle();
+    const kayit = servisMock.taslakKaydet.mock.calls[0][1] as { taslak: LexisTaslak; ekran: { secili_kararlar: number[] } };
+    expect(kayit.taslak.kararlar).toEqual([71]);
+    expect(kayit.ekran.secili_kararlar).toEqual([71]);
+  });
+
+  it("yazım kapalıyken kararlar yalnız okunur, taslak iskelettir; servis yazamazsa iskelet kalır ve uyarı görünür", async () => {
+    servisMock.kartKararlari.mockResolvedValue({ kararlar: KARARLAR, yazim: { acik: false, neden: "kapali", model: null } });
+    await ciz();
+    await davaSec("QUICK-0501");
+    const liste = test("lexis-kararlar")!;
+    expect(liste.querySelectorAll("li")).toHaveLength(2);
+    expect(liste.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(test("lexis-yazim-kapali")!.textContent).toContain("Kararlardan yazım bu kurulumda kapalı");
+    expect(test("lexis-iskelet-notu")!.textContent).toBe(GERCEK_ISKELET_NOTU);
+    await tikla(dugme("Taslağı yaz"));
+    expect((confirmMock.fn.mock.calls[0][0] as { details: { label: string }[] }).details.map((d) => d.label)).toEqual(["Rapor"]);
+    expect(servisMock.yaz).not.toHaveBeenCalled();
+    expect(servisMock.iskelet).toHaveBeenCalledTimes(1);
+
+    // Yazım açık ama servis yazamadı (model hatası): akış kesilmez, iskelet ekrandadır, neden görünür.
+    servisMock.kartKararlari.mockResolvedValue({ kararlar: KARARLAR, yazim: { acik: true, neden: null, model: "gemini-test" } });
+    servisMock.kararGetir.mockImplementation(async (id: number) => ayrinti(KARARLAR.find((k) => k.id === id)!));
+    servisMock.yaz.mockRejectedValue(new LexisApiError(502, "Model yanıtı kullanılamadı; yeniden deneyin."));
+    await tikla(dugme("Davayı değiştir"));
+    await davaSec("QUICK-0502");
+    await tikla(dugme("Taslağı yaz"));
+    expect(servisMock.yaz).toHaveBeenCalledTimes(1);
+    expect(test("lexis-akis-hatasi")!.textContent).toBe("Kararlardan yazım yapılamadı: Model yanıtı kullanılamadı; yeniden deneyin. Taslak iskelet olarak bırakıldı.");
+    expect(maddeler()).toHaveLength(1); // iskeletin son (muallak) maddesi
+    expect(test("lexis-bolum-hasar")!.querySelectorAll("input")).toHaveLength(1);
+  });
 });
 
 describe("Tezgah — dosya bölgesi", () => {
+  it("örnek kipte davanın kararları listelenir ve okuyucuda açılır; yazım seçimi yoktur", async () => {
+    await ciz();
+    await davaSec("AXA-9004");
+    const liste = test("lexis-kararlar")!;
+    expect(liste.querySelectorAll("li")).toHaveLength(2);
+    expect(liste.textContent).toContain("Adana 1. İdare Mahkemesi");
+    expect(liste.textContent).toContain("2023/404 E., 2025/118 K. · 12.03.2025");
+    expect(liste.querySelector('input[type="checkbox"]')).toBeNull();
+    await tikla(dugme("Adana 1. İdare Mahkemesi", liste));
+    expect(document.querySelector('[data-testid="lexis-karar-okuyucu"]')!.querySelector('[aria-label="Hüküm"]')!.textContent).toContain("DAVANIN REDDİNE");
+
+    await tikla(dugme("Davayı değiştir"));
+    await davaSec("ANADOLU-9001");
+    expect(test("lexis-kararlar")!.textContent).toContain("Bu dava kartına bağlı karar yok.");
+  });
+
   it("dava seçilmeden boş durum ve dava listesi görünür", async () => {
     await ciz();
     expect(kap.textContent).toContain("Rapor yazılacak davayı seçin");
