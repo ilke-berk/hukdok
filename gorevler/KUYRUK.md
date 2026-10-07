@@ -195,6 +195,11 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G265 | bant:lexis | bagimli:G261,G263 | Ölçüm aracı `emsal_ajan_olcum.py`: altın küme (zincir · rapor atfı · avukat işareti `emsal_isaret_oku.py`), aday ve okuma aşaması ayrı, Recall@5/@10, MRR, gerekçe doğruluğu, token/sn; çıktı depo dışı; gerçek koşu insan adımı
 - [x] G266 | bant:docs | bagimli:G264,G262 | CLAUDE.md Lexis paragrafı + plan durumu + genel-bakış + otomasyon/gorevler README lexis bandı (koddan doğrulanmış)
 
+<!-- 07.10 gündüz, kullanıcı kararı (maliyet): 30 tam metin okuması 3 emsal için fazla → kademeli okuma. G267 tek görev,
+     lexis bandı; G261/G265 main'de olduğu için bağımsız. Tahmin: 1 gece. Ölçüm (eleme kapsaması) insan adımı. -->
+
+- [ ] G267 | bant:lexis | bagimli:- | Kademeli okuma: aday → tek toplu ELEME çağrısı (hüküm + iddia + gerekçe parçalarıyla, `LEXIS_EMSAL_ELEME=8`) → yalnız seçilenlere tam okuma; `ELEME=0` eski akış; `emsal_elemeler` önbellek; ölçümde `eleme_kapsama`; README maliyet hesabı + PLAN K31
+
 ## ÖNCELİK 10 — PDF araçları sayfası: Acrobat yerine birleştir/böl/sayfa düzenle/sıkıştır/karart/damga + karta bağla (2026-10-07 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/plan/pdf-araclari-plani-2026-10-07.md (§3 API sözleşmesi SABİT — frontend sahte API ile backend'e
