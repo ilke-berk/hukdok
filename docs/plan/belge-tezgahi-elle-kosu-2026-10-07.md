@@ -28,8 +28,8 @@ göreve ben "devam" deyince geç.
 | 8 | G273 karta bağla / karttan al diyalogları + `CaseDetails` | frontend | G269, G271 | bitti | e2876ad |
 | 9 | G274 doküman (PDF yolu) | docs | G272, G273 | bitti | 134b169 |
 | — | **DURAK: PDF yolu gerçek girişle tarayıcıda denenir (insan adımı), sonra deploy kararı** | | | | |
-| 10 | G283 kartta Gelen · Taslak · Giden | frontend | G273, G282 | bitti | (SHA G284 commit'inde işlenir) |
-| 11 | G284 Word yaşam döngüsü uçları | backend | G282, G269 | açık | |
+| 10 | G283 kartta Gelen · Taslak · Giden | frontend | G273, G282 | bitti | ab79263 |
+| 11 | G284 Word yaşam döngüsü uçları | backend | G282, G269 | bitti | (SHA G285 commit'inde işlenir) |
 | 12 | G285 Word yolu ekranı | frontend | G284, G283 | açık | |
 | 13 | G286 eklenti altyapısı (CSP + kimlik ÖLÇÜMÜ — kullanıcıyla) | backend | G284 | açık | |
 | 14 | G287 eklenti görev bölmesi `/eklenti` | frontend | G286, G285 | açık | |
