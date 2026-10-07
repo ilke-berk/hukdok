@@ -19,6 +19,7 @@ from fastapi import HTTPException, BackgroundTasks, UploadFile
 
 from config.settings import settings
 from database import SessionLocal
+from db_errors import KayitMesgulError, is_lock_timeout
 from managers.lawyer_resolver import kanonik_avukat_metni
 from managers.log_manager import TechnicalLogger
 from file_utils import safe_remove, normalize_date_for_sharepoint, get_doctype_label, ALLOWED_EXTENSIONS, validate_file_type, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
@@ -136,7 +137,6 @@ def save_case_document(
         logging.info(f"CaseDocument saved: ID={doc_id}, mode={link_mode}, case_id={case_id}, party_id={resolved_party_id}")
         return doc_id
     except Exception as e:
-        logging.error(f"CaseDocument save error: {e}")
         # Faz 3-E (3.6): başarısız transaction bağlantıda asılı kalmasın.
         # Guard'lı: rollback'in kendisi de düşerse (DB tamamen kapalı) bu
         # fonksiyonun "hata = None döner" sözleşmesi bozulmamalı.
@@ -145,6 +145,15 @@ def save_case_document(
                 db.rollback()
             except Exception:
                 pass
+        if is_lock_timeout(e):
+            # G269: kart toplu bir veri işleminin kilidinde (lock_timeout, 5 sn) —
+            # kod/veri hatası değil, geçici. None dönüp belgeyi kayıtsız bırakmak
+            # yerine KayitMesgulError yükselir: route 409 "birkaç dakika sonra
+            # tekrar deneyin" döner, idempotency kaydı bırakılır, kullanıcı yeniden
+            # dener. Log sözleşmesi: geçici → WARNING, ERROR yok.
+            logging.warning(f"CaseDocument kaydı kilit beklemesinde düştü (case_id={case_id}): {e}")
+            raise KayitMesgulError() from e
+        logging.error(f"CaseDocument save error: {e}")
         return None
     finally:
         if db is not None:
@@ -542,8 +551,13 @@ def convert_pdfa_and_queue_uploads(
     yon: str = "GELEN",
     kaynak: str = "BELGE_HATTI",
     durum: str = "KESIN",
+    conversion_budget_seconds: Optional[float] = None,
 ):
     """PDF/A dönüşümü + DB kaydı + iki SharePoint arşiv yüklemesinin kuyruklanması.
+
+    `conversion_budget_seconds`: dönüşüm zinciri zaman bütçesi; None (varsayılan,
+    /confirm + intake) → `settings.confirm_conversion_budget_seconds`. PDF tezgâhı
+    (G269 `karta-bagla`) kendi bütçesini (`pdf_araclari_butce_saniye`) geçirir.
 
     Faz 4: ham upload is queued AFTER PDF/A succeeds so both archives are consistent.
     Başarıda (pdfa_temp_file, doc_id) döndürür.
@@ -583,7 +597,11 @@ def convert_pdfa_and_queue_uploads(
             # retry job'ı convert_to_pdfa2b'yi DOĞRUDAN, bütçesiz çağırır.
             pdfa_temp_file = convert_to_pdfa2b(
                 source_path,
-                time_budget_seconds=settings.confirm_conversion_budget_seconds,
+                time_budget_seconds=(
+                    settings.confirm_conversion_budget_seconds
+                    if conversion_budget_seconds is None
+                    else conversion_budget_seconds
+                ),
             )
         except ConversionBusyError:
             # Sistem doluluğu belge sorunu değildir: conversion_pending
@@ -690,6 +708,10 @@ def convert_pdfa_and_queue_uploads(
         # katmanı 503 CONVERSION_BUSY_DETAIL üretir (WARNING'i semafor attı).
         raise
     except HTTPException:
+        raise
+    except KayitMesgulError:
+        # G269: kart kilitli (save_case_document yükseltti) — geçici, 409'a gider;
+        # aşağıdaki genel except'in 500 "arşiv yüklemesi başarısız"ına DÜŞMEZ.
         raise
     except (RuntimeError, ValueError) as e:
         # Pipeline'ın dönüşüm-dışı adımlarından gelen kullanıcıya dönük mesajlar —

@@ -390,7 +390,7 @@ class TestBekci:
         from rate_limiting import limiter
 
         assert route_mod.HIZ_SINIRI == "30/minute"
-        for ad in ("yukle", "islem"):
+        for ad in ("yukle", "islem", "karta_bagla", "karttan_al"):  # G269 iki ucu da sınırlı
             assert f"routes.pdf_araclari.{ad}" in limiter._route_limits, ad
 
     def test_yollar_api_altinda(self):
@@ -399,6 +399,8 @@ class TestBekci:
         yollar = sorted(r.path for r in route_mod.router.routes)
         assert yollar == [
             "/api/pdf-araclari/islem",
+            "/api/pdf-araclari/karta-bagla",  # G269
+            "/api/pdf-araclari/karttan-al",  # G269
             "/api/pdf-araclari/onizleme/{file_id}/{sayfa}",
             "/api/pdf-araclari/yukle",
         ]

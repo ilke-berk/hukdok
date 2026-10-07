@@ -1,7 +1,20 @@
-"""PDF araçları uçları (G268, plan `docs/plan/pdf-araclari-plani-2026-10-07.md` §3 ilk üç uç).
+"""PDF araçları uçları (G268 + G269, plan `docs/plan/pdf-araclari-plani-2026-10-07.md` §3 ve §6.3 son satır).
 
-`POST /api/pdf-araclari/yukle` · `POST /api/pdf-araclari/islem` · `GET /api/pdf-araclari/onizleme/{id}/{sayfa}`.
+`POST /api/pdf-araclari/yukle` · `POST /api/pdf-araclari/islem` · `GET /api/pdf-araclari/onizleme/{id}/{sayfa}` ·
+`POST /api/pdf-araclari/karta-bagla` · `POST /api/pdf-araclari/karttan-al`.
 İndirme mevcut `GET /api/download/{id}` ucundan (routes/processing) — değişmedi.
+
+**Karta bağla (G269, K4/K5/K17):** çalışma dosyası tek adımda kartın belgesi olur. `durum=KESIN` → MEVCUT hat
+(`document_pipeline.convert_pdfa_and_queue_uploads`: PDF/A + ham/işlenmiş arşiv kuyruğu + URL commit'inde bildirim
+ve Hukukbot allowlist'i — yeni kural yok; `/process` analizi ve e-posta YOK). `durum=TASLAK` → PDF/A YOK,
+`save_case_document(durum="TASLAK")` + tek `islenmis` kuyruğu `03_TASLAKLAR/<ofis_no>/`; G282 filtreleri taslağı
+Hukukbot'tan ve bildirimden eler. Idempotent: `istek_kimligi` (UUID) `ConfirmReceipt` deseniyle
+(`services/confirm_idempotency`, anahtar `pdf_araclari:<uuid>`, şema değişmedi) — tekrar `{"document_id": aynı,
+"reused": true}`. Kilitli kart (`KayitMesgulError`) 409, dönüşüm kuyruğu dolu 503, ikisi de kaydı bırakır.
+
+**Karttan al:** kartın arşivdeki belgesi (`sharepoint_url` dolu) `documents.py` indirme yardımcısıyla
+(`sharepoint_uploader_graph.download_file_from_sharepoint`) çekilir → `pdf_ye_cevir` (arşivde Office/UDF de olabilir)
+→ çalışma dosyası (`Dosya`). Taslak belge `03_TASLAKLAR/<ofis_no>/`den, kesin belge işlenmiş arşivden okunur.
 
 Çalışma dosyası = `DOWNLOAD_CACHE` kaydı (K2): `{"path","filename","owner","kaynak":"pdf_araclari","sayfa","sayfalar"}`;
 dosya `PDF_ARACLARI_DIR` (varsayılan `<backend>/data/pdf_araclari`, konteynerde backend-data volume'ü) altında
@@ -16,33 +29,58 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import tempfile
 import threading
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from auth_helpers import get_tenant_owned_case, get_tenant_owned_document
 from config.settings import settings
-from dependencies import get_current_user
-from file_utils import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, sanitize_filename, validate_file_type
+from constants import normalize_belge_durumu, normalize_belge_yonu
+from database import SessionLocal
+from db_errors import KAYIT_MESGUL_DETAIL, KayitMesgulError
+from dependencies import get_current_tenant, get_current_user
+from file_utils import (
+    ALLOWED_EXTENSIONS,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_MB,
+    _normalize_doctype_code,
+    safe_remove,
+    sanitize_filename,
+    validate_file_type,
+)
+from managers.config_manager import DynamicConfig
 from managers.log_manager import TechnicalLogger
+import models
 from pdf import pdf_araclari as cekirdek
 from pdf.format_converter import ConversionBusyError, acquire_conversion_slot
 from rate_limiting import limiter
 from routes.processing import DOWNLOAD_CACHE, _cache_dir, _cleanup_process_cache, _owner_id
+from services import confirm_idempotency, document_pipeline, upload_queue
 
 router = APIRouter(prefix="/api/pdf-araclari")
 logger = logging.getLogger(__name__)
 
 KAYNAK = "pdf_araclari"
 HIZ_SINIRI = "30/minute"
+# G269: belge kaynağı kolonu (constants.BELGE_KAYNAKLARI) — cache `kaynak`ından (küçük harf) AYRI.
+BELGE_KAYNAGI = "PDF_ARACLARI"
+# G269: idempotency anahtarı öneki — `ConfirmReceipt.process_id` (String(64)) /confirm'ün UUID'leriyle
+# aynı tabloda yaşar; önek iki uzayı ayırır (13 + 36 = 49 karakter).
+IDEMPOTENCY_ONEKI = "pdf_araclari:"
+KART_BULUNAMADI = "Belirtilen dava bulunamadı."
+BELGE_BULUNAMADI = "Belge bulunamadı."
 # İşlem semaforu (K8): aynı anda en çok 2 PDF işlemi; bekleme `conversion_acquire_timeout_seconds` ile tavanlı.
 _pdf_arac_semaphore = threading.Semaphore(2)
 
@@ -141,6 +179,33 @@ class IslemIstegi(_StrictModel):
     girdiler: list[str] = Field(min_length=1)
     parametreler: dict[str, Any] = Field(default_factory=dict)
     cikti_adi: Optional[str] = Field(default=None, max_length=200)
+
+
+class KartaBaglaIstegi(_StrictModel):
+    """§3 + §6.3: `yon`/`durum` `constants.normalize_belge_*`'dan geçer (küçük harf kabul, bilinmeyen 422)."""
+
+    id: str = Field(min_length=1, max_length=64)
+    case_id: int = Field(ge=1)
+    belge_turu_kodu: str = Field(min_length=1, max_length=64)
+    dosya_adi: str = Field(min_length=1, max_length=255)
+    case_party_id: Optional[int] = Field(default=None, ge=1)
+    istek_kimligi: uuid.UUID
+    yon: str = "GELEN"
+    durum: str = "KESIN"
+
+    @field_validator("yon")
+    @classmethod
+    def _yon(cls, v: str) -> str:
+        return normalize_belge_yonu(v)
+
+    @field_validator("durum")
+    @classmethod
+    def _durum(cls, v: str) -> str:
+        return normalize_belge_durumu(v)
+
+
+class KarttanAlIstegi(_StrictModel):
+    document_id: int = Field(ge=1)
 
 
 # ── Yardımcılar ──────────────────────────────────────────────────────────────
@@ -348,6 +413,307 @@ async def onizleme(file_id: str, sayfa: int, genislik: int = 240, user: dict = D
     except Exception as e:
         raise _cekirdek_hatasini_cevir(e) from None
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+# ── G269: karta bağla / karttan al ───────────────────────────────────────────
+
+def _belge_turleri() -> list[dict]:
+    """Belge türü listesi: süreç-içi DynamicConfig (açılışta DB'den ısıtılır), boşsa DB'den okunur."""
+    turler = DynamicConfig.get_instance().get_doctypes()
+    if not turler:
+        from managers.reference_lists import get_doctypes
+
+        turler = get_doctypes()
+    return turler or []
+
+
+def _belge_turu_coz(kod: str) -> tuple[str, Optional[str]]:
+    """İstekteki kodu listedeki KANONİK koda (DB'deki `_` pad'li yazım) ve adına çözer; yoksa 422.
+
+    Karşılaştırma `_normalize_doctype_code` ile (padding tuzağı: `DAVA-DLK` == `DAVA-DLK______`)."""
+    hedef = _normalize_doctype_code(kod)
+    if hedef:
+        for tur in _belge_turleri():
+            ham = tur.get("kod") or tur.get("code") or tur.get("value")
+            if ham and _normalize_doctype_code(str(ham)) == hedef:
+                return str(ham), tur.get("aciklama") or tur.get("label") or tur.get("name") or None
+    raise _hata(422, f"Belge türü kodu tanınmadı: {kod}", "belge_turu", ValueError(kod))
+
+
+def _kart_dosya_adi(ad: str) -> str:
+    """Kart belgesinin adı: `sanitize_filename` + `.pdf` zorunlu; sonuç boşsa 422 (varsayılan ad UYDURULMAZ)."""
+    ham = os.path.basename((ad or "").strip().replace("\\", "/"))
+    govde = ham
+    for uzanti in sorted(ALLOWED_EXTENSIONS, key=len, reverse=True):  # ".pdf" gibi uzantı-yalnız ad da yakalanır
+        if ham.lower().endswith(uzanti):
+            govde = ham[: -len(uzanti)]
+            break
+    govde = govde.strip(" .")
+    if not govde.strip("_-"):
+        raise _hata(422, "Dosya adı boş ya da geçersiz.", "dosya_adi", ValueError(ad))
+    try:
+        temiz = sanitize_filename(f"{govde}.pdf")
+    except HTTPException as e:
+        raise _hata(422, f"Dosya adı geçersiz: {e.detail}", "dosya_adi", e) from None
+    if not temiz or not Path(temiz).stem.strip(" ._-") or not temiz.lower().endswith(".pdf"):
+        raise _hata(422, "Dosya adı boş ya da geçersiz.", "dosya_adi", ValueError(ad))
+    return temiz
+
+
+def _klasor_adi(ofis_no: str) -> str:
+    """SharePoint alt klasör adı: ofis no'daki yol ayraçları ve yasak karakterler `-` olur (ayrıştırma YOK, karar 023)."""
+    return re.sub(r'[\\/:*?"<>|#%]', "-", (ofis_no or "").strip()).strip(" .") or "KARTSIZ"
+
+
+def _kart_bul(case_id: int, tenant_id: str) -> SimpleNamespace:
+    """Kart `tenant_id == X OR IS NULL` + soft-delete süzgeciyle; yoksa 404. Oturum kapanmadan kopya alınır."""
+    db = SessionLocal()
+    try:
+        kart = get_tenant_owned_case(db, case_id, tenant_id)
+        if kart is None:
+            raise HTTPException(status_code=404, detail=KART_BULUNAMADI)
+        return SimpleNamespace(id=kart.id, tracking_no=kart.tracking_no, esas_no=kart.esas_no)
+    finally:
+        db.close()
+
+
+def _taraf_dogrula(case_party_id: Optional[int], case_id: int) -> None:
+    """`case_party_id` verilmişse o kartın tarafı olmalı; değilse 422."""
+    if case_party_id is None:
+        return
+    db = SessionLocal()
+    try:
+        taraf = (
+            db.query(models.CaseParty.id)
+            .filter(models.CaseParty.id == case_party_id, models.CaseParty.case_id == case_id)
+            .first()
+        )
+    finally:
+        db.close()
+    if taraf is None:
+        raise _hata(422, "Taraf bu davanın tarafı değil.", "taraf", ValueError(case_party_id))
+
+
+def _kullanici_adi(user: dict) -> str:
+    return user.get("name") or user.get("preferred_username") or "Bilinmeyen"
+
+
+def _kullanici_eposta(user: dict) -> Optional[str]:
+    return user.get("preferred_username") or user.get("upn") or user.get("email") or None
+
+
+def _karta_bagla_kos(
+    background_tasks: BackgroundTasks,
+    kayit: dict[str, Any],
+    kart: SimpleNamespace,
+    tur_kodu: str,
+    tur_adi: Optional[str],
+    dosya_adi: str,
+    case_party_id: Optional[int],
+    yon: str,
+    durum: str,
+    user: dict,
+    results: dict[str, Any],
+) -> int:
+    """Threadpool'da: KESIN → mevcut PDF/A hattı; TASLAK → PDF/A'sız kayıt + tek taslak yüklemesi.
+
+    Çalışma dosyası SİLİNMEZ (cache TTL'i siler; kullanıcı zincire devam edebilir) — bu yüzden
+    `schedule_cleanup` çağrılmaz; yalnız PDF/A geçici dosyası kuyruğa kopyalandıktan sonra temizlenir.
+    Belge yaratıldıysa `results["case_document_id"]` dolar (idempotency release kararı buna bakar).
+    """
+    kaynak_yol = kayit["path"]
+    orijinal_ad = kayit.get("filename") or dosya_adi
+    if durum == "KESIN":
+        ham_folder = os.getenv("SHAREPOINT_FOLDER_HAM_NAME", "01_HAM_ARSIV")
+        islenmis_folder = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+        ham_filename = f"{datetime.now().strftime('%Y-%m-%d')}_{dosya_adi}"
+        timings: dict[str, Any] = {}
+        pdfa_temp_file, doc_id = document_pipeline.convert_pdfa_and_queue_uploads(
+            background_tasks=background_tasks,
+            source_path=kaynak_yol,
+            ham_filename=ham_filename,
+            ham_folder=ham_folder,
+            islenmis_folder=islenmis_folder,
+            new_filename=dosya_adi,
+            original_filename=orijinal_ad,
+            belge_turu_kodu=tur_kodu,
+            muvekkiller=[],
+            muvekkil_adi=None,
+            ai_ozet=None,
+            linked_case_id=kart.id,
+            case_party_id=case_party_id,
+            lawyer_id=None,
+            esas_no=kart.esas_no,
+            is_test_mode=False,
+            user=user,
+            current_user_name=_kullanici_adi(user),
+            results=results,
+            timings=timings,
+            ham_source_path=kaynak_yol,
+            yon=yon,
+            kaynak=BELGE_KAYNAGI,
+            durum="KESIN",
+            conversion_budget_seconds=settings.pdf_araclari_butce_saniye,
+        )
+        if pdfa_temp_file and pdfa_temp_file != kaynak_yol:
+            # Kuyruk payload'ı spool'a kopyalandı (fallback görevi varsa sırada ondan ÖNCE koşar).
+            background_tasks.add_task(safe_remove, pdfa_temp_file)
+    else:
+        from services.archive_names import unique_islenmis_name
+
+        # Kayıt adı DB'de benzersiz (mevcut hat ile aynı kural): aynı adlı ikinci taslak
+        # SharePoint'te öncekini EZMEZ (küçük dosya yüklemesi sormadan değiştirir).
+        dosya_adi = unique_islenmis_name(dosya_adi)
+        doc_id = document_pipeline.save_case_document(
+            case_id=kart.id,
+            original_filename=orijinal_ad,
+            stored_filename=dosya_adi,
+            belge_turu_kodu=tur_kodu,
+            belge_turu_adi=tur_adi,
+            case_party_id=case_party_id,
+            lawyer_id=None,
+            esas_no=kart.esas_no,
+            is_test_mode=False,
+            uploaded_by=_kullanici_adi(user),
+            uploaded_by_email=_kullanici_eposta(user),
+            yon=yon,
+            kaynak=BELGE_KAYNAGI,
+            durum="TASLAK",
+        )
+        if doc_id is not None:
+            results["case_document_id"] = doc_id
+            hedef = f"{settings.sharepoint_folder_taslak_name}/{_klasor_adi(kart.tracking_no)}"
+            # Tek kuyruk: taslak ham arşive GİRMEZ (K12); URL commit'i `upload_queue` yolundan
+            # geçer, G282 kapıları (export + bildirim) TASLAK'ı eler.
+            if upload_queue.enqueue_upload("islenmis", kaynak_yol, dosya_adi, hedef, document_id=doc_id) is None:
+                background_tasks.add_task(document_pipeline.async_islenmis_upload, kaynak_yol, dosya_adi, hedef, doc_id)
+    if doc_id is None:
+        raise _hata(500, "Belge kaydı açılamadı.", "belge_kaydi", RuntimeError("save_case_document None"))
+    return int(doc_id)
+
+
+@router.post("/karta-bagla")
+@limiter.limit(HIZ_SINIRI)
+async def karta_bagla(
+    request: Request,
+    istek: KartaBaglaIstegi,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Çalışma dosyasını kartın belgesi yapar; yanıt `{"document_id", "reused"}` (§3 / §6.3, K17).
+
+    Sıra: idempotency kapısı (ilk yan etkiden ÖNCE; replay'de cache süresi dolmuş olsa da aynı belge döner)
+    → sahiplik 404 → kart 404 → tür 422 → ad 422 → taraf 422 → kayıt. Belge yaratılmadan düşen her yol kaydı
+    bırakır (retry serbest); belge yaratıldıysa kayıt kalır (mükerrer belge yolu kapalı, bayat eşiği 30 dk).
+    """
+    anahtar = f"{IDEMPOTENCY_ONEKI}{istek.istek_kimligi}"
+    verdict, replay = confirm_idempotency.begin(anahtar, _owner_id(user))
+    if verdict == "replay" and replay is not None:
+        TechnicalLogger.log("INFO", f"karta-bagla idempotent replay: {anahtar}")
+        return {"document_id": replay.get("document_id"), "reused": True}
+    if verdict == "in_progress":
+        raise HTTPException(
+            status_code=409,
+            detail="Bu belgenin karta bağlanması sunucuda halen sürüyor. Lütfen bekleyin ve TEKRAR GÖNDERMEYİN.",
+        )
+    idem_active = verdict == "proceed"
+    results: dict[str, Any] = {}
+    try:
+        try:
+            kayit = _sahipli_kayit(istek.id, user)
+            kart = _kart_bul(istek.case_id, tenant_id)
+            tur_kodu, tur_adi = _belge_turu_coz(istek.belge_turu_kodu)
+            dosya_adi = _kart_dosya_adi(istek.dosya_adi)
+            _taraf_dogrula(istek.case_party_id, kart.id)
+            doc_id = await run_in_threadpool(
+                _karta_bagla_kos, background_tasks, kayit, kart, tur_kodu, tur_adi, dosya_adi,
+                istek.case_party_id, istek.yon, istek.durum, user, results,
+            )
+        except KayitMesgulError as e:
+            # Kart toplu bir işlemin kilidinde — geçici; WARNING pipeline'da atıldı, burada ERROR yok.
+            raise HTTPException(status_code=409, detail=KAYIT_MESGUL_DETAIL) from e
+        except ConversionBusyError as e:
+            raise _hata(503, document_pipeline.CONVERSION_BUSY_DETAIL, "sistem_mesgul", e) from None
+    except BaseException:
+        if idem_active and not results.get("case_document_id"):
+            confirm_idempotency.release(anahtar)
+        raise
+    payload = {"document_id": doc_id, "reused": False}
+    if idem_active:
+        confirm_idempotency.complete(anahtar, payload)
+    return payload
+
+
+def _sharepoint_indir(klasor: str, dosya_adi: str) -> tuple[bytes, str]:
+    """`routes/documents.py` indirme ucunun kullandığı yardımcı (testte sahte)."""
+    from sharepoint.sharepoint_uploader_graph import download_file_from_sharepoint
+
+    return download_file_from_sharepoint(klasor, dosya_adi)
+
+
+@router.post("/karttan-al")
+@limiter.limit(HIZ_SINIRI)
+async def karttan_al(
+    request: Request,
+    istek: KarttanAlIstegi,
+    user: dict = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
+):
+    """Kartın arşivdeki belgesini çalışma dosyası yapar; yanıt `Dosya`. 404 belge/URL yok, 502 SharePoint, 413 boyut."""
+    db = SessionLocal()
+    try:
+        doc = get_tenant_owned_document(db, istek.document_id, tenant_id, user)
+        if doc is None or not doc.sharepoint_url or not doc.stored_filename:
+            raise HTTPException(status_code=404, detail=BELGE_BULUNAMADI)
+        stored_filename = str(doc.stored_filename)
+        gorunen_ad = str(doc.original_filename or doc.stored_filename)
+        taslak_mi = getattr(doc, "durum", "KESIN") == "TASLAK"
+        ofis_no = doc.case.tracking_no if doc.case is not None else None
+    finally:
+        db.close()
+    if taslak_mi and ofis_no:
+        klasor = f"{settings.sharepoint_folder_taslak_name}/{_klasor_adi(ofis_no)}"
+    else:
+        klasor = os.getenv("SHAREPOINT_FOLDER_ISLENMIS_NAME", "02_YEDEK_ARSIV")
+
+    try:
+        icerik, _mime = await run_in_threadpool(_sharepoint_indir, klasor, stored_filename)
+    except Exception as e:
+        raise _hata(502, "Belge SharePoint'ten alınamadı.", "sharepoint", e) from None
+    if not icerik:
+        raise _hata(502, "Belge SharePoint'ten boş geldi.", "sharepoint", ValueError(stored_filename))
+    if len(icerik) > MAX_UPLOAD_BYTES:
+        raise _hata(413, f"Belge çok büyük. Maksimum {MAX_UPLOAD_MB}MB.", "boyut", ValueError(len(icerik)))
+
+    suffix = Path(stored_filename).suffix.lower() or ".pdf"
+    ham_dizin = tempfile.mkdtemp(prefix="pdf_araclari_kart_")
+    file_id = str(uuid.uuid4())
+    ham_yol = os.path.join(ham_dizin, f"{file_id}{suffix}")
+    try:
+        with open(ham_yol, "wb") as f:
+            f.write(icerik)
+
+        def _calis() -> dict[str, Any]:
+            _cleanup_process_cache()
+            deadline = _deadline()
+            acquire_conversion_slot(_pdf_arac_semaphore, deadline, "PDF aracı karttan al")
+            try:
+                yol = cekirdek.pdf_ye_cevir(ham_yol, str(_pdf_araclari_dir()), deadline)
+            finally:
+                _pdf_arac_semaphore.release()
+            return _dosya_yaniti(file_id, yol, _pdf_adi(gorunen_ad, "belge.pdf"), owner=_owner_id(user))
+
+        try:
+            return await run_in_threadpool(_calis)
+        except HTTPException:
+            raise
+        except (cekirdek.PdfArcHatasi, ConversionBusyError) as e:
+            raise _cekirdek_hatasini_cevir(e) from None
+        except Exception as e:
+            raise _hata(422, "Arşiv belgesi PDF'e çevrilemedi.", "donusum_basarisiz", e) from None
+    finally:
+        shutil.rmtree(ham_dizin, ignore_errors=True)
 
 
 # Bekçi (K10): uç yolları nginx `location /api` altında kalmalı — test_pdf_araclari_uclari doğrular.
