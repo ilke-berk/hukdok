@@ -193,7 +193,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [x] G263 | bant:lexis | bagimli:G261,G260 | İnceleme paketi: `inceleme.docx` (işaret sütunlu liste) + karar metinleri + `sonuc.json` zip, `GET /emsal-sonuc/{sha}/indir`, arşive yazma; Word'de "Emsal kararlar" künye satırı (`emsal_kararlar`, K28)
 - [x] G264 | bant:frontend | bagimli:G261,G262,G263 | Ekran: `EmsalBulDiyalogu` (kaynak seçimi, maske dökümü, model rozeti + Gemini onay kutusu, ilerleme) + `EmsalKararListesi` (puan, gerekçe, doğrulanmış alıntı, kararı aç) + `lexisAkis.ts` NDJSON okuyucu + onay → taslak `emsal_kararlar` (yazıma gitmez) + indirme + örnek kip
 - [x] G265 | bant:lexis | bagimli:G261,G263 | Ölçüm aracı `emsal_ajan_olcum.py`: altın küme (zincir · rapor atfı · avukat işareti `emsal_isaret_oku.py`), aday ve okuma aşaması ayrı, Recall@5/@10, MRR, gerekçe doğruluğu, token/sn; çıktı depo dışı; gerçek koşu insan adımı
-- [ ] G266 | bant:docs | bagimli:G264,G262 | CLAUDE.md Lexis paragrafı + plan durumu + genel-bakış + otomasyon/gorevler README lexis bandı (koddan doğrulanmış)
+- [ ] G266 | bant:docs | bagimli:G264,G262 | CLAUDE.md Lexis paragrafı + plan durumu + genel-bakış + otomasyon/gorevler README lexis bandı (koddan doğrulanmış) | BLOKE(ana dizin kirli - merge ertelendi; worktree C:/dev/hukudok-wt/G266 + dal gorev/G266 korundu, 07.10)
 
 ## ÖNCELİK 10 — PDF araçları sayfası: Acrobat yerine birleştir/böl/sayfa düzenle/sıkıştır/karart/damga + karta bağla (2026-10-07 gündüz, kullanıcı kararı)
 
