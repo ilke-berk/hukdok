@@ -78,7 +78,9 @@ const LONG_TIMEOUT_PREFIXES = [
     "/api/pdf-araclari/",         // belge tezgâhı (G271): birleştir/sıkıştır/sayfa düzenle Ghostscript'li, sunucu bütçesi 270 sn (K8)
 ];
 // Yolun İÇİNDE geçen işaretler (ör. /api/documents/{id}/download).
-const LONG_TIMEOUT_MARKERS = ["/download", "/resend-email", "/send-emails"];
+// G285: Word yaşam döngüsü — `kesinlestir` PDF/A dönüşümünü senkron koşar (sunucu bütçesi 270 sn); `belgeler/yeni`,
+// `surum`, `yeni-surum-taslagi` SharePoint'e senkron yükler/indirir.
+const LONG_TIMEOUT_MARKERS = ["/download", "/resend-email", "/send-emails", "/kesinlestir", "/belgeler/yeni", "/surum", "/yeni-surum-taslagi"];
 
 export function resolveTimeoutMs(endpoint: string, options: RequestInit = {}): number {
     if (options.body instanceof FormData) return LONG_TIMEOUT_MS;

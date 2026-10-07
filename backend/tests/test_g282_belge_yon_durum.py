@@ -393,7 +393,8 @@ class TestKartVeListe:
         gelen = _belge(env, cid)
         giden = _belge(env, cid, yon="GIDEN", kaynak="WORD", durum="KESIN",
                        kesinlesme_tarihi=datetime(2026, 10, 7, 9, 0, tzinfo=timezone.utc), kesinlestiren_email="a@x")
-        taslak = _belge(env, cid, yon="GIDEN", kaynak="PDF_ARACLARI", durum="TASLAK", word_url="https://sp/t.docx")
+        taslak = _belge(env, cid, yon="GIDEN", kaynak="PDF_ARACLARI", durum="TASLAK", word_url="https://sp/t.docx",
+                        onceki_document_id=giden)
         db = env.sessions()
         db.add(env.models.BelgeSurumu(document_id=giden, surum_no=1, sha256="a" * 64))
         db.add(env.models.BelgeSurumu(document_id=giden, surum_no=2, sha256="b" * 64, kesin=True))
@@ -411,6 +412,8 @@ class TestKartVeListe:
         assert docs[giden]["surum_sayisi"] == 2 and docs[giden]["kesinlesme_tarihi"].startswith("2026-10-07")
         assert docs[taslak]["durum"] == "TASLAK" and docs[taslak]["word_url"] == "https://sp/t.docx"
         assert docs[taslak]["kesinlesme_tarihi"] is None
+        # G285: yeni sürüm taslağı bağı kart yanıtında
+        assert docs[taslak]["onceki_document_id"] == giden and docs[gelen]["onceki_document_id"] is None
 
     def test_kart_surum_sayisi_tek_sorgu(self, env, client):
         """Belge sayısı artsa da sorgu sayısı sabit (N+1 yok)."""

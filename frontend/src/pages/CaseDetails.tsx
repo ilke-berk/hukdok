@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2, Wrench, Combine } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2, Wrench, Combine, FilePlus2, FileCheck2, FilePen, History, ExternalLink } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -19,7 +19,7 @@ import {
     filledFields, formatCardValue, closedListState, isDocumentationEventCandidate,
     type CardFieldDef, type ClosedListKey,
 } from "@/lib/caseCardFields";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,7 +41,12 @@ import {
     belgeKumeSayilari, belgeKumesiCoz, belgeKumesiUygula, evrakFiltreCipleri, evrakFiltreUygula, type BelgeKumesi,
 } from "@/lib/evrakFiltresi";
 import { BelgeDurumCipi } from "@/components/belge/BelgeDurumCipi";
-import { taslakMi } from "@/types/belge";
+import { KesinlestirOnayi, YeniSurumTaslagiOnayi } from "@/components/belge/KesinlestirOnayi";
+import { SurumPaneli } from "@/components/belge/SurumPaneli";
+import { YeniBelgeDiyalogu } from "@/components/belge/YeniBelgeDiyalogu";
+import { useWordAcici } from "@/components/belge/useWordAcici";
+import { wordAcBaglantisi } from "@/lib/belgeYasamApi";
+import { belgeKaynagi, surumZinciri, taslakMi } from "@/types/belge";
 
 // Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
 // Temyiz/istinaf durum değil aşamadır — CaseTrackingPanel gösterir.
@@ -116,7 +121,7 @@ interface CaseDetailsData {
     lawyers?: { name: string; lawyer_id?: number | null }[];
     // G282/G283: `yon`/`kaynak`/`durum`/`word_url`/`kesinlesme_tarihi`/`surum_sayisi` — `routes/cases.py` yanıtı
     // (`case_manager.get_case`); eski yanıtta eksikse GELEN / BELGE_HATTI / KESIN varsayılır (`types/belge.ts`).
-    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null; yon?: string | null; kaynak?: string | null; durum?: string | null; word_url?: string | null; kesinlesme_tarihi?: string | null; surum_sayisi?: number | null }[];
+    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null; yon?: string | null; kaynak?: string | null; durum?: string | null; word_url?: string | null; kesinlesme_tarihi?: string | null; surum_sayisi?: number | null; onceki_document_id?: number | null }[];
     [key: string]: unknown;
 }
 
@@ -218,6 +223,7 @@ type CaseParty = NonNullable<CaseDetailsData["parties"]>[number];
  */
 const DocCard = ({
     doc, clientParties, onAssignParty, onResend, onDelete, onPdfAraclari, pdfSecili, onPdfSec,
+    surumEtiketi, onKesinlestir, onYeniSurum, onSurumKaydedildi,
 }: {
     doc: CaseDocument;
     clientParties: CaseParty[];
@@ -229,11 +235,24 @@ const DocCard = ({
     /** G273: çoklu seçim (tezgâhta birleştirme). */
     pdfSecili?: boolean;
     onPdfSec?: (doc: CaseDocument, secili: boolean) => void;
+    /** G285: yeni sürüm zinciri etiketi ("v2 (önceki: …)"; `onceki_document_id` bağlı belgede). */
+    surumEtiketi?: string | null;
+    /** G285: taslak → kesinleştirme onayı. */
+    onKesinlestir?: (doc: CaseDocument) => void;
+    /** G285: kesin Word belgesi → yeni sürüm taslağı onayı. */
+    onYeniSurum?: (doc: CaseDocument) => void;
+    /** G285: sürüm kaydedildi (kartın `surum_sayisi` tazelensin). */
+    onSurumKaydedildi?: () => void;
 }) => {
-    // G283: taslak satırı (K12) — e-posta ve PDF tezgâhı eylemleri gizli, Word/kesinleştir yer tutucu (G285 açar), silme kalır.
+    // G283: taslak satırı (K12) — e-posta ve PDF tezgâhı eylemleri gizli, silme kalır. G285: "Word'de aç" (ms-word: →
+    // 1,5 sn'de açılmazsa Word Online yedeği), "Sürümler" (SurumPaneli), "Kesinleştir"; kesin Word belgesinde "Yeni sürüm
+    // taslağı". "Word aslını indir" YOK: `/api/documents/{id}/download` işlenmiş arşivi (PDF/A) verir, ham `.docx`'i değil.
     const taslak = taslakMi(doc);
+    const word = useWordAcici();
+    const [surumlerAcik, setSurumlerAcik] = useState(false);
+    const wordBelgesi = belgeKaynagi(doc) === "WORD";
     return (
-    <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4" data-belge-id={doc.id} data-taslak={taslak ? "true" : undefined}>
+    <div className="group flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4" data-belge-id={doc.id} data-taslak={taslak ? "true" : undefined}>
         <div className="flex items-start gap-4 flex-1 min-w-0">
             {onPdfSec && !taslak && (
                 <input
@@ -277,6 +296,11 @@ const DocCard = ({
                             Kesinleşti: {new Date(doc.kesinlesme_tarihi).toLocaleDateString("tr-TR")}
                         </span>
                     )}
+                    {surumEtiketi && (
+                        <span data-testid="belge-surum-zinciri" className="text-xs text-muted-foreground">
+                            {surumEtiketi}
+                        </span>
+                    )}
                 </div>
                 {/* Müvekkil atama seçici — sadece CLIENT taraf varsa göster */}
                 {clientParties.length > 0 && (
@@ -301,16 +325,47 @@ const DocCard = ({
             </div>
         </div>
         <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
-            {/* G283: taslak yer tutucuları — Word'de aç / Kesinleştir G285 ile açılır */}
+            {/* G285: taslak eylemleri — Word'de aç (yalnız Word taslağı: `word_url`), Sürümler, Kesinleştir */}
             {taslak && (
                 <>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto" disabled title="Sonraki sürümde (Word yaşam döngüsü)">
-                        Word'de aç
-                    </Button>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto" disabled title="Sonraki sürümde (Word yaşam döngüsü)">
-                        Kesinleştir
-                    </Button>
+                    {doc.word_url && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            title="Masaüstü Word'de aç (açılmazsa Word Online bağlantısı çıkar)"
+                            onClick={() => word.ac(wordAcBaglantisi(doc.word_url!), doc.word_url!)}
+                        >
+                            <FilePen className="w-3.5 h-3.5 mr-1" />
+                            Word'de aç
+                        </Button>
+                    )}
+                    {doc.word_url && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            aria-expanded={surumlerAcik}
+                            onClick={() => setSurumlerAcik((v) => !v)}
+                        >
+                            <History className="w-3.5 h-3.5 mr-1" />
+                            Sürümler
+                        </Button>
+                    )}
+                    {onKesinlestir && (
+                        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => onKesinlestir(doc)}>
+                            <FileCheck2 className="w-3.5 h-3.5 mr-1" />
+                            Kesinleştir
+                        </Button>
+                    )}
                 </>
+            )}
+            {/* G285: kesin Word belgesi değişmez; düzeltme yeni taslak olarak açılır (K14) */}
+            {!taslak && wordBelgesi && onYeniSurum && (
+                <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={() => onYeniSurum(doc)}>
+                    <FilePen className="w-3.5 h-3.5 mr-1" />
+                    Yeni sürüm taslağı
+                </Button>
             )}
             {/* Email durum ikonu (taslak gönderilmez — gizli) */}
             {!taslak && doc.email_sent === true && (
@@ -403,6 +458,19 @@ const DocCard = ({
                 <Trash2 className="w-3.5 h-3.5" />
             </Button>
         </div>
+        {word.yedekUrl && (
+            <p data-testid="word-online-yedek" className="basis-full w-full text-xs text-muted-foreground">
+                Masaüstü Word açılmadı mı?{" "}
+                <a href={word.yedekUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-[var(--brand)] underline">
+                    Word Online'da aç <ExternalLink className="w-3 h-3" />
+                </a>
+            </p>
+        )}
+        {taslak && surumlerAcik && (
+            <div className="basis-full w-full">
+                <SurumPaneli documentId={doc.id} onKaydedildi={onSurumKaydedildi} />
+            </div>
+        )}
     </div>
     );
 };
@@ -476,6 +544,30 @@ const CaseDetails = () => {
     const [evrakFiltre, setEvrakFiltre] = useState(FILTRE_TUMU);
     // G273: Belge tezgâhı (PDF araçları) için çoklu belge seçimi — seçim sırası birleştirme sırasıdır.
     const [pdfSecim, setPdfSecim] = useState<number[]>([]);
+    // G285: Word yaşam döngüsü diyalogları (yeni belge · kesinleştir · yeni sürüm taslağı).
+    const [yeniBelgeAcik, setYeniBelgeAcik] = useState(false);
+    const [kesinlestirDoc, setKesinlestirDoc] = useState<CaseDocument | null>(null);
+    const [yeniSurumDoc, setYeniSurumDoc] = useState<CaseDocument | null>(null);
+    const belgeAdi = (d: CaseDocument) => d.stored_filename || d.original_filename;
+    // Diyaloğa giden kart künyesi — kimliği kart değişmedikçe sabit (diyalog açılış efekti buna bağlı).
+    const yeniBelgeKarti = useMemo(() => (caseData ? {
+        id: caseData.id,
+        tracking_no: caseData.tracking_no ?? null,
+        esas_no: caseData.esas_no ?? null,
+        court: caseData.court ?? null,
+        status: caseData.status ?? null,
+        parties: (caseData.parties ?? []).map((p) => ({ id: p.id, party_type: p.party_type, name: p.name, role: p.role })),
+    } : null), [caseData]);
+    /** DocCard'a Word yaşam döngüsü eylemleri + sürüm zinciri etiketi ("v2 (önceki: …)"). */
+    const belgeYasamProps = (doc: CaseDocument) => {
+        const zincir = doc.onceki_document_id != null ? surumZinciri(doc, caseData?.documents ?? []) : null;
+        return {
+            surumEtiketi: zincir ? `v${zincir.no} (önceki: ${zincir.onceki ? belgeAdi(zincir.onceki) : `#${doc.onceki_document_id}`})` : null,
+            onKesinlestir: setKesinlestirDoc,
+            onYeniSurum: setYeniSurumDoc,
+            onSurumKaydedildi: () => { void kartiYenile(); },
+        };
+    };
     const pdfSec = (doc: CaseDocument, secili: boolean) =>
         setPdfSecim((onceki) => (secili ? (onceki.includes(doc.id) ? onceki : [...onceki, doc.id]) : onceki.filter((x) => x !== doc.id)));
     /** Tezgâha giden kart künyesi (`location.state.case`; tüm kart değil — küçük ve sözleşmeli, `types/pdfAraclari.KartOzeti`). */
@@ -1219,9 +1311,16 @@ const CaseDetails = () => {
                     {/* Documents Tab */}
                     <TabsContent value="documents">
                         <Card className="bg-[var(--bg-elevated)] border-[var(--border)] rounded-none">
-                            <CardHeader>
-                                <CardTitle className="text-lg">Evrak Listesi</CardTitle>
-                                <CardDescription>Davaya bağlanan ve analiz edilen tüm belgeler</CardDescription>
+                            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+                                <div>
+                                    <CardTitle className="text-lg">Evrak Listesi</CardTitle>
+                                    <CardDescription>Davaya bağlanan ve analiz edilen tüm belgeler</CardDescription>
+                                </div>
+                                {/* G285: kartta Word taslağı aç (K15) */}
+                                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setYeniBelgeAcik(true)}>
+                                    <FilePlus2 className="w-3.5 h-3.5" />
+                                    Yeni belge
+                                </Button>
                             </CardHeader>
                             <CardContent>
                                 {caseData.documents && caseData.documents.length > 0 ? (() => {
@@ -1324,7 +1423,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto">{caseWide.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} />)}
+                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} {...belgeYasamProps(doc)} />)}
                                                     </div>
                                                 </div>
                                             )}
@@ -1338,7 +1437,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto shrink-0">{group.docs!.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} />)}
+                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} {...belgeYasamProps(doc)} />)}
                                                     </div>
                                                 </div>
                                             ))}
@@ -1372,6 +1471,30 @@ const CaseDetails = () => {
                     muvekkil_adi: resendDoc.muvekkil_adi ?? undefined,
                     belge_turu_kodu: resendDoc.belge_turu_kodu ?? undefined,
                 } : undefined}
+            />
+
+            {/* G285: Word yaşam döngüsü — yeni belge (→ Taslak), kesinleştir (→ Giden), yeni sürüm taslağı (→ Taslak) */}
+            {/* Yalnız açıkken monte edilir: doctype listesi kart açılışında çekilmesin (G185 abonelik bekçisi). */}
+            {yeniBelgeAcik && (
+                <YeniBelgeDiyalogu
+                    acik
+                    kart={yeniBelgeKarti}
+                    onKapat={() => setYeniBelgeAcik(false)}
+                    onBasari={() => { belgeKumeSec("taslak"); void kartiYenile(); }}
+                />
+            )}
+            <KesinlestirOnayi
+                acik={kesinlestirDoc != null}
+                belge={kesinlestirDoc ? { id: kesinlestirDoc.id, ad: belgeAdi(kesinlestirDoc) } : null}
+                onKapat={() => setKesinlestirDoc(null)}
+                onZatenKesin={() => { void kartiYenile(); }}
+                onBasari={() => { setKesinlestirDoc(null); belgeKumeSec("giden"); void kartiYenile(); }}
+            />
+            <YeniSurumTaslagiOnayi
+                acik={yeniSurumDoc != null}
+                belge={yeniSurumDoc ? { id: yeniSurumDoc.id, ad: belgeAdi(yeniSurumDoc) } : null}
+                onKapat={() => setYeniSurumDoc(null)}
+                onBasari={() => { setYeniSurumDoc(null); belgeKumeSec("taslak"); void kartiYenile(); }}
             />
 
             {/* Belge silme onayı — gerekçe zorunlu, admin geri alabilir */}

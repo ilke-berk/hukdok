@@ -268,6 +268,13 @@ describe("resolveTimeoutMs (uç eşlemesi)", () => {
         expect(resolveTimeoutMs("/api/config/export/clients")).toBe(LONG_TIMEOUT_MS);
     });
 
+    it("Word yaşam döngüsü uçları uzun katmandadır (G285: kesinleştirme PDF/A, SharePoint senkron)", () => {
+        expect(resolveTimeoutMs("/api/documents/5/kesinlestir")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/cases/7/belgeler/yeni")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/documents/5/surum")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/documents/5/yeni-surum-taslagi")).toBe(LONG_TIMEOUT_MS);
+    });
+
     it("veri teslimi (admin aktarım) uçları uzun katmandadır; diğer admin uçları varsayılanda (G117)", () => {
         // Kuru koşu/uygulama 8.409 satırda 45-60 sn sürüyor; 30 sn'de kesilince
         // ikinci tıklama 409 görüyordu (03.09 lokal test bulgusu).

@@ -12,11 +12,14 @@ import { PdfYukleyici } from "@/components/pdf/PdfYukleyici";
 import { SayfaGorunumu } from "@/components/pdf/SayfaGorunumu";
 import { SayfaIzgarasi } from "@/components/pdf/SayfaIzgarasi";
 import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
+import { YeniBelgeDiyalogu } from "@/components/belge/YeniBelgeDiyalogu";
+import { useCaseDetailInvalidate } from "@/hooks/useCaseQueries";
 
 /**
  * `/belge-tezgahi` — Belge tezgâhı (G270, plan `docs/plan/pdf-araclari-plani-2026-10-07.md` §2-§3, K1/K2/K8).
  * Giriş yapan HER kullanıcı (yönetici kısıtı yok; rota `ProtectedRoute > ShellLayout`). İki yol çipi: "Düzenle (PDF)"
- * bu sürüm; "Yaz (Word)" G285 ile açılır (şimdilik kapalı).
+ * bu sayfanın kendisi; "Yaz (Word)" (G285) `YeniBelgeDiyalogu`'nu açar — kart ara → tür/ad → Word taslağı kartın
+ * Taslaklar'ına düşer (`location.state.case` varsa ön-seçili); PDF tezgâhı yerinde kalır (çalışma dosyaları kaybolmaz).
  *
  * PDF tezgâhı üç bölge: sol `DosyaListesi` (+ yükleyici), orta `<section data-slot="sayfalar">` (G271: seçili dosyanın
  * `SayfaIzgarasi`; G272: karttaki "büyüt" ya da çizim kipi açılınca `SayfaGorunumu` — karartma/not katmanları; biriken
@@ -36,6 +39,8 @@ export default function BelgeTezgahiPage() {
   const giris = (location.state ?? null) as BelgeTezgahiGirisi | null;
   const [kartaBaglaAcik, setKartaBaglaAcik] = useState(false);
   const [karttanAlAcik, setKarttanAlAcik] = useState(false);
+  const [yeniBelgeAcik, setYeniBelgeAcik] = useState(false);
+  const kartiBayatla = useCaseDetailInvalidate();
   const onYuklendi = useRef(false);
   const { karttanAlHepsini, isaretle } = tezgah;
 
@@ -73,13 +78,12 @@ export default function BelgeTezgahiPage() {
           <button
             type="button"
             data-testid="yol-word"
-            disabled
-            title="Sonraki sürümde: Word taslağı yazma ve kesinleştirme"
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1 font-mono text-[11px] tracking-[0.06em] uppercase text-[var(--fg-subtle)] disabled:cursor-not-allowed"
+            onClick={() => setYeniBelgeAcik(true)}
+            title="Kartta yeni Word taslağı aç (kart seç → tür → Word)"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1 font-mono text-[11px] tracking-[0.06em] uppercase text-[var(--fg-muted)] hover:border-[var(--brand)] hover:text-[var(--brand)]"
           >
             <PenLine className="w-3.5 h-3.5" />
             Yaz (Word)
-            <span className="normal-case tracking-normal font-sans text-[10px]">· sonraki sürüm</span>
           </button>
         </div>
       </header>
@@ -210,6 +214,13 @@ export default function BelgeTezgahiPage() {
         onKapat={() => setKarttanAlAcik(false)}
         onDosyalar={karttanAlinanlar}
         onBirlestir={karttanAlVeBirlestir}
+      />
+      <YeniBelgeDiyalogu
+        acik={yeniBelgeAcik}
+        kart={giris?.case ?? null}
+        kartaGitBaglantisi
+        onKapat={() => setYeniBelgeAcik(false)}
+        onBasari={(_, kart) => void kartiBayatla(kart.id)}
       />
     </div>
   );

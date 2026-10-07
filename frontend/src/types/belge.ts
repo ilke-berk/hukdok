@@ -45,6 +45,77 @@ export interface KartBelgesi {
   kesinlesme_tarihi?: string | null;
   /** `belge_surumleri` satır sayısı (K13). */
   surum_sayisi?: number | null;
+  /** G285: yeni sürüm taslağının bağlı olduğu (kesinleşmiş) belge (K14). */
+  onceki_document_id?: number | null;
+}
+
+// ── Word yaşam döngüsü (G285; plan §6.3, uçlar `backend/routes/belge_yasam.py`) ──────────────────────────────
+
+/** `POST /api/cases/{id}/belgeler/yeni` gövdesi. `belge_turu_kodu` `_` pad'li gider (sunucu normalize eder). */
+export interface YeniBelgeIstegi {
+  belge_turu_kodu: string;
+  ad: string;
+  sablon?: "bos";
+  case_party_id?: number;
+}
+
+/** `word_ac` = `ms-word:ofe|u|<word_url>` (masaüstü Word protokolü). */
+export interface YeniBelgeYaniti {
+  document_id: number;
+  word_url: string;
+  word_ac: string;
+}
+
+/** `POST /api/documents/{id}/surum` yanıtı; aynı sha → `degisti: false` (satır yine açılır — not için). */
+export interface SurumKaydetYaniti {
+  surum_no: number;
+  sha256: string;
+  degisti: boolean;
+}
+
+/** `GET /api/documents/{id}/surumler` satırı (`surum_no` artan; KESIN belgede son satır `kesin: true`). */
+export interface BelgeSurumu {
+  surum_no: number;
+  sha256: string;
+  not: string | null;
+  olusturan_email: string | null;
+  olusturulma: string | null;
+  kesin: boolean;
+}
+
+/** `POST /api/documents/{id}/kesinlestir` yanıtı (aynı `istek_kimligi` → `reused: true`). */
+export interface KesinlestirYaniti {
+  document_id: number;
+  reused: boolean;
+}
+
+/** `POST /api/documents/{id}/yeni-surum-taslagi` yanıtı (yeni TASLAK satırı; `reused` yanıtında URL'ler boş olabilir). */
+export interface YeniSurumTaslagiYaniti {
+  document_id: number;
+  reused: boolean;
+  word_url: string | null;
+  word_ac: string | null;
+}
+
+/**
+ * Yeni sürüm zinciri (K14): `onceki_document_id` bağını kartın belgeleri içinde geriye yürür. `no` = zincirdeki sıra
+ * (bağsız belge 1), `onceki` = doğrudan önceki belge (kartta yoksa — silinmiş — `null`). Döngüye karşı sınırlı.
+ */
+export function surumZinciri<T extends Pick<KartBelgesi, "id" | "onceki_document_id">>(
+  doc: Pick<KartBelgesi, "id" | "onceki_document_id">,
+  belgeler: readonly T[],
+): { no: number; onceki: T | null } {
+  const harita = new Map(belgeler.map((b) => [b.id, b]));
+  const onceki = doc.onceki_document_id != null ? harita.get(doc.onceki_document_id) ?? null : null;
+  let no = 1;
+  let imlec: number | null | undefined = doc.onceki_document_id;
+  const gorulen = new Set<number>([doc.id]);
+  while (imlec != null && !gorulen.has(imlec) && no < 100) {
+    gorulen.add(imlec);
+    no += 1;
+    imlec = harita.get(imlec)?.onceki_document_id;
+  }
+  return { no, onceki };
 }
 
 type YonDurumKaynak = Pick<KartBelgesi, "yon" | "kaynak" | "durum">;

@@ -28,6 +28,12 @@ const cases = vi.hoisted(() => ({
 vi.mock("@/hooks/useCases", () => ({ useCases: () => cases }));
 vi.mock("@/hooks/useConfig", () => ({ useConfigList: () => ({ data: [{ code: "KARAR_________", name: "Karar" }], error: null }) }));
 vi.mock("@/hooks/useDebounce", () => ({ useDebounce: <T,>(v: T) => v }));
+// G285: "Yaz (Word)" → YeniBelgeDiyalogu; Word yaşam döngüsü uçları sahte, tarayıcı yönlendirmesi taklit.
+const yasamMock = vi.hoisted(() => ({ yeniBelge: vi.fn() }));
+vi.mock("@/lib/belgeYasamApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/belgeYasamApi")>()),
+  ...yasamMock,
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 type Kids = { children?: ReactNode; className?: string; "data-testid"?: string };
 vi.mock("@/components/ui/dialog", () => ({
@@ -44,6 +50,7 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 import BelgeTezgahiPage from "./BelgeTezgahiPage";
+import { tarayici } from "@/lib/belgeYasamApi";
 import { PdfAraclariApiError } from "@/lib/pdfAraclariApi";
 import type { BelgeTezgahiGirisi, Dosya, IslemIstegi } from "@/types/pdfAraclari";
 
@@ -130,8 +137,8 @@ describe("BelgeTezgahiPage iskelet", () => {
     expect(kap.querySelector("h1")!.textContent).toBe("Belge tezgâhı");
     expect(kap.querySelector('[data-testid="yol-pdf"]')!.getAttribute("aria-current")).toBe("true");
     const word = kap.querySelector<HTMLButtonElement>('[data-testid="yol-word"]')!;
-    expect(word.disabled).toBe(true);
-    expect(word.textContent).toContain("sonraki sürüm");
+    expect(word.disabled).toBe(false);
+    expect(word.textContent).toContain("Yaz (Word)");
     expect(kap.querySelector('[data-testid="ttl-bilgisi"]')!.textContent).toContain("1 saat");
     const yuva = kap.querySelector('section[data-slot="sayfalar"]')!;
     expect(yuva).not.toBeNull();
@@ -395,5 +402,38 @@ describe("rota ve menü bekçisi", () => {
 
   it("menü yolu önden yüklenebilir (sayfaOnYukleme haritası)", () => {
     expect(oku("lib/sayfaOnYukleme.ts")).toContain('"/belge-tezgahi": [() => import("../pages/BelgeTezgahiPage")]');
+  });
+});
+
+describe("BelgeTezgahiPage — Yaz (Word) yolu (G285)", () => {
+  it("çip diyaloğu açar: dava ara → kart seç → tür → Oluştur → yeniBelge + ms-word; PDF tezgâhı yerinde kalır", async () => {
+    const git = vi.spyOn(tarayici, "git").mockImplementation(() => undefined);
+    cases.searchCases.mockResolvedValue([{ id: 7, tracking_no: "DR.M.OZTURK-0003-HUK", esas_no: "2026/15" }]);
+    cases.getCase.mockResolvedValue({ parties: [{ id: 11, party_type: "CLIENT", name: "Ayşe Yılmaz" }] });
+    yasamMock.yeniBelge.mockResolvedValue({ document_id: 91, word_url: "https://sp/t.docx", word_ac: "ms-word:ofe|u|https://sp/t.docx" });
+    await ciz();
+    await act(async () => kap.querySelector<HTMLButtonElement>('[data-testid="yol-word"]')!.click());
+    const diyalog = kap.querySelector('[data-testid="yeni-belge-diyalogu"]')!;
+    expect(diyalog).not.toBeNull();
+    const ara = diyalog.querySelector<HTMLInputElement>('input[aria-label="Dava ara"]')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(ara, "OZTURK");
+      ara.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => diyalog.querySelector<HTMLButtonElement>('[role="option"] button')!.click());
+    const tur = diyalog.querySelector<HTMLSelectElement>("select")!;
+    const secSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    await act(async () => {
+      secSetter.call(tur, "KARAR_________");
+      tur.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => dugme("Oluştur ve Word'de aç")!.click());
+    expect(yasamMock.yeniBelge).toHaveBeenCalledWith(7, expect.objectContaining({ belge_turu_kodu: "KARAR_________" }));
+    expect(git).toHaveBeenCalledWith("ms-word:ofe|u|https://sp/t.docx");
+    const karta = kap.querySelector<HTMLAnchorElement>('[data-testid="yeni-belge-sonuc"] a[href="/cases/7?belgeler=taslak"]');
+    expect(karta).not.toBeNull();
+    expect(kap.querySelector('section[data-slot="sayfalar"]')).not.toBeNull();
+    git.mockRestore();
   });
 });

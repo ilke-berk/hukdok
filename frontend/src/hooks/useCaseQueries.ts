@@ -91,6 +91,17 @@ export function useCaseDetailQuery<T = Record<string, unknown>>(id: number | und
   });
 }
 
+/**
+ * Kartı önbellekte bayat işaretler (açık sayfa varsa yeniden çeker). G285: kartın DIŞINDAN yapılan yazmalar (tezgâhta
+ * "Yeni belge") sonrası karta dönüşte eski belge listesi bir istek süresi bile görünmesin. Sağlayıcı yoksa no-op.
+ */
+export function useCaseDetailInvalidate(): (id: number) => Promise<void> {
+  const queryClient = useContext(QueryClientContext);
+  return useCallback(async (id: number) => {
+    if (queryClient) await queryClient.invalidateQueries({ queryKey: caseKeys.detail(id) });
+  }, [queryClient]);
+}
+
 // ---- Önden yükleme (Faz 4) ----
 
 /** İmleç satırda bu kadar kalırsa niyet sayılır — listeyi tarayan fare her satırı çekmesin. */

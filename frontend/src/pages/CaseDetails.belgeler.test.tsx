@@ -2,7 +2,7 @@
 // CaseDetails "Belgeler": Gelen · Taslak · Giden alt filtresi (G283, plan §6 K11/K12). Kilitlenen davranışlar: üç filtre
 // sayıları ve listeleri; seçim URL'de `?belgeler=` (varsayılan gelen yazılmaz, `?hata=` korunur; URL ile açılış);
 // tür çipleri alt filtreyle birlikte; çip etiketleri (durum/yön/kaynak); taslak satırında e-posta + PDF tezgâhı eylemleri
-// GİZLİ, "Word'de aç"/"Kesinleştir" yer tutucu, "N sürüm", silme kalır; kesin satırında "Kesinleşti:"; alanları olmayan
+// GİZLİ, "Word'de aç"/"Sürümler"/"Kesinleştir" (G285 açtı), "N sürüm", silme kalır; kesin satırında "Kesinleşti:"; alanları olmayan
 // eski yanıt GELEN/KESIN sayılır. Kurulum CaseDetails.docCard.test.tsx deseni.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
@@ -61,7 +61,7 @@ describe("CaseDetails — Belgeler: Gelen · Taslak · Giden (G283)", () => {
       belge(1, { yon: "GELEN", durum: "KESIN", kaynak: "BELGE_HATTI", belge_turu_adi: "Tebligat", document_type_code: "TEBLIGAT______" }),
       belge(2, { yon: "GELEN", durum: "KESIN", kaynak: "ARSIV_AKTARIM" }),
       belge(3, { yon: "GIDEN", durum: "KESIN", kaynak: "PDF_ARACLARI", kesinlesme_tarihi: "2026-10-07T09:30:00Z" }),
-      belge(4, { yon: "GIDEN", durum: "TASLAK", kaynak: "WORD", surum_sayisi: 3, email_sent: false, sharepoint_url: "https://sp/4" }),
+      belge(4, { yon: "GIDEN", durum: "TASLAK", kaynak: "WORD", surum_sayisi: 3, email_sent: false, sharepoint_url: "https://sp/4", word_url: "https://sp/4.docx" }),
       belge(5, {}), // eski yanıt: yon/durum yok → gelen/kesin
     ];
   });
@@ -169,15 +169,13 @@ describe("CaseDetails — Belgeler: Gelen · Taslak · Giden (G283)", () => {
     expect(satir(2).querySelector('[data-testid="belge-durum-cipi"]')!.getAttribute("data-kaynak")).toBe("ARSIV_AKTARIM");
   });
 
-  it("taslak satırı: e-posta ve PDF tezgâhı eylemleri gizli, Word'de aç / Kesinleştir yer tutucu, '3 sürüm', silme kalır", async () => {
+  it("taslak satırı: e-posta ve PDF tezgâhı eylemleri gizli, Word'de aç / Sürümler / Kesinleştir açık (G285), '3 sürüm', silme kalır", async () => {
     await renderDocumentsTab("/cases/7?belgeler=taslak");
     const s = satir(4);
     expect(s.dataset.taslak).toBe("true");
     const dugmeler = Array.from(s.querySelectorAll<HTMLButtonElement>("button")).map((b) => [b.textContent?.trim(), b.disabled, b.title] as const);
-    expect(dugmeler.map((d) => d[0])).toEqual(["Word'de aç", "Kesinleştir", "Detay / Görüntüle", ""]);
-    expect(dugmeler[0][1]).toBe(true);
-    expect(dugmeler[0][2]).toContain("Sonraki sürümde");
-    expect(dugmeler[1][1]).toBe(true);
+    expect(dugmeler.map((d) => d[0])).toEqual(["Word'de aç", "Sürümler", "Kesinleştir", "Detay / Görüntüle", ""]);
+    expect(dugmeler.every((d) => d[1] === false)).toBe(true);
     expect(s.querySelector('button[title="Belgeyi sil"]')).not.toBeNull();
     expect(s.textContent).not.toContain("Tekrar Gönder");
     expect(s.textContent).not.toContain("PDF araçlarında aç");
