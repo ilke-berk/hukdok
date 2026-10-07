@@ -195,6 +195,24 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 - [ ] G265 | bant:lexis | bagimli:G261,G263 | Ölçüm aracı `emsal_ajan_olcum.py`: altın küme (zincir · rapor atfı · avukat işareti `emsal_isaret_oku.py`), aday ve okuma aşaması ayrı, Recall@5/@10, MRR, gerekçe doğruluğu, token/sn; çıktı depo dışı; gerçek koşu insan adımı
 - [ ] G266 | bant:docs | bagimli:G264,G262 | CLAUDE.md Lexis paragrafı + plan durumu + genel-bakış + otomasyon/gorevler README lexis bandı (koddan doğrulanmış)
 
+## ÖNCELİK 10 — PDF araçları sayfası: Acrobat yerine birleştir/böl/sayfa düzenle/sıkıştır/karart/damga + karta bağla (2026-10-07 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/pdf-araclari-plani-2026-10-07.md (§3 API sözleşmesi SABİT — frontend sahte API ile backend'e
+     paralel yazılır; ilk gerçek buluşma G273). Yeni bağımlılık YOK (pymupdf + Ghostscript + LibreOffice imajda,
+     @dnd-kit kurulu); nginx DEĞİŞMEZ (/api altı); migrasyon YOK. Karta bağlama mevcut convert_pdfa_and_queue_uploads
+     hattı: PDF/A + iki arşiv + bildirim + (tür allowlist'teyse) Hukukbot — yeni kural yok. OCR katmanı kapsam DIŞI.
+     Zincirler: G267 → G268 → G269 (backend seri) ∥ G270 → G271 → G272 (frontend); G273 ikisinin birleşimi; G274 son.
+     Tahmin 3 gece (gece 1: G267 → G268 ∥ G270 → G271; gece 2: G269 ∥ G272; gece 3: G273 → G274). -->
+
+- [ ] G267 | bant:backend | bagimli:- | PDF araçları çekirdeği `pdf/pdf_araclari.py`: birleştir, böl, sayfa düzenle (sıra/sil/döndür), sıkıştır (gs), karart (apply_redactions, görünür düzlem koordinatı), damga (DejaVuSans), not, pdf_ye_cevir, sayfa_meta, onizleme_png; deadline + os.replace; gerçek PDF testleri
+- [ ] G268 | bant:backend | bagimli:G267 | Uçlar `POST /api/pdf-araclari/{yukle,islem}` + `GET .../onizleme/{id}/{sayfa}`: DOWNLOAD_CACHE `kaynak:"pdf_araclari"` + on_evict payload silme, sahiplik 404, semafor 2 → 503, bütçe 270 → 504, sayfa 1.000 → 413, 30/dk; api.py kaydı; nginx dokunulmaz (bekçi)
+- [ ] G269 | bant:backend | bagimli:G268 | `POST .../karta-bagla` (convert_pdfa_and_queue_uploads, analiz/e-posta yok, `istek_kimligi` idempotent, 409 kilit, tür allowlist Hukukbot kuralı testle) + `POST .../karttan-al` (SharePoint'ten çalışma dosyası)
+- [ ] G270 | bant:frontend | bagimli:- | Sayfa iskeleti `/pdf-araclari` (herkese, Araçlar menüsü) + `lib/pdfAraclariApi.ts` + `types/pdfAraclari.ts` (§3 birebir) + yükleyici (sıralı tek dosya) + dosya listesi + işlem paneli (birleştir/böl/sıkıştır/damga) + indir; sahte API testleri
+- [ ] G271 | bant:frontend | bagimli:G270 | Sayfa ızgarası: önizleme (görünür kartlar), @dnd-kit sırala, döndür, sil, seç → `sayfa_duzenle`; seçili sayfalardan `bol` aralıkları
+- [ ] G272 | bant:frontend | bagimli:G271 | Karartma + not çizim katmanı: büyük sayfa görünümü, dikdörtgen/nokta, `pdfKoordinat.ts` piksel→puan, geri alınamaz onayı → `karart`/`not`
+- [ ] G273 | bant:frontend | bagimli:G269,G271 | Karta bağla diyaloğu (dava ara, belge türü, taraf, istek_kimligi) + karttan al diyaloğu + `CaseDetails` "PDF araçlarında aç" / çoklu seç → birleştir; sözleşme hizası raporu
+- [ ] G274 | bant:docs | bagimli:G272,G273 | CLAUDE.md "PDF araçları" paragrafı + `belge-isleme-hatti.md` bölümü + plan durumu (koddan doğrulanmış)
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices
