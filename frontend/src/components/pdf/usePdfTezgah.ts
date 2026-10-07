@@ -12,7 +12,7 @@
 // nokta, her not yeni çıktı — zincir). Büyük görünüm dosya değişince (kullanıcı başka dosya seçince) ızgaraya döner;
 // işlem çıktısı seçilince AYNI sayfada kalır (sayfa sayısına kırpılır) — kullanıcı metnin gittiğini hemen görür.
 import { useCallback, useMemo, useState } from "react";
-import { hataMesaji, indir, islem, yukle } from "@/lib/pdfAraclariApi";
+import { hataMesaji, indir, islem, karttanAl, yukle } from "@/lib/pdfAraclariApi";
 import type {
   DondurmeAcisi,
   Dosya,
@@ -161,6 +161,39 @@ export function usePdfTezgah() {
   );
 
   const yuklemeleriTemizle = useCallback(() => setYuklemeler([]), []);
+
+  /**
+   * G273: kart belgelerini SIRAYLA çalışma dosyası yapar (`karttan-al`; sunucu semaforu 2). Satırlar `yuklemeler`de
+   * (yükleyici listesi), bir belgenin hatası diğerlerini durdurmaz; başarılı dosyalar listeye düşer, ilki seçilir.
+   */
+  const karttanAlHepsini = useCallback(
+    async (documentIds: number[]): Promise<Dosya[]> => {
+      const idler = Array.from(new Set(documentIds.filter((n) => Number.isInteger(n) && n > 0)));
+      if (idler.length === 0) return [];
+      setHata(null);
+      setYukleniyor(true);
+      const satirlar: YuklemeDurumu[] = idler.map((id) => ({ anahtar: `k${++yuklemeSayaci}`, ad: `Kart belgesi #${id}`, durum: "yukleniyor" }));
+      setYuklemeler(satirlar);
+      const alinanlar: Dosya[] = [];
+      try {
+        for (let i = 0; i < idler.length; i++) {
+          const satir = satirlar[i];
+          try {
+            const dosya = await karttanAl(idler[i]);
+            alinanlar.push(dosya);
+            yuklemeGuncelle(satir.anahtar, { durum: "tamam", ad: dosya.ad });
+          } catch (e) {
+            yuklemeGuncelle(satir.anahtar, { durum: "hata", mesaj: hataMesaji(e) });
+          }
+        }
+      } finally {
+        setYukleniyor(false);
+      }
+      if (alinanlar.length > 0) dosyaEkle(alinanlar);
+      return alinanlar;
+    },
+    [dosyaEkle, yuklemeGuncelle],
+  );
 
   /** Yalnız istemci listesinden düşürür; sunucudaki dosyaya dokunmaz (TTL siler). */
   const listedenKaldir = useCallback((id: string) => {
@@ -456,6 +489,7 @@ export function usePdfTezgah() {
     indiriliyor,
     hata,
     yukleHepsini,
+    karttanAlHepsini,
     yuklemeleriTemizle,
     dosyaEkle,
     listedenKaldir,

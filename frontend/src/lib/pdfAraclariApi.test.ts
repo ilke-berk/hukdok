@@ -14,6 +14,9 @@ import {
   hataMesaji,
   indir,
   islem,
+  istekKimligiUret,
+  kartaBagla,
+  karttanAl,
   onizlemeUrl,
   yukle,
 } from "./pdfAraclariApi";
@@ -117,6 +120,64 @@ describe("onizlemeUrl / indir", () => {
   it("indir 404 → PdfAraclariApiError", async () => {
     fetchMock.mockResolvedValueOnce(yanit(404, { detail: "Dosya bulunamadı" }));
     await expect(indir("yok", "x.pdf")).rejects.toBeInstanceOf(PdfAraclariApiError);
+  });
+});
+
+describe("kartaBagla / karttanAl (G273)", () => {
+  it("kartaBagla JSON gövdeyle /karta-bagla'ya POST eder; yanıt {document_id, reused}", async () => {
+    fetchMock.mockResolvedValueOnce(yanit(200, { document_id: 321, reused: false }));
+    const istek = {
+      id: "u1",
+      case_id: 7,
+      belge_turu_kodu: "TEBLIGAT______",
+      dosya_adi: "tebligat.pdf",
+      case_party_id: 11,
+      istek_kimligi: "11111111-2222-4333-8444-555555555555",
+      yon: "GELEN" as const,
+      durum: "TASLAK" as const,
+    };
+    expect(await kartaBagla(istek)).toEqual({ document_id: 321, reused: false });
+    const [yol, secenekler] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(yol).toBe("/api/pdf-araclari/karta-bagla");
+    expect(secenekler.method).toBe("POST");
+    expect(JSON.parse(secenekler.body as string)).toEqual(istek);
+  });
+
+  it("reused true → bayrak; 409 kilitli kart sunucu metniyle; 503 meşgul sabit metin", async () => {
+    fetchMock.mockResolvedValueOnce(yanit(200, { document_id: 5, reused: true }));
+    const r = await kartaBagla({ id: "u", case_id: 1, belge_turu_kodu: "X", dosya_adi: "a.pdf", istek_kimligi: "k" });
+    expect(r).toEqual({ document_id: 5, reused: true });
+    fetchMock.mockResolvedValueOnce(yanit(409, { detail: "Kayıt şu anda başka bir işlem tarafından kilitli; birkaç dakika sonra tekrar deneyin." }));
+    const h409 = (await kartaBagla({ id: "u", case_id: 1, belge_turu_kodu: "X", dosya_adi: "a.pdf", istek_kimligi: "k" }).catch((e: unknown) => e)) as PdfAraclariApiError;
+    expect(h409.status).toBe(409);
+    expect(h409.message).toContain("kilitli");
+    fetchMock.mockResolvedValueOnce(yanit(503, { detail: { mesaj: "teknik", error_kod: "sistem_mesgul" } }));
+    const h503 = (await kartaBagla({ id: "u", case_id: 1, belge_turu_kodu: "X", dosya_adi: "a.pdf", istek_kimligi: "k" }).catch((e: unknown) => e)) as PdfAraclariApiError;
+    expect(h503.message).toBe("Sistem şu anda meşgul; birkaç dakika sonra tekrar deneyin.");
+    expect(h503.errorKod).toBe("sistem_mesgul");
+  });
+
+  it("karttanAl {document_id} gövdesiyle /karttan-al'a POST eder, Dosya döner; 404 ve 502 mesajları", async () => {
+    fetchMock.mockResolvedValueOnce(yanit(200, DOSYA));
+    expect(await karttanAl(42)).toEqual(DOSYA);
+    const [yol, secenekler] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(yol).toBe("/api/pdf-araclari/karttan-al");
+    expect(JSON.parse(secenekler.body as string)).toEqual({ document_id: 42 });
+    fetchMock.mockResolvedValueOnce(yanit(404, { detail: "Belge bulunamadı." }));
+    const h404 = (await karttanAl(1).catch((e: unknown) => e)) as PdfAraclariApiError;
+    expect(h404.status).toBe(404);
+    expect(h404.message).toBe("Belge bulunamadı.");
+    fetchMock.mockResolvedValueOnce(yanit(502, { detail: { mesaj: "Graph 500 ...", error_kod: "sharepoint" } }));
+    const h502 = (await karttanAl(1).catch((e: unknown) => e)) as PdfAraclariApiError;
+    expect(h502.message).toBe("Belge arşivden (SharePoint) alınamadı; daha sonra tekrar deneyin.");
+    expect(h502.errorKod).toBe("sharepoint");
+  });
+
+  it("istekKimligiUret UUID v4 biçiminde ve her çağrıda farklı", () => {
+    const a = istekKimligiUret();
+    const b = istekKimligiUret();
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(a).not.toBe(b);
   });
 });
 

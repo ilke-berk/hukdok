@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, User, Scale, Clock, Gavel, FileText, Briefcase, AlertCircle, AlertTriangle, FileStack, TrendingUp, BarChart3, Users, Edit, Activity, Copy, Check, CheckCircle2, XCircle, MinusCircle, RotateCcw, Sparkles, Trash2, Wrench, Combine } from "lucide-react";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -210,16 +210,32 @@ type CaseParty = NonNullable<CaseDetailsData["parties"]>[number];
  * yazarken her tuşta). Modül düzeyinde durur; sayfa verisini prop olarak alır.
  */
 const DocCard = ({
-    doc, clientParties, onAssignParty, onResend, onDelete,
+    doc, clientParties, onAssignParty, onResend, onDelete, onPdfAraclari, pdfSecili, onPdfSec,
 }: {
     doc: CaseDocument;
     clientParties: CaseParty[];
     onAssignParty: (docId: number, partyId: number | null) => void;
     onResend: (doc: CaseDocument) => void;
     onDelete: (doc: CaseDocument) => void;
+    /** G273: belgeyi Belge tezgâhında aç (yalnız arşivde — `sharepoint_url` dolu — belgeler). */
+    onPdfAraclari?: (doc: CaseDocument) => void;
+    /** G273: çoklu seçim (tezgâhta birleştirme). */
+    pdfSecili?: boolean;
+    onPdfSec?: (doc: CaseDocument, secili: boolean) => void;
 }) => (
     <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
         <div className="flex items-start gap-4 flex-1 min-w-0">
+            {onPdfSec && (
+                <input
+                    type="checkbox"
+                    aria-label={`Tezgâh için seç: ${doc.stored_filename || doc.original_filename}`}
+                    title={doc.sharepoint_url ? "Belge tezgâhında birleştirmek için seç" : "Arşivde yok; tezgâha alınamaz"}
+                    checked={!!pdfSecili}
+                    disabled={!doc.sharepoint_url}
+                    onChange={(e) => onPdfSec(doc, e.target.checked)}
+                    className="mt-3 accent-[var(--brand)]"
+                />
+            )}
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                 <FileText className="w-5 h-5 text-brand" />
             </div>
@@ -331,6 +347,19 @@ const DocCard = ({
             >
                 Detay / Görüntüle
             </Button>
+            {onPdfAraclari && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    title={doc.sharepoint_url ? "Belge tezgâhında (PDF araçları) aç" : "Arşivde yok; tezgâha alınamaz"}
+                    disabled={!doc.sharepoint_url}
+                    onClick={() => onPdfAraclari(doc)}
+                >
+                    <Wrench className="w-3.5 h-3.5 mr-1" />
+                    PDF araçlarında aç
+                </Button>
+            )}
             <Button
                 variant="outline"
                 size="sm"
@@ -400,6 +429,27 @@ const CaseDetails = () => {
     const [deleteDocReason, setDeleteDocReason] = useState("");
     // Evrak Listesi belge türü süzgeci (FILTRE_TUMU | FILTRE_KARARLAR | tür anahtarı)
     const [evrakFiltre, setEvrakFiltre] = useState(FILTRE_TUMU);
+    // G273: Belge tezgâhı (PDF araçları) için çoklu belge seçimi — seçim sırası birleştirme sırasıdır.
+    const [pdfSecim, setPdfSecim] = useState<number[]>([]);
+    const pdfSec = (doc: CaseDocument, secili: boolean) =>
+        setPdfSecim((onceki) => (secili ? (onceki.includes(doc.id) ? onceki : [...onceki, doc.id]) : onceki.filter((x) => x !== doc.id)));
+    /** Tezgâha giden kart künyesi (`location.state.case`; tüm kart değil — küçük ve sözleşmeli, `types/pdfAraclari.KartOzeti`). */
+    const tezgahaGit = (documentIds: number[]) => {
+        if (!caseData || documentIds.length === 0) return;
+        navigate("/belge-tezgahi", {
+            state: {
+                document_ids: documentIds,
+                case: {
+                    id: caseData.id,
+                    tracking_no: caseData.tracking_no ?? null,
+                    esas_no: caseData.esas_no ?? null,
+                    court: caseData.court ?? null,
+                    status: caseData.status ?? null,
+                    parties: (caseData.parties ?? []).map((p) => ({ id: p.id, party_type: p.party_type, name: p.name, role: p.role })),
+                },
+            },
+        });
+    };
 
     const handleResendConfirm = async (
         to: string[],
@@ -1146,8 +1196,25 @@ const CaseDetails = () => {
 
                                     const clientParties = (caseData.parties || []).filter(p => p.party_type === "CLIENT");
 
+                                    const pdfSecili = pdfSecim.filter((id) => caseData.documents!.some((d) => d.id === id));
+
                                     return (
                                         <div className="space-y-6">
+                                            {/* G273: çoklu seçim şeridi → Belge tezgâhında birleştir (seçim sırası = birleştirme sırası) */}
+                                            {pdfSecili.length > 0 && (
+                                                <div data-testid="pdf-secim-seridi" role="status" className="flex flex-wrap items-center gap-2 border border-[var(--brand)] bg-[var(--brand-soft)] px-3 py-2 text-xs">
+                                                    <span className="font-medium text-[var(--brand)]">{pdfSecili.length} belge seçili</span>
+                                                    <span className="text-muted-foreground hidden sm:inline">— seçim sırasıyla tek PDF olur</span>
+                                                    <span className="flex-1" />
+                                                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setPdfSecim([])}>
+                                                        Seçimi temizle
+                                                    </Button>
+                                                    <Button size="sm" className="h-7 text-xs gap-1.5" onClick={() => tezgahaGit(pdfSecili)}>
+                                                        <Combine className="w-3.5 h-3.5" />
+                                                        Seçilenleri PDF araçlarında birleştir
+                                                    </Button>
+                                                </div>
+                                            )}
                                             {cipler.length > 2 && (
                                                 <div role="group" aria-label="Belge türüne göre süz" className="flex flex-wrap gap-2">
                                                     {cipler.map(c => {
@@ -1179,7 +1246,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto">{caseWide.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} />)}
+                                                        {caseWide.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} />)}
                                                     </div>
                                                 </div>
                                             )}
@@ -1193,7 +1260,7 @@ const CaseDetails = () => {
                                                         <Badge variant="outline" className="text-[10px] ml-auto shrink-0">{group.docs!.length}</Badge>
                                                     </div>
                                                     <div className="space-y-3">
-                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} />)}
+                                                        {group.docs!.map(doc => <DocCard key={doc.id} doc={doc} clientParties={clientParties} onAssignParty={handleAssignParty} onResend={setResendDoc} onDelete={setDeleteDoc} onPdfAraclari={(d) => tezgahaGit([d.id])} pdfSecili={pdfSecim.includes(doc.id)} onPdfSec={pdfSec} />)}
                                                     </div>
                                                 </div>
                                             ))}

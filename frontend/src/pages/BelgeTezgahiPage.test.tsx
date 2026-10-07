@@ -8,21 +8,44 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: vi.fn() } }));
 
-const apiMock = vi.hoisted(() => ({ yukle: vi.fn(), islem: vi.fn(), indir: vi.fn(), onizlemeBlob: vi.fn() }));
+const apiMock = vi.hoisted(() => ({ yukle: vi.fn(), islem: vi.fn(), indir: vi.fn(), onizlemeBlob: vi.fn(), karttanAl: vi.fn(), kartaBagla: vi.fn() }));
 vi.mock("@/lib/pdfAraclariApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/pdfAraclariApi")>()),
   ...apiMock,
 }));
+// G273: diyaloglar dava arama + doctype listesi ister; sayfa testinde sahte. Dialog düz DOM (Radix odak tuzağı).
+const cases = vi.hoisted(() => ({
+  searchCases: vi.fn<(q: string) => Promise<unknown[]>>(async () => []),
+  getCase: vi.fn<(id: number) => Promise<unknown>>(async () => null),
+}));
+vi.mock("@/hooks/useCases", () => ({ useCases: () => cases }));
+vi.mock("@/hooks/useConfig", () => ({ useConfigList: () => ({ data: [{ code: "KARAR_________", name: "Karar" }], error: null }) }));
+vi.mock("@/hooks/useDebounce", () => ({ useDebounce: <T,>(v: T) => v }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+type Kids = { children?: ReactNode; className?: string; "data-testid"?: string };
+vi.mock("@/components/ui/dialog", () => ({
+  Dialog: ({ open, children }: Kids & { open: boolean }) => (open ? <div>{children}</div> : null),
+  DialogContent: ({ children, className, ...rest }: Kids) => (
+    <div className={className} data-testid={rest["data-testid"]}>
+      {children}
+    </div>
+  ),
+  DialogHeader: ({ children }: Kids) => <div>{children}</div>,
+  DialogTitle: ({ children }: Kids) => <div>{children}</div>,
+  DialogDescription: ({ children }: Kids) => <div>{children}</div>,
+  DialogFooter: ({ children }: Kids) => <div>{children}</div>,
+}));
 
 import BelgeTezgahiPage from "./BelgeTezgahiPage";
 import { PdfAraclariApiError } from "@/lib/pdfAraclariApi";
-import type { Dosya, IslemIstegi } from "@/types/pdfAraclari";
+import type { BelgeTezgahiGirisi, Dosya, IslemIstegi } from "@/types/pdfAraclari";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,9 +60,14 @@ const dosyaNesnesi = (ad: string, sayfa = 2): Dosya => ({
   sayfalar: Array.from({ length: sayfa }, (_, i) => ({ no: i + 1, genislik: 595, yukseklik: 842 })),
 });
 
-async function ciz() {
+/** Sayfa `useLocation().state` okur (G273) → MemoryRouter; `giris` ile `CaseDetails`'ten gelen state taklit edilir. */
+async function ciz(giris?: BelgeTezgahiGirisi) {
   await act(async () => {
-    kok.render(<BelgeTezgahiPage />);
+    kok.render(
+      <MemoryRouter initialEntries={[{ pathname: "/belge-tezgahi", state: giris ?? null }]}>
+        <BelgeTezgahiPage />
+      </MemoryRouter>,
+    );
   });
 }
 
@@ -143,6 +171,67 @@ describe("BelgeTezgahiPage iskelet", () => {
     const yuva = kap.querySelector('section[data-slot="sayfalar"]')!;
     expect(yuva.querySelector('[data-testid="sayfa-izgarasi"]')).not.toBeNull();
     expect(yuva.querySelectorAll('[role="listitem"]').length).toBe(2);
+  });
+});
+
+describe("dava kartı köprüsü (G273)", () => {
+  it("state.document_ids açılışta SIRAYLA karttanAl ile tezgâha alınır; ≥ 2 ise birleştirmeye işaretlenir; hata satırı diğerlerini durdurmaz", async () => {
+    const sira: number[] = [];
+    apiMock.karttanAl.mockImplementation(async (id: number) => {
+      sira.push(id);
+      if (id === 102) throw new PdfAraclariApiError(404, "Belge bulunamadı.");
+      return dosyaNesnesi(`kart-${id}.pdf`);
+    });
+    await ciz({ document_ids: [101, 102, 103], case: { id: 7, tracking_no: "T-7" } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(sira).toEqual([101, 102, 103]);
+    expect(satirAdlari()).toEqual(["kart-101.pdf", "kart-103.pdf"]);
+    expect(onayKutusu("kart-101.pdf").checked).toBe(true);
+    expect(onayKutusu("kart-103.pdf").checked).toBe(true);
+    expect(dugme("Birleştir")!.disabled).toBe(false);
+    expect(kap.textContent).toContain("Belge bulunamadı.");
+    expect(apiMock.yukle).not.toHaveBeenCalled();
+  });
+
+  it("tek document_id işaretlenmez; state.case 'Karta bağla' diyaloğunda ön-seçili (arama kutusu yok)", async () => {
+    apiMock.karttanAl.mockResolvedValueOnce(dosyaNesnesi("tek.pdf"));
+    await ciz({ document_ids: [55], case: { id: 7, tracking_no: "T-7", parties: [{ id: 1, party_type: "CLIENT", name: "Ayşe" }] } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(satirAdlari()).toEqual(["tek.pdf"]);
+    expect(onayKutusu("tek.pdf").checked).toBe(false);
+    await tikla(dugme("Karta bağla"));
+    const diyalog = kap.querySelector<HTMLDivElement>('[data-testid="karta-bagla-diyalogu"]')!;
+    expect(diyalog).not.toBeNull();
+    expect(diyalog.className).toContain("theme-classic");
+    expect(diyalog.querySelector('[data-testid="secili-kart"]')!.textContent).toContain("T-7");
+    expect(diyalog.querySelector('input[aria-label="Dava ara"]')).toBeNull();
+    expect(diyalog.textContent).toContain("tek.pdf");
+  });
+
+  it("'Karta bağla' dosya yokken kapalı; 'Karttan al' diyaloğu açılır ve alınan dosyalar listeye düşer", async () => {
+    await ciz();
+    expect(dugme("Karta bağla")!.disabled).toBe(true);
+    expect(kap.querySelector('[data-testid="karttan-al-diyalogu"]')).toBeNull();
+    await tikla(dugme("Karttan al"));
+    const diyalog = kap.querySelector<HTMLDivElement>('[data-testid="karttan-al-diyalogu"]')!;
+    expect(diyalog).not.toBeNull();
+    expect(diyalog.className).toContain("theme-classic");
+    // diyalog akışı kendi testinde; burada sayfa bağı: ara → seç → al → listede
+    cases.searchCases.mockResolvedValueOnce([{ id: 7, tracking_no: "T-7" }]);
+    cases.getCase.mockResolvedValueOnce({ id: 7, documents: [{ id: 101, original_filename: "a.pdf", sharepoint_url: "https://sp/1" }] });
+    await yaz(diyalog.querySelector<HTMLInputElement>('input[aria-label="Dava ara"]')!, "T-7");
+    await tikla(diyalog.querySelector<HTMLButtonElement>('[role="listbox"] button')!);
+    await tikla(diyalog.querySelector<HTMLInputElement>('input[aria-label="Seç: a.pdf"]')!);
+    apiMock.karttanAl.mockResolvedValueOnce(dosyaNesnesi("a.pdf"));
+    await tikla(Array.from(diyalog.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === "Tezgâha al"));
+    expect(apiMock.karttanAl).toHaveBeenCalledWith(101);
+    expect(satirAdlari()).toEqual(["a.pdf"]);
+    expect(kap.querySelector('[data-testid="karttan-al-diyalogu"]')).toBeNull();
+    expect(dugme("Karta bağla")!.disabled).toBe(false);
   });
 });
 

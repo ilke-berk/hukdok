@@ -4,7 +4,7 @@
 // düğmeler ÇİZİM KİPİNİ açar (büyük görünümde sürükle / tıkla); karartma isteği `KarartmaListesi`'nden (onaylı), not
 // isteği not kutusundan gider. Çıktı adı sunucudan gelen `ad`dır; indirme seçili dosyayı indirir.
 import { useId, useState, type ReactNode } from "react";
-import { Combine, Download, Eraser, Layers, Loader2, MessageSquareText, Scissors, Shrink, Stamp } from "lucide-react";
+import { Combine, Download, Eraser, FileDown, Layers, Link2, Loader2, MessageSquareText, Scissors, Shrink, Stamp } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { bolAraliklariniAyristir, damgaSayfalariniAyristir } from "@/lib/pdfAraclariApi";
 import { seciliSayfalardanAraliklar, type CizimKipi } from "./usePdfTezgah";
@@ -37,6 +37,10 @@ type Props = {
   onCizimKipi?: (kip: CizimKipi) => void;
   /** G272: biriken karartma alanı sayısı (bilgi). */
   karartmaSayisi?: number;
+  /** G273: "Karta bağla" diyaloğu (seçili dosya). */
+  onKartaBagla?: () => void;
+  /** G273: "Karttan al" diyaloğu. */
+  onKarttanAl?: () => void;
 };
 
 const KONUM_ADLARI: Record<DamgaKonumu, string> = {
@@ -87,6 +91,8 @@ export function IslemPaneli({
   cizimKipi = "yok",
   onCizimKipi,
   karartmaSayisi = 0,
+  onKartaBagla,
+  onKarttanAl,
 }: Props) {
   const kimlik = useId();
   const mesgul = surenIslem !== null;
@@ -325,6 +331,22 @@ export function IslemPaneli({
               ? "Not kipi açık: büyük görünümde noktaya tıklayın, metni yazın."
               : "Karartma ve not büyük sayfa görünümünde çizilir."}
         </p>
+      </Bolum>
+
+      <Bolum baslik="Dava kartı" ikon={<Link2 className="w-4 h-4" />}>
+        <p className="text-[12px] text-[var(--fg-muted)] mb-2">
+          Seçili dosyayı bir kartın belgesi yapın (kesin ya da taslak) ya da kartın arşivdeki belgelerini tezgâha alın.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <FlowButton size="sm" disabled={mesgul || !secili || !onKartaBagla} onClick={() => onKartaBagla?.()} title={secili ? "Seçili dosyayı dava kartına bağla" : "Önce bir dosya seçin"}>
+            <Link2 className="w-3.5 h-3.5" />
+            Karta bağla
+          </FlowButton>
+          <FlowButton size="sm" variant="secondary" disabled={mesgul || !onKarttanAl} onClick={() => onKarttanAl?.()} title="Kartın belgelerini çalışma dosyası olarak al">
+            <FileDown className="w-3.5 h-3.5" />
+            Karttan al
+          </FlowButton>
+        </div>
       </Bolum>
 
       <FlowButton disabled={!secili || indiriliyor || mesgul} onClick={onIndir} className="w-full">

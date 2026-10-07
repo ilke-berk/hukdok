@@ -5,17 +5,22 @@
 //   (300 sn) kendiliğinden; `islem` JSON → varsayılan 30 sn (lib/api.ts'e dokunulmadı — bkz. G270 raporu).
 // - Hata gövdesi: PDF araçları uçları `{"detail": {"mesaj", "error_kod"}}` döner (`routes/pdf_araclari._hata`),
 //   diğer uçlar düz `{"detail": "..."}`; ikisi de `PdfAraclariApiError`'a (status + errorKod + kullanıcı mesajı) çevrilir.
+// - G273: `kartaBagla` (`/karta-bagla`, yanıt `{document_id, reused}`; 409 kilitli kart / sürüyor → sunucu metni,
+//   503 meşgul) ve `karttanAl` (`/karttan-al`, yanıt `Dosya`; 404 belge/URL yok, 502 SharePoint → sabit metin).
 import { apiClient } from "@/lib/api";
-import type { Dosya, IslemIstegi, IslemYaniti } from "@/types/pdfAraclari";
+import type { Dosya, IslemIstegi, IslemYaniti, KartaBaglaIstegi, KartaBaglaYaniti } from "@/types/pdfAraclari";
 
 export const PDF_ARACLARI_ONEKI = "/api/pdf-araclari";
 export const PDF_ARACLARI_GENEL_HATA = "PDF işlemi tamamlanamadı.";
 
 /** Durum koduna göre kullanıcı mesajı; sunucunun `mesaj`ı varsa 4xx'te o kazanır. */
 const DURUM_MESAJLARI: Record<number, string> = {
+  404: "Kayıt bulunamadı ya da süresi dolmuş.",
+  409: "Kayıt şu anda meşgul; birkaç dakika sonra tekrar deneyin.",
   413: "Dosya boyutu ya da sayfa sayısı sınırı aşıldı.",
   415: "Desteklenmeyen dosya türü.",
   422: "İstek geçersiz; girdileri kontrol edin.",
+  502: "Belge arşivden (SharePoint) alınamadı; daha sonra tekrar deneyin.",
   503: "Sistem şu anda meşgul; birkaç dakika sonra tekrar deneyin.",
   504: "İşlem zaman bütçesinde bitmedi; daha küçük parçalarla deneyin.",
 };
@@ -103,6 +108,41 @@ export async function indir(id: string, ad: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** Çalışma dosyasını kartın belgesi yapar (§3 + §6.3). Aynı `istek_kimligi` ile tekrar → `reused: true`. */
+export async function kartaBagla(istek_: KartaBaglaIstegi, signal?: AbortSignal): Promise<KartaBaglaYaniti> {
+  const res = await istek(`${PDF_ARACLARI_ONEKI}/karta-bagla`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(istek_),
+    signal,
+  });
+  const yanit = (await res.json()) as Partial<KartaBaglaYaniti>;
+  return { document_id: Number(yanit?.document_id), reused: yanit?.reused === true };
+}
+
+/** Kartın arşivdeki belgesini çalışma dosyası yapar (§3; K5). Yanıt `Dosya`. */
+export async function karttanAl(documentId: number, signal?: AbortSignal): Promise<Dosya> {
+  const res = await istek(`${PDF_ARACLARI_ONEKI}/karttan-al`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ document_id: documentId }),
+    signal,
+  });
+  return (await res.json()) as Dosya;
+}
+
+/** Diyalog açılışında üretilen idempotency kimliği (UUID v4); `crypto.randomUUID` yoksa `getRandomValues` ile kurulur. */
+export function istekKimligiUret(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  const b = new Uint8Array(16);
+  c.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 /** Hata nesnesinden kullanıcı mesajı (`PdfAraclariApiError`, `ApiTimeoutError`, ağ hatası). */
 export function hataMesaji(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
@@ -145,4 +185,4 @@ export function damgaSayfalariniAyristir(metin: string, toplamSayfa: number): "h
   return sayfalar;
 }
 
-export const pdfAraclariApi = { yukle, islem, onizlemeUrl, onizlemeBlob, indir };
+export const pdfAraclariApi = { yukle, islem, onizlemeUrl, onizlemeBlob, indir, kartaBagla, karttanAl };

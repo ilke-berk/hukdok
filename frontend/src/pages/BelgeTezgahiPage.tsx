@@ -1,8 +1,13 @@
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import { AlertCircle, FileStack, PenLine, X } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { DosyaListesi } from "@/components/pdf/DosyaListesi";
 import { IslemPaneli } from "@/components/pdf/IslemPaneli";
 import { KarartmaListesi } from "@/components/pdf/KarartmaKatmani";
+import { KartaBaglaDiyalogu } from "@/components/pdf/KartaBaglaDiyalogu";
+import { KarttanAlDiyalogu } from "@/components/pdf/KarttanAlDiyalogu";
+import type { BelgeTezgahiGirisi, Dosya } from "@/types/pdfAraclari";
 import { PdfYukleyici } from "@/components/pdf/PdfYukleyici";
 import { SayfaGorunumu } from "@/components/pdf/SayfaGorunumu";
 import { SayfaIzgarasi } from "@/components/pdf/SayfaIzgarasi";
@@ -18,10 +23,36 @@ import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
  * karartma alanları `KarartmaListesi`'nde yuvanın altında, dosya başına `key`; dosya yokken boş), sağ `IslemPaneli`.
  * Çalışma dosyaları yalnız bu oturumdadır — sayfa yenilenince liste gider, sunucu 1 saat sonra siler (K2). Sayfa
  * `max-w` koymaz (tam genişlik kuralı). Default export: rota `React.lazy`.
+ *
+ * G273: `CaseDetails`'ten `navigate("/belge-tezgahi", { state: { document_ids, case } })` ile gelen belgeler açılışta
+ * SIRAYLA `karttan-al` ile tezgâha alınır (bir kez; `document_ids` ≥ 2 ise listede işaretlenir — birleştirmeye hazır),
+ * `state.case` "Karta bağla" diyaloğunda ön-seçilidir. İki diyalog: `KartaBaglaDiyalogu` (seçili dosya) ve
+ * `KarttanAlDiyalogu` (dava ara → belgeleri seç → tezgâha al / al ve birleştir).
  */
 export default function BelgeTezgahiPage() {
   useSetPageTitle("Belge tezgâhı", ["Araçlar", "Belge tezgâhı"]);
   const tezgah = usePdfTezgah();
+  const location = useLocation();
+  const giris = (location.state ?? null) as BelgeTezgahiGirisi | null;
+  const [kartaBaglaAcik, setKartaBaglaAcik] = useState(false);
+  const [karttanAlAcik, setKarttanAlAcik] = useState(false);
+  const onYuklendi = useRef(false);
+  const { karttanAlHepsini, isaretle } = tezgah;
+
+  // Açılışta karttan gelen belgeler (bir kez; sayfa içi yeniden çizimde tekrar etmez).
+  useEffect(() => {
+    if (onYuklendi.current) return;
+    const idler = giris?.document_ids?.filter((n) => Number.isInteger(n) && n > 0) ?? [];
+    if (idler.length === 0) return;
+    onYuklendi.current = true;
+    void karttanAlHepsini(idler).then((dosyalar) => {
+      if (dosyalar.length >= 2) for (const d of dosyalar) isaretle(d.id, true);
+    });
+  }, [giris, karttanAlHepsini, isaretle]);
+
+  const karttanAlinanlar = (dosyalar: Dosya[]) => tezgah.dosyaEkle(dosyalar);
+  const karttanAlVeBirlestir = (dosyalar: Dosya[]) =>
+    void tezgah.islemKos({ islem: "birlestir", girdiler: dosyalar.map((d) => d.id), parametreler: {} });
 
   return (
     <div data-testid="belge-tezgahi-sayfasi" className="flex flex-col gap-5 w-full min-w-0">
@@ -162,9 +193,24 @@ export default function BelgeTezgahiPage() {
             cizimKipi={tezgah.cizimKipi}
             onCizimKipi={tezgah.cizimKipiniAyarla}
             karartmaSayisi={tezgah.karartmaAlanlari.length}
+            onKartaBagla={() => setKartaBaglaAcik(true)}
+            onKarttanAl={() => setKarttanAlAcik(true)}
           />
         </aside>
       </div>
+
+      <KartaBaglaDiyalogu
+        acik={kartaBaglaAcik}
+        dosya={tezgah.secili}
+        onSecilenKart={giris?.case ?? null}
+        onKapat={() => setKartaBaglaAcik(false)}
+      />
+      <KarttanAlDiyalogu
+        acik={karttanAlAcik}
+        onKapat={() => setKarttanAlAcik(false)}
+        onDosyalar={karttanAlinanlar}
+        onBirlestir={karttanAlVeBirlestir}
+      />
     </div>
   );
 }

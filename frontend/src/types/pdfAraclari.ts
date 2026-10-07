@@ -127,6 +127,31 @@ export interface KarttanAlIstegi {
   document_id: number;
 }
 
+/**
+ * G273 — tezgâhın kart bağlamı (sözleşme dışı, yalnız istemci): `CaseDetails`'ten `navigate("/belge-tezgahi", { state })`
+ * ile gelen belge kimlikleri (açılışta sırayla `karttan-al`) ve "Karta bağla" diyaloğunda ön-seçili kart künyesi.
+ */
+export interface KartOzeti {
+  id: number;
+  tracking_no?: string | null;
+  esas_no?: string | null;
+  court?: string | null;
+  status?: string | null;
+  parties?: KartTarafi[];
+}
+
+export interface KartTarafi {
+  id: number;
+  party_type: string;
+  name: string;
+  role?: string;
+}
+
+export interface BelgeTezgahiGirisi {
+  document_ids?: number[];
+  case?: KartOzeti;
+}
+
 /** Sunucu hata gövdesi: `detail` düz metin (FastAPI) ya da `{mesaj, error_kod}` (PDF araçları `_hata`). */
 export interface PdfAraclariHataDetayi {
   mesaj: string;
