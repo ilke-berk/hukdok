@@ -185,7 +185,7 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
      tek dosya denemesi, karar_arama_kur --apply, SharePoint tek dosya denemesi ve altın küme ölçümü gündüz İNSAN ADIMI.
      Tahmin: 3-4 gece (gece 1: G258 ∥ G262; gece 2: G259 → G260 → G261; gece 3: G263 → G265 ∥ G264; gece 4: G266). -->
 
-- [ ] G258 | bant:lexis | bagimli:- | Tam metin arama: `karar_arama` tablosu (tsvector + GIN, yalnız büro) + `lexis_rapor/arama.py` operatör ayrıştırıcı (AND/OR/NOT/"ibare", `:*` ön-ek) + `karar_arama_kur.py` (kuru koşu) + raf araması FTS'ye (SQLite'ta ILIKE kalır) + 20 sorguluk ölçüm README'ye
+- [x] G258 | bant:lexis | bagimli:- | Tam metin arama: `karar_arama` tablosu (tsvector + GIN, yalnız büro) + `lexis_rapor/arama.py` operatör ayrıştırıcı (AND/OR/NOT/"ibare", `:*` ön-ek) + `karar_arama_kur.py` (kuru koşu) + raf araması FTS'ye (SQLite'ta ILIKE kalır) + 20 sorguluk ölçüm README'ye
 - [ ] G259 | bant:lexis | bagimli:G258 | Emsal belgesi: `POST /emsal-belge` (kart belgesi HUKDOK'tan token'la | disk yükleme ≤ 20 MB) → PDF/DOCX/UDF metin + bölümler (yeni `udf_okuyucu`) → maske (kart adlarıyla) → `emsal_dosyalari` (ad saklanmaz) + spool birimi; `GET /emsal-belge/{sha}` maskeli metin
 - [ ] G260 | bant:lexis | bagimli:G259 | Kalıcı arşiv: `servis/sharepoint.py` (Graph, HUKDOK arşiv kimliği, yeni `03_LEXIS_EMSAL/<yıl>/<sha>/`) + arşivleme/yeniden deneme + `emsal_arsiv_toparla.py` + ad çakışması kuralı; sahte Graph testleri
 - [ ] G261 | bant:lexis | bagimli:G258,G259 | Ajanlar: sorgu üretici (1 çağrı) + FTS adaylar (≤ 30) + asyncio okuyucular (6) + kod denetçi (alıntı birebir, düşen ÇIKMAZ) + `emsal_okumalar` önbellek + `model_cagrilari` log + `POST /emsal-ara` NDJSON + `GET /emsal-sonuc`, `/emsal-durum`; sahte üretici varsayılan
