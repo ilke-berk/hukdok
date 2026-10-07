@@ -527,7 +527,7 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 # --- ROUTES ---
-from routes import admin, config, clients, cases, case_hizmetleri, case_notes, debug, documents, hata_bildirimleri, processing, activity, export, parties, case_intake, client_errors, notifications, reports, transcribe
+from routes import admin, config, clients, cases, case_hizmetleri, case_notes, debug, documents, hata_bildirimleri, processing, activity, export, parties, case_intake, client_errors, notifications, reports, transcribe, pdf_araclari
 
 app.include_router(config.router)
 # Frontend hata beacon'ı — bilinçli auth'suz (auth kırıkken de rapor gelsin);
@@ -547,6 +547,9 @@ app.include_router(case_hizmetleri.router)
 app.include_router(hata_bildirimleri.router)
 app.include_router(parties.router)
 app.include_router(documents.router)
+# PDF araçları (G268, Belge tezgâhı): `/api/pdf-araclari/{yukle,islem,onizleme}` — çalışma dosyaları
+# DOWNLOAD_CACHE'te, indirme mevcut `/api/download`; `/api` altında, nginx istisnası gerekmez (K10).
+app.include_router(pdf_araclari.router)
 app.include_router(processing.router)
 # Otonom dava açma — intake analiz endpoint'i (Faz 2)
 app.include_router(case_intake.router)

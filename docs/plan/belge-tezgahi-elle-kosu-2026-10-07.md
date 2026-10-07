@@ -18,8 +18,8 @@ göreve ben "devam" deyince geç.
 
 | Sıra | Görev | Bant | Bağımlı | Durum | Commit |
 | --- | --- | --- | --- | --- | --- |
-| 1 | G267 PDF çekirdeği `pdf/pdf_araclari.py` | backend | - | bitti | (bu satırın commit'i; SHA G268 commit'inde işlenir) |
-| 2 | G268 uçlar `yukle/islem/onizleme` + cache temizliği | backend | G267 | açık | |
+| 1 | G267 PDF çekirdeği `pdf/pdf_araclari.py` | backend | - | bitti | 35cebfb |
+| 2 | G268 uçlar `yukle/islem/onizleme` + cache temizliği | backend | G267 | bitti | (SHA G282 commit'inde işlenir) |
 | 3 | G282 migrasyon 61: yön/kaynak/durum + sürüm defteri | backend | - | açık | |
 | 4 | G269 `karta-bagla` (kesin/taslak) + `karttan-al` | backend | G268, G282 | açık | |
 | 5 | G270 Belge tezgâhı sayfa iskeleti (PDF yolu) | frontend | - | açık | |

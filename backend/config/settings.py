@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     # (sonsuz bekleyip nginx 504'üne çarpmak yerine hızlı ve dürüst sinyal).
     conversion_acquire_timeout_seconds: float = 30.0
 
+    # ── PDF araçları (G268, plan K8) ─────────────────────────────────────
+    # Çıktı sayfa tavanı (aşım 413), işlem başına girdi tavanı (aşım 422) ve
+    # işlem zaman bütçesi (confirm ile aynı; nginx 300 sn — dolunca 504).
+    pdf_araclari_max_sayfa: int = 1000
+    pdf_araclari_max_girdi: int = 20
+    pdf_araclari_butce_saniye: float = 270.0
+
     # ── E-posta ek limitleri (0-C: Graph /sendMail ~4 MB gövde tavanı) ───
     # int: kullanıcı mesajlarına "(3 MB)" olarak giriyor (eski biçim korunur)
     email_max_single_mb: int = 3

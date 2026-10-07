@@ -90,9 +90,15 @@ def _cleanup_process_cache():
         logger.info(f"PROCESS_CACHE TTL expired: {k} → {entry.get('path')}")
     PROCESS_CACHE.cleanup_stale(on_evict=_evict)
     # Piggyback download cache cleanup on the same trigger.
-    DOWNLOAD_CACHE.cleanup_stale(
-        on_evict=lambda k, v: logger.info(f"DOWNLOAD_CACHE TTL expired: {k}")
-    )
+    DOWNLOAD_CACHE.cleanup_stale(on_evict=_download_evict)
+
+
+def _download_evict(k, entry):
+    """DOWNLOAD_CACHE evict'i: yalnız PDF araçları (G268, plan K2) kayıtlarının payload'ı
+    silinir — `/confirm` kayıtlarının dosyası eskisi gibi `schedule_cleanup`'a bırakılır."""
+    if entry.get("kaynak") == "pdf_araclari":
+        safe_remove(entry.get("path"))
+    logger.info(f"DOWNLOAD_CACHE TTL expired: {k}")
 
 # Belge türü → dava AŞAMASI (cases.case_stage) otomatik eşlemesi.
 # 12.09.2026 kullanıcı kararı: `cases.status` yalnız DERDEST | DANIŞ | MAHZEN
