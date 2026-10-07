@@ -7,11 +7,13 @@ nginx'indeki `/lexis-api/` önekidir — Hukukbot proxy'sinin aynı deseni
 1. ALLOWLIST: yalnız kullanıcı uçları proxy'lenir (`word`, `davalar`, `dosya`,
    `emsal-oner`, `iskelet`, `muallak-oner`, `karar-bankasi`, `kutuphane`, `rapor`,
    `emsal-puanla`, `taslak`, `gecmis`, `kart-baglari`, `kart-sec`, `profiller`, `profil`,
-   `karar-rafi`, `kararlar`, `karar`, `yaz`); servisin `/health`'i ve geri kalan her
-   `/lexis-api` yolu 404'tür.
+   `karar-rafi`, `kararlar`, `karar`, `yaz`, `emsal-belge`, `emsal-ara`, `emsal-sonuc`,
+   `emsal-durum`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
    Lexis stack'i kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. Vite dev proxy'si aynı allowlist'i taşır.
+4. AKIŞ ve GÖVDE (G262): `/emsal-ara` NDJSON akışı tamponlanmaz (`proxy_buffering off`);
+   `/emsal-belge` disk yüklemesi için gövde tavanı 20 MB (`client_max_body_size 20M`).
 
 Konteynerde repo kökü görünmediği için atlanır; CI'da (repo checkout'u) koşar.
 """
@@ -47,7 +49,7 @@ def _proxy_govdesi() -> str:
 
 
 # Tam metin: alternatif eklemek, (/|$) çapasını silmek ya da ~ → ~* yapmak allowlist'i genişletir.
-ALLOWLIST = "(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz)"
+ALLOWLIST = "(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum)"
 ALLOWLIST_ESLESMESI = f"~ ^/lexis-api/{ALLOWLIST}(/|$)"
 
 
@@ -88,6 +90,19 @@ def test_lexis_proxy_guvenlik_basliklarini_dusurmez():
     assert "add_header" not in _proxy_govdesi(), (
         "add_header server düzeyi güvenlik başlıklarını düşürür (nginx.conf kalıtım tuzağı)"
     )
+
+
+def test_lexis_ndjson_akisi_tamponlanmaz():
+    """`POST /emsal-ara` NDJSON akışıdır (plan §3 C5): tamponlansa ilerleme olayları sonda tek
+    seferde görünür. Hukukbot `/ask` bloğuyla aynı ayar."""
+    assert re.search(r"proxy_buffering\s+off\s*;", _proxy_govdesi()), "/emsal-ara NDJSON akışı tamponlanmamalı"
+
+
+def test_lexis_govde_tavani_20m():
+    """`POST /emsal-belge` disk yüklemesi 20 MB'a kadar kabul edilir (plan §3 A1); Word JSON'u
+    ve taslak gövdeleri zaten küçüktür. Tavan nginx'te TEK yerde, tam `20M` yazımıyla."""
+    tavanlar = re.findall(r"client_max_body_size\s+(\S+)\s*;", _proxy_govdesi())
+    assert tavanlar == ["20M"], f"Lexis gövde tavanı 20M olmalı (tek satır): {tavanlar!r}"
 
 
 @pytest.mark.skipif(not VITE_CONFIG.exists(), reason="frontend/vite.config.ts görünmüyor")

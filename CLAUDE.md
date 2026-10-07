@@ -160,7 +160,7 @@ filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G
 backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
 `lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). **Örnek kipte tek ağ isteği "Word indir"dir**
 (`lib/lexisWord.ts`, dinamik yüklenir): örnek taslak aynı origin'den `/lexis-api/word`'e gider, konteyner nginx'i
-(`nginx.conf:209-237`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz`, gecikmeli DNS, gerisi 404; bekçi
+(`nginx.conf:209-237`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum`, gecikmeli DNS, gerisi 404; bekçi
 `backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
 (`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HUKDOK kuralıyla kendisi doğrular,
 yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (dört biçim: Anadolu şablonu
