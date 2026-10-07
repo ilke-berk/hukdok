@@ -13,7 +13,9 @@ import { CiktiCubugu } from "./CiktiCubugu";
 import { DavaSecici } from "./DavaSecici";
 import { DayanakGoruntuleyici } from "./DayanakGoruntuleyici";
 import { DegerlendirmeBolumu } from "./DegerlendirmeBolumu";
+import { EmsalBulDiyalogu } from "./EmsalBulDiyalogu";
 import { EmsalEkleDiyalogu } from "./EmsalEkleDiyalogu";
+import { TaslakEmsalListesi } from "./EmsalKararListesi";
 import { EmsalListesi } from "./EmsalListesi";
 import { EmsalOkuyucu } from "./EmsalOkuyucu";
 import { EtiketliBolum } from "./EtiketliBolum";
@@ -53,6 +55,8 @@ export function Tezgah() {
   const [okunan, setOkunan] = useState<{ kayit: KutuphaneKaydi; emsal: Emsal | null } | null>(null);
   const [okunanKarar, setOkunanKarar] = useState<number | null>(null);
   const [ekleAcik, setEkleAcik] = useState(false);
+  // "Bu dosyaya emsal bul" diyaloğu: belge satırından açıldıysa o belge seçili gelir (`belgeId`), başlıktan açıldıysa null.
+  const [emsalBul, setEmsalBul] = useState<{ belgeId: number | null } | null>(null);
   const [wordIniyor, setWordIniyor] = useState(false);
   const vurguZamanlayici = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -83,6 +87,7 @@ export function Tezgah() {
   const kararlardanYazim = yazilacakKararlar.length > 0;
   // Gerçek kipte taslak sunucuda saklanır: dava değişimi taslağı SİLMEZ (onay gerekmez) — kayıt başarısızsa gerekir.
   const kayitsiz = t.kayit.tur === "hata" || t.kayit.tur === "cakisma";
+  const emsalKararIdleri = useMemo(() => new Set(t.emsalKararlari.map((k) => k.id)), [t.emsalKararlari]);
 
   const taslakSilinsinMi = useCallback(
     async (neden: string) =>
@@ -229,7 +234,7 @@ export function Tezgah() {
                 onOncekiRapor={dosya.onceki_rapor ? () => void raporOku(dosya.onceki_rapor!) : undefined}
                 kilitli={kilitli}
               />
-              <BelgeListesi belgeler={dosya.belgeler} secili={t.seciliBelgeler} onSec={t.belgeSec} kilitli={kilitli} />
+              <BelgeListesi belgeler={dosya.belgeler} secili={t.seciliBelgeler} onSec={t.belgeSec} onEmsalBul={(b) => setEmsalBul({ belgeId: b.id })} kilitli={kilitli} />
               <KararListesi
                 kararlar={t.kararlar}
                 yukleniyor={t.kararYukleniyor}
@@ -238,6 +243,15 @@ export function Tezgah() {
                 secili={t.seciliKararlar}
                 onSec={t.kararSec}
                 onOku={setOkunanKarar}
+                kilitli={kilitli}
+              />
+              <TaslakEmsalListesi
+                kararlar={t.emsalKararlari}
+                yukleniyor={t.emsalKararYukleniyor}
+                hata={t.emsalKararHatasi}
+                onOku={setOkunanKarar}
+                onCikar={t.emsalKarariCikar}
+                onBul={() => setEmsalBul({ belgeId: null })}
                 kilitli={kilitli}
               />
               <EmsalListesi
@@ -471,6 +485,19 @@ export function Tezgah() {
 
       <EmsalOkuyucu kayit={okunan?.kayit ?? null} emsal={okunan?.emsal} onKapat={() => setOkunan(null)} />
       <KararOkuyucu kararId={okunanKarar} onKapat={() => setOkunanKarar(null)} />
+      <EmsalBulDiyalogu
+        acik={emsalBul !== null}
+        caseId={dosya?.dava.case_id ?? null}
+        belgeler={dosya?.belgeler ?? []}
+        baslangicBelgeId={emsalBul?.belgeId ?? null}
+        mevcutKararlar={emsalKararIdleri}
+        onTaslagaEkle={(kararlar) => {
+          t.emsalKarariEkle(kararlar);
+          toast.success(`${kararlar.length} emsal karar taslağa eklendi`, { description: "Yazıma girmez; Word'de künye satırı olur." });
+        }}
+        onKararAc={setOkunanKarar}
+        onKapat={() => setEmsalBul(null)}
+      />
       <EmsalEkleDiyalogu
         acik={ekleAcik}
         haricSha={t.emsaller.map((e) => e.kayit.okuma.sha256)}

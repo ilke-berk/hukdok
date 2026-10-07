@@ -292,6 +292,33 @@ describe("KutuphaneTarayici", () => {
     await tikla(tam.querySelector("button")!);
     expect(tam.querySelector("p")!.textContent).toContain("HÜKÜM: Açıklanan nedenlerle DAVANIN REDDİNE");
   });
+
+  it("karar rafı: 'Bu dosyaya emsal bul' diskten belge alır (kart belgesi yok, taslağa ekleme yok); sonuç listesinden karar okuyucuda açılır; raf değişmez", async () => {
+    await ciz(<KutuphaneTarayici />);
+    await tikla(dugme("Karar rafı"));
+    await tikla(dugme("Bu dosyaya emsal bul"));
+    const diyalog = document.querySelector<HTMLElement>('[data-testid="lexis-emsal-bul"]')!;
+    expect(diyalog.getAttribute("role")).toBe("dialog");
+    expect(diyalog.querySelector('input[type="radio"]')).toBeNull();
+    const girdi = diyalog.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(girdi, "files", { value: [new File(["%PDF-1.4"], "dilekce.pdf", { type: "application/pdf" })], configurable: true });
+    await act(async () => {
+      girdi.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await bekle();
+    await tikla(dugme("Belgeyi hazırla"));
+    expect(document.querySelector('[data-testid="lexis-emsal-belge"]')!.textContent).toContain("Yükleme");
+    await tikla(dugme("Ara"));
+    await bekle(24);
+    const oneriler = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="lexis-emsal-oneri"]'));
+    expect(oneriler).toHaveLength(5);
+    expect(oneriler.some((o) => o.textContent?.includes("aynı kart"))).toBe(false); // kartsız belge
+    expect(Array.from(document.querySelectorAll("button")).some((b) => b.textContent?.includes("Taslağa ekle"))).toBe(false);
+    await tikla(dugme("Mersin 2. İdare Mahkemesi", oneriler[1]));
+    expect(document.querySelector('[data-testid="lexis-karar-okuyucu"]')!.textContent).toContain("2022/310 E., 2024/455 K.");
+    // Uydurma emsal kararlar rafa GİRMEZ: raf listesi 3 satır kalır.
+    expect(satirlar("lexis-raf-satiri")).toHaveLength(3);
+  });
 });
 
 describe("KartBagiListesi", () => {

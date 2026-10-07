@@ -12,12 +12,16 @@
 //
 // ENTEGRASYON: `LexisApi` arayüzü sözleşmedir. Dilekçe / beyan / poliçeden yazım gelince `taslakYaz` NDJSON akışına
 // bağlanır (`hukukbotApi.ask` okuyucusu), `ORNEK_VERI` false olur; örnek veri, `lexisDenetim.ts` ve buradaki puanlama KALKAR.
+import type { EmsalAkisSecenekleri } from "@/lib/lexisAkis";
 import { denetle as ornekDenetle, kararKaynakMetni } from "@/lib/lexisDenetim";
 import { katla } from "@/lib/lexisMetin";
 import type { WordSonucu } from "@/lib/lexisWord";
 import {
   ORNEK_DAVALAR,
   ORNEK_DOSYALAR,
+  ORNEK_EMSAL_KARARLARI,
+  ORNEK_EMSAL_KUNYESI,
+  ORNEK_EMSAL_OKUMALARI,
   ORNEK_GECMIS,
   ORNEK_HEDEF_ETIKETLER,
   ORNEK_KARARLAR,
@@ -25,12 +29,20 @@ import {
   ORNEK_KUTUPHANE,
   ORNEK_PROFILLER,
   ORNEK_TASLAKLAR,
+  ornekSha,
 } from "@/lib/lexisOrnekVeri";
 import {
+  EMSAL_BELGE_BICIMLERI,
   ISKELET_BOLUMLERI,
+  belgeUzantisi,
   type Bilesen,
   type DosyaGirdisi,
   type Emsal,
+  type EmsalAkisOlayi,
+  type EmsalBelge,
+  type EmsalDurumu,
+  type EmsalOnerisi,
+  type EmsalSonucu,
   type KararKaydi,
   type KartKararlari,
   type KayitliTaslak,
@@ -134,6 +146,20 @@ export interface LexisApi {
   taslakKaydet(caseId: number, kayit: Omit<TaslakKaydi, "kosu_id">, signal?: AbortSignal): Promise<TaslakKayitSonucu | null>;
   /** Kayıtlı taslağı siler (künye değişip taslak bilerek bırakıldığında). */
   taslakSil(caseId: number, signal?: AbortSignal): Promise<void>;
+
+  // --- emsal ajan hattı ("Bu dosyaya emsal bul", K27 / K28) ---
+  /** Kart belgesini emsal aramasına hazırlar (servis HUKDOK'tan indirir, metni çıkarıp maskeler; metin dönmez). */
+  emsalBelgeKarttan(caseId: number, belgeId: number, signal?: AbortSignal): Promise<EmsalBelge>;
+  /** Diskten seçilen belgeyi hazırlar (pdf / docx / udf, ≤ 20 MB). */
+  emsalBelgeYukle(dosya: File, caseId: number | null, signal?: AbortSignal): Promise<EmsalBelge>;
+  /** Hat açık mı, kip (`sahte` / `gemini`), modeller — ekrandaki model rozeti ve Gemini onayı (K4). */
+  emsalDurum(signal?: AbortSignal): Promise<EmsalDurumu>;
+  /** Emsal araması NDJSON akışı; `failed` SON olaydır, `complete` sıralı öneri listesini taşır. */
+  emsalAra(sha256: string, secenekler?: EmsalAkisSecenekleri): AsyncGenerator<EmsalAkisOlayi, void, undefined>;
+  /** Belgenin son `complete` sonucu; yoksa 404 (`LexisApiError`). */
+  emsalSonuc(sha256: string, signal?: AbortSignal): Promise<EmsalSonucu>;
+  /** İnceleme paketini (zip) indirir, dosya adını döner; paket yoksa 404. Örnek kipte paket üretilmez (404). */
+  emsalIndir(sha256: string, signal?: AbortSignal): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -147,6 +173,9 @@ interface OrnekDurum {
   baglar: RaporBagi[];
   profiller: SirketProfili[];
   kosuSayaci: number;
+  /** Bu oturumda hazırlanan emsal belgeleri (sha256 → kayıt) ve tamamlanan aramalar (sha256 → sonuç). */
+  emsalBelgeleri: Map<string, EmsalBelge>;
+  emsalSonuclari: Map<string, EmsalSonucu>;
 }
 
 const ilkDurum = (): OrnekDurum => ({
@@ -154,6 +183,8 @@ const ilkDurum = (): OrnekDurum => ({
   baglar: kopya(ORNEK_KART_BAGLARI),
   profiller: kopya(ORNEK_PROFILLER),
   kosuSayaci: ORNEK_GECMIS.length,
+  emsalBelgeleri: new Map(),
+  emsalSonuclari: new Map(),
 });
 
 let durum = ilkDurum();
@@ -290,6 +321,65 @@ function rafOzeti(karar: RafKarariAyrinti): RafKarari {
   const ozet: Record<string, unknown> = { ...karar };
   for (const alan of AYRINTI_ALANLARI) delete ozet[alan];
   return ozet as unknown as RafKarari;
+}
+
+/** Raftaki kararlar + yalnız emsal önerisi olarak görünen uydurma kararlar (`kararGetir` ikisinde de arar). */
+const tumOrnekKararlar = (): RafKarariAyrinti[] => [...ORNEK_KARARLAR, ...ORNEK_EMSAL_KARARLARI];
+
+// --- emsal ajan hattı (örnek): sahte üretici kipi, sabit sentetik sonuç, servis çağrısı yok ---
+
+export const ORNEK_EMSAL_DURUMU: EmsalDurumu = {
+  acik: true,
+  kip: "sahte",
+  neden: null,
+  sorgu_modeli: "sahte",
+  okuyucu_modeli: "sahte",
+  aday: 30,
+  eszamanli: 6,
+  karar_karakter: 20_000,
+  gunluk_token: 0,
+  istem_surumu: "ornek",
+  kullanilan_token: 0,
+  acik_is: false,
+};
+
+export const ORNEK_PAKET_YOK = "Örnek kipte inceleme paketi üretilmez; gerçek dava kipinde servis hazırlar.";
+export const EMSAL_BOYUT_TAVANI = 20 * 1024 * 1024;
+
+function ornekEmsalBelgesi(p: Pick<EmsalBelge, "sha256" | "kaynak" | "bicim" | "boyut" | "sayfa" | "case_id" | "hukdok_belge_id" | "arsiv">): EmsalBelge {
+  const metin = Math.max(1200, (p.sayfa ?? Math.max(1, Math.round(p.boyut / 48_000))) * 2_400);
+  return {
+    ...p,
+    metin_uzunluk: metin,
+    bolumler: [
+      { tip: "kunye", baslik: "", bas: 0, son: Math.round(metin * 0.12) },
+      { tip: "olay", baslik: "OLAYLAR", bas: Math.round(metin * 0.12), son: Math.round(metin * 0.5) },
+      { tip: "iddia", baslik: "İDDİA", bas: Math.round(metin * 0.5), son: Math.round(metin * 0.85) },
+      { tip: "talep", baslik: "NETİCE-İ TALEP", bas: Math.round(metin * 0.85), son: metin },
+    ],
+    // Kartlı belgede kartın kişi tarafları bilinen addır; kartsız yüklemede yalnız kalıp.
+    maske_dokumu: p.case_id !== null ? { bilinen: 2, kalip: 1, ogrenilen: 0 } : { bilinen: 0, kalip: 3, ogrenilen: 1 },
+    yukleme: new Date().toISOString(),
+    mevcut: false,
+    sharepoint_url: null,
+  };
+}
+
+/** Sentetik sonuç: öneriler puan sırasında; `ayni_kart` belgenin kartına göre hesaplanır (kartsız belgede hep false). */
+function ornekEmsalSonucu(sha256: string, caseId: number | null): EmsalSonucu {
+  const kararlar = tumOrnekKararlar();
+  const oneriler: EmsalOnerisi[] = ORNEK_EMSAL_OKUMALARI.flatMap((o) => {
+    const karar = kararlar.find((k) => k.id === o.id);
+    return karar ? [{ ...rafOzeti(karar), ...kopya(o), ayni_kart: caseId !== null && karar.kart_id === caseId, bilesenler: [] }] : [];
+  });
+  return {
+    sha256,
+    kunye: kopya(ORNEK_EMSAL_KUNYESI),
+    model: "sahte",
+    sorgu_modeli: "sahte",
+    oneriler,
+    sayilar: { aday: oneriler.length + 1, okunan: oneriler.length + 1, dusen: 1, onbellek: 1, model_cagrisi: oneriler.length, token: 0, saniye: 1.2 },
+  };
 }
 
 function kararBankasiKur(): KararKaydi[] {
@@ -502,9 +592,74 @@ const ornekLexisApi: LexisApi = {
 
   async kararGetir(id, signal) {
     await bekle(signal, 0.5);
-    const karar = ORNEK_KARARLAR.find((k) => k.id === id);
+    const karar = tumOrnekKararlar().find((k) => k.id === id);
     if (!karar) throw new LexisApiError(404, "Karar rafta bulunamadı.");
     return kopya(karar);
+  },
+
+  // Emsal ajan hattı (örnek): belge kaydı uydurma sayılardan kurulur (metin yok), arama sabit sentetik listeyi
+  // 3 `info` + 1 `warning` + `complete` ile verir; servise hiçbir istek gitmez, inceleme paketi üretilmez.
+  async emsalBelgeKarttan(caseId, belgeId, signal) {
+    await bekle(signal);
+    const belge = dosyaBul(caseId).belgeler.find((b) => b.id === belgeId);
+    if (!belge) throw new LexisApiError(404, "Belge bu dava kartında bulunamadı.");
+    const uzanti = belgeUzantisi(belge.ad);
+    if (uzanti !== null && !EMSAL_BELGE_BICIMLERI.includes(uzanti)) throw new LexisApiError(422, "Yalnız PDF, DOCX ve UDF kabul edilir.");
+    const sha256 = ornekSha(belgeId);
+    const kayit = ornekEmsalBelgesi({ sha256, kaynak: "kart", bicim: uzanti ?? "pdf", boyut: (belge.sayfa ?? 3) * 48_000, sayfa: belge.sayfa, case_id: caseId, hukdok_belge_id: belgeId, arsiv: "gerekmiyor" });
+    const mevcut = durum.emsalBelgeleri.has(sha256);
+    durum.emsalBelgeleri.set(sha256, kayit);
+    return kopya({ ...kayit, mevcut });
+  },
+
+  async emsalBelgeYukle(dosya, caseId, signal) {
+    await bekle(signal);
+    const uzanti = belgeUzantisi(dosya.name);
+    if (uzanti === null || !EMSAL_BELGE_BICIMLERI.includes(uzanti)) throw new LexisApiError(422, "Yalnız PDF, DOCX ve UDF kabul edilir.");
+    if (dosya.size > EMSAL_BOYUT_TAVANI) throw new LexisApiError(413, "Dosya 20 MB tavanını aşıyor.");
+    const sha256 = ornekSha(0xe000 + ((dosya.size + dosya.name.length) % 0x1fff));
+    const kayit = ornekEmsalBelgesi({ sha256, kaynak: "yukleme", bicim: uzanti, boyut: dosya.size, sayfa: uzanti === "pdf" ? Math.max(1, Math.round(dosya.size / 48_000)) : null, case_id: caseId, hukdok_belge_id: null, arsiv: "kapali" });
+    const mevcut = durum.emsalBelgeleri.has(sha256);
+    durum.emsalBelgeleri.set(sha256, kayit);
+    return kopya({ ...kayit, mevcut });
+  },
+
+  async emsalDurum(signal) {
+    await bekle(signal, 0.5);
+    return kopya(ORNEK_EMSAL_DURUMU);
+  },
+
+  async *emsalAra(sha256, secenekler = {}) {
+    const { signal } = secenekler;
+    const belge = durum.emsalBelgeleri.get(sha256);
+    if (!belge) {
+      yield { status: "failed", error_ozet: "Belge kaydı bulunamadı; önce belgeyi hazırlayın.", error_kod: "metin_yok" };
+      return;
+    }
+    const sonuc = ornekEmsalSonucu(sha256, belge.case_id);
+    yield { status: "info", asama: "kunye", kaynak: "model", sorgu: sonuc.kunye.sorgular.length, mesaj: "Künye ve arama sorguları üretiliyor" };
+    await bekle(signal, 2);
+    yield { status: "info", asama: "aday", aday: sonuc.sayilar.aday, sorgu: sonuc.kunye.sorgular.length, ayni_kart: sonuc.oneriler.filter((o) => o.ayni_kart).length, mesaj: "Büro arşivinde adaylar toplandı" };
+    await bekle(signal, 2);
+    yield { status: "info", asama: "okuma", ilerleme: [sonuc.sayilar.okunan, sonuc.sayilar.okunan], kaynak: "model", mesaj: "Adaylar okunup puanlandı" };
+    await bekle(signal);
+    yield { status: "warning", asama: "denetim", belge_id: 7999, message: "aday düştü: alıntı kararda bulunamadı" };
+    await bekle(signal);
+    durum.emsalSonuclari.set(sha256, sonuc);
+    yield { status: "complete", ...kopya(sonuc) };
+  },
+
+  async emsalSonuc(sha256, signal) {
+    await bekle(signal, 0.5);
+    const sonuc = durum.emsalSonuclari.get(sha256);
+    if (!sonuc) throw new LexisApiError(404, "Sonuç bulunamadı.");
+    return kopya(sonuc);
+  },
+
+  async emsalIndir(sha256, signal) {
+    await bekle(signal, 0.5);
+    if (!durum.emsalSonuclari.has(sha256)) throw new LexisApiError(404, "Sonuç bulunamadı.");
+    throw new LexisApiError(404, ORNEK_PAKET_YOK);
   },
 
   async kartBaglari(signal) {
@@ -742,6 +897,26 @@ const gercekLexisApi: LexisApi = {
     const karar = await (await servis()).kararGetir(id, signal);
     gercekKararMetinleri.set(id, kararKaynakMetni(karar));
     return karar;
+  },
+  // Emsal ajan hattı: hepsi servise gider; akış `lexisAkis.emsalAkisi` ile okunur (modele giden yalnız servisin
+  // maskelediği metindir, tarayıcıdan sha256 gider).
+  async emsalBelgeKarttan(caseId, belgeId, signal) {
+    return (await servis()).emsalBelgeKarttan(caseId, belgeId, signal);
+  },
+  async emsalBelgeYukle(dosya, caseId, signal) {
+    return (await servis()).emsalBelgeYukle(dosya, caseId, signal);
+  },
+  async emsalDurum(signal) {
+    return (await servis()).emsalDurum(signal);
+  },
+  async *emsalAra(sha256, secenekler = {}) {
+    yield* (await servis()).emsalAra(sha256, secenekler);
+  },
+  async emsalSonuc(sha256, signal) {
+    return (await servis()).emsalSonuc(sha256, signal);
+  },
+  async emsalIndir(sha256, signal) {
+    return (await servis()).emsalIndir(sha256, signal);
   },
   async denetle(taslak, signal) {
     if (signal?.aborted) throw iptalHatasi();
