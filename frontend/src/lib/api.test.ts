@@ -249,6 +249,14 @@ describe("resolveTimeoutMs (uç eşlemesi)", () => {
         expect(resolveTimeoutMs("/preview-email-body")).toBe(LONG_TIMEOUT_MS);
     });
 
+    it("Lexis'in model çağıran uçları uzun katmandadır; diğer Lexis uçları varsayılanda", () => {
+        // 07.10 canlı deneme: /yaz 106 sn sürdü, istemci 30 sn'de kesti (nginx 499) ve sonuç kayboldu.
+        expect(resolveTimeoutMs("/lexis-api/yaz")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/lexis-api/emsal-ara")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/lexis-api/dosya/13019")).toBe(DEFAULT_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/lexis-api/kararlar/13019")).toBe(DEFAULT_TIMEOUT_MS);
+    });
+
     it("indirme/export/e-posta uçları uzun katmandadır", () => {
         expect(resolveTimeoutMs("/api/download/abc123")).toBe(LONG_TIMEOUT_MS);
         expect(resolveTimeoutMs("/api/documents/5/download?inline=true")).toBe(LONG_TIMEOUT_MS);
