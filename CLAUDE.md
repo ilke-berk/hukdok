@@ -160,7 +160,7 @@ filtresi ile `YetkiBelgesiModal` "Veren Avukat" bilinçli dönüştürülmedi (G
 backend'inde ucu YOK, tek kapısı `lib/lexisApi.ts`'teki örnek adaptördür (`ORNEK_VERI`; veri
 `lib/lexisOrnekVeri.ts` — uydurma, repoya gerçek rapor/kişi verisi girmez). **Örnek kipte tek ağ isteği "Word indir"dir**
 (`lib/lexisWord.ts`, dinamik yüklenir): örnek taslak aynı origin'den `/lexis-api/word`'e gider, konteyner nginx'i
-(`nginx.conf:209-237`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum`, gecikmeli DNS, gerisi 404; bekçi
+(`nginx.conf:209-242`, Hukukbot proxy'sinin aynı deseni: allowlist `word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum`, gecikmeli DNS, gerisi 404; bekçi
 `backend/tests/test_nginx_lexis.py`) `hukuk_shared` üzerinden **ayrı stack'teki** `lexis_api:8020`'ye iletir
 (`..\lexis-rapor\servis`; yerleşim kararı 04.10: ayrı servis). Servis token'ı HUKDOK kuralıyla kendisi doğrular,
 yalnız `ADMIN_EMAILS`'i kabul eder, gerçek şirket şablonunu doldurup dosyayı döndürür (dört biçim: Anadolu şablonu
@@ -190,8 +190,29 @@ yalnız karar KİMLİKLERİ gider, onay kutusu kararları künyeleriyle listeler
 (`warning` olayı, taslak iskelet kalır). Taslak yazıldığı kararları taşır (`LexisTaslak.kararlar`); denetim
 (`lexisDenetim.ts`) dayanak alıntısını o kararların metninde de arar ve karardan yazılan özet paragrafındaki tutar /
 tarih / numarayı kaynak kararla karşılaştırır (`lexisMetin.kaynaktaOlmayanlar` — çekirdekteki kuralla AYNI tutulur).
-Dilekçe / hekim beyanı / poliçeden yazım hâlâ bağlı DEĞİL.
-Servis kapalıyken HUKDOK açılır, yalnız Word 502 olur. Entegrasyona dek **yalnız yönetici**
+Dilekçe / hekim beyanı / poliçeden yazım hâlâ bağlı DEĞİL. **Emsal ajan hattı (07.10 gece kuyruğu G258-G265, LOKAL —
+prod'da Lexis servisi kurulu değil; plan ve durum `docs/plan/emsal-ajan-hatti-plani-2026-10-06.md`, kararlar lexis-rapor
+`PLAN.md` Aşama 12 / K23-K30):** karar rafı başlığındaki ve tezgâhtaki belge satırındaki "Bu dosyaya emsal bul"
+(`components/lexis/EmsalBulDiyalogu.tsx`, liste `EmsalKararListesi.tsx`, NDJSON okuyucu `lib/lexisAkis.ts`) büro karar
+arşivinde emsal arar — akış: belge (kart belgesini servis HUKDOK'tan kullanıcının token'ıyla indirir, kopyasını almaz; ya da
+diskten PDF/DOCX/UDF ≤ 20 MB) → metin + bölümler → maske (`maske.metin_maskele`; kartlıysa kartın tarafları bilinen ad) →
+künye + operatörlü sorgular → tam metin arama (`karar_arama` tsvector+GIN, YALNIZ büro kararları — K29) → paralel
+okuyucular (aday başına 1 çağrı; `LEXIS_EMSAL_ADAY`=30, `LEXIS_EMSAL_ESZAMANLI`=6; önbellek `emsal_okumalar`, çağrı logu
+`model_cagrilari` metinsiz) → KOD denetçisi (alıntı kaynak kararda birebir değilse öneri DÜŞER, ekrana çıkmaz) → gerekçeli
+liste → onaylanan karar taslağa `LexisTaslak.emsal_kararlar` ile biner (K28: `kararlar`dan AYRI, yazıma GİTMEZ, Word'de
+"Emsal kararlar" künye satırı). Uçlar `/lexis-api/{emsal-belge,emsal-ara,emsal-sonuc,emsal-durum}` (allowlist'te, G262;
+`POST /emsal-ara` NDJSON akışı HUKDOK stream sözleşmesiyle — bu yüzden Lexis location'ında `proxy_buffering off`, gövde
+tavanı `client_max_body_size 20M`; `GET /emsal-sonuc/{sha}/indir` inceleme paketi zip'i: işaret sütunlu DOCX + birebir
+karar metinleri + `sonuc.json`; servis kodu `..\lexis-rapor\servis\{emsal_dosya,emsal_ajan,inceleme_paketi,sharepoint}.py`).
+**Üretici varsayılan SAHTE** (`LEXIS_EMSAL_MODEL=sahte`: Gemini'ye hiçbir şey gitmez; künye, puan ve alıntı belirlenimci);
+`gemini` kipi env + `GEMINI_API_KEY` + ekranda her koşuda onay kutusu ister (K4; onaysız "Ara" pasif) ve **canlı Gemini
+çağrısı henüz YAPILMADI** (plan adım 6, ayrı kullanıcı onayı). Yüklenen belge kalıcıdır: `lexis_db.emsal_dosyalari`
+(sha256 anahtar, dosya adı SAKLANMAZ) + SharePoint `03_LEXIS_EMSAL/<yıl>/<sha256>/` (HUKDOK arşiv kimliğiyle,
+`LEXIS_SHAREPOINT_KLASORU`; yüklenemezse spool'da bekler, `araclar/emsal_arsiv_toparla.py`). İnsan adımları:
+`karar_arama`'yı gerçek `lexis_db`'de kurmak (`araclar/karar_arama_kur.py --apply`, KOŞULMADI — kurulana dek Postgres'te
+raf araması yalnız künye bulur), ölçüm (`araclar/emsal_ajan_olcum.py`, gerçek veride KOŞULMADI), gerçek SharePoint'e ilk
+yükleme.
+Servis kapalıyken HUKDOK açılır, yalnız `/lexis-api` istekleri 502 olur. Entegrasyona dek **yalnız yönetici**
 görür (menüde `yalnizYonetici`, rota `ProtectedAdminRoute`). Sözleşme `types/lexis.ts` (çekirdek sınıflarıyla birebir +
 "çekirdekte yok" notlu arayüz tipleri). Beş sekme (`?sekme=`): "Rapor yaz" üç bölgeli tezgâh (`components/lexis/Tezgah.tsx`,
 durum `useTezgah.ts`: dosya · taslak · denetim), Geçmiş, Kütüphane, Kart bağı, Şirketler. Lexis diyalogları `theme-classic`
@@ -419,7 +440,7 @@ dump). `.env` değişikliği `restart` ile GELMEZ: env yalnız konteyner create'
 | `docs/kararlar/` | Kalıcı mimari kararlar (karar + gerekçe + reddedilenler) | Güncel |
 | `docs/arsiv/` | Tarihli plan/rapor/denetimler | **TARİHSEL — güncel bilgi kaynağı DEĞİL.** İçindeki "şu an şöyle" ifadeleri yazıldığı günün fotoğrafıdır; okumadan önce `docs/arsiv/README.md` şerhini oku |
 | `docs/hukukbot-aktarim/` | Hukukbot export spesifikasyonu — koddan referanslı (`nginx.conf:117-118`, `models.py`, `routes/export.py`) | Yaşayan spec, arşiv DEĞİL |
-| `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları | Süreç dosyaları |
+| `gorevler/` | Gece kuyruğu: `KUYRUK.md` + `gorev/GNNN.md` görev dosyaları; dört bant backend / frontend / docs / **lexis** (lexis = dış depo `..\lexis-rapor`, worktree'siz; `gorevler/README.md`) | Süreç dosyaları |
 | `otomasyon/` | Gece koşucuları — güncel: Workflow v3 (`.claude/workflows/gece-kuyrugu.js`, başlatıcı `/gece-kuyrugu`); CLI koşucuları `gece-kosusu.ps1`/`kuyruk-kosusu.ps1` (org ayarı CLI'yi kapattı, 2026-08-18) + loglar | Süreç dosyaları |
 | `infra/` | Sunucu birimleri: systemd timer'lar, watchdog scriptleri (`infra/README.md`) | Güncel |
 

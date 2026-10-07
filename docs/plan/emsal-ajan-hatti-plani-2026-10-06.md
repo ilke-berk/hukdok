@@ -1,6 +1,36 @@
 # Emsal ajan hattı planı — Lexis B kolu (06.10.2026)
 
-> **Durum: ONAYLANDI (07.10.2026).** Kullanıcı 06.10'da A'yı değiştirdi (kalıcı SharePoint arşivi), E4 ve H'yi
+> **Durum (07.10.2026 gece kuyruğu, G266 ile yazıldı): §4'ün 2-5. adımları ve 7. adımın aracı KODLANDI — hepsi sahte
+> modelle; canlı Gemini (adım 6) ve gerçek veride ölçüm YAPILMADI; prod'da Lexis servisi kurulu değil, push/deploy yok.**
+> Commit'ler (SHA'lar iki deponun `git log`'undan):
+>
+> | Adım | Görev | Depo · commit | Not |
+> | --- | --- | --- | --- |
+> | 2 FTS | G258 | lexis-rapor `0200695` (+ kapı düzeltmesi `7d830af`) | `karar_arama` + `arama.py` + `karar_arama_kur.py`; raf araması FTS'ye geçti. Gerçek `lexis_db`'de `--apply` KOŞULMADI |
+> | 3 yükleme/maske | G259 | lexis-rapor `3a84ccd` | `POST/GET /emsal-belge`, PDF/DOCX/UDF, `emsal_dosyalari` + spool |
+> | 3 kalıcı arşiv | G260 | lexis-rapor `cd90f33` (+ `90262b9`) | `servis/sharepoint.py`, `03_LEXIS_EMSAL/<yıl>/<sha256>/`, `emsal_arsiv_toparla.py`. Gerçek SharePoint'e yükleme DENENMEDİ |
+> | 4 ajanlar | G261 | lexis-rapor `9767445` | `POST /emsal-ara` NDJSON, `GET /emsal-sonuc/{sha}`, `GET /emsal-durum`; `emsal_okumalar`, `model_cagrilari` |
+> | 4 HUKDOK proxy | G262 | HUKDOK `af10c9c` | allowlist + 4 uç, `proxy_buffering off`, `client_max_body_size 20M`, bekçi, Vite |
+> | 5 inceleme paketi + K28 Word | G263 | lexis-rapor `58d8a27` | `GET /emsal-sonuc/{sha}/indir`, arşive yazma, Word "Emsal kararlar" satırı |
+> | 5 ekran | G264 | HUKDOK `1590c5a` (merge `9508e1a`) | `EmsalBulDiyalogu`, `EmsalKararListesi`, `lexisAkis.ts`, taslak `emsal_kararlar` |
+> | 7 ölçüm aracı | G265 | lexis-rapor `624270a` | `emsal_ajan_olcum.py` + `emsal_isaret_oku.py`; gerçek veride KOŞULMADI |
+> | doküman | G266 | HUKDOK (bu tur) | CLAUDE.md, bu not, genel bakış, otomasyon/gorevler README |
+>
+> Testler (görev raporları): lexis-rapor 503 passed · 14 skipped (skip = Postgres FTS testleri, `LEXIS_TEST_DB_URL`
+> yok); HUKDOK vitest 1666 (150 dosya), backend 4327 passed · 23 skipped.
+>
+> **Açık kalanlar (insan adımı, ayrı onay):** (1) canlı Gemini tek dosya — `LEXIS_EMSAL_MODEL=gemini` + `GEMINI_API_KEY` +
+> ekran onayı (K4); `minItems/maxItems` ve `minimum/maximum`'un Gemini `response_schema`'da kabulü canlıda doğrulanacak
+> (G261 notu). (2) Altın küme ölçümü gerçek `lexis_db`'de (`araclar/emsal_ajan_olcum.py --kume zincir | atif | isaret`;
+> önce sahte, sonra küçük dilimle canlı) — zincir kümesi hazır, atıf kümesi 4 çift. (3) Külliyat dışa aktarımı (Aşama 7
+> adım 1) ya da 30 dosyalık kör avukat işaretlemesi — Recall sayısının anlamı buna bağlı (§6). (4) `hukdok_kararlar` PDF
+> dizininin compose'a salt okunur bağlanması + `LEXIS_KARAR_PDF_DIZINI` (bağlanmazsa paket yalnız metin). (5) `karar_arama`
+> gerçek `lexis_db`'de `--apply` (mesai dışı; kurulana dek Postgres'te raf araması yalnız künye bulur). (6) Gerçek
+> SharePoint'e ilk yükleme (Lexis `.env`'ine dört `SHAREPOINT_*` değeri). (7) Postgres FTS aday yolu ölçümü (< 200 ms hedefi).
+> (8) Geçmiş sekmesinde "Emsal koşuları" listesi (§3 D): `depo.model_cagri_listesi` serviste var ama ne uç ne ekran
+> bağlandı (G264 kapsamına girmedi). (9) G258 notu: ekranda operatör ipucu / "sorguyu daraltın" uyarısı.
+>
+> **Onay notu (07.10.2026):** Kullanıcı 06.10'da A'yı değiştirdi (kalıcı SharePoint arşivi), E4 ve H'yi
 > istedi; 07.10'da F ve G'yi önerildiği gibi onayladı ve işin gece kuyruğunda koşmasına karar verdi (koşucuya
 > `lexis` bandı eklendi, görevler G258-G266). Bu belge "Emsal arama — Lexis, Lexpera ve ajan hattı"
 > karşılaştırmasının (masaüstü, 06.10) "Ajan hattı" ve "Test süreci" bölümlerinin uygulama planıdır. Her sayı
@@ -17,7 +47,7 @@
 | Raf araması bugün | `karar_depo.raf_listesi`: beş kolonda (`mahkeme`, `esas_no`, `karar_no`, `uzmanlik`, `metin`) `ILIKE '%…%'`, Türkçe büyük/küçük üç biçimle; operatör yok. Index yok: `karar_belgeleri` üzerinde yalnız `kaynak`, `kart_id`, `vaka_id`, `dosya_sha256`, `uyusmazlik_no`, `paket_id` btree'leri. | `servis/karar_depo.py:356-424`, `pg_indexes` |
 | Servis | `lexis_api:8020`, FastAPI, tek uvicorn worker, `uid 10001`, yazılabilir birim YOK (yalnız geçici dizin). İmajda pymupdf YOK (`servis/requirements.txt`: "ucu gelince eklenir"). `google-genai==2.26.0` kurulu; `cikarim.gemini_uretici` senkron, `temperature=0`, `response_schema` ile JSON. | `Dockerfile`, `docker-compose.yml`, `cikarim.py:250` |
 | Kimlik | `kimlik.yonetici`: HUKDOK token'ı + `ADMIN_EMAILS`. | `servis/kimlik.py` |
-| Proxy | HUKDOK `nginx.conf:216-235` allowlist (20 uç), `proxy_buffering` kapatılmamış (Hukukbot bloğunda NDJSON için kapalı); bekçi `backend/tests/test_nginx_lexis.py`, Vite `vite.config.ts:80`. | okundu |
+| Proxy | HUKDOK `nginx.conf:216-235` allowlist (20 uç), `proxy_buffering` kapatılmamış (Hukukbot bloğunda NDJSON için kapalı); bekçi `backend/tests/test_nginx_lexis.py`, Vite `vite.config.ts:80`. *(07.10, G262 sonrası: 24 uç, location `nginx.conf:219-238`, `proxy_buffering off`, `client_max_body_size 20M`.)* | okundu |
 | Maske | `maske.metin_maskele(metin, bilinen_adlar)`: bilinen adlar (kart tarafları) → kalıplar → öğrenilen adlar; karar başlığı satırları; TC. Kalıp geçişi kusursuz değil (modül notu). | `lexis_rapor/maske.py` |
 | Alıntı denetimi | Python: `yazici._alinti_parcalari` + `metin.katla` (dayanak alıntısı hedef metinde aranır). TS: `lexisMetin.kaynaktaOlmayanlar`, `alintiGeciyor`. | okundu |
 | Kararlardan yazım kuralı | `yazim.yaz` yalnız **o karta bağlı** büro belgesini girdi alır (`karar_depo.kart_metinleri` `kart_id` süzer); "başka dosyanın kararını girdi yapan yol açma" (lexis-rapor `CLAUDE.md`). Emsal karar tanım gereği başka dosyanın kararıdır → **F kararı**. | `servis/yazim.py:150`, `karar_depo.py:463` |

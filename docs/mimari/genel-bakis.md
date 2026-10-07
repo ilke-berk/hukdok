@@ -7,6 +7,8 @@
 > `database.py`/`api.py` satır atıfları bu turda yeniden doğrulanmadı.
 > §1 port haritasının Hukukbot satırı ve §2'nin `/hukukbot-api` bölümü: **2026-09-26 · G207**
 > (G203 `nginx.conf` + `docker-compose.yml` ve Hukukbot compose'una karşı okundu; karar 021).
+> §1 port haritasının Lexis satırı ve §2'nin `/lexis-api` bölümü: **2026-10-07 · G266** (G262 sonrası
+> `nginx.conf:209-242`, `frontend/vite.config.ts:80` ve `backend/tests/test_nginx_lexis.py`'ye karşı okundu).
 > Bu dosyadaki her iddia koddan okunarak doğrulanmıştır. Kod ile çelişirse kod haklıdır —
 > bu dosyayı düzelt. Ayrıntı için bkz. [`docs/mimari/README.md`](README.md).
 
@@ -49,7 +51,7 @@ bekçi `backend/tests/test_port_baglama.py` (CI'da koşar, konteynerde repo kök
 | 5432 | postgres | 127.0.0.1 | backend, yönetim araçları |
 | 5173 | Vite dev sunucusu (yalnız lokal; `frontend/vite.config.ts`, strictPort) | 127.0.0.1 | geliştirici tarayıcısı |
 | 8010 | `hukukbot_api` (ayrı compose projesi `../hukukbot-ui`) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/hukukbot-api/` allowlist'i, §2), HUKDOK backend'inin `HUKUKBOT_WEBHOOK_URL` webhook'u (`services/export_publisher.py`) |
-| 8020 | `lexis_api` (ayrı compose projesi `../lexis-rapor`; 04.10.2026 itibarıyla yalnız lokalde kurulu) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/lexis-api/` allowlist'i, §2), Vite dev proxy'si |
+| 8020 | `lexis_api` (ayrı compose projesi `../lexis-rapor`; yalnız lokalde kurulu — 04.10.2026'dan beri, 07.10'da da prod'da yok) | 127.0.0.1 + `hukuk_shared` ağı | konteyner nginx (`/lexis-api/` allowlist'i, §2), Vite dev proxy'si (`frontend/vite.config.ts:80`) |
 
 Hukukbot'un **kendi sitesi ve frontend portu yoktur** (karar
 [021](../kararlar/021-hukukbot-hukudok-girisi.md)): eski ayrı alan adı ve `:3000` frontend konteyneri
@@ -121,18 +123,19 @@ HUKDOK'un frontend konteynerini hiç kaldırmazdı; böyle yalnız bu istekler 5
 Bu yüzden `docker-compose.yml`'da frontend `hukuk_shared` ağındadır ama Hukukbot'a `depends_on` bilerek YOKTUR.
 Bekçi: `backend/tests/test_nginx_hukukbot.py`.
 
-**Lexis rapor servisine giden location** (04.10.2026, `nginx.conf:209-234`) aynı desendir: servis ayrı depoda
-ve ayrı stack'tedir (`../lexis-rapor`, `lexis_api:8020`), kimliği kendisi doğrular (HUKDOK token kuralı +
-`ADMIN_EMAILS`).
+**Lexis rapor servisine giden location** (04.10.2026; emsal uçları G262 07.10.2026; `nginx.conf:209-242`) aynı
+desendir: servis ayrı depoda ve ayrı stack'tedir (`../lexis-rapor`, `lexis_api:8020`), kimliği kendisi doğrular
+(HUKDOK token kuralı + `ADMIN_EMAILS`).
 
 | Location | Not |
 | --- | --- |
-| `~ ^/lexis-api/(word)(/\|$)` | Allowlist: `/lexis` sayfasının Word ucu. Önek `rewrite ... break` ile atılır, gecikmeli DNS (`set $lexis_upstream`), `client_max_body_size 2M`, location'da `add_header` yok (`nginx.conf:217-230`) |
-| `~ ^/lexis-api(/\|$)` | Allowlist dışı her şey — servisin `/health`'i dahil — `return 404` (`nginx.conf:232-234`) |
+| `~ ^/lexis-api/(word\|davalar\|dosya\|emsal-oner\|iskelet\|muallak-oner\|karar-bankasi\|kutuphane\|rapor\|emsal-puanla\|taslak\|gecmis\|kart-baglari\|kart-sec\|profiller\|profil\|karar-rafi\|kararlar\|karar\|yaz\|emsal-belge\|emsal-ara\|emsal-sonuc\|emsal-durum)(/\|$)` | Allowlist (24 uç): `/lexis` sayfasının Word, gerçek dava kipi, saklama, karar rafı / yazım ve emsal ajan hattı uçları. Önek `rewrite ... break` ile atılır, gecikmeli DNS (`set $lexis_upstream`), `proxy_buffering off` + `proxy_cache off` (`/emsal-ara` NDJSON akışı parça parça gelsin — Hukukbot `/ask` ile aynı gerekçe), `client_max_body_size 20M` (`/emsal-belge` disk yüklemesi; G262'de 2M → 20M), location'da `add_header` yok (`nginx.conf:219-238`) |
+| `~ ^/lexis-api(/\|$)` | Allowlist dışı her şey — servisin `/health`'i dahil — `return 404` (`nginx.conf:240-242`) |
 
 Servis kapalıyken HUKDOK açılır, yalnız bu istekler 502 olur (04.10'da lokalde denendi: servis durdurulup
 frontend yeniden başlatıldı; ana sayfa ve `/healthz` 200, `/lexis-api/word` 502). Bekçi:
-`backend/tests/test_nginx_lexis.py`.
+`backend/tests/test_nginx_lexis.py` (allowlist sabiti, 404 bloğunun sırası, `proxy_buffering off`, tavan tam `20M`,
+Vite proxy'sinin aynı allowlist'i taşıması — `frontend/vite.config.ts:80`).
 
 `proxy_read_timeout`/`proxy_send_timeout` 300s'tir (`nginx.conf:13-14`). Gerekçe konfigde:
 GhostScript PDF/A dönüşümü 60s'yi aşabiliyor, default 60s ile `/confirm` 504 dönüyor ama
