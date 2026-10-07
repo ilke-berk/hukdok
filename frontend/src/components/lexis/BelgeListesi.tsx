@@ -1,8 +1,8 @@
 import { Link } from "react-router";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Scale } from "lucide-react";
 import { tarihYaz } from "@/lib/lexisMetin";
-import { BEKLENEN_BELGELER, BELGE_TURU_ADLARI, type LexisBelge } from "@/types/lexis";
-import { BolgeBasligi, BosDurum } from "./ortak";
+import { BEKLENEN_BELGELER, BELGE_TURU_ADLARI, emsalBelgesiMi, type LexisBelge } from "@/types/lexis";
+import { BolgeBasligi, BosDurum, SimgeDugmesi } from "./ortak";
 import { BAGLANTI_SINIFI } from "./yardimcilar";
 
 type BelgeListesiProps = {
@@ -10,15 +10,17 @@ type BelgeListesiProps = {
   /** Rapora girecek (modele gönderilecek) belgeler. */
   secili: ReadonlySet<number>;
   onSec: (id: number, secili: boolean) => void;
+  /** "Bu belgeye emsal bul" satır düğmesi (yalnız pdf / docx / udf); verilmezse çizilmez. */
+  onEmsalBul?: (belge: LexisBelge) => void;
   kilitli?: boolean;
 };
 
 /**
  * Dava kartındaki belgeler; işaretli olanlar taslağa girer. Raporun beklediği türlerden (dilekçe, hekim beyanı,
  * bilirkişi/ATK raporu, poliçe) kartta olmayan uyarıyla gösterilir — belge HUKDOK'a yüklenir, araç kendi
- * yükleme yolunu açmaz (`lexis-rapor/PLAN.md` K10).
+ * yükleme yolunu açmaz (`lexis-rapor/PLAN.md` K10). Satırdaki terazi düğmesi belgeyi emsal ajanına verir (K27).
  */
-export function BelgeListesi({ belgeler, secili, onSec, kilitli = false }: BelgeListesiProps) {
+export function BelgeListesi({ belgeler, secili, onSec, onEmsalBul, kilitli = false }: BelgeListesiProps) {
   const eksikler = BEKLENEN_BELGELER.filter((tur) => !belgeler.some((b) => b.tur === tur));
   const seciliSayisi = belgeler.filter((b) => secili.has(b.id)).length;
 
@@ -30,8 +32,8 @@ export function BelgeListesi({ belgeler, secili, onSec, kilitli = false }: Belge
       {belgeler.length === 0 && <BosDurum>Dava kartında belge yok.</BosDurum>}
       <ul className="grid gap-1">
         {belgeler.map((b) => (
-          <li key={b.id}>
-            <label className="flex items-start gap-2.5 px-2 py-1.5 -mx-2 rounded-[3px] hover:bg-[var(--bg-sunken)] cursor-pointer">
+          <li key={b.id} className="flex items-start gap-1 -mx-2">
+            <label className="min-w-0 flex-1 flex items-start gap-2.5 px-2 py-1.5 rounded-[3px] hover:bg-[var(--bg-sunken)] cursor-pointer">
               <input
                 type="checkbox"
                 className="mt-[3px] accent-[var(--brand)]"
@@ -47,6 +49,13 @@ export function BelgeListesi({ belgeler, secili, onSec, kilitli = false }: Belge
                 {b.ozet && <span className="block mt-0.5 text-[12px] text-[var(--fg-muted)] leading-[1.45]">{b.ozet}</span>}
               </span>
             </label>
+            {onEmsalBul && emsalBelgesiMi(b.ad) && (
+              <span className="shrink-0 pt-0.5">
+                <SimgeDugmesi etiket={`Bu belgeye emsal bul: ${b.ad}`} onClick={() => onEmsalBul(b)} disabled={kilitli}>
+                  <Scale className="w-3.5 h-3.5" />
+                </SimgeDugmesi>
+              </span>
+            )}
           </li>
         ))}
       </ul>

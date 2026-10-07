@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Search } from "lucide-react";
+import { Scale, Search } from "lucide-react";
+import { FlowButton } from "@/components/flow/primitives";
 import { TableSkeleton } from "@/components/skeletons/Skeletons";
 import { DataErrorBanner } from "@/components/system/DataErrorBanner";
 import { lexisApi } from "@/lib/lexisApi";
 import { tarihYaz } from "@/lib/lexisMetin";
 import { BELGE_TURU_RAF_ADLARI, DERECE_ADLARI, HUKUM_SINIFI_ADLARI, KONU_ADLARI, rafAdi, type RafSecenekleri, type RafSuzgeci } from "@/types/lexis";
+import { EmsalBulDiyalogu } from "./EmsalBulDiyalogu";
 import { KararOkuyucu } from "./KararOkuyucu";
 import { Rozet } from "./ortak";
 import { useVeri } from "./useVeri";
@@ -23,12 +25,15 @@ const BOS_SECENEKLER: RafSecenekleri = { derece: [], uzmanlik: [], belge_turu: [
  * metin araması sunucuda koşar (karar metninin içinde de arar); satır kararı okuyucuda açar. Sayfa `RAF_SAYFA_BOYU`.
  *
  * Raf yalnız büro belgelerini gösterir (dış kararlarda ikinci düzey ayrım yok). Kodun okuyamadığı alan boş gelir.
+ * Başlıktaki "Bu dosyaya emsal bul" diyaloğu diskten belge alır (kart yok): sonuç yalnız incelenir ve paket indirilir;
+ * taslağa biniş tezgâhtan yapılır (K27).
  */
 export function KararRafi() {
   const [suzgec, setSuzgec] = useState<Suzgec>(BOS_SUZGEC);
   const [metin, setMetin] = useState("");
   const [sayfa, setSayfa] = useState(0);
   const [okunan, setOkunan] = useState<number | null>(null);
+  const [emsalAcik, setEmsalAcik] = useState(false);
 
   // Yazarken her tuşta istek atılmaz (metin araması bütün karar metinlerini tarar).
   useEffect(() => {
@@ -96,6 +101,10 @@ export function KararRafi() {
             Süzgeçleri temizle
           </button>
         )}
+        <FlowButton variant="secondary" size="sm" className="ml-auto" onClick={() => setEmsalAcik(true)}>
+          <Scale className="w-3.5 h-3.5" aria-hidden="true" />
+          Bu dosyaya emsal bul
+        </FlowButton>
       </div>
 
       <div className="border border-[var(--border)] bg-[var(--bg)]">
@@ -201,6 +210,7 @@ export function KararRafi() {
       )}
 
       <KararOkuyucu kararId={okunan} onKapat={() => setOkunan(null)} />
+      <EmsalBulDiyalogu acik={emsalAcik} caseId={null} belgeler={[]} onKararAc={setOkunan} onKapat={() => setEmsalAcik(false)} />
     </div>
   );
 }

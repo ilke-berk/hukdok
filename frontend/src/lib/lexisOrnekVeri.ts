@@ -4,6 +4,8 @@
 import type {
   DegerlendirmeTaslagi,
   DosyaGirdisi,
+  EmsalKunyesi,
+  EmsalOnerisi,
   EtiketliSatir,
   KutuphaneKaydi,
   LexisBelge,
@@ -1403,4 +1405,137 @@ export const ORNEK_KARARLAR: RafKarariAyrinti[] = [
       hukum: "HÜKÜM: Davalı hekim yönünden davanın REDDİNE, davalı hastane yönünden davanın KISMEN KABULÜ ile 75.000,00 TL manevi tazminatın olay tarihinden itibaren işleyecek yasal faiziyle birlikte davalı hastaneden alınarak davacıya verilmesine 20.02.2026 tarihinde karar verildi.",
     },
   }),
+];
+
+// ---------------------------------------------------------------------------------------------
+// Emsal ajan hattı — örnek kipte sentetik sonuç (G264). Hangi belge hazırlanırsa hazırlansın liste aynıdır;
+// künye, puan, gerekçe ve alıntı UYDURMADIR (modele hiçbir şey gitmez). Alıntılar kararın örnek metninden alınır
+// (ekran "kaynakta doğrulandı" rozetini sunucunun denetimine güvenerek basar — örnekte de tutarlı olsun diye).
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Rafta OLMAYAN iki uydurma büro kararı: yalnız emsal önerisi olarak görünür ve "Kararı aç" ile okunur; karar
+ * rafı listesi (`ORNEK_KARARLAR`) ve kartın kararları değişmez. Kart kimlikleri (9101, 9102) örnek davalardan değildir.
+ */
+export const ORNEK_EMSAL_KARARLARI: RafKarariAyrinti[] = [
+  ornekKarar({
+    id: 7004,
+    kart_id: 9101,
+    mahkeme: "Mersin 2. İdare Mahkemesi",
+    esas_no: "2022/310",
+    karar_no: "2024/455",
+    karar_tarihi: "2024-05-14",
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    hukum_sinifi: "RED_ESASTAN",
+    hukum_yonleri: ["RED"],
+    sonuc_muvekkil: "RED_ESASTAN",
+    sonuc_iliskisi: "AYNI",
+    talep_manevi: [350000],
+    olay: "YARALANMA",
+    dayanak_kurul: ["ATK 7. İhtisas Kurulu"],
+    parcalar: {
+      iddia: ["Davacı vekili, doğum sırasında bebeğin omzunun takılması sonucu kolunda kalıcı sinir hasarı oluştuğunu ileri sürerek 350.000,00 TL manevi tazminat talep etmiştir."],
+      savunma: ["Davalı idare, omuz takılmasının önceden öngörülemeyeceğini ve gerekli manevraların uygulandığını savunmuştur."],
+      gerekce: [
+        { metin: "Adli Tıp Kurumu raporunda; omuz takılmasının doğum eyleminin öngörülemeyen bir komplikasyonu olduğu, brakial pleksus hasarının bu komplikasyona bağlı gelişebileceği ve doğumu yöneten ekibe atfedilecek kusur bulunmadığı belirtilmiştir.", konular: ["bilirkisi", "kusur"] },
+        { metin: "Hizmet kusurunun varlığı ispatlanamadığından tazminat isteminin reddi gerekmiştir.", konular: ["kusur", "tazminat"] },
+      ],
+      hukum: "HÜKÜM: Açıklanan nedenlerle DAVANIN REDDİNE 14.05.2024 tarihinde karar verildi.",
+    },
+  }),
+  ornekKarar({
+    id: 7005,
+    kart_id: 9102,
+    mahkeme: "Ankara 12. Asliye Hukuk Mahkemesi",
+    esas_no: "2021/88",
+    karar_no: "2023/612",
+    karar_tarihi: "2023-11-02",
+    uzmanlik: "Kadın Hastalıkları ve Doğum",
+    hukum_sinifi: "KISMEN_KABUL",
+    hukum_yonleri: ["KABUL", "RED"],
+    sonuc_muvekkil: "KISMEN_KABUL",
+    sonuc_iliskisi: "AYNI",
+    talep_manevi: [200000],
+    hukmedilen_manevi: [60000],
+    olay: "YARALANMA",
+    faiz: ["dava tarihinden itibaren yasal faiz"],
+    parcalar: {
+      iddia: ["Davacı, doğum yöntemi hakkında bilgilendirilmediğini ve omuz takılması sonrası bebekte kol felci geliştiğini ileri sürerek 200.000,00 TL manevi tazminat talep etmiştir."],
+      savunma: ["Davalı hekim, doğumun tıp kurallarına uygun yönetildiğini savunmuştur."],
+      gerekce: [
+        { metin: "Bilirkişi raporunda omuz takılmasının komplikasyon olduğu kabul edilmekle birlikte dosyada aydınlatılmış onam formunun bulunmadığı, davacının sezaryen seçeneği hakkında bilgilendirildiğinin ispatlanamadığı tespit edilmiştir.", konular: ["bilirkisi", "onam"] },
+        { metin: "Aydınlatma yükümlülüğünün ihlali nedeniyle 60.000,00 TL manevi tazminata hükmedilmesi gerekmiştir.", konular: ["onam", "tazminat"] },
+      ],
+      hukum: "HÜKÜM: Davanın KISMEN KABULÜ ile 60.000,00 TL manevi tazminatın dava tarihinden itibaren işleyecek yasal faiziyle davalıdan alınarak davacıya verilmesine 02.11.2023 tarihinde karar verildi.",
+    },
+  }),
+];
+
+/** Sorgu üreticinin örnek künyesi (sahte üretici biçiminde). */
+export const ORNEK_EMSAL_KUNYESI: EmsalKunyesi = {
+  uzmanlik: "Kadın Hastalıkları ve Doğum",
+  tibbi_islem: "vajinal doğum, omuz distosisi manevraları",
+  iddia: "Doğum sırasında omuz takılması sonrası bebekte kol sinir hasarı; hizmet kusuru ve aydınlatma eksikliği iddiası.",
+  taraf_turu: "davacı hasta",
+  yargi_yolu: "IDARE",
+  sorgular: [
+    { metin: "omuz takılması brakial", tur: "tibbi" },
+    { metin: "hizmet kusuru doğum", tur: "hukuki" },
+    { metin: "omuz distosisi OR omuz takılması", tur: "es_anlam" },
+  ],
+  istem_surumu: "ornek",
+};
+
+/** Okuma puanları (belge kimliği → puan, gerekçe, alıntı, fark); liste puan sırasındadır. `ayni_kart` kartla hesaplanır. */
+export const ORNEK_EMSAL_OKUMALARI: readonly Pick<EmsalOnerisi, "id" | "puan" | "gerekce" | "alinti" | "fark" | "kaynak" | "fts_sira" | "denetim_uyarilari">[] = [
+  {
+    id: 7001,
+    puan: 91,
+    gerekce: "Aynı uzmanlık ve aynı olay: doğumda omuz takılması; ATK raporu komplikasyon demiş, dava reddedilmiş.",
+    alinti: "omuz takılmasının doğumun öngörülemeyen bir komplikasyonu olduğu, uygulanan manevraların tıp kurallarına uygun olduğu bildirilmiştir",
+    fark: "Belgenin kendi kartının kararı; emsal değil, zincirin halkası.",
+    kaynak: "model",
+    fts_sira: 1,
+    denetim_uyarilari: [],
+  },
+  {
+    id: 7004,
+    puan: 84,
+    gerekce: "Aynı olay ve yargı yolu; brakial pleksus hasarının komplikasyona bağlı gelişebileceği kabul edilmiş.",
+    alinti: "brakial pleksus hasarının bu komplikasyona bağlı gelişebileceği ve doğumu yöneten ekibe atfedilecek kusur bulunmadığı belirtilmiştir",
+    fark: "Davalı idare; sigortalı hekim bireysel olarak taraf değil.",
+    kaynak: "model",
+    fts_sira: 2,
+    denetim_uyarilari: [],
+  },
+  {
+    id: 7005,
+    puan: 77,
+    gerekce: "Aynı olay; kusur yok ama 65.000,00 TL manevi tazminat aydınlatma eksikliğinden verilmiş — onam riski.",
+    alinti: "dosyada aydınlatılmış onam formunun bulunmadığı, davacının sezaryen seçeneği hakkında bilgilendirildiğinin ispatlanamadığı tespit edilmiştir",
+    fark: "Adli yargı (asliye hukuk); hüküm onam ihlaline dayanıyor.",
+    kaynak: "model",
+    fts_sira: 4,
+    denetim_uyarilari: ["gerekçedeki 65.000,00 TL tutarı kararda geçmiyor (kararda 60.000,00 TL)"],
+  },
+  {
+    id: 7003,
+    puan: 58,
+    gerekce: "Farklı uzmanlık; komplikasyon ile takip kusuru ayrımı değerlendirme için emsal olabilir.",
+    alinti: "enfeksiyonun komplikasyon olduğu, ancak hastanenin enfeksiyon kontrol kayıtlarının eksik tutulduğu",
+    fark: "Olay ortopedi ameliyatı sonrası enfeksiyon; doğum değil.",
+    kaynak: "onbellek",
+    fts_sira: 3,
+    denetim_uyarilari: [],
+  },
+  {
+    id: 7002,
+    puan: 40,
+    gerekce: "İlk derece kararını ayakta tutan istinaf kararı; gerekçe yalnız usul denetimi.",
+    alinti: "kararının usul ve hukuka uygun olduğu, kaldırılmasını gerektiren bir neden bulunmadığı sonucuna varılmıştır",
+    fark: "Esasa ilişkin değerlendirme yok.",
+    kaynak: "model",
+    fts_sira: 5,
+    denetim_uyarilari: [],
+  },
 ];

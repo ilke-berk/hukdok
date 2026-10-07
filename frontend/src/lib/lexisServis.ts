@@ -8,14 +8,22 @@
 //   listesini HUKDOK'un mevcut uçlarından AYNI token'la okur (`lexis-rapor/servis/hukdok.py`, K9).
 // - Yanıtlar `types/lexis.ts` tipleriyle aynıdır (`LexisDava`, `DosyaGirdisi`, `Emsal`); emsal metni maskelidir.
 //
+// - Emsal ajan hattı (G264): `emsal-belge` (kart belgesi JSON ya da multipart yükleme), `emsal-ara` (NDJSON akışı,
+//   okuyucu `lib/lexisAkis.ts`), `emsal-sonuc` (+ `/indir` inceleme paketi), `emsal-durum`.
+//
 // Bu modül `lexisApi.ts`'ten DİNAMİK yüklenir: örnek kip `apiClient`'ı (MSAL) hiç yüklemez.
 import { apiClient } from "@/lib/api";
+import { emsalAkisi, type EmsalAkisSecenekleri } from "@/lib/lexisAkis";
 import { LexisApiError, type EmsalIstegi, type MuallakIstegi } from "@/lib/lexisApi";
 import { LEXIS_API_ONEKI, LEXIS_YETKI_MESAJI } from "@/lib/lexisWord";
 import type {
   DegerlendirmeTaslagi,
   DosyaGirdisi,
   Emsal,
+  EmsalAkisOlayi,
+  EmsalBelge,
+  EmsalDurumu,
+  EmsalSonucu,
   KararKaydi,
   KartKararlari,
   KayitliTaslak,
@@ -54,7 +62,10 @@ async function jsonGetir<T>(yol: string, init: RequestInit, signal?: AbortSignal
     let detay: string | null = null;
     if (json) {
       const govde = (await res.json().catch(() => null)) as { detail?: unknown } | null;
-      if (typeof govde?.detail === "string" && govde.detail.trim()) detay = govde.detail;
+      const detail = govde?.detail;
+      if (typeof detail === "string" && detail.trim()) detay = detail;
+      // `/emsal-belge` hata deseni: `detail: {kod, mesaj}` (G259).
+      else if (detail && typeof detail === "object" && typeof (detail as { mesaj?: unknown }).mesaj === "string") detay = (detail as { mesaj: string }).mesaj;
     }
     throw new LexisApiError(res.status, detay ?? ([404, 502, 504].includes(res.status) ? LEXIS_DAVA_SERVISI_YOK : `Lexis isteği tamamlanamadı (HTTP ${res.status}).`));
   }
@@ -147,6 +158,91 @@ export function kararGetir(id: number, signal?: AbortSignal): Promise<RafKarariA
 export function yaz(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet" | "emsal_sha"> & { karar_idleri: number[] }, signal?: AbortSignal): Promise<YazimSonucu> {
   const { case_id, sirket, rapor_turu, iskelet: bicim, emsal_sha, karar_idleri } = istek;
   return jsonGetir<YazimSonucu>("/yaz", { method: "POST", body: JSON.stringify({ case_id, sirket, rapor_turu, iskelet: bicim, karar_idleri, emsal_sha }) }, signal);
+}
+
+// --- emsal ajan hattı (`lexis-rapor/servis/emsal_dosya.py`, `emsal_ajan.py`, `inceleme_paketi.py`; G259-G263) ---
+
+/**
+ * `POST /lexis-api/emsal-belge` (JSON `{case_id, belge_id}`) — kart belgesini servis HUKDOK'tan kullanıcının
+ * token'ıyla indirir, metnini çıkarıp maskeler. Yanıtta metin yok; aynı dosya ikinci kez `mevcut: true`.
+ */
+export function emsalBelgeKarttan(caseId: number, belgeId: number, signal?: AbortSignal): Promise<EmsalBelge> {
+  return jsonGetir<EmsalBelge>("/emsal-belge", { method: "POST", body: JSON.stringify({ case_id: caseId, belge_id: belgeId }) }, signal);
+}
+
+/**
+ * `POST /lexis-api/emsal-belge` (multipart `dosya` [+ `case_id`]) — diskten yükleme (≤ 20 MB; biçim içerikten
+ * tanınır). `Content-Type`'ı tarayıcı koyar (`apiClient` FormData'da JSON başlığı eklemez). Kart verilirse kartın
+ * kişi tarafları maskeye bilinen ad olarak girer.
+ */
+export function emsalBelgeYukle(dosya: File, caseId: number | null, signal?: AbortSignal): Promise<EmsalBelge> {
+  const govde = new FormData();
+  govde.append("dosya", dosya, dosya.name);
+  if (caseId !== null) govde.append("case_id", String(caseId));
+  return jsonGetir<EmsalBelge>("/emsal-belge", { method: "POST", body: govde }, signal);
+}
+
+/** `POST /lexis-api/emsal-ara` — NDJSON akışı (`lexisAkis.emsalAkisi`); `failed` SON olaydır. */
+export function emsalAra(sha256: string, secenekler: EmsalAkisSecenekleri = {}): AsyncGenerator<EmsalAkisOlayi, void, undefined> {
+  return emsalAkisi(sha256, secenekler);
+}
+
+/** `GET /lexis-api/emsal-sonuc/{sha256}` — belgenin son `complete` sonucu; yoksa 404 (`LexisApiError`). */
+export function emsalSonuc(sha256: string, signal?: AbortSignal): Promise<EmsalSonucu> {
+  return jsonGetir<EmsalSonucu>(`/emsal-sonuc/${encodeURIComponent(sha256)}`, { method: "GET" }, signal);
+}
+
+/** `GET /lexis-api/emsal-durum` — hat açık mı, kip ve modeller (ekrandaki model rozeti, K4 onayı). */
+export function emsalDurum(signal?: AbortSignal): Promise<EmsalDurumu> {
+  return jsonGetir<EmsalDurumu>("/emsal-durum", { method: "GET" }, signal);
+}
+
+/** İnceleme paketinin ucu (`GET …/emsal-sonuc/{sha256}/indir`); düz `<a href>` ÇALIŞMAZ (Authorization gerekir). */
+export function emsalIndirUrl(sha256: string): string {
+  return `${LEXIS_API_ONEKI}/emsal-sonuc/${encodeURIComponent(sha256)}/indir`;
+}
+
+/**
+ * İnceleme paketini indirir (`hukukbotApi.indir` deseni: `fetch` + blob + geçici object URL + `<a download>`).
+ * Sonuç yoksa 404 `LexisApiError` (G263 ucu kurulu değilse de 404 — çağıran düğmeyi pasifleştirir). Dönen değer
+ * dosya adıdır (`Content-Disposition`'dan; yoksa `inceleme_<sha12>.zip`).
+ */
+export async function emsalIndir(sha256: string, signal?: AbortSignal): Promise<string> {
+  let res: Response;
+  try {
+    res = await apiClient.fetch(emsalIndirUrl(sha256), { method: "GET", signal });
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") throw e;
+    throw new LexisApiError(0, LEXIS_DAVA_SERVISI_YOK);
+  }
+  if (!res.ok) {
+    if (res.status === 401) throw new LexisApiError(401, LEXIS_YETKI_MESAJI);
+    let detay: string | null = null;
+    if ((res.headers.get("Content-Type") ?? "").includes("application/json")) {
+      const govde = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+      if (typeof govde?.detail === "string" && govde.detail.trim()) detay = govde.detail;
+    }
+    throw new LexisApiError(res.status, detay ?? (res.status === 404 ? "İnceleme paketi bulunamadı." : [502, 504].includes(res.status) ? LEXIS_DAVA_SERVISI_YOK : `İnceleme paketi indirilemedi (HTTP ${res.status}).`));
+  }
+  if (!(res.headers.get("Content-Type") ?? "").includes("zip")) throw new LexisApiError(502, LEXIS_DAVA_SERVISI_YOK);
+  const eslesme = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "");
+  const dosyaAdi = eslesme?.[1] ?? `inceleme_${sha256.slice(0, 12)}.zip`;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = dosyaAdi;
+    document.body.appendChild(a);
+    try {
+      a.click();
+    } finally {
+      a.remove();
+    }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  return dosyaAdi;
 }
 
 // --- kalıcılık: servisin kendi veritabanı (`lexis-rapor/servis/depo.py`) ---

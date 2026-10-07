@@ -490,6 +490,11 @@ export interface LexisTaslak {
   emsaller: string[];
   /** Taslağın yazıldığı kararlar (`RafKarari.id`); dayanak alıntıları bunların metninde aranır. Eski kayıtta yok. */
   kararlar?: number[];
+  /**
+   * Emsal ajanından onaylanan büro kararları (`RafKarari.id`; K28). `kararlar`dan AYRI alandır: yazıma GİTMEZ,
+   * Word'de yalnız künye satırı olur. Eski kayıtta yok.
+   */
+  emsal_kararlar?: number[];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -802,6 +807,190 @@ export interface TaslakKaydi {
 }
 
 export type TaslakKayitSonucu = Pick<KayitliTaslak, "surum" | "guncelleme" | "guncelleyen">;
+
+// ---------------------------------------------------------------------------------------------
+// Arayüz (çekirdekte yok): emsal ajan hattı — "Bu dosyaya emsal bul" (K27, K28)
+// Sözleşme servisten OKUNDU: `lexis-rapor/servis/emsal_dosya.py::tel`, `servis/emsal_ajan.py` (akış olayları,
+// `_denetle`, `durum`), `lexis_rapor/emsal_ajan.py::EmsalKunyesi`; 07.10.2026 hâli.
+// ---------------------------------------------------------------------------------------------
+
+/** Servisin kabul ettiği belge biçimleri (`emsal_dosya.BICIMLER`; biçim içerikten tanınır). */
+export const EMSAL_BELGE_BICIMLERI: readonly string[] = ["pdf", "docx", "udf"];
+
+/** Dosya adının uzantısı (küçük harf); uzantısız adda `null`. */
+export function belgeUzantisi(ad: string): string | null {
+  const nokta = ad.lastIndexOf(".");
+  if (nokta <= 0 || nokta === ad.length - 1) return null;
+  const uzanti = ad.slice(nokta + 1).toLocaleLowerCase("en");
+  return /^[a-z0-9]{1,5}$/.test(uzanti) ? uzanti : null;
+}
+
+/**
+ * Kart belgesi emsal aramasına verilebilir mi: uzantısı pdf / docx / udf olanlar. Uzantısız ad (biçimi bilinmeyen
+ * kayıt) elenmez — servis biçimi içerikten tanır ve desteklemiyorsa 422 döner.
+ */
+export function emsalBelgesiMi(ad: string): boolean {
+  const uzanti = belgeUzantisi(ad);
+  return uzanti === null || EMSAL_BELGE_BICIMLERI.includes(uzanti);
+}
+
+/** Maske dökümü: kart tarafından bilinen ad, kalıpla yakalanan, metinden öğrenilen (`maske.metin_maskele`). */
+export interface MaskeDokumu {
+  bilinen: number;
+  kalip: number;
+  ogrenilen: number;
+}
+
+export interface EmsalBelgeBolumu {
+  tip: string;
+  baslik: string;
+  bas: number;
+  son: number;
+}
+
+/** `POST /lexis-api/emsal-belge` yanıtı: künye + sayılar; METİN ve dosya adı gelmez (K23). */
+export interface EmsalBelge {
+  sha256: string;
+  /** `kart` (HUKDOK belgesi) | `yukleme` (diskten). */
+  kaynak: string;
+  bicim: string;
+  boyut: number;
+  sayfa: number | null;
+  metin_uzunluk: number;
+  bolumler: EmsalBelgeBolumu[];
+  maske_dokumu: MaskeDokumu;
+  case_id: number | null;
+  hukdok_belge_id: number | null;
+  /** ISO zaman damgası. */
+  yukleme: string;
+  /** Aynı dosya daha önce hazırlanmış: yeniden çıkarılmadı. */
+  mevcut: boolean;
+  /** `tamam | bekliyor | kapali | gerekmiyor`. */
+  arsiv: string;
+  sharepoint_url: string | null;
+}
+
+export type EmsalAsamasi = "kunye" | "aday" | "okuma" | "denetim";
+
+export const EMSAL_ASAMALARI: readonly { kod: EmsalAsamasi; ad: string }[] = [
+  { kod: "kunye", ad: "Künye" },
+  { kod: "aday", ad: "Adaylar" },
+  { kod: "okuma", ad: "Okuma" },
+  { kod: "denetim", ad: "Denetim" },
+];
+
+/** Sorgu üreticinin çıktısı (`EmsalKunyesi`); kişi adı içermez. */
+export interface EmsalKunyesi {
+  uzmanlik: string | null;
+  tibbi_islem: string | null;
+  iddia: string;
+  taraf_turu: string | null;
+  yargi_yolu: string;
+  sorgular: { metin: string; tur: string }[];
+  istem_surumu?: string;
+}
+
+/**
+ * Ajanın denetimden geçirdiği öneri: raf künyesi (`RafKarari`) + okuma puanı. `alinti` kaynak kararda BİREBİR
+ * bulunmuştur (kod denetçisi); `denetim_uyarilari` gerekçedeki tutar / tarih / numara uyarılarıdır (düşürmez).
+ */
+export interface EmsalOnerisi extends RafKarari {
+  /** 0-100. */
+  puan: number;
+  gerekce: string;
+  /** Karardan AYNEN alınmış 15-40 sözcük (maskeli). */
+  alinti: string;
+  fark: string;
+  /** Belgenin kendi kartının kararı (zincir ölçümü için aday kalır; emsal sayılmaz). */
+  ayni_kart: boolean;
+  /** `model | onbellek`. */
+  kaynak: string;
+  fts_sira: number | null;
+  denetim_uyarilari: string[];
+  /** C kolu için boş liste. */
+  bilesenler: Bilesen[];
+  /**
+   * Çekirdekte yok: sunucu yalnız denetimden geçen öneriyi gönderir (`alinti_dogrula`), bu alanı yazmaz. Açıkça
+   * `false` gelen satırı ekran GÖSTERMEZ (savunma — K13 kuralı sunucuda da ekranda da aynıdır).
+   */
+  alinti_dogrulandi?: boolean;
+}
+
+/**
+ * Ekranda gösterilecek öneriler (savunma, K13 / K28): sunucu denetimden geçmeyen öneriyi zaten göndermez; yine de
+ * açıkça `alinti_dogrulandi: false` gelen ya da alıntısı boş satır GÖSTERİLMEZ — "kaynakta doğrulandı" rozeti
+ * doğrulanmamış alıntıya basılmaz.
+ */
+export function gosterilecekOneriler(oneriler: readonly EmsalOnerisi[]): EmsalOnerisi[] {
+  return oneriler.filter((o) => o.alinti_dogrulandi !== false && o.alinti.trim() !== "");
+}
+
+export interface EmsalSayilari {
+  aday: number;
+  okunan: number;
+  dusen: number;
+  onbellek: number;
+  model_cagrisi: number;
+  token: number;
+  saniye: number;
+  /** `onbellek`: sonuç bellekten değil önbellekten kuruldu (`GET /emsal-sonuc`). */
+  kaynak?: string;
+}
+
+/** Akışın `complete` olayı = `GET /lexis-api/emsal-sonuc/{sha256}` yanıtı. Sıra: puan azalan, eşitlikte FTS sırası. */
+export interface EmsalSonucu {
+  sha256: string;
+  kunye: EmsalKunyesi;
+  /** Okuyucu modeli. */
+  model: string;
+  sorgu_modeli: string;
+  oneriler: EmsalOnerisi[];
+  sayilar: EmsalSayilari;
+}
+
+/**
+ * `POST /lexis-api/emsal-ara` NDJSON olayları — HUKDOK stream sözleşmesi: `failed` SON olaydır ve `error_kod`
+ * taşır (`gemini_saturated | gemini_blocked | schema_invalid | metin_yok | aday_yok | kota | analysis_error`, uzay
+ * açık); başarılı akış `complete` ile biter. `warning` akışı KESMEZ (aday düştü, okuyucu hatası).
+ */
+export type EmsalAkisOlayi =
+  | {
+      status: "info";
+      asama: EmsalAsamasi;
+      mesaj?: string;
+      /** Okuma aşamasında `[i, n]`. */
+      ilerleme?: [number, number];
+      kaynak?: string;
+      aday?: number;
+      sorgu?: number;
+      ayni_kart?: number;
+      gecen?: number;
+      dusen?: number;
+      belge_id?: number;
+    }
+  | { status: "warning"; asama?: EmsalAsamasi; belge_id?: number; message: string; error_kod?: string }
+  | ({ status: "complete" } & EmsalSonucu)
+  | { status: "failed"; error_ozet: string; error_kod: string };
+
+/** `GET /lexis-api/emsal-durum` — hat açık mı, kip (`sahte | gemini`), modeller, tavanlar, bugünkü kullanım. */
+export interface EmsalDurumu {
+  acik: boolean;
+  kip: string;
+  /** `kip_gecersiz | anahtar_yok | paket_yok`; açıkken `null`. */
+  neden: string | null;
+  sorgu_modeli: string;
+  okuyucu_modeli: string;
+  aday: number;
+  eszamanli: number;
+  karar_karakter: number;
+  /** 0 = sınırsız. */
+  gunluk_token: number;
+  istem_surumu: string;
+  /** Bugün kullanılan model token'ı; sayılamadıysa `null`. */
+  kullanilan_token: number | null;
+  /** Bu kullanıcının süren bir araması var. */
+  acik_is: boolean;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Görünen adlar

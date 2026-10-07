@@ -95,6 +95,11 @@ export function useTezgah() {
   const [kararHatasi, setKararHatasi] = useState<string | null>(null);
   const [seciliKararlar, setSeciliKararlar] = useState<ReadonlySet<number>>(new Set());
   const [yazimDurumu, setYazimDurumu] = useState<YazimDurumu | null>(null);
+  // Emsal ajanından onaylanan büro kararları (K28): taslağın `emsal_kararlar` alanı + künye için raf kaydı.
+  // Yazım girdisi `seciliKararlar`dan AYRIDIR; modele gitmez.
+  const [emsalKararlari, setEmsalKararlari] = useState<RafKarari[]>([]);
+  const [emsalKararYukleniyor, setEmsalKararYukleniyor] = useState(false);
+  const [emsalKararHatasi, setEmsalKararHatasi] = useState<string | null>(null);
 
   const [taslak, setTaslak] = useState<LexisTaslak | null>(null);
   const [bolumDurumlari, setBolumDurumlari] = useState<BolumDurumlari>({});
@@ -114,6 +119,7 @@ export function useTezgah() {
 
   const taslakRef = useRef<LexisTaslak | null>(null);
   const kimliklerRef = useRef<string[]>([]);
+  const emsalKararlariRef = useRef<RafKarari[]>([]);
   const dosyaIstegi = useRef<AbortController | null>(null);
   const emsalIstegi = useRef<AbortController | null>(null);
   const kararIstegi = useRef<AbortController | null>(null);
@@ -184,6 +190,20 @@ export function useTezgah() {
     kimliklerRef.current = yeni;
     setMaddeKimlikleri(yeni);
   }, []);
+
+  /**
+   * Emsal karar listesini koyar; taslak varsa `emsal_kararlar` alanını da eşitler (otomatik kayıt tetiklenir).
+   * Denetimi BAYATLATMAZ: emsal karar denetime girmez (K28).
+   */
+  const emsalKararlariKoy = useCallback(
+    (yeni: RafKarari[]) => {
+      emsalKararlariRef.current = yeni;
+      setEmsalKararlari(yeni);
+      const mevcut = taslakRef.current;
+      if (mevcut) koy({ ...mevcut, emsal_kararlar: yeni.map((k) => k.id) });
+    },
+    [koy],
+  );
 
   const taslagiSifirla = useCallback(() => {
     akisIstegi.current?.abort();
@@ -325,6 +345,12 @@ export function useTezgah() {
       koy(t);
       kimlikleriKoy((t.degerlendirme?.maddeler ?? []).map(yeniKimlik));
       setEmsalYukleniyor(true);
+      // Taslağın emsal kararları (K28): künyeleri raftan; alınamayan karar listede görünmez, uyarı düşer.
+      const emsalIdler = t.emsal_kararlar ?? [];
+      emsalKararlariRef.current = [];
+      setEmsalKararlari([]);
+      setEmsalKararHatasi(null);
+      setEmsalKararYukleniyor(emsalIdler.length > 0);
       try {
         const sonuclar = await Promise.allSettled(t.emsaller.map((sha) => lexisApi.emsalPuanla(caseId, sha, signal)));
         if (signal.aborted) return;
@@ -332,6 +358,15 @@ export function useTezgah() {
         setEmsaller(bulunan);
         if (bulunan.length < sonuclar.length) setEmsalHatasi(`Taslağın baktığı ${sonuclar.length - bulunan.length} emsal rapor kütüphaneden alınamadı.`);
         setEmsalYukleniyor(false);
+        if (emsalIdler.length > 0) {
+          const kararSonuclari = await Promise.allSettled(emsalIdler.map((id) => lexisApi.kararGetir(id, signal)));
+          if (signal.aborted) return;
+          const bulunanKararlar: RafKarari[] = kararSonuclari.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
+          emsalKararlariRef.current = bulunanKararlar;
+          setEmsalKararlari(bulunanKararlar);
+          if (bulunanKararlar.length < emsalIdler.length) setEmsalKararHatasi(`Taslağın ${emsalIdler.length - bulunanKararlar.length} emsal kararı raftan alınamadı.`);
+          setEmsalKararYukleniyor(false);
+        }
         const uyarilar = await denetle();
         if (signal.aborted) return;
         const baglam = baglamlar.current.get(caseId);
@@ -339,7 +374,10 @@ export function useTezgah() {
         setKayit({ tur: "kaydedildi", zaman: tarihSaatYaz(kayitli.guncelleme) });
         setAcilanKayit({ guncelleyen: kayitli.guncelleyen, guncelleme: kayitli.guncelleme });
       } finally {
-        if (!signal.aborted) setGeriYukleniyor(false);
+        if (!signal.aborted) {
+          setGeriYukleniyor(false);
+          setEmsalKararYukleniyor(false);
+        }
       }
     },
     [denetle, kararlariYukle, koy, kimlikleriKoy, yeniKimlik],
@@ -364,6 +402,10 @@ export function useTezgah() {
       setKararYukleniyor(false);
       setSeciliKararlar(new Set());
       setYazimDurumu(null);
+      emsalKararlariRef.current = [];
+      setEmsalKararlari([]);
+      setEmsalKararYukleniyor(false);
+      setEmsalKararHatasi(null);
       setKayit({ tur: "yok" });
       setAcilanKayit(null);
       setGeriYukleniyor(false);
@@ -463,6 +505,25 @@ export function useTezgah() {
     setEmsaller((onceki) => onceki.filter((e) => e.kayit.okuma.sha256 !== sha256));
   }, []);
 
+  /** Emsal ajanından onaylanan kararlar listeye (ve taslağa) girer; listedekiler yinelenmez. Yazım seçimine DOKUNMAZ. */
+  const emsalKarariEkle = useCallback(
+    (kararlar: RafKarari[]) => {
+      const mevcut = emsalKararlariRef.current;
+      const yeni = kararlar.filter((k) => !mevcut.some((m) => m.id === k.id));
+      if (yeni.length === 0) return;
+      emsalKararlariKoy([...mevcut, ...yeni]);
+    },
+    [emsalKararlariKoy],
+  );
+
+  const emsalKarariCikar = useCallback(
+    (id: number) => {
+      if (!emsalKararlariRef.current.some((k) => k.id === id)) return;
+      emsalKararlariKoy(emsalKararlariRef.current.filter((k) => k.id !== id));
+    },
+    [emsalKararlariKoy],
+  );
+
   const emsalEkle = useCallback(
     async (kayit: KutuphaneKaydi) => {
       if (!dosya) return;
@@ -506,6 +567,8 @@ export function useTezgah() {
       muallak_manevi: null,
       emsaller: istek.emsal_sha,
       kararlar: istek.karar_idleri ?? [],
+      // Emsal kararlar yeniden yazımda korunur (K28: yazıma girmez, taslakla taşınır); boşsa alan yazılmaz.
+      ...(emsalKararlari.length > 0 ? { emsal_kararlar: emsalKararlari.map((k) => k.id) } : {}),
     });
     setBolumDurumlari(Object.fromEntries(bolumler.map((b) => [b.kod, "yaziliyor"])) as BolumDurumlari);
     setAkis({ asama: "olgular", mesaj: null });
@@ -550,7 +613,7 @@ export function useTezgah() {
         setAkis(null);
       }
     }
-  }, [dosya, emsaller, kararlar, seciliBelgeler, seciliKararlar, yazimDurumu, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
+  }, [dosya, emsaller, emsalKararlari, kararlar, seciliBelgeler, seciliKararlar, yazimDurumu, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
 
   const durdur = useCallback(() => akisIstegi.current?.abort(), []);
 
@@ -720,6 +783,9 @@ export function useTezgah() {
     kararHatasi,
     seciliKararlar,
     yazimDurumu,
+    emsalKararlari,
+    emsalKararYukleniyor,
+    emsalKararHatasi,
     taslak,
     bolumDurumlari,
     akis,
@@ -741,6 +807,8 @@ export function useTezgah() {
     kararSec,
     emsalCikar,
     emsalEkle,
+    emsalKarariEkle,
+    emsalKarariCikar,
     yaz,
     durdur,
     denetle,
