@@ -174,6 +174,27 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [ ] G255 | bant:backend | bagimli:- | `hukdok_aktarim` parti başına kısa transaction: kilitli kartı atla-sona bırak (`NOWAIT`/`SKIP LOCKED`), parti kapsamlı belge envanteri kapısı + sonda tam kapı, kuru koşu parti başına rollback, idempotent yeniden koşu, açılış toparlaması "kısmen uygulandı"; eşzamanlı yazma dbtest'i
 
+## ÖNCELİK 9 — Emsal ajan hattı (Lexis B kolu): FTS, belge yükleme + kalıcı arşiv, paralel okuyucular, ekran, ölçüm (2026-10-07 gündüz, kullanıcı kararı)
+
+<!-- Kaynak: docs/plan/emsal-ajan-hatti-plani-2026-10-06.md (06.10 plan, 07.10 onay: F = emsal karar taslakta ayrı
+     alan, yazıma gitmez; G = yalnız büro kararları) + lexis-rapor PLAN.md Aşama 12 (K23-K30). İLK LEXİS BANDI KOŞUSU:
+     görevlerin çoğu dış depo ../lexis-rapor'da (bant:lexis — koşucuya 07.10'da eklendi; ön koşul: oturumun o dizine
+     yazma yetkisi + lexis-rapor temiz). Lexis bandı SERİ: G258 → G259 → G260 → G261 → G263 → G265 (hepsi servis/app.py,
+     depo.py, README'yi paylaşır). HUKDOK tarafı: G262 (backend, bağımsız — uç adları sabit) ∥ lexis zinciri; G264
+     (frontend) G261+G262 sonrası; G266 (docs) en son. Sahte üretici varsayılan: gece Gemini'ye HİÇBİR ŞEY gitmez; canlı
+     tek dosya denemesi, karar_arama_kur --apply, SharePoint tek dosya denemesi ve altın küme ölçümü gündüz İNSAN ADIMI.
+     Tahmin: 3-4 gece (gece 1: G258 ∥ G262; gece 2: G259 → G260 → G261; gece 3: G263 → G265 ∥ G264; gece 4: G266). -->
+
+- [ ] G258 | bant:lexis | bagimli:- | Tam metin arama: `karar_arama` tablosu (tsvector + GIN, yalnız büro) + `lexis_rapor/arama.py` operatör ayrıştırıcı (AND/OR/NOT/"ibare", `:*` ön-ek) + `karar_arama_kur.py` (kuru koşu) + raf araması FTS'ye (SQLite'ta ILIKE kalır) + 20 sorguluk ölçüm README'ye
+- [ ] G259 | bant:lexis | bagimli:G258 | Emsal belgesi: `POST /emsal-belge` (kart belgesi HUKDOK'tan token'la | disk yükleme ≤ 20 MB) → PDF/DOCX/UDF metin + bölümler (yeni `udf_okuyucu`) → maske (kart adlarıyla) → `emsal_dosyalari` (ad saklanmaz) + spool birimi; `GET /emsal-belge/{sha}` maskeli metin
+- [ ] G260 | bant:lexis | bagimli:G259 | Kalıcı arşiv: `servis/sharepoint.py` (Graph, HUKDOK arşiv kimliği, yeni `03_LEXIS_EMSAL/<yıl>/<sha>/`) + arşivleme/yeniden deneme + `emsal_arsiv_toparla.py` + ad çakışması kuralı; sahte Graph testleri
+- [ ] G261 | bant:lexis | bagimli:G258,G259 | Ajanlar: sorgu üretici (1 çağrı) + FTS adaylar (≤ 30) + asyncio okuyucular (6) + kod denetçi (alıntı birebir, düşen ÇIKMAZ) + `emsal_okumalar` önbellek + `model_cagrilari` log + `POST /emsal-ara` NDJSON + `GET /emsal-sonuc`, `/emsal-durum`; sahte üretici varsayılan
+- [ ] G262 | bant:backend | bagimli:- | HUKDOK proxy: Lexis allowlist += `emsal-belge|emsal-ara|emsal-sonuc|emsal-durum` + `proxy_buffering off` + `client_max_body_size 20M` + bekçi testleri + Vite proxy + CLAUDE.md allowlist listesi
+- [ ] G263 | bant:lexis | bagimli:G261,G260 | İnceleme paketi: `inceleme.docx` (işaret sütunlu liste) + karar metinleri + `sonuc.json` zip, `GET /emsal-sonuc/{sha}/indir`, arşive yazma; Word'de "Emsal kararlar" künye satırı (`emsal_kararlar`, K28)
+- [ ] G264 | bant:frontend | bagimli:G261,G262,G263 | Ekran: `EmsalBulDiyalogu` (kaynak seçimi, maske dökümü, model rozeti + Gemini onay kutusu, ilerleme) + `EmsalKararListesi` (puan, gerekçe, doğrulanmış alıntı, kararı aç) + `lexisAkis.ts` NDJSON okuyucu + onay → taslak `emsal_kararlar` (yazıma gitmez) + indirme + örnek kip
+- [ ] G265 | bant:lexis | bagimli:G261,G263 | Ölçüm aracı `emsal_ajan_olcum.py`: altın küme (zincir · rapor atfı · avukat işareti `emsal_isaret_oku.py`), aday ve okuma aşaması ayrı, Recall@5/@10, MRR, gerekçe doğruluğu, token/sn; çıktı depo dışı; gerçek koşu insan adımı
+- [ ] G266 | bant:docs | bagimli:G264,G262 | CLAUDE.md Lexis paragrafı + plan durumu + genel-bakış + otomasyon/gorevler README lexis bandı (koddan doğrulanmış)
+
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
 <!-- Kaynak: docs/arsiv/performans-denetimi-2026-09-14.md (Vercel react-best-practices + Supabase postgres-best-practices

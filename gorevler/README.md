@@ -35,10 +35,15 @@ kurumsal kayıttır; `git mv` sayesinde `git log --follow` geçmişi izlemeye de
 ```
 
 - `[ ]` açık, `[x]` bitti (runner işaretler, işçi değil).
-- `bant:` üç değer alır — **backend**: ana dizinde koşar (konteyner ana dizini bind-mount
+- `bant:` dört değer alır — **backend**: ana dizinde koşar (konteyner ana dizini bind-mount
   ettiği için pytest yalnız orada doğru kodu test eder; bu yüzden backend seri'dir);
   **frontend**: worktree'de koşar (vitest host'ta kendi `node_modules`'üyle);
-  **docs**: worktree'de koşar, test yok.
+  **docs**: worktree'de koşar, test yok;
+  **lexis** (07.10.2026): dış depo `..\lexis-rapor`'da koşar — worktree yok, dal yok, doğrudan o
+  deponun main'ine commit (backend bandının aynası, kendi seri sırası); test host'ta
+  `python -m pytest` + ruff, docker yok. Görev dosyası HUKDOK'ta kalır: işçi Rapor'u yazar,
+  runner'ın Teslim adımı KUYRUK ile birlikte commit'ler. Oturumun o dizine yazma yetkisi ve
+  deponun temiz olması ön koşuldur (`/gece-kuyrugu` ön kontrolleri).
 - `bagimli:` virgüllü görev id'leri ya da `-`. Bağımlılığı bitmemiş görev başlatılmaz.
 - Runner başarısızlıkta satır sonuna ` | BLOKE(sebep)` ekler; `BLOKE` içeren satır bir daha
   seçilmez. Çözünce eki elle sil.
@@ -95,7 +100,7 @@ Tip kapısı tek yerde: yukarıdaki komut ve CI'ın "TypeScript kontrolü" adım
    her görev birbirine zincirlenir.
 3. Görev boyutu = **bir oturum** (sertleştirme paketi ölçüsü: aynı dosya kümesi, tek okuma
    turu). Sığmayacak iş ikiye bölünür.
-4. Backend bandında paralellik yok (tek compose stack'i); gerçek paralellik backend×frontend
-   ve frontend×docs çiftlerinden gelir.
+4. Backend bandında paralellik yok (tek compose stack'i); lexis bandında da yok (tek depo).
+   Gerçek paralellik backend×frontend, frontend×docs ve lexis×(HUKDOK bantları) çiftlerinden gelir.
 5. Bağımlılık şüphesinde zincirle — yanlış "bağımsız" işareti gece merge çakışması üretir,
    yanlış "bağımlı" işareti sadece birkaç saat kaybettirir.

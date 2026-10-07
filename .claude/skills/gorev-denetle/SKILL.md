@@ -20,6 +20,9 @@ Kod DEĞİŞTİRME, commit atma, dosya yazma. Bulunduğun dizinde çalış (work
      tutarlı mı (sayı DÜŞTÜYSE kırmızı bayrak)?
    - **Bant ihlali:** frontend/docs görevi `docker compose` koşmuş mu (yanıltıcı test —
      konteyner ana dizini mount eder)? Backend görevi konteyner dışında pytest koşmuş mu?
+     lexis görevi (dış depo `..\lexis-rapor`) HUKDOK deposuna kod/test/doc yazmış mı, `docker compose`
+     koşmuş mu, depoya gerçek rapor/karar/kişi verisi sokmuş mu? (lexis'te görev dosyasının HUKDOK'ta
+     commit'siz kalması NORMALDİR — Teslim adımı commit'ler; RET sebebi değil.)
    - **Log sözleşmesi:** deneme-düzeyi yola yeni ERROR eklenmiş mi?
    - **Rapor disiplini:** Rapor bölümü dolu mu, kararlar gerekçeli mi, KUYRUK.md'ye dokunulmamış mı?
 4. Şüphen varsa doğrulama komutlarını KENDİN koş (bant kurallarına uyarak: frontend worktree'de

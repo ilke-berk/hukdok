@@ -163,6 +163,13 @@ Rapor (otomasyon/loglar/kuyruk-workflow_<tarih>.md + commit)
   (OneDrive dışı), dal `gorev/<id>`.
 - **Ana dizin mutex'i:** backend görev zinciri bütünüyle + tüm merge/işaretleme adımları
   tek sıradan geçer; worktree bantlarının uygulaması paralel kalır.
+- **lexis bandı (07.10.2026, kullanıcı kararı):** dış depo `..\lexis-rapor` için dördüncü bant,
+  backend bandının aynası — worktree/dal yok, doğrudan o deponun main'i, kendi mutex'i
+  (`lexisSira`), test host'ta `python -m pytest` + ruff (docker yok), kırmızı-yeşil kanıtı
+  lexis deposundan açılan kanıt worktree'sinde host Python ile. Görev dosyası HUKDOK'ta: işçi
+  Rapor'u yazar, Teslim ajanı KUYRUK + görev dosyasını tek pathspec commit'iyle atar. Plan
+  aşaması lexis deposunun kirliliğine ayrıca bakar (kirliyse o bant ertelenir). Parametreler
+  `lexisKok`, `hukdokKok`. Ön koşul: oturumun o dizine yazma yetkisi (`request_directory`).
 - **`Durum: TAMAM` kısayolu:** görev dosyasının Rapor'unda "Durum: TAMAM" yazan ama
   KUYRUK'ta açık kalan görev (ana oturumda bitirilmiş iş — ilk örnek G060) yeniden
   UYGULANMAZ; doğrudan bağımsız denetime girer, GECTI ise işaretlenir.

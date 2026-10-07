@@ -13,6 +13,11 @@ Prompt'un sonunda `GOREV: <id>` verilir. Tek çağrı = o TEK görev. Bitince (c
   arşiv/plan dosyası açma.
 - **Bulunduğun dizin çalışma alanındır** — worktree olabilir. Başka dizine (ana repoya) geçme,
   `git worktree` komutları kullanma; dallama/birleştirme runner'ın işi.
+- **bant:lexis** (07.10.2026): çalışma alanı dış depo `..\lexis-rapor`'dur (worktree yok, dal yok,
+  doğrudan o deponun main'i). O deponun `CLAUDE.md`'si de okunur ve geçerlidir (Write/Edit ile
+  yazma, `PYTHONIOENCODING=utf-8`, kişi verisi depoya girmez, K-kararları). Görev dosyası
+  HUKDOK'ta kalır: Rapor'u oraya yazarsın ama HUKDOK'ta commit ATMAZSIN (runner'ın Teslim adımı
+  KUYRUK ile birlikte commit'ler); kod commit'i yalnız lexis-rapor'da.
 
 ## 2. Çalışma ağacı
 - `git status --porcelain`: kirli dosyalar görev kapsamındaysa önceki yarım oturumun işidir —
@@ -35,6 +40,10 @@ Prompt'un sonunda `GOREV: <id>` verilir. Tek çağrı = o TEK görev. Bitince (c
   YASAK** — konteyner ANA dizini bind-mount eder, senin worktree kodunu test etmez; sonuç
   yanıltıcı olur.
 - **bant:docs**: test yok; iç tutarlılık (bozuk link, yanlış yol) kontrolü yeterli.
+- **bant:lexis** (lexis-rapor deposundasın): HOST'ta `PYTHONIOENCODING=utf-8 python -m pytest`
+  (ekstra `-q` ekleme) + `python -m ruff check .`. **`docker compose` YASAK** — lexis-rapor
+  compose'u servis imajını kaldırır, host kodunu test etmez; HUKDOK konteynerlerine dokunma.
+  Postgres isteyen test varsa görev dosyası `LEXIS_TEST_DB_URL` verir, yoksa skip sayısı Rapor'a yazılır.
 - Kırmızı → düzelt. Düzeltemiyorsan: kod commit'leme, görev dosyasına `DURUM: BLOKE — <sebep>`
   yaz, son mesajında `BLOKE` geçir, dur.
 

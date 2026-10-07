@@ -18,6 +18,12 @@ bölümü. Kuyruk formatı ve görev sözleşmeleri değişmedi (`gorevler/READM
    ertelenir) kararı kullanıcının.
 3. Kuyrukta backend görevi varsa Docker Desktop açık olmalı (`docker info`). Konteyneri
    koşucu kendisi kaldırır (`docker compose up -d`), sen kaldırmak zorunda değilsin.
+3b. Kuyrukta **lexis** görevi varsa (dış depo `..\lexis-rapor`, 07.10.2026): (a) oturumun o
+   dizine yazma yetkisi olmalı — uygulamanın dizin ekleme izniyle (`request_directory`) eklenmemişse
+   her lexis adımı izin engeline takılır; (b) `git -C ..\lexis-rapor status --porcelain` temiz
+   olmalı — kirliyse koşucu lexis görevlerini erteler (`kirliKabul: true` ile yine koşar);
+   (c) host Python'unda lexis-rapor bağımlılıkları kurulu olmalı (`python -m pytest` orada
+   yeşil geçiyorsa yeter; docker kullanılmaz).
 4. **Uyku engeli:** `Start-Process presentationsettings -ArgumentList "/start" -PassThru`
    ile sunum modunu aç, süreç id'sini not et; koşu bitince `Stop-Process` ile kapat.
    `cmd /c` ile ÇAĞIRMA — süresiz bloklar (2026-08-11 dersi). Kapak kapatılırsa makine
@@ -44,6 +50,8 @@ Workflow aracını şu şekilde çağır (ad çözümlemesine güvenme, yol ver)
 | `turTavani` / `teshisHakki` | `8` / `1` | Döngü mühendisliği sınırları |
 | `butceTabani` | `60000` | Bu kadar token kalmadan yeni iş başlamaz |
 | `worktreeKok` | `C:/dev/hukudok-wt` | Worktree kökü (OneDrive DIŞI kalmalı) |
+| `lexisKok` | `C:/Users/ilkeb/OneDrive/Masaüstü/lexis-rapor` | lexis bandının deposu (mutlak yol) |
+| `hukdokKok` | `C:/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main` | HUKDOK kökü (lexis işçisi görev dosyasına buradan ulaşır) |
 
 - **İlk koşu ya da yeni plan sonrası daima önce `kuru: true`** — dalga planını kullanıcıya
   göster, onay al, sonra gerçek koşuyu başlat.
@@ -53,7 +61,8 @@ Workflow aracını şu şekilde çağır (ad çözümlemesine güvenme, yol ver)
 ## 3. Koşu bitince
 
 1. Dönen özeti ve `otomasyon/loglar/kuyruk-workflow_<tarih>.md` raporunu oku.
-2. Kullanıcıya sırayla özetle: **işaretlenenler** (commit'leriyle) → **BLOKE'ler**
+2. Kullanıcıya sırayla özetle: **işaretlenenler** (commit'leriyle; lexis bandının commit'i
+   `..\lexis-rapor` deposundadır, sabah incelemesi ve push orada ayrıca) → **BLOKE'ler**
    (sebep + korunan worktree yolu + önerilen adım) → **karar bekleyenler** (görev tanımı
    hatalı / kabul karşılanamayan) → **izin engelleri** (varsa: settings izin listesi
    YALNIZ bu ölçümle genişletilir; koşucu/skill kendi iznini genişletmez).

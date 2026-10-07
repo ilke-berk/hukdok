@@ -19,14 +19,18 @@ dosyalarına dönüştür. Format ve kurallar: `gorevler/README.md` — önce on
 - Her görev için belirle:
   - **Dosya kapsamı** (glob'lar) ve **Dokunma listesi** (kapsam dışı ama riskli komşular).
   - **Bant**: backend (ana dizin, seri — konteyner bind-mount gerçeği), frontend (worktree,
-    vitest host), docs (worktree, test yok).
+    vitest host), docs (worktree, test yok), lexis (dış depo `..\lexis-rapor`, seri, host pytest;
+    dosya kapsamı o deponun köküne göre yazılır, HUKDOK dosyası KAPSAMA GİRMEZ — HUKDOK tarafı
+    ayrı backend/frontend/docs görevi olur ve zincirlenir).
   - **Bağımlılıklar**: iki görev aynı dosyaya dokunuyorsa zincirle. Hub dosyalara
     (tipler/şemalar, route kayıtları, `api.ts`, migration, `package.json`) dokunan işleri ya
     tek "temel" göreve topla ya da hepsini zincirle. Şüphede zincirle.
   - **Kabul kriterleri**: denetçinin bakacağı somut maddeler; "çalışıyor" değil, "X durumunda
     Y oluyor, testi Z".
   - **Doğrulama komutları**: backend `docker compose exec -T backend python -m pytest -q`
-    (+ ruff + mypy), frontend `npm --prefix frontend test`.
+    (+ ruff + mypy), frontend `npm --prefix frontend test`, lexis
+    `PYTHONIOENCODING=utf-8 python -m pytest` + `python -m ruff check .` (lexis-rapor kökünde,
+    docker yok; Postgres isteyen test için `LEXIS_TEST_DB_URL` görev dosyasında verilir).
 - Yeni bağımlılık (pip/npm paketi) gerektiren işleri ayrı, erken ve `bant:backend` (ana dizin)
   göreve koy — worktree'de paket kurulumu kalıcı olmaz.
 

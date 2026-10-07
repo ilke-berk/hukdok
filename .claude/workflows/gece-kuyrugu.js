@@ -1,7 +1,7 @@
 export const meta = {
   name: "gece-kuyrugu",
   description:
-    "gorevler/KUYRUK.md'deki isleri bant kurallariyla uygular (backend=ana dizin seri, frontend/docs=worktree), gorev-devam/gorev-denetle sozlesmeleriyle dogrular, KUYRUK'u isaretler, sabah raporu yazar. Push/ssh/deploy YAPMAZ.",
+    "gorevler/KUYRUK.md'deki isleri bant kurallariyla uygular (backend=ana dizin seri, frontend/docs=worktree, lexis=../lexis-rapor deposu seri), gorev-devam/gorev-denetle sozlesmeleriyle dogrular, KUYRUK'u isaretler, sabah raporu yazar. Push/ssh/deploy YAPMAZ.",
   whenToUse:
     "Gece kuyrugu kosusu (otomasyon/README.md v3 bolumu). KUYRUK.md'de acik ([ ]) ve BLOKE'siz gorev olmali. CLI kosucusu kuyruk-kosusu.ps1'in Workflow tabanli halefi (org ayari CLI erisimini kapatti, 2026-08-18).",
   phases: [
@@ -43,6 +43,17 @@ export const meta = {
    siradan (anaSira) gecer - backend gorev zinciri BUTUNUYLE, worktree
    gorevlerinin ise yalniz teslim (merge+vitest+KUYRUK) adimi. Iki ajan ayni
    anda ana dizine dokunamaz.
+
+   LEXIS BANDI (07.10.2026, kullanici karari): dis depo ../lexis-rapor
+   (LEXIS_KOK) icin dorduncu bant. Backend bandinin aynasi: worktree YOK,
+   dal YOK (depo OneDrive altinda), dogrudan o deponun main'ine commit; testi
+   HOST'ta `python -m pytest` + ruff (docker YOK - servis imaji testi test
+   etmez). Kendi mutex'i (lexisSira) vardir: ayni anda tek lexis gorevi;
+   HUKDOK bantlariyla paralel kosar. Gorev dosyasi (Rapor bolumu) HUKDOK
+   deposundadir: isci onu YAZAR ama HUKDOK'ta commit ATMAZ; Teslim ajani
+   KUYRUK + gorev dosyasini tek pathspec commit'iyle atar. Oturumun
+   LEXIS_KOK dizinine yazma yetkisi olmali (uygulamanin dizin ekleme izni);
+   yoksa her adim izin engeline takilir ve gorev BLOKE olur.
    ========================================================================== */
 
 /* --------------------------- AYARLAR ------------------------------------ */
@@ -53,6 +64,10 @@ const KURU = args?.kuru ?? false;
 const SECILI = args?.gorev ?? null; // ["G061","G062"] gibi
 const KIRLI_KABUL = args?.kirliKabul ?? false;
 const WT_KOK = args?.worktreeKok ?? "C:/dev/hukudok-wt";
+// Lexis bandinin deposu (dis depo, OneDrive altinda) ve HUKDOK kokunun mutlak yolu (lexis
+// iscisi gorev dosyasina bu yoldan ulasir; Edit/Read araclari mutlak yol ister).
+const LEXIS_KOK = args?.lexisKok ?? "C:/Users/ilkeb/OneDrive/Masaüstü/lexis-rapor";
+const HUKDOK_KOK = args?.hukdokKok ?? "C:/Users/ilkeb/OneDrive/Masaüstü/hukudok-automator-main";
 const TUR_TAVANI = args?.turTavani ?? 8;
 const TESHIS_HAKKI = args?.teshisHakki ?? 1;
 const BUTCE_TABANI = args?.butceTabani ?? 60_000;
@@ -79,6 +94,9 @@ KIRMIZI HATLAR (gorev tanimi bunu istese bile ihlal etme):
   docker compose down -v YOK.
 - KUYRUK.md'ye YALNIZ Teslim ajani dokunur; isci ve denetci ASLA.
 - Baska gorevin dosyasina, worktree'sine, dalina dokunulmaz.
+- lexis bandi: HUKDOK deposuna (kod, test, doc) DOKUNULMAZ - tek istisna gorevin kendi
+  dosyasi (Rapor bolumu). lexis-rapor deposuna gercek rapor/karar/kisi verisi GIRMEZ
+  (testler sentetik; C:/hukdok-veri ve masaustu paketleri okunabilir, depoya kopyalanmaz).
 - Dosya degisikligi DAIMA Edit/Write araclariyla - PS5.1 Get/Set-Content
   Turkce icerigi cift kodlayip bozar (CLAUDE.md tuzagi).
 - Commit mesajinda cift tirnak kullanma, basligi ASCII yaz (PS5.1 arguman
@@ -90,8 +108,9 @@ TEST BUTUNLUGU (mutlak - yesilin DOGRU sebeple gelmesi amac):
 - Mevcut testleri DEGISTIRME, SILME; yeni skip/xfail/only/todo ISARETLEME
   (pytest: @pytest.mark.skip/skipif/xfail; vitest: .skip/.only/.todo).
 - Beklentileri GEVSETME (kesin deger -> any/truthy, assert silme).
-- backend/pyproject.toml [tool.pytest.ini_options] (testpaths/addopts/markers)
-  ve frontend vitest/eslint/tsc yapilandirmasi ZAYIFLATILMAZ.
+- backend/pyproject.toml [tool.pytest.ini_options] (testpaths/addopts/markers),
+  lexis-rapor/pyproject.toml ayni bolumu ve tests/conftest.py'si,
+  frontend vitest/eslint/tsc yapilandirmasi ZAYIFLATILMAZ.
 - Hatayi susturma: # noqa, # type: ignore, @ts-ignore, eslint-disable YOK.
 - Testi degistirmeden gecemiyorsan DEGISIKLIGIN kendisi yanlistir: DUR,
   durmaSebebi="test-degistirmek-gerekti" dondur. Bu basarisizlik degil,
@@ -132,7 +151,7 @@ const PLAN_SEMA = {
         properties: {
           id: { type: "string" },
           baslik: { type: "string" },
-          bant: { type: "string", enum: ["backend", "frontend", "docs"] },
+          bant: { type: "string", enum: ["backend", "frontend", "docs", "lexis"] },
           bagimli: { type: "array", items: { type: "string" } },
           zatenTamam: {
             type: "boolean",
@@ -155,6 +174,12 @@ const PLAN_SEMA = {
       items: { type: "string" },
       description: "git status --porcelain'de .claude/ DISI kirli dosyalar",
     },
+    lexisKirliDosyalar: {
+      type: "array",
+      items: { type: "string" },
+      description: "lexis-rapor deposunda .claude/ DISI kirli dosyalar (depo yoksa bos + uyari)",
+    },
+    lexisDepoVar: { type: "boolean", description: "LEXIS_KOK bir git deposu olarak acildi" },
     dockerCalisiyor: { type: "boolean" },
     uyarilar: { type: "array", items: { type: "string" } },
   },
@@ -314,6 +339,24 @@ function anaSira(is) {
   return sonuc;
 }
 
+/** Lexis deposu mutex'i: ../lexis-rapor'a yazan/orada test kosan isler tek tek (anaSira'dan bagimsiz). */
+let lexisSlot = Promise.resolve();
+function lexisSira(is) {
+  const sonuc = lexisSlot.then(is, is);
+  lexisSlot = sonuc.then(
+    () => {},
+    () => {},
+  );
+  return sonuc;
+}
+
+/** Worktree'siz bantlar: dogrudan kendi deposunun main'ine commit'ler (merge/dal yok). */
+const dogrudanBant = (gorev) => gorev.bant === "backend" || gorev.bant === "lexis";
+/** Gorevin deposu (git -C icin): lexis bandi dis depo, gerisi HUKDOK ana dizini / worktree'si. */
+const depoYolu = (gorev) => (gorev.bant === "lexis" ? LEXIS_KOK : gorev.bant === "backend" ? "." : wt(gorev.id));
+/** Denetim/kapi araliginin sonu: dogrudan bantlarda gorev commit'i, worktree bantlarinda dal. */
+const aralikSonu = (gorev, uygula) => (dogrudanBant(gorev) ? uygula.commitHash : dal(gorev.id));
+
 /** Topolojik dalgalar. `harici` = kosu disinda bitmis sayilan id'ler. */
 function dalgalaraBol(gorevler, harici) {
   const kalan = new Map(gorevler.map((g) => [g.id, g]));
@@ -355,6 +398,15 @@ DIKKAT: ciplak "npx tsc --noEmit" SAHTEDIR (solution-style tsconfig, hicbir dosy
 denetlemez) - daima yukaridaki -b --force bicimi.
 docker compose KESINLIKLE YASAK: konteyner ANA dizini mount eder, senin worktree
 kodunu test etmez; sonuc yanilticidir (gorev-denetle bunu bant ihlali sayar).`;
+  if (gorev.bant === "lexis")
+    return `Gorev dosyasinin "Dogrulama" bolumu esastir. Tipik (HOST'ta, lexis-rapor deposunda):
+  cd "${LEXIS_KOK}" && PYTHONIOENCODING=utf-8 python -m pytest     (EKSTRA -q EKLEME - pyproject addopts zaten -q)
+  cd "${LEXIS_KOK}" && python -m ruff check .
+Veritabani isteyen testler SQLite ile kosar (tests/conftest.py LEXIS_DB_URL'i siler); Postgres'e
+bagli (tsvector vb.) test varsa gorev dosyasi LEXIS_TEST_DB_URL'i verir, yoksa o testler skip
+olur ve Rapor'da sayisi yazilir.
+docker compose KESINLIKLE YASAK (lexis-rapor compose'u servis imajini kaldirir, host kodunu
+test etmez; HUKDOK compose'u ise baska deponun isidir). HUKDOK konteynerlerine dokunma.`;
   return `docs bandi: test yok. Ic tutarlilik kontrolu yeterli (bozuk link, yanlis yol,
 kod ile celisen iddia). Operasyonel iddialar KODDAN dogrulanir (CLAUDE.md ALTIN KURAL).`;
 }
@@ -382,6 +434,11 @@ const plan = await agent(
 
 2. git status --porcelain kos. ".claude/" ile baslayanlar ve "otomasyon/loglar/"
    altindakiler HARIC kirli dosyalari kirliDosyalar[] icine yaz.
+
+2b. Lexis deposu: git -C "${LEXIS_KOK}" status --porcelain kos. Komut duserse (dizin yok /
+   git deposu degil) lexisDepoVar=false + uyarilar[]'a yaz; yoksa lexisDepoVar=true ve
+   ".claude/" disi kirli dosyalari lexisKirliDosyalar[] icine yaz. (Bu depoda SADECE
+   okuma; dosya acma gerekmiyor.)
 
 3. docker info kos -> calisiyorsa dockerCalisiyor=true. (docker compose up DENEME -
    yalniz durum tespiti; konteyneri gerekirse backend iscisi kaldirir.)
@@ -412,6 +469,16 @@ if (anaKirli) {
   if (ertelenenBackend.length)
     log(`kirliKabul: ana dizin kirli -> backend gorevleri ERTELENDI: ${ertelenenBackend.map((g) => g.id).join(", ")}`);
   secilenler = secilenler.filter((g) => g.bant !== "backend" || g.zatenTamam);
+}
+
+// Lexis bandi: depo yoksa ya da kirliyse (kirliKabul verilmedikce) o bantta uygulama yok;
+// HUKDOK bantlari etkilenmez. zatenTamam gorevleri yalniz denetim+isaret oldugu icin gecer.
+const lexisKirli = (plan.lexisKirliDosyalar?.length ?? 0) > 0;
+if (plan.lexisDepoVar === false || (lexisKirli && !KIRLI_KABUL)) {
+  const dusen = secilenler.filter((g) => g.bant === "lexis" && !g.zatenTamam);
+  if (dusen.length)
+    log(`lexis deposu ${plan.lexisDepoVar === false ? "acilamadi" : `kirli (${plan.lexisKirliDosyalar.length} dosya)`} -> lexis gorevleri ERTELENDI: ${dusen.map((g) => g.id).join(", ")}`);
+  secilenler = secilenler.filter((g) => g.bant !== "lexis" || g.zatenTamam);
 }
 
 const backendVar = secilenler.some((g) => g.bant === "backend" && !g.zatenTamam);
@@ -453,12 +520,14 @@ if (KURU) {
         baslik: g.baslik,
         bant: g.bant,
         zatenTamam: g.zatenTamam,
-        calismaAlani: g.bant === "backend" ? "(ana dizin)" : wt(g.id),
-        dal: g.bant === "backend" ? "main (dogrudan)" : dal(g.id),
+        calismaAlani: g.bant === "backend" ? "(ana dizin)" : g.bant === "lexis" ? LEXIS_KOK : wt(g.id),
+        dal: dogrudanBant(g) ? `main (dogrudan${g.bant === "lexis" ? ", lexis-rapor deposu" : ""})` : dal(g.id),
       })),
     ),
     atlanan: atlanan.map((g) => g.id),
     anaKirli,
+    lexisDepoVar: plan.lexisDepoVar ?? null,
+    lexisKirli,
     dockerCalisiyor: plan.dockerCalisiyor,
     uyarilar: plan.uyarilar ?? [],
   };
@@ -480,11 +549,16 @@ async function teslimEt(gorev, mod, sebep) {
       ? `Satiri "- [x]" yap (Edit araciyla, satirin kalanina dokunma).`
       : `Satirin SONUNA " | BLOKE(${sebep})" ekle (Edit araciyla; satirda zaten BLOKE varsa dokunma).`}
 - Baska HICBIR satira/dosyaya dokunma.
-- Commit'i PATHSPEC ile at (index'te baska sey olsa bile yalniz KUYRUK girer):
-    git commit -m 'chore: kuyruk durumu - ${gorev.id} ${mod === "tamam" ? "tamam" : "BLOKE"}' -m 'Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>' -- ${KUYRUK_DOSYA}
+${gorev.bant === "lexis"
+      ? `- lexis bandi: gorev dosyasi ${GOREV_DIZIN}/${gorev.id}.md HUKDOK'ta kirli durur (isci Rapor'u yazdi ama
+  bu depoda commit atmadi - kod lexis-rapor deposundadir). Onu KUYRUK ile BIRLIKTE commit'le:
+    git add ${GOREV_DIZIN}/${gorev.id}.md
+    git commit -m 'chore: kuyruk durumu - ${gorev.id} ${mod === "tamam" ? "tamam" : "BLOKE"} (lexis)' -m 'Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>' -- ${KUYRUK_DOSYA} ${GOREV_DIZIN}/${gorev.id}.md`
+      : `- Commit'i PATHSPEC ile at (index'te baska sey olsa bile yalniz KUYRUK girer):
+    git commit -m 'chore: kuyruk durumu - ${gorev.id} ${mod === "tamam" ? "tamam" : "BLOKE"}' -m 'Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>' -- ${KUYRUK_DOSYA}`}
 - kuyrukCommit alanina commit SHA'sini yaz.`;
 
-  if (gorev.bant === "backend" || gorev.zatenTamam || mod === "bloke") {
+  if (dogrudanBant(gorev) || gorev.zatenTamam || mod === "bloke") {
     // Merge yok: backend dogrudan main'e commit'ledi ya da gorev bloke.
     return agent(
       `TESLIM - gorev ${gorev.id} (${mod === "tamam" ? "isaretle" : "BLOKE isaretle"}).
@@ -492,7 +566,8 @@ Ana dizindesin (repo koku). Kod degistirme; yalniz asagidaki isaretleme.
 
 ${isaretleme}
 
-${mod === "bloke" ? `Gorevin worktree'si/dali varsa (${wt(gorev.id)}, ${dal(gorev.id)}) DOKUNMA - sabah incelemesi icin korunur.` : ""}
+${mod === "bloke" && !dogrudanBant(gorev) ? `Gorevin worktree'si/dali varsa (${wt(gorev.id)}, ${dal(gorev.id)}) DOKUNMA - sabah incelemesi icin korunur.` : ""}
+${gorev.bant === "lexis" ? `lexis-rapor deposuna (${LEXIS_KOK}) DOKUNMA - oradaki commit/kirlilik sabah incelemesi icindir.` : ""}
 islem alanini "${mod === "tamam" ? "isaretlendi" : "bloke"}" yap. Adim duserse islem="yapilamadi" + hata.`,
       { label: `teslim:${gorev.id}`, phase: "Teslim", schema: TESLIM_SEMA, effort: "low" },
     );
@@ -537,9 +612,24 @@ ${KIRMIZI_HATLAR}`,
 
 /* --- Uygula prompt'u --- */
 function uygulaPrompt(gorev, deneme, teshis) {
-  const alan = gorev.bant === "backend" ? "(repo koku - ana dizin)" : wt(gorev.id);
+  const alan = gorev.bant === "backend" ? "(repo koku - ana dizin)" : gorev.bant === "lexis" ? LEXIS_KOK : wt(gorev.id);
+  const gorevDosyasi = gorev.bant === "lexis" ? `${HUKDOK_KOK}/${GOREV_DIZIN}/${gorev.id}.md` : `${GOREV_DIZIN}/${gorev.id}.md`;
   const kurulum =
-    gorev.bant === "backend"
+    gorev.bant === "lexis"
+      ? `KURULUM (lexis - dis depo ../lexis-rapor, DOGRUDAN):
+- Calisma alanin "${LEXIS_KOK}" deposudur (OneDrive altinda). Worktree YOK, dal YOK: dogrudan
+  o deponun main'ine commit'lersin. Her git komutunu "git -C ${LEXIS_KOK} ..." ya da o dizine
+  cd ederek kos; HUKDOK deposuna (${HUKDOK_KOK}) kod/test/doc YAZMA.
+- ONCE "${LEXIS_KOK}/CLAUDE.md" dosyasini oku: o deponun kurallari (Write/Edit ile yazma,
+  PYTHONIOENCODING=utf-8, kisi verisi depoya girmez, K-kararlari) burada da gecerlidir.
+  "${LEXIS_KOK}/PLAN.md" yalniz gorev dosyasi isaret ederse acilir.
+- git -C "${LEXIS_KOK}" status --porcelain: kirli dosya varsa gorev-devam 2. bolumu uygulanir
+  (kapsam disi kirlilik = BLOKE).
+- oncekiHead = git -C "${LEXIS_KOK}" rev-parse HEAD (semaya yaz).
+- GOREV DOSYASI HUKDOK'TADIR: ${gorevDosyasi}. Rapor bolumunu ve DURUM satirini Edit ile oraya
+  yazarsin ama HUKDOK'ta commit ATMAZSIN (Teslim ajani KUYRUK ile birlikte commit'ler). Kod
+  commit'i YALNIZ lexis-rapor deposunda.`
+      : gorev.bant === "backend"
       ? `KURULUM (backend - ana dizin):
 - Calisma alanin repo kokudur. Worktree YOK, dal YOK: backend dogrudan main'e commit'ler
   (lokal konteyner ./backend'i bind-mount eder; pytest yalniz ana dizini dogru test eder).
@@ -568,9 +658,11 @@ ISCI SOZLESMESI:
 - Son satir sentineli ("GOREV-SONUC: ...") YERINE bu cagridaki yapilandirilmis alanlari
   doldur (basarili/durmaSebebi/notlar). Skill'in istedigi gorev dosyasi Rapor bolumu
   ve DURUM satiri AYNEN yazilir.
-- Gorev tanimi: ${GOREV_DIZIN}/${gorev.id}.md (hedef, kabul, dosya kapsami, dogrulama).
+- Gorev tanimi: ${gorevDosyasi} (hedef, kabul, dosya kapsami, dogrulama).
   "Dokunma" listesindeki dosya gerekirse DEGISIKLIK YAPMA -> durmaSebebi="kapsam-disi-gerekti",
   gorev dosyasina DURUM: BLOKE satirini yaz, dur.
+${gorev.bant === "lexis" ? `- Skill'in "Kapat" bolumundeki "kod + gorev dosyasi TEK commit" kurali lexis bandinda
+  "kod TEK commit (lexis-rapor'da), gorev dosyasi commit'siz (HUKDOK'ta kalir)" diye okunur.` : ""}
 
 DOGRULAMA (bant: ${gorev.bant}):
 ${bantDogrulama(gorev)}
@@ -607,10 +699,16 @@ doldur. Kabul olcutu karsilanamadiysa kabulKarsilanmayan[] + notlar. Sessizce at
 
 /* --- Kapi prompt'u (mekanik) --- */
 function kapiPrompt(gorev, uygula) {
-  const aralik =
-    gorev.bant === "backend"
-      ? `${uygula.oncekiHead}..${uygula.commitHash}`
-      : `${uygula.oncekiHead}..${dal(gorev.id)}`;
+  const aralik = `${uygula.oncekiHead}..${aralikSonu(gorev, uygula)}`;
+  const lexisKanit = `KANIT DUZENEGI (lexis - dis depo, HOST python):
+  git -C "${LEXIS_KOK}" worktree add "${WT_KOK}/kanit-${gorev.id}" ${uygula.oncekiHead}
+  git -C "${WT_KOK}/kanit-${gorev.id}" checkout ${uygula.commitHash} -- <eklenen test dosyalari>
+  cd "${WT_KOK}/kanit-${gorev.id}" && PYTHONIOENCODING=utf-8 python -m pytest -o addopts='' <test yollari>
+  (Bagimliliklar host Python'unda zaten kurulu - lexis bandinin dogrulamasi da orada kosar.)
+  BEKLENEN: en az bir test FAIL (kirmizi) -> "kanitlandi". Hepsi PASS -> "kanitlanamadi", gecti=false.
+  Hepsi SKIP / import hatasi (yeni modul eski kodda yok -> ImportError de KIRMIZIDIR, kanitlandi sayilir;
+  yalniz toplama disi SKIP "uygulanamaz"dir) -> kirmiziYesilNotu'na yaz.
+  TEMIZLIK: git -C "${LEXIS_KOK}" worktree remove --force "${WT_KOK}/kanit-${gorev.id}"`;
   const backendKanit = `KANIT DUZENEGI (backend):
   git worktree add "${WT_KOK}/kanit-${gorev.id}" ${uygula.oncekiHead}
   git -C "${WT_KOK}/kanit-${gorev.id}" checkout ${uygula.commitHash} -- <eklenen test dosyalari>
@@ -635,7 +733,7 @@ function kapiPrompt(gorev, uygula) {
   return `KAPI - gorev ${gorev.id}. MEKANIK kontrol, yorum degil. Gorev dosyalarina DOKUNMA.
 
 ## 1) TEST BUTUNLUGU
-Diff'i incele: git diff ${aralik}
+Diff'i incele: git ${gorev.bant === "lexis" ? `-C "${LEXIS_KOK}" ` : ""}diff ${aralik}
 IHLAL sayilanlar (her birini ihlaller[] icine yaz):
 ${gorev.bant === "frontend"
       ? `- Silinen test dosyasi; net azalan "expect(" sayisi (silinen > eklenen)
@@ -644,8 +742,8 @@ ${gorev.bant === "frontend"
 - vitest.config include daraltilmis / exclude genisletilmis; package.json test/lint zayiflatilmis
 - Kaynakta yeni @ts-ignore / @ts-expect-error / eslint-disable`
       : `- Silinen test dosyasi; net azalan "def test_" veya "assert" sayisi (silinen > eklenen)
-- Yeni @pytest.mark.skip / skipif / xfail (yeni eklenen isaretler)
-- backend/pyproject.toml [tool.pytest.ini_options] degisikligi (testpaths/addopts/markers)
+- Yeni @pytest.mark.skip / skipif / xfail (yeni eklenen isaretler${gorev.bant === "lexis" ? "; lexis'te Postgres'e bagli testin SQLite'ta skipif'i YALNIZ gorev dosyasi acikca izin verdiyse ve yalniz o testlerde" : ""})
+- ${gorev.bant === "lexis" ? "lexis-rapor/pyproject.toml" : "backend/pyproject.toml"} [tool.pytest.ini_options] degisikligi (testpaths/addopts/markers)
 - conftest.py'de yeni collect_ignore / toplama daraltmasi
 - Kaynakta yeni "# noqa" / "# type: ignore"`}
 ${(TEST_TASIMA_IZNI[gorev.id] ?? []).length
@@ -660,7 +758,7 @@ Bir tanesi bile varsa testButunlugu="ihlal", gecti=false.
 Eklenen test dosyasi: ${(uygula.eklenenTestler ?? []).join(", ") || "(yok)"}
 Yoksa: kirmiziYesil="uygulanamaz" (yalniz yapilandirma/dokuman goreviyse normaldir).
 Varsa amac: eklenen testin ESKI kodda BASARISIZ oldugunu kanitlamak.
-${gorev.bant === "frontend" ? frontendKanit : gorev.bant === "backend" ? backendKanit : 'docs bandi: kirmiziYesil="uygulanamaz".'}
+${gorev.bant === "frontend" ? frontendKanit : gorev.bant === "backend" ? backendKanit : gorev.bant === "lexis" ? lexisKanit : 'docs bandi: kirmiziYesil="uygulanamaz".'}
 
 ## SONUC
 gecti = (testButunlugu=="temiz") VE (kirmiziYesil != "kanitlanamadi")
@@ -672,7 +770,7 @@ function denetimPrompt(gorev, ctx) {
   return `DENETIM - gorev ${gorev.id}. Sen kodu yazan oturum DEGILSIN; isin itiraz etmek.
 
 .claude/skills/gorev-denetle/SKILL.md dosyasini OKU ve harfiyen uygula, su uyarlamalarla:
-- Calisma dizini: ${gorev.bant === "backend" || gorev.zatenTamam ? "repo koku (ana dizin)" : `"${wt(gorev.id)}" worktree'si (bant kurallari: docker compose YASAK, vitest worktree icinde)`}.
+- Calisma dizini: ${gorev.bant === "lexis" ? `"${LEXIS_KOK}" (dis depo; git komutlari "git -C" ile; bant kurallari: docker compose YASAK, HOST'ta PYTHONIOENCODING=utf-8 python -m pytest + ruff). Gorev dosyasi HUKDOK'ta: ${HUKDOK_KOK}/${GOREV_DIZIN}/${gorev.id}.md (isci Rapor'u yazdi, HUKDOK'ta commit beklenmez; "kapsam sizmasi" kontrolu lexis-rapor commit'inin diff'ine bakar). O deponun CLAUDE.md kurallari (kisi verisi, K-kararlari) denetim olcutudur.` : gorev.bant === "backend" || gorev.zatenTamam ? "repo koku (ana dizin)" : `"${wt(gorev.id)}" worktree'si (bant kurallari: docker compose YASAK, vitest worktree icinde)`}.
 - Son satir sentineli YERINE yapilandirilmis cikti: sonuc="GECTI"|"RET" + sebep + bulgular[].
 - Denetlenecek commit: ${ctx.commitAciklama}
 ${ctx.kapi && ctx.kapi.gecti === false ? `- BILGI: mekanik Kapi kirmizi cikti (${(ctx.kapi.ihlaller ?? []).join("; ") || ctx.kapi.kirmiziYesil}). Bunu dogrula ve degerlendir.` : ""}
@@ -706,7 +804,7 @@ async function zincirGovde(gorev) {
     log(`${gorev.id}: gorev dosyasi "Durum: TAMAM" diyor - dogrudan denetime gidiyor`);
     const denetim = await agent(
       denetimPrompt(gorev, {
-        commitAciklama: `git log --oneline -30 icinde mesajinda "${gorev.id}" gecen ILK commit'i bul ve onu denetle (HEAD olmayabilir - kuyruk chore commit'leri arada olabilir). Bulamazsan RET: "${gorev.id} icin commit bulunamadi".`,
+        commitAciklama: `git ${gorev.bant === "lexis" ? `-C "${LEXIS_KOK}" ` : ""}log --oneline -30 icinde mesajinda "${gorev.id}" gecen ILK commit'i bul ve onu denetle (HEAD olmayabilir - kuyruk chore commit'leri arada olabilir). Bulamazsan RET: "${gorev.id} icin commit bulunamadi".`,
       }),
       { label: `denetle:${gorev.id}`, phase: "Denetle", schema: DENETIM_SEMA, effort: "high" },
     );
@@ -742,9 +840,9 @@ Uygulama denemesinin raporu:
 - denenen yaklasimlar:
 ${(uygula?.denenenYaklasimlar ?? []).map((y) => `  - ${y}`).join("\n") || "  (bildirilmedi)"}
 
-Calisma alani: ${gorev.bant === "backend" ? "ana dizin" : wt(gorev.id)} (dokunma, incele).
+Calisma alani: ${gorev.bant === "backend" ? "ana dizin" : gorev.bant === "lexis" ? LEXIS_KOK : wt(gorev.id)} (dokunma, incele).
 Dogrulama komutlarini kosabilirsin (bant kurallarina uyarak - ${gorev.bant}).
-Gorev tanimi: ${GOREV_DIZIN}/${gorev.id}.md
+Gorev tanimi: ${gorev.bant === "lexis" ? `${HUKDOK_KOK}/` : ""}${GOREV_DIZIN}/${gorev.id}.md
 
 SORULAR:
 1. Kok neden ne? (semptom degil sebep)
@@ -777,6 +875,8 @@ SORULAR:
       : await anaSira(() => teslimEt(gorev, "bloke", sebep));
     return kayit;
   }
+  // NOT: backend zinciri zaten anaSira icindedir, teslimi dogrudan cagirir; lexis dahil diger
+  // bantlar KUYRUK'a (HUKDOK ana dizini) yazdigi icin teslimi anaSira'ya sokar.
 
   /* --- 2: KAPI (mekanik) --- */
   const kapi = await agent(kapiPrompt(gorev, uygula), {
@@ -799,7 +899,7 @@ SORULAR:
   }
 
   /* --- 3: DENETLE --- */
-  const commitAciklama = `${uygula.commitHash}${kayit.onar?.commitHash ? " + onarim commit'i" : ""} (aralik: ${uygula.oncekiHead}..${gorev.bant === "backend" ? uygula.commitHash : dal(gorev.id)})`;
+  const commitAciklama = `${uygula.commitHash}${kayit.onar?.commitHash ? " + onarim commit'i" : ""} (aralik: ${uygula.oncekiHead}..${aralikSonu(gorev, uygula)}${gorev.bant === "lexis" ? ", lexis-rapor deposunda" : ""})`;
   let denetim = await agent(denetimPrompt(gorev, { commitAciklama, kapi }), {
     label: `denetle:${gorev.id}`,
     phase: "Denetle",
@@ -814,7 +914,7 @@ SORULAR:
       (b) => b.ciddiyet === "kritik" || b.ciddiyet === "yuksek",
     );
     const onar = await agent(
-      `ONARIM - gorev ${gorev.id}. Calisma alani: ${gorev.bant === "backend" ? "ana dizin" : `"${wt(gorev.id)}" (worktree ZATEN VAR, yeni acma)`}.
+      `ONARIM - gorev ${gorev.id}. Calisma alani: ${gorev.bant === "backend" ? "ana dizin" : gorev.bant === "lexis" ? `"${LEXIS_KOK}" (dis depo; commit ORADA, HUKDOK'a dokunma; gorev dosyasi ${HUKDOK_KOK}/${GOREV_DIZIN}/${gorev.id}.md - Rapor'a onarim notu ekle, commit'leme)` : `"${wt(gorev.id)}" (worktree ZATEN VAR, yeni acma)`}.
 
 Denetim RET verdi: ${denetim.sebep ?? "(sebep yok)"}
 ${ciddi.length ? `CIDDI BULGULAR:\n${ciddi.map((b, i) => `${i + 1}. [${b.ciddiyet}] ${b.dosya}${b.satir ? ":" + b.satir : ""} - ${b.iddia}\n   Senaryo: ${b.senaryo ?? "(yok)"}`).join("\n")}` : ""}
@@ -840,7 +940,7 @@ ${KIRMIZI_HATLAR}`,
     if (onar?.basarili && onar.verifyDurumu === "yesil") {
       denetim = await agent(
         denetimPrompt(gorev, {
-          commitAciklama: `${uygula.commitHash} + onarim ${onar.commitHash ?? ""} (aralik: ${uygula.oncekiHead}..${gorev.bant === "backend" ? "HEAD" : dal(gorev.id)})`,
+          commitAciklama: `${uygula.commitHash} + onarim ${onar.commitHash ?? ""} (aralik: ${uygula.oncekiHead}..${dogrudanBant(gorev) ? "HEAD" : dal(gorev.id)}${gorev.bant === "lexis" ? ", lexis-rapor deposunda" : ""})`,
         }),
         { label: `denetle2:${gorev.id}`, phase: "Denetle", schema: DENETIM_SEMA, effort: "high" },
       );
@@ -866,6 +966,7 @@ ${KIRMIZI_HATLAR}`,
 /** Backend zinciri BUTUNUYLE ana dizin mutex'inde; worktree bantlari serbest
     (yalniz teslim adimlari kendi icinde anaSira'ya girer). */
 function gorevKos(gorev) {
+  if (gorev.bant === "lexis" && !gorev.zatenTamam) return lexisSira(() => zincirGovde(gorev));
   if (gorev.bant === "backend" || gorev.zatenTamam) return anaSira(() => zincirGovde(gorev));
   return zincirGovde(gorev);
 }
@@ -951,8 +1052,9 @@ const ozet = sonuclar.map((s) => ({
   teslimHatasi: s.teslim?.islem === "yapilamadi" ? (s.teslim?.hata ?? "bilinmiyor") : null,
   mergeYapildi: Boolean(s.teslim?.mergeYapildi),
   entegrasyon: s.teslim?.entegrasyonTesti ?? null,
-  worktree: s.gorev.bant === "backend" ? null : wt(s.gorev.id),
+  worktree: dogrudanBant(s.gorev) ? null : wt(s.gorev.id),
   worktreeTemizlendi: Boolean(s.teslim?.worktreeTemizlendi),
+  depo: s.gorev.bant === "lexis" ? "lexis-rapor (../lexis-rapor, push'suz)" : "hukdok",
 }));
 
 await agent(
@@ -960,7 +1062,10 @@ await agent(
 
 Bicim: "# Gece Kuyrugu (workflow) · ${TARIH}" basligi; ardindan:
 - "## Ozet": X gorev alindi · Y isaretlendi · Z bloke · W atlandi (tek satir)
-- "## Isaretlenenler" tablosu: gorev | bant | commit | kapi | denetim | not
+- "## Isaretlenenler" tablosu: gorev | bant | depo | commit | kapi | denetim | not
+  (depo sutunu: bant "lexis" ise "lexis-rapor", yoksa "hukdok". lexis bandinin commit'i lexis-rapor
+  DEPOSUNDADIR - sabah incelemesi ve push orada ayrica yapilir; lexis gorevinin worktree'si YOKTUR,
+  verideki worktree alanini lexis icin yok say)
 - "## Bloke" - EN DEGERLI BOLUM: her bloke gorev icin durma sebebi, son parmak izi,
   denenen yaklasimlar, teshisin kok nedeni, worktree yolu (korunuyorsa), onerilen
   sonraki adim.
