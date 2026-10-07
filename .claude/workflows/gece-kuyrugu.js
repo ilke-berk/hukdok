@@ -992,13 +992,14 @@ for (let d = 0; d < dalgalar.length; d++) {
   const dalga = dalgalar[d];
   log(`--- Dalga ${d + 1}/${dalgalar.length}: ${dalga.map((g) => g.id).join(" ")} ---`);
 
-  const gruplar = { backend: [], frontend: [], docs: [] };
+  const gruplar = { backend: [], frontend: [], docs: [], lexis: [] };
   for (const g of dalga) gruplar[g.bant].push(g);
 
   const dalgaSonuc = await parallel([
     () => bantKos(gruplar.backend),
     () => bantKos(gruplar.frontend),
     () => bantKos(gruplar.docs),
+    () => bantKos(gruplar.lexis),
   ]);
   sonuclar.push(...dalgaSonuc.filter(Boolean).flat().filter(Boolean));
 }
