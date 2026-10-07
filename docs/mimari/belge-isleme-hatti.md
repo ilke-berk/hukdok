@@ -358,3 +358,117 @@ ASLA devrilmemeli" (`export_publisher.py:21-22`).
 Hukukbot'un okuduğu `/export` uçları public'e açılmaz; bkz.
 [`010-export-nginxe-acilmaz.md`](../kararlar/010-export-nginxe-acilmaz.md) ve yaşayan spec
 [`docs/hukukbot-aktarim/`](../hukukbot-aktarim/).
+
+## 9. PDF araçları tezgâhı (07.10.2026, G267-G273)
+
+Plan ve API sözleşmesi: [`docs/plan/pdf-araclari-plani-2026-10-07.md`](../plan/pdf-araclari-plani-2026-10-07.md) §3
+(uç/parametre tablosu TEK kaynaktır; değişiklik önce orada). Amaç: Acrobat yerine PDF işlerinin (birleştir, böl, sayfa
+düzenle, sıkıştır, karart, damga, not) HUKDOK'ta yapılması ve sonucun tek adımda kartın belgesi olması. `/process` →
+`/confirm` hattından (§1-§3) AYRI bir yoldur: analiz koşmaz, e-posta gitmez, belge türünü kullanıcı seçer.
+
+### 9.1 Akış
+
+```
+tarayıcı /belge-tezgahi (herkese; App.tsx:126, Sidebar.tsx:51)
+   ├─ yükle (multipart, tek dosya) ─▶ POST /api/pdf-araclari/yukle ──pdf_ye_cevir──▶ PDF_ARACLARI_DIR/<uuid>.pdf
+   │                                   DOWNLOAD_CACHE[file_id] = {path, filename, owner, kaynak:"pdf_araclari", sayfa, sayfalar}
+   ├─ işlem (JSON) ──────────────────▶ POST /api/pdf-araclari/islem  ──pdf_araclari.<islem>──▶ yeni file_id(ler) (böl: birden çok)
+   ├─ önizleme ◀─PNG──────────────── GET  /api/pdf-araclari/onizleme/{file_id}/{sayfa}?genislik=64..1600 (Bearer → blob URL)
+   ├─ indir ◀─dosya───────────────── GET  /api/download/{file_id}   (mevcut uç, routes/processing)
+   ├─ karta bağla ───────────────────▶ POST /api/pdf-araclari/karta-bagla ─▶ KESIN: convert_pdfa_and_queue_uploads
+   │                                                                        TASLAK: save_case_document + 03_TASLAKLAR/<ofis_no>/
+   └─ karttan al ────────────────────▶ POST /api/pdf-araclari/karttan-al ──SharePoint indir──▶ yeni file_id
+```
+
+Katmanlar: `backend/pdf/pdf_araclari.py` (saf fonksiyonlar; HTTP bilmez, `deadline` alır, girdi dosyasını değiştirmez,
+çıktı geçici ada yazılıp `os.replace`) → `backend/routes/pdf_araclari.py` (doğrulama, sahiplik, cache, semafor, hata
+eşlemesi) → `services/document_pipeline` (yalnız karta bağla). Frontend: `pages/BelgeTezgahiPage.tsx` üç bölge (sol
+`DosyaListesi` + yükleyici · orta `SayfaIzgarasi` ↔ `SayfaGorunumu` · sağ `IslemPaneli`), `components/pdf/**`,
+istemci `lib/pdfAraclariApi.ts`, tipler `types/pdfAraclari.ts` (§3 ile birebir). nginx DEĞİŞMEDİ: her yol
+`location /api` altında (`nginx.conf:119`), `proxy_read_timeout 300s` yeter (K10). `api.py:552` router kaydı.
+
+### 9.2 Çalışma dosyası (K2)
+
+- Her yükleme ve her işlem çıktısı sahibine bağlı bir `file_id` alır; kayıt `DOWNLOAD_CACHE`'tedir (`/process`
+  indirmeleriyle aynı cache, `kaynak:"pdf_araclari"` ile ayrılır). Başkasının id'si her uçta 404 (varlık maskelenir,
+  `_sahipli_kayit`, `routes/pdf_araclari.py`).
+- Dosyalar `PDF_ARACLARI_DIR` (varsayılan `<backend>/data/pdf_araclari`, konteynerde backend-data volume'ü) altında
+  `<uuid>.pdf`. TTL (1 saat, `download_cache_ttl_seconds`) dolunca **payload da silinir** — `processing._download_evict`
+  yalnız bu kaynağın dosyasını siler (`routes/processing.py:96-101`); `/confirm` kayıtları eskisi gibi `schedule_cleanup`'a
+  bırakılır. Ekranda bilgi satırı: "Dosyalar 1 saat sonra silinir".
+- Zincir: bir işlemin çıktısı sonraki işlemin girdisidir; girdiler SİLİNMEZ (TTL siler), kullanıcı sol listeden kaldırınca
+  istemci yalnız kendi listesinden düşürür. Sayfa yenilenince istemci listesi gider (sunucu dosyaları TTL'e dek durur).
+- Yüklenen her şey hemen PDF olur (K3: `pdf_ye_cevir` — `.pdf` kopya, `.udf` → `_udf_to_pdfa2b`, resim/Office →
+  `format_converter`); işlemler yalnız PDF üstünde çalışır. Çıktılar düz PDF'tir, PDF/A karta bağlanınca (K4).
+
+### 9.3 İşlemler ve koordinat sözleşmesi
+
+İşlem parametreleri plan §3 tablosundadır (`birlestir`, `bol` aralık/`her_n`, `sayfa_duzenle` sıra+döndür+sil, `sikistir`
+Ghostscript `/screen|/ebook|/printer`, `karart`, `damga`, `not`, `donustur`). Üç kural koddan:
+
+- **Görünür düzlem:** karartma, not ve damga koordinatları döndürme uygulanmış GÖRÜNÜR sayfa düzlemindedir (sol-üst
+  orijin, PDF puanı; `Dosya.sayfalar[].genislik/yukseklik` görünür boyut). Çekirdek `page.derotation_matrix` ile açıklama
+  düzlemine kendisi çevirir (`pdf_araclari.py::_gorunur_rect`); tarayıcı yalnız ölçekler — ölçek = `sayfa.genislik /
+  görüntü genişliği`, ek dönüşüm yok (`components/pdf/pdfKoordinat.ts`, testi döndürülmüş 842×595 ile belgeler).
+- **Karartma gerçek silmedir** (K6): `add_redact_annot` + `apply_redactions` metin VE görüntü piksellerini siler; alan
+  sayfa sınırına kırpılır, boş/sayfa dışı alan 422. Ekranda alanlar dosya başına birden çok sayfada birikir, "Karart" tek
+  istek atar ve onay kutusu ("Karartma geri alınamaz; metin ve görüntü kalıcı silinir") işaretlenmeden istek GİTMEZ
+  (`components/pdf/KarartmaKatmani.tsx`); en küçük alan 4×4 pt.
+- **Türkçe glif:** damga ve not `DejaVuSans.ttf` (`fonts-dejavu-core`, `DEJAVU_FONTFILE`) ile gömülür (K7); damga ≤ 120,
+  not ≤ 2.000 karakter.
+
+### 9.4 Karta bağlama ve karttan alma (K4, K5, K17)
+
+- `POST /karta-bagla` gövdesi `{id, case_id, belge_turu_kodu, dosya_adi, case_party_id?, istek_kimligi, yon, durum}`;
+  sıra: idempotency kapısı → sahiplik 404 → kart 404 (tenant + soft-delete) → tür 422 (`doctypes` listesi,
+  `_normalize_doctype_code`, DB'ye kanonik pad'li kod) → ad 422 → taraf 422 → kayıt.
+- `durum=KESIN`: MEVCUT `document_pipeline.convert_pdfa_and_queue_uploads(...)` hattı (§3-§4 ile aynı: PDF/A + ham/işlenmiş
+  arşiv kuyruğu + URL commit'inde `belge_islendi` bildirimi ve Hukukbot allowlist kuralı — yeni kural YOK;
+  `kaynak="PDF_ARACLARI"`, `conversion_budget_seconds=pdf_araclari_butce_saniye`). Çalışma dosyası silinmez (zincir sürer).
+- `durum=TASLAK` (K12): PDF/A YOK; `save_case_document(durum="TASLAK")` + TEK `islenmis` kuyruğu
+  `SHAREPOINT_FOLDER_TASLAK_NAME/<ofis_no>/` (varsayılan `03_TASLAKLAR`; ofis no'daki `/` → `-`, ayrıştırma yok). G282
+  kapıları taslağı Hukukbot export'undan (`export_publisher.py:66`) ve bildirimden (`upload_queue.py:223`, `_belge_kesin_mi`) eler.
+- İdempotent: `istek_kimligi` (UUID; ekranda diyalog açılışında üretilir, tekrar denemede sabit) `confirm_idempotency`
+  deseniyle, anahtar `pdf_araclari:<uuid>` (`ConfirmReceipt.process_id`, şema değişmedi) → tekrar `{"document_id": aynı,
+  "reused": true}`; belge yaratılmadan düşen her yol (4xx, 503, 409) kaydı bırakır.
+- **Kilitli kart → 409:** `save_case_document` lock_timeout'ta (SQLSTATE 55P03) artık `KayitMesgulError` yükseltir
+  (`document_pipeline.py:151-155`); bu `/confirm` ve intake'i de etkiler — eskiden belge kaydı sessizce açılmıyordu
+  (G269 raporu).
+- `POST /karttan-al {document_id}`: kartın arşivdeki belgesi (`sharepoint_url` + `stored_filename` dolu; taslak
+  `03_TASLAKLAR/<ofis_no>/`den, kesin işlenmiş arşivden) `download_file_from_sharepoint` ile indirilir → `pdf_ye_cevir` →
+  `Dosya`. 404 belge/URL yok, 502 SharePoint (TEK ERROR), 413 boyut.
+- Ekran: "Karta bağla" diyaloğu (dava arama `/api/cases/search`, belge türü `/api/config/doctypes`, müvekkil tarafı, yön,
+  Kesinleştir/Taslak), "Karttan al" diyaloğu (kart belgeleri, çoklu seçim, sıralı alma, "Al ve birleştir"); dava kartı
+  belge satırında "PDF araçlarında aç" ve çoklu seçim şeridi `navigate("/belge-tezgahi", { state: { document_ids, case } })`
+  (`pages/CaseDetails.tsx`). Diyaloglar `theme-classic` taşır.
+
+### 9.5 Sınırlar ve hata eşlemesi (K8)
+
+| Sınır | Değer | Kaynak |
+| --- | --- | --- |
+| İşlem başına girdi | 20 (422) | `settings.pdf_araclari_max_girdi` (`config/settings.py:84`) |
+| Çıktı sayfa tavanı | 1.000 (413) | `settings.pdf_araclari_max_sayfa` (`:83`) |
+| Zaman bütçesi | 270 sn (504; nginx 300 sn) | `settings.pdf_araclari_butce_saniye` (`:85`) |
+| Eşzamanlı işlem | 2 (dolu → 503) | `_pdf_arac_semaphore` (`routes/pdf_araclari.py:85`) |
+| Hız sınırı | `30/minute` (uca özel) | `HIZ_SINIRI` (`:76`) |
+| Yükleme | 50 MB, `ALLOWED_EXTENSIONS` + magic-byte | mevcut `file_utils` |
+| Önizleme genişliği | 64-1600 px (aksi 422), `Cache-Control: private, max-age=3600` | `ONIZLEME_GENISLIK_ARALIGI` |
+
+Hata eşlemesi (`routes/pdf_araclari.py` docstring): `ParametreHatasi`/`PdfArcHatasi` → 422, `SayfaSinirAsildi` → 413,
+`AracYok` → 503, `ZamanAsimi` → 504, `ConversionBusyError` → 503; gövde `{"detail": {"mesaj", "error_kod"}}`. Log
+sözleşmesi: 4xx WARNING, 5xx TEK ERROR. İstemci: 4xx'te sunucu metni, 5xx'te sabit metin (`lib/pdfAraclariApi.ts`);
+`islem` JSON gövdeli olduğundan `lib/api.ts:78` uzun zaman aşımı (300 sn) önekindedir.
+
+### 9.6 Belge modeli eki (G282, migrasyon 61) ve testler
+
+`case_documents.yon` (GELEN|GIDEN), `kaynak` (BELGE_HATTI|PDF_ARACLARI|WORD|ARSIV_AKTARIM|TESLIM), `durum` (TASLAK|KESIN),
+`word_url`, `kesinlesme_*`, `onceki_document_id` (`models.py:1318-1324`); sürüm defteri `belge_surumleri`
+(`models.py:1332`; `database.py` madde 61 — kolon/tablo KOŞULLU, kalıcı kısıt/index ve backfill AYRI `("index", ...)`
+op'unda, CLAUDE.md tuzağı). Mevcut kayıtlar GELEN/KESIN, `uploaded_by LIKE 'ARSIV_AKTARIM:%'` → kaynak ARSIV_AKTARIM.
+Word yaşam döngüsü (yeni/sürüm/kesinleştir) G284-G287'nin işidir; bu bölüm yalnız PDF yolunu anlatır.
+
+Bekçiler: backend `tests/test_pdf_araclari_{cekirdek,uclari,cache,kart}.py` (çekirdek 81 · uçlar+cache 57 · kart 61;
+nginx'te `/pdf-araclari` location'ı OLMADIĞI bekçisi `test_pdf_araclari_uclari.py`, konteynerde skip); frontend
+`components/pdf/*.test.tsx`, `lib/pdfAraclariApi.test.ts`, `pages/BelgeTezgahiPage.test.tsx`,
+`pages/CaseDetails.pdfAraclari.test.tsx`. Gerçek girişle tarayıcı zinciri (yükle → işlem → karart → karta bağla → kartta
+görünür → karttan al) ve deploy İNSAN ADIMIdır (plan "DURAK"). OCR kapsam DIŞI (ayrı karar).

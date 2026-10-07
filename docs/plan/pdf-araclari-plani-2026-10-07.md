@@ -5,6 +5,21 @@
 > dosya uygulama planı ve **frontend ile backend'in paralel koşabilmesi için sabitlenen API sözleşmesidir** (§3).
 > Her iddia 07.10'da koddan okunarak doğrulandı; kaynağı yanında yazar. Görevler G267-G274 (PDF yolu) +
 > G282-G288 (§6: yön/kaynak/durum modeli, Word yaşam döngüsü, eklenti — 07.10 ikinci onay, "birlikte geliştirelim").
+>
+> **PDF yolu TAMAM (07.10.2026 gece, sohbette elle koşu — `docs/plan/belge-tezgahi-elle-kosu-2026-10-07.md`; hepsi
+> main, push'suz, deploy YOK):** G267 çekirdek **35cebfb** (81 test) → G268 uçlar + cache **0539ad4** (57) → G282
+> migrasyon 61 **4ef2621** (31) → G269 karta bağla / karttan al **66f0483** (61; tam backend paketi 4566 passed, 25 skipped)
+> ∥ G270 sayfa iskeleti **fa0479b** → G271 sayfa ızgarası **94948c1** → G272 karartma + not **d7c799e** → G273 kart
+> diyalogları + `CaseDetails` **e2876ad** (frontend tam paket 1764 passed) → G274 doküman (bu not + CLAUDE.md paragrafı +
+> `belge-isleme-hatti.md` §9; SHA G283 commit'inde). §3 sözleşmesi hiçbir görevde değişmedi (G273 hizalama tablosu: fark
+> yok). Sapmalar: sayfa yolu `/pdf-araclari` yerine **`/belge-tezgahi`** (K1, tek menü girişi); `lib/api.ts` uzun zaman
+> aşımı öneki (G271); `save_case_document` kilitli kartta `KayitMesgulError` → `/confirm` 409 (G269, bilinçli).
+> **Açık kalanlar (insan adımı, DURAK):** gerçek girişle tarayıcıda zincir (yükle → birleştir → karart → indir → karta
+> bağla kesin + taslak → kartta görünür → "PDF araçlarında aç" → karttan al; dokunmatik cihazda kaydırma/çizim ayrımı;
+> `03_TASLAKLAR/<ofis_no>` klasörünün Graph'ta ilk yüklemede oluşması), sonra deploy kararı (CI yeşil şartı, mesai dışı).
+> **OCR kararı:** kapsam dışı kaldı (K9; Tesseract imaja girmedi) — tarama PDF'lerinde karartma yalnız görüntü piksellerini
+> siler, metin katmanı yoktur; ayrı karar. **Görsel karşılaştırma** (Acrobat çıktısı ↔ HUKDOK çıktısı, özellikle sıkıştırma
+> seviyeleri ve damga yerleşimi) yapılmadı — DURAK'ta kullanıcıyla. Word yolu G283'ten sürer (§6.4).
 
 ## 0. Doğrulanan zemin
 

@@ -92,6 +92,32 @@ biner; toplu akışta e-postası açık tebligat ya da ekli satırda EmailModal 
 (`lib/tebligatDoctype.ts`); dosya başına meta `File` anahtarlıdır (`Index.tsx` `BatchFileMeta`).
 Ayrıntı `docs/mimari/belge-isleme-hatti.md` §3.
 
+**Belge tezgâhı — PDF araçları (07.10, G267-G273; plan `docs/plan/pdf-araclari-plani-2026-10-07.md`):** Acrobat yerine
+PDF işleri HUKDOK'ta. Sayfa `/belge-tezgahi` (Araçlar menüsü, giriş yapan HERKESE — `App.tsx:126`, `Sidebar.tsx:51`;
+"Yaz (Word)" yolu G285'e dek kapalı). Uçlar `routes/pdf_araclari.py` (`/api/pdf-araclari/{yukle,islem,onizleme/{id}/{sayfa},
+karta-bagla,karttan-al}`; indirme mevcut `/api/download/{id}`), çekirdek `pdf/pdf_araclari.py` (HTTP bilmez, `deadline` alır;
+sekiz işlem: birleştir · böl · sayfa_duzenle · sıkıştır (Ghostscript) · karart · damga · not · donustur). **Çalışma dosyası =
+`DOWNLOAD_CACHE` kaydı** `{path, filename, owner, kaynak:"pdf_araclari", sayfa, sayfalar}`; başkasının id'si her uçta 404;
+dosya `PDF_ARACLARI_DIR` altında, TTL 1 saat dolunca payload da silinir (`processing._download_evict`, yalnız bu kaynak);
+her işlem çıktısı yeni id'dir, girdiler listede kalır (zincir). Yükleme Office/resim/UDF'yi hemen PDF yapar (K3); çıktılar düz
+PDF, PDF/A karta bağlanınca. **Koordinat sözleşmesi:** karartma/not/damga alanları GÖRÜNÜR sayfa düzleminde, sol-üst orijin,
+PDF puanı (`Dosya.sayfalar[].genislik/yukseklik` döndürme uygulanmış) — çekirdek `derotation_matrix` ile çevirir, tarayıcı
+yalnız ölçekler (`components/pdf/pdfKoordinat.ts`). **Karartma gerçek silmedir** (`apply_redactions`, metin + görüntü
+pikselleri; ekranda onay kutusu olmadan istek gitmez). **Karta bağla** (`durum=KESIN`): MEVCUT
+`document_pipeline.convert_pdfa_and_queue_uploads` hattı (PDF/A + iki arşiv + URL commit'inde bildirim ve Hukukbot allowlist
+kuralı AYNEN; `/process` analizi ve e-posta YOK); `durum=TASLAK` (K12/K17): PDF/A yok, tek `islenmis` kuyruğu
+`03_TASLAKLAR/<ofis_no>/` (`SHAREPOINT_FOLDER_TASLAK_NAME`), G282 kapıları taslağı export'tan ve bildirimden eler
+(`export_publisher.py:66`, `upload_queue.py:223`). `istek_kimligi` (UUID) ile idempotent (`confirm_idempotency`, anahtar
+`pdf_araclari:<uuid>`, tekrar → `reused: true`); kilitli kart 409 — `save_case_document` artık `KayitMesgulError` yükseltir
+(`/confirm`'ü de etkiler, G269). **Karttan al:** arşivdeki belge (`sharepoint_url` dolu) SharePoint'ten çalışma dosyasına.
+**Sınırlar (K8, `config/settings.py:83-85`):** işlem başına 20 girdi, çıktı ≤ 1.000 sayfa (413), bütçe 270 sn (504),
+semafor 2 (`_pdf_arac_semaphore`, dolu → 503), uca özel `30/minute`; yükleme 50 MB; `islem` JSON olduğu için
+`lib/api.ts:78` uzun zaman aşımı önekinde. **Belge modeli (G282, migrasyon 61):** `case_documents.yon` (GELEN|GIDEN) /
+`kaynak` (BELGE_HATTI|PDF_ARACLARI|WORD|ARSIV_AKTARIM|TESLIM) / `durum` (TASLAK|KESIN) + `word_url`, `onceki_document_id`
+(`models.py:1318-1324`), sürüm defteri `belge_surumleri` (`models.py:1332`). nginx DEĞİŞMEDİ (her yol `location /api` altında,
+`nginx.conf:119`); yeni bağımlılık yok (pymupdf + Ghostscript imajda, `@dnd-kit` kurulu); OCR kapsam DIŞI (ayrı karar).
+Gerçek girişle tarayıcı denemesi ve deploy İNSAN ADIMI (plan DURAK). Ayrıntı `docs/mimari/belge-isleme-hatti.md` §9.
+
 **Arşiv belgesi (05.10, migrasyon 60):** büro karar arşivi kartlara `/process` → `/confirm` hattından GEÇMEDEN,
 `backend/scripts/arsiv_karar_ekle.py` ile eklenir (İNSAN ADIMI; varsayılan kuru koşu, girdi depo dışındaki eşleştirme
 listesi: karar → föy). Kayıt `uploaded_by = ARSIV_AKTARIM:<kim>`, `uploaded_at` = KARAR TARİHİ (yükleme anı değil),

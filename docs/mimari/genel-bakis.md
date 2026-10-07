@@ -437,6 +437,7 @@ anahtarındadır, eski kalıcı anahtar modal açılınca silinir
 | Konu | Dosya |
 | --- | --- |
 | `/process` → `/confirm` zinciri, olay sözleşmesi, zaman bütçeleri | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) |
+| Belge tezgâhı / PDF araçları (`/belge-tezgahi`, `/api/pdf-araclari/*`, çalışma dosyası cache'i, karta bağla kesin/taslak, sınırlar) | [`belge-isleme-hatti.md`](belge-isleme-hatti.md) §9 + plan [`pdf-araclari-plani-2026-10-07.md`](../plan/pdf-araclari-plani-2026-10-07.md) |
 | Manuel form + intake sihirbazı, ofis no, taslak kalıcılığı, tarihli dava notları (`case_notes`) | [`dava-acma-akisi.md`](dava-acma-akisi.md) |
 | Veri teslim hattı: panelden yükleme, defter, kapı, elle uygulama, cevap dosyaları | [`veri-teslim-hatti.md`](veri-teslim-hatti.md) |
 | Raporlama: kayıt defteri (serbest SQL yok), önizleme, Excel/CSV export + koşu logu, şablonlar, AI asistan + `rapor_asistani` anahtarı | [`raporlama.md`](raporlama.md) |
