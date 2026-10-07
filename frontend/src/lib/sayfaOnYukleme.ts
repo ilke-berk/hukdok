@@ -18,6 +18,7 @@ const YUKLEYICILER: Record<string, Yukleyici[]> = {
   "/activity-history": [() => import("../pages/ActivityHistory")],
   "/hukukbot": [() => import("../pages/HukukbotPage")],
   "/reports": [() => import("../pages/ReportsPage")],
+  "/belge-tezgahi": [() => import("../pages/BelgeTezgahiPage")],
   "/lexis": [() => import("../pages/LexisPage")],
   "/admin": [() => import("../pages/AdminPage")],
 };

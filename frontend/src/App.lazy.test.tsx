@@ -197,8 +197,9 @@ describe("App.tsx route kod bölme bekçisi (G182)", () => {
 
   it("geri kalan her sayfa React.lazy + importWithReload ile yüklenir", () => {
     const beklenen = sayfaModulleri().filter((modul) => !STATIK_KALAN_SAYFALAR.has(modul));
-    // 14 sayfa: dashboard'lar, iş sayfaları, /reports, /admin, /hukukbot (G205, karar 021) ve /lexis (04.10 önizleme).
-    expect(beklenen).toHaveLength(14);
+    // 15 sayfa: dashboard'lar, iş sayfaları, /reports, /admin, /hukukbot (G205, karar 021), /lexis (04.10 önizleme)
+    // ve /belge-tezgahi (G270).
+    expect(beklenen).toHaveLength(15);
     const lazySayfalar = [
       ...APP_SOURCE.matchAll(/lazy\(\(\)\s*=>\s*importWithReload\(\(\)\s*=>\s*import\("(\.\/pages\/[^"]+)"\)\)\)/g),
     ].map((m) => m[1]);

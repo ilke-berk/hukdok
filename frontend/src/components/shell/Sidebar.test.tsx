@@ -90,4 +90,21 @@ describe("Sidebar Hukukbot öğesi", () => {
         await act(async () => oge!.click());
         expect(container.querySelector('[data-testid="konum"]')!.textContent).toBe("/lexis");
     });
+
+    // Belge tezgâhı (G270, plan K1): PDF araçları her kullanıcıda, yönetici kısıtı yok.
+    const tezgahOgesi = () =>
+        Array.from(container.querySelectorAll("button")).find(b => b.textContent?.trim() === "Belge tezgâhı");
+
+    it("Belge tezgâhı öğesi yönetici olmayan kullanıcıda görünür ve /belge-tezgahi'ye gider", async () => {
+        await render(false);
+        const oge = tezgahOgesi();
+        expect(oge).toBeDefined();
+        await act(async () => oge!.click());
+        expect(container.querySelector('[data-testid="konum"]')!.textContent).toBe("/belge-tezgahi");
+    });
+
+    it("/belge-tezgahi'deyken Belge tezgâhı öğesi aktif vurgulanır", async () => {
+        await render(true, "/belge-tezgahi");
+        expect(tezgahOgesi()!.className).toContain("bg-[var(--brand-soft)]");
+    });
 });

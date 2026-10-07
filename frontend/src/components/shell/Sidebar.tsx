@@ -16,6 +16,7 @@ import {
   Scale,
   Bot,
   ScrollText,
+  FileStack,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 import { clearAppStorage } from "@/lib/appStorage";
@@ -46,6 +47,8 @@ const NAV: NavItemDef[] = [
 const ARACLAR: NavItemDef[] = [
   { id: "hukukbot", label: "Hukukbot", path: "/hukukbot", Icon: Bot },
   { id: "reports", label: "Raporlar", path: "/reports", Icon: Table2 },
+  // Belge tezgâhı (G270, plan K1): PDF araçları, her kullanıcıda.
+  { id: "tezgah", label: "Belge tezgâhı", path: "/belge-tezgahi", Icon: FileStack },
   // Lexis rapor aracı ÖNİZLEMESİ (04.10): örnek veriyle çalışır, entegrasyona dek yalnız yöneticide.
   { id: "lexis", label: "Lexis", path: "/lexis", Icon: ScrollText, yalnizYonetici: true },
 ];

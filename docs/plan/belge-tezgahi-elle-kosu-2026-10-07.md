@@ -21,8 +21,8 @@ göreve ben "devam" deyince geç.
 | 1 | G267 PDF çekirdeği `pdf/pdf_araclari.py` | backend | - | bitti | 35cebfb |
 | 2 | G268 uçlar `yukle/islem/onizleme` + cache temizliği | backend | G267 | bitti | 0539ad4 |
 | 3 | G282 migrasyon 61: yön/kaynak/durum + sürüm defteri | backend | - | bitti | 4ef2621 |
-| 4 | G269 `karta-bagla` (kesin/taslak) + `karttan-al` | backend | G268, G282 | bitti | (SHA G270 commit'inde işlenir) |
-| 5 | G270 Belge tezgâhı sayfa iskeleti (PDF yolu) | frontend | - | açık | |
+| 4 | G269 `karta-bagla` (kesin/taslak) + `karttan-al` | backend | G268, G282 | bitti | 66f0483 |
+| 5 | G270 Belge tezgâhı sayfa iskeleti (PDF yolu) | frontend | - | bitti | (SHA G271 commit'inde işlenir) |
 | 6 | G271 sayfa ızgarası | frontend | G270 | açık | |
 | 7 | G272 karartma + not çizim katmanı | frontend | G271 | açık | |
 | 8 | G273 karta bağla / karttan al diyalogları + `CaseDetails` | frontend | G269, G271 | açık | |
