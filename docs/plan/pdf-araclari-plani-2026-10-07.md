@@ -10,8 +10,8 @@
 > main, push'suz, deploy YOK):** G267 çekirdek **35cebfb** (81 test) → G268 uçlar + cache **0539ad4** (57) → G282
 > migrasyon 61 **4ef2621** (31) → G269 karta bağla / karttan al **66f0483** (61; tam backend paketi 4566 passed, 25 skipped)
 > ∥ G270 sayfa iskeleti **fa0479b** → G271 sayfa ızgarası **94948c1** → G272 karartma + not **d7c799e** → G273 kart
-> diyalogları + `CaseDetails` **e2876ad** (frontend tam paket 1764 passed) → G274 doküman (bu not + CLAUDE.md paragrafı +
-> `belge-isleme-hatti.md` §9; SHA G283 commit'inde). §3 sözleşmesi hiçbir görevde değişmedi (G273 hizalama tablosu: fark
+> diyalogları + `CaseDetails` **e2876ad** (frontend tam paket 1764 passed) → G274 doküman **134b169** (bu not + CLAUDE.md paragrafı +
+> `belge-isleme-hatti.md` §9). §3 sözleşmesi hiçbir görevde değişmedi (G273 hizalama tablosu: fark
 > yok). Sapmalar: sayfa yolu `/pdf-araclari` yerine **`/belge-tezgahi`** (K1, tek menü girişi); `lib/api.ts` uzun zaman
 > aşımı öneki (G271); `save_case_document` kilitli kartta `KayitMesgulError` → `/confirm` 409 (G269, bilinçli).
 > **Açık kalanlar (insan adımı, DURAK):** gerçek girişle tarayıcıda zincir (yükle → birleştir → karart → indir → karta

@@ -101,8 +101,9 @@ export interface IslemYaniti {
   ciktilar: Dosya[];
 }
 
-export type BelgeYonu = "GELEN" | "GIDEN";
-export type BelgeDurumu = "KESIN" | "TASLAK";
+// G283: yön/durum birlikleri tek yerde — `types/belge.ts` (kart belgesi sözleşmesi); burada yalnız yeniden dışa aktarılır.
+import type { BelgeDurumu, BelgeYonu } from "./belge";
+export type { BelgeDurumu, BelgeYonu } from "./belge";
 
 /** `POST /api/pdf-araclari/karta-bagla` (§3 + §6.3; G273 kullanır). */
 export interface KartaBaglaIstegi {

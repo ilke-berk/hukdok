@@ -36,7 +36,12 @@ import { AcikHataBildirimleri, HataBildirButonu, HataBildirimSaglayici } from "@
 import { EmailModal } from "@/components/email/EmailModal";
 import { apiClient } from "@/lib/api";
 import { tarihceEtiketi } from "@/lib/tarihceEtiketleri";
-import { FILTRE_TUMU, evrakFiltreCipleri, evrakFiltreUygula } from "@/lib/evrakFiltresi";
+import {
+    BELGE_KUMELERI, BELGE_KUMESI_ETIKETLERI, BELGE_KUMESI_PARAM, FILTRE_TUMU, VARSAYILAN_BELGE_KUMESI,
+    belgeKumeSayilari, belgeKumesiCoz, belgeKumesiUygula, evrakFiltreCipleri, evrakFiltreUygula, type BelgeKumesi,
+} from "@/lib/evrakFiltresi";
+import { BelgeDurumCipi } from "@/components/belge/BelgeDurumCipi";
+import { taslakMi } from "@/types/belge";
 
 // Dava durumu üçlüsü (kullanıcı kararı 12.09.2026): DERDEST | DANIŞ | MAHZEN.
 // Temyiz/istinaf durum değil aşamadır — CaseTrackingPanel gösterir.
@@ -109,7 +114,9 @@ interface CaseDetailsData {
     history?: { date: string; action: string; user?: string; field?: string; old?: string; new?: string }[];
     parties?: { id: number; client_id?: number; party_type: string; name: string; role: string; tckn?: string; vergi_no?: string }[];
     lawyers?: { name: string; lawyer_id?: number | null }[];
-    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null }[];
+    // G282/G283: `yon`/`kaynak`/`durum`/`word_url`/`kesinlesme_tarihi`/`surum_sayisi` — `routes/cases.py` yanıtı
+    // (`case_manager.get_case`); eski yanıtta eksikse GELEN / BELGE_HATTI / KESIN varsayılır (`types/belge.ts`).
+    documents?: { id: number; created_at: string; uploaded_at?: string; document_type_code: string; belge_turu_adi?: string; belge_turu_kodu?: string; summary?: string; stored_filename: string; original_filename: string; sharepoint_url?: string; case_party_id?: number | null; case_party_name?: string | null; muvekkil_adi?: string | null; email_sent?: boolean | null; email_error?: string | null; yon?: string | null; kaynak?: string | null; durum?: string | null; word_url?: string | null; kesinlesme_tarihi?: string | null; surum_sayisi?: number | null }[];
     [key: string]: unknown;
 }
 
@@ -222,10 +229,13 @@ const DocCard = ({
     /** G273: çoklu seçim (tezgâhta birleştirme). */
     pdfSecili?: boolean;
     onPdfSec?: (doc: CaseDocument, secili: boolean) => void;
-}) => (
-    <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4">
+}) => {
+    // G283: taslak satırı (K12) — e-posta ve PDF tezgâhı eylemleri gizli, Word/kesinleştir yer tutucu (G285 açar), silme kalır.
+    const taslak = taslakMi(doc);
+    return (
+    <div className="group flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-none border bg-background/50 hover:border-primary/40 transition-all gap-4" data-belge-id={doc.id} data-taslak={taslak ? "true" : undefined}>
         <div className="flex items-start gap-4 flex-1 min-w-0">
-            {onPdfSec && (
+            {onPdfSec && !taslak && (
                 <input
                     type="checkbox"
                     aria-label={`Tezgâh için seç: ${doc.stored_filename || doc.original_filename}`}
@@ -244,6 +254,8 @@ const DocCard = ({
                     {doc.stored_filename || doc.original_filename}
                 </h4>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {/* G283: durum (Taslak/Kesin) · yön oku · kaynak simgesi */}
+                    <BelgeDurumCipi doc={doc} />
                     {doc.belge_turu_adi && (
                         <Badge variant="secondary" className="text-[10px] sm:text-xs font-normal">
                             {doc.belge_turu_adi}
@@ -254,6 +266,16 @@ const DocCard = ({
                             <Clock className="w-3 h-3" />
                             {new Date(doc.uploaded_at).toLocaleString("sv-SE")}
                         </div>
+                    )}
+                    {taslak && (
+                        <span data-testid="belge-surum-sayisi" className="text-xs text-muted-foreground tabular-nums">
+                            {doc.surum_sayisi ?? 0} sürüm
+                        </span>
+                    )}
+                    {!taslak && doc.kesinlesme_tarihi && (
+                        <span data-testid="belge-kesinlesme" className="text-xs text-muted-foreground">
+                            Kesinleşti: {new Date(doc.kesinlesme_tarihi).toLocaleDateString("tr-TR")}
+                        </span>
                     )}
                 </div>
                 {/* Müvekkil atama seçici — sadece CLIENT taraf varsa göster */}
@@ -279,26 +301,37 @@ const DocCard = ({
             </div>
         </div>
         <div className="shrink-0 max-sm:w-full flex flex-col sm:flex-row sm:items-center gap-2">
-            {/* Email durum ikonu */}
-            {doc.email_sent === true && (
+            {/* G283: taslak yer tutucuları — Word'de aç / Kesinleştir G285 ile açılır */}
+            {taslak && (
+                <>
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto" disabled title="Sonraki sürümde (Word yaşam döngüsü)">
+                        Word'de aç
+                    </Button>
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto" disabled title="Sonraki sürümde (Word yaşam döngüsü)">
+                        Kesinleştir
+                    </Button>
+                </>
+            )}
+            {/* Email durum ikonu (taslak gönderilmez — gizli) */}
+            {!taslak && doc.email_sent === true && (
                 <span title="E-posta gönderildi" className="text-tone-ok flex items-center gap-1 text-xs whitespace-nowrap">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span className="hidden sm:inline">Gönderildi</span>
                 </span>
             )}
-            {doc.email_sent === false && (
+            {!taslak && doc.email_sent === false && (
                 <span title={doc.email_error || "E-posta gönderilemedi"} className="text-tone-danger flex items-center gap-1 text-xs whitespace-nowrap">
                     <XCircle className="w-4 h-4 shrink-0" />
                     <span className="hidden sm:inline">Başarısız</span>
                 </span>
             )}
-            {doc.email_sent == null && (
+            {!taslak && doc.email_sent == null && (
                 <span title="E-posta gönderilmedi / atlandı" className="text-[var(--fg-subtle)] flex items-center">
                     <MinusCircle className="w-4 h-4" />
                 </span>
             )}
             {/* Gönder / Tekrar Gönder butonu */}
-            {(doc.email_sent === false || doc.email_sent === null) && (
+            {!taslak && (doc.email_sent === false || doc.email_sent === null) && (
                 <Button
                     variant="outline"
                     size="sm"
@@ -347,7 +380,7 @@ const DocCard = ({
             >
                 Detay / Görüntüle
             </Button>
-            {onPdfAraclari && (
+            {onPdfAraclari && !taslak && (
                 <Button
                     variant="outline"
                     size="sm"
@@ -371,15 +404,27 @@ const DocCard = ({
             </Button>
         </div>
     </div>
-);
+    );
+};
 
 const CaseDetails = () => {
     useSetPageTitle("Dava Detay", ["Avukat Paneli", "Davalar"]);
     const { id } = useParams();
     const navigate = useNavigate();
     // Zildeki hata bildiriminden gelindiyse (`?hata=<id>`) o bildirim şeritte vurgulanır.
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const vurgulananHata = Number(searchParams.get("hata")) || null;
+    // G283: Evrak Listesi alt filtresi Gelen · Taslak · Giden — URL'de `?belgeler=giden|taslak` (varsayılan "gelen" yazılmaz)
+    // ki kart bağlantısı paylaşılabilsin; `?hata=` gibi diğer parametreler korunur.
+    const belgeKume = belgeKumesiCoz(searchParams.get(BELGE_KUMESI_PARAM));
+    const belgeKumeSec = (kume: BelgeKumesi) => {
+        setSearchParams((onceki) => {
+            const yeni = new URLSearchParams(onceki);
+            if (kume === VARSAYILAN_BELGE_KUMESI) yeni.delete(BELGE_KUMESI_PARAM);
+            else yeni.set(BELGE_KUMESI_PARAM, kume);
+            return yeni;
+        }, { replace: true });
+    };
     // Kapalı liste değerleri backend'den gelir — kartta sabit liste TUTULMAZ (G048).
     // G185: yalnız kartın okuduğu altı kapalı listeye abone olunur (useConfig 32 sorgu kuruyordu).
     const { data: allegedFaults } = useConfigList("allegedFaults");
@@ -1181,9 +1226,12 @@ const CaseDetails = () => {
                             <CardContent>
                                 {caseData.documents && caseData.documents.length > 0 ? (() => {
                                     // Tür süzgeci: çipler davadaki türlerden; seçili tür artık yoksa (silme) Tümü'ne düşer
-                                    const cipler = evrakFiltreCipleri(caseData.documents!);
+                                    // G283: önce küme (Gelen · Taslak · Giden), sonra tür çipi — çipler kümedeki türlerden türer.
+                                    const kumeSayilari = belgeKumeSayilari(caseData.documents!);
+                                    const kumeDocs = belgeKumesiUygula(caseData.documents!, belgeKume);
+                                    const cipler = evrakFiltreCipleri(kumeDocs);
                                     const aktifFiltre = cipler.some(c => c.anahtar === evrakFiltre) ? evrakFiltre : FILTRE_TUMU;
-                                    const gorunen = evrakFiltreUygula(caseData.documents!, aktifFiltre);
+                                    const gorunen = evrakFiltreUygula(kumeDocs, aktifFiltre);
                                     // Belgeleri grupla: null → dava geneli, dolu → müvekkile ait
                                     const caseWide = gorunen.filter(d => d.case_party_id == null);
                                     const byParty = gorunen.reduce<Record<string, { name: string; docs: typeof caseData.documents }>>((acc, d) => {
@@ -1200,6 +1248,36 @@ const CaseDetails = () => {
 
                                     return (
                                         <div className="space-y-6">
+                                            {/* G283: Gelen · Taslak · Giden alt filtresi (sayı rozetli; URL `?belgeler=`) */}
+                                            <div role="group" aria-label="Belge kümesi" data-testid="belge-kume-filtresi" className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-3">
+                                                {BELGE_KUMELERI.map(kume => {
+                                                    const secili = kume === belgeKume;
+                                                    return (
+                                                        <button
+                                                            key={kume}
+                                                            type="button"
+                                                            aria-pressed={secili}
+                                                            data-kume={kume}
+                                                            onClick={() => belgeKumeSec(kume)}
+                                                            className={`inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors ${secili
+                                                                ? "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]"
+                                                                : "border-[var(--border)] text-muted-foreground hover:text-foreground hover:border-[var(--fg-subtle)]"}`}
+                                                        >
+                                                            {BELGE_KUMESI_ETIKETLERI[kume]}
+                                                            <span className="tabular-nums opacity-70">{kumeSayilari[kume]}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            {kumeDocs.length === 0 && (
+                                                <p data-testid="belge-kume-bos" className="text-sm text-muted-foreground">
+                                                    {belgeKume === "taslak"
+                                                        ? "Bu kartta taslak belge yok. Taslak, Belge tezgâhından \"Taslak olarak kaydet\" ile ya da Word yazımıyla açılır."
+                                                        : belgeKume === "giden"
+                                                            ? "Bu kartta giden (kesinleşmiş) belge yok."
+                                                            : "Bu kartta gelen belge yok."}
+                                                </p>
+                                            )}
                                             {/* G273: çoklu seçim şeridi → Belge tezgâhında birleştir (seçim sırası = birleştirme sırası) */}
                                             {pdfSecili.length > 0 && (
                                                 <div data-testid="pdf-secim-seridi" role="status" className="flex flex-wrap items-center gap-2 border border-[var(--brand)] bg-[var(--brand-soft)] px-3 py-2 text-xs">

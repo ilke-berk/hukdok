@@ -7,6 +7,9 @@
  * `normalizeDoctypeKey` ile `_` padding'inden arındırılır.
  */
 import { isKararDoctype, normalizeDoctypeKey } from "@/lib/kararDoctype";
+import { belgeYonu, taslakMi, type KartBelgesi } from "@/types/belge";
+
+type YonDurumlu = Pick<KartBelgesi, "yon" | "kaynak" | "durum">;
 
 export const FILTRE_TUMU = "__TUMU__";
 export const FILTRE_KARARLAR = "__KARARLAR__";
@@ -61,4 +64,41 @@ export function evrakFiltreUygula<T extends EvrakTurlu>(docs: readonly T[], filt
     if (filtre === FILTRE_TUMU) return [...docs];
     if (filtre === FILTRE_KARARLAR) return docs.filter(isKararEvraki);
     return docs.filter(d => evrakTurAnahtari(d) === filtre);
+}
+
+// ── G283: Gelen · Taslak · Giden alt filtresi (plan §6 K11/K12) ──────────────
+// Küme belgenin yön + durumundan türer: TASLAK (yönü ne olursa olsun) → "taslak"; KESIN + GIDEN → "giden"; gerisi
+// "gelen". Eski yanıtta alanlar yoksa GELEN/KESIN varsayılır (`types/belge.ts`), yani "gelen". Tür çipleri alt filtreyle
+// BİRLİKTE çalışır: önce küme, sonra tür. Seçim URL'de `?belgeler=giden|taslak` (varsayılan "gelen" yazılmaz).
+
+export const BELGE_KUMELERI = ["gelen", "taslak", "giden"] as const;
+export type BelgeKumesi = (typeof BELGE_KUMELERI)[number];
+export const VARSAYILAN_BELGE_KUMESI: BelgeKumesi = "gelen";
+export const BELGE_KUMESI_PARAM = "belgeler";
+
+export const BELGE_KUMESI_ETIKETLERI: Record<BelgeKumesi, string> = {
+    gelen: "Gelen",
+    taslak: "Taslak",
+    giden: "Giden",
+};
+
+export function belgeKumesi(doc: YonDurumlu): BelgeKumesi {
+    if (taslakMi(doc)) return "taslak";
+    return belgeYonu(doc) === "GIDEN" ? "giden" : "gelen";
+}
+
+export function belgeKumeSayilari(docs: readonly YonDurumlu[]): Record<BelgeKumesi, number> {
+    const sayilar: Record<BelgeKumesi, number> = { gelen: 0, taslak: 0, giden: 0 };
+    for (const d of docs) sayilar[belgeKumesi(d)] += 1;
+    return sayilar;
+}
+
+export function belgeKumesiUygula<T extends YonDurumlu>(docs: readonly T[], kume: BelgeKumesi): T[] {
+    return docs.filter(d => belgeKumesi(d) === kume);
+}
+
+/** URL parametresi → küme; tanınmayan / boş değer varsayılan ("gelen"). */
+export function belgeKumesiCoz(param: string | null | undefined): BelgeKumesi {
+    const v = (param ?? "").trim().toLocaleLowerCase("tr-TR");
+    return (BELGE_KUMELERI as readonly string[]).includes(v) ? (v as BelgeKumesi) : VARSAYILAN_BELGE_KUMESI;
 }
