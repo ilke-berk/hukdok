@@ -200,23 +200,34 @@ Ayrıntılar ve kurallar: [README.md](README.md). Görev tanımları: `gorev/<id
 
 - [ ] G275 | bant:lexis | bagimli:- | Kademeli okuma: aday → tek toplu ELEME çağrısı (hüküm + iddia + gerekçe parçalarıyla, `LEXIS_EMSAL_ELEME=8`) → yalnız seçilenlere tam okuma; `ELEME=0` eski akış; `emsal_elemeler` önbellek; ölçümde `eleme_kapsama`; README maliyet hesabı + PLAN K31
 
-## ÖNCELİK 10 — PDF araçları sayfası: Acrobat yerine birleştir/böl/sayfa düzenle/sıkıştır/karart/damga + karta bağla (2026-10-07 gündüz, kullanıcı kararı)
+## ÖNCELİK 10 — Belge tezgâhı: PDF araçları (Acrobat yerine) + yön/taslak/sürüm modeli + Word yaşam döngüsü + Word eklentisi (2026-10-07 gündüz, kullanıcı kararı; §6 ikinci onay aynı gün)
 
-<!-- Kaynak: docs/plan/pdf-araclari-plani-2026-10-07.md (§3 API sözleşmesi SABİT — frontend sahte API ile backend'e
-     paralel yazılır; ilk gerçek buluşma G273). Yeni bağımlılık YOK (pymupdf + Ghostscript + LibreOffice imajda,
-     @dnd-kit kurulu); nginx DEĞİŞMEZ (/api altı); migrasyon YOK. Karta bağlama mevcut convert_pdfa_and_queue_uploads
-     hattı: PDF/A + iki arşiv + bildirim + (tür allowlist'teyse) Hukukbot — yeni kural yok. OCR katmanı kapsam DIŞI.
-     Zincirler: G267 → G268 → G269 (backend seri) ∥ G270 → G271 → G272 (frontend); G273 ikisinin birleşimi; G274 son.
-     Tahmin 3 gece (gece 1: G267 → G268 ∥ G270 → G271; gece 2: G269 ∥ G272; gece 3: G273 → G274). -->
+<!-- Kaynak: docs/plan/pdf-araclari-plani-2026-10-07.md (§3 PDF API sözleşmesi + §6.3 Word sözleşmesi SABİT — frontend
+     sahte API ile backend'e paralel yazılır; ilk gerçek buluşma G273). PDF yolu (G267-G274): yeni bağımlılık YOK
+     (pymupdf + Ghostscript + LibreOffice imajda, @dnd-kit kurulu); nginx DEĞİŞMEZ (/api altı). Word yolu (G282-G288):
+     migrasyon 61 (yon/kaynak/durum + belge_surumleri, G282); TASLAK Hukukbot'a gitmez/bildirim üretmez; kesinleştirme
+     AYNI satırı günceller; taslak .docx SharePoint 03_TASLAKLAR/<ofis_no>/ (Word'ün kendi sürüm/birlikte düzenlemesi);
+     eklenti /eklenti sayfası + CSP (G286) — M365 dağıtımı ve olası Azure kaydı İNSAN ADIMI. OCR katmanı kapsam DIŞI.
+     Zincirler: backend seri G267 → G268 → G282 → G269 → G284 → G286; frontend G270 → G271 → G272 → G273 → G283 → G285 → G287;
+     docs G274 (PDF) → G288 (bütün). G275 bu planın DEĞİL (lexis kademeli okuma; numara çakışması 07.10'da çözüldü, bu
+     planın Word görevleri G282'den başlar). Tahmin 7-8 gece (gece 1: G267 → G268 ∥ G270 → G271; gece 2: G282 → G269 ∥
+     G272; gece 3: G284 ∥ G273 → G283; gece 4: G286 ∥ G285 → G274; gece 5: G287; gece 6: G288 + takılanlar). -->
 
 - [ ] G267 | bant:backend | bagimli:- | PDF araçları çekirdeği `pdf/pdf_araclari.py`: birleştir, böl, sayfa düzenle (sıra/sil/döndür), sıkıştır (gs), karart (apply_redactions, görünür düzlem koordinatı), damga (DejaVuSans), not, pdf_ye_cevir, sayfa_meta, onizleme_png; deadline + os.replace; gerçek PDF testleri
 - [ ] G268 | bant:backend | bagimli:G267 | Uçlar `POST /api/pdf-araclari/{yukle,islem}` + `GET .../onizleme/{id}/{sayfa}`: DOWNLOAD_CACHE `kaynak:"pdf_araclari"` + on_evict payload silme, sahiplik 404, semafor 2 → 503, bütçe 270 → 504, sayfa 1.000 → 413, 30/dk; api.py kaydı; nginx dokunulmaz (bekçi)
-- [ ] G269 | bant:backend | bagimli:G268 | `POST .../karta-bagla` (convert_pdfa_and_queue_uploads, analiz/e-posta yok, `istek_kimligi` idempotent, 409 kilit, tür allowlist Hukukbot kuralı testle) + `POST .../karttan-al` (SharePoint'ten çalışma dosyası)
-- [ ] G270 | bant:frontend | bagimli:- | Sayfa iskeleti `/pdf-araclari` (herkese, Araçlar menüsü) + `lib/pdfAraclariApi.ts` + `types/pdfAraclari.ts` (§3 birebir) + yükleyici (sıralı tek dosya) + dosya listesi + işlem paneli (birleştir/böl/sıkıştır/damga) + indir; sahte API testleri
+- [ ] G269 | bant:backend | bagimli:G268,G282 | `POST .../karta-bagla` (`yon`/`durum`; KESIN → convert_pdfa_and_queue_uploads, analiz/e-posta yok; TASLAK → PDF/A'sız 03_TASLAKLAR yüklemesi; `istek_kimligi` idempotent, 409 kilit, tür allowlist Hukukbot kuralı testle) + `POST .../karttan-al` (SharePoint'ten çalışma dosyası)
+- [ ] G270 | bant:frontend | bagimli:- | Belge tezgâhı sayfa iskeleti `/belge-tezgahi` (herkese, Araçlar menüsü; "Düzenle (PDF)" yolu, "Yaz (Word)" yuvası) + `lib/pdfAraclariApi.ts` + `types/pdfAraclari.ts` (§3 birebir) + yükleyici (sıralı tek dosya) + dosya listesi + işlem paneli (birleştir/böl/sıkıştır/damga) + indir; sahte API testleri
 - [ ] G271 | bant:frontend | bagimli:G270 | Sayfa ızgarası: önizleme (görünür kartlar), @dnd-kit sırala, döndür, sil, seç → `sayfa_duzenle`; seçili sayfalardan `bol` aralıkları
 - [ ] G272 | bant:frontend | bagimli:G271 | Karartma + not çizim katmanı: büyük sayfa görünümü, dikdörtgen/nokta, `pdfKoordinat.ts` piksel→puan, geri alınamaz onayı → `karart`/`not`
-- [ ] G273 | bant:frontend | bagimli:G269,G271 | Karta bağla diyaloğu (dava ara, belge türü, taraf, istek_kimligi) + karttan al diyaloğu + `CaseDetails` "PDF araçlarında aç" / çoklu seç → birleştir; sözleşme hizası raporu
+- [ ] G273 | bant:frontend | bagimli:G269,G271 | Karta bağla diyaloğu (dava ara, belge türü, taraf, yön, kesinleştir/taslak, istek_kimligi) + karttan al diyaloğu + `CaseDetails` "PDF araçlarında aç" / çoklu seç → birleştir; sözleşme hizası raporu
 - [ ] G274 | bant:docs | bagimli:G272,G273 | CLAUDE.md "PDF araçları" paragrafı + `belge-isleme-hatti.md` bölümü + plan durumu (koddan doğrulanmış)
+- [ ] G282 | bant:backend | bagimli:- | Migrasyon 61: `case_documents.yon/kaynak/durum/word_url/kesinlesme_*/onceki_document_id` + `belge_surumleri`; backfill ARSIV_AKTARIM; export + bildirim filtresi `durum==KESIN`; kart yanıtı + `?yon=&durum=` filtresi; rapor `belgeler` kolonları; `SHAREPOINT_FOLDER_TASLAK_NAME`
+- [ ] G283 | bant:frontend | bagimli:G273,G282 | Kart "Belgeler": Gelen · Taslak · Giden alt filtreleri (sayı rozeti, `?belgeler=`), `BelgeDurumCipi` (durum/yön/kaynak), taslakta gizlenen eylemler, Word düğme yuvaları; tipler kart yanıtıyla birebir
+- [ ] G284 | bant:backend | bagimli:G282,G269 | Word yaşam döngüsü uçları `routes/belge_yasam.py`: `POST /api/cases/{id}/belgeler/yeni` (bos.docx → 03_TASLAKLAR, ad çakışması `-2`), `POST /api/documents/{id}/surum`, `GET .../surumler`, `POST .../kesinlestir` (aynı satır KESIN; PDF/A + iki arşiv; idempotent), `POST .../yeni-surum-taslagi`; sahte Graph testleri
+- [ ] G285 | bant:frontend | bagimli:G284,G283 | Word yolu ekranı: `YeniBelgeDiyalogu` (ms-word bağlantısı + Word Online yedeği), "Word'de aç", `SurumPaneli`, `KesinlestirOnayi`, "Yeni sürüm taslağı"; tezgâhta "Yaz (Word)" yolu açılır; `lib/belgeYasamApi.ts`
+- [ ] G286 | bant:backend | bagimli:G284 | Eklenti altyapısı: nginx CSP'ye Office.js kaynakları (kopyalar eşit, bekçi), `/eklenti` location (frame-ancestors Office) + `/eklenti/manifest.xml`, token audience ÖLÇÜMÜ (NAA aynı scope mu?) + gerekirse `ALLOWED_AUDIENCES`; `kimlik-ve-token.md` bölümü
+- [ ] G287 | bant:frontend | bagimli:G286,G285 | `/eklenti` görev bölmesi (ProtectedRoute dışı): Office.js + MSAL NAA, kart ara, "Taslak kaydet" (`getFileAsync`), "Sürüm kaydet", "Kesinleştir", belge kimliği `document.settings`; manifest + ikonlar; M365 dağıtım adımları dokümana (İNSAN ADIMI)
+- [ ] G288 | bant:docs | bagimli:G287,G274 | CLAUDE.md "Belge tezgâhı" paragrafı (PDF + Word + eklenti) + `belge-isleme-hatti.md` Word akışı + genel-bakış + bildirimler + Hukukbot spec `durum==KESIN` + plan durumu
 
 ## ÖNCELİK 1 — Performans turu: kod bölme + arama tek koşu + kanıtlı index'ler + bağlantı ayarları (2026-09-14 gündüz, kullanıcı kararı)
 
