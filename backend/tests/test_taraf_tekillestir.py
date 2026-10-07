@@ -272,6 +272,31 @@ def test_virgullu_foy_muvekkili_bagiyla_tek_satira_iner(fabrika):
         db.close()
 
 
+def test_ayni_turde_sigortali_satiri_eski_diger_davali_satirina_tercih_edilir(fabrika):
+    """Ekibin düzelttirdiği "Sigortalı" satırı (ekip_cevabi_2609) eski import'un yanlış yazımlı
+    "Diğer Davalı" ikizine YENİLMEZ — id'si büyük olsa da kalan odur (rol + yazım korunur)."""
+    db = fabrika()
+    try:
+        kart, _ = _kart(db, "AK-0015", [
+            ("Ak Sigorta A.Ş.", "CLIENT", "Müvekkil"),
+            ("Mustafa Kavurmaci Dr.", "THIRD", "Diğer Davalı"),
+            ("Mustafa Kavurmacı Dr.", "THIRD", "Sigortalı"),
+        ])
+        db.commit()
+        kart_id = kart.id
+    finally:
+        db.close()
+
+    sonuc = tt.kos(fabrika, apply=True, kim="test")
+
+    assert [(i.kural, i.ad, i.kalan_rol) for i in sonuc.islemler] == [
+        ("ayni_kisi:THIRD+THIRD", "Mustafa Kavurmaci Dr.", "Sigortalı")]
+    assert _taraflar(fabrika, kart_id) == [
+        ("Ak Sigorta A.Ş.", "CLIENT", "Müvekkil"),
+        ("Mustafa Kavurmacı Dr.", "THIRD", "Sigortalı"),
+    ]
+
+
 def test_ofis_no_girdisi_degisecekse_kart_atlanir(fabrika):
     """Föysüz sigortacı kartında sigortalı "Diğer Davalı" hekim satırından okunur (ofis_no
     kaynak 4). O satır karşı tarafla aynı kişi diye silinirse blok kaybolurdu → kart atlanır."""

@@ -20,7 +20,8 @@ Kart içinde sırayla:
    satırına taşınır; birleşik satır silinir. Sonu virgüllü tek ad yalnız temizlenir.
 2. **Aynı kişi** (`normalize_party_key` eşit — ünvan, şirket eki, harf katlama):
    kalan = öncelikli tür (`party_check.TARAF_TUR_ONCELIGI`: müvekkil > karşı taraf >
-   3. şahıs), eşitse bağı olan, sonra küçük id. Gidenin bağları kalana taşınır, kalanın
+   3. şahıs), eşitse eski import rolü ("Diğer Davalı") OLMAYAN, sonra bağı olan, sonra
+   küçük id. Gidenin bağları kalana taşınır, kalanın
    boş kimlik alanları gidenden dolar; kalanın adı ve rolü DEĞİŞMEZ.
 3. **Koruma:** kartın ofis no girdileri (müvekkil kodu + sigortalı bloğu,
    `services.ofis_no`) değişecekse kart ATLANIR — prod'da ofis no göçü koşmadı, göç
@@ -72,6 +73,8 @@ VARSAYILAN_CIKTI = "/tmp/taraf_tekillestir"
 #: Kurum adlarında bulanık eşleşme eşiği (difflib oranı, anahtar üzerinde). Yalnız
 #: İNCELEME listesi; kişi adlarında eşik yok — `party_check` kelime bazlı kuralı geçerli.
 KURUM_ESIK = 0.90
+#: Emekli `import_excel_cases`'in 3. şahıslara verdiği rol — aynı türde ikizi varsa giden odur.
+ESKI_IMPORT_ROLU = "Diğer Davalı"
 #: Kimlik alanları: kalan satırda boşsa giden satırdan dolar.
 KIMLIK_ALANLARI: Tuple[str, ...] = ("client_id", "tc_no", "birth_year", "gender")
 
@@ -354,7 +357,10 @@ def _ayni_kisileri_birlestir(db, case: models.Case, kim: str) -> List[Islem]:
         grup = gruplar[anahtar]
         if len(grup) < 2:
             continue
+        # Aynı türde eski import'un "Diğer Davalı" satırı, aktarımın/ekibin yazdığı satıra
+        # (ör. "Sigortalı" — ekip_cevabi_2609 düzeltmesi) yol verir: rol bilgisi kaybolmaz.
         sirali = sorted(grup, key=lambda x: (taraf_tur_sirasi(x.party_type),
+                                             1 if x.role == ESKI_IMPORT_ROLU else 0,
                                              0 if _bagli_mi(db, x.id) else 1, x.id or 0))
         kalan = sirali[0]
         for giden in sirali[1:]:
