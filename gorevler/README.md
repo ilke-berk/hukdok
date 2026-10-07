@@ -40,10 +40,13 @@ kurumsal kayıttır; `git mv` sayesinde `git log --follow` geçmişi izlemeye de
   **frontend**: worktree'de koşar (vitest host'ta kendi `node_modules`'üyle);
   **docs**: worktree'de koşar, test yok;
   **lexis** (07.10.2026): dış depo `..\lexis-rapor`'da koşar — worktree yok, dal yok, doğrudan o
-  deponun main'ine commit (backend bandının aynası, kendi seri sırası); test host'ta
-  `python -m pytest` + ruff, docker yok. Görev dosyası HUKDOK'ta kalır: işçi Rapor'u yazar,
-  runner'ın Teslim adımı KUYRUK ile birlikte commit'ler. Oturumun o dizine yazma yetkisi ve
-  deponun temiz olması ön koşuldur (`/gece-kuyrugu` ön kontrolleri).
+  deponun main'ine commit (backend bandının aynası, kendi seri sırası: runner'da `lexisSira`
+  mutex'i, HUKDOK bantlarıyla paralel); test host'ta `python -m pytest` + ruff, docker yok.
+  Görev dosyası HUKDOK'ta kalır: işçi Rapor'u yazar, runner'ın Teslim adımı KUYRUK ile birlikte
+  tek pathspec commit'iyle atar (kod commit'i yalnız lexis-rapor'da). Oturumun o dizine yazma
+  yetkisi (`request_directory`) ve deponun `.claude/` dışında temiz olması ön koşuldur
+  (`/gece-kuyrugu` ön kontrolü 3b; kirliyse lexis görevleri ertelenir, `kirliKabul: true` ile yine
+  koşar). Runner parametreleri `lexisKok` / `hukdokKok` (`otomasyon/README.md`).
 - `bagimli:` virgüllü görev id'leri ya da `-`. Bağımlılığı bitmemiş görev başlatılmaz.
 - Runner başarısızlıkta satır sonuna ` | BLOKE(sebep)` ekler; `BLOKE` içeren satır bir daha
   seçilmez. Çözünce eki elle sil.

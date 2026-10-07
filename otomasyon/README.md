@@ -164,12 +164,21 @@ Rapor (otomasyon/loglar/kuyruk-workflow_<tarih>.md + commit)
 - **Ana dizin mutex'i:** backend görev zinciri bütünüyle + tüm merge/işaretleme adımları
   tek sıradan geçer; worktree bantlarının uygulaması paralel kalır.
 - **lexis bandı (07.10.2026, kullanıcı kararı):** dış depo `..\lexis-rapor` için dördüncü bant,
-  backend bandının aynası — worktree/dal yok, doğrudan o deponun main'i, kendi mutex'i
-  (`lexisSira`), test host'ta `python -m pytest` + ruff (docker yok), kırmızı-yeşil kanıtı
-  lexis deposundan açılan kanıt worktree'sinde host Python ile. Görev dosyası HUKDOK'ta: işçi
-  Rapor'u yazar, Teslim ajanı KUYRUK + görev dosyasını tek pathspec commit'iyle atar. Plan
-  aşaması lexis deposunun kirliliğine ayrıca bakar (kirliyse o bant ertelenir). Parametreler
-  `lexisKok`, `hukdokKok`. Ön koşul: oturumun o dizine yazma yetkisi (`request_directory`).
+  backend bandının aynası — worktree/dal yok, doğrudan o deponun main'i (`depoYolu`: her git
+  komutu `git -C <lexisKok>`), kendi mutex'i `lexisSira` (ana dizin mutex'i `anaSira`'dan
+  bağımsız: aynı anda tek lexis görevi, HUKDOK bantlarıyla paralel — dalga gruplamasında
+  `bantKos(gruplar.lexis)`), test host'ta `PYTHONIOENCODING=utf-8 python -m pytest` + `ruff check .`
+  (docker compose YASAK — lexis compose'u servis imajını kaldırır, host kodunu test etmez),
+  kırmızı-yeşil kanıtı lexis deposundan açılan `C:\dev\hukudok-wt\kanit-<id>` worktree'sinde host
+  Python ile. Görev dosyası HUKDOK'ta: işçi Rapor'u yazar ama HUKDOK'ta commit atmaz; Teslim
+  ajanı KUYRUK + görev dosyasını tek pathspec commit'iyle atar
+  (`-- gorevler/KUYRUK.md gorevler/gorev/<id>.md`); kod commit'i yalnız lexis-rapor'dadır (sabah
+  raporunda depo sütunu `lexis-rapor (../lexis-rapor, push'suz)`). Plan aşaması
+  `git -C <lexisKok> status --porcelain` ile lexis deposunun `.claude/` dışı kirliliğine ayrıca
+  bakar: depo açılamıyorsa ya da kirliyse lexis görevleri ERTELENİR (`kirliKabul: true` ile yine
+  koşar). Parametreler `lexisKok` (varsayılan `C:/Users/ilkeb/OneDrive/Masaüstü/lexis-rapor`) ve
+  `hukdokKok` (HUKDOK kökünün mutlak yolu; lexis işçisi görev dosyasını bununla bulur). Ön koşul:
+  oturumun o dizine yazma yetkisi (`request_directory`, `/gece-kuyrugu` ön kontrolü 3b).
 - **`Durum: TAMAM` kısayolu:** görev dosyasının Rapor'unda "Durum: TAMAM" yazan ama
   KUYRUK'ta açık kalan görev (ana oturumda bitirilmiş iş — ilk örnek G060) yeniden
   UYGULANMAZ; doğrudan bağımsız denetime girer, GECTI ise işaretlenir.
