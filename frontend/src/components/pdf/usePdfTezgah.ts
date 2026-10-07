@@ -5,9 +5,27 @@
 // G271 — sayfa düzeni: dosya başına YEREL düzen (`duzenler[dosyaId]`: sıra, döndürme, silinmiş, seçili). Sunucuya yalnız
 // "Uygula" ile tek `sayfa_duzenle` isteği gider; çıktı yeni dosya olur, girdi dosyası listede kalır (K2 zincir) ve onun
 // yerel düzeni sıfırlanır. Seçili sayfalar "böl" için ardışık bloklara çevrilir (`seciliSayfalardanAraliklar`).
+//
+// G272 — çizim katmanı: orta yuva ızgara ↔ büyük sayfa görünümü (`buyukSayfa`); çizim kipi `yok | karart | not`.
+// Karartma alanları dosya başına YEREL birikir (`karartmalar[dosyaId]`, görünür düzlem PDF puanı, birden çok sayfa);
+// "Karart" tek `karart` isteği atar, çıktı seçilir, girdinin alan listesi temizlenir. Not ANINDA gider (sayfa başına tek
+// nokta, her not yeni çıktı — zincir). Büyük görünüm dosya değişince (kullanıcı başka dosya seçince) ızgaraya döner;
+// işlem çıktısı seçilince AYNI sayfada kalır (sayfa sayısına kırpılır) — kullanıcı metnin gittiğini hemen görür.
 import { useCallback, useMemo, useState } from "react";
 import { hataMesaji, indir, islem, yukle } from "@/lib/pdfAraclariApi";
-import type { DondurmeAcisi, Dosya, Islem, IslemIstegi, SayfaDuzenleParametreleri, SayfaKaydi } from "@/types/pdfAraclari";
+import type {
+  DondurmeAcisi,
+  Dosya,
+  Islem,
+  IslemIstegi,
+  KarartmaAlani,
+  NotParametreleri,
+  SayfaDuzenleParametreleri,
+  SayfaKaydi,
+} from "@/types/pdfAraclari";
+import { NOT_MAX_KARAKTER, karartmaAlaniGecerli } from "./pdfKoordinat";
+
+export type CizimKipi = "yok" | "karart" | "not";
 
 export type YuklemeDurumu = {
   anahtar: string;
@@ -70,6 +88,18 @@ function dondurmeEkle(aci: DondurmeAcisi, ek: 90 | 180 | 270 = 90): DondurmeAcis
   return (((aci + ek) % 360) as DondurmeAcisi);
 }
 
+function anahtariDusur<T>(kayit: Record<string, T>, anahtar: string): Record<string, T> {
+  if (!(anahtar in kayit)) return kayit;
+  const kopya = { ...kayit };
+  delete kopya[anahtar];
+  return kopya;
+}
+
+/** Not metni gönderilebilir mi: boş değil, ≤ `NOT_MAX_KARAKTER`. */
+export function notMetniGecerli(metin: string): boolean {
+  return metin.trim().length > 0 && metin.length <= NOT_MAX_KARAKTER;
+}
+
 export function usePdfTezgah() {
   const [dosyalar, setDosyalar] = useState<Dosya[]>([]);
   const [seciliId, setSeciliId] = useState<string | null>(null);
@@ -82,6 +112,10 @@ export function usePdfTezgah() {
   const [hata, setHata] = useState<string | null>(null);
   // G271: dosya başına yerel sayfa düzeni; kaydı olmayan dosya varsayılan düzende sayılır.
   const [duzenler, setDuzenler] = useState<Record<string, SayfaDuzeni>>({});
+  // G272: büyük görünümdeki sayfa (null = ızgara), çizim kipi, dosya başına biriken karartma alanları.
+  const [buyukSayfaNo, setBuyukSayfaNo] = useState<number | null>(null);
+  const [cizimKipi, setCizimKipi] = useState<CizimKipi>("yok");
+  const [karartmalar, setKarartmalar] = useState<Record<string, KarartmaAlani[]>>({});
 
   const dosyaEkle = useCallback((yeniler: Dosya[]) => {
     if (yeniler.length === 0) return;
@@ -136,15 +170,19 @@ export function usePdfTezgah() {
       return kalan;
     });
     setIsaretliler((onceki) => onceki.filter((x) => x !== id));
-    setDuzenler((onceki) => {
-      if (!(id in onceki)) return onceki;
-      const kopya = { ...onceki };
-      delete kopya[id];
-      return kopya;
-    });
-  }, []);
+    setDuzenler((onceki) => anahtariDusur(onceki, id));
+    setKarartmalar((onceki) => anahtariDusur(onceki, id));
+    if (id === seciliId) setBuyukSayfaNo(null);
+  }, [seciliId]);
 
-  const sec = useCallback((id: string) => setSeciliId(id), []);
+  /** Dosya seçimi; başka dosyaya geçince büyük görünüm ızgaraya döner (sayfa sayısı farklı olabilir). */
+  const sec = useCallback(
+    (id: string) => {
+      if (id !== seciliId) setBuyukSayfaNo(null);
+      setSeciliId(id);
+    },
+    [seciliId],
+  );
 
   const isaretle = useCallback((id: string, isaretli: boolean) => {
     setIsaretliler((onceki) => {
@@ -177,12 +215,12 @@ export function usePdfTezgah() {
         if (istek.islem === "sayfa_duzenle") {
           // Uygulanan düzen sunucuda çıktı oldu; girdi dosyası listede kalır, yerel düzeni sıfırlanır.
           const girdiId = istek.girdiler[0];
-          setDuzenler((onceki) => {
-            if (!(girdiId in onceki)) return onceki;
-            const kopya = { ...onceki };
-            delete kopya[girdiId];
-            return kopya;
-          });
+          setDuzenler((onceki) => anahtariDusur(onceki, girdiId));
+        }
+        if (istek.islem === "karart") {
+          // Alanlar sunucuda silindi; girdinin biriken alan listesi temizlenir (çıktı dosyasında alan yok).
+          const girdiId = istek.girdiler[0];
+          setKarartmalar((onceki) => anahtariDusur(onceki, girdiId));
         }
         return ciktilar;
       } catch (e) {
@@ -309,12 +347,7 @@ export function usePdfTezgah() {
   const sayfaDuzeniniSifirla = useCallback(() => {
     if (!secili) return;
     const id = secili.id;
-    setDuzenler((onceki) => {
-      if (!(id in onceki)) return onceki;
-      const kopya = { ...onceki };
-      delete kopya[id];
-      return kopya;
-    });
+    setDuzenler((onceki) => anahtariDusur(onceki, id));
   }, [secili]);
 
   const sayfaDegisikligi = sayfaDuzeni ? sayfaDegisikligiVar(sayfaDuzeni) : false;
@@ -329,6 +362,87 @@ export function usePdfTezgah() {
     }
     return islemKos({ islem: "sayfa_duzenle", girdiler: [secili.id], parametreler });
   }, [secili, sayfaDuzeni, islemKos]);
+
+  // ── G272: büyük görünüm + çizim katmanı ───────────────────────────────────
+  /** Büyük görünümdeki sayfa numarası; seçili dosyanın sayfa sayısına kırpılır (çıktıya geçince aynı sayfada kalır). */
+  const buyukSayfa = useMemo<number | null>(() => {
+    if (!secili || buyukSayfaNo === null) return null;
+    const toplam = Math.max(secili.sayfa, 1);
+    return Math.min(Math.max(buyukSayfaNo, 1), toplam);
+  }, [secili, buyukSayfaNo]);
+
+  const sayfayiBuyut = useCallback((no: number) => setBuyukSayfaNo(no), []);
+  const izgarayaDon = useCallback(() => setBuyukSayfaNo(null), []);
+
+  /** Önceki/sonraki sayfa (ok tuşları); sınırda durur. */
+  const buyukSayfayaGit = useCallback(
+    (adim: number) => {
+      if (!secili || buyukSayfa === null) return;
+      const hedef = Math.min(Math.max(buyukSayfa + adim, 1), Math.max(secili.sayfa, 1));
+      setBuyukSayfaNo(hedef);
+    },
+    [secili, buyukSayfa],
+  );
+
+  /** Çizim kipi; aynı kip tekrar seçilince kapanır. Kip açılırken büyük görünüm kapalıysa ilk seçili (yoksa 1.) sayfa açılır. */
+  const cizimKipiniAyarla = useCallback(
+    (kip: CizimKipi) => {
+      const yeni = kip === cizimKipi ? "yok" : kip;
+      setCizimKipi(yeni);
+      if (yeni !== "yok" && buyukSayfaNo === null && secili) {
+        setBuyukSayfaNo(sayfaDuzeni?.secili[0] ?? 1);
+      }
+    },
+    [cizimKipi, buyukSayfaNo, secili, sayfaDuzeni],
+  );
+
+  const karartmaAlanlari = useMemo<KarartmaAlani[]>(() => (secili ? (karartmalar[secili.id] ?? []) : []), [secili, karartmalar]);
+
+  /** Alan ekler; `KARARTMA_MIN_PT` altındaki (sürükleme hatası) alan yok sayılır → `false`. */
+  const karartmaEkle = useCallback(
+    (alan: KarartmaAlani): boolean => {
+      if (!secili || !karartmaAlaniGecerli(alan)) return false;
+      const id = secili.id;
+      setKarartmalar((onceki) => ({ ...onceki, [id]: [...(onceki[id] ?? []), alan] }));
+      return true;
+    },
+    [secili],
+  );
+
+  const karartmaSil = useCallback(
+    (indeks: number) => {
+      if (!secili) return;
+      const id = secili.id;
+      setKarartmalar((onceki) => {
+        const liste = onceki[id] ?? [];
+        if (indeks < 0 || indeks >= liste.length) return onceki;
+        const kalan = liste.filter((_, i) => i !== indeks);
+        return kalan.length === 0 ? anahtariDusur(onceki, id) : { ...onceki, [id]: kalan };
+      });
+    },
+    [secili],
+  );
+
+  const karartmalariTemizle = useCallback(() => {
+    if (!secili) return;
+    const id = secili.id;
+    setKarartmalar((onceki) => anahtariDusur(onceki, id));
+  }, [secili]);
+
+  /** "Karart": biriken alanlar tek `karart` isteğiyle gider; onay kutusu KarartmaKatmani'ndadır (onaysız çağrılmaz). */
+  const karartmayiUygula = useCallback(async () => {
+    if (!secili || karartmaAlanlari.length === 0) return null;
+    return islemKos({ islem: "karart", girdiler: [secili.id], parametreler: { alanlar: karartmaAlanlari } });
+  }, [secili, karartmaAlanlari, islemKos]);
+
+  /** Not anında gider (her not yeni çıktı — zincir); metin boş ya da sınır üstü ise istek yok. */
+  const notEkle = useCallback(
+    async (parametreler: NotParametreleri) => {
+      if (!secili || !notMetniGecerli(parametreler.metin)) return null;
+      return islemKos({ islem: "not", girdiler: [secili.id], parametreler: { ...parametreler, metin: parametreler.metin.trim() } });
+    },
+    [secili, islemKos],
+  );
 
   return {
     dosyalar,
@@ -361,6 +475,19 @@ export function usePdfTezgah() {
     sayfalariSec,
     sayfaDuzeniniSifirla,
     sayfaDuzeniniUygula,
+    // G272
+    buyukSayfa,
+    sayfayiBuyut,
+    izgarayaDon,
+    buyukSayfayaGit,
+    cizimKipi,
+    cizimKipiniAyarla,
+    karartmaAlanlari,
+    karartmaEkle,
+    karartmaSil,
+    karartmalariTemizle,
+    karartmayiUygula,
+    notEkle,
   };
 }
 

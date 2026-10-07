@@ -113,14 +113,28 @@ describe("BelgeTezgahiPage iskelet", () => {
     expect(kap.textContent).toContain("İşlem için soldan bir dosya seçin.");
   });
 
-  it("karart / not yuvaları kapalı ve 'sonraki sürüm' ipuçlu; sayfa düzenle değişiklik olmadan kapalı (G271)", async () => {
+  it("karart / not dosya yokken kapalı; sayfa düzenle değişiklik olmadan kapalı (G271); dosya seçilince Karart büyük görünümü açar (G272)", async () => {
     await ciz();
     for (const ad of ["Karart", "Not"]) {
       const b = dugme(ad)!;
       expect(b.disabled, ad).toBe(true);
-      expect(b.title).toBe("Sonraki sürümde");
+      expect(b.getAttribute("aria-pressed")).toBe("false");
     }
     expect(dugme("Sayfa düzenle")!.disabled).toBe(true);
+
+    await yukleDosyalar(["z.pdf"]);
+    expect(dugme("Karart")!.disabled).toBe(false);
+    expect(dugme("Not")!.disabled).toBe(false);
+    const yuva = kap.querySelector('section[data-slot="sayfalar"]')!;
+    expect(yuva.querySelector('[data-testid="sayfa-gorunumu"]')).toBeNull();
+    await tikla(dugme("Karart"));
+    expect(dugme("Karart")!.getAttribute("aria-pressed")).toBe("true");
+    expect(yuva.querySelector('[data-testid="sayfa-gorunumu"]')).not.toBeNull();
+    expect(yuva.querySelector('[data-testid="sayfa-izgarasi"]')).toBeNull();
+    expect(kap.querySelector('[data-testid="karartma-listesi"]')).not.toBeNull();
+    expect(apiMock.onizlemeBlob).toHaveBeenLastCalledWith("id-z.pdf", 1, 1200);
+    await tikla(Array.from(kap.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === "Izgara"));
+    expect(yuva.querySelector('[data-testid="sayfa-izgarasi"]')).not.toBeNull();
   });
 
   it("dosya seçilince orta yuvada sayfa ızgarası çizilir (G271)", async () => {

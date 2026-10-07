@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, RotateCw, Trash2, Undo2 } from "lucide-react";
+import { GripVertical, Maximize2, RotateCw, Trash2, Undo2 } from "lucide-react";
 import { onizlemeBlob } from "@/lib/pdfAraclariApi";
 import type { DosyaSayfasi } from "@/types/pdfAraclari";
 import type { SayfaDurumu } from "./usePdfTezgah";
@@ -21,6 +21,8 @@ type Props = {
   onDondur: (no: number) => void;
   onSil: (no: number) => void;
   onSec: (no: number, secili: boolean, aralik: boolean) => void;
+  /** G272: sayfayı büyük görünümde aç (karartma / not çizimi). */
+  onBuyut?: (no: number) => void;
 };
 
 type OnizlemeDurumu = "bekliyor" | "yukleniyor" | "hazir" | "hata";
@@ -50,7 +52,7 @@ function useGorunur(ref: React.RefObject<HTMLElement | null>): boolean {
   return gorunur;
 }
 
-export function SayfaKarti({ dosyaId, sayfa, durum, sira, secili, onDondur, onSil, onSec }: Props) {
+export function SayfaKarti({ dosyaId, sayfa, durum, sira, secili, onDondur, onSil, onSec, onBuyut }: Props) {
   const { no, dondur, silindi } = durum;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: no });
   const kartRef = useRef<HTMLLIElement | null>(null);
@@ -166,6 +168,18 @@ export function SayfaKarti({ dosyaId, sayfa, durum, sira, secili, onDondur, onSi
           <RotateCw className="w-3.5 h-3.5" />
         </button>
         {dondur !== 0 && <span className="font-mono text-[10px] text-[var(--fg-subtle)]">{dondur}°</span>}
+        {onBuyut && (
+          <button
+            type="button"
+            aria-label={`Sayfa ${no}'i büyüt`}
+            title="Büyük görünüm (karartma / not)"
+            disabled={silindi}
+            onClick={() => onBuyut(no)}
+            className="w-7 h-7 grid place-items-center rounded-[3px] text-[var(--fg-subtle)] hover:text-[var(--brand)] hover:bg-[var(--brand-soft)] disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           type="button"
           aria-label={silindi ? `Sayfa ${no}'i geri al` : `Sayfa ${no}'i sil`}

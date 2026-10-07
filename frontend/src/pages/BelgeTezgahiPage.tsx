@@ -2,7 +2,9 @@ import { AlertCircle, FileStack, PenLine, X } from "lucide-react";
 import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { DosyaListesi } from "@/components/pdf/DosyaListesi";
 import { IslemPaneli } from "@/components/pdf/IslemPaneli";
+import { KarartmaListesi } from "@/components/pdf/KarartmaKatmani";
 import { PdfYukleyici } from "@/components/pdf/PdfYukleyici";
+import { SayfaGorunumu } from "@/components/pdf/SayfaGorunumu";
 import { SayfaIzgarasi } from "@/components/pdf/SayfaIzgarasi";
 import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
 
@@ -12,8 +14,10 @@ import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
  * bu sürüm; "Yaz (Word)" G285 ile açılır (şimdilik kapalı).
  *
  * PDF tezgâhı üç bölge: sol `DosyaListesi` (+ yükleyici), orta `<section data-slot="sayfalar">` (G271: seçili dosyanın
- * `SayfaIzgarasi`; dosya yokken boş), sağ `IslemPaneli`. Çalışma dosyaları yalnız bu oturumdadır — sayfa yenilenince liste
- * gider, sunucu 1 saat sonra siler (K2). Sayfa `max-w` koymaz (tam genişlik kuralı). Default export: rota `React.lazy`.
+ * `SayfaIzgarasi`; G272: karttaki "büyüt" ya da çizim kipi açılınca `SayfaGorunumu` — karartma/not katmanları; biriken
+ * karartma alanları `KarartmaListesi`'nde yuvanın altında, dosya başına `key`; dosya yokken boş), sağ `IslemPaneli`.
+ * Çalışma dosyaları yalnız bu oturumdadır — sayfa yenilenince liste gider, sunucu 1 saat sonra siler (K2). Sayfa
+ * `max-w` koymaz (tam genişlik kuralı). Default export: rota `React.lazy`.
  */
 export default function BelgeTezgahiPage() {
   useSetPageTitle("Belge tezgâhı", ["Araçlar", "Belge tezgâhı"]);
@@ -86,32 +90,63 @@ export default function BelgeTezgahiPage() {
           />
         </aside>
 
-        {/* G271: seçili dosyanın sayfa ızgarası (önizleme, sürükle-sırala, döndür, sil, aralık seçimi); G272 çizim katmanı. */}
-        <section
-          data-slot="sayfalar"
-          aria-label="Sayfalar"
-          className={[
-            "min-h-[320px] rounded-[3px] border bg-[var(--bg-elevated)]",
-            tezgah.secili && tezgah.sayfaDuzeni ? "border-[var(--border)]" : "border-dashed border-[var(--border)]",
-          ].join(" ")}
-        >
-          {tezgah.secili && tezgah.sayfaDuzeni && (
-            <SayfaIzgarasi
+        {/* G271: seçili dosyanın sayfa ızgarası (önizleme, sürükle-sırala, döndür, sil, aralık seçimi);
+            G272: büyük sayfa görünümü + karartma/not çizim katmanı, altında karartma alan listesi. */}
+        <div className="flex flex-col gap-3 min-w-0">
+          <section
+            data-slot="sayfalar"
+            aria-label="Sayfalar"
+            className={[
+              "min-h-[320px] rounded-[3px] border bg-[var(--bg-elevated)]",
+              tezgah.secili && tezgah.sayfaDuzeni ? "border-[var(--border)]" : "border-dashed border-[var(--border)]",
+            ].join(" ")}
+          >
+            {tezgah.secili && tezgah.buyukSayfa !== null ? (
+              <SayfaGorunumu
+                key={tezgah.secili.id}
+                dosya={tezgah.secili}
+                sayfaNo={tezgah.buyukSayfa}
+                cizimKipi={tezgah.cizimKipi}
+                karartmaAlanlari={tezgah.karartmaAlanlari}
+                mesgul={tezgah.surenIslem !== null}
+                onIzgara={tezgah.izgarayaDon}
+                onSayfaGit={tezgah.buyukSayfayaGit}
+                onKip={tezgah.cizimKipiniAyarla}
+                onKarartmaEkle={tezgah.karartmaEkle}
+                onNotEkle={tezgah.notEkle}
+              />
+            ) : (
+              tezgah.secili &&
+              tezgah.sayfaDuzeni && (
+                <SayfaIzgarasi
+                  key={tezgah.secili.id}
+                  dosya={tezgah.secili}
+                  duzen={tezgah.sayfaDuzeni}
+                  degisiklikVar={tezgah.sayfaDegisikligi}
+                  uygulaniyor={tezgah.surenIslem === "sayfa_duzenle"}
+                  onTasi={tezgah.sayfaTasi}
+                  onDondur={tezgah.sayfaDondur}
+                  onSil={tezgah.sayfaSilToggle}
+                  onSec={tezgah.sayfaSec}
+                  onHepsiniSec={tezgah.sayfalariSec}
+                  onSifirla={tezgah.sayfaDuzeniniSifirla}
+                  onUygula={() => void tezgah.sayfaDuzeniniUygula()}
+                  onBuyut={tezgah.sayfayiBuyut}
+                />
+              )
+            )}
+          </section>
+          {tezgah.secili && (tezgah.karartmaAlanlari.length > 0 || tezgah.cizimKipi === "karart") && (
+            <KarartmaListesi
               key={tezgah.secili.id}
-              dosya={tezgah.secili}
-              duzen={tezgah.sayfaDuzeni}
-              degisiklikVar={tezgah.sayfaDegisikligi}
-              uygulaniyor={tezgah.surenIslem === "sayfa_duzenle"}
-              onTasi={tezgah.sayfaTasi}
-              onDondur={tezgah.sayfaDondur}
-              onSil={tezgah.sayfaSilToggle}
-              onSec={tezgah.sayfaSec}
-              onHepsiniSec={tezgah.sayfalariSec}
-              onSifirla={tezgah.sayfaDuzeniniSifirla}
-              onUygula={() => void tezgah.sayfaDuzeniniUygula()}
+              alanlar={tezgah.karartmaAlanlari}
+              mesgul={tezgah.surenIslem !== null}
+              onSil={tezgah.karartmaSil}
+              onTemizle={tezgah.karartmalariTemizle}
+              onKarart={() => void tezgah.karartmayiUygula()}
             />
           )}
-        </section>
+        </div>
 
         <aside aria-label="İşlemler" className="rounded-[3px] border border-[var(--border)] bg-[var(--bg-elevated)] p-4 min-w-0">
           <IslemPaneli
@@ -124,6 +159,9 @@ export default function BelgeTezgahiPage() {
             seciliSayfalar={tezgah.sayfaDuzeni?.secili ?? []}
             sayfaDegisikligi={tezgah.sayfaDegisikligi}
             onSayfaDuzenle={() => void tezgah.sayfaDuzeniniUygula()}
+            cizimKipi={tezgah.cizimKipi}
+            onCizimKipi={tezgah.cizimKipiniAyarla}
+            karartmaSayisi={tezgah.karartmaAlanlari.length}
           />
         </aside>
       </div>

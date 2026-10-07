@@ -21,9 +21,11 @@ type Props = {
   onHepsiniSec: (hepsi: boolean) => void;
   onSifirla: () => void;
   onUygula: () => void;
+  /** G272: karttaki "büyüt" → büyük sayfa görünümü. */
+  onBuyut?: (no: number) => void;
 };
 
-export function SayfaIzgarasi({ dosya, duzen, degisiklikVar, uygulaniyor, onTasi, onDondur, onSil, onSec, onHepsiniSec, onSifirla, onUygula }: Props) {
+export function SayfaIzgarasi({ dosya, duzen, degisiklikVar, uygulaniyor, onTasi, onDondur, onSil, onSec, onHepsiniSec, onSifirla, onUygula, onBuyut }: Props) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -83,6 +85,7 @@ export function SayfaIzgarasi({ dosya, duzen, degisiklikVar, uygulaniyor, onTasi
                 onDondur={onDondur}
                 onSil={onSil}
                 onSec={onSec}
+                onBuyut={onBuyut}
               />
             ))}
           </ul>

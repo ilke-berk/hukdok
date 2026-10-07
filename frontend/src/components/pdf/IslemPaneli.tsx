@@ -1,12 +1,13 @@
 // Belge tezgâhı sağ bölgesi (G270 + G271): birleştir (işaretli dosyalar, liste sırasıyla), böl (aralık metni / her sayfa
 // ayrı / G271: ızgarada seçili sayfalar → ardışık bloklar), sıkıştır (üç seviye), damga (metin/konum/sayfalar/punto/renk),
-// sayfa düzenle (G271: ızgaradaki yerel düzeni "Uygula" ile aynı tek `sayfa_duzenle` isteği). Karart ve not yuvaları
-// `disabled` + "sonraki sürüm" (G272 açar). Çıktı adı sunucudan gelen `ad`dır; indirme seçili dosyayı indirir.
+// sayfa düzenle (G271: ızgaradaki yerel düzeni "Uygula" ile aynı tek `sayfa_duzenle` isteği). Karart ve not (G272):
+// düğmeler ÇİZİM KİPİNİ açar (büyük görünümde sürükle / tıkla); karartma isteği `KarartmaListesi`'nden (onaylı), not
+// isteği not kutusundan gider. Çıktı adı sunucudan gelen `ad`dır; indirme seçili dosyayı indirir.
 import { useId, useState, type ReactNode } from "react";
 import { Combine, Download, Eraser, Layers, Loader2, MessageSquareText, Scissors, Shrink, Stamp } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { bolAraliklariniAyristir, damgaSayfalariniAyristir } from "@/lib/pdfAraclariApi";
-import { seciliSayfalardanAraliklar } from "./usePdfTezgah";
+import { seciliSayfalardanAraliklar, type CizimKipi } from "./usePdfTezgah";
 import {
   DAMGA_KONUMLARI,
   SIKISTIRMA_SEVIYELERI,
@@ -30,6 +31,12 @@ type Props = {
   sayfaDegisikligi?: boolean;
   /** G271: "Sayfa düzenle" → ızgaranın "Uygula"sı ile aynı istek. */
   onSayfaDuzenle?: () => void;
+  /** G272: açık çizim kipi; "Karart"/"Not" düğmeleri `aria-pressed`. */
+  cizimKipi?: CizimKipi;
+  /** G272: kipi aç/kapat (büyük görünüm açılır). */
+  onCizimKipi?: (kip: CizimKipi) => void;
+  /** G272: biriken karartma alanı sayısı (bilgi). */
+  karartmaSayisi?: number;
 };
 
 const KONUM_ADLARI: Record<DamgaKonumu, string> = {
@@ -46,7 +53,10 @@ const SEVIYE_ADLARI: Record<SikistirmaSeviyesi, string> = {
   yazici: "Yazıcı (en kaliteli)",
 };
 
-const SONRAKI_SURUM = "Sonraki sürümde";
+const KIP_DUGMESI =
+  "inline-flex items-center justify-center gap-2 border font-sans font-medium tracking-[0.03em] rounded-[3px] px-3 py-1.5 text-[12px] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]";
+const KIP_AKTIF = "border-[var(--brand)] bg-[var(--brand-soft)] text-[var(--brand)]";
+const KIP_PASIF = "bg-transparent text-[var(--fg-muted)] border-[var(--border-strong)] hover:text-[var(--fg)] hover:border-[var(--fg-muted)]";
 
 const GIRDI_SINIFI =
   "w-full rounded-[3px] border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[13px] text-[var(--fg)] focus:outline-none focus:border-[var(--brand)]";
@@ -74,6 +84,9 @@ export function IslemPaneli({
   seciliSayfalar = [],
   sayfaDegisikligi = false,
   onSayfaDuzenle,
+  cizimKipi = "yok",
+  onCizimKipi,
+  karartmaSayisi = 0,
 }: Props) {
   const kimlik = useId();
   const mesgul = surenIslem !== null;
@@ -281,16 +294,37 @@ export function IslemPaneli({
             {ikon("sayfa_duzenle", Layers)}
             Sayfa düzenle
           </FlowButton>
-          <FlowButton size="sm" variant="secondary" disabled title={SONRAKI_SURUM}>
-            <Eraser className="w-3.5 h-3.5" />
+          <button
+            type="button"
+            aria-pressed={cizimKipi === "karart"}
+            disabled={mesgul || !secili || !onCizimKipi}
+            title={secili ? "Büyük görünümde sürükleyerek karartma alanı çizin" : "Önce bir dosya seçin"}
+            onClick={() => onCizimKipi?.("karart")}
+            className={[KIP_DUGMESI, cizimKipi === "karart" ? KIP_AKTIF : KIP_PASIF].join(" ")}
+          >
+            {ikon("karart", Eraser)}
             Karart
-          </FlowButton>
-          <FlowButton size="sm" variant="secondary" disabled title={SONRAKI_SURUM}>
-            <MessageSquareText className="w-3.5 h-3.5" />
+            {karartmaSayisi > 0 && <span className="font-mono text-[10px]">· {karartmaSayisi}</span>}
+          </button>
+          <button
+            type="button"
+            aria-pressed={cizimKipi === "not"}
+            disabled={mesgul || !secili || !onCizimKipi}
+            title={secili ? "Büyük görünümde tıklayarak not noktası seçin" : "Önce bir dosya seçin"}
+            onClick={() => onCizimKipi?.("not")}
+            className={[KIP_DUGMESI, cizimKipi === "not" ? KIP_AKTIF : KIP_PASIF].join(" ")}
+          >
+            {ikon("not", MessageSquareText)}
             Not
-          </FlowButton>
+          </button>
         </div>
-        <p className="mt-1.5 text-[11px] text-[var(--fg-subtle)]">Karartma ve not sonraki sürümde açılır.</p>
+        <p className="mt-1.5 text-[11px] text-[var(--fg-subtle)]">
+          {cizimKipi === "karart"
+            ? "Karartma kipi açık: büyük görünümde alan çizin, listeden onaylayıp uygulayın (geri alınamaz)."
+            : cizimKipi === "not"
+              ? "Not kipi açık: büyük görünümde noktaya tıklayın, metni yazın."
+              : "Karartma ve not büyük sayfa görünümünde çizilir."}
+        </p>
       </Bolum>
 
       <FlowButton disabled={!secili || indiriliyor || mesgul} onClick={onIndir} className="w-full">
