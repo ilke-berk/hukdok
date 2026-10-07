@@ -108,6 +108,12 @@ KAYNAK_IPUCLARI: Mapping[str, str] = {
         "muvekkil_adi düz kolondur: contains ile süzülür, sıralanır ve GRUPLANIR; dava bilgisi dava.<kolon>. "
         "Dava başına TEK satır isteniyorsa 'davalar' kaynağı + hizmet_turu (çok değerli özet)."
     ),
+    # G282: yön/kaynak/durum kolonları — "giden belgeler / büronun yazdığı dilekçeler" sorusunda taslak sayılmaz.
+    "belgeler": (
+        "ne zaman: 'giden belgeler', 'büronun yazdığı dilekçeler', 'taslaklar' → yon (GELEN|GIDEN), kaynak (hangi hat "
+        "yazdı) ve durum (TASLAK|KESIN) kolonlarıyla: giden = yon eq GIDEN VE durum eq KESIN (taslak giden sayılmaz); "
+        "taslaklar = durum eq TASLAK."
+    ),
 }
 
 

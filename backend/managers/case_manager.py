@@ -461,6 +461,17 @@ def get_case(case_id: int, tenant_id: str = None):
         if not item:
             return None
 
+        # G282: belge başına sürüm sayısı TEK GROUP BY sorgusuyla (N+1 yok; kartın
+        # sorgu sayısı 6 → 7, G051 kilidi tests/test_g282'de güncellenmiş sayıyla).
+        surum_sayilari: dict[int, int] = {
+            int(doc_id): int(adet)
+            for doc_id, adet in db.query(models.BelgeSurumu.document_id, func.count(models.BelgeSurumu.id))
+            .join(models.CaseDocument, models.CaseDocument.id == models.BelgeSurumu.document_id)
+            .filter(models.CaseDocument.case_id == case_id)
+            .group_by(models.BelgeSurumu.document_id)
+            .all()
+        }
+
         # Build response with parties and history
         result = {
             "id": item.id,
@@ -506,7 +517,8 @@ def get_case(case_id: int, tenant_id: str = None):
             "history": [{"field": h.field_name, "old": h.old_value, "new": h.new_value, "date": h.changed_at.isoformat(), "changed_by": h.changed_by, "source": h.source} for h in sorted(item.history, key=lambda x: x.changed_at, reverse=True)],
             # Soft-delete: silinen belgeler dava kartında görünmez (ilişki ham
             # geldiği için filtre burada — routes/documents.py listeleriyle tutarlı)
-            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None} for d in item.documents if d.deleted_at is None],
+            # G282: yön/kaynak/durum + Word/kesinleşme alanları + sürüm sayısı (yukarıdaki tek sorgu).
+            "documents": [{"id": d.id, "original_filename": d.original_filename, "stored_filename": d.stored_filename, "sharepoint_url": d.sharepoint_url, "belge_turu_kodu": d.belge_turu_kodu, "belge_turu_adi": d.belge_turu_adi, "ai_summary": d.ai_summary, "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None, "case_party_id": d.case_party_id, "case_party_name": d.case_party.name if d.case_party else None, "yon": d.yon, "kaynak": d.kaynak, "durum": d.durum, "word_url": d.word_url, "kesinlesme_tarihi": d.kesinlesme_tarihi.isoformat() if d.kesinlesme_tarihi else None, "surum_sayisi": surum_sayilari.get(d.id, 0)} for d in item.documents if d.deleted_at is None],
             # Kartın föyleri (G063) + kapsam işareti (G113); joinedload ile
             # yukarıdaki sorguda geldi, burada ek sorgu açılmaz. Sıra: sistem_no
             # (foy_map.get_case_foys ile aynı sözleşme).

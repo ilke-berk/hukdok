@@ -116,6 +116,7 @@ from sqlalchemy.sql import ColumnElement
 import models
 from auth_helpers import tenant_filter_clause
 from config.settings import settings
+from constants import BELGE_DURUMLARI, BELGE_KAYNAKLARI, BELGE_YONLERI
 from managers.case_manager import KANUN_YOLLARI, kanun_yolu_ifadesi
 from managers.seed_data import (
     APPEAL_DECISIONS, APPEALING_PARTIES, CASSATION_DECISIONS, CLIENT_TYPES, CURRENCIES, EVENT_TYPES,
@@ -525,6 +526,8 @@ DAVA_TURLERI = ("Ceza", "Hukuk", "İcra", "İdare", "Arabuluculuk", "Savcılık"
 BELGE_LINK_MODLARI = ("LINKED", "TEST", "UNLINKED")
 BELGE_UPLOAD_DURUMLARI = ("pending", "uploaded", "failed")
 BELGE_DONUSUM_DURUMLARI = ("pending", "failed")
+# G282: yön/kaynak/durum kapalı listeleri `constants.BELGE_*`'dan (üstteki import); raporda
+# "giden" = `yon = GIDEN AND durum = KESIN` (taslak giden sayılmaz, K12 — filtreyi kullanıcı kurar).
 FOY_DURUMLARI = ("DERDEST", "MAHZEN")
 FOY_KAPSAM_DURUMLARI = ("SILINDI", "KAPSAM_DISI")
 MUVEKKIL_ILETISIM_TURLERI = ("Client", "Other")
@@ -1118,6 +1121,11 @@ _BELGE_KOLONLARI: list[Kolon] = [
         _kolon(_D, "esas_no", "Esas No"),
         _kolon(_D, "ai_summary", "Özet"),
         _kolon(_D, "sharepoint_url", "SharePoint Bağlantısı"),
+        # G282: belgenin yönü (gelen/giden), kaynağı (hangi hat yazdı) ve taslak/kesin durumu.
+        # Asistan için: "giden belgeler" = yon GIDEN ve durum KESIN; taslak giden sayılmaz.
+        _kolon(_D, "yon", "Yön", liste=BELGE_YONLERI),
+        _kolon(_D, "kaynak", "Kaynak", liste=BELGE_KAYNAKLARI),
+        _kolon(_D, "durum", "Durum", liste=BELGE_DURUMLARI),
     ),
     *_grup(
         "Dava",

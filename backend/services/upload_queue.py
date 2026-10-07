@@ -202,8 +202,15 @@ def _notify_document_processed(document_id: int) -> None:
 
     Log sözleşmesi: bildirim üretilememesi NİHAİ başarısızlık değildir (belge
     arşive girdi) → WARNING; ERROR-oranı alarmı bundan çalmaz.
+
+    G282/K12: TASLAK belge (durum != KESIN) bildirim ÜRETMEZ — taslak "işlendi"
+    değildir; kesinleşme (G284) aynı satırı KESIN yapıp URL commit'inde yeniden
+    çağırır. Durum ayrı kısa oturumda okunur (bildirim servisi kendi oturumunu açar).
     """
     try:
+        if not _belge_kesin_mi(document_id):
+            logger.info(f"Taslak belge için bildirim üretilmedi (doc={document_id})")
+            return
         from services.notifications import notify_document_processed
         notify_document_processed(document_id)
     except Exception as e:
@@ -211,6 +218,26 @@ def _notify_document_processed(document_id: int) -> None:
             f"Belge işlendi bildirimi üretilemedi (doc={document_id}): {e}",
             extra={"doc_id": document_id},
         )
+
+
+def _belge_kesin_mi(document_id: int) -> bool:
+    """Belgenin `durum`u KESIN mi (G282). Kayıt yoksa ya da okunamazsa True döner —
+    bildirim servisi kendi "belge yok" yolunu zaten WARNING'le ele alır; buradaki
+    kapı yalnız TASLAK'ı eler, eski davranışı başka hiçbir durumda değiştirmez."""
+    try:
+        db = SessionLocal()
+        try:
+            durum = (
+                db.query(models.CaseDocument.durum)
+                .filter(models.CaseDocument.id == document_id)
+                .scalar()
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Belge durumu okunamadı, bildirim kapısı açık bırakıldı (doc={document_id}): {e}")
+        return True
+    return durum is None or durum == "KESIN"
 
 
 def _finalize_failed(db, row, reason: str) -> None:

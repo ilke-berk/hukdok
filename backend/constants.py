@@ -95,3 +95,45 @@ def validated_case_status(value: Optional[str]) -> "tuple[Optional[str], Optiona
             f"olabilir (temyiz, istinaf, karar gibi yargı aşamaları durum değil aşamadır)"
         )
     return status, stage
+
+
+# ─── Belge yönü / kaynağı / durumu (G282, plan §6.2 K11-K12, migrasyon 61) ──
+# `case_documents.yon/kaynak/durum` kapalı listeleri. Doctype kodlarının aksine `_`
+# padding YOKTUR: düz büyük harf string, Postgres CHECK kısıtı (`ck_case_docs_*`) ile
+# korunur. Tür bu alanların yerine GEÇMEZ (dilekçe iki yönde de olur).
+#   yon    : GELEN (mahkeme/karşı taraftan geldi) | GIDEN (büro yazdı, gönderildi)
+#   kaynak : BELGE_HATTI (/process → /confirm) | PDF_ARACLARI (belge tezgâhı) | WORD
+#            (Word yaşam döngüsü) | ARSIV_AKTARIM (büro karar arşivi script'i) | TESLIM
+#   durum  : TASLAK (kesinleşmemiş: Hukukbot'a gitmez, bildirim üretmez, raporda giden
+#            sayılmaz, PDF/A yapılmaz) | KESIN
+BELGE_YONLERI: tuple = ("GELEN", "GIDEN")
+BELGE_KAYNAKLARI: tuple = ("BELGE_HATTI", "PDF_ARACLARI", "WORD", "ARSIV_AKTARIM", "TESLIM")
+BELGE_DURUMLARI: tuple = ("TASLAK", "KESIN")
+BELGE_YONU_VARSAYILAN = "GELEN"
+BELGE_KAYNAGI_VARSAYILAN = "BELGE_HATTI"
+BELGE_DURUMU_VARSAYILAN = "KESIN"
+
+
+def _belge_alani_normalize(value: Optional[str], liste: tuple, ad: str, varsayilan: str) -> str:
+    """Boş → varsayılan; büyük harfe çevrilip listeyle eşlenir; tanınmayan → ValueError."""
+    if value is None:
+        return varsayilan
+    ham = str(value).strip()
+    if not ham:
+        return varsayilan
+    key = ham.upper().replace("İ", "I").replace("ı", "I")
+    if key not in liste:
+        raise ValueError(f"Geçersiz belge {ad}: {value!r} — {', '.join(liste)} olabilir")
+    return key
+
+
+def normalize_belge_yonu(value: Optional[str]) -> str:
+    return _belge_alani_normalize(value, BELGE_YONLERI, "yönü", BELGE_YONU_VARSAYILAN)
+
+
+def normalize_belge_kaynagi(value: Optional[str]) -> str:
+    return _belge_alani_normalize(value, BELGE_KAYNAKLARI, "kaynağı", BELGE_KAYNAGI_VARSAYILAN)
+
+
+def normalize_belge_durumu(value: Optional[str]) -> str:
+    return _belge_alani_normalize(value, BELGE_DURUMLARI, "durumu", BELGE_DURUMU_VARSAYILAN)

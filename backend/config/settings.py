@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     pdf_araclari_max_sayfa: int = 1000
     pdf_araclari_max_girdi: int = 20
     pdf_araclari_butce_saniye: float = 270.0
+    # Taslak belgelerin SharePoint üst klasörü (G282, K12): aynı sürücü, `<klasör>/<ofis_no>/`.
+    # Ham/işlenmiş klasörleri hâlâ `os.getenv("SHAREPOINT_FOLDER_*_NAME")` ile okunur.
+    sharepoint_folder_taslak_name: str = "03_TASLAKLAR"
 
     # ── E-posta ek limitleri (0-C: Graph /sendMail ~4 MB gövde tavanı) ───
     # int: kullanıcı mesajlarına "(3 MB)" olarak giriyor (eski biçim korunur)

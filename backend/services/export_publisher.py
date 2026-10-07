@@ -38,7 +38,9 @@ def enqueue_document(document_id: int) -> Optional[int]:
 
     Filtreler export listesindekiyle aynı (routes/export.py): tür allowlist'i
     normalize edilerek (BULGULAR #7), link_mode != "TEST" (BULGULAR #3),
-    sharepoint_url dolu. Idempotent: satır zaten varsa id'sini döndürür.
+    sharepoint_url dolu, dönüşüm beklemiyor, davası silinmemiş; ayrıca belge
+    KESIN olmalı (G282/K12: TASLAK Hukukbot'a GİTMEZ — kesinleşince URL commit'i
+    hook'u yeniden çağırır). Idempotent: satır zaten varsa id'sini döndürür.
     Filtreden düşen veya hata alan belge için None döner, hata fırlatmaz.
     """
     from database import SessionLocal
@@ -58,6 +60,10 @@ def enqueue_document(document_id: int) -> Optional[int]:
         # (140+ belgelik failed birikimi vakasının önlemi). Gece job'ı dönüşümü
         # tamamlayınca statü NULL'lanır ve hook o zaman yeniden çağrılır.
         if doc.conversion_status is not None:
+            return None
+        # G282/K12: taslak belge (Word taslağı, PDF tezgâhından "taslak olarak kaydet")
+        # Hukukbot'a aktarılmaz. `getattr` savunması: SimpleNamespace'li eski testler.
+        if getattr(doc, "durum", "KESIN") != "KESIN":
             return None
         # Silinmiş davanın belgesi outbox'a hiç girmez; zaten delivered olmuş
         # satırlara dokunulmaz. Dava restore edilirse belgeleri tekrar akabilir

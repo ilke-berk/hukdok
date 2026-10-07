@@ -53,7 +53,17 @@ def save_case_document(
     uploaded_by_email: str = None,
     conversion_status: str = None,
     conversion_spool_path: str = None,
+    yon: str = "GELEN",
+    kaynak: str = "BELGE_HATTI",
+    durum: str = "KESIN",
 ):
+    # G282: yön/kaynak/durum kapalı listelerden geçer (varsayılanlar bugünkü davranış:
+    # /confirm ve intake GELEN/BELGE_HATTI/KESIN yazar). Tanınmayan değer ValueError —
+    # çağıran (route) 422'ye çevirir; DB'deki CHECK'e hiç ulaşılmaz.
+    from constants import normalize_belge_durumu, normalize_belge_kaynagi, normalize_belge_yonu
+    yon = normalize_belge_yonu(yon)
+    kaynak = normalize_belge_kaynagi(kaynak)
+    durum = normalize_belge_durumu(durum)
     db = None
     try:
         db = SessionLocal()
@@ -104,6 +114,9 @@ def save_case_document(
             uploaded_by_email=uploaded_by_email,
             conversion_status=conversion_status,
             conversion_spool_path=conversion_spool_path,
+            yon=yon,
+            kaynak=kaynak,
+            durum=durum,
         )
         db.add(doc)
 
@@ -526,6 +539,9 @@ def convert_pdfa_and_queue_uploads(
     results: dict,
     timings: dict,
     ham_source_path: Optional[str] = None,
+    yon: str = "GELEN",
+    kaynak: str = "BELGE_HATTI",
+    durum: str = "KESIN",
 ):
     """PDF/A dönüşümü + DB kaydı + iki SharePoint arşiv yüklemesinin kuyruklanması.
 
@@ -631,6 +647,11 @@ def convert_pdfa_and_queue_uploads(
             is_test_mode=is_test_mode,
             uploaded_by=current_user_name,
             uploaded_by_email=current_user_email,
+            # G282: /confirm ve intake varsayılanı taşır (GELEN/BELGE_HATTI/KESIN);
+            # PDF tezgâhı (G269) yön/kaynak/durum geçirir.
+            yon=yon,
+            kaynak=kaynak,
+            durum=durum,
         )
         results["case_document_id"] = doc_id
 

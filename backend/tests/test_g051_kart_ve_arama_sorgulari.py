@@ -131,20 +131,24 @@ def test_kart_sorgu_sayisi_belge_sayisiyla_buyumuyor(db_env):
 
 
 def test_kart_iliski_basina_tek_sorgu_kosuyor(db_env):
-    """Dava satırı + beş ilişki = 6 SQL. Sayı değişirse gerekçesi olmalı.
+    """Dava satırı + beş ilişki + sürüm sayısı = 7 SQL. Sayı değişirse gerekçesi olmalı.
 
     Bu sabit, "kart 5 sorgu koşuyor, selectinload'la azalır" varsayımının
     ölçülmüş hâlidir: azalmıyor — lazy de eager de ilişki başına tek sorgu.
+    G282 (07.10.2026): belge başına `surum_sayisi` TEK `GROUP BY` sorgusuyla gelir
+    (6 → 7); belge sayısından bağımsızdır (N+1 yok — `test_g282_belge_yon_durum`
+    belge sayısı artınca sorgu sayısının sabit kaldığını ayrıca kilitler).
     """
     case_id = _dava_yaz(db_env, belge_sayisi=3)
 
     kart, sqls = _sorgular(db_env, db_env.manager.get_case, case_id)
 
     assert kart is not None
-    assert len(sqls) == 6, (
-        "kartın sorgu sayısı 6 (dava + parties/lawyers/esas_numbers/history/documents) "
+    assert len(sqls) == 7, (
+        "kartın sorgu sayısı 7 (dava + parties/lawyers/esas_numbers/history/documents + belge_surumleri GROUP BY) "
         f"değil {len(sqls)}:\n" + "\n".join(sqls)
     )
+    assert sum(1 for s in sqls if "belge_surumleri" in s.lower()) == 1
     assert len(kart["documents"]) == 3
     assert all(d["case_party_name"] for d in kart["documents"]), (
         "taraf adı kartta boş — testin N+1 riskini gerçekten sürdüğü varsayımı düşer"

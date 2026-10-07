@@ -94,6 +94,8 @@ def create_yetki_belgesi_udf(
 def get_case_documents(
     case_id: int,
     party_id: Optional[str] = None,
+    yon: Optional[str] = None,
+    durum: Optional[str] = None,
     tenant_id: str = Depends(get_current_tenant),
 ):
     """
@@ -101,7 +103,16 @@ def get_case_documents(
     - party_id filtresi verilmezse → tüm belgeler
     - party_id=null → sadece dava geneli belgeler (case_party_id IS NULL)
     - party_id=123 → sadece o tarafa ait belgeler
+    - yon=GELEN|GIDEN, durum=TASLAK|KESIN (G282; geçersiz değer 422)
     """
+    from constants import normalize_belge_durumu, normalize_belge_yonu
+
+    try:
+        yon_f = normalize_belge_yonu(yon) if yon else None
+        durum_f = normalize_belge_durumu(durum) if durum else None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
     db = SessionLocal()
     try:
         from auth_helpers import get_tenant_owned_case
@@ -114,6 +125,10 @@ def get_case_documents(
             .filter(models.CaseDocument.case_id == case_id)
             .filter(models.CaseDocument.deleted_at.is_(None))
         )
+        if yon_f:
+            q = q.filter(models.CaseDocument.yon == yon_f)
+        if durum_f:
+            q = q.filter(models.CaseDocument.durum == durum_f)
         if party_id is not None:
             if party_id.lower() == "null":
                 q = q.filter(models.CaseDocument.case_party_id.is_(None))
@@ -150,6 +165,12 @@ def get_case_documents(
                 "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
                 "email_sent": d.email_sent,
                 "email_error": d.email_error,
+                # G282
+                "yon": d.yon,
+                "kaynak": d.kaynak,
+                "durum": d.durum,
+                "word_url": d.word_url,
+                "kesinlesme_tarihi": d.kesinlesme_tarihi.isoformat() if d.kesinlesme_tarihi else None,
             }
             for d in docs
         ]

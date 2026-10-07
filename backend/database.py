@@ -1505,6 +1505,67 @@ _MIGRATIONS = [
         "CREATE INDEX IF NOT EXISTS idx_case_docs_asama_karari "
         "ON case_documents (asama_karari_id) WHERE asama_karari_id IS NOT NULL",
     ]),
+
+    # ─── 61. BELGE YÖNÜ / KAYNAĞI / DURUMU + SÜRÜM DEFTERİ (G282, 07.10.2026) ──────
+    # Belge tezgâhı planı §6.2 K11-K14: her belge yönünü (GELEN|GIDEN), kaynağını
+    # (BELGE_HATTI|PDF_ARACLARI|WORD|ARSIV_AKTARIM|TESLIM) ve taslak/kesin durumunu
+    # taşır; `belge_surumleri` bilinçli sürüm kayıtları. Kapalı listeler
+    # `constants.BELGE_*`; padding YOK (doctype kodlarının aksine).
+    # "columns"/"table" op'ları KOŞULLUDUR (create_all yaratmışsa atlanır) → CHECK
+    # kısıtları (pg_constraint yoklamalı, madde 54/57 deseni), index'ler, UNIQUE ve
+    # backfill alttaki KOŞULSUZ ("index", ...) op'larında. Backfill idempotent: yalnız
+    # `uploaded_by LIKE 'ARSIV_AKTARIM:%' AND kaynak = 'BELGE_HATTI'` satırları
+    # ARSIV_AKTARIM olur; geri kalan her kayıt varsayılan GELEN/BELGE_HATTI/KESIN kalır
+    # (mevcut belgelerin tamamı kesin ve gelendir — K11).
+    ("columns", "case_documents", {
+        "yon": "VARCHAR(8) NOT NULL DEFAULT 'GELEN'",
+        "kaynak": "VARCHAR(16) NOT NULL DEFAULT 'BELGE_HATTI'",
+        "durum": "VARCHAR(8) NOT NULL DEFAULT 'KESIN'",
+        "word_url": "TEXT",
+        "kesinlesme_tarihi": "TIMESTAMPTZ",
+        "kesinlestiren_email": "VARCHAR",
+        "onceki_document_id": "INTEGER REFERENCES case_documents(id) ON DELETE SET NULL",
+    }),
+    ("table", "belge_surumleri", """
+        CREATE TABLE belge_surumleri (
+            id SERIAL PRIMARY KEY,
+            document_id INTEGER NOT NULL REFERENCES case_documents(id) ON DELETE RESTRICT,
+            surum_no INTEGER NOT NULL,
+            sha256 VARCHAR(64) NOT NULL,
+            sharepoint_etag VARCHAR,
+            "not" TEXT,
+            kesin BOOLEAN NOT NULL DEFAULT FALSE,
+            olusturan_email VARCHAR,
+            olusturulma TIMESTAMPTZ DEFAULT NOW()
+        )
+    """, []),
+    ("index", "case_documents", [
+        "UPDATE case_documents SET kaynak = 'ARSIV_AKTARIM' "
+        "WHERE uploaded_by LIKE 'ARSIV_AKTARIM:%' AND kaynak = 'BELGE_HATTI'",
+        "CREATE INDEX IF NOT EXISTS idx_case_docs_case_durum ON case_documents (case_id, durum)",
+        "CREATE INDEX IF NOT EXISTS idx_case_docs_durum_yon ON case_documents (durum, yon)",
+        "CREATE INDEX IF NOT EXISTS idx_case_docs_onceki ON case_documents (onceki_document_id) "
+        "WHERE onceki_document_id IS NOT NULL",
+        "DO $$ BEGIN "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_case_docs_yon' AND conrelid = to_regclass('case_documents')) THEN "
+        "ALTER TABLE case_documents ADD CONSTRAINT ck_case_docs_yon "
+        "CHECK (yon IN ('GELEN', 'GIDEN')); "
+        "END IF; "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_case_docs_kaynak' AND conrelid = to_regclass('case_documents')) THEN "
+        "ALTER TABLE case_documents ADD CONSTRAINT ck_case_docs_kaynak "
+        "CHECK (kaynak IN ('BELGE_HATTI', 'PDF_ARACLARI', 'WORD', 'ARSIV_AKTARIM', 'TESLIM')); "
+        "END IF; "
+        "IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_case_docs_durum' AND conrelid = to_regclass('case_documents')) THEN "
+        "ALTER TABLE case_documents ADD CONSTRAINT ck_case_docs_durum "
+        "CHECK (durum IN ('TASLAK', 'KESIN')); "
+        "END IF; END $$",
+    ]),
+    ("index", "belge_surumleri", [
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_belge_surumleri_no ON belge_surumleri (document_id, surum_no)",
+    ]),
 ]
 
 # ─── 29. KULLANILMAYAN/MÜKERRER INDEX TEMİZLİĞİ (FAZ D 6.2, G042) ─────────────

@@ -1307,9 +1307,52 @@ class CaseDocument(Base):
     dosya_sha256 = Column(String(64), nullable=True)
     asama_karari_id = Column(Integer, ForeignKey("case_stage_decisions.id", ondelete="SET NULL"), nullable=True)
 
+    # Belge yönü / kaynağı / durumu (G282, plan §6.2 K11-K14, migrasyon 61). Kapalı
+    # listeler `constants.BELGE_YONLERI/KAYNAKLARI/DURUMLARI`; CHECK kısıtları ve index'ler
+    # migrasyon 61'in KOŞULSUZ ("index", ...) op'unda (modelde DEĞİL). Mevcut kayıtlar
+    # GELEN/KESIN; `uploaded_by LIKE 'ARSIV_AKTARIM:%'` backfill ile ARSIV_AKTARIM.
+    #   TASLAK: Hukukbot'a gitmez (export_publisher), bildirim üretmez (upload_queue),
+    #   PDF/A yapılmaz; dosyası `SHAREPOINT_FOLDER_TASLAK_NAME/<ofis_no>/` altında.
+    #   Kesinleşme tek yönlüdür (K14): AYNI satır KESIN olur, `kesinlesme_*` dolar;
+    #   düzeltme = yeni TASLAK satırı, `onceki_document_id` eskisine bağ.
+    yon = Column(String(8), nullable=False, default="GELEN", server_default="GELEN")
+    kaynak = Column(String(16), nullable=False, default="BELGE_HATTI", server_default="BELGE_HATTI")
+    durum = Column(String(8), nullable=False, default="KESIN", server_default="KESIN")
+    word_url = Column(Text, nullable=True)                    # Word taslağının SharePoint URL'si (K15)
+    kesinlesme_tarihi = Column(DateTime(timezone=True), nullable=True)
+    kesinlestiren_email = Column(String, nullable=True)
+    onceki_document_id = Column(Integer, ForeignKey("case_documents.id", ondelete="SET NULL"), nullable=True)
+
     # İlişkiler
     case = relationship("Case", back_populates="documents")
     case_party = relationship("CaseParty", foreign_keys=[case_party_id])
+    surumler = relationship("BelgeSurumu", back_populates="belge", order_by="BelgeSurumu.surum_no")
+
+
+class BelgeSurumu(Base):
+    """Sürüm defteri (G282, K13): belgenin bilinçli "Sürüm kaydet" ve kesinleşme anları.
+
+    SharePoint'in her otomatik kaydı DEĞİL — satır yalnız kullanıcı "Sürüm kaydet"
+    dediğinde ve kesinleşmede açılır (`kesin=True`). `sha256` indirilen dosyanın parmak
+    izi, `sharepoint_etag` o anki Graph eTag'i. UNIQUE (document_id, surum_no) migrasyon
+    61'in koşulsuz ("index", ...) op'unda. FK RESTRICT: sürümü olan belge satırı silinmez
+    (belge soft-delete'tir zaten).
+    """
+    __tablename__ = "belge_surumleri"
+
+    # `index=True` YOK: PK'nın ikiz index'i (G192 bekçisi `test_g192_dusuk_etkili`).
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("case_documents.id", ondelete="RESTRICT"), nullable=False)
+    surum_no = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    sharepoint_etag = Column(String, nullable=True)
+    # `not` Python anahtar sözcüğü — kolon adı DB'de `not`, öznitelik `aciklama_notu`
+    aciklama_notu = Column("not", Text, nullable=True)
+    kesin = Column(Boolean, nullable=False, default=False, server_default="false")
+    olusturan_email = Column(String, nullable=True)
+    olusturulma = Column(DateTime(timezone=True), default=func.now(), server_default=func.now())
+
+    belge = relationship("CaseDocument", back_populates="surumler", foreign_keys=[document_id])
 
 
 class DailyActivityReport(Base):
