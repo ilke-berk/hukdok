@@ -1,10 +1,12 @@
-// Belge tezgâhı sağ bölgesi (G270): dört işlem — birleştir (işaretli dosyalar, liste sırasıyla), böl (aralık metni ya da
-// her sayfa ayrı), sıkıştır (üç seviye), damga (metin/konum/sayfalar/punto/renk). Karart, not ve sayfa düzenle yuvaları
-// `disabled` + "sonraki sürüm" (G271/G272 açar). Çıktı adı sunucudan gelen `ad`dır; indirme seçili dosyayı indirir.
+// Belge tezgâhı sağ bölgesi (G270 + G271): birleştir (işaretli dosyalar, liste sırasıyla), böl (aralık metni / her sayfa
+// ayrı / G271: ızgarada seçili sayfalar → ardışık bloklar), sıkıştır (üç seviye), damga (metin/konum/sayfalar/punto/renk),
+// sayfa düzenle (G271: ızgaradaki yerel düzeni "Uygula" ile aynı tek `sayfa_duzenle` isteği). Karart ve not yuvaları
+// `disabled` + "sonraki sürüm" (G272 açar). Çıktı adı sunucudan gelen `ad`dır; indirme seçili dosyayı indirir.
 import { useId, useState, type ReactNode } from "react";
 import { Combine, Download, Eraser, Layers, Loader2, MessageSquareText, Scissors, Shrink, Stamp } from "lucide-react";
 import { FlowButton } from "@/components/flow/primitives";
 import { bolAraliklariniAyristir, damgaSayfalariniAyristir } from "@/lib/pdfAraclariApi";
+import { seciliSayfalardanAraliklar } from "./usePdfTezgah";
 import {
   DAMGA_KONUMLARI,
   SIKISTIRMA_SEVIYELERI,
@@ -22,6 +24,12 @@ type Props = {
   indiriliyor: boolean;
   onIslem: (istek: IslemIstegi) => void;
   onIndir: () => void;
+  /** G271: ızgarada seçili sayfa numaraları (böl "seçili sayfalar" kipi). */
+  seciliSayfalar?: number[];
+  /** G271: ızgaradaki yerel düzende uygulanacak değişiklik var mı. */
+  sayfaDegisikligi?: boolean;
+  /** G271: "Sayfa düzenle" → ızgaranın "Uygula"sı ile aynı istek. */
+  onSayfaDuzenle?: () => void;
 };
 
 const KONUM_ADLARI: Record<DamgaKonumu, string> = {
@@ -56,13 +64,23 @@ function Bolum({ baslik, ikon, children }: { baslik: string; ikon: ReactNode; ch
   );
 }
 
-export function IslemPaneli({ secili, isaretliler, surenIslem, indiriliyor, onIslem, onIndir }: Props) {
+export function IslemPaneli({
+  secili,
+  isaretliler,
+  surenIslem,
+  indiriliyor,
+  onIslem,
+  onIndir,
+  seciliSayfalar = [],
+  sayfaDegisikligi = false,
+  onSayfaDuzenle,
+}: Props) {
   const kimlik = useId();
   const mesgul = surenIslem !== null;
   const toplamSayfa = secili?.sayfa ?? 0;
 
   const [birlestirAdi, setBirlestirAdi] = useState("birlestirilmis.pdf");
-  const [bolKipi, setBolKipi] = useState<"aralik" | "her_sayfa">("aralik");
+  const [bolKipi, setBolKipi] = useState<"aralik" | "her_sayfa" | "secili">("aralik");
   const [bolMetni, setBolMetni] = useState("");
   const [seviye, setSeviye] = useState<SikistirmaSeviyesi>("ebook");
   const [damgaMetni, setDamgaMetni] = useState("ASLI GİBİDİR");
@@ -71,8 +89,12 @@ export function IslemPaneli({ secili, isaretliler, surenIslem, indiriliyor, onIs
   const [damgaPunto, setDamgaPunto] = useState(12);
   const [damgaRengi, setDamgaRengi] = useState("#b00020");
 
-  const bolAraliklari = bolKipi === "aralik" ? bolAraliklariniAyristir(bolMetni, toplamSayfa) : null;
-  const bolGecerli = !!secili && (bolKipi === "her_sayfa" ? toplamSayfa >= 1 : bolAraliklari !== null);
+  const seciliAraliklar = seciliSayfalardanAraliklar(seciliSayfalar);
+  const bolAraliklari =
+    bolKipi === "aralik" ? bolAraliklariniAyristir(bolMetni, toplamSayfa) : bolKipi === "secili" ? seciliAraliklar : null;
+  const bolGecerli =
+    !!secili &&
+    (bolKipi === "her_sayfa" ? toplamSayfa >= 1 : bolKipi === "secili" ? seciliAraliklar.length > 0 : bolAraliklari !== null);
   const damgaSayfaListesi = damgaSayfalariniAyristir(damgaSayfalari, toplamSayfa);
   const damgaGecerli =
     !!secili && damgaMetni.trim().length > 0 && damgaMetni.length <= 120 && damgaSayfaListesi !== null && damgaPunto >= 4 && damgaPunto <= 144;
@@ -140,6 +162,13 @@ export function IslemPaneli({ secili, isaretliler, surenIslem, indiriliyor, onIs
           <label className="flex items-center gap-2">
             <input type="radio" name={`${kimlik}-bol`} checked={bolKipi === "her_sayfa"} onChange={() => setBolKipi("her_sayfa")} className="accent-[var(--brand)]" />
             Her sayfa ayrı dosya
+          </label>
+          <label className="flex items-center gap-2" title="Ortadaki ızgarada tik attığınız sayfalar ardışık bloklara ayrılır">
+            <input type="radio" name={`${kimlik}-bol`} checked={bolKipi === "secili"} onChange={() => setBolKipi("secili")} className="accent-[var(--brand)]" />
+            Seçili sayfalar
+            <span className="font-mono text-[10px] text-[var(--fg-subtle)]">
+              {seciliAraliklar.length > 0 ? seciliAraliklar.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(", ") : "(ızgarada seçin)"}
+            </span>
           </label>
         </div>
         <FlowButton
@@ -237,9 +266,19 @@ export function IslemPaneli({ secili, isaretliler, surenIslem, indiriliyor, onIs
       </Bolum>
 
       <Bolum baslik="Sayfa işlemleri" ikon={<Layers className="w-4 h-4" />}>
+        <p className="text-[12px] text-[var(--fg-muted)] mb-2">
+          Ortadaki ızgarada sürükleyin, döndürün, silin; sonra uygulayın.
+          {sayfaDegisikligi ? " Uygulanmamış değişiklik var." : ""}
+        </p>
         <div className="flex flex-wrap gap-2">
-          <FlowButton size="sm" variant="secondary" disabled title={SONRAKI_SURUM}>
-            <Layers className="w-3.5 h-3.5" />
+          <FlowButton
+            size="sm"
+            variant="secondary"
+            disabled={mesgul || !secili || !sayfaDegisikligi || !onSayfaDuzenle}
+            title={sayfaDegisikligi ? "Izgaradaki sırayı, döndürmeleri ve silmeleri yeni dosya olarak uygula" : "Önce ızgarada bir değişiklik yapın"}
+            onClick={() => onSayfaDuzenle?.()}
+          >
+            {ikon("sayfa_duzenle", Layers)}
             Sayfa düzenle
           </FlowButton>
           <FlowButton size="sm" variant="secondary" disabled title={SONRAKI_SURUM}>
@@ -251,7 +290,7 @@ export function IslemPaneli({ secili, isaretliler, surenIslem, indiriliyor, onIs
             Not
           </FlowButton>
         </div>
-        <p className="mt-1.5 text-[11px] text-[var(--fg-subtle)]">Sayfa ızgarası, karartma ve not sonraki sürümde açılır.</p>
+        <p className="mt-1.5 text-[11px] text-[var(--fg-subtle)]">Karartma ve not sonraki sürümde açılır.</p>
       </Bolum>
 
       <FlowButton disabled={!secili || indiriliyor || mesgul} onClick={onIndir} className="w-full">

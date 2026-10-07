@@ -247,6 +247,9 @@ describe("resolveTimeoutMs (uç eşlemesi)", () => {
         expect(resolveTimeoutMs("/api/case-intake/analyze")).toBe(LONG_TIMEOUT_MS);
         expect(resolveTimeoutMs("/api/case-intake/commit")).toBe(LONG_TIMEOUT_MS);
         expect(resolveTimeoutMs("/preview-email-body")).toBe(LONG_TIMEOUT_MS);
+        // G271: PDF araçları işlemleri (JSON gövde) sunucu bütçesi 270 sn — 30 sn'de kesilmesin
+        expect(resolveTimeoutMs("/api/pdf-araclari/islem")).toBe(LONG_TIMEOUT_MS);
+        expect(resolveTimeoutMs("/api/pdf-araclari/onizleme/abc/1?genislik=240")).toBe(LONG_TIMEOUT_MS);
     });
 
     it("Lexis'in model çağıran uçları uzun katmandadır; diğer Lexis uçları varsayılanda", () => {

@@ -75,6 +75,7 @@ const LONG_TIMEOUT_PREFIXES = [
     "/api/reports/",              // raporlama: önizleme (8.000+ satırlı JOIN'li sorgu), export (xlsx akışı), chat (Gemini) 30 sn'yi aşabilir (G133)
     "/lexis-api/yaz",             // kararlardan yazım: iki Gemini çağrısı, 07.10 canlı denemede 106 sn (30 sn'de istemci kesti, nginx 499)
     "/lexis-api/emsal-ara",       // emsal ajan hattı: NDJSON akışı, 30 aday okuması dakikayı bulur
+    "/api/pdf-araclari/",         // belge tezgâhı (G271): birleştir/sıkıştır/sayfa düzenle Ghostscript'li, sunucu bütçesi 270 sn (K8)
 ];
 // Yolun İÇİNDE geçen işaretler (ör. /api/documents/{id}/download).
 const LONG_TIMEOUT_MARKERS = ["/download", "/resend-email", "/send-emails"];

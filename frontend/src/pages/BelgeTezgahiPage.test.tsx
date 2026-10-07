@@ -14,7 +14,7 @@ import { createRoot, type Root } from "react-dom/client";
 vi.mock("@/hooks/usePageTitle", () => ({ useSetPageTitle: () => undefined }));
 vi.mock("@/lib/api", () => ({ apiClient: { fetch: vi.fn() } }));
 
-const apiMock = vi.hoisted(() => ({ yukle: vi.fn(), islem: vi.fn(), indir: vi.fn() }));
+const apiMock = vi.hoisted(() => ({ yukle: vi.fn(), islem: vi.fn(), indir: vi.fn(), onizlemeBlob: vi.fn() }));
 vi.mock("@/lib/pdfAraclariApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/pdfAraclariApi")>()),
   ...apiMock,
@@ -83,6 +83,9 @@ beforeEach(() => {
   apiMock.indir.mockReset();
   apiMock.yukle.mockImplementation(async (f: File) => dosyaNesnesi(f.name));
   apiMock.indir.mockResolvedValue(undefined);
+  // G271: ızgara kartları önizleme çeker (jsdom'da IntersectionObserver yok → hemen); burada hata ("Önizleme yok") yeter
+  apiMock.onizlemeBlob.mockReset();
+  apiMock.onizlemeBlob.mockRejectedValue(new Error("test: önizleme yok"));
   kap = document.createElement("div");
   document.body.appendChild(kap);
   kok = createRoot(kap);
@@ -110,13 +113,22 @@ describe("BelgeTezgahiPage iskelet", () => {
     expect(kap.textContent).toContain("İşlem için soldan bir dosya seçin.");
   });
 
-  it("karart / not / sayfa düzenle yuvaları kapalı ve 'sonraki sürüm' ipuçlu", async () => {
+  it("karart / not yuvaları kapalı ve 'sonraki sürüm' ipuçlu; sayfa düzenle değişiklik olmadan kapalı (G271)", async () => {
     await ciz();
-    for (const ad of ["Sayfa düzenle", "Karart", "Not"]) {
+    for (const ad of ["Karart", "Not"]) {
       const b = dugme(ad)!;
       expect(b.disabled, ad).toBe(true);
       expect(b.title).toBe("Sonraki sürümde");
     }
+    expect(dugme("Sayfa düzenle")!.disabled).toBe(true);
+  });
+
+  it("dosya seçilince orta yuvada sayfa ızgarası çizilir (G271)", async () => {
+    await ciz();
+    await yukleDosyalar(["z.pdf"]); // 2 sayfa
+    const yuva = kap.querySelector('section[data-slot="sayfalar"]')!;
+    expect(yuva.querySelector('[data-testid="sayfa-izgarasi"]')).not.toBeNull();
+    expect(yuva.querySelectorAll('[role="listitem"]').length).toBe(2);
   });
 });
 

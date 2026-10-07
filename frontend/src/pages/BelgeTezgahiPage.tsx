@@ -3,6 +3,7 @@ import { useSetPageTitle } from "@/hooks/usePageTitle";
 import { DosyaListesi } from "@/components/pdf/DosyaListesi";
 import { IslemPaneli } from "@/components/pdf/IslemPaneli";
 import { PdfYukleyici } from "@/components/pdf/PdfYukleyici";
+import { SayfaIzgarasi } from "@/components/pdf/SayfaIzgarasi";
 import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
 
 /**
@@ -10,8 +11,8 @@ import { usePdfTezgah } from "@/components/pdf/usePdfTezgah";
  * Giriş yapan HER kullanıcı (yönetici kısıtı yok; rota `ProtectedRoute > ShellLayout`). İki yol çipi: "Düzenle (PDF)"
  * bu sürüm; "Yaz (Word)" G285 ile açılır (şimdilik kapalı).
  *
- * PDF tezgâhı üç bölge: sol `DosyaListesi` (+ yükleyici), orta `<section data-slot="sayfalar">` (G271 sayfa ızgarasını
- * buraya koyar; bu sürümde boş), sağ `IslemPaneli`. Çalışma dosyaları yalnız bu oturumdadır — sayfa yenilenince liste
+ * PDF tezgâhı üç bölge: sol `DosyaListesi` (+ yükleyici), orta `<section data-slot="sayfalar">` (G271: seçili dosyanın
+ * `SayfaIzgarasi`; dosya yokken boş), sağ `IslemPaneli`. Çalışma dosyaları yalnız bu oturumdadır — sayfa yenilenince liste
  * gider, sunucu 1 saat sonra siler (K2). Sayfa `max-w` koymaz (tam genişlik kuralı). Default export: rota `React.lazy`.
  */
 export default function BelgeTezgahiPage() {
@@ -85,12 +86,32 @@ export default function BelgeTezgahiPage() {
           />
         </aside>
 
-        {/* G271: sayfa ızgarası bu yuvaya gelir (önizleme, sürükle-sırala, döndür, sil, aralık seçimi). */}
+        {/* G271: seçili dosyanın sayfa ızgarası (önizleme, sürükle-sırala, döndür, sil, aralık seçimi); G272 çizim katmanı. */}
         <section
           data-slot="sayfalar"
           aria-label="Sayfalar"
-          className="min-h-[320px] rounded-[3px] border border-dashed border-[var(--border)] bg-[var(--bg-elevated)]"
-        />
+          className={[
+            "min-h-[320px] rounded-[3px] border bg-[var(--bg-elevated)]",
+            tezgah.secili && tezgah.sayfaDuzeni ? "border-[var(--border)]" : "border-dashed border-[var(--border)]",
+          ].join(" ")}
+        >
+          {tezgah.secili && tezgah.sayfaDuzeni && (
+            <SayfaIzgarasi
+              key={tezgah.secili.id}
+              dosya={tezgah.secili}
+              duzen={tezgah.sayfaDuzeni}
+              degisiklikVar={tezgah.sayfaDegisikligi}
+              uygulaniyor={tezgah.surenIslem === "sayfa_duzenle"}
+              onTasi={tezgah.sayfaTasi}
+              onDondur={tezgah.sayfaDondur}
+              onSil={tezgah.sayfaSilToggle}
+              onSec={tezgah.sayfaSec}
+              onHepsiniSec={tezgah.sayfalariSec}
+              onSifirla={tezgah.sayfaDuzeniniSifirla}
+              onUygula={() => void tezgah.sayfaDuzeniniUygula()}
+            />
+          )}
+        </section>
 
         <aside aria-label="İşlemler" className="rounded-[3px] border border-[var(--border)] bg-[var(--bg-elevated)] p-4 min-w-0">
           <IslemPaneli
@@ -100,6 +121,9 @@ export default function BelgeTezgahiPage() {
             indiriliyor={tezgah.indiriliyor}
             onIslem={(istek) => void tezgah.islemKos(istek)}
             onIndir={() => void tezgah.indirSecili()}
+            seciliSayfalar={tezgah.sayfaDuzeni?.secili ?? []}
+            sayfaDegisikligi={tezgah.sayfaDegisikligi}
+            onSayfaDuzenle={() => void tezgah.sayfaDuzeniniUygula()}
           />
         </aside>
       </div>
