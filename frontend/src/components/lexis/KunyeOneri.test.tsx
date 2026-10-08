@@ -83,6 +83,13 @@ describe("KunyeKarti — öneri çipleri", () => {
     expect(karar).toHaveBeenCalledWith(kabul, "oneri");
   });
 
+  it("taranmış belgeden (model okuması) gelen öneri işaret taşır", () => {
+    act(() => kok.render(<KunyeKarti dosya={dosya} onDegistir={() => undefined} oneriler={[oneri({ metin_kaynagi: "gorsel" })]} onOneriKarar={() => undefined} />));
+    const cip = kap.querySelector("[data-testid=kunye-oneri]")!;
+    expect(cip.textContent).toContain("taranmış belgeden");
+    expect(cip.getAttribute("title")).toContain("model okuması");
+  });
+
   it("öneri yoksa kart eskisi gibi", () => {
     act(() => kok.render(<KunyeKarti dosya={dosya} onDegistir={() => undefined} />));
     expect(kap.querySelectorAll("[data-testid=kunye-oneri]")).toHaveLength(0);

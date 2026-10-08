@@ -1098,6 +1098,8 @@ export interface KunyeOnerisi {
   alinti: string;
   kart_durumu: KunyeKartDurumu;
   kart_degeri: string | null;
+  /** `gorsel`: taranmış PDF'i model okudu, alıntı o okumaya karşı denetlendi (S2) — belgeyle karşılaştırarak kabul edin. */
+  metin_kaynagi?: "metin" | "gorsel";
   model: string;
   istem_surumu: string;
   durum: KunyeOneriDurumu;

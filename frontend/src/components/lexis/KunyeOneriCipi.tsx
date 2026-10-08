@@ -15,7 +15,7 @@ const KART_NOTU: Record<KunyeOnerisi["kart_durumu"], string | null> = {
 
 /** Değerin belge adıyla görünen etiketi; alıntı `title`'da (üstüne gelince) ve ekran okuyucuya açık. */
 function oneriBasligi(o: KunyeOnerisi, belgeAdi: (id: number) => string): string {
-  return `Belge: ${belgeAdi(o.belge_id)}\nAlıntı: “${o.alinti}”${o.kart_durumu === "farkli" && o.kart_degeri ? `\nKartta: ${o.kart_degeri}` : ""}`;
+  return `Belge: ${belgeAdi(o.belge_id)}${o.metin_kaynagi === "gorsel" ? " (taranmış — model okuması)" : ""}\nAlıntı: “${o.alinti}”${o.kart_durumu === "farkli" && o.kart_degeri ? `\nKartta: ${o.kart_degeri}` : ""}`;
 }
 
 /**
@@ -38,6 +38,7 @@ export function KunyeOneriCipi({ oneri, belgeAdi, onKarar, kilitli = false }: { 
       <span className="text-[var(--fg-subtle)]">· {belgeAdi(oneri.belge_id)}</span>
       {oneri.kart_durumu === "farkli" && oneri.kart_degeri && <span className="text-tone-caution">· kartta: {oneri.kart_degeri}</span>}
       {not && <span className="text-[var(--fg-subtle)]">· {not}</span>}
+      {oneri.metin_kaynagi === "gorsel" && <span className="text-tone-caution">· taranmış belgeden</span>}
       <span className="sr-only">Alıntı: {oneri.alinti}</span>
       {kabul ? (
         <button type="button" disabled={kilitli} onClick={() => onKarar(oneri, "oneri")} aria-label={`${oneri.deger} kabulünü geri al`} className={`inline-flex items-center gap-0.5 ${BAGLANTI_SINIFI}`}>
