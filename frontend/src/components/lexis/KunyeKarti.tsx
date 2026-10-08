@@ -1,6 +1,18 @@
+import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { BOS, tutarYaz } from "@/lib/lexisMetin";
-import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type DosyaGirdisi, type LexisSirket, type RaporTuru, type YazilabilirIskelet } from "@/types/lexis";
+import {
+  ISKELET_BOLUMLERI,
+  SIRKET_ADLARI,
+  type DosyaGirdisi,
+  type KunyeAlani,
+  type KunyeOneriDurumu,
+  type KunyeOnerisi,
+  type LexisSirket,
+  type RaporTuru,
+  type YazilabilirIskelet,
+} from "@/types/lexis";
+import { KunyeOneriCipi } from "./KunyeOneriCipi";
 import { BolgeBasligi } from "./ortak";
 import { BAGLANTI_SINIFI } from "./yardimcilar";
 
@@ -12,6 +24,12 @@ type KunyeKartiProps = {
   /** Ek raporda: dosyanın önceki raporunu okuyucuda açar. */
   onOncekiRapor?: () => void;
   kilitli?: boolean;
+  /** Belgeden künye önerileri (Aşama 13): alan başına çip; reddedilen gösterilmez. Verilmezse çip çizilmez. */
+  oneriler?: KunyeOnerisi[];
+  onOneriKarar?: (oneri: KunyeOnerisi, durum: KunyeOneriDurumu) => void;
+  belgeAdi?: (id: number) => string;
+  /** Başlığın altındaki alan: "Belgelerden doldur" (`KunyeDoldur`). */
+  ust?: ReactNode;
 };
 
 const ISKELET_ADLARI: Record<YazilabilirIskelet, string> = { ANADOLU: "Anadolu", ALTILI: "Altılı", KISA: "Kısa", EK: "Ek rapor" };
@@ -27,21 +45,29 @@ const SECIM_SINIFI =
 /**
  * Dosyanın künyesi: raporun şirketi, türü ve iskeleti seçilir; kalan alanlar dava kartından gelir (salt okunur —
  * düzeltme dava kartında yapılır). Boş alan `[…]` ile gösterilir; kart ile belge çelişirse ikisi de yazılır.
+ * Belgeden gelen öneri alanın altında çiptir: kabul edilen değer taslağın künyesine girer (karta yazılmaz, K34) ve
+ * satırda "belgeden" işaretiyle görünür; kart değeri farklıysa çipte yanında durur.
  */
-export function KunyeKarti({ dosya, onDegistir, onOncekiRapor, kilitli = false }: KunyeKartiProps) {
-  const satirlar: [string, string | null][] = [
-    ["Mahkeme", dosya.mahkeme],
-    ["Esas no", dosya.esas_no],
-    ["Hasar no", dosya.hasar_no],
-    ["Poliçe no", dosya.police_no],
-    ["Teminat limiti", dosya.teminat_limiti === null ? null : tutarYaz(dosya.teminat_limiti)],
-    ["Talep (maddi)", dosya.talep_maddi === null ? null : tutarYaz(dosya.talep_maddi)],
-    ["Talep (manevi)", dosya.talep_manevi === null ? null : tutarYaz(dosya.talep_manevi)],
-    ["Uzmanlık", dosya.uzmanlik],
-    ["Sigortalı", dosya.sigortali],
-    ["Hasta", dosya.magdur],
-    ["Hastane", dosya.hastane],
+export function KunyeKarti({ dosya, onDegistir, onOncekiRapor, kilitli = false, oneriler = [], onOneriKarar, belgeAdi, ust }: KunyeKartiProps) {
+  const satirlar: [string, string | null, KunyeAlani | null][] = [
+    ["Mahkeme", dosya.mahkeme, null],
+    ["Esas no", dosya.esas_no, null],
+    ["Hasar no", dosya.hasar_no, "hasar_no"],
+    ["Poliçe no", dosya.police_no, "police_no"],
+    ["Teminat limiti", dosya.teminat_limiti === null ? null : tutarYaz(dosya.teminat_limiti), "teminat_limiti"],
+    ["Talep (maddi)", dosya.talep_maddi === null ? null : tutarYaz(dosya.talep_maddi), "talep_maddi"],
+    ["Talep (manevi)", dosya.talep_manevi === null ? null : tutarYaz(dosya.talep_manevi), "talep_manevi"],
+    ["Uzmanlık", dosya.uzmanlik, "uzmanlik"],
+    ["Sigortalı", dosya.sigortali, "sigortali"],
+    ["Hasta", dosya.magdur, "hasta"],
+    ["Hastane", dosya.hastane, "hastane"],
   ];
+  const gorunen = oneriler.filter((o) => o.durum !== "ret");
+  // Kartta karşılığı olmayan alanlar yalnız önerisi varsa satır olur.
+  for (const [etiket, alan] of [["Olay tarihi", "olay_tarihi"], ["Davalı", "davali"]] as const) {
+    if (gorunen.some((o) => o.alan === alan)) satirlar.push([etiket, null, alan]);
+  }
+  const ad = belgeAdi ?? ((id: number) => `belge ${id}`);
 
   return (
     <section aria-label="Künye" data-testid="lexis-kunye" className="grid gap-2.5">
@@ -92,13 +118,33 @@ export function KunyeKarti({ dosya, onDegistir, onOncekiRapor, kilitli = false }
         </label>
       </div>
 
+      {ust}
+
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12.5px]">
-        {satirlar.map(([etiket, deger]) => (
-          <div key={etiket} className="contents">
-            <dt className="text-[var(--fg-subtle)] whitespace-nowrap">{etiket}</dt>
-            <dd className={deger ? "text-[var(--fg)] break-words" : "text-tone-caution font-mono"}>{deger ?? BOS}</dd>
-          </div>
-        ))}
+        {satirlar.map(([etiket, kartDegeri, alan]) => {
+          const alanOnerileri = alan ? gorunen.filter((o) => o.alan === alan) : [];
+          const kabuller = alanOnerileri.filter((o) => o.durum === "kabul");
+          // Kabul edilen değer kartın yerine geçer (iki farklı tutar kabul edilmişse servis seçmez: kart kalır).
+          const deger = kabuller.length ? [...new Set(kabuller.map((o) => o.deger))].join(", ") : kartDegeri;
+          return (
+            <div key={etiket} className="contents">
+              <dt className="text-[var(--fg-subtle)] whitespace-nowrap">{etiket}</dt>
+              <dd className="grid gap-1 min-w-0">
+                <span className={deger ? "text-[var(--fg)] break-words" : "text-tone-caution font-mono"}>
+                  {deger ?? BOS}
+                  {kabuller.length > 0 && <span className="ml-1.5 text-[10.5px] text-tone-ok">belgeden</span>}
+                </span>
+                {onOneriKarar && alanOnerileri.length > 0 && (
+                  <span className="flex flex-wrap gap-1">
+                    {alanOnerileri.map((o) => (
+                      <KunyeOneriCipi key={o.id} oneri={o} belgeAdi={ad} onKarar={onOneriKarar} kilitli={kilitli} />
+                    ))}
+                  </span>
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
 
       {dosya.celiskiler.map((c) => (

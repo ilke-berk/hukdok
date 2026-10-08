@@ -77,7 +77,7 @@ export default defineConfig(({ mode }) => ({
       },
       // Lexis rapor servisi (04.10.2026): nginx.conf'taki /lexis-api/ allowlist'inin dev karsiligi —
       // ayni uclar, onek atilir. Servis lokalde 127.0.0.1:8020 (../lexis-rapor compose'u).
-      '^/lexis-api/(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum)(/|$)': {
+      '^/lexis-api/(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum|kunye-oneri|kunye-karar)(/|$)': {
         target: 'http://127.0.0.1:8020',
         changeOrigin: true,
         rewrite: (p: string) => p.replace(/^\/lexis-api/, ''),

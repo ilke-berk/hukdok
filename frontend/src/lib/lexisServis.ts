@@ -8,12 +8,13 @@
 //   listesini HUKDOK'un mevcut uçlarından AYNI token'la okur (`lexis-rapor/servis/hukdok.py`, K9).
 // - Yanıtlar `types/lexis.ts` tipleriyle aynıdır (`LexisDava`, `DosyaGirdisi`, `Emsal`); emsal metni maskelidir.
 //
+// - Belgeden künye çıkarımı (Aşama 13): `kunye-oneri` (GET liste, POST NDJSON akışı), `kunye-karar`.
 // - Emsal ajan hattı (G264): `emsal-belge` (kart belgesi JSON ya da multipart yükleme), `emsal-ara` (NDJSON akışı,
 //   okuyucu `lib/lexisAkis.ts`), `emsal-sonuc` (+ `/indir` inceleme paketi), `emsal-durum`.
 //
 // Bu modül `lexisApi.ts`'ten DİNAMİK yüklenir: örnek kip `apiClient`'ı (MSAL) hiç yüklemez.
 import { apiClient } from "@/lib/api";
-import { emsalAkisi, type EmsalAkisSecenekleri } from "@/lib/lexisAkis";
+import { emsalAkisi, kunyeAkisi, kunyeOnerisiCoz, type EmsalAkisSecenekleri } from "@/lib/lexisAkis";
 import { LexisApiError, type EmsalIstegi, type MuallakIstegi } from "@/lib/lexisApi";
 import { LEXIS_API_ONEKI, LEXIS_YETKI_MESAJI } from "@/lib/lexisWord";
 import type {
@@ -28,6 +29,11 @@ import type {
   KartKararlari,
   KayitliTaslak,
   KutuphaneFiltresi,
+  KunyeAkisOlayi,
+  KunyeAkisSecenekleri,
+  KunyeOneriDurumu,
+  KunyeOnerileri,
+  KunyeOnerisi,
   KutuphaneKaydi,
   LexisDava,
   LexisTaslak,
@@ -185,6 +191,24 @@ export function emsalBelgeYukle(dosya: File, caseId: number | null, signal?: Abo
 /** `POST /lexis-api/emsal-ara` — NDJSON akışı (`lexisAkis.emsalAkisi`); `failed` SON olaydır. */
 export function emsalAra(sha256: string, secenekler: EmsalAkisSecenekleri = {}): AsyncGenerator<EmsalAkisOlayi, void, undefined> {
   return emsalAkisi(sha256, secenekler);
+}
+
+/** `GET /lexis-api/kunye-oneri/{case_id}` — davanın belgeden künye önerileri (kabul / ret dahil) + hat durumu. */
+export async function kunyeOnerileri(caseId: number, signal?: AbortSignal): Promise<KunyeOnerileri> {
+  const yanit = await jsonGetir<KunyeOnerileri>(`/kunye-oneri/${caseId}`, { method: "GET" }, signal);
+  return { ...yanit, oneriler: (yanit.oneriler ?? []).map(kunyeOnerisiCoz).filter((o): o is KunyeOnerisi => o !== null) };
+}
+
+/** `POST /lexis-api/kunye-oneri` — NDJSON akışı (`lexisAkis.kunyeAkisi`); `failed` SON olaydır. */
+export function kunyeOner(caseId: number, secenekler: KunyeAkisSecenekleri = {}): AsyncGenerator<KunyeAkisOlayi, void, undefined> {
+  return kunyeAkisi(caseId, secenekler);
+}
+
+/** `POST /lexis-api/kunye-karar` — öneriyi kabul / ret eder ya da kararı geri alır (`oneri`). Karta yazılmaz (K34). */
+export async function kunyeKarar(id: number, caseId: number, durum: KunyeOneriDurumu, signal?: AbortSignal): Promise<KunyeOnerisi> {
+  const satir = kunyeOnerisiCoz(await jsonGetir<unknown>("/kunye-karar", { method: "POST", body: JSON.stringify({ id, case_id: caseId, durum }) }, signal));
+  if (!satir) throw new LexisApiError(502, LEXIS_DAVA_SERVISI_YOK);
+  return satir;
 }
 
 /** `GET /lexis-api/emsal-sonuc/{sha256}` — belgenin son `complete` sonucu; yoksa 404 (`LexisApiError`). */

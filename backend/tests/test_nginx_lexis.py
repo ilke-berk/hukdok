@@ -8,7 +8,7 @@ nginx'indeki `/lexis-api/` önekidir — Hukukbot proxy'sinin aynı deseni
    `emsal-oner`, `iskelet`, `muallak-oner`, `karar-bankasi`, `kutuphane`, `rapor`,
    `emsal-puanla`, `taslak`, `gecmis`, `kart-baglari`, `kart-sec`, `profiller`, `profil`,
    `karar-rafi`, `kararlar`, `karar`, `yaz`, `emsal-belge`, `emsal-ara`, `emsal-sonuc`,
-   `emsal-durum`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
+   `emsal-durum`, `kunye-oneri`, `kunye-karar`); servisin `/health`'i ve geri kalan her `/lexis-api` yolu 404'tür.
 2. GECİKMELİ DNS: upstream değişkenle + `resolver` ile verilir. Düz adla yazılırsa
    Lexis stack'i kapalıyken HUKDOK'un nginx'i açılışta upstream'i çözemez ve HİÇ kalkmaz.
 3. Vite dev proxy'si aynı allowlist'i taşır.
@@ -49,7 +49,7 @@ def _proxy_govdesi() -> str:
 
 
 # Tam metin: alternatif eklemek, (/|$) çapasını silmek ya da ~ → ~* yapmak allowlist'i genişletir.
-ALLOWLIST = "(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum)"
+ALLOWLIST = "(word|davalar|dosya|emsal-oner|iskelet|muallak-oner|karar-bankasi|kutuphane|rapor|emsal-puanla|taslak|gecmis|kart-baglari|kart-sec|profiller|profil|karar-rafi|kararlar|karar|yaz|emsal-belge|emsal-ara|emsal-sonuc|emsal-durum|kunye-oneri|kunye-karar)"
 ALLOWLIST_ESLESMESI = f"~ ^/lexis-api/{ALLOWLIST}(/|$)"
 
 

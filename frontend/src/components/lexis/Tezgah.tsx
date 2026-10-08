@@ -6,7 +6,7 @@ import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeleto
 import { useConfirm } from "@/hooks/useConfirm";
 import { GERCEK_ISKELET_NOTU, GERCEK_YAZIM_NOTU, lexisApi, veriKipi } from "@/lib/lexisApi";
 import { tarihSaatYaz } from "@/lib/lexisMetin";
-import { ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
+import { BELGE_SINIFI_ALANI, ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
 import { BolumGezgini } from "./BolumGezgini";
 import { CiktiCubugu } from "./CiktiCubugu";
@@ -22,10 +22,12 @@ import { EtiketliBolum } from "./EtiketliBolum";
 import { KararListesi } from "./KararListesi";
 import { KararOkuyucu } from "./KararOkuyucu";
 import { KunyeKarti, type KunyeSecimi } from "./KunyeKarti";
+import { KunyeDoldur } from "./KunyeOneriCipi";
 import { MuallakKarti } from "./MuallakKarti";
 import { OzetBolum } from "./OzetBolum";
 import { UretimSeridi } from "./UretimSeridi";
 import { UyariListesi } from "./UyariListesi";
+import { useKunyeOnerileri } from "./useKunyeOnerileri";
 import { useTezgah } from "./useTezgah";
 import { BAGLANTI_SINIFI, bolumKimligi, bolumUyariSayilari, hataMetni, kararKunyesi, uyariHedefi } from "./yardimcilar";
 
@@ -82,6 +84,9 @@ export function Tezgah() {
   const uyariSayilari = useMemo(() => bolumUyariSayilari(t.uyarilar), [t.uyarilar]);
   const hataSayisi = t.uyarilar.filter((u) => u.seviye === "HATA").length;
   const kilitli = t.yaziliyor || t.geriYukleniyor;
+  // Belgeden künye önerileri (Aşama 13): yalnız gerçek kipte; kabul edilen değeri iskelete servis koyar.
+  const kunye = useKunyeOnerileri(gercek && dosya ? dosya.dava.case_id : null);
+  const belgeAdi = useCallback((id: number) => dosya?.belgeler.find((b) => b.id === id)?.ad ?? `belge ${id}`, [dosya]);
   // Kararlardan yazım: servis açmışsa ve en az bir karar seçiliyse seçili kararların maskeli metni modele gider.
   const yazilacakKararlar = useMemo(() => (t.yazimDurumu?.acik ? t.kararlar.filter((k) => t.seciliKararlar.has(k.id)) : []), [t.yazimDurumu, t.kararlar, t.seciliKararlar]);
   const kararlardanYazim = yazilacakKararlar.length > 0;
@@ -233,6 +238,23 @@ export function Tezgah() {
                 onDegistir={(s) => void kunyeDegistir(s)}
                 onOncekiRapor={dosya.onceki_rapor ? () => void raporOku(dosya.onceki_rapor!) : undefined}
                 kilitli={kilitli}
+                oneriler={kunye.oneriler.filter((o) => o.alan !== BELGE_SINIFI_ALANI)}
+                onOneriKarar={(o, d) => void kunye.karar(o, d)}
+                belgeAdi={belgeAdi}
+                ust={
+                  <KunyeDoldur
+                    hat={kunye.hat}
+                    calisiyor={kunye.calisiyor}
+                    ilerleme={kunye.ilerleme}
+                    uyarilar={kunye.uyarilar}
+                    hata={kunye.hata}
+                    siniflar={kunye.oneriler.filter((o) => o.alan === BELGE_SINIFI_ALANI)}
+                    belgeAdi={belgeAdi}
+                    onDoldur={(onay) => void kunye.doldur(onay)}
+                    onKarar={(o, d) => void kunye.karar(o, d)}
+                    kilitli={kilitli}
+                  />
+                }
               />
               <BelgeListesi belgeler={dosya.belgeler} secili={t.seciliBelgeler} onSec={t.belgeSec} onEmsalBul={(b) => setEmsalBul({ belgeId: b.id })} kilitli={kilitli} />
               <KararListesi

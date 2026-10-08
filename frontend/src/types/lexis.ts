@@ -1040,3 +1040,96 @@ export const BAG_ANAHTARI_ADLARI: Record<BagAnahtari, string> = {
   DOSYA_NO: "dosya no",
   ESAS_NO: "mahkeme + esas no",
 };
+
+// ---------------------------------------------------------------------------------------------
+// Belgeden künye çıkarımı (`lexis-rapor` PLAN.md Aşama 13, K31-K34; servis `servis/kunye.py`)
+// ---------------------------------------------------------------------------------------------
+
+/** Künye alanları — `lexis-rapor/lexis_rapor/kunye_alanlari.py::ALANLAR` ile birebir (sıra dahil). */
+export const KUNYE_ALANLARI = [
+  "sigortali", "hasta", "hastane", "olay_tarihi", "davali", "uzmanlik", "hasar_no", "police_no", "teminat_limiti",
+  "talep_maddi", "talep_manevi",
+] as const;
+export type KunyeAlani = (typeof KUNYE_ALANLARI)[number];
+/** Belge sınıfı önerisinin alan kodu (türü boş / "Diğer" belgenin sınıfı; S9). */
+export const BELGE_SINIFI_ALANI = "belge_sinifi";
+
+export const KUNYE_ALAN_ADLARI: Record<KunyeAlani, string> = {
+  sigortali: "Sigortalı",
+  hasta: "Hasta",
+  hastane: "Hastane",
+  olay_tarihi: "Olay tarihi",
+  davali: "Davalı",
+  uzmanlik: "Uzmanlık",
+  hasar_no: "Hasar no",
+  police_no: "Poliçe no",
+  teminat_limiti: "Teminat limiti",
+  talep_maddi: "Talep (maddi)",
+  talep_manevi: "Talep (manevi)",
+};
+
+/** Öneri kartla karşılaştırıldığında: aynı, farklı (ikisi yan yana gösterilir, K34), kartta boş, kartta böyle alan yok. */
+export type KunyeKartDurumu = "ayni" | "farkli" | "kartta_bos" | "kartta_yok";
+export type KunyeOneriDurumu = "oneri" | "kabul" | "ret";
+
+/** `kunye_onerileri` satırı. `alinti` belgeden birebirdir (kod denetçisi doğruladı, K33); karta YAZILMAZ (K34). */
+export interface KunyeOnerisi {
+  id: number;
+  case_id: number;
+  belge_id: number;
+  belge_sha256: string;
+  /** `KunyeAlani` ya da `belge_sinifi`. */
+  alan: string;
+  /** Ekrandaki yazım (tarih gg.aa.yyyy, tutar "1.234,56"); belge sınıfında `LexisBelgeTuru`. */
+  deger: string;
+  deger_sayi: number | null;
+  alinti: string;
+  kart_durumu: KunyeKartDurumu;
+  kart_degeri: string | null;
+  model: string;
+  istem_surumu: string;
+  durum: KunyeOneriDurumu;
+  olusturma: string | null;
+  karar_veren: string | null;
+  karar_zamani: string | null;
+}
+
+/** Hat durumu: `kip` sahte | gemini (gerçek kipte belge MASKESİZ gider — her koşuda onay, K4). */
+export interface KunyeHatDurumu {
+  acik: boolean;
+  kip: string;
+  model: string;
+  /** `kip_gecersiz | anahtar_yok | paket_yok | ornek`; açıkken `null`. */
+  neden: string | null;
+  onay_gerekir: boolean;
+  istem_surumu: string;
+  belge_tavani: number;
+}
+
+/** `GET /lexis-api/kunye-oneri/{case_id}`. */
+export interface KunyeOnerileri {
+  oneriler: KunyeOnerisi[];
+  durum: KunyeHatDurumu;
+}
+
+export interface KunyeOkunamayan {
+  belge_id: number;
+  neden: string;
+}
+
+/** `POST /lexis-api/kunye-oneri` NDJSON olayları (HUKDOK stream sözleşmesi; `failed` SON olaydır). */
+export type KunyeAkisOlayi =
+  | { status: "info"; asama: string; belge_id?: number; sira?: number; toplam?: number; aday?: number }
+  | { status: "warning"; message: string; asama?: string; belge_id?: number }
+  | { status: "complete"; case_id: number; model: string; oneriler: KunyeOnerisi[]; okunamayanlar: KunyeOkunamayan[]; sayilar: Record<string, number> }
+  | { status: "failed"; error_ozet: string; error_kod: string; okunamayanlar?: KunyeOkunamayan[] };
+
+export interface KunyeAkisSecenekleri {
+  /** Yoksa kartın bütün belgeleri. */
+  belgeIdleri?: number[];
+  /** Ekrandaki onay kutusu — gerçek kipte zorunlu (sunucu 422 döner). */
+  onay?: boolean;
+  /** Önbellek atlanır. */
+  yeniden?: boolean;
+  signal?: AbortSignal;
+}

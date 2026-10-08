@@ -71,6 +71,11 @@ import {
   type TaslakKosusu,
   type Teminat,
   type YazimSonucu,
+  type KunyeAkisOlayi,
+  type KunyeAkisSecenekleri,
+  type KunyeOneriDurumu,
+  type KunyeOnerileri,
+  type KunyeOnerisi,
 } from "@/types/lexis";
 
 /** Örnek adaptör devrede mi — entegrasyon tamamlanınca false. Dava bölgesinin kipi ayrıca `veriKipi()`. */
@@ -160,11 +165,23 @@ export interface LexisApi {
   emsalSonuc(sha256: string, signal?: AbortSignal): Promise<EmsalSonucu>;
   /** İnceleme paketini (zip) indirir, dosya adını döner; paket yoksa 404. Örnek kipte paket üretilmez (404). */
   emsalIndir(sha256: string, signal?: AbortSignal): Promise<string>;
+
+  // --- belgeden künye çıkarımı (Aşama 13, K31-K34) ---
+  /** Davanın önerileri + hat durumu. Örnek kipte hat kapalıdır (`neden: "ornek"`), liste boş. */
+  kunyeOnerileri(caseId: number, signal?: AbortSignal): Promise<KunyeOnerileri>;
+  /** "Belgelerden doldur" akışı; `failed` SON olaydır, `complete` davanın güncel öneri listesini taşır. */
+  kunyeOner(caseId: number, secenekler?: KunyeAkisSecenekleri): AsyncGenerator<KunyeAkisOlayi, void, undefined>;
+  /** Önerinin kabulü / reddi; `oneri` kararı geri alır. Kabul edilen değer taslağın künyesine girer, karta yazılmaz. */
+  kunyeKarar(id: number, caseId: number, durum: KunyeOneriDurumu, signal?: AbortSignal): Promise<KunyeOnerisi>;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Örnek adaptör
 // ---------------------------------------------------------------------------------------------
+
+const ORNEK_KUNYE_DURUMU: KunyeOnerileri["durum"] = {
+  acik: false, kip: "ornek", model: "", neden: "ornek", onay_gerekir: false, istem_surumu: "", belge_tavani: 0,
+};
 
 const kopya = <T>(deger: T): T => JSON.parse(JSON.stringify(deger)) as T;
 
@@ -662,6 +679,19 @@ const ornekLexisApi: LexisApi = {
     throw new LexisApiError(404, ORNEK_PAKET_YOK);
   },
 
+  // Örnek kipte belgeden künye çıkarımı yok: örnek davaların belgesi gerçek değildir (hat kapalı görünür).
+  async kunyeOnerileri(_caseId, signal) {
+    await bekle(signal, 0.2);
+    return { oneriler: [], durum: { ...ORNEK_KUNYE_DURUMU } };
+  },
+  // eslint-disable-next-line require-yield
+  async *kunyeOner() {
+    throw new LexisApiError(503, "Örnek veride belgeden künye çıkarımı yok; gerçek dava kipine geçin.");
+  },
+  async kunyeKarar() {
+    throw new LexisApiError(404, "Öneri bulunamadı.");
+  },
+
   async kartBaglari(signal) {
     await bekle(signal);
     return kopya(durum.baglar);
@@ -917,6 +947,16 @@ const gercekLexisApi: LexisApi = {
   },
   async emsalIndir(sha256, signal) {
     return (await servis()).emsalIndir(sha256, signal);
+  },
+  // Belgeden künye çıkarımı: belgeyi servis HUKDOK'tan kullanıcının token'ıyla alır (tarayıcıdan yalnız kimlik gider).
+  async kunyeOnerileri(caseId, signal) {
+    return (await servis()).kunyeOnerileri(caseId, signal);
+  },
+  async *kunyeOner(caseId, secenekler = {}) {
+    yield* (await servis()).kunyeOner(caseId, secenekler);
+  },
+  async kunyeKarar(id, caseId, durum, signal) {
+    return (await servis()).kunyeKarar(id, caseId, durum, signal);
   },
   async denetle(taslak, signal) {
     if (signal?.aborted) throw iptalHatasi();
