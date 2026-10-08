@@ -326,18 +326,21 @@ export interface LexisDava {
   durum: string | null;
 }
 
-/** Rapor yazımının beklediği belge türleri + diğerleri. */
-export type LexisBelgeTuru = "DILEKCE" | "HEKIM_BEYANI" | "BILIRKISI" | "POLICE" | "KARAR" | "DIGER";
+/** Rapor yazımının beklediği belge türleri + diğerleri. Servis HUKDOK kodundan eşler (`lexis-rapor/lexis_rapor/belge_turleri.py`
+ * ile birebir); `UST_YAZI` kodla değil künye çıkarımının belge sınıflamasıyla gelir. */
+export type LexisBelgeTuru = "DILEKCE" | "HEKIM_BEYANI" | "BILIRKISI" | "TIBBI_KAYIT" | "POLICE" | "KARAR" | "UST_YAZI" | "DIGER";
 
 /** Eksikse uyarı verilen türler (`lexis-rapor/PLAN.md` K10). */
 export const BEKLENEN_BELGELER: readonly LexisBelgeTuru[] = ["DILEKCE", "HEKIM_BEYANI", "BILIRKISI", "POLICE"];
 
 export const BELGE_TURU_ADLARI: Record<LexisBelgeTuru, string> = {
   DILEKCE: "Dava / şikâyet dilekçesi",
-  HEKIM_BEYANI: "Sigortalı hekim beyanı",
+  HEKIM_BEYANI: "Hekim beyanı / cevap / savunma",
   BILIRKISI: "Bilirkişi / ATK raporu",
+  TIBBI_KAYIT: "Tıbbi kayıt",
   POLICE: "Poliçe",
   KARAR: "Mahkeme kararı",
+  UST_YAZI: "İdare üst yazısı",
   DIGER: "Diğer",
 };
 
