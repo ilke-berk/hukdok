@@ -161,9 +161,13 @@ export function kararGetir(id: number, signal?: AbortSignal): Promise<RafKarariA
  * `POST /lexis-api/yaz` — seçilen kararlardan özet bölümleri + değerlendirme. Kararların MASKELİ metni ve emsal
  * raporların maskeli bölümleri modele gider; çağıran önce kullanıcı onayı alır (K4). Servis kapalıysa 503.
  */
-export function yaz(istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet" | "emsal_sha"> & { karar_idleri: number[] }, signal?: AbortSignal): Promise<YazimSonucu> {
-  const { case_id, sirket, rapor_turu, iskelet: bicim, emsal_sha, karar_idleri } = istek;
-  return jsonGetir<YazimSonucu>("/yaz", { method: "POST", body: JSON.stringify({ case_id, sirket, rapor_turu, iskelet: bicim, karar_idleri, emsal_sha }) }, signal);
+export function yaz(
+  istek: Pick<TaslakIstegi, "case_id" | "sirket" | "rapor_turu" | "iskelet" | "emsal_sha"> & { karar_idleri: number[]; belge_idleri?: number[] },
+  signal?: AbortSignal,
+): Promise<YazimSonucu> {
+  const { case_id, sirket, rapor_turu, iskelet: bicim, emsal_sha, karar_idleri, belge_idleri } = istek;
+  const govde = { case_id, sirket, rapor_turu, iskelet: bicim, karar_idleri, ...(belge_idleri?.length ? { belge_idleri } : {}), emsal_sha };
+  return jsonGetir<YazimSonucu>("/yaz", { method: "POST", body: JSON.stringify(govde) }, signal);
 }
 
 // --- emsal ajan hattı (`lexis-rapor/servis/emsal_dosya.py`, `emsal_ajan.py`, `inceleme_paketi.py`; G259-G263) ---

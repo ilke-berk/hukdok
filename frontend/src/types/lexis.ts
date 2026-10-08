@@ -413,6 +413,8 @@ export interface OzetParagraf {
   kaynak_karar_id?: number | null;
   /** O karardan AYNEN alınmış kısa alıntı; rapora girmez, denetim kaynak kararda arar. */
   dayanak_alinti?: string | null;
+  /** Belgelerden yazımda (Aşama 14, K38): bölümün asıl belgesi kartta yok, paragraf yedek belgeden yazıldı. */
+  zayif_kaynak?: boolean;
 }
 
 export type UyariSeviyesi = "HATA" | "UYARI" | "BILGI";
@@ -437,7 +439,11 @@ export type UyariKodu =
   | "KART_BELGE_CELISKISI"
   | "EKSIK_BELGE"
   /** Özet paragrafındaki tutar, tarih ya da esas / karar numarası kaynak kararda geçmiyor. */
-  | "OLGU_KAYNAKTA_YOK";
+  | "OLGU_KAYNAKTA_YOK"
+  /** Belgelerden yazılan paragraf bölümün yedek (zayıf) kaynağından (K38). */
+  | "ZAYIF_KAYNAK"
+  /** Belgelerden yazımda servisin denetim uyarısı (alıntı, kaynakta olmayan olgu, kartta yok, tutarlılık). */
+  | "YAZIM_UYARISI";
 
 export interface LexisUyari {
   id: string;
@@ -588,6 +594,8 @@ export interface YazimDurumu {
   acik: boolean;
   neden: string | null;
   model: string | null;
+  /** Belgelerden yazımın modeli (`LEXIS_YAZIM_MODEL`); kapalıyken `null`. */
+  belge_model?: string | null;
 }
 
 /** `GET /lexis-api/kararlar/{case_id}` — dava kartına bağlı büro kararları + yazım durumu. */
@@ -602,6 +610,8 @@ export interface YazimSonucu {
   degerlendirme: DegerlendirmeTaslagi;
   muallak: MuallakOnerisi;
   kararlar: number[];
+  /** Belgelerden yazımda okunan (modele maskeli giden) kart belgeleri. */
+  belgeler?: number[];
   uyarilar: string[];
   model: string;
   maske: { bilinen: number; kalip: number; ogrenilen: number };
@@ -691,6 +701,8 @@ export interface TaslakIstegi {
    * (kullanıcı gönderim onayında görür); boşsa taslak iskelettir, hiçbir şey gönderilmez.
    */
   karar_idleri?: number[];
+  /** Gerçek davada: seçili kart belgelerinden de yazılsın (servis yazımı açmışsa; belgeler MASKELİ gider, Aşama 14). */
+  belgelerden_yaz?: boolean;
 }
 
 /**

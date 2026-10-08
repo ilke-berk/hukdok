@@ -71,6 +71,7 @@ import {
   type TaslakKosusu,
   type Teminat,
   type YazimSonucu,
+  type BolumKodu,
   type KunyeAkisOlayi,
   type KunyeAkisSecenekleri,
   type KunyeOneriDurumu,
@@ -815,6 +816,20 @@ async function gercekKaynakMetinleri(taslak: LexisTaslak, signal?: AbortSignal):
   return sonuc;
 }
 
+const SUNUCU_BOLUMLERI: readonly string[] = ["iddia", "beyan", "yargi_sureci", "uzman_gorusu", "ek_inceleme", "degerlendirme"];
+
+/** Servisin düz metin yazım uyarıları → ekran uyarısı; bölüm satır önekinden ("iddia paragraf 1: …"). Zayıf kaynak
+ * satırları alınmaz (paragrafın `zayif_kaynak` işaretinden `lexisDenetim` üretir). */
+export function sunucuUyarilari(satirlar: string[]): LexisUyari[] {
+  return satirlar
+    .filter((s) => !s.includes("zayıf kaynak"))
+    .map((s, i) => {
+      const onek = s.split(/[\s:]/, 1)[0];
+      const bolum = SUNUCU_BOLUMLERI.includes(onek) ? (onek as BolumKodu) : null;
+      return { id: `yazim-${i}`, kod: "YAZIM_UYARISI", seviye: "UYARI", bolum, madde: null, alan: null, metin: s };
+    });
+}
+
 async function gercekDenetle(taslak: LexisTaslak, signal?: AbortSignal): Promise<LexisUyari[]> {
   const dosya = await gercekDosya(taslak.case_id, signal);
   // Karar bankası alınamazsa denetim yine koşar: atıflar yalnız dosya metninde aranır.
@@ -876,14 +891,17 @@ const gercekLexisApi: LexisApi = {
     }
 
     const kararIdleri = istek.karar_idleri ?? [];
+    // Belgelerden yazım (Aşama 14): seçili kart belgeleri; servis maskeleyip bölüm başına yazar, künye onaylı künyeden.
+    const belgeIdleri = istek.belgelerden_yaz ? istek.belge_idleri : [];
     let yazim: YazimSonucu | null = null;
-    if (kararIdleri.length > 0) {
-      yield { status: "info", asama: "bolumler", mesaj: `${kararIdleri.length} karar maskelenip modele gönderiliyor; özet ve değerlendirme yazılıyor` };
+    if (kararIdleri.length > 0 || belgeIdleri.length > 0) {
+      const kaynak = [kararIdleri.length > 0 && `${kararIdleri.length} karar`, belgeIdleri.length > 0 && `${belgeIdleri.length} belge`].filter(Boolean).join(" ve ");
+      yield { status: "info", asama: "bolumler", mesaj: `${kaynak} maskelenip modele gönderiliyor; özet ve değerlendirme yazılıyor` };
       try {
-        yazim = await (await servis()).yaz({ ...istek, karar_idleri: kararIdleri }, signal);
+        yazim = await (await servis()).yaz({ ...istek, karar_idleri: kararIdleri, belge_idleri: belgeIdleri }, signal);
       } catch (e) {
         if ((e as Error)?.name === "AbortError") throw e;
-        yield { status: "warning", mesaj: `Kararlardan yazım yapılamadı: ${e instanceof LexisApiError ? e.message : LEXIS_GENEL_HATA} Taslak iskelet olarak bırakıldı.` };
+        yield { status: "warning", mesaj: `${belgeIdleri.length > 0 ? "Yazım" : "Kararlardan yazım"} yapılamadı: ${e instanceof LexisApiError ? e.message : LEXIS_GENEL_HATA} Taslak iskelet olarak bırakıldı.` };
       }
     } else {
       yield { status: "info", asama: "bolumler", mesaj: "Bölümler hazırlanıyor" };
@@ -912,7 +930,10 @@ const gercekLexisApi: LexisApi = {
       emsaller: istek.emsal_sha,
       kararlar: kararIdleri,
     };
-    yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
+    // Belgelerden yazımda servisin denetimi (alıntı belgede, kartta yok, tutarlılık) ekranda belge metni olmadan
+    // yinelenemez: yazım anının uyarısı olarak eklenir (zayıf kaynak paragrafın kendi işaretinden denetlenir).
+    const yazimUyarilari = belgeIdleri.length > 0 ? sunucuUyarilari(yazim?.uyarilar ?? []) : [];
+    yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: [...(await gercekDenetle(taslak, signal)), ...yazimUyarilari] };
   },
   async kararAra(suzgec, signal) {
     return (await servis()).kararAra(suzgec, signal);

@@ -95,6 +95,8 @@ export function useTezgah() {
   const [kararHatasi, setKararHatasi] = useState<string | null>(null);
   const [seciliKararlar, setSeciliKararlar] = useState<ReadonlySet<number>>(new Set());
   const [yazimDurumu, setYazimDurumu] = useState<YazimDurumu | null>(null);
+  // Belgelerden yazım (Aşama 14) AÇIK seçimdir: belgeler varsayılan seçili geldiği için seçim tek başına gönderim değildir.
+  const [belgelerdenYaz, setBelgelerdenYaz] = useState(false);
   // Emsal ajanından onaylanan büro kararları (K28): taslağın `emsal_kararlar` alanı + künye için raf kaydı.
   // Yazım girdisi `seciliKararlar`dan AYRIDIR; modele gitmez.
   const [emsalKararlari, setEmsalKararlari] = useState<RafKarari[]>([]);
@@ -549,6 +551,8 @@ export function useTezgah() {
       emsal_sha: emsaller.map((e) => e.kayit.okuma.sha256),
       // Kararlardan yazım yalnız servis açmışsa: kapalıyken seçim gönderilmez, taslak iskelet gelir.
       karar_idleri: yazimDurumu?.acik ? kararlar.filter((k) => seciliKararlar.has(k.id)).map((k) => k.id) : [],
+      // Belgelerden yazım (Aşama 14) da yalnız servis yazımı açmışsa; seçili belge yoksa gönderim yok.
+      belgelerden_yaz: belgelerdenYaz && !!yazimDurumu?.acik && dosya.belgeler.some((b) => seciliBelgeler.has(b.id)),
     };
     // Önce eski akış kesilir ve taslak sıfırlanır; yeni akışın denetçisi SONRA kurulur (sıfırlama onu kesmesin).
     taslagiSifirla();
@@ -613,7 +617,7 @@ export function useTezgah() {
         setAkis(null);
       }
     }
-  }, [dosya, emsaller, emsalKararlari, kararlar, seciliBelgeler, seciliKararlar, yazimDurumu, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
+  }, [dosya, emsaller, emsalKararlari, kararlar, seciliBelgeler, seciliKararlar, yazimDurumu, belgelerdenYaz, koy, kimlikleriKoy, taslagiSifirla, yeniKimlik]);
 
   const durdur = useCallback(() => akisIstegi.current?.abort(), []);
 
@@ -783,6 +787,8 @@ export function useTezgah() {
     kararHatasi,
     seciliKararlar,
     yazimDurumu,
+    belgelerdenYaz,
+    setBelgelerdenYaz,
     emsalKararlari,
     emsalKararYukleniyor,
     emsalKararHatasi,

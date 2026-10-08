@@ -6,7 +6,7 @@ import { DetailSkeleton, LineListSkeleton } from "@/components/skeletons/Skeleto
 import { useConfirm } from "@/hooks/useConfirm";
 import { GERCEK_ISKELET_NOTU, GERCEK_YAZIM_NOTU, lexisApi, veriKipi } from "@/lib/lexisApi";
 import { tarihSaatYaz } from "@/lib/lexisMetin";
-import { BELGE_SINIFI_ALANI, ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisDava, type LexisUyari } from "@/types/lexis";
+import { BELGE_SINIFI_ALANI, ISKELET_BOLUMLERI, SIRKET_ADLARI, type BolumKodu, type Emsal, type KutuphaneKaydi, type LexisBelgeTuru, type LexisDava, type LexisUyari } from "@/types/lexis";
 import { BelgeListesi } from "./BelgeListesi";
 import { BolumGezgini } from "./BolumGezgini";
 import { CiktiCubugu } from "./CiktiCubugu";
@@ -30,6 +30,18 @@ import { UyariListesi } from "./UyariListesi";
 import { useKunyeOnerileri } from "./useKunyeOnerileri";
 import { useTezgah } from "./useTezgah";
 import { BAGLANTI_SINIFI, bolumKimligi, bolumUyariSayilari, hataMetni, kararKunyesi, uyariHedefi } from "./yardimcilar";
+
+/** Belgelerden yazımda belgenin hangi bölüme kaynak olduğu (`lexis-rapor/lexis_rapor/belge_turleri.py` tablosu). */
+const BELGE_BOLUMU: Record<LexisBelgeTuru, string> = {
+  DILEKCE: "iddia",
+  HEKIM_BEYANI: "beyan",
+  KARAR: "yargı süreci (iddia yedeği)",
+  BILIRKISI: "uzman görüşü — S8 bekliyor (iddia yedeği)",
+  TIBBI_KAYIT: "uzman görüşü — S8 bekliyor",
+  UST_YAZI: "iddia yedeği",
+  POLICE: "kullanılmaz",
+  DIGER: "kullanılmaz (türü yok: künye önerisinde sınıflandırın)",
+};
 
 type Vurgu = { madde: number | null; alan: string | null; bolum: BolumKodu | null };
 
@@ -90,6 +102,13 @@ export function Tezgah() {
   // Kararlardan yazım: servis açmışsa ve en az bir karar seçiliyse seçili kararların maskeli metni modele gider.
   const yazilacakKararlar = useMemo(() => (t.yazimDurumu?.acik ? t.kararlar.filter((k) => t.seciliKararlar.has(k.id)) : []), [t.yazimDurumu, t.kararlar, t.seciliKararlar]);
   const kararlardanYazim = yazilacakKararlar.length > 0;
+  // Belgelerden yazım (Aşama 14): servis yazımı açmışsa seçili kart belgeleri maskelenip bölüm başına yazılır.
+  const yazilacakBelgeler = useMemo(
+    () => (gercek && t.yazimDurumu?.acik && t.belgelerdenYaz && dosya ? dosya.belgeler.filter((b) => t.seciliBelgeler.has(b.id)) : []),
+    [gercek, t.yazimDurumu, t.belgelerdenYaz, dosya, t.seciliBelgeler],
+  );
+  const belgelerdenYazim = yazilacakBelgeler.length > 0;
+  const modeleGonderim = kararlardanYazim || belgelerdenYazim;
   // Gerçek kipte taslak sunucuda saklanır: dava değişimi taslağı SİLMEZ (onay gerekmez) — kayıt başarısızsa gerekir.
   const kayitsiz = t.kayit.tur === "hata" || t.kayit.tur === "cakisma";
   const emsalKararIdleri = useMemo(() => new Set(t.emsalKararlari.map((k) => k.id)), [t.emsalKararlari]);
@@ -138,25 +157,30 @@ export function Tezgah() {
       title: taslak ? "Taslak yeniden yazılacak" : "Taslak yazılacak",
       body:
         (taslak ? "Mevcut taslak ve düzeltmeleriniz silinir. " : "") +
-        (kararlardanYazim
+        (modeleGonderim
           ? GERCEK_YAZIM_NOTU
           : gercek
             ? GERCEK_ISKELET_NOTU
             : "Seçili belgelerin metni ve emsal raporların maskeli metni taslak yazımı için modele gönderilir. (Önizleme: hiçbir şey gönderilmez, örnek taslak gösterilir.)"),
       details: [
         // Modele gidecekler listelenir (K4). Gerçek kipte karar seçilmemişse iskelet karttan kurulur, gönderim yoktur.
-        ...(kararlardanYazim
+        ...(modeleGonderim
           ? [
-              { label: "Modele gidecek kararlar", value: `${yazilacakKararlar.length} karar (maskeli) — ${yazilacakKararlar.map((k) => kararKunyesi(k)).join("; ")}` },
+              ...(kararlardanYazim
+                ? [{ label: "Modele gidecek kararlar", value: `${yazilacakKararlar.length} karar (maskeli) — ${yazilacakKararlar.map((k) => kararKunyesi(k)).join("; ")}` }]
+                : []),
+              ...(belgelerdenYazim
+                ? [{ label: "Modele gidecek belgeler", value: `${yazilacakBelgeler.length} belge (maskeli) — ${yazilacakBelgeler.map((b) => `${b.ad} → ${BELGE_BOLUMU[b.tur]}`).join("; ")}` }]
+                : []),
               emsalSatiri,
-              { label: "Model", value: t.yazimDurumu?.model ?? "—" },
+              { label: "Model", value: [kararlardanYazim && t.yazimDurumu?.model, belgelerdenYazim && t.yazimDurumu?.belge_model].filter(Boolean).join(" · ") || "—" },
             ]
           : gercek
             ? []
             : [{ label: "Belgeler", value: secili.length > 0 ? `${secili.length} belge — ${secili.map((b) => b.ad).join(", ")}` : "Belge seçilmedi" }, emsalSatiri]),
         { label: "Rapor", value: [dosya.sirket && SIRKET_ADLARI[dosya.sirket], dosya.rapor_turu === "EK" ? "ek rapor" : "ana rapor", `${bolumler.length} bölüm`].filter(Boolean).join(" · ") },
       ],
-      confirmLabel: kararlardanYazim ? "Gönder ve yaz" : taslak ? "Yeniden yaz" : "Taslağı yaz",
+      confirmLabel: modeleGonderim ? "Gönder ve yaz" : taslak ? "Yeniden yaz" : "Taslağı yaz",
     });
     if (!onay) return;
     setSeciliMadde(null);
@@ -290,10 +314,18 @@ export function Tezgah() {
         </div>
         {dosya && (
           <div className="shrink-0 p-3 border-t border-[var(--border)]">
+            {gercek && t.yazimDurumu?.acik && (
+              <label data-testid="lexis-belgelerden-yaz" className="mb-2 flex items-start gap-2 text-[12px] leading-snug text-[var(--fg)]">
+                <input type="checkbox" className="mt-[2px] accent-[var(--brand)]" checked={t.belgelerdenYaz} disabled={kilitli} onChange={(e) => t.setBelgelerdenYaz(e.target.checked)} />
+                <span>Seçili belgelerden de yaz (iddia, beyan, yargı süreci; belgeler maskeli gider)</span>
+              </label>
+            )}
             {gercek &&
-              (kararlardanYazim ? (
+              (modeleGonderim ? (
                 <p data-testid="lexis-yazim-notu" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">
-                  Seçili {yazilacakKararlar.length} karar maskelenerek modele gönderilir; özet ve değerlendirme kararlardan yazılır. Gönderimden önce onayınız istenir.
+                  {belgelerdenYazim
+                    ? `Seçili ${[kararlardanYazim && `${yazilacakKararlar.length} karar`, `${yazilacakBelgeler.length} belge`].filter(Boolean).join(" ve ")} maskelenerek modele gönderilir; özet ve değerlendirme bunlardan yazılır (künye onaylı künyeden). Gönderimden önce onayınız istenir.`
+                    : `Seçili ${yazilacakKararlar.length} karar maskelenerek modele gönderilir; özet ve değerlendirme kararlardan yazılır. Gönderimden önce onayınız istenir.`}
                 </p>
               ) : (
                 <p data-testid="lexis-iskelet-notu" className="mb-2 text-[12px] leading-snug text-[var(--fg-muted)]">

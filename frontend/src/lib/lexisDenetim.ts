@@ -100,6 +100,9 @@ export function denetle({ taslak, dosya, emsalMetinleri, kararBankasi, kaynakMet
       if (paragraflar.length === 0) ekle("BOLUM_BOS", "UYARI", `Bölüm boş: ${tanim.baslik}`, { bolum: tanim.kod });
       paragraflar.forEach((p, i) => {
         metinDenetimi(p.metin, tanim.kod, null);
+        if (p.zayif_kaynak) {
+          ekle("ZAYIF_KAYNAK", "UYARI", `${tanim.baslik}, paragraf ${i + 1}: zayıf kaynak — bölümün asıl belgesi kartta yok, yedek belgeden yazıldı`, { bolum: tanim.kod });
+        }
         // Karardan yazılan paragraf: alıntısı ve içindeki tutar / tarih / numara kaynak kararda geçmelidir.
         const kaynak = p.kaynak_karar_id != null ? kaynakMetinleri[p.kaynak_karar_id] : undefined;
         if (kaynak === undefined) return;
