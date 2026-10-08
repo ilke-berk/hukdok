@@ -239,8 +239,12 @@ girişle deneme kuyruk dışı insan adımı.
   girmez. Diyalog uyarır ("Word'de kaydettiğinizden emin olun"); K13 sha ile kullanıcı sürüm kaydında farkı görür.
 - **Eklenti kimliği:** NAA ile aynı scope alınamazsa `ALLOWED_AUDIENCES` + token doğrulayıcı değişir (kimlik-ve-token
   dokümanı); G286 bunu test eder, gerekirse BLOKE bırakır ve kullanıcı kararı ister (Azure uygulama kaydı değişikliği
-  İNSAN ADIMI).
+  İNSAN ADIMI). **G286 sonucu (08.10, belge ölçümü):** NAA token'ı aynı kayıt + aynı scope → `aud` aynı; doğrulayıcı
+  DEĞİŞMEDİ. İNSAN ADIMI: uygulama kaydına SPA yönlendirmesi `brk-multihub://hukukoid.com` + `https://hukukoid.com/eklenti`
+  (`kimlik-ve-token.md` §2.5). Canlı claim teyidi G287 sonrası.
 - **CSP:** Office.js için `script-src`/`connect-src`/`frame-ancestors` genişler; `add_header` kopyaları birlikte değişir,
-  bekçi testi eşitliği doğrular.
+  bekçi testi eşitliği doğrular. **G286 (08.10):** Office.js CDN'i değişmiş — `officeapis.public.onecdn.static.microsoft`
+  (eski `appsforoffice`; Ajax artık yüklenmez → `ajax.aspnetcdn` gereksiz); `connect-src` değişmedi (MSAL zaten vardı);
+  `frame-ancestors` yalnız `/eklenti` location'ında açık.
 - **Word Online mı masaüstü mü:** `ms-word:ofe|u|` bağlantısı masaüstü Word'ü açar, yoksa `word_url` Word Online'ı; iki
   yol da SharePoint oturumu ister (kullanıcı HUKDOK'a Microsoft hesabıyla girdiği için genelde açık).

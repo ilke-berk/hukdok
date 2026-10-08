@@ -160,6 +160,27 @@ tüketicisidir, kendi `aud`'u yoktur. Bu yüzden:
 - Hukukbot'un kurtarılamayan 401'i `apiClient`'ın oturum-bitti akışını tetikler — Hukukbot'ta `aud`/kiracı
   yanlış yapılandırılırsa kullanıcı HUKDOK'tan da çıkarılır (bilinçli; `hukukbotApi.ts` baş yorumu).
 
+### 2.5 Word eklentisi kimliği (G286, 08.10 — belge ölçümü; canlı teyit G287 sonrası)
+
+Word eklentisi (`/eklenti` görev bölmesi, G287) token'ı MSAL.js **nested app authentication (NAA)** ile alır
+(`createNestablePublicClientApplication`; `ssoSilent` → gerekirse `acquireTokenPopup`; Word web'de `loginHint` =
+`Office.auth.getAuthContext().userPrincipalName`). Microsoft Learn "Enable single sign-on in an Office add-in with nested
+app authentication" (ms.date 15.12.2025): NAA ile alınan token'lar **eklentinin kendi uygulama kaydı** için verilir ve
+istenen scope serbesttir. Eklenti HUKDOK'un AYNI kaydını (`VITE_AZURE_CLIENT_ID`) ve AYNI scope'u
+(`api://<client_id>/access_as_user`) kullanır → token `aud=api://<client_id>`, `scp=access_as_user`, `tid` kullanıcının
+kiracısı: §2 zinciri DEĞİŞMEZ, `ALLOWED_AUDIENCES` EKLENMEDİ (`auth_verifier.py` dokunulmadı). Hukukbot doğrulayıcısı da
+aynı nedenle etkilenmez.
+
+**Gerekli Azure adımı (İNSAN ADIMI, deploy öncesi):** uygulama kaydı → Authentication → *Single-page application*
+yönlendirme adreslerine iki ekleme: `brk-multihub://hukukoid.com` (NAA güvenilir aracı grubu — Word/Excel/PowerPoint/
+Outlook/Teams; yalnız origin, alt yol YOK) ve `https://hukukoid.com/eklenti` (Word web standart akışı görev bölmesi
+sayfasını ister). Lokal deneme için `brk-multihub://localhost:<port>` ayrıca.
+
+**Açık (G287 sonrası canlı ölçüm):** Word'de alınan token'ın `aud`/`scp`/`iss` claim'leri decode edilip §2 ile
+karşılaştırılır; fark çıkarsa (beklenmiyor) `ALLOWED_AUDIENCES` kararı o zaman verilir. Eski Office sürümleri NAA'yı
+desteklemez (`Office.context.requirements.isSetSupported("NestedAppAuth", "1.1")`) — G287 bu durumda "HUKDOK'u
+tarayıcıda açın" der.
+
 ## 3. Süre tablosu
 
 ### 3.1 Koddan okunan (doğrulanmış)

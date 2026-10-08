@@ -335,6 +335,14 @@ yoktur. G182'den beri beşi `/assets/` ve `/` location'larında AYNEN tekrar yaz
 (`nginx.conf:84-88`, `:97-101`): `add_header` kalıtım kuralı gereği `Cache-Control` ekleyen
 location server düzeyindeki başlıkları devralmaz (`nginx.conf:48-51`).
 
+**Word eklentisi (G286, 08.10):** CSP artık BEŞ kopyadır — server, `/assets/`, `/`, `location = /eklenti/manifest.xml`
+(dördü birebir) ve `location ~ ^/eklenti(/|$)` (görev bölmesi). `script-src` her kopyada Office.js CDN'ini
+(`https://officeapis.public.onecdn.static.microsoft`) içerir. `/eklenti` kopyası YALNIZ `frame-ancestors`'ta farklıdır:
+`'self' https://*.officeapps.live.com https://*.office.com https://word.cloud.microsoft` (Word web bölmeyi çerçeveler);
+bu location'da `X-Frame-Options` BİLEREK yoktur (SAMEORIGIN Office çerçevelemesiyle çelişir), diğer dört başlık tamdır.
+Manifest `application/xml` + `no-cache`. Permissions-Policy de beş kopyadır. Bekçi `backend/tests/test_nginx_eklenti.py`
+(+ `test_nginx_permissions_policy.py` sayısı 5). Geri dönüş (`-Report-Only`) artık beş satırda birlikte yapılır.
+
 **Tarihçe — neden önce Report-Only kondu (G091):** bilinen bir XSS yolu yok (React
 varsayılan kaçışı var, `dangerouslySetInnerHTML` hiç kullanılmıyor), yani bu bir açık
 kapatma değil derinlemesine savunmadır; ve `frontend/index.html:38`'deki inline
@@ -373,6 +381,8 @@ Politikanın izin verdiği dış kaynaklar ve gerekçeleri koddan doğrulanmış
 | `font-src` | `https://fonts.gstatic.com` | aynı `<link>` zincirinin çektiği font dosyaları |
 | `connect-src` / `frame-src` | `https://login.microsoftonline.com` | MSAL sessiz token yenilemesi bu origin'e iframe açar (`frontend/src/config/msalConfig.ts:12`) |
 | `img-src` | `data:` `blob:` | `URL.createObjectURL` ile üretilen indirme/önizleme bağlantıları |
+| `script-src` | `https://officeapis.public.onecdn.static.microsoft` | Office.js (Word eklentisi görev bölmesi, G286). Microsoft Learn "Referencing the Office JavaScript API library" (23.09.2026): eski `appsforoffice.microsoft.com` ucunun halefi, Microsoft Ajax'ı yüklemez → `ajax.aspnetcdn.com` gerekmez |
+| `frame-ancestors` (yalnız `/eklenti`) | `*.officeapps.live.com`, `*.office.com`, `word.cloud.microsoft` | Word web görev bölmesini Office alan adlarından iframe'ler; masaüstü Word WebView2'de üst düzey açar |
 
 Sözdizimi denetimi çalışan stack'e dokunmadan, tek kullanımlık konteynerle koşar
 (`backend` upstream'i çözülebilsin diye compose ağına bağlanır):

@@ -2,8 +2,8 @@
 
 Sesli giriş (G217, `MicButton`) tarayıcıda `getUserMedia` ister. Konteyner nginx'i
 `microphone=()` gönderirse tarayıcı kullanıcıya HİÇ SORMADAN reddeder ve ekranda
-"Mikrofon izni verilmedi" çıkar. Bekçi: başlık (add_header kalıtımı yüzünden üç
-yerde tekrar yazılır) üç yerde de AYNI, mikrofon yalnız kendi origin'imize açık
+"Mikrofon izni verilmedi" çıkar. Bekçi: başlık (add_header kalıtımı yüzünden beş
+yerde tekrar yazılır — G286 `/eklenti` ve manifest location'ları ekledi) hepsinde AYNI, mikrofon yalnız kendi origin'imize açık
 (`microphone=(self)`), kamera ve konum kapalı.
 
 Konteynerde repo kökü görünmediği için atlanır; CI'da (repo checkout'u) koşar.
@@ -24,9 +24,9 @@ def _politikalar() -> list[str]:
     return re.findall(r'add_header\s+Permissions-Policy\s+"([^"]*)"\s+always;', yorumsuz)
 
 
-def test_uc_yerde_ayni_politika():
+def test_bes_yerde_ayni_politika():
     politikalar = _politikalar()
-    assert len(politikalar) == 3, politikalar
+    assert len(politikalar) == 5, politikalar
     assert len(set(politikalar)) == 1, politikalar
 
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HUKDOK Word eklentisi manifesti - YER TUTUCU (G286). G287 simgeleri, komut duğmesini ve sürümü tamamlar.
+  nginx: `location = /eklenti/manifest.xml` (application/xml, no-cache). Görev bölmesi: SPA'nın /eklenti rotası.
+  Dağıtım Microsoft 365 yönetici merkezinden — İNSAN ADIMI. <Id> değişmez (Office eklentiyi bununla tanır).
+-->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:type="TaskPaneApp">
+  <Id>7e652ba9-d305-4215-a488-34f40f8a0ad5</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>HUKDOK</ProviderName>
+  <DefaultLocale>tr-TR</DefaultLocale>
+  <DisplayName DefaultValue="HUKDOK" />
+  <Description DefaultValue="Word belgesini HUKDOK dava kartına taslak olarak kaydedin, sürüm alın, kesinleştirin." />
+  <IconUrl DefaultValue="https://hukukoid.com/favicon-32x32.png" />
+  <HighResolutionIconUrl DefaultValue="https://hukukoid.com/android-chrome-192x192.png" />
+  <SupportUrl DefaultValue="https://hukukoid.com/" />
+  <AppDomains>
+    <AppDomain>https://hukukoid.com</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://hukukoid.com/eklenti" />
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
