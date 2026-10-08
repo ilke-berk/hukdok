@@ -40,7 +40,7 @@ const BELGE_BOLUMU: Record<LexisBelgeTuru, string> = {
   TIBBI_KAYIT: "uzman görüşü — S8 bekliyor",
   UST_YAZI: "iddia yedeği",
   POLICE: "kullanılmaz",
-  DIGER: "kullanılmaz (türü yok: künye önerisinde sınıflandırın)",
+  DIGER: "tensip / zabıt ise yargı süreci; türsüzse künye önerisinde onaylanan sınıfına göre, yoksa kullanılmaz",
 };
 
 type Vurgu = { madde: number | null; alan: string | null; bolum: BolumKodu | null };

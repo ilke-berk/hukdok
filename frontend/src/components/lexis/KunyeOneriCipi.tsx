@@ -109,6 +109,7 @@ export function KunyeDoldur({ hat, calisiyor, ilerleme, uyarilar, hata, siniflar
         </label>
       )}
       {hata && <p role="alert" className="text-[11.5px] text-tone-danger">{hata}</p>}
+      <p className="text-[11px] text-[var(--fg-subtle)]">Kabul ettiğiniz değerler taslağa “Taslağı yaz” ile girer (var olan taslak yeniden yazılmalı).</p>
       {uyarilar.length > 0 && (
         <details className="text-[11.5px] text-[var(--fg-muted)]">
           <summary className="cursor-pointer">{uyarilar.length} uyarı (okunamayan belge, düşen öneri)</summary>

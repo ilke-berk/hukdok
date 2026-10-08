@@ -124,15 +124,20 @@ export function KunyeKarti({ dosya, onDegistir, onOncekiRapor, kilitli = false, 
         {satirlar.map(([etiket, kartDegeri, alan]) => {
           const alanOnerileri = alan ? gorunen.filter((o) => o.alan === alan) : [];
           const kabuller = alanOnerileri.filter((o) => o.durum === "kabul");
-          // Kabul edilen değer kartın yerine geçer (iki farklı tutar kabul edilmişse servis seçmez: kart kalır).
-          const deger = kabuller.length ? [...new Set(kabuller.map((o) => o.deger))].join(", ") : kartDegeri;
+          // Kabul edilen değer kartın yerine geçer. Tutar alanında iki farklı tutar kabul edilmişse servis seçmez, kart
+          // değeri kalır (`kunye_cikarim.onayli_dosya`): ekran da aynısını gösterir.
+          const farkli = [...new Set(kabuller.map((o) => o.deger))];
+          const tutarAlani = alan === "teminat_limiti" || alan === "talep_maddi" || alan === "talep_manevi";
+          const secilmedi = tutarAlani && farkli.length > 1;
+          const deger = kabuller.length && !secilmedi ? farkli.join(", ") : kartDegeri;
           return (
             <div key={etiket} className="contents">
               <dt className="text-[var(--fg-subtle)] whitespace-nowrap">{etiket}</dt>
               <dd className="grid gap-1 min-w-0">
                 <span className={deger ? "text-[var(--fg)] break-words" : "text-tone-caution font-mono"}>
                   {deger ?? BOS}
-                  {kabuller.length > 0 && <span className="ml-1.5 text-[10.5px] text-tone-ok">belgeden</span>}
+                  {kabuller.length > 0 && !secilmedi && <span className="ml-1.5 text-[10.5px] text-tone-ok">belgeden</span>}
+                  {secilmedi && <span className="ml-1.5 text-[10.5px] text-tone-caution">iki farklı tutar kabul edildi — kart değeri kullanılır</span>}
                 </span>
                 {onOneriKarar && alanOnerileri.length > 0 && (
                   <span className="flex flex-wrap gap-1">

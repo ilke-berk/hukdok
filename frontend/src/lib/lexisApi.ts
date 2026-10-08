@@ -216,6 +216,7 @@ export function ornekDurumuSifirla(): void {
   gercekDosyalar.clear();
   gercekEmsalMetinleri.clear();
   gercekKosular.clear();
+  gercekYazimUyarilari.clear();
   gercekKararMetinleri.clear();
   gercekKararBankasi = null;
 }
@@ -772,6 +773,9 @@ const gercekDosyalar = new Map<number, DosyaGirdisi>();
 const gercekEmsalMetinleri = new Map<string, string>();
 // Dava → taslağının koşusu (Geçmiş satırı): iskelet yanıtından ya da kayıtlı taslaktan öğrenilir; kayıt ve Word taşır.
 const gercekKosular = new Map<number, number>();
+// Belgelerden yazımda servisin denetim uyarıları (belge metni tarayıcıda yok, ekranda yinelenemez): dava başına son
+// yazımın uyarıları; "Yeniden denetle" bunları da ekler (yeni yazım ya da belgesiz yazım siler). Sayfa yenilenince gider.
+const gercekYazimUyarilari = new Map<number, LexisUyari[]>();
 // Karar kimliği → metin: denetim, dayanak alıntısını taslağın yazıldığı kararlarda arar.
 const gercekKararMetinleri = new Map<number, string>();
 let gercekKararBankasi: KararKaydi[] | null = null;
@@ -823,7 +827,8 @@ const SUNUCU_BOLUMLERI: readonly string[] = ["iddia", "beyan", "yargi_sureci", "
  * satırları alınmaz (paragrafın `zayif_kaynak` işaretinden `lexisDenetim` üretir). */
 export function sunucuUyarilari(satirlar: string[]): LexisUyari[] {
   return satirlar
-    .filter((s) => !s.includes("zayıf kaynak"))
+    // Karar paragraflarının uyarılarını istemci kendisi üretir (`lexisDenetim`, karar metni elde): iki kez yazılmaz.
+    .filter((s) => !s.includes("zayıf kaynak") && (s.startsWith("tutarlılık:") || !/kararda |gösterilen karar|karar \d+ metninde/.test(s)))
     .map((s, i) => {
       const onek = s.split(/[\s:]/, 1)[0];
       const bolum = SUNUCU_BOLUMLERI.includes(onek) ? (onek as BolumKodu) : null;
@@ -837,7 +842,8 @@ async function gercekDenetle(taslak: LexisTaslak, signal?: AbortSignal): Promise
   gercekKararBankasi ??= await (await servis()).kararBankasi(signal).catch(() => null);
   const emsalMetinleri = taslak.emsaller.map((sha) => gercekEmsalMetinleri.get(sha) ?? "");
   const kaynakMetinleri = await gercekKaynakMetinleri(taslak, signal);
-  return ornekDenetle({ taslak, dosya, emsalMetinleri, kararBankasi: gercekKararBankasi ?? [], kaynakMetinleri });
+  const yazimUyarilari = gercekYazimUyarilari.get(taslak.case_id) ?? [];
+  return [...ornekDenetle({ taslak, dosya, emsalMetinleri, kararBankasi: gercekKararBankasi ?? [], kaynakMetinleri }), ...yazimUyarilari];
 }
 
 const gercekLexisApi: LexisApi = {
@@ -934,7 +940,8 @@ const gercekLexisApi: LexisApi = {
     // Belgelerden yazımda servisin denetimi (alıntı belgede, kartta yok, tutarlılık) ekranda belge metni olmadan
     // yinelenemez: yazım anının uyarısı olarak eklenir (zayıf kaynak paragrafın kendi işaretinden denetlenir).
     const yazimUyarilari = belgeIdleri.length > 0 ? sunucuUyarilari(yazim?.uyarilar ?? []) : [];
-    yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: [...(await gercekDenetle(taslak, signal)), ...yazimUyarilari] };
+    gercekYazimUyarilari.set(istek.case_id, yazimUyarilari);
+    yield { status: "complete", kosu_id: iskelet.kosu_id != null ? String(iskelet.kosu_id) : `iskelet-${istek.case_id}`, uyarilar: await gercekDenetle(taslak, signal) };
   },
   async kararAra(suzgec, signal) {
     return (await servis()).kararAra(suzgec, signal);

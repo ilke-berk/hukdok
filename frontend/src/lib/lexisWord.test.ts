@@ -124,6 +124,8 @@ describe("wordIndir", () => {
     await expect(wordIndir(taslak, kunye, undefined, "pdf")).resolves.toEqual({ dosya_adi: "Lexis_9.9001_ANA_taslak.pdf", uyari_sayisi: 0, uyarilar: [] });
     expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual({ taslak, kunye, bicim: "pdf" });
     expect(tiklamalar).toEqual([{ href: "blob:sahte-url", download: "Lexis_9.9001_ANA_taslak.pdf" }]);
+    stubFetch(yanit(200, { "Content-Type": "application/pdf" }));
+    await expect(wordIndir(taslak, kunye, undefined, "pdf")).resolves.toMatchObject({ dosya_adi: "Lexis_taslak.pdf" }); // başlıksız yedek ad
     stubFetch(yanit(200, { "Content-Type": DOCX }));
     await expect(wordIndir(taslak, kunye, undefined, "pdf")).rejects.toMatchObject({ status: 502, message: LEXIS_SERVIS_YOK });
     stubFetch(yanit(200, { "Content-Type": "application/pdf" }));

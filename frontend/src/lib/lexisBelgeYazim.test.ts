@@ -88,6 +88,18 @@ describe("belgelerden yazım — ekran", () => {
     expect(olaylar.at(-1)?.status).toBe("complete");
   });
 
+  it("sunucu yazım uyarıları 'Yeniden denetle'de kaybolmaz; karar paragraflarının uyarısı iki kez yazılmaz", async () => {
+    sunucu([]);
+    const olaylar = await topla(istek({ belgelerden_yaz: true }));
+    const son = olaylar.at(-1)!;
+    const taslak = { case_id: 501, sirket: "AK", rapor_turu: "ANA", iskelet: "ALTILI", etiketli: {}, ozet: YAZIM.ozet, degerlendirme: null, muallak: null, muallak_maddi: null, muallak_manevi: null, emsaller: [], kararlar: [] } as LexisTaslak;
+    const yeniden = await lexisApi.denetle(taslak);
+    const metin = (u: { metin: string }[]) => u.filter((x) => x.metin.startsWith("beyan:")).map((x) => x.metin);
+    expect(son.status === "complete" && metin(son.uyarilar)).toEqual(["beyan: kartta yok: hekim beyanı / cevap / savunma"]);
+    expect(metin(yeniden)).toEqual(["beyan: kartta yok: hekim beyanı / cevap / savunma"]);
+    expect(sunucuUyarilari(["yargi_sureci paragraf 1: kaynak kararda geçmiyor: 2021/5", "tutarlılık: iki karar tarihi çelişiyor"]).map((u) => u.metin)).toEqual(["tutarlılık: iki karar tarihi çelişiyor"]);
+  });
+
   it("sunucuUyarilari: önekten bölüm, zayıf kaynak satırı alınmaz", () => {
     expect(sunucuUyarilari(["iddia paragraf 2: dayanak alıntısı belgede bulunamadı", "iddia paragraf 1: zayıf kaynak (x)", "belge 82 okunamadı: biçim"]).map((u) => [u.kod, u.bolum])).toEqual([
       ["YAZIM_UYARISI", "iddia"],

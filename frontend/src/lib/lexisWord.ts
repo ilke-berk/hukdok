@@ -49,9 +49,9 @@ async function detayOku(res: Response): Promise<string | null> {
   return null;
 }
 
-function dosyaAdi(res: Response): string {
+function dosyaAdi(res: Response, bicim: CiktiBicimi = "docx"): string {
   const m = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "");
-  return m?.[1] || VARSAYILAN_DOSYA_ADI;
+  return m?.[1] || (bicim === "pdf" ? VARSAYILAN_DOSYA_ADI.replace(/\.docx$/, ".pdf") : VARSAYILAN_DOSYA_ADI);
 }
 
 function uyarilariOku(res: Response): string[] {
@@ -108,7 +108,7 @@ export async function wordIndir(taslak: LexisTaslak, kunye: WordKunyesi, signal?
 
   const uyarilar = uyarilariOku(res);
   const sayi = Number.parseInt(res.headers.get("X-Lexis-Uyari-Sayisi") ?? "", 10);
-  const ad = dosyaAdi(res);
+  const ad = dosyaAdi(res, bicim);
   indir(await res.blob(), ad);
   return { dosya_adi: ad, uyari_sayisi: Number.isFinite(sayi) ? sayi : uyarilar.length, uyarilar };
 }

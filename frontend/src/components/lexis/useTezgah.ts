@@ -403,6 +403,7 @@ export function useTezgah() {
       setKararHatasi(null);
       setKararYukleniyor(false);
       setSeciliKararlar(new Set());
+      setBelgelerdenYaz(false);
       setYazimDurumu(null);
       emsalKararlariRef.current = [];
       setEmsalKararlari([]);
