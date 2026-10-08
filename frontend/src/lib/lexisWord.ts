@@ -80,12 +80,20 @@ function indir(blob: Blob, ad: string): void {
   }
 }
 
-/** `POST /lexis-api/word` — şirket şablonunda Word üretir ve tarayıcıya indirir. Hata `LexisApiError`. */
-export async function wordIndir(taslak: LexisTaslak, kunye: WordKunyesi, signal?: AbortSignal): Promise<WordSonucu> {
+/** İndirilecek biçim: Word ya da servisin LibreOffice'le çevirdiği PDF (`/word` gövdesinde `bicim: "pdf"`). */
+export type CiktiBicimi = "docx" | "pdf";
+const ICERIK_TURU: Record<CiktiBicimi, string> = { docx: "wordprocessingml", pdf: "application/pdf" };
+
+/** `POST /lexis-api/word` — şirket şablonunda Word (ya da PDF) üretir ve tarayıcıya indirir. Hata `LexisApiError`. */
+export async function wordIndir(taslak: LexisTaslak, kunye: WordKunyesi, signal?: AbortSignal, bicim: CiktiBicimi = "docx"): Promise<WordSonucu> {
   let res: Response;
   const { kosu_id, ...kapak } = kunye;
   try {
-    res = await apiClient.fetch(`${LEXIS_API_ONEKI}/word`, { method: "POST", body: JSON.stringify({ taslak, kunye: kapak, ...(kosu_id != null ? { kosu_id } : {}) }), signal });
+    res = await apiClient.fetch(`${LEXIS_API_ONEKI}/word`, {
+      method: "POST",
+      body: JSON.stringify({ taslak, kunye: kapak, ...(kosu_id != null ? { kosu_id } : {}), ...(bicim === "pdf" ? { bicim } : {}) }),
+      signal,
+    });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw e;
     throw new LexisApiError(0, LEXIS_SERVIS_YOK);
@@ -93,10 +101,10 @@ export async function wordIndir(taslak: LexisTaslak, kunye: WordKunyesi, signal?
   if (!res.ok) {
     if (res.status === 401) throw new LexisApiError(401, LEXIS_YETKI_MESAJI);
     // Servisin kendi hataları JSON `detail` taşır; nginx'in 404'ü (uç proxy'de yok) ve 502/504'ü (servis kapalı) taşımaz.
-    throw new LexisApiError(res.status, (await detayOku(res)) ?? ([404, 502, 504].includes(res.status) ? LEXIS_SERVIS_YOK : `Word üretilemedi (HTTP ${res.status}).`));
+    throw new LexisApiError(res.status, (await detayOku(res)) ?? ([404, 502, 504].includes(res.status) ? LEXIS_SERVIS_YOK : `${bicim === "pdf" ? "PDF" : "Word"} üretilemedi (HTTP ${res.status}).`));
   }
   // Proxy bu ucu tanımıyorsa istek SPA'ya düşüp 200 + HTML dönebilir: dosya sanılıp indirilmesin.
-  if (!(res.headers.get("Content-Type") ?? "").includes("wordprocessingml")) throw new LexisApiError(502, LEXIS_SERVIS_YOK);
+  if (!(res.headers.get("Content-Type") ?? "").includes(ICERIK_TURU[bicim])) throw new LexisApiError(502, LEXIS_SERVIS_YOK);
 
   const uyarilar = uyarilariOku(res);
   const sayi = Number.parseInt(res.headers.get("X-Lexis-Uyari-Sayisi") ?? "", 10);

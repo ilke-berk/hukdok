@@ -223,7 +223,7 @@ describe("önizleme sınırı", () => {
 
     await expect(lexisApi.wordIndir(taslak)).resolves.toEqual(sonuc);
 
-    expect(wordMock.wordIndir).toHaveBeenCalledWith(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, undefined);
+    expect(wordMock.wordIndir).toHaveBeenCalledWith(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, undefined, undefined);
     const [sonKosu, ...eskiler] = await lexisApi.gecmis();
     expect(sonKosu.case_id).toBe(9004);
     expect(sonKosu.indirme_tarihi).not.toBeNull();

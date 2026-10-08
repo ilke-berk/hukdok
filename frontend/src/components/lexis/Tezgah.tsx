@@ -201,18 +201,19 @@ export function Tezgah() {
     }
   };
 
-  const wordIndir = async () => {
+  const wordIndir = async (bicim: "docx" | "pdf" = "docx") => {
     if (!taslak || wordIniyor) return;
     setWordIniyor(true);
+    const ad = bicim === "pdf" ? "PDF" : "Word";
     try {
-      const sonuc = await lexisApi.wordIndir(taslak);
+      const sonuc = await lexisApi.wordIndir(taslak, undefined, bicim);
       // Şablon yazımının uyarıları (boş kalan alan, yazılamayan bölüm) dosyayla birlikte gelir; ilk üçü gösterilir.
       const ozet = sonuc.uyarilar.slice(0, 3).join(" · ");
-      toast.success("Word indirildi", {
+      toast.success(`${ad} indirildi`, {
         description: sonuc.uyari_sayisi > 0 ? `${sonuc.uyari_sayisi} uyarı${ozet ? `: ${ozet}` : ""}` : sonuc.dosya_adi,
       });
     } catch (e) {
-      toast.error("Word indirilemedi", { description: hataMetni(e) });
+      toast.error(`${ad} indirilemedi`, { description: hataMetni(e) });
     } finally {
       setWordIniyor(false);
     }
@@ -531,6 +532,7 @@ export function Tezgah() {
               sonDenetim={t.sonDenetim}
               onDenetle={() => void t.denetle()}
               onWord={() => void wordIndir()}
+              onPdf={() => void wordIndir("pdf")}
               kilitli={wordIniyor}
             />
           </div>

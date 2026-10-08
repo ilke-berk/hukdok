@@ -665,6 +665,15 @@ describe("Tezgah — taslak yazımı", () => {
     await tikla(dugme("Word indir"));
     expect(toastMocks.error).toHaveBeenCalledWith("Word indirilemedi", { description: "Word çıktısı şimdilik yalnız Anadolu biçiminde üretiliyor." });
     expect(dugme("Word indir").disabled).toBe(false);
+
+    // PDF indir: aynı uç, `bicim: "pdf"` (servis LibreOffice'le çevirir)
+    wordMock.wordIndir.mockResolvedValueOnce({ dosya_adi: "Lexis_x_ANA_taslak.pdf", uyari_sayisi: 0, uyarilar: [] });
+    await tikla(dugme("PDF indir"));
+    expect(wordMock.wordIndir.mock.calls.at(-1)?.[3]).toBe("pdf"); // lexisWord.wordIndir(taslak, künye, signal, bicim)
+    expect(toastMocks.success).toHaveBeenLastCalledWith("PDF indirildi", { description: "Lexis_x_ANA_taslak.pdf" });
+    wordMock.wordIndir.mockRejectedValueOnce(new LexisApiError(503, "PDF üretici sunucuda kurulu değil; Word indirip Word'den PDF'e aktarın."));
+    await tikla(dugme("PDF indir"));
+    expect(toastMocks.error).toHaveBeenLastCalledWith("PDF indirilemedi", { description: "PDF üretici sunucuda kurulu değil; Word indirip Word'den PDF'e aktarın." });
   });
 
   it("taslak varken künye değişimi onay ister; reddedilirse taslak kalır, kabul edilirse silinir", async () => {

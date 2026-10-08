@@ -15,7 +15,7 @@
 import type { EmsalAkisSecenekleri } from "@/lib/lexisAkis";
 import { denetle as ornekDenetle, kararKaynakMetni } from "@/lib/lexisDenetim";
 import { katla } from "@/lib/lexisMetin";
-import type { WordSonucu } from "@/lib/lexisWord";
+import type { CiktiBicimi, WordSonucu } from "@/lib/lexisWord";
 import {
   ORNEK_DAVALAR,
   ORNEK_DOSYALAR,
@@ -126,7 +126,8 @@ export interface LexisApi {
   /** Sınıflar değişince muallak önerisini yeniden hesaplatır (tutarı kod belirler, K11). */
   muallakOner(istek: MuallakIstegi, signal?: AbortSignal): Promise<MuallakOnerisi>;
   /** Şirket şablonunu doldurup Word'ü indirir; şablon yazımının uyarılarıyla döner. */
-  wordIndir(taslak: LexisTaslak, signal?: AbortSignal): Promise<WordSonucu>;
+  /** `bicim: "pdf"`: servis Word'ü LibreOffice'le PDF'e çevirir (uyarılar ve dosya adı aynı yoldan). */
+  wordIndir(taslak: LexisTaslak, signal?: AbortSignal, bicim?: CiktiBicimi): Promise<WordSonucu>;
   gecmis(signal?: AbortSignal): Promise<TaslakKosusu[]>;
   kutuphaneAra(filtre: KutuphaneFiltresi, signal?: AbortSignal): Promise<KutuphaneKaydi[]>;
   raporGetir(sha256: string, signal?: AbortSignal): Promise<KutuphaneKaydi>;
@@ -532,10 +533,10 @@ const ornekLexisApi: LexisApi = {
 
   // Word örnek modda da GERÇEK servise gider: örnek taslak + örnek dosyanın künyesi. Modül dinamik yüklenir —
   // adaptörün geri kalanı `apiClient`'ı (MSAL) hiç yüklemez.
-  async wordIndir(taslak, signal) {
+  async wordIndir(taslak, signal, bicim) {
     const dosya = dosyaBul(taslak.case_id);
     const { wordIndir } = await import("@/lib/lexisWord");
-    const sonuc = await wordIndir(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, signal);
+    const sonuc = await wordIndir(taslak, { hasar_no: dosya.hasar_no, rapor_no: dosya.dava.dosya_no }, signal, bicim);
     // Geçmiş en yeni koşu başta tutulur: bu davanın son koşusu "Word indirildi" olur.
     const kosu = durum.gecmis.find((k) => k.case_id === taslak.case_id);
     if (kosu) kosu.indirme_tarihi = new Date().toISOString();
@@ -986,11 +987,11 @@ const gercekLexisApi: LexisApi = {
   async muallakOner(istek, signal) {
     return (await servis()).muallakOner(istek, signal);
   },
-  async wordIndir(taslak, signal) {
+  async wordIndir(taslak, signal, bicim) {
     const dosya = await gercekDosya(taslak.case_id, signal);
     const { wordIndir } = await import("@/lib/lexisWord");
     const kosu = gercekKosular.get(taslak.case_id);
-    return wordIndir(taslak, { hasar_no: dosya.hasar_no, hukuk_no: dosya.hukuk_no, rapor_no: dosya.dava.dosya_no, ...(kosu != null ? { kosu_id: kosu } : {}) }, signal);
+    return wordIndir(taslak, { hasar_no: dosya.hasar_no, hukuk_no: dosya.hukuk_no, rapor_no: dosya.dava.dosya_no, ...(kosu != null ? { kosu_id: kosu } : {}) }, signal, bicim);
   },
 
   // --- kalıcılık: servisin kendi veritabanı ---

@@ -118,6 +118,18 @@ describe("wordIndir", () => {
     expect(document.querySelector("a[download]")).toBeNull();
   });
 
+  it("PDF: gövdede bicim=pdf gider, application/pdf kabul edilir; Word içerik türü PDF sanılmaz", async () => {
+    const blob = new Blob(["%PDF-"], { type: "application/pdf" });
+    const fetchMock = stubFetch(yanit(200, { "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="Lexis_9.9001_ANA_taslak.pdf"' }, { blob }));
+    await expect(wordIndir(taslak, kunye, undefined, "pdf")).resolves.toEqual({ dosya_adi: "Lexis_9.9001_ANA_taslak.pdf", uyari_sayisi: 0, uyarilar: [] });
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)).toEqual({ taslak, kunye, bicim: "pdf" });
+    expect(tiklamalar).toEqual([{ href: "blob:sahte-url", download: "Lexis_9.9001_ANA_taslak.pdf" }]);
+    stubFetch(yanit(200, { "Content-Type": DOCX }));
+    await expect(wordIndir(taslak, kunye, undefined, "pdf")).rejects.toMatchObject({ status: 502, message: LEXIS_SERVIS_YOK });
+    stubFetch(yanit(200, { "Content-Type": "application/pdf" }));
+    await expect(wordIndir(taslak, kunye)).rejects.toMatchObject({ status: 502 });          // Word beklenirken PDF
+  });
+
   it("başlıklar eksik ya da bozuksa varsayılan ad ve boş uyarı listesiyle yine indirir", async () => {
     stubFetch(yanit(200, { "Content-Type": DOCX, "X-Lexis-Uyarilar": "%E0%A4%A" }));
     await expect(wordIndir(taslak, kunye)).resolves.toEqual({ dosya_adi: "Lexis_taslak.docx", uyari_sayisi: 0, uyarilar: [] });
