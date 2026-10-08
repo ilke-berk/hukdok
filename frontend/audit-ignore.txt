@@ -17,3 +17,11 @@
 # kullanıcı girdisi braces'e ulaşmaz, tarayıcıya giden pakette braces yoktur.
 # Kalıcı çözüm: braces yaması ya da tailwindcss 4 geçişi (bağımlılık yol haritası).
 GHSA-vfj7-8cjw-p6xm  # dev zinciri: tailwindcss@3 → chokidar/micromatch → braces (yama yok, desenler sabit config glob'u). Gözden geçirme: 2026-11-15
+
+# 2026-10-08 — DEV ZİNCİRİ kapısı için (prod kapısı temiz). postcss-selector-parser <7.1.6:
+# düz seçici ayrıştırmada karesel karmaşıklık (CPU tüketimi). `npm audit fix` yalnız
+# @tailwindcss/typography / tailwindcss 4 major atlamasıyla kapatıyor. Yol: tailwindcss@3,
+# postcss-nested, @tailwindcss/typography (hepsi build zamanı) → postcss-selector-parser@6;
+# ayrıştırılan seçiciler repodaki kendi CSS'imiz ve Tailwind'in ürettikleridir — kullanıcı
+# girdisi ulaşmaz, tarayıcıya giden pakette yoktur. Kalıcı çözüm: tailwindcss 4 geçişi.
+GHSA-rj75-hqrm-r3gf  # dev zinciri: tailwindcss@3 / @tailwindcss/typography → postcss-selector-parser@6 (yama major atlamada, girdi kendi CSS'imiz). Gözden geçirme: 2026-11-15
